@@ -1,7 +1,15 @@
 const fs = require('fs');
 const path = require('path');
 
-const AUTOMOD_PATH = path.join(__dirname, '..', '..', 'dashboard', 'server', 'data', 'automod.json');
+const AUTOMOD_PATH = path.join(
+  __dirname,
+  '..',
+  '..',
+  'dashboard',
+  'server',
+  'data',
+  'automod.json'
+);
 
 function ensureFile() {
   const dir = path.dirname(AUTOMOD_PATH);
@@ -56,6 +64,7 @@ function getDefaultConfig() {
     },
     antiLink: {
       enabled: false,
+      allowedDomains: [],
       punishment: 'delete',
       timeoutMinutes: 10,
     },
@@ -91,13 +100,26 @@ function getDefaultConfig() {
   };
 }
 
+function toSafeNumber(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function toStringArray(value) {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((entry) => String(entry).trim())
+    .filter(Boolean);
+}
+
 function normalizeRule(rule = {}, defaults = {}) {
   return {
     ...defaults,
     ...rule,
     enabled: Boolean(rule?.enabled),
     punishment: String(rule?.punishment || defaults.punishment || 'delete').toLowerCase(),
-    timeoutMinutes: Number(rule?.timeoutMinutes ?? defaults.timeoutMinutes ?? 10),
+    timeoutMinutes: toSafeNumber(rule?.timeoutMinutes, defaults.timeoutMinutes ?? 10),
   };
 }
 
@@ -106,60 +128,55 @@ function sanitizeConfig(input = {}) {
   const sourceRules = input?.rules || {};
 
   const antiSpam = normalizeRule(input?.antiSpam || sourceRules.antiSpam, defaults.antiSpam);
-  antiSpam.maxMessages = Number(
-    input?.antiSpam?.maxMessages ??
-      sourceRules?.antiSpam?.maxMessages ??
-      defaults.antiSpam.maxMessages
+  antiSpam.maxMessages = toSafeNumber(
+    input?.antiSpam?.maxMessages ?? sourceRules?.antiSpam?.maxMessages,
+    defaults.antiSpam.maxMessages
   );
-  antiSpam.intervalSeconds = Number(
-    input?.antiSpam?.intervalSeconds ??
-      sourceRules?.antiSpam?.intervalSeconds ??
-      defaults.antiSpam.intervalSeconds
+  antiSpam.intervalSeconds = toSafeNumber(
+    input?.antiSpam?.intervalSeconds ?? sourceRules?.antiSpam?.intervalSeconds,
+    defaults.antiSpam.intervalSeconds
   );
 
   const antiLink = normalizeRule(input?.antiLink || sourceRules.antiLink, defaults.antiLink);
+  antiLink.allowedDomains = toStringArray(
+    input?.antiLink?.allowedDomains ?? sourceRules?.antiLink?.allowedDomains
+  );
+
   const antiInvite = normalizeRule(input?.antiInvite || sourceRules.antiInvite, defaults.antiInvite);
 
   const capsAbuse = normalizeRule(input?.capsAbuse || sourceRules.capsAbuse, defaults.capsAbuse);
-  capsAbuse.minLength = Number(
-    input?.capsAbuse?.minLength ??
-      sourceRules?.capsAbuse?.minLength ??
-      defaults.capsAbuse.minLength
+  capsAbuse.minLength = toSafeNumber(
+    input?.capsAbuse?.minLength ?? sourceRules?.capsAbuse?.minLength,
+    defaults.capsAbuse.minLength
   );
-  capsAbuse.percentage = Number(
-    input?.capsAbuse?.percentage ??
-      sourceRules?.capsAbuse?.percentage ??
-      defaults.capsAbuse.percentage
+  capsAbuse.percentage = toSafeNumber(
+    input?.capsAbuse?.percentage ?? sourceRules?.capsAbuse?.percentage,
+    defaults.capsAbuse.percentage
   );
 
   const badWords = normalizeRule(input?.badWords || sourceRules.badWords, defaults.badWords);
-  const badWordsSource = input?.badWords?.words ?? sourceRules?.badWords?.words;
-  badWords.words = Array.isArray(badWordsSource)
-    ? badWordsSource.map((word) => String(word).trim()).filter(Boolean)
-    : [];
+  badWords.words = toStringArray(input?.badWords?.words ?? sourceRules?.badWords?.words);
 
   const repeatedMessages = normalizeRule(
     input?.repeatedMessages || sourceRules.repeatedMessages,
     defaults.repeatedMessages
   );
-  repeatedMessages.maxRepeats = Number(
-    input?.repeatedMessages?.maxRepeats ??
-      sourceRules?.repeatedMessages?.maxRepeats ??
-      defaults.repeatedMessages.maxRepeats
+  repeatedMessages.maxRepeats = toSafeNumber(
+    input?.repeatedMessages?.maxRepeats ?? sourceRules?.repeatedMessages?.maxRepeats,
+    defaults.repeatedMessages.maxRepeats
   );
-  repeatedMessages.intervalSeconds = Number(
-    input?.repeatedMessages?.intervalSeconds ??
-      sourceRules?.repeatedMessages?.intervalSeconds ??
-      defaults.repeatedMessages.intervalSeconds
+  repeatedMessages.intervalSeconds = toSafeNumber(
+    input?.repeatedMessages?.intervalSeconds ?? sourceRules?.repeatedMessages?.intervalSeconds,
+    defaults.repeatedMessages.intervalSeconds
   );
 
   return {
     enabled: input?.enabled !== false,
     ignoreBots: input?.ignoreBots !== false,
     ignoreAdmins: input?.ignoreAdmins !== false,
-    ignoredChannelIds: Array.isArray(input?.ignoredChannelIds) ? input.ignoredChannelIds : [],
-    ignoredUserIds: Array.isArray(input?.ignoredUserIds) ? input.ignoredUserIds : [],
-    ignoredRoleIds: Array.isArray(input?.ignoredRoleIds) ? input.ignoredRoleIds : [],
+    ignoredChannelIds: toStringArray(input?.ignoredChannelIds),
+    ignoredUserIds: toStringArray(input?.ignoredUserIds),
+    ignoredRoleIds: toStringArray(input?.ignoredRoleIds),
     antiSpam,
     antiLink,
     antiInvite,
@@ -223,8 +240,32 @@ function saveGuildAutoModConfig(guildId, config) {
   return attachComputedRules(safeConfig);
 }
 
+function updateGuildAutoModConfig(guildId, updater) {
+  const current = getGuildAutoModConfig(guildId);
+  const next =
+    typeof updater === 'function'
+      ? updater(structuredCloneSafe(current))
+      : {
+          ...current,
+          ...updater,
+        };
+
+  return saveGuildAutoModConfig(guildId, next);
+}
+
+function resetGuildAutoModConfig(guildId) {
+  return saveGuildAutoModConfig(guildId, getDefaultConfig());
+}
+
+function structuredCloneSafe(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
 module.exports = {
+  AUTOMOD_PATH,
   getDefaultConfig,
   getGuildAutoModConfig,
   saveGuildAutoModConfig,
+  updateGuildAutoModConfig,
+  resetGuildAutoModConfig,
 };
