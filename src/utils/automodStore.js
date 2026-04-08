@@ -52,30 +52,37 @@ function getDefaultConfig() {
       maxMessages: 6,
       intervalSeconds: 8,
       punishment: 'delete',
+      timeoutMinutes: 10,
     },
     antiLink: {
       enabled: false,
       punishment: 'delete',
+      timeoutMinutes: 10,
     },
     antiInvite: {
       enabled: false,
       punishment: 'delete',
+      timeoutMinutes: 10,
     },
     capsAbuse: {
       enabled: false,
       minLength: 10,
       percentage: 70,
       punishment: 'delete',
+      timeoutMinutes: 10,
     },
     badWords: {
       enabled: false,
       words: [],
       punishment: 'delete',
+      timeoutMinutes: 10,
     },
     repeatedMessages: {
       enabled: false,
       maxRepeats: 3,
+      intervalSeconds: 10,
       punishment: 'delete',
+      timeoutMinutes: 10,
     },
     logs: {
       enabled: true,
@@ -84,8 +91,68 @@ function getDefaultConfig() {
   };
 }
 
+function normalizeRule(rule = {}, defaults = {}) {
+  return {
+    ...defaults,
+    ...rule,
+    enabled: Boolean(rule?.enabled),
+    punishment: String(rule?.punishment || defaults.punishment || 'delete').toLowerCase(),
+    timeoutMinutes: Number(rule?.timeoutMinutes ?? defaults.timeoutMinutes ?? 10),
+  };
+}
+
 function sanitizeConfig(input = {}) {
   const defaults = getDefaultConfig();
+  const sourceRules = input?.rules || {};
+
+  const antiSpam = normalizeRule(input?.antiSpam || sourceRules.antiSpam, defaults.antiSpam);
+  antiSpam.maxMessages = Number(
+    input?.antiSpam?.maxMessages ??
+      sourceRules?.antiSpam?.maxMessages ??
+      defaults.antiSpam.maxMessages
+  );
+  antiSpam.intervalSeconds = Number(
+    input?.antiSpam?.intervalSeconds ??
+      sourceRules?.antiSpam?.intervalSeconds ??
+      defaults.antiSpam.intervalSeconds
+  );
+
+  const antiLink = normalizeRule(input?.antiLink || sourceRules.antiLink, defaults.antiLink);
+  const antiInvite = normalizeRule(input?.antiInvite || sourceRules.antiInvite, defaults.antiInvite);
+
+  const capsAbuse = normalizeRule(input?.capsAbuse || sourceRules.capsAbuse, defaults.capsAbuse);
+  capsAbuse.minLength = Number(
+    input?.capsAbuse?.minLength ??
+      sourceRules?.capsAbuse?.minLength ??
+      defaults.capsAbuse.minLength
+  );
+  capsAbuse.percentage = Number(
+    input?.capsAbuse?.percentage ??
+      sourceRules?.capsAbuse?.percentage ??
+      defaults.capsAbuse.percentage
+  );
+
+  const badWords = normalizeRule(input?.badWords || sourceRules.badWords, defaults.badWords);
+  badWords.words = Array.isArray(input?.badWords?.words || sourceRules?.badWords?.words)
+    ? (input?.badWords?.words || sourceRules?.badWords?.words)
+        .map((word) => String(word).trim())
+        .filter(Boolean)
+    : [];
+
+  const repeatedMessages = normalizeRule(
+    input?.repeatedMessages || sourceRules.repeatedMessages,
+    defaults.repeatedMessages
+  );
+  repeatedMessages.maxRepeats = Number(
+    input?.repeatedMessages?.maxRepeats ??
+      sourceRules?.repeatedMessages?.maxRepeats ??
+      defaults.repeatedMessages.maxRepeats
+  );
+  repeatedMessages.intervalSeconds = Number(
+    input?.repeatedMessages?.intervalSeconds ??
+      sourceRules?.repeatedMessages?.intervalSeconds ??
+      defaults.repeatedMessages.intervalSeconds
+  );
 
   return {
     enabled: input?.enabled !== false,
@@ -94,43 +161,12 @@ function sanitizeConfig(input = {}) {
     ignoredChannelIds: Array.isArray(input?.ignoredChannelIds) ? input.ignoredChannelIds : [],
     ignoredUserIds: Array.isArray(input?.ignoredUserIds) ? input.ignoredUserIds : [],
     ignoredRoleIds: Array.isArray(input?.ignoredRoleIds) ? input.ignoredRoleIds : [],
-    antiSpam: {
-      enabled: Boolean(input?.antiSpam?.enabled),
-      maxMessages: Number(input?.antiSpam?.maxMessages ?? defaults.antiSpam.maxMessages),
-      intervalSeconds: Number(
-        input?.antiSpam?.intervalSeconds ?? defaults.antiSpam.intervalSeconds
-      ),
-      punishment: input?.antiSpam?.punishment || defaults.antiSpam.punishment,
-    },
-    antiLink: {
-      enabled: Boolean(input?.antiLink?.enabled),
-      punishment: input?.antiLink?.punishment || defaults.antiLink.punishment,
-    },
-    antiInvite: {
-      enabled: Boolean(input?.antiInvite?.enabled),
-      punishment: input?.antiInvite?.punishment || defaults.antiInvite.punishment,
-    },
-    capsAbuse: {
-      enabled: Boolean(input?.capsAbuse?.enabled),
-      minLength: Number(input?.capsAbuse?.minLength ?? defaults.capsAbuse.minLength),
-      percentage: Number(input?.capsAbuse?.percentage ?? defaults.capsAbuse.percentage),
-      punishment: input?.capsAbuse?.punishment || defaults.capsAbuse.punishment,
-    },
-    badWords: {
-      enabled: Boolean(input?.badWords?.enabled),
-      words: Array.isArray(input?.badWords?.words)
-        ? input.badWords.words.map((word) => String(word).trim()).filter(Boolean)
-        : [],
-      punishment: input?.badWords?.punishment || defaults.badWords.punishment,
-    },
-    repeatedMessages: {
-      enabled: Boolean(input?.repeatedMessages?.enabled),
-      maxRepeats: Number(
-        input?.repeatedMessages?.maxRepeats ?? defaults.repeatedMessages.maxRepeats
-      ),
-      punishment:
-        input?.repeatedMessages?.punishment || defaults.repeatedMessages.punishment,
-    },
+    antiSpam,
+    antiLink,
+    antiInvite,
+    capsAbuse,
+    badWords,
+    repeatedMessages,
     logs: {
       enabled: input?.logs?.enabled !== false,
       channelId: String(input?.logs?.channelId || '').trim(),
@@ -138,9 +174,44 @@ function sanitizeConfig(input = {}) {
   };
 }
 
+function attachComputedRules(config) {
+  return {
+    ...config,
+    rules: {
+      antiSpam: {
+        ...config.antiSpam,
+        intervalMs: Number(config.antiSpam.intervalSeconds || 8) * 1000,
+        timeoutMs: Number(config.antiSpam.timeoutMinutes || 10) * 60 * 1000,
+      },
+      antiLink: {
+        ...config.antiLink,
+        timeoutMs: Number(config.antiLink.timeoutMinutes || 10) * 60 * 1000,
+      },
+      antiInvite: {
+        ...config.antiInvite,
+        timeoutMs: Number(config.antiInvite.timeoutMinutes || 10) * 60 * 1000,
+      },
+      capsAbuse: {
+        ...config.capsAbuse,
+        timeoutMs: Number(config.capsAbuse.timeoutMinutes || 10) * 60 * 1000,
+      },
+      badWords: {
+        ...config.badWords,
+        timeoutMs: Number(config.badWords.timeoutMinutes || 10) * 60 * 1000,
+      },
+      repeatedMessages: {
+        ...config.repeatedMessages,
+        intervalMs: Number(config.repeatedMessages.intervalSeconds || 10) * 1000,
+        timeoutMs: Number(config.repeatedMessages.timeoutMinutes || 10) * 60 * 1000,
+      },
+    },
+  };
+}
+
 function getGuildAutoModConfig(guildId) {
   const data = readAutoModData();
-  return data[guildId] || getDefaultConfig();
+  const safeConfig = sanitizeConfig(data[guildId] || getDefaultConfig());
+  return attachComputedRules(safeConfig);
 }
 
 function saveGuildAutoModConfig(guildId, config) {
@@ -150,7 +221,7 @@ function saveGuildAutoModConfig(guildId, config) {
   data[guildId] = safeConfig;
   writeAutoModData(data);
 
-  return safeConfig;
+  return attachComputedRules(safeConfig);
 }
 
 module.exports = {

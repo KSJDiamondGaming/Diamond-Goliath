@@ -5,12 +5,10 @@ function getBucketKey(guildId, userId) {
   return `${guildId}:${userId}`;
 }
 
-// Remove old timestamps outside interval
 function pruneTimestamps(timestamps, intervalMs, now = Date.now()) {
   return timestamps.filter((timestamp) => now - timestamp <= intervalMs);
 }
 
-// ===== SPAM TRACKING =====
 function getSpamBucket(guildId, userId) {
   const key = getBucketKey(guildId, userId);
 
@@ -26,7 +24,10 @@ function getSpamBucket(guildId, userId) {
   return bucket;
 }
 
-// ===== REPEAT TRACKING =====
+function clearSpamBucket(guildId, userId) {
+  userSpamBuckets.delete(getBucketKey(guildId, userId));
+}
+
 function getRepeatBucket(guildId, userId) {
   const key = getBucketKey(guildId, userId);
 
@@ -42,10 +43,13 @@ function getRepeatBucket(guildId, userId) {
   return bucket;
 }
 
-// ===== CLEANUP (IMPORTANT FOR MEMORY) =====
+function clearRepeatBucket(guildId, userId) {
+  userRepeatBuckets.delete(getBucketKey(guildId, userId));
+}
+
 function cleanupRuntime() {
   const now = Date.now();
-  const maxIdleMs = 30 * 60 * 1000; // 30 minutes
+  const maxIdleMs = 30 * 60 * 1000;
 
   for (const [key, bucket] of userSpamBuckets.entries()) {
     if (now - bucket.lastSeenAt > maxIdleMs) {
@@ -60,11 +64,12 @@ function cleanupRuntime() {
   }
 }
 
-// Run cleanup every 5 minutes (non-blocking)
 setInterval(cleanupRuntime, 5 * 60 * 1000).unref();
 
 module.exports = {
   getSpamBucket,
+  clearSpamBucket,
   getRepeatBucket,
+  clearRepeatBucket,
   pruneTimestamps,
 };
