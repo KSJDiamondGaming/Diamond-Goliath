@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const buildEmbed = require('./buildEmbed');
+const { createCase } = require('./cases/createCase');
 
 function readJson(filePath) {
   if (!fs.existsSync(filePath)) return {};
@@ -67,6 +68,18 @@ module.exports = async function logModerationAction({
     writeJson(casesPath, modCases);
     writeJson(caseDetailsPath, modCaseDetails);
 
+    const createdCase = createCase({
+      guild,
+      action,
+      target,
+      moderator,
+      reason: reason || 'No reason provided.',
+      duration,
+      evidence,
+      active: !['Unban', 'ClearWarnings'].includes(action),
+      expiresAt: null,
+    });
+
     const styles = {
       Ban: {
         color: '#ff3b30',
@@ -110,6 +123,11 @@ module.exports = async function logModerationAction({
       {
         name: '📁 Case',
         value: `#${caseNumber}`,
+        inline: true,
+      },
+      {
+        name: '🗂️ Persistent Case',
+        value: `#${createdCase.caseNumber}`,
         inline: true,
       },
       {
