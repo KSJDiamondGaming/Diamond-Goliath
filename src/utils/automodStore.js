@@ -133,10 +133,9 @@ function sanitizeConfig(input = {}) {
   );
 
   const badWords = normalizeRule(input?.badWords || sourceRules.badWords, defaults.badWords);
-  badWords.words = Array.isArray(input?.badWords?.words || sourceRules?.badWords?.words)
-    ? (input?.badWords?.words || sourceRules?.badWords?.words)
-        .map((word) => String(word).trim())
-        .filter(Boolean)
+  const badWordsSource = input?.badWords?.words ?? sourceRules?.badWords?.words;
+  badWords.words = Array.isArray(badWordsSource)
+    ? badWordsSource.map((word) => String(word).trim()).filter(Boolean)
     : [];
 
   const repeatedMessages = normalizeRule(

@@ -6,13 +6,18 @@
   "type": "commonjs",
   "scripts": {
     "start": "node index.js",
-    "dev": "nodemon index.js"
+    "dev": "nodemon index.js",
+    "lint": "eslint index.js src",
+    "lint:fix": "eslint index.js src --fix"
   },
   "dependencies": {
     "discord.js": "^14.15.0",
     "dotenv": "^16.4.5"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.2.0",
+    "globals": "^17.4.0",
     "nodemon": "^3.0.3"
   }
 }

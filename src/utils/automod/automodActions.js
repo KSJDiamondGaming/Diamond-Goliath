@@ -25,7 +25,9 @@ async function executeWarnAction(message, reason) {
     await message.author.send(
       `You were warned in **${message.guild.name}**.\nReason: **${reason}**`
     ).catch(() => null);
-  } catch {}
+  } catch {
+    // Ignore DM failures.
+  }
 }
 
 async function executeTimeoutAction(message, member, reason, timeoutMs) {
@@ -113,7 +115,7 @@ async function executeAutomodAction(message, result) {
 
   const reason = `[AutoMod: ${result.ruleName}] ${result.reason}`;
   let deleted = false;
-  let actionTaken = 'none';
+  let actionTaken;
   let moderationLogAction = null;
   let moderationDuration = null;
 

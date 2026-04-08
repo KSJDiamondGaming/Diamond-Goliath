@@ -2,7 +2,7 @@ const handleMemberEmbed = require('../utils/handleMemberEmbed');
 
 module.exports = {
   name: 'guildMemberAdd',
-  async execute(member, client) {
+  async execute(member, _client) {
     try {
       console.log(`👋 Member joined: ${member.user.tag} in ${member.guild.name}`);
 
