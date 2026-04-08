@@ -122,4 +122,11 @@ client.on(Events.InteractionCreate, async interaction => {
   }
 });
 
+const { startScheduler } = require('./src/utils/punishmentScheduler');
+
+client.once('ready', () => {
+  console.log(`Logged in as ${client.user.tag}`);
+  startScheduler(client);
+});
+
 client.login(token);
