@@ -2,7 +2,7 @@ const {
   SlashCommandBuilder,
   PermissionFlagsBits,
 } = require('discord.js');
-const logModerationAction = require('../../utils/logModerationAction');
+const logModerationAction = require('../../utils/logging/logModerationAction');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -81,15 +81,16 @@ module.exports = {
       content: dmSent
         ? `✅ Warned **${targetUser.tag}**.\nReason: **${reason}**`
         : `✅ Warned **${targetUser.tag}**.\nReason: **${reason}**\n⚠️ I could not DM the user.`,
+      ephemeral: true,
     });
 
     await logModerationAction({
       guild: interaction.guild,
       action: 'Warn',
-      target: targetUser,
+      user: targetUser,
       moderator: interaction.user,
-      reason,
-      evidence,
+      reason: evidence ? `${reason}\nEvidence: ${evidence}` : reason,
+      color: '#f39c12',
     });
   },
 };

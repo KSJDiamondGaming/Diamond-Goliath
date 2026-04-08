@@ -5,7 +5,7 @@ const {
 const fs = require('fs');
 const path = require('path');
 const buildEmbed = require('../../utils/buildEmbed');
-const logModerationAction = require('../../utils/logModerationAction');
+const logModerationAction = require('../../utils/logging/logModerationAction');
 
 function readJson(filePath) {
   if (!fs.existsSync(filePath)) return {};
@@ -156,16 +156,18 @@ module.exports = {
 
     await interaction.reply({
       embeds: [embed],
+      ephemeral: true,
     });
 
     await logModerationAction({
       guild: interaction.guild,
       action: 'ClearWarnings',
-      target,
+      user: target,
       moderator: interaction.user,
       reason: caseNumberInput
         ? `Cleared case #${caseNumberInput}. Reason: ${reason}`
         : `Cleared ${cleared} warning(s). Reason: ${reason}`,
+      color: '#2ecc71',
     });
   },
 };

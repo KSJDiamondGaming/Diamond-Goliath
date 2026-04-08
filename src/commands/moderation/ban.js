@@ -2,7 +2,7 @@ const {
   SlashCommandBuilder,
   PermissionFlagsBits,
 } = require('discord.js');
-const logModerationAction = require('../../utils/logModerationAction');
+const logModerationAction = require('../../utils/logging/logModerationAction');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -78,15 +78,16 @@ module.exports = {
 
     await interaction.reply({
       content: `✅ Banned **${targetUser.tag}**.\nReason: **${reason}**`,
+      ephemeral: true,
     });
 
     await logModerationAction({
       guild: interaction.guild,
       action: 'Ban',
-      target: targetUser,
+      user: targetUser,
       moderator: interaction.user,
-      reason,
-      evidence,
+      reason: evidence ? `${reason}\nEvidence: ${evidence}` : reason,
+      color: '#e74c3c',
     });
   },
 };

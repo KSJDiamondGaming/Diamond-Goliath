@@ -2,7 +2,7 @@ const {
   SlashCommandBuilder,
   PermissionFlagsBits,
 } = require('discord.js');
-const logModerationAction = require('../../utils/logModerationAction');
+const logModerationAction = require('../../utils/logging/logModerationAction');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -89,16 +89,17 @@ module.exports = {
 
     await interaction.reply({
       content: `✅ Timed out **${targetUser.tag}** for **${minutes} minute(s)**.\nReason: **${reason}**`,
+      ephemeral: true,
     });
 
     await logModerationAction({
       guild: interaction.guild,
       action: 'Timeout',
-      target: targetUser,
+      user: targetUser,
       moderator: interaction.user,
-      reason,
+      reason: evidence ? `${reason}\nEvidence: ${evidence}` : reason,
       duration: `${minutes} minute(s)`,
-      evidence,
+      color: '#f39c12',
     });
   },
 };
