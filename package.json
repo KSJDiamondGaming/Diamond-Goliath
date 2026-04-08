@@ -1,17 +1,11 @@
 {
-  "name": "discord-bot",
+  "name": "Diamond-Goliath",
   "version": "1.0.0",
-  "description": "Public Discord bot",
+  "description": "All in on Goliath",
   "main": "index.js",
   "type": "commonjs",
   "scripts": {
     "start": "node index.js",
-
-    "deploy": "node deploy-commands.js",
-
-    "deploy:guild": "node deploy-commands.js guild",
-    "deploy:global": "node deploy-commands.js global",
-
     "dev": "nodemon index.js"
   },
   "dependencies": {

@@ -6,60 +6,32 @@ const {
   Client,
   Collection,
   GatewayIntentBits,
+  Events,
 } = require('discord.js');
+
+const { registerCommands } = require('./src/utils/registerCommands');
+
+const token = process.env.TOKEN;
+const clientId = process.env.CLIENT_ID;
+const guildIds = process.env.GUILD_IDS
+  ? process.env.GUILD_IDS.split(',').map(id => id.trim()).filter(Boolean)
+  : [];
+
+if (!token) {
+  throw new Error('Missing TOKEN in .env');
+}
+
+if (!clientId) {
+  throw new Error('Missing CLIENT_ID in .env');
+}
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
   ],
 });
 
-global.client = client;
-
 client.commands = new Collection();
-
-const commands = [];
-const commandsPath = path.join(__dirname, 'src', 'commands');
-const guildsDataPath = path.join(__dirname, 'src', 'data', 'guilds.json');
-
-function ensureFile(filePath, fallback = '{}') {
-  const dir = path.dirname(filePath);
-
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-
-  if (!fs.existsSync(filePath)) {
-    fs.writeFileSync(filePath, fallback, 'utf8');
-  }
-}
-
-function syncGuildsData() {
-  try {
-    ensureFile(guildsDataPath, '{}');
-
-    const guilds = {};
-
-    for (const guild of client.guilds.cache.values()) {
-      guilds[guild.id] = {
-        id: guild.id,
-        name: guild.name,
-        icon: guild.icon
-          ? `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png?size=128`
-          : null,
-        memberCount: guild.memberCount ?? 0,
-      };
-    }
-
-    fs.writeFileSync(guildsDataPath, JSON.stringify(guilds, null, 2), 'utf8');
-    console.log(`✅ Synced ${Object.keys(guilds).length} guild(s) to ${guildsDataPath}`);
-  } catch (error) {
-    console.error('❌ Failed to sync guilds.json:', error);
-  }
-}
 
 function getCommandFiles(dir) {
   let results = [];
@@ -82,66 +54,72 @@ function getCommandFiles(dir) {
   return results;
 }
 
-const commandFiles = getCommandFiles(commandsPath);
+function loadRuntimeCommands() {
+  const commandsPath = path.join(__dirname, 'src', 'commands');
+  const commandFiles = getCommandFiles(commandsPath);
 
-for (const filePath of commandFiles) {
-  const command = require(filePath);
+  for (const filePath of commandFiles) {
+    const command = require(filePath);
 
-  if (!command?.data?.name || !command?.execute) {
-    console.log(`⚠️ Skipped invalid command: ${filePath}`);
-    continue;
-  }
-
-  if (client.commands.has(command.data.name)) {
-    console.log(`❌ Duplicate command name found: ${command.data.name} in ${filePath}`);
-    continue;
-  }
-
-  client.commands.set(command.data.name, command);
-  commands.push(command.data.toJSON());
-  console.log(`✅ Loaded command: ${command.data.name}`);
-}
-
-const eventsPath = path.join(__dirname, 'src', 'events');
-
-if (fs.existsSync(eventsPath)) {
-  const eventFiles = fs.readdirSync(eventsPath).filter((file) => file.endsWith('.js'));
-
-  for (const file of eventFiles) {
-    const filePath = path.join(eventsPath, file);
-    const event = require(filePath);
-
-    if (!event?.name || !event?.execute) {
-      console.log(`⚠️ Skipped invalid event: ${filePath}`);
+    if (!command?.data || !command?.execute) {
+      console.warn(`⚠️ Skipping invalid command file: ${filePath}`);
       continue;
     }
 
-    if (event.once) {
-      client.once(event.name, (...args) => event.execute(...args, client));
-    } else {
-      client.on(event.name, (...args) => event.execute(...args, client));
-    }
-
-    console.log(`📌 Loaded event: ${event.name}`);
+    client.commands.set(command.data.name, command);
+    console.log(`✅ Runtime command loaded: ${command.data.name}`);
   }
 }
 
-client.once('clientReady', () => {
-  console.log(`Logged in as: ${client.user.tag}`);
-  console.log(`Bot ID: ${client.user.id}`);
-  console.log(`ENV CLIENT_ID: ${process.env.CLIENT_ID}`);
+loadRuntimeCommands();
 
-  syncGuildsData();
+client.once(Events.ClientReady, async readyClient => {
+  console.log(`🤖 Logged in as ${readyClient.user.tag}`);
+
+  try {
+    const isDev = process.env.NODE_ENV !== 'production';
+
+    await registerCommands({
+      token,
+      clientId,
+      commandsPath: path.join(__dirname, 'src', 'commands'),
+      guildIds,
+      mode: isDev ? 'guild' : 'global',
+    });
+
+    console.log(`✅ Startup command sync finished in ${isDev ? 'guild' : 'global'} mode.`);
+  } catch (error) {
+    console.error('❌ Command sync failed on startup:', error);
+  }
 });
 
-client.on('guildCreate', (guild) => {
-  console.log(`➕ Joined guild: ${guild.name} (${guild.id})`);
-  syncGuildsData();
+client.on(Events.InteractionCreate, async interaction => {
+  if (!interaction.isChatInputCommand()) return;
+
+  const command = client.commands.get(interaction.commandName);
+
+  if (!command) {
+    console.warn(`⚠️ No command handler found for /${interaction.commandName}`);
+    return;
+  }
+
+  try {
+    await command.execute(interaction);
+  } catch (error) {
+    console.error(`❌ Error running /${interaction.commandName}:`, error);
+
+    if (interaction.replied || interaction.deferred) {
+      await interaction.followUp({
+        content: 'There was an error while executing this command.',
+        ephemeral: true,
+      }).catch(() => null);
+    } else {
+      await interaction.reply({
+        content: 'There was an error while executing this command.',
+        ephemeral: true,
+      }).catch(() => null);
+    }
+  }
 });
 
-client.on('guildDelete', (guild) => {
-  console.log(`➖ Removed from guild: ${guild.name} (${guild.id})`);
-  syncGuildsData();
-});
-
-client.login(process.env.TOKEN);
+client.login(token);
