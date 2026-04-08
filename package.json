@@ -1,24 +1,24 @@
 {
-  "name": "ksj-goliath",
+  "name": "discord-bot",
   "version": "1.0.0",
-  "description": "KSJ Goliath",
-  "main": "server.js",
+  "description": "Public Discord bot",
+  "main": "index.js",
+  "type": "commonjs",
   "scripts": {
-    "start": "node server.js"
+    "start": "node index.js",
+
+    "deploy": "node deploy-commands.js",
+
+    "deploy:guild": "node deploy-commands.js guild",
+    "deploy:global": "node deploy-commands.js global",
+
+    "dev": "nodemon index.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "dependencies": {
-    "discord.js": "^14.15.3",
-    "dotenv": "^16.4.5",
-    "express": "^4.19.2",
-    "cors": "^2.8.5",
-    "express-session": "^1.17.3",
-    "passport": "^0.7.0",
-    "passport-discord": "^0.1.4"
+    "discord.js": "^14.15.0",
+    "dotenv": "^16.4.5"
   },
   "devDependencies": {
-    "nodemon": "^3.1.0"
+    "nodemon": "^3.0.3"
   }
 }
