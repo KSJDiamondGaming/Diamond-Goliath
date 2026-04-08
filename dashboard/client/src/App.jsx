@@ -1,0 +1,300 @@
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { api } from './api';
+import { getStorage, setStorage } from './storage';
+import { getTheme, navItems } from './appConfig';
+import { shellStyles } from './ui';
+import Sidebar from './components/Sidebar';
+import Topbar from './components/Topbar';
+import HeroBanner from './components/HeroBanner';
+import AppRoutes from './routes';
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+
+function App() {
+  const [selectedGuild, setSelectedGuild] = useState(() => getStorage('selectedGuild', ''));
+  const [guilds, setGuilds] = useState([]);
+  const [guildError, setGuildError] = useState('');
+  const [darkMode, setDarkMode] = useState(() => getStorage('darkMode', true));
+  const [currentUser, setCurrentUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [guildsLoading, setGuildsLoading] = useState(false);
+
+  useEffect(() => {
+    setStorage('selectedGuild', selectedGuild);
+  }, [selectedGuild]);
+
+  useEffect(() => {
+    setStorage('darkMode', darkMode);
+  }, [darkMode]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function checkAuth() {
+      setAuthLoading(true);
+
+      try {
+        const authResponse = await fetch(`${API_BASE}/api/auth/me`, {
+          credentials: 'include',
+        });
+
+        if (!isMounted) return;
+
+        if (authResponse.status === 401) {
+          setCurrentUser(null);
+          setGuilds([]);
+          setSelectedGuild('');
+          setGuildError('');
+          return;
+        }
+
+        if (!authResponse.ok) {
+          console.warn('Auth check failed with status:', authResponse.status);
+          setCurrentUser(null);
+          setGuilds([]);
+          setSelectedGuild('');
+          setGuildError('');
+          return;
+        }
+
+        const authData = await authResponse.json();
+        setCurrentUser(authData?.user || null);
+      } catch (err) {
+        if (!isMounted) return;
+        console.warn('Auth check failed:', err);
+        setCurrentUser(null);
+        setGuilds([]);
+        setSelectedGuild('');
+        setGuildError('');
+      } finally {
+        if (isMounted) {
+          setAuthLoading(false);
+        }
+      }
+    }
+
+    checkAuth();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    function applyGuildSelection(nextGuilds) {
+      if (!isMounted) return;
+
+      const safeGuilds = Array.isArray(nextGuilds) ? nextGuilds : [];
+      setGuilds(safeGuilds);
+      setGuildError('');
+
+      if (safeGuilds.length === 0) {
+        setSelectedGuild('');
+        return;
+      }
+
+      const savedGuild = getStorage('selectedGuild', '');
+      const guildStillExists = safeGuilds.some((guild) => guild.id === savedGuild);
+
+      setSelectedGuild((current) => {
+        if (current && safeGuilds.some((guild) => guild.id === current)) {
+          return current;
+        }
+
+        if (savedGuild && guildStillExists) {
+          return savedGuild;
+        }
+
+        return safeGuilds[0]?.id || '';
+      });
+    }
+
+    async function loadGuilds() {
+      if (!currentUser) {
+        setGuilds([]);
+        setSelectedGuild('');
+        setGuildError('');
+        setGuildsLoading(false);
+        return;
+      }
+
+      setGuildsLoading(true);
+
+      try {
+        const guildList = await api.getGuilds();
+
+        if (!isMounted) return;
+
+        if (!Array.isArray(guildList)) {
+          console.warn('Guild response was not an array:', guildList);
+          setGuilds([]);
+          setSelectedGuild('');
+          setGuildError('Guild endpoint did not return valid JSON.');
+          return;
+        }
+
+        applyGuildSelection(guildList);
+      } catch (err) {
+        if (!isMounted) return;
+
+        console.error('Failed to load guilds:', err);
+        setGuilds([]);
+        setSelectedGuild('');
+
+        if (String(err?.message || '').includes('(401)')) {
+          setGuildError('');
+          return;
+        }
+
+        setGuildError(err?.message || 'Could not load guild list.');
+      } finally {
+        if (isMounted) {
+          setGuildsLoading(false);
+        }
+      }
+    }
+
+    loadGuilds();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [currentUser]);
+
+  const selectedGuildData = useMemo(
+    () => guilds.find((guild) => guild.id === selectedGuild) || null,
+    [guilds, selectedGuild]
+  );
+
+  const theme = useMemo(() => getTheme(darkMode), [darkMode]);
+  const styles = useMemo(() => shellStyles(theme), [theme]);
+
+  const pageProps = useMemo(
+    () => ({
+      selectedGuild,
+      darkMode,
+      theme,
+    }),
+    [selectedGuild, darkMode, theme]
+  );
+
+  const topbarUserName = useMemo(() => {
+    if (authLoading) return 'Loading...';
+
+    return (
+      currentUser?.global_name ||
+      currentUser?.globalName ||
+      currentUser?.displayName ||
+      currentUser?.username ||
+      currentUser?.name ||
+      'Not signed in'
+    );
+  }, [currentUser, authLoading]);
+
+  const currentUserAvatar = useMemo(() => {
+    if (!currentUser) return null;
+
+    if (currentUser?.avatarUrl || currentUser?.image) {
+      return currentUser.avatarUrl || currentUser.image;
+    }
+
+    if (currentUser?.id && currentUser?.avatar) {
+      return `https://cdn.discordapp.com/avatars/${currentUser.id}/${currentUser.avatar}.png?size=128`;
+    }
+
+    return null;
+  }, [currentUser]);
+
+  const isAuthenticated = Boolean(currentUser);
+
+  const handleLogin = useCallback(() => {
+  window.location.href = `${API_BASE || 'http://localhost:3001'}/api/auth/login`;
+  }, []);
+
+  const handleLogout = useCallback(async () => {
+    try {
+      await fetch(`${API_BASE}/api/auth/logout`, {
+      method: 'POST',
+      credentials: 'include',
+      });
+    } catch (error) {
+    console.error('Logout failed:', error);
+    }
+
+    window.location.assign('/');
+  }, []);
+
+  const pageLoader = <div style={styles.card}>Loading page...</div>;
+
+  const visibleNavItems = isAuthenticated ? navItems : [];
+  const visibleGuildError = isAuthenticated ? guildError : '';
+
+  return (
+    <>
+      <style>{`
+        * { box-sizing: border-box; }
+        html, body, #root { margin: 0; min-height: 100%; }
+        button, select, input, textarea { font: inherit; }
+        h1, h2, h3, h4, h5, h6 { margin: 0; }
+        p { margin: 0; }
+        .ksj-shell { min-height: 100vh; }
+      `}</style>
+
+      <div className="ksj-shell" style={styles.app}>
+        <div style={styles.grid}>
+          <Sidebar
+            theme={theme}
+            selectedGuild={selectedGuild}
+            setSelectedGuild={setSelectedGuild}
+            guilds={isAuthenticated ? guilds : []}
+            guildError={visibleGuildError}
+            isAuthenticated={isAuthenticated}
+            authLoading={authLoading}
+            navItems={visibleNavItems}
+          />
+
+          <div style={styles.mainColumn}>
+            <Topbar
+              theme={theme}
+              authLoading={authLoading}
+              isAuthenticated={isAuthenticated}
+              handleLogin={handleLogin}
+              handleLogout={handleLogout}
+              topbarUserName={topbarUserName}
+              currentUserAvatar={currentUserAvatar}
+              darkMode={darkMode}
+              setDarkMode={setDarkMode}
+            />
+
+            <main style={styles.main}>
+              <HeroBanner
+                theme={theme}
+                authLoading={authLoading}
+                isAuthenticated={isAuthenticated}
+                selectedGuildName={selectedGuildData?.name || ''}
+                selectedGuildId={selectedGuildData?.id || ''}
+                handleLogin={handleLogin}
+              />
+
+              {authLoading ? (
+                <div style={styles.card}>Checking your session...</div>
+              ) : !isAuthenticated ? null : guildsLoading ? (
+                <div style={styles.card}>Loading your guild data...</div>
+              ) : selectedGuild ? (
+                <Suspense fallback={pageLoader}>
+                  <AppRoutes pageProps={pageProps} />
+                </Suspense>
+              ) : (
+                <div style={styles.card}>No guilds available for this dashboard.</div>
+              )}
+            </main>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+export default App;

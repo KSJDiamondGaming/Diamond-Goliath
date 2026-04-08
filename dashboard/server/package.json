@@ -1,0 +1,16 @@
+{
+  "name": "ksj-goliath-dashboard-server",
+  "version": "1.0.0",
+  "description": "Dashboard backend for KSJ Goliath",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.1",
+    "express": "^5.1.0"
+  }
+}

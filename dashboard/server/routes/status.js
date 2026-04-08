@@ -1,0 +1,87 @@
+const express = require('express');
+
+const router = express.Router();
+
+router.get('/', (req, res) => {
+  try {
+    const guildId = req.query.guildId || null;
+    const client = global.client || null;
+
+    const botReady = Boolean(client?.isReady?.());
+    const botLatencyMs =
+      typeof client?.ws?.ping === 'number' && Number.isFinite(client.ws.ping)
+        ? Math.round(client.ws.ping)
+        : null;
+
+    const discordGuild =
+      guildId && client?.guilds?.cache
+        ? client.guilds.cache.get(String(guildId))
+        : null;
+
+    const guildConnected = Boolean(discordGuild);
+    const memberCount =
+      typeof discordGuild?.memberCount === 'number' ? discordGuild.memberCount : null;
+
+    return res.json({
+      ok: true,
+      status: botReady ? 'online' : 'offline',
+      backendOnline: true,
+      apiOnline: true,
+      botOnline: botReady,
+      botLatencyMs,
+      guilds: guildId
+        ? {
+            [guildId]: {
+              connected: guildConnected,
+              inGuild: guildConnected,
+              available: guildConnected,
+              online: guildConnected,
+              status: guildConnected ? 'connected' : 'missing',
+              memberCount,
+            },
+          }
+        : {},
+      bot: {
+        online: botReady,
+        connected: botReady,
+        latencyMs: botLatencyMs,
+        guilds: guildId
+          ? {
+              [guildId]: {
+                connected: guildConnected,
+                inGuild: guildConnected,
+                available: guildConnected,
+                online: guildConnected,
+                status: guildConnected ? 'connected' : 'missing',
+                memberCount,
+              },
+            }
+          : {},
+      },
+      api: {
+        online: true,
+        healthy: true,
+        status: 'healthy',
+      },
+      backend: {
+        online: true,
+        ok: true,
+        status: 'online',
+      },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('Failed to load status:', error);
+    return res.status(500).json({
+      ok: false,
+      status: 'offline',
+      backendOnline: false,
+      apiOnline: false,
+      botOnline: false,
+      botLatencyMs: null,
+      error: 'Failed to load status.',
+    });
+  }
+});
+
+module.exports = router;
