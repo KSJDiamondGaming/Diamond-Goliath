@@ -5,7 +5,7 @@ const {
 const fs = require('fs');
 const path = require('path');
 const buildEmbed = require('../../utils/buildEmbed');
-const logModerationAction = require('../../utils/logging/logModerationAction');
+const logModerationAction = require('../../utils/logging/ModerationActionLog');
 
 function readJson(filePath) {
   if (!fs.existsSync(filePath)) return {};

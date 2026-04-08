@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const { addPunishment } = require('../../utils/tempPunishmentsStore');
-const logModerationAction = require('../../utils/logging/logModerationAction');
+const logModerationAction = require('../../utils/logging/ModerationActionLog');
 
 module.exports = {
   data: new SlashCommandBuilder()

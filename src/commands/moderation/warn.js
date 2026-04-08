@@ -2,7 +2,8 @@ const {
   SlashCommandBuilder,
   PermissionFlagsBits,
 } = require('discord.js');
-const logModerationAction = require('../../utils/logging/logModerationAction');
+const logModerationAction = require('../../utils/logging/ModerationActionLog');
+const { canModerate } = require('../../utils/logging/ModerationChecks');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -34,35 +35,11 @@ module.exports = {
     const evidence = interaction.options.getString('evidence') || null;
 
     const member = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
-    const moderator = interaction.member;
 
-    if (!member) {
+    const result = canModerate({ interaction, member });
+    if (!result.allowed) {
       return interaction.reply({
-        content: 'That user is not in this server.',
-        ephemeral: true,
-      });
-    }
-
-    if (member.id === interaction.user.id) {
-      return interaction.reply({
-        content: 'You cannot warn yourself.',
-        ephemeral: true,
-      });
-    }
-
-    if (member.id === interaction.client.user.id) {
-      return interaction.reply({
-        content: 'You cannot warn the bot.',
-        ephemeral: true,
-      });
-    }
-
-    if (
-      member.roles.highest.position >= moderator.roles.highest.position &&
-      interaction.guild.ownerId !== interaction.user.id
-    ) {
-      return interaction.reply({
-        content: 'You cannot warn a member with the same or higher role than you.',
+        content: result.message,
         ephemeral: true,
       });
     }

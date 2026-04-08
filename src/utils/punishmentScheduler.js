@@ -1,5 +1,5 @@
 const { getPunishments, removePunishment } = require('./tempPunishmentsStore');
-const logModerationAction = require('./logging/logModerationAction');
+const logModerationAction = require('./logging/ModerationActionLog');
 
 function startScheduler(client) {
   setInterval(async () => {
