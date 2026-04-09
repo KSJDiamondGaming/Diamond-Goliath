@@ -1,23 +1,38 @@
 const express = require('express');
-const path = require('path');
-const readJson = require('../utils/readJson');
-
 const router = express.Router();
 
-const DATA_PATH = path.join(__dirname, '..', '..', '..', 'src', 'data');
-const GUILDS_FILE = path.join(DATA_PATH, 'guilds.json');
-
-router.get('/guilds', (req, res) => {
+router.get('/guilds', async (req, res) => {
   try {
-    const guilds = readJson(GUILDS_FILE) || {};
-    const guildList = Object.values(guilds).sort((a, b) =>
-      (a.name || '').localeCompare(b.name || '')
+    if (!req.session.user) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    if (!req.session.access_token) {
+      return res.status(401).json({ error: 'Missing access token' });
+    }
+
+    const response = await fetch('https://discord.com/api/users/@me/guilds', {
+      headers: {
+        Authorization: `Bearer ${req.session.access_token}`,
+      },
+    });
+
+    const guilds = await response.json();
+
+    if (!response.ok) {
+      console.error('Discord guild fetch error:', guilds);
+      return res.status(500).json({ error: 'Failed to fetch guilds' });
+    }
+
+    // Optional: filter only servers where user has MANAGE_GUILD
+    const filtered = guilds.filter(
+      (g) => (g.permissions & 0x20) === 0x20 // MANAGE_GUILD
     );
 
-    res.json(guildList);
-  } catch (error) {
-    console.error('Failed to load guilds:', error);
-    res.status(500).json([]);
+    res.json(filtered);
+  } catch (err) {
+    console.error('Guild fetch error:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

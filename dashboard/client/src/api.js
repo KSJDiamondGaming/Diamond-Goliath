@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 
 async function request(path, options = {}) {
   const response = await fetch(`${API_BASE}${path}`, {
@@ -30,10 +30,10 @@ export const api = {
     return request('/api/discord/guilds');
   },
 
- getStatus(guildId) {
-  const query = guildId ? `?guildId=${encodeURIComponent(guildId)}` : '';
-  return request(`/api/status${query}`);
- },
+  getStatus(guildId) {
+    const query = guildId ? `?guildId=${encodeURIComponent(guildId)}` : '';
+    return request(`/api/status${query}`);
+  },
 
   getAuthMe() {
     return request('/api/auth/me');
