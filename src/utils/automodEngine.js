@@ -1,13 +1,11 @@
 const { PermissionFlagsBits } = require('discord.js');
-const { getGuildAutoModConfig } = require('./automodStore');
+const { getGuildAutoModConfig, AUTOMOD_PATH } = require('./automodStore');
 
-const userMessageCache = new Map();
+const spamCache = new Map();
+const repeatCache = new Map();
 
-const INVITE_REGEX =
-  /(https?:\/\/)?(www\.)?(discord\.gg|discord(app)?\.com\/invite)\/[a-zA-Z0-9-]+/i;
-
-const URL_REGEX =
-  /\b((https?:\/\/)?([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(\/[^\s]*)?)\b/i;
+const INVITE_REGEX = /(https?:\/\/)?(www\.)?(discord\.gg|discord(app)?\.com\/invite)\/[a-zA-Z0-9-]+/i;
+const URL_REGEX = /\b((https?:\/\/)?([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(\/[^\s]*)?)\b/i;
 
 function normalizeContent(content = '') {
   return String(content).toLowerCase().replace(/\s+/g, ' ').trim();
@@ -50,7 +48,9 @@ function shouldIgnoreMessage(message, config) {
   }
 
   if (
-    message.member.roles?.cache?.some((role) => config.ignoredRoleIds.includes(role.id))
+    message.member.roles?.cache?.some((role) =>
+      config.ignoredRoleIds.includes(role.id)
+    )
   ) {
     return true;
   }
@@ -74,7 +74,7 @@ function checkAntiSpam(message, config) {
   if (!rule?.enabled) return null;
 
   const key = getCacheKey(message.guild.id, message.author.id);
-  const current = userMessageCache.get(key) || [];
+  const current = spamCache.get(key) || [];
   const next = pruneEntries(current, rule.intervalMs || 8000);
 
   next.push({
@@ -83,9 +83,21 @@ function checkAntiSpam(message, config) {
     messageId: message.id,
   });
 
-  userMessageCache.set(key, next);
+  spamCache.set(key, next);
+
+  console.log('[AUTOMOD][SPAM]', {
+    user: message.author.tag,
+    guildId: message.guild.id,
+    content: message.content,
+    count: next.length,
+    maxMessages: rule.maxMessages,
+    intervalMs: rule.intervalMs,
+    punishment: rule.punishment,
+  });
 
   if (next.length >= rule.maxMessages) {
+    spamCache.delete(key);
+
     return buildResult(
       'antiSpam',
       `Sent ${next.length} messages in ${rule.intervalSeconds} seconds`,
@@ -105,14 +117,23 @@ function checkRepeatedMessages(message, config) {
   if (!rule?.enabled) return null;
 
   const key = getCacheKey(message.guild.id, message.author.id);
-  const entries = pruneEntries(userMessageCache.get(key) || [], rule.intervalMs || 10000);
+  const entries = pruneEntries(repeatCache.get(key) || [], rule.intervalMs || 10000);
   const content = normalizeContent(message.content);
-
   if (!content) return null;
+
+  entries.push({
+    content,
+    createdAt: Date.now(),
+    messageId: message.id,
+  });
+
+  repeatCache.set(key, entries);
 
   const repeats = entries.filter((entry) => entry.content === content).length;
 
   if (repeats >= rule.maxRepeats) {
+    repeatCache.delete(key);
+
     return buildResult(
       'repeatedMessages',
       `Repeated the same message ${repeats} times in ${rule.intervalSeconds} seconds`,
@@ -203,13 +224,17 @@ function checkBadWords(message, config) {
 
   for (const word of words) {
     const normalizedWord = normalizeContent(word);
+
     if (normalizedWord && content.includes(normalizedWord)) {
       return buildResult(
         'badWords',
         `Blocked word detected: ${word}`,
         rule.punishment,
         rule.timeoutMinutes,
-        { deleteMessage: true, matchedWord: word }
+        {
+          deleteMessage: true,
+          matchedWord: word,
+        }
       );
     }
   }
@@ -222,8 +247,31 @@ async function runAutomod(message) {
 
   const config = getGuildAutoModConfig(message.guild.id);
 
+  console.log('[AUTOMOD][LOAD]', {
+    path: AUTOMOD_PATH,
+    guildId: message.guild.id,
+    enabled: config.enabled,
+    ignoreBots: config.ignoreBots,
+    ignoreAdmins: config.ignoreAdmins,
+    antiSpam: config.antiSpam,
+    antiSpamComputed: config.rules?.antiSpam,
+  });
+
   if (!config.enabled) return null;
-  if (shouldIgnoreMessage(message, config)) return null;
+
+  const ignored = shouldIgnoreMessage(message, config);
+  if (ignored) {
+    console.log('[AUTOMOD][SKIP]', {
+      user: message.author.tag,
+      isAdmin: message.member.permissions.has(PermissionFlagsBits.Administrator),
+      channelId: message.channel.id,
+      ignoredChannels: config.ignoredChannelIds,
+      ignoredUsers: config.ignoredUserIds,
+      ignoredRoles: config.ignoredRoleIds,
+    });
+    return null;
+  }
+
   if (!message.content?.trim()) return null;
 
   const checks = [
@@ -238,6 +286,7 @@ async function runAutomod(message) {
   for (const check of checks) {
     const result = check();
     if (result?.matched) {
+      console.log('[AUTOMOD][MATCH]', result);
       return {
         ...result,
         config,

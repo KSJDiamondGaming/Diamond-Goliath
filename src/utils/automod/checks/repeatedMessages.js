@@ -2,7 +2,7 @@ const { getRepeatBucket, clearRepeatBucket } = require('../runtime');
 const { normalizeContent } = require('../automodHelpers');
 
 function repeatedMessagesCheck(message, config) {
-  const rule = config.rules?.repeatedMessages;
+  const rule = config.rules?.repeatedMessages || config.repeatedMessages;
   if (!rule?.enabled) return null;
 
   const guildId = message.guild?.id;
@@ -14,7 +14,8 @@ function repeatedMessagesCheck(message, config) {
   if (!content) return null;
 
   const now = Date.now();
-  const intervalMs = Number(rule.intervalMs || 10000);
+  const intervalMs =
+    Number(rule.intervalMs) || Number(rule.intervalSeconds) * 1000 || 10000;
   const maxRepeats = Number(rule.maxRepeats || 3);
 
   const bucket = getRepeatBucket(guildId, userId);
@@ -35,7 +36,8 @@ function repeatedMessagesCheck(message, config) {
       ruleKey: 'repeatedMessages',
       ruleName: 'Repeated Messages',
       punishment: rule.punishment,
-      timeoutMs: rule.timeoutMs,
+      timeoutMs:
+        Number(rule.timeoutMs) || Number(rule.timeoutMinutes) * 60 * 1000 || 600000,
       deleteMessage: true,
       reason: `Repeated the same message ${repeatCount} times within ${Math.round(intervalMs / 1000)} seconds.`,
       details: {

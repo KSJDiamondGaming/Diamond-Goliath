@@ -1,1 +1,52 @@
-{}
+{
+  "808091031350280213": {
+    "enabled": true,
+    "ignoreBots": true,
+    "ignoreAdmins": false,
+    "ignoredChannelIds": [],
+    "ignoredUserIds": [],
+    "ignoredRoleIds": [],
+    "antiSpam": {
+      "enabled": true,
+      "maxMessages": 3,
+      "intervalSeconds": 50,
+      "punishment": "warn",
+      "timeoutMinutes": 4
+    },
+    "antiLink": {
+      "enabled": false,
+      "allowedDomains": [],
+      "punishment": "delete",
+      "timeoutMinutes": 10
+    },
+    "antiInvite": {
+      "enabled": false,
+      "punishment": "delete",
+      "timeoutMinutes": 10
+    },
+    "capsAbuse": {
+      "enabled": false,
+      "minLength": 10,
+      "percentage": 70,
+      "punishment": "delete",
+      "timeoutMinutes": 10
+    },
+    "badWords": {
+      "enabled": false,
+      "words": [],
+      "punishment": "delete",
+      "timeoutMinutes": 10
+    },
+    "repeatedMessages": {
+      "enabled": false,
+      "maxRepeats": 3,
+      "intervalSeconds": 10,
+      "punishment": "delete",
+      "timeoutMinutes": 10
+    },
+    "logs": {
+      "enabled": true,
+      "channelId": ""
+    }
+  }
+}

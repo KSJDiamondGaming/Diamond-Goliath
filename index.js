@@ -7,14 +7,16 @@ const {
   Collection,
   GatewayIntentBits,
   Events,
+  MessageFlags,
 } = require('discord.js');
 
 const { registerCommands } = require('./src/utils/registerCommands');
+const { startScheduler } = require('./src/utils/punishmentScheduler');
 
 const token = process.env.TOKEN;
 const clientId = process.env.CLIENT_ID;
 const guildIds = process.env.GUILD_IDS
-  ? process.env.GUILD_IDS.split(',').map(id => id.trim()).filter(Boolean)
+  ? process.env.GUILD_IDS.split(',').map((id) => id.trim()).filter(Boolean)
   : [];
 
 if (!token) {
@@ -25,10 +27,12 @@ if (!clientId) {
   throw new Error('Missing CLIENT_ID in .env');
 }
 
+if (!guildIds.length) {
+  throw new Error('Missing GUILD_IDS in .env');
+}
+
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-  ],
+  intents: [GatewayIntentBits.Guilds],
 });
 
 client.commands = new Collection();
@@ -59,6 +63,7 @@ function loadRuntimeCommands() {
   const commandFiles = getCommandFiles(commandsPath);
 
   for (const filePath of commandFiles) {
+    delete require.cache[require.resolve(filePath)];
     const command = require(filePath);
 
     if (!command?.data || !command?.execute) {
@@ -73,27 +78,42 @@ function loadRuntimeCommands() {
 
 loadRuntimeCommands();
 
-client.once(Events.ClientReady, async readyClient => {
+client.once(Events.ClientReady, async (readyClient) => {
   console.log(`🤖 Logged in as ${readyClient.user.tag}`);
+  console.log(`📍 Connected guilds: ${readyClient.guilds.cache.map((g) => `${g.name} (${g.id})`).join(', ')}`);
+  console.log(`🛠️ Command sync mode: guild`);
+  console.log(`🏠 Target guild IDs: ${guildIds.join(', ')}`);
 
   try {
-    const isDev = process.env.NODE_ENV !== 'production';
+    const commandsPath = path.join(__dirname, 'src', 'commands');
 
+    // Clear old global commands so duplicate slash commands do not come back.
     await registerCommands({
       token,
       clientId,
-      commandsPath: path.join(__dirname, 'src', 'commands'),
-      guildIds,
-      mode: isDev ? 'guild' : 'global',
+      commandsPath,
+      mode: 'global',
+      clear: true,
     });
 
-    console.log(`✅ Startup command sync finished in ${isDev ? 'guild' : 'global'} mode.`);
+    // Register only guild commands for development/stability.
+    await registerCommands({
+      token,
+      clientId,
+      commandsPath,
+      guildIds,
+      mode: 'guild',
+    });
+
+    console.log('✅ Cleared global commands and synced guild commands.');
   } catch (error) {
     console.error('❌ Command sync failed on startup:', error);
   }
+
+  startScheduler(client);
 });
 
-client.on(Events.InteractionCreate, async interaction => {
+client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
   const command = client.commands.get(interaction.commandName);
@@ -108,25 +128,22 @@ client.on(Events.InteractionCreate, async interaction => {
   } catch (error) {
     console.error(`❌ Error running /${interaction.commandName}:`, error);
 
-    if (interaction.replied || interaction.deferred) {
-      await interaction.followUp({
-        content: 'There was an error while executing this command.',
-        ephemeral: true,
-      }).catch(() => null);
+    if (interaction.deferred || interaction.replied) {
+      await interaction
+        .followUp({
+          content: 'There was an error while executing this command.',
+          flags: MessageFlags.Ephemeral,
+        })
+        .catch(() => null);
     } else {
-      await interaction.reply({
-        content: 'There was an error while executing this command.',
-        ephemeral: true,
-      }).catch(() => null);
+      await interaction
+        .reply({
+          content: 'There was an error while executing this command.',
+          flags: MessageFlags.Ephemeral,
+        })
+        .catch(() => null);
     }
   }
-});
-
-const { startScheduler } = require('./src/utils/punishmentScheduler');
-
-client.once('ready', () => {
-  console.log(`Logged in as ${client.user.tag}`);
-  startScheduler(client);
 });
 
 client.login(token);

@@ -1,5 +1,6 @@
 const { PermissionFlagsBits } = require('discord.js');
 const { runAutomod } = require('../utils/automodEngine');
+console.log('AUTOMOD RESULT:', result);
 
 module.exports = {
   name: 'messageCreate',

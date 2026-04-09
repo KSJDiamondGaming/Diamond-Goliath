@@ -3,6 +3,7 @@ const {
   PermissionFlagsBits,
   ChannelType,
   EmbedBuilder,
+  MessageFlags,
 } = require('discord.js');
 const {
   getGuildAutoModConfig,
@@ -469,14 +470,15 @@ module.exports = {
     ),
 
   async execute(interaction) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
     const subcommand = interaction.options.getSubcommand();
     const guildId = interaction.guild.id;
     const config = getGuildAutoModConfig(guildId);
 
     if (subcommand === 'overview') {
-      return interaction.reply({
+      return interaction.editReply({
         embeds: [buildOverviewEmbed(interaction.guild, config)],
-        ephemeral: true,
       });
     }
 
@@ -484,9 +486,8 @@ module.exports = {
       config.enabled = interaction.options.getBoolean('enabled');
       const saved = saveGuildAutoModConfig(guildId, config);
 
-      return interaction.reply({
+      return interaction.editReply({
         content: `✅ AutoMod has been **${saved.enabled ? 'enabled' : 'disabled'}**.`,
-        ephemeral: true,
       });
     }
 
@@ -499,13 +500,12 @@ module.exports = {
 
       const saved = saveGuildAutoModConfig(guildId, config);
 
-      return interaction.reply({
+      return interaction.editReply({
         content: [
           '✅ **Ignore settings** updated.',
           `Ignore Bots: **${boolText(saved.ignoreBots)}**`,
           `Ignore Admins: **${boolText(saved.ignoreAdmins)}**`,
         ].join('\n'),
-        ephemeral: true,
       });
     }
 
@@ -521,11 +521,10 @@ module.exports = {
 
       const saved = saveGuildAutoModConfig(guildId, config);
 
-      return interaction.reply({
+      return interaction.editReply({
         content: saved.logs.channelId
           ? `✅ AutoMod logs **${saved.logs.enabled ? 'enabled' : 'disabled'}** in <#${saved.logs.channelId}>.`
           : `✅ AutoMod logs **${saved.logs.enabled ? 'enabled' : 'disabled'}**. No log channel is set yet.`,
-        ephemeral: true,
       });
     }
 
@@ -542,7 +541,7 @@ module.exports = {
 
       const saved = saveGuildAutoModConfig(guildId, config);
 
-      return interaction.reply({
+      return interaction.editReply({
         content: [
           '✅ **Anti Spam** updated.',
           `Enabled: **${boolText(saved.antiSpam.enabled)}**`,
@@ -551,7 +550,6 @@ module.exports = {
           `Punishment: **${saved.antiSpam.punishment}**`,
           `Timeout: **${saved.antiSpam.timeoutMinutes}m**`,
         ].join('\n'),
-        ephemeral: true,
       });
     }
 
@@ -568,7 +566,7 @@ module.exports = {
 
       const saved = saveGuildAutoModConfig(guildId, config);
 
-      return interaction.reply({
+      return interaction.editReply({
         content: [
           '✅ **Repeated Messages** updated.',
           `Enabled: **${boolText(saved.repeatedMessages.enabled)}**`,
@@ -577,7 +575,6 @@ module.exports = {
           `Punishment: **${saved.repeatedMessages.punishment}**`,
           `Timeout: **${saved.repeatedMessages.timeoutMinutes}m**`,
         ].join('\n'),
-        ephemeral: true,
       });
     }
 
@@ -590,14 +587,13 @@ module.exports = {
 
       const saved = saveGuildAutoModConfig(guildId, config);
 
-      return interaction.reply({
+      return interaction.editReply({
         content: [
           '✅ **Anti Invite** updated.',
           `Enabled: **${boolText(saved.antiInvite.enabled)}**`,
           `Punishment: **${saved.antiInvite.punishment}**`,
           `Timeout: **${saved.antiInvite.timeoutMinutes}m**`,
         ].join('\n'),
-        ephemeral: true,
       });
     }
 
@@ -615,7 +611,7 @@ module.exports = {
 
       const saved = saveGuildAutoModConfig(guildId, config);
 
-      return interaction.reply({
+      return interaction.editReply({
         content: [
           '✅ **Anti Link** updated.',
           `Enabled: **${boolText(saved.antiLink.enabled)}**`,
@@ -623,7 +619,6 @@ module.exports = {
           `Timeout: **${saved.antiLink.timeoutMinutes}m**`,
           `Allowed Domains: **${listText(saved.antiLink.allowedDomains)}**`,
         ].join('\n'),
-        ephemeral: true,
       });
     }
 
@@ -640,7 +635,7 @@ module.exports = {
 
       const saved = saveGuildAutoModConfig(guildId, config);
 
-      return interaction.reply({
+      return interaction.editReply({
         content: [
           '✅ **Caps Abuse** updated.',
           `Enabled: **${boolText(saved.capsAbuse.enabled)}**`,
@@ -649,7 +644,6 @@ module.exports = {
           `Punishment: **${saved.capsAbuse.punishment}**`,
           `Timeout: **${saved.capsAbuse.timeoutMinutes}m**`,
         ].join('\n'),
-        ephemeral: true,
       });
     }
 
@@ -667,7 +661,7 @@ module.exports = {
 
       const saved = saveGuildAutoModConfig(guildId, config);
 
-      return interaction.reply({
+      return interaction.editReply({
         content: [
           '✅ **Bad Words** updated.',
           `Enabled: **${boolText(saved.badWords.enabled)}**`,
@@ -675,7 +669,6 @@ module.exports = {
           `Punishment: **${saved.badWords.punishment}**`,
           `Timeout: **${saved.badWords.timeoutMinutes}m**`,
         ].join('\n'),
-        ephemeral: true,
       });
     }
 
@@ -690,29 +683,26 @@ module.exports = {
 
       const saved = saveGuildAutoModConfig(guildId, config);
 
-      return interaction.reply({
+      return interaction.editReply({
         content: [
           '✅ **Ignore lists** updated.',
           `Channels: **${saved.ignoredChannelIds.length ? saved.ignoredChannelIds.join(', ') : 'None'}**`,
           `Roles: **${saved.ignoredRoleIds.length ? saved.ignoredRoleIds.join(', ') : 'None'}**`,
           `Users: **${saved.ignoredUserIds.length ? saved.ignoredUserIds.join(', ') : 'None'}**`,
         ].join('\n'),
-        ephemeral: true,
       });
     }
 
     if (subcommand === 'reset') {
       resetGuildAutoModConfig(guildId);
 
-      return interaction.reply({
+      return interaction.editReply({
         content: '✅ AutoMod settings have been reset to default.',
-        ephemeral: true,
       });
     }
 
-    return interaction.reply({
+    return interaction.editReply({
       content: 'Unknown subcommand.',
-      ephemeral: true,
     });
   },
 };

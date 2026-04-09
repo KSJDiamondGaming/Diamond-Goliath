@@ -113,11 +113,28 @@ function toStringArray(value) {
     .filter(Boolean);
 }
 
+function toBoolean(value, fallback = false) {
+  if (typeof value === 'boolean') return value;
+
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true') return true;
+    if (normalized === 'false') return false;
+  }
+
+  if (typeof value === 'number') {
+    if (value === 1) return true;
+    if (value === 0) return false;
+  }
+
+  return fallback;
+}
+
 function normalizeRule(rule = {}, defaults = {}) {
   return {
     ...defaults,
     ...rule,
-    enabled: Boolean(rule?.enabled),
+    enabled: toBoolean(rule?.enabled, defaults.enabled ?? false),
     punishment: String(rule?.punishment || defaults.punishment || 'delete').toLowerCase(),
     timeoutMinutes: toSafeNumber(rule?.timeoutMinutes, defaults.timeoutMinutes ?? 10),
   };
@@ -155,7 +172,9 @@ function sanitizeConfig(input = {}) {
   );
 
   const badWords = normalizeRule(input?.badWords || sourceRules.badWords, defaults.badWords);
-  badWords.words = toStringArray(input?.badWords?.words ?? sourceRules?.badWords?.words);
+  badWords.words = toStringArray(
+    input?.badWords?.words ?? sourceRules?.badWords?.words
+  );
 
   const repeatedMessages = normalizeRule(
     input?.repeatedMessages || sourceRules.repeatedMessages,
@@ -171,9 +190,9 @@ function sanitizeConfig(input = {}) {
   );
 
   return {
-    enabled: input?.enabled !== false,
-    ignoreBots: input?.ignoreBots !== false,
-    ignoreAdmins: input?.ignoreAdmins !== false,
+    enabled: toBoolean(input?.enabled, true),
+    ignoreBots: toBoolean(input?.ignoreBots, true),
+    ignoreAdmins: toBoolean(input?.ignoreAdmins, true),
     ignoredChannelIds: toStringArray(input?.ignoredChannelIds),
     ignoredUserIds: toStringArray(input?.ignoredUserIds),
     ignoredRoleIds: toStringArray(input?.ignoredRoleIds),
@@ -184,7 +203,7 @@ function sanitizeConfig(input = {}) {
     badWords,
     repeatedMessages,
     logs: {
-      enabled: input?.logs?.enabled !== false,
+      enabled: toBoolean(input?.logs?.enabled, true),
       channelId: String(input?.logs?.channelId || '').trim(),
     },
   };
@@ -233,10 +252,8 @@ function getGuildAutoModConfig(guildId) {
 function saveGuildAutoModConfig(guildId, config) {
   const data = readAutoModData();
   const safeConfig = sanitizeConfig(config);
-
   data[guildId] = safeConfig;
   writeAutoModData(data);
-
   return attachComputedRules(safeConfig);
 }
 
@@ -245,10 +262,7 @@ function updateGuildAutoModConfig(guildId, updater) {
   const next =
     typeof updater === 'function'
       ? updater(structuredCloneSafe(current))
-      : {
-          ...current,
-          ...updater,
-        };
+      : { ...current, ...updater };
 
   return saveGuildAutoModConfig(guildId, next);
 }

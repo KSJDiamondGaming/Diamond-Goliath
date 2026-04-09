@@ -1,7 +1,7 @@
 const { getSpamBucket, pruneTimestamps, clearSpamBucket } = require('../runtime');
 
 function antiSpamCheck(message, config) {
-  const rule = config.rules?.antiSpam;
+  const rule = config.rules?.antiSpam || config.antiSpam;
   if (!rule?.enabled) return null;
 
   const guildId = message.guild?.id;
@@ -10,7 +10,8 @@ function antiSpamCheck(message, config) {
   if (!guildId || !userId) return null;
 
   const now = Date.now();
-  const intervalMs = Number(rule.intervalMs || 6000);
+  const intervalMs =
+    Number(rule.intervalMs) || Number(rule.intervalSeconds) * 1000 || 6000;
   const maxMessages = Number(rule.maxMessages || 5);
 
   const bucket = getSpamBucket(guildId, userId);
@@ -25,7 +26,8 @@ function antiSpamCheck(message, config) {
       ruleKey: 'antiSpam',
       ruleName: 'Anti Spam',
       punishment: rule.punishment,
-      timeoutMs: rule.timeoutMs,
+      timeoutMs:
+        Number(rule.timeoutMs) || Number(rule.timeoutMinutes) * 60 * 1000 || 600000,
       deleteMessage: true,
       reason: `Sent more than ${maxMessages} messages in ${Math.round(intervalMs / 1000)} seconds.`,
       details: {
