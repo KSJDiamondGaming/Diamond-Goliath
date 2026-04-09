@@ -1,6 +1,6 @@
 import { memo, useMemo } from 'react';
 
-const PAGE_HEADER_MIN_HEIGHT = '174px';
+const PAGE_HEADER_MIN_HEIGHT = '110px';
 
 export default function DashboardPage({
   title,

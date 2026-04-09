@@ -170,43 +170,6 @@ export default function Overview({ selectedGuild, theme }) {
         />
 
         <StatusCard
-          title="Backend"
-          value={state.loading ? 'Checking...' : overviewStats.backendOnline ? 'Online' : 'Offline'}
-          theme={theme}
-          tone={state.loading ? 'neutral' : overviewStats.backendOnline ? 'success' : 'danger'}
-        />
-
-        <StatusCard
-          title="API Status"
-          value={state.loading ? 'Checking...' : overviewStats.apiOnline ? 'Online' : 'Offline'}
-          theme={theme}
-          tone={state.loading ? 'neutral' : overviewStats.apiOnline ? 'success' : 'danger'}
-        />
-
-        <StatusCard
-          title="Bot Latency"
-          value={
-            state.loading
-              ? '...'
-              : overviewStats.botLatencyMs != null
-                ? `${overviewStats.botLatencyMs} ms`
-                : 'Unavailable'
-          }
-          theme={theme}
-          tone={
-            state.loading
-              ? 'neutral'
-              : overviewStats.botLatencyMs == null
-                ? 'warning'
-                : overviewStats.botLatencyMs <= 150
-                  ? 'success'
-                  : overviewStats.botLatencyMs <= 300
-                    ? 'warning'
-                    : 'danger'
-          }
-        />
-
-        <StatusCard
           title="Members"
           value={
             state.loading
@@ -220,26 +183,17 @@ export default function Overview({ selectedGuild, theme }) {
         />
 
         <StatusCard
-          title="Request Speed"
-          value={
-            state.loading
-              ? '...'
-              : overviewStats.requestSpeedMs != null
-                ? `${overviewStats.requestSpeedMs} ms`
-                : 'Unavailable'
-          }
+          title="Backend"
+          value={state.loading ? 'Checking...' : overviewStats.backendOnline ? 'Online' : 'Offline'}
           theme={theme}
-          tone={
-            state.loading
-              ? 'neutral'
-              : overviewStats.requestSpeedMs == null
-                ? 'warning'
-                : overviewStats.requestSpeedMs <= 400
-                  ? 'success'
-                  : overviewStats.requestSpeedMs <= 900
-                    ? 'warning'
-                    : 'danger'
-          }
+          tone={state.loading ? 'neutral' : overviewStats.backendOnline ? 'success' : 'danger'}
+        />
+
+        <StatusCard
+          title="API Status"
+          value={state.loading ? 'Checking...' : overviewStats.apiOnline ? 'Online' : 'Offline'}
+          theme={theme}
+          tone={state.loading ? 'neutral' : overviewStats.apiOnline ? 'success' : 'danger'}
         />
       </StatGrid>
 
