@@ -1,5 +1,4 @@
 const path = require('path');
-const fs = require('fs');
 
 // ✅ Load ROOT dashboard/.env
 require('dotenv').config({

@@ -84,6 +84,31 @@ client.once(Events.ClientReady, async (readyClient) => {
   console.log(`🛠️ Command sync mode: guild`);
   console.log(`🏠 Target guild IDs: ${guildIds.join(', ')}`);
 
+  const express = require('express');
+
+const botApi = express();
+
+botApi.get('/internal/guilds', (req, res) => {
+  try {
+    const guilds = client.guilds.cache.map((guild) => ({
+      id: guild.id,
+      name: guild.name,
+      icon: guild.icon,
+    }));
+
+    return res.json(guilds);
+  } catch (error) {
+    console.error('Failed to return bot guilds:', error);
+    return res.status(500).json({ error: 'Failed to fetch bot guilds' });
+  }
+});
+
+const BOT_API_PORT = process.env.BOT_API_PORT || 3002;
+
+botApi.listen(BOT_API_PORT, () => {
+  console.log(`🤖 Bot internal API running on http://localhost:${BOT_API_PORT}`);
+});
+
   try {
     const commandsPath = path.join(__dirname, 'src', 'commands');
 
