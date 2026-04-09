@@ -42,7 +42,7 @@ function HeroBanner({
     ? 'Checking your session...'
     : isAuthenticated
       ? 'Manage your moderation tools, messages, warnings and embed settings from one clean dashboard.'
-      : 'Sign in with Discord to access your server dashboard, moderation tools, and settings.';
+      : 'Sign in with Discord to access your server dashboard.';
 
   if (!isAuthenticated && !authLoading) {
     return (
@@ -187,17 +187,6 @@ function HeroBanner({
                 >
                   Login required
                 </div>
-
-                <div
-                  style={{
-                    marginTop: '6px',
-                    color: theme.mutedText,
-                    fontSize: '14px',
-                    lineHeight: 1.6,
-                  }}
-                >
-                  Continue with Discord to open your dashboard.
-                </div>
               </div>
 
               <button
@@ -227,25 +216,26 @@ function HeroBanner({
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: '10px',
+                  width: '100%',
                   minHeight: '52px',
                   padding: '0 18px',
                   borderRadius: '16px',
-                  border: 'none',
+                  border: '1px solid rgba(96, 165, 250, 0.24)',
                   cursor: loginPending ? 'not-allowed' : 'pointer',
                   textDecoration: 'none',
                   background: loginPending
-                    ? 'linear-gradient(135deg, #7c86f7 0%, #6f79ef 100%)'
+                    ? 'linear-gradient(135deg, #4a69d9 0%, #3f63d1 100%)'
                     : buttonHovered
-                      ? 'linear-gradient(135deg, #4752c4 0%, #5865f2 100%)'
-                      : 'linear-gradient(135deg, #5865f2 0%, #4752c4 100%)',
+                      ? 'linear-gradient(135deg, #3f63d1 0%, #3157c9 100%)'
+                      : 'linear-gradient(135deg, #4f73e8 0%, #3b82f6 100%)',
                   color: '#ffffff',
                   fontWeight: 800,
                   fontSize: '15px',
                   boxShadow: loginPending
-                    ? '0 10px 24px rgba(88, 101, 242, 0.18)'
+                    ? '0 10px 24px rgba(59, 130, 246, 0.18)'
                     : buttonHovered
-                      ? '0 16px 34px rgba(88, 101, 242, 0.32)'
-                      : '0 12px 26px rgba(88, 101, 242, 0.24)',
+                      ? '0 16px 34px rgba(59, 130, 246, 0.28)'
+                      : '0 12px 26px rgba(59, 130, 246, 0.22)',
                   transform:
                     loginPending
                       ? 'translateY(0)'
@@ -253,8 +243,8 @@ function HeroBanner({
                         ? 'translateY(1px) scale(0.992)'
                         : 'translateY(0)',
                   transition:
-                    'transform 0.14s ease, box-shadow 0.18s ease, filter 0.18s ease, background 0.18s ease, opacity 0.18s ease',
-                  filter: loginPending ? 'none' : buttonHovered ? 'brightness(1.04)' : 'none',
+                    'transform 0.14s ease, box-shadow 0.18s ease, filter 0.18s ease, background 0.18s ease, opacity 0.18s ease, border-color 0.18s ease',
+                  filter: loginPending ? 'none' : buttonHovered ? 'brightness(1.03)' : 'none',
                   opacity: loginPending ? 0.82 : 1,
                 }}
               >
