@@ -1,0 +1,14 @@
+const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const stats = require('../../utils/stats');
+
+module.exports = {
+  data: new SlashCommandBuilder()
+    .setName('removestats')
+    .setDescription('Remove stats')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+  async execute(interaction) {
+    const res = await stats.remove(interaction.guild);
+    await interaction.reply({ content: res.msg, ephemeral: true });
+  },
+};

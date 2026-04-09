@@ -12,6 +12,7 @@ const {
 
 const { registerCommands } = require('./src/utils/registerCommands');
 const { startScheduler } = require('./src/utils/punishmentScheduler');
+const stats = require('./src/utils/stats/statsManager');
 
 const token = process.env.TOKEN;
 const clientId = process.env.CLIENT_ID;
@@ -32,7 +33,11 @@ if (!guildIds.length) {
 }
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds],
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildPresences,
+  ],
 });
 
 client.commands = new Collection();
@@ -80,39 +85,41 @@ loadRuntimeCommands();
 
 client.once(Events.ClientReady, async (readyClient) => {
   console.log(`🤖 Logged in as ${readyClient.user.tag}`);
-  console.log(`📍 Connected guilds: ${readyClient.guilds.cache.map((g) => `${g.name} (${g.id})`).join(', ')}`);
+  console.log(
+    `📍 Connected guilds: ${readyClient.guilds.cache
+      .map((g) => `${g.name} (${g.id})`)
+      .join(', ')}`
+  );
   console.log(`🛠️ Command sync mode: guild`);
   console.log(`🏠 Target guild IDs: ${guildIds.join(', ')}`);
 
   const express = require('express');
+  const botApi = express();
 
-const botApi = express();
+  botApi.get('/internal/guilds', (req, res) => {
+    try {
+      const guilds = client.guilds.cache.map((guild) => ({
+        id: guild.id,
+        name: guild.name,
+        icon: guild.icon,
+      }));
 
-botApi.get('/internal/guilds', (req, res) => {
-  try {
-    const guilds = client.guilds.cache.map((guild) => ({
-      id: guild.id,
-      name: guild.name,
-      icon: guild.icon,
-    }));
+      return res.json(guilds);
+    } catch (error) {
+      console.error('Failed to return bot guilds:', error);
+      return res.status(500).json({ error: 'Failed to fetch bot guilds' });
+    }
+  });
 
-    return res.json(guilds);
-  } catch (error) {
-    console.error('Failed to return bot guilds:', error);
-    return res.status(500).json({ error: 'Failed to fetch bot guilds' });
-  }
-});
+  const BOT_API_PORT = process.env.BOT_API_PORT || 3002;
 
-const BOT_API_PORT = process.env.BOT_API_PORT || 3002;
-
-botApi.listen(BOT_API_PORT, () => {
-  console.log(`🤖 Bot internal API running on http://localhost:${BOT_API_PORT}`);
-});
+  botApi.listen(BOT_API_PORT, () => {
+    console.log(`🤖 Bot internal API running on http://localhost:${BOT_API_PORT}`);
+  });
 
   try {
     const commandsPath = path.join(__dirname, 'src', 'commands');
 
-    // Clear old global commands so duplicate slash commands do not come back.
     await registerCommands({
       token,
       clientId,
@@ -121,7 +128,6 @@ botApi.listen(BOT_API_PORT, () => {
       clear: true,
     });
 
-    // Register only guild commands for development/stability.
     await registerCommands({
       token,
       clientId,
@@ -136,6 +142,8 @@ botApi.listen(BOT_API_PORT, () => {
   }
 
   startScheduler(client);
+  stats.start(client);
+  console.log('📊 Stats updater started.');
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
