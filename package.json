@@ -5,19 +5,26 @@
   "main": "index.js",
   "type": "commonjs",
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js",
+    "bot": "nodemon index.js",
+    "api": "nodemon dashboard/server/index.js",
+    "client": "npm run dev --prefix dashboard/client",
+    "dev": "concurrently \"npm run bot\" \"npm run api\" \"npm run client\"",
+    "start": "npm run dev",
     "lint": "eslint index.js src",
     "lint:fix": "eslint index.js src --fix"
   },
   "dependencies": {
+    "concurrently": "^9.2.1",
+    "cors": "^2.8.6",
     "discord.js": "^14.15.0",
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.5",
+    "express": "^5.2.1",
+    "express-session": "^1.19.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "eslint": "^10.2.0",
     "globals": "^17.4.0",
-    "nodemon": "^3.0.3"
+    "nodemon": "^3.1.14"
   }
 }

@@ -10,6 +10,8 @@ function Sidebar({
   isAuthenticated,
   authLoading = false,
   navItems,
+  botAvatar = '',
+  botName = 'KSJ Goliath',
 }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -53,140 +55,158 @@ function Sidebar({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 10px' }}>
-        <div
-          style={{
-            width: '42px',
-            height: '42px',
-            borderRadius: '14px',
-            background: 'linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#ffffff',
-            fontWeight: 800,
-          }}
-        >
-          K
-        </div>
+        {botAvatar ? (
+          <img
+            src={botAvatar}
+            alt={botName}
+            style={{
+              width: '42px',
+              height: '42px',
+              borderRadius: '14px',
+              objectFit: 'cover',
+              display: 'block',
+              border: `1px solid rgba(255,255,255,0.12)`,
+            }}
+          />
+        ) : (
+          <div
+            style={{
+              width: '42px',
+              height: '42px',
+              borderRadius: '14px',
+              background: 'linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#ffffff',
+              fontWeight: 800,
+            }}
+          >
+            K
+          </div>
+        )}
+
         <div>
           <div style={{ fontSize: '16px', fontWeight: 800, color: '#ffffff' }}>KSJ Goliath</div>
-          <div style={{ marginTop: '3px', fontSize: '12px', color: theme.sidebarMuted }}>
-            Discord dashboard
-          </div>
+          <div style={{ marginTop: '3px', fontSize: '12px', color: theme.sidebarMuted }} />
         </div>
       </div>
 
-      <div
-        style={{
-          background: 'rgba(255,255,255,0.03)',
-          border: `1px solid ${theme.sidebarBorder}`,
-          borderRadius: '16px',
-          padding: '14px',
-        }}
-      >
-        <label
+      {isAuthenticated ? (
+        <div
           style={{
-            display: 'block',
-            marginBottom: '8px',
-            fontSize: '12px',
-            fontWeight: 700,
-            color: theme.sidebarMuted,
-            textTransform: 'uppercase',
+            background: 'rgba(255,255,255,0.03)',
+            border: `1px solid ${theme.sidebarBorder}`,
+            borderRadius: '16px',
+            padding: '14px',
           }}
         >
-          Guild
-        </label>
-
-        <div style={{ position: 'relative' }}>
-          <select
-            value={selectedGuild}
-            onChange={(e) => setSelectedGuild(e.target.value)}
-            disabled={authLoading || (!isAuthenticated && guilds.length === 0)}
+          <label
             style={{
-              width: '100%',
-              padding: '11px 40px 11px 12px',
-              borderRadius: '12px',
-              border: `1px solid ${theme.inputBorder}`,
-              background: theme.inputBg,
-              color: theme.inputText,
-              fontSize: '14px',
-              appearance: 'none',
-              WebkitAppearance: 'none',
-              MozAppearance: 'none',
-              outline: 'none',
-              boxShadow: 'none',
-              cursor:
-                authLoading || (!isAuthenticated && guilds.length === 0)
-                  ? 'not-allowed'
-                  : 'pointer',
+              display: 'block',
+              marginBottom: '8px',
+              fontSize: '12px',
+              fontWeight: 700,
+              color: theme.sidebarMuted,
+              textTransform: 'uppercase',
             }}
           >
-            {authLoading ? (
-              <option value="">Loading guilds...</option>
-            ) : !isAuthenticated && guilds.length === 0 ? (
-              <option value="">Login required</option>
-            ) : guilds.length === 0 ? (
-              <option value="">No guilds found</option>
-            ) : (
-              guilds.map((guild) => (
-                <option key={guild.id} value={guild.id}>
-                  {guild.name}
-                </option>
-              ))
-            )}
-          </select>
+            Guild
+          </label>
 
-          <span
-            aria-hidden="true"
-            style={{
-              position: 'absolute',
-              top: '50%',
-              right: '14px',
-              transform: 'translateY(-50%)',
-              color: theme.mutedText,
-              fontSize: '13px',
-              lineHeight: 1,
-              pointerEvents: 'none',
-              userSelect: 'none',
-            }}
-          >
-            ▾
-          </span>
-        </div>
-
-        {guildError ? (
-          <p style={{ marginTop: '8px', fontSize: '12px', color: '#fca5a5' }}>{guildError}</p>
-        ) : null}
-      </div>
-
-      <div style={{ display: 'grid', gap: '6px' }}>
-        {navItems.map((item) => {
-          const active =
-            location.pathname === `/${item.key}` ||
-            (item.key === 'overview' && location.pathname === '/');
-
-          return (
-            <button
-              key={item.key}
-              type="button"
-              onClick={() => handleNavigate(item.key)}
-              disabled={!canNavigate}
-              style={getNavItemStyle(active)}
+          <div style={{ position: 'relative' }}>
+            <select
+              value={selectedGuild}
+              onChange={(e) => setSelectedGuild(e.target.value)}
+              disabled={authLoading || (!isAuthenticated && guilds.length === 0)}
+              style={{
+                width: '100%',
+                padding: '11px 40px 11px 12px',
+                borderRadius: '12px',
+                border: `1px solid ${theme.inputBorder}`,
+                background: theme.inputBg,
+                color: theme.inputText,
+                fontSize: '14px',
+                appearance: 'none',
+                WebkitAppearance: 'none',
+                MozAppearance: 'none',
+                outline: 'none',
+                boxShadow: 'none',
+                cursor:
+                  authLoading || (!isAuthenticated && guilds.length === 0)
+                    ? 'not-allowed'
+                    : 'pointer',
+              }}
             >
-              <span
-                style={{
-                  width: '18px',
-                  textAlign: 'center',
-                  flexShrink: 0,
-                }}
+              {authLoading ? (
+                <option value="">Loading guilds...</option>
+              ) : !isAuthenticated && guilds.length === 0 ? (
+                <option value="">Login required</option>
+              ) : guilds.length === 0 ? (
+                <option value="">No guilds found</option>
+              ) : (
+                guilds.map((guild) => (
+                  <option key={guild.id} value={guild.id}>
+                    {guild.name}
+                  </option>
+                ))
+              )}
+            </select>
+
+            <span
+              aria-hidden="true"
+              style={{
+                position: 'absolute',
+                top: '50%',
+                right: '14px',
+                transform: 'translateY(-50%)',
+                color: theme.mutedText,
+                fontSize: '13px',
+                lineHeight: 1,
+                pointerEvents: 'none',
+                userSelect: 'none',
+              }}
+            >
+              ▾
+            </span>
+          </div>
+
+          {guildError ? (
+            <p style={{ marginTop: '8px', fontSize: '12px', color: '#fca5a5' }}>{guildError}</p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {isAuthenticated ? (
+        <div style={{ display: 'grid', gap: '6px' }}>
+          {navItems.map((item) => {
+            const active =
+              location.pathname === `/${item.key}` ||
+              (item.key === 'overview' && location.pathname === '/');
+
+            return (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => handleNavigate(item.key)}
+                disabled={!canNavigate}
+                style={getNavItemStyle(active)}
               >
-                {item.icon}
-              </span>
-              <span>{item.label}</span>
-            </button>
-          );
-        })}
-      </div>
+                <span
+                  style={{
+                    width: '18px',
+                    textAlign: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  {item.icon}
+                </span>
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
     </aside>
   );
 }

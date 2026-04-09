@@ -18,6 +18,10 @@ function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [guildsLoading, setGuildsLoading] = useState(false);
+  const [botProfile, setBotProfile] = useState({
+    name: 'KSJ Goliath',
+    avatarUrl: '',
+  });
 
   useEffect(() => {
     setStorage('selectedGuild', selectedGuild);
@@ -26,6 +30,48 @@ function App() {
   useEffect(() => {
     setStorage('darkMode', darkMode);
   }, [darkMode]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadBotProfile() {
+      try {
+        const statusData = await api.getStatus();
+
+        if (!isMounted || !statusData || typeof statusData !== 'object') return;
+
+        const botData =
+          statusData?.bot && typeof statusData.bot === 'object' ? statusData.bot : statusData;
+
+        const avatarUrl =
+          botData?.avatarUrl ||
+          botData?.displayAvatarURL ||
+          botData?.displayAvatarUrl ||
+          botData?.image ||
+          '';
+
+        const name =
+          botData?.name ||
+          botData?.username ||
+          botData?.displayName ||
+          botData?.tag ||
+          'KSJ Goliath';
+
+        setBotProfile({
+          name,
+          avatarUrl,
+        });
+      } catch (error) {
+        console.warn('Bot profile load failed:', error);
+      }
+    }
+
+    loadBotProfile();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -210,17 +256,17 @@ function App() {
   const isAuthenticated = Boolean(currentUser);
 
   const handleLogin = useCallback(() => {
-  window.location.href = `${API_BASE || 'http://localhost:3001'}/api/auth/login`;
+    window.location.href = `${API_BASE || 'http://localhost:3001'}/api/auth/login`;
   }, []);
 
   const handleLogout = useCallback(async () => {
     try {
       await fetch(`${API_BASE}/api/auth/logout`, {
-      method: 'POST',
-      credentials: 'include',
+        method: 'POST',
+        credentials: 'include',
       });
     } catch (error) {
-    console.error('Logout failed:', error);
+      console.error('Logout failed:', error);
     }
 
     window.location.assign('/');
@@ -253,6 +299,8 @@ function App() {
             isAuthenticated={isAuthenticated}
             authLoading={authLoading}
             navItems={visibleNavItems}
+            botAvatar={botProfile.avatarUrl}
+            botName={botProfile.name}
           />
 
           <div style={styles.mainColumn}>
@@ -276,6 +324,8 @@ function App() {
                 selectedGuildName={selectedGuildData?.name || ''}
                 selectedGuildId={selectedGuildData?.id || ''}
                 handleLogin={handleLogin}
+                botAvatar={botProfile.avatarUrl}
+                botName={botProfile.name}
               />
 
               {authLoading ? (

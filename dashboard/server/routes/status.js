@@ -2,6 +2,44 @@ const express = require('express');
 
 const router = express.Router();
 
+function getBotProfile(client) {
+  const botUser = client?.user || null;
+
+  if (!botUser) {
+    return {
+      id: null,
+      username: 'KSJ Goliath',
+      name: 'KSJ Goliath',
+      tag: null,
+      avatar: null,
+      avatarUrl: '',
+    };
+  }
+
+  let avatarUrl = '';
+
+  try {
+    if (typeof botUser.displayAvatarURL === 'function') {
+      avatarUrl = botUser.displayAvatarURL({
+        extension: 'png',
+        size: 256,
+        forceStatic: false,
+      });
+    }
+  } catch (error) {
+    console.error('Failed to build bot avatar URL:', error);
+  }
+
+  return {
+    id: botUser.id || null,
+    username: botUser.username || 'KSJ Goliath',
+    name: botUser.username || 'KSJ Goliath',
+    tag: botUser.tag || null,
+    avatar: botUser.avatar || null,
+    avatarUrl: avatarUrl || '',
+  };
+}
+
 router.get('/', (req, res) => {
   try {
     const guildId = req.query.guildId || null;
@@ -21,6 +59,8 @@ router.get('/', (req, res) => {
     const guildConnected = Boolean(discordGuild);
     const memberCount =
       typeof discordGuild?.memberCount === 'number' ? discordGuild.memberCount : null;
+
+    const botProfile = getBotProfile(client);
 
     return res.json({
       ok: true,
@@ -42,6 +82,12 @@ router.get('/', (req, res) => {
           }
         : {},
       bot: {
+        id: botProfile.id,
+        username: botProfile.username,
+        name: botProfile.name,
+        tag: botProfile.tag,
+        avatar: botProfile.avatar,
+        avatarUrl: botProfile.avatarUrl,
         online: botReady,
         connected: botReady,
         latencyMs: botLatencyMs,

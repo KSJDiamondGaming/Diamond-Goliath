@@ -98,7 +98,7 @@ router.get('/callback', async (req, res) => {
       avatar: userData.avatar || null,
     };
 
-    return res.redirect(CLIENT_URL);
+    return res.redirect(`${CLIENT_URL}/dashboard`);
   } catch (error) {
     console.error('Auth callback error:', error);
     return res.status(500).send('Authentication failed.');

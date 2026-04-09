@@ -134,15 +134,7 @@ function Topbar({
                 </div>
               ) : null}
             </>
-          ) : (
-            <button
-              type="button"
-              onClick={handleLogin}
-              style={styles.userButton(false)}
-            >
-              Sign in
-            </button>
-          )}
+          ) : null}
         </div>
       </div>
     </header>

@@ -1,16 +1,27 @@
 {
-  "name": "ksj-goliath-dashboard-server",
+  "name": "Diamond-Goliath",
   "version": "1.0.0",
-  "description": "Dashboard backend for KSJ Goliath",
+  "description": "All in on Goliath",
   "main": "index.js",
+  "type": "commonjs",
   "scripts": {
-    "start": "node index.js",
-    "dev": "node index.js"
+    "bot": "node index.js",
+    "api": "node dashboard/server/index.js",
+    "client": "npm run dev --prefix dashboard/client",
+    "dev": "concurrently \"npm run bot\" \"npm run api\" \"npm run client\"",
+    "start": "npm run dev",
+    "lint": "eslint index.js src",
+    "lint:fix": "eslint index.js src --fix"
   },
-  "license": "ISC",
   "dependencies": {
-    "cors": "^2.8.5",
-    "dotenv": "^17.2.1",
-    "express": "^5.1.0"
+    "discord.js": "^14.15.0",
+    "dotenv": "^16.4.5",
+    "concurrently": "^9.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.2.0",
+    "globals": "^17.4.0",
+    "nodemon": "^3.0.3"
   }
 }
