@@ -11,6 +11,7 @@ function Topbar({
   currentUserAvatar,
   darkMode,
   setDarkMode,
+  loginPending = false,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [isUserButtonHovered, setIsUserButtonHovered] = useState(false);
@@ -56,6 +57,33 @@ function Topbar({
         <div />
 
         <div style={styles.actionsWrap}>
+          {!isAuthenticated && !authLoading ? (
+            <button
+              type="button"
+              onClick={() => {
+                if (loginPending || typeof handleLogin !== 'function') return;
+                handleLogin();
+              }}
+              disabled={loginPending}
+              style={{
+                minHeight: '42px',
+                padding: '0 16px',
+                borderRadius: '12px',
+                border: 'none',
+                cursor: loginPending ? 'not-allowed' : 'pointer',
+                background: 'linear-gradient(135deg, #5865f2 0%, #4752c4 100%)',
+                color: '#ffffff',
+                fontWeight: 800,
+                fontSize: '14px',
+                boxShadow: '0 10px 24px rgba(88, 101, 242, 0.22)',
+                opacity: loginPending ? 0.82 : 1,
+                transition: 'opacity 0.18s ease, transform 0.14s ease',
+              }}
+            >
+              {loginPending ? 'Redirecting...' : 'Login'}
+            </button>
+          ) : null}
+
           {isAuthenticated ? (
             <>
               <button

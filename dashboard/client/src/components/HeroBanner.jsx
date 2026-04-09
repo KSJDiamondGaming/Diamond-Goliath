@@ -1,8 +1,6 @@
 import { memo, useMemo, useState } from 'react';
 import { heroStyles } from '../ui';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
-
 function DiscordIcon() {
   return (
     <svg
@@ -27,6 +25,8 @@ function HeroBanner({
   centered = false,
   botAvatar = '',
   botName = 'KSJ Goliath',
+  handleLogin,
+  loginPending = false,
 }) {
   const styles = useMemo(() => heroStyles(theme), [theme]);
   const [buttonHovered, setButtonHovered] = useState(false);
@@ -195,17 +195,28 @@ function HeroBanner({
                     fontSize: '14px',
                     lineHeight: 1.6,
                   }}
-                />
+                >
+                  Continue with Discord to open your dashboard.
+                </div>
               </div>
 
-              <a
-                href={`${API_BASE}/api/auth/login`}
+              <button
+                type="button"
+                onClick={() => {
+                  if (loginPending || typeof handleLogin !== 'function') return;
+                  handleLogin();
+                }}
+                disabled={loginPending}
                 onMouseEnter={() => setButtonHovered(true)}
                 onMouseLeave={() => {
                   setButtonHovered(false);
                   setButtonPressed(false);
                 }}
-                onMouseDown={() => setButtonPressed(true)}
+                onMouseDown={() => {
+                  if (!loginPending) {
+                    setButtonPressed(true);
+                  }
+                }}
                 onMouseUp={() => setButtonPressed(false)}
                 onBlur={() => {
                   setButtonHovered(false);
@@ -219,25 +230,37 @@ function HeroBanner({
                   minHeight: '52px',
                   padding: '0 18px',
                   borderRadius: '16px',
+                  border: 'none',
+                  cursor: loginPending ? 'not-allowed' : 'pointer',
                   textDecoration: 'none',
-                  background: buttonHovered
-                    ? 'linear-gradient(135deg, #4752c4 0%, #5865f2 100%)'
-                    : 'linear-gradient(135deg, #5865f2 0%, #4752c4 100%)',
+                  background: loginPending
+                    ? 'linear-gradient(135deg, #7c86f7 0%, #6f79ef 100%)'
+                    : buttonHovered
+                      ? 'linear-gradient(135deg, #4752c4 0%, #5865f2 100%)'
+                      : 'linear-gradient(135deg, #5865f2 0%, #4752c4 100%)',
                   color: '#ffffff',
                   fontWeight: 800,
                   fontSize: '15px',
-                  boxShadow: buttonHovered
-                    ? '0 16px 34px rgba(88, 101, 242, 0.32)'
-                    : '0 12px 26px rgba(88, 101, 242, 0.24)',
-                  transform: buttonPressed ? 'translateY(1px) scale(0.992)' : 'translateY(0)',
+                  boxShadow: loginPending
+                    ? '0 10px 24px rgba(88, 101, 242, 0.18)'
+                    : buttonHovered
+                      ? '0 16px 34px rgba(88, 101, 242, 0.32)'
+                      : '0 12px 26px rgba(88, 101, 242, 0.24)',
+                  transform:
+                    loginPending
+                      ? 'translateY(0)'
+                      : buttonPressed
+                        ? 'translateY(1px) scale(0.992)'
+                        : 'translateY(0)',
                   transition:
-                    'transform 0.14s ease, box-shadow 0.18s ease, filter 0.18s ease, background 0.18s ease',
-                  filter: buttonHovered ? 'brightness(1.04)' : 'none',
+                    'transform 0.14s ease, box-shadow 0.18s ease, filter 0.18s ease, background 0.18s ease, opacity 0.18s ease',
+                  filter: loginPending ? 'none' : buttonHovered ? 'brightness(1.04)' : 'none',
+                  opacity: loginPending ? 0.82 : 1,
                 }}
               >
                 <DiscordIcon />
-                Continue with Discord
-              </a>
+                {loginPending ? 'Redirecting...' : 'Continue with Discord'}
+              </button>
             </div>
           </div>
         </div>

@@ -8,6 +8,7 @@ const CLIENT_SECRET = String(process.env.CLIENT_SECRET || '').trim();
 const REDIRECT_URI = String(process.env.DISCORD_REDIRECT_URI || '').trim();
 const CLIENT_URL = String(process.env.CLIENT_URL || 'http://localhost:5173').trim();
 
+// 🔹 LOGIN ROUTE
 router.get('/login', (req, res) => {
   if (!CLIENT_ID || !REDIRECT_URI) {
     return res.status(500).json({
@@ -15,8 +16,11 @@ router.get('/login', (req, res) => {
     });
   }
 
-  console.log('OAuth client_id:', JSON.stringify(CLIENT_ID));
-  console.log('OAuth redirect_uri:', JSON.stringify(REDIRECT_URI));
+  if (!CLIENT_SECRET) {
+    return res.status(500).json({
+      error: 'Missing CLIENT_SECRET in dashboard/.env',
+    });
+  }
 
   const params = new URLSearchParams({
     client_id: CLIENT_ID,
@@ -31,6 +35,7 @@ router.get('/login', (req, res) => {
   return res.redirect(authUrl);
 });
 
+// 🔹 CHECK AUTH
 router.get('/me', (req, res) => {
   if (!req.session.user) {
     return res.status(401).json({ authenticated: false });
@@ -42,6 +47,7 @@ router.get('/me', (req, res) => {
   });
 });
 
+// 🔹 LOGOUT
 router.post('/logout', (req, res) => {
   req.session.destroy(() => {
     res.clearCookie('ksj_dashboard_session');
@@ -49,12 +55,26 @@ router.post('/logout', (req, res) => {
   });
 });
 
+// 🔹 CALLBACK
 router.get('/callback', async (req, res) => {
   try {
-    const code = req.query.code;
+    const code = String(req.query.code || '').trim();
+
+    console.log('🔥 CALLBACK HIT:', code || '[missing code]');
 
     if (!code) {
       return res.status(400).send('Missing OAuth code.');
+    }
+
+    if (!CLIENT_ID || !CLIENT_SECRET || !REDIRECT_URI) {
+      console.error('❌ Missing OAuth environment variables');
+      return res.status(500).send('OAuth environment variables are missing.');
+    }
+
+    // ✅ Prevent duplicate exchange if already signed in
+    if (req.session.user) {
+      console.log('⚠️ Session already exists, skipping token exchange');
+      return req.session.save(() => res.redirect(`${CLIENT_URL}/dashboard`));
     }
 
     const tokenResponse = await fetch('https://discord.com/api/oauth2/token', {
@@ -74,7 +94,19 @@ router.get('/callback', async (req, res) => {
     const tokenData = await tokenResponse.json();
 
     if (!tokenResponse.ok) {
-      console.error('Discord token error:', tokenData);
+      console.error('❌ Discord token error:', tokenData);
+
+      const errorDescription =
+        typeof tokenData?.error_description === 'string'
+          ? tokenData.error_description
+          : '';
+
+      if (errorDescription.toLowerCase().includes('rate limited')) {
+        return res
+          .status(429)
+          .send('Discord OAuth is temporarily rate limited. Wait a few minutes and try again once.');
+      }
+
       return res.status(500).send('Failed to get Discord token.');
     }
 
@@ -87,7 +119,7 @@ router.get('/callback', async (req, res) => {
     const userData = await userResponse.json();
 
     if (!userResponse.ok) {
-      console.error('Discord user fetch error:', userData);
+      console.error('❌ Discord user fetch error:', userData);
       return res.status(500).send('Failed to get Discord user.');
     }
 
@@ -98,9 +130,18 @@ router.get('/callback', async (req, res) => {
       avatar: userData.avatar || null,
     };
 
-    return res.redirect(`${CLIENT_URL}/dashboard`);
+    console.log('✅ User logged in:', req.session.user.username);
+
+    req.session.save((saveError) => {
+      if (saveError) {
+        console.error('❌ Session save error:', saveError);
+        return res.status(500).send('Failed to save session.');
+      }
+
+      return res.redirect(`${CLIENT_URL}/dashboard`);
+    });
   } catch (error) {
-    console.error('Auth callback error:', error);
+    console.error('❌ Auth callback error:', error);
     return res.status(500).send('Authentication failed.');
   }
 });

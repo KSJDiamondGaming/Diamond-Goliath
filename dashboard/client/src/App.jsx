@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api';
 import { getStorage, setStorage } from './storage';
 import { getTheme, navItems } from './appConfig';
@@ -8,7 +8,7 @@ import Topbar from './components/Topbar';
 import HeroBanner from './components/HeroBanner';
 import AppRoutes from './routes';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 
 function App() {
   const [selectedGuild, setSelectedGuild] = useState(() => getStorage('selectedGuild', ''));
@@ -18,6 +18,9 @@ function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [guildsLoading, setGuildsLoading] = useState(false);
+  const [loginPending, setLoginPending] = useState(false);
+  const loginStartedRef = useRef(false);
+
   const [botProfile, setBotProfile] = useState({
     name: 'KSJ Goliath',
     avatarUrl: '',
@@ -82,6 +85,9 @@ function App() {
       try {
         const authResponse = await fetch(`${API_BASE}/api/auth/me`, {
           credentials: 'include',
+          headers: {
+            Accept: 'application/json',
+          },
         });
 
         if (!isMounted) return;
@@ -256,14 +262,26 @@ function App() {
   const isAuthenticated = Boolean(currentUser);
 
   const handleLogin = useCallback(() => {
-    window.location.href = `${API_BASE || 'http://localhost:3001'}/api/auth/login`;
+    if (loginStartedRef.current) return;
+
+    loginStartedRef.current = true;
+    setLoginPending(true);
+    window.location.href = `${API_BASE}/api/auth/login`;
   }, []);
 
   const handleLogout = useCallback(async () => {
+    setCurrentUser(null);
+    setGuilds([]);
+    setSelectedGuild('');
+    setGuildError('');
+
     try {
       await fetch(`${API_BASE}/api/auth/logout`, {
         method: 'POST',
         credentials: 'include',
+        headers: {
+          Accept: 'application/json',
+        },
       });
     } catch (error) {
       console.error('Logout failed:', error);
@@ -314,6 +332,7 @@ function App() {
               currentUserAvatar={currentUserAvatar}
               darkMode={darkMode}
               setDarkMode={setDarkMode}
+              loginPending={loginPending}
             />
 
             <main style={styles.main}>
@@ -326,6 +345,7 @@ function App() {
                 handleLogin={handleLogin}
                 botAvatar={botProfile.avatarUrl}
                 botName={botProfile.name}
+                loginPending={loginPending}
               />
 
               {authLoading ? (
