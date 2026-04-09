@@ -86,13 +86,14 @@ function checkAntiSpam(message, config) {
   spamCache.set(key, next);
 
   console.log('[AUTOMOD][SPAM]', {
+    path: AUTOMOD_PATH,
     user: message.author.tag,
     guildId: message.guild.id,
-    content: message.content,
     count: next.length,
     maxMessages: rule.maxMessages,
     intervalMs: rule.intervalMs,
     punishment: rule.punishment,
+    content: message.content,
   });
 
   if (next.length >= rule.maxMessages) {
@@ -130,6 +131,15 @@ function checkRepeatedMessages(message, config) {
   repeatCache.set(key, entries);
 
   const repeats = entries.filter((entry) => entry.content === content).length;
+
+  console.log('[AUTOMOD][REPEAT]', {
+    user: message.author.tag,
+    guildId: message.guild.id,
+    content,
+    repeats,
+    maxRepeats: rule.maxRepeats,
+    intervalMs: rule.intervalMs,
+  });
 
   if (repeats >= rule.maxRepeats) {
     repeatCache.delete(key);
@@ -243,6 +253,12 @@ function checkBadWords(message, config) {
 }
 
 async function runAutomod(message) {
+  console.log('[AUTOMOD] runAutomod called', {
+    guild: message.guild?.id,
+    user: message.author?.tag,
+    content: message.content,
+  });
+
   if (!message.guild || !message.member) return null;
 
   const config = getGuildAutoModConfig(message.guild.id);
@@ -259,15 +275,11 @@ async function runAutomod(message) {
 
   if (!config.enabled) return null;
 
-  const ignored = shouldIgnoreMessage(message, config);
-  if (ignored) {
+  if (shouldIgnoreMessage(message, config)) {
     console.log('[AUTOMOD][SKIP]', {
       user: message.author.tag,
       isAdmin: message.member.permissions.has(PermissionFlagsBits.Administrator),
       channelId: message.channel.id,
-      ignoredChannels: config.ignoredChannelIds,
-      ignoredUsers: config.ignoredUserIds,
-      ignoredRoles: config.ignoredRoleIds,
     });
     return null;
   }
