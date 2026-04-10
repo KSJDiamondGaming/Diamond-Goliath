@@ -1,5 +1,6 @@
 const { MessageFlags } = require('discord.js');
 const stats = require('../../utils/stats/statsManager');
+const automodPanel = require('../../utils/automod/automodPanel');
 
 let embedPanelHandler = null;
 
@@ -21,6 +22,10 @@ async function handleComponents(interaction, client) {
 
   if (stats?.handleInteraction) {
     if (await stats.handleInteraction(interaction)) return true;
+  }
+
+  if (automodPanel?.handleInteraction) {
+    if (await automodPanel.handleInteraction(interaction, client)) return true;
   }
 
   if (interaction.customId?.startsWith('embedpanel_') && embedPanelHandler) {
