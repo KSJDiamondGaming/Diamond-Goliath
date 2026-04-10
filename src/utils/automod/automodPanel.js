@@ -1,14 +1,8 @@
 const {
-  EmbedBuilder,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  StringSelectMenuBuilder,
-  ModalBuilder,
-  TextInputBuilder,
-  TextInputStyle,
-  ChannelType,
-} = require('discord.js');
+  getGuildAutoModConfig,
+  saveGuildAutoModConfig,
+  resetGuildAutoModConfig,
+} = require('./automodStore');
 
 const {
   getGuildAutoModConfig,
