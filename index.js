@@ -7,28 +7,30 @@ const {
   Collection,
   GatewayIntentBits,
   Events,
+  MessageFlags,
 } = require('discord.js');
 
 const { registerCommands } = require('./src/utils/registerCommands');
 const { startScheduler } = require('./src/utils/punishmentScheduler');
 const stats = require('./src/utils/stats/statsManager');
+
+let embedPanelHandler = null;
+try {
+  embedPanelHandler = require('./src/utils/embed/embedPanelInteraction');
+  console.log('✅ Embed panel handler loaded');
+} catch (err) {
+  console.warn('⚠️ Embed panel handler missing');
+}
+
 const token = process.env.TOKEN;
 const clientId = process.env.CLIENT_ID;
 const guildIds = process.env.GUILD_IDS
-  ? process.env.GUILD_IDS.split(',').map((id) => id.trim()).filter(Boolean)
+  ? process.env.GUILD_IDS.split(',').map(id => id.trim()).filter(Boolean)
   : [];
 
-if (!token) {
-  throw new Error('Missing TOKEN in .env');
-}
-
-if (!clientId) {
-  throw new Error('Missing CLIENT_ID in .env');
-}
-
-if (!guildIds.length) {
-  throw new Error('Missing GUILD_IDS in .env');
-}
+if (!token) throw new Error('Missing TOKEN');
+if (!clientId) throw new Error('Missing CLIENT_ID');
+if (!guildIds.length) throw new Error('Missing GUILD_IDS');
 
 const client = new Client({
   intents: [
@@ -42,12 +44,9 @@ client.commands = new Collection();
 
 function getCommandFiles(dir) {
   let results = [];
-
   if (!fs.existsSync(dir)) return results;
 
-  const files = fs.readdirSync(dir);
-
-  for (const file of files) {
+  for (const file of fs.readdirSync(dir)) {
     const filePath = path.join(dir, file);
     const stat = fs.statSync(filePath);
 
@@ -63,124 +62,107 @@ function getCommandFiles(dir) {
 
 function loadRuntimeCommands() {
   const commandsPath = path.join(__dirname, 'src', 'commands');
-  const commandFiles = getCommandFiles(commandsPath);
+  const files = getCommandFiles(commandsPath);
 
-  for (const filePath of commandFiles) {
+  for (const filePath of files) {
     delete require.cache[require.resolve(filePath)];
     const command = require(filePath);
 
-    if (!command?.data || !command?.execute) {
-      console.warn(`⚠️ Skipping invalid command file: ${filePath}`);
-      continue;
-    }
+    if (!command?.data || !command?.execute) continue;
 
     client.commands.set(command.data.name, command);
-    console.log(`✅ Runtime command loaded: ${command.data.name}`);
+    console.log(`✅ Loaded: ${command.data.name}`);
   }
+}
+
+async function handleComponents(interaction) {
+  if (
+    !interaction.isButton() &&
+    !interaction.isStringSelectMenu() &&
+    !interaction.isModalSubmit()
+  ) return false;
+
+  // stats
+  if (stats?.handleInteraction) {
+    if (await stats.handleInteraction(interaction)) return true;
+  }
+
+  // embed panel
+  if (interaction.customId?.startsWith('embedpanel_') && embedPanelHandler) {
+    return await embedPanelHandler(interaction, client);
+  }
+
+  return false;
 }
 
 loadRuntimeCommands();
 
 client.once(Events.ClientReady, async (readyClient) => {
   console.log(`🤖 Logged in as ${readyClient.user.tag}`);
-  console.log(
-    `📍 Connected guilds: ${readyClient.guilds.cache
-      .map((g) => `${g.name} (${g.id})`)
-      .join(', ')}`
-  );
-  console.log(`🛠️ Command sync mode: guild`);
-  console.log(`🏠 Target guild IDs: ${guildIds.join(', ')}`);
 
   const express = require('express');
   const botApi = express();
 
   botApi.get('/internal/guilds', (req, res) => {
-    try {
-      const guilds = client.guilds.cache.map((guild) => ({
-        id: guild.id,
-        name: guild.name,
-        icon: guild.icon,
-      }));
-
-      return res.json(guilds);
-    } catch (error) {
-      console.error('Failed to return bot guilds:', error);
-      return res.status(500).json({ error: 'Failed to fetch bot guilds' });
-    }
+    const guilds = client.guilds.cache.map(g => ({
+      id: g.id,
+      name: g.name,
+      icon: g.icon,
+    }));
+    res.json(guilds);
   });
 
-  const BOT_API_PORT = process.env.BOT_API_PORT || 3002;
-
-  botApi.listen(BOT_API_PORT, () => {
-    console.log(`🤖 Bot internal API running on http://localhost:${BOT_API_PORT}`);
+  botApi.listen(3002, () => {
+    console.log(`🤖 API running on http://localhost:3002`);
   });
 
-  try {
-    const commandsPath = path.join(__dirname, 'src', 'commands');
+  const commandsPath = path.join(__dirname, 'src', 'commands');
 
-    await registerCommands({
-      token,
-      clientId,
-      commandsPath,
-      mode: 'global',
-      clear: true,
-    });
+  await registerCommands({
+    token,
+    clientId,
+    commandsPath,
+    mode: 'global',
+    clear: true,
+  });
 
-    await registerCommands({
-      token,
-      clientId,
-      commandsPath,
-      guildIds,
-      mode: 'guild',
-    });
-
-    console.log('✅ Cleared global commands and synced guild commands.');
-  } catch (error) {
-    console.error('❌ Command sync failed on startup:', error);
-  }
+  await registerCommands({
+    token,
+    clientId,
+    commandsPath,
+    guildIds,
+    mode: 'guild',
+  });
 
   startScheduler(client);
   stats.start(client);
-  console.log('📊 Stats updater started.');
+
+  console.log('🚀 Bot ready');
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
-    if (interaction.isButton() || interaction.isStringSelectMenu()) {
-      const handled = await handleStatsInteraction(interaction);
-      if (handled) return;
-    }
+    if (await handleComponents(interaction)) return;
 
     if (!interaction.isChatInputCommand()) return;
 
     const command = client.commands.get(interaction.commandName);
+    if (!command) return;
 
-    if (!command) {
-      console.warn(`⚠️ No command handler found for /${interaction.commandName}`);
-      return;
-    }
+    await command.execute(interaction, client);
 
-    await command.execute(interaction);
-  } catch (error) {
-    console.error(
-      `❌ Error running interaction ${interaction.customId || interaction.commandName || 'unknown'}:`,
-      error
-    );
+  } catch (err) {
+    console.error('❌ Interaction error:', err);
 
-    try {
-      if (interaction.replied || interaction.deferred) {
-        await interaction.followUp({
-          content: 'There was an error while executing this command.',
-          ephemeral: true,
-        });
-      } else {
-        await interaction.reply({
-          content: 'There was an error while executing this command.',
-          ephemeral: true,
-        });
-      }
-    } catch (replyError) {
-      console.error('❌ Failed to send error response:', replyError);
+    const payload = {
+      content: 'Something went wrong.',
+      flags: MessageFlags.Ephemeral,
+    };
+
+    if (interaction.replied || interaction.deferred) {
+      await interaction.followUp(payload).catch(() => {});
+    } else {
+      await interaction.reply(payload).catch(() => {});
     }
   }
 });

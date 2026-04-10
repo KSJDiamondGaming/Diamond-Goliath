@@ -1,27 +1,26 @@
 const {
   SlashCommandBuilder,
-  PermissionFlagsBits
+  PermissionFlagsBits,
+  MessageFlags,
 } = require('discord.js');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('embedpanel')
-    .setDescription('Open the advanced embed control panel')
+    .setDescription('Open the stylish modular embed studio')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
 
   async execute(interaction) {
     const {
-      buildEmbedPanelMessage
+      buildEmbedPanelMessage,
     } = require('../../utils/embed/embedPanelHandler');
 
-    const payload = buildEmbedPanelMessage(interaction.guildId, {
-      selectedType: 'welcome'
-    });
+    const payload = buildEmbedPanelMessage(interaction.guildId);
 
     await interaction.reply({
       embeds: [payload.embed],
       components: payload.components,
-      ephemeral: true
+      flags: MessageFlags.Ephemeral,
     });
-  }
+  },
 };

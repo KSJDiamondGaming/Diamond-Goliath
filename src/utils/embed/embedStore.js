@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const dataDir = path.join(process.cwd(), 'data');
+const dataDir = path.join(__dirname, '..', '..', '..', 'data');
 const filePath = path.join(dataDir, 'embedTemplates.json');
 
 function ensureFile() {
@@ -10,143 +10,126 @@ function ensureFile() {
   }
 
   if (!fs.existsSync(filePath)) {
-    fs.writeFileSync(filePath, JSON.stringify({}, null, 2), 'utf8');
+    fs.writeFileSync(filePath, JSON.stringify({ guilds: {} }, null, 2));
   }
 }
 
 function readStore() {
   ensureFile();
-
-  try {
-    const raw = fs.readFileSync(filePath, 'utf8');
-    return JSON.parse(raw || '{}');
-  } catch (error) {
-    console.error('[embedStore] Failed to read store:', error);
-    return {};
-  }
+  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
 
 function writeStore(data) {
   ensureFile();
+  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+}
 
-  try {
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
-  } catch (error) {
-    console.error('[embedStore] Failed to write store:', error);
+function ensureGuild(store, guildId) {
+  if (!store.guilds[guildId]) {
+    store.guilds[guildId] = {
+      templates: [],
+    };
   }
 }
 
-function defaultTemplate() {
-  return {
-    title: '',
-    description: '',
-    color: '#5865F2',
-    footer: '',
-    image: '',
-    thumbnail: '',
-    authorName: '',
-    authorIcon: '',
-    authorUrl: '',
-    channelId: '',
-    content: '',
-    buttons: []
-  };
-}
-
-function sanitizeButton(button = {}) {
-  return {
-    label: button.label || '',
-    style: button.style || 'Link',
-    url: button.url || '',
-    customId: button.customId || '',
-    emoji: button.emoji || '',
-    disabled: Boolean(button.disabled)
-  };
-}
-
-function sanitizeTemplate(template = {}) {
-  return {
-    title: template.title || '',
-    description: template.description || '',
-    color: template.color || '#5865F2',
-    footer: template.footer || '',
-    image: template.image || '',
-    thumbnail: template.thumbnail || '',
-    authorName: template.authorName || '',
-    authorIcon: template.authorIcon || '',
-    authorUrl: template.authorUrl || '',
-    channelId: template.channelId || '',
-    content: template.content || '',
-    buttons: Array.isArray(template.buttons)
-      ? template.buttons.slice(0, 5).map(sanitizeButton)
-      : []
-  };
-}
-
-function getGuildData(guildId) {
+function createTemplate(guildId, name) {
   const store = readStore();
+  ensureGuild(store, guildId);
 
-  if (!store[guildId]) {
-    store[guildId] = { embeds: {} };
-    writeStore(store);
-  }
+  const template = {
+    id: `tpl_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
+    name,
+    channelId: null,
+    messageContent: '',
+    embed: {
+      title: '',
+      description: '',
+      color: '#5865F2',
+      footer: '',
+      image: '',
+      thumbnail: '',
+      authorName: '',
+      authorIcon: '',
+      authorUrl: '',
+    },
+    buttons: [],
+  };
 
-  return store[guildId];
+  store.guilds[guildId].templates.push(template);
+  writeStore(store);
+
+  return template;
 }
 
-function getEmbedTemplate(guildId, type) {
-  const guildData = getGuildData(guildId);
-  const template = guildData.embeds[type];
+function getTemplates(guildId) {
+  const store = readStore();
+  ensureGuild(store, guildId);
+  return store.guilds[guildId].templates;
+}
 
+function getTemplate(guildId, templateId) {
+  const templates = getTemplates(guildId);
+  return templates.find((t) => t.id === templateId) || null;
+}
+
+function updateTemplate(guildId, templateId, updates) {
+  const store = readStore();
+  ensureGuild(store, guildId);
+
+  const template = store.guilds[guildId].templates.find((t) => t.id === templateId);
   if (!template) return null;
-  return sanitizeTemplate(template);
-}
 
-function saveEmbedTemplate(guildId, type, template) {
-  const store = readStore();
-
-  if (!store[guildId]) {
-    store[guildId] = { embeds: {} };
-  }
-
-  store[guildId].embeds[type] = sanitizeTemplate({
-    ...defaultTemplate(),
-    ...template
-  });
+  Object.assign(template, updates);
 
   writeStore(store);
-  return store[guildId].embeds[type];
+  return template;
 }
 
-function deleteEmbedTemplate(guildId, type) {
+function updateTemplateEmbed(guildId, templateId, embedUpdates) {
   const store = readStore();
+  ensureGuild(store, guildId);
 
-  if (!store[guildId] || !store[guildId].embeds[type]) {
-    return false;
-  }
+  const template = store.guilds[guildId].templates.find((t) => t.id === templateId);
+  if (!template) return null;
 
-  delete store[guildId].embeds[type];
+  template.embed = {
+    ...template.embed,
+    ...embedUpdates,
+  };
+
   writeStore(store);
-  return true;
+  return template;
 }
 
-function clearAllGuildTemplates(guildId) {
+function updateTemplateButtons(guildId, templateId, buttons) {
   const store = readStore();
+  ensureGuild(store, guildId);
 
-  if (!store[guildId]) {
-    store[guildId] = { embeds: {} };
-  }
+  const template = store.guilds[guildId].templates.find((t) => t.id === templateId);
+  if (!template) return null;
 
-  store[guildId].embeds = {};
+  template.buttons = Array.isArray(buttons) ? buttons.slice(0, 5) : [];
+
   writeStore(store);
-  return true;
+  return template;
+}
+
+function deleteTemplate(guildId, templateId) {
+  const store = readStore();
+  ensureGuild(store, guildId);
+
+  store.guilds[guildId].templates =
+    store.guilds[guildId].templates.filter((t) => t.id !== templateId);
+
+  writeStore(store);
 }
 
 module.exports = {
-  defaultTemplate,
-  getGuildData,
-  getEmbedTemplate,
-  saveEmbedTemplate,
-  deleteEmbedTemplate,
-  clearAllGuildTemplates
+  createTemplate,
+  getTemplates,
+  getTemplate,
+  updateTemplate,
+  updateTemplateEmbed,
+  updateTemplateButtons,
+  deleteTemplate,
 };
