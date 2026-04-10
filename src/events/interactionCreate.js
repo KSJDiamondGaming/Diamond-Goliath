@@ -1,5 +1,6 @@
 const { Events } = require('discord.js');
 const { handleStatsInteraction } = require('../utils/stats/statsHandlers');
+const { handleEmbedPanelInteraction } = require('../utils/embed/embedPanelHandler');
 
 module.exports = {
   name: Events.InteractionCreate,
@@ -7,6 +8,17 @@ module.exports = {
     // ✅ Handle stats panel interactions FIRST
     if (interaction.isButton() || interaction.isStringSelectMenu()) {
       const handled = await handleStatsInteraction(interaction);
+      if (handled) return;
+    }
+
+    // ✅ Handle embed panel interactions
+    if (
+      interaction.isButton() ||
+      interaction.isStringSelectMenu() ||
+      interaction.isChannelSelectMenu() ||
+      interaction.isModalSubmit()
+    ) {
+      const handled = await handleEmbedPanelInteraction(interaction);
       if (handled) return;
     }
 
