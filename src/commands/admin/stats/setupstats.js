@@ -1,10 +1,10 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const stats = require('../../utils/stats');
+const stats = require('../../../utils/stats/statsManager');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('setupstats')
-    .setDescription('Create stats channels')
+    .setDescription('Create server stats channels')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async execute(interaction) {
