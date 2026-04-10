@@ -12,8 +12,6 @@ const {
 const { registerCommands } = require('./src/utils/registerCommands');
 const { startScheduler } = require('./src/utils/punishmentScheduler');
 const stats = require('./src/utils/stats/statsManager');
-const { handleStatsInteraction } = require('./src/utils/stats/statsHandlers');
-
 const token = process.env.TOKEN;
 const clientId = process.env.CLIENT_ID;
 const guildIds = process.env.GUILD_IDS
@@ -147,24 +145,27 @@ client.once(Events.ClientReady, async (readyClient) => {
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
-  if (interaction.isButton() || interaction.isStringSelectMenu()) {
-    const handled = await handleStatsInteraction(interaction);
-    if (handled) return;
-  }
-
-  if (!interaction.isChatInputCommand()) return;
-
-  const command = client.commands.get(interaction.commandName);
-
-  if (!command) {
-    console.warn(`⚠️ No command handler found for /${interaction.commandName}`);
-    return;
-  }
-
   try {
+    if (interaction.isButton() || interaction.isStringSelectMenu()) {
+      const handled = await handleStatsInteraction(interaction);
+      if (handled) return;
+    }
+
+    if (!interaction.isChatInputCommand()) return;
+
+    const command = client.commands.get(interaction.commandName);
+
+    if (!command) {
+      console.warn(`⚠️ No command handler found for /${interaction.commandName}`);
+      return;
+    }
+
     await command.execute(interaction);
   } catch (error) {
-    console.error(`❌ Error running /${interaction.commandName}:`, error);
+    console.error(
+      `❌ Error running interaction ${interaction.customId || interaction.commandName || 'unknown'}:`,
+      error
+    );
 
     try {
       if (interaction.replied || interaction.deferred) {

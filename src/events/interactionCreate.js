@@ -4,11 +4,13 @@ const { handleStatsInteraction } = require('../utils/stats/statsHandlers');
 module.exports = {
   name: Events.InteractionCreate,
   async execute(interaction) {
+    // ✅ Handle stats panel interactions FIRST
     if (interaction.isButton() || interaction.isStringSelectMenu()) {
       const handled = await handleStatsInteraction(interaction);
       if (handled) return;
     }
 
+    // ✅ Then slash commands
     if (!interaction.isChatInputCommand()) return;
 
     const command = interaction.client.commands.get(interaction.commandName);
