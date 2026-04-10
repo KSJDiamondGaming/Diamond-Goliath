@@ -4,14 +4,14 @@ const stats = require('../../../utils/stats/statsManager');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('updatestats')
-    .setDescription('Force update server stats')
+    .setDescription('Force update all stat channels')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async execute(interaction) {
-    await stats.update(interaction.guild);
+    const result = await stats.updateAllStatChannels(interaction.guild);
 
     await interaction.reply({
-      content: 'Stats updated.',
+      content: result.msg,
       ephemeral: true,
     });
   },

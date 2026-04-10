@@ -7,12 +7,12 @@ const {
   Collection,
   GatewayIntentBits,
   Events,
-  MessageFlags,
 } = require('discord.js');
 
 const { registerCommands } = require('./src/utils/registerCommands');
 const { startScheduler } = require('./src/utils/punishmentScheduler');
 const stats = require('./src/utils/stats/statsManager');
+const { handleStatsInteraction } = require('./src/utils/stats/statsHandlers');
 
 const token = process.env.TOKEN;
 const clientId = process.env.CLIENT_ID;
@@ -147,6 +147,11 @@ client.once(Events.ClientReady, async (readyClient) => {
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
+  if (interaction.isButton() || interaction.isStringSelectMenu()) {
+    const handled = await handleStatsInteraction(interaction);
+    if (handled) return;
+  }
+
   if (!interaction.isChatInputCommand()) return;
 
   const command = client.commands.get(interaction.commandName);
@@ -161,20 +166,20 @@ client.on(Events.InteractionCreate, async (interaction) => {
   } catch (error) {
     console.error(`❌ Error running /${interaction.commandName}:`, error);
 
-    if (interaction.deferred || interaction.replied) {
-      await interaction
-        .followUp({
+    try {
+      if (interaction.replied || interaction.deferred) {
+        await interaction.followUp({
           content: 'There was an error while executing this command.',
-          flags: MessageFlags.Ephemeral,
-        })
-        .catch(() => null);
-    } else {
-      await interaction
-        .reply({
+          ephemeral: true,
+        });
+      } else {
+        await interaction.reply({
           content: 'There was an error while executing this command.',
-          flags: MessageFlags.Ephemeral,
-        })
-        .catch(() => null);
+          ephemeral: true,
+        });
+      }
+    } catch (replyError) {
+      console.error('❌ Failed to send error response:', replyError);
     }
   }
 });

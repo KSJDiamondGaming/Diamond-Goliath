@@ -11,18 +11,24 @@ function ensureFile() {
   }
 
   if (!fs.existsSync(filePath)) {
-    fs.writeFileSync(filePath, JSON.stringify({}, null, 2));
+    fs.writeFileSync(filePath, JSON.stringify({}, null, 2), 'utf8');
   }
 }
 
 function read() {
   ensureFile();
-  return JSON.parse(fs.readFileSync(filePath, 'utf8') || '{}');
+
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8') || '{}');
+  } catch (error) {
+    console.error('Failed to read stats store:', error);
+    return {};
+  }
 }
 
 function write(data) {
   ensureFile();
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
 }
 
 function get(guildId) {
@@ -42,4 +48,8 @@ function remove(guildId) {
   write(data);
 }
 
-module.exports = { get, set, remove };
+module.exports = {
+  get,
+  set,
+  remove,
+};

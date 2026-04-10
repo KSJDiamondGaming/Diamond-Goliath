@@ -1,8 +1,14 @@
 const { Events } = require('discord.js');
+const { handleStatsInteraction } = require('../utils/stats/statsHandlers');
 
 module.exports = {
   name: Events.InteractionCreate,
   async execute(interaction) {
+    if (interaction.isButton() || interaction.isStringSelectMenu()) {
+      const handled = await handleStatsInteraction(interaction);
+      if (handled) return;
+    }
+
     if (!interaction.isChatInputCommand()) return;
 
     const command = interaction.client.commands.get(interaction.commandName);
@@ -18,11 +24,12 @@ module.exports = {
         if (interaction.replied || interaction.deferred) {
           await interaction.followUp({
             content: 'There was an error while executing this command.',
+            ephemeral: true,
           });
         } else {
           await interaction.reply({
             content: 'There was an error while executing this command.',
-            flags: 64,
+            ephemeral: true,
           });
         }
       } catch (replyError) {

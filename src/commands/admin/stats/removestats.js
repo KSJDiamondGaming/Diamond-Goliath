@@ -4,14 +4,15 @@ const stats = require('../../../utils/stats/statsManager');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('removestats')
-    .setDescription('Remove server stats channels')
+    .setDescription('Remove all stats channels')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async execute(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    const result = await stats.removeAllStatChannels(interaction.guild);
 
-    const res = await stats.remove(interaction.guild);
-
-    await interaction.editReply({ content: res.msg });
+    await interaction.reply({
+      content: result.msg,
+      ephemeral: true,
+    });
   },
 };

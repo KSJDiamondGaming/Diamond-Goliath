@@ -1,17 +1,15 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const stats = require('../../../utils/stats/statsManager');
+const {
+  buildStatsSetupMessage,
+} = require('../../../utils/stats/statsHandlers');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('setupstats')
-    .setDescription('Create server stats channels')
+    .setDescription('Open the stats setup menu')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async execute(interaction) {
-    await interaction.deferReply({ ephemeral: true });
-
-    const res = await stats.setup(interaction.guild);
-
-    await interaction.editReply({ content: res.msg });
+    await interaction.reply(buildStatsSetupMessage(interaction.guild));
   },
 };
