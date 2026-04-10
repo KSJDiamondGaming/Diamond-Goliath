@@ -1,7 +1,7 @@
 const logModerationAction = require('../logModerationAction');
 const { logAutomodEvent } = require('./automodLogger');
 const { formatDuration, canActOnMember } = require('./automodHelpers');
-const { getGuildAutoModConfig } = require('../automodStore');
+const { getGuildAutoModConfig } = require('./automodStore');
 
 function getBotUser(client) {
   return client?.user || {

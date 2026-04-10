@@ -1,4 +1,4 @@
-const { getGuildAutoModConfig } = require('../automodStore');
+const { getGuildAutoModConfig } = require('./automodStore');
 const { executeAutomodAction } = require('./automodActions');
 
 const antiInviteCheck = require('./checks/antiInvite');

@@ -1,5 +1,5 @@
 const { PermissionFlagsBits } = require('discord.js');
-const { getGuildAutoModConfig } = require('../../utils/automodStore');
+const { getGuildAutoModConfig } = require('../../utils/automod/automodStore');
 const { addPunishment } = require('../../utils/tempPunishmentsStore');
 const logModerationAction = require('../../utils/logging/ModerationActionLog');
 
