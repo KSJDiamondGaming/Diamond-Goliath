@@ -1,4 +1,4 @@
-const path = require('path');
+const path = require('node:path');
 
 const { registerCommands } = require('../../utils/registerCommands');
 const { startScheduler } = require('../../utils/punishmentScheduler');
@@ -11,6 +11,7 @@ module.exports = {
   async execute(client) {
     console.log(`🤖 Logged in as ${client.user.tag}`);
 
+    // ===== Internal API =====
     const express = require('express');
     const botApi = express();
 
@@ -20,13 +21,15 @@ module.exports = {
         name: g.name,
         icon: g.icon,
       }));
+
       res.json(guilds);
     });
 
     botApi.listen(3002, () => {
-      console.log('🤖 API running on http://localhost:3002');
+      console.log('🌐 API running on http://localhost:3002');
     });
 
+    // ===== Command Sync =====
     const commandsPath = path.join(process.cwd(), 'src', 'commands');
 
     await registerCommands({
@@ -45,6 +48,7 @@ module.exports = {
       mode: 'guild',
     });
 
+    // ===== Systems =====
     startScheduler(client);
     stats.start(client);
 

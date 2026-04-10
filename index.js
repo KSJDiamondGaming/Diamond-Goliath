@@ -2,7 +2,12 @@ require('dotenv').config();
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { Client, Collection, GatewayIntentBits, Partials } = require('discord.js');
+const {
+  Client,
+  Collection,
+  GatewayIntentBits,
+  Partials,
+} = require('discord.js');
 const loadEvents = require('./src/handlers/eventHandler');
 
 const client = new Client({
@@ -19,32 +24,37 @@ const client = new Client({
 
 client.commands = new Collection();
 
-/**
- * Command loader
- * Adjust this path if your commands folder is elsewhere.
- */
-const commandsPath = path.join(__dirname, 'src', 'commands');
-if (fs.existsSync(commandsPath)) {
-  const commandFolders = fs.readdirSync(commandsPath);
+function getCommandFiles(dir) {
+  let results = [];
 
-  for (const folder of commandFolders) {
-    const folderPath = path.join(commandsPath, folder);
-    if (!fs.statSync(folderPath).isDirectory()) continue;
+  if (!fs.existsSync(dir)) return results;
 
-    const commandFiles = fs
-      .readdirSync(folderPath)
-      .filter(file => file.endsWith('.js'));
+  for (const file of fs.readdirSync(dir)) {
+    const filePath = path.join(dir, file);
+    const stat = fs.statSync(filePath);
 
-    for (const file of commandFiles) {
-      const filePath = path.join(folderPath, file);
-      const command = require(filePath);
-
-      if (command?.data && command?.execute) {
-        client.commands.set(command.data.name, command);
-      } else {
-        console.warn(`[WARNING] Command at ${filePath} is missing "data" or "execute".`);
-      }
+    if (stat.isDirectory()) {
+      results = results.concat(getCommandFiles(filePath));
+    } else if (file.endsWith('.js')) {
+      results.push(filePath);
     }
+  }
+
+  return results;
+}
+
+const commandsPath = path.join(__dirname, 'src', 'commands');
+const commandFiles = getCommandFiles(commandsPath);
+
+for (const filePath of commandFiles) {
+  delete require.cache[require.resolve(filePath)];
+  const command = require(filePath);
+
+  if (command?.data && command?.execute) {
+    client.commands.set(command.data.name, command);
+    console.log(`✅ Loaded: ${command.data.name}`);
+  } else {
+    console.warn(`[WARNING] Invalid command file: ${filePath}`);
   }
 }
 

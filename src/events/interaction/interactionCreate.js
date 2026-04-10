@@ -15,14 +15,14 @@ async function handleComponents(interaction, client) {
     !interaction.isButton() &&
     !interaction.isStringSelectMenu() &&
     !interaction.isModalSubmit()
-  ) return false;
+  ) {
+    return false;
+  }
 
-  // stats system
   if (stats?.handleInteraction) {
     if (await stats.handleInteraction(interaction)) return true;
   }
 
-  // embed panel
   if (interaction.customId?.startsWith('embedpanel_') && embedPanelHandler) {
     return await embedPanelHandler(interaction, client);
   }
@@ -40,15 +40,26 @@ module.exports = {
       if (!interaction.isChatInputCommand()) return;
 
       const command = client.commands.get(interaction.commandName);
-      if (!command) return;
+      if (!command) {
+        const payload = {
+          content: 'That command could not be found.',
+          flags: MessageFlags.Ephemeral,
+        };
+
+        if (interaction.replied || interaction.deferred) {
+          await interaction.followUp(payload).catch(() => {});
+        } else {
+          await interaction.reply(payload).catch(() => {});
+        }
+        return;
+      }
 
       await command.execute(interaction, client);
-
     } catch (error) {
       console.error(`[COMMAND ERROR] /${interaction.commandName}`, error);
 
       const payload = {
-        content: 'Something went wrong.',
+        content: 'There was an error while executing this command.',
         flags: MessageFlags.Ephemeral,
       };
 

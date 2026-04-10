@@ -18,14 +18,18 @@ module.exports = (client) => {
 
     const eventFiles = fs
       .readdirSync(categoryPath)
-      .filter(file => file.endsWith('.js'));
+      .filter((file) => file.endsWith('.js'));
 
     for (const file of eventFiles) {
       const filePath = path.join(categoryPath, file);
+
+      delete require.cache[require.resolve(filePath)];
       const event = require(filePath);
 
       if (!event?.name || !event?.execute) {
-        console.warn(`[WARNING] Event at ${filePath} is missing "name" or "execute".`);
+        console.warn(
+          `[WARNING] Event at ${filePath} is missing "name" or "execute".`
+        );
         continue;
       }
 
