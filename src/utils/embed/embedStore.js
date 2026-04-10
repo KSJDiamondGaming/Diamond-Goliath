@@ -14,21 +14,49 @@ function ensureFile() {
   }
 }
 
+function normalizeStore(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { guilds: {} };
+  }
+
+  if (!raw.guilds || typeof raw.guilds !== 'object' || Array.isArray(raw.guilds)) {
+    raw.guilds = {};
+  }
+
+  return raw;
+}
+
 function readStore() {
   ensureFile();
-  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    const normalized = normalizeStore(parsed);
+    writeStore(normalized);
+    return normalized;
+  } catch {
+    const fallback = { guilds: {} };
+    writeStore(fallback);
+    return fallback;
+  }
 }
 
 function writeStore(data) {
   ensureFile();
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+  fs.writeFileSync(filePath, JSON.stringify(normalizeStore(data), null, 2));
 }
 
 function ensureGuild(store, guildId) {
-  if (!store.guilds[guildId]) {
+  store.guilds = store.guilds && typeof store.guilds === 'object' ? store.guilds : {};
+
+  if (!store.guilds[guildId] || typeof store.guilds[guildId] !== 'object') {
     store.guilds[guildId] = {
       templates: [],
     };
+  }
+
+  if (!Array.isArray(store.guilds[guildId].templates)) {
+    store.guilds[guildId].templates = [];
   }
 }
 

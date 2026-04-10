@@ -41,7 +41,7 @@ function HeroBanner({
   const subtitle = authLoading
     ? 'Checking your session...'
     : isAuthenticated
-      ? 'Manage your moderation tools, messages, warnings and embed settings from one clean dashboard.'
+      ? 'Manage your server configurations.'
       : 'Sign in with Discord to access your server dashboard.';
 
   if (!isAuthenticated && !authLoading) {

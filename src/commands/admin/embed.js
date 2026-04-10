@@ -6,7 +6,7 @@ const {
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('embedpanel')
+    .setName('embed')
     .setDescription('Open the stylish modular embed studio')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
 

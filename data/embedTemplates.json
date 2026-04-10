@@ -4,5 +4,29 @@
   },
   "1490424012826742804": {
     "embeds": {}
+  },
+  "guilds": {
+    "808091031350280213": {
+      "templates": [
+        {
+          "id": "tpl_1775789148346_5632",
+          "name": "test",
+          "channelId": null,
+          "messageContent": "a",
+          "embed": {
+            "title": "a",
+            "description": "a",
+            "color": "#5865F2",
+            "footer": "a",
+            "image": "",
+            "thumbnail": "",
+            "authorName": "",
+            "authorIcon": "",
+            "authorUrl": ""
+          },
+          "buttons": []
+        }
+      ]
+    }
   }
 }

@@ -1,11 +1,11 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const {
   buildStatsSetupMessage,
-} = require('../../../utils/stats/statsHandlers');
+} = require('../../utils/stats/statsHandlers');
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('setupstats')
+    .setName('stats')
     .setDescription('Open the stats setup menu')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
