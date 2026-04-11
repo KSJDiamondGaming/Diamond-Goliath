@@ -6,6 +6,7 @@ const {
 const { addPunishment } = require('../../utils/tempPunishmentsStore');
 const logModerationAction = require('../../utils/logging/ModerationActionLog');
 const { canModerate } = require('../../utils/logging/ModerationChecks');
+const createModCase = require('../../utils/moderation/createModCase');
 
 function trimText(text, max = 1024) {
   if (!text) return 'No reason provided';
@@ -103,6 +104,7 @@ module.exports = {
 
     const ms = duration * 60 * 1000;
     const expiresAt = Date.now() + ms;
+    const durationText = formatDuration(duration);
 
     try {
       const dmEmbed = createDangerEmbed(interaction, {
@@ -113,7 +115,7 @@ module.exports = {
       }).addFields(
         {
           name: '⏱️ Duration',
-          value: formatDuration(duration),
+          value: durationText,
           inline: true,
         },
         {
@@ -145,11 +147,26 @@ module.exports = {
       expiresAt,
     });
 
+    const { caseNumber } = createModCase({
+      guildId: interaction.guild.id,
+      action: 'Temporary Mute',
+      targetUser: user,
+      moderator: interaction.user,
+      reason,
+      duration: durationText,
+      evidence,
+    });
+
     const embed = createSuccessEmbed(interaction, {
       title: '🔇 Temporary Mute Applied',
       description: `${user} has been temporarily muted.`,
       thumbnail: user.displayAvatarURL({ dynamic: true }),
     }).addFields(
+      {
+        name: '📁 Case',
+        value: `#${caseNumber}`,
+        inline: true,
+      },
       {
         name: '👤 Member',
         value: `${user}\n\`${user.id}\``,
@@ -162,7 +179,17 @@ module.exports = {
       },
       {
         name: '⏱️ Duration',
-        value: formatDuration(duration),
+        value: durationText,
+        inline: true,
+      },
+      {
+        name: '⌛ Expires',
+        value: `<t:${Math.floor(expiresAt / 1000)}:F>`,
+        inline: true,
+      },
+      {
+        name: '📌 Action',
+        value: 'Temporary Mute',
         inline: true,
       },
       {
@@ -180,12 +207,6 @@ module.exports = {
       });
     }
 
-    embed.addFields({
-      name: '⌛ Expires',
-      value: `<t:${Math.floor(expiresAt / 1000)}:F>`,
-      inline: false,
-    });
-
     await interaction.reply({
       embeds: [embed],
       ephemeral: true,
@@ -197,8 +218,9 @@ module.exports = {
       user,
       moderator: interaction.user,
       reason: evidence ? `${reason}\nEvidence: ${evidence}` : reason,
-      duration: formatDuration(duration),
+      duration: durationText,
       color: '#f1c40f',
+      caseId: caseNumber,
     });
   },
 };
