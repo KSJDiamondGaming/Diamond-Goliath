@@ -8,6 +8,7 @@ const {
 } = require('../../utils/embed/embedStyle');
 const logModerationAction = require('../../utils/logging/ModerationActionLog');
 const { canModerate } = require('../../utils/logging/ModerationChecks');
+const createModCase = require('../../utils/moderation/createModCase');
 
 function trimText(text, max = 1024) {
   if (!text) return 'No reason provided';
@@ -115,11 +116,25 @@ module.exports = {
 
     await member.ban({ reason });
 
+    const { caseNumber } = createModCase({
+      guildId: interaction.guild.id,
+      action: 'Ban',
+      targetUser,
+      moderator: interaction.user,
+      reason,
+      evidence,
+    });
+
     const embed = createSuccessEmbed(interaction, {
       title: '🔨 Member Banned',
       description: `${targetUser} has been banned successfully.`,
       thumbnail: targetUser.displayAvatarURL({ dynamic: true }),
     }).addFields(
+      {
+        name: '📁 Case',
+        value: `#${caseNumber}`,
+        inline: true,
+      },
       {
         name: '👤 Member',
         value: `${targetUser}\n\`${targetUser.id}\``,
@@ -162,6 +177,7 @@ module.exports = {
       moderator: interaction.user,
       reason: evidence ? `${reason}\nEvidence: ${evidence}` : reason,
       color: '#e74c3c',
+      caseId: caseNumber,
     });
   },
 };
