@@ -1,4 +1,4 @@
-const { PermissionFlagsBits } = require('discord.js');
+const { PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 const { getGuildAutoModConfig } = require('../../utils/automod/automodStore');
 const { addPunishment } = require('../../utils/tempPunishmentsStore');
 const logModerationAction = require('../../utils/logging/ModerationActionLog');
@@ -52,6 +52,31 @@ function isAllowedDomain(match, allowedDomains = []) {
 function pruneTimestamps(list, windowMs) {
   const cutoff = now() - windowMs;
   return list.filter((entry) => entry.timestamp >= cutoff);
+}
+
+function formatRule(rule) {
+  const map = {
+    'Anti Spam': '📨 Anti Spam',
+    'Repeated Messages': '🔁 Repeated Messages',
+    'Anti Invite': '🔗 Anti Invite',
+    'Anti Link': '🌐 Anti Link',
+    'Caps Abuse': '🔠 Caps Abuse',
+    'Bad Words': '🚫 Bad Words',
+  };
+
+  return map[rule] || `🛡️ ${rule}`;
+}
+
+function actionEmoji(outcome) {
+  const normalized = String(outcome || '').toLowerCase();
+
+  if (normalized.includes('ban')) return '🔨';
+  if (normalized.includes('kick')) return '👢';
+  if (normalized.includes('timeout')) return '⏱️';
+  if (normalized.includes('warn')) return '⚠️';
+  if (normalized.includes('delete')) return '🗑️';
+
+  return '⚡';
 }
 
 function shouldIgnoreMessage(message, config) {
@@ -268,20 +293,33 @@ async function sendAutoModLog(message, config, trigger, outcome) {
     const channel = await message.guild.channels.fetch(config.logs.channelId).catch(() => null);
     if (!channel || !channel.isTextBased()) return;
 
-    const lines = [
-      `🛡️ **AutoMod Triggered**`,
-      `**Rule:** ${trigger.rule}`,
-      `**User:** ${message.author.tag} (${message.author.id})`,
-      `**Channel:** <#${message.channel.id}>`,
-      `**Action:** ${outcome}`,
-      `**Reason:** ${trigger.reason}`,
-    ];
+    const embed = new EmbedBuilder()
+      .setColor(0xffa500)
+      .setTitle('🛡️ AutoMod Triggered')
+      .setDescription(
+        `📋 **Rule:** ${formatRule(trigger.rule)}\n` +
+          `👤 **User:** <@${message.author.id}> (${message.author.tag})\n` +
+          `🆔 **User ID:** ${message.author.id}\n` +
+          `📺 **Channel:** <#${message.channel.id}>\n` +
+          `${actionEmoji(outcome)} **Action:** ${outcome}\n` +
+          `📝 **Reason:** ${trigger.reason}`
+      )
+      .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
+      .setFooter({
+        text: message.guild.name,
+        iconURL: message.guild.iconURL({ dynamic: true }) || undefined,
+      })
+      .setTimestamp();
 
     if (trigger.matchedContent) {
-      lines.push(`**Match:** ${String(trigger.matchedContent).slice(0, 500)}`);
+      embed.addFields({
+        name: '🔎 Matched Content',
+        value: `\`\`\`${String(trigger.matchedContent).slice(0, 1000)}\`\`\``,
+        inline: false,
+      });
     }
 
-    await channel.send({ content: lines.join('\n') });
+    await channel.send({ embeds: [embed] });
   } catch (error) {
     console.error('Failed to send automod log:', error);
   }
@@ -304,7 +342,7 @@ async function applyPunishment(message, config, trigger) {
 
     try {
       await message.author.send(
-        `You were warned in **${message.guild.name}** by AutoMod.\nRule: **${trigger.rule}**\nReason: **${trigger.reason}**`
+        `You were warned in **${message.guild.name}** by AutoMod.\nRule: **${formatRule(trigger.rule)}**\nReason: **${trigger.reason}**`
       );
     } catch {}
 

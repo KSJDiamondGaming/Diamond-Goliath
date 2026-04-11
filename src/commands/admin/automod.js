@@ -1,7 +1,9 @@
 const {
   SlashCommandBuilder,
   PermissionFlagsBits,
+  MessageFlags,
 } = require('discord.js');
+
 const { buildMainPanelPayload } = require('../../utils/automod/automodPanel');
 
 module.exports = {
@@ -12,9 +14,10 @@ module.exports = {
 
   async execute(interaction) {
     const payload = buildMainPanelPayload(interaction.guild);
+
     await interaction.reply({
       ...payload,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   },
 };

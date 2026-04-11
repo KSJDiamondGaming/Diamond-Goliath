@@ -1,45 +1,47 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-module.exports = (client) => {
-  const eventsPath = path.join(__dirname, '..', 'events');
+function getEventFiles(dir) {
+  let results = [];
 
-  if (!fs.existsSync(eventsPath)) {
-    console.warn('[WARNING] No events folder found.');
-    return;
+  if (!fs.existsSync(dir)) return results;
+
+  for (const file of fs.readdirSync(dir)) {
+    const filePath = path.join(dir, file);
+    const stat = fs.statSync(filePath);
+
+    if (stat.isDirectory()) {
+      results = results.concat(getEventFiles(filePath));
+    } else if (file.endsWith('.js')) {
+      results.push(filePath);
+    }
   }
 
-  const eventCategories = fs.readdirSync(eventsPath);
+  return results;
+}
 
-  for (const category of eventCategories) {
-    const categoryPath = path.join(eventsPath, category);
+module.exports = function loadEvents(client) {
+  const eventsPath = path.join(__dirname, '..', 'events');
+  const eventFiles = getEventFiles(eventsPath);
 
-    if (!fs.statSync(categoryPath).isDirectory()) continue;
+  for (const filePath of eventFiles) {
+    delete require.cache[require.resolve(filePath)];
+    const event = require(filePath);
 
-    const eventFiles = fs
-      .readdirSync(categoryPath)
-      .filter((file) => file.endsWith('.js'));
-
-    for (const file of eventFiles) {
-      const filePath = path.join(categoryPath, file);
-
-      delete require.cache[require.resolve(filePath)];
-      const event = require(filePath);
-
-      if (!event?.name || !event?.execute) {
-        console.warn(
-          `[WARNING] Event at ${filePath} is missing "name" or "execute".`
-        );
-        continue;
-      }
-
-      if (event.once) {
-        client.once(event.name, (...args) => event.execute(...args, client));
-      } else {
-        client.on(event.name, (...args) => event.execute(...args, client));
-      }
-
-      console.log(`[EVENT] Loaded ${event.name} from ${category}/${file}`);
+    if (!event?.name || !event?.execute) {
+      console.warn(`[WARNING] Invalid event file: ${filePath}`);
+      continue;
     }
+
+    const eventName = event.name === 'ready' ? 'clientReady' : event.name;
+    const handler = (...args) => event.execute(...args, client);
+
+    if (event.once) {
+      client.once(eventName, handler);
+    } else {
+      client.on(eventName, handler);
+    }
+
+    console.log(`📌 Loaded event: ${eventName}`);
   }
 };
