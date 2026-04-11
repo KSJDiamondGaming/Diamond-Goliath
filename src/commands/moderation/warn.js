@@ -5,6 +5,8 @@ const {
   createSuccessEmbed,
   createDangerEmbed,
 } = require('../../utils/embed/embedStyle');
+const logModerationAction = require('../../utils/logging/ModerationActionLog');
+const createModCase = require('../../utils/moderation/createModCase');
 
 const warningsPath = path.join(__dirname, '../../data/warnings.json');
 
@@ -30,6 +32,12 @@ function saveWarnings(data) {
   fs.writeFileSync(warningsPath, JSON.stringify(data, null, 2));
 }
 
+function trimText(text, max = 1024) {
+  if (!text) return 'No reason provided';
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 3)}...`;
+}
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('warn')
@@ -46,12 +54,19 @@ module.exports = {
         .setDescription('Reason for the warning')
         .setRequired(false)
     )
+    .addStringOption(option =>
+      option
+        .setName('evidence')
+        .setDescription('Optional evidence link or note')
+        .setRequired(false)
+    )
     .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
 
   async execute(interaction) {
     const target = interaction.options.getUser('user');
     const reason =
       interaction.options.getString('reason') || 'No reason provided';
+    const evidence = interaction.options.getString('evidence') || null;
 
     const member = await interaction.guild.members
       .fetch(target.id)
@@ -93,7 +108,10 @@ module.exports = {
       return interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
-    if (interaction.member.roles.highest.position <= member.roles.highest.position) {
+    if (
+      interaction.member.roles.highest.position <= member.roles.highest.position &&
+      interaction.guild.ownerId !== interaction.user.id
+    ) {
       const embed = createDangerEmbed(interaction, {
         title: '❌ Action Failed',
         description: 'You cannot warn a member with the same or higher role.',
@@ -112,6 +130,7 @@ module.exports = {
       reason,
       moderator: interaction.user.id,
       timestamp: Date.now(),
+      evidence,
     };
 
     warningsData[target.id].push(warningEntry);
@@ -119,19 +138,33 @@ module.exports = {
 
     const totalWarnings = warningsData[target.id].length;
 
+    const { caseNumber } = createModCase({
+      guildId: interaction.guild.id,
+      action: 'Warn',
+      targetUser: target,
+      moderator: interaction.user,
+      reason,
+      evidence,
+    });
+
     const embed = createSuccessEmbed(interaction, {
       title: '⚠️ Member Warned',
       description: `${target} has been warned successfully.`,
       thumbnail: target.displayAvatarURL({ dynamic: true }),
     }).addFields(
       {
+        name: '📁 Case',
+        value: `#${caseNumber}`,
+        inline: true,
+      },
+      {
         name: '👤 Member',
-        value: `${target}`,
+        value: `${target}\n\`${target.id}\``,
         inline: true,
       },
       {
         name: '👮 Moderator',
-        value: `${interaction.user}`,
+        value: `${interaction.user}\n\`${interaction.user.id}\``,
         inline: true,
       },
       {
@@ -141,12 +174,20 @@ module.exports = {
       },
       {
         name: '📝 Reason',
-        value: reason,
+        value: trimText(reason),
         inline: false,
       }
     );
 
-    await interaction.reply({ embeds: [embed] });
+    if (evidence) {
+      embed.addFields({
+        name: '📎 Evidence',
+        value: trimText(evidence),
+        inline: false,
+      });
+    }
+
+    await interaction.reply({ embeds: [embed], ephemeral: true });
 
     try {
       const dmEmbed = createSuccessEmbed(interaction, {
@@ -156,13 +197,31 @@ module.exports = {
         footerText: interaction.guild.name,
       }).addFields({
         name: '📝 Reason',
-        value: reason,
+        value: trimText(reason),
         inline: false,
       });
+
+      if (evidence) {
+        dmEmbed.addFields({
+          name: '📎 Evidence',
+          value: trimText(evidence),
+          inline: false,
+        });
+      }
 
       await target.send({ embeds: [dmEmbed] });
     } catch (error) {
       // Ignore DM failures
     }
+
+    await logModerationAction({
+      guild: interaction.guild,
+      action: 'Warn',
+      user: target,
+      moderator: interaction.user,
+      reason: evidence ? `${reason}\nEvidence: ${evidence}` : reason,
+      color: '#f39c12',
+      caseId: caseNumber,
+    });
   },
 };
