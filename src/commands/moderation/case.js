@@ -4,6 +4,7 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  StringSelectMenuBuilder,
 } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
@@ -84,6 +85,111 @@ function buildButtons(prefix, page, totalPages, userId) {
   );
 }
 
+function buildCaseSelect(prefix, userId, pageItems) {
+  return new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId(`${prefix}_select_${userId}`)
+      .setPlaceholder('Open a case from this page')
+      .addOptions(
+        pageItems.slice(0, 25).map((item) => ({
+          label: `Case #${item.caseNumber} • ${item.action}`.slice(0, 100),
+          description: `${item.targetTag || 'Unknown target'}`.slice(0, 100),
+          value: String(item.caseNumber),
+        }))
+      )
+  );
+}
+
+function createCaseViewEmbed(interaction, caseData) {
+  const embed = createPanelEmbed(interaction, {
+    title: `📁 Case #${caseData.caseNumber}`,
+    description: 'Moderation case details',
+  }).addFields(
+    {
+      name: '📌 Action',
+      value: caseData.action || 'Unknown',
+      inline: true,
+    },
+    {
+      name: '👤 Target',
+      value: `${caseData.targetTag || 'Unknown'}\n\`${caseData.targetId || 'Unknown'}\``,
+      inline: true,
+    },
+    {
+      name: '🛡️ Moderator',
+      value: `${caseData.moderatorTag || 'Unknown'}\n\`${caseData.moderatorId || 'Unknown'}\``,
+      inline: true,
+    },
+    {
+      name: '🕒 Created',
+      value: caseData.createdAt
+        ? `<t:${Math.floor(caseData.createdAt / 1000)}:F>`
+        : 'Unknown',
+      inline: false,
+    },
+    {
+      name: '📝 Reason',
+      value: trimText(caseData.reason || 'No reason provided'),
+      inline: false,
+    }
+  );
+
+  if (caseData.duration) {
+    embed.addFields({
+      name: '⏱️ Duration',
+      value: `${caseData.duration}`,
+      inline: true,
+    });
+  }
+
+  if (caseData.evidence) {
+    embed.addFields({
+      name: '📎 Evidence',
+      value: trimText(caseData.evidence),
+      inline: false,
+    });
+  }
+
+  if (caseData.cleared === true) {
+    embed.addFields({
+      name: '🧹 Cleared',
+      value:
+        `Yes\n` +
+        `By ${caseData.clearedByTag || 'Unknown'}\n` +
+        `${caseData.clearedAt ? `<t:${Math.floor(caseData.clearedAt / 1000)}:F>` : 'Unknown time'}`,
+      inline: false,
+    });
+
+    if (caseData.clearReason) {
+      embed.addFields({
+        name: '📝 Clear Reason',
+        value: trimText(caseData.clearReason),
+        inline: false,
+      });
+    }
+  }
+
+  if (Array.isArray(caseData.notes) && caseData.notes.length > 0) {
+    const notesText = caseData.notes
+      .map((note, index) => {
+        const when = note.createdAt
+          ? `<t:${Math.floor(note.createdAt / 1000)}:R>`
+          : 'Unknown time';
+
+        return `**${index + 1}.** ${note.text}\n*By ${note.moderatorTag || 'Unknown'} • ${when}*`;
+      })
+      .join('\n\n');
+
+    embed.addFields({
+      name: '🗒️ Notes',
+      value: trimText(notesText),
+      inline: false,
+    });
+  }
+
+  return embed;
+}
+
 function createPagedEmbed(interaction, options) {
   const {
     title,
@@ -115,7 +221,7 @@ function createPagedEmbed(interaction, options) {
     inline: true,
   });
 
-  return { embed, totalPages: pages.length };
+  return { embed, totalPages: pages.length, pageItems };
 }
 
 async function handlePagedReply({
@@ -127,6 +233,7 @@ async function handlePagedReply({
   perPage = 5,
   fields = [],
   renderItem,
+  guildCases,
 }) {
   const pages = chunkArray(items, perPage);
   let page = 0;
@@ -141,51 +248,89 @@ async function handlePagedReply({
     renderItem,
   });
 
+  const components = [];
+  if (pages.length > 1) {
+    components.push(buildButtons(prefix, page, initial.totalPages, interaction.user.id));
+  }
+  if (initial.pageItems.length > 0) {
+    components.push(buildCaseSelect(prefix, interaction.user.id, initial.pageItems));
+  }
+
   const response = await interaction.reply({
     embeds: [initial.embed],
-    components: pages.length > 1 ? [buildButtons(prefix, page, initial.totalPages, interaction.user.id)] : [],
+    components,
     ephemeral: true,
     fetchReply: true,
   });
-
-  if (pages.length <= 1) return;
 
   const collector = response.createMessageComponentCollector({
     time: 120000,
   });
 
-  collector.on('collect', async (buttonInteraction) => {
-    if (buttonInteraction.user.id !== interaction.user.id) {
-      return buttonInteraction.reply({
-        content: '❌ You cannot use these buttons.',
+  collector.on('collect', async (componentInteraction) => {
+    if (componentInteraction.user.id !== interaction.user.id) {
+      return componentInteraction.reply({
+        content: '❌ You cannot use these controls.',
         ephemeral: true,
       });
     }
 
-    if (buttonInteraction.customId === `${prefix}_first_${interaction.user.id}`) {
-      page = 0;
-    } else if (buttonInteraction.customId === `${prefix}_prev_${interaction.user.id}`) {
-      page = Math.max(0, page - 1);
-    } else if (buttonInteraction.customId === `${prefix}_next_${interaction.user.id}`) {
-      page = Math.min(pages.length - 1, page + 1);
-    } else if (buttonInteraction.customId === `${prefix}_last_${interaction.user.id}`) {
-      page = pages.length - 1;
+    if (componentInteraction.isButton()) {
+      if (componentInteraction.customId === `${prefix}_first_${interaction.user.id}`) {
+        page = 0;
+      } else if (componentInteraction.customId === `${prefix}_prev_${interaction.user.id}`) {
+        page = Math.max(0, page - 1);
+      } else if (componentInteraction.customId === `${prefix}_next_${interaction.user.id}`) {
+        page = Math.min(pages.length - 1, page + 1);
+      } else if (componentInteraction.customId === `${prefix}_last_${interaction.user.id}`) {
+        page = pages.length - 1;
+      }
+
+      const updated = createPagedEmbed(interaction, {
+        title,
+        thumbnail,
+        items,
+        page,
+        perPage,
+        fields,
+        renderItem,
+      });
+
+      const updatedComponents = [];
+      if (pages.length > 1) {
+        updatedComponents.push(buildButtons(prefix, page, updated.totalPages, interaction.user.id));
+      }
+      if (updated.pageItems.length > 0) {
+        updatedComponents.push(buildCaseSelect(prefix, interaction.user.id, updated.pageItems));
+      }
+
+      return componentInteraction.update({
+        embeds: [updated.embed],
+        components: updatedComponents,
+      });
     }
 
-    const updated = createPagedEmbed(interaction, {
-      title,
-      thumbnail,
-      items,
-      page,
-      perPage,
-      fields,
-      renderItem,
-    });
+    if (componentInteraction.isStringSelectMenu()) {
+      const selectedCaseNumber = componentInteraction.values[0];
+      const caseData = guildCases[selectedCaseNumber];
 
-    await buttonInteraction.update({
-      embeds: [updated.embed],
-      components: [buildButtons(prefix, page, updated.totalPages, interaction.user.id)],
-    });
+      if (!caseData) {
+        return componentInteraction.reply({
+          embeds: [
+            createDangerEmbed(interaction, {
+              title: '❌ Case Not Found',
+              description: `Case **#${selectedCaseNumber}** was not found.`,
+            }),
+          ],
+          ephemeral: true,
+        });
+      }
+
+      return componentInteraction.reply({
+        embeds: [createCaseViewEmbed(interaction, caseData)],
+        ephemeral: true,
+      });
+    }
   });
 
   collector.on('end', async () => {
@@ -330,93 +475,10 @@ module.exports = {
         return interaction.reply({ embeds: [embed], ephemeral: true });
       }
 
-      const embed = createPanelEmbed(interaction, {
-        title: `📁 Case #${caseData.caseNumber}`,
-        description: 'Moderation case details',
-      }).addFields(
-        {
-          name: '📌 Action',
-          value: caseData.action || 'Unknown',
-          inline: true,
-        },
-        {
-          name: '👤 Target',
-          value: `${caseData.targetTag || 'Unknown'}\n\`${caseData.targetId || 'Unknown'}\``,
-          inline: true,
-        },
-        {
-          name: '🛡️ Moderator',
-          value: `${caseData.moderatorTag || 'Unknown'}\n\`${caseData.moderatorId || 'Unknown'}\``,
-          inline: true,
-        },
-        {
-          name: '🕒 Created',
-          value: caseData.createdAt
-            ? `<t:${Math.floor(caseData.createdAt / 1000)}:F>`
-            : 'Unknown',
-          inline: false,
-        },
-        {
-          name: '📝 Reason',
-          value: trimText(caseData.reason || 'No reason provided'),
-          inline: false,
-        }
-      );
-
-      if (caseData.duration) {
-        embed.addFields({
-          name: '⏱️ Duration',
-          value: `${caseData.duration}`,
-          inline: true,
-        });
-      }
-
-      if (caseData.evidence) {
-        embed.addFields({
-          name: '📎 Evidence',
-          value: trimText(caseData.evidence),
-          inline: false,
-        });
-      }
-
-      if (caseData.cleared === true) {
-        embed.addFields({
-          name: '🧹 Cleared',
-          value:
-            `Yes\n` +
-            `By ${caseData.clearedByTag || 'Unknown'}\n` +
-            `${caseData.clearedAt ? `<t:${Math.floor(caseData.clearedAt / 1000)}:F>` : 'Unknown time'}`,
-          inline: false,
-        });
-
-        if (caseData.clearReason) {
-          embed.addFields({
-            name: '📝 Clear Reason',
-            value: trimText(caseData.clearReason),
-            inline: false,
-          });
-        }
-      }
-
-      if (Array.isArray(caseData.notes) && caseData.notes.length > 0) {
-        const notesText = caseData.notes
-          .map((note, index) => {
-            const when = note.createdAt
-              ? `<t:${Math.floor(note.createdAt / 1000)}:R>`
-              : 'Unknown time';
-
-            return `**${index + 1}.** ${note.text}\n*By ${note.moderatorTag || 'Unknown'} • ${when}*`;
-          })
-          .join('\n\n');
-
-        embed.addFields({
-          name: '🗒️ Notes',
-          value: trimText(notesText),
-          inline: false,
-        });
-      }
-
-      return interaction.reply({ embeds: [embed], ephemeral: true });
+      return interaction.reply({
+        embeds: [createCaseViewEmbed(interaction, caseData)],
+        ephemeral: true,
+      });
     }
 
     if (sub === 'note') {
@@ -540,6 +602,7 @@ module.exports = {
           const clearedTag = c.cleared === true ? ' • Cleared' : '';
           return `**#${c.caseNumber}** • ${c.action}${clearedTag} • ${c.targetTag}\n<t:${Math.floor(c.createdAt / 1000)}:R>`;
         },
+        guildCases,
       });
     }
 
@@ -584,6 +647,7 @@ module.exports = {
           const clearedTag = c.cleared === true ? ' • Cleared' : '';
           return `**#${c.caseNumber}** • ${c.action}${clearedTag}\nReason: ${c.reason || 'No reason provided'}\n<t:${Math.floor(c.createdAt / 1000)}:R>`;
         },
+        guildCases,
       });
     }
 
@@ -625,6 +689,7 @@ module.exports = {
           const clearedTag = c.cleared === true ? ' • Cleared' : '';
           return `**#${c.caseNumber}** • ${c.targetTag}${clearedTag}\nReason: ${c.reason || 'No reason provided'}\n<t:${Math.floor(c.createdAt / 1000)}:R>`;
         },
+        guildCases,
       });
     }
   },
