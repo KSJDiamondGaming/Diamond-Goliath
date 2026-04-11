@@ -4,16 +4,42 @@ const {
 } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
-const buildEmbed = require('../../utils/buildEmbed');
+const {
+  createPanelEmbed,
+  createSuccessEmbed,
+  createDangerEmbed,
+} = require('../../utils/embed/embedStyle');
 
-function readJson(filePath) {
-  if (!fs.existsSync(filePath)) return {};
-  const raw = fs.readFileSync(filePath, 'utf8');
+const caseDetailsPath = path.join(__dirname, '..', '..', 'data', 'modCaseDetails.json');
+
+function ensureCaseFile() {
+  const dir = path.dirname(caseDetailsPath);
+
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  if (!fs.existsSync(caseDetailsPath)) {
+    fs.writeFileSync(caseDetailsPath, JSON.stringify({}, null, 2));
+  }
+}
+
+function readJson() {
+  ensureCaseFile();
+
+  const raw = fs.readFileSync(caseDetailsPath, 'utf8');
   return raw ? JSON.parse(raw) : {};
 }
 
-function writeJson(filePath, data) {
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+function writeJson(data) {
+  ensureCaseFile();
+  fs.writeFileSync(caseDetailsPath, JSON.stringify(data, null, 2));
+}
+
+function trimText(text, max = 1024) {
+  if (!text) return 'No reason provided';
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 3)}...`;
 }
 
 module.exports = {
@@ -129,9 +155,8 @@ module.exports = {
 
   async execute(interaction) {
     const sub = interaction.options.getSubcommand();
-    const caseDetailsPath = path.join(__dirname, '..', '..', 'data', 'modCaseDetails.json');
 
-    const data = readJson(caseDetailsPath);
+    const data = readJson();
     const guildCases = data[interaction.guild.id] || {};
     const allCases = Object.values(guildCases);
 
@@ -140,96 +165,101 @@ module.exports = {
       const caseData = guildCases[caseNumber];
 
       if (!caseData) {
-        return interaction.reply({
-          content: `❌ Case #${caseNumber} was not found.`,
-          ephemeral: true,
+        const embed = createDangerEmbed(interaction, {
+          title: '❌ Case Not Found',
+          description: `Case **#${caseNumber}** was not found.`,
         });
+
+        return interaction.reply({ embeds: [embed], ephemeral: true });
       }
 
-      const fields = [
+      const embed = createPanelEmbed(interaction, {
+        title: `📁 Case #${caseData.caseNumber}`,
+        description: 'Moderation case details',
+      }).addFields(
         {
           name: '📌 Action',
-          value: caseData.action,
+          value: caseData.action || 'Unknown',
           inline: true,
         },
         {
           name: '👤 Target',
-          value: `${caseData.targetTag}\n\`${caseData.targetId}\``,
+          value: `${caseData.targetTag || 'Unknown'}\n\`${caseData.targetId || 'Unknown'}\``,
           inline: true,
         },
         {
           name: '🛡️ Moderator',
-          value: `${caseData.moderatorTag}\n\`${caseData.moderatorId}\``,
+          value: `${caseData.moderatorTag || 'Unknown'}\n\`${caseData.moderatorId || 'Unknown'}\``,
           inline: true,
         },
         {
           name: '🕒 Created',
-          value: `<t:${Math.floor(caseData.createdAt / 1000)}:F>`,
+          value: caseData.createdAt
+            ? `<t:${Math.floor(caseData.createdAt / 1000)}:F>`
+            : 'Unknown',
           inline: false,
         },
         {
           name: '📝 Reason',
-          value: caseData.reason || 'No reason provided',
+          value: trimText(caseData.reason || 'No reason provided'),
           inline: false,
-        },
-      ];
-
-      if (caseData.cleared === true) {
-        fields.push({
-          name: '🧹 Cleared',
-          value: `Yes\nBy ${caseData.clearedByTag}\n<t:${Math.floor(caseData.clearedAt / 1000)}:F>`,
-          inline: false,
-        });
-
-        if (caseData.clearReason) {
-          fields.push({
-            name: '📝 Clear Reason',
-            value: caseData.clearReason,
-            inline: false,
-          });
         }
-      }
+      );
 
       if (caseData.duration) {
-        fields.push({
+        embed.addFields({
           name: '⏱️ Duration',
-          value: caseData.duration,
+          value: `${caseData.duration}`,
           inline: true,
         });
       }
 
       if (caseData.evidence) {
-        fields.push({
+        embed.addFields({
           name: '📎 Evidence',
-          value: caseData.evidence,
+          value: trimText(caseData.evidence),
           inline: false,
         });
       }
 
-      if (caseData.notes && caseData.notes.length > 0) {
+      if (caseData.cleared === true) {
+        embed.addFields({
+          name: '🧹 Cleared',
+          value:
+            `Yes\n` +
+            `By ${caseData.clearedByTag || 'Unknown'}\n` +
+            `${caseData.clearedAt ? `<t:${Math.floor(caseData.clearedAt / 1000)}:F>` : 'Unknown time'}`,
+          inline: false,
+        });
+
+        if (caseData.clearReason) {
+          embed.addFields({
+            name: '📝 Clear Reason',
+            value: trimText(caseData.clearReason),
+            inline: false,
+          });
+        }
+      }
+
+      if (Array.isArray(caseData.notes) && caseData.notes.length > 0) {
         const notesText = caseData.notes
           .map((note, index) => {
-            return `**${index + 1}.** ${note.text}\n*By ${note.moderatorTag} • <t:${Math.floor(note.createdAt / 1000)}:R>*`;
-          })
-          .join('\n\n')
-          .slice(0, 1024);
+            const when = note.createdAt
+              ? `<t:${Math.floor(note.createdAt / 1000)}:R>`
+              : 'Unknown time';
 
-        fields.push({
+            return `**${index + 1}.** ${note.text}\n*By ${note.moderatorTag || 'Unknown'} • ${when}*`;
+          })
+          .join('\n\n');
+
+        embed.addFields({
           name: '🗒️ Notes',
-          value: notesText,
+          value: trimText(notesText),
           inline: false,
         });
       }
 
-      const embed = buildEmbed(interaction.guild.id, {
-        title: `📁 Case #${caseData.caseNumber}`,
-        description: 'Moderation case details',
-        fields,
-      });
-
-      return interaction.reply({
-        embeds: [embed],
-      });
+      return interaction.reply({ embeds: [embed] });
     }
 
     if (sub === 'note') {
@@ -238,13 +268,15 @@ module.exports = {
       const caseData = guildCases[caseNumber];
 
       if (!caseData) {
-        return interaction.reply({
-          content: `❌ Case #${caseNumber} was not found.`,
-          ephemeral: true,
+        const embed = createDangerEmbed(interaction, {
+          title: '❌ Case Not Found',
+          description: `Case **#${caseNumber}** was not found.`,
         });
+
+        return interaction.reply({ embeds: [embed], ephemeral: true });
       }
 
-      if (!caseData.notes) {
+      if (!Array.isArray(caseData.notes)) {
         caseData.notes = [];
       }
 
@@ -255,11 +287,18 @@ module.exports = {
         createdAt: Date.now(),
       });
 
-      writeJson(caseDetailsPath, data);
+      writeJson(data);
 
-      return interaction.reply({
-        content: `✅ Added a note to case #${caseNumber}.`,
+      const embed = createSuccessEmbed(interaction, {
+        title: '🗒️ Note Added',
+        description: `Added a note to case **#${caseNumber}**.`,
+      }).addFields({
+        name: '📝 Note',
+        value: trimText(text),
+        inline: false,
       });
+
+      return interaction.reply({ embeds: [embed] });
     }
 
     if (sub === 'delete-note') {
@@ -268,32 +307,41 @@ module.exports = {
       const caseData = guildCases[caseNumber];
 
       if (!caseData) {
-        return interaction.reply({
-          content: `❌ Case #${caseNumber} was not found.`,
-          ephemeral: true,
+        const embed = createDangerEmbed(interaction, {
+          title: '❌ Case Not Found',
+          description: `Case **#${caseNumber}** was not found.`,
         });
+
+        return interaction.reply({ embeds: [embed], ephemeral: true });
       }
 
-      if (!caseData.notes || caseData.notes.length === 0) {
-        return interaction.reply({
-          content: `❌ Case #${caseNumber} has no notes.`,
-          ephemeral: true,
+      if (!Array.isArray(caseData.notes) || caseData.notes.length === 0) {
+        const embed = createDangerEmbed(interaction, {
+          title: '❌ No Notes Found',
+          description: `Case **#${caseNumber}** has no notes.`,
         });
+
+        return interaction.reply({ embeds: [embed], ephemeral: true });
       }
 
       if (noteNumber < 1 || noteNumber > caseData.notes.length) {
-        return interaction.reply({
-          content: `❌ Note #${noteNumber} does not exist on case #${caseNumber}.`,
-          ephemeral: true,
+        const embed = createDangerEmbed(interaction, {
+          title: '❌ Note Not Found',
+          description: `Note **#${noteNumber}** does not exist on case **#${caseNumber}**.`,
         });
+
+        return interaction.reply({ embeds: [embed], ephemeral: true });
       }
 
       caseData.notes.splice(noteNumber - 1, 1);
-      writeJson(caseDetailsPath, data);
+      writeJson(data);
 
-      return interaction.reply({
-        content: `✅ Deleted note #${noteNumber} from case #${caseNumber}.`,
+      const embed = createSuccessEmbed(interaction, {
+        title: '🗑️ Note Deleted',
+        description: `Deleted note **#${noteNumber}** from case **#${caseNumber}**.`,
       });
+
+      return interaction.reply({ embeds: [embed] });
     }
 
     if (sub === 'list') {
@@ -304,10 +352,12 @@ module.exports = {
         .slice(0, limit);
 
       if (casesArray.length === 0) {
-        return interaction.reply({
-          content: '❌ No moderation cases found for this server.',
-          ephemeral: true,
+        const embed = createDangerEmbed(interaction, {
+          title: '❌ No Cases Found',
+          description: 'No moderation cases were found for this server.',
         });
+
+        return interaction.reply({ embeds: [embed], ephemeral: true });
       }
 
       const warnCount = allCases.filter(c => c.action === 'Warn').length;
@@ -321,25 +371,21 @@ module.exports = {
           const clearedTag = c.cleared === true ? ' • Cleared' : '';
           return `**#${c.caseNumber}** • ${c.action}${clearedTag} • ${c.targetTag}\n<t:${Math.floor(c.createdAt / 1000)}:R>`;
         })
-        .join('\n\n')
-        .slice(0, 4096);
+        .join('\n\n');
 
-      const embed = buildEmbed(interaction.guild.id, {
+      const embed = createPanelEmbed(interaction, {
         title: '📚 Recent Moderation Cases',
-        description,
-        fields: [
-          { name: 'Warns', value: `${warnCount}`, inline: true },
-          { name: 'Bans', value: `${banCount}`, inline: true },
-          { name: 'Kicks', value: `${kickCount}`, inline: true },
-          { name: 'Timeouts', value: `${timeoutCount}`, inline: true },
-          { name: 'Cleared', value: `${clearedCount}`, inline: true },
-          { name: 'Total Cases', value: `${allCases.length}`, inline: true },
-        ],
-      });
+        description: trimText(description, 4096),
+      }).addFields(
+        { name: '⚠️ Warns', value: `${warnCount}`, inline: true },
+        { name: '🔨 Bans', value: `${banCount}`, inline: true },
+        { name: '👢 Kicks', value: `${kickCount}`, inline: true },
+        { name: '⏱️ Timeouts', value: `${timeoutCount}`, inline: true },
+        { name: '🧹 Cleared', value: `${clearedCount}`, inline: true },
+        { name: '📦 Total Cases', value: `${allCases.length}`, inline: true }
+      );
 
-      return interaction.reply({
-        embeds: [embed],
-      });
+      return interaction.reply({ embeds: [embed] });
     }
 
     if (sub === 'search-user') {
@@ -350,10 +396,12 @@ module.exports = {
         .sort((a, b) => b.caseNumber - a.caseNumber);
 
       if (matches.length === 0) {
-        return interaction.reply({
-          content: `❌ No cases found for **${target.tag}**.`,
-          ephemeral: true,
+        const embed = createDangerEmbed(interaction, {
+          title: '❌ No Cases Found',
+          description: `No cases were found for ${target}.`,
         });
+
+        return interaction.reply({ embeds: [embed], ephemeral: true });
       }
 
       const activeWarns = matches.filter(c => c.action === 'Warn' && c.cleared !== true).length;
@@ -366,28 +414,24 @@ module.exports = {
         .slice(0, 15)
         .map((c) => {
           const clearedTag = c.cleared === true ? ' • Cleared' : '';
-          return `**#${c.caseNumber}** • ${c.action}${clearedTag}\nReason: ${c.reason}\n<t:${Math.floor(c.createdAt / 1000)}:R>`;
+          return `**#${c.caseNumber}** • ${c.action}${clearedTag}\nReason: ${c.reason || 'No reason provided'}\n<t:${Math.floor(c.createdAt / 1000)}:R>`;
         })
-        .join('\n\n')
-        .slice(0, 4096);
+        .join('\n\n');
 
-      const embed = buildEmbed(interaction.guild.id, {
-        title: `🔎 Cases for ${target.tag}`,
-        description,
-        thumbnail: target.displayAvatarURL({ forceStatic: false }),
-        fields: [
-          { name: 'Active Warns', value: `${activeWarns}`, inline: true },
-          { name: 'Cleared Warns', value: `${clearedWarns}`, inline: true },
-          { name: 'Bans', value: `${bans}`, inline: true },
-          { name: 'Kicks', value: `${kicks}`, inline: true },
-          { name: 'Timeouts', value: `${timeouts}`, inline: true },
-          { name: 'Total Cases', value: `${matches.length}`, inline: true },
-        ],
-      });
+      const embed = createPanelEmbed(interaction, {
+        title: `🔎 Cases for ${target.username}`,
+        description: trimText(description, 4096),
+        thumbnail: target.displayAvatarURL({ dynamic: true }),
+      }).addFields(
+        { name: '⚠️ Active Warns', value: `${activeWarns}`, inline: true },
+        { name: '🧹 Cleared Warns', value: `${clearedWarns}`, inline: true },
+        { name: '🔨 Bans', value: `${bans}`, inline: true },
+        { name: '👢 Kicks', value: `${kicks}`, inline: true },
+        { name: '⏱️ Timeouts', value: `${timeouts}`, inline: true },
+        { name: '📦 Total Cases', value: `${matches.length}`, inline: true }
+      );
 
-      return interaction.reply({
-        embeds: [embed],
-      });
+      return interaction.reply({ embeds: [embed] });
     }
 
     if (sub === 'search-action') {
@@ -404,34 +448,32 @@ module.exports = {
       const activeActionCases = totalActionCases.filter(c => c.cleared !== true).length;
 
       if (matches.length === 0) {
-        return interaction.reply({
-          content: `❌ No **${action}** cases found for this server.`,
-          ephemeral: true,
+        const embed = createDangerEmbed(interaction, {
+          title: '❌ No Cases Found',
+          description: `No **${action}** cases were found for this server.`,
         });
+
+        return interaction.reply({ embeds: [embed], ephemeral: true });
       }
 
       const description = matches
         .map((c) => {
           const clearedTag = c.cleared === true ? ' • Cleared' : '';
-          return `**#${c.caseNumber}** • ${c.targetTag}${clearedTag}\nReason: ${c.reason}\n<t:${Math.floor(c.createdAt / 1000)}:R>`;
+          return `**#${c.caseNumber}** • ${c.targetTag}${clearedTag}\nReason: ${c.reason || 'No reason provided'}\n<t:${Math.floor(c.createdAt / 1000)}:R>`;
         })
-        .join('\n\n')
-        .slice(0, 4096);
+        .join('\n\n');
 
-      const embed = buildEmbed(interaction.guild.id, {
+      const embed = createPanelEmbed(interaction, {
         title: `📂 ${action} Cases`,
-        description,
-        fields: [
-          { name: 'Shown', value: `${matches.length}`, inline: true },
-          { name: 'Total', value: `${totalActionCases.length}`, inline: true },
-          { name: 'Active', value: `${activeActionCases}`, inline: true },
-          { name: 'Cleared', value: `${clearedActionCases}`, inline: true },
-        ],
-      });
+        description: trimText(description, 4096),
+      }).addFields(
+        { name: '👀 Shown', value: `${matches.length}`, inline: true },
+        { name: '📦 Total', value: `${totalActionCases.length}`, inline: true },
+        { name: '✅ Active', value: `${activeActionCases}`, inline: true },
+        { name: '🧹 Cleared', value: `${clearedActionCases}`, inline: true }
+      );
 
-      return interaction.reply({
-        embeds: [embed],
-      });
+      return interaction.reply({ embeds: [embed] });
     }
   },
 };
