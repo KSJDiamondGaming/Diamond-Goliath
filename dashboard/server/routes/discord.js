@@ -87,4 +87,37 @@ router.get('/guilds', async (req, res) => {
   }
 });
 
+router.get('/guilds/:guildId/channels', async (req, res) => {
+  try {
+    const { guildId } = req.params;
+
+    if (!guildId) {
+      return res.status(400).json({ error: 'Guild ID is required' });
+    }
+
+    console.log(`📡 Fetching channels for guild ${guildId} from ${BOT_API_URL} ...`);
+
+    const channels = await fetchJson(`${BOT_API_URL}/internal/guilds/${guildId}/channels`);
+
+    const filtered = (Array.isArray(channels) ? channels : [])
+      .filter((channel) => channel.type === 0 || channel.type === 5)
+      .sort((a, b) => {
+        const posDiff = (a.position ?? 0) - (b.position ?? 0);
+        if (posDiff !== 0) return posDiff;
+        return String(a.name || '').localeCompare(String(b.name || ''));
+      })
+      .map((channel) => ({
+        id: channel.id,
+        name: channel.name,
+        type: channel.type,
+        position: channel.position ?? 0,
+      }));
+
+    return res.json(filtered);
+  } catch (error) {
+    console.error('❌ Failed to fetch guild channels:', error);
+    return res.status(500).json({ error: 'Failed to fetch guild channels' });
+  }
+});
+
 module.exports = router;

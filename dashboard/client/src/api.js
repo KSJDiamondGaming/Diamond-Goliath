@@ -30,6 +30,10 @@ export const api = {
     return request('/api/discord/guilds');
   },
 
+  getGuildChannels(guildId) {
+    return request(`/api/discord/guilds/${guildId}/channels`);
+  },
+
   getStatus(guildId) {
     const query = guildId ? `?guildId=${encodeURIComponent(guildId)}` : '';
     return request(`/api/status${query}`);

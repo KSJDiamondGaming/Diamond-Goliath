@@ -45,9 +45,11 @@ const DEFAULT_FORM = {
 
 export default function AutoMod({ selectedGuild, theme }) {
   const [loading, setLoading] = useState(false);
+  const [channelsLoading, setChannelsLoading] = useState(false);
   const [error, setError] = useState('');
   const [saveMessage, setSaveMessage] = useState('');
   const [form, setForm] = useState(DEFAULT_FORM);
+  const [logChannels, setLogChannels] = useState([]);
 
   useEffect(() => {
     let mounted = true;
@@ -56,8 +58,10 @@ export default function AutoMod({ selectedGuild, theme }) {
       if (!selectedGuild) {
         if (mounted) {
           setForm(DEFAULT_FORM);
+          setLogChannels([]);
           setError('');
           setSaveMessage('');
+          setChannelsLoading(false);
         }
         return;
       }
@@ -123,6 +127,46 @@ export default function AutoMod({ selectedGuild, theme }) {
     }
 
     loadConfig();
+
+    return () => {
+      mounted = false;
+    };
+  }, [selectedGuild]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadChannels() {
+      if (!selectedGuild) {
+        if (mounted) {
+          setLogChannels([]);
+          setChannelsLoading(false);
+        }
+        return;
+      }
+
+      try {
+        setChannelsLoading(true);
+
+        const channels = await api.getGuildChannels(selectedGuild);
+
+        if (!mounted) return;
+
+        setLogChannels(Array.isArray(channels) ? channels : []);
+      } catch (err) {
+        console.error(err);
+        if (!mounted) return;
+
+        setLogChannels([]);
+        setError((prev) => prev || 'Could not load server channels for the log dropdown.');
+      } finally {
+        if (mounted) {
+          setChannelsLoading(false);
+        }
+      }
+    }
+
+    loadChannels();
 
     return () => {
       mounted = false;
@@ -210,7 +254,7 @@ export default function AutoMod({ selectedGuild, theme }) {
         },
         logs: {
           enabled: form.logs.enabled,
-          channelId: form.logs.channelId.trim(),
+          channelId: String(form.logs.channelId || '').trim(),
         },
       };
 
@@ -460,14 +504,27 @@ export default function AutoMod({ selectedGuild, theme }) {
                 theme={theme}
               />
 
-              <FieldRow theme={theme} label="Log Channel ID">
-                <input
-                  type="text"
+              <FieldRow theme={theme} label="Log Channel">
+                <select
                   value={form.logs.channelId}
                   onChange={(e) => handleChange('logs', 'channelId', e.target.value)}
                   style={inputStyle(theme)}
-                  placeholder="123456789012345678"
-                />
+                  disabled={channelsLoading || logChannels.length === 0}
+                >
+                  <option value="">
+                    {channelsLoading
+                      ? 'Loading channels...'
+                      : logChannels.length === 0
+                        ? 'No text channels found'
+                        : 'Select a log channel'}
+                  </option>
+
+                  {logChannels.map((channel) => (
+                    <option key={channel.id} value={channel.id}>
+                      #{channel.name}
+                    </option>
+                  ))}
+                </select>
               </FieldRow>
             </div>
           </SectionCard>
