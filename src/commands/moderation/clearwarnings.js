@@ -4,17 +4,49 @@ const {
 } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
-const buildEmbed = require('../../utils/buildEmbed');
+const {
+  createSuccessEmbed,
+  createDangerEmbed,
+  createWarningEmbed,
+} = require('../../utils/embed/embedStyle');
 const logModerationAction = require('../../utils/logging/ModerationActionLog');
 
-function readJson(filePath) {
-  if (!fs.existsSync(filePath)) return {};
-  const raw = fs.readFileSync(filePath, 'utf8');
+const caseDetailsPath = path.join(
+  __dirname,
+  '..',
+  '..',
+  'data',
+  'modCaseDetails.json'
+);
+
+function ensureCaseFile() {
+  const dir = path.dirname(caseDetailsPath);
+
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  if (!fs.existsSync(caseDetailsPath)) {
+    fs.writeFileSync(caseDetailsPath, JSON.stringify({}, null, 2));
+  }
+}
+
+function readJson() {
+  ensureCaseFile();
+
+  const raw = fs.readFileSync(caseDetailsPath, 'utf8');
   return raw ? JSON.parse(raw) : {};
 }
 
-function writeJson(filePath, data) {
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+function writeJson(data) {
+  ensureCaseFile();
+  fs.writeFileSync(caseDetailsPath, JSON.stringify(data, null, 2));
+}
+
+function trimText(text, max = 1024) {
+  if (!text) return 'No reason provided';
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 3)}...`;
 }
 
 module.exports = {
@@ -48,15 +80,7 @@ module.exports = {
     const reason =
       interaction.options.getString('reason') || 'No reason provided';
 
-    const caseDetailsPath = path.join(
-      __dirname,
-      '..',
-      '..',
-      'data',
-      'modCaseDetails.json'
-    );
-
-    const data = readJson(caseDetailsPath);
+    const data = readJson();
 
     if (!data[interaction.guild.id]) {
       data[interaction.guild.id] = {};
@@ -70,24 +94,30 @@ module.exports = {
       const caseData = guildCases[caseNumberInput];
 
       if (!caseData) {
-        return interaction.reply({
-          content: `❌ Case #${caseNumberInput} not found.`,
-          ephemeral: true,
+        const embed = createDangerEmbed(interaction, {
+          title: '❌ Case Not Found',
+          description: `Case **#${caseNumberInput}** was not found.`,
         });
+
+        return interaction.reply({ embeds: [embed], ephemeral: true });
       }
 
       if (caseData.action !== 'Warn' || caseData.targetId !== target.id) {
-        return interaction.reply({
-          content: `❌ Case #${caseNumberInput} is not a warning for this user.`,
-          ephemeral: true,
+        const embed = createDangerEmbed(interaction, {
+          title: '❌ Invalid Case',
+          description: `Case **#${caseNumberInput}** is not an active warning for ${target}.`,
         });
+
+        return interaction.reply({ embeds: [embed], ephemeral: true });
       }
 
       if (caseData.cleared === true) {
-        return interaction.reply({
-          content: `⚠️ Case #${caseNumberInput} is already cleared.`,
-          ephemeral: true,
+        const embed = createWarningEmbed(interaction, {
+          title: '⚠️ Already Cleared',
+          description: `Case **#${caseNumberInput}** has already been cleared.`,
         });
+
+        return interaction.reply({ embeds: [embed], ephemeral: true });
       }
 
       caseData.cleared = true;
@@ -106,10 +136,13 @@ module.exports = {
       );
 
       if (activeWarnings.length === 0) {
-        return interaction.reply({
-          content: `✅ ${target.tag} has no active warnings to clear.`,
-          ephemeral: true,
+        const embed = createWarningEmbed(interaction, {
+          title: '⚠️ No Active Warnings',
+          description: `${target} has no active warnings to clear.`,
+          thumbnail: target.displayAvatarURL({ dynamic: true }),
         });
+
+        return interaction.reply({ embeds: [embed], ephemeral: true });
       }
 
       for (const caseData of activeWarnings) {
@@ -122,37 +155,36 @@ module.exports = {
       }
     }
 
-    writeJson(caseDetailsPath, data);
+    writeJson(data);
 
-    const embed = buildEmbed(interaction.guild.id, {
+    const embed = createSuccessEmbed(interaction, {
       title: '🧹 Warnings Cleared',
       description: caseNumberInput
-        ? `Case **#${caseNumberInput}** has been cleared for **${target.tag}**.`
-        : `All active warnings for **${target.tag}** have been cleared.`,
-      thumbnail: target.displayAvatarURL({ forceStatic: false }),
-      fields: [
-        {
-          name: '👤 Target',
-          value: `${target.tag}\n\`${target.id}\``,
-          inline: true,
-        },
-        {
-          name: '🛡️ Moderator',
-          value: `${interaction.user.tag}\n\`${interaction.user.id}\``,
-          inline: true,
-        },
-        {
-          name: '📌 Cleared',
-          value: `${cleared}`,
-          inline: true,
-        },
-        {
-          name: '📝 Reason',
-          value: reason,
-          inline: false,
-        },
-      ],
-    });
+        ? `Case **#${caseNumberInput}** has been cleared for ${target}.`
+        : `All active warnings for ${target} have been cleared.`,
+      thumbnail: target.displayAvatarURL({ dynamic: true }),
+    }).addFields(
+      {
+        name: '👤 Target',
+        value: `${target}\n\`${target.id}\``,
+        inline: true,
+      },
+      {
+        name: '🛡️ Moderator',
+        value: `${interaction.user}\n\`${interaction.user.id}\``,
+        inline: true,
+      },
+      {
+        name: '📌 Cleared',
+        value: `${cleared}`,
+        inline: true,
+      },
+      {
+        name: '📝 Reason',
+        value: trimText(reason),
+        inline: false,
+      }
+    );
 
     await interaction.reply({
       embeds: [embed],
