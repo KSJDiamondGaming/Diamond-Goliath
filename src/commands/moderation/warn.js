@@ -1,36 +1,10 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const fs = require('fs');
-const path = require('path');
 const {
   createSuccessEmbed,
   createDangerEmbed,
 } = require('../../utils/embed/embedStyle');
 const logModerationAction = require('../../utils/logging/ModerationActionLog');
 const createModCase = require('../../utils/moderation/createModCase');
-
-const warningsPath = path.join(__dirname, '../../data/warnings.json');
-
-function ensureWarningsFile() {
-  const dir = path.dirname(warningsPath);
-
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-
-  if (!fs.existsSync(warningsPath)) {
-    fs.writeFileSync(warningsPath, JSON.stringify({}, null, 2));
-  }
-}
-
-function getWarnings() {
-  ensureWarningsFile();
-  return JSON.parse(fs.readFileSync(warningsPath, 'utf8'));
-}
-
-function saveWarnings(data) {
-  ensureWarningsFile();
-  fs.writeFileSync(warningsPath, JSON.stringify(data, null, 2));
-}
 
 function trimText(text, max = 1024) {
   if (!text) return 'No reason provided';
@@ -120,24 +94,6 @@ module.exports = {
       return interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
-    const warningsData = getWarnings();
-
-    if (!warningsData[target.id]) {
-      warningsData[target.id] = [];
-    }
-
-    const warningEntry = {
-      reason,
-      moderator: interaction.user.id,
-      timestamp: Date.now(),
-      evidence,
-    };
-
-    warningsData[target.id].push(warningEntry);
-    saveWarnings(warningsData);
-
-    const totalWarnings = warningsData[target.id].length;
-
     const { caseNumber } = createModCase({
       guildId: interaction.guild.id,
       action: 'Warn',
@@ -168,8 +124,8 @@ module.exports = {
         inline: true,
       },
       {
-        name: '📊 Total Warnings',
-        value: `${totalWarnings}`,
+        name: '📌 Action',
+        value: 'Warn',
         inline: true,
       },
       {
