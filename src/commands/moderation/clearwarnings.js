@@ -10,6 +10,7 @@ const {
   createWarningEmbed,
 } = require('../../utils/embed/embedStyle');
 const logModerationAction = require('../../utils/logging/ModerationActionLog');
+const createModCase = require('../../utils/moderation/createModCase');
 
 const caseDetailsPath = path.join(
   __dirname,
@@ -105,7 +106,7 @@ module.exports = {
       if (caseData.action !== 'Warn' || caseData.targetId !== target.id) {
         const embed = createDangerEmbed(interaction, {
           title: '❌ Invalid Case',
-          description: `Case **#${caseNumberInput}** is not an active warning for ${target}.`,
+          description: `Case **#${caseNumberInput}** is not a warning for ${target}.`,
         });
 
         return interaction.reply({ embeds: [embed], ephemeral: true });
@@ -157,6 +158,18 @@ module.exports = {
 
     writeJson(data);
 
+    const clearReasonText = caseNumberInput
+      ? `Cleared warning case #${caseNumberInput}. ${reason}`
+      : `Cleared ${cleared} active warning(s). ${reason}`;
+
+    const { caseNumber } = createModCase({
+      guildId: interaction.guild.id,
+      action: 'ClearWarnings',
+      targetUser: target,
+      moderator: interaction.user,
+      reason: clearReasonText,
+    });
+
     const embed = createSuccessEmbed(interaction, {
       title: '🧹 Warnings Cleared',
       description: caseNumberInput
@@ -164,6 +177,11 @@ module.exports = {
         : `All active warnings for ${target} have been cleared.`,
       thumbnail: target.displayAvatarURL({ dynamic: true }),
     }).addFields(
+      {
+        name: '📁 Case',
+        value: `#${caseNumber}`,
+        inline: true,
+      },
       {
         name: '👤 Target',
         value: `${target}\n\`${target.id}\``,
@@ -186,6 +204,14 @@ module.exports = {
       }
     );
 
+    if (caseNumberInput) {
+      embed.addFields({
+        name: '🔎 Cleared Warning Case',
+        value: `#${caseNumberInput}`,
+        inline: true,
+      });
+    }
+
     await interaction.reply({
       embeds: [embed],
       ephemeral: true,
@@ -200,6 +226,7 @@ module.exports = {
         ? `Cleared case #${caseNumberInput}. Reason: ${reason}`
         : `Cleared ${cleared} warning(s). Reason: ${reason}`,
       color: '#2ecc71',
+      caseId: caseNumber,
     });
   },
 };
