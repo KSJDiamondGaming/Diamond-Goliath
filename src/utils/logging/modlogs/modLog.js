@@ -9,7 +9,10 @@ async function sendModLog({
   caseId,
   metadata = {}
 }) {
-  const logChannelId = guild?.settings?.modLogChannelId || guild?.modLogChannelId;
+  if (!guild) return false;
+
+  const logChannelId =
+    guild?.settings?.modLogChannelId || guild?.modLogChannelId;
 
   if (!logChannelId) return false;
 
@@ -27,12 +30,16 @@ async function sendModLog({
       },
       {
         name: 'User',
-        value: `${target.user.tag}\n<@${target.id}>`,
+        value: target
+          ? `${target.user.tag}\n<@${target.id}>`
+          : 'Unknown',
         inline: true
       },
       {
         name: 'Moderator',
-        value: `${moderator.tag}\n<@${moderator.id}>`,
+        value: moderator
+          ? `${moderator.tag}\n<@${moderator.id}>`
+          : 'Unknown',
         inline: true
       },
       {
@@ -43,6 +50,7 @@ async function sendModLog({
     )
     .setTimestamp();
 
+  // Optional metadata
   if (metadata.duration) {
     embed.addFields({
       name: 'Duration',
@@ -51,7 +59,7 @@ async function sendModLog({
     });
   }
 
-  if (typeof metadata.deleteDays !== 'undefined') {
+  if (metadata.deleteDays !== undefined) {
     embed.addFields({
       name: 'Delete Message Days',
       value: String(metadata.deleteDays),
@@ -59,10 +67,21 @@ async function sendModLog({
     });
   }
 
-  await channel.send({ embeds: [embed] });
-  return true;
+  if (metadata.repeatTriggered) {
+    embed.addFields({
+      name: 'Escalation',
+      value: 'Repeat behaviour detected',
+      inline: true
+    });
+  }
+
+  try {
+    await channel.send({ embeds: [embed] });
+    return true;
+  } catch (err) {
+    console.error('Mod log failed:', err);
+    return false;
+  }
 }
 
-module.exports = {
-  sendModLog
-};
+module.exports = { sendModLog };

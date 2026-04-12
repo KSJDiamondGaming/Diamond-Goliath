@@ -8,215 +8,136 @@ const {
   MessageFlags
 } = require('discord.js');
 
-function buildModPanelEmbed(guild, moderator, targetMember = null, extra = {}) {
+const { getNextEscalationPreview } = require('../../utils/moderation/escalationSystem');
+
+function formatRoles(member, guild) {
+  return member.roles.cache
+    .filter(r => r.id !== guild.id)
+    .sort((a, b) => b.position - a.position)
+    .map(r => r.toString())
+    .slice(0, 10)
+    .join(', ') || 'No roles';
+}
+
+function buildModPanelEmbed(guild, moderator, target = null, extra = {}) {
   const embed = new EmbedBuilder()
     .setColor('#5865F2')
     .setTitle('🛡️ Moderation Panel')
-    .setDescription('Select a member or use bulk moderation tools below.')
+    .setDescription('Manage users or use bulk moderation tools.')
     .addFields(
-      {
-        name: 'Moderator',
-        value: `${moderator}`,
-        inline: true
-      },
+      { name: 'Moderator', value: `${moderator}`, inline: true },
       {
         name: 'Selected User',
-        value: targetMember
-          ? `${targetMember}\n\`${targetMember.user.tag}\`\nID: \`${targetMember.id}\``
+        value: target
+          ? `${target}\n\`${target.user.tag}\`\nID: \`${target.id}\``
           : 'None selected',
         inline: true
       },
-      {
-        name: 'Server',
-        value: guild.name,
-        inline: true
-      }
+      { name: 'Server', value: guild.name, inline: true }
     )
     .setTimestamp();
 
   const icon = guild.iconURL({ dynamic: true });
   if (icon) embed.setThumbnail(icon);
 
-  if (targetMember) {
-    const roles = targetMember.roles.cache
-      .filter(role => role.id !== guild.id)
-      .sort((a, b) => b.position - a.position)
-      .map(role => role.toString())
-      .slice(0, 10);
-
-    embed.addFields(
-      {
-        name: 'Joined Server',
-        value: targetMember.joinedTimestamp
-          ? `<t:${Math.floor(targetMember.joinedTimestamp / 1000)}:F>`
-          : 'Unknown',
-        inline: true
-      },
-      {
-        name: 'Account Created',
-        value: `<t:${Math.floor(targetMember.user.createdTimestamp / 1000)}:F>`,
-        inline: true
-      },
-      {
-        name: 'Top Role',
-        value:
-          targetMember.roles.highest?.id !== guild.id
-            ? targetMember.roles.highest.toString()
-            : 'None',
-        inline: true
-      },
-      {
-        name: 'Roles',
-        value: roles.length ? roles.join(', ') : 'No roles',
-        inline: false
-      }
-    );
-
-    if (typeof extra.warningCount === 'number') {
-      embed.addFields({
-        name: 'Warnings',
-        value: String(extra.warningCount),
-        inline: true
-      });
-    }
-
-    if (typeof extra.caseCount === 'number') {
-      embed.addFields({
-        name: 'Cases',
-        value: String(extra.caseCount),
-        inline: true
-      });
-    }
-
-    if (extra.lastCaseSummary) {
-      embed.addFields({
-        name: 'Latest Case',
-        value: extra.lastCaseSummary,
-        inline: false
-      });
-    }
-  } else {
+  if (!target) {
     embed.addFields({
       name: 'Bulk Tools',
-      value: [
-        '**Bulk Warn**',
-        '**Bulk Timeout**',
-        '**Bulk Kick**',
-        '**Bulk Ban**'
-      ].join('\n'),
+      value: '**Warn • Timeout • Kick • Ban**'
+    });
+    return embed;
+  }
+
+  embed.addFields(
+    {
+      name: 'Joined',
+      value: target.joinedTimestamp
+        ? `<t:${Math.floor(target.joinedTimestamp / 1000)}:F>`
+        : 'Unknown',
+      inline: true
+    },
+    {
+      name: 'Created',
+      value: `<t:${Math.floor(target.user.createdTimestamp / 1000)}:F>`,
+      inline: true
+    },
+    {
+      name: 'Top Role',
+      value:
+        target.roles.highest?.id !== guild.id
+          ? target.roles.highest.toString()
+          : 'None',
+      inline: true
+    },
+    {
+      name: 'Roles',
+      value: formatRoles(target, guild),
       inline: false
+    },
+    {
+      name: 'Warnings',
+      value: String(extra.warningCount ?? 0),
+      inline: true
+    },
+    {
+      name: 'Cases',
+      value: String(extra.caseCount ?? 0),
+      inline: true
+    },
+    {
+      name: 'Next Escalation',
+      value: getNextEscalationPreview(guild.id, target.id),
+      inline: false
+    }
+  );
+
+  if (extra.lastCaseSummary) {
+    embed.addFields({
+      name: 'Latest Case',
+      value: extra.lastCaseSummary
     });
   }
 
   return embed;
 }
 
+function buildButton(id, label, emoji, style, disabled = false) {
+  return new ButtonBuilder()
+    .setCustomId(id)
+    .setLabel(label)
+    .setEmoji(emoji)
+    .setStyle(style)
+    .setDisabled(disabled);
+}
+
 function buildModPanelRows(targetId = null) {
-  const hasTarget = Boolean(targetId);
+  const hasTarget = !!targetId;
 
-  const row1 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('mod_select_user')
-      .setLabel('Select User')
-      .setEmoji('🔍')
-      .setStyle(ButtonStyle.Primary),
-    new ButtonBuilder()
-      .setCustomId(`mod_refresh:${targetId || 'none'}`)
-      .setLabel('Refresh')
-      .setEmoji('🔄')
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId(`mod_view_cases:${targetId || 'none'}:0`)
-      .setLabel('View Cases')
-      .setEmoji('📜')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(!hasTarget)
-  );
-
-  const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`mod_open_ban:${targetId || 'none'}`)
-      .setLabel('Ban')
-      .setEmoji('🔨')
-      .setStyle(ButtonStyle.Danger)
-      .setDisabled(!hasTarget),
-    new ButtonBuilder()
-      .setCustomId(`mod_open_kick:${targetId || 'none'}`)
-      .setLabel('Kick')
-      .setEmoji('👢')
-      .setStyle(ButtonStyle.Danger)
-      .setDisabled(!hasTarget),
-    new ButtonBuilder()
-      .setCustomId(`mod_open_warn:${targetId || 'none'}`)
-      .setLabel('Warn')
-      .setEmoji('⚠️')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(!hasTarget),
-    new ButtonBuilder()
-      .setCustomId(`mod_open_timeout:${targetId || 'none'}`)
-      .setLabel('Timeout')
-      .setEmoji('⏳')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(!hasTarget),
-    new ButtonBuilder()
-      .setCustomId(`mod_remove_timeout:${targetId || 'none'}`)
-      .setLabel('Remove Timeout')
-      .setEmoji('✅')
-      .setStyle(ButtonStyle.Success)
-      .setDisabled(!hasTarget)
-  );
-
-  const row3 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`mod_case_detail:${targetId || 'none'}`)
-      .setLabel('Case Detail')
-      .setEmoji('🧾')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(!hasTarget),
-    new ButtonBuilder()
-      .setCustomId(`mod_edit_case:${targetId || 'none'}`)
-      .setLabel('Edit Case')
-      .setEmoji('✏️')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(!hasTarget),
-    new ButtonBuilder()
-      .setCustomId(`mod_remove_warning:${targetId || 'none'}`)
-      .setLabel('Remove Warning')
-      .setEmoji('🗑️')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(!hasTarget)
-  );
-
-  const row4 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('mod_bulk_warn')
-      .setLabel('Bulk Warn')
-      .setEmoji('📢')
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId('mod_bulk_timeout')
-      .setLabel('Bulk Timeout')
-      .setEmoji('📦')
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId('mod_bulk_kick')
-      .setLabel('Bulk Kick')
-      .setEmoji('👢')
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId('mod_bulk_ban')
-      .setLabel('Bulk Ban')
-      .setEmoji('🔨')
-      .setStyle(ButtonStyle.Secondary)
-  );
-
-  return [row1, row2, row3, row4];
+  return [
+    new ActionRowBuilder().addComponents(
+      buildButton('mod_select_user', 'Select', '🔍', ButtonStyle.Primary),
+      buildButton(`mod_refresh:${targetId || 'none'}`, 'Refresh', '🔄', ButtonStyle.Secondary),
+      buildButton(`mod_view_cases:${targetId || 'none'}:0`, 'Cases', '📜', ButtonStyle.Secondary, !hasTarget)
+    ),
+    new ActionRowBuilder().addComponents(
+      buildButton(`mod_open_ban:${targetId}`, 'Ban', '🔨', ButtonStyle.Danger, !hasTarget),
+      buildButton(`mod_open_kick:${targetId}`, 'Kick', '👢', ButtonStyle.Danger, !hasTarget),
+      buildButton(`mod_open_warn:${targetId}`, 'Warn', '⚠️', ButtonStyle.Secondary, !hasTarget),
+      buildButton(`mod_open_timeout:${targetId}`, 'Timeout', '⏳', ButtonStyle.Secondary, !hasTarget),
+      buildButton(`mod_remove_timeout:${targetId}`, 'Un-timeout', '✅', ButtonStyle.Success, !hasTarget)
+    ),
+    new ActionRowBuilder().addComponents(
+      buildButton(`mod_case_detail:${targetId}`, 'Details', '🧾', ButtonStyle.Secondary, !hasTarget),
+      buildButton(`mod_edit_case:${targetId}`, 'Edit', '✏️', ButtonStyle.Secondary, !hasTarget),
+      buildButton(`mod_remove_warning:${targetId}`, 'Unwarn', '🗑️', ButtonStyle.Secondary, !hasTarget)
+    )
+  ];
 }
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('mod')
-    .setDescription('Open the moderation panel')
+    .setDescription('Open moderation panel')
     .setDefaultMemberPermissions(
       PermissionFlagsBits.ModerateMembers |
       PermissionFlagsBits.KickMembers |
@@ -224,7 +145,7 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    const embed = buildModPanelEmbed(interaction.guild, interaction.member, null);
+    const embed = buildModPanelEmbed(interaction.guild, interaction.member);
     const rows = buildModPanelRows();
 
     const payload = {
@@ -233,11 +154,7 @@ module.exports = {
       flags: MessageFlags.Ephemeral
     };
 
-    if (interaction.deferred || interaction.replied) {
-      await interaction.editReply(payload);
-    } else {
-      await interaction.reply(payload);
-    }
+    return interaction.reply(payload);
   },
 
   buildModPanelEmbed,

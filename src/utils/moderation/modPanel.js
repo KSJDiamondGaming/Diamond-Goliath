@@ -1,3 +1,6 @@
+// =========================
+// 📦 Imports
+// =========================
 const {
   ModalBuilder,
   TextInputBuilder,
@@ -10,7 +13,8 @@ const {
   ButtonStyle
 } = require('discord.js');
 
-const { buildModPanelEmbed, buildModPanelRows } = require('./mod');
+const { handleEscalation, getRepeatReasonInfo } = require('./escalationSystem');
+
 const {
   createCase,
   getCasesForUser,
@@ -20,6 +24,7 @@ const {
   updateCaseReason,
   updateCaseStatus
 } = require('../../utils/moderation/caseStore');
+
 const {
   addWarning,
   getWarningCountForUser,
@@ -27,7 +32,9 @@ const {
   deleteWarningByCaseId,
   purgeExpiredWarnings
 } = require('../../utils/moderation/warningStore');
+
 const { sendModLog } = require('../../utils/moderation/modLog');
+
 const {
   createPendingAction,
   getPendingAction,
@@ -149,6 +156,10 @@ function checkHierarchy(interaction, target) {
   return null;
 }
 
+// =========================
+// ⏱ Parsing + Formatting Helpers
+// =========================
+
 function parseDuration(input) {
   const value = input.trim().toLowerCase();
   const match = value.match(/^(\d+)\s*(m|h|d)$/);
@@ -187,32 +198,9 @@ async function syncExpiredWarningsToCases(guildId) {
   }
 }
 
-async function buildPanelPayload(interaction, target) {
-  await syncExpiredWarningsToCases(interaction.guild.id);
-
-  const warningCount = target
-    ? getWarningCountForUser(interaction.guild.id, target.id)
-    : undefined;
-
-  const caseCount = target
-    ? getCaseCountForUser(interaction.guild.id, target.id)
-    : undefined;
-
-  const latestCase = target
-    ? getCasesForUser(interaction.guild.id, target.id)[0]
-    : null;
-
-  const embed = buildModPanelEmbed(interaction.guild, interaction.member, target, {
-    warningCount,
-    caseCount,
-    lastCaseSummary: latestCase ? formatCaseSummary(latestCase) : null
-  });
-
-  return {
-    embeds: [embed],
-    components: buildModPanelRows(target?.id || null)
-  };
-}
+// =========================
+// 🎨 UI Builders (Modals / Buttons / Embeds)
+// =========================
 
 function buildReasonModal(
   customId,
@@ -399,80 +387,70 @@ function buildEditCaseModal(customId) {
   return modal;
 }
 
-function buildCaseFilterButtons(targetId) {
+function buildCaseFilterButtons(targetId, actionFilter = 'all', statusFilter = 'all', page = 0) {
   return [
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId(`mod_filter_cases:${targetId}:all:all:0`)
+        .setCustomId(`mod_filter_cases:${targetId}:all:${statusFilter}:${page}`)
         .setLabel('All')
-        .setStyle(ButtonStyle.Secondary),
+        .setStyle(actionFilter === 'all' ? ButtonStyle.Primary : ButtonStyle.Secondary),
       new ButtonBuilder()
-        .setCustomId(`mod_filter_cases:${targetId}:warn:all:0`)
+        .setCustomId(`mod_filter_cases:${targetId}:warn:${statusFilter}:${page}`)
         .setLabel('Warns')
-        .setStyle(ButtonStyle.Secondary),
+        .setStyle(actionFilter === 'warn' ? ButtonStyle.Primary : ButtonStyle.Secondary),
       new ButtonBuilder()
-        .setCustomId(`mod_filter_cases:${targetId}:timeout:all:0`)
+        .setCustomId(`mod_filter_cases:${targetId}:timeout:${statusFilter}:${page}`)
         .setLabel('Timeouts')
-        .setStyle(ButtonStyle.Secondary),
+        .setStyle(actionFilter === 'timeout' ? ButtonStyle.Primary : ButtonStyle.Secondary),
       new ButtonBuilder()
-        .setCustomId(`mod_filter_cases:${targetId}:note:all:0`)
+        .setCustomId(`mod_filter_cases:${targetId}:note:${statusFilter}:${page}`)
         .setLabel('Notes')
-        .setStyle(ButtonStyle.Secondary)
+        .setStyle(actionFilter === 'note' ? ButtonStyle.Primary : ButtonStyle.Secondary)
     ),
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId(`mod_filter_cases:${targetId}:all:active:0`)
+        .setCustomId(`mod_filter_cases:${targetId}:${actionFilter}:active:${page}`)
         .setLabel('Active')
-        .setStyle(ButtonStyle.Secondary),
+        .setStyle(statusFilter === 'active' ? ButtonStyle.Primary : ButtonStyle.Secondary),
       new ButtonBuilder()
-        .setCustomId(`mod_filter_cases:${targetId}:all:reversed:0`)
+        .setCustomId(`mod_filter_cases:${targetId}:${actionFilter}:reversed:${page}`)
         .setLabel('Reversed')
-        .setStyle(ButtonStyle.Secondary),
+        .setStyle(statusFilter === 'reversed' ? ButtonStyle.Primary : ButtonStyle.Secondary),
       new ButtonBuilder()
-        .setCustomId(`mod_filter_cases:${targetId}:all:expired:0`)
+        .setCustomId(`mod_filter_cases:${targetId}:${actionFilter}:expired:${page}`)
         .setLabel('Expired')
-        .setStyle(ButtonStyle.Secondary)
+        .setStyle(statusFilter === 'expired' ? ButtonStyle.Primary : ButtonStyle.Secondary)
     )
   ];
 }
 
-async function refreshPanelFromReply(interaction, target) {
-  const payload = await buildPanelPayload(interaction, target);
-
-  try {
-    if (interaction.message) {
-      await interaction.message.edit(payload);
-    }
-  } catch (error) {
-    console.error('Failed to refresh mod panel message:', error);
-  }
-}
-
-function buildCasesPageEmbed(target, cases, page, totalPages) {
+function buildCasesPageEmbed(target, cases, page, totalPages, actionFilter = 'all', statusFilter = 'all') {
   return new EmbedBuilder()
     .setColor('#5865F2')
     .setTitle(`📜 Cases for ${target.user.tag}`)
     .setDescription(
       cases.length
         ? cases.map(entry =>
-            `**#${entry.caseId}** • ${entry.action}\nStatus: ${getStatusLabel(entry)}\nReason: ${entry.reason}\n<t:${Math.floor(new Date(entry.createdAt).getTime() / 1000)}:R>`
+            `**#${entry.caseId}** • ${entry.action}\nStatus: ${getStatusLabel(entry)}\nReason: ${entry.reason || 'No reason provided'}\n<t:${Math.floor(new Date(entry.createdAt).getTime() / 1000)}:R>`
           ).join('\n\n')
         : 'No cases found.'
     )
-    .setFooter({ text: `Page ${page + 1} of ${totalPages}` })
+    .setFooter({
+      text: `Action: ${actionFilter} | Status: ${statusFilter} | Page ${page + 1} of ${totalPages}`
+    })
     .setTimestamp();
 }
 
-function buildCasesPageButtons(targetId, page, totalPages) {
+function buildCasesPageButtons(targetId, page, totalPages, actionFilter = 'all', statusFilter = 'all') {
   return [
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId(`mod_view_cases:${targetId}:${page - 1}`)
+        .setCustomId(`mod_case_page:${targetId}:${actionFilter}:${statusFilter}:${page - 1}`)
         .setLabel('Prev')
         .setStyle(ButtonStyle.Secondary)
         .setDisabled(page <= 0),
       new ButtonBuilder()
-        .setCustomId(`mod_view_cases:${targetId}:${page + 1}`)
+        .setCustomId(`mod_case_page:${targetId}:${actionFilter}:${statusFilter}:${page + 1}`)
         .setLabel('Next')
         .setStyle(ButtonStyle.Secondary)
         .setDisabled(page >= totalPages - 1)
@@ -595,6 +573,266 @@ function checkHierarchyForBulk(actorMember, botMember, guildOwnerId, targetMembe
   return null;
 }
 
+// =========================
+// 📊 Dashboard Builders
+// =========================
+
+function buildDashboardNav(targetId, activeView = 'overview') {
+  const items = [
+    { view: 'overview', label: 'Overview' },
+    { view: 'actions', label: 'Actions' },
+    { view: 'cases', label: 'Cases' },
+    { view: 'tools', label: 'Tools' }
+  ];
+
+  return [
+    new ActionRowBuilder().addComponents(
+      items.map(item =>
+        new ButtonBuilder()
+          .setCustomId(`mod_dashboard:${targetId || 'none'}:${item.view}`)
+          .setLabel(item.label)
+          .setStyle(activeView === item.view ? ButtonStyle.Primary : ButtonStyle.Secondary)
+      )
+    )
+  ];
+}
+
+function buildOverviewEmbed(guild, moderator, target, stats = {}) {
+  return new EmbedBuilder()
+    .setColor('#5865F2')
+    .setTitle('🛡️ Moderation Dashboard')
+    .setDescription(
+      target
+        ? `Managing **${target.user.tag}**`
+        : 'No user selected yet. Use **Select User** to begin.'
+    )
+    .addFields(
+      {
+        name: 'Moderator',
+        value: `${moderator}`,
+        inline: true
+      },
+      {
+        name: 'Warnings',
+        value: target ? String(stats.warningCount ?? 0) : '—',
+        inline: true
+      },
+      {
+        name: 'Cases',
+        value: target ? String(stats.caseCount ?? 0) : '—',
+        inline: true
+      },
+      {
+        name: 'Latest Case',
+        value: stats.lastCaseSummary || 'No cases found.',
+        inline: false
+      }
+    )
+    .setTimestamp();
+}
+
+function buildActionsRows(targetId) {
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`mod_open_warn:${targetId || 'none'}`)
+        .setLabel('Warn')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(!targetId),
+      new ButtonBuilder()
+        .setCustomId(`mod_open_timeout:${targetId || 'none'}`)
+        .setLabel('Timeout')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(!targetId),
+      new ButtonBuilder()
+        .setCustomId(`mod_open_kick:${targetId || 'none'}`)
+        .setLabel('Kick')
+        .setStyle(ButtonStyle.Danger)
+        .setDisabled(!targetId),
+      new ButtonBuilder()
+        .setCustomId(`mod_open_ban:${targetId || 'none'}`)
+        .setLabel('Ban')
+        .setStyle(ButtonStyle.Danger)
+        .setDisabled(!targetId)
+    ),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`mod_remove_warning:${targetId || 'none'}`)
+        .setLabel('Remove Warning')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(!targetId),
+      new ButtonBuilder()
+        .setCustomId(`mod_remove_timeout:${targetId || 'none'}`)
+        .setLabel('Remove Timeout')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(!targetId),
+      new ButtonBuilder()
+        .setCustomId(`mod_refresh:${targetId || 'none'}:overview`)
+        .setLabel('Refresh')
+        .setStyle(ButtonStyle.Success)
+    )
+  ];
+}
+
+function buildToolsRows(targetId) {
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('mod_select_user')
+        .setLabel('Select User')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId(`mod_case_detail:${targetId || 'none'}`)
+        .setLabel('Case Detail')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(!targetId),
+      new ButtonBuilder()
+        .setCustomId(`mod_edit_case:${targetId || 'none'}`)
+        .setLabel('Edit Case')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(!targetId)
+    ),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('mod_bulk_warn')
+        .setLabel('Bulk Warn')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId('mod_bulk_timeout')
+        .setLabel('Bulk Timeout')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId('mod_bulk_kick')
+        .setLabel('Bulk Kick')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId('mod_bulk_ban')
+        .setLabel('Bulk Ban')
+        .setStyle(ButtonStyle.Danger)
+    )
+  ];
+}
+
+// =========================
+// 🔄 Case + Warning Sync
+// =========================
+
+async function buildDashboardPayload(
+  interaction,
+  target,
+  view = 'overview',
+  options = {}
+) {
+  await syncExpiredWarningsToCases(interaction.guild.id);
+
+  const warningCount = target
+    ? getWarningCountForUser(interaction.guild.id, target.id)
+    : undefined;
+
+  const caseCount = target
+    ? getCaseCountForUser(interaction.guild.id, target.id)
+    : undefined;
+
+  const latestCase = target
+    ? getCasesForUser(interaction.guild.id, target.id)[0]
+    : null;
+
+  const stats = {
+    warningCount,
+    caseCount,
+    lastCaseSummary: latestCase ? formatCaseSummary(latestCase) : null
+  };
+
+  const embeds = [];
+  const components = [...buildDashboardNav(target?.id || null, view)];
+
+  if (view === 'overview') {
+    embeds.push(buildOverviewEmbed(interaction.guild, interaction.member, target, stats));
+    components.push(...buildActionsRows(target?.id || null));
+  }
+
+  if (view === 'actions') {
+    embeds.push(
+      new EmbedBuilder()
+        .setColor('#5865F2')
+        .setTitle('⚖️ Moderation Actions')
+        .setDescription(
+          target
+            ? `Choose an action for **${target.user.tag}**`
+            : 'Select a user first.'
+        )
+        .setTimestamp()
+    );
+    components.push(...buildActionsRows(target?.id || null));
+  }
+
+  if (view === 'cases') {
+    const actionFilter = options.actionFilter || 'all';
+    const statusFilter = options.statusFilter || 'all';
+    const pageRaw = options.page || 0;
+
+    const filters = {};
+    if (actionFilter !== 'all') filters.action = actionFilter;
+    if (statusFilter !== 'all') filters.status = statusFilter;
+
+    const allCases = target
+      ? getFilteredCases(interaction.guild.id, target.id, filters)
+      : [];
+
+    const perPage = 5;
+    const totalPages = Math.max(1, Math.ceil(allCases.length / perPage));
+    const page = Math.max(0, Math.min(Number(pageRaw) || 0, totalPages - 1));
+    const pageCases = allCases.slice(page * perPage, page * perPage + perPage);
+
+    if (target) {
+      embeds.push(
+        buildCasesPageEmbed(target, pageCases, page, totalPages, actionFilter, statusFilter)
+      );
+      components.push(
+        ...buildCasesPageButtons(target.id, page, totalPages, actionFilter, statusFilter),
+        ...buildCaseFilterButtons(target.id, actionFilter, statusFilter, page)
+      );
+    } else {
+      embeds.push(
+        new EmbedBuilder()
+          .setColor('#5865F2')
+          .setTitle('📜 Cases')
+          .setDescription('Select a user first.')
+          .setTimestamp()
+      );
+    }
+  }
+
+  if (view === 'tools') {
+    embeds.push(
+      new EmbedBuilder()
+        .setColor('#5865F2')
+        .setTitle('🧰 Moderation Tools')
+        .setDescription('Utility actions and bulk moderation.')
+        .setTimestamp()
+    );
+    components.push(...buildToolsRows(target?.id || null));
+  }
+
+  return { embeds, components };
+}
+
+// =========================
+// ⚙️ Bulk Actions
+// =========================
+
+async function refreshDashboard(interaction, target, view = 'overview', options = {}) {
+  const payload = await buildDashboardPayload(interaction, target, view, options);
+
+  try {
+    if (interaction.message) {
+      await interaction.message.edit(payload);
+    }
+  } catch (error) {
+    console.error('Failed to refresh moderation dashboard message:', error);
+  }
+}
+
 async function runBulkAction(interaction, options) {
   const {
     actionType,
@@ -702,13 +940,43 @@ async function runBulkAction(interaction, options) {
           caseId: modCase.caseId
         });
 
+        let escalatedCase = null;
+        let repeatInfo = { isRepeatPattern: false, repeatCount: 0 };
+
+        try {
+          repeatInfo = getRepeatReasonInfo({
+            guildId: interaction.guild.id,
+            userId: member.id,
+            reason
+          }) || repeatInfo;
+        } catch (error) {
+          console.error('Repeat reason check failed during bulk warn:', error);
+        }
+
+        try {
+          escalatedCase = await handleEscalation({
+            guild: interaction.guild,
+            member,
+            moderator: interaction.user,
+            reason
+          });
+        } catch (error) {
+          console.error('Escalation failed during bulk warn:', error);
+        }
+
         await sendModLog({
           guild: interaction.guild,
           target: member,
           moderator: interaction.user,
           action: 'Bulk Warn',
           reason,
-          caseId: modCase.caseId
+          caseId: modCase.caseId,
+          metadata: {
+            repeatPattern: Boolean(repeatInfo.isRepeatPattern),
+            repeatCount: repeatInfo.repeatCount || 0,
+            escalatedAction: escalatedCase?.action || null,
+            escalatedCaseId: escalatedCase?.caseId || null
+          }
         });
 
         success.push(`⚠️ ${member.user.tag}`);
@@ -816,6 +1084,10 @@ async function runBulkAction(interaction, options) {
   });
 }
 
+// =========================
+// 🧾 Pending Action System
+// =========================
+
 async function executePendingAction(interaction, token) {
   const pending = getPendingAction(interaction.guild.id, token);
 
@@ -836,7 +1108,7 @@ async function executePendingAction(interaction, token) {
   const target = await fetchTarget(interaction.guild, pending.targetId);
   const error = checkHierarchy(interaction, target);
 
-  if (error) {
+  if (error && pending.type !== 'remove-warning') {
     deletePendingAction(interaction.guild.id, token);
     return interaction.reply({
       content: error,
@@ -874,6 +1146,7 @@ async function executePendingAction(interaction, token) {
 
       return interaction.update({
         content: `✅ Banned **${target.user.tag}** • Case #${modCase.caseId}`,
+        embeds: [],
         components: []
       });
     }
@@ -902,6 +1175,7 @@ async function executePendingAction(interaction, token) {
 
       return interaction.update({
         content: `✅ Kicked **${target.user.tag}** • Case #${modCase.caseId}`,
+        embeds: [],
         components: []
       });
     }
@@ -917,11 +1191,16 @@ async function executePendingAction(interaction, token) {
         });
       }
 
-      updateCaseStatus(interaction.guild.id, pending.payload.caseId, 'reversed');
+      const sourceCase = getCaseById(interaction.guild.id, pending.payload.caseId);
+      if (sourceCase) {
+        updateCaseStatus(interaction.guild.id, pending.payload.caseId, 'reversed');
+      }
+
+      const userId = sourceCase?.userId || pending.targetId;
 
       const unwindCase = createCase({
         guildId: interaction.guild.id,
-        userId: target.id,
+        userId,
         moderatorId: interaction.user.id,
         action: 'unwarn',
         reason: `Removed warning from case #${pending.payload.caseId}`,
@@ -929,23 +1208,31 @@ async function executePendingAction(interaction, token) {
         status: 'reversed'
       });
 
-      await sendModLog({
-        guild: interaction.guild,
-        target,
-        moderator: interaction.user,
-        action: 'Unwarn',
-        reason: `Removed warning from case #${pending.payload.caseId}`,
-        caseId: unwindCase.caseId
-      });
+      const logTarget = target || await fetchTarget(interaction.guild, userId);
+
+      if (logTarget) {
+        await sendModLog({
+          guild: interaction.guild,
+          target: logTarget,
+          moderator: interaction.user,
+          action: 'Unwarn',
+          reason: `Removed warning from case #${pending.payload.caseId}`,
+          caseId: unwindCase.caseId
+        });
+      }
 
       deletePendingAction(interaction.guild.id, token);
 
       await interaction.update({
         content: `🗑️ Removed warning linked to **Case #${pending.payload.caseId}**.`,
+        embeds: [],
         components: []
       });
 
-      await refreshPanelFromReply(interaction, target);
+      if (logTarget) {
+        await refreshDashboard(interaction, logTarget, 'overview');
+      }
+
       return;
     }
 
@@ -982,10 +1269,11 @@ async function executePendingAction(interaction, token) {
 
       await interaction.update({
         content: `✅ Removed timeout from **${target.user.tag}** • Case #${modCase.caseId}`,
+        embeds: [],
         components: []
       });
 
-      await refreshPanelFromReply(interaction, target);
+      await refreshDashboard(interaction, target, 'overview');
       return;
     }
 
@@ -1061,15 +1349,22 @@ async function handleModButton(interaction) {
     return executePendingAction(interaction, token);
   }
 
-  if (interaction.customId.startsWith('mod_filter_cases:')) {
-    const [, targetId, actionFilter, statusFilter, pageRaw] = interaction.customId.split(':');
+  if (interaction.customId.startsWith('mod_dashboard:')) {
+    const [, targetId, view] = interaction.customId.split(':');
+    const target = await fetchTarget(interaction.guild, targetId);
+    const payload = await buildDashboardPayload(interaction, target, view);
+    return interaction.update(payload);
+  }
 
-    if (!targetId || targetId === 'none') {
-      return interaction.reply({
-        content: '❌ No user selected.',
-        flags: MessageFlags.Ephemeral
-      });
-    }
+  if (interaction.customId.startsWith('mod_refresh:')) {
+    const [, id, view = 'overview'] = interaction.customId.split(':');
+    const target = await fetchTarget(interaction.guild, id);
+    const payload = await buildDashboardPayload(interaction, target, view);
+    return interaction.update(payload);
+  }
+
+  if (interaction.customId.startsWith('mod_case_page:')) {
+    const [, targetId, actionFilter, statusFilter, pageRaw] = interaction.customId.split(':');
 
     const target = await fetchTarget(interaction.guild, targetId);
     if (!target) {
@@ -1079,36 +1374,33 @@ async function handleModButton(interaction) {
       });
     }
 
-    const filters = {};
-    if (actionFilter !== 'all') filters.action = actionFilter;
-    if (statusFilter !== 'all') filters.status = statusFilter;
-
-    const allCases = getFilteredCases(interaction.guild.id, target.id, filters);
-    const perPage = 5;
-    const totalPages = Math.max(1, Math.ceil(allCases.length / perPage));
-    const page = Math.max(0, Math.min(Number(pageRaw) || 0, totalPages - 1));
-    const pageCases = allCases.slice(page * perPage, page * perPage + perPage);
-
-    const embed = new EmbedBuilder()
-      .setColor('#5865F2')
-      .setTitle(`📂 Filtered Cases for ${target.user.tag}`)
-      .setDescription(
-        pageCases.length
-          ? pageCases.map(entry =>
-              `**#${entry.caseId}** • ${entry.action}\nStatus: ${getStatusLabel(entry)}\nReason: ${entry.reason}\n<t:${Math.floor(new Date(entry.createdAt).getTime() / 1000)}:R>`
-            ).join('\n\n')
-          : 'No matching cases found.'
-      )
-      .setFooter({
-        text: `Action: ${actionFilter} | Status: ${statusFilter} | Page ${page + 1} of ${totalPages}`
-      })
-      .setTimestamp();
-
-    return interaction.reply({
-      embeds: [embed],
-      components: buildCaseFilterButtons(target.id),
-      flags: MessageFlags.Ephemeral
+    const payload = await buildDashboardPayload(interaction, target, 'cases', {
+      actionFilter,
+      statusFilter,
+      page: Number(pageRaw) || 0
     });
+
+    return interaction.update(payload);
+  }
+
+  if (interaction.customId.startsWith('mod_filter_cases:')) {
+    const [, targetId, actionFilter, statusFilter, pageRaw] = interaction.customId.split(':');
+
+    const target = await fetchTarget(interaction.guild, targetId);
+    if (!target) {
+      return interaction.reply({
+        content: '❌ User not found.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    const payload = await buildDashboardPayload(interaction, target, 'cases', {
+      actionFilter,
+      statusFilter,
+      page: Number(pageRaw) || 0
+    });
+
+    return interaction.update(payload);
   }
 
   if (interaction.customId.startsWith('mod_case_reverse_warning:')) {
@@ -1173,49 +1465,6 @@ async function handleModButton(interaction) {
     return interaction.reply({
       content: `Reverse timeout from **Case #${modCase.caseId}**?`,
       components: buildConfirmRow(`mod_confirm_action:${token}`),
-      flags: MessageFlags.Ephemeral
-    });
-  }
-
-  if (interaction.customId.startsWith('mod_refresh:')) {
-    const [, id] = interaction.customId.split(':');
-    const target = await fetchTarget(interaction.guild, id);
-    const payload = await buildPanelPayload(interaction, target);
-    return interaction.update(payload);
-  }
-
-  if (interaction.customId.startsWith('mod_view_cases:')) {
-    const [, targetId, pageRaw] = interaction.customId.split(':');
-
-    if (!targetId || targetId === 'none') {
-      return interaction.reply({
-        content: '❌ No user selected.',
-        flags: MessageFlags.Ephemeral
-      });
-    }
-
-    const target = await fetchTarget(interaction.guild, targetId);
-    if (!target) {
-      return interaction.reply({
-        content: '❌ User not found.',
-        flags: MessageFlags.Ephemeral
-      });
-    }
-
-    const allCases = getCasesForUser(interaction.guild.id, target.id);
-    const perPage = 5;
-    const totalPages = Math.max(1, Math.ceil(allCases.length / perPage));
-    const page = Math.max(0, Math.min(Number(pageRaw) || 0, totalPages - 1));
-    const pageCases = allCases.slice(page * perPage, page * perPage + perPage);
-
-    const embed = buildCasesPageEmbed(target, pageCases, page, totalPages);
-
-    return interaction.reply({
-      embeds: [embed],
-      components: [
-        ...buildCasesPageButtons(target.id, page, totalPages),
-        ...buildCaseFilterButtons(target.id)
-      ],
       flags: MessageFlags.Ephemeral
     });
   }
@@ -1351,6 +1600,10 @@ async function handleModButton(interaction) {
   return false;
 }
 
+// =========================
+// 🧾 Modal Handler
+// =========================
+
 async function handleModModal(interaction) {
   await syncExpiredWarningsToCases(interaction.guild.id);
 
@@ -1372,7 +1625,7 @@ async function handleModModal(interaction) {
       });
     }
 
-    const payload = await buildPanelPayload(interaction, target);
+    const payload = await buildDashboardPayload(interaction, target, 'overview');
 
     return interaction.reply({
       ...payload,
@@ -1501,6 +1754,10 @@ async function handleModModal(interaction) {
       });
     }
 
+    // =========================
+    // 🖱 Button Handler
+    // =========================
+
     return interaction.reply({
       embeds: [embed],
       components: buildCaseDetailButtons(modCase),
@@ -1551,7 +1808,7 @@ async function handleModModal(interaction) {
     });
 
     if (target) {
-      await refreshPanelFromReply(interaction, target);
+      await refreshDashboard(interaction, target, 'overview');
     }
 
     return true;
@@ -1705,6 +1962,30 @@ async function handleModModal(interaction) {
         expiresAt
       });
 
+      let repeatInfo = { isRepeatPattern: false, repeatCount: 0 };
+      let escalatedCase = null;
+
+      try {
+        repeatInfo = getRepeatReasonInfo({
+          guildId: interaction.guild.id,
+          userId: target.id,
+          reason
+        }) || repeatInfo;
+      } catch (repeatError) {
+        console.error('Warn repeat check failed:', repeatError);
+      }
+
+      try {
+        escalatedCase = await handleEscalation({
+          guild: interaction.guild,
+          member: target,
+          moderator: interaction.user,
+          reason
+        });
+      } catch (escalationError) {
+        console.error('Warn escalation failed:', escalationError);
+      }
+
       await sendModLog({
         guild: interaction.guild,
         target,
@@ -1712,15 +1993,34 @@ async function handleModModal(interaction) {
         action: 'Warn',
         reason,
         caseId: modCase.caseId,
-        metadata: { expiresAt }
+        metadata: {
+          expiresAt,
+          repeatPattern: Boolean(repeatInfo.isRepeatPattern),
+          repeatCount: repeatInfo.repeatCount || 0,
+          escalatedAction: escalatedCase?.action || null,
+          escalatedCaseId: escalatedCase?.caseId || null
+        }
       });
 
+      const extraLines = [];
+
+      if (repeatInfo.isRepeatPattern) {
+        extraLines.push(`🔁 Repeat reason detected (${repeatInfo.repeatCount} matching warnings)`);
+      }
+
+      if (escalatedCase) {
+        extraLines.push(`⚡ Auto escalation triggered: **${escalatedCase.action}** (Case #${escalatedCase.caseId})`);
+      }
+
       await interaction.reply({
-        content: `⚠️ Warned **${target.user.tag}** • Case #${modCase.caseId}`,
+        content: [
+          `⚠️ Warned **${target.user.tag}** • Case #${modCase.caseId}`,
+          ...extraLines
+        ].join('\n'),
         flags: MessageFlags.Ephemeral
       });
 
-      await refreshPanelFromReply(interaction, target);
+      await refreshDashboard(interaction, target, 'overview');
       return true;
     } catch (err) {
       console.error('Warn error:', err);
@@ -1784,10 +2084,13 @@ async function handleModModal(interaction) {
         metadata: { duration: durationRaw }
       });
 
-      return interaction.reply({
+      await interaction.reply({
         content: `⏳ Timed out **${target.user.tag}** for **${durationRaw}** • Case #${modCase.caseId}`,
         flags: MessageFlags.Ephemeral
       });
+
+      await refreshDashboard(interaction, target, 'overview');
+      return true;
     } catch (err) {
       console.error('Timeout error:', err);
       return interaction.reply({
@@ -1799,6 +2102,10 @@ async function handleModModal(interaction) {
 
   return false;
 }
+
+// =========================
+// 📤 Exports
+// =========================
 
 module.exports = {
   handleModButton,

@@ -330,7 +330,7 @@ function buildEmbedPanelMessage(guildId, options = {}) {
   };
 }
 
-function buildPanelPayload(guildId, selectedTemplateId) {
+function buildDashboardPayload(guildId, selectedTemplateId) {
   const panel = buildEmbedPanelMessage(guildId, { selectedTemplateId });
   return {
     embeds: [panel.embed],
@@ -469,7 +469,7 @@ function parseButtonsJson(input) {
 }
 
 async function refreshPanel(interaction, guildId, selectedTemplateId) {
-  const payload = buildPanelPayload(guildId, selectedTemplateId);
+  const payload = buildDashboardPayload(guildId, selectedTemplateId);
 
   if (interaction.isModalSubmit()) {
     if (!interaction.replied && !interaction.deferred) {
