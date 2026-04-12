@@ -14,7 +14,7 @@ const {
 const {
   addPunishment,
   getPunishments,
-} = require('../../utils/tempPunishmentsStore');
+} = require('../../utils/moderation/tempPunishmentsStore');
 
 function trimText(text, max = 1024) {
   if (!text) return 'No reason provided.';
