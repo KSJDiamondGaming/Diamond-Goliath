@@ -91,12 +91,12 @@ async function handleStatsInteraction(interaction) {
     if (interaction.deferred || interaction.replied) {
       await interaction.followUp({
         content: 'There was an error handling the stats menu.',
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       }).catch(() => null);
     } else {
       await interaction.reply({
         content: 'There was an error handling the stats menu.',
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       }).catch(() => null);
     }
 

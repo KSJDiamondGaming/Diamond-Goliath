@@ -174,7 +174,7 @@ module.exports = {
         thumbnail: target.displayAvatarURL({ dynamic: true }),
       });
 
-      return interaction.reply({ embeds: [embed], ephemeral: true });
+      return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
     }
 
     const pages = chunkArray(warningCases, 5);
@@ -194,7 +194,7 @@ module.exports = {
     const response = await interaction.reply({
       embeds: [embed],
       components,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
       fetchReply: true,
     });
 
@@ -208,7 +208,7 @@ module.exports = {
       if (buttonInteraction.user.id !== interaction.user.id) {
         return buttonInteraction.reply({
           content: '❌ You cannot use these buttons.',
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
 

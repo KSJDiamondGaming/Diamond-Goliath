@@ -76,7 +76,7 @@ module.exports = {
         description: 'No moderation cases were found for this server.',
       });
 
-      return interaction.reply({ embeds: [embed], ephemeral: true });
+      return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
     }
 
     const warnCount = countByAction(allCases, 'Warn');
@@ -202,7 +202,7 @@ module.exports = {
 
     return interaction.reply({
       embeds: [embed],
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   },
 };

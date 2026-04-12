@@ -1,6 +1,6 @@
 const { EmbedBuilder } = require('discord.js');
 const getEmbedConfig = require('./getEmbedConfig');
-const replacePlaceholders = require('./replacePlaceholders');
+const replacePlaceholders = require('../replacePlaceholders');
 
 module.exports = function buildEmbed(guildId, options = {}) {
   const config = getEmbedConfig(guildId);

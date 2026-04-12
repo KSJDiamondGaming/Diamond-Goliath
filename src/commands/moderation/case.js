@@ -259,7 +259,7 @@ async function handlePagedReply({
   const response = await interaction.reply({
     embeds: [initial.embed],
     components,
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
     fetchReply: true,
   });
 
@@ -271,7 +271,7 @@ async function handlePagedReply({
     if (componentInteraction.user.id !== interaction.user.id) {
       return componentInteraction.reply({
         content: '❌ You cannot use these controls.',
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -322,13 +322,13 @@ async function handlePagedReply({
               description: `Case **#${selectedCaseNumber}** was not found.`,
             }),
           ],
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
 
       return componentInteraction.reply({
         embeds: [createCaseViewEmbed(interaction, caseData)],
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
   });
@@ -472,12 +472,12 @@ module.exports = {
           description: `Case **#${caseNumber}** was not found.`,
         });
 
-        return interaction.reply({ embeds: [embed], ephemeral: true });
+        return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
       }
 
       return interaction.reply({
         embeds: [createCaseViewEmbed(interaction, caseData)],
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -492,7 +492,7 @@ module.exports = {
           description: `Case **#${caseNumber}** was not found.`,
         });
 
-        return interaction.reply({ embeds: [embed], ephemeral: true });
+        return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
       }
 
       if (!Array.isArray(caseData.notes)) {
@@ -517,7 +517,7 @@ module.exports = {
         inline: false,
       });
 
-      return interaction.reply({ embeds: [embed], ephemeral: true });
+      return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
     }
 
     if (sub === 'delete-note') {
@@ -531,7 +531,7 @@ module.exports = {
           description: `Case **#${caseNumber}** was not found.`,
         });
 
-        return interaction.reply({ embeds: [embed], ephemeral: true });
+        return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
       }
 
       if (!Array.isArray(caseData.notes) || caseData.notes.length === 0) {
@@ -540,7 +540,7 @@ module.exports = {
           description: `Case **#${caseNumber}** has no notes.`,
         });
 
-        return interaction.reply({ embeds: [embed], ephemeral: true });
+        return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
       }
 
       if (noteNumber < 1 || noteNumber > caseData.notes.length) {
@@ -549,7 +549,7 @@ module.exports = {
           description: `Note **#${noteNumber}** does not exist on case **#${caseNumber}**.`,
         });
 
-        return interaction.reply({ embeds: [embed], ephemeral: true });
+        return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
       }
 
       caseData.notes.splice(noteNumber - 1, 1);
@@ -560,7 +560,7 @@ module.exports = {
         description: `Deleted note **#${noteNumber}** from case **#${caseNumber}**.`,
       });
 
-      return interaction.reply({ embeds: [embed], ephemeral: true });
+      return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
     }
 
     if (sub === 'list') {
@@ -575,7 +575,7 @@ module.exports = {
           description: 'No moderation cases were found for this server.',
         });
 
-        return interaction.reply({ embeds: [embed], ephemeral: true });
+        return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
       }
 
       const warnCount = allCases.filter(c => c.action === 'Warn').length;
@@ -619,7 +619,7 @@ module.exports = {
           description: `No cases were found for ${target}.`,
         });
 
-        return interaction.reply({ embeds: [embed], ephemeral: true });
+        return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
       }
 
       const activeWarns = matches.filter(c => c.action === 'Warn' && c.cleared !== true).length;
@@ -670,7 +670,7 @@ module.exports = {
           description: `No **${action}** cases were found for this server.`,
         });
 
-        return interaction.reply({ embeds: [embed], ephemeral: true });
+        return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
       }
 
       return handlePagedReply({

@@ -1,6 +1,7 @@
 const {
   SlashCommandBuilder,
   PermissionFlagsBits,
+  MessageFlags,
 } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
@@ -9,8 +10,8 @@ const {
   createDangerEmbed,
   createWarningEmbed,
 } = require('../../utils/embed/embedStyle');
-const logModerationAction = require('../../utils/logging/ModerationActionLog');
-const createModCase = require('../../utils/moderation/createModCase');
+const logModerationAction = require('../../utils/logs/moderationActionLog');
+const createModCase = require('../../utils/logs/cases/createModCase');
 
 const caseDetailsPath = path.join(
   __dirname,
@@ -100,7 +101,7 @@ module.exports = {
           description: `Case **#${caseNumberInput}** was not found.`,
         });
 
-        return interaction.reply({ embeds: [embed], ephemeral: true });
+        return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
       }
 
       if (caseData.action !== 'Warn' || caseData.targetId !== target.id) {
@@ -109,7 +110,7 @@ module.exports = {
           description: `Case **#${caseNumberInput}** is not a warning for ${target}.`,
         });
 
-        return interaction.reply({ embeds: [embed], ephemeral: true });
+        return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
       }
 
       if (caseData.cleared === true) {
@@ -118,7 +119,7 @@ module.exports = {
           description: `Case **#${caseNumberInput}** has already been cleared.`,
         });
 
-        return interaction.reply({ embeds: [embed], ephemeral: true });
+        return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
       }
 
       caseData.cleared = true;
@@ -143,7 +144,7 @@ module.exports = {
           thumbnail: target.displayAvatarURL({ dynamic: true }),
         });
 
-        return interaction.reply({ embeds: [embed], ephemeral: true });
+        return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
       }
 
       for (const caseData of activeWarnings) {
@@ -214,7 +215,7 @@ module.exports = {
 
     await interaction.reply({
       embeds: [embed],
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
 
     await logModerationAction({
@@ -230,3 +231,7 @@ module.exports = {
     });
   },
 };
+
+
+
+

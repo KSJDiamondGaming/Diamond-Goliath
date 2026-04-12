@@ -3,8 +3,8 @@ const {
   createSuccessEmbed,
   createDangerEmbed,
 } = require('../../utils/embed/embedStyle');
-const logModerationAction = require('../../utils/logging/ModerationActionLog');
-const createModCase = require('../../utils/moderation/createModCase');
+const logModerationAction = require('../../utils/logs/modlogs/moderationActionLog');
+const createModCase = require('../../utils/moderation/cases/createModCase');
 
 function trimText(text, max = 1024) {
   if (!text) return 'No reason provided';
@@ -52,7 +52,7 @@ module.exports = {
         description: 'That member is not in this server.',
       });
 
-      return interaction.reply({ embeds: [embed], ephemeral: true });
+      return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
     }
 
     if (target.bot) {
@@ -61,7 +61,7 @@ module.exports = {
         description: 'You cannot warn a bot.',
       });
 
-      return interaction.reply({ embeds: [embed], ephemeral: true });
+      return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
     }
 
     if (target.id === interaction.user.id) {
@@ -70,7 +70,7 @@ module.exports = {
         description: 'You cannot warn yourself.',
       });
 
-      return interaction.reply({ embeds: [embed], ephemeral: true });
+      return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
     }
 
     if (target.id === interaction.client.user.id) {
@@ -79,7 +79,7 @@ module.exports = {
         description: 'You cannot warn this bot.',
       });
 
-      return interaction.reply({ embeds: [embed], ephemeral: true });
+      return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
     }
 
     if (
@@ -91,7 +91,7 @@ module.exports = {
         description: 'You cannot warn a member with the same or higher role.',
       });
 
-      return interaction.reply({ embeds: [embed], ephemeral: true });
+      return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
     }
 
     const { caseNumber } = createModCase({
@@ -143,7 +143,7 @@ module.exports = {
       });
     }
 
-    await interaction.reply({ embeds: [embed], ephemeral: true });
+    await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
 
     try {
       const dmEmbed = createSuccessEmbed(interaction, {
@@ -181,3 +181,4 @@ module.exports = {
     });
   },
 };
+

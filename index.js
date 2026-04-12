@@ -8,8 +8,7 @@ const {
   GatewayIntentBits,
   Partials,
 } = require('discord.js');
-const loadEvents = require('./src/handlers/eventHandler');
-const startTempPunishmentsRunner = require('./src/utils/tempPunishmentsRunner');
+const loadEvents = require('./src/events/handlers/eventHandler');
 
 const client = new Client({
   intents: [
@@ -60,6 +59,5 @@ for (const filePath of commandFiles) {
 }
 
 loadEvents(client);
-startTempPunishmentsRunner(client);
 
 client.login(process.env.TOKEN);

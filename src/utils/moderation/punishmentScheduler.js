@@ -1,12 +1,12 @@
 const {
   getPunishments,
   removePunishment,
-} = require('./tempPunishmentsStore');
+} = require('../logs/tempPunishmentsStore');
 
 function startPunishmentScheduler(client) {
   console.log('⏱️ Temp punishment scheduler started');
 
-  setInterval(async () => {
+  const run = async () => {
     const punishments = getPunishments();
     const now = Date.now();
 
@@ -25,7 +25,7 @@ function startPunishmentScheduler(client) {
           const member = await guild.members.fetch(punishment.userId).catch(() => null);
 
           if (member) {
-            await member.timeout(null, 'Temporary mute expired');
+            await member.timeout(null, 'Temporary mute expired').catch(() => null);
           }
         }
 
@@ -42,6 +42,16 @@ function startPunishmentScheduler(client) {
         console.error('Temp punishment scheduler error:', error);
       }
     }
+  };
+
+  run().catch((error) => {
+    console.error('Initial temp punishment scheduler run failed:', error);
+  });
+
+  setInterval(() => {
+    run().catch((error) => {
+      console.error('Temp punishment scheduler interval failed:', error);
+    });
   }, 30_000);
 }
 

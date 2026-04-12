@@ -1,7 +1,10 @@
 const { PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 const { getGuildAutoModConfig } = require('../../utils/automod/automodStore');
-const { addPunishment } = require('../../utils/tempPunishmentsStore');
-const logModerationAction = require('../../utils/logging/ModerationActionLog');
+const {
+  getPunishments,
+  addPunishment,
+} = require('../../utils/moderation/tempPunishmentsStore');
+const logModerationAction = require('../../utils/moderation/logging/moderationActionLog');
 
 const spamTracker = new Map();
 const repeatTracker = new Map();
@@ -366,6 +369,8 @@ async function applyPunishment(message, config, trigger) {
         guildId: message.guild.id,
         type: 'mute',
         expiresAt: Date.now() + trigger.timeoutMinutes * 60 * 1000,
+        reason: `[AutoMod] ${trigger.rule}: ${trigger.reason}`,
+        moderatorId: null,
       });
     }
 

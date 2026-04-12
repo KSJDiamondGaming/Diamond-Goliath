@@ -27,7 +27,7 @@ module.exports = {
 
     await interaction.reply({
       content: `✅ Moderation log channel set to ${channel}.`,
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
   }
 };

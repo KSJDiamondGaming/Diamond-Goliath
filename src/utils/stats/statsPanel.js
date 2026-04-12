@@ -106,7 +106,7 @@ function buildStatsSetupMessage(guild) {
   return {
     embeds: [buildStatsSetupEmbed(guild)],
     components: buildStatsSetupComponents(guild),
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
   };
 }
 
