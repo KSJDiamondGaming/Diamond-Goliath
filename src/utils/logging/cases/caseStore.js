@@ -171,6 +171,32 @@ function updateCaseStatus(guildId, caseId, status) {
   return getCaseById(guildId, caseId);
 }
 
+function updateCaseNote(guildId, caseId, note) {
+  const guildCases = ensureGuildCases(guildId);
+  const existingCase = guildCases.find(entry => entry.caseId === Number(caseId));
+
+  if (!existingCase) return null;
+
+  existingCase.note = String(note || '').trim();
+  existingCase.updatedAt = new Date().toISOString();
+
+  saveStore();
+  return existingCase;
+}
+
+function clearCaseNote(guildId, caseId) {
+  const guildCases = ensureGuildCases(guildId);
+  const existingCase = guildCases.find(entry => entry.caseId === Number(caseId));
+
+  if (!existingCase) return null;
+
+  delete existingCase.note;
+  existingCase.updatedAt = new Date().toISOString();
+
+  saveStore();
+  return existingCase;
+}
+
 module.exports = {
   createCase,
   getCasesForUser,
@@ -180,5 +206,7 @@ module.exports = {
   getCaseCountForUser,
   getCaseById,
   updateCaseReason,
-  updateCaseStatus
+  updateCaseStatus,
+  updateCaseNote,
+  clearCaseNote
 };
