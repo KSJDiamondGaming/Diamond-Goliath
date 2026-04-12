@@ -1,696 +1,628 @@
 const {
   SlashCommandBuilder,
-  PermissionFlagsBits,
+  EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  StringSelectMenuBuilder,
+  PermissionFlagsBits,
+  MessageFlags,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  AttachmentBuilder
 } = require('discord.js');
+
 const fs = require('fs');
 const path = require('path');
+
 const {
-  createPanelEmbed,
-  createSuccessEmbed,
-  createDangerEmbed,
-} = require('../../utils/embed/embedStyle');
+  getCaseById,
+  getCasesForUser,
+  getFilteredCases,
+  getCasesByModerator
+} = require('../../utils/moderation/caseStore');
 
-const caseDetailsPath = path.join(__dirname, '..', '..', 'data', 'modCaseDetails.json');
-
-function ensureCaseFile() {
-  const dir = path.dirname(caseDetailsPath);
-
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-
-  if (!fs.existsSync(caseDetailsPath)) {
-    fs.writeFileSync(caseDetailsPath, JSON.stringify({}, null, 2));
-  }
-}
-
-function readJson() {
-  ensureCaseFile();
-  const raw = fs.readFileSync(caseDetailsPath, 'utf8');
-  return raw ? JSON.parse(raw) : {};
-}
-
-function writeJson(data) {
-  ensureCaseFile();
-  fs.writeFileSync(caseDetailsPath, JSON.stringify(data, null, 2));
-}
-
-function trimText(text, max = 1024) {
-  if (!text) return 'No reason provided';
-  if (text.length <= max) return text;
-  return `${text.slice(0, max - 3)}...`;
-}
-
-function chunkArray(array, size) {
-  const chunks = [];
-
-  for (let i = 0; i < array.length; i += size) {
-    chunks.push(array.slice(i, i + size));
-  }
-
-  return chunks;
-}
-
-function buildButtons(prefix, page, totalPages, userId) {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`${prefix}_first_${userId}`)
-      .setLabel('≪')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(page === 0),
-    new ButtonBuilder()
-      .setCustomId(`${prefix}_prev_${userId}`)
-      .setLabel('‹')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(page === 0),
-    new ButtonBuilder()
-      .setCustomId(`${prefix}_page_${userId}`)
-      .setLabel(`${page + 1}/${totalPages}`)
-      .setStyle(ButtonStyle.Primary)
-      .setDisabled(true),
-    new ButtonBuilder()
-      .setCustomId(`${prefix}_next_${userId}`)
-      .setLabel('›')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(page === totalPages - 1),
-    new ButtonBuilder()
-      .setCustomId(`${prefix}_last_${userId}`)
-      .setLabel('≫')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(page === totalPages - 1)
+function hasCasePermission(member) {
+  return (
+    member.permissions.has(PermissionFlagsBits.ModerateMembers) ||
+    member.permissions.has(PermissionFlagsBits.KickMembers) ||
+    member.permissions.has(PermissionFlagsBits.BanMembers)
   );
 }
 
-function buildCaseSelect(prefix, userId, pageItems) {
-  return new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder()
-      .setCustomId(`${prefix}_select_${userId}`)
-      .setPlaceholder('Open a case from this page')
-      .addOptions(
-        pageItems.slice(0, 25).map((item) => ({
-          label: `Case #${item.caseNumber} • ${item.action}`.slice(0, 100),
-          description: `${item.targetTag || 'Unknown target'}`.slice(0, 100),
-          value: String(item.caseNumber),
-        }))
-      )
-  );
+function formatStatus(status) {
+  if (status === 'reversed') return '🔁 Reversed';
+  if (status === 'expired') return '⌛ Expired';
+  return '🟢 Active';
 }
 
-function createCaseViewEmbed(interaction, caseData) {
-  const embed = createPanelEmbed(interaction, {
-    title: `📁 Case #${caseData.caseNumber}`,
-    description: 'Moderation case details',
-  }).addFields(
-    {
-      name: '📌 Action',
-      value: caseData.action || 'Unknown',
-      inline: true,
-    },
-    {
-      name: '👤 Target',
-      value: `${caseData.targetTag || 'Unknown'}\n\`${caseData.targetId || 'Unknown'}\``,
-      inline: true,
-    },
-    {
-      name: '🛡️ Moderator',
-      value: `${caseData.moderatorTag || 'Unknown'}\n\`${caseData.moderatorId || 'Unknown'}\``,
-      inline: true,
-    },
-    {
-      name: '🕒 Created',
-      value: caseData.createdAt
-        ? `<t:${Math.floor(caseData.createdAt / 1000)}:F>`
-        : 'Unknown',
-      inline: false,
-    },
-    {
-      name: '📝 Reason',
-      value: trimText(caseData.reason || 'No reason provided'),
-      inline: false,
-    }
-  );
+async function findMemberByQuery(guild, query) {
+  const cleaned = query.trim().toLowerCase();
 
-  if (caseData.duration) {
-    embed.addFields({
-      name: '⏱️ Duration',
-      value: `${caseData.duration}`,
-      inline: true,
-    });
-  }
-
-  if (caseData.evidence) {
-    embed.addFields({
-      name: '📎 Evidence',
-      value: trimText(caseData.evidence),
-      inline: false,
-    });
-  }
-
-  if (caseData.cleared === true) {
-    embed.addFields({
-      name: '🧹 Cleared',
-      value:
-        `Yes\n` +
-        `By ${caseData.clearedByTag || 'Unknown'}\n` +
-        `${caseData.clearedAt ? `<t:${Math.floor(caseData.clearedAt / 1000)}:F>` : 'Unknown time'}`,
-      inline: false,
-    });
-
-    if (caseData.clearReason) {
-      embed.addFields({
-        name: '📝 Clear Reason',
-        value: trimText(caseData.clearReason),
-        inline: false,
-      });
+  if (/^\d{17,20}$/.test(cleaned)) {
+    try {
+      return await guild.members.fetch(cleaned);
+    } catch {
+      return null;
     }
   }
 
-  if (Array.isArray(caseData.notes) && caseData.notes.length > 0) {
-    const notesText = caseData.notes
-      .map((note, index) => {
-        const when = note.createdAt
-          ? `<t:${Math.floor(note.createdAt / 1000)}:R>`
-          : 'Unknown time';
+  await guild.members.fetch();
 
-        return `**${index + 1}.** ${note.text}\n*By ${note.moderatorTag || 'Unknown'} • ${when}*`;
-      })
-      .join('\n\n');
+  return guild.members.cache.find(member => {
+    const tag = member.user.tag?.toLowerCase() || '';
+    const username = member.user.username?.toLowerCase() || '';
+    const displayName = member.displayName?.toLowerCase() || '';
 
+    return (
+      tag === cleaned ||
+      username === cleaned ||
+      displayName === cleaned ||
+      tag.includes(cleaned) ||
+      username.includes(cleaned) ||
+      displayName.includes(cleaned)
+    );
+  }) || null;
+}
+
+function buildCasePanelEmbed(guild, moderator) {
+  const embed = new EmbedBuilder()
+    .setColor('#5865F2')
+    .setTitle('📂 Case Management Panel')
+    .setDescription('Browse, search, filter, and export moderation cases using the controls below.')
+    .addFields(
+      {
+        name: 'Moderator',
+        value: `${moderator}`,
+        inline: true
+      },
+      {
+        name: 'Server',
+        value: guild.name,
+        inline: true
+      },
+      {
+        name: 'Tools',
+        value: [
+          '🔎 Search by case ID',
+          '👤 Search by member',
+          '📜 Recent cases',
+          '🎛️ Filter by action/status',
+          '👮 Moderator lookup',
+          '📦 Export member history'
+        ].join('\n'),
+        inline: false
+      }
+    )
+    .setTimestamp();
+
+  const icon = guild.iconURL({ dynamic: true });
+  if (icon) embed.setThumbnail(icon);
+
+  return embed;
+}
+
+function buildCasePanelRows() {
+  const row1 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('casepanel_search_case')
+      .setLabel('Search Case')
+      .setEmoji('🔎')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId('casepanel_search_member')
+      .setLabel('Search Member')
+      .setEmoji('👤')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId('casepanel_recent')
+      .setLabel('Recent Cases')
+      .setEmoji('📜')
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('casepanel_filter_action')
+      .setLabel('Filter Action')
+      .setEmoji('🎯')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('casepanel_filter_status')
+      .setLabel('Filter Status')
+      .setEmoji('🏷️')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('casepanel_moderator')
+      .setLabel('Moderator Cases')
+      .setEmoji('👮')
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  const row3 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('casepanel_export')
+      .setLabel('Export Cases')
+      .setEmoji('📦')
+      .setStyle(ButtonStyle.Success)
+  );
+
+  return [row1, row2, row3];
+}
+
+function buildCasesEmbed(title, cases, footerText = null) {
+  const embed = new EmbedBuilder()
+    .setColor('#5865F2')
+    .setTitle(title)
+    .setDescription(
+      cases.length
+        ? cases.map(entry =>
+            `**#${entry.caseId}** • ${entry.action}\nUser: \`${entry.userId}\`\nModerator: \`${entry.moderatorId}\`\nStatus: ${formatStatus(entry.status)}\nReason: ${entry.reason || 'No reason provided'}\n<t:${Math.floor(new Date(entry.createdAt).getTime() / 1000)}:R>`
+          ).join('\n\n')
+        : 'No cases found.'
+    )
+    .setTimestamp();
+
+  if (footerText) {
+    embed.setFooter({ text: footerText });
+  }
+
+  return embed;
+}
+
+function buildCaseDetailEmbed(modCase) {
+  const embed = new EmbedBuilder()
+    .setColor('#5865F2')
+    .setTitle(`🧾 Case #${modCase.caseId}`)
+    .addFields(
+      { name: 'Action', value: modCase.action, inline: true },
+      { name: 'Status', value: formatStatus(modCase.status), inline: true },
+      { name: 'User ID', value: modCase.userId, inline: true },
+      { name: 'Moderator ID', value: modCase.moderatorId, inline: true },
+      { name: 'Reason', value: modCase.reason || 'No reason provided', inline: false },
+      {
+        name: 'Created',
+        value: `<t:${Math.floor(new Date(modCase.createdAt).getTime() / 1000)}:F>`,
+        inline: true
+      },
+      {
+        name: 'Updated',
+        value: modCase.updatedAt
+          ? `<t:${Math.floor(new Date(modCase.updatedAt).getTime() / 1000)}:F>`
+          : 'Never',
+        inline: true
+      }
+    )
+    .setTimestamp();
+
+  if (modCase.relatedCaseId) {
     embed.addFields({
-      name: '🗒️ Notes',
-      value: trimText(notesText),
-      inline: false,
+      name: 'Related Case',
+      value: `#${modCase.relatedCaseId}`,
+      inline: true
+    });
+  }
+
+  if (modCase.metadata && Object.keys(modCase.metadata).length) {
+    embed.addFields({
+      name: 'Metadata',
+      value: `\`\`\`json\n${JSON.stringify(modCase.metadata, null, 2)}\n\`\`\``,
+      inline: false
     });
   }
 
   return embed;
 }
 
-function createPagedEmbed(interaction, options) {
-  const {
-    title,
-    thumbnail = null,
-    items,
-    page,
-    perPage = 5,
-    fields = [],
-    renderItem,
-  } = options;
+function buildCaseSearchModal() {
+  const modal = new ModalBuilder()
+    .setCustomId('casepanel_submit_search_case')
+    .setTitle('Search Case');
 
-  const pages = chunkArray(items, perPage);
-  const pageItems = pages[page];
-  const description = pageItems.map(renderItem).join('\n\n');
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('case_id')
+        .setLabel('Case ID')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('123')
+        .setRequired(true)
+        .setMaxLength(10)
+    )
+  );
 
-  const embed = createPanelEmbed(interaction, {
-    title,
-    description,
-    thumbnail,
-  });
-
-  if (fields.length) {
-    embed.addFields(...fields);
-  }
-
-  embed.addFields({
-    name: '📄 Page',
-    value: `${page + 1}/${pages.length}`,
-    inline: true,
-  });
-
-  return { embed, totalPages: pages.length, pageItems };
+  return modal;
 }
 
-async function handlePagedReply({
-  interaction,
-  prefix,
-  title,
-  thumbnail = null,
-  items,
-  perPage = 5,
-  fields = [],
-  renderItem,
-  guildCases,
-}) {
-  const pages = chunkArray(items, perPage);
-  let page = 0;
+function buildMemberSearchModal() {
+  const modal = new ModalBuilder()
+    .setCustomId('casepanel_submit_search_member')
+    .setTitle('Search Member Cases');
 
-  const initial = createPagedEmbed(interaction, {
-    title,
-    thumbnail,
-    items,
-    page,
-    perPage,
-    fields,
-    renderItem,
-  });
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('member_query')
+        .setLabel('User ID, username, tag, or display name')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('123456789012345678 or TwoToneTaj')
+        .setRequired(true)
+        .setMaxLength(100)
+    )
+  );
 
-  const components = [];
-  if (pages.length > 1) {
-    components.push(buildButtons(prefix, page, initial.totalPages, interaction.user.id));
+  return modal;
+}
+
+function buildModeratorSearchModal() {
+  const modal = new ModalBuilder()
+    .setCustomId('casepanel_submit_moderator')
+    .setTitle('Moderator Cases');
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('moderator_query')
+        .setLabel('Moderator ID, username, tag, or display name')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('Moderator name or ID')
+        .setRequired(true)
+        .setMaxLength(100)
+    )
+  );
+
+  return modal;
+}
+
+function buildExportModal() {
+  const modal = new ModalBuilder()
+    .setCustomId('casepanel_submit_export')
+    .setTitle('Export Member Cases');
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('member_query')
+        .setLabel('Member ID, username, tag, or display name')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('Member name or ID')
+        .setRequired(true)
+        .setMaxLength(100)
+    ),
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('format')
+        .setLabel('Format: json or csv')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('json')
+        .setRequired(true)
+        .setMaxLength(10)
+    )
+  );
+
+  return modal;
+}
+
+function toCsv(rows) {
+  const headers = [
+    'caseId',
+    'guildId',
+    'userId',
+    'moderatorId',
+    'action',
+    'reason',
+    'status',
+    'relatedCaseId',
+    'createdAt',
+    'updatedAt',
+    'metadata'
+  ];
+
+  const escape = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
+
+  return [
+    headers.join(','),
+    ...rows.map(row => [
+      row.caseId,
+      row.guildId,
+      row.userId,
+      row.moderatorId,
+      row.action,
+      row.reason,
+      row.status,
+      row.relatedCaseId,
+      row.createdAt,
+      row.updatedAt,
+      JSON.stringify(row.metadata || {})
+    ].map(escape).join(','))
+  ].join('\n');
+}
+
+async function handleCasePanelButton(interaction) {
+  if (!hasCasePermission(interaction.member)) {
+    return interaction.reply({
+      content: '❌ No permission to use the case panel.',
+      flags: MessageFlags.Ephemeral
+    });
   }
-  if (initial.pageItems.length > 0) {
-    components.push(buildCaseSelect(prefix, interaction.user.id, initial.pageItems));
+
+  if (interaction.customId === 'casepanel_search_case') {
+    return interaction.showModal(buildCaseSearchModal());
   }
 
-  const response = await interaction.reply({
-    embeds: [initial.embed],
-    components,
-    flags: MessageFlags.Ephemeral,
-    fetchReply: true,
-  });
+  if (interaction.customId === 'casepanel_search_member') {
+    return interaction.showModal(buildMemberSearchModal());
+  }
 
-  const collector = response.createMessageComponentCollector({
-    time: 120000,
-  });
+  if (interaction.customId === 'casepanel_recent') {
+    await interaction.guild.members.fetch();
 
-  collector.on('collect', async (componentInteraction) => {
-    if (componentInteraction.user.id !== interaction.user.id) {
-      return componentInteraction.reply({
-        content: '❌ You cannot use these controls.',
-        flags: MessageFlags.Ephemeral,
+    const allMembers = interaction.guild.members.cache.map(member => member.id);
+    let allCases = [];
+
+    for (const userId of allMembers) {
+      allCases.push(...getCasesForUser(interaction.guild.id, userId));
+    }
+
+    allCases = allCases
+      .sort((a, b) => b.caseId - a.caseId)
+      .slice(0, 15);
+
+    return interaction.reply({
+      embeds: [buildCasesEmbed('📜 Recent Cases', allCases, 'Latest 15 cases')],
+      flags: MessageFlags.Ephemeral
+    });
+  }
+
+  if (interaction.customId === 'casepanel_filter_action') {
+    const rows = [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('casepanel_filter_action_warn')
+          .setLabel('Warns')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId('casepanel_filter_action_timeout')
+          .setLabel('Timeouts')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId('casepanel_filter_action_note')
+          .setLabel('Notes')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId('casepanel_filter_action_ban')
+          .setLabel('Bans')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId('casepanel_filter_action_kick')
+          .setLabel('Kicks')
+          .setStyle(ButtonStyle.Secondary)
+      )
+    ];
+
+    return interaction.reply({
+      content: 'Choose an action filter:',
+      components: rows,
+      flags: MessageFlags.Ephemeral
+    });
+  }
+
+  if (interaction.customId === 'casepanel_filter_status') {
+    const rows = [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('casepanel_filter_status_active')
+          .setLabel('Active')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId('casepanel_filter_status_reversed')
+          .setLabel('Reversed')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId('casepanel_filter_status_expired')
+          .setLabel('Expired')
+          .setStyle(ButtonStyle.Secondary)
+      )
+    ];
+
+    return interaction.reply({
+      content: 'Choose a status filter:',
+      components: rows,
+      flags: MessageFlags.Ephemeral
+    });
+  }
+
+  if (interaction.customId === 'casepanel_moderator') {
+    return interaction.showModal(buildModeratorSearchModal());
+  }
+
+  if (interaction.customId === 'casepanel_export') {
+    return interaction.showModal(buildExportModal());
+  }
+
+  if (interaction.customId.startsWith('casepanel_filter_action_')) {
+    const action = interaction.customId.replace('casepanel_filter_action_', '');
+
+    await interaction.guild.members.fetch();
+    const memberIds = interaction.guild.members.cache.map(member => member.id);
+
+    let cases = [];
+    for (const userId of memberIds) {
+      cases.push(...getFilteredCases(interaction.guild.id, userId, { action }));
+    }
+
+    cases = cases.sort((a, b) => b.caseId - a.caseId).slice(0, 20);
+
+    return interaction.reply({
+      embeds: [buildCasesEmbed(`🎯 Cases filtered by action: ${action}`, cases)],
+      flags: MessageFlags.Ephemeral
+    });
+  }
+
+  if (interaction.customId.startsWith('casepanel_filter_status_')) {
+    const status = interaction.customId.replace('casepanel_filter_status_', '');
+
+    await interaction.guild.members.fetch();
+    const memberIds = interaction.guild.members.cache.map(member => member.id);
+
+    let cases = [];
+    for (const userId of memberIds) {
+      cases.push(...getFilteredCases(interaction.guild.id, userId, { status }));
+    }
+
+    cases = cases.sort((a, b) => b.caseId - a.caseId).slice(0, 20);
+
+    return interaction.reply({
+      embeds: [buildCasesEmbed(`🏷️ Cases filtered by status: ${status}`, cases)],
+      flags: MessageFlags.Ephemeral
+    });
+  }
+
+  return false;
+}
+
+async function handleCasePanelModal(interaction) {
+  if (!hasCasePermission(interaction.member)) {
+    return interaction.reply({
+      content: '❌ No permission to use the case panel.',
+      flags: MessageFlags.Ephemeral
+    });
+  }
+
+  if (interaction.customId === 'casepanel_submit_search_case') {
+    const caseIdRaw = interaction.fields.getTextInputValue('case_id').trim();
+
+    if (!/^\d+$/.test(caseIdRaw)) {
+      return interaction.reply({
+        content: '❌ Case ID must be a number.',
+        flags: MessageFlags.Ephemeral
       });
     }
 
-    if (componentInteraction.isButton()) {
-      if (componentInteraction.customId === `${prefix}_first_${interaction.user.id}`) {
-        page = 0;
-      } else if (componentInteraction.customId === `${prefix}_prev_${interaction.user.id}`) {
-        page = Math.max(0, page - 1);
-      } else if (componentInteraction.customId === `${prefix}_next_${interaction.user.id}`) {
-        page = Math.min(pages.length - 1, page + 1);
-      } else if (componentInteraction.customId === `${prefix}_last_${interaction.user.id}`) {
-        page = pages.length - 1;
-      }
+    const modCase = getCaseById(interaction.guild.id, Number(caseIdRaw));
 
-      const updated = createPagedEmbed(interaction, {
-        title,
-        thumbnail,
-        items,
-        page,
-        perPage,
-        fields,
-        renderItem,
-      });
-
-      const updatedComponents = [];
-      if (pages.length > 1) {
-        updatedComponents.push(buildButtons(prefix, page, updated.totalPages, interaction.user.id));
-      }
-      if (updated.pageItems.length > 0) {
-        updatedComponents.push(buildCaseSelect(prefix, interaction.user.id, updated.pageItems));
-      }
-
-      return componentInteraction.update({
-        embeds: [updated.embed],
-        components: updatedComponents,
+    if (!modCase) {
+      return interaction.reply({
+        content: '❌ Case not found.',
+        flags: MessageFlags.Ephemeral
       });
     }
 
-    if (componentInteraction.isStringSelectMenu()) {
-      const selectedCaseNumber = componentInteraction.values[0];
-      const caseData = guildCases[selectedCaseNumber];
+    return interaction.reply({
+      embeds: [buildCaseDetailEmbed(modCase)],
+      flags: MessageFlags.Ephemeral
+    });
+  }
 
-      if (!caseData) {
-        return componentInteraction.reply({
-          embeds: [
-            createDangerEmbed(interaction, {
-              title: '❌ Case Not Found',
-              description: `Case **#${selectedCaseNumber}** was not found.`,
-            }),
-          ],
-          flags: MessageFlags.Ephemeral,
-        });
-      }
+  if (interaction.customId === 'casepanel_submit_search_member') {
+    const query = interaction.fields.getTextInputValue('member_query').trim();
+    const member = await findMemberByQuery(interaction.guild, query);
 
-      return componentInteraction.reply({
-        embeds: [createCaseViewEmbed(interaction, caseData)],
-        flags: MessageFlags.Ephemeral,
+    if (!member) {
+      return interaction.reply({
+        content: '❌ Member not found.',
+        flags: MessageFlags.Ephemeral
       });
     }
-  });
 
-  collector.on('end', async () => {
-    try {
-      await interaction.editReply({ components: [] });
-    } catch (error) {
-      // Ignore edit errors
+    const cases = getCasesForUser(interaction.guild.id, member.id);
+
+    return interaction.reply({
+      embeds: [buildCasesEmbed(`👤 Cases for ${member.user.tag}`, cases)],
+      flags: MessageFlags.Ephemeral
+    });
+  }
+
+  if (interaction.customId === 'casepanel_submit_moderator') {
+    const query = interaction.fields.getTextInputValue('moderator_query').trim();
+    const moderator = await findMemberByQuery(interaction.guild, query);
+
+    if (!moderator) {
+      return interaction.reply({
+        content: '❌ Moderator not found.',
+        flags: MessageFlags.Ephemeral
+      });
     }
-  });
+
+    const cases = getCasesByModerator(interaction.guild.id, moderator.id).slice(0, 20);
+
+    return interaction.reply({
+      embeds: [buildCasesEmbed(`👮 Cases by ${moderator.user.tag}`, cases)],
+      flags: MessageFlags.Ephemeral
+    });
+  }
+
+  if (interaction.customId === 'casepanel_submit_export') {
+    const query = interaction.fields.getTextInputValue('member_query').trim();
+    const formatRaw = interaction.fields.getTextInputValue('format').trim().toLowerCase();
+
+    if (!['json', 'csv'].includes(formatRaw)) {
+      return interaction.reply({
+        content: '❌ Format must be `json` or `csv`.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    const member = await findMemberByQuery(interaction.guild, query);
+
+    if (!member) {
+      return interaction.reply({
+        content: '❌ Member not found.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    const cases = getCasesForUser(interaction.guild.id, member.id);
+    const exportDir = path.join(process.cwd(), 'data', 'moderation', 'exports');
+    fs.mkdirSync(exportDir, { recursive: true });
+
+    const filePath = path.join(
+      exportDir,
+      `cases-${interaction.guild.id}-${member.id}.${formatRaw}`
+    );
+
+    if (formatRaw === 'csv') {
+      fs.writeFileSync(filePath, toCsv(cases), 'utf8');
+    } else {
+      fs.writeFileSync(filePath, JSON.stringify(cases, null, 2), 'utf8');
+    }
+
+    return interaction.reply({
+      content: `📦 Exported ${cases.length} case(s) for **${member.user.tag}** as ${formatRaw.toUpperCase()}.`,
+      files: [new AttachmentBuilder(filePath)],
+      flags: MessageFlags.Ephemeral
+    });
+  }
+
+  return false;
 }
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('case')
-    .setDescription('Manage moderation cases')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
-
-    .addSubcommand(sub =>
-      sub
-        .setName('view')
-        .setDescription('View a moderation case')
-        .addIntegerOption(option =>
-          option
-            .setName('number')
-            .setDescription('Case number')
-            .setRequired(true)
-            .setMinValue(1)
-        )
-    )
-
-    .addSubcommand(sub =>
-      sub
-        .setName('note')
-        .setDescription('Add a note to a moderation case')
-        .addIntegerOption(option =>
-          option
-            .setName('number')
-            .setDescription('Case number')
-            .setRequired(true)
-            .setMinValue(1)
-        )
-        .addStringOption(option =>
-          option
-            .setName('text')
-            .setDescription('Note text')
-            .setRequired(true)
-        )
-    )
-
-    .addSubcommand(sub =>
-      sub
-        .setName('delete-note')
-        .setDescription('Delete a note from a moderation case')
-        .addIntegerOption(option =>
-          option
-            .setName('number')
-            .setDescription('Case number')
-            .setRequired(true)
-            .setMinValue(1)
-        )
-        .addIntegerOption(option =>
-          option
-            .setName('note')
-            .setDescription('Note number to delete')
-            .setRequired(true)
-            .setMinValue(1)
-        )
-    )
-
-    .addSubcommand(sub =>
-      sub
-        .setName('list')
-        .setDescription('List recent moderation cases')
-        .addIntegerOption(option =>
-          option
-            .setName('limit')
-            .setDescription('How many recent cases to show')
-            .setRequired(false)
-            .setMinValue(1)
-            .setMaxValue(100)
-        )
-    )
-
-    .addSubcommand(sub =>
-      sub
-        .setName('search-user')
-        .setDescription('Search moderation cases for a user')
-        .addUserOption(option =>
-          option
-            .setName('target')
-            .setDescription('The user to search for')
-            .setRequired(true)
-        )
-    )
-
-    .addSubcommand(sub =>
-      sub
-        .setName('search-action')
-        .setDescription('Search moderation cases by action')
-        .addStringOption(option =>
-          option
-            .setName('action')
-            .setDescription('The action to search for')
-            .setRequired(true)
-            .addChoices(
-              { name: 'Warn', value: 'Warn' },
-              { name: 'Ban', value: 'Ban' },
-              { name: 'Kick', value: 'Kick' },
-              { name: 'Timeout', value: 'Timeout' },
-              { name: 'ClearWarnings', value: 'ClearWarnings' },
-              { name: 'Temporary Ban', value: 'Temporary Ban' },
-              { name: 'Temporary Mute', value: 'Temporary Mute' }
-            )
-        )
-        .addIntegerOption(option =>
-          option
-            .setName('limit')
-            .setDescription('How many cases to show')
-            .setRequired(false)
-            .setMinValue(1)
-            .setMaxValue(100)
-        )
+    .setDescription('Open the case management panel')
+    .setDefaultMemberPermissions(
+      PermissionFlagsBits.ModerateMembers |
+      PermissionFlagsBits.KickMembers |
+      PermissionFlagsBits.BanMembers
     ),
 
   async execute(interaction) {
-    const sub = interaction.options.getSubcommand();
+    const payload = {
+      embeds: [buildCasePanelEmbed(interaction.guild, interaction.member)],
+      components: buildCasePanelRows(),
+      flags: MessageFlags.Ephemeral
+    };
 
-    const data = readJson();
-    const guildCases = data[interaction.guild.id] || {};
-    const allCases = Object.values(guildCases);
-
-    if (sub === 'view') {
-      const caseNumber = interaction.options.getInteger('number');
-      const caseData = guildCases[caseNumber];
-
-      if (!caseData) {
-        const embed = createDangerEmbed(interaction, {
-          title: '❌ Case Not Found',
-          description: `Case **#${caseNumber}** was not found.`,
-        });
-
-        return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
-      }
-
-      return interaction.reply({
-        embeds: [createCaseViewEmbed(interaction, caseData)],
-        flags: MessageFlags.Ephemeral,
-      });
-    }
-
-    if (sub === 'note') {
-      const caseNumber = interaction.options.getInteger('number');
-      const text = interaction.options.getString('text');
-      const caseData = guildCases[caseNumber];
-
-      if (!caseData) {
-        const embed = createDangerEmbed(interaction, {
-          title: '❌ Case Not Found',
-          description: `Case **#${caseNumber}** was not found.`,
-        });
-
-        return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
-      }
-
-      if (!Array.isArray(caseData.notes)) {
-        caseData.notes = [];
-      }
-
-      caseData.notes.push({
-        text,
-        moderatorId: interaction.user.id,
-        moderatorTag: interaction.user.tag,
-        createdAt: Date.now(),
-      });
-
-      writeJson(data);
-
-      const embed = createSuccessEmbed(interaction, {
-        title: '🗒️ Note Added',
-        description: `Added a note to case **#${caseNumber}**.`,
-      }).addFields({
-        name: '📝 Note',
-        value: trimText(text),
-        inline: false,
-      });
-
-      return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
-    }
-
-    if (sub === 'delete-note') {
-      const caseNumber = interaction.options.getInteger('number');
-      const noteNumber = interaction.options.getInteger('note');
-      const caseData = guildCases[caseNumber];
-
-      if (!caseData) {
-        const embed = createDangerEmbed(interaction, {
-          title: '❌ Case Not Found',
-          description: `Case **#${caseNumber}** was not found.`,
-        });
-
-        return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
-      }
-
-      if (!Array.isArray(caseData.notes) || caseData.notes.length === 0) {
-        const embed = createDangerEmbed(interaction, {
-          title: '❌ No Notes Found',
-          description: `Case **#${caseNumber}** has no notes.`,
-        });
-
-        return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
-      }
-
-      if (noteNumber < 1 || noteNumber > caseData.notes.length) {
-        const embed = createDangerEmbed(interaction, {
-          title: '❌ Note Not Found',
-          description: `Note **#${noteNumber}** does not exist on case **#${caseNumber}**.`,
-        });
-
-        return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
-      }
-
-      caseData.notes.splice(noteNumber - 1, 1);
-      writeJson(data);
-
-      const embed = createSuccessEmbed(interaction, {
-        title: '🗑️ Note Deleted',
-        description: `Deleted note **#${noteNumber}** from case **#${caseNumber}**.`,
-      });
-
-      return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
-    }
-
-    if (sub === 'list') {
-      const limit = interaction.options.getInteger('limit') || 25;
-      const casesArray = allCases
-        .sort((a, b) => b.caseNumber - a.caseNumber)
-        .slice(0, limit);
-
-      if (!casesArray.length) {
-        const embed = createDangerEmbed(interaction, {
-          title: '❌ No Cases Found',
-          description: 'No moderation cases were found for this server.',
-        });
-
-        return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
-      }
-
-      const warnCount = allCases.filter(c => c.action === 'Warn').length;
-      const banCount = allCases.filter(c => c.action === 'Ban').length;
-      const kickCount = allCases.filter(c => c.action === 'Kick').length;
-      const timeoutCount = allCases.filter(c => c.action === 'Timeout').length;
-      const clearedCount = allCases.filter(c => c.cleared === true).length;
-
-      return handlePagedReply({
-        interaction,
-        prefix: 'case_list',
-        title: '📚 Recent Moderation Cases',
-        items: casesArray,
-        perPage: 5,
-        fields: [
-          { name: '⚠️ Warns', value: `${warnCount}`, inline: true },
-          { name: '🔨 Bans', value: `${banCount}`, inline: true },
-          { name: '👢 Kicks', value: `${kickCount}`, inline: true },
-          { name: '⏱️ Timeouts', value: `${timeoutCount}`, inline: true },
-          { name: '🧹 Cleared', value: `${clearedCount}`, inline: true },
-          { name: '📦 Total Cases', value: `${allCases.length}`, inline: true },
-        ],
-        renderItem: (c) => {
-          const clearedTag = c.cleared === true ? ' • Cleared' : '';
-          return `**#${c.caseNumber}** • ${c.action}${clearedTag} • ${c.targetTag}\n<t:${Math.floor(c.createdAt / 1000)}:R>`;
-        },
-        guildCases,
-      });
-    }
-
-    if (sub === 'search-user') {
-      const target = interaction.options.getUser('target');
-
-      const matches = allCases
-        .filter((c) => c.targetId === target.id)
-        .sort((a, b) => b.caseNumber - a.caseNumber);
-
-      if (!matches.length) {
-        const embed = createDangerEmbed(interaction, {
-          title: '❌ No Cases Found',
-          description: `No cases were found for ${target}.`,
-        });
-
-        return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
-      }
-
-      const activeWarns = matches.filter(c => c.action === 'Warn' && c.cleared !== true).length;
-      const clearedWarns = matches.filter(c => c.action === 'Warn' && c.cleared === true).length;
-      const bans = matches.filter(c => c.action === 'Ban').length;
-      const kicks = matches.filter(c => c.action === 'Kick').length;
-      const timeouts = matches.filter(c => c.action === 'Timeout').length;
-
-      return handlePagedReply({
-        interaction,
-        prefix: 'case_user',
-        title: `🔎 Cases for ${target.username}`,
-        thumbnail: target.displayAvatarURL({ dynamic: true }),
-        items: matches,
-        perPage: 5,
-        fields: [
-          { name: '⚠️ Active Warns', value: `${activeWarns}`, inline: true },
-          { name: '🧹 Cleared Warns', value: `${clearedWarns}`, inline: true },
-          { name: '🔨 Bans', value: `${bans}`, inline: true },
-          { name: '👢 Kicks', value: `${kicks}`, inline: true },
-          { name: '⏱️ Timeouts', value: `${timeouts}`, inline: true },
-          { name: '📦 Total Cases', value: `${matches.length}`, inline: true },
-        ],
-        renderItem: (c) => {
-          const clearedTag = c.cleared === true ? ' • Cleared' : '';
-          return `**#${c.caseNumber}** • ${c.action}${clearedTag}\nReason: ${c.reason || 'No reason provided'}\n<t:${Math.floor(c.createdAt / 1000)}:R>`;
-        },
-        guildCases,
-      });
-    }
-
-    if (sub === 'search-action') {
-      const action = interaction.options.getString('action');
-      const limit = interaction.options.getInteger('limit') || 25;
-
-      const matches = allCases
-        .filter((c) => c.action === action)
-        .sort((a, b) => b.caseNumber - a.caseNumber)
-        .slice(0, limit);
-
-      const totalActionCases = allCases.filter(c => c.action === action);
-      const clearedActionCases = totalActionCases.filter(c => c.cleared === true).length;
-      const activeActionCases = totalActionCases.filter(c => c.cleared !== true).length;
-
-      if (!matches.length) {
-        const embed = createDangerEmbed(interaction, {
-          title: '❌ No Cases Found',
-          description: `No **${action}** cases were found for this server.`,
-        });
-
-        return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
-      }
-
-      return handlePagedReply({
-        interaction,
-        prefix: 'case_action',
-        title: `📂 ${action} Cases`,
-        items: matches,
-        perPage: 5,
-        fields: [
-          { name: '👀 Shown', value: `${matches.length}`, inline: true },
-          { name: '📦 Total', value: `${totalActionCases.length}`, inline: true },
-          { name: '✅ Active', value: `${activeActionCases}`, inline: true },
-          { name: '🧹 Cleared', value: `${clearedActionCases}`, inline: true },
-        ],
-        renderItem: (c) => {
-          const clearedTag = c.cleared === true ? ' • Cleared' : '';
-          return `**#${c.caseNumber}** • ${c.targetTag}${clearedTag}\nReason: ${c.reason || 'No reason provided'}\n<t:${Math.floor(c.createdAt / 1000)}:R>`;
-        },
-        guildCases,
-      });
+    if (interaction.deferred || interaction.replied) {
+      await interaction.editReply(payload);
+    } else {
+      await interaction.reply(payload);
     }
   },
+
+  buildCasePanelEmbed,
+  buildCasePanelRows,
+  handleCasePanelButton,
+  handleCasePanelModal
 };

@@ -10,8 +10,8 @@ const {
   createDangerEmbed,
   createWarningEmbed,
 } = require('../../utils/embed/embedStyle');
-const logModerationAction = require('../../utils/logs/moderationActionLog');
-const createModCase = require('../../utils/logs/cases/createModCase');
+const logModerationAction = require('../../utils/logging/modlogs/moderationActionLog');
+const createModCase = require('../../utils/logging/cases/createModCase');
 
 const caseDetailsPath = path.join(
   __dirname,

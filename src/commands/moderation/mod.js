@@ -12,7 +12,7 @@ function buildModPanelEmbed(guild, moderator, targetMember = null, extra = {}) {
   const embed = new EmbedBuilder()
     .setColor('#5865F2')
     .setTitle('🛡️ Moderation Panel')
-    .setDescription('Select a member, then choose a moderation action below.')
+    .setDescription('Select a member or use bulk moderation tools below.')
     .addFields(
       {
         name: 'Moderator',
@@ -95,6 +95,17 @@ function buildModPanelEmbed(guild, moderator, targetMember = null, extra = {}) {
         inline: false
       });
     }
+  } else {
+    embed.addFields({
+      name: 'Bulk Tools',
+      value: [
+        '**Bulk Warn**',
+        '**Bulk Timeout**',
+        '**Bulk Kick**',
+        '**Bulk Ban**'
+      ].join('\n'),
+      inline: false
+    });
   }
 
   return embed;
@@ -176,7 +187,30 @@ function buildModPanelRows(targetId = null) {
       .setDisabled(!hasTarget)
   );
 
-  return [row1, row2, row3];
+  const row4 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('mod_bulk_warn')
+      .setLabel('Bulk Warn')
+      .setEmoji('📢')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('mod_bulk_timeout')
+      .setLabel('Bulk Timeout')
+      .setEmoji('📦')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('mod_bulk_kick')
+      .setLabel('Bulk Kick')
+      .setEmoji('👢')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('mod_bulk_ban')
+      .setLabel('Bulk Ban')
+      .setEmoji('🔨')
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  return [row1, row2, row3, row4];
 }
 
 module.exports = {
@@ -208,4 +242,4 @@ module.exports = {
 
   buildModPanelEmbed,
   buildModPanelRows
-}
+};

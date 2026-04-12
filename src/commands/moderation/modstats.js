@@ -1,51 +1,16 @@
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const fs = require('fs');
-const path = require('path');
 const {
-  createPanelEmbed,
-  createDangerEmbed,
-} = require('../../utils/embed/embedStyle');
+  SlashCommandBuilder,
+  PermissionFlagsBits,
+  MessageFlags,
+  EmbedBuilder
+} = require('discord.js');
 
-const caseDetailsPath = path.join(
-  __dirname,
-  '..',
-  '..',
-  'data',
-  'modCaseDetails.json'
-);
-
-function ensureCaseFile() {
-  const dir = path.dirname(caseDetailsPath);
-
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-
-  if (!fs.existsSync(caseDetailsPath)) {
-    fs.writeFileSync(caseDetailsPath, JSON.stringify({}, null, 2));
-  }
-}
-
-function readCaseData() {
-  ensureCaseFile();
-
-  try {
-    const raw = fs.readFileSync(caseDetailsPath, 'utf8');
-    return raw ? JSON.parse(raw) : {};
-  } catch (error) {
-    console.error('❌ Failed to read moderation case data:', error);
-    return {};
-  }
-}
+const db = require('../../utils/moderation/db');
 
 function trimText(text, max = 1024) {
   if (!text) return 'No data';
   if (text.length <= max) return text;
   return `${text.slice(0, max - 3)}...`;
-}
-
-function countByAction(cases, action) {
-  return cases.filter((c) => c.action === action).length;
 }
 
 module.exports = {
@@ -63,142 +28,129 @@ module.exports = {
     .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
 
   async execute(interaction) {
+    const guildId = interaction.guild.id;
     const recentLimit = interaction.options.getInteger('recent') || 5;
-    const data = readCaseData();
-    const guildCases = data[interaction.guild.id] || {};
-    const allCases = Object.values(guildCases).sort(
-      (a, b) => (b.caseNumber || 0) - (a.caseNumber || 0)
-    );
 
-    if (!allCases.length) {
-      const embed = createDangerEmbed(interaction, {
-        title: '❌ No Moderation Data',
-        description: 'No moderation cases were found for this server.',
+    const totalCasesRow = db.prepare(`
+      SELECT COUNT(*) AS count
+      FROM cases
+      WHERE guild_id = ?
+    `).get(guildId);
+
+    const totalCases = totalCasesRow?.count || 0;
+
+    if (!totalCases) {
+      const embed = new EmbedBuilder()
+        .setColor('#ED4245')
+        .setTitle('❌ No Moderation Data')
+        .setDescription('No moderation cases were found for this server.')
+        .setTimestamp();
+
+      return interaction.reply({
+        embeds: [embed],
+        flags: MessageFlags.Ephemeral,
       });
-
-      return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
     }
 
-    const warnCount = countByAction(allCases, 'Warn');
-    const banCount = countByAction(allCases, 'Ban');
-    const kickCount = countByAction(allCases, 'Kick');
-    const timeoutCount = countByAction(allCases, 'Timeout');
-    const clearWarningsCount = countByAction(allCases, 'ClearWarnings');
-    const tempBanCount = countByAction(allCases, 'Temporary Ban');
-    const tempMuteCount = countByAction(allCases, 'Temporary Mute');
+    const actionTotals = db.prepare(`
+      SELECT action, COUNT(*) AS count
+      FROM cases
+      WHERE guild_id = ?
+      GROUP BY action
+      ORDER BY count DESC
+    `).all(guildId);
 
-    const activeWarnings = allCases.filter(
-      (c) => c.action === 'Warn' && c.cleared !== true
-    ).length;
-    const clearedWarnings = allCases.filter(
-      (c) => c.action === 'Warn' && c.cleared === true
-    ).length;
+    const topModerators = db.prepare(`
+      SELECT moderator_id, COUNT(*) AS count
+      FROM cases
+      WHERE guild_id = ?
+      GROUP BY moderator_id
+      ORDER BY count DESC
+      LIMIT 5
+    `).all(guildId);
 
-    const moderatorMap = new Map();
+    const recentCases = db.prepare(`
+      SELECT case_id, action, user_id, created_at, reason, status
+      FROM cases
+      WHERE guild_id = ?
+      ORDER BY case_id DESC
+      LIMIT ?
+    `).all(guildId, recentLimit);
 
-    for (const modCase of allCases) {
-      const moderatorId = modCase.moderatorId || 'unknown';
-      const moderatorTag = modCase.moderatorTag || 'Unknown Moderator';
+    const activeWarningsRow = db.prepare(`
+      SELECT COUNT(*) AS count
+      FROM warnings
+      WHERE guild_id = ?
+    `).get(guildId);
 
-      if (!moderatorMap.has(moderatorId)) {
-        moderatorMap.set(moderatorId, {
-          id: moderatorId,
-          tag: moderatorTag,
-          total: 0,
-        });
-      }
+    const activeWarnings = activeWarningsRow?.count || 0;
 
-      moderatorMap.get(moderatorId).total++;
-    }
+    const totalWarnCases = actionTotals.find(row => row.action === 'warn')?.count || 0;
+    const clearedWarnings = Math.max(0, totalWarnCases - activeWarnings);
 
-    const topModerators = [...moderatorMap.values()]
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 5);
+    const totalsText = actionTotals.length
+      ? actionTotals.map(row => `**${row.action}**: ${row.count}`).join('\n')
+      : 'No data';
 
     const topModeratorsText = topModerators.length
       ? topModerators
-          .map((mod, index) => {
-            const label =
-              mod.id !== 'unknown' ? `<@${mod.id}>` : mod.tag;
-            return `**${index + 1}.** ${label} — ${mod.total}`;
-          })
+          .map((row, index) => `**${index + 1}.** <@${row.moderator_id}> — ${row.count}`)
           .join('\n')
       : 'No moderator data';
 
-    const recentCasesText = allCases
-      .slice(0, recentLimit)
-      .map((c) => {
-        const target = c.targetTag || c.targetId || 'Unknown Target';
-        return `**#${c.caseNumber}** • ${c.action} • ${target}\n<t:${Math.floor((c.createdAt || Date.now()) / 1000)}:R>`;
-      })
-      .join('\n\n');
+    const recentCasesText = recentCases.length
+      ? recentCases
+          .map(row => {
+            const statusLabel =
+              row.status === 'reversed'
+                ? '🔁'
+                : row.status === 'expired'
+                  ? '⌛'
+                  : '🟢';
 
-    const embed = createPanelEmbed(interaction, {
-      title: '📊 Moderation Statistics',
-      description: `Overview for **${interaction.guild.name}**`,
-      thumbnail: interaction.guild.iconURL({ dynamic: true }),
-    }).addFields(
-      {
-        name: '📦 Total Cases',
-        value: `${allCases.length}`,
-        inline: true,
-      },
-      {
-        name: '⚠️ Active Warns',
-        value: `${activeWarnings}`,
-        inline: true,
-      },
-      {
-        name: '🧹 Cleared Warns',
-        value: `${clearedWarnings}`,
-        inline: true,
-      },
-      {
-        name: '⚠️ Warns',
-        value: `${warnCount}`,
-        inline: true,
-      },
-      {
-        name: '🔨 Bans',
-        value: `${banCount}`,
-        inline: true,
-      },
-      {
-        name: '👢 Kicks',
-        value: `${kickCount}`,
-        inline: true,
-      },
-      {
-        name: '⏱️ Timeouts',
-        value: `${timeoutCount}`,
-        inline: true,
-      },
-      {
-        name: '🧹 Clear Actions',
-        value: `${clearWarningsCount}`,
-        inline: true,
-      },
-      {
-        name: '🔨 Temp Bans',
-        value: `${tempBanCount}`,
-        inline: true,
-      },
-      {
-        name: '🔇 Temp Mutes',
-        value: `${tempMuteCount}`,
-        inline: true,
-      },
-      {
-        name: '🏆 Top Moderators',
-        value: trimText(topModeratorsText),
-        inline: false,
-      },
-      {
-        name: `🕘 Recent ${recentLimit} Cases`,
-        value: trimText(recentCasesText),
-        inline: false,
-      }
-    );
+            return `**#${row.case_id}** • ${row.action} • \`${row.user_id}\` ${statusLabel}\n<t:${Math.floor(new Date(row.created_at).getTime() / 1000)}:R>`;
+          })
+          .join('\n\n')
+      : 'No recent cases';
+
+    const embed = new EmbedBuilder()
+      .setColor('#5865F2')
+      .setTitle('📊 Moderation Statistics')
+      .setDescription(`Overview for **${interaction.guild.name}**`)
+      .setThumbnail(interaction.guild.iconURL({ dynamic: true }))
+      .addFields(
+        {
+          name: '📦 Total Cases',
+          value: String(totalCases),
+          inline: true,
+        },
+        {
+          name: '⚠️ Active Warns',
+          value: String(activeWarnings),
+          inline: true,
+        },
+        {
+          name: '🧹 Cleared/Expired Warns',
+          value: String(clearedWarnings),
+          inline: true,
+        },
+        {
+          name: '📈 Action Totals',
+          value: trimText(totalsText),
+          inline: false,
+        },
+        {
+          name: '🏆 Top Moderators',
+          value: trimText(topModeratorsText),
+          inline: false,
+        },
+        {
+          name: `🕘 Recent ${recentLimit} Cases`,
+          value: trimText(recentCasesText),
+          inline: false,
+        }
+      )
+      .setTimestamp();
 
     return interaction.reply({
       embeds: [embed],

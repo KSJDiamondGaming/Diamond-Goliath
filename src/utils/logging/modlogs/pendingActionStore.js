@@ -1,69 +1,41 @@
-const fs = require('fs');
-const path = require('path');
 const crypto = require('crypto');
-
-const dataDir = path.join(process.cwd(), 'data', 'moderation');
-
-function ensureDir() {
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-  }
-}
-
-function getFilePath(guildId) {
-  ensureDir();
-  return path.join(dataDir, `pending-actions-${guildId}.json`);
-}
-
-function ensureStore(guildId) {
-  const filePath = getFilePath(guildId);
-
-  if (!fs.existsSync(filePath)) {
-    fs.writeFileSync(filePath, JSON.stringify({ actions: [] }, null, 2), 'utf8');
-  }
-
-  return filePath;
-}
-
-function readStore(guildId) {
-  const filePath = ensureStore(guildId);
-  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-}
-
-function writeStore(guildId, data) {
-  const filePath = ensureStore(guildId);
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
-}
+const db = require('./db');
 
 function purgeExpired(guildId) {
-  const store = readStore(guildId);
-  const now = Date.now();
+  const nowIso = new Date().toISOString();
 
-  store.actions = store.actions.filter(entry => {
-    return new Date(entry.expiresAt).getTime() > now;
-  });
+  const stmt = db.prepare(`
+    DELETE FROM pending_actions
+    WHERE guild_id = ? AND expires_at <= ?
+  `);
 
-  writeStore(guildId, store);
+  stmt.run(guildId, nowIso);
 }
 
 function createPendingAction(guildId, action) {
   purgeExpired(guildId);
 
-  const store = readStore(guildId);
   const token = crypto.randomBytes(8).toString('hex');
+  const createdAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
-  const entry = {
+  const stmt = db.prepare(`
+    INSERT INTO pending_actions (
+      token, guild_id, moderator_id, target_id, type, payload, created_at, expires_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  stmt.run(
     token,
-    moderatorId: action.moderatorId,
-    targetId: action.targetId,
-    type: action.type,
-    payload: action.payload || {},
-    createdAt: new Date().toISOString(),
-    expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString()
-  };
-
-  store.actions.push(entry);
-  writeStore(guildId, store);
+    guildId,
+    action.moderatorId,
+    action.targetId,
+    action.type,
+    JSON.stringify(action.payload || {}),
+    createdAt,
+    expiresAt
+  );
 
   return token;
 }
@@ -71,14 +43,32 @@ function createPendingAction(guildId, action) {
 function getPendingAction(guildId, token) {
   purgeExpired(guildId);
 
-  const store = readStore(guildId);
-  return store.actions.find(entry => entry.token === token) || null;
+  const stmt = db.prepare(`
+    SELECT * FROM pending_actions
+    WHERE guild_id = ? AND token = ?
+  `);
+
+  const row = stmt.get(guildId, token);
+  if (!row) return null;
+
+  return {
+    token: row.token,
+    moderatorId: row.moderator_id,
+    targetId: row.target_id,
+    type: row.type,
+    payload: row.payload ? JSON.parse(row.payload) : {},
+    createdAt: row.created_at,
+    expiresAt: row.expires_at
+  };
 }
 
 function deletePendingAction(guildId, token) {
-  const store = readStore(guildId);
-  store.actions = store.actions.filter(entry => entry.token !== token);
-  writeStore(guildId, store);
+  const stmt = db.prepare(`
+    DELETE FROM pending_actions
+    WHERE guild_id = ? AND token = ?
+  `);
+
+  stmt.run(guildId, token);
 }
 
 module.exports = {

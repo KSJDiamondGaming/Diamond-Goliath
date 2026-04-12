@@ -1,42 +1,38 @@
 const {
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  ActionRowBuilder,
+  PermissionFlagsBits,
+  MessageFlags,
+  EmbedBuilder,
+  ButtonBuilder,
+  ButtonStyle
+} = require('discord.js');
+
+const { buildModPanelEmbed, buildModPanelRows } = require('./mod');
+const {
   createCase,
   getCasesForUser,
+  getFilteredCases,
   getCaseCountForUser,
   getCaseById,
   updateCaseReason,
   updateCaseStatus
-} = require('../../utils/logs/cases/caseStore');
-
-
+} = require('../../utils/moderation/caseStore');
 const {
   addWarning,
   getWarningCountForUser,
   getWarningByCaseId,
   deleteWarningByCaseId,
   purgeExpiredWarnings
-} = require('../../utils/logs/cases/warningStore');
-
-const { sendModLog } = require('../../utils/logs/cases/modLog');
-
+} = require('../../utils/moderation/warningStore');
+const { sendModLog } = require('../../utils/moderation/modLog');
 const {
   createPendingAction,
   getPendingAction,
   deletePendingAction
-} = require('../../utils/logs/cases/pendingActionStore');
-
-const moderationChecks = require('../../utils/moderation/moderationChecks');
-const punishmentScheduler = require('../../utils/moderation/punishmentScheduler');
-
-const { buildModPanelEmbed, buildModPanelRows } = require('../../commands/moderation/mod');
-const {
-  createCase,
-  getCasesForUser,
-  getCaseCountForUser,
-  getCaseById,
-  updateCaseReason,
-  updateCaseStatus
-} = require('../logs/cases/caseStore');
-
+} = require('../../utils/moderation/pendingActionStore');
 
 function hasModPermission(member) {
   return (
@@ -289,6 +285,71 @@ function buildReasonModal(
   return modal;
 }
 
+function buildBulkModal(type) {
+  const titleMap = {
+    warn: 'Bulk Warn',
+    timeout: 'Bulk Timeout',
+    kick: 'Bulk Kick',
+    ban: 'Bulk Ban'
+  };
+
+  const modal = new ModalBuilder()
+    .setCustomId(`mod_submit_bulk_${type}`)
+    .setTitle(titleMap[type] || 'Bulk Moderation');
+
+  const rows = [
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('users')
+        .setLabel('User IDs (comma separated)')
+        .setStyle(TextInputStyle.Paragraph)
+        .setPlaceholder('123456789012345678, 987654321098765432')
+        .setRequired(true)
+    )
+  ];
+
+  if (type === 'timeout') {
+    rows.push(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('duration')
+          .setLabel('Duration (10m, 1h, 1d)')
+          .setStyle(TextInputStyle.Short)
+          .setPlaceholder('1h')
+          .setRequired(true)
+      )
+    );
+  }
+
+  if (type === 'ban') {
+    rows.push(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('days')
+          .setLabel('Delete message days (0-7)')
+          .setStyle(TextInputStyle.Short)
+          .setPlaceholder('0')
+          .setRequired(true)
+          .setMaxLength(1)
+      )
+    );
+  }
+
+  rows.push(
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('reason')
+        .setLabel('Reason')
+        .setStyle(TextInputStyle.Paragraph)
+        .setPlaceholder('Enter the moderation reason')
+        .setRequired(true)
+    )
+  );
+
+  modal.addComponents(...rows);
+  return modal;
+}
+
 function buildCaseIdModal(customId, title, label = 'Case ID') {
   const modal = new ModalBuilder()
     .setCustomId(customId)
@@ -336,6 +397,43 @@ function buildEditCaseModal(customId) {
   );
 
   return modal;
+}
+
+function buildCaseFilterButtons(targetId) {
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`mod_filter_cases:${targetId}:all:all:0`)
+        .setLabel('All')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`mod_filter_cases:${targetId}:warn:all:0`)
+        .setLabel('Warns')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`mod_filter_cases:${targetId}:timeout:all:0`)
+        .setLabel('Timeouts')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`mod_filter_cases:${targetId}:note:all:0`)
+        .setLabel('Notes')
+        .setStyle(ButtonStyle.Secondary)
+    ),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`mod_filter_cases:${targetId}:all:active:0`)
+        .setLabel('Active')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`mod_filter_cases:${targetId}:all:reversed:0`)
+        .setLabel('Reversed')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`mod_filter_cases:${targetId}:all:expired:0`)
+        .setLabel('Expired')
+        .setStyle(ButtonStyle.Secondary)
+    )
+  ];
 }
 
 async function refreshPanelFromReply(interaction, target) {
@@ -401,6 +499,321 @@ function buildCaseDetailButtons(modCase) {
         .setDisabled(!isTimeout || reversedOrExpired)
     )
   ];
+}
+
+function getBulkActionProgressEmbed({
+  actionLabel,
+  total,
+  processed,
+  successCount,
+  failCount
+}) {
+  return new EmbedBuilder()
+    .setColor('#5865F2')
+    .setTitle(`⚙️ ${actionLabel} Progress`)
+    .setDescription('Bulk moderation is running...')
+    .addFields(
+      {
+        name: 'Processed',
+        value: `${processed}/${total}`,
+        inline: true
+      },
+      {
+        name: 'Success',
+        value: String(successCount),
+        inline: true
+      },
+      {
+        name: 'Failed',
+        value: String(failCount),
+        inline: true
+      }
+    )
+    .setTimestamp();
+}
+
+function getBulkActionSummaryEmbed({
+  actionLabel,
+  total,
+  success,
+  failed
+}) {
+  return new EmbedBuilder()
+    .setColor(failed.length ? '#ED4245' : '#57F287')
+    .setTitle(`✅ ${actionLabel} Complete`)
+    .addFields(
+      {
+        name: 'Total Targets',
+        value: String(total),
+        inline: true
+      },
+      {
+        name: 'Successful',
+        value: String(success.length),
+        inline: true
+      },
+      {
+        name: 'Failed',
+        value: String(failed.length),
+        inline: true
+      },
+      {
+        name: 'Successes',
+        value: success.length ? success.join('\n').slice(0, 1024) : 'None',
+        inline: false
+      },
+      {
+        name: 'Failures',
+        value: failed.length ? failed.join('\n').slice(0, 1024) : 'None',
+        inline: false
+      }
+    )
+    .setTimestamp();
+}
+
+function checkHierarchyForBulk(actorMember, botMember, guildOwnerId, targetMember, actorUserId) {
+  if (!targetMember) return 'User not found.';
+  if (targetMember.id === actorUserId) return 'Cannot target yourself.';
+  if (targetMember.id === guildOwnerId) return 'Cannot target server owner.';
+
+  const actorIsOwner = actorUserId === guildOwnerId;
+
+  if (
+    !actorIsOwner &&
+    actorMember.roles.highest.position <= targetMember.roles.highest.position
+  ) {
+    return 'Target has equal or higher role.';
+  }
+
+  if (
+    !botMember ||
+    botMember.roles.highest.position <= targetMember.roles.highest.position
+  ) {
+    return 'Bot role is too low.';
+  }
+
+  return null;
+}
+
+async function runBulkAction(interaction, options) {
+  const {
+    actionType,
+    ids,
+    reason,
+    durationRaw = null,
+    deleteDays = 0
+  } = options;
+
+  const actionLabelMap = {
+    warn: 'Bulk Warn',
+    timeout: 'Bulk Timeout',
+    kick: 'Bulk Kick',
+    ban: 'Bulk Ban'
+  };
+
+  const actionLabel = actionLabelMap[actionType] || 'Bulk Moderation';
+
+  const uniqueIds = [...new Set(ids.map(id => id.trim()).filter(Boolean))];
+
+  if (!uniqueIds.length) {
+    return interaction.reply({
+      content: '❌ No valid user IDs.',
+      flags: MessageFlags.Ephemeral
+    });
+  }
+
+  let durationMs = null;
+  if (actionType === 'timeout') {
+    durationMs = parseDuration(durationRaw);
+    if (!durationMs) {
+      return interaction.reply({
+        content: '❌ Invalid duration. Use `10m`, `1h`, or `1d`.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    const maxTimeoutMs = 28 * 24 * 60 * 60 * 1000;
+    if (durationMs > maxTimeoutMs) {
+      return interaction.reply({
+        content: '❌ Timeout cannot exceed 28 days.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
+  }
+
+  if (actionType === 'ban') {
+    if (!Number.isInteger(deleteDays) || deleteDays < 0 || deleteDays > 7) {
+      return interaction.reply({
+        content: '❌ Delete message days must be 0-7.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
+  }
+
+  const total = uniqueIds.length;
+  const success = [];
+  const failed = [];
+
+  await interaction.reply({
+    embeds: [
+      getBulkActionProgressEmbed({
+        actionLabel,
+        total,
+        processed: 0,
+        successCount: 0,
+        failCount: 0
+      })
+    ],
+    flags: MessageFlags.Ephemeral
+  });
+
+  const actorMember = interaction.member;
+  const botMember = interaction.guild.members.me;
+
+  for (let index = 0; index < uniqueIds.length; index += 1) {
+    const id = uniqueIds[index];
+
+    try {
+      const member = await interaction.guild.members.fetch(id);
+      const hierarchyError = checkHierarchyForBulk(
+        actorMember,
+        botMember,
+        interaction.guild.ownerId,
+        member,
+        interaction.user.id
+      );
+
+      if (hierarchyError) {
+        failed.push(`❌ ${id} — ${hierarchyError}`);
+      } else if (actionType === 'warn') {
+        const modCase = createCase({
+          guildId: interaction.guild.id,
+          userId: member.id,
+          moderatorId: interaction.user.id,
+          action: 'warn',
+          reason
+        });
+
+        addWarning({
+          guildId: interaction.guild.id,
+          userId: member.id,
+          moderatorId: interaction.user.id,
+          reason,
+          caseId: modCase.caseId
+        });
+
+        await sendModLog({
+          guild: interaction.guild,
+          target: member,
+          moderator: interaction.user,
+          action: 'Bulk Warn',
+          reason,
+          caseId: modCase.caseId
+        });
+
+        success.push(`⚠️ ${member.user.tag}`);
+      } else if (actionType === 'timeout') {
+        await member.timeout(durationMs, `${reason} | By ${interaction.user.tag}`);
+
+        const modCase = createCase({
+          guildId: interaction.guild.id,
+          userId: member.id,
+          moderatorId: interaction.user.id,
+          action: 'timeout',
+          reason,
+          metadata: { duration: durationRaw }
+        });
+
+        await sendModLog({
+          guild: interaction.guild,
+          target: member,
+          moderator: interaction.user,
+          action: 'Bulk Timeout',
+          reason,
+          caseId: modCase.caseId,
+          metadata: { duration: durationRaw }
+        });
+
+        success.push(`⏳ ${member.user.tag}`);
+      } else if (actionType === 'kick') {
+        await member.kick(`${reason} | By ${interaction.user.tag}`);
+
+        const modCase = createCase({
+          guildId: interaction.guild.id,
+          userId: member.id,
+          moderatorId: interaction.user.id,
+          action: 'kick',
+          reason
+        });
+
+        await sendModLog({
+          guild: interaction.guild,
+          target: member,
+          moderator: interaction.user,
+          action: 'Bulk Kick',
+          reason,
+          caseId: modCase.caseId
+        });
+
+        success.push(`👢 ${member.user.tag}`);
+      } else if (actionType === 'ban') {
+        await member.ban({
+          deleteMessageSeconds: deleteDays * 24 * 60 * 60,
+          reason: `${reason} | By ${interaction.user.tag}`
+        });
+
+        const modCase = createCase({
+          guildId: interaction.guild.id,
+          userId: member.id,
+          moderatorId: interaction.user.id,
+          action: 'ban',
+          reason,
+          metadata: { deleteDays }
+        });
+
+        await sendModLog({
+          guild: interaction.guild,
+          target: member,
+          moderator: interaction.user,
+          action: 'Bulk Ban',
+          reason,
+          caseId: modCase.caseId,
+          metadata: { deleteDays }
+        });
+
+        success.push(`🔨 ${member.user.tag}`);
+      } else {
+        failed.push(`❌ ${id} — Unknown action.`);
+      }
+    } catch (error) {
+      failed.push(`❌ ${id} — ${error?.message || 'Failed to process.'}`);
+    }
+
+    if ((index + 1) % 2 === 0 || index === uniqueIds.length - 1) {
+      await interaction.editReply({
+        embeds: [
+          getBulkActionProgressEmbed({
+            actionLabel,
+            total,
+            processed: index + 1,
+            successCount: success.length,
+            failCount: failed.length
+          })
+        ]
+      }).catch(() => {});
+    }
+  }
+
+  return interaction.editReply({
+    embeds: [
+      getBulkActionSummaryEmbed({
+        actionLabel,
+        total,
+        success,
+        failed
+      })
+    ]
+  });
 }
 
 async function executePendingAction(interaction, token) {
@@ -627,9 +1040,75 @@ async function handleModButton(interaction) {
     return interaction.showModal(modal);
   }
 
+  if (interaction.customId === 'mod_bulk_warn') {
+    return interaction.showModal(buildBulkModal('warn'));
+  }
+
+  if (interaction.customId === 'mod_bulk_timeout') {
+    return interaction.showModal(buildBulkModal('timeout'));
+  }
+
+  if (interaction.customId === 'mod_bulk_kick') {
+    return interaction.showModal(buildBulkModal('kick'));
+  }
+
+  if (interaction.customId === 'mod_bulk_ban') {
+    return interaction.showModal(buildBulkModal('ban'));
+  }
+
   if (interaction.customId.startsWith('mod_confirm_action:')) {
     const [, token] = interaction.customId.split(':');
     return executePendingAction(interaction, token);
+  }
+
+  if (interaction.customId.startsWith('mod_filter_cases:')) {
+    const [, targetId, actionFilter, statusFilter, pageRaw] = interaction.customId.split(':');
+
+    if (!targetId || targetId === 'none') {
+      return interaction.reply({
+        content: '❌ No user selected.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    const target = await fetchTarget(interaction.guild, targetId);
+    if (!target) {
+      return interaction.reply({
+        content: '❌ User not found.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    const filters = {};
+    if (actionFilter !== 'all') filters.action = actionFilter;
+    if (statusFilter !== 'all') filters.status = statusFilter;
+
+    const allCases = getFilteredCases(interaction.guild.id, target.id, filters);
+    const perPage = 5;
+    const totalPages = Math.max(1, Math.ceil(allCases.length / perPage));
+    const page = Math.max(0, Math.min(Number(pageRaw) || 0, totalPages - 1));
+    const pageCases = allCases.slice(page * perPage, page * perPage + perPage);
+
+    const embed = new EmbedBuilder()
+      .setColor('#5865F2')
+      .setTitle(`📂 Filtered Cases for ${target.user.tag}`)
+      .setDescription(
+        pageCases.length
+          ? pageCases.map(entry =>
+              `**#${entry.caseId}** • ${entry.action}\nStatus: ${getStatusLabel(entry)}\nReason: ${entry.reason}\n<t:${Math.floor(new Date(entry.createdAt).getTime() / 1000)}:R>`
+            ).join('\n\n')
+          : 'No matching cases found.'
+      )
+      .setFooter({
+        text: `Action: ${actionFilter} | Status: ${statusFilter} | Page ${page + 1} of ${totalPages}`
+      })
+      .setTimestamp();
+
+    return interaction.reply({
+      embeds: [embed],
+      components: buildCaseFilterButtons(target.id),
+      flags: MessageFlags.Ephemeral
+    });
   }
 
   if (interaction.customId.startsWith('mod_case_reverse_warning:')) {
@@ -730,11 +1209,13 @@ async function handleModButton(interaction) {
     const pageCases = allCases.slice(page * perPage, page * perPage + perPage);
 
     const embed = buildCasesPageEmbed(target, pageCases, page, totalPages);
-    const rows = buildCasesPageButtons(target.id, page, totalPages);
 
     return interaction.reply({
       embeds: [embed],
-      components: rows,
+      components: [
+        ...buildCasesPageButtons(target.id, page, totalPages),
+        ...buildCaseFilterButtons(target.id)
+      ],
       flags: MessageFlags.Ephemeral
     });
   }
@@ -896,6 +1377,61 @@ async function handleModModal(interaction) {
     return interaction.reply({
       ...payload,
       flags: MessageFlags.Ephemeral
+    });
+  }
+
+  if (interaction.customId === 'mod_submit_bulk_warn') {
+    const ids = interaction.fields.getTextInputValue('users').split(',');
+    const reason = interaction.fields.getTextInputValue('reason');
+
+    return runBulkAction(interaction, {
+      actionType: 'warn',
+      ids,
+      reason
+    });
+  }
+
+  if (interaction.customId === 'mod_submit_bulk_timeout') {
+    const ids = interaction.fields.getTextInputValue('users').split(',');
+    const durationRaw = interaction.fields.getTextInputValue('duration');
+    const reason = interaction.fields.getTextInputValue('reason');
+
+    return runBulkAction(interaction, {
+      actionType: 'timeout',
+      ids,
+      reason,
+      durationRaw
+    });
+  }
+
+  if (interaction.customId === 'mod_submit_bulk_kick') {
+    const ids = interaction.fields.getTextInputValue('users').split(',');
+    const reason = interaction.fields.getTextInputValue('reason');
+
+    return runBulkAction(interaction, {
+      actionType: 'kick',
+      ids,
+      reason
+    });
+  }
+
+  if (interaction.customId === 'mod_submit_bulk_ban') {
+    const ids = interaction.fields.getTextInputValue('users').split(',');
+    const daysRaw = interaction.fields.getTextInputValue('days').trim();
+    const reason = interaction.fields.getTextInputValue('reason');
+
+    if (!/^[0-7]$/.test(daysRaw)) {
+      return interaction.reply({
+        content: '❌ Delete message days must be 0-7.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    return runBulkAction(interaction, {
+      actionType: 'ban',
+      ids,
+      reason,
+      deleteDays: Number(daysRaw)
     });
   }
 
@@ -1268,5 +1804,3 @@ module.exports = {
   handleModButton,
   handleModModal
 };
-
-

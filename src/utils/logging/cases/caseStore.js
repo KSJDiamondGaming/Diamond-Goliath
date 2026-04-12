@@ -1,41 +1,21 @@
-const fs = require('fs');
-const path = require('path');
+const db = require('./db');
 
-const dataDir = path.join(process.cwd(), 'data', 'moderation');
+function mapCase(row) {
+  if (!row) return null;
 
-function ensureDir() {
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-  }
-}
-
-function getFilePath(guildId) {
-  ensureDir();
-  return path.join(dataDir, `cases-${guildId}.json`);
-}
-
-function ensureStore(guildId) {
-  const filePath = getFilePath(guildId);
-
-  if (!fs.existsSync(filePath)) {
-    fs.writeFileSync(
-      filePath,
-      JSON.stringify({ nextCaseId: 1, cases: [] }, null, 2),
-      'utf8'
-    );
-  }
-
-  return filePath;
-}
-
-function readStore(guildId) {
-  const filePath = ensureStore(guildId);
-  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-}
-
-function writeStore(guildId, data) {
-  const filePath = ensureStore(guildId);
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+  return {
+    caseId: row.case_id,
+    guildId: row.guild_id,
+    userId: row.user_id,
+    moderatorId: row.moderator_id,
+    action: row.action,
+    reason: row.reason,
+    metadata: row.metadata ? JSON.parse(row.metadata) : {},
+    status: row.status,
+    relatedCaseId: row.related_case_id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
 }
 
 function createCase({
@@ -48,74 +28,155 @@ function createCase({
   status = 'active',
   relatedCaseId = null
 }) {
-  const store = readStore(guildId);
+  const createdAt = new Date().toISOString();
 
-  const newCase = {
-    caseId: store.nextCaseId,
+  const stmt = db.prepare(`
+    INSERT INTO cases (
+      guild_id, user_id, moderator_id, action, reason, metadata,
+      status, related_case_id, created_at, updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+  `);
+
+  const result = stmt.run(
     guildId,
     userId,
     moderatorId,
     action,
     reason,
-    metadata,
+    JSON.stringify(metadata || {}),
     status,
     relatedCaseId,
-    createdAt: new Date().toISOString(),
-    updatedAt: null
-  };
+    createdAt
+  );
 
-  store.nextCaseId += 1;
-  store.cases.push(newCase);
-  writeStore(guildId, store);
-
-  return newCase;
+  return getCaseById(guildId, result.lastInsertRowid);
 }
 
 function getCasesForUser(guildId, userId) {
-  const store = readStore(guildId);
-  return store.cases
-    .filter(entry => entry.userId === userId)
-    .sort((a, b) => b.caseId - a.caseId);
+  const stmt = db.prepare(`
+    SELECT * FROM cases
+    WHERE guild_id = ? AND user_id = ?
+    ORDER BY case_id DESC
+  `);
+
+  return stmt.all(guildId, userId).map(mapCase);
+}
+
+function getFilteredCases(guildId, userId, filters = {}) {
+  let query = `SELECT * FROM cases WHERE guild_id = ? AND user_id = ?`;
+  const params = [guildId, userId];
+
+  if (filters.action) {
+    query += ` AND action = ?`;
+    params.push(filters.action);
+  }
+
+  if (filters.status) {
+    query += ` AND status = ?`;
+    params.push(filters.status);
+  }
+
+  query += ` ORDER BY case_id DESC`;
+
+  const stmt = db.prepare(query);
+  return stmt.all(...params).map(mapCase);
+}
+
+function getCasesByModerator(guildId, moderatorId, filters = {}) {
+  let query = `SELECT * FROM cases WHERE guild_id = ? AND moderator_id = ?`;
+  const params = [guildId, moderatorId];
+
+  if (filters.action) {
+    query += ` AND action = ?`;
+    params.push(filters.action);
+  }
+
+  if (filters.status) {
+    query += ` AND status = ?`;
+    params.push(filters.status);
+  }
+
+  query += ` ORDER BY case_id DESC`;
+
+  const stmt = db.prepare(query);
+  return stmt.all(...params).map(mapCase);
+}
+
+function searchCaseIds(guildId, partial = '') {
+  const like = `%${partial}%`;
+  const stmt = db.prepare(`
+    SELECT case_id, action, status, user_id
+    FROM cases
+    WHERE guild_id = ?
+      AND CAST(case_id AS TEXT) LIKE ?
+    ORDER BY case_id DESC
+    LIMIT 25
+  `);
+
+  return stmt.all(guildId, like).map(row => ({
+    caseId: row.case_id,
+    action: row.action,
+    status: row.status,
+    userId: row.user_id
+  }));
 }
 
 function getCaseCountForUser(guildId, userId) {
-  return getCasesForUser(guildId, userId).length;
+  const stmt = db.prepare(`
+    SELECT COUNT(*) AS count
+    FROM cases
+    WHERE guild_id = ? AND user_id = ?
+  `);
+
+  return stmt.get(guildId, userId).count;
 }
 
 function getCaseById(guildId, caseId) {
-  const store = readStore(guildId);
-  return store.cases.find(entry => entry.caseId === Number(caseId)) || null;
+  const stmt = db.prepare(`
+    SELECT * FROM cases
+    WHERE guild_id = ? AND case_id = ?
+  `);
+
+  return mapCase(stmt.get(guildId, Number(caseId)));
 }
 
 function updateCaseReason(guildId, caseId, newReason) {
-  const store = readStore(guildId);
+  const updatedAt = new Date().toISOString();
 
-  const entry = store.cases.find(item => item.caseId === Number(caseId));
-  if (!entry) return null;
+  const stmt = db.prepare(`
+    UPDATE cases
+    SET reason = ?, updated_at = ?
+    WHERE guild_id = ? AND case_id = ?
+  `);
 
-  entry.reason = newReason;
-  entry.updatedAt = new Date().toISOString();
+  const result = stmt.run(newReason, updatedAt, guildId, Number(caseId));
+  if (!result.changes) return null;
 
-  writeStore(guildId, store);
-  return entry;
+  return getCaseById(guildId, caseId);
 }
 
 function updateCaseStatus(guildId, caseId, status) {
-  const store = readStore(guildId);
+  const updatedAt = new Date().toISOString();
 
-  const entry = store.cases.find(item => item.caseId === Number(caseId));
-  if (!entry) return null;
+  const stmt = db.prepare(`
+    UPDATE cases
+    SET status = ?, updated_at = ?
+    WHERE guild_id = ? AND case_id = ?
+  `);
 
-  entry.status = status;
-  entry.updatedAt = new Date().toISOString();
+  const result = stmt.run(status, updatedAt, guildId, Number(caseId));
+  if (!result.changes) return null;
 
-  writeStore(guildId, store);
-  return entry;
+  return getCaseById(guildId, caseId);
 }
 
 module.exports = {
   createCase,
   getCasesForUser,
+  getFilteredCases,
+  getCasesByModerator,
+  searchCaseIds,
   getCaseCountForUser,
   getCaseById,
   updateCaseReason,

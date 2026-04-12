@@ -3,8 +3,8 @@ const {
   createSuccessEmbed,
   createDangerEmbed,
 } = require('../../utils/embed/embedStyle');
-const logModerationAction = require('../../utils/logs/modlogs/moderationActionLog');
-const createModCase = require('../../utils/moderation/cases/createModCase');
+const logModerationAction = require('../../utils/logging/modlogs/moderationActionLog');
+const createModCase = require('../../utils/logging/cases/createModCase');
 
 function trimText(text, max = 1024) {
   if (!text) return 'No reason provided';

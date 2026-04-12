@@ -3,7 +3,7 @@ const {
   PermissionFlagsBits,
   EmbedBuilder
 } = require('discord.js');
-const logModerationAction = require('../../utils/logs/moderationActionLog');
+const logModerationAction = require('../../utils/logging/modlogs/moderationActionLog');
 
 module.exports = {
   data: new SlashCommandBuilder()

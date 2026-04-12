@@ -1,38 +1,4 @@
-const fs = require('fs');
-const path = require('path');
-
-const dataDir = path.join(process.cwd(), 'data', 'moderation');
-
-function ensureDir() {
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-  }
-}
-
-function getFilePath(guildId) {
-  ensureDir();
-  return path.join(dataDir, `warnings-${guildId}.json`);
-}
-
-function ensureStore(guildId) {
-  const filePath = getFilePath(guildId);
-
-  if (!fs.existsSync(filePath)) {
-    fs.writeFileSync(filePath, JSON.stringify({ warnings: [] }, null, 2), 'utf8');
-  }
-
-  return filePath;
-}
-
-function readStore(guildId) {
-  const filePath = ensureStore(guildId);
-  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-}
-
-function writeStore(guildId, data) {
-  const filePath = ensureStore(guildId);
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
-}
+const db = require('./db');
 
 function addWarning({
   guildId,
@@ -42,46 +8,66 @@ function addWarning({
   caseId,
   expiresAt = null
 }) {
-  const store = readStore(guildId);
+  const createdAt = new Date().toISOString();
 
-  const warning = {
+  const stmt = db.prepare(`
+    INSERT INTO warnings (
+      guild_id, user_id, moderator_id, reason, case_id, created_at, expires_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const result = stmt.run(
     guildId,
     userId,
     moderatorId,
     reason,
     caseId,
-    createdAt: new Date().toISOString(),
+    createdAt,
+    expiresAt
+  );
+
+  return {
+    id: result.lastInsertRowid,
+    guildId,
+    userId,
+    moderatorId,
+    reason,
+    caseId,
+    createdAt,
     expiresAt
   };
-
-  store.warnings.push(warning);
-  writeStore(guildId, store);
-
-  return warning;
 }
 
 function purgeExpiredWarnings(guildId) {
-  const store = readStore(guildId);
-  const now = Date.now();
-  const expired = [];
+  const nowIso = new Date().toISOString();
 
-  const stillActive = [];
+  const selectStmt = db.prepare(`
+    SELECT * FROM warnings
+    WHERE guild_id = ?
+      AND expires_at IS NOT NULL
+      AND expires_at <= ?
+  `);
 
-  for (const warning of store.warnings) {
-    if (!warning.expiresAt) {
-      stillActive.push(warning);
-      continue;
-    }
+  const expired = selectStmt.all(guildId, nowIso).map(row => ({
+    id: row.id,
+    guildId: row.guild_id,
+    userId: row.user_id,
+    moderatorId: row.moderator_id,
+    reason: row.reason,
+    caseId: row.case_id,
+    createdAt: row.created_at,
+    expiresAt: row.expires_at
+  }));
 
-    if (new Date(warning.expiresAt).getTime() > now) {
-      stillActive.push(warning);
-    } else {
-      expired.push(warning);
-    }
-  }
+  const deleteStmt = db.prepare(`
+    DELETE FROM warnings
+    WHERE guild_id = ?
+      AND expires_at IS NOT NULL
+      AND expires_at <= ?
+  `);
 
-  store.warnings = stillActive;
-  writeStore(guildId, store);
+  deleteStmt.run(guildId, nowIso);
 
   return expired;
 }
@@ -89,37 +75,69 @@ function purgeExpiredWarnings(guildId) {
 function getWarningsForUser(guildId, userId) {
   purgeExpiredWarnings(guildId);
 
-  const store = readStore(guildId);
-  return store.warnings
-    .filter(entry => entry.userId === userId)
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const stmt = db.prepare(`
+    SELECT * FROM warnings
+    WHERE guild_id = ? AND user_id = ?
+    ORDER BY datetime(created_at) DESC
+  `);
+
+  return stmt.all(guildId, userId).map(row => ({
+    id: row.id,
+    guildId: row.guild_id,
+    userId: row.user_id,
+    moderatorId: row.moderator_id,
+    reason: row.reason,
+    caseId: row.case_id,
+    createdAt: row.created_at,
+    expiresAt: row.expires_at
+  }));
 }
 
 function getWarningCountForUser(guildId, userId) {
-  return getWarningsForUser(guildId, userId).length;
+  purgeExpiredWarnings(guildId);
+
+  const stmt = db.prepare(`
+    SELECT COUNT(*) AS count
+    FROM warnings
+    WHERE guild_id = ? AND user_id = ?
+  `);
+
+  return stmt.get(guildId, userId).count;
 }
 
 function getWarningByCaseId(guildId, caseId) {
   purgeExpiredWarnings(guildId);
 
-  const store = readStore(guildId);
-  return store.warnings.find(entry => entry.caseId === Number(caseId)) || null;
+  const stmt = db.prepare(`
+    SELECT * FROM warnings
+    WHERE guild_id = ? AND case_id = ?
+  `);
+
+  const row = stmt.get(guildId, Number(caseId));
+  if (!row) return null;
+
+  return {
+    id: row.id,
+    guildId: row.guild_id,
+    userId: row.user_id,
+    moderatorId: row.moderator_id,
+    reason: row.reason,
+    caseId: row.case_id,
+    createdAt: row.created_at,
+    expiresAt: row.expires_at
+  };
 }
 
 function deleteWarningByCaseId(guildId, caseId) {
   purgeExpiredWarnings(guildId);
 
-  const store = readStore(guildId);
-  const before = store.warnings.length;
+  const stmt = db.prepare(`
+    DELETE FROM warnings
+    WHERE guild_id = ? AND case_id = ?
+  `);
 
-  store.warnings = store.warnings.filter(
-    entry => entry.caseId !== Number(caseId)
-  );
-
-  if (store.warnings.length === before) return false;
-
-  writeStore(guildId, store);
-  return true;
+  const result = stmt.run(guildId, Number(caseId));
+  return result.changes > 0;
 }
 
 module.exports = {
