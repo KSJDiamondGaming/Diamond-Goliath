@@ -782,8 +782,8 @@ const safeView = allowedViews.has(view) ? view : 'overview';
 function buildDashboardNav(targetId, activeView = 'overview') {
   const items = [
     { view: 'overview', label: 'Overview' },
-    { view: 'actions', actionFilter: 'all', statusFilter: 'all', page: 0 }
-    { view: 'cases', actionFilter: 'all', statusFilter: 'all', page: 0 }
+    { view: 'actions', actionFilter: 'all', statusFilter: 'all', page: 0 },
+    { view: 'cases', actionFilter: 'all', statusFilter: 'all', page: 0 },
     { view: 'tools', label: 'Tools' },
     { view: 'analytics', label: 'Analytics' }
   ];
@@ -1084,7 +1084,7 @@ async function buildDashboardPayload(
   const embeds = [];
   const components = [...buildDashboardNav(target?.id || null, view)];
 
-  f (safeView === 'overview') {
+  if (safeView === 'overview') {
     embeds.push(buildOverviewEmbed(interaction.guild, interaction.member, target, stats));
     components.push(...buildActionsRows(target?.id || null));
   }

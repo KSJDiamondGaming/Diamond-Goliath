@@ -1,1 +1,0 @@
-Please find comfort in knowing how much I love you. Hope you loved me too.
