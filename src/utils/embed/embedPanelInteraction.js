@@ -1,8 +1,5 @@
-// ONLY showing the CHANGED SECTION (buttons modal)
-// Everything else stays the same
-
 if (id.startsWith('embedpanel_edit_buttons:')) {
-  const templateId = id.split(':')[1];
+  const templateId = id.substring('embedpanel_edit_buttons:'.length);
   const template = getTemplate(interaction.guildId, templateId);
 
   if (!template) {
@@ -14,71 +11,43 @@ if (id.startsWith('embedpanel_edit_buttons:')) {
   }
 
   const serializeButton = (btn) => {
-    if (!btn || !btn.label) return '';
+    if (!btn || !btn.label) return null;
+
     const style = normalizeButtonStyle(btn.style);
     const target = style === 'Link' ? (btn.url || '') : (btn.customId || '');
     const emoji = btn.emoji || '';
     const disabled = btn.disabled ? 'true' : 'false';
+
     return `${btn.label}|${style}|${target}|${emoji}|${disabled}`;
+  };
+
+  const createButtonInput = (customId, label, buttonData) => {
+    const input = new TextInputBuilder()
+      .setCustomId(customId)
+      .setLabel(label)
+      .setPlaceholder('label|style|url/customId|emoji|disabled')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(false)
+      .setMaxLength(400);
+
+    const value = serializeButton(buttonData);
+    if (value) input.setValue(value);
+
+    return new ActionRowBuilder().addComponents(input);
   };
 
   const buttons = Array.isArray(template.buttons) ? template.buttons : [];
 
   const modal = new ModalBuilder()
     .setCustomId(`embedpanel_modal_edit_buttons:${templateId}`)
-    .setTitle(`Buttons for ${template.name}`);
+    .setTitle(`Buttons for ${template.name}`.slice(0, 45));
 
   modal.addComponents(
-    new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId('button1')
-        .setLabel('Button 1')
-        .setPlaceholder('label|style|url/customId|emoji|disabled')
-        .setStyle(TextInputStyle.Short)
-        .setRequired(false)
-        .setMaxLength(400)
-        .setValue(serializeButton(buttons[0]))
-    ),
-    new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId('button2')
-        .setLabel('Button 2')
-        .setPlaceholder('label|style|url/customId|emoji|disabled')
-        .setStyle(TextInputStyle.Short)
-        .setRequired(false)
-        .setMaxLength(400)
-        .setValue(serializeButton(buttons[1]))
-    ),
-    new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId('button3')
-        .setLabel('Button 3')
-        .setPlaceholder('label|style|url/customId|emoji|disabled')
-        .setStyle(TextInputStyle.Short)
-        .setRequired(false)
-        .setMaxLength(400)
-        .setValue(serializeButton(buttons[2]))
-    ),
-    new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId('button4')
-        .setLabel('Button 4')
-        .setPlaceholder('label|style|url/customId|emoji|disabled')
-        .setStyle(TextInputStyle.Short)
-        .setRequired(false)
-        .setMaxLength(400)
-        .setValue(serializeButton(buttons[3]))
-    ),
-    new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId('button5')
-        .setLabel('Button 5')
-        .setPlaceholder('label|style|url/customId|emoji|disabled')
-        .setStyle(TextInputStyle.Short)
-        .setRequired(false)
-        .setMaxLength(400)
-        .setValue(serializeButton(buttons[4]))
-    )
+    createButtonInput('button1', 'Button 1', buttons[0]),
+    createButtonInput('button2', 'Button 2', buttons[1]),
+    createButtonInput('button3', 'Button 3', buttons[2]),
+    createButtonInput('button4', 'Button 4', buttons[3]),
+    createButtonInput('button5', 'Button 5', buttons[4])
   );
 
   await interaction.showModal(modal);

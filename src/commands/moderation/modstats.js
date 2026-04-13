@@ -5,7 +5,7 @@ const {
   EmbedBuilder
 } = require('discord.js');
 
-const db = require('../../utils/moderation/db');
+require('../../utils/moderation/db')
 
 function trimText(text, max = 1024) {
   if (!text) return 'No data';
