@@ -5,12 +5,12 @@ const automodPanel = require('../../utils/automod/automodPanel');
 
 const {
   handleModButton,
-  handleModModal
+  handleModModal,
 } = require('../../utils/moderation/modPanel');
 
 const {
   handleCasePanelButton,
-  handleCasePanelModal
+  handleCasePanelModal,
 } = require('../../commands/moderation/case');
 
 let embedPanelInteraction = null;
@@ -67,50 +67,80 @@ function isCasePanelModal(customId = '') {
   );
 }
 
-async function handleComponents(interaction, client) {
-  // 🔵 BUTTONS
-  if (interaction.isButton()) {
-    if (isModPanelButton(interaction.customId)) {
-      return await handleModButton(interaction);
-    }
+async function handleButtonInteraction(interaction, client) {
+  const { customId } = interaction;
 
-    if (isCasePanelButton(interaction.customId)) {
-      await handleCasePanelButton(interaction);
-      return true;
-    }
+  if (isModPanelButton(customId)) {
+    await handleModButton(interaction);
+    return true;
   }
 
-  // 🟣 SELECT MENUS
-  if (interaction.isStringSelectMenu()) {
-    if (interaction.customId.startsWith('mod_action_select:')) {
-      return await handleModButton(interaction);
-    }
+  if (isCasePanelButton(customId)) {
+    await handleCasePanelButton(interaction);
+    return true;
   }
 
-  // 🟡 MODALS
-  if (interaction.isModalSubmit()) {
-    if (isModPanelModal(interaction.customId)) {
-      await handleModModal(interaction);
-      return true;
-    }
-
-    if (isCasePanelModal(interaction.customId)) {
-      await handleCasePanelModal(interaction);
-      return true;
-    }
-  }
-
-  // ⚙️ OTHER SYSTEMS
   if (stats?.handleInteraction) {
-    if (await stats.handleInteraction(interaction)) return true;
+    if (await stats.handleInteraction(interaction, client)) return true;
   }
 
   if (automodPanel?.handleInteraction) {
     if (await automodPanel.handleInteraction(interaction, client)) return true;
   }
 
-  if (interaction.customId?.startsWith('embedpanel_') && embedPanelInteraction) {
-    return await embedPanelInteraction(interaction, client);
+  if (customId?.startsWith('embedpanel_') && embedPanelInteraction) {
+    if (await embedPanelInteraction(interaction, client)) return true;
+  }
+
+  return false;
+}
+
+async function handleSelectMenuInteraction(interaction, client) {
+  const { customId } = interaction;
+
+  if (customId.startsWith('mod_action_select:')) {
+    await handleModButton(interaction);
+    return true;
+  }
+
+  if (stats?.handleInteraction) {
+    if (await stats.handleInteraction(interaction, client)) return true;
+  }
+
+  if (automodPanel?.handleInteraction) {
+    if (await automodPanel.handleInteraction(interaction, client)) return true;
+  }
+
+  if (customId?.startsWith('embedpanel_') && embedPanelInteraction) {
+    if (await embedPanelInteraction(interaction, client)) return true;
+  }
+
+  return false;
+}
+
+async function handleModalInteraction(interaction, client) {
+  const { customId } = interaction;
+
+  if (isModPanelModal(customId)) {
+    await handleModModal(interaction);
+    return true;
+  }
+
+  if (isCasePanelModal(customId)) {
+    await handleCasePanelModal(interaction);
+    return true;
+  }
+
+  if (stats?.handleInteraction) {
+    if (await stats.handleInteraction(interaction, client)) return true;
+  }
+
+  if (automodPanel?.handleInteraction) {
+    if (await automodPanel.handleInteraction(interaction, client)) return true;
+  }
+
+  if (customId?.startsWith('embedpanel_') && embedPanelInteraction) {
+    if (await embedPanelInteraction(interaction, client)) return true;
   }
 
   return false;
@@ -126,15 +156,7 @@ module.exports = {
       console.log('🟦 Command:', interaction.commandName ?? 'N/A');
       console.log('🟦 Custom ID:', interaction.customId ?? 'N/A');
 
-      if (
-        interaction.isButton() ||
-        interaction.isModalSubmit() ||
-        interaction.isStringSelectMenu()
-      ) {
-        const handled = await handleComponents(interaction, client);
-        if (handled) return;
-      }
-
+      // Fastest path first: slash commands
       if (interaction.isChatInputCommand()) {
         console.log(`🟨 CHAT INPUT COMMAND REACHED: /${interaction.commandName}`);
 
@@ -159,16 +181,42 @@ module.exports = {
         return;
       }
 
+      // Autocomplete separate
       if (interaction.isAutocomplete()) {
         const command = client.commands.get(interaction.commandName);
 
         if (command?.autocomplete) {
           await command.autocomplete(interaction, client);
-          return;
         }
+
+        return;
+      }
+
+      // Buttons
+      if (interaction.isButton()) {
+        const handled = await handleButtonInteraction(interaction, client);
+        if (handled) return;
+        return;
+      }
+
+      // Select menus
+      if (interaction.isStringSelectMenu()) {
+        const handled = await handleSelectMenuInteraction(interaction, client);
+        if (handled) return;
+        return;
+      }
+
+      // Modals
+      if (interaction.isModalSubmit()) {
+        const handled = await handleModalInteraction(interaction, client);
+        if (handled) return;
+        return;
       }
     } catch (error) {
-      console.error(`❌ [COMMAND ERROR] /${interaction.commandName || 'interaction'}`, error);
+      console.error(
+        `❌ [COMMAND ERROR] /${interaction.commandName || interaction.customId || 'interaction'}`,
+        error
+      );
 
       if (interaction.isAutocomplete()) return;
 

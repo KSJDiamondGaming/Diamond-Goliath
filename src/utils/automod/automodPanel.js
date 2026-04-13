@@ -120,12 +120,105 @@ function yesNo(v) {
   return v ? 'Yes' : 'No';
 }
 
-function channelText(id) {
-  return id ? `<#${id}>` : 'Not set';
+function extractId(value) {
+  if (!value) return null;
+  const match = String(value).match(/\d{16,20}/);
+  return match ? match[0] : null;
+}
+
+function normalizeArray(value) {
+  return Array.isArray(value) ? value.filter(Boolean) : [];
+}
+
+function createFallbackRule(defaults = {}) {
+  return {
+    enabled: Boolean(defaults.enabled),
+    punishment: defaults.punishment || 'timeout',
+    timeoutMinutes: Number(defaults.timeoutMinutes) || 10,
+    maxMessages: Number(defaults.maxMessages) || 5,
+    intervalSeconds: Number(defaults.intervalSeconds) || 8,
+    maxRepeats: Number(defaults.maxRepeats) || 3,
+    minLength: Number(defaults.minLength) || 8,
+    percentage: Number(defaults.percentage) || 70,
+    allowedDomains: Array.isArray(defaults.allowedDomains) ? defaults.allowedDomains : [],
+    words: Array.isArray(defaults.words) ? defaults.words : [],
+  };
+}
+
+function normalizeConfig(rawConfig = {}) {
+  const legacyLogs = rawConfig.logs || {};
+  const normalized = {
+    enabled: Boolean(rawConfig.enabled),
+    ignoreBots: rawConfig.ignoreBots !== undefined ? Boolean(rawConfig.ignoreBots) : true,
+    ignoreAdmins: rawConfig.ignoreAdmins !== undefined ? Boolean(rawConfig.ignoreAdmins) : true,
+    logs: {
+      enabled:
+        legacyLogs.enabled !== undefined
+          ? Boolean(legacyLogs.enabled)
+          : Boolean(rawConfig.logsEnabled),
+      channelId:
+        extractId(legacyLogs.channelId) ||
+        extractId(legacyLogs.channel) ||
+        extractId(rawConfig.logChannelId) ||
+        extractId(rawConfig.logChannel) ||
+        null,
+    },
+    ignoredChannelIds: normalizeArray(rawConfig.ignoredChannelIds),
+    ignoredRoleIds: normalizeArray(rawConfig.ignoredRoleIds),
+    ignoredUserIds: normalizeArray(rawConfig.ignoredUserIds),
+
+    antiSpam: createFallbackRule(rawConfig.antiSpam),
+    repeatedMessages: createFallbackRule(rawConfig.repeatedMessages),
+    antiInvite: createFallbackRule(rawConfig.antiInvite),
+    antiLink: createFallbackRule(rawConfig.antiLink),
+    capsAbuse: createFallbackRule(rawConfig.capsAbuse),
+    badWords: createFallbackRule(rawConfig.badWords),
+  };
+
+  normalized.antiInvite.maxMessages = undefined;
+  normalized.antiInvite.intervalSeconds = undefined;
+  normalized.antiInvite.maxRepeats = undefined;
+  normalized.antiInvite.minLength = undefined;
+  normalized.antiInvite.percentage = undefined;
+  normalized.antiInvite.allowedDomains = [];
+  normalized.antiInvite.words = [];
+
+  normalized.badWords.allowedDomains = [];
+  normalized.antiLink.words = [];
+  normalized.capsAbuse.allowedDomains = [];
+  normalized.capsAbuse.words = [];
+  normalized.repeatedMessages.allowedDomains = [];
+  normalized.repeatedMessages.words = [];
+  normalized.antiSpam.allowedDomains = [];
+  normalized.antiSpam.words = [];
+
+  return normalized;
+}
+
+function getConfig(guildId) {
+  return normalizeConfig(getGuildAutoModConfig(guildId));
+}
+
+function saveConfig(guildId, config) {
+  return saveGuildAutoModConfig(guildId, normalizeConfig(config));
+}
+
+function getChannelDisplay(guild, channelId) {
+  if (!channelId) return 'Not set';
+
+  const resolvedId = extractId(channelId);
+  if (!resolvedId) return 'Not set';
+
+  const channel = guild.channels.cache.get(resolvedId);
+  if (channel) {
+    return `<#${channel.id}>`;
+  }
+
+  return `Missing channel (${resolvedId})`;
 }
 
 function buildMainPanelPayload(guild) {
-  const config = getGuildAutoModConfig(guild.id);
+  const config = getConfig(guild.id);
 
   const embed = new EmbedBuilder()
     .setColor(0x5865f2)
@@ -143,7 +236,7 @@ function buildMainPanelPayload(guild) {
         name: '📜 Logs',
         value:
           `📌 Enabled: **${yesNo(config.logs.enabled)}**\n` +
-          `📍 Channel: ${channelText(config.logs.channelId)}`,
+          `📍 Channel: ${getChannelDisplay(guild, config.logs.channelId)}`,
       },
       {
         name: '🚫 Ignored Channels',
@@ -215,7 +308,7 @@ function buildMainPanelPayload(guild) {
 }
 
 function buildRulesPanelPayload(guild, selectedRule = 'antiSpam') {
-  const config = getGuildAutoModConfig(guild.id);
+  const config = getConfig(guild.id);
   const meta = RULE_META[selectedRule];
   const rule = config[selectedRule];
 
@@ -273,7 +366,7 @@ function buildRulesPanelPayload(guild, selectedRule = 'antiSpam') {
 }
 
 function buildPunishmentPanelPayload(guild, selectedRule) {
-  const config = getGuildAutoModConfig(guild.id);
+  const config = getConfig(guild.id);
   const meta = RULE_META[selectedRule];
   const rule = config[selectedRule];
 
@@ -320,7 +413,7 @@ function buildPunishmentPanelPayload(guild, selectedRule) {
 }
 
 function buildLogsPanelPayload(guild) {
-  const config = getGuildAutoModConfig(guild.id);
+  const config = getConfig(guild.id);
 
   const embed = new EmbedBuilder()
     .setColor(0x5865f2)
@@ -328,7 +421,7 @@ function buildLogsPanelPayload(guild) {
     .setDescription(
       `Configure logging for moderation actions\n\n` +
         `📌 **Enabled:** ${config.logs.enabled ? '🟢 Yes' : '🔴 No'}\n` +
-        `📍 **Channel:** ${channelText(config.logs.channelId)}`
+        `📍 **Channel:** ${getChannelDisplay(guild, config.logs.channelId)}`
     )
     .addFields({
       name: 'ℹ️ Info',
@@ -363,7 +456,7 @@ function buildLogsPanelPayload(guild) {
 }
 
 function buildIgnorePanelPayload(guild) {
-  const config = getGuildAutoModConfig(guild.id);
+  const config = getConfig(guild.id);
 
   const embed = new EmbedBuilder()
     .setColor(0x5865f2)
@@ -413,7 +506,7 @@ function buildIgnorePanelPayload(guild) {
 }
 
 function buildRuleEditModal(ruleKey, guildId) {
-  const config = getGuildAutoModConfig(guildId);
+  const config = getConfig(guildId);
   const meta = RULE_META[ruleKey];
   const rule = config[ruleKey];
 
@@ -485,7 +578,7 @@ function buildRuleEditModal(ruleKey, guildId) {
 }
 
 function buildLogsModal(guildId) {
-  const config = getGuildAutoModConfig(guildId);
+  const config = getConfig(guildId);
 
   return new ModalBuilder()
     .setCustomId('automod_modal_logs')
@@ -497,7 +590,7 @@ function buildLogsModal(guildId) {
 }
 
 function buildIgnoreModal(guildId) {
-  const config = getGuildAutoModConfig(guildId);
+  const config = getConfig(guildId);
 
   return new ModalBuilder()
     .setCustomId('automod_modal_ignore')
@@ -566,7 +659,7 @@ function parseCsv(value) {
 }
 
 function applyRuleModal(ruleKey, fields, guildId) {
-  const config = getGuildAutoModConfig(guildId);
+  const config = getConfig(guildId);
 
   if (ruleKey === 'antiSpam') {
     config.antiSpam.enabled = parseBoolean(fields.enabled, config.antiSpam.enabled);
@@ -636,22 +729,22 @@ function applyRuleModal(ruleKey, fields, guildId) {
     config.badWords.words = parseCsv(fields.words);
   }
 
-  return saveGuildAutoModConfig(guildId, config);
+  return saveConfig(guildId, config);
 }
 
 function applyLogsModal(fields, guildId) {
-  const config = getGuildAutoModConfig(guildId);
+  const config = getConfig(guildId);
   config.logs.enabled = parseBoolean(fields.enabled, config.logs.enabled);
-  config.logs.channelId = String(fields.channel_id || '').trim();
-  return saveGuildAutoModConfig(guildId, config);
+  config.logs.channelId = extractId(fields.channel_id) || null;
+  return saveConfig(guildId, config);
 }
 
 function applyIgnoreModal(fields, guildId) {
-  const config = getGuildAutoModConfig(guildId);
-  config.ignoredChannelIds = parseCsv(fields.channels);
-  config.ignoredRoleIds = parseCsv(fields.roles);
-  config.ignoredUserIds = parseCsv(fields.users);
-  return saveGuildAutoModConfig(guildId, config);
+  const config = getConfig(guildId);
+  config.ignoredChannelIds = parseCsv(fields.channels).map(extractId).filter(Boolean);
+  config.ignoredRoleIds = parseCsv(fields.roles).map(extractId).filter(Boolean);
+  config.ignoredUserIds = parseCsv(fields.users).map(extractId).filter(Boolean);
+  return saveConfig(guildId, config);
 }
 
 async function handleInteraction(interaction) {
@@ -661,25 +754,25 @@ async function handleInteraction(interaction) {
     const { customId } = interaction;
 
     if (customId === 'automod_toggle_global') {
-      const config = getGuildAutoModConfig(interaction.guild.id);
+      const config = getConfig(interaction.guild.id);
       config.enabled = !config.enabled;
-      saveGuildAutoModConfig(interaction.guild.id, config);
+      saveConfig(interaction.guild.id, config);
       await interaction.update(buildMainPanelPayload(interaction.guild));
       return true;
     }
 
     if (customId === 'automod_toggle_ignore_bots') {
-      const config = getGuildAutoModConfig(interaction.guild.id);
+      const config = getConfig(interaction.guild.id);
       config.ignoreBots = !config.ignoreBots;
-      saveGuildAutoModConfig(interaction.guild.id, config);
+      saveConfig(interaction.guild.id, config);
       await interaction.update(buildMainPanelPayload(interaction.guild));
       return true;
     }
 
     if (customId === 'automod_toggle_ignore_admins') {
-      const config = getGuildAutoModConfig(interaction.guild.id);
+      const config = getConfig(interaction.guild.id);
       config.ignoreAdmins = !config.ignoreAdmins;
-      saveGuildAutoModConfig(interaction.guild.id, config);
+      saveConfig(interaction.guild.id, config);
       await interaction.update(buildMainPanelPayload(interaction.guild));
       return true;
     }
@@ -705,9 +798,9 @@ async function handleInteraction(interaction) {
     }
 
     if (customId === 'automod_toggle_logs') {
-      const config = getGuildAutoModConfig(interaction.guild.id);
+      const config = getConfig(interaction.guild.id);
       config.logs.enabled = !config.logs.enabled;
-      saveGuildAutoModConfig(interaction.guild.id, config);
+      saveConfig(interaction.guild.id, config);
       await interaction.update(buildLogsPanelPayload(interaction.guild));
       return true;
     }
@@ -730,9 +823,9 @@ async function handleInteraction(interaction) {
 
     if (customId.startsWith('automod_toggle_rule:')) {
       const ruleKey = customId.split(':')[1];
-      const config = getGuildAutoModConfig(interaction.guild.id);
+      const config = getConfig(interaction.guild.id);
       config[ruleKey].enabled = !config[ruleKey].enabled;
-      saveGuildAutoModConfig(interaction.guild.id, config);
+      saveConfig(interaction.guild.id, config);
       await interaction.update(buildRulesPanelPayload(interaction.guild, ruleKey));
       return true;
     }
@@ -770,9 +863,9 @@ async function handleInteraction(interaction) {
     if (customId.startsWith('automod_punishment_select:')) {
       const ruleKey = customId.split(':')[1];
       const punishment = interaction.values[0];
-      const config = getGuildAutoModConfig(interaction.guild.id);
+      const config = getConfig(interaction.guild.id);
       config[ruleKey].punishment = punishment;
-      saveGuildAutoModConfig(interaction.guild.id, config);
+      saveConfig(interaction.guild.id, config);
       await interaction.update(buildPunishmentPanelPayload(interaction.guild, ruleKey));
       return true;
     }

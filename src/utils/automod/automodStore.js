@@ -5,10 +5,8 @@ const AUTOMOD_PATH = path.join(
   __dirname,
   '..',
   '..',
-  'dashboard',
-  'server',
   'data',
-  'automod.json'
+  'automodSettings.json'
 );
 
 function ensureFile() {
@@ -95,7 +93,7 @@ function getDefaultConfig() {
     },
     logs: {
       enabled: true,
-      channelId: '',
+      channelId: null,
     },
   };
 }
@@ -128,6 +126,13 @@ function toBoolean(value, fallback = false) {
   }
 
   return fallback;
+}
+
+function extractId(value) {
+  if (!value) return null;
+
+  const match = String(value).match(/\d{16,20}/);
+  return match ? match[0] : null;
 }
 
 function normalizeRule(rule = {}, defaults = {}) {
@@ -189,13 +194,20 @@ function sanitizeConfig(input = {}) {
     defaults.repeatedMessages.intervalSeconds
   );
 
+  const logChannelId =
+    extractId(input?.logs?.channelId) ||
+    extractId(input?.logs?.channel) ||
+    extractId(input?.logChannelId) ||
+    extractId(input?.logChannel) ||
+    null;
+
   return {
-    enabled: toBoolean(input?.enabled, true),
-    ignoreBots: toBoolean(input?.ignoreBots, true),
-    ignoreAdmins: toBoolean(input?.ignoreAdmins, true),
-    ignoredChannelIds: toStringArray(input?.ignoredChannelIds),
-    ignoredUserIds: toStringArray(input?.ignoredUserIds),
-    ignoredRoleIds: toStringArray(input?.ignoredRoleIds),
+    enabled: toBoolean(input?.enabled, defaults.enabled),
+    ignoreBots: toBoolean(input?.ignoreBots, defaults.ignoreBots),
+    ignoreAdmins: toBoolean(input?.ignoreAdmins, defaults.ignoreAdmins),
+    ignoredChannelIds: toStringArray(input?.ignoredChannelIds).map(extractId).filter(Boolean),
+    ignoredUserIds: toStringArray(input?.ignoredUserIds).map(extractId).filter(Boolean),
+    ignoredRoleIds: toStringArray(input?.ignoredRoleIds).map(extractId).filter(Boolean),
     antiSpam,
     antiLink,
     antiInvite,
@@ -203,8 +215,11 @@ function sanitizeConfig(input = {}) {
     badWords,
     repeatedMessages,
     logs: {
-      enabled: toBoolean(input?.logs?.enabled, true),
-      channelId: String(input?.logs?.channelId || '').trim(),
+      enabled: toBoolean(
+        input?.logs?.enabled ?? input?.logsEnabled,
+        defaults.logs.enabled
+      ),
+      channelId: logChannelId,
     },
   };
 }
@@ -245,15 +260,23 @@ function attachComputedRules(config) {
 
 function getGuildAutoModConfig(guildId) {
   const data = readAutoModData();
-  const safeConfig = sanitizeConfig(data[guildId] || getDefaultConfig());
+
+  if (!data[guildId]) {
+    data[guildId] = getDefaultConfig();
+    writeAutoModData(data);
+  }
+
+  const safeConfig = sanitizeConfig(data[guildId]);
   return attachComputedRules(safeConfig);
 }
 
 function saveGuildAutoModConfig(guildId, config) {
   const data = readAutoModData();
   const safeConfig = sanitizeConfig(config);
+
   data[guildId] = safeConfig;
   writeAutoModData(data);
+
   return attachComputedRules(safeConfig);
 }
 

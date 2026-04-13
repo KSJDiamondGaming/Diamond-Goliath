@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const filePath = path.join(process.cwd(), 'data', 'stats.json');
+const filePath = path.join(__dirname, '..', '..', 'data', 'stats.json');
 
 function ensureFile() {
   const dir = path.dirname(filePath);

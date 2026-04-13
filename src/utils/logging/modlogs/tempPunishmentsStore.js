@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const dataDir = path.join(__dirname, '../../../data');
+const dataDir = path.join(__dirname, '../../data');
 const filePath = path.join(dataDir, 'tempPunishments.json');
 
 function ensureStorage() {

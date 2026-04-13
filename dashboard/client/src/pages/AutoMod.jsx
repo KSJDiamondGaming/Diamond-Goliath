@@ -46,6 +46,7 @@ const DEFAULT_FORM = {
 export default function AutoMod({ selectedGuild, theme }) {
   const [loading, setLoading] = useState(false);
   const [channelsLoading, setChannelsLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [saveMessage, setSaveMessage] = useState('');
   const [form, setForm] = useState(DEFAULT_FORM);
@@ -62,6 +63,7 @@ export default function AutoMod({ selectedGuild, theme }) {
           setError('');
           setSaveMessage('');
           setChannelsLoading(false);
+          setSaving(false);
         }
         return;
       }
@@ -209,12 +211,17 @@ export default function AutoMod({ selectedGuild, theme }) {
   const totalRules = 6;
 
   const handleSave = useCallback(async () => {
+    console.log('🔥 Save AutoMod clicked');
+    console.log('Guild:', selectedGuild);
+    console.log('Form:', form);
+
     if (!selectedGuild) {
-      setSaveMessage('Select a guild first.');
+      setSaveMessage('❌ Select a guild first.');
       return;
     }
 
     try {
+      setSaving(true);
       setSaveMessage('');
       setError('');
 
@@ -254,15 +261,22 @@ export default function AutoMod({ selectedGuild, theme }) {
         },
         logs: {
           enabled: form.logs.enabled,
-          channelId: String(form.logs.channelId || '').trim(),
+          channelId: form.logs.channelId || null,
         },
       };
 
-      await api.saveAutoModConfig(selectedGuild, payload);
-      setSaveMessage('AutoMod config saved successfully.');
+      console.log('📤 Sending payload:', payload);
+
+      const res = await api.saveAutoModConfig(selectedGuild, payload);
+
+      console.log('✅ API response:', res);
+
+      setSaveMessage('✅ AutoMod config saved successfully.');
     } catch (err) {
-      console.error(err);
-      setSaveMessage('Failed to save automod config.');
+      console.error('❌ Save failed:', err);
+      setSaveMessage('❌ Failed to save automod config.');
+    } finally {
+      setSaving(false);
     }
   }, [selectedGuild, form]);
 
@@ -292,7 +306,18 @@ export default function AutoMod({ selectedGuild, theme }) {
       ) : null}
 
       {error ? <p style={{ color: '#ef4444', margin: 0 }}>{error}</p> : null}
-      {saveMessage ? <p style={{ color: '#2563eb', margin: 0 }}>{saveMessage}</p> : null}
+
+      {saveMessage && (
+        <p
+          style={{
+            color: saveMessage.startsWith('❌') ? '#ef4444' : '#22c55e',
+            margin: 0,
+            fontWeight: 600,
+          }}
+        >
+          {saveMessage}
+        </p>
+      )}
 
       <StatGrid>
         <StatCard title="Enabled Rules" value={`${enabledCount}/${totalRules}`} theme={theme} />
@@ -530,8 +555,8 @@ export default function AutoMod({ selectedGuild, theme }) {
           </SectionCard>
 
           <div>
-            <PrimaryButton onClick={handleSave} disabled={!selectedGuild}>
-              Save AutoMod
+            <PrimaryButton onClick={handleSave} disabled={!selectedGuild || saving}>
+              {saving ? 'Saving...' : 'Save AutoMod'}
             </PrimaryButton>
           </div>
         </div>
