@@ -1,6 +1,6 @@
-const { getWarningsForUser, getWarningCountForUser } = require('./warningStore');
-const { createCase } = require('./caseStore');
-const { sendModLog } = require('./modLog');
+const { getWarningsForUser, getWarningCountForUser } = require('../../utils/logging/modlogs/warningStore');
+const { createCase } = require('../../utils/logging/cases/caseStore');
+const { sendModLog } = require('../../utils/logging/modlogs/modLog');
 
 function getEscalationConfig() {
   return {

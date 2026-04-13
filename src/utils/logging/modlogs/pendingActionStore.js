@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const db = require('./db');
+const db = require('../../utils/moderation/db');
 
 function purgeExpired(guildId) {
   const nowIso = new Date().toISOString();

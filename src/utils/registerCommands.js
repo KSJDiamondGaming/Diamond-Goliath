@@ -2,6 +2,9 @@ const fs = require('fs');
 const path = require('path');
 const { REST, Routes } = require('discord.js');
 
+/**
+ * Recursively get all command files
+ */
 function getCommandFiles(dir) {
   let results = [];
 
@@ -23,9 +26,14 @@ function getCommandFiles(dir) {
   return results;
 }
 
+/**
+ * Load commands from files
+ */
 function loadCommands(commandsPath) {
   const commandFiles = getCommandFiles(commandsPath);
   const commands = [];
+
+  console.log(`📂 Found ${commandFiles.length} command file(s) for sync`);
 
   for (const filePath of commandFiles) {
     delete require.cache[require.resolve(filePath)];
@@ -37,17 +45,16 @@ function loadCommands(commandsPath) {
     }
 
     commands.push(command.data.toJSON());
-    console.log(`✅ Loaded command for sync: ${command.data.name}`);
+    console.log(`✅ Prepared: ${command.data.name}`);
   }
 
   return commands;
 }
 
+/**
+ * Clear ALL guild commands
+ */
 async function clearGuildCommands(rest, clientId, guildIds) {
-  if (!guildIds.length) {
-    throw new Error('Guild clear requested, but no guild IDs were provided.');
-  }
-
   console.log(`🧹 Clearing commands from ${guildIds.length} guild(s)...`);
 
   for (const guildId of guildIds) {
@@ -56,76 +63,54 @@ async function clearGuildCommands(rest, clientId, guildIds) {
       { body: [] }
     );
 
-    console.log(`🧹 Cleared commands for guild ${guildId}`);
+    console.log(`🧹 Cleared guild ${guildId}`);
   }
 
-  console.log('✅ Guild command clear complete.');
+  console.log('✅ Guild command wipe complete.');
 }
 
-async function clearGlobalCommands(rest, clientId) {
-  console.log('🧹 Clearing global commands...');
-
-  await rest.put(
-    Routes.applicationCommands(clientId),
-    { body: [] }
-  );
-
-  console.log('✅ Global command clear complete.');
-}
-
+/**
+ * Main register function (AUTO CLEARS FIRST)
+ */
 async function registerCommands({
   token,
   clientId,
   commandsPath,
   guildIds = [],
-  mode = 'global',
-  clear = false,
 }) {
   if (!token) throw new Error('Missing bot token.');
   if (!clientId) throw new Error('Missing client ID.');
+  if (!guildIds.length) throw new Error('No guild IDs provided.');
 
   const rest = new REST({ version: '10' }).setToken(token);
 
-  if (clear) {
-    if (mode === 'guild') {
-      await clearGuildCommands(rest, clientId, guildIds);
-      return;
-    }
+  await registerCommands({
+  token: process.env.TOKEN,
+  clientId: process.env.CLIENT_ID,
+  commandsPath,
+  guildIds,
+  clear: true // 👈 ONLY THIS
+  });
 
-    await clearGlobalCommands(rest, clientId);
-    return;
-  }
+  // 🔥 STEP 1: CLEAR OLD COMMANDS
+  await clearGuildCommands(rest, clientId, guildIds);
 
+  // 🔥 STEP 2: LOAD NEW COMMANDS
   const commands = loadCommands(commandsPath);
 
-  if (mode === 'guild') {
-    if (!guildIds.length) {
-      throw new Error('Guild mode selected, but no guild IDs were provided.');
-    }
+  console.log(`🚀 Registering ${commands.length} command(s)...`);
 
-    console.log(`🚀 Syncing ${commands.length} command(s) to ${guildIds.length} guild(s)...`);
+  // 🔥 STEP 3: REGISTER FRESH
+  for (const guildId of guildIds) {
+    await rest.put(
+      Routes.applicationGuildCommands(clientId, guildId),
+      { body: commands }
+    );
 
-    for (const guildId of guildIds) {
-      await rest.put(
-        Routes.applicationGuildCommands(clientId, guildId),
-        { body: commands }
-      );
-
-      console.log(`✅ Synced commands to guild ${guildId}`);
-    }
-
-    console.log('✅ Guild command sync complete.');
-    return;
+    console.log(`✅ Synced to guild ${guildId}`);
   }
 
-  console.log(`🚀 Syncing ${commands.length} global command(s)...`);
-
-  await rest.put(
-    Routes.applicationCommands(clientId),
-    { body: commands }
-  );
-
-  console.log('✅ Global command sync complete.');
+  console.log('🎉 Command sync complete.');
 }
 
 module.exports = {

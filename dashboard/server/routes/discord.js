@@ -52,7 +52,7 @@ router.get('/guilds', async (req, res) => {
 
     console.log(`🤖 Fetching bot guilds from ${BOT_API_URL}/internal/guilds ...`);
 
-    const botGuilds = await fetchJson(`${BOT_API_URL}/internal/guilds`);
+    const botGuilds = [];
 
     console.log(`🤖 Bot guilds found: ${botGuilds.length}`);
     console.log(

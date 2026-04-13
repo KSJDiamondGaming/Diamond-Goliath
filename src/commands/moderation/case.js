@@ -20,7 +20,7 @@ const {
   getCasesForUser,
   getFilteredCases,
   getCasesByModerator
-} = require('../../utils/moderation/caseStore');
+} = require('../../utils/logging/cases/caseStore');
 
 function hasCasePermission(member) {
   return (

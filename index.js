@@ -128,6 +128,37 @@ async function startBot() {
   } catch (error) {
     console.error('❌ Fatal startup error:', error);
   }
+
+  const express = require('express');
+const app = express();
+
+app.get('/internal/guilds', (req, res) => {
+  const guilds = client.guilds.cache.map(guild => ({
+    id: guild.id,
+    name: guild.name
+  }));
+
+  res.json(guilds);
+});
+
+app.get('/internal/guilds/:guildId/channels', async (req, res) => {
+  const guild = client.guilds.cache.get(req.params.guildId);
+
+  if (!guild) return res.status(404).json({ error: 'Guild not found' });
+
+  const channels = guild.channels.cache.map(channel => ({
+    id: channel.id,
+    name: channel.name,
+    type: channel.type,
+    position: channel.position
+  }));
+
+  res.json(channels);
+});
+
+app.listen(3002, () => {
+  console.log('🤖 Bot API running on http://localhost:3002');
+});
 }
 
 startBot();
