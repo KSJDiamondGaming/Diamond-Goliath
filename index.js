@@ -237,31 +237,17 @@ function startInternalApi() {
           ? guild.memberCount
           : null;
 
-      let humans = null;
-      let bots = null;
-      let fetched = false;
-
-      try {
-        console.log(`👥 Fetching members for ${guild.name} (${guild.id})`);
-
-        await guild.members.fetch();
-
-        humans = guild.members.cache.filter((member) => !member.user.bot).size;
-        bots = guild.members.cache.filter((member) => member.user.bot).size;
-        fetched = true;
-      } catch (error) {
-        console.error(
-          `❌ Failed to fetch full member list for ${guild.name}:`,
-          error.message
-        );
-      }
+      const cachedMembers = guild.members.cache;
+      const humans = cachedMembers.filter((member) => !member.user.bot).size;
+      const bots = cachedMembers.filter((member) => member.user.bot).size;
 
       return res.json({
         guildId: guild.id,
         total,
         humans,
         bots,
-        fetched,
+        fetched: false,
+        cached: true,
       });
     } catch (error) {
       console.error('❌ Failed to fetch member counts:', error);
