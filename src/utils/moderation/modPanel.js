@@ -11,7 +11,8 @@ const {
   EmbedBuilder,
   ButtonBuilder,
   ButtonStyle,
-  StringSelectMenuBuilder
+  StringSelectMenuBuilder,
+  UserSelectMenuBuilder
 } = require('discord.js');
 
 const { handleEscalation, getRepeatReasonInfo } = require('./escalationSystem');
@@ -147,7 +148,11 @@ async function safeReply(interaction, payload) {
 
 async function safeUpdate(interaction, payload) {
   try {
-    if (interaction.isButton?.() || interaction.isStringSelectMenu?.()) {
+    if (
+      interaction.isButton?.() ||
+      interaction.isStringSelectMenu?.() ||
+      interaction.isUserSelectMenu?.()
+    ) {
       return await interaction.update(payload);
     }
 
@@ -749,20 +754,20 @@ function buildDashboardNav(targetId, activeView = 'overview') {
     { view: 'analytics', label: 'Analytics' }
   ];
 
-return [
-  new ActionRowBuilder().addComponents(
-    items.map(item =>
-      new ButtonBuilder()
-        .setCustomId(`mod_dashboard:${targetId || 'none'}:${item.view}`)
-        .setLabel(item.label)
-        .setStyle(
-          activeView === item.view
-            ? ButtonStyle.Primary   // 🔥 active tab highlighted
-            : ButtonStyle.Secondary
-        )
+  return [
+    new ActionRowBuilder().addComponents(
+      items.map(item =>
+        new ButtonBuilder()
+          .setCustomId(`mod_dashboard:${targetId || 'none'}:${item.view}`)
+          .setLabel(item.label)
+          .setStyle(
+            activeView === item.view
+              ? ButtonStyle.Primary
+              : ButtonStyle.Secondary
+          )
+      )
     )
-  )
-];
+  ];
 }
 
 function getActionCount(cases, action) {
@@ -1563,7 +1568,7 @@ async function executePendingAction(interaction, token, returnContext = {}) {
       deletePendingAction(interaction.guild.id, token);
 
       await interaction.update({
-        content: `🗑️ Removed warning linked to **Case #${pending.payload.caseId}**.`,
+        content: `🗑️ Removed warning linked to **${pending.payload.caseId}**.`,
         embeds: [],
         components: []
       });
@@ -1633,6 +1638,27 @@ async function handleModButton(interaction) {
 
   if (!hasModPermission(interaction.member)) {
     return safeReply(interaction, ephemeralError('❌ No permission to use moderation panel.'));
+  }
+
+  if (interaction.isUserSelectMenu()) {
+    if (interaction.customId === 'mod_user_select') {
+      const userId = interaction.values[0];
+
+      const target = await fetchTarget(interaction.guild, userId);
+
+      if (!target) {
+        return safeReply(interaction, {
+          content: '❌ Could not find that user.',
+          flags: MessageFlags.Ephemeral
+        });
+      }
+
+      const payload = await buildDashboardPayload(interaction, target, 'overview');
+
+      return safeUpdate(interaction, payload);
+    }
+
+    return false;
   }
 
   if (interaction.isStringSelectMenu()) {
@@ -1708,20 +1734,19 @@ async function handleModButton(interaction) {
   }
 
   if (interaction.customId === 'mod_select_user') {
-    const modal = new ModalBuilder()
-      .setCustomId('mod_select_user_modal')
-      .setTitle('Select Member');
+    const row = new ActionRowBuilder().addComponents(
+      new UserSelectMenuBuilder()
+        .setCustomId('mod_user_select')
+        .setPlaceholder('Select a user to moderate')
+        .setMinValues(1)
+        .setMaxValues(1)
+    );
 
-    const input = new TextInputBuilder()
-      .setCustomId('target_user_query')
-      .setLabel('User ID, username, tag, or display name')
-      .setStyle(TextInputStyle.Short)
-      .setPlaceholder('123456789012345678 or TwoToneTaj')
-      .setRequired(true)
-      .setMaxLength(100);
-
-    modal.addComponents(new ActionRowBuilder().addComponents(input));
-    return interaction.showModal(modal);
+    return safeReply(interaction, {
+      content: 'Select a user:',
+      components: [row],
+      flags: MessageFlags.Ephemeral
+    });
   }
 
   if (interaction.customId === 'mod_bulk_warn') {
@@ -1771,13 +1796,12 @@ async function handleModButton(interaction) {
     }
   }
 
-// 🔥 REFRESH BUTTON
-if (interaction.customId.startsWith('mod_refresh:')) {
-  const [, id, view = 'overview'] = interaction.customId.split(':');
-  const target = await fetchTarget(interaction.guild, id);
-  const payload = await buildDashboardPayload(interaction, target, view);
-  return safeUpdate(interaction, payload);
-}
+  if (interaction.customId.startsWith('mod_refresh:')) {
+    const [, id, view = 'overview'] = interaction.customId.split(':');
+    const target = await fetchTarget(interaction.guild, id);
+    const payload = await buildDashboardPayload(interaction, target, view);
+    return safeUpdate(interaction, payload);
+  }
 
   if (interaction.customId.startsWith('mod_case_page:')) {
     const [, targetId, actionFilter, statusFilter, pageRaw] = interaction.customId.split(':');
@@ -2609,8 +2633,6 @@ async function handleModModal(interaction) {
 // =========================
 // 📤 Exports
 // =========================
-
-
 module.exports = {
   handleModButton,
   handleModModal,

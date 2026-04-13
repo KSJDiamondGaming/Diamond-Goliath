@@ -10,18 +10,16 @@ module.exports = {
 
   async execute(client) {
     console.log(`🤖 Logged in as ${client.user.tag}`);
-      console.log(`🆔 Bot ID: ${client.user.id}`);
+    console.log(`🆔 Bot ID: ${client.user.id}`);
 
-      if (client.guilds.cache.size > 0) {
-        console.log('📍 Connected guilds:');
-        for (const guild of client.guilds.cache.values()) {
-          console.log(`- ${guild.name} (${guild.id})`);
-        }
-      } else {
-        console.log('📍 No guilds connected');
+    if (client.guilds.cache.size > 0) {
+      console.log('📍 Connected guilds:');
+      for (const guild of client.guilds.cache.values()) {
+        console.log(`- ${guild.name} (${guild.id})`);
       }
-
-    /* ---------------- COMMAND SYNC ---------------- */
+    } else {
+      console.log('📍 No guilds connected');
+    }
 
     const commandsPath = path.join(__dirname, '..', '..', 'commands');
 
@@ -30,14 +28,12 @@ module.exports = {
         token: process.env.TOKEN,
         clientId: process.env.CLIENT_ID,
         commandsPath,
-        client,          // 🔥 allows fallback to connected guilds
-        clear: true,     // wipe old commands first
+        client,
+        clear: false,
       });
     } catch (err) {
       console.error('❌ Command registration failed:', err);
     }
-
-    /* ---------------- SYSTEM START ---------------- */
 
     try {
       punishmentScheduler.start?.(client);

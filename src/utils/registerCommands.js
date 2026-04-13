@@ -41,7 +41,9 @@ function loadCommands(commandsPath) {
         continue;
       }
 
-      commands.push(command.data.toJSON());
+      const json = command.data.toJSON();
+      commands.push(json);
+
       console.log(`✅ Prepared command: ${command.data.name}`);
     } catch (error) {
       console.error(`❌ Failed to prepare command file: ${filePath}`);
@@ -52,30 +54,15 @@ function loadCommands(commandsPath) {
   return commands;
 }
 
-async function clearGuildCommands(rest, clientId, guildIds) {
-  console.log(`🧹 Clearing commands from ${guildIds.length} guild(s)...`);
-
-  for (const guildId of guildIds) {
-    await rest.put(
-      Routes.applicationGuildCommands(clientId, guildId),
-      { body: [] }
-    );
-
-    console.log(`🧹 Cleared guild ${guildId}`);
-  }
-
-  console.log('✅ Guild command wipe complete.');
-}
-
 function resolveGuildIds(guildIds, client) {
   if (Array.isArray(guildIds) && guildIds.length) {
-    return guildIds.map(id => String(id).trim()).filter(Boolean);
+    return guildIds.map((id) => String(id).trim()).filter(Boolean);
   }
 
   if (process.env.GUILD_IDS) {
     return process.env.GUILD_IDS
       .split(',')
-      .map(id => id.trim())
+      .map((id) => id.trim())
       .filter(Boolean);
   }
 
@@ -84,10 +71,19 @@ function resolveGuildIds(guildIds, client) {
   }
 
   if (client?.guilds?.cache?.size) {
-    return client.guilds.cache.map(guild => guild.id);
+    return client.guilds.cache.map((guild) => guild.id);
   }
 
   return [];
+}
+
+async function putWithTimeout(rest, route, body, timeoutMs = 120000) {
+  return Promise.race([
+    rest.put(route, { body }),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`Timeout after ${timeoutMs}ms`)), timeoutMs)
+    ),
+  ]);
 }
 
 async function registerCommands({
@@ -96,7 +92,7 @@ async function registerCommands({
   commandsPath,
   guildIds = [],
   client = null,
-  clear = true,
+  clear = false,
 }) {
   if (!token) {
     throw new Error('Missing bot token.');
@@ -117,22 +113,32 @@ async function registerCommands({
   }
 
   const rest = new REST({ version: '10' }).setToken(token);
-
-  if (clear) {
-    await clearGuildCommands(rest, clientId, resolvedGuildIds);
-  }
-
   const commands = loadCommands(commandsPath);
 
   console.log(`🚀 Registering ${commands.length} command(s)...`);
+  console.log('🧾 Commands:', commands.map((cmd) => cmd.name).join(', '));
+  console.log('📦 Guilds detected:', resolvedGuildIds);
 
   for (const guildId of resolvedGuildIds) {
-    await rest.put(
-      Routes.applicationGuildCommands(clientId, guildId),
-      { body: commands }
-    );
+    try {
+      console.log(`📡 Registering commands for guild ${guildId}...`);
 
-    console.log(`✅ Synced commands to guild ${guildId}`);
+      const route = Routes.applicationGuildCommands(clientId, guildId);
+      const startedAt = Date.now();
+
+      if (clear) {
+        await putWithTimeout(rest, route, [], 30000);
+        console.log(`🧹 Cleared existing commands for guild ${guildId}`);
+      }
+
+      await putWithTimeout(rest, route, commands, 120000);
+
+      const elapsed = Date.now() - startedAt;
+      console.log(`✅ Synced ${commands.length} commands to guild ${guildId} in ${elapsed}ms`);
+    } catch (err) {
+      console.error(`❌ Failed to register commands for guild ${guildId}:`, err);
+      continue;
+    }
   }
 
   console.log('🎉 Command sync complete.');
