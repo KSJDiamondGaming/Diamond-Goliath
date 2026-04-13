@@ -11,10 +11,7 @@ module.exports = {
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
 
   async execute(interaction) {
-    const {
-      buildEmbedPanelMessage,
-    } = require('../../utils/embed/embedPanelHandler');
-
+    const {buildEmbedPanelMessage,} = require('../../utils/embed/embedPanelInteraction');
     const payload = buildEmbedPanelMessage(interaction.guildId);
 
     await interaction.reply({

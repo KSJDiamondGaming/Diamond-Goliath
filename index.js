@@ -128,7 +128,7 @@ async function startBot() {
 
     if (!token) {
       throw new Error('Missing TOKEN in .env file');
-    }      
+    }
 
     client.on('warn', (warning) => {
       console.warn('⚠️ Discord client warning:', warning);
@@ -160,35 +160,117 @@ async function startBot() {
 
 function startInternalApi() {
   const app = express();
+  const PORT = Number(process.env.BOT_API_PORT) || 3002;
+
+  app.get('/internal/status', (req, res) => {
+    const ready = client.isReady();
+
+    return res.json({
+      ok: true,
+      online: ready,
+      ready,
+      ping:
+        ready && typeof client.ws?.ping === 'number' && Number.isFinite(client.ws.ping)
+          ? Math.round(client.ws.ping)
+          : null,
+      guilds: client.guilds.cache.size,
+      user: client.user
+        ? {
+            id: client.user.id,
+            username: client.user.username,
+            tag: client.user.tag ?? null,
+            avatar: client.user.avatar ?? null,
+            avatarUrl: client.user.displayAvatarURL({
+              extension: 'png',
+              size: 256,
+              forceStatic: false,
+            }),
+          }
+        : null,
+      timestamp: new Date().toISOString(),
+    });
+  });
 
   app.get('/internal/guilds', (req, res) => {
-    const guilds = client.guilds.cache.map((guild) => ({
-      id: guild.id,
-      name: guild.name,
-    }));
+    const guilds = client.guilds.cache
+      .map((guild) => ({
+        id: guild.id,
+        name: guild.name,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
 
-    res.json(guilds);
+    return res.json(guilds);
   });
 
   app.get('/internal/guilds/:guildId/channels', async (req, res) => {
-    const guild = client.guilds.cache.get(req.params.guildId);
+    try {
+      const guild = client.guilds.cache.get(req.params.guildId);
 
-    if (!guild) {
-      return res.status(404).json({ error: 'Guild not found' });
+      if (!guild) {
+        return res.status(404).json({ error: 'Guild not found' });
+      }
+
+      const channels = guild.channels.cache.map((channel) => ({
+        id: channel.id,
+        name: channel.name,
+        type: channel.type,
+        position: channel.position,
+      }));
+
+      return res.json(channels);
+    } catch (error) {
+      console.error('❌ Failed to fetch channels:', error);
+      return res.status(500).json({ error: 'Failed to fetch channels' });
     }
-
-    const channels = guild.channels.cache.map((channel) => ({
-      id: channel.id,
-      name: channel.name,
-      type: channel.type,
-      position: channel.position,
-    }));
-
-    res.json(channels);
   });
 
-  app.listen(3002, () => {
-    console.log('🤖 Bot API running on http://localhost:3002');
+  app.get('/internal/guilds/:guildId/members/count', async (req, res) => {
+    try {
+      const guild = client.guilds.cache.get(req.params.guildId);
+
+      if (!guild) {
+        return res.status(404).json({ error: 'Guild not found' });
+      }
+
+      const total =
+        typeof guild.memberCount === 'number' && Number.isFinite(guild.memberCount)
+          ? guild.memberCount
+          : null;
+
+      let humans = null;
+      let bots = null;
+      let fetched = false;
+
+      try {
+        console.log(`👥 Fetching members for ${guild.name} (${guild.id})`);
+
+        await guild.members.fetch();
+
+        humans = guild.members.cache.filter((member) => !member.user.bot).size;
+        bots = guild.members.cache.filter((member) => member.user.bot).size;
+        fetched = true;
+      } catch (error) {
+        console.error(
+          `❌ Failed to fetch full member list for ${guild.name}:`,
+          error.message
+        );
+      }
+
+      return res.json({
+        guildId: guild.id,
+        total,
+        humans,
+        bots,
+        fetched,
+      });
+    } catch (error) {
+      console.error('❌ Failed to fetch member counts:', error);
+      return res.status(500).json({ error: 'Failed to fetch member counts' });
+    }
+  });
+
+  app.listen(PORT, () => {
+    console.log(`🤖 Bot API running on http://localhost:${PORT}`);
   });
 }
 

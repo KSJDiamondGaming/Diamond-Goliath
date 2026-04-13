@@ -20,7 +20,8 @@
     "discord.js": "^14.15.0",
     "dotenv": "^16.4.5",
     "express": "^5.2.1",
-    "express-session": "^1.19.0"
+    "express-session": "^1.19.0",
+    "node-fetch": "^2.7.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

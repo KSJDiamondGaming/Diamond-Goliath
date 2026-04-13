@@ -1,3 +1,4 @@
+const fetch = global.fetch || require('node-fetch');
 const express = require('express');
 console.log('✅ AUTH ROUTES FILE LOADED');
 

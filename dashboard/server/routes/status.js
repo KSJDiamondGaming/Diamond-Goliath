@@ -2,65 +2,73 @@ const express = require('express');
 
 const router = express.Router();
 
-function getBotProfile(client) {
-  const botUser = client?.user || null;
+const BOT_API_URL = process.env.BOT_API_URL || 'http://localhost:3002';
 
-  if (!botUser) {
-    return {
-      id: null,
-      username: 'KSJ Goliath',
-      name: 'KSJ Goliath',
-      tag: null,
-      avatar: null,
-      avatarUrl: '',
-    };
+async function fetchJson(url, options = {}) {
+  const response = await fetch(url, options);
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Request failed ${response.status}: ${text}`);
   }
 
-  let avatarUrl = '';
+  return response.json();
+}
 
-  try {
-    if (typeof botUser.displayAvatarURL === 'function') {
-      avatarUrl = botUser.displayAvatarURL({
-        extension: 'png',
-        size: 256,
-        forceStatic: false,
-      });
-    }
-  } catch (error) {
-    console.error('Failed to build bot avatar URL:', error);
-  }
-
+function emptyBotProfile() {
   return {
-    id: botUser.id || null,
-    username: botUser.username || 'KSJ Goliath',
-    name: botUser.username || 'KSJ Goliath',
-    tag: botUser.tag || null,
-    avatar: botUser.avatar || null,
-    avatarUrl: avatarUrl || '',
+    id: null,
+    username: 'KSJ Goliath',
+    name: 'KSJ Goliath',
+    tag: null,
+    avatar: null,
+    avatarUrl: '',
   };
 }
 
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
-    const guildId = req.query.guildId || null;
-    const client = global.client || null;
+    const guildId = req.query.guildId ? String(req.query.guildId) : null;
 
-    const botReady = Boolean(client?.isReady?.());
+    let botStatus = null;
+    let memberInfo = null;
+
+    try {
+      botStatus = await fetchJson(`${BOT_API_URL}/internal/status`);
+    } catch (error) {
+      console.error('Failed to reach bot status endpoint:', error.message);
+    }
+
+    if (guildId) {
+      try {
+        memberInfo = await fetchJson(
+          `${BOT_API_URL}/internal/guilds/${guildId}/members/count`
+        );
+      } catch (error) {
+        console.error('Failed to reach member count endpoint:', error.message);
+      }
+    }
+
+    const botReady = Boolean(botStatus?.online);
     const botLatencyMs =
-      typeof client?.ws?.ping === 'number' && Number.isFinite(client.ws.ping)
-        ? Math.round(client.ws.ping)
+      typeof botStatus?.ping === 'number' && Number.isFinite(botStatus.ping)
+        ? Math.round(botStatus.ping)
         : null;
 
-    const discordGuild =
-      guildId && client?.guilds?.cache
-        ? client.guilds.cache.get(String(guildId))
-        : null;
-
-    const guildConnected = Boolean(discordGuild);
+    const guildConnected = guildId ? Boolean(memberInfo) : false;
     const memberCount =
-      typeof discordGuild?.memberCount === 'number' ? discordGuild.memberCount : null;
+      typeof memberInfo?.total === 'number' ? memberInfo.total : null;
 
-    const botProfile = getBotProfile(client);
+    const botProfile = botStatus?.user
+      ? {
+          id: botStatus.user.id || null,
+          username: botStatus.user.username || 'KSJ Goliath',
+          name: botStatus.user.username || 'KSJ Goliath',
+          tag: botStatus.user.tag || null,
+          avatar: botStatus.user.avatar || null,
+          avatarUrl: botStatus.user.avatarUrl || '',
+        }
+      : emptyBotProfile();
 
     return res.json({
       ok: true,
@@ -78,6 +86,10 @@ router.get('/', (req, res) => {
               online: guildConnected,
               status: guildConnected ? 'connected' : 'missing',
               memberCount,
+              humans:
+                typeof memberInfo?.humans === 'number' ? memberInfo.humans : null,
+              bots:
+                typeof memberInfo?.bots === 'number' ? memberInfo.bots : null,
             },
           }
         : {},
@@ -100,6 +112,12 @@ router.get('/', (req, res) => {
                 online: guildConnected,
                 status: guildConnected ? 'connected' : 'missing',
                 memberCount,
+                humans:
+                  typeof memberInfo?.humans === 'number'
+                    ? memberInfo.humans
+                    : null,
+                bots:
+                  typeof memberInfo?.bots === 'number' ? memberInfo.bots : null,
               },
             }
           : {},

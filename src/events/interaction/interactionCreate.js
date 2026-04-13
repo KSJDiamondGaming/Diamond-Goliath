@@ -13,10 +13,10 @@ const {
   handleCasePanelModal
 } = require('../../commands/moderation/case');
 
-let embedPanelHandler = null;
+let embedPanelInteraction = null;
 
 try {
-  embedPanelHandler = require('../../utils/embed/embedPanelInteraction');
+  embedPanelInteraction = require('../../utils/embed/embedPanelInteraction');
   console.log('✅ Embed panel handler loaded');
 } catch (error) {
   console.warn('⚠️ Embed panel handler missing');
@@ -109,8 +109,8 @@ async function handleComponents(interaction, client) {
     if (await automodPanel.handleInteraction(interaction, client)) return true;
   }
 
-  if (interaction.customId?.startsWith('embedpanel_') && embedPanelHandler) {
-    return await embedPanelHandler(interaction, client);
+  if (interaction.customId?.startsWith('embedpanel_') && embedPanelInteraction) {
+    return await embedPanelInteraction(interaction, client);
   }
 
   return false;
