@@ -3,8 +3,8 @@ const { getGuildAutoModConfig } = require('../../utils/automod/automodStore');
 const {
   getPunishments,
   addPunishment,
-} = require('../../utils/moderation/tempPunishmentsStore');
-const logModerationAction = require('../../utils/moderation/logging/moderationActionLog');
+} = require('../../utils/logging/modlogs/tempPunishmentsStore')
+const moderationActionLog = require('../../utils/logging/modlogs/moderationActionLog');
 
 const spamTracker = new Map();
 const repeatTracker = new Map();

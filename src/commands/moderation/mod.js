@@ -1,6 +1,5 @@
 const {
   SlashCommandBuilder,
-  MessageFlags,
   PermissionFlagsBits
 } = require('discord.js');
 
@@ -19,11 +18,27 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    const payload = await buildDashboardPayload(interaction, null, 'overview');
+    try {
+      await interaction.deferReply({ ephemeral: true });
 
-    return interaction.reply({
-      ...payload,
-      flags: MessageFlags.Ephemeral
-    });
+      const payload = await buildDashboardPayload(interaction, null, 'overview');
+
+      return interaction.editReply({
+        ...payload
+      });
+    } catch (err) {
+      console.error('MOD PANEL ERROR:', err);
+
+      if (interaction.deferred || interaction.replied) {
+        return interaction.editReply({
+          content: '❌ Failed to open mod panel.'
+        });
+      }
+
+      return interaction.reply({
+        content: '❌ Failed to open mod panel.',
+        ephemeral: true
+      });
+    }
   }
 };

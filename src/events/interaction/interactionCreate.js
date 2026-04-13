@@ -1,7 +1,13 @@
 const { MessageFlags } = require('discord.js');
+
 const stats = require('../../utils/stats/statsManager');
 const automodPanel = require('../../utils/automod/automodPanel');
-const { handleModButton, handleModModal } = require('../../utils/moderation/modPanel');
+
+const {
+  handleModButton,
+  handleModModal
+} = require('../../utils/moderation/modPanel');
+
 const {
   handleCasePanelButton,
   handleCasePanelModal
@@ -12,36 +18,15 @@ let embedPanelHandler = null;
 try {
   embedPanelHandler = require('../../utils/embed/embedPanelInteraction');
   console.log('✅ Embed panel handler loaded');
-} catch {
+} catch (error) {
   console.warn('⚠️ Embed panel handler missing');
 }
 
-function isModPanelButton(customId) {
-  return (
-    customId === 'mod_select_user' ||
-    customId === 'mod_cancel_action' ||
-    customId === 'mod_bulk_warn' ||
-    customId === 'mod_bulk_timeout' ||
-    customId === 'mod_bulk_kick' ||
-    customId === 'mod_bulk_ban' ||
-    customId.startsWith('mod_refresh:') ||
-    customId.startsWith('mod_view_cases:') ||
-    customId.startsWith('mod_filter_cases:') ||
-    customId.startsWith('mod_case_detail:') ||
-    customId.startsWith('mod_edit_case:') ||
-    customId.startsWith('mod_remove_warning:') ||
-    customId.startsWith('mod_remove_timeout:') ||
-    customId.startsWith('mod_case_reverse_warning:') ||
-    customId.startsWith('mod_case_reverse_timeout:') ||
-    customId.startsWith('mod_confirm_action:') ||
-    customId.startsWith('mod_open_ban:') ||
-    customId.startsWith('mod_open_kick:') ||
-    customId.startsWith('mod_open_warn:') ||
-    customId.startsWith('mod_open_timeout:')
-  );
+function isModPanelButton(customId = '') {
+  return customId.startsWith('mod_');
 }
 
-function isCasePanelButton(customId) {
+function isCasePanelButton(customId = '') {
   return (
     customId === 'casepanel_search_case' ||
     customId === 'casepanel_search_member' ||
@@ -55,7 +40,7 @@ function isCasePanelButton(customId) {
   );
 }
 
-function isModPanelModal(customId) {
+function isModPanelModal(customId = '') {
   return (
     customId === 'mod_select_user_modal' ||
     customId === 'mod_submit_bulk_warn' ||
@@ -68,11 +53,12 @@ function isModPanelModal(customId) {
     customId.startsWith('mod_submit_ban:') ||
     customId.startsWith('mod_submit_kick:') ||
     customId.startsWith('mod_submit_warn:') ||
-    customId.startsWith('mod_submit_timeout:')
+    customId.startsWith('mod_submit_timeout:') ||
+    customId.startsWith('mod_submit_case_note:')
   );
 }
 
-function isCasePanelModal(customId) {
+function isCasePanelModal(customId = '') {
   return (
     customId === 'casepanel_submit_search_case' ||
     customId === 'casepanel_submit_search_member' ||
@@ -82,10 +68,10 @@ function isCasePanelModal(customId) {
 }
 
 async function handleComponents(interaction, client) {
+  // 🔵 BUTTONS
   if (interaction.isButton()) {
     if (isModPanelButton(interaction.customId)) {
-      await handleModButton(interaction);
-      return true;
+      return await handleModButton(interaction);
     }
 
     if (isCasePanelButton(interaction.customId)) {
@@ -94,6 +80,14 @@ async function handleComponents(interaction, client) {
     }
   }
 
+  // 🟣 SELECT MENUS
+  if (interaction.isStringSelectMenu()) {
+    if (interaction.customId.startsWith('mod_action_select:')) {
+      return await handleModButton(interaction);
+    }
+  }
+
+  // 🟡 MODALS
   if (interaction.isModalSubmit()) {
     if (isModPanelModal(interaction.customId)) {
       await handleModModal(interaction);
@@ -106,6 +100,7 @@ async function handleComponents(interaction, client) {
     }
   }
 
+  // ⚙️ OTHER SYSTEMS
   if (stats?.handleInteraction) {
     if (await stats.handleInteraction(interaction)) return true;
   }
@@ -126,14 +121,29 @@ module.exports = {
 
   async execute(interaction, client) {
     try {
-      if (await handleComponents(interaction, client)) return;
+      console.log('🟦 INTERACTION EVENT FIRED');
+      console.log('🟦 Type:', interaction.type);
+      console.log('🟦 Command:', interaction.commandName ?? 'N/A');
+      console.log('🟦 Custom ID:', interaction.customId ?? 'N/A');
+
+      if (
+        interaction.isButton() ||
+        interaction.isModalSubmit() ||
+        interaction.isStringSelectMenu()
+      ) {
+        const handled = await handleComponents(interaction, client);
+        if (handled) return;
+      }
 
       if (interaction.isChatInputCommand()) {
+        console.log(`🟨 CHAT INPUT COMMAND REACHED: /${interaction.commandName}`);
+
         const command = client.commands.get(interaction.commandName);
+        console.log(`🟨 COMMAND EXISTS: ${!!command}`);
 
         if (!command) {
           const payload = {
-            content: 'That command could not be found.',
+            content: `❌ Command not found: /${interaction.commandName}`,
             flags: MessageFlags.Ephemeral,
           };
 
@@ -151,18 +161,19 @@ module.exports = {
 
       if (interaction.isAutocomplete()) {
         const command = client.commands.get(interaction.commandName);
+
         if (command?.autocomplete) {
           await command.autocomplete(interaction, client);
           return;
         }
       }
     } catch (error) {
-      console.error(`[COMMAND ERROR] /${interaction.commandName || 'interaction'}`, error);
+      console.error(`❌ [COMMAND ERROR] /${interaction.commandName || 'interaction'}`, error);
 
       if (interaction.isAutocomplete()) return;
 
       const payload = {
-        content: 'There was an error while executing this interaction.',
+        content: '❌ There was an error while executing this interaction.',
         flags: MessageFlags.Ephemeral,
       };
 

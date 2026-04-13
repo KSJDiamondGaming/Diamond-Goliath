@@ -5,51 +5,54 @@ const punishmentScheduler = require('../../utils/moderation/punishmentScheduler'
 const stats = require('../../utils/stats/statsManager');
 
 module.exports = {
-  name: 'ready',
+  name: 'clientReady',
   once: true,
 
   async execute(client) {
     console.log(`🤖 Logged in as ${client.user.tag}`);
+      console.log(`🆔 Bot ID: ${client.user.id}`);
 
-    const express = require('express');
-    const botApi = express();
+      if (client.guilds.cache.size > 0) {
+        console.log('📍 Connected guilds:');
+        for (const guild of client.guilds.cache.values()) {
+          console.log(`- ${guild.name} (${guild.id})`);
+        }
+      } else {
+        console.log('📍 No guilds connected');
+      }
 
-    botApi.get('/internal/guilds', (req, res) => {
-      const guilds = client.guilds.cache.map((g) => ({
-        id: g.id,
-        name: g.name,
-        icon: g.icon,
-      }));
+    /* ---------------- COMMAND SYNC ---------------- */
 
-      res.json(guilds);
-    });
+    const commandsPath = path.join(__dirname, '..', '..', 'commands');
 
-    botApi.listen(3002, () => {
-      console.log('🌐 API running on http://localhost:3002');
-    });
+    try {
+      await registerCommands({
+        token: process.env.TOKEN,
+        clientId: process.env.CLIENT_ID,
+        commandsPath,
+        client,          // 🔥 allows fallback to connected guilds
+        clear: true,     // wipe old commands first
+      });
+    } catch (err) {
+      console.error('❌ Command registration failed:', err);
+    }
 
-    const commandsPath = path.join(process.cwd(), 'src', 'commands');
+    /* ---------------- SYSTEM START ---------------- */
 
-    await registerCommands({
-      token: process.env.TOKEN,
-      clientId: process.env.CLIENT_ID,
-      commandsPath,
-      mode: 'global',
-      clear: true,
-    });
+    try {
+      punishmentScheduler.start?.(client);
+      console.log('⏱️ Punishment scheduler started');
+    } catch (err) {
+      console.error('❌ Failed to start punishment scheduler:', err);
+    }
 
-    await registerCommands({
-      token: process.env.TOKEN,
-      clientId: process.env.CLIENT_ID,
-      commandsPath,
-      guildIds: process.env.GUILD_IDS.split(','),
-      mode: 'guild',
-    });
-
-    startPunishmentScheduler(client);
-    stats.start(client);
+    try {
+      stats.start?.(client);
+      console.log('📊 Stats system started');
+    } catch (err) {
+      console.error('❌ Failed to start stats system:', err);
+    }
 
     console.log('🚀 Bot ready');
   },
 };
-

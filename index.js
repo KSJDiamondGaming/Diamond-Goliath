@@ -2,14 +2,13 @@ require('dotenv').config();
 
 const fs = require('node:fs');
 const path = require('node:path');
+const express = require('express');
 const {
   Client,
   Collection,
   GatewayIntentBits,
   Partials,
 } = require('discord.js');
-
-const loadEvents = require('./src/events/handlers/eventHandler');
 
 const client = new Client({
   intents: [
@@ -29,58 +28,97 @@ const client = new Client({
 
 client.commands = new Collection();
 
-function getCommandFiles(dir) {
+/* ---------------- RECURSIVE FILE LOADERS ---------------- */
+
+function getAllJsFiles(dir) {
   let results = [];
 
   if (!fs.existsSync(dir)) {
-    console.warn(`⚠️ Commands folder not found: ${dir}`);
+    console.warn(`⚠️ Folder not found: ${dir}`);
     return results;
   }
 
-  for (const file of fs.readdirSync(dir)) {
-    const filePath = path.join(dir, file);
-    const stat = fs.statSync(filePath);
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
 
-    if (stat.isDirectory()) {
-      results = results.concat(getCommandFiles(filePath));
-    } else if (file.endsWith('.js')) {
-      results.push(filePath);
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+
+    if (entry.isDirectory()) {
+      results = results.concat(getAllJsFiles(fullPath));
+    } else if (entry.isFile() && entry.name.endsWith('.js')) {
+      results.push(fullPath);
     }
   }
 
   return results;
 }
 
+function loadCommands(client) {
+  const commandsPath = path.join(__dirname, 'src', 'commands');
+  const commandFiles = getAllJsFiles(commandsPath);
+
+  console.log(`📂 Found ${commandFiles.length} command file(s)`);
+
+  for (const filePath of commandFiles) {
+    try {
+      delete require.cache[require.resolve(filePath)];
+      const command = require(filePath);
+
+      if (command?.data && typeof command.execute === 'function') {
+        client.commands.set(command.data.name, command);
+        console.log(`✅ Loaded command: ${command.data.name}`);
+      } else {
+        console.warn(`⚠️ Invalid command file: ${filePath}`);
+      }
+    } catch (error) {
+      console.error(`❌ Failed to load command file: ${filePath}`);
+      console.error(error);
+    }
+  }
+
+  console.log(`📦 Total commands loaded: ${client.commands.size}`);
+}
+
+function loadEvents(client) {
+  const eventsPath = path.join(__dirname, 'src', 'events');
+  const eventFiles = getAllJsFiles(eventsPath);
+
+  console.log(`📂 Found ${eventFiles.length} event file(s)`);
+
+  for (const filePath of eventFiles) {
+    try {
+      delete require.cache[require.resolve(filePath)];
+      const event = require(filePath);
+
+      if (!event?.name || typeof event.execute !== 'function') {
+        console.warn(`⚠️ Invalid event file: ${filePath}`);
+        continue;
+      }
+
+      if (event.once) {
+        client.once(event.name, (...args) => event.execute(...args, client));
+      } else {
+        client.on(event.name, (...args) => event.execute(...args, client));
+      }
+
+      console.log(`✅ Loaded event: ${event.name} (${filePath})`);
+    } catch (error) {
+      console.error(`❌ Failed to load event file: ${filePath}`);
+      console.error(error);
+    }
+  }
+}
+
+/* ---------------- BOT STARTUP ---------------- */
+
 async function startBot() {
   try {
     console.log('🚀 Starting bot...');
 
-    const commandsPath = path.join(__dirname, 'src', 'commands');
-    const commandFiles = getCommandFiles(commandsPath);
-
-    console.log(`📂 Found ${commandFiles.length} command file(s)`);
-
-    for (const filePath of commandFiles) {
-      try {
-        delete require.cache[require.resolve(filePath)];
-        const command = require(filePath);
-
-        if (command?.data && command?.execute) {
-          client.commands.set(command.data.name, command);
-          console.log(`✅ Loaded: ${command.data.name}`);
-        } else {
-          console.warn(`⚠️ Invalid command file: ${filePath}`);
-        }
-      } catch (error) {
-        console.error(`❌ Failed to load command file: ${filePath}`);
-        console.error(error);
-      }
-    }
-
-    console.log(`📦 Total commands loaded: ${client.commands.size}`);
+    loadCommands(client);
 
     console.log('📡 Loading events...');
-    await loadEvents(client);
+    loadEvents(client);
     console.log('✅ Events loaded');
 
     const token = process.env.TOKEN;
@@ -90,21 +128,7 @@ async function startBot() {
 
     if (!token) {
       throw new Error('Missing TOKEN in .env file');
-    }
-
-    client.once('clientReady', () => {
-      console.log(`🤖 Logged in as ${client.user.tag}`);
-      console.log(`🆔 Bot ID: ${client.user.id}`);
-
-      if (client.guilds.cache.size > 0) {
-        console.log('📍 Connected guilds:');
-        for (const guild of client.guilds.cache.values()) {
-          console.log(`- ${guild.name} (${guild.id})`);
-        }
-      } else {
-        console.log('📍 No guilds connected');
-      }
-    });
+    }      
 
     client.on('warn', (warning) => {
       console.warn('⚠️ Discord client warning:', warning);
@@ -125,40 +149,47 @@ async function startBot() {
     console.log('🔑 About to login...');
     await client.login(token);
     console.log('✅ Login promise resolved');
+
+    startInternalApi();
   } catch (error) {
     console.error('❌ Fatal startup error:', error);
   }
+}
 
-  const express = require('express');
-const app = express();
+/* ---------------- INTERNAL API ---------------- */
 
-app.get('/internal/guilds', (req, res) => {
-  const guilds = client.guilds.cache.map(guild => ({
-    id: guild.id,
-    name: guild.name
-  }));
+function startInternalApi() {
+  const app = express();
 
-  res.json(guilds);
-});
+  app.get('/internal/guilds', (req, res) => {
+    const guilds = client.guilds.cache.map((guild) => ({
+      id: guild.id,
+      name: guild.name,
+    }));
 
-app.get('/internal/guilds/:guildId/channels', async (req, res) => {
-  const guild = client.guilds.cache.get(req.params.guildId);
+    res.json(guilds);
+  });
 
-  if (!guild) return res.status(404).json({ error: 'Guild not found' });
+  app.get('/internal/guilds/:guildId/channels', async (req, res) => {
+    const guild = client.guilds.cache.get(req.params.guildId);
 
-  const channels = guild.channels.cache.map(channel => ({
-    id: channel.id,
-    name: channel.name,
-    type: channel.type,
-    position: channel.position
-  }));
+    if (!guild) {
+      return res.status(404).json({ error: 'Guild not found' });
+    }
 
-  res.json(channels);
-});
+    const channels = guild.channels.cache.map((channel) => ({
+      id: channel.id,
+      name: channel.name,
+      type: channel.type,
+      position: channel.position,
+    }));
 
-app.listen(3002, () => {
-  console.log('🤖 Bot API running on http://localhost:3002');
-});
+    res.json(channels);
+  });
+
+  app.listen(3002, () => {
+    console.log('🤖 Bot API running on http://localhost:3002');
+  });
 }
 
 startBot();

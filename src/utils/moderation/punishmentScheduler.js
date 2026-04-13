@@ -1,7 +1,7 @@
 const {
   getPunishments,
   removePunishment,
-} = require('../logs/tempPunishmentsStore');
+} = require('../logging/modlogs/tempPunishmentsStore')
 
 function startPunishmentScheduler(client) {
   console.log('⏱️ Temp punishment scheduler started');

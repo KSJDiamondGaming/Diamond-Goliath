@@ -749,16 +749,20 @@ function buildDashboardNav(targetId, activeView = 'overview') {
     { view: 'analytics', label: 'Analytics' }
   ];
 
-  return [
-    new ActionRowBuilder().addComponents(
-      items.map(item =>
-        new ButtonBuilder()
-          .setCustomId(`mod_dashboard:${targetId || 'none'}:${item.view}`)
-          .setLabel(item.label)
-          .setStyle(activeView === item.view ? ButtonStyle.Primary : ButtonStyle.Secondary)
-      )
+return [
+  new ActionRowBuilder().addComponents(
+    items.map(item =>
+      new ButtonBuilder()
+        .setCustomId(`mod_dashboard:${targetId || 'none'}:${item.view}`)
+        .setLabel(item.label)
+        .setStyle(
+          activeView === item.view
+            ? ButtonStyle.Primary   // 🔥 active tab highlighted
+            : ButtonStyle.Secondary
+        )
     )
-  ];
+  )
+];
 }
 
 function getActionCount(cases, action) {
@@ -1754,18 +1758,26 @@ async function handleModButton(interaction) {
   }
 
   if (interaction.customId.startsWith('mod_dashboard:')) {
-    const [, targetId, view] = interaction.customId.split(':');
-    const target = await fetchTarget(interaction.guild, targetId);
-    const payload = await buildDashboardPayload(interaction, target, view);
-    return safeUpdate(interaction, payload);
+    try {
+      const [, targetId, view] = interaction.customId.split(':');
+      const target = await fetchTarget(interaction.guild, targetId);
+      const payload = await buildDashboardPayload(interaction, target, view);
+
+      await interaction.update(payload);
+      return true;
+    } catch (error) {
+      console.error('mod_dashboard button failed:', error);
+      return safeReply(interaction, ephemeralError('❌ Failed to switch dashboard tab.'));
+    }
   }
 
-  if (interaction.customId.startsWith('mod_refresh:')) {
-    const [, id, view = 'overview'] = interaction.customId.split(':');
-    const target = await fetchTarget(interaction.guild, id);
-    const payload = await buildDashboardPayload(interaction, target, view);
-    return safeUpdate(interaction, payload);
-  }
+// 🔥 REFRESH BUTTON
+if (interaction.customId.startsWith('mod_refresh:')) {
+  const [, id, view = 'overview'] = interaction.customId.split(':');
+  const target = await fetchTarget(interaction.guild, id);
+  const payload = await buildDashboardPayload(interaction, target, view);
+  return safeUpdate(interaction, payload);
+}
 
   if (interaction.customId.startsWith('mod_case_page:')) {
     const [, targetId, actionFilter, statusFilter, pageRaw] = interaction.customId.split(':');
