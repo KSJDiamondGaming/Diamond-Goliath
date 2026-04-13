@@ -22,6 +22,7 @@ const {
   getFilteredCases,
   getCaseCountForUser,
   getCaseById,
+  getAllCases,
   updateCaseReason,
   updateCaseStatus,
   updateCaseNote,
@@ -251,6 +252,67 @@ function checkHierarchy(interaction, target) {
 // =========================
 // ⏱ Parsing + Formatting Helpers
 // =========================
+
+
+function ephemeralError(content) {
+  return {
+    content,
+    flags: MessageFlags.Ephemeral
+  };
+}
+
+
+async function safeReply(interaction, payload) {
+  try {
+    if (interaction.replied || interaction.deferred) {
+      return await interaction.followUp({
+        ...payload,
+        flags: payload.flags ?? MessageFlags.Ephemeral
+      });
+    }
+
+    return await interaction.reply(payload);
+  } catch (error) {
+    console.error('safeReply failed:', error);
+    return null;
+  }
+}
+
+async function safeUpdate(interaction, payload) {
+  try {
+    if (interaction.isButton?.() || interaction.isStringSelectMenu?.()) {
+      return await interaction.update(payload);
+    }
+
+    if (interaction.replied || interaction.deferred) {
+      return await interaction.editReply(payload);
+    }
+
+    return await safeReply(interaction, {
+      ...payload,
+      flags: payload.flags ?? MessageFlags.Ephemeral
+    });
+  } catch (error) {
+    console.error('safeUpdate failed:', error);
+    return null;
+  }
+}
+
+async function safeEditReply(interaction, payload) {
+  try {
+    if (interaction.replied || interaction.deferred) {
+      return await interaction.editReply(payload);
+    }
+
+    return await safeReply(interaction, {
+      ...payload,
+      flags: payload.flags ?? MessageFlags.Ephemeral
+    });
+  } catch (error) {
+    console.error('safeEditReply failed:', error);
+    return null;
+  }
+}
 
 function parseDuration(input) {
   const value = input.trim().toLowerCase();
@@ -714,12 +776,16 @@ function checkHierarchyForBulk(actorMember, botMember, guildOwnerId, targetMembe
 // 📊 Dashboard Builders
 // =========================
 
+const allowedViews = new Set(['overview', 'actions', 'cases', 'tools', 'analytics']);
+const safeView = allowedViews.has(view) ? view : 'overview';
+
 function buildDashboardNav(targetId, activeView = 'overview') {
   const items = [
     { view: 'overview', label: 'Overview' },
-    { view: 'actions', label: 'Actions' },
-    { view: 'cases', label: 'Cases' },
-    { view: 'tools', label: 'Tools' }
+    { view: 'actions', actionFilter: 'all', statusFilter: 'all', page: 0 }
+    { view: 'cases', actionFilter: 'all', statusFilter: 'all', page: 0 }
+    { view: 'tools', label: 'Tools' },
+    { view: 'analytics', label: 'Analytics' }
   ];
 
   return [
@@ -732,6 +798,64 @@ function buildDashboardNav(targetId, activeView = 'overview') {
       )
     )
   ];
+}
+
+function getActionCount(cases, action) {
+  return cases.filter(entry => entry.action === action).length;
+}
+
+function getStatusCount(cases, status) {
+  return cases.filter(entry => (entry.status || 'active') === status).length;
+}
+
+function buildTopList(itemsMap, limit = 5, formatter = (id, count) => `${id} — ${count}`) {
+  return Object.entries(itemsMap)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([id, count]) => formatter(id, count));
+}
+
+function getModerationAnalytics(guildId) {
+  const allCases = getAllCases(guildId) || [];
+
+  const moderatorCounts = {};
+  const userCounts = {};
+
+  for (const modCase of allCases) {
+    moderatorCounts[modCase.moderatorId] = (moderatorCounts[modCase.moderatorId] || 0) + 1;
+    userCounts[modCase.userId] = (userCounts[modCase.userId] || 0) + 1;
+  }
+
+  return {
+    totalCases: allCases.length,
+    activeCases: getStatusCount(allCases, 'active'),
+    reversedCases: getStatusCount(allCases, 'reversed'),
+    expiredCases: getStatusCount(allCases, 'expired'),
+
+    warnCount: getActionCount(allCases, 'warn'),
+    timeoutCount: getActionCount(allCases, 'timeout'),
+    kickCount: getActionCount(allCases, 'kick'),
+    banCount: getActionCount(allCases, 'ban'),
+    unwarnCount: getActionCount(allCases, 'unwarn'),
+    removeTimeoutCount: getActionCount(allCases, 'remove-timeout'),
+
+    topModerators: buildTopList(
+      moderatorCounts,
+      5,
+      (id, count) => `<@${id}> • ${count} case${count === 1 ? '' : 's'}`
+    ),
+
+    topUsers: buildTopList(
+      userCounts,
+      5,
+      (id, count) => `<@${id}> • ${count} case${count === 1 ? '' : 's'}`
+    ),
+
+    recentCases: allCases
+      .slice()
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, 5)
+  };
 }
 
 function buildOverviewEmbed(guild, moderator, target, stats = {}) {
@@ -762,6 +886,63 @@ function buildOverviewEmbed(guild, moderator, target, stats = {}) {
       {
         name: 'Latest Case',
         value: stats.lastCaseSummary || 'No cases found.',
+        inline: false
+      }
+    )
+    .setTimestamp();
+}
+
+function buildAnalyticsEmbed(guild, analytics) {
+  const recentCasesText = analytics.recentCases.length
+    ? analytics.recentCases.map(entry =>
+        `**#${entry.caseId}** • ${entry.action} • <@${entry.userId}> • <t:${Math.floor(new Date(entry.createdAt).getTime() / 1000)}:R>`
+      ).join('\n')
+    : 'No recent cases.';
+
+  return new EmbedBuilder()
+    .setColor('#5865F2')
+    .setTitle('📊 Moderation Analytics')
+    .setDescription(`Analytics for **${guild.name}**`)
+    .addFields(
+      {
+        name: 'Case Summary',
+        value: [
+          `Total: **${analytics.totalCases}**`,
+          `Active: **${analytics.activeCases}**`,
+          `Reversed: **${analytics.reversedCases}**`,
+          `Expired: **${analytics.expiredCases}**`
+        ].join('\n'),
+        inline: true
+      },
+      {
+        name: 'Action Breakdown',
+        value: [
+          `Warns: **${analytics.warnCount}**`,
+          `Timeouts: **${analytics.timeoutCount}**`,
+          `Kicks: **${analytics.kickCount}**`,
+          `Bans: **${analytics.banCount}**`,
+          `Unwarns: **${analytics.unwarnCount}**`,
+          `Remove Timeouts: **${analytics.removeTimeoutCount}**`
+        ].join('\n'),
+        inline: true
+      },
+      {
+        name: 'Top Moderators',
+        value: analytics.topModerators.length
+          ? analytics.topModerators.join('\n').slice(0, 1024)
+          : 'No moderator data yet.',
+        inline: false
+      },
+      {
+        name: 'Top Moderated Users',
+        value: analytics.topUsers.length
+          ? analytics.topUsers.join('\n').slice(0, 1024)
+          : 'No user data yet.',
+        inline: false
+      },
+      {
+        name: 'Recent Cases',
+        value: recentCasesText.slice(0, 1024),
         inline: false
       }
     )
@@ -903,7 +1084,7 @@ async function buildDashboardPayload(
   const embeds = [];
   const components = [...buildDashboardNav(target?.id || null, view)];
 
-  if (view === 'overview') {
+ if (safeView === 'overview') {
     embeds.push(buildOverviewEmbed(interaction.guild, interaction.member, target, stats));
     components.push(...buildActionsRows(target?.id || null));
   }
@@ -961,14 +1142,20 @@ async function buildDashboardPayload(
   }
 
   if (view === 'tools') {
-    embeds.push(
-      new EmbedBuilder()
-        .setColor('#5865F2')
-        .setTitle('🧰 Moderation Tools')
-        .setDescription('Utility actions and bulk moderation.')
-        .setTimestamp()
-    );
-    components.push(...buildToolsRows(target?.id || null));
+  embeds.push(
+    new EmbedBuilder()
+      .setColor('#5865F2')
+      .setTitle('🧰 Moderation Tools')
+      .setDescription('Utility actions and bulk moderation.')
+      .setTimestamp()
+  );
+  components.push(...buildToolsRows(target?.id || null, interaction.member, interaction.guild));
+}
+
+  if (view === 'analytics') {
+    const analytics = getModerationAnalytics(interaction.guild.id);
+
+    embeds.push(buildAnalyticsEmbed(interaction.guild, analytics));
   }
 
   return { embeds, components };
@@ -1012,6 +1199,8 @@ async function refreshDashboard(interaction, target, context = {}) {
   try {
     if (interaction.message) {
       await interaction.message.edit(payload);
+    } else {
+      await safeEditReply(interaction, payload);
     }
   } catch (error) {
     console.error('Failed to refresh moderation dashboard message:', error);
@@ -1039,7 +1228,7 @@ async function runBulkAction(interaction, options) {
   const uniqueIds = [...new Set(ids.map(id => id.trim()).filter(Boolean))];
 
   if (!uniqueIds.length) {
-    return interaction.reply({
+    return safeReply(interaction, {
       content: '❌ No valid user IDs.',
       flags: MessageFlags.Ephemeral
     });
@@ -1049,7 +1238,7 @@ async function runBulkAction(interaction, options) {
   if (actionType === 'timeout') {
     durationMs = parseDuration(durationRaw);
     if (!durationMs) {
-      return interaction.reply({
+      return safeReply(interaction, {
         content: '❌ Invalid duration. Use `10m`, `1h`, or `1d`.',
         flags: MessageFlags.Ephemeral
       });
@@ -1057,7 +1246,7 @@ async function runBulkAction(interaction, options) {
 
     const maxTimeoutMs = 28 * 24 * 60 * 60 * 1000;
     if (durationMs > maxTimeoutMs) {
-      return interaction.reply({
+      return safeReply(interaction, {
         content: '❌ Timeout cannot exceed 28 days.',
         flags: MessageFlags.Ephemeral
       });
@@ -1066,7 +1255,7 @@ async function runBulkAction(interaction, options) {
 
   if (actionType === 'ban') {
     if (!Number.isInteger(deleteDays) || deleteDays < 0 || deleteDays > 7) {
-      return interaction.reply({
+      return safeReply(interaction, {
         content: '❌ Delete message days must be 0-7.',
         flags: MessageFlags.Ephemeral
       });
@@ -1077,18 +1266,18 @@ async function runBulkAction(interaction, options) {
   const success = [];
   const failed = [];
 
-  await interaction.reply({
-    embeds: [
-      getBulkActionProgressEmbed({
-        actionLabel,
-        total,
-        processed: 0,
-        successCount: 0,
-        failCount: 0
-      })
-    ],
-    flags: MessageFlags.Ephemeral
-  });
+await safeReply(interaction, {
+  embeds: [
+    getBulkActionProgressEmbed({
+      actionLabel,
+      total,
+      processed: 0,
+      successCount: 0,
+      failCount: 0
+    })
+  ],
+  flags: MessageFlags.Ephemeral
+});
 
   const actorMember = interaction.member;
   const botMember = interaction.guild.members.me;
@@ -1243,31 +1432,28 @@ async function runBulkAction(interaction, options) {
     }
 
     if ((index + 1) % 2 === 0 || index === uniqueIds.length - 1) {
-      await interaction.editReply({
-        embeds: [
-          getBulkActionProgressEmbed({
-            actionLabel,
-            total,
-            processed: index + 1,
-            successCount: success.length,
-            failCount: failed.length
-          })
-        ]
-      }).catch(() => {});
-    }
-  }
+      await safeEditReply(interaction, {
+  embeds: [
+    getBulkActionProgressEmbed({
+      actionLabel,
+      total,
+      processed: index + 1,
+      successCount: success.length,
+      failCount: failed.length
+    })
+  ]
+});
 
-  return interaction.editReply({
-    embeds: [
-      getBulkActionSummaryEmbed({
-        actionLabel,
-        total,
-        success,
-        failed
-      })
-    ]
-  });
-}
+ return safeEditReply(interaction, {
+  embeds: [
+    getBulkActionSummaryEmbed({
+      actionLabel,
+      total,
+      success,
+      failed
+    })
+  ]
+});
 
 // =========================
 // 🧾 Pending Action System
@@ -1285,17 +1471,11 @@ await refreshDashboard(interaction, target, {
   const pending = getPendingAction(interaction.guild.id, token);
 
   if (!pending) {
-    return interaction.reply({
-      content: '❌ That pending action has expired or could not be found.',
-      flags: MessageFlags.Ephemeral
-    });
+    return safeReply(interaction, ephemeralError('❌ That pending action has expired or could not be found.'));
   }
 
   if (pending.moderatorId !== interaction.user.id) {
-    return interaction.reply({
-      content: '❌ Only the moderator who created this action can confirm it.',
-      flags: MessageFlags.Ephemeral
-    });
+    return safeReply(interaction, ephemeralError('❌ Only the moderator who created this action can confirm it.'));
   }
 
   const target = await fetchTarget(interaction.guild, pending.targetId);
@@ -1303,10 +1483,7 @@ await refreshDashboard(interaction, target, {
 
   if (error && pending.type !== 'remove-warning') {
     deletePendingAction(interaction.guild.id, token);
-    return interaction.reply({
-      content: error,
-      flags: MessageFlags.Ephemeral
-    });
+    return safeReply(interaction, ephemeralError('❌ Failed to remove warning.'));
   }
 
   try {
@@ -1337,14 +1514,14 @@ await refreshDashboard(interaction, target, {
 
       deletePendingAction(interaction.guild.id, token);
 
-      return interaction.update({
-        content: `✅ Banned **${target.user.tag}** • Case #${modCase.caseId}`,
-        embeds: [],
-        components: []
-      });
-    }
+  return safeUpdate(interaction, {
+    content: `✅ Banned **${target.user.tag}** • Case #${modCase.caseId}`,
+    embeds: [],
+    components: []
+  });
+}
 
-    if (pending.type === 'kick') {
+if (pending.type === 'kick') {
       await target.kick(`${pending.payload.reason} | By ${interaction.user.tag}`);
 
       const modCase = createCase({
@@ -1366,22 +1543,19 @@ await refreshDashboard(interaction, target, {
 
       deletePendingAction(interaction.guild.id, token);
 
-      return interaction.update({
-        content: `✅ Kicked **${target.user.tag}** • Case #${modCase.caseId}`,
-        embeds: [],
-        components: []
-      });
-    }
+  return safeUpdate(interaction, {
+    content: `✅ Kicked **${target.user.tag}** • Case #${modCase.caseId}`,
+    embeds: [],
+    components: []
+  });
+}
 
-    if (pending.type === 'remove-warning') {
+if (pending.type === 'remove-warning') {
       const removed = deleteWarningByCaseId(interaction.guild.id, pending.payload.caseId);
 
       if (!removed) {
         deletePendingAction(interaction.guild.id, token);
-        return interaction.reply({
-          content: '❌ Failed to remove warning.',
-          flags: MessageFlags.Ephemeral
-        });
+        return safeReply(interaction, ephemeralError('❌ Failed to remove warning.'));
       }
 
       const sourceCase = getCaseById(interaction.guild.id, pending.payload.caseId);
@@ -1416,25 +1590,25 @@ await refreshDashboard(interaction, target, {
 
       deletePendingAction(interaction.guild.id, token);
 
-      await interaction.update({
-        content: `🗑️ Removed warning linked to **Case #${pending.payload.caseId}**.`,
-        embeds: [],
-        components: []
-      });
+  await interaction.update({
+    content: `🗑️ Removed warning linked to **Case #${pending.payload.caseId}**.`,
+    embeds: [],
+    components: []
+  });
 
-      if (logTarget) {
-        await refreshDashboard(interaction, target, {
-  view: 'cases',
-  actionFilter: 'all',
-  statusFilter: 'all',
-  page: 0
-});
-      }
+  if (logTarget) {
+    await refreshDashboard(interaction, target, {
+      view: 'cases',
+      actionFilter: 'all',
+      statusFilter: 'all',
+      page: 0
+    });
+  }
 
-      return;
-    }
+  return;
+}
 
-    if (pending.type === 'remove-timeout') {
+if (pending.type === 'remove-timeout') {
       await target.timeout(null, `Timeout removed by ${interaction.user.tag}`);
 
       const reversedSourceCaseId = pending.payload.sourceCaseId || null;
@@ -1471,24 +1645,19 @@ await refreshDashboard(interaction, target, {
         components: []
       });
 
-      await refreshDashboard(interaction, target, safeReturnContext);
-      return;
-    }
+    await refreshDashboard(interaction, target, safeReturnContext);
+    return;
+  }
 
-    deletePendingAction(interaction.guild.id, token);
+  deletePendingAction(interaction.guild.id, token);
 
-    return interaction.reply({
-      content: '❌ Unknown pending action type.',
-      flags: MessageFlags.Ephemeral
-    });
-  } catch (err) {
+  return safeReply(interaction, ephemeralError('❌ Unknown pending action type.'));
+}
+catch (err) {
     console.error('Pending action execution error:', err);
     deletePendingAction(interaction.guild.id, token);
 
-    return interaction.reply({
-      content: '❌ Failed to complete that action.',
-      flags: MessageFlags.Ephemeral
-    });
+    return safeReply(interaction, ephemeralError('❌ Failed to complete that action.'));
   }
 }
 
@@ -1535,7 +1704,7 @@ async function handleModButton(interaction) {
       const error = checkHierarchy(interaction, target);
 
       if (error) {
-        return interaction.reply({ content: error, flags: MessageFlags.Ephemeral });
+        return safeReply(interaction, ephemeralError(error));
       }
 
       const token = createPendingAction(interaction.guild.id, {
@@ -1545,7 +1714,7 @@ async function handleModButton(interaction) {
         payload: {}
       });
 
-      return interaction.reply({
+      return safeReply(interaction, {
         content: `Remove timeout from **${target.user.tag}**?`,
         components: buildConfirmRow(`mod_confirm_action:${token}:cases:all:all:0`),
         flags: MessageFlags.Ephemeral
@@ -1555,14 +1724,11 @@ async function handleModButton(interaction) {
 }
 
   if (!hasModPermission(interaction.member)) {
-    return interaction.reply({
-      content: '❌ No permission to use moderation panel.',
-      flags: MessageFlags.Ephemeral
-    });
+    return safeReply(interaction, ephemeralError('❌ No permission to use moderation panel.'));
   }
 
   if (interaction.customId === 'mod_cancel_action') {
-    return interaction.reply({
+    return safeReply(interaction, {
       content: 'Cancelled.',
       flags: MessageFlags.Ephemeral
     });
@@ -1587,10 +1753,7 @@ async function handleModButton(interaction) {
 
   if (interaction.customId === 'mod_bulk_warn') {
   if (!canUseModAction(interaction.member, interaction.guild, 'bulk_warn')) {
-    return interaction.reply({
-      content: getModActionDeniedMessage('bulk_warn'),
-      flags: MessageFlags.Ephemeral
-    });
+    return safeReply(interaction, ephemeralError('❌ No permission to use bulk warn.'));
   }
 
   return interaction.showModal(buildBulkModal('warn'));
@@ -1598,10 +1761,7 @@ async function handleModButton(interaction) {
 
 if (interaction.customId === 'mod_bulk_timeout') {
   if (!canUseModAction(interaction.member, interaction.guild, 'bulk_timeout')) {
-    return interaction.reply({
-      content: getModActionDeniedMessage('bulk_timeout'),
-      flags: MessageFlags.Ephemeral
-    });
+    return safeReply(interaction, ephemeralError('❌ No permission to use bulk timeout.'));
   }
 
   return interaction.showModal(buildBulkModal('timeout'));
@@ -1609,10 +1769,7 @@ if (interaction.customId === 'mod_bulk_timeout') {
 
  if (interaction.customId === 'mod_bulk_kick') {
   if (!canUseModAction(interaction.member, interaction.guild, 'bulk_kick')) {
-    return interaction.reply({
-      content: getModActionDeniedMessage('bulk_kick'),
-      flags: MessageFlags.Ephemeral
-    });
+    return safeReply(interaction, ephemeralError('❌ No permission to use bulk kick.'));
   }
 
   return interaction.showModal(buildBulkModal('kick'));
@@ -1620,10 +1777,7 @@ if (interaction.customId === 'mod_bulk_timeout') {
 
  if (interaction.customId === 'mod_bulk_ban') {
   if (!canUseModAction(interaction.member, interaction.guild, 'bulk_ban')) {
-    return interaction.reply({
-      content: getModActionDeniedMessage('bulk_ban'),
-      flags: MessageFlags.Ephemeral
-    });
+    return safeReply(interaction, ephemeralError('❌ No permission to use bulk ban.'));
   }
 
   return interaction.showModal(buildBulkModal('ban'));
@@ -1638,14 +1792,14 @@ if (interaction.customId.startsWith('mod_confirm_action:')) {
     const [, targetId, view] = interaction.customId.split(':');
     const target = await fetchTarget(interaction.guild, targetId);
     const payload = await buildDashboardPayload(interaction, target, view);
-    return interaction.update(payload);
+    return safeUpdate(interaction, payload);
   }
 
   if (interaction.customId.startsWith('mod_refresh:')) {
     const [, id, view = 'overview'] = interaction.customId.split(':');
     const target = await fetchTarget(interaction.guild, id);
     const payload = await buildDashboardPayload(interaction, target, view);
-    return interaction.update(payload);
+    return safeUpdate(interaction, payload);
   }
 
   if (interaction.customId.startsWith('mod_case_page:')) {
@@ -1653,10 +1807,7 @@ if (interaction.customId.startsWith('mod_confirm_action:')) {
 
     const target = await fetchTarget(interaction.guild, targetId);
     if (!target) {
-      return interaction.reply({
-        content: '❌ User not found.',
-        flags: MessageFlags.Ephemeral
-      });
+      return safeReply(interaction, ephemeralError('❌ User not found.'));
     }
 
     const payload = await buildDashboardPayload(interaction, target, 'cases', {
@@ -1665,7 +1816,7 @@ if (interaction.customId.startsWith('mod_confirm_action:')) {
       page: Number(pageRaw) || 0
     });
 
-    return interaction.update(payload);
+    return safeUpdate(interaction, payload);
   }
 
   if (interaction.customId.startsWith('mod_filter_cases:')) {
@@ -1673,10 +1824,7 @@ if (interaction.customId.startsWith('mod_confirm_action:')) {
 
     const target = await fetchTarget(interaction.guild, targetId);
     if (!target) {
-      return interaction.reply({
-        content: '❌ User not found.',
-        flags: MessageFlags.Ephemeral
-      });
+      return safeReply(interaction, ephemeralError('❌ User not found.'));
     }
 
     const payload = await buildDashboardPayload(interaction, target, 'cases', {
@@ -1685,7 +1833,7 @@ if (interaction.customId.startsWith('mod_confirm_action:')) {
       page: Number(pageRaw) || 0
     });
 
-    return interaction.update(payload);
+    return safeUpdate(interaction, payload);
   }
 
   if (interaction.customId.startsWith('mod_case_reverse_warning:')) {
@@ -1693,18 +1841,12 @@ if (interaction.customId.startsWith('mod_confirm_action:')) {
     const modCase = getCaseById(interaction.guild.id, Number(caseIdRaw));
 
     if (!modCase || modCase.action !== 'warn') {
-      return interaction.reply({
-        content: '❌ That warning case could not be found.',
-        flags: MessageFlags.Ephemeral
-      });
+     return safeReply(interaction, ephemeralError('❌ User not found for that case.'));
     }
 
     const target = await fetchTarget(interaction.guild, modCase.userId);
     if (!target) {
-      return interaction.reply({
-        content: '❌ User not found for that case.',
-        flags: MessageFlags.Ephemeral
-      });
+      return safeReply(interaction, ephemeralError('❌ User not found for that case.'));
     }
 
     const token = createPendingAction(interaction.guild.id, {
@@ -1714,7 +1856,7 @@ if (interaction.customId.startsWith('mod_confirm_action:')) {
       payload: { caseId: modCase.caseId }
     });
 
-    return interaction.reply({
+    return safeReply(interaction, {
       content: `Reverse warning from **Case #${modCase.caseId}**?`,
       components: buildConfirmRow(`mod_confirm_action:${token}:cases:all:all:0`),
       flags: MessageFlags.Ephemeral
@@ -1726,18 +1868,12 @@ if (interaction.customId.startsWith('mod_confirm_action:')) {
     const modCase = getCaseById(interaction.guild.id, Number(caseIdRaw));
 
     if (!modCase || modCase.action !== 'timeout') {
-      return interaction.reply({
-        content: '❌ That timeout case could not be found.',
-        flags: MessageFlags.Ephemeral
-      });
+      return safeReply(interaction, ephemeralError('❌ That timeout case could not be found.'));
     }
 
     const target = await fetchTarget(interaction.guild, modCase.userId);
     if (!target) {
-      return interaction.reply({
-        content: '❌ User not found for that case.',
-        flags: MessageFlags.Ephemeral
-      });
+      return safeReply(interaction, ephemeralError('❌ User not found for that case.'));
     }
 
     const token = createPendingAction(interaction.guild.id, {
@@ -1747,7 +1883,7 @@ if (interaction.customId.startsWith('mod_confirm_action:')) {
       payload: { sourceCaseId: modCase.caseId }
     });
 
-    return interaction.reply({
+    return safeReply(interaction, {
       content: `Reverse timeout from **Case #${modCase.caseId}**?`,
       components: buildConfirmRow(`mod_confirm_action:${token}:cases:all:all:0`),
       flags: MessageFlags.Ephemeral
@@ -1755,21 +1891,15 @@ if (interaction.customId.startsWith('mod_confirm_action:')) {
   }
 
   if (!canUseModAction(interaction.member, interaction.guild, 'view_case_detail')) {
-  return interaction.reply({
-    content: getModActionDeniedMessage('view_case_detail'),
-    flags: MessageFlags.Ephemeral
-  });
-}
+  return safeReply(interaction, ephemeralError('❌ No permission to view case details.'));
+}}}
 
   if (interaction.customId.startsWith('mod_case_detail:')) {
     const [, targetId] = interaction.customId.split(':');
 
     if (!targetId || targetId === 'none') {
-      return interaction.reply({
-        content: '❌ No user selected.',
-        flags: MessageFlags.Ephemeral
-      });
-    }
+      return safeReply(interaction, ephemeralError('❌ No user selected.'));
+    }}}
 
     return interaction.showModal(
       buildCaseIdModal(`mod_submit_case_detail:${targetId}`, 'View Case Detail')
@@ -1777,42 +1907,30 @@ if (interaction.customId.startsWith('mod_confirm_action:')) {
   }
 
   if (!canUseModAction(interaction.member, interaction.guild, 'view_case_detail')) {
-  return interaction.reply({
-    content: getModActionDeniedMessage('view_case_detail'),
-    flags: MessageFlags.Ephemeral
-  });
+  return safeReply(interaction, ephemeralError('❌ No permission to view case details.'));
 }
 
   if (interaction.customId.startsWith('mod_edit_case:')) {
     const [, targetId] = interaction.customId.split(':');
 
     if (!targetId || targetId === 'none') {
-      return interaction.reply({
-        content: '❌ No user selected.',
-        flags: MessageFlags.Ephemeral
-      });
+      return safeReply(interaction, ephemeralError('❌ No user selected.'));
+    }
     }
 
     return interaction.showModal(
       buildEditCaseModal(`mod_submit_edit_case:${targetId}`)
-    );
-  }
+    )
 
 if (!canUseModAction(interaction.member, interaction.guild, 'remove_warning')) {
-  return interaction.reply({
-    content: getModActionDeniedMessage('remove_warning'),
-    flags: MessageFlags.Ephemeral
-  });
+  return safeReply(interaction, ephemeralError('❌ No permission to remove warnings.'));
 }
 
   if (interaction.customId.startsWith('mod_remove_warning:')) {
     const [, targetId] = interaction.customId.split(':');
 
     if (!targetId || targetId === 'none') {
-      return interaction.reply({
-        content: '❌ No user selected.',
-        flags: MessageFlags.Ephemeral
-      });
+      return safeReply(interaction, ephemeralError('❌ No user selected.'));
     }
 
     return interaction.showModal(
@@ -1825,30 +1943,21 @@ if (!canUseModAction(interaction.member, interaction.guild, 'remove_warning')) {
   }
 
   if (!canUseModAction(interaction.member, interaction.guild, 'remove_timeout')) {
-  return interaction.reply({
-    content: getModActionDeniedMessage('remove_timeout'),
-    flags: MessageFlags.Ephemeral
-  });
+  return safeReply(interaction, ephemeralError('❌ No permission to remove timeouts.'));
 }
 
   if (interaction.customId.startsWith('mod_remove_timeout:')) {
     const [, targetId] = interaction.customId.split(':');
 
     if (!interaction.member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
-      return interaction.reply({
-        content: '❌ No permission to remove timeouts.',
-        flags: MessageFlags.Ephemeral
-      });
+      return safeReply(interaction, ephemeralError('❌ No permission to remove timeouts.'));
     }
 
     const target = await fetchTarget(interaction.guild, targetId);
     const error = checkHierarchy(interaction, target);
 
     if (error) {
-      return interaction.reply({
-        content: error,
-        flags: MessageFlags.Ephemeral
-      });
+      return safeReply(interaction, ephemeralError('❌ Failed to remove warning.'));
     }
 
     const token = createPendingAction(interaction.guild.id, {
@@ -1858,7 +1967,7 @@ if (!canUseModAction(interaction.member, interaction.guild, 'remove_warning')) {
       payload: {}
     });
 
-    return interaction.reply({
+    return safeReply(interaction, {
       content: `Remove timeout from **${target.user.tag}**?`,
       components: buildConfirmRow(`mod_confirm_action:${token}:cases:all:all:0`),
       flags: MessageFlags.Ephemeral
@@ -1869,28 +1978,19 @@ if (!canUseModAction(interaction.member, interaction.guild, 'remove_warning')) {
     const [prefix, targetId] = interaction.customId.split(':');
 
     if (!targetId || targetId === 'none') {
-      return interaction.reply({
-        content: '❌ No user selected.',
-        flags: MessageFlags.Ephemeral
-      });
+      return safeReply(interaction, ephemeralError('❌ No user selected.'));
     }
 
     const target = await fetchTarget(interaction.guild, targetId);
     const error = checkHierarchy(interaction, target);
 
     if (error) {
-      return interaction.reply({
-        content: error,
-        flags: MessageFlags.Ephemeral
-      });
+      return safeReply(interaction, ephemeralError('❌ Failed to remove warning.'));
     }
 
    if (prefix === 'mod_open_ban') {
   if (!canUseModAction(interaction.member, interaction.guild, 'ban')) {
-    return interaction.reply({
-      content: getModActionDeniedMessage('ban'),
-      flags: MessageFlags.Ephemeral
-    });
+    return safeReply(interaction, ephemeralError('❌ No permission to ban users.'));
   }
 
   return interaction.showModal(
@@ -1900,10 +2000,7 @@ if (!canUseModAction(interaction.member, interaction.guild, 'remove_warning')) {
 
     if (prefix === 'mod_open_kick') {
   if (!canUseModAction(interaction.member, interaction.guild, 'kick')) {
-    return interaction.reply({
-      content: getModActionDeniedMessage('kick'),
-      flags: MessageFlags.Ephemeral
-    });
+    return safeReply(interaction, ephemeralError('❌ No permission to kick users.'));
   }
 
   return interaction.showModal(
@@ -1913,10 +2010,7 @@ if (!canUseModAction(interaction.member, interaction.guild, 'remove_warning')) {
 
 if (prefix === 'mod_open_warn') {
   if (!canUseModAction(interaction.member, interaction.guild, 'warn')) {
-    return interaction.reply({
-      content: getModActionDeniedMessage('warn'),
-      flags: MessageFlags.Ephemeral
-    });
+    return safeReply(interaction, ephemeralError('❌ No permission to warn users.'));
   }
 
   return interaction.showModal(
@@ -1928,16 +2022,11 @@ if (prefix === 'mod_open_warn') {
     buildReasonModal(`mod_submit_warn:${targetId}`, 'Warn User', false, false, true)
   );
 }      return interaction.showModal(
-        buildReasonModal(`mod_submit_warn:${targetId}`, 'Warn User', false, false, true)
-      );
-    }
+        buildReasonModal(`mod_submit_warn:${targetId}`, 'Warn User', false, false, true));
 
  if (prefix === 'mod_open_timeout') {
   if (!canUseModAction(interaction.member, interaction.guild, 'timeout')) {
-    return interaction.reply({
-      content: getModActionDeniedMessage('timeout'),
-      flags: MessageFlags.Ephemeral
-    });
+    return safeReply(interaction, ephemeralError('❌ No permission to timeout users.'));
   }
 
   return interaction.showModal(
@@ -1955,10 +2044,7 @@ async function handleModModal(interaction) {
   await syncExpiredWarningsToCases(interaction.guild.id);
 
   if (!hasModPermission(interaction.member)) {
-    return interaction.reply({
-      content: '❌ No permission to use moderation panel.',
-      flags: MessageFlags.Ephemeral
-    });
+    return safeReply(interaction, ephemeralError('❌ No permission to use moderation panel.'));
   }
 
   if (interaction.customId === 'mod_select_user_modal') {
@@ -1966,44 +2052,32 @@ async function handleModModal(interaction) {
     const target = await findMemberByQuery(interaction.guild, query);
 
     if (!target) {
-      return interaction.reply({
-        content: '❌ User not found by that ID, username, tag, or display name.',
-        flags: MessageFlags.Ephemeral
-      });
+      return safeReply(interaction, ephemeralError('❌ User not found by that ID, username, tag, or display name.'));
     }
 
     const payload = await buildDashboardPayload(interaction, target, 'overview');
 
-    return interaction.reply({
+    return safeReply(interaction, {
       ...payload,
       flags: MessageFlags.Ephemeral
     });
   }
 
-  if (interaction.customId.startsWith('mod_submit_case_note:')) {
+if (interaction.customId.startsWith('mod_submit_case_note:')) {
   const [, caseIdRaw] = interaction.customId.split(':');
   const note = interaction.fields.getTextInputValue('note').trim();
 
   if (!/^\d+$/.test(caseIdRaw)) {
-    return interaction.reply({
-      content: '❌ Case ID must be a number.',
-      flags: MessageFlags.Ephemeral
-    });
+    return safeReply(interaction, ephemeralError('❌ Case ID must be a number.'));
+  }
 
-    if (!canUseModAction(interaction.member, interaction.guild, 'add_case_note')) {
-  return interaction.reply({
-    content: getModActionDeniedMessage('add_case_note'),
-    flags: MessageFlags.Ephemeral
-  });
-}
+  if (!canUseModAction(interaction.member, interaction.guild, 'add_case_note')) {
+    return safeReply(interaction, ephemeralError('❌ No permission to add case notes.'));
   }
 
   const existingCase = getCaseById(interaction.guild.id, Number(caseIdRaw));
   if (!existingCase) {
-    return interaction.reply({
-      content: '❌ Case not found.',
-      flags: MessageFlags.Ephemeral
-    });
+    return safeReply(interaction, ephemeralError('❌ Case not found.'));
   }
 
   const updated = note
@@ -2011,20 +2085,17 @@ async function handleModModal(interaction) {
     : clearCaseNote(interaction.guild.id, Number(caseIdRaw));
 
   if (!updated) {
-    return interaction.reply({
-      content: '❌ Failed to update case note.',
-      flags: MessageFlags.Ephemeral
-    });
+    return safeReply(interaction, ephemeralError('❌ Failed to update case note.'));
   }
 
   const target = await fetchTarget(interaction.guild, updated.userId);
 
-  await interaction.reply({
-    content: note
-      ? `📝 Updated note for **Case #${updated.caseId}**.`
-      : `🗑️ Cleared note for **Case #${updated.caseId}**.`,
-    flags: MessageFlags.Ephemeral
-  });
+  await safeReply(interaction, {
+  content: note
+    ? `📝 Updated note for **Case #${updated.caseId}**.`
+    : `🗑️ Cleared note for **Case #${updated.caseId}**.`,
+  flags: MessageFlags.Ephemeral
+});
 
   if (target) {
     await refreshDashboard(interaction, target, {
@@ -2038,61 +2109,52 @@ async function handleModModal(interaction) {
   return true;
 }
 
-  if (interaction.customId === 'mod_submit_bulk_warn') {
-    const ids = interaction.fields.getTextInputValue('users').split(',');
-    const reason = interaction.fields.getTextInputValue('reason');
-
-    return runBulkAction(interaction, {
-      actionType: 'warn',
-      ids,
-      reason
-    });
-
-    if (!canUseModAction(interaction.member, interaction.guild, 'bulk_warn')) {
-  return interaction.reply({
-    content: getModActionDeniedMessage('bulk_warn'),
-    flags: MessageFlags.Ephemeral
-  });
-}
+if (interaction.customId === 'mod_submit_bulk_warn') {
+  if (!canUseModAction(interaction.member, interaction.guild, 'bulk_warn')) {
+    return safeReply(interaction, ephemeralError('❌ No permission to warn users in bulk.'));
   }
 
-  if (interaction.customId === 'mod_submit_bulk_timeout') {
-    const ids = interaction.fields.getTextInputValue('users').split(',');
-    const durationRaw = interaction.fields.getTextInputValue('duration');
-    const reason = interaction.fields.getTextInputValue('reason');
+  const ids = interaction.fields.getTextInputValue('users').split(',');
+  const reason = interaction.fields.getTextInputValue('reason');
 
-    return runBulkAction(interaction, {
-      actionType: 'timeout',
-      ids,
-      reason,
-      durationRaw
-    });
-
-    if (!canUseModAction(interaction.member, interaction.guild, 'bulk_timeout')) {
-  return interaction.reply({
-    content: getModActionDeniedMessage('bulk_timeout'),
-    flags: MessageFlags.Ephemeral
+  return runBulkAction(interaction, {
+    actionType: 'warn',
+    ids,
+    reason
   });
 }
+
+if (interaction.customId === 'mod_submit_bulk_timeout') {
+  if (!canUseModAction(interaction.member, interaction.guild, 'bulk_timeout')) {
+    return safeReply(interaction, ephemeralError('❌ No permission to timeout users in bulk.'));
   }
 
-  if (interaction.customId === 'mod_submit_bulk_kick') {
-    const ids = interaction.fields.getTextInputValue('users').split(',');
-    const reason = interaction.fields.getTextInputValue('reason');
+  const ids = interaction.fields.getTextInputValue('users').split(',');
+  const durationRaw = interaction.fields.getTextInputValue('duration');
+  const reason = interaction.fields.getTextInputValue('reason');
 
-    return runBulkAction(interaction, {
-      actionType: 'kick',
-      ids,
-      reason
-    });
-    
-    if (!canUseModAction(interaction.member, interaction.guild, 'bulk_kick')) {
-  return interaction.reply({
-    content: getModActionDeniedMessage('bulk_kick'),
-    flags: MessageFlags.Ephemeral
+  return runBulkAction(interaction, {
+    actionType: 'timeout',
+    ids,
+    reason,
+    durationRaw
   });
 }
+
+if (interaction.customId === 'mod_submit_bulk_kick') {
+  if (!canUseModAction(interaction.member, interaction.guild, 'bulk_kick')) {
+    return safeReply(interaction, ephemeralError('❌ No permission to kick users in bulk.'));
   }
+
+  const ids = interaction.fields.getTextInputValue('users').split(',');
+  const reason = interaction.fields.getTextInputValue('reason');
+
+  return runBulkAction(interaction, {
+    actionType: 'kick',
+    ids,
+    reason
+  });
+}
 
   if (interaction.customId === 'mod_submit_bulk_ban') {
     const ids = interaction.fields.getTextInputValue('users').split(',');
@@ -2100,10 +2162,7 @@ async function handleModModal(interaction) {
     const reason = interaction.fields.getTextInputValue('reason');
 
     if (!/^[0-7]$/.test(daysRaw)) {
-      return interaction.reply({
-        content: '❌ Delete message days must be 0-7.',
-        flags: MessageFlags.Ephemeral
-      });
+      return safeReply(interaction, ephemeralError('❌ Delete message days must be 0-7.'));
     }
 
     return runBulkAction(interaction, {
@@ -2114,65 +2173,31 @@ async function handleModModal(interaction) {
     });
   }
 
-  if (interaction.customId.startsWith('mod_submit_case_detail:')) {
-    const [, targetId] = interaction.customId.split(':');
-    const caseIdRaw = interaction.fields.getTextInputValue('case_id').trim();
+if (interaction.customId.startsWith('mod_submit_case_detail:')) {
+  const [, targetId] = interaction.customId.split(':');
+  const caseIdRaw = interaction.fields.getTextInputValue('case_id').trim();
 
-    if (!/^\d+$/.test(caseIdRaw)) {
-      return interaction.reply({
-        content: '❌ Case ID must be a number.',
-        flags: MessageFlags.Ephemeral
-      });
+  if (!/^\d+$/.test(caseIdRaw)) {
+    return safeReply(interaction, ephemeralError('❌ Case ID must be a number.'));
+  }
 
-      if (!canUseModAction(interaction.member, interaction.guild, 'view_case_detail')) {
-  return interaction.reply({
-    content: getModActionDeniedMessage('view_case_detail'),
-    flags: MessageFlags.Ephemeral
-  });
-}
-    }
+  if (!canUseModAction(interaction.member, interaction.guild, 'view_case_detail')) {
+    return safeReply(interaction, ephemeralError('❌ No permission to view case details.'));
+  }
 
-    if (modCase.note && String(modCase.note).trim()) {
-  embed.addFields({
-    name: 'Staff Note',
-    value: modCase.note.slice(0, 1024),
-    inline: false
-  });
-}
-
-if (!canUseModAction(interaction.member, interaction.guild, 'add_case_note')) {
-  return interaction.reply({
-    content: getModActionDeniedMessage('add_case_note'),
-    flags: MessageFlags.Ephemeral
-  });
-}
-
-   if (interaction.customId.startsWith('mod_case_note:')) {
-  const [, caseIdRaw] = interaction.customId.split(':');
-  const modCase = getCaseById(interaction.guild.id, Number(caseIdRaw));
-
-  if (!modCase) {
-    return interaction.reply({
-      content: '❌ Case not found.',
-      flags: MessageFlags.Ephemeral
+  if (modCase.note && String(modCase.note).trim()) {
+    embed.addFields({
+      name: 'Staff Note',
+      value: modCase.note.slice(0, 1024),
+      inline: false
     });
   }
 
-  return interaction.showModal(
-    buildCaseNoteModal(`mod_submit_case_note:${modCase.caseId}`, modCase.note || '')
-  );
-}
-
-  return interaction.showModal(
-    buildCaseNoteModal(`mod_submit_case_note:${modCase.caseId}`, modCase.note || '')
-  );
+  return safeReply(interaction, { embeds: [embed], components: buildCaseDetailButtons(modCase) });
 }
 
     if (targetId !== 'none' && modCase.userId !== targetId) {
-      return interaction.reply({
-        content: '❌ That case does not belong to the currently selected user.',
-        flags: MessageFlags.Ephemeral
-      });
+      return safeReply(interaction, ephemeralError('❌ That case does not belong to the currently selected user.'));
     }
 
     const embed = new EmbedBuilder()
@@ -2219,61 +2244,41 @@ if (!canUseModAction(interaction.member, interaction.guild, 'add_case_note')) {
     // 🖱 Button Handler
     // =========================
 
-    return interaction.reply({
-      embeds: [embed],
-      components: buildCaseDetailButtons(modCase),
-      flags: MessageFlags.Ephemeral
-    });
+    return safeReply(interaction, { embeds: [embed], components: buildCaseDetailButtons(modCase) });
+
+if (interaction.customId.startsWith('mod_submit_edit_case:')) {
+  const [, targetId] = interaction.customId.split(':');
+  const caseIdRaw = interaction.fields.getTextInputValue('case_id').trim();
+  const reason = interaction.fields.getTextInputValue('reason').trim();
+
+  if (!/^\d+$/.test(caseIdRaw)) {
+    return safeReply(interaction, ephemeralError('❌ Case ID must be a number.'));
   }
 
-  if (interaction.customId.startsWith('mod_submit_edit_case:')) {
-    const [, targetId] = interaction.customId.split(':');
-    const caseIdRaw = interaction.fields.getTextInputValue('case_id').trim();
-    const reason = interaction.fields.getTextInputValue('reason').trim();
-
-    if (!/^\d+$/.test(caseIdRaw)) {
-      return interaction.reply({
-        content: '❌ Case ID must be a number.',
-        flags: MessageFlags.Ephemeral
-      });
-
-      if (!canUseModAction(interaction.member, interaction.guild, 'edit_case')) {
-  return interaction.reply({
-    content: getModActionDeniedMessage('edit_case'),
-    flags: MessageFlags.Ephemeral
-  });
-}
-    }
+  if (!canUseModAction(interaction.member, interaction.guild, 'edit_case')) {
+    return safeReply(interaction, ephemeralError('❌ No permission to edit cases.'));
+  }
 
     const existingCase = getCaseById(interaction.guild.id, Number(caseIdRaw));
     if (!existingCase) {
-      return interaction.reply({
-        content: '❌ Case not found.',
-        flags: MessageFlags.Ephemeral
-      });
+      return safeReply(interaction, ephemeralError('❌ Case not found.'));
     }
 
     if (targetId !== 'none' && existingCase.userId !== targetId) {
-      return interaction.reply({
-        content: '❌ That case does not belong to the currently selected user.',
-        flags: MessageFlags.Ephemeral
-      });
+      return safeReply(interaction, ephemeralError('❌ That case does not belong to the currently selected user.'));
     }
 
     const updated = updateCaseReason(interaction.guild.id, Number(caseIdRaw), reason);
     if (!updated) {
-      return interaction.reply({
-        content: '❌ Failed to update case.',
-        flags: MessageFlags.Ephemeral
-      });
+      return safeReply(interaction, ephemeralError('❌ Failed to update case.'));
     }
 
     const target = await fetchTarget(interaction.guild, updated.userId);
 
-    await interaction.reply({
-      content: `✏️ Updated reason for **Case #${updated.caseId}**.`,
-      flags: MessageFlags.Ephemeral
-    });
+    await safeReply(interaction, {
+  content: `✏️ Updated reason for **Case #${updated.caseId}**.`,
+  flags: MessageFlags.Ephemeral
+});
 
     if (target) {
       await refreshDashboard(interaction, target, {
@@ -2287,37 +2292,28 @@ if (!canUseModAction(interaction.member, interaction.guild, 'add_case_note')) {
     return true;
   }
 
-  if (interaction.customId.startsWith('mod_submit_remove_warning:')) {
-    const [, targetId] = interaction.customId.split(':');
-    const caseIdRaw = interaction.fields.getTextInputValue('case_id').trim();
+if (interaction.customId.startsWith('mod_submit_remove_warning:')) {
+  const [, targetId] = interaction.customId.split(':');
+  const caseIdRaw = interaction.fields.getTextInputValue('case_id').trim();
 
-    if (!/^\d+$/.test(caseIdRaw)) {
-      return interaction.reply({
-        content: '❌ Warning case ID must be a number.',
-        flags: MessageFlags.Ephemeral
-      });
+  if (!/^\d+$/.test(caseIdRaw)) {
+    return safeReply(interaction, ephemeralError('❌ Warning case ID must be a number.'));
+  }
 
-      if (!canUseModAction(interaction.member, interaction.guild, 'remove_warning')) {
-  return interaction.reply({
-    content: getModActionDeniedMessage('remove_warning'),
-    flags: MessageFlags.Ephemeral
-  });
-}
-    }
+  if (!canUseModAction(interaction.member, interaction.guild, 'remove_warning')) {
+    return safeReply(interaction, {
+      content: getModActionDeniedMessage('remove_warning'),
+      flags: MessageFlags.Ephemeral
+    });
+  }
 
     const warning = getWarningByCaseId(interaction.guild.id, Number(caseIdRaw));
     if (!warning) {
-      return interaction.reply({
-        content: '❌ Warning not found for that case ID.',
-        flags: MessageFlags.Ephemeral
-      });
+      return safeReply(interaction, ephemeralError('❌ Warning not found for that case ID.'));
     }
 
     if (targetId !== 'none' && warning.userId !== targetId) {
-      return interaction.reply({
-        content: '❌ That warning does not belong to the currently selected user.',
-        flags: MessageFlags.Ephemeral
-      });
+      return safeReply(interaction, ephemeralError('❌ User not found for that case.'));
     }
 
     const token = createPendingAction(interaction.guild.id, {
@@ -2327,41 +2323,32 @@ if (!canUseModAction(interaction.member, interaction.guild, 'add_case_note')) {
       payload: { caseId: Number(caseIdRaw) }
     });
 
-    return interaction.reply({
+    return safeReply(interaction, {
       content: `Remove warning linked to **Case #${caseIdRaw}**?`,
       components: buildConfirmRow(`mod_confirm_action:${token}:cases:all:all:0`),
       flags: MessageFlags.Ephemeral
     });
   }
 
-  if (interaction.customId.startsWith('mod_submit_ban:')) {
-    const [, targetId] = interaction.customId.split(':');
-    const target = await fetchTarget(interaction.guild, targetId);
-    const error = checkHierarchy(interaction, target);
+if (interaction.customId.startsWith('mod_submit_ban:')) {
+  const [, targetId] = interaction.customId.split(':');
+  const target = await fetchTarget(interaction.guild, targetId);
+  const error = checkHierarchy(interaction, target);
 
-    if (error) {
-      return interaction.reply({
-        content: error,
-        flags: MessageFlags.Ephemeral
-      });
+  if (error) {
+    return safeReply(interaction, ephemeralError(error));
+  }
 
-      if (!canUseModAction(interaction.member, interaction.guild, 'ban')) {
-  return interaction.reply({
-    content: getModActionDeniedMessage('ban'),
-    flags: MessageFlags.Ephemeral
-  });
-}
-    }
+  if (!canUseModAction(interaction.member, interaction.guild, 'ban')) {
+    return safeReply(interaction, ephemeralError('❌ No permission to ban users.'));
+  }
 
-    const daysRaw = interaction.fields.getTextInputValue('days').trim();
-    const reason = interaction.fields.getTextInputValue('reason').trim();
+  const daysRaw = interaction.fields.getTextInputValue('days').trim();
+  const reason = interaction.fields.getTextInputValue('reason').trim();
 
-    if (!/^[0-7]$/.test(daysRaw)) {
-      return interaction.reply({
-        content: '❌ Delete message days must be 0-7.',
-        flags: MessageFlags.Ephemeral
-      });
-    }
+  if (!/^[0-7]$/.test(daysRaw)) {
+    return safeReply(interaction, ephemeralError('❌ Delete message days must be 0-7.'));
+  }
 
     const deleteDays = Number(daysRaw);
 
@@ -2372,31 +2359,28 @@ if (!canUseModAction(interaction.member, interaction.guild, 'add_case_note')) {
       payload: { reason, deleteDays }
     });
 
-    return interaction.reply({
+    return safeReply(interaction, {
       content: `Confirm ban for **${target.user.tag}**?\nReason: ${reason}\nDelete days: ${deleteDays}`,
       components: buildConfirmRow(`mod_confirm_action:${token}:cases:all:all:0`),
       flags: MessageFlags.Ephemeral
     });
   }
 
-  if (interaction.customId.startsWith('mod_submit_kick:')) {
-    const [, targetId] = interaction.customId.split(':');
-    const target = await fetchTarget(interaction.guild, targetId);
-    const error = checkHierarchy(interaction, target);
+if (interaction.customId.startsWith('mod_submit_kick:')) {
+  const [, targetId] = interaction.customId.split(':');
+  const target = await fetchTarget(interaction.guild, targetId);
+  const error = checkHierarchy(interaction, target);
 
-    if (error) {
-      return interaction.reply({
-        content: error,
-        flags: MessageFlags.Ephemeral
-      });
+  if (error) {
+    return safeReply(interaction, ephemeralError(error));
+  }
 
-      if (!canUseModAction(interaction.member, interaction.guild, 'kick')) {
-  return interaction.reply({
-    content: getModActionDeniedMessage('kick'),
-    flags: MessageFlags.Ephemeral
-  });
-}
-    }
+  if (!canUseModAction(interaction.member, interaction.guild, 'kick')) {
+    return safeReply(interaction, {
+      content: getModActionDeniedMessage('kick'),
+      flags: MessageFlags.Ephemeral
+    });
+  }
 
     const reason = interaction.fields.getTextInputValue('reason').trim();
 
@@ -2407,38 +2391,35 @@ if (!canUseModAction(interaction.member, interaction.guild, 'add_case_note')) {
       payload: { reason }
     });
 
-    return interaction.reply({
+    return safeReply(interaction, {
       content: `Confirm kick for **${target.user.tag}**?\nReason: ${reason}`,
       components: buildConfirmRow(`mod_confirm_action:${token}:cases:all:all:0`),
       flags: MessageFlags.Ephemeral
     });
   }
 
-  if (interaction.customId.startsWith('mod_submit_warn:')) {
-    const [, targetId] = interaction.customId.split(':');
-    const target = await fetchTarget(interaction.guild, targetId);
-    const error = checkHierarchy(interaction, target);
+if (interaction.customId.startsWith('mod_submit_warn:')) {
+  const [, targetId] = interaction.customId.split(':');
+  const target = await fetchTarget(interaction.guild, targetId);
+  const error = checkHierarchy(interaction, target);
 
-    if (error) {
-      return interaction.reply({
-        content: error,
-        flags: MessageFlags.Ephemeral
-      });
+  if (error) {
+    return safeReply(interaction, ephemeralError(error));
+  }
 
-      if (!canUseModAction(interaction.member, interaction.guild, 'warn')) {
-  return interaction.reply({
-    content: getModActionDeniedMessage('warn'),
-    flags: MessageFlags.Ephemeral
-  });
-}
-    }
+  if (!canUseModAction(interaction.member, interaction.guild, 'warn')) {
+    return safeReply(interaction, {
+      content: getModActionDeniedMessage('warn'),
+      flags: MessageFlags.Ephemeral
+    });
+  }
 
     const reason = interaction.fields.getTextInputValue('reason').trim();
     const warnExpiryRaw = interaction.fields.getTextInputValue('warn_expiry') || 'never';
     const expiresAt = getWarningExpiry(warnExpiryRaw);
 
     if (warnExpiryRaw.trim().toLowerCase() !== 'never' && !expiresAt) {
-      return interaction.reply({
+      return safeReply(interaction, {
         content: '❌ Invalid warning expiry. Use `7d`, `2w`, `1m`, or `never`.',
         flags: MessageFlags.Ephemeral
       });
@@ -2513,13 +2494,13 @@ if (!canUseModAction(interaction.member, interaction.guild, 'add_case_note')) {
         extraLines.push(`⚡ Auto escalation triggered: **${escalatedCase.action}** (Case #${escalatedCase.caseId})`);
       }
 
-      await interaction.reply({
-        content: [
-          `⚠️ Warned **${target.user.tag}** • Case #${modCase.caseId}`,
-          ...extraLines
-        ].join('\n'),
-        flags: MessageFlags.Ephemeral
-      });
+     await safeReply(interaction, {
+  content: [
+    `⚠️ Warned **${target.user.tag}** • Case #${modCase.caseId}`,
+    ...extraLines
+  ].join('\n'),
+  flags: MessageFlags.Ephemeral
+});
 
       await refreshDashboard(interaction, target, {
   view: 'cases',
@@ -2530,38 +2511,35 @@ if (!canUseModAction(interaction.member, interaction.guild, 'add_case_note')) {
       return true;
     } catch (err) {
       console.error('Warn error:', err);
-      return interaction.reply({
+      return safeReply(interaction, {
         content: '❌ Failed to warn user.',
         flags: MessageFlags.Ephemeral
       });
     }
   }
 
-  if (interaction.customId.startsWith('mod_submit_timeout:')) {
-    const [, targetId] = interaction.customId.split(':');
-    const target = await fetchTarget(interaction.guild, targetId);
-    const error = checkHierarchy(interaction, target);
+if (interaction.customId.startsWith('mod_submit_timeout:')) {
+  const [, targetId] = interaction.customId.split(':');
+  const target = await fetchTarget(interaction.guild, targetId);
+  const error = checkHierarchy(interaction, target);
 
-    if (error) {
-      return interaction.reply({
-        content: error,
-        flags: MessageFlags.Ephemeral
-      });
+  if (error) {
+    return safeReply(interaction, ephemeralError(error));
+  }
 
-      if (!canUseModAction(interaction.member, interaction.guild, 'timeout')) {
-  return interaction.reply({
-    content: getModActionDeniedMessage('timeout'),
-    flags: MessageFlags.Ephemeral
-  });
-}
-    }
+  if (!canUseModAction(interaction.member, interaction.guild, 'timeout')) {
+    return safeReply(interaction, {
+      content: getModActionDeniedMessage('timeout'),
+      flags: MessageFlags.Ephemeral
+    });
+  }
 
     const durationRaw = interaction.fields.getTextInputValue('duration').trim();
     const reason = interaction.fields.getTextInputValue('reason').trim();
     const durationMs = parseDuration(durationRaw);
 
     if (!durationMs) {
-      return interaction.reply({
+      return safeReply(interaction, {
         content: '❌ Invalid duration. Use `10m`, `1h`, or `1d`.',
         flags: MessageFlags.Ephemeral
       });
@@ -2569,7 +2547,7 @@ if (!canUseModAction(interaction.member, interaction.guild, 'add_case_note')) {
 
     const maxTimeoutMs = 28 * 24 * 60 * 60 * 1000;
     if (durationMs > maxTimeoutMs) {
-      return interaction.reply({
+      return safeReply(interaction, {
         content: '❌ Timeout cannot exceed 28 days.',
         flags: MessageFlags.Ephemeral
       });
@@ -2597,10 +2575,10 @@ if (!canUseModAction(interaction.member, interaction.guild, 'add_case_note')) {
         metadata: { duration: durationRaw }
       });
 
-      await interaction.reply({
-        content: `⏳ Timed out **${target.user.tag}** for **${durationRaw}** • Case #${modCase.caseId}`,
-        flags: MessageFlags.Ephemeral
-      });
+      await safeReply(interaction, {
+  content: `⏳ Timed out **${target.user.tag}** for **${durationRaw}** • Case #${modCase.caseId}`,
+  flags: MessageFlags.Ephemeral
+});
 
       await refreshDashboard(interaction, target, {
   view: 'cases',
@@ -2611,7 +2589,7 @@ if (!canUseModAction(interaction.member, interaction.guild, 'add_case_note')) {
       return true;
     } catch (err) {
       console.error('Timeout error:', err);
-      return interaction.reply({
+      return safeReply(interaction, {
         content: '❌ Failed to timeout user.',
         flags: MessageFlags.Ephemeral
       });

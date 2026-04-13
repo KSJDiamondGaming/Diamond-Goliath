@@ -103,6 +103,14 @@ function getCasesByModerator(guildId, moderatorId, filters = {}) {
   return stmt.all(...params).map(mapCase);
 }
 
+function getAllCases(guildId) {
+  const guildCases = ensureGuildCases(guildId);
+
+  return [...guildCases].sort(
+    (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+  );
+}
+
 function searchCaseIds(guildId, partial = '') {
   const like = `%${partial}%`;
   const stmt = db.prepare(`
@@ -205,6 +213,7 @@ module.exports = {
   searchCaseIds,
   getCaseCountForUser,
   getCaseById,
+  getAllCases,
   updateCaseReason,
   updateCaseStatus,
   updateCaseNote,
