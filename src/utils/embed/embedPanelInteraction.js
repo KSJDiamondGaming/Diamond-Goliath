@@ -1,4 +1,19 @@
-if (id.startsWith('embedpanel_edit_buttons:')) {
+const {
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  ActionRowBuilder,
+  MessageFlags
+} = require('discord.js');
+
+const { getTemplate } = require('./embedPanelStore'); // adjust if needed
+const { normalizeButtonStyle } = require('./embedUtils'); // adjust if needed
+
+async function handleEmbedPanelInteraction(interaction) {
+  const id = interaction.customId;
+
+  if (!id.startsWith('embedpanel_edit_buttons:')) return false;
+
   const templateId = id.substring('embedpanel_edit_buttons:'.length);
   const template = getTemplate(interaction.guildId, templateId);
 
@@ -53,3 +68,7 @@ if (id.startsWith('embedpanel_edit_buttons:')) {
   await interaction.showModal(modal);
   return true;
 }
+
+module.exports = {
+  handleEmbedPanelInteraction
+};
