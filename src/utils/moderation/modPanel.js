@@ -1084,12 +1084,12 @@ async function buildDashboardPayload(
   const embeds = [];
   const components = [...buildDashboardNav(target?.id || null, view)];
 
- if (safeView === 'overview') {
+  f (safeView === 'overview') {
     embeds.push(buildOverviewEmbed(interaction.guild, interaction.member, target, stats));
     components.push(...buildActionsRows(target?.id || null));
   }
 
-  if (view === 'actions') {
+  if (safeView === 'actions') {
     embeds.push(
       new EmbedBuilder()
         .setColor('#5865F2')
@@ -1104,7 +1104,7 @@ async function buildDashboardPayload(
     components.push(...buildActionsRows(target?.id || null));
   }
 
-  if (view === 'cases') {
+  if (safeView === 'cases') {
     const actionFilter = options.actionFilter || 'all';
     const statusFilter = options.statusFilter || 'all';
     const pageRaw = options.page || 0;
@@ -1141,7 +1141,7 @@ async function buildDashboardPayload(
     }
   }
 
-  if (view === 'tools') {
+  if (safeView === 'tools') {
   embeds.push(
     new EmbedBuilder()
       .setColor('#5865F2')
@@ -1152,7 +1152,7 @@ async function buildDashboardPayload(
   components.push(...buildToolsRows(target?.id || null, interaction.member, interaction.guild));
 }
 
-  if (view === 'analytics') {
+  if (safeView === 'analytics') {
     const analytics = getModerationAnalytics(interaction.guild.id);
 
     embeds.push(buildAnalyticsEmbed(interaction.guild, analytics));
