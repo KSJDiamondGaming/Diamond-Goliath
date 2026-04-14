@@ -1,13 +1,20 @@
 const fs = require('fs');
 const path = require('path');
+const { EmbedBuilder, PermissionsBitField } = require('discord.js');
 
 const AUTOMOD_PATH = path.join(
   __dirname,
-  '..',
-  '..',
-  'data',
-  'automodSettings.json'
+  '../../../dashboard/server/data/automod.json'
 );
+
+const spamTracker = new Map();
+const repeatTracker = new Map();
+
+const INVITE_REGEX =
+  /(discord\.gg\/|discord\.com\/invite\/|discordapp\.com\/invite\/)/i;
+
+const URL_REGEX =
+  /https?:\/\/[^\s]+|www\.[^\s]+|(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(?:\/[^\s]*)?/i;
 
 function ensureFile() {
   const dir = path.dirname(AUTOMOD_PATH);
@@ -298,6 +305,414 @@ function structuredCloneSafe(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function now() {
+  return Date.now();
+}
+
+function normalizeMessage(content) {
+  return String(content || '').trim().toLowerCase();
+}
+
+function getMemberKey(message) {
+  return `${message.guild.id}:${message.author.id}`;
+}
+
+function hasBypass(message, config) {
+  if (!message.guild || !message.member) return true;
+  if (!config) return true;
+  if (!config.enabled) return true;
+  if (message.author.bot && config.ignoreBots) return true;
+
+  const isAdmin = message.member.permissions.has(
+    PermissionsBitField.Flags.Administrator
+  );
+
+  if (config.ignoreAdmins && isAdmin) return true;
+  if (config.ignoredChannelIds.includes(message.channel.id)) return true;
+  if (config.ignoredUserIds.includes(message.author.id)) return true;
+  if (message.member.roles?.cache?.some((role) => config.ignoredRoleIds.includes(role.id))) {
+    return true;
+  }
+
+  return false;
+}
+
+async function safeDelete(message) {
+  try {
+    if (message.deletable) {
+      await message.delete();
+      return true;
+    }
+  } catch (error) {
+    console.error('❌ Failed to delete automod message:', error);
+  }
+
+  return false;
+}
+
+async function safeTimeout(member, durationMs, reason) {
+  try {
+    if (!member || !member.moderatable) return false;
+    await member.timeout(durationMs, reason);
+    return true;
+  } catch (error) {
+    console.error('❌ Failed to timeout automod member:', error);
+    return false;
+  }
+}
+
+async function safeKick(member, reason) {
+  try {
+    if (!member || !member.kickable) return false;
+    await member.kick(reason);
+    return true;
+  } catch (error) {
+    console.error('❌ Failed to kick automod member:', error);
+    return false;
+  }
+}
+
+async function safeBan(member, reason) {
+  try {
+    if (!member || !member.bannable) return false;
+    await member.ban({ reason });
+    return true;
+  } catch (error) {
+    console.error('❌ Failed to ban automod member:', error);
+    return false;
+  }
+}
+
+async function safeWarnChannel(message, text) {
+  try {
+    const sent = await message.channel.send({ content: text });
+    setTimeout(() => {
+      sent.delete().catch(() => {});
+    }, 5000);
+  } catch (error) {
+    console.error('❌ Failed to send automod warning message:', error);
+  }
+}
+
+async function applyPunishment(message, type, reason, timeoutMinutes = 10) {
+  const punishment = String(type || 'delete').toLowerCase();
+  const timeoutMs = Number(timeoutMinutes || 10) * 60 * 1000;
+
+  switch (punishment) {
+    case 'delete': {
+      await safeDelete(message);
+      return 'delete';
+    }
+
+    case 'warn': {
+      await safeDelete(message);
+      await safeWarnChannel(
+        message,
+        `⚠️ ${message.author}, your message was blocked: ${reason}`
+      );
+      return 'warn';
+    }
+
+    case 'timeout': {
+      await safeDelete(message);
+      const timedOut = await safeTimeout(
+        message.member,
+        timeoutMs,
+        `Automod: ${reason}`
+      );
+
+      if (!timedOut) {
+        await safeWarnChannel(
+          message,
+          `⚠️ ${message.author}, your message was blocked: ${reason}`
+        );
+        return 'warn';
+      }
+
+      return 'timeout';
+    }
+
+    case 'kick': {
+      await safeDelete(message);
+      const kicked = await safeKick(message.member, `Automod: ${reason}`);
+
+      if (!kicked) {
+        await safeWarnChannel(
+          message,
+          `⚠️ ${message.author}, your message was blocked: ${reason}`
+        );
+        return 'warn';
+      }
+
+      return 'kick';
+    }
+
+    case 'ban': {
+      await safeDelete(message);
+      const banned = await safeBan(message.member, `Automod: ${reason}`);
+
+      if (!banned) {
+        await safeWarnChannel(
+          message,
+          `⚠️ ${message.author}, your message was blocked: ${reason}`
+        );
+        return 'warn';
+      }
+
+      return 'ban';
+    }
+
+    default: {
+      await safeDelete(message);
+      return 'delete';
+    }
+  }
+}
+
+async function sendAutomodLog(message, config, details) {
+  try {
+    if (!config?.logs?.enabled) return;
+    if (!config?.logs?.channelId) return;
+
+    const logChannel = message.guild.channels.cache.get(config.logs.channelId);
+    if (!logChannel || !logChannel.isTextBased()) return;
+
+    const embed = new EmbedBuilder()
+      .setColor('#ff5555')
+      .setTitle('🛡️ Automod Triggered')
+      .addFields(
+        { name: 'User', value: `${message.author} (${message.author.id})` },
+        { name: 'Channel', value: `${message.channel}` },
+        { name: 'Rule', value: details.rule || 'Unknown', inline: true },
+        { name: 'Action', value: details.action || 'delete', inline: true }
+      )
+      .setTimestamp();
+
+    if (details.reason) {
+      embed.addFields({ name: 'Reason', value: details.reason });
+    }
+
+    if (details.content) {
+      const clipped =
+        details.content.length > 1024
+          ? `${details.content.slice(0, 1021)}...`
+          : details.content;
+
+      embed.addFields({ name: 'Message Content', value: clipped });
+    }
+
+    await logChannel.send({ embeds: [embed] });
+  } catch (error) {
+    console.error('❌ Failed to send automod log:', error);
+  }
+}
+
+function isAllowedDomain(content, allowedDomains = []) {
+  if (!allowedDomains.length) return false;
+
+  const lowered = content.toLowerCase();
+  return allowedDomains.some((domain) => {
+    const clean = String(domain || '').trim().toLowerCase();
+    return clean && lowered.includes(clean);
+  });
+}
+
+function checkAntiLink(content, config) {
+  if (!config?.antiLink?.enabled) return null;
+  if (!URL_REGEX.test(content)) return null;
+  if (isAllowedDomain(content, config.antiLink.allowedDomains)) return null;
+
+  return {
+    rule: 'Anti-Link',
+    reason: 'Links are not allowed.',
+    punishment: config.antiLink.punishment || 'delete',
+    timeoutMinutes: config.antiLink.timeoutMinutes || 10,
+  };
+}
+
+function checkAntiInvite(content, config) {
+  if (!config?.antiInvite?.enabled) return null;
+  if (!INVITE_REGEX.test(content)) return null;
+
+  return {
+    rule: 'Anti-Invite',
+    reason: 'Discord invite links are not allowed.',
+    punishment: config.antiInvite.punishment || 'delete',
+    timeoutMinutes: config.antiInvite.timeoutMinutes || 10,
+  };
+}
+
+function checkCapsAbuse(content, config) {
+  if (!config?.capsAbuse?.enabled) return null;
+
+  const minLength = Number(config.capsAbuse.minLength || 10);
+  const threshold = Number(config.capsAbuse.percentage || 70);
+
+  const lettersOnly = content.replace(/[^a-zA-Z]/g, '');
+  if (lettersOnly.length < minLength) return null;
+
+  const upperCount = lettersOnly
+    .split('')
+    .filter((char) => char === char.toUpperCase()).length;
+
+  const percentage = (upperCount / lettersOnly.length) * 100;
+
+  if (percentage < threshold) return null;
+
+  return {
+    rule: 'Caps Abuse',
+    reason: `Too many capital letters (${Math.round(percentage)}%).`,
+    punishment: config.capsAbuse.punishment || 'delete',
+    timeoutMinutes: config.capsAbuse.timeoutMinutes || 10,
+  };
+}
+
+function checkBadWords(content, config) {
+  if (!config?.badWords?.enabled) return null;
+
+  const words = Array.isArray(config.badWords.words) ? config.badWords.words : [];
+  if (!words.length) return null;
+
+  const lowered = content.toLowerCase();
+  const matched = words.find((word) => {
+    const clean = String(word || '').trim().toLowerCase();
+    return clean && lowered.includes(clean);
+  });
+
+  if (!matched) return null;
+
+  return {
+    rule: 'Bad Words',
+    reason: `Blocked word detected: ${matched}`,
+    punishment: config.badWords.punishment || 'delete',
+    timeoutMinutes: config.badWords.timeoutMinutes || 10,
+  };
+}
+
+function checkRepeatedMessages(message, config) {
+  if (!config?.repeatedMessages?.enabled) return null;
+
+  const key = getMemberKey(message);
+  const content = normalizeMessage(message.content);
+  const maxRepeats = Number(config.repeatedMessages.maxRepeats || 3);
+  const intervalSeconds = Number(config.repeatedMessages.intervalSeconds || 10);
+
+  if (!content) return null;
+
+  const entry = repeatTracker.get(key) || {
+    lastContent: null,
+    count: 0,
+    updatedAt: 0,
+  };
+
+  const currentTime = now();
+
+  if (
+    entry.lastContent === content &&
+    currentTime - entry.updatedAt <= intervalSeconds * 1000
+  ) {
+    entry.count += 1;
+  } else {
+    entry.lastContent = content;
+    entry.count = 1;
+  }
+
+  entry.updatedAt = currentTime;
+  repeatTracker.set(key, entry);
+
+  if (entry.count < maxRepeats) return null;
+
+  return {
+    rule: 'Repeated Messages',
+    reason: `Same message repeated ${entry.count} times.`,
+    punishment: config.repeatedMessages.punishment || 'delete',
+    timeoutMinutes: config.repeatedMessages.timeoutMinutes || 10,
+  };
+}
+
+function checkAntiSpam(message, config) {
+  if (!config?.antiSpam?.enabled) return null;
+
+  const key = getMemberKey(message);
+  const maxMessages = Number(config.antiSpam.maxMessages || 6);
+  const intervalSeconds = Number(config.antiSpam.intervalSeconds || 8);
+  const cutoff = now() - intervalSeconds * 1000;
+
+  const entries = spamTracker.get(key) || [];
+  const filtered = entries.filter((timestamp) => timestamp >= cutoff);
+  filtered.push(now());
+  spamTracker.set(key, filtered);
+
+  if (filtered.length < maxMessages) return null;
+
+  return {
+    rule: 'Anti-Spam',
+    reason: `${filtered.length} messages sent in ${intervalSeconds} seconds.`,
+    punishment: config.antiSpam.punishment || 'delete',
+    timeoutMinutes: config.antiSpam.timeoutMinutes || 10,
+  };
+}
+
+function cleanupTrackers() {
+  const cutoff = now() - 10 * 60 * 1000;
+
+  for (const [key, timestamps] of spamTracker.entries()) {
+    const fresh = timestamps.filter((timestamp) => timestamp >= cutoff);
+    if (fresh.length) spamTracker.set(key, fresh);
+    else spamTracker.delete(key);
+  }
+
+  for (const [key, entry] of repeatTracker.entries()) {
+    if (entry.updatedAt < cutoff) {
+      repeatTracker.delete(key);
+    }
+  }
+}
+
+setInterval(cleanupTrackers, 60 * 1000).unref();
+
+async function runAutomod(message) {
+  if (!message.guild) return { blocked: false };
+  if (!message.content) return { blocked: false };
+
+  const config = getGuildAutoModConfig(message.guild.id);
+  if (!config) return { blocked: false };
+  if (hasBypass(message, config)) return { blocked: false };
+
+  const checks = [
+    checkAntiInvite(message.content, config),
+    checkAntiLink(message.content, config),
+    checkCapsAbuse(message.content, config),
+    checkBadWords(message.content, config),
+    checkRepeatedMessages(message, config),
+    checkAntiSpam(message, config),
+  ];
+
+  const hit = checks.find(Boolean);
+  if (!hit) return { blocked: false };
+
+  const action = await applyPunishment(
+    message,
+    hit.punishment,
+    hit.reason,
+    hit.timeoutMinutes
+  );
+
+  await sendAutomodLog(message, config, {
+    rule: hit.rule,
+    reason: hit.reason,
+    action,
+    content: message.content,
+  });
+
+  return {
+    blocked: true,
+    rule: hit.rule,
+    reason: hit.reason,
+    action,
+  };
+}
+
 module.exports = {
   AUTOMOD_PATH,
   getDefaultConfig,
@@ -305,4 +720,5 @@ module.exports = {
   saveGuildAutoModConfig,
   updateGuildAutoModConfig,
   resetGuildAutoModConfig,
+  runAutomod,
 };

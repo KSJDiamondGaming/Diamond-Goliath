@@ -1,0 +1,38 @@
+{
+  "1490424012826742804": {
+    "antiSpam": {
+      "enabled": false,
+      "maxMessages": 6,
+      "intervalSeconds": 8,
+      "punishment": "delete"
+    },
+    "antiLink": {
+      "enabled": false,
+      "punishment": "delete"
+    },
+    "antiInvite": {
+      "enabled": false,
+      "punishment": "delete"
+    },
+    "capsAbuse": {
+      "enabled": false,
+      "minLength": 10,
+      "percentage": 70,
+      "punishment": "delete"
+    },
+    "badWords": {
+      "enabled": false,
+      "words": [],
+      "punishment": "delete"
+    },
+    "repeatedMessages": {
+      "enabled": false,
+      "maxRepeats": 3,
+      "punishment": "delete"
+    },
+    "logs": {
+      "enabled": true,
+      "channelId": "1490437416497058083"
+    }
+  }
+}

@@ -4,8 +4,8 @@ const stats = require('../../utils/stats/statsManager');
 const automodPanel = require('../../utils/automod/automodPanel');
 
 const {
-  handleModButton,
-  handleModModal,
+  handleModPanelInteraction,
+  handleModPanelModal,
 } = require('../../utils/moderation/modPanel');
 
 const {
@@ -71,7 +71,7 @@ async function handleButtonInteraction(interaction, client) {
   const { customId } = interaction;
 
   if (isModPanelButton(customId)) {
-    await handleModButton(interaction);
+    await handleModPanelInteraction(interaction);
     return true;
   }
 
@@ -98,8 +98,11 @@ async function handleButtonInteraction(interaction, client) {
 async function handleSelectMenuInteraction(interaction, client) {
   const { customId } = interaction;
 
-  if (customId.startsWith('mod_action_select:')) {
-    await handleModButton(interaction);
+  if (
+    customId.startsWith('mod_action_select:') ||
+    customId === 'mod_user_select'
+  ) {
+    await handleModPanelInteraction(interaction);
     return true;
   }
 
@@ -122,7 +125,7 @@ async function handleModalInteraction(interaction, client) {
   const { customId } = interaction;
 
   if (isModPanelModal(customId)) {
-    await handleModModal(interaction);
+    await handleModPanelModal(interaction);
     return true;
   }
 
@@ -156,7 +159,7 @@ module.exports = {
       console.log('🟦 Command:', interaction.commandName ?? 'N/A');
       console.log('🟦 Custom ID:', interaction.customId ?? 'N/A');
 
-      // Fastest path first: slash commands
+      // 💬 Slash commands
       if (interaction.isChatInputCommand()) {
         console.log(`🟨 CHAT INPUT COMMAND REACHED: /${interaction.commandName}`);
 
@@ -181,7 +184,7 @@ module.exports = {
         return;
       }
 
-      // Autocomplete separate
+      // 🔎 Autocomplete
       if (interaction.isAutocomplete()) {
         const command = client.commands.get(interaction.commandName);
 
@@ -192,21 +195,24 @@ module.exports = {
         return;
       }
 
-      // Buttons
+      // 🔘 Buttons
       if (interaction.isButton()) {
         const handled = await handleButtonInteraction(interaction, client);
         if (handled) return;
         return;
       }
 
-      // Select menus
-      if (interaction.isStringSelectMenu()) {
+      // 📋 Select menus
+      if (
+        interaction.isStringSelectMenu() ||
+        interaction.isUserSelectMenu()
+      ) {
         const handled = await handleSelectMenuInteraction(interaction, client);
         if (handled) return;
         return;
       }
 
-      // Modals
+      // 📝 Modals
       if (interaction.isModalSubmit()) {
         const handled = await handleModalInteraction(interaction, client);
         if (handled) return;
