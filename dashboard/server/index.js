@@ -8,7 +8,7 @@ const express = require('express');
 const cors = require('cors');
 const session = require('express-session');
 
-const terminal = require('../../src/utils/utility/terminalLogger');
+const terminal = require('../../src/utils/utility/terminalLogger').createLogger('api');
 
 const casesRoute = require('./routes/cases');
 const warningsRoute = require('./routes/warnings');
@@ -30,17 +30,46 @@ if (IS_PROD) {
   app.set('trust proxy', 1);
 }
 
+/* =========================
+   🔥 SMART REQUEST LOGGER
+   ========================= */
 app.use((req, res, next) => {
   const startedAt = Date.now();
 
   res.on('finish', () => {
     const duration = Date.now() - startedAt;
-    terminal.request(req.method, req.originalUrl, res.statusCode, duration);
+    const url = req.originalUrl;
+    const status = res.statusCode;
+
+    // ✅ ALWAYS log errors
+    if (status >= 400) {
+      return terminal.request(req.method, url, status, duration);
+    }
+
+    // ❌ Ignore polling routes
+    if (
+      url.includes('/api/cases') ||
+      url.includes('/api/warnings') ||
+      url.includes('/api/status')
+    ) {
+      return;
+    }
+
+    // ❌ Ignore cache hits
+    if (status === 304) return;
+
+    // ✅ Only log slow requests (>100ms)
+    if (duration > 100) {
+      return terminal.request(req.method, url, status, duration);
+    }
   });
 
   next();
 });
 
+/* =========================
+   Middleware
+   ========================= */
 app.use(
   cors({
     origin: CLIENT_URL,
@@ -66,6 +95,9 @@ app.use(
   })
 );
 
+/* =========================
+   Routes
+   ========================= */
 app.use('/api/auth', authRoute);
 app.use('/api/discord', discordRoutes);
 app.use('/api/cases', casesRoute);
@@ -74,10 +106,16 @@ app.use('/api/config', configRoute);
 app.use('/api/automod', automodRoutes);
 app.use('/api/status', statusRoute);
 
+/* =========================
+   404
+   ========================= */
 app.use((req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
+/* =========================
+   Errors
+   ========================= */
 app.use((err, req, res, next) => {
   terminal.error('API Error', err);
 
@@ -88,6 +126,9 @@ app.use((err, req, res, next) => {
   });
 });
 
+/* =========================
+   Start
+   ========================= */
 app.listen(PORT, () => {
   terminal.line('🌐 Dashboard', `http://localhost:${PORT}`);
 });
