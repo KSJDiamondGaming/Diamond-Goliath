@@ -10,7 +10,7 @@ const {
   parseDuration,
   isValidTimeoutDuration,
   isValidDeleteDays
-} = require('./targetHelpers');
+} = require('../utility/targetHelpers');
 const {
   getBulkActionProgressEmbed,
   getBulkActionSummaryEmbed

@@ -18,7 +18,7 @@ const {
   isValidTimeoutDuration,
   getWarningExpiry,
   parseDeleteDays
-} = require('./targetHelpers');
+} = require('../utility/targetHelpers');
 
 const {
   getStatusLabel,

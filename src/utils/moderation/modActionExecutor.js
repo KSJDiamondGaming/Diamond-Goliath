@@ -17,7 +17,7 @@ const {
 
 const { sendModLog } = require('../logging/modlogs/modLog');
 
-const { fetchTarget } = require('./targetHelpers');
+const { fetchTarget } = require('../utility/targetHelpers');
 const { checkHierarchy } = require('../admin/hierarchyChecks');
 const { refreshDashboard } = require('./dashboardService');
 const { normalizeDashboardContext } = require('../utility/pendingActionHelpers');

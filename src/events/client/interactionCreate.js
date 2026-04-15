@@ -13,13 +13,14 @@ const {
   handleCasePanelModal,
 } = require('../../commands/moderation/case');
 
+// ✅ Safe embed panel handler loader
 let embedPanelInteraction = null;
 
 try {
   embedPanelInteraction = require('../../utils/embed/embedPanelInteraction');
   console.log('✅ Embed panel handler loaded');
 } catch (error) {
-  console.warn('⚠️ Embed panel handler missing');
+  embedPanelInteraction = null; // silent fallback
 }
 
 function isModPanelButton(customId = '') {
@@ -88,6 +89,7 @@ async function handleButtonInteraction(interaction, client) {
     if (await automodPanel.handleInteraction(interaction, client)) return true;
   }
 
+  // ✅ Embed panel (only if exists)
   if (customId?.startsWith('embedpanel_') && embedPanelInteraction) {
     if (await embedPanelInteraction(interaction, client)) return true;
   }
@@ -114,6 +116,7 @@ async function handleSelectMenuInteraction(interaction, client) {
     if (await automodPanel.handleInteraction(interaction, client)) return true;
   }
 
+  // ✅ Embed panel
   if (customId?.startsWith('embedpanel_') && embedPanelInteraction) {
     if (await embedPanelInteraction(interaction, client)) return true;
   }
@@ -142,6 +145,7 @@ async function handleModalInteraction(interaction, client) {
     if (await automodPanel.handleInteraction(interaction, client)) return true;
   }
 
+  // ✅ Embed panel
   if (customId?.startsWith('embedpanel_') && embedPanelInteraction) {
     if (await embedPanelInteraction(interaction, client)) return true;
   }

@@ -1,6 +1,6 @@
 const path = require('node:path');
 
-const { registerCommands } = require('../../utils/registerCommands');
+const { registerCommands } = require('../../utils/utility/registerCommands');
 const punishmentScheduler = require('../../utils/moderation/punishmentScheduler');
 const stats = require('../../utils/stats/statsManager');
 

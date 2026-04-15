@@ -17,7 +17,7 @@ const {
 
 const {
   fetchTarget
-} = require('./targetHelpers');
+} = require('../utility/targetHelpers');
 
 const {
   buildReasonModal,

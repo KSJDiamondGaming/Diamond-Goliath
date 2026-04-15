@@ -1,5 +1,5 @@
 const { EmbedBuilder } = require('discord.js');
-const { getGuildConfig } = require('../../guildConfigStore');
+const { getGuildConfig } = require('../../config/guildConfigStore');
 
 async function logModerationAction({
   guild,

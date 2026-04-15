@@ -3,7 +3,7 @@ const {
   PermissionFlagsBits,
   ChannelType
 } = require('discord.js');
-const { setGuildConfig } = require('../../utils/guildConfigStore');
+const { setGuildConfig } = require('../../utils/config/guildConfigStore');
 
 module.exports = {
   data: new SlashCommandBuilder()
