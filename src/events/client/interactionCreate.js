@@ -3,27 +3,6 @@ const { MessageFlags } = require('discord.js');
 const stats = require('../../utils/stats/statsManager');
 const automodPanel = require('../../utils/automod/automodPanel');
 
-async function handleButtonInteraction(interaction, client) {
-  const { customId } = interaction;
-
-  console.log('BUTTON RECEIVED', {
-    customId,
-    interactionId: interaction.id,
-    userId: interaction.user?.id,
-    createdTimestamp: interaction.createdTimestamp,
-    now: Date.now(),
-    ageMs: Date.now() - interaction.createdTimestamp,
-    deferred: interaction.deferred,
-    replied: interaction.replied,
-  });
-
-  if (customId.startsWith('automod_')) {
-    return await automodPanel.handleInteraction(interaction, client);
-  }
-
-  // rest...
-}
-
 const {
   handleModPanelInteraction,
   handleModPanelModal,
@@ -57,6 +36,17 @@ function isCasePanelButton(customId = '') {
 ========================= */
 async function handleButtonInteraction(interaction, client) {
   const { customId } = interaction;
+
+  console.log('BUTTON RECEIVED', {
+    customId,
+    interactionId: interaction.id,
+    userId: interaction.user?.id,
+    createdTimestamp: interaction.createdTimestamp,
+    now: Date.now(),
+    ageMs: Date.now() - interaction.createdTimestamp,
+    deferred: interaction.deferred,
+    replied: interaction.replied,
+  });
 
   // 🔒 HARD LOCK: AutoMod ONLY
   if (customId.startsWith('automod_')) {
@@ -158,15 +148,21 @@ module.exports = {
       console.log('🟦 Type:', interaction.type);
       console.log('🟦 Command:', interaction.commandName ?? 'N/A');
       console.log('🟦 Custom ID:', interaction.customId ?? 'N/A');
+      console.log('🕒 Interaction age:', Date.now() - interaction.createdTimestamp, 'ms');
 
       if (interaction.isChatInputCommand()) {
         const command = client.commands.get(interaction.commandName);
 
         if (!command) {
           return interaction.reply({
-            content: `❌ Command not found`,
+            content: '❌ Command not found',
             flags: MessageFlags.Ephemeral,
           });
+        }
+
+        // Acknowledge immediately so commands have time to run
+        if (!interaction.deferred && !interaction.replied) {
+          await interaction.deferReply();
         }
 
         await command.execute(interaction, client);
@@ -175,9 +171,11 @@ module.exports = {
 
       if (interaction.isAutocomplete()) {
         const command = client.commands.get(interaction.commandName);
+
         if (command?.autocomplete) {
           await command.autocomplete(interaction, client);
         }
+
         return;
       }
 
@@ -205,16 +203,12 @@ module.exports = {
     } catch (error) {
       console.error('❌ Interaction error:', error);
 
-      const payload = {
+      if (interaction.replied || interaction.deferred) return;
+
+      await interaction.reply({
         content: '❌ Something went wrong.',
         flags: MessageFlags.Ephemeral,
-      };
-
-      if (interaction.replied || interaction.deferred) {
-        await interaction.followUp(payload).catch(() => {});
-      } else {
-        await interaction.reply(payload).catch(() => {});
-      }
+      }).catch(() => {});
     }
   },
 };
