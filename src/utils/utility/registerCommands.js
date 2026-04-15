@@ -5,10 +5,7 @@ const { REST, Routes } = require('discord.js');
 function getCommandFiles(dir) {
   let results = [];
 
-  if (!fs.existsSync(dir)) {
-    console.warn(`⚠️ Commands folder not found: ${dir}`);
-    return results;
-  }
+  if (!fs.existsSync(dir)) return results;
 
   const entries = fs.readdirSync(dir, { withFileTypes: true });
 
@@ -29,24 +26,18 @@ function loadCommands(commandsPath) {
   const commandFiles = getCommandFiles(commandsPath);
   const commands = [];
 
-  console.log(`📂 Found ${commandFiles.length} command file(s) for sync`);
-
   for (const filePath of commandFiles) {
     try {
       delete require.cache[require.resolve(filePath)];
       const command = require(filePath);
 
       if (!command?.data || typeof command.execute !== 'function') {
-        console.warn(`⚠️ Skipping invalid command file: ${filePath}`);
         continue;
       }
 
-      const json = command.data.toJSON();
-      commands.push(json);
-
-      console.log(`✅ Prepared command: ${command.data.name}`);
+      commands.push(command.data.toJSON());
     } catch (error) {
-      console.error(`❌ Failed to prepare command file: ${filePath}`);
+      console.error(`❌ Failed to load command: ${filePath}`);
       console.error(error);
     }
   }
@@ -94,58 +85,34 @@ async function registerCommands({
   client = null,
   clear = false,
 }) {
-  if (!token) {
-    throw new Error('Missing bot token.');
-  }
-
-  if (!clientId) {
-    throw new Error('Missing client ID.');
-  }
-
-  if (!commandsPath) {
-    throw new Error('Missing commandsPath.');
-  }
+  if (!token) throw new Error('Missing bot token.');
+  if (!clientId) throw new Error('Missing client ID.');
+  if (!commandsPath) throw new Error('Missing commandsPath.');
 
   const resolvedGuildIds = resolveGuildIds(guildIds, client);
-
-  if (!resolvedGuildIds.length) {
-    throw new Error('No guild IDs provided.');
-  }
+  if (!resolvedGuildIds.length) throw new Error('No guild IDs provided.');
 
   const rest = new REST({ version: '10' }).setToken(token);
   const commands = loadCommands(commandsPath);
 
-  console.log(`🚀 Registering ${commands.length} command(s)...`);
-  console.log('🧾 Commands:', commands.map((cmd) => cmd.name).join(', '));
-  console.log('📦 Guilds detected:', resolvedGuildIds);
+  const start = Date.now();
 
   for (const guildId of resolvedGuildIds) {
-    try {
-      console.log(`📡 Registering commands for guild ${guildId}...`);
+    const route = Routes.applicationGuildCommands(clientId, guildId);
 
-      const route = Routes.applicationGuildCommands(clientId, guildId);
-      const startedAt = Date.now();
-
-      if (clear) {
-        await putWithTimeout(rest, route, [], 30000);
-        console.log(`🧹 Cleared existing commands for guild ${guildId}`);
-      }
-
-      await putWithTimeout(rest, route, commands, 120000);
-
-      const elapsed = Date.now() - startedAt;
-      console.log(`✅ Synced ${commands.length} commands to guild ${guildId} in ${elapsed}ms`);
-    } catch (err) {
-      console.error(`❌ Failed to register commands for guild ${guildId}:`, err);
-      continue;
+    if (clear) {
+      await putWithTimeout(rest, route, [], 30000);
     }
+
+    await putWithTimeout(rest, route, commands, 120000);
   }
 
-  console.log('🎉 Command sync complete.');
+  const durationMs = Date.now() - start;
 
   return {
-    count: commands.length,
-    guildIds: resolvedGuildIds,
+    synced: commands.length,
+    guilds: resolvedGuildIds.length,
+    durationMs,
   };
 }
 

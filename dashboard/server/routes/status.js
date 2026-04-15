@@ -2,7 +2,10 @@ const express = require('express');
 
 const router = express.Router();
 
+const terminal = require('../../../src/utils/utility/terminalLogger').createLogger('api');
+
 const BOT_API_URL = process.env.BOT_API_URL || 'http://localhost:3002';
+const DEBUG = String(process.env.DEBUG || '').toLowerCase() === 'true';
 
 async function fetchJson(url, options = {}) {
   const response = await fetch(url, options);
@@ -36,7 +39,9 @@ router.get('/', async (req, res) => {
     try {
       botStatus = await fetchJson(`${BOT_API_URL}/internal/status`);
     } catch (error) {
-      console.error('Failed to reach bot status endpoint:', error.message);
+      if (DEBUG) {
+        terminal.debug('Bot status fetch failed', error.message);
+      }
     }
 
     if (guildId) {
@@ -45,7 +50,9 @@ router.get('/', async (req, res) => {
           `${BOT_API_URL}/internal/guilds/${guildId}/members/count`
         );
       } catch (error) {
-        console.error('Failed to reach member count endpoint:', error.message);
+        if (DEBUG) {
+          terminal.debug('Member count fetch failed', error.message);
+        }
       }
     }
 
@@ -81,9 +88,6 @@ router.get('/', async (req, res) => {
         ? {
             [guildId]: {
               connected: guildConnected,
-              inGuild: guildConnected,
-              available: guildConnected,
-              online: guildConnected,
               status: guildConnected ? 'connected' : 'missing',
               memberCount,
               humans:
@@ -101,48 +105,20 @@ router.get('/', async (req, res) => {
         avatar: botProfile.avatar,
         avatarUrl: botProfile.avatarUrl,
         online: botReady,
-        connected: botReady,
         latencyMs: botLatencyMs,
-        guilds: guildId
-          ? {
-              [guildId]: {
-                connected: guildConnected,
-                inGuild: guildConnected,
-                available: guildConnected,
-                online: guildConnected,
-                status: guildConnected ? 'connected' : 'missing',
-                memberCount,
-                humans:
-                  typeof memberInfo?.humans === 'number'
-                    ? memberInfo.humans
-                    : null,
-                bots:
-                  typeof memberInfo?.bots === 'number' ? memberInfo.bots : null,
-              },
-            }
-          : {},
       },
       api: {
         online: true,
-        healthy: true,
         status: 'healthy',
-      },
-      backend: {
-        online: true,
-        ok: true,
-        status: 'online',
       },
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error('Failed to load status:', error);
+    terminal.error('Status route failed', error);
+
     return res.status(500).json({
       ok: false,
       status: 'offline',
-      backendOnline: false,
-      apiOnline: false,
-      botOnline: false,
-      botLatencyMs: null,
       error: 'Failed to load status.',
     });
   }

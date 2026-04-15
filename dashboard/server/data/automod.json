@@ -1,34 +1,77 @@
 {
   "1490424012826742804": {
+    "enabled": false,
+    "ignoreBots": false,
+    "ignoreAdmins": true,
+    "ignoredChannelIds": [],
+    "ignoredUserIds": [],
+    "ignoredRoleIds": [],
     "antiSpam": {
       "enabled": false,
       "maxMessages": 6,
       "intervalSeconds": 8,
-      "punishment": "delete"
+      "punishment": "delete",
+      "timeoutMinutes": 10,
+      "maxRepeats": 3,
+      "minLength": 8,
+      "percentage": 70,
+      "allowedDomains": [],
+      "words": []
     },
     "antiLink": {
       "enabled": false,
-      "punishment": "delete"
+      "allowedDomains": [],
+      "punishment": "delete",
+      "timeoutMinutes": 10,
+      "maxMessages": 5,
+      "intervalSeconds": 8,
+      "maxRepeats": 3,
+      "minLength": 8,
+      "percentage": 70,
+      "words": []
     },
     "antiInvite": {
       "enabled": false,
-      "punishment": "delete"
+      "punishment": "delete",
+      "timeoutMinutes": 10,
+      "allowedDomains": [],
+      "words": []
     },
     "capsAbuse": {
       "enabled": false,
       "minLength": 10,
       "percentage": 70,
-      "punishment": "delete"
+      "punishment": "delete",
+      "timeoutMinutes": 10,
+      "maxMessages": 5,
+      "intervalSeconds": 8,
+      "maxRepeats": 3,
+      "allowedDomains": [],
+      "words": []
     },
     "badWords": {
       "enabled": false,
       "words": [],
-      "punishment": "delete"
+      "punishment": "delete",
+      "timeoutMinutes": 10,
+      "maxMessages": 5,
+      "intervalSeconds": 8,
+      "maxRepeats": 3,
+      "minLength": 8,
+      "percentage": 70,
+      "allowedDomains": []
     },
     "repeatedMessages": {
       "enabled": false,
       "maxRepeats": 3,
-      "punishment": "delete"
+      "intervalSeconds": 10,
+      "punishment": "delete",
+      "timeoutMinutes": 10,
+      "maxMessages": 5,
+      "minLength": 8,
+      "percentage": 70,
+      "allowedDomains": [],
+      "words": []
     },
     "logs": {
       "enabled": true,
@@ -36,35 +79,78 @@
     }
   },
   "808091031350280213": {
+    "enabled": true,
+    "ignoreBots": true,
+    "ignoreAdmins": true,
+    "ignoredChannelIds": [],
+    "ignoredUserIds": [],
+    "ignoredRoleIds": [],
     "antiSpam": {
-      "enabled": false,
+      "enabled": true,
       "maxMessages": 6,
       "intervalSeconds": 8,
-      "punishment": "delete"
+      "punishment": "delete",
+      "timeoutMinutes": 10,
+      "maxRepeats": 3,
+      "minLength": 8,
+      "percentage": 70,
+      "allowedDomains": [],
+      "words": []
     },
     "antiLink": {
       "enabled": false,
-      "punishment": "delete"
+      "allowedDomains": [],
+      "punishment": "delete",
+      "timeoutMinutes": 10,
+      "maxMessages": 5,
+      "intervalSeconds": 8,
+      "maxRepeats": 3,
+      "minLength": 8,
+      "percentage": 70,
+      "words": []
     },
     "antiInvite": {
       "enabled": false,
-      "punishment": "delete"
+      "punishment": "delete",
+      "timeoutMinutes": 10,
+      "allowedDomains": [],
+      "words": []
     },
     "capsAbuse": {
       "enabled": false,
       "minLength": 10,
       "percentage": 70,
-      "punishment": "delete"
+      "punishment": "delete",
+      "timeoutMinutes": 10,
+      "maxMessages": 5,
+      "intervalSeconds": 8,
+      "maxRepeats": 3,
+      "allowedDomains": [],
+      "words": []
     },
     "badWords": {
       "enabled": false,
       "words": [],
-      "punishment": "delete"
+      "punishment": "delete",
+      "timeoutMinutes": 10,
+      "maxMessages": 5,
+      "intervalSeconds": 8,
+      "maxRepeats": 3,
+      "minLength": 8,
+      "percentage": 70,
+      "allowedDomains": []
     },
     "repeatedMessages": {
       "enabled": false,
       "maxRepeats": 3,
-      "punishment": "delete"
+      "intervalSeconds": 10,
+      "punishment": "delete",
+      "timeoutMinutes": 10,
+      "maxMessages": 5,
+      "minLength": 8,
+      "percentage": 70,
+      "allowedDomains": [],
+      "words": []
     },
     "logs": {
       "enabled": true,

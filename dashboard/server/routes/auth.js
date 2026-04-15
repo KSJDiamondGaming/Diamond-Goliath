@@ -1,8 +1,9 @@
 const fetch = global.fetch || require('node-fetch');
 const express = require('express');
-console.log('✅ AUTH ROUTES FILE LOADED');
 
 const router = express.Router();
+
+const DEBUG = String(process.env.DEBUG || '').toLowerCase() === 'true';
 
 const CLIENT_ID = String(process.env.CLIENT_ID || '').trim();
 const CLIENT_SECRET = String(process.env.CLIENT_SECRET || '').trim();
@@ -13,13 +14,13 @@ const CLIENT_URL = String(process.env.CLIENT_URL || 'http://localhost:5173').tri
 router.get('/login', (req, res) => {
   if (!CLIENT_ID || !REDIRECT_URI) {
     return res.status(500).json({
-      error: 'Missing CLIENT_ID or DISCORD_REDIRECT_URI in dashboard/.env',
+      error: 'Missing CLIENT_ID or DISCORD_REDIRECT_URI',
     });
   }
 
   if (!CLIENT_SECRET) {
     return res.status(500).json({
-      error: 'Missing CLIENT_SECRET in dashboard/.env',
+      error: 'Missing CLIENT_SECRET',
     });
   }
 
@@ -31,7 +32,8 @@ router.get('/login', (req, res) => {
   });
 
   const authUrl = `https://discord.com/oauth2/authorize?${params.toString()}`;
-  console.log('OAuth URL:', authUrl);
+
+  if (DEBUG) console.log('[AUTH] OAuth URL:', authUrl);
 
   return res.redirect(authUrl);
 });
@@ -61,15 +63,13 @@ router.get('/callback', async (req, res) => {
   try {
     const code = String(req.query.code || '').trim();
 
-    console.log('🔥 CALLBACK HIT:', code || '[missing code]');
-
     if (!code) {
       return res.status(400).send('Missing OAuth code.');
     }
 
     if (!CLIENT_ID || !CLIENT_SECRET || !REDIRECT_URI) {
-      console.error('❌ Missing OAuth environment variables');
-      return res.status(500).send('OAuth environment variables are missing.');
+      console.error('❌ OAuth config missing');
+      return res.status(500).send('OAuth configuration error.');
     }
 
     const tokenResponse = await fetch('https://discord.com/api/oauth2/token', {
@@ -89,7 +89,7 @@ router.get('/callback', async (req, res) => {
     const tokenData = await tokenResponse.json();
 
     if (!tokenResponse.ok) {
-      console.error('❌ Discord token error:', tokenData);
+      console.error('❌ Discord token error');
 
       const errorDescription =
         typeof tokenData?.error_description === 'string'
@@ -99,10 +99,10 @@ router.get('/callback', async (req, res) => {
       if (errorDescription.toLowerCase().includes('rate limited')) {
         return res
           .status(429)
-          .send('Discord OAuth is temporarily rate limited. Wait a few minutes and try again once.');
+          .send('Discord OAuth rate limited. Try again later.');
       }
 
-      return res.status(500).send('Failed to get Discord token.');
+      return res.status(500).send('OAuth failed.');
     }
 
     const userResponse = await fetch('https://discord.com/api/users/@me', {
@@ -114,8 +114,8 @@ router.get('/callback', async (req, res) => {
     const userData = await userResponse.json();
 
     if (!userResponse.ok) {
-      console.error('❌ Discord user fetch error:', userData);
-      return res.status(500).send('Failed to get Discord user.');
+      console.error('❌ Discord user fetch failed');
+      return res.status(500).send('Failed to fetch user.');
     }
 
     req.session.user = {
@@ -125,24 +125,24 @@ router.get('/callback', async (req, res) => {
       avatar: userData.avatar || null,
     };
 
-    // Save OAuth tokens in the names your other routes expect
     req.session.accessToken = tokenData.access_token;
     req.session.refreshToken = tokenData.refresh_token || null;
     req.session.tokenType = tokenData.token_type || 'Bearer';
 
-    console.log('✅ User logged in:', req.session.user.username);
-    console.log('✅ Access token saved to session');
+    if (DEBUG) {
+      console.log('[AUTH] User logged in:', req.session.user.username);
+    }
 
     req.session.save((saveError) => {
       if (saveError) {
-        console.error('❌ Session save error:', saveError);
-        return res.status(500).send('Failed to save session.');
+        console.error('❌ Session save failed');
+        return res.status(500).send('Session error.');
       }
 
       return res.redirect(`${CLIENT_URL}/dashboard`);
     });
   } catch (error) {
-    console.error('❌ Auth callback error:', error);
+    console.error('❌ Auth error');
     return res.status(500).send('Authentication failed.');
   }
 });

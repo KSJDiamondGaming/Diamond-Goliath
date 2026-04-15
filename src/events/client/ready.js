@@ -1,5 +1,6 @@
 const path = require('node:path');
 
+const terminal = require('../../utils/utility/terminalLogger').createLogger('bot');
 const { registerCommands } = require('../../utils/utility/registerCommands');
 const punishmentScheduler = require('../../utils/moderation/punishmentScheduler');
 const stats = require('../../utils/stats/statsManager');
@@ -9,22 +10,13 @@ module.exports = {
   once: true,
 
   async execute(client) {
-    console.log(`🤖 Logged in as ${client.user.tag}`);
-    console.log(`🆔 Bot ID: ${client.user.id}`);
-
-    if (client.guilds.cache.size > 0) {
-      console.log('📍 Connected guilds:');
-      for (const guild of client.guilds.cache.values()) {
-        console.log(`- ${guild.name} (${guild.id})`);
-      }
-    } else {
-      console.log('📍 No guilds connected');
-    }
-
+    const guild = client.guilds.cache.first();
     const commandsPath = path.join(__dirname, '..', '..', 'commands');
 
+    let syncInfo = { synced: 0, durationMs: 0 };
+
     try {
-      await registerCommands({
+      syncInfo = await registerCommands({
         token: process.env.TOKEN,
         clientId: process.env.CLIENT_ID,
         commandsPath,
@@ -32,23 +24,28 @@ module.exports = {
         clear: false,
       });
     } catch (err) {
-      console.error('❌ Command registration failed:', err);
+      terminal.error('Command sync failed', err);
     }
 
     try {
       punishmentScheduler.start?.(client);
-      console.log('⏱️ Punishment scheduler started');
     } catch (err) {
-      console.error('❌ Failed to start punishment scheduler:', err);
+      terminal.error('Scheduler failed', err);
     }
 
     try {
       stats.start?.(client);
-      console.log('📊 Stats system started');
     } catch (err) {
-      console.error('❌ Failed to start stats system:', err);
+      terminal.error('Stats failed', err);
     }
 
-    console.log('🚀 Bot ready');
+    terminal.banner([
+      { label: 'Bot', value: 'READY', ok: true },
+      { label: 'Sync', value: `${syncInfo.synced} cmds / ${syncInfo.durationMs}ms`, ok: true },
+      { label: 'Guild', value: guild?.name || 'None', ok: Boolean(guild) },
+      { label: 'Systems', value: 'Scheduler, Stats', ok: true },
+    ]);
+
+    terminal.success('Bot ready');
   },
 };

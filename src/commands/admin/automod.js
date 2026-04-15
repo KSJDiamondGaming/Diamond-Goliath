@@ -1,4 +1,9 @@
-const { SlashCommandBuilder, MessageFlags, PermissionFlagsBits } = require('discord.js');
+const {
+  SlashCommandBuilder,
+  MessageFlags,
+  PermissionFlagsBits,
+} = require('discord.js');
+
 const automodPanel = require('../../utils/automod/automodPanel');
 
 module.exports = {
@@ -8,41 +13,29 @@ module.exports = {
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
 
   async execute(interaction) {
-    try {
-      console.log('🧪 automod execute start', {
-        deferred: interaction.deferred,
-        replied: interaction.replied,
-        id: interaction.id,
-        guildId: interaction.guild?.id || null,
-      });
-
-      if (!interaction.guild) {
-        await interaction.reply({
-          content: '❌ This command can only be used in a server.',
-          flags: MessageFlags.Ephemeral,
-        });
-        return;
-      }
-
-      await interaction.deferReply({
+    if (!interaction.guild) {
+      const payload = {
+        content: 'This command can only be used in a server.',
         flags: MessageFlags.Ephemeral,
-      });
+      };
 
-      const payload = automodPanel.buildMainPanelPayload(interaction.guild);
-
-      await interaction.editReply(payload);
-    } catch (error) {
-      console.error('❌ [AUTOMOD ERROR]', error);
-
-      if (interaction.deferred || interaction.replied) {
-        await interaction.editReply({
-          content: '❌ Failed to open the AutoMod panel.',
-          embeds: [],
-          components: [],
-        }).catch(() => {});
+      if (interaction.replied || interaction.deferred) {
+        await interaction.followUp(payload).catch(() => {});
       } else {
-        console.warn('⚠️ Interaction expired before reply could be sent.');
+        await interaction.reply(payload).catch(() => {});
       }
+      return;
+    }
+
+    const payload = automodPanel.buildMainPanelPayload(interaction.guild);
+
+    if (interaction.replied || interaction.deferred) {
+      await interaction.editReply(payload).catch(() => {});
+    } else {
+      await interaction.reply({
+        ...payload,
+        flags: MessageFlags.Ephemeral,
+      }).catch(() => {});
     }
   },
 };

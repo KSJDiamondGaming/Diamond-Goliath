@@ -259,19 +259,19 @@ export default function Overview({ selectedGuild, theme }) {
           >
             <MiniChartCard
               theme={theme}
-              title="System Health"
-              subtitle="Backend, API, bot"
+              title="System"
+              subtitle="Backend, API, Bot"
               data={overviewStats.charts.health}
               max={100}
               labels={['Backend', 'API', 'Bot']}
             />
 
             <MiniChartCard
-              theme={theme}
-              title="Moderation Load"
-              subtitle="Cases and warnings"
-              data={overviewStats.charts.moderation}
-              labels={['Cases', 'Total Warn', 'Active', 'Cleared']}
+            theme={theme}
+            title="Moderation"
+            subtitle="Cases and warnings"
+            data={overviewStats.charts.moderation}
+            labels={['Cases', 'Warnings', 'Active', 'Cleared']}
             />
 
             <MiniChartCard

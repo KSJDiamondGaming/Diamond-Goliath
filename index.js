@@ -1,5 +1,7 @@
 require('dotenv').config();
 
+const terminal = require('./src/utils/utility/terminalLogger');
+
 const fs = require('node:fs');
 const path = require('node:path');
 const express = require('express');
@@ -34,7 +36,6 @@ function getAllJsFiles(dir) {
   let results = [];
 
   if (!fs.existsSync(dir)) {
-    console.warn(`⚠️ Folder not found: ${dir}`);
     return results;
   }
 
@@ -57,7 +58,7 @@ function loadCommands(client) {
   const commandsPath = path.join(__dirname, 'src', 'commands');
   const commandFiles = getAllJsFiles(commandsPath);
 
-  console.log(`📂 Found ${commandFiles.length} command file(s)`);
+  let loaded = 0;
 
   for (const filePath of commandFiles) {
     try {
@@ -66,24 +67,24 @@ function loadCommands(client) {
 
       if (command?.data && typeof command.execute === 'function') {
         client.commands.set(command.data.name, command);
-        console.log(`✅ Loaded command: ${command.data.name}`);
-      } else {
-        console.warn(`⚠️ Invalid command file: ${filePath}`);
+        loaded++;
       }
     } catch (error) {
-      console.error(`❌ Failed to load command file: ${filePath}`);
-      console.error(error);
+      terminal.error(`Failed to load command file: ${filePath}`, error);
     }
   }
 
-  console.log(`📦 Total commands loaded: ${client.commands.size}`);
+  return {
+    found: commandFiles.length,
+    loaded,
+  };
 }
 
 function loadEvents(client) {
   const eventsPath = path.join(__dirname, 'src', 'events');
   const eventFiles = getAllJsFiles(eventsPath);
 
-  console.log(`📂 Found ${eventFiles.length} event file(s)`);
+  let loaded = 0;
 
   for (const filePath of eventFiles) {
     try {
@@ -91,7 +92,6 @@ function loadEvents(client) {
       const event = require(filePath);
 
       if (!event?.name || typeof event.execute !== 'function') {
-        console.warn(`⚠️ Invalid event file: ${filePath}`);
         continue;
       }
 
@@ -101,58 +101,56 @@ function loadEvents(client) {
         client.on(event.name, (...args) => event.execute(...args, client));
       }
 
-      console.log(`✅ Loaded event: ${event.name} (${filePath})`);
+      loaded++;
     } catch (error) {
-      console.error(`❌ Failed to load event file: ${filePath}`);
-      console.error(error);
+      terminal.error(`Failed to load event file: ${filePath}`, error);
     }
   }
+
+  return {
+    found: eventFiles.length,
+    loaded,
+  };
 }
 
 /* ---------------- BOT STARTUP ---------------- */
 
 async function startBot() {
   try {
-    console.log('🚀 Starting bot...');
+    terminal.start();
 
-    loadCommands(client);
-
-    console.log('📡 Loading events...');
-    loadEvents(client);
-    console.log('✅ Events loaded');
+    const commandStats = loadCommands(client);
+    const eventStats = loadEvents(client);
 
     const token = process.env.TOKEN;
-
-    console.log('🔐 TOKEN EXISTS:', !!token);
-    console.log('🔐 TOKEN LENGTH:', token?.length || 0);
-
     if (!token) {
       throw new Error('Missing TOKEN in .env file');
     }
 
     client.on('warn', (warning) => {
-      console.warn('⚠️ Discord client warning:', warning);
+      terminal.warn(`Discord client warning: ${warning}`);
     });
 
     client.on('error', (error) => {
-      console.error('❌ Discord client error:', error);
+      terminal.error('Discord client error', error);
     });
 
     process.on('unhandledRejection', (reason) => {
-      console.error('❌ Unhandled promise rejection:', reason);
+      terminal.error('Unhandled promise rejection', reason);
     });
 
     process.on('uncaughtException', (error) => {
-      console.error('❌ Uncaught exception:', error);
+      terminal.error('Uncaught exception', error);
     });
 
-    console.log('🔑 About to login...');
     await client.login(token);
-    console.log('✅ Login promise resolved');
+
+    terminal.line('🤖 Bot', `READY (${commandStats.loaded} cmds, ${eventStats.loaded} events)`);
 
     startInternalApi();
+
   } catch (error) {
-    console.error('❌ Fatal startup error:', error);
+    terminal.error('Fatal startup error', error);
   }
 }
 
@@ -219,7 +217,7 @@ function startInternalApi() {
 
       return res.json(channels);
     } catch (error) {
-      console.error('❌ Failed to fetch channels:', error);
+      terminal.error('Failed to fetch channels', error);
       return res.status(500).json({ error: 'Failed to fetch channels' });
     }
   });
@@ -250,13 +248,13 @@ function startInternalApi() {
         cached: true,
       });
     } catch (error) {
-      console.error('❌ Failed to fetch member counts:', error);
+      terminal.error('Failed to fetch member counts', error);
       return res.status(500).json({ error: 'Failed to fetch member counts' });
     }
   });
 
   app.listen(PORT, () => {
-    console.log(`🤖 Bot API running on http://localhost:${PORT}`);
+    terminal.line('🌐 API', `http://localhost:${PORT}`);
   });
 }
 

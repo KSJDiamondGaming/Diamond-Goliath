@@ -5,16 +5,15 @@
   "main": "index.js",
   "type": "commonjs",
   "scripts": {
-    "bot": "nodemon index.js",
-    "api": "nodemon dashboard/server/index.js",
-    "client": "npm run dev --prefix dashboard/client",
-    "dev": "concurrently \"npm run bot\" \"npm run api\" \"npm run client\"",
-    "start": "npm run dev",
-    "lint": "eslint index.js src",
-    "lint:fix": "eslint index.js src --fix"
+    "bot": "nodemon --quiet index.js",
+    "api": "nodemon --quiet dashboard/server/index.js",
+    "client": "npm run dev --silent --prefix dashboard/client",
+    "dev": "concurrently --names \"BOT,API,CLIENT\" --prefix \"[{name}]\" \"npm run bot --silent\" \"npm run api --silent\" \"npm run client --silent\"",
+    "start": "npm run dev"
   },
   "dependencies": {
     "better-sqlite3": "^12.8.0",
+    "chalk": "^5.6.2",
     "concurrently": "^9.2.1",
     "cors": "^2.8.6",
     "discord.js": "^14.15.0",
@@ -24,9 +23,6 @@
     "node-fetch": "^2.7.0"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
-    "eslint": "^10.2.0",
-    "globals": "^17.4.0",
     "nodemon": "^3.1.14"
   }
 }
