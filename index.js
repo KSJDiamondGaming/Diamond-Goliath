@@ -51,7 +51,7 @@ function getAllJsFiles(dir) {
     }
   }
 
-  return results;
+  return results.sort((a, b) => a.localeCompare(b));
 }
 
 function loadCommands(client) {
@@ -66,6 +66,12 @@ function loadCommands(client) {
       const command = require(filePath);
 
       if (command?.data && typeof command.execute === 'function') {
+        if (client.commands.has(command.data.name)) {
+          terminal.warn(
+            `Duplicate command name detected: ${command.data.name} (${filePath})`
+          );
+        }
+
         client.commands.set(command.data.name, command);
         loaded++;
       }
@@ -85,13 +91,24 @@ function loadEvents(client) {
   const eventFiles = getAllJsFiles(eventsPath);
 
   let loaded = 0;
+  const seenEventFiles = new Set();
 
   for (const filePath of eventFiles) {
     try {
+      terminal.line('📦 Event Loader', filePath);
+
+      const normalizedPath = path.normalize(filePath).toLowerCase();
+      if (seenEventFiles.has(normalizedPath)) {
+        terminal.warn(`Skipping duplicate event file path: ${filePath}`);
+        continue;
+      }
+      seenEventFiles.add(normalizedPath);
+
       delete require.cache[require.resolve(filePath)];
       const event = require(filePath);
 
       if (!event?.name || typeof event.execute !== 'function') {
+        terminal.warn(`Skipping invalid event module: ${filePath}`);
         continue;
       }
 
@@ -100,6 +117,12 @@ function loadEvents(client) {
       } else {
         client.on(event.name, (...args) => event.execute(...args, client));
       }
+
+      const listenerCount = client.listeners(event.name).length;
+      terminal.line(
+        '🧩 Event Bound',
+        `${event.name} -> listeners: ${listenerCount}`
+      );
 
       loaded++;
     } catch (error) {
@@ -145,10 +168,17 @@ async function startBot() {
 
     await client.login(token);
 
-    terminal.line('🤖 Bot', `READY (${commandStats.loaded} cmds, ${eventStats.loaded} events)`);
+    terminal.line(
+      '🤖 Bot',
+      `READY (${commandStats.loaded} cmds, ${eventStats.loaded} events)`
+    );
+
+    terminal.line(
+      '🧪 interactionCreate listeners',
+      String(client.listeners('interactionCreate').length)
+    );
 
     startInternalApi();
-
   } catch (error) {
     terminal.error('Fatal startup error', error);
   }
