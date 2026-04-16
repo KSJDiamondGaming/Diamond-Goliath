@@ -1,7 +1,5 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const {
-  buildStatsSetupMessage,
-} = require('../../utils/stats/statsHandlers');
+const { buildStatsSetupMessage } = require('../../utils/stats/statsUI');
 
 module.exports = {
   data: new SlashCommandBuilder()

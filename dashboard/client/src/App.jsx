@@ -21,6 +21,10 @@ function App() {
   const [loginPending, setLoginPending] = useState(false);
   const loginStartedRef = useRef(false);
 
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
+    getStorage('sidebarCollapsed', false)
+  );
+
   const [botProfile, setBotProfile] = useState({
     name: 'KSJ Goliath',
     avatarUrl: '',
@@ -33,6 +37,10 @@ function App() {
   useEffect(() => {
     setStorage('darkMode', darkMode);
   }, [darkMode]);
+
+  useEffect(() => {
+    setStorage('sidebarCollapsed', sidebarCollapsed);
+  }, [sidebarCollapsed]);
 
   useEffect(() => {
     let isMounted = true;
@@ -221,7 +229,15 @@ function App() {
   );
 
   const theme = useMemo(() => getTheme(darkMode), [darkMode]);
-  const styles = useMemo(() => shellStyles(theme), [theme]);
+  const sidebarExpanded = !sidebarCollapsed;
+
+  const styles = useMemo(
+    () =>
+      shellStyles(theme, {
+        sidebarExpanded,
+      }),
+    [theme, sidebarExpanded]
+  );
 
   const pageProps = useMemo(
     () => ({
@@ -290,8 +306,11 @@ function App() {
     window.location.assign('/');
   }, []);
 
-  const pageLoader = <div style={styles.card}>Loading page...</div>;
+  const handleSidebarToggle = useCallback(() => {
+    setSidebarCollapsed((prev) => !prev);
+  }, []);
 
+  const pageLoader = <div style={styles.card}>Loading page...</div>;
   const visibleNavItems = isAuthenticated ? navItems : [];
   const visibleGuildError = isAuthenticated ? guildError : '';
 
@@ -299,10 +318,16 @@ function App() {
     <>
       <style>{`
         * { box-sizing: border-box; }
-        html, body, #root { margin: 0; min-height: 100%; }
+        html, body, #root {
+          margin: 0;
+          padding: 0;
+          min-height: 100%;
+          width: 100%;
+          background: ${theme.pageBg};
+          overflow-x: hidden;
+        }
         button, select, input, textarea { font: inherit; }
-        h1, h2, h3, h4, h5, h6 { margin: 0; }
-        p { margin: 0; }
+        h1, h2, h3, h4, h5, h6, p { margin: 0; }
         .ksj-shell { min-height: 100vh; }
       `}</style>
 
@@ -319,6 +344,9 @@ function App() {
             navItems={visibleNavItems}
             botAvatar={botProfile.avatarUrl}
             botName={botProfile.name}
+            expanded={sidebarExpanded}
+            collapsed={sidebarCollapsed}
+            onToggleCollapsed={handleSidebarToggle}
           />
 
           <div style={styles.mainColumn}>

@@ -7,7 +7,7 @@ import DashboardPage, {
   SecondaryButton,
   SectionCard,
   StatGrid,
-} from '../components/DashboardPage';
+} from '../components/Dashboard';
 
 export default function Warnings({ selectedGuild, theme }) {
   const [warnings, setWarnings] = useState(null);

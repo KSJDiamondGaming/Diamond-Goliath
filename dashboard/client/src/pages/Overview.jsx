@@ -4,7 +4,7 @@ import DashboardPage, {
   EmptyState,
   SectionCard,
   StatGrid,
-} from '../components/DashboardPage';
+} from '../components/Dashboard';
 
 const INITIAL_STATE = {
   loading: true,

@@ -3,7 +3,7 @@ import { api } from '../api';
 import DashboardPage, {
   PrimaryButton,
   SectionCard,
-} from '../components/DashboardPage';
+} from '../components/Dashboard';
 
 const EMPTY_FORM = {
   defaultTitle: '',

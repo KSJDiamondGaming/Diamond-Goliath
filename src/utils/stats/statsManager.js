@@ -14,17 +14,17 @@ const STAT_DEFINITIONS = {
   online: {
     key: 'online',
     label: 'Online',
-    buildName: (counts) => `🟢 ${counts.online}`,
+    buildName: (counts) => `🟢 ${counts.online} ONLINE`,
   },
   idle: {
     key: 'idle',
     label: 'Idle',
-    buildName: (counts) => `🌙 ${counts.idle}`,
+    buildName: (counts) => `🌙 ${counts.idle} IDLE`,
   },
   dnd: {
     key: 'dnd',
     label: 'Do Not Disturb',
-    buildName: (counts) => `🔴 ${counts.dnd}`,
+    buildName: (counts) => `🔴 ${counts.dnd} DND`,
   },
   services: {
     key: 'services',
@@ -140,6 +140,9 @@ async function createStatChannel(guild, statKey) {
     if (!categoryResult.ok) {
       return categoryResult;
     }
+
+    const refreshedConfig = getGuildConfig(guild.id);
+    config.categoryId = refreshedConfig.categoryId;
   }
 
   const existingChannelId = config.channels[statKey];
@@ -147,7 +150,10 @@ async function createStatChannel(guild, statKey) {
     const existingChannel = guild.channels.cache.get(existingChannelId);
     if (existingChannel) {
       await updateSingleStatChannel(guild, statKey);
-      return { ok: true, msg: `${stat.label} channel already exists. Updated it instead.` };
+      return {
+        ok: true,
+        msg: `${stat.label} channel already exists. Updated it instead.`,
+      };
     }
   }
 
@@ -217,7 +223,11 @@ async function updateSingleStatChannel(guild, statKey) {
 
 async function updateAllStatChannels(guild) {
   const config = getGuildConfig(guild.id);
-  const statKeys = Object.keys(config.channels);
+  const statKeys = Object.keys(config.channels || {});
+
+  if (!config.enabled) {
+    return { ok: false, msg: 'Stats system is disabled.' };
+  }
 
   if (!statKeys.length) {
     return { ok: false, msg: 'No stat channels have been created yet.' };
@@ -272,7 +282,7 @@ async function removeSingleStatChannel(guild, statKey) {
 async function removeAllStatChannels(guild) {
   const config = getGuildConfig(guild.id);
 
-  for (const channelId of Object.values(config.channels)) {
+  for (const channelId of Object.values(config.channels || {})) {
     const channel = guild.channels.cache.get(channelId);
     if (channel) {
       await channel.delete('Removing all stats channels').catch(() => null);
@@ -311,7 +321,7 @@ function getSelectedStat(guildId) {
 
 function getConfiguredStats(guildId) {
   const config = getGuildConfig(guildId);
-  return Object.keys(config.channels);
+  return Object.keys(config.channels || {});
 }
 
 function hasCategory(guildId) {
@@ -319,10 +329,19 @@ function hasCategory(guildId) {
   return Boolean(config.categoryId);
 }
 
+let statsInterval = null;
+
 function start(client) {
-  setInterval(async () => {
+  if (statsInterval) return;
+
+  statsInterval = setInterval(async () => {
     for (const guild of client.guilds.cache.values()) {
       try {
+        const config = getGuildConfig(guild.id);
+
+        if (!config.enabled) continue;
+        if (!Object.keys(config.channels || {}).length) continue;
+
         await updateAllStatChannels(guild);
       } catch (error) {
         console.error(`Stats updater failed for guild ${guild.id}:`, error);

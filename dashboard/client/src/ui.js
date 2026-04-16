@@ -1,4 +1,13 @@
-export function shellStyles(theme) {
+export const DASHBOARD_LAYOUT = {
+  sidebarExpandedWidth: '280px',
+  sidebarCollapsedWidth: '88px',
+  topPanelMinHeight: '136px',
+  topPanelRadius: '24px',
+};
+
+export function shellStyles(theme, options = {}) {
+  const { sidebarExpanded = true } = options;
+
   return {
     app: {
       minHeight: '100vh',
@@ -9,8 +18,9 @@ export function shellStyles(theme) {
     },
     grid: {
       display: 'grid',
-      gridTemplateColumns: '280px minmax(0, 1fr)',
+      gridTemplateColumns: `${sidebarExpanded ? DASHBOARD_LAYOUT.sidebarExpandedWidth : DASHBOARD_LAYOUT.sidebarCollapsedWidth} minmax(0, 1fr)`,
       minHeight: '100vh',
+      transition: 'grid-template-columns 0.28s cubic-bezier(0.22, 1, 0.36, 1)',
     },
     mainColumn: {
       minWidth: 0,
@@ -21,6 +31,7 @@ export function shellStyles(theme) {
       flex: 1,
       minWidth: 0,
       padding: '24px',
+      transition: 'padding 0.2s ease',
     },
     card: {
       background: theme.cardBg,
@@ -33,102 +44,6 @@ export function shellStyles(theme) {
       gap: '16px',
       alignContent: 'start',
       transition: 'border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease',
-    },
-  };
-}
-
-export function sidebarStyles(theme, isAuthenticated) {
-  return {
-    root: {
-      background: theme.sidebarBg,
-      borderRight: `1px solid ${theme.sidebarBorder}`,
-      padding: '18px 16px',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '18px',
-    },
-    brandRow: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '12px',
-      padding: '8px 10px',
-    },
-    brandIcon: {
-      width: '42px',
-      height: '42px',
-      borderRadius: '14px',
-      background: 'linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      color: '#ffffff',
-      fontWeight: 800,
-    },
-    brandTitle: {
-      fontSize: '16px',
-      fontWeight: 800,
-      color: '#ffffff',
-    },
-    brandSubtitle: {
-      marginTop: '3px',
-      fontSize: '12px',
-      color: theme.sidebarMuted,
-    },
-    guildBox: {
-      background: 'rgba(255,255,255,0.03)',
-      border: `1px solid ${theme.sidebarBorder}`,
-      borderRadius: '16px',
-      padding: '14px',
-    },
-    guildLabel: {
-      display: 'block',
-      marginBottom: '8px',
-      fontSize: '12px',
-      fontWeight: 700,
-      color: theme.sidebarMuted,
-      textTransform: 'uppercase',
-    },
-    guildSelect: {
-      width: '100%',
-      padding: '11px 12px',
-      borderRadius: '12px',
-      border: `1px solid ${theme.inputBorder}`,
-      background: theme.inputBg,
-      color: theme.inputText,
-      fontSize: '14px',
-      outline: 'none',
-    },
-    guildError: {
-      marginTop: '8px',
-      fontSize: '12px',
-      color: '#fca5a5',
-    },
-    nav: {
-      display: 'grid',
-      gap: '6px',
-    },
-    navItem(active) {
-      return {
-        width: '100%',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '12px',
-        padding: '12px 14px',
-        borderRadius: '14px',
-        border: active ? `1px solid ${theme.primaryBorder}` : '1px solid transparent',
-        background: active ? theme.primarySoft : 'transparent',
-        color: active ? '#ffffff' : theme.sidebarText,
-        cursor: isAuthenticated ? 'pointer' : 'not-allowed',
-        textAlign: 'left',
-        fontSize: '14px',
-        fontWeight: active ? 700 : 600,
-        transition: 'all 0.18s ease',
-        opacity: isAuthenticated ? 1 : 0.45,
-      };
-    },
-    navIcon: {
-      width: '18px',
-      textAlign: 'center',
     },
   };
 }
@@ -149,40 +64,6 @@ export function topbarStyles(theme) {
       alignItems: 'center',
       gap: '14px',
       padding: '14px 24px',
-    },
-    guildChip: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '12px',
-      minWidth: '280px',
-      maxWidth: '460px',
-      padding: '10px 14px',
-      borderRadius: '14px',
-      border: `1px solid ${theme.topbarSoftBorder}`,
-      background: theme.topbarSoft,
-    },
-    guildDot: {
-      width: '8px',
-      height: '8px',
-      borderRadius: '999px',
-      background: '#3b82f6',
-    },
-    guildChipContent: {
-      minWidth: 0,
-      flex: 1,
-    },
-    guildChipLabel: {
-      fontSize: '10px',
-      fontWeight: 700,
-      color: theme.mutedText,
-      textTransform: 'uppercase',
-    },
-    guildChipValue: {
-      fontSize: '14px',
-      fontWeight: 800,
-      whiteSpace: 'nowrap',
-      overflow: 'hidden',
-      textOverflow: 'ellipsis',
     },
     actionsWrap: {
       justifySelf: 'end',
@@ -252,32 +133,6 @@ export function topbarStyles(theme) {
       padding: '8px',
       display: 'grid',
       gap: '8px',
-    },
-    menuButton(isHovered = false) {
-      return {
-        width: '100%',
-        padding: '12px 14px',
-        borderRadius: '12px',
-        border: `1px solid ${isHovered ? theme.primaryBorder : theme.topbarSoftBorder}`,
-        background: isHovered ? theme.primarySoft : theme.topbarSoft,
-        color: theme.cardText,
-        cursor: 'pointer',
-        fontWeight: 600,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '10px',
-        transform: isHovered ? 'translateX(2px)' : 'translateX(0)',
-        transition:
-          'transform 0.16s ease, border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease',
-        boxShadow: isHovered ? theme.shadow : 'none',
-      };
-    },
-    menuButtonIcon: {
-      display: 'inline-flex',
-      width: '18px',
-      justifyContent: 'center',
-      flexShrink: 0,
     },
     themeRow: {
       display: 'flex',
@@ -381,9 +236,9 @@ export function heroStyles(theme) {
     root: {
       background: theme.heroBg,
       border: `1px solid ${theme.heroBorder}`,
-      borderRadius: '24px',
+      borderRadius: DASHBOARD_LAYOUT.topPanelRadius,
       padding: '18px 24px',
-      minHeight: '136px',
+      minHeight: DASHBOARD_LAYOUT.topPanelMinHeight,
       boxShadow: theme.shadow,
       marginBottom: '24px',
       display: 'grid',

@@ -1,5 +1,6 @@
 export function getTheme(darkMode) {
   return {
+    mode: darkMode ? 'dark' : 'light',
     pageBg: darkMode ? '#0b1220' : '#f3f4f6',
     sidebarBg: darkMode
       ? 'linear-gradient(180deg, #111827 0%, #0f172a 100%)'
@@ -36,10 +37,10 @@ export function getTheme(darkMode) {
 }
 
 export const navItems = [
-  { key: 'overview', label: 'Overview', icon: '⌂' },
-  { key: 'cases', label: 'Cases', icon: '🛡' },
-  { key: 'warnings', label: 'Warnings', icon: '⚠' },
-  { key: 'automod', label: 'AutoMod', icon: '🤖' },
-  { key: 'config', label: 'Embed Config', icon: '✦' },
-  { key: 'messages', label: 'Welcome & Leave', icon: '✉' },
+  { key: 'overview', label: 'Overview', icon: 'overview' },
+  { key: 'cases', label: 'Cases', icon: 'cases' },
+  { key: 'warnings', label: 'Warnings', icon: 'warnings' },
+  { key: 'automod', label: 'AutoMod', icon: 'automod' },
+  { key: 'config', label: 'Embed Config', icon: 'config' },
+  { key: 'messages', label: 'Welcome & Leave', icon: 'messages' },
 ];

@@ -4,7 +4,7 @@ import DashboardPage, {
   PrimaryButton,
   SectionCard,
   StatGrid,
-} from '../components/DashboardPage';
+} from '../components/Dashboard';
 
 const DEFAULT_FORM = {
   antiSpam: {

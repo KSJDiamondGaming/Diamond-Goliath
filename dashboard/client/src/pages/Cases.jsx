@@ -6,7 +6,7 @@ import DashboardPage, {
   EmptyState,
   SecondaryButton,
   SectionCard,
-} from '../components/DashboardPage';
+} from '../components/Dashboard';
 
 export default function Cases({ selectedGuild, theme }) {
   const [cases, setCases] = useState(null);

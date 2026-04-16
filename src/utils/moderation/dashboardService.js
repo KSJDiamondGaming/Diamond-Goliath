@@ -171,7 +171,7 @@ async function buildDashboardPayload(discord, interaction, target, view = 'overv
   const components = [...buildDashboardNav(target?.id || null, safeView)];
 
   if (safeView === 'overview') {
-    embeds.push(buildOverviewEmbed(interaction.guild, interaction.member, target, stats));
+    embeds.push(buildOverviewEmbed(interaction.guild, interaction.member, target, ));
     components.push(...buildActionsRows(target?.id || null, interaction.member, interaction.guild));
   }
 

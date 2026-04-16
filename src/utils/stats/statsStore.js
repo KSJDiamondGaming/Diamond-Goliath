@@ -1,7 +1,8 @@
 const fs = require('fs');
 const path = require('path');
+const { statsFile } = require('../utility/paths');
 
-const filePath = path.join(__dirname, '..', '..', 'data', 'stats.json');
+const filePath = statsFile;
 
 function ensureFile() {
   const dir = path.dirname(filePath);
