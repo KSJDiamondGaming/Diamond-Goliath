@@ -2,8 +2,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { REST, Routes } = require('discord.js');
 
-/* ---------------- FILE LOADER ---------------- */
-
 function getCommandFiles(dir) {
   let results = [];
 
@@ -21,10 +19,10 @@ function getCommandFiles(dir) {
     }
   }
 
-  return results;
+  return results.sort((a, b) => a.localeCompare(b));
 }
 
-function loadCommands(commandsPath) {
+function loadCommands(commandsPath, mode = 'guild') {
   const commandFiles = getCommandFiles(commandsPath);
   const commands = [];
 
@@ -37,6 +35,11 @@ function loadCommands(commandsPath) {
         continue;
       }
 
+      if (mode === 'global' && command.devOnly) {
+        console.log(`🧪 Skipping dev-only command in global sync: ${command.data.name}`);
+        continue;
+      }
+
       commands.push(command.data.toJSON());
     } catch (error) {
       console.error(`❌ Failed to load command: ${filePath}`);
@@ -46,8 +49,6 @@ function loadCommands(commandsPath) {
 
   return commands;
 }
-
-/* ---------------- GUILD RESOLVER ---------------- */
 
 function resolveGuildIds(guildIds, client) {
   if (Array.isArray(guildIds) && guildIds.length) {
@@ -72,8 +73,6 @@ function resolveGuildIds(guildIds, client) {
   return [];
 }
 
-/* ---------------- SAFE REQUEST ---------------- */
-
 async function putWithTimeout(rest, route, body, timeoutMs = 120000) {
   return Promise.race([
     rest.put(route, { body }),
@@ -83,8 +82,6 @@ async function putWithTimeout(rest, route, body, timeoutMs = 120000) {
   ]);
 }
 
-/* ---------------- MAIN FUNCTION ---------------- */
-
 async function registerCommands({
   token,
   clientId,
@@ -92,20 +89,18 @@ async function registerCommands({
   guildIds = [],
   client = null,
   clear = false,
-  mode = 'guild', // 👈 NEW
+  mode = 'guild',
 }) {
   if (!token) throw new Error('Missing bot token.');
   if (!clientId) throw new Error('Missing client ID.');
   if (!commandsPath) throw new Error('Missing commandsPath.');
 
   const rest = new REST({ version: '10' }).setToken(token);
-  const commands = loadCommands(commandsPath);
+  const commands = loadCommands(commandsPath, mode);
 
-  console.log('📦 Commands loaded:', commands.length);
+  console.log(`📦 Commands loaded for ${mode}:`, commands.length);
 
   const start = Date.now();
-
-  /* ---------------- GLOBAL MODE ---------------- */
 
   if (mode === 'global') {
     const route = Routes.applicationCommands(clientId);
@@ -129,8 +124,6 @@ async function registerCommands({
       durationMs,
     };
   }
-
-  /* ---------------- GUILD MODE ---------------- */
 
   const resolvedGuildIds = resolveGuildIds(guildIds, client);
 
