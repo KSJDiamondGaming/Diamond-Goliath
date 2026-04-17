@@ -1,9 +1,9 @@
 const path = require('node:path');
 
-const terminal = require('../../utils/utility/terminalLogger').createLogger('bot');
-const { registerCommands } = require('../../utils/utility/registerCommands');
-const punishmentScheduler = require('../../utils/moderation/punishmentScheduler');
-const stats = require('../../utils/stats/statsManager');
+const terminal = require('../utils/utility/terminalLogger').createLogger('bot');
+const { registerCommands } = require('../utils/utility/registerCommands');
+const punishmentScheduler = require('../utils/moderation/punishmentScheduler');
+const stats = require('../utils/stats/statsManager');
 
 module.exports = {
   name: 'clientReady',
