@@ -70,6 +70,7 @@ function loadCommands(client) {
           terminal.warn(
             `Duplicate command name detected: ${command.data.name} (${filePath})`
           );
+          continue;
         }
 
         client.commands.set(command.data.name, command);
@@ -92,6 +93,7 @@ function loadEvents(client) {
 
   let loaded = 0;
   const seenEventFiles = new Set();
+  const seenEventBindings = new Set();
 
   for (const filePath of eventFiles) {
     try {
@@ -112,10 +114,21 @@ function loadEvents(client) {
         continue;
       }
 
+      const bindingKey = `${event.name}:${event.once ? 'once' : 'on'}`;
+      if (seenEventBindings.has(bindingKey)) {
+        terminal.warn(
+          `Skipping duplicate event binding: ${event.name} (${filePath})`
+        );
+        continue;
+      }
+      seenEventBindings.add(bindingKey);
+
+      const handler = (...args) => event.execute(...args);
+
       if (event.once) {
-        client.once(event.name, (...args) => event.execute(...args, client));
+        client.once(event.name, handler);
       } else {
-        client.on(event.name, (...args) => event.execute(...args, client));
+        client.on(event.name, handler);
       }
 
       const listenerCount = client.listeners(event.name).length;

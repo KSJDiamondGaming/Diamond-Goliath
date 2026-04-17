@@ -1,46 +1,48 @@
-const { SlashCommandBuilder, MessageFlags } = require('discord.js');
+const { SlashCommandBuilder } = require('discord.js');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('ping')
-    .setDescription('Replies with Pong!'),
+    .setDescription('Shows the bot latency'),
 
   async execute(interaction) {
-    console.log('🏓 PING EXECUTE', {
-      pid: process.pid,
-      id: interaction.id,
-      deferred: interaction.deferred,
-      replied: interaction.replied,
-      createdTimestamp: interaction.createdTimestamp,
-      now: Date.now(),
-      ageMs: Date.now() - interaction.createdTimestamp,
-    });
+    let replied = false;
 
     try {
-      try {
-        await interaction.deferReply({
-          flags: MessageFlags.Ephemeral,
-        });
+      const reply = await interaction.reply({
+        content: '🏓 Pong!',
+        ephemeral: true,
+        fetchReply: true
+      });
 
-        await interaction.editReply({
-          content: '🏓 Pong!',
-        });
-      } catch (error) {
-        console.error('❌ ping defer failed:', error);
+      replied = true;
 
-        if (error?.code === 10062) {
-          await new Promise(resolve => setTimeout(resolve, 750));
+      const apiPing = reply.createdTimestamp - interaction.createdTimestamp;
+      const wsPing = interaction.client.ws.ping;
 
-          await interaction.editReply({
-            content: '🏓 Pong! (Discord likely acknowledged despite 10062)',
-          });
-          return;
-        }
+      await interaction.editReply(
+        `🏓 Pong!\n📡 API Latency: ${apiPing}ms\n💓 WebSocket: ${wsPing}ms`
+      );
 
-        throw error;
-      }
     } catch (error) {
-      console.error('❌ /ping final error:', error);
+      console.error('❌ /ping error:', error);
+
+      try {
+        // Only respond if we actually can
+        if (!interaction.replied && !interaction.deferred && !replied) {
+          await interaction.reply({
+            content: '❌ Failed to run /ping.',
+            ephemeral: true
+          });
+        } else {
+          await interaction.followUp({
+            content: '❌ Failed to run /ping.',
+            ephemeral: true
+          });
+        }
+      } catch (err) {
+        console.error('❌ Failed to send ping error response:', err);
+      }
     }
-  },
+  }
 };
