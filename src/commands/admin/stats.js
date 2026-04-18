@@ -4,7 +4,7 @@ const { buildStatsSetupMessage } = require('../../utils/stats/statsUI');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('stats')
-    .setDescription('Open the stats setup menu')
+    .setDescription('📊 Stats • open the server stats setup panel')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async execute(interaction) {

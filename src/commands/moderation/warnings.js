@@ -3,6 +3,7 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  MessageFlags
 } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
@@ -45,11 +46,9 @@ function readCaseData() {
 
 function chunkArray(array, size) {
   const chunks = [];
-
   for (let i = 0; i < array.length; i += size) {
     chunks.push(array.slice(i, i + size));
   }
-
   return chunks;
 }
 
@@ -150,11 +149,12 @@ function createWarningsEmbed(interaction, target, warningCases, page, totalPages
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('warnings')
-    .setDescription('View warnings for a member')
+    .setDescription('📜 Warnings • view a member’s warning history')
+
     .addUserOption(option =>
       option
         .setName('user')
-        .setDescription('User to check')
+        .setDescription('👤 Target • select a user to view warnings')
         .setRequired(true)
     ),
 
@@ -241,9 +241,7 @@ module.exports = {
         await interaction.editReply({
           components: [],
         });
-      } catch (error) {
-        // Ignore edit errors after expiry/deletion
-      }
+      } catch (error) {}
     });
   },
 };

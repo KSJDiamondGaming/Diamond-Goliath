@@ -7,11 +7,11 @@ const {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('embed')
-    .setDescription('Open the stylish modular embed studio')
+    .setDescription('🎨 Embed Studio • build stylish modular embeds')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
 
   async execute(interaction) {
-    const {buildEmbedPanelMessage,} = require('../../utils/embed/embedPanelInteraction');
+    const { buildEmbedPanelMessage } = require('../../utils/embed/embedPanelInteraction');
     const payload = buildEmbedPanelMessage(interaction.guildId);
 
     await interaction.reply({

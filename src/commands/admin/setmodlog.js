@@ -8,11 +8,11 @@ const { setGuildConfig } = require('../../utils/config/guildConfigStore');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('setmodlog')
-    .setDescription('Set the moderation log channel for this server')
+    .setDescription('📋 Logs • set the moderation log channel')
     .addChannelOption(option =>
       option
         .setName('channel')
-        .setDescription('Channel to use for moderation logs')
+        .setDescription('📋 Logs • select the channel for moderation logs')
         .addChannelTypes(ChannelType.GuildText)
         .setRequired(true)
     )
@@ -27,7 +27,7 @@ module.exports = {
 
     await interaction.reply({
       content: `✅ Moderation log channel set to ${channel}.`,
-      flags: MessageFlags.Ephemeral
+      ephemeral: true
     });
   }
 };

@@ -54,26 +54,30 @@ function trimText(text, max = 1024) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('clearwarnings')
-    .setDescription('Clear warnings for a member')
+    .setDescription('🧹 Warnings • clear warnings for a member')
+
     .addUserOption(option =>
       option
         .setName('target')
-        .setDescription('The user whose warnings to clear')
+        .setDescription('👤 Target • select the user to clear warnings for')
         .setRequired(true)
     )
+
     .addIntegerOption(option =>
       option
         .setName('case')
-        .setDescription('Specific case number to clear')
+        .setDescription('🔢 Case • specific warning case number to clear')
         .setRequired(false)
         .setMinValue(1)
     )
+
     .addStringOption(option =>
       option
         .setName('reason')
-        .setDescription('Reason for clearing warnings')
+        .setDescription('📝 Reason • why the warnings are being cleared')
         .setRequired(false)
     )
+
     .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
 
   async execute(interaction) {
@@ -231,7 +235,3 @@ module.exports = {
     });
   },
 };
-
-
-
-

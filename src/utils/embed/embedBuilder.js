@@ -1,20 +1,23 @@
 const { EmbedBuilder } = require('discord.js');
 const { COLORS, EMOJIS } = require('../utility/uiConfig');
 
-// 🎯 Base Embed
 function createEmbed({
   title = '',
   description = '',
   color = COLORS.PRIMARY,
   fields = [],
   footer = null,
-  thumbnail = null
+  thumbnail = null,
+  timestamp = true,
 } = {}) {
   const embed = new EmbedBuilder()
     .setColor(color)
     .setTitle(title)
-    .setDescription(description)
-    .setTimestamp();
+    .setDescription(description);
+
+  if (timestamp) {
+    embed.setTimestamp();
+  }
 
   if (fields.length) embed.addFields(fields);
   if (footer) embed.setFooter({ text: footer });
@@ -23,43 +26,39 @@ function createEmbed({
   return embed;
 }
 
-// ✅ Success Embed
 function successEmbed(description, options = {}) {
   return createEmbed({
     title: `${EMOJIS.SUCCESS} Success`,
     description,
     color: COLORS.SUCCESS,
-    ...options
+    ...options,
   });
 }
 
-// ❌ Error Embed
 function errorEmbed(description, options = {}) {
   return createEmbed({
     title: `${EMOJIS.ERROR} Error`,
     description,
     color: COLORS.ERROR,
-    ...options
+    ...options,
   });
 }
 
-// ⚠️ Warning Embed
 function warningEmbed(description, options = {}) {
   return createEmbed({
     title: `${EMOJIS.WARNING} Warning`,
     description,
     color: COLORS.WARNING,
-    ...options
+    ...options,
   });
 }
 
-// ℹ️ Info Embed
 function infoEmbed(title, description, options = {}) {
   return createEmbed({
     title,
     description,
     color: COLORS.PRIMARY,
-    ...options
+    ...options,
   });
 }
 
@@ -68,5 +67,5 @@ module.exports = {
   successEmbed,
   errorEmbed,
   warningEmbed,
-  infoEmbed
+  infoEmbed,
 };

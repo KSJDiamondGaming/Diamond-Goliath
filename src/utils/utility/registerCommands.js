@@ -2,6 +2,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { REST, Routes } = require('discord.js');
 
+/* ---------------- LOAD COMMAND FILES ---------------- */
+
 function getCommandFiles(dir) {
   let results = [];
 
@@ -36,7 +38,7 @@ function loadCommands(commandsPath, mode = 'guild') {
       }
 
       if (mode === 'global' && command.devOnly) {
-        console.log(`🧪 Skipping dev-only command in global sync: ${command.data.name}`);
+        console.log(`🧪 Skipping dev-only command: ${command.data.name}`);
         continue;
       }
 
@@ -50,37 +52,21 @@ function loadCommands(commandsPath, mode = 'guild') {
   return commands;
 }
 
+/* ---------------- GUILD ID RESOLUTION ---------------- */
+
 function resolveGuildIds(guildIds, client) {
   if (Array.isArray(guildIds) && guildIds.length) {
-    return guildIds.map((id) => String(id).trim()).filter(Boolean);
-  }
-
-  if (process.env.GUILD_IDS) {
-    return process.env.GUILD_IDS
-      .split(',')
-      .map((id) => id.trim())
-      .filter(Boolean);
-  }
-
-  if (process.env.GUILD_ID) {
-    return [process.env.GUILD_ID.trim()].filter(Boolean);
+    return guildIds.map(String);
   }
 
   if (client?.guilds?.cache?.size) {
-    return client.guilds.cache.map((guild) => guild.id);
+    return client.guilds.cache.map((g) => g.id);
   }
 
   return [];
 }
 
-async function putWithTimeout(rest, route, body, timeoutMs = 120000) {
-  return Promise.race([
-    rest.put(route, { body }),
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error(`Timeout after ${timeoutMs}ms`)), timeoutMs)
-    ),
-  ]);
-}
+/* ---------------- MAIN REGISTER FUNCTION ---------------- */
 
 async function registerCommands({
   token,
@@ -88,7 +74,6 @@ async function registerCommands({
   commandsPath,
   guildIds = [],
   client = null,
-  clear = false,
   mode = 'guild',
 }) {
   if (!token) throw new Error('Missing bot token.');
@@ -98,21 +83,16 @@ async function registerCommands({
   const rest = new REST({ version: '10' }).setToken(token);
   const commands = loadCommands(commandsPath, mode);
 
-  console.log(`📦 Commands loaded for ${mode}:`, commands.length);
+  console.log(`📦 Commands loaded (${mode}):`, commands.length);
 
   const start = Date.now();
 
   if (mode === 'global') {
-    const route = Routes.applicationCommands(clientId);
-
     console.log('🌍 Registering GLOBAL commands...');
 
-    if (clear) {
-      console.log('🧹 Clearing GLOBAL commands...');
-      await putWithTimeout(rest, route, [], 30000);
-    }
-
-    await putWithTimeout(rest, route, commands, 120000);
+    await rest.put(Routes.applicationCommands(clientId), {
+      body: commands,
+    });
 
     const durationMs = Date.now() - start;
 
@@ -134,14 +114,9 @@ async function registerCommands({
   console.log('📡 Registering to guilds:', resolvedGuildIds);
 
   for (const guildId of resolvedGuildIds) {
-    const route = Routes.applicationGuildCommands(clientId, guildId);
-
-    if (clear) {
-      console.log(`🧹 Clearing commands for guild: ${guildId}`);
-      await putWithTimeout(rest, route, [], 30000);
-    }
-
-    await putWithTimeout(rest, route, commands, 120000);
+    await rest.put(Routes.applicationGuildCommands(clientId, guildId), {
+      body: commands,
+    });
 
     console.log(`✅ Registered commands for guild: ${guildId}`);
   }

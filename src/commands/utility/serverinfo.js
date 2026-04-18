@@ -8,8 +8,8 @@ const {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('serverinfo')
-    .setDescription('View information about this server'),
-
+    .setDescription('📊 Server Info • view server stats and information'),
+  
   async execute(interaction) {
     try {
       const guild = interaction.guild;

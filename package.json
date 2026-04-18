@@ -5,8 +5,8 @@
   "main": "index.js",
   "type": "commonjs",
   "scripts": {
-    "bot": "nodemon --quiet index.js",
-    "api": "nodemon --quiet dashboard/server/index.js",
+    "bot": "node index.js",
+    "api": "node dashboard/server/index.js",
     "client": "npm run dev --silent --prefix dashboard/client",
     "dev": "concurrently --names \"BOT,API,CLIENT\" --prefix \"[{name}]\" \"npm run bot --silent\" \"npm run api --silent\" \"npm run client --silent\"",
     "start": "npm run dev"

@@ -69,7 +69,7 @@ function buildCasePanelEmbed(guild, moderator) {
   const embed = new EmbedBuilder()
     .setColor('#5865F2')
     .setTitle('📂 Case Management Panel')
-    .setDescription('Browse, search, filter, and export moderation cases using the controls below.')
+    .setDescription('📂 Cases • manage and review moderation history')
     .addFields(
       {
         name: 'Moderator',

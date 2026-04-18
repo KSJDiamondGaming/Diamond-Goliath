@@ -9,11 +9,11 @@ const path = require('path');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('setlogs')
-    .setDescription('Set the moderation log channel')
+    .setDescription('📋 Logs • set the moderation log channel')
     .addChannelOption(option =>
       option
         .setName('channel')
-        .setDescription('The channel for moderation logs')
+        .setDescription('📋 Logs • The channel for moderation logs')
         .addChannelTypes(ChannelType.GuildText)
         .setRequired(true)
     )

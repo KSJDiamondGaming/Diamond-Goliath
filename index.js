@@ -12,6 +12,18 @@ const {
   Partials,
 } = require('discord.js');
 
+process.on('unhandledRejection', (reason) => {
+  terminal.error('Unhandled promise rejection', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  terminal.error('Uncaught exception', error);
+});
+
+process.on('uncaughtExceptionMonitor', (error) => {
+  terminal.error('Uncaught exception monitor', error);
+});
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -29,6 +41,8 @@ const client = new Client({
 });
 
 client.commands = new Collection();
+client.isBooting = true;
+client.apiStarted = false;
 
 /* ---------------- RECURSIVE FILE LOADERS ---------------- */
 
@@ -65,17 +79,21 @@ function loadCommands(client) {
       delete require.cache[require.resolve(filePath)];
       const command = require(filePath);
 
-      if (command?.data && typeof command.execute === 'function') {
-        if (client.commands.has(command.data.name)) {
-          terminal.warn(
-            `Duplicate command name detected: ${command.data.name} (${filePath})`
-          );
-          continue;
-        }
-
-        client.commands.set(command.data.name, command);
-        loaded++;
+      if (!command?.data || typeof command.execute !== 'function') {
+        terminal.warn(`Skipping invalid command module: ${filePath}`);
+        continue;
       }
+
+      if (client.commands.has(command.data.name)) {
+        terminal.warn(
+          `Duplicate command name detected: ${command.data.name} (${filePath})`
+        );
+        continue;
+      }
+
+      client.commands.set(command.data.name, command);
+      loaded++;
+      terminal.line('✅ Command Loaded', `${command.data.name} -> ${filePath}`);
     } catch (error) {
       terminal.error(`Failed to load command file: ${filePath}`, error);
     }
@@ -123,7 +141,13 @@ function loadEvents(client) {
       }
       seenEventBindings.add(bindingKey);
 
-      const handler = (...args) => event.execute(...args);
+      const handler = async (...args) => {
+        try {
+          await event.execute(...args);
+        } catch (error) {
+          terminal.error(`Event handler failed: ${event.name}`, error);
+        }
+      };
 
       if (event.once) {
         client.once(event.name, handler);
@@ -171,27 +195,25 @@ async function startBot() {
       terminal.error('Discord client error', error);
     });
 
-    process.on('unhandledRejection', (reason) => {
-      terminal.error('Unhandled promise rejection', reason);
-    });
+    client.once('ready', () => {
+      client.isBooting = false;
+      terminal.line(
+        '🤖 Bot',
+        `READY (${commandStats.loaded} cmds, ${eventStats.loaded} events)`
+      );
 
-    process.on('uncaughtException', (error) => {
-      terminal.error('Uncaught exception', error);
+      terminal.line(
+        '🧪 interactionCreate listeners',
+        String(client.listeners('interactionCreate').length)
+      );
+
+      if (!client.apiStarted) {
+        startInternalApi();
+        client.apiStarted = true;
+      }
     });
 
     await client.login(token);
-
-    terminal.line(
-      '🤖 Bot',
-      `READY (${commandStats.loaded} cmds, ${eventStats.loaded} events)`
-    );
-
-    terminal.line(
-      '🧪 interactionCreate listeners',
-      String(client.listeners('interactionCreate').length)
-    );
-
-    startInternalApi();
   } catch (error) {
     terminal.error('Fatal startup error', error);
   }
@@ -210,6 +232,7 @@ function startInternalApi() {
       ok: true,
       online: ready,
       ready,
+      booting: client.isBooting,
       ping:
         ready && typeof client.ws?.ping === 'number' && Number.isFinite(client.ws.ping)
           ? Math.round(client.ws.ping)
@@ -302,3 +325,5 @@ function startInternalApi() {
 }
 
 startBot();
+
+module.exports = client;

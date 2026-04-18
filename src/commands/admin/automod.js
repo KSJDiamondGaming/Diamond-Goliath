@@ -9,7 +9,7 @@ const automodPanel = require('../../utils/automod/automodPanel');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('automod')
-    .setDescription('Open the AutoMod control panel')
+    .setDescription('⚙️ AutoMod control • manage filters & protection')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
 
   async execute(interaction) {
