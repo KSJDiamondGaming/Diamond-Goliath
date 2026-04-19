@@ -4,7 +4,11 @@ const path = require('node:path');
 const fs = require('node:fs');
 const state = require('../../utils/utility/state');
 
-const SERVICE_NAME = process.env.RAILWAY_SERVICE_NAME || 'goliath';
+const PROJECT_ID =
+  process.env.RAILWAY_PROJECT_ID || '12c36909-d3c9-40b6-9c72-3f73f60a0e6a';
+const ENVIRONMENT_ID =
+  process.env.RAILWAY_ENVIRONMENT_ID || '6888799b-8703-448e-97d3-e5aa15e57e0e';
+const SERVICE_NAME = process.env.RAILWAY_SERVICE_NAME || 'Diamond Goliath';
 const ENVIRONMENT_NAME =
   process.env.RAILWAY_ENVIRONMENT_NAME || 'production';
 
@@ -19,11 +23,8 @@ function getRailwayCliPath() {
   return binName;
 }
 
-function runRailwayDown() {
+function runRailwayCommand(command) {
   return new Promise((resolve, reject) => {
-    const cliPath = getRailwayCliPath();
-    const command = `"${cliPath}" down -s "${SERVICE_NAME}" -e "${ENVIRONMENT_NAME}" -y`;
-
     exec(
       command,
       {
@@ -35,16 +36,25 @@ function runRailwayDown() {
         if (error) {
           error.stdout = stdout;
           error.stderr = stderr;
-          error.cliPath = cliPath;
           error.command = command;
           reject(error);
           return;
         }
 
-        resolve({ stdout, stderr, cliPath, command });
+        resolve({ stdout, stderr, command });
       }
     );
   });
+}
+
+async function linkRailwayProject(cliPath) {
+  const command = `"${cliPath}" link -p "${PROJECT_ID}" -e "${ENVIRONMENT_ID}" -s "${SERVICE_NAME}"`;
+  return runRailwayCommand(command);
+}
+
+async function shutdownRailway(cliPath) {
+  const command = `"${cliPath}" down -s "${SERVICE_NAME}" -e "${ENVIRONMENT_NAME}" -y`;
+  return runRailwayCommand(command);
 }
 
 module.exports = {
@@ -60,10 +70,17 @@ module.exports = {
       });
     }
 
+    await interaction.deferReply();
+
     const isActive = state.toggle();
+    const cliPath = getRailwayCliPath();
 
     if (isActive) {
-      await interaction.reply('🟢 Bot is now ONLINE');
+      try {
+        await interaction.editReply('🟢 Bot is now ONLINE');
+      } catch (error) {
+        console.error('❌ Failed to send online response:', error);
+      }
 
       try {
         await interaction.client.user.setPresence({
@@ -77,7 +94,13 @@ module.exports = {
       return;
     }
 
-    await interaction.reply('🔴 Shutting down Railway deployment...');
+    try {
+      await interaction.editReply('🔴 Shutting down Railway deployment...');
+    } catch (error) {
+      console.error('❌ Failed to send shutdown response:', error);
+      state.toggle();
+      return;
+    }
 
     try {
       await interaction.client.user.setPresence({
@@ -89,27 +112,27 @@ module.exports = {
     }
 
     try {
-      const { stdout, stderr, cliPath, command } = await runRailwayDown();
-
       console.log('🚂 Railway CLI path:', cliPath);
-      console.log('🚂 Railway command:', command);
 
-      if (stdout?.trim()) {
-        console.log('🚂 Railway CLI stdout:', stdout.trim());
+      const linkResult = await linkRailwayProject(cliPath);
+      if (linkResult.stdout?.trim()) {
+        console.log('🚂 Railway link stdout:', linkResult.stdout.trim());
+      }
+      if (linkResult.stderr?.trim()) {
+        console.warn('⚠️ Railway link stderr:', linkResult.stderr.trim());
       }
 
-      if (stderr?.trim()) {
-        console.warn('⚠️ Railway CLI stderr:', stderr.trim());
+      const downResult = await shutdownRailway(cliPath);
+      if (downResult.stdout?.trim()) {
+        console.log('🚂 Railway down stdout:', downResult.stdout.trim());
+      }
+      if (downResult.stderr?.trim()) {
+        console.warn('⚠️ Railway down stderr:', downResult.stderr.trim());
       }
 
-      try {
-        await interaction.followUp({
-          content: `✅ Railway deployment removed for \`${SERVICE_NAME}\` in \`${ENVIRONMENT_NAME}\`.`,
-          ephemeral: true,
-        });
-      } catch (error) {
-        console.error('❌ Failed to send Railway success follow-up:', error);
-      }
+      await interaction.followUp({
+        content: `✅ Railway deployment removed for \`${SERVICE_NAME}\` in \`${ENVIRONMENT_NAME}\`.`,
+      });
 
       setTimeout(() => {
         console.log('🛑 Shutting down bot process...');
@@ -117,7 +140,7 @@ module.exports = {
       }, 1500);
     } catch (error) {
       console.error('❌ Railway CLI shutdown failed:', error);
-      console.error('❌ CLI path tried:', error.cliPath || 'unknown');
+      console.error('❌ CLI path tried:', cliPath);
       console.error('❌ Command tried:', error.command || 'unknown');
 
       if (error.stdout?.trim()) {
@@ -132,9 +155,7 @@ module.exports = {
 
       try {
         await interaction.followUp({
-          content:
-            '❌ Railway shutdown failed. Check the bot logs for the exact CLI error.',
-          ephemeral: true,
+          content: '❌ Railway shutdown failed. Check the bot logs for the exact CLI error.',
         });
       } catch (followUpError) {
         console.error('❌ Failed to send Railway failure follow-up:', followUpError);
