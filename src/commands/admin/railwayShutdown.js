@@ -3,14 +3,14 @@ const state = require('../../utils/utility/state');
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('railwayShutdown')
-    .setDescription('🛠️ Maintenance • toggle bot maintenance mode'),
+    .setName('railwayshutdown')
+    .setDescription('Toggle bot maintenance mode and shut it down'),
 
   async execute(interaction) {
     if (!state.isOwner(interaction.user.id)) {
       return interaction.reply({
         content: '❌ You are not authorized to use this command.',
-        ephemeral: true
+        ephemeral: true,
       });
     }
 
@@ -19,14 +19,27 @@ module.exports = {
     await interaction.reply(
       isActive
         ? '🟢 Bot is now ONLINE'
-        : '🔴 Bot is now OFFLINE (maintenance mode)'
+        : '🔴 Bot is shutting down...'
     );
 
-    interaction.client.user.setPresence({
-      activities: [{
-        name: isActive ? 'Serving the server' : 'Maintenance Mode'
-      }],
-      status: isActive ? 'online' : 'dnd'
-    });
-  }
+    try {
+      await interaction.client.user.setPresence({
+        activities: [
+          {
+            name: isActive ? 'Serving the server' : 'Maintenance Mode',
+          },
+        ],
+        status: isActive ? 'online' : 'dnd',
+      });
+    } catch (error) {
+      console.error('❌ Failed to update bot presence:', error);
+    }
+
+    if (!isActive) {
+      setTimeout(() => {
+        console.log('🛑 Shutting down bot process...');
+        process.exit(0);
+      }, 1500);
+    }
+  },
 };

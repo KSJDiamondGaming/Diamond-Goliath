@@ -195,7 +195,7 @@ async function startBot() {
       terminal.error('Discord client error', error);
     });
 
-    client.once('ready', () => {
+    client.once('clientReady', () => {
       client.isBooting = false;
       terminal.line(
         '🤖 Bot',

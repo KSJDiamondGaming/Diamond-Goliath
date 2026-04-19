@@ -45,11 +45,18 @@ module.exports = {
             console.warn(`⏱️ Auto-deferred slow command: /${commandName}`);
           }
         } catch (error) {
-          console.error(`❌ Failed auto-defer for /${commandName}:`, error);
+          if (error.code !== 40060) {
+            console.error(`❌ Failed auto-defer for /${commandName}:`, error);
+          }
         }
       }, 1500);
 
       await command.execute(interaction);
+
+      if (watchdog) {
+        clearTimeout(watchdog);
+        watchdog = null;
+      }
 
       const duration = Date.now() - startedAt;
       if (duration > 2500) {

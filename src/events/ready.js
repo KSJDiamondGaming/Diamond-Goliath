@@ -63,6 +63,22 @@ module.exports = {
     ]);
 
     terminal.success('Bot ready');
-    terminal.warn('Command sync temporarily disabled for debugging.');
+    terminal.warn('Command sync temporarily disabled for debugging.');terminal.success('Bot ready');
+
+try {
+  if (isDevMode) {
+    if (!mainGuild) {
+      terminal.error('Main guild not found, cannot sync commands.');
+    } else {
+      await mainGuild.commands.set(client.commands.map(cmd => cmd.data));
+      terminal.success('Commands synced to main guild');
+    }
+  } else {
+    await client.application.commands.set(client.commands.map(cmd => cmd.data));
+    terminal.success('Global commands synced');
+  }
+  } catch (err) {
+  terminal.error('Command sync failed', err);
+  }
   },
 };
