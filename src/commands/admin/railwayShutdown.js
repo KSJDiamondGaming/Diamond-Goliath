@@ -1,5 +1,5 @@
 const { SlashCommandBuilder } = require('discord.js');
-const { execFile } = require('node:child_process');
+const { exec } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
 const state = require('../../utils/utility/state');
@@ -22,24 +22,26 @@ function getRailwayCliPath() {
 function runRailwayDown() {
   return new Promise((resolve, reject) => {
     const cliPath = getRailwayCliPath();
+    const command = `"${cliPath}" down -s "${SERVICE_NAME}" -e "${ENVIRONMENT_NAME}" -y`;
 
-    execFile(
-      cliPath,
-      ['down', '-s', SERVICE_NAME, '-e', ENVIRONMENT_NAME, '-y'],
+    exec(
+      command,
       {
         env: process.env,
         windowsHide: true,
+        shell: true,
       },
       (error, stdout, stderr) => {
         if (error) {
           error.stdout = stdout;
           error.stderr = stderr;
           error.cliPath = cliPath;
+          error.command = command;
           reject(error);
           return;
         }
 
-        resolve({ stdout, stderr, cliPath });
+        resolve({ stdout, stderr, cliPath, command });
       }
     );
   });
@@ -87,9 +89,10 @@ module.exports = {
     }
 
     try {
-      const { stdout, stderr, cliPath } = await runRailwayDown();
+      const { stdout, stderr, cliPath, command } = await runRailwayDown();
 
       console.log('🚂 Railway CLI path:', cliPath);
+      console.log('🚂 Railway command:', command);
 
       if (stdout?.trim()) {
         console.log('🚂 Railway CLI stdout:', stdout.trim());
@@ -115,6 +118,7 @@ module.exports = {
     } catch (error) {
       console.error('❌ Railway CLI shutdown failed:', error);
       console.error('❌ CLI path tried:', error.cliPath || 'unknown');
+      console.error('❌ Command tried:', error.command || 'unknown');
 
       if (error.stdout?.trim()) {
         console.error('❌ Railway stdout:', error.stdout.trim());
@@ -129,7 +133,7 @@ module.exports = {
       try {
         await interaction.followUp({
           content:
-            '❌ Railway shutdown failed. The Railway CLI is missing or not available in this runtime.',
+            '❌ Railway shutdown failed. Check the bot logs for the exact CLI error.',
           ephemeral: true,
         });
       } catch (followUpError) {
