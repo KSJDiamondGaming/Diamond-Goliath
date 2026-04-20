@@ -76,32 +76,56 @@ module.exports = {
       );
 
       await interaction.editReply({
-        content: null,
+        content: '',
         embeds: [embed],
       });
     } catch (error) {
       console.error('❌ Ping command failed:', error);
 
-      if (error?.code === 10062 || error?.code === 40060) {
+      if (isIgnorableInteractionError(error)) {
         return;
       }
 
       try {
-        if (interaction.deferred || interaction.replied) {
-          await interaction.editReply({
-            content: '❌ Ping failed to load.',
-            embeds: [],
-            components: [],
-          });
-        } else {
-          await interaction.reply({
-            content: '❌ Ping failed to load.',
-            flags: MessageFlags.Ephemeral,
-          });
-        }
+        await safeReply(interaction, {
+          content: '❌ Ping failed to load.',
+          embeds: [],
+          components: [],
+          flags: MessageFlags.Ephemeral,
+        });
       } catch (replyError) {
         console.error('❌ Failed to send ping failure response:', replyError);
       }
     }
   },
 };
+
+async function safeReply(interaction, payload) {
+  const safePayload = {
+    ...payload,
+    embeds: payload.embeds ?? [],
+    components: payload.components ?? [],
+  };
+
+  if (interaction.deferred) {
+    return await interaction.editReply(stripFlagsForEditReply(safePayload));
+  }
+
+  if (interaction.replied) {
+    return await interaction.followUp({
+      ...safePayload,
+      flags: safePayload.flags ?? MessageFlags.Ephemeral,
+    });
+  }
+
+  return await interaction.reply(safePayload);
+}
+
+function stripFlagsForEditReply(payload) {
+  const { flags, ...rest } = payload;
+  return rest;
+}
+
+function isIgnorableInteractionError(error) {
+  return error?.code === 10062 || error?.code === 40060;
+}

@@ -9,7 +9,11 @@
     "api": "node dashboard/server/index.js",
     "client": "npm run dev --silent --prefix dashboard/client",
     "dev": "concurrently --names \"BOT,API,CLIENT\" --prefix \"[{name}]\" \"npm run bot --silent\" \"npm run api --silent\" \"npm run client --silent\"",
-    "start": "npm run dev"
+    "start": "npm run dev",
+
+    "sync": "node src/utils/utility/syncCommands.js",
+    "sync:global": "cross-env COMMAND_MODE=global node src/utils/utility/syncCommands.js",
+    "sync:guild": "cross-env COMMAND_MODE=guild node src/utils/utility/syncCommands.js"
   },
   "dependencies": {
     "better-sqlite3": "^12.8.0",
@@ -23,6 +27,7 @@
     "node-fetch": "^2.7.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14"
+    "nodemon": "^3.1.14",
+    "cross-env": "^7.0.3"
   }
 }

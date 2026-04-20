@@ -11,9 +11,11 @@ module.exports = {
 
   async execute(interaction, client) {
     try {
-      await interaction.deferReply({
-        flags: MessageFlags.Ephemeral,
-      });
+      if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferReply({
+          flags: MessageFlags.Ephemeral,
+        });
+      }
 
       const commands = [...client.commands.values()].sort((a, b) =>
         a.data.name.localeCompare(b.data.name)
@@ -30,15 +32,21 @@ module.exports = {
 
       for (const line of commandLines) {
         const candidate = currentChunk ? `${currentChunk}\n${line}` : line;
+
         if (candidate.length > 1024) {
-          if (currentChunk) chunks.push(currentChunk);
+          if (currentChunk) {
+            chunks.push(currentChunk);
+          }
+
           currentChunk = line;
         } else {
           currentChunk = candidate;
         }
       }
 
-      if (currentChunk) chunks.push(currentChunk);
+      if (currentChunk) {
+        chunks.push(currentChunk);
+      }
 
       const embed = new EmbedBuilder()
         .setColor('#5865F2')
@@ -71,26 +79,50 @@ module.exports = {
     } catch (error) {
       console.error('❌ Help command failed:', error);
 
-      if (error?.code === 10062 || error?.code === 40060) {
+      if (isIgnorableInteractionError(error)) {
         return;
       }
 
       try {
-        if (interaction.deferred || interaction.replied) {
-          await interaction.editReply({
-            content: '❌ Failed to load the help menu.',
-            embeds: [],
-            components: [],
-          });
-        } else {
-          await interaction.reply({
-            content: '❌ Failed to load the help menu.',
-            flags: MessageFlags.Ephemeral,
-          });
-        }
+        await safeReply(interaction, {
+          content: '❌ Failed to load the help menu.',
+          embeds: [],
+          components: [],
+          flags: MessageFlags.Ephemeral,
+        });
       } catch (replyError) {
         console.error('❌ Failed to send help failure response:', replyError);
       }
     }
   },
 };
+
+async function safeReply(interaction, payload) {
+  const safePayload = {
+    ...payload,
+    embeds: payload.embeds ?? [],
+    components: payload.components ?? [],
+  };
+
+  if (interaction.deferred) {
+    return await interaction.editReply(stripFlagsForEditReply(safePayload));
+  }
+
+  if (interaction.replied) {
+    return await interaction.followUp({
+      ...safePayload,
+      flags: safePayload.flags ?? MessageFlags.Ephemeral,
+    });
+  }
+
+  return await interaction.reply(safePayload);
+}
+
+function stripFlagsForEditReply(payload) {
+  const { flags, ...rest } = payload;
+  return rest;
+}
+
+function isIgnorableInteractionError(error) {
+  return error?.code === 10062 || error?.code === 40060;
+}
