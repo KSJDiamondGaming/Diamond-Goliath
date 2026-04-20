@@ -76,12 +76,12 @@ module.exports = {
       await interaction.editReply({
         embeds: [embed],
       });
-    } catch (error) {
-      console.error('❌ Help command failed:', error);
-
+        } catch (error) {
       if (isIgnorableInteractionError(error)) {
         return;
       }
+
+      console.error('❌ Help command failed:', error);
 
       try {
         await safeReply(interaction, {
@@ -95,7 +95,7 @@ module.exports = {
       }
     }
   },
-};
+};  
 
 async function safeReply(interaction, payload) {
   const safePayload = {

@@ -621,7 +621,7 @@ async function handleCasePanelModal(interaction) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('case')
-    .setDescription('Open the case management panel')
+    .setDescription('📂 Cases • open the case management panel')
     .setDefaultMemberPermissions(
       PermissionFlagsBits.ModerateMembers |
         PermissionFlagsBits.KickMembers |
@@ -650,12 +650,12 @@ module.exports = {
           flags: MessageFlags.Ephemeral,
         });
       }
-    } catch (error) {
-      console.error('❌ Case command failed:', error);
-
+            } catch (error) {
       if (error?.code === 10062 || error?.code === 40060) {
         return;
       }
+
+      console.error('❌ Case command failed:', error);
 
       try {
         if (interaction.deferred || interaction.replied) {

@@ -248,13 +248,13 @@ module.exports = {
           // ignore collector cleanup failures
         }
       });
-    } catch (error) {
-      console.error('❌ Warnings command failed:', error);
-
+        } catch (error) {
       if (error?.code === 10062 || error?.code === 40060) {
         return;
       }
 
+      console.error('❌ Warnings command failed:', error);
+      
       try {
         if (interaction.deferred || interaction.replied) {
           await interaction.editReply({

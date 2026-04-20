@@ -39,11 +39,11 @@ module.exports = {
         flags: MessageFlags.Ephemeral,
       });
     } catch (error) {
-      console.error('❌ SetModLog command failed:', error);
-
       if (error?.code === 10062 || error?.code === 40060) {
         return;
       }
+
+      console.error('❌ SetModLog command failed:', error);
 
       try {
         if (interaction.deferred || interaction.replied) {

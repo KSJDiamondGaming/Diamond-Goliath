@@ -34,11 +34,11 @@ module.exports = {
         return await handleModalInteraction(interaction);
       }
     } catch (error) {
-      console.error('❌ interactionCreate event failed:', error);
-
       if (isIgnorableInteractionError(error)) {
         return;
       }
+
+      console.error('❌ interactionCreate event failed:', error);
 
       try {
         await safeReply(interaction, {
@@ -78,11 +78,11 @@ async function handleChatInputCommand(interaction) {
       console.warn(`⏱️ Slow command detected: /${commandName} took ${duration}ms`);
     }
   } catch (error) {
-    console.error(`❌ Error executing /${commandName}:`, error);
-
     if (isIgnorableInteractionError(error)) {
       return;
     }
+
+    console.error(`❌ Error executing /${commandName}:`, error);
 
     await safeReply(interaction, {
       content: '❌ There was an error while running this command.',
@@ -120,11 +120,11 @@ async function handleButtonInteraction(interaction) {
       });
     }
   } catch (error) {
-    console.error(`❌ Button interaction failed (${interaction.customId}):`, error);
-
     if (isIgnorableInteractionError(error)) {
       return;
     }
+
+    console.error(`❌ Button interaction failed (${interaction.customId}):`, error);
 
     await safeReply(interaction, {
       content: '❌ Something went wrong while handling that button.',
@@ -156,11 +156,11 @@ async function handleStringSelectMenuInteraction(interaction) {
       });
     }
   } catch (error) {
-    console.error(`❌ Select menu interaction failed (${interaction.customId}):`, error);
-
     if (isIgnorableInteractionError(error)) {
       return;
     }
+
+    console.error(`❌ Select menu interaction failed (${interaction.customId}):`, error);
 
     await safeReply(interaction, {
       content: '❌ Something went wrong while handling that menu.',
@@ -192,11 +192,11 @@ async function handleModalInteraction(interaction) {
       });
     }
   } catch (error) {
-    console.error(`❌ Modal interaction failed (${interaction.customId}):`, error);
-
     if (isIgnorableInteractionError(error)) {
       return;
     }
+
+    console.error(`❌ Modal interaction failed (${interaction.customId}):`, error);
 
     await safeReply(interaction, {
       content: '❌ Something went wrong while handling that modal.',

@@ -104,11 +104,11 @@ module.exports = {
         embeds: [embed],
       });
     } catch (error) {
-      console.error('❌ ServerInfo Error:', error);
-
       if (isIgnorableInteractionError(error)) {
         return;
       }
+
+      console.error('❌ ServerInfo Error:', error);
 
       try {
         await safeReply(interaction, {
@@ -123,6 +123,7 @@ module.exports = {
     }
   },
 };
+
 
 async function safeReply(interaction, payload) {
   const safePayload = {

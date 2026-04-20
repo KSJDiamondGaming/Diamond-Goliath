@@ -240,12 +240,12 @@ module.exports = {
         color: '#2ecc71',
         caseId: caseNumber,
       });
-    } catch (error) {
-      console.error('❌ ClearWarnings command failed:', error);
-
+        } catch (error) {
       if (error?.code === 10062 || error?.code === 40060) {
         return;
       }
+
+      console.error('❌ ClearWarnings command failed:', error);
 
       try {
         if (interaction.deferred || interaction.replied) {

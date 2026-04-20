@@ -57,11 +57,11 @@ module.exports = {
         flags: MessageFlags.Ephemeral,
       });
     } catch (error) {
-      console.error('❌ SetLogs command failed:', error);
-
       if (error?.code === 10062 || error?.code === 40060) {
         return;
       }
+
+      console.error('❌ SetLogs command failed:', error);
 
       try {
         if (interaction.deferred || interaction.replied) {

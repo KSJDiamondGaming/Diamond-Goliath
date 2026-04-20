@@ -48,7 +48,9 @@ module.exports = {
         content: `🧹 Deleted **${deleted.size}** message(s).`,
       });
     } catch (error) {
-      console.error('❌ /purge error:', error);
+  if (error?.code === 10062 || error?.code === 40060) return;
+
+  console.error('❌ /purge error:', error);
 
       if (interaction.deferred || interaction.replied) {
         await interaction.editReply({

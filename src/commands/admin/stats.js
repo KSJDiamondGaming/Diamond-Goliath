@@ -31,11 +31,11 @@ module.exports = {
         });
       }
     } catch (error) {
-      console.error('❌ Stats command failed:', error);
-
       if (error?.code === 10062 || error?.code === 40060) {
         return;
       }
+
+      console.error('❌ Stats command failed:', error);
 
       try {
         if (interaction.deferred || interaction.replied) {

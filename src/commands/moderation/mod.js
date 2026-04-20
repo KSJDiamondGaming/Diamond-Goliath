@@ -7,7 +7,7 @@ const { openModPanel } = require('../../utils/moderation/modPanel');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('mod')
-    .setDescription('🛡️ Moderation panel • manage server moderation tools'),
+    .setDescription('🛡️ Moderation • open the server moderation panel'),
 
   async execute(interaction) {
     try {
@@ -19,12 +19,12 @@ module.exports = {
       }
 
       return await openModPanel(interaction);
-    } catch (error) {
-      console.error('❌ Mod command failed:', error);
-
+        } catch (error) {
       if (error?.code === 10062 || error?.code === 40060) {
         return;
       }
+
+      console.error('❌ Mod command failed:', error);
 
       try {
         if (interaction.deferred || interaction.replied) {

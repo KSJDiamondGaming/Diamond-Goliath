@@ -80,11 +80,11 @@ module.exports = {
         embeds: [embed],
       });
     } catch (error) {
-      console.error('❌ Ping command failed:', error);
-
       if (isIgnorableInteractionError(error)) {
         return;
       }
+
+      console.error('❌ Ping command failed:', error);
 
       try {
         await safeReply(interaction, {
