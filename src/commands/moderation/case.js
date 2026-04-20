@@ -9,7 +9,7 @@ const {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
-  AttachmentBuilder
+  AttachmentBuilder,
 } = require('discord.js');
 
 const fs = require('fs');
@@ -19,7 +19,7 @@ const {
   getCaseById,
   getCasesForUser,
   getFilteredCases,
-  getCasesByModerator
+  getCasesByModerator,
 } = require('../../utils/logging/cases/caseStore');
 
 function hasCasePermission(member) {
@@ -49,20 +49,22 @@ async function findMemberByQuery(guild, query) {
 
   await guild.members.fetch();
 
-  return guild.members.cache.find(member => {
-    const tag = member.user.tag?.toLowerCase() || '';
-    const username = member.user.username?.toLowerCase() || '';
-    const displayName = member.displayName?.toLowerCase() || '';
+  return (
+    guild.members.cache.find((member) => {
+      const tag = member.user.tag?.toLowerCase() || '';
+      const username = member.user.username?.toLowerCase() || '';
+      const displayName = member.displayName?.toLowerCase() || '';
 
-    return (
-      tag === cleaned ||
-      username === cleaned ||
-      displayName === cleaned ||
-      tag.includes(cleaned) ||
-      username.includes(cleaned) ||
-      displayName.includes(cleaned)
-    );
-  }) || null;
+      return (
+        tag === cleaned ||
+        username === cleaned ||
+        displayName === cleaned ||
+        tag.includes(cleaned) ||
+        username.includes(cleaned) ||
+        displayName.includes(cleaned)
+      );
+    }) || null
+  );
 }
 
 function buildCasePanelEmbed(guild, moderator) {
@@ -74,12 +76,12 @@ function buildCasePanelEmbed(guild, moderator) {
       {
         name: 'Moderator',
         value: `${moderator}`,
-        inline: true
+        inline: true,
       },
       {
         name: 'Server',
         value: guild.name,
-        inline: true
+        inline: true,
       },
       {
         name: 'Tools',
@@ -89,9 +91,9 @@ function buildCasePanelEmbed(guild, moderator) {
           '📜 Recent cases',
           '🎛️ Filter by action/status',
           '👮 Moderator lookup',
-          '📦 Export member history'
+          '📦 Export member history',
         ].join('\n'),
-        inline: false
+        inline: false,
       }
     )
     .setTimestamp();
@@ -156,9 +158,14 @@ function buildCasesEmbed(title, cases, footerText = null) {
     .setTitle(title)
     .setDescription(
       cases.length
-        ? cases.map(entry =>
-            `**#${entry.caseId}** • ${entry.action}\nUser: \`${entry.userId}\`\nModerator: \`${entry.moderatorId}\`\nStatus: ${formatStatus(entry.status)}\nReason: ${entry.reason || 'No reason provided'}\n<t:${Math.floor(new Date(entry.createdAt).getTime() / 1000)}:R>`
-          ).join('\n\n')
+        ? cases
+            .map(
+              (entry) =>
+                `**#${entry.caseId}** • ${entry.action}\nUser: \`${entry.userId}\`\nModerator: \`${entry.moderatorId}\`\nStatus: ${formatStatus(entry.status)}\nReason: ${entry.reason || 'No reason provided'}\n<t:${Math.floor(
+                  new Date(entry.createdAt).getTime() / 1000
+                )}:R>`
+            )
+            .join('\n\n')
         : 'No cases found.'
     )
     .setTimestamp();
@@ -179,18 +186,22 @@ function buildCaseDetailEmbed(modCase) {
       { name: 'Status', value: formatStatus(modCase.status), inline: true },
       { name: 'User ID', value: modCase.userId, inline: true },
       { name: 'Moderator ID', value: modCase.moderatorId, inline: true },
-      { name: 'Reason', value: modCase.reason || 'No reason provided', inline: false },
+      {
+        name: 'Reason',
+        value: modCase.reason || 'No reason provided',
+        inline: false,
+      },
       {
         name: 'Created',
         value: `<t:${Math.floor(new Date(modCase.createdAt).getTime() / 1000)}:F>`,
-        inline: true
+        inline: true,
       },
       {
         name: 'Updated',
         value: modCase.updatedAt
           ? `<t:${Math.floor(new Date(modCase.updatedAt).getTime() / 1000)}:F>`
           : 'Never',
-        inline: true
+        inline: true,
       }
     )
     .setTimestamp();
@@ -199,7 +210,7 @@ function buildCaseDetailEmbed(modCase) {
     embed.addFields({
       name: 'Related Case',
       value: `#${modCase.relatedCaseId}`,
-      inline: true
+      inline: true,
     });
   }
 
@@ -207,7 +218,7 @@ function buildCaseDetailEmbed(modCase) {
     embed.addFields({
       name: 'Metadata',
       value: `\`\`\`json\n${JSON.stringify(modCase.metadata, null, 2)}\n\`\`\``,
-      inline: false
+      inline: false,
     });
   }
 
@@ -315,34 +326,51 @@ function toCsv(rows) {
     'relatedCaseId',
     'createdAt',
     'updatedAt',
-    'metadata'
+    'metadata',
   ];
 
-  const escape = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
+  const escape = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
 
   return [
     headers.join(','),
-    ...rows.map(row => [
-      row.caseId,
-      row.guildId,
-      row.userId,
-      row.moderatorId,
-      row.action,
-      row.reason,
-      row.status,
-      row.relatedCaseId,
-      row.createdAt,
-      row.updatedAt,
-      JSON.stringify(row.metadata || {})
-    ].map(escape).join(','))
+    ...rows.map((row) =>
+      [
+        row.caseId,
+        row.guildId,
+        row.userId,
+        row.moderatorId,
+        row.action,
+        row.reason,
+        row.status,
+        row.relatedCaseId,
+        row.createdAt,
+        row.updatedAt,
+        JSON.stringify(row.metadata || {}),
+      ]
+        .map(escape)
+        .join(',')
+    ),
   ].join('\n');
+}
+
+async function safeEphemeralReply(interaction, payload) {
+  if (interaction.deferred || interaction.replied) {
+    return interaction.followUp({
+      ...payload,
+      flags: MessageFlags.Ephemeral,
+    });
+  }
+
+  return interaction.reply({
+    ...payload,
+    flags: MessageFlags.Ephemeral,
+  });
 }
 
 async function handleCasePanelButton(interaction) {
   if (!hasCasePermission(interaction.member)) {
-    return interaction.reply({
+    return safeEphemeralReply(interaction, {
       content: '❌ No permission to use the case panel.',
-      flags: MessageFlags.Ephemeral
     });
   }
 
@@ -357,20 +385,17 @@ async function handleCasePanelButton(interaction) {
   if (interaction.customId === 'casepanel_recent') {
     await interaction.guild.members.fetch();
 
-    const allMembers = interaction.guild.members.cache.map(member => member.id);
+    const allMembers = interaction.guild.members.cache.map((member) => member.id);
     let allCases = [];
 
     for (const userId of allMembers) {
       allCases.push(...getCasesForUser(interaction.guild.id, userId));
     }
 
-    allCases = allCases
-      .sort((a, b) => b.caseId - a.caseId)
-      .slice(0, 15);
+    allCases = allCases.sort((a, b) => b.caseId - a.caseId).slice(0, 15);
 
-    return interaction.reply({
+    return safeEphemeralReply(interaction, {
       embeds: [buildCasesEmbed('📜 Recent Cases', allCases, 'Latest 15 cases')],
-      flags: MessageFlags.Ephemeral
     });
   }
 
@@ -397,13 +422,12 @@ async function handleCasePanelButton(interaction) {
           .setCustomId('casepanel_filter_action_kick')
           .setLabel('Kicks')
           .setStyle(ButtonStyle.Secondary)
-      )
+      ),
     ];
 
-    return interaction.reply({
+    return safeEphemeralReply(interaction, {
       content: 'Choose an action filter:',
       components: rows,
-      flags: MessageFlags.Ephemeral
     });
   }
 
@@ -422,13 +446,12 @@ async function handleCasePanelButton(interaction) {
           .setCustomId('casepanel_filter_status_expired')
           .setLabel('Expired')
           .setStyle(ButtonStyle.Secondary)
-      )
+      ),
     ];
 
-    return interaction.reply({
+    return safeEphemeralReply(interaction, {
       content: 'Choose a status filter:',
       components: rows,
-      flags: MessageFlags.Ephemeral
     });
   }
 
@@ -444,7 +467,7 @@ async function handleCasePanelButton(interaction) {
     const action = interaction.customId.replace('casepanel_filter_action_', '');
 
     await interaction.guild.members.fetch();
-    const memberIds = interaction.guild.members.cache.map(member => member.id);
+    const memberIds = interaction.guild.members.cache.map((member) => member.id);
 
     let cases = [];
     for (const userId of memberIds) {
@@ -453,9 +476,8 @@ async function handleCasePanelButton(interaction) {
 
     cases = cases.sort((a, b) => b.caseId - a.caseId).slice(0, 20);
 
-    return interaction.reply({
+    return safeEphemeralReply(interaction, {
       embeds: [buildCasesEmbed(`🎯 Cases filtered by action: ${action}`, cases)],
-      flags: MessageFlags.Ephemeral
     });
   }
 
@@ -463,7 +485,7 @@ async function handleCasePanelButton(interaction) {
     const status = interaction.customId.replace('casepanel_filter_status_', '');
 
     await interaction.guild.members.fetch();
-    const memberIds = interaction.guild.members.cache.map(member => member.id);
+    const memberIds = interaction.guild.members.cache.map((member) => member.id);
 
     let cases = [];
     for (const userId of memberIds) {
@@ -472,9 +494,8 @@ async function handleCasePanelButton(interaction) {
 
     cases = cases.sort((a, b) => b.caseId - a.caseId).slice(0, 20);
 
-    return interaction.reply({
+    return safeEphemeralReply(interaction, {
       embeds: [buildCasesEmbed(`🏷️ Cases filtered by status: ${status}`, cases)],
-      flags: MessageFlags.Ephemeral
     });
   }
 
@@ -485,7 +506,7 @@ async function handleCasePanelModal(interaction) {
   if (!hasCasePermission(interaction.member)) {
     return interaction.reply({
       content: '❌ No permission to use the case panel.',
-      flags: MessageFlags.Ephemeral
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -495,7 +516,7 @@ async function handleCasePanelModal(interaction) {
     if (!/^\d+$/.test(caseIdRaw)) {
       return interaction.reply({
         content: '❌ Case ID must be a number.',
-        flags: MessageFlags.Ephemeral
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -504,13 +525,13 @@ async function handleCasePanelModal(interaction) {
     if (!modCase) {
       return interaction.reply({
         content: '❌ Case not found.',
-        flags: MessageFlags.Ephemeral
+        flags: MessageFlags.Ephemeral,
       });
     }
 
     return interaction.reply({
       embeds: [buildCaseDetailEmbed(modCase)],
-      flags: MessageFlags.Ephemeral
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -521,7 +542,7 @@ async function handleCasePanelModal(interaction) {
     if (!member) {
       return interaction.reply({
         content: '❌ Member not found.',
-        flags: MessageFlags.Ephemeral
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -529,7 +550,7 @@ async function handleCasePanelModal(interaction) {
 
     return interaction.reply({
       embeds: [buildCasesEmbed(`👤 Cases for ${member.user.tag}`, cases)],
-      flags: MessageFlags.Ephemeral
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -540,7 +561,7 @@ async function handleCasePanelModal(interaction) {
     if (!moderator) {
       return interaction.reply({
         content: '❌ Moderator not found.',
-        flags: MessageFlags.Ephemeral
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -548,7 +569,7 @@ async function handleCasePanelModal(interaction) {
 
     return interaction.reply({
       embeds: [buildCasesEmbed(`👮 Cases by ${moderator.user.tag}`, cases)],
-      flags: MessageFlags.Ephemeral
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -559,7 +580,7 @@ async function handleCasePanelModal(interaction) {
     if (!['json', 'csv'].includes(formatRaw)) {
       return interaction.reply({
         content: '❌ Format must be `json` or `csv`.',
-        flags: MessageFlags.Ephemeral
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -568,7 +589,7 @@ async function handleCasePanelModal(interaction) {
     if (!member) {
       return interaction.reply({
         content: '❌ Member not found.',
-        flags: MessageFlags.Ephemeral
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -590,7 +611,7 @@ async function handleCasePanelModal(interaction) {
     return interaction.reply({
       content: `📦 Exported ${cases.length} case(s) for **${member.user.tag}** as ${formatRaw.toUpperCase()}.`,
       files: [new AttachmentBuilder(filePath)],
-      flags: MessageFlags.Ephemeral
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -603,26 +624,60 @@ module.exports = {
     .setDescription('Open the case management panel')
     .setDefaultMemberPermissions(
       PermissionFlagsBits.ModerateMembers |
-      PermissionFlagsBits.KickMembers |
-      PermissionFlagsBits.BanMembers
+        PermissionFlagsBits.KickMembers |
+        PermissionFlagsBits.BanMembers
     ),
 
   async execute(interaction) {
-    const payload = {
-      embeds: [buildCasePanelEmbed(interaction.guild, interaction.member)],
-      components: buildCasePanelRows(),
-      flags: MessageFlags.Ephemeral
-    };
+    try {
+      if (!interaction.guild) {
+        return await interaction.reply({
+          content: '❌ This command can only be used in a server.',
+          flags: MessageFlags.Ephemeral,
+        });
+      }
 
-    if (interaction.deferred || interaction.replied) {
-      await interaction.editReply(payload);
-    } else {
-      await interaction.reply(payload);
+      const payload = {
+        embeds: [buildCasePanelEmbed(interaction.guild, interaction.member)],
+        components: buildCasePanelRows(),
+      };
+
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply(payload);
+      } else {
+        await interaction.reply({
+          ...payload,
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+    } catch (error) {
+      console.error('❌ Case command failed:', error);
+
+      if (error?.code === 10062 || error?.code === 40060) {
+        return;
+      }
+
+      try {
+        if (interaction.deferred || interaction.replied) {
+          await interaction.editReply({
+            content: '❌ Failed to open the case panel.',
+            embeds: [],
+            components: [],
+          });
+        } else {
+          await interaction.reply({
+            content: '❌ Failed to open the case panel.',
+            flags: MessageFlags.Ephemeral,
+          });
+        }
+      } catch (replyError) {
+        console.error('❌ Failed to send case failure response:', replyError);
+      }
     }
   },
 
   buildCasePanelEmbed,
   buildCasePanelRows,
   handleCasePanelButton,
-  handleCasePanelModal
+  handleCasePanelModal,
 };

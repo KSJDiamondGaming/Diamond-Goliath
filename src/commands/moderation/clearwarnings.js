@@ -35,7 +35,6 @@ function ensureCaseFile() {
 
 function readJson() {
   ensureCaseFile();
-
   const raw = fs.readFileSync(caseDetailsPath, 'utf8');
   return raw ? JSON.parse(raw) : {};
 }
@@ -55,183 +54,215 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('clearwarnings')
     .setDescription('🧹 Warnings • clear warnings for a member')
-
-    .addUserOption(option =>
+    .addUserOption((option) =>
       option
         .setName('target')
         .setDescription('👤 Target • select the user to clear warnings for')
         .setRequired(true)
     )
-
-    .addIntegerOption(option =>
+    .addIntegerOption((option) =>
       option
         .setName('case')
         .setDescription('🔢 Case • specific warning case number to clear')
         .setRequired(false)
         .setMinValue(1)
     )
-
-    .addStringOption(option =>
+    .addStringOption((option) =>
       option
         .setName('reason')
         .setDescription('📝 Reason • why the warnings are being cleared')
         .setRequired(false)
     )
-
     .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
 
   async execute(interaction) {
-    const target = interaction.options.getUser('target');
-    const caseNumberInput = interaction.options.getInteger('case');
-    const reason =
-      interaction.options.getString('reason') || 'No reason provided';
+    try {
+      const target = interaction.options.getUser('target');
+      const caseNumberInput = interaction.options.getInteger('case');
+      const reason = interaction.options.getString('reason') || 'No reason provided';
 
-    const data = readJson();
+      const data = readJson();
 
-    if (!data[interaction.guild.id]) {
-      data[interaction.guild.id] = {};
-    }
-
-    const guildCases = data[interaction.guild.id];
-    let cleared = 0;
-    const clearedAt = Date.now();
-
-    if (caseNumberInput) {
-      const caseData = guildCases[caseNumberInput];
-
-      if (!caseData) {
-        const embed = createDangerEmbed(interaction, {
-          title: '❌ Case Not Found',
-          description: `Case **#${caseNumberInput}** was not found.`,
-        });
-
-        return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+      if (!data[interaction.guild.id]) {
+        data[interaction.guild.id] = {};
       }
 
-      if (caseData.action !== 'Warn' || caseData.targetId !== target.id) {
-        const embed = createDangerEmbed(interaction, {
-          title: '❌ Invalid Case',
-          description: `Case **#${caseNumberInput}** is not a warning for ${target}.`,
-        });
+      const guildCases = data[interaction.guild.id];
+      let cleared = 0;
+      const clearedAt = Date.now();
 
-        return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
-      }
+      if (caseNumberInput) {
+        const caseData = guildCases[caseNumberInput];
 
-      if (caseData.cleared === true) {
-        const embed = createWarningEmbed(interaction, {
-          title: '⚠️ Already Cleared',
-          description: `Case **#${caseNumberInput}** has already been cleared.`,
-        });
+        if (!caseData) {
+          const embed = createDangerEmbed(interaction, {
+            title: '❌ Case Not Found',
+            description: `Case **#${caseNumberInput}** was not found.`,
+          });
 
-        return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
-      }
+          return interaction.reply({
+            embeds: [embed],
+            flags: MessageFlags.Ephemeral,
+          });
+        }
 
-      caseData.cleared = true;
-      caseData.clearedAt = clearedAt;
-      caseData.clearedById = interaction.user.id;
-      caseData.clearedByTag = interaction.user.tag;
-      caseData.clearReason = reason;
+        if (caseData.action !== 'Warn' || caseData.targetId !== target.id) {
+          const embed = createDangerEmbed(interaction, {
+            title: '❌ Invalid Case',
+            description: `Case **#${caseNumberInput}** is not a warning for ${target}.`,
+          });
 
-      cleared = 1;
-    } else {
-      const activeWarnings = Object.values(guildCases).filter(
-        (c) =>
-          c.action === 'Warn' &&
-          c.targetId === target.id &&
-          c.cleared !== true
-      );
+          return interaction.reply({
+            embeds: [embed],
+            flags: MessageFlags.Ephemeral,
+          });
+        }
 
-      if (activeWarnings.length === 0) {
-        const embed = createWarningEmbed(interaction, {
-          title: '⚠️ No Active Warnings',
-          description: `${target} has no active warnings to clear.`,
-          thumbnail: target.displayAvatarURL({ dynamic: true }),
-        });
+        if (caseData.cleared === true) {
+          const embed = createWarningEmbed(interaction, {
+            title: '⚠️ Already Cleared',
+            description: `Case **#${caseNumberInput}** has already been cleared.`,
+          });
 
-        return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
-      }
+          return interaction.reply({
+            embeds: [embed],
+            flags: MessageFlags.Ephemeral,
+          });
+        }
 
-      for (const caseData of activeWarnings) {
         caseData.cleared = true;
         caseData.clearedAt = clearedAt;
         caseData.clearedById = interaction.user.id;
         caseData.clearedByTag = interaction.user.tag;
         caseData.clearReason = reason;
-        cleared++;
+
+        cleared = 1;
+      } else {
+        const activeWarnings = Object.values(guildCases).filter(
+          (c) =>
+            c.action === 'Warn' &&
+            c.targetId === target.id &&
+            c.cleared !== true
+        );
+
+        if (activeWarnings.length === 0) {
+          const embed = createWarningEmbed(interaction, {
+            title: '⚠️ No Active Warnings',
+            description: `${target} has no active warnings to clear.`,
+            thumbnail: target.displayAvatarURL({ dynamic: true }),
+          });
+
+          return interaction.reply({
+            embeds: [embed],
+            flags: MessageFlags.Ephemeral,
+          });
+        }
+
+        for (const caseData of activeWarnings) {
+          caseData.cleared = true;
+          caseData.clearedAt = clearedAt;
+          caseData.clearedById = interaction.user.id;
+          caseData.clearedByTag = interaction.user.tag;
+          caseData.clearReason = reason;
+          cleared++;
+        }
       }
-    }
 
-    writeJson(data);
+      writeJson(data);
 
-    const clearReasonText = caseNumberInput
-      ? `Cleared warning case #${caseNumberInput}. ${reason}`
-      : `Cleared ${cleared} active warning(s). ${reason}`;
+      const clearReasonText = caseNumberInput
+        ? `Cleared warning case #${caseNumberInput}. ${reason}`
+        : `Cleared ${cleared} active warning(s). ${reason}`;
 
-    const { caseNumber } = createModCase({
-      guildId: interaction.guild.id,
-      action: 'ClearWarnings',
-      targetUser: target,
-      moderator: interaction.user,
-      reason: clearReasonText,
-    });
-
-    const embed = createSuccessEmbed(interaction, {
-      title: '🧹 Warnings Cleared',
-      description: caseNumberInput
-        ? `Case **#${caseNumberInput}** has been cleared for ${target}.`
-        : `All active warnings for ${target} have been cleared.`,
-      thumbnail: target.displayAvatarURL({ dynamic: true }),
-    }).addFields(
-      {
-        name: '📁 Case',
-        value: `#${caseNumber}`,
-        inline: true,
-      },
-      {
-        name: '👤 Target',
-        value: `${target}\n\`${target.id}\``,
-        inline: true,
-      },
-      {
-        name: '🛡️ Moderator',
-        value: `${interaction.user}\n\`${interaction.user.id}\``,
-        inline: true,
-      },
-      {
-        name: '📌 Cleared',
-        value: `${cleared}`,
-        inline: true,
-      },
-      {
-        name: '📝 Reason',
-        value: trimText(reason),
-        inline: false,
-      }
-    );
-
-    if (caseNumberInput) {
-      embed.addFields({
-        name: '🔎 Cleared Warning Case',
-        value: `#${caseNumberInput}`,
-        inline: true,
+      const { caseNumber } = createModCase({
+        guildId: interaction.guild.id,
+        action: 'ClearWarnings',
+        targetUser: target,
+        moderator: interaction.user,
+        reason: clearReasonText,
       });
+
+      const embed = createSuccessEmbed(interaction, {
+        title: '🧹 Warnings Cleared',
+        description: caseNumberInput
+          ? `Case **#${caseNumberInput}** has been cleared for ${target}.`
+          : `All active warnings for ${target} have been cleared.`,
+        thumbnail: target.displayAvatarURL({ dynamic: true }),
+      }).addFields(
+        {
+          name: '📁 Case',
+          value: `#${caseNumber}`,
+          inline: true,
+        },
+        {
+          name: '👤 Target',
+          value: `${target}\n\`${target.id}\``,
+          inline: true,
+        },
+        {
+          name: '🛡️ Moderator',
+          value: `${interaction.user}\n\`${interaction.user.id}\``,
+          inline: true,
+        },
+        {
+          name: '📌 Cleared',
+          value: `${cleared}`,
+          inline: true,
+        },
+        {
+          name: '📝 Reason',
+          value: trimText(reason),
+          inline: false,
+        }
+      );
+
+      if (caseNumberInput) {
+        embed.addFields({
+          name: '🔎 Cleared Warning Case',
+          value: `#${caseNumberInput}`,
+          inline: true,
+        });
+      }
+
+      await interaction.reply({
+        embeds: [embed],
+        flags: MessageFlags.Ephemeral,
+      });
+
+      await logModerationAction({
+        guild: interaction.guild,
+        action: 'ClearWarnings',
+        user: target,
+        moderator: interaction.user,
+        reason: caseNumberInput
+          ? `Cleared case #${caseNumberInput}. Reason: ${reason}`
+          : `Cleared ${cleared} warning(s). Reason: ${reason}`,
+        color: '#2ecc71',
+        caseId: caseNumber,
+      });
+    } catch (error) {
+      console.error('❌ ClearWarnings command failed:', error);
+
+      if (error?.code === 10062 || error?.code === 40060) {
+        return;
+      }
+
+      try {
+        if (interaction.deferred || interaction.replied) {
+          await interaction.editReply({
+            content: '❌ Failed to clear warnings.',
+            embeds: [],
+            components: [],
+          });
+        } else {
+          await interaction.reply({
+            content: '❌ Failed to clear warnings.',
+            flags: MessageFlags.Ephemeral,
+          });
+        }
+      } catch (replyError) {
+        console.error('❌ Failed to send clearwarnings failure response:', replyError);
+      }
     }
-
-    await interaction.reply({
-      embeds: [embed],
-      flags: MessageFlags.Ephemeral,
-    });
-
-    await logModerationAction({
-      guild: interaction.guild,
-      action: 'ClearWarnings',
-      user: target,
-      moderator: interaction.user,
-      reason: caseNumberInput
-        ? `Cleared case #${caseNumberInput}. Reason: ${reason}`
-        : `Cleared ${cleared} warning(s). Reason: ${reason}`,
-      color: '#2ecc71',
-      caseId: caseNumber,
-    });
   },
 };

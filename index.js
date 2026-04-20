@@ -4,13 +4,14 @@ const terminal = require('./src/utils/utility/terminalLogger');
 
 const fs = require('node:fs');
 const path = require('node:path');
-const express = require('express');
 const {
   Client,
   Collection,
   GatewayIntentBits,
   Partials,
 } = require('discord.js');
+
+/* ---------------- PROCESS SAFETY ---------------- */
 
 process.on('unhandledRejection', (reason) => {
   terminal.error('Unhandled promise rejection', reason);
@@ -23,6 +24,8 @@ process.on('uncaughtException', (error) => {
 process.on('uncaughtExceptionMonitor', (error) => {
   terminal.error('Uncaught exception monitor', error);
 });
+
+/* ---------------- CLIENT ---------------- */
 
 const client = new Client({
   intents: [
@@ -42,9 +45,8 @@ const client = new Client({
 
 client.commands = new Collection();
 client.isBooting = true;
-client.apiStarted = false;
 
-/* ---------------- RECURSIVE FILE LOADERS ---------------- */
+/* ---------------- FILE LOADERS ---------------- */
 
 function getAllJsFiles(dir) {
   let results = [];
@@ -68,7 +70,9 @@ function getAllJsFiles(dir) {
   return results.sort((a, b) => a.localeCompare(b));
 }
 
-function loadCommands(client) {
+/* ---------------- COMMAND LOADER ---------------- */
+
+function loadCommands(clientInstance) {
   const commandsPath = path.join(__dirname, 'src', 'commands');
   const commandFiles = getAllJsFiles(commandsPath);
 
@@ -84,15 +88,14 @@ function loadCommands(client) {
         continue;
       }
 
-      if (client.commands.has(command.data.name)) {
-        terminal.warn(
-          `Duplicate command name detected: ${command.data.name} (${filePath})`
-        );
+      if (clientInstance.commands.has(command.data.name)) {
+        terminal.warn(`Duplicate command detected: ${command.data.name} (${filePath})`);
         continue;
       }
 
-      client.commands.set(command.data.name, command);
+      clientInstance.commands.set(command.data.name, command);
       loaded++;
+
       terminal.line('✅ Command Loaded', `${command.data.name} -> ${filePath}`);
     } catch (error) {
       terminal.error(`Failed to load command file: ${filePath}`, error);
@@ -105,7 +108,9 @@ function loadCommands(client) {
   };
 }
 
-function loadEvents(client) {
+/* ---------------- EVENT LOADER ---------------- */
+
+function loadEvents(clientInstance) {
   const eventsPath = path.join(__dirname, 'src', 'events');
   const eventFiles = getAllJsFiles(eventsPath);
 
@@ -115,13 +120,13 @@ function loadEvents(client) {
 
   for (const filePath of eventFiles) {
     try {
-      terminal.line('📦 Event Loader', filePath);
-
       const normalizedPath = path.normalize(filePath).toLowerCase();
+
       if (seenEventFiles.has(normalizedPath)) {
         terminal.warn(`Skipping duplicate event file path: ${filePath}`);
         continue;
       }
+
       seenEventFiles.add(normalizedPath);
 
       delete require.cache[require.resolve(filePath)];
@@ -134,11 +139,10 @@ function loadEvents(client) {
 
       const bindingKey = `${event.name}:${event.once ? 'once' : 'on'}`;
       if (seenEventBindings.has(bindingKey)) {
-        terminal.warn(
-          `Skipping duplicate event binding: ${event.name} (${filePath})`
-        );
+        terminal.warn(`Skipping duplicate event binding: ${event.name} (${filePath})`);
         continue;
       }
+
       seenEventBindings.add(bindingKey);
 
       const handler = async (...args) => {
@@ -150,18 +154,17 @@ function loadEvents(client) {
       };
 
       if (event.once) {
-        client.once(event.name, handler);
+        clientInstance.once(event.name, handler);
       } else {
-        client.on(event.name, handler);
+        clientInstance.on(event.name, handler);
       }
 
-      const listenerCount = client.listeners(event.name).length;
+      loaded++;
+
       terminal.line(
         '🧩 Event Bound',
-        `${event.name} -> listeners: ${listenerCount}`
+        `${event.name} -> listeners: ${clientInstance.listeners(event.name).length}`
       );
-
-      loaded++;
     } catch (error) {
       terminal.error(`Failed to load event file: ${filePath}`, error);
     }
@@ -173,7 +176,7 @@ function loadEvents(client) {
   };
 }
 
-/* ---------------- BOT STARTUP ---------------- */
+/* ---------------- START BOT ---------------- */
 
 async function startBot() {
   try {
@@ -187,29 +190,21 @@ async function startBot() {
       throw new Error('Missing TOKEN in .env file');
     }
 
-    client.on('warn', (warning) => {
-      terminal.warn(`Discord client warning: ${warning}`);
-    });
-
-    client.on('error', (error) => {
-      terminal.error('Discord client error', error);
-    });
-
     client.once('clientReady', () => {
       client.isBooting = false;
+
       terminal.line(
         '🤖 Bot',
         `READY (${commandStats.loaded} cmds, ${eventStats.loaded} events)`
       );
 
       terminal.line(
-        '🧪 interactionCreate listeners',
+        '🔁 interactionCreate listeners',
         String(client.listeners('interactionCreate').length)
       );
 
-      if (!client.apiStarted) {
-        startInternalApi();
-        client.apiStarted = true;
+      if (client.listeners('interactionCreate').length > 1) {
+        terminal.warn('⚠️ Multiple interactionCreate listeners detected!');
       }
     });
 
@@ -217,111 +212,6 @@ async function startBot() {
   } catch (error) {
     terminal.error('Fatal startup error', error);
   }
-}
-
-/* ---------------- INTERNAL API ---------------- */
-
-function startInternalApi() {
-  const app = express();
-  const PORT = Number(process.env.BOT_API_PORT) || 3002;
-
-  app.get('/internal/status', (req, res) => {
-    const ready = client.isReady();
-
-    return res.json({
-      ok: true,
-      online: ready,
-      ready,
-      booting: client.isBooting,
-      ping:
-        ready && typeof client.ws?.ping === 'number' && Number.isFinite(client.ws.ping)
-          ? Math.round(client.ws.ping)
-          : null,
-      guilds: client.guilds.cache.size,
-      user: client.user
-        ? {
-            id: client.user.id,
-            username: client.user.username,
-            tag: client.user.tag ?? null,
-            avatar: client.user.avatar ?? null,
-            avatarUrl: client.user.displayAvatarURL({
-              extension: 'png',
-              size: 256,
-              forceStatic: false,
-            }),
-          }
-        : null,
-      timestamp: new Date().toISOString(),
-    });
-  });
-
-  app.get('/internal/guilds', (req, res) => {
-    const guilds = client.guilds.cache
-      .map((guild) => ({
-        id: guild.id,
-        name: guild.name,
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-
-    return res.json(guilds);
-  });
-
-  app.get('/internal/guilds/:guildId/channels', async (req, res) => {
-    try {
-      const guild = client.guilds.cache.get(req.params.guildId);
-
-      if (!guild) {
-        return res.status(404).json({ error: 'Guild not found' });
-      }
-
-      const channels = guild.channels.cache.map((channel) => ({
-        id: channel.id,
-        name: channel.name,
-        type: channel.type,
-        position: channel.position,
-      }));
-
-      return res.json(channels);
-    } catch (error) {
-      terminal.error('Failed to fetch channels', error);
-      return res.status(500).json({ error: 'Failed to fetch channels' });
-    }
-  });
-
-  app.get('/internal/guilds/:guildId/members/count', async (req, res) => {
-    try {
-      const guild = client.guilds.cache.get(req.params.guildId);
-
-      if (!guild) {
-        return res.status(404).json({ error: 'Guild not found' });
-      }
-
-      const total =
-        typeof guild.memberCount === 'number' && Number.isFinite(guild.memberCount)
-          ? guild.memberCount
-          : null;
-
-      const cachedMembers = guild.members.cache;
-      const humans = cachedMembers.filter((member) => !member.user.bot).size;
-      const bots = cachedMembers.filter((member) => member.user.bot).size;
-
-      return res.json({
-        guildId: guild.id,
-        total,
-        humans,
-        bots,
-        fetched: false,
-        cached: true,
-      });
-    } catch (error) {
-      terminal.error('Failed to fetch member counts', error);
-      return res.status(500).json({ error: 'Failed to fetch member counts' });
-    }
-  });
-
-  app.listen(PORT, () => {
-    terminal.line('🌐 API', `http://localhost:${PORT}`);
-  });
 }
 
 startBot();

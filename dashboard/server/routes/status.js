@@ -1,22 +1,14 @@
 const express = require('express');
-
 const router = express.Router();
 
 const terminal = require('../../../src/utils/utility/terminalLogger').createLogger('api');
 
-const BOT_API_URL = process.env.BOT_API_URL || 'http://localhost:3002';
+// 👇 DIRECT BOT ACCESS (no more BOT_API_URL)
+const client = require('../../../index.js');
+
 const DEBUG = String(process.env.DEBUG || '').toLowerCase() === 'true';
 
-async function fetchJson(url, options = {}) {
-  const response = await fetch(url, options);
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Request failed ${response.status}: ${text}`);
-  }
-
-  return response.json();
-}
+/* ---------------- HELPERS ---------------- */
 
 function emptyBotProfile() {
   return {
@@ -29,74 +21,72 @@ function emptyBotProfile() {
   };
 }
 
+/* ---------------- STATUS ROUTE ---------------- */
+
 router.get('/', async (req, res) => {
   try {
     const guildId = req.query.guildId ? String(req.query.guildId) : null;
 
-    let botStatus = null;
-    let memberInfo = null;
+    const ready = client.isReady();
 
-    try {
-      botStatus = await fetchJson(`${BOT_API_URL}/internal/status`);
-    } catch (error) {
-      if (DEBUG) {
-        terminal.debug('Bot status fetch failed', error.message);
-      }
-    }
-
-    if (guildId) {
-      try {
-        memberInfo = await fetchJson(
-          `${BOT_API_URL}/internal/guilds/${guildId}/members/count`
-        );
-      } catch (error) {
-        if (DEBUG) {
-          terminal.debug('Member count fetch failed', error.message);
-        }
-      }
-    }
-
-    const botReady = Boolean(botStatus?.online);
     const botLatencyMs =
-      typeof botStatus?.ping === 'number' && Number.isFinite(botStatus.ping)
-        ? Math.round(botStatus.ping)
+      ready && typeof client.ws?.ping === 'number'
+        ? Math.round(client.ws.ping)
         : null;
 
-    const guildConnected = guildId ? Boolean(memberInfo) : false;
-    const memberCount =
-      typeof memberInfo?.total === 'number' ? memberInfo.total : null;
+    let memberInfo = null;
 
-    const botProfile = botStatus?.user
+    if (guildId) {
+      const guild = client.guilds.cache.get(guildId);
+
+      if (guild) {
+        const members = guild.members.cache;
+
+        memberInfo = {
+          total: guild.memberCount ?? null,
+          humans: members.filter((m) => !m.user.bot).size,
+          bots: members.filter((m) => m.user.bot).size,
+        };
+      }
+    }
+
+    const botProfile = client.user
       ? {
-          id: botStatus.user.id || null,
-          username: botStatus.user.username || 'KSJ Goliath',
-          name: botStatus.user.username || 'KSJ Goliath',
-          tag: botStatus.user.tag || null,
-          avatar: botStatus.user.avatar || null,
-          avatarUrl: botStatus.user.avatarUrl || '',
+          id: client.user.id,
+          username: client.user.username,
+          name: client.user.username,
+          tag: client.user.tag ?? null,
+          avatar: client.user.avatar ?? null,
+          avatarUrl: client.user.displayAvatarURL({ dynamic: true }),
         }
       : emptyBotProfile();
 
+    const guildConnected = guildId
+      ? Boolean(client.guilds.cache.get(guildId))
+      : false;
+
     return res.json({
       ok: true,
-      status: botReady ? 'online' : 'offline',
+      status: ready ? 'online' : 'offline',
+
       backendOnline: true,
       apiOnline: true,
-      botOnline: botReady,
+      botOnline: ready,
+
       botLatencyMs,
+
       guilds: guildId
         ? {
             [guildId]: {
               connected: guildConnected,
               status: guildConnected ? 'connected' : 'missing',
-              memberCount,
-              humans:
-                typeof memberInfo?.humans === 'number' ? memberInfo.humans : null,
-              bots:
-                typeof memberInfo?.bots === 'number' ? memberInfo.bots : null,
+              memberCount: memberInfo?.total ?? null,
+              humans: memberInfo?.humans ?? null,
+              bots: memberInfo?.bots ?? null,
             },
           }
         : {},
+
       bot: {
         id: botProfile.id,
         username: botProfile.username,
@@ -104,13 +94,15 @@ router.get('/', async (req, res) => {
         tag: botProfile.tag,
         avatar: botProfile.avatar,
         avatarUrl: botProfile.avatarUrl,
-        online: botReady,
+        online: ready,
         latencyMs: botLatencyMs,
       },
+
       api: {
         online: true,
         status: 'healthy',
       },
+
       timestamp: new Date().toISOString(),
     });
   } catch (error) {

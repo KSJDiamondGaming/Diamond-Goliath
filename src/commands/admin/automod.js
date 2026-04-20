@@ -13,29 +13,54 @@ module.exports = {
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
 
   async execute(interaction) {
-    if (!interaction.guild) {
-      const payload = {
-        content: 'This command can only be used in a server.',
-        flags: MessageFlags.Ephemeral,
-      };
+    try {
+      if (!interaction.guild) {
+        const payload = {
+          content: '❌ This command can only be used in a server.',
+          flags: MessageFlags.Ephemeral,
+        };
+
+        if (interaction.replied || interaction.deferred) {
+          await interaction.followUp(payload);
+        } else {
+          await interaction.reply(payload);
+        }
+        return;
+      }
+
+      const payload = automodPanel.buildMainPanelPayload(interaction.guild);
 
       if (interaction.replied || interaction.deferred) {
-        await interaction.followUp(payload).catch(() => {});
+        await interaction.editReply(payload);
       } else {
-        await interaction.reply(payload).catch(() => {});
+        await interaction.reply({
+          ...payload,
+          flags: MessageFlags.Ephemeral,
+        });
       }
-      return;
-    }
+    } catch (error) {
+      console.error('❌ AutoMod command failed:', error);
 
-    const payload = automodPanel.buildMainPanelPayload(interaction.guild);
+      if (error?.code === 10062 || error?.code === 40060) {
+        return;
+      }
 
-    if (interaction.replied || interaction.deferred) {
-      await interaction.editReply(payload).catch(() => {});
-    } else {
-      await interaction.reply({
-        ...payload,
-        flags: MessageFlags.Ephemeral,
-      }).catch(() => {});
+      try {
+        if (interaction.deferred || interaction.replied) {
+          await interaction.editReply({
+            content: '❌ Failed to open the AutoMod panel.',
+            embeds: [],
+            components: [],
+          });
+        } else {
+          await interaction.reply({
+            content: '❌ Failed to open the AutoMod panel.',
+            flags: MessageFlags.Ephemeral,
+          });
+        }
+      } catch (replyError) {
+        console.error('❌ Failed to send automod failure response:', replyError);
+      }
     }
   },
 };

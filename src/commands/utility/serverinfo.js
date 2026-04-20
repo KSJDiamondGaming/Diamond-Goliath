@@ -2,48 +2,54 @@ const {
   SlashCommandBuilder,
   EmbedBuilder,
   ChannelType,
-  MessageFlags
+  MessageFlags,
 } = require('discord.js');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('serverinfo')
     .setDescription('📊 Server Info • view server stats and information'),
-  
+
   async execute(interaction) {
     try {
       const guild = interaction.guild;
 
       if (!guild) {
         if (interaction.deferred || interaction.replied) {
-          return interaction.editReply({
-            content: 'This command can only be used in a server.',
-            embeds: []
+          return await interaction.editReply({
+            content: '❌ This command can only be used in a server.',
+            embeds: [],
+            components: [],
           });
         }
 
-        return interaction.reply({
-          content: 'This command can only be used in a server.',
-          flags: MessageFlags.Ephemeral
+        return await interaction.reply({
+          content: '❌ This command can only be used in a server.',
+          flags: MessageFlags.Ephemeral,
         });
       }
 
-      const ownerMention = guild.ownerId ? `<@${guild.ownerId}>` : 'Unknown';
+      if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferReply();
+      }
+
+      await guild.members.fetch();
+      const owner = await guild.fetchOwner();
 
       const textChannels = guild.channels.cache.filter(
-        c => c.type === ChannelType.GuildText
+        (c) => c.type === ChannelType.GuildText
       ).size;
 
       const voiceChannels = guild.channels.cache.filter(
-        c => c.type === ChannelType.GuildVoice
+        (c) => c.type === ChannelType.GuildVoice
       ).size;
 
       const categories = guild.channels.cache.filter(
-        c => c.type === ChannelType.GuildCategory
+        (c) => c.type === ChannelType.GuildCategory
       ).size;
 
-      const humans = guild.members.cache.filter(m => !m.user.bot).size;
-      const bots = guild.members.cache.filter(m => m.user.bot).size;
+      const humans = guild.members.cache.filter((m) => !m.user.bot).size;
+      const bots = guild.members.cache.filter((m) => m.user.bot).size;
 
       const createdTimestamp = Math.floor(guild.createdTimestamp / 1000);
 
@@ -54,72 +60,68 @@ module.exports = {
         .addFields(
           {
             name: '👑 Owner',
-            value: ownerMention,
-            inline: true
+            value: `${owner}`,
+            inline: true,
           },
           {
             name: '🆔 Server ID',
             value: `\`${guild.id}\``,
-            inline: true
+            inline: true,
           },
           {
             name: '📅 Created',
             value: `<t:${createdTimestamp}:F>`,
-            inline: false
+            inline: false,
           },
           {
             name: '👥 Members',
             value: `Total: **${guild.memberCount}**\nHumans: **${humans}**\nBots: **${bots}**`,
-            inline: true
+            inline: true,
           },
           {
             name: '💬 Channels',
             value: `Text: **${textChannels}**\nVoice: **${voiceChannels}**\nCategories: **${categories}**`,
-            inline: true
+            inline: true,
           },
           {
             name: '🚀 Boosts',
             value: `Level: **${guild.premiumTier}**\nBoosts: **${guild.premiumSubscriptionCount || 0}**`,
-            inline: true
+            inline: true,
           }
         )
         .setFooter({
           text: `Requested by ${interaction.member?.displayName || interaction.user.username}`,
-          iconURL: interaction.user.displayAvatarURL({ dynamic: true })
+          iconURL: interaction.user.displayAvatarURL({ dynamic: true }),
         })
         .setTimestamp();
 
-      if (interaction.deferred || interaction.replied) {
-        await interaction.editReply({
-          content: '',
-          embeds: [embed]
-        });
-      } else {
-        await interaction.reply({
-          embeds: [embed]
-        });
-      }
-
+      await interaction.editReply({
+        content: '',
+        embeds: [embed],
+      });
     } catch (error) {
       console.error('❌ ServerInfo Error:', error);
 
-      if (error?.code === 10062 || error?.code === 40060) return;
+      if (error?.code === 10062 || error?.code === 40060) {
+        return;
+      }
 
       try {
         if (interaction.deferred || interaction.replied) {
           await interaction.editReply({
             content: '❌ Something went wrong while fetching server info.',
-            embeds: []
+            embeds: [],
+            components: [],
           });
         } else {
           await interaction.reply({
             content: '❌ Something went wrong while fetching server info.',
-            flags: MessageFlags.Ephemeral
+            flags: MessageFlags.Ephemeral,
           });
         }
       } catch (replyError) {
         console.error('❌ Failed to send ServerInfo error response:', replyError);
       }
     }
-  }
+  },
 };

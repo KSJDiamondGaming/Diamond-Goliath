@@ -1,4 +1,7 @@
-const { SlashCommandBuilder } = require('discord.js');
+const {
+  SlashCommandBuilder,
+  MessageFlags,
+} = require('discord.js');
 const { createPanelEmbed } = require('../../utils/embed/embedStyle');
 
 module.exports = {
@@ -6,11 +9,12 @@ module.exports = {
     .setName('ping')
     .setDescription('`🏓` Check the bots latency and status'),
 
-
   async execute(interaction) {
     try {
       if (!interaction.deferred && !interaction.replied) {
-        await interaction.deferReply();
+        await interaction.deferReply({
+          flags: MessageFlags.Ephemeral,
+        });
       }
 
       const apiLatency = Math.round(interaction.client.ws.ping);
@@ -78,16 +82,21 @@ module.exports = {
     } catch (error) {
       console.error('❌ Ping command failed:', error);
 
+      if (error?.code === 10062 || error?.code === 40060) {
+        return;
+      }
+
       try {
         if (interaction.deferred || interaction.replied) {
           await interaction.editReply({
             content: '❌ Ping failed to load.',
             embeds: [],
+            components: [],
           });
         } else {
           await interaction.reply({
             content: '❌ Ping failed to load.',
-            ephemeral: true,
+            flags: MessageFlags.Ephemeral,
           });
         }
       } catch (replyError) {

@@ -1,7 +1,8 @@
 const {
   SlashCommandBuilder,
   PermissionFlagsBits,
-  ChannelType
+  ChannelType,
+  MessageFlags,
 } = require('discord.js');
 const { setGuildConfig } = require('../../utils/config/guildConfigStore');
 
@@ -9,7 +10,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('setmodlog')
     .setDescription('📋 Logs • set the moderation log channel')
-    .addChannelOption(option =>
+    .addChannelOption((option) =>
       option
         .setName('channel')
         .setDescription('📋 Logs • select the channel for moderation logs')
@@ -19,15 +20,47 @@ module.exports = {
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async execute(interaction) {
-    const channel = interaction.options.getChannel('channel');
+    try {
+      if (!interaction.guild) {
+        return await interaction.reply({
+          content: '❌ This command can only be used in a server.',
+          flags: MessageFlags.Ephemeral,
+        });
+      }
 
-    setGuildConfig(interaction.guild.id, {
-      modLogChannelId: channel.id
-    });
+      const channel = interaction.options.getChannel('channel');
 
-    await interaction.reply({
-      content: `✅ Moderation log channel set to ${channel}.`,
-      ephemeral: true
-    });
-  }
+      setGuildConfig(interaction.guild.id, {
+        modLogChannelId: channel.id,
+      });
+
+      await interaction.reply({
+        content: `✅ Moderation log channel set to ${channel}.`,
+        flags: MessageFlags.Ephemeral,
+      });
+    } catch (error) {
+      console.error('❌ SetModLog command failed:', error);
+
+      if (error?.code === 10062 || error?.code === 40060) {
+        return;
+      }
+
+      try {
+        if (interaction.deferred || interaction.replied) {
+          await interaction.editReply({
+            content: '❌ Failed to update the moderation log channel.',
+            embeds: [],
+            components: [],
+          });
+        } else {
+          await interaction.reply({
+            content: '❌ Failed to update the moderation log channel.',
+            flags: MessageFlags.Ephemeral,
+          });
+        }
+      } catch (replyError) {
+        console.error('❌ Failed to send setmodlog failure response:', replyError);
+      }
+    }
+  },
 };

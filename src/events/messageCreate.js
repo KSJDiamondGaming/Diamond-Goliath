@@ -1,33 +1,17 @@
-const { PermissionFlagsBits, EmbedBuilder } = require('discord.js');
+const { PermissionFlagsBits } = require('discord.js');
 const { getGuildAutoModConfig } = require('../utils/automod/automodStore');
 
 const {
-  getPunishments,
   addPunishment,
 } = require('../utils/logging/modlogs/tempPunishmentsStore');
 
 const logModerationAction = require('../utils/logging/modlogs/moderationActionLog');
-
-const spamTracker = new Map();
-const repeatTracker = new Map();
 
 const INVITE_REGEX =
   /(?:https?:\/\/)?(?:www\.)?(?:discord\.gg|discord(?:app)?\.com\/invite)\/[A-Za-z0-9-]+/gi;
 
 const URL_REGEX =
   /https?:\/\/[^\s]+|(?:^|\s)([a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s]*)?/gi;
-
-function now() {
-  return Date.now();
-}
-
-function normalizeContent(content) {
-  return String(content || '').trim().toLowerCase();
-}
-
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
 
 function getDomainFromUrl(raw) {
   if (!raw) return null;
@@ -54,39 +38,10 @@ function isAllowedDomain(match, allowedDomains = []) {
   });
 }
 
-function pruneTimestamps(list, windowMs) {
-  const cutoff = now() - windowMs;
-  return list.filter((entry) => entry.timestamp >= cutoff);
-}
-
-function formatRule(rule) {
-  const map = {
-    'Anti Spam': '📨 Anti Spam',
-    'Repeated Messages': '🔁 Repeated Messages',
-    'Anti Invite': '🔗 Anti Invite',
-    'Anti Link': '🌐 Anti Link',
-    'Caps Abuse': '🔠 Caps Abuse',
-    'Bad Words': '🚫 Bad Words',
-  };
-
-  return map[rule] || `🛡️ ${rule}`;
-}
-
-function actionEmoji(outcome) {
-  const normalized = String(outcome || '').toLowerCase();
-
-  if (normalized.includes('ban')) return '🔨';
-  if (normalized.includes('kick')) return '👢';
-  if (normalized.includes('timeout')) return '⏱️';
-  if (normalized.includes('warn')) return '⚠️';
-  if (normalized.includes('delete')) return '🗑️';
-
-  return '⚡';
-}
-
 function shouldIgnoreMessage(message, config) {
   if (!message.guild || !message.member) return true;
   if (!config?.enabled) return true;
+  if (!message.client.user) return true;
   if (message.author.id === message.client.user.id) return true;
   if (config.ignoreBots && message.author.bot) return true;
   if (config.ignoredChannelIds?.includes(message.channel.id)) return true;
@@ -110,10 +65,9 @@ function shouldIgnoreMessage(message, config) {
   return false;
 }
 
-// --- detection functions unchanged (kept same logic) ---
-
 function detectInvite(message, config) {
   if (!config.antiInvite?.enabled) return null;
+
   const match = message.content?.match(INVITE_REGEX);
   if (!match) return null;
 
@@ -129,7 +83,9 @@ function detectInvite(message, config) {
 function detectLink(message, config) {
   if (!config.antiLink?.enabled) return null;
 
-  const matches = [...(message.content?.matchAll(URL_REGEX) || [])].map((m) => m[0].trim());
+  const matches = [...(message.content?.matchAll(URL_REGEX) || [])].map((m) =>
+    m[0].trim()
+  );
   if (!matches.length) return null;
 
   const blocked = matches.find(
@@ -146,11 +102,23 @@ function detectLink(message, config) {
   };
 }
 
-// --- punishment logic (fixed logger reference) ---
+async function tryDeleteMessage(message) {
+  try {
+    if (message.deletable) {
+      await message.delete();
+      return true;
+    }
+  } catch (error) {
+    console.error('❌ AutoMod failed to delete message:', error);
+  }
 
-async function applyPunishment(message, config, trigger) {
+  return false;
+}
+
+async function applyPunishment(message, trigger) {
   const member = message.member;
   const baseReason = `[AutoMod] ${trigger.rule}: ${trigger.reason}`;
+  const deleted = await tryDeleteMessage(message);
 
   if (trigger.punishment === 'warn') {
     await logModerationAction({
@@ -158,20 +126,24 @@ async function applyPunishment(message, config, trigger) {
       action: 'Warn',
       user: message.author,
       moderator: null,
-      reason: baseReason,
+      reason: deleted ? `${baseReason} Message deleted.` : baseReason,
       color: '#f39c12',
     });
+
+    return;
   }
 
   if (trigger.punishment === 'timeout') {
-    const success = await member.timeout(trigger.timeoutMinutes * 60 * 1000);
+    const durationMs = Number(trigger.timeoutMinutes || 1) * 60 * 1000;
 
-    if (success) {
+    try {
+      await member.timeout(durationMs, baseReason);
+
       addPunishment({
         userId: message.author.id,
         guildId: message.guild.id,
         type: 'mute',
-        expiresAt: Date.now() + trigger.timeoutMinutes * 60 * 1000,
+        expiresAt: Date.now() + durationMs,
       });
 
       await logModerationAction({
@@ -179,10 +151,12 @@ async function applyPunishment(message, config, trigger) {
         action: 'Timeout',
         user: message.author,
         moderator: null,
-        reason: baseReason,
+        reason: deleted ? `${baseReason} Message deleted.` : baseReason,
         duration: `${trigger.timeoutMinutes}m`,
         color: '#e67e22',
       });
+    } catch (error) {
+      console.error('❌ AutoMod timeout failed:', error);
     }
   }
 }
@@ -191,17 +165,21 @@ module.exports = {
   name: 'messageCreate',
 
   async execute(message) {
-    if (!message.guild || !message.member) return;
+    try {
+      if (!message.guild || !message.member) return;
 
-    const config = getGuildAutoModConfig(message.guild.id);
-    if (shouldIgnoreMessage(message, config)) return;
+      const config = getGuildAutoModConfig(message.guild.id);
+      if (shouldIgnoreMessage(message, config)) return;
 
-    const trigger =
-      detectInvite(message, config) ||
-      detectLink(message, config);
+      const trigger =
+        detectInvite(message, config) ||
+        detectLink(message, config);
 
-    if (!trigger) return;
+      if (!trigger) return;
 
-    await applyPunishment(message, config, trigger);
+      await applyPunishment(message, trigger);
+    } catch (error) {
+      console.error('❌ messageCreate handler failed:', error);
+    }
   },
 };

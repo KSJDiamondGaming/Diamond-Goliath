@@ -3,7 +3,7 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  MessageFlags
+  MessageFlags,
 } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
@@ -115,7 +115,7 @@ function createWarningsEmbed(interaction, target, warningCases, page, totalPages
   const activeWarnings = warningCases.filter((c) => c.cleared !== true);
   const clearedWarnings = warningCases.filter((c) => c.cleared === true);
 
-  const pageItems = chunkArray(warningCases, 5)[page];
+  const pageItems = chunkArray(warningCases, 5)[page] || [];
   const description = pageItems.map(buildWarningLine).join('\n\n');
 
   return createPanelEmbed(interaction, {
@@ -150,8 +150,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('warnings')
     .setDescription('📜 Warnings • view a member’s warning history')
-
-    .addUserOption(option =>
+    .addUserOption((option) =>
       option
         .setName('user')
         .setDescription('👤 Target • select a user to view warnings')
@@ -159,89 +158,119 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    const target = interaction.options.getUser('user');
-    const data = readCaseData();
-    const guildCases = data[interaction.guild.id] || {};
+    try {
+      const target = interaction.options.getUser('user');
+      const data = readCaseData();
+      const guildCases = data[interaction.guild.id] || {};
 
-    const warningCases = Object.values(guildCases)
-      .filter((c) => c.action === 'Warn' && c.targetId === target.id)
-      .sort((a, b) => b.caseNumber - a.caseNumber);
+      const warningCases = Object.values(guildCases)
+        .filter((c) => c.action === 'Warn' && c.targetId === target.id)
+        .sort((a, b) => b.caseNumber - a.caseNumber);
 
-    if (!warningCases.length) {
-      const embed = createWarningEmbed(interaction, {
-        title: '⚠️ No Warnings',
-        description: `${target} has no warning history 🎉`,
-        thumbnail: target.displayAvatarURL({ dynamic: true }),
-      });
+      if (!warningCases.length) {
+        const embed = createWarningEmbed(interaction, {
+          title: '⚠️ No Warnings',
+          description: `${target} has no warning history 🎉`,
+          thumbnail: target.displayAvatarURL({ dynamic: true }),
+        });
 
-      return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
-    }
-
-    const pages = chunkArray(warningCases, 5);
-    let page = 0;
-
-    const embed = createWarningsEmbed(
-      interaction,
-      target,
-      warningCases,
-      page,
-      pages.length
-    );
-
-    const components =
-      pages.length > 1 ? [buildButtons(page, pages.length, interaction.user.id)] : [];
-
-    const response = await interaction.reply({
-      embeds: [embed],
-      components,
-      flags: MessageFlags.Ephemeral,
-      fetchReply: true,
-    });
-
-    if (pages.length <= 1) return;
-
-    const collector = response.createMessageComponentCollector({
-      time: 120000,
-    });
-
-    collector.on('collect', async (buttonInteraction) => {
-      if (buttonInteraction.user.id !== interaction.user.id) {
-        return buttonInteraction.reply({
-          content: '❌ You cannot use these buttons.',
+        return await interaction.reply({
+          embeds: [embed],
           flags: MessageFlags.Ephemeral,
         });
       }
 
-      if (buttonInteraction.customId === `warnings_first_${interaction.user.id}`) {
-        page = 0;
-      } else if (buttonInteraction.customId === `warnings_prev_${interaction.user.id}`) {
-        page = Math.max(0, page - 1);
-      } else if (buttonInteraction.customId === `warnings_next_${interaction.user.id}`) {
-        page = Math.min(pages.length - 1, page + 1);
-      } else if (buttonInteraction.customId === `warnings_last_${interaction.user.id}`) {
-        page = pages.length - 1;
+      const pages = chunkArray(warningCases, 5);
+      let page = 0;
+
+      const embed = createWarningsEmbed(
+        interaction,
+        target,
+        warningCases,
+        page,
+        pages.length
+      );
+
+      const components =
+        pages.length > 1 ? [buildButtons(page, pages.length, interaction.user.id)] : [];
+
+      const response = await interaction.reply({
+        embeds: [embed],
+        components,
+        flags: MessageFlags.Ephemeral,
+        fetchReply: true,
+      });
+
+      if (pages.length <= 1) return;
+
+      const collector = response.createMessageComponentCollector({
+        time: 120000,
+      });
+
+      collector.on('collect', async (buttonInteraction) => {
+        if (buttonInteraction.user.id !== interaction.user.id) {
+          return buttonInteraction.reply({
+            content: '❌ You cannot use these buttons.',
+            flags: MessageFlags.Ephemeral,
+          });
+        }
+
+        if (buttonInteraction.customId === `warnings_first_${interaction.user.id}`) {
+          page = 0;
+        } else if (buttonInteraction.customId === `warnings_prev_${interaction.user.id}`) {
+          page = Math.max(0, page - 1);
+        } else if (buttonInteraction.customId === `warnings_next_${interaction.user.id}`) {
+          page = Math.min(pages.length - 1, page + 1);
+        } else if (buttonInteraction.customId === `warnings_last_${interaction.user.id}`) {
+          page = pages.length - 1;
+        }
+
+        await buttonInteraction.update({
+          embeds: [
+            createWarningsEmbed(
+              interaction,
+              target,
+              warningCases,
+              page,
+              pages.length
+            ),
+          ],
+          components: [buildButtons(page, pages.length, interaction.user.id)],
+        });
+      });
+
+      collector.on('end', async () => {
+        try {
+          await interaction.editReply({
+            components: [],
+          });
+        } catch (error) {
+          // ignore collector cleanup failures
+        }
+      });
+    } catch (error) {
+      console.error('❌ Warnings command failed:', error);
+
+      if (error?.code === 10062 || error?.code === 40060) {
+        return;
       }
 
-      await buttonInteraction.update({
-        embeds: [
-          createWarningsEmbed(
-            interaction,
-            target,
-            warningCases,
-            page,
-            pages.length
-          ),
-        ],
-        components: [buildButtons(page, pages.length, interaction.user.id)],
-      });
-    });
-
-    collector.on('end', async () => {
       try {
-        await interaction.editReply({
-          components: [],
-        });
-      } catch (error) {}
-    });
+        if (interaction.deferred || interaction.replied) {
+          await interaction.editReply({
+            content: '❌ Failed to load warning history.',
+            embeds: [],
+            components: [],
+          });
+        } else {
+          await interaction.reply({
+            content: '❌ Failed to load warning history.',
+            flags: MessageFlags.Ephemeral,
+          });
+        }
+      } catch (replyError) {
+        console.error('❌ Failed to send warnings failure response:', replyError);
+      }
+    }
   },
 };
