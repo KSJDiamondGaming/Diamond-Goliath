@@ -1,4 +1,9 @@
 const { MessageFlags } = require('discord.js');
+const {
+  handleModPanelInteraction,
+  handleModPanelModal,
+} = require('../utils/moderation/modPanel');
+const adminPanelInteraction = require('./adminPanelInteraction');
 
 module.exports = {
   name: 'interactionCreate',
@@ -26,8 +31,8 @@ module.exports = {
         return await handleButtonInteraction(interaction);
       }
 
-      if (interaction.isStringSelectMenu()) {
-        return await handleStringSelectMenuInteraction(interaction);
+      if (interaction.isStringSelectMenu() || interaction.isChannelSelectMenu()) {
+        return await handleSelectMenuInteraction(interaction);
       }
 
       if (interaction.isModalSubmit()) {
@@ -97,6 +102,18 @@ async function handleButtonInteraction(interaction) {
   try {
     const customId = interaction.customId;
 
+    if (customId.startsWith('admin:')) {
+      return await adminPanelInteraction.execute(interaction);
+    }
+
+    if (
+      typeof handleModPanelInteraction === 'function' &&
+      customId.startsWith('mod_')
+    ) {
+      const handled = await handleModPanelInteraction(interaction);
+      if (handled !== false) return;
+    }
+
     const caseCommand = interaction.client.commands.get('case');
     if (
       caseCommand &&
@@ -133,12 +150,17 @@ async function handleButtonInteraction(interaction) {
   }
 }
 
-async function handleStringSelectMenuInteraction(interaction) {
+async function handleSelectMenuInteraction(interaction) {
   try {
     const customId = interaction.customId;
 
+    if (customId.startsWith('admin:')) {
+      return await adminPanelInteraction.execute(interaction);
+    }
+
     const caseCommand = interaction.client.commands.get('case');
     if (
+      interaction.isStringSelectMenu() &&
       caseCommand &&
       typeof caseCommand.handleCasePanelSelectMenu === 'function' &&
       customId.startsWith('casepanel_')
@@ -172,6 +194,18 @@ async function handleStringSelectMenuInteraction(interaction) {
 async function handleModalInteraction(interaction) {
   try {
     const customId = interaction.customId;
+
+    if (customId.startsWith('admin:')) {
+      return await adminPanelInteraction.execute(interaction);
+    }
+
+    if (
+      typeof handleModPanelModal === 'function' &&
+      customId.startsWith('mod_')
+    ) {
+      const handled = await handleModPanelModal(interaction);
+      if (handled !== false) return;
+    }
 
     const caseCommand = interaction.client.commands.get('case');
     if (
@@ -240,6 +274,7 @@ function isHandledInteractionType(interaction) {
     interaction.isChatInputCommand() ||
     interaction.isButton() ||
     interaction.isStringSelectMenu() ||
+    interaction.isChannelSelectMenu() ||
     interaction.isModalSubmit()
   );
 }

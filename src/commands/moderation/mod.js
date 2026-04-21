@@ -1,15 +1,33 @@
 const {
   SlashCommandBuilder,
   MessageFlags,
+  PermissionFlagsBits,
 } = require('discord.js');
+
+const { enforceCommandAccess } = require('../../utils/utility/commandAccess');
 const { openModPanel } = require('../../utils/moderation/modPanel');
 
 module.exports = {
+  category: 'Moderation',
+  help: {
+    name: 'mod',
+    description: 'Open the server moderation panel.',
+    usage: '/mod',
+  },
+  access: {
+    permissions: [PermissionFlagsBits.ModerateMembers],
+    ownerOnly: false,
+  },
+
   data: new SlashCommandBuilder()
     .setName('mod')
-    .setDescription('🛡️ Moderation • open the server moderation panel'),
+    .setDescription('🛡️ Moderation • open the server moderation hub'),
 
   async execute(interaction) {
+    const BOT_OWNER_ID = process.env.BOT_OWNER_ID;
+    const denied = await enforceCommandAccess(interaction, module.exports, BOT_OWNER_ID);
+    if (denied) return;
+
     try {
       if (!interaction.guild) {
         return await interaction.reply({
@@ -19,29 +37,13 @@ module.exports = {
       }
 
       return await openModPanel(interaction);
-        } catch (error) {
-      if (error?.code === 10062 || error?.code === 40060) {
-        return;
-      }
-
+    } catch (error) {
       console.error('❌ Mod command failed:', error);
 
-      try {
-        if (interaction.deferred || interaction.replied) {
-          await interaction.editReply({
-            content: '❌ Failed to open the moderation panel.',
-            embeds: [],
-            components: [],
-          });
-        } else {
-          await interaction.reply({
-            content: '❌ Failed to open the moderation panel.',
-            flags: MessageFlags.Ephemeral,
-          });
-        }
-      } catch (replyError) {
-        console.error('❌ Failed to send mod failure response:', replyError);
-      }
+      return interaction.reply({
+        content: '❌ Failed to open moderation hub.',
+        flags: MessageFlags.Ephemeral,
+      });
     }
   },
 };
