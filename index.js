@@ -12,6 +12,30 @@ const {
   Partials,
 } = require('discord.js');
 
+/* ---------------- CLIENT ---------------- */
+
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMessageReactions,
+    GatewayIntentBits.GuildVoiceStates,
+  ],
+  partials: [
+    Partials.Channel,
+    Partials.Message,
+    Partials.Reaction,
+  ],
+});
+
+client.commands = new Collection();
+client.cooldowns = new Collection();
+client.isBooting = true;
+client.startTimestamp = Date.now();
+client.bootId = `${process.pid}-${Date.now()}`;
+
 /* ---------------- PROCESS SAFETY ---------------- */
 
 let isShuttingDown = false;
@@ -52,30 +76,6 @@ async function shutdown(signal) {
 
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
-
-/* ---------------- CLIENT ---------------- */
-
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMessageReactions,
-    GatewayIntentBits.GuildVoiceStates,
-  ],
-  partials: [
-    Partials.Channel,
-    Partials.Message,
-    Partials.Reaction,
-  ],
-});
-
-client.commands = new Collection();
-client.cooldowns = new Collection();
-client.isBooting = true;
-client.startTimestamp = Date.now();
-client.bootId = `${process.pid}-${Date.now()}`;
 
 /* ---------------- FILE HELPERS ---------------- */
 
@@ -272,9 +272,7 @@ async function maybeSyncCommands() {
   }
 
   terminal.line('🛰️ Command Sync', 'Starting automatic sync...');
-
   await syncCommands();
-
   terminal.line('🛰️ Command Sync', 'Finished automatic sync');
 }
 

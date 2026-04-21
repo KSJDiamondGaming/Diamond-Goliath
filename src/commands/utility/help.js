@@ -5,12 +5,12 @@ const {
   StringSelectMenuBuilder,
   ButtonBuilder,
   ButtonStyle,
-  ComponentType
+  MessageFlags,
 } = require('discord.js');
 
 const {
   canAccessCommand,
-  enforceCommandAccess
+  enforceCommandAccess,
 } = require('../../utils/utility/commandAccess');
 
 const BOT_OWNER_ID = process.env.BOT_OWNER_ID || 'YOUR_USER_ID_HERE';
@@ -18,36 +18,36 @@ const BOT_OWNER_ID = process.env.BOT_OWNER_ID || 'YOUR_USER_ID_HERE';
 const CATEGORY_META = {
   Utility: {
     emoji: '🧰',
-    description: 'General useful commands for everyone.'
+    description: 'General useful commands for everyone.',
   },
   Moderation: {
     emoji: '🛡️',
-    description: 'Moderation tools for staff members.'
+    description: 'Moderation tools for staff members.',
   },
   Logging: {
     emoji: '📜',
-    description: 'Logging and moderation log setup commands.'
+    description: 'Logging and moderation log setup commands.',
   },
   Admin: {
     emoji: '⚙️',
-    description: 'Administrative and server management commands.'
+    description: 'Administrative and server management commands.',
   },
   Stats: {
     emoji: '📊',
-    description: 'Server stats and stat panel setup commands.'
+    description: 'Server stats and stat panel setup commands.',
   },
   Embeds: {
     emoji: '🎨',
-    description: 'Embed and welcome message tools.'
+    description: 'Embed and welcome message tools.',
   },
   Fun: {
     emoji: '🎉',
-    description: 'Fun and community commands.'
+    description: 'Fun and community commands.',
   },
   Other: {
     emoji: '📁',
-    description: 'Other available commands.'
-  }
+    description: 'Other available commands.',
+  },
 };
 
 function normalizeCategory(category) {
@@ -96,6 +96,11 @@ function getCommandDescription(command) {
   );
 }
 
+function getHelpState(interaction) {
+  const visibleCommands = getVisibleCommands(interaction);
+  return groupCommandsByCategory(visibleCommands);
+}
+
 function buildHomeEmbed(interaction, groupedCommands) {
   const categories = Object.keys(groupedCommands).sort((a, b) => a.localeCompare(b));
   const totalCommands = categories.reduce(
@@ -105,7 +110,7 @@ function buildHomeEmbed(interaction, groupedCommands) {
 
   const categoryLines = categories.length
     ? categories
-        .map(category => {
+        .map((category) => {
           const meta = CATEGORY_META[category] || CATEGORY_META.Other;
           const count = groupedCommands[category].length;
           return `${meta.emoji} **${category}** • ${count} command${count === 1 ? '' : 's'}`;
@@ -121,15 +126,15 @@ function buildHomeEmbed(interaction, groupedCommands) {
     .addFields(
       {
         name: 'Categories',
-        value: categoryLines
+        value: categoryLines,
       },
       {
         name: 'Visible Commands',
-        value: `\`${totalCommands}\` command${totalCommands === 1 ? '' : 's'}`
+        value: `\`${totalCommands}\` command${totalCommands === 1 ? '' : 's'}`,
       }
     )
     .setFooter({
-      text: `${interaction.client.user.username} • Only commands you can use are shown`
+      text: `${interaction.client.user.username} • Only commands you can use are shown`,
     })
     .setTimestamp();
 }
@@ -139,7 +144,7 @@ function buildCategoryEmbed(category, commands) {
 
   const commandList = commands.length
     ? commands
-        .map(command => `**/${command.data.name}** — ${getCommandDescription(command)}`)
+        .map((command) => `**/${command.data.name}** — ${getCommandDescription(command)}`)
         .join('\n')
     : 'No commands available in this category.';
 
@@ -149,10 +154,10 @@ function buildCategoryEmbed(category, commands) {
     .setDescription(meta.description)
     .addFields({
       name: `Available in ${category}`,
-      value: commandList
+      value: commandList,
     })
     .setFooter({
-      text: `${commands.length} command${commands.length === 1 ? '' : 's'} visible to you`
+      text: `${commands.length} command${commands.length === 1 ? '' : 's'} visible to you`,
     })
     .setTimestamp();
 }
@@ -160,12 +165,8 @@ function buildCategoryEmbed(category, commands) {
 function buildComponents(groupedCommands, selectedCategory = null, disabled = false) {
   const categories = Object.keys(groupedCommands).sort((a, b) => a.localeCompare(b));
 
-  const selectMenu = new StringSelectMenuBuilder()
-    .setCustomId('help-category-select')
-    .setPlaceholder('Choose a command category')
-    .setDisabled(disabled)
-    .addOptions(
-      categories.map(category => {
+  const options = categories.length
+    ? categories.map((category) => {
         const meta = CATEGORY_META[category] || CATEGORY_META.Other;
         const count = groupedCommands[category].length;
 
@@ -174,10 +175,24 @@ function buildComponents(groupedCommands, selectedCategory = null, disabled = fa
           description: `${count} command${count === 1 ? '' : 's'} available`,
           value: category,
           emoji: meta.emoji,
-          default: selectedCategory === category
+          default: selectedCategory === category,
         };
       })
-    );
+    : [
+        {
+          label: 'Other',
+          description: 'No commands available',
+          value: 'Other',
+          emoji: CATEGORY_META.Other.emoji,
+          default: true,
+        },
+      ];
+
+  const selectMenu = new StringSelectMenuBuilder()
+    .setCustomId('help-category-select')
+    .setPlaceholder('Choose a command category')
+    .setDisabled(disabled || !categories.length)
+    .addOptions(options);
 
   const selectRow = new ActionRowBuilder().addComponents(selectMenu);
 
@@ -198,16 +213,65 @@ function buildComponents(groupedCommands, selectedCategory = null, disabled = fa
   return [selectRow, buttonRow];
 }
 
+async function handleHelpSelectMenu(interaction) {
+  if (interaction.customId !== 'help-category-select') return false;
+
+  const groupedCommands = getHelpState(interaction);
+  const selectedCategory = interaction.values?.[0];
+
+  if (!selectedCategory || !groupedCommands[selectedCategory]) {
+    await interaction.reply({
+      content: '⚠️ That help category is no longer available.',
+      flags: MessageFlags.Ephemeral,
+    });
+    return true;
+  }
+
+  const commands = groupedCommands[selectedCategory] || [];
+
+  await interaction.update({
+    embeds: [buildCategoryEmbed(selectedCategory, commands)],
+    components: buildComponents(groupedCommands, selectedCategory),
+  });
+
+  return true;
+}
+
+async function handleHelpButton(interaction) {
+  if (interaction.customId === 'help-back-home') {
+    const groupedCommands = getHelpState(interaction);
+
+    await interaction.update({
+      embeds: [buildHomeEmbed(interaction, groupedCommands)],
+      components: buildComponents(groupedCommands),
+    });
+
+    return true;
+  }
+
+  if (interaction.customId === 'help-close') {
+    await interaction.update({
+      content: 'Help panel closed.',
+      embeds: [],
+      components: [],
+    });
+
+    return true;
+  }
+
+  return false;
+}
+
 module.exports = {
   category: 'Utility',
   help: {
     name: 'help',
     description: 'Browse bot commands by category based on your permissions.',
-    usage: '/help'
+    usage: '/help',
   },
   access: {
     permissions: [],
-    ownerOnly: false
+    ownerOnly: false,
   },
 
   data: new SlashCommandBuilder()
@@ -218,79 +282,22 @@ module.exports = {
     const denied = await enforceCommandAccess(interaction, module.exports, BOT_OWNER_ID);
     if (denied) return;
 
-    const visibleCommands = getVisibleCommands(interaction);
-    const groupedCommands = groupCommandsByCategory(visibleCommands);
+    const groupedCommands = getHelpState(interaction);
 
     if (!Object.keys(groupedCommands).length) {
       return interaction.reply({
         content: 'I could not find any commands available to you.',
-        ephemeral: true
+        flags: MessageFlags.Ephemeral,
       });
     }
 
-    const homeEmbed = buildHomeEmbed(interaction, groupedCommands);
-    const homeComponents = buildComponents(groupedCommands);
-
-    const message = await interaction.reply({
-      embeds: [homeEmbed],
-      components: homeComponents,
-      ephemeral: true,
-      fetchReply: true
+    return interaction.reply({
+      embeds: [buildHomeEmbed(interaction, groupedCommands)],
+      components: buildComponents(groupedCommands),
+      flags: MessageFlags.Ephemeral,
     });
+  },
 
-    const collector = message.createMessageComponentCollector({
-      componentType: ComponentType.MessageComponent,
-      time: 120000
-    });
-
-    collector.on('collect', async componentInteraction => {
-      if (componentInteraction.user.id !== interaction.user.id) {
-        return componentInteraction.reply({
-          content: 'This help panel is not for you.',
-          ephemeral: true
-        });
-      }
-
-      if (componentInteraction.isStringSelectMenu()) {
-        const selectedCategory = componentInteraction.values[0];
-        const commands = groupedCommands[selectedCategory] || [];
-
-        return componentInteraction.update({
-          embeds: [buildCategoryEmbed(selectedCategory, commands)],
-          components: buildComponents(groupedCommands, selectedCategory)
-        });
-      }
-
-      if (componentInteraction.isButton()) {
-        if (componentInteraction.customId === 'help-back-home') {
-          return componentInteraction.update({
-            embeds: [buildHomeEmbed(interaction, groupedCommands)],
-            components: buildComponents(groupedCommands)
-          });
-        }
-
-        if (componentInteraction.customId === 'help-close') {
-          collector.stop('closed');
-
-          return componentInteraction.update({
-            content: 'Help panel closed.',
-            embeds: [],
-            components: []
-          });
-        }
-      }
-    });
-
-    collector.on('end', async (_, reason) => {
-      if (reason === 'closed') return;
-
-      try {
-        await interaction.editReply({
-          components: buildComponents(groupedCommands, null, true)
-        });
-      } catch (error) {
-        // Ignore message edit failures after timeout/deletion
-      }
-    });
-  }
+  handleHelpSelectMenu,
+  handleHelpButton,
 };

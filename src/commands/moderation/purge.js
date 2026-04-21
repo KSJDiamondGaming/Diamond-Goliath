@@ -44,7 +44,7 @@ module.exports = {
     if (!botMember.permissions.has(PermissionFlagsBits.ManageMessages)) {
       return interaction.reply({
         content: 'I do not have permission to manage messages in this server.',
-        ephemeral: true
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -65,14 +65,14 @@ module.exports = {
 
       await interaction.reply({
         embeds: [embed],
-        ephemeral: true
+        flags: MessageFlags.Ephemeral,
       });
     } catch (error) {
       console.error('Purge command error:', error);
 
       await interaction.reply({
         content: 'I could not delete those messages. Messages older than 14 days cannot be bulk deleted.',
-        ephemeral: true
+        flags: MessageFlags.Ephemeral,
       });
     }
   }

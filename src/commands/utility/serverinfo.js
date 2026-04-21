@@ -90,7 +90,7 @@ module.exports = {
 
     await interaction.reply({
       embeds: [embed],
-      ephemeral: true
+      flags: MessageFlags.Ephemeral,
     });
   }
 };

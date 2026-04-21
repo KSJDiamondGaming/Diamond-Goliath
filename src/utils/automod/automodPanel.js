@@ -8,6 +8,10 @@ const {
   TextInputBuilder,
   TextInputStyle,
   MessageFlags,
+  ChannelSelectMenuBuilder,
+  RoleSelectMenuBuilder,
+  UserSelectMenuBuilder,
+  ChannelType,
 } = require('discord.js');
 
 const autoModStore = require('./automodStore');
@@ -225,6 +229,39 @@ function getChannelDisplay(guild, channelId) {
   return `Missing channel (${resolvedId})`;
 }
 
+function getIgnoredChannelsDisplay(guild, ids) {
+  return ids.length
+    ? ids
+        .map((id) => {
+          const channel = guild.channels.cache.get(id);
+          return channel ? `📁 ${channel}` : `📁 Missing channel (${id})`;
+        })
+        .join('\n')
+    : 'None';
+}
+
+function getIgnoredRolesDisplay(guild, ids) {
+  return ids.length
+    ? ids
+        .map((id) => {
+          const role = guild.roles.cache.get(id);
+          return role ? `🎭 <@&${role.id}>` : `🎭 Missing role (${id})`;
+        })
+        .join('\n')
+    : 'None';
+}
+
+function getIgnoredUsersDisplay(guild, ids) {
+  return ids.length
+    ? ids
+        .map((id) => {
+          const member = guild.members.cache.get(id);
+          return member ? `👤 <@${id}>` : `👤 Missing user (${id})`;
+        })
+        .join('\n')
+    : 'None';
+}
+
 function buildMainPanelPayload(guild) {
   const config = getConfig(guild.id);
 
@@ -248,23 +285,17 @@ function buildMainPanelPayload(guild) {
       },
       {
         name: '🚫 Ignored Channels',
-        value: config.ignoredChannelIds.length
-          ? config.ignoredChannelIds.map((id) => `📁 <#${id}>`).join('\n')
-          : 'None',
+        value: getIgnoredChannelsDisplay(guild, config.ignoredChannelIds),
         inline: true,
       },
       {
         name: '🎭 Ignored Roles',
-        value: config.ignoredRoleIds.length
-          ? config.ignoredRoleIds.map((id) => `🎭 <@&${id}>`).join('\n')
-          : 'None',
+        value: getIgnoredRolesDisplay(guild, config.ignoredRoleIds),
         inline: true,
       },
       {
         name: '👤 Ignored Users',
-        value: config.ignoredUserIds.length
-          ? config.ignoredUserIds.map((id) => `👤 <@${id}>`).join('\n')
-          : 'None',
+        value: getIgnoredUsersDisplay(guild, config.ignoredUserIds),
         inline: true,
       }
     )
@@ -284,7 +315,12 @@ function buildMainPanelPayload(guild) {
     new ButtonBuilder()
       .setCustomId('automod_view_ignore')
       .setLabel('Ignore')
-      .setStyle(ButtonStyle.Primary)
+      .setStyle(ButtonStyle.Primary),
+
+    new ButtonBuilder()
+      .setCustomId('admin:home')
+      .setLabel('Back')
+      .setStyle(ButtonStyle.Secondary)
   );
 
   const navRow = new ActionRowBuilder().addComponents(
@@ -440,6 +476,27 @@ function buildLogsPanelPayload(guild) {
     })
     .setTimestamp();
 
+  const channelOptionsCount = guild.channels.cache.filter((channel) => {
+    return [
+      ChannelType.GuildText,
+      ChannelType.GuildAnnouncement,
+      ChannelType.GuildForum,
+    ].includes(channel.type);
+  }).size;
+
+  const channelRow = new ActionRowBuilder().addComponents(
+    new ChannelSelectMenuBuilder()
+      .setCustomId('automod_logs_channel_select')
+      .setPlaceholder('Select AutoMod logs channel')
+      .setMinValues(0)
+      .setMaxValues(Math.max(1, Math.min(1, channelOptionsCount || 1)))
+      .addChannelTypes(
+        ChannelType.GuildText,
+        ChannelType.GuildAnnouncement,
+        ChannelType.GuildForum
+      )
+  );
+
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('automod_toggle_logs')
@@ -447,9 +504,9 @@ function buildLogsPanelPayload(guild) {
       .setStyle(stateStyle(config.logs.enabled)),
 
     new ButtonBuilder()
-      .setCustomId('automod_edit_logs')
-      .setLabel('Set Channel')
-      .setStyle(ButtonStyle.Primary),
+      .setCustomId('automod_clear_logs_channel')
+      .setLabel('Clear Channel')
+      .setStyle(ButtonStyle.Secondary),
 
     new ButtonBuilder()
       .setCustomId('automod_back_main')
@@ -459,7 +516,7 @@ function buildLogsPanelPayload(guild) {
 
   return {
     embeds: [embed],
-    components: [row],
+    components: [channelRow, row],
   };
 }
 
@@ -469,37 +526,83 @@ function buildIgnorePanelPayload(guild) {
   const embed = new EmbedBuilder()
     .setColor(0x5865f2)
     .setTitle('🙈 AutoMod Ignore Lists')
-    .setDescription('Manage ignored channels, roles, and users')
+    .setDescription('Choose channels, roles, and users directly from the server.')
     .addFields(
       {
         name: '🚫 Ignored Channels',
-        value: config.ignoredChannelIds.length
-          ? config.ignoredChannelIds.map((id) => `📁 <#${id}>`).join('\n')
-          : 'None',
+        value: getIgnoredChannelsDisplay(guild, config.ignoredChannelIds),
         inline: false,
       },
       {
         name: '🎭 Ignored Roles',
-        value: config.ignoredRoleIds.length
-          ? config.ignoredRoleIds.map((id) => `🎭 <@&${id}>`).join('\n')
-          : 'None',
+        value: getIgnoredRolesDisplay(guild, config.ignoredRoleIds),
         inline: false,
       },
       {
         name: '👤 Ignored Users',
-        value: config.ignoredUserIds.length
-          ? config.ignoredUserIds.map((id) => `👤 <@${id}>`).join('\n')
-          : 'None',
+        value: getIgnoredUsersDisplay(guild, config.ignoredUserIds),
         inline: false,
       }
     )
     .setTimestamp();
 
-  const row = new ActionRowBuilder().addComponents(
+  const maxChannelValues = Math.max(1, Math.min(25, guild.channels.cache.size || 1));
+  const maxRoleValues = Math.max(
+    1,
+    Math.min(25, guild.roles.cache.filter((role) => role.id !== guild.id).size || 1)
+  );
+  const maxUserValues = Math.max(1, Math.min(25, guild.memberCount || 1));
+
+  const channelRow = new ActionRowBuilder().addComponents(
+    new ChannelSelectMenuBuilder()
+      .setCustomId('automod_ignore_channels_select')
+      .setPlaceholder('Select ignored channels')
+      .setMinValues(0)
+      .setMaxValues(maxChannelValues)
+      .addChannelTypes(
+        ChannelType.GuildText,
+        ChannelType.GuildAnnouncement,
+        ChannelType.PublicThread,
+        ChannelType.PrivateThread,
+        ChannelType.AnnouncementThread,
+        ChannelType.GuildVoice,
+        ChannelType.GuildStageVoice,
+        ChannelType.GuildForum,
+        ChannelType.GuildCategory
+      )
+  );
+
+  const roleRow = new ActionRowBuilder().addComponents(
+    new RoleSelectMenuBuilder()
+      .setCustomId('automod_ignore_roles_select')
+      .setPlaceholder('Select ignored roles')
+      .setMinValues(0)
+      .setMaxValues(maxRoleValues)
+  );
+
+  const userRow = new ActionRowBuilder().addComponents(
+    new UserSelectMenuBuilder()
+      .setCustomId('automod_ignore_users_select')
+      .setPlaceholder('Select ignored users')
+      .setMinValues(0)
+      .setMaxValues(maxUserValues)
+  );
+
+  const buttonRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId('automod_edit_ignore')
-      .setLabel('Edit Ignore')
-      .setStyle(ButtonStyle.Primary),
+      .setCustomId('automod_clear_ignored_channels')
+      .setLabel('Clear Channels')
+      .setStyle(ButtonStyle.Secondary),
+
+    new ButtonBuilder()
+      .setCustomId('automod_clear_ignored_roles')
+      .setLabel('Clear Roles')
+      .setStyle(ButtonStyle.Secondary),
+
+    new ButtonBuilder()
+      .setCustomId('automod_clear_ignored_users')
+      .setLabel('Clear Users')
+      .setStyle(ButtonStyle.Secondary),
 
     new ButtonBuilder()
       .setCustomId('automod_back_main')
@@ -509,7 +612,7 @@ function buildIgnorePanelPayload(guild) {
 
   return {
     embeds: [embed],
-    components: [row],
+    components: [channelRow, roleRow, userRow, buttonRow],
   };
 }
 
@@ -583,43 +686,6 @@ function buildRuleEditModal(ruleKey, guildId) {
   }
 
   return modal;
-}
-
-function buildLogsModal(guildId) {
-  const config = getConfig(guildId);
-
-  return new ModalBuilder()
-    .setCustomId('automod_modal_logs')
-    .setTitle('AutoMod Logs')
-    .addComponents(
-      textRow('enabled', 'Enabled (true/false)', String(config.logs.enabled)),
-      textRow('channel_id', 'Log Channel ID', config.logs.channelId || '')
-    );
-}
-
-function buildIgnoreModal(guildId) {
-  const config = getConfig(guildId);
-
-  return new ModalBuilder()
-    .setCustomId('automod_modal_ignore')
-    .setTitle('AutoMod Ignore Lists')
-    .addComponents(
-      paragraphRow(
-        'channels',
-        'Ignored Channel IDs (comma separated)',
-        config.ignoredChannelIds.join(', ')
-      ),
-      paragraphRow(
-        'roles',
-        'Ignored Role IDs (comma separated)',
-        config.ignoredRoleIds.join(', ')
-      ),
-      paragraphRow(
-        'users',
-        'Ignored User IDs (comma separated)',
-        config.ignoredUserIds.join(', ')
-      )
-    );
 }
 
 function textRow(customId, label, value = '') {
@@ -740,21 +806,6 @@ function applyRuleModal(ruleKey, fields, guildId) {
   return saveConfig(guildId, config);
 }
 
-function applyLogsModal(fields, guildId) {
-  const config = getConfig(guildId);
-  config.logs.enabled = parseBoolean(fields.enabled, config.logs.enabled);
-  config.logs.channelId = extractId(fields.channel_id) || null;
-  return saveConfig(guildId, config);
-}
-
-function applyIgnoreModal(fields, guildId) {
-  const config = getConfig(guildId);
-  config.ignoredChannelIds = parseCsv(fields.channels).map(extractId).filter(Boolean);
-  config.ignoredRoleIds = parseCsv(fields.roles).map(extractId).filter(Boolean);
-  config.ignoredUserIds = parseCsv(fields.users).map(extractId).filter(Boolean);
-  return saveConfig(guildId, config);
-}
-
 async function handleInteraction(interaction) {
   if (!interaction.guild) return false;
 
@@ -762,13 +813,6 @@ async function handleInteraction(interaction) {
     const { customId } = interaction;
 
     if (customId === 'automod_toggle_global') {
-      console.log('AUTOMOD BUTTON HANDLER', {
-  customId,
-  interactionId: interaction.id,
-  ageMs: Date.now() - interaction.createdTimestamp,
-  deferred: interaction.deferred,
-  replied: interaction.replied,
-});
       await interaction.deferUpdate();
       const config = getConfig(interaction.guild.id);
       config.enabled = !config.enabled;
@@ -828,13 +872,39 @@ async function handleInteraction(interaction) {
       return true;
     }
 
-    if (customId === 'automod_edit_logs') {
-      await interaction.showModal(buildLogsModal(interaction.guild.id));
+    if (customId === 'automod_clear_logs_channel') {
+      await interaction.deferUpdate();
+      const config = getConfig(interaction.guild.id);
+      config.logs.channelId = null;
+      saveConfig(interaction.guild.id, config);
+      await interaction.editReply(buildLogsPanelPayload(interaction.guild));
       return true;
     }
 
-    if (customId === 'automod_edit_ignore') {
-      await interaction.showModal(buildIgnoreModal(interaction.guild.id));
+    if (customId === 'automod_clear_ignored_channels') {
+      await interaction.deferUpdate();
+      const config = getConfig(interaction.guild.id);
+      config.ignoredChannelIds = [];
+      saveConfig(interaction.guild.id, config);
+      await interaction.editReply(buildIgnorePanelPayload(interaction.guild));
+      return true;
+    }
+
+    if (customId === 'automod_clear_ignored_roles') {
+      await interaction.deferUpdate();
+      const config = getConfig(interaction.guild.id);
+      config.ignoredRoleIds = [];
+      saveConfig(interaction.guild.id, config);
+      await interaction.editReply(buildIgnorePanelPayload(interaction.guild));
+      return true;
+    }
+
+    if (customId === 'automod_clear_ignored_users') {
+      await interaction.deferUpdate();
+      const config = getConfig(interaction.guild.id);
+      config.ignoredUserIds = [];
+      saveConfig(interaction.guild.id, config);
+      await interaction.editReply(buildIgnorePanelPayload(interaction.guild));
       return true;
     }
 
@@ -902,6 +972,54 @@ async function handleInteraction(interaction) {
     return false;
   }
 
+  if (interaction.isChannelSelectMenu()) {
+    if (interaction.customId === 'automod_logs_channel_select') {
+      await interaction.deferUpdate();
+      const config = getConfig(interaction.guild.id);
+      config.logs.channelId = interaction.values[0] ? extractId(interaction.values[0]) : null;
+      saveConfig(interaction.guild.id, config);
+      await interaction.editReply(buildLogsPanelPayload(interaction.guild));
+      return true;
+    }
+
+    if (interaction.customId === 'automod_ignore_channels_select') {
+      await interaction.deferUpdate();
+      const config = getConfig(interaction.guild.id);
+      config.ignoredChannelIds = interaction.values.map(extractId).filter(Boolean);
+      saveConfig(interaction.guild.id, config);
+      await interaction.editReply(buildIgnorePanelPayload(interaction.guild));
+      return true;
+    }
+
+    return false;
+  }
+
+  if (interaction.isRoleSelectMenu()) {
+    if (interaction.customId === 'automod_ignore_roles_select') {
+      await interaction.deferUpdate();
+      const config = getConfig(interaction.guild.id);
+      config.ignoredRoleIds = interaction.values.map(extractId).filter(Boolean);
+      saveConfig(interaction.guild.id, config);
+      await interaction.editReply(buildIgnorePanelPayload(interaction.guild));
+      return true;
+    }
+
+    return false;
+  }
+
+  if (interaction.isUserSelectMenu()) {
+    if (interaction.customId === 'automod_ignore_users_select') {
+      await interaction.deferUpdate();
+      const config = getConfig(interaction.guild.id);
+      config.ignoredUserIds = interaction.values.map(extractId).filter(Boolean);
+      saveConfig(interaction.guild.id, config);
+      await interaction.editReply(buildIgnorePanelPayload(interaction.guild));
+      return true;
+    }
+
+    return false;
+  }
+
   if (interaction.isModalSubmit()) {
     const { customId } = interaction;
 
@@ -914,32 +1032,6 @@ async function handleInteraction(interaction) {
       applyRuleModal(ruleKey, fields, interaction.guild.id);
       await interaction.reply({
         ...buildRulesPanelPayload(interaction.guild, ruleKey),
-        flags: MessageFlags.Ephemeral,
-      });
-      return true;
-    }
-
-    if (customId === 'automod_modal_logs') {
-      const fields = Object.fromEntries(
-        [...interaction.fields.fields.values()].map((field) => [field.customId, field.value])
-      );
-
-      applyLogsModal(fields, interaction.guild.id);
-      await interaction.reply({
-        ...buildLogsPanelPayload(interaction.guild),
-        flags: MessageFlags.Ephemeral,
-      });
-      return true;
-    }
-
-    if (customId === 'automod_modal_ignore') {
-      const fields = Object.fromEntries(
-        [...interaction.fields.fields.values()].map((field) => [field.customId, field.value])
-      );
-
-      applyIgnoreModal(fields, interaction.guild.id);
-      await interaction.reply({
-        ...buildIgnorePanelPayload(interaction.guild),
         flags: MessageFlags.Ephemeral,
       });
       return true;

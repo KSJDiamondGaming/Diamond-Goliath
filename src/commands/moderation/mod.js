@@ -30,20 +30,52 @@ module.exports = {
 
     try {
       if (!interaction.guild) {
+        if (interaction.deferred || interaction.replied) {
+          return await interaction.followUp({
+            content: '❌ This command can only be used in a server.',
+            flags: MessageFlags.Ephemeral,
+          });
+        }
+
         return await interaction.reply({
           content: '❌ This command can only be used in a server.',
           flags: MessageFlags.Ephemeral,
         });
       }
 
-      return await openModPanel(interaction);
+      if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferReply({
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
+      await openModPanel(interaction);
     } catch (error) {
       console.error('❌ Mod command failed:', error);
 
-      return interaction.reply({
-        content: '❌ Failed to open moderation hub.',
-        flags: MessageFlags.Ephemeral,
-      });
+      try {
+        if (interaction.deferred) {
+          return await interaction.editReply({
+            content: '❌ Failed to open moderation hub.',
+            embeds: [],
+            components: [],
+          });
+        }
+
+        if (interaction.replied) {
+          return await interaction.followUp({
+            content: '❌ Failed to open moderation hub.',
+            flags: MessageFlags.Ephemeral,
+          });
+        }
+
+        return await interaction.reply({
+          content: '❌ Failed to open moderation hub.',
+          flags: MessageFlags.Ephemeral,
+        });
+      } catch (replyError) {
+        console.error('❌ Failed to send mod command error response:', replyError);
+      }
     }
   },
 };

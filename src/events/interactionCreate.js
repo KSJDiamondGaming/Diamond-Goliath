@@ -4,6 +4,9 @@ const {
   handleModPanelModal,
 } = require('../utils/moderation/modPanel');
 const adminPanelInteraction = require('./adminPanelInteraction');
+const helpCommand = require('../commands/utility/help');
+const automodPanel = require('../utils/automod/automodPanel');
+const { handleStatsInteraction } = require('../utils/stats/statsUI');
 
 module.exports = {
   name: 'interactionCreate',
@@ -31,7 +34,12 @@ module.exports = {
         return await handleButtonInteraction(interaction);
       }
 
-      if (interaction.isStringSelectMenu() || interaction.isChannelSelectMenu()) {
+      if (
+        interaction.isStringSelectMenu() ||
+        interaction.isChannelSelectMenu() ||
+        interaction.isRoleSelectMenu() ||
+        interaction.isUserSelectMenu()
+      ) {
         return await handleSelectMenuInteraction(interaction);
       }
 
@@ -107,6 +115,27 @@ async function handleButtonInteraction(interaction) {
     }
 
     if (
+      typeof helpCommand.handleHelpButton === 'function' &&
+      (customId === 'help-back-home' || customId === 'help-close')
+    ) {
+      const handled = await helpCommand.handleHelpButton(interaction);
+      if (handled !== false) return;
+    }
+
+    if (
+      typeof automodPanel.handleInteraction === 'function' &&
+      customId.startsWith('automod_')
+    ) {
+      const handled = await automodPanel.handleInteraction(interaction);
+      if (handled !== false) return;
+    }
+
+    if (typeof handleStatsInteraction === 'function' && customId.startsWith('stats_')) {
+      const handled = await handleStatsInteraction(interaction);
+      if (handled !== false) return;
+    }
+
+    if (
       typeof handleModPanelInteraction === 'function' &&
       customId.startsWith('mod_')
     ) {
@@ -158,6 +187,28 @@ async function handleSelectMenuInteraction(interaction) {
       return await adminPanelInteraction.execute(interaction);
     }
 
+    if (
+      typeof automodPanel.handleInteraction === 'function' &&
+      customId.startsWith('automod_')
+    ) {
+      const handled = await automodPanel.handleInteraction(interaction);
+      if (handled !== false) return;
+    }
+
+    if (typeof handleStatsInteraction === 'function' && customId.startsWith('stats_')) {
+      const handled = await handleStatsInteraction(interaction);
+      if (handled !== false) return;
+    }
+
+    if (
+      interaction.isStringSelectMenu() &&
+      typeof helpCommand.handleHelpSelectMenu === 'function' &&
+      customId === 'help-category-select'
+    ) {
+      const handled = await helpCommand.handleHelpSelectMenu(interaction);
+      if (handled !== false) return;
+    }
+
     const caseCommand = interaction.client.commands.get('case');
     if (
       interaction.isStringSelectMenu() &&
@@ -197,6 +248,14 @@ async function handleModalInteraction(interaction) {
 
     if (customId.startsWith('admin:')) {
       return await adminPanelInteraction.execute(interaction);
+    }
+
+    if (
+      typeof automodPanel.handleInteraction === 'function' &&
+      customId.startsWith('automod_')
+    ) {
+      const handled = await automodPanel.handleInteraction(interaction);
+      if (handled !== false) return;
     }
 
     if (
@@ -275,6 +334,8 @@ function isHandledInteractionType(interaction) {
     interaction.isButton() ||
     interaction.isStringSelectMenu() ||
     interaction.isChannelSelectMenu() ||
+    interaction.isRoleSelectMenu() ||
+    interaction.isUserSelectMenu() ||
     interaction.isModalSubmit()
   );
 }
