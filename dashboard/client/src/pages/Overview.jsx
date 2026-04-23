@@ -1,12 +1,13 @@
-import { memo, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
-import PageShell, {
-  EmptyState,
-  LoadingPanel,
-  Notice,
-  SectionCard,
-} from '../components/PageShell';
-import { OVERVIEW_UI, PAGE_LAYOUTS, SECTION_DEFS } from '../ui';
+import {
+  PAGE_LAYOUTS,
+  OVERVIEW_UI,
+  buildOverviewMetrics,
+  createOverviewPageStyles,
+  formatOverviewDisplayValue,
+  getOverviewChartValue,
+} from '../ui';
 
 const INITIAL_STATE = {
   loading: true,
@@ -14,384 +15,137 @@ const INITIAL_STATE = {
   statusData: null,
   casesData: null,
   warningsData: null,
+  streamConnected: false,
 };
 
 const PAGE_KEY = 'overview';
+const FALLBACK_REFRESH_MS = 20000;
 
-function clamp(value, min = 0, max = 100) {
-  return Math.min(max, Math.max(min, value));
+function getGuildAvatar(guild) {
+  return guild?.iconUrl || guild?.iconURL || guild?.avatarUrl || guild?.image || '';
 }
 
-function toNumber(value, fallback = 0) {
-  const num = Number(value);
-  return Number.isFinite(num) ? num : fallback;
-}
+const HeroCard = memo(function HeroCard({ styles, metrics, selectedGuildData }) {
+  const guildAvatar = getGuildAvatar(selectedGuildData);
 
-function firstNumber(...values) {
-  for (const value of values) {
-    const num = Number(value);
-    if (Number.isFinite(num)) return num;
-  }
-  return 0;
-}
+  return (
+    <section style={styles.hero}>
+      <div style={styles.heroGlow} />
 
-function getDeepValue(source, paths = [], fallback = undefined) {
-  for (const path of paths) {
-    const segments = Array.isArray(path) ? path : String(path).split('.');
-    let current = source;
+      <div style={styles.heroMeta}>
+        <h1 style={styles.heroTitle}>{metrics.guildName}</h1>
 
-    for (const key of segments) {
-      if (current == null || typeof current !== 'object' || !(key in current)) {
-        current = undefined;
-        break;
-      }
-      current = current[key];
-    }
+        <p style={styles.heroMetaText}>
+          {OVERVIEW_UI.labels.guildId}: {metrics.guildId}
+        </p>
 
-    if (current !== undefined && current !== null) {
-      return current;
-    }
-  }
+        <p style={styles.heroMetaText}>{OVERVIEW_UI.hero.subtitle}</p>
+      </div>
 
-  return fallback;
-}
+      {guildAvatar ? (
+        <img
+          src={guildAvatar}
+          alt={metrics.guildName}
+          style={{
+            position: 'absolute',
+            right: '24px',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            width: '84px',
+            height: '84px',
+            borderRadius: '20px',
+            objectFit: 'cover',
+            opacity: 0.1,
+            pointerEvents: 'none',
+          }}
+        />
+      ) : null}
+    </section>
+  );
+});
 
-function getStatusTone(value) {
-  if (typeof value === 'boolean') return value ? 'online' : 'offline';
+const OverviewSectionHeader = memo(function OverviewSectionHeader({ styles, title, subtitle }) {
+  return (
+    <div style={styles.sectionHeadingWrap}>
+      <h2 style={styles.sectionTitle}>{title}</h2>
+      {subtitle ? <p style={styles.sectionSubtitle}>{subtitle}</p> : null}
+    </div>
+  );
+});
 
-  const normalized = String(value || '').trim().toLowerCase();
-  if (!normalized) return 'unknown';
-  if (['online', 'up', 'healthy', 'ok', 'ready', 'connected'].includes(normalized)) return 'online';
-  if (['offline', 'down', 'error', 'failed', 'disconnected'].includes(normalized)) return 'offline';
-  return 'unknown';
-}
-
-function getStatusLabel(value) {
-  const tone = getStatusTone(value);
-  if (tone === 'online') return 'Online';
-  if (tone === 'offline') return 'Offline';
-  return 'Checking';
-}
-
-function getThemeColors(theme) {
-  return {
-    pageGlow: theme?.pageGlow || 'radial-gradient(circle at top right, rgba(80,130,255,0.22), transparent 34%)',
-    cardBg: theme?.cardBg || 'rgba(8, 18, 40, 0.96)',
-    softBg: theme?.softBg || 'rgba(14, 26, 56, 0.9)',
-    cardBorder: theme?.cardBorder || 'rgba(110, 144, 210, 0.18)',
-    cardText: theme?.cardText || '#f8fafc',
-    mutedText: theme?.mutedText || 'rgba(203, 213, 225, 0.82)',
-    accent: theme?.accent || '#4f8cff',
-    accentStrong: theme?.accentStrong || '#67a1ff',
-    success: theme?.success || '#22c55e',
-    danger: theme?.danger || '#ef4444',
-    shadow: theme?.shadow || '0 20px 60px rgba(0, 0, 0, 0.38)',
+const TopStatCard = memo(function TopStatCard({ theme, styles, item, metrics }) {
+  const statusMap = {
+    botStatus: metrics.botOnline,
+    backend: metrics.backendOnline,
+    apiStatus: metrics.apiOnline,
   };
-}
 
-function normalizeWarnings(data) {
-  if (Array.isArray(data)) return data;
-  if (data && Array.isArray(data.items)) return data.items;
-  if (data && Array.isArray(data.warnings)) return data.warnings;
-  return [];
-}
-
-function getOverviewData(statusData, casesData, warningsData) {
-  const casesArray = Array.isArray(casesData)
-    ? casesData
-    : Array.isArray(casesData?.items)
-      ? casesData.items
-      : Array.isArray(casesData?.cases)
-        ? casesData.cases
-        : casesData && typeof casesData === 'object'
-          ? Object.values(casesData)
-          : [];
-
-  const warningsArray = normalizeWarnings(warningsData);
-
-  const totalCases = casesArray.length;
-  const totalWarnings = warningsArray.length;
-  const activeWarnings = warningsArray.filter((warning) => warning?.cleared !== true).length;
-  const clearedWarnings = warningsArray.filter((warning) => warning?.cleared === true).length;
-
-  const members = firstNumber(
-    getDeepValue(statusData, ['members', 'memberCount', 'guild.memberCount', 'guild.members']),
-    getDeepValue(statusData, [['guild', 'approximateMemberCount']]),
-  );
-
-  const latency = firstNumber(
-    getDeepValue(statusData, ['latency', 'ping', 'wsPing', 'discordPing', 'performance.latency']),
-  );
-
-  const requestCount = firstNumber(
-    getDeepValue(statusData, ['requestCount', 'requests', 'apiRequests', 'performance.requests']),
-  );
-
-  const botStatusRaw = getDeepValue(statusData, ['botStatus', 'bot.status', 'bot.online', 'bot']);
-  const backendStatusRaw = getDeepValue(statusData, ['backendStatus', 'backend.status', 'backend.online', 'backend']);
-  const apiStatusRaw = getDeepValue(statusData, ['apiStatus', 'api.status', 'api.online', 'api']);
-
-  const systemBars = [
-    {
-      key: 'backend',
-      label: 'Backend',
-      value: getStatusTone(backendStatusRaw) === 'online' ? 100 : 18,
-      footer: getStatusLabel(backendStatusRaw),
-    },
-    {
-      key: 'api',
-      label: 'API',
-      value: getStatusTone(apiStatusRaw) === 'online' ? 100 : 18,
-      footer: getStatusLabel(apiStatusRaw),
-    },
-    {
-      key: 'bot',
-      label: 'Bot',
-      value: getStatusTone(botStatusRaw) === 'online' ? 100 : 18,
-      footer: getStatusLabel(botStatusRaw),
-    },
-  ];
-
-  const moderationBars = [
-    { key: 'cases', label: 'Cases', value: totalCases, footer: totalCases },
-    { key: 'warnings', label: 'Warnings', value: totalWarnings, footer: totalWarnings },
-    { key: 'active', label: 'Active', value: activeWarnings, footer: activeWarnings },
-    { key: 'cleared', label: 'Cleared', value: clearedWarnings, footer: clearedWarnings },
-  ];
-
-  const performanceBars = [
-    { key: 'latency', label: 'Latency', value: latency, footer: latency || 0 },
-    { key: 'requests', label: 'Request', value: requestCount, footer: requestCount || 0 },
-    { key: 'members', label: 'Members', value: members, footer: members || 0 },
-  ];
-
-  return {
-    totalCases,
-    totalWarnings,
-    activeWarnings,
-    clearedWarnings,
-    members,
-    latency,
-    requestCount,
-    botStatus: getStatusLabel(botStatusRaw),
-    backendStatus: getStatusLabel(backendStatusRaw),
-    apiStatus: getStatusLabel(apiStatusRaw),
-    systemBars,
-    moderationBars,
-    performanceBars,
+  const valueMap = {
+    members: metrics.members,
+    bots: metrics.bots,
   };
-}
 
-const MetricCard = memo(function MetricCard({ theme, eyebrow, value, statusDot = null }) {
-  const colors = getThemeColors(theme);
+  const isStatus = item.type === 'status';
+  const isOnline = statusMap[item.key];
+  const color = isOnline ? theme.success : theme.danger;
+  const text = isOnline ? item.onlineText : item.offlineText;
+  const value = isStatus ? text : formatOverviewDisplayValue(valueMap[item.key], item.format);
 
   return (
-    <div
-      style={{
-        background: colors.softBg,
-        border: `1px solid ${colors.cardBorder}`,
-        borderRadius: '18px',
-        padding: '18px 20px',
-        display: 'grid',
-        gap: '10px',
-        minHeight: '92px',
-        boxShadow: colors.shadow,
-      }}
-    >
-      <div
-        style={{
-          fontSize: '12px',
-          fontWeight: 800,
-          textTransform: 'uppercase',
-          letterSpacing: '0.08em',
-          color: colors.mutedText,
-        }}
-      >
-        {eyebrow}
-      </div>
+    <div style={styles.topStatCard}>
+      <p style={styles.topStatLabel}>{item.label}</p>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-        {statusDot ? (
-          <span
-            aria-hidden="true"
-            style={{
-              width: '10px',
-              height: '10px',
-              borderRadius: '999px',
-              background: statusDot,
-              boxShadow: `0 0 0 4px ${statusDot}22`,
-              flexShrink: 0,
-            }}
-          />
-        ) : null}
-
-        <div
-          style={{
-            color: colors.cardText,
-            fontSize: '22px',
-            lineHeight: 1.1,
-            fontWeight: 900,
-            textShadow: '0 2px 0 rgba(0,0,0,0.2)',
-          }}
-        >
-          {value}
-        </div>
+      <div style={styles.topStatValueRow}>
+        {isStatus ? <span style={styles.statusDot(color)} /> : null}
+        <p style={styles.topStatValue(isStatus ? color : theme.cardText)}>{value}</p>
       </div>
     </div>
   );
 });
 
-const SnapshotCard = memo(function SnapshotCard({ theme, label, value }) {
-  const colors = getThemeColors(theme);
-
+const SnapshotCard = memo(function SnapshotCard({ styles, label, value }) {
   return (
-    <div
-      style={{
-        background: 'rgba(8, 18, 40, 0.66)',
-        border: `1px solid ${colors.cardBorder}`,
-        borderRadius: '16px',
-        padding: '16px 16px 14px',
-        display: 'grid',
-        gap: '10px',
-      }}
-    >
-      <div
-        style={{
-          fontSize: '11px',
-          fontWeight: 800,
-          textTransform: 'uppercase',
-          letterSpacing: '0.08em',
-          color: colors.mutedText,
-        }}
-      >
-        {label}
-      </div>
-
-      <div
-        style={{
-          color: colors.cardText,
-          fontSize: '18px',
-          fontWeight: 900,
-          textShadow: '0 2px 0 rgba(0,0,0,0.2)',
-        }}
-      >
-        {value}
-      </div>
+    <div style={styles.snapshotCard}>
+      <p style={styles.snapshotLabel}>{label}</p>
+      <p style={styles.snapshotValue}>{value}</p>
     </div>
   );
 });
 
-const ChartCard = memo(function ChartCard({ theme, title, subtitle, items, mode = 'scaled' }) {
-  const colors = getThemeColors(theme);
-  const maxValue = Math.max(...items.map((item) => toNumber(item.value, 0)), 1);
-
+const ChartGroup = memo(function ChartGroup({ styles, metrics, group }) {
   return (
-    <div
-      style={{
-        background: 'rgba(8, 18, 40, 0.66)',
-        border: `1px solid ${colors.cardBorder}`,
-        borderRadius: '18px',
-        padding: '16px',
-        display: 'grid',
-        gap: '16px',
-      }}
-    >
-      <div style={{ display: 'grid', gap: '6px' }}>
-        <div
-          style={{
-            margin: 0,
-            fontSize: '15px',
-            fontWeight: 900,
-            color: colors.cardText,
-          }}
-        >
-          {title}
-        </div>
-        <div
-          style={{
-            margin: 0,
-            fontSize: '13px',
-            lineHeight: 1.5,
-            color: colors.mutedText,
-          }}
-        >
-          {subtitle}
-        </div>
+    <div style={styles.chartCard}>
+      <div style={styles.chartHeading}>
+        <h3 style={styles.chartTitle}>{group.title}</h3>
+        <p style={styles.chartSubtitle}>{group.subtitle}</p>
       </div>
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))`,
-          gap: '10px',
-          alignItems: 'end',
-          minHeight: '160px',
-        }}
-      >
-        {items.map((item) => {
-          const rawValue = toNumber(item.value, 0);
-          const percentage =
-            mode === 'percentage' ? clamp(rawValue, 10, 100) : clamp((rawValue / maxValue) * 100, 10, 100);
+      <div style={styles.barsWrap}>
+        <div style={styles.barsRow}>
+          {group.bars.map((bar) => {
+            const rawValue = metrics[bar.valueKey] ?? 0;
+            const displayValue = formatOverviewDisplayValue(rawValue, bar.format);
+            const chartHeight = getOverviewChartValue(rawValue, group.key);
 
-          return (
-            <div
-              key={item.key}
-              style={{
-                display: 'grid',
-                gap: '10px',
-                alignItems: 'end',
-              }}
-            >
-              <div
-                style={{
-                  height: '100px',
-                  display: 'flex',
-                  alignItems: 'flex-end',
-                }}
-              >
-                <div
-                  title={`${item.label}: ${item.footer}`}
-                  style={{
-                    width: '100%',
-                    height: `${percentage}%`,
-                    minHeight: '14px',
-                    borderRadius: '10px',
-                    background: 'linear-gradient(180deg, rgba(84,138,255,1) 0%, rgba(29,78,216,0.98) 58%, rgba(15,23,42,0.98) 100%)',
-                    border: '1px solid rgba(147, 197, 253, 0.24)',
-                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.12)',
-                  }}
-                />
-              </div>
-
-              <div style={{ display: 'grid', gap: '4px' }}>
-                <div
-                  style={{
-                    fontSize: '13px',
-                    fontWeight: 800,
-                    color: colors.cardText,
-                  }}
-                >
-                  {item.label}
+            return (
+              <div key={bar.key} style={styles.barColumn}>
+                <div style={styles.barTrack}>
+                  <div style={styles.barFill(chartHeight)} />
                 </div>
-                <div
-                  style={{
-                    fontSize: '13px',
-                    color: colors.mutedText,
-                  }}
-                >
-                  {item.footer}
-                </div>
+                <p style={styles.barLabel}>{bar.label}</p>
+                <p style={styles.barValue}>{displayValue}</p>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
     </div>
   );
 });
 
-export default function Overview({ selectedGuild, theme }) {
+export default function Overview({ selectedGuild, theme, guilds = [] }) {
   const [state, setState] = useState(INITIAL_STATE);
+  const requestIdRef = useRef(0);
 
   const page = PAGE_LAYOUTS[PAGE_KEY] || {
     title: 'Overview',
@@ -399,30 +153,37 @@ export default function Overview({ selectedGuild, theme }) {
     sections: [],
   };
 
-  useEffect(() => {
-    let mounted = true;
+  const styles = useMemo(() => createOverviewPageStyles(theme), [theme]);
 
-    async function loadOverview() {
+  const selectedGuildData = useMemo(
+    () => guilds.find((guild) => guild.id === selectedGuild) || null,
+    [guilds, selectedGuild],
+  );
+
+  const loadOverview = useCallback(
+    async ({ preserveData = true } = {}) => {
+      const requestId = ++requestIdRef.current;
+
       if (!selectedGuild) {
-        if (mounted) {
-          setState({
-            loading: false,
-            error: '',
-            statusData: null,
-            casesData: null,
-            warningsData: null,
-          });
-        }
+        setState({
+          loading: false,
+          error: '',
+          statusData: null,
+          casesData: null,
+          warningsData: null,
+          streamConnected: false,
+        });
         return;
       }
 
-      if (mounted) {
-        setState((prev) => ({
-          ...prev,
-          loading: true,
-          error: '',
-        }));
-      }
+      setState((prev) => ({
+        loading: true,
+        error: '',
+        statusData: preserveData ? prev.statusData : null,
+        casesData: preserveData ? prev.casesData : null,
+        warningsData: preserveData ? prev.warningsData : null,
+        streamConnected: prev.streamConnected,
+      }));
 
       const [statusResult, casesResult, warningsResult] = await Promise.allSettled([
         api.getStatus(selectedGuild),
@@ -430,7 +191,7 @@ export default function Overview({ selectedGuild, theme }) {
         api.getWarnings(selectedGuild),
       ]);
 
-      if (!mounted) return;
+      if (requestId !== requestIdRef.current) return;
 
       const nextStatusData = statusResult.status === 'fulfilled' ? statusResult.value : null;
       const nextCasesData = casesResult.status === 'fulfilled' ? casesResult.value : null;
@@ -447,203 +208,270 @@ export default function Overview({ selectedGuild, theme }) {
         error = 'Some overview stats could not be loaded.';
       }
 
-      setState({
+      setState((prev) => ({
         loading: false,
         error,
         statusData: nextStatusData,
         casesData: nextCasesData,
         warningsData: nextWarningsData,
-      });
-    }
+        streamConnected: prev.streamConnected,
+      }));
+    },
+    [selectedGuild],
+  );
 
-    loadOverview();
+  useEffect(() => {
+    loadOverview({ preserveData: false });
+  }, [loadOverview]);
 
-    const interval = window.setInterval(loadOverview, 15000);
+  useEffect(() => {
+    if (!selectedGuild) return undefined;
+
+    let cancelled = false;
+    const currentGuildId = selectedGuild;
+
+    setState((prev) => ({
+      ...prev,
+      streamConnected: false,
+    }));
+
+    const stream = api.createStatusStream(currentGuildId, {
+      onOpen: () => {
+        if (cancelled) return;
+        setState((prev) => ({
+          ...prev,
+          streamConnected: true,
+          error: '',
+        }));
+      },
+
+      onStatus: (payload) => {
+        if (cancelled || currentGuildId !== selectedGuild) return;
+
+        setState((prev) => ({
+          ...prev,
+          loading: false,
+          error: '',
+          statusData: payload,
+        }));
+      },
+
+      onCases: (payload) => {
+        if (cancelled || currentGuildId !== selectedGuild) return;
+
+        setState((prev) => ({
+          ...prev,
+          loading: false,
+          casesData: payload,
+        }));
+      },
+
+      onWarnings: (payload) => {
+        if (cancelled || currentGuildId !== selectedGuild) return;
+
+        setState((prev) => ({
+          ...prev,
+          loading: false,
+          warningsData: payload,
+        }));
+      },
+
+      onSnapshot: (payload) => {
+        if (cancelled || currentGuildId !== selectedGuild) return;
+
+        setState((prev) => ({
+          ...prev,
+          loading: false,
+          error: '',
+          statusData: payload?.status ?? prev.statusData,
+          casesData: payload?.cases ?? prev.casesData,
+          warningsData: payload?.warnings ?? prev.warningsData,
+        }));
+      },
+
+      onError: () => {
+        if (cancelled) return;
+
+        setState((prev) => ({
+          ...prev,
+          streamConnected: false,
+        }));
+      },
+    });
 
     return () => {
-      mounted = false;
-      window.clearInterval(interval);
+      cancelled = true;
+      stream.close();
     };
   }, [selectedGuild]);
 
-  const colors = useMemo(() => getThemeColors(theme), [theme]);
+  useEffect(() => {
+    if (!selectedGuild) return undefined;
 
-  const overviewData = useMemo(
-    () => getOverviewData(state.statusData, state.casesData, state.warningsData),
-    [state.statusData, state.casesData, state.warningsData],
-  );
+    const interval = window.setInterval(() => {
+      loadOverview({ preserveData: true });
+    }, FALLBACK_REFRESH_MS);
 
-  const heroTitle = getDeepValue(
-    state.statusData,
-    ['guild.name', 'guildName', 'name'],
-    selectedGuild || 'Guild Overview',
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [loadOverview, selectedGuild]);
+
+  useEffect(() => {
+    if (!selectedGuild) return undefined;
+
+    const handleFocus = () => {
+      loadOverview({ preserveData: true });
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadOverview({ preserveData: true });
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [loadOverview, selectedGuild]);
+
+  const metrics = useMemo(
+    () =>
+      buildOverviewMetrics({
+        selectedGuild,
+        selectedGuildData,
+        statusData: state.statusData,
+        casesData: state.casesData,
+        warningsData: state.warningsData,
+      }),
+    [selectedGuild, selectedGuildData, state.statusData, state.casesData, state.warningsData],
   );
 
   if (!selectedGuild) {
     return (
-      <PageShell
-        title={page.title || 'Overview'}
-        subtitle={page.description || 'Select a server to view live guild and moderation stats.'}
-        theme={theme}
-      >
-        <EmptyState theme={theme} text="Select a guild to view overview stats." />
-      </PageShell>
+      <div style={styles.page}>
+        <section style={styles.sectionCard}>
+          <OverviewSectionHeader
+            styles={styles}
+            title={page.title || 'Overview'}
+            subtitle={page.description || 'Select a server to view live guild and moderation stats.'}
+          />
+
+          <div
+            style={{
+              background: theme.softBg,
+              border: `1px dashed ${theme.cardBorder}`,
+              borderRadius: '16px',
+              padding: '26px',
+              color: theme.mutedText,
+              textAlign: 'center',
+              fontWeight: 600,
+            }}
+          >
+            Select a guild to view overview stats.
+          </div>
+        </section>
+      </div>
     );
   }
 
   return (
-    <PageShell
-      title={page.title || 'Overview'}
-      subtitle={page.description || 'Guild stats and live moderation overview.'}
-      theme={theme}
-    >
-      {state.error ? (
-        <Notice theme={theme} tone="danger">
-          {state.error}
-        </Notice>
-      ) : null}
+    <div style={styles.page}>
+      <HeroCard styles={styles} metrics={metrics} selectedGuildData={selectedGuildData} />
 
-      <section
-        style={{
-          background: `${colors.pageGlow}, ${colors.cardBg}`,
-          border: `1px solid ${colors.cardBorder}`,
-          borderRadius: '26px',
-          padding: '22px 24px',
-          boxShadow: colors.shadow,
-          display: 'grid',
-          gap: '10px',
-          overflow: 'hidden',
-          position: 'relative',
-        }}
-      >
-        <div
-          style={{
-            fontSize: 'clamp(30px, 5vw, 52px)',
-            lineHeight: 0.95,
-            fontWeight: 1000,
-            letterSpacing: '-0.04em',
-            color: colors.cardText,
-            textTransform: 'uppercase',
-            textShadow: '0 3px 0 rgba(0,0,0,0.25)',
-          }}
-        >
-          {heroTitle}
-        </div>
+      <section style={styles.sectionCard}>
+        <OverviewSectionHeader
+          styles={styles}
+          title={OVERVIEW_UI.labels.overviewTitle}
+          subtitle={OVERVIEW_UI.labels.overviewSubtitle}
+        />
 
-        <div style={{ color: colors.mutedText, fontWeight: 700, fontSize: '14px' }}>
-          Guild ID: {selectedGuild}
-        </div>
+        {state.error ? (
+          <div
+            style={{
+              background: theme.dangerSoft,
+              border: `1px solid ${theme.dangerBorder}`,
+              borderRadius: '14px',
+              padding: '14px 16px',
+              color: theme.dangerText,
+              fontWeight: 700,
+            }}
+          >
+            {state.error}
+          </div>
+        ) : null}
 
-        <div style={{ color: colors.mutedText, fontSize: '14px', lineHeight: 1.6 }}>
-          {OVERVIEW_UI.heroDescription}
+        {state.loading && !state.statusData && !state.casesData && !state.warningsData ? (
+          <div
+            style={{
+              background: theme.softBg,
+              border: `1px solid ${theme.cardBorder}`,
+              borderRadius: '14px',
+              padding: '16px',
+              color: theme.mutedText,
+            }}
+          >
+            Loading overview...
+          </div>
+        ) : (
+          <div style={styles.topStatsGrid}>
+            {OVERVIEW_UI.topStats.map((item) => (
+              <div key={item.key} style={styles.topStatsGridItem(item.key)}>
+                <TopStatCard theme={theme} styles={styles} item={item} metrics={metrics} />
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section style={styles.sectionCard}>
+        <OverviewSectionHeader
+          styles={styles}
+          title={OVERVIEW_UI.labels.moderationTitle}
+          subtitle={OVERVIEW_UI.labels.moderationSubtitle}
+        />
+
+        <div style={styles.snapshotGrid}>
+          <SnapshotCard
+            styles={styles}
+            label={OVERVIEW_UI.labels.totalCases}
+            value={metrics.totalCases}
+          />
+          <SnapshotCard
+            styles={styles}
+            label={OVERVIEW_UI.labels.totalWarnings}
+            value={metrics.totalWarnings}
+          />
+          <SnapshotCard
+            styles={styles}
+            label={OVERVIEW_UI.labels.activeWarnings}
+            value={metrics.activeWarnings}
+          />
+          <SnapshotCard
+            styles={styles}
+            label={OVERVIEW_UI.labels.clearedWarnings}
+            value={metrics.clearedWarnings}
+          />
         </div>
       </section>
 
-      <SectionCard
-        theme={theme}
-        title={SECTION_DEFS?.overviewStats?.title || OVERVIEW_UI.sectionTitles.overview}
-        subtitle={SECTION_DEFS?.overviewStats?.description || OVERVIEW_UI.sectionDescriptions.overview}
-        padding="22px"
-      >
-        {state.loading ? (
-          <LoadingPanel theme={theme} text="Loading overview..." />
-        ) : (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
-              gap: '14px',
-            }}
-          >
-            <MetricCard
-              theme={theme}
-              eyebrow={OVERVIEW_UI.metricLabels.botStatus}
-              value={overviewData.botStatus}
-              statusDot={overviewData.botStatus === 'Online' ? colors.success : colors.danger}
-            />
-            <MetricCard
-              theme={theme}
-              eyebrow={OVERVIEW_UI.metricLabels.members}
-              value={overviewData.members}
-            />
-            <MetricCard
-              theme={theme}
-              eyebrow={OVERVIEW_UI.metricLabels.backendStatus}
-              value={overviewData.backendStatus}
-              statusDot={overviewData.backendStatus === 'Online' ? colors.success : colors.danger}
-            />
-            <MetricCard
-              theme={theme}
-              eyebrow={OVERVIEW_UI.metricLabels.apiStatus}
-              value={overviewData.apiStatus}
-              statusDot={overviewData.apiStatus === 'Online' ? colors.success : colors.danger}
-            />
-          </div>
-        )}
-      </SectionCard>
+      <section style={styles.sectionCard}>
+        <OverviewSectionHeader
+          styles={styles}
+          title={OVERVIEW_UI.labels.chartsTitle}
+          subtitle={OVERVIEW_UI.labels.chartsSubtitle}
+        />
 
-      <SectionCard
-        theme={theme}
-        title={SECTION_DEFS?.moderationSnapshot?.title || OVERVIEW_UI.sectionTitles.moderation}
-        subtitle={SECTION_DEFS?.moderationSnapshot?.description || OVERVIEW_UI.sectionDescriptions.moderation}
-        padding="22px"
-      >
-        {state.loading ? (
-          <LoadingPanel theme={theme} text="Loading moderation snapshot..." />
-        ) : (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-              gap: '14px',
-            }}
-          >
-            <SnapshotCard theme={theme} label={OVERVIEW_UI.snapshotLabels.totalCases} value={overviewData.totalCases} />
-            <SnapshotCard theme={theme} label={OVERVIEW_UI.snapshotLabels.totalWarnings} value={overviewData.totalWarnings} />
-            <SnapshotCard theme={theme} label={OVERVIEW_UI.snapshotLabels.activeWarnings} value={overviewData.activeWarnings} />
-            <SnapshotCard theme={theme} label={OVERVIEW_UI.snapshotLabels.clearedWarnings} value={overviewData.clearedWarnings} />
-          </div>
-        )}
-      </SectionCard>
-
-      <SectionCard
-        theme={theme}
-        title={SECTION_DEFS?.liveCharts?.title || OVERVIEW_UI.sectionTitles.charts}
-        subtitle={SECTION_DEFS?.liveCharts?.description || OVERVIEW_UI.sectionDescriptions.charts}
-        padding="22px"
-      >
-        {state.loading ? (
-          <LoadingPanel theme={theme} text="Loading live charts..." />
-        ) : (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-              gap: '14px',
-            }}
-          >
-            <ChartCard
-              theme={theme}
-              title={OVERVIEW_UI.chartCards.system.title}
-              subtitle={OVERVIEW_UI.chartCards.system.subtitle}
-              items={overviewData.systemBars}
-              mode="percentage"
-            />
-            <ChartCard
-              theme={theme}
-              title={OVERVIEW_UI.chartCards.moderation.title}
-              subtitle={OVERVIEW_UI.chartCards.moderation.subtitle}
-              items={overviewData.moderationBars}
-            />
-            <ChartCard
-              theme={theme}
-              title={OVERVIEW_UI.chartCards.performance.title}
-              subtitle={OVERVIEW_UI.chartCards.performance.subtitle}
-              items={overviewData.performanceBars}
-            />
-          </div>
-        )}
-      </SectionCard>
-    </PageShell>
+        <div style={styles.chartsGrid}>
+          {OVERVIEW_UI.chartGroups.map((group) => (
+            <ChartGroup key={group.key} styles={styles} metrics={metrics} group={group} />
+          ))}
+        </div>
+      </section>
+    </div>
   );
 }

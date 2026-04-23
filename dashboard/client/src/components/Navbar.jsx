@@ -1,4 +1,4 @@
-import { memo, useMemo, useCallback } from 'react';
+import { memo, useMemo, useCallback, useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import BotAvatar from './BotAvatar';
 import { navbarStyles } from '../ui';
@@ -30,6 +30,18 @@ function isActivePath(currentPath, itemPath) {
   );
 }
 
+function itemHasActiveChild(currentPath, item) {
+  if (!item?.children?.length) return false;
+
+  return item.children.some((child) =>
+    isActivePath(currentPath, child.path || '/')
+  );
+}
+
+function isShortcutItem(item) {
+  return item?.key === 'administration' || item?.key === 'moderation';
+}
+
 function SidebarIcon({ type, active, color }) {
   const stroke = active ? '#93c5fd' : color;
 
@@ -52,6 +64,14 @@ function SidebarIcon({ type, active, color }) {
         <svg {...baseProps}>
           <path d="M3 10.5 12 3l9 7.5" />
           <path d="M5.5 9.5V20h13V9.5" />
+        </svg>
+      );
+    case 'modules':
+      return (
+        <svg {...baseProps}>
+          <rect x="3" y="4" width="8" height="8" rx="2" />
+          <rect x="13" y="4" width="8" height="8" rx="2" />
+          <rect x="8" y="14" width="8" height="7" rx="2" />
         </svg>
       );
     case 'cases':
@@ -94,6 +114,15 @@ function SidebarIcon({ type, active, color }) {
           <path d="m4 8 8 6 8-6" />
         </svg>
       );
+    case 'logs':
+      return (
+        <svg {...baseProps}>
+          <path d="M6 4h12" />
+          <path d="M6 9h12" />
+          <path d="M6 14h8" />
+          <path d="M6 19h10" />
+        </svg>
+      );
     default:
       return (
         <svg {...baseProps}>
@@ -107,7 +136,7 @@ function Navbar({
   theme,
   selectedGuild,
   setSelectedGuild,
-  guilds,
+  guilds = [],
   guildError = '',
   isAuthenticated = true,
   authLoading = false,
@@ -121,8 +150,9 @@ function Navbar({
   const location = useLocation();
   const navigate = useNavigate();
   const styles = useMemo(() => navbarStyles(theme), [theme]);
-
   const safeNavItems = Array.isArray(navItems) ? navItems : [];
+  const [openGroups, setOpenGroups] = useState({});
+  const [collapseHover, setCollapseHover] = useState(false);
 
   const selectedGuildData = useMemo(
     () => guilds.find((g) => g.id === selectedGuild) || null,
@@ -131,8 +161,37 @@ function Navbar({
 
   const selectedGuildAvatar = getGuildAvatar(selectedGuildData);
   const selectedGuildInitial = getNameInitial(selectedGuildData?.name || '');
-  const canNavigate = isAuthenticated && Boolean(selectedGuild);
+
+  const canNavigate = isAuthenticated;
   const canPickGuild = isAuthenticated && !authLoading && guilds.length > 0;
+
+  const activeModuleGroup = useMemo(
+    () =>
+      safeNavItems.some(
+        (item) => item?.children?.length && itemHasActiveChild(location.pathname, item)
+      ),
+    [location.pathname, safeNavItems]
+  );
+
+  useEffect(() => {
+    setOpenGroups((prev) => {
+      const next = { ...prev };
+
+      safeNavItems.forEach((item) => {
+        if (!item?.children?.length) return;
+
+        if (typeof next[item.key] !== 'boolean') {
+          next[item.key] = true;
+        }
+
+        if (itemHasActiveChild(location.pathname, item)) {
+          next[item.key] = true;
+        }
+      });
+
+      return next;
+    });
+  }, [location.pathname, safeNavItems]);
 
   const handleNavigate = useCallback(
     (item) => {
@@ -141,6 +200,13 @@ function Navbar({
     },
     [canNavigate, navigate]
   );
+
+  const handleToggleGroup = useCallback((groupKey) => {
+    setOpenGroups((prev) => ({
+      ...prev,
+      [groupKey]: !prev[groupKey],
+    }));
+  }, []);
 
   const guildOptions = useMemo(() => {
     if (authLoading) return [{ id: '', name: 'Loading guilds...' }];
@@ -200,8 +266,92 @@ function Navbar({
 
         <nav style={styles.nav}>
           {safeNavItems.map((item) => {
+            if (item?.children?.length) {
+              const groupOpen = Boolean(openGroups[item.key]);
+              const hasActiveChild = itemHasActiveChild(location.pathname, item);
+
+              return (
+                <div key={item.key} style={{ display: 'grid', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleGroup(item.key)}
+                    style={styles.navItem(false, expanded, canNavigate)}
+                    title={expanded ? undefined : item.label}
+                    aria-expanded={groupOpen}
+                  >
+                    <span style={styles.navIcon}>
+                      <SidebarIcon
+                        type={item.icon}
+                        active={hasActiveChild}
+                        color={theme.sidebarText}
+                      />
+                    </span>
+
+                    {expanded ? (
+                      <>
+                        <span style={styles.navLabel}>{item.label}</span>
+                        <span
+                          style={{
+                            marginLeft: 'auto',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transform: groupOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                            transition: 'transform 0.2s ease',
+                            color: hasActiveChild ? '#93c5fd' : theme.sidebarMuted,
+                            fontSize: '12px',
+                            lineHeight: 1,
+                          }}
+                        >
+                          ▾
+                        </span>
+                      </>
+                    ) : null}
+                  </button>
+
+                  {groupOpen
+                    ? item.children.map((child) => {
+                        const childPath = normalizePath(child.path || '/');
+                        const childActive = isActivePath(location.pathname, childPath);
+
+                        return (
+                          <button
+                            key={child.key}
+                            type="button"
+                            onClick={() => handleNavigate(child)}
+                            style={{
+                              ...styles.navItem(childActive, expanded, canNavigate),
+                              ...(expanded ? { paddingLeft: '38px' } : {}),
+                            }}
+                            title={expanded ? undefined : child.label}
+                            disabled={!canNavigate || !child.path}
+                            aria-current={childActive ? 'page' : undefined}
+                          >
+                            <span style={styles.navIcon}>
+                              <SidebarIcon
+                                type={child.icon}
+                                active={childActive}
+                                color={theme.sidebarText}
+                              />
+                            </span>
+
+                            {expanded ? (
+                              <span style={styles.navLabel}>{child.label}</span>
+                            ) : null}
+                          </button>
+                        );
+                      })
+                    : null}
+                </div>
+              );
+            }
+
             const itemPath = normalizePath(item.path || '/');
-            const active = isActivePath(location.pathname, itemPath);
+            let active = isActivePath(location.pathname, itemPath);
+
+            if (isShortcutItem(item) && activeModuleGroup) {
+              active = false;
+            }
 
             return (
               <button
@@ -232,10 +382,15 @@ function Navbar({
         <button
           type="button"
           onClick={onToggleCollapsed}
-          style={styles.collapseButton}
+          onMouseEnter={() => setCollapseHover(true)}
+          onMouseLeave={() => setCollapseHover(false)}
+          style={styles.collapseButton(collapseHover)}
           title={expanded ? 'Collapse navbar' : 'Expand navbar'}
+          aria-label={expanded ? 'Collapse navbar' : 'Expand navbar'}
         >
-          <span style={styles.collapseButtonIcon(expanded)}>›</span>
+          <span style={styles.collapseButtonIcon}>
+            {styles.collapseButtonGlyph(expanded)}
+          </span>
         </button>
       </div>
     </aside>

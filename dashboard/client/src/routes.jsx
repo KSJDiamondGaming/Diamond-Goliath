@@ -5,6 +5,7 @@ import Warnings from './pages/Warnings';
 import AutoMod from './pages/AutoMod';
 import Config from './pages/Config';
 import Messages from './pages/Messages';
+import Logs from './pages/Logs';
 import Login from './pages/Login';
 import { ROUTES } from './ui';
 
@@ -15,6 +16,7 @@ const MAP = {
   automod: AutoMod,
   config: Config,
   messages: Messages,
+  logs: Logs,
 };
 
 function ProtectedRoute({ isAuthenticated, authLoading, children }) {
@@ -38,9 +40,11 @@ export default function AppRoutes(props) {
       {ROUTES.map((routeItem) => {
         const Page = MAP[routeItem.key];
 
+        if (!Page) return null;
+
         return (
           <Route
-            key={routeItem.key}
+            key={`${routeItem.key}:${routeItem.path}`}
             path={routeItem.path}
             element={
               <ProtectedRoute isAuthenticated={isAuthenticated} authLoading={authLoading}>

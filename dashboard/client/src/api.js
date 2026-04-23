@@ -25,6 +25,21 @@ async function request(path, options = {}) {
   return response.json();
 }
 
+function buildStreamUrl(path) {
+  return `${API_BASE}${path}`;
+}
+
+function safeParseStreamData(raw) {
+  if (!raw) return null;
+
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    console.error('Failed to parse stream payload:', error, raw);
+    return null;
+  }
+}
+
 export const api = {
   getGuilds() {
     return request('/api/discord/guilds');
@@ -37,6 +52,83 @@ export const api = {
   getStatus(guildId) {
     const query = guildId ? `?guildId=${encodeURIComponent(guildId)}` : '';
     return request(`/api/status${query}`);
+  },
+
+  createStatusStream(guildId, handlers = {}) {
+    if (!guildId || typeof window === 'undefined' || typeof window.EventSource === 'undefined') {
+      return {
+        close() {},
+      };
+    }
+
+    const query = `?guildId=${encodeURIComponent(guildId)}`;
+    const stream = new EventSource(buildStreamUrl(`/api/status/stream${query}`), {
+      withCredentials: true,
+    });
+
+    const handleOpen =
+      typeof handlers.onOpen === 'function'
+        ? handlers.onOpen
+        : () => {};
+
+    const handleError =
+      typeof handlers.onError === 'function'
+        ? handlers.onError
+        : () => {};
+
+    const handleStatus =
+      typeof handlers.onStatus === 'function'
+        ? handlers.onStatus
+        : () => {};
+
+    const handleCases =
+      typeof handlers.onCases === 'function'
+        ? handlers.onCases
+        : () => {};
+
+    const handleWarnings =
+      typeof handlers.onWarnings === 'function'
+        ? handlers.onWarnings
+        : () => {};
+
+    const handleSnapshot =
+      typeof handlers.onSnapshot === 'function'
+        ? handlers.onSnapshot
+        : () => {};
+
+    stream.onopen = (event) => {
+      handleOpen(event);
+    };
+
+    stream.onerror = (event) => {
+      handleError(event);
+    };
+
+    stream.addEventListener('status', (event) => {
+      const payload = safeParseStreamData(event.data);
+      if (payload) handleStatus(payload);
+    });
+
+    stream.addEventListener('cases', (event) => {
+      const payload = safeParseStreamData(event.data);
+      if (payload) handleCases(payload);
+    });
+
+    stream.addEventListener('warnings', (event) => {
+      const payload = safeParseStreamData(event.data);
+      if (payload) handleWarnings(payload);
+    });
+
+    stream.addEventListener('snapshot', (event) => {
+      const payload = safeParseStreamData(event.data);
+      if (payload) handleSnapshot(payload);
+    });
+
+    return {
+      close() {
+        stream.close();
+      },
+    };
   },
 
   getAuthMe() {

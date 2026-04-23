@@ -8,6 +8,11 @@ function getNameInitial(name = '') {
 function buildDiscordAvatarUrl(botData) {
   if (!botData) return '';
 
+  if (botData.avatarUrl) return botData.avatarUrl;
+  if (botData.avatarURL) return botData.avatarURL;
+  if (botData.image) return botData.image;
+  if (botData.profileImage) return botData.profileImage;
+
   const id = botData.id || botData.botId || '';
   const avatar = botData.avatar || botData.avatarHash || '';
 
@@ -22,25 +27,25 @@ function BotAvatar({ theme, botAvatar, botName, botData, expanded = true }) {
   const displayName = botName || 'KSJ Goliath';
   const initial = useMemo(() => getNameInitial(displayName), [displayName]);
 
-  const [imageSrc, setImageSrc] = useState('');
+  const propImage = botAvatar || '';
+  const fallbackImage = useMemo(() => buildDiscordAvatarUrl(botData), [botData]);
+
+  const [imageSrc, setImageSrc] = useState(propImage || fallbackImage || '');
   const [imageFailed, setImageFailed] = useState(false);
 
   useEffect(() => {
     setImageFailed(false);
+    setImageSrc(propImage || fallbackImage || '');
+  }, [propImage, fallbackImage]);
 
-    if (botAvatar) {
-      setImageSrc(botAvatar);
+  const handleImageError = () => {
+    if (imageSrc !== fallbackImage && fallbackImage) {
+      setImageSrc(fallbackImage);
       return;
     }
 
-    const discordAvatar = buildDiscordAvatarUrl(botData);
-    if (discordAvatar) {
-      setImageSrc(discordAvatar);
-      return;
-    }
-
-    setImageSrc('');
-  }, [botAvatar, botData]);
+    setImageFailed(true);
+  };
 
   const shouldShowImage = Boolean(imageSrc) && !imageFailed;
 
@@ -51,7 +56,7 @@ function BotAvatar({ theme, botAvatar, botName, botData, expanded = true }) {
           src={imageSrc}
           alt={displayName}
           style={styles.avatar}
-          onError={() => setImageFailed(true)}
+          onError={handleImageError}
         />
       ) : (
         <div style={styles.fallback} aria-hidden="true">

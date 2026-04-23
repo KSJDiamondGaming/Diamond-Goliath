@@ -10,7 +10,10 @@ import AppRoutes from './routes';
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 const LOGIN_PATH = '/api/auth/login';
 const LOGOUT_PATH = '/api/auth/logout';
+
 const GUILD_STORAGE_KEY = 'selected_guild';
+const BOT_PROFILE_STORAGE_KEY = 'bot_profile';
+const SIDEBAR_EXPANDED_STORAGE_KEY = 'sidebar_expanded';
 
 function normalizeGuilds(payload) {
   if (Array.isArray(payload)) return payload;
@@ -48,11 +51,63 @@ function getDisplayName(user) {
   );
 }
 
+function buildDiscordAvatarUrl(entity) {
+  if (!entity) return '';
+
+  if (entity.avatarUrl) return entity.avatarUrl;
+  if (entity.avatarURL) return entity.avatarURL;
+  if (entity.image) return entity.image;
+  if (entity.profileImage) return entity.profileImage;
+
+  const id = entity.id || entity.botId || '';
+  const avatar = entity.avatar || entity.avatarHash || '';
+
+  if (!id || !avatar || typeof avatar !== 'string') return '';
+
+  const ext = avatar.startsWith('a_') ? 'gif' : 'png';
+  return `https://cdn.discordapp.com/avatars/${id}/${avatar}.${ext}?size=256`;
+}
+
+function normalizeBotProfile(payload) {
+  const bot = payload?.bot || payload?.data?.bot || payload?.botData || payload || null;
+
+  if (!bot || typeof bot !== 'object') {
+    return {
+      name: 'KSJ Goliath',
+      avatar: '',
+      raw: null,
+    };
+  }
+
+  const name =
+    bot.name ||
+    bot.username ||
+    bot.displayName ||
+    bot.global_name ||
+    bot.globalName ||
+    'KSJ Goliath';
+
+  const avatar =
+    bot.avatarUrl ||
+    bot.avatarURL ||
+    buildDiscordAvatarUrl(bot) ||
+    '';
+
+  return {
+    name,
+    avatar,
+    raw: bot,
+  };
+}
+
 export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
 
   const [darkMode, setDarkMode] = useState(true);
+  const [sidebarExpanded, setSidebarExpanded] = useState(() =>
+    getStorage(SIDEBAR_EXPANDED_STORAGE_KEY, true)
+  );
   const [selectedGuild, setSelectedGuild] = useState(() =>
     getStorage(GUILD_STORAGE_KEY, '')
   );
@@ -63,11 +118,22 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [loginPending, setLoginPending] = useState(false);
 
-  const [botAvatar, setBotAvatar] = useState('');
-  const [botName, setBotName] = useState('KSJ Goliath');
+  const cachedBotProfile = useMemo(
+    () =>
+      getStorage(BOT_PROFILE_STORAGE_KEY, {
+        name: 'KSJ Goliath',
+        avatar: '',
+        raw: null,
+      }),
+    []
+  );
+
+  const [botAvatar, setBotAvatar] = useState(cachedBotProfile?.avatar || '');
+  const [botName, setBotName] = useState(cachedBotProfile?.name || 'KSJ Goliath');
+  const [botData, setBotData] = useState(cachedBotProfile?.raw || null);
 
   const theme = useMemo(() => getTheme(darkMode), [darkMode]);
-  const styles = shellStyles(theme, { sidebarExpanded: true });
+  const styles = shellStyles(theme, { sidebarExpanded });
   const isLoginPage = location.pathname === '/login';
 
   const selectedGuildData = useMemo(
@@ -75,20 +141,31 @@ export default function App() {
     [guilds, selectedGuild]
   );
 
+  const applyBotProfile = useCallback((profile) => {
+    const safeProfile = {
+      name: profile?.name || 'KSJ Goliath',
+      avatar: profile?.avatar || '',
+      raw: profile?.raw || null,
+    };
+
+    setBotName(safeProfile.name);
+    setBotAvatar(safeProfile.avatar);
+    setBotData(safeProfile.raw);
+    setStorage(BOT_PROFILE_STORAGE_KEY, safeProfile);
+  }, []);
+
   const loadBotStatus = useCallback(async () => {
     try {
       const status = await api.getStatus();
-      const nextBotAvatar = status?.bot?.avatarUrl || '';
-      const nextBotName = status?.bot?.name || status?.bot?.username || 'KSJ Goliath';
+      const nextProfile = normalizeBotProfile(status?.bot || status);
 
-      setBotAvatar(nextBotAvatar);
-      setBotName(nextBotName);
+      applyBotProfile(nextProfile);
+      return nextProfile;
     } catch (error) {
       console.error('Failed to load bot status:', error);
-      setBotAvatar('');
-      setBotName('KSJ Goliath');
+      return null;
     }
-  }, []);
+  }, [applyBotProfile]);
 
   const loadGuilds = useCallback(async () => {
     try {
@@ -148,7 +225,16 @@ export default function App() {
 
       setIsAuthenticated(true);
       setCurrentUser(normalizeUser(authResponse));
-      await loadGuilds();
+
+      const authBotProfile = normalizeBotProfile(
+        authResponse?.bot || authResponse?.client || authResponse?.application
+      );
+
+      if (authBotProfile.avatar || authBotProfile.raw || authBotProfile.name !== 'KSJ Goliath') {
+        applyBotProfile(authBotProfile);
+      }
+
+      await Promise.all([loadGuilds(), loadBotStatus()]);
     } catch (error) {
       console.error('Session check failed:', error);
       setIsAuthenticated(false);
@@ -160,12 +246,17 @@ export default function App() {
       setAuthLoading(false);
       setLoginPending(false);
     }
-  }, [loadGuilds]);
+  }, [applyBotProfile, loadBotStatus, loadGuilds]);
 
   useEffect(() => {
-    loadBotStatus();
     loadSession();
-  }, [loadBotStatus, loadSession]);
+  }, [loadSession]);
+
+  useEffect(() => {
+    if (!botAvatar && !botData) {
+      loadBotStatus();
+    }
+  }, [botAvatar, botData, loadBotStatus]);
 
   useEffect(() => {
     if (selectedGuild) {
@@ -174,6 +265,10 @@ export default function App() {
       removeStorage(GUILD_STORAGE_KEY);
     }
   }, [selectedGuild]);
+
+  useEffect(() => {
+    setStorage(SIDEBAR_EXPANDED_STORAGE_KEY, sidebarExpanded);
+  }, [sidebarExpanded]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -217,6 +312,10 @@ export default function App() {
     }
   }, [navigate]);
 
+  const handleToggleCollapsed = useCallback(() => {
+    setSidebarExpanded((prev) => !prev);
+  }, []);
+
   if (isLoginPage) {
     return (
       <>
@@ -240,6 +339,8 @@ export default function App() {
               selectedGuildData?.avatarUrl ||
               ''
             }
+            selectedGuildData={selectedGuildData}
+            guilds={guilds}
             theme={theme}
             authLoading={authLoading}
             isAuthenticated={isAuthenticated}
@@ -247,6 +348,7 @@ export default function App() {
             loginPending={loginPending}
             botName={botName}
             botAvatar={botAvatar}
+            botData={botData}
           />
         </div>
       </>
@@ -270,6 +372,9 @@ export default function App() {
             navItems={navItems}
             botName={botName}
             botAvatar={botAvatar}
+            botData={botData}
+            expanded={sidebarExpanded}
+            onToggleCollapsed={handleToggleCollapsed}
           />
 
           <div style={styles.mainColumn}>
@@ -297,6 +402,8 @@ export default function App() {
                   selectedGuildData?.avatarUrl ||
                   ''
                 }
+                selectedGuildData={selectedGuildData}
+                guilds={guilds}
                 theme={theme}
                 authLoading={authLoading}
                 isAuthenticated={isAuthenticated}
@@ -304,6 +411,7 @@ export default function App() {
                 loginPending={loginPending}
                 botName={botName}
                 botAvatar={botAvatar}
+                botData={botData}
               />
             </main>
           </div>

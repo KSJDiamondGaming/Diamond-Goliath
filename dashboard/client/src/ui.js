@@ -82,18 +82,58 @@ export const getTheme = createTheme;
 // NAV + ROUTES
 // ------------------------------
 export const NAV_ITEMS = [
-  { key: 'overview', label: 'Overview', icon: 'overview', path: '/overview' },
-  { key: 'cases', label: 'Cases', icon: 'cases', path: '/cases' },
-  { key: 'warnings', label: 'Warnings', icon: 'warnings', path: '/warnings' },
-  { key: 'automod', label: 'AutoMod', icon: 'automod', path: '/automod' },
-  { key: 'config', label: 'Config', icon: 'config', path: '/config' },
-  { key: 'messages', label: 'Welcome & Leave', icon: 'messages', path: '/messages' },
+  {
+    key: 'overview',
+    label: 'Overview',
+    icon: 'overview',
+    path: '/overview',
+  },
+  {
+    key: 'automod',
+    label: 'Auto Mod',
+    icon: 'automod',
+    path: '/automod',
+  },
+  {
+    key: 'administration',
+    label: 'Administration',
+    icon: 'config',
+    path: '/config',
+  },
+  {
+    key: 'moderation',
+    label: 'Moderation',
+    icon: 'cases',
+    path: '/cases',
+  },
+  {
+    key: 'logs',
+    label: 'Logs',
+    icon: 'logs',
+    path: '/logs',
+  },
+  {
+    key: 'modules',
+    label: 'Modules',
+    icon: 'modules',
+    children: [
+      { key: 'cases', label: 'Cases', icon: 'cases', path: '/cases' },
+      { key: 'warnings', label: 'Warnings', icon: 'warnings', path: '/warnings' },
+      { key: 'messages', label: 'Welcome & Leave', icon: 'messages', path: '/messages' },
+      { key: 'config', label: 'Config', icon: 'config', path: '/config' },
+    ],
+  },
 ];
 
-export const ROUTES = NAV_ITEMS.map((item) => ({
-  key: item.key,
-  path: item.path,
-}));
+export const ROUTES = [
+  { key: 'overview', path: '/overview' },
+  { key: 'automod', path: '/automod' },
+  { key: 'cases', path: '/cases' },
+  { key: 'warnings', path: '/warnings' },
+  { key: 'messages', path: '/messages' },
+  { key: 'config', path: '/config' },
+  { key: 'logs', path: '/logs' },
+];
 
 export const navItems = NAV_ITEMS;
 
@@ -151,6 +191,13 @@ export const PAGE_LAYOUTS = {
       { id: 'leave', type: 'config' },
     ],
   },
+
+  logs: {
+    title: 'Logs',
+    description: 'Assign log channels for the selected server and filter log groups quickly.',
+    emptyDescription: 'Select a server to manage log channels.',
+    sections: [{ id: 'logManager', type: 'config' }],
+  },
 };
 
 export const SECTION_DEFS = {
@@ -193,6 +240,10 @@ export const SECTION_DEFS = {
   logConfig: {
     title: 'Log Channels',
     description: 'Choose where different bot logs should be sent.',
+  },
+  logManager: {
+    title: 'Log Manager',
+    description: 'Choose which channel each log group should use.',
   },
 };
 
@@ -419,27 +470,37 @@ export function navbarStyles(theme) {
       overflow: 'hidden',
       textOverflow: 'ellipsis',
     },
-    collapseButton: {
-      width: '40px',
-      height: '24px',
-      borderRadius: '999px',
-      border: `1px solid ${theme.topbarSoftBorder}`,
-      background: theme.topbarSoft,
-      color: theme.sidebarText,
-      cursor: 'pointer',
+
+    collapseButton(isHovered = false) {
+      return {
+        width: '36px',
+        height: '36px',
+        borderRadius: '999px',
+        border: `1px solid ${isHovered ? theme.primaryBorder : theme.topbarSoftBorder}`,
+        background: isHovered ? theme.softBg : theme.topbarSoft,
+        color: theme.sidebarText,
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 0,
+        boxShadow: isHovered ? theme.shadow : '0 6px 18px rgba(0,0,0,0.16)',
+        transition:
+          'background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.18s ease',
+        transform: isHovered ? 'translateY(-1px)' : 'translateY(0)',
+      };
+    },
+    collapseButtonIcon: {
+      width: '100%',
+      height: '100%',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      boxShadow: theme.shadow,
+      fontSize: '14px',
+      lineHeight: 1,
     },
-    collapseButtonIcon(expanded = true) {
-      return {
-        display: 'inline-block',
-        fontSize: '14px',
-        lineHeight: 1,
-        transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
-        transition: 'transform 0.2s ease',
-      };
+    collapseButtonGlyph(expanded = true) {
+      return expanded ? '🔓' : '🔒';
     },
   };
 }
@@ -786,4 +847,580 @@ export function loginPageStyles(theme) {
       justifySelf: 'start',
     },
   };
+}
+
+// ------------------------------
+// OVERVIEW PAGE SYSTEM
+// ------------------------------
+export const OVERVIEW_UI = {
+  hero: {
+    fallbackTitle: 'KSJ DIAMOND GAMING',
+    subtitle: 'Manage your server configurations.',
+    minHeight: '142px',
+  },
+
+  cards: {
+    statGridMin: '220px',
+    snapshotGridMin: '210px',
+    chartGridMin: '280px',
+    topStatHeight: '92px',
+    snapshotHeight: '82px',
+  },
+
+  labels: {
+    guildId: 'Guild ID',
+    overviewTitle: 'Overview',
+    overviewSubtitle: 'Guild Stats',
+    moderationTitle: 'Moderation Snapshot',
+    moderationSubtitle:
+      'A breakdown of current warning records and moderation activity for this guild.',
+    chartsTitle: 'Live Charts',
+    chartsSubtitle: 'Quick visual indicators for health, moderation, and performance.',
+    totalCases: 'Total Cases',
+    totalWarnings: 'Total Warnings',
+    activeWarnings: 'Active Warnings',
+    clearedWarnings: 'Cleared Warnings',
+  },
+
+  topStats: [
+    {
+      key: 'botStatus',
+      label: 'Bot Status',
+      type: 'status',
+      onlineText: 'Online',
+      offlineText: 'Offline',
+      successColorKey: 'success',
+      dangerColorKey: 'danger',
+    },
+    {
+      key: 'backend',
+      label: 'Backend',
+      type: 'status',
+      onlineText: 'Online',
+      offlineText: 'Offline',
+      successColorKey: 'success',
+      dangerColorKey: 'danger',
+    },
+    {
+      key: 'apiStatus',
+      label: 'API Status',
+      type: 'status',
+      onlineText: 'Online',
+      offlineText: 'Offline',
+      successColorKey: 'success',
+      dangerColorKey: 'danger',
+    },
+    {
+      key: 'members',
+      label: 'Members',
+      type: 'metric',
+      format: 'number',
+    },
+    {
+      key: 'bots',
+      label: 'Bots',
+      type: 'metric',
+      format: 'number',
+    },
+  ],
+
+  chartGroups: [
+    {
+      key: 'system',
+      title: 'System',
+      subtitle: 'Backend, API, Bot',
+      bars: [
+        { key: 'backend', label: 'Backend', valueKey: 'backendScore', format: 'integer' },
+        { key: 'api', label: 'API', valueKey: 'apiScore', format: 'integer' },
+        { key: 'bot', label: 'Bot', valueKey: 'botScore', format: 'integer' },
+      ],
+    },
+    {
+      key: 'moderation',
+      title: 'Moderation',
+      subtitle: 'Cases and warnings',
+      bars: [
+        { key: 'cases', label: 'Cases', valueKey: 'totalCases', format: 'integer' },
+        { key: 'warnings', label: 'Warnings', valueKey: 'totalWarnings', format: 'integer' },
+        { key: 'active', label: 'Active', valueKey: 'activeWarnings', format: 'integer' },
+        { key: 'cleared', label: 'Cleared', valueKey: 'clearedWarnings', format: 'integer' },
+      ],
+    },
+    {
+      key: 'performance',
+      title: 'Performance',
+      subtitle: 'Latency, request speed, humans, bots',
+      bars: [
+        { key: 'latency', label: 'Latency', valueKey: 'latencyMs', format: 'integer' },
+        { key: 'request', label: 'Request', valueKey: 'requestRate', format: 'integer' },
+        { key: 'members', label: 'Members', valueKey: 'members', format: 'integer' },
+        { key: 'bots', label: 'Bots', valueKey: 'bots', format: 'integer' },
+      ],
+    },
+  ],
+};
+
+function clampOverviewNumber(value, fallback = 0) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return fallback;
+  return num;
+}
+
+function truthyOnline(value, defaultValue = false) {
+  if (typeof value === 'boolean') return value;
+
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+
+    if (['online', 'up', 'ok', 'healthy', 'connected', 'ready', 'true'].includes(normalized)) {
+      return true;
+    }
+
+    if (['offline', 'down', 'error', 'disconnected', 'false'].includes(normalized)) {
+      return false;
+    }
+  }
+
+  if (typeof value === 'number') return value > 0;
+
+  return defaultValue;
+}
+
+function getSafeObjectSize(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return 0;
+  return Object.keys(value).length;
+}
+
+export function buildOverviewMetrics({
+  selectedGuild = '',
+  selectedGuildData = null,
+  statusData = null,
+  casesData = null,
+  warningsData = null,
+} = {}) {
+  const nestedGuildData =
+    selectedGuild && statusData?.guilds && typeof statusData.guilds === 'object'
+      ? statusData.guilds[selectedGuild] || null
+      : null;
+
+  const guildName =
+    selectedGuildData?.name ||
+    statusData?.guildName ||
+    statusData?.guild?.name ||
+    nestedGuildData?.name ||
+    OVERVIEW_UI.hero.fallbackTitle;
+
+  const guildId =
+    selectedGuildData?.id ||
+    statusData?.guildId ||
+    statusData?.guild?.id ||
+    nestedGuildData?.id ||
+    selectedGuild ||
+    '—';
+
+  const members =
+    clampOverviewNumber(statusData?.humans, NaN) ||
+    clampOverviewNumber(statusData?.guild?.humans, NaN) ||
+    clampOverviewNumber(nestedGuildData?.humans, NaN) ||
+    clampOverviewNumber(statusData?.members, NaN) ||
+    clampOverviewNumber(statusData?.memberCount, NaN) ||
+    clampOverviewNumber(statusData?.guild?.memberCount, NaN) ||
+    clampOverviewNumber(nestedGuildData?.memberCount, NaN) ||
+    clampOverviewNumber(selectedGuildData?.approximateMemberCount, 0) ||
+    0;
+
+  const bots =
+    clampOverviewNumber(statusData?.bots, NaN) ||
+    clampOverviewNumber(statusData?.guild?.bots, NaN) ||
+    clampOverviewNumber(nestedGuildData?.bots, 0) ||
+    0;
+
+  const totalCases = Array.isArray(casesData)
+    ? casesData.length
+    : Array.isArray(casesData?.cases)
+      ? casesData.cases.length
+      : clampOverviewNumber(casesData?.total, NaN) ||
+        clampOverviewNumber(casesData?.count, NaN) ||
+        getSafeObjectSize(casesData);
+
+  const warningsArray = Array.isArray(warningsData)
+    ? warningsData
+    : Array.isArray(warningsData?.warnings)
+      ? warningsData.warnings
+      : [];
+
+  const totalWarnings =
+    warningsArray.length ||
+    clampOverviewNumber(warningsData?.total, NaN) ||
+    clampOverviewNumber(warningsData?.count, NaN) ||
+    getSafeObjectSize(warningsData);
+
+  const activeWarnings =
+    warningsArray.filter((warning) => warning?.cleared !== true).length ||
+    clampOverviewNumber(warningsData?.active, 0);
+
+  const clearedWarnings =
+    warningsArray.filter((warning) => warning?.cleared === true).length ||
+    clampOverviewNumber(warningsData?.cleared, 0);
+
+  const latencyMs =
+    clampOverviewNumber(statusData?.latency, NaN) ||
+    clampOverviewNumber(statusData?.latencyMs, NaN) ||
+    clampOverviewNumber(statusData?.botLatencyMs, NaN) ||
+    clampOverviewNumber(statusData?.ping, NaN) ||
+    clampOverviewNumber(statusData?.wsPing, 106) ||
+    106;
+
+  const requestRate =
+    clampOverviewNumber(statusData?.requestRate, NaN) ||
+    clampOverviewNumber(statusData?.requestsPerMinute, NaN) ||
+    clampOverviewNumber(statusData?.apiRequests, NaN) ||
+    clampOverviewNumber(statusData?.requests, 15) ||
+    15;
+
+  const botOnline = truthyOnline(
+    statusData?.botOnline ?? statusData?.botStatus ?? statusData?.bot?.online,
+    true,
+  );
+
+  const backendOnline = truthyOnline(
+    statusData?.backendOnline ?? statusData?.backendStatus ?? statusData?.backend?.online,
+    true,
+  );
+
+  const apiOnline = truthyOnline(
+    statusData?.apiOnline ?? statusData?.apiStatus ?? statusData?.api?.online,
+    true,
+  );
+
+  const botScore = botOnline ? 100 : 0;
+  const backendScore = backendOnline ? 100 : 0;
+  const apiScore = apiOnline ? 100 : 0;
+
+  return {
+    guildName,
+    guildId,
+    members,
+    bots,
+    botOnline,
+    backendOnline,
+    apiOnline,
+    totalCases,
+    totalWarnings,
+    activeWarnings,
+    clearedWarnings,
+    latencyMs,
+    requestRate,
+    botScore,
+    backendScore,
+    apiScore,
+  };
+}
+
+export function createOverviewPageStyles(theme) {
+  const baseCard = {
+    background: theme.cardBg,
+    border: `1px solid ${theme.cardBorder}`,
+    borderRadius: DASHBOARD_LAYOUT.cardRadius,
+    boxShadow: theme.shadow,
+  };
+
+  return {
+    page: {
+      display: 'grid',
+      gap: '20px',
+    },
+
+    hero: {
+      ...baseCard,
+      position: 'relative',
+      overflow: 'hidden',
+      minHeight: OVERVIEW_UI.hero.minHeight,
+      padding: '22px 24px',
+      display: 'grid',
+      alignContent: 'center',
+      gap: '10px',
+      background: `linear-gradient(120deg, ${theme.cardBg} 0%, ${theme.cardBg} 55%, rgba(59,130,246,0.16) 100%)`,
+    },
+
+    heroGlow: {
+      position: 'absolute',
+      inset: 0,
+      pointerEvents: 'none',
+      background: 'radial-gradient(circle at 85% 50%, rgba(96,165,250,0.22), transparent 34%)',
+    },
+
+    heroTitle: {
+      margin: 0,
+      position: 'relative',
+      zIndex: 1,
+      fontSize: 'clamp(30px, 4vw, 56px)',
+      lineHeight: 0.94,
+      fontWeight: 950,
+      letterSpacing: '-0.045em',
+      color: theme.cardText,
+      textTransform: 'uppercase',
+      textShadow: '0 3px 0 rgba(0,0,0,0.28)',
+      wordBreak: 'break-word',
+    },
+
+    heroMeta: {
+      position: 'relative',
+      zIndex: 1,
+      display: 'grid',
+      gap: '8px',
+    },
+
+    heroMetaText: {
+      margin: 0,
+      fontSize: '15px',
+      lineHeight: 1.45,
+      color: theme.mutedText,
+      fontWeight: 600,
+    },
+
+    sectionCard: {
+      ...baseCard,
+      padding: '20px',
+      display: 'grid',
+      gap: '18px',
+    },
+
+    sectionHeadingWrap: {
+      display: 'grid',
+      gap: '8px',
+    },
+
+    sectionTitle: {
+      margin: 0,
+      fontSize: 'clamp(24px, 3vw, 38px)',
+      lineHeight: 1,
+      fontWeight: 950,
+      letterSpacing: '-0.04em',
+      color: theme.cardText,
+      textShadow: '0 2px 0 rgba(0,0,0,0.24)',
+    },
+
+    sectionSubtitle: {
+      margin: 0,
+      fontSize: '15px',
+      lineHeight: 1.55,
+      color: theme.mutedText,
+      maxWidth: '900px',
+    },
+
+    topStatsGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+      gap: '16px',
+      alignItems: 'stretch',
+    },
+
+    topStatsGridItem: (itemKey) => ({
+      minWidth: 0,
+      gridColumn:
+        itemKey === 'members' || itemKey === 'bots'
+          ? 'span 1'
+          : 'span 1',
+    }),
+
+    topStatCard: {
+      background: theme.softBg,
+      border: `1px solid ${theme.cardBorder}`,
+      borderRadius: '18px',
+      minHeight: OVERVIEW_UI.cards.topStatHeight,
+      padding: '18px 20px',
+      display: 'grid',
+      alignContent: 'space-between',
+      gap: '10px',
+    },
+
+    topStatLabel: {
+      margin: 0,
+      fontSize: '12px',
+      lineHeight: 1.2,
+      fontWeight: 800,
+      textTransform: 'uppercase',
+      letterSpacing: '0.08em',
+      color: theme.mutedText,
+    },
+
+    topStatValueRow: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '10px',
+      flexWrap: 'wrap',
+    },
+
+    statusDot: (color) => ({
+      width: '10px',
+      height: '10px',
+      borderRadius: '999px',
+      background: color,
+      boxShadow: `0 0 0 4px ${color}22`,
+      flexShrink: 0,
+    }),
+
+    topStatValue: (color = theme.cardText) => ({
+      margin: 0,
+      fontSize: '22px',
+      lineHeight: 1,
+      fontWeight: 900,
+      color,
+      letterSpacing: '-0.02em',
+    }),
+
+    snapshotGrid: {
+      display: 'grid',
+      gridTemplateColumns: `repeat(auto-fit, minmax(${OVERVIEW_UI.cards.snapshotGridMin}, 1fr))`,
+      gap: '14px',
+    },
+
+    snapshotCard: {
+      background: theme.softBg,
+      border: `1px solid ${theme.cardBorder}`,
+      borderRadius: '16px',
+      minHeight: OVERVIEW_UI.cards.snapshotHeight,
+      padding: '14px 16px',
+      display: 'grid',
+      gap: '10px',
+      alignContent: 'space-between',
+    },
+
+    snapshotLabel: {
+      margin: 0,
+      fontSize: '12px',
+      lineHeight: 1.2,
+      fontWeight: 800,
+      textTransform: 'uppercase',
+      letterSpacing: '0.08em',
+      color: theme.mutedText,
+    },
+
+    snapshotValue: {
+      margin: 0,
+      fontSize: '20px',
+      lineHeight: 1,
+      fontWeight: 900,
+      color: theme.cardText,
+    },
+
+    chartsGrid: {
+      display: 'grid',
+      gridTemplateColumns: `repeat(auto-fit, minmax(${OVERVIEW_UI.cards.chartGridMin}, 1fr))`,
+      gap: '16px',
+      alignItems: 'stretch',
+    },
+
+    chartCard: {
+      background: theme.softBg,
+      border: `1px solid ${theme.cardBorder}`,
+      borderRadius: '18px',
+      padding: '16px',
+      display: 'grid',
+      gap: '16px',
+      alignContent: 'start',
+    },
+
+    chartHeading: {
+      display: 'grid',
+      gap: '6px',
+    },
+
+    chartTitle: {
+      margin: 0,
+      fontSize: '17px',
+      lineHeight: 1.1,
+      fontWeight: 900,
+      color: theme.cardText,
+    },
+
+    chartSubtitle: {
+      margin: 0,
+      fontSize: '14px',
+      lineHeight: 1.45,
+      color: theme.mutedText,
+    },
+
+    barsWrap: {
+      display: 'grid',
+      gap: '14px',
+      alignContent: 'end',
+      minHeight: '170px',
+    },
+
+    barsRow: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(56px, 1fr))',
+      gap: '10px',
+      alignItems: 'end',
+      minHeight: '126px',
+    },
+
+    barColumn: {
+      display: 'grid',
+      gap: '8px',
+      alignItems: 'end',
+      justifyItems: 'stretch',
+    },
+
+    barTrack: {
+      height: '100px',
+      display: 'flex',
+      alignItems: 'flex-end',
+      padding: '0 4px',
+    },
+
+    barFill: (heightPercent) => ({
+      width: '100%',
+      height: `${Math.max(14, Math.min(100, heightPercent))}%`,
+      borderRadius: '10px',
+      background: 'linear-gradient(180deg, rgba(59,130,246,0.95) 0%, rgba(37,99,235,0.72) 100%)',
+      border: '1px solid rgba(147,197,253,0.26)',
+      boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.12)',
+      transition: 'height 0.24s ease',
+    }),
+
+    barLabel: {
+      margin: 0,
+      fontSize: '12px',
+      lineHeight: 1.2,
+      fontWeight: 800,
+      color: theme.cardText,
+      textAlign: 'left',
+    },
+
+    barValue: {
+      margin: 0,
+      fontSize: '12px',
+      lineHeight: 1.2,
+      color: theme.mutedText,
+      fontWeight: 700,
+    },
+  };
+}
+
+export function getOverviewChartValue(value, chartKey) {
+  const safe = clampOverviewNumber(value, 0);
+
+  if (chartKey === 'moderation') {
+    return Math.max(0, Math.min(100, safe * 12));
+  }
+
+  if (chartKey === 'performance') {
+    if (safe <= 0) return 12;
+    return Math.max(12, Math.min(100, safe));
+  }
+
+  return Math.max(0, Math.min(100, safe));
+}
+
+export function formatOverviewDisplayValue(value, format = 'integer') {
+  const safe = clampOverviewNumber(value, 0);
+
+  if (format === 'number' || format === 'integer') {
+    return String(Math.round(safe));
+  }
+
+  return String(safe);
 }
