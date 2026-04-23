@@ -1,16 +1,20 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { topbarStyles } from '../ui';
+
+function getInitial(name = '') {
+  return name.trim().charAt(0).toUpperCase() || '?';
+}
 
 function Topbar({
   theme,
-  authLoading,
-  isAuthenticated,
-  handleLogin,
-  handleLogout,
-  topbarUserName,
+  authLoading = false,
+  isAuthenticated = false,
+  handleLogin = () => {},
+  handleLogout = () => {},
+  topbarUserName = 'User',
   currentUserAvatar,
-  darkMode,
-  setDarkMode,
+  darkMode = true,
+  setDarkMode = () => {},
   loginPending = false,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -18,7 +22,29 @@ function Topbar({
   const [hoveredMenuItem, setHoveredMenuItem] = useState('');
   const menuRef = useRef(null);
   const menuButtonRef = useRef(null);
+
   const styles = useMemo(() => topbarStyles(theme), [theme]);
+  const userInitial = getInitial(topbarUserName);
+
+  const closeMenu = useCallback(() => {
+    setMenuOpen(false);
+    setHoveredMenuItem('');
+    setIsUserButtonHovered(false);
+  }, []);
+
+  const toggleMenu = useCallback(() => {
+    if (authLoading || !isAuthenticated) return;
+    setMenuOpen((prev) => !prev);
+  }, [authLoading, isAuthenticated]);
+
+  const handleThemeToggle = useCallback(() => {
+    setDarkMode((prev) => !prev);
+  }, [setDarkMode]);
+
+  const onLogoutClick = useCallback(() => {
+    closeMenu();
+    handleLogout();
+  }, [closeMenu, handleLogout]);
 
   useEffect(() => {
     if (!menuOpen) return undefined;
@@ -29,13 +55,13 @@ function Topbar({
         !menuRef.current.contains(event.target) &&
         !menuButtonRef.current?.contains(event.target)
       ) {
-        setMenuOpen(false);
+        closeMenu();
       }
     }
 
     function handleKeyDown(event) {
       if (event.key === 'Escape') {
-        setMenuOpen(false);
+        closeMenu();
         menuButtonRef.current?.focus();
       }
     }
@@ -49,12 +75,12 @@ function Topbar({
       document.removeEventListener('touchstart', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [menuOpen]);
+  }, [menuOpen, closeMenu]);
 
   return (
     <header style={styles.root}>
       <div style={styles.inner}>
-        <div />
+        <div style={styles.left} />
 
         <div style={styles.actionsWrap}>
           {isAuthenticated ? (
@@ -64,14 +90,16 @@ function Topbar({
                 type="button"
                 aria-haspopup="menu"
                 aria-expanded={menuOpen}
-                onClick={() => {
-                  if (authLoading) return;
-                  setMenuOpen((prev) => !prev);
-                }}
+                disabled={authLoading}
+                onClick={toggleMenu}
                 onMouseEnter={() => setIsUserButtonHovered(true)}
                 onMouseLeave={() => setIsUserButtonHovered(false)}
                 onBlur={() => setIsUserButtonHovered(false)}
-                style={styles.userButton(isUserButtonHovered || menuOpen)}
+                style={{
+                  ...styles.userButton(isUserButtonHovered || menuOpen),
+                  opacity: authLoading ? 0.7 : 1,
+                  cursor: authLoading ? 'not-allowed' : 'pointer',
+                }}
               >
                 <div style={styles.userText}>
                   <div style={styles.userName}>{topbarUserName}</div>
@@ -86,9 +114,7 @@ function Topbar({
                     style={styles.avatar}
                   />
                 ) : (
-                  <div style={styles.avatarFallback}>
-                    {topbarUserName.charAt(0)?.toUpperCase() || '?'}
-                  </div>
+                  <div style={styles.avatarFallback}>{userInitial}</div>
                 )}
               </button>
 
@@ -104,7 +130,7 @@ function Topbar({
                       role="switch"
                       aria-checked={!darkMode}
                       aria-label={`Switch to ${darkMode ? 'light' : 'dark'} mode`}
-                      onClick={() => setDarkMode((prev) => !prev)}
+                      onClick={handleThemeToggle}
                       onMouseEnter={() => setHoveredMenuItem('theme')}
                       onMouseLeave={() => setHoveredMenuItem('')}
                       onBlur={() => setHoveredMenuItem('')}
@@ -121,10 +147,7 @@ function Topbar({
                   <button
                     type="button"
                     role="menuitem"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      handleLogout();
-                    }}
+                    onClick={onLogoutClick}
                     onMouseEnter={() => setHoveredMenuItem('logout')}
                     onMouseLeave={() => setHoveredMenuItem('')}
                     onBlur={() => setHoveredMenuItem('')}
@@ -135,7 +158,26 @@ function Topbar({
                 </div>
               ) : null}
             </>
-          ) : null}
+          ) : (
+            <button
+              type="button"
+              onClick={handleLogin}
+              disabled={authLoading || loginPending}
+              style={{
+                ...styles.userButton(false),
+                opacity: authLoading || loginPending ? 0.7 : 1,
+                cursor: authLoading || loginPending ? 'not-allowed' : 'pointer',
+              }}
+            >
+              <div style={styles.userText}>
+                <div style={styles.userName}>
+                  {loginPending ? 'Redirecting...' : 'Login'}
+                </div>
+              </div>
+
+              <div style={styles.avatarFallback}>↗</div>
+            </button>
+          )}
         </div>
       </div>
     </header>

@@ -24,7 +24,7 @@ export function setStorage(key, value) {
  * Get a value from localStorage
  * @param {string} key
  * @param {any} defaultValue
- * @returns {any}
+ * @returns {any}s
  */
 export function getStorage(key, defaultValue = null) {
   if (!hasStorage()) return defaultValue;

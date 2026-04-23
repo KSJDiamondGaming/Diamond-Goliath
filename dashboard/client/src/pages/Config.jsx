@@ -1,32 +1,60 @@
+
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
-import DashboardPage, {
+import PageShell, {
+  EmptyState,
+  LoadingPanel,
+  Notice,
   PrimaryButton,
   SectionCard,
-} from '../components/Dashboard';
+  StatGrid,
+  SummaryStat,
+} from '../components/PageShell';
+import { PAGE_LAYOUTS, SECTION_DEFS } from '../ui';
 
-const EMPTY_FORM = {
-  defaultTitle: '',
-  footerText: '',
-  footerIcon: '',
-  color: '',
+const PAGE_KEY = 'config';
+
+const DEFAULT_FORM = {
+  modLogChannelId: '',
+  memberLogChannelId: '',
+  messageLogChannelId: '',
+  automodLogChannelId: '',
+  prefix: '/',
+  muteRoleId: '',
+  staffRoleId: '',
+  appealUrl: '',
+  dashboardEnabled: true,
 };
 
 export default function Config({ selectedGuild, theme }) {
   const [loading, setLoading] = useState(false);
+  const [channelsLoading, setChannelsLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [saveMessage, setSaveMessage] = useState('');
-  const [form, setForm] = useState(EMPTY_FORM);
+  const [form, setForm] = useState(DEFAULT_FORM);
+  const [channels, setChannels] = useState([]);
+
+  const page = PAGE_LAYOUTS[PAGE_KEY] || {
+    title: 'Config',
+    description: 'Manage dashboard and moderation configuration for the selected server.',
+    emptyDescription: 'Select a server to manage config.',
+    sections: [
+      { id: 'generalConfig', type: 'config' },
+      { id: 'logConfig', type: 'config' },
+    ],
+  };
 
   useEffect(() => {
     let mounted = true;
 
-    async function loadData() {
+    async function loadConfig() {
       if (!selectedGuild) {
         if (mounted) {
-          setForm(EMPTY_FORM);
+          setForm(DEFAULT_FORM);
           setError('');
           setSaveMessage('');
+          setLoading(false);
         }
         return;
       }
@@ -36,30 +64,66 @@ export default function Config({ selectedGuild, theme }) {
         setError('');
         setSaveMessage('');
 
-        const config = await api.getConfig(selectedGuild);
+        const data = await api.getConfig(selectedGuild);
 
         if (!mounted) return;
 
         setForm({
-          defaultTitle: config?.defaultTitle || '',
-          footerText: config?.footerText || '',
-          footerIcon: config?.footerIcon || '',
-          color: config?.color || '',
+          modLogChannelId: data?.modLogChannelId || data?.modlogChannelId || '',
+          memberLogChannelId: data?.memberLogChannelId || '',
+          messageLogChannelId: data?.messageLogChannelId || '',
+          automodLogChannelId: data?.automodLogChannelId || '',
+          prefix: data?.prefix || '/',
+          muteRoleId: data?.muteRoleId || '',
+          staffRoleId: data?.staffRoleId || '',
+          appealUrl: data?.appealUrl || '',
+          dashboardEnabled: data?.dashboardEnabled !== false,
         });
       } catch (err) {
         console.error(err);
         if (!mounted) return;
-
-        setForm(EMPTY_FORM);
+        setForm(DEFAULT_FORM);
         setError('Could not load config.');
       } finally {
-        if (mounted) {
-          setLoading(false);
-        }
+        if (mounted) setLoading(false);
       }
     }
 
-    loadData();
+    loadConfig();
+
+    return () => {
+      mounted = false;
+    };
+  }, [selectedGuild]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadChannels() {
+      if (!selectedGuild) {
+        if (mounted) {
+          setChannels([]);
+          setChannelsLoading(false);
+        }
+        return;
+      }
+
+      try {
+        setChannelsLoading(true);
+        const result = await api.getGuildChannels(selectedGuild);
+        if (!mounted) return;
+        const channelList = Array.isArray(result) ? result : [];
+        setChannels(channelList.filter((channel) => isTextChannel(channel)));
+      } catch (err) {
+        console.error(err);
+        if (!mounted) return;
+        setChannels([]);
+      } finally {
+        if (mounted) setChannelsLoading(false);
+      }
+    }
+
+    loadChannels();
 
     return () => {
       mounted = false;
@@ -67,177 +131,209 @@ export default function Config({ selectedGuild, theme }) {
   }, [selectedGuild]);
 
   const handleChange = useCallback((field, value) => {
-    setForm((prev) => {
-      if (prev[field] === value) return prev;
+    setForm((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  }, []);
 
-      return {
-        ...prev,
-        [field]: value,
-      };
-    });
+  const handleToggle = useCallback((field) => {
+    setForm((prev) => ({
+      ...prev,
+      [field]: !prev[field],
+    }));
   }, []);
 
   const handleSave = useCallback(async () => {
     if (!selectedGuild) {
-      setSaveMessage('Select a guild first.');
+      setSaveMessage('❌ Select a guild first.');
       return;
     }
 
     try {
+      setSaving(true);
       setSaveMessage('');
       setError('');
 
-      await api.updateConfig(selectedGuild, form);
+      await api.updateConfig(selectedGuild, {
+        modLogChannelId: form.modLogChannelId || null,
+        memberLogChannelId: form.memberLogChannelId || null,
+        messageLogChannelId: form.messageLogChannelId || null,
+        automodLogChannelId: form.automodLogChannelId || null,
+        prefix: form.prefix || '/',
+        muteRoleId: form.muteRoleId || null,
+        staffRoleId: form.staffRoleId || null,
+        appealUrl: form.appealUrl || '',
+        dashboardEnabled: Boolean(form.dashboardEnabled),
+      });
 
-      setSaveMessage('Embed config saved successfully.');
+      setSaveMessage('✅ Config saved successfully.');
     } catch (err) {
       console.error(err);
-      setSaveMessage('Failed to save embed config.');
+      setSaveMessage('❌ Failed to save config.');
+    } finally {
+      setSaving(false);
     }
   }, [selectedGuild, form]);
 
-  const previewBorderColor = useMemo(() => form.color || '#2b2d31', [form.color]);
+  const configuredLogs = useMemo(() => {
+    return [
+      form.modLogChannelId,
+      form.memberLogChannelId,
+      form.messageLogChannelId,
+      form.automodLogChannelId,
+    ].filter(Boolean).length;
+  }, [form]);
+
+  if (!selectedGuild) {
+    return (
+      <PageShell
+        title={page.title || 'Config'}
+        subtitle={page.emptyDescription || 'Select a server to manage config.'}
+        theme={theme}
+      >
+        <EmptyState theme={theme} text="Select a guild from the sidebar to continue." />
+      </PageShell>
+    );
+  }
 
   return (
-    <DashboardPage
-      title="Embed Config"
-      subtitle={
-        selectedGuild
-          ? 'Edit the default embed style for the selected guild.'
-          : 'Select a server to edit embed config.'
-      }
+    <PageShell
+      title={page.title || 'Config'}
+      subtitle={page.description || 'Manage dashboard and moderation configuration for the selected server.'}
       theme={theme}
     >
-      {!selectedGuild ? (
-        <div
-          style={{
-            background: theme.cardBg,
-            border: `1px solid ${theme.cardBorder}`,
-            borderRadius: '18px',
-            padding: '18px',
-            color: theme.mutedText,
-            boxShadow: theme.shadow,
-          }}
-        >
-          Select a guild to edit embed config.
-        </div>
+      {error ? <Notice theme={theme} tone="danger">{error}</Notice> : null}
+      {saveMessage ? (
+        <Notice theme={theme} tone={saveMessage.startsWith('❌') ? 'danger' : 'success'}>
+          {saveMessage}
+        </Notice>
       ) : null}
 
-      {error ? <p style={{ color: '#ef4444', margin: 0 }}>{error}</p> : null}
-      {saveMessage ? <p style={{ color: '#2563eb', margin: 0 }}>{saveMessage}</p> : null}
+      <StatGrid>
+        <SummaryStat theme={theme} label="Prefix" value={form.prefix || '/'} />
+        <SummaryStat theme={theme} label="Log Channels" value={`${configuredLogs}/4`} />
+        <SummaryStat
+          theme={theme}
+          label="Dashboard"
+          value={form.dashboardEnabled ? 'Enabled' : 'Disabled'}
+          accent={form.dashboardEnabled ? '#22c55e' : '#ef4444'}
+        />
+      </StatGrid>
 
-      {loading ? (
-        <div
-          style={{
-            background: theme.cardBg,
-            border: `1px solid ${theme.cardBorder}`,
-            borderRadius: '18px',
-            padding: '18px',
-            color: theme.cardText,
-            boxShadow: theme.shadow,
-          }}
-        >
-          Loading embed config...
-        </div>
-      ) : (
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 0.95fr)',
-            gap: '20px',
-            alignItems: 'start',
-          }}
-        >
-          <SectionCard theme={theme} title="Edit Embed Config" padding="20px">
-            <div style={{ display: 'grid', gap: '14px' }}>
-              <Field label="Default Title" theme={theme}>
-                <input
-                  type="text"
-                  value={form.defaultTitle}
-                  onChange={(e) => handleChange('defaultTitle', e.target.value)}
-                  style={inputStyle(theme)}
-                  disabled={!selectedGuild}
-                />
-              </Field>
+      <SectionCard
+        theme={theme}
+        title={SECTION_DEFS?.generalConfig?.title || 'General Config'}
+        subtitle={SECTION_DEFS?.generalConfig?.description || 'Core dashboard, moderation, and server-wide configuration.'}
+        padding="20px"
+      >
+        {loading ? (
+          <LoadingPanel theme={theme} text="Loading config..." />
+        ) : (
+          <div style={{ display: 'grid', gap: '16px' }}>
+            <Field theme={theme} label="Command Prefix">
+              <input
+                value={form.prefix}
+                onChange={(e) => handleChange('prefix', e.target.value)}
+                style={inputStyle(theme)}
+                placeholder="/"
+                maxLength={5}
+              />
+            </Field>
 
-              <Field label="Footer Text" theme={theme}>
-                <input
-                  type="text"
-                  value={form.footerText}
-                  onChange={(e) => handleChange('footerText', e.target.value)}
-                  style={inputStyle(theme)}
-                  disabled={!selectedGuild}
-                />
-              </Field>
+            <Field theme={theme} label="Mute Role ID">
+              <input
+                value={form.muteRoleId}
+                onChange={(e) => handleChange('muteRoleId', e.target.value)}
+                style={inputStyle(theme)}
+                placeholder="Mute role ID"
+              />
+            </Field>
 
-              <Field label="Footer Icon URL" theme={theme}>
-                <input
-                  type="text"
-                  value={form.footerIcon}
-                  onChange={(e) => handleChange('footerIcon', e.target.value)}
-                  style={inputStyle(theme)}
-                  disabled={!selectedGuild}
-                />
-              </Field>
+            <Field theme={theme} label="Staff Role ID">
+              <input
+                value={form.staffRoleId}
+                onChange={(e) => handleChange('staffRoleId', e.target.value)}
+                style={inputStyle(theme)}
+                placeholder="Staff role ID"
+              />
+            </Field>
 
-              <Field label="Color" theme={theme}>
-                <input
-                  type="text"
-                  placeholder="#00ffae"
-                  value={form.color}
-                  onChange={(e) => handleChange('color', e.target.value)}
-                  style={inputStyle(theme)}
-                  disabled={!selectedGuild}
-                />
-              </Field>
+            <Field theme={theme} label="Appeal URL">
+              <input
+                value={form.appealUrl}
+                onChange={(e) => handleChange('appealUrl', e.target.value)}
+                style={inputStyle(theme)}
+                placeholder="https://..."
+              />
+            </Field>
 
-              <div style={{ paddingTop: '4px' }}>
-                <PrimaryButton onClick={handleSave} disabled={!selectedGuild}>
-                  Save Config
-                </PrimaryButton>
-              </div>
-            </div>
-          </SectionCard>
+            <ToggleRow
+              label="Enable Dashboard Access"
+              checked={form.dashboardEnabled}
+              onChange={() => handleToggle('dashboardEnabled')}
+              theme={theme}
+            />
+          </div>
+        )}
+      </SectionCard>
 
-          <SectionCard
-            theme={theme}
-            title="Live Preview"
-            subtitle="See how your embed style will look before saving."
-            padding="20px"
-          >
-            <div
-              style={{
-                borderRadius: '16px',
-                background: theme.softBg,
-                borderLeft: `6px solid ${previewBorderColor}`,
-                borderTop: `1px solid ${theme.cardBorder}`,
-                borderRight: `1px solid ${theme.cardBorder}`,
-                borderBottom: `1px solid ${theme.cardBorder}`,
-                padding: '16px',
-              }}
-            >
-              <h3 style={{ margin: 0, color: theme.cardText }}>
-                {form.defaultTitle || 'Preview Title'}
-              </h3>
+      <SectionCard
+        theme={theme}
+        title={SECTION_DEFS?.logConfig?.title || 'Log Channels'}
+        subtitle={SECTION_DEFS?.logConfig?.description || 'Choose where different bot logs should be sent.'}
+        padding="20px"
+      >
+        {loading ? (
+          <LoadingPanel theme={theme} text="Loading log channels..." />
+        ) : (
+          <div style={{ display: 'grid', gap: '16px' }}>
+            <ChannelField
+              theme={theme}
+              label="Moderation Log Channel"
+              value={form.modLogChannelId}
+              onChange={(value) => handleChange('modLogChannelId', value)}
+              channels={channels}
+              channelsLoading={channelsLoading}
+            />
+            <ChannelField
+              theme={theme}
+              label="Member Log Channel"
+              value={form.memberLogChannelId}
+              onChange={(value) => handleChange('memberLogChannelId', value)}
+              channels={channels}
+              channelsLoading={channelsLoading}
+            />
+            <ChannelField
+              theme={theme}
+              label="Message Log Channel"
+              value={form.messageLogChannelId}
+              onChange={(value) => handleChange('messageLogChannelId', value)}
+              channels={channels}
+              channelsLoading={channelsLoading}
+            />
+            <ChannelField
+              theme={theme}
+              label="AutoMod Log Channel"
+              value={form.automodLogChannelId}
+              onChange={(value) => handleChange('automodLogChannelId', value)}
+              channels={channels}
+              channelsLoading={channelsLoading}
+            />
+          </div>
+        )}
+      </SectionCard>
 
-              <p style={{ margin: '10px 0 0 0', color: theme.cardText, lineHeight: 1.6 }}>
-                This is how your embed style will look in KSJ Goliath.
-              </p>
-
-              <div style={{ marginTop: '14px', fontSize: '13px', color: theme.mutedText }}>
-                {form.footerText || 'No footer text set'}
-              </div>
-
-              {form.footerIcon ? <PreviewImage src={form.footerIcon} theme={theme} /> : null}
-            </div>
-          </SectionCard>
-        </div>
-      )}
-    </DashboardPage>
+      <div>
+        <PrimaryButton onClick={handleSave} disabled={!selectedGuild || saving}>
+          {saving ? 'Saving...' : 'Save Config'}
+        </PrimaryButton>
+      </div>
+    </PageShell>
   );
 }
 
-const Field = memo(function Field({ label, children, theme }) {
+const Field = memo(function Field({ theme, label, children }) {
   return (
     <div>
       <p
@@ -256,30 +352,71 @@ const Field = memo(function Field({ label, children, theme }) {
   );
 });
 
-const PreviewImage = memo(function PreviewImage({ src, theme }) {
-  const [hidden, setHidden] = useState(false);
-
-  useEffect(() => {
-    setHidden(false);
-  }, [src]);
-
-  if (hidden || !src) return null;
-
+const ToggleRow = memo(function ToggleRow({ label, checked, onChange, theme }) {
   return (
-    <div style={{ marginTop: '12px' }}>
-      <img
-        src={src}
-        alt="Footer icon preview"
+    <div
+      style={{
+        background: theme.softBg,
+        border: `1px solid ${theme.cardBorder}`,
+        borderRadius: '14px',
+        padding: '14px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        gap: '16px',
+      }}
+    >
+      <span style={{ color: theme.cardText, fontWeight: 700 }}>{label}</span>
+      <button
+        type="button"
+        onClick={onChange}
         style={{
-          width: '28px',
-          height: '28px',
+          padding: '8px 12px',
           borderRadius: '999px',
-          objectFit: 'cover',
-          border: `1px solid ${theme.cardBorder}`,
+          border: checked ? '1px solid rgba(34,197,94,0.3)' : `1px solid ${theme.cardBorder}`,
+          background: checked ? 'rgba(34,197,94,0.14)' : theme.softBg,
+          color: checked ? '#16a34a' : theme.cardText,
+          fontWeight: 800,
+          cursor: 'pointer',
         }}
-        onError={() => setHidden(true)}
-      />
+      >
+        {checked ? 'Enabled' : 'Disabled'}
+      </button>
     </div>
+  );
+});
+
+const ChannelField = memo(function ChannelField({
+  theme,
+  label,
+  value,
+  onChange,
+  channels,
+  channelsLoading,
+}) {
+  return (
+    <Field theme={theme} label={label}>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        style={inputStyle(theme)}
+        disabled={channelsLoading || channels.length === 0}
+      >
+        <option value="">
+          {channelsLoading
+            ? 'Loading channels...'
+            : channels.length === 0
+              ? 'No text channels found'
+              : 'Select a channel'}
+        </option>
+
+        {channels.map((channel) => (
+          <option key={channel.id} value={channel.id}>
+            #{channel.name}
+          </option>
+        ))}
+      </select>
+    </Field>
   );
 });
 
@@ -295,4 +432,9 @@ function inputStyle(theme) {
     fontSize: '14px',
     boxSizing: 'border-box',
   };
+}
+
+function isTextChannel(channel) {
+  const type = channel?.type;
+  return type === 0 || type === 'GUILD_TEXT' || type === 'text';
 }

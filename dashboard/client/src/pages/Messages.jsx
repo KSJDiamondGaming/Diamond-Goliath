@@ -1,83 +1,99 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import DashboardPage, {
+import { api } from '../api';
+import PageShell, {
+  EmptyState,
+  LoadingPanel,
+  Notice,
   PrimaryButton,
   SectionCard,
-} from '../components/Dashboard';
+  StatGrid,
+  SummaryStat,
+} from '../components/PageShell';
+import { PAGE_LAYOUTS, SECTION_DEFS } from '../ui';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+const PAGE_KEY = 'messages';
 
-const EMPTY_FORM = {
-  welcomeTitle: '',
-  welcomeMessage: '',
-  leaveTitle: '',
-  leaveMessage: '',
-};
-
-const EMPTY_MESSAGE_DATA = {
+const DEFAULT_FORM = {
   welcome: {
-    channels: {},
-    messages: {},
-    titles: {},
+    enabled: false,
+    channelId: '',
+    message: '',
   },
   leave: {
-    channels: {},
-    messages: {},
-    titles: {},
+    enabled: false,
+    channelId: '',
+    message: '',
   },
 };
 
 export default function Messages({ selectedGuild, theme }) {
-  const [messageData, setMessageData] = useState(EMPTY_MESSAGE_DATA);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [channelsLoading, setChannelsLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [saveMessage, setSaveMessage] = useState('');
-  const [form, setForm] = useState(EMPTY_FORM);
+  const [form, setForm] = useState(DEFAULT_FORM);
+  const [channels, setChannels] = useState([]);
+
+  const page = PAGE_LAYOUTS[PAGE_KEY] || {
+    title: 'Welcome & Leave',
+    description: 'Manage join and leave messages for the selected server.',
+    emptyDescription: 'Select a server to manage welcome and leave messages.',
+    sections: [
+      { id: 'welcome', type: 'config' },
+      { id: 'leave', type: 'config' },
+    ],
+  };
 
   useEffect(() => {
     let mounted = true;
 
     async function loadMessages() {
+      if (!selectedGuild) {
+        if (mounted) {
+          setForm(DEFAULT_FORM);
+          setError('');
+          setSaveMessage('');
+          setLoading(false);
+        }
+        return;
+      }
+
       try {
         setLoading(true);
         setError('');
+        setSaveMessage('');
 
-        const response = await fetch(`${API_BASE}/api/config/messages`, {
-          credentials: 'include',
-          headers: {
-            Accept: 'application/json',
-          },
-        });
-
-        if (!response.ok) {
-          const text = await response.text();
-          throw new Error(`Request failed (${response.status}): ${text.slice(0, 160)}`);
-        }
-
-        const data = await response.json();
+        const data = await api.getMessages();
 
         if (!mounted) return;
 
-        setMessageData({
+        const guildConfig =
+          data?.[selectedGuild] ||
+          data?.guilds?.[selectedGuild] ||
+          data?.configs?.[selectedGuild] ||
+          data?.messageConfigs?.[selectedGuild] ||
+          {};
+
+        setForm({
           welcome: {
-            channels: data?.welcome?.channels || {},
-            messages: data?.welcome?.messages || {},
-            titles: data?.welcome?.titles || {},
+            enabled: Boolean(guildConfig?.welcome?.enabled ?? guildConfig?.welcomeMessage?.enabled ?? false),
+            channelId: guildConfig?.welcome?.channelId || guildConfig?.welcomeMessage?.channelId || '',
+            message: guildConfig?.welcome?.message || guildConfig?.welcomeMessage?.message || '',
           },
           leave: {
-            channels: data?.leave?.channels || {},
-            messages: data?.leave?.messages || {},
-            titles: data?.leave?.titles || {},
+            enabled: Boolean(guildConfig?.leave?.enabled ?? guildConfig?.leaveMessage?.enabled ?? false),
+            channelId: guildConfig?.leave?.channelId || guildConfig?.leaveMessage?.channelId || '',
+            message: guildConfig?.leave?.message || guildConfig?.leaveMessage?.message || '',
           },
         });
       } catch (err) {
-        console.error('Failed to load welcome/leave config:', err);
+        console.error(err);
         if (!mounted) return;
-        setMessageData(EMPTY_MESSAGE_DATA);
-        setError('Could not load welcome/leave config.');
+        setForm(DEFAULT_FORM);
+        setError('Could not load message config.');
       } finally {
-        if (mounted) {
-          setLoading(false);
-        }
+        if (mounted) setLoading(false);
       }
     }
 
@@ -86,263 +102,286 @@ export default function Messages({ selectedGuild, theme }) {
     return () => {
       mounted = false;
     };
-  }, []);
-
-  const guildValues = useMemo(() => {
-    if (!selectedGuild) return EMPTY_FORM;
-
-    return {
-      welcomeTitle: messageData?.welcome?.titles?.[selectedGuild] || '',
-      welcomeMessage: messageData?.welcome?.messages?.[selectedGuild] || '',
-      leaveTitle: messageData?.leave?.titles?.[selectedGuild] || '',
-      leaveMessage: messageData?.leave?.messages?.[selectedGuild] || '',
-    };
-  }, [selectedGuild, messageData]);
+  }, [selectedGuild]);
 
   useEffect(() => {
-    setForm((prev) => {
-      if (
-        prev.welcomeTitle === guildValues.welcomeTitle &&
-        prev.welcomeMessage === guildValues.welcomeMessage &&
-        prev.leaveTitle === guildValues.leaveTitle &&
-        prev.leaveMessage === guildValues.leaveMessage
-      ) {
-        return prev;
+    let mounted = true;
+
+    async function loadChannels() {
+      if (!selectedGuild) {
+        if (mounted) {
+          setChannels([]);
+          setChannelsLoading(false);
+        }
+        return;
       }
 
-      return guildValues;
-    });
-  }, [guildValues]);
+      try {
+        setChannelsLoading(true);
+        const result = await api.getGuildChannels(selectedGuild);
+        if (!mounted) return;
+        const channelList = Array.isArray(result) ? result : [];
+        setChannels(channelList.filter((channel) => isTextChannel(channel)));
+      } catch (err) {
+        console.error(err);
+        if (!mounted) return;
+        setChannels([]);
+      } finally {
+        if (mounted) setChannelsLoading(false);
+      }
+    }
 
-  const handleChange = useCallback((field, value) => {
+    loadChannels();
+
+    return () => {
+      mounted = false;
+    };
+  }, [selectedGuild]);
+
+  const enabledCount = useMemo(() => {
+    let count = 0;
+    if (form.welcome.enabled) count += 1;
+    if (form.leave.enabled) count += 1;
+    return count;
+  }, [form]);
+
+  const handleToggle = useCallback((section) => {
     setForm((prev) => ({
       ...prev,
-      [field]: value,
+      [section]: {
+        ...prev[section],
+        enabled: !prev[section].enabled,
+      },
+    }));
+  }, []);
+
+  const handleChange = useCallback((section, field, value) => {
+    setForm((prev) => ({
+      ...prev,
+      [section]: {
+        ...prev[section],
+        [field]: value,
+      },
     }));
   }, []);
 
   const handleSave = useCallback(async () => {
     if (!selectedGuild) {
-      setSaveMessage('Select a server first.');
+      setSaveMessage('❌ Select a guild first.');
       return;
     }
 
     try {
+      setSaving(true);
       setSaveMessage('');
       setError('');
 
-      const response = await fetch(`${API_BASE}/api/config/messages/${selectedGuild}`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
+      const payload = {
+        welcome: {
+          enabled: form.welcome.enabled,
+          channelId: form.welcome.channelId || null,
+          message: form.welcome.message,
         },
-        body: JSON.stringify(form),
-      });
+        leave: {
+          enabled: form.leave.enabled,
+          channelId: form.leave.channelId || null,
+          message: form.leave.message,
+        },
+      };
 
-      if (!response.ok) {
-        const text = await response.text();
-        throw new Error(`Request failed (${response.status}): ${text.slice(0, 160)}`);
-      }
-
-      const result = await response.json();
-
-      setMessageData((prev) => {
-        const safePrev = prev || EMPTY_MESSAGE_DATA;
-
-        return {
-          ...safePrev,
-          welcome: {
-            ...(safePrev.welcome || {}),
-            titles: {
-              ...(safePrev.welcome?.titles || {}),
-              [selectedGuild]: result?.data?.welcomeTitle || '',
-            },
-            messages: {
-              ...(safePrev.welcome?.messages || {}),
-              [selectedGuild]: result?.data?.welcomeMessage || '',
-            },
-          },
-          leave: {
-            ...(safePrev.leave || {}),
-            titles: {
-              ...(safePrev.leave?.titles || {}),
-              [selectedGuild]: result?.data?.leaveTitle || '',
-            },
-            messages: {
-              ...(safePrev.leave?.messages || {}),
-              [selectedGuild]: result?.data?.leaveMessage || '',
-            },
-          },
-        };
-      });
-
-      setSaveMessage('Welcome / leave messages saved successfully.');
+      await api.saveMessages(selectedGuild, payload);
+      setSaveMessage('✅ Message config saved successfully.');
     } catch (err) {
-      console.error('Failed to save welcome/leave config:', err);
-      setSaveMessage('Failed to save welcome / leave messages.');
+      console.error(err);
+      setSaveMessage('❌ Failed to save message config.');
+    } finally {
+      setSaving(false);
     }
   }, [selectedGuild, form]);
 
+  if (!selectedGuild) {
+    return (
+      <PageShell
+        title={page.title || 'Welcome & Leave'}
+        subtitle={page.emptyDescription || 'Select a server to manage welcome and leave messages.'}
+        theme={theme}
+      >
+        <EmptyState theme={theme} text="Select a guild from the sidebar to continue." />
+      </PageShell>
+    );
+  }
+
   return (
-    <DashboardPage
-      title="Welcome & Leave"
-      subtitle="Manage join and leave messaging for the selected guild."
+    <PageShell
+      title={page.title || 'Welcome & Leave'}
+      subtitle={page.description || 'Manage join and leave messages for the selected server.'}
       theme={theme}
     >
-      {!selectedGuild ? (
-        <div
-          style={{
-            background: theme.cardBg,
-            border: `1px solid ${theme.cardBorder}`,
-            borderRadius: '18px',
-            padding: '18px',
-            color: theme.mutedText,
-            boxShadow: theme.shadow,
-          }}
-        >
-          Select a guild to edit welcome and leave messages.
-        </div>
+      {error ? <Notice theme={theme} tone="danger">{error}</Notice> : null}
+      {saveMessage ? (
+        <Notice theme={theme} tone={saveMessage.startsWith('❌') ? 'danger' : 'success'}>
+          {saveMessage}
+        </Notice>
       ) : null}
 
-      {error ? <p style={{ color: '#ef4444', margin: 0 }}>{error}</p> : null}
-      {saveMessage ? <p style={{ color: '#2563eb', margin: 0 }}>{saveMessage}</p> : null}
+      <StatGrid>
+        <SummaryStat theme={theme} label="Enabled Flows" value={`${enabledCount}/2`} />
+        <SummaryStat
+          theme={theme}
+          label="Welcome"
+          value={form.welcome.enabled ? 'Enabled' : 'Disabled'}
+          accent={form.welcome.enabled ? '#16a34a' : '#ef4444'}
+        />
+        <SummaryStat
+          theme={theme}
+          label="Leave"
+          value={form.leave.enabled ? 'Enabled' : 'Disabled'}
+          accent={form.leave.enabled ? '#16a34a' : '#ef4444'}
+        />
+      </StatGrid>
 
-      {loading ? (
-        <div
-          style={{
-            background: theme.cardBg,
-            border: `1px solid ${theme.cardBorder}`,
-            borderRadius: '18px',
-            padding: '18px',
-            color: theme.cardText,
-            boxShadow: theme.shadow,
-          }}
-        >
-          Loading welcome / leave settings...
-        </div>
-      ) : (
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 0.95fr)',
-            gap: '20px',
-            alignItems: 'start',
-          }}
-        >
-          <SectionCard theme={theme} title="Edit Messages" padding="20px">
-            <div style={{ display: 'grid', gap: '14px' }}>
-              <Field label="Welcome Title" theme={theme}>
-                <input
-                  type="text"
-                  value={form.welcomeTitle}
-                  onChange={(e) => handleChange('welcomeTitle', e.target.value)}
-                  style={inputStyle(theme)}
-                  disabled={!selectedGuild}
-                />
-              </Field>
+      <SectionCard
+        theme={theme}
+        title={SECTION_DEFS?.welcome?.title || 'Welcome Message'}
+        subtitle={SECTION_DEFS?.welcome?.description || 'Configure the welcome message sent when a new user joins.'}
+        padding="20px"
+      >
+        {loading ? (
+          <LoadingPanel theme={theme} text="Loading message config..." />
+        ) : (
+          <MessageEditor
+            theme={theme}
+            title="Welcome"
+            form={form.welcome}
+            channels={channels}
+            channelsLoading={channelsLoading}
+            onToggle={() => handleToggle('welcome')}
+            onChange={(field, value) => handleChange('welcome', field, value)}
+          />
+        )}
+      </SectionCard>
 
-              <Field label="Welcome Message" theme={theme}>
-                <textarea
-                  value={form.welcomeMessage}
-                  onChange={(e) => handleChange('welcomeMessage', e.target.value)}
-                  style={textareaStyle(theme)}
-                  disabled={!selectedGuild}
-                />
-              </Field>
+      <SectionCard
+        theme={theme}
+        title={SECTION_DEFS?.leave?.title || 'Leave Message'}
+        subtitle={SECTION_DEFS?.leave?.description || 'Configure the leave message sent when a user leaves the server.'}
+        padding="20px"
+      >
+        {loading ? (
+          <LoadingPanel theme={theme} text="Loading message config..." />
+        ) : (
+          <MessageEditor
+            theme={theme}
+            title="Leave"
+            form={form.leave}
+            channels={channels}
+            channelsLoading={channelsLoading}
+            onToggle={() => handleToggle('leave')}
+            onChange={(field, value) => handleChange('leave', field, value)}
+          />
+        )}
+      </SectionCard>
 
-              <Field label="Leave Title" theme={theme}>
-                <input
-                  type="text"
-                  value={form.leaveTitle}
-                  onChange={(e) => handleChange('leaveTitle', e.target.value)}
-                  style={inputStyle(theme)}
-                  disabled={!selectedGuild}
-                />
-              </Field>
-
-              <Field label="Leave Message" theme={theme}>
-                <textarea
-                  value={form.leaveMessage}
-                  onChange={(e) => handleChange('leaveMessage', e.target.value)}
-                  style={textareaStyle(theme)}
-                  disabled={!selectedGuild}
-                />
-              </Field>
-
-              <div style={{ paddingTop: '4px' }}>
-                <PrimaryButton onClick={handleSave} disabled={!selectedGuild}>
-                  Save Messages
-                </PrimaryButton>
-              </div>
-            </div>
-          </SectionCard>
-
-          <div style={{ display: 'grid', gap: '20px' }}>
-            <PreviewCard
-              title={form.welcomeTitle || 'Welcome Preview'}
-              message={
-                form.welcomeMessage ||
-                'Welcome {user} to {server}! You are member #{membercount}.'
-              }
-              borderColor="#2563eb"
-              theme={theme}
-            />
-
-            <PreviewCard
-              title={form.leaveTitle || 'Leave Preview'}
-              message={
-                form.leaveMessage ||
-                '{username} has left the server. We now have {membercount} members.'
-              }
-              borderColor="#6b7280"
-              theme={theme}
-            />
-          </div>
-        </div>
-      )}
-    </DashboardPage>
+      <div>
+        <PrimaryButton onClick={handleSave} disabled={!selectedGuild || saving}>
+          {saving ? 'Saving...' : 'Save Messages'}
+        </PrimaryButton>
+      </div>
+    </PageShell>
   );
 }
 
-const Field = memo(function Field({ label, children, theme }) {
+const MessageEditor = memo(function MessageEditor({
+  theme,
+  title,
+  form,
+  channels,
+  channelsLoading,
+  onToggle,
+  onChange,
+}) {
   return (
-    <div>
-      <p style={{ margin: '0 0 6px 0', fontSize: '12px', fontWeight: 700, color: theme.mutedText, textTransform: 'uppercase' }}>
-        {label}
-      </p>
-      {children}
+    <div style={{ display: 'grid', gap: '16px' }}>
+      <div
+        style={{
+          background: theme.softBg,
+          border: `1px solid ${theme.cardBorder}`,
+          borderRadius: '14px',
+          padding: '14px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: '16px',
+        }}
+      >
+        <span style={{ color: theme.cardText, fontWeight: 700 }}>{title} Enabled</span>
+        <button
+          type="button"
+          onClick={onToggle}
+          style={{
+            padding: '8px 12px',
+            borderRadius: '999px',
+            border: form.enabled ? '1px solid rgba(34,197,94,0.3)' : `1px solid ${theme.cardBorder}`,
+            background: form.enabled ? 'rgba(34,197,94,0.14)' : theme.softBg,
+            color: form.enabled ? '#16a34a' : theme.cardText,
+            fontWeight: 800,
+            cursor: 'pointer',
+          }}
+        >
+          {form.enabled ? 'Enabled' : 'Disabled'}
+        </button>
+      </div>
+
+      <div>
+        <p style={fieldLabel(theme)}>Channel</p>
+        <select
+          value={form.channelId}
+          onChange={(e) => onChange('channelId', e.target.value)}
+          style={inputStyle(theme)}
+          disabled={channelsLoading || channels.length === 0}
+        >
+          <option value="">
+            {channelsLoading
+              ? 'Loading channels...'
+              : channels.length === 0
+                ? 'No text channels found'
+                : 'Select a channel'}
+          </option>
+
+          {channels.map((channel) => (
+            <option key={channel.id} value={channel.id}>
+              #{channel.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <p style={fieldLabel(theme)}>Message</p>
+        <textarea
+          value={form.message}
+          onChange={(e) => onChange('message', e.target.value)}
+          style={textareaStyle(theme)}
+          placeholder={
+            title === 'Welcome'
+              ? 'Welcome {user} to {server}!'
+              : 'Goodbye {user}.'
+          }
+        />
+      </div>
     </div>
   );
 });
 
-const PreviewCard = memo(function PreviewCard({ title, message, borderColor, theme }) {
-  return (
-    <SectionCard
-      theme={theme}
-      title="Preview"
-      padding="20px"
-    >
-      <div
-        style={{
-          borderRadius: '16px',
-          background: theme.softBg,
-          borderLeft: `6px solid ${borderColor}`,
-          borderTop: `1px solid ${theme.cardBorder}`,
-          borderRight: `1px solid ${theme.cardBorder}`,
-          borderBottom: `1px solid ${theme.cardBorder}`,
-          padding: '16px',
-        }}
-      >
-        <h3 style={{ margin: 0, color: theme.cardText }}>{title}</h3>
-        <p style={{ margin: '10px 0 0 0', color: theme.cardText, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
-          {message}
-        </p>
-      </div>
-    </SectionCard>
-  );
-});
+function fieldLabel(theme) {
+  return {
+    margin: '0 0 6px 0',
+    fontSize: '12px',
+    fontWeight: 700,
+    color: theme.mutedText,
+    textTransform: 'uppercase',
+  };
+}
 
 function inputStyle(theme) {
   return {
@@ -373,4 +412,9 @@ function textareaStyle(theme) {
     resize: 'vertical',
     lineHeight: 1.6,
   };
+}
+
+function isTextChannel(channel) {
+  const type = channel?.type;
+  return type === 0 || type === 'GUILD_TEXT' || type === 'text';
 }

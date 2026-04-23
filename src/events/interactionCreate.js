@@ -38,7 +38,8 @@ module.exports = {
         interaction.isStringSelectMenu() ||
         interaction.isChannelSelectMenu() ||
         interaction.isRoleSelectMenu() ||
-        interaction.isUserSelectMenu()
+        interaction.isUserSelectMenu() ||
+        interaction.isMentionableSelectMenu()
       ) {
         return await handleSelectMenuInteraction(interaction);
       }
@@ -336,6 +337,7 @@ function isHandledInteractionType(interaction) {
     interaction.isChannelSelectMenu() ||
     interaction.isRoleSelectMenu() ||
     interaction.isUserSelectMenu() ||
+    interaction.isMentionableSelectMenu() ||
     interaction.isModalSubmit()
   );
 }

@@ -1,5 +1,3 @@
-const fs = require('fs');
-const path = require('path');
 const {
   ActionRowBuilder,
   ButtonBuilder,
@@ -13,12 +11,11 @@ const {
 const { buildAdminPanel, buildChannelPanel, buildPurgeModal } = require('../utils/admin/adminPanel');
 const automodPanel = require('../utils/automod/automodPanel');
 const { buildStatsSetupMessage } = require('../utils/stats/statsUI');
-const { setGuildConfig } = require('../utils/config/guildConfigStore');
+const { getGuildConfig, setGuildConfig } = require('../utils/config/guildConfigStore');
 const { enforceCommandAccess } = require('../utils/utility/commandAccess');
+const logAdminAction = require('../utils/logging/adminlogs/adminActionLog');
 
 const purgeCommand = require('../commands/moderation/purge');
-
-const logChannelsPath = path.join(__dirname, '..', 'data', 'logChannels.json');
 
 function buildBackRow(label = 'Back to Admin Panel') {
   return new ActionRowBuilder().addComponents(
@@ -62,35 +59,6 @@ function buildEmbedPanelMessage(guild) {
     embeds: [embed],
     components: [buildBackRow()],
   };
-}
-
-function readLogChannels() {
-  try {
-    if (!fs.existsSync(logChannelsPath)) {
-      return {};
-    }
-
-    const raw = fs.readFileSync(logChannelsPath, 'utf8');
-    return raw ? JSON.parse(raw) : {};
-  } catch (error) {
-    console.error('❌ Failed to read logChannels.json:', error);
-    return {};
-  }
-}
-
-function writeLogChannels(data) {
-  try {
-    const dir = path.dirname(logChannelsPath);
-
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-
-    fs.writeFileSync(logChannelsPath, JSON.stringify(data, null, 2));
-  } catch (error) {
-    console.error('❌ Failed to write logChannels.json:', error);
-    throw error;
-  }
 }
 
 async function execute(interaction) {
@@ -139,6 +107,53 @@ async function execute(interaction) {
         return true;
       }
 
+      if (interaction.customId === 'admin:setadminlog') {
+        await interaction.update(buildChannelPanel('adminlog'));
+        return true;
+      }
+
+      if (interaction.customId === 'admin:setautomodlog') {
+        await interaction.update(buildChannelPanel('automodlog'));
+        return true;
+      }
+
+      if (interaction.customId === 'admin:toggleadminlogger') {
+        const currentConfig = getGuildConfig(interaction.guild.id);
+        const nextEnabled = !currentConfig.adminActionLoggerEnabled;
+
+        setGuildConfig(interaction.guild.id, {
+          adminActionLoggerEnabled: nextEnabled,
+        });
+
+        await interaction.update({
+          ...buildAdminPanel(interaction.guild, memberDisplayName),
+        });
+
+        await logAdminAction({
+          guild: interaction.guild,
+          moderator: interaction.user,
+          action: nextEnabled ? 'Admin Logger Enabled' : 'Admin Logger Disabled',
+          reason: nextEnabled
+            ? 'Admin action logger was enabled from the admin panel.'
+            : 'Admin action logger was disabled from the admin panel.',
+          details: [
+            {
+              name: 'Setting',
+              value: 'adminActionLoggerEnabled',
+              inline: true,
+            },
+            {
+              name: 'New Value',
+              value: String(nextEnabled),
+              inline: true,
+            },
+          ],
+          force: nextEnabled,
+        });
+
+        return true;
+      }
+
       if (interaction.customId === 'admin:purge') {
         await interaction.showModal(buildPurgeModal());
         return true;
@@ -163,9 +178,9 @@ async function execute(interaction) {
       }
 
       if (interaction.customId === 'admin:selectlogs') {
-        const logChannels = readLogChannels();
-        logChannels[interaction.guild.id] = channel.id;
-        writeLogChannels(logChannels);
+        setGuildConfig(interaction.guild.id, {
+          logsChannelId: channel.id,
+        });
 
         await interaction.update({
           embeds: [
@@ -177,6 +192,21 @@ async function execute(interaction) {
           ],
           components: [buildBackRow()],
         });
+
+        await logAdminAction({
+          guild: interaction.guild,
+          moderator: interaction.user,
+          action: 'Logs Channel Updated',
+          reason: `General logs channel set to ${channel}.`,
+          details: [
+            {
+              name: 'Channel ID',
+              value: channel.id,
+              inline: true,
+            },
+          ],
+        });
+
         return true;
       }
 
@@ -195,6 +225,88 @@ async function execute(interaction) {
           ],
           components: [buildBackRow()],
         });
+
+        await logAdminAction({
+          guild: interaction.guild,
+          moderator: interaction.user,
+          action: 'Mod Log Channel Updated',
+          reason: `Moderation log channel set to ${channel}.`,
+          details: [
+            {
+              name: 'Channel ID',
+              value: channel.id,
+              inline: true,
+            },
+          ],
+        });
+
+        return true;
+      }
+
+      if (interaction.customId === 'admin:selectadminlog') {
+        setGuildConfig(interaction.guild.id, {
+          adminLogChannelId: channel.id,
+        });
+
+        await interaction.update({
+          embeds: [
+            new EmbedBuilder()
+              .setColor('#5865F2')
+              .setTitle('✅ Admin Logs Updated')
+              .setDescription(`Admin log channel set to ${channel}.`)
+              .setTimestamp(),
+          ],
+          components: [buildBackRow()],
+        });
+
+        await logAdminAction({
+          guild: interaction.guild,
+          moderator: interaction.user,
+          action: 'Admin Log Channel Updated',
+          reason: `Admin log channel set to ${channel}.`,
+          details: [
+            {
+              name: 'Channel ID',
+              value: channel.id,
+              inline: true,
+            },
+          ],
+          force: true,
+        });
+
+        return true;
+      }
+
+      if (interaction.customId === 'admin:selectautomodlog') {
+        setGuildConfig(interaction.guild.id, {
+          automodLogChannelId: channel.id,
+        });
+
+        await interaction.update({
+          embeds: [
+            new EmbedBuilder()
+              .setColor('#5865F2')
+              .setTitle('✅ AutoMod Logs Updated')
+              .setDescription(`AutoMod log channel set to ${channel}.`)
+              .setTimestamp(),
+          ],
+          components: [buildBackRow()],
+        });
+
+        await logAdminAction({
+          guild: interaction.guild,
+          moderator: interaction.user,
+          action: 'AutoMod Log Channel Updated',
+          reason: `AutoMod log channel set to ${channel}.`,
+          details: [
+            {
+              name: 'Channel ID',
+              value: channel.id,
+              inline: true,
+            },
+          ],
+        });
+
         return true;
       }
 
@@ -299,7 +411,7 @@ async function execute(interaction) {
 
       if (!deleted?.size) {
         await interaction.editReply({
-          content: '⚠️ No messages were deleted. They may all be older than 14 days or already removed.',
+          content: '⚠️ No messages were deleted.',
           embeds: [],
           components: [],
         });
@@ -309,28 +421,33 @@ async function execute(interaction) {
       const embed = new EmbedBuilder()
         .setColor('#5865F2')
         .setTitle('🧹 Messages Purged')
-        .setDescription(
-          `Successfully deleted \`${deleted.size}\` message${deleted.size === 1 ? '' : 's'}.`
-        )
-        .addFields(
-          {
-            name: 'Channel',
-            value: `${channel}`,
-            inline: true,
-          },
-          {
-            name: 'Moderator',
-            value: `${interaction.user}`,
-            inline: true,
-          }
-        )
-        .setFooter({ text: `Requested by ${interaction.user.tag}` })
+        .setDescription(`Successfully deleted \`${deleted.size}\` messages.`)
         .setTimestamp();
 
       await interaction.editReply({
         embeds: [embed],
         components: [],
       });
+
+      await logAdminAction({
+        guild: interaction.guild,
+        moderator: interaction.user,
+        action: 'Purge',
+        reason: `Purged ${deleted.size} message(s) in ${channel}.`,
+        details: [
+          {
+            name: 'Channel',
+            value: `${channel}`,
+            inline: true,
+          },
+          {
+            name: 'Deleted',
+            value: String(deleted.size),
+            inline: true,
+          },
+        ],
+      });
+
       return true;
     }
 
@@ -346,8 +463,6 @@ async function execute(interaction) {
       if (interaction.deferred || interaction.replied) {
         await interaction.editReply({
           content: '❌ Something went wrong in the admin panel.',
-          embeds: [],
-          components: [],
         });
       } else if (interaction.isRepliable()) {
         await interaction.reply({
@@ -355,9 +470,7 @@ async function execute(interaction) {
           flags: MessageFlags.Ephemeral,
         });
       }
-    } catch (replyError) {
-      console.error('❌ Failed to send admin panel error response:', replyError);
-    }
+    } catch {}
 
     return true;
   }

@@ -16,6 +16,8 @@ const INVITE_REGEX =
 const URL_REGEX =
   /https?:\/\/[^\s]+|www\.[^\s]+|(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(?:\/[^\s]*)?/i;
 
+const VALID_PUNISHMENTS = ['delete', 'warn', 'timeout', 'kick', 'ban'];
+
 function ensureFile() {
   const dir = path.dirname(AUTOMOD_PATH);
 
@@ -57,6 +59,7 @@ function getDefaultConfig() {
     enabled: true,
     ignoreBots: true,
     ignoreAdmins: true,
+    dmWarnings: false,
     ignoredChannelIds: [],
     ignoredUserIds: [],
     ignoredRoleIds: [],
@@ -64,17 +67,20 @@ function getDefaultConfig() {
       enabled: false,
       maxMessages: 6,
       intervalSeconds: 8,
+      punishments: ['delete'],
       punishment: 'delete',
       timeoutMinutes: 10,
     },
     antiLink: {
       enabled: false,
       allowedDomains: [],
+      punishments: ['delete'],
       punishment: 'delete',
       timeoutMinutes: 10,
     },
     antiInvite: {
       enabled: false,
+      punishments: ['delete'],
       punishment: 'delete',
       timeoutMinutes: 10,
     },
@@ -82,12 +88,14 @@ function getDefaultConfig() {
       enabled: false,
       minLength: 10,
       percentage: 70,
+      punishments: ['delete'],
       punishment: 'delete',
       timeoutMinutes: 10,
     },
     badWords: {
       enabled: false,
       words: [],
+      punishments: ['delete'],
       punishment: 'delete',
       timeoutMinutes: 10,
     },
@@ -95,6 +103,7 @@ function getDefaultConfig() {
       enabled: false,
       maxRepeats: 3,
       intervalSeconds: 10,
+      punishments: ['delete'],
       punishment: 'delete',
       timeoutMinutes: 10,
     },
@@ -142,12 +151,28 @@ function extractId(value) {
   return match ? match[0] : null;
 }
 
+function normalizePunishments(value, fallback = ['delete']) {
+  const base = Array.isArray(value) ? value : value ? [value] : fallback;
+
+  const cleaned = base
+    .map((entry) => String(entry).trim().toLowerCase())
+    .filter((entry) => VALID_PUNISHMENTS.includes(entry));
+
+  return cleaned.length ? [...new Set(cleaned)] : [...fallback];
+}
+
 function normalizeRule(rule = {}, defaults = {}) {
+  const punishments = normalizePunishments(
+    rule?.punishments ?? rule?.punishment,
+    defaults.punishments ?? [defaults.punishment || 'delete']
+  );
+
   return {
     ...defaults,
     ...rule,
     enabled: toBoolean(rule?.enabled, defaults.enabled ?? false),
-    punishment: String(rule?.punishment || defaults.punishment || 'delete').toLowerCase(),
+    punishments,
+    punishment: punishments[0],
     timeoutMinutes: toSafeNumber(rule?.timeoutMinutes, defaults.timeoutMinutes ?? 10),
   };
 }
@@ -212,6 +237,7 @@ function sanitizeConfig(input = {}) {
     enabled: toBoolean(input?.enabled, defaults.enabled),
     ignoreBots: toBoolean(input?.ignoreBots, defaults.ignoreBots),
     ignoreAdmins: toBoolean(input?.ignoreAdmins, defaults.ignoreAdmins),
+    dmWarnings: toBoolean(input?.dmWarnings, defaults.dmWarnings),
     ignoredChannelIds: toStringArray(input?.ignoredChannelIds).map(extractId).filter(Boolean),
     ignoredUserIds: toStringArray(input?.ignoredUserIds).map(extractId).filter(Boolean),
     ignoredRoleIds: toStringArray(input?.ignoredRoleIds).map(extractId).filter(Boolean),
@@ -389,84 +415,144 @@ async function safeWarnChannel(message, text) {
     setTimeout(() => {
       sent.delete().catch(() => {});
     }, 5000);
+    return true;
   } catch (error) {
     console.error('❌ Failed to send automod warning message:', error);
+    return false;
   }
 }
 
-async function applyPunishment(message, type, reason, timeoutMinutes = 10) {
-  const punishment = String(type || 'delete').toLowerCase();
-  const timeoutMs = Number(timeoutMinutes || 10) * 60 * 1000;
+async function safeWarnDM(user, text) {
+  try {
+    await user.send({ content: text });
+    return true;
+  } catch (error) {
+    console.error('❌ Failed to send automod DM warning:', error);
+    return false;
+  }
+}
 
-  switch (punishment) {
-    case 'delete': {
-      await safeDelete(message);
-      return 'delete';
-    }
+async function sendWarningNotice(message, reason, config) {
+  const text = `⚠️ Your message was blocked in **${message.guild?.name || 'this server'}**: ${reason}`;
 
-    case 'warn': {
-      await safeDelete(message);
-      await safeWarnChannel(
-        message,
-        `⚠️ ${message.author}, your message was blocked: ${reason}`
-      );
-      return 'warn';
-    }
-
-    case 'timeout': {
-      await safeDelete(message);
-      const timedOut = await safeTimeout(
-        message.member,
-        timeoutMs,
-        `Automod: ${reason}`
-      );
-
-      if (!timedOut) {
-        await safeWarnChannel(
-          message,
-          `⚠️ ${message.author}, your message was blocked: ${reason}`
-        );
-        return 'warn';
-      }
-
-      return 'timeout';
-    }
-
-    case 'kick': {
-      await safeDelete(message);
-      const kicked = await safeKick(message.member, `Automod: ${reason}`);
-
-      if (!kicked) {
-        await safeWarnChannel(
-          message,
-          `⚠️ ${message.author}, your message was blocked: ${reason}`
-        );
-        return 'warn';
-      }
-
-      return 'kick';
-    }
-
-    case 'ban': {
-      await safeDelete(message);
-      const banned = await safeBan(message.member, `Automod: ${reason}`);
-
-      if (!banned) {
-        await safeWarnChannel(
-          message,
-          `⚠️ ${message.author}, your message was blocked: ${reason}`
-        );
-        return 'warn';
-      }
-
-      return 'ban';
-    }
-
-    default: {
-      await safeDelete(message);
-      return 'delete';
+  if (config?.dmWarnings) {
+    const sentDM = await safeWarnDM(message.author, text);
+    if (sentDM) {
+      return 'dm';
     }
   }
+
+  const sentChannel = await safeWarnChannel(message, `⚠️ ${message.author}, your message was blocked: ${reason}`);
+  return sentChannel ? 'channel' : 'none';
+}
+
+async function applyPunishment(message, type, reason, timeoutMinutes = 10, config = null) {
+  const punishments = normalizePunishments(type);
+  const timeoutMs = Number(timeoutMinutes || 10) * 60 * 1000;
+  const applied = [];
+  let deleted = false;
+
+  for (const punishment of punishments) {
+    switch (punishment) {
+      case 'delete': {
+        if (!deleted) {
+          const didDelete = await safeDelete(message);
+          if (didDelete) {
+            deleted = true;
+          }
+        }
+        applied.push('delete');
+        break;
+      }
+
+      case 'warn': {
+        if (!deleted) {
+          const didDelete = await safeDelete(message);
+          if (didDelete) {
+            deleted = true;
+          }
+        }
+
+        const warningMode = await sendWarningNotice(message, reason, config);
+        applied.push(warningMode === 'dm' ? 'warn-dm' : 'warn');
+        break;
+      }
+
+      case 'timeout': {
+        if (!deleted) {
+          const didDelete = await safeDelete(message);
+          if (didDelete) {
+            deleted = true;
+          }
+        }
+
+        const timedOut = await safeTimeout(
+          message.member,
+          timeoutMs,
+          `Automod: ${reason}`
+        );
+
+        if (timedOut) {
+          applied.push('timeout');
+        } else {
+          const warningMode = await sendWarningNotice(message, reason, config);
+          applied.push(warningMode === 'dm' ? 'warn-dm' : 'warn');
+        }
+        break;
+      }
+
+      case 'kick': {
+        if (!deleted) {
+          const didDelete = await safeDelete(message);
+          if (didDelete) {
+            deleted = true;
+          }
+        }
+
+        const kicked = await safeKick(message.member, `Automod: ${reason}`);
+
+        if (kicked) {
+          applied.push('kick');
+        } else {
+          const warningMode = await sendWarningNotice(message, reason, config);
+          applied.push(warningMode === 'dm' ? 'warn-dm' : 'warn');
+        }
+        break;
+      }
+
+      case 'ban': {
+        if (!deleted) {
+          const didDelete = await safeDelete(message);
+          if (didDelete) {
+            deleted = true;
+          }
+        }
+
+        const banned = await safeBan(message.member, `Automod: ${reason}`);
+
+        if (banned) {
+          applied.push('ban');
+        } else {
+          const warningMode = await sendWarningNotice(message, reason, config);
+          applied.push(warningMode === 'dm' ? 'warn-dm' : 'warn');
+        }
+        break;
+      }
+
+      default: {
+        if (!deleted) {
+          const didDelete = await safeDelete(message);
+          if (didDelete) {
+            deleted = true;
+          }
+        }
+        applied.push('delete');
+        break;
+      }
+    }
+  }
+
+  return [...new Set(applied)].join(', ');
 }
 
 async function sendAutomodLog(message, config, details) {
@@ -525,7 +611,7 @@ function checkAntiLink(content, config) {
   return {
     rule: 'Anti-Link',
     reason: 'Links are not allowed.',
-    punishment: config.antiLink.punishment || 'delete',
+    punishments: config.antiLink.punishments || [config.antiLink.punishment || 'delete'],
     timeoutMinutes: config.antiLink.timeoutMinutes || 10,
   };
 }
@@ -537,7 +623,7 @@ function checkAntiInvite(content, config) {
   return {
     rule: 'Anti-Invite',
     reason: 'Discord invite links are not allowed.',
-    punishment: config.antiInvite.punishment || 'delete',
+    punishments: config.antiInvite.punishments || [config.antiInvite.punishment || 'delete'],
     timeoutMinutes: config.antiInvite.timeoutMinutes || 10,
   };
 }
@@ -562,7 +648,7 @@ function checkCapsAbuse(content, config) {
   return {
     rule: 'Caps Abuse',
     reason: `Too many capital letters (${Math.round(percentage)}%).`,
-    punishment: config.capsAbuse.punishment || 'delete',
+    punishments: config.capsAbuse.punishments || [config.capsAbuse.punishment || 'delete'],
     timeoutMinutes: config.capsAbuse.timeoutMinutes || 10,
   };
 }
@@ -584,7 +670,7 @@ function checkBadWords(content, config) {
   return {
     rule: 'Bad Words',
     reason: `Blocked word detected: ${matched}`,
-    punishment: config.badWords.punishment || 'delete',
+    punishments: config.badWords.punishments || [config.badWords.punishment || 'delete'],
     timeoutMinutes: config.badWords.timeoutMinutes || 10,
   };
 }
@@ -625,9 +711,17 @@ function checkRepeatedMessages(message, config) {
   return {
     rule: 'Repeated Messages',
     reason: `Same message repeated ${entry.count} times.`,
-    punishment: config.repeatedMessages.punishment || 'delete',
+    punishments:
+      config.repeatedMessages.punishments || [config.repeatedMessages.punishment || 'delete'],
     timeoutMinutes: config.repeatedMessages.timeoutMinutes || 10,
   };
+}
+
+function getNonEmptyLineCount(content) {
+  return String(content || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean).length;
 }
 
 function checkAntiSpam(message, config) {
@@ -643,14 +737,26 @@ function checkAntiSpam(message, config) {
   filtered.push(now());
   spamTracker.set(key, filtered);
 
-  if (filtered.length < maxMessages) return null;
+  if (filtered.length >= maxMessages) {
+    return {
+      rule: 'Anti-Spam',
+      reason: `${filtered.length} messages sent in ${intervalSeconds} seconds.`,
+      punishments: config.antiSpam.punishments || [config.antiSpam.punishment || 'delete'],
+      timeoutMinutes: config.antiSpam.timeoutMinutes || 10,
+    };
+  }
 
-  return {
-    rule: 'Anti-Spam',
-    reason: `${filtered.length} messages sent in ${intervalSeconds} seconds.`,
-    punishment: config.antiSpam.punishment || 'delete',
-    timeoutMinutes: config.antiSpam.timeoutMinutes || 10,
-  };
+  const nonEmptyLineCount = getNonEmptyLineCount(message.content);
+  if (nonEmptyLineCount >= maxMessages) {
+    return {
+      rule: 'Anti-Spam',
+      reason: `${nonEmptyLineCount} message lines sent in a single message.`,
+      punishments: config.antiSpam.punishments || [config.antiSpam.punishment || 'delete'],
+      timeoutMinutes: config.antiSpam.timeoutMinutes || 10,
+    };
+  }
+
+  return null;
 }
 
 function cleanupTrackers() {
@@ -693,9 +799,10 @@ async function runAutomod(message) {
 
   const action = await applyPunishment(
     message,
-    hit.punishment,
+    hit.punishments,
     hit.reason,
-    hit.timeoutMinutes
+    hit.timeoutMinutes,
+    config
   );
 
   await sendAutomodLog(message, config, {

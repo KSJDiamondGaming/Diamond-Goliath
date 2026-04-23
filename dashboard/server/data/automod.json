@@ -3,19 +3,18 @@
     "enabled": true,
     "ignoreBots": true,
     "ignoreAdmins": false,
-    "ignoredChannelIds": [
-      "1491219255465869514"
-    ],
-    "ignoredUserIds": [
-      "700058312229650442"
-    ],
-    "ignoredRoleIds": [
-      "814665924921524227"
-    ],
+    "dmWarnings": true,
+    "ignoredChannelIds": [],
+    "ignoredUserIds": [],
+    "ignoredRoleIds": [],
     "antiSpam": {
-      "enabled": false,
+      "enabled": true,
       "maxMessages": 6,
       "intervalSeconds": 8,
+      "punishments": [
+        "delete",
+        "warn"
+      ],
       "punishment": "delete",
       "timeoutMinutes": 10,
       "maxRepeats": 3,
@@ -27,6 +26,9 @@
     "antiLink": {
       "enabled": false,
       "allowedDomains": [],
+      "punishments": [
+        "delete"
+      ],
       "punishment": "delete",
       "timeoutMinutes": 10,
       "maxMessages": 5,
@@ -38,6 +40,9 @@
     },
     "antiInvite": {
       "enabled": false,
+      "punishments": [
+        "delete"
+      ],
       "punishment": "delete",
       "timeoutMinutes": 10,
       "allowedDomains": [],
@@ -47,6 +52,9 @@
       "enabled": false,
       "minLength": 10,
       "percentage": 70,
+      "punishments": [
+        "delete"
+      ],
       "punishment": "delete",
       "timeoutMinutes": 10,
       "maxMessages": 5,
@@ -58,6 +66,9 @@
     "badWords": {
       "enabled": false,
       "words": [],
+      "punishments": [
+        "delete"
+      ],
       "punishment": "delete",
       "timeoutMinutes": 10,
       "maxMessages": 5,
@@ -68,9 +79,12 @@
       "allowedDomains": []
     },
     "repeatedMessages": {
-      "enabled": false,
+      "enabled": true,
       "maxRepeats": 3,
       "intervalSeconds": 10,
+      "punishments": [
+        "delete"
+      ],
       "punishment": "delete",
       "timeoutMinutes": 10,
       "maxMessages": 5,
@@ -82,56 +96,6 @@
     "logs": {
       "enabled": true,
       "channelId": "1491219255465869514"
-    }
-  },
-  "1490424012826742804": {
-    "enabled": true,
-    "ignoreBots": true,
-    "ignoreAdmins": true,
-    "ignoredChannelIds": [],
-    "ignoredUserIds": [],
-    "ignoredRoleIds": [],
-    "antiSpam": {
-      "enabled": false,
-      "maxMessages": 6,
-      "intervalSeconds": 8,
-      "punishment": "delete",
-      "timeoutMinutes": 10
-    },
-    "antiLink": {
-      "enabled": false,
-      "allowedDomains": [],
-      "punishment": "delete",
-      "timeoutMinutes": 10
-    },
-    "antiInvite": {
-      "enabled": false,
-      "punishment": "delete",
-      "timeoutMinutes": 10
-    },
-    "capsAbuse": {
-      "enabled": false,
-      "minLength": 10,
-      "percentage": 70,
-      "punishment": "delete",
-      "timeoutMinutes": 10
-    },
-    "badWords": {
-      "enabled": false,
-      "words": [],
-      "punishment": "delete",
-      "timeoutMinutes": 10
-    },
-    "repeatedMessages": {
-      "enabled": false,
-      "maxRepeats": 3,
-      "intervalSeconds": 10,
-      "punishment": "delete",
-      "timeoutMinutes": 10
-    },
-    "logs": {
-      "enabled": true,
-      "channelId": null
     }
   }
 }

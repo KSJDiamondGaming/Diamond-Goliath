@@ -1,1 +1,12 @@
-{}
+{
+  "808091031350280213": {
+    "logsChannelId": "1491219255465869514",
+    "modLogChannelId": "1491219255465869514",
+    "adminLogChannelId": null,
+    "automodLogChannelId": null,
+    "adminActionLoggerEnabled": false,
+    "logsChannel": "1491219255465869514",
+    "guildId": "808091031350280213",
+    "updatedAt": "2026-04-21T23:59:24.809Z"
+  }
+}

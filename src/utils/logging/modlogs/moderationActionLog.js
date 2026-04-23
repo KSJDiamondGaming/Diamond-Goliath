@@ -1,6 +1,29 @@
 const { EmbedBuilder } = require('discord.js');
 const { getGuildConfig } = require('../../config/guildConfigStore');
 
+function resolveLogChannelId(config, logType = 'mod') {
+  if (logType === 'automod') {
+    return config.automodLogChannelId
+      || config.modLogChannelId
+      || config.logsChannelId
+      || null;
+  }
+
+  if (logType === 'admin') {
+    return config.adminLogChannelId
+      || config.logsChannelId
+      || null;
+  }
+
+  if (logType === 'general') {
+    return config.logsChannelId || null;
+  }
+
+  return config.modLogChannelId
+    || config.logsChannelId
+    || null;
+}
+
 async function logModerationAction({
   guild,
   action,
@@ -11,12 +34,13 @@ async function logModerationAction({
   color = '#5865F2',
   caseId = null,
   details = [],
-  title = null
+  title = null,
+  logType = 'mod',
 }) {
   if (!guild) return;
 
   const config = getGuildConfig(guild.id);
-  const logChannelId = config.modLogChannelId;
+  const logChannelId = resolveLogChannelId(config, logType);
 
   if (!logChannelId) return;
 

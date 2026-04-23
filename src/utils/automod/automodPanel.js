@@ -38,7 +38,7 @@ const RULE_META = {
         `Enabled: **${yesNo(config.antiSpam.enabled)}**`,
         `Max Messages: **${config.antiSpam.maxMessages}**`,
         `Interval: **${config.antiSpam.intervalSeconds}s**`,
-        `Punishment: **${config.antiSpam.punishment}**`,
+        `Actions: **${formatPunishments(config.antiSpam.punishments)}**`,
         `Timeout: **${config.antiSpam.timeoutMinutes}m**`,
       ];
     },
@@ -51,7 +51,7 @@ const RULE_META = {
         `Enabled: **${yesNo(config.repeatedMessages.enabled)}**`,
         `Max Repeats: **${config.repeatedMessages.maxRepeats}**`,
         `Interval: **${config.repeatedMessages.intervalSeconds}s**`,
-        `Punishment: **${config.repeatedMessages.punishment}**`,
+        `Actions: **${formatPunishments(config.repeatedMessages.punishments)}**`,
         `Timeout: **${config.repeatedMessages.timeoutMinutes}m**`,
       ];
     },
@@ -62,7 +62,7 @@ const RULE_META = {
     fields(config) {
       return [
         `Enabled: **${yesNo(config.antiInvite.enabled)}**`,
-        `Punishment: **${config.antiInvite.punishment}**`,
+        `Actions: **${formatPunishments(config.antiInvite.punishments)}**`,
         `Timeout: **${config.antiInvite.timeoutMinutes}m**`,
       ];
     },
@@ -73,7 +73,7 @@ const RULE_META = {
     fields(config) {
       return [
         `Enabled: **${yesNo(config.antiLink.enabled)}**`,
-        `Punishment: **${config.antiLink.punishment}**`,
+        `Actions: **${formatPunishments(config.antiLink.punishments)}**`,
         `Timeout: **${config.antiLink.timeoutMinutes}m**`,
         `Allowed Domains: **${
           config.antiLink.allowedDomains.length
@@ -91,7 +91,7 @@ const RULE_META = {
         `Enabled: **${yesNo(config.capsAbuse.enabled)}**`,
         `Min Length: **${config.capsAbuse.minLength}**`,
         `Percentage: **${config.capsAbuse.percentage}%**`,
-        `Punishment: **${config.capsAbuse.punishment}**`,
+        `Actions: **${formatPunishments(config.capsAbuse.punishments)}**`,
         `Timeout: **${config.capsAbuse.timeoutMinutes}m**`,
       ];
     },
@@ -102,7 +102,7 @@ const RULE_META = {
     fields(config) {
       return [
         `Enabled: **${yesNo(config.badWords.enabled)}**`,
-        `Punishment: **${config.badWords.punishment}**`,
+        `Actions: **${formatPunishments(config.badWords.punishments)}**`,
         `Timeout: **${config.badWords.timeoutMinutes}m**`,
         `Words: **${
           config.badWords.words.length ? config.badWords.words.join(', ') : 'None'
@@ -142,10 +142,38 @@ function normalizeArray(value) {
   return Array.isArray(value) ? value.filter(Boolean) : [];
 }
 
+function normalizePunishments(value) {
+  if (Array.isArray(value)) {
+    const cleaned = value
+      .map((entry) => String(entry).trim().toLowerCase())
+      .filter((entry) => PUNISHMENTS.some((p) => p.value === entry));
+
+    return cleaned.length ? [...new Set(cleaned)] : ['delete'];
+  }
+
+  if (value) {
+    const single = String(value).trim().toLowerCase();
+    if (PUNISHMENTS.some((p) => p.value === single)) {
+      return [single];
+    }
+  }
+
+  return ['delete'];
+}
+
+function formatPunishments(values) {
+  const punishments = normalizePunishments(values);
+
+  return punishments
+    .map((value) => PUNISHMENTS.find((entry) => entry.value === value)?.label || value)
+    .join(', ');
+}
+
 function createFallbackRule(defaults = {}) {
   return {
     enabled: Boolean(defaults.enabled),
-    punishment: defaults.punishment || 'timeout',
+    punishments: normalizePunishments(defaults.punishments || defaults.punishment),
+    punishment: normalizePunishments(defaults.punishments || defaults.punishment)[0],
     timeoutMinutes: Number(defaults.timeoutMinutes) || 10,
     maxMessages: Number(defaults.maxMessages) || 5,
     intervalSeconds: Number(defaults.intervalSeconds) || 8,
@@ -163,6 +191,7 @@ function normalizeConfig(rawConfig = {}) {
     enabled: Boolean(rawConfig.enabled),
     ignoreBots: rawConfig.ignoreBots !== undefined ? Boolean(rawConfig.ignoreBots) : true,
     ignoreAdmins: rawConfig.ignoreAdmins !== undefined ? Boolean(rawConfig.ignoreAdmins) : true,
+    dmWarnings: rawConfig.dmWarnings !== undefined ? Boolean(rawConfig.dmWarnings) : false,
     logs: {
       enabled:
         legacyLogs.enabled !== undefined
@@ -262,20 +291,24 @@ function getIgnoredUsersDisplay(guild, ids) {
     : 'None';
 }
 
-function buildMainPanelPayload(guild) {
+function buildMainPanelPayload(guild, view = 'overview') {
   const config = getConfig(guild.id);
 
   const embed = new EmbedBuilder()
     .setColor(config.enabled ? 0x22c55e : 0xef4444)
     .setTitle('🛡️ AutoMod Control Panel')
-    .setDescription(`Manage AutoMod for **${guild.name}**\n\u200b`)
-    .addFields(
+    .setDescription(`Manage AutoMod for **${guild.name}**`)
+    .setTimestamp();
+
+  if (view === 'overview') {
+    embed.addFields(
       {
         name: '⚙️ System',
         value:
           `**Status:** ${config.enabled ? '🟢 Enabled' : '🔴 Disabled'}\n` +
           `Ignore Bots: **${yesNo(config.ignoreBots)}**\n` +
-          `Ignore Admins: **${yesNo(config.ignoreAdmins)}**`,
+          `Ignore Admins: **${yesNo(config.ignoreAdmins)}**\n` +
+          `DM Warnings: **${yesNo(config.dmWarnings)}**`,
       },
       {
         name: '📜 Logs',
@@ -298,24 +331,80 @@ function buildMainPanelPayload(guild) {
         value: getIgnoredUsersDisplay(guild, config.ignoredUserIds),
         inline: true,
       }
-    )
-    .setTimestamp();
+    );
+  }
 
-  const topRow = new ActionRowBuilder().addComponents(
+  if (view === 'rules') {
+    embed
+      .setDescription(`Manage AutoMod rules for **${guild.name}**`)
+      .addFields({
+        name: '🛡️ Rules Overview',
+        value: RULE_KEYS.map((key) => {
+          const rule = config[key];
+          return `${RULE_META[key].label} • **${yesNo(rule.enabled)}** • Actions: **${formatPunishments(rule.punishments)}**`;
+        }).join('\n'),
+      });
+  }
+
+  if (view === 'logs') {
+    embed
+      .setDescription(`Configure AutoMod logs for **${guild.name}**`)
+      .addFields(
+        {
+          name: '📜 Logs',
+          value:
+            `Enabled: **${yesNo(config.logs.enabled)}**\n` +
+            `Channel: ${getChannelDisplay(guild, config.logs.channelId)}`,
+        },
+        {
+          name: '✉️ Warning Delivery',
+          value: `DM Warnings: **${yesNo(config.dmWarnings)}**`,
+        }
+      );
+  }
+
+  if (view === 'ignore') {
+    embed
+      .setDescription(`Choose who and what AutoMod ignores in **${guild.name}**`)
+      .addFields(
+        {
+          name: '🚫 Ignored Channels',
+          value: getIgnoredChannelsDisplay(guild, config.ignoredChannelIds),
+          inline: false,
+        },
+        {
+          name: '🎭 Ignored Roles',
+          value: getIgnoredRolesDisplay(guild, config.ignoredRoleIds),
+          inline: false,
+        },
+        {
+          name: '👤 Ignored Users',
+          value: getIgnoredUsersDisplay(guild, config.ignoredUserIds),
+          inline: false,
+        }
+      );
+  }
+
+  const tabRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId('automod_view_rules')
+      .setCustomId('automod_tab_overview')
+      .setLabel('Overview')
+      .setStyle(view === 'overview' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+
+    new ButtonBuilder()
+      .setCustomId('automod_tab_rules')
       .setLabel('Rules')
-      .setStyle(ButtonStyle.Primary),
+      .setStyle(view === 'rules' ? ButtonStyle.Primary : ButtonStyle.Secondary),
 
     new ButtonBuilder()
-      .setCustomId('automod_view_logs')
+      .setCustomId('automod_tab_logs')
       .setLabel('Logs')
-      .setStyle(ButtonStyle.Primary),
+      .setStyle(view === 'logs' ? ButtonStyle.Primary : ButtonStyle.Secondary),
 
     new ButtonBuilder()
-      .setCustomId('automod_view_ignore')
+      .setCustomId('automod_tab_ignore')
       .setLabel('Ignore')
-      .setStyle(ButtonStyle.Primary),
+      .setStyle(view === 'ignore' ? ButtonStyle.Primary : ButtonStyle.Secondary),
 
     new ButtonBuilder()
       .setCustomId('admin:home')
@@ -323,7 +412,7 @@ function buildMainPanelPayload(guild) {
       .setStyle(ButtonStyle.Secondary)
   );
 
-  const navRow = new ActionRowBuilder().addComponents(
+  const mainControlsRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('automod_toggle_ignore_bots')
       .setLabel(`Bots: ${onOff(config.ignoreBots)}`)
@@ -335,19 +424,176 @@ function buildMainPanelPayload(guild) {
       .setStyle(stateStyle(config.ignoreAdmins)),
 
     new ButtonBuilder()
-      .setCustomId('automod_reset')
-      .setLabel('Reset')
-      .setStyle(ButtonStyle.Danger),
+      .setCustomId('automod_toggle_dm_warnings')
+      .setLabel(`DM Warnings: ${onOff(config.dmWarnings)}`)
+      .setStyle(stateStyle(config.dmWarnings)),
 
     new ButtonBuilder()
       .setCustomId('automod_toggle_global')
       .setLabel(`AutoMod: ${onOff(config.enabled)}`)
-      .setStyle(stateStyle(config.enabled))
+      .setStyle(stateStyle(config.enabled)),
+
+    new ButtonBuilder()
+      .setCustomId('automod_reset')
+      .setLabel('Reset')
+      .setStyle(ButtonStyle.Danger)
   );
+
+  if (view === 'overview') {
+    return {
+      embeds: [embed],
+      components: [tabRow, mainControlsRow],
+    };
+  }
+
+  if (view === 'rules') {
+    const selectedRule = 'antiSpam';
+
+    const rulesSelectRow = new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId('automod_rule_select')
+        .setPlaceholder('Choose a rule')
+        .addOptions(
+          RULE_KEYS.map((key) => ({
+            label: RULE_META[key].label,
+            description: RULE_META[key].description,
+            value: key,
+            default: key === selectedRule,
+          }))
+        )
+    );
+
+    const rule = config[selectedRule];
+
+    const rulesButtonRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`automod_toggle_rule:${selectedRule}`)
+        .setLabel(`Rule: ${onOff(rule.enabled)}`)
+        .setStyle(stateStyle(rule.enabled)),
+
+      new ButtonBuilder()
+        .setCustomId(`automod_edit_rule:${selectedRule}`)
+        .setLabel('Edit')
+        .setStyle(ButtonStyle.Primary),
+
+      new ButtonBuilder()
+        .setCustomId(`automod_punishment:${selectedRule}`)
+        .setLabel('Actions')
+        .setStyle(ButtonStyle.Secondary)
+    );
+
+    return {
+      embeds: [embed],
+      components: [tabRow, rulesSelectRow, rulesButtonRow],
+    };
+  }
+
+  if (view === 'logs') {
+    const channelRow = new ActionRowBuilder().addComponents(
+      new ChannelSelectMenuBuilder()
+        .setCustomId('automod_logs_channel_select')
+        .setPlaceholder('Select AutoMod logs channel')
+        .setMinValues(0)
+        .setMaxValues(1)
+        .addChannelTypes(
+          ChannelType.GuildText,
+          ChannelType.GuildAnnouncement,
+          ChannelType.GuildForum
+        )
+    );
+
+    const logsButtonRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('automod_toggle_logs')
+        .setLabel(`Logs: ${onOff(config.logs.enabled)}`)
+        .setStyle(stateStyle(config.logs.enabled)),
+
+      new ButtonBuilder()
+        .setCustomId('automod_toggle_dm_warnings')
+        .setLabel(`DM Warnings: ${onOff(config.dmWarnings)}`)
+        .setStyle(stateStyle(config.dmWarnings)),
+
+      new ButtonBuilder()
+        .setCustomId('automod_clear_logs_channel')
+        .setLabel('Clear Channel')
+        .setStyle(ButtonStyle.Secondary)
+    );
+
+    return {
+      embeds: [embed],
+      components: [tabRow, channelRow, logsButtonRow],
+    };
+  }
+
+  if (view === 'ignore') {
+    const maxChannelValues = Math.max(1, Math.min(25, guild.channels.cache.size || 1));
+    const maxRoleValues = Math.max(
+      1,
+      Math.min(25, guild.roles.cache.filter((role) => role.id !== guild.id).size || 1)
+    );
+    const maxUserValues = Math.max(1, Math.min(25, guild.memberCount || 1));
+
+    const channelRow = new ActionRowBuilder().addComponents(
+      new ChannelSelectMenuBuilder()
+        .setCustomId('automod_ignore_channels_select')
+        .setPlaceholder('Select ignored channels')
+        .setMinValues(0)
+        .setMaxValues(maxChannelValues)
+        .addChannelTypes(
+          ChannelType.GuildText,
+          ChannelType.GuildAnnouncement,
+          ChannelType.PublicThread,
+          ChannelType.PrivateThread,
+          ChannelType.AnnouncementThread,
+          ChannelType.GuildVoice,
+          ChannelType.GuildStageVoice,
+          ChannelType.GuildForum,
+          ChannelType.GuildCategory
+        )
+    );
+
+    const roleRow = new ActionRowBuilder().addComponents(
+      new RoleSelectMenuBuilder()
+        .setCustomId('automod_ignore_roles_select')
+        .setPlaceholder('Select ignored roles')
+        .setMinValues(0)
+        .setMaxValues(maxRoleValues)
+    );
+
+    const userRow = new ActionRowBuilder().addComponents(
+      new UserSelectMenuBuilder()
+        .setCustomId('automod_ignore_users_select')
+        .setPlaceholder('Select ignored users')
+        .setMinValues(0)
+        .setMaxValues(maxUserValues)
+    );
+
+    const ignoreButtonsRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('automod_clear_ignored_channels')
+        .setLabel('Clear Channels')
+        .setStyle(ButtonStyle.Secondary),
+
+      new ButtonBuilder()
+        .setCustomId('automod_clear_ignored_roles')
+        .setLabel('Clear Roles')
+        .setStyle(ButtonStyle.Secondary),
+
+      new ButtonBuilder()
+        .setCustomId('automod_clear_ignored_users')
+        .setLabel('Clear Users')
+        .setStyle(ButtonStyle.Secondary)
+    );
+
+    return {
+      embeds: [embed],
+      components: [tabRow, channelRow, roleRow, userRow, ignoreButtonsRow],
+    };
+  }
 
   return {
     embeds: [embed],
-    components: [topRow, navRow],
+    components: [tabRow, mainControlsRow],
   };
 }
 
@@ -394,11 +640,11 @@ function buildRulesPanelPayload(guild, selectedRule = 'antiSpam') {
 
     new ButtonBuilder()
       .setCustomId(`automod_punishment:${selectedRule}`)
-      .setLabel('Punishment')
+      .setLabel('Actions')
       .setStyle(ButtonStyle.Secondary),
 
     new ButtonBuilder()
-      .setCustomId('automod_back_main')
+      .setCustomId('automod_tab_rules')
       .setLabel('Back')
       .setStyle(ButtonStyle.Secondary)
   );
@@ -413,11 +659,12 @@ function buildPunishmentPanelPayload(guild, selectedRule) {
   const config = getConfig(guild.id);
   const meta = RULE_META[selectedRule];
   const rule = config[selectedRule];
+  const selectedValues = normalizePunishments(rule.punishments);
 
   const embed = new EmbedBuilder()
     .setColor(0x5865f2)
-    .setTitle(`⚖️ Punishment • ${meta.label}`)
-    .setDescription(`Current punishment: **${rule.punishment}**`)
+    .setTitle(`⚖️ Actions • ${meta.label}`)
+    .setDescription(`Current actions: **${formatPunishments(selectedValues)}**`)
     .addFields({
       name: '⏱️ Timeout Length',
       value: `**${rule.timeoutMinutes}** minute(s)`,
@@ -428,12 +675,14 @@ function buildPunishmentPanelPayload(guild, selectedRule) {
   const selectRow = new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
       .setCustomId(`automod_punishment_select:${selectedRule}`)
-      .setPlaceholder('Choose punishment')
+      .setPlaceholder('Choose one or more actions')
+      .setMinValues(1)
+      .setMaxValues(PUNISHMENTS.length)
       .addOptions(
         PUNISHMENTS.map((entry) => ({
           label: entry.label,
           value: entry.value,
-          default: entry.value === rule.punishment,
+          default: selectedValues.includes(entry.value),
         }))
       )
   );
@@ -457,163 +706,11 @@ function buildPunishmentPanelPayload(guild, selectedRule) {
 }
 
 function buildLogsPanelPayload(guild) {
-  const config = getConfig(guild.id);
-
-  const embed = new EmbedBuilder()
-    .setColor(config.logs.enabled ? 0x22c55e : 0xef4444)
-    .setTitle('📜 AutoMod Logs')
-    .setDescription(
-      `Configure logging for moderation actions\n\n` +
-        `Enabled: **${config.logs.enabled ? 'Yes' : 'No'}**\n` +
-        `Channel: ${getChannelDisplay(guild, config.logs.channelId)}`
-    )
-    .addFields({
-      name: 'ℹ️ Info',
-      value:
-        `Users will be clickable\n` +
-        `Logs include rule + action\n` +
-        `Real-time moderation tracking`,
-    })
-    .setTimestamp();
-
-  const channelOptionsCount = guild.channels.cache.filter((channel) => {
-    return [
-      ChannelType.GuildText,
-      ChannelType.GuildAnnouncement,
-      ChannelType.GuildForum,
-    ].includes(channel.type);
-  }).size;
-
-  const channelRow = new ActionRowBuilder().addComponents(
-    new ChannelSelectMenuBuilder()
-      .setCustomId('automod_logs_channel_select')
-      .setPlaceholder('Select AutoMod logs channel')
-      .setMinValues(0)
-      .setMaxValues(Math.max(1, Math.min(1, channelOptionsCount || 1)))
-      .addChannelTypes(
-        ChannelType.GuildText,
-        ChannelType.GuildAnnouncement,
-        ChannelType.GuildForum
-      )
-  );
-
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('automod_toggle_logs')
-      .setLabel(`Logs: ${onOff(config.logs.enabled)}`)
-      .setStyle(stateStyle(config.logs.enabled)),
-
-    new ButtonBuilder()
-      .setCustomId('automod_clear_logs_channel')
-      .setLabel('Clear Channel')
-      .setStyle(ButtonStyle.Secondary),
-
-    new ButtonBuilder()
-      .setCustomId('automod_back_main')
-      .setLabel('Back')
-      .setStyle(ButtonStyle.Secondary)
-  );
-
-  return {
-    embeds: [embed],
-    components: [channelRow, row],
-  };
+  return buildMainPanelPayload(guild, 'logs');
 }
 
 function buildIgnorePanelPayload(guild) {
-  const config = getConfig(guild.id);
-
-  const embed = new EmbedBuilder()
-    .setColor(0x5865f2)
-    .setTitle('🙈 AutoMod Ignore Lists')
-    .setDescription('Choose channels, roles, and users directly from the server.')
-    .addFields(
-      {
-        name: '🚫 Ignored Channels',
-        value: getIgnoredChannelsDisplay(guild, config.ignoredChannelIds),
-        inline: false,
-      },
-      {
-        name: '🎭 Ignored Roles',
-        value: getIgnoredRolesDisplay(guild, config.ignoredRoleIds),
-        inline: false,
-      },
-      {
-        name: '👤 Ignored Users',
-        value: getIgnoredUsersDisplay(guild, config.ignoredUserIds),
-        inline: false,
-      }
-    )
-    .setTimestamp();
-
-  const maxChannelValues = Math.max(1, Math.min(25, guild.channels.cache.size || 1));
-  const maxRoleValues = Math.max(
-    1,
-    Math.min(25, guild.roles.cache.filter((role) => role.id !== guild.id).size || 1)
-  );
-  const maxUserValues = Math.max(1, Math.min(25, guild.memberCount || 1));
-
-  const channelRow = new ActionRowBuilder().addComponents(
-    new ChannelSelectMenuBuilder()
-      .setCustomId('automod_ignore_channels_select')
-      .setPlaceholder('Select ignored channels')
-      .setMinValues(0)
-      .setMaxValues(maxChannelValues)
-      .addChannelTypes(
-        ChannelType.GuildText,
-        ChannelType.GuildAnnouncement,
-        ChannelType.PublicThread,
-        ChannelType.PrivateThread,
-        ChannelType.AnnouncementThread,
-        ChannelType.GuildVoice,
-        ChannelType.GuildStageVoice,
-        ChannelType.GuildForum,
-        ChannelType.GuildCategory
-      )
-  );
-
-  const roleRow = new ActionRowBuilder().addComponents(
-    new RoleSelectMenuBuilder()
-      .setCustomId('automod_ignore_roles_select')
-      .setPlaceholder('Select ignored roles')
-      .setMinValues(0)
-      .setMaxValues(maxRoleValues)
-  );
-
-  const userRow = new ActionRowBuilder().addComponents(
-    new UserSelectMenuBuilder()
-      .setCustomId('automod_ignore_users_select')
-      .setPlaceholder('Select ignored users')
-      .setMinValues(0)
-      .setMaxValues(maxUserValues)
-  );
-
-  const buttonRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('automod_clear_ignored_channels')
-      .setLabel('Clear Channels')
-      .setStyle(ButtonStyle.Secondary),
-
-    new ButtonBuilder()
-      .setCustomId('automod_clear_ignored_roles')
-      .setLabel('Clear Roles')
-      .setStyle(ButtonStyle.Secondary),
-
-    new ButtonBuilder()
-      .setCustomId('automod_clear_ignored_users')
-      .setLabel('Clear Users')
-      .setStyle(ButtonStyle.Secondary),
-
-    new ButtonBuilder()
-      .setCustomId('automod_back_main')
-      .setLabel('Back')
-      .setStyle(ButtonStyle.Secondary)
-  );
-
-  return {
-    embeds: [embed],
-    components: [channelRow, roleRow, userRow, buttonRow],
-  };
+  return buildMainPanelPayload(guild, 'ignore');
 }
 
 function buildRuleEditModal(ruleKey, guildId) {
@@ -812,12 +909,19 @@ async function handleInteraction(interaction) {
   if (interaction.isButton()) {
     const { customId } = interaction;
 
+    if (customId.startsWith('automod_tab_')) {
+      await interaction.deferUpdate();
+      const view = customId.replace('automod_tab_', '');
+      await interaction.editReply(buildMainPanelPayload(interaction.guild, view));
+      return true;
+    }
+
     if (customId === 'automod_toggle_global') {
       await interaction.deferUpdate();
       const config = getConfig(interaction.guild.id);
       config.enabled = !config.enabled;
       saveConfig(interaction.guild.id, config);
-      await interaction.editReply(buildMainPanelPayload(interaction.guild));
+      await interaction.editReply(buildMainPanelPayload(interaction.guild, 'overview'));
       return true;
     }
 
@@ -826,7 +930,7 @@ async function handleInteraction(interaction) {
       const config = getConfig(interaction.guild.id);
       config.ignoreBots = !config.ignoreBots;
       saveConfig(interaction.guild.id, config);
-      await interaction.editReply(buildMainPanelPayload(interaction.guild));
+      await interaction.editReply(buildMainPanelPayload(interaction.guild, 'overview'));
       return true;
     }
 
@@ -835,31 +939,45 @@ async function handleInteraction(interaction) {
       const config = getConfig(interaction.guild.id);
       config.ignoreAdmins = !config.ignoreAdmins;
       saveConfig(interaction.guild.id, config);
-      await interaction.editReply(buildMainPanelPayload(interaction.guild));
+      await interaction.editReply(buildMainPanelPayload(interaction.guild, 'overview'));
+      return true;
+    }
+
+    if (customId === 'automod_toggle_dm_warnings') {
+      await interaction.deferUpdate();
+      const config = getConfig(interaction.guild.id);
+      config.dmWarnings = !config.dmWarnings;
+      saveConfig(interaction.guild.id, config);
+
+      const activeView = interaction.message?.components?.[0]?.components?.find(
+        (component) => component.custom_id?.startsWith('automod_tab_') && component.style === ButtonStyle.Primary
+      )?.custom_id?.replace('automod_tab_', '') || 'overview';
+
+      await interaction.editReply(buildMainPanelPayload(interaction.guild, activeView));
       return true;
     }
 
     if (customId === 'automod_view_rules') {
       await interaction.deferUpdate();
-      await interaction.editReply(buildRulesPanelPayload(interaction.guild));
+      await interaction.editReply(buildMainPanelPayload(interaction.guild, 'rules'));
       return true;
     }
 
     if (customId === 'automod_view_logs') {
       await interaction.deferUpdate();
-      await interaction.editReply(buildLogsPanelPayload(interaction.guild));
+      await interaction.editReply(buildMainPanelPayload(interaction.guild, 'logs'));
       return true;
     }
 
     if (customId === 'automod_view_ignore') {
       await interaction.deferUpdate();
-      await interaction.editReply(buildIgnorePanelPayload(interaction.guild));
+      await interaction.editReply(buildMainPanelPayload(interaction.guild, 'ignore'));
       return true;
     }
 
     if (customId === 'automod_back_main') {
       await interaction.deferUpdate();
-      await interaction.editReply(buildMainPanelPayload(interaction.guild));
+      await interaction.editReply(buildMainPanelPayload(interaction.guild, 'overview'));
       return true;
     }
 
@@ -868,7 +986,7 @@ async function handleInteraction(interaction) {
       const config = getConfig(interaction.guild.id);
       config.logs.enabled = !config.logs.enabled;
       saveConfig(interaction.guild.id, config);
-      await interaction.editReply(buildLogsPanelPayload(interaction.guild));
+      await interaction.editReply(buildMainPanelPayload(interaction.guild, 'logs'));
       return true;
     }
 
@@ -877,7 +995,7 @@ async function handleInteraction(interaction) {
       const config = getConfig(interaction.guild.id);
       config.logs.channelId = null;
       saveConfig(interaction.guild.id, config);
-      await interaction.editReply(buildLogsPanelPayload(interaction.guild));
+      await interaction.editReply(buildMainPanelPayload(interaction.guild, 'logs'));
       return true;
     }
 
@@ -886,7 +1004,7 @@ async function handleInteraction(interaction) {
       const config = getConfig(interaction.guild.id);
       config.ignoredChannelIds = [];
       saveConfig(interaction.guild.id, config);
-      await interaction.editReply(buildIgnorePanelPayload(interaction.guild));
+      await interaction.editReply(buildMainPanelPayload(interaction.guild, 'ignore'));
       return true;
     }
 
@@ -895,7 +1013,7 @@ async function handleInteraction(interaction) {
       const config = getConfig(interaction.guild.id);
       config.ignoredRoleIds = [];
       saveConfig(interaction.guild.id, config);
-      await interaction.editReply(buildIgnorePanelPayload(interaction.guild));
+      await interaction.editReply(buildMainPanelPayload(interaction.guild, 'ignore'));
       return true;
     }
 
@@ -904,14 +1022,14 @@ async function handleInteraction(interaction) {
       const config = getConfig(interaction.guild.id);
       config.ignoredUserIds = [];
       saveConfig(interaction.guild.id, config);
-      await interaction.editReply(buildIgnorePanelPayload(interaction.guild));
+      await interaction.editReply(buildMainPanelPayload(interaction.guild, 'ignore'));
       return true;
     }
 
     if (customId === 'automod_reset') {
       await interaction.deferUpdate();
       resetGuildAutoModConfig(interaction.guild.id);
-      await interaction.editReply(buildMainPanelPayload(interaction.guild));
+      await interaction.editReply(buildMainPanelPayload(interaction.guild, 'overview'));
       return true;
     }
 
@@ -961,9 +1079,10 @@ async function handleInteraction(interaction) {
     if (customId.startsWith('automod_punishment_select:')) {
       await interaction.deferUpdate();
       const ruleKey = customId.split(':')[1];
-      const punishment = interaction.values[0];
+      const punishments = normalizePunishments(interaction.values);
       const config = getConfig(interaction.guild.id);
-      config[ruleKey].punishment = punishment;
+      config[ruleKey].punishments = punishments;
+      config[ruleKey].punishment = punishments[0];
       saveConfig(interaction.guild.id, config);
       await interaction.editReply(buildPunishmentPanelPayload(interaction.guild, ruleKey));
       return true;
@@ -978,7 +1097,7 @@ async function handleInteraction(interaction) {
       const config = getConfig(interaction.guild.id);
       config.logs.channelId = interaction.values[0] ? extractId(interaction.values[0]) : null;
       saveConfig(interaction.guild.id, config);
-      await interaction.editReply(buildLogsPanelPayload(interaction.guild));
+      await interaction.editReply(buildMainPanelPayload(interaction.guild, 'logs'));
       return true;
     }
 
@@ -987,7 +1106,7 @@ async function handleInteraction(interaction) {
       const config = getConfig(interaction.guild.id);
       config.ignoredChannelIds = interaction.values.map(extractId).filter(Boolean);
       saveConfig(interaction.guild.id, config);
-      await interaction.editReply(buildIgnorePanelPayload(interaction.guild));
+      await interaction.editReply(buildMainPanelPayload(interaction.guild, 'ignore'));
       return true;
     }
 
@@ -1000,7 +1119,7 @@ async function handleInteraction(interaction) {
       const config = getConfig(interaction.guild.id);
       config.ignoredRoleIds = interaction.values.map(extractId).filter(Boolean);
       saveConfig(interaction.guild.id, config);
-      await interaction.editReply(buildIgnorePanelPayload(interaction.guild));
+      await interaction.editReply(buildMainPanelPayload(interaction.guild, 'ignore'));
       return true;
     }
 
@@ -1013,7 +1132,7 @@ async function handleInteraction(interaction) {
       const config = getConfig(interaction.guild.id);
       config.ignoredUserIds = interaction.values.map(extractId).filter(Boolean);
       saveConfig(interaction.guild.id, config);
-      await interaction.editReply(buildIgnorePanelPayload(interaction.guild));
+      await interaction.editReply(buildMainPanelPayload(interaction.guild, 'ignore'));
       return true;
     }
 

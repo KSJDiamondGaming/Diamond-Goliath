@@ -4,7 +4,8 @@ const readJson = require('../utils/readJson');
 
 const router = express.Router();
 
-const DATA_PATH = path.join(__dirname, '..', '..', '..', 'src', 'data');
+// ✅ FIXED PATH (shared system)
+const DATA_PATH = path.join(__dirname, '..', 'data');
 const CASES_PATH = path.join(DATA_PATH, 'modCaseDetails.json');
 
 function getCasesData() {

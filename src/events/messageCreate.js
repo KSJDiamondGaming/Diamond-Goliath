@@ -128,6 +128,17 @@ async function applyPunishment(message, trigger) {
       moderator: null,
       reason: deleted ? `${baseReason} Message deleted.` : baseReason,
       color: '#f39c12',
+      logType: 'automod',
+      title: '🤖 AutoMod Action: Warn',
+      details: trigger.matchedContent
+        ? [
+            {
+              name: 'Matched Content',
+              value: String(trigger.matchedContent).slice(0, 1024),
+              inline: false,
+            },
+          ]
+        : [],
     });
 
     return;
@@ -154,6 +165,17 @@ async function applyPunishment(message, trigger) {
         reason: deleted ? `${baseReason} Message deleted.` : baseReason,
         duration: `${trigger.timeoutMinutes}m`,
         color: '#e67e22',
+        logType: 'automod',
+        title: '🤖 AutoMod Action: Timeout',
+        details: trigger.matchedContent
+          ? [
+              {
+                name: 'Matched Content',
+                value: String(trigger.matchedContent).slice(0, 1024),
+                inline: false,
+              },
+            ]
+          : [],
       });
     } catch (error) {
       console.error('❌ AutoMod timeout failed:', error);

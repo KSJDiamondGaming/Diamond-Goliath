@@ -9,11 +9,20 @@ const {
   TextInputBuilder,
   TextInputStyle,
 } = require('discord.js');
+const { getGuildConfig } = require('../config/guildConfigStore');
 
 /**
  * 🧠 MAIN HUB
  */
 function buildAdminPanel(guild, memberDisplayName) {
+  const config = getGuildConfig(guild?.id);
+
+  const logsChannelId = config.logsChannelId || config.logsChannel || null;
+  const modLogChannelId = config.modLogChannelId || null;
+  const adminLogChannelId = config.adminLogChannelId || null;
+  const automodLogChannelId = config.automodLogChannelId || null;
+  const adminActionLoggerEnabled = config.adminActionLoggerEnabled === true;
+
   const embed = new EmbedBuilder()
     .setColor('#5865F2')
     .setTitle('🛠️ KSJ Goliath Admin Hub')
@@ -22,8 +31,31 @@ function buildAdminPanel(guild, memberDisplayName) {
       { name: '⚙️ AutoMod', value: 'Filters & protection', inline: true },
       { name: '🎨 Embed', value: 'Create custom embeds', inline: true },
       { name: '📊 Stats', value: 'Server stats system', inline: true },
-      { name: '📋 Logs', value: 'Set logs channel', inline: true },
-      { name: '📌 Mod Log', value: 'Set mod log channel', inline: true },
+      {
+        name: '📋 Logs',
+        value: logsChannelId ? `Set logs channel\nCurrent: <#${logsChannelId}>` : 'Set logs channel',
+        inline: true,
+      },
+      {
+        name: '📌 Mod Log',
+        value: modLogChannelId ? `Set mod log channel\nCurrent: <#${modLogChannelId}>` : 'Set mod log channel',
+        inline: true,
+      },
+      {
+        name: '👑 Admin Log',
+        value: adminLogChannelId ? `Set admin log channel\nCurrent: <#${adminLogChannelId}>` : 'Set admin log channel',
+        inline: true,
+      },
+      {
+        name: '🤖 AutoMod Log',
+        value: automodLogChannelId ? `Set automod log channel\nCurrent: <#${automodLogChannelId}>` : 'Set automod log channel',
+        inline: true,
+      },
+      {
+        name: '🧾 Admin Logger',
+        value: adminActionLoggerEnabled ? 'Enabled ✅' : 'Disabled ❌',
+        inline: true,
+      },
       { name: '🧹 Purge', value: 'Bulk delete messages', inline: true }
     )
     .setFooter({ text: `Requested by ${memberDisplayName}` })
@@ -49,13 +81,30 @@ function buildAdminPanel(guild, memberDisplayName) {
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('admin:setlogs')
-      .setLabel('Set Logs')
-      .setStyle(ButtonStyle.Success),
+      .setLabel(logsChannelId ? 'Set Logs ✅' : 'Set Logs')
+      .setStyle(logsChannelId ? ButtonStyle.Success : ButtonStyle.Primary),
 
     new ButtonBuilder()
       .setCustomId('admin:setmodlog')
-      .setLabel('Set Mod Log')
-      .setStyle(ButtonStyle.Success),
+      .setLabel(modLogChannelId ? 'Set Mod Log ✅' : 'Set Mod Log')
+      .setStyle(modLogChannelId ? ButtonStyle.Success : ButtonStyle.Primary),
+
+    new ButtonBuilder()
+      .setCustomId('admin:setadminlog')
+      .setLabel(adminLogChannelId ? 'Set Admin Log ✅' : 'Set Admin Log')
+      .setStyle(adminLogChannelId ? ButtonStyle.Success : ButtonStyle.Primary)
+  );
+
+  const row3 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('admin:setautomodlog')
+      .setLabel(automodLogChannelId ? 'Set AutoMod Log ✅' : 'Set AutoMod Log')
+      .setStyle(automodLogChannelId ? ButtonStyle.Success : ButtonStyle.Primary),
+
+    new ButtonBuilder()
+      .setCustomId('admin:toggleadminlogger')
+      .setLabel(adminActionLoggerEnabled ? 'Admin Logger ON' : 'Admin Logger OFF')
+      .setStyle(adminActionLoggerEnabled ? ButtonStyle.Success : ButtonStyle.Secondary),
 
     new ButtonBuilder()
       .setCustomId('admin:purge')
@@ -65,7 +114,7 @@ function buildAdminPanel(guild, memberDisplayName) {
 
   return {
     embeds: [embed],
-    components: [row1, row2],
+    components: [row1, row2, row3],
   };
 }
 
@@ -73,17 +122,36 @@ function buildAdminPanel(guild, memberDisplayName) {
  * 📋 CHANNEL PICKER PANEL
  */
 function buildChannelPanel(type) {
-  const isModLog = type === 'modlog';
+  const panelMap = {
+    logs: {
+      title: '📋 Set Logs Channel',
+      customId: 'admin:selectlogs',
+    },
+    modlog: {
+      title: '📌 Set Mod Log Channel',
+      customId: 'admin:selectmodlog',
+    },
+    adminlog: {
+      title: '👑 Set Admin Log Channel',
+      customId: 'admin:selectadminlog',
+    },
+    automodlog: {
+      title: '🤖 Set AutoMod Log Channel',
+      customId: 'admin:selectautomodlog',
+    },
+  };
+
+  const selected = panelMap[type] || panelMap.logs;
 
   const embed = new EmbedBuilder()
     .setColor('#5865F2')
-    .setTitle(isModLog ? '📌 Set Mod Log Channel' : '📋 Set Logs Channel')
+    .setTitle(selected.title)
     .setDescription('Select a channel below')
     .setTimestamp();
 
   const row = new ActionRowBuilder().addComponents(
     new ChannelSelectMenuBuilder()
-      .setCustomId(isModLog ? 'admin:selectmodlog' : 'admin:selectlogs')
+      .setCustomId(selected.customId)
       .setPlaceholder('Choose a channel')
       .addChannelTypes(ChannelType.GuildText)
   );

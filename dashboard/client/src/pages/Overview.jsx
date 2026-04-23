@@ -1,10 +1,12 @@
 import { memo, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
-import DashboardPage, {
+import PageShell, {
   EmptyState,
+  LoadingPanel,
+  Notice,
   SectionCard,
-  StatGrid,
-} from '../components/Dashboard';
+} from '../components/PageShell';
+import { OVERVIEW_UI, PAGE_LAYOUTS, SECTION_DEFS } from '../ui';
 
 const INITIAL_STATE = {
   loading: true,
@@ -12,11 +14,390 @@ const INITIAL_STATE = {
   statusData: null,
   casesData: null,
   warningsData: null,
-  requestSpeedMs: null,
 };
+
+const PAGE_KEY = 'overview';
+
+function clamp(value, min = 0, max = 100) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function toNumber(value, fallback = 0) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+function firstNumber(...values) {
+  for (const value of values) {
+    const num = Number(value);
+    if (Number.isFinite(num)) return num;
+  }
+  return 0;
+}
+
+function getDeepValue(source, paths = [], fallback = undefined) {
+  for (const path of paths) {
+    const segments = Array.isArray(path) ? path : String(path).split('.');
+    let current = source;
+
+    for (const key of segments) {
+      if (current == null || typeof current !== 'object' || !(key in current)) {
+        current = undefined;
+        break;
+      }
+      current = current[key];
+    }
+
+    if (current !== undefined && current !== null) {
+      return current;
+    }
+  }
+
+  return fallback;
+}
+
+function getStatusTone(value) {
+  if (typeof value === 'boolean') return value ? 'online' : 'offline';
+
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return 'unknown';
+  if (['online', 'up', 'healthy', 'ok', 'ready', 'connected'].includes(normalized)) return 'online';
+  if (['offline', 'down', 'error', 'failed', 'disconnected'].includes(normalized)) return 'offline';
+  return 'unknown';
+}
+
+function getStatusLabel(value) {
+  const tone = getStatusTone(value);
+  if (tone === 'online') return 'Online';
+  if (tone === 'offline') return 'Offline';
+  return 'Checking';
+}
+
+function getThemeColors(theme) {
+  return {
+    pageGlow: theme?.pageGlow || 'radial-gradient(circle at top right, rgba(80,130,255,0.22), transparent 34%)',
+    cardBg: theme?.cardBg || 'rgba(8, 18, 40, 0.96)',
+    softBg: theme?.softBg || 'rgba(14, 26, 56, 0.9)',
+    cardBorder: theme?.cardBorder || 'rgba(110, 144, 210, 0.18)',
+    cardText: theme?.cardText || '#f8fafc',
+    mutedText: theme?.mutedText || 'rgba(203, 213, 225, 0.82)',
+    accent: theme?.accent || '#4f8cff',
+    accentStrong: theme?.accentStrong || '#67a1ff',
+    success: theme?.success || '#22c55e',
+    danger: theme?.danger || '#ef4444',
+    shadow: theme?.shadow || '0 20px 60px rgba(0, 0, 0, 0.38)',
+  };
+}
+
+function normalizeWarnings(data) {
+  if (Array.isArray(data)) return data;
+  if (data && Array.isArray(data.items)) return data.items;
+  if (data && Array.isArray(data.warnings)) return data.warnings;
+  return [];
+}
+
+function getOverviewData(statusData, casesData, warningsData) {
+  const casesArray = Array.isArray(casesData)
+    ? casesData
+    : Array.isArray(casesData?.items)
+      ? casesData.items
+      : Array.isArray(casesData?.cases)
+        ? casesData.cases
+        : casesData && typeof casesData === 'object'
+          ? Object.values(casesData)
+          : [];
+
+  const warningsArray = normalizeWarnings(warningsData);
+
+  const totalCases = casesArray.length;
+  const totalWarnings = warningsArray.length;
+  const activeWarnings = warningsArray.filter((warning) => warning?.cleared !== true).length;
+  const clearedWarnings = warningsArray.filter((warning) => warning?.cleared === true).length;
+
+  const members = firstNumber(
+    getDeepValue(statusData, ['members', 'memberCount', 'guild.memberCount', 'guild.members']),
+    getDeepValue(statusData, [['guild', 'approximateMemberCount']]),
+  );
+
+  const latency = firstNumber(
+    getDeepValue(statusData, ['latency', 'ping', 'wsPing', 'discordPing', 'performance.latency']),
+  );
+
+  const requestCount = firstNumber(
+    getDeepValue(statusData, ['requestCount', 'requests', 'apiRequests', 'performance.requests']),
+  );
+
+  const botStatusRaw = getDeepValue(statusData, ['botStatus', 'bot.status', 'bot.online', 'bot']);
+  const backendStatusRaw = getDeepValue(statusData, ['backendStatus', 'backend.status', 'backend.online', 'backend']);
+  const apiStatusRaw = getDeepValue(statusData, ['apiStatus', 'api.status', 'api.online', 'api']);
+
+  const systemBars = [
+    {
+      key: 'backend',
+      label: 'Backend',
+      value: getStatusTone(backendStatusRaw) === 'online' ? 100 : 18,
+      footer: getStatusLabel(backendStatusRaw),
+    },
+    {
+      key: 'api',
+      label: 'API',
+      value: getStatusTone(apiStatusRaw) === 'online' ? 100 : 18,
+      footer: getStatusLabel(apiStatusRaw),
+    },
+    {
+      key: 'bot',
+      label: 'Bot',
+      value: getStatusTone(botStatusRaw) === 'online' ? 100 : 18,
+      footer: getStatusLabel(botStatusRaw),
+    },
+  ];
+
+  const moderationBars = [
+    { key: 'cases', label: 'Cases', value: totalCases, footer: totalCases },
+    { key: 'warnings', label: 'Warnings', value: totalWarnings, footer: totalWarnings },
+    { key: 'active', label: 'Active', value: activeWarnings, footer: activeWarnings },
+    { key: 'cleared', label: 'Cleared', value: clearedWarnings, footer: clearedWarnings },
+  ];
+
+  const performanceBars = [
+    { key: 'latency', label: 'Latency', value: latency, footer: latency || 0 },
+    { key: 'requests', label: 'Request', value: requestCount, footer: requestCount || 0 },
+    { key: 'members', label: 'Members', value: members, footer: members || 0 },
+  ];
+
+  return {
+    totalCases,
+    totalWarnings,
+    activeWarnings,
+    clearedWarnings,
+    members,
+    latency,
+    requestCount,
+    botStatus: getStatusLabel(botStatusRaw),
+    backendStatus: getStatusLabel(backendStatusRaw),
+    apiStatus: getStatusLabel(apiStatusRaw),
+    systemBars,
+    moderationBars,
+    performanceBars,
+  };
+}
+
+const MetricCard = memo(function MetricCard({ theme, eyebrow, value, statusDot = null }) {
+  const colors = getThemeColors(theme);
+
+  return (
+    <div
+      style={{
+        background: colors.softBg,
+        border: `1px solid ${colors.cardBorder}`,
+        borderRadius: '18px',
+        padding: '18px 20px',
+        display: 'grid',
+        gap: '10px',
+        minHeight: '92px',
+        boxShadow: colors.shadow,
+      }}
+    >
+      <div
+        style={{
+          fontSize: '12px',
+          fontWeight: 800,
+          textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+          color: colors.mutedText,
+        }}
+      >
+        {eyebrow}
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+        {statusDot ? (
+          <span
+            aria-hidden="true"
+            style={{
+              width: '10px',
+              height: '10px',
+              borderRadius: '999px',
+              background: statusDot,
+              boxShadow: `0 0 0 4px ${statusDot}22`,
+              flexShrink: 0,
+            }}
+          />
+        ) : null}
+
+        <div
+          style={{
+            color: colors.cardText,
+            fontSize: '22px',
+            lineHeight: 1.1,
+            fontWeight: 900,
+            textShadow: '0 2px 0 rgba(0,0,0,0.2)',
+          }}
+        >
+          {value}
+        </div>
+      </div>
+    </div>
+  );
+});
+
+const SnapshotCard = memo(function SnapshotCard({ theme, label, value }) {
+  const colors = getThemeColors(theme);
+
+  return (
+    <div
+      style={{
+        background: 'rgba(8, 18, 40, 0.66)',
+        border: `1px solid ${colors.cardBorder}`,
+        borderRadius: '16px',
+        padding: '16px 16px 14px',
+        display: 'grid',
+        gap: '10px',
+      }}
+    >
+      <div
+        style={{
+          fontSize: '11px',
+          fontWeight: 800,
+          textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+          color: colors.mutedText,
+        }}
+      >
+        {label}
+      </div>
+
+      <div
+        style={{
+          color: colors.cardText,
+          fontSize: '18px',
+          fontWeight: 900,
+          textShadow: '0 2px 0 rgba(0,0,0,0.2)',
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+});
+
+const ChartCard = memo(function ChartCard({ theme, title, subtitle, items, mode = 'scaled' }) {
+  const colors = getThemeColors(theme);
+  const maxValue = Math.max(...items.map((item) => toNumber(item.value, 0)), 1);
+
+  return (
+    <div
+      style={{
+        background: 'rgba(8, 18, 40, 0.66)',
+        border: `1px solid ${colors.cardBorder}`,
+        borderRadius: '18px',
+        padding: '16px',
+        display: 'grid',
+        gap: '16px',
+      }}
+    >
+      <div style={{ display: 'grid', gap: '6px' }}>
+        <div
+          style={{
+            margin: 0,
+            fontSize: '15px',
+            fontWeight: 900,
+            color: colors.cardText,
+          }}
+        >
+          {title}
+        </div>
+        <div
+          style={{
+            margin: 0,
+            fontSize: '13px',
+            lineHeight: 1.5,
+            color: colors.mutedText,
+          }}
+        >
+          {subtitle}
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))`,
+          gap: '10px',
+          alignItems: 'end',
+          minHeight: '160px',
+        }}
+      >
+        {items.map((item) => {
+          const rawValue = toNumber(item.value, 0);
+          const percentage =
+            mode === 'percentage' ? clamp(rawValue, 10, 100) : clamp((rawValue / maxValue) * 100, 10, 100);
+
+          return (
+            <div
+              key={item.key}
+              style={{
+                display: 'grid',
+                gap: '10px',
+                alignItems: 'end',
+              }}
+            >
+              <div
+                style={{
+                  height: '100px',
+                  display: 'flex',
+                  alignItems: 'flex-end',
+                }}
+              >
+                <div
+                  title={`${item.label}: ${item.footer}`}
+                  style={{
+                    width: '100%',
+                    height: `${percentage}%`,
+                    minHeight: '14px',
+                    borderRadius: '10px',
+                    background: 'linear-gradient(180deg, rgba(84,138,255,1) 0%, rgba(29,78,216,0.98) 58%, rgba(15,23,42,0.98) 100%)',
+                    border: '1px solid rgba(147, 197, 253, 0.24)',
+                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.12)',
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gap: '4px' }}>
+                <div
+                  style={{
+                    fontSize: '13px',
+                    fontWeight: 800,
+                    color: colors.cardText,
+                  }}
+                >
+                  {item.label}
+                </div>
+                <div
+                  style={{
+                    fontSize: '13px',
+                    color: colors.mutedText,
+                  }}
+                >
+                  {item.footer}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+});
 
 export default function Overview({ selectedGuild, theme }) {
   const [state, setState] = useState(INITIAL_STATE);
+
+  const page = PAGE_LAYOUTS[PAGE_KEY] || {
+    title: 'Overview',
+    description: 'Select a server to view live guild and moderation stats.',
+    sections: [],
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -30,7 +411,6 @@ export default function Overview({ selectedGuild, theme }) {
             statusData: null,
             casesData: null,
             warningsData: null,
-            requestSpeedMs: null,
           });
         }
         return;
@@ -44,15 +424,11 @@ export default function Overview({ selectedGuild, theme }) {
         }));
       }
 
-      const startedAt = performance.now();
-
       const [statusResult, casesResult, warningsResult] = await Promise.allSettled([
         api.getStatus(selectedGuild),
         api.getCases(selectedGuild),
         api.getWarnings(selectedGuild),
       ]);
-
-      const endedAt = performance.now();
 
       if (!mounted) return;
 
@@ -61,7 +437,7 @@ export default function Overview({ selectedGuild, theme }) {
       const nextWarningsData = warningsResult.status === 'fulfilled' ? warningsResult.value : null;
 
       const failures = [statusResult, casesResult, warningsResult].filter(
-        (result) => result.status === 'rejected'
+        (result) => result.status === 'rejected',
       );
 
       let error = '';
@@ -77,7 +453,6 @@ export default function Overview({ selectedGuild, theme }) {
         statusData: nextStatusData,
         casesData: nextCasesData,
         warningsData: nextWarningsData,
-        requestSpeedMs: Math.max(1, Math.round(endedAt - startedAt)),
       });
     }
 
@@ -91,596 +466,184 @@ export default function Overview({ selectedGuild, theme }) {
     };
   }, [selectedGuild]);
 
-  const overviewStats = useMemo(() => {
-    const statusData = state.statusData;
-    const casesData = state.casesData;
-    const warningsData = state.warningsData;
+  const colors = useMemo(() => getThemeColors(theme), [theme]);
 
-    const totalCases = countCases(casesData, selectedGuild);
-    const warningStats = countWarnings(warningsData, selectedGuild);
+  const overviewData = useMemo(
+    () => getOverviewData(state.statusData, state.casesData, state.warningsData),
+    [state.statusData, state.casesData, state.warningsData],
+  );
 
-    const backendOnline = resolveBackendOnline(statusData);
-    const apiOnline = resolveApiOnline(statusData);
-    const botOnline = resolveBotOnline(statusData);
-    const guildConnected = resolveGuildConnected(statusData, selectedGuild);
-
-    const botLatencyMs = resolveBotLatency(statusData);
-    const memberCount = resolveMemberCount(statusData, selectedGuild);
-    const requestSpeedMs = Number(state.requestSpeedMs ?? statusData?.requestSpeedMs ?? 0) || null;
-
-    return {
-      totalCases,
-      totalWarnings: warningStats.total,
-      activeWarnings: warningStats.active,
-      clearedWarnings: warningStats.cleared,
-      backendOnline,
-      apiOnline,
-      botOnline,
-      guildConnected,
-      botLatencyMs,
-      memberCount,
-      requestSpeedMs,
-      charts: {
-        health: [
-          backendOnline ? 100 : 15,
-          apiOnline ? 100 : 15,
-          botOnline ? 100 : 15,
-        ],
-        moderation: [
-          totalCases,
-          warningStats.total,
-          warningStats.active,
-          warningStats.cleared,
-        ],
-        performance: [
-          botLatencyMs ?? 0,
-          requestSpeedMs ?? 0,
-          memberCount ?? 0,
-        ],
-      },
-    };
-  }, [state.statusData, state.casesData, state.warningsData, state.requestSpeedMs, selectedGuild]);
+  const heroTitle = getDeepValue(
+    state.statusData,
+    ['guild.name', 'guildName', 'name'],
+    selectedGuild || 'Guild Overview',
+  );
 
   if (!selectedGuild) {
     return (
-      <DashboardPage
-        title="Overview"
-        subtitle="Select a server to view live guild and moderation stats."
+      <PageShell
+        title={page.title || 'Overview'}
+        subtitle={page.description || 'Select a server to view live guild and moderation stats.'}
         theme={theme}
       >
         <EmptyState theme={theme} text="Select a guild to view overview stats." />
-      </DashboardPage>
+      </PageShell>
     );
   }
 
   return (
-    <DashboardPage
-      title="Overview"
-      subtitle="Guild Stats"
+    <PageShell
+      title={page.title || 'Overview'}
+      subtitle={page.description || 'Guild stats and live moderation overview.'}
       theme={theme}
     >
-      {state.error ? <p style={{ color: '#ef4444', margin: 0 }}>{state.error}</p> : null}
+      {state.error ? (
+        <Notice theme={theme} tone="danger">
+          {state.error}
+        </Notice>
+      ) : null}
 
-      <StatGrid>
-        <StatusCard
-          title="Bot Status"
-          value={state.loading ? 'Checking...' : overviewStats.botOnline ? 'Online' : 'Offline'}
-          theme={theme}
-          tone={state.loading ? 'neutral' : overviewStats.botOnline ? 'success' : 'danger'}
-        />
+      <section
+        style={{
+          background: `${colors.pageGlow}, ${colors.cardBg}`,
+          border: `1px solid ${colors.cardBorder}`,
+          borderRadius: '26px',
+          padding: '22px 24px',
+          boxShadow: colors.shadow,
+          display: 'grid',
+          gap: '10px',
+          overflow: 'hidden',
+          position: 'relative',
+        }}
+      >
+        <div
+          style={{
+            fontSize: 'clamp(30px, 5vw, 52px)',
+            lineHeight: 0.95,
+            fontWeight: 1000,
+            letterSpacing: '-0.04em',
+            color: colors.cardText,
+            textTransform: 'uppercase',
+            textShadow: '0 3px 0 rgba(0,0,0,0.25)',
+          }}
+        >
+          {heroTitle}
+        </div>
 
-        <StatusCard
-          title="Members"
-          value={
-            state.loading
-              ? '...'
-              : overviewStats.memberCount != null
-                ? String(overviewStats.memberCount)
-                : 'Unavailable'
-          }
-          theme={theme}
-          tone="neutral"
-        />
+        <div style={{ color: colors.mutedText, fontWeight: 700, fontSize: '14px' }}>
+          Guild ID: {selectedGuild}
+        </div>
 
-        <StatusCard
-          title="Backend"
-          value={state.loading ? 'Checking...' : overviewStats.backendOnline ? 'Online' : 'Offline'}
-          theme={theme}
-          tone={state.loading ? 'neutral' : overviewStats.backendOnline ? 'success' : 'danger'}
-        />
-
-        <StatusCard
-          title="API Status"
-          value={state.loading ? 'Checking...' : overviewStats.apiOnline ? 'Online' : 'Offline'}
-          theme={theme}
-          tone={state.loading ? 'neutral' : overviewStats.apiOnline ? 'success' : 'danger'}
-        />
-      </StatGrid>
+        <div style={{ color: colors.mutedText, fontSize: '14px', lineHeight: 1.6 }}>
+          {OVERVIEW_UI.heroDescription}
+        </div>
+      </section>
 
       <SectionCard
         theme={theme}
-        title="Moderation Snapshot"
-        subtitle="A breakdown of current warning records and moderation activity for this guild."
-        padding="20px"
+        title={SECTION_DEFS?.overviewStats?.title || OVERVIEW_UI.sectionTitles.overview}
+        subtitle={SECTION_DEFS?.overviewStats?.description || OVERVIEW_UI.sectionDescriptions.overview}
+        padding="22px"
       >
         {state.loading ? (
+          <LoadingPanel theme={theme} text="Loading overview..." />
+        ) : (
           <div
             style={{
-              background: theme.softBg,
-              border: `1px solid ${theme.cardBorder}`,
-              borderRadius: '14px',
-              padding: '16px',
-              color: theme.mutedText,
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
+              gap: '14px',
             }}
           >
-            Loading moderation snapshot...
+            <MetricCard
+              theme={theme}
+              eyebrow={OVERVIEW_UI.metricLabels.botStatus}
+              value={overviewData.botStatus}
+              statusDot={overviewData.botStatus === 'Online' ? colors.success : colors.danger}
+            />
+            <MetricCard
+              theme={theme}
+              eyebrow={OVERVIEW_UI.metricLabels.members}
+              value={overviewData.members}
+            />
+            <MetricCard
+              theme={theme}
+              eyebrow={OVERVIEW_UI.metricLabels.backendStatus}
+              value={overviewData.backendStatus}
+              statusDot={overviewData.backendStatus === 'Online' ? colors.success : colors.danger}
+            />
+            <MetricCard
+              theme={theme}
+              eyebrow={OVERVIEW_UI.metricLabels.apiStatus}
+              value={overviewData.apiStatus}
+              statusDot={overviewData.apiStatus === 'Online' ? colors.success : colors.danger}
+            />
           </div>
+        )}
+      </SectionCard>
+
+      <SectionCard
+        theme={theme}
+        title={SECTION_DEFS?.moderationSnapshot?.title || OVERVIEW_UI.sectionTitles.moderation}
+        subtitle={SECTION_DEFS?.moderationSnapshot?.description || OVERVIEW_UI.sectionDescriptions.moderation}
+        padding="22px"
+      >
+        {state.loading ? (
+          <LoadingPanel theme={theme} text="Loading moderation snapshot..." />
         ) : (
           <div
             style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-              gap: '12px',
+              gap: '14px',
             }}
           >
-            <MiniMetric label="Total Cases" value={overviewStats.totalCases} theme={theme} />
-            <MiniMetric label="Total Warnings" value={overviewStats.totalWarnings} theme={theme} />
-            <MiniMetric label="Active Warnings" value={overviewStats.activeWarnings} theme={theme} />
-            <MiniMetric label="Cleared Warnings" value={overviewStats.clearedWarnings} theme={theme} />
+            <SnapshotCard theme={theme} label={OVERVIEW_UI.snapshotLabels.totalCases} value={overviewData.totalCases} />
+            <SnapshotCard theme={theme} label={OVERVIEW_UI.snapshotLabels.totalWarnings} value={overviewData.totalWarnings} />
+            <SnapshotCard theme={theme} label={OVERVIEW_UI.snapshotLabels.activeWarnings} value={overviewData.activeWarnings} />
+            <SnapshotCard theme={theme} label={OVERVIEW_UI.snapshotLabels.clearedWarnings} value={overviewData.clearedWarnings} />
           </div>
         )}
       </SectionCard>
 
       <SectionCard
         theme={theme}
-        title="Live Charts"
-        subtitle="Quick visual indicators for health, moderation, and performance."
-        padding="20px"
+        title={SECTION_DEFS?.liveCharts?.title || OVERVIEW_UI.sectionTitles.charts}
+        subtitle={SECTION_DEFS?.liveCharts?.description || OVERVIEW_UI.sectionDescriptions.charts}
+        padding="22px"
       >
         {state.loading ? (
-          <div
-            style={{
-              background: theme.softBg,
-              border: `1px solid ${theme.cardBorder}`,
-              borderRadius: '14px',
-              padding: '16px',
-              color: theme.mutedText,
-            }}
-          >
-            Loading charts...
-          </div>
+          <LoadingPanel theme={theme} text="Loading live charts..." />
         ) : (
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-              gap: '16px',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+              gap: '14px',
             }}
           >
-            <MiniChartCard
+            <ChartCard
               theme={theme}
-              title="System"
-              subtitle="Backend, API, Bot"
-              data={overviewStats.charts.health}
-              max={100}
-              labels={['Backend', 'API', 'Bot']}
+              title={OVERVIEW_UI.chartCards.system.title}
+              subtitle={OVERVIEW_UI.chartCards.system.subtitle}
+              items={overviewData.systemBars}
+              mode="percentage"
             />
-
-            <MiniChartCard
-            theme={theme}
-            title="Moderation"
-            subtitle="Cases and warnings"
-            data={overviewStats.charts.moderation}
-            labels={['Cases', 'Warnings', 'Active', 'Cleared']}
-            />
-
-            <MiniChartCard
+            <ChartCard
               theme={theme}
-              title="Performance"
-              subtitle="Latency, request speed, members"
-              data={overviewStats.charts.performance}
-              labels={['Latency', 'Request', 'Members']}
+              title={OVERVIEW_UI.chartCards.moderation.title}
+              subtitle={OVERVIEW_UI.chartCards.moderation.subtitle}
+              items={overviewData.moderationBars}
+            />
+            <ChartCard
+              theme={theme}
+              title={OVERVIEW_UI.chartCards.performance.title}
+              subtitle={OVERVIEW_UI.chartCards.performance.subtitle}
+              items={overviewData.performanceBars}
             />
           </div>
         )}
       </SectionCard>
-    </DashboardPage>
+    </PageShell>
   );
-}
-
-const StatusCard = memo(function StatusCard({ title, value, theme, tone = 'neutral' }) {
-  const toneStyles = getToneStyles(tone);
-
-  return (
-    <div
-      style={{
-        background: theme.cardBg,
-        border: `1px solid ${theme.cardBorder}`,
-        padding: '20px',
-        borderRadius: '18px',
-        boxShadow: theme.shadow,
-        minWidth: '180px',
-        display: 'grid',
-        gap: '10px',
-      }}
-    >
-      <div
-        style={{
-          fontSize: '12px',
-          fontWeight: 700,
-          color: theme.mutedText,
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-        }}
-      >
-        {title}
-      </div>
-
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px',
-          flexWrap: 'wrap',
-        }}
-      >
-        <span
-          style={{
-            width: '10px',
-            height: '10px',
-            borderRadius: '999px',
-            background: toneStyles.dot,
-            flexShrink: 0,
-          }}
-        />
-
-        <span
-          style={{
-            fontSize: '24px',
-            fontWeight: 800,
-            color: toneStyles.text || theme.cardText,
-            lineHeight: 1.1,
-          }}
-        >
-          {value}
-        </span>
-      </div>
-    </div>
-  );
-});
-
-const MiniMetric = memo(function MiniMetric({ label, value, theme }) {
-  return (
-    <div
-      style={{
-        background: theme.softBg,
-        border: `1px solid ${theme.cardBorder}`,
-        borderRadius: '14px',
-        padding: '16px',
-        display: 'grid',
-        gap: '8px',
-      }}
-    >
-      <div
-        style={{
-          fontSize: '11px',
-          fontWeight: 800,
-          color: theme.mutedText,
-          textTransform: 'uppercase',
-          letterSpacing: '0.06em',
-        }}
-      >
-        {label}
-      </div>
-
-      <div
-        style={{
-          color: theme.cardText,
-          fontWeight: 800,
-          fontSize: '22px',
-          lineHeight: 1.1,
-        }}
-      >
-        {value}
-      </div>
-    </div>
-  );
-});
-
-const MiniChartCard = memo(function MiniChartCard({
-  theme,
-  title,
-  subtitle,
-  data,
-  labels = [],
-  max,
-}) {
-  const normalizedData = Array.isArray(data) ? data.map((value) => Number(value || 0)) : [];
-  const maxValue = max || Math.max(...normalizedData, 1);
-
-  return (
-    <div
-      style={{
-        background: theme.softBg,
-        border: `1px solid ${theme.cardBorder}`,
-        borderRadius: '16px',
-        padding: '16px',
-        display: 'grid',
-        gap: '14px',
-      }}
-    >
-      <div>
-        <div
-          style={{
-            color: theme.cardText,
-            fontWeight: 800,
-            fontSize: '16px',
-            lineHeight: 1.2,
-          }}
-        >
-          {title}
-        </div>
-        {subtitle ? (
-          <div
-            style={{
-              marginTop: '6px',
-              color: theme.mutedText,
-              fontSize: '13px',
-              lineHeight: 1.5,
-            }}
-          >
-            {subtitle}
-          </div>
-        ) : null}
-      </div>
-
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'end',
-          gap: '10px',
-          minHeight: '130px',
-        }}
-      >
-        {normalizedData.map((value, index) => {
-          const height = maxValue > 0 ? Math.max(14, Math.round((value / maxValue) * 100)) : 14;
-
-          return (
-            <div
-              key={`${title}-${index}`}
-              style={{
-                flex: 1,
-                minWidth: 0,
-                display: 'grid',
-                gap: '8px',
-                alignItems: 'end',
-              }}
-            >
-              <div
-                title={`${labels[index] || `Value ${index + 1}`}: ${value}`}
-                style={{
-                  height: `${height}px`,
-                  borderRadius: '10px 10px 6px 6px',
-                  background:
-                    'linear-gradient(180deg, rgba(59,130,246,0.95) 0%, rgba(37,99,235,0.45) 100%)',
-                  border: `1px solid ${theme.cardBorder}`,
-                  boxShadow: theme.shadow,
-                }}
-              />
-              <div
-                style={{
-                  color: theme.cardText,
-                  fontWeight: 700,
-                  fontSize: '12px',
-                  lineHeight: 1.3,
-                  wordBreak: 'break-word',
-                }}
-              >
-                {labels[index] || `Value ${index + 1}`}
-              </div>
-              <div
-                style={{
-                  color: theme.mutedText,
-                  fontSize: '12px',
-                  fontWeight: 700,
-                }}
-              >
-                {value}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-});
-
-function getToneStyles(tone) {
-  switch (tone) {
-    case 'success':
-      return { dot: '#22c55e', text: '#22c55e' };
-    case 'danger':
-      return { dot: '#ef4444', text: '#ef4444' };
-    case 'warning':
-      return { dot: '#f59e0b', text: '#f59e0b' };
-    default:
-      return { dot: '#3b82f6', text: '' };
-  }
-}
-
-function countCases(data, selectedGuild) {
-  if (!data) return 0;
-
-  if (Array.isArray(data)) {
-    return data.length;
-  }
-
-  if (typeof data !== 'object') {
-    return 0;
-  }
-
-  if (selectedGuild && data[selectedGuild] && typeof data[selectedGuild] === 'object') {
-    const guildCases = data[selectedGuild];
-    return Array.isArray(guildCases) ? guildCases.length : Object.keys(guildCases).length;
-  }
-
-  return Object.keys(data).length;
-}
-
-function countWarnings(data, selectedGuild) {
-  let warningList = [];
-
-  if (Array.isArray(data)) {
-    warningList = data;
-  } else if (data && typeof data === 'object') {
-    if (selectedGuild && Array.isArray(data[selectedGuild])) {
-      warningList = data[selectedGuild];
-    } else if (selectedGuild && data[selectedGuild] && typeof data[selectedGuild] === 'object') {
-      warningList = Object.values(data[selectedGuild]);
-    } else {
-      warningList = Object.values(data).flatMap((entry) => {
-        if (Array.isArray(entry)) return entry;
-        if (entry && typeof entry === 'object') return Object.values(entry);
-        return [];
-      });
-    }
-  }
-
-  const active = warningList.filter((warning) => warning?.cleared !== true).length;
-  const cleared = warningList.filter((warning) => warning?.cleared === true).length;
-
-  return {
-    total: warningList.length,
-    active,
-    cleared,
-  };
-}
-
-function resolveBackendOnline(statusData) {
-  if (!statusData || typeof statusData !== 'object') return false;
-
-  if (typeof statusData.backendOnline === 'boolean') return statusData.backendOnline;
-  if (typeof statusData.backend === 'boolean') return statusData.backend;
-  if (typeof statusData.ok === 'boolean') return statusData.ok;
-  if (typeof statusData.success === 'boolean') return statusData.success;
-
-  if (statusData.backend && typeof statusData.backend === 'object') {
-    if (typeof statusData.backend.online === 'boolean') return statusData.backend.online;
-    if (typeof statusData.backend.ok === 'boolean') return statusData.backend.ok;
-    if (typeof statusData.backend.status === 'string') {
-      return isPositiveStatus(statusData.backend.status);
-    }
-  }
-
-  if (typeof statusData.status === 'string') {
-    return isPositiveStatus(statusData.status);
-  }
-
-  return false;
-}
-
-function resolveApiOnline(statusData) {
-  if (!statusData || typeof statusData !== 'object') return false;
-
-  if (typeof statusData.apiOnline === 'boolean') return statusData.apiOnline;
-  if (typeof statusData.api === 'boolean') return statusData.api;
-
-  if (statusData.api && typeof statusData.api === 'object') {
-    if (typeof statusData.api.online === 'boolean') return statusData.api.online;
-    if (typeof statusData.api.ok === 'boolean') return statusData.api.ok;
-    if (typeof statusData.api.healthy === 'boolean') return statusData.api.healthy;
-    if (typeof statusData.api.status === 'string') {
-      return isPositiveStatus(statusData.api.status);
-    }
-  }
-
-  if (typeof statusData.ok === 'boolean') return statusData.ok;
-  if (typeof statusData.success === 'boolean') return statusData.success;
-
-  return false;
-}
-
-function resolveBotOnline(statusData) {
-  if (!statusData || typeof statusData !== 'object') return false;
-
-  if (typeof statusData.botOnline === 'boolean') return statusData.botOnline;
-  if (typeof statusData.bot === 'boolean') return statusData.bot;
-
-  if (statusData.bot && typeof statusData.bot === 'object') {
-    if (typeof statusData.bot.online === 'boolean') return statusData.bot.online;
-    if (typeof statusData.bot.connected === 'boolean') return statusData.bot.connected;
-    if (typeof statusData.bot.status === 'string') return isPositiveStatus(statusData.bot.status);
-  }
-
-  return false;
-}
-
-function resolveGuildConnected(statusData, selectedGuild) {
-  if (!selectedGuild) return false;
-  if (!statusData || typeof statusData !== 'object') return false;
-
-  if (statusData.guilds && typeof statusData.guilds === 'object') {
-    const guildState = statusData.guilds[selectedGuild];
-    if (typeof guildState === 'boolean') return guildState;
-    if (guildState && typeof guildState === 'object') {
-      if (typeof guildState.inGuild === 'boolean') return guildState.inGuild;
-      if (typeof guildState.connected === 'boolean') return guildState.connected;
-      if (typeof guildState.available === 'boolean') return guildState.available;
-      if (typeof guildState.online === 'boolean') return guildState.online;
-    }
-  }
-
-  if (statusData.bot && typeof statusData.bot === 'object' && statusData.bot.guilds) {
-    const guildState = statusData.bot.guilds[selectedGuild];
-    if (typeof guildState === 'boolean') return guildState;
-    if (guildState && typeof guildState === 'object') {
-      if (typeof guildState.inGuild === 'boolean') return guildState.inGuild;
-      if (typeof guildState.connected === 'boolean') return guildState.connected;
-      if (typeof guildState.available === 'boolean') return guildState.available;
-      if (typeof guildState.online === 'boolean') return guildState.online;
-    }
-  }
-
-  return false;
-}
-
-function resolveBotLatency(statusData) {
-  if (!statusData || typeof statusData !== 'object') return null;
-
-  if (typeof statusData.botLatencyMs === 'number') return Math.round(statusData.botLatencyMs);
-  if (typeof statusData.latencyMs === 'number') return Math.round(statusData.latencyMs);
-
-  if (statusData.bot && typeof statusData.bot === 'object') {
-    if (typeof statusData.bot.latencyMs === 'number') return Math.round(statusData.bot.latencyMs);
-    if (typeof statusData.bot.ping === 'number') return Math.round(statusData.bot.ping);
-  }
-
-  return null;
-}
-
-function resolveMemberCount(statusData, selectedGuild) {
-  if (!statusData || typeof statusData !== 'object') return null;
-
-  if (typeof statusData.memberCount === 'number') return statusData.memberCount;
-
-  if (statusData.guilds && selectedGuild && typeof statusData.guilds[selectedGuild] === 'object') {
-    const guildState = statusData.guilds[selectedGuild];
-    if (typeof guildState.memberCount === 'number') return guildState.memberCount;
-    if (typeof guildState.members === 'number') return guildState.members;
-  }
-
-  if (statusData.bot && statusData.bot.guilds && selectedGuild) {
-    const guildState = statusData.bot.guilds[selectedGuild];
-    if (guildState && typeof guildState === 'object') {
-      if (typeof guildState.memberCount === 'number') return guildState.memberCount;
-      if (typeof guildState.members === 'number') return guildState.members;
-    }
-  }
-
-  return null;
-}
-
-function isPositiveStatus(value) {
-  const normalized = String(value || '').trim().toLowerCase();
-  return ['ok', 'online', 'healthy', 'ready', 'connected', 'up'].includes(normalized);
 }

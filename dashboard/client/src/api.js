@@ -92,4 +92,18 @@ export const api = {
       body: JSON.stringify(body),
     });
   },
+
+  getLogConfig(guildId) {
+    return request(`/api/config/logs/${guildId}`);
+  },
+
+  saveLogConfig(guildId, body) {
+    return request(`/api/config/logs/${guildId}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+  },
 };

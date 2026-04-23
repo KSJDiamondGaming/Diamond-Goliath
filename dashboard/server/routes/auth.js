@@ -10,7 +10,7 @@ const CLIENT_SECRET = String(process.env.CLIENT_SECRET || '').trim();
 const REDIRECT_URI = String(process.env.DISCORD_REDIRECT_URI || '').trim();
 const CLIENT_URL = String(process.env.CLIENT_URL || 'http://localhost:5173').trim();
 
-// 🔹 LOGIN ROUTE
+// LOGIN ROUTE
 router.get('/login', (req, res) => {
   if (!CLIENT_ID || !REDIRECT_URI) {
     return res.status(500).json({
@@ -38,7 +38,7 @@ router.get('/login', (req, res) => {
   return res.redirect(authUrl);
 });
 
-// 🔹 CHECK AUTH
+// CHECK AUTH
 router.get('/me', (req, res) => {
   if (!req.session.user) {
     return res.status(401).json({ authenticated: false });
@@ -50,7 +50,7 @@ router.get('/me', (req, res) => {
   });
 });
 
-// 🔹 LOGOUT
+// LOGOUT
 router.post('/logout', (req, res) => {
   req.session.destroy(() => {
     res.clearCookie('ksj_dashboard_session');
@@ -58,7 +58,7 @@ router.post('/logout', (req, res) => {
   });
 });
 
-// 🔹 CALLBACK
+// CALLBACK
 router.get('/callback', async (req, res) => {
   try {
     const code = String(req.query.code || '').trim();
@@ -89,7 +89,7 @@ router.get('/callback', async (req, res) => {
     const tokenData = await tokenResponse.json();
 
     if (!tokenResponse.ok) {
-      console.error('❌ Discord token error');
+      console.error('❌ Discord token error', tokenData);
 
       const errorDescription =
         typeof tokenData?.error_description === 'string'
@@ -97,9 +97,7 @@ router.get('/callback', async (req, res) => {
           : '';
 
       if (errorDescription.toLowerCase().includes('rate limited')) {
-        return res
-          .status(429)
-          .send('Discord OAuth rate limited. Try again later.');
+        return res.status(429).send('Discord OAuth rate limited. Try again later.');
       }
 
       return res.status(500).send('OAuth failed.');
@@ -114,7 +112,7 @@ router.get('/callback', async (req, res) => {
     const userData = await userResponse.json();
 
     if (!userResponse.ok) {
-      console.error('❌ Discord user fetch failed');
+      console.error('❌ Discord user fetch failed', userData);
       return res.status(500).send('Failed to fetch user.');
     }
 
@@ -135,14 +133,14 @@ router.get('/callback', async (req, res) => {
 
     req.session.save((saveError) => {
       if (saveError) {
-        console.error('❌ Session save failed');
+        console.error('❌ Session save failed', saveError);
         return res.status(500).send('Session error.');
       }
 
-      return res.redirect(`${CLIENT_URL}/dashboard`);
+      return res.redirect(`${CLIENT_URL}/`);
     });
   } catch (error) {
-    console.error('❌ Auth error');
+    console.error('❌ Auth error', error);
     return res.status(500).send('Authentication failed.');
   }
 });
