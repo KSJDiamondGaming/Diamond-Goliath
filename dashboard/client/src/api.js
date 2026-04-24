@@ -1,6 +1,48 @@
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 
+const cache = new Map();
+
+function getCache(key) {
+  const cached = cache.get(key);
+
+  if (!cached) return null;
+
+  if (Date.now() > cached.expiresAt) {
+    cache.delete(key);
+    return null;
+  }
+
+  return cached.data;
+}
+
+function setCache(key, data, ttlMs) {
+  cache.set(key, {
+    data,
+    expiresAt: Date.now() + ttlMs,
+  });
+}
+
+function clearCache() {
+  cache.clear();
+}
+
+function getCacheTtl(path) {
+  if (path === '/api/discord/guilds') return 30_000;
+  if (path.startsWith('/api/status')) return 10_000;
+  if (path.includes('/channels')) return 30_000;
+  return 0;
+}
+
 async function request(path, options = {}) {
+  const method = String(options.method || 'GET').toUpperCase();
+  const cacheKey = `${method}:${path}`;
+  const ttl = method === 'GET' ? getCacheTtl(path) : 0;
+
+  if (ttl > 0) {
+    const cached = getCache(cacheKey);
+    if (cached) return cached;
+  }
+
   const response = await fetch(`${API_BASE}${path}`, {
     credentials: 'include',
     headers: {
@@ -12,7 +54,6 @@ async function request(path, options = {}) {
 
   const contentType = response.headers.get('content-type') || '';
 
-  // ✅ HANDLE AUTH CLEANLY (THIS FIXES YOUR SPAM)
   if (response.status === 401) {
     return { authenticated: false, user: null };
   }
@@ -27,7 +68,13 @@ async function request(path, options = {}) {
     throw new Error(`Expected JSON but received: ${text.slice(0, 160)}`);
   }
 
-  return response.json();
+  const data = await response.json();
+
+  if (ttl > 0) {
+    setCache(cacheKey, data, ttl);
+  }
+
+  return data;
 }
 
 async function requestOptionalJson(path, options = {}) {
@@ -40,7 +87,6 @@ async function requestOptionalJson(path, options = {}) {
     ...options,
   });
 
-  // ✅ ALSO HANDLE 401 HERE
   if (response.status === 401) {
     return null;
   }
@@ -75,11 +121,15 @@ function safeParseStreamData(raw) {
 }
 
 export const api = {
+  clearCache,
+
   getLoginUrl() {
     return `${API_BASE}/api/auth/login`;
   },
 
-  logout() {
+  async logout() {
+    clearCache();
+
     return requestOptionalJson('/api/auth/logout', {
       method: 'POST',
     });
@@ -89,10 +139,13 @@ export const api = {
     return request('/api/auth/me');
   },
 
-  async getGuilds() {
+  async getGuilds({ force = false } = {}) {
+    if (force) {
+      cache.delete('GET:/api/discord/guilds');
+    }
+
     const result = await request('/api/discord/guilds');
 
-    // ✅ STOP CALLING IF NOT AUTHENTICATED
     if (result?.authenticated === false) {
       return [];
     }
@@ -100,18 +153,32 @@ export const api = {
     return result;
   },
 
-  getGuildChannels(guildId) {
-    return request(`/api/discord/guilds/${guildId}/channels`);
+  getGuildChannels(guildId, { force = false } = {}) {
+    const path = `/api/discord/guilds/${guildId}/channels`;
+
+    if (force) {
+      cache.delete(`GET:${path}`);
+    }
+
+    return request(path);
   },
 
-  getStatus(guildId) {
+  getStatus(guildId, { force = false } = {}) {
     const query = guildId ? `?guildId=${encodeURIComponent(guildId)}` : '';
-    return request(`/api/status${query}`);
+    const path = `/api/status${query}`;
+
+    if (force) {
+      cache.delete(`GET:${path}`);
+    }
+
+    return request(path);
   },
 
   createStatusStream(guildId, handlers = {}) {
     if (!guildId || typeof window === 'undefined' || typeof window.EventSource === 'undefined') {
-      return { close() {} };
+      return {
+        close() {},
+      };
     }
 
     const query = `?guildId=${encodeURIComponent(guildId)}`;
@@ -124,24 +191,24 @@ export const api = {
     stream.onopen = safe(handlers.onOpen);
     stream.onerror = safe(handlers.onError);
 
-    stream.addEventListener('status', (e) => {
-      const data = safeParseStreamData(e.data);
-      if (data) safe(handlers.onStatus)(data);
+    stream.addEventListener('status', (event) => {
+      const payload = safeParseStreamData(event.data);
+      if (payload) safe(handlers.onStatus)(payload);
     });
 
-    stream.addEventListener('cases', (e) => {
-      const data = safeParseStreamData(e.data);
-      if (data) safe(handlers.onCases)(data);
+    stream.addEventListener('cases', (event) => {
+      const payload = safeParseStreamData(event.data);
+      if (payload) safe(handlers.onCases)(payload);
     });
 
-    stream.addEventListener('warnings', (e) => {
-      const data = safeParseStreamData(e.data);
-      if (data) safe(handlers.onWarnings)(data);
+    stream.addEventListener('warnings', (event) => {
+      const payload = safeParseStreamData(event.data);
+      if (payload) safe(handlers.onWarnings)(payload);
     });
 
-    stream.addEventListener('snapshot', (e) => {
-      const data = safeParseStreamData(e.data);
-      if (data) safe(handlers.onSnapshot)(data);
+    stream.addEventListener('snapshot', (event) => {
+      const payload = safeParseStreamData(event.data);
+      if (payload) safe(handlers.onSnapshot)(payload);
     });
 
     return {
@@ -164,9 +231,13 @@ export const api = {
   },
 
   updateConfig(guildId, body) {
+    clearCache();
+
     return request(`/api/config/${guildId}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify(body),
     });
   },
@@ -176,9 +247,13 @@ export const api = {
   },
 
   saveMessages(guildId, body) {
+    clearCache();
+
     return request(`/api/config/messages/${guildId}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify(body),
     });
   },
@@ -188,9 +263,13 @@ export const api = {
   },
 
   saveAutoModConfig(guildId, body) {
+    clearCache();
+
     return request(`/api/automod/${guildId}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify(body),
     });
   },
@@ -200,9 +279,13 @@ export const api = {
   },
 
   saveLogConfig(guildId, body) {
+    clearCache();
+
     return request(`/api/config/logs/${guildId}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify(body),
     });
   },

@@ -1,7 +1,7 @@
 {
   "guildId": "1490424012826742804",
   "guildName": null,
-  "updatedAt": "2026-04-24T17:42:17.439Z",
+  "updatedAt": "2026-04-24T17:53:07.006Z",
   "general": {
     "enabled": true,
     "prefix": "!",
@@ -19,5 +19,18 @@
   "reactionRoles": {},
   "giveaways": {},
   "suggestions": {},
-  "stats": {}
+  "stats": {},
+  "prefix": "/",
+  "appealUrl": "",
+  "dashboardEnabled": true,
+  "managerRoleIds": [],
+  "dashboardAccessRoleIds": [],
+  "commandManagerRoleIds": [],
+  "restrictedChannelIds": [],
+  "commandNotFoundEnabled": true,
+  "wrongCommandUsageEnabled": true,
+  "noCommandPermissionsEnabled": true,
+  "disabledInChannelEnabled": false,
+  "commandCooldownEnabled": true,
+  "instantDeleteDataEnabled": false
 }

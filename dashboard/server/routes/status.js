@@ -4,14 +4,22 @@ const path = require('path');
 const router = express.Router();
 
 const terminal = require('../../../src/utils/utility/terminalLogger').createLogger('api');
-const client = require('../../../index.js');
 const { read: readJson } = require('../utils/fileStore');
 
 const CASES_PATH = path.join(__dirname, '..', 'data', 'modCaseDetails.json');
 const DISCORD_API = 'https://discord.com/api/v10';
 
+const BOT_PROFILE_CACHE_TTL = 1000 * 60 * 5;
+const GUILD_STATS_CACHE_TTL = 15_000;
+
 let cachedBotProfile = null;
 let cachedBotProfileExpiresAt = 0;
+
+const guildStatsCache = new Map();
+
+function getBotToken() {
+  return String(process.env.TOKEN || process.env.DISCORD_BOT_TOKEN || '').trim();
+}
 
 function emptyBotProfile() {
   return {
@@ -27,10 +35,6 @@ function emptyBotProfile() {
   };
 }
 
-function getCasesData() {
-  return readJson(CASES_PATH, {});
-}
-
 function buildDiscordAvatarUrl(id, avatar) {
   if (!id || !avatar) return '';
 
@@ -38,83 +42,160 @@ function buildDiscordAvatarUrl(id, avatar) {
   return `https://cdn.discordapp.com/avatars/${id}/${avatar}.${ext}?size=256`;
 }
 
+function buildGuildIconUrl(id, icon) {
+  if (!id || !icon) return '';
+
+  const ext = String(icon).startsWith('a_') ? 'gif' : 'png';
+  return `https://cdn.discordapp.com/icons/${id}/${icon}.${ext}?size=256`;
+}
+
+async function discordBotRequest(pathname) {
+  const token = getBotToken();
+
+  if (!token) {
+    throw new Error('Missing TOKEN or DISCORD_BOT_TOKEN in env');
+  }
+
+  const response = await fetch(`${DISCORD_API}${pathname}`, {
+    headers: {
+      Authorization: `Bot ${token}`,
+      Accept: 'application/json',
+    },
+  });
+
+  const text = await response.text();
+
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      `Discord API failed ${response.status} ${response.statusText}: ${
+        typeof data === 'string' ? data : JSON.stringify(data)
+      }`
+    );
+  }
+
+  return data;
+}
+
 async function fetchBotProfileFromToken() {
-  const token = process.env.TOKEN || process.env.DISCORD_BOT_TOKEN || '';
-
-  if (!token) return null;
-
   const now = Date.now();
 
   if (cachedBotProfile && now < cachedBotProfileExpiresAt) {
     return cachedBotProfile;
   }
 
-  const response = await fetch(`${DISCORD_API}/users/@me`, {
-    headers: {
-      Authorization: `Bot ${token}`,
-    },
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Bot profile fetch failed ${response.status}: ${text}`);
-  }
-
-  const bot = await response.json();
-
+  const bot = await discordBotRequest('/users/@me');
   const avatarUrl = buildDiscordAvatarUrl(bot.id, bot.avatar);
+
+  const tag =
+    bot.discriminator && bot.discriminator !== '0'
+      ? `${bot.username}#${bot.discriminator}`
+      : bot.username;
 
   cachedBotProfile = {
     id: bot.id,
     username: bot.username,
-    name: bot.username || 'KSJ Goliath',
-    tag: bot.discriminator ? `${bot.username}#${bot.discriminator}` : bot.username,
+    name: bot.global_name || bot.username || 'KSJ Goliath',
+    tag,
     avatar: bot.avatar || null,
     avatarUrl,
     avatarURL: avatarUrl,
+    online: true,
+    latencyMs: null,
   };
 
-  cachedBotProfileExpiresAt = now + 1000 * 60 * 5;
+  cachedBotProfileExpiresAt = now + BOT_PROFILE_CACHE_TTL;
 
   return cachedBotProfile;
 }
 
-async function buildBotProfile(ready, botLatencyMs) {
-  if (client?.user) {
-    const avatarUrl = client.user.displayAvatarURL({
-      extension: 'png',
-      size: 256,
-      forceStatic: false,
-    });
+async function fetchAllGuildMembers(guildId) {
+  const members = [];
+  let after = '0';
 
-    return {
-      id: client.user.id,
-      username: client.user.username,
-      name: client.user.username,
-      tag: client.user.tag ?? null,
-      avatar: client.user.avatar ?? null,
-      avatarUrl,
-      avatarURL: avatarUrl,
-      online: ready,
-      latencyMs: botLatencyMs,
-    };
+  for (let page = 0; page < 20; page += 1) {
+    const batch = await discordBotRequest(
+      `/guilds/${guildId}/members?limit=1000&after=${after}`
+    );
+
+    if (!Array.isArray(batch) || batch.length === 0) break;
+
+    members.push(...batch);
+
+    if (batch.length < 1000) break;
+
+    after = batch[batch.length - 1]?.user?.id || after;
   }
+
+  return members;
+}
+
+async function fetchGuildStats(guildId) {
+  const cached = guildStatsCache.get(guildId);
+
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.data;
+  }
+
+  const guild = await discordBotRequest(`/guilds/${guildId}?with_counts=true`);
+
+  let total = Number(
+    guild.approximate_member_count ||
+      guild.member_count ||
+      guild.memberCount ||
+      0
+  );
+
+  let humans = total;
+  let bots = 0;
+  let exactMembersAvailable = false;
 
   try {
-    const tokenProfile = await fetchBotProfileFromToken();
+    const members = await fetchAllGuildMembers(guildId);
 
-    if (tokenProfile) {
-      return {
-        ...tokenProfile,
-        online: ready,
-        latencyMs: botLatencyMs,
-      };
+    if (members.length > 0) {
+      exactMembersAvailable = true;
+      total = members.length;
+      bots = members.filter((member) => Boolean(member?.user?.bot)).length;
+      humans = members.filter((member) => !member?.user?.bot).length;
     }
   } catch (error) {
-    terminal.error('Failed to fetch bot profile from token', error);
+    terminal.warn(
+      `Could not fetch exact members for guild ${guildId}; using approximate count. ${error.message}`
+    );
   }
 
-  return emptyBotProfile();
+  const data = {
+    id: guild.id,
+    name: guild.name,
+    icon: guild.icon || null,
+    iconUrl: buildGuildIconUrl(guild.id, guild.icon),
+    iconURL: buildGuildIconUrl(guild.id, guild.icon),
+    memberCount: total,
+    members: total,
+    humans,
+    bots,
+    exactMembersAvailable,
+    connected: true,
+    status: 'connected',
+  };
+
+  guildStatsCache.set(guildId, {
+    data,
+    expiresAt: Date.now() + GUILD_STATS_CACHE_TTL,
+  });
+
+  return data;
+}
+
+function getCasesData() {
+  return readJson(CASES_PATH, {});
 }
 
 function normalizeGuildCases(guildCases, guildId) {
@@ -132,82 +213,113 @@ function getGuildWarningsFromCases(cases) {
   return cases.filter((entry) => entry?.action === 'Warn');
 }
 
-async function resolveGuild(guildId) {
-  if (!guildId || !client?.guilds) return null;
-
-  return (
-    client.guilds.cache.get(guildId) ||
-    (await client.guilds.fetch(guildId).catch(() => null))
-  );
-}
-
 async function buildStatusPayload(guildId) {
-  const ready = Boolean(client?.isReady?.());
+  let botProfile = emptyBotProfile();
+  let botOnline = false;
+  let statusError = '';
 
-  const botLatencyMs =
-    ready && typeof client.ws?.ping === 'number'
-      ? Math.round(client.ws.ping)
-      : null;
+  try {
+    botProfile = await fetchBotProfileFromToken();
+    botOnline = true;
+  } catch (error) {
+    statusError = error.message;
+    terminal.error('Bot token status check failed', error);
+  }
 
   let guildPayload = null;
+
   let memberInfo = {
-    total: null,
-    humans: null,
-    bots: null,
+    total: 0,
+    humans: 0,
+    bots: 0,
   };
 
-  if (guildId) {
-    const guild = await resolveGuild(guildId);
-
-    if (guild) {
-      await guild.members.fetch().catch(() => null);
-
-      const members = guild.members.cache;
+  if (guildId && botOnline) {
+    try {
+      guildPayload = await fetchGuildStats(guildId);
 
       memberInfo = {
-        total: Number(guild.memberCount ?? members.size ?? 0),
-        humans: members.filter((member) => !member.user?.bot).size,
-        bots: members.filter((member) => Boolean(member.user?.bot)).size,
+        total: Number(guildPayload.memberCount || 0),
+        humans: Number(guildPayload.humans || 0),
+        bots: Number(guildPayload.bots || 0),
       };
+    } catch (error) {
+      statusError = error.message;
+      terminal.error('Guild status fetch failed', error);
 
       guildPayload = {
-        id: guild.id,
-        name: guild.name,
-        icon: guild.icon || null,
-        memberCount: memberInfo.total,
-        humans: memberInfo.humans,
-        bots: memberInfo.bots,
-        connected: true,
-        status: 'connected',
+        id: guildId,
+        name: null,
+        icon: null,
+        iconUrl: '',
+        iconURL: '',
+        memberCount: 0,
+        members: 0,
+        humans: 0,
+        bots: 0,
+        exactMembersAvailable: false,
+        connected: false,
+        status: 'missing',
       };
     }
   }
 
-  const botProfile = await buildBotProfile(ready, botLatencyMs);
-
   return {
     ok: true,
-    status: ready ? 'online' : 'offline',
+    status: botOnline ? 'online' : 'offline',
+
     backendOnline: true,
     apiOnline: true,
-    botOnline: ready,
-    botLatencyMs,
-    latencyMs: botLatencyMs,
+    botOnline,
+
+    botLatencyMs: null,
+    latencyMs: null,
+
     guildId: guildId || null,
     guild: guildPayload,
+
     members: memberInfo.total,
+    memberCount: memberInfo.total,
     humans: memberInfo.humans,
     bots: memberInfo.bots,
-    guilds: {},
-    bot: botProfile,
+
+    guilds:
+      guildId && guildPayload
+        ? {
+            [guildId]: {
+              connected: guildPayload.connected,
+              status: guildPayload.status,
+              memberCount: guildPayload.memberCount,
+              members: guildPayload.memberCount,
+              humans: guildPayload.humans,
+              bots: guildPayload.bots,
+              name: guildPayload.name,
+              id: guildPayload.id,
+              icon: guildPayload.icon,
+              iconUrl: guildPayload.iconUrl,
+              iconURL: guildPayload.iconURL,
+              exactMembersAvailable: guildPayload.exactMembersAvailable,
+            },
+          }
+        : {},
+
+    bot: {
+      ...botProfile,
+      online: botOnline,
+      latencyMs: null,
+    },
+
     backend: {
       online: true,
       status: 'healthy',
     },
+
     api: {
       online: true,
       status: 'healthy',
     },
+
+    error: statusError || null,
     timestamp: new Date().toISOString(),
   };
 }
@@ -237,7 +349,25 @@ router.get('/', async (req, res) => {
     return res.status(500).json({
       ok: false,
       status: 'offline',
-      error: 'Failed to load status.',
+      backendOnline: true,
+      apiOnline: true,
+      botOnline: false,
+      guildId: req.query.guildId ? String(req.query.guildId) : null,
+      guild: null,
+      members: 0,
+      humans: 0,
+      bots: 0,
+      bot: emptyBotProfile(),
+      backend: {
+        online: true,
+        status: 'healthy',
+      },
+      api: {
+        online: true,
+        status: 'healthy',
+      },
+      error: error.message || 'Failed to load status.',
+      timestamp: new Date().toISOString(),
     });
   }
 });
@@ -280,10 +410,11 @@ router.get('/stream', async (req, res) => {
       sendEvent('snapshot', snapshot);
     } catch (error) {
       console.error('SSE status stream failed:', error);
+
       sendEvent('status', {
         ok: false,
         guildId,
-        error: 'Failed to refresh live status.',
+        error: error.message || 'Failed to refresh live status.',
         timestamp: new Date().toISOString(),
       });
     }

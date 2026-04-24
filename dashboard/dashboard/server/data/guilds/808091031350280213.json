@@ -1,0 +1,23 @@
+{
+  "guildId": "808091031350280213",
+  "guildName": null,
+  "updatedAt": "2026-04-24T18:07:38.327Z",
+  "general": {
+    "enabled": true,
+    "prefix": "!",
+    "timezone": "Europe/London"
+  },
+  "modules": {},
+  "automod": {},
+  "logs": {},
+  "cases": {},
+  "warnings": {},
+  "welcome": {},
+  "leave": {},
+  "tickets": {},
+  "levels": {},
+  "reactionRoles": {},
+  "giveaways": {},
+  "suggestions": {},
+  "stats": {}
+}

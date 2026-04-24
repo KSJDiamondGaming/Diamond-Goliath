@@ -29,6 +29,15 @@ const PAGE_COMPONENTS = {
 };
 
 const ROUTE_PATHS = ROUTES.map((routeItem) => routeItem.path);
+const GUILD_REQUIRED_ROUTES = new Set([
+  'overview',
+  'cases',
+  'warnings',
+  'automod',
+  'config',
+  'messages',
+  'logs',
+]);
 
 function normalizeGuilds(payload) {
   if (Array.isArray(payload)) return payload;
@@ -119,6 +128,36 @@ function isKnownPath(pathname) {
   return pathname === '/' || pathname === '/login' || ROUTE_PATHS.includes(pathname);
 }
 
+function CenterMessage({ theme, title, text }) {
+  return (
+    <div
+      style={{
+        minHeight: 'calc(100vh - 180px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 24,
+      }}
+    >
+      <div
+        style={{
+          width: 'min(520px, 100%)',
+          border: `1px solid ${theme.border}`,
+          background: theme.cardBg,
+          color: theme.cardText,
+          borderRadius: 24,
+          padding: 28,
+          textAlign: 'center',
+          boxShadow: theme.shadow,
+        }}
+      >
+        <h2 style={{ margin: '0 0 10px', fontSize: 24 }}>{title}</h2>
+        <p style={{ margin: 0, color: theme.mutedText, lineHeight: 1.6 }}>{text}</p>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -135,6 +174,7 @@ export default function App() {
   const [guilds, setGuilds] = useState([]);
   const [guildError, setGuildError] = useState('');
   const [authLoading, setAuthLoading] = useState(true);
+  const [guildsLoading, setGuildsLoading] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [loginPending, setLoginPending] = useState(false);
@@ -183,9 +223,9 @@ export default function App() {
     setStorage(BOT_PROFILE_STORAGE_KEY, safeProfile);
   }, []);
 
-  const loadBotStatus = useCallback(async () => {
+  const loadBotStatus = useCallback(async ({ force = false } = {}) => {
     try {
-      const status = await api.getStatus();
+      const status = await api.getStatus(undefined, { force });
       const nextProfile = normalizeBotProfile(status?.bot || status);
 
       applyBotProfile(nextProfile);
@@ -196,11 +236,12 @@ export default function App() {
     }
   }, [applyBotProfile]);
 
-  const loadGuilds = useCallback(async () => {
+  const loadGuilds = useCallback(async ({ force = false } = {}) => {
     try {
+      setGuildsLoading(true);
       setGuildError('');
 
-      const guildResponse = await api.getGuilds();
+      const guildResponse = await api.getGuilds({ force });
       const nextGuilds = normalizeGuilds(guildResponse);
 
       setGuilds(nextGuilds);
@@ -229,6 +270,8 @@ export default function App() {
       setGuildError('Could not load guilds.');
       setSelectedGuild('');
       removeStorage(GUILD_STORAGE_KEY);
+    } finally {
+      setGuildsLoading(false);
     }
   }, []);
 
@@ -355,6 +398,8 @@ export default function App() {
       '',
     selectedGuildData,
     guilds,
+    guildsLoading,
+    guildError,
     theme,
     authLoading,
     isAuthenticated,
@@ -363,10 +408,13 @@ export default function App() {
     botName,
     botAvatar,
     botData,
+    refreshGuilds: () => loadGuilds({ force: true }),
+    refreshBotStatus: () => loadBotStatus({ force: true }),
   };
 
   const activeRoute = getRouteForPath(location.pathname);
   const ActivePage = activeRoute?.component || PAGE_COMPONENTS[activeRoute?.key] || null;
+  const routeNeedsGuild = Boolean(activeRoute?.key && GUILD_REQUIRED_ROUTES.has(activeRoute.key));
 
   if (isLoginPage) {
     return (
@@ -401,6 +449,7 @@ export default function App() {
             guildError={guildError}
             isAuthenticated={isAuthenticated}
             authLoading={authLoading}
+            guildsLoading={guildsLoading}
             navItems={navItems}
             botName={botName}
             botAvatar={botAvatar}
@@ -424,9 +473,39 @@ export default function App() {
             />
 
             <main style={styles.main}>
-              {!authLoading && isAuthenticated && ActivePage ? (
+              {authLoading ? (
+                <CenterMessage
+                  theme={theme}
+                  title="Loading dashboard..."
+                  text="Checking your Discord session and preparing your server tools."
+                />
+              ) : !isAuthenticated ? (
+                <CenterMessage
+                  theme={theme}
+                  title="Not signed in"
+                  text="Please login with Discord to access your dashboard."
+                />
+              ) : guildsLoading && guilds.length === 0 ? (
+                <CenterMessage
+                  theme={theme}
+                  title="Loading servers..."
+                  text="Fetching the Discord servers shared with KSJ Goliath."
+                />
+              ) : routeNeedsGuild && !selectedGuild ? (
+                <CenterMessage
+                  theme={theme}
+                  title="No server selected"
+                  text="Select a server from the sidebar to continue."
+                />
+              ) : ActivePage ? (
                 <ActivePage {...pageProps} />
-              ) : null}
+              ) : (
+                <CenterMessage
+                  theme={theme}
+                  title="Page not found"
+                  text="That dashboard page does not exist."
+                />
+              )}
             </main>
           </div>
         </div>

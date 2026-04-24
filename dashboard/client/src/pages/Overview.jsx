@@ -25,6 +25,88 @@ function getGuildAvatar(guild) {
   return guild?.iconUrl || guild?.iconURL || guild?.avatarUrl || guild?.image || '';
 }
 
+function normalizeStatusData(payload, selectedGuild, selectedGuildData) {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  const guildPayload =
+    payload.guild ||
+    payload.guilds?.[selectedGuild] ||
+    payload.data?.guild ||
+    null;
+
+  const memberCount =
+    payload.members ??
+    payload.memberCount ??
+    payload.totalMembers ??
+    guildPayload?.memberCount ??
+    selectedGuildData?.memberCount ??
+    0;
+
+  const bots =
+    payload.bots ??
+    payload.botCount ??
+    guildPayload?.bots ??
+    selectedGuildData?.bots ??
+    0;
+
+  const humans =
+    payload.humans ??
+    payload.humanCount ??
+    guildPayload?.humans ??
+    Math.max(Number(memberCount || 0) - Number(bots || 0), 0);
+
+  const botOnline = Boolean(
+    payload.botOnline ??
+      payload.bot?.online ??
+      payload.status === 'online',
+  );
+
+  const backendOnline = Boolean(
+    payload.backendOnline ??
+      payload.backend?.online ??
+      true,
+  );
+
+  const apiOnline = Boolean(
+    payload.apiOnline ??
+      payload.api?.online ??
+      payload.ok ??
+      true,
+  );
+
+  const normalizedGuild = {
+    ...(guildPayload || {}),
+    id: guildPayload?.id || selectedGuild,
+    name: guildPayload?.name || selectedGuildData?.name || null,
+    memberCount,
+    humans,
+    bots,
+    connected: guildPayload?.connected ?? true,
+    status: guildPayload?.status || 'connected',
+  };
+
+  return {
+    ...payload,
+    botOnline,
+    backendOnline,
+    apiOnline,
+    members: memberCount,
+    memberCount,
+    humans,
+    bots,
+    guild: normalizedGuild,
+    guilds: {
+      ...(payload.guilds || {}),
+      [selectedGuild]: {
+        ...(payload.guilds?.[selectedGuild] || {}),
+        ...normalizedGuild,
+      },
+    },
+  };
+}
+
 const HeroCard = memo(function HeroCard({ styles, metrics, selectedGuildData }) {
   const guildAvatar = getGuildAvatar(selectedGuildData);
 
@@ -64,7 +146,11 @@ const HeroCard = memo(function HeroCard({ styles, metrics, selectedGuildData }) 
   );
 });
 
-const OverviewSectionHeader = memo(function OverviewSectionHeader({ styles, title, subtitle }) {
+const OverviewSectionHeader = memo(function OverviewSectionHeader({
+  styles,
+  title,
+  subtitle,
+}) {
   return (
     <div style={styles.sectionHeadingWrap}>
       <h2 style={styles.sectionTitle}>{title}</h2>
@@ -76,20 +162,34 @@ const OverviewSectionHeader = memo(function OverviewSectionHeader({ styles, titl
 const TopStatCard = memo(function TopStatCard({ theme, styles, item, metrics }) {
   const statusMap = {
     botStatus: metrics.botOnline,
+    botOnline: metrics.botOnline,
     backend: metrics.backendOnline,
+    backendOnline: metrics.backendOnline,
     apiStatus: metrics.apiOnline,
+    apiOnline: metrics.apiOnline,
   };
 
   const valueMap = {
     members: metrics.members,
+    memberCount: metrics.members,
+    humans: metrics.humans,
     bots: metrics.bots,
+    botCount: metrics.bots,
+    totalCases: metrics.totalCases,
+    totalWarnings: metrics.totalWarnings,
+    activeWarnings: metrics.activeWarnings,
+    clearedWarnings: metrics.clearedWarnings,
   };
 
   const isStatus = item.type === 'status';
-  const isOnline = statusMap[item.key];
+  const isOnline = Boolean(statusMap[item.key]);
   const color = isOnline ? theme.success : theme.danger;
-  const text = isOnline ? item.onlineText : item.offlineText;
-  const value = isStatus ? text : formatOverviewDisplayValue(valueMap[item.key], item.format);
+
+  const value = isStatus
+    ? isOnline
+      ? item.onlineText
+      : item.offlineText
+    : formatOverviewDisplayValue(valueMap[item.key] ?? 0, item.format);
 
   return (
     <div style={styles.topStatCard}>
@@ -143,7 +243,13 @@ const ChartGroup = memo(function ChartGroup({ styles, metrics, group }) {
   );
 });
 
-export default function Overview({ selectedGuild, theme, guilds = [] }) {
+export default function Overview({
+  selectedGuild,
+  selectedGuildId,
+  theme,
+  guilds = [],
+}) {
+  const activeGuildId = selectedGuildId || selectedGuild;
   const [state, setState] = useState(INITIAL_STATE);
   const requestIdRef = useRef(0);
 
@@ -156,15 +262,15 @@ export default function Overview({ selectedGuild, theme, guilds = [] }) {
   const styles = useMemo(() => createOverviewPageStyles(theme), [theme]);
 
   const selectedGuildData = useMemo(
-    () => guilds.find((guild) => guild.id === selectedGuild) || null,
-    [guilds, selectedGuild],
+    () => guilds.find((guild) => guild.id === activeGuildId) || null,
+    [guilds, activeGuildId],
   );
 
   const loadOverview = useCallback(
     async ({ preserveData = true } = {}) => {
       const requestId = ++requestIdRef.current;
 
-      if (!selectedGuild) {
+      if (!activeGuildId) {
         setState({
           loading: false,
           error: '',
@@ -186,16 +292,27 @@ export default function Overview({ selectedGuild, theme, guilds = [] }) {
       }));
 
       const [statusResult, casesResult, warningsResult] = await Promise.allSettled([
-        api.getStatus(selectedGuild),
-        api.getCases(selectedGuild),
-        api.getWarnings(selectedGuild),
+        api.getStatus(activeGuildId, { force: true }),
+        api.getCases(activeGuildId),
+        api.getWarnings(activeGuildId),
       ]);
 
       if (requestId !== requestIdRef.current) return;
 
-      const nextStatusData = statusResult.status === 'fulfilled' ? statusResult.value : null;
-      const nextCasesData = casesResult.status === 'fulfilled' ? casesResult.value : null;
-      const nextWarningsData = warningsResult.status === 'fulfilled' ? warningsResult.value : null;
+      const rawStatusData =
+        statusResult.status === 'fulfilled' ? statusResult.value : null;
+
+      const nextStatusData = normalizeStatusData(
+        rawStatusData,
+        activeGuildId,
+        selectedGuildData,
+      );
+
+      const nextCasesData =
+        casesResult.status === 'fulfilled' ? casesResult.value : null;
+
+      const nextWarningsData =
+        warningsResult.status === 'fulfilled' ? warningsResult.value : null;
 
       const failures = [statusResult, casesResult, warningsResult].filter(
         (result) => result.status === 'rejected',
@@ -211,13 +328,13 @@ export default function Overview({ selectedGuild, theme, guilds = [] }) {
       setState((prev) => ({
         loading: false,
         error,
-        statusData: nextStatusData,
-        casesData: nextCasesData,
-        warningsData: nextWarningsData,
+        statusData: nextStatusData ?? prev.statusData,
+        casesData: nextCasesData ?? prev.casesData,
+        warningsData: nextWarningsData ?? prev.warningsData,
         streamConnected: prev.streamConnected,
       }));
     },
-    [selectedGuild],
+    [activeGuildId, selectedGuildData],
   );
 
   useEffect(() => {
@@ -225,88 +342,100 @@ export default function Overview({ selectedGuild, theme, guilds = [] }) {
   }, [loadOverview]);
 
   useEffect(() => {
-    if (!selectedGuild) return undefined;
+    if (!activeGuildId) return undefined;
 
     let cancelled = false;
-    const currentGuildId = selectedGuild;
+    const currentGuildId = activeGuildId;
+    let stream = null;
 
-    setState((prev) => ({
-      ...prev,
-      streamConnected: false,
-    }));
+    if (typeof api.createStatusStream === 'function') {
+      stream = api.createStatusStream(currentGuildId, {
+        onOpen: () => {
+          if (cancelled) return;
 
-    const stream = api.createStatusStream(currentGuildId, {
-      onOpen: () => {
-        if (cancelled) return;
-        setState((prev) => ({
-          ...prev,
-          streamConnected: true,
-          error: '',
-        }));
-      },
+          setState((prev) => ({
+            ...prev,
+            streamConnected: true,
+            error: '',
+          }));
+        },
 
-      onStatus: (payload) => {
-        if (cancelled || currentGuildId !== selectedGuild) return;
+        onStatus: (payload) => {
+          if (cancelled || currentGuildId !== activeGuildId) return;
 
-        setState((prev) => ({
-          ...prev,
-          loading: false,
-          error: '',
-          statusData: payload,
-        }));
-      },
+          setState((prev) => ({
+            ...prev,
+            loading: false,
+            error: '',
+            streamConnected: true,
+            statusData: normalizeStatusData(
+              payload,
+              currentGuildId,
+              selectedGuildData,
+            ),
+          }));
+        },
 
-      onCases: (payload) => {
-        if (cancelled || currentGuildId !== selectedGuild) return;
+        onCases: (payload) => {
+          if (cancelled || currentGuildId !== activeGuildId) return;
 
-        setState((prev) => ({
-          ...prev,
-          loading: false,
-          casesData: payload,
-        }));
-      },
+          setState((prev) => ({
+            ...prev,
+            loading: false,
+            casesData: payload,
+          }));
+        },
 
-      onWarnings: (payload) => {
-        if (cancelled || currentGuildId !== selectedGuild) return;
+        onWarnings: (payload) => {
+          if (cancelled || currentGuildId !== activeGuildId) return;
 
-        setState((prev) => ({
-          ...prev,
-          loading: false,
-          warningsData: payload,
-        }));
-      },
+          setState((prev) => ({
+            ...prev,
+            loading: false,
+            warningsData: payload,
+          }));
+        },
 
-      onSnapshot: (payload) => {
-        if (cancelled || currentGuildId !== selectedGuild) return;
+        onSnapshot: (payload) => {
+          if (cancelled || currentGuildId !== activeGuildId) return;
 
-        setState((prev) => ({
-          ...prev,
-          loading: false,
-          error: '',
-          statusData: payload?.status ?? prev.statusData,
-          casesData: payload?.cases ?? prev.casesData,
-          warningsData: payload?.warnings ?? prev.warningsData,
-        }));
-      },
+          setState((prev) => ({
+            ...prev,
+            loading: false,
+            error: '',
+            streamConnected: true,
+            statusData: normalizeStatusData(
+              payload?.status ?? prev.statusData,
+              currentGuildId,
+              selectedGuildData,
+            ),
+            casesData: payload?.cases ?? prev.casesData,
+            warningsData: payload?.warnings ?? prev.warningsData,
+          }));
+        },
 
-      onError: () => {
-        if (cancelled) return;
+        onError: () => {
+          if (cancelled) return;
 
-        setState((prev) => ({
-          ...prev,
-          streamConnected: false,
-        }));
-      },
-    });
+          setState((prev) => ({
+            ...prev,
+            streamConnected: false,
+          }));
+        },
+      });
+    }
 
     return () => {
       cancelled = true;
-      stream.close();
+
+      if (stream && typeof stream.close === 'function') {
+        stream.close();
+      }
     };
-  }, [selectedGuild]);
+  }, [activeGuildId, selectedGuildData]);
 
   useEffect(() => {
-    if (!selectedGuild) return undefined;
+    if (!activeGuildId) return undefined;
 
     const interval = window.setInterval(() => {
       loadOverview({ preserveData: true });
@@ -315,10 +444,10 @@ export default function Overview({ selectedGuild, theme, guilds = [] }) {
     return () => {
       window.clearInterval(interval);
     };
-  }, [loadOverview, selectedGuild]);
+  }, [loadOverview, activeGuildId]);
 
   useEffect(() => {
-    if (!selectedGuild) return undefined;
+    if (!activeGuildId) return undefined;
 
     const handleFocus = () => {
       loadOverview({ preserveData: true });
@@ -337,28 +466,37 @@ export default function Overview({ selectedGuild, theme, guilds = [] }) {
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [loadOverview, selectedGuild]);
+  }, [loadOverview, activeGuildId]);
 
   const metrics = useMemo(
     () =>
       buildOverviewMetrics({
-        selectedGuild,
+        selectedGuild: activeGuildId,
         selectedGuildData,
         statusData: state.statusData,
         casesData: state.casesData,
         warningsData: state.warningsData,
       }),
-    [selectedGuild, selectedGuildData, state.statusData, state.casesData, state.warningsData],
+    [
+      activeGuildId,
+      selectedGuildData,
+      state.statusData,
+      state.casesData,
+      state.warningsData,
+    ],
   );
 
-  if (!selectedGuild) {
+  if (!activeGuildId) {
     return (
       <div style={styles.page}>
         <section style={styles.sectionCard}>
           <OverviewSectionHeader
             styles={styles}
             title={page.title || 'Overview'}
-            subtitle={page.description || 'Select a server to view live guild and moderation stats.'}
+            subtitle={
+              page.description ||
+              'Select a server to view live guild and moderation stats.'
+            }
           />
 
           <div
@@ -381,7 +519,11 @@ export default function Overview({ selectedGuild, theme, guilds = [] }) {
 
   return (
     <div style={styles.page}>
-      <HeroCard styles={styles} metrics={metrics} selectedGuildData={selectedGuildData} />
+      <HeroCard
+        styles={styles}
+        metrics={metrics}
+        selectedGuildData={selectedGuildData}
+      />
 
       <section style={styles.sectionCard}>
         <OverviewSectionHeader
@@ -421,7 +563,12 @@ export default function Overview({ selectedGuild, theme, guilds = [] }) {
           <div style={styles.topStatsGrid}>
             {OVERVIEW_UI.topStats.map((item) => (
               <div key={item.key} style={styles.topStatsGridItem(item.key)}>
-                <TopStatCard theme={theme} styles={styles} item={item} metrics={metrics} />
+                <TopStatCard
+                  theme={theme}
+                  styles={styles}
+                  item={item}
+                  metrics={metrics}
+                />
               </div>
             ))}
           </div>
@@ -468,7 +615,12 @@ export default function Overview({ selectedGuild, theme, guilds = [] }) {
 
         <div style={styles.chartsGrid}>
           {OVERVIEW_UI.chartGroups.map((group) => (
-            <ChartGroup key={group.key} styles={styles} metrics={metrics} group={group} />
+            <ChartGroup
+              key={group.key}
+              styles={styles}
+              metrics={metrics}
+              group={group}
+            />
           ))}
         </div>
       </section>
