@@ -314,6 +314,8 @@ function Navbar({
                     aria-expanded={groupOpen}
                     {...getNavInteractionProps(item.key)}
                   >
+                    <span style={styles.navAccent(hasActiveChild)} />
+
                     <span style={styles.navIcon}>
                       <SidebarIcon
                         type={item.icon}
@@ -383,6 +385,8 @@ function Navbar({
                           tabIndex={groupOpen && expanded ? 0 : -1}
                           {...getNavInteractionProps(childKey)}
                         >
+                          <span style={styles.navAccent(childActive)} />
+
                           <span style={styles.navIcon}>
                             <SidebarIcon
                               type={child.icon}
@@ -415,6 +419,8 @@ function Navbar({
                 aria-current={active ? 'page' : undefined}
                 {...getNavInteractionProps(item.key)}
               >
+                <span style={styles.navAccent(active)} />
+
                 <span style={styles.navIcon}>
                   <SidebarIcon
                     type={item.icon}
@@ -445,6 +451,8 @@ function Navbar({
                 aria-current={active ? 'page' : undefined}
                 {...getNavInteractionProps(bottomKey)}
               >
+                <span style={styles.navAccent(active)} />
+
                 <span style={styles.navIcon}>
                   <SidebarIcon
                     type={item.icon}

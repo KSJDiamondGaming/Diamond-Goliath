@@ -518,6 +518,23 @@ export function navbarStyles(theme) {
       textOverflow: 'ellipsis',
     },
 
+navAccent(active = false) {
+  return {
+    position: 'absolute',
+    left: 0,
+    top: '8px',
+    bottom: '8px',
+    width: '4px',
+    borderRadius: '4px',
+    background: theme.primary,
+    boxShadow: `0 0 12px ${theme.primary}`,
+    opacity: active ? 1 : 0,
+    transform: active ? 'scaleY(1)' : 'scaleY(0.35)',
+    transformOrigin: 'center',
+    transition: 'opacity 0.18s ease, transform 0.22s ease',
+  };
+},
+
     collapseButton(isHovered = false) {
       return {
         width: '36px',
