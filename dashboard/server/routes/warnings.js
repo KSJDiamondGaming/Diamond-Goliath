@@ -1,6 +1,6 @@
 const express = require('express');
 const path = require('path');
-const readJson = require('../utils/readJson');
+const { read, write } = require('../utils/fileStore');
 
 const router = express.Router();
 

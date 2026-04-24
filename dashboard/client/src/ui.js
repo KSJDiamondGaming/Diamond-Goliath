@@ -2,6 +2,14 @@
 // KSJ GOLIATH - UI SYSTEM
 // ==============================
 
+import Overview from './pages/Overview';
+import Cases from './pages/Cases';
+import Warnings from './pages/Warnings';
+import AutoMod from './pages/AutoMod';
+import Config from './pages/Config';
+import Messages from './pages/Messages';
+import Logs from './pages/Logs';
+
 // ------------------------------
 // LAYOUT CONSTANTS
 // ------------------------------
@@ -78,9 +86,8 @@ export function createTheme(darkMode = true) {
 export const getTheme = createTheme;
 
 // ------------------------------
-// NAV + ROUTES (FINAL SAFE)
+// NAV + ROUTES
 // ------------------------------
-
 export const NAV_ITEMS = [
   {
     key: 'overview',
@@ -114,16 +121,59 @@ export const NAV_BOTTOM = [
 ];
 
 export const ROUTES = [
-  { key: 'overview', path: '/overview' },
-  { key: 'automod', path: '/automod' },
-  { key: 'cases', path: '/cases' },
-  { key: 'warnings', path: '/warnings' },
-  { key: 'messages', path: '/messages' },
-  { key: 'config', path: '/config' },
-  { key: 'logs', path: '/logs' },
+  {
+    key: 'overview',
+    label: 'Overview',
+    icon: 'overview',
+    path: '/overview',
+    component: Overview,
+  },
+  {
+    key: 'config',
+    label: 'General Settings',
+    icon: 'config',
+    path: '/config',
+    component: Config,
+  },
+  {
+    key: 'automod',
+    label: 'Auto Mod',
+    icon: 'automod',
+    path: '/automod',
+    component: AutoMod,
+  },
+  {
+    key: 'cases',
+    label: 'Cases',
+    icon: 'cases',
+    path: '/cases',
+    component: Cases,
+  },
+  {
+    key: 'warnings',
+    label: 'Warnings',
+    icon: 'warnings',
+    path: '/warnings',
+    component: Warnings,
+  },
+  {
+    key: 'messages',
+    label: 'Welcome & Leave',
+    icon: 'messages',
+    path: '/messages',
+    component: Messages,
+  },
+  {
+    key: 'logs',
+    label: 'Logs',
+    icon: 'logs',
+    path: '/logs',
+    component: Logs,
+  },
 ];
 
 export const navItems = NAV_ITEMS;
+export const navBottomItems = NAV_BOTTOM;
 
 // ------------------------------
 // PAGE STRUCTURE
@@ -276,7 +326,11 @@ export function shellStyles(theme, { sidebarExpanded = true } = {}) {
     },
     grid: {
       display: 'grid',
-      gridTemplateColumns: `${sidebarExpanded ? DASHBOARD_LAYOUT.sidebarExpandedWidth : DASHBOARD_LAYOUT.sidebarCollapsedWidth} minmax(0, 1fr)`,
+      gridTemplateColumns: `${
+        sidebarExpanded
+          ? DASHBOARD_LAYOUT.sidebarExpandedWidth
+          : DASHBOARD_LAYOUT.sidebarCollapsedWidth
+      } minmax(0, 1fr)`,
       minHeight: '100vh',
       transition: 'grid-template-columns 0.28s cubic-bezier(0.22, 1, 0.36, 1)',
     },
@@ -1073,8 +1127,7 @@ export function buildOverviewMetrics({
     : Array.isArray(casesData?.cases)
       ? casesData.cases.length
       : clampOverviewNumber(casesData?.total, NaN) ||
-        clampOverviewNumber(casesData?.count, NaN) ||
-        getSafeObjectSize(casesData);
+        clampOverviewNumber(casesData?.count, 0);
 
   const warningsArray = Array.isArray(warningsData)
     ? warningsData
@@ -1082,19 +1135,22 @@ export function buildOverviewMetrics({
       ? warningsData.warnings
       : [];
 
-  const totalWarnings =
-    warningsArray.length ||
-    clampOverviewNumber(warningsData?.total, NaN) ||
-    clampOverviewNumber(warningsData?.count, NaN) ||
-    getSafeObjectSize(warningsData);
+  const totalWarnings = Array.isArray(warningsData)
+    ? warningsData.length
+    : Array.isArray(warningsData?.warnings)
+      ? warningsData.warnings.length
+      : clampOverviewNumber(warningsData?.total, NaN) ||
+        clampOverviewNumber(warningsData?.count, 0);
 
   const activeWarnings =
-    warningsArray.filter((warning) => warning?.cleared !== true).length ||
-    clampOverviewNumber(warningsData?.active, 0);
+    warningsArray.length > 0
+      ? warningsArray.filter((warning) => warning?.cleared !== true).length
+      : clampOverviewNumber(warningsData?.active, 0);
 
   const clearedWarnings =
-    warningsArray.filter((warning) => warning?.cleared === true).length ||
-    clampOverviewNumber(warningsData?.cleared, 0);
+    warningsArray.length > 0
+      ? warningsArray.filter((warning) => warning?.cleared === true).length
+      : clampOverviewNumber(warningsData?.cleared, 0);
 
   const latencyMs =
     clampOverviewNumber(statusData?.latency, NaN) ||
@@ -1249,12 +1305,9 @@ export function createOverviewPageStyles(theme) {
       alignItems: 'stretch',
     },
 
-    topStatsGridItem: (itemKey) => ({
+    topStatsGridItem: () => ({
       minWidth: 0,
-      gridColumn:
-        itemKey === 'members' || itemKey === 'bots'
-          ? 'span 1'
-          : 'span 1',
+      gridColumn: 'span 1',
     }),
 
     topStatCard: {
@@ -1408,7 +1461,8 @@ export function createOverviewPageStyles(theme) {
       width: '100%',
       height: `${Math.max(14, Math.min(100, heightPercent))}%`,
       borderRadius: '10px',
-      background: 'linear-gradient(180deg, rgba(59,130,246,0.95) 0%, rgba(37,99,235,0.72) 100%)',
+      background:
+        'linear-gradient(180deg, rgba(59,130,246,0.95) 0%, rgba(37,99,235,0.72) 100%)',
       border: '1px solid rgba(147,197,253,0.26)',
       boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.12)',
       transition: 'height 0.24s ease',
@@ -1473,45 +1527,46 @@ export const CONFIG_UI = {
 
 export function createConfigPageStyles(theme) {
   return {
-dashboardToggleWrap: {
-  display: 'flex',
-  alignItems: 'center',
-  gap: '12px',
-},
+    dashboardToggleWrap: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '12px',
+    },
 
-dashboardStatusText(enabled = false) {
-  return {
-    color: enabled ? theme.success : theme.danger,
-    fontWeight: 800,
-    fontSize: '18px',
-  };
-},
+    dashboardStatusText(enabled = false) {
+      return {
+        color: enabled ? theme.success : theme.danger,
+        fontWeight: 800,
+        fontSize: '18px',
+      };
+    },
 
-dashboardToggle(enabled = false) {
-  return {
-    width: '50px',
-    height: '26px',
-    borderRadius: '999px',
-    border: `1px solid ${enabled ? theme.successBorder : theme.cardBorder}`,
-    background: enabled ? theme.successSoft : 'rgba(148,163,184,0.2)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: enabled ? 'flex-end' : 'flex-start',
-    padding: '3px',
-    cursor: 'pointer',
-    transition: 'all 0.2s ease',
-  };
-},
+    dashboardToggle(enabled = false) {
+      return {
+        width: '50px',
+        height: '26px',
+        borderRadius: '999px',
+        border: `1px solid ${enabled ? theme.successBorder : theme.cardBorder}`,
+        background: enabled ? theme.successSoft : 'rgba(148,163,184,0.2)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: enabled ? 'flex-end' : 'flex-start',
+        padding: '3px',
+        cursor: 'pointer',
+        transition: 'all 0.2s ease',
+      };
+    },
 
-dashboardToggleThumb(enabled = false) {
-  return {
-    width: '18px',
-    height: '18px',
-    borderRadius: '999px',
-    background: enabled ? theme.success : theme.mutedText,
-    transition: 'all 0.2s ease',
-  };
-},
+    dashboardToggleThumb(enabled = false) {
+      return {
+        width: '18px',
+        height: '18px',
+        borderRadius: '999px',
+        background: enabled ? theme.success : theme.mutedText,
+        transition: 'all 0.2s ease',
+      };
+    },
+
     section: {
       background: theme.cardBg,
       border: `1px solid ${theme.cardBorder}`,
@@ -1865,18 +1920,19 @@ dashboardToggleThumb(enabled = false) {
         textAlign: 'left',
       };
     },
+
     dashboardInlineToggle(enabled = false) {
-  return {
-    border: `1px solid ${enabled ? theme.successBorder : theme.cardBorder}`,
-    background: enabled ? theme.successSoft : 'rgba(148,163,184,0.15)',
-    color: enabled ? theme.success : theme.mutedText,
-    padding: '6px 12px',
-    borderRadius: '8px',
-    fontWeight: 800,
-    fontSize: '18px',
-    cursor: 'pointer',
-    transition: 'all 0.2s ease',
-  };
-},
+      return {
+        border: `1px solid ${enabled ? theme.successBorder : theme.cardBorder}`,
+        background: enabled ? theme.successSoft : 'rgba(148,163,184,0.15)',
+        color: enabled ? theme.success : theme.mutedText,
+        padding: '6px 12px',
+        borderRadius: '8px',
+        fontWeight: 800,
+        fontSize: '18px',
+        cursor: 'pointer',
+        transition: 'all 0.2s ease',
+      };
+    },
   };
 }

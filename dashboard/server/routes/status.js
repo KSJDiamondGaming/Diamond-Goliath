@@ -5,7 +5,7 @@ const router = express.Router();
 
 const terminal = require('../../../src/utils/utility/terminalLogger').createLogger('api');
 const client = require('../../../index.js');
-const readJson = require('../utils/readJson');
+const { read, write } = require('../utils/fileStore');
 
 const CASES_PATH = path.join(__dirname, '..', 'data', 'modCaseDetails.json');
 

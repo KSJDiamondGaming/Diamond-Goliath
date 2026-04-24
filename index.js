@@ -112,7 +112,7 @@ function getAllJsFiles(dir) {
 function clearRequireCache(filePath) {
   try {
     delete require.cache[require.resolve(filePath)];
-  } catch (error) {
+  } catch {
     terminal.warn(`Could not clear require cache for: ${filePath}`);
   }
 }
@@ -335,6 +335,8 @@ async function startBot() {
   }
 }
 
-startBot();
+if (require.main === module) {
+  startBot();
+}
 
 module.exports = client;

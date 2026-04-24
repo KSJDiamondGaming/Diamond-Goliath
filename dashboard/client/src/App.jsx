@@ -2,18 +2,31 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from './api';
 import { getStorage, removeStorage, setStorage } from './storage';
-import { getTheme, appBaseStyles, shellStyles, navItems } from './ui';
+import { getTheme, appBaseStyles, shellStyles, navItems, ROUTES } from './ui';
 import Navbar from './components/Navbar';
 import Topbar from './components/Topbar';
-import AppRoutes from './routes';
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
-const LOGIN_PATH = '/api/auth/login';
-const LOGOUT_PATH = '/api/auth/logout';
+import Cases from './pages/Cases';
+import Warnings from './pages/Warnings';
+import AutoMod from './pages/AutoMod';
+import Config from './pages/Config';
+import Messages from './pages/Messages';
+import Logs from './pages/Logs';
+import Login from './pages/Login';
 
 const GUILD_STORAGE_KEY = 'selected_guild';
 const BOT_PROFILE_STORAGE_KEY = 'bot_profile';
 const SIDEBAR_EXPANDED_STORAGE_KEY = 'sidebar_expanded';
+
+const PAGE_COMPONENTS = {
+  cases: Cases,
+  warnings: Warnings,
+  automod: AutoMod,
+  config: Config,
+  messages: Messages,
+  logs: Logs,
+};
+
+const ROUTE_PATHS = ROUTES.map((routeItem) => routeItem.path);
 
 function normalizeGuilds(payload) {
   if (Array.isArray(payload)) return payload;
@@ -87,17 +100,21 @@ function normalizeBotProfile(payload) {
     bot.globalName ||
     'KSJ Goliath';
 
-  const avatar =
-    bot.avatarUrl ||
-    bot.avatarURL ||
-    buildDiscordAvatarUrl(bot) ||
-    '';
+  const avatar = bot.avatarUrl || bot.avatarURL || buildDiscordAvatarUrl(bot) || '';
 
   return {
     name,
     avatar,
     raw: bot,
   };
+}
+
+function getRouteForPath(pathname) {
+  return ROUTES.find((routeItem) => routeItem.path === pathname) || null;
+}
+
+function isKnownPath(pathname) {
+  return pathname === '/' || pathname === '/login' || ROUTE_PATHS.includes(pathname);
 }
 
 export default function App() {
@@ -273,6 +290,16 @@ export default function App() {
   useEffect(() => {
     if (authLoading) return;
 
+    if (!isKnownPath(location.pathname)) {
+      navigate(isAuthenticated ? '/overview' : '/login', { replace: true });
+      return;
+    }
+
+    if (location.pathname === '/') {
+      navigate(isAuthenticated ? '/overview' : '/login', { replace: true });
+      return;
+    }
+
     if (!isAuthenticated && location.pathname !== '/login') {
       navigate('/login', { replace: true });
       return;
@@ -285,20 +312,13 @@ export default function App() {
 
   const handleLogin = useCallback(() => {
     setLoginPending(true);
-    window.location.href = `${API_BASE}${LOGIN_PATH}`;
+    window.location.href = api.getLoginUrl();
   }, []);
 
   const handleLogout = useCallback(async () => {
     try {
       setAuthLoading(true);
-
-      await fetch(`${API_BASE}${LOGOUT_PATH}`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          Accept: 'application/json',
-        },
-      });
+      await api.logout();
     } catch (error) {
       console.error('Logout failed:', error);
     } finally {
@@ -312,9 +332,29 @@ export default function App() {
     }
   }, [navigate]);
 
-  const handleToggleCollapsed = useCallback(() => {
-    setSidebarExpanded((prev) => !prev);
-  }, []);
+  const pageProps = {
+    selectedGuild,
+    selectedGuildName: selectedGuildData?.name || '',
+    selectedGuildId: selectedGuildData?.id || '',
+    selectedGuildIcon:
+      selectedGuildData?.iconUrl ||
+      selectedGuildData?.iconURL ||
+      selectedGuildData?.avatarUrl ||
+      '',
+    selectedGuildData,
+    guilds,
+    theme,
+    authLoading,
+    isAuthenticated,
+    handleLogin,
+    loginPending,
+    botName,
+    botAvatar,
+    botData,
+  };
+
+  const activeRoute = getRouteForPath(location.pathname);
+  const ActivePage = activeRoute ? PAGE_COMPONENTS[activeRoute.key] : null;
 
   if (isLoginPage) {
     return (
@@ -329,27 +369,7 @@ export default function App() {
             padding: '24px',
           }}
         >
-          <AppRoutes
-            selectedGuild={selectedGuild}
-            selectedGuildName={selectedGuildData?.name || ''}
-            selectedGuildId={selectedGuildData?.id || ''}
-            selectedGuildIcon={
-              selectedGuildData?.iconUrl ||
-              selectedGuildData?.iconURL ||
-              selectedGuildData?.avatarUrl ||
-              ''
-            }
-            selectedGuildData={selectedGuildData}
-            guilds={guilds}
-            theme={theme}
-            authLoading={authLoading}
-            isAuthenticated={isAuthenticated}
-            handleLogin={handleLogin}
-            loginPending={loginPending}
-            botName={botName}
-            botAvatar={botAvatar}
-            botData={botData}
-          />
+          <Login {...pageProps} />
         </div>
       </>
     );
@@ -373,8 +393,8 @@ export default function App() {
             botName={botName}
             botAvatar={botAvatar}
             botData={botData}
-            expanded={sidebarExpanded}
-            onToggleCollapsed={handleToggleCollapsed}
+            sidebarExpanded={sidebarExpanded}
+            setSidebarExpanded={setSidebarExpanded}
           />
 
           <div style={styles.mainColumn}>
@@ -392,27 +412,9 @@ export default function App() {
             />
 
             <main style={styles.main}>
-              <AppRoutes
-                selectedGuild={selectedGuild}
-                selectedGuildName={selectedGuildData?.name || ''}
-                selectedGuildId={selectedGuildData?.id || ''}
-                selectedGuildIcon={
-                  selectedGuildData?.iconUrl ||
-                  selectedGuildData?.iconURL ||
-                  selectedGuildData?.avatarUrl ||
-                  ''
-                }
-                selectedGuildData={selectedGuildData}
-                guilds={guilds}
-                theme={theme}
-                authLoading={authLoading}
-                isAuthenticated={isAuthenticated}
-                handleLogin={handleLogin}
-                loginPending={loginPending}
-                botName={botName}
-                botAvatar={botAvatar}
-                botData={botData}
-              />
+              {!authLoading && isAuthenticated && ActivePage ? (
+                <ActivePage {...pageProps} />
+              ) : null}
             </main>
           </div>
         </div>

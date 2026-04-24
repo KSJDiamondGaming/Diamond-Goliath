@@ -64,7 +64,7 @@ export default function Messages({ selectedGuild, theme }) {
         setError('');
         setSaveMessage('');
 
-        const data = await api.getMessages();
+        const data = await api.getMessages(selectedGuild);
 
         if (!mounted) return;
 

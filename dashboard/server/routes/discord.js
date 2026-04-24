@@ -2,15 +2,16 @@ const fetch = global.fetch || require('node-fetch');
 const express = require('express');
 const router = express.Router();
 
-// 👇 DIRECT BOT ACCESS
 const client = require('../../../index.js');
 
 const DISCORD_API = 'https://discord.com/api/v10';
 const GUILD_CACHE_TTL_MS = 15 * 1000;
 
-/* ---------------- HELPERS ---------------- */
-
 const guildCache = new Map();
+
+function isBotReady() {
+  return client?.isReady && client.isReady();
+}
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -20,6 +21,7 @@ function getCachedGuilds(accessToken) {
   const cached = guildCache.get(accessToken);
 
   if (!cached) return null;
+
   if (Date.now() > cached.expiresAt) {
     guildCache.delete(accessToken);
     return null;
@@ -84,8 +86,6 @@ function buildGuildIconUrl(guild) {
   return `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png?size=256`;
 }
 
-/* ---------------- GET USER GUILDS ---------------- */
-
 router.get('/guilds', async (req, res) => {
   try {
     const accessToken =
@@ -98,6 +98,10 @@ router.get('/guilds', async (req, res) => {
       return res.status(401).json({ error: 'Not authenticated' });
     }
 
+    if (!isBotReady()) {
+      return res.status(503).json({ error: 'Bot is not ready yet.' });
+    }
+
     const cachedGuilds = getCachedGuilds(accessToken);
     const userGuilds =
       cachedGuilds ||
@@ -105,10 +109,6 @@ router.get('/guilds', async (req, res) => {
 
     if (!cachedGuilds) {
       setCachedGuilds(accessToken, userGuilds);
-    }
-
-    if (!client?.guilds) {
-      return res.status(503).json({ error: 'Bot client is not available yet.' });
     }
 
     await client.guilds.fetch().catch(() => null);
@@ -142,11 +142,13 @@ router.get('/guilds', async (req, res) => {
   }
 });
 
-/* ---------------- GET CHANNELS ---------------- */
-
 router.get('/guilds/:guildId/channels', async (req, res) => {
   try {
     const { guildId } = req.params;
+
+    if (!isBotReady()) {
+      return res.status(503).json({ error: 'Bot is not ready yet.' });
+    }
 
     const guild =
       client.guilds.cache.get(guildId) ||
@@ -159,12 +161,12 @@ router.get('/guilds/:guildId/channels', async (req, res) => {
     await guild.channels.fetch().catch(() => null);
 
     const channels = guild.channels.cache
-      .filter((c) => c && (c.type === 0 || c.type === 5))
-      .map((c) => ({
-        id: c.id,
-        name: c.name,
-        type: c.type,
-        position: c.position ?? 0,
+      .filter((channel) => channel && (channel.type === 0 || channel.type === 5))
+      .map((channel) => ({
+        id: channel.id,
+        name: channel.name,
+        type: channel.type,
+        position: channel.position ?? 0,
       }))
       .sort((a, b) => {
         const posDiff = a.position - b.position;

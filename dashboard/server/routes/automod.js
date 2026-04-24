@@ -2,7 +2,7 @@ const express = require('express');
 const {
   getGuildAutoModConfig,
   saveGuildAutoModConfig,
-} = require('../utils/automodStore');
+} = require('../../../src/utils/automodStore');
 
 const router = express.Router();
 
@@ -31,6 +31,7 @@ router.post('/:guildId', (req, res) => {
     }
 
     const saved = saveGuildAutoModConfig(guildId, req.body || {});
+
     return res.json({
       success: true,
       config: saved,

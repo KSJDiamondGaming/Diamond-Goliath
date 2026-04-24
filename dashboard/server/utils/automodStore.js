@@ -1,6 +1,7 @@
 const path = require('path');
 const readJson = require('./readJson');
 const writeJson = require('./writeJson');
+const guildManager = require('./guildManager');
 
 const AUTOMOD_PATH = path.join(__dirname, '..', 'data', 'automod.json');
 

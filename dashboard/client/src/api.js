@@ -25,6 +25,30 @@ async function request(path, options = {}) {
   return response.json();
 }
 
+async function requestOptionalJson(path, options = {}) {
+  const response = await fetch(`${API_BASE}${path}`, {
+    credentials: 'include',
+    headers: {
+      Accept: 'application/json',
+      ...(options.headers || {}),
+    },
+    ...options,
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Request failed (${response.status}): ${text.slice(0, 160)}`);
+  }
+
+  const contentType = response.headers.get('content-type') || '';
+
+  if (contentType.includes('application/json')) {
+    return response.json();
+  }
+
+  return null;
+}
+
 function buildStreamUrl(path) {
   return `${API_BASE}${path}`;
 }
@@ -41,6 +65,16 @@ function safeParseStreamData(raw) {
 }
 
 export const api = {
+  getLoginUrl() {
+    return `${API_BASE}/api/auth/login`;
+  },
+
+  logout() {
+    return requestOptionalJson('/api/auth/logout', {
+      method: 'POST',
+    });
+  },
+
   getGuilds() {
     return request('/api/discord/guilds');
   },
@@ -157,8 +191,8 @@ export const api = {
     });
   },
 
-  getMessages() {
-    return request('/api/config/messages');
+  getMessages(guildId) {
+    return request(`/api/config/messages/${guildId}`);
   },
 
   saveMessages(guildId, body) {
