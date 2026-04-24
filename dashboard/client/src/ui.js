@@ -1,6 +1,5 @@
 // ==============================
 // KSJ GOLIATH - UI SYSTEM
-// SINGLE SOURCE OF TRUTH
 // ==============================
 
 // ------------------------------
@@ -79,8 +78,9 @@ export function createTheme(darkMode = true) {
 export const getTheme = createTheme;
 
 // ------------------------------
-// NAV + ROUTES
+// NAV + ROUTES (FINAL SAFE)
 // ------------------------------
+
 export const NAV_ITEMS = [
   {
     key: 'overview',
@@ -89,28 +89,13 @@ export const NAV_ITEMS = [
     path: '/overview',
   },
   {
-    key: 'automod',
-    label: 'Auto Mod',
-    icon: 'automod',
-    path: '/automod',
-  },
-  {
-    key: 'administration',
-    label: 'Administration',
-    icon: 'config',
-    path: '/config',
-  },
-  {
-    key: 'moderation',
-    label: 'Moderation',
-    icon: 'cases',
-    path: '/cases',
-  },
-  {
-    key: 'logs',
-    label: 'Logs',
-    icon: 'logs',
-    path: '/logs',
+    key: 'admin',
+    label: 'Admin',
+    icon: 'admin',
+    children: [
+      { key: 'config', label: 'General Settings', icon: 'config', path: '/config' },
+      { key: 'automod', label: 'Auto Mod', icon: 'automod', path: '/automod' },
+    ],
   },
   {
     key: 'modules',
@@ -120,9 +105,12 @@ export const NAV_ITEMS = [
       { key: 'cases', label: 'Cases', icon: 'cases', path: '/cases' },
       { key: 'warnings', label: 'Warnings', icon: 'warnings', path: '/warnings' },
       { key: 'messages', label: 'Welcome & Leave', icon: 'messages', path: '/messages' },
-      { key: 'config', label: 'Config', icon: 'config', path: '/config' },
     ],
   },
+];
+
+export const NAV_BOTTOM = [
+  { key: 'logs', label: 'Logs', icon: 'logs', path: '/logs' },
 ];
 
 export const ROUTES = [
@@ -173,13 +161,10 @@ export const PAGE_LAYOUTS = {
   },
 
   config: {
-    title: 'Config',
-    description: 'Manage dashboard and moderation configuration for the selected server.',
-    emptyDescription: 'Select a server to manage config.',
-    sections: [
-      { id: 'generalConfig', type: 'config' },
-      { id: 'logConfig', type: 'config' },
-    ],
+    title: 'General Settings',
+    description: 'Manage dashboard and server configuration for the selected server.',
+    emptyDescription: 'Select a server to manage settings.',
+    sections: [{ id: 'generalConfig', type: 'config' }],
   },
 
   messages: {
@@ -236,10 +221,6 @@ export const SECTION_DEFS = {
   generalConfig: {
     title: 'General Config',
     description: 'Core dashboard, moderation, and server-wide configuration.',
-  },
-  logConfig: {
-    title: 'Log Channels',
-    description: 'Choose where different bot logs should be sent.',
   },
   logManager: {
     title: 'Log Manager',
@@ -582,9 +563,12 @@ export function topbarStyles(theme) {
     actionsWrap: {
       justifySelf: 'end',
       position: 'relative',
+      display: 'inline-grid',
+      justifyItems: 'stretch',
     },
     userButton(isActive = false) {
       return {
+        minWidth: '240px',
         display: 'flex',
         alignItems: 'center',
         gap: '10px',
@@ -604,10 +588,14 @@ export function topbarStyles(theme) {
     userText: {
       textAlign: 'right',
       minWidth: 0,
+      flex: 1,
     },
     userName: {
       fontSize: '14px',
       fontWeight: 700,
+      whiteSpace: 'nowrap',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
     },
     chevron(isOpen = false) {
       return {
@@ -624,6 +612,7 @@ export function topbarStyles(theme) {
       height: '34px',
       borderRadius: '50%',
       objectFit: 'cover',
+      flexShrink: 0,
     },
     avatarFallback: {
       width: '34px',
@@ -634,27 +623,70 @@ export function topbarStyles(theme) {
       alignItems: 'center',
       justifyContent: 'center',
       fontWeight: 800,
+      flexShrink: 0,
     },
     menu: {
       position: 'absolute',
-      top: '56px',
+      top: '58px',
       right: 0,
-      width: '220px',
+      width: '100%',
+      minWidth: '100%',
       background: theme.dropdownBg,
-      border: `1px solid ${theme.menuBorder}`,
-      borderRadius: '16px',
+      border: `1px solid ${theme.primaryBorder}`,
+      borderRadius: '18px',
       boxShadow: theme.shadow,
-      padding: '8px',
+      padding: '10px',
       display: 'grid',
       gap: '8px',
+      backdropFilter: 'blur(12px)',
+    },
+    menuButton(isHovered = false) {
+      return {
+        width: '100%',
+        minHeight: '44px',
+        padding: '11px 12px',
+        borderRadius: '13px',
+        border: `1px solid ${isHovered ? theme.primaryBorder : 'transparent'}`,
+        background: isHovered ? theme.primarySoft : 'transparent',
+        color: isHovered ? '#bfdbfe' : theme.cardText,
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        textAlign: 'left',
+        fontSize: '14px',
+        fontWeight: 800,
+        transition:
+          'background 0.16s ease, border-color 0.16s ease, color 0.16s ease, transform 0.16s ease',
+        transform: isHovered ? 'translateX(2px)' : 'translateX(0)',
+      };
+    },
+    menuButtonIcon: {
+      width: '22px',
+      height: '22px',
+      borderRadius: '9px',
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      color: 'inherit',
+      flexShrink: 0,
+      background: theme.topbarSoft,
+      border: `1px solid ${theme.topbarSoftBorder}`,
+      fontSize: '13px',
+    },
+    menuButtonLabel: {
+      minWidth: 0,
+      whiteSpace: 'nowrap',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
     },
     themeRow: {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'space-between',
       gap: '12px',
-      padding: '10px 12px',
-      borderRadius: '12px',
+      padding: '12px',
+      borderRadius: '14px',
       border: `1px solid ${theme.topbarSoftBorder}`,
       background: theme.topbarSoft,
     },
@@ -664,7 +696,7 @@ export function topbarStyles(theme) {
     },
     themeLabel: {
       fontSize: '14px',
-      fontWeight: 700,
+      fontWeight: 800,
       color: theme.cardText,
     },
     themeSwitch(_isLight = false, isHovered = false) {
@@ -730,12 +762,13 @@ export function topbarStyles(theme) {
       return {
         width: '100%',
         padding: '12px 14px',
-        borderRadius: '12px',
-        border: `1px solid ${isHovered ? theme.dangerBorder : 'transparent'}`,
-        background: isHovered ? 'rgba(239,68,68,0.18)' : theme.dangerSoft,
+        borderRadius: '14px',
+        border: `1px solid ${theme.dangerBorder}`,
+        background: isHovered ? 'rgba(239,68,68,0.2)' : theme.dangerSoft,
         color: theme.dangerText,
         cursor: 'pointer',
-        fontWeight: 600,
+        fontWeight: 900,
+        fontSize: '14px',
         transform: isHovered ? 'translateX(2px)' : 'translateX(0)',
         transition:
           'transform 0.16s ease, border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease',
@@ -1423,4 +1456,427 @@ export function formatOverviewDisplayValue(value, format = 'integer') {
   }
 
   return String(safe);
+}
+
+// ------------------------------
+// CONFIG / GENERAL SETTINGS PAGE
+// ------------------------------
+export const CONFIG_UI = {
+  sectionKeys: {
+    general: 'general',
+    commands: 'commands',
+    errorMessages: 'errorMessages',
+    permissions: 'permissions',
+    data: 'data',
+  },
+};
+
+export function createConfigPageStyles(theme) {
+  return {
+dashboardToggleWrap: {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '12px',
+},
+
+dashboardStatusText(enabled = false) {
+  return {
+    color: enabled ? theme.success : theme.danger,
+    fontWeight: 800,
+    fontSize: '18px',
+  };
+},
+
+dashboardToggle(enabled = false) {
+  return {
+    width: '50px',
+    height: '26px',
+    borderRadius: '999px',
+    border: `1px solid ${enabled ? theme.successBorder : theme.cardBorder}`,
+    background: enabled ? theme.successSoft : 'rgba(148,163,184,0.2)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: enabled ? 'flex-end' : 'flex-start',
+    padding: '3px',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+  };
+},
+
+dashboardToggleThumb(enabled = false) {
+  return {
+    width: '18px',
+    height: '18px',
+    borderRadius: '999px',
+    background: enabled ? theme.success : theme.mutedText,
+    transition: 'all 0.2s ease',
+  };
+},
+    section: {
+      background: theme.cardBg,
+      border: `1px solid ${theme.cardBorder}`,
+      borderRadius: '20px',
+      boxShadow: theme.shadow,
+      overflow: 'hidden',
+    },
+
+    sectionHeader: {
+      width: '100%',
+      border: 0,
+      background: 'transparent',
+      color: theme.cardText,
+      padding: '20px',
+      cursor: 'pointer',
+      display: 'grid',
+      gridTemplateColumns: 'minmax(0, 1fr) auto',
+      alignItems: 'center',
+      gap: '16px',
+      textAlign: 'left',
+    },
+
+    sectionTitleWrap: {
+      display: 'grid',
+      gap: '7px',
+      minWidth: 0,
+    },
+
+    sectionTitle: {
+      fontSize: '19px',
+      lineHeight: 1.1,
+      fontWeight: 900,
+      letterSpacing: '-0.03em',
+      color: theme.cardText,
+    },
+
+    sectionSubtitle: {
+      fontSize: '14px',
+      lineHeight: 1.45,
+      color: theme.mutedText,
+      fontWeight: 600,
+    },
+
+    sectionBody: {
+      borderTop: `1px solid ${theme.cardBorder}`,
+      padding: '20px',
+    },
+
+    chevron(open = false) {
+      return {
+        width: '36px',
+        height: '36px',
+        borderRadius: '12px',
+        display: 'grid',
+        placeItems: 'center',
+        border: `1px solid ${open ? theme.primaryBorder : theme.cardBorder}`,
+        background: open ? theme.primarySoft : theme.softBg,
+        color: open ? '#bfdbfe' : theme.mutedText,
+        transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
+        transition:
+          'transform 0.2s ease, background 0.2s ease, border-color 0.2s ease, color 0.2s ease',
+      };
+    },
+
+    grid: {
+      display: 'grid',
+      gap: '16px',
+    },
+
+    gridSmall: {
+      display: 'grid',
+      gap: '12px',
+    },
+
+    label: {
+      margin: '0 0 6px 0',
+      fontSize: '12px',
+      fontWeight: 800,
+      color: theme.mutedText,
+      textTransform: 'uppercase',
+      letterSpacing: '0.05em',
+    },
+
+    input: {
+      width: '100%',
+      padding: '11px 12px',
+      borderRadius: '12px',
+      border: `1px solid ${theme.inputBorder}`,
+      background: theme.inputBg,
+      color: theme.inputText,
+      outline: 'none',
+      fontSize: '14px',
+      boxSizing: 'border-box',
+    },
+
+    row: {
+      background: theme.softBg,
+      border: `1px solid ${theme.cardBorder}`,
+      borderRadius: '16px',
+      padding: '16px',
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: '16px',
+    },
+
+    rowGrid: {
+      background: theme.softBg,
+      border: `1px solid ${theme.cardBorder}`,
+      borderRadius: '16px',
+      padding: '16px 18px',
+      display: 'grid',
+      gridTemplateColumns: 'minmax(0, 1fr) auto',
+      alignItems: 'center',
+      gap: '16px',
+    },
+
+    inlineTitle: {
+      color: theme.cardText,
+      fontWeight: 900,
+      fontSize: '15px',
+      lineHeight: 1.2,
+    },
+
+    inlineText: {
+      color: theme.mutedText,
+      fontSize: '14px',
+      lineHeight: 1.45,
+      fontWeight: 600,
+    },
+
+    rowTitle: {
+      margin: 0,
+      color: theme.cardText,
+      fontSize: '18px',
+      lineHeight: 1.15,
+      fontWeight: 900,
+      letterSpacing: '-0.03em',
+    },
+
+    rowText: {
+      margin: '5px 0 0',
+      color: theme.mutedText,
+      fontSize: '14px',
+      lineHeight: 1.4,
+      fontWeight: 600,
+    },
+
+    actionRow: {
+      background: theme.softBg,
+      border: `1px solid ${theme.cardBorder}`,
+      borderRadius: '16px',
+      padding: '18px 20px',
+      display: 'grid',
+      gridTemplateColumns: 'auto minmax(0, 1fr) auto',
+      alignItems: 'center',
+      gap: '18px',
+    },
+
+    actionIcon: {
+      width: '26px',
+      height: '26px',
+      display: 'grid',
+      placeItems: 'center',
+      color: theme.cardText,
+      fontWeight: 900,
+      fontSize: '18px',
+    },
+
+    actionTitle: {
+      margin: 0,
+      color: theme.cardText,
+      fontSize: '19px',
+      lineHeight: 1.1,
+      fontWeight: 900,
+      letterSpacing: '-0.03em',
+    },
+
+    actionText: {
+      margin: '6px 0 0',
+      color: theme.mutedText,
+      fontSize: '14px',
+      lineHeight: 1.45,
+      fontWeight: 600,
+    },
+
+    rightIcon: {
+      color: theme.cardText,
+      fontSize: '30px',
+      lineHeight: 1,
+      fontWeight: 500,
+    },
+
+    prefixPanel: {
+      background: theme.softBg,
+      border: `1px solid ${theme.cardBorder}`,
+      borderRadius: '16px',
+      padding: '18px 20px',
+      display: 'grid',
+      gap: '14px',
+    },
+
+    prefixHeader: {
+      display: 'grid',
+      gridTemplateColumns: 'minmax(0, 1fr) auto',
+      gap: '16px',
+      alignItems: 'start',
+    },
+
+    prefixTitleRow: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px',
+      flexWrap: 'wrap',
+    },
+
+    prefixTitle: {
+      margin: 0,
+      color: theme.cardText,
+      fontSize: '19px',
+      lineHeight: 1.1,
+      fontWeight: 900,
+      letterSpacing: '-0.03em',
+    },
+
+    prefixCount: {
+      padding: '3px 8px',
+      borderRadius: '999px',
+      background: theme.topbarSoft,
+      border: `1px solid ${theme.cardBorder}`,
+      color: theme.mutedText,
+      fontSize: '12px',
+      fontWeight: 900,
+    },
+
+    prefixText: {
+      margin: '8px 0 0',
+      color: theme.mutedText,
+      fontSize: '14px',
+      lineHeight: 1.45,
+      fontWeight: 600,
+    },
+
+    prefixChip: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '10px',
+      padding: '9px 12px',
+      borderRadius: '10px',
+      background: theme.topbarSoft,
+      border: `1px solid ${theme.cardBorder}`,
+      color: theme.cardText,
+      fontWeight: 900,
+    },
+
+    prefixDelete: {
+      color: theme.mutedText,
+    },
+
+    infoRow: {
+      background: theme.softBg,
+      border: `1px solid ${theme.cardBorder}`,
+      borderRadius: '16px',
+      padding: '18px 20px',
+      display: 'grid',
+      gap: '10px',
+    },
+
+    chipsWrap: {
+      display: 'flex',
+      gap: '6px',
+      flexWrap: 'wrap',
+    },
+
+    chip: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      minHeight: '26px',
+      padding: '5px 9px',
+      borderRadius: '8px',
+      background: theme.topbarSoft,
+      border: `1px solid ${theme.cardBorder}`,
+      color: theme.cardText,
+      fontSize: '13px',
+      fontWeight: 800,
+    },
+
+    button(tone = 'primary', disabled = false) {
+      const success = tone === 'success';
+      const soft = tone === 'soft';
+
+      return {
+        borderRadius: '12px',
+        border: success
+          ? `1px solid ${theme.successBorder}`
+          : soft
+            ? `1px solid ${theme.cardBorder}`
+            : `1px solid ${theme.primaryBorder}`,
+        background: success ? theme.successSoft : soft ? theme.softBg : theme.primarySoft,
+        color: success ? theme.successText : soft ? theme.cardText : '#bfdbfe',
+        padding: '10px 14px',
+        fontWeight: 900,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.55 : 1,
+        boxShadow: disabled ? 'none' : '0 8px 18px rgba(0,0,0,0.14)',
+        whiteSpace: 'nowrap',
+      };
+    },
+
+    switchTrack(checked = false) {
+      return {
+        width: '48px',
+        height: '26px',
+        borderRadius: '999px',
+        border: checked ? `1px solid ${theme.successBorder}` : `1px solid ${theme.cardBorder}`,
+        background: checked ? theme.successSoft : 'rgba(148,163,184,0.18)',
+        padding: '3px',
+        display: 'flex',
+        justifyContent: checked ? 'flex-end' : 'flex-start',
+        alignItems: 'center',
+        cursor: 'pointer',
+        transition: 'background 0.18s ease, border-color 0.18s ease',
+      };
+    },
+
+    switchThumb(checked = false) {
+      return {
+        width: '18px',
+        height: '18px',
+        borderRadius: '999px',
+        background: checked ? theme.success : theme.mutedText,
+        display: 'block',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.22)',
+      };
+    },
+
+    permissionOption(checked = false) {
+      return {
+        width: '100%',
+        borderRadius: '12px',
+        border: checked ? `1px solid ${theme.primaryBorder}` : `1px solid ${theme.cardBorder}`,
+        background: checked ? theme.primarySoft : theme.softBg,
+        color: checked ? '#bfdbfe' : theme.cardText,
+        padding: '11px 12px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        gap: '12px',
+        fontWeight: 800,
+        cursor: 'pointer',
+        textAlign: 'left',
+      };
+    },
+    dashboardInlineToggle(enabled = false) {
+  return {
+    border: `1px solid ${enabled ? theme.successBorder : theme.cardBorder}`,
+    background: enabled ? theme.successSoft : 'rgba(148,163,184,0.15)',
+    color: enabled ? theme.success : theme.mutedText,
+    padding: '6px 12px',
+    borderRadius: '8px',
+    fontWeight: 800,
+    fontSize: '18px',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+  };
+},
+  };
 }

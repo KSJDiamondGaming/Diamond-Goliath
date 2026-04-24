@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { topbarStyles } from '../ui';
 
 function getInitial(name = '') {
@@ -20,6 +20,7 @@ function Topbar({
   const [menuOpen, setMenuOpen] = useState(false);
   const [isUserButtonHovered, setIsUserButtonHovered] = useState(false);
   const [hoveredMenuItem, setHoveredMenuItem] = useState('');
+
   const menuRef = useRef(null);
   const menuButtonRef = useRef(null);
 
@@ -37,6 +38,39 @@ function Topbar({
     setMenuOpen((prev) => !prev);
   }, [authLoading, isAuthenticated]);
 
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    function handleClickOutside(event) {
+      const target = event.target;
+
+      if (
+        menuRef.current?.contains(target) ||
+        menuButtonRef.current?.contains(target)
+      ) {
+        return;
+      }
+
+      closeMenu();
+    }
+
+    function handleEscape(event) {
+      if (event.key === 'Escape') {
+        closeMenu();
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [menuOpen, closeMenu]);
+
   const handleThemeToggle = useCallback(() => {
     setDarkMode((prev) => !prev);
   }, [setDarkMode]);
@@ -46,36 +80,16 @@ function Topbar({
     handleLogout();
   }, [closeMenu, handleLogout]);
 
-  useEffect(() => {
-    if (!menuOpen) return undefined;
+  const goToPath = useCallback(
+    (path) => {
+      closeMenu();
 
-    function handlePointerDown(event) {
-      if (
-        menuRef.current &&
-        !menuRef.current.contains(event.target) &&
-        !menuButtonRef.current?.contains(event.target)
-      ) {
-        closeMenu();
+      if (typeof window !== 'undefined') {
+        window.location.href = path;
       }
-    }
-
-    function handleKeyDown(event) {
-      if (event.key === 'Escape') {
-        closeMenu();
-        menuButtonRef.current?.focus();
-      }
-    }
-
-    document.addEventListener('mousedown', handlePointerDown);
-    document.addEventListener('touchstart', handlePointerDown, { passive: true });
-    document.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-      document.removeEventListener('touchstart', handlePointerDown);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [menuOpen, closeMenu]);
+    },
+    [closeMenu],
+  );
 
   return (
     <header style={styles.root}>
@@ -101,34 +115,50 @@ function Topbar({
                   cursor: authLoading ? 'not-allowed' : 'pointer',
                 }}
               >
+                {currentUserAvatar ? (
+                  <img src={currentUserAvatar} alt={topbarUserName} style={styles.avatar} />
+                ) : (
+                  <div style={styles.avatarFallback}>{userInitial}</div>
+                )}
+
                 <div style={styles.userText}>
                   <div style={styles.userName}>{topbarUserName}</div>
                 </div>
 
                 <span style={styles.chevron(menuOpen)}>▾</span>
-
-                {currentUserAvatar ? (
-                  <img
-                    src={currentUserAvatar}
-                    alt={topbarUserName}
-                    style={styles.avatar}
-                  />
-                ) : (
-                  <div style={styles.avatarFallback}>{userInitial}</div>
-                )}
               </button>
 
               {menuOpen ? (
                 <div ref={menuRef} style={styles.menu} role="menu">
+                  <MenuButton
+                    styles={styles}
+                    hovered={hoveredMenuItem === 'billing'}
+                    onHover={() => setHoveredMenuItem('billing')}
+                    onLeave={() => setHoveredMenuItem('')}
+                    onClick={() => goToPath('/billing')}
+                    icon="£"
+                    label="Billing"
+                  />
+
+                  <MenuButton
+                    styles={styles}
+                    hovered={hoveredMenuItem === 'docs'}
+                    onHover={() => setHoveredMenuItem('docs')}
+                    onLeave={() => setHoveredMenuItem('')}
+                    onClick={() => goToPath('/docs')}
+                    icon="?"
+                    label="Documentation"
+                  />
+
                   <div style={styles.themeRow}>
                     <div style={styles.themeCopy}>
-                      <span style={styles.themeLabel}>Theme</span>
+                      <span style={styles.themeLabel}>Dark mode</span>
                     </div>
 
                     <button
                       type="button"
                       role="switch"
-                      aria-checked={!darkMode}
+                      aria-checked={darkMode}
                       aria-label={`Switch to ${darkMode ? 'light' : 'dark'} mode`}
                       onClick={handleThemeToggle}
                       onMouseEnter={() => setHoveredMenuItem('theme')}
@@ -183,5 +213,30 @@ function Topbar({
     </header>
   );
 }
+
+const MenuButton = memo(function MenuButton({
+  styles,
+  hovered = false,
+  onHover,
+  onLeave,
+  onClick,
+  icon,
+  label,
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      onMouseEnter={onHover}
+      onMouseLeave={onLeave}
+      onBlur={onLeave}
+      style={styles.menuButton(hovered)}
+    >
+      <span style={styles.menuButtonIcon}>{icon}</span>
+      <span style={styles.menuButtonLabel}>{label}</span>
+    </button>
+  );
+});
 
 export default memo(Topbar);
