@@ -5,9 +5,13 @@ const router = express.Router();
 
 const terminal = require('../../../src/utils/utility/terminalLogger').createLogger('api');
 const client = require('../../../index.js');
-const { read, write } = require('../utils/fileStore');
+const { read: readJson } = require('../utils/fileStore');
 
 const CASES_PATH = path.join(__dirname, '..', 'data', 'modCaseDetails.json');
+const DISCORD_API = 'https://discord.com/api/v10';
+
+let cachedBotProfile = null;
+let cachedBotProfileExpiresAt = 0;
 
 function emptyBotProfile() {
   return {
@@ -17,11 +21,100 @@ function emptyBotProfile() {
     tag: null,
     avatar: null,
     avatarUrl: '',
+    avatarURL: '',
+    online: false,
+    latencyMs: null,
   };
 }
 
 function getCasesData() {
   return readJson(CASES_PATH, {});
+}
+
+function buildDiscordAvatarUrl(id, avatar) {
+  if (!id || !avatar) return '';
+
+  const ext = String(avatar).startsWith('a_') ? 'gif' : 'png';
+  return `https://cdn.discordapp.com/avatars/${id}/${avatar}.${ext}?size=256`;
+}
+
+async function fetchBotProfileFromToken() {
+  const token = process.env.TOKEN || process.env.DISCORD_BOT_TOKEN || '';
+
+  if (!token) return null;
+
+  const now = Date.now();
+
+  if (cachedBotProfile && now < cachedBotProfileExpiresAt) {
+    return cachedBotProfile;
+  }
+
+  const response = await fetch(`${DISCORD_API}/users/@me`, {
+    headers: {
+      Authorization: `Bot ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Bot profile fetch failed ${response.status}: ${text}`);
+  }
+
+  const bot = await response.json();
+
+  const avatarUrl = buildDiscordAvatarUrl(bot.id, bot.avatar);
+
+  cachedBotProfile = {
+    id: bot.id,
+    username: bot.username,
+    name: bot.username || 'KSJ Goliath',
+    tag: bot.discriminator ? `${bot.username}#${bot.discriminator}` : bot.username,
+    avatar: bot.avatar || null,
+    avatarUrl,
+    avatarURL: avatarUrl,
+  };
+
+  cachedBotProfileExpiresAt = now + 1000 * 60 * 5;
+
+  return cachedBotProfile;
+}
+
+async function buildBotProfile(ready, botLatencyMs) {
+  if (client?.user) {
+    const avatarUrl = client.user.displayAvatarURL({
+      extension: 'png',
+      size: 256,
+      forceStatic: false,
+    });
+
+    return {
+      id: client.user.id,
+      username: client.user.username,
+      name: client.user.username,
+      tag: client.user.tag ?? null,
+      avatar: client.user.avatar ?? null,
+      avatarUrl,
+      avatarURL: avatarUrl,
+      online: ready,
+      latencyMs: botLatencyMs,
+    };
+  }
+
+  try {
+    const tokenProfile = await fetchBotProfileFromToken();
+
+    if (tokenProfile) {
+      return {
+        ...tokenProfile,
+        online: ready,
+        latencyMs: botLatencyMs,
+      };
+    }
+  } catch (error) {
+    terminal.error('Failed to fetch bot profile from token', error);
+  }
+
+  return emptyBotProfile();
 }
 
 function normalizeGuildCases(guildCases, guildId) {
@@ -49,7 +142,7 @@ async function resolveGuild(guildId) {
 }
 
 async function buildStatusPayload(guildId) {
-  const ready = client.isReady();
+  const ready = Boolean(client?.isReady?.());
 
   const botLatencyMs =
     ready && typeof client.ws?.ping === 'number'
@@ -87,84 +180,34 @@ async function buildStatusPayload(guildId) {
         connected: true,
         status: 'connected',
       };
-    } else {
-      guildPayload = {
-        id: guildId,
-        name: null,
-        icon: null,
-        memberCount: 0,
-        humans: 0,
-        bots: 0,
-        connected: false,
-        status: 'missing',
-      };
     }
   }
 
-  const botProfile = client.user
-    ? {
-        id: client.user.id,
-        username: client.user.username,
-        name: client.user.username,
-        tag: client.user.tag ?? null,
-        avatar: client.user.avatar ?? null,
-        avatarUrl: client.user.displayAvatarURL({ dynamic: true }),
-      }
-    : emptyBotProfile();
+  const botProfile = await buildBotProfile(ready, botLatencyMs);
 
   return {
     ok: true,
     status: ready ? 'online' : 'offline',
-
     backendOnline: true,
     apiOnline: true,
     botOnline: ready,
-
     botLatencyMs,
     latencyMs: botLatencyMs,
-
     guildId: guildId || null,
     guild: guildPayload,
     members: memberInfo.total,
     humans: memberInfo.humans,
     bots: memberInfo.bots,
-
-    guilds:
-      guildId && guildPayload
-        ? {
-            [guildId]: {
-              connected: guildPayload.connected,
-              status: guildPayload.status,
-              memberCount: guildPayload.memberCount,
-              humans: guildPayload.humans,
-              bots: guildPayload.bots,
-              name: guildPayload.name,
-              id: guildPayload.id,
-            },
-          }
-        : {},
-
-    bot: {
-      id: botProfile.id,
-      username: botProfile.username,
-      name: botProfile.name,
-      tag: botProfile.tag,
-      avatar: botProfile.avatar,
-      avatarUrl: botProfile.avatarUrl,
-      online: ready,
-      latencyMs: botLatencyMs,
-    },
-
+    guilds: {},
+    bot: botProfile,
     backend: {
       online: true,
       status: 'healthy',
     },
-
     api: {
       online: true,
       status: 'healthy',
     },
-
     timestamp: new Date().toISOString(),
   };
 }
@@ -213,6 +256,7 @@ router.get('/stream', async (req, res) => {
 
   let closed = false;
   let intervalId = null;
+  let heartbeatId = null;
 
   const sendEvent = (eventName, payload) => {
     if (closed) return;
@@ -246,8 +290,9 @@ router.get('/stream', async (req, res) => {
   };
 
   await pushSnapshot();
+
   intervalId = setInterval(pushSnapshot, 5000);
-  const heartbeatId = setInterval(sendHeartbeat, 20000);
+  heartbeatId = setInterval(sendHeartbeat, 20000);
 
   req.on('close', () => {
     closed = true;

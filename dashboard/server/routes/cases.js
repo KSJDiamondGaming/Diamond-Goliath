@@ -1,10 +1,9 @@
 const express = require('express');
 const path = require('path');
-const { read, write } = require('../utils/fileStore');
+const { read: readJson } = require('../utils/fileStore');
 
 const router = express.Router();
 
-// ✅ FIXED PATH (shared system)
 const DATA_PATH = path.join(__dirname, '..', 'data');
 const CASES_PATH = path.join(DATA_PATH, 'modCaseDetails.json');
 
@@ -30,7 +29,7 @@ router.get('/:guildId', (req, res) => {
     return res.json(cases[guildId] || {});
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Failed to load cases' });
+    return res.status(500).json({ error: 'Failed to load cases' });
   }
 });
 
@@ -39,10 +38,10 @@ router.get('/:guildId/list', (req, res) => {
     const { guildId } = req.params;
     const cases = getCasesData();
     const list = normalizeGuildCases(cases[guildId] || {}, guildId);
-    res.json(list);
+    return res.json(list);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Failed to load case list' });
+    return res.status(500).json({ error: 'Failed to load case list' });
   }
 });
 

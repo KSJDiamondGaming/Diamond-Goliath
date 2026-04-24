@@ -1,10 +1,9 @@
 const express = require('express');
 const path = require('path');
-const { read, write } = require('../utils/fileStore');
+const { read: readJson } = require('../utils/fileStore');
 
 const router = express.Router();
 
-// ✅ FIXED PATH (shared system)
 const DATA_PATH = path.join(__dirname, '..', 'data');
 const CASES_PATH = path.join(DATA_PATH, 'modCaseDetails.json');
 
@@ -29,10 +28,10 @@ router.get('/:guildId', (req, res) => {
   try {
     const { guildId } = req.params;
     const warnings = getGuildWarnings(guildId);
-    res.json(warnings);
+    return res.json(warnings);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Failed to load warnings' });
+    return res.status(500).json({ error: 'Failed to load warnings' });
   }
 });
 

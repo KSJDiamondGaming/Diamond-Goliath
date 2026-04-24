@@ -12,6 +12,11 @@ async function request(path, options = {}) {
 
   const contentType = response.headers.get('content-type') || '';
 
+  // ✅ HANDLE AUTH CLEANLY (THIS FIXES YOUR SPAM)
+  if (response.status === 401) {
+    return { authenticated: false, user: null };
+  }
+
   if (!response.ok) {
     const text = await response.text();
     throw new Error(`Request failed (${response.status}): ${text.slice(0, 160)}`);
@@ -34,6 +39,11 @@ async function requestOptionalJson(path, options = {}) {
     },
     ...options,
   });
+
+  // ✅ ALSO HANDLE 401 HERE
+  if (response.status === 401) {
+    return null;
+  }
 
   if (!response.ok) {
     const text = await response.text();
@@ -75,8 +85,19 @@ export const api = {
     });
   },
 
-  getGuilds() {
-    return request('/api/discord/guilds');
+  async getAuthMe() {
+    return request('/api/auth/me');
+  },
+
+  async getGuilds() {
+    const result = await request('/api/discord/guilds');
+
+    // ✅ STOP CALLING IF NOT AUTHENTICATED
+    if (result?.authenticated === false) {
+      return [];
+    }
+
+    return result;
   },
 
   getGuildChannels(guildId) {
@@ -90,9 +111,7 @@ export const api = {
 
   createStatusStream(guildId, handlers = {}) {
     if (!guildId || typeof window === 'undefined' || typeof window.EventSource === 'undefined') {
-      return {
-        close() {},
-      };
+      return { close() {} };
     }
 
     const query = `?guildId=${encodeURIComponent(guildId)}`;
@@ -100,62 +119,29 @@ export const api = {
       withCredentials: true,
     });
 
-    const handleOpen =
-      typeof handlers.onOpen === 'function'
-        ? handlers.onOpen
-        : () => {};
+    const safe = (fn) => (typeof fn === 'function' ? fn : () => {});
 
-    const handleError =
-      typeof handlers.onError === 'function'
-        ? handlers.onError
-        : () => {};
+    stream.onopen = safe(handlers.onOpen);
+    stream.onerror = safe(handlers.onError);
 
-    const handleStatus =
-      typeof handlers.onStatus === 'function'
-        ? handlers.onStatus
-        : () => {};
-
-    const handleCases =
-      typeof handlers.onCases === 'function'
-        ? handlers.onCases
-        : () => {};
-
-    const handleWarnings =
-      typeof handlers.onWarnings === 'function'
-        ? handlers.onWarnings
-        : () => {};
-
-    const handleSnapshot =
-      typeof handlers.onSnapshot === 'function'
-        ? handlers.onSnapshot
-        : () => {};
-
-    stream.onopen = (event) => {
-      handleOpen(event);
-    };
-
-    stream.onerror = (event) => {
-      handleError(event);
-    };
-
-    stream.addEventListener('status', (event) => {
-      const payload = safeParseStreamData(event.data);
-      if (payload) handleStatus(payload);
+    stream.addEventListener('status', (e) => {
+      const data = safeParseStreamData(e.data);
+      if (data) safe(handlers.onStatus)(data);
     });
 
-    stream.addEventListener('cases', (event) => {
-      const payload = safeParseStreamData(event.data);
-      if (payload) handleCases(payload);
+    stream.addEventListener('cases', (e) => {
+      const data = safeParseStreamData(e.data);
+      if (data) safe(handlers.onCases)(data);
     });
 
-    stream.addEventListener('warnings', (event) => {
-      const payload = safeParseStreamData(event.data);
-      if (payload) handleWarnings(payload);
+    stream.addEventListener('warnings', (e) => {
+      const data = safeParseStreamData(e.data);
+      if (data) safe(handlers.onWarnings)(data);
     });
 
-    stream.addEventListener('snapshot', (event) => {
-      const payload = safeParseStreamData(event.data);
-      if (payload) handleSnapshot(payload);
+    stream.addEventListener('snapshot', (e) => {
+      const data = safeParseStreamData(e.data);
+      if (data) safe(handlers.onSnapshot)(data);
     });
 
     return {
@@ -163,10 +149,6 @@ export const api = {
         stream.close();
       },
     };
-  },
-
-  getAuthMe() {
-    return request('/api/auth/me');
   },
 
   getCases(guildId) {
@@ -184,9 +166,7 @@ export const api = {
   updateConfig(guildId, body) {
     return request(`/api/config/${guildId}`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
   },
@@ -198,9 +178,7 @@ export const api = {
   saveMessages(guildId, body) {
     return request(`/api/config/messages/${guildId}`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
   },
@@ -212,9 +190,7 @@ export const api = {
   saveAutoModConfig(guildId, body) {
     return request(`/api/automod/${guildId}`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
   },
@@ -226,9 +202,7 @@ export const api = {
   saveLogConfig(guildId, body) {
     return request(`/api/config/logs/${guildId}`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
   },

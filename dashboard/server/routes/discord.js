@@ -9,6 +9,10 @@ const GUILD_CACHE_TTL_MS = 15 * 1000;
 
 const guildCache = new Map();
 
+/* =========================
+   HELPERS
+   ========================= */
+
 function isBotReady() {
   return client?.isReady && client.isReady();
 }
@@ -44,11 +48,11 @@ async function fetchJson(url, options = {}, retryCount = 0) {
     let retryAfterMs = 1000;
 
     try {
-      const rateLimitData = await res.json();
-      const retryAfterSeconds = Number(rateLimitData?.retry_after);
+      const data = await res.json();
+      const retryAfter = Number(data?.retry_after);
 
-      if (!Number.isNaN(retryAfterSeconds) && retryAfterSeconds > 0) {
-        retryAfterMs = Math.ceil(retryAfterSeconds * 1000);
+      if (!Number.isNaN(retryAfter) && retryAfter > 0) {
+        retryAfterMs = Math.ceil(retryAfter * 1000);
       }
     } catch {
       const headerValue = Number(res.headers.get('retry-after'));
@@ -62,7 +66,7 @@ async function fetchJson(url, options = {}, retryCount = 0) {
       return fetchJson(url, options, retryCount + 1);
     }
 
-    throw new Error(`Discord rate limit exceeded after retries (${retryAfterMs}ms wait).`);
+    throw new Error(`Rate limited after retries (${retryAfterMs}ms)`);
   }
 
   if (!res.ok) {
@@ -86,23 +90,27 @@ function buildGuildIconUrl(guild) {
   return `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png?size=256`;
 }
 
+/* =========================
+   ROUTES
+   ========================= */
+
 router.get('/guilds', async (req, res) => {
   try {
-    const accessToken =
-      req.session?.accessToken ||
-      req.session?.discordAccessToken ||
-      req.session?.access_token ||
-      req.session?.token;
-
-    if (!accessToken) {
+    // ✅ STRICT session check (prevents 503 crash)
+    if (!req.session?.user || !req.session?.accessToken) {
       return res.status(401).json({ error: 'Not authenticated' });
     }
 
+    const accessToken = req.session.accessToken;
+
+    // ✅ Prevent hitting route before bot ready
     if (!isBotReady()) {
       return res.status(503).json({ error: 'Bot is not ready yet.' });
     }
 
+    // ✅ Use cache
     const cachedGuilds = getCachedGuilds(accessToken);
+
     const userGuilds =
       cachedGuilds ||
       (await discordRequest(`${DISCORD_API}/users/@me/guilds`, accessToken));
@@ -134,7 +142,7 @@ router.get('/guilds', async (req, res) => {
 
     if (String(error.message || '').toLowerCase().includes('rate limit')) {
       return res.status(429).json({
-        error: 'Discord is rate limiting guild fetches. Please try again in a moment.',
+        error: 'Discord rate limiting. Try again shortly.',
       });
     }
 
@@ -142,9 +150,18 @@ router.get('/guilds', async (req, res) => {
   }
 });
 
+/* =========================
+   CHANNELS
+   ========================= */
+
 router.get('/guilds/:guildId/channels', async (req, res) => {
   try {
     const { guildId } = req.params;
+
+    // ✅ ALSO protect this route
+    if (!req.session?.user) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
 
     if (!isBotReady()) {
       return res.status(503).json({ error: 'Bot is not ready yet.' });
@@ -161,22 +178,22 @@ router.get('/guilds/:guildId/channels', async (req, res) => {
     await guild.channels.fetch().catch(() => null);
 
     const channels = guild.channels.cache
-      .filter((channel) => channel && (channel.type === 0 || channel.type === 5))
-      .map((channel) => ({
-        id: channel.id,
-        name: channel.name,
-        type: channel.type,
-        position: channel.position ?? 0,
+      .filter((c) => c && (c.type === 0 || c.type === 5))
+      .map((c) => ({
+        id: c.id,
+        name: c.name,
+        type: c.type,
+        position: c.position ?? 0,
       }))
       .sort((a, b) => {
-        const posDiff = a.position - b.position;
-        if (posDiff !== 0) return posDiff;
+        const diff = a.position - b.position;
+        if (diff !== 0) return diff;
         return a.name.localeCompare(b.name);
       });
 
     return res.json(channels);
   } catch (error) {
-    console.error('❌ Failed to fetch guild channels:', error);
+    console.error('❌ Failed to fetch channels:', error);
     return res.status(500).json({ error: 'Failed to fetch guild channels' });
   }
 });

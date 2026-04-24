@@ -1,5 +1,5 @@
 const express = require('express');
-const guildManager = require('../../../src/utils/guildManager');
+const guildManager = require('../utils/guildManager');
 
 const router = express.Router();
 
@@ -16,10 +16,10 @@ router.get('/logs/:guildId', (req, res) => {
     const { guildId } = req.params;
     const config = guildManager.getGuildSection(guildId, 'logs', DEFAULT_LOGS);
 
-    res.json({ ok: true, guildId, config });
+    return res.json({ ok: true, guildId, config });
   } catch (error) {
     console.error('Failed to get logs config:', error);
-    res.status(500).json({ error: 'Failed to load logs config.' });
+    return res.status(500).json({ error: 'Failed to load logs config.' });
   }
 });
 
@@ -35,10 +35,10 @@ router.post('/logs/:guildId', (req, res) => {
       adminActionLoggerEnabled: req.body.adminActionLoggerEnabled === true,
     });
 
-    res.json({ ok: true, guildId, config });
+    return res.json({ ok: true, guildId, config });
   } catch (error) {
     console.error('Failed to save logs config:', error);
-    res.status(500).json({ error: 'Failed to save logs config.' });
+    return res.status(500).json({ error: 'Failed to save logs config.' });
   }
 });
 
@@ -48,10 +48,10 @@ router.get('/messages/:guildId', (req, res) => {
     const welcome = guildManager.getGuildSection(guildId, 'welcome', {});
     const leave = guildManager.getGuildSection(guildId, 'leave', {});
 
-    res.json({ ok: true, guildId, welcome, leave });
+    return res.json({ ok: true, guildId, welcome, leave });
   } catch (error) {
     console.error('Failed to get message config:', error);
-    res.status(500).json({ error: 'Failed to load message config.' });
+    return res.status(500).json({ error: 'Failed to load message config.' });
   }
 });
 
@@ -71,10 +71,10 @@ router.post('/messages/:guildId', (req, res) => {
       channelId: req.body.leaveChannelId || null,
     });
 
-    res.json({ ok: true, guildId, welcome, leave });
+    return res.json({ ok: true, guildId, welcome, leave });
   } catch (error) {
     console.error('Failed to save message config:', error);
-    res.status(500).json({ error: 'Failed to save message config.' });
+    return res.status(500).json({ error: 'Failed to save message config.' });
   }
 });
 
@@ -83,10 +83,10 @@ router.get('/embeds/:guildId', (req, res) => {
     const { guildId } = req.params;
     const embeds = guildManager.getGuildSection(guildId, 'embeds', {});
 
-    res.json({ ok: true, guildId, config: embeds });
+    return res.json({ ok: true, guildId, config: embeds });
   } catch (error) {
     console.error('Failed to get embed config:', error);
-    res.status(500).json({ error: 'Failed to load embed config.' });
+    return res.status(500).json({ error: 'Failed to load embed config.' });
   }
 });
 
@@ -101,10 +101,10 @@ router.post('/embeds/:guildId', (req, res) => {
       color: req.body.color || '',
     });
 
-    res.json({ ok: true, guildId, config });
+    return res.json({ ok: true, guildId, config });
   } catch (error) {
     console.error('Failed to save embed config:', error);
-    res.status(500).json({ error: 'Failed to save embed config.' });
+    return res.status(500).json({ error: 'Failed to save embed config.' });
   }
 });
 
@@ -113,10 +113,10 @@ router.get('/:guildId', (req, res) => {
     const { guildId } = req.params;
     const config = guildManager.getGuildData(guildId);
 
-    res.json({ ok: true, guildId, config });
+    return res.json({ ok: true, guildId, config });
   } catch (error) {
     console.error('Failed to get guild config:', error);
-    res.status(500).json({ error: 'Failed to load guild config.' });
+    return res.status(500).json({ error: 'Failed to load guild config.' });
   }
 });
 
@@ -125,10 +125,10 @@ router.post('/:guildId', (req, res) => {
     const { guildId } = req.params;
     const config = guildManager.saveGuildData(guildId, req.body || {});
 
-    res.json({ ok: true, guildId, config });
+    return res.json({ ok: true, guildId, config });
   } catch (error) {
     console.error('Failed to save guild config:', error);
-    res.status(500).json({ error: 'Failed to save guild config.' });
+    return res.status(500).json({ error: 'Failed to save guild config.' });
   }
 });
 

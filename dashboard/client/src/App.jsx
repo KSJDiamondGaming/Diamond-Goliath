@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from './api';
 import { getStorage, removeStorage, setStorage } from './storage';
@@ -120,6 +120,8 @@ function isKnownPath(pathname) {
 export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
+  const sessionLoadedRef = useRef(false);
+  const botStatusLoadedRef = useRef(false);
 
   const [darkMode, setDarkMode] = useState(true);
   const [sidebarExpanded, setSidebarExpanded] = useState(() =>
@@ -158,6 +160,14 @@ export default function App() {
     [guilds, selectedGuild]
   );
 
+  const clearAuthState = useCallback(() => {
+    setIsAuthenticated(false);
+    setCurrentUser(null);
+    setGuilds([]);
+    setSelectedGuild('');
+    removeStorage(GUILD_STORAGE_KEY);
+  }, []);
+
   const applyBotProfile = useCallback((profile) => {
     const safeProfile = {
       name: profile?.name || 'KSJ Goliath',
@@ -187,6 +197,7 @@ export default function App() {
   const loadGuilds = useCallback(async () => {
     try {
       setGuildError('');
+
       const guildResponse = await api.getGuilds();
       const nextGuilds = normalizeGuilds(guildResponse);
 
@@ -225,6 +236,7 @@ export default function App() {
       setGuildError('');
 
       const authResponse = await api.getAuthMe();
+
       const authenticated = Boolean(
         authResponse?.authenticated ??
           authResponse?.isAuthenticated ??
@@ -232,11 +244,7 @@ export default function App() {
       );
 
       if (!authenticated) {
-        setIsAuthenticated(false);
-        setCurrentUser(null);
-        setGuilds([]);
-        setSelectedGuild('');
-        removeStorage(GUILD_STORAGE_KEY);
+        clearAuthState();
         return;
       }
 
@@ -254,18 +262,24 @@ export default function App() {
       await Promise.all([loadGuilds(), loadBotStatus()]);
     } catch (error) {
       console.error('Session check failed:', error);
-      setIsAuthenticated(false);
-      setCurrentUser(null);
-      setGuilds([]);
-      setSelectedGuild('');
-      removeStorage(GUILD_STORAGE_KEY);
+      clearAuthState();
     } finally {
       setAuthLoading(false);
       setLoginPending(false);
     }
-  }, [applyBotProfile, loadBotStatus, loadGuilds]);
+  }, [applyBotProfile, clearAuthState, loadBotStatus, loadGuilds]);
 
   useEffect(() => {
+    if (botStatusLoadedRef.current) return;
+
+    botStatusLoadedRef.current = true;
+    loadBotStatus();
+  }, [loadBotStatus]);
+
+  useEffect(() => {
+    if (sessionLoadedRef.current) return;
+
+    sessionLoadedRef.current = true;
     loadSession();
   }, [loadSession]);
 
@@ -322,15 +336,11 @@ export default function App() {
     } catch (error) {
       console.error('Logout failed:', error);
     } finally {
-      setIsAuthenticated(false);
-      setCurrentUser(null);
-      setGuilds([]);
-      setSelectedGuild('');
-      removeStorage(GUILD_STORAGE_KEY);
+      clearAuthState();
       setAuthLoading(false);
       navigate('/login', { replace: true });
     }
-  }, [navigate]);
+  }, [clearAuthState, navigate]);
 
   const pageProps = {
     selectedGuild,

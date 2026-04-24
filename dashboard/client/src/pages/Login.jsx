@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useState } from 'react';
 import { loginPageStyles } from '../ui';
 
 function getNameInitial(name = '') {
@@ -17,11 +17,14 @@ function Login({
   loginPending,
 }) {
   const styles = loginPageStyles(theme);
+  const [avatarFailed, setAvatarFailed] = useState(false);
 
   const guildInitial = getNameInitial(selectedGuildName || 'Guild');
   const botInitial = getNameInitial(botName || 'KSJ Goliath');
 
   const avatarSrc = isAuthenticated ? selectedGuildIcon || '' : botAvatar || '';
+  const showAvatarImage = Boolean(avatarSrc) && !avatarFailed;
+
   const fallbackInitial = isAuthenticated ? guildInitial : botInitial;
   const fallbackTitle = isAuthenticated
     ? selectedGuildName || 'Selected guild'
@@ -32,7 +35,7 @@ function Login({
       <section style={styles.card}>
         <section style={styles.root}>
           <div style={styles.guildRow}>
-            {avatarSrc ? (
+            {showAvatarImage ? (
               <img
                 src={avatarSrc}
                 alt={fallbackTitle}
@@ -41,6 +44,7 @@ function Login({
                   objectFit: 'cover',
                   padding: 0,
                 }}
+                onError={() => setAvatarFailed(true)}
               />
             ) : (
               <div style={styles.guildAvatar}>{fallbackInitial}</div>

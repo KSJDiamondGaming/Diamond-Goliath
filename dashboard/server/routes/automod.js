@@ -1,8 +1,9 @@
 const express = require('express');
+
 const {
   getGuildAutoModConfig,
   saveGuildAutoModConfig,
-} = require('../../../src/utils/automodStore');
+} = require('../utils/automodStore');
 
 const router = express.Router();
 

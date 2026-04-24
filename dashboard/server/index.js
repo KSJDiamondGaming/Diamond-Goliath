@@ -1,7 +1,13 @@
 const path = require('path');
+const dotenv = require('dotenv');
 
-require('dotenv').config({
+dotenv.config({
+  path: path.resolve(__dirname, '..', '..', '.env'),
+});
+
+dotenv.config({
   path: path.resolve(__dirname, '..', '.env'),
+  override: true,
 });
 
 const express = require('express');
@@ -26,13 +32,16 @@ const SESSION_SECRET = process.env.SESSION_SECRET || 'change-me-in-production';
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const IS_PROD = NODE_ENV === 'production';
 
+const allowedOrigins = new Set([
+  CLIENT_URL,
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+]);
+
 if (IS_PROD) {
   app.set('trust proxy', 1);
 }
 
-/* =========================
-   🔥 SMART REQUEST LOGGER
-   ========================= */
 app.use((req, res, next) => {
   const startedAt = Date.now();
 
@@ -41,12 +50,10 @@ app.use((req, res, next) => {
     const url = req.originalUrl;
     const status = res.statusCode;
 
-    // ✅ ALWAYS log errors
     if (status >= 400) {
       return terminal.request(req.method, url, status, duration);
     }
 
-    // ❌ Ignore polling routes
     if (
       url.includes('/api/cases') ||
       url.includes('/api/warnings') ||
@@ -55,10 +62,8 @@ app.use((req, res, next) => {
       return;
     }
 
-    // ❌ Ignore cache hits
     if (status === 304) return;
 
-    // ✅ Only log slow requests (>100ms)
     if (duration > 100) {
       return terminal.request(req.method, url, status, duration);
     }
@@ -67,12 +72,15 @@ app.use((req, res, next) => {
   next();
 });
 
-/* =========================
-   Middleware
-   ========================= */
 app.use(
   cors({
-    origin: CLIENT_URL,
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.has(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error(`CORS blocked origin: ${origin}`));
+    },
     credentials: true,
   })
 );
@@ -86,6 +94,7 @@ app.use(
     secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
+    rolling: true,
     cookie: {
       httpOnly: true,
       secure: IS_PROD,
@@ -95,9 +104,6 @@ app.use(
   })
 );
 
-/* =========================
-   Routes
-   ========================= */
 app.use('/api/auth', authRoute);
 app.use('/api/discord', discordRoutes);
 app.use('/api/cases', casesRoute);
@@ -106,16 +112,10 @@ app.use('/api/config', configRoute);
 app.use('/api/automod', automodRoutes);
 app.use('/api/status', statusRoute);
 
-/* =========================
-   404
-   ========================= */
 app.use((req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
-/* =========================
-   Errors
-   ========================= */
 app.use((err, req, res, next) => {
   terminal.error('API Error', err);
 
@@ -126,9 +126,7 @@ app.use((err, req, res, next) => {
   });
 });
 
-/* =========================
-   Start
-   ========================= */
 app.listen(PORT, () => {
   terminal.line('🌐 Dashboard', `http://localhost:${PORT}`);
+  terminal.line('🖥️ Client', CLIENT_URL);
 });

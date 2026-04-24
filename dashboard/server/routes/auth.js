@@ -40,8 +40,11 @@ router.get('/login', (req, res) => {
 
 // CHECK AUTH
 router.get('/me', (req, res) => {
-  if (!req.session.user) {
-    return res.status(401).json({ authenticated: false });
+  if (!req.session?.user) {
+    return res.status(401).json({
+      authenticated: false,
+      user: null,
+    });
   }
 
   return res.json({
@@ -52,8 +55,18 @@ router.get('/me', (req, res) => {
 
 // LOGOUT
 router.post('/logout', (req, res) => {
-  req.session.destroy(() => {
-    res.clearCookie('ksj_dashboard_session');
+  req.session.destroy((error) => {
+    if (error) {
+      console.error('❌ Logout session destroy failed', error);
+      return res.status(500).json({ error: 'Logout failed' });
+    }
+
+    res.clearCookie('ksj_dashboard_session', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    });
+
     return res.json({ success: true });
   });
 });
