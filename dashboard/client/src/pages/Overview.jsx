@@ -114,6 +114,14 @@ const HeroCard = memo(function HeroCard({ styles, metrics, selectedGuildData }) 
     <section style={styles.hero}>
       <div style={styles.heroGlow} />
 
+      {guildAvatar ? (
+        <img
+          src={guildAvatar}
+          alt={`${metrics.guildName} logo`}
+          style={styles.heroGuildLogo}
+        />
+      ) : null}
+
       <div style={styles.heroMeta}>
         <h1 style={styles.heroTitle}>{metrics.guildName}</h1>
 
@@ -123,25 +131,6 @@ const HeroCard = memo(function HeroCard({ styles, metrics, selectedGuildData }) 
 
         <p style={styles.heroMetaText}>{OVERVIEW_UI.hero.subtitle}</p>
       </div>
-
-      {guildAvatar ? (
-        <img
-          src={guildAvatar}
-          alt={metrics.guildName}
-          style={{
-            position: 'absolute',
-            right: '24px',
-            top: '50%',
-            transform: 'translateY(-50%)',
-            width: '84px',
-            height: '84px',
-            borderRadius: '20px',
-            objectFit: 'cover',
-            opacity: 0.1,
-            pointerEvents: 'none',
-          }}
-        />
-      ) : null}
     </section>
   );
 });

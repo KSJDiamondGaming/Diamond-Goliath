@@ -347,6 +347,22 @@ export default function App() {
   }, [sidebarExpanded]);
 
   useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth <= 900) {
+        setSidebarExpanded(false);
+      }
+    };
+
+    handleResize();
+
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
+
+  useEffect(() => {
     if (authLoading) return;
 
     if (!isKnownPath(location.pathname)) {
@@ -454,8 +470,8 @@ export default function App() {
             botName={botName}
             botAvatar={botAvatar}
             botData={botData}
-            sidebarExpanded={sidebarExpanded}
-            setSidebarExpanded={setSidebarExpanded}
+            expanded={sidebarExpanded}
+            onToggleCollapsed={() => setSidebarExpanded((prev) => !prev)}
           />
 
           <div style={styles.mainColumn}>

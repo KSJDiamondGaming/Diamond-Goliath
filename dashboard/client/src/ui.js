@@ -467,30 +467,42 @@ export function navbarStyles(theme) {
       overflowY: 'auto',
       paddingRight: '2px',
     },
-    navItem(active = false, expanded = true, canNavigate = true) {
-      return {
-        width: '100%',
-        minHeight: '44px',
-        padding: expanded ? '10px 12px' : '10px',
-        borderRadius: '14px',
-        border: active ? `1px solid ${theme.primaryBorder}` : '1px solid transparent',
-        background: active ? theme.primarySoft : 'transparent',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: expanded ? 'flex-start' : 'center',
-        gap: '10px',
-        color: active ? '#93c5fd' : theme.sidebarText,
-        cursor: canNavigate ? 'pointer' : 'not-allowed',
-        textAlign: 'left',
-        fontSize: '14px',
-        fontWeight: active ? 700 : 600,
-        opacity: canNavigate ? 1 : 0.5,
-        transition:
-          'background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.18s ease',
-        outline: 'none',
-        appearance: 'none',
-      };
-    },
+    navItem(active = false, expanded = true, canNavigate = true, isHovered = false, isPressed = false) {
+  const interactive = canNavigate && (isHovered || isPressed);
+
+  return {
+    width: '100%',
+    minHeight: '44px',
+    padding: expanded ? '10px 12px' : '10px',
+    borderRadius: '14px',
+    border: active || isHovered ? `1px solid ${theme.primaryBorder}` : '1px solid transparent',
+    background: active
+      ? theme.primarySoft
+      : isHovered
+        ? 'rgba(59,130,246,0.08)'
+        : 'transparent',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: expanded ? 'flex-start' : 'center',
+    gap: '10px',
+    color: active || isHovered ? '#93c5fd' : theme.sidebarText,
+    cursor: canNavigate ? 'pointer' : 'not-allowed',
+    textAlign: 'left',
+    fontSize: '14px',
+    fontWeight: active ? 700 : 600,
+    opacity: canNavigate ? 1 : 0.5,
+    transform: isPressed
+      ? 'scale(0.97)'
+      : interactive
+        ? 'translateY(-2px)'
+        : 'translateY(0)',
+    boxShadow: active || isHovered ? theme.shadow : 'none',
+    transition:
+      'background 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.12s ease, box-shadow 0.12s ease',
+    outline: 'none',
+    appearance: 'none',
+  };
+},
     navIcon: {
       display: 'inline-flex',
       alignItems: 'center',
@@ -525,15 +537,19 @@ export function navbarStyles(theme) {
         transform: isHovered ? 'translateY(-1px)' : 'translateY(0)',
       };
     },
-    collapseButtonIcon: {
-      width: '100%',
-      height: '100%',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      fontSize: '14px',
-      lineHeight: 1,
-    },
+    collapseButtonIcon(expanded = true) {
+  return {
+    width: '100%',
+    height: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '14px',
+    lineHeight: 1,
+    transform: expanded ? 'rotate(360deg)' : 'rotate(0deg)',
+    transition: 'transform 1.50s ease',
+  };
+},
     collapseButtonGlyph(expanded = true) {
       return expanded ? '🔓' : '🔒';
     },
@@ -1073,11 +1089,6 @@ function truthyOnline(value, defaultValue = false) {
   return defaultValue;
 }
 
-function getSafeObjectSize(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return 0;
-  return Object.keys(value).length;
-}
-
 export function buildOverviewMetrics({
   selectedGuild = '',
   selectedGuildData = null,
@@ -1225,7 +1236,7 @@ export function createOverviewPageStyles(theme) {
       position: 'relative',
       overflow: 'hidden',
       minHeight: OVERVIEW_UI.hero.minHeight,
-      padding: '22px 24px',
+      padding: '22px 172px 22px 24px',
       display: 'grid',
       alignContent: 'center',
       gap: '10px',
@@ -1236,13 +1247,30 @@ export function createOverviewPageStyles(theme) {
       position: 'absolute',
       inset: 0,
       pointerEvents: 'none',
+      zIndex: 0,
       background: 'radial-gradient(circle at 85% 50%, rgba(96,165,250,0.22), transparent 34%)',
+    },
+
+    heroGuildLogo: {
+      position: 'absolute',
+      top: '50%',
+      right: '20px',
+      width: '125px',
+      height: '125px',
+      transform: 'translateY(-50%)',
+      objectFit: 'contain',
+      borderRadius: '30px',
+      opacity: 0.35,
+      filter: 'saturate(1.25) contrast(1.18)',
+      pointerEvents: 'none',
+      userSelect: 'none',
+      zIndex: 1,
     },
 
     heroTitle: {
       margin: 0,
       position: 'relative',
-      zIndex: 1,
+      zIndex: 2,
       fontSize: 'clamp(30px, 4vw, 56px)',
       lineHeight: 0.94,
       fontWeight: 950,
@@ -1255,7 +1283,7 @@ export function createOverviewPageStyles(theme) {
 
     heroMeta: {
       position: 'relative',
-      zIndex: 1,
+      zIndex: 2,
       display: 'grid',
       gap: '8px',
     },

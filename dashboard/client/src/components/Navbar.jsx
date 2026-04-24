@@ -160,6 +160,8 @@ function Navbar({
 
   const [openGroups, setOpenGroups] = useState({});
   const [collapseHover, setCollapseHover] = useState(false);
+  const [hoveredNavKey, setHoveredNavKey] = useState('');
+  const [pressedNavKey, setPressedNavKey] = useState('');
 
   const selectedGuildData = useMemo(
     () => guilds.find((guild) => guild.id === selectedGuild) || null,
@@ -212,6 +214,31 @@ function Navbar({
       [groupKey]: !prev[groupKey],
     }));
   }, []);
+
+  const getNavInteractionProps = useCallback(
+    (key) => ({
+      onMouseEnter: () => {
+        if (!canNavigate) return;
+        setHoveredNavKey(key);
+      },
+      onMouseLeave: () => {
+        setHoveredNavKey((current) => (current === key ? '' : current));
+        setPressedNavKey((current) => (current === key ? '' : current));
+      },
+      onMouseDown: () => {
+        if (!canNavigate) return;
+        setPressedNavKey(key);
+      },
+      onMouseUp: () => {
+        setPressedNavKey((current) => (current === key ? '' : current));
+      },
+      onBlur: () => {
+        setHoveredNavKey((current) => (current === key ? '' : current));
+        setPressedNavKey((current) => (current === key ? '' : current));
+      },
+    }),
+    [canNavigate],
+  );
 
   return (
     <aside style={styles.root(expanded)}>
@@ -268,20 +295,29 @@ function Navbar({
             if (item?.children?.length) {
               const groupOpen = Boolean(openGroups[item.key]);
               const hasActiveChild = itemHasActiveChild(location.pathname, item);
+              const groupHovered = hoveredNavKey === item.key;
+              const groupPressed = pressedNavKey === item.key;
 
               return (
                 <div key={item.key} style={{ display: 'grid', gap: '8px' }}>
                   <button
                     type="button"
                     onClick={() => handleToggleGroup(item.key)}
-                    style={styles.navItem(hasActiveChild, expanded, canNavigate)}
+                    style={styles.navItem(
+                      hasActiveChild,
+                      expanded,
+                      canNavigate,
+                      groupHovered,
+                      groupPressed,
+                    )}
                     title={expanded ? undefined : item.label}
                     aria-expanded={groupOpen}
+                    {...getNavInteractionProps(item.key)}
                   >
                     <span style={styles.navIcon}>
                       <SidebarIcon
                         type={item.icon}
-                        active={hasActiveChild}
+                        active={hasActiveChild || groupHovered}
                         color={theme.sidebarText}
                       />
                     </span>
@@ -297,7 +333,7 @@ function Navbar({
                             justifyContent: 'center',
                             transform: groupOpen ? 'rotate(180deg)' : 'rotate(0deg)',
                             transition: 'transform 0.2s ease',
-                            color: hasActiveChild ? '#93c5fd' : theme.sidebarMuted,
+                            color: hasActiveChild || groupHovered ? '#93c5fd' : theme.sidebarMuted,
                             fontSize: '12px',
                             lineHeight: 1,
                           }}
@@ -308,54 +344,83 @@ function Navbar({
                     ) : null}
                   </button>
 
-                  {groupOpen
-                    ? item.children.map((child) => {
-                        const childActive = isActivePath(location.pathname, child.path || '/');
+                  <div
+                    style={{
+                      display: 'grid',
+                      gap: '8px',
+                      overflow: 'hidden',
+                      maxHeight: groupOpen && expanded ? `${item.children.length * 58}px` : '0px',
+                      opacity: groupOpen && expanded ? 1 : 0,
+                      transform: groupOpen && expanded ? 'translateY(0)' : 'translateY(-6px)',
+                      transition:
+                        'max-height 0.24s ease, opacity 0.18s ease, transform 0.2s ease',
+                    }}
+                  >
+                    {item.children.map((child) => {
+                      const childKey = `${item.key}-${child.key}`;
+                      const childActive = isActivePath(location.pathname, child.path || '/');
+                      const childHovered = hoveredNavKey === childKey;
+                      const childPressed = pressedNavKey === childKey;
 
-                        return (
-                          <button
-                            key={child.key}
-                            type="button"
-                            onClick={() => handleNavigate(child)}
-                            style={{
-                              ...styles.navItem(childActive, expanded, canNavigate),
-                              ...(expanded ? { paddingLeft: '38px' } : {}),
-                            }}
-                            title={expanded ? undefined : child.label}
-                            disabled={!canNavigate || !child.path}
-                            aria-current={childActive ? 'page' : undefined}
-                          >
-                            <span style={styles.navIcon}>
-                              <SidebarIcon
-                                type={child.icon}
-                                active={childActive}
-                                color={theme.sidebarText}
-                              />
-                            </span>
+                      return (
+                        <button
+                          key={child.key}
+                          type="button"
+                          onClick={() => handleNavigate(child)}
+                          style={{
+                            ...styles.navItem(
+                              childActive,
+                              expanded,
+                              canNavigate,
+                              childHovered,
+                              childPressed,
+                            ),
+                            paddingLeft: '38px',
+                          }}
+                          title={expanded ? undefined : child.label}
+                          disabled={!canNavigate || !child.path}
+                          aria-current={childActive ? 'page' : undefined}
+                          tabIndex={groupOpen && expanded ? 0 : -1}
+                          {...getNavInteractionProps(childKey)}
+                        >
+                          <span style={styles.navIcon}>
+                            <SidebarIcon
+                              type={child.icon}
+                              active={childActive || childHovered}
+                              color={theme.sidebarText}
+                            />
+                          </span>
 
-                            {expanded ? <span style={styles.navLabel}>{child.label}</span> : null}
-                          </button>
-                        );
-                      })
-                    : null}
+                          <span style={styles.navLabel}>{child.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               );
             }
 
             const active = isActivePath(location.pathname, item.path || '/');
+            const hovered = hoveredNavKey === item.key;
+            const pressed = pressedNavKey === item.key;
 
             return (
               <button
                 key={item.key}
                 type="button"
                 onClick={() => handleNavigate(item)}
-                style={styles.navItem(active, expanded, canNavigate)}
+                style={styles.navItem(active, expanded, canNavigate, hovered, pressed)}
                 title={expanded ? undefined : item.label}
                 disabled={!canNavigate || !item.path}
                 aria-current={active ? 'page' : undefined}
+                {...getNavInteractionProps(item.key)}
               >
                 <span style={styles.navIcon}>
-                  <SidebarIcon type={item.icon} active={active} color={theme.sidebarText} />
+                  <SidebarIcon
+                    type={item.icon}
+                    active={active || hovered}
+                    color={theme.sidebarText}
+                  />
                 </span>
 
                 {expanded ? <span style={styles.navLabel}>{item.label}</span> : null}
@@ -364,20 +429,28 @@ function Navbar({
           })}
 
           {safeBottomItems.map((item) => {
+            const bottomKey = `bottom-${item.key}`;
             const active = isActivePath(location.pathname, item.path || '/');
+            const hovered = hoveredNavKey === bottomKey;
+            const pressed = pressedNavKey === bottomKey;
 
             return (
               <button
                 key={item.key}
                 type="button"
                 onClick={() => handleNavigate(item)}
-                style={styles.navItem(active, expanded, canNavigate)}
+                style={styles.navItem(active, expanded, canNavigate, hovered, pressed)}
                 title={expanded ? undefined : item.label}
                 disabled={!canNavigate || !item.path}
                 aria-current={active ? 'page' : undefined}
+                {...getNavInteractionProps(bottomKey)}
               >
                 <span style={styles.navIcon}>
-                  <SidebarIcon type={item.icon} active={active} color={theme.sidebarText} />
+                  <SidebarIcon
+                    type={item.icon}
+                    active={active || hovered}
+                    color={theme.sidebarText}
+                  />
                 </span>
 
                 {expanded ? <span style={styles.navLabel}>{item.label}</span> : null}
@@ -397,7 +470,7 @@ function Navbar({
           title={expanded ? 'Collapse navbar' : 'Expand navbar'}
           aria-label={expanded ? 'Collapse navbar' : 'Expand navbar'}
         >
-          <span style={styles.collapseButtonIcon}>
+          <span style={styles.collapseButtonIcon(expanded)}>
             {styles.collapseButtonGlyph(expanded)}
           </span>
         </button>
