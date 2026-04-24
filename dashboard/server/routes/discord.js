@@ -1,41 +1,36 @@
 const fetch = global.fetch || require('node-fetch');
 const express = require('express');
-const router = express.Router();
 
-const client = require('../../../index.js');
+const router = express.Router();
 
 const DISCORD_API = 'https://discord.com/api/v10';
 const GUILD_CACHE_TTL_MS = 15 * 1000;
 
 const guildCache = new Map();
 
-/* =========================
-   HELPERS
-   ========================= */
-
-function isBotReady() {
-  return client?.isReady && client.isReady();
-}
-
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function getCachedGuilds(accessToken) {
-  const cached = guildCache.get(accessToken);
+function getBotToken() {
+  return process.env.TOKEN || process.env.DISCORD_BOT_TOKEN || '';
+}
+
+function getCachedGuilds(cacheKey) {
+  const cached = guildCache.get(cacheKey);
 
   if (!cached) return null;
 
   if (Date.now() > cached.expiresAt) {
-    guildCache.delete(accessToken);
+    guildCache.delete(cacheKey);
     return null;
   }
 
   return cached.data;
 }
 
-function setCachedGuilds(accessToken, data) {
-  guildCache.set(accessToken, {
+function setCachedGuilds(cacheKey, data) {
+  guildCache.set(cacheKey, {
     data,
     expiresAt: Date.now() + GUILD_CACHE_TTL_MS,
   });
@@ -56,6 +51,7 @@ async function fetchJson(url, options = {}, retryCount = 0) {
       }
     } catch {
       const headerValue = Number(res.headers.get('retry-after'));
+
       if (!Number.isNaN(headerValue) && headerValue > 0) {
         retryAfterMs = Math.ceil(headerValue * 1000);
       }
@@ -77,51 +73,78 @@ async function fetchJson(url, options = {}, retryCount = 0) {
   return res.json();
 }
 
-async function discordRequest(url, token) {
-  return fetchJson(url, {
+function buildGuildIconUrl(guild) {
+  if (!guild?.id || !guild?.icon) return null;
+  return `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png?size=256`;
+}
+
+function getSessionAccessToken(req) {
+  return (
+    req.session?.accessToken ||
+    req.session?.discordAccessToken ||
+    req.session?.access_token ||
+    req.session?.token ||
+    ''
+  );
+}
+
+async function fetchUserGuilds(accessToken) {
+  return fetchJson(`${DISCORD_API}/users/@me/guilds`, {
     headers: {
-      Authorization: `Bearer ${token}`,
+      Authorization: `Bearer ${accessToken}`,
     },
   });
 }
 
-function buildGuildIconUrl(guild) {
-  if (!guild.icon) return null;
-  return `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png?size=256`;
+async function fetchBotGuilds() {
+  const botToken = getBotToken();
+
+  if (!botToken) {
+    throw new Error('Missing bot token. Set TOKEN in root .env or dashboard/.env');
+  }
+
+  return fetchJson(`${DISCORD_API}/users/@me/guilds`, {
+    headers: {
+      Authorization: `Bot ${botToken}`,
+    },
+  });
 }
 
-/* =========================
-   ROUTES
-   ========================= */
+async function fetchGuildChannels(guildId) {
+  const botToken = getBotToken();
+
+  if (!botToken) {
+    throw new Error('Missing bot token. Set TOKEN in root .env or dashboard/.env');
+  }
+
+  return fetchJson(`${DISCORD_API}/guilds/${guildId}/channels`, {
+    headers: {
+      Authorization: `Bot ${botToken}`,
+    },
+  });
+}
 
 router.get('/guilds', async (req, res) => {
   try {
-    // ✅ STRICT session check (prevents 503 crash)
-    if (!req.session?.user || !req.session?.accessToken) {
+    const accessToken = getSessionAccessToken(req);
+
+    if (!req.session?.user || !accessToken) {
       return res.status(401).json({ error: 'Not authenticated' });
     }
 
-    const accessToken = req.session.accessToken;
+    const cacheKey = `guilds:${req.session.user.id}:${accessToken}`;
+    const cachedGuilds = getCachedGuilds(cacheKey);
 
-    // ✅ Prevent hitting route before bot ready
-    if (!isBotReady()) {
-      return res.status(503).json({ error: 'Bot is not ready yet.' });
+    if (cachedGuilds) {
+      return res.json(cachedGuilds);
     }
 
-    // ✅ Use cache
-    const cachedGuilds = getCachedGuilds(accessToken);
+    const [userGuilds, botGuilds] = await Promise.all([
+      fetchUserGuilds(accessToken),
+      fetchBotGuilds(),
+    ]);
 
-    const userGuilds =
-      cachedGuilds ||
-      (await discordRequest(`${DISCORD_API}/users/@me/guilds`, accessToken));
-
-    if (!cachedGuilds) {
-      setCachedGuilds(accessToken, userGuilds);
-    }
-
-    await client.guilds.fetch().catch(() => null);
-
-    const botGuildIds = new Set(client.guilds.cache.map((g) => g.id));
+    const botGuildIds = new Set(botGuilds.map((guild) => guild.id));
 
     const mutualGuilds = userGuilds
       .filter((guild) => botGuildIds.has(guild.id))
@@ -135,6 +158,8 @@ router.get('/guilds', async (req, res) => {
         permissions: guild.permissions,
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
+
+    setCachedGuilds(cacheKey, mutualGuilds);
 
     return res.json(mutualGuilds);
   } catch (error) {
@@ -150,40 +175,23 @@ router.get('/guilds', async (req, res) => {
   }
 });
 
-/* =========================
-   CHANNELS
-   ========================= */
-
 router.get('/guilds/:guildId/channels', async (req, res) => {
   try {
     const { guildId } = req.params;
 
-    // ✅ ALSO protect this route
     if (!req.session?.user) {
       return res.status(401).json({ error: 'Not authenticated' });
     }
 
-    if (!isBotReady()) {
-      return res.status(503).json({ error: 'Bot is not ready yet.' });
-    }
+    const channels = await fetchGuildChannels(guildId);
 
-    const guild =
-      client.guilds.cache.get(guildId) ||
-      (await client.guilds.fetch(guildId).catch(() => null));
-
-    if (!guild) {
-      return res.status(404).json({ error: 'Guild not found' });
-    }
-
-    await guild.channels.fetch().catch(() => null);
-
-    const channels = guild.channels.cache
-      .filter((c) => c && (c.type === 0 || c.type === 5))
-      .map((c) => ({
-        id: c.id,
-        name: c.name,
-        type: c.type,
-        position: c.position ?? 0,
+    const textChannels = channels
+      .filter((channel) => channel && (channel.type === 0 || channel.type === 5))
+      .map((channel) => ({
+        id: channel.id,
+        name: channel.name,
+        type: channel.type,
+        position: channel.position ?? 0,
       }))
       .sort((a, b) => {
         const diff = a.position - b.position;
@@ -191,9 +199,9 @@ router.get('/guilds/:guildId/channels', async (req, res) => {
         return a.name.localeCompare(b.name);
       });
 
-    return res.json(channels);
+    return res.json(textChannels);
   } catch (error) {
-    console.error('❌ Failed to fetch channels:', error);
+    console.error('❌ Failed to fetch guild channels:', error);
     return res.status(500).json({ error: 'Failed to fetch guild channels' });
   }
 });

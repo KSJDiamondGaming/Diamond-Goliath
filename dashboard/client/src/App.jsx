@@ -11,6 +11,7 @@ import AutoMod from './pages/AutoMod';
 import Config from './pages/Config';
 import Messages from './pages/Messages';
 import Logs from './pages/Logs';
+import Overview from './pages/Overview';
 import Login from './pages/Login';
 
 const GUILD_STORAGE_KEY = 'selected_guild';
@@ -18,6 +19,7 @@ const BOT_PROFILE_STORAGE_KEY = 'bot_profile';
 const SIDEBAR_EXPANDED_STORAGE_KEY = 'sidebar_expanded';
 
 const PAGE_COMPONENTS = {
+  overview: Overview,
   cases: Cases,
   warnings: Warnings,
   automod: AutoMod,
@@ -364,7 +366,7 @@ export default function App() {
   };
 
   const activeRoute = getRouteForPath(location.pathname);
-  const ActivePage = activeRoute ? PAGE_COMPONENTS[activeRoute.key] : null;
+  const ActivePage = activeRoute?.component || PAGE_COMPONENTS[activeRoute?.key] || null;
 
   if (isLoginPage) {
     return (
