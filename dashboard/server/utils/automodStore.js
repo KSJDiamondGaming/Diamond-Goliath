@@ -1,108 +1,99 @@
-const path = require('path');
-const { read: readJson, write: writeJson } = require('./fileStore');
-const guildManager = require('./guildManager');
-
-const AUTOMOD_PATH = path.join(__dirname, '..', 'data', 'automod.json');
+const guildManager = require('../../../dashboard/server/utils/guildManager');
 
 function getDefaultConfig() {
   return {
+    enabled: true,
+    ignoreBots: true,
+    ignoreAdmins: true,
+    ignoredChannelIds: [],
+    ignoredRoleIds: [],
+    ignoredUserIds: [],
+
     antiSpam: {
       enabled: false,
       maxMessages: 6,
       intervalSeconds: 8,
-      punishment: 'delete',
+      punishments: ['delete'],
+      timeoutMinutes: 10,
     },
+
     antiLink: {
       enabled: false,
-      punishment: 'delete',
+      allowedDomains: [],
+      blockedDomains: [],
     },
+
     antiInvite: {
       enabled: false,
-      punishment: 'delete',
+      punishments: ['delete'],
+      timeoutMinutes: 10,
     },
+
     capsAbuse: {
       enabled: false,
       minLength: 10,
       percentage: 70,
-      punishment: 'delete',
+      punishments: ['delete'],
+      timeoutMinutes: 10,
     },
+
     badWords: {
       enabled: false,
       words: [],
-      punishment: 'delete',
+      punishments: ['delete'],
+      timeoutMinutes: 10,
     },
+
     repeatedMessages: {
       enabled: false,
       maxRepeats: 3,
-      punishment: 'delete',
+      intervalSeconds: 10,
+      punishments: ['delete'],
+      timeoutMinutes: 10,
     },
+
     logs: {
       enabled: true,
-      channelId: '',
-    },
-  };
-}
-
-function sanitizeConfig(input = {}) {
-  const defaults = getDefaultConfig();
-
-  return {
-    antiSpam: {
-      enabled: Boolean(input?.antiSpam?.enabled),
-      maxMessages: Number(input?.antiSpam?.maxMessages ?? defaults.antiSpam.maxMessages),
-      intervalSeconds: Number(input?.antiSpam?.intervalSeconds ?? defaults.antiSpam.intervalSeconds),
-      punishment: input?.antiSpam?.punishment || defaults.antiSpam.punishment,
-    },
-    antiLink: {
-      enabled: Boolean(input?.antiLink?.enabled),
-      punishment: input?.antiLink?.punishment || defaults.antiLink.punishment,
-    },
-    antiInvite: {
-      enabled: Boolean(input?.antiInvite?.enabled),
-      punishment: input?.antiInvite?.punishment || defaults.antiInvite.punishment,
-    },
-    capsAbuse: {
-      enabled: Boolean(input?.capsAbuse?.enabled),
-      minLength: Number(input?.capsAbuse?.minLength ?? defaults.capsAbuse.minLength),
-      percentage: Number(input?.capsAbuse?.percentage ?? defaults.capsAbuse.percentage),
-      punishment: input?.capsAbuse?.punishment || defaults.capsAbuse.punishment,
-    },
-    badWords: {
-      enabled: Boolean(input?.badWords?.enabled),
-      words: Array.isArray(input?.badWords?.words)
-        ? input.badWords.words.map((word) => String(word).trim()).filter(Boolean)
-        : [],
-      punishment: input?.badWords?.punishment || defaults.badWords.punishment,
-    },
-    repeatedMessages: {
-      enabled: Boolean(input?.repeatedMessages?.enabled),
-      maxRepeats: Number(input?.repeatedMessages?.maxRepeats ?? defaults.repeatedMessages.maxRepeats),
-      punishment: input?.repeatedMessages?.punishment || defaults.repeatedMessages.punishment,
-    },
-    logs: {
-      enabled: input?.logs?.enabled !== false,
-      channelId: String(input?.logs?.channelId || '').trim(),
+      channelId: null,
     },
   };
 }
 
 function getGuildAutoModConfig(guildId) {
-  const data = readJson(AUTOMOD_PATH, {});
-  return data[guildId] || getDefaultConfig();
+  return guildManager.getGuildSection(
+    guildId,
+    'automod',
+    getDefaultConfig()
+  );
 }
 
 function saveGuildAutoModConfig(guildId, config) {
-  const data = readJson(AUTOMOD_PATH, {});
-  const safeConfig = sanitizeConfig(config);
+  return guildManager.replaceGuildSection(
+    guildId,
+    'automod',
+    config
+  );
+}
 
-  data[guildId] = safeConfig;
-  writeJson(AUTOMOD_PATH, data);
+function updateGuildAutoModConfig(guildId, updater) {
+  const current = getGuildAutoModConfig(guildId);
 
-  return safeConfig;
+  const next =
+    typeof updater === 'function'
+      ? updater(JSON.parse(JSON.stringify(current)))
+      : { ...current, ...updater };
+
+  return saveGuildAutoModConfig(guildId, next);
+}
+
+function resetGuildAutoModConfig(guildId) {
+  return saveGuildAutoModConfig(guildId, getDefaultConfig());
 }
 
 module.exports = {
   getDefaultConfig,
   getGuildAutoModConfig,
   saveGuildAutoModConfig,
+  updateGuildAutoModConfig,
+  resetGuildAutoModConfig,
 };

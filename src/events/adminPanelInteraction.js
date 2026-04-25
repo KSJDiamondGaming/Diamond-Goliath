@@ -10,12 +10,9 @@ const {
 
 const { buildAdminPanel, buildChannelPanel, buildPurgeModal } = require('../utils/admin/adminPanel');
 const automodPanel = require('../utils/automod/automodPanel');
-const { buildStatsSetupMessage } = require('../utils/stats/statsUI');
 const { getGuildConfig, setGuildConfig } = require('../utils/config/guildConfigStore');
 const { enforceCommandAccess } = require('../utils/utility/commandAccess');
 const logAdminAction = require('../utils/logging/adminlogs/adminActionLog');
-
-const purgeCommand = require('../commands/moderation/purge');
 
 function buildBackRow(label = 'Back to Admin Panel') {
   return new ActionRowBuilder().addComponents(
@@ -82,12 +79,6 @@ async function execute(interaction) {
 
       if (interaction.customId === 'admin:automod') {
         const payload = automodPanel.buildMainPanelPayload(interaction.guild);
-        await interaction.update(payload);
-        return true;
-      }
-
-      if (interaction.customId === 'admin:stats') {
-        const payload = buildStatsSetupMessage(interaction.guild);
         await interaction.update(payload);
         return true;
       }

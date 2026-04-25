@@ -1,0 +1,140 @@
+{
+  "guildId": "808091031350280213",
+  "guildName": null,
+  "updatedAt": "2026-04-25T00:33:08.868Z",
+  "general": {
+    "enabled": true,
+    "prefix": "!",
+    "timezone": "Europe/London"
+  },
+  "modules": {},
+  "automod": {
+    "enabled": true,
+    "ignoreBots": false,
+    "ignoreAdmins": false,
+    "dmWarnings": true,
+    "ignoredChannelIds": [],
+    "ignoredUserIds": [],
+    "ignoredRoleIds": [],
+    "antiSpam": {
+      "enabled": true,
+      "maxMessages": 6,
+      "intervalSeconds": 8,
+      "punishments": [
+        "delete"
+      ],
+      "punishment": "delete",
+      "timeoutMinutes": 10,
+      "maxRepeats": 3,
+      "minLength": 8,
+      "percentage": 70,
+      "allowedDomains": [],
+      "words": []
+    },
+    "antiLink": {
+      "enabled": true,
+      "allowedDomains": [],
+      "punishments": [
+        "delete",
+        "warn"
+      ],
+      "punishment": "delete",
+      "timeoutMinutes": 10,
+      "maxMessages": 5,
+      "intervalSeconds": 8,
+      "maxRepeats": 3,
+      "minLength": 8,
+      "percentage": 70,
+      "words": []
+    },
+    "antiInvite": {
+      "enabled": true,
+      "punishments": [
+        "delete"
+      ],
+      "punishment": "delete",
+      "timeoutMinutes": 10,
+      "allowedDomains": [],
+      "words": []
+    },
+    "capsAbuse": {
+      "enabled": true,
+      "minLength": 5,
+      "percentage": 20,
+      "punishments": [
+        "delete",
+        "warn"
+      ],
+      "punishment": "delete",
+      "timeoutMinutes": 10,
+      "maxMessages": 5,
+      "intervalSeconds": 8,
+      "maxRepeats": 3,
+      "allowedDomains": [],
+      "words": []
+    },
+    "badWords": {
+      "enabled": true,
+      "words": [],
+      "punishments": [
+        "delete"
+      ],
+      "punishment": "delete",
+      "timeoutMinutes": 10,
+      "maxMessages": 5,
+      "intervalSeconds": 8,
+      "maxRepeats": 3,
+      "minLength": 8,
+      "percentage": 70,
+      "allowedDomains": []
+    },
+    "repeatedMessages": {
+      "enabled": true,
+      "maxRepeats": 3,
+      "intervalSeconds": 10,
+      "punishments": [
+        "delete"
+      ],
+      "punishment": "delete",
+      "timeoutMinutes": 10,
+      "maxMessages": 5,
+      "minLength": 8,
+      "percentage": 70,
+      "allowedDomains": [],
+      "words": []
+    },
+    "logs": {
+      "enabled": true,
+      "channelId": "1491219255465869514"
+    },
+    "updatedAt": "2026-04-25T00:33:08.868Z"
+  },
+  "logs": {},
+  "cases": {},
+  "warnings": {},
+  "welcome": {},
+  "leave": {},
+  "tickets": {},
+  "levels": {},
+  "reactionRoles": {},
+  "giveaways": {},
+  "suggestions": {},
+  "stats": {},
+  "modLogChannelId": "1491219255465869514",
+  "memberLogChannelId": "1491219255465869514",
+  "messageLogChannelId": "1491219255465869514",
+  "automodLogChannelId": "1491219255465869514",
+  "prefix": "/",
+  "appealUrl": "",
+  "dashboardEnabled": true,
+  "managerRoleIds": [],
+  "dashboardAccessRoleIds": [],
+  "commandManagerRoleIds": [],
+  "restrictedChannelIds": [],
+  "commandNotFoundEnabled": true,
+  "wrongCommandUsageEnabled": true,
+  "noCommandPermissionsEnabled": true,
+  "disabledInChannelEnabled": false,
+  "commandCooldownEnabled": true,
+  "instantDeleteDataEnabled": false
+}

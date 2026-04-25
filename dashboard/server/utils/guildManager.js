@@ -1,15 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const GUILDS_DIR = path.join(
-  __dirname,
-  '..',
-  '..',
-  'dashboard',
-  'server',
-  'data',
-  'guilds'
-);
+const GUILDS_DIR = path.join(__dirname, '..', 'data', 'guilds');
 
 const DEFAULT_GUILD_DATA = {
   guildId: null,
@@ -42,9 +34,7 @@ function clone(value) {
 }
 
 function ensureGuildsDir() {
-  if (!fs.existsSync(GUILDS_DIR)) {
-    fs.mkdirSync(GUILDS_DIR, { recursive: true });
-  }
+  fs.mkdirSync(GUILDS_DIR, { recursive: true });
 }
 
 function normalizeGuildId(guildId) {

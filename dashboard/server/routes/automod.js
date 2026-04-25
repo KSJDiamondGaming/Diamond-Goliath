@@ -5,6 +5,8 @@ const {
   saveGuildAutoModConfig,
 } = require('../utils/automodStore');
 
+const { emitGuildUpdate } = require('../utils/socketHub');
+
 const router = express.Router();
 
 router.get('/:guildId', (req, res) => {
@@ -32,6 +34,12 @@ router.post('/:guildId', (req, res) => {
     }
 
     const saved = saveGuildAutoModConfig(guildId, req.body || {});
+
+    emitGuildUpdate(guildId, {
+      section: 'automod',
+      data: saved,
+      source: 'dashboard',
+    });
 
     return res.json({
       success: true,

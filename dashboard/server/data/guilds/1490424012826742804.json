@@ -1,0 +1,72 @@
+{
+  "guildId": "1490424012826742804",
+  "guildName": null,
+  "updatedAt": "2026-04-24T22:28:41.500Z",
+  "general": {
+    "enabled": true,
+    "prefix": "!",
+    "timezone": "Europe/London"
+  },
+  "modules": {},
+  "automod": {
+    "enabled": true,
+    "ignoreBots": true,
+    "ignoreAdmins": true,
+    "ignoredChannelIds": [],
+    "ignoredRoleIds": [],
+    "ignoredUserIds": [],
+    "antiSpam": {
+      "enabled": false,
+      "maxMessages": 6,
+      "intervalSeconds": 8,
+      "punishment": "delete"
+    },
+    "antiLink": {
+      "enabled": false,
+      "punishment": "delete",
+      "timeoutMinutes": 1,
+      "allowedDomains": []
+    },
+    "antiInvite": {
+      "enabled": false,
+      "punishment": "delete",
+      "timeoutMinutes": 1
+    },
+    "capsAbuse": {
+      "enabled": false,
+      "minLength": 10,
+      "percentage": 70,
+      "punishment": "delete"
+    },
+    "badWords": {
+      "enabled": false,
+      "words": [],
+      "punishment": "delete"
+    },
+    "repeatedMessages": {
+      "enabled": false,
+      "maxRepeats": 3,
+      "punishment": "delete"
+    },
+    "logs": {
+      "enabled": true,
+      "channelId": ""
+    },
+    "updatedAt": "2026-04-24T22:28:41.500Z"
+  },
+  "logs": {},
+  "cases": {},
+  "warnings": {},
+  "welcome": {},
+  "leave": {},
+  "tickets": {},
+  "levels": {},
+  "reactionRoles": {},
+  "giveaways": {},
+  "suggestions": {},
+  "stats": {},
+  "modLogChannelId": "1490437416497058083",
+  "memberLogChannelId": null,
+  "messageLogChannelId": null,
+  "automodLogChannelId": null
+}

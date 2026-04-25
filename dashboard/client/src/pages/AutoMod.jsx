@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { io } from 'socket.io-client';
 import { api } from '../api';
 import PageShell, {
   LoadingPanel,
@@ -9,6 +10,12 @@ import PageShell, {
   SummaryStat,
 } from '../components/PageShell';
 import { PAGE_LAYOUTS, SECTION_DEFS } from '../ui';
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
+const socket = io(API_URL, {
+  withCredentials: true,
+});
 
 const DEFAULT_FORM = {
   antiSpam: { enabled: false, maxMessages: 6, intervalSeconds: 8, punishment: 'delete' },
@@ -21,6 +28,47 @@ const DEFAULT_FORM = {
 };
 
 const PAGE_KEY = 'automod';
+
+function normalizeAutoModForm(data = {}) {
+  return {
+    antiSpam: {
+      enabled: Boolean(data?.antiSpam?.enabled),
+      maxMessages: Number(data?.antiSpam?.maxMessages ?? 6),
+      intervalSeconds: Number(data?.antiSpam?.intervalSeconds ?? 8),
+      punishment: data?.antiSpam?.punishment || 'delete',
+    },
+    antiLink: {
+      enabled: Boolean(data?.antiLink?.enabled),
+      punishment: data?.antiLink?.punishment || 'delete',
+    },
+    antiInvite: {
+      enabled: Boolean(data?.antiInvite?.enabled),
+      punishment: data?.antiInvite?.punishment || 'delete',
+    },
+    capsAbuse: {
+      enabled: Boolean(data?.capsAbuse?.enabled),
+      minLength: Number(data?.capsAbuse?.minLength ?? 10),
+      percentage: Number(data?.capsAbuse?.percentage ?? 70),
+      punishment: data?.capsAbuse?.punishment || 'delete',
+    },
+    badWords: {
+      enabled: Boolean(data?.badWords?.enabled),
+      words: Array.isArray(data?.badWords?.words)
+        ? data.badWords.words.join(', ')
+        : data?.badWords?.words || '',
+      punishment: data?.badWords?.punishment || 'delete',
+    },
+    repeatedMessages: {
+      enabled: Boolean(data?.repeatedMessages?.enabled),
+      maxRepeats: Number(data?.repeatedMessages?.maxRepeats ?? 3),
+      punishment: data?.repeatedMessages?.punishment || 'delete',
+    },
+    logs: {
+      enabled: data?.logs?.enabled !== false,
+      channelId: data?.logs?.channelId || '',
+    },
+  };
+}
 
 export default function AutoMod({ selectedGuild, theme }) {
   const page = PAGE_LAYOUTS[PAGE_KEY] || {
@@ -61,45 +109,7 @@ export default function AutoMod({ selectedGuild, theme }) {
         const data = await api.getAutoModConfig(selectedGuild);
 
         if (!mounted) return;
-
-        setForm({
-          antiSpam: {
-            enabled: Boolean(data?.antiSpam?.enabled),
-            maxMessages: Number(data?.antiSpam?.maxMessages ?? 6),
-            intervalSeconds: Number(data?.antiSpam?.intervalSeconds ?? 8),
-            punishment: data?.antiSpam?.punishment || 'delete',
-          },
-          antiLink: {
-            enabled: Boolean(data?.antiLink?.enabled),
-            punishment: data?.antiLink?.punishment || 'delete',
-          },
-          antiInvite: {
-            enabled: Boolean(data?.antiInvite?.enabled),
-            punishment: data?.antiInvite?.punishment || 'delete',
-          },
-          capsAbuse: {
-            enabled: Boolean(data?.capsAbuse?.enabled),
-            minLength: Number(data?.capsAbuse?.minLength ?? 10),
-            percentage: Number(data?.capsAbuse?.percentage ?? 70),
-            punishment: data?.capsAbuse?.punishment || 'delete',
-          },
-          badWords: {
-            enabled: Boolean(data?.badWords?.enabled),
-            words: Array.isArray(data?.badWords?.words)
-              ? data.badWords.words.join(', ')
-              : data?.badWords?.words || '',
-            punishment: data?.badWords?.punishment || 'delete',
-          },
-          repeatedMessages: {
-            enabled: Boolean(data?.repeatedMessages?.enabled),
-            maxRepeats: Number(data?.repeatedMessages?.maxRepeats ?? 3),
-            punishment: data?.repeatedMessages?.punishment || 'delete',
-          },
-          logs: {
-            enabled: data?.logs?.enabled !== false,
-            channelId: data?.logs?.channelId || '',
-          },
-        });
+        setForm(normalizeAutoModForm(data));
       } catch (err) {
         console.error(err);
         if (!mounted) return;
@@ -147,6 +157,30 @@ export default function AutoMod({ selectedGuild, theme }) {
 
     return () => {
       mounted = false;
+    };
+  }, [selectedGuild]);
+
+  useEffect(() => {
+    if (!selectedGuild) return undefined;
+
+    socket.emit('joinGuild', selectedGuild);
+
+    function handleGuildUpdate(payload) {
+      if (payload?.guildId !== selectedGuild) return;
+      if (payload?.section !== 'automod') return;
+
+      setForm(normalizeAutoModForm(payload.data));
+      setSaveMessage(
+        payload.source === 'dashboard'
+          ? '✅ AutoMod synced live.'
+          : '🔄 AutoMod updated from bot.'
+      );
+    }
+
+    socket.on('guild:update', handleGuildUpdate);
+
+    return () => {
+      socket.off('guild:update', handleGuildUpdate);
     };
   }, [selectedGuild]);
 
@@ -219,7 +253,7 @@ export default function AutoMod({ selectedGuild, theme }) {
         },
         logs: {
           enabled: form.logs.enabled,
-          channelId: form.logs.channelId || null,
+          channelId: form.logs.channelId || '',
         },
       };
 

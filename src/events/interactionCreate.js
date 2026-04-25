@@ -6,7 +6,6 @@ const {
 const adminPanelInteraction = require('./adminPanelInteraction');
 const helpCommand = require('../commands/utility/help');
 const automodPanel = require('../utils/automod/automodPanel');
-const { handleStatsInteraction } = require('../utils/stats/statsUI');
 
 module.exports = {
   name: 'interactionCreate',

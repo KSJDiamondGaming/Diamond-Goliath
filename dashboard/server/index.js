@@ -10,11 +10,14 @@ dotenv.config({
   override: true,
 });
 
+const http = require('http');
 const express = require('express');
 const cors = require('cors');
 const session = require('express-session');
 
 const terminal = require('../../src/utils/utility/terminalLogger').createLogger('api');
+
+const { initSocketHub } = require('./utils/socketHub');
 
 const casesRoute = require('./routes/cases');
 const warningsRoute = require('./routes/warnings');
@@ -126,7 +129,14 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(PORT, () => {
+const server = http.createServer(app);
+
+initSocketHub(server, {
+  clientUrl: CLIENT_URL,
+});
+
+server.listen(PORT, () => {
   terminal.line('🌐 Dashboard', `http://localhost:${PORT}`);
   terminal.line('🖥️ Client', CLIENT_URL);
+  terminal.line('📡 Live Sync', 'Socket.IO enabled');
 });

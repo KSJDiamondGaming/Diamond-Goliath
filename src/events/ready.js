@@ -1,6 +1,5 @@
 const terminal = require('../utils/utility/terminalLogger').createLogger('bot');
 const punishmentScheduler = require('../utils/moderation/punishmentScheduler');
-const stats = require('../utils/stats/statsManager');
 
 const MAIN_GUILD_ID = '808091031350280213';
 
