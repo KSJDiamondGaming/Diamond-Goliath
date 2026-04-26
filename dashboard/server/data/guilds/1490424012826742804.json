@@ -1,7 +1,7 @@
 {
   "guildId": "1490424012826742804",
   "guildName": null,
-  "updatedAt": "2026-04-24T22:28:41.500Z",
+  "updatedAt": "2026-04-25T01:40:57.791Z",
   "general": {
     "enabled": true,
     "prefix": "!",
@@ -9,50 +9,56 @@
   },
   "modules": {},
   "automod": {
-    "enabled": true,
-    "ignoreBots": true,
-    "ignoreAdmins": true,
-    "ignoredChannelIds": [],
-    "ignoredRoleIds": [],
-    "ignoredUserIds": [],
     "antiSpam": {
       "enabled": false,
       "maxMessages": 6,
       "intervalSeconds": 8,
-      "punishment": "delete"
+      "punishment": [
+        "delete"
+      ]
     },
     "antiLink": {
       "enabled": false,
-      "punishment": "delete",
-      "timeoutMinutes": 1,
-      "allowedDomains": []
+      "punishment": [
+        "delete",
+        "kick"
+      ],
+      "allowedDomains": [],
+      "blockedDomains": []
     },
     "antiInvite": {
       "enabled": false,
-      "punishment": "delete",
-      "timeoutMinutes": 1
+      "punishment": [
+        "delete"
+      ]
     },
     "capsAbuse": {
       "enabled": false,
       "minLength": 10,
       "percentage": 70,
-      "punishment": "delete"
+      "punishment": [
+        "delete"
+      ]
     },
     "badWords": {
       "enabled": false,
       "words": [],
-      "punishment": "delete"
+      "punishment": [
+        "delete"
+      ]
     },
     "repeatedMessages": {
       "enabled": false,
       "maxRepeats": 3,
-      "punishment": "delete"
+      "punishment": [
+        "delete"
+      ]
     },
     "logs": {
       "enabled": true,
       "channelId": ""
     },
-    "updatedAt": "2026-04-24T22:28:41.500Z"
+    "updatedAt": "2026-04-25T01:40:57.790Z"
   },
   "logs": {},
   "cases": {},
@@ -68,5 +74,18 @@
   "modLogChannelId": "1490437416497058083",
   "memberLogChannelId": null,
   "messageLogChannelId": null,
-  "automodLogChannelId": null
+  "automodLogChannelId": null,
+  "prefix": "/",
+  "appealUrl": "",
+  "dashboardEnabled": true,
+  "managerRoleIds": [],
+  "dashboardAccessRoleIds": [],
+  "commandManagerRoleIds": [],
+  "restrictedChannelIds": [],
+  "commandNotFoundEnabled": true,
+  "wrongCommandUsageEnabled": true,
+  "noCommandPermissionsEnabled": true,
+  "disabledInChannelEnabled": false,
+  "commandCooldownEnabled": true,
+  "instantDeleteDataEnabled": false
 }

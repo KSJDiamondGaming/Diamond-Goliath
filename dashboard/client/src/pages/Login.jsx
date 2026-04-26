@@ -1,4 +1,4 @@
-import { memo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { loginPageStyles } from '../ui';
 
 function getNameInitial(name = '') {
@@ -16,7 +16,7 @@ function Login({
   botName,
   loginPending,
 }) {
-  const styles = loginPageStyles(theme);
+  const styles = useMemo(() => loginPageStyles(theme), [theme]);
   const [avatarFailed, setAvatarFailed] = useState(false);
 
   const guildInitial = getNameInitial(selectedGuildName || 'Guild');
@@ -39,11 +39,7 @@ function Login({
               <img
                 src={avatarSrc}
                 alt={fallbackTitle}
-                style={{
-                  ...styles.guildAvatar,
-                  objectFit: 'cover',
-                  padding: 0,
-                }}
+                style={styles.guildAvatarImage}
                 onError={() => setAvatarFailed(true)}
               />
             ) : (
@@ -66,8 +62,7 @@ function Login({
               disabled={loginPending}
               style={{
                 ...styles.loginButton,
-                opacity: loginPending ? 0.7 : 1,
-                cursor: loginPending ? 'not-allowed' : 'pointer',
+                ...styles.loginButtonState(loginPending),
               }}
             >
               {loginPending ? 'Redirecting to Discord...' : 'Login with Discord'}

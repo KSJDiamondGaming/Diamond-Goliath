@@ -1,5 +1,8 @@
 const guildManager = require('../../../dashboard/server/utils/guildManager');
 
+/**
+ * DEFAULT CONFIG
+ */
 function getDefaultConfig() {
   return {
     enabled: true,
@@ -20,7 +23,9 @@ function getDefaultConfig() {
     antiLink: {
       enabled: false,
       allowedDomains: [],
-      blockedDomains: [],
+      blockedDomains: [], // 🔥 NEW
+      punishments: ['delete'],
+      timeoutMinutes: 10,
     },
 
     antiInvite: {
@@ -59,6 +64,34 @@ function getDefaultConfig() {
   };
 }
 
+/**
+ * DEEP MERGE (critical fix 🔥)
+ */
+function deepMerge(target, source) {
+  if (!source) return target;
+
+  const output = { ...target };
+
+  for (const key of Object.keys(source)) {
+    const value = source[key];
+
+    if (
+      value &&
+      typeof value === 'object' &&
+      !Array.isArray(value)
+    ) {
+      output[key] = deepMerge(target[key] || {}, value);
+    } else {
+      output[key] = value;
+    }
+  }
+
+  return output;
+}
+
+/**
+ * GET CONFIG
+ */
 function getGuildAutoModConfig(guildId) {
   return guildManager.getGuildSection(
     guildId,
@@ -67,6 +100,9 @@ function getGuildAutoModConfig(guildId) {
   );
 }
 
+/**
+ * SAVE FULL CONFIG
+ */
 function saveGuildAutoModConfig(guildId, config) {
   return guildManager.replaceGuildSection(
     guildId,
@@ -75,17 +111,23 @@ function saveGuildAutoModConfig(guildId, config) {
   );
 }
 
+/**
+ * UPDATE (SAFE MERGE) 🔥
+ */
 function updateGuildAutoModConfig(guildId, updater) {
   const current = getGuildAutoModConfig(guildId);
 
   const next =
     typeof updater === 'function'
       ? updater(JSON.parse(JSON.stringify(current)))
-      : { ...current, ...updater };
+      : deepMerge(current, updater); // 🔥 FIX HERE
 
   return saveGuildAutoModConfig(guildId, next);
 }
 
+/**
+ * RESET
+ */
 function resetGuildAutoModConfig(guildId) {
   return saveGuildAutoModConfig(guildId, getDefaultConfig());
 }

@@ -3,12 +3,16 @@ const express = require('express');
 const {
   getGuildAutoModConfig,
   saveGuildAutoModConfig,
+  updateGuildAutoModConfig,
 } = require('../utils/automodStore');
 
 const { emitGuildUpdate } = require('../utils/socketHub');
 
 const router = express.Router();
 
+/**
+ * GET AutoMod config
+ */
 router.get('/:guildId', (req, res) => {
   try {
     const { guildId } = req.params;
@@ -25,6 +29,9 @@ router.get('/:guildId', (req, res) => {
   }
 });
 
+/**
+ * SAVE (merge-safe)
+ */
 router.post('/:guildId', (req, res) => {
   try {
     const { guildId } = req.params;
@@ -33,9 +40,11 @@ router.post('/:guildId', (req, res) => {
       return res.status(400).json({ error: 'Guild ID is required.' });
     }
 
-    const saved = saveGuildAutoModConfig(guildId, req.body || {});
+    // 🔥 IMPORTANT: merge instead of overwrite
+    const saved = updateGuildAutoModConfig(guildId, req.body || {});
 
     emitGuildUpdate(guildId, {
+      guildId,
       section: 'automod',
       data: saved,
       source: 'dashboard',

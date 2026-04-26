@@ -7,7 +7,11 @@ import PageShell, {
   StatGrid,
   SummaryStat,
 } from '../components/PageShell';
-import { PAGE_LAYOUTS, SECTION_DEFS, createConfigPageStyles } from '../ui';
+import {
+  PAGE_LAYOUTS,
+  createConfigPageStyles,
+  createDashboardControlStyles,
+} from '../ui';
 
 const PAGE_KEY = 'config';
 
@@ -31,15 +35,24 @@ const DEFAULT_FORM = {
 };
 
 const DEFAULT_OPEN_SECTIONS = {
-  general: false,
+  general: true,
+  permissions: false,
   commands: false,
   errorMessages: false,
-  permissions: false,
   data: false,
 };
 
 export default function Config({ selectedGuild, theme }) {
-  const styles = useMemo(() => createConfigPageStyles(theme), [theme]);
+  const configStyles = useMemo(() => createConfigPageStyles(theme), [theme]);
+  const controlStyles = useMemo(() => createDashboardControlStyles(theme), [theme]);
+
+  const styles = useMemo(
+    () => ({
+      ...configStyles,
+      ...controlStyles,
+    }),
+    [configStyles, controlStyles],
+  );
 
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -64,9 +77,7 @@ export default function Config({ selectedGuild, theme }) {
       setSyncing(true);
 
       const channelsResult = await api.getGuildChannels(selectedGuild);
-      const channelList = Array.isArray(channelsResult) ? channelsResult : [];
-
-      setChannels(channelList);
+      setChannels(Array.isArray(channelsResult) ? channelsResult : []);
 
       if (typeof api.getGuildRoles === 'function') {
         const rolesResult = await api.getGuildRoles(selectedGuild);
@@ -243,6 +254,15 @@ export default function Config({ selectedGuild, theme }) {
     ].filter((role, index, arr) => arr.findIndex((item) => item.id === role.id) === index);
   }, [roles, form.managerRoleIds, form.dashboardAccessRoleIds, form.commandManagerRoleIds]);
 
+  const permissionsEnabled =
+    form.managerRoleIds.length > 0 ||
+    form.dashboardAccessRoleIds.length > 0 ||
+    form.commandManagerRoleIds.length > 0 ||
+    form.restrictedChannelIds.length > 0;
+
+  const commandsEnabled = Boolean(form.prefix);
+  const errorsEnabled = enabledErrorMessages > 0;
+
   if (!selectedGuild) {
     return (
       <PageShell
@@ -272,10 +292,11 @@ export default function Config({ selectedGuild, theme }) {
       <StatGrid>
         <SummaryStat theme={theme} label="Prefix" value={form.prefix || '/'} />
         <SummaryStat theme={theme} label="Error Messages" value={`${enabledErrorMessages}/5`} />
-        <DashboardAccessStat
-          styles={styles}
-          enabled={form.dashboardEnabled}
-          onToggle={() => handleToggle('dashboardEnabled')}
+        <SummaryStat
+          theme={theme}
+          label="Dashboard"
+          value={form.dashboardEnabled ? 'Enabled' : 'Disabled'}
+          accent={form.dashboardEnabled ? theme.success : theme.danger}
         />
       </StatGrid>
 
@@ -283,192 +304,215 @@ export default function Config({ selectedGuild, theme }) {
         <LoadingPanel theme={theme} text="Loading general settings..." />
       ) : (
         <>
-          <CollapsibleSection
-            styles={styles}
-            title={SECTION_DEFS?.generalConfig?.title || 'General Config'}
-            subtitle="Core dashboard and Discord sync settings."
-            open={openSections.general}
-            onToggle={() => toggleSection('general')}
-          >
-            <div style={styles.grid}>
-              <div style={styles.row}>
-                <div style={{ display: 'grid', gap: '4px', minWidth: 0 }}>
-                  <span style={styles.inlineTitle}>Sync Discord Data</span>
-                  <span style={styles.inlineText}>
-                    Refresh cached Discord roles and channels for dropdown menus.
-                  </span>
+          <section style={styles.pageSection}>
+            <div style={styles.pageSectionHeader}>
+              <h2 style={styles.pageSectionTitle}>General Config</h2>
+              <p style={styles.pageSectionSubtitle}>
+                Core dashboard, permissions, commands, and data behaviour.
+              </p>
+            </div>
+
+            <div style={styles.sectionList}>
+              <CollapsibleSection
+                styles={styles}
+                title="General Config"
+                subtitle="Core dashboard and Discord sync settings."
+                checked={form.dashboardEnabled}
+                open={openSections.general}
+                onToggle={() => handleToggle('dashboardEnabled')}
+                onOpenToggle={() => toggleSection('general')}
+              >
+                <div style={styles.innerStack}>
+                  <div style={styles.expandedPanel}>
+                    <div style={styles.ruleHeader}>
+                      <div style={styles.minWidthZero}>
+                        <span style={styles.ruleTitle}>Sync Discord Data</span>
+                        <p style={styles.ruleDescription}>
+                          Refresh cached Discord roles and channels for dropdown menus.
+                        </p>
+                      </div>
+
+                      <ThemeButton styles={styles} onClick={loadDiscordData} disabled={syncing}>
+                        {syncing ? 'Syncing...' : 'Sync roles/channels'}
+                      </ThemeButton>
+                    </div>
+                  </div>
+
+                  <Field styles={styles} label="Appeal URL">
+                    <input
+                      value={form.appealUrl}
+                      onChange={(e) => handleChange('appealUrl', e.target.value)}
+                      style={styles.input}
+                      placeholder="https://..."
+                    />
+                  </Field>
                 </div>
+              </CollapsibleSection>
 
-                <ThemeButton styles={styles} onClick={loadDiscordData} disabled={syncing}>
-                  {syncing ? 'Syncing...' : 'Sync roles/channels'}
-                </ThemeButton>
-              </div>
+              <CollapsibleSection
+                styles={styles}
+                title="Roles & Permissions"
+                subtitle="Choose which roles can access and manage dashboard features."
+                checked={permissionsEnabled}
+                open={openSections.permissions}
+                onToggle={() => toggleSection('permissions')}
+                onOpenToggle={() => toggleSection('permissions')}
+              >
+                <div style={styles.sectionList}>
+                  <MultiSelectPanel
+                    styles={styles}
+                    title="Manager Roles"
+                    description="Roles selected here can manage General Settings and bot features."
+                    emptyText="No roles synced yet. Click Sync roles/channels in General Config."
+                    options={roleOptions}
+                    selectedIds={form.managerRoleIds}
+                    onToggle={(id) => handleMultiToggle('managerRoleIds', id)}
+                    type="role"
+                  />
 
-              <Field styles={styles} label="Appeal URL">
-                <input
-                  value={form.appealUrl}
-                  onChange={(e) => handleChange('appealUrl', e.target.value)}
-                  style={styles.input}
-                  placeholder="https://..."
+                  <MultiSelectPanel
+                    styles={styles}
+                    title="Dashboard Access Roles"
+                    description="Roles selected here are allowed to access this dashboard."
+                    emptyText="No roles synced yet. Click Sync roles/channels in General Config."
+                    options={roleOptions}
+                    selectedIds={form.dashboardAccessRoleIds}
+                    onToggle={(id) => handleMultiToggle('dashboardAccessRoleIds', id)}
+                    type="role"
+                  />
+
+                  <MultiSelectPanel
+                    styles={styles}
+                    title="Command Manager Roles"
+                    description="Roles selected here can manage command permissions."
+                    emptyText="No roles synced yet. Click Sync roles/channels in General Config."
+                    options={roleOptions}
+                    selectedIds={form.commandManagerRoleIds}
+                    onToggle={(id) => handleMultiToggle('commandManagerRoleIds', id)}
+                    type="role"
+                  />
+
+                  <MultiSelectPanel
+                    styles={styles}
+                    title="Restricted Command Channels"
+                    description="Choose channels where command permissions should be restricted or reviewed."
+                    emptyText="No text channels found. Click Sync roles/channels in General Config."
+                    options={textChannels}
+                    selectedIds={form.restrictedChannelIds}
+                    onToggle={(id) => handleMultiToggle('restrictedChannelIds', id)}
+                    type="channel"
+                  />
+                </div>
+              </CollapsibleSection>
+
+              <CollapsibleSection
+                styles={styles}
+                title="Commands"
+                subtitle="Manage command behaviour, prefixes, and command access."
+                checked={commandsEnabled}
+                open={openSections.commands}
+                onToggle={() => toggleSection('commands')}
+                onOpenToggle={() => toggleSection('commands')}
+              >
+                <div style={styles.sectionList}>
+                  <ActionRow
+                    styles={styles}
+                    icon="⌘"
+                    title="Custom Commands"
+                    description="Create and manage your own commands."
+                    actionLabel="Create new command"
+                  />
+
+                  <ActionRow
+                    styles={styles}
+                    icon="▦"
+                    title="Default Commands"
+                    description="Update permissions, aliases and more for all default commands. You can also enable or disable slash commands here."
+                    rightIcon="›"
+                  />
+
+                  <PrefixPanel
+                    styles={styles}
+                    prefix={form.prefix || '/'}
+                    onPrefixChange={(value) => handleChange('prefix', value)}
+                    onAddPrefix={() =>
+                      setSaveMessage('ℹ️ Multi-prefix support can be added in the next stage.')
+                    }
+                  />
+                </div>
+              </CollapsibleSection>
+
+              <CollapsibleSection
+                styles={styles}
+                title="Error Messages"
+                subtitle="Choose which command error responses the bot should send."
+                checked={errorsEnabled}
+                open={openSections.errorMessages}
+                onToggle={() => toggleSection('errorMessages')}
+                onOpenToggle={() => toggleSection('errorMessages')}
+              >
+                <div style={styles.sectionList}>
+                  <SwitchRow
+                    styles={styles}
+                    title="Command not found"
+                    description="Sent when an executed command doesn't exist."
+                    checked={form.commandNotFoundEnabled}
+                    onChange={() => handleToggle('commandNotFoundEnabled')}
+                  />
+
+                  <SwitchRow
+                    styles={styles}
+                    title="Wrong command usage"
+                    description="Sent when an existing command is used incorrectly."
+                    checked={form.wrongCommandUsageEnabled}
+                    onChange={() => handleToggle('wrongCommandUsageEnabled')}
+                  />
+
+                  <SwitchRow
+                    styles={styles}
+                    title="No command permissions"
+                    description='Sent when an unpermitted user is executing an existing command. If disabled, "Command not found" will be sent instead.'
+                    checked={form.noCommandPermissionsEnabled}
+                    onChange={() => handleToggle('noCommandPermissionsEnabled')}
+                  />
+
+                  <SwitchRow
+                    styles={styles}
+                    title="Disabled in channel"
+                    description="Sent when an existing command is executed in channels where it's disabled."
+                    checked={form.disabledInChannelEnabled}
+                    onChange={() => handleToggle('disabledInChannelEnabled')}
+                  />
+
+                  <SwitchRow
+                    styles={styles}
+                    title="Command on cooldown"
+                    description="Sent when an existing command is executed while the user is on cooldown."
+                    checked={form.commandCooldownEnabled}
+                    onChange={() => handleToggle('commandCooldownEnabled')}
+                  />
+                </div>
+              </CollapsibleSection>
+
+              <CollapsibleSection
+                styles={styles}
+                title="Data Deletion Behaviour"
+                subtitle="Choose what happens to configuration data if the bot is kicked."
+                checked={form.instantDeleteDataEnabled}
+                open={openSections.data}
+                onToggle={() => handleToggle('instantDeleteDataEnabled')}
+                onOpenToggle={() => toggleSection('data')}
+              >
+                <ToggleRow
+                  styles={styles}
+                  label="Instantly delete data when bot is kicked"
+                  description="By default, data is kept temporarily so it can be restored. Enable this to delete configuration instantly."
+                  checked={form.instantDeleteDataEnabled}
+                  onChange={() => handleToggle('instantDeleteDataEnabled')}
                 />
-              </Field>
+              </CollapsibleSection>
             </div>
-          </CollapsibleSection>
-
-          <CollapsibleSection
-            styles={styles}
-            title="Roles & Permissions"
-            subtitle="Choose which roles can access and manage dashboard features."
-            open={openSections.permissions}
-            onToggle={() => toggleSection('permissions')}
-          >
-            <div style={styles.gridSmall}>
-              <MultiSelectPanel
-                styles={styles}
-                title="Manager Roles"
-                description="Roles selected here can manage General Settings and bot features."
-                emptyText="No roles synced yet. Click Sync roles/channels in General Config."
-                options={roleOptions}
-                selectedIds={form.managerRoleIds}
-                onToggle={(id) => handleMultiToggle('managerRoleIds', id)}
-                type="role"
-              />
-
-              <MultiSelectPanel
-                styles={styles}
-                title="Dashboard Access Roles"
-                description="Roles selected here are allowed to access this dashboard."
-                emptyText="No roles synced yet. Click Sync roles/channels in General Config."
-                options={roleOptions}
-                selectedIds={form.dashboardAccessRoleIds}
-                onToggle={(id) => handleMultiToggle('dashboardAccessRoleIds', id)}
-                type="role"
-              />
-
-              <MultiSelectPanel
-                styles={styles}
-                title="Command Manager Roles"
-                description="Roles selected here can manage command permissions."
-                emptyText="No roles synced yet. Click Sync roles/channels in General Config."
-                options={roleOptions}
-                selectedIds={form.commandManagerRoleIds}
-                onToggle={(id) => handleMultiToggle('commandManagerRoleIds', id)}
-                type="role"
-              />
-
-              <MultiSelectPanel
-                styles={styles}
-                title="Restricted Command Channels"
-                description="Choose channels where command permissions should be restricted or reviewed."
-                emptyText="No text channels found. Click Sync roles/channels in General Config."
-                options={textChannels}
-                selectedIds={form.restrictedChannelIds}
-                onToggle={(id) => handleMultiToggle('restrictedChannelIds', id)}
-                type="channel"
-              />
-            </div>
-          </CollapsibleSection>
-
-          <CollapsibleSection
-            styles={styles}
-            title="Commands"
-            subtitle="Manage command behaviour, prefixes, and command access."
-            open={openSections.commands}
-            onToggle={() => toggleSection('commands')}
-          >
-            <div style={styles.gridSmall}>
-              <ActionRow
-                styles={styles}
-                icon="⌘"
-                title="Custom Commands"
-                description="Create and manage your own commands."
-                actionLabel="Create new command"
-              />
-
-              <ActionRow
-                styles={styles}
-                icon="▦"
-                title="Default Commands"
-                description="Update permissions, aliases and more for all default commands. You can also enable or disable slash commands here."
-                rightIcon="›"
-              />
-
-              <PrefixPanel
-                styles={styles}
-                prefix={form.prefix || '/'}
-                onPrefixChange={(value) => handleChange('prefix', value)}
-                onAddPrefix={() =>
-                  setSaveMessage('ℹ️ Multi-prefix support can be added in the next stage.')
-                }
-              />
-            </div>
-          </CollapsibleSection>
-
-          <CollapsibleSection
-            styles={styles}
-            title="Error Messages"
-            subtitle="Choose which command error responses the bot should send."
-            open={openSections.errorMessages}
-            onToggle={() => toggleSection('errorMessages')}
-          >
-            <div style={styles.gridSmall}>
-              <SwitchRow
-                styles={styles}
-                title="Command not found"
-                description="Sent when an executed command doesn't exist."
-                checked={form.commandNotFoundEnabled}
-                onChange={() => handleToggle('commandNotFoundEnabled')}
-              />
-
-              <SwitchRow
-                styles={styles}
-                title="Wrong command usage"
-                description="Sent when an existing command is used incorrectly."
-                checked={form.wrongCommandUsageEnabled}
-                onChange={() => handleToggle('wrongCommandUsageEnabled')}
-              />
-
-              <SwitchRow
-                styles={styles}
-                title="No command permissions"
-                description='Sent when an unpermitted user is executing an existing command. If disabled, "Command not found" will be sent instead.'
-                checked={form.noCommandPermissionsEnabled}
-                onChange={() => handleToggle('noCommandPermissionsEnabled')}
-              />
-
-              <SwitchRow
-                styles={styles}
-                title="Disabled in channel"
-                description="Sent when an existing command is executed in channels where it's disabled."
-                checked={form.disabledInChannelEnabled}
-                onChange={() => handleToggle('disabledInChannelEnabled')}
-              />
-
-              <SwitchRow
-                styles={styles}
-                title="Command on cooldown"
-                description="Sent when an existing command is executed while the user is on cooldown."
-                checked={form.commandCooldownEnabled}
-                onChange={() => handleToggle('commandCooldownEnabled')}
-              />
-            </div>
-          </CollapsibleSection>
-
-          <CollapsibleSection
-            styles={styles}
-            title="Data Deletion Behaviour"
-            subtitle="Choose what happens to configuration data if the bot is kicked."
-            open={openSections.data}
-            onToggle={() => toggleSection('data')}
-          >
-            <ToggleRow
-              styles={styles}
-              label="Instantly delete data when bot is kicked"
-              description="By default, data is kept temporarily so it can be restored. Enable this to delete configuration instantly."
-              checked={form.instantDeleteDataEnabled}
-              onChange={() => handleToggle('instantDeleteDataEnabled')}
-            />
-          </CollapsibleSection>
+          </section>
 
           <div>
             <ThemeButton styles={styles} onClick={handleSave} disabled={!selectedGuild || saving}>
@@ -481,59 +525,54 @@ export default function Config({ selectedGuild, theme }) {
   );
 }
 
-const DashboardAccessStat = memo(function DashboardAccessStat({
-  styles,
-  enabled,
-  onToggle,
-}) {
-  return (
-    <div style={styles.rowGrid}>
-      <div style={{ minWidth: 0 }}>
-        <p style={styles.label}>DASHBOARD</p>
-
-        <button
-          type="button"
-          onClick={onToggle}
-          style={styles.dashboardInlineToggle(enabled)}
-        >
-          {enabled ? 'Enabled' : 'Disabled'}
-        </button>
-      </div>
-    </div>
-  );
-});
-
 const CollapsibleSection = memo(function CollapsibleSection({
   styles,
   title,
   subtitle,
+  checked,
   open,
   onToggle,
+  onOpenToggle,
   children,
 }) {
   return (
-    <section style={styles.section}>
-      <button type="button" onClick={onToggle} style={styles.sectionHeader}>
-        <span style={styles.sectionTitleWrap}>
-          <span style={styles.sectionTitle}>{title}</span>
-          {subtitle ? <span style={styles.sectionSubtitle}>{subtitle}</span> : null}
-        </span>
+    <div style={styles.ruleCard(open, checked)}>
+      <div style={styles.ruleHeader}>
+        <button type="button" onClick={onOpenToggle} style={styles.ruleTitleButton}>
+          <div style={styles.ruleTitleRow}>
+            <span style={styles.ruleTitle}>{title}</span>
+            <span style={styles.statusPill(checked)}>{checked ? 'Enabled' : 'Disabled'}</span>
+          </div>
 
-        <span style={styles.chevron(open)}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path
-              d="M7 10l5 5 5-5"
-              stroke="currentColor"
-              strokeWidth="2.4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </span>
-      </button>
+          {subtitle ? <p style={styles.ruleDescription}>{subtitle}</p> : null}
+        </button>
 
-      {open ? <div style={styles.sectionBody}>{children}</div> : null}
-    </section>
+        <div style={styles.ruleActions}>
+          <ToggleSwitch checked={checked} onClick={onToggle} styles={styles} />
+
+          <button
+            type="button"
+            onClick={onOpenToggle}
+            aria-label={open ? `Collapse ${title}` : `Expand ${title}`}
+            style={styles.chevron(open)}
+          >
+            <span style={styles.chevronIcon(open)}>⌄</span>
+          </button>
+        </div>
+      </div>
+
+      {open ? children : null}
+    </div>
+  );
+});
+
+const ToggleSwitch = memo(function ToggleSwitch({ checked, onClick, styles }) {
+  return (
+    <button type="button" onClick={onClick} style={styles.toggleButton(checked)}>
+      {checked ? <span>On</span> : null}
+      <span style={styles.toggleDot(checked)} />
+      {!checked ? <span style={styles.toggleOffLabel}>Off</span> : null}
+    </button>
   );
 });
 
@@ -548,42 +587,31 @@ const Field = memo(function Field({ styles, label, children }) {
 
 const ToggleRow = memo(function ToggleRow({ styles, label, description, checked, onChange }) {
   return (
-    <div style={styles.row}>
-      <div style={{ display: 'grid', gap: '4px', minWidth: 0 }}>
-        <span style={styles.inlineTitle}>{label}</span>
-        {description ? <span style={styles.inlineText}>{description}</span> : null}
-      </div>
+    <div style={styles.expandedPanel}>
+      <div style={styles.ruleHeader}>
+        <div style={styles.minWidthZero}>
+          <span style={styles.ruleTitle}>{label}</span>
+          {description ? <p style={styles.ruleDescription}>{description}</p> : null}
+        </div>
 
-      <ThemeButton styles={styles} onClick={onChange} tone={checked ? 'success' : 'soft'}>
-        {checked ? 'Enabled' : 'Disabled'}
-      </ThemeButton>
+        <ToggleSwitch checked={checked} onClick={onChange} styles={styles} />
+      </div>
     </div>
   );
 });
 
 const SwitchRow = memo(function SwitchRow({ styles, title, description, checked, onChange }) {
   return (
-    <div style={styles.rowGrid}>
-      <div style={{ minWidth: 0 }}>
-        <h3 style={styles.rowTitle}>{title}</h3>
-        <p style={styles.rowText}>{description}</p>
+    <div style={styles.expandedPanel}>
+      <div style={styles.ruleHeader}>
+        <div style={styles.minWidthZero}>
+          <span style={styles.ruleTitle}>{title}</span>
+          <p style={styles.ruleDescription}>{description}</p>
+        </div>
+
+        <ToggleSwitch checked={checked} onClick={onChange} styles={styles} />
       </div>
-
-      <Switch styles={styles} checked={checked} onChange={onChange} />
     </div>
-  );
-});
-
-const Switch = memo(function Switch({ styles, checked, onChange }) {
-  return (
-    <button
-      type="button"
-      onClick={onChange}
-      aria-label={checked ? 'Disable setting' : 'Enable setting'}
-      style={styles.switchTrack(checked)}
-    >
-      <span style={styles.switchThumb(checked)} />
-    </button>
   );
 });
 
@@ -596,19 +624,21 @@ const ActionRow = memo(function ActionRow({
   rightIcon,
 }) {
   return (
-    <div style={styles.actionRow}>
-      <div style={styles.actionIcon}>{icon}</div>
+    <div style={styles.expandedPanel}>
+      <div style={styles.actionInnerRow}>
+        <div style={styles.actionIcon}>{icon}</div>
 
-      <div style={{ minWidth: 0 }}>
-        <h3 style={styles.actionTitle}>{title}</h3>
-        <p style={styles.actionText}>{description}</p>
+        <div style={styles.minWidthZero}>
+          <span style={styles.ruleTitle}>{title}</span>
+          <p style={styles.ruleDescription}>{description}</p>
+        </div>
+
+        {actionLabel ? (
+          <ThemeButton styles={styles}>{actionLabel}</ThemeButton>
+        ) : (
+          <span style={styles.rightIcon}>{rightIcon}</span>
+        )}
       </div>
-
-      {actionLabel ? (
-        <ThemeButton styles={styles}>{actionLabel}</ThemeButton>
-      ) : (
-        <span style={styles.rightIcon}>{rightIcon}</span>
-      )}
     </div>
   );
 });
@@ -620,15 +650,15 @@ const PrefixPanel = memo(function PrefixPanel({
   onAddPrefix,
 }) {
   return (
-    <div style={styles.prefixPanel}>
-      <div style={styles.prefixHeader}>
-        <div>
-          <div style={styles.prefixTitleRow}>
-            <h3 style={styles.prefixTitle}>Prefixes</h3>
-            <span style={styles.prefixCount}>1/5</span>
+    <div style={styles.expandedPanel}>
+      <div style={styles.ruleHeader}>
+        <div style={styles.minWidthZero}>
+          <div style={styles.ruleTitleRow}>
+            <span style={styles.ruleTitle}>Prefixes</span>
+            <span style={styles.statusPill(true)}>1/5</span>
           </div>
 
-          <p style={styles.prefixText}>
+          <p style={styles.ruleDescription}>
             Put one of the following prefixes in front of your message to execute bot commands.
           </p>
         </div>
@@ -662,24 +692,30 @@ const MultiSelectPanel = memo(function MultiSelectPanel({
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
   return (
-    <div style={styles.infoRow}>
+    <div style={styles.expandedPanel}>
       <div>
-        <h3 style={styles.actionTitle}>{title}</h3>
-        <p style={styles.actionText}>{description}</p>
+        <div style={styles.ruleTitleRow}>
+          <span style={styles.ruleTitle}>{title}</span>
+          <span style={styles.statusPill(selectedIds.length > 0)}>
+            {selectedIds.length > 0 ? `${selectedIds.length} selected` : 'None'}
+          </span>
+        </div>
+
+        <p style={styles.ruleDescription}>{description}</p>
       </div>
 
       {options.length === 0 ? (
-        <p style={styles.actionText}>{emptyText}</p>
+        <p style={styles.helpText}>{emptyText}</p>
       ) : (
-        <div style={styles.gridSmall}>
+        <div style={styles.innerStack}>
           <div style={styles.chipsWrap}>
             {selectedIds.length === 0 ? (
-              <span style={styles.chip}>None selected</span>
+              <span style={styles.chip(false)}>None selected</span>
             ) : (
               selectedIds.map((id) => {
                 const item = options.find((option) => option.id === id);
                 return (
-                  <span key={id} style={styles.chip}>
+                  <span key={id} style={styles.chip(true)}>
                     {formatOptionLabel(item, id, type)}
                   </span>
                 );
@@ -687,19 +723,19 @@ const MultiSelectPanel = memo(function MultiSelectPanel({
             )}
           </div>
 
-          <div style={styles.gridSmall}>
+          <div style={styles.innerStackSmall}>
             {options.map((option) => {
-              const checked = selectedSet.has(option.id);
+              const selected = selectedSet.has(option.id);
 
               return (
                 <button
                   key={option.id}
                   type="button"
                   onClick={() => onToggle(option.id)}
-                  style={styles.permissionOption(checked)}
+                  style={styles.selectOption(selected)}
                 >
                   <span>{formatOptionLabel(option, option.id, type)}</span>
-                  <span>{checked ? '✓' : '+'}</span>
+                  <span>{selected ? '✓' : '+'}</span>
                 </button>
               );
             })}

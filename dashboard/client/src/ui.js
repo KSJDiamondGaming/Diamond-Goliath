@@ -3,10 +3,12 @@
 // ==============================
 
 import Overview from './pages/Overview';
+import AutoMod from './pages/AutoMod';
+import Admin from './pages/Admin';
+import Moderation from './pages/Moderation';
+import Config from './pages/Config'
 import Cases from './pages/Cases';
 import Warnings from './pages/Warnings';
-import AutoMod from './pages/AutoMod';
-import Config from './pages/Config';
 import Messages from './pages/Messages';
 import Logs from './pages/Logs';
 
@@ -102,6 +104,8 @@ export const NAV_ITEMS = [
     children: [
       { key: 'config', label: 'General Settings', icon: 'config', path: '/config' },
       { key: 'automod', label: 'Auto Mod', icon: 'automod', path: '/automod' },
+      { key: 'admin', label: 'Admin', icon: 'admin', path: '/admin' },
+      { key: 'moderation', label: 'Moderation', icon: 'admin', path: '/moderation' },
     ],
   },
   {
@@ -141,6 +145,20 @@ export const ROUTES = [
     icon: 'automod',
     path: '/automod',
     component: AutoMod,
+  },
+  {
+    key: 'admin',
+    label: 'Admin',
+    icon: 'admin',
+    path: '/admin',
+    component: Admin,
+  },
+  {
+  key: 'moderation',
+  label: 'Moderation',
+  icon: 'admin',
+  path: '/moderation',
+  component: Moderation,
   },
   {
     key: 'cases',
@@ -197,6 +215,24 @@ export const PAGE_LAYOUTS = {
     ],
   },
 
+  admin: {
+  title: 'Admin',
+  description: 'Core system configuration and control panel.',
+  emptyDescription: 'Select a server to manage admin settings.',
+  sections: [
+    { id: 'adminHub', type: 'future' },
+  ],
+},
+
+  moderation: {
+    title: 'Moderation',
+    description: 'Central moderation tools & controls for this server.',
+    emptyDescription: 'Select a server to manage moderation.',
+    sections: [
+      { id: 'moderationHub', type: 'future' },
+    ],
+  },
+
   cases: {
     title: 'Cases',
     description: 'Moderation history',
@@ -229,7 +265,7 @@ export const PAGE_LAYOUTS = {
 
   logs: {
     title: 'Logs',
-    description: 'Assign log channels for the selected server and filter log groups quickly.',
+    description: 'Manage log channels for the selected guild.',
     emptyDescription: 'Select a server to manage log channels.',
     sections: [{ id: 'logManager', type: 'config' }],
   },
@@ -467,42 +503,48 @@ export function navbarStyles(theme) {
       overflowY: 'auto',
       paddingRight: '2px',
     },
-    navItem(active = false, expanded = true, canNavigate = true, isHovered = false, isPressed = false) {
-  const interactive = canNavigate && (isHovered || isPressed);
+    navItem(
+      active = false,
+      expanded = true,
+      canNavigate = true,
+      isHovered = false,
+      isPressed = false,
+    ) {
+      const interactive = canNavigate && (isHovered || isPressed);
 
-  return {
-    width: '100%',
-    minHeight: '44px',
-    padding: expanded ? '10px 12px' : '10px',
-    borderRadius: '14px',
-    border: active || isHovered ? `1px solid ${theme.primaryBorder}` : '1px solid transparent',
-    background: active
-      ? theme.primarySoft
-      : isHovered
-        ? 'rgba(59,130,246,0.08)'
-        : 'transparent',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: expanded ? 'flex-start' : 'center',
-    gap: '10px',
-    color: active || isHovered ? '#93c5fd' : theme.sidebarText,
-    cursor: canNavigate ? 'pointer' : 'not-allowed',
-    textAlign: 'left',
-    fontSize: '14px',
-    fontWeight: active ? 700 : 600,
-    opacity: canNavigate ? 1 : 0.5,
-    transform: isPressed
-      ? 'scale(0.97)'
-      : interactive
-        ? 'translateY(-2px)'
-        : 'translateY(0)',
-    boxShadow: active || isHovered ? theme.shadow : 'none',
-    transition:
-      'background 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.12s ease, box-shadow 0.12s ease',
-    outline: 'none',
-    appearance: 'none',
-  };
-},
+      return {
+        width: '100%',
+        minHeight: '44px',
+        padding: expanded ? '10px 12px' : '10px',
+        borderRadius: '14px',
+        border: active || isHovered ? `1px solid ${theme.primaryBorder}` : '1px solid transparent',
+        background: active
+          ? theme.primarySoft
+          : isHovered
+            ? 'rgba(59,130,246,0.08)'
+            : 'transparent',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: expanded ? 'flex-start' : 'center',
+        gap: '10px',
+        color: active || isHovered ? '#93c5fd' : theme.sidebarText,
+        cursor: canNavigate ? 'pointer' : 'not-allowed',
+        textAlign: 'left',
+        fontSize: '14px',
+        fontWeight: active ? 700 : 600,
+        opacity: canNavigate ? 1 : 0.5,
+        transform: isPressed
+          ? 'scale(0.97)'
+          : interactive
+            ? 'translateY(-2px)'
+            : 'translateY(0)',
+        boxShadow: active || isHovered ? theme.shadow : 'none',
+        transition:
+          'background 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.12s ease, box-shadow 0.12s ease',
+        outline: 'none',
+        appearance: 'none',
+      };
+    },
     navIcon: {
       display: 'inline-flex',
       alignItems: 'center',
@@ -518,22 +560,22 @@ export function navbarStyles(theme) {
       textOverflow: 'ellipsis',
     },
 
-navAccent(active = false) {
-  return {
-    position: 'absolute',
-    left: 0,
-    top: '8px',
-    bottom: '8px',
-    width: '4px',
-    borderRadius: '4px',
-    background: theme.primary,
-    boxShadow: `0 0 12px ${theme.primary}`,
-    opacity: active ? 1 : 0,
-    transform: active ? 'scaleY(1)' : 'scaleY(0.35)',
-    transformOrigin: 'center',
-    transition: 'opacity 0.18s ease, transform 0.22s ease',
-  };
-},
+    navAccent(active = false) {
+      return {
+        position: 'absolute',
+        left: 0,
+        top: '8px',
+        bottom: '8px',
+        width: '4px',
+        borderRadius: '4px',
+        background: theme.primary,
+        boxShadow: `0 0 12px ${theme.primary}`,
+        opacity: active ? 1 : 0,
+        transform: active ? 'scaleY(1)' : 'scaleY(0.35)',
+        transformOrigin: 'center',
+        transition: 'opacity 0.18s ease, transform 0.22s ease',
+      };
+    },
 
     collapseButton(isHovered = false) {
       return {
@@ -555,18 +597,18 @@ navAccent(active = false) {
       };
     },
     collapseButtonIcon(expanded = true) {
-  return {
-    width: '100%',
-    height: '100%',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '14px',
-    lineHeight: 1,
-    transform: expanded ? 'rotate(360deg)' : 'rotate(0deg)',
-    transition: 'transform 1.50s ease',
-  };
-},
+      return {
+        width: '100%',
+        height: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: '14px',
+        lineHeight: 1,
+        transform: expanded ? 'rotate(360deg)' : 'rotate(0deg)',
+        transition: 'transform 1.50s ease',
+      };
+    },
     collapseButtonGlyph(expanded = true) {
       return expanded ? '🔓' : '🔒';
     },
@@ -642,7 +684,7 @@ export function topbarStyles(theme) {
     inner: {
       display: 'grid',
       gridTemplateColumns: '1fr auto',
-      alignItems: 'center',
+            alignItems: 'center',
       gap: '14px',
       padding: '14px 24px',
     },
@@ -866,6 +908,116 @@ export function topbarStyles(theme) {
 }
 
 // ------------------------------
+// SHARED COMPONENT STYLES (NEW)
+// ------------------------------
+export function createSharedComponentStyles(theme) {
+  return {
+    button: (variant = 'primary') => {
+      const map = {
+        primary: {
+          background: theme.primarySoft,
+          border: theme.primaryBorder,
+          color: '#bfdbfe',
+        },
+        success: {
+          background: theme.successSoft,
+          border: theme.successBorder,
+          color: theme.successText,
+        },
+        danger: {
+          background: theme.dangerSoft,
+          border: theme.dangerBorder,
+          color: theme.dangerText,
+        },
+      };
+
+      const v = map[variant] || map.primary;
+
+      return {
+        padding: '10px 14px',
+        borderRadius: '12px',
+        border: `1px solid ${v.border}`,
+        background: v.background,
+        color: v.color,
+        fontWeight: 900,
+        cursor: 'pointer',
+      };
+    },
+
+    input: {
+      width: '100%',
+      padding: '11px 12px',
+      borderRadius: '12px',
+      border: `1px solid ${theme.inputBorder}`,
+      background: theme.inputBg,
+      color: theme.inputText,
+    },
+
+    card: {
+      background: theme.cardBg,
+      border: `1px solid ${theme.cardBorder}`,
+      borderRadius: '18px',
+      padding: '18px',
+      boxShadow: theme.shadow,
+    },
+
+    emptyState: {
+      textAlign: 'center',
+      color: theme.mutedText,
+      padding: '30px',
+    },
+
+    loading: {
+      color: theme.mutedText,
+      padding: '20px',
+    },
+
+ bluePanel: {
+  background: 'rgba(59,130,246,0.04)',
+  border: `1px solid ${theme.primaryBorder}`,
+  borderRadius: DASHBOARD_LAYOUT.cardRadius,
+  boxShadow: '0 0 0 1px rgba(59,130,246,0.18)',
+},
+
+blueInnerPanel: {
+  background: 'rgba(15,23,42,0.6)',
+  border: `1px solid ${theme.primaryBorder}`,
+  borderRadius: '16px',
+  boxShadow: '0 0 0 1px rgba(59,130,246,0.12)',
+},
+
+futurePage: {
+  display: 'grid',
+  gap: '16px',
+},
+
+futureGrid: {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+  gap: '16px',
+  alignItems: 'start',
+},
+
+futurePanel: {
+  background: 'rgba(59,130,246,0.04)',
+  border: `1px solid ${theme.primaryBorder}`,
+  borderRadius: '20px',
+  boxShadow: '0 0 0 1px rgba(59,130,246,0.18)',
+  overflow: 'hidden',
+},
+
+futureInnerPanel: {
+  background: 'rgba(15,23,42,0.6)',
+  border: `1px solid ${theme.primaryBorder}`,
+  borderRadius: '16px',
+  padding: '16px 18px',
+  display: 'grid',
+  gap: '10px',
+  boxShadow: '0 0 0 1px rgba(59,130,246,0.12)',
+},
+  };
+}
+// ------------------------------
 // LOGIN PAGE
 // ------------------------------
 export function loginPageStyles(theme) {
@@ -966,6 +1118,24 @@ export function loginPageStyles(theme) {
       transition: 'transform 0.18s ease, opacity 0.18s ease, box-shadow 0.18s ease',
       justifySelf: 'start',
     },
+    guildAvatarImage: {
+    width: '56px',
+    height: '56px',
+    borderRadius: '18px',
+    background: theme.softBg,
+    border: `1px solid ${theme.cardBorder}`,
+    objectFit: 'cover',
+    display: 'block',
+    flexShrink: 0,
+    boxShadow: theme.shadow,
+    },
+
+  loginButtonState(disabled = false) {
+  return {
+    opacity: disabled ? 0.7 : 1,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+  };
+},
   };
 }
 
@@ -1235,12 +1405,7 @@ export function buildOverviewMetrics({
 }
 
 export function createOverviewPageStyles(theme) {
-  const baseCard = {
-    background: theme.cardBg,
-    border: `1px solid ${theme.cardBorder}`,
-    borderRadius: DASHBOARD_LAYOUT.cardRadius,
-    boxShadow: theme.shadow,
-  };
+  const shared = createSharedComponentStyles(theme);
 
   return {
     page: {
@@ -1249,7 +1414,10 @@ export function createOverviewPageStyles(theme) {
     },
 
     hero: {
-      ...baseCard,
+      background: theme.cardBg,
+      border: `1px solid ${theme.cardBorder}`,
+      borderRadius: DASHBOARD_LAYOUT.cardRadius,
+      boxShadow: theme.shadow,
       position: 'relative',
       overflow: 'hidden',
       minHeight: OVERVIEW_UI.hero.minHeight,
@@ -1257,7 +1425,6 @@ export function createOverviewPageStyles(theme) {
       display: 'grid',
       alignContent: 'center',
       gap: '10px',
-      background: `linear-gradient(120deg, ${theme.cardBg} 0%, ${theme.cardBg} 55%, rgba(59,130,246,0.16) 100%)`,
     },
 
     heroGlow: {
@@ -1265,7 +1432,7 @@ export function createOverviewPageStyles(theme) {
       inset: 0,
       pointerEvents: 'none',
       zIndex: 0,
-      background: 'radial-gradient(circle at 85% 50%, rgba(96,165,250,0.22), transparent 34%)',
+      background: 'radial-gradient(circle at 85% 50%, rgba(96,165,250,0.18), transparent 34%)',
     },
 
     heroGuildLogo: {
@@ -1314,7 +1481,10 @@ export function createOverviewPageStyles(theme) {
     },
 
     sectionCard: {
-      ...baseCard,
+      background: theme.cardBg,
+      border: `1px solid ${theme.cardBorder}`,
+      borderRadius: DASHBOARD_LAYOUT.cardRadius,
+      boxShadow: theme.shadow,
       padding: '20px',
       display: 'grid',
       gap: '18px',
@@ -1327,26 +1497,26 @@ export function createOverviewPageStyles(theme) {
 
     sectionTitle: {
       margin: 0,
-      fontSize: 'clamp(24px, 3vw, 38px)',
-      lineHeight: 1,
-      fontWeight: 950,
-      letterSpacing: '-0.04em',
+      fontSize: '22px',
+      lineHeight: 1.1,
+      fontWeight: 900,
+      letterSpacing: '-0.03em',
       color: theme.cardText,
-      textShadow: '0 2px 0 rgba(0,0,0,0.24)',
     },
 
     sectionSubtitle: {
       margin: 0,
-      fontSize: '15px',
-      lineHeight: 1.55,
+      fontSize: '14px',
+      lineHeight: 1.45,
       color: theme.mutedText,
+      fontWeight: 600,
       maxWidth: '900px',
     },
 
     topStatsGrid: {
       display: 'grid',
       gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-      gap: '16px',
+      gap: '14px',
       alignItems: 'stretch',
     },
 
@@ -1356,21 +1526,22 @@ export function createOverviewPageStyles(theme) {
     }),
 
     topStatCard: {
-      background: theme.softBg,
+      background: theme.cardBg,
       border: `1px solid ${theme.cardBorder}`,
-      borderRadius: '18px',
-      minHeight: OVERVIEW_UI.cards.topStatHeight,
-      padding: '18px 20px',
+      borderRadius: '16px',
+      minHeight: '82px',
+      padding: '16px',
       display: 'grid',
       alignContent: 'space-between',
-      gap: '10px',
+      gap: '8px',
+      boxShadow: theme.shadow,
     },
 
     topStatLabel: {
       margin: 0,
       fontSize: '12px',
-      lineHeight: 1.2,
-      fontWeight: 800,
+      lineHeight: 1,
+      fontWeight: 900,
       textTransform: 'uppercase',
       letterSpacing: '0.08em',
       color: theme.mutedText,
@@ -1394,11 +1565,10 @@ export function createOverviewPageStyles(theme) {
 
     topStatValue: (color = theme.cardText) => ({
       margin: 0,
-      fontSize: '22px',
+      fontSize: '24px',
       lineHeight: 1,
-      fontWeight: 900,
+      fontWeight: 950,
       color,
-      letterSpacing: '-0.02em',
     }),
 
     snapshotGrid: {
@@ -1408,21 +1578,22 @@ export function createOverviewPageStyles(theme) {
     },
 
     snapshotCard: {
-      background: theme.softBg,
+      background: theme.cardBg,
       border: `1px solid ${theme.cardBorder}`,
       borderRadius: '16px',
-      minHeight: OVERVIEW_UI.cards.snapshotHeight,
-      padding: '14px 16px',
+      minHeight: '82px',
+      padding: '16px',
       display: 'grid',
-      gap: '10px',
+      gap: '8px',
       alignContent: 'space-between',
+      boxShadow: theme.shadow,
     },
 
     snapshotLabel: {
       margin: 0,
       fontSize: '12px',
-      lineHeight: 1.2,
-      fontWeight: 800,
+      lineHeight: 1,
+      fontWeight: 900,
       textTransform: 'uppercase',
       letterSpacing: '0.08em',
       color: theme.mutedText,
@@ -1430,9 +1601,9 @@ export function createOverviewPageStyles(theme) {
 
     snapshotValue: {
       margin: 0,
-      fontSize: '20px',
+      fontSize: '24px',
       lineHeight: 1,
-      fontWeight: 900,
+      fontWeight: 950,
       color: theme.cardText,
     },
 
@@ -1444,9 +1615,7 @@ export function createOverviewPageStyles(theme) {
     },
 
     chartCard: {
-      background: theme.softBg,
-      border: `1px solid ${theme.cardBorder}`,
-      borderRadius: '18px',
+      ...shared.blueInnerPanel,
       padding: '16px',
       display: 'grid',
       gap: '16px',
@@ -1612,13 +1781,85 @@ export function createConfigPageStyles(theme) {
       };
     },
 
+    pageSection: {
+  background: theme.cardBg,
+  border: `1px solid ${theme.cardBorder}`,
+  borderRadius: '20px',
+  boxShadow: theme.shadow,
+  padding: '20px',
+  display: 'grid',
+  gap: '18px',
+},
+
+pageSectionHeader: {
+  display: 'grid',
+  gap: '8px',
+},
+
+pageSectionTitle: {
+  margin: 0,
+  color: theme.cardText,
+  fontSize: '22px',
+  lineHeight: 1.1,
+  fontWeight: 900,
+  letterSpacing: '-0.03em',
+},
+
+pageSectionSubtitle: {
+  margin: 0,
+  color: theme.mutedText,
+  fontSize: '14px',
+  lineHeight: 1.45,
+  fontWeight: 600,
+},
+
+innerStack: {
+  display: 'grid',
+  gap: '14px',
+},
+
+innerStackSmall: {
+  display: 'grid',
+  gap: '8px',
+},
+
+actionInnerRow: {
+  display: 'grid',
+  gridTemplateColumns: 'auto minmax(0, 1fr) auto',
+  alignItems: 'center',
+  gap: '14px',
+},
+
+selectOption(selected = false) {
+  return {
+    width: '100%',
+    borderRadius: '12px',
+    border: selected ? `1px solid ${theme.primaryBorder}` : `1px solid ${theme.cardBorder}`,
+    background: selected ? theme.primarySoft : theme.softBg,
+    color: selected ? '#bfdbfe' : theme.cardText,
+    padding: '11px 12px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '12px',
+    fontWeight: 800,
+    cursor: 'pointer',
+    textAlign: 'left',
+  };
+},
+
+  toggleOffLabel: {
+    order: 2,
+  },
+
+  minWidthZero: {
+    minWidth: 0,
+  },
+
     section: {
-      background: theme.cardBg,
-      border: `1px solid ${theme.cardBorder}`,
-      borderRadius: '20px',
-      boxShadow: theme.shadow,
-      overflow: 'hidden',
-    },
+  ...createSharedComponentStyles(theme).bluePanel,
+  overflow: 'hidden',
+},
 
     sectionHeader: {
       width: '100%',
@@ -1668,11 +1909,21 @@ export function createConfigPageStyles(theme) {
         display: 'grid',
         placeItems: 'center',
         border: `1px solid ${open ? theme.primaryBorder : theme.cardBorder}`,
-        background: open ? theme.primarySoft : theme.softBg,
+        background: open ? theme.primarySoft : 'rgba(15,23,42,0.35)',
         color: open ? '#bfdbfe' : theme.mutedText,
-        transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
         transition:
-          'transform 0.2s ease, background 0.2s ease, border-color 0.2s ease, color 0.2s ease',
+          'background 0.2s ease, border-color 0.2s ease, color 0.2s ease',
+      };
+    },
+
+    chevronIcon(open = false) {
+      return {
+        display: 'inline-block',
+        fontSize: '14px',
+        lineHeight: 1,
+        transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
+        transition: 'transform 0.2s ease',
+        opacity: 0.85,
       };
     },
 
@@ -1719,15 +1970,13 @@ export function createConfigPageStyles(theme) {
     },
 
     rowGrid: {
-      background: theme.softBg,
-      border: `1px solid ${theme.cardBorder}`,
-      borderRadius: '16px',
-      padding: '16px 18px',
-      display: 'grid',
-      gridTemplateColumns: 'minmax(0, 1fr) auto',
-      alignItems: 'center',
-      gap: '16px',
-    },
+  ...createSharedComponentStyles(theme).blueInnerPanel,
+  padding: '16px 18px',
+  display: 'grid',
+  gridTemplateColumns: 'minmax(0, 1fr) auto',
+  alignItems: 'center',
+  gap: '16px',
+},
 
     inlineTitle: {
       color: theme.cardText,
@@ -1981,3 +2230,1675 @@ export function createConfigPageStyles(theme) {
     },
   };
 }
+// ------------------------------
+// SHARED DASHBOARD CONTROL SYSTEM
+// Used by AutoMod and future dashboard pages
+// ------------------------------
+export function createDashboardControlStyles(theme) {
+  return {
+    sectionList: {
+      display: 'grid',
+      gap: '14px',
+    },
+
+    ruleCard(open = false, checked = false) {
+      return {
+        background: open ? 'rgba(59,130,246,0.06)' : theme.softBg,
+        border: `1px solid ${theme.primaryBorder}`,
+        borderRadius: '16px',
+        padding: open ? '18px 20px' : '16px 20px',
+        display: 'grid',
+        gap: open ? '16px' : '0',
+        boxShadow: open ? '0 0 0 1px rgba(59,130,246,0.18)' : 'none',
+        transition:
+          'border-color 0.2s ease, background 0.2s ease, padding 0.2s ease, box-shadow 0.2s ease',
+      };
+    },
+
+    ruleHeader: {
+      display: 'grid',
+      gridTemplateColumns: 'minmax(0, 1fr) auto',
+      alignItems: 'center',
+      gap: '16px',
+    },
+
+    ruleTitleButton: {
+      border: 0,
+      background: 'transparent',
+      padding: 0,
+      textAlign: 'left',
+      cursor: 'pointer',
+      minWidth: 0,
+    },
+
+    ruleTitleRow: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '10px',
+      flexWrap: 'wrap',
+    },
+
+    ruleTitle: {
+      color: theme.cardText,
+      fontWeight: 900,
+      fontSize: '18px',
+      lineHeight: 1.15,
+      letterSpacing: '-0.03em',
+    },
+
+    ruleDescription: {
+      margin: '6px 0 0',
+      color: theme.mutedText,
+      fontSize: '14px',
+      lineHeight: 1.45,
+      fontWeight: 600,
+    },
+
+    ruleActions: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '10px',
+      flexShrink: 0,
+    },
+
+    statusPill(checked = false) {
+      return {
+        borderRadius: '999px',
+        padding: '4px 9px',
+        background: checked ? theme.successSoft : 'rgba(148,163,184,0.14)',
+        border: checked ? `1px solid ${theme.successBorder}` : `1px solid ${theme.cardBorder}`,
+        color: checked ? theme.success : theme.mutedText,
+        fontSize: '11px',
+        fontWeight: 900,
+      };
+    },
+
+    toggleButton(checked = false) {
+      return {
+        minWidth: '58px',
+        height: '34px',
+        padding: checked ? '0 9px 0 13px' : '0 13px 0 9px',
+        borderRadius: '999px',
+        border: checked ? `1px solid ${theme.successBorder}` : `1px solid ${theme.cardBorder}`,
+        background: checked ? 'rgba(34,197,94,0.28)' : theme.softBg,
+        color: checked ? theme.success : theme.cardText,
+        fontWeight: 900,
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '6px',
+        transition: 'background 0.18s ease, border-color 0.18s ease, color 0.18s ease',
+      };
+    },
+
+    toggleDot(checked = false) {
+      return {
+        width: '16px',
+        height: '16px',
+        borderRadius: '999px',
+        background: '#ffffff',
+        display: 'block',
+        boxShadow: '0 1px 4px rgba(0,0,0,0.25)',
+        order: checked ? 2 : 1,
+      };
+    },
+
+    chevron(open = false) {
+      return {
+        width: '36px',
+        height: '36px',
+        borderRadius: '12px',
+        display: 'grid',
+        placeItems: 'center',
+        border: `1px solid ${open ? theme.primaryBorder : theme.cardBorder}`,
+        background: open ? theme.primarySoft : 'rgba(15,23,42,0.35)',
+        color: open ? '#bfdbfe' : theme.mutedText,
+        cursor: 'pointer',
+        transition:
+          'background 0.2s ease, border-color 0.2s ease, color 0.2s ease',
+      };
+    },
+
+    chevronIcon(open = false) {
+      return {
+        display: 'inline-block',
+        fontSize: '14px',
+        lineHeight: 1,
+        transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
+        transition: 'transform 0.2s ease',
+        opacity: 0.85,
+      };
+    },
+
+    expandedPanel: {
+      background: theme.inputBg,
+      border: `1px solid ${theme.cardBorder}`,
+      borderRadius: '14px',
+      padding: '16px',
+      display: 'grid',
+      gap: '14px',
+    },
+
+    input: {
+      width: '100%',
+      padding: '11px 12px',
+      borderRadius: '12px',
+      border: `1px solid ${theme.inputBorder}`,
+      background: theme.inputBg,
+      color: theme.inputText,
+      outline: 'none',
+      fontSize: '14px',
+      boxSizing: 'border-box',
+    },
+
+    textarea: {
+      width: '100%',
+      minHeight: '82px',
+      padding: '11px 12px',
+      borderRadius: '12px',
+      border: `1px solid ${theme.inputBorder}`,
+      background: theme.inputBg,
+      color: theme.inputText,
+      outline: 'none',
+      fontSize: '14px',
+      boxSizing: 'border-box',
+      resize: 'vertical',
+      lineHeight: 1.5,
+      fontFamily: 'inherit',
+    },
+
+    label: {
+      margin: '0 0 6px 0',
+      fontSize: '12px',
+      fontWeight: 800,
+      color: theme.mutedText,
+      textTransform: 'uppercase',
+      letterSpacing: '0.05em',
+    },
+
+    helpText: {
+      margin: '6px 0 0',
+      color: theme.mutedText,
+      fontSize: '12px',
+      lineHeight: 1.45,
+    },
+
+    twoColumnGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+      gap: '12px',
+    },
+  };
+}
+
+// ------------------------------
+// AUTOMOD PAGE SYSTEM
+// ------------------------------
+export function createAutoModPageStyles(theme) {
+  const controls = createDashboardControlStyles(theme);
+
+  return {
+    ...controls,
+
+    ruleList: controls.sectionList,
+
+    saveRow: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'flex-start',
+      gap: '12px',
+      flexWrap: 'wrap',
+    },
+
+    punishmentSelectWrap: {
+      position: 'relative',
+      width: '100%',
+    },
+
+        punishmentGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+      gap: '10px',
+    },
+
+    punishmentOption(selected = false) {
+      return {
+        width: '100%',
+        borderRadius: '12px',
+        border: selected ? `1px solid ${theme.primaryBorder}` : `1px solid ${theme.cardBorder}`,
+        background: selected ? theme.primarySoft : theme.softBg,
+        color: selected ? '#bfdbfe' : theme.cardText,
+        padding: '11px 12px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        gap: '12px',
+        fontWeight: 800,
+        cursor: 'pointer',
+        textAlign: 'left',
+      };
+    },
+
+    actionSummary: {
+      margin: 0,
+      color: theme.mutedText,
+      fontSize: '13px',
+      lineHeight: 1.45,
+      fontWeight: 700,
+    },
+
+    ruleMiniGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+      gap: '12px',
+    },
+
+    miniField: {
+      display: 'grid',
+      gap: '6px',
+    },
+
+    dangerPanel: {
+      background: theme.dangerSoft,
+      border: `1px solid ${theme.dangerBorder}`,
+      borderRadius: '14px',
+      padding: '14px',
+      color: theme.dangerText,
+      fontWeight: 800,
+      lineHeight: 1.45,
+    },
+
+    successPanel: {
+      background: theme.successSoft,
+      border: `1px solid ${theme.successBorder}`,
+      borderRadius: '14px',
+      padding: '14px',
+      color: theme.successText,
+      fontWeight: 800,
+      lineHeight: 1.45,
+    },
+
+      punishmentTrigger: {
+      width: '100%',
+      minHeight: '43px',
+      padding: '11px 12px',
+      borderRadius: '12px',
+      border: `1px solid ${theme.inputBorder}`,
+      background: theme.inputBg,
+      color: theme.inputText,
+      outline: 'none',
+      fontSize: '14px',
+      boxSizing: 'border-box',
+      display: 'grid',
+      gridTemplateColumns: 'minmax(0, 1fr) auto',
+      alignItems: 'center',
+      gap: '10px',
+      textAlign: 'left',
+      cursor: 'pointer',
+    },
+
+    punishmentTriggerText: {
+      minWidth: 0,
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap',
+      fontWeight: 800,
+    },
+
+    punishmentMenu: {
+      position: 'absolute',
+      zIndex: 30,
+      top: 'calc(100% + 8px)',
+      left: 0,
+      right: 0,
+      display: 'grid',
+      gap: '8px',
+      padding: '8px',
+      background: theme.dropdownBg,
+      border: `1px solid ${theme.primaryBorder}`,
+      borderRadius: '14px',
+      boxShadow: theme.shadow,
+    },
+
+    toggleOffLabel: {
+      order: 2,
+    },
+  };
+  
+}
+
+// ------------------------------
+// TABLE / RECORD PAGE SYSTEM
+// Used by Cases + Warnings
+// ------------------------------
+export function createRecordPageStyles(theme) {
+  return {
+    page: {
+      display: 'grid',
+      gap: '16px',
+    },
+
+    /* ================= TOOLBAR ================= */
+
+    toolbar: {
+      ...createSharedComponentStyles(theme).bluePanel,
+      padding: '16px',
+      display: 'grid',
+      gridTemplateColumns: 'minmax(0, 1fr) auto',
+      gap: '14px',
+      alignItems: 'center',
+    },
+
+    toolbarStack: {
+      display: 'grid',
+      gap: '6px',
+      minWidth: 0,
+    },
+
+    toolbarTitle: {
+      margin: 0,
+      color: theme.cardText,
+      fontSize: '20px',
+      fontWeight: 900,
+    },
+
+    toolbarText: {
+      margin: 0,
+      color: theme.mutedText,
+      fontSize: '14px',
+      fontWeight: 600,
+    },
+
+    /* ================= INPUTS ================= */
+
+    searchInput: {
+      width: 'min(100%, 320px)',
+      padding: '11px 12px',
+      borderRadius: '12px',
+      border: `1px solid ${theme.inputBorder}`,
+      background: theme.inputBg,
+      color: theme.inputText,
+      fontSize: '14px',
+    },
+
+    select: {
+      minWidth: '180px',
+      padding: '11px 12px',
+      borderRadius: '12px',
+      border: `1px solid ${theme.inputBorder}`,
+      background: theme.inputBg,
+      color: theme.inputText,
+      fontSize: '14px',
+    },
+
+    /* ================= GRID ================= */
+
+    contentGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'minmax(0, 1.1fr) minmax(320px, 0.9fr)',
+      gap: '16px',
+      alignItems: 'start',
+    },
+
+    /* ================= LIST ================= */
+
+    listCard: {
+      ...createSharedComponentStyles(theme).bluePanel,
+      overflow: 'hidden',
+    },
+
+    listHeader: {
+      padding: '16px 18px',
+      borderBottom: `1px solid ${theme.cardBorder}`,
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+
+    listTitle: {
+      margin: 0,
+      fontSize: '18px',
+      fontWeight: 900,
+      color: theme.cardText,
+    },
+
+    countPill: {
+      padding: '5px 10px',
+      borderRadius: '999px',
+      background: theme.topbarSoft,
+      border: `1px solid ${theme.cardBorder}`,
+      fontSize: '12px',
+      fontWeight: 900,
+      color: theme.mutedText,
+    },
+
+    list: {
+      display: 'grid',
+    },
+
+    recordButton(active = false) {
+      return {
+        width: '100%',
+        border: 0,
+        borderBottom: `1px solid ${theme.cardBorder}`,
+        background: active ? theme.primarySoft : 'transparent',
+        padding: '14px 16px',
+        display: 'grid',
+        gap: '8px',
+        cursor: 'pointer',
+      };
+    },
+
+    recordTop: {
+      display: 'grid',
+      gridTemplateColumns: '1fr auto',
+      gap: '12px',
+      alignItems: 'center',
+    },
+
+    recordTitle: {
+      margin: 0,
+      fontSize: '15px',
+      fontWeight: 900,
+      color: theme.cardText,
+    },
+
+    recordMeta: {
+      margin: 0,
+      fontSize: '12px',
+      fontWeight: 700,
+      color: theme.mutedText,
+    },
+
+    recordReason: {
+      margin: 0,
+      fontSize: '13px',
+      fontWeight: 600,
+      color: theme.mutedText,
+    },
+
+    /* ================= BADGE ================= */
+
+    badge(tone = 'soft') {
+      const tones = {
+        soft: { bg: theme.topbarSoft, border: theme.cardBorder, color: theme.mutedText },
+        success: { bg: theme.successSoft, border: theme.successBorder, color: theme.successText },
+        warning: { bg: theme.warningSoft, border: theme.warningBorder, color: theme.warningText },
+        danger: { bg: theme.dangerSoft, border: theme.dangerBorder, color: theme.dangerText },
+        primary: { bg: theme.primarySoft, border: theme.primaryBorder, color: '#bfdbfe' },
+      };
+
+      const t = tones[tone] || tones.soft;
+
+      return {
+        padding: '4px 9px',
+        borderRadius: '999px',
+        background: t.bg,
+        border: `1px solid ${t.border}`,
+        color: t.color,
+        fontSize: '11px',
+        fontWeight: 900,
+      };
+    },
+
+    /* ================= DETAIL ================= */
+
+    detailCard: {
+      ...createSharedComponentStyles(theme).bluePanel,
+      overflow: 'hidden',
+      position: 'sticky',
+      top: '88px',
+    },
+
+    detailHeader: {
+      padding: '18px',
+      borderBottom: `1px solid ${theme.cardBorder}`,
+      display: 'grid',
+      gap: '8px',
+    },
+
+    detailTitle: {
+      margin: 0,
+      fontSize: '21px',
+      fontWeight: 950,
+      color: theme.cardText,
+    },
+
+    detailSubtitle: {
+      margin: 0,
+      fontSize: '14px',
+      fontWeight: 600,
+      color: theme.mutedText,
+    },
+
+    detailBody: {
+      padding: '18px',
+      display: 'grid',
+      gap: '14px',
+    },
+
+    detailGrid: {
+      display: 'grid',
+      gap: '12px',
+    },
+
+    detailRow: {
+      ...createSharedComponentStyles(theme).blueInnerPanel,
+      padding: '13px 14px',
+      display: 'grid',
+      gap: '6px',
+    },
+
+    detailLabel: {
+      fontSize: '11px',
+      fontWeight: 900,
+      textTransform: 'uppercase',
+      color: theme.mutedText,
+    },
+
+    detailValue: {
+      fontSize: '14px',
+      fontWeight: 800,
+      color: theme.cardText,
+    },
+
+    /* ================= EMPTY ================= */
+
+    emptyPanel: {
+      ...createSharedComponentStyles(theme).bluePanel,
+      padding: '28px',
+      textAlign: 'center',
+      display: 'grid',
+      gap: '10px',
+    },
+
+    emptyTitle: {
+      fontSize: '20px',
+      fontWeight: 900,
+      color: theme.cardText,
+    },
+
+    emptyText: {
+      fontSize: '14px',
+      fontWeight: 600,
+      color: theme.mutedText,
+    },
+
+    /* ================= STATS ================= */
+
+    statsGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+      gap: '14px',
+    },
+
+    statCard: {
+      background: theme.cardBg,
+      border: `1px solid ${theme.cardBorder}`,
+      borderRadius: '16px',
+      padding: '16px',
+      display: 'grid',
+      gap: '8px',
+      boxShadow: theme.shadow,
+    },
+
+    statLabel: {
+      fontSize: '12px',
+      fontWeight: 900,
+      textTransform: 'uppercase',
+      color: theme.mutedText,
+    },
+
+    statValue: {
+      fontSize: '24px',
+      fontWeight: 950,
+      color: theme.cardText,
+    },
+
+    statValueWarning: {
+      fontSize: '24px',
+      fontWeight: 950,
+      color: theme.warning,
+    },
+
+    statValueSuccess: {
+      fontSize: '24px',
+      fontWeight: 950,
+      color: theme.success,
+    },
+  };
+}
+
+export const createCasesPageStyles = createRecordPageStyles;
+export const createWarningsPageStyles = createRecordPageStyles;
+
+// ------------------------------
+// MESSAGES PAGE SYSTEM
+// ------------------------------
+export function createMessagesPageStyles(theme) {
+  return {
+page: {
+  display: 'grid',
+  gap: '18px',
+},
+
+statsGrid: {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+  gap: '14px',
+},
+
+statCard: {
+  background: theme.cardBg,
+  border: `1px solid ${theme.cardBorder}`,
+  borderRadius: '16px',
+  padding: '16px',
+  display: 'grid',
+  gap: '8px',
+  minHeight: '82px',
+  boxShadow: theme.shadow,
+},
+
+statLabel: {
+  margin: 0,
+  color: theme.mutedText,
+  fontSize: '12px',
+  fontWeight: 900,
+  textTransform: 'uppercase',
+  letterSpacing: '0.08em',
+},
+
+statValue: {
+  margin: 0,
+  color: theme.cardText,
+  fontSize: '24px',
+  fontWeight: 950,
+},
+
+statValueSuccess: {
+  margin: 0,
+  color: theme.success,
+  fontSize: '24px',
+  fontWeight: 950,
+},
+
+statValueDanger: {
+  margin: 0,
+  color: theme.danger,
+  fontSize: '24px',
+  fontWeight: 950,
+},
+
+grid: {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+  gap: '16px',
+},
+
+panel: {
+  background: theme.cardBg,
+  border: `1px solid ${theme.cardBorder}`,
+  borderRadius: '18px',
+  padding: '18px',
+  display: 'grid',
+  gap: '14px',
+  boxShadow: theme.shadow,
+},
+
+panelTitle: {
+  margin: 0,
+  color: theme.cardText,
+  fontSize: '16px',
+  fontWeight: 800,
+},
+
+previewCard: {
+  ...createSharedComponentStyles(theme).blueInnerPanel,
+  padding: '16px',
+  display: 'grid',
+  gap: '12px',
+},
+
+    panelHeader: {
+      padding: '18px 20px',
+      borderBottom: `1px solid ${theme.cardBorder}`,
+      display: 'grid',
+      gap: '7px',
+    },
+
+     panelText: {
+      margin: 0,
+      color: theme.mutedText,
+      fontSize: '14px',
+      lineHeight: 1.45,
+      fontWeight: 600,
+    },
+
+    panelBody: {
+      padding: '20px',
+      display: 'grid',
+      gap: '14px',
+    },
+
+    formGrid: {
+      display: 'grid',
+      gap: '14px',
+    },
+
+    twoColumnGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+      gap: '12px',
+    },
+
+    label: {
+      margin: '0 0 6px',
+      color: theme.mutedText,
+      fontSize: '12px',
+      lineHeight: 1,
+      fontWeight: 900,
+      textTransform: 'uppercase',
+      letterSpacing: '0.08em',
+    },
+
+    input: {
+      width: '100%',
+      padding: '11px 12px',
+      borderRadius: '12px',
+      border: `1px solid ${theme.inputBorder}`,
+      background: theme.inputBg,
+      color: theme.inputText,
+      outline: 'none',
+      fontSize: '14px',
+      boxSizing: 'border-box',
+    },
+
+    textarea: {
+      width: '100%',
+      minHeight: '132px',
+      padding: '11px 12px',
+      borderRadius: '12px',
+      border: `1px solid ${theme.inputBorder}`,
+      background: theme.inputBg,
+      color: theme.inputText,
+      outline: 'none',
+      fontSize: '14px',
+      lineHeight: 1.5,
+      resize: 'vertical',
+      fontFamily: 'inherit',
+      boxSizing: 'border-box',
+    },
+
+    previewCard: {
+  ...createSharedComponentStyles(theme).blueInnerPanel,
+  padding: '16px',
+  display: 'grid',
+  gap: '12px',
+},
+        previewTitle: {
+      margin: 0,
+      color: theme.cardText,
+      fontSize: '16px',
+      lineHeight: 1.2,
+      fontWeight: 900,
+      letterSpacing: '-0.03em',
+    },
+
+    previewText: {
+      margin: 0,
+      color: theme.mutedText,
+      fontSize: '14px',
+      lineHeight: 1.55,
+      fontWeight: 600,
+      whiteSpace: 'pre-wrap',
+      wordBreak: 'break-word',
+    },
+
+    actionRow: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '10px',
+      flexWrap: 'wrap',
+    },
+
+    button(tone = 'primary', disabled = false) {
+      const tones = {
+        primary: {
+          bg: theme.primarySoft,
+          border: theme.primaryBorder,
+          color: '#bfdbfe',
+        },
+        success: {
+          bg: theme.successSoft,
+          border: theme.successBorder,
+          color: theme.successText,
+        },
+        danger: {
+          bg: theme.dangerSoft,
+          border: theme.dangerBorder,
+          color: theme.dangerText,
+        },
+        soft: {
+          bg: theme.softBg,
+          border: theme.cardBorder,
+          color: theme.cardText,
+        },
+      };
+
+      const selected = tones[tone] || tones.primary;
+
+      return {
+        borderRadius: '12px',
+        border: `1px solid ${selected.border}`,
+        background: selected.bg,
+        color: selected.color,
+        padding: '10px 14px',
+        fontWeight: 900,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.55 : 1,
+        boxShadow: disabled ? 'none' : '0 8px 18px rgba(0,0,0,0.14)',
+        whiteSpace: 'nowrap',
+      };
+    },
+
+    switchRow: {
+      background: theme.softBg,
+      border: `1px solid ${theme.cardBorder}`,
+      borderRadius: '16px',
+      padding: '14px 16px',
+      display: 'grid',
+      gridTemplateColumns: 'minmax(0, 1fr) auto',
+      alignItems: 'center',
+      gap: '14px',
+    },
+
+    switchTitle: {
+      margin: 0,
+      color: theme.cardText,
+      fontSize: '15px',
+      lineHeight: 1.2,
+      fontWeight: 900,
+    },
+
+    switchText: {
+      margin: '5px 0 0',
+      color: theme.mutedText,
+      fontSize: '13px',
+      lineHeight: 1.45,
+      fontWeight: 600,
+    },
+
+    switchTrack(checked = false) {
+      return {
+        width: '48px',
+        height: '26px',
+        borderRadius: '999px',
+        border: checked ? `1px solid ${theme.successBorder}` : `1px solid ${theme.cardBorder}`,
+        background: checked ? theme.successSoft : 'rgba(148,163,184,0.18)',
+        padding: '3px',
+        display: 'flex',
+        justifyContent: checked ? 'flex-end' : 'flex-start',
+        alignItems: 'center',
+        cursor: 'pointer',
+        transition: 'background 0.18s ease, border-color 0.18s ease',
+      };
+    },
+
+    switchThumb(checked = false) {
+      return {
+        width: '18px',
+        height: '18px',
+        borderRadius: '999px',
+        background: checked ? theme.success : theme.mutedText,
+        display: 'block',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.22)',
+      };
+    },
+  };
+}
+
+// ------------------------------
+// LOGS PAGE SYSTEM
+// ------------------------------
+export function createLogsPageStyles(theme) {
+  const shared = createSharedComponentStyles(theme);  
+  return {
+    page: {
+      display: 'grid',
+      gap: '16px',
+    },
+
+    toolbar: {
+  background: 'rgba(59,130,246,0.05)',
+  border: `1px solid ${theme.primaryBorder}`,
+  borderRadius: '20px',
+  boxShadow: '0 0 0 1px rgba(59,130,246,0.18)',
+  padding: '18px 20px',
+  display: 'grid',
+  gridTemplateColumns: 'minmax(0, 1fr) auto',
+  alignItems: 'center',
+  gap: '16px',
+},
+
+    toolbarTitle: {
+      margin: 0,
+      color: theme.cardText,
+      fontSize: '20px',
+      lineHeight: 1.1,
+      fontWeight: 900,
+      letterSpacing: '-0.03em',
+    },
+
+    toolbarText: {
+      margin: '6px 0 0',
+      color: theme.mutedText,
+      fontSize: '14px',
+      lineHeight: 1.45,
+      fontWeight: 600,
+    },
+
+    filterRow: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '10px',
+      flexWrap: 'wrap',
+    },
+
+    select: {
+      minWidth: '220px',
+      padding: '11px 12px',
+      borderRadius: '12px',
+      border: `1px solid ${theme.inputBorder}`,
+      background: theme.inputBg,
+      color: theme.inputText,
+      outline: 'none',
+      fontSize: '14px',
+      boxSizing: 'border-box',
+    },
+
+    grid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+      gap: '16px',
+      alignItems: 'start',
+    },
+
+  logCard: {
+  background: theme.cardBg,
+  border: `1px solid ${theme.cardBorder}`,
+  borderRadius: DASHBOARD_LAYOUT.cardRadius,
+  boxShadow: theme.shadow,
+  overflow: 'hidden',
+},
+
+    logHeader: {
+      padding: '16px 18px',
+      borderBottom: `1px solid ${theme.cardBorder}`,
+      display: 'grid',
+      gap: '7px',
+    },
+
+    logTitle: {
+      margin: 0,
+      color: theme.cardText,
+      fontSize: '18px',
+      lineHeight: 1.1,
+      fontWeight: 900,
+      letterSpacing: '-0.03em',
+    },
+
+    logDescription: {
+      margin: 0,
+      color: theme.mutedText,
+      fontSize: '13px',
+      lineHeight: 1.45,
+      fontWeight: 600,
+    },
+
+ logBody: {
+  padding: '20px',
+  display: 'grid',
+  gap: '16px',
+},
+
+  row: {
+  ...createSharedComponentStyles(theme).blueInnerPanel,
+  padding: '16px 18px',
+  display: 'grid',
+  gap: '10px',
+},
+
+    rowHeader: {
+      display: 'grid',
+      gridTemplateColumns: 'minmax(0, 1fr) auto',
+      gap: '12px',
+      alignItems: 'center',
+    },
+
+    rowTitle: {
+      margin: 0,
+      color: theme.cardText,
+      fontSize: '15px',
+      lineHeight: 1.2,
+      fontWeight: 900,
+    },
+
+    rowText: {
+      margin: 0,
+      color: theme.mutedText,
+      fontSize: '13px',
+      lineHeight: 1.45,
+      fontWeight: 600,
+    },
+
+    channelSelect: {
+      width: '100%',
+      padding: '11px 12px',
+      borderRadius: '12px',
+      border: `1px solid ${theme.inputBorder}`,
+      background: theme.inputBg,
+      color: theme.inputText,
+      outline: 'none',
+      fontSize: '14px',
+      boxSizing: 'border-box',
+    },
+
+    badge(enabled = false) {
+      return {
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '24px',
+        padding: '4px 9px',
+        borderRadius: '999px',
+        background: enabled ? theme.successSoft : 'rgba(148,163,184,0.14)',
+        border: enabled ? `1px solid ${theme.successBorder}` : `1px solid ${theme.cardBorder}`,
+        color: enabled ? theme.successText : theme.mutedText,
+        fontSize: '11px',
+        lineHeight: 1,
+        fontWeight: 900,
+        whiteSpace: 'nowrap',
+      };
+    },
+
+    actionRow: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '10px',
+      flexWrap: 'wrap',
+    },
+        button(tone = 'primary', disabled = false) {
+      const tones = {
+        primary: {
+          bg: theme.primarySoft,
+          border: theme.primaryBorder,
+          color: '#bfdbfe',
+        },
+        success: {
+          bg: theme.successSoft,
+          border: theme.successBorder,
+          color: theme.successText,
+        },
+        danger: {
+          bg: theme.dangerSoft,
+          border: theme.dangerBorder,
+          color: theme.dangerText,
+        },
+        soft: {
+          bg: theme.softBg,
+          border: theme.cardBorder,
+          color: theme.cardText,
+        },
+      };
+
+      const selected = tones[tone] || tones.primary;
+
+      return {
+        borderRadius: '12px',
+        border: `1px solid ${selected.border}`,
+        background: selected.bg,
+        color: selected.color,
+        padding: '10px 14px',
+        fontWeight: 900,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.55 : 1,
+        boxShadow: disabled ? 'none' : '0 8px 18px rgba(0,0,0,0.14)',
+        whiteSpace: 'nowrap',
+      };
+    },
+
+    emptyPanel: {
+      background: theme.cardBg,
+      border: `1px solid ${theme.cardBorder}`,
+      borderRadius: DASHBOARD_LAYOUT.cardRadius,
+      boxShadow: theme.shadow,
+      padding: '28px',
+      display: 'grid',
+      gap: '10px',
+      justifyItems: 'center',
+      textAlign: 'center',
+      color: theme.mutedText,
+    },
+  };
+}
+
+// ------------------------------
+// SHARED PAGE SHELL / UTILITY COMPONENT STYLES
+// ------------------------------
+export function createPageShellStyles(theme) {
+  return {
+    shell: {
+      display: 'grid',
+      gap: DASHBOARD_LAYOUT.pageGap,
+    },
+
+    header: {
+      background: theme.cardBg,
+      border: `1px solid ${theme.cardBorder}`,
+      borderRadius: DASHBOARD_LAYOUT.cardRadius,
+      padding: DASHBOARD_LAYOUT.cardPadding,
+      boxShadow: theme.shadow,
+      display: 'grid',
+      gap: '8px',
+    },
+
+    eyebrow: {
+      margin: 0,
+      color: theme.primary,
+      fontSize: '12px',
+      lineHeight: 1,
+      fontWeight: 900,
+      textTransform: 'uppercase',
+      letterSpacing: '0.12em',
+    },
+
+    title: {
+      margin: 0,
+      color: theme.cardText,
+      fontSize: 'clamp(28px, 4vw, 46px)',
+      lineHeight: 0.96,
+      fontWeight: 950,
+      letterSpacing: '-0.045em',
+      textShadow: '0 3px 0 rgba(0,0,0,0.22)',
+    },
+
+    description: {
+      margin: 0,
+      color: theme.mutedText,
+      fontSize: '15px',
+      lineHeight: 1.55,
+      fontWeight: 600,
+      maxWidth: '900px',
+    },
+
+    content: {
+      display: 'grid',
+      gap: '16px',
+    },
+
+sectionCard: {
+  ...createSharedComponentStyles(theme).bluePanel,
+  padding: DASHBOARD_LAYOUT.cardPadding,
+  display: 'grid',
+  gap: '16px',
+},
+
+    sectionHeader: {
+      display: 'grid',
+      gap: '7px',
+    },
+
+    sectionTitle: {
+      margin: 0,
+      color: theme.cardText,
+      fontSize: '22px',
+      lineHeight: 1.1,
+      fontWeight: 900,
+      letterSpacing: '-0.03em',
+    },
+
+    sectionDescription: {
+      margin: 0,
+      color: theme.mutedText,
+      fontSize: '14px',
+      lineHeight: 1.45,
+      fontWeight: 600,
+    },
+
+    notice(tone = 'soft') {
+      const tones = {
+        soft: {
+          bg: theme.softBg,
+          border: theme.cardBorder,
+          color: theme.mutedText,
+        },
+        primary: {
+          bg: theme.primarySoft,
+          border: theme.primaryBorder,
+          color: '#bfdbfe',
+        },
+        success: {
+          bg: theme.successSoft,
+          border: theme.successBorder,
+          color: theme.successText,
+        },
+        warning: {
+          bg: theme.warningSoft,
+          border: theme.warningBorder,
+          color: theme.warningText,
+        },
+        danger: {
+          bg: theme.dangerSoft,
+          border: theme.dangerBorder,
+          color: theme.dangerText,
+        },
+      };
+
+      const selected = tones[tone] || tones.soft;
+
+      return {
+        background: selected.bg,
+        border: `1px solid ${selected.border}`,
+        borderRadius: '14px',
+        padding: '13px 14px',
+        color: selected.color,
+        fontSize: '14px',
+        lineHeight: 1.45,
+        fontWeight: 700,
+      };
+    },
+
+    loadingPanel: {
+      background: theme.cardBg,
+      border: `1px solid ${theme.cardBorder}`,
+      borderRadius: DASHBOARD_LAYOUT.cardRadius,
+      padding: DASHBOARD_LAYOUT.cardPadding,
+      boxShadow: theme.shadow,
+      color: theme.mutedText,
+      display: 'grid',
+      gap: '12px',
+      alignContent: 'center',
+      minHeight: '140px',
+    },
+
+    emptyPanel: {
+      background: theme.cardBg,
+      border: `1px solid ${theme.cardBorder}`,
+      borderRadius: DASHBOARD_LAYOUT.cardRadius,
+      padding: DASHBOARD_LAYOUT.cardPadding,
+      boxShadow: theme.shadow,
+      color: theme.mutedText,
+      textAlign: 'center',
+      display: 'grid',
+      gap: '10px',
+      justifyItems: 'center',
+    },
+
+    statGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+      gap: '14px',
+    },
+
+    statCard: {
+      background: theme.softBg,
+      border: `1px solid ${theme.cardBorder}`,
+      borderRadius: '16px',
+      padding: '16px',
+      display: 'grid',
+      gap: '8px',
+      minHeight: '86px',
+    },
+
+    statLabel: {
+      margin: 0,
+      color: theme.mutedText,
+      fontSize: '12px',
+      lineHeight: 1,
+      fontWeight: 900,
+      textTransform: 'uppercase',
+      letterSpacing: '0.08em',
+    },
+
+    statValue: {
+      margin: 0,
+      color: theme.cardText,
+      fontSize: '24px',
+      lineHeight: 1,
+      fontWeight: 950,
+      letterSpacing: '-0.04em',
+    },
+
+    button(tone = 'primary', disabled = false) {
+      const tones = {
+        primary: {
+          bg: theme.primarySoft,
+          border: theme.primaryBorder,
+          color: '#bfdbfe',
+        },
+        success: {
+          bg: theme.successSoft,
+          border: theme.successBorder,
+          color: theme.successText,
+        },
+        danger: {
+          bg: theme.dangerSoft,
+          border: theme.dangerBorder,
+          color: theme.dangerText,
+        },
+        soft: {
+          bg: theme.softBg,
+          border: theme.cardBorder,
+          color: theme.cardText,
+        },
+      };
+
+      const selected = tones[tone] || tones.primary;
+
+      return {
+        borderRadius: '12px',
+        border: `1px solid ${selected.border}`,
+        background: selected.bg,
+        color: selected.color,
+        padding: '10px 14px',
+        fontWeight: 900,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.55 : 1,
+        boxShadow: disabled ? 'none' : '0 8px 18px rgba(0,0,0,0.14)',
+        whiteSpace: 'nowrap',
+      };
+    },
+  };
+}
+
+// Backwards-friendly aliases for PageShell components
+export const createPageShellComponentStyles = createPageShellStyles;
+export const createSharedDashboardStyles = createPageShellStyles;
+
+// ------------------------------
+// SHARED FORM SYSTEM
+// ------------------------------
+export function createFormStyles(theme) {
+  return {
+    grid: {
+      display: 'grid',
+      gap: '14px',
+    },
+
+    twoColumnGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+      gap: '12px',
+    },
+
+    label: {
+      margin: '0 0 6px',
+      color: theme.mutedText,
+      fontSize: '12px',
+      lineHeight: 1,
+      fontWeight: 900,
+      textTransform: 'uppercase',
+      letterSpacing: '0.08em',
+    },
+
+    input: {
+      width: '100%',
+      padding: '11px 12px',
+      borderRadius: '12px',
+      border: `1px solid ${theme.inputBorder}`,
+      background: theme.inputBg,
+      color: theme.inputText,
+      outline: 'none',
+      fontSize: '14px',
+      boxSizing: 'border-box',
+    },
+
+    select: {
+      width: '100%',
+      padding: '11px 12px',
+      borderRadius: '12px',
+      border: `1px solid ${theme.inputBorder}`,
+      background: theme.inputBg,
+      color: theme.inputText,
+      outline: 'none',
+      fontSize: '14px',
+      boxSizing: 'border-box',
+    },
+
+    textarea: {
+      width: '100%',
+      minHeight: '96px',
+      padding: '11px 12px',
+      borderRadius: '12px',
+      border: `1px solid ${theme.inputBorder}`,
+      background: theme.inputBg,
+      color: theme.inputText,
+      outline: 'none',
+      fontSize: '14px',
+      lineHeight: 1.5,
+      resize: 'vertical',
+      fontFamily: 'inherit',
+      boxSizing: 'border-box',
+    },
+
+    helpText: {
+      margin: '6px 0 0',
+      color: theme.mutedText,
+      fontSize: '12px',
+      lineHeight: 1.45,
+      fontWeight: 600,
+    },
+
+    actionRow: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '10px',
+      flexWrap: 'wrap',
+    },
+
+    fieldCard: {
+      background: theme.softBg,
+      border: `1px solid ${theme.cardBorder}`,
+      borderRadius: '16px',
+      padding: '16px',
+      display: 'grid',
+      gap: '10px',
+    },
+
+    button(tone = 'primary', disabled = false) {
+      const tones = {
+        primary: {
+          bg: theme.primarySoft,
+          border: theme.primaryBorder,
+          color: '#bfdbfe',
+        },
+        success: {
+          bg: theme.successSoft,
+          border: theme.successBorder,
+          color: theme.successText,
+        },
+        danger: {
+          bg: theme.dangerSoft,
+          border: theme.dangerBorder,
+          color: theme.dangerText,
+        },
+        soft: {
+          bg: theme.softBg,
+          border: theme.cardBorder,
+          color: theme.cardText,
+        },
+      };
+
+      const selected = tones[tone] || tones.primary;
+
+      return {
+        borderRadius: '12px',
+        border: `1px solid ${selected.border}`,
+        background: selected.bg,
+        color: selected.color,
+        padding: '10px 14px',
+        fontWeight: 900,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.55 : 1,
+        boxShadow: disabled ? 'none' : '0 8px 18px rgba(0,0,0,0.14)',
+        whiteSpace: 'nowrap',
+      };
+    },
+  };
+}
+
+// ------------------------------
+// SHARED LIST / CARD SYSTEM
+// ------------------------------
+export function createListStyles(theme) {
+  return {
+    card: {
+      background: theme.cardBg,
+      border: `1px solid ${theme.cardBorder}`,
+      borderRadius: DASHBOARD_LAYOUT.cardRadius,
+      boxShadow: theme.shadow,
+      overflow: 'hidden',
+    },
+
+    header: {
+      padding: '16px 18px',
+      borderBottom: `1px solid ${theme.cardBorder}`,
+      display: 'grid',
+      gap: '6px',
+    },
+
+    title: {
+      margin: 0,
+      color: theme.cardText,
+      fontSize: '18px',
+      lineHeight: 1.1,
+      fontWeight: 900,
+      letterSpacing: '-0.03em',
+    },
+
+    text: {
+      margin: 0,
+      color: theme.mutedText,
+      fontSize: '14px',
+      lineHeight: 1.45,
+      fontWeight: 600,
+    },
+
+    body: {
+      display: 'grid',
+      gap: '0',
+    },
+
+    item(active = false) {
+      return {
+        width: '100%',
+        border: 0,
+        borderBottom: `1px solid ${theme.cardBorder}`,
+        background: active ? theme.primarySoft : 'transparent',
+        color: theme.cardText,
+        cursor: 'pointer',
+        padding: '14px 16px',
+        display: 'grid',
+        gap: '8px',
+        textAlign: 'left',
+        transition: 'background 0.16s ease',
+      };
+    },
+
+    itemTitle: {
+      margin: 0,
+      color: theme.cardText,
+      fontSize: '15px',
+      fontWeight: 900,
+      lineHeight: 1.2,
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap',
+    },
+
+    itemMeta: {
+      margin: 0,
+      color: theme.mutedText,
+      fontSize: '12px',
+      lineHeight: 1.35,
+      fontWeight: 700,
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap',
+    },
+
+    itemText: {
+      margin: 0,
+      color: theme.mutedText,
+      fontSize: '13px',
+      lineHeight: 1.45,
+      fontWeight: 600,
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap',
+    },
+  };
+}
+
+// ------------------------------
+// SHARED BADGE SYSTEM
+// ------------------------------
+export function createBadgeStyles(theme) {
+  return {
+    badge(tone = 'soft') {
+      const tones = {
+        soft: {
+          bg: theme.topbarSoft,
+          border: theme.cardBorder,
+          color: theme.mutedText,
+        },
+        success: {
+          bg: theme.successSoft,
+          border: theme.successBorder,
+          color: theme.successText,
+        },
+        warning: {
+          bg: theme.warningSoft,
+          border: theme.warningBorder,
+          color: theme.warningText,
+        },
+        danger: {
+          bg: theme.dangerSoft,
+          border: theme.dangerBorder,
+          color: theme.dangerText,
+        },
+        primary: {
+          bg: theme.primarySoft,
+          border: theme.primaryBorder,
+          color: '#bfdbfe',
+        },
+      };
+
+      const selected = tones[tone] || tones.soft;
+
+      return {
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '24px',
+        padding: '4px 9px',
+        borderRadius: '999px',
+        background: selected.bg,
+        border: `1px solid ${selected.border}`,
+        color: selected.color,
+        fontSize: '11px',
+        lineHeight: 1,
+        fontWeight: 900,
+        whiteSpace: 'nowrap',
+      };
+    },
+  };
+}
+
+// ------------------------------
+// FINAL ALIASES
+// ------------------------------
+export const createTableStyles = createRecordPageStyles;
+export const createCasePageStyles = createRecordPageStyles;
+export const createWarningPageStyles = createRecordPageStyles;
