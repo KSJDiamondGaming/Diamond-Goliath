@@ -3,10 +3,10 @@ const { MessageFlags } = require('discord.js');
 const {
   handleModPanelInteraction,
   handleModPanelModal,
-} = require('../utils/moderation/modPanel');
+} = require('../interactions/moderation/modPanel');
 
 const helpCommand = require('../commands/utility/help');
-const automodPanel = require('../bot/interactions/automod/automodPanel');
+const automodPanel = require('../interactions/automod/automodPanel');
 
 module.exports = {
   name: 'interactionCreate',

@@ -1,5 +1,4 @@
-const terminal = require('../utils/utility/terminalLogger').createLogger('bot');
-const punishmentScheduler = require('../utils/moderation/punishmentScheduler');
+const terminal = require('../../core/logs/terminalLogger').createLogger('bot');
 
 const MAIN_GUILD_ID = '808091031350280213';
 
@@ -18,7 +17,6 @@ module.exports = {
     );
 
     try {
-      punishmentScheduler.start?.(client);
     } catch (err) {
       terminal.error('Scheduler failed', err);
     }

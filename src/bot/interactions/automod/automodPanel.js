@@ -1,5 +1,5 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const automod = require('../../../core/modules/automod');
+const automod = require('../../../core/modules/admin/automod');
 
 function buildAutomodPanel(guild, memberDisplayName) {
   const guildId = guild.id;

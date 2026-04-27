@@ -124,7 +124,7 @@ function normalizeFilePath(filePath) {
 /* ---------------- COMMAND LOADER ---------------- */
 
 function loadCommands(clientInstance) {
-  const commandsPath = path.join(__dirname, 'src', 'commands');
+  const commandsPath = path.join(__dirname, 'src', 'bot', 'commands');
   const commandFiles = getAllJsFiles(commandsPath);
 
   let loaded = 0;
@@ -190,7 +190,7 @@ function loadCommands(clientInstance) {
 /* ---------------- EVENT LOADER ---------------- */
 
 function loadEvents(clientInstance) {
-  const eventsPath = path.join(__dirname, 'src', 'events');
+  const eventsPath = path.join(__dirname, 'src', 'bot', 'events');
   const eventFiles = getAllJsFiles(eventsPath);
 
   let loaded = 0;
