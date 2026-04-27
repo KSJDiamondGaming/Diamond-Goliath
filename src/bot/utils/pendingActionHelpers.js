@@ -1,5 +1,5 @@
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const { EMOJIS } = require('./uiConfig');
+const { EMOJIS } = require('../../utils/utility/uiConfig');
 
 function buildConfirmRow(confirmId, cancelId = 'mod_cancel_action') {
   return [
