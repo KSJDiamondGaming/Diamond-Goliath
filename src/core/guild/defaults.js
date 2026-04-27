@@ -3,7 +3,7 @@ const path = require('path');
 
 const { DEFAULT_GUILD_DATA, DEFAULT_LOGS } = require('./defaults');
 
-const GUILDS_DIR = path.join(__dirname, '..', '..', '..', 'data', 'guilds');
+const GUILDS_DIR = path.join(__dirname, 'data', 'guilds');
 
 const guildCache = new Map();
 

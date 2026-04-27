@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const GUILDS_DIR = path.join(__dirname, '..', '..', '..', 'data', 'guilds');
+const GUILDS_DIR = path.join(__dirname, 'data', 'guilds');
 
 const guildCache = new Map();
 

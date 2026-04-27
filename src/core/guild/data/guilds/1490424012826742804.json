@@ -1,0 +1,111 @@
+{
+  "guildId": "1490424012826742804",
+  "guildName": null,
+  "updatedAt": "2026-04-27T19:57:10.531Z",
+  "general": {
+    "enabled": true,
+    "prefix": "!",
+    "timezone": "Europe/London"
+  },
+  "modules": {},
+  "automod": {
+    "antiSpam": {
+      "enabled": false,
+      "maxMessages": 6,
+      "intervalSeconds": 8,
+      "punishment": "delete",
+      "punishments": [
+        "delete"
+      ]
+    },
+    "antiLink": {
+      "enabled": false,
+      "punishment": "delete",
+      "allowedDomains": [],
+      "blockedDomains": [],
+      "punishments": [
+        "delete"
+      ]
+    },
+    "antiInvite": {
+      "enabled": false,
+      "punishment": "delete",
+      "punishments": [
+        "delete"
+      ]
+    },
+    "capsAbuse": {
+      "enabled": false,
+      "minLength": 10,
+      "percentage": 70,
+      "punishment": "delete",
+      "punishments": [
+        "delete"
+      ]
+    },
+    "badWords": {
+      "enabled": true,
+      "words": [],
+      "punishment": "delete",
+      "punishments": [
+        "delete"
+      ]
+    },
+    "repeatedMessages": {
+      "enabled": false,
+      "maxRepeats": 3,
+      "intervalSeconds": 10,
+      "punishment": "delete",
+      "punishments": [
+        "delete"
+      ]
+    },
+    "logs": {
+      "enabled": true,
+      "channelId": ""
+    },
+    "updatedAt": "2026-04-27T19:57:10.531Z"
+  },
+  "logs": {
+    "enabled": true,
+    "channels": {
+      "general": null,
+      "moderation": null,
+      "admin": null,
+      "automod": null,
+      "member": null,
+      "messageDelete": null,
+      "messageEdit": null,
+      "voice": null
+    },
+    "events": {
+      "moderationActions": true,
+      "adminActions": true,
+      "automodActions": true,
+      "memberJoin": true,
+      "memberLeave": true,
+      "memberUpdate": true,
+      "messageDelete": true,
+      "messageEdit": true,
+      "roleCreate": true,
+      "roleDelete": true,
+      "roleUpdate": true,
+      "channelCreate": true,
+      "channelDelete": true,
+      "channelUpdate": true,
+      "voiceJoin": true,
+      "voiceLeave": true,
+      "voiceMove": true
+    }
+  },
+  "cases": {},
+  "warnings": {},
+  "welcome": {},
+  "leave": {},
+  "tickets": {},
+  "levels": {},
+  "reactionRoles": {},
+  "giveaways": {},
+  "suggestions": {},
+  "stats": {}
+}
