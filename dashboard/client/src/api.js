@@ -87,9 +87,7 @@ async function requestOptionalJson(path, options = {}) {
     ...options,
   });
 
-  if (response.status === 401) {
-    return null;
-  }
+  if (response.status === 401) return null;
 
   if (!response.ok) {
     const text = await response.text();
@@ -97,12 +95,7 @@ async function requestOptionalJson(path, options = {}) {
   }
 
   const contentType = response.headers.get('content-type') || '';
-
-  if (contentType.includes('application/json')) {
-    return response.json();
-  }
-
-  return null;
+  return contentType.includes('application/json') ? response.json() : null;
 }
 
 function buildStreamUrl(path) {
@@ -120,6 +113,18 @@ function safeParseStreamData(raw) {
   }
 }
 
+function jsonPost(path, body) {
+  clearCache();
+
+  return request(path, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body || {}),
+  });
+}
+
 export const api = {
   clearCache,
 
@@ -127,7 +132,7 @@ export const api = {
     return `${API_BASE}/api/auth/login`;
   },
 
-  async logout() {
+  logout() {
     clearCache();
 
     return requestOptionalJson('/api/auth/logout', {
@@ -135,30 +140,21 @@ export const api = {
     });
   },
 
-  async getAuthMe() {
+  getAuthMe() {
     return request('/api/auth/me');
   },
 
   async getGuilds({ force = false } = {}) {
-    if (force) {
-      cache.delete('GET:/api/discord/guilds');
-    }
+    if (force) cache.delete('GET:/api/discord/guilds');
 
     const result = await request('/api/discord/guilds');
-
-    if (result?.authenticated === false) {
-      return [];
-    }
-
-    return result;
+    return result?.authenticated === false ? [] : result;
   },
 
   getGuildChannels(guildId, { force = false } = {}) {
     const path = `/api/discord/guilds/${guildId}/channels`;
 
-    if (force) {
-      cache.delete(`GET:${path}`);
-    }
+    if (force) cache.delete(`GET:${path}`);
 
     return request(path);
   },
@@ -167,18 +163,18 @@ export const api = {
     const query = guildId ? `?guildId=${encodeURIComponent(guildId)}` : '';
     const path = `/api/status${query}`;
 
-    if (force) {
-      cache.delete(`GET:${path}`);
-    }
+    if (force) cache.delete(`GET:${path}`);
 
     return request(path);
   },
 
   createStatusStream(guildId, handlers = {}) {
-    if (!guildId || typeof window === 'undefined' || typeof window.EventSource === 'undefined') {
-      return {
-        close() {},
-      };
+    if (
+      !guildId ||
+      typeof window === 'undefined' ||
+      typeof window.EventSource === 'undefined'
+    ) {
+      return { close() {} };
     }
 
     const query = `?guildId=${encodeURIComponent(guildId)}`;
@@ -223,7 +219,7 @@ export const api = {
   },
 
   getWarnings(guildId) {
-    return request(`/api/warnings/${guildId}`);
+    return request(`/api/cases/${guildId}/warnings`);
   },
 
   getConfig(guildId) {
@@ -231,15 +227,7 @@ export const api = {
   },
 
   updateConfig(guildId, body) {
-    clearCache();
-
-    return request(`/api/config/${guildId}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    });
+    return jsonPost(`/api/config/${guildId}`, body);
   },
 
   getMessages(guildId) {
@@ -247,31 +235,15 @@ export const api = {
   },
 
   saveMessages(guildId, body) {
-    clearCache();
-
-    return request(`/api/config/messages/${guildId}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    });
+    return jsonPost(`/api/config/messages/${guildId}`, body);
   },
 
   getAutoModConfig(guildId) {
-    return request(`/api/automod/${guildId}`);
+    return request(`/api/config/automod/${guildId}`);
   },
 
   saveAutoModConfig(guildId, body) {
-    clearCache();
-
-    return request(`/api/automod/${guildId}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    });
+    return jsonPost(`/api/config/automod/${guildId}`, body);
   },
 
   getLogConfig(guildId) {
@@ -279,14 +251,6 @@ export const api = {
   },
 
   saveLogConfig(guildId, body) {
-    clearCache();
-
-    return request(`/api/config/logs/${guildId}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    });
+    return jsonPost(`/api/config/logs/${guildId}`, body);
   },
 };

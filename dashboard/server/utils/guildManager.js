@@ -3,6 +3,8 @@ const path = require('path');
 
 const GUILDS_DIR = path.join(__dirname, '..', 'data', 'guilds');
 
+const guildCache = new Map();
+
 const DEFAULT_GUILD_DATA = {
   guildId: null,
   guildName: null,
@@ -15,6 +17,7 @@ const DEFAULT_GUILD_DATA = {
   },
 
   modules: {},
+
   automod: {},
   logs: {},
   cases: {},
@@ -77,11 +80,33 @@ function readJson(filePath, fallback = {}) {
 
 function writeJson(filePath, data) {
   ensureGuildsDir();
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+
+  const tempPath = `${filePath}.tmp`;
+
+  fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), 'utf8');
+  fs.renameSync(tempPath, filePath);
+}
+
+function mergeObject(defaultValue, sourceValue) {
+  const defaults =
+    defaultValue && typeof defaultValue === 'object' && !Array.isArray(defaultValue)
+      ? defaultValue
+      : {};
+
+  const source =
+    sourceValue && typeof sourceValue === 'object' && !Array.isArray(sourceValue)
+      ? sourceValue
+      : {};
+
+  return {
+    ...defaults,
+    ...source,
+  };
 }
 
 function mergeDefaults(data = {}) {
   const defaults = clone(DEFAULT_GUILD_DATA);
+
   const source =
     data && typeof data === 'object' && !Array.isArray(data) ? data : {};
 
@@ -89,23 +114,21 @@ function mergeDefaults(data = {}) {
     ...defaults,
     ...source,
 
-    general: { ...defaults.general, ...(source.general || {}) },
-    modules: { ...defaults.modules, ...(source.modules || {}) },
-    automod: { ...defaults.automod, ...(source.automod || {}) },
-    logs: { ...defaults.logs, ...(source.logs || {}) },
-    cases: { ...defaults.cases, ...(source.cases || {}) },
-    warnings: { ...defaults.warnings, ...(source.warnings || {}) },
-    welcome: { ...defaults.welcome, ...(source.welcome || {}) },
-    leave: { ...defaults.leave, ...(source.leave || {}) },
-    tickets: { ...defaults.tickets, ...(source.tickets || {}) },
-    levels: { ...defaults.levels, ...(source.levels || {}) },
-    reactionRoles: {
-      ...defaults.reactionRoles,
-      ...(source.reactionRoles || {}),
-    },
-    giveaways: { ...defaults.giveaways, ...(source.giveaways || {}) },
-    suggestions: { ...defaults.suggestions, ...(source.suggestions || {}) },
-    stats: { ...defaults.stats, ...(source.stats || {}) },
+    general: mergeObject(defaults.general, source.general),
+    modules: mergeObject(defaults.modules, source.modules),
+
+    automod: mergeObject(defaults.automod, source.automod),
+    logs: mergeObject(defaults.logs, source.logs),
+    cases: mergeObject(defaults.cases, source.cases),
+    warnings: mergeObject(defaults.warnings, source.warnings),
+    welcome: mergeObject(defaults.welcome, source.welcome),
+    leave: mergeObject(defaults.leave, source.leave),
+    tickets: mergeObject(defaults.tickets, source.tickets),
+    levels: mergeObject(defaults.levels, source.levels),
+    reactionRoles: mergeObject(defaults.reactionRoles, source.reactionRoles),
+    giveaways: mergeObject(defaults.giveaways, source.giveaways),
+    suggestions: mergeObject(defaults.suggestions, source.suggestions),
+    stats: mergeObject(defaults.stats, source.stats),
   };
 }
 
@@ -120,24 +143,40 @@ function resolveGuildMeta(guildOrMeta = {}) {
   };
 }
 
-function getGuildData(guildId) {
+function cacheGuildData(guildId, data) {
+  const safeGuildId = normalizeGuildId(guildId);
+  const nextData = mergeDefaults(data);
+
+  nextData.guildId = safeGuildId;
+
+  guildCache.set(safeGuildId, clone(nextData));
+
+  return clone(nextData);
+}
+
+function getGuildData(guildId, options = {}) {
   const safeGuildId = normalizeGuildId(guildId);
   const filePath = getGuildFilePath(safeGuildId);
+
+  if (!options.forceReload && guildCache.has(safeGuildId)) {
+    return clone(guildCache.get(safeGuildId));
+  }
+
   const data = mergeDefaults(readJson(filePath, DEFAULT_GUILD_DATA));
 
   data.guildId = safeGuildId;
 
   if (!fs.existsSync(filePath)) {
-    saveGuildData(safeGuildId, data);
+    writeJson(filePath, data);
   }
 
-  return data;
+  return cacheGuildData(safeGuildId, data);
 }
 
 function saveGuildData(guildId, data = {}, guildOrMeta = {}) {
   const safeGuildId = normalizeGuildId(guildId);
   const filePath = getGuildFilePath(safeGuildId);
-  const current = readJson(filePath, DEFAULT_GUILD_DATA);
+  const current = getGuildData(safeGuildId);
   const meta = resolveGuildMeta(guildOrMeta);
 
   const nextData = mergeDefaults({
@@ -151,7 +190,8 @@ function saveGuildData(guildId, data = {}, guildOrMeta = {}) {
   nextData.updatedAt = new Date().toISOString();
 
   writeJson(filePath, nextData);
-  return nextData;
+
+  return cacheGuildData(safeGuildId, nextData);
 }
 
 function syncGuildMeta(guildOrMeta = {}) {
@@ -189,14 +229,20 @@ function replaceGuildSection(
   sectionData = {},
   guildOrMeta = {}
 ) {
-  const data = getGuildData(guildId);
-
-  data[sectionName] = {
+  const nextSection = {
     ...(sectionData || {}),
     updatedAt: new Date().toISOString(),
   };
 
-  return saveGuildData(guildId, data, guildOrMeta)[sectionName];
+  const updatedGuild = saveGuildData(
+    guildId,
+    {
+      [sectionName]: nextSection,
+    },
+    guildOrMeta
+  );
+
+  return clone(updatedGuild[sectionName] || {});
 }
 
 function saveGuildSection(
@@ -226,10 +272,26 @@ function updateGuildSection(
   guildOrMeta = {}
 ) {
   const current = getGuildSection(guildId, sectionName, fallback);
+
   const next =
     typeof updater === 'function' ? updater(clone(current)) : updater;
 
   return replaceGuildSection(guildId, sectionName, next || {}, guildOrMeta);
+}
+
+function reloadGuild(guildId) {
+  const safeGuildId = normalizeGuildId(guildId);
+  guildCache.delete(safeGuildId);
+  return getGuildData(safeGuildId, { forceReload: true });
+}
+
+function clearGuildCache(guildId) {
+  if (guildId) {
+    guildCache.delete(normalizeGuildId(guildId));
+    return;
+  }
+
+  guildCache.clear();
 }
 
 function listGuildFiles() {
@@ -254,6 +316,9 @@ module.exports = {
   saveGuildSection,
   replaceGuildSection,
   updateGuildSection,
+
+  reloadGuild,
+  clearGuildCache,
 
   listGuildFiles,
 };

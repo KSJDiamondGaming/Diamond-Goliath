@@ -1,7 +1,7 @@
 {
   "guildId": "808091031350280213",
   "guildName": null,
-  "updatedAt": "2026-04-25T23:36:09.035Z",
+  "updatedAt": "2026-04-27T00:39:49.106Z",
   "general": {
     "enabled": true,
     "prefix": "!",
@@ -10,54 +10,66 @@
   "modules": {},
   "automod": {
     "antiSpam": {
-      "enabled": true,
+      "enabled": false,
       "maxMessages": 6,
       "intervalSeconds": 8,
-      "punishment": [
-        "delete"
+      "punishment": "delete",
+      "punishments": [
+        "delete",
+        "warn",
+        "dm",
+        "timeout",
+        "kick",
+        "ban"
       ]
     },
     "antiLink": {
-      "enabled": true,
-      "punishment": [
-        "warn"
-      ],
+      "enabled": false,
+      "punishment": "delete",
       "allowedDomains": [],
-      "blockedDomains": []
+      "blockedDomains": [],
+      "punishments": [
+        "delete"
+      ]
     },
     "antiInvite": {
-      "enabled": true,
-      "punishment": [
+      "enabled": false,
+      "punishment": "delete",
+      "punishments": [
         "delete"
       ]
     },
     "capsAbuse": {
-      "enabled": true,
-      "minLength": 5,
-      "percentage": 20,
-      "punishment": [
+      "enabled": false,
+      "minLength": 10,
+      "percentage": 70,
+      "punishment": "delete",
+      "punishments": [
         "delete"
       ]
     },
     "badWords": {
-      "enabled": true,
+      "enabled": false,
       "words": [],
-      "punishment": [
+      "punishment": "delete",
+      "punishments": [
         "delete"
       ]
     },
     "repeatedMessages": {
-      "enabled": true,
+      "enabled": false,
       "maxRepeats": 3,
-      "punishment": [
+      "intervalSeconds": 10,
+      "punishment": "delete",
+      "punishments": [
         "delete"
       ]
     },
     "logs": {
       "enabled": true,
-      "channelId": "1491219255465869514"
+      "channelId": ""
     },
-    "updatedAt": "2026-04-25T01:59:53.878Z"
+    "updatedAt": "2026-04-27T00:39:49.106Z"
   },
   "logs": {},
   "cases": {},

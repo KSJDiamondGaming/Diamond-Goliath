@@ -8,6 +8,7 @@ module.exports = {
       if (!message.guild) return;
       if (!message.member) return;
       if (!message.content) return;
+      if (message.author?.bot) return;
 
       await runAutomod(message);
     } catch (error) {

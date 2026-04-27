@@ -19,12 +19,10 @@ const terminal = require('../../src/utils/utility/terminalLogger').createLogger(
 
 const { initSocketHub } = require('./utils/socketHub');
 
-const casesRoute = require('./routes/cases');
-const warningsRoute = require('./routes/warnings');
-const configRoute = require('./routes/config');
 const authRoute = require('./routes/auth');
 const discordRoutes = require('./routes/discord');
-const automodRoutes = require('./routes/automod');
+const configRoute = require('./routes/guildConfig');
+const casesRoute = require('./routes/moderation');
 const statusRoute = require('./routes/status');
 
 const app = express();
@@ -57,13 +55,12 @@ app.use((req, res, next) => {
       return terminal.request(req.method, url, status, duration);
     }
 
-    if (
-      url.includes('/api/cases') ||
-      url.includes('/api/warnings') ||
-      url.includes('/api/status')
-    ) {
-      return;
-    }
+  if (
+    url.includes('/api/cases') ||
+    url.includes('/api/status')
+  ) {
+    return;
+  }
 
     if (status === 304) return;
 
@@ -109,10 +106,8 @@ app.use(
 
 app.use('/api/auth', authRoute);
 app.use('/api/discord', discordRoutes);
-app.use('/api/cases', casesRoute);
-app.use('/api/warnings', warningsRoute);
-app.use('/api/config', configRoute);
-app.use('/api/automod', automodRoutes);
+app.use('/api/cases', casesRoute);       // now includes warnings
+app.use('/api/config', configRoute);     // now includes automod
 app.use('/api/status', statusRoute);
 
 app.use((req, res) => {

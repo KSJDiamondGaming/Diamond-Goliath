@@ -1,7 +1,10 @@
 const express = require('express');
 const guildManager = require('../utils/guildManager');
+const { emitGuildUpdate } = require('../utils/socketHub');
 
 const router = express.Router();
+
+/* ================= DEFAULTS ================= */
 
 const DEFAULT_LOGS = {
   logsChannelId: null,
@@ -11,14 +14,57 @@ const DEFAULT_LOGS = {
   adminActionLoggerEnabled: false,
 };
 
+/* ================= AUTOMOD ================= */
+
+router.get('/automod/:guildId', (req, res) => {
+  try {
+    const { guildId } = req.params;
+
+    const config = guildManager.getGuildSection(guildId, 'automod', {});
+    return res.json({ ok: true, guildId, config });
+  } catch (err) {
+    console.error('AutoMod load failed:', err);
+    return res.status(500).json({ error: 'Failed to load automod config.' });
+  }
+});
+
+router.post('/automod/:guildId', (req, res) => {
+  try {
+    const { guildId } = req.params;
+
+    const config = guildManager.saveGuildSection(
+      guildId,
+      'automod',
+      req.body || {}
+    );
+
+    emitGuildUpdate(guildId, {
+      section: 'automod',
+      data: config,
+    });
+
+    return res.json({ ok: true, guildId, config });
+  } catch (err) {
+    console.error('AutoMod save failed:', err);
+    return res.status(500).json({ error: 'Failed to save automod config.' });
+  }
+});
+
+/* ================= LOGS ================= */
+
 router.get('/logs/:guildId', (req, res) => {
   try {
     const { guildId } = req.params;
-    const config = guildManager.getGuildSection(guildId, 'logs', DEFAULT_LOGS);
+
+    const config = guildManager.getGuildSection(
+      guildId,
+      'logs',
+      DEFAULT_LOGS
+    );
 
     return res.json({ ok: true, guildId, config });
-  } catch (error) {
-    console.error('Failed to get logs config:', error);
+  } catch (err) {
+    console.error('Logs load failed:', err);
     return res.status(500).json({ error: 'Failed to load logs config.' });
   }
 });
@@ -35,22 +81,30 @@ router.post('/logs/:guildId', (req, res) => {
       adminActionLoggerEnabled: req.body.adminActionLoggerEnabled === true,
     });
 
+    emitGuildUpdate(guildId, {
+      section: 'logs',
+      data: config,
+    });
+
     return res.json({ ok: true, guildId, config });
-  } catch (error) {
-    console.error('Failed to save logs config:', error);
+  } catch (err) {
+    console.error('Logs save failed:', err);
     return res.status(500).json({ error: 'Failed to save logs config.' });
   }
 });
 
+/* ================= MESSAGES ================= */
+
 router.get('/messages/:guildId', (req, res) => {
   try {
     const { guildId } = req.params;
+
     const welcome = guildManager.getGuildSection(guildId, 'welcome', {});
     const leave = guildManager.getGuildSection(guildId, 'leave', {});
 
     return res.json({ ok: true, guildId, welcome, leave });
-  } catch (error) {
-    console.error('Failed to get message config:', error);
+  } catch (err) {
+    console.error('Messages load failed:', err);
     return res.status(500).json({ error: 'Failed to load message config.' });
   }
 });
@@ -71,21 +125,26 @@ router.post('/messages/:guildId', (req, res) => {
       channelId: req.body.leaveChannelId || null,
     });
 
+    emitGuildUpdate(guildId, { section: 'welcome', data: welcome });
+    emitGuildUpdate(guildId, { section: 'leave', data: leave });
+
     return res.json({ ok: true, guildId, welcome, leave });
-  } catch (error) {
-    console.error('Failed to save message config:', error);
+  } catch (err) {
+    console.error('Messages save failed:', err);
     return res.status(500).json({ error: 'Failed to save message config.' });
   }
 });
 
+/* ================= EMBEDS ================= */
+
 router.get('/embeds/:guildId', (req, res) => {
   try {
     const { guildId } = req.params;
-    const embeds = guildManager.getGuildSection(guildId, 'embeds', {});
 
-    return res.json({ ok: true, guildId, config: embeds });
-  } catch (error) {
-    console.error('Failed to get embed config:', error);
+    const config = guildManager.getGuildSection(guildId, 'embeds', {});
+    return res.json({ ok: true, guildId, config });
+  } catch (err) {
+    console.error('Embeds load failed:', err);
     return res.status(500).json({ error: 'Failed to load embed config.' });
   }
 });
@@ -101,21 +160,28 @@ router.post('/embeds/:guildId', (req, res) => {
       color: req.body.color || '',
     });
 
+    emitGuildUpdate(guildId, {
+      section: 'embeds',
+      data: config,
+    });
+
     return res.json({ ok: true, guildId, config });
-  } catch (error) {
-    console.error('Failed to save embed config:', error);
+  } catch (err) {
+    console.error('Embeds save failed:', err);
     return res.status(500).json({ error: 'Failed to save embed config.' });
   }
 });
 
+/* ================= FULL CONFIG ================= */
+
 router.get('/:guildId', (req, res) => {
   try {
     const { guildId } = req.params;
-    const config = guildManager.getGuildData(guildId);
 
+    const config = guildManager.getGuildData(guildId);
     return res.json({ ok: true, guildId, config });
-  } catch (error) {
-    console.error('Failed to get guild config:', error);
+  } catch (err) {
+    console.error('Full config load failed:', err);
     return res.status(500).json({ error: 'Failed to load guild config.' });
   }
 });
@@ -123,11 +189,17 @@ router.get('/:guildId', (req, res) => {
 router.post('/:guildId', (req, res) => {
   try {
     const { guildId } = req.params;
+
     const config = guildManager.saveGuildData(guildId, req.body || {});
 
+    emitGuildUpdate(guildId, {
+      section: 'all',
+      data: config,
+    });
+
     return res.json({ ok: true, guildId, config });
-  } catch (error) {
-    console.error('Failed to save guild config:', error);
+  } catch (err) {
+    console.error('Full config save failed:', err);
     return res.status(500).json({ error: 'Failed to save guild config.' });
   }
 });

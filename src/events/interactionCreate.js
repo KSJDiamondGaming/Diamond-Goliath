@@ -1,9 +1,10 @@
 const { MessageFlags } = require('discord.js');
+
 const {
   handleModPanelInteraction,
   handleModPanelModal,
 } = require('../utils/moderation/modPanel');
-const adminPanelInteraction = require('./adminPanelInteraction');
+
 const helpCommand = require('../commands/utility/help');
 const automodPanel = require('../utils/automod/automodPanel');
 
@@ -11,13 +12,11 @@ module.exports = {
   name: 'interactionCreate',
 
   async execute(interaction) {
-    const client = interaction.client;
-
     try {
-      if (client.isBooting) {
+      if (interaction.client.isBooting) {
         if (isHandledInteractionType(interaction)) {
-          return await safeReply(interaction, {
-            content: '⏳ The bot is still starting up. Please try again in a moment.',
+          return safeReply(interaction, {
+            content: '⏳ Bot is still starting up. Please try again in a moment.',
             flags: MessageFlags.Ephemeral,
           });
         }
@@ -26,11 +25,11 @@ module.exports = {
       }
 
       if (interaction.isChatInputCommand()) {
-        return await handleChatInputCommand(interaction);
+        return handleChatInputCommand(interaction);
       }
 
       if (interaction.isButton()) {
-        return await handleButtonInteraction(interaction);
+        return handleButtonInteraction(interaction);
       }
 
       if (
@@ -40,62 +39,43 @@ module.exports = {
         interaction.isUserSelectMenu() ||
         interaction.isMentionableSelectMenu()
       ) {
-        return await handleSelectMenuInteraction(interaction);
+        return handleSelectMenuInteraction(interaction);
       }
 
       if (interaction.isModalSubmit()) {
-        return await handleModalInteraction(interaction);
+        return handleModalInteraction(interaction);
       }
     } catch (error) {
-      if (isIgnorableInteractionError(error)) {
-        return;
-      }
+      if (isIgnorableInteractionError(error)) return;
 
       console.error('❌ interactionCreate event failed:', error);
 
-      try {
-        await safeReply(interaction, {
-          content: '❌ Something went wrong while processing that interaction.',
-          embeds: [],
-          components: [],
-          flags: MessageFlags.Ephemeral,
-        });
-      } catch (replyError) {
-        console.error('❌ Failed to send interaction error response:', replyError);
-      }
+      await safeReply(interaction, {
+        content: '❌ Something went wrong while processing that interaction.',
+        embeds: [],
+        components: [],
+        flags: MessageFlags.Ephemeral,
+      }).catch(() => {});
     }
   },
 };
 
 async function handleChatInputCommand(interaction) {
-  const commandName = interaction.commandName;
-  const command = interaction.client.commands.get(commandName);
+  const command = interaction.client.commands.get(interaction.commandName);
 
   if (!command) {
-    console.warn(`⚠️ Command not loaded: /${commandName}`);
-
-    return await safeReply(interaction, {
-      content: `❌ The command \`/${commandName}\` is not currently available on the bot.`,
+    return safeReply(interaction, {
+      content: `❌ The command \`/${interaction.commandName}\` is not currently available.`,
       flags: MessageFlags.Ephemeral,
     });
   }
 
-  const startedAt = Date.now();
-
   try {
     await command.execute(interaction, interaction.client);
-
-    const duration = Date.now() - startedAt;
-
-    if (duration > 2500) {
-      console.warn(`⏱️ Slow command detected: /${commandName} took ${duration}ms`);
-    }
   } catch (error) {
-    if (isIgnorableInteractionError(error)) {
-      return;
-    }
+    if (isIgnorableInteractionError(error)) return;
 
-    console.error(`❌ Error executing /${commandName}:`, error);
+    console.error(`❌ Error executing /${interaction.commandName}:`, error);
 
     await safeReply(interaction, {
       content: '❌ There was an error while running this command.',
@@ -107,192 +87,132 @@ async function handleChatInputCommand(interaction) {
 }
 
 async function handleButtonInteraction(interaction) {
-  try {
-    const customId = interaction.customId;
+  const customId = interaction.customId;
 
-    if (customId.startsWith('admin:')) {
-      return await adminPanelInteraction.execute(interaction);
-    }
+  if (
+    typeof helpCommand.handleHelpButton === 'function' &&
+    (customId === 'help-back-home' || customId === 'help-close')
+  ) {
+    const handled = await helpCommand.handleHelpButton(interaction);
+    if (handled !== false) return;
+  }
 
-    if (
-      typeof helpCommand.handleHelpButton === 'function' &&
-      (customId === 'help-back-home' || customId === 'help-close')
-    ) {
-      const handled = await helpCommand.handleHelpButton(interaction);
-      if (handled !== false) return;
-    }
+  if (
+    typeof automodPanel.handleInteraction === 'function' &&
+    customId.startsWith('automod_')
+  ) {
+    const handled = await automodPanel.handleInteraction(interaction);
+    if (handled !== false) return;
+  }
 
-    if (
-      typeof automodPanel.handleInteraction === 'function' &&
-      customId.startsWith('automod_')
-    ) {
-      const handled = await automodPanel.handleInteraction(interaction);
-      if (handled !== false) return;
-    }
+  if (
+    typeof handleModPanelInteraction === 'function' &&
+    customId.startsWith('mod_')
+  ) {
+    const handled = await handleModPanelInteraction(interaction);
+    if (handled !== false) return;
+  }
 
-    if (typeof handleStatsInteraction === 'function' && customId.startsWith('stats_')) {
-      const handled = await handleStatsInteraction(interaction);
-      if (handled !== false) return;
-    }
+  const caseCommand = interaction.client.commands.get('case');
 
-    if (
-      typeof handleModPanelInteraction === 'function' &&
-      customId.startsWith('mod_')
-    ) {
-      const handled = await handleModPanelInteraction(interaction);
-      if (handled !== false) return;
-    }
+  if (
+    caseCommand &&
+    typeof caseCommand.handleCasePanelButton === 'function' &&
+    customId.startsWith('casepanel_')
+  ) {
+    const handled = await caseCommand.handleCasePanelButton(interaction);
+    if (handled !== false) return;
+  }
 
-    const caseCommand = interaction.client.commands.get('case');
-    if (
-      caseCommand &&
-      typeof caseCommand.handleCasePanelButton === 'function' &&
-      customId.startsWith('casepanel_')
-    ) {
-      const handled = await caseCommand.handleCasePanelButton(interaction);
-      if (handled !== false) return;
-    }
+  if (customId.startsWith('warnings_')) return;
 
-    if (customId.startsWith('warnings_')) {
-      return;
-    }
+  console.warn(`⚠️ Unhandled button interaction: ${customId}`);
 
-    console.warn(`⚠️ Unhandled button interaction: ${customId}`);
-
-    if (!interaction.deferred && !interaction.replied) {
-      await interaction.reply({
-        content: '⚠️ That button is not currently handled by the bot.',
-        flags: MessageFlags.Ephemeral,
-      });
-    }
-  } catch (error) {
-    if (isIgnorableInteractionError(error)) {
-      return;
-    }
-
-    console.error(`❌ Button interaction failed (${interaction.customId}):`, error);
-
-    await safeReply(interaction, {
-      content: '❌ Something went wrong while handling that button.',
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.reply({
+      content: '⚠️ That button is not currently handled by the bot.',
       flags: MessageFlags.Ephemeral,
     });
   }
 }
 
 async function handleSelectMenuInteraction(interaction) {
-  try {
-    const customId = interaction.customId;
+  const customId = interaction.customId;
 
-    if (customId.startsWith('admin:')) {
-      return await adminPanelInteraction.execute(interaction);
-    }
+  if (
+    typeof automodPanel.handleInteraction === 'function' &&
+    customId.startsWith('automod_')
+  ) {
+    const handled = await automodPanel.handleInteraction(interaction);
+    if (handled !== false) return;
+  }
 
-    if (
-      typeof automodPanel.handleInteraction === 'function' &&
-      customId.startsWith('automod_')
-    ) {
-      const handled = await automodPanel.handleInteraction(interaction);
-      if (handled !== false) return;
-    }
+  if (
+    interaction.isStringSelectMenu() &&
+    typeof helpCommand.handleHelpSelectMenu === 'function' &&
+    customId === 'help-category-select'
+  ) {
+    const handled = await helpCommand.handleHelpSelectMenu(interaction);
+    if (handled !== false) return;
+  }
 
-    if (typeof handleStatsInteraction === 'function' && customId.startsWith('stats_')) {
-      const handled = await handleStatsInteraction(interaction);
-      if (handled !== false) return;
-    }
+  const caseCommand = interaction.client.commands.get('case');
 
-    if (
-      interaction.isStringSelectMenu() &&
-      typeof helpCommand.handleHelpSelectMenu === 'function' &&
-      customId === 'help-category-select'
-    ) {
-      const handled = await helpCommand.handleHelpSelectMenu(interaction);
-      if (handled !== false) return;
-    }
+  if (
+    interaction.isStringSelectMenu() &&
+    caseCommand &&
+    typeof caseCommand.handleCasePanelSelectMenu === 'function' &&
+    customId.startsWith('casepanel_')
+  ) {
+    const handled = await caseCommand.handleCasePanelSelectMenu(interaction);
+    if (handled !== false) return;
+  }
 
-    const caseCommand = interaction.client.commands.get('case');
-    if (
-      interaction.isStringSelectMenu() &&
-      caseCommand &&
-      typeof caseCommand.handleCasePanelSelectMenu === 'function' &&
-      customId.startsWith('casepanel_')
-    ) {
-      const handled = await caseCommand.handleCasePanelSelectMenu(interaction);
-      if (handled !== false) return;
-    }
+  console.warn(`⚠️ Unhandled select menu interaction: ${customId}`);
 
-    console.warn(`⚠️ Unhandled select menu interaction: ${customId}`);
-
-    if (!interaction.deferred && !interaction.replied) {
-      await interaction.reply({
-        content: '⚠️ That menu is not currently handled by the bot.',
-        flags: MessageFlags.Ephemeral,
-      });
-    }
-  } catch (error) {
-    if (isIgnorableInteractionError(error)) {
-      return;
-    }
-
-    console.error(`❌ Select menu interaction failed (${interaction.customId}):`, error);
-
-    await safeReply(interaction, {
-      content: '❌ Something went wrong while handling that menu.',
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.reply({
+      content: '⚠️ That menu is not currently handled by the bot.',
       flags: MessageFlags.Ephemeral,
     });
   }
 }
 
 async function handleModalInteraction(interaction) {
-  try {
-    const customId = interaction.customId;
+  const customId = interaction.customId;
 
-    if (customId.startsWith('admin:')) {
-      return await adminPanelInteraction.execute(interaction);
-    }
+  if (
+    typeof automodPanel.handleInteraction === 'function' &&
+    customId.startsWith('automod_')
+  ) {
+    const handled = await automodPanel.handleInteraction(interaction);
+    if (handled !== false) return;
+  }
 
-    if (
-      typeof automodPanel.handleInteraction === 'function' &&
-      customId.startsWith('automod_')
-    ) {
-      const handled = await automodPanel.handleInteraction(interaction);
-      if (handled !== false) return;
-    }
+  if (
+    typeof handleModPanelModal === 'function' &&
+    customId.startsWith('mod_')
+  ) {
+    const handled = await handleModPanelModal(interaction);
+    if (handled !== false) return;
+  }
 
-    if (
-      typeof handleModPanelModal === 'function' &&
-      customId.startsWith('mod_')
-    ) {
-      const handled = await handleModPanelModal(interaction);
-      if (handled !== false) return;
-    }
+  const caseCommand = interaction.client.commands.get('case');
 
-    const caseCommand = interaction.client.commands.get('case');
-    if (
-      caseCommand &&
-      typeof caseCommand.handleCasePanelModal === 'function' &&
-      customId.startsWith('casepanel_')
-    ) {
-      const handled = await caseCommand.handleCasePanelModal(interaction);
-      if (handled !== false) return;
-    }
+  if (
+    caseCommand &&
+    typeof caseCommand.handleCasePanelModal === 'function' &&
+    customId.startsWith('casepanel_')
+  ) {
+    const handled = await caseCommand.handleCasePanelModal(interaction);
+    if (handled !== false) return;
+  }
 
-    console.warn(`⚠️ Unhandled modal interaction: ${customId}`);
+  console.warn(`⚠️ Unhandled modal interaction: ${customId}`);
 
-    if (!interaction.deferred && !interaction.replied) {
-      await interaction.reply({
-        content: '⚠️ That modal is not currently handled by the bot.',
-        flags: MessageFlags.Ephemeral,
-      });
-    }
-  } catch (error) {
-    if (isIgnorableInteractionError(error)) {
-      return;
-    }
-
-    console.error(`❌ Modal interaction failed (${interaction.customId}):`, error);
-
-    await safeReply(interaction, {
-      content: '❌ Something went wrong while handling that modal.',
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.reply({
+      content: '⚠️ That modal is not currently handled by the bot.',
       flags: MessageFlags.Ephemeral,
     });
   }
@@ -306,22 +226,18 @@ async function safeReply(interaction, payload) {
   };
 
   if (interaction.deferred) {
-    return await interaction.editReply(stripFlagsForEditReply(safePayload));
+    const { flags, ...editPayload } = safePayload;
+    return interaction.editReply(editPayload);
   }
 
   if (interaction.replied) {
-    return await interaction.followUp({
+    return interaction.followUp({
       ...safePayload,
       flags: safePayload.flags ?? MessageFlags.Ephemeral,
     });
   }
 
-  return await interaction.reply(safePayload);
-}
-
-function stripFlagsForEditReply(payload) {
-  const { flags, ...rest } = payload;
-  return rest;
+  return interaction.reply(safePayload);
 }
 
 function isIgnorableInteractionError(error) {

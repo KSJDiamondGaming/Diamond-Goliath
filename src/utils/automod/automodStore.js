@@ -649,7 +649,7 @@ function formatAutomodActions(action) {
         { name: 'User', value: `${message.author} (${message.author.id})` },
         { name: 'Channel', value: `${message.channel}` },
         { name: 'Rule', value: details.rule || 'Unknown', inline: true },
-        { name: 'Actions Taken', value: formatAutomodActions(details.action || 'delete'), inline: true,}
+        { name: 'Actions Taken', value: formatAutomodActions(details.action || 'delete'), inline: true,},
         { name: 'Severity', value: severities[details.rule] || 'Medium', inline: true,}
       )
       .setTimestamp();
