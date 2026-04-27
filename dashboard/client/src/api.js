@@ -1,4 +1,10 @@
+import { io } from 'socket.io-client';
+
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+
+export const socket = io(API_BASE, {
+  withCredentials: true,
+});
 
 const cache = new Map();
 
@@ -24,6 +30,33 @@ function setCache(key, data, ttlMs) {
 
 function clearCache() {
   cache.clear();
+}
+
+export function joinGuildRoom(guildId) {
+  if (!guildId) return;
+  socket.emit('joinGuild', guildId);
+}
+
+export function listenForGuildUpdate(guildId, section, handler) {
+  if (!guildId || !section || typeof handler !== 'function') {
+    return () => {};
+  }
+
+  function onUpdate(payload = {}) {
+    const payloadGuildId = payload.guildId || payload.data?.guildId;
+
+    if (payloadGuildId && payloadGuildId !== guildId) return;
+    if (payload.section !== section) return;
+    if (!payload.data) return;
+
+    handler(payload.data, payload);
+  }
+
+  socket.on('guild:update', onUpdate);
+
+  return () => {
+    socket.off('guild:update', onUpdate);
+  };
 }
 
 function getCacheTtl(path) {

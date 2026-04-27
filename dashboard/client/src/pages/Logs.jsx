@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { api } from '../api';
+import { api, joinGuildRoom, listenForGuildUpdate } from '../api';
 import PageShell, {
   EmptyState,
   LoadingPanel,
@@ -7,6 +7,8 @@ import PageShell, {
   PrimaryButton,
 } from '../components/PageShell';
 import { PAGE_LAYOUTS, createLogsPageStyles } from '../ui';
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 const DEFAULT_LOGS = {
   enabled: true,
@@ -16,24 +18,30 @@ const DEFAULT_LOGS = {
     admin: null,
     automod: null,
     member: null,
-    message: null,
+    messageDelete: null,
+    messageEdit: null,
     voice: null,
   },
   events: {
     moderationActions: true,
     adminActions: true,
     automodActions: true,
+
     memberJoin: true,
     memberLeave: true,
     memberUpdate: true,
+
     messageDelete: true,
     messageEdit: true,
+
     roleCreate: true,
     roleDelete: true,
     roleUpdate: true,
+
     channelCreate: true,
     channelDelete: true,
     channelUpdate: true,
+
     voiceJoin: true,
     voiceLeave: true,
     voiceMove: true,
@@ -46,30 +54,6 @@ function getGuildId(selectedGuild) {
   return selectedGuild.id || selectedGuild.guildId || '';
 }
 
-async function apiRequest(method, path, body = null) {
-  if (api?.[method]) {
-    const result = await api[method](path, body);
-    return result?.data ?? result;
-  }
-
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-
-  const res = await fetch(`${API_URL}${path}`, {
-    method: method.toUpperCase(),
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-
-  if (!res.ok) {
-    throw new Error(`${method.toUpperCase()} ${path} failed: ${res.status}`);
-  }
-
-  return res.json();
-}
-
 function normalizeLogs(config = {}) {
   return {
     ...DEFAULT_LOGS,
@@ -77,6 +61,14 @@ function normalizeLogs(config = {}) {
     channels: {
       ...DEFAULT_LOGS.channels,
       ...(config.channels || {}),
+      messageDelete:
+        config.channels?.messageDelete ||
+        config.channels?.message ||
+        null,
+      messageEdit:
+        config.channels?.messageEdit ||
+        config.channels?.message ||
+        null,
     },
     events: {
       ...DEFAULT_LOGS.events,
@@ -95,41 +87,71 @@ export default function Logs({ selectedGuild, theme }) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [saveMessage, setSaveMessage] = useState('');
 
   useEffect(() => {
-  let mounted = true;
+    let mounted = true;
 
-  async function loadData() {
-    if (!guildId) return;
+    async function loadData() {
+      if (!guildId) {
+        if (mounted) {
+          setLogs(DEFAULT_LOGS);
+          setChannels([]);
+          setError('');
+          setSaveMessage('');
+          setLoading(false);
+        }
 
-    try {
-      setLoading(true);
-      setError('');
+        return;
+      }
 
-      const [logsRes, channelsRes] = await Promise.all([
-        api.getLogConfig(guildId),
-        api.getGuildChannels(guildId),
-      ]);
+      try {
+        setLoading(true);
+        setError('');
+        setSaveMessage('');
 
-      if (!mounted) return;
+        const [logsRes, channelsRes] = await Promise.all([
+          api.getLogConfig(guildId),
+          api.getGuildChannels(guildId),
+        ]);
 
-      setLogs(normalizeLogs(logsRes?.config || {}));
-      setChannels(Array.isArray(channelsRes) ? channelsRes : []);
-    } catch (err) {
-      console.error(err);
-      if (!mounted) return;
-      setError('Failed to load log settings.');
-      setChannels([]);
-    } finally {
-      if (mounted) setLoading(false);
+        if (!mounted) return;
+
+        setLogs(normalizeLogs(logsRes?.config || logsRes || {}));
+        setChannels(Array.isArray(channelsRes) ? channelsRes : []);
+      } catch (err) {
+        console.error(err);
+
+        if (!mounted) return;
+
+        setError('Failed to load log settings.');
+        setChannels([]);
+      } finally {
+        if (mounted) setLoading(false);
+      }
     }
-  }
 
-  loadData();
+    loadData();
 
-  return () => {
-    mounted = false;
-  };
+    return () => {
+      mounted = false;
+    };
+  }, [guildId]);
+
+  useEffect(() => {
+  if (!guildId) return undefined;
+
+  joinGuildRoom(guildId);
+
+  return listenForGuildUpdate(guildId, 'logs', (data, payload) => {
+    setLogs(normalizeLogs(data));
+
+    setSaveMessage(
+      payload.source === 'dashboard'
+        ? '✅ Logs synced live.'
+        : '🔄 Logs updated live.',
+    );
+  });
 }, [guildId]);
 
   function updateChannel(channelKey, value) {
@@ -140,7 +162,7 @@ export default function Logs({ selectedGuild, theme }) {
           ...prev.channels,
           [channelKey]: value || null,
         },
-      })
+      }),
     );
   }
 
@@ -152,7 +174,7 @@ export default function Logs({ selectedGuild, theme }) {
           ...prev.events,
           [eventKey]: enabled,
         },
-      })
+      }),
     );
   }
 
@@ -162,8 +184,15 @@ export default function Logs({ selectedGuild, theme }) {
     try {
       setSaving(true);
       setError('');
+      setSaveMessage('');
 
-      await await api.saveLogConfig(guildId, logs);
+      const saved = await api.saveLogConfig(guildId, logs);
+
+      if (saved?.config) {
+        setLogs(normalizeLogs(saved.config));
+      }
+
+      setSaveMessage('✅ Logs saved successfully.');
     } catch (err) {
       console.error(err);
       setError('Failed to save logs.');
@@ -190,6 +219,15 @@ export default function Logs({ selectedGuild, theme }) {
       {error ? (
         <Notice theme={theme} tone="danger">
           {error}
+        </Notice>
+      ) : null}
+
+      {saveMessage ? (
+        <Notice
+          theme={theme}
+          tone={saveMessage.startsWith('❌') ? 'danger' : 'success'}
+        >
+          {saveMessage}
         </Notice>
       ) : null}
 
@@ -230,8 +268,8 @@ export default function Logs({ selectedGuild, theme }) {
                       <select
                         style={styles.channelSelect}
                         value={selectedChannel}
-                        onChange={(e) =>
-                          updateChannel(item.channelKey, e.target.value)
+                        onChange={(event) =>
+                          updateChannel(item.channelKey, event.target.value)
                         }
                       >
                         <option value="">Select channel</option>
@@ -282,17 +320,19 @@ const LOG_GROUPS = [
     description: 'Track deleted and edited messages.',
     items: [
       {
-  key: 'messageDelete',
-  label: 'Deleted Messages',
-  channelKey: 'messageDelete',
-  eventKey: 'messageDelete',
-},
-{
-  key: 'messageEdit',
-  label: 'Edited Messages',
-  channelKey: 'messageEdit',
-  eventKey: 'messageEdit',
-},
+        key: 'messageDelete',
+        label: 'Deleted Messages',
+        description: 'Messages deleted in the server.',
+        channelKey: 'messageDelete',
+        eventKey: 'messageDelete',
+      },
+      {
+        key: 'messageEdit',
+        label: 'Edited Messages',
+        description: 'Messages edited in the server.',
+        channelKey: 'messageEdit',
+        eventKey: 'messageEdit',
+      },
     ],
   },
 ];

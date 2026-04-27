@@ -1,6 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { io } from 'socket.io-client';
-import { api } from '../api';
+import { api, joinGuildRoom, listenForGuildUpdate } from '../api';
 import PageShell, {
   LoadingPanel,
   Notice,
@@ -14,12 +13,6 @@ import {
   SECTION_DEFS,
   createAutoModPageStyles,
 } from '../ui';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-
-const socket = io(API_URL, {
-  withCredentials: true,
-});
 
 const PAGE_KEY = 'automod';
 
@@ -305,35 +298,21 @@ export default function AutoMod({ selectedGuild, theme }) {
     };
   }, [selectedGuild]);
 
-  useEffect(() => {
-    if (!selectedGuild) return undefined;
+    useEffect(() => {
+  if (!selectedGuild) return undefined;
 
-    socket.emit('joinGuild', selectedGuild);
+  joinGuildRoom(selectedGuild);
 
-    function belongsToSelectedGuild(payload = {}) {
-      const payloadGuildId = payload?.guildId || payload?.data?.guildId;
-      return !payloadGuildId || payloadGuildId === selectedGuild;
-    }
+  return listenForGuildUpdate(selectedGuild, 'automod', (data, payload) => {
+    setForm(normalizeAutoModForm(data));
 
-    function handleGuildUpdate(payload) {
-      if (!belongsToSelectedGuild(payload)) return;
-      if (payload?.section !== 'automod') return;
-
-      setForm(normalizeAutoModForm(payload.data));
-
-      setSaveMessage(
-        payload.source === 'dashboard'
-          ? '✅ AutoMod synced live.'
-          : '🔄 AutoMod updated from bot.',
-      );
-    }
-
-    socket.on('guild:update', handleGuildUpdate);
-
-    return () => {
-      socket.off('guild:update', handleGuildUpdate);
-    };
-  }, [selectedGuild]);
+    setSaveMessage(
+      payload.source === 'dashboard'
+        ? '✅ AutoMod synced live.'
+        : '🔄 AutoMod updated live.',
+    );
+  });
+}, [selectedGuild]);
 
   const handleToggle = useCallback((section, field = 'enabled') => {
     setForm((prev) => ({
@@ -418,7 +397,11 @@ export default function AutoMod({ selectedGuild, theme }) {
         },
       };
 
-      await api.saveAutoModConfig(selectedGuild, payload);
+      const saved = await api.saveAutoModConfig(selectedGuild, payload);
+
+      if (saved?.config) {
+        setForm(normalizeAutoModForm(saved.config));
+      }
 
       setSaveMessage('✅ AutoMod config saved successfully.');
     } catch (err) {

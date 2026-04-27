@@ -128,10 +128,7 @@ function readJson(filePath, fallback = {}) {
 function writeJson(filePath, data) {
   ensureGuildsDir();
 
-  const tempPath = `${filePath}.tmp`;
-
-  fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), 'utf8');
-  fs.renameSync(tempPath, filePath);
+  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
 }
 
 function mergeObject(defaultValue, sourceValue) {

@@ -904,6 +904,57 @@ export function topbarStyles(theme) {
         boxShadow: isHovered ? theme.shadow : 'none',
       };
     },
+    syncBadge(status = 'connected') {
+  const map = {
+    connected: {
+      bg: theme.successSoft,
+      border: theme.successBorder,
+      text: theme.successText,
+      dot: theme.success,
+      label: 'Live',
+    },
+    syncing: {
+      bg: theme.warningSoft,
+      border: theme.warningBorder,
+      text: theme.warningText,
+      dot: theme.warning,
+      label: 'Syncing',
+    },
+    disconnected: {
+      bg: theme.dangerSoft,
+      border: theme.dangerBorder,
+      text: theme.dangerText,
+      dot: theme.danger,
+      label: 'Offline',
+    },
+  };
+
+  const s = map[status] || map.connected;
+
+  return {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '6px 10px',
+    borderRadius: '999px',
+    background: s.bg,
+    border: `1px solid ${s.border}`,
+    color: s.text,
+    fontSize: '12px',
+    fontWeight: 800,
+    whiteSpace: 'nowrap',
+  };
+},
+
+syncDot(color) {
+  return {
+    width: '8px',
+    height: '8px',
+    borderRadius: '999px',
+    background: color,
+    boxShadow: `0 0 0 3px ${color}22`,
+  };
+},
   };
 }
 

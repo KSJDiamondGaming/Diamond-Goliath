@@ -279,22 +279,51 @@ async function maybeSyncCommands() {
 
 function registerGuildDataLiveSync() {
   const guildsDir = guildStore.GUILDS_DIR;
+  const refreshTimers = new Map();
+  const DEBOUNCE_MS = 750;
+  const lastRefreshAt = new Map();
+  const MIN_REFRESH_GAP_MS = 3000;
 
   fs.mkdirSync(guildsDir, { recursive: true });
 
-  fs.watch(guildsDir, (eventType, filename) => {
+  function scheduleRefresh(filename) {
     if (!filename || !filename.endsWith('.json')) return;
 
     const guildId = filename.replace('.json', '');
 
-    try {
-      guildStore.clearGuildCache(guildId);
-      guildStore.reloadGuild(guildId);
+    if (!/^\d{16,20}$/.test(guildId)) return;
 
-      terminal.line('🔁 Live Sync', `Guild cache refreshed: ${guildId}`);
-    } catch (error) {
-      terminal.error(`Live sync failed for guild: ${guildId}`, error);
+    if (refreshTimers.has(guildId)) {
+      clearTimeout(refreshTimers.get(guildId));
     }
+
+    const timer = setTimeout(() => {
+      refreshTimers.delete(guildId);
+
+      const now = Date.now();
+      const last = lastRefreshAt.get(guildId) || 0;
+
+      if (now - last < MIN_REFRESH_GAP_MS) {
+        return;
+      }
+
+      lastRefreshAt.set(guildId, now);
+
+      try {
+        guildStore.clearGuildCache(guildId);
+        guildStore.reloadGuild(guildId);
+
+        terminal.line('🔁 Live Sync', `Guild cache refreshed: ${guildId}`);
+      } catch (error) {
+        terminal.error(`Live sync failed for guild: ${guildId}`, error);
+      }
+    }, DEBOUNCE_MS);
+
+    refreshTimers.set(guildId, timer);
+  }
+
+  fs.watch(guildsDir, (_eventType, filename) => {
+    scheduleRefresh(filename);
   });
 
   terminal.line('🔁 Live Sync', `Watching ${guildsDir}`);

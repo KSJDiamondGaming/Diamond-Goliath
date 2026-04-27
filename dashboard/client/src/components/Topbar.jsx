@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { topbarStyles } from '../ui';
+import { socket } from '../api'; // or wherever your socket is exported
 
 function getInitial(name = '') {
   return name.trim().charAt(0).toUpperCase() || '?';
@@ -91,12 +92,47 @@ function Topbar({
     [closeMenu],
   );
 
+  const [syncStatus, setSyncStatus] = useState('connected');
+
+useEffect(() => {
+  if (!socket) return;
+
+  const handleConnect = () => setSyncStatus('connected');
+  const handleDisconnect = () => setSyncStatus('disconnected');
+
+  socket.on('connect', handleConnect);
+  socket.on('disconnect', handleDisconnect);
+
+  return () => {
+    socket.off('connect', handleConnect);
+    socket.off('disconnect', handleDisconnect);
+  };
+}, []);
+
   return (
     <header style={styles.root}>
       <div style={styles.inner}>
         <div style={styles.left} />
 
-        <div style={styles.actionsWrap}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+  
+  <div style={styles.syncBadge(syncStatus)}>
+    <span style={styles.syncDot(
+      syncStatus === 'connected'
+        ? theme.success
+        : syncStatus === 'syncing'
+        ? theme.warning
+        : theme.danger
+    )} />
+    {syncStatus === 'connected'
+      ? 'Live Sync'
+      : syncStatus === 'syncing'
+      ? 'Syncing...'
+      : 'Disconnected'}
+  </div>
+
+  <div style={styles.actionsWrap}>
+    {/* existing user button stays here */}
           {isAuthenticated ? (
             <>
               <button
@@ -209,6 +245,7 @@ function Topbar({
             </button>
           )}
         </div>
+      </div>
       </div>
     </header>
   );
