@@ -5,7 +5,7 @@ const {
 } = require('discord.js');
 
 const { enforceCommandAccess } = require('../../utils/utility/commandAccess');
-const { openModPanel } = require('../../utils/moderation/modPanel');
+const modPanel = require('../bot/interactions/moderation/modPanel');
 
 module.exports = {
   category: 'Moderation',
