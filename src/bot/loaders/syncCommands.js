@@ -168,8 +168,7 @@ async function syncCommands(options = {}) {
 
   const mode = (options.mode || COMMAND_MODE || 'guild').toLowerCase();
   const guildIds = parseGuildIds(options.guildIds ?? GUILD_IDS);
-  const commandsPath =
-    options.commandsPath || path.join(__dirname, '..', '..', 'commands');
+  const commandsPath = options.commandsPath || path.join(__dirname, '..', 'commands');
 
   const commands = loadCommands(commandsPath, mode);
 

@@ -11,7 +11,7 @@ const {
 } = require('discord.js');
 
 const { getLogChannelId } = require('../../../core/guild/store');
-const adminModule = require('../../../core/modules/admin');
+const adminModule = require('../../../core/modules/admin/admin');
 
 /**
  * 🧠 MAIN HUB

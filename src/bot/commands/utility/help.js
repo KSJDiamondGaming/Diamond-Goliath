@@ -11,7 +11,7 @@ const {
 const {
   canAccessCommand,
   enforceCommandAccess,
-} = require('../../utils/utility/commandAccess');
+} = require('../../utils/commandAccess');
 
 const BOT_OWNER_ID = process.env.BOT_OWNER_ID || 'YOUR_USER_ID_HERE';
 

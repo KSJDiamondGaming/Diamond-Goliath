@@ -14,7 +14,6 @@ const {
 const fs = require('fs');
 const path = require('path');
 
-const db = require('./db');
 const {
   getCaseById,
   getCasesForUser,

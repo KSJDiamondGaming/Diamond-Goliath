@@ -4,7 +4,7 @@ const {
   MessageFlags,
 } = require('discord.js');
 
-const { buildAdminPanel } = require('../../bot/interactions/admin/adminPanel');
+const { buildAdminPanel } = require('../../interactions/admin/adminPanel');
 
 module.exports = {
   data: new SlashCommandBuilder()

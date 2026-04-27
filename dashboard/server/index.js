@@ -15,7 +15,7 @@ const express = require('express');
 const cors = require('cors');
 const session = require('express-session');
 
-const terminal = require('../../src/utils/utility/terminalLogger').createLogger('api');
+const terminal = require('../../src/core/logs/terminalLogger').createLogger('api');
 
 const { initSocketHub } = require('./sockets/socketHub');
 

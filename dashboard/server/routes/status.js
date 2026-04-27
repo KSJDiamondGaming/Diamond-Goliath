@@ -2,7 +2,7 @@ const express = require('express');
 
 const router = express.Router();
 
-const terminal = require('../../../src/utils/utility/terminalLogger').createLogger('api');
+const terminal = require('../../../src/core/logs/terminalLogger').createLogger('api');
 const guildStore = require('../../../src/core/guild/store');
 
 const DISCORD_API = 'https://discord.com/api/v10';

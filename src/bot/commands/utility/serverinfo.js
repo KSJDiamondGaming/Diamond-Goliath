@@ -4,7 +4,7 @@ const {
   ChannelType
 } = require('discord.js');
 
-const { enforceCommandAccess } = require('../../utils/utility/commandAccess');
+const { enforceCommandAccess } = require('../../utils/commandAccess');
 
 module.exports = {
   category: 'Utility',

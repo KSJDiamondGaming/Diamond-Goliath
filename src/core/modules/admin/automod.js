@@ -1,7 +1,7 @@
 const { PermissionsBitField } = require('discord.js');
-const guildStore = require('../guild/store');
-const logService = require('../logs/service');
-const { LOG_TYPES } = require('../logs/types');
+const guildStore = require('../../guild/store');
+const logService = require('../../logs/service');
+const { LOG_TYPES } = require('../../logs/types');
 
 const spamTracker = new Map();
 const repeatTracker = new Map();
