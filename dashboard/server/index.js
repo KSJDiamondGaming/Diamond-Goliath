@@ -17,7 +17,7 @@ const session = require('express-session');
 
 const terminal = require('../../src/utils/utility/terminalLogger').createLogger('api');
 
-const { initSocketHub } = require('./utils/socketHub');
+const { initSocketHub } = require('./sockets/socketHub');
 
 const authRoute = require('./routes/auth');
 const discordRoutes = require('./routes/discord');

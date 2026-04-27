@@ -10,10 +10,8 @@ const {
   TextInputStyle,
 } = require('discord.js');
 
-const {
-  getLogChannelId,
-  isLogEventEnabled,
-} = require('../../../dashboard/server/utils/guildManager');
+const { getLogChannelId } = require('../../../core/guild/store');
+const adminModule = require('../../../core/modules/admin');
 
 /**
  * 🧠 MAIN HUB
@@ -24,7 +22,8 @@ function buildAdminPanel(guild, memberDisplayName) {
   const logsChannelId = getLogChannelId(guildId, 'general');
   const automodLogChannelId = getLogChannelId(guildId, 'automod');
   const adminLogChannelId = getLogChannelId(guildId, 'admin');
-  const adminActionLoggerEnabled = isLogEventEnabled(guildId, 'adminActions');
+  const adminState = adminModule.getAdminPanelState(guildId);
+  const adminActionLoggerEnabled = adminState.adminActionsEnabled;
   const modLogChannelId = getLogChannelId(guildId, 'moderation');
 
   const embed = new EmbedBuilder()

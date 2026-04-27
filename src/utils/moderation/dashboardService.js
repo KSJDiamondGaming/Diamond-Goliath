@@ -10,7 +10,7 @@ const {
   getCaseCountForUser,
   getCasesForUser,
   getFilteredCases
-} = require('../logging/cases/caseStore');
+} = require('../../core/modules/moderation/cases');
 
 const {
   formatCaseSummary,

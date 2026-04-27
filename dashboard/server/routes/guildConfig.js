@@ -1,6 +1,6 @@
 const express = require('express');
-const guildManager = require('../utils/guildManager');
-const { emitGuildUpdate } = require('../utils/socketHub');
+const guildStore = require('../../../src/core/guild/store');
+const { emitGuildUpdate } = require('../sockets/socketHub');
 
 const router = express.Router();
 
@@ -10,7 +10,7 @@ router.get('/automod/:guildId', (req, res) => {
   try {
     const { guildId } = req.params;
 
-    const config = guildManager.getGuildSection(guildId, 'automod', {});
+    const config = guildStore.getGuildSection(guildId, 'automod', {});
     return res.json({ ok: true, guildId, config });
   } catch (err) {
     console.error('AutoMod load failed:', err);
@@ -22,7 +22,7 @@ router.post('/automod/:guildId', (req, res) => {
   try {
     const { guildId } = req.params;
 
-    const config = guildManager.saveGuildSection(
+    const config = guildStore.saveGuildSection(
       guildId,
       'automod',
       req.body || {}
@@ -46,10 +46,10 @@ router.get('/logs/:guildId', (req, res) => {
   try {
     const { guildId } = req.params;
 
-    const config = guildManager.getGuildSection(
+    const config = guildStore.getGuildSection(
       guildId,
       'logs',
-      guildManager.DEFAULT_LOGS
+      guildStore.DEFAULT_LOGS
     );
 
     return res.json({ ok: true, guildId, config });
@@ -63,13 +63,13 @@ router.post('/logs/:guildId', (req, res) => {
   try {
     const { guildId } = req.params;
     const body = req.body || {};
-    const current = guildManager.getGuildSection(
+    const current = guildStore.getGuildSection(
       guildId,
       'logs',
-      guildManager.DEFAULT_LOGS
+      guildStore.DEFAULT_LOGS
     );
 
-    const config = guildManager.saveGuildSection(guildId, 'logs', {
+    const config = guildStore.saveGuildSection(guildId, 'logs', {
       ...current,
       enabled: body.enabled !== false,
 
@@ -130,8 +130,8 @@ router.get('/messages/:guildId', (req, res) => {
   try {
     const { guildId } = req.params;
 
-    const welcome = guildManager.getGuildSection(guildId, 'welcome', {});
-    const leave = guildManager.getGuildSection(guildId, 'leave', {});
+    const welcome = guildStore.getGuildSection(guildId, 'welcome', {});
+    const leave = guildStore.getGuildSection(guildId, 'leave', {});
 
     return res.json({ ok: true, guildId, welcome, leave });
   } catch (err) {
@@ -144,13 +144,13 @@ router.post('/messages/:guildId', (req, res) => {
   try {
     const { guildId } = req.params;
 
-    const welcome = guildManager.saveGuildSection(guildId, 'welcome', {
+    const welcome = guildStore.saveGuildSection(guildId, 'welcome', {
       title: req.body.welcomeTitle || '',
       message: req.body.welcomeMessage || '',
       channelId: req.body.welcomeChannelId || null,
     });
 
-    const leave = guildManager.saveGuildSection(guildId, 'leave', {
+    const leave = guildStore.saveGuildSection(guildId, 'leave', {
       title: req.body.leaveTitle || '',
       message: req.body.leaveMessage || '',
       channelId: req.body.leaveChannelId || null,
@@ -172,7 +172,7 @@ router.get('/embeds/:guildId', (req, res) => {
   try {
     const { guildId } = req.params;
 
-    const config = guildManager.getGuildSection(guildId, 'embeds', {});
+    const config = guildStore.getGuildSection(guildId, 'embeds', {});
     return res.json({ ok: true, guildId, config });
   } catch (err) {
     console.error('Embeds load failed:', err);
@@ -184,7 +184,7 @@ router.post('/embeds/:guildId', (req, res) => {
   try {
     const { guildId } = req.params;
 
-    const config = guildManager.saveGuildSection(guildId, 'embeds', {
+    const config = guildStore.saveGuildSection(guildId, 'embeds', {
       defaultTitle: req.body.defaultTitle || '',
       footerText: req.body.footerText || '',
       footerIcon: req.body.footerIcon || '',
@@ -209,7 +209,7 @@ router.get('/:guildId', (req, res) => {
   try {
     const { guildId } = req.params;
 
-    const config = guildManager.getGuildData(guildId);
+    const config = guildStore.getGuildData(guildId);
     return res.json({ ok: true, guildId, config });
   } catch (err) {
     console.error('Full config load failed:', err);
@@ -221,7 +221,7 @@ router.post('/:guildId', (req, res) => {
   try {
     const { guildId } = req.params;
 
-    const config = guildManager.saveGuildData(guildId, req.body || {});
+    const config = guildStore.saveGuildData(guildId, req.body || {});
 
     emitGuildUpdate(guildId, {
       section: 'all',

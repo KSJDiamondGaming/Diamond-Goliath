@@ -1,15 +1,7 @@
 const express = require('express');
-const path = require('path');
-const { read: readJson } = require('../utils/fileStore');
+const guildStore = require('../../../src/core/guild/store');
 
 const router = express.Router();
-
-const DATA_PATH = path.join(__dirname, '..', 'data');
-const CASES_PATH = path.join(DATA_PATH, 'modCaseDetails.json');
-
-function getCasesData() {
-  return readJson(CASES_PATH, {});
-}
 
 function normalizeGuildCases(guildCases, guildId) {
   if (!guildCases || typeof guildCases !== 'object') return [];
@@ -39,9 +31,9 @@ function getGuildWarnings(guildCases, guildId) {
 router.get('/:guildId', (req, res) => {
   try {
     const { guildId } = req.params;
-    const cases = getCasesData();
+    const cases = guildStore.getGuildSection(guildId, 'cases', {});
 
-    return res.json(cases[guildId] || {});
+    return res.json(cases);
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Failed to load cases' });
@@ -53,9 +45,9 @@ router.get('/:guildId', (req, res) => {
 router.get('/:guildId/list', (req, res) => {
   try {
     const { guildId } = req.params;
-    const cases = getCasesData();
+    const cases = guildStore.getGuildSection(guildId, 'cases', {});
 
-    const list = normalizeGuildCases(cases[guildId] || {}, guildId);
+    const list = normalizeGuildCases(cases, guildId);
     return res.json(list);
   } catch (err) {
     console.error(err);
@@ -63,14 +55,14 @@ router.get('/:guildId/list', (req, res) => {
   }
 });
 
-/* ================= WARNINGS (MERGED) ================= */
+/* ================= WARNINGS ================= */
 
 router.get('/:guildId/warnings', (req, res) => {
   try {
     const { guildId } = req.params;
-    const cases = getCasesData();
+    const cases = guildStore.getGuildSection(guildId, 'cases', {});
 
-    const warnings = getGuildWarnings(cases[guildId] || {}, guildId);
+    const warnings = getGuildWarnings(cases, guildId);
     return res.json(warnings);
   } catch (err) {
     console.error(err);

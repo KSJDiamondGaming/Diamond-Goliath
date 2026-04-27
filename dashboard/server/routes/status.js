@@ -1,12 +1,10 @@
 const express = require('express');
-const path = require('path');
 
 const router = express.Router();
 
 const terminal = require('../../../src/utils/utility/terminalLogger').createLogger('api');
-const { read: readJson } = require('../utils/fileStore');
+const guildStore = require('../../../src/core/guild/store');
 
-const CASES_PATH = path.join(__dirname, '..', 'data', 'modCaseDetails.json');
 const DISCORD_API = 'https://discord.com/api/v10';
 
 const BOT_PROFILE_CACHE_TTL = 1000 * 60 * 5;
@@ -194,10 +192,6 @@ async function fetchGuildStats(guildId) {
   return data;
 }
 
-function getCasesData() {
-  return readJson(CASES_PATH, {});
-}
-
 function normalizeGuildCases(guildCases, guildId) {
   if (!guildCases || typeof guildCases !== 'object') return [];
 
@@ -325,8 +319,8 @@ async function buildStatusPayload(guildId) {
 }
 
 function buildGuildSnapshot(guildId, statusPayload) {
-  const casesData = getCasesData();
-  const guildCases = normalizeGuildCases(casesData[guildId] || {}, guildId);
+  const casesData = guildStore.getGuildSection(guildId, 'cases', {});
+  const guildCases = normalizeGuildCases(casesData, guildId);
   const guildWarnings = getGuildWarningsFromCases(guildCases);
 
   return {

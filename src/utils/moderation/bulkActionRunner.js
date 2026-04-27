@@ -1,6 +1,6 @@
 const { MessageFlags } = require('discord.js');
 
-const { createCase } = require('../logging/cases/caseStore');
+const { createCase } = require('../../core/modules/moderation/cases');
 const { addWarning } = require('../logging/modlogs/warningStore');
 const { sendModLog } = require('../logging/modlogs/modLog');
 

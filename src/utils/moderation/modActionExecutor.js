@@ -4,7 +4,7 @@ const {
   createCase,
   getCaseById,
   updateCaseStatus
-} = require('../logging/cases/caseStore');
+} = require('../../core/modules/moderation/cases');
 
 const {
   deleteWarningByCaseId

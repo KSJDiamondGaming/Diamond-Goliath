@@ -20,7 +20,7 @@ const {
   getCasesForUser,
   getFilteredCases,
   getCasesByModerator,
-} = require('../logging/cases/caseStore');
+} = require('../../core/modules/moderation/cases');
 
 function hasModAccess(member) {
   return member.permissions.has(PermissionFlagsBits.ModerateMembers)

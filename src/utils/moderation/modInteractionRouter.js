@@ -48,7 +48,7 @@ const {
 
 const {
   getCaseById
-} = require('../logging/cases/caseStore');
+} = require('../../core/modules/moderation/cases');
 
 const {
   getWarningByCaseId

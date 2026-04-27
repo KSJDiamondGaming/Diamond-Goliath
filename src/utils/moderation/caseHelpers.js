@@ -3,7 +3,7 @@
 const {
   updateCaseStatus,
   getAllCases
-} = require('../logging/cases/caseStore');
+} = require('../../core/modules/moderation/cases');
 
 const {
   purgeExpiredWarnings

@@ -6,7 +6,7 @@ const {
 } = require('../utils/moderation/modPanel');
 
 const helpCommand = require('../commands/utility/help');
-const automodPanel = require('../utils/automod/automodPanel');
+const automodPanel = require('../bot/interactions/automod/automodPanel');
 
 module.exports = {
   name: 'interactionCreate',

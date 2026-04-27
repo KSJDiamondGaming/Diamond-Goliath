@@ -1,74 +1,11 @@
 const fs = require('fs');
 const path = require('path');
 
-const GUILDS_DIR = path.join(__dirname, '..', 'data', 'guilds');
+const { DEFAULT_GUILD_DATA, DEFAULT_LOGS } = require('./defaults');
+
+const GUILDS_DIR = path.join(__dirname, '..', '..', '..', 'data', 'guilds');
 
 const guildCache = new Map();
-
-const DEFAULT_LOGS = {
-  enabled: true,
-  channels: {
-    general: null,
-    moderation: null,
-    admin: null,
-    automod: null,
-    member: null,
-    messageDelete: null,
-    messageEdit: null,
-    voice: null,
-  },
-  events: {
-    moderationActions: true,
-    adminActions: true,
-    automodActions: true,
-
-    memberJoin: true,
-    memberLeave: true,
-    memberUpdate: true,
-
-    messageDelete: true,
-    messageEdit: true,
-
-    roleCreate: true,
-    roleDelete: true,
-    roleUpdate: true,
-
-    channelCreate: true,
-    channelDelete: true,
-    channelUpdate: true,
-
-    voiceJoin: true,
-    voiceLeave: true,
-    voiceMove: true,
-  },
-};
-
-const DEFAULT_GUILD_DATA = {
-  guildId: null,
-  guildName: null,
-  updatedAt: null,
-
-  general: {
-    enabled: true,
-    prefix: '!',
-    timezone: 'Europe/London',
-  },
-
-  modules: {},
-
-  automod: {},
-  logs: DEFAULT_LOGS,
-  cases: {},
-  warnings: {},
-  welcome: {},
-  leave: {},
-  tickets: {},
-  levels: {},
-  reactionRoles: {},
-  giveaways: {},
-  suggestions: {},
-  stats: {},
-};
 
 const LEGACY_LOG_FIELDS = [
   'logsChannelId',
@@ -197,12 +134,12 @@ function normalizeLogs(source = {}) {
   logs.channels.messageDelete =
     normalizeChannelId(logs.channels.messageDelete) ||
     normalizeChannelId(logs.channels.message) ||
-  legacyMessageChannelId;
+    legacyMessageChannelId;
 
   logs.channels.messageEdit =
     normalizeChannelId(logs.channels.messageEdit) ||
     normalizeChannelId(logs.channels.message) ||
-  legacyMessageChannelId;
+    legacyMessageChannelId;
 
   delete logs.channels.message;
 
@@ -236,18 +173,25 @@ function mergeDefaults(data = {}) {
     general: mergeObject(defaults.general, source.general),
     modules: mergeObject(defaults.modules, source.modules),
 
-    automod: mergeObject(defaults.automod, source.automod),
     logs: normalizeLogs(source),
-    cases: mergeObject(defaults.cases, source.cases),
+
+    automod: mergeObject(defaults.automod, source.automod),
+    moderation: mergeObject(defaults.moderation, source.moderation),
+    purge: mergeObject(defaults.purge, source.purge),
+    stats: mergeObject(defaults.stats, source.stats),
+    suggestions: mergeObject(defaults.suggestions, source.suggestions),
+    polls: mergeObject(defaults.polls, source.polls),
+    roles: mergeObject(defaults.roles, source.roles),
+    birthdays: mergeObject(defaults.birthdays, source.birthdays),
+    tempVoice: mergeObject(defaults.tempVoice, source.tempVoice),
+    tickets: mergeObject(defaults.tickets, source.tickets),
+    giveaways: mergeObject(defaults.giveaways, source.giveaways),
+
     warnings: mergeObject(defaults.warnings, source.warnings),
+    cases: mergeObject(defaults.cases, source.cases),
     welcome: mergeObject(defaults.welcome, source.welcome),
     leave: mergeObject(defaults.leave, source.leave),
-    tickets: mergeObject(defaults.tickets, source.tickets),
-    levels: mergeObject(defaults.levels, source.levels),
     reactionRoles: mergeObject(defaults.reactionRoles, source.reactionRoles),
-    giveaways: mergeObject(defaults.giveaways, source.giveaways),
-    suggestions: mergeObject(defaults.suggestions, source.suggestions),
-    stats: mergeObject(defaults.stats, source.stats),
   };
 
   return removeLegacyLogFields(merged);
@@ -261,6 +205,7 @@ function resolveGuildMeta(guildOrMeta = {}) {
   return {
     guildId: guildOrMeta.id || guildOrMeta.guildId || null,
     guildName: cleanGuildName(guildOrMeta.name || guildOrMeta.guildName),
+    ownerId: guildOrMeta.ownerId || null,
   };
 }
 
@@ -311,6 +256,11 @@ function saveGuildData(guildId, data = {}, guildOrMeta = {}) {
   nextData.guildId = safeGuildId;
   nextData.guildName =
     meta.guildName || cleanGuildName(nextData.guildName) || null;
+
+  if (meta.ownerId) {
+    nextData.ownerId = meta.ownerId;
+  }
+
   nextData.updatedAt = new Date().toISOString();
 
   writeJson(filePath, nextData);
@@ -318,10 +268,6 @@ function saveGuildData(guildId, data = {}, guildOrMeta = {}) {
   return cacheGuildData(safeGuildId, nextData);
 }
 
-/**
- * Bot-friendly aliases.
- * These let old bot-side code call guildManager like a config store.
- */
 async function getGuildConfig(guildId) {
   return getGuildData(guildId);
 }
@@ -342,6 +288,7 @@ function syncGuildMeta(guildOrMeta = {}) {
   return saveGuildData(meta.guildId, {
     ...current,
     guildName: meta.guildName || current.guildName || null,
+    ownerId: meta.ownerId || current.ownerId || null,
   });
 }
 
@@ -414,6 +361,27 @@ function updateGuildSection(
   return replaceGuildSection(guildId, sectionName, next || {}, guildOrMeta);
 }
 
+function getModuleConfig(guildId, moduleName, fallback = {}) {
+  return getGuildSection(guildId, moduleName, fallback);
+}
+
+function saveModuleConfig(guildId, moduleName, config = {}, guildOrMeta = {}) {
+  return saveGuildSection(guildId, moduleName, config, guildOrMeta);
+}
+
+function isModuleEnabled(guildId, moduleName) {
+  const data = getGuildData(guildId);
+  return data.modules?.[moduleName] !== false;
+}
+
+function setModuleEnabled(guildId, moduleName, enabled, guildOrMeta = {}) {
+  const modules = getGuildSection(guildId, 'modules', DEFAULT_GUILD_DATA.modules);
+
+  modules[moduleName] = enabled === true;
+
+  return saveGuildSection(guildId, 'modules', modules, guildOrMeta);
+}
+
 function getLogChannelId(guildId, type = 'general', fallbackType = 'general') {
   const logs = getGuildSection(guildId, 'logs', DEFAULT_LOGS);
 
@@ -470,6 +438,11 @@ module.exports = {
   saveGuildSection,
   replaceGuildSection,
   updateGuildSection,
+
+  getModuleConfig,
+  saveModuleConfig,
+  isModuleEnabled,
+  setModuleEnabled,
 
   getLogChannelId,
   isLogEventEnabled,

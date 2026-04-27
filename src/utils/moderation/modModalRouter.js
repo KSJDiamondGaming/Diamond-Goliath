@@ -53,7 +53,7 @@ const {
   updateCaseReason,
   updateCaseNote,
   clearCaseNote
-} = require('../logging/cases/caseStore');
+} = require('../../core/modules/moderation/cases');
 
 const {
   addWarning,

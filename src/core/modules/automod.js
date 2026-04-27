@@ -1,5 +1,7 @@
-const { EmbedBuilder, PermissionsBitField } = require('discord.js');
-const guildManager = require('../../../dashboard/server/utils/guildManager');
+const { PermissionsBitField } = require('discord.js');
+const guildStore = require('../guild/store');
+const logService = require('../logs/service');
+const { LOG_TYPES } = require('../logs/types');
 
 const spamTracker = new Map();
 const repeatTracker = new Map();
@@ -334,7 +336,7 @@ function attachComputedRules(config) {
 }
 
 function getGuildAutoModConfig(guildId) {
-  const config = guildManager.getGuildSection(
+  const config = guildStore.getGuildSection(
     guildId,
     'automod',
     getDefaultConfig()
@@ -345,7 +347,7 @@ function getGuildAutoModConfig(guildId) {
 
 function saveGuildAutoModConfig(guildId, config) {
   const safeConfig = sanitizeConfig(config);
-  const saved = guildManager.replaceGuildSection(guildId, 'automod', safeConfig);
+  const saved = guildStore.replaceGuildSection(guildId, 'automod', safeConfig);
 
   return attachComputedRules(sanitizeConfig(saved));
 }
@@ -627,96 +629,79 @@ function formatAutomodActions(action) {
 }
 
 async function sendAutomodLog(message, config, details) {
-  try {
-    if (!message?.guild) return;
-    if (!config?.logs?.enabled) return;
-    if (!guildManager.isLogEventEnabled(message.guild.id, 'automodActions')) return;
+  if (!message?.guild) return;
+  if (!config?.logs?.enabled) return;
 
-    const logChannelId =
-      config.logs.channelId ||
-      guildManager.getLogChannelId(message.guild.id, 'automod', 'general');
+  const colors = {
+    'Anti-Link': '#e74c3c',
+    'Caps Abuse': '#f39c12',
+    'Bad Words': '#c0392b',
+    'Anti-Spam': '#9b59b6',
+    'Repeated Messages': '#8e44ad',
+    'Anti-Invite': '#3498db',
+    'Blacklisted Domain': '#c0392b',
+    'Suspicious Domain': '#e67e22',
+  };
 
-    if (!logChannelId) return;
+  const emojis = {
+    'Anti-Link': '🔗',
+    'Caps Abuse': '🔠',
+    'Bad Words': '🚫',
+    'Anti-Spam': '📨',
+    'Repeated Messages': '🔁',
+    'Anti-Invite': '📩',
+    'Blacklisted Domain': '⛔',
+    'Suspicious Domain': '⚠️',
+  };
 
-    const colors = {
-      'Anti-Link': '#e74c3c',
-      'Caps Abuse': '#f39c12',
-      'Bad Words': '#c0392b',
-      'Anti-Spam': '#9b59b6',
-      'Repeated Messages': '#8e44ad',
-      'Anti-Invite': '#3498db',
-      'Blacklisted Domain': '#c0392b',
-      'Suspicious Domain': '#e67e22',
-    };
+  const severities = {
+    'Anti-Link': 'High',
+    'Blacklisted Domain': 'Critical',
+    'Suspicious Domain': 'High',
+    'Caps Abuse': 'Medium',
+    'Bad Words': 'High',
+    'Anti-Spam': 'Medium',
+    'Repeated Messages': 'Low',
+    'Anti-Invite': 'High',
+  };
 
-    const emojis = {
-      'Anti-Link': '🔗',
-      'Caps Abuse': '🔠',
-      'Bad Words': '🚫',
-      'Anti-Spam': '📨',
-      'Repeated Messages': '🔁',
-      'Anti-Invite': '📩',
-      'Blacklisted Domain': '⛔',
-      'Suspicious Domain': '⚠️',
-    };
-
-    const severities = {
-      'Anti-Link': 'High',
-      'Blacklisted Domain': 'Critical',
-      'Suspicious Domain': 'High',
-      'Caps Abuse': 'Medium',
-      'Bad Words': 'High',
-      'Anti-Spam': 'Medium',
-      'Repeated Messages': 'Low',
-      'Anti-Invite': 'High',
-    };
-
-    const logChannel =
-      message.guild.channels.cache.get(logChannelId) ||
-      (await message.guild.channels.fetch(logChannelId).catch(() => null));
-
-    if (!logChannel || !logChannel.isTextBased()) {
-      console.log(`❌ Automod log channel not found: ${logChannelId}`);
-      return;
-    }
-
-    const embed = new EmbedBuilder()
-      .setColor(colors[details.rule] || '#ff5555')
-      .setTitle(`${emojis[details.rule] || '🛡️'} AutoMod: ${details.rule || 'Triggered'}`)
-      .addFields(
-        { name: 'User', value: `${message.author} (${message.author.id})` },
-        { name: 'Channel', value: `${message.channel}` },
-        { name: 'Rule', value: details.rule || 'Unknown', inline: true },
-        {
-          name: 'Actions Taken',
-          value: formatAutomodActions(details.action || 'delete'),
-          inline: true,
-        },
-        {
-          name: 'Severity',
-          value: severities[details.rule] || 'Medium',
-          inline: true,
-        }
-      )
-      .setTimestamp();
-
-    if (details.reason) {
-      embed.addFields({ name: 'Reason', value: details.reason });
-    }
-
-    if (details.content) {
-      const clipped =
-        details.content.length > 1024
-          ? `${details.content.slice(0, 1021)}...`
-          : details.content;
-
-      embed.addFields({ name: 'Message Content', value: clipped });
-    }
-
-    await logChannel.send({ embeds: [embed] });
-  } catch (error) {
-    console.error('❌ Failed to send automod log:', error);
-  }
+  await logService.send(message.guild, LOG_TYPES.AUTOMOD_ACTION, {
+    color: colors[details.rule] || '#ff5555',
+    title: `${emojis[details.rule] || '🛡️'} AutoMod: ${
+      details.rule || 'Triggered'
+    }`,
+    user: message.author,
+    reason: details.reason || 'No reason provided',
+    fields: [
+      {
+        name: 'Channel',
+        value: `${message.channel}`,
+        inline: true,
+      },
+      {
+        name: 'Rule',
+        value: details.rule || 'Unknown',
+        inline: true,
+      },
+      {
+        name: 'Actions Taken',
+        value: formatAutomodActions(details.action || 'delete'),
+        inline: true,
+      },
+      {
+        name: 'Severity',
+        value: severities[details.rule] || 'Medium',
+        inline: true,
+      },
+      {
+        name: 'Message Content',
+        value:
+          details.content && details.content.length > 1024
+            ? `${details.content.slice(0, 1021)}...`
+            : details.content || 'N/A',
+      },
+    ],
+  });
 }
 
 function isAllowedDomain(content, allowedDomains = []) {
@@ -979,6 +964,10 @@ setInterval(cleanupTrackers, 60 * 1000).unref();
 async function runAutomod(message) {
   if (!message.guild) return { blocked: false };
   if (!message.content) return { blocked: false };
+
+  if (!guildStore.isModuleEnabled(message.guild.id, 'automod')) {
+    return { blocked: false };
+  }
 
   const config = getGuildAutoModConfig(message.guild.id);
   if (!config) return { blocked: false };
