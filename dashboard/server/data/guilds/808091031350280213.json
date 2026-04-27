@@ -1,7 +1,7 @@
 {
   "guildId": "808091031350280213",
   "guildName": null,
-  "updatedAt": "2026-04-27T01:25:19.979Z",
+  "updatedAt": "2026-04-27T02:06:43.238Z",
   "general": {
     "enabled": true,
     "prefix": "!",
@@ -13,11 +13,11 @@
     "enabled": true,
     "channels": {
       "general": null,
-      "moderation": null,
+      "moderation": "1491219255465869514",
       "admin": null,
-      "automod": null,
+      "automod": "1491219255465869514",
       "member": null,
-      "message": null,
+      "message": "1491219255465869514",
       "voice": null
     },
     "events": {
@@ -38,7 +38,8 @@
       "voiceJoin": true,
       "voiceLeave": true,
       "voiceMove": true
-    }
+    },
+    "updatedAt": "2026-04-27T02:06:43.238Z"
   },
   "cases": {},
   "warnings": {},

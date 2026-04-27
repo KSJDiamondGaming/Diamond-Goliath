@@ -1,8 +1,5 @@
 const { EmbedBuilder, PermissionsBitField } = require('discord.js');
-const {
-  getLogChannelId,
-  isLogEventEnabled,
-} = require('../../../dashboard/server/utils/guildManager');
+const guildManager = require('../../../dashboard/server/utils/guildManager');
 
 const spamTracker = new Map();
 const repeatTracker = new Map();
@@ -12,6 +9,8 @@ const INVITE_REGEX =
 
 const URL_REGEX =
   /((https?:\/\/)|(www\.))?[a-zA-Z0-9-]+\.[a-zA-Z]{2,}([^\s]*)/i;
+
+const VALID_PUNISHMENTS = ['delete', 'warn', 'timeout', 'kick', 'ban'];
 
 function normalizeLinkContent(content) {
   return String(content || '')
@@ -41,8 +40,6 @@ function hasSuspiciousLinkBehaviour(content) {
   return suspiciousPatterns.some((pattern) => pattern.test(raw)) || URL_REGEX.test(compact);
 }
 
-const VALID_PUNISHMENTS = ['delete', 'warn', 'timeout', 'kick', 'ban'];
-
 function getDefaultConfig() {
   return {
     enabled: true,
@@ -65,6 +62,7 @@ function getDefaultConfig() {
     antiLink: {
       enabled: false,
       allowedDomains: [],
+      blockedDomains: [],
       punishments: ['delete'],
       punishment: 'delete',
       timeoutMinutes: 10,
@@ -108,6 +106,10 @@ function getDefaultConfig() {
       channelId: null,
     },
   };
+}
+
+function structuredCloneSafe(value) {
+  return JSON.parse(JSON.stringify(value));
 }
 
 function toSafeNumber(value, fallback) {
@@ -184,10 +186,12 @@ function sanitizeConfig(input = {}) {
     input?.antiSpam || sourceRules.antiSpam,
     defaults.antiSpam
   );
+
   antiSpam.maxMessages = toSafeNumber(
     input?.antiSpam?.maxMessages ?? sourceRules?.antiSpam?.maxMessages,
     defaults.antiSpam.maxMessages
   );
+
   antiSpam.intervalSeconds = toSafeNumber(
     input?.antiSpam?.intervalSeconds ?? sourceRules?.antiSpam?.intervalSeconds,
     defaults.antiSpam.intervalSeconds
@@ -197,8 +201,13 @@ function sanitizeConfig(input = {}) {
     input?.antiLink || sourceRules.antiLink,
     defaults.antiLink
   );
+
   antiLink.allowedDomains = toStringArray(
     input?.antiLink?.allowedDomains ?? sourceRules?.antiLink?.allowedDomains
+  );
+
+  antiLink.blockedDomains = toStringArray(
+    input?.antiLink?.blockedDomains ?? sourceRules?.antiLink?.blockedDomains
   );
 
   const antiInvite = normalizeRule(
@@ -210,10 +219,12 @@ function sanitizeConfig(input = {}) {
     input?.capsAbuse || sourceRules.capsAbuse,
     defaults.capsAbuse
   );
+
   capsAbuse.minLength = toSafeNumber(
     input?.capsAbuse?.minLength ?? sourceRules?.capsAbuse?.minLength,
     defaults.capsAbuse.minLength
   );
+
   capsAbuse.percentage = toSafeNumber(
     input?.capsAbuse?.percentage ?? sourceRules?.capsAbuse?.percentage,
     defaults.capsAbuse.percentage
@@ -223,6 +234,7 @@ function sanitizeConfig(input = {}) {
     input?.badWords || sourceRules.badWords,
     defaults.badWords
   );
+
   badWords.words = toStringArray(
     input?.badWords?.words ?? sourceRules?.badWords?.words
   );
@@ -231,11 +243,13 @@ function sanitizeConfig(input = {}) {
     input?.repeatedMessages || sourceRules.repeatedMessages,
     defaults.repeatedMessages
   );
+
   repeatedMessages.maxRepeats = toSafeNumber(
     input?.repeatedMessages?.maxRepeats ??
       sourceRules?.repeatedMessages?.maxRepeats,
     defaults.repeatedMessages.maxRepeats
   );
+
   repeatedMessages.intervalSeconds = toSafeNumber(
     input?.repeatedMessages?.intervalSeconds ??
       sourceRules?.repeatedMessages?.intervalSeconds,
@@ -254,21 +268,26 @@ function sanitizeConfig(input = {}) {
     ignoreBots: toBoolean(input?.ignoreBots, defaults.ignoreBots),
     ignoreAdmins: toBoolean(input?.ignoreAdmins, defaults.ignoreAdmins),
     dmWarnings: toBoolean(input?.dmWarnings, defaults.dmWarnings),
+
     ignoredChannelIds: toStringArray(input?.ignoredChannelIds)
       .map(extractId)
       .filter(Boolean),
+
     ignoredUserIds: toStringArray(input?.ignoredUserIds)
       .map(extractId)
       .filter(Boolean),
+
     ignoredRoleIds: toStringArray(input?.ignoredRoleIds)
       .map(extractId)
       .filter(Boolean),
+
     antiSpam,
     antiLink,
     antiInvite,
     capsAbuse,
     badWords,
     repeatedMessages,
+
     logs: {
       enabled: toBoolean(
         input?.logs?.enabled ?? input?.logsEnabled,
@@ -327,6 +346,7 @@ function getGuildAutoModConfig(guildId) {
 function saveGuildAutoModConfig(guildId, config) {
   const safeConfig = sanitizeConfig(config);
   const saved = guildManager.replaceGuildSection(guildId, 'automod', safeConfig);
+
   return attachComputedRules(sanitizeConfig(saved));
 }
 
@@ -346,10 +366,6 @@ function updateGuildAutoModConfig(guildId, updater) {
 
 function resetGuildAutoModConfig(guildId) {
   return saveGuildAutoModConfig(guildId, getDefaultConfig());
-}
-
-function structuredCloneSafe(value) {
-  return JSON.parse(JSON.stringify(value));
 }
 
 function now() {
@@ -377,6 +393,7 @@ function hasBypass(message, config) {
   if (config.ignoreAdmins && isAdmin) return true;
   if (config.ignoredChannelIds.includes(message.channel.id)) return true;
   if (config.ignoredUserIds.includes(message.author.id)) return true;
+
   if (
     message.member.roles?.cache?.some((role) =>
       config.ignoredRoleIds.includes(role.id)
@@ -404,6 +421,7 @@ async function safeDelete(message) {
 async function safeTimeout(member, durationMs, reason) {
   try {
     if (!member || !member.moderatable) return false;
+
     await member.timeout(durationMs, reason);
     return true;
   } catch (error) {
@@ -415,6 +433,7 @@ async function safeTimeout(member, durationMs, reason) {
 async function safeKick(member, reason) {
   try {
     if (!member || !member.kickable) return false;
+
     await member.kick(reason);
     return true;
   } catch (error) {
@@ -426,6 +445,7 @@ async function safeKick(member, reason) {
 async function safeBan(member, reason) {
   try {
     if (!member || !member.bannable) return false;
+
     await member.ban({ reason });
     return true;
   } catch (error) {
@@ -437,9 +457,11 @@ async function safeBan(member, reason) {
 async function safeWarnChannel(message, text) {
   try {
     const sent = await message.channel.send({ content: text });
+
     setTimeout(() => {
       sent.delete().catch(() => {});
     }, 5000);
+
     return true;
   } catch (error) {
     console.error('❌ Failed to send automod warning message:', error);
@@ -464,6 +486,7 @@ async function sendWarningNotice(message, reason, config) {
 
   if (config?.dmWarnings) {
     const sentDM = await safeWarnDM(message.author, text);
+
     if (sentDM) {
       return 'dm';
     }
@@ -496,6 +519,7 @@ async function applyPunishment(
           const didDelete = await safeDelete(message);
           if (didDelete) deleted = true;
         }
+
         applied.push('delete');
         break;
       }
@@ -529,6 +553,7 @@ async function applyPunishment(
           const warningMode = await sendWarningNotice(message, reason, config);
           applied.push(warningMode === 'dm' ? 'warn-dm' : 'warn');
         }
+
         break;
       }
 
@@ -546,6 +571,7 @@ async function applyPunishment(
           const warningMode = await sendWarningNotice(message, reason, config);
           applied.push(warningMode === 'dm' ? 'warn-dm' : 'warn');
         }
+
         break;
       }
 
@@ -563,6 +589,7 @@ async function applyPunishment(
           const warningMode = await sendWarningNotice(message, reason, config);
           applied.push(warningMode === 'dm' ? 'warn-dm' : 'warn');
         }
+
         break;
       }
 
@@ -571,6 +598,7 @@ async function applyPunishment(
           const didDelete = await safeDelete(message);
           if (didDelete) deleted = true;
         }
+
         applied.push('delete');
         break;
       }
@@ -598,12 +626,16 @@ function formatAutomodActions(action) {
   return actions.map((entry) => labels[entry] || entry).join('\n');
 }
 
-  async function sendAutomodLog(message, config, details) {
+async function sendAutomodLog(message, config, details) {
   try {
     if (!message?.guild) return;
-    if (!isLogEventEnabled(message.guild.id, 'automodActions')) return;
+    if (!config?.logs?.enabled) return;
+    if (!guildManager.isLogEventEnabled(message.guild.id, 'automodActions')) return;
 
-    const logChannelId = getLogChannelId(message.guild.id, 'automod');
+    const logChannelId =
+      config.logs.channelId ||
+      guildManager.getLogChannelId(message.guild.id, 'automod', 'general');
+
     if (!logChannelId) return;
 
     const colors = {
@@ -691,18 +723,50 @@ function isAllowedDomain(content, allowedDomains = []) {
   if (!allowedDomains.length) return false;
 
   const lowered = content.toLowerCase();
+
   return allowedDomains.some((domain) => {
     const clean = String(domain || '').trim().toLowerCase();
     return clean && lowered.includes(clean);
   });
 }
 
+function isBlockedDomain(content, blockedDomains = []) {
+  if (!blockedDomains.length) return false;
+
+  const domains = extractDomains(content);
+
+  return domains.some((domain) =>
+    blockedDomains.some((blocked) => {
+      const cleanBlocked = String(blocked).toLowerCase().trim();
+
+      return domain === cleanBlocked || domain.endsWith(`.${cleanBlocked}`);
+    })
+  );
+}
+
+function isSuspiciousDomain(domain) {
+  const suspiciousTLDs = [
+    '.ru',
+    '.xyz',
+    '.tk',
+    '.to',
+    '.biz',
+    '.info',
+    '.click',
+  ];
+
+  return suspiciousTLDs.some((tld) => domain.endsWith(tld));
+}
+
+function hasBadReputation(content) {
+  const domains = extractDomains(content);
+  return domains.some((domain) => isSuspiciousDomain(domain));
+}
+
 function checkAntiLink(content, config) {
   if (!config?.antiLink?.enabled) return null;
-
   if (!hasSuspiciousLinkBehaviour(content)) return null;
 
-  // 🚫 FORCE BLOCK FIRST
   if (isBlockedDomain(content, config.antiLink.blockedDomains)) {
     return {
       rule: 'Blacklisted Domain',
@@ -713,7 +777,6 @@ function checkAntiLink(content, config) {
     };
   }
 
-  // 🧠 REPUTATION CHECK
   if (hasBadReputation(content)) {
     return {
       rule: 'Suspicious Domain',
@@ -724,7 +787,6 @@ function checkAntiLink(content, config) {
     };
   }
 
-  // ✅ WHITELIST
   if (isAllowedDomain(content, config.antiLink.allowedDomains)) {
     return null;
   }
@@ -736,35 +798,6 @@ function checkAntiLink(content, config) {
       config.antiLink.punishments || [config.antiLink.punishment || 'delete'],
     timeoutMinutes: config.antiLink.timeoutMinutes || 10,
   };
-}
-
-function isBlockedDomain(content, blockedDomains = []) {
-  if (!blockedDomains.length) return false;
-
-  const domains = extractDomains(content);
-
-  return domains.some((domain) =>
-    blockedDomains.some((blocked) => {
-      const cleanBlocked = String(blocked).toLowerCase().trim();
-      return (
-        domain === cleanBlocked ||
-        domain.endsWith(`.${cleanBlocked}`)
-      );
-    })
-  );
-}
-
-function isSuspiciousDomain(domain) {
-  const suspiciousTLDs = [
-    '.ru', '.xyz', '.tk', '.to', '.biz', '.info', '.click'
-  ];
-
-  return suspiciousTLDs.some(tld => domain.endsWith(tld));
-}
-
-function hasBadReputation(content) {
-  const domains = extractDomains(content);
-  return domains.some(domain => isSuspiciousDomain(domain));
 }
 
 function checkAntiInvite(content, config) {
@@ -817,6 +850,7 @@ function checkBadWords(content, config) {
   if (!words.length) return null;
 
   const lowered = content.toLowerCase();
+
   const matched = words.find((word) => {
     const clean = String(word || '').trim().toLowerCase();
     return clean && lowered.includes(clean);
@@ -894,6 +928,7 @@ function checkAntiSpam(message, config) {
 
   const entries = spamTracker.get(key) || [];
   const filtered = entries.filter((timestamp) => timestamp >= cutoff);
+
   filtered.push(now());
   spamTracker.set(key, filtered);
 
@@ -908,6 +943,7 @@ function checkAntiSpam(message, config) {
   }
 
   const nonEmptyLineCount = getNonEmptyLineCount(message.content);
+
   if (nonEmptyLineCount >= maxMessages) {
     return {
       rule: 'Anti-Spam',
@@ -926,6 +962,7 @@ function cleanupTrackers() {
 
   for (const [key, timestamps] of spamTracker.entries()) {
     const fresh = timestamps.filter((timestamp) => timestamp >= cutoff);
+
     if (fresh.length) spamTracker.set(key, fresh);
     else spamTracker.delete(key);
   }
@@ -967,12 +1004,12 @@ async function runAutomod(message) {
     config
   );
 
- await sendAutomodLog(message, config, {
-  rule: hit.rule,
-  reason: hit.reason,
-  action,
-  content: message.content,
-});
+  await sendAutomodLog(message, config, {
+    rule: hit.rule,
+    reason: hit.reason,
+    action,
+    content: message.content,
+  });
 
   return {
     blocked: true,

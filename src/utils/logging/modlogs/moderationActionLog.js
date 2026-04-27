@@ -1,27 +1,32 @@
 const { EmbedBuilder } = require('discord.js');
-const { getGuildConfig } = require('../../config/guildConfigStore');
+const guildManager = require('../../../../dashboard/server/utils/guildManager');
 
-function resolveLogChannelId(config, logType = 'mod') {
-  if (logType === 'automod') {
-    return config.automodLogChannelId
-      || config.modLogChannelId
-      || config.logsChannelId
-      || null;
-  }
+function normalizeLogType(logType = 'mod') {
+  if (logType === 'mod') return 'moderation';
+  return logType || 'general';
+}
 
-  if (logType === 'admin') {
-    return config.adminLogChannelId
-      || config.logsChannelId
-      || null;
-  }
+function formatModerationAction(action) {
+  const actions = Array.isArray(action) ? action : [action];
 
-  if (logType === 'general') {
-    return config.logsChannelId || null;
-  }
+  const labels = {
+    delete: 'Message Deleted',
+    warn: 'User Warned',
+    'warn-dm': 'User Warned & DM Sent',
+    timeout: 'User Timed Out',
+    mute: 'User Muted',
+    unmute: 'User Unmuted',
+    kick: 'User Kicked',
+    ban: 'User Banned',
+    unban: 'User Unbanned',
+    tempban: 'User Temporarily Banned',
+    tempmute: 'User Temporarily Muted',
+    automod: 'AutoMod Action Taken',
+  };
 
-  return config.modLogChannelId
-    || config.logsChannelId
-    || null;
+  return actions
+    .map((item) => labels[String(item).toLowerCase()] || String(item))
+    .join(', ');
 }
 
 async function logModerationAction({
@@ -37,15 +42,30 @@ async function logModerationAction({
   title = null,
   logType = 'mod',
 }) {
-  if (!guild) return;
-
-  const config = getGuildConfig(guild.id);
-  const logChannelId = resolveLogChannelId(config, logType);
-
-  if (!logChannelId) return;
+  if (!guild?.id) return;
 
   try {
-    const channel = await guild.channels.fetch(logChannelId);
+    const channelType = normalizeLogType(logType);
+
+    // 🔥 NEW: respect dashboard log toggles
+    const eventName =
+      channelType === 'automod'
+        ? 'automodActions'
+        : channelType === 'admin'
+          ? 'adminActions'
+          : 'moderationActions';
+
+    if (!guildManager.isLogEventEnabled(guild.id, eventName)) return;
+
+    const logChannelId = guildManager.getLogChannelId(
+      guild.id,
+      channelType,
+      'general'
+    );
+
+    if (!logChannelId) return;
+
+    const channel = await guild.channels.fetch(logChannelId).catch(() => null);
     if (!channel || !channel.isTextBased()) return;
 
     const fields = [];
@@ -53,30 +73,32 @@ async function logModerationAction({
     if (user) {
       fields.push({
         name: 'User',
-        value: `${user.tag} (${user.id})`,
-        inline: false
+        value: `${user.tag || user.username || 'Unknown User'} (${user.id})`,
+        inline: false,
       });
     }
 
     fields.push({
       name: 'Moderator',
-      value: moderator ? `${moderator.tag} (${moderator.id})` : 'System',
-      inline: false
+      value: moderator
+        ? `${moderator.tag || moderator.username || 'Unknown Moderator'} (${moderator.id})`
+        : 'System',
+      inline: false,
     });
 
     if (reason) {
       fields.push({
         name: 'Reason',
-        value: reason,
-        inline: false
+        value: String(reason),
+        inline: false,
       });
     }
 
     if (duration) {
       fields.push({
         name: 'Duration',
-        value: duration,
-        inline: false
+        value: String(duration),
+        inline: false,
       });
     }
 
@@ -84,25 +106,25 @@ async function logModerationAction({
       fields.push({
         name: 'Case ID',
         value: `#${caseId}`,
-        inline: false
+        inline: false,
       });
     }
 
     if (Array.isArray(details) && details.length) {
       for (const detail of details) {
-        if (!detail?.name || !detail?.value) continue;
+        if (!detail?.name || detail?.value === undefined || detail?.value === null) continue;
 
         fields.push({
-          name: detail.name,
+          name: String(detail.name),
           value: String(detail.value),
-          inline: detail.inline ?? false
+          inline: detail.inline ?? false,
         });
       }
     }
 
     const embed = new EmbedBuilder()
       .setColor(color)
-      .setTitle(title || `🛡️ Moderation Action: ${action}`)
+      .setTitle(title || `🛡️ ${formatModerationAction(action)}`)
       .addFields(fields)
       .setTimestamp();
 

@@ -42,30 +42,6 @@ router.post('/automod/:guildId', (req, res) => {
 
 /* ================= LOGS ================= */
 
-const DEFAULT_LOGS = {
-  enabled: true,
-  channels: {
-    general: null,
-    moderation: null,
-    admin: null,
-    automod: null,
-    member: null,
-    message: null,
-    voice: null,
-  },
-  events: {
-    moderationActions: true,
-    adminActions: true,
-    automodActions: true,
-
-    memberJoin: true,
-    memberLeave: true,
-
-    messageDelete: true,
-    messageEdit: true,
-  },
-};
-
 router.get('/logs/:guildId', (req, res) => {
   try {
     const { guildId } = req.params;
@@ -73,7 +49,7 @@ router.get('/logs/:guildId', (req, res) => {
     const config = guildManager.getGuildSection(
       guildId,
       'logs',
-      DEFAULT_LOGS
+      guildManager.DEFAULT_LOGS
     );
 
     return res.json({ ok: true, guildId, config });
@@ -87,30 +63,52 @@ router.post('/logs/:guildId', (req, res) => {
   try {
     const { guildId } = req.params;
     const body = req.body || {};
+    const current = guildManager.getGuildSection(
+      guildId,
+      'logs',
+      guildManager.DEFAULT_LOGS
+    );
 
     const config = guildManager.saveGuildSection(guildId, 'logs', {
+      ...current,
       enabled: body.enabled !== false,
 
       channels: {
+        ...current.channels,
         general: body.channels?.general || null,
         moderation: body.channels?.moderation || null,
         admin: body.channels?.admin || null,
         automod: body.channels?.automod || null,
         member: body.channels?.member || null,
-        message: body.channels?.message || null,
+        messageDelete: body.channels?.messageDelete || null,
+        messageEdit: body.channels?.messageEdit || null,
         voice: body.channels?.voice || null,
       },
 
       events: {
+        ...current.events,
         moderationActions: body.events?.moderationActions !== false,
         adminActions: body.events?.adminActions !== false,
         automodActions: body.events?.automodActions !== false,
 
         memberJoin: body.events?.memberJoin !== false,
         memberLeave: body.events?.memberLeave !== false,
+        memberUpdate: body.events?.memberUpdate !== false,
 
         messageDelete: body.events?.messageDelete !== false,
         messageEdit: body.events?.messageEdit !== false,
+
+        roleCreate: body.events?.roleCreate !== false,
+        roleDelete: body.events?.roleDelete !== false,
+        roleUpdate: body.events?.roleUpdate !== false,
+
+        channelCreate: body.events?.channelCreate !== false,
+        channelDelete: body.events?.channelDelete !== false,
+        channelUpdate: body.events?.channelUpdate !== false,
+
+        voiceJoin: body.events?.voiceJoin !== false,
+        voiceLeave: body.events?.voiceLeave !== false,
+        voiceMove: body.events?.voiceMove !== false,
       },
     });
 

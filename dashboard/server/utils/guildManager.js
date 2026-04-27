@@ -13,7 +13,8 @@ const DEFAULT_LOGS = {
     admin: null,
     automod: null,
     member: null,
-    message: null,
+    messageDelete: null,
+    messageEdit: null,
     voice: null,
   },
   events: {
@@ -171,7 +172,6 @@ function normalizeLogs(source = {}) {
 
   logs.enabled = logs.enabled !== false;
 
-  // Legacy root fields → central logs.channels
   logs.channels.general =
     normalizeChannelId(logs.channels.general) ||
     normalizeChannelId(source.logsChannelId);
@@ -192,9 +192,19 @@ function normalizeLogs(source = {}) {
     normalizeChannelId(logs.channels.member) ||
     normalizeChannelId(source.memberLogChannelId);
 
-  logs.channels.message =
+  const legacyMessageChannelId = normalizeChannelId(source.messageLogChannelId);
+
+  logs.channels.messageDelete =
+    normalizeChannelId(logs.channels.messageDelete) ||
     normalizeChannelId(logs.channels.message) ||
-    normalizeChannelId(source.messageLogChannelId);
+  legacyMessageChannelId;
+
+  logs.channels.messageEdit =
+    normalizeChannelId(logs.channels.messageEdit) ||
+    normalizeChannelId(logs.channels.message) ||
+  legacyMessageChannelId;
+
+  delete logs.channels.message;
 
   logs.channels.voice =
     normalizeChannelId(logs.channels.voice) ||
@@ -279,7 +289,6 @@ function getGuildData(guildId, options = {}) {
 
   data.guildId = safeGuildId;
 
-  // Save new files and auto-migrate old log fields into central logs.
   if (!exists || LEGACY_LOG_FIELDS.some((field) => field in rawData)) {
     data.updatedAt = new Date().toISOString();
     writeJson(filePath, data);
@@ -307,6 +316,18 @@ function saveGuildData(guildId, data = {}, guildOrMeta = {}) {
   writeJson(filePath, nextData);
 
   return cacheGuildData(safeGuildId, nextData);
+}
+
+/**
+ * Bot-friendly aliases.
+ * These let old bot-side code call guildManager like a config store.
+ */
+async function getGuildConfig(guildId) {
+  return getGuildData(guildId);
+}
+
+async function saveGuildConfig(guildId, data = {}, guildOrMeta = {}) {
+  return saveGuildData(guildId, data, guildOrMeta);
 }
 
 function syncGuildMeta(guildOrMeta = {}) {
@@ -393,14 +414,10 @@ function updateGuildSection(
   return replaceGuildSection(guildId, sectionName, next || {}, guildOrMeta);
 }
 
-function getLogChannelId(guildId, type, fallbackType = 'general') {
+function getLogChannelId(guildId, type = 'general', fallbackType = 'general') {
   const logs = getGuildSection(guildId, 'logs', DEFAULT_LOGS);
 
-  return (
-    logs.channels?.[type] ||
-    logs.channels?.[fallbackType] ||
-    null
-  );
+  return logs.channels?.[type] || logs.channels?.[fallbackType] || null;
 }
 
 function isLogEventEnabled(guildId, eventName) {
@@ -441,6 +458,10 @@ module.exports = {
   DEFAULT_LOGS,
 
   getGuildFilePath,
+
+  getGuildConfig,
+  saveGuildConfig,
+
   getGuildData,
   saveGuildData,
   syncGuildMeta,
