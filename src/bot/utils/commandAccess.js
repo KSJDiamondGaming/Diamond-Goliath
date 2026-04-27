@@ -1,4 +1,4 @@
-const { PermissionFlagsBits } = require('discord.js');
+const { PermissionFlagsBits, MessageFlags } = require('discord.js');
 
 function hasRequiredPermissions(member, permissions = []) {
   if (!permissions.length) return true;
