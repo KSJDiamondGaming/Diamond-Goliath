@@ -5,6 +5,43 @@ const GUILDS_DIR = path.join(__dirname, '..', 'data', 'guilds');
 
 const guildCache = new Map();
 
+const DEFAULT_LOGS = {
+  enabled: true,
+  channels: {
+    general: null,
+    moderation: null,
+    admin: null,
+    automod: null,
+    member: null,
+    message: null,
+    voice: null,
+  },
+  events: {
+    moderationActions: true,
+    adminActions: true,
+    automodActions: true,
+
+    memberJoin: true,
+    memberLeave: true,
+    memberUpdate: true,
+
+    messageDelete: true,
+    messageEdit: true,
+
+    roleCreate: true,
+    roleDelete: true,
+    roleUpdate: true,
+
+    channelCreate: true,
+    channelDelete: true,
+    channelUpdate: true,
+
+    voiceJoin: true,
+    voiceLeave: true,
+    voiceMove: true,
+  },
+};
+
 const DEFAULT_GUILD_DATA = {
   guildId: null,
   guildName: null,
@@ -19,7 +56,7 @@ const DEFAULT_GUILD_DATA = {
   modules: {},
 
   automod: {},
-  logs: {},
+  logs: DEFAULT_LOGS,
   cases: {},
   warnings: {},
   welcome: {},
@@ -31,6 +68,16 @@ const DEFAULT_GUILD_DATA = {
   suggestions: {},
   stats: {},
 };
+
+const LEGACY_LOG_FIELDS = [
+  'logsChannelId',
+  'modLogChannelId',
+  'adminLogChannelId',
+  'automodLogChannelId',
+  'memberLogChannelId',
+  'messageLogChannelId',
+  'voiceLogChannelId',
+];
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -56,8 +103,7 @@ function cleanGuildName(guildName) {
 }
 
 function getGuildFilePath(guildId) {
-  const safeGuildId = normalizeGuildId(guildId);
-  return path.join(GUILDS_DIR, `${safeGuildId}.json`);
+  return path.join(GUILDS_DIR, `${normalizeGuildId(guildId)}.json`);
 }
 
 function readJson(filePath, fallback = {}) {
@@ -104,13 +150,76 @@ function mergeObject(defaultValue, sourceValue) {
   };
 }
 
+function normalizeChannelId(value) {
+  const id = String(value || '').trim();
+  return /^\d{16,20}$/.test(id) ? id : null;
+}
+
+function normalizeLogs(source = {}) {
+  const defaults = clone(DEFAULT_LOGS);
+  const logs = mergeObject(defaults, source.logs);
+
+  logs.channels = {
+    ...defaults.channels,
+    ...(logs.channels && typeof logs.channels === 'object' ? logs.channels : {}),
+  };
+
+  logs.events = {
+    ...defaults.events,
+    ...(logs.events && typeof logs.events === 'object' ? logs.events : {}),
+  };
+
+  logs.enabled = logs.enabled !== false;
+
+  // Legacy root fields → central logs.channels
+  logs.channels.general =
+    normalizeChannelId(logs.channels.general) ||
+    normalizeChannelId(source.logsChannelId);
+
+  logs.channels.moderation =
+    normalizeChannelId(logs.channels.moderation) ||
+    normalizeChannelId(source.modLogChannelId);
+
+  logs.channels.admin =
+    normalizeChannelId(logs.channels.admin) ||
+    normalizeChannelId(source.adminLogChannelId);
+
+  logs.channels.automod =
+    normalizeChannelId(logs.channels.automod) ||
+    normalizeChannelId(source.automodLogChannelId);
+
+  logs.channels.member =
+    normalizeChannelId(logs.channels.member) ||
+    normalizeChannelId(source.memberLogChannelId);
+
+  logs.channels.message =
+    normalizeChannelId(logs.channels.message) ||
+    normalizeChannelId(source.messageLogChannelId);
+
+  logs.channels.voice =
+    normalizeChannelId(logs.channels.voice) ||
+    normalizeChannelId(source.voiceLogChannelId);
+
+  return logs;
+}
+
+function removeLegacyLogFields(data) {
+  const clean = { ...data };
+
+  for (const key of LEGACY_LOG_FIELDS) {
+    delete clean[key];
+  }
+
+  return clean;
+}
+
 function mergeDefaults(data = {}) {
   const defaults = clone(DEFAULT_GUILD_DATA);
 
   const source =
     data && typeof data === 'object' && !Array.isArray(data) ? data : {};
 
-  return {
+  const merged = {
     ...defaults,
     ...source,
 
@@ -118,7 +227,7 @@ function mergeDefaults(data = {}) {
     modules: mergeObject(defaults.modules, source.modules),
 
     automod: mergeObject(defaults.automod, source.automod),
-    logs: mergeObject(defaults.logs, source.logs),
+    logs: normalizeLogs(source),
     cases: mergeObject(defaults.cases, source.cases),
     warnings: mergeObject(defaults.warnings, source.warnings),
     welcome: mergeObject(defaults.welcome, source.welcome),
@@ -130,6 +239,8 @@ function mergeDefaults(data = {}) {
     suggestions: mergeObject(defaults.suggestions, source.suggestions),
     stats: mergeObject(defaults.stats, source.stats),
   };
+
+  return removeLegacyLogFields(merged);
 }
 
 function resolveGuildMeta(guildOrMeta = {}) {
@@ -162,11 +273,15 @@ function getGuildData(guildId, options = {}) {
     return clone(guildCache.get(safeGuildId));
   }
 
-  const data = mergeDefaults(readJson(filePath, DEFAULT_GUILD_DATA));
+  const exists = fs.existsSync(filePath);
+  const rawData = readJson(filePath, DEFAULT_GUILD_DATA);
+  const data = mergeDefaults(rawData);
 
   data.guildId = safeGuildId;
 
-  if (!fs.existsSync(filePath)) {
+  // Save new files and auto-migrate old log fields into central logs.
+  if (!exists || LEGACY_LOG_FIELDS.some((field) => field in rawData)) {
+    data.updatedAt = new Date().toISOString();
     writeJson(filePath, data);
   }
 
@@ -272,11 +387,28 @@ function updateGuildSection(
   guildOrMeta = {}
 ) {
   const current = getGuildSection(guildId, sectionName, fallback);
-
   const next =
     typeof updater === 'function' ? updater(clone(current)) : updater;
 
   return replaceGuildSection(guildId, sectionName, next || {}, guildOrMeta);
+}
+
+function getLogChannelId(guildId, type, fallbackType = 'general') {
+  const logs = getGuildSection(guildId, 'logs', DEFAULT_LOGS);
+
+  return (
+    logs.channels?.[type] ||
+    logs.channels?.[fallbackType] ||
+    null
+  );
+}
+
+function isLogEventEnabled(guildId, eventName) {
+  const logs = getGuildSection(guildId, 'logs', DEFAULT_LOGS);
+
+  if (logs.enabled === false) return false;
+
+  return logs.events?.[eventName] !== false;
 }
 
 function reloadGuild(guildId) {
@@ -306,6 +438,7 @@ function listGuildFiles() {
 module.exports = {
   GUILDS_DIR,
   DEFAULT_GUILD_DATA,
+  DEFAULT_LOGS,
 
   getGuildFilePath,
   getGuildData,
@@ -316,6 +449,9 @@ module.exports = {
   saveGuildSection,
   replaceGuildSection,
   updateGuildSection,
+
+  getLogChannelId,
+  isLogEventEnabled,
 
   reloadGuild,
   clearGuildCache,

@@ -4,16 +4,6 @@ const { emitGuildUpdate } = require('../utils/socketHub');
 
 const router = express.Router();
 
-/* ================= DEFAULTS ================= */
-
-const DEFAULT_LOGS = {
-  logsChannelId: null,
-  modLogChannelId: null,
-  adminLogChannelId: null,
-  automodLogChannelId: null,
-  adminActionLoggerEnabled: false,
-};
-
 /* ================= AUTOMOD ================= */
 
 router.get('/automod/:guildId', (req, res) => {
@@ -52,6 +42,30 @@ router.post('/automod/:guildId', (req, res) => {
 
 /* ================= LOGS ================= */
 
+const DEFAULT_LOGS = {
+  enabled: true,
+  channels: {
+    general: null,
+    moderation: null,
+    admin: null,
+    automod: null,
+    member: null,
+    message: null,
+    voice: null,
+  },
+  events: {
+    moderationActions: true,
+    adminActions: true,
+    automodActions: true,
+
+    memberJoin: true,
+    memberLeave: true,
+
+    messageDelete: true,
+    messageEdit: true,
+  },
+};
+
 router.get('/logs/:guildId', (req, res) => {
   try {
     const { guildId } = req.params;
@@ -72,13 +86,32 @@ router.get('/logs/:guildId', (req, res) => {
 router.post('/logs/:guildId', (req, res) => {
   try {
     const { guildId } = req.params;
+    const body = req.body || {};
 
     const config = guildManager.saveGuildSection(guildId, 'logs', {
-      logsChannelId: req.body.logsChannelId || null,
-      modLogChannelId: req.body.modLogChannelId || null,
-      adminLogChannelId: req.body.adminLogChannelId || null,
-      automodLogChannelId: req.body.automodLogChannelId || null,
-      adminActionLoggerEnabled: req.body.adminActionLoggerEnabled === true,
+      enabled: body.enabled !== false,
+
+      channels: {
+        general: body.channels?.general || null,
+        moderation: body.channels?.moderation || null,
+        admin: body.channels?.admin || null,
+        automod: body.channels?.automod || null,
+        member: body.channels?.member || null,
+        message: body.channels?.message || null,
+        voice: body.channels?.voice || null,
+      },
+
+      events: {
+        moderationActions: body.events?.moderationActions !== false,
+        adminActions: body.events?.adminActions !== false,
+        automodActions: body.events?.automodActions !== false,
+
+        memberJoin: body.events?.memberJoin !== false,
+        memberLeave: body.events?.memberLeave !== false,
+
+        messageDelete: body.events?.messageDelete !== false,
+        messageEdit: body.events?.messageEdit !== false,
+      },
     });
 
     emitGuildUpdate(guildId, {

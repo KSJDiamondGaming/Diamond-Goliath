@@ -1,5 +1,8 @@
 const { EmbedBuilder, PermissionsBitField } = require('discord.js');
-const guildManager = require('../../../dashboard/server/utils/guildManager');
+const {
+  getLogChannelId,
+  isLogEventEnabled,
+} = require('../../../dashboard/server/utils/guildManager');
 
 const spamTracker = new Map();
 const repeatTracker = new Map();
@@ -597,8 +600,11 @@ function formatAutomodActions(action) {
 
   async function sendAutomodLog(message, config, details) {
   try {
-    if (!config?.logs?.enabled) return;
-    if (!config?.logs?.channelId) return;
+    if (!message?.guild) return;
+    if (!isLogEventEnabled(message.guild.id, 'automodActions')) return;
+
+    const logChannelId = getLogChannelId(message.guild.id, 'automod');
+    if (!logChannelId) return;
 
     const colors = {
       'Anti-Link': '#e74c3c',
@@ -620,25 +626,25 @@ function formatAutomodActions(action) {
       'Anti-Invite': '📩',
       'Blacklisted Domain': '⛔',
       'Suspicious Domain': '⚠️',
-  };
+    };
 
-  const severities = {
-    'Anti-Link': 'High',
-    'Blacklisted Domain': 'Critical',
-    'Suspicious Domain': 'High',
-    'Caps Abuse': 'Medium',
-    'Bad Words': 'High',
-    'Anti-Spam': 'Medium',
-    'Repeated Messages': 'Low',
-    'Anti-Invite': 'High',
-  };
+    const severities = {
+      'Anti-Link': 'High',
+      'Blacklisted Domain': 'Critical',
+      'Suspicious Domain': 'High',
+      'Caps Abuse': 'Medium',
+      'Bad Words': 'High',
+      'Anti-Spam': 'Medium',
+      'Repeated Messages': 'Low',
+      'Anti-Invite': 'High',
+    };
 
     const logChannel =
-      message.guild.channels.cache.get(config.logs.channelId) ||
-      (await message.guild.channels.fetch(config.logs.channelId).catch(() => null));
+      message.guild.channels.cache.get(logChannelId) ||
+      (await message.guild.channels.fetch(logChannelId).catch(() => null));
 
     if (!logChannel || !logChannel.isTextBased()) {
-      console.log(`❌ Automod log channel not found: ${config.logs.channelId}`);
+      console.log(`❌ Automod log channel not found: ${logChannelId}`);
       return;
     }
 
@@ -649,8 +655,16 @@ function formatAutomodActions(action) {
         { name: 'User', value: `${message.author} (${message.author.id})` },
         { name: 'Channel', value: `${message.channel}` },
         { name: 'Rule', value: details.rule || 'Unknown', inline: true },
-        { name: 'Actions Taken', value: formatAutomodActions(details.action || 'delete'), inline: true,},
-        { name: 'Severity', value: severities[details.rule] || 'Medium', inline: true,}
+        {
+          name: 'Actions Taken',
+          value: formatAutomodActions(details.action || 'delete'),
+          inline: true,
+        },
+        {
+          name: 'Severity',
+          value: severities[details.rule] || 'Medium',
+          inline: true,
+        }
       )
       .setTimestamp();
 

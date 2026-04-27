@@ -9,23 +9,27 @@ const {
   TextInputBuilder,
   TextInputStyle,
 } = require('discord.js');
-const { getGuildConfig } = require('../config/guildConfigStore');
+
+const {
+  getLogChannelId,
+  isLogEventEnabled,
+} = require('../../../dashboard/server/utils/guildManager');
 
 /**
  * 🧠 MAIN HUB
  */
 function buildAdminPanel(guild, memberDisplayName) {
-  const config = getGuildConfig(guild?.id);
+  const guildId = guild?.id;
 
-  const logsChannelId = config.logsChannelId || config.logsChannel || null;
-  const modLogChannelId = config.modLogChannelId || null;
-  const adminLogChannelId = config.adminLogChannelId || null;
-  const automodLogChannelId = config.automodLogChannelId || null;
-  const adminActionLoggerEnabled = config.adminActionLoggerEnabled === true;
+  const logsChannelId = getLogChannelId(guildId, 'general');
+  const automodLogChannelId = getLogChannelId(guildId, 'automod');
+  const adminLogChannelId = getLogChannelId(guildId, 'admin');
+  const adminActionLoggerEnabled = isLogEventEnabled(guildId, 'adminActions');
+  const modLogChannelId = getLogChannelId(guildId, 'moderation');
 
   const embed = new EmbedBuilder()
     .setColor('#5865F2')
-    .setTitle('🛠️ KSJ Goliath Admin Hub')
+    .setTitle('🛠️ Admin Hub')
     .setDescription('Control your entire server from one panel.')
     .addFields(
       { name: '⚙️ AutoMod', value: 'Filters & protection', inline: true },

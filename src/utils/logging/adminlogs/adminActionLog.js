@@ -1,5 +1,8 @@
 const { EmbedBuilder } = require('discord.js');
-const { getGuildConfig } = require('../../config/guildConfigStore');
+const {
+  getLogChannelId,
+  isLogEventEnabled,
+} = require('../../../dashboard/server/utils/guildManager');
 
 async function logAdminAction({
   guild,
@@ -9,21 +12,12 @@ async function logAdminAction({
   color = '#5865F2',
   details = [],
   title = null,
-  force = false,
 }) {
   if (!guild) return;
 
-  const config = getGuildConfig(guild.id);
+  if (!isLogEventEnabled(guild.id, 'adminActions')) return;
 
-  if (!force && config.adminActionLoggerEnabled !== true) {
-    return;
-  }
-
-  const logChannelId =
-    config.adminLogChannelId ||
-    config.logsChannelId ||
-    null;
-
+  const logChannelId = getLogChannelId(guild.id, 'admin');
   if (!logChannelId) return;
 
   try {
@@ -34,30 +28,25 @@ async function logAdminAction({
       {
         name: 'Action',
         value: action || 'Unknown',
-        inline: false,
       },
       {
         name: 'Moderator',
         value: moderator ? `${moderator.tag} (${moderator.id})` : 'System',
-        inline: false,
       },
       {
         name: 'Reason',
-        value: reason || 'No reason provided',
-        inline: false,
+        value: reason,
       },
     ];
 
-    if (Array.isArray(details) && details.length) {
-      for (const detail of details) {
-        if (!detail?.name || detail?.value == null) continue;
+    for (const detail of details || []) {
+      if (!detail?.name || detail?.value == null) continue;
 
-        fields.push({
-          name: detail.name,
-          value: String(detail.value),
-          inline: detail.inline ?? false,
-        });
-      }
+      fields.push({
+        name: detail.name,
+        value: String(detail.value),
+        inline: detail.inline ?? false,
+      });
     }
 
     const embed = new EmbedBuilder()
@@ -66,13 +55,13 @@ async function logAdminAction({
       .addFields(fields)
       .setTimestamp();
 
-    if (moderator && typeof moderator.displayAvatarURL === 'function') {
+    if (moderator?.displayAvatarURL) {
       embed.setThumbnail(moderator.displayAvatarURL({ dynamic: true }));
     }
 
     await channel.send({ embeds: [embed] });
   } catch (error) {
-    console.error(`Failed to log admin action in guild ${guild.id}:`, error);
+    console.error(`❌ Admin log failed (${guild.id}):`, error);
   }
 }
 
