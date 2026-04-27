@@ -21,12 +21,6 @@ module.exports = {
       terminal.error('Scheduler failed', err);
     }
 
-    try {
-      stats.start?.(client);
-    } catch (err) {
-      terminal.error('Stats failed', err);
-    }
-
     client.isBooting = false;
 
     terminal.banner([
@@ -54,7 +48,7 @@ module.exports = {
       },
       {
         label: 'Systems',
-        value: 'Scheduler, Stats',
+        value: 'Scheduler',
         ok: true,
       },
     ]);

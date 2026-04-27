@@ -2,6 +2,7 @@ require('dotenv').config();
 
 const terminal = require('./src/core/logs/terminalLogger');
 const { syncCommands } = require('./src/bot/loaders/syncCommands');
+const guildStore = require('./src/core/guild/store');
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -276,12 +277,35 @@ async function maybeSyncCommands() {
   terminal.line('🛰️ Command Sync', 'Finished automatic sync');
 }
 
+function registerGuildDataLiveSync() {
+  const guildsDir = guildStore.GUILDS_DIR;
+
+  fs.mkdirSync(guildsDir, { recursive: true });
+
+  fs.watch(guildsDir, (eventType, filename) => {
+    if (!filename || !filename.endsWith('.json')) return;
+
+    const guildId = filename.replace('.json', '');
+
+    try {
+      guildStore.clearGuildCache(guildId);
+      guildStore.reloadGuild(guildId);
+
+      terminal.line('🔁 Live Sync', `Guild cache refreshed: ${guildId}`);
+    } catch (error) {
+      terminal.error(`Live sync failed for guild: ${guildId}`, error);
+    }
+  });
+
+  terminal.line('🔁 Live Sync', `Watching ${guildsDir}`);
+}
+
 /* ---------------- START BOT ---------------- */
 
 async function startBot() {
   try {
     terminal.start();
-
+    
     const token = process.env.TOKEN;
     if (!token) {
       throw new Error('Missing TOKEN in .env file');
@@ -289,6 +313,7 @@ async function startBot() {
 
     const commandStats = loadCommands(client);
     const eventStats = loadEvents(client);
+    registerGuildDataLiveSync();
 
     terminal.line(
       '📦 Commands',
