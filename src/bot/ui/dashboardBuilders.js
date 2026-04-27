@@ -6,7 +6,7 @@ const {
   EmbedBuilder
 } = require('discord.js');
 
-const { COLORS, EMOJIS } = require('./uiConfig');
+const { COLORS, EMOJIS } = require('../../utils/utility/uiConfig');
 const { getStatusLabel } = require('../moderation/caseHelpers');
 
 // =========================

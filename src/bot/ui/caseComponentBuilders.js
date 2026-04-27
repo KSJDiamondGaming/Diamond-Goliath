@@ -5,7 +5,7 @@ const {
   EmbedBuilder
 } = require('discord.js');
 
-const { COLORS, EMOJIS } = require('./uiConfig');
+const { COLORS, EMOJIS } = require('../../utils/utility/uiConfig');
 
 function buildCaseFilterButtons(
   targetId,
