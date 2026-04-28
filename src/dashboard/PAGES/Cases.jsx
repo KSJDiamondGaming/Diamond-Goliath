@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { api } from '../api';
+import { api, joinGuildRoom, listenForGuildUpdate } from '../api';
 import PageShell, {
   EmptyState,
   LoadingPanel,
@@ -15,57 +15,134 @@ const ACTION_TONES = {
   kick: 'warning',
   timeout: 'warning',
   warn: 'primary',
+  warning: 'primary',
+  mute: 'warning',
   clearwarnings: 'soft',
 };
 
+function getGuildId(selectedGuild) {
+  if (!selectedGuild) return '';
+  if (typeof selectedGuild === 'string') return selectedGuild;
+  return selectedGuild.id || selectedGuild.guildId || '';
+}
+
 export default function Cases({ selectedGuild, theme }) {
   const styles = useMemo(() => createCasesPageStyles(theme), [theme]);
+  const page = PAGE_LAYOUTS[PAGE_KEY];
+  const guildId = getGuildId(selectedGuild);
 
   const [cases, setCases] = useState([]);
   const [selectedCase, setSelectedCase] = useState(null);
+  const [clearingCase, setClearingCase] = useState('');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [syncMessage, setSyncMessage] = useState('');
 
-  const page = PAGE_LAYOUTS[PAGE_KEY];
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function loadCases() {
-      if (!selectedGuild) {
+  const loadCases = useCallback(
+    async ({ quiet = false } = {}) => {
+      if (!guildId) {
         setCases([]);
         setSelectedCase(null);
+        setError('');
+        setSyncMessage('');
         return;
       }
 
       try {
-        setLoading(true);
+        if (quiet) setRefreshing(true);
+        else setLoading(true);
+
         setError('');
 
-        const data = await api.getCases(selectedGuild);
+        const data = await api.getCases(guildId);
+        const nextCases = normalizeCases(data, guildId);
 
-        if (!mounted) return;
-
-        const nextCases = normalizeCases(data, selectedGuild);
         setCases(nextCases);
-        setSelectedCase(null);
+        setSelectedCase((current) => {
+          if (!current) return null;
+          const currentKey = getCaseKey(current);
+          return nextCases.find((item) => getCaseKey(item) === currentKey) || null;
+        });
       } catch (err) {
         console.error(err);
-        if (!mounted) return;
         setCases([]);
+        setSelectedCase(null);
         setError('Could not load cases.');
       } finally {
-        if (mounted) setLoading(false);
+        setLoading(false);
+        setRefreshing(false);
       }
-    }
+    },
+    [guildId],
+  );
 
+  const handleClearCase = useCallback(
+    async (item) => {
+      if (!guildId || !item?.caseNumber) return;
+
+      try {
+        setClearingCase(String(item.caseNumber));
+        setError('');
+        setSyncMessage('');
+
+        const result = await api.clearCase(guildId, item.caseNumber);
+        const nextCases = normalizeCases(result?.cases || result?.data || result, guildId);
+
+        if (nextCases.length > 0) {
+          setCases(nextCases);
+          setSelectedCase(
+            nextCases.find(
+              (caseItem) => String(caseItem.caseNumber) === String(item.caseNumber),
+            ) || null,
+          );
+        } else {
+          await loadCases({ quiet: true });
+        }
+
+        setSyncMessage('✅ Case cleared.');
+      } catch (err) {
+        console.error(err);
+        setError('Failed to clear case.');
+      } finally {
+        setClearingCase('');
+      }
+    },
+    [guildId, loadCases],
+  );
+
+  useEffect(() => {
     loadCases();
+  }, [loadCases]);
 
-    return () => {
-      mounted = false;
-    };
-  }, [selectedGuild]);
+  useEffect(() => {
+    if (!guildId) return undefined;
+
+    joinGuildRoom(guildId);
+
+    return listenForGuildUpdate(guildId, 'cases', (data) => {
+      const nextCases = normalizeCases(data, guildId);
+
+      setCases(nextCases);
+      setSelectedCase((current) => {
+        if (!current) return null;
+        const currentKey = getCaseKey(current);
+        return nextCases.find((item) => getCaseKey(item) === currentKey) || null;
+      });
+      setSyncMessage('✅ Cases synced live.');
+    });
+  }, [guildId]);
+
+  useEffect(() => {
+    if (!syncMessage) return undefined;
+
+    const timeout = setTimeout(() => {
+      setSyncMessage('');
+    }, 3000);
+
+    return () => clearTimeout(timeout);
+  }, [syncMessage]);
 
   const filteredCases = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -110,23 +187,33 @@ export default function Cases({ selectedGuild, theme }) {
     <PageShell
       title={page?.title || 'Cases'}
       subtitle={
-        selectedGuild
+        guildId
           ? page?.description || 'Moderation history'
           : page?.emptyDescription || 'Select a server to view cases.'
       }
       theme={theme}
       actions={
-        selectedGuild ? (
-          <input
-            style={styles.searchInput}
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search cases..."
-          />
-        ) : null
-      }
+  guildId ? (
+    <div style={styles.actionsRow}>
+      <input
+        style={styles.searchInput}
+        value={search}
+        onChange={(event) => setSearch(event.target.value)}
+        placeholder="Search cases..."
+      />
+
+      <SecondaryButton
+        theme={theme}
+        onClick={() => loadCases({ quiet: true })}
+        disabled={refreshing}
+      >
+        {refreshing ? 'Refreshing...' : 'Refresh'}
+      </SecondaryButton>
+    </div>
+  ) : null
+}
     >
-      {!selectedGuild ? (
+      {!guildId ? (
         <EmptyState theme={theme} text="Select a guild to view cases." />
       ) : null}
 
@@ -136,11 +223,17 @@ export default function Cases({ selectedGuild, theme }) {
         </Notice>
       ) : null}
 
-      {selectedGuild && loading ? (
+      {syncMessage ? (
+        <Notice theme={theme} tone="success">
+          {syncMessage}
+        </Notice>
+      ) : null}
+
+      {guildId && loading ? (
         <LoadingPanel theme={theme} text="Loading cases..." />
       ) : null}
 
-      {selectedGuild && !loading ? (
+      {guildId && !loading ? (
         <div style={styles.page}>
           <div style={styles.statsGrid}>
             <div style={styles.statCard}>
@@ -195,6 +288,8 @@ export default function Cases({ selectedGuild, theme }) {
                   theme={theme}
                   formatDate={formatDate}
                   onClose={() => setSelectedCase(null)}
+                  onClear={() => handleClearCase(selectedCase)}
+                  clearing={clearingCase === String(selectedCase.caseNumber)}
                 />
               ) : (
                 <div style={styles.emptyPanel}>
@@ -227,7 +322,8 @@ const CaseListItem = memo(function CaseListItem({
         <h4 style={styles.recordTitle}>
           Case #{item.caseNumber || item.id || 'Unknown'}
         </h4>
-        <span style={styles.badge(tone)}>{item.action || 'Unknown'}</span>
+
+        <span style={styles.badge(tone)}>{formatAction(item.action)}</span>
       </div>
 
       <p style={styles.recordMeta}>
@@ -249,6 +345,8 @@ const CaseDetail = memo(function CaseDetail({
   theme,
   formatDate,
   onClose,
+  onClear,
+  clearing,
 }) {
   const tone = getActionTone(item.action);
 
@@ -259,15 +357,19 @@ const CaseDetail = memo(function CaseDetail({
           <h3 style={styles.detailTitle}>
             Case #{item.caseNumber || item.id || 'Unknown'}
           </h3>
-          <span style={styles.badge(tone)}>{item.action || 'Unknown'}</span>
+
+          <span style={styles.badge(tone)}>{formatAction(item.action)}</span>
         </div>
 
-        <p style={styles.detailSubtitle}>Full moderation case details.</p>
+        <p style={styles.detailSubtitle}>
+          {item.cleared ? 'This case has been cleared.' : 'Full moderation case details.'}
+        </p>
       </div>
 
       <div style={styles.detailBody}>
         <div style={styles.detailGrid}>
-          <DetailRow styles={styles} label="Action" value={item.action || 'Unknown'} />
+          <DetailRow styles={styles} label="Action" value={formatAction(item.action)} />
+
           <DetailRow
             styles={styles}
             label="Target"
@@ -276,27 +378,44 @@ const CaseDetail = memo(function CaseDetail({
               item.targetId || item.userId,
             )}
           />
+
           <DetailRow
             styles={styles}
             label="Moderator"
             value={formatUser(item.moderatorTag || item.moderator, item.moderatorId)}
           />
+
           <DetailRow
             styles={styles}
             label="Date"
             value={formatDate(item.createdAt || item.date || item.timestamp)}
           />
+
           <DetailRow
             styles={styles}
             label="Reason"
             value={item.reason || 'No reason provided'}
           />
+
+          {item.cleared ? (
+            <DetailRow
+              styles={styles}
+              label="Cleared At"
+              value={formatDate(item.clearedAt)}
+            />
+          ) : null}
         </div>
 
         <div style={styles.detailActions}>
           <SecondaryButton theme={theme} onClick={onClose}>
             Close
           </SecondaryButton>
+
+          {!item.cleared ? (
+            <SecondaryButton theme={theme} onClick={onClear} disabled={clearing}>
+              {clearing ? 'Clearing...' : 'Clear Case'}
+            </SecondaryButton>
+          ) : null}
         </div>
       </div>
     </aside>
@@ -312,61 +431,78 @@ const DetailRow = memo(function DetailRow({ label, value, styles }) {
   );
 });
 
-function normalizeCases(data, selectedGuild) {
+function normalizeCases(data, guildId) {
   if (!data) return [];
 
+  let rawCases = [];
+
   if (Array.isArray(data)) {
-    return data.map((item) => normalizeCase(item, selectedGuild));
+    rawCases = data;
+  } else if (Array.isArray(data.cases)) {
+    rawCases = data.cases;
+  } else if (data.cases && typeof data.cases === 'object') {
+    rawCases = Object.values(data.cases);
+  } else if (typeof data === 'object') {
+    rawCases = Object.values(data).filter(
+      (item) => item && typeof item === 'object' && !Array.isArray(item),
+    );
   }
 
-  if (Array.isArray(data.cases)) {
-    return data.cases.map((item) => normalizeCase(item, selectedGuild));
-  }
+  return rawCases
+    .map((item, index) => normalizeCase(item, guildId, index))
+    .sort((a, b) => {
+      const aNumber = Number(a.caseNumber || 0);
+      const bNumber = Number(b.caseNumber || 0);
 
-  if (selectedGuild && data[selectedGuild]) {
-    return normalizeCases(data[selectedGuild], selectedGuild);
-  }
+      if (aNumber !== bNumber) return bNumber - aNumber;
 
-  if (typeof data === 'object') {
-    return Object.entries(data).flatMap(([guildId, value]) => {
-      if (Array.isArray(value)) {
-        return value.map((item) => normalizeCase(item, guildId));
-      }
+      const aTime = new Date(a.createdAt || 0).getTime() || 0;
+      const bTime = new Date(b.createdAt || 0).getTime() || 0;
 
-      if (value && typeof value === 'object') {
-        return Object.values(value).map((item) => normalizeCase(item, guildId));
-      }
-
-      return [];
+      return bTime - aTime;
     });
-  }
-
-  return [];
 }
 
-function normalizeCase(item, guildId) {
+function normalizeCase(item = {}, guildId, index = 0) {
+  const caseNumber = item.caseNumber || item.case || item.number || item.id || index + 1;
+
   return {
     ...item,
-    guildId: item?.guildId || guildId,
-    caseNumber: item?.caseNumber || item?.case || item?.number || item?.id,
-    action: item?.action || item?.type || item?.punishment,
-    targetTag: item?.targetTag || item?.userTag || item?.user,
-    targetId: item?.targetId || item?.userId,
-    moderatorTag: item?.moderatorTag || item?.moderator,
-    moderatorId: item?.moderatorId,
-    createdAt: item?.createdAt || item?.date || item?.timestamp,
-    reason: item?.reason,
-    cleared: item?.cleared === true,
+    guildId: item.guildId || guildId,
+    caseNumber,
+    action: item.action || item.type || item.punishment || 'unknown',
+    targetTag: item.targetTag || item.userTag || item.user || item.target,
+    targetId: item.targetId || item.userId,
+    moderatorTag: item.moderatorTag || item.moderator,
+    moderatorId: item.moderatorId,
+    createdAt: item.createdAt || item.date || item.timestamp,
+    reason: item.reason,
+    cleared: item.cleared === true,
+    clearedAt: item.clearedAt,
+    stableKey:
+      item.id ||
+      item.caseId ||
+      `${item.guildId || guildId}-${caseNumber}-${item.createdAt || item.timestamp || index}`,
   };
 }
 
 function getCaseKey(item) {
   if (!item) return '';
-  return `${item.guildId || 'guild'}-${item.caseNumber || item.id || item.createdAt || Math.random()}`;
+  return item.stableKey || `${item.guildId || 'guild'}-${item.caseNumber || item.id || 'case'}`;
 }
 
 function getActionTone(action = '') {
   return ACTION_TONES[String(action).toLowerCase()] || 'soft';
+}
+
+function formatAction(action = '') {
+  const normalized = String(action || 'unknown').trim();
+
+  if (!normalized) return 'Unknown';
+
+  return normalized
+    .replace(/-/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function formatUser(tag, id) {

@@ -98,7 +98,19 @@
       "voiceMove": true
     }
   },
-  "cases": {},
+  "cases": {
+  "1": {
+    "caseNumber": 1,
+    "action": "Warn",
+    "targetTag": "TestUser#0001",
+    "targetId": "123456789012345678",
+    "moderatorTag": "Morgz",
+    "moderatorId": "808091031350280213",
+    "reason": "Testing dashboard clear case button",
+    "createdAt": "2026-04-28T23:20:00.000Z",
+    "cleared": false
+  }
+  },
   "warnings": {},
   "welcome": {},
   "leave": {},

@@ -12,61 +12,73 @@ import { PAGE_LAYOUTS, createWarningsPageStyles } from '../ui';
 
 const PAGE_KEY = 'warnings';
 
+function getGuildId(selectedGuild) {
+  if (!selectedGuild) return '';
+  if (typeof selectedGuild === 'string') return selectedGuild;
+  return selectedGuild.id || selectedGuild.guildId || '';
+}
+
 export default function Warnings({ selectedGuild, theme }) {
   const styles = useMemo(() => createWarningsPageStyles(theme), [theme]);
+  const page = PAGE_LAYOUTS[PAGE_KEY];
+  const guildId = getGuildId(selectedGuild);
 
   const [warnings, setWarnings] = useState([]);
   const [selectedWarning, setSelectedWarning] = useState(null);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
 
-  const page = PAGE_LAYOUTS[PAGE_KEY];
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function loadWarnings() {
-      if (!selectedGuild) {
+  const loadWarnings = useCallback(
+    async ({ quiet = false } = {}) => {
+      if (!guildId) {
         setWarnings([]);
         setSelectedWarning(null);
+        setError('');
         return;
       }
 
       try {
-        setLoading(true);
+        if (quiet) setRefreshing(true);
+        else setLoading(true);
+
         setError('');
 
-        const data = await api.getWarnings(selectedGuild);
+        const data = await api.getWarnings(guildId);
+        const nextWarnings = normalizeWarnings(data, guildId);
 
-        if (!mounted) return;
-
-        setWarnings(normalizeWarnings(data, selectedGuild));
-        setSelectedWarning(null);
+        setWarnings(nextWarnings);
+        setSelectedWarning((current) => {
+          if (!current) return null;
+          const currentKey = getWarningKey(current);
+          return nextWarnings.find((item) => getWarningKey(item) === currentKey) || null;
+        });
       } catch (err) {
         console.error(err);
-        if (!mounted) return;
         setWarnings([]);
+        setSelectedWarning(null);
         setError('Could not load warnings.');
       } finally {
-        if (mounted) setLoading(false);
+        setLoading(false);
+        setRefreshing(false);
       }
-    }
+    },
+    [guildId],
+  );
 
+  useEffect(() => {
     loadWarnings();
-
-    return () => {
-      mounted = false;
-    };
-  }, [selectedGuild]);
+  }, [loadWarnings]);
 
   const filteredWarnings = useMemo(() => {
-    const query = search.toLowerCase();
+    const query = search.trim().toLowerCase();
     if (!query) return warnings;
 
     return warnings.filter((w) =>
       [
         w.id,
+        w.caseNumber,
         w.userTag,
         w.userId,
         w.moderatorTag,
@@ -91,52 +103,62 @@ export default function Warnings({ selectedGuild, theme }) {
   const formatDate = useCallback((value) => {
     if (!value) return 'Unknown';
     const d = new Date(value);
-    return isNaN(d.getTime()) ? 'Unknown' : d.toLocaleString();
+    return Number.isNaN(d.getTime()) ? 'Unknown' : d.toLocaleString();
   }, []);
 
   return (
     <PageShell
       title={page?.title || 'Warnings'}
       subtitle={
-        selectedGuild
+        guildId
           ? page?.description || 'View and manage warning records.'
           : page?.emptyDescription || 'Select a server to view warnings.'
       }
       theme={theme}
       actions={
-        selectedGuild ? (
-          <input
-            style={styles.searchInput}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search warnings..."
-          />
+        guildId ? (
+          <div style={styles.actionsRow}>
+            <input
+              style={styles.searchInput}
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search warnings..."
+            />
+
+            <SecondaryButton
+              theme={theme}
+              onClick={() => loadWarnings({ quiet: true })}
+              disabled={refreshing}
+            >
+              {refreshing ? 'Refreshing...' : 'Refresh'}
+            </SecondaryButton>
+          </div>
         ) : null
       }
     >
-      {!selectedGuild && (
+      {!guildId ? (
         <EmptyState theme={theme} text="Select a server to view warnings." />
-      )}
+      ) : null}
 
-      {error && (
+      {error ? (
         <Notice theme={theme} tone="danger">
           {error}
         </Notice>
-      )}
+      ) : null}
 
-      {selectedGuild && (
+      {guildId ? (
         <StatGrid>
           <SummaryStat theme={theme} label="Total Warnings" value={stats.total} />
           <SummaryStat theme={theme} label="Active" value={stats.active} accent={theme.warning} />
           <SummaryStat theme={theme} label="Cleared" value={stats.cleared} accent={theme.success} />
         </StatGrid>
-      )}
+      ) : null}
 
-      {selectedGuild && loading && (
+      {guildId && loading ? (
         <LoadingPanel theme={theme} text="Loading warnings..." />
-      )}
+      ) : null}
 
-      {selectedGuild && !loading && (
+      {guildId && !loading ? (
         <div style={styles.page}>
           {filteredWarnings.length === 0 ? (
             <div style={styles.emptyPanel}>
@@ -190,20 +212,18 @@ export default function Warnings({ selectedGuild, theme }) {
             </div>
           )}
         </div>
-      )}
+      ) : null}
     </PageShell>
   );
 }
-
-/* ================= COMPONENTS ================= */
 
 const WarningItem = memo(function WarningItem({ item, active, styles, formatDate, onClick }) {
   const tone = item.cleared ? 'success' : 'warning';
 
   return (
-    <button onClick={onClick} style={styles.recordButton(active)}>
+    <button type="button" onClick={onClick} style={styles.recordButton(active)}>
       <div style={styles.recordTop}>
-        <h4 style={styles.recordTitle}>Warning #{item.id || '—'}</h4>
+        <h4 style={styles.recordTitle}>Warning #{item.id || item.caseNumber || '—'}</h4>
         <span style={styles.badge(tone)}>
           {item.cleared ? 'Cleared' : 'Active'}
         </span>
@@ -229,7 +249,7 @@ const WarningDetail = memo(function WarningDetail({ item, styles, theme, formatD
     <aside style={styles.detailCard}>
       <div style={styles.detailHeader}>
         <div style={styles.recordTop}>
-          <h3 style={styles.detailTitle}>Warning #{item.id}</h3>
+          <h3 style={styles.detailTitle}>Warning #{item.id || item.caseNumber || '—'}</h3>
           <span style={styles.badge(tone)}>
             {item.cleared ? 'Cleared' : 'Active'}
           </span>
@@ -240,10 +260,10 @@ const WarningDetail = memo(function WarningDetail({ item, styles, theme, formatD
 
       <div style={styles.detailBody}>
         <div style={styles.detailGrid}>
-          <DetailRow styles={styles} label="User" value={item.userTag || item.userId} />
-          <DetailRow styles={styles} label="Moderator" value={item.moderatorTag} />
+          <DetailRow styles={styles} label="User" value={item.userTag || item.userId || 'Unknown'} />
+          <DetailRow styles={styles} label="Moderator" value={item.moderatorTag || 'Unknown'} />
           <DetailRow styles={styles} label="Date" value={formatDate(item.createdAt)} />
-          <DetailRow styles={styles} label="Reason" value={item.reason} />
+          <DetailRow styles={styles} label="Reason" value={item.reason || 'No reason provided'} />
         </div>
 
         <div style={styles.detailActions}>
@@ -265,41 +285,58 @@ const DetailRow = memo(function DetailRow({ label, value, styles }) {
   );
 });
 
-/* ================= HELPERS ================= */
-
 function normalizeWarnings(data, guildId) {
   if (!data) return [];
 
+  let rawWarnings = [];
+
   if (Array.isArray(data)) {
-    return data.map((w) => normalizeWarning(w, guildId));
-  }
-
-  if (data[guildId]) {
+    rawWarnings = data;
+  } else if (Array.isArray(data.warnings)) {
+    rawWarnings = data.warnings;
+  } else if (data.warnings && typeof data.warnings === 'object') {
+    rawWarnings = Object.values(data.warnings);
+  } else if (guildId && data[guildId]) {
     return normalizeWarnings(data[guildId], guildId);
+  } else if (typeof data === 'object') {
+    rawWarnings = Object.values(data).filter(
+      (item) => item && typeof item === 'object' && !Array.isArray(item),
+    );
   }
 
-  return Object.values(data).flatMap((val) =>
-    Array.isArray(val)
-      ? val.map((w) => normalizeWarning(w, guildId))
-      : [],
-  );
+  return rawWarnings
+    .map((w, index) => normalizeWarning(w, guildId, index))
+    .sort((a, b) => {
+      const aNumber = Number(a.caseNumber || a.id || 0);
+      const bNumber = Number(b.caseNumber || b.id || 0);
+
+      if (aNumber !== bNumber) return bNumber - aNumber;
+
+      const aTime = new Date(a.createdAt || 0).getTime() || 0;
+      const bTime = new Date(b.createdAt || 0).getTime() || 0;
+
+      return bTime - aTime;
+    });
 }
 
-function normalizeWarning(w, guildId) {
+function normalizeWarning(w, guildId, index = 0) {
+  const id = w.id || w.warningId || w.caseNumber || w.case || index + 1;
+
   return {
     ...w,
-    guildId,
-    id: w.id || w.warningId,
-    userTag: w.userTag || w.user,
-    userId: w.userId,
+    guildId: w.guildId || guildId,
+    id,
+    caseNumber: w.caseNumber || w.case || id,
+    userTag: w.userTag || w.user || w.targetTag || w.target,
+    userId: w.userId || w.targetId,
     moderatorTag: w.moderatorTag || w.moderator,
     reason: w.reason,
     cleared: w.cleared === true,
-    createdAt: w.createdAt || w.timestamp,
+    createdAt: w.createdAt || w.timestamp || w.date,
   };
 }
 
 function getWarningKey(w) {
   if (!w) return '';
-  return `${w.guildId}-${w.id || w.createdAt}`;
+  return `${w.guildId}-${w.id || w.caseNumber || w.createdAt}`;
 }

@@ -2630,6 +2630,23 @@ export function createRecordPageStyles(theme) {
       gap: '16px',
     },
 
+  actionsRow: {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '10px',
+},
+
+searchInput: {
+  width: '185px',
+  height: '44px',
+  padding: '0 12px',
+  borderRadius: '12px',
+  border: `1px solid ${theme.inputBorder}`,
+  background: theme.inputBg,
+  color: theme.inputText,
+  outline: 'none',
+},
+
     /* ================= TOOLBAR ================= */
 
     toolbar: {
@@ -3620,6 +3637,32 @@ sectionCard: {
       fontWeight: 950,
       letterSpacing: '-0.04em',
     },
+
+    const sharedStatsStyles = (theme) => ({
+  statCard: {
+    padding: '16px',   // 👈 reduce this (likely 20–24 in Cases)
+    borderRadius: '20px',
+    background: theme.cardBg,
+    border: `1px solid ${theme.cardBorder}`,
+  },
+
+  statLabel: {
+    fontSize: '12px',
+    opacity: 0.7,
+  },
+
+  statValue: {
+    fontSize: '22px',
+    fontWeight: 600,
+  },
+});
+const stats = sharedStatsStyles(theme);
+
+
+statCard: stats.statCard,
+statLabel: stats.statLabel,
+statValue: stats.statValue,
+
 
     button(tone = 'primary', disabled = false) {
       const tones = {

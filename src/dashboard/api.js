@@ -251,6 +251,10 @@ export const api = {
     return request(`/api/cases/${guildId}`);
   },
 
+  clearCase(guildId, caseNumber) {
+    return jsonPost(`/api/cases/${guildId}/${caseNumber}/clear`);
+  } ,
+
   getWarnings(guildId) {
     return request(`/api/cases/${guildId}/warnings`);
   },
