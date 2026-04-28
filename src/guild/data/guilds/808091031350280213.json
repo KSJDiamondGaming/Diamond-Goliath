@@ -1,0 +1,123 @@
+{
+  "guildId": "808091031350280213",
+  "guildName": null,
+  "updatedAt": "2026-04-27T19:57:23.949Z",
+  "general": {
+    "enabled": true,
+    "prefix": "!",
+    "timezone": "Europe/London"
+  },
+  "modules": {},
+  "automod": {
+    "antiSpam": {
+      "enabled": false,
+      "maxMessages": 6,
+      "intervalSeconds": 8,
+      "punishment": "delete",
+      "punishments": [
+        "delete"
+      ]
+    },
+    "antiLink": {
+      "enabled": true,
+      "punishment": "delete",
+      "allowedDomains": [],
+      "blockedDomains": [],
+      "punishments": [
+        "delete"
+      ]
+    },
+    "antiInvite": {
+      "enabled": false,
+      "punishment": "delete",
+      "punishments": [
+        "delete"
+      ]
+    },
+    "capsAbuse": {
+      "enabled": false,
+      "minLength": 10,
+      "percentage": 70,
+      "punishment": "delete",
+      "punishments": [
+        "delete"
+      ]
+    },
+    "badWords": {
+      "enabled": false,
+      "words": [],
+      "punishment": "delete",
+      "punishments": [
+        "delete"
+      ]
+    },
+    "repeatedMessages": {
+      "enabled": false,
+      "maxRepeats": 3,
+      "intervalSeconds": 10,
+      "punishment": "delete",
+      "punishments": [
+        "delete"
+      ]
+    },
+    "logs": {
+      "enabled": true,
+      "channelId": ""
+    },
+    "updatedAt": "2026-04-27T19:57:23.949Z"
+  },
+  "logs": {
+    "enabled": true,
+    "channels": {
+      "general": null,
+      "moderation": null,
+      "admin": null,
+      "automod": null,
+      "member": null,
+      "messageDelete": null,
+      "messageEdit": null,
+      "voice": null
+    },
+    "events": {
+      "moderationActions": true,
+      "adminActions": true,
+      "automodActions": true,
+      "memberJoin": true,
+      "memberLeave": true,
+      "memberUpdate": true,
+      "messageDelete": true,
+      "messageEdit": true,
+      "roleCreate": true,
+      "roleDelete": true,
+      "roleUpdate": true,
+      "channelCreate": true,
+      "channelDelete": true,
+      "channelUpdate": true,
+      "voiceJoin": true,
+      "voiceLeave": true,
+      "voiceMove": true
+    }
+  },
+  "cases": {
+  "1": {
+    "caseNumber": 1,
+    "action": "Warn",
+    "targetTag": "TestUser#0001",
+    "targetId": "123456789012345678",
+    "moderatorTag": "Morgz",
+    "moderatorId": "808091031350280213",
+    "reason": "Testing dashboard clear case button",
+    "createdAt": "2026-04-28T23:20:00.000Z",
+    "cleared": false
+  }
+  },
+  "warnings": {},
+  "welcome": {},
+  "leave": {},
+  "tickets": {},
+  "levels": {},
+  "reactionRoles": {},
+  "giveaways": {},
+  "suggestions": {},
+  "stats": {}
+}
