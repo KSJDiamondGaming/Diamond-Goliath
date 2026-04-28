@@ -1,8 +1,8 @@
 require('dotenv').config();
 
-const terminal = require('./src/core/logs/terminalLogger');
-const { syncCommands } = require('./src/bot/loaders/syncCommands');
-const guildStore = require('./src/core/guild/store');
+const terminal = require('./core/logs/terminalLogger');
+const { syncCommands } = require('./loaders/syncCommands');
+const guildStore = require('./core/guild/store');
 
 const fs = require('node:fs');
 const path = require('node:path');
