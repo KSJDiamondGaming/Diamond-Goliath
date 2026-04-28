@@ -1,59 +1,109 @@
-// 📜 Case Helper Utilities
+// functions/moderation/caseHelpers.js
 
 const {
   updateCaseStatus,
-  getAllCases
+  getAllCases,
 } = require('../logging/cases/caseStore');
 
 const {
-  purgeExpiredWarnings
+  purgeExpiredWarnings,
 } = require('../logging/modlogs/warningStore');
 
-// 🟢 Status label with emoji
-function getStatusLabel(modCase) {
-  const status = modCase.status || 'active';
+const STATUS_LABELS = {
+  active: '🟢 Active',
+  reversed: '🔁 Reversed',
+  expired: '⌛ Expired',
+};
 
-  if (status === 'reversed') return '🔁 Reversed';
-  if (status === 'expired') return '⌛ Expired';
+const TRACKED_ACTIONS = [
+  'warn',
+  'timeout',
+  'kick',
+  'ban',
+  'unwarn',
+  'remove-timeout',
+];
 
-  return '🟢 Active';
+function getStatus(modCase = {}) {
+  return modCase.status || 'active';
 }
 
-// 🧾 Short case summary (used in dashboard)
-function formatCaseSummary(modCase) {
-  return `#${modCase.caseId} • ${modCase.action} • ${getStatusLabel(modCase)} • <t:${Math.floor(
-    new Date(modCase.createdAt).getTime() / 1000
-  )}:R>`;
+function getStatusLabel(modCase = {}) {
+  return STATUS_LABELS[getStatus(modCase)] || STATUS_LABELS.active;
 }
 
-// ⏰ Sync expired warnings → update cases
+function getCaseTimestamp(dateValue) {
+  const timestamp = new Date(dateValue).getTime();
+
+  if (!Number.isFinite(timestamp)) {
+    return Math.floor(Date.now() / 1000);
+  }
+
+  return Math.floor(timestamp / 1000);
+}
+
+function formatCaseSummary(modCase = {}) {
+  return [
+    `#${modCase.caseId || '?'}`,
+    modCase.action || 'unknown',
+    getStatusLabel(modCase),
+    `<t:${getCaseTimestamp(modCase.createdAt)}:R>`,
+  ].join(' • ');
+}
+
 async function syncExpiredWarningsToCases(guildId) {
-  const expiredWarnings = purgeExpiredWarnings(guildId);
+  const expiredWarnings = purgeExpiredWarnings(guildId) || [];
 
   for (const warning of expiredWarnings) {
-    updateCaseStatus(guildId, warning.caseId, 'expired');
+    if (warning?.caseId) {
+      updateCaseStatus(guildId, warning.caseId, 'expired');
+    }
   }
+
+  return expiredWarnings.length;
 }
 
-// 📊 Count helper
-function countCasesByAction(cases, action) {
-  return cases.filter(c => c.action === action).length;
+function countCasesByAction(cases = [], action) {
+  return cases.filter((modCase) => modCase.action === action).length;
 }
 
-// 📊 Count by status
-function countCasesByStatus(cases, status) {
-  return cases.filter(c => (c.status || 'active') === status).length;
+function countCasesByStatus(cases = [], status) {
+  return cases.filter((modCase) => getStatus(modCase) === status).length;
 }
 
-// 🏆 Build top list (mods/users)
-function buildTopList(itemsMap, limit = 5, formatter = (id, count) => `${id} — ${count}`) {
+function buildTopList(
+  itemsMap = {},
+  limit = 5,
+  formatter = (id, count) => `${id} — ${count}`
+) {
   return Object.entries(itemsMap)
+    .filter(([id]) => Boolean(id))
     .sort((a, b) => b[1] - a[1])
     .slice(0, limit)
     .map(([id, count]) => formatter(id, count));
 }
 
-// 📊 Full analytics generator
+function incrementCount(map, key) {
+  if (!key) return;
+  map[key] = (map[key] || 0) + 1;
+}
+
+function getRecentCases(cases = [], limit = 5) {
+  return cases
+    .slice()
+    .sort((a, b) => {
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    })
+    .slice(0, limit);
+}
+
+function getActionCounts(cases = []) {
+  return TRACKED_ACTIONS.reduce((counts, action) => {
+    counts[`${action.replace(/-/g, '')}Count`] = countCasesByAction(cases, action);
+    return counts;
+  }, {});
+}
+
 function getModerationAnalytics(guildId) {
   const allCases = getAllCases(guildId) || [];
 
@@ -61,11 +111,8 @@ function getModerationAnalytics(guildId) {
   const userCounts = {};
 
   for (const modCase of allCases) {
-    moderatorCounts[modCase.moderatorId] =
-      (moderatorCounts[modCase.moderatorId] || 0) + 1;
-
-    userCounts[modCase.userId] =
-      (userCounts[modCase.userId] || 0) + 1;
+    incrementCount(moderatorCounts, modCase.moderatorId);
+    incrementCount(userCounts, modCase.userId);
   }
 
   return {
@@ -75,12 +122,7 @@ function getModerationAnalytics(guildId) {
     reversedCases: countCasesByStatus(allCases, 'reversed'),
     expiredCases: countCasesByStatus(allCases, 'expired'),
 
-    warnCount: countCasesByAction(allCases, 'warn'),
-    timeoutCount: countCasesByAction(allCases, 'timeout'),
-    kickCount: countCasesByAction(allCases, 'kick'),
-    banCount: countCasesByAction(allCases, 'ban'),
-    unwarnCount: countCasesByAction(allCases, 'unwarn'),
-    removeTimeoutCount: countCasesByAction(allCases, 'remove-timeout'),
+    ...getActionCounts(allCases),
 
     topModerators: buildTopList(
       moderatorCounts,
@@ -94,19 +136,27 @@ function getModerationAnalytics(guildId) {
       (id, count) => `<@${id}> • ${count} case${count === 1 ? '' : 's'}`
     ),
 
-    recentCases: allCases
-      .slice()
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-      .slice(0, 5)
+    recentCases: getRecentCases(allCases, 5),
   };
 }
 
 module.exports = {
+  STATUS_LABELS,
+  TRACKED_ACTIONS,
+
+  getStatus,
   getStatusLabel,
+  getCaseTimestamp,
   formatCaseSummary,
+
   syncExpiredWarningsToCases,
+
   countCasesByAction,
   countCasesByStatus,
   buildTopList,
-  getModerationAnalytics
+  incrementCount,
+  getRecentCases,
+  getActionCounts,
+
+  getModerationAnalytics,
 };

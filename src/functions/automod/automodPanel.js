@@ -1,59 +1,133 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const automod = require('../../../core/modules/admin/automod');
+// functions/automod/automodPanel.js
+
+const {
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+} = require('discord.js');
+
+const automod = require('./automodStore');
+
+const RULES = [
+  {
+    key: 'antiSpam',
+    label: 'Anti-Spam',
+    buttonLabel: 'Spam',
+    customId: 'automod:toggle:antiSpam',
+    style: ButtonStyle.Primary,
+  },
+  {
+    key: 'antiLink',
+    label: 'Anti-Link',
+    buttonLabel: 'Link',
+    customId: 'automod:toggle:antiLink',
+    style: ButtonStyle.Primary,
+  },
+  {
+    key: 'antiInvite',
+    label: 'Anti-Invite',
+    buttonLabel: 'Invite',
+    customId: 'automod:toggle:antiInvite',
+    style: ButtonStyle.Primary,
+  },
+  {
+    key: 'capsAbuse',
+    label: 'Caps Abuse',
+    buttonLabel: 'Caps',
+    customId: 'automod:toggle:capsAbuse',
+    style: ButtonStyle.Secondary,
+  },
+  {
+    key: 'badWords',
+    label: 'Bad Words',
+    buttonLabel: 'Words',
+    customId: 'automod:toggle:badWords',
+    style: ButtonStyle.Secondary,
+  },
+  {
+    key: 'repeatedMessages',
+    label: 'Repeated Messages',
+    buttonLabel: 'Repeats',
+    customId: 'automod:toggle:repeatedMessages',
+    style: ButtonStyle.Secondary,
+  },
+];
+
+function formatEnabled(enabled) {
+  return enabled ? 'Enabled ✅' : 'Disabled ❌';
+}
+
+function getEnabledCount(config) {
+  return RULES.filter((rule) => config?.[rule.key]?.enabled).length;
+}
+
+function buildRuleFields(config) {
+  return RULES.map((rule) => ({
+    name: rule.label,
+    value: formatEnabled(Boolean(config?.[rule.key]?.enabled)),
+    inline: true,
+  }));
+}
+
+function buildRuleButtons(config) {
+  const rows = [];
+  const buttons = RULES.map((rule) =>
+    new ButtonBuilder()
+      .setCustomId(rule.customId)
+      .setLabel(`${rule.buttonLabel}: ${config?.[rule.key]?.enabled ? 'On' : 'Off'}`)
+      .setStyle(config?.[rule.key]?.enabled ? ButtonStyle.Success : rule.style)
+  );
+
+  for (let index = 0; index < buttons.length; index += 5) {
+    rows.push(new ActionRowBuilder().addComponents(buttons.slice(index, index + 5)));
+  }
+
+  return rows;
+}
 
 function buildAutomodPanel(guild, memberDisplayName) {
-  const guildId = guild.id;
-  const config = automod.getGuildAutoModConfig(guildId);
+  const config = automod.getGuildAutoModConfig(guild.id);
+  const enabledCount = getEnabledCount(config);
 
   const embed = new EmbedBuilder()
-    .setColor('#5865F2')
+    .setColor(enabledCount > 0 ? '#57F287' : '#5865F2')
     .setTitle('🛡️ AutoMod Panel')
-    .setDescription('Control automated moderation settings.')
-    .addFields(
-      { name: 'Anti-Spam', value: config.antiSpam.enabled ? 'Enabled ✅' : 'Disabled ❌', inline: true },
-      { name: 'Anti-Link', value: config.antiLink.enabled ? 'Enabled ✅' : 'Disabled ❌', inline: true },
-      { name: 'Anti-Invite', value: config.antiInvite.enabled ? 'Enabled ✅' : 'Disabled ❌', inline: true },
-      { name: 'Caps Abuse', value: config.capsAbuse.enabled ? 'Enabled ✅' : 'Disabled ❌', inline: true },
-      { name: 'Bad Words', value: config.badWords.enabled ? 'Enabled ✅' : 'Disabled ❌', inline: true },
-      { name: 'Repeated Messages', value: config.repeatedMessages.enabled ? 'Enabled ✅' : 'Disabled ❌', inline: true }
+    .setDescription(
+      [
+        'Control quick AutoMod toggles from Discord.',
+        '',
+        `**${enabledCount}/${RULES.length}** rules enabled.`,
+      ].join('\n')
     )
+    .addFields(buildRuleFields(config))
     .setFooter({ text: `Requested by ${memberDisplayName}` })
     .setTimestamp();
 
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('automod:toggleSpam').setLabel('Spam').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('automod:toggleLink').setLabel('Link').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('automod:toggleInvite').setLabel('Invite').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('automod:toggleCaps').setLabel('Caps').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('automod:toggleWords').setLabel('Words').setStyle(ButtonStyle.Secondary)
-  );
-
   return {
     embeds: [embed],
-    components: [row],
+    components: buildRuleButtons(config),
   };
 }
 
 async function handleInteraction(interaction) {
   if (!interaction.isButton()) return false;
+  if (!interaction.customId.startsWith('automod:toggle:')) return false;
+
+  const [, , key] = interaction.customId.split(':');
+  const rule = RULES.find((entry) => entry.key === key);
+
+  if (!rule) return false;
 
   const guildId = interaction.guild.id;
-  const config = automod.getGuildAutoModConfig(guildId);
 
-  const toggleMap = {
-    'automod:toggleSpam': 'antiSpam',
-    'automod:toggleLink': 'antiLink',
-    'automod:toggleInvite': 'antiInvite',
-    'automod:toggleCaps': 'capsAbuse',
-    'automod:toggleWords': 'badWords',
-  };
-
-  const key = toggleMap[interaction.customId];
-  if (!key) return false;
-
-  config[key].enabled = !config[key].enabled;
-
-  automod.saveGuildAutoModConfig(guildId, config);
+  automod.updateGuildAutoModConfig(guildId, (current) => ({
+    ...current,
+    [key]: {
+      ...current[key],
+      enabled: !current?.[key]?.enabled,
+    },
+  }));
 
   await interaction.update(
     buildAutomodPanel(interaction.guild, interaction.member.displayName)
@@ -63,6 +137,7 @@ async function handleInteraction(interaction) {
 }
 
 module.exports = {
+  RULES,
   buildAutomodPanel,
   handleInteraction,
 };

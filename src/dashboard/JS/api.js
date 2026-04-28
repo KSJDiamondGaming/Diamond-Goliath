@@ -1,4 +1,7 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+const API_BASE =
+  import.meta.env.VITE_API_BASE_URL ||
+  import.meta.env.VITE_API_URL ||
+  'http://localhost:3001';
 
 const cache = new Map();
 
@@ -26,11 +29,25 @@ function clearCache() {
   cache.clear();
 }
 
+function clearCacheKey(key) {
+  cache.delete(key);
+}
+
 function getCacheTtl(path) {
   if (path === '/api/discord/guilds') return 30_000;
   if (path.startsWith('/api/status')) return 10_000;
   if (path.includes('/channels')) return 30_000;
+
   return 0;
+}
+
+function buildUrl(path) {
+  return `${API_BASE}${path}`;
+}
+
+async function parseErrorResponse(response) {
+  const text = await response.text().catch(() => '');
+  return text || response.statusText || 'Unknown error';
 }
 
 async function request(path, options = {}) {
@@ -43,7 +60,7 @@ async function request(path, options = {}) {
     if (cached) return cached;
   }
 
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetch(buildUrl(path), {
     credentials: 'include',
     headers: {
       Accept: 'application/json',
@@ -52,19 +69,19 @@ async function request(path, options = {}) {
     ...options,
   });
 
-  const contentType = response.headers.get('content-type') || '';
-
   if (response.status === 401) {
     return { authenticated: false, user: null };
   }
 
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Request failed (${response.status}): ${text.slice(0, 160)}`);
+    const errorText = await parseErrorResponse(response);
+    throw new Error(`Request failed (${response.status}): ${errorText.slice(0, 160)}`);
   }
 
+  const contentType = response.headers.get('content-type') || '';
+
   if (!contentType.includes('application/json')) {
-    const text = await response.text();
+    const text = await response.text().catch(() => '');
     throw new Error(`Expected JSON but received: ${text.slice(0, 160)}`);
   }
 
@@ -78,7 +95,7 @@ async function request(path, options = {}) {
 }
 
 async function requestOptionalJson(path, options = {}) {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetch(buildUrl(path), {
     credentials: 'include',
     headers: {
       Accept: 'application/json',
@@ -90,16 +107,17 @@ async function requestOptionalJson(path, options = {}) {
   if (response.status === 401) return null;
 
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Request failed (${response.status}): ${text.slice(0, 160)}`);
+    const errorText = await parseErrorResponse(response);
+    throw new Error(`Request failed (${response.status}): ${errorText.slice(0, 160)}`);
   }
 
   const contentType = response.headers.get('content-type') || '';
-  return contentType.includes('application/json') ? response.json() : null;
-}
 
-function buildStreamUrl(path) {
-  return `${API_BASE}${path}`;
+  if (!contentType.includes('application/json')) {
+    return null;
+  }
+
+  return response.json();
 }
 
 function safeParseStreamData(raw) {
@@ -127,9 +145,10 @@ function jsonPost(path, body) {
 
 export const api = {
   clearCache,
+  clearCacheKey,
 
   getLoginUrl() {
-    return `${API_BASE}/api/auth/login`;
+    return buildUrl('/api/auth/login');
   },
 
   logout() {
@@ -145,7 +164,7 @@ export const api = {
   },
 
   async getGuilds({ force = false } = {}) {
-    if (force) cache.delete('GET:/api/discord/guilds');
+    if (force) clearCacheKey('GET:/api/discord/guilds');
 
     const result = await request('/api/discord/guilds');
     return result?.authenticated === false ? [] : result;
@@ -154,7 +173,7 @@ export const api = {
   getGuildChannels(guildId, { force = false } = {}) {
     const path = `/api/discord/guilds/${guildId}/channels`;
 
-    if (force) cache.delete(`GET:${path}`);
+    if (force) clearCacheKey(`GET:${path}`);
 
     return request(path);
   },
@@ -163,7 +182,7 @@ export const api = {
     const query = guildId ? `?guildId=${encodeURIComponent(guildId)}` : '';
     const path = `/api/status${query}`;
 
-    if (force) cache.delete(`GET:${path}`);
+    if (force) clearCacheKey(`GET:${path}`);
 
     return request(path);
   },
@@ -178,7 +197,7 @@ export const api = {
     }
 
     const query = `?guildId=${encodeURIComponent(guildId)}`;
-    const stream = new EventSource(buildStreamUrl(`/api/status/stream${query}`), {
+    const stream = new EventSource(buildUrl(`/api/status/stream${query}`), {
       withCredentials: true,
     });
 
@@ -244,6 +263,10 @@ export const api = {
 
   saveAutoModConfig(guildId, body) {
     return jsonPost(`/api/config/automod/${guildId}`, body);
+  },
+
+  resetAutoModConfig(guildId) {
+    return jsonPost(`/api/config/automod/${guildId}/reset`);
   },
 
   getLogConfig(guildId) {

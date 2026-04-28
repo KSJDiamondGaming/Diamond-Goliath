@@ -1,32 +1,42 @@
 let io = null;
 const botListeners = new Set();
 
+function getRoomName(guildId) {
+  return `guild:${guildId}`;
+}
+
 function initSocketHub(server, options = {}) {
   const { Server } = require('socket.io');
 
+  if (io) {
+    return io; // prevent double init
+  }
+
   io = new Server(server, {
     cors: {
-      origin: options.clientUrl || 'http://localhost:5173',
+      origin: options?.clientUrl || 'http://localhost:5173',
       credentials: true,
     },
   });
 
   io.on('connection', (socket) => {
-    console.log(`Dashboard connected: ${socket.id}`);
+    console.log(`🟢 Dashboard connected: ${socket.id}`);
 
-    socket.on('joinGuild', (guildId) => {
-      if (!guildId) return;
-      socket.join(`guild:${guildId}`);
-      console.log(`${socket.id} joined guild:${guildId}`);
-    });
+    function joinGuildRoom(guildId) {
+      const id = String(guildId || '').trim();
+      if (!id) return;
 
-    socket.on('automod:join', (guildId) => {
-      if (!guildId) return;
-      socket.join(`guild:${guildId}`);
-    });
+      const room = getRoomName(id);
+      socket.join(room);
+
+      console.log(`${socket.id} joined ${room}`);
+    }
+
+    socket.on('joinGuild', joinGuildRoom);
+    socket.on('automod:join', joinGuildRoom);
 
     socket.on('disconnect', () => {
-      console.log(`Dashboard disconnected: ${socket.id}`);
+      console.log(`🔴 Dashboard disconnected: ${socket.id}`);
     });
   });
 
@@ -34,22 +44,30 @@ function initSocketHub(server, options = {}) {
 }
 
 function onGuildUpdate(listener) {
-  if (typeof listener !== 'function') return () => {};
+  if (typeof listener !== 'function') {
+    return () => {};
+  }
+
   botListeners.add(listener);
-  return () => botListeners.delete(listener);
+
+  return () => {
+    botListeners.delete(listener);
+  };
 }
 
 function emitGuildUpdate(guildId, payload = {}) {
-  if (!guildId) return;
+  const id = String(guildId || '').trim();
+
+  if (!id) return;
 
   const update = {
-    guildId,
-    ...payload,
+    guildId: id,
+    ...(payload && typeof payload === 'object' ? payload : {}),
     updatedAt: new Date().toISOString(),
   };
 
   if (io) {
-    io.to(`guild:${guildId}`).emit('guild:update', update);
+    io.to(getRoomName(id)).emit('guild:update', update);
   }
 
   for (const listener of botListeners) {

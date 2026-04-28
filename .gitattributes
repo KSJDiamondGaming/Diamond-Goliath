@@ -1,2 +1,28 @@
-# Auto detect text files and perform LF normalization
+# Normalize text files in Git
 * text=auto
+
+# Keep source/config files as LF
+*.js text eol=lf
+*.jsx text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+
+# Keep scripts platform-safe
+*.sh text eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Treat images/assets as binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.svg text eol=lf
+*.mp4 binary
+*.mp3 binary
+*.wav binary
+*.zip binary

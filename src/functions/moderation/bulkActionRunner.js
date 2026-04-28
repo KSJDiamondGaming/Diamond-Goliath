@@ -1,55 +1,61 @@
+// functions/moderation/bulkActionRunner.js
+
 const { MessageFlags } = require('discord.js');
 
 const { createCase } = require('../logging/cases/caseStore');
 const { addWarning } = require('../logging/modlogs/warningStore');
 const { sendModLog } = require('../logging/modlogs/modLog');
 
-const { handleEscalation, getRepeatReasonInfo } = require('../admin/escalationSystem');
-const { checkHierarchyForBulk } = require('../admin/hierarchyChecks');
+const { handleEscalation, getRepeatReasonInfo } = require('./escalationSystem');
+const { checkHierarchyForBulk } = require('./moderationChecks');
+
 const {
   parseDuration,
   isValidTimeoutDuration,
-  isValidDeleteDays
+  isValidDeleteDays,
 } = require('../utility/targetHelpers');
+
 const {
   getBulkActionProgressEmbed,
-  getBulkActionSummaryEmbed
+  getBulkActionSummaryEmbed,
 } = require('../utility/caseComponentBuilders');
+
 const {
   safeReply,
-  safeEditReply
+  safeEditReply,
 } = require('../utility/interactionResponse');
 
-// =========================
-// 🏷️ Labels
-// =========================
 const ACTION_LABELS = {
   warn: 'Bulk Warn',
   timeout: 'Bulk Timeout',
   kick: 'Bulk Kick',
-  ban: 'Bulk Ban'
+  ban: 'Bulk Ban',
 };
 
-// =========================
-// 🧹 Normalize IDs
-// =========================
+const ACTION_EMOJIS = {
+  warn: '⚠️',
+  timeout: '⏳',
+  kick: '👢',
+  ban: '🔨',
+};
+
+const VALID_BULK_ACTIONS = Object.keys(ACTION_LABELS);
+const PROGRESS_UPDATE_EVERY = 2;
+
 function normalizeBulkIds(ids = []) {
   return [
     ...new Set(
       ids
-        .map(id => String(id || '').trim())
+        .map((id) => String(id || '').trim())
         .filter(Boolean)
-    )
+    ),
   ];
 }
 
-// =========================
-// ✅ Validation
-// =========================
 function validateBulkOptions(actionType, options = {}) {
   const errors = [];
 
-  if (!['warn', 'timeout', 'kick', 'ban'].includes(actionType)) {
+  if (!VALID_BULK_ACTIONS.includes(actionType)) {
     errors.push('❌ Unknown bulk action type.');
   }
 
@@ -71,25 +77,171 @@ function validateBulkOptions(actionType, options = {}) {
     }
   }
 
-  if (actionType === 'ban') {
-    if (!isValidDeleteDays(options.deleteDays)) {
-      errors.push('❌ Delete message days must be between 0 and 7.');
-    }
+  if (actionType === 'ban' && !isValidDeleteDays(options.deleteDays)) {
+    errors.push('❌ Delete message days must be between 0 and 7.');
   }
 
   return errors;
 }
 
-// =========================
-// ⚙️ Main Runner
-// =========================
+function createModerationCase(interaction, member, action, reason, metadata = {}) {
+  return createCase({
+    guildId: interaction.guild.id,
+    userId: member.id,
+    moderatorId: interaction.user.id,
+    action,
+    reason,
+    metadata,
+  });
+}
+
+async function logBulkAction(interaction, member, actionType, reason, caseId, metadata = {}) {
+  return sendModLog({
+    guild: interaction.guild,
+    target: member,
+    moderator: interaction.user,
+    action: ACTION_LABELS[actionType] || 'Bulk Moderation',
+    reason,
+    caseId,
+    metadata,
+  });
+}
+
+async function runBulkWarn(interaction, member, reason) {
+  const modCase = createModerationCase(interaction, member, 'warn', reason);
+
+  addWarning({
+    guildId: interaction.guild.id,
+    userId: member.id,
+    moderatorId: interaction.user.id,
+    reason,
+    caseId: modCase.caseId,
+  });
+
+  let repeatInfo = { isRepeatPattern: false, repeatCount: 0 };
+  let escalatedCase = null;
+
+  try {
+    repeatInfo = getRepeatReasonInfo({
+      guildId: interaction.guild.id,
+      userId: member.id,
+      reason,
+    }) || repeatInfo;
+  } catch (error) {
+    console.error('❌ Bulk warn repeat reason check failed:', error);
+  }
+
+  try {
+    escalatedCase = await handleEscalation({
+      guild: interaction.guild,
+      member,
+      moderator: interaction.user,
+      reason,
+    });
+  } catch (error) {
+    console.error('❌ Bulk warn escalation failed:', error);
+  }
+
+  await logBulkAction(interaction, member, 'warn', reason, modCase.caseId, {
+    repeatPattern: Boolean(repeatInfo.isRepeatPattern),
+    repeatCount: repeatInfo.repeatCount || 0,
+    escalatedAction: escalatedCase?.action || null,
+    escalatedCaseId: escalatedCase?.caseId || null,
+  });
+
+  return modCase;
+}
+
+async function runBulkTimeout(interaction, member, reason, durationRaw, durationMs) {
+  await member.timeout(durationMs, `${reason} | By ${interaction.user.tag}`);
+
+  const modCase = createModerationCase(interaction, member, 'timeout', reason, {
+    duration: durationRaw,
+  });
+
+  await logBulkAction(interaction, member, 'timeout', reason, modCase.caseId, {
+    duration: durationRaw,
+  });
+
+  return modCase;
+}
+
+async function runBulkKick(interaction, member, reason) {
+  await member.kick(`${reason} | By ${interaction.user.tag}`);
+
+  const modCase = createModerationCase(interaction, member, 'kick', reason);
+
+  await logBulkAction(interaction, member, 'kick', reason, modCase.caseId);
+
+  return modCase;
+}
+
+async function runBulkBan(interaction, member, reason, deleteDays) {
+  await member.ban({
+    deleteMessageSeconds: deleteDays * 24 * 60 * 60,
+    reason: `${reason} | By ${interaction.user.tag}`,
+  });
+
+  const modCase = createModerationCase(interaction, member, 'ban', reason, {
+    deleteDays,
+  });
+
+  await logBulkAction(interaction, member, 'ban', reason, modCase.caseId, {
+    deleteDays,
+  });
+
+  return modCase;
+}
+
+async function runSingleBulkAction(interaction, member, options) {
+  const {
+    actionType,
+    reason,
+    durationRaw = null,
+    durationMs = null,
+    deleteDays = 0,
+  } = options;
+
+  if (actionType === 'warn') {
+    return runBulkWarn(interaction, member, reason);
+  }
+
+  if (actionType === 'timeout') {
+    return runBulkTimeout(interaction, member, reason, durationRaw, durationMs);
+  }
+
+  if (actionType === 'kick') {
+    return runBulkKick(interaction, member, reason);
+  }
+
+  if (actionType === 'ban') {
+    return runBulkBan(interaction, member, reason, deleteDays);
+  }
+
+  throw new Error('Unknown action.');
+}
+
+async function updateBulkProgress(interaction, actionLabel, total, processed, success, failed) {
+  return safeEditReply(interaction, {
+    embeds: [
+      getBulkActionProgressEmbed({
+        actionLabel,
+        total,
+        processed,
+        successCount: success.length,
+        failCount: failed.length,
+      }),
+    ],
+  });
+}
+
 async function runBulkAction(interaction, options) {
   const {
     actionType,
     ids,
     reason,
     durationRaw = null,
-    deleteDays = 0
+    deleteDays = 0,
   } = options;
 
   const uniqueIds = normalizeBulkIds(ids);
@@ -99,13 +251,13 @@ async function runBulkAction(interaction, options) {
     ids: uniqueIds,
     reason,
     durationRaw,
-    deleteDays
+    deleteDays,
   });
 
   if (validationErrors.length) {
     return safeReply(interaction, {
       content: validationErrors.join('\n'),
-      flags: MessageFlags.Ephemeral
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -124,10 +276,10 @@ async function runBulkAction(interaction, options) {
         total,
         processed: 0,
         successCount: 0,
-        failCount: 0
-      })
+        failCount: 0,
+      }),
     ],
-    flags: MessageFlags.Ephemeral
+    flags: MessageFlags.Ephemeral,
   });
 
   const actorMember = interaction.member;
@@ -149,152 +301,34 @@ async function runBulkAction(interaction, options) {
 
       if (hierarchyError) {
         failed.push(`❌ ${id} — ${hierarchyError}`);
-      } else if (actionType === 'warn') {
-        const modCase = createCase({
-          guildId: interaction.guild.id,
-          userId: member.id,
-          moderatorId: interaction.user.id,
-          action: 'warn',
-          reason
-        });
-
-        addWarning({
-          guildId: interaction.guild.id,
-          userId: member.id,
-          moderatorId: interaction.user.id,
-          reason,
-          caseId: modCase.caseId
-        });
-
-        let repeatInfo = { isRepeatPattern: false, repeatCount: 0 };
-        let escalatedCase = null;
-
-        try {
-          repeatInfo = getRepeatReasonInfo({
-            guildId: interaction.guild.id,
-            userId: member.id,
-            reason
-          }) || repeatInfo;
-        } catch (error) {
-          console.error('Bulk warn repeat reason check failed:', error);
-        }
-
-        try {
-          escalatedCase = await handleEscalation({
-            guild: interaction.guild,
-            member,
-            moderator: interaction.user,
-            reason
-          });
-        } catch (error) {
-          console.error('Bulk warn escalation failed:', error);
-        }
-
-        await sendModLog({
-          guild: interaction.guild,
-          target: member,
-          moderator: interaction.user,
-          action: 'Bulk Warn',
-          reason,
-          caseId: modCase.caseId,
-          metadata: {
-            repeatPattern: Boolean(repeatInfo.isRepeatPattern),
-            repeatCount: repeatInfo.repeatCount || 0,
-            escalatedAction: escalatedCase?.action || null,
-            escalatedCaseId: escalatedCase?.caseId || null
-          }
-        });
-
-        success.push(`⚠️ ${member.user.tag}`);
-      } else if (actionType === 'timeout') {
-        await member.timeout(durationMs, `${reason} | By ${interaction.user.tag}`);
-
-        const modCase = createCase({
-          guildId: interaction.guild.id,
-          userId: member.id,
-          moderatorId: interaction.user.id,
-          action: 'timeout',
-          reason,
-          metadata: { duration: durationRaw }
-        });
-
-        await sendModLog({
-          guild: interaction.guild,
-          target: member,
-          moderator: interaction.user,
-          action: 'Bulk Timeout',
-          reason,
-          caseId: modCase.caseId,
-          metadata: { duration: durationRaw }
-        });
-
-        success.push(`⏳ ${member.user.tag}`);
-      } else if (actionType === 'kick') {
-        await member.kick(`${reason} | By ${interaction.user.tag}`);
-
-        const modCase = createCase({
-          guildId: interaction.guild.id,
-          userId: member.id,
-          moderatorId: interaction.user.id,
-          action: 'kick',
-          reason
-        });
-
-        await sendModLog({
-          guild: interaction.guild,
-          target: member,
-          moderator: interaction.user,
-          action: 'Bulk Kick',
-          reason,
-          caseId: modCase.caseId
-        });
-
-        success.push(`👢 ${member.user.tag}`);
-      } else if (actionType === 'ban') {
-        await member.ban({
-          deleteMessageSeconds: deleteDays * 24 * 60 * 60,
-          reason: `${reason} | By ${interaction.user.tag}`
-        });
-
-        const modCase = createCase({
-          guildId: interaction.guild.id,
-          userId: member.id,
-          moderatorId: interaction.user.id,
-          action: 'ban',
-          reason,
-          metadata: { deleteDays }
-        });
-
-        await sendModLog({
-          guild: interaction.guild,
-          target: member,
-          moderator: interaction.user,
-          action: 'Bulk Ban',
-          reason,
-          caseId: modCase.caseId,
-          metadata: { deleteDays }
-        });
-
-        success.push(`🔨 ${member.user.tag}`);
       } else {
-        failed.push(`❌ ${id} — Unknown action.`);
+        await runSingleBulkAction(interaction, member, {
+          actionType,
+          reason,
+          durationRaw,
+          durationMs,
+          deleteDays,
+        });
+
+        success.push(`${ACTION_EMOJIS[actionType] || '✅'} ${member.user.tag}`);
       }
     } catch (error) {
       failed.push(`❌ ${id} — ${error?.message || 'Failed to process.'}`);
     }
 
-    if ((index + 1) % 2 === 0 || index === uniqueIds.length - 1) {
-      await safeEditReply(interaction, {
-        embeds: [
-          getBulkActionProgressEmbed({
-            actionLabel,
-            total,
-            processed: index + 1,
-            successCount: success.length,
-            failCount: failed.length
-          })
-        ]
-      });
+    const processed = index + 1;
+    const shouldUpdate =
+      processed % PROGRESS_UPDATE_EVERY === 0 || processed === total;
+
+    if (shouldUpdate) {
+      await updateBulkProgress(
+        interaction,
+        actionLabel,
+        total,
+        processed,
+        success,
+        failed
+      );
     }
   }
 
@@ -304,15 +338,19 @@ async function runBulkAction(interaction, options) {
         actionLabel,
         total,
         success,
-        failed
-      })
-    ]
+        failed,
+      }),
+    ],
   });
 }
 
 module.exports = {
   ACTION_LABELS,
+  ACTION_EMOJIS,
+  VALID_BULK_ACTIONS,
+
   normalizeBulkIds,
   validateBulkOptions,
-  runBulkAction
+
+  runBulkAction,
 };

@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import PageShell, {
   EmptyState,
   SectionCard,
-} from '../components/PageShell';
+} from '../shared/PageShell';
 import { PAGE_LAYOUTS, createSharedComponentStyles } from '../ui';
 
 export default function Admin({ selectedGuild, theme }) {

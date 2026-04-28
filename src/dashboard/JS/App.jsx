@@ -1,34 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+
 import { api } from './api';
 import { getStorage, removeStorage, setStorage } from './storage';
-import { getTheme, appBaseStyles, shellStyles, navItems, ROUTES } from './ui';
+import {
+  appBaseStyles,
+  getTheme,
+  navItems,
+  ROUTES,
+  shellStyles,
+} from './ui/system';
+
 import Navbar from './components/Navbar';
 import Topbar from './components/Topbar';
-import Cases from './pages/Cases';
-import Warnings from './pages/Warnings';
-import AutoMod from './pages/AutoMod';
-import Config from './pages/Config';
-import Messages from './pages/Messages';
-import Logs from './pages/Logs';
-import Overview from './pages/Overview';
 import Login from './pages/Login';
 
 const GUILD_STORAGE_KEY = 'selected_guild';
 const BOT_PROFILE_STORAGE_KEY = 'bot_profile';
 const SIDEBAR_EXPANDED_STORAGE_KEY = 'sidebar_expanded';
 
-const PAGE_COMPONENTS = {
-  overview: Overview,
-  cases: Cases,
-  warnings: Warnings,
-  automod: AutoMod,
-  config: Config,
-  messages: Messages,
-  logs: Logs,
-};
-
 const ROUTE_PATHS = ROUTES.map((routeItem) => routeItem.path);
+
 const GUILD_REQUIRED_ROUTES = new Set([
   'overview',
   'cases',
@@ -37,6 +29,8 @@ const GUILD_REQUIRED_ROUTES = new Set([
   'config',
   'messages',
   'logs',
+  'admin',
+  'moderation',
 ]);
 
 function normalizeGuilds(payload) {
@@ -52,7 +46,6 @@ function normalizeUser(payload) {
 
 function getAvatarUrl(user) {
   if (!user) return '';
-
   if (user.avatarUrl) return user.avatarUrl;
   if (user.avatarURL) return user.avatarURL;
 
@@ -103,19 +96,15 @@ function normalizeBotProfile(payload) {
     };
   }
 
-  const name =
-    bot.name ||
-    bot.username ||
-    bot.displayName ||
-    bot.global_name ||
-    bot.globalName ||
-    'KSJ Goliath';
-
-  const avatar = bot.avatarUrl || bot.avatarURL || buildDiscordAvatarUrl(bot) || '';
-
   return {
-    name,
-    avatar,
+    name:
+      bot.name ||
+      bot.username ||
+      bot.displayName ||
+      bot.global_name ||
+      bot.globalName ||
+      'KSJ Goliath',
+    avatar: bot.avatarUrl || bot.avatarURL || buildDiscordAvatarUrl(bot) || '',
     raw: bot,
   };
 }
@@ -142,7 +131,7 @@ function CenterMessage({ theme, title, text }) {
       <div
         style={{
           width: 'min(520px, 100%)',
-          border: `1px solid ${theme.border}`,
+          border: `1px solid ${theme.cardBorder}`,
           background: theme.cardBg,
           color: theme.cardText,
           borderRadius: 24,
@@ -161,6 +150,7 @@ function CenterMessage({ theme, title, text }) {
 export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
+
   const sessionLoadedRef = useRef(false);
   const botStatusLoadedRef = useRef(false);
 
@@ -171,6 +161,7 @@ export default function App() {
   const [selectedGuild, setSelectedGuild] = useState(() =>
     getStorage(GUILD_STORAGE_KEY, '')
   );
+
   const [guilds, setGuilds] = useState([]);
   const [guildError, setGuildError] = useState('');
   const [authLoading, setAuthLoading] = useState(true);
@@ -194,12 +185,27 @@ export default function App() {
   const [botData, setBotData] = useState(cachedBotProfile?.raw || null);
 
   const theme = useMemo(() => getTheme(darkMode), [darkMode]);
-  const styles = shellStyles(theme, { sidebarExpanded });
+  const styles = useMemo(
+    () => shellStyles(theme, { sidebarExpanded }),
+    [theme, sidebarExpanded]
+  );
+
   const isLoginPage = location.pathname === '/login';
 
   const selectedGuildData = useMemo(
     () => guilds.find((guild) => guild.id === selectedGuild) || null,
     [guilds, selectedGuild]
+  );
+
+  const activeRoute = useMemo(
+    () => getRouteForPath(location.pathname),
+    [location.pathname]
+  );
+
+  const ActivePage = activeRoute?.component || null;
+
+  const routeNeedsGuild = Boolean(
+    activeRoute?.key && GUILD_REQUIRED_ROUTES.has(activeRoute.key)
   );
 
   const clearAuthState = useCallback(() => {
@@ -223,18 +229,21 @@ export default function App() {
     setStorage(BOT_PROFILE_STORAGE_KEY, safeProfile);
   }, []);
 
-  const loadBotStatus = useCallback(async ({ force = false } = {}) => {
-    try {
-      const status = await api.getStatus(undefined, { force });
-      const nextProfile = normalizeBotProfile(status?.bot || status);
+  const loadBotStatus = useCallback(
+    async ({ force = false } = {}) => {
+      try {
+        const status = await api.getStatus(undefined, { force });
+        const nextProfile = normalizeBotProfile(status?.bot || status);
 
-      applyBotProfile(nextProfile);
-      return nextProfile;
-    } catch (error) {
-      console.error('Failed to load bot status:', error);
-      return null;
-    }
-  }, [applyBotProfile]);
+        applyBotProfile(nextProfile);
+        return nextProfile;
+      } catch (error) {
+        console.error('Failed to load bot status:', error);
+        return null;
+      }
+    },
+    [applyBotProfile]
+  );
 
   const loadGuilds = useCallback(async ({ force = false } = {}) => {
     try {
@@ -354,7 +363,6 @@ export default function App() {
     };
 
     handleResize();
-
     window.addEventListener('resize', handleResize);
 
     return () => {
@@ -427,10 +435,6 @@ export default function App() {
     refreshGuilds: () => loadGuilds({ force: true }),
     refreshBotStatus: () => loadBotStatus({ force: true }),
   };
-
-  const activeRoute = getRouteForPath(location.pathname);
-  const ActivePage = activeRoute?.component || PAGE_COMPONENTS[activeRoute?.key] || null;
-  const routeNeedsGuild = Boolean(activeRoute?.key && GUILD_REQUIRED_ROUTES.has(activeRoute.key));
 
   if (isLoginPage) {
     return (

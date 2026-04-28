@@ -7,7 +7,7 @@ import PageShell, {
   SecondaryButton,
   StatGrid,
   SummaryStat,
-} from '../components/PageShell';
+} from '../shared/PageShell';
 import { PAGE_LAYOUTS, createWarningsPageStyles } from '../ui';
 
 const PAGE_KEY = 'warnings';

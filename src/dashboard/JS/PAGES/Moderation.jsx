@@ -3,7 +3,7 @@ import PageShell, {
   EmptyState,
   Notice,
   SectionCard,
-} from '../components/PageShell';
+} from '../shared/PageShell';
 import { PAGE_LAYOUTS, createSharedComponentStyles } from '../ui';
 
 export default function Moderation({ selectedGuild, theme }) {

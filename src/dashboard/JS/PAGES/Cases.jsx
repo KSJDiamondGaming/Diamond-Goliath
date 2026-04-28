@@ -5,7 +5,7 @@ import PageShell, {
   LoadingPanel,
   Notice,
   SecondaryButton,
-} from '../components/PageShell';
+} from '../shared/PageShell';
 import { PAGE_LAYOUTS, createCasesPageStyles } from '../ui';
 
 const PAGE_KEY = 'cases';

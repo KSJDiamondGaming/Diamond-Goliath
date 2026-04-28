@@ -1,6 +1,6 @@
 const express = require('express');
 const path = require('path');
-const { read: readJson } = require('../utils/fileStore');
+const { read: readJson } = require('../services/guild/fileStore');
 
 const router = express.Router();
 
@@ -11,27 +11,31 @@ function getCasesData() {
   return readJson(CASES_PATH, {});
 }
 
-function normalizeGuildCases(guildCases, guildId) {
-  if (!guildCases || typeof guildCases !== 'object') return [];
+function getGuildCaseEntries(guildCases, guildId) {
+  if (!guildCases || typeof guildCases !== 'object' || Array.isArray(guildCases)) {
+    return [];
+  }
 
   return Object.values(guildCases)
-    .map((c) => ({
-      ...c,
-      guildId: c?.guildId || guildId,
+    .filter((entry) => entry && typeof entry === 'object')
+    .map((entry) => ({
+      ...entry,
+      guildId: entry.guildId || guildId,
     }))
-    .sort((a, b) => Number(b?.caseNumber || 0) - Number(a?.caseNumber || 0));
+    .sort((a, b) => Number(b.caseNumber || 0) - Number(a.caseNumber || 0));
+}
+
+function getGuildCases(guildId) {
+  const cases = getCasesData();
+  return cases[guildId] && typeof cases[guildId] === 'object'
+    ? cases[guildId]
+    : {};
 }
 
 function getGuildWarnings(guildCases, guildId) {
-  if (!guildCases || typeof guildCases !== 'object') return [];
-
-  return Object.values(guildCases)
-    .filter((c) => c?.action === 'Warn')
-    .map((w) => ({
-      ...w,
-      guildId: w?.guildId || guildId,
-    }))
-    .sort((a, b) => Number(b?.caseNumber || 0) - Number(a?.caseNumber || 0));
+  return getGuildCaseEntries(guildCases, guildId).filter(
+    (entry) => String(entry.action || '').toLowerCase() === 'warn'
+  );
 }
 
 /* ================= RAW CASES ================= */
@@ -39,11 +43,9 @@ function getGuildWarnings(guildCases, guildId) {
 router.get('/:guildId', (req, res) => {
   try {
     const { guildId } = req.params;
-    const cases = getCasesData();
-
-    return res.json(cases[guildId] || {});
-  } catch (err) {
-    console.error(err);
+    return res.json(getGuildCases(guildId));
+  } catch (error) {
+    console.error('Failed to load cases:', error);
     return res.status(500).json({ error: 'Failed to load cases' });
   }
 });
@@ -53,27 +55,27 @@ router.get('/:guildId', (req, res) => {
 router.get('/:guildId/list', (req, res) => {
   try {
     const { guildId } = req.params;
-    const cases = getCasesData();
+    const guildCases = getGuildCases(guildId);
+    const list = getGuildCaseEntries(guildCases, guildId);
 
-    const list = normalizeGuildCases(cases[guildId] || {}, guildId);
     return res.json(list);
-  } catch (err) {
-    console.error(err);
+  } catch (error) {
+    console.error('Failed to load case list:', error);
     return res.status(500).json({ error: 'Failed to load case list' });
   }
 });
 
-/* ================= WARNINGS (MERGED) ================= */
+/* ================= WARNINGS ================= */
 
 router.get('/:guildId/warnings', (req, res) => {
   try {
     const { guildId } = req.params;
-    const cases = getCasesData();
+    const guildCases = getGuildCases(guildId);
+    const warnings = getGuildWarnings(guildCases, guildId);
 
-    const warnings = getGuildWarnings(cases[guildId] || {}, guildId);
     return res.json(warnings);
-  } catch (err) {
-    console.error(err);
+  } catch (error) {
+    console.error('Failed to load warnings:', error);
     return res.status(500).json({ error: 'Failed to load warnings' });
   }
 });

@@ -7,7 +7,7 @@ import PageShell, {
   SectionCard,
   StatGrid,
   SummaryStat,
-} from '../components/PageShell';
+} from '../shared/PageShell';
 import {
   PAGE_LAYOUTS,
   SECTION_DEFS,

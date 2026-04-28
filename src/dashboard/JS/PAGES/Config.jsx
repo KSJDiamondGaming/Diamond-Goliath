@@ -6,7 +6,7 @@ import PageShell, {
   Notice,
   StatGrid,
   SummaryStat,
-} from '../components/PageShell';
+} from '../shared/PageShell';
 import {
   PAGE_LAYOUTS,
   createConfigPageStyles,

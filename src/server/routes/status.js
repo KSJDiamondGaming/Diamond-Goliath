@@ -4,13 +4,13 @@ const path = require('path');
 const router = express.Router();
 
 const terminal = require('../../../src/utils/utility/terminalLogger').createLogger('api');
-const { read: readJson } = require('../utils/fileStore');
+const { read: readJson } = require('../services/guild/fileStore');
 
 const CASES_PATH = path.join(__dirname, '..', 'data', 'modCaseDetails.json');
 const DISCORD_API = 'https://discord.com/api/v10';
 
-const BOT_PROFILE_CACHE_TTL = 1000 * 60 * 5;
-const GUILD_STATS_CACHE_TTL = 15_000;
+const BOT_PROFILE_CACHE_TTL_MS = 1000 * 60 * 5;
+const GUILD_STATS_CACHE_TTL_MS = 15_000;
 
 let cachedBotProfile = null;
 let cachedBotProfileExpiresAt = 0;
@@ -19,6 +19,16 @@ const guildStatsCache = new Map();
 
 function getBotToken() {
   return String(process.env.TOKEN || process.env.DISCORD_BOT_TOKEN || '').trim();
+}
+
+function requireBotToken() {
+  const token = getBotToken();
+
+  if (!token) {
+    throw new Error('Missing TOKEN or DISCORD_BOT_TOKEN in env');
+  }
+
+  return token;
 }
 
 function emptyBotProfile() {
@@ -49,12 +59,28 @@ function buildGuildIconUrl(id, icon) {
   return `https://cdn.discordapp.com/icons/${id}/${icon}.${ext}?size=256`;
 }
 
-async function discordBotRequest(pathname) {
-  const token = getBotToken();
+function getCached(cache, key) {
+  const cached = cache.get(key);
 
-  if (!token) {
-    throw new Error('Missing TOKEN or DISCORD_BOT_TOKEN in env');
+  if (!cached) return null;
+
+  if (Date.now() > cached.expiresAt) {
+    cache.delete(key);
+    return null;
   }
+
+  return cached.data;
+}
+
+function setCached(cache, key, data, ttlMs) {
+  cache.set(key, {
+    data,
+    expiresAt: Date.now() + ttlMs,
+  });
+}
+
+async function discordBotRequest(pathname) {
+  const token = requireBotToken();
 
   const response = await fetch(`${DISCORD_API}${pathname}`, {
     headers: {
@@ -66,6 +92,7 @@ async function discordBotRequest(pathname) {
   const text = await response.text();
 
   let data = null;
+
   try {
     data = text ? JSON.parse(text) : null;
   } catch {
@@ -110,7 +137,7 @@ async function fetchBotProfileFromToken() {
     latencyMs: null,
   };
 
-  cachedBotProfileExpiresAt = now + BOT_PROFILE_CACHE_TTL;
+  cachedBotProfileExpiresAt = now + BOT_PROFILE_CACHE_TTL_MS;
 
   return cachedBotProfile;
 }
@@ -137,10 +164,10 @@ async function fetchAllGuildMembers(guildId) {
 }
 
 async function fetchGuildStats(guildId) {
-  const cached = guildStatsCache.get(guildId);
+  const cached = getCached(guildStatsCache, guildId);
 
-  if (cached && Date.now() < cached.expiresAt) {
-    return cached.data;
+  if (cached) {
+    return cached;
   }
 
   const guild = await discordBotRequest(`/guilds/${guildId}?with_counts=true`);
@@ -171,12 +198,14 @@ async function fetchGuildStats(guildId) {
     );
   }
 
+  const iconUrl = buildGuildIconUrl(guild.id, guild.icon);
+
   const data = {
     id: guild.id,
     name: guild.name,
     icon: guild.icon || null,
-    iconUrl: buildGuildIconUrl(guild.id, guild.icon),
-    iconURL: buildGuildIconUrl(guild.id, guild.icon),
+    iconUrl,
+    iconURL: iconUrl,
     memberCount: total,
     members: total,
     humans,
@@ -186,10 +215,7 @@ async function fetchGuildStats(guildId) {
     status: 'connected',
   };
 
-  guildStatsCache.set(guildId, {
-    data,
-    expiresAt: Date.now() + GUILD_STATS_CACHE_TTL,
-  });
+  setCached(guildStatsCache, guildId, data, GUILD_STATS_CACHE_TTL_MS);
 
   return data;
 }
@@ -199,18 +225,61 @@ function getCasesData() {
 }
 
 function normalizeGuildCases(guildCases, guildId) {
-  if (!guildCases || typeof guildCases !== 'object') return [];
+  if (!guildCases || typeof guildCases !== 'object' || Array.isArray(guildCases)) {
+    return [];
+  }
 
   return Object.values(guildCases)
+    .filter((entry) => entry && typeof entry === 'object')
     .map((entry) => ({
       ...entry,
-      guildId: entry?.guildId || guildId,
+      guildId: entry.guildId || guildId,
     }))
-    .sort((a, b) => Number(b?.caseNumber || 0) - Number(a?.caseNumber || 0));
+    .sort((a, b) => Number(b.caseNumber || 0) - Number(a.caseNumber || 0));
 }
 
 function getGuildWarningsFromCases(cases) {
-  return cases.filter((entry) => entry?.action === 'Warn');
+  return cases.filter(
+    (entry) => String(entry.action || '').toLowerCase() === 'warn'
+  );
+}
+
+function buildGuildFallback(guildId) {
+  return {
+    id: guildId,
+    name: null,
+    icon: null,
+    iconUrl: '',
+    iconURL: '',
+    memberCount: 0,
+    members: 0,
+    humans: 0,
+    bots: 0,
+    exactMembersAvailable: false,
+    connected: false,
+    status: 'missing',
+  };
+}
+
+function buildGuildMap(guildId, guildPayload) {
+  if (!guildId || !guildPayload) return {};
+
+  return {
+    [guildId]: {
+      connected: guildPayload.connected,
+      status: guildPayload.status,
+      memberCount: guildPayload.memberCount,
+      members: guildPayload.memberCount,
+      humans: guildPayload.humans,
+      bots: guildPayload.bots,
+      name: guildPayload.name,
+      id: guildPayload.id,
+      icon: guildPayload.icon,
+      iconUrl: guildPayload.iconUrl,
+      iconURL: guildPayload.iconURL,
+      exactMembersAvailable: guildPayload.exactMembersAvailable,
+    },
+  };
 }
 
 async function buildStatusPayload(guildId) {
@@ -228,7 +297,7 @@ async function buildStatusPayload(guildId) {
 
   let guildPayload = null;
 
-  let memberInfo = {
+  const memberInfo = {
     total: 0,
     humans: 0,
     bots: 0,
@@ -238,29 +307,13 @@ async function buildStatusPayload(guildId) {
     try {
       guildPayload = await fetchGuildStats(guildId);
 
-      memberInfo = {
-        total: Number(guildPayload.memberCount || 0),
-        humans: Number(guildPayload.humans || 0),
-        bots: Number(guildPayload.bots || 0),
-      };
+      memberInfo.total = Number(guildPayload.memberCount || 0);
+      memberInfo.humans = Number(guildPayload.humans || 0);
+      memberInfo.bots = Number(guildPayload.bots || 0);
     } catch (error) {
       statusError = error.message;
       terminal.error('Guild status fetch failed', error);
-
-      guildPayload = {
-        id: guildId,
-        name: null,
-        icon: null,
-        iconUrl: '',
-        iconURL: '',
-        memberCount: 0,
-        members: 0,
-        humans: 0,
-        bots: 0,
-        exactMembersAvailable: false,
-        connected: false,
-        status: 'missing',
-      };
+      guildPayload = buildGuildFallback(guildId);
     }
   }
 
@@ -283,25 +336,7 @@ async function buildStatusPayload(guildId) {
     humans: memberInfo.humans,
     bots: memberInfo.bots,
 
-    guilds:
-      guildId && guildPayload
-        ? {
-            [guildId]: {
-              connected: guildPayload.connected,
-              status: guildPayload.status,
-              memberCount: guildPayload.memberCount,
-              members: guildPayload.memberCount,
-              humans: guildPayload.humans,
-              bots: guildPayload.bots,
-              name: guildPayload.name,
-              id: guildPayload.id,
-              icon: guildPayload.icon,
-              iconUrl: guildPayload.iconUrl,
-              iconURL: guildPayload.iconURL,
-              exactMembersAvailable: guildPayload.exactMembersAvailable,
-            },
-          }
-        : {},
+    guilds: buildGuildMap(guildId, guildPayload),
 
     bot: {
       ...botProfile,
@@ -342,6 +377,7 @@ router.get('/', async (req, res) => {
   try {
     const guildId = req.query.guildId ? String(req.query.guildId) : null;
     const payload = await buildStatusPayload(guildId);
+
     return res.json(payload);
   } catch (error) {
     terminal.error('Status route failed', error);
@@ -355,8 +391,10 @@ router.get('/', async (req, res) => {
       guildId: req.query.guildId ? String(req.query.guildId) : null,
       guild: null,
       members: 0,
+      memberCount: 0,
       humans: 0,
       bots: 0,
+      guilds: {},
       bot: emptyBotProfile(),
       backend: {
         online: true,
@@ -385,11 +423,10 @@ router.get('/stream', async (req, res) => {
   res.flushHeaders?.();
 
   let closed = false;
-  let intervalId = null;
-  let heartbeatId = null;
 
   const sendEvent = (eventName, payload) => {
     if (closed) return;
+
     res.write(`event: ${eventName}\n`);
     res.write(`data: ${JSON.stringify(payload)}\n\n`);
   };
@@ -422,8 +459,8 @@ router.get('/stream', async (req, res) => {
 
   await pushSnapshot();
 
-  intervalId = setInterval(pushSnapshot, 5000);
-  heartbeatId = setInterval(sendHeartbeat, 20000);
+  const intervalId = setInterval(pushSnapshot, 5000);
+  const heartbeatId = setInterval(sendHeartbeat, 20000);
 
   req.on('close', () => {
     closed = true;

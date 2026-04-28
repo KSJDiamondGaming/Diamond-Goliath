@@ -1,14 +1,15 @@
 {
-  "name": "Diamond-Goliath",
+  "name": "goliath",
   "version": "1.0.0",
-  "description": "All in on Goliath",
-  "main": "index.js",
+  "description": "Goliath Discord Bot + Dashboard",
+  "main": "server.js",
   "type": "commonjs",
+  "private": true,
   "scripts": {
-    "bot": "node index.js",
+    "bot": "node server.js",
     "api": "node dashboard/server/index.js",
-    "client": "npm run dev --silent --prefix dashboard/client",
-    "dev": "concurrently --names \"BOT,API,CLIENT\" --prefix \"[{name}]\" \"npm run bot --silent\" \"npm run api --silent\" \"npm run client --silent\"",
+    "client": "npm run dev --prefix dashboard/client",
+    "dev": "concurrently --names \"BOT,API,CLIENT\" --prefix \"[{name}]\" \"npm run bot\" \"npm run api\" \"npm run client\"",
     "start": "npm run dev",
     "sync": "node src/utils/utility/syncCommands.js",
     "sync:global": "cross-env COMMAND_MODE=global node src/utils/utility/syncCommands.js",
@@ -17,17 +18,17 @@
   "dependencies": {
     "better-sqlite3": "^12.8.0",
     "chalk": "^5.6.2",
-    "concurrently": "^9.2.1",
     "cors": "^2.8.6",
     "discord.js": "^14.15.0",
     "dotenv": "^16.4.5",
-    "express": "^5.2.1",
+    "express": "^4.19.2",
     "express-session": "^1.19.0",
     "node-fetch": "^2.7.0",
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
+    "concurrently": "^9.2.1",
     "cross-env": "^7.0.3",
     "nodemon": "^3.1.14"
   }

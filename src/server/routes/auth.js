@@ -85,7 +85,7 @@ router.get('/callback', async (req, res) => {
       return res.status(500).send('OAuth configuration error.');
     }
 
-    const tokenResponse = await fetch('https://discord.com/api/oauth2/token', {
+    const tokenResponse = await fetch('https://discord.com/api/v10/oauth2/token', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -116,7 +116,7 @@ router.get('/callback', async (req, res) => {
       return res.status(500).send('OAuth failed.');
     }
 
-    const userResponse = await fetch('https://discord.com/api/users/@me', {
+    const userResponse = await fetch('https://discord.com/api/v10/users/@me', {
       headers: {
         Authorization: `Bearer ${tokenData.access_token}`,
       },

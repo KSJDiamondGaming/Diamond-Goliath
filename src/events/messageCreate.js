@@ -3,16 +3,14 @@ const { runAutomod } = require('../../core/modules/admin/automod');
 module.exports = {
   name: 'messageCreate',
 
-  async execute(message) {
+  async execute(message, client) {
     try {
-      if (!message.guild) return;
-      if (!message.member) return;
-      if (!message.content) return;
-      if (message.author?.bot) return;
+      if (!message.guild || !message.member) return;
+      if (!message.content || message.author?.bot) return;
 
-      await runAutomod(message);
+      await runAutomod(message, client);
     } catch (error) {
-      console.error('❌ messageCreate handler failed:', error);
+      console.error('[EVENT: messageCreate]', error);
     }
   },
 };
