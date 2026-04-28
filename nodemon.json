@@ -1,5 +1,0 @@
-{
-  "watch": ["index.js", "src"],
-  "ext": "js,json",
-  "ignore": ["dashboard/*", "node_modules/*"]
-}
