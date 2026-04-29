@@ -1,11 +1,14 @@
 const {
   ActionRowBuilder,
   ButtonBuilder,
-  ButtonStyle
+  ButtonStyle,
 } = require('discord.js');
 
-const { COLORS, EMOJIS } = require('./uiConfig');
-const { createEmbed } = require('./embedBuilder');
+const uiConfig = require('./uiConfig');
+const embedBuilder = require('./embedBuilder');
+
+const { COLORS, EMOJIS } = uiConfig;
+const { createEmbed } = embedBuilder;
 
 /* ---------------- FILTER BUTTONS ---------------- */
 
@@ -15,46 +18,46 @@ function buildCaseFilterButtons(
   statusFilter = 'all',
   page = 0
 ) {
-  return [
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`mod_filter_cases:${targetId}:all:${statusFilter}:${page}`)
-        .setLabel('📂 All')
-        .setStyle(actionFilter === 'all' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+  const row1 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`mod_filter_cases:${targetId}:all:${statusFilter}:${page}`)
+      .setLabel('📂 All')
+      .setStyle(actionFilter === 'all' ? ButtonStyle.Primary : ButtonStyle.Secondary),
 
-      new ButtonBuilder()
-        .setCustomId(`mod_filter_cases:${targetId}:warn:${statusFilter}:${page}`)
-        .setLabel(`${EMOJIS.WARNING} Warns`)
-        .setStyle(actionFilter === 'warn' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId(`mod_filter_cases:${targetId}:warn:${statusFilter}:${page}`)
+      .setLabel(`${EMOJIS.WARNING} Warns`)
+      .setStyle(actionFilter === 'warn' ? ButtonStyle.Primary : ButtonStyle.Secondary),
 
-      new ButtonBuilder()
-        .setCustomId(`mod_filter_cases:${targetId}:timeout:${statusFilter}:${page}`)
-        .setLabel(`${EMOJIS.TIMEOUT} Timeouts`)
-        .setStyle(actionFilter === 'timeout' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId(`mod_filter_cases:${targetId}:timeout:${statusFilter}:${page}`)
+      .setLabel(`${EMOJIS.TIMEOUT} Timeouts`)
+      .setStyle(actionFilter === 'timeout' ? ButtonStyle.Primary : ButtonStyle.Secondary),
 
-      new ButtonBuilder()
-        .setCustomId(`mod_filter_cases:${targetId}:note:${statusFilter}:${page}`)
-        .setLabel(`${EMOJIS.NOTE} Notes`)
-        .setStyle(actionFilter === 'note' ? ButtonStyle.Primary : ButtonStyle.Secondary)
-    ),
+    new ButtonBuilder()
+      .setCustomId(`mod_filter_cases:${targetId}:note:${statusFilter}:${page}`)
+      .setLabel(`${EMOJIS.NOTE} Notes`)
+      .setStyle(actionFilter === 'note' ? ButtonStyle.Primary : ButtonStyle.Secondary)
+  );
 
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`mod_filter_cases:${targetId}:${actionFilter}:active:${page}`)
-        .setLabel(`${EMOJIS.ACTIVE} Active`)
-        .setStyle(statusFilter === 'active' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`mod_filter_cases:${targetId}:${actionFilter}:active:${page}`)
+      .setLabel(`${EMOJIS.ACTIVE} Active`)
+      .setStyle(statusFilter === 'active' ? ButtonStyle.Primary : ButtonStyle.Secondary),
 
-      new ButtonBuilder()
-        .setCustomId(`mod_filter_cases:${targetId}:${actionFilter}:reversed:${page}`)
-        .setLabel(`${EMOJIS.REVERSED} Reversed`)
-        .setStyle(statusFilter === 'reversed' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId(`mod_filter_cases:${targetId}:${actionFilter}:reversed:${page}`)
+      .setLabel(`${EMOJIS.REVERSED} Reversed`)
+      .setStyle(statusFilter === 'reversed' ? ButtonStyle.Primary : ButtonStyle.Secondary),
 
-      new ButtonBuilder()
-        .setCustomId(`mod_filter_cases:${targetId}:${actionFilter}:expired:${page}`)
-        .setLabel(`${EMOJIS.EXPIRED} Expired`)
-        .setStyle(statusFilter === 'expired' ? ButtonStyle.Primary : ButtonStyle.Secondary)
-    )
-  ];
+    new ButtonBuilder()
+      .setCustomId(`mod_filter_cases:${targetId}:${actionFilter}:expired:${page}`)
+      .setLabel(`${EMOJIS.EXPIRED} Expired`)
+      .setStyle(statusFilter === 'expired' ? ButtonStyle.Primary : ButtonStyle.Secondary)
+  );
+
+  return [row1, row2];
 }
 
 /* ---------------- PAGINATION ---------------- */
@@ -122,7 +125,7 @@ function getBulkActionProgressEmbed({
   total,
   processed,
   successCount,
-  failCount
+  failCount,
 }) {
   return createEmbed({
     title: `${EMOJIS.SETTINGS} ${EMOJIS.BULK} ${actionLabel} Progress`,
@@ -131,8 +134,8 @@ function getBulkActionProgressEmbed({
     fields: [
       { name: '📦 Processed', value: `${processed}/${total}`, inline: true },
       { name: `${EMOJIS.SUCCESS} Success`, value: String(successCount), inline: true },
-      { name: `${EMOJIS.ERROR} Failed`, value: String(failCount), inline: true }
-    ]
+      { name: `${EMOJIS.ERROR} Failed`, value: String(failCount), inline: true },
+    ],
   });
 }
 
@@ -142,7 +145,7 @@ function getBulkActionSummaryEmbed({
   actionLabel,
   total,
   success,
-  failed
+  failed,
 }) {
   return createEmbed({
     title: failed.length
@@ -155,13 +158,13 @@ function getBulkActionSummaryEmbed({
       { name: `${EMOJIS.ERROR} Failed`, value: String(failed.length), inline: true },
       {
         name: `${EMOJIS.SUCCESS} Successes`,
-        value: success.length ? success.join('\n').slice(0, 1024) : 'None'
+        value: success.length ? success.join('\n').slice(0, 1024) : 'None',
       },
       {
         name: `${EMOJIS.ERROR} Failures`,
-        value: failed.length ? failed.join('\n').slice(0, 1024) : 'None'
-      }
-    ]
+        value: failed.length ? failed.join('\n').slice(0, 1024) : 'None',
+      },
+    ],
   });
 }
 
@@ -172,5 +175,5 @@ module.exports = {
   buildCasesPageButtons,
   buildCaseDetailButtons,
   getBulkActionProgressEmbed,
-  getBulkActionSummaryEmbed
+  getBulkActionSummaryEmbed,
 };

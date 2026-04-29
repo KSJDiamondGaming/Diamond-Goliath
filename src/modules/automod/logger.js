@@ -1,5 +1,5 @@
-const logService = require('../logging/logService');
-const { LOG_TYPES } = require('../logging/types');
+const logService = require('../../logging/service');
+const { LOG_TYPES } = require('../../logging/types');
 
 function formatAutomodActions(action) {
   const actions = String(action || '')

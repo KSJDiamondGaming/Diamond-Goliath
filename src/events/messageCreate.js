@@ -1,4 +1,4 @@
-const { runAutomod } = require('../../core/modules/admin/automod');
+const { runAutomod } = require('../modules/automod/service');
 
 module.exports = {
   name: 'messageCreate',

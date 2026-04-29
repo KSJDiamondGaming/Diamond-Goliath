@@ -2,10 +2,8 @@
 
 const { MessageFlags } = require('discord.js');
 
-const { createCase } = require('../logging/cases/caseStore');
-const { addWarning } = require('../logging/modlogs/warningStore');
-const { sendModLog } = require('../logging/modlogs/modLog');
-
+const { createCase } = require('../../logging/cases/caseStore');
+const { addWarning } = require('../../logging/warnings/warningStore');
 const { handleEscalation, getRepeatReasonInfo } = require('./escalationSystem');
 const { checkHierarchyForBulk } = require('./moderationChecks');
 
@@ -13,17 +11,17 @@ const {
   parseDuration,
   isValidTimeoutDuration,
   isValidDeleteDays,
-} = require('../utility/targetHelpers');
+} = require('../../helpers/ui/targetHelpers');
 
 const {
   getBulkActionProgressEmbed,
   getBulkActionSummaryEmbed,
-} = require('../utility/caseComponentBuilders');
+} = require('../../helpers/ui/caseComponentBuilders');
 
 const {
   safeReply,
   safeEditReply,
-} = require('../utility/interactionResponse');
+} = require('../../helpers/ui/interactionResponse');
 
 const ACTION_LABELS = {
   warn: 'Bulk Warn',

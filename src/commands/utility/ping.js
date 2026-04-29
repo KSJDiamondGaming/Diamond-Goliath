@@ -3,7 +3,7 @@ const {
   EmbedBuilder
 } = require('discord.js');
 
-const { enforceCommandAccess } = require('../../utils/commandAccess');
+const { enforceCommandAccess } = require('../../helpers/ui/commandAccess');
 
 module.exports = {
   category: 'Utility',

@@ -1,5 +1,5 @@
 const { EmbedBuilder } = require('discord.js');
-const guildManager = require('../../../../dashboard/server/utils/guildManager');
+const guildManager = require('../require('../guild/guildManager')');
 
 const ADMIN_ACTION_LABELS = {
   rolecreate: 'Role Created',

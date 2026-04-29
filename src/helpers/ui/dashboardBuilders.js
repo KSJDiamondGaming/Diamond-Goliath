@@ -7,7 +7,7 @@ const {
 
 const { COLORS, EMOJIS } = require('./uiConfig');
 const { createEmbed } = require('./embedBuilder');
-const { getStatusLabel } = require('../moderation/caseHelpers');
+const { getStatusLabel } = require('../../functions/moderation/caseHelpers');
 
 /* ---------------- DASHBOARD NAV ---------------- */
 

@@ -1,4 +1,4 @@
-const terminal = require('../../core/logs/terminalLogger').createLogger('bot');
+const terminal = require('../../logging/terminalLogger').createLogger('bot');
 
 const MAIN_GUILD_ID = '808091031350280213';
 

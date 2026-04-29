@@ -1,7 +1,7 @@
 // functions/automod/automodStore.js
 
 const { EmbedBuilder, PermissionsBitField } = require('discord.js');
-const guildManager = require('../../../dashboard/server/utils/guildManager');
+const guildManager = require('../guild/guildManager');
 
 // =========================
 // Constants

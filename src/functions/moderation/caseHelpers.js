@@ -3,11 +3,11 @@
 const {
   updateCaseStatus,
   getAllCases,
-} = require('../logging/cases/caseStore');
+} = require('../../logging/cases/caseStore');
 
 const {
   purgeExpiredWarnings,
-} = require('../logging/modlogs/warningStore');
+} = require('../../logging/warnings/warningStore');
 
 const STATUS_LABELS = {
   active: '🟢 Active',

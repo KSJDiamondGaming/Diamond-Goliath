@@ -1,5 +1,5 @@
 const { EmbedBuilder } = require('discord.js');
-const guildManager = require('../../../../dashboard/server/utils/guildManager');
+const guildManager = require('../guild/guildManager');
 
 const MODERATION_ACTION_LABELS = {
   delete: 'Message Deleted',
@@ -18,8 +18,14 @@ const MODERATION_ACTION_LABELS = {
 };
 
 function normalizeLogType(logType = 'mod') {
-  if (logType === 'mod') return 'moderation';
-  return logType || 'general';
+  const type = String(logType || 'general').toLowerCase();
+
+  if (type === 'mod') return 'moderation';
+  if (type === 'moderation') return 'moderation';
+  if (type === 'automod') return 'automod';
+  if (type === 'admin') return 'admin';
+
+  return 'general';
 }
 
 function getEventName(channelType) {
@@ -57,11 +63,17 @@ function normalizeDetails(details = []) {
   if (!Array.isArray(details)) return [];
 
   return details
-    .filter((detail) => detail?.name && detail?.value !== undefined && detail?.value !== null)
+    .filter(
+      (detail) =>
+        detail &&
+        detail.name &&
+        detail.value !== undefined &&
+        detail.value !== null
+    )
     .map((detail) => ({
       name: String(detail.name).slice(0, 256),
       value: String(detail.value).slice(0, 1024),
-      inline: detail.inline ?? false,
+      inline: Boolean(detail.inline),
     }));
 }
 
@@ -151,12 +163,14 @@ async function logModerationAction({
 
     fields.push(...normalizeDetails(details));
 
+    const actionLabel = formatModerationAction(action) || 'Moderation Action';
+
     const embed = new EmbedBuilder()
       .setColor(color)
-      .setTitle(title || `🛡️ ${formatModerationAction(action) || 'Moderation Action'}`)
+      .setTitle(title || `🛡️ ${actionLabel}`)
       .setTimestamp();
 
-    if (fields.length) {
+    if (fields.length > 0) {
       embed.addFields(fields);
     }
 
@@ -169,7 +183,10 @@ async function logModerationAction({
     await channel.send({ embeds: [embed] });
     return true;
   } catch (error) {
-    console.error(`Failed to log moderation action in guild ${guild?.id || 'unknown'}:`, error);
+    console.error(
+      `Failed to log moderation action in guild ${guild?.id || 'unknown'}:`,
+      error
+    );
     return false;
   }
 }

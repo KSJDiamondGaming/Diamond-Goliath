@@ -1,4 +1,4 @@
-const guildStore = require('../../guild/store');
+const guildStore = require('../../guild/guildManager')
 
 function getAdminPanelState(guildId) {
   const logs = guildStore.getGuildSection(

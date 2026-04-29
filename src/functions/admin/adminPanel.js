@@ -12,8 +12,8 @@ const {
   TextInputStyle,
 } = require('discord.js');
 
-const guildManager = require('../../../dashboard/server/utils/guildManager');
-const adminModule = require('../../../core/modules/admin/admin');
+const guildManager = require('../../guild/guildManager');
+const adminModule = require('../../modules/admin/admin');
 
 const PANEL_COLOR = '#5865F2';
 

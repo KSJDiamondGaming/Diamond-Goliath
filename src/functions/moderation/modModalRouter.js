@@ -17,7 +17,7 @@ const {
   isValidTimeoutDuration,
   getWarningExpiry,
   parseDeleteDays,
-} = require('../utility/targetHelpers');
+} = require('../../helpers/ui/targetHelpers');
 
 const {
   getStatusLabel,
@@ -30,14 +30,14 @@ const { refreshDashboard, buildDashboardPayload } = require('./dashboardService'
 const {
   safeReply,
   ephemeralError,
-} = require('../utility/interactionResponse');
+} = require('../../helpers/ui/interactionResponse');
 
-const { buildCaseDetailButtons } = require('../utility/caseComponentBuilders');
+const { buildCaseDetailButtons } = require('../../helpers/ui/caseComponentBuilders');
 
 const {
   buildConfirmRow,
   buildConfirmCustomId,
-} = require('../utility/pendingActionHelpers');
+} = require('../../helpers/ui/pendingActionHelpers');
 
 const {
   createCase,
@@ -45,16 +45,14 @@ const {
   updateCaseReason,
   updateCaseNote,
   clearCaseNote,
-} = require('../logging/cases/caseStore');
+} = require('../../logging/cases/caseStore');
 
 const {
   addWarning,
   getWarningByCaseId,
-} = require('../logging/modlogs/warningStore');
+} = require('../../logging/warnings/warningStore');
 
-const { createPendingAction } = require('../logging/modlogs/pendingActionStore');
-const { sendModLog } = require('../logging/modlogs/modLog');
-
+const { createPendingAction } = require('../../logging/stores/pendingActionStore');
 const {
   handleEscalation,
   getRepeatReasonInfo,

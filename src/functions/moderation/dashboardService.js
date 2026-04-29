@@ -7,13 +7,13 @@ const {
   EmbedBuilder,
 } = require('discord.js');
 
-const { getWarningCountForUser } = require('../logging/modlogs/warningStore');
+const { getWarningCountForUser } = require('../../logging/warnings/warningStore');
 
 const {
   getCaseCountForUser,
   getCasesForUser,
   getFilteredCases,
-} = require('../logging/cases/caseStore');
+} = require('../../logging/cases/caseStore');
 
 const {
   formatCaseSummary,
@@ -27,16 +27,16 @@ const {
   buildCasesEmbed,
   buildAnalyticsEmbed,
   buildActionSelect,
-} = require('../utility/dashboardBuilders');
+} = require('../../helpers/ui/dashboardBuilders');
 
 const {
   buildCaseFilterButtons,
   buildCasesPageButtons,
-} = require('../utility/caseComponentBuilders');
+} = require('../../helpers/ui/caseComponentBuilders');
 
-const { normalizeDashboardContext } = require('../utility/pendingActionHelpers');
+const { normalizeDashboardContext } = require('../../helpers/ui/pendingActionHelpers');
 const { canUseModAction } = require('./moderationChecks');
-const { COLORS, EMOJIS } = require('../utility/uiConfig');
+const { COLORS, EMOJIS } = require('../../helpers/ui/uiConfig');
 
 const allowedViews = new Set([
   'overview',

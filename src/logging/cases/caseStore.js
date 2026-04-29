@@ -1,4 +1,4 @@
-const db = require('../../moderation/db');
+const db = require('../../functions/moderation/db');
 
 function mapCase(row) {
   if (!row) return null;

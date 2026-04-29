@@ -1,11 +1,7 @@
 require('dotenv').config();
 
-const terminal = require('./core/logs/terminalLogger');
-const { syncCommands } = require('./loaders/syncCommands');
-const guildStore = require('./core/guild/store');
-
-const fs = require('node:fs');
-const path = require('node:path');
+const fs = require('fs');
+const path = require('path');
 const {
   Client,
   Collection,
@@ -21,376 +17,114 @@ const client = new Client({
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMessageReactions,
-    GatewayIntentBits.GuildVoiceStates,
   ],
-  partials: [
-    Partials.Channel,
-    Partials.Message,
-    Partials.Reaction,
-  ],
+  partials: [Partials.Channel, Partials.Message],
 });
 
 client.commands = new Collection();
-client.cooldowns = new Collection();
-client.isBooting = true;
-client.startTimestamp = Date.now();
-client.bootId = `${process.pid}-${Date.now()}`;
 
-/* ---------------- PROCESS SAFETY ---------------- */
-
-let isShuttingDown = false;
-
-process.on('unhandledRejection', (reason) => {
-  terminal.error('Unhandled promise rejection', reason);
-});
-
-process.on('uncaughtException', (error) => {
-  terminal.error('Uncaught exception', error);
-});
-
-process.on('uncaughtExceptionMonitor', (error) => {
-  terminal.error('Uncaught exception monitor', error);
-});
-
-async function shutdown(signal) {
-  if (isShuttingDown) return;
-  isShuttingDown = true;
-
-  try {
-    terminal.warn(`Received ${signal}. Shutting down gracefully...`);
-
-    client.isBooting = true;
-
-    if (client.isReady()) {
-      client.removeAllListeners();
-      client.destroy();
-    }
-
-    terminal.line('🛑 Bot', 'Shutdown complete');
-  } catch (error) {
-    terminal.error('Error during shutdown', error);
-  } finally {
-    process.exit(0);
-  }
-}
-
-process.on('SIGINT', () => shutdown('SIGINT'));
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-
-/* ---------------- FILE HELPERS ---------------- */
+/* ---------------- HELPERS ---------------- */
 
 function getAllJsFiles(dir) {
-  let results = [];
+  if (!fs.existsSync(dir)) return [];
 
-  if (!fs.existsSync(dir)) {
-    return results;
-  }
+  const results = [];
 
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
-
-  for (const entry of entries) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const fullPath = path.join(dir, entry.name);
 
     if (entry.isDirectory()) {
-      results = results.concat(getAllJsFiles(fullPath));
+      results.push(...getAllJsFiles(fullPath));
       continue;
     }
 
-    if (
-      entry.isFile() &&
-      entry.name.endsWith('.js') &&
-      !entry.name.endsWith('.test.js') &&
-      !entry.name.endsWith('.spec.js')
-    ) {
+    if (entry.isFile() && entry.name.endsWith('.js')) {
       results.push(fullPath);
     }
   }
 
-  return results.sort((a, b) => a.localeCompare(b));
+  return results;
 }
 
-function clearRequireCache(filePath) {
-  try {
-    delete require.cache[require.resolve(filePath)];
-  } catch {
-    terminal.warn(`Could not clear require cache for: ${filePath}`);
-  }
-}
+/* ---------------- COMMANDS ---------------- */
 
-function normalizeFilePath(filePath) {
-  return path.normalize(filePath).toLowerCase();
-}
+function loadCommands() {
+  const commandsPath = path.join(__dirname, 'src', 'commands');
+  const files = getAllJsFiles(commandsPath);
 
-/* ---------------- COMMAND LOADER ---------------- */
-
-function loadCommands(clientInstance) {
-  const commandsPath = path.join(__dirname, 'src', 'bot', 'commands');
-  const commandFiles = getAllJsFiles(commandsPath);
-
-  let loaded = 0;
-  const seenCommandFiles = new Set();
-  const duplicateNames = new Set();
-
-  clientInstance.commands.clear();
-
-  for (const filePath of commandFiles) {
+  for (const file of files) {
     try {
-      const normalizedPath = normalizeFilePath(filePath);
+      const command = require(file);
 
-      if (seenCommandFiles.has(normalizedPath)) {
-        terminal.warn(`Skipping duplicate command file path: ${filePath}`);
+      if (!command?.data?.name || typeof command.execute !== 'function') {
+        console.warn(`⚠️ Skipped command: ${file}`);
         continue;
       }
 
-      seenCommandFiles.add(normalizedPath);
-
-      clearRequireCache(filePath);
-      const command = require(filePath);
-
-      if (!command?.data || typeof command.execute !== 'function') {
-        terminal.warn(`Skipping invalid command module: ${filePath}`);
-        continue;
-      }
-
-      const commandName = command.data.name;
-
-      if (!commandName || typeof commandName !== 'string') {
-        terminal.warn(`Skipping command with invalid name: ${filePath}`);
-        continue;
-      }
-
-      if (clientInstance.commands.has(commandName)) {
-        duplicateNames.add(commandName);
-        terminal.warn(`Duplicate command detected: ${commandName} (${filePath})`);
-        continue;
-      }
-
-      clientInstance.commands.set(commandName, command);
-      loaded++;
-
-      terminal.line('✅ Command Loaded', `${commandName} -> ${filePath}`);
-    } catch (error) {
-      terminal.error(`Failed to load command file: ${filePath}`, error);
+      client.commands.set(command.data.name, command);
+      console.log(`✅ Command: ${command.data.name}`);
+    } catch (err) {
+      console.error(`❌ Command failed: ${file}`);
+      console.error(err);
     }
   }
-
-  if (duplicateNames.size > 0) {
-    terminal.warn(
-      `Duplicate command names skipped: ${[...duplicateNames].join(', ')}`
-    );
-  }
-
-  return {
-    found: commandFiles.length,
-    loaded,
-    skipped: commandFiles.length - loaded,
-  };
 }
 
-/* ---------------- EVENT LOADER ---------------- */
+/* ---------------- EVENTS ---------------- */
 
-function loadEvents(clientInstance) {
-  const eventsPath = path.join(__dirname, 'src', 'bot', 'events');
-  const eventFiles = getAllJsFiles(eventsPath);
+function loadEvents() {
+  const eventsPath = path.join(__dirname, 'src', 'events');
+  const files = getAllJsFiles(eventsPath);
 
-  let loaded = 0;
-  const seenEventFiles = new Set();
-  const seenEventBindings = new Set();
-
-  for (const eventName of clientInstance.eventNames()) {
-    clientInstance.removeAllListeners(eventName);
-  }
-
-  for (const filePath of eventFiles) {
+  for (const file of files) {
     try {
-      const normalizedPath = normalizeFilePath(filePath);
-
-      if (seenEventFiles.has(normalizedPath)) {
-        terminal.warn(`Skipping duplicate event file path: ${filePath}`);
-        continue;
-      }
-
-      seenEventFiles.add(normalizedPath);
-
-      clearRequireCache(filePath);
-      const event = require(filePath);
+      const event = require(file);
 
       if (!event?.name || typeof event.execute !== 'function') {
-        terminal.warn(`Skipping invalid event module: ${filePath}`);
+        console.warn(`⚠️ Skipped event: ${file}`);
         continue;
       }
 
-      const bindingKey = `${event.name}:${event.once ? 'once' : 'on'}`;
-
-      if (seenEventBindings.has(bindingKey)) {
-        terminal.warn(`Skipping duplicate event binding: ${event.name} (${filePath})`);
-        continue;
-      }
-
-      seenEventBindings.add(bindingKey);
-
-      const handler = async (...args) => {
-        try {
-          await event.execute(...args);
-        } catch (error) {
-          terminal.error(`Event handler failed: ${event.name}`, error);
-        }
-      };
+      const handler = (...args) => event.execute(...args, client);
 
       if (event.once) {
-        clientInstance.once(event.name, handler);
+        client.once(event.name, handler);
       } else {
-        clientInstance.on(event.name, handler);
+        client.on(event.name, handler);
       }
 
-      loaded++;
-
-      terminal.line(
-        '🧩 Event Bound',
-        `${event.name} -> listeners: ${clientInstance.listeners(event.name).length}`
-      );
-    } catch (error) {
-      terminal.error(`Failed to load event file: ${filePath}`, error);
+      console.log(`🧩 Event: ${event.name}`);
+    } catch (err) {
+      console.error(`❌ Event failed: ${file}`);
+      console.error(err);
     }
   }
-
-  return {
-    found: eventFiles.length,
-    loaded,
-    skipped: eventFiles.length - loaded,
-  };
 }
 
-/* ---------------- COMMAND SYNC ---------------- */
+/* ---------------- START ---------------- */
 
-async function maybeSyncCommands() {
-  const shouldSync = String(process.env.AUTO_SYNC_COMMANDS).toLowerCase() === 'true';
+async function start() {
+  const token = process.env.TOKEN;
 
-  if (!shouldSync) {
-    terminal.line('🛰️ Command Sync', 'Skipped (AUTO_SYNC_COMMANDS=false)');
-    return;
-  }
-
-  terminal.line('🛰️ Command Sync', 'Starting automatic sync...');
-  await syncCommands();
-  terminal.line('🛰️ Command Sync', 'Finished automatic sync');
-}
-
-function registerGuildDataLiveSync() {
-  const guildsDir = guildStore.GUILDS_DIR;
-  const refreshTimers = new Map();
-  const DEBOUNCE_MS = 750;
-  const lastRefreshAt = new Map();
-  const MIN_REFRESH_GAP_MS = 3000;
-
-  fs.mkdirSync(guildsDir, { recursive: true });
-
-  function scheduleRefresh(filename) {
-    if (!filename || !filename.endsWith('.json')) return;
-
-    const guildId = filename.replace('.json', '');
-
-    if (!/^\d{16,20}$/.test(guildId)) return;
-
-    if (refreshTimers.has(guildId)) {
-      clearTimeout(refreshTimers.get(guildId));
-    }
-
-    const timer = setTimeout(() => {
-      refreshTimers.delete(guildId);
-
-      const now = Date.now();
-      const last = lastRefreshAt.get(guildId) || 0;
-
-      if (now - last < MIN_REFRESH_GAP_MS) {
-        return;
-      }
-
-      lastRefreshAt.set(guildId, now);
-
-      try {
-        guildStore.clearGuildCache(guildId);
-        guildStore.reloadGuild(guildId);
-
-        terminal.line('🔁 Live Sync', `Guild cache refreshed: ${guildId}`);
-      } catch (error) {
-        terminal.error(`Live sync failed for guild: ${guildId}`, error);
-      }
-    }, DEBOUNCE_MS);
-
-    refreshTimers.set(guildId, timer);
-  }
-
-  fs.watch(guildsDir, (_eventType, filename) => {
-    scheduleRefresh(filename);
-  });
-
-  terminal.line('🔁 Live Sync', `Watching ${guildsDir}`);
-}
-
-/* ---------------- START BOT ---------------- */
-
-async function startBot() {
-  try {
-    terminal.start();
-    
-    const token = process.env.TOKEN;
-    if (!token) {
-      throw new Error('Missing TOKEN in .env file');
-    }
-
-    const commandStats = loadCommands(client);
-    const eventStats = loadEvents(client);
-    registerGuildDataLiveSync();
-
-    terminal.line(
-      '📦 Commands',
-      `Found: ${commandStats.found} | Loaded: ${commandStats.loaded} | Skipped: ${commandStats.skipped}`
-    );
-
-    terminal.line(
-      '📦 Events',
-      `Found: ${eventStats.found} | Loaded: ${eventStats.loaded} | Skipped: ${eventStats.skipped}`
-    );
-
-    await maybeSyncCommands();
-
-    client.once('clientReady', (readyClient) => {
-      readyClient.isBooting = false;
-
-      terminal.line(
-        '🤖 Bot',
-        `READY as ${readyClient.user.tag} (${commandStats.loaded} cmds, ${eventStats.loaded} events)`
-      );
-
-      terminal.line('🆔 Boot ID', readyClient.bootId);
-      terminal.line('🧠 Process ID', String(process.pid));
-
-      terminal.line(
-        '🔁 interactionCreate listeners',
-        String(readyClient.listeners('interactionCreate').length)
-      );
-
-      if (readyClient.listeners('interactionCreate').length > 1) {
-        terminal.warn('⚠️ Multiple interactionCreate listeners detected!');
-      }
-
-      terminal.line(
-        '⏱️ Startup',
-        `${Date.now() - readyClient.startTimestamp}ms`
-      );
-    });
-
-    await client.login(token);
-  } catch (error) {
-    terminal.error('Fatal startup error', error);
+  if (!token) {
+    console.error('❌ Missing TOKEN in .env');
     process.exit(1);
   }
+
+  loadCommands();
+  loadEvents();
+
+  client.once('clientReady', (readyClient) => {
+    console.log(`🤖 Logged in as ${readyClient.user.tag}`);
+  });
+
+  await client.login(token);
 }
 
-if (require.main === module) {
-  startBot();
-}
+start().catch((err) => {
+  console.error('❌ Bot startup failed');
+  console.error(err);
+  process.exit(1);
+});
 
 module.exports = client;

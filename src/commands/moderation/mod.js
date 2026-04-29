@@ -4,8 +4,8 @@ const {
   PermissionFlagsBits,
 } = require('discord.js');
 
-const { enforceCommandAccess } = require('../../utils/commandAccess');
-const modPanel = require('../../interactions/moderation/modPanel');
+const { enforceCommandAccess } = require('../../helpers/ui/commandAccess');
+const modPanel = require('../../functions/moderation/modPanel');
 
 module.exports = {
   category: 'Moderation',

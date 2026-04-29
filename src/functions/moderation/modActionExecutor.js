@@ -4,19 +4,17 @@ const {
   createCase,
   getCaseById,
   updateCaseStatus,
-} = require('../logging/cases/caseStore');
+} = require('../../logging/cases/caseStore');
 
-const { deleteWarningByCaseId } = require('../logging/modlogs/warningStore');
+const { deleteWarningByCaseId } = require('../../logging/warnings/warningStore');
 
 const {
   getPendingAction,
   deletePendingAction,
-} = require('../logging/modlogs/pendingActionStore');
+} = require('../../logging/stores/pendingActionStore');
 
-const { sendModLog } = require('../logging/modlogs/modLog');
-
-const { fetchTarget } = require('../utility/targetHelpers');
-const { normalizeDashboardContext } = require('../utility/pendingActionHelpers');
+const { fetchTarget } = require('../../helpers/ui/targetHelpers');
+const { normalizeDashboardContext } = require('../../helpers/ui/pendingActionHelpers');
 
 const { checkHierarchy } = require('./moderationChecks');
 const { refreshDashboard } = require('./dashboardService');
@@ -24,7 +22,7 @@ const { refreshDashboard } = require('./dashboardService');
 const {
   safeReply,
   ephemeralError,
-} = require('../utility/interactionResponse');
+} = require('../../helpers/ui/interactionResponse');
 
 function cleanError(error) {
   return String(error || '').replace(/^❌\s*/, '');
@@ -49,18 +47,6 @@ function createModCase(interaction, pending, action, reason, metadata = {}) {
     moderatorId: interaction.user.id,
     action,
     reason,
-    metadata,
-  });
-}
-
-async function logAction(interaction, target, action, reason, caseId, metadata = {}) {
-  return sendModLog({
-    guild: interaction.guild,
-    target,
-    moderator: interaction.user,
-    action,
-    reason,
-    caseId,
     metadata,
   });
 }

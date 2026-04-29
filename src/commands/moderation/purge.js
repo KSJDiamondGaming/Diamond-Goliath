@@ -8,7 +8,7 @@ const {
 
 const {
   enforceCommandAccess,
-} = require('../../../bot/utils/commandAccess')
+} = require('../../helpers/ui/commandAccess')
 
 module.exports = {
   category: 'Moderation',
