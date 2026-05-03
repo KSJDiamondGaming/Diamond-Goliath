@@ -6,7 +6,8 @@ import PageShell, {
   Notice,
   PrimaryButton,
 } from '../shared/PageShell';
-import { PAGE_LAYOUTS, createLogsPageStyles } from '../ui';
+import { PAGE_LAYOUTS } from "../ui/layout";
+import { createLogsPageStyles } from "../ui/components";
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 

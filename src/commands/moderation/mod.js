@@ -1,19 +1,21 @@
 const {
   SlashCommandBuilder,
-  MessageFlags,
   PermissionFlagsBits,
 } = require('discord.js');
 
 const { enforceCommandAccess } = require('../../helpers/ui/commandAccess');
+const { errorEmbed } = require('../../helpers/ui/embeds');
 const modPanel = require('../../functions/moderation/modPanel');
 
 module.exports = {
   category: 'Moderation',
+
   help: {
     name: 'mod',
-    description: 'Open the server moderation panel.',
+    description: '🔐 Open moderation hub and staff tools.',
     usage: '/mod',
   },
+
   access: {
     permissions: [PermissionFlagsBits.ModerateMembers],
     ownerOnly: false,
@@ -21,7 +23,8 @@ module.exports = {
 
   data: new SlashCommandBuilder()
     .setName('mod')
-    .setDescription('🛡️ Moderation • open the server moderation hub'),
+    .setDescription('🛡️ Open Goliath’s moderation hub and staff tools')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
 
   async execute(interaction) {
     const BOT_OWNER_ID = process.env.BOT_OWNER_ID;
@@ -30,48 +33,49 @@ module.exports = {
 
     try {
       if (!interaction.guild) {
-        if (interaction.deferred || interaction.replied) {
-          return await interaction.followUp({
-            content: '❌ This command can only be used in a server.',
-            flags: MessageFlags.Ephemeral,
-          });
-        }
-
         return await interaction.reply({
-          content: '❌ This command can only be used in a server.',
-          flags: MessageFlags.Ephemeral,
+          embeds: [
+            errorEmbed('This command can only be used inside a server.'),
+          ],
+          ephemeral: true,
         });
       }
 
       if (!interaction.deferred && !interaction.replied) {
         await interaction.deferReply({
-          flags: MessageFlags.Ephemeral,
+          ephemeral: true,
         });
       }
 
-      await openModPanel(interaction);
+      if (typeof modPanel.openModPanel === 'function') {
+        return await modPanel.openModPanel(interaction);
+      }
+
+      if (typeof modPanel === 'function') {
+        return await modPanel(interaction);
+      }
+
+      throw new Error('Moderation panel opener was not found.');
     } catch (error) {
+      if (error?.code === 10062 || error?.code === 40060) return;
+
       console.error('❌ Mod command failed:', error);
 
-      try {
-        if (interaction.deferred) {
-          return await interaction.editReply({
-            content: '❌ Failed to open moderation hub.',
-            embeds: [],
-            components: [],
-          });
-        }
+      const failurePayload = {
+        embeds: [
+          errorEmbed('Failed to open the moderation hub. Please try again.'),
+        ],
+        components: [],
+      };
 
-        if (interaction.replied) {
-          return await interaction.followUp({
-            content: '❌ Failed to open moderation hub.',
-            flags: MessageFlags.Ephemeral,
-          });
+      try {
+        if (interaction.deferred || interaction.replied) {
+          return await interaction.editReply(failurePayload);
         }
 
         return await interaction.reply({
-          content: '❌ Failed to open moderation hub.',
-          flags: MessageFlags.Ephemeral,
+          ...failurePayload,
+          ephemeral: true,
         });
       } catch (replyError) {
         console.error('❌ Failed to send mod command error response:', replyError);

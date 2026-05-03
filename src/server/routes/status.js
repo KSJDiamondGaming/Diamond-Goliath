@@ -3,7 +3,6 @@ const path = require('path');
 
 const router = express.Router();
 
-const terminal = require('../../../src/utils/utility/terminalLogger').createLogger('api');
 const { read: readJson } = require('../services/guild/fileStore');
 
 const CASES_PATH = path.join(__dirname, '..', 'data', 'modCaseDetails.json');
@@ -193,7 +192,7 @@ async function fetchGuildStats(guildId) {
       humans = members.filter((member) => !member?.user?.bot).length;
     }
   } catch (error) {
-    terminal.warn(
+      console.warn(
       `Could not fetch exact members for guild ${guildId}; using approximate count. ${error.message}`
     );
   }
@@ -292,7 +291,7 @@ async function buildStatusPayload(guildId) {
     botOnline = true;
   } catch (error) {
     statusError = error.message;
-    terminal.error('Bot token status check failed', error);
+    console.error('Bot token status check failed', error);
   }
 
   let guildPayload = null;
@@ -312,7 +311,7 @@ async function buildStatusPayload(guildId) {
       memberInfo.bots = Number(guildPayload.bots || 0);
     } catch (error) {
       statusError = error.message;
-      terminal.error('Guild status fetch failed', error);
+      console.error('Guild status fetch failed', error);
       guildPayload = buildGuildFallback(guildId);
     }
   }
@@ -380,7 +379,7 @@ router.get('/', async (req, res) => {
 
     return res.json(payload);
   } catch (error) {
-    terminal.error('Status route failed', error);
+    console.error('Status route failed', error);
 
     return res.status(500).json({
       ok: false,

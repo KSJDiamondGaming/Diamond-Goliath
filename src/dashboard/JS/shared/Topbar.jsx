@@ -1,5 +1,5 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { topbarStyles } from '../ui';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { topbarStyles } from '../ui/components';
 
 function getInitial(name = '') {
   return name.trim().charAt(0).toUpperCase() || '?';

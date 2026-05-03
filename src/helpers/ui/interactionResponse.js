@@ -4,7 +4,7 @@ const {
   errorEmbed,
   warningEmbed,
   infoEmbed
-} = require('./embedBuilder');
+} = require('./embeds');
 
 // ✅ Generic safe reply
 async function safeReply(interaction, payload = {}) {

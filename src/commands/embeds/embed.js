@@ -1,62 +1,67 @@
 const {
   SlashCommandBuilder,
   PermissionFlagsBits,
-  MessageFlags,
 } = require('discord.js');
 
+const { errorEmbed } = require('../../helpers/ui/embeds');
+const { buildEmbedPanel } = require('../../functions/embed/embedPanel');
+
 module.exports = {
+  category: 'Embeds',
+
+  help: {
+    name: 'embed',
+    description: '🎨 Open embed studio and builder tools.',
+    usage: '/embed',
+  },
+
+  access: {
+    permissions: [PermissionFlagsBits.ManageGuild],
+    ownerOnly: false,
+  },
+
   data: new SlashCommandBuilder()
     .setName('embed')
-    .setDescription('🎨 Embed Studio • build stylish modular embeds')
+    .setDescription('🎨 Open Goliath’s embed studio')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
 
   async execute(interaction) {
     try {
       if (!interaction.guild) {
         return await interaction.reply({
-          content: '❌ This command can only be used in a server.',
-          flags: MessageFlags.Ephemeral,
+          embeds: [errorEmbed('This command can only be used inside a server.')],
+          ephemeral: true,
         });
       }
 
-      const { buildEmbedPanelMessage } = require('../../utils/embed/embedPanelInteraction');
-      const payload = buildEmbedPanelMessage(interaction.guildId);
+      const memberDisplayName =
+        interaction.member?.displayName ||
+        interaction.user?.displayName ||
+        interaction.user?.username ||
+        'Unknown User';
 
-      if (interaction.deferred || interaction.replied) {
-        await interaction.editReply({
-          embeds: [payload.embed],
-          components: payload.components,
-        });
-      } else {
-        await interaction.reply({
-          embeds: [payload.embed],
-          components: payload.components,
-          flags: MessageFlags.Ephemeral,
-        });
-      }
+      return await interaction.reply({
+        ...buildEmbedPanel(interaction, memberDisplayName),
+        ephemeral: true,
+      });
     } catch (error) {
+      if (error?.code === 10062 || error?.code === 40060) return;
+
       console.error('❌ Embed command failed:', error);
 
-      if (error?.code === 10062 || error?.code === 40060) {
-        return;
+      const failurePayload = {
+        embeds: [errorEmbed('Failed to open the embed panel. Please try again.')],
+        components: [],
+      };
+
+      if (interaction.deferred || interaction.replied) {
+        return await interaction.editReply(failurePayload);
       }
 
-      try {
-        if (interaction.deferred || interaction.replied) {
-          await interaction.editReply({
-            content: '❌ Failed to open the embed panel.',
-            embeds: [],
-            components: [],
-          });
-        } else {
-          await interaction.reply({
-            content: '❌ Failed to open the embed panel.',
-            flags: MessageFlags.Ephemeral,
-          });
-        }
-      } catch (replyError) {
-        console.error('❌ Failed to send embed failure response:', replyError);
-      }
+      return await interaction.reply({
+        ...failurePayload,
+        ephemeral: true,
+      });
     }
   },
 };

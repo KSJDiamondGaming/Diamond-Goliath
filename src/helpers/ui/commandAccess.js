@@ -26,7 +26,7 @@ async function enforceCommandAccess(interaction, command, botOwnerId) {
   if (access.ownerOnly && interaction.user.id !== botOwnerId) {
     await interaction.reply({
       content: 'This command is owner only.',
-      flags: MessageFlags.Ephemeral,
+      ephemeral: true,
     });
     return true;
   }
@@ -35,7 +35,7 @@ async function enforceCommandAccess(interaction, command, botOwnerId) {
   if (permissions.length && !hasRequiredPermissions(member, permissions)) {
     await interaction.reply({
       content: 'You do not have permission to use this command.',
-      flags: MessageFlags.Ephemeral,
+      ephemeral: true,
     });
     return true;
   }

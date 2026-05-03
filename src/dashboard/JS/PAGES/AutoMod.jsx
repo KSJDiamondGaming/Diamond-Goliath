@@ -8,11 +8,8 @@ import PageShell, {
   StatGrid,
   SummaryStat,
 } from '../shared/PageShell';
-import {
-  PAGE_LAYOUTS,
-  SECTION_DEFS,
-  createAutoModPageStyles,
-} from '../ui';
+import { SECTION_DEFS } from "../ui/layout";
+import { createAutoModPageStyles } from "../ui/components";
 
 const PAGE_KEY = 'automod';
 

@@ -1,11 +1,8 @@
 const {
   SlashCommandBuilder,
-  EmbedBuilder,
   ActionRowBuilder,
   StringSelectMenuBuilder,
-  ButtonBuilder,
   ButtonStyle,
-  MessageFlags,
 } = require('discord.js');
 
 const {
@@ -13,79 +10,69 @@ const {
   enforceCommandAccess,
 } = require('../../helpers/ui/commandAccess');
 
-const BOT_OWNER_ID = process.env.BOT_OWNER_ID || 'YOUR_USER_ID_HERE';
+const {
+  baseEmbed,
+  createSecondaryButton,
+  createDangerButton,
+} = require('../../helpers/ui/embeds');
+
+const BOT_OWNER_ID = process.env.BOT_OWNER_ID || '1168285714732036096';
 
 const CATEGORY_META = {
   Utility: {
     emoji: '🧰',
-    description: 'General useful commands for everyone.',
+    label: 'Utility',
+    description: 'Helpful tools, status checks, and general bot commands.',
   },
   Moderation: {
     emoji: '🛡️',
-    description: 'Moderation tools for staff members.',
+    label: 'Moderation',
+    description: 'Staff tools for keeping your server clean and protected.',
   },
   Logging: {
     emoji: '📜',
-    description: 'Logging and moderation log setup commands.',
+    label: 'Logging',
+    description: 'Logging setup, moderation records, and audit tools.',
   },
   Admin: {
     emoji: '⚙️',
-    description: 'Administrative and server management commands.',
+    label: 'Admin',
+    description: 'Server management, configuration, and control panels.',
   },
   Stats: {
     emoji: '📊',
-    description: 'Server stats and stat panel setup commands.',
+    label: 'Stats',
+    description: 'Server stats, counters, and tracking panels.',
   },
   Embeds: {
     emoji: '🎨',
-    description: 'Embed and welcome message tools.',
+    label: 'Embeds',
+    description: 'Embed builders, welcome messages, and styled panels.',
   },
   Fun: {
     emoji: '🎉',
-    description: 'Fun and community commands.',
+    label: 'Fun',
+    description: 'Community games, fun extras, and social commands.',
   },
   Other: {
     emoji: '📁',
-    description: 'Other available commands.',
+    label: 'Other',
+    description: 'Extra commands that do not fit another category.',
   },
 };
 
 function normalizeCategory(category) {
   if (!category || typeof category !== 'string') return 'Other';
+
   const trimmed = category.trim();
-  return CATEGORY_META[trimmed] ? trimmed : trimmed || 'Other';
+  return trimmed || 'Other';
 }
 
-function getVisibleCommands(interaction) {
-  const visibleCommands = [];
-
-  for (const command of interaction.client.commands.values()) {
-    if (!command?.data?.name) continue;
-    if (!canAccessCommand(interaction, command, BOT_OWNER_ID)) continue;
-    visibleCommands.push(command);
-  }
-
-  return visibleCommands.sort((a, b) => a.data.name.localeCompare(b.data.name));
-}
-
-function groupCommandsByCategory(commands) {
-  const grouped = {};
-
-  for (const command of commands) {
-    const category = normalizeCategory(command.category);
-
-    if (!grouped[category]) {
-      grouped[category] = [];
-    }
-
-    grouped[category].push(command);
-  }
-
-  for (const category of Object.keys(grouped)) {
-    grouped[category].sort((a, b) => a.data.name.localeCompare(b.data.name));
-  }
-
-  return grouped;
+function getCategoryMeta(category) {
+  return CATEGORY_META[category] || {
+    ...CATEGORY_META.Other,
+    label: category || 'Other',
+  };
 }
 
 function getCommandDescription(command) {
@@ -96,119 +83,144 @@ function getCommandDescription(command) {
   );
 }
 
+function getVisibleCommands(interaction) {
+  return [...interaction.client.commands.values()]
+    .filter((command) => command?.data?.name)
+    .filter((command) => canAccessCommand(interaction, command, BOT_OWNER_ID))
+    .sort((a, b) => a.data.name.localeCompare(b.data.name));
+}
+
+function groupCommandsByCategory(commands) {
+  return commands.reduce((grouped, command) => {
+    const category = normalizeCategory(command.category);
+
+    if (!grouped[category]) grouped[category] = [];
+    grouped[category].push(command);
+
+    return grouped;
+  }, {});
+}
+
+function getSortedCategories(groupedCommands) {
+  return Object.keys(groupedCommands).sort((a, b) => a.localeCompare(b));
+}
+
 function getHelpState(interaction) {
-  const visibleCommands = getVisibleCommands(interaction);
-  return groupCommandsByCategory(visibleCommands);
+  return groupCommandsByCategory(getVisibleCommands(interaction));
 }
 
 function buildHomeEmbed(interaction, groupedCommands) {
-  const categories = Object.keys(groupedCommands).sort((a, b) => a.localeCompare(b));
+  const categories = getSortedCategories(groupedCommands);
+
   const totalCommands = categories.reduce(
     (sum, category) => sum + groupedCommands[category].length,
     0
   );
 
-  const categoryLines = categories.length
-    ? categories
-        .map((category) => {
-          const meta = CATEGORY_META[category] || CATEGORY_META.Other;
-          const count = groupedCommands[category].length;
-          return `${meta.emoji} **${category}** • ${count} command${count === 1 ? '' : 's'}`;
-        })
-        .join('\n')
-    : 'No categories available.';
+  const categoryLines = categories.map((category) => {
+    const meta = getCategoryMeta(category);
+    const count = groupedCommands[category].length;
 
-  return new EmbedBuilder()
-    .setColor('#5865F2')
-    .setTitle('📘 Help Menu')
-    .setDescription('Browse the commands available to **your Discord permissions**.')
-    .setThumbnail(interaction.client.user.displayAvatarURL({ dynamic: true }))
-    .addFields(
-      {
-        name: 'Categories',
-        value: categoryLines,
-      },
-      {
-        name: 'Visible Commands',
-        value: `\`${totalCommands}\` command${totalCommands === 1 ? '' : 's'}`,
-      }
-    )
-    .setFooter({
-      text: `${interaction.client.user.username} • Only commands you can use are shown`,
-    })
-    .setTimestamp();
+    return [
+      `${meta.emoji} **${meta.label}**`,
+      `> ${meta.description}`,
+      `> \`${count}\` command${count === 1 ? '' : 's'} available`,
+    ].join('\n');
+  });
+
+  return baseEmbed(interaction.client)
+    .setTitle('`📚` Goliath Command Centre')
+    .setDescription([
+      '`💎` Browse the commands available to your Discord permissions.',
+      '',
+      '`📂` **Command Categories**',
+      '',
+      categoryLines.join('\n\n'),
+      '',
+      '`🔎` **Visible Commands**',
+      `> \`${totalCommands}\` command${totalCommands === 1 ? '' : 's'} available to you`,
+    ].join('\n'))
+    .setThumbnail(interaction.client.user.displayAvatarURL({ dynamic: true }));
 }
 
-function buildCategoryEmbed(category, commands) {
-  const meta = CATEGORY_META[category] || CATEGORY_META.Other;
+function buildCategoryEmbed(interaction, category, commands) {
+  const meta = getCategoryMeta(category);
 
   const commandList = commands.length
     ? commands
-        .map((command) => `**/${command.data.name}** — ${getCommandDescription(command)}`)
-        .join('\n')
-    : 'No commands available in this category.';
+        .map((command) => {
+          const name = command.data.name;
+          const description = getCommandDescription(command);
 
-  return new EmbedBuilder()
-    .setColor('#5865F2')
-    .setTitle(`${meta.emoji} ${category} Commands`)
-    .setDescription(meta.description)
-    .addFields({
-      name: `Available in ${category}`,
-      value: commandList,
-    })
+          return [
+            `\`/${name}\``,
+            `> ${description}`,
+          ].join('\n');
+        })
+        .join('\n\n')
+    : '*No commands available in this category.*';
+
+  return baseEmbed(interaction.client)
+    .setTitle(`\`${meta.emoji}\` ${meta.label} Commands`)
+    .setDescription([
+      meta.description,
+      '',
+      '`⚡` **Available Commands**',
+      '',
+      commandList,
+    ].join('\n'))
     .setFooter({
       text: `${commands.length} command${commands.length === 1 ? '' : 's'} visible to you`,
-    })
-    .setTimestamp();
+      iconURL: interaction.client.user.displayAvatarURL({ dynamic: true }),
+    });
 }
 
 function buildComponents(groupedCommands, selectedCategory = null, disabled = false) {
-  const categories = Object.keys(groupedCommands).sort((a, b) => a.localeCompare(b));
+  const categories = getSortedCategories(groupedCommands);
 
   const options = categories.length
-    ? categories.map((category) => {
-        const meta = CATEGORY_META[category] || CATEGORY_META.Other;
+    ? categories.slice(0, 25).map((category) => {
+        const meta = getCategoryMeta(category);
         const count = groupedCommands[category].length;
 
         return {
-          label: category,
+          label: meta.label,
           description: `${count} command${count === 1 ? '' : 's'} available`,
           value: category,
           emoji: meta.emoji,
           default: selectedCategory === category,
         };
       })
-    : [
-        {
-          label: 'Other',
-          description: 'No commands available',
-          value: 'Other',
-          emoji: CATEGORY_META.Other.emoji,
-          default: true,
-        },
-      ];
+    : [{
+        label: 'Other',
+        description: 'No commands available',
+        value: 'Other',
+        emoji: CATEGORY_META.Other.emoji,
+        default: true,
+      }];
 
-  const selectMenu = new StringSelectMenuBuilder()
-    .setCustomId('help-category-select')
-    .setPlaceholder('Choose a command category')
-    .setDisabled(disabled || !categories.length)
-    .addOptions(options);
+  const selectRow = new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId('help-category-select')
+      .setPlaceholder('📂 Choose a command category')
+      .setDisabled(disabled || !categories.length)
+      .addOptions(options)
+  );
 
-  const selectRow = new ActionRowBuilder().addComponents(selectMenu);
-
-  const backButton = new ButtonBuilder()
-    .setCustomId('help-back-home')
-    .setLabel('Back Home')
-    .setStyle(ButtonStyle.Secondary)
-    .setDisabled(disabled || !selectedCategory);
-
-  const closeButton = new ButtonBuilder()
-    .setCustomId('help-close')
-    .setLabel('Close')
-    .setStyle(ButtonStyle.Danger)
-    .setDisabled(disabled);
-
-  const buttonRow = new ActionRowBuilder().addComponents(backButton, closeButton);
+  const buttonRow = new ActionRowBuilder().addComponents(
+    createSecondaryButton(
+      'help-back-home',
+      'Back Home',
+      '🏠',
+      disabled || !selectedCategory
+    ),
+    createDangerButton(
+      'help-close',
+      'Close',
+      '✖️',
+      disabled
+    )
+  );
 
   return [selectRow, buttonRow];
 }
@@ -222,15 +234,20 @@ async function handleHelpSelectMenu(interaction) {
   if (!selectedCategory || !groupedCommands[selectedCategory]) {
     await interaction.reply({
       content: '⚠️ That help category is no longer available.',
-      flags: MessageFlags.Ephemeral,
+      ephemeral: true,
     });
+
     return true;
   }
 
-  const commands = groupedCommands[selectedCategory] || [];
-
   await interaction.update({
-    embeds: [buildCategoryEmbed(selectedCategory, commands)],
+    embeds: [
+      buildCategoryEmbed(
+        interaction,
+        selectedCategory,
+        groupedCommands[selectedCategory]
+      ),
+    ],
     components: buildComponents(groupedCommands, selectedCategory),
   });
 
@@ -251,7 +268,7 @@ async function handleHelpButton(interaction) {
 
   if (interaction.customId === 'help-close') {
     await interaction.update({
-      content: 'Help panel closed.',
+      content: '`✅` Help panel closed.',
       embeds: [],
       components: [],
     });
@@ -264,11 +281,13 @@ async function handleHelpButton(interaction) {
 
 module.exports = {
   category: 'Utility',
+
   help: {
     name: 'help',
-    description: 'Browse bot commands by category based on your permissions.',
+    description: '📚 Browse Goliath commands, modules, and tools.',
     usage: '/help',
   },
+
   access: {
     permissions: [],
     ownerOnly: false,
@@ -276,25 +295,30 @@ module.exports = {
 
   data: new SlashCommandBuilder()
     .setName('help')
-    .setDescription('Browse all commands available to you'),
+    .setDescription('📚 Browse Goliath commands, modules, and tools'),
 
   async execute(interaction) {
-    const denied = await enforceCommandAccess(interaction, module.exports, BOT_OWNER_ID);
+    const denied = await enforceCommandAccess(
+      interaction,
+      module.exports,
+      BOT_OWNER_ID
+    );
+
     if (denied) return;
 
     const groupedCommands = getHelpState(interaction);
 
     if (!Object.keys(groupedCommands).length) {
       return interaction.reply({
-        content: 'I could not find any commands available to you.',
-        flags: MessageFlags.Ephemeral,
+        content: '`⚠️` I could not find any commands available to you.',
+        ephemeral: true,
       });
     }
 
     return interaction.reply({
       embeds: [buildHomeEmbed(interaction, groupedCommands)],
       components: buildComponents(groupedCommands),
-      flags: MessageFlags.Ephemeral,
+      ephemeral: true,
     });
   },
 

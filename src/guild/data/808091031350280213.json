@@ -1,0 +1,153 @@
+{
+  "guildId": "808091031350280213",
+  "guildName": "KSJ DIAMOND GAMING",
+  "updatedAt": "2026-05-02T23:06:06.543Z",
+  "general": {
+    "enabled": true,
+    "prefix": "!",
+    "timezone": "Europe/London"
+  },
+  "modules": {},
+  "automod": {
+    "enabled": true,
+    "ignoreBots": true,
+    "ignoreAdmins": true,
+    "dmWarnings": false,
+    "ignoredChannelIds": [],
+    "ignoredUserIds": [],
+    "ignoredRoleIds": [],
+    "antiSpam": {
+      "enabled": true,
+      "punishments": [
+        "delete",
+        "warn",
+        "timeout"
+      ],
+      "punishment": "delete",
+      "timeoutMinutes": 10,
+      "maxMessages": 6,
+      "intervalSeconds": 8
+    },
+    "antiLink": {
+      "enabled": true,
+      "punishments": [
+        "delete"
+      ],
+      "punishment": "delete",
+      "timeoutMinutes": 10,
+      "allowedDomains": [],
+      "blockedDomains": []
+    },
+    "antiInvite": {
+      "enabled": true,
+      "punishments": [
+        "delete"
+      ],
+      "punishment": "delete",
+      "timeoutMinutes": 10
+    },
+    "capsAbuse": {
+      "enabled": true,
+      "punishments": [
+        "delete"
+      ],
+      "punishment": "delete",
+      "timeoutMinutes": 10,
+      "minLength": 10,
+      "percentage": 70
+    },
+    "badWords": {
+      "enabled": true,
+      "punishments": [
+        "delete"
+      ],
+      "punishment": "delete",
+      "timeoutMinutes": 10,
+      "words": []
+    },
+    "repeatedMessages": {
+      "enabled": true,
+      "punishments": [
+        "delete"
+      ],
+      "punishment": "delete",
+      "timeoutMinutes": 10,
+      "maxRepeats": 3,
+      "intervalSeconds": 10
+    },
+    "logs": {
+      "enabled": true,
+      "channelId": null
+    },
+    "updatedAt": "2026-05-01T01:10:22.149Z"
+  },
+  "logs": {
+    "enabled": true,
+    "channels": {
+      "general": null,
+      "moderation": null,
+      "admin": null,
+      "automod": null,
+      "member": null,
+      "messageDelete": null,
+      "messageEdit": null,
+      "voice": null
+    },
+    "events": {
+      "moderationActions": true,
+      "adminActions": true,
+      "automodActions": true,
+      "memberJoin": true,
+      "memberLeave": true,
+      "memberUpdate": true,
+      "messageDelete": true,
+      "messageEdit": true,
+      "roleCreate": true,
+      "roleDelete": true,
+      "roleUpdate": true,
+      "channelCreate": true,
+      "channelDelete": true,
+      "channelUpdate": true,
+      "voiceJoin": true,
+      "voiceLeave": true,
+      "voiceMove": true
+    }
+  },
+  "cases": {},
+  "warnings": {},
+  "welcome": {},
+  "leave": {},
+  "tickets": {},
+  "levels": {},
+  "reactionRoles": {},
+  "giveaways": {},
+  "suggestions": {},
+  "stats": {},
+  "embedPresets": {
+    "updatedAt": "2026-05-02T00:58:13.750Z",
+    "test new": {
+      "template": "custom",
+      "channelId": null,
+      "title": "Custom Embed",
+      "description": "Edit this embed custom to the guild.",
+      "color": "#5865F2",
+      "authorName": "",
+      "footer": "",
+      "image": "",
+      "fields": [],
+      "name": "test new",
+      "updatedAt": "2026-05-02T00:58:13.748Z"
+    }
+  },
+  "embedDefaults": {
+    "welcome": null,
+    "leave": null,
+    "rules": null,
+    "announcement": null,
+    "suggestion": null,
+    "giveaway": null,
+    "update": null,
+    "event": null,
+    "warning": null
+  }
+}

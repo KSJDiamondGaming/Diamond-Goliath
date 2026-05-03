@@ -6,10 +6,12 @@
   "type": "commonjs",
   "private": true,
   "scripts": {
-  "bot": "node server.js",
-  "dev": "npm run bot",
-  "start": "node server.js"
-},
+    "bot": "node server.js",
+    "api": "node src/dashboard/server.js",
+    "dashboard": "vite src/dashboard --host",
+    "dev": "concurrently -n BOT,API,DASH -c blue,green,magenta \"npm run bot\" \"npm run api\" \"npm run dashboard\"",
+    "sync": "node src/helpers/commands/syncCommands.js"
+  },
   "dependencies": {
     "better-sqlite3": "^12.8.0",
     "chalk": "^5.6.2",
@@ -19,12 +21,16 @@
     "express": "^4.19.2",
     "express-session": "^1.19.0",
     "node-fetch": "^2.7.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.14.2",
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
     "cross-env": "^7.0.3",
-    "nodemon": "^3.1.14"
+    "nodemon": "^3.1.14",
+    "vite": "^5.0.0"
   }
 }

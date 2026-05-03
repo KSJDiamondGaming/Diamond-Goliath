@@ -1,23 +1,35 @@
-const {
-  SlashCommandBuilder,
-  PermissionFlagsBits,
-  MessageFlags,
-} = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 
 const { buildAdminPanel } = require('../../functions/admin/adminPanel');
+const { errorEmbed } = require('../../helpers/ui/embeds');
 
 module.exports = {
+  category: 'Admin',
+
+  help: {
+    name: 'admin',
+    description: '🔏 Open admin controls and server tools.',
+    usage: '/admin',
+  },
+
+  access: {
+    permissions: [PermissionFlagsBits.Administrator],
+    ownerOnly: false,
+  },
+
   data: new SlashCommandBuilder()
     .setName('admin')
-    .setDescription('🛠️ Open the all-in-one admin hub')
+    .setDescription('🛡️ Open Goliath’s admin controls and server tools')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async execute(interaction) {
     try {
       if (!interaction.guild) {
         return await interaction.reply({
-          content: '❌ This command can only be used in a server.',
-          flags: MessageFlags.Ephemeral,
+          embeds: [
+            errorEmbed('This command can only be used inside a server.'),
+          ],
+          ephemeral: true,
         });
       }
 
@@ -30,33 +42,34 @@ module.exports = {
       const payload = buildAdminPanel(interaction.guild, memberDisplayName);
 
       if (interaction.deferred || interaction.replied) {
-        await interaction.editReply(payload);
-      } else {
-        await interaction.reply({
-          ...payload,
-          flags: MessageFlags.Ephemeral,
-        });
+        return await interaction.editReply(payload);
       }
+
+      return await interaction.reply({
+        ...payload,
+        ephemeral: true,
+      });
     } catch (error) {
-      if (error?.code === 10062 || error?.code === 40060) {
-        return;
-      }
+      if (error?.code === 10062 || error?.code === 40060) return;
 
       console.error('❌ Admin command failed:', error);
 
+      const failurePayload = {
+        embeds: [
+          errorEmbed('Failed to open the admin panel. Please try again.'),
+        ],
+        components: [],
+      };
+
       try {
         if (interaction.deferred || interaction.replied) {
-          await interaction.editReply({
-            content: '❌ Failed to open the admin panel.',
-            embeds: [],
-            components: [],
-          });
-        } else {
-          await interaction.reply({
-            content: '❌ Failed to open the admin panel.',
-            flags: MessageFlags.Ephemeral,
-          });
+          return await interaction.editReply(failurePayload);
         }
+
+        return await interaction.reply({
+          ...failurePayload,
+          ephemeral: true,
+        });
       } catch (replyError) {
         console.error('❌ Failed to send admin failure response:', replyError);
       }

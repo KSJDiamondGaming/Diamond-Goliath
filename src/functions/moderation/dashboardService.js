@@ -2,9 +2,7 @@
 
 const {
   ActionRowBuilder,
-  ButtonBuilder,
   ButtonStyle,
-  EmbedBuilder,
 } = require('discord.js');
 
 const { getWarningCountForUser } = require('../../logging/warnings/warningStore');
@@ -36,7 +34,16 @@ const {
 
 const { normalizeDashboardContext } = require('../../helpers/ui/pendingActionHelpers');
 const { canUseModAction } = require('./moderationChecks');
-const { COLORS, EMOJIS } = require('../../helpers/ui/uiConfig');
+
+const {
+  COLORS,
+  EMOJIS,
+  baseEmbed,
+  createPrimaryButton,
+  createSecondaryButton,
+  createSuccessButton,
+  createDangerButton,
+} = require('../../helpers/ui/embeds');
 
 const allowedViews = new Set([
   'overview',
@@ -55,6 +62,10 @@ function getSafeView(view) {
 
 function getTargetId(target) {
   return target?.id || null;
+}
+
+function getEmoji(key, fallback) {
+  return EMOJIS?.[key] || fallback;
 }
 
 function buildTargetStats(guildId, target) {
@@ -92,48 +103,55 @@ function buildActionsRows(targetId, member, guild) {
     ...buildActionSelect(targetId),
 
     new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`mod_open_warn:${id}`)
-        .setLabel(`${EMOJIS.WARNING} Warn`)
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(!targetId || !permissions.warn),
+      createSecondaryButton(
+        `mod_open_warn:${id}`,
+        'Warn',
+        getEmoji('WARNING', '⚠️'),
+        !targetId || !permissions.warn
+      ),
 
-      new ButtonBuilder()
-        .setCustomId(`mod_open_timeout:${id}`)
-        .setLabel(`${EMOJIS.TIMEOUT} Timeout`)
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(!targetId || !permissions.timeout),
+      createSecondaryButton(
+        `mod_open_timeout:${id}`,
+        'Timeout',
+        getEmoji('TIMEOUT', '⏳'),
+        !targetId || !permissions.timeout
+      ),
 
-      new ButtonBuilder()
-        .setCustomId(`mod_open_kick:${id}`)
-        .setLabel(`${EMOJIS.KICK} Kick`)
-        .setStyle(ButtonStyle.Danger)
-        .setDisabled(!targetId || !permissions.kick),
+      createDangerButton(
+        `mod_open_kick:${id}`,
+        'Kick',
+        getEmoji('KICK', '👢'),
+        !targetId || !permissions.kick
+      ),
 
-      new ButtonBuilder()
-        .setCustomId(`mod_open_ban:${id}`)
-        .setLabel(`${EMOJIS.BAN} Ban`)
-        .setStyle(ButtonStyle.Danger)
-        .setDisabled(!targetId || !permissions.ban)
+      createDangerButton(
+        `mod_open_ban:${id}`,
+        'Ban',
+        getEmoji('BAN', '🔨'),
+        !targetId || !permissions.ban
+      )
     ),
 
     new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`mod_remove_warning:${id}`)
-        .setLabel(`${EMOJIS.DELETE} Remove Warning`)
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(!targetId || !permissions.removeWarning),
+      createSecondaryButton(
+        `mod_remove_warning:${id}`,
+        'Remove Warning',
+        getEmoji('DELETE', '🗑️'),
+        !targetId || !permissions.removeWarning
+      ),
 
-      new ButtonBuilder()
-        .setCustomId(`mod_remove_timeout:${id}`)
-        .setLabel(`${EMOJIS.SUCCESS} Remove Timeout`)
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(!targetId || !permissions.removeTimeout),
+      createSecondaryButton(
+        `mod_remove_timeout:${id}`,
+        'Remove Timeout',
+        getEmoji('SUCCESS', '✅'),
+        !targetId || !permissions.removeTimeout
+      ),
 
-      new ButtonBuilder()
-        .setCustomId(`mod_refresh:${id}:overview`)
-        .setLabel(`${EMOJIS.REFRESH} Refresh`)
-        .setStyle(ButtonStyle.Success)
+      createSuccessButton(
+        `mod_refresh:${id}:overview`,
+        'Refresh',
+        getEmoji('REFRESH', '🔄')
+      )
     ),
   ];
 }
@@ -152,78 +170,93 @@ function buildToolsRows(targetId, member, guild) {
 
   return [
     new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('mod_select_user')
-        .setLabel(`${EMOJIS.USER} Select User`)
-        .setStyle(ButtonStyle.Primary),
+      createPrimaryButton(
+        'mod_select_user',
+        'Select User',
+        getEmoji('USER', '👤')
+      ),
 
-      new ButtonBuilder()
-        .setCustomId(`mod_case_detail:${id}`)
-        .setLabel(`${EMOJIS.SEARCH} Case Detail`)
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(!targetId || !permissions.viewCaseDetail),
+      createSecondaryButton(
+        `mod_case_detail:${id}`,
+        'Case Detail',
+        getEmoji('SEARCH', '🔎'),
+        !targetId || !permissions.viewCaseDetail
+      ),
 
-      new ButtonBuilder()
-        .setCustomId(`mod_edit_case:${id}`)
-        .setLabel(`${EMOJIS.EDIT} Edit Case`)
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(!targetId || !permissions.editCase)
+      createSecondaryButton(
+        `mod_edit_case:${id}`,
+        'Edit Case',
+        getEmoji('EDIT', '✏️'),
+        !targetId || !permissions.editCase
+      )
     ),
 
     new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('mod_bulk_warn')
-        .setLabel(`${EMOJIS.BULK} ${EMOJIS.WARNING} Bulk Warn`)
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(!permissions.bulkWarn),
+      createSecondaryButton(
+        'mod_bulk_warn',
+        'Bulk Warn',
+        getEmoji('WARNING', '⚠️'),
+        !permissions.bulkWarn
+      ),
 
-      new ButtonBuilder()
-        .setCustomId('mod_bulk_timeout')
-        .setLabel(`${EMOJIS.BULK} ${EMOJIS.TIMEOUT} Bulk Timeout`)
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(!permissions.bulkTimeout),
+      createSecondaryButton(
+        'mod_bulk_timeout',
+        'Bulk Timeout',
+        getEmoji('TIMEOUT', '⏳'),
+        !permissions.bulkTimeout
+      ),
 
-      new ButtonBuilder()
-        .setCustomId('mod_bulk_kick')
-        .setLabel(`${EMOJIS.BULK} ${EMOJIS.KICK} Bulk Kick`)
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(!permissions.bulkKick),
+      createSecondaryButton(
+        'mod_bulk_kick',
+        'Bulk Kick',
+        getEmoji('KICK', '👢'),
+        !permissions.bulkKick
+      ),
 
-      new ButtonBuilder()
-        .setCustomId('mod_bulk_ban')
-        .setLabel(`${EMOJIS.BULK} ${EMOJIS.BAN} Bulk Ban`)
-        .setStyle(ButtonStyle.Danger)
-        .setDisabled(!permissions.bulkBan)
+      createDangerButton(
+        'mod_bulk_ban',
+        'Bulk Ban',
+        getEmoji('BAN', '🔨'),
+        !permissions.bulkBan
+      )
     ),
   ];
 }
 
-function buildSelectUserEmbed(title, description) {
-  return new EmbedBuilder()
-    .setColor(COLORS.PRIMARY)
+function buildSelectUserEmbed(interaction, title, description) {
+  return baseEmbed(interaction.client, COLORS.PRIMARY)
     .setTitle(title)
-    .setDescription(description)
-    .setTimestamp();
+    .setDescription(description);
 }
 
-function buildActionsEmbed(target) {
-  return new EmbedBuilder()
-    .setColor(COLORS.PRIMARY)
-    .setTitle(`${EMOJIS.ACTIONS} Moderation Actions`)
+function buildActionsEmbed(interaction, target) {
+  return baseEmbed(interaction.client, COLORS.PRIMARY)
+    .setTitle('`🛡️` Moderation Actions')
     .setDescription(
       target
-        ? `${EMOJIS.USER} Choose an action for **${target.user.tag}**`
-        : `${EMOJIS.WARNING} Select a user first.`
-    )
-    .setTimestamp();
+        ? [
+            `\`👤\` **Target:** ${target.user}`,
+            `\`🏷️\` **User Tag:** \`${target.user.tag}\``,
+            '',
+            '`⚡` Choose a moderation action below.',
+          ].join('\n')
+        : [
+            '`⚠️` **No user selected**',
+            '',
+            'Select a user before running moderation actions.',
+          ].join('\n')
+    );
 }
 
-function buildToolsEmbed() {
-  return new EmbedBuilder()
-    .setColor(COLORS.PRIMARY)
-    .setTitle(`${EMOJIS.TOOLS} Moderation Tools`)
-    .setDescription(`${EMOJIS.SETTINGS} Utility actions and bulk moderation.`)
-    .setTimestamp();
+function buildToolsEmbed(interaction) {
+  return baseEmbed(interaction.client, COLORS.PRIMARY)
+    .setTitle('`🧰` Moderation Tools')
+    .setDescription([
+      '`⚙️` Utility actions and bulk moderation controls.',
+      '',
+      '`👤` Select a user to inspect cases or edit moderation history.',
+      '`📦` Bulk tools are permission-gated for staff safety.',
+    ].join('\n'));
 }
 
 function getCasesPageData(guildId, targetId, options = {}) {
@@ -280,7 +313,7 @@ async function buildDashboardPayload(discord, interaction, target, view = DEFAUL
   }
 
   if (safeView === 'actions') {
-    embeds.push(buildActionsEmbed(target));
+    embeds.push(buildActionsEmbed(interaction, target));
 
     components.push(
       ...buildActionsRows(targetId, interaction.member, interaction.guild)
@@ -291,8 +324,13 @@ async function buildDashboardPayload(discord, interaction, target, view = DEFAUL
     if (!target) {
       embeds.push(
         buildSelectUserEmbed(
-          `${EMOJIS.CASES} Cases`,
-          `${EMOJIS.WARNING} Select a user first.`
+          interaction,
+          '`📁` Cases',
+          [
+            '`⚠️` **No user selected**',
+            '',
+            'Select a user first to view their moderation cases.',
+          ].join('\n')
         )
       );
     } else {
@@ -332,7 +370,7 @@ async function buildDashboardPayload(discord, interaction, target, view = DEFAUL
   }
 
   if (safeView === 'tools') {
-    embeds.push(buildToolsEmbed());
+    embeds.push(buildToolsEmbed(interaction));
 
     components.push(
       ...buildToolsRows(targetId, interaction.member, interaction.guild)
@@ -376,7 +414,11 @@ async function refreshDashboard(discord, interaction, target, context = {}) {
       return true;
     }
 
-    await interaction.reply(payload);
+    await interaction.reply({
+      ...payload,
+      ephemeral: true,
+    });
+
     return true;
   } catch (error) {
     console.error('❌ Failed to refresh moderation dashboard message:', error);

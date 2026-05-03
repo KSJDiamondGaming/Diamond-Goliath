@@ -9,22 +9,13 @@ const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_IDS = process.env.GUILD_IDS;
 const COMMAND_MODE = (process.env.COMMAND_MODE || 'guild').toLowerCase();
 
-if (!TOKEN) {
-  throw new Error('Missing TOKEN in .env');
-}
-
-if (!CLIENT_ID) {
-  throw new Error('Missing CLIENT_ID in .env');
-}
+if (!TOKEN) throw new Error('Missing TOKEN in .env');
+if (!CLIENT_ID) throw new Error('Missing CLIENT_ID in .env');
 
 const rest = new REST({ version: '10' }).setToken(TOKEN);
 
-/* ---------------- HELPERS ---------------- */
-
 function parseGuildIds(value) {
-  if (!value) {
-    return [];
-  }
+  if (!value) return [];
 
   return String(value)
     .split(',')
@@ -35,9 +26,7 @@ function parseGuildIds(value) {
 function getAllJsFiles(dir) {
   let results = [];
 
-  if (!fs.existsSync(dir)) {
-    return results;
-  }
+  if (!fs.existsSync(dir)) return results;
 
   const entries = fs.readdirSync(dir, { withFileTypes: true });
 
@@ -90,7 +79,7 @@ function loadCommands(commandsPath, mode = 'guild') {
       }
 
       if (seenNames.has(commandName)) {
-        console.warn(`⚠️ Duplicate command skipped: ${commandName} (${filePath})`);
+        console.warn(`⚠️ Duplicate command skipped: ${commandName}`);
         continue;
       }
 
@@ -105,8 +94,6 @@ function loadCommands(commandsPath, mode = 'guild') {
   return commands;
 }
 
-/* ---------------- CLEAR ---------------- */
-
 async function clearGuildCommands(guildIds) {
   if (!guildIds.length) {
     throw new Error('No GUILD_IDS provided for guild mode.');
@@ -115,11 +102,16 @@ async function clearGuildCommands(guildIds) {
   console.log('🧹 Clearing guild commands...');
 
   for (const guildId of guildIds) {
-    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, guildId), {
-      body: [],
-    });
+    try {
+      await rest.put(Routes.applicationGuildCommands(CLIENT_ID, guildId), {
+        body: [],
+      });
 
-    console.log(`✅ Cleared guild commands: ${guildId}`);
+      console.log(`✅ Cleared guild commands: ${guildId}`);
+    } catch (err) {
+      console.error(`❌ Failed to clear guild commands: ${guildId}`);
+      console.error(err);
+    }
   }
 }
 
@@ -133,8 +125,6 @@ async function clearGlobalCommands() {
   console.log('✅ Cleared global commands');
 }
 
-/* ---------------- REGISTER ---------------- */
-
 async function registerGuildCommands(guildIds, commands) {
   if (!guildIds.length) {
     throw new Error('No GUILD_IDS provided for guild mode.');
@@ -143,11 +133,16 @@ async function registerGuildCommands(guildIds, commands) {
   console.log('📡 Registering guild commands...');
 
   for (const guildId of guildIds) {
-    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, guildId), {
-      body: commands,
-    });
+    try {
+      await rest.put(Routes.applicationGuildCommands(CLIENT_ID, guildId), {
+        body: commands,
+      });
 
-    console.log(`✅ Registered ${commands.length} commands for guild: ${guildId}`);
+      console.log(`✅ Registered ${commands.length} commands for guild: ${guildId}`);
+    } catch (err) {
+      console.error(`❌ Failed to register commands for guild: ${guildId}`);
+      console.error(err);
+    }
   }
 }
 
@@ -161,25 +156,24 @@ async function registerGlobalCommands(commands) {
   console.log(`✅ Registered ${commands.length} global commands`);
 }
 
-/* ---------------- MAIN ---------------- */
-
 async function syncCommands(options = {}) {
   const startTime = Date.now();
 
   const mode = (options.mode || COMMAND_MODE || 'guild').toLowerCase();
   const guildIds = parseGuildIds(options.guildIds ?? GUILD_IDS);
-  const commandsPath = options.commandsPath || path.join(__dirname, '..', 'commands');
+
+  const commandsPath =
+    options.commandsPath || path.join(__dirname, '..', '..', 'commands');
 
   const commands = loadCommands(commandsPath, mode);
 
   console.log('🚀 Starting command sync...');
   console.log(`🛠️ Mode: ${mode}`);
+  console.log(`📂 Commands path: ${commandsPath}`);
   console.log(`📦 Commands loaded: ${commands.length}`);
 
   if (mode === 'guild') {
-    console.log(
-      `🏠 Guild targets: ${guildIds.length ? guildIds.join(', ') : 'none'}`
-    );
+    console.log(`🏠 Guild targets: ${guildIds.length ? guildIds.join(', ') : 'none'}`);
 
     await clearGuildCommands(guildIds);
     await registerGuildCommands(guildIds, commands);

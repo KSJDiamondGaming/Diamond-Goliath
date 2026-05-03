@@ -6,7 +6,8 @@ import PageShell, {
   Notice,
   PrimaryButton,
 } from '../shared/PageShell';
-import { PAGE_LAYOUTS, createMessagesPageStyles } from '../ui';
+import { PAGE_LAYOUTS } from "../ui/layout";
+import { createMessagesPageStyles } from "../ui/components";
 
 const PAGE_KEY = 'messages';
 

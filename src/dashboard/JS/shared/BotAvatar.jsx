@@ -1,5 +1,5 @@
-import { memo, useEffect, useMemo, useState } from 'react';
-import { botAvatarStyles } from '../ui';
+import React, { memo, useEffect, useMemo, useState } from 'react';
+import { botAvatarStyles } from "../ui/components";
 
 function getNameInitial(name = '') {
   return name.trim().charAt(0).toUpperCase() || 'K';

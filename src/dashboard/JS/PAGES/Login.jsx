@@ -1,5 +1,5 @@
-import { memo, useMemo, useState } from 'react';
-import { loginPageStyles } from '../ui';
+import React, { memo, useMemo, useState } from 'react';
+import { loginPageStyles } from '../ui/components';
 
 function getNameInitial(name = '') {
   return name.trim().charAt(0).toUpperCase() || '?';

@@ -7,11 +7,8 @@ import PageShell, {
   StatGrid,
   SummaryStat,
 } from '../shared/PageShell';
-import {
-  PAGE_LAYOUTS,
-  createConfigPageStyles,
-  createDashboardControlStyles,
-} from '../ui';
+import { SECTION_DEFS } from "../ui/layout";
+import { createAutoModPageStyles } from "../ui/components";
 
 const PAGE_KEY = 'config';
 

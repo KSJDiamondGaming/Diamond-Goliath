@@ -1,19 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import { api } from './api';
 import { getStorage, removeStorage, setStorage } from './storage';
-import {
-  appBaseStyles,
-  getTheme,
-  navItems,
-  ROUTES,
-  shellStyles,
-} from './ui/system';
 
-import Navbar from './components/Navbar';
-import Topbar from './components/Topbar';
-import Login from './pages/Login';
+import { appBaseStyles, shellStyles } from './ui/components';
+import { getTheme } from './ui/theme';
+import { navItems, ROUTES } from './ui/layout';
+
+import Navbar from './shared/Navbar.jsx';
+import Topbar from './shared/Topbar.jsx';
+import Login from './pages/Login.jsx';
 
 const GUILD_STORAGE_KEY = 'selected_guild';
 const BOT_PROFILE_STORAGE_KEY = 'bot_profile';

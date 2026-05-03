@@ -4,7 +4,8 @@ import PageShell, {
   Notice,
   SectionCard,
 } from '../shared/PageShell';
-import { PAGE_LAYOUTS, createSharedComponentStyles } from '../ui';
+import { PAGE_LAYOUTS } from "../ui/layout";
+import { createSharedComponentStyles } from "../ui/components";
 
 export default function Moderation({ selectedGuild, theme }) {
   const styles = useMemo(() => createSharedComponentStyles(theme), [theme]);

@@ -8,7 +8,8 @@ import PageShell, {
   StatGrid,
   SummaryStat,
 } from '../shared/PageShell';
-import { PAGE_LAYOUTS, createWarningsPageStyles } from '../ui';
+import { PAGE_LAYOUTS } from "../ui/layout";
+import { createWarningsPageStyles } from "../ui/components";
 
 const PAGE_KEY = 'warnings';
 

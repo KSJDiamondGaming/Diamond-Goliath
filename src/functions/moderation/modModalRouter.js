@@ -96,7 +96,7 @@ function getTargetIdFromCustomId(customId) {
 async function replyNoPermission(interaction, action) {
   return safeReply(interaction, {
     content: getModActionDeniedMessage(action),
-    flags: MessageFlags.Ephemeral,
+    ephemeral: true,
   });
 }
 
@@ -190,7 +190,7 @@ async function handleSelectUserModal(interaction) {
 
   return safeReply(interaction, {
     ...payload,
-    flags: MessageFlags.Ephemeral,
+    ephemeral: true,
   });
 }
 
@@ -280,7 +280,7 @@ async function handleCaseDetailModal(interaction) {
   return safeReply(interaction, {
     embeds: [buildCaseDetailEmbed(modCase)],
     components: buildCaseDetailButtons(modCase),
-    flags: MessageFlags.Ephemeral,
+    ephemeral: true,
   });
 }
 
@@ -325,7 +325,7 @@ async function handleEditCaseModal(interaction) {
 
   await safeReply(interaction, {
     content: `✏️ Updated reason for **Case #${updated.caseId}**.`,
-    flags: MessageFlags.Ephemeral,
+    ephemeral: true,
   });
 
   await refreshCasesDashboard(interaction, target);
@@ -372,7 +372,7 @@ async function handleCaseNoteModal(interaction) {
     content: note
       ? `📝 Updated note for **Case #${updated.caseId}**.`
       : `🗑️ Cleared note for **Case #${updated.caseId}**.`,
-    flags: MessageFlags.Ephemeral,
+    ephemeral: true,
   });
 
   await refreshCasesDashboard(interaction, target);
@@ -427,7 +427,7 @@ async function handleRemoveWarningModal(interaction) {
     components: buildConfirmRow(
       buildConfirmCustomId(token, DEFAULT_DASHBOARD_CONTEXT)
     ),
-    flags: MessageFlags.Ephemeral,
+    ephemeral: true,
   });
 }
 
@@ -481,7 +481,7 @@ async function handleBanModal(interaction) {
     components: buildConfirmRow(
       buildConfirmCustomId(token, DEFAULT_DASHBOARD_CONTEXT)
     ),
-    flags: MessageFlags.Ephemeral,
+    ephemeral: true,
   });
 }
 
@@ -514,7 +514,7 @@ async function handleKickModal(interaction) {
     components: buildConfirmRow(
       buildConfirmCustomId(token, DEFAULT_DASHBOARD_CONTEXT)
     ),
-    flags: MessageFlags.Ephemeral,
+    ephemeral: true,
   });
 }
 
@@ -545,7 +545,7 @@ async function handleWarnModal(interaction) {
   if (warnExpiryRaw.trim().toLowerCase() !== 'never' && !expiresAt) {
     return safeReply(interaction, {
       content: '❌ Invalid warning expiry. Use `7d`, `2w`, `1m`, or `never`.',
-      flags: MessageFlags.Ephemeral,
+      ephemeral: true,
     });
   }
 
@@ -616,7 +616,7 @@ async function handleWarnModal(interaction) {
         `⚠️ Warned **${target.user.tag}** • Case #${modCase.caseId}`,
         ...extraLines,
       ].join('\n'),
-      flags: MessageFlags.Ephemeral,
+      ephemeral: true,
     });
 
     await refreshCasesDashboard(interaction, target);
@@ -626,7 +626,7 @@ async function handleWarnModal(interaction) {
 
     return safeReply(interaction, {
       content: '❌ Failed to warn user.',
-      flags: MessageFlags.Ephemeral,
+      ephemeral: true,
     });
   }
 }
@@ -656,14 +656,14 @@ async function handleTimeoutModal(interaction) {
   if (!durationMs) {
     return safeReply(interaction, {
       content: '❌ Invalid duration. Use `10m`, `1h`, or `1d`.',
-      flags: MessageFlags.Ephemeral,
+      ephemeral: true,
     });
   }
 
   if (!isValidTimeoutDuration(durationMs)) {
     return safeReply(interaction, {
       content: '❌ Timeout cannot exceed 28 days.',
-      flags: MessageFlags.Ephemeral,
+      ephemeral: true,
     });
   }
 
@@ -691,7 +691,7 @@ async function handleTimeoutModal(interaction) {
 
     await safeReply(interaction, {
       content: `⏳ Timed out **${target.user.tag}** for **${durationRaw}** • Case #${modCase.caseId}`,
-      flags: MessageFlags.Ephemeral,
+      ephemeral: true,
     });
 
     await refreshCasesDashboard(interaction, target);
@@ -701,7 +701,7 @@ async function handleTimeoutModal(interaction) {
 
     return safeReply(interaction, {
       content: '❌ Failed to timeout user.',
-      flags: MessageFlags.Ephemeral,
+      ephemeral: true,
     });
   }
 }

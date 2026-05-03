@@ -6,7 +6,7 @@ const {
 } = require('discord.js');
 
 const { COLORS, EMOJIS } = require('./uiConfig');
-const { createEmbed } = require('./embedBuilder');
+const { createEmbed } = require('./embeds');
 const { getStatusLabel } = require('../../functions/moderation/caseHelpers');
 
 /* ---------------- DASHBOARD NAV ---------------- */

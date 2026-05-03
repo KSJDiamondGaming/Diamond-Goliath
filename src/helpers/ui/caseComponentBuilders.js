@@ -5,7 +5,7 @@ const {
 } = require('discord.js');
 
 const uiConfig = require('./uiConfig');
-const embedBuilder = require('./embedBuilder');
+const embedBuilder = require('./embeds');
 
 const { COLORS, EMOJIS } = uiConfig;
 const { createEmbed } = embedBuilder;

@@ -1,22 +1,25 @@
 const {
   SlashCommandBuilder,
-  EmbedBuilder,
   PermissionFlagsBits,
-  MessageFlags,
   ChannelType,
 } = require('discord.js');
 
+const { enforceCommandAccess } = require('../../helpers/ui/commandAccess');
 const {
-  enforceCommandAccess,
-} = require('../../helpers/ui/commandAccess')
+  baseEmbed,
+  errorEmbed,
+  warningEmbed,
+} = require('../../helpers/ui/embeds');
 
 module.exports = {
   category: 'Moderation',
+
   help: {
     name: 'purge',
-    description: 'Delete messages from a channel.',
+    description: '🧹 Clean messages quickly with moderation controls.',
     usage: '/purge',
   },
+
   access: {
     permissions: [PermissionFlagsBits.ManageMessages],
     ownerOnly: false,
@@ -24,11 +27,12 @@ module.exports = {
 
   data: new SlashCommandBuilder()
     .setName('purge')
-    .setDescription('Delete a number of messages from this channel')
+    .setDescription('🧹 Clean messages quickly with moderation controls')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
     .addIntegerOption((option) =>
       option
         .setName('amount')
-        .setDescription('Number of messages to delete (1-100)')
+        .setDescription('🧹 Number of messages to delete, from 1 to 100')
         .setRequired(true)
         .setMinValue(1)
         .setMaxValue(100)
@@ -42,8 +46,10 @@ module.exports = {
     try {
       if (!interaction.guild) {
         return await interaction.reply({
-          content: '❌ This command can only be used in a server.',
-          flags: MessageFlags.Ephemeral,
+          embeds: [
+            errorEmbed('This command can only be used inside a server.'),
+          ],
+          ephemeral: true,
         });
       }
 
@@ -51,8 +57,10 @@ module.exports = {
 
       if (!channel) {
         return await interaction.reply({
-          content: '❌ I could not find this channel.',
-          flags: MessageFlags.Ephemeral,
+          embeds: [
+            errorEmbed('I could not find this channel.'),
+          ],
+          ephemeral: true,
         });
       }
 
@@ -65,8 +73,10 @@ module.exports = {
 
       if (!allowedChannelTypes.includes(channel.type)) {
         return await interaction.reply({
-          content: '❌ This command can only be used in text channels or threads.',
-          flags: MessageFlags.Ephemeral,
+          embeds: [
+            errorEmbed('This command can only be used in text channels or threads.'),
+          ],
+          ephemeral: true,
         });
       }
 
@@ -78,15 +88,19 @@ module.exports = {
 
       if (!botMember) {
         return await interaction.reply({
-          content: '❌ I could not verify my permissions in this server.',
-          flags: MessageFlags.Ephemeral,
+          embeds: [
+            errorEmbed('I could not verify my permissions in this server.'),
+          ],
+          ephemeral: true,
         });
       }
 
       if (!botMember.permissions.has(PermissionFlagsBits.ManageMessages)) {
         return await interaction.reply({
-          content: '❌ I do not have permission to manage messages in this server.',
-          flags: MessageFlags.Ephemeral,
+          embeds: [
+            errorEmbed('I do not have permission to manage messages in this server.'),
+          ],
+          ephemeral: true,
         });
       }
 
@@ -95,8 +109,10 @@ module.exports = {
         !channel.permissionsFor(botMember)?.has(PermissionFlagsBits.ManageMessages)
       ) {
         return await interaction.reply({
-          content: '❌ I do not have permission to manage messages in this channel.',
-          flags: MessageFlags.Ephemeral,
+          embeds: [
+            errorEmbed('I do not have permission to manage messages in this channel.'),
+          ],
+          ephemeral: true,
         });
       }
 
@@ -104,58 +120,51 @@ module.exports = {
 
       if (!deleted.size) {
         return await interaction.reply({
-          content: '⚠️ No messages were deleted. They may all be older than 14 days.',
-          flags: MessageFlags.Ephemeral,
+          embeds: [
+            warningEmbed('No messages were deleted. They may all be older than 14 days.'),
+          ],
+          ephemeral: true,
         });
       }
 
-      const embed = new EmbedBuilder()
-        .setColor('#5865F2')
-        .setTitle('🧹 Messages Purged')
-        .setDescription(
-          `Successfully deleted \`${deleted.size}\` message${deleted.size === 1 ? '' : 's'}.`
-        )
-        .addFields(
-          {
-            name: 'Channel',
-            value: `${channel}`,
-            inline: true,
-          },
-          {
-            name: 'Moderator',
-            value: `${interaction.user}`,
-            inline: true,
-          }
-        )
-        .setFooter({ text: `Requested by ${interaction.user.tag}` })
-        .setTimestamp();
+      const embed = baseEmbed(interaction.client)
+        .setTitle('`🧹` Messages Purged')
+        .setDescription([
+          `\`✅\` Successfully deleted \`${deleted.size}\` message${deleted.size === 1 ? '' : 's'}.`,
+          '',
+          `\`📍\` **Channel:** ${channel}`,
+          `\`🛡️\` **Moderator:** ${interaction.user}`,
+        ].join('\n'))
+        .setFooter({
+          text: `Requested by ${interaction.user.tag}`,
+          iconURL: interaction.user.displayAvatarURL({ dynamic: true }),
+        });
 
-      await interaction.reply({
+      return await interaction.reply({
         embeds: [embed],
-        flags: MessageFlags.Ephemeral,
+        ephemeral: true,
       });
     } catch (error) {
-      if (error?.code === 10062 || error?.code === 40060) {
-        return;
-      }
+      if (error?.code === 10062 || error?.code === 40060) return;
 
       console.error('❌ Purge command failed:', error);
 
+      const failurePayload = {
+        embeds: [
+          errorEmbed('I could not delete those messages. Messages older than 14 days cannot be bulk deleted.'),
+        ],
+        components: [],
+      };
+
       try {
         if (interaction.deferred || interaction.replied) {
-          await interaction.editReply({
-            content:
-              '❌ I could not delete those messages. Messages older than 14 days cannot be bulk deleted.',
-            embeds: [],
-            components: [],
-          });
-        } else {
-          await interaction.reply({
-            content:
-              '❌ I could not delete those messages. Messages older than 14 days cannot be bulk deleted.',
-            flags: MessageFlags.Ephemeral,
-          });
+          return await interaction.editReply(failurePayload);
         }
+
+        return await interaction.reply({
+          ...failurePayload,
+          ephemeral: true,
+        });
       } catch (replyError) {
         console.error('❌ Failed to send purge failure response:', replyError);
       }

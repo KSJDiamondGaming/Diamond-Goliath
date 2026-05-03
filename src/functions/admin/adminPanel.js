@@ -62,9 +62,7 @@ function getAdminLoggerEnabled(guildId) {
 }
 
 function formatChannelStatus(channelId, fallbackLabel) {
-  return channelId
-    ? `Set ${fallbackLabel.toLowerCase()} channel\nCurrent: <#${channelId}>`
-    : `Set ${fallbackLabel.toLowerCase()} channel`;
+  return channelId ? `Current: <#${channelId}>` : `Not set`;
 }
 
 function buildAdminFields(guildId) {
@@ -94,6 +92,7 @@ function buildAdminFields(guildId) {
       value: formatChannelStatus(adminLogId, 'admin log'),
       inline: true,
     },
+
     {
       name: '🤖 AutoMod Log',
       value: formatChannelStatus(automodLogId, 'automod log'),
@@ -123,51 +122,51 @@ function buildFeatureRows(guildId) {
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('admin:automod')
-        .setLabel('AutoMod')
+        .setLabel('⚙️ AutoMod')
         .setStyle(ButtonStyle.Primary),
 
       new ButtonBuilder()
         .setCustomId('admin:embed')
-        .setLabel('Embed')
+        .setLabel('🎨 Embed')
         .setStyle(ButtonStyle.Primary),
 
       new ButtonBuilder()
         .setCustomId('admin:stats')
-        .setLabel('Stats')
+        .setLabel('📊 Stats')
         .setStyle(ButtonStyle.Secondary)
     ),
 
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId(LOG_TYPES.logs.customId)
-        .setLabel(generalLogId ? 'Set Logs ✅' : 'Set Logs')
+        .setLabel(generalLogId ? '📋 Logs ✅' : '📋 Logs')
         .setStyle(generalLogId ? ButtonStyle.Success : ButtonStyle.Primary),
 
       new ButtonBuilder()
         .setCustomId(LOG_TYPES.modlog.customId)
-        .setLabel(modLogId ? 'Set Mod Log ✅' : 'Set Mod Log')
+        .setLabel(modLogId ? '📌 Mod Log ✅' : '📌 Mod Log')
         .setStyle(modLogId ? ButtonStyle.Success : ButtonStyle.Primary),
 
       new ButtonBuilder()
         .setCustomId(LOG_TYPES.adminlog.customId)
-        .setLabel(adminLogId ? 'Set Admin Log ✅' : 'Set Admin Log')
+        .setLabel(adminLogId ? '👑 Admin Log ✅' : '👑 Admin Log')
         .setStyle(adminLogId ? ButtonStyle.Success : ButtonStyle.Primary)
     ),
 
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId(LOG_TYPES.automodlog.customId)
-        .setLabel(automodLogId ? 'Set AutoMod Log ✅' : 'Set AutoMod Log')
+        .setLabel(automodLogId ? '🤖 AutoMod Log ✅' : '🤖 AutoMod Log')
         .setStyle(automodLogId ? ButtonStyle.Success : ButtonStyle.Primary),
 
       new ButtonBuilder()
         .setCustomId('admin:toggleadminlogger')
-        .setLabel(adminLoggerEnabled ? 'Admin Logger ON' : 'Admin Logger OFF')
+        .setLabel(adminLoggerEnabled ? '🧾 Admin Logger ON' : '🧾 Admin Logger OFF')
         .setStyle(adminLoggerEnabled ? ButtonStyle.Success : ButtonStyle.Secondary),
 
       new ButtonBuilder()
         .setCustomId('admin:purge')
-        .setLabel('Purge')
+        .setLabel('🧹 Purge')
         .setStyle(ButtonStyle.Danger)
     ),
   ];
@@ -196,26 +195,46 @@ function buildChannelPanel(type = 'logs') {
   const embed = new EmbedBuilder()
     .setColor(PANEL_COLOR)
     .setTitle(selected.title)
-    .setDescription('Select a text channel below.')
+    .setDescription('Select the text channel you want to use.')
     .setTimestamp();
 
   const channelRow = new ActionRowBuilder().addComponents(
     new ChannelSelectMenuBuilder()
       .setCustomId(selected.selectId)
-      .setPlaceholder('Choose a channel')
+      .setPlaceholder('Choose a text channel')
       .addChannelTypes(ChannelType.GuildText)
   );
 
   const backRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('admin:home')
-      .setLabel('Back')
+      .setLabel('⬅️ Back')
       .setStyle(ButtonStyle.Secondary)
   );
 
   return {
     embeds: [embed],
     components: [channelRow, backRow],
+  };
+}
+
+function buildComingSoonPanel(title, description) {
+  const embed = new EmbedBuilder()
+    .setColor(PANEL_COLOR)
+    .setTitle(title)
+    .setDescription(description)
+    .setTimestamp();
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('admin:home')
+      .setLabel('⬅️ Back')
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  return {
+    embeds: [embed],
+    components: [row],
   };
 }
 
@@ -239,5 +258,6 @@ module.exports = {
 
   buildAdminPanel,
   buildChannelPanel,
+  buildComingSoonPanel,
   buildPurgeModal,
 };

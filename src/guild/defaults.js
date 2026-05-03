@@ -7,6 +7,18 @@ const GUILDS_DIR = path.join(__dirname, 'data');
 
 const guildCache = new Map();
 
+const DEFAULT_EMBED_DEFAULTS = {
+  welcome: null,
+  leave: null,
+  rules: null,
+  announcement: null,
+  suggestion: null,
+  giveaway: null,
+  update: null,
+  event: null,
+  warning: null,
+};
+
 const LEGACY_LOG_FIELDS = [
   'logsChannelId',
   'modLogChannelId',
@@ -18,7 +30,7 @@ const LEGACY_LOG_FIELDS = [
 ];
 
 function clone(value) {
-  return JSON.parse(JSON.stringify(value));
+  return JSON.parse(JSON.stringify(value ?? {}));
 }
 
 function ensureGuildsDir() {
@@ -83,8 +95,8 @@ function mergeObject(defaultValue, sourceValue) {
       : {};
 
   return {
-    ...defaults,
-    ...source,
+    ...clone(defaults),
+    ...clone(source),
   };
 }
 
@@ -92,6 +104,12 @@ function normalizeChannelId(value) {
   const id = String(value || '').trim();
   return /^\d{16,20}$/.test(id) ? id : null;
 }
+
+function sanitizeKey(value) {
+  return String(value || '').trim();
+}
+
+/* ---------------- LOGS ---------------- */
 
 function normalizeLogs(source = {}) {
   const defaults = clone(DEFAULT_LOGS);
@@ -160,8 +178,14 @@ function removeLegacyLogFields(data) {
   return clean;
 }
 
+/* ---------------- DEFAULTS ---------------- */
+
 function mergeDefaults(data = {}) {
-  const defaults = clone(DEFAULT_GUILD_DATA);
+  const defaults = clone({
+    ...DEFAULT_GUILD_DATA,
+    embedPresets: {},
+    embedDefaults: DEFAULT_EMBED_DEFAULTS,
+  });
 
   const source =
     data && typeof data === 'object' && !Array.isArray(data) ? data : {};
@@ -192,6 +216,9 @@ function mergeDefaults(data = {}) {
     welcome: mergeObject(defaults.welcome, source.welcome),
     leave: mergeObject(defaults.leave, source.leave),
     reactionRoles: mergeObject(defaults.reactionRoles, source.reactionRoles),
+
+    embedPresets: mergeObject(defaults.embedPresets, source.embedPresets),
+    embedDefaults: mergeObject(defaults.embedDefaults, source.embedDefaults),
   };
 
   return removeLegacyLogFields(merged);
@@ -220,6 +247,8 @@ function cacheGuildData(guildId, data) {
   return clone(nextData);
 }
 
+/* ---------------- GUILD DATA ---------------- */
+
 function getGuildData(guildId, options = {}) {
   const safeGuildId = normalizeGuildId(guildId);
   const filePath = getGuildFilePath(safeGuildId);
@@ -234,7 +263,14 @@ function getGuildData(guildId, options = {}) {
 
   data.guildId = safeGuildId;
 
-  if (!exists || LEGACY_LOG_FIELDS.some((field) => field in rawData)) {
+  const needsRewrite =
+    !exists ||
+    !rawData.embedDefaults ||
+    LEGACY_LOG_FIELDS.some((field) =>
+      Object.prototype.hasOwnProperty.call(rawData, field)
+    );
+
+  if (needsRewrite) {
     data.updatedAt = new Date().toISOString();
     writeJson(filePath, data);
   }
@@ -291,6 +327,8 @@ function syncGuildMeta(guildOrMeta = {}) {
     ownerId: meta.ownerId || current.ownerId || null,
   });
 }
+
+/* ---------------- SECTIONS ---------------- */
 
 function getGuildSection(guildId, sectionName, fallback = {}) {
   const data = getGuildData(guildId);
@@ -361,6 +399,8 @@ function updateGuildSection(
   return replaceGuildSection(guildId, sectionName, next || {}, guildOrMeta);
 }
 
+/* ---------------- MODULES ---------------- */
+
 function getModuleConfig(guildId, moduleName, fallback = {}) {
   return getGuildSection(guildId, moduleName, fallback);
 }
@@ -371,16 +411,32 @@ function saveModuleConfig(guildId, moduleName, config = {}, guildOrMeta = {}) {
 
 function isModuleEnabled(guildId, moduleName) {
   const data = getGuildData(guildId);
-  return data.modules?.[moduleName] !== false;
+
+  const moduleConfig = data.modules?.[moduleName];
+
+  if (moduleConfig === false) return false;
+
+  if (moduleConfig && typeof moduleConfig === 'object') {
+    return moduleConfig.enabled !== false;
+  }
+
+  return true;
 }
 
 function setModuleEnabled(guildId, moduleName, enabled, guildOrMeta = {}) {
   const modules = getGuildSection(guildId, 'modules', DEFAULT_GUILD_DATA.modules);
 
-  modules[moduleName] = enabled === true;
+  modules[moduleName] = {
+    ...(modules[moduleName] && typeof modules[moduleName] === 'object'
+      ? modules[moduleName]
+      : {}),
+    enabled: enabled === true,
+  };
 
   return saveGuildSection(guildId, 'modules', modules, guildOrMeta);
 }
+
+/* ---------------- LOG HELPERS ---------------- */
 
 function getLogChannelId(guildId, type = 'general', fallbackType = 'general') {
   const logs = getGuildSection(guildId, 'logs', DEFAULT_LOGS);
@@ -396,9 +452,165 @@ function isLogEventEnabled(guildId, eventName) {
   return logs.events?.[eventName] !== false;
 }
 
+/* ---------------- EMBED PRESETS ---------------- */
+
+function sanitizePresetName(name) {
+  const safeName = String(name || '').trim();
+
+  if (!safeName) {
+    throw new Error('Preset name is required.');
+  }
+
+  return safeName.slice(0, 50);
+}
+
+function sanitizeTemplateKey(templateKey) {
+  const key = sanitizeKey(templateKey);
+
+  if (!key) {
+    throw new Error('Template key is required.');
+  }
+
+  return key.slice(0, 50);
+}
+
+function getEmbedPresets(guildId) {
+  return getGuildSection(guildId, 'embedPresets', {});
+}
+
+function getEmbedPreset(guildId, presetName) {
+  const name = sanitizePresetName(presetName);
+  const presets = getEmbedPresets(guildId);
+
+  return presets[name] && typeof presets[name] === 'object'
+    ? clone(presets[name])
+    : null;
+}
+
+function saveEmbedPreset(guildId, presetName, presetData = {}, guildOrMeta = {}) {
+  const name = sanitizePresetName(presetName);
+  const presets = getEmbedPresets(guildId);
+
+  const nextPreset = {
+    ...clone(presetData),
+    name,
+    updatedAt: new Date().toISOString(),
+  };
+
+  const updatedPresets = saveGuildSection(
+    guildId,
+    'embedPresets',
+    {
+      ...presets,
+      [name]: nextPreset,
+    },
+    guildOrMeta
+  );
+
+  return clone(updatedPresets[name] || nextPreset);
+}
+
+function deleteEmbedPreset(guildId, presetName, guildOrMeta = {}) {
+  const name = sanitizePresetName(presetName);
+  const guildData = getGuildData(guildId);
+  const presets = mergeObject({}, guildData.embedPresets);
+
+  if (!presets[name]) return false;
+
+  delete presets[name];
+
+  const embedDefaults = mergeObject(DEFAULT_EMBED_DEFAULTS, guildData.embedDefaults);
+
+  for (const [templateKey, defaultPresetName] of Object.entries(embedDefaults)) {
+    if (defaultPresetName === name) {
+      embedDefaults[templateKey] = null;
+    }
+  }
+
+  saveGuildData(
+    guildId,
+    {
+      embedPresets: presets,
+      embedDefaults,
+    },
+    guildOrMeta
+  );
+
+  return true;
+}
+
+/* ---------------- EMBED DEFAULTS ---------------- */
+
+function getEmbedDefaults(guildId) {
+  const data = getGuildData(guildId);
+
+  return mergeObject(DEFAULT_EMBED_DEFAULTS, data.embedDefaults);
+}
+
+function setEmbedDefault(guildId, templateKey, presetName, guildOrMeta = {}) {
+  const key = sanitizeTemplateKey(templateKey);
+  const name = sanitizePresetName(presetName);
+
+  const preset = getEmbedPreset(guildId, name);
+
+  if (!preset) {
+    throw new Error(`Cannot set default. Preset "${name}" does not exist.`);
+  }
+
+  const embedDefaults = getEmbedDefaults(guildId);
+
+  embedDefaults[key] = name;
+
+  const updated = saveGuildData(
+    guildId,
+    {
+      embedDefaults,
+    },
+    guildOrMeta
+  );
+
+  return clone(updated.embedDefaults || embedDefaults);
+}
+
+function clearEmbedDefault(guildId, templateKey, guildOrMeta = {}) {
+  const key = sanitizeTemplateKey(templateKey);
+  const embedDefaults = getEmbedDefaults(guildId);
+
+  embedDefaults[key] = null;
+
+  const updated = saveGuildData(
+    guildId,
+    {
+      embedDefaults,
+    },
+    guildOrMeta
+  );
+
+  return clone(updated.embedDefaults || embedDefaults);
+}
+
+function getEmbedDefaultPresetName(guildId, templateKey) {
+  const key = sanitizeTemplateKey(templateKey);
+  const defaults = getEmbedDefaults(guildId);
+
+  return defaults[key] || null;
+}
+
+function getEmbedDefaultPreset(guildId, templateKey) {
+  const presetName = getEmbedDefaultPresetName(guildId, templateKey);
+
+  if (!presetName) return null;
+
+  return getEmbedPreset(guildId, presetName);
+}
+
+/* ---------------- CACHE ---------------- */
+
 function reloadGuild(guildId) {
   const safeGuildId = normalizeGuildId(guildId);
+
   guildCache.delete(safeGuildId);
+
   return getGuildData(safeGuildId, { forceReload: true });
 }
 
@@ -422,8 +634,10 @@ function listGuildFiles() {
 
 module.exports = {
   GUILDS_DIR,
+
   DEFAULT_GUILD_DATA,
   DEFAULT_LOGS,
+  DEFAULT_EMBED_DEFAULTS,
 
   getGuildFilePath,
 
@@ -446,6 +660,17 @@ module.exports = {
 
   getLogChannelId,
   isLogEventEnabled,
+
+  getEmbedPresets,
+  getEmbedPreset,
+  saveEmbedPreset,
+  deleteEmbedPreset,
+
+  getEmbedDefaults,
+  setEmbedDefault,
+  clearEmbedDefault,
+  getEmbedDefaultPresetName,
+  getEmbedDefaultPreset,
 
   reloadGuild,
   clearGuildCache,

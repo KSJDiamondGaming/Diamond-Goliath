@@ -1,18 +1,13 @@
 // functions/automod/automodStore.js
 
 const { EmbedBuilder, PermissionsBitField } = require('discord.js');
-const guildManager = require('../guild/guildManager');
-
-// =========================
-// Constants
-// =========================
+const guildManager = require('../../guild/guildManager');
 
 const spamTracker = new Map();
 const repeatTracker = new Map();
 
 const TRACKER_CLEANUP_INTERVAL_MS = 60 * 1000;
 const TRACKER_MAX_AGE_MS = 10 * 60 * 1000;
-
 const DEFAULT_TIMEOUT_MINUTES = 10;
 
 const INVITE_REGEX =
@@ -24,46 +19,14 @@ const URL_REGEX =
 const VALID_PUNISHMENTS = ['delete', 'warn', 'timeout', 'kick', 'ban'];
 
 const RULE_META = {
-  'Anti-Link': {
-    emoji: '🔗',
-    color: '#e74c3c',
-    severity: 'High',
-  },
-  'Blacklisted Domain': {
-    emoji: '⛔',
-    color: '#c0392b',
-    severity: 'Critical',
-  },
-  'Suspicious Domain': {
-    emoji: '⚠️',
-    color: '#e67e22',
-    severity: 'High',
-  },
-  'Caps Abuse': {
-    emoji: '🔠',
-    color: '#f39c12',
-    severity: 'Medium',
-  },
-  'Bad Words': {
-    emoji: '🚫',
-    color: '#c0392b',
-    severity: 'High',
-  },
-  'Anti-Spam': {
-    emoji: '📨',
-    color: '#9b59b6',
-    severity: 'Medium',
-  },
-  'Repeated Messages': {
-    emoji: '🔁',
-    color: '#8e44ad',
-    severity: 'Low',
-  },
-  'Anti-Invite': {
-    emoji: '📩',
-    color: '#3498db',
-    severity: 'High',
-  },
+  'Anti-Link': { emoji: '🔗', color: '#e74c3c', severity: 'High' },
+  'Blacklisted Domain': { emoji: '⛔', color: '#c0392b', severity: 'Critical' },
+  'Suspicious Domain': { emoji: '⚠️', color: '#e67e22', severity: 'High' },
+  'Caps Abuse': { emoji: '🔠', color: '#f39c12', severity: 'Medium' },
+  'Bad Words': { emoji: '🚫', color: '#c0392b', severity: 'High' },
+  'Anti-Spam': { emoji: '📨', color: '#9b59b6', severity: 'Medium' },
+  'Repeated Messages': { emoji: '🔁', color: '#8e44ad', severity: 'Low' },
+  'Anti-Invite': { emoji: '📩', color: '#3498db', severity: 'High' },
 };
 
 const ACTION_LABELS = {
@@ -85,9 +48,7 @@ const SUSPICIOUS_TLDS = [
   '.click',
 ];
 
-// =========================
-// Defaults
-// =========================
+/* ---------------- DEFAULTS ---------------- */
 
 function getDefaultRule(overrides = {}) {
   return {
@@ -143,9 +104,7 @@ function getDefaultConfig() {
   };
 }
 
-// =========================
-// Generic Helpers
-// =========================
+/* ---------------- HELPERS ---------------- */
 
 function now() {
   return Date.now();
@@ -179,11 +138,18 @@ function toBoolean(value, fallback = false) {
 }
 
 function toStringArray(value) {
-  if (!Array.isArray(value)) return [];
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry || '').trim()).filter(Boolean);
+  }
 
-  return value
-    .map((entry) => String(entry || '').trim())
-    .filter(Boolean);
+  if (typeof value === 'string') {
+    return value
+      .split(/[\n,]+/)
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+
+  return [];
 }
 
 function extractId(value) {
@@ -247,9 +213,7 @@ function normalizeDomainList(value) {
     .filter(Boolean);
 }
 
-// =========================
-// Config Sanitizing
-// =========================
+/* ---------------- CONFIG ---------------- */
 
 function sanitizeConfig(input = {}) {
   const defaults = getDefaultConfig();
@@ -420,7 +384,9 @@ function withComputedRules(config) {
         ...config.repeatedMessages,
         intervalMs: Number(config.repeatedMessages.intervalSeconds || 10) * 1000,
         timeoutMs:
-          Number(config.repeatedMessages.timeoutMinutes || DEFAULT_TIMEOUT_MINUTES) *
+          Number(
+            config.repeatedMessages.timeoutMinutes || DEFAULT_TIMEOUT_MINUTES
+          ) *
           60 *
           1000,
       },
@@ -428,9 +394,7 @@ function withComputedRules(config) {
   };
 }
 
-// =========================
-// Store API
-// =========================
+/* ---------------- STORE API ---------------- */
 
 function getGuildAutoModConfig(guildId) {
   const config = guildManager.getGuildSection(
@@ -467,9 +431,7 @@ function resetGuildAutoModConfig(guildId) {
   return saveGuildAutoModConfig(guildId, getDefaultConfig());
 }
 
-// =========================
-// Bypass Checks
-// =========================
+/* ---------------- BYPASS ---------------- */
 
 function hasBypass(message, config) {
   if (!message.guild || !message.member) return true;
@@ -491,9 +453,7 @@ function hasBypass(message, config) {
   );
 }
 
-// =========================
-// Safe Discord Actions
-// =========================
+/* ---------------- SAFE ACTIONS ---------------- */
 
 async function safeDelete(message) {
   try {
@@ -586,12 +546,18 @@ async function sendWarningNotice(message, reason, config) {
   return sentChannel ? 'channel' : 'none';
 }
 
-async function ensureMessageDeleted(message, currentDeletedState) {
-  if (currentDeletedState) return true;
+async function ensureMessageDeleted(message, alreadyDeleted) {
+  if (alreadyDeleted) return true;
   return safeDelete(message);
 }
 
-async function applyPunishment(message, punishmentsInput, reason, timeoutMinutes = 10, config = null) {
+async function applyPunishment(
+  message,
+  punishmentsInput,
+  reason,
+  timeoutMinutes = DEFAULT_TIMEOUT_MINUTES,
+  config = null
+) {
   const punishments = normalizePunishments(punishmentsInput);
   const timeoutMs = Number(timeoutMinutes || DEFAULT_TIMEOUT_MINUTES) * 60 * 1000;
 
@@ -599,9 +565,7 @@ async function applyPunishment(message, punishmentsInput, reason, timeoutMinutes
   let deleted = false;
 
   for (const punishment of punishments) {
-    if (['delete', 'warn', 'timeout', 'kick', 'ban'].includes(punishment)) {
-      deleted = await ensureMessageDeleted(message, deleted);
-    }
+    deleted = await ensureMessageDeleted(message, deleted);
 
     if (punishment === 'delete') {
       applied.push('delete');
@@ -659,9 +623,7 @@ async function applyPunishment(message, punishmentsInput, reason, timeoutMinutes
   return [...new Set(applied)].join(', ');
 }
 
-// =========================
-// Logging
-// =========================
+/* ---------------- LOGGING ---------------- */
 
 function formatAutomodActions(action) {
   const actions = String(action || '')
@@ -689,6 +651,7 @@ async function sendAutomodLog(message, config, details) {
   try {
     if (!message?.guild) return;
     if (!config?.logs?.enabled) return;
+
     if (!guildManager.isLogEventEnabled(message.guild.id, 'automodActions')) {
       return;
     }
@@ -707,9 +670,19 @@ async function sendAutomodLog(message, config, details) {
       .setColor(meta.color)
       .setTitle(`${meta.emoji} AutoMod: ${details.rule || 'Triggered'}`)
       .addFields(
-        { name: 'User', value: `${message.author} (${message.author.id})` },
-        { name: 'Channel', value: `${message.channel}` },
-        { name: 'Rule', value: details.rule || 'Unknown', inline: true },
+        {
+          name: 'User',
+          value: `${message.author} (${message.author.id})`,
+        },
+        {
+          name: 'Channel',
+          value: `${message.channel}`,
+        },
+        {
+          name: 'Rule',
+          value: details.rule || 'Unknown',
+          inline: true,
+        },
         {
           name: 'Actions Taken',
           value: formatAutomodActions(details.action || 'delete'),
@@ -724,7 +697,10 @@ async function sendAutomodLog(message, config, details) {
       .setTimestamp();
 
     if (details.reason) {
-      embed.addFields({ name: 'Reason', value: details.reason });
+      embed.addFields({
+        name: 'Reason',
+        value: details.reason,
+      });
     }
 
     if (details.content) {
@@ -733,7 +709,10 @@ async function sendAutomodLog(message, config, details) {
           ? `${details.content.slice(0, 1021)}...`
           : details.content;
 
-      embed.addFields({ name: 'Message Content', value: clipped });
+      embed.addFields({
+        name: 'Message Content',
+        value: clipped,
+      });
     }
 
     await logChannel.send({ embeds: [embed] });
@@ -742,9 +721,7 @@ async function sendAutomodLog(message, config, details) {
   }
 }
 
-// =========================
-// Link Helpers
-// =========================
+/* ---------------- LINK HELPERS ---------------- */
 
 function normalizeLinkContent(content) {
   return String(content || '')
@@ -771,13 +748,16 @@ function hasSuspiciousLinkBehaviour(content) {
     /h\s*t\s*t\s*p\s*s?\s*:/i,
   ];
 
-  return suspiciousPatterns.some((pattern) => pattern.test(raw)) || URL_REGEX.test(compact);
+  return (
+    suspiciousPatterns.some((pattern) => pattern.test(raw)) ||
+    URL_REGEX.test(compact)
+  );
 }
 
 function isAllowedDomain(content, allowedDomains = []) {
   if (!allowedDomains.length) return false;
 
-  const lowered = content.toLowerCase();
+  const lowered = String(content || '').toLowerCase();
 
   return allowedDomains.some((domain) => {
     const clean = String(domain || '').trim().toLowerCase();
@@ -793,7 +773,6 @@ function isBlockedDomain(content, blockedDomains = []) {
   return domains.some((domain) =>
     blockedDomains.some((blocked) => {
       const cleanBlocked = String(blocked || '').toLowerCase().trim();
-
       return domain === cleanBlocked || domain.endsWith(`.${cleanBlocked}`);
     })
   );
@@ -808,9 +787,7 @@ function hasBadReputation(content) {
   return domains.some((domain) => isSuspiciousDomain(domain));
 }
 
-// =========================
-// Rule Checks
-// =========================
+/* ---------------- RULE CHECKS ---------------- */
 
 function makeRuleHit(rule, reason, configRule) {
   return {
@@ -866,7 +843,6 @@ function checkCapsAbuse(content, config) {
 
   const minLength = Number(config.capsAbuse.minLength || 10);
   const threshold = Number(config.capsAbuse.percentage || 70);
-
   const lettersOnly = String(content || '').replace(/[^a-zA-Z]/g, '');
 
   if (lettersOnly.length < minLength) return null;
@@ -901,7 +877,11 @@ function checkBadWords(content, config) {
 
   if (!matched) return null;
 
-  return makeRuleHit('Bad Words', `Blocked word detected: ${matched}`, config.badWords);
+  return makeRuleHit(
+    'Bad Words',
+    `Blocked word detected: ${matched}`,
+    config.badWords
+  );
 }
 
 function checkRepeatedMessages(message, config) {
@@ -922,7 +902,10 @@ function checkRepeatedMessages(message, config) {
     updatedAt: 0,
   };
 
-  if (entry.lastContent === content && currentTime - entry.updatedAt <= intervalMs) {
+  if (
+    entry.lastContent === content &&
+    currentTime - entry.updatedAt <= intervalMs
+  ) {
     entry.count += 1;
   } else {
     entry.lastContent = content;
@@ -983,9 +966,7 @@ function checkAntiSpam(message, config) {
   return null;
 }
 
-// =========================
-// Tracker Cleanup
-// =========================
+/* ---------------- CLEANUP ---------------- */
 
 function cleanupTrackers() {
   const cutoff = now() - TRACKER_MAX_AGE_MS;
@@ -993,8 +974,11 @@ function cleanupTrackers() {
   for (const [key, timestamps] of spamTracker.entries()) {
     const fresh = timestamps.filter((timestamp) => timestamp >= cutoff);
 
-    if (fresh.length) spamTracker.set(key, fresh);
-    else spamTracker.delete(key);
+    if (fresh.length) {
+      spamTracker.set(key, fresh);
+    } else {
+      spamTracker.delete(key);
+    }
   }
 
   for (const [key, entry] of repeatTracker.entries()) {
@@ -1006,9 +990,7 @@ function cleanupTrackers() {
 
 setInterval(cleanupTrackers, TRACKER_CLEANUP_INTERVAL_MS).unref();
 
-// =========================
-// Main Runner
-// =========================
+/* ---------------- MAIN RUNNER ---------------- */
 
 function getAutomodHit(message, config) {
   const checks = [

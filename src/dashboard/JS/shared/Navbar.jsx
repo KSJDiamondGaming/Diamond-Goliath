@@ -1,7 +1,8 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import BotAvatar from './BotAvatar';
-import { NAV_BOTTOM, navbarStyles } from '../ui';
+import { NAV_BOTTOM } from '../ui/layout';
+import { navbarStyles } from '../ui/components';
 
 function getNameInitial(name = '') {
   return name.trim().charAt(0).toUpperCase() || '?';

@@ -72,28 +72,35 @@ function loadCommands() {
 
 /* ---------------- EVENTS ---------------- */
 
+function registerEvent(event, file) {
+  if (!event?.name || typeof event.execute !== 'function') {
+    console.warn(`⚠️ Skipped event in: ${file}`);
+    return;
+  }
+
+  const handler = (...args) => event.execute(...args, client);
+
+  if (event.once) {
+    client.once(event.name, handler);
+  } else {
+    client.on(event.name, handler);
+  }
+
+  console.log(`🧩 Event: ${event.name}`);
+}
+
 function loadEvents() {
   const eventsPath = path.join(__dirname, 'src', 'events');
   const files = getAllJsFiles(eventsPath);
 
   for (const file of files) {
     try {
-      const event = require(file);
+      const loadedEvent = require(file);
+      const events = Array.isArray(loadedEvent) ? loadedEvent : [loadedEvent];
 
-      if (!event?.name || typeof event.execute !== 'function') {
-        console.warn(`⚠️ Skipped event: ${file}`);
-        continue;
+      for (const event of events) {
+        registerEvent(event, file);
       }
-
-      const handler = (...args) => event.execute(...args, client);
-
-      if (event.once) {
-        client.once(event.name, handler);
-      } else {
-        client.on(event.name, handler);
-      }
-
-      console.log(`🧩 Event: ${event.name}`);
     } catch (err) {
       console.error(`❌ Event failed: ${file}`);
       console.error(err);
