@@ -794,7 +794,9 @@ function buildEmbedPanel(interactionOrGuild, memberDisplayName = 'Unknown User')
       buildPanelEmbed(state, fakeInteraction, memberDisplayName),
       buildPreviewEmbed(state, fakeInteraction),
     ],
+
     components: [
+      // 🔹 MAIN ACTIONS
       new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId('embed:editor')
@@ -804,7 +806,7 @@ function buildEmbedPanel(interactionOrGuild, memberDisplayName = 'Unknown User')
         new ButtonBuilder()
           .setCustomId('embed:presets')
           .setLabel('💾 Presets')
-          .setStyle(ButtonStyle.Secondary),
+          .setStyle(ButtonStyle.Primary),
 
         new ButtonBuilder()
           .setCustomId('embed:send')
@@ -812,28 +814,35 @@ function buildEmbedPanel(interactionOrGuild, memberDisplayName = 'Unknown User')
           .setStyle(ButtonStyle.Success)
       ),
 
+      // 🔹 SECONDARY ACTIONS
       new ActionRowBuilder().addComponents(
-  ...[
-    new ButtonBuilder()
-      .setCustomId('embed:helpers')
-      .setLabel('📖 Variables')
-      .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId('embed:helpers')
+          .setLabel('📖 Variables')
+          .setStyle(ButtonStyle.Secondary),
 
-    new ButtonBuilder()
-      .setCustomId('embed:reset')
-      .setLabel('♻️ Reset')
-      .setStyle(ButtonStyle.Danger),
+        new ButtonBuilder()
+          .setCustomId('embed:reset')
+          .setLabel('♻️ Reset')
+          .setStyle(ButtonStyle.Danger)
+      ),
 
-    ...(state.openedFromAdmin
-      ? [
-          new ButtonBuilder()
-            .setCustomId('embed:back:admin')
-            .setLabel('⬅️ Back')
-            .setStyle(ButtonStyle.Secondary),
-        ]
-      : []),
-  ]
-),
+      // 🔹 NAVIGATION (CLEAN + CONSISTENT)
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('admin:modules')
+          .setLabel('⬅️ Modules')
+          .setStyle(ButtonStyle.Secondary),
+
+        ...(state.openedFromAdmin
+          ? [
+              new ButtonBuilder()
+                .setCustomId('embed:back:admin')
+                .setLabel('🏠 Admin')
+                .setStyle(ButtonStyle.Secondary),
+            ]
+          : [])
+      ),
     ],
   };
 }

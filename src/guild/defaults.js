@@ -452,6 +452,58 @@ function isLogEventEnabled(guildId, eventName) {
   return logs.events?.[eventName] !== false;
 }
 
+function setLogEventEnabled(guildId, eventName, enabled, guildOrMeta = {}) {
+  const logs = getGuildSection(guildId, 'logs', DEFAULT_LOGS);
+
+  const nextLogs = normalizeLogs({
+    logs: {
+      ...logs,
+      events: {
+        ...(logs.events || {}),
+        [eventName]: enabled === true,
+      },
+    },
+  });
+
+  return saveGuildSection(guildId, 'logs', nextLogs, guildOrMeta);
+}
+
+function setLogEventsEnabled(guildId, eventNames = [], enabled, guildOrMeta = {}) {
+  const logs = getGuildSection(guildId, 'logs', DEFAULT_LOGS);
+
+  const nextEvents = {
+    ...(logs.events || {}),
+  };
+
+  for (const eventName of eventNames) {
+    nextEvents[eventName] = enabled === true;
+  }
+
+  const nextLogs = normalizeLogs({
+    logs: {
+      ...logs,
+      events: nextEvents,
+    },
+  });
+
+  return saveGuildSection(guildId, 'logs', nextLogs, guildOrMeta);
+}
+
+function toggleLogEvent(guildId, eventName, guildOrMeta = {}) {
+  const logs = getGuildSection(guildId, 'logs', DEFAULT_LOGS);
+  const currentEnabled = logs.events?.[eventName] !== false;
+
+  return setLogEventEnabled(guildId, eventName, !currentEnabled, guildOrMeta);
+}
+
+function toggleLogEvents(guildId, eventNames = [], guildOrMeta = {}) {
+  const logs = getGuildSection(guildId, 'logs', DEFAULT_LOGS);
+
+  const allEnabled = eventNames.every((eventName) => logs.events?.[eventName] !== false);
+
+  return setLogEventsEnabled(guildId, eventNames, !allEnabled, guildOrMeta);
+}
+
 /* ---------------- EMBED PRESETS ---------------- */
 
 function sanitizePresetName(name) {
@@ -660,6 +712,10 @@ module.exports = {
 
   getLogChannelId,
   isLogEventEnabled,
+  setLogEventEnabled,
+  setLogEventsEnabled,
+  toggleLogEvent,
+  toggleLogEvents,
 
   getEmbedPresets,
   getEmbedPreset,

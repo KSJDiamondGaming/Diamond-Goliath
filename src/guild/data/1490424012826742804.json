@@ -1,0 +1,74 @@
+{
+  "guildId": "1490424012826742804",
+  "guildName": null,
+  "updatedAt": "2026-05-03T17:36:59.343Z",
+  "general": {
+    "enabled": true,
+    "prefix": "!",
+    "timezone": "Europe/London"
+  },
+  "modules": {},
+  "automod": {},
+  "logs": {
+    "enabled": true,
+    "channels": {
+      "general": null,
+      "moderation": null,
+      "admin": null,
+      "automod": null,
+      "member": null,
+      "messageDelete": null,
+      "messageEdit": null,
+      "voice": null
+    },
+    "events": {
+      "moderationActions": true,
+      "adminActions": true,
+      "automodActions": true,
+      "memberJoin": true,
+      "memberLeave": true,
+      "memberUpdate": true,
+      "messageDelete": true,
+      "messageEdit": true,
+      "roleCreate": true,
+      "roleDelete": true,
+      "roleUpdate": true,
+      "channelCreate": true,
+      "channelDelete": true,
+      "channelUpdate": true,
+      "voiceJoin": true,
+      "voiceLeave": true,
+      "voiceMove": true
+    }
+  },
+  "cases": {},
+  "warnings": {},
+  "welcome": {},
+  "leave": {},
+  "tickets": {},
+  "levels": {},
+  "reactionRoles": {},
+  "giveaways": {},
+  "suggestions": {},
+  "stats": {},
+  "embedPresets": {},
+  "embedDefaults": {
+    "welcome": null,
+    "leave": null,
+    "rules": null,
+    "announcement": null,
+    "suggestion": null,
+    "giveaway": null,
+    "update": null,
+    "event": null,
+    "warning": null
+  },
+  "autoRoles": {
+    "enabled": true,
+    "roleIds": [
+      "1493333511132811439",
+      "1500547890823823502"
+    ],
+    "updatedAt": "2026-05-03T17:36:59.343Z"
+  }
+}

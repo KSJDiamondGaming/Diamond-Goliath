@@ -290,13 +290,13 @@ function buildRuleEditorPanel(guild, key, memberDisplayName = 'Unknown User') {
       new ActionRowBuilder().addComponents(punishmentSelect),
       new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-          .setCustomId(`automod:toggle-edit:${key}`)
-          .setLabel(enabled ? '🔴 Disable Rule' : '🟢 Enable Rule')
-          .setStyle(enabled ? ButtonStyle.Danger : ButtonStyle.Success),
-        new ButtonBuilder()
           .setCustomId(`automod:modal:${key}`)
           .setLabel('⚙️ Edit Settings')
-          .setStyle(ButtonStyle.Primary)
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId(`automod:toggle-edit:${key}`)
+          .setLabel(enabled ? '🔴 Disable Rule' : '🟢 Enable Rule')
+          .setStyle(enabled ? ButtonStyle.Danger : ButtonStyle.Success)
       ),
       new ActionRowBuilder().addComponents(
         new ButtonBuilder()

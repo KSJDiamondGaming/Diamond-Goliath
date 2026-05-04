@@ -1,16 +1,36 @@
-const automodPanel = require('../functions/automod/automodPanel');
-const embedPanel = require('../functions/embed/embedPanel');
+const automodPanel = require('../../functions/automod/automodPanel');
+const embedPanel = require('../../functions/embed/embedPanel');
 
 const {
   buildAdminPanel,
+  buildModulesPanel,
+  buildAutoRolesPanel,
+  buildLogsPanel,
   buildChannelPanel,
   buildComingSoonPanel,
   buildPurgeModal,
   LOG_TYPES,
-} = require('../functions/admin/adminPanel');
+} = require('../../functions/admin/adminPanel');
 
-const guildManager = require('../guild/guildManager');
-const adminModule = require('../modules/admin/admin');
+const guildManager = require('../../guild/guildManager');
+const adminModule = require('../../modules/admin/admin');
+
+const LOG_EVENT_GROUPS = {
+  members: ['memberJoin', 'memberLeave', 'memberUpdate'],
+  messages: ['messageDelete', 'messageEdit'],
+  roles: ['roleCreate', 'roleDelete', 'roleUpdate'],
+  channels: ['channelCreate', 'channelDelete', 'channelUpdate'],
+  voice: ['voiceJoin', 'voiceLeave', 'voiceMove'],
+};
+
+const MODULE_COMING_SOON = [
+  'admin:sticky',
+  'admin:suggestions',
+  'admin:tickets',
+  'admin:giveaways',
+  'admin:fun',
+  'admin:polls',
+];
 
 function getMemberDisplayName(interaction) {
   return (
@@ -31,6 +51,38 @@ function setLogChannel(guildId, type, channelId) {
   }
 
   throw new Error('No guildManager log channel setter found.');
+}
+
+function getAutoRolesConfig(guildId) {
+  return guildManager.getGuildSection(guildId, 'autoRoles', {
+    enabled: false,
+    roleIds: [],
+  });
+}
+
+function saveAutoRolesConfig(guildId, config) {
+  if (typeof guildManager.replaceGuildSection !== 'function') {
+    throw new Error('guildManager.replaceGuildSection is not available.');
+  }
+
+  guildManager.replaceGuildSection(guildId, 'autoRoles', {
+    enabled: Boolean(config.enabled),
+    roleIds: Array.isArray(config.roleIds) ? config.roleIds : [],
+  });
+}
+
+function toggleLogGroup(guildId, groupName) {
+  const events = LOG_EVENT_GROUPS[groupName];
+
+  if (!events) {
+    throw new Error(`Unknown log group: ${groupName}`);
+  }
+
+  if (typeof guildManager.toggleLogEvents !== 'function') {
+    throw new Error('guildManager.toggleLogEvents is not available.');
+  }
+
+  return guildManager.toggleLogEvents(guildId, events);
 }
 
 function toggleAdminLogger(guildId) {
@@ -65,17 +117,11 @@ module.exports = {
 
       const memberDisplayName = getMemberDisplayName(interaction);
 
-      /* ---------------- AUTOMOD INTERACTIONS ---------------- */
-
       const handledAutomod = await automodPanel.handleInteraction(interaction);
       if (handledAutomod) return;
 
-      /* ---------------- EMBED STUDIO INTERACTIONS ---------------- */
-
       const handledEmbed = await embedPanel.handleInteraction(interaction);
       if (handledEmbed) return;
-
-      /* ---------------- SLASH COMMANDS ---------------- */
 
       if (interaction.isChatInputCommand()) {
         const command = client.commands.get(interaction.commandName);
@@ -90,25 +136,34 @@ module.exports = {
         return await command.execute(interaction, client);
       }
 
-      /* ---------------- CHANNEL SELECT MENUS ---------------- */
-
       if (interaction.isChannelSelectMenu()) {
         const logType = Object.values(LOG_TYPES).find(
           (type) => type.selectId === interaction.customId
         );
 
         if (logType) {
-          const channelId = interaction.values[0];
-
-          setLogChannel(interaction.guild.id, logType.key, channelId);
+          setLogChannel(interaction.guild.id, logType.key, interaction.values[0]);
 
           return await interaction.update(
-            buildAdminPanel(interaction.guild, memberDisplayName)
+            buildLogsPanel(interaction.guild, memberDisplayName)
           );
         }
       }
 
-      /* ---------------- STRING SELECT MENUS ---------------- */
+      if (interaction.isRoleSelectMenu()) {
+        if (interaction.customId === 'admin:autoRoles:select') {
+          const current = getAutoRolesConfig(interaction.guild.id);
+
+          saveAutoRolesConfig(interaction.guild.id, {
+            ...current,
+            roleIds: interaction.values,
+          });
+
+          return await interaction.update(
+            buildAutoRolesPanel(interaction.guild, memberDisplayName)
+          );
+        }
+      }
 
       if (interaction.isStringSelectMenu()) {
         if (interaction.customId === 'help-category-select') {
@@ -122,12 +177,89 @@ module.exports = {
         return;
       }
 
-      /* ---------------- BUTTONS ---------------- */
-
       if (interaction.isButton()) {
         if (interaction.customId === 'admin:home') {
           return await interaction.update(
             buildAdminPanel(interaction.guild, memberDisplayName)
+          );
+        }
+
+        if (interaction.customId === 'admin:modules') {
+          return await interaction.update(
+            buildModulesPanel(interaction.guild, memberDisplayName)
+          );
+        }
+
+        if (interaction.customId === 'admin:adminpanel') {
+          return await interaction.update(
+            buildComingSoonPanel(
+              '👑 Admin',
+              'Admin-only modules and server management tools will live here.'
+            )
+          );
+        }
+
+        if (interaction.customId === 'admin:modpanel') {
+          return await interaction.update(
+            buildComingSoonPanel(
+              '🛡️ Mod Panel',
+              'Moderator tools will be grouped here.'
+            )
+          );
+        }
+
+        if (MODULE_COMING_SOON.includes(interaction.customId)) {
+          return await interaction.update(
+            buildComingSoonPanel(
+              '🧩 Module Coming Soon',
+              'This module is ready to be built next.'
+            )
+          );
+        }
+
+        if (interaction.customId === 'admin:logs') {
+          return await interaction.update(
+            buildLogsPanel(interaction.guild, memberDisplayName)
+          );
+        }
+
+        if (interaction.customId === 'admin:logs:members') {
+          toggleLogGroup(interaction.guild.id, 'members');
+
+          return await interaction.update(
+            buildLogsPanel(interaction.guild, memberDisplayName)
+          );
+        }
+
+        if (interaction.customId === 'admin:logs:messages') {
+          toggleLogGroup(interaction.guild.id, 'messages');
+
+          return await interaction.update(
+            buildLogsPanel(interaction.guild, memberDisplayName)
+          );
+        }
+
+        if (interaction.customId === 'admin:logs:roles') {
+          toggleLogGroup(interaction.guild.id, 'roles');
+
+          return await interaction.update(
+            buildLogsPanel(interaction.guild, memberDisplayName)
+          );
+        }
+
+        if (interaction.customId === 'admin:logs:channels') {
+          toggleLogGroup(interaction.guild.id, 'channels');
+
+          return await interaction.update(
+            buildLogsPanel(interaction.guild, memberDisplayName)
+          );
+        }
+
+        if (interaction.customId === 'admin:logs:voice') {
+          toggleLogGroup(interaction.guild.id, 'voice');
+
+          return await interaction.update(
+            buildLogsPanel(interaction.guild, memberDisplayName)
           );
         }
 
@@ -146,6 +278,38 @@ module.exports = {
             ...embedPanel.buildEmbedPanel(interaction, memberDisplayName),
             ephemeral: true,
           });
+        }
+
+        if (interaction.customId === 'admin:autoRoles') {
+          return await interaction.update(
+            buildAutoRolesPanel(interaction.guild, memberDisplayName)
+          );
+        }
+
+        if (interaction.customId === 'admin:autoRoles:toggle') {
+          const current = getAutoRolesConfig(interaction.guild.id);
+
+          saveAutoRolesConfig(interaction.guild.id, {
+            ...current,
+            enabled: !current.enabled,
+          });
+
+          return await interaction.update(
+            buildAutoRolesPanel(interaction.guild, memberDisplayName)
+          );
+        }
+
+        if (interaction.customId === 'admin:autoRoles:clear') {
+          const current = getAutoRolesConfig(interaction.guild.id);
+
+          saveAutoRolesConfig(interaction.guild.id, {
+            ...current,
+            roleIds: [],
+          });
+
+          return await interaction.update(
+            buildAutoRolesPanel(interaction.guild, memberDisplayName)
+          );
         }
 
         if (interaction.customId === 'admin:stats') {
@@ -177,7 +341,7 @@ module.exports = {
           toggleAdminLogger(interaction.guild.id);
 
           return await interaction.update(
-            buildAdminPanel(interaction.guild, memberDisplayName)
+            buildLogsPanel(interaction.guild, memberDisplayName)
           );
         }
 
@@ -198,8 +362,6 @@ module.exports = {
 
         console.log('⚠️ Unhandled button:', interaction.customId);
       }
-
-      /* ---------------- MODALS ---------------- */
 
       if (interaction.isModalSubmit()) {
         if (interaction.customId === 'admin:purgeModal') {
