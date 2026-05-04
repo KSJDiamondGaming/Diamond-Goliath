@@ -345,7 +345,7 @@ async function handleInteraction(interaction) {
   if (!interaction.guild) {
     await interaction.reply({
       content: 'AutoMod can only be used inside a server.',
-      ephemeral: true,
+      flags: 64,
     });
     return true;
   }

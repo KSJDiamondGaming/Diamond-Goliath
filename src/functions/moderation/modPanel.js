@@ -25,7 +25,7 @@ function canOpenModPanel(interaction) {
 function noAccessPayload() {
   return {
     content: '❌ You do not have permission to use the moderation panel.',
-    ephemeral: true,
+    flags: 64,
   };
 }
 
@@ -59,7 +59,7 @@ async function openModPanel(interaction, options = {}) {
 
   const finalPayload = {
     ...payload,
-    ephemeral: true,
+    flags: 64,
   };
 
   if (interaction.deferred || interaction.replied) {

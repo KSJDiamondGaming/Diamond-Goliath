@@ -29,7 +29,7 @@ module.exports = {
           embeds: [
             errorEmbed('This command can only be used inside a server.'),
           ],
-          ephemeral: true,
+          flags: 64,
         });
       }
 
@@ -47,7 +47,7 @@ module.exports = {
 
       return await interaction.reply({
         ...payload,
-        ephemeral: true,
+        flags: 64,
       });
     } catch (error) {
       if (error?.code === 10062 || error?.code === 40060) return;
@@ -68,7 +68,7 @@ module.exports = {
 
         return await interaction.reply({
           ...failurePayload,
-          ephemeral: true,
+          flags: 64,
         });
       } catch (replyError) {
         console.error('❌ Failed to send admin failure response:', replyError);

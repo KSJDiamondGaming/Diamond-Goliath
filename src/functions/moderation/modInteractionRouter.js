@@ -170,7 +170,7 @@ async function createConfirmation(interaction, targetId, type, payload, message)
     components: buildConfirmRow(
       buildConfirmCustomId(token, DEFAULT_DASHBOARD_CONTEXT)
     ),
-    ephemeral: true,
+    flags: 64,
   });
 }
 
@@ -190,7 +190,7 @@ async function handleUserSelectMenu(interaction) {
   if (!target) {
     return safeReply(interaction, {
       content: '❌ Could not find that user.',
-      ephemeral: true,
+      flags: 64,
     });
   }
 
@@ -256,7 +256,7 @@ async function handleCancelButton(interaction) {
 
   return safeReply(interaction, {
     content: '❌ Cancelled.',
-    ephemeral: true,
+    flags: 64,
   });
 }
 
@@ -274,7 +274,7 @@ async function handleSelectUserButton(interaction) {
   return safeReply(interaction, {
     content: '👤 Select a user:',
     components: [row],
-    ephemeral: true,
+    flags: 64,
   });
 }
 

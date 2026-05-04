@@ -49,7 +49,7 @@ module.exports = {
           embeds: [
             errorEmbed('This command can only be used inside a server.'),
           ],
-          ephemeral: true,
+          flags: 64,
         });
       }
 
@@ -60,7 +60,7 @@ module.exports = {
           embeds: [
             errorEmbed('I could not find this channel.'),
           ],
-          ephemeral: true,
+          flags: 64,
         });
       }
 
@@ -76,7 +76,7 @@ module.exports = {
           embeds: [
             errorEmbed('This command can only be used in text channels or threads.'),
           ],
-          ephemeral: true,
+          flags: 64,
         });
       }
 
@@ -91,7 +91,7 @@ module.exports = {
           embeds: [
             errorEmbed('I could not verify my permissions in this server.'),
           ],
-          ephemeral: true,
+          flags: 64,
         });
       }
 
@@ -100,7 +100,7 @@ module.exports = {
           embeds: [
             errorEmbed('I do not have permission to manage messages in this server.'),
           ],
-          ephemeral: true,
+          flags: 64,
         });
       }
 
@@ -112,7 +112,7 @@ module.exports = {
           embeds: [
             errorEmbed('I do not have permission to manage messages in this channel.'),
           ],
-          ephemeral: true,
+          flags: 64,
         });
       }
 
@@ -123,7 +123,7 @@ module.exports = {
           embeds: [
             warningEmbed('No messages were deleted. They may all be older than 14 days.'),
           ],
-          ephemeral: true,
+          flags: 64,
         });
       }
 
@@ -142,7 +142,7 @@ module.exports = {
 
       return await interaction.reply({
         embeds: [embed],
-        ephemeral: true,
+        flags: 64,
       });
     } catch (error) {
       if (error?.code === 10062 || error?.code === 40060) return;
@@ -163,7 +163,7 @@ module.exports = {
 
         return await interaction.reply({
           ...failurePayload,
-          ephemeral: true,
+          flags: 64,
         });
       } catch (replyError) {
         console.error('❌ Failed to send purge failure response:', replyError);

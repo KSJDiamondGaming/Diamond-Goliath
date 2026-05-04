@@ -416,7 +416,7 @@ async function refreshDashboard(discord, interaction, target, context = {}) {
 
     await interaction.reply({
       ...payload,
-      ephemeral: true,
+      flags: 64,
     });
 
     return true;

@@ -1448,7 +1448,7 @@ async function handleInteraction(interaction) {
   if (!interaction.guild) {
     await interaction.reply({
       content: 'Embed Studio can only be used inside a server.',
-      ephemeral: true,
+      flags: 64,
     });
     return true;
   }
@@ -1523,7 +1523,7 @@ async function handleInteraction(interaction) {
       if (!preset) {
         await interaction.reply({
           content: 'That preset could not be found.',
-          ephemeral: true,
+          flags: 64,
         });
         return true;
       }
@@ -1626,7 +1626,7 @@ async function handleInteraction(interaction) {
       if (!freshState.selectedPreset) {
         await interaction.reply({
           content: 'Load a preset first before setting it as default.',
-          ephemeral: true,
+          flags: 64,
         });
         return true;
       }
@@ -1634,7 +1634,7 @@ async function handleInteraction(interaction) {
       if (typeof guildManager.setEmbedDefault !== 'function') {
         await interaction.reply({
           content: 'Embed defaults are not wired in guildManager yet.',
-          ephemeral: true,
+          flags: 64,
         });
         return true;
       }
@@ -1656,7 +1656,7 @@ async function handleInteraction(interaction) {
       if (typeof guildManager.clearEmbedDefault !== 'function') {
         await interaction.reply({
           content: 'Embed defaults are not wired in guildManager yet.',
-          ephemeral: true,
+          flags: 64,
         });
         return true;
       }
@@ -1677,7 +1677,7 @@ async function handleInteraction(interaction) {
       if (!freshState.selectedPreset) {
         await interaction.reply({
           content: 'Load a preset first before renaming one.',
-          ephemeral: true,
+          flags: 64,
         });
         return true;
       }
@@ -1692,7 +1692,7 @@ async function handleInteraction(interaction) {
       if (!freshState.selectedPreset) {
         await interaction.reply({
           content: 'Load a preset first before duplicating one.',
-          ephemeral: true,
+          flags: 64,
         });
         return true;
       }
@@ -1728,7 +1728,7 @@ async function handleInteraction(interaction) {
       if (!presetName) {
         await interaction.reply({
           content: 'Load a preset first before deleting one.',
-          ephemeral: true,
+          flags: 64,
         });
         return true;
       }
@@ -1744,7 +1744,7 @@ async function handleInteraction(interaction) {
       if (!presetName) {
         await interaction.reply({
           content: 'Load a preset first before deleting one.',
-          ephemeral: true,
+          flags: 64,
         });
         return true;
       }
@@ -1763,7 +1763,7 @@ async function handleInteraction(interaction) {
       if (!deleted) {
         await interaction.reply({
           content: 'That preset was already missing or could not be deleted.',
-          ephemeral: true,
+          flags: 64,
         });
         return true;
       }
@@ -1823,7 +1823,7 @@ async function handleInteraction(interaction) {
       if (!freshState.channelId) {
         await interaction.reply({
           content: 'Please select a channel before sending.',
-          ephemeral: true,
+          flags: 64,
         });
         return true;
       }
@@ -1837,7 +1837,7 @@ async function handleInteraction(interaction) {
       if (!channel?.isTextBased()) {
         await interaction.reply({
           content: 'That channel is not available or is not text-based.',
-          ephemeral: true,
+          flags: 64,
         });
         return true;
       }
@@ -1850,7 +1850,7 @@ async function handleInteraction(interaction) {
 
       await interaction.reply({
         content: `Embed sent to <#${freshState.channelId}>.`,
-        ephemeral: true,
+        flags: 64,
       });
       return true;
     }
@@ -1877,7 +1877,7 @@ async function handleInteraction(interaction) {
       if (!presetName) {
         await interaction.reply({
           content: 'Preset name cannot be empty.',
-          ephemeral: true,
+          flags: 64,
         });
         return true;
       }
@@ -1918,7 +1918,7 @@ async function handleInteraction(interaction) {
       if (!oldName) {
         await interaction.reply({
           content: 'No preset selected to rename.',
-          ephemeral: true,
+          flags: 64,
         });
         return true;
       }
@@ -1926,7 +1926,7 @@ async function handleInteraction(interaction) {
       if (!newName) {
         await interaction.reply({
           content: 'Preset name cannot be empty.',
-          ephemeral: true,
+          flags: 64,
         });
         return true;
       }
@@ -1944,7 +1944,7 @@ async function handleInteraction(interaction) {
       if (!originalPreset) {
         await interaction.reply({
           content: 'Original preset could not be found.',
-          ephemeral: true,
+          flags: 64,
         });
         return true;
       }
@@ -1984,7 +1984,7 @@ async function handleInteraction(interaction) {
       if (!sourceName) {
         await interaction.reply({
           content: 'No preset selected to duplicate.',
-          ephemeral: true,
+          flags: 64,
         });
         return true;
       }
@@ -1992,7 +1992,7 @@ async function handleInteraction(interaction) {
       if (!duplicateName) {
         await interaction.reply({
           content: 'Preset name cannot be empty.',
-          ephemeral: true,
+          flags: 64,
         });
         return true;
       }
@@ -2031,7 +2031,7 @@ async function handleInteraction(interaction) {
       if (!isValidHexColor(rawHex)) {
         await interaction.reply({
           content: 'Please enter a valid HEX colour like `#5865F2`.',
-          ephemeral: true,
+          flags: 64,
         });
         return true;
       }

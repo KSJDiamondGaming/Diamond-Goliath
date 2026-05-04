@@ -11,17 +11,15 @@ const {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
+  PermissionFlagsBits,
 } = require('discord.js');
-
-const {
-  canAccessAdminPanel,
-  canAccessAutoMod,
-  canAccessModPanel,
-} = require('./permissions');
 
 const guildManager = require('../../guild/guildManager');
 
 const PANEL_COLOR = '#5865F2';
+
+const ADMIN_HISTORY = new Map();
+const ADMIN_ROUTE = new Map();
 
 const LOG_TYPES = {
   automodlog: {
@@ -83,6 +81,53 @@ const COMING_SOON = {
   'admin:fun': ['🎮 Fun', 'Fun commands and extras are coming soon.'],
   'admin:polls': ['📊 Polls', 'Poll system is coming soon.'],
 };
+
+/* ---------------- HISTORY HELPERS ---------------- */
+
+function getNavKey(interaction) {
+  return `${interaction.guild.id}:${interaction.user.id}`;
+}
+
+function getCurrentRoute(interaction) {
+  return ADMIN_ROUTE.get(getNavKey(interaction)) || 'admin:home';
+}
+
+function setCurrentRoute(interaction, route) {
+  ADMIN_ROUTE.set(getNavKey(interaction), route);
+}
+
+function pushHistory(interaction, route) {
+  const key = getNavKey(interaction);
+  const history = ADMIN_HISTORY.get(key) || [];
+
+  history.push(route);
+
+  if (history.length > 10) {
+    history.shift();
+  }
+
+  ADMIN_HISTORY.set(key, history);
+}
+
+function popHistory(interaction) {
+  const key = getNavKey(interaction);
+  const history = ADMIN_HISTORY.get(key) || [];
+  const currentRoute = getCurrentRoute(interaction);
+
+  let previousRoute = history.pop();
+
+  while (previousRoute && previousRoute === currentRoute) {
+    previousRoute = history.pop();
+  }
+
+  if (!previousRoute) {
+    previousRoute = 'admin:home';
+  }
+
+  ADMIN_HISTORY.set(key, history);
+
+  return previousRoute;
+}
 
 /* ---------------- HELPERS ---------------- */
 
@@ -149,7 +194,10 @@ function formatChannelStatus(channelId) {
 
 function formatRoleList(roleIds = []) {
   const cleanIds = [...new Set((roleIds || []).filter(Boolean))];
-  return cleanIds.length ? cleanIds.map((id) => `<@&${id}>`).join(', ') : 'None';
+
+  return cleanIds.length
+    ? cleanIds.map((id) => `<@&${id}>`).join(', ')
+    : 'None';
 }
 
 function formatLogsSummary(guildId) {
@@ -157,7 +205,7 @@ function formatLogsSummary(guildId) {
     .map((key) => getLogChannelId(guildId, key))
     .filter(Boolean).length;
 
-  return `${total}/4 channels set`;
+  return `${total}/4 configured`;
 }
 
 function createEmbed(title, description, memberDisplayName) {
@@ -166,8 +214,13 @@ function createEmbed(title, description, memberDisplayName) {
     .setTitle(title)
     .setTimestamp();
 
-  if (description) embed.setDescription(description);
-  if (memberDisplayName) embed.setFooter({ text: `Requested by ${memberDisplayName}` });
+  if (description) {
+    embed.setDescription(description);
+  }
+
+  if (memberDisplayName) {
+    embed.setFooter({ text: `Requested by ${memberDisplayName}` });
+  }
 
   return embed;
 }
@@ -177,6 +230,10 @@ function button(customId, label, style = ButtonStyle.Primary) {
     .setCustomId(customId)
     .setLabel(label)
     .setStyle(style);
+}
+
+function backButton() {
+  return button('admin:back', '⬅️ Back', ButtonStyle.Secondary);
 }
 
 function row(...components) {
@@ -205,7 +262,7 @@ function safeValues(interaction) {
     : [];
 }
 
-/* ---------------- MAIN ADMIN HUB ---------------- */
+/* ---------------- PANELS ---------------- */
 
 function buildAdminPanel(guild, memberDisplayName = 'Unknown User') {
   const guildId = guild.id;
@@ -236,8 +293,6 @@ function buildAdminPanel(guild, memberDisplayName = 'Unknown User') {
   };
 }
 
-/* ---------------- ADMIN TOOLS PANEL ---------------- */
-
 function buildAdminToolsPanel(guild, memberDisplayName = 'Unknown User') {
   const guildId = guild.id;
   const adminLogChannelId = getLogChannelId(guildId, 'admin');
@@ -249,11 +304,6 @@ function buildAdminToolsPanel(guild, memberDisplayName = 'Unknown User') {
     [
       'Manage admin-only systems, staff controls, and server configuration.',
       '',
-      '**👑 Admin Logging**',
-      adminLogChannelId
-        ? `Enabled ✅ — admin actions will log to <#${adminLogChannelId}>.`
-        : 'Disabled ❌ — set an Admin Log channel to enable admin logging.',
-      '',
       '**👥 Staff Roles**',
       formatRoleList(staffConfig.roleIds),
       '',
@@ -264,7 +314,9 @@ function buildAdminToolsPanel(guild, memberDisplayName = 'Unknown User') {
   ).addFields(
     {
       name: '👑 Admin Log',
-      value: formatChannelStatus(adminLogChannelId),
+      value: adminLogChannelId
+        ? `<#${adminLogChannelId}>\nAdmin actions will log here. ✅`
+        : 'Not set\nSet an Admin Log channel to enable admin logging. ❌',
       inline: true,
     },
     {
@@ -281,17 +333,17 @@ function buildAdminToolsPanel(guild, memberDisplayName = 'Unknown User') {
 
   return {
     embeds: [embed],
-    components: buttonRows([
-      ['admin:setadminlog', '👑 Set Admin Log', ButtonStyle.Primary],
-      ['admin:staffroles', '👥 Staff Roles', ButtonStyle.Primary],
-      ['admin:modroles', '🛡️ Mod Roles', ButtonStyle.Primary],
-      ['admin:adminsettings', '⚙️ Settings', ButtonStyle.Primary],
-      ['admin:home', '⬅️ Admin Hub', ButtonStyle.Secondary],
-    ]),
+    components: [
+      ...buttonRows([
+        ['admin:setadminlog', '👑 Set Admin Log', ButtonStyle.Primary],
+        ['admin:staffroles', '👥 Staff Roles', ButtonStyle.Primary],
+        ['admin:modroles', '🛡️ Mod Roles', ButtonStyle.Primary],
+        ['admin:adminsettings', '⚙️ Settings', ButtonStyle.Primary],
+      ]),
+      row(backButton()),
+    ],
   };
 }
-
-/* ---------------- ROLE PANELS ---------------- */
 
 function buildRolePanel({
   guild,
@@ -304,7 +356,6 @@ function buildRolePanel({
   accessType,
   selectId,
   clearId,
-  backId = 'admin:adminpanel',
 }) {
   const config = getRoleConfig(guild.id, section);
   const roleIds = config.roleIds || [];
@@ -322,16 +373,8 @@ function buildRolePanel({
     ].join('\n'),
     memberDisplayName
   ).addFields(
-    {
-      name: 'Selected',
-      value: `${roleIds.length}/10 roles`,
-      inline: true,
-    },
-    {
-      name: 'Access Type',
-      value: accessType,
-      inline: true,
-    }
+    { name: 'Selected', value: `${roleIds.length}/10 roles`, inline: true },
+    { name: 'Access Type', value: accessType, inline: true }
   );
 
   return {
@@ -346,7 +389,7 @@ function buildRolePanel({
       ),
       row(
         button(clearId, '🧹 Clear Roles', ButtonStyle.Secondary),
-        button(backId, '⬅️ Admin Panel', ButtonStyle.Secondary)
+        backButton()
       ),
     ],
   };
@@ -383,8 +426,6 @@ function buildModRolesPanel(guild, memberDisplayName = 'Unknown User') {
   });
 }
 
-/* ---------------- MODULES PANEL ---------------- */
-
 function buildModulesPanel(guild, memberDisplayName = 'Unknown User') {
   const embed = createEmbed(
     '🧩 Modules',
@@ -408,12 +449,10 @@ function buildModulesPanel(guild, memberDisplayName = 'Unknown User') {
     embeds: [embed],
     components: [
       ...buttonRows(moduleButtons),
-      row(button('admin:home', '⬅️ Admin Hub', ButtonStyle.Secondary)),
+      row(backButton()),
     ],
   };
 }
-
-/* ---------------- LOGS PANEL ---------------- */
 
 function buildLogsPanel(guild, memberDisplayName = 'Unknown User') {
   const guildId = guild.id;
@@ -437,11 +476,26 @@ function buildLogsPanel(guild, memberDisplayName = 'Unknown User') {
     ].join('\n'),
     memberDisplayName
   ).addFields(
-    ...Object.values(LOG_TYPES).map((log) => ({
-      name: log.label,
-      value: formatChannelStatus(getLogChannelId(guildId, log.key)),
+    {
+      name: '🤖 AutoMod Log',
+      value: formatChannelStatus(getLogChannelId(guildId, 'automod')),
       inline: true,
-    }))
+    },
+    {
+      name: '👑 Admin Log',
+      value: formatChannelStatus(getLogChannelId(guildId, 'admin')),
+      inline: true,
+    },
+    {
+      name: '📌 Mod Log',
+      value: formatChannelStatus(getLogChannelId(guildId, 'moderation')),
+      inline: true,
+    },
+    {
+      name: '📋 General Logs',
+      value: formatChannelStatus(getLogChannelId(guildId, 'general')),
+      inline: true,
+    }
   );
 
   return {
@@ -455,12 +509,10 @@ function buildLogsPanel(guild, memberDisplayName = 'Unknown User') {
         ]),
         3
       ),
-      row(button('admin:home', '⬅️ Admin Hub', ButtonStyle.Secondary)),
+      row(backButton()),
     ],
   };
 }
-
-/* ---------------- JOIN ROLES ---------------- */
 
 function buildAutoRolesPanel(guild, memberDisplayName = 'Unknown User') {
   const config = getAutoRolesConfig(guild.id);
@@ -493,13 +545,11 @@ function buildAutoRolesPanel(guild, memberDisplayName = 'Unknown User') {
           config.enabled ? 'Disable' : 'Enable',
           config.enabled ? ButtonStyle.Danger : ButtonStyle.Success
         ),
-        button('admin:modules', '⬅️ Modules', ButtonStyle.Secondary)
+        backButton()
       ),
     ],
   };
 }
-
-/* ---------------- CHANNEL PANEL ---------------- */
 
 function buildChannelPanel(type = 'logs') {
   const selected = LOG_TYPES[type] || LOG_TYPES.logs;
@@ -518,23 +568,17 @@ function buildChannelPanel(type = 'logs') {
           .setPlaceholder('Choose a text channel')
           .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
       ),
-      row(button('admin:logs', '⬅️ Logs', ButtonStyle.Secondary)),
+      row(backButton()),
     ],
   };
 }
 
-/* ---------------- PLACEHOLDER PANEL ---------------- */
-
-function buildComingSoonPanel(title, description, backTo = 'admin:modules') {
-  const backLabel = backTo === 'admin:home' ? '⬅️ Admin Hub' : '⬅️ Modules';
-
+function buildComingSoonPanel(title, description) {
   return {
     embeds: [createEmbed(title, description)],
-    components: [row(button(backTo, backLabel, ButtonStyle.Secondary))],
+    components: [row(backButton())],
   };
 }
-
-/* ---------------- PURGE MODAL ---------------- */
 
 function buildPurgeModal() {
   return new ModalBuilder()
@@ -553,20 +597,59 @@ function buildPurgeModal() {
     );
 }
 
-/* ---------------- NAVIGATION SYSTEM ---------------- */
+/* ---------------- NAVIGATION ---------------- */
 
 async function replyNoAccess(interaction, message) {
   await interaction.reply({
     content: message,
-    ephemeral: true,
+    flags: 64,
   });
 
   return true;
 }
 
-async function updatePanel(interaction, panel) {
+async function updatePanel(interaction, panel, nextRoute = null, options = {}) {
+  const currentRoute = getCurrentRoute(interaction);
+
+  if (nextRoute && !options.skipHistory && nextRoute !== currentRoute) {
+    pushHistory(interaction, currentRoute);
+  }
+
+  if (nextRoute) {
+    setCurrentRoute(interaction, nextRoute);
+  }
+
   await interaction.update(panel);
   return true;
+}
+
+function buildPanelByRoute(route, guild, memberDisplayName) {
+  if (route === 'admin:home') return buildAdminPanel(guild, memberDisplayName);
+  if (route === 'admin:adminpanel') return buildAdminToolsPanel(guild, memberDisplayName);
+  if (route === 'admin:modules') return buildModulesPanel(guild, memberDisplayName);
+  if (route === 'admin:logs') return buildLogsPanel(guild, memberDisplayName);
+  if (route === 'admin:staffroles') return buildStaffRolesPanel(guild, memberDisplayName);
+  if (route === 'admin:modroles') return buildModRolesPanel(guild, memberDisplayName);
+  if (route === 'admin:autoRoles') return buildAutoRolesPanel(guild, memberDisplayName);
+
+  if (route === 'admin:automod') {
+    return buildComingSoonPanel('⚙️ AutoMod', 'AutoMod controls will live here.');
+  }
+
+  if (route === 'admin:modpanel') {
+    return buildComingSoonPanel('🛡️ Mod Panel', 'Moderation tools will live here.');
+  }
+
+  if (route === 'admin:adminsettings') {
+    return buildComingSoonPanel('⚙️ Admin Settings', 'Admin settings will live here.');
+  }
+
+  if (COMING_SOON[route]) {
+    const [title, description] = COMING_SOON[route];
+    return buildComingSoonPanel(title, description);
+  }
+
+  return buildAdminPanel(guild, memberDisplayName);
 }
 
 async function handleRoleSelect(interaction, memberDisplayName) {
@@ -574,14 +657,17 @@ async function handleRoleSelect(interaction, memberDisplayName) {
     'admin:staffroles:select': {
       section: 'staffRoles',
       panel: () => buildStaffRolesPanel(interaction.guild, memberDisplayName),
+      route: 'admin:staffroles',
     },
     'admin:modroles:select': {
       section: 'modRoles',
       panel: () => buildModRolesPanel(interaction.guild, memberDisplayName),
+      route: 'admin:modroles',
     },
     'admin:autoRoles:select': {
       section: 'autoRoles',
       panel: () => buildAutoRolesPanel(interaction.guild, memberDisplayName),
+      route: 'admin:autoRoles',
       mergeExisting: true,
     },
   };
@@ -602,7 +688,9 @@ async function handleRoleSelect(interaction, memberDisplayName) {
     });
   }
 
-  return updatePanel(interaction, selected.panel());
+  return updatePanel(interaction, selected.panel(), selected.route, {
+    skipHistory: true,
+  });
 }
 
 async function handleChannelSelect(interaction, memberDisplayName) {
@@ -614,7 +702,12 @@ async function handleChannelSelect(interaction, memberDisplayName) {
 
   setLogChannelId(interaction.guild.id, selected.key, channelId);
 
-  return updatePanel(interaction, buildLogsPanel(interaction.guild, memberDisplayName));
+  return updatePanel(
+    interaction,
+    buildLogsPanel(interaction.guild, memberDisplayName),
+    'admin:logs',
+    { skipHistory: true }
+  );
 }
 
 async function handleAdminNavigation(interaction) {
@@ -635,59 +728,90 @@ async function handleAdminNavigation(interaction) {
 
   const { customId } = interaction;
 
+  if (customId === 'admin:back') {
+    const previousRoute = popHistory(interaction);
+
+    return updatePanel(
+      interaction,
+      buildPanelByRoute(previousRoute, interaction.guild, memberDisplayName),
+      previousRoute,
+      { skipHistory: true }
+    );
+  }
+
   if (customId === 'admin:home') {
-    return updatePanel(interaction, buildAdminPanel(interaction.guild, memberDisplayName));
+    return updatePanel(
+      interaction,
+      buildAdminPanel(interaction.guild, memberDisplayName),
+      'admin:home'
+    );
   }
 
   if (customId === 'admin:modules') {
-    return updatePanel(interaction, buildModulesPanel(interaction.guild, memberDisplayName));
+    return updatePanel(
+      interaction,
+      buildModulesPanel(interaction.guild, memberDisplayName),
+      'admin:modules'
+    );
   }
 
   if (customId === 'admin:logs') {
-    return updatePanel(interaction, buildLogsPanel(interaction.guild, memberDisplayName));
+    return updatePanel(
+      interaction,
+      buildLogsPanel(interaction.guild, memberDisplayName),
+      'admin:logs'
+    );
   }
 
   if (LOG_BUTTON_TO_TYPE[customId]) {
-    return updatePanel(interaction, buildChannelPanel(LOG_BUTTON_TO_TYPE[customId]));
+    return updatePanel(
+      interaction,
+      buildChannelPanel(LOG_BUTTON_TO_TYPE[customId]),
+      `admin:channel:${LOG_BUTTON_TO_TYPE[customId]}`
+    );
   }
 
   if (customId === 'admin:adminpanel') {
-    if (!canAccessAdminPanel(interaction.member)) {
+    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
       return replyNoAccess(interaction, '❌ You cannot access the Admin Panel.');
     }
 
     return updatePanel(
       interaction,
-      buildAdminToolsPanel(interaction.guild, memberDisplayName)
+      buildAdminToolsPanel(interaction.guild, memberDisplayName),
+      'admin:adminpanel'
     );
   }
 
   if (customId === 'admin:automod') {
-    if (!canAccessAutoMod(interaction.member)) {
+    if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
       return replyNoAccess(interaction, '❌ You cannot access AutoMod.');
     }
 
     return updatePanel(
       interaction,
-      buildComingSoonPanel('⚙️ AutoMod', 'AutoMod controls will live here.', 'admin:home')
+      buildComingSoonPanel('⚙️ AutoMod', 'AutoMod controls will live here.'),
+      'admin:automod'
     );
   }
 
   if (customId === 'admin:modpanel') {
-    if (!canAccessModPanel(interaction.member)) {
+    if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
       return replyNoAccess(interaction, '❌ You cannot access the Mod Panel.');
     }
 
     return updatePanel(
       interaction,
-      buildComingSoonPanel('🛡️ Mod Panel', 'Moderation tools will live here.', 'admin:home')
+      buildComingSoonPanel('🛡️ Mod Panel', 'Moderation tools will live here.'),
+      'admin:modpanel'
     );
   }
 
   if (customId === 'admin:staffroles') {
     return updatePanel(
       interaction,
-      buildStaffRolesPanel(interaction.guild, memberDisplayName)
+      buildStaffRolesPanel(interaction.guild, memberDisplayName),
+      'admin:staffroles'
     );
   }
 
@@ -696,14 +820,17 @@ async function handleAdminNavigation(interaction) {
 
     return updatePanel(
       interaction,
-      buildStaffRolesPanel(interaction.guild, memberDisplayName)
+      buildStaffRolesPanel(interaction.guild, memberDisplayName),
+      'admin:staffroles',
+      { skipHistory: true }
     );
   }
 
   if (customId === 'admin:modroles') {
     return updatePanel(
       interaction,
-      buildModRolesPanel(interaction.guild, memberDisplayName)
+      buildModRolesPanel(interaction.guild, memberDisplayName),
+      'admin:modroles'
     );
   }
 
@@ -712,14 +839,17 @@ async function handleAdminNavigation(interaction) {
 
     return updatePanel(
       interaction,
-      buildModRolesPanel(interaction.guild, memberDisplayName)
+      buildModRolesPanel(interaction.guild, memberDisplayName),
+      'admin:modroles',
+      { skipHistory: true }
     );
   }
 
   if (customId === 'admin:autoRoles') {
     return updatePanel(
       interaction,
-      buildAutoRolesPanel(interaction.guild, memberDisplayName)
+      buildAutoRolesPanel(interaction.guild, memberDisplayName),
+      'admin:autoRoles'
     );
   }
 
@@ -734,29 +864,38 @@ async function handleAdminNavigation(interaction) {
 
     return updatePanel(
       interaction,
-      buildAutoRolesPanel(interaction.guild, memberDisplayName)
+      buildAutoRolesPanel(interaction.guild, memberDisplayName),
+      'admin:autoRoles',
+      { skipHistory: true }
     );
   }
 
   if (customId === 'admin:embed') {
     const { buildEmbedPanel } = require('../embed/embedPanel');
-    return updatePanel(interaction, buildEmbedPanel(interaction, memberDisplayName));
+
+    return updatePanel(
+      interaction,
+      buildEmbedPanel(interaction, memberDisplayName),
+      'admin:embed'
+    );
   }
 
   if (customId === 'admin:adminsettings') {
     return updatePanel(
       interaction,
-      buildComingSoonPanel(
-        '⚙️ Admin Settings',
-        'Admin settings will live here.',
-        'admin:adminpanel'
-      )
+      buildComingSoonPanel('⚙️ Admin Settings', 'Admin settings will live here.'),
+      'admin:adminsettings'
     );
   }
 
   if (COMING_SOON[customId]) {
     const [title, description] = COMING_SOON[customId];
-    return updatePanel(interaction, buildComingSoonPanel(title, description));
+
+    return updatePanel(
+      interaction,
+      buildComingSoonPanel(title, description),
+      customId
+    );
   }
 
   if (customId === 'admin:purge') {

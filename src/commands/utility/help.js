@@ -234,7 +234,7 @@ async function handleHelpSelectMenu(interaction) {
   if (!selectedCategory || !groupedCommands[selectedCategory]) {
     await interaction.reply({
       content: '⚠️ That help category is no longer available.',
-      ephemeral: true,
+      flags: 64,
     });
 
     return true;
@@ -311,14 +311,14 @@ module.exports = {
     if (!Object.keys(groupedCommands).length) {
       return interaction.reply({
         content: '`⚠️` I could not find any commands available to you.',
-        ephemeral: true,
+        flags: 64,
       });
     }
 
     return interaction.reply({
       embeds: [buildHomeEmbed(interaction, groupedCommands)],
       components: buildComponents(groupedCommands),
-      ephemeral: true,
+      flags: 64,
     });
   },
 

@@ -37,13 +37,13 @@ module.exports = {
           embeds: [
             errorEmbed('This command can only be used inside a server.'),
           ],
-          ephemeral: true,
+          flags: 64,
         });
       }
 
       if (!interaction.deferred && !interaction.replied) {
         await interaction.deferReply({
-          ephemeral: true,
+          flags: 64,
         });
       }
 
@@ -75,7 +75,7 @@ module.exports = {
 
         return await interaction.reply({
           ...failurePayload,
-          ephemeral: true,
+          flags: 64,
         });
       } catch (replyError) {
         console.error('❌ Failed to send mod command error response:', replyError);

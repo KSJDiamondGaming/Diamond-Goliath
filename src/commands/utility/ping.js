@@ -35,7 +35,7 @@ module.exports = {
     try {
       if (!interaction.deferred && !interaction.replied) {
         await interaction.deferReply({
-          ephemeral: true,
+          flags: 64,
         });
       }
 
@@ -98,7 +98,7 @@ module.exports = {
 
       return await interaction.reply({
         content: '❌ Failed to check Goliath status.',
-        ephemeral: true,
+        flags: 64,
       });
     }
   },

@@ -255,7 +255,7 @@ async function runBulkAction(interaction, options) {
   if (validationErrors.length) {
     return safeReply(interaction, {
       content: validationErrors.join('\n'),
-      ephemeral: true,
+      flags: 64,
     });
   }
 
@@ -277,7 +277,7 @@ async function runBulkAction(interaction, options) {
         failCount: 0,
       }),
     ],
-    ephemeral: true,
+    flags: 64,
   });
 
   const actorMember = interaction.member;
