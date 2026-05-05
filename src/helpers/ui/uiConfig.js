@@ -12,7 +12,7 @@ module.exports = {
 
   EMOJIS: {
     // Navigation
-    DASHBOARD: '🛡️',
+    DASHBOARD: '⚙️',
     ACTIONS: '⚖️',
     CASES: '📜',
     TOOLS: '🧰',
@@ -20,7 +20,7 @@ module.exports = {
 
     // People
     USER: '👤',
-    MODERATOR: '🛡️',
+    MODERATOR: '🔐',
 
     // Actions
     WARNING: '⚠️',

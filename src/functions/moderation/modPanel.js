@@ -11,7 +11,7 @@ const { hasModPermission } = require('./moderationChecks');
 const DEFAULT_VIEW = 'overview';
 
 // =========================
-// 🛡️ Access Guard
+// 🔐 Access Guard
 // =========================
 
 function canOpenModPanel(interaction) {

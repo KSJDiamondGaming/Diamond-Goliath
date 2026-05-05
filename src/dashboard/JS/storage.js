@@ -1,4 +1,4 @@
-const PREFIX = 'ksj_goliath_';
+const PREFIX = 'goliath';
 
 function hasStorage() {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
@@ -53,7 +53,7 @@ export function removeStorage(key) {
 }
 
 /**
- * Clear ALL KSJ storage
+ * Clear ALL storage
  */
 export function clearStorage() {
   if (!hasStorage()) return;

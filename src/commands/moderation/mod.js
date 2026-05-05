@@ -17,34 +17,31 @@ module.exports = {
   },
 
   access: {
-    permissions: [PermissionFlagsBits.ModerateMembers],
+    level: 'mod',
     ownerOnly: false,
   },
 
   data: new SlashCommandBuilder()
     .setName('mod')
-    .setDescription('🛡️ Open Goliath’s moderation hub and staff tools')
+    .setDescription('🔐 Open Goliath’s moderation hub and staff tools')
     .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
 
   async execute(interaction) {
-    const BOT_OWNER_ID = process.env.BOT_OWNER_ID;
-    const denied = await enforceCommandAccess(interaction, module.exports, BOT_OWNER_ID);
+    const denied = await enforceCommandAccess(interaction, module.exports);
     if (denied) return;
 
     try {
       if (!interaction.guild) {
-        return await interaction.reply({
+        return await safeReply(interaction, {
           embeds: [
             errorEmbed('This command can only be used inside a server.'),
           ],
-          flags: 64,
         });
       }
 
+      // Defer for panel loading
       if (!interaction.deferred && !interaction.replied) {
-        await interaction.deferReply({
-          flags: 64,
-        });
+        await interaction.deferReply({ flags: 64 });
       }
 
       if (typeof modPanel.openModPanel === 'function') {
@@ -61,25 +58,25 @@ module.exports = {
 
       console.error('❌ Mod command failed:', error);
 
-      const failurePayload = {
+      return await safeReply(interaction, {
         embeds: [
           errorEmbed('Failed to open the moderation hub. Please try again.'),
         ],
         components: [],
-      };
-
-      try {
-        if (interaction.deferred || interaction.replied) {
-          return await interaction.editReply(failurePayload);
-        }
-
-        return await interaction.reply({
-          ...failurePayload,
-          flags: 64,
-        });
-      } catch (replyError) {
-        console.error('❌ Failed to send mod command error response:', replyError);
-      }
+      });
     }
   },
 };
+
+async function safeReply(interaction, payload) {
+  const safePayload = {
+    ...payload,
+    flags: 64,
+  };
+
+  if (interaction.deferred || interaction.replied) {
+    return interaction.editReply(safePayload);
+  }
+
+  return interaction.reply(safePayload);
+}

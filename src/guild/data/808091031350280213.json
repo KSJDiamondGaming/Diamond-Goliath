@@ -1,7 +1,7 @@
 {
   "guildId": "808091031350280213",
   "guildName": "KSJ DIAMOND GAMING",
-  "updatedAt": "2026-05-04T01:15:53.570Z",
+  "updatedAt": "2026-05-05T19:01:59.811Z",
   "general": {
     "enabled": true,
     "prefix": "!",
@@ -86,7 +86,7 @@
     "channels": {
       "general": "1491219255465869514",
       "moderation": "1491219255465869514",
-      "admin": "1491219255465869514",
+      "admin": "1002293429004406895",
       "automod": "1491219255465869514",
       "member": null,
       "messageDelete": null,
@@ -112,7 +112,35 @@
       "voiceLeave": true,
       "voiceMove": true
     },
-    "updatedAt": "2026-05-04T01:15:53.570Z"
+    "updatedAt": "2026-05-05T19:01:59.811Z"
+  },
+  "serverBackups": {
+    "enabled": true,
+    "lastBackupId": "2026-05-05T18-46-58-913Z",
+    "lastBackupAt": "2026-05-05T18:46:58.915Z",
+    "lastBackupBy": "1168285714732036096",
+    "lastBackupReason": "Manual backup from admin panel",
+    "backupCount": 4,
+    "latestBackup": {
+      "backupId": "2026-05-05T18-46-58-913Z",
+      "createdAt": "2026-05-05T18:46:58.915Z",
+      "createdBy": "1168285714732036096",
+      "reason": "Manual backup from admin panel",
+      "sourceGuildName": "KSJ DIAMOND GAMING",
+      "roles": 24,
+      "channels": 57,
+      "logsIncluded": true
+    },
+    "storage": {
+      "provider": "google_drive_desktop",
+      "path": "F:\\My Drive\\Goliath Backups",
+      "restoreRequiresSupport": true
+    },
+    "retention": {
+      "maxBackups": 4,
+      "autoCleanup": true
+    },
+    "updatedAt": "2026-05-05T18:46:58.934Z"
   },
   "cases": {},
   "warnings": {},

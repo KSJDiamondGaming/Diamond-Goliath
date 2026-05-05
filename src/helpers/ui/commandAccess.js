@@ -1,50 +1,95 @@
 const { PermissionFlagsBits } = require('discord.js');
+const security = require('../../security/securityCore');
 
 function hasRequiredPermissions(member, permissions = []) {
   if (!permissions.length) return true;
-  return permissions.every(permission => member.permissions.has(permission));
+  return permissions.every((perm) => member.permissions.has(perm));
 }
 
-function canAccessCommand(interaction, command, botOwnerId) {
+function canAccessCommand(interaction, command) {
   if (!command) return false;
 
   const access = command.access || {};
-  const member = interaction.member;
 
+  // 🔥 Bot owner always allowed
+  if (security.isBotOwner(interaction.user.id)) return true;
+
+  // Owner-only commands
   if (access.ownerOnly) {
-    return interaction.user.id === botOwnerId;
+    return security.isBotOwner(interaction.user.id);
   }
 
-  const permissions = Array.isArray(access.permissions) ? access.permissions : [];
-  return hasRequiredPermissions(member, permissions);
+  // Level-based access (NEW SYSTEM)
+  if (access.level) {
+    return security.hasPermission(interaction, access.level);
+  }
+
+  // Fallback: raw Discord permissions (legacy support)
+  const permissions = Array.isArray(access.permissions)
+    ? access.permissions
+    : [];
+
+  return hasRequiredPermissions(interaction.member, permissions);
 }
 
-async function enforceCommandAccess(interaction, command, botOwnerId) {
+async function enforceCommandAccess(interaction, command) {
   const access = command.access || {};
-  const member = interaction.member;
 
-  if (access.ownerOnly && interaction.user.id !== botOwnerId) {
-    await interaction.reply({
-      content: 'This command is owner only.',
-      flags: 64,
-    });
-    return true;
+  // 🔥 BOT OWNER ALWAYS PASSES
+  if (security.isBotOwner(interaction.user.id)) return false;
+
+  // OWNER ONLY
+  if (access.ownerOnly) {
+    if (!security.isBotOwner(interaction.user.id)) {
+      await reply(interaction, '❌ This command is bot-owner only.');
+      return true;
+    }
   }
 
-  const permissions = Array.isArray(access.permissions) ? access.permissions : [];
-  if (permissions.length && !hasRequiredPermissions(member, permissions)) {
-    await interaction.reply({
-      content: 'You do not have permission to use this command.',
-      flags: 64,
+  // LEVEL SYSTEM (NEW)
+  if (access.level) {
+    const check = await security.enforceInteractionSecurity(interaction, {
+      level: access.level,
+      cooldownKey: `cmd:${interaction.commandName}`,
+      cooldownMs: 2000,
+      guildOnly: true,
     });
+
+    if (!check.allowed) return true;
+  }
+
+  // LEGACY PERMISSIONS SUPPORT
+  const permissions = Array.isArray(access.permissions)
+    ? access.permissions
+    : [];
+
+  if (permissions.length && !hasRequiredPermissions(interaction.member, permissions)) {
+    await reply(interaction, '❌ You do not have permission to use this command.');
     return true;
   }
 
   return false;
 }
 
+/* ---------------- SAFE REPLY ---------------- */
+
+async function reply(interaction, content) {
+  const payload = {
+    content,
+    embeds: [],
+    components: [],
+    flags: 64,
+  };
+
+  if (interaction.deferred || interaction.replied) {
+    return interaction.editReply(payload);
+  }
+
+  return interaction.reply(payload);
+}
+
 module.exports = {
   PermissionFlagsBits,
   canAccessCommand,
-  enforceCommandAccess
+  enforceCommandAccess,
 };

@@ -6,35 +6,31 @@ const { REST, Routes } = require('discord.js');
 
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
+const COMMAND_MODE = String(process.env.COMMAND_MODE || 'guild').toLowerCase();
 const GUILD_IDS = process.env.GUILD_IDS;
-const COMMAND_MODE = (process.env.COMMAND_MODE || 'guild').toLowerCase();
 
-if (!TOKEN) throw new Error('Missing TOKEN in .env');
-if (!CLIENT_ID) throw new Error('Missing CLIENT_ID in .env');
+if (!TOKEN) throw new Error('❌ Missing TOKEN in .env');
+if (!CLIENT_ID) throw new Error('❌ Missing CLIENT_ID in .env');
 
 const rest = new REST({ version: '10' }).setToken(TOKEN);
 
 function parseGuildIds(value) {
-  if (!value) return [];
-
-  return String(value)
+  return String(value || '')
     .split(',')
     .map((id) => id.trim())
-    .filter(Boolean);
+    .filter((id) => /^\d{16,20}$/.test(id));
 }
 
 function getAllJsFiles(dir) {
-  let results = [];
+  if (!fs.existsSync(dir)) return [];
 
-  if (!fs.existsSync(dir)) return results;
+  const files = [];
 
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
-
-  for (const entry of entries) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const fullPath = path.join(dir, entry.name);
 
     if (entry.isDirectory()) {
-      results = results.concat(getAllJsFiles(fullPath));
+      files.push(...getAllJsFiles(fullPath));
       continue;
     }
 
@@ -44,49 +40,51 @@ function getAllJsFiles(dir) {
       !entry.name.endsWith('.test.js') &&
       !entry.name.endsWith('.spec.js')
     ) {
-      results.push(fullPath);
+      files.push(fullPath);
     }
   }
 
-  return results.sort((a, b) => a.localeCompare(b));
+  return files.sort((a, b) => a.localeCompare(b));
 }
 
-function loadCommands(commandsPath, mode = 'guild') {
+function loadCommands(commandsPath, mode) {
   const commandFiles = getAllJsFiles(commandsPath);
   const commands = [];
-  const seenNames = new Set();
+  const seen = new Set();
 
   for (const filePath of commandFiles) {
     try {
       delete require.cache[require.resolve(filePath)];
+
       const command = require(filePath);
+      const name = command?.data?.name;
 
       if (!command?.data || typeof command.execute !== 'function') {
-        console.warn(`⚠️ Skipping invalid command module: ${filePath}`);
+        console.warn(`⚠️ Skipped invalid command: ${filePath}`);
         continue;
       }
 
-      const commandName = command.data?.name;
-
-      if (!commandName || typeof commandName !== 'string') {
-        console.warn(`⚠️ Skipping command with invalid name: ${filePath}`);
+      if (!name || typeof name !== 'string') {
+        console.warn(`⚠️ Skipped unnamed command: ${filePath}`);
         continue;
       }
 
-      if (mode === 'global' && command.devOnly) {
-        console.log(`🧪 Skipping dev-only command in global mode: ${commandName}`);
+      if (seen.has(name)) {
+        console.warn(`⚠️ Skipped duplicate command: ${name}`);
         continue;
       }
 
-      if (seenNames.has(commandName)) {
-        console.warn(`⚠️ Duplicate command skipped: ${commandName}`);
+      if (mode === 'global' && command.devOnly === true) {
+        console.log(`🧪 Skipped dev-only command in global mode: ${name}`);
         continue;
       }
 
-      seenNames.add(commandName);
+      seen.add(name);
       commands.push(command.data.toJSON());
+
+      console.log(`✅ Loaded command: ${name}`);
     } catch (error) {
-      console.error(`❌ Failed to load command file: ${filePath}`);
+      console.error(`❌ Failed to load command: ${filePath}`);
       console.error(error);
     }
   }
@@ -95,96 +93,79 @@ function loadCommands(commandsPath, mode = 'guild') {
 }
 
 async function clearGuildCommands(guildIds) {
-  if (!guildIds.length) {
-    throw new Error('No GUILD_IDS provided for guild mode.');
-  }
-
-  console.log('🧹 Clearing guild commands...');
-
   for (const guildId of guildIds) {
-    try {
-      await rest.put(Routes.applicationGuildCommands(CLIENT_ID, guildId), {
-        body: [],
-      });
+    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, guildId), {
+      body: [],
+    });
 
-      console.log(`✅ Cleared guild commands: ${guildId}`);
-    } catch (err) {
-      console.error(`❌ Failed to clear guild commands: ${guildId}`);
-      console.error(err);
-    }
+    console.log(`🧹 Cleared guild commands: ${guildId}`);
+  }
+}
+
+async function registerGuildCommands(guildIds, commands) {
+  for (const guildId of guildIds) {
+    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, guildId), {
+      body: commands,
+    });
+
+    console.log(`✅ Registered ${commands.length} command(s) for guild: ${guildId}`);
   }
 }
 
 async function clearGlobalCommands() {
-  console.log('🧹 Clearing global commands...');
-
   await rest.put(Routes.applicationCommands(CLIENT_ID), {
     body: [],
   });
 
-  console.log('✅ Cleared global commands');
-}
-
-async function registerGuildCommands(guildIds, commands) {
-  if (!guildIds.length) {
-    throw new Error('No GUILD_IDS provided for guild mode.');
-  }
-
-  console.log('📡 Registering guild commands...');
-
-  for (const guildId of guildIds) {
-    try {
-      await rest.put(Routes.applicationGuildCommands(CLIENT_ID, guildId), {
-        body: commands,
-      });
-
-      console.log(`✅ Registered ${commands.length} commands for guild: ${guildId}`);
-    } catch (err) {
-      console.error(`❌ Failed to register commands for guild: ${guildId}`);
-      console.error(err);
-    }
-  }
+  console.log('🧹 Cleared global commands');
 }
 
 async function registerGlobalCommands(commands) {
-  console.log('🌍 Registering global commands...');
-
   await rest.put(Routes.applicationCommands(CLIENT_ID), {
     body: commands,
   });
 
-  console.log(`✅ Registered ${commands.length} global commands`);
+  console.log(`✅ Registered ${commands.length} global command(s)`);
 }
 
 async function syncCommands(options = {}) {
-  const startTime = Date.now();
+  const startedAt = Date.now();
 
-  const mode = (options.mode || COMMAND_MODE || 'guild').toLowerCase();
+  const mode = String(options.mode || COMMAND_MODE || 'guild').toLowerCase();
   const guildIds = parseGuildIds(options.guildIds ?? GUILD_IDS);
 
   const commandsPath =
     options.commandsPath || path.join(__dirname, '..', '..', 'commands');
 
-  const commands = loadCommands(commandsPath, mode);
+  if (!['guild', 'global'].includes(mode)) {
+    throw new Error(`❌ Invalid COMMAND_MODE "${mode}". Use "guild" or "global".`);
+  }
+
+  if (mode === 'guild' && guildIds.length === 0) {
+    throw new Error('❌ GUILD_IDS is required when COMMAND_MODE is "guild".');
+  }
 
   console.log('🚀 Starting command sync...');
   console.log(`🛠️ Mode: ${mode}`);
   console.log(`📂 Commands path: ${commandsPath}`);
+
+  const commands = loadCommands(commandsPath, mode);
+
   console.log(`📦 Commands loaded: ${commands.length}`);
 
   if (mode === 'guild') {
-    console.log(`🏠 Guild targets: ${guildIds.length ? guildIds.join(', ') : 'none'}`);
+    console.log(`🏠 Target guilds: ${guildIds.join(', ')}`);
 
     await clearGuildCommands(guildIds);
     await registerGuildCommands(guildIds, commands);
-  } else if (mode === 'global') {
-    await clearGlobalCommands();
-    await registerGlobalCommands(commands);
-  } else {
-    throw new Error(`Invalid COMMAND_MODE "${mode}". Use "guild" or "global".`);
   }
 
-  const durationMs = Date.now() - startTime;
+  if (mode === 'global') {
+    await clearGlobalCommands();
+    await registerGlobalCommands(commands);
+  }
+
+  const durationMs = Date.now() - startedAt;
 
   console.log(`🎉 Command sync complete in ${durationMs}ms`);
 
@@ -206,4 +187,7 @@ if (require.main === module) {
 
 module.exports = {
   syncCommands,
+  parseGuildIds,
+  getAllJsFiles,
+  loadCommands,
 };

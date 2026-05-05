@@ -16,7 +16,6 @@ module.exports = {
   },
 
   access: {
-    permissions: [],
     ownerOnly: false,
   },
 
@@ -25,55 +24,87 @@ module.exports = {
     .setDescription('🏰 View server stats, members, roles, channels and guild details'),
 
   async execute(interaction) {
-    const BOT_OWNER_ID = process.env.BOT_OWNER_ID;
-    const denied = await enforceCommandAccess(interaction, module.exports, BOT_OWNER_ID);
+    const denied = await enforceCommandAccess(interaction, module.exports);
     if (denied) return;
 
-    const guild = interaction.guild;
+    try {
+      if (!interaction.guild) {
+        return await safeReply(interaction, {
+          content: '❌ This command can only be used inside a server.',
+        });
+      }
 
-    await guild.members.fetch();
-    const owner = await guild.fetchOwner();
+      if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferReply({ flags: 64 });
+      }
 
-    const textChannels = guild.channels.cache.filter(
-      (channel) => channel.type === ChannelType.GuildText
-    ).size;
+      const guild = interaction.guild;
 
-    const voiceChannels = guild.channels.cache.filter(
-      (channel) => channel.type === ChannelType.GuildVoice
-    ).size;
+      await guild.members.fetch().catch(() => null);
 
-    const categories = guild.channels.cache.filter(
-      (channel) => channel.type === ChannelType.GuildCategory
-    ).size;
+      const owner = await guild.fetchOwner().catch(() => null);
 
-    const totalMembers = guild.memberCount;
-    const humans = guild.members.cache.filter((member) => !member.user.bot).size;
-    const bots = guild.members.cache.filter((member) => member.user.bot).size;
-    const createdTimestamp = Math.floor(guild.createdTimestamp / 1000);
+      const textChannels = guild.channels.cache.filter(
+        (channel) => channel.type === ChannelType.GuildText
+      ).size;
 
-    const embed = baseEmbed(interaction.client)
-      .setTitle('`🏰` Server Overview')
-      .setThumbnail(guild.iconURL({ dynamic: true }))
-      .setDescription([
-        `\`💎\` **${guild.name}**`,
-        '',
-        `\`👑\` **Owner:** <@${owner.id}>`,
-        `\`🆔\` **Server ID:** \`${guild.id}\``,
-        `\`📅\` **Created:** <t:${createdTimestamp}:F>`,
-        '',
-        `\`👥\` **Members**`,
-        `Total: \`${totalMembers}\`  •  Humans: \`${humans}\`  •  Bots: \`${bots}\``,
-        '',
-        `\`💬\` **Channels**`,
-        `Text: \`${textChannels}\`  •  Voice: \`${voiceChannels}\`  •  Categories: \`${categories}\``,
-        '',
-        `\`🎭\` **Roles**`,
-        `\`${guild.roles.cache.size}\` roles`,
-      ].join('\n'));
+      const voiceChannels = guild.channels.cache.filter(
+        (channel) => channel.type === ChannelType.GuildVoice
+      ).size;
 
-    await interaction.reply({
-      embeds: [embed],
-      flags: 64,
-    });
+      const categories = guild.channels.cache.filter(
+        (channel) => channel.type === ChannelType.GuildCategory
+      ).size;
+
+      const totalMembers = guild.memberCount;
+      const humans = guild.members.cache.filter((member) => !member.user.bot).size;
+      const bots = guild.members.cache.filter((member) => member.user.bot).size;
+      const createdTimestamp = Math.floor(guild.createdTimestamp / 1000);
+
+      const embed = baseEmbed(interaction.client)
+        .setTitle('`🏰` Server Overview')
+        .setThumbnail(guild.iconURL({ dynamic: true }))
+        .setDescription([
+          `\`💎\` **${guild.name}**`,
+          '',
+          `\`👑\` **Owner:** ${owner ? `<@${owner.id}>` : '`Unknown`'}`,
+          `\`🆔\` **Server ID:** \`${guild.id}\``,
+          `\`📅\` **Created:** <t:${createdTimestamp}:F>`,
+          '',
+          `\`👥\` **Members**`,
+          `Total: \`${totalMembers}\`  •  Humans: \`${humans}\`  •  Bots: \`${bots}\``,
+          '',
+          `\`💬\` **Channels**`,
+          `Text: \`${textChannels}\`  •  Voice: \`${voiceChannels}\`  •  Categories: \`${categories}\``,
+          '',
+          `\`🎭\` **Roles**`,
+          `\`${guild.roles.cache.size}\` roles`,
+        ].join('\n'));
+
+      return await interaction.editReply({
+        embeds: [embed],
+      });
+    } catch (error) {
+      console.error('❌ Serverinfo command failed:', error);
+
+      return await safeReply(interaction, {
+        content: '❌ Failed to load server information.',
+        embeds: [],
+        components: [],
+      });
+    }
   },
 };
+
+async function safeReply(interaction, payload) {
+  const safePayload = {
+    ...payload,
+    flags: 64,
+  };
+
+  if (interaction.deferred || interaction.replied) {
+    return interaction.editReply(safePayload);
+  }
+
+  return interaction.reply(safePayload);
+}

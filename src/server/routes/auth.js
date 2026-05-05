@@ -61,7 +61,7 @@ router.post('/logout', (req, res) => {
       return res.status(500).json({ error: 'Logout failed' });
     }
 
-    res.clearCookie('ksj_dashboard_session', {
+    res.clearCookie('dashboard_session', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',

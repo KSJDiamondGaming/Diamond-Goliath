@@ -2,7 +2,6 @@ const {
   SlashCommandBuilder,
   ActionRowBuilder,
   StringSelectMenuBuilder,
-  ButtonStyle,
 } = require('discord.js');
 
 const {
@@ -16,8 +15,6 @@ const {
   createDangerButton,
 } = require('../../helpers/ui/embeds');
 
-const BOT_OWNER_ID = process.env.BOT_OWNER_ID || '1168285714732036096';
-
 const CATEGORY_META = {
   Utility: {
     emoji: '🧰',
@@ -25,7 +22,7 @@ const CATEGORY_META = {
     description: 'Helpful tools, status checks, and general bot commands.',
   },
   Moderation: {
-    emoji: '🛡️',
+    emoji: '🔐',
     label: 'Moderation',
     description: 'Staff tools for keeping your server clean and protected.',
   },
@@ -35,7 +32,7 @@ const CATEGORY_META = {
     description: 'Logging setup, moderation records, and audit tools.',
   },
   Admin: {
-    emoji: '⚙️',
+    emoji: '🔏',
     label: 'Admin',
     description: 'Server management, configuration, and control panels.',
   },
@@ -86,7 +83,7 @@ function getCommandDescription(command) {
 function getVisibleCommands(interaction) {
   return [...interaction.client.commands.values()]
     .filter((command) => command?.data?.name)
-    .filter((command) => canAccessCommand(interaction, command, BOT_OWNER_ID))
+    .filter((command) => canAccessCommand(interaction, command))
     .sort((a, b) => a.data.name.localeCompare(b.data.name));
 }
 
@@ -191,13 +188,15 @@ function buildComponents(groupedCommands, selectedCategory = null, disabled = fa
           default: selectedCategory === category,
         };
       })
-    : [{
-        label: 'Other',
-        description: 'No commands available',
-        value: 'Other',
-        emoji: CATEGORY_META.Other.emoji,
-        default: true,
-      }];
+    : [
+        {
+          label: 'Other',
+          description: 'No commands available',
+          value: 'Other',
+          emoji: CATEGORY_META.Other.emoji,
+          default: true,
+        },
+      ];
 
   const selectRow = new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
@@ -214,12 +213,7 @@ function buildComponents(groupedCommands, selectedCategory = null, disabled = fa
       '🏠',
       disabled || !selectedCategory
     ),
-    createDangerButton(
-      'help-close',
-      'Close',
-      '✖️',
-      disabled
-    )
+    createDangerButton('help-close', 'Close', '✖️', disabled)
   );
 
   return [selectRow, buttonRow];
@@ -232,9 +226,8 @@ async function handleHelpSelectMenu(interaction) {
   const selectedCategory = interaction.values?.[0];
 
   if (!selectedCategory || !groupedCommands[selectedCategory]) {
-    await interaction.reply({
+    await safeReply(interaction, {
       content: '⚠️ That help category is no longer available.',
-      flags: 64,
     });
 
     return true;
@@ -279,6 +272,19 @@ async function handleHelpButton(interaction) {
   return false;
 }
 
+async function safeReply(interaction, payload) {
+  const safePayload = {
+    ...payload,
+    flags: 64,
+  };
+
+  if (interaction.deferred || interaction.replied) {
+    return interaction.editReply(safePayload);
+  }
+
+  return interaction.reply(safePayload);
+}
+
 module.exports = {
   category: 'Utility',
 
@@ -289,7 +295,6 @@ module.exports = {
   },
 
   access: {
-    permissions: [],
     ownerOnly: false,
   },
 
@@ -298,27 +303,20 @@ module.exports = {
     .setDescription('📚 Browse Goliath commands, modules, and tools'),
 
   async execute(interaction) {
-    const denied = await enforceCommandAccess(
-      interaction,
-      module.exports,
-      BOT_OWNER_ID
-    );
-
+    const denied = await enforceCommandAccess(interaction, module.exports);
     if (denied) return;
 
     const groupedCommands = getHelpState(interaction);
 
     if (!Object.keys(groupedCommands).length) {
-      return interaction.reply({
+      return safeReply(interaction, {
         content: '`⚠️` I could not find any commands available to you.',
-        flags: 64,
       });
     }
 
-    return interaction.reply({
+    return safeReply(interaction, {
       embeds: [buildHomeEmbed(interaction, groupedCommands)],
       components: buildComponents(groupedCommands),
-      flags: 64,
     });
   },
 

@@ -167,7 +167,7 @@ function buildAutomodPanel(guild, memberDisplayName = 'Unknown User') {
 
   const embed = new EmbedBuilder()
     .setColor(enabledCount > 0 ? '#57F287' : '#5865F2')
-    .setTitle('🛡️ AutoMod Panel')
+    .setTitle('🤖 AutoMod Panel')
     .setDescription(
       [
         'Control your server protection from one panel.',

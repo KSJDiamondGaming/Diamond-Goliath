@@ -20,7 +20,7 @@ function Login({
   const [avatarFailed, setAvatarFailed] = useState(false);
 
   const guildInitial = getNameInitial(selectedGuildName || 'Guild');
-  const botInitial = getNameInitial(botName || 'KSJ Goliath');
+  const botInitial = getNameInitial(botName || 'Goliath');
 
   const avatarSrc = isAuthenticated ? selectedGuildIcon || '' : botAvatar || '';
   const showAvatarImage = Boolean(avatarSrc) && !avatarFailed;
@@ -28,7 +28,7 @@ function Login({
   const fallbackInitial = isAuthenticated ? guildInitial : botInitial;
   const fallbackTitle = isAuthenticated
     ? selectedGuildName || 'Selected guild'
-    : botName || 'KSJ Goliath';
+    : botName || 'Goliath';
 
   return (
     <div style={styles.page}>
@@ -47,7 +47,7 @@ function Login({
             )}
 
             <div style={styles.guildInfo}>
-              <h1 style={styles.title}>KSJ Goliath Dashboard</h1>
+              <h1 style={styles.title}>Goliath Dashboard</h1>
             </div>
           </div>
 

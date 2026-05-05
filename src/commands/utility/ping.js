@@ -19,7 +19,6 @@ module.exports = {
   },
 
   access: {
-    permissions: [],
     ownerOnly: false,
   },
 
@@ -28,15 +27,12 @@ module.exports = {
     .setDescription('💎 Check Goliath’s live status, heartbeat and latency'),
 
   async execute(interaction) {
-    const BOT_OWNER_ID = process.env.BOT_OWNER_ID;
-    const denied = await enforceCommandAccess(interaction, module.exports, BOT_OWNER_ID);
+    const denied = await enforceCommandAccess(interaction, module.exports);
     if (denied) return;
 
     try {
       if (!interaction.deferred && !interaction.replied) {
-        await interaction.deferReply({
-          flags: 64,
-        });
+        await interaction.deferReply({ flags: 64 });
       }
 
       const clientLatency = Date.now() - interaction.createdTimestamp;
@@ -59,9 +55,6 @@ module.exports = {
         return '▰▰▱▱▱';
       };
 
-      const shardId = interaction.guild?.shardId ?? 0;
-      const shardCount = interaction.client.shard?.count ?? 1;
-
       const embed = baseEmbed(interaction.client)
         .setTitle('`🏓` Goliath Status')
         .setDescription([
@@ -78,8 +71,6 @@ module.exports = {
           `\`⏱️\` **Uptime**`,
           `\`${uptime}\``,
           '',
-          `\`🧩\` **Shard**`,
-          `\`${shardId + 1}/${shardCount}\``,
         ].join('\n'));
 
       return await interaction.editReply({
@@ -88,18 +79,24 @@ module.exports = {
     } catch (error) {
       console.error('❌ Ping command failed:', error);
 
-      if (interaction.deferred || interaction.replied) {
-        return await interaction.editReply({
-          content: '❌ Failed to check Goliath status.',
-          embeds: [],
-          components: [],
-        });
-      }
-
-      return await interaction.reply({
+      return await safeReply(interaction, {
         content: '❌ Failed to check Goliath status.',
-        flags: 64,
+        embeds: [],
+        components: [],
       });
     }
   },
 };
+
+async function safeReply(interaction, payload) {
+  const safePayload = {
+    ...payload,
+    flags: 64,
+  };
+
+  if (interaction.deferred || interaction.replied) {
+    return interaction.editReply(safePayload);
+  }
+
+  return interaction.reply(safePayload);
+}

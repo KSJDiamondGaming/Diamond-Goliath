@@ -32,10 +32,10 @@ const STAFF_LEVEL_LABELS = {
 const STAFF_BADGES = {
   [STAFF_LEVELS.NONE]: '🚫',
   [STAFF_LEVELS.HELPER]: '🪪',
-  [STAFF_LEVELS.JUNIOR_MOD]: '🛡️',
-  [STAFF_LEVELS.MOD]: '⚔️',
-  [STAFF_LEVELS.ADMIN]: '👑',
-  [STAFF_LEVELS.OWNER]: '🏆',
+  [STAFF_LEVELS.JUNIOR_MOD]: '🗝️',
+  [STAFF_LEVELS.MOD]: '🔐',
+  [STAFF_LEVELS.ADMIN]: '🔏',
+  [STAFF_LEVELS.OWNER]: '👑',
 };
 
 const ACTION_REQUIREMENTS = {
@@ -60,12 +60,35 @@ const ACTION_REQUIREMENTS = {
   bulk_ban: STAFF_LEVELS.OWNER,
 };
 
+function getBotOwnerId() {
+  return String(process.env.BOT_OWNER_ID || '').trim();
+}
+
+function getId(memberOrUserId) {
+  return typeof memberOrUserId === 'string'
+    ? memberOrUserId
+    : memberOrUserId?.id;
+}
+
+function isBotOwner(memberOrUserId) {
+  const ownerId = getBotOwnerId();
+  const id = getId(memberOrUserId);
+
+  return Boolean(ownerId && id && String(id) === ownerId);
+}
+
+function isGuildOwner(memberOrUserId, guildOwnerId) {
+  const id = getId(memberOrUserId);
+  return Boolean(id && guildOwnerId && String(id) === String(guildOwnerId));
+}
+
 function hasPermission(member, permission) {
   return Boolean(member?.permissions?.has(permission));
 }
 
 function hasModPermission(member) {
   return (
+    isBotOwner(member) ||
     hasPermission(member, PermissionFlagsBits.ModerateMembers) ||
     hasPermission(member, PermissionFlagsBits.KickMembers) ||
     hasPermission(member, PermissionFlagsBits.BanMembers) ||
@@ -75,7 +98,9 @@ function hasModPermission(member) {
 
 function getStaffLevel(member, guild) {
   if (!member || !guild) return STAFF_LEVELS.NONE;
-  if (member.id === guild.ownerId) return STAFF_LEVELS.OWNER;
+
+  if (isBotOwner(member)) return STAFF_LEVELS.OWNER;
+  if (isGuildOwner(member, guild.ownerId)) return STAFF_LEVELS.OWNER;
 
   if (hasPermission(member, PermissionFlagsBits.Administrator)) {
     return STAFF_LEVELS.ADMIN;
@@ -96,8 +121,42 @@ function getStaffLevel(member, guild) {
   return STAFF_LEVELS.NONE;
 }
 
+function getStaffDisplay(member, guild) {
+  if (!member || !guild) {
+    return {
+      level: STAFF_LEVELS.NONE,
+      label: STAFF_LEVEL_LABELS[STAFF_LEVELS.NONE],
+      badge: STAFF_BADGES[STAFF_LEVELS.NONE],
+    };
+  }
+
+  if (isBotOwner(member)) {
+    return {
+      level: STAFF_LEVELS.OWNER,
+      label: 'Bot Owner',
+      badge: '👑',
+    };
+  }
+
+  if (isGuildOwner(member, guild.ownerId)) {
+    return {
+      level: STAFF_LEVELS.OWNER,
+      label: 'Server Owner',
+      badge: '🏆',
+    };
+  }
+
+  const level = getStaffLevel(member, guild);
+
+  return {
+    level,
+    label: getStaffLevelLabel(level),
+    badge: getStaffBadge(level),
+  };
+}
+
 function getStaffLevelRank(level) {
-  return STAFF_LEVEL_RANKS[level] || STAFF_LEVEL_RANKS.none;
+  return STAFF_LEVEL_RANKS[level] ?? STAFF_LEVEL_RANKS[STAFF_LEVELS.NONE];
 }
 
 function getRequiredStaffLevel(action) {
@@ -129,19 +188,13 @@ function getHighestRolePosition(member) {
   return member?.roles?.highest?.position ?? 0;
 }
 
-function isGuildOwner(memberOrUserId, guildOwnerId) {
-  const id = typeof memberOrUserId === 'string'
-    ? memberOrUserId
-    : memberOrUserId?.id;
-
-  return Boolean(id && id === guildOwnerId);
-}
-
 function canActOnTarget(actorMember, targetMember, guildOwnerId) {
   if (!actorMember || !targetMember) return false;
 
   if (isGuildOwner(targetMember, guildOwnerId)) return false;
   if (actorMember.id === targetMember.id) return false;
+
+  if (isBotOwner(actorMember)) return true;
   if (isGuildOwner(actorMember, guildOwnerId)) return true;
 
   return getHighestRolePosition(actorMember) > getHighestRolePosition(targetMember);
@@ -225,12 +278,24 @@ function checkHierarchy(interaction, target) {
   return summary.ok ? null : summary.reason;
 }
 
-function checkHierarchyForBulk(actorMember, botMember, guildOwnerId, targetMember, actorUserId) {
+function checkHierarchyForBulk(
+  actorMember,
+  botMember,
+  guildOwnerId,
+  targetMember,
+  actorUserId
+) {
   if (!targetMember) return 'User not found.';
   if (targetMember.id === actorUserId) return 'Cannot target yourself.';
-  if (isGuildOwner(targetMember, guildOwnerId)) return 'Cannot target the server owner.';
+  if (isGuildOwner(targetMember, guildOwnerId)) {
+    return 'Cannot target the server owner.';
+  }
 
-  const actorIsOwner = actorUserId === guildOwnerId;
+  const actorIsOwner =
+    isGuildOwner(actorUserId, guildOwnerId) ||
+    isBotOwner(actorUserId) ||
+    isBotOwner(actorMember);
+
   const actorHighestRole = getHighestRolePosition(actorMember);
   const targetHighestRole = getHighestRolePosition(targetMember);
   const botHighestRole = getHighestRolePosition(botMember);
@@ -253,10 +318,16 @@ module.exports = {
   STAFF_BADGES,
   ACTION_REQUIREMENTS,
 
+  getBotOwnerId,
+  getId,
+  isBotOwner,
+  isGuildOwner,
+
   hasPermission,
   hasModPermission,
 
   getStaffLevel,
+  getStaffDisplay,
   getStaffLevelRank,
   getRequiredStaffLevel,
   canUseModAction,
@@ -265,10 +336,10 @@ module.exports = {
   getStaffBadge,
 
   getHighestRolePosition,
-  isGuildOwner,
   checkHierarchy,
   checkHierarchyForBulk,
   canActOnTarget,
+  canBotActOnTarget,
   canBotActOnTarget,
   getHierarchySummary,
 };

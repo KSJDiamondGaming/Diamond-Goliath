@@ -9,6 +9,8 @@ const {
   Partials,
 } = require('discord.js');
 
+const { startServerBackupScheduler } = require('./src/security/serverBackupScheduler');
+
 /* ---------------- CLIENT ---------------- */
 
 const client = new Client({
@@ -38,12 +40,17 @@ function getAllJsFiles(dir) {
       continue;
     }
 
-    if (entry.isFile() && entry.name.endsWith('.js')) {
+    if (
+      entry.isFile() &&
+      entry.name.endsWith('.js') &&
+      !entry.name.endsWith('.test.js') &&
+      !entry.name.endsWith('.spec.js')
+    ) {
       results.push(fullPath);
     }
   }
 
-  return results;
+  return results.sort((a, b) => a.localeCompare(b));
 }
 
 /* ---------------- COMMANDS ---------------- */
@@ -54,6 +61,8 @@ function loadCommands() {
 
   for (const file of files) {
     try {
+      delete require.cache[require.resolve(file)];
+
       const command = require(file);
 
       if (!command?.data?.name || typeof command.execute !== 'function') {
@@ -95,6 +104,8 @@ function loadEvents() {
 
   for (const file of files) {
     try {
+      delete require.cache[require.resolve(file)];
+
       const loadedEvent = require(file);
       const events = Array.isArray(loadedEvent) ? loadedEvent : [loadedEvent];
 
@@ -123,6 +134,8 @@ async function start() {
 
   client.once('clientReady', (readyClient) => {
     console.log(`🤖 Logged in as ${readyClient.user.tag}`);
+
+    startServerBackupScheduler(readyClient);
   });
 
   await client.login(token);

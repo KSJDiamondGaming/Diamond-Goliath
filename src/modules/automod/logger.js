@@ -58,7 +58,7 @@ async function sendAutomodLog(message, config, details) {
 
   await logService.send(message.guild, LOG_TYPES.AUTOMOD_ACTION, {
     color: colors[details.rule] || '#ff5555',
-    title: `${emojis[details.rule] || '🛡️'} AutoMod: ${
+    title: `${emojis[details.rule] || '🤖'} AutoMod: ${
       details.rule || 'Triggered'
     }`,
     user: message.author,

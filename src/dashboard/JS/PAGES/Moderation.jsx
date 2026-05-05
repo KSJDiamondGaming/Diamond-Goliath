@@ -73,7 +73,7 @@ export default function Moderation({ selectedGuild, theme }) {
 
             <div style={styles.futurePanel}>
               <div style={styles.futureInnerPanel}>
-                <h4 style={{ margin: 0 }}>🛡️ Permissions</h4>
+                <h4 style={{ margin: 0 }}>🔐 Permissions</h4>
                 <p style={{ margin: 0 }}>
                   Control moderator roles and permissions.
                 </p>

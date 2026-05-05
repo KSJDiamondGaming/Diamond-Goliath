@@ -167,7 +167,7 @@ async function logModerationAction({
 
     const embed = new EmbedBuilder()
       .setColor(color)
-      .setTitle(title || `🛡️ ${actionLabel}`)
+      .setTitle(title || `🔐 ${actionLabel}`)
       .setTimestamp();
 
     if (fields.length > 0) {

@@ -26,39 +26,63 @@ function buildDashboardNav(targetId, activeView = 'overview') {
         new ButtonBuilder()
           .setCustomId(`mod_dashboard:${targetId || 'none'}:${item.view}`)
           .setLabel(item.label)
-          .setStyle(
-            activeView === item.view
-              ? ButtonStyle.Primary
-              : ButtonStyle.Secondary
-          )
+          .setStyle(activeView === item.view ? ButtonStyle.Primary : ButtonStyle.Secondary)
       )
     ),
   ];
 }
 
+/* ---------------- HELPERS ---------------- */
+
+function empty(value = '—') {
+  return value;
+}
+
+function formatTargetLine(target) {
+  if (!target) {
+    return `${EMOJIS.WARNING} **No target selected**\nUse **${EMOJIS.USER} Select User** to begin.`;
+  }
+
+  return [
+    `${EMOJIS.USER} **Target Selected**`,
+    `> ${target.user}`,
+    `> \`${target.user.tag}\``,
+    `> ID: \`${target.id}\``,
+  ].join('\n');
+}
+
 /* ---------------- OVERVIEW EMBED ---------------- */
 
-function buildOverviewEmbed(guild, moderator, target, stats = {}) {
+function buildOverviewEmbed(guild, moderator, target, stats = {}, staffDisplay = null) {
+  const staffLine = staffDisplay || `${EMOJIS.MODERATOR} Moderator • ${moderator}`;
+
   return createEmbed({
-    title: `${EMOJIS.DASHBOARD} Moderation Dashboard`,
-    description: target
-      ? `${EMOJIS.USER} Managing **${target.user.tag}**`
-      : `${EMOJIS.WARNING} No user selected yet.\nUse **${EMOJIS.USER} Select User** to begin.`,
+    title: `${EMOJIS.DASHBOARD} Moderation Command Centre`,
+    description: [
+      `**${guild.name}** moderation hub`,
+      '',
+      formatTargetLine(target),
+    ].join('\n'),
     color: COLORS.PRIMARY,
     fields: [
       {
-        name: `${EMOJIS.MODERATOR} Moderator`,
-        value: `${moderator}`,
-        inline: true,
+        name: '🔐 Active Staff',
+        value: staffLine,
+        inline: false,
       },
       {
         name: `${EMOJIS.WARNING} Warnings`,
-        value: target ? String(stats.warningCount ?? 0) : '—',
+        value: target ? `\`${stats.warningCount ?? 0}\`` : empty(),
         inline: true,
       },
       {
         name: `${EMOJIS.CASES} Cases`,
-        value: target ? String(stats.caseCount ?? 0) : '—',
+        value: target ? `\`${stats.caseCount ?? 0}\`` : empty(),
+        inline: true,
+      },
+      {
+        name: '📌 Target Status',
+        value: target ? '`Ready for action`' : '`Awaiting target`',
         inline: true,
       },
       {
@@ -80,22 +104,22 @@ function buildCasesEmbed(
   actionFilter = 'all',
   statusFilter = 'all'
 ) {
+  const description = cases.length
+    ? cases
+        .map((entry) =>
+          [
+            `**#${entry.caseId}** • \`${entry.action}\` • ${getStatusLabel(entry)}`,
+            `> **Reason:** ${entry.reason || 'No reason provided'}`,
+          ].join('\n')
+        )
+        .join('\n\n')
+    : `${EMOJIS.ERROR} No cases found for this user.`;
+
   return createEmbed({
-    title: `${EMOJIS.CASES} Cases for ${target.user.tag}`,
-    description: cases.length
-      ? cases
-          .map(
-            (entry) =>
-              `**#${entry.caseId}** • ${entry.action}\nStatus: ${getStatusLabel(
-                entry
-              )}\nReason: ${entry.reason || 'No reason'}`
-          )
-          .join('\n\n')
-      : `${EMOJIS.ERROR} No cases found.`,
+    title: `${EMOJIS.CASES} Cases • ${target.user.tag}`,
+    description,
     color: COLORS.PRIMARY,
-    footer: `Action: ${actionFilter} | Status: ${statusFilter} | Page ${
-      page + 1
-    } of ${totalPages}`,
+    footer: `Action: ${actionFilter} | Status: ${statusFilter} | Page ${page + 1} of ${totalPages}`,
   });
 }
 
@@ -104,49 +128,51 @@ function buildCasesEmbed(
 function buildAnalyticsEmbed(guild, analytics = {}) {
   return createEmbed({
     title: `${EMOJIS.ANALYTICS} Moderation Analytics`,
-    description: `${EMOJIS.FIRE} Stats for **${guild.name}**`,
+    description: `${EMOJIS.FIRE} Security and moderation stats for **${guild.name}**`,
     color: COLORS.PRIMARY,
     fields: [
       {
         name: `${EMOJIS.CASE} Total Cases`,
-        value: String(analytics.totalCases ?? 0),
+        value: `\`${analytics.totalCases ?? 0}\``,
         inline: true,
       },
       {
         name: `${EMOJIS.ACTIVE} Active`,
-        value: String(analytics.activeCases ?? 0),
+        value: `\`${analytics.activeCases ?? 0}\``,
         inline: true,
       },
       {
         name: `${EMOJIS.EXPIRED} Expired`,
-        value: String(analytics.expiredCases ?? 0),
+        value: `\`${analytics.expiredCases ?? 0}\``,
         inline: true,
       },
       {
         name: `${EMOJIS.WARNING} Warns`,
-        value: String(analytics.warnCount ?? 0),
+        value: `\`${analytics.warnCount ?? 0}\``,
         inline: true,
       },
       {
         name: `${EMOJIS.TIMEOUT} Timeouts`,
-        value: String(analytics.timeoutCount ?? 0),
+        value: `\`${analytics.timeoutCount ?? 0}\``,
         inline: true,
       },
       {
         name: `${EMOJIS.BAN} Bans`,
-        value: String(analytics.banCount ?? 0),
+        value: `\`${analytics.banCount ?? 0}\``,
         inline: true,
       },
       {
         name: '🏆 Top Moderators',
         value: analytics.topModerators?.length
           ? analytics.topModerators.join('\n')
-          : 'None',
+          : 'No moderator data yet.',
         inline: false,
       },
       {
-        name: '🎯 Top Moderated Users',
-        value: analytics.topUsers?.length ? analytics.topUsers.join('\n') : 'None',
+        name: '🎯 Most Moderated Users',
+        value: analytics.topUsers?.length
+          ? analytics.topUsers.join('\n')
+          : 'No user data yet.',
         inline: false,
       },
     ],
@@ -167,16 +193,8 @@ function buildActionSelect(targetId) {
           { label: 'Timeout', value: 'timeout', emoji: EMOJIS.TIMEOUT },
           { label: 'Kick', value: 'kick', emoji: EMOJIS.KICK },
           { label: 'Ban', value: 'ban', emoji: EMOJIS.BAN },
-          {
-            label: 'Remove Warning',
-            value: 'remove-warning',
-            emoji: EMOJIS.DELETE,
-          },
-          {
-            label: 'Remove Timeout',
-            value: 'remove-timeout',
-            emoji: EMOJIS.SUCCESS,
-          }
+          { label: 'Remove Warning', value: 'remove-warning', emoji: EMOJIS.DELETE },
+          { label: 'Remove Timeout', value: 'remove-timeout', emoji: EMOJIS.SUCCESS }
         )
     ),
   ];
@@ -201,8 +219,6 @@ function buildPagination(targetId, page, totalPages) {
     ),
   ];
 }
-
-/* ---------------- EXPORTS ---------------- */
 
 module.exports = {
   buildDashboardNav,

@@ -69,7 +69,7 @@ function baseEmbed(clientOrOptions = {}, maybeColor = COLORS.PRIMARY) {
 
   if (footer && client?.user) {
     embed.setFooter({
-      text: `${client.user.username} • KSJ Goliath`,
+      text: `${client.user.username} • Goliath`,
       iconURL: getBotIcon(client),
     });
   }
@@ -140,7 +140,7 @@ function createPanelEmbed(interaction, options = {}) {
     footerText ||
     interaction?.guild?.name ||
     interaction?.client?.user?.username ||
-    'KSJ Goliath';
+    'Goliath';
 
   const resolvedFooterIcon =
     footerIcon ||

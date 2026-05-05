@@ -661,7 +661,7 @@ async function sendAutomodLog(message, config, details) {
     if (!logChannel?.isTextBased()) return;
 
     const meta = RULE_META[details.rule] || {
-      emoji: '🛡️',
+      emoji: '🔐',
       color: '#ff5555',
       severity: 'Medium',
     };

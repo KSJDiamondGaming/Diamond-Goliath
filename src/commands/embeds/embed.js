@@ -5,6 +5,7 @@ const {
 
 const { errorEmbed } = require('../../helpers/ui/embeds');
 const { buildEmbedPanel } = require('../../functions/embed/embedPanel');
+const { enforceCommandAccess } = require('../../helpers/ui/commandAccess');
 
 module.exports = {
   category: 'Embeds',
@@ -16,7 +17,7 @@ module.exports = {
   },
 
   access: {
-    permissions: [PermissionFlagsBits.ManageGuild],
+    level: 'admin',
     ownerOnly: false,
   },
 
@@ -26,11 +27,13 @@ module.exports = {
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
 
   async execute(interaction) {
+    const denied = await enforceCommandAccess(interaction, module.exports);
+    if (denied) return;
+
     try {
       if (!interaction.guild) {
-        return await interaction.reply({
+        return await safeReply(interaction, {
           embeds: [errorEmbed('This command can only be used inside a server.')],
-          flags: 64,
         });
       }
 
@@ -40,28 +43,31 @@ module.exports = {
         interaction.user?.username ||
         'Unknown User';
 
-      return await interaction.reply({
+      return await safeReply(interaction, {
         ...buildEmbedPanel(interaction, memberDisplayName),
-        flags: 64,
       });
     } catch (error) {
       if (error?.code === 10062 || error?.code === 40060) return;
 
       console.error('❌ Embed command failed:', error);
 
-      const failurePayload = {
+      return await safeReply(interaction, {
         embeds: [errorEmbed('Failed to open the embed panel. Please try again.')],
         components: [],
-      };
-
-      if (interaction.deferred || interaction.replied) {
-        return await interaction.editReply(failurePayload);
-      }
-
-      return await interaction.reply({
-        ...failurePayload,
-        flags: 64,
       });
     }
   },
 };
+
+async function safeReply(interaction, payload) {
+  const safePayload = {
+    ...payload,
+    flags: 64,
+  };
+
+  if (interaction.deferred || interaction.replied) {
+    return interaction.editReply(safePayload);
+  }
+
+  return interaction.reply(safePayload);
+}

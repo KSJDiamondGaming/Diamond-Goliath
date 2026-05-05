@@ -33,8 +33,8 @@ function requireBotToken() {
 function emptyBotProfile() {
   return {
     id: null,
-    username: 'KSJ Goliath',
-    name: 'KSJ Goliath',
+    username: 'Goliath',
+    name: 'Goliath',
     tag: null,
     avatar: null,
     avatarUrl: '',
@@ -127,7 +127,7 @@ async function fetchBotProfileFromToken() {
   cachedBotProfile = {
     id: bot.id,
     username: bot.username,
-    name: bot.global_name || bot.username || 'KSJ Goliath',
+    name: bot.global_name || bot.username || 'Goliath',
     tag,
     avatar: bot.avatar || null,
     avatarUrl,

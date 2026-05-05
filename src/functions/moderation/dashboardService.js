@@ -1,9 +1,4 @@
-// functions/moderation/dashboardService.js
-
-const {
-  ActionRowBuilder,
-  ButtonStyle,
-} = require('discord.js');
+const { ActionRowBuilder } = require('discord.js');
 
 const { getWarningCountForUser } = require('../../logging/warnings/warningStore');
 
@@ -33,7 +28,11 @@ const {
 } = require('../../helpers/ui/caseComponentBuilders');
 
 const { normalizeDashboardContext } = require('../../helpers/ui/pendingActionHelpers');
-const { canUseModAction } = require('./moderationChecks');
+
+const {
+  canUseModAction,
+  getStaffDisplay,
+} = require('./moderationChecks');
 
 const {
   COLORS,
@@ -66,6 +65,11 @@ function getTargetId(target) {
 
 function getEmoji(key, fallback) {
   return EMOJIS?.[key] || fallback;
+}
+
+function buildStaffDisplayLine(member, guild) {
+  const staff = getStaffDisplay(member, guild);
+  return `${staff.badge} ${staff.label} • ${member}`;
 }
 
 function buildTargetStats(guildId, target) {
@@ -231,7 +235,7 @@ function buildSelectUserEmbed(interaction, title, description) {
 
 function buildActionsEmbed(interaction, target) {
   return baseEmbed(interaction.client, COLORS.PRIMARY)
-    .setTitle('`🛡️` Moderation Actions')
+    .setTitle('`🔐` Moderation Actions')
     .setDescription(
       target
         ? [
@@ -291,6 +295,7 @@ async function buildDashboardPayload(discord, interaction, target, view = DEFAUL
   const safeView = getSafeView(view);
   const targetId = getTargetId(target);
   const stats = buildTargetStats(interaction.guild.id, target);
+  const staffDisplay = buildStaffDisplayLine(interaction.member, interaction.guild);
 
   const embeds = [];
   const components = [
@@ -303,7 +308,8 @@ async function buildDashboardPayload(discord, interaction, target, view = DEFAUL
         interaction.guild,
         interaction.member,
         target,
-        stats
+        stats,
+        staffDisplay
       )
     );
 

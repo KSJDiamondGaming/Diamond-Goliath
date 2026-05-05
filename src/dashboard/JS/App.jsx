@@ -87,7 +87,7 @@ function normalizeBotProfile(payload) {
 
   if (!bot || typeof bot !== 'object') {
     return {
-      name: 'KSJ Goliath',
+      name: 'Goliath',
       avatar: '',
       raw: null,
     };
@@ -100,7 +100,7 @@ function normalizeBotProfile(payload) {
       bot.displayName ||
       bot.global_name ||
       bot.globalName ||
-      'KSJ Goliath',
+      'Goliath',
     avatar: bot.avatarUrl || bot.avatarURL || buildDiscordAvatarUrl(bot) || '',
     raw: bot,
   };
@@ -170,7 +170,7 @@ export default function App() {
   const cachedBotProfile = useMemo(
     () =>
       getStorage(BOT_PROFILE_STORAGE_KEY, {
-        name: 'KSJ Goliath',
+        name: 'Goliath',
         avatar: '',
         raw: null,
       }),
@@ -178,7 +178,7 @@ export default function App() {
   );
 
   const [botAvatar, setBotAvatar] = useState(cachedBotProfile?.avatar || '');
-  const [botName, setBotName] = useState(cachedBotProfile?.name || 'KSJ Goliath');
+  const [botName, setBotName] = useState(cachedBotProfile?.name || 'Goliath');
   const [botData, setBotData] = useState(cachedBotProfile?.raw || null);
 
   const theme = useMemo(() => getTheme(darkMode), [darkMode]);
@@ -215,7 +215,7 @@ export default function App() {
 
   const applyBotProfile = useCallback((profile) => {
     const safeProfile = {
-      name: profile?.name || 'KSJ Goliath',
+      name: profile?.name || 'Goliath',
       avatar: profile?.avatar || '',
       raw: profile?.raw || null,
     };
@@ -306,7 +306,7 @@ export default function App() {
         authResponse?.bot || authResponse?.client || authResponse?.application
       );
 
-      if (authBotProfile.avatar || authBotProfile.raw || authBotProfile.name !== 'KSJ Goliath') {
+      if (authBotProfile.avatar || authBotProfile.raw || authBotProfile.name !== 'Goliath') {
         applyBotProfile(authBotProfile);
       }
 
@@ -506,7 +506,7 @@ export default function App() {
                 <CenterMessage
                   theme={theme}
                   title="Loading servers..."
-                  text="Fetching the Discord servers shared with KSJ Goliath."
+                  text="Fetching the Discord servers shared with Goliath."
                 />
               ) : routeNeedsGuild && !selectedGuild ? (
                 <CenterMessage

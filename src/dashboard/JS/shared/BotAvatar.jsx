@@ -24,7 +24,7 @@ function buildDiscordAvatarUrl(botData) {
 
 function BotAvatar({ theme, botAvatar, botName, botData, expanded = true }) {
   const styles = useMemo(() => botAvatarStyles(theme), [theme]);
-  const displayName = botName || 'KSJ Goliath';
+  const displayName = botName || 'Goliath';
   const initial = useMemo(() => getNameInitial(displayName), [displayName]);
 
   const propImage = botAvatar || '';

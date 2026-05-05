@@ -1,5 +1,5 @@
 // ==============================
-// KSJ GOLIATH - UI EXPORT SYSTEM
+// GOLIATH - UI EXPORT SYSTEM
 // ==============================
 
 // Core systems

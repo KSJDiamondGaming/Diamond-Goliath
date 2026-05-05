@@ -21,7 +21,7 @@ module.exports = {
   },
 
   access: {
-    permissions: [PermissionFlagsBits.ManageMessages],
+    level: 'mod',
     ownerOnly: false,
   },
 
@@ -39,28 +39,21 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    const BOT_OWNER_ID = process.env.BOT_OWNER_ID;
-    const denied = await enforceCommandAccess(interaction, module.exports, BOT_OWNER_ID);
+    const denied = await enforceCommandAccess(interaction, module.exports);
     if (denied) return;
 
     try {
       if (!interaction.guild) {
-        return await interaction.reply({
-          embeds: [
-            errorEmbed('This command can only be used inside a server.'),
-          ],
-          flags: 64,
+        return await safeReply(interaction, {
+          embeds: [errorEmbed('This command can only be used inside a server.')],
         });
       }
 
       const channel = interaction.channel;
 
       if (!channel) {
-        return await interaction.reply({
-          embeds: [
-            errorEmbed('I could not find this channel.'),
-          ],
-          flags: 64,
+        return await safeReply(interaction, {
+          embeds: [errorEmbed('I could not find this channel.')],
         });
       }
 
@@ -72,11 +65,10 @@ module.exports = {
       ];
 
       if (!allowedChannelTypes.includes(channel.type)) {
-        return await interaction.reply({
+        return await safeReply(interaction, {
           embeds: [
             errorEmbed('This command can only be used in text channels or threads.'),
           ],
-          flags: 64,
         });
       }
 
@@ -87,87 +79,84 @@ module.exports = {
         (await interaction.guild.members.fetchMe().catch(() => null));
 
       if (!botMember) {
-        return await interaction.reply({
-          embeds: [
-            errorEmbed('I could not verify my permissions in this server.'),
-          ],
-          flags: 64,
+        return await safeReply(interaction, {
+          embeds: [errorEmbed('I could not verify my permissions in this server.')],
         });
       }
 
       if (!botMember.permissions.has(PermissionFlagsBits.ManageMessages)) {
-        return await interaction.reply({
+        return await safeReply(interaction, {
           embeds: [
             errorEmbed('I do not have permission to manage messages in this server.'),
           ],
-          flags: 64,
         });
       }
 
       if (
-        'permissionsFor' in channel &&
+        typeof channel.permissionsFor === 'function' &&
         !channel.permissionsFor(botMember)?.has(PermissionFlagsBits.ManageMessages)
       ) {
-        return await interaction.reply({
+        return await safeReply(interaction, {
           embeds: [
             errorEmbed('I do not have permission to manage messages in this channel.'),
           ],
-          flags: 64,
         });
       }
 
       const deleted = await channel.bulkDelete(amount, true);
 
       if (!deleted.size) {
-        return await interaction.reply({
+        return await safeReply(interaction, {
           embeds: [
             warningEmbed('No messages were deleted. They may all be older than 14 days.'),
           ],
-          flags: 64,
         });
       }
 
       const embed = baseEmbed(interaction.client)
         .setTitle('`🧹` Messages Purged')
         .setDescription([
-          `\`✅\` Successfully deleted \`${deleted.size}\` message${deleted.size === 1 ? '' : 's'}.`,
+          `\`✅\` Successfully deleted \`${deleted.size}\` message${
+            deleted.size === 1 ? '' : 's'
+          }.`,
           '',
           `\`📍\` **Channel:** ${channel}`,
-          `\`🛡️\` **Moderator:** ${interaction.user}`,
+          `\`🗝️\` **Moderator:** ${interaction.user}`,
         ].join('\n'))
         .setFooter({
           text: `Requested by ${interaction.user.tag}`,
           iconURL: interaction.user.displayAvatarURL({ dynamic: true }),
         });
 
-      return await interaction.reply({
+      return await safeReply(interaction, {
         embeds: [embed],
-        flags: 64,
       });
     } catch (error) {
       if (error?.code === 10062 || error?.code === 40060) return;
 
       console.error('❌ Purge command failed:', error);
 
-      const failurePayload = {
+      return await safeReply(interaction, {
         embeds: [
-          errorEmbed('I could not delete those messages. Messages older than 14 days cannot be bulk deleted.'),
+          errorEmbed(
+            'I could not delete those messages. Messages older than 14 days cannot be bulk deleted.'
+          ),
         ],
         components: [],
-      };
-
-      try {
-        if (interaction.deferred || interaction.replied) {
-          return await interaction.editReply(failurePayload);
-        }
-
-        return await interaction.reply({
-          ...failurePayload,
-          flags: 64,
-        });
-      } catch (replyError) {
-        console.error('❌ Failed to send purge failure response:', replyError);
-      }
+      });
     }
   },
 };
+
+async function safeReply(interaction, payload) {
+  const safePayload = {
+    ...payload,
+    flags: 64,
+  };
+
+  if (interaction.deferred || interaction.replied) {
+    return interaction.editReply(safePayload);
+  }
+
+  return interaction.reply(safePayload);
+}

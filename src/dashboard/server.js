@@ -29,7 +29,7 @@ app.use(cors({
 app.use(express.json());
 
 app.use(session({
-  name: 'ksj_dashboard_session',
+  name: 'goliath_dashboard_session',
   secret: process.env.SESSION_SECRET || 'dev-secret',
   resave: false,
   saveUninitialized: false,

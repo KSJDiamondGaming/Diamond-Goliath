@@ -55,6 +55,25 @@ const DEFAULT_EMBED_DEFAULTS = Object.freeze({
   warning: null,
 });
 
+const DEFAULT_SERVER_BACKUPS = Object.freeze({
+  enabled: true,
+  lastBackupId: null,
+  lastBackupAt: null,
+  lastBackupBy: null,
+  lastBackupReason: null,
+  backupCount: 0,
+  latestBackup: null,
+  storage: {
+    provider: 'google_drive_desktop',
+    path: process.env.SERVER_BACKUP_DIR || null,
+    restoreRequiresSupport: true,
+  },
+  retention: {
+    maxBackups: Number(process.env.SERVER_BACKUP_RETENTION || 4),
+    autoCleanup: true,
+  },
+});
+
 const DEFAULT_GUILD_DATA = Object.freeze({
   guildId: null,
   guildName: null,
@@ -70,6 +89,8 @@ const DEFAULT_GUILD_DATA = Object.freeze({
 
   automod: {},
   logs: DEFAULT_LOGS,
+  serverBackups: DEFAULT_SERVER_BACKUPS,
+
   cases: {},
   warnings: {},
   welcome: {},
@@ -305,6 +326,36 @@ function normalizeLogs(source = {}) {
   return logs;
 }
 
+function normalizeServerBackups(source = {}) {
+  const serverBackups = mergeDeep(
+    DEFAULT_SERVER_BACKUPS,
+    isPlainObject(source.serverBackups) ? source.serverBackups : {}
+  );
+
+  serverBackups.enabled = serverBackups.enabled !== false;
+
+  serverBackups.storage = mergeDeep(
+    DEFAULT_SERVER_BACKUPS.storage,
+    serverBackups.storage || {}
+  );
+
+  serverBackups.retention = mergeDeep(
+    DEFAULT_SERVER_BACKUPS.retention,
+    serverBackups.retention || {}
+  );
+
+  serverBackups.retention.maxBackups =
+    Number(serverBackups.retention.maxBackups || process.env.SERVER_BACKUP_RETENTION || 4);
+
+  serverBackups.retention.autoCleanup =
+    serverBackups.retention.autoCleanup !== false;
+
+  serverBackups.storage.path =
+    serverBackups.storage.path || process.env.SERVER_BACKUP_DIR || null;
+
+  return serverBackups;
+}
+
 /* ---------------- DEFAULT MERGE ---------------- */
 
 function mergeDefaults(data = {}) {
@@ -312,6 +363,7 @@ function mergeDefaults(data = {}) {
   const merged = mergeDeep(DEFAULT_GUILD_DATA, source);
 
   merged.logs = normalizeLogs(source);
+  merged.serverBackups = normalizeServerBackups(source);
   merged.embedDefaults = mergeDeep(DEFAULT_EMBED_DEFAULTS, source.embedDefaults || {});
 
   return removeLegacyLogFields(merged);
@@ -336,6 +388,7 @@ function getGuildData(guildId, options = {}) {
   const needsRewrite =
     !exists ||
     !rawData.embedDefaults ||
+    !rawData.serverBackups ||
     LEGACY_LOG_FIELDS.some((field) =>
       Object.prototype.hasOwnProperty.call(rawData, field)
     );
@@ -512,6 +565,26 @@ function setLogEventEnabled(guildId, eventName, enabled = true, guildOrMeta = {}
       },
     }),
     DEFAULT_LOGS,
+    guildOrMeta
+  );
+}
+
+/* ---------------- SERVER BACKUP HELPERS ---------------- */
+
+function getServerBackupConfig(guildId) {
+  return getGuildSection(guildId, 'serverBackups', DEFAULT_SERVER_BACKUPS);
+}
+
+function saveServerBackupConfig(guildId, config = {}, guildOrMeta = {}) {
+  return saveGuildSection(guildId, 'serverBackups', config, guildOrMeta);
+}
+
+function updateServerBackupConfig(guildId, updater, guildOrMeta = {}) {
+  return updateGuildSection(
+    guildId,
+    'serverBackups',
+    updater,
+    DEFAULT_SERVER_BACKUPS,
     guildOrMeta
   );
 }
@@ -702,6 +775,7 @@ module.exports = {
   DEFAULT_GUILD_DATA,
   DEFAULT_LOGS,
   DEFAULT_EMBED_DEFAULTS,
+  DEFAULT_SERVER_BACKUPS,
 
   getGuildFilePath,
 
@@ -721,6 +795,10 @@ module.exports = {
   setLogChannelId,
   isLogEventEnabled,
   setLogEventEnabled,
+
+  getServerBackupConfig,
+  saveServerBackupConfig,
+  updateServerBackupConfig,
 
   isModuleEnabled,
   setModuleEnabled,

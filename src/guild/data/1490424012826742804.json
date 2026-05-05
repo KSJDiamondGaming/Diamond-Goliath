@@ -1,7 +1,7 @@
 {
   "guildId": "1490424012826742804",
-  "guildName": null,
-  "updatedAt": "2026-05-03T17:36:59.343Z",
+  "guildName": "Emergency Community Hub",
+  "updatedAt": "2026-05-04T23:26:52.833Z",
   "general": {
     "enabled": true,
     "prefix": "!",
@@ -41,6 +41,30 @@
       "voiceMove": true
     }
   },
+  "serverBackups": {
+    "enabled": true,
+    "lastBackupId": "2026-05-04T23-20-09-177Z",
+    "lastBackupAt": "2026-05-04T23:20:09.178Z",
+    "lastBackupBy": "system:auto-weekly",
+    "lastBackupReason": null,
+    "backupCount": 1,
+    "latestBackup": {
+      "backupId": "2026-05-04T23-20-09-177Z",
+      "createdAt": "2026-05-04T23:20:09.178Z",
+      "roles": 1,
+      "channels": 9
+    },
+    "storage": {
+      "provider": "google_drive",
+      "path": "F:\\My Drive\\Goliath Backups",
+      "restoreRequiresSupport": true
+    },
+    "retention": {
+      "maxBackups": 4,
+      "autoCleanup": true
+    },
+    "updatedAt": "2026-05-04T23:20:09.287Z"
+  },
   "cases": {},
   "warnings": {},
   "welcome": {},
@@ -51,6 +75,20 @@
   "giveaways": {},
   "suggestions": {},
   "stats": {},
+  "autoRoles": {
+    "enabled": true,
+    "roleIds": [
+      "1493333511132811439",
+      "1500547890823823502"
+    ],
+    "updatedAt": "2026-05-03T17:36:59.343Z"
+  },
+  "staffRoles": {
+    "roleIds": []
+  },
+  "modRoles": {
+    "roleIds": []
+  },
   "embedPresets": {},
   "embedDefaults": {
     "welcome": null,
@@ -62,13 +100,5 @@
     "update": null,
     "event": null,
     "warning": null
-  },
-  "autoRoles": {
-    "enabled": true,
-    "roleIds": [
-      "1493333511132811439",
-      "1500547890823823502"
-    ],
-    "updatedAt": "2026-05-03T17:36:59.343Z"
   }
 }
