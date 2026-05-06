@@ -17,6 +17,8 @@ const {
 
 const guildManager = require('../../guild/guildManager');
 const { restoreServerBackup } = require('../../security/serverRestore');
+const panelNav = require('../../helpers/ui/panelNavigation');
+const { sendAutoModDM } = require('../../functions/automod/automodDm');
 
 const {
   createServerBackup,
@@ -26,8 +28,6 @@ const {
 
 const PANEL_COLOR = '#5865F2';
 
-const ADMIN_HISTORY = new Map();
-const ADMIN_ROUTE = new Map();
 const RESTORE_PENDING = new Map();
 
 const LOG_TYPES = {
@@ -91,6 +91,58 @@ const COMING_SOON = {
   'admin:polls': ['📊 Polls', 'Poll system is coming soon.'],
 };
 
+function getRouteLabel(route) {
+  const labels = {
+    'admin:home': 'Admin Hub',
+    'admin:automod': 'AutoMod',
+    'admin:embed': 'Embed Studio',
+    'admin:modules': 'Modules',
+    'admin:logs': 'Logs',
+    'admin:backups': 'Backups',
+    'admin:adminpanel': 'Admin Panel',
+    'admin:modpanel': 'Mod Panel',
+    'admin:staffroles': 'Staff Roles',
+    'admin:modroles': 'Mod Roles',
+    'admin:autoRoles': 'Join Roles',
+    'admin:backup:restore': 'Restore Backup',
+    'admin:backup:restore:confirm': 'Confirm Restore',
+  };
+
+  return labels[route] || String(route || 'admin:home').replace('admin:', '').replaceAll(':', ' › ');
+}
+
+function getBreadcrumbFromState(navState) {
+  const state = navState || panelNav.createState('admin:home');
+  const history = Array.isArray(state.history) ? state.history : ['admin:home'];
+
+  return history
+    .filter(Boolean)
+    .slice(-4)
+    .map(getRouteLabel)
+    .join(' › ');
+}
+
+function applyNavigationUI(interaction, panel, navState = panelNav.createState('admin:home')) {
+  if (!interaction || !panel?.embeds?.[0]) return panel;
+
+  const embed = EmbedBuilder.from(panel.embeds[0]);
+
+  embed.setFooter({
+    text: `Navigation: ${getBreadcrumbFromState(navState)}`,
+  });
+
+  return {
+    ...panel,
+    embeds: [embed],
+  };
+}
+
+async function openExternalAdminPanel(interaction, panel, navState = panelNav.createState('admin:home')) {
+  const finalPanel = applyNavigationUI(interaction, panel, navState);
+  await interaction.update(finalPanel);
+  return true;
+}
+
 function getBotOwnerIds() {
   const ids = [];
 
@@ -116,49 +168,16 @@ function isGuildOwner(interaction) {
   return interaction.guild?.ownerId === interaction.user.id;
 }
 
-function canCreateBackup(interaction) {
-  return isBotOwner(interaction) || isGuildOwner(interaction);
-}
-
-function getNavKey(interaction) {
-  return `${interaction.guild.id}:${interaction.user.id}`;
+function canUseAdminPanel(interaction) {
+  return (
+    isBotOwner(interaction) ||
+    isGuildOwner(interaction) ||
+    interaction.member?.permissions?.has(PermissionFlagsBits.Administrator)
+  );
 }
 
 function getRestoreKey(interaction) {
   return `${interaction.guild.id}:${interaction.user.id}`;
-}
-
-function getCurrentRoute(interaction) {
-  return ADMIN_ROUTE.get(getNavKey(interaction)) || 'admin:home';
-}
-
-function setCurrentRoute(interaction, route) {
-  ADMIN_ROUTE.set(getNavKey(interaction), route);
-}
-
-function pushHistory(interaction, route) {
-  const key = getNavKey(interaction);
-  const history = ADMIN_HISTORY.get(key) || [];
-
-  history.push(route);
-  if (history.length > 10) history.shift();
-
-  ADMIN_HISTORY.set(key, history);
-}
-
-function popHistory(interaction) {
-  const key = getNavKey(interaction);
-  const history = ADMIN_HISTORY.get(key) || [];
-  const currentRoute = getCurrentRoute(interaction);
-
-  let previousRoute = history.pop();
-
-  while (previousRoute && previousRoute === currentRoute) {
-    previousRoute = history.pop();
-  }
-
-  ADMIN_HISTORY.set(key, history);
-  return previousRoute || 'admin:home';
 }
 
 function getMemberDisplayName(interaction) {
@@ -263,8 +282,16 @@ function button(customId, label, style = ButtonStyle.Primary) {
     .setStyle(style);
 }
 
-function backButton() {
-  return button('admin:back', '⬅️ Back', ButtonStyle.Secondary);
+function backButton(navState = panelNav.createState('admin:home')) {
+  return button(
+    panelNav.buildCustomId(navState, 'back'),
+    '⬅️ Back',
+    ButtonStyle.Secondary
+  );
+}
+
+function navRow(navState) {
+  return row(backButton(navState));
 }
 
 function row(...components) {
@@ -301,8 +328,8 @@ function buildAdminPanel(guild, memberDisplayName = 'Unknown User') {
     'Control your server systems from one place.',
     memberDisplayName
   ).addFields(
-    { name: '🤖 AutoMod', value: 'Filters & protection', inline: true },
-    { name: '🔏 Admin', value: 'Admin tools & systems', inline: true },
+    { name: '🤖 AutoMod', value: 'Auto Protection', inline: true },
+    { name: '🔏 Admin', value: 'Admin tools', inline: true },
     { name: '🔐 Mod Panel', value: 'Moderation tools', inline: true },
     { name: '🧩 Modules', value: 'Embeds, tickets, fun, etc.', inline: true },
     { name: '📋 Logs', value: formatLogsSummary(guildId), inline: true },
@@ -324,7 +351,7 @@ function buildAdminPanel(guild, memberDisplayName = 'Unknown User') {
   };
 }
 
-function buildAdminToolsPanel(guild, memberDisplayName = 'Unknown User') {
+function buildAdminToolsPanel(guild, memberDisplayName = 'Unknown User', navState = panelNav.createState('admin:home')) {
   const guildId = guild.id;
   const adminLogChannelId = getLogChannelId(guildId, 'admin');
   const staffConfig = getRoleConfig(guildId, 'staffRoles');
@@ -371,12 +398,12 @@ function buildAdminToolsPanel(guild, memberDisplayName = 'Unknown User') {
         ['admin:modroles', '🔐 Mod Roles', ButtonStyle.Primary],
         ['admin:adminsettings', '⚙️ Settings', ButtonStyle.Primary],
       ]),
-      row(backButton()),
+      navRow(navState),
     ],
   };
 }
 
-function buildBackupsPanel(guild, memberDisplayName = 'Unknown User') {
+function buildBackupsPanel(guild, memberDisplayName = 'Unknown User', navState = panelNav.createState('admin:home')) {
   const backupConfig = guildManager.getGuildSection(guild.id, 'serverBackups', {});
   const backups = listServerBackups(guild.id);
   const latest = normalizeBackupId(backups[0]) || null;
@@ -415,12 +442,12 @@ function buildBackupsPanel(guild, memberDisplayName = 'Unknown User') {
         ],
         2
       ),
-      row(backButton()),
+      navRow(navState),
     ],
   };
 }
 
-function buildRestoreSelectPanel(guild, memberDisplayName = 'Unknown User') {
+function buildRestoreSelectPanel(guild, memberDisplayName = 'Unknown User', navState = panelNav.createState('admin:home')) {
   const backups = listServerBackups(guild.id)
     .map(normalizeBackupId)
     .filter(Boolean)
@@ -442,7 +469,7 @@ function buildRestoreSelectPanel(guild, memberDisplayName = 'Unknown User') {
   if (!backups.length) {
     return {
       embeds: [embed.setDescription('No backups found to restore.')],
-      components: [row(backButton())],
+      components: [navRow(navState)],
     };
   }
 
@@ -461,11 +488,11 @@ function buildRestoreSelectPanel(guild, memberDisplayName = 'Unknown User') {
 
   return {
     embeds: [embed],
-    components: [row(select), row(backButton())],
+    components: [row(select), navRow(navState)],
   };
 }
 
-function buildRestoreConfirmPanel(guild, backupId, memberDisplayName = 'Unknown User') {
+function buildRestoreConfirmPanel(guild, backupId, memberDisplayName = 'Unknown User', navState = panelNav.createState('admin:home')) {
   const backup = readServerBackup(guild.id, backupId);
 
   if (!backup) {
@@ -477,7 +504,7 @@ function buildRestoreConfirmPanel(guild, backupId, memberDisplayName = 'Unknown 
           memberDisplayName
         ),
       ],
-      components: [row(backButton())],
+      components: [navRow(navState)],
     };
   }
 
@@ -509,7 +536,7 @@ function buildRestoreConfirmPanel(guild, backupId, memberDisplayName = 'Unknown 
         button('admin:backup:restore:confirm', '✅ Dry Run Restore', ButtonStyle.Danger),
         button('admin:backup:restore:cancel', '❌ Cancel', ButtonStyle.Secondary)
       ),
-      row(backButton()),
+      navRow(navState),
     ],
   };
 }
@@ -525,6 +552,7 @@ function buildRolePanel({
   accessType,
   selectId,
   clearId,
+  navState = panelNav.createState('admin:home'),
 }) {
   const config = getRoleConfig(guild.id, section);
   const roleIds = config.roleIds || [];
@@ -556,12 +584,12 @@ function buildRolePanel({
           .setMinValues(0)
           .setMaxValues(10)
       ),
-      row(button(clearId, '🧹 Clear Roles', ButtonStyle.Secondary), backButton()),
+      row(button(clearId, '🧹 Clear Roles', ButtonStyle.Secondary), backButton(navState),),
     ],
   };
 }
 
-function buildStaffRolesPanel(guild, memberDisplayName = 'Unknown User') {
+function buildStaffRolesPanel(guild, memberDisplayName = 'Unknown User', navState = panelNav.createState('admin:home')) {
   return buildRolePanel({
     guild,
     memberDisplayName,
@@ -573,10 +601,11 @@ function buildStaffRolesPanel(guild, memberDisplayName = 'Unknown User') {
     accessType: 'Admin tools',
     selectId: 'admin:staffroles:select',
     clearId: 'admin:staffroles:clear',
+    navState,
   });
 }
 
-function buildModRolesPanel(guild, memberDisplayName = 'Unknown User') {
+function buildModRolesPanel(guild, memberDisplayName = 'Unknown User', navState = panelNav.createState('admin:home')) {
   return buildRolePanel({
     guild,
     memberDisplayName,
@@ -588,10 +617,11 @@ function buildModRolesPanel(guild, memberDisplayName = 'Unknown User') {
     accessType: 'Mod panel only',
     selectId: 'admin:modroles:select',
     clearId: 'admin:modroles:clear',
+    navState,
   });
 }
 
-function buildModulesPanel(guild, memberDisplayName = 'Unknown User') {
+function buildModulesPanel(guild, memberDisplayName = 'Unknown User', navState = panelNav.createState('admin:home')) {
   const embed = createEmbed(
     '🧩 Modules',
     'Manage optional server modules from here.',
@@ -608,12 +638,12 @@ function buildModulesPanel(guild, memberDisplayName = 'Unknown User') {
     embeds: [embed],
     components: [
       ...buttonRows(MODULES.map(([customId, label]) => [customId, label, ButtonStyle.Primary])),
-      row(backButton()),
+      navRow(navState),
     ],
   };
 }
 
-function buildLogsPanel(guild, memberDisplayName = 'Unknown User') {
+function buildLogsPanel(guild, memberDisplayName = 'Unknown User', navState = panelNav.createState('admin:home')) {
   const guildId = guild.id;
 
   const embed = createEmbed(
@@ -664,12 +694,12 @@ function buildLogsPanel(guild, memberDisplayName = 'Unknown User') {
         Object.values(LOG_TYPES).map((log) => [log.customId, log.label, ButtonStyle.Primary]),
         3
       ),
-      row(backButton()),
+      navRow(navState),
     ],
   };
 }
 
-function buildAutoRolesPanel(guild, memberDisplayName = 'Unknown User') {
+function buildAutoRolesPanel(guild, memberDisplayName = 'Unknown User', navState = panelNav.createState('admin:home')) {
   const config = getAutoRolesConfig(guild.id);
   const roleIds = config.roleIds || [];
 
@@ -700,13 +730,13 @@ function buildAutoRolesPanel(guild, memberDisplayName = 'Unknown User') {
           config.enabled ? 'Disable' : 'Enable',
           config.enabled ? ButtonStyle.Danger : ButtonStyle.Success
         ),
-        backButton()
+        backButton(navState),
       ),
     ],
   };
 }
 
-function buildChannelPanel(type = 'logs') {
+function buildChannelPanel(type = 'logs', navState = panelNav.createState('admin:home')) {
   const selected = LOG_TYPES[type] || LOG_TYPES.logs;
 
   return {
@@ -720,15 +750,15 @@ function buildChannelPanel(type = 'logs') {
           .setPlaceholder('Choose a text channel')
           .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
       ),
-      row(backButton()),
+      navRow(navState),
     ],
   };
 }
 
-function buildComingSoonPanel(title, description) {
+function buildComingSoonPanel(title, description, navState = panelNav.createState('admin:home')) {
   return {
     embeds: [createEmbed(title, description)],
-    components: [row(backButton())],
+    components: [navRow(navState)],
   };
 }
 
@@ -774,73 +804,96 @@ async function replyNoAccess(interaction, message) {
   return true;
 }
 
-async function updatePanel(interaction, panel, nextRoute = null, options = {}) {
-  const currentRoute = getCurrentRoute(interaction);
+function makeComponentIdsUnique(panel) {
+  const seen = new Set();
 
-  if (nextRoute && !options.skipHistory && nextRoute !== currentRoute) {
-    pushHistory(interaction, currentRoute);
+  for (const row of panel.components || []) {
+    for (const component of row.components || []) {
+      const customId = component.data?.custom_id;
+      if (!customId) continue;
+
+      if (seen.has(customId)) {
+        console.error('❌ Duplicate customId detected:', customId);
+
+        component.setCustomId(`${customId}:dup:${Date.now()}`);
+      }
+
+      seen.add(component.data.custom_id);
+    }
   }
 
-  if (nextRoute) setCurrentRoute(interaction, nextRoute);
+  return panel;
+}
 
-  await interaction.update(panel);
+async function updatePanel(interaction, panel, navState = panelNav.createState('admin:home')) {
+  const finalPanel = applyNavigationUI(interaction, panel, navState);
+
+  makeComponentIdsUnique(finalPanel); // 👈 THIS LINE FIXES YOUR CRASH
+
+  await interaction.update(finalPanel);
   return true;
 }
 
-function buildPanelByRoute(route, guild, memberDisplayName, interaction = null) {
+function buildPanelByRoute(route, guild, memberDisplayName, interaction = null, navState = panelNav.createState('admin:home')) {
   if (route === 'admin:home') return buildAdminPanel(guild, memberDisplayName);
-  if (route === 'admin:adminpanel') return buildAdminToolsPanel(guild, memberDisplayName);
-  if (route === 'admin:modules') return buildModulesPanel(guild, memberDisplayName);
-  if (route === 'admin:logs') return buildLogsPanel(guild, memberDisplayName);
-  if (route === 'admin:backups') return buildBackupsPanel(guild, memberDisplayName);
-  if (route === 'admin:backup:restore') return buildRestoreSelectPanel(guild, memberDisplayName);
-  if (route === 'admin:staffroles') return buildStaffRolesPanel(guild, memberDisplayName);
-  if (route === 'admin:modroles') return buildModRolesPanel(guild, memberDisplayName);
-  if (route === 'admin:autoRoles') return buildAutoRolesPanel(guild, memberDisplayName);
+  if (route === 'admin:adminpanel') return buildAdminToolsPanel(guild, memberDisplayName, navState);
+  if (route === 'admin:modules') return buildModulesPanel(guild, memberDisplayName, navState);
+  if (route === 'admin:logs') return buildLogsPanel(guild, memberDisplayName, navState);
+  if (route === 'admin:backups') return buildBackupsPanel(guild, memberDisplayName, navState);
+  if (route === 'admin:backup:restore') return buildRestoreSelectPanel(guild, memberDisplayName, navState);
+  if (route === 'admin:staffroles') return buildStaffRolesPanel(guild, memberDisplayName, navState);
+  if (route === 'admin:modroles') return buildModRolesPanel(guild, memberDisplayName, navState);
+  if (route === 'admin:autoRoles') return buildAutoRolesPanel(guild, memberDisplayName, navState);
 
   if (route === 'admin:backup:restore:confirm' && interaction) {
     const pending = RESTORE_PENDING.get(getRestoreKey(interaction));
+
     if (pending?.backupId) {
-      return buildRestoreConfirmPanel(guild, pending.backupId, memberDisplayName);
+      return buildRestoreConfirmPanel(guild, pending.backupId, memberDisplayName, navState);
     }
   }
 
   if (route === 'admin:automod') {
-    return buildComingSoonPanel('⚙️ AutoMod', 'AutoMod controls will live here.');
+    const { buildAutomodPanel } = require('../automod/automodPanel');
+    return buildAutomodPanel(guild, memberDisplayName, navState);
   }
 
   if (route === 'admin:modpanel') {
-    return buildComingSoonPanel('🔐 Mod Panel', 'Moderation tools will live here.');
+    return buildComingSoonPanel('🔐 Mod Panel', 'Moderation tools will live here.', navState);
   }
 
   if (route === 'admin:adminsettings') {
-    return buildComingSoonPanel('⚙️ Admin Settings', 'Admin settings will live here.');
+    return buildComingSoonPanel('⚙️ Admin Settings', 'Admin settings will live here.', navState);
   }
 
   if (COMING_SOON[route]) {
     const [title, description] = COMING_SOON[route];
-    return buildComingSoonPanel(title, description);
+    return buildComingSoonPanel(title, description, navState);
   }
 
   return buildAdminPanel(guild, memberDisplayName);
 }
 
-async function handleRoleSelect(interaction, memberDisplayName) {
+function nextState(navState, route) {
+  return panelNav.push(
+    navState || panelNav.createState('admin:home'),
+    route
+  );
+}
+
+async function handleRoleSelect(interaction, memberDisplayName, navState) {
   const handlers = {
     'admin:staffroles:select': {
       section: 'staffRoles',
-      panel: () => buildStaffRolesPanel(interaction.guild, memberDisplayName),
-      route: 'admin:staffroles',
+      panel: () => buildStaffRolesPanel(interaction.guild, memberDisplayName, navState),
     },
     'admin:modroles:select': {
       section: 'modRoles',
-      panel: () => buildModRolesPanel(interaction.guild, memberDisplayName),
-      route: 'admin:modroles',
+      panel: () => buildModRolesPanel(interaction.guild, memberDisplayName, navState),
     },
     'admin:autoRoles:select': {
       section: 'autoRoles',
-      panel: () => buildAutoRolesPanel(interaction.guild, memberDisplayName),
-      route: 'admin:autoRoles',
+      panel: () => buildAutoRolesPanel(interaction.guild, memberDisplayName, navState),
       mergeExisting: true,
     },
   };
@@ -861,12 +914,10 @@ async function handleRoleSelect(interaction, memberDisplayName) {
     });
   }
 
-  return updatePanel(interaction, selected.panel(), selected.route, {
-    skipHistory: true,
-  });
+  return updatePanel(interaction, selected.panel(), navState);
 }
 
-async function handleChannelSelect(interaction, memberDisplayName) {
+async function handleChannelSelect(interaction, memberDisplayName, navState) {
   const type = LOG_SELECT_TO_TYPE[interaction.customId];
   if (!type) return false;
 
@@ -877,13 +928,12 @@ async function handleChannelSelect(interaction, memberDisplayName) {
 
   return updatePanel(
     interaction,
-    buildLogsPanel(interaction.guild, memberDisplayName),
-    'admin:logs',
-    { skipHistory: true }
+    buildLogsPanel(interaction.guild, memberDisplayName, navState),
+    navState
   );
 }
 
-async function handleRestoreSelect(interaction, memberDisplayName) {
+async function handleRestoreSelect(interaction, memberDisplayName, navState) {
   if (!isBotOwner(interaction)) {
     return replyNoAccess(interaction, '❌ Only the bot owner can restore backups.');
   }
@@ -900,14 +950,20 @@ async function handleRestoreSelect(interaction, memberDisplayName) {
     selectedAt: new Date().toISOString(),
   });
 
+  const state = nextState(navState, 'admin:backup:restore:confirm');
+
   return updatePanel(
     interaction,
-    buildRestoreConfirmPanel(interaction.guild, backupId, memberDisplayName),
-    'admin:backup:restore:confirm'
+    buildRestoreConfirmPanel(interaction.guild, backupId, memberDisplayName, state),
+    state
   );
 }
 
-async function handleBackupCreate(interaction, memberDisplayName) {
+function canCreateBackup(interaction) {
+  return isBotOwner(interaction) || isGuildOwner(interaction);
+}
+
+async function handleBackupCreate(interaction, memberDisplayName, navState) {
   if (!canCreateBackup(interaction)) {
     return replyNoAccess(
       interaction,
@@ -922,7 +978,14 @@ async function handleBackupCreate(interaction, memberDisplayName) {
     reason: 'Manual backup from admin panel',
   });
 
-  await interaction.editReply(buildBackupsPanel(interaction.guild, memberDisplayName));
+  await interaction.editReply(
+    applyNavigationUI(
+      interaction,
+      buildBackupsPanel(interaction.guild, memberDisplayName, navState),
+      navState
+    )
+  );
+
   return true;
 }
 
@@ -1031,15 +1094,17 @@ async function handleBackupPreview(interaction) {
   });
 }
 
-async function handleBackupRestore(interaction, memberDisplayName) {
+async function handleBackupRestore(interaction, memberDisplayName, navState) {
   if (!isBotOwner(interaction)) {
     return replyNoAccess(interaction, '❌ Only the bot owner can restore backups.');
   }
 
+  const state = nextState(navState, 'admin:backup:restore');
+
   return updatePanel(
     interaction,
-    buildRestoreSelectPanel(interaction.guild, memberDisplayName),
-    'admin:backup:restore'
+    buildRestoreSelectPanel(interaction.guild, memberDisplayName, state),
+    state
   );
 }
 
@@ -1104,7 +1169,7 @@ async function handleBackupRestoreConfirm(interaction) {
   }
 }
 
-async function handleBackupRestoreCancel(interaction, memberDisplayName) {
+async function handleBackupRestoreCancel(interaction, memberDisplayName, navState) {
   const pending = RESTORE_PENDING.get(getRestoreKey(interaction));
 
   if (pending?.backupId) {
@@ -1124,9 +1189,8 @@ async function handleBackupRestoreCancel(interaction, memberDisplayName) {
 
   return updatePanel(
     interaction,
-    buildBackupsPanel(interaction.guild, memberDisplayName),
-    'admin:backups',
-    { skipHistory: true }
+    buildBackupsPanel(interaction.guild, memberDisplayName, navState),
+    navState
   );
 }
 
@@ -1157,29 +1221,25 @@ async function handleFinalRestoreModal(interaction) {
 
   try {
     await interaction.editReply({
-  content: '⏳ Restore starting...\n\nProgress: 0%',
-});
+      content: '⏳ Restore starting...\n\nProgress: 0%',
+    });
 
-const report = await restoreServerBackup(
-  interaction.guild,
-  pending.backupId,
-  {
-    dryRun: false,
-    reason: `REAL RESTORE by ${interaction.user.tag}`,
+    const report = await restoreServerBackup(interaction.guild, pending.backupId, {
+      dryRun: false,
+      reason: `REAL RESTORE by ${interaction.user.tag}`,
 
-    onProgress: async ({ step, current, total, percent }) => {
-      await interaction.editReply({
-        content: [
-          '⏳ **Restore in progress**',
-          '',
-          `**Step:** ${step}`,
-          `**Progress:** ${percent}%`,
-          `**Items:** ${current}/${total}`,
-        ].join('\n'),
-      });
-    },
-  }
-);
+      onProgress: async ({ step, current, total, percent }) => {
+        await interaction.editReply({
+          content: [
+            '⏳ **Restore in progress**',
+            '',
+            `**Step:** ${step}`,
+            `**Progress:** ${percent}%`,
+            `**Items:** ${current}/${total}`,
+          ].join('\n'),
+        });
+      },
+    });
 
     sendRestoreLog(
       interaction.guild,
@@ -1210,9 +1270,32 @@ const report = await restoreServerBackup(
   }
 }
 
-async function handleAdminNavigation(interaction) {
+async function openRoute(interaction, route, memberDisplayName, navState) {
+  const state = route === 'admin:home'
+    ? panelNav.createState('admin:home')
+    : nextState(navState, route);
+
+  const panel = buildPanelByRoute(
+    route,
+    interaction.guild,
+    memberDisplayName,
+    interaction,
+    state
+  );
+
+  return updatePanel(interaction, panel, state);
+}
+
+async function handleAdminNavigation(interaction, navState = panelNav.createState('admin:home')) {
   if (!interaction.guild) return false;
   if (!interaction.customId?.startsWith('admin:')) return false;
+
+  if (!canUseAdminPanel(interaction)) {
+    return replyNoAccess(
+      interaction,
+      '❌ Only the bot owner, server owner, or administrators can use the Admin Panel.'
+    );
+  }
 
   if (interaction.isModalSubmit()) {
     if (interaction.customId === 'admin:backup:restore:finalModal') {
@@ -1225,16 +1308,16 @@ async function handleAdminNavigation(interaction) {
   const memberDisplayName = getMemberDisplayName(interaction);
 
   if (interaction.isRoleSelectMenu()) {
-    return handleRoleSelect(interaction, memberDisplayName);
+    return handleRoleSelect(interaction, memberDisplayName, navState);
   }
 
   if (interaction.isChannelSelectMenu()) {
-    return handleChannelSelect(interaction, memberDisplayName);
+    return handleChannelSelect(interaction, memberDisplayName, navState);
   }
 
   if (interaction.isStringSelectMenu()) {
     if (interaction.customId === 'admin:backup:restore:select') {
-      return handleRestoreSelect(interaction, memberDisplayName);
+      return handleRestoreSelect(interaction, memberDisplayName, navState);
     }
 
     return false;
@@ -1262,126 +1345,52 @@ async function handleAdminNavigation(interaction) {
     return true;
   }
 
-  if (customId === 'admin:back') {
-    const previousRoute = popHistory(interaction);
-
-    return updatePanel(
-      interaction,
-      buildPanelByRoute(previousRoute, interaction.guild, memberDisplayName, interaction),
-      previousRoute,
-      { skipHistory: true }
-    );
-  }
-
   if (customId === 'admin:home') {
-    return updatePanel(
-      interaction,
-      buildAdminPanel(interaction.guild, memberDisplayName),
-      'admin:home'
-    );
+    return openRoute(interaction, 'admin:home', memberDisplayName, panelNav.createState('admin:home'));
   }
 
-  if (customId === 'admin:backups') {
-    return updatePanel(
-      interaction,
-      buildBackupsPanel(interaction.guild, memberDisplayName),
-      'admin:backups'
-    );
-  }
+  if (customId === 'admin:backup:create') return handleBackupCreate(interaction, memberDisplayName, navState);
+  if (customId === 'admin:backup:list') return handleBackupList(interaction);
+  if (customId === 'admin:backup:preview') return handleBackupPreview(interaction);
+  if (customId === 'admin:backup:download') return handleBackupDownload(interaction);
+  if (customId === 'admin:backup:restore') return handleBackupRestore(interaction, memberDisplayName, navState);
+  if (customId === 'admin:backup:restore:confirm') return handleBackupRestoreConfirm(interaction);
+  if (customId === 'admin:backup:restore:cancel') return handleBackupRestoreCancel(interaction, memberDisplayName, navState);
 
-  if (customId === 'admin:backup:create') {
-    return handleBackupCreate(interaction, memberDisplayName);
-  }
-
-  if (customId === 'admin:backup:list') {
-    return handleBackupList(interaction);
-  }
-
-  if (customId === 'admin:backup:preview') {
-    return handleBackupPreview(interaction);
-  }
-
-  if (customId === 'admin:backup:download') {
-    return handleBackupDownload(interaction);
-  }
-
-  if (customId === 'admin:backup:restore') {
-    return handleBackupRestore(interaction, memberDisplayName);
-  }
-
-  if (customId === 'admin:backup:restore:confirm') {
-    return handleBackupRestoreConfirm(interaction);
-  }
-
-  if (customId === 'admin:backup:restore:cancel') {
-    return handleBackupRestoreCancel(interaction, memberDisplayName);
-  }
-
-  if (customId === 'admin:modules') {
-    return updatePanel(
-      interaction,
-      buildModulesPanel(interaction.guild, memberDisplayName),
-      'admin:modules'
-    );
-  }
-
-  if (customId === 'admin:logs') {
-    return updatePanel(
-      interaction,
-      buildLogsPanel(interaction.guild, memberDisplayName),
-      'admin:logs'
-    );
+  if (customId === 'admin:purge') {
+    await interaction.showModal(buildPurgeModal());
+    return true;
   }
 
   if (LOG_BUTTON_TO_TYPE[customId]) {
-    return updatePanel(
-      interaction,
-      buildChannelPanel(LOG_BUTTON_TO_TYPE[customId]),
-      `admin:channel:${LOG_BUTTON_TO_TYPE[customId]}`
-    );
-  }
-
-  if (customId === 'admin:adminpanel') {
-    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-      return replyNoAccess(interaction, '❌ You cannot access the Admin Panel.');
-    }
+    const state = nextState(navState, `admin:channel:${LOG_BUTTON_TO_TYPE[customId]}`);
 
     return updatePanel(
       interaction,
-      buildAdminToolsPanel(interaction.guild, memberDisplayName),
-      'admin:adminpanel'
+      buildChannelPanel(LOG_BUTTON_TO_TYPE[customId], state),
+      state
     );
   }
 
   if (customId === 'admin:automod') {
-    if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
-      return replyNoAccess(interaction, '❌ You cannot access AutoMod.');
-    }
+    const state = nextState(navState, 'admin:automod');
+    const { buildAutomodPanel } = require('../automod/automodPanel');
 
     return updatePanel(
       interaction,
-      buildComingSoonPanel('⚙️ AutoMod', 'AutoMod controls will live here.'),
-      'admin:automod'
+      buildAutomodPanel(interaction.guild, memberDisplayName, state),
+      state
     );
   }
 
-  if (customId === 'admin:modpanel') {
-    if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
-      return replyNoAccess(interaction, '❌ You cannot access the Mod Panel.');
-    }
+  if (customId === 'admin:embed') {
+    const state = nextState(navState, 'admin:embed');
+    const { buildEmbedPanel } = require('../embed/embedPanel');
 
     return updatePanel(
       interaction,
-      buildComingSoonPanel('🔐 Mod Panel', 'Moderation tools will live here.'),
-      'admin:modpanel'
-    );
-  }
-
-  if (customId === 'admin:staffroles') {
-    return updatePanel(
-      interaction,
-      buildStaffRolesPanel(interaction.guild, memberDisplayName),
-      'admin:staffroles'
+      buildEmbedPanel(interaction, memberDisplayName),
+      state
     );
   }
 
@@ -1390,17 +1399,8 @@ async function handleAdminNavigation(interaction) {
 
     return updatePanel(
       interaction,
-      buildStaffRolesPanel(interaction.guild, memberDisplayName),
-      'admin:staffroles',
-      { skipHistory: true }
-    );
-  }
-
-  if (customId === 'admin:modroles') {
-    return updatePanel(
-      interaction,
-      buildModRolesPanel(interaction.guild, memberDisplayName),
-      'admin:modroles'
+      buildStaffRolesPanel(interaction.guild, memberDisplayName, navState),
+      navState
     );
   }
 
@@ -1409,17 +1409,8 @@ async function handleAdminNavigation(interaction) {
 
     return updatePanel(
       interaction,
-      buildModRolesPanel(interaction.guild, memberDisplayName),
-      'admin:modroles',
-      { skipHistory: true }
-    );
-  }
-
-  if (customId === 'admin:autoRoles') {
-    return updatePanel(
-      interaction,
-      buildAutoRolesPanel(interaction.guild, memberDisplayName),
-      'admin:autoRoles'
+      buildModRolesPanel(interaction.guild, memberDisplayName, navState),
+      navState
     );
   }
 
@@ -1434,46 +1425,47 @@ async function handleAdminNavigation(interaction) {
 
     return updatePanel(
       interaction,
-      buildAutoRolesPanel(interaction.guild, memberDisplayName),
-      'admin:autoRoles',
-      { skipHistory: true }
+      buildAutoRolesPanel(interaction.guild, memberDisplayName, navState),
+      navState
     );
   }
 
-  if (customId === 'admin:embed') {
-    const { buildEmbedPanel } = require('../embed/embedPanel');
-
-    return updatePanel(
-      interaction,
-      buildEmbedPanel(interaction, memberDisplayName),
-      'admin:embed'
-    );
-  }
-
-  if (customId === 'admin:adminsettings') {
-    return updatePanel(
-      interaction,
-      buildComingSoonPanel('⚙️ Admin Settings', 'Admin settings will live here.'),
-      'admin:adminsettings'
-    );
-  }
-
-  if (COMING_SOON[customId]) {
-    const [title, description] = COMING_SOON[customId];
-
-    return updatePanel(
-      interaction,
-      buildComingSoonPanel(title, description),
-      customId
-    );
-  }
-
-  if (customId === 'admin:purge') {
-    await interaction.showModal(buildPurgeModal());
-    return true;
+  if (
+    customId === 'admin:adminpanel' ||
+    customId === 'admin:modules' ||
+    customId === 'admin:logs' ||
+    customId === 'admin:backups' ||
+    customId === 'admin:modpanel' ||
+    customId === 'admin:staffroles' ||
+    customId === 'admin:modroles' ||
+    customId === 'admin:autoRoles' ||
+    customId === 'admin:adminsettings' ||
+    COMING_SOON[customId]
+  ) {
+    return openRoute(interaction, customId, memberDisplayName, navState);
   }
 
   return false;
+}
+
+function getCurrentRoute() {
+  return 'admin:home';
+}
+
+function setCurrentRoute() {
+  return true;
+}
+
+function pushHistory() {
+  return true;
+}
+
+function popHistory() {
+  return 'admin:home';
+}
+
+function getBreadcrumb() {
+  return 'Admin Hub';
 }
 
 module.exports = {
@@ -1496,4 +1488,13 @@ module.exports = {
   getLogChannelId,
   setLogChannelId,
   handleAdminNavigation,
+
+  updatePanel,
+  openExternalAdminPanel,
+  applyNavigationUI,
+  getCurrentRoute,
+  setCurrentRoute,
+  pushHistory,
+  popHistory,
+  getBreadcrumb,
 };

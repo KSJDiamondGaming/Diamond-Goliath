@@ -1,4 +1,4 @@
-// functions/automod/automodPanel.js
+// src/functions/automod/automodPanel.js
 
 const {
   EmbedBuilder,
@@ -12,7 +12,10 @@ const {
 } = require('discord.js');
 
 const automod = require('./automodStore');
-const { buildAdminPanel } = require('../admin/adminPanel');
+const panelNav = require('../../helpers/ui/panelNavigation');
+
+const PANEL_COLOR = '#5865F2';
+const SUCCESS_COLOR = '#57F287';
 
 const RULES = [
   {
@@ -87,12 +90,24 @@ const RULES = [
 ];
 
 const PUNISHMENTS = [
+  { label: '📩 DM user', value: 'dm' },
   { label: '🗑️ Delete message', value: 'delete' },
   { label: '⚠️ Warn user', value: 'warn' },
   { label: '⏱️ Timeout user', value: 'timeout' },
   { label: '👢 Kick user', value: 'kick' },
   { label: '🔨 Ban user', value: 'ban' },
 ];
+
+function row(...components) {
+  return new ActionRowBuilder().addComponents(...components);
+}
+
+function button(customId, label, style = ButtonStyle.Primary) {
+  return new ButtonBuilder()
+    .setCustomId(customId)
+    .setLabel(label)
+    .setStyle(style);
+}
 
 function getMemberDisplayName(interaction) {
   return (
@@ -129,13 +144,83 @@ function toNumber(value, fallback) {
 }
 
 function getPunishments(ruleConfig) {
-  if (Array.isArray(ruleConfig?.punishments)) return ruleConfig.punishments;
-  if (ruleConfig?.punishment) return [ruleConfig.punishment];
+  if (Array.isArray(ruleConfig?.punishments)) {
+    return ruleConfig.punishments.filter(Boolean);
+  }
+
+  if (ruleConfig?.punishment) {
+    return [ruleConfig.punishment];
+  }
+
   return ['delete'];
 }
 
 function formatPunishments(ruleConfig) {
   return getPunishments(ruleConfig).join(', ') || 'delete';
+}
+
+function getRouteLabel(route) {
+  const labels = {
+    'admin:home': 'Admin Hub',
+    'admin:automod': 'AutoMod',
+    'automod:home': 'AutoMod',
+    'automod:settings': 'Rule Editor',
+  };
+
+  if (route?.startsWith('automod:rule:')) {
+    const key = route.split(':')[2];
+    const rule = getRule(key);
+    return rule ? rule.label : 'Rule';
+  }
+
+  return labels[route] || String(route || 'automod:home').replaceAll(':', ' › ');
+}
+
+function getBreadcrumbFromState(navState) {
+  const state = navState || panelNav.createState('admin:automod');
+  const history = Array.isArray(state.history)
+    ? state.history
+    : ['admin:home', 'admin:automod'];
+
+  return history
+    .filter(Boolean)
+    .slice(-4)
+    .map(getRouteLabel)
+    .join(' › ');
+}
+
+function applyNavigationUI(panel, navState) {
+  if (!panel?.embeds?.[0]) return panel;
+
+  const embed = EmbedBuilder.from(panel.embeds[0]);
+
+  embed.setFooter({
+    text: `Navigation: ${getBreadcrumbFromState(navState)}`,
+  });
+
+  return {
+    ...panel,
+    embeds: [embed],
+  };
+}
+
+function backButton(navState) {
+  return button(
+    panelNav.buildCustomId(navState || panelNav.createState('admin:automod'), 'back'),
+    '⬅️ Back',
+    ButtonStyle.Secondary
+  );
+}
+
+function navRow(navState) {
+  return row(backButton(navState));
+}
+
+function nextState(navState, route) {
+  return panelNav.push(
+    navState || panelNav.createState('admin:automod'),
+    route
+  );
 }
 
 function buildRuleSummary(config) {
@@ -161,12 +246,16 @@ function buildRuleFields(config) {
   ];
 }
 
-function buildAutomodPanel(guild, memberDisplayName = 'Unknown User') {
+function buildAutomodPanel(
+  guild,
+  memberDisplayName = 'Unknown User',
+  navState = panelNav.createState('admin:automod')
+) {
   const config = automod.getGuildAutoModConfig(guild.id);
   const enabledCount = getEnabledCount(config);
 
   const embed = new EmbedBuilder()
-    .setColor(enabledCount > 0 ? '#57F287' : '#5865F2')
+    .setColor(enabledCount > 0 ? SUCCESS_COLOR : PANEL_COLOR)
     .setTitle('🤖 AutoMod Panel')
     .setDescription(
       [
@@ -182,37 +271,39 @@ function buildAutomodPanel(guild, memberDisplayName = 'Unknown User') {
   const toggleButtons = RULES.map((rule) => {
     const enabled = Boolean(config?.[rule.key]?.enabled);
 
-    return new ButtonBuilder()
-      .setCustomId(`automod:toggle:${rule.key}`)
-      .setLabel(`${rule.emoji} ${rule.shortLabel}: ${enabled ? 'On' : 'Off'}`)
-      .setStyle(enabled ? ButtonStyle.Success : ButtonStyle.Secondary);
+    return button(
+      `automod:toggle:${rule.key}`,
+      `${rule.emoji} ${rule.shortLabel}: ${enabled ? 'On' : 'Off'}`,
+      enabled ? ButtonStyle.Success : ButtonStyle.Secondary
+    );
   });
 
-  return {
-    embeds: [embed],
-    components: [
-      new ActionRowBuilder().addComponents(toggleButtons.slice(0, 3)),
-      new ActionRowBuilder().addComponents(toggleButtons.slice(3, 6)),
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('automod:settings')
-          .setLabel('⚙️ Edit Rules')
-          .setStyle(ButtonStyle.Primary),
-        new ButtonBuilder()
-          .setCustomId('automod:back:admin')
-          .setLabel('⬅️ Back')
-          .setStyle(ButtonStyle.Secondary)
-      ),
-    ],
-  };
+  return applyNavigationUI(
+    {
+      embeds: [embed],
+      components: [
+        row(...toggleButtons.slice(0, 3)),
+        row(...toggleButtons.slice(3, 6)),
+        row(
+          button('automod:settings', '⚙️ Edit Rules', ButtonStyle.Primary),
+          backButton(navState)
+        ),
+      ],
+    },
+    navState
+  );
 }
 
-function buildAutomodSettingsPanel(guild, memberDisplayName = 'Unknown User') {
+function buildAutomodSettingsPanel(
+  guild,
+  memberDisplayName = 'Unknown User',
+  navState = panelNav.createState('admin:automod')
+) {
   const config = automod.getGuildAutoModConfig(guild.id);
   const enabledCount = getEnabledCount(config);
 
   const embed = new EmbedBuilder()
-    .setColor('#5865F2')
+    .setColor(PANEL_COLOR)
     .setTitle('⚙️ AutoMod Rule Editor')
     .setDescription(
       [
@@ -236,29 +327,37 @@ function buildAutomodSettingsPanel(guild, memberDisplayName = 'Unknown User') {
       }))
     );
 
-  return {
-    embeds: [embed],
-    components: [
-      new ActionRowBuilder().addComponents(select),
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('automod:panel')
-          .setLabel('⬅️ Back')
-          .setStyle(ButtonStyle.Secondary)
-      ),
-    ],
-  };
+  return applyNavigationUI(
+    {
+      embeds: [embed],
+      components: [
+        row(select),
+        navRow(navState),
+      ],
+    },
+    navState
+  );
 }
 
-function buildRuleEditorPanel(guild, key, memberDisplayName = 'Unknown User') {
+function buildRuleEditorPanel(
+  guild,
+  key,
+  memberDisplayName = 'Unknown User',
+  navState = panelNav.createState('admin:automod')
+) {
   const config = automod.getGuildAutoModConfig(guild.id);
   const rule = getRule(key);
+
+  if (!rule) {
+    return buildAutomodSettingsPanel(guild, memberDisplayName, navState);
+  }
+
   const ruleConfig = config?.[key] || {};
   const enabled = Boolean(ruleConfig.enabled);
   const punishments = getPunishments(ruleConfig);
 
   const embed = new EmbedBuilder()
-    .setColor(enabled ? '#57F287' : '#5865F2')
+    .setColor(enabled ? SUCCESS_COLOR : PANEL_COLOR)
     .setTitle(`${rule.emoji} ${rule.label} Settings`)
     .setDescription(
       [
@@ -284,33 +383,34 @@ function buildRuleEditorPanel(guild, key, memberDisplayName = 'Unknown User') {
       }))
     );
 
-  return {
-    embeds: [embed],
-    components: [
-      new ActionRowBuilder().addComponents(punishmentSelect),
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`automod:modal:${key}`)
-          .setLabel('⚙️ Edit Settings')
-          .setStyle(ButtonStyle.Primary),
-        new ButtonBuilder()
-          .setCustomId(`automod:toggle-edit:${key}`)
-          .setLabel(enabled ? '🔴 Disable Rule' : '🟢 Enable Rule')
-          .setStyle(enabled ? ButtonStyle.Danger : ButtonStyle.Success)
-      ),
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('automod:settings')
-          .setLabel('⬅️ Back')
-          .setStyle(ButtonStyle.Secondary)
-      ),
-    ],
-  };
+  return applyNavigationUI(
+    {
+      embeds: [embed],
+      components: [
+        row(punishmentSelect),
+        row(
+          button(`automod:modal:${key}`, '⚙️ Edit Settings', ButtonStyle.Primary),
+          button(
+            `automod:toggle-edit:${key}`,
+            enabled ? '🔴 Disable Rule' : '🟢 Enable Rule',
+            enabled ? ButtonStyle.Danger : ButtonStyle.Success
+          )
+        ),
+        navRow(navState),
+      ],
+    },
+    navState
+  );
 }
 
 function buildRuleModal(guildId, key) {
   const config = automod.getGuildAutoModConfig(guildId);
   const rule = getRule(key);
+
+  if (!rule) {
+    return null;
+  }
+
   const ruleConfig = config?.[key] || {};
 
   const modal = new ModalBuilder()
@@ -325,7 +425,7 @@ function buildRuleModal(guildId, key) {
         ? toCsv(ruleConfig[field.id])
         : String(ruleConfig[field.id] ?? field.value ?? '');
 
-    return new ActionRowBuilder().addComponents(
+    return row(
       new TextInputBuilder()
         .setCustomId(field.id)
         .setLabel(field.label)
@@ -339,7 +439,29 @@ function buildRuleModal(guildId, key) {
   return modal;
 }
 
-async function handleInteraction(interaction) {
+async function safeUpdate(interaction, panel) {
+  await interaction.update(panel);
+  return true;
+}
+
+async function safeModalReply(interaction, panel) {
+  if (interaction.deferred || interaction.replied) {
+    await interaction.editReply(panel);
+    return true;
+  }
+
+  await interaction.reply({
+    ...panel,
+    flags: 64,
+  });
+
+  return true;
+}
+
+async function handleInteraction(
+  interaction,
+  navState = panelNav.createState('admin:automod')
+) {
   if (!interaction.customId?.startsWith('automod:')) return false;
 
   if (!interaction.guild) {
@@ -347,34 +469,29 @@ async function handleInteraction(interaction) {
       content: 'AutoMod can only be used inside a server.',
       flags: 64,
     });
+
     return true;
   }
 
   const memberDisplayName = getMemberDisplayName(interaction);
 
   if (interaction.isButton()) {
-    if (interaction.customId === 'automod:panel') {
-      await interaction.update(buildAutomodPanel(interaction.guild, memberDisplayName));
-      return true;
-    }
-
     if (interaction.customId === 'automod:settings') {
-      await interaction.update(buildAutomodSettingsPanel(interaction.guild, memberDisplayName));
-      return true;
-    }
+      const state = nextState(navState, 'automod:settings');
 
-    if (interaction.customId === 'automod:back:admin') {
-      await interaction.update(buildAdminPanel(interaction.guild, memberDisplayName));
-      return true;
+      return safeUpdate(
+        interaction,
+        buildAutomodSettingsPanel(interaction.guild, memberDisplayName, state)
+      );
     }
 
     if (
       interaction.customId.startsWith('automod:toggle:') ||
       interaction.customId.startsWith('automod:toggle-edit:')
     ) {
-      const parts = interaction.customId.split(':');
-      const key = parts[2];
+      const [, actionType, key] = interaction.customId.split(':');
       const rule = getRule(key);
+
       if (!rule) return false;
 
       automod.updateGuildAutoModConfig(interaction.guild.id, (current) => {
@@ -389,21 +506,29 @@ async function handleInteraction(interaction) {
         };
       });
 
-      if (interaction.customId.startsWith('automod:toggle-edit:')) {
-        await interaction.update(buildRuleEditorPanel(interaction.guild, key, memberDisplayName));
-      } else {
-        await interaction.update(buildAutomodPanel(interaction.guild, memberDisplayName));
+      if (actionType === 'toggle-edit') {
+        return safeUpdate(
+          interaction,
+          buildRuleEditorPanel(interaction.guild, key, memberDisplayName, navState)
+        );
       }
 
-      return true;
+      return safeUpdate(
+        interaction,
+        buildAutomodPanel(interaction.guild, memberDisplayName, navState)
+      );
     }
 
     if (interaction.customId.startsWith('automod:modal:')) {
       const [, , key] = interaction.customId.split(':');
       const rule = getRule(key);
+
       if (!rule) return false;
 
-      await interaction.showModal(buildRuleModal(interaction.guild.id, key));
+      const modal = buildRuleModal(interaction.guild.id, key);
+      if (!modal) return false;
+
+      await interaction.showModal(modal);
       return true;
     }
   }
@@ -412,15 +537,21 @@ async function handleInteraction(interaction) {
     if (interaction.customId === 'automod:select-rule') {
       const key = interaction.values[0];
       const rule = getRule(key);
+
       if (!rule) return false;
 
-      await interaction.update(buildRuleEditorPanel(interaction.guild, key, memberDisplayName));
-      return true;
+      const state = nextState(navState, `automod:rule:${key}`);
+
+      return safeUpdate(
+        interaction,
+        buildRuleEditorPanel(interaction.guild, key, memberDisplayName, state)
+      );
     }
 
     if (interaction.customId.startsWith('automod:punishments:')) {
       const [, , key] = interaction.customId.split(':');
       const rule = getRule(key);
+
       if (!rule) return false;
 
       automod.updateGuildAutoModConfig(interaction.guild.id, (current) => {
@@ -436,8 +567,10 @@ async function handleInteraction(interaction) {
         };
       });
 
-      await interaction.update(buildRuleEditorPanel(interaction.guild, key, memberDisplayName));
-      return true;
+      return safeUpdate(
+        interaction,
+        buildRuleEditorPanel(interaction.guild, key, memberDisplayName, navState)
+      );
     }
   }
 
@@ -445,6 +578,7 @@ async function handleInteraction(interaction) {
     if (interaction.customId.startsWith('automod:save:')) {
       const [, , key] = interaction.customId.split(':');
       const rule = getRule(key);
+
       if (!rule) return false;
 
       automod.updateGuildAutoModConfig(interaction.guild.id, (current) => {
@@ -474,8 +608,10 @@ async function handleInteraction(interaction) {
         };
       });
 
-      await interaction.update(buildRuleEditorPanel(interaction.guild, key, memberDisplayName));
-      return true;
+      return safeModalReply(
+        interaction,
+        buildRuleEditorPanel(interaction.guild, key, memberDisplayName, navState)
+      );
     }
   }
 
@@ -484,8 +620,14 @@ async function handleInteraction(interaction) {
 
 module.exports = {
   RULES,
+  PUNISHMENTS,
+
   buildAutomodPanel,
   buildAutomodSettingsPanel,
   buildRuleEditorPanel,
+
+  getRule,
+  getPunishments,
+
   handleInteraction,
 };

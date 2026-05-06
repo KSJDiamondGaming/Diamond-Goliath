@@ -1,4 +1,4 @@
-const VALID_PUNISHMENTS = ['delete', 'warn', 'timeout', 'kick', 'ban'];
+const VALID_PUNISHMENTS = ['dm', 'delete', 'warn', 'timeout', 'kick', 'ban'];
 
 function normalizePunishments(value, fallback = ['delete']) {
   const base = Array.isArray(value) ? value : value ? [value] : fallback;
@@ -19,14 +19,12 @@ async function safeDelete(message) {
   } catch (error) {
     console.error('❌ Failed to delete automod message:', error);
   }
-
   return false;
 }
 
 async function safeTimeout(member, durationMs, reason) {
   try {
     if (!member || !member.moderatable) return false;
-
     await member.timeout(durationMs, reason);
     return true;
   } catch (error) {
@@ -38,7 +36,6 @@ async function safeTimeout(member, durationMs, reason) {
 async function safeKick(member, reason) {
   try {
     if (!member || !member.kickable) return false;
-
     await member.kick(reason);
     return true;
   } catch (error) {
@@ -50,7 +47,6 @@ async function safeKick(member, reason) {
 async function safeBan(member, reason) {
   try {
     if (!member || !member.bannable) return false;
-
     await member.ban({ reason });
     return true;
   } catch (error) {
@@ -91,10 +87,7 @@ async function sendWarningNotice(message, reason, config) {
 
   if (config?.dmWarnings) {
     const sentDM = await safeWarnDM(message.author, text);
-
-    if (sentDM) {
-      return 'dm';
-    }
+    if (sentDM) return 'dm';
   }
 
   const sentChannel = await safeWarnChannel(
@@ -114,11 +107,19 @@ async function applyPunishment(
 ) {
   const punishments = normalizePunishments(type);
   const timeoutMs = Number(timeoutMinutes || 10) * 60 * 1000;
+
   const applied = [];
   let deleted = false;
 
   for (const punishment of punishments) {
     switch (punishment) {
+
+      // 👇 NEW: DM SUPPORT (handled in service.js)
+      case 'dm': {
+        applied.push('dm');
+        break;
+      }
+
       case 'delete': {
         if (!deleted) {
           const didDelete = await safeDelete(message);

@@ -1,5 +1,5 @@
 const { EmbedBuilder } = require('discord.js');
-const guildManager = require('../guild/guildManager');
+const guildManager = require('../../guild/guildManager');
 
 const MODERATION_ACTION_LABELS = {
   delete: 'Message Deleted',
@@ -49,14 +49,21 @@ function formatModerationAction(action) {
 function formatUser(user, fallback = 'Unknown User') {
   if (!user) return fallback;
 
+  const realUser = user.user || user;
+
   const name =
-    user.tag ||
-    user.username ||
-    user.displayName ||
-    user.name ||
+    realUser.tag ||
+    realUser.username ||
+    realUser.displayName ||
+    realUser.name ||
     fallback;
 
-  return `${name} (${user.id || 'N/A'})`;
+  return `${name} (${realUser.id || user.id || 'N/A'})`;
+}
+
+function getAvatarTarget(user) {
+  if (!user) return null;
+  return user.user || user;
 }
 
 function normalizeDetails(details = []) {
@@ -99,12 +106,14 @@ async function logModerationAction({
   guild,
   action,
   user = null,
+  target = null,
   moderator = null,
   reason = 'No reason provided',
   duration = null,
   color = '#5865F2',
   caseId = null,
   details = [],
+  metadata = {},
   title = null,
   logType = 'mod',
 }) {
@@ -114,19 +123,23 @@ async function logModerationAction({
     const channelType = normalizeLogType(logType);
     const eventName = getEventName(channelType);
 
-    if (!guildManager.isLogEventEnabled(guild.id, eventName)) {
+    if (
+      typeof guildManager.isLogEventEnabled === 'function' &&
+      !guildManager.isLogEventEnabled(guild.id, eventName)
+    ) {
       return false;
     }
 
     const channel = await resolveLogChannel(guild, channelType);
     if (!channel) return false;
 
+    const targetUser = target || user;
     const fields = [];
 
-    if (user) {
+    if (targetUser) {
       fields.push({
         name: 'User',
-        value: formatUser(user),
+        value: formatUser(targetUser),
         inline: false,
       });
     }
@@ -161,6 +174,33 @@ async function logModerationAction({
       });
     }
 
+    if (metadata?.dmSent !== undefined) {
+      fields.push({
+        name: 'DM Status',
+        value: metadata.dmSent ? 'Sent ✅' : 'Failed ❌',
+        inline: true,
+      });
+    }
+
+    if (metadata?.punishmentReport) {
+      fields.push({
+        name: 'Punishments Applied',
+        value: metadata.punishmentReport.actionText || 'none',
+        inline: true,
+      });
+
+      if (
+        metadata.punishmentReport.failedText &&
+        metadata.punishmentReport.failedText !== 'none'
+      ) {
+        fields.push({
+          name: 'Punishments Failed',
+          value: metadata.punishmentReport.failedText,
+          inline: true,
+        });
+      }
+    }
+
     fields.push(...normalizeDetails(details));
 
     const actionLabel = formatModerationAction(action) || 'Moderation Action';
@@ -171,13 +211,13 @@ async function logModerationAction({
       .setTimestamp();
 
     if (fields.length > 0) {
-      embed.addFields(fields);
+      embed.addFields(fields.slice(0, 25));
     }
 
-    if (user && typeof user.displayAvatarURL === 'function') {
-      embed.setThumbnail(user.displayAvatarURL({ dynamic: true }));
-    } else if (moderator && typeof moderator.displayAvatarURL === 'function') {
-      embed.setThumbnail(moderator.displayAvatarURL({ dynamic: true }));
+    const avatarTarget = getAvatarTarget(targetUser || moderator);
+
+    if (avatarTarget && typeof avatarTarget.displayAvatarURL === 'function') {
+      embed.setThumbnail(avatarTarget.displayAvatarURL({ dynamic: true }));
     }
 
     await channel.send({ embeds: [embed] });
@@ -191,4 +231,14 @@ async function logModerationAction({
   }
 }
 
+async function sendModLog(payload = {}) {
+  return logModerationAction({
+    ...payload,
+    user: payload.user || payload.target || null,
+    logType: payload.logType || 'mod',
+  });
+}
+
 module.exports = logModerationAction;
+module.exports.logModerationAction = logModerationAction;
+module.exports.sendModLog = sendModLog;

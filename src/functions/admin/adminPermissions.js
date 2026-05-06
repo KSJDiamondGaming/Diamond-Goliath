@@ -1,64 +1,121 @@
 const { PermissionsBitField } = require('discord.js');
 const guildManager = require('../../guild/guildManager');
 
+/* ---------------- CONSTANTS ---------------- */
+
+const LEVELS = {
+  NONE: 'none',
+  MOD: 'mod',
+  ADMIN: 'admin',
+  OWNER: 'owner',
+};
+
 /* ---------------- HELPERS ---------------- */
 
+function safeArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
 function getRoleIds(guildId, section) {
+  if (!guildId) return [];
+
   const config = guildManager.getGuildSection(guildId, section, {
     roleIds: [],
   });
 
-  return Array.isArray(config.roleIds) ? config.roleIds : [];
+  return safeArray(config.roleIds)
+    .map((id) => String(id || '').trim())
+    .filter(Boolean);
 }
 
 function hasAnyRole(member, roleIds = []) {
   if (!member?.roles?.cache) return false;
+
   return roleIds.some((roleId) => member.roles.cache.has(roleId));
 }
 
 function isOwner(member) {
-  return member?.guild?.ownerId === member?.id;
+  if (!member?.guild || !member?.id) return false;
+
+  return member.guild.ownerId === member.id;
 }
 
 function isAdmin(member) {
-  return member?.permissions?.has(PermissionsBitField.Flags.Administrator);
+  return Boolean(
+    member?.permissions?.has(
+      PermissionsBitField.Flags.Administrator
+    )
+  );
 }
 
 function isMod(member) {
-  return hasAnyRole(member, getRoleIds(member.guild.id, 'modRoles'));
+  if (!member?.guild) return false;
+
+  return hasAnyRole(
+    member,
+    getRoleIds(member.guild.id, 'modRoles')
+  );
 }
 
 /* ---------------- PERMISSION LEVEL ---------------- */
 
 function getPermissionLevel(member) {
-  if (!member?.guild) return 'none';
+  if (!member?.guild) {
+    return LEVELS.NONE;
+  }
 
-  if (isOwner(member)) return 'owner';
-  if (isAdmin(member)) return 'admin';
-  if (isMod(member)) return 'mod';
+  if (isOwner(member)) {
+    return LEVELS.OWNER;
+  }
 
-  return 'none';
+  if (isAdmin(member)) {
+    return LEVELS.ADMIN;
+  }
+
+  if (isMod(member)) {
+    return LEVELS.MOD;
+  }
+
+  return LEVELS.NONE;
+}
+
+function hasPermissionLevel(member, allowedLevels = []) {
+  const level = getPermissionLevel(member);
+
+  return allowedLevels.includes(level);
 }
 
 /* ---------------- ACCESS RULES ---------------- */
 
 function canAccessAdminPanel(member) {
-  const level = getPermissionLevel(member);
-  return level === 'owner' || level === 'admin';
+  return hasPermissionLevel(member, [
+    LEVELS.OWNER,
+    LEVELS.ADMIN,
+  ]);
 }
 
 function canAccessAutoMod(member) {
-  const level = getPermissionLevel(member);
-  return level === 'owner' || level === 'admin';
+  return hasPermissionLevel(member, [
+    LEVELS.OWNER,
+    LEVELS.ADMIN,
+  ]);
 }
 
 function canAccessModPanel(member) {
-  const level = getPermissionLevel(member);
-  return level === 'owner' || level === 'admin' || level === 'mod';
+  return hasPermissionLevel(member, [
+    LEVELS.OWNER,
+    LEVELS.ADMIN,
+    LEVELS.MOD,
+  ]);
 }
 
+/* ---------------- EXPORTS ---------------- */
+
 module.exports = {
+  LEVELS,
+
   getPermissionLevel,
+  hasPermissionLevel,
 
   isOwner,
   isAdmin,

@@ -16,7 +16,7 @@ const INVITE_REGEX =
 const URL_REGEX =
   /((https?:\/\/)|(www\.))?[a-zA-Z0-9-]+\.[a-zA-Z]{2,}([^\s]*)/i;
 
-const VALID_PUNISHMENTS = ['delete', 'warn', 'timeout', 'kick', 'ban'];
+const VALID_PUNISHMENTS = ['dm', 'delete', 'warn', 'timeout', 'kick', 'ban'];
 
 const RULE_META = {
   'Anti-Link': { emoji: '🔗', color: '#e74c3c', severity: 'High' },
@@ -30,6 +30,7 @@ const RULE_META = {
 };
 
 const ACTION_LABELS = {
+  dm: 'DM sent',
   delete: 'Message deleted',
   warn: 'User warned in channel',
   'warn-dm': 'User warned by DM',
@@ -168,7 +169,7 @@ function getMemberKey(message) {
 }
 
 function getRulePunishments(rule) {
-  return rule?.punishments || [rule?.punishment || 'delete'];
+  return normalizePunishments(rule?.punishments ?? rule?.punishment);
 }
 
 function normalizePunishments(value, fallback = ['delete']) {
@@ -451,176 +452,6 @@ function hasBypass(message, config) {
       config.ignoredRoleIds.includes(role.id)
     )
   );
-}
-
-/* ---------------- SAFE ACTIONS ---------------- */
-
-async function safeDelete(message) {
-  try {
-    if (!message?.deletable) return false;
-
-    await message.delete();
-    return true;
-  } catch (error) {
-    console.error('❌ Failed to delete automod message:', error);
-    return false;
-  }
-}
-
-async function safeTimeout(member, durationMs, reason) {
-  try {
-    if (!member?.moderatable) return false;
-
-    await member.timeout(durationMs, reason);
-    return true;
-  } catch (error) {
-    console.error('❌ Failed to timeout automod member:', error);
-    return false;
-  }
-}
-
-async function safeKick(member, reason) {
-  try {
-    if (!member?.kickable) return false;
-
-    await member.kick(reason);
-    return true;
-  } catch (error) {
-    console.error('❌ Failed to kick automod member:', error);
-    return false;
-  }
-}
-
-async function safeBan(member, reason) {
-  try {
-    if (!member?.bannable) return false;
-
-    await member.ban({ reason });
-    return true;
-  } catch (error) {
-    console.error('❌ Failed to ban automod member:', error);
-    return false;
-  }
-}
-
-async function safeWarnChannel(message, text) {
-  try {
-    const sent = await message.channel.send({ content: text });
-
-    setTimeout(() => {
-      sent.delete().catch(() => {});
-    }, 5000);
-
-    return true;
-  } catch (error) {
-    console.error('❌ Failed to send automod warning message:', error);
-    return false;
-  }
-}
-
-async function safeWarnDM(user, text) {
-  try {
-    await user.send({ content: text });
-    return true;
-  } catch (error) {
-    console.error('❌ Failed to send automod DM warning:', error);
-    return false;
-  }
-}
-
-async function sendWarningNotice(message, reason, config) {
-  const text = `⚠️ Your message was blocked in **${
-    message.guild?.name || 'this server'
-  }**: ${reason}`;
-
-  if (config?.dmWarnings) {
-    const sentDM = await safeWarnDM(message.author, text);
-    if (sentDM) return 'dm';
-  }
-
-  const sentChannel = await safeWarnChannel(
-    message,
-    `⚠️ ${message.author}, your message was blocked: ${reason}`
-  );
-
-  return sentChannel ? 'channel' : 'none';
-}
-
-async function ensureMessageDeleted(message, alreadyDeleted) {
-  if (alreadyDeleted) return true;
-  return safeDelete(message);
-}
-
-async function applyPunishment(
-  message,
-  punishmentsInput,
-  reason,
-  timeoutMinutes = DEFAULT_TIMEOUT_MINUTES,
-  config = null
-) {
-  const punishments = normalizePunishments(punishmentsInput);
-  const timeoutMs = Number(timeoutMinutes || DEFAULT_TIMEOUT_MINUTES) * 60 * 1000;
-
-  const applied = [];
-  let deleted = false;
-
-  for (const punishment of punishments) {
-    deleted = await ensureMessageDeleted(message, deleted);
-
-    if (punishment === 'delete') {
-      applied.push('delete');
-      continue;
-    }
-
-    if (punishment === 'warn') {
-      const mode = await sendWarningNotice(message, reason, config);
-      applied.push(mode === 'dm' ? 'warn-dm' : 'warn');
-      continue;
-    }
-
-    if (punishment === 'timeout') {
-      const timedOut = await safeTimeout(
-        message.member,
-        timeoutMs,
-        `Automod: ${reason}`
-      );
-
-      if (timedOut) {
-        applied.push('timeout');
-      } else {
-        const mode = await sendWarningNotice(message, reason, config);
-        applied.push(mode === 'dm' ? 'warn-dm' : 'warn');
-      }
-
-      continue;
-    }
-
-    if (punishment === 'kick') {
-      const kicked = await safeKick(message.member, `Automod: ${reason}`);
-
-      if (kicked) {
-        applied.push('kick');
-      } else {
-        const mode = await sendWarningNotice(message, reason, config);
-        applied.push(mode === 'dm' ? 'warn-dm' : 'warn');
-      }
-
-      continue;
-    }
-
-    if (punishment === 'ban') {
-      const banned = await safeBan(message.member, `Automod: ${reason}`);
-
-      if (banned) {
-        applied.push('ban');
-      } else {
-        const mode = await sendWarningNotice(message, reason, config);
-        applied.push(mode === 'dm' ? 'warn-dm' : 'warn');
-      }
-    }
-  }
-
-  return [...new Set(applied)].join(', ');
 }
 
 /* ---------------- LOGGING ---------------- */
@@ -1018,26 +849,12 @@ async function runAutomod(message) {
   const hit = getAutomodHit(message, config);
   if (!hit) return { blocked: false };
 
-  const action = await applyPunishment(
-    message,
-    hit.punishments,
-    hit.reason,
-    hit.timeoutMinutes,
-    config
-  );
-
-  await sendAutomodLog(message, config, {
-    rule: hit.rule,
-    reason: hit.reason,
-    action,
-    content: message.content,
-  });
-
   return {
     blocked: true,
     rule: hit.rule,
     reason: hit.reason,
-    action,
+    punishments: hit.punishments,
+    timeoutMinutes: hit.timeoutMinutes,
   };
 }
 
@@ -1068,7 +885,6 @@ module.exports = {
   checkRepeatedMessages,
   checkAntiSpam,
 
-  applyPunishment,
   sendAutomodLog,
   runAutomod,
 };

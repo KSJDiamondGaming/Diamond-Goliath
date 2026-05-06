@@ -1,5 +1,3 @@
-// functions/moderation/modActionExecutor.js
-
 const {
   createCase,
   getCaseById,
@@ -23,6 +21,11 @@ const {
   safeReply,
   ephemeralError,
 } = require('../../helpers/ui/interactionResponse');
+
+const { applyPunishmentEngine } = require('../../modules/automod/punishmentEngine');
+
+// If this path is different in your project, only change this line.
+const { sendModLog } = require('../../logging/modlogs/moderationActionLog');
 
 function cleanError(error) {
   return String(error || '').replace(/^❌\s*/, '');
@@ -51,41 +54,99 @@ function createModCase(interaction, pending, action, reason, metadata = {}) {
   });
 }
 
+async function logAction(interaction, target, action, reason, caseId, metadata = {}) {
+  if (typeof sendModLog !== 'function') return null;
+
+  return sendModLog({
+    guild: interaction.guild,
+    target,
+    moderator: interaction.user,
+    action,
+    reason,
+    caseId,
+    metadata,
+  });
+}
+
 async function executeBan(interaction, pending, target) {
   const deleteDays = Number(pending.payload.deleteDays || 0);
   const reason = pending.payload.reason || 'No reason provided';
 
-  await target.ban({
-    deleteMessageSeconds: deleteDays * 24 * 60 * 60,
-    reason: `${reason} | By ${interaction.user.tag}`,
-  });
+  const report = await applyPunishmentEngine(
+    {
+      member: target,
+      user: target.user,
+      guild: interaction.guild,
+    },
+    {
+      punishments: ['dm', 'ban'],
+      rule: 'Ban',
+      reason,
+      deleteDays,
+      moderator: interaction.user,
+      source: 'moderation',
+    }
+  );
+
+  if (!report.applied.includes('ban')) {
+    return {
+      error: `Failed to ban user. ${report.failedText !== 'none' ? `Failed: ${report.failedText}` : ''}`.trim(),
+    };
+  }
 
   const modCase = createModCase(interaction, pending, 'ban', reason, {
     deleteDays,
+    punishmentReport: report,
   });
 
   await logAction(interaction, target, 'Ban', reason, modCase.caseId, {
     deleteDays,
+    dmSent: report.dmSent,
+    punishmentReport: report,
   });
 
   return {
     target,
-    content: `✅ Banned **${target.user.tag}** • Case #${modCase.caseId}`,
+    content: `✅ Banned **${target.user.tag}** • Case #${modCase.caseId}${report.dmSent ? ' • DM sent ✅' : ' • DM failed ❌'}`,
   };
 }
 
 async function executeKick(interaction, pending, target) {
   const reason = pending.payload.reason || 'No reason provided';
 
-  await target.kick(`${reason} | By ${interaction.user.tag}`);
+  const report = await applyPunishmentEngine(
+    {
+      member: target,
+      user: target.user,
+      guild: interaction.guild,
+    },
+    {
+      punishments: ['dm', 'kick'],
+      rule: 'Kick',
+      reason,
+      moderator: interaction.user,
+      source: 'moderation',
+    }
+  );
 
-  const modCase = createModCase(interaction, pending, 'kick', reason);
+  if (!report.applied.includes('kick')) {
+    return {
+      error: `Failed to kick user. ${report.failedText !== 'none' ? `Failed: ${report.failedText}` : ''}`.trim(),
+    };
+  }
 
-  await logAction(interaction, target, 'Kick', reason, modCase.caseId);
+  const modCase = createModCase(interaction, pending, 'kick', reason, {
+    punishmentReport: report,
+  });
+
+  await logAction(interaction, target, 'Kick', reason, modCase.caseId, {
+    dmSent: report.dmSent,
+    punishmentReport: report,
+  });
 
   return {
     target,
-    content: `✅ Kicked **${target.user.tag}** • Case #${modCase.caseId}`,
+    content: `✅ Kicked **${target.user.tag}** • Case #${modCase.caseId}${report.dmSent ? ' • DM sent ✅' : ' • DM failed ❌'}`,
   };
 }
 

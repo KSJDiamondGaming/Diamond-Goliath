@@ -1,7 +1,3 @@
-// functions/moderation/bulkActionRunner.js
-
-const { MessageFlags } = require('discord.js');
-
 const { createCase } = require('../../logging/cases/caseStore');
 const { addWarning } = require('../../logging/warnings/warningStore');
 const { handleEscalation, getRepeatReasonInfo } = require('./escalationSystem');
@@ -22,6 +18,11 @@ const {
   safeReply,
   safeEditReply,
 } = require('../../helpers/ui/interactionResponse');
+
+const { applyPunishmentEngine } = require('../../modules/automod/punishmentEngine');
+
+// If this path is different in your project, only change this line.
+const { sendModLog } = require('../../logging/modlogs/moderationActionLog');
 
 const ACTION_LABELS = {
   warn: 'Bulk Warn',
@@ -94,6 +95,8 @@ function createModerationCase(interaction, member, action, reason, metadata = {}
 }
 
 async function logBulkAction(interaction, member, actionType, reason, caseId, metadata = {}) {
+  if (typeof sendModLog !== 'function') return null;
+
   return sendModLog({
     guild: interaction.guild,
     target: member,
@@ -106,7 +109,24 @@ async function logBulkAction(interaction, member, actionType, reason, caseId, me
 }
 
 async function runBulkWarn(interaction, member, reason) {
-  const modCase = createModerationCase(interaction, member, 'warn', reason);
+  const report = await applyPunishmentEngine(
+    {
+      member,
+      user: member.user,
+      guild: interaction.guild,
+    },
+    {
+      punishments: ['dm'],
+      rule: 'Warning',
+      reason,
+      moderator: interaction.user,
+      source: 'moderation',
+    }
+  );
+
+  const modCase = createModerationCase(interaction, member, 'warn', reason, {
+    punishmentReport: report,
+  });
 
   addWarning({
     guildId: interaction.guild.id,
@@ -145,47 +165,110 @@ async function runBulkWarn(interaction, member, reason) {
     repeatCount: repeatInfo.repeatCount || 0,
     escalatedAction: escalatedCase?.action || null,
     escalatedCaseId: escalatedCase?.caseId || null,
+    dmSent: report.dmSent,
+    punishmentReport: report,
   });
 
   return modCase;
 }
 
 async function runBulkTimeout(interaction, member, reason, durationRaw, durationMs) {
-  await member.timeout(durationMs, `${reason} | By ${interaction.user.tag}`);
+  const report = await applyPunishmentEngine(
+    {
+      member,
+      user: member.user,
+      guild: interaction.guild,
+    },
+    {
+      punishments: ['dm', 'timeout'],
+      rule: 'Timeout',
+      reason,
+      durationMs,
+      moderator: interaction.user,
+      source: 'moderation',
+    }
+  );
+
+  if (!report.applied.includes('timeout')) {
+    throw new Error(`Failed to timeout user. Failed: ${report.failedText}`);
+  }
 
   const modCase = createModerationCase(interaction, member, 'timeout', reason, {
     duration: durationRaw,
+    punishmentReport: report,
   });
 
   await logBulkAction(interaction, member, 'timeout', reason, modCase.caseId, {
     duration: durationRaw,
+    dmSent: report.dmSent,
+    punishmentReport: report,
   });
 
   return modCase;
 }
 
 async function runBulkKick(interaction, member, reason) {
-  await member.kick(`${reason} | By ${interaction.user.tag}`);
+  const report = await applyPunishmentEngine(
+    {
+      member,
+      user: member.user,
+      guild: interaction.guild,
+    },
+    {
+      punishments: ['dm', 'kick'],
+      rule: 'Kick',
+      reason,
+      moderator: interaction.user,
+      source: 'moderation',
+    }
+  );
 
-  const modCase = createModerationCase(interaction, member, 'kick', reason);
+  if (!report.applied.includes('kick')) {
+    throw new Error(`Failed to kick user. Failed: ${report.failedText}`);
+  }
 
-  await logBulkAction(interaction, member, 'kick', reason, modCase.caseId);
+  const modCase = createModerationCase(interaction, member, 'kick', reason, {
+    punishmentReport: report,
+  });
+
+  await logBulkAction(interaction, member, 'kick', reason, modCase.caseId, {
+    dmSent: report.dmSent,
+    punishmentReport: report,
+  });
 
   return modCase;
 }
 
 async function runBulkBan(interaction, member, reason, deleteDays) {
-  await member.ban({
-    deleteMessageSeconds: deleteDays * 24 * 60 * 60,
-    reason: `${reason} | By ${interaction.user.tag}`,
-  });
+  const report = await applyPunishmentEngine(
+    {
+      member,
+      user: member.user,
+      guild: interaction.guild,
+    },
+    {
+      punishments: ['dm', 'ban'],
+      rule: 'Ban',
+      reason,
+      deleteDays,
+      moderator: interaction.user,
+      source: 'moderation',
+    }
+  );
+
+  if (!report.applied.includes('ban')) {
+    throw new Error(`Failed to ban user. Failed: ${report.failedText}`);
+  }
 
   const modCase = createModerationCase(interaction, member, 'ban', reason, {
     deleteDays,
+    punishmentReport: report,
   });
 
   await logBulkAction(interaction, member, 'ban', reason, modCase.caseId, {
     deleteDays,
+    dmSent: report.dmSent,
+    punishmentReport: report,
   });
 
   return modCase;

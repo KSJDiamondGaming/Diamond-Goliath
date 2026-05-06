@@ -1,4 +1,7 @@
-const { ActionRowBuilder } = require('discord.js');
+const {
+  ActionRowBuilder,
+  UserSelectMenuBuilder,
+} = require('discord.js');
 
 const { getWarningCountForUser } = require('../../logging/warnings/warningStore');
 
@@ -91,6 +94,16 @@ function buildTargetStats(guildId, target) {
   };
 }
 
+function buildUserSelectRow() {
+  return new ActionRowBuilder().addComponents(
+    new UserSelectMenuBuilder()
+      .setCustomId('mod_user_select')
+      .setPlaceholder('👤 Select any server member to moderate')
+      .setMinValues(1)
+      .setMaxValues(1)
+  );
+}
+
 function buildActionsRows(targetId, member, guild) {
   const id = targetId || 'none';
 
@@ -104,6 +117,8 @@ function buildActionsRows(targetId, member, guild) {
   };
 
   return [
+    buildUserSelectRow(),
+
     ...buildActionSelect(targetId),
 
     new ActionRowBuilder().addComponents(
@@ -173,6 +188,8 @@ function buildToolsRows(targetId, member, guild) {
   };
 
   return [
+    buildUserSelectRow(),
+
     new ActionRowBuilder().addComponents(
       createPrimaryButton(
         'mod_select_user',
@@ -240,6 +257,7 @@ function buildActionsEmbed(interaction, target) {
       target
         ? [
             `\`👤\` **Target:** ${target.user}`,
+            `\`🆔\` **User ID:** \`${target.id}\``,
             `\`🏷️\` **User Tag:** \`${target.user.tag}\``,
             '',
             '`⚡` Choose a moderation action below.',
@@ -247,7 +265,7 @@ function buildActionsEmbed(interaction, target) {
         : [
             '`⚠️` **No user selected**',
             '',
-            'Select a user before running moderation actions.',
+            'Use the user selector below to choose any member in this server.',
           ].join('\n')
     );
 }
@@ -335,10 +353,12 @@ async function buildDashboardPayload(discord, interaction, target, view = DEFAUL
           [
             '`⚠️` **No user selected**',
             '',
-            'Select a user first to view their moderation cases.',
+            'Use the user selector below to choose any member first.',
           ].join('\n')
         )
       );
+
+      components.push(buildUserSelectRow());
     } else {
       const pageData = getCasesPageData(
         interaction.guild.id,
@@ -358,6 +378,7 @@ async function buildDashboardPayload(discord, interaction, target, view = DEFAUL
       );
 
       components.push(
+        buildUserSelectRow(),
         ...buildCasesPageButtons(
           target.id,
           pageData.page,
@@ -442,6 +463,7 @@ module.exports = {
   buildTargetStats,
   getCasesPageData,
 
+  buildUserSelectRow,
   buildActionsRows,
   buildToolsRows,
 

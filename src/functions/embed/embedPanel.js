@@ -15,6 +15,7 @@ const {
 
 const { buildAdminPanel } = require('../admin/adminPanel');
 const guildManager = require('../../guild/guildManager');
+const panelNav = require('../../helpers/ui/panelNavigation');
 
 const PANEL_COLOR = '#5865F2';
 const CUSTOM_HEX_VALUE = '__custom_hex__';
@@ -827,21 +828,13 @@ function buildEmbedPanel(interactionOrGuild, memberDisplayName = 'Unknown User')
           .setStyle(ButtonStyle.Danger)
       ),
 
-      // 🔹 NAVIGATION (CLEAN + CONSISTENT)
+      // 🔹 NAVIGATION (FIXED)
       new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-          .setCustomId('admin:modules')
-          .setLabel('⬅️ Modules')
+          .setCustomId(panelNav.buildCustomId(state, 'back'))
+          .setLabel('⬅️ Back')
           .setStyle(ButtonStyle.Secondary),
 
-        ...(state.openedFromAdmin
-          ? [
-              new ButtonBuilder()
-                .setCustomId('embed:back:admin')
-                .setLabel('🏠 Admin')
-                .setStyle(ButtonStyle.Secondary),
-            ]
-          : [])
       ),
     ],
   };
@@ -852,43 +845,46 @@ function buildEmbedPanel(interactionOrGuild, memberDisplayName = 'Unknown User')
 function buildEditorPanel(interaction, memberDisplayName = 'Unknown User') {
   const state = getSession(interaction);
 
+  const selectedField =
+    Number.isInteger(state.selectedFieldIndex) &&
+    state.fields?.[state.selectedFieldIndex]
+      ? state.fields[state.selectedFieldIndex]
+      : null;
+
   const templateSelect = new StringSelectMenuBuilder()
     .setCustomId('embed:template')
-    .setPlaceholder('Choose a premade template')
+    .setPlaceholder('🎨 Choose a premade template')
     .addOptions(
       Object.entries(TEMPLATES).map(([value, template]) => ({
-        label: `${template.emoji} ${template.label}`,
+        label: template.label,
         value,
+        emoji: template.emoji,
         default: state.template === value,
       }))
     );
 
   const channelSelect = new ChannelSelectMenuBuilder()
     .setCustomId('embed:channel')
-    .setPlaceholder('Choose where to send this embed')
+    .setPlaceholder('📢 Choose where to send this embed')
     .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement);
 
   const colorSelect = new StringSelectMenuBuilder()
     .setCustomId('embed:color')
-    .setPlaceholder('Choose embed colour or custom HEX')
+    .setPlaceholder('🌈 Choose embed colour or custom HEX')
     .addOptions([
       ...COLORS.map((color) => ({
-        label: `${color.emoji} ${color.label}`,
+        label: color.label,
         value: color.value,
+        emoji: color.emoji,
         default: state.color === color.value,
       })),
       {
-        label: '🎨 Custom HEX',
+        label: 'Custom HEX',
         value: CUSTOM_HEX_VALUE,
+        emoji: '🎨',
         description: 'Enter your own HEX colour',
       },
     ]);
-
-  const selectedField =
-    Number.isInteger(state.selectedFieldIndex) &&
-    state.fields?.[state.selectedFieldIndex]
-      ? state.fields[state.selectedFieldIndex]
-      : null;
 
   const fieldOptions = (state.fields || []).slice(0, 25).map((field, index) => ({
     label: `${index + 1}. ${trim(field.name, 80) || 'Untitled Field'}`,
@@ -908,63 +904,126 @@ function buildEditorPanel(interaction, memberDisplayName = 'Unknown User') {
       new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
           .setCustomId('embed:field-select')
-          .setPlaceholder('Choose a field to edit or remove')
+          .setPlaceholder('🧩 Select a field to edit, move, or remove')
           .addOptions(fieldOptions)
       )
     );
   }
 
   components.push(
-  new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('embed:edit-content')
-      .setLabel('📝 Text')
-      .setStyle(ButtonStyle.Primary),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('embed:edit-content')
+        .setLabel('📝 Text')
+        .setStyle(ButtonStyle.Primary),
 
-    new ButtonBuilder()
-      .setCustomId('embed:edit-media')
-      .setLabel('🖼️ Media')
-      .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId('embed:edit-media')
+        .setLabel('🖼️ Media')
+        .setStyle(ButtonStyle.Secondary),
 
-    new ButtonBuilder()
-      .setCustomId('embed:field-add')
-      .setLabel('➕ Field')
-      .setStyle(ButtonStyle.Success)
-      .setDisabled((state.fields?.length || 0) >= 25),
+      new ButtonBuilder()
+        .setCustomId('embed:toggle-ping')
+        .setLabel(state.allowUserPing ? '🔔 Ping ON' : '🔕 Ping OFF')
+        .setStyle(state.allowUserPing ? ButtonStyle.Success : ButtonStyle.Secondary),
 
-    new ButtonBuilder()
-      .setCustomId(
-        selectedField
-          ? `embed:field-edit:${state.selectedFieldIndex}`
-          : 'embed:field-edit'
-      )
-      .setLabel('✏️ Field')
-      .setStyle(ButtonStyle.Primary)
-      .setDisabled(!selectedField),
+      new ButtonBuilder()
+        .setCustomId('embed:field-add')
+        .setLabel('➕ Field')
+        .setStyle(ButtonStyle.Success)
+        .setDisabled((state.fields?.length || 0) >= 25),
 
-    new ButtonBuilder()
-      .setCustomId('embed:home')
-      .setLabel('⬅️ Back')
-      .setStyle(ButtonStyle.Secondary)
-  )
-);
+      new ButtonBuilder()
+        .setCustomId('embed:send')
+        .setLabel('🚀 Send')
+        .setStyle(ButtonStyle.Success)
+    )
+  );
+
+  components.push(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(
+          selectedField
+            ? `embed:field-edit:${state.selectedFieldIndex}`
+            : 'embed:field-edit'
+        )
+        .setLabel('✏️ Edit Field')
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(!selectedField),
+
+      new ButtonBuilder()
+        .setCustomId('embed:field-move-up')
+        .setLabel('⬆️ Move Up')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(!selectedField || state.selectedFieldIndex <= 0),
+
+      new ButtonBuilder()
+        .setCustomId('embed:field-move-down')
+        .setLabel('⬇️ Move Down')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(
+          !selectedField ||
+            state.selectedFieldIndex >= (state.fields?.length || 0) - 1
+        ),
+
+      new ButtonBuilder()
+        .setCustomId('embed:field-remove-selected')
+        .setLabel('🗑️ Remove')
+        .setStyle(ButtonStyle.Danger)
+        .setDisabled(!selectedField)
+    )
+  );
+
+  components.push(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('embed:helpers')
+        .setLabel('📖 Variables')
+        .setStyle(ButtonStyle.Secondary),
+
+      new ButtonBuilder()
+        .setCustomId('embed:presets')
+        .setLabel('💾 Presets')
+        .setStyle(ButtonStyle.Primary),
+
+      new ButtonBuilder()
+        .setCustomId('embed:reset')
+        .setLabel('♻️ Reset')
+        .setStyle(ButtonStyle.Danger),
+
+      new ButtonBuilder()
+        .setCustomId(panelNav.buildCustomId(state, 'back'))
+        .setLabel('⬅️ Back')
+        .setStyle(ButtonStyle.Secondary),
+    )
+  );
 
   const embed = new EmbedBuilder()
-    .setColor(PANEL_COLOR)
+    .setColor(state.color || PANEL_COLOR)
     .setTitle('✏️ Embed Editor')
     .setDescription(
       [
-        'Edit your embed using the controls below.',
+        '**Build, customise, preview, and send your embed from one place.**',
         '',
-        `**Preset:** ${state.selectedPreset || 'None'}`,
-        `**Mentions:** ${state.allowUserPing ? 'Ping ON' : 'Ping OFF'}`,
-        `**Fields:** ${state.fields?.length || 0}/25`,
+        `> **Template:** ${TEMPLATES[state.template]?.emoji || '🛠️'} ${
+          TEMPLATES[state.template]?.label || 'Custom Embed'
+        }`,
+        `> **Preset:** ${state.selectedPreset ? `💾 ${state.selectedPreset}` : 'None loaded'}`,
+        `> **Channel:** ${state.channelId ? `<#${state.channelId}>` : 'Not selected'}`,
+        `> **Colour:** \`${state.color || PANEL_COLOR}\``,
+        `> **Mentions:** ${state.allowUserPing ? '🔔 User ping enabled' : '🔕 Safe / no ping'}`,
+        `> **Fields:** ${state.fields?.length || 0}/25`,
+        `> **Unsaved Changes:** ${state.hasUnsavedChanges ? '⚠️ Yes' : '✅ No'}`,
         '',
-        `**Selected field:** ${selectedField ? selectedField.name : 'None'}`,
-        selectedField ? `Inline: ${selectedField.inline ? 'Yes' : 'No'}` : '',
-      ]
-        .filter(Boolean)
-        .join('\n')
+        selectedField
+          ? [
+              '**Selected Field**',
+              `\`${state.selectedFieldIndex + 1}.\` **${trim(selectedField.name, 120)}**`,
+              `Inline: ${selectedField.inline ? 'Yes' : 'No'}`,
+            ].join('\n')
+          : '**Selected Field**\nNone selected.',
+      ].join('\n')
     )
     .setFooter({ text: `Requested by ${memberDisplayName}` })
     .setTimestamp();
@@ -1100,14 +1159,14 @@ function buildDeleteConfirmPanel(presetName, memberDisplayName = 'Unknown User')
 
 function buildPresetsPanel(interaction, memberDisplayName = 'Unknown User') {
   const state = getSession(interaction);
-  const presets = guildManager.getEmbedPresets(interaction.guild.id);
+  const presets = guildManager.getEmbedPresets(interaction.guild.id) || {};
 
   const embedDefaults =
     typeof guildManager.getEmbedDefaults === 'function'
-      ? guildManager.getEmbedDefaults(interaction.guild.id)
+      ? guildManager.getEmbedDefaults(interaction.guild.id) || {}
       : {};
 
-  const presetEntries = Object.entries(presets || {})
+  const presetEntries = Object.entries(presets)
     .filter(([name, value]) => name !== 'updatedAt' && value && typeof value === 'object')
     .sort(([, a], [, b]) => {
       const aTime = new Date(a?.updatedAt || 0).getTime();
@@ -1116,6 +1175,8 @@ function buildPresetsPanel(interaction, memberDisplayName = 'Unknown User') {
     })
     .slice(0, 25);
 
+  const currentDefault = embedDefaults[state.template] || null;
+
   const presetText = presetEntries.length
     ? presetEntries
         .map(([name, preset], index) => {
@@ -1123,25 +1184,38 @@ function buildPresetsPanel(interaction, memberDisplayName = 'Unknown User') {
             ? new Date(preset.updatedAt).toLocaleString()
             : 'Unknown';
 
-          const defaultBadge =
-            embedDefaults[state.template] === name ? '\n⭐ Default for this template' : '';
+          const loadedBadge = state.selectedPreset === name ? ' ✅ Loaded' : '';
+          const defaultBadge = currentDefault === name ? ' ⭐ Default' : '';
 
-          return `**${index + 1}. ${name}**\nUpdated: ${updated}${defaultBadge}`;
+          return [
+            `**${index + 1}. ${name}**${loadedBadge}${defaultBadge}`,
+            `> Updated: ${updated}`,
+            `> Template: \`${preset.template || 'custom'}\``,
+            `> Fields: ${Array.isArray(preset.fields) ? preset.fields.length : 0}/25`,
+          ].join('\n');
         })
         .join('\n\n')
-    : 'No presets saved yet.';
+    : [
+        'No presets saved yet.',
+        '',
+        'Use **Save Current** to store your current embed setup.',
+      ].join('\n');
 
   const embed = new EmbedBuilder()
     .setColor(PANEL_COLOR)
     .setTitle('💾 Embed Presets')
     .setDescription(
       [
-        'Save your current embed, load an existing preset, rename it, duplicate it, delete it, or set it as a server default.',
+        '**Save, load, duplicate, rename, delete, and set default embeds.**',
         '',
-        `**Loaded:** ${state.selectedPreset || 'None'}`,
-        `**Template:** ${state.template || 'custom'}`,
-        `**Default for this template:** ${embedDefaults[state.template] || 'None'}`,
+        `> **Loaded Preset:** ${state.selectedPreset ? `💾 ${state.selectedPreset}` : 'None'}`,
+        `> **Current Template:** ${TEMPLATES[state.template]?.emoji || '🛠️'} ${
+          TEMPLATES[state.template]?.label || 'Custom Embed'
+        }`,
+        `> **Template Default:** ${currentDefault ? `⭐ ${currentDefault}` : 'None'}`,
+        `> **Unsaved Changes:** ${state.hasUnsavedChanges ? '⚠️ Yes' : '✅ No'}`,
         '',
+        '**Saved Presets**',
         presetText,
       ].join('\n')
     )
@@ -1155,11 +1229,14 @@ function buildPresetsPanel(interaction, memberDisplayName = 'Unknown User') {
       new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
           .setCustomId('embed:preset-load')
-          .setPlaceholder('Load a saved preset')
+          .setPlaceholder('💾 Load a saved preset')
           .addOptions(
             presetEntries.map(([name, preset]) => ({
               label: name.slice(0, 100),
-              description: trim(preset?.title || 'Saved embed preset', 100),
+              description: trim(
+                preset?.title || preset?.description || 'Saved embed preset',
+                100
+              ),
               value: name,
               default: state.selectedPreset === name,
             }))
@@ -1172,7 +1249,7 @@ function buildPresetsPanel(interaction, memberDisplayName = 'Unknown User') {
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('embed:preset-save')
-        .setLabel('💾 Save Current')
+        .setLabel(state.selectedPreset ? '💾 Save / Overwrite' : '💾 Save Current')
         .setStyle(ButtonStyle.Success),
 
       new ButtonBuilder()
@@ -1184,7 +1261,24 @@ function buildPresetsPanel(interaction, memberDisplayName = 'Unknown User') {
       new ButtonBuilder()
         .setCustomId('embed:preset-clear-default')
         .setLabel('🧹 Clear Default')
-        .setStyle(ButtonStyle.Secondary),
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(!currentDefault)
+    )
+  );
+
+  components.push(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('embed:preset-rename')
+        .setLabel('✏️ Rename')
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(!state.selectedPreset),
+
+      new ButtonBuilder()
+        .setCustomId('embed:preset-duplicate')
+        .setLabel('📄 Duplicate')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(!state.selectedPreset),
 
       new ButtonBuilder()
         .setCustomId('embed:preset-delete-confirm')
@@ -1197,21 +1291,19 @@ function buildPresetsPanel(interaction, memberDisplayName = 'Unknown User') {
   components.push(
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId('embed:preset-rename')
-        .setLabel('✏️ Rename Loaded')
-        .setStyle(ButtonStyle.Primary)
-        .setDisabled(!state.selectedPreset),
+        .setCustomId('embed:editor')
+        .setLabel('✏️ Editor')
+        .setStyle(ButtonStyle.Primary),
 
       new ButtonBuilder()
-        .setCustomId('embed:preset-duplicate')
-        .setLabel('📄 Duplicate Loaded')
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(!state.selectedPreset),
+        .setCustomId('embed:helpers')
+        .setLabel('📖 Variables')
+        .setStyle(ButtonStyle.Secondary),
 
       new ButtonBuilder()
-        .setCustomId('embed:home')
+        .setCustomId(panelNav.buildCustomId(state, 'back'))
         .setLabel('⬅️ Back')
-        .setStyle(ButtonStyle.Secondary)
+        .setStyle(ButtonStyle.Secondary),
     )
   );
 
@@ -1445,18 +1537,12 @@ async function updatePresets(interaction, memberDisplayName) {
 async function handleInteraction(interaction) {
   if (!interaction.customId?.startsWith('embed:')) return false;
 
-  if (!interaction.guild) {
-    await interaction.reply({
-      content: 'Embed Studio can only be used inside a server.',
-      flags: 64,
-    });
-    return true;
-  }
-
   const memberDisplayName = getMemberDisplayName(interaction);
-  const state = getSession(interaction);
 
+  /* ---------------- SELECT MENUS ---------------- */
   if (interaction.isStringSelectMenu()) {
+    const state = getSession(interaction);
+
     if (interaction.customId === 'embed:template') {
       applyTemplate(interaction, interaction.values[0]);
       await updateEditor(interaction, memberDisplayName);
@@ -1471,45 +1557,15 @@ async function handleInteraction(interaction) {
         return true;
       }
 
-      markUnsaved(interaction, {
-        ...state,
-        color: selectedColor,
-      });
-
+      markUnsaved(interaction, { ...state, color: selectedColor });
       await updateEditor(interaction, memberDisplayName);
       return true;
     }
 
     if (interaction.customId === 'embed:field-select') {
-      const fieldIndex = Number(interaction.values[0]);
-
       saveSession(interaction, {
         ...state,
-        selectedFieldIndex: fieldIndex,
-      });
-
-      await updateEditor(interaction, memberDisplayName);
-      return true;
-    }
-
-    if (interaction.customId === 'embed:field-inline-toggle') {
-      const freshState = getSession(interaction);
-      const fieldIndex = freshState.selectedFieldIndex;
-      const nextFields = [...(freshState.fields || [])];
-
-      if (!Number.isInteger(fieldIndex) || !nextFields[fieldIndex]) {
-        await updateEditor(interaction, memberDisplayName);
-        return true;
-      }
-
-      nextFields[fieldIndex] = {
-        ...nextFields[fieldIndex],
-        inline: interaction.values[0] === 'true',
-      };
-
-      markUnsaved(interaction, {
-        ...freshState,
-        fields: nextFields,
+        selectedFieldIndex: Number(interaction.values[0]),
       });
 
       await updateEditor(interaction, memberDisplayName);
@@ -1521,10 +1577,7 @@ async function handleInteraction(interaction) {
       const preset = guildManager.getEmbedPreset(interaction.guild.id, presetName);
 
       if (!preset) {
-        await interaction.reply({
-          content: 'That preset could not be found.',
-          flags: 64,
-        });
+        await interaction.reply({ content: 'Preset not found.', flags: 64 });
         return true;
       }
 
@@ -1534,7 +1587,10 @@ async function handleInteraction(interaction) {
     }
   }
 
+  /* ---------------- CHANNEL SELECT ---------------- */
   if (interaction.isChannelSelectMenu()) {
+    const state = getSession(interaction);
+
     if (interaction.customId === 'embed:channel') {
       markUnsaved(interaction, {
         ...state,
@@ -1546,11 +1602,15 @@ async function handleInteraction(interaction) {
     }
   }
 
+  /* ---------------- BUTTONS ---------------- */
   if (interaction.isButton()) {
-    if (interaction.customId === 'embed:home') {
-      await updatePanel(interaction, memberDisplayName);
-      return true;
-    }
+
+    // Let NAV system handle its own buttons
+    if (interaction.customId.startsWith('nav|')) return false;
+
+    if (!interaction.customId.startsWith('embed:')) return false;
+
+    const state = getSession(interaction);
 
     if (interaction.customId === 'embed:editor') {
       await updateEditor(interaction, memberDisplayName);
@@ -1568,247 +1628,29 @@ async function handleInteraction(interaction) {
     }
 
     if (interaction.customId === 'embed:toggle-ping') {
-      const freshState = getSession(interaction);
-
       markUnsaved(interaction, {
-        ...freshState,
-        allowUserPing: !freshState.allowUserPing,
+        ...state,
+        allowUserPing: !state.allowUserPing,
       });
 
       await updateEditor(interaction, memberDisplayName);
-      return true;
-    }
-
-    if (
-      interaction.customId === 'embed:field-move-up' ||
-      interaction.customId === 'embed:field-move-down'
-    ) {
-      const freshState = getSession(interaction);
-      const fieldIndex = freshState.selectedFieldIndex;
-      const nextFields = [...(freshState.fields || [])];
-
-      if (!Number.isInteger(fieldIndex) || !nextFields[fieldIndex]) {
-        await updateEditor(interaction, memberDisplayName);
-        return true;
-      }
-
-      const direction = interaction.customId === 'embed:field-move-up' ? -1 : 1;
-      const nextIndex = fieldIndex + direction;
-
-      if (!nextFields[nextIndex]) {
-        await updateEditor(interaction, memberDisplayName);
-        return true;
-      }
-
-      [nextFields[fieldIndex], nextFields[nextIndex]] = [
-        nextFields[nextIndex],
-        nextFields[fieldIndex],
-      ];
-
-      markUnsaved(interaction, {
-        ...freshState,
-        fields: nextFields,
-        selectedFieldIndex: nextIndex,
-      });
-
-      await updateEditor(interaction, memberDisplayName);
-      return true;
-    }
-
-    if (interaction.customId === 'embed:preset-save') {
-      await interaction.showModal(buildPresetSaveModal(state));
-      return true;
-    }
-
-    if (interaction.customId === 'embed:preset-set-default') {
-      const freshState = getSession(interaction);
-
-      if (!freshState.selectedPreset) {
-        await interaction.reply({
-          content: 'Load a preset first before setting it as default.',
-          flags: 64,
-        });
-        return true;
-      }
-
-      if (typeof guildManager.setEmbedDefault !== 'function') {
-        await interaction.reply({
-          content: 'Embed defaults are not wired in guildManager yet.',
-          flags: 64,
-        });
-        return true;
-      }
-
-      guildManager.setEmbedDefault(
-        interaction.guild.id,
-        freshState.template || 'custom',
-        freshState.selectedPreset,
-        interaction.guild
-      );
-
-      await updatePresets(interaction, memberDisplayName);
-      return true;
-    }
-
-    if (interaction.customId === 'embed:preset-clear-default') {
-      const freshState = getSession(interaction);
-
-      if (typeof guildManager.clearEmbedDefault !== 'function') {
-        await interaction.reply({
-          content: 'Embed defaults are not wired in guildManager yet.',
-          flags: 64,
-        });
-        return true;
-      }
-
-      guildManager.clearEmbedDefault(
-        interaction.guild.id,
-        freshState.template || 'custom',
-        interaction.guild
-      );
-
-      await updatePresets(interaction, memberDisplayName);
-      return true;
-    }
-
-    if (interaction.customId === 'embed:preset-rename') {
-      const freshState = getSession(interaction);
-
-      if (!freshState.selectedPreset) {
-        await interaction.reply({
-          content: 'Load a preset first before renaming one.',
-          flags: 64,
-        });
-        return true;
-      }
-
-      await interaction.showModal(buildRenameModal(freshState.selectedPreset));
-      return true;
-    }
-
-    if (interaction.customId === 'embed:preset-duplicate') {
-      const freshState = getSession(interaction);
-
-      if (!freshState.selectedPreset) {
-        await interaction.reply({
-          content: 'Load a preset first before duplicating one.',
-          flags: 64,
-        });
-        return true;
-      }
-
-      await interaction.showModal(buildDuplicateModal(freshState.selectedPreset));
-      return true;
-    }
-
-    if (interaction.customId.startsWith('embed:preset-overwrite:')) {
-      const freshState = getSession(interaction);
-      const presetName = interaction.customId.replace('embed:preset-overwrite:', '');
-
-      guildManager.saveEmbedPreset(
-        interaction.guild.id,
-        presetName,
-        getPresetDataFromState(freshState),
-        interaction.guild
-      );
-
-      clearUnsaved(interaction, {
-        ...freshState,
-        selectedPreset: presetName,
-      });
-
-      await updatePresets(interaction, memberDisplayName);
-      return true;
-    }
-
-    if (interaction.customId === 'embed:preset-delete-confirm') {
-      const freshState = getSession(interaction);
-      const presetName = freshState.selectedPreset;
-
-      if (!presetName) {
-        await interaction.reply({
-          content: 'Load a preset first before deleting one.',
-          flags: 64,
-        });
-        return true;
-      }
-
-      await interaction.update(buildDeleteConfirmPanel(presetName, memberDisplayName));
-      return true;
-    }
-
-    if (interaction.customId === 'embed:preset-delete') {
-      const freshState = getSession(interaction);
-      const presetName = freshState.selectedPreset;
-
-      if (!presetName) {
-        await interaction.reply({
-          content: 'Load a preset first before deleting one.',
-          flags: 64,
-        });
-        return true;
-      }
-
-      const deleted = guildManager.deleteEmbedPreset(
-        interaction.guild.id,
-        presetName
-      );
-
-      saveSession(interaction, {
-        ...freshState,
-        selectedPreset: null,
-        hasUnsavedChanges: false,
-      });
-
-      if (!deleted) {
-        await interaction.reply({
-          content: 'That preset was already missing or could not be deleted.',
-          flags: 64,
-        });
-        return true;
-      }
-
-      await updatePresets(interaction, memberDisplayName);
-      return true;
-    }
-
-    if (interaction.customId === 'embed:edit-content') {
-      const freshState = getSession(interaction);
-      await interaction.showModal(buildContentModal(freshState));
-      return true;
-    }
-
-    if (interaction.customId === 'embed:edit-media') {
-      const freshState = getSession(interaction);
-      await interaction.showModal(buildMediaModal(freshState));
       return true;
     }
 
     if (interaction.customId === 'embed:field-add') {
-      const freshState = getSession(interaction);
-      await interaction.showModal(buildFieldModal(freshState));
-      return true;
-    }
-
-    if (interaction.customId.startsWith('embed:field-edit:')) {
-      const freshState = getSession(interaction);
-      const fieldIndex = Number(interaction.customId.split(':')[2]);
-
-      await interaction.showModal(buildFieldModal(freshState, fieldIndex));
+      await interaction.showModal(buildFieldModal(state));
       return true;
     }
 
     if (interaction.customId === 'embed:field-remove-selected') {
-      const freshState = getSession(interaction);
-      const fieldIndex = freshState.selectedFieldIndex;
-      const nextFields = [...(freshState.fields || [])];
+      const nextFields = [...(state.fields || [])];
 
-      if (Number.isInteger(fieldIndex) && nextFields[fieldIndex]) {
-        nextFields.splice(fieldIndex, 1);
+      if (Number.isInteger(state.selectedFieldIndex)) {
+        nextFields.splice(state.selectedFieldIndex, 1);
       }
 
       markUnsaved(interaction, {
-        ...freshState,
+        ...state,
         fields: nextFields,
         selectedFieldIndex: null,
       });
@@ -1817,41 +1659,18 @@ async function handleInteraction(interaction) {
       return true;
     }
 
-    if (interaction.customId === 'embed:send') {
-      const freshState = getSession(interaction);
+    if (interaction.customId === 'embed:edit-content') {
+      await interaction.showModal(buildContentModal(state));
+      return true;
+    }
 
-      if (!freshState.channelId) {
-        await interaction.reply({
-          content: 'Please select a channel before sending.',
-          flags: 64,
-        });
-        return true;
-      }
+    if (interaction.customId === 'embed:edit-media') {
+      await interaction.showModal(buildMediaModal(state));
+      return true;
+    }
 
-      const channel =
-        interaction.guild.channels.cache.get(freshState.channelId) ||
-        (await interaction.guild.channels
-          .fetch(freshState.channelId)
-          .catch(() => null));
-
-      if (!channel?.isTextBased()) {
-        await interaction.reply({
-          content: 'That channel is not available or is not text-based.',
-          flags: 64,
-        });
-        return true;
-      }
-
-      await channel.send({
-        content: freshState.allowUserPing ? `<@${interaction.user.id}>` : '',
-        embeds: [buildPreviewEmbed(freshState, interaction)],
-        allowedMentions: getAllowedMentionsForState(freshState, interaction),
-      });
-
-      await interaction.reply({
-        content: `Embed sent to <#${freshState.channelId}>.`,
-        flags: 64,
-      });
+    if (interaction.customId === 'embed:preset-save') {
+      await interaction.showModal(buildPresetSaveModal(state));
       return true;
     }
 
@@ -1861,164 +1680,64 @@ async function handleInteraction(interaction) {
       return true;
     }
 
-    if (interaction.customId === 'embed:back:admin') {
-      await interaction.update(
-        buildAdminPanel(interaction.guild, memberDisplayName)
-      );
+    if (interaction.customId === 'embed:send') {
+      if (!state.channelId) {
+        await interaction.reply({
+          content: 'Select a channel first.',
+          flags: 64,
+        });
+        return true;
+      }
+
+      const channel =
+        interaction.guild.channels.cache.get(state.channelId) ||
+        (await interaction.guild.channels.fetch(state.channelId).catch(() => null));
+
+      if (!channel?.isTextBased()) {
+        await interaction.reply({
+          content: 'Invalid channel.',
+          flags: 64,
+        });
+        return true;
+      }
+
+      await channel.send({
+        content: state.allowUserPing ? `<@${interaction.user.id}>` : '',
+        embeds: [buildPreviewEmbed(state, interaction)],
+        allowedMentions: getAllowedMentionsForState(state, interaction),
+      });
+
+      await interaction.reply({
+        content: `Sent to <#${state.channelId}>`,
+        flags: 64,
+      });
+
       return true;
     }
   }
 
+  /* ---------------- MODALS ---------------- */
   if (interaction.isModalSubmit()) {
+    const state = getSession(interaction);
+
     if (interaction.customId === 'embed:preset-save-modal') {
-      const freshState = getSession(interaction);
-      const presetName = interaction.fields.getTextInputValue('name').trim();
+      const name = interaction.fields.getTextInputValue('name').trim();
 
-      if (!presetName) {
-        await interaction.reply({
-          content: 'Preset name cannot be empty.',
-          flags: 64,
-        });
-        return true;
-      }
-
-      const existingPreset = guildManager.getEmbedPreset(
-        interaction.guild.id,
-        presetName
-      );
-
-      if (existingPreset) {
-        await interaction.update(
-          buildOverwriteConfirmPanel(presetName, memberDisplayName)
-        );
+      if (!name) {
+        await interaction.reply({ content: 'Name required.', flags: 64 });
         return true;
       }
 
       guildManager.saveEmbedPreset(
         interaction.guild.id,
-        presetName,
-        getPresetDataFromState(freshState),
+        name,
+        getPresetDataFromState(state),
         interaction.guild
       );
 
       clearUnsaved(interaction, {
-        ...freshState,
-        selectedPreset: presetName,
-      });
-
-      await updatePresets(interaction, memberDisplayName);
-      return true;
-    }
-
-    if (interaction.customId === 'embed:preset-rename-modal') {
-      const freshState = getSession(interaction);
-      const oldName = freshState.selectedPreset;
-      const newName = interaction.fields.getTextInputValue('name').trim();
-
-      if (!oldName) {
-        await interaction.reply({
-          content: 'No preset selected to rename.',
-          flags: 64,
-        });
-        return true;
-      }
-
-      if (!newName) {
-        await interaction.reply({
-          content: 'Preset name cannot be empty.',
-          flags: 64,
-        });
-        return true;
-      }
-
-      if (newName === oldName) {
-        await updatePresets(interaction, memberDisplayName);
-        return true;
-      }
-
-      const originalPreset = guildManager.getEmbedPreset(
-        interaction.guild.id,
-        oldName
-      );
-
-      if (!originalPreset) {
-        await interaction.reply({
-          content: 'Original preset could not be found.',
-          flags: 64,
-        });
-        return true;
-      }
-
-      const nameTaken = guildManager.getEmbedPreset(interaction.guild.id, newName);
-
-      if (nameTaken) {
-        await interaction.update(
-          buildOverwriteConfirmPanel(newName, memberDisplayName)
-        );
-        return true;
-      }
-
-      guildManager.saveEmbedPreset(
-        interaction.guild.id,
-        newName,
-        originalPreset,
-        interaction.guild
-      );
-
-      guildManager.deleteEmbedPreset(interaction.guild.id, oldName);
-
-      clearUnsaved(interaction, {
-        ...freshState,
-        selectedPreset: newName,
-      });
-
-      await updatePresets(interaction, memberDisplayName);
-      return true;
-    }
-
-    if (interaction.customId === 'embed:preset-duplicate-modal') {
-      const freshState = getSession(interaction);
-      const sourceName = freshState.selectedPreset;
-      const duplicateName = interaction.fields.getTextInputValue('name').trim();
-
-      if (!sourceName) {
-        await interaction.reply({
-          content: 'No preset selected to duplicate.',
-          flags: 64,
-        });
-        return true;
-      }
-
-      if (!duplicateName) {
-        await interaction.reply({
-          content: 'Preset name cannot be empty.',
-          flags: 64,
-        });
-        return true;
-      }
-
-      const nameTaken = guildManager.getEmbedPreset(
-        interaction.guild.id,
-        duplicateName
-      );
-
-      if (nameTaken) {
-        await interaction.update(
-          buildOverwriteConfirmPanel(duplicateName, memberDisplayName)
-        );
-        return true;
-      }
-
-      guildManager.saveEmbedPreset(
-        interaction.guild.id,
-        duplicateName,
-        getPresetDataFromState(freshState),
-        interaction.guild
-      );
-
-      clearUnsaved(interaction, {
-        ...freshState,
-        selectedPreset: duplicateName,
+        ...state,
+        selectedPreset: name,
       });
 
       await updatePresets(interaction, memberDisplayName);
@@ -2026,21 +1745,16 @@ async function handleInteraction(interaction) {
     }
 
     if (interaction.customId === 'embed:save-color') {
-      const rawHex = interaction.fields.getTextInputValue('hex');
+      const hex = interaction.fields.getTextInputValue('hex');
 
-      if (!isValidHexColor(rawHex)) {
-        await interaction.reply({
-          content: 'Please enter a valid HEX colour like `#5865F2`.',
-          flags: 64,
-        });
+      if (!isValidHexColor(hex)) {
+        await interaction.reply({ content: 'Invalid HEX.', flags: 64 });
         return true;
       }
 
-      const freshState = getSession(interaction);
-
       markUnsaved(interaction, {
-        ...freshState,
-        color: normalizeHexColor(rawHex),
+        ...state,
+        color: normalizeHexColor(hex),
       });
 
       await updateEditor(interaction, memberDisplayName);
@@ -2048,10 +1762,8 @@ async function handleInteraction(interaction) {
     }
 
     if (interaction.customId.startsWith('embed:save-content:')) {
-      const freshState = getSession(interaction);
-
       markUnsaved(interaction, {
-        ...freshState,
+        ...state,
         title: interaction.fields.getTextInputValue('title'),
         description: interaction.fields.getTextInputValue('description'),
         authorName: interaction.fields.getTextInputValue('authorName'),
@@ -2063,10 +1775,8 @@ async function handleInteraction(interaction) {
     }
 
     if (interaction.customId.startsWith('embed:save-media:')) {
-      const freshState = getSession(interaction);
-
       markUnsaved(interaction, {
-        ...freshState,
+        ...state,
         authorIcon: interaction.fields.getTextInputValue('authorIcon'),
         thumbnail: interaction.fields.getTextInputValue('thumbnail'),
         image: interaction.fields.getTextInputValue('image'),
@@ -2076,52 +1786,18 @@ async function handleInteraction(interaction) {
       return true;
     }
 
-    if (
-      interaction.customId === 'embed:field-save-new' ||
-      interaction.customId.startsWith('embed:field-save:')
-    ) {
-      const freshState = getSession(interaction);
-      const nextFields = [...(freshState.fields || [])];
+    if (interaction.customId === 'embed:field-save-new') {
+      const nextFields = [...(state.fields || [])];
 
-      const isNewField = interaction.customId === 'embed:field-save-new';
-      const fieldIndex = isNewField
-        ? nextFields.length
-        : Number(interaction.customId.split(':')[2]);
-
-      const existingInline = isNewField
-        ? false
-        : Boolean(nextFields[fieldIndex]?.inline);
-
-      const layoutInput = String(
-        interaction.fields.getTextInputValue('layout') || ''
-      )
-        .toLowerCase()
-        .trim();
-
-      const isInline = layoutInput
-        ? ['inline', 'i', 'yes', 'y', 'true', '1'].includes(layoutInput)
-        : existingInline;
-
-      const field = {
-        name: trim(interaction.fields.getTextInputValue('name'), 256),
-        value: trim(interaction.fields.getTextInputValue('value'), 1024),
-        inline: isInline,
-      };
-
-      if (isNewField) {
-        if (nextFields.length < 25) {
-          nextFields.push(field);
-        }
-      } else if (Number.isInteger(fieldIndex) && nextFields[fieldIndex]) {
-        nextFields[fieldIndex] = field;
-      }
+      nextFields.push({
+        name: interaction.fields.getTextInputValue('name'),
+        value: interaction.fields.getTextInputValue('value'),
+        inline: false,
+      });
 
       markUnsaved(interaction, {
-        ...freshState,
+        ...state,
         fields: nextFields,
-        selectedFieldIndex: isNewField
-          ? nextFields.length - 1
-          : freshState.selectedFieldIndex,
       });
 
       await updateEditor(interaction, memberDisplayName);

@@ -1,7 +1,7 @@
 {
   "guildId": "808091031350280213",
   "guildName": "KSJ DIAMOND GAMING",
-  "updatedAt": "2026-05-05T19:01:59.811Z",
+  "updatedAt": "2026-05-06T01:54:17.707Z",
   "general": {
     "enabled": true,
     "prefix": "!",
@@ -19,9 +19,7 @@
     "antiSpam": {
       "enabled": true,
       "punishments": [
-        "delete",
-        "warn",
-        "timeout"
+        "delete"
       ],
       "punishment": "delete",
       "timeoutMinutes": 10,
@@ -79,14 +77,14 @@
       "enabled": true,
       "channelId": null
     },
-    "updatedAt": "2026-05-01T01:10:22.149Z"
+    "updatedAt": "2026-05-06T01:54:17.707Z"
   },
   "logs": {
     "enabled": true,
     "channels": {
       "general": "1491219255465869514",
       "moderation": "1491219255465869514",
-      "admin": "1002293429004406895",
+      "admin": "1491219255465869514",
       "automod": "1491219255465869514",
       "member": null,
       "messageDelete": null,
@@ -112,7 +110,7 @@
       "voiceLeave": true,
       "voiceMove": true
     },
-    "updatedAt": "2026-05-05T19:01:59.811Z"
+    "updatedAt": "2026-05-06T01:32:05.037Z"
   },
   "serverBackups": {
     "enabled": true,
@@ -154,11 +152,16 @@
   "stats": {},
   "autoRoles": {
     "enabled": false,
-    "roleIds": [],
-    "updatedAt": "2026-05-03T21:59:18.908Z"
+    "roleIds": [
+      "1418344356573610087"
+    ],
+    "updatedAt": "2026-05-06T01:53:01.958Z"
   },
   "staffRoles": {
-    "roleIds": []
+    "roleIds": [
+      "810273860993679400"
+    ],
+    "updatedAt": "2026-05-06T01:52:20.203Z"
   },
   "modRoles": {
     "roleIds": []

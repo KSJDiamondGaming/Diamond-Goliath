@@ -4,33 +4,50 @@ const embedPanel = require('../../functions/embed/embedPanel');
 const { handleAdminNavigation } = require('../../functions/admin/adminPanel');
 const security = require('../../security/securityCore');
 
+const panelNav = require('../../helpers/ui/panelNavigation');
+
+function startsWithCustomId(interaction, prefix) {
+  return String(interaction.customId || '').startsWith(prefix);
+}
+
 function isAdminInteraction(interaction) {
-  return String(interaction.customId || '').startsWith('admin:');
+  return startsWithCustomId(interaction, 'admin:');
 }
 
 function isAutomodInteraction(interaction) {
-  return String(interaction.customId || '').startsWith('automod:');
+  return startsWithCustomId(interaction, 'automod:');
 }
 
 function isEmbedInteraction(interaction) {
-  return String(interaction.customId || '').startsWith('embed:');
+  return startsWithCustomId(interaction, 'embed:');
 }
 
-function isProtectedPanelInteraction(interaction) {
+function isNavigationInteraction(interaction) {
+  return startsWithCustomId(interaction, 'nav|');
+}
+
+function isPanelComponent(interaction) {
   return (
     interaction.isButton?.() ||
     interaction.isRoleSelectMenu?.() ||
     interaction.isChannelSelectMenu?.() ||
     interaction.isStringSelectMenu?.() ||
     interaction.isModalSubmit?.()
-  ) && (
+  );
+}
+
+function isProtectedPanelInteraction(interaction) {
+  if (!isPanelComponent(interaction)) return false;
+
+  return (
+    isNavigationInteraction(interaction) ||
     isAdminInteraction(interaction) ||
     isAutomodInteraction(interaction) ||
     isEmbedInteraction(interaction)
   );
 }
 
-async function deny(interaction, message) {
+async function safeReply(interaction, message) {
   const payload = {
     content: message,
     embeds: [],
@@ -45,12 +62,65 @@ async function deny(interaction, message) {
   return interaction.reply(payload);
 }
 
+async function handlePurgeModal(interaction) {
+  const rawAmount = interaction.fields.getTextInputValue('amount');
+  const amount = Number(rawAmount);
+
+  if (!Number.isInteger(amount) || amount < 1 || amount > 100) {
+    return safeReply(interaction, '❌ Please enter a number between 1 and 100.');
+  }
+
+  if (!interaction.channel?.bulkDelete) {
+    return safeReply(interaction, '❌ This channel does not support bulk delete.');
+  }
+
+  const deleted = await interaction.channel.bulkDelete(amount, true);
+
+  return safeReply(interaction, `✅ Deleted ${deleted.size} message(s).`);
+}
+
+async function handlePanelNavigation(interaction) {
+  const parsed = panelNav.parseCustomId(interaction.customId);
+  if (!parsed) return false;
+
+  let { state, action } = parsed;
+
+  if (action === 'back') {
+    state = panelNav.back(state);
+  }
+
+  if (action === 'home') {
+    interaction.customId = 'admin:home';
+    return handleAdminNavigation(interaction, state);
+  }
+
+  const currentPanel = panelNav.current(state) || 'admin:home';
+
+  if (currentPanel.startsWith('admin:')) {
+    interaction.customId = currentPanel;
+    return handleAdminNavigation(interaction, state);
+  }
+
+  if (currentPanel.startsWith('automod:')) {
+    interaction.customId = currentPanel;
+    return automodPanel.handleInteraction(interaction, state);
+  }
+
+  if (currentPanel.startsWith('embed:')) {
+    interaction.customId = currentPanel;
+    return embedPanel.handleInteraction(interaction, state);
+  }
+
+  interaction.customId = 'admin:home';
+  return handleAdminNavigation(interaction, state);
+}
+
 module.exports = {
   name: 'interactionCreate',
 
   async execute(interaction, client) {
     try {
-      if (!client) client = interaction.client;
+      const activeClient = client || interaction.client;
 
       if (isProtectedPanelInteraction(interaction)) {
         const check = await security.enforceInteractionSecurity(interaction, {
@@ -63,84 +133,88 @@ module.exports = {
         if (!check.allowed) return;
       }
 
-      const handledAutomod = await automodPanel.handleInteraction(interaction);
-      if (handledAutomod) return;
-
-      const handledEmbed = await embedPanel.handleInteraction(interaction);
-      if (handledEmbed) return;
-
-      if (isAdminInteraction(interaction)) {
-        const handledAdmin = await handleAdminNavigation(interaction);
-        if (handledAdmin) return;
+      // 1. Global nav system first.
+      if (isNavigationInteraction(interaction)) {
+        if (await handlePanelNavigation(interaction)) return;
       }
 
+      // 2. Admin purge modal.
+      if (interaction.isModalSubmit() && interaction.customId === 'admin:purgeModal') {
+        return handlePurgeModal(interaction);
+      }
+
+      // 3. Embed panel owns embed:* and its own admin:back/admin:home buttons.
+      if (
+        isEmbedInteraction(interaction) ||
+        interaction.customId === 'admin:back' ||
+        interaction.customId === 'admin:home'
+      ) {
+        if (await embedPanel.handleInteraction(interaction)) return;
+      }
+
+      // 4. Automod panel.
+      if (isAutomodInteraction(interaction)) {
+        if (await automodPanel.handleInteraction(interaction)) return;
+      }
+
+      // 5. Admin panel.
+      if (isAdminInteraction(interaction)) {
+        if (await handleAdminNavigation(interaction)) return;
+      }
+
+      // 6. Slash commands.
       if (interaction.isChatInputCommand()) {
-        const command = client.commands.get(interaction.commandName);
+        const command = activeClient.commands.get(interaction.commandName);
 
         if (!command) {
-          return await deny(interaction, '❌ Command not found.');
+          return safeReply(interaction, '❌ Command not found.');
         }
 
-        return await command.execute(interaction, client);
+        return command.execute(interaction, activeClient);
       }
 
+      // 7. Help select menu.
       if (interaction.isStringSelectMenu()) {
         if (interaction.customId === 'help-category-select') {
-          const helpCommand = client.commands.get('help');
+          const helpCommand = activeClient.commands.get('help');
 
           if (helpCommand?.handleHelpSelectMenu) {
-            return await helpCommand.handleHelpSelectMenu(interaction, client);
+            return helpCommand.handleHelpSelectMenu(interaction, activeClient);
           }
         }
 
-        return;
+        return false;
       }
 
+      // 8. Help buttons.
       if (interaction.isButton()) {
         if (
           interaction.customId === 'help-back-home' ||
           interaction.customId === 'help-close'
         ) {
-          const helpCommand = client.commands.get('help');
+          const helpCommand = activeClient.commands.get('help');
 
           if (helpCommand?.handleHelpButton) {
-            return await helpCommand.handleHelpButton(interaction, client);
+            return helpCommand.handleHelpButton(interaction, activeClient);
           }
         }
 
         console.warn('⚠️ Unhandled button:', interaction.customId);
+        return false;
       }
 
-      if (interaction.isModalSubmit()) {
-        if (interaction.customId === 'admin:purgeModal') {
-          const rawAmount = interaction.fields.getTextInputValue('amount');
-          const amount = Number(rawAmount);
-
-          if (!Number.isInteger(amount) || amount < 1 || amount > 100) {
-            return await deny(
-              interaction,
-              '❌ Please enter a number between 1 and 100.'
-            );
-          }
-
-          const deleted = await interaction.channel.bulkDelete(amount, true);
-
-          return await deny(
-            interaction,
-            `✅ Deleted ${deleted.size} message(s).`
-          );
-        }
-      }
+      return false;
     } catch (error) {
       console.error('❌ Interaction error:', error);
 
       try {
-        return await deny(
+        return safeReply(
           interaction,
           '❌ Something went wrong while handling this interaction.'
         );
       } catch (replyError) {
         console.error('❌ Failed to send interaction error response:', replyError);
+        return false;
       }
     }
   },

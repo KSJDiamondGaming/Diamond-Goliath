@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const PRESETS_DIR = path.join(__dirname, '../../data/presets');
+const PRESETS_DIR = path.join(process.cwd(), 'src', 'data', 'presets');
 
 const presetCache = new Map();
 
@@ -32,12 +32,13 @@ function sanitizePresetName(name) {
     throw new Error('Preset name is required.');
   }
 
-  return safeName.slice(0, 50);
+  return safeName
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '')
+    .slice(0, 50);
 }
 
 function getFile(guildId) {
   ensureDir();
-
   return path.join(PRESETS_DIR, `${normalizeGuildId(guildId)}.json`);
 }
 
@@ -70,6 +71,12 @@ function writeJson(filePath, data) {
   fs.renameSync(tempPath, filePath);
 }
 
+function stripMeta(data = {}) {
+  const cloned = clone(data);
+  delete cloned.updatedAt;
+  return cloned;
+}
+
 /* ---------------- LOAD / SAVE ---------------- */
 
 function loadPresets(guildId, options = {}) {
@@ -100,7 +107,6 @@ function savePresets(guildId, data = {}) {
   };
 
   writeJson(file, nextData);
-
   presetCache.set(safeGuildId, clone(nextData));
 
   return clone(nextData);
@@ -110,7 +116,7 @@ function savePresets(guildId, data = {}) {
 
 function savePreset(guildId, name, embedData = {}) {
   const presetName = sanitizePresetName(name);
-  const presets = loadPresets(guildId);
+  const presets = stripMeta(loadPresets(guildId));
 
   presets[presetName] = {
     ...clone(embedData),
@@ -119,7 +125,6 @@ function savePreset(guildId, name, embedData = {}) {
   };
 
   const saved = savePresets(guildId, presets);
-
   return clone(saved[presetName]);
 }
 
@@ -133,19 +138,18 @@ function getPreset(guildId, name) {
 }
 
 function getAllPresets(guildId) {
-  return loadPresets(guildId);
+  return stripMeta(loadPresets(guildId));
 }
 
 function deletePreset(guildId, name) {
   const presetName = sanitizePresetName(name);
-  const presets = loadPresets(guildId);
+  const presets = stripMeta(loadPresets(guildId));
 
   if (!Object.prototype.hasOwnProperty.call(presets, presetName)) {
     return false;
   }
 
   delete presets[presetName];
-
   savePresets(guildId, presets);
 
   return true;
@@ -154,7 +158,7 @@ function deletePreset(guildId, name) {
 function renamePreset(guildId, oldName, newName) {
   const currentName = sanitizePresetName(oldName);
   const nextName = sanitizePresetName(newName);
-  const presets = loadPresets(guildId);
+  const presets = stripMeta(loadPresets(guildId));
 
   if (!presets[currentName]) {
     return null;
@@ -173,14 +177,13 @@ function renamePreset(guildId, oldName, newName) {
   delete presets[currentName];
 
   const saved = savePresets(guildId, presets);
-
   return clone(saved[nextName]);
 }
 
 function duplicatePreset(guildId, sourceName, duplicateName) {
   const sourcePresetName = sanitizePresetName(sourceName);
   const newPresetName = sanitizePresetName(duplicateName);
-  const presets = loadPresets(guildId);
+  const presets = stripMeta(loadPresets(guildId));
 
   if (!presets[sourcePresetName]) {
     return null;
@@ -197,7 +200,6 @@ function duplicatePreset(guildId, sourceName, duplicateName) {
   };
 
   const saved = savePresets(guildId, presets);
-
   return clone(saved[newPresetName]);
 }
 
