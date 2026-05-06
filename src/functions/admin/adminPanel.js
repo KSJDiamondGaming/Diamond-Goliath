@@ -38,6 +38,7 @@ const LOG_TYPES = {
     title: '🤖 Set AutoMod Log Channel',
     label: '🤖 AutoMod Log',
   },
+
   adminlog: {
     key: 'admin',
     customId: 'admin:setadminlog',
@@ -45,6 +46,7 @@ const LOG_TYPES = {
     title: '👑 Set Admin Log Channel',
     label: '👑 Admin Log',
   },
+
   modlog: {
     key: 'moderation',
     customId: 'admin:setmodlog',
@@ -52,12 +54,21 @@ const LOG_TYPES = {
     title: '📌 Set Mod Log Channel',
     label: '📌 Mod Log',
   },
+
   logs: {
     key: 'general',
     customId: 'admin:setlogs',
     selectId: 'admin:selectlogs',
     title: '📋 Set General Logs Channel',
     label: '📋 General Logs',
+  },
+
+  memberlog: {
+    key: 'member',
+    customId: 'admin:setmemberlog',
+    selectId: 'admin:selectmemberlog',
+    title: '👥 Set Member Log Channel',
+    label: '👥 Member Log',
   },
 };
 
@@ -250,11 +261,11 @@ function formatRoleList(roleIds = []) {
 }
 
 function formatLogsSummary(guildId) {
-  const total = ['automod', 'admin', 'moderation', 'general']
+  const total = ['automod', 'admin', 'moderation', 'general', 'member']
     .map((key) => getLogChannelId(guildId, key))
     .filter(Boolean).length;
 
-  return `${total}/4 configured`;
+  return `${total}/5 configured`;
 }
 
 function normalizeBackupId(backup) {
@@ -282,7 +293,7 @@ function button(customId, label, style = ButtonStyle.Primary) {
     .setStyle(style);
 }
 
-function backButton(navState = panelNav.createState('admin:home')) {
+function backButton(navState = panelNav.createState('admin:back')) {
   return button(
     panelNav.buildCustomId(navState, 'back'),
     '⬅️ Back',
@@ -651,47 +662,43 @@ function buildLogsPanel(guild, memberDisplayName = 'Unknown User', navState = pa
     [
       'Choose where Goliath sends different server logs.',
       '',
+
       '**🤖 AutoMod Log**',
+      `└ ${formatChannelStatus(getLogChannelId(guildId, 'automod'))}`,
       'AutoMod actions such as deleted messages, blocked links, warnings, timeouts, kicks, and bans.',
       '',
+
       '**👑 Admin Log**',
+      `└ ${formatChannelStatus(getLogChannelId(guildId, 'admin'))}`,
       'Admin panel actions, setting changes, module changes, and server configuration updates.',
       '',
+
       '**📌 Mod Log**',
+      `└ ${formatChannelStatus(getLogChannelId(guildId, 'moderation'))}`,
       'Moderation actions such as warns, mutes, kicks, bans, purges, and case updates.',
       '',
+
+      '**👥 Member Log**',
+      `└ ${formatChannelStatus(getLogChannelId(guildId, 'member'))}`,
+      'Member joins, leaves, kicks, bans, account creation dates, and member tracking.',
+      '',
+
       '**📋 General Logs**',
+      `└ ${formatChannelStatus(getLogChannelId(guildId, 'general'))}`,
       'General server activity such as joins, leaves, message events, role changes, and channel changes.',
     ].join('\n'),
     memberDisplayName
-  ).addFields(
-    {
-      name: '🤖 AutoMod Log',
-      value: formatChannelStatus(getLogChannelId(guildId, 'automod')),
-      inline: true,
-    },
-    {
-      name: '👑 Admin Log',
-      value: formatChannelStatus(getLogChannelId(guildId, 'admin')),
-      inline: true,
-    },
-    {
-      name: '📌 Mod Log',
-      value: formatChannelStatus(getLogChannelId(guildId, 'moderation')),
-      inline: true,
-    },
-    {
-      name: '📋 General Logs',
-      value: formatChannelStatus(getLogChannelId(guildId, 'general')),
-      inline: true,
-    }
   );
 
   return {
     embeds: [embed],
     components: [
       ...buttonRows(
-        Object.values(LOG_TYPES).map((log) => [log.customId, log.label, ButtonStyle.Primary]),
+        Object.values(LOG_TYPES).map((log) => [
+          log.customId,
+          log.label,
+          ButtonStyle.Primary,
+        ]),
         3
       ),
       navRow(navState),
@@ -736,7 +743,7 @@ function buildAutoRolesPanel(guild, memberDisplayName = 'Unknown User', navState
   };
 }
 
-function buildChannelPanel(type = 'logs', navState = panelNav.createState('admin:home')) {
+function buildChannelPanel(type = 'logs', navState = panelNav.createState('admin:back')) {
   const selected = LOG_TYPES[type] || LOG_TYPES.logs;
 
   return {

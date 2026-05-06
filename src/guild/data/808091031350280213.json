@@ -1,7 +1,7 @@
 {
   "guildId": "808091031350280213",
   "guildName": "KSJ DIAMOND GAMING",
-  "updatedAt": "2026-05-06T01:54:17.707Z",
+  "updatedAt": "2026-05-06T20:40:24.731Z",
   "general": {
     "enabled": true,
     "prefix": "!",
@@ -57,9 +57,11 @@
     "badWords": {
       "enabled": true,
       "punishments": [
-        "delete"
+        "dm",
+        "delete",
+        "warn"
       ],
-      "punishment": "delete",
+      "punishment": "dm",
       "timeoutMinutes": 10,
       "words": []
     },
@@ -77,7 +79,7 @@
       "enabled": true,
       "channelId": null
     },
-    "updatedAt": "2026-05-06T01:54:17.707Z"
+    "updatedAt": "2026-05-06T17:09:33.003Z"
   },
   "logs": {
     "enabled": true,
@@ -86,7 +88,7 @@
       "moderation": "1491219255465869514",
       "admin": "1491219255465869514",
       "automod": "1491219255465869514",
-      "member": null,
+      "member": "1491219255465869514",
       "messageDelete": null,
       "messageEdit": null,
       "voice": null
@@ -110,7 +112,7 @@
       "voiceLeave": true,
       "voiceMove": true
     },
-    "updatedAt": "2026-05-06T01:32:05.037Z"
+    "updatedAt": "2026-05-06T17:12:42.221Z"
   },
   "serverBackups": {
     "enabled": true,
@@ -151,11 +153,11 @@
   "suggestions": {},
   "stats": {},
   "autoRoles": {
-    "enabled": false,
+    "enabled": true,
     "roleIds": [
       "1418344356573610087"
     ],
-    "updatedAt": "2026-05-06T01:53:01.958Z"
+    "updatedAt": "2026-05-06T20:40:24.730Z"
   },
   "staffRoles": {
     "roleIds": [
@@ -167,7 +169,7 @@
     "roleIds": []
   },
   "embedPresets": {
-    "updatedAt": "2026-05-02T00:58:13.750Z",
+    "updatedAt": "2026-05-06T20:29:35.047Z",
     "test new": {
       "template": "custom",
       "channelId": null,
@@ -180,17 +182,50 @@
       "fields": [],
       "name": "test new",
       "updatedAt": "2026-05-02T00:58:13.748Z"
+    },
+    "auto-welcome": {
+      "template": "welcome",
+      "channelId": "1491219255465869514",
+      "allowUserPing": false,
+      "title": "",
+      "description": "🎉 **Welcome to {guildName},**\n**{userMention}!**\n\n👤 You are member **#{guildMemberCount}**.\n\nEnjoy your stay!",
+      "color": "#57F287",
+      "authorName": "{guildName}",
+      "authorIcon": "{guildIcon}",
+      "footer": "Member joined",
+      "image": "",
+      "thumbnail": "{userAvatar}",
+      "fields": [],
+      "name": "auto-welcome",
+      "updatedAt": "2026-05-06T20:29:35.047Z"
+    },
+    "auto-leave": {
+      "template": "leave",
+      "channelId": "1491219255465869514",
+      "allowUserPing": false,
+      "title": "",
+      "description": "{userMention}\n\n**{userDisplay} ({userTag})** has left **{guildName}**.\n\nUser ID: `{userId}`\n\nWe now have **{guildMemberCount}** members.",
+      "color": "#ED4245",
+      "authorName": "{guildName}",
+      "authorIcon": "{guildIcon}",
+      "footer": "Member left",
+      "image": "",
+      "thumbnail": "{guildIcon}",
+      "fields": [],
+      "name": "auto-leave",
+      "updatedAt": "2026-05-06T18:29:43.658Z"
     }
   },
   "embedDefaults": {
-    "welcome": null,
-    "leave": null,
+    "welcome": "auto-welcome",
+    "leave": "auto-leave",
     "rules": null,
     "announcement": null,
     "suggestion": null,
     "giveaway": null,
     "update": null,
     "event": null,
-    "warning": null
+    "warning": null,
+    "updatedAt": "2026-05-06T20:29:35.051Z"
   }
 }

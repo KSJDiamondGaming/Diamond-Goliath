@@ -23,26 +23,26 @@ const CUSTOM_HEX_VALUE = '__custom_hex__';
 const sessions = new Map();
 
 const COLORS = [
-  { label: 'Discord Blurple', value: '#5865F2', emoji: '🟦' },
   { label: 'Deep Blue', value: '#2F80ED', emoji: '🔷' },
   { label: 'Royal Blue', value: '#4169E1', emoji: '🔵' },
-  { label: 'Sky Blue', value: '#00BFFF', emoji: '💧' },
+  { label: 'Sky Blue', value: '#00BFFF', emoji: '🩵' },
   { label: 'Electric Blue', value: '#007BFF', emoji: '⚡' },
   { label: 'Cyan', value: '#00D4FF', emoji: '💧' },
   { label: 'Teal', value: '#1ABC9C', emoji: '🌊' },
-  { label: 'Green', value: '#57F287', emoji: '🟩' },
+  { label: 'Green', value: '#57F287', emoji: '🟢' },
   { label: 'Emerald', value: '#2ECC71', emoji: '💚' },
   { label: 'Lime', value: '#BFFF00', emoji: '🍏' },
-  { label: 'Yellow', value: '#FEE75C', emoji: '🟨' },
+  { label: 'Yellow', value: '#FEE75C', emoji: '🟡' },
   { label: 'Gold', value: '#FFD700', emoji: '🏆' },
-  { label: 'Amber', value: '#FFC107', emoji: '🟡' },
-  { label: 'Orange', value: '#E67E22', emoji: '🟧' },
+  { label: 'Amber', value: '#FFC107', emoji: '🌟' },
+  { label: 'Orange', value: '#E67E22', emoji: '🟠' },
   { label: 'Dark Orange', value: '#FF8C00', emoji: '🔥' },
-  { label: 'Red', value: '#ED4245', emoji: '🟥' },
+  { label: 'Red', value: '#ED4245', emoji: '🔴' },
   { label: 'Crimson', value: '#DC143C', emoji: '❤️' },
   { label: 'Rose', value: '#FF4D6D', emoji: '🌹' },
-  { label: 'Purple', value: '#9B59B6', emoji: '🟪' },
-  { label: 'Violet', value: '#8A2BE2', emoji: '🔮' },
+  { label: 'Discord Blurple', value: '#5865F2', emoji: '🔮' },
+  { label: 'Purple', value: '#9B59B6', emoji: '🟣' },
+  { label: 'Violet', value: '#8A2BE2', emoji: '🪻' },
   { label: 'Pink', value: '#EB459E', emoji: '🌸' },
   { label: 'Hot Pink', value: '#FF69B4', emoji: '💖' },
   { label: 'Dark', value: '#2B2D31', emoji: '⬛' },
@@ -66,19 +66,18 @@ const TEMPLATES = {
 
   welcome: {
     label: 'Welcome Message',
-    emoji: '👋',
+    emoji: '🤗',
     title: '',
     description: [
-      '{userMention}',
+      '🎉 **Welcome to {guildName},**',
+      '**{userMention}**',
       '',
-      'Welcome to **{guildName}**!',
+      '👤 You are member **#{guildMemberCount}**.',
       '',
-      'You are member **#{guildMemberCount}**.',
-      '',
-      'We hope you enjoy your stay.',
+      'Enjoy your stay!',
     ].join('\n'),
     color: '#57F287',
-    authorName: 'Welcome to {guildName}',
+    authorName: '{guildName}',
     authorIcon: '{guildIcon}',
     footer: 'Member joined',
     image: '',
@@ -87,26 +86,24 @@ const TEMPLATES = {
   },
 
   leave: {
-  label: 'Leave Message',
-  emoji: '👋',
-  title: '',
-  description: [
-    '{userMention}',
-    '',
-    '**{userDisplay} ({userTag})** has left **{guildName}**.',
-    '',
-    'User ID: `{userId}`',
-    '',
-    'We now have **{guildMemberCount}** members.',
-  ].join('\n'),
-  color: '#ED4245',
-  authorName: '{guildName}',
-  authorIcon: '{guildIcon}',
-  footer: 'Member left',
-  image: '',
-  thumbnail: '{userAvatar}',
-  fields: [],
-},
+    label: 'Leave Message',
+    emoji: '👋',
+    title: '',
+    description: [
+      '{userMention}',
+      '',
+      '👋 **{userDisplay}** has left **{guildName}**.',
+      '',
+      '📉 We now have **{guildMemberCount}** members.',
+    ].join('\n'),
+    color: '#ED4245',
+    authorName: '{guildName}',
+    authorIcon: '{guildIcon}',
+    footer: 'Member left',
+    image: '',
+    thumbnail: '{userAvatar}',
+    fields: [],
+  },
 
   announcement: {
     label: 'Announcement',
@@ -153,7 +150,7 @@ const TEMPLATES = {
     authorIcon: '{guildIcon}',
     footer: 'Please follow the rules',
     image: '',
-    thumbnail: '{guildIcon}',
+    thumbnail: '',
     fields: [],
   },
 
@@ -195,7 +192,7 @@ const TEMPLATES = {
     authorIcon: '{guildIcon}',
     footer: 'Good luck!',
     image: '',
-    thumbnail: '{guildIcon}',
+    thumbnail: '',
     fields: [
       { name: 'Prize', value: 'Your prize here', inline: true },
       { name: 'Winners', value: '1', inline: true },
@@ -220,7 +217,7 @@ const TEMPLATES = {
     authorIcon: '{guildIcon}',
     footer: 'Update notice',
     image: '',
-    thumbnail: '{guildIcon}',
+    thumbnail: '',
     fields: [],
   },
 
@@ -243,7 +240,7 @@ const TEMPLATES = {
     authorIcon: '{guildIcon}',
     footer: 'Event details',
     image: '',
-    thumbnail: '{guildIcon}',
+    thumbnail: '',
     fields: [
       { name: 'Date', value: 'Set date', inline: true },
       { name: 'Time', value: 'Set time', inline: true },
@@ -265,7 +262,7 @@ const TEMPLATES = {
     authorIcon: '{guildIcon}',
     footer: 'Moderator notice',
     image: '',
-    thumbnail: '{guildIcon}',
+    thumbnail: '',
     fields: [],
   },
 };
@@ -277,7 +274,7 @@ const HELPER_VARIABLES = [
   { name: '{userGlobalName}', desc: 'Global display name' },
   { name: '{userMention}', desc: 'Clickable user mention' },
   { name: '{userNoPing}', desc: 'Mention style, safe with Ping OFF' },
-  { name: '{userAvatar}', desc: 'User avatar URL' },
+  { name: '{guildIcon}', desc: 'User avatar URL' },
   { name: '{userServerAvatar}', desc: 'Server avatar URL' },
   { name: '{userNickname}', desc: 'Server nickname' },
   { name: '{userDisplay}', desc: 'Display name' },
@@ -674,14 +671,18 @@ function buildPreviewEmbed(state, interaction) {
   const authorName = trim(resolvePreviewText(state.authorName, interaction), 256);
   const authorIconUrl = safeUrl(resolvePreviewText(state.authorIcon, interaction));
 
-  if (authorName) {
-    embed.setAuthor({
-      name: authorName,
-      ...(authorIconUrl ? { iconURL: authorIconUrl } : {}),
-    });
-  } else {
-    embed.setAuthor({ name: 'Live Embed Preview' });
-  }
+  const resolvedAuthorName =
+  authorName ||
+  (state.template === 'welcome'
+    ? `Welcome to ${interaction.guild?.name || 'the server'}`
+    : 'Live Embed Preview');
+
+  const resolvedAuthorIcon = authorIconUrl;
+
+  embed.setAuthor({
+    name: resolvedAuthorName,
+    ...(resolvedAuthorIcon ? { iconURL: resolvedAuthorIcon } : {}),
+  });
 
   if (state.title) {
     embed.setTitle(trim(resolvePreviewText(state.title, interaction), 256));
@@ -699,11 +700,16 @@ function buildPreviewEmbed(state, interaction) {
     });
   }
 
-  const thumbnailUrl = safeUrl(resolvePreviewText(state.thumbnail, interaction));
-  if (thumbnailUrl) embed.setThumbnail(thumbnailUrl);
-
-  const imageUrl = safeUrl(resolvePreviewText(state.image, interaction));
+    const imageUrl = safeUrl(resolvePreviewText(state.image, interaction));
   if (imageUrl) embed.setImage(imageUrl);
+
+  const thumbnailUrl = safeUrl(
+    resolvePreviewText(state.thumbnail, interaction)
+  );
+
+  if (thumbnailUrl) {
+    embed.setThumbnail(thumbnailUrl);
+  }
 
   const safeFields = Array.isArray(state.fields) ? state.fields.slice(0, 25) : [];
 
@@ -735,7 +741,7 @@ function buildPanelEmbed(state, interaction, memberDisplayName) {
   return new EmbedBuilder()
     .setColor(PANEL_COLOR)
     .setTitle('🎨 Embed Studio')
-    .setDescription('Create, edit, save, and send reusable embeds for this server.')
+    .setDescription('Create, edit and activate embeds for this server.')
     .addFields(
       {
         name: 'Template',
@@ -808,39 +814,66 @@ function buildEmbedPanel(interactionOrGuild, memberDisplayName = 'Unknown User')
           .setCustomId('embed:presets')
           .setLabel('💾 Presets')
           .setStyle(ButtonStyle.Primary),
-
-        new ButtonBuilder()
-          .setCustomId('embed:send')
-          .setLabel('🚀 Send')
-          .setStyle(ButtonStyle.Success)
       ),
 
-      // 🔹 SECONDARY ACTIONS
-      new ActionRowBuilder().addComponents(
+        new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-          .setCustomId('embed:helpers')
-          .setLabel('📖 Variables')
-          .setStyle(ButtonStyle.Secondary),
-
-        new ButtonBuilder()
-          .setCustomId('embed:reset')
-          .setLabel('♻️ Reset')
-          .setStyle(ButtonStyle.Danger)
-      ),
-
-      // 🔹 NAVIGATION (FIXED)
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(panelNav.buildCustomId(state, 'back'))
+          .setCustomId('embed:back')
           .setLabel('⬅️ Back')
           .setStyle(ButtonStyle.Secondary),
-
       ),
     ],
   };
 }
 
 /* ---------------- EDITOR PANEL ---------------- */
+function getUseButtonLabel(templateKey) {
+  const labels = {
+    welcome: '✅ Use Welcome',
+    leave: '✅ Use Leave',
+    announcement: '✅ Use Announcement',
+    rules: '✅ Use Rules',
+    suggestion: '✅ Use Suggestion',
+    giveaway: '✅ Use Giveaway',
+    update: '✅ Use Update',
+    event: '✅ Use Event',
+    warning: '✅ Use Warning',
+    custom: '✅ Use Embed',
+  };
+
+  return labels[templateKey] || '✅ Use Embed';
+}
+
+function getAutoPresetName(state) {
+  return `auto-${state.template || 'custom'}`;
+}
+
+function setEmbedDefault(guildId, templateKey, presetName) {
+  if (typeof guildManager.setEmbedDefaultPreset === 'function') {
+    guildManager.setEmbedDefaultPreset(guildId, templateKey, presetName);
+    return true;
+  }
+
+  if (typeof guildManager.setEmbedDefault === 'function') {
+    guildManager.setEmbedDefault(guildId, templateKey, presetName);
+    return true;
+  }
+
+  const current =
+    typeof guildManager.getEmbedDefaults === 'function'
+      ? guildManager.getEmbedDefaults(guildId) || {}
+      : {};
+
+  if (typeof guildManager.replaceGuildSection === 'function') {
+    guildManager.replaceGuildSection(guildId, 'embedDefaults', {
+      ...current,
+      [templateKey]: presetName,
+    });
+    return true;
+  }
+
+  return false;
+}
 
 function buildEditorPanel(interaction, memberDisplayName = 'Unknown User') {
   const state = getSession(interaction);
@@ -886,101 +919,29 @@ function buildEditorPanel(interaction, memberDisplayName = 'Unknown User') {
       },
     ]);
 
-  const fieldOptions = (state.fields || []).slice(0, 25).map((field, index) => ({
-    label: `${index + 1}. ${trim(field.name, 80) || 'Untitled Field'}`,
-    description: `Inline: ${field.inline ? 'Yes' : 'No'}`,
-    value: String(index),
-    default: state.selectedFieldIndex === index,
-  }));
-
   const components = [
     new ActionRowBuilder().addComponents(templateSelect),
+
     new ActionRowBuilder().addComponents(channelSelect),
+
     new ActionRowBuilder().addComponents(colorSelect),
   ];
-
-  if (fieldOptions.length) {
-    components.push(
-      new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-          .setCustomId('embed:field-select')
-          .setPlaceholder('🧩 Select a field to edit, move, or remove')
-          .addOptions(fieldOptions)
-      )
-    );
-  }
 
   components.push(
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('embed:edit-content')
-        .setLabel('📝 Text')
+        .setLabel('✏️ Edit Embed')
         .setStyle(ButtonStyle.Primary),
 
       new ButtonBuilder()
-        .setCustomId('embed:edit-media')
-        .setLabel('🖼️ Media')
-        .setStyle(ButtonStyle.Secondary),
-
-      new ButtonBuilder()
-        .setCustomId('embed:toggle-ping')
-        .setLabel(state.allowUserPing ? '🔔 Ping ON' : '🔕 Ping OFF')
-        .setStyle(state.allowUserPing ? ButtonStyle.Success : ButtonStyle.Secondary),
-
-      new ButtonBuilder()
-        .setCustomId('embed:field-add')
-        .setLabel('➕ Field')
-        .setStyle(ButtonStyle.Success)
-        .setDisabled((state.fields?.length || 0) >= 25),
-
-      new ButtonBuilder()
-        .setCustomId('embed:send')
-        .setLabel('🚀 Send')
-        .setStyle(ButtonStyle.Success)
-    )
-  );
-
-  components.push(
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(
+        .setCustomId('embed:fields')
+        .setLabel(
           selectedField
-            ? `embed:field-edit:${state.selectedFieldIndex}`
-            : 'embed:field-edit'
+            ? `📋 Fields (${state.selectedFieldIndex + 1}/${state.fields.length})`
+            : `📋 Fields (${state.fields?.length || 0})`
         )
-        .setLabel('✏️ Edit Field')
-        .setStyle(ButtonStyle.Primary)
-        .setDisabled(!selectedField),
-
-      new ButtonBuilder()
-        .setCustomId('embed:field-move-up')
-        .setLabel('⬆️ Move Up')
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(!selectedField || state.selectedFieldIndex <= 0),
-
-      new ButtonBuilder()
-        .setCustomId('embed:field-move-down')
-        .setLabel('⬇️ Move Down')
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(
-          !selectedField ||
-            state.selectedFieldIndex >= (state.fields?.length || 0) - 1
-        ),
-
-      new ButtonBuilder()
-        .setCustomId('embed:field-remove-selected')
-        .setLabel('🗑️ Remove')
-        .setStyle(ButtonStyle.Danger)
-        .setDisabled(!selectedField)
-    )
-  );
-
-  components.push(
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('embed:helpers')
-        .setLabel('📖 Variables')
-        .setStyle(ButtonStyle.Secondary),
+        .setStyle(ButtonStyle.Primary),
 
       new ButtonBuilder()
         .setCustomId('embed:presets')
@@ -988,14 +949,33 @@ function buildEditorPanel(interaction, memberDisplayName = 'Unknown User') {
         .setStyle(ButtonStyle.Primary),
 
       new ButtonBuilder()
+        .setCustomId('embed:use')
+        .setLabel(getUseButtonLabel(state.template))
+        .setStyle(ButtonStyle.Success)
+    )
+  );
+
+  components.push(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('embed:test-send')
+        .setLabel('🧪 Test')
+        .setStyle(ButtonStyle.Secondary),
+
+      new ButtonBuilder()
+        .setCustomId('embed:helpers')
+        .setLabel('📖 Variables')
+        .setStyle(ButtonStyle.Secondary),
+
+      new ButtonBuilder()
         .setCustomId('embed:reset')
         .setLabel('♻️ Reset')
         .setStyle(ButtonStyle.Danger),
 
       new ButtonBuilder()
-        .setCustomId(panelNav.buildCustomId(state, 'back'))
+        .setCustomId('embed:back')
         .setLabel('⬅️ Back')
-        .setStyle(ButtonStyle.Secondary),
+        .setStyle(ButtonStyle.Secondary)
     )
   );
 
@@ -1004,22 +984,41 @@ function buildEditorPanel(interaction, memberDisplayName = 'Unknown User') {
     .setTitle('✏️ Embed Editor')
     .setDescription(
       [
-        '**Build, customise, preview, and send your embed from one place.**',
+        '**Build, customise, preview, and activate embeds for your server.**',
         '',
         `> **Template:** ${TEMPLATES[state.template]?.emoji || '🛠️'} ${
           TEMPLATES[state.template]?.label || 'Custom Embed'
         }`,
-        `> **Preset:** ${state.selectedPreset ? `💾 ${state.selectedPreset}` : 'None loaded'}`,
-        `> **Channel:** ${state.channelId ? `<#${state.channelId}>` : 'Not selected'}`,
+        `> **Preset:** ${
+          state.selectedPreset
+            ? `💾 ${state.selectedPreset}`
+            : 'None loaded'
+        }`,
+        `> **Channel:** ${
+          state.channelId
+            ? `<#${state.channelId}>`
+            : 'Not selected'
+        }`,
         `> **Colour:** \`${state.color || PANEL_COLOR}\``,
-        `> **Mentions:** ${state.allowUserPing ? '🔔 User ping enabled' : '🔕 Safe / no ping'}`,
+        `> **Mentions:** ${
+          state.allowUserPing
+            ? '🔔 User ping enabled'
+            : '🔕 Safe / no ping'
+        }`,
         `> **Fields:** ${state.fields?.length || 0}/25`,
-        `> **Unsaved Changes:** ${state.hasUnsavedChanges ? '⚠️ Yes' : '✅ No'}`,
+        `> **Unsaved Changes:** ${
+          state.hasUnsavedChanges
+            ? '⚠️ Yes'
+            : '✅ No'
+        }`,
         '',
         selectedField
           ? [
               '**Selected Field**',
-              `\`${state.selectedFieldIndex + 1}.\` **${trim(selectedField.name, 120)}**`,
+              `\`${state.selectedFieldIndex + 1}.\` **${trim(
+                selectedField.name,
+                120
+              )}**`,
               `Inline: ${selectedField.inline ? 'Yes' : 'No'}`,
             ].join('\n')
           : '**Selected Field**\nNone selected.',
@@ -1035,6 +1034,104 @@ function buildEditorPanel(interaction, memberDisplayName = 'Unknown User') {
 }
 
 /* ---------------- SUB PANELS ---------------- */
+function buildFieldsPanel(interaction, memberDisplayName = 'Unknown User') {
+  const state = getSession(interaction);
+
+  const selectedField =
+    Number.isInteger(state.selectedFieldIndex) &&
+    state.fields?.[state.selectedFieldIndex]
+      ? state.fields[state.selectedFieldIndex]
+      : null;
+
+  const fieldEmbed = new EmbedBuilder()
+    .setColor(state.color || PANEL_COLOR)
+    .setTitle('📋 Field Management')
+    .setDescription(
+      selectedField
+        ? [
+            '**Selected Field:**',
+            `\`${state.selectedFieldIndex + 1}.\` ${selectedField.name}`,
+            '',
+            `Inline: ${selectedField.inline ? 'Yes' : 'No'}`,
+            '',
+            'Manage your embed fields below.',
+          ].join('\n')
+        : [
+            'No field selected.',
+            '',
+            'Add a field to begin.',
+          ].join('\n')
+    )
+    .setFooter({ text: `Requested by ${memberDisplayName}` })
+    .setTimestamp();
+
+  return {
+    embeds: [fieldEmbed],
+    components: [
+      ...(state.fields?.length
+        ? [
+            new ActionRowBuilder().addComponents(
+              new StringSelectMenuBuilder()
+                .setCustomId('embed:field-select')
+                .setPlaceholder('🧩 Select a field')
+                .addOptions(
+                  state.fields.map((field, index) => ({
+                    label: `${index + 1}. ${trim(field.name, 80)}`,
+                    value: String(index),
+                    default: state.selectedFieldIndex === index,
+                  }))
+                )
+            ),
+          ]
+        : []),
+
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('embed:field-add')
+          .setLabel('➕ Add')
+          .setStyle(ButtonStyle.Success),
+
+        new ButtonBuilder()
+          .setCustomId(
+            selectedField
+              ? `embed:field-edit:${state.selectedFieldIndex}`
+              : 'embed:field-edit'
+          )
+          .setLabel('✏️ Edit')
+          .setStyle(ButtonStyle.Primary)
+          .setDisabled(!selectedField),
+
+        new ButtonBuilder()
+          .setCustomId('embed:field-remove-selected')
+          .setLabel('🗑️ Remove')
+          .setStyle(ButtonStyle.Danger)
+          .setDisabled(!selectedField)
+      ),
+
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('embed:field-move-up')
+          .setLabel('⬆️ Up')
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(!selectedField || state.selectedFieldIndex <= 0),
+
+        new ButtonBuilder()
+          .setCustomId('embed:field-move-down')
+          .setLabel('⬇️ Down')
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(
+            !selectedField ||
+              state.selectedFieldIndex >= (state.fields?.length || 0) - 1
+          ),
+
+        new ButtonBuilder()
+          .setCustomId('embed:editor')
+          .setLabel('⬅️ Back')
+          .setStyle(ButtonStyle.Secondary)
+      ),
+    ],
+  };
+}
 
 function buildHelpersPanel(memberDisplayName = 'Unknown User') {
   const messageVariables = HELPER_VARIABLES.slice(0, 13)
@@ -1068,22 +1165,22 @@ function buildHelpersPanel(memberDisplayName = 'Unknown User') {
         '**Examples:**',
         '`Welcome to {guildName}`',
         '`Hello {userMention}`',
-        '`{userAvatar}` inside thumbnail',
+        '`{guildIcon}` inside thumbnail',
         '`{guildIcon}` inside author icon',
       ].join('\n')
     )
     .setFooter({ text: `Requested by ${memberDisplayName}` })
     .setTimestamp();
 
-  return {
+      return {
     embeds: [embed],
     components: [
-     new ActionRowBuilder().addComponents(
-     new ButtonBuilder()
-    .setCustomId('embed:editor')
-    .setLabel('⬅️ Back to Editor')
-    .setStyle(ButtonStyle.Secondary)
-    ),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('embed:editor')
+          .setLabel('⬅️ Back')
+          .setStyle(ButtonStyle.Secondary)
+      ),
     ],
   };
 }
@@ -1291,17 +1388,12 @@ function buildPresetsPanel(interaction, memberDisplayName = 'Unknown User') {
   components.push(
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId('embed:editor')
-        .setLabel('✏️ Editor')
-        .setStyle(ButtonStyle.Primary),
-
-      new ButtonBuilder()
         .setCustomId('embed:helpers')
         .setLabel('📖 Variables')
         .setStyle(ButtonStyle.Secondary),
 
       new ButtonBuilder()
-        .setCustomId(panelNav.buildCustomId(state, 'back'))
+        .setCustomId('embed:back')
         .setLabel('⬅️ Back')
         .setStyle(ButtonStyle.Secondary),
     )
@@ -1379,7 +1471,7 @@ function buildMediaModal(state) {
           .setLabel('Thumbnail URL / variable')
           .setStyle(TextInputStyle.Short)
           .setRequired(false)
-          .setPlaceholder('{userAvatar}')
+          .setPlaceholder('{guildIcon}')
           .setValue(trim(state.thumbnail || '', 1000))
       ),
 
@@ -1563,14 +1655,14 @@ async function handleInteraction(interaction) {
     }
 
     if (interaction.customId === 'embed:field-select') {
-      saveSession(interaction, {
-        ...state,
-        selectedFieldIndex: Number(interaction.values[0]),
-      });
+    saveSession(interaction, {
+      ...state,
+      selectedFieldIndex: Number(interaction.values[0]),
+    });
 
-      await updateEditor(interaction, memberDisplayName);
-      return true;
-    }
+    await interaction.update(buildFieldsPanel(interaction, memberDisplayName));
+    return true;
+  }
 
     if (interaction.customId === 'embed:preset-load') {
       const presetName = interaction.values[0];
@@ -1588,19 +1680,19 @@ async function handleInteraction(interaction) {
   }
 
   /* ---------------- CHANNEL SELECT ---------------- */
-  if (interaction.isChannelSelectMenu()) {
-    const state = getSession(interaction);
+if (interaction.isChannelSelectMenu()) {
+  const state = getSession(interaction);
 
-    if (interaction.customId === 'embed:channel') {
-      markUnsaved(interaction, {
-        ...state,
-        channelId: interaction.values[0],
-      });
+  if (interaction.customId === 'embed:channel') {
+    markUnsaved(interaction, {
+      ...state,
+      channelId: interaction.values[0],
+    });
 
-      await updateEditor(interaction, memberDisplayName);
-      return true;
-    }
+    await updateEditor(interaction, memberDisplayName);
+    return true;
   }
+}
 
   /* ---------------- BUTTONS ---------------- */
   if (interaction.isButton()) {
@@ -1611,6 +1703,17 @@ async function handleInteraction(interaction) {
     if (!interaction.customId.startsWith('embed:')) return false;
 
     const state = getSession(interaction);
+
+    if (interaction.customId === 'embed:back') {
+      await interaction.update(
+        buildAdminPanel(
+          interaction.guild,
+          memberDisplayName
+        )
+      );
+
+      return true;
+    }
 
     if (interaction.customId === 'embed:editor') {
       await updateEditor(interaction, memberDisplayName);
@@ -1642,6 +1745,24 @@ async function handleInteraction(interaction) {
       return true;
     }
 
+    if (interaction.customId.startsWith('embed:field-edit')) {
+      const indexFromId = interaction.customId.split(':')[2];
+      const fieldIndex = Number.isInteger(Number(indexFromId))
+        ? Number(indexFromId)
+        : state.selectedFieldIndex;
+
+      if (!Number.isInteger(fieldIndex) || !state.fields?.[fieldIndex]) {
+        await interaction.reply({
+          content: 'Select a field first.',
+          flags: 64,
+        });
+        return true;
+      }
+
+      await interaction.showModal(buildFieldModal(state, fieldIndex));
+      return true;
+    }
+
     if (interaction.customId === 'embed:field-remove-selected') {
       const nextFields = [...(state.fields || [])];
 
@@ -1664,6 +1785,11 @@ async function handleInteraction(interaction) {
       return true;
     }
 
+    if (interaction.customId === 'embed:fields') {
+      await interaction.update(buildFieldsPanel(interaction, memberDisplayName));
+      return true;
+    }
+
     if (interaction.customId === 'embed:edit-media') {
       await interaction.showModal(buildMediaModal(state));
       return true;
@@ -1680,12 +1806,53 @@ async function handleInteraction(interaction) {
       return true;
     }
 
-    if (interaction.customId === 'embed:send') {
+    if (interaction.customId === 'embed:use') {
+    if (!state.channelId) {
+      await interaction.reply({
+        content: 'Select a channel first before activating this embed.',
+        flags: 64,
+      });
+
+      return true;
+    }
+
+    const presetName = getAutoPresetName(state);
+
+    guildManager.saveEmbedPreset(
+      interaction.guild.id,
+      presetName,
+      getPresetDataFromState(state),
+      interaction.guild
+    );
+
+    const success = setEmbedDefault(
+      interaction.guild.id,
+      state.template,
+      presetName
+    );
+
+    clearUnsaved(interaction, {
+      ...state,
+      selectedPreset: presetName,
+    });
+
+    await interaction.reply({
+      content: success
+        ? `✅ ${TEMPLATES[state.template]?.label || 'Embed'} is now active in <#${state.channelId}>`
+        : '⚠️ Preset saved, but default assignment failed.',
+      flags: 64,
+    });
+
+    return true;
+  }
+
+    if (interaction.customId === 'embed:test-send') {
       if (!state.channelId) {
         await interaction.reply({
           content: 'Select a channel first.',
           flags: 64,
         });
+
         return true;
       }
 
@@ -1714,7 +1881,6 @@ async function handleInteraction(interaction) {
 
       return true;
     }
-  }
 
   /* ---------------- MODALS ---------------- */
   if (interaction.isModalSubmit()) {
@@ -1774,38 +1940,80 @@ async function handleInteraction(interaction) {
       return true;
     }
 
-    if (interaction.customId.startsWith('embed:save-media:')) {
-      markUnsaved(interaction, {
-        ...state,
-        authorIcon: interaction.fields.getTextInputValue('authorIcon'),
-        thumbnail: interaction.fields.getTextInputValue('thumbnail'),
-        image: interaction.fields.getTextInputValue('image'),
+      if (interaction.customId.startsWith('embed:save-media:')) {
+        markUnsaved(interaction, {
+          ...state,
+          authorIcon: interaction.fields.getTextInputValue('authorIcon'),
+          thumbnail: interaction.fields.getTextInputValue('thumbnail'),
+          image: interaction.fields.getTextInputValue('image'),
+        });
+
+        await updateEditor(interaction, memberDisplayName);
+        return true;
+      }
+
+    if (interaction.customId.startsWith('embed:field-save:')) {
+    const fieldIndex = Number(interaction.customId.split(':')[2]);
+
+    if (!Number.isInteger(fieldIndex) || !state.fields?.[fieldIndex]) {
+      await interaction.reply({
+        content: 'Field not found.',
+        flags: 64,
       });
 
-      await updateEditor(interaction, memberDisplayName);
       return true;
     }
 
-    if (interaction.customId === 'embed:field-save-new') {
-      const nextFields = [...(state.fields || [])];
+    const nextFields = [...(state.fields || [])];
 
-      nextFields.push({
-        name: interaction.fields.getTextInputValue('name'),
-        value: interaction.fields.getTextInputValue('value'),
-        inline: false,
-      });
+    nextFields[fieldIndex] = {
+      name: interaction.fields.getTextInputValue('name'),
+      value: interaction.fields.getTextInputValue('value'),
+      inline: /^y(es)?|true|1$/i.test(
+        interaction.fields.getTextInputValue('layout') || ''
+      ),
+    };
 
-      markUnsaved(interaction, {
-        ...state,
-        fields: nextFields,
-      });
+    markUnsaved(interaction, {
+      ...state,
+      fields: nextFields,
+      selectedFieldIndex: fieldIndex,
+    });
 
-      await updateEditor(interaction, memberDisplayName);
-      return true;
+    await interaction.update(
+      buildFieldsPanel(interaction, memberDisplayName)
+    );
+
+    return true;
+  }
+
+  if (interaction.customId === 'embed:field-save-new') {
+    const nextFields = [...(state.fields || [])];
+
+    nextFields.push({
+      name: interaction.fields.getTextInputValue('name'),
+      value: interaction.fields.getTextInputValue('value'),
+      inline: /^y(es)?|true|1$/i.test(
+        interaction.fields.getTextInputValue('layout') || ''
+      ),
+    });
+
+    markUnsaved(interaction, {
+      ...state,
+      fields: nextFields,
+      selectedFieldIndex: nextFields.length - 1,
+    });
+
+    await interaction.update(
+      buildFieldsPanel(interaction, memberDisplayName)
+    );
+
+    return true;
     }
   }
 
-  return false;
+    return false;
+  }
 }
 
 module.exports = {
