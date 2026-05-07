@@ -5,7 +5,7 @@ const { ChannelType } = require('discord.js');
 const { readServerBackup } = require('./serverBackup');
 const guildManager = require('../guild/guildManager');
 
-const RESTORE_VERSION = '2C';
+const RESTORE_VERSION = '3A_SAFE';
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -13,36 +13,6 @@ function asArray(value) {
 
 function asSnowflake(value) {
   return value ? String(value) : null;
-}
-
-function getBackupGuildId(backup) {
-  return (
-    backup.guild?.id ||
-    backup.sourceGuild?.id ||
-    backup.guildId ||
-    backup.sourceGuildId ||
-    null
-  );
-}
-
-function getBackupRoles(backup) {
-  return asArray(backup.roles);
-}
-
-function getBackupCategories(backup) {
-  const categories = asArray(backup.categories);
-
-  if (categories.length) return categories;
-
-  return asArray(backup.channels).filter((channel) =>
-    isCategoryType(channel.type)
-  );
-}
-
-function getBackupChannels(backup) {
-  return asArray(backup.channels).filter((channel) =>
-    !isCategoryType(channel.type)
-  );
 }
 
 function isCategoryType(type) {
@@ -91,6 +61,35 @@ function bitfield(value) {
 
 function cleanName(name, fallback) {
   return String(name || fallback || 'restored-item').slice(0, 100);
+}
+
+function getBackupGuildId(backup) {
+  return (
+    backup.guild?.id ||
+    backup.sourceGuild?.id ||
+    backup.guildId ||
+    backup.sourceGuildId ||
+    null
+  );
+}
+
+function getBackupRoles(backup) {
+  return asArray(backup.roles);
+}
+
+function getBackupCategories(backup) {
+  const categories = asArray(backup.categories);
+  if (categories.length) return categories;
+
+  return asArray(backup.channels).filter((channel) =>
+    isCategoryType(channel.type)
+  );
+}
+
+function getBackupChannels(backup) {
+  return asArray(backup.channels).filter((channel) =>
+    !isCategoryType(channel.type)
+  );
 }
 
 function roleIsRestorable(role) {
@@ -145,6 +144,59 @@ function getOverwriteType(overwrite) {
   return type;
 }
 
+function getBackupConfigSections(backup) {
+  return (
+    backup.guildConfig ||
+    backup.config ||
+    backup.sections ||
+    backup.guildSections ||
+    null
+  );
+}
+
+function countConfigSections(backup) {
+  const sections = getBackupConfigSections(backup);
+  if (!sections || typeof sections !== 'object') return 0;
+  return Object.entries(sections).filter(([, data]) => data != null).length;
+}
+
+function findExistingRole(guild, role) {
+  const targetName = cleanName(role.name, 'restored-role').toLowerCase();
+
+  return guild.roles.cache.find(
+    (existing) =>
+      !existing.managed &&
+      existing.id !== guild.id &&
+      existing.name.toLowerCase() === targetName
+  );
+}
+
+function findExistingChannel(guild, channel, type) {
+  const targetName = cleanName(channel.name, 'restored-channel').toLowerCase();
+
+  return guild.channels.cache.find(
+    (existing) =>
+      existing.type === type &&
+      existing.name.toLowerCase() === targetName
+  );
+}
+
+async function emitProgress(options, payload) {
+  if (typeof options.onProgress !== 'function') return;
+
+  const total = Number(payload.total || 0);
+  const current = Number(payload.current || 0);
+  const percent = total > 0 ? Math.round((current / total) * 100) : 100;
+
+  await options.onProgress({
+    ...payload,
+    current,
+    total,
+    percent,
+    at: new Date().toISOString(),
+  });
+}
+
 function mapPermissionOverwrites(overwrites, guild, maps) {
   return asArray(overwrites)
     .map((overwrite) => {
@@ -175,58 +227,154 @@ function mapPermissionOverwrites(overwrites, guild, maps) {
     .filter(Boolean);
 }
 
-function getBackupConfigSections(backup) {
-  return (
-    backup.guildConfig ||
-    backup.config ||
-    backup.sections ||
-    backup.guildSections ||
-    null
-  );
+function remapConfigValue(value, maps) {
+  if (Array.isArray(value)) {
+    return value.map((item) => remapConfigValue(item, maps));
+  }
+
+  if (value && typeof value === 'object') {
+    const output = {};
+
+    for (const [key, nestedValue] of Object.entries(value)) {
+      output[key] = remapConfigValue(nestedValue, maps);
+    }
+
+    return output;
+  }
+
+  const stringValue = asSnowflake(value);
+
+  if (!stringValue) return value;
+
+  if (maps.roles.has(stringValue)) return maps.roles.get(stringValue);
+  if (maps.channels.has(stringValue)) return maps.channels.get(stringValue);
+
+  return value;
 }
 
-function countConfigSections(backup) {
-  const sections = getBackupConfigSections(backup);
-  if (!sections || typeof sections !== 'object') return 0;
-  return Object.entries(sections).filter(([, data]) => data != null).length;
+function createRestoreReport(guild, backupId, options) {
+  return {
+    version: RESTORE_VERSION,
+    dryRun: Boolean(options.dryRun),
+    cleanupMode: Boolean(options.cleanupMode),
+    guildId: guild.id,
+    guildName: guild.name,
+    backupId,
+    startedAt: new Date().toISOString(),
+    finishedAt: null,
+
+    roles: {
+      planned: 0,
+      created: 0,
+      skippedDuplicates: 0,
+      positionsRestored: 0,
+    },
+
+    categories: {
+      planned: 0,
+      created: 0,
+      skippedDuplicates: 0,
+    },
+
+    channels: {
+      planned: 0,
+      created: 0,
+      skippedDuplicates: 0,
+    },
+
+    config: {
+      planned: 0,
+      restored: 0,
+      skipped: false,
+      reason: null,
+      sections: [],
+    },
+
+    cleanup: {
+      enabled: Boolean(options.cleanupMode),
+      deletedChannels: 0,
+      deletedRoles: 0,
+      skipped: [],
+    },
+
+    created: {
+      roles: [],
+      categories: [],
+      channels: [],
+    },
+
+    duplicates: {
+      roles: [],
+      categories: [],
+      channels: [],
+    },
+
+    warnings: [],
+    errors: [],
+    progress: [],
+  };
 }
 
-async function emitProgress(options, payload) {
-  if (typeof options.onProgress !== 'function') return;
+function validateRestore(guild, backup, backupId, options) {
+  if (!guild) {
+    throw new Error('Missing guild.');
+  }
 
-  const total = Number(payload.total || 0);
-  const current = Number(payload.current || 0);
-  const percent = total > 0 ? Math.round((current / total) * 100) : 100;
+  if (!backup) {
+    throw new Error(`Backup not found: ${backupId}`);
+  }
 
-  await options.onProgress({
-    ...payload,
-    current,
-    total,
-    percent,
-  });
+  if (!options.confirmed && !options.dryRun) {
+    throw new Error('Restore blocked. Confirmation is required.');
+  }
+
+  const backupGuildId = getBackupGuildId(backup);
+
+  if (
+    options.requireSameGuild !== false &&
+    backupGuildId &&
+    backupGuildId !== guild.id
+  ) {
+    throw new Error(
+      `Backup guild mismatch. Backup belongs to ${backupGuildId}, current guild is ${guild.id}.`
+    );
+  }
+}
+
+function getRestoreTotal(backup, options) {
+  let total = 0;
+
+  if (options.restoreRoles) total += getRestorableRoles(backup).length;
+  if (options.restoreCategories) total += getSortedCategories(backup).length;
+  if (options.restoreChannels) total += getSortedChannels(backup).length;
+  if (options.restoreConfig) total += countConfigSections(backup);
+
+  return total || 1;
 }
 
 async function restoreRoles(guild, backup, maps, report, options, progressState) {
   const roles = getRestorableRoles(backup);
   let processed = 0;
 
-  await emitProgress(options, {
-    phase: 'roles',
-    step: 'Restoring roles',
-    current: progressState.completed,
-    total: progressState.total,
-    phaseCurrent: 0,
-    phaseTotal: roles.length,
-  });
-
   for (const role of roles) {
     const oldRoleId = getRoleBackupId(role);
+
     if (!oldRoleId) {
       processed += 1;
       continue;
     }
 
-    if (options.dryRun) {
+    const existing = findExistingRole(guild, role);
+
+    if (existing && options.skipDuplicates !== false) {
+      maps.roles.set(oldRoleId, existing.id);
+      report.roles.skippedDuplicates += 1;
+      report.duplicates.roles.push({
+        oldId: oldRoleId,
+        existingId: existing.id,
+        name: existing.name,
+      });
+    } else if (options.dryRun) {
       maps.roles.set(oldRoleId, `dry-role-${oldRoleId}`);
       report.roles.planned += 1;
     } else {
@@ -252,28 +400,26 @@ async function restoreRoles(guild, backup, maps, report, options, progressState)
     processed += 1;
     progressState.completed += 1;
 
-    await emitProgress(options, {
+    const progress = {
       phase: 'roles',
-      step: options.dryRun ? 'Planning roles' : 'Creating roles',
+      step: options.dryRun ? 'Planning roles' : 'Restoring roles',
       current: progressState.completed,
       total: progressState.total,
       phaseCurrent: processed,
       phaseTotal: roles.length,
       itemName: role.name,
-    });
+    };
+
+    report.progress.push(progress);
+    await emitProgress(options, progress);
   }
 
   if (!options.dryRun && options.restoreRolePositions !== false) {
-    let positionProcessed = 0;
-
     for (const role of roles) {
       const newRoleId = maps.roles.get(getRoleBackupId(role));
       const newRole = newRoleId ? guild.roles.cache.get(newRoleId) : null;
 
-      if (!newRole || typeof role.position !== 'number') {
-        positionProcessed += 1;
-        continue;
-      }
+      if (!newRole || typeof role.position !== 'number') continue;
 
       try {
         await newRole.setPosition(role.position, options.reason);
@@ -283,18 +429,6 @@ async function restoreRoles(guild, backup, maps, report, options, progressState)
           `Could not restore role position for ${role.name}: ${error.message}`
         );
       }
-
-      positionProcessed += 1;
-
-      await emitProgress(options, {
-        phase: 'rolePositions',
-        step: 'Restoring role positions',
-        current: progressState.completed,
-        total: progressState.total,
-        phaseCurrent: positionProcessed,
-        phaseTotal: roles.length,
-        itemName: role.name,
-      });
     }
   }
 }
@@ -303,35 +437,38 @@ async function restoreCategories(guild, backup, maps, report, options, progressS
   const categories = getSortedCategories(backup);
   let processed = 0;
 
-  await emitProgress(options, {
-    phase: 'categories',
-    step: 'Restoring categories',
-    current: progressState.completed,
-    total: progressState.total,
-    phaseCurrent: 0,
-    phaseTotal: categories.length,
-  });
-
   for (const category of categories) {
     const oldCategoryId = getChannelBackupId(category);
+
     if (!oldCategoryId) {
       processed += 1;
       continue;
     }
 
-    const overwrites = mapPermissionOverwrites(
-      category.permissionOverwrites || category.overwrites,
-      guild,
-      maps
-    );
+    const type = ChannelType.GuildCategory;
+    const existing = findExistingChannel(guild, category, type);
 
-    if (options.dryRun) {
+    if (existing && options.skipDuplicates !== false) {
+      maps.channels.set(oldCategoryId, existing.id);
+      report.categories.skippedDuplicates += 1;
+      report.duplicates.categories.push({
+        oldId: oldCategoryId,
+        existingId: existing.id,
+        name: existing.name,
+      });
+    } else if (options.dryRun) {
       maps.channels.set(oldCategoryId, `dry-category-${oldCategoryId}`);
       report.categories.planned += 1;
     } else {
+      const overwrites = mapPermissionOverwrites(
+        category.permissionOverwrites || category.overwrites,
+        guild,
+        maps
+      );
+
       const created = await guild.channels.create({
         name: cleanName(category.name, 'restored-category'),
-        type: ChannelType.GuildCategory,
+        type,
         permissionOverwrites: overwrites,
         reason: options.reason,
       });
@@ -349,15 +486,18 @@ async function restoreCategories(guild, backup, maps, report, options, progressS
     processed += 1;
     progressState.completed += 1;
 
-    await emitProgress(options, {
+    const progress = {
       phase: 'categories',
-      step: options.dryRun ? 'Planning categories' : 'Creating categories',
+      step: options.dryRun ? 'Planning categories' : 'Restoring categories',
       current: progressState.completed,
       total: progressState.total,
       phaseCurrent: processed,
       phaseTotal: categories.length,
       itemName: category.name,
-    });
+    };
+
+    report.progress.push(progress);
+    await emitProgress(options, progress);
   }
 }
 
@@ -365,37 +505,39 @@ async function restoreChannels(guild, backup, maps, report, options, progressSta
   const channels = getSortedChannels(backup);
   let processed = 0;
 
-  await emitProgress(options, {
-    phase: 'channels',
-    step: 'Restoring channels',
-    current: progressState.completed,
-    total: progressState.total,
-    phaseCurrent: 0,
-    phaseTotal: channels.length,
-  });
-
   for (const channel of channels) {
     const oldChannelId = getChannelBackupId(channel);
+
     if (!oldChannelId) {
       processed += 1;
       continue;
     }
 
-    const parentOldId = getParentBackupId(channel);
-    const parentNewId = parentOldId ? maps.channels.get(parentOldId) : null;
-
-    const overwrites = mapPermissionOverwrites(
-      channel.permissionOverwrites || channel.overwrites,
-      guild,
-      maps
-    );
-
     const type = normalizeChannelType(channel.type);
+    const existing = findExistingChannel(guild, channel, type);
 
-    if (options.dryRun) {
+    if (existing && options.skipDuplicates !== false) {
+      maps.channels.set(oldChannelId, existing.id);
+      report.channels.skippedDuplicates += 1;
+      report.duplicates.channels.push({
+        oldId: oldChannelId,
+        existingId: existing.id,
+        name: existing.name,
+        type,
+      });
+    } else if (options.dryRun) {
       maps.channels.set(oldChannelId, `dry-channel-${oldChannelId}`);
       report.channels.planned += 1;
     } else {
+      const parentOldId = getParentBackupId(channel);
+      const parentNewId = parentOldId ? maps.channels.get(parentOldId) : null;
+
+      const overwrites = mapPermissionOverwrites(
+        channel.permissionOverwrites || channel.overwrites,
+        guild,
+        maps
+      );
+
       const payload = {
         name: cleanName(channel.name, 'restored-channel'),
         type,
@@ -431,41 +573,19 @@ async function restoreChannels(guild, backup, maps, report, options, progressSta
     processed += 1;
     progressState.completed += 1;
 
-    await emitProgress(options, {
+    const progress = {
       phase: 'channels',
-      step: options.dryRun ? 'Planning channels' : 'Creating channels',
+      step: options.dryRun ? 'Planning channels' : 'Restoring channels',
       current: progressState.completed,
       total: progressState.total,
       phaseCurrent: processed,
       phaseTotal: channels.length,
       itemName: channel.name,
-    });
+    };
+
+    report.progress.push(progress);
+    await emitProgress(options, progress);
   }
-}
-
-function remapConfigValue(value, maps) {
-  if (Array.isArray(value)) {
-    return value.map((item) => remapConfigValue(item, maps));
-  }
-
-  if (value && typeof value === 'object') {
-    const output = {};
-
-    for (const [key, nestedValue] of Object.entries(value)) {
-      output[key] = remapConfigValue(nestedValue, maps);
-    }
-
-    return output;
-  }
-
-  const stringValue = asSnowflake(value);
-
-  if (!stringValue) return value;
-
-  if (maps.roles.has(stringValue)) return maps.roles.get(stringValue);
-  if (maps.channels.has(stringValue)) return maps.channels.get(stringValue);
-
-  return value;
 }
 
 async function restoreGuildConfig(guild, backup, maps, report, options, progressState) {
@@ -474,33 +594,12 @@ async function restoreGuildConfig(guild, backup, maps, report, options, progress
   if (!sections || typeof sections !== 'object') {
     report.config.skipped = true;
     report.config.reason = 'No config sections found in backup.';
-
-    await emitProgress(options, {
-      phase: 'config',
-      step: 'No config sections found',
-      current: progressState.completed,
-      total: progressState.total,
-      phaseCurrent: 0,
-      phaseTotal: 0,
-    });
-
     return;
   }
 
   const entries = Object.entries(sections).filter(
     ([section, data]) => section && data != null
   );
-
-  let processed = 0;
-
-  await emitProgress(options, {
-    phase: 'config',
-    step: 'Restoring config',
-    current: progressState.completed,
-    total: progressState.total,
-    phaseCurrent: 0,
-    phaseTotal: entries.length,
-  });
 
   for (const [section, data] of entries) {
     const remapped = remapConfigValue(data, maps);
@@ -513,111 +612,102 @@ async function restoreGuildConfig(guild, backup, maps, report, options, progress
       report.config.sections.push(section);
     }
 
-    processed += 1;
     progressState.completed += 1;
 
-    await emitProgress(options, {
+    const progress = {
       phase: 'config',
       step: options.dryRun ? 'Planning config' : 'Restoring config',
       current: progressState.completed,
       total: progressState.total,
-      phaseCurrent: processed,
-      phaseTotal: entries.length,
       itemName: section,
-    });
+    };
+
+    report.progress.push(progress);
+    await emitProgress(options, progress);
   }
 }
 
-function createRestoreReport(guild, backupId, options) {
-  return {
-    version: RESTORE_VERSION,
-    dryRun: Boolean(options.dryRun),
-    guildId: guild.id,
-    guildName: guild.name,
-    backupId,
-    startedAt: new Date().toISOString(),
-    finishedAt: null,
+async function cleanupBeforeRestore(guild, backup, report, options) {
+  if (!options.cleanupMode || options.dryRun) return;
 
-    roles: {
-      planned: 0,
-      created: 0,
-      positionsRestored: 0,
-    },
+  const backupRoleNames = new Set(
+    getRestorableRoles(backup).map((role) =>
+      cleanName(role.name, 'restored-role').toLowerCase()
+    )
+  );
 
-    categories: {
-      planned: 0,
-      created: 0,
-    },
+  const backupChannelKeys = new Set([
+    ...getSortedCategories(backup).map(
+      (channel) =>
+        `${ChannelType.GuildCategory}:${cleanName(channel.name, 'restored-category').toLowerCase()}`
+    ),
+    ...getSortedChannels(backup).map(
+      (channel) =>
+        `${normalizeChannelType(channel.type)}:${cleanName(channel.name, 'restored-channel').toLowerCase()}`
+    ),
+  ]);
 
-    channels: {
-      planned: 0,
-      created: 0,
-    },
+  for (const channel of guild.channels.cache.values()) {
+    const key = `${channel.type}:${channel.name.toLowerCase()}`;
 
-    config: {
-      planned: 0,
-      restored: 0,
-      skipped: false,
-      reason: null,
-      sections: [],
-    },
+    if (!backupChannelKeys.has(key)) continue;
 
-    created: {
-      roles: [],
-      categories: [],
-      channels: [],
-    },
-
-    warnings: [],
-    errors: [],
-  };
-}
-
-function validateRestore(guild, backup, backupId, options) {
-  if (!guild) {
-    throw new Error('Missing guild.');
+    try {
+      await channel.delete(options.reason);
+      report.cleanup.deletedChannels += 1;
+    } catch (error) {
+      report.cleanup.skipped.push({
+        type: 'channel',
+        name: channel.name,
+        reason: error.message,
+      });
+    }
   }
 
-  if (!backup) {
-    throw new Error(`Backup not found: ${backupId}`);
+  for (const role of guild.roles.cache.values()) {
+    if (
+      role.id === guild.id ||
+      role.managed ||
+      !backupRoleNames.has(role.name.toLowerCase())
+    ) {
+      continue;
+    }
+
+    try {
+      await role.delete(options.reason);
+      report.cleanup.deletedRoles += 1;
+    } catch (error) {
+      report.cleanup.skipped.push({
+        type: 'role',
+        name: role.name,
+        reason: error.message,
+      });
+    }
   }
-
-  const backupGuildId = getBackupGuildId(backup);
-
-  if (options.requireSameGuild !== false && backupGuildId && backupGuildId !== guild.id) {
-    throw new Error(
-      `Backup guild mismatch. Backup belongs to ${backupGuildId}, current guild is ${guild.id}.`
-    );
-  }
-}
-
-function getRestoreTotal(backup, options) {
-  let total = 0;
-
-  if (options.restoreRoles) total += getRestorableRoles(backup).length;
-  if (options.restoreCategories) total += getSortedCategories(backup).length;
-  if (options.restoreChannels) total += getSortedChannels(backup).length;
-  if (options.restoreConfig) total += countConfigSections(backup);
-
-  return total || 1;
 }
 
 async function restoreServerBackup(guild, backupId, options = {}) {
   const restoreOptions = {
     onProgress: null,
     dryRun: true,
+    confirmed: false,
     requireSameGuild: true,
     restoreRoles: true,
     restoreCategories: true,
     restoreChannels: true,
     restoreConfig: true,
     restoreRolePositions: true,
-    reason: `Goliath restore ${RESTORE_VERSION}`,
+    skipDuplicates: true,
+    cleanupMode: false,
+    reason: `Goliath safe restore ${RESTORE_VERSION}`,
     ...options,
   };
 
   const backup = readServerBackup(guild.id, backupId);
   validateRestore(guild, backup, backupId, restoreOptions);
+
+  await guild.roles.fetch().catch(() => null);
+  await guild.channels.fetch().catch(() => null);
 
   const report = createRestoreReport(guild, backupId, restoreOptions);
 
@@ -634,12 +724,12 @@ async function restoreServerBackup(guild, backupId, options = {}) {
   try {
     await emitProgress(restoreOptions, {
       phase: 'start',
-      step: 'Starting restore',
+      step: restoreOptions.dryRun ? 'Starting restore preview' : 'Starting safe restore',
       current: 0,
       total: progressState.total,
-      phaseCurrent: 0,
-      phaseTotal: progressState.total,
     });
+
+    await cleanupBeforeRestore(guild, backup, report, restoreOptions);
 
     if (restoreOptions.restoreRoles) {
       await restoreRoles(guild, backup, maps, report, restoreOptions, progressState);
@@ -659,11 +749,9 @@ async function restoreServerBackup(guild, backupId, options = {}) {
 
     await emitProgress(restoreOptions, {
       phase: 'complete',
-      step: 'Restore complete',
+      step: restoreOptions.dryRun ? 'Restore preview complete' : 'Safe restore complete',
       current: progressState.total,
       total: progressState.total,
-      phaseCurrent: progressState.total,
-      phaseTotal: progressState.total,
     });
   } catch (error) {
     report.errors.push(error.message);
@@ -673,8 +761,6 @@ async function restoreServerBackup(guild, backupId, options = {}) {
       step: 'Restore failed',
       current: progressState.completed,
       total: progressState.total,
-      phaseCurrent: progressState.completed,
-      phaseTotal: progressState.total,
       error: error.message,
     });
 

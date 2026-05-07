@@ -167,7 +167,7 @@ async function safeDeny(interaction, message) {
     content: message,
     embeds: [],
     components: [],
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
   };
 
   if (interaction.deferred || interaction.replied) {

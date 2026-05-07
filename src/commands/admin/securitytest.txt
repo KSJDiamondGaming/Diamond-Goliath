@@ -1,0 +1,35 @@
+const { SlashCommandBuilder } = require('discord.js');
+const {
+  logIncident,
+  SEVERITY,
+  INCIDENT_TYPES,
+} = require('../../security/securityIncidentLogger');
+
+module.exports = {
+  data: new SlashCommandBuilder()
+    .setName('securitytest')
+    .setDescription('Owner-only test for Goliath security logging.'),
+
+  async execute(interaction) {
+    await interaction.reply({
+      content: '✅ Security test started. Check your private webhook channel.',
+      flags: MessageFlags.Ephemeral,
+    });
+
+    await logIncident(interaction.guild, {
+      type: INCIDENT_TYPES.SUSPICIOUS_ADMIN_ACTION,
+      severity: SEVERITY.HIGH,
+      actorId: interaction.user.id,
+      actorTag: interaction.user.tag,
+      targetId: interaction.guild.id,
+      targetName: interaction.guild.name,
+      targetType: 'guild',
+      reason: 'Manual owner security webhook test.',
+      actionTaken: 'Test incident sent to local logs and owner webhook mirror.',
+      metadata: {
+        command: '/securitytest',
+        requestedBy: interaction.user.id,
+      },
+    });
+  },
+};

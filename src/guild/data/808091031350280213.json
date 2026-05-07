@@ -1,7 +1,7 @@
 {
   "guildId": "808091031350280213",
   "guildName": "KSJ DIAMOND GAMING",
-  "updatedAt": "2026-05-06T20:40:24.731Z",
+  "updatedAt": "2026-05-07T00:36:00.394Z",
   "general": {
     "enabled": true,
     "prefix": "!",
@@ -113,6 +113,42 @@
       "voiceMove": true
     },
     "updatedAt": "2026-05-06T17:12:42.221Z"
+  },
+  "security": {
+    "enabled": true,
+    "threatLevel": "high",
+    "totalIncidents": 1,
+    "criticalIncidents": 0,
+    "lastIncidentAt": "2026-05-07T00:36:00.393Z",
+    "lastIncidentType": "suspicious_admin_action",
+    "lastLockdownAt": null,
+    "lastQuarantineAt": null,
+    "incidents": [
+      {
+        "id": "inc_1778114160393_mmqcow",
+        "type": "suspicious_admin_action",
+        "severity": "high",
+        "guildId": "808091031350280213",
+        "guildName": "KSJ DIAMOND GAMING",
+        "actorId": "1168285714732036096",
+        "actorTag": "_.morgz._",
+        "targetId": "808091031350280213",
+        "targetName": "KSJ DIAMOND GAMING",
+        "targetType": "guild",
+        "reason": "Manual owner security webhook test.",
+        "actionTaken": "Test incident sent to local logs and owner webhook mirror.",
+        "metadata": {
+          "command": "/securitytest",
+          "requestedBy": "1168285714732036096"
+        },
+        "createdAt": "2026-05-07T00:36:00.393Z"
+      }
+    ],
+    "ownerMonitoring": {
+      "enabled": true,
+      "webhookMirrorEnabled": true
+    },
+    "updatedAt": "2026-05-07T00:36:00.394Z"
   },
   "serverBackups": {
     "enabled": true,

@@ -7,6 +7,28 @@ const GUILDS_DIR = path.join(__dirname, 'data');
 
 const guildCache = new Map();
 
+const DEFAULT_SECURITY = {
+  enabled: true,
+
+  threatLevel: 'low',
+
+  totalIncidents: 0,
+  criticalIncidents: 0,
+
+  lastIncidentAt: null,
+  lastIncidentType: null,
+
+  lastLockdownAt: null,
+  lastQuarantineAt: null,
+
+  incidents: [],
+
+  ownerMonitoring: {
+    enabled: true,
+    webhookMirrorEnabled: true,
+  },
+};
+
 const DEFAULT_EMBED_DEFAULTS = {
   welcome: null,
   leave: null,
@@ -178,11 +200,51 @@ function removeLegacyLogFields(data) {
   return clean;
 }
 
+/* ---------------- SECURITY ---------------- */
+
+function normalizeSecurity(source = {}) {
+  const security = mergeObject(DEFAULT_SECURITY, source.security);
+
+  security.enabled = security.enabled !== false;
+
+  security.threatLevel = String(security.threatLevel || 'low').toLowerCase();
+
+  if (!['low', 'medium', 'high', 'critical'].includes(security.threatLevel)) {
+    security.threatLevel = 'low';
+  }
+
+  security.totalIncidents = Number(security.totalIncidents || 0);
+  security.criticalIncidents = Number(security.criticalIncidents || 0);
+
+  security.lastIncidentAt = security.lastIncidentAt || null;
+  security.lastIncidentType = security.lastIncidentType || null;
+  security.lastLockdownAt = security.lastLockdownAt || null;
+  security.lastQuarantineAt = security.lastQuarantineAt || null;
+
+  security.incidents = Array.isArray(security.incidents)
+    ? security.incidents.slice(0, 250)
+    : [];
+
+  security.ownerMonitoring = mergeObject(
+    DEFAULT_SECURITY.ownerMonitoring,
+    security.ownerMonitoring
+  );
+
+  security.ownerMonitoring.enabled =
+    security.ownerMonitoring.enabled !== false;
+
+  security.ownerMonitoring.webhookMirrorEnabled =
+    security.ownerMonitoring.webhookMirrorEnabled !== false;
+
+  return security;
+}
+
 /* ---------------- DEFAULTS ---------------- */
 
 function mergeDefaults(data = {}) {
   const defaults = clone({
     ...DEFAULT_GUILD_DATA,
+    security: DEFAULT_SECURITY,
     embedPresets: {},
     embedDefaults: DEFAULT_EMBED_DEFAULTS,
   });
@@ -198,6 +260,7 @@ function mergeDefaults(data = {}) {
     modules: mergeObject(defaults.modules, source.modules),
 
     logs: normalizeLogs(source),
+    security: normalizeSecurity(source),
 
     automod: mergeObject(defaults.automod, source.automod),
     moderation: mergeObject(defaults.moderation, source.moderation),
@@ -266,6 +329,7 @@ function getGuildData(guildId, options = {}) {
   const needsRewrite =
     !exists ||
     !rawData.embedDefaults ||
+    !rawData.security ||
     LEGACY_LOG_FIELDS.some((field) =>
       Object.prototype.hasOwnProperty.call(rawData, field)
     );
@@ -504,6 +568,26 @@ function toggleLogEvents(guildId, eventNames = [], guildOrMeta = {}) {
   return setLogEventsEnabled(guildId, eventNames, !allEnabled, guildOrMeta);
 }
 
+/* ---------------- SECURITY HELPERS ---------------- */
+
+function getSecurityConfig(guildId) {
+  return getGuildSection(guildId, 'security', DEFAULT_SECURITY);
+}
+
+function saveSecurityConfig(guildId, config = {}, guildOrMeta = {}) {
+  return saveGuildSection(guildId, 'security', config, guildOrMeta);
+}
+
+function updateSecurityConfig(guildId, updater, guildOrMeta = {}) {
+  return updateGuildSection(
+    guildId,
+    'security',
+    updater,
+    DEFAULT_SECURITY,
+    guildOrMeta
+  );
+}
+
 /* ---------------- EMBED PRESETS ---------------- */
 
 function sanitizePresetName(name) {
@@ -689,6 +773,7 @@ module.exports = {
 
   DEFAULT_GUILD_DATA,
   DEFAULT_LOGS,
+  DEFAULT_SECURITY,
   DEFAULT_EMBED_DEFAULTS,
 
   getGuildFilePath,
@@ -716,6 +801,10 @@ module.exports = {
   setLogEventsEnabled,
   toggleLogEvent,
   toggleLogEvents,
+
+  getSecurityConfig,
+  saveSecurityConfig,
+  updateSecurityConfig,
 
   getEmbedPresets,
   getEmbedPreset,

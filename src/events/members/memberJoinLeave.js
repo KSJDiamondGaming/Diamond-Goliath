@@ -344,7 +344,7 @@ async function detectRemoval(member) {
   };
 }
 
-/* ---------------- PRIVATE ADMIN MEMBER LOGS ---------------- */
+/* ---------------- ADMIN MEMBER LOGS ---------------- */
 
 async function getAdminMemberLogChannel(guild) {
   const channelId =
@@ -391,7 +391,7 @@ function buildAdminJoinLog(member, addedRoles = []) {
       { name: 'Member Count', value: `\`${guild.memberCount}\``, inline: true },
       { name: 'Roles', value: getRolesText(member, addedRoles), inline: false }
     )
-    .setFooter({ text: 'Private admin member log' })
+    .setFooter({ text: 'Admin Log' })
     .setTimestamp();
 }
 
@@ -436,7 +436,7 @@ function buildAdminRemovalLog(member, removal) {
       { name: 'Roles', value: getRolesText(member), inline: false },
       { name: 'Reason', value: String(reason).slice(0, 1024), inline: false }
     )
-    .setFooter({ text: 'Private admin member log' })
+    .setFooter({ text: 'Admin Log' })
     .setTimestamp();
 
   if (moderator) {

@@ -18,6 +18,8 @@ const embeds = require('../server/routes/config/embeds');
 
 const cases = require('../server/routes/moderation');
 
+const serverRestoreRoutes = require('../server/routes/serverRestoreRoutes');
+
 const app = express();
 const server = http.createServer(app);
 
@@ -50,6 +52,8 @@ app.use('/api/config/messages', messages);
 app.use('/api/config/embeds', embeds);
 
 app.use('/api/cases', cases);
+
+app.use('/api/server-restore', serverRestoreRoutes);
 
 initSocketHub(server, {
   clientUrl: 'http://localhost:5173',

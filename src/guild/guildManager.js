@@ -43,6 +43,28 @@ const DEFAULT_LOGS = Object.freeze({
   },
 });
 
+const DEFAULT_SECURITY = Object.freeze({
+  enabled: true,
+
+  threatLevel: 'low',
+
+  totalIncidents: 0,
+  criticalIncidents: 0,
+
+  lastIncidentAt: null,
+  lastIncidentType: null,
+
+  lastLockdownAt: null,
+  lastQuarantineAt: null,
+
+  incidents: [],
+
+  ownerMonitoring: {
+    enabled: true,
+    webhookMirrorEnabled: true,
+  },
+});
+
 const DEFAULT_EMBED_DEFAULTS = Object.freeze({
   welcome: null,
   leave: null,
@@ -89,6 +111,7 @@ const DEFAULT_GUILD_DATA = Object.freeze({
 
   automod: {},
   logs: DEFAULT_LOGS,
+  security: DEFAULT_SECURITY,
   serverBackups: DEFAULT_SERVER_BACKUPS,
 
   cases: {},
@@ -326,6 +349,45 @@ function normalizeLogs(source = {}) {
   return logs;
 }
 
+/* ---------------- SECURITY ---------------- */
+
+function normalizeSecurity(source = {}) {
+  const security = mergeDeep(
+    DEFAULT_SECURITY,
+    isPlainObject(source.security) ? source.security : {}
+  );
+
+  security.enabled = security.enabled !== false;
+
+  security.threatLevel = String(security.threatLevel || 'low').toLowerCase();
+
+  if (!['low', 'medium', 'high', 'critical'].includes(security.threatLevel)) {
+    security.threatLevel = 'low';
+  }
+
+  security.totalIncidents = Number(security.totalIncidents || 0);
+  security.criticalIncidents = Number(security.criticalIncidents || 0);
+
+  security.incidents = Array.isArray(security.incidents)
+    ? security.incidents.slice(0, 250)
+    : [];
+
+  security.ownerMonitoring = mergeDeep(
+    DEFAULT_SECURITY.ownerMonitoring,
+    security.ownerMonitoring || {}
+  );
+
+  security.ownerMonitoring.enabled =
+    security.ownerMonitoring.enabled !== false;
+
+  security.ownerMonitoring.webhookMirrorEnabled =
+    security.ownerMonitoring.webhookMirrorEnabled !== false;
+
+  return security;
+}
+
+/* ---------------- SERVER BACKUPS ---------------- */
+
 function normalizeServerBackups(source = {}) {
   const serverBackups = mergeDeep(
     DEFAULT_SERVER_BACKUPS,
@@ -363,6 +425,7 @@ function mergeDefaults(data = {}) {
   const merged = mergeDeep(DEFAULT_GUILD_DATA, source);
 
   merged.logs = normalizeLogs(source);
+  merged.security = normalizeSecurity(source);
   merged.serverBackups = normalizeServerBackups(source);
   merged.embedDefaults = mergeDeep(DEFAULT_EMBED_DEFAULTS, source.embedDefaults || {});
 
@@ -389,6 +452,7 @@ function getGuildData(guildId, options = {}) {
     !exists ||
     !rawData.embedDefaults ||
     !rawData.serverBackups ||
+    !rawData.security ||
     LEGACY_LOG_FIELDS.some((field) =>
       Object.prototype.hasOwnProperty.call(rawData, field)
     );
@@ -565,6 +629,26 @@ function setLogEventEnabled(guildId, eventName, enabled = true, guildOrMeta = {}
       },
     }),
     DEFAULT_LOGS,
+    guildOrMeta
+  );
+}
+
+/* ---------------- SECURITY HELPERS ---------------- */
+
+function getSecurityConfig(guildId) {
+  return getGuildSection(guildId, 'security', DEFAULT_SECURITY);
+}
+
+function saveSecurityConfig(guildId, config = {}, guildOrMeta = {}) {
+  return saveGuildSection(guildId, 'security', config, guildOrMeta);
+}
+
+function updateSecurityConfig(guildId, updater, guildOrMeta = {}) {
+  return updateGuildSection(
+    guildId,
+    'security',
+    updater,
+    DEFAULT_SECURITY,
     guildOrMeta
   );
 }
@@ -774,6 +858,7 @@ module.exports = {
 
   DEFAULT_GUILD_DATA,
   DEFAULT_LOGS,
+  DEFAULT_SECURITY,
   DEFAULT_EMBED_DEFAULTS,
   DEFAULT_SERVER_BACKUPS,
 
@@ -795,6 +880,10 @@ module.exports = {
   setLogChannelId,
   isLogEventEnabled,
   setLogEventEnabled,
+
+  getSecurityConfig,
+  saveSecurityConfig,
+  updateSecurityConfig,
 
   getServerBackupConfig,
   saveServerBackupConfig,

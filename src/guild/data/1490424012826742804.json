@@ -1,7 +1,7 @@
 {
   "guildId": "1490424012826742804",
   "guildName": "Emergency Community Hub",
-  "updatedAt": "2026-05-04T23:26:52.833Z",
+  "updatedAt": "2026-05-07T00:23:46.024Z",
   "general": {
     "enabled": true,
     "prefix": "!",
@@ -39,6 +39,21 @@
       "voiceJoin": true,
       "voiceLeave": true,
       "voiceMove": true
+    }
+  },
+  "security": {
+    "enabled": true,
+    "threatLevel": "low",
+    "totalIncidents": 0,
+    "criticalIncidents": 0,
+    "lastIncidentAt": null,
+    "lastIncidentType": null,
+    "lastLockdownAt": null,
+    "lastQuarantineAt": null,
+    "incidents": [],
+    "ownerMonitoring": {
+      "enabled": true,
+      "webhookMirrorEnabled": true
     }
   },
   "serverBackups": {

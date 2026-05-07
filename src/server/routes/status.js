@@ -3,7 +3,7 @@ const path = require('path');
 
 const router = express.Router();
 
-const { read: readJson } = require('../services/guild/fileStore');
+const { readJsonSafe } = require('../../guild/fileStore');
 
 const CASES_PATH = path.join(__dirname, '..', 'data', 'modCaseDetails.json');
 const DISCORD_API = 'https://discord.com/api/v10';

@@ -1,6 +1,6 @@
 const express = require('express');
 const path = require('path');
-const { read: readJson } = require('../services/guild/fileStore');
+const { readJsonSafe } = require('../../guild/fileStore');
 
 const router = express.Router();
 

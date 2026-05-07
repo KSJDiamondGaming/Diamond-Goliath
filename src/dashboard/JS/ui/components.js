@@ -2968,3 +2968,368 @@ export function createBadgeStyles(theme) {
 export const createTableStyles = createRecordPageStyles;
 export const createCasePageStyles = createRecordPageStyles;
 export const createWarningPageStyles = createRecordPageStyles;
+
+export function createRestorePageStyles(theme) {
+  return {
+    page: {
+      display: 'grid',
+      gap: '20px',
+    },
+
+    hero: {
+      background: theme.cardBg,
+      border: `1px solid ${theme.cardBorder}`,
+      borderRadius: DASHBOARD_LAYOUT.cardRadius,
+      padding: DASHBOARD_LAYOUT.cardPadding,
+      boxShadow: theme.shadow,
+      display: 'grid',
+      gap: '10px',
+    },
+
+    heroTitle: {
+      margin: 0,
+      color: theme.cardText,
+      fontSize: 'clamp(28px, 4vw, 46px)',
+      lineHeight: 0.96,
+      fontWeight: 950,
+      letterSpacing: '-0.045em',
+      textShadow: '0 3px 0 rgba(0,0,0,0.22)',
+    },
+
+    heroText: {
+      margin: 0,
+      color: theme.mutedText,
+      fontSize: '15px',
+      lineHeight: 1.55,
+      fontWeight: 600,
+      maxWidth: '900px',
+    },
+
+    grid: {
+      display: 'grid',
+      gridTemplateColumns: 'minmax(280px, 360px) minmax(0, 1fr)',
+      gap: '16px',
+      alignItems: 'start',
+    },
+
+    panel: {
+      background: theme.cardBg,
+      border: `1px solid ${theme.cardBorder}`,
+      borderRadius: DASHBOARD_LAYOUT.cardRadius,
+      boxShadow: theme.shadow,
+      overflow: 'hidden',
+    },
+
+    panelHeader: {
+      padding: '18px 20px',
+      borderBottom: `1px solid ${theme.cardBorder}`,
+      display: 'grid',
+      gap: '7px',
+    },
+
+    panelTitle: {
+      margin: 0,
+      color: theme.cardText,
+      fontSize: '18px',
+      lineHeight: 1.1,
+      fontWeight: 900,
+      letterSpacing: '-0.03em',
+    },
+
+    panelText: {
+      margin: 0,
+      color: theme.mutedText,
+      fontSize: '14px',
+      lineHeight: 1.45,
+      fontWeight: 600,
+    },
+
+    panelBody: {
+      padding: '20px',
+      display: 'grid',
+      gap: '16px',
+    },
+
+    backupList: {
+      display: 'grid',
+      gap: '10px',
+    },
+
+    backupButton(active = false) {
+      return {
+        width: '100%',
+        borderRadius: '16px',
+        border: active
+          ? `1px solid ${theme.primaryBorder}`
+          : `1px solid ${theme.cardBorder}`,
+        background: active ? theme.primarySoft : theme.softBg,
+        color: active ? '#bfdbfe' : theme.cardText,
+        padding: '14px',
+        cursor: 'pointer',
+        display: 'grid',
+        gap: '6px',
+        textAlign: 'left',
+        transition:
+          'background 0.18s ease, border-color 0.18s ease, transform 0.18s ease',
+      };
+    },
+
+    backupTitle: {
+      fontWeight: 900,
+      fontSize: '15px',
+      color: theme.cardText,
+    },
+
+    backupMeta: {
+      fontSize: '12px',
+      color: theme.mutedText,
+      fontWeight: 700,
+      lineHeight: 1.35,
+    },
+
+    summaryRow: {
+      display: 'grid',
+      gridTemplateColumns: 'minmax(0, 1fr) auto',
+      gap: '12px',
+      padding: '12px 0',
+      borderBottom: `1px solid ${theme.cardBorder}`,
+      color: theme.cardText,
+      fontWeight: 800,
+    },
+
+    summaryLabel: {
+      color: theme.mutedText,
+      fontSize: '13px',
+      fontWeight: 800,
+    },
+
+    statGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+      gap: '12px',
+    },
+
+    statCard: {
+      background: theme.softBg,
+      border: `1px solid ${theme.cardBorder}`,
+      borderRadius: '16px',
+      padding: '16px',
+      display: 'grid',
+      gap: '8px',
+    },
+
+    statLabel: {
+      margin: 0,
+      fontSize: '12px',
+      lineHeight: 1,
+      fontWeight: 900,
+      textTransform: 'uppercase',
+      letterSpacing: '0.08em',
+      color: theme.mutedText,
+    },
+
+    statValue: {
+      margin: 0,
+      color: theme.cardText,
+      fontSize: '24px',
+      lineHeight: 1,
+      fontWeight: 950,
+      letterSpacing: '-0.04em',
+    },
+
+    actionRow: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '10px',
+      flexWrap: 'wrap',
+    },
+
+    warningBox: {
+      background: theme.warningSoft,
+      border: `1px solid ${theme.warningBorder}`,
+      borderRadius: '16px',
+      padding: '14px',
+      color: theme.warningText,
+      fontWeight: 700,
+      lineHeight: 1.5,
+    },
+
+    dangerBox: {
+      background: theme.dangerSoft,
+      border: `1px solid ${theme.dangerBorder}`,
+      borderRadius: '16px',
+      padding: '14px',
+      color: theme.dangerText,
+      fontWeight: 700,
+      lineHeight: 1.5,
+    },
+
+    successBox: {
+      background: theme.successSoft,
+      border: `1px solid ${theme.successBorder}`,
+      borderRadius: '16px',
+      padding: '14px',
+      color: theme.successText,
+      fontWeight: 700,
+      lineHeight: 1.5,
+    },
+
+    emptyPanel: {
+      background: theme.softBg,
+      border: `1px solid ${theme.cardBorder}`,
+      borderRadius: '16px',
+      padding: '24px',
+      color: theme.mutedText,
+      textAlign: 'center',
+      display: 'grid',
+      gap: '8px',
+    },
+
+    button(tone = 'primary', disabled = false) {
+      return makeButton(theme, tone, disabled);
+    },
+  };
+}
+
+export function createRestoreModalStyles(theme) {
+  return {
+    backdrop: {
+      position: 'fixed',
+      inset: 0,
+      background: 'rgba(0,0,0,0.72)',
+      backdropFilter: 'blur(10px)',
+      zIndex: 999,
+      display: 'grid',
+      placeItems: 'center',
+      padding: '24px',
+    },
+
+    modal: {
+      width: 'min(620px, 100%)',
+      maxHeight: '92vh',
+      overflow: 'auto',
+      background: theme.cardBg,
+      border: `1px solid ${theme.cardBorder}`,
+      borderRadius: '24px',
+      padding: '24px',
+      boxShadow: theme.shadow,
+      display: 'grid',
+      gap: '18px',
+    },
+
+    header: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: '16px',
+    },
+
+    title: {
+      margin: 0,
+      color: theme.cardText,
+      fontSize: '24px',
+      lineHeight: 1.05,
+      fontWeight: 950,
+      letterSpacing: '-0.04em',
+    },
+
+    text: {
+      margin: 0,
+      color: theme.mutedText,
+      fontSize: '14px',
+      lineHeight: 1.5,
+      fontWeight: 600,
+    },
+
+    closeButton: {
+      border: `1px solid ${theme.cardBorder}`,
+      background: theme.softBg,
+      color: theme.cardText,
+      borderRadius: '12px',
+      width: '38px',
+      height: '38px',
+      cursor: 'pointer',
+      fontWeight: 900,
+    },
+
+    dangerBox: {
+      background: theme.dangerSoft,
+      border: `1px solid ${theme.dangerBorder}`,
+      borderRadius: '16px',
+      padding: '14px',
+      color: theme.dangerText,
+      fontWeight: 700,
+      lineHeight: 1.5,
+    },
+
+    sectionTitle: {
+      margin: '0 0 8px',
+      color: theme.cardText,
+      fontSize: '16px',
+      fontWeight: 900,
+    },
+
+    miniGrid: {
+      display: 'grid',
+      gridTemplateColumns: '1fr auto',
+      gap: '10px 16px',
+      background: theme.softBg,
+      border: `1px solid ${theme.cardBorder}`,
+      borderRadius: '16px',
+      padding: '14px',
+      color: theme.cardText,
+      fontWeight: 700,
+    },
+
+    cleanupToggle: {
+      display: 'flex',
+      gap: '12px',
+      background: theme.warningSoft,
+      border: `1px solid ${theme.warningBorder}`,
+      borderRadius: '16px',
+      padding: '14px',
+      color: theme.warningText,
+      lineHeight: 1.45,
+      cursor: 'pointer',
+    },
+
+    smallText: {
+      display: 'block',
+      marginTop: '4px',
+      color: theme.mutedText,
+      fontSize: '12px',
+      lineHeight: 1.4,
+      fontWeight: 600,
+    },
+
+    label: {
+      display: 'block',
+      marginBottom: '8px',
+      color: theme.cardText,
+      fontWeight: 800,
+    },
+
+    input: {
+      width: '100%',
+      padding: '12px 14px',
+      borderRadius: '14px',
+      border: `1px solid ${theme.inputBorder}`,
+      background: theme.inputBg,
+      color: theme.inputText,
+      outline: 'none',
+      boxSizing: 'border-box',
+      fontWeight: 800,
+    },
+
+    actionRow: {
+      display: 'flex',
+      justifyContent: 'flex-end',
+      gap: '12px',
+      flexWrap: 'wrap',
+    },
+
+    button(tone = 'primary', disabled = false) {
+      return makeButton(theme, tone, disabled);
+    },
+  };
+}

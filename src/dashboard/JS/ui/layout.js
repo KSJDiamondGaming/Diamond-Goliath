@@ -6,6 +6,8 @@ import Config from '../pages/Config';
 import Cases from '../pages/Cases';
 import Warnings from '../pages/Warnings';
 import Messages from '../pages/Messages';
+import Restore from '../pages/Restore';
+
 import Logs from '../pages/Logs';
 
 export const DASHBOARD_LAYOUT = {
@@ -44,6 +46,7 @@ export const NAV_ITEMS = [
 ];
 
 export const NAV_BOTTOM = [
+  { key: 'restore', label: 'Restore', icon: 'admin', path: '/restore' },
   { key: 'logs', label: 'Logs', icon: 'logs', path: '/logs' },
 ];
 
@@ -56,6 +59,7 @@ export const ROUTES = [
   { key: 'cases', label: 'Cases', icon: 'cases', path: '/cases', component: Cases },
   { key: 'warnings', label: 'Warnings', icon: 'warnings', path: '/warnings', component: Warnings },
   { key: 'messages', label: 'Welcome & Leave', icon: 'messages', path: '/messages', component: Messages },
+  { key: 'restore', label: 'Restore', icon: 'admin', path: '/restore', component: Restore },
   { key: 'logs', label: 'Logs', icon: 'logs', path: '/logs', component: Logs },
 ];
 
@@ -117,6 +121,12 @@ export const PAGE_LAYOUTS = {
       { id: 'leave', type: 'config' },
     ],
   },
+  restore: {
+    title: 'Server Restore',
+    description: 'Preview and safely restore server backups.',
+    emptyDescription: 'Select a server to restore from backup.',
+    sections: [{ id: 'restoreManager', type: 'config' }],
+  },
   logs: {
     title: 'Logs',
     description: 'Manage log channels for the selected guild.',
@@ -161,6 +171,10 @@ export const SECTION_DEFS = {
   generalConfig: {
     title: 'General Config',
     description: 'Core dashboard, moderation, and server-wide configuration.',
+  },
+  restoreManager: {
+    title: 'Restore Manager',
+    description: 'Preview backup contents, confirm restore actions, and safely recover server structure.',
   },
   logManager: {
     title: 'Log Manager',

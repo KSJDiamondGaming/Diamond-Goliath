@@ -1,4 +1,4 @@
-const db = require('../../functions/moderation/db');
+const db = require('../../functions/moderation/moderationStore');
 
 function mapWarning(row) {
   if (!row) return null;
