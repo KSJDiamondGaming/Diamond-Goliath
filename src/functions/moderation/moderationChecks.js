@@ -133,7 +133,7 @@ function getStaffDisplay(member, guild) {
   if (isBotOwner(member)) {
     return {
       level: STAFF_LEVELS.OWNER,
-      label: 'Bot Owner',
+      label: 'Goliath Owner',
       badge: '👑',
     };
   }
@@ -141,7 +141,7 @@ function getStaffDisplay(member, guild) {
   if (isGuildOwner(member, guild.ownerId)) {
     return {
       level: STAFF_LEVELS.OWNER,
-      label: 'Server Owner',
+      label: 'Guild Owner',
       badge: '🏆',
     };
   }

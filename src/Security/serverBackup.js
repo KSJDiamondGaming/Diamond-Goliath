@@ -1,3 +1,5 @@
+// security/serverBackup.js
+
 const fs = require('node:fs');
 const path = require('node:path');
 const { ChannelType } = require('discord.js');
@@ -8,6 +10,8 @@ const BACKUPS_DIR = path.resolve(
   process.env.SERVER_BACKUP_DIR ||
     path.join(process.cwd(), 'data', 'serverBackups')
 );
+
+const SUPPORTED_BACKUP_VERSIONS = [3];
 
 function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true });
@@ -40,6 +44,33 @@ function writeJson(filePath, data) {
 function readJson(filePath) {
   if (!fs.existsSync(filePath)) return null;
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+}
+
+function isObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isValidBitfield(value) {
+  if (value === undefined || value === null) return false;
+
+  try {
+    BigInt(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isValidChannelType(type) {
+  return [
+    ChannelType.GuildText,
+    ChannelType.GuildAnnouncement,
+    ChannelType.GuildVoice,
+    ChannelType.GuildCategory,
+    ChannelType.GuildStageVoice,
+    ChannelType.GuildForum,
+    ChannelType.GuildMedia,
+  ].includes(type);
 }
 
 function serializeOverwrite(overwrite) {
@@ -90,6 +121,134 @@ function getLogsSnapshot(guildId) {
     enabled: guildData.logs?.enabled !== false,
     channels: guildData.logs?.channels || {},
     events: guildData.logs?.events || {},
+  };
+}
+
+function createBackupSummary(backup) {
+  const roles = Array.isArray(backup?.roles) ? backup.roles : [];
+  const channels = Array.isArray(backup?.channels) ? backup.channels : [];
+
+  return {
+    backupId: backup?.backupId || null,
+    version: backup?.version || null,
+    createdAt: backup?.createdAt || null,
+    createdBy: backup?.createdBy || null,
+    reason: backup?.reason || null,
+    guildId: backup?.guild?.id || null,
+    guildName: backup?.guild?.name || null,
+
+    counts: {
+      roles: roles.length,
+      channels: channels.length,
+      categories: channels.filter((c) => c.type === ChannelType.GuildCategory).length,
+      permissionOverwrites: channels.reduce(
+        (total, c) =>
+          total +
+          (Array.isArray(c.permissionOverwrites)
+            ? c.permissionOverwrites.length
+            : 0),
+        0
+      ),
+    },
+  };
+}
+
+function validateServerBackup(backup, options = {}) {
+  const errors = [];
+  const warnings = [];
+
+  if (!isObject(backup)) {
+    return {
+      valid: false,
+      errors: ['Backup is not a valid object.'],
+      warnings,
+      summary: null,
+    };
+  }
+
+  if (!SUPPORTED_BACKUP_VERSIONS.includes(Number(backup.version))) {
+    errors.push(`Unsupported backup version: ${backup.version || 'missing'}`);
+  }
+
+  if (!backup.backupId) errors.push('Backup is missing backupId.');
+  if (!backup.createdAt) errors.push('Backup is missing createdAt.');
+  if (!backup.guild?.id) errors.push('Backup is missing guild.id.');
+
+  if (
+    options.guildId &&
+    backup.guild?.id &&
+    String(options.guildId) !== String(backup.guild.id)
+  ) {
+    errors.push(
+      `Backup guild mismatch. Backup belongs to ${backup.guild.id}, current guild is ${options.guildId}.`
+    );
+  }
+
+  if (!Array.isArray(backup.roles)) {
+    errors.push('Backup roles field is missing or invalid.');
+  }
+
+  if (!Array.isArray(backup.channels)) {
+    errors.push('Backup channels field is missing or invalid.');
+  }
+
+  for (const role of backup.roles || []) {
+    if (!role.id) errors.push(`Role "${role.name || 'unknown'}" is missing id.`);
+    if (!role.name) errors.push(`Role at ${role.id || 'unknown'} is missing name.`);
+
+    if (!isValidBitfield(role.permissions)) {
+      errors.push(`Role "${role.name || role.id}" has invalid permissions.`);
+    }
+
+    if (typeof role.position !== 'number') {
+      warnings.push(`Role "${role.name || role.id}" has no numeric position.`);
+    }
+  }
+
+  for (const channel of backup.channels || []) {
+    if (!channel.id) errors.push(`Channel "${channel.name || 'unknown'}" is missing id.`);
+    if (!channel.name) errors.push(`Channel at ${channel.id || 'unknown'} is missing name.`);
+
+    if (!isValidChannelType(channel.type)) {
+      errors.push(`Channel "${channel.name || channel.id}" has invalid type.`);
+    }
+
+    if (typeof channel.position !== 'number') {
+      warnings.push(`Channel "${channel.name || channel.id}" has no numeric position.`);
+    }
+
+    for (const overwrite of channel.permissionOverwrites || []) {
+      if (!overwrite.id) {
+        errors.push(`Channel "${channel.name}" has overwrite missing id.`);
+      }
+
+      if (overwrite.type === undefined || overwrite.type === null) {
+        errors.push(`Channel "${channel.name}" has overwrite missing type.`);
+      }
+
+      if (!isValidBitfield(overwrite.allow)) {
+        errors.push(`Channel "${channel.name}" has overwrite with invalid allow.`);
+      }
+
+      if (!isValidBitfield(overwrite.deny)) {
+        errors.push(`Channel "${channel.name}" has overwrite with invalid deny.`);
+      }
+    }
+  }
+
+  if ((backup.roles || []).length === 0) {
+    warnings.push('Backup contains no restorable roles.');
+  }
+
+  if ((backup.channels || []).length === 0) {
+    warnings.push('Backup contains no restorable channels.');
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings,
+    summary: createBackupSummary(backup),
   };
 }
 
@@ -178,6 +337,24 @@ function listServerBackups(guildId) {
     .sort((a, b) => b.localeCompare(a));
 }
 
+function getLatestServerBackupId(guildId) {
+  const section = guildManager.getGuildSection(guildId, 'serverBackups', {});
+
+  if (section.lastBackupId) {
+    const existing = readServerBackup(guildId, section.lastBackupId);
+    if (existing) return section.lastBackupId;
+  }
+
+  return listServerBackups(guildId)[0] || null;
+}
+
+function readLatestServerBackup(guildId) {
+  const latestBackupId = getLatestServerBackupId(guildId);
+  if (!latestBackupId) return null;
+
+  return readServerBackup(guildId, latestBackupId);
+}
+
 function cleanupOldBackups(guildId) {
   const maxBackups = getRetentionLimit();
   const backups = listServerBackups(guildId);
@@ -207,6 +384,9 @@ function getBackupSummaries(guildId) {
       roles: backup.roles?.length || 0,
       channels: backup.channels?.length || 0,
       logsIncluded: Boolean(backup.logs),
+      validation: validateServerBackup(backup, {
+        guildId: backup.guild?.id,
+      }),
     }));
 }
 
@@ -261,135 +441,9 @@ function updateGuildBackupReference(guild, backup) {
   });
 }
 
-function mapOverwrite(overwrite, roleIdMap, guildId) {
-  const mappedId =
-    overwrite.id === guildId ? guildId : roleIdMap.get(overwrite.id) || overwrite.id;
-
-  return {
-    id: mappedId,
-    type: overwrite.type,
-    allow: BigInt(overwrite.allow || 0),
-    deny: BigInt(overwrite.deny || 0),
-  };
-}
-
-function getChannelCreateOptions(channel, roleIdMap, guildId, categoryIdMap) {
-  const options = {
-    name: channel.name,
-    type: channel.type,
-    permissionOverwrites: (channel.permissionOverwrites || []).map((overwrite) =>
-      mapOverwrite(overwrite, roleIdMap, guildId)
-    ),
-  };
-
-  if (channel.parentId && categoryIdMap.has(channel.parentId)) {
-    options.parent = categoryIdMap.get(channel.parentId);
-  }
-
-  if (channel.topic) options.topic = channel.topic;
-  if ('nsfw' in channel) options.nsfw = Boolean(channel.nsfw);
-  if ('rateLimitPerUser' in channel) {
-    options.rateLimitPerUser = channel.rateLimitPerUser || 0;
-  }
-
-  if (
-    channel.type === ChannelType.GuildVoice ||
-    channel.type === ChannelType.GuildStageVoice
-  ) {
-    if (channel.bitrate) options.bitrate = channel.bitrate;
-    if (channel.userLimit) options.userLimit = channel.userLimit;
-  }
-
-  return options;
-}
-
-async function restoreServerBackup(targetGuild, backup) {
-  if (!targetGuild || !backup) throw new Error('Invalid restore input.');
-
-  const roleIdMap = new Map();
-  const categoryIdMap = new Map();
-
-  const result = {
-    roles: [],
-    categories: [],
-    channels: [],
-    skipped: [],
-  };
-
-  roleIdMap.set(backup.guild?.id || backup.sourceGuild?.id || targetGuild.id, targetGuild.id);
-
-  for (const role of backup.roles || []) {
-    try {
-      const createdRole = await targetGuild.roles.create({
-        name: role.name,
-        color: role.color,
-        permissions: BigInt(role.permissions || 0),
-        hoist: role.hoist,
-        mentionable: role.mentionable,
-        reason: 'Server backup restore',
-      });
-
-      roleIdMap.set(role.id, createdRole.id);
-      result.roles.push(createdRole.id);
-    } catch (error) {
-      result.skipped.push({
-        type: 'role',
-        name: role.name,
-        reason: error.message,
-      });
-    }
-  }
-
-  const categories = (backup.channels || [])
-    .filter((channel) => channel.type === ChannelType.GuildCategory)
-    .sort((a, b) => a.position - b.position);
-
-  for (const category of categories) {
-    try {
-      const createdCategory = await targetGuild.channels.create(
-        getChannelCreateOptions(category, roleIdMap, targetGuild.id, categoryIdMap)
-      );
-
-      categoryIdMap.set(category.id, createdCategory.id);
-      result.categories.push(createdCategory.id);
-    } catch (error) {
-      result.skipped.push({
-        type: 'category',
-        name: category.name,
-        reason: error.message,
-      });
-    }
-  }
-
-  const channels = (backup.channels || [])
-    .filter((channel) => channel.type !== ChannelType.GuildCategory)
-    .sort((a, b) => a.position - b.position);
-
-  for (const channel of channels) {
-    try {
-      const createdChannel = await targetGuild.channels.create(
-        getChannelCreateOptions(channel, roleIdMap, targetGuild.id, categoryIdMap)
-      );
-
-      result.channels.push(createdChannel.id);
-    } catch (error) {
-      result.skipped.push({
-        type: 'channel',
-        name: channel.name,
-        reason: error.message,
-      });
-    }
-  }
-
-  if (backup.logs) {
-    guildManager.replaceGuildSection(targetGuild.id, 'logs', backup.logs);
-  }
-
-  return result;
-}
-
 module.exports = {
   BACKUPS_DIR,
+  SUPPORTED_BACKUP_VERSIONS,
 
   createServerBackup,
   listServerBackups,
@@ -397,5 +451,10 @@ module.exports = {
   getBackupSummaries,
   readServerBackup,
   deleteServerBackup,
-  restoreServerBackup,
+
+  getLatestServerBackupId,
+  readLatestServerBackup,
+
+  validateServerBackup,
+  createBackupSummary,
 };

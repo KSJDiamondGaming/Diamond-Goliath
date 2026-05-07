@@ -17,3 +17,15 @@ Dashboard
 Live configuration
 Clean UI system
 Real-Time Sync
+
+
+
+
+above staff roles
+above quarantine role
+above roles it needs to remove
+Manage Roles
+Manage Channels
+View Audit Log
+Manage Webhooks
+Ban/Kick/Timeout if used elsewhere

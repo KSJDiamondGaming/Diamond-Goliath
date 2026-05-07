@@ -1,6 +1,16 @@
-const { AuditLogEvent, PermissionsBitField } = require('discord.js');
+const {
+  AuditLogEvent,
+  PermissionsBitField,
+  PermissionFlagsBits,
+} = require('discord.js');
 const securityIncidentLogger = require('./securityIncidentLogger');
 const guildManager = require('../guild/guildManager');
+
+const {
+  validateBotHierarchy,
+  hasDangerousPermissions,
+  canManageTargetMember,
+} = require('./securityCore');
 
 const {
   SEVERITY,
@@ -51,6 +61,20 @@ const DEFAULT_CONFIG = {
 
 const actionBuckets = new Map();
 const activeLockdowns = new Set();
+
+setInterval(() => {
+  const now = Date.now();
+
+  for (const [key, timestamps] of actionBuckets.entries()) {
+    const fresh = timestamps.filter((timestamp) => now - timestamp < 60_000);
+
+    if (fresh.length) {
+      actionBuckets.set(key, fresh);
+    } else {
+      actionBuckets.delete(key);
+    }
+  }
+}, 60_000);
 
 function getAntiNukeConfig(guildId) {
   const saved = guildManager.getGuildSection(guildId, 'antiNuke', {});
@@ -124,11 +148,19 @@ function addAction(guildId, userId, actionType, windowMs) {
 function isTrustedMember(member, config) {
   if (!member) return false;
 
-  if (config.trustedUserIds.includes(member.id)) return true;
+  if (config.trustedUserIds.includes(member.id)) {
+    return true;
+  }
 
-  return member.roles.cache.some((role) =>
+  const trustedRoleMatch = member.roles.cache.some((role) =>
     config.trustedRoleIds.includes(role.id)
   );
+
+  if (!trustedRoleMatch) {
+    return false;
+  }
+
+  return hasDangerousPermissions(member);
 }
 
 async function fetchAuditExecutor(guild, auditType) {
@@ -201,13 +233,18 @@ async function alertOwner(guild, incident) {
 }
 
 async function emergencyLockdown(guild, reason) {
-  if (activeLockdowns.has(guild.id)) return false;
+  if (!guild) return false;
+
+  if (activeLockdowns.has(guild.id)) {
+    return false;
+  }
+
   activeLockdowns.add(guild.id);
 
   try {
     const everyoneRole = guild.roles.everyone;
-
     const me = await guild.members.fetchMe().catch(() => null);
+
     if (!me?.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
       return false;
     }
@@ -243,6 +280,8 @@ async function emergencyLockdown(guild, reason) {
   } catch (err) {
     console.error('[AntiNukeManager] Emergency lockdown failed:', err);
     return false;
+  } finally {
+    activeLockdowns.delete(guild.id);
   }
 }
 
@@ -305,6 +344,15 @@ async function quarantineMember(guild, member, config, reason) {
     }
 
     const me = await guild.members.fetchMe().catch(() => null);
+
+    const manageable = canManageTargetMember(guild, member);
+
+    if (!manageable.allowed) {
+      return {
+        success: false,
+        reason: manageable.reason,
+      };
+    }
 
     if (!me?.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
       return {
@@ -406,6 +454,16 @@ async function handleDeleteEvent({
 
   const config = getAntiNukeConfig(guild.id);
   if (!config.enabled) return null;
+
+  const hierarchy = validateBotHierarchy(guild);
+
+  if (!hierarchy.valid) {
+    console.warn(
+      `[AntiNuke] Blocked protection system in ${guild.name}: ${hierarchy.reason}`
+    );
+
+    return null;
+  }
 
   const executor = await fetchAuditExecutor(guild, auditType);
   if (!executor?.id) return null;
@@ -550,6 +608,282 @@ async function handleRoleDelete(role) {
   });
 }
 
+async function handleRoleCreate(role) {
+  const guild = role.guild;
+
+  if (!guild) return null;
+
+  const config = getAntiNukeConfig(guild.id);
+
+  if (!config.enabled) return null;
+
+  const hierarchy = validateBotHierarchy(guild);
+
+  if (!hierarchy.valid) {
+    return null;
+  }
+
+  const executor = await fetchAuditExecutor(
+    guild,
+    AuditLogEvent.RoleCreate
+  );
+
+  if (!executor?.id) return null;
+
+  if (config.ignoreBots && executor.bot) {
+    return null;
+  }
+
+  const member = await guild.members
+    .fetch(executor.id)
+    .catch(() => null);
+
+  if (isTrustedMember(member, config)) {
+    return null;
+  }
+
+  const dangerous =
+    role.permissions.has(PermissionFlagsBits.Administrator) ||
+    role.permissions.has(PermissionFlagsBits.ManageGuild) ||
+    role.permissions.has(PermissionFlagsBits.ManageRoles) ||
+    role.permissions.has(PermissionFlagsBits.ManageChannels) ||
+    role.permissions.has(PermissionFlagsBits.BanMembers) ||
+    role.permissions.has(PermissionFlagsBits.KickMembers) ||
+    role.permissions.has(PermissionFlagsBits.ManageWebhooks);
+
+  if (!dangerous) {
+    return null;
+  }
+
+  if (config.backups.beforeIncident) {
+  await createEmergencyBackup(
+    guild,
+    'Security escalation detected.',
+    'security_escalation'
+  );
+}
+
+  await logIncident(guild, {
+    type: INCIDENT_TYPES.DANGEROUS_ROLE_CREATE || 'dangerous_role_create',
+    severity: SEVERITY.CRITICAL,
+    actorId: executor.id,
+    actorTag: executor.tag,
+    targetId: role.id,
+    targetName: role.name,
+    targetType: 'role',
+    reason: 'Dangerous role created.',
+    actionTaken: 'Role creation flagged as suspicious.',
+  });
+
+  if (config.quarantine.enabled && member) {
+  await quarantineMember(
+    guild,
+    member,
+    config,
+    'Dangerous role creation detected.'
+  );
+}
+
+  return true;
+}
+
+async function handleRoleUpdate(oldRole, newRole) {
+  const guild = newRole.guild;
+  if (!guild) return null;
+
+  const config = getAntiNukeConfig(guild.id);
+  if (!config.enabled) return null;
+
+  const hierarchy = validateBotHierarchy(guild);
+  if (!hierarchy.valid) return null;
+
+  const executor = await fetchAuditExecutor(guild, AuditLogEvent.RoleUpdate);
+  if (!executor?.id) return null;
+
+  if (config.ignoreBots && executor.bot) return null;
+
+  const member = await guild.members.fetch(executor.id).catch(() => null);
+  if (isTrustedMember(member, config)) return null;
+
+  const dangerousFlags = [
+    PermissionFlagsBits.Administrator,
+    PermissionFlagsBits.ManageGuild,
+    PermissionFlagsBits.ManageRoles,
+    PermissionFlagsBits.ManageChannels,
+    PermissionFlagsBits.BanMembers,
+    PermissionFlagsBits.KickMembers,
+    PermissionFlagsBits.ManageWebhooks,
+  ];
+
+  const addedDangerous = dangerousFlags.filter(
+    (flag) =>
+      !oldRole.permissions.has(flag) &&
+      newRole.permissions.has(flag)
+  );
+
+  if (!addedDangerous.length) return null;
+
+  if (config.backups.beforeIncident) {
+  await createEmergencyBackup(
+    guild,
+    'Security escalation detected.',
+    'security_escalation'
+  );
+}
+
+  await logIncident(guild, {
+    type:
+      INCIDENT_TYPES.DANGEROUS_ROLE_PERMISSION_ADDED ||
+      'dangerous_role_permission_added',
+    severity: SEVERITY.CRITICAL,
+    actorId: executor.id,
+    actorTag: executor.tag,
+    targetId: newRole.id,
+    targetName: newRole.name,
+    targetType: 'role',
+    reason: 'Dangerous permissions were added to an existing role.',
+    actionTaken: 'Role permission escalation flagged.',
+    metadata: {
+      roleId: newRole.id,
+      roleName: newRole.name,
+      addedPermissionCount: addedDangerous.length,
+    },
+  });
+
+  if (config.quarantine.enabled && member) {
+  await quarantineMember(
+    guild,
+    member,
+    config,
+    'Dangerous role permission escalation detected.'
+  );
+}
+
+  return true;
+}
+
+async function handleWebhookCreate(webhook) {
+  const guild = webhook.guild;
+
+  if (!guild) return null;
+
+  const config = getAntiNukeConfig(guild.id);
+
+  if (!config.enabled) return null;
+
+  const hierarchy = validateBotHierarchy(guild);
+
+  if (!hierarchy.valid) {
+    return null;
+  }
+
+  const executor = await fetchAuditExecutor(
+    guild,
+    AuditLogEvent.WebhookCreate
+  );
+
+  if (!executor?.id) return null;
+
+  const member = await guild.members
+    .fetch(executor.id)
+    .catch(() => null);
+
+  if (isTrustedMember(member, config)) {
+    return null;
+  }
+
+  if (config.ignoreBots && executor.bot) return null;
+
+  if (config.backups.beforeIncident) {
+  await createEmergencyBackup(
+    guild,
+    'Security escalation detected.',
+    'security_escalation'
+  );
+}
+
+  await logIncident(guild, {
+    type: INCIDENT_TYPES.WEBHOOK_CREATE || 'webhook_create',
+    severity: SEVERITY.HIGH,
+    actorId: executor.id,
+    actorTag: executor.tag,
+    targetId: webhook.id,
+    targetName: webhook.name,
+    targetType: 'webhook',
+    reason: 'Webhook creation detected.',
+    actionTaken: 'Webhook flagged for monitoring.',
+  });
+
+  if (config.quarantine.enabled && member) {
+  await quarantineMember(
+    guild,
+    member,
+    config,
+    'Suspicious webhook creation detected.'
+  );
+}
+
+  return true;
+}
+
+async function handleWebhookDelete(webhook) {
+  const guild = webhook.guild;
+
+  if (!guild) return null;
+
+  const config = getAntiNukeConfig(guild.id);
+  if (!config.enabled) return null;
+
+  const hierarchy = validateBotHierarchy(guild);
+  if (!hierarchy.valid) return null;
+
+  const executor = await fetchAuditExecutor(
+    guild,
+    AuditLogEvent.WebhookDelete
+  );
+
+  if (!executor?.id) return null;
+
+  if (config.ignoreBots && executor.bot) return null;
+
+  const member = await guild.members
+    .fetch(executor.id)
+    .catch(() => null);
+
+  if (isTrustedMember(member, config)) return null;
+
+  if (config.backups.beforeIncident) {
+  await createEmergencyBackup(
+    guild,
+    'Security escalation detected.',
+    'security_escalation'
+  );
+}
+
+  await logIncident(guild, {
+    type: INCIDENT_TYPES.WEBHOOK_DELETE || 'webhook_delete',
+    severity: SEVERITY.CRITICAL,
+    actorId: executor.id,
+    actorTag: executor.tag,
+    targetId: webhook.id,
+    targetName: webhook.name,
+    targetType: 'webhook',
+    reason: 'Webhook deletion detected.',
+    actionTaken: 'Webhook deletion flagged as suspicious.',
+  });
+
+  if (config.quarantine.enabled && member) {
+  await quarantineMember(
+    guild,
+    member,
+    config,
+    'Suspicious webhook deletion detected.'
+  );
+}
+
+  return true;
+}
+
 module.exports = {
   DEFAULT_CONFIG,
   QUARANTINE_ROLE_NAME,
@@ -557,6 +891,10 @@ module.exports = {
   getAntiNukeConfig,
   handleChannelDelete,
   handleRoleDelete,
+  handleWebhookCreate,
+  handleWebhookDelete,
+  handleRoleCreate,
+  handleRoleUpdate,
 
   emergencyLockdown,
   quarantineMember,

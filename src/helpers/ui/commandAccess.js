@@ -11,7 +11,7 @@ function canAccessCommand(interaction, command) {
 
   const access = command.access || {};
 
-  // 🔥 Bot owner always allowed
+  // 🔥 GOLIATH OWNER ALWAYS PASSES
   if (security.isBotOwner(interaction.user.id)) return true;
 
   // Owner-only commands
@@ -35,7 +35,7 @@ function canAccessCommand(interaction, command) {
 async function enforceCommandAccess(interaction, command) {
   const access = command.access || {};
 
-  // 🔥 BOT OWNER ALWAYS PASSES
+  // 🔥 GOLIATH OWNER ALWAYS PASSES
   if (security.isBotOwner(interaction.user.id)) return false;
 
   // OWNER ONLY

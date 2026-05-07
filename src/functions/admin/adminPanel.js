@@ -19,16 +19,22 @@ const guildManager = require('../../guild/guildManager');
 const { restoreServerBackup } = require('../../security/serverRestore');
 const panelNav = require('../../helpers/ui/panelNavigation');
 const { sendAutoModDM } = require('../../functions/automod/automodDm');
+const {
+  canUseRestore,
+  checkRestoreCooldown,
+} = require('../../security/securityCore');
 
 const {
   createServerBackup,
   listServerBackups,
   readServerBackup,
+  validateServerBackup,
 } = require('../../security/serverBackup');
 
 const PANEL_COLOR = '#5865F2';
 
 const RESTORE_PENDING = new Map();
+const ACTIVE_RESTORES = new Set();
 
 const LOG_TYPES = {
   automodlog: {
@@ -433,9 +439,9 @@ function buildBackupsPanel(guild, memberDisplayName = 'Unknown User', navState =
       `**Backups Found:** \`${backups.length}\``,
       `**Retention:** Keep latest \`${backupConfig.retention?.maxBackups || process.env.SERVER_BACKUP_RETENTION || 4}\``,
       '',
-      'Create backups: Bot owner or server owner.',
-      'Download backups: Bot owner or server owner.',
-      'Restore: Bot owner only.',
+      'Create backups: Goliath Owner or Guild Owner.',
+      'Download backups: Goliath Owner or Guild Owner.',
+      'Restore: Goliath Owner only.',
     ].join('\n'),
     memberDisplayName
   );
@@ -470,7 +476,7 @@ function buildRestoreSelectPanel(guild, memberDisplayName = 'Unknown User', navS
       'Select a backup to preview before restore.',
       '',
       '⚠️ **Restore is protected.**',
-      'Only the bot owner can restore backups.',
+      'Only the Goliath Owner can restore backups.',
       '',
       `**Backups Found:** \`${backups.length}\``,
     ].join('\n'),
@@ -803,6 +809,18 @@ function buildRestoreConfirmModal() {
 }
 
 async function replyNoAccess(interaction, message) {
+  if (
+  interaction.customId?.includes('restore') ||
+  interaction.customId?.includes('backup')
+) {
+  console.warn(
+    `[SECURITY] Blocked protected action | ` +
+    `User=${interaction.user?.tag} (${interaction.user?.id}) | ` +
+    `Guild=${interaction.guild?.name} (${interaction.guild?.id}) | ` +
+    `Action=${interaction.customId}`
+  );
+}
+
   await interaction.reply({
     content: message,
     flags: 64,
@@ -941,8 +959,10 @@ async function handleChannelSelect(interaction, memberDisplayName, navState) {
 }
 
 async function handleRestoreSelect(interaction, memberDisplayName, navState) {
-  if (!isBotOwner(interaction)) {
-    return replyNoAccess(interaction, '❌ Only the bot owner can restore backups.');
+  const restoreAccess = canUseRestore(interaction);
+
+  if (!restoreAccess.allowed) {
+    return replyNoAccess(interaction, `❌ ${restoreAccess.reason}`);
   }
 
   const backupId = interaction.values?.[0];
@@ -967,14 +987,17 @@ async function handleRestoreSelect(interaction, memberDisplayName, navState) {
 }
 
 function canCreateBackup(interaction) {
-  return isBotOwner(interaction) || isGuildOwner(interaction);
+  return (
+    isBotOwner(interaction) ||
+    isGuildOwner(interaction)
+  );
 }
 
 async function handleBackupCreate(interaction, memberDisplayName, navState) {
   if (!canCreateBackup(interaction)) {
     return replyNoAccess(
       interaction,
-      '❌ Only the bot owner or server owner can create backups.'
+      '❌ Only the Goliath Owner or Guild Owner can create backups.'
     );
   }
 
@@ -1016,7 +1039,7 @@ async function handleBackupDownload(interaction) {
   if (!isBotOwner(interaction) && !isGuildOwner(interaction)) {
     return replyNoAccess(
       interaction,
-      '❌ Only the bot owner and guild owner can download backups.'
+      '❌ Only the Goliath Owner and Guild Owner can download backups.'
     );
   }
 
@@ -1074,7 +1097,10 @@ async function handleBackupPreview(interaction) {
     });
   }
 
-  const backup = readServerBackup(interaction.guild.id, latestBackupId);
+  const backup = readServerBackup(
+    interaction.guild.id,
+    latestBackupId
+  );
 
   if (!backup) {
     return interaction.reply({
@@ -1082,6 +1108,10 @@ async function handleBackupPreview(interaction) {
       flags: 64,
     });
   }
+
+  const validation = validateServerBackup(backup, {
+    guildId: interaction.guild.id,
+  });
 
   return interaction.reply({
     content: [
@@ -1096,29 +1126,56 @@ async function handleBackupPreview(interaction) {
       `**Channels:** \`${backup.channels?.length || 0}\``,
       `**Categories:** \`${backup.categories?.length || 0}\``,
       `**Logs Included:** \`${backup.logs ? 'Yes' : 'No'}\``,
+      `**Backup Valid:** \`${validation.valid ? 'YES ✅' : 'NO ❌'}\``,
+
+      validation.errors.length
+        ? `**Errors:**\n${validation.errors
+            .slice(0, 5)
+            .map((e) => `- ${e}`)
+            .join('\n')}`
+        : '**Errors:** `None`',
     ].join('\n'),
     flags: 64,
   });
 }
 
 async function handleBackupRestore(interaction, memberDisplayName, navState) {
-  if (!isBotOwner(interaction)) {
-    return replyNoAccess(interaction, '❌ Only the bot owner can restore backups.');
+  const restoreAccess = canUseRestore(interaction);
+
+  if (!restoreAccess.allowed) {
+    return replyNoAccess(interaction, `❌ ${restoreAccess.reason}`);
   }
 
   const state = nextState(navState, 'admin:backup:restore');
 
   return updatePanel(
     interaction,
-    buildRestoreSelectPanel(interaction.guild, memberDisplayName, state),
+    buildRestoreSelectPanel(
+      interaction.guild,
+      memberDisplayName,
+      state
+    ),
     state
   );
 }
 
 async function handleBackupRestoreConfirm(interaction) {
-  if (!isBotOwner(interaction)) {
-    return replyNoAccess(interaction, '❌ Only the bot owner can restore backups.');
+  const restoreAccess = canUseRestore(interaction);
+
+  if (!restoreAccess.allowed) {
+    return replyNoAccess(interaction, `❌ ${restoreAccess.reason}`);
   }
+
+const cooldown = checkRestoreCooldown(interaction.guildId);
+
+if (!cooldown.allowed) {
+  const minutes = Math.ceil(cooldown.remainingMs / 60000);
+
+  return interaction.reply({
+    content: `⚠️ Restore cooldown active.\nTry again in ${minutes} minute(s).`,
+    flags: 64,
+  });
+}
 
   const pending = RESTORE_PENDING.get(getRestoreKey(interaction));
 
@@ -1183,7 +1240,7 @@ async function handleBackupRestoreCancel(interaction, memberDisplayName, navStat
     sendRestoreLog(
       interaction.guild,
       [
-        '🧱 **Server Restore Cancelled**',
+        '🟡 **Restore Cancelled / No Changes Made**',
         '',
         `👤 By: <@${interaction.user.id}>`,
         `📦 Backup: ${pending.backupId}`,
@@ -1202,8 +1259,21 @@ async function handleBackupRestoreCancel(interaction, memberDisplayName, navStat
 }
 
 async function handleFinalRestoreModal(interaction) {
-  if (!isBotOwner(interaction)) {
-    return replyNoAccess(interaction, '❌ Only the bot owner can restore backups.');
+  const restoreAccess = canUseRestore(interaction);
+
+  if (!restoreAccess.allowed) {
+    return replyNoAccess(interaction, `❌ ${restoreAccess.reason}`);
+  }
+
+  const cooldown = checkRestoreCooldown(interaction.guildId);
+
+  if (!cooldown.allowed) {
+    const minutes = Math.ceil(cooldown.remainingMs / 60000);
+
+    return interaction.reply({
+      content: `⚠️ Restore cooldown active.\nTry again in ${minutes} minute(s).`,
+      flags: 64,
+    });
   }
 
   const confirm = interaction.fields.getTextInputValue('confirm');
@@ -1216,6 +1286,7 @@ async function handleFinalRestoreModal(interaction) {
   }
 
   const pending = RESTORE_PENDING.get(getRestoreKey(interaction));
+  const activeKey = getRestoreKey(interaction);
 
   if (!pending?.backupId) {
     return interaction.reply({
@@ -1224,7 +1295,54 @@ async function handleFinalRestoreModal(interaction) {
     });
   }
 
-  await interaction.deferReply({ flags: 64 });
+  if (ACTIVE_RESTORES.has(activeKey)) {
+    return interaction.reply({
+      content: '⚠️ A restore is already running.',
+      flags: 64,
+    });
+  }
+
+  ACTIVE_RESTORES.add(activeKey);
+
+  const backup = readServerBackup(
+    interaction.guild.id,
+    pending.backupId
+  );
+
+  if (!backup) {
+    ACTIVE_RESTORES.delete(activeKey);
+
+    return interaction.reply({
+      content: '❌ Backup no longer exists.',
+      flags: 64,
+    });
+  }
+
+  const validation = validateServerBackup(backup, {
+    guildId: interaction.guild.id,
+  });
+
+  if (!validation.valid) {
+    ACTIVE_RESTORES.delete(activeKey);
+
+    return interaction.reply({
+      content: [
+        '❌ Backup validation failed.',
+        '',
+        ...validation.errors.slice(0, 5),
+      ].join('\n'),
+      flags: 64,
+    });
+  }
+
+  const restoreStartedAt = Date.now();
+
+  await Promise.race([
+    interaction.deferReply({ flags: 64 }),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Restore interaction timeout')), 5000)
+    ),
+  ]);
 
   try {
     await interaction.editReply({
@@ -1239,6 +1357,7 @@ async function handleFinalRestoreModal(interaction) {
         await interaction.editReply({
           content: [
             '⏳ **Restore in progress**',
+            `Duration: ${(Date.now() - restoreStartedAt) / 1000}s`,
             '',
             `**Step:** ${step}`,
             `**Progress:** ${percent}%`,
@@ -1251,14 +1370,19 @@ async function handleFinalRestoreModal(interaction) {
     sendRestoreLog(
       interaction.guild,
       [
-        '🚨 **Server Restore Executed**',
+        '🚨 **CRITICAL SECURITY ACTION: Server Restore Executed**',
         '',
         `👤 By: <@${interaction.user.id}>`,
         `📦 Backup: ${pending.backupId}`,
+        `📊 Roles Restored: ${report.roles?.created || 0}`,
+        `📊 Categories Restored: ${report.categories?.created || 0}`,
+        `📊 Channels Restored: ${report.channels?.created || 0}`,
+        `⏱️ Duration: ${Date.now() - restoreStartedAt}ms`,
         `🕒 Time: ${new Date().toLocaleString()}`,
       ].join('\n')
     );
 
+    ACTIVE_RESTORES.delete(activeKey);
     RESTORE_PENDING.delete(getRestoreKey(interaction));
 
     return interaction.editReply({
@@ -1268,9 +1392,13 @@ async function handleFinalRestoreModal(interaction) {
         `Roles: ${report.roles?.created || 0}`,
         `Categories: ${report.categories?.created || 0}`,
         `Channels: ${report.channels?.created || 0}`,
+        `Duration: ${(Date.now() - restoreStartedAt) / 1000}s`,
       ].join('\n'),
     });
   } catch (err) {
+    ACTIVE_RESTORES.delete(activeKey);
+    RESTORE_PENDING.delete(getRestoreKey(interaction));
+
     return interaction.editReply({
       content: `❌ Restore failed:\n${err.message}`,
     });
@@ -1300,7 +1428,7 @@ async function handleAdminNavigation(interaction, navState = panelNav.createStat
   if (!canUseAdminPanel(interaction)) {
     return replyNoAccess(
       interaction,
-      '❌ Only the bot owner, server owner, or administrators can use the Admin Panel.'
+      '❌ Only the Goliath Owner, Guild Owner, or Administrators can use the Admin Panel.'
     );
   }
 
@@ -1335,9 +1463,11 @@ async function handleAdminNavigation(interaction, navState = panelNav.createStat
   const { customId } = interaction;
 
   if (customId === 'admin:backup:restore:real') {
-    if (!isBotOwner(interaction)) {
-      return replyNoAccess(interaction, '❌ Only the bot owner can restore.');
-    }
+    const restoreAccess = canUseRestore(interaction);
+
+  if (!restoreAccess.allowed) {
+    return replyNoAccess(interaction, `❌ ${restoreAccess.reason}`);
+  }
 
     const pending = RESTORE_PENDING.get(getRestoreKey(interaction));
 

@@ -1,6 +1,7 @@
-const { PermissionFlagsBits } = require('discord.js');
+const { PermissionFlagsBits, MessageFlags } = require('discord.js');
 
 const DEFAULT_COOLDOWN_MS = Number(process.env.SECURITY_COOLDOWN_MS || 2500);
+
 const cooldowns = new Map();
 
 function getBotOwnerId() {
@@ -13,8 +14,11 @@ function isBotOwner(userId) {
 }
 
 function isGuildOwner(interaction) {
-  if (!interaction?.guild || !interaction?.user) return false;
-  return interaction.guild.ownerId === interaction.user.id;
+  return Boolean(
+    interaction?.guild &&
+      interaction?.user &&
+      interaction.guild.ownerId === interaction.user.id
+  );
 }
 
 function hasPermission(interaction, level = 'mod') {
@@ -25,38 +29,37 @@ function hasPermission(interaction, level = 'mod') {
   if (!interaction.guild || !interaction.member) return false;
 
   const member = interaction.member;
+  const permissions = member.permissions;
 
-  if (level === 'botOwner') {
-    return isBotOwner(interaction.user.id);
+  switch (level) {
+    case 'botOwner':
+      return isBotOwner(interaction.user.id);
+
+    case 'guildOwner':
+      return isGuildOwner(interaction);
+
+    case 'owner':
+      return isBotOwner(interaction.user.id) || isGuildOwner(interaction);
+
+    case 'admin':
+      return (
+        isGuildOwner(interaction) ||
+        permissions?.has(PermissionFlagsBits.Administrator)
+      );
+
+    case 'mod':
+      return (
+        isGuildOwner(interaction) ||
+        permissions?.has(PermissionFlagsBits.Administrator) ||
+        permissions?.has(PermissionFlagsBits.ModerateMembers) ||
+        permissions?.has(PermissionFlagsBits.KickMembers) ||
+        permissions?.has(PermissionFlagsBits.BanMembers) ||
+        permissions?.has(PermissionFlagsBits.ManageMessages)
+      );
+
+    default:
+      return false;
   }
-
-  if (level === 'guildOwner') {
-    return isGuildOwner(interaction);
-  }
-
-  if (level === 'owner') {
-    return isBotOwner(interaction.user.id) || isGuildOwner(interaction);
-  }
-
-  if (level === 'admin') {
-    return (
-      isGuildOwner(interaction) ||
-      member.permissions?.has(PermissionFlagsBits.Administrator)
-    );
-  }
-
-  if (level === 'mod') {
-    return (
-      isGuildOwner(interaction) ||
-      member.permissions?.has(PermissionFlagsBits.Administrator) ||
-      member.permissions?.has(PermissionFlagsBits.ModerateMembers) ||
-      member.permissions?.has(PermissionFlagsBits.KickMembers) ||
-      member.permissions?.has(PermissionFlagsBits.BanMembers) ||
-      member.permissions?.has(PermissionFlagsBits.ManageMessages)
-    );
-  }
-
-  return false;
 }
 
 function canModerateTarget(interaction, targetMember) {
@@ -67,8 +70,9 @@ function canModerateTarget(interaction, targetMember) {
     };
   }
 
+  const guild = interaction.guild;
   const moderator = interaction.member;
-  const botMember = interaction.guild.members.me;
+  const botMember = guild.members.me;
 
   if (isBotOwner(interaction.user.id)) {
     return {
@@ -77,7 +81,7 @@ function canModerateTarget(interaction, targetMember) {
     };
   }
 
-  if (targetMember.id === interaction.guild.ownerId) {
+  if (targetMember.id === guild.ownerId) {
     return {
       allowed: false,
       reason: 'You cannot moderate the server owner.',
@@ -91,27 +95,25 @@ function canModerateTarget(interaction, targetMember) {
     };
   }
 
-  if (targetMember.id === botMember?.id) {
+  if (botMember && targetMember.id === botMember.id) {
     return {
       allowed: false,
       reason: 'You cannot moderate the bot.',
     };
   }
 
-  if (
-    moderator.id !== interaction.guild.ownerId &&
-    moderator.roles.highest.position <= targetMember.roles.highest.position
-  ) {
+  const moderatorHighest = moderator.roles?.highest?.position ?? 0;
+  const targetHighest = targetMember.roles?.highest?.position ?? 0;
+  const botHighest = botMember?.roles?.highest?.position ?? 0;
+
+  if (moderator.id !== guild.ownerId && moderatorHighest <= targetHighest) {
     return {
       allowed: false,
       reason: 'That user has an equal or higher role than you.',
     };
   }
 
-  if (
-    botMember &&
-    botMember.roles.highest.position <= targetMember.roles.highest.position
-  ) {
+  if (botMember && botHighest <= targetHighest) {
     return {
       allowed: false,
       reason: 'That user has an equal or higher role than the bot.',
@@ -124,7 +126,7 @@ function canModerateTarget(interaction, targetMember) {
   };
 }
 
-function checkCooldown(userId, key, ms = DEFAULT_COOLDOWN_MS) {
+function checkCooldown(userId, key = 'global', ms = DEFAULT_COOLDOWN_MS) {
   const safeUserId = String(userId || '');
   const safeKey = String(key || 'global');
   const cooldownMs = Number(ms || DEFAULT_COOLDOWN_MS);
@@ -163,6 +165,8 @@ function checkCooldown(userId, key, ms = DEFAULT_COOLDOWN_MS) {
 }
 
 async function safeDeny(interaction, message) {
+  if (!interaction) return null;
+
   const payload = {
     content: message,
     embeds: [],
@@ -196,6 +200,7 @@ async function enforceInteractionSecurity(interaction, options = {}) {
 
   if (guildOnly && !interaction.guild) {
     await safeDeny(interaction, '❌ This can only be used inside a server.');
+
     return {
       allowed: false,
       reason: 'Guild only.',
@@ -208,7 +213,11 @@ async function enforceInteractionSecurity(interaction, options = {}) {
       (allowGuildOwner && isGuildOwner(interaction));
 
     if (!allowed) {
-      await safeDeny(interaction, '❌ Only the bot owner or server owner can do this.');
+      await safeDeny(
+        interaction,
+        '❌ Only the Goliath Owner or Guild Owner can do this.'
+      );
+
       return {
         allowed: false,
         reason: 'Owner only.',
@@ -218,6 +227,7 @@ async function enforceInteractionSecurity(interaction, options = {}) {
 
   if (level && !hasPermission(interaction, level)) {
     await safeDeny(interaction, '❌ You do not have permission to do this.');
+
     return {
       allowed: false,
       reason: `Missing permission level: ${level}`,
@@ -229,7 +239,9 @@ async function enforceInteractionSecurity(interaction, options = {}) {
 
     if (!cooldown.allowed) {
       const seconds = Math.ceil(cooldown.remainingMs / 1000);
+
       await safeDeny(interaction, `⏱️ Slow down. Try again in ${seconds}s.`);
+
       return {
         allowed: false,
         reason: 'Cooldown active.',
@@ -244,6 +256,141 @@ async function enforceInteractionSecurity(interaction, options = {}) {
   };
 }
 
+function canUseRestore(interaction) {
+  if (!interaction?.user) {
+    return {
+      allowed: false,
+      reason: 'Invalid restore request.',
+    };
+  }
+
+  if (isBotOwner(interaction.user.id)) {
+    return {
+      allowed: true,
+      level: 'BOT_OWNER',
+    };
+  }
+
+  return {
+    allowed: false,
+    reason: 'Only the Goliath Owner can use restore systems.',
+  };
+}
+
+function checkRestoreCooldown(guildId) {
+  return checkCooldown(
+    String(guildId),
+    'server_restore',
+    Number(process.env.RESTORE_COOLDOWN_MS || 10 * 60 * 1000)
+  );
+}
+
+function validateBotHierarchy(guild) {
+  if (!guild?.members?.me) {
+    return {
+      valid: false,
+      reason: 'Bot member not found.',
+    };
+  }
+
+  const botMember = guild.members.me;
+
+  if (botMember.roles.highest.position <= 1) {
+    return {
+      valid: false,
+      reason: 'Bot role is too low in hierarchy.',
+    };
+  }
+
+  if (!botMember.permissions.has(PermissionFlagsBits.ManageRoles)) {
+    return {
+      valid: false,
+      reason: 'Bot is missing ManageRoles permission.',
+    };
+  }
+
+  if (!botMember.permissions.has(PermissionFlagsBits.ManageChannels)) {
+    return {
+      valid: false,
+      reason: 'Bot is missing ManageChannels permission.',
+    };
+  }
+
+  return {
+    valid: true,
+    reason: null,
+  };
+}
+
+function hasDangerousPermissions(member) {
+  if (!member?.permissions) return false;
+
+  return (
+    member.permissions.has(PermissionFlagsBits.Administrator) ||
+    member.permissions.has(PermissionFlagsBits.ManageGuild) ||
+    member.permissions.has(PermissionFlagsBits.ManageRoles) ||
+    member.permissions.has(PermissionFlagsBits.ManageChannels) ||
+    member.permissions.has(PermissionFlagsBits.BanMembers) ||
+    member.permissions.has(PermissionFlagsBits.KickMembers) ||
+    member.permissions.has(PermissionFlagsBits.ManageWebhooks)
+  );
+}
+
+function canManageTargetRole(guild, role) {
+  if (!guild?.members?.me || !role) {
+    return {
+      allowed: false,
+      reason: 'Invalid guild or role.',
+    };
+  }
+
+  const botHighest = guild.members.me.roles.highest.position;
+
+  if (role.managed) {
+    return {
+      allowed: false,
+      reason: 'Cannot manage integration roles.',
+    };
+  }
+
+  if (role.position >= botHighest) {
+    return {
+      allowed: false,
+      reason: 'Role is above bot hierarchy.',
+    };
+  }
+
+  return {
+    allowed: true,
+    reason: null,
+  };
+}
+
+function canManageTargetMember(guild, targetMember) {
+  if (!guild?.members?.me || !targetMember) {
+    return { allowed: false, reason: 'Invalid guild or target member.' };
+  }
+
+  // Block bot owner
+  if (isBotOwner(targetMember.id)) {
+    return { allowed: false, reason: 'Cannot manage the Goliath owner.' };
+  }
+
+  // Block server owner
+  if (targetMember.id === guild.ownerId) {
+    return { allowed: false, reason: 'Cannot manage server owner.' };
+  }
+
+  const botHighest = guild.members.me.roles.highest.position;
+  const targetHighest = targetMember.roles.highest.position;
+
+  if (targetHighest >= botHighest) {
+    return { allowed: false, reason: 'Target is above bot hierarchy.' };
+  }
+
+  return { allowed: true, reason: null };
+}
+
 module.exports = {
   PermissionFlagsBits,
 
@@ -253,4 +400,13 @@ module.exports = {
   canModerateTarget,
   checkCooldown,
   enforceInteractionSecurity,
+  safeDeny,
+
+  canUseRestore,
+  checkRestoreCooldown,
+
+  validateBotHierarchy,
+  hasDangerousPermissions,
+  canManageTargetRole,
+  canManageTargetMember,
 };
