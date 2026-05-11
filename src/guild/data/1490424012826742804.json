@@ -1,7 +1,7 @@
 {
   "guildId": "1490424012826742804",
   "guildName": "Emergency Community Hub",
-  "updatedAt": "2026-05-07T00:23:46.024Z",
+  "updatedAt": "2026-05-11T19:57:26.508Z",
   "general": {
     "enabled": true,
     "prefix": "!",
@@ -51,6 +51,15 @@
     "lastLockdownAt": null,
     "lastQuarantineAt": null,
     "incidents": [],
+    "lockdown": {
+      "active": false,
+      "enabledBy": null,
+      "enabledAt": null,
+      "reason": null,
+      "expiresAt": null,
+      "channels": [],
+      "bypassRoleIds": []
+    },
     "ownerMonitoring": {
       "enabled": true,
       "webhookMirrorEnabled": true

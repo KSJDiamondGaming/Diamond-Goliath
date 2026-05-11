@@ -21,22 +21,17 @@ const DEFAULT_LOGS = Object.freeze({
     moderationActions: true,
     adminActions: true,
     automodActions: true,
-
     memberJoin: true,
     memberLeave: true,
     memberUpdate: true,
-
     messageDelete: true,
     messageEdit: true,
-
     roleCreate: true,
     roleDelete: true,
     roleUpdate: true,
-
     channelCreate: true,
     channelDelete: true,
     channelUpdate: true,
-
     voiceJoin: true,
     voiceLeave: true,
     voiceMove: true,
@@ -45,19 +40,24 @@ const DEFAULT_LOGS = Object.freeze({
 
 const DEFAULT_SECURITY = Object.freeze({
   enabled: true,
-
   threatLevel: 'low',
-
   totalIncidents: 0,
   criticalIncidents: 0,
-
   lastIncidentAt: null,
   lastIncidentType: null,
-
   lastLockdownAt: null,
   lastQuarantineAt: null,
-
   incidents: [],
+
+  lockdown: {
+    active: false,
+    enabledBy: null,
+    enabledAt: null,
+    reason: null,
+    expiresAt: null,
+    channels: [],
+    bypassRoleIds: [],
+  },
 
   ownerMonitoring: {
     enabled: true,
@@ -166,8 +166,6 @@ const LOG_CHANNEL_ALIASES = {
   voice: 'voice',
 };
 
-/* ---------------- BASIC HELPERS ---------------- */
-
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
 }
@@ -197,6 +195,12 @@ function normalizeGuildId(guildId) {
 function normalizeDiscordId(value) {
   const id = String(value || '').trim();
   return /^\d{16,20}$/.test(id) ? id : null;
+}
+
+function normalizeDiscordIdArray(value) {
+  if (!Array.isArray(value)) return [];
+
+  return [...new Set(value.map(normalizeDiscordId).filter(Boolean))];
 }
 
 function normalizeChannelId(value) {
@@ -303,7 +307,6 @@ function normalizeLogs(source = {}) {
   const logs = mergeDeep(DEFAULT_LOGS, isPlainObject(source.logs) ? source.logs : {});
 
   logs.enabled = logs.enabled !== false;
-
   logs.channels = mergeDeep(DEFAULT_LOGS.channels, logs.channels || {});
   logs.events = mergeDeep(DEFAULT_LOGS.events, logs.events || {});
 
@@ -368,9 +371,33 @@ function normalizeSecurity(source = {}) {
   security.totalIncidents = Number(security.totalIncidents || 0);
   security.criticalIncidents = Number(security.criticalIncidents || 0);
 
+  security.lastIncidentAt = security.lastIncidentAt || null;
+  security.lastIncidentType = security.lastIncidentType || null;
+  security.lastLockdownAt = security.lastLockdownAt || null;
+  security.lastQuarantineAt = security.lastQuarantineAt || null;
+
   security.incidents = Array.isArray(security.incidents)
     ? security.incidents.slice(0, 250)
     : [];
+
+  security.lockdown = mergeDeep(
+    DEFAULT_SECURITY.lockdown,
+    security.lockdown || {}
+  );
+
+  security.lockdown.active = security.lockdown.active === true;
+  security.lockdown.enabledBy = security.lockdown.enabledBy || null;
+  security.lockdown.enabledAt = security.lockdown.enabledAt || null;
+  security.lockdown.reason = security.lockdown.reason || null;
+  security.lockdown.expiresAt = security.lockdown.expiresAt || null;
+
+  security.lockdown.channels = Array.isArray(security.lockdown.channels)
+    ? security.lockdown.channels
+    : [];
+
+  security.lockdown.bypassRoleIds = normalizeDiscordIdArray(
+    security.lockdown.bypassRoleIds
+  );
 
   security.ownerMonitoring = mergeDeep(
     DEFAULT_SECURITY.ownerMonitoring,
@@ -453,6 +480,8 @@ function getGuildData(guildId, options = {}) {
     !rawData.embedDefaults ||
     !rawData.serverBackups ||
     !rawData.security ||
+    !rawData.security?.lockdown ||
+    !Array.isArray(rawData.security?.lockdown?.bypassRoleIds) ||
     LEGACY_LOG_FIELDS.some((field) =>
       Object.prototype.hasOwnProperty.call(rawData, field)
     );

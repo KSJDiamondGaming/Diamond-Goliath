@@ -1,5 +1,9 @@
 const terminal = require('../../logging/terminalLogger').createLogger('bot');
 
+const {
+  restoreLockdownReminders,
+} = require('../../security/lockdownSystem');
+
 const MAIN_GUILD_ID = '808091031350280213';
 
 module.exports = {
@@ -17,6 +21,14 @@ module.exports = {
     );
 
     try {
+      await restoreLockdownReminders(client);
+      terminal.success('Lockdown recovery system initialized');
+    } catch (error) {
+      terminal.error('Lockdown recovery failed', error);
+    }
+
+    try {
+      // Future schedulers can be initialized here.
     } catch (err) {
       terminal.error('Scheduler failed', err);
     }
@@ -48,7 +60,7 @@ module.exports = {
       },
       {
         label: 'Systems',
-        value: 'Scheduler',
+        value: 'Scheduler + Lockdown Recovery',
         ok: true,
       },
     ]);

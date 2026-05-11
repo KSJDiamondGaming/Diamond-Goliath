@@ -3,10 +3,19 @@ const path = require('path');
 
 function clone(value) {
   try {
-    return JSON.parse(JSON.stringify(value));
+    return value == null ? value : JSON.parse(JSON.stringify(value));
   } catch {
     return value;
   }
+}
+
+function ensureDir(dirPath) {
+  if (!dirPath || typeof dirPath !== 'string') {
+    return false;
+  }
+
+  fs.mkdirSync(dirPath, { recursive: true });
+  return true;
 }
 
 function read(filePath, fallback = {}) {
@@ -31,20 +40,19 @@ function read(filePath, fallback = {}) {
       ? parsed
       : clone(fallback);
   } catch (error) {
-    console.error(`Failed to read file: ${filePath}`, error);
+    console.error(`[fileStore] Failed to read file: ${filePath}`, error);
     return clone(fallback);
   }
 }
 
-function write(filePath, data) {
+function write(filePath, data = {}) {
   try {
     if (!filePath || typeof filePath !== 'string') {
       return false;
     }
 
     const dir = path.dirname(filePath);
-
-    fs.mkdirSync(dir, { recursive: true });
+    ensureDir(dir);
 
     const tempPath = `${filePath}.tmp`;
 
@@ -58,12 +66,46 @@ function write(filePath, data) {
 
     return true;
   } catch (error) {
-    console.error(`Failed to write file: ${filePath}`, error);
+    console.error(`[fileStore] Failed to write file: ${filePath}`, error);
+    return false;
+  }
+}
+
+function remove(filePath) {
+  try {
+    if (!filePath || typeof filePath !== 'string') {
+      return false;
+    }
+
+    if (!fs.existsSync(filePath)) {
+      return false;
+    }
+
+    fs.unlinkSync(filePath);
+    return true;
+  } catch (error) {
+    console.error(`[fileStore] Failed to remove file: ${filePath}`, error);
+    return false;
+  }
+}
+
+function exists(filePath) {
+  try {
+    return Boolean(
+      filePath &&
+        typeof filePath === 'string' &&
+        fs.existsSync(filePath)
+    );
+  } catch {
     return false;
   }
 }
 
 module.exports = {
+  clone,
+  ensureDir,
   read,
   write,
+  remove,
+  exists,
 };

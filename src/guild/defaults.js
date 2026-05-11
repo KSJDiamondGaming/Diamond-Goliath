@@ -1,13 +1,46 @@
-const fs = require('fs');
 const path = require('path');
 
-const { DEFAULT_GUILD_DATA, DEFAULT_LOGS } = require('./defaults');
+const DEFAULT_LOGS = Object.freeze({
+  enabled: true,
 
-const GUILDS_DIR = path.join(__dirname, 'data');
+  channels: {
+    general: null,
+    moderation: null,
+    admin: null,
+    automod: null,
+    member: null,
+    messageDelete: null,
+    messageEdit: null,
+    voice: null,
+  },
 
-const guildCache = new Map();
+  events: {
+    moderationActions: true,
+    adminActions: true,
+    automodActions: true,
 
-const DEFAULT_SECURITY = {
+    memberJoin: true,
+    memberLeave: true,
+    memberUpdate: true,
+
+    messageDelete: true,
+    messageEdit: true,
+
+    roleCreate: true,
+    roleDelete: true,
+    roleUpdate: true,
+
+    channelCreate: true,
+    channelDelete: true,
+    channelUpdate: true,
+
+    voiceJoin: true,
+    voiceLeave: true,
+    voiceMove: true,
+  },
+});
+
+const DEFAULT_SECURITY = Object.freeze({
   enabled: true,
 
   threatLevel: 'low',
@@ -23,13 +56,54 @@ const DEFAULT_SECURITY = {
 
   incidents: [],
 
+  lockdown: {
+    active: false,
+
+    enabledBy: null,
+    enabledAt: null,
+
+    reason: null,
+    expiresAt: null,
+
+    channels: [],
+
+    bypassRoleIds: [],
+  },
+
   ownerMonitoring: {
     enabled: true,
     webhookMirrorEnabled: true,
   },
-};
+});
 
-const DEFAULT_EMBED_DEFAULTS = {
+const DEFAULT_SERVER_BACKUPS = Object.freeze({
+  enabled: true,
+
+  lastBackupId: null,
+  lastBackupAt: null,
+  lastBackupBy: null,
+  lastBackupReason: null,
+
+  backupCount: 0,
+  latestBackup: null,
+
+  storage: {
+    provider: 'google_drive_desktop',
+
+    path:
+      process.env.SERVER_BACKUP_DIR ||
+      path.join(process.cwd(), 'data', 'serverBackups'),
+
+    restoreRequiresSupport: true,
+  },
+
+  retention: {
+    maxBackups: Number(process.env.SERVER_BACKUP_RETENTION || 4),
+    autoCleanup: true,
+  },
+});
+
+const DEFAULT_EMBED_DEFAULTS = Object.freeze({
   welcome: null,
   leave: null,
   rules: null,
@@ -39,741 +113,72 @@ const DEFAULT_EMBED_DEFAULTS = {
   update: null,
   event: null,
   warning: null,
-};
+});
 
-const LEGACY_LOG_FIELDS = [
-  'logsChannelId',
-  'modLogChannelId',
-  'adminLogChannelId',
-  'automodLogChannelId',
-  'memberLogChannelId',
-  'messageLogChannelId',
-  'voiceLogChannelId',
-];
+const DEFAULT_GUILD_DATA = Object.freeze({
+  guildId: null,
+  guildName: null,
 
-function clone(value) {
-  return JSON.parse(JSON.stringify(value ?? {}));
-}
+  updatedAt: null,
 
-function ensureGuildsDir() {
-  fs.mkdirSync(GUILDS_DIR, { recursive: true });
-}
+  general: {
+    enabled: true,
+    prefix: '!',
+    timezone: 'Europe/London',
+  },
 
-function normalizeGuildId(guildId) {
-  const id = String(guildId || '').trim();
+  modules: {},
 
-  if (!/^\d{16,20}$/.test(id)) {
-    throw new Error(`Invalid guild ID: ${guildId}`);
-  }
+  automod: {},
+  moderation: {},
+  purge: {},
 
-  return id;
-}
+  logs: DEFAULT_LOGS,
+  security: DEFAULT_SECURITY,
 
-function cleanGuildName(guildName) {
-  const name = String(guildName || '').trim();
-  return name || null;
-}
+  serverBackups: DEFAULT_SERVER_BACKUPS,
 
-function getGuildFilePath(guildId) {
-  return path.join(GUILDS_DIR, `${normalizeGuildId(guildId)}.json`);
-}
+  stats: {},
+  suggestions: {},
+  polls: {},
 
-function readJson(filePath, fallback = {}) {
-  try {
-    if (!fs.existsSync(filePath)) return clone(fallback);
+  roles: {},
+  birthdays: {},
+  tempVoice: {},
 
-    const raw = fs.readFileSync(filePath, 'utf8');
-    if (!raw.trim()) return clone(fallback);
+  tickets: {},
+  giveaways: {},
 
-    const parsed = JSON.parse(raw);
+  warnings: {},
+  cases: {},
 
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? parsed
-      : clone(fallback);
-  } catch (error) {
-    console.error(`Failed to read guild JSON from ${filePath}:`, error);
-    return clone(fallback);
-  }
-}
+  welcome: {},
+  leave: {},
 
-function writeJson(filePath, data) {
-  ensureGuildsDir();
+  reactionRoles: {},
 
-  const tempPath = `${filePath}.tmp`;
+  autoRoles: {
+    enabled: false,
+    roleIds: [],
+  },
 
-  fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), 'utf8');
-  fs.renameSync(tempPath, filePath);
-}
+  staffRoles: {
+    roleIds: [],
+  },
 
-function mergeObject(defaultValue, sourceValue) {
-  const defaults =
-    defaultValue && typeof defaultValue === 'object' && !Array.isArray(defaultValue)
-      ? defaultValue
-      : {};
+  modRoles: {
+    roleIds: [],
+  },
 
-  const source =
-    sourceValue && typeof sourceValue === 'object' && !Array.isArray(sourceValue)
-      ? sourceValue
-      : {};
-
-  return {
-    ...clone(defaults),
-    ...clone(source),
-  };
-}
-
-function normalizeChannelId(value) {
-  const id = String(value || '').trim();
-  return /^\d{16,20}$/.test(id) ? id : null;
-}
-
-function sanitizeKey(value) {
-  return String(value || '').trim();
-}
-
-/* ---------------- LOGS ---------------- */
-
-function normalizeLogs(source = {}) {
-  const defaults = clone(DEFAULT_LOGS);
-  const logs = mergeObject(defaults, source.logs);
-
-  logs.channels = {
-    ...defaults.channels,
-    ...(logs.channels && typeof logs.channels === 'object' ? logs.channels : {}),
-  };
-
-  logs.events = {
-    ...defaults.events,
-    ...(logs.events && typeof logs.events === 'object' ? logs.events : {}),
-  };
-
-  logs.enabled = logs.enabled !== false;
-
-  logs.channels.general =
-    normalizeChannelId(logs.channels.general) ||
-    normalizeChannelId(source.logsChannelId);
-
-  logs.channels.moderation =
-    normalizeChannelId(logs.channels.moderation) ||
-    normalizeChannelId(source.modLogChannelId);
-
-  logs.channels.admin =
-    normalizeChannelId(logs.channels.admin) ||
-    normalizeChannelId(source.adminLogChannelId);
-
-  logs.channels.automod =
-    normalizeChannelId(logs.channels.automod) ||
-    normalizeChannelId(source.automodLogChannelId);
-
-  logs.channels.member =
-    normalizeChannelId(logs.channels.member) ||
-    normalizeChannelId(source.memberLogChannelId);
-
-  const legacyMessageChannelId = normalizeChannelId(source.messageLogChannelId);
-
-  logs.channels.messageDelete =
-    normalizeChannelId(logs.channels.messageDelete) ||
-    normalizeChannelId(logs.channels.message) ||
-    legacyMessageChannelId;
-
-  logs.channels.messageEdit =
-    normalizeChannelId(logs.channels.messageEdit) ||
-    normalizeChannelId(logs.channels.message) ||
-    legacyMessageChannelId;
-
-  delete logs.channels.message;
-
-  logs.channels.voice =
-    normalizeChannelId(logs.channels.voice) ||
-    normalizeChannelId(source.voiceLogChannelId);
-
-  return logs;
-}
-
-function removeLegacyLogFields(data) {
-  const clean = { ...data };
-
-  for (const key of LEGACY_LOG_FIELDS) {
-    delete clean[key];
-  }
-
-  return clean;
-}
-
-/* ---------------- SECURITY ---------------- */
-
-function normalizeSecurity(source = {}) {
-  const security = mergeObject(DEFAULT_SECURITY, source.security);
-
-  security.enabled = security.enabled !== false;
-
-  security.threatLevel = String(security.threatLevel || 'low').toLowerCase();
-
-  if (!['low', 'medium', 'high', 'critical'].includes(security.threatLevel)) {
-    security.threatLevel = 'low';
-  }
-
-  security.totalIncidents = Number(security.totalIncidents || 0);
-  security.criticalIncidents = Number(security.criticalIncidents || 0);
-
-  security.lastIncidentAt = security.lastIncidentAt || null;
-  security.lastIncidentType = security.lastIncidentType || null;
-  security.lastLockdownAt = security.lastLockdownAt || null;
-  security.lastQuarantineAt = security.lastQuarantineAt || null;
-
-  security.incidents = Array.isArray(security.incidents)
-    ? security.incidents.slice(0, 250)
-    : [];
-
-  security.ownerMonitoring = mergeObject(
-    DEFAULT_SECURITY.ownerMonitoring,
-    security.ownerMonitoring
-  );
-
-  security.ownerMonitoring.enabled =
-    security.ownerMonitoring.enabled !== false;
-
-  security.ownerMonitoring.webhookMirrorEnabled =
-    security.ownerMonitoring.webhookMirrorEnabled !== false;
-
-  return security;
-}
-
-/* ---------------- DEFAULTS ---------------- */
-
-function mergeDefaults(data = {}) {
-  const defaults = clone({
-    ...DEFAULT_GUILD_DATA,
-    security: DEFAULT_SECURITY,
-    embedPresets: {},
-    embedDefaults: DEFAULT_EMBED_DEFAULTS,
-  });
-
-  const source =
-    data && typeof data === 'object' && !Array.isArray(data) ? data : {};
-
-  const merged = {
-    ...defaults,
-    ...source,
-
-    general: mergeObject(defaults.general, source.general),
-    modules: mergeObject(defaults.modules, source.modules),
-
-    logs: normalizeLogs(source),
-    security: normalizeSecurity(source),
-
-    automod: mergeObject(defaults.automod, source.automod),
-    moderation: mergeObject(defaults.moderation, source.moderation),
-    purge: mergeObject(defaults.purge, source.purge),
-    stats: mergeObject(defaults.stats, source.stats),
-    suggestions: mergeObject(defaults.suggestions, source.suggestions),
-    polls: mergeObject(defaults.polls, source.polls),
-    roles: mergeObject(defaults.roles, source.roles),
-    birthdays: mergeObject(defaults.birthdays, source.birthdays),
-    tempVoice: mergeObject(defaults.tempVoice, source.tempVoice),
-    tickets: mergeObject(defaults.tickets, source.tickets),
-    giveaways: mergeObject(defaults.giveaways, source.giveaways),
-
-    warnings: mergeObject(defaults.warnings, source.warnings),
-    cases: mergeObject(defaults.cases, source.cases),
-    welcome: mergeObject(defaults.welcome, source.welcome),
-    leave: mergeObject(defaults.leave, source.leave),
-    reactionRoles: mergeObject(defaults.reactionRoles, source.reactionRoles),
-
-    embedPresets: mergeObject(defaults.embedPresets, source.embedPresets),
-    embedDefaults: mergeObject(defaults.embedDefaults, source.embedDefaults),
-  };
-
-  return removeLegacyLogFields(merged);
-}
-
-function resolveGuildMeta(guildOrMeta = {}) {
-  if (!guildOrMeta || typeof guildOrMeta !== 'object') {
-    return {};
-  }
-
-  return {
-    guildId: guildOrMeta.id || guildOrMeta.guildId || null,
-    guildName: cleanGuildName(guildOrMeta.name || guildOrMeta.guildName),
-    ownerId: guildOrMeta.ownerId || null,
-  };
-}
-
-function cacheGuildData(guildId, data) {
-  const safeGuildId = normalizeGuildId(guildId);
-  const nextData = mergeDefaults(data);
-
-  nextData.guildId = safeGuildId;
-
-  guildCache.set(safeGuildId, clone(nextData));
-
-  return clone(nextData);
-}
-
-/* ---------------- GUILD DATA ---------------- */
-
-function getGuildData(guildId, options = {}) {
-  const safeGuildId = normalizeGuildId(guildId);
-  const filePath = getGuildFilePath(safeGuildId);
-
-  if (!options.forceReload && guildCache.has(safeGuildId)) {
-    return clone(guildCache.get(safeGuildId));
-  }
-
-  const exists = fs.existsSync(filePath);
-  const rawData = readJson(filePath, DEFAULT_GUILD_DATA);
-  const data = mergeDefaults(rawData);
-
-  data.guildId = safeGuildId;
-
-  const needsRewrite =
-    !exists ||
-    !rawData.embedDefaults ||
-    !rawData.security ||
-    LEGACY_LOG_FIELDS.some((field) =>
-      Object.prototype.hasOwnProperty.call(rawData, field)
-    );
-
-  if (needsRewrite) {
-    data.updatedAt = new Date().toISOString();
-    writeJson(filePath, data);
-  }
-
-  return cacheGuildData(safeGuildId, data);
-}
-
-function saveGuildData(guildId, data = {}, guildOrMeta = {}) {
-  const safeGuildId = normalizeGuildId(guildId);
-  const filePath = getGuildFilePath(safeGuildId);
-  const current = getGuildData(safeGuildId);
-  const meta = resolveGuildMeta(guildOrMeta);
-
-  const nextData = mergeDefaults({
-    ...current,
-    ...(data || {}),
-  });
-
-  nextData.guildId = safeGuildId;
-  nextData.guildName =
-    meta.guildName || cleanGuildName(nextData.guildName) || null;
-
-  if (meta.ownerId) {
-    nextData.ownerId = meta.ownerId;
-  }
-
-  nextData.updatedAt = new Date().toISOString();
-
-  writeJson(filePath, nextData);
-
-  return cacheGuildData(safeGuildId, nextData);
-}
-
-async function getGuildConfig(guildId) {
-  return getGuildData(guildId);
-}
-
-async function saveGuildConfig(guildId, data = {}, guildOrMeta = {}) {
-  return saveGuildData(guildId, data, guildOrMeta);
-}
-
-function syncGuildMeta(guildOrMeta = {}) {
-  const meta = resolveGuildMeta(guildOrMeta);
-
-  if (!meta.guildId) {
-    throw new Error('Cannot sync guild meta without a guild ID.');
-  }
-
-  const current = getGuildData(meta.guildId);
-
-  return saveGuildData(meta.guildId, {
-    ...current,
-    guildName: meta.guildName || current.guildName || null,
-    ownerId: meta.ownerId || current.ownerId || null,
-  });
-}
-
-/* ---------------- SECTIONS ---------------- */
-
-function getGuildSection(guildId, sectionName, fallback = {}) {
-  const data = getGuildData(guildId);
-  const section = data[sectionName];
-
-  if (!section || typeof section !== 'object' || Array.isArray(section)) {
-    return clone(fallback);
-  }
-
-  return {
-    ...clone(fallback),
-    ...clone(section),
-  };
-}
-
-function replaceGuildSection(
-  guildId,
-  sectionName,
-  sectionData = {},
-  guildOrMeta = {}
-) {
-  const nextSection = {
-    ...(sectionData || {}),
-    updatedAt: new Date().toISOString(),
-  };
-
-  const updatedGuild = saveGuildData(
-    guildId,
-    {
-      [sectionName]: nextSection,
-    },
-    guildOrMeta
-  );
-
-  return clone(updatedGuild[sectionName] || {});
-}
-
-function saveGuildSection(
-  guildId,
-  sectionName,
-  sectionData = {},
-  guildOrMeta = {}
-) {
-  const current = getGuildSection(guildId, sectionName);
-
-  return replaceGuildSection(
-    guildId,
-    sectionName,
-    {
-      ...current,
-      ...(sectionData || {}),
-    },
-    guildOrMeta
-  );
-}
-
-function updateGuildSection(
-  guildId,
-  sectionName,
-  updater,
-  fallback = {},
-  guildOrMeta = {}
-) {
-  const current = getGuildSection(guildId, sectionName, fallback);
-  const next =
-    typeof updater === 'function' ? updater(clone(current)) : updater;
-
-  return replaceGuildSection(guildId, sectionName, next || {}, guildOrMeta);
-}
-
-/* ---------------- MODULES ---------------- */
-
-function getModuleConfig(guildId, moduleName, fallback = {}) {
-  return getGuildSection(guildId, moduleName, fallback);
-}
-
-function saveModuleConfig(guildId, moduleName, config = {}, guildOrMeta = {}) {
-  return saveGuildSection(guildId, moduleName, config, guildOrMeta);
-}
-
-function isModuleEnabled(guildId, moduleName) {
-  const data = getGuildData(guildId);
-
-  const moduleConfig = data.modules?.[moduleName];
-
-  if (moduleConfig === false) return false;
-
-  if (moduleConfig && typeof moduleConfig === 'object') {
-    return moduleConfig.enabled !== false;
-  }
-
-  return true;
-}
-
-function setModuleEnabled(guildId, moduleName, enabled, guildOrMeta = {}) {
-  const modules = getGuildSection(guildId, 'modules', DEFAULT_GUILD_DATA.modules);
-
-  modules[moduleName] = {
-    ...(modules[moduleName] && typeof modules[moduleName] === 'object'
-      ? modules[moduleName]
-      : {}),
-    enabled: enabled === true,
-  };
-
-  return saveGuildSection(guildId, 'modules', modules, guildOrMeta);
-}
-
-/* ---------------- LOG HELPERS ---------------- */
-
-function getLogChannelId(guildId, type = 'general', fallbackType = 'general') {
-  const logs = getGuildSection(guildId, 'logs', DEFAULT_LOGS);
-
-  return logs.channels?.[type] || logs.channels?.[fallbackType] || null;
-}
-
-function isLogEventEnabled(guildId, eventName) {
-  const logs = getGuildSection(guildId, 'logs', DEFAULT_LOGS);
-
-  if (logs.enabled === false) return false;
-
-  return logs.events?.[eventName] !== false;
-}
-
-function setLogEventEnabled(guildId, eventName, enabled, guildOrMeta = {}) {
-  const logs = getGuildSection(guildId, 'logs', DEFAULT_LOGS);
-
-  const nextLogs = normalizeLogs({
-    logs: {
-      ...logs,
-      events: {
-        ...(logs.events || {}),
-        [eventName]: enabled === true,
-      },
-    },
-  });
-
-  return saveGuildSection(guildId, 'logs', nextLogs, guildOrMeta);
-}
-
-function setLogEventsEnabled(guildId, eventNames = [], enabled, guildOrMeta = {}) {
-  const logs = getGuildSection(guildId, 'logs', DEFAULT_LOGS);
-
-  const nextEvents = {
-    ...(logs.events || {}),
-  };
-
-  for (const eventName of eventNames) {
-    nextEvents[eventName] = enabled === true;
-  }
-
-  const nextLogs = normalizeLogs({
-    logs: {
-      ...logs,
-      events: nextEvents,
-    },
-  });
-
-  return saveGuildSection(guildId, 'logs', nextLogs, guildOrMeta);
-}
-
-function toggleLogEvent(guildId, eventName, guildOrMeta = {}) {
-  const logs = getGuildSection(guildId, 'logs', DEFAULT_LOGS);
-  const currentEnabled = logs.events?.[eventName] !== false;
-
-  return setLogEventEnabled(guildId, eventName, !currentEnabled, guildOrMeta);
-}
-
-function toggleLogEvents(guildId, eventNames = [], guildOrMeta = {}) {
-  const logs = getGuildSection(guildId, 'logs', DEFAULT_LOGS);
-
-  const allEnabled = eventNames.every((eventName) => logs.events?.[eventName] !== false);
-
-  return setLogEventsEnabled(guildId, eventNames, !allEnabled, guildOrMeta);
-}
-
-/* ---------------- SECURITY HELPERS ---------------- */
-
-function getSecurityConfig(guildId) {
-  return getGuildSection(guildId, 'security', DEFAULT_SECURITY);
-}
-
-function saveSecurityConfig(guildId, config = {}, guildOrMeta = {}) {
-  return saveGuildSection(guildId, 'security', config, guildOrMeta);
-}
-
-function updateSecurityConfig(guildId, updater, guildOrMeta = {}) {
-  return updateGuildSection(
-    guildId,
-    'security',
-    updater,
-    DEFAULT_SECURITY,
-    guildOrMeta
-  );
-}
-
-/* ---------------- EMBED PRESETS ---------------- */
-
-function sanitizePresetName(name) {
-  const safeName = String(name || '').trim();
-
-  if (!safeName) {
-    throw new Error('Preset name is required.');
-  }
-
-  return safeName.slice(0, 50);
-}
-
-function sanitizeTemplateKey(templateKey) {
-  const key = sanitizeKey(templateKey);
-
-  if (!key) {
-    throw new Error('Template key is required.');
-  }
-
-  return key.slice(0, 50);
-}
-
-function getEmbedPresets(guildId) {
-  return getGuildSection(guildId, 'embedPresets', {});
-}
-
-function getEmbedPreset(guildId, presetName) {
-  const name = sanitizePresetName(presetName);
-  const presets = getEmbedPresets(guildId);
-
-  return presets[name] && typeof presets[name] === 'object'
-    ? clone(presets[name])
-    : null;
-}
-
-function saveEmbedPreset(guildId, presetName, presetData = {}, guildOrMeta = {}) {
-  const name = sanitizePresetName(presetName);
-  const presets = getEmbedPresets(guildId);
-
-  const nextPreset = {
-    ...clone(presetData),
-    name,
-    updatedAt: new Date().toISOString(),
-  };
-
-  const updatedPresets = saveGuildSection(
-    guildId,
-    'embedPresets',
-    {
-      ...presets,
-      [name]: nextPreset,
-    },
-    guildOrMeta
-  );
-
-  return clone(updatedPresets[name] || nextPreset);
-}
-
-function deleteEmbedPreset(guildId, presetName, guildOrMeta = {}) {
-  const name = sanitizePresetName(presetName);
-  const guildData = getGuildData(guildId);
-  const presets = mergeObject({}, guildData.embedPresets);
-
-  if (!presets[name]) return false;
-
-  delete presets[name];
-
-  const embedDefaults = mergeObject(DEFAULT_EMBED_DEFAULTS, guildData.embedDefaults);
-
-  for (const [templateKey, defaultPresetName] of Object.entries(embedDefaults)) {
-    if (defaultPresetName === name) {
-      embedDefaults[templateKey] = null;
-    }
-  }
-
-  saveGuildData(
-    guildId,
-    {
-      embedPresets: presets,
-      embedDefaults,
-    },
-    guildOrMeta
-  );
-
-  return true;
-}
-
-/* ---------------- EMBED DEFAULTS ---------------- */
-
-function getEmbedDefaults(guildId) {
-  const data = getGuildData(guildId);
-
-  return mergeObject(DEFAULT_EMBED_DEFAULTS, data.embedDefaults);
-}
-
-function setEmbedDefault(guildId, templateKey, presetName, guildOrMeta = {}) {
-  const key = sanitizeTemplateKey(templateKey);
-  const name = sanitizePresetName(presetName);
-
-  const preset = getEmbedPreset(guildId, name);
-
-  if (!preset) {
-    throw new Error(`Cannot set default. Preset "${name}" does not exist.`);
-  }
-
-  const embedDefaults = getEmbedDefaults(guildId);
-
-  embedDefaults[key] = name;
-
-  const updated = saveGuildData(
-    guildId,
-    {
-      embedDefaults,
-    },
-    guildOrMeta
-  );
-
-  return clone(updated.embedDefaults || embedDefaults);
-}
-
-function clearEmbedDefault(guildId, templateKey, guildOrMeta = {}) {
-  const key = sanitizeTemplateKey(templateKey);
-  const embedDefaults = getEmbedDefaults(guildId);
-
-  embedDefaults[key] = null;
-
-  const updated = saveGuildData(
-    guildId,
-    {
-      embedDefaults,
-    },
-    guildOrMeta
-  );
-
-  return clone(updated.embedDefaults || embedDefaults);
-}
-
-function getEmbedDefaultPresetName(guildId, templateKey) {
-  const key = sanitizeTemplateKey(templateKey);
-  const defaults = getEmbedDefaults(guildId);
-
-  return defaults[key] || null;
-}
-
-function getEmbedDefaultPreset(guildId, templateKey) {
-  const presetName = getEmbedDefaultPresetName(guildId, templateKey);
-
-  if (!presetName) return null;
-
-  return getEmbedPreset(guildId, presetName);
-}
-
-/* ---------------- CACHE ---------------- */
-
-function reloadGuild(guildId) {
-  const safeGuildId = normalizeGuildId(guildId);
-
-  guildCache.delete(safeGuildId);
-
-  return getGuildData(safeGuildId, { forceReload: true });
-}
-
-function clearGuildCache(guildId) {
-  if (guildId) {
-    guildCache.delete(normalizeGuildId(guildId));
-    return;
-  }
-
-  guildCache.clear();
-}
-
-function listGuildFiles() {
-  ensureGuildsDir();
-
-  return fs
-    .readdirSync(GUILDS_DIR, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && /^\d{16,20}\.json$/.test(entry.name))
-    .map((entry) => path.join(GUILDS_DIR, entry.name));
-}
+  embedPresets: {},
+  embedDefaults: DEFAULT_EMBED_DEFAULTS,
+});
 
 module.exports = {
-  GUILDS_DIR,
-
   DEFAULT_GUILD_DATA,
   DEFAULT_LOGS,
   DEFAULT_SECURITY,
+  DEFAULT_SERVER_BACKUPS,
   DEFAULT_EMBED_DEFAULTS,
 
   getGuildFilePath,

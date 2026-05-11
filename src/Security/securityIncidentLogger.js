@@ -17,17 +17,26 @@ const SEVERITY = {
 const INCIDENT_TYPES = {
   CHANNEL_DELETE: 'channel_delete',
   ROLE_DELETE: 'role_delete',
+
   MASS_CHANNEL_DELETE: 'mass_channel_delete',
   MASS_ROLE_DELETE: 'mass_role_delete',
+
+  LOCKDOWN_ENABLED: 'lockdown_enabled',
+  LOCKDOWN_DISABLED: 'lockdown_disabled',
+  LOCKDOWN_RECOVERY_RESTORED: 'lockdown_recovery_restored',
   EMERGENCY_LOCKDOWN: 'emergency_lockdown',
+
   MEMBER_QUARANTINED: 'member_quarantined',
+
   DANGEROUS_ROLE_PERMISSION_ADDED: 'dangerous_role_permission_added',
   DANGEROUS_ROLE_PERMISSION_REMOVED: 'dangerous_role_permission_removed',
   DANGEROUS_ROLE_CREATE: 'dangerous_role_create',
+
   WEBHOOK_UPDATE: 'webhook_update',
   WEBHOOK_CREATE: 'webhook_create',
   WEBHOOK_DELETE: 'webhook_delete',
   SUSPICIOUS_WEBHOOK_ACTIVITY: 'suspicious_webhook_activity',
+
   OWNER_ESCALATION: 'owner_escalation',
   BACKUP_CREATED: 'backup_created',
   RESTORE_ACTION: 'restore_action',
@@ -138,7 +147,6 @@ function updateGuildSecurityState(guildId, incident, options = {}) {
       ...security,
 
       enabled: security.enabled !== false,
-
       incidents,
 
       threatLevel: getThreatLevelFromSeverity(incident.severity),
@@ -150,6 +158,7 @@ function updateGuildSecurityState(guildId, incident, options = {}) {
       lastIncidentType: incident.type,
 
       lastLockdownAt:
+        incident.type === INCIDENT_TYPES.LOCKDOWN_ENABLED ||
         incident.type === INCIDENT_TYPES.EMERGENCY_LOCKDOWN
           ? incident.createdAt
           : security.lastLockdownAt || null,
@@ -169,7 +178,10 @@ function updateGuildSecurityState(guildId, incident, options = {}) {
 
     return true;
   } catch (err) {
-    console.error('[SecurityIncidentLogger] Failed to update guild security state:', err);
+    console.error(
+      '[SecurityIncidentLogger] Failed to update guild security state:',
+      err
+    );
     return false;
   }
 }
@@ -185,7 +197,9 @@ function buildIncidentEmbed(incident, options = {}) {
         ? '🚨 Goliath Security Network Alert'
         : '🚨 Security Incident Logged'
     )
-    .setDescription(`**Type:** \`${incident.type}\`\n**Severity:** \`${severity}\``)
+    .setDescription(
+      `**Type:** \`${incident.type}\`\n**Severity:** \`${severity}\``
+    )
     .addFields(
       {
         name: 'Incident ID',
@@ -238,7 +252,10 @@ function buildIncidentEmbed(incident, options = {}) {
   if (incident.metadata && Object.keys(incident.metadata).length) {
     embed.addFields({
       name: 'Metadata',
-      value: `\`\`\`json\n${JSON.stringify(incident.metadata, null, 2).slice(0, 950)}\n\`\`\``,
+      value:
+        `\`\`\`json\n` +
+        `${JSON.stringify(incident.metadata, null, 2).slice(0, 950)}\n` +
+        `\`\`\``,
       inline: false,
     });
   }
@@ -304,7 +321,10 @@ async function sendOwnerSecurityMirror(incident) {
 
     return true;
   } catch (err) {
-    console.error('[SecurityIncidentLogger] Failed to send owner security mirror:', err);
+    console.error(
+      '[SecurityIncidentLogger] Failed to send owner security mirror:',
+      err
+    );
     return false;
   }
 }

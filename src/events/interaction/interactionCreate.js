@@ -22,6 +22,10 @@ function isEmbedInteraction(interaction) {
   return startsWithCustomId(interaction, 'embed:');
 }
 
+function isSecurityTestInteraction(interaction) {
+  return startsWithCustomId(interaction, 'securitytest:');
+}
+
 function isNavigationInteraction(interaction) {
   return startsWithCustomId(interaction, 'nav|');
 }
@@ -115,6 +119,23 @@ async function handlePanelNavigation(interaction) {
   return handleAdminNavigation(interaction, state);
 }
 
+async function handleSecurityTestButton(interaction, activeClient) {
+  if (!interaction.isButton() || !isSecurityTestInteraction(interaction)) {
+    return false;
+  }
+
+  const securityTestCommand = activeClient.commands.get('securitytest');
+
+  if (!securityTestCommand?.handleButton) {
+    return safeReply(
+      interaction,
+      '❌ Security test handler is missing. Check the securitytest command file.'
+    );
+  }
+
+  return securityTestCommand.handleButton(interaction, activeClient);
+}
+
 module.exports = {
   name: 'interactionCreate',
 
@@ -186,7 +207,10 @@ module.exports = {
         return false;
       }
 
-      // 8. Help buttons.
+      // 8. Security test buttons.
+      if (await handleSecurityTestButton(interaction, activeClient)) return;
+
+      // 9. Help buttons.
       if (interaction.isButton()) {
         if (
           interaction.customId === 'help-back-home' ||

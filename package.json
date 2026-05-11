@@ -6,11 +6,11 @@
   "type": "commonjs",
   "private": true,
   "scripts": {
-    "bot": "node server.js",
-    "api": "node src/dashboard/server.js",
-    "dashboard": "vite src/dashboard --host",
-    "dev": "concurrently -n BOT,API,DASH -c blue,green,magenta \"npm run bot\" \"npm run api\" \"npm run dashboard\"",
-    "sync": "node src/helpers/commands/syncCommands.js"
+  "bot": "node server.js",
+  "api": "node src/dashboard/server.js",
+  "dashboard": "vite src/dashboard --host",
+  "sync": "node src/helpers/commands/syncCommands.js",
+  "dev": "npm run sync && concurrently -n BOT,API,DASH -c blue,green,magenta \"npm run bot\" \"npm run api\" \"npm run dashboard\""
   },
   "dependencies": {
     "better-sqlite3": "^12.8.0",
