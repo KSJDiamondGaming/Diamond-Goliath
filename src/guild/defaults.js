@@ -1,5 +1,15 @@
 const path = require('path');
 
+const {
+  getRuntimePaths,
+} = require('../config/runtimePaths');
+
+const runtimePaths = getRuntimePaths(
+  process.env.BOT_MODE || 'DEV'
+);
+
+/* ---------------- LOGS ---------------- */
+
 const DEFAULT_LOGS = Object.freeze({
   enabled: true,
 
@@ -40,6 +50,8 @@ const DEFAULT_LOGS = Object.freeze({
   },
 });
 
+/* ---------------- SECURITY ---------------- */
+
 const DEFAULT_SECURITY = Object.freeze({
   enabled: true,
 
@@ -76,6 +88,8 @@ const DEFAULT_SECURITY = Object.freeze({
   },
 });
 
+/* ---------------- SERVER BACKUPS ---------------- */
+
 const DEFAULT_SERVER_BACKUPS = Object.freeze({
   enabled: true,
 
@@ -92,16 +106,21 @@ const DEFAULT_SERVER_BACKUPS = Object.freeze({
 
     path:
       process.env.SERVER_BACKUP_DIR ||
-      path.join(process.cwd(), 'data', 'serverBackups'),
+      runtimePaths.backups,
 
     restoreRequiresSupport: true,
   },
 
   retention: {
-    maxBackups: Number(process.env.SERVER_BACKUP_RETENTION || 4),
+    maxBackups: Number(
+      process.env.SERVER_BACKUP_RETENTION || 4
+    ),
+
     autoCleanup: true,
   },
 });
+
+/* ---------------- EMBED DEFAULTS ---------------- */
 
 const DEFAULT_EMBED_DEFAULTS = Object.freeze({
   welcome: null,
@@ -114,6 +133,8 @@ const DEFAULT_EMBED_DEFAULTS = Object.freeze({
   event: null,
   warning: null,
 });
+
+/* ---------------- GUILD DATA ---------------- */
 
 const DEFAULT_GUILD_DATA = Object.freeze({
   guildId: null,
@@ -180,50 +201,4 @@ module.exports = {
   DEFAULT_SECURITY,
   DEFAULT_SERVER_BACKUPS,
   DEFAULT_EMBED_DEFAULTS,
-
-  getGuildFilePath,
-
-  getGuildConfig,
-  saveGuildConfig,
-
-  getGuildData,
-  saveGuildData,
-  syncGuildMeta,
-
-  getGuildSection,
-  saveGuildSection,
-  replaceGuildSection,
-  updateGuildSection,
-
-  getModuleConfig,
-  saveModuleConfig,
-  isModuleEnabled,
-  setModuleEnabled,
-
-  getLogChannelId,
-  isLogEventEnabled,
-  setLogEventEnabled,
-  setLogEventsEnabled,
-  toggleLogEvent,
-  toggleLogEvents,
-
-  getSecurityConfig,
-  saveSecurityConfig,
-  updateSecurityConfig,
-
-  getEmbedPresets,
-  getEmbedPreset,
-  saveEmbedPreset,
-  deleteEmbedPreset,
-
-  getEmbedDefaults,
-  setEmbedDefault,
-  clearEmbedDefault,
-  getEmbedDefaultPresetName,
-  getEmbedDefaultPreset,
-
-  reloadGuild,
-  clearGuildCache,
-
-  listGuildFiles,
 };
