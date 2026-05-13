@@ -24,7 +24,7 @@ jobs:
         run: npm ci
 
       - name: Check index.js syntax
-        run: node --check index.js
+        run: node --check server.js
 
       - name: Check all command files syntax
         shell: bash
