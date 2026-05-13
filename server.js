@@ -19,12 +19,19 @@ const { startServerBackupScheduler } = require('./src/security/serverBackupSched
 
 /* ---------------- ENV / MODE ---------------- */
 
-const allowedModes = ['dev', 'beta', 'production'];
-const modeArg = process.argv[2]?.toLowerCase();
+const ALLOWED_MODES = ['dev', 'beta', 'production'];
 
-const selectedMode = allowedModes.includes(modeArg)
-  ? modeArg
-  : 'dev';
+function resolveBotMode() {
+  const argMode = process.argv[2]?.toLowerCase();
+  const envMode = process.env.BOT_MODE?.toLowerCase();
+
+  if (ALLOWED_MODES.includes(argMode)) return argMode;
+  if (ALLOWED_MODES.includes(envMode)) return envMode;
+
+  return 'dev';
+}
+
+const selectedMode = resolveBotMode();
 
 process.env.BOT_MODE = selectedMode;
 
@@ -91,6 +98,20 @@ function getAllJsFiles(dir) {
   }
 
   return results.sort((a, b) => a.localeCompare(b));
+}
+
+function printStartupBanner() {
+  const modeLabels = {
+    DEV: '🟢 GOLIATH DEV',
+    BETA: '🟡 GOLIATH BETA',
+    PRODUCTION: '🔴 GOLIATH PRODUCTION',
+  };
+
+  console.log('============================================================');
+  console.log(`🚀 Starting ${modeLabels[BOT_MODE] || 'KSJ Goliath'}`);
+  console.log(`🧠 Mode: ${BOT_MODE}`);
+  console.log(`📄 Env: ${loadedEnv.envFile}`);
+  console.log('============================================================');
 }
 
 /* ---------------- COMMANDS ---------------- */
@@ -205,11 +226,7 @@ function registerProcessSafetyHandlers() {
 /* ---------------- START ---------------- */
 
 async function start() {
-  console.log('============================================================');
-  console.log('🚀 Starting KSJ Goliath');
-  console.log(`🧠 Mode: ${BOT_MODE}`);
-  console.log(`📄 Env: ${loadedEnv.envFile}`);
-  console.log('============================================================');
+  printStartupBanner();
 
   const runtimePaths = ensureRuntimePaths(BOT_MODE);
   client.runtimePaths = runtimePaths;

@@ -5,13 +5,21 @@ const { REST, Routes } = require('discord.js');
 
 /* ---------------- ENV / MODE ---------------- */
 
-const allowedModes = ['dev', 'beta', 'production'];
+const ALLOWED_MODES = ['dev', 'beta', 'production'];
 
-const modeArg = process.argv[2]?.toLowerCase();
+function resolveBotMode() {
+  const argMode = process.argv[2]?.toLowerCase();
+  const envMode = process.env.BOT_MODE?.toLowerCase();
 
-const selectedMode = allowedModes.includes(modeArg)
-  ? modeArg
-  : 'dev';
+  if (ALLOWED_MODES.includes(argMode)) return argMode;
+  if (ALLOWED_MODES.includes(envMode)) return envMode;
+
+  return 'dev';
+}
+
+const selectedMode = resolveBotMode();
+
+process.env.BOT_MODE = selectedMode;
 
 const envFile = `.env.${selectedMode}`;
 const envPath = path.join(process.cwd(), envFile);
@@ -20,30 +28,40 @@ dotenv.config({ path: envPath });
 
 const BOT_MODE = selectedMode.toUpperCase();
 
+/* ---------------- ENV VALUES ---------------- */
+
 const TOKEN = process.env.DISCORD_TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 
-const COMMAND_MODE = BOT_MODE === 'PRODUCTION'
-  ? 'global'
-  : 'guild';
+const COMMAND_MODE =
+  BOT_MODE === 'PRODUCTION'
+    ? 'global'
+    : 'guild';
 
-const GUILD_IDS = BOT_MODE === 'DEV'
-  ? process.env.DEV_GUILD_ID
-  : process.env.BETA_GUILD_IDS;
+const GUILD_IDS =
+  BOT_MODE === 'DEV'
+    ? process.env.DEV_GUILD_ID
+    : process.env.BETA_GUILD_IDS;
 
 /* ---------------- VALIDATION ---------------- */
 
-if (!TOKEN) {
-  throw new Error(`❌ Missing DISCORD_TOKEN in ${envFile}`);
+function required(name, value) {
+  if (!value || !String(value).trim()) {
+    throw new Error(`❌ Missing ${name} in ${envFile}`);
+  }
+
+  return value;
 }
 
-if (!CLIENT_ID) {
-  throw new Error(`❌ Missing CLIENT_ID in ${envFile}`);
-}
+required('DISCORD_TOKEN', TOKEN);
+required('CLIENT_ID', CLIENT_ID);
 
-if (COMMAND_MODE === 'guild' && !GUILD_IDS) {
-  throw new Error(
-    `❌ Missing ${BOT_MODE === 'DEV' ? 'DEV_GUILD_ID' : 'BETA_GUILD_IDS'} in ${envFile}`
+if (COMMAND_MODE === 'guild') {
+  required(
+    BOT_MODE === 'DEV'
+      ? 'DEV_GUILD_ID'
+      : 'BETA_GUILD_IDS',
+    GUILD_IDS
   );
 }
 
@@ -88,6 +106,7 @@ function getAllJsFiles(dir) {
 
 function loadCommands(commandsPath, mode) {
   const commandFiles = getAllJsFiles(commandsPath);
+
   const commands = [];
   const seen = new Set();
 
@@ -96,6 +115,7 @@ function loadCommands(commandsPath, mode) {
       delete require.cache[require.resolve(filePath)];
 
       const command = require(filePath);
+
       const name = command?.data?.name;
 
       if (!command?.data || typeof command.execute !== 'function') {
@@ -114,11 +134,12 @@ function loadCommands(commandsPath, mode) {
       }
 
       if (mode === 'global' && command.devOnly === true) {
-        console.log(`🧪 Skipped dev-only command in production mode: ${name}`);
+        console.log(`🧪 Skipped dev-only command: ${name}`);
         continue;
       }
 
       seen.add(name);
+
       commands.push(command.data.toJSON());
 
       console.log(`✅ Loaded command: ${name}`);
@@ -131,13 +152,26 @@ function loadCommands(commandsPath, mode) {
   return commands;
 }
 
+function printSyncBanner(mode, commandsPath) {
+  console.log('============================================================');
+  console.log('🚀 Syncing KSJ Goliath Commands');
+  console.log(`🧠 Bot Mode: ${BOT_MODE}`);
+  console.log(`📄 Env: ${envFile}`);
+  console.log(`🛠️ Command Mode: ${mode.toUpperCase()}`);
+  console.log(`📂 Commands Path: ${commandsPath}`);
+  console.log('============================================================');
+}
+
 /* ---------------- DISCORD API ---------------- */
 
 async function clearGuildCommands(guildIds) {
   for (const guildId of guildIds) {
-    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, guildId), {
-      body: [],
-    });
+    await rest.put(
+      Routes.applicationGuildCommands(CLIENT_ID, guildId),
+      {
+        body: [],
+      }
+    );
 
     console.log(`🧹 Cleared guild commands: ${guildId}`);
   }
@@ -145,26 +179,37 @@ async function clearGuildCommands(guildIds) {
 
 async function registerGuildCommands(guildIds, commands) {
   for (const guildId of guildIds) {
-    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, guildId), {
-      body: commands,
-    });
+    await rest.put(
+      Routes.applicationGuildCommands(CLIENT_ID, guildId),
+      {
+        body: commands,
+      }
+    );
 
-    console.log(`✅ Registered ${commands.length} command(s) for guild: ${guildId}`);
+    console.log(
+      `✅ Registered ${commands.length} command(s) for guild: ${guildId}`
+    );
   }
 }
 
 async function clearGlobalCommands() {
-  await rest.put(Routes.applicationCommands(CLIENT_ID), {
-    body: [],
-  });
+  await rest.put(
+    Routes.applicationCommands(CLIENT_ID),
+    {
+      body: [],
+    }
+  );
 
   console.log('🧹 Cleared global commands');
 }
 
 async function registerGlobalCommands(commands) {
-  await rest.put(Routes.applicationCommands(CLIENT_ID), {
-    body: commands,
-  });
+  await rest.put(
+    Routes.applicationCommands(CLIENT_ID),
+    {
+      body: commands,
+    }
+  );
 
   console.log(`✅ Registered ${commands.length} global command(s)`);
 }
@@ -174,28 +219,31 @@ async function registerGlobalCommands(commands) {
 async function syncCommands(options = {}) {
   const startedAt = Date.now();
 
-  const mode = String(options.mode || COMMAND_MODE).toLowerCase();
+  const mode = String(
+    options.mode || COMMAND_MODE
+  ).toLowerCase();
 
-  const guildIds = parseGuildIds(options.guildIds ?? GUILD_IDS);
+  const guildIds = parseGuildIds(
+    options.guildIds ?? GUILD_IDS
+  );
 
   const commandsPath =
-    options.commandsPath || path.join(process.cwd(), 'src', 'commands');
+    options.commandsPath ||
+    path.join(process.cwd(), 'src', 'commands');
 
   if (!['guild', 'global'].includes(mode)) {
-    throw new Error(`❌ Invalid command mode "${mode}". Use "guild" or "global".`);
+    throw new Error(
+      `❌ Invalid command mode "${mode}". Use "guild" or "global".`
+    );
   }
 
   if (mode === 'guild' && guildIds.length === 0) {
-    throw new Error(`❌ No valid guild IDs found for ${BOT_MODE} mode.`);
+    throw new Error(
+      `❌ No valid guild IDs found for ${BOT_MODE} mode.`
+    );
   }
 
-  console.log('============================================================');
-  console.log('🚀 Syncing KSJ Goliath Commands');
-  console.log(`🧠 Bot Mode: ${BOT_MODE}`);
-  console.log(`📄 Env: ${envFile}`);
-  console.log(`🛠️ Command Mode: ${mode.toUpperCase()}`);
-  console.log(`📂 Commands Path: ${commandsPath}`);
-  console.log('============================================================');
+  printSyncBanner(mode, commandsPath);
 
   const commands = loadCommands(commandsPath, mode);
 
@@ -205,11 +253,13 @@ async function syncCommands(options = {}) {
     console.log(`🏠 Target guilds: ${guildIds.join(', ')}`);
 
     await clearGuildCommands(guildIds);
+
     await registerGuildCommands(guildIds, commands);
   }
 
   if (mode === 'global') {
     await clearGlobalCommands();
+
     await registerGlobalCommands(commands);
   }
 
@@ -223,7 +273,9 @@ async function syncCommands(options = {}) {
     botMode: BOT_MODE,
     commandMode: mode,
     commands: commands.length,
-    guilds: mode === 'guild' ? guildIds.length : 0,
+    guilds: mode === 'guild'
+      ? guildIds.length
+      : 0,
     durationMs,
   };
 }
@@ -232,8 +284,9 @@ async function syncCommands(options = {}) {
 
 if (require.main === module) {
   syncCommands().catch((error) => {
-    console.error('❌ Command sync failed:');
+    console.error('❌ Command sync failed');
     console.error(error);
+
     process.exit(1);
   });
 }
