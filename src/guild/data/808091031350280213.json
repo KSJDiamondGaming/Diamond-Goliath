@@ -1,7 +1,7 @@
 {
   "guildId": "808091031350280213",
   "guildName": "KSJ DIAMOND GAMING",
-  "updatedAt": "2026-05-11T23:15:11.711Z",
+  "updatedAt": "2026-05-13T00:11:56.327Z",
   "general": {
     "enabled": true,
     "prefix": "!",
@@ -821,16 +821,16 @@
   },
   "serverBackups": {
     "enabled": true,
-    "lastBackupId": "2026-05-05T18-46-58-913Z",
-    "lastBackupAt": "2026-05-05T18:46:58.915Z",
-    "lastBackupBy": "1168285714732036096",
-    "lastBackupReason": "Manual backup from admin panel",
+    "lastBackupId": "2026-05-13T00-11-56-274Z",
+    "lastBackupAt": "2026-05-13T00:11:56.276Z",
+    "lastBackupBy": "system:auto-weekly",
+    "lastBackupReason": "Automatic weekly server disaster backup",
     "backupCount": 4,
     "latestBackup": {
-      "backupId": "2026-05-05T18-46-58-913Z",
-      "createdAt": "2026-05-05T18:46:58.915Z",
-      "createdBy": "1168285714732036096",
-      "reason": "Manual backup from admin panel",
+      "backupId": "2026-05-13T00-11-56-274Z",
+      "createdAt": "2026-05-13T00:11:56.276Z",
+      "createdBy": "system:auto-weekly",
+      "reason": "Automatic weekly server disaster backup",
       "sourceGuildName": "KSJ DIAMOND GAMING",
       "roles": 24,
       "channels": 57,
@@ -845,7 +845,7 @@
       "maxBackups": 4,
       "autoCleanup": true
     },
-    "updatedAt": "2026-05-05T18:46:58.934Z"
+    "updatedAt": "2026-05-13T00:11:56.326Z"
   },
   "cases": {},
   "warnings": {},

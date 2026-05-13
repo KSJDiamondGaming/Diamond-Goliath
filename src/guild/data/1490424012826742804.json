@@ -1,7 +1,7 @@
 {
   "guildId": "1490424012826742804",
   "guildName": "Emergency Community Hub",
-  "updatedAt": "2026-05-11T19:57:26.508Z",
+  "updatedAt": "2026-05-13T00:11:56.744Z",
   "general": {
     "enabled": true,
     "prefix": "!",
@@ -67,19 +67,23 @@
   },
   "serverBackups": {
     "enabled": true,
-    "lastBackupId": "2026-05-04T23-20-09-177Z",
-    "lastBackupAt": "2026-05-04T23:20:09.178Z",
+    "lastBackupId": "2026-05-13T00-11-56-727Z",
+    "lastBackupAt": "2026-05-13T00:11:56.727Z",
     "lastBackupBy": "system:auto-weekly",
-    "lastBackupReason": null,
-    "backupCount": 1,
+    "lastBackupReason": "Automatic weekly server disaster backup",
+    "backupCount": 2,
     "latestBackup": {
-      "backupId": "2026-05-04T23-20-09-177Z",
-      "createdAt": "2026-05-04T23:20:09.178Z",
-      "roles": 1,
-      "channels": 9
+      "backupId": "2026-05-13T00-11-56-727Z",
+      "createdAt": "2026-05-13T00:11:56.727Z",
+      "createdBy": "system:auto-weekly",
+      "reason": "Automatic weekly server disaster backup",
+      "sourceGuildName": "Emergency Community Hub",
+      "roles": 9,
+      "channels": 11,
+      "logsIncluded": true
     },
     "storage": {
-      "provider": "google_drive",
+      "provider": "google_drive_desktop",
       "path": "F:\\My Drive\\Goliath Backups",
       "restoreRequiresSupport": true
     },
@@ -87,7 +91,7 @@
       "maxBackups": 4,
       "autoCleanup": true
     },
-    "updatedAt": "2026-05-04T23:20:09.287Z"
+    "updatedAt": "2026-05-13T00:11:56.744Z"
   },
   "cases": {},
   "warnings": {},
