@@ -1,18 +1,57 @@
-require('dotenv').config();
-
 const fs = require('node:fs');
 const path = require('node:path');
+const dotenv = require('dotenv');
 const { REST, Routes } = require('discord.js');
 
-const TOKEN = process.env.TOKEN;
-const CLIENT_ID = process.env.CLIENT_ID;
-const COMMAND_MODE = String(process.env.COMMAND_MODE || 'guild').toLowerCase();
-const GUILD_IDS = process.env.GUILD_IDS;
+/* ---------------- ENV / MODE ---------------- */
 
-if (!TOKEN) throw new Error('❌ Missing TOKEN in .env');
-if (!CLIENT_ID) throw new Error('❌ Missing CLIENT_ID in .env');
+const allowedModes = ['dev', 'beta', 'production'];
+
+const modeArg = process.argv[2]?.toLowerCase();
+
+const selectedMode = allowedModes.includes(modeArg)
+  ? modeArg
+  : 'dev';
+
+const envFile = `.env.${selectedMode}`;
+const envPath = path.join(process.cwd(), envFile);
+
+dotenv.config({ path: envPath });
+
+const BOT_MODE = selectedMode.toUpperCase();
+
+const TOKEN = process.env.DISCORD_TOKEN;
+const CLIENT_ID = process.env.CLIENT_ID;
+
+const COMMAND_MODE = BOT_MODE === 'PRODUCTION'
+  ? 'global'
+  : 'guild';
+
+const GUILD_IDS = BOT_MODE === 'DEV'
+  ? process.env.DEV_GUILD_ID
+  : process.env.BETA_GUILD_IDS;
+
+/* ---------------- VALIDATION ---------------- */
+
+if (!TOKEN) {
+  throw new Error(`❌ Missing DISCORD_TOKEN in ${envFile}`);
+}
+
+if (!CLIENT_ID) {
+  throw new Error(`❌ Missing CLIENT_ID in ${envFile}`);
+}
+
+if (COMMAND_MODE === 'guild' && !GUILD_IDS) {
+  throw new Error(
+    `❌ Missing ${BOT_MODE === 'DEV' ? 'DEV_GUILD_ID' : 'BETA_GUILD_IDS'} in ${envFile}`
+  );
+}
+
+/* ---------------- REST ---------------- */
 
 const rest = new REST({ version: '10' }).setToken(TOKEN);
+
+/* ---------------- HELPERS ---------------- */
 
 function parseGuildIds(value) {
   return String(value || '')
@@ -75,7 +114,7 @@ function loadCommands(commandsPath, mode) {
       }
 
       if (mode === 'global' && command.devOnly === true) {
-        console.log(`🧪 Skipped dev-only command in global mode: ${name}`);
+        console.log(`🧪 Skipped dev-only command in production mode: ${name}`);
         continue;
       }
 
@@ -91,6 +130,8 @@ function loadCommands(commandsPath, mode) {
 
   return commands;
 }
+
+/* ---------------- DISCORD API ---------------- */
 
 async function clearGuildCommands(guildIds) {
   for (const guildId of guildIds) {
@@ -128,26 +169,33 @@ async function registerGlobalCommands(commands) {
   console.log(`✅ Registered ${commands.length} global command(s)`);
 }
 
+/* ---------------- SYNC ---------------- */
+
 async function syncCommands(options = {}) {
   const startedAt = Date.now();
 
-  const mode = String(options.mode || COMMAND_MODE || 'guild').toLowerCase();
+  const mode = String(options.mode || COMMAND_MODE).toLowerCase();
+
   const guildIds = parseGuildIds(options.guildIds ?? GUILD_IDS);
 
   const commandsPath =
-    options.commandsPath || path.join(__dirname, '..', '..', 'commands');
+    options.commandsPath || path.join(process.cwd(), 'src', 'commands');
 
   if (!['guild', 'global'].includes(mode)) {
-    throw new Error(`❌ Invalid COMMAND_MODE "${mode}". Use "guild" or "global".`);
+    throw new Error(`❌ Invalid command mode "${mode}". Use "guild" or "global".`);
   }
 
   if (mode === 'guild' && guildIds.length === 0) {
-    throw new Error('❌ GUILD_IDS is required when COMMAND_MODE is "guild".');
+    throw new Error(`❌ No valid guild IDs found for ${BOT_MODE} mode.`);
   }
 
-  console.log('🚀 Starting command sync...');
-  console.log(`🛠️ Mode: ${mode}`);
-  console.log(`📂 Commands path: ${commandsPath}`);
+  console.log('============================================================');
+  console.log('🚀 Syncing KSJ Goliath Commands');
+  console.log(`🧠 Bot Mode: ${BOT_MODE}`);
+  console.log(`📄 Env: ${envFile}`);
+  console.log(`🛠️ Command Mode: ${mode.toUpperCase()}`);
+  console.log(`📂 Commands Path: ${commandsPath}`);
+  console.log('============================================================');
 
   const commands = loadCommands(commandsPath, mode);
 
@@ -167,15 +215,20 @@ async function syncCommands(options = {}) {
 
   const durationMs = Date.now() - startedAt;
 
+  console.log('============================================================');
   console.log(`🎉 Command sync complete in ${durationMs}ms`);
+  console.log('============================================================');
 
   return {
-    mode,
+    botMode: BOT_MODE,
+    commandMode: mode,
     commands: commands.length,
     guilds: mode === 'guild' ? guildIds.length : 0,
     durationMs,
   };
 }
+
+/* ---------------- DIRECT RUN ---------------- */
 
 if (require.main === module) {
   syncCommands().catch((error) => {

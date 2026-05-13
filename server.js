@@ -1,5 +1,3 @@
-require('dotenv').config();
-
 const fs = require('fs');
 const path = require('path');
 const {
@@ -9,7 +7,30 @@ const {
   Partials,
 } = require('discord.js');
 
+const { loadEnvironment } = require('./src/config/envLoader');
+const { getBotModeConfig } = require('./src/config/botModes');
+const {
+  enforceGuildAccess,
+  enforceCurrentGuilds,
+} = require('./src/config/guildAccess');
+const { ensureRuntimePaths } = require('./src/config/runtimePaths');
+
 const { startServerBackupScheduler } = require('./src/security/serverBackupScheduler');
+
+/* ---------------- ENV / MODE ---------------- */
+
+const allowedModes = ['dev', 'beta', 'production'];
+const modeArg = process.argv[2]?.toLowerCase();
+
+const selectedMode = allowedModes.includes(modeArg)
+  ? modeArg
+  : 'dev';
+
+process.env.BOT_MODE = selectedMode;
+
+const loadedEnv = loadEnvironment(selectedMode);
+const BOT_MODE = selectedMode.toUpperCase();
+const activeMode = getBotModeConfig(BOT_MODE);
 
 /* ---------------- CLIENT ---------------- */
 
@@ -24,8 +45,27 @@ const client = new Client({
 });
 
 client.commands = new Collection();
+client.botMode = BOT_MODE;
+client.modeConfig = activeMode;
 
 /* ---------------- HELPERS ---------------- */
+
+function logDev(message) {
+  if (activeMode.verboseLogging) {
+    console.log(message);
+  }
+}
+
+function getRequiredEnv(name) {
+  const value = process.env[name];
+
+  if (!value || !String(value).trim()) {
+    console.error(`❌ Missing required environment variable: ${name}`);
+    process.exit(1);
+  }
+
+  return value;
+}
 
 function getAllJsFiles(dir) {
   if (!fs.existsSync(dir)) return [];
@@ -56,8 +96,10 @@ function getAllJsFiles(dir) {
 /* ---------------- COMMANDS ---------------- */
 
 function loadCommands() {
-  const commandsPath = path.join(__dirname, 'src', 'commands');
+  const commandsPath = path.join(process.cwd(), 'src', 'commands');
   const files = getAllJsFiles(commandsPath);
+
+  console.log(`📦 Loading commands from: ${commandsPath}`);
 
   for (const file of files) {
     try {
@@ -77,6 +119,8 @@ function loadCommands() {
       console.error(err);
     }
   }
+
+  console.log(`✅ Loaded ${client.commands.size} command(s).`);
 }
 
 /* ---------------- EVENTS ---------------- */
@@ -102,6 +146,8 @@ function loadEvents() {
   const eventsPath = path.join(__dirname, 'src', 'events');
   const files = getAllJsFiles(eventsPath);
 
+  console.log(`📦 Loading events from: ${eventsPath}`);
+
   for (const file of files) {
     try {
       delete require.cache[require.resolve(file)];
@@ -117,25 +163,89 @@ function loadEvents() {
       console.error(err);
     }
   }
+
+  console.log('✅ Event loading complete.');
+}
+
+/* ---------------- MODE EVENTS ---------------- */
+
+function registerModeProtectionEvents() {
+  client.on('guildCreate', async (guild) => {
+    await enforceGuildAccess(guild, BOT_MODE, activeMode);
+  });
+}
+
+/* ---------------- PROCESS SAFETY ---------------- */
+
+function registerProcessSafetyHandlers() {
+  process.on('unhandledRejection', (reason) => {
+    console.error('❌ Unhandled Promise Rejection');
+    console.error(reason);
+  });
+
+  process.on('uncaughtException', (err) => {
+    console.error('❌ Uncaught Exception');
+    console.error(err);
+    process.exit(1);
+  });
+
+  process.on('SIGINT', () => {
+    console.log('🛑 SIGINT received. Shutting down Goliath...');
+    client.destroy();
+    process.exit(0);
+  });
+
+  process.on('SIGTERM', () => {
+    console.log('🛑 SIGTERM received. Shutting down Goliath...');
+    client.destroy();
+    process.exit(0);
+  });
 }
 
 /* ---------------- START ---------------- */
 
 async function start() {
-  const token = process.env.TOKEN;
+  console.log('============================================================');
+  console.log('🚀 Starting KSJ Goliath');
+  console.log(`🧠 Mode: ${BOT_MODE}`);
+  console.log(`📄 Env: ${loadedEnv.envFile}`);
+  console.log('============================================================');
 
-  if (!token) {
-    console.error('❌ Missing TOKEN in .env');
-    process.exit(1);
+  const runtimePaths = ensureRuntimePaths(BOT_MODE);
+  client.runtimePaths = runtimePaths;
+
+  console.log(`📁 Runtime: ${runtimePaths.root}`);
+
+  const token = getRequiredEnv('DISCORD_TOKEN');
+
+  if (BOT_MODE === 'DEV') {
+    getRequiredEnv('DEV_GUILD_ID');
   }
+
+  if (BOT_MODE === 'BETA') {
+    getRequiredEnv('BETA_GUILD_IDS');
+  }
+
+  registerProcessSafetyHandlers();
+  registerModeProtectionEvents();
 
   loadCommands();
   loadEvents();
 
-  client.once('clientReady', (readyClient) => {
+  client.once('clientReady', async (readyClient) => {
     console.log(`🤖 Logged in as ${readyClient.user.tag}`);
+    console.log(`🧠 Active mode: ${BOT_MODE}`);
 
-    startServerBackupScheduler(readyClient);
+    await enforceCurrentGuilds(client, BOT_MODE, activeMode);
+
+    if (activeMode.startBackupScheduler) {
+      console.log('💾 Starting server backup scheduler...');
+      startServerBackupScheduler(readyClient);
+    } else {
+      logDev('💾 Backup scheduler disabled in DEV mode.');
+    }
+
+    console.log('✅ Goliath startup complete.');
   });
 
   await client.login(token);

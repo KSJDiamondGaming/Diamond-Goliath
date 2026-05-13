@@ -1,0 +1,118 @@
+{
+  "guildId": "1501605485357433024",
+  "guildName": null,
+  "updatedAt": "2026-05-13T03:42:18.996Z",
+  "general": {
+    "enabled": true,
+    "prefix": "!",
+    "timezone": "Europe/London"
+  },
+  "modules": {},
+  "automod": {},
+  "logs": {
+    "enabled": true,
+    "channels": {
+      "general": null,
+      "moderation": null,
+      "admin": null,
+      "automod": null,
+      "member": null,
+      "messageDelete": null,
+      "messageEdit": null,
+      "voice": null
+    },
+    "events": {
+      "moderationActions": true,
+      "adminActions": true,
+      "automodActions": true,
+      "memberJoin": true,
+      "memberLeave": true,
+      "memberUpdate": true,
+      "messageDelete": true,
+      "messageEdit": true,
+      "roleCreate": true,
+      "roleDelete": true,
+      "roleUpdate": true,
+      "channelCreate": true,
+      "channelDelete": true,
+      "channelUpdate": true,
+      "voiceJoin": true,
+      "voiceLeave": true,
+      "voiceMove": true
+    }
+  },
+  "security": {
+    "enabled": true,
+    "threatLevel": "low",
+    "totalIncidents": 0,
+    "criticalIncidents": 0,
+    "lastIncidentAt": null,
+    "lastIncidentType": null,
+    "lastLockdownAt": null,
+    "lastQuarantineAt": null,
+    "incidents": [],
+    "lockdown": {
+      "active": false,
+      "enabledBy": null,
+      "enabledAt": null,
+      "reason": null,
+      "expiresAt": null,
+      "channels": [],
+      "bypassRoleIds": []
+    },
+    "ownerMonitoring": {
+      "enabled": true,
+      "webhookMirrorEnabled": true
+    }
+  },
+  "serverBackups": {
+    "enabled": true,
+    "lastBackupId": null,
+    "lastBackupAt": null,
+    "lastBackupBy": null,
+    "lastBackupReason": null,
+    "backupCount": 0,
+    "latestBackup": null,
+    "storage": {
+      "provider": "google_drive_desktop",
+      "path": "F:\\My Drive\\Goliath Backups\\beta",
+      "restoreRequiresSupport": true
+    },
+    "retention": {
+      "maxBackups": 4,
+      "autoCleanup": true
+    }
+  },
+  "cases": {},
+  "warnings": {},
+  "welcome": {},
+  "leave": {},
+  "tickets": {},
+  "levels": {},
+  "reactionRoles": {},
+  "giveaways": {},
+  "suggestions": {},
+  "stats": {},
+  "autoRoles": {
+    "enabled": false,
+    "roleIds": []
+  },
+  "staffRoles": {
+    "roleIds": []
+  },
+  "modRoles": {
+    "roleIds": []
+  },
+  "embedPresets": {},
+  "embedDefaults": {
+    "welcome": null,
+    "leave": null,
+    "rules": null,
+    "announcement": null,
+    "suggestion": null,
+    "giveaway": null,
+    "update": null,
+    "event": null,
+    "warning": null
+  }
+}

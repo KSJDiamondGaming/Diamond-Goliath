@@ -4,21 +4,31 @@ const {
   restoreLockdownReminders,
 } = require('../../security/lockdownSystem');
 
-const MAIN_GUILD_ID = '808091031350280213';
-
 module.exports = {
   name: 'clientReady',
   once: true,
 
   async execute(client) {
-    const mainGuild = client.guilds.cache.get(MAIN_GUILD_ID);
-    const syncMode = String(process.env.COMMAND_SYNC_MODE || 'dev').toLowerCase();
-    const isDevMode = syncMode === 'dev';
+    const currentMode = client.botMode || 'DEV';
 
-    terminal.line(
-      '🧪 Mode',
-      isDevMode ? 'DEV (Main Guild Only)' : 'GLOBAL (Public Bot)'
-    );
+    const modeLabels = {
+      DEV: 'DEV (Main Guild Only)',
+      BETA: 'BETA (Restricted Servers)',
+      PRODUCTION: 'PRODUCTION (Public Bot)',
+    };
+
+    const modeLabel =
+      modeLabels[currentMode] || `${currentMode} MODE`;
+
+    const mainGuildId =
+      process.env.DEV_GUILD_ID ||
+      process.env.BETA_GUILD_IDS?.split(',')[0];
+
+    const mainGuild = mainGuildId
+      ? client.guilds.cache.get(mainGuildId)
+      : null;
+
+    terminal.line('🧪 Mode', modeLabel);
 
     try {
       await restoreLockdownReminders(client);
@@ -43,14 +53,14 @@ module.exports = {
       },
       {
         label: 'Mode',
-        value: isDevMode ? 'DEV (Main Guild)' : 'GLOBAL (Public)',
+        value: modeLabel,
         ok: true,
       },
       {
         label: 'Main Guild',
         value: mainGuild
           ? `${mainGuild.name} (${mainGuild.id})`
-          : `Missing (${MAIN_GUILD_ID})`,
+          : 'Not Connected',
         ok: Boolean(mainGuild),
       },
       {
