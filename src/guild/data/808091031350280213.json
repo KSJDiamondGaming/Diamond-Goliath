@@ -1,7 +1,7 @@
 {
   "guildId": "808091031350280213",
   "guildName": "KSJ DIAMOND GAMING",
-  "updatedAt": "2026-05-13T03:05:31.013Z",
+  "updatedAt": "2026-05-13T18:33:09.267Z",
   "general": {
     "enabled": true,
     "prefix": "!",
@@ -116,14 +116,36 @@
   },
   "security": {
     "enabled": true,
-    "threatLevel": "medium",
-    "totalIncidents": 27,
+    "threatLevel": "high",
+    "totalIncidents": 28,
     "criticalIncidents": 9,
-    "lastIncidentAt": "2026-05-11T23:10:04.110Z",
-    "lastIncidentType": "suspicious_admin_action",
-    "lastLockdownAt": "2026-05-11T23:14:12.007Z",
+    "lastIncidentAt": "2026-05-13T18:32:25.928Z",
+    "lastIncidentType": "lockdown_enabled",
+    "lastLockdownAt": "2026-05-13T18:32:25.928Z",
     "lastQuarantineAt": null,
     "incidents": [
+      {
+        "id": "inc_1778697145928_h8s7aw",
+        "type": "lockdown_enabled",
+        "severity": "high",
+        "guildId": "808091031350280213",
+        "guildName": "KSJ DIAMOND GAMING",
+        "actorId": "1168285714732036096",
+        "actorTag": "_.morgz._",
+        "targetId": null,
+        "targetName": null,
+        "targetType": null,
+        "reason": "No reason provided",
+        "actionTaken": "Server lockdown enabled.",
+        "metadata": {
+          "lockedChannels": 0,
+          "bypassRoles": 0,
+          "reminderEnabled": true,
+          "reminderChannelId": "1491219255465869514",
+          "reminderUserId": "1168285714732036096"
+        },
+        "createdAt": "2026-05-13T18:32:25.928Z"
+      },
       {
         "id": "inc_1778541004110_fjjgx5",
         "type": "suspicious_admin_action",
@@ -817,7 +839,7 @@
       "enabled": true,
       "webhookMirrorEnabled": true
     },
-    "updatedAt": "2026-05-11T23:15:11.711Z"
+    "updatedAt": "2026-05-13T18:33:09.266Z"
   },
   "serverBackups": {
     "enabled": true,
