@@ -12,15 +12,29 @@ jobs:
     steps:
       - name: Deploy Goliath DEV
         uses: appleboy/ssh-action@v1.0.3
-
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
           port: 22
-
           script: |
             echo "Starting Goliath DEV deployment..."
+
+            cd /home/goliath/dev
+
+            echo "Creating DEV deployment snapshot..."
+            SNAPSHOT_DIR="/home/goliath/runtime/snapshots/dev"
+            SNAPSHOT_NAME="dev-$(date +%Y-%m-%d-%H-%M-%S).tar.gz"
+
+            mkdir -p "$SNAPSHOT_DIR"
+
+            tar -czf "$SNAPSHOT_DIR/$SNAPSHOT_NAME" \
+              --exclude=node_modules \
+              --exclude=.git \
+              -C /home/goliath dev
+
+            cd "$SNAPSHOT_DIR"
+            ls -1t dev-*.tar.gz | tail -n +4 | xargs -r rm --
 
             cd /home/goliath/dev
 
@@ -32,9 +46,9 @@ jobs:
             npm install
 
             echo "Restarting PM2 DEV bot..."
-            pm2 restart goliath-dev
+            BOT_MODE=dev pm2 restart goliath-dev --update-env
 
             echo "Saving PM2..."
             pm2 save
 
-            echo "Deployment complete."
+            echo "DEV deployment complete."
