@@ -1,0 +1,40 @@
+name: Deploy DEV to VPS
+
+on:
+  push:
+    branches:
+      - dev
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy Goliath DEV
+        uses: appleboy/ssh-action@v1.0.3
+
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: 22
+
+          script: |
+            echo "Starting Goliath DEV deployment..."
+
+            cd /home/goliath/dev
+
+            echo "Pulling latest DEV branch..."
+            git fetch origin dev
+            git reset --hard origin/dev
+
+            echo "Installing dependencies..."
+            npm install
+
+            echo "Restarting PM2 DEV bot..."
+            pm2 restart goliath-dev
+
+            echo "Saving PM2..."
+            pm2 save
+
+            echo "Deployment complete."

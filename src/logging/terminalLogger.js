@@ -5,7 +5,15 @@ const { Chalk } = require('chalk');
 const chalk = new Chalk();
 const DEBUG = String(process.env.DEBUG || '').toLowerCase() === 'true';
 
-const logsDir = path.join(process.cwd(), 'src', 'runtime', 'logs');
+const {
+  getRuntimePaths,
+} = require('../config/runtimePaths');
+
+const runtimePaths = getRuntimePaths(
+  process.env.BOT_MODE || 'DEV'
+);
+
+const logsDir = runtimePaths.logs;
 
 if (!fs.existsSync(logsDir)) {
   fs.mkdirSync(logsDir, { recursive: true });
