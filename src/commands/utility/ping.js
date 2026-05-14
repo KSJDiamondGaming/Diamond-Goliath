@@ -54,7 +54,7 @@ module.exports = {
       };
 
       const embed = baseEmbed(interaction.client)
-        .setTitle('`🏓` Goliath DEV Status')
+        .setTitle('`🏓` Goliath Status')
         .setDescription([
           `\`●\` **Status:** ${health}`,
           '',
