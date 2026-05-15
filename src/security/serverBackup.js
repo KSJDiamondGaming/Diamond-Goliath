@@ -6,13 +6,18 @@ const { ChannelType } = require('discord.js');
 
 const guildManager = require('../guild/guildManager');
 
-const BACKUPS_DIR = path.resolve(
-  process.env.SERVER_BACKUP_DIR ||
-    path.join(process.cwd(), 'data', 'serverBackups')
-);
+const {
+  getBackupRoot,
+  getBackupDir,
+  ensureBackupDir,
+} = require('./backupPathManager');
+
+const BACKUPS_DIR = getBackupRoot();
 
 const SUPPORTED_BACKUP_VERSIONS = [3];
 const BACKUP_SCHEMA_VERSION = 3;
+
+const BACKUP_TYPES_TO_LIST = ['scheduled', 'runtime'];
 
 function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true });
@@ -26,7 +31,7 @@ function safeLabel(value, fallback = 'backup') {
     .slice(0, 40);
 }
 
-function createBackupId(type = 'manual') {
+function createBackupId(type = 'runtime') {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   return `${safeLabel(type)}_${timestamp}`;
 }
@@ -39,20 +44,49 @@ function getRollbackRetentionLimit() {
   return Number(process.env.SERVER_ROLLBACK_RETENTION || 6) || 6;
 }
 
-function getGuildBackupDir(guildId) {
-  return path.join(BACKUPS_DIR, 'guilds', String(guildId), 'backups');
+function normaliseBackupType(type = 'runtime') {
+  const value = String(type || 'runtime').toLowerCase();
+
+  if (value === 'rollback') return 'rollback';
+  if (value === 'scheduled') return 'scheduled';
+  if (value === 'runtime') return 'runtime';
+
+  return 'runtime';
+}
+
+function getGuildBackupDir(guildId, backupType = 'runtime') {
+  return getBackupDir({
+    environment: process.env.BOT_MODE,
+    guildId,
+    backupType: normaliseBackupType(backupType),
+  });
 }
 
 function getGuildRollbackDir(guildId) {
-  return path.join(BACKUPS_DIR, 'guilds', String(guildId), 'rollbacks');
+  return getBackupDir({
+    environment: process.env.BOT_MODE,
+    guildId,
+    backupType: 'rollback',
+  });
 }
 
-function getBackupFilePath(guildId, backupId, type = 'backup') {
-  const dir = type === 'rollback'
+function getBackupFilePath(guildId, backupId, type = 'runtime') {
+  const backupType = normaliseBackupType(type);
+
+  const dir = backupType === 'rollback'
     ? getGuildRollbackDir(guildId)
-    : getGuildBackupDir(guildId);
+    : getGuildBackupDir(guildId, backupType);
 
   return path.join(dir, `${backupId}.json`);
+}
+
+function findBackupFilePath(guildId, backupId) {
+  for (const backupType of BACKUP_TYPES_TO_LIST) {
+    const filePath = getBackupFilePath(guildId, backupId, backupType);
+    if (fs.existsSync(filePath)) return filePath;
+  }
+
+  return null;
 }
 
 function writeJson(filePath, data) {
@@ -64,7 +98,7 @@ function writeJson(filePath, data) {
 }
 
 function readJson(filePath) {
-  if (!fs.existsSync(filePath)) return null;
+  if (!filePath || !fs.existsSync(filePath)) return null;
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
 
@@ -153,13 +187,15 @@ function createBackupSummary(backup) {
 
   return {
     backupId: backup?.backupId || null,
-    type: backup?.type || 'backup',
+    type: backup?.type || 'runtime',
+    backupType: backup?.metadata?.backupType || backup?.type || 'runtime',
     version: backup?.version || null,
     createdAt: backup?.createdAt || null,
     createdBy: backup?.createdBy || null,
     requestedBy: backup?.requestedBy || null,
     restoreRequestId: backup?.restoreRequestId || null,
     reason: backup?.reason || null,
+    environment: backup?.environment || backup?.metadata?.environment || null,
     guildId: backup?.guild?.id || null,
     guildName: backup?.guild?.name || null,
 
@@ -295,9 +331,16 @@ function getBackupStats(roles, channels) {
 async function createServerBackup(guild, options = {}) {
   if (!guild) throw new Error('Missing guild.');
 
-  const type = options.type === 'rollback' ? 'rollback' : 'backup';
-  const backupId = options.backupId || createBackupId(type);
-  const filePath = getBackupFilePath(guild.id, backupId, type);
+  const backupType = normaliseBackupType(options.type || options.backupType || 'runtime');
+  const backupId = options.backupId || createBackupId(backupType);
+
+  const dir = ensureBackupDir({
+    environment: process.env.BOT_MODE,
+    guildId: guild.id,
+    backupType,
+  });
+
+  const filePath = path.join(dir, `${backupId}.json`);
 
   await guild.roles.fetch().catch(() => null);
   await guild.channels.fetch().catch(() => null);
@@ -319,9 +362,11 @@ async function createServerBackup(guild, options = {}) {
 
   const backup = {
     version: BACKUP_SCHEMA_VERSION,
-    type,
+    type: backupType,
+    backupType,
     backupId,
     path: filePath,
+    environment: String(process.env.BOT_MODE || 'DEV').toUpperCase(),
 
     createdAt: new Date().toISOString(),
     createdBy: options.createdBy || options.requestedBy || null,
@@ -330,7 +375,7 @@ async function createServerBackup(guild, options = {}) {
     restoreRequestId: options.restoreRequestId || null,
     reason:
       options.reason ||
-      (type === 'rollback'
+      (backupType === 'rollback'
         ? 'Automatic rollback snapshot before restore'
         : 'Server backup'),
 
@@ -343,10 +388,12 @@ async function createServerBackup(guild, options = {}) {
     metadata: {
       source: 'KSJ Goliath',
       backupVersion: BACKUP_SCHEMA_VERSION,
-      backupType: type,
-      isRollbackSnapshot: type === 'rollback',
+      backupType,
+      environment: String(process.env.BOT_MODE || 'DEV').toUpperCase(),
+      isRollbackSnapshot: backupType === 'rollback',
       restoreRequestId: options.restoreRequestId || null,
       createdBySystem: Boolean(options.createdBySystem),
+      storageRoot: BACKUPS_DIR,
     },
 
     logs: getLogsSnapshot(guild.id),
@@ -379,7 +426,7 @@ async function createServerBackup(guild, options = {}) {
 
   writeJson(filePath, backup);
 
-  if (type === 'rollback') {
+  if (backupType === 'rollback') {
     cleanupOldRollbacks(guild.id);
     updateGuildRollbackReference(guild, backup);
   } else {
@@ -405,7 +452,9 @@ function listFilesAsBackupIds(dir) {
 }
 
 function listServerBackups(guildId) {
-  return listFilesAsBackupIds(getGuildBackupDir(guildId));
+  return BACKUP_TYPES_TO_LIST
+    .flatMap((backupType) => listFilesAsBackupIds(getGuildBackupDir(guildId, backupType)))
+    .sort((a, b) => b.localeCompare(a));
 }
 
 function listServerRollbacks(guildId) {
@@ -486,7 +535,9 @@ function getBackupSummaries(guildId) {
     .filter(Boolean)
     .map((backup) => ({
       backupId: backup.backupId,
-      type: backup.type || 'backup',
+      type: backup.type || 'runtime',
+      backupType: backup.backupType || backup.metadata?.backupType || backup.type || 'runtime',
+      environment: backup.environment || backup.metadata?.environment || null,
       createdAt: backup.createdAt,
       createdBy: backup.createdBy,
       requestedBy: backup.requestedBy || null,
@@ -509,6 +560,8 @@ function getRollbackSummaries(guildId) {
     .map((backup) => ({
       backupId: backup.backupId,
       type: backup.type || 'rollback',
+      backupType: backup.backupType || backup.metadata?.backupType || 'rollback',
+      environment: backup.environment || backup.metadata?.environment || null,
       createdAt: backup.createdAt,
       createdBy: backup.createdBy,
       requestedBy: backup.requestedBy || null,
@@ -525,7 +578,7 @@ function getRollbackSummaries(guildId) {
 }
 
 function readServerBackup(guildId, backupId) {
-  return readJson(getBackupFilePath(guildId, backupId, 'backup'));
+  return readJson(findBackupFilePath(guildId, backupId));
 }
 
 function readServerRollback(guildId, rollbackId) {
@@ -533,8 +586,8 @@ function readServerRollback(guildId, rollbackId) {
 }
 
 function deleteServerBackup(guildId, backupId) {
-  const file = getBackupFilePath(guildId, backupId, 'backup');
-  if (!fs.existsSync(file)) return false;
+  const file = findBackupFilePath(guildId, backupId);
+  if (!file || !fs.existsSync(file)) return false;
 
   fs.unlinkSync(file);
   return true;
@@ -563,12 +616,15 @@ function updateGuildBackupReference(guild, backup) {
     lastBackupAt: backup.createdAt,
     lastBackupBy: backup.createdBy || null,
     lastBackupReason: backup.reason || null,
+    lastBackupType: backup.backupType || backup.type || 'runtime',
 
     backupCount: backups.length,
     rollbackCount: rollbacks.length,
 
     latestBackup: {
       backupId: backup.backupId,
+      backupType: backup.backupType || backup.type || 'runtime',
+      environment: backup.environment || backup.metadata?.environment || null,
       createdAt: backup.createdAt,
       createdBy: backup.createdBy || null,
       reason: backup.reason || null,
@@ -579,7 +635,7 @@ function updateGuildBackupReference(guild, backup) {
     },
 
     storage: {
-      provider: process.env.SERVER_BACKUP_PROVIDER || 'google_drive_desktop',
+      provider: process.env.SERVER_BACKUP_PROVIDER || 'local_runtime',
       path: BACKUPS_DIR,
       restoreRequiresSupport: true,
     },
@@ -613,6 +669,8 @@ function updateGuildRollbackReference(guild, rollback) {
 
     latestRollback: {
       backupId: rollback.backupId,
+      backupType: 'rollback',
+      environment: rollback.environment || rollback.metadata?.environment || null,
       createdAt: rollback.createdAt,
       createdBy: rollback.createdBy || null,
       requestedBy: rollback.requestedBy || null,
@@ -625,7 +683,7 @@ function updateGuildRollbackReference(guild, rollback) {
     },
 
     storage: {
-      provider: process.env.SERVER_BACKUP_PROVIDER || 'google_drive_desktop',
+      provider: process.env.SERVER_BACKUP_PROVIDER || 'local_runtime',
       path: BACKUPS_DIR,
       restoreRequiresSupport: true,
     },

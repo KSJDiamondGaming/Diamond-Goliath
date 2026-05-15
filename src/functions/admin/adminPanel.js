@@ -153,25 +153,17 @@ async function openExternalAdminPanel(interaction, panel, navState = panelNav.cr
   return true;
 }
 
+const OWNER_IDS = (process.env.OWNER_IDS || '')
+  .split(',')
+  .map((id) => String(id).trim())
+  .filter(Boolean);
+
 function getBotOwnerIds() {
-  const ids = [];
-
-  if (process.env.BOT_OWNER_ID) ids.push(process.env.BOT_OWNER_ID.trim());
-
-  if (process.env.BOT_OWNER_IDS) {
-    ids.push(
-      ...process.env.BOT_OWNER_IDS
-        .split(',')
-        .map((id) => id.trim())
-        .filter(Boolean)
-    );
-  }
-
-  return [...new Set(ids.filter(Boolean))];
+  return [...new Set(OWNER_IDS)];
 }
 
 function isBotOwner(interaction) {
-  return getBotOwnerIds().includes(interaction.user.id);
+  return OWNER_IDS.includes(String(interaction.user.id));
 }
 
 function isGuildOwner(interaction) {

@@ -60,8 +60,17 @@ const ACTION_REQUIREMENTS = {
   bulk_ban: STAFF_LEVELS.OWNER,
 };
 
+const OWNER_IDS = (process.env.OWNER_IDS || '')
+  .split(',')
+  .map((id) => String(id).trim())
+  .filter(Boolean);
+
+function getBotOwnerIds() {
+  return [...new Set(OWNER_IDS)];
+}
+
 function getBotOwnerId() {
-  return String(process.env.BOT_OWNER_ID || '').trim();
+  return OWNER_IDS[0] || null;
 }
 
 function getId(memberOrUserId) {
@@ -71,10 +80,12 @@ function getId(memberOrUserId) {
 }
 
 function isBotOwner(memberOrUserId) {
-  const ownerId = getBotOwnerId();
   const id = getId(memberOrUserId);
 
-  return Boolean(ownerId && id && String(id) === ownerId);
+  return Boolean(
+    id &&
+    OWNER_IDS.includes(String(id))
+  );
 }
 
 function isGuildOwner(memberOrUserId, guildOwnerId) {
@@ -318,8 +329,9 @@ module.exports = {
   STAFF_BADGES,
   ACTION_REQUIREMENTS,
 
-  getBotOwnerId,
   getId,
+  getBotOwnerIds,
+  getBotOwnerId,
   isBotOwner,
   isGuildOwner,
 

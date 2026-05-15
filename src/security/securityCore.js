@@ -4,13 +4,21 @@ const DEFAULT_COOLDOWN_MS = Number(process.env.SECURITY_COOLDOWN_MS || 2500);
 
 const cooldowns = new Map();
 
+const OWNER_IDS = (process.env.OWNER_IDS || '')
+  .split(',')
+  .map((id) => String(id).trim())
+  .filter(Boolean);
+
+function getBotOwnerIds() {
+  return [...new Set(OWNER_IDS)];
+}
+
 function getBotOwnerId() {
-  return String(process.env.BOT_OWNER_ID || '').trim();
+  return OWNER_IDS[0] || null;
 }
 
 function isBotOwner(userId) {
-  const ownerId = getBotOwnerId();
-  return Boolean(ownerId && String(userId) === ownerId);
+  return OWNER_IDS.includes(String(userId));
 }
 
 function isGuildOwner(interaction) {
@@ -394,6 +402,8 @@ function canManageTargetMember(guild, targetMember) {
 module.exports = {
   PermissionFlagsBits,
 
+  getBotOwnerIds,
+  getBotOwnerId,
   isBotOwner,
   isGuildOwner,
   hasPermission,

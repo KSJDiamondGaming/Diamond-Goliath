@@ -1,7 +1,7 @@
 {
   "guildId": "808091031350280213",
   "guildName": "KSJ DIAMOND GAMING",
-  "updatedAt": "2026-05-15T03:09:46.623Z",
+  "updatedAt": "2026-05-15T18:37:45.588Z",
   "general": {
     "enabled": true,
     "prefix": "!",
@@ -74,14 +74,16 @@
   },
   "serverBackups": {
     "enabled": true,
-    "lastBackupId": "backup_2026-05-15T02-50-30-279Z",
-    "lastBackupAt": "2026-05-15T02:50:30.727Z",
+    "lastBackupId": "runtime_2026-05-15T18-37-45-018Z",
+    "lastBackupAt": "2026-05-15T18:37:45.581Z",
     "lastBackupBy": "1168285714732036096",
     "lastBackupReason": "Manual backup from admin panel",
-    "backupCount": 3,
+    "backupCount": 1,
     "latestBackup": {
-      "backupId": "backup_2026-05-15T02-50-30-279Z",
-      "createdAt": "2026-05-15T02:50:30.727Z",
+      "backupId": "runtime_2026-05-15T18-37-45-018Z",
+      "backupType": "runtime",
+      "environment": "DEV",
+      "createdAt": "2026-05-15T18:37:45.581Z",
       "createdBy": "1168285714732036096",
       "reason": "Manual backup from admin panel",
       "sourceGuildName": "KSJ DIAMOND GAMING",
@@ -90,8 +92,8 @@
       "logsIncluded": true
     },
     "storage": {
-      "provider": "google_drive_desktop",
-      "path": "C:\\Users\\Morgz\\OneDrive\\KSJ\\KSJ Bots\\Goliath\\data\\serverBackups",
+      "provider": "local_runtime",
+      "path": "C:\\Users\\Morgz\\OneDrive\\KSJ\\KSJ Bots\\Goliath\\src\\runtime\\backups",
       "restoreRequiresSupport": true
     },
     "retention": {
@@ -100,7 +102,8 @@
       "maxRollbacks": 6
     },
     "rollbackCount": 0,
-    "updatedAt": "2026-05-15T03:09:39.311Z"
+    "updatedAt": "2026-05-15T18:37:45.586Z",
+    "lastBackupType": "runtime"
   },
   "cases": {
     "updatedAt": "2026-05-15T03:09:39.314Z"

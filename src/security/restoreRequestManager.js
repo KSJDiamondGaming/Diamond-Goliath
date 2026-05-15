@@ -10,7 +10,7 @@ const {
 const serverBackup = require('./serverBackup');
 const serverRestore = require('./serverRestore');
 
-const RESTORE_REQUEST_VERSION = '1B_APPROVAL_PIPELINE';
+const RESTORE_REQUEST_VERSION = '1C_DIFF_APPROVAL_PIPELINE';
 
 const DATA_DIR = path.join(process.cwd(), 'data', 'restoreRequests');
 const PENDING_FILE = path.join(DATA_DIR, 'pending.json');
@@ -72,34 +72,17 @@ function createRequestId(guildId) {
   return `restore_${guildId}_${Date.now()}`;
 }
 
+const OWNER_IDS = (process.env.OWNER_IDS || '')
+  .split(',')
+  .map((id) => String(id).trim())
+  .filter(Boolean);
+
 function getOwnerIds() {
-  const ids = [];
-
-  if (process.env.OWNER_IDS) {
-    ids.push(
-      ...process.env.OWNER_IDS
-        .split(',')
-        .map((id) => id.trim())
-        .filter(Boolean)
-    );
-  }
-
-  if (process.env.BOT_OWNER_ID) ids.push(process.env.BOT_OWNER_ID.trim());
-
-  if (process.env.BOT_OWNER_IDS) {
-    ids.push(
-      ...process.env.BOT_OWNER_IDS
-        .split(',')
-        .map((id) => id.trim())
-        .filter(Boolean)
-    );
-  }
-
-  return [...new Set(ids.filter(Boolean))];
+  return [...new Set(OWNER_IDS)];
 }
 
 function isGlobalOwner(userId) {
-  return getOwnerIds().includes(String(userId));
+  return OWNER_IDS.includes(String(userId));
 }
 
 function isGuildOwner(guild, userId) {
@@ -216,8 +199,62 @@ function safeField(value, max = 1000) {
   return text.length > max ? `${text.slice(0, max - 3)}...` : text;
 }
 
+function formatDiffSummary(diff) {
+  if (!diff?.summary) return null;
+
+  return safeField(
+    [
+      '**Roles**',
+      `+ Create: ${diff.summary.roles?.create || 0}`,
+      `~ Update: ${diff.summary.roles?.update || 0}`,
+      `= Skip: ${diff.summary.roles?.skip || 0}`,
+      `! Duplicates: ${diff.summary.roles?.duplicates || 0}`,
+      `⚠ Warnings: ${diff.summary.roles?.warnings || 0}`,
+      '',
+      '**Channels**',
+      `+ Create: ${diff.summary.channels?.create || 0}`,
+      `~ Update: ${diff.summary.channels?.update || 0}`,
+      `= Skip: ${diff.summary.channels?.skip || 0}`,
+      `! Duplicates: ${diff.summary.channels?.duplicates || 0}`,
+      `⚠ Warnings: ${diff.summary.channels?.warnings || 0}`,
+      '',
+      '**Permissions**',
+      `↺ Check/restore: ${diff.summary.permissions?.restore || 0}`,
+      `= Skip: ${diff.summary.permissions?.skip || 0}`,
+      `⚠ Warnings: ${diff.summary.permissions?.warnings || 0}`,
+      '',
+      '**Safety**',
+      `Warnings: ${diff.summary.totals?.warnings || 0}`,
+      `Blockers: ${diff.summary.totals?.blockers || 0}`,
+    ].join('\n')
+  );
+}
+
+function getTopDiffWarnings(diff, max = 5) {
+  const warnings = Array.isArray(diff?.warnings) ? diff.warnings : [];
+  const blockers = Array.isArray(diff?.blockers) ? diff.blockers : [];
+
+  const lines = [
+    ...blockers.map((item) => `BLOCKER: ${item}`),
+    ...warnings.map((item) => item.message || String(item)),
+  ];
+
+  if (!lines.length) return 'No warnings detected.';
+
+  return safeField(lines.slice(0, max).map((line) => `- ${line}`).join('\n'));
+}
+
 function getPreviewSummary(preview) {
   if (!preview) return 'Preview unavailable.';
+
+  if (preview.restoreDiff) {
+    return formatDiffSummary(preview.restoreDiff);
+  }
+
+  if (preview.restoreDiffText) {
+    return safeField(preview.restoreDiffText);
+  }
+
   if (preview.summary) return safeField(preview.summary);
 
   return safeField(
@@ -250,8 +287,12 @@ function getRestoreSummary(result) {
 }
 
 function buildRequestEmbed(request) {
-  return new EmbedBuilder()
-    .setColor(0xf59e0b)
+  const preview = request.preview || null;
+  const diff = preview?.restoreDiff || null;
+  const warningText = getTopDiffWarnings(diff);
+
+  const embed = new EmbedBuilder()
+    .setColor(diff?.summary?.totals?.blockers > 0 ? 0xdc2626 : 0xf59e0b)
     .setTitle('Restore Approval Required')
     .setDescription(
       [
@@ -283,8 +324,22 @@ function buildRequestEmbed(request) {
         inline: false,
       },
       {
-        name: 'Restore Preview',
+        name: 'Backup',
+        value: [
+          `ID: \`${preview?.backupId || diff?.backup?.backupId || 'Unknown'}\``,
+          `Type: \`${diff?.backup?.type || preview?.type || 'Unknown'}\``,
+          `Environment: \`${diff?.backup?.environment || 'Unknown'}\``,
+        ].join('\n'),
+        inline: false,
+      },
+      {
+        name: 'Restore Diff Preview',
         value: request.previewSummary || 'Preview unavailable.',
+        inline: false,
+      },
+      {
+        name: 'Warnings / Blockers',
+        value: warningText,
         inline: false,
       }
     )
@@ -292,19 +347,23 @@ function buildRequestEmbed(request) {
       text: `KSJ Goliath Restore System • ${RESTORE_REQUEST_VERSION}`,
     })
     .setTimestamp(new Date(request.createdAt));
+
+  return embed;
 }
 
-function buildDecisionButtons(requestId) {
+function buildDecisionButtons(requestId, disabled = false) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`restore_request_approve:${requestId}`)
       .setLabel('Approve Restore')
-      .setStyle(ButtonStyle.Success),
+      .setStyle(ButtonStyle.Success)
+      .setDisabled(disabled),
 
     new ButtonBuilder()
       .setCustomId(`restore_request_deny:${requestId}`)
       .setLabel('Deny Restore')
       .setStyle(ButtonStyle.Danger)
+      .setDisabled(disabled)
   );
 }
 
@@ -376,9 +435,12 @@ async function sendSupportAlert(client, request) {
     throw new Error('Could not fetch restore request channel.');
   }
 
+  const diffBlockers = request.preview?.restoreDiff?.summary?.totals?.blockers || 0;
+  const disabled = diffBlockers > 0 || !request.previewOk;
+
   const message = await channel.send({
     embeds: [buildRequestEmbed(request)],
-    components: [buildDecisionButtons(request.id)],
+    components: [buildDecisionButtons(request.id, disabled)],
   });
 
   request.supportGuildId = supportGuildId;
@@ -454,7 +516,8 @@ async function createRestoreRequest(interaction, options = {}) {
     previewSummary = `Preview failed: ${error.message}`;
   }
 
-  const previewOk = Boolean(preview && preview.available !== false);
+  const diffBlockers = preview?.restoreDiff?.summary?.totals?.blockers || 0;
+  const previewOk = Boolean(preview && preview.available !== false && diffBlockers === 0);
 
   const request = {
     id: createRequestId(guild.id),
@@ -466,7 +529,7 @@ async function createRestoreRequest(interaction, options = {}) {
     requestedById: user.id,
     requestedByTag: user.tag,
 
-    status: preview ? 'pending' : 'preview_failed',
+    status: previewOk ? 'pending' : 'preview_failed',
 
     previewOk,
     preview,
@@ -494,7 +557,7 @@ async function createRestoreRequest(interaction, options = {}) {
 
   upsertPendingRequest(request);
 
-  if (!preview) {
+  if (!previewOk) {
     removePendingRequest(request.id);
     pushHistory(request);
     pushAudit({
@@ -504,7 +567,7 @@ async function createRestoreRequest(interaction, options = {}) {
 
     return interaction.editReply({
       content: [
-        'Restore request could not be submitted because the preview failed.',
+        'Restore request could not be submitted because the preview failed or has blockers.',
         '',
         previewSummary,
       ].join('\n'),
@@ -573,6 +636,13 @@ async function approveRestoreRequest(interaction, requestId) {
   if (!request.previewOk || !request.preview) {
     return interaction.reply({
       content: 'This request cannot be approved because it does not have a valid restore preview.',
+      flags: 64,
+    });
+  }
+
+  if (request.preview?.restoreDiff?.summary?.totals?.blockers > 0) {
+    return interaction.reply({
+      content: 'This request cannot be approved because the restore diff has blockers.',
       flags: 64,
     });
   }

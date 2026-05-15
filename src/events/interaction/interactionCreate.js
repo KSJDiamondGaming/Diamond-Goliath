@@ -65,10 +65,10 @@ async function safeReply(interaction, message) {
   };
 
   if (interaction.deferred || interaction.replied) {
-    return interaction.editReply(payload);
+    return interaction.editReply(payload).catch(() => null);
   }
 
-  return interaction.reply(payload);
+  return interaction.reply(payload).catch(() => null);
 }
 
 async function handlePurgeModal(interaction) {
@@ -132,13 +132,16 @@ async function handleSecurityTestButton(interaction, activeClient) {
   const securityTestCommand = activeClient.commands.get('securitytest');
 
   if (!securityTestCommand?.handleButton) {
-    return safeReply(
+    await safeReply(
       interaction,
       '❌ Security test handler is missing. Check the securitytest command file.'
     );
+
+    return true;
   }
 
-  return securityTestCommand.handleButton(interaction, activeClient);
+  await securityTestCommand.handleButton(interaction, activeClient);
+  return true;
 }
 
 module.exports = {
@@ -149,13 +152,17 @@ module.exports = {
       const activeClient = client || interaction.client;
 
       // 0. Restore approval system buttons.
-      // These are handled before protected panel routing so support guild approvals
-      // do not get swallowed by admin/embed/help handlers.
       if (interaction.isButton() && isRestoreInteraction(interaction)) {
         const handledRestoreButton =
           await restoreRequestManager.handleRestoreButton(interaction);
 
         if (handledRestoreButton) return;
+      }
+
+      // 0.5 Security test buttons.
+      // Handle these before protected admin/embed/automod routing.
+      if (interaction.isButton() && isSecurityTestInteraction(interaction)) {
+        if (await handleSecurityTestButton(interaction, activeClient)) return;
       }
 
       if (isProtectedPanelInteraction(interaction)) {
@@ -222,10 +229,7 @@ module.exports = {
         return false;
       }
 
-      // 8. Security test buttons.
-      if (await handleSecurityTestButton(interaction, activeClient)) return;
-
-      // 9. Help buttons.
+      // 8. Help buttons / unhandled buttons.
       if (interaction.isButton()) {
         if (
           interaction.customId === 'help-back-home' ||

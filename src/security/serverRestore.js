@@ -8,11 +8,16 @@ const {
   getLatestServerBackupId,
 } = require('./serverBackup');
 
+const {
+  buildRestoreDiff,
+  createRestoreDiffText,
+} = require('./restoreDiffBuilder');
+
 const { validateBotHierarchy } = require('./securityCore');
 
 const guildManager = require('../guild/guildManager');
 
-const RESTORE_VERSION = '3B_APPROVAL_SAFE';
+const RESTORE_VERSION = '3C_DIFF_PREVIEW_SAFE';
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -22,34 +27,21 @@ function asSnowflake(value) {
   return value ? String(value) : null;
 }
 
+const OWNER_IDS = (process.env.OWNER_IDS || '')
+  .split(',')
+  .map((id) => String(id).trim())
+  .filter(Boolean);
+
 function getBotOwnerIds() {
-  const ids = [];
+  return [...new Set(OWNER_IDS)];
+}
 
-  if (process.env.OWNER_IDS) {
-    ids.push(
-      ...process.env.OWNER_IDS
-        .split(',')
-        .map((id) => id.trim())
-        .filter(Boolean)
-    );
-  }
-
-  if (process.env.BOT_OWNER_ID) ids.push(process.env.BOT_OWNER_ID.trim());
-
-  if (process.env.BOT_OWNER_IDS) {
-    ids.push(
-      ...process.env.BOT_OWNER_IDS
-        .split(',')
-        .map((id) => id.trim())
-        .filter(Boolean)
-    );
-  }
-
-  return [...new Set(ids.filter(Boolean))];
+function getBotOwnerId() {
+  return OWNER_IDS[0] || null;
 }
 
 function isBotOwner(userId) {
-  return getBotOwnerIds().includes(String(userId));
+  return OWNER_IDS.includes(String(userId));
 }
 
 function isCategoryType(type) {
@@ -338,6 +330,9 @@ function createRestoreReport(guild, backupId, options) {
 
     validation: null,
     hierarchy: null,
+
+    restoreDiff: null,
+    restoreDiffText: null,
 
     roles: {
       planned: 0,
@@ -783,6 +778,27 @@ async function cleanupBeforeRestore(guild, backup, report, options) {
   }
 }
 
+async function attachRestoreDiff(guild, backup, report, options = {}) {
+  const diff = await buildRestoreDiff(guild, backup, {
+    enforceGuildMatch: options.requireSameGuild !== false,
+  });
+
+  report.restoreDiff = diff;
+  report.restoreDiffText = createRestoreDiffText(diff);
+
+  if (diff.warnings?.length) {
+    report.warnings.push(
+      ...diff.warnings.map((warning) => warning.message || String(warning))
+    );
+  }
+
+  if (diff.blockers?.length) {
+    report.errors.push(...diff.blockers);
+  }
+
+  return diff;
+}
+
 async function restoreServerBackup(guild, backupId, options = {}) {
   const restoreOptions = {
     onProgress: null,
@@ -848,6 +864,14 @@ async function restoreServerBackup(guild, backupId, options = {}) {
 
   if (validation.warnings?.length) {
     report.warnings.push(...validation.warnings);
+  }
+
+  const diff = await attachRestoreDiff(guild, backup, report, restoreOptions);
+
+  if (diff.blockers?.length) {
+    throw new Error(
+      `Restore blocked by diff validation:\n${diff.blockers.join('\n')}`
+    );
   }
 
   const maps = {
@@ -928,7 +952,7 @@ async function previewRestore(guild, options = {}) {
     reason: options.reason || `Goliath restore preview ${RESTORE_VERSION}`,
   });
 
-  report.summary = [
+  report.summary = report.restoreDiffText || [
     `Backup: ${report.backupId}`,
     `Roles planned: ${report.roles.planned}`,
     `Categories planned: ${report.categories.planned}`,
