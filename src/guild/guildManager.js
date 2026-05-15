@@ -1,7 +1,15 @@
 const fs = require('fs');
 const path = require('path');
 
-const GUILDS_DIR = path.join(__dirname, 'data');
+const {
+  getRuntimePaths,
+} = require('../config/runtimePaths');
+
+const runtimePaths = getRuntimePaths(
+  process.env.BOT_MODE || 'DEV'
+);
+
+const GUILDS_DIR = runtimePaths.guilds;
 
 const guildCache = new Map();
 
@@ -245,9 +253,32 @@ function writeJson(filePath, data) {
   ensureGuildsDir();
 
   const tempPath = `${filePath}.tmp`;
+  const json = JSON.stringify(data, null, 2);
 
-  fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), 'utf8');
-  fs.renameSync(tempPath, filePath);
+  try {
+    fs.writeFileSync(tempPath, json, 'utf8');
+    fs.renameSync(tempPath, filePath);
+  } catch (error) {
+    if (error.code === 'EPERM' || error.code === 'EBUSY') {
+      fs.writeFileSync(filePath, json, 'utf8');
+
+      try {
+        if (fs.existsSync(tempPath)) {
+          fs.unlinkSync(tempPath);
+        }
+      } catch {}
+
+      return;
+    }
+
+    try {
+      if (fs.existsSync(tempPath)) {
+        fs.unlinkSync(tempPath);
+      }
+    } catch {}
+
+    throw error;
+  }
 }
 
 function mergeDeep(defaults = {}, source = {}) {

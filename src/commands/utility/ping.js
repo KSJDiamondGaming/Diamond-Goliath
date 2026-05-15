@@ -1,6 +1,4 @@
-const {
-  SlashCommandBuilder,
-} = require('discord.js');
+const { SlashCommandBuilder } = require('discord.js');
 
 const { enforceCommandAccess } = require('../../helpers/ui/commandAccess');
 const {
@@ -24,18 +22,18 @@ module.exports = {
 
   data: new SlashCommandBuilder()
     .setName('ping')
-    .setDescription('💎 Check Goliath’s live status, heartbeat and latency'),
+    .setDescription('💎 Check Goliath’s heartbeat, latency and status'),
 
   async execute(interaction) {
-    const denied = await enforceCommandAccess(interaction, module.exports);
-    if (denied) return;
-
     try {
+      const denied = await enforceCommandAccess(interaction, module.exports);
+      if (denied) return;
+
       if (!interaction.deferred && !interaction.replied) {
         await interaction.deferReply({ flags: 64 });
       }
 
-      const clientLatency = Date.now() - interaction.createdTimestamp;
+      const clientLatency = Math.max(0, Date.now() - interaction.createdTimestamp);
       const apiLatency = Math.round(interaction.client.ws.ping);
       const uptime = formatUptime(process.uptime());
 
@@ -70,10 +68,9 @@ module.exports = {
           '',
           `\`⏱️\` **Uptime**`,
           `\`${uptime}\``,
-          '',
         ].join('\n'));
 
-      return await interaction.editReply({
+      return await safeReply(interaction, {
         embeds: [embed],
       });
     } catch (error) {
@@ -89,14 +86,17 @@ module.exports = {
 };
 
 async function safeReply(interaction, payload) {
-  const safePayload = {
-    ...payload,
-    flags: 64,
-  };
+  try {
+    if (interaction.deferred || interaction.replied) {
+      return await interaction.editReply(payload);
+    }
 
-  if (interaction.deferred || interaction.replied) {
-    return interaction.editReply(safePayload);
+    return await interaction.reply({
+      ...payload,
+      flags: 64,
+    });
+  } catch (error) {
+    console.error('❌ Failed to send ping response:', error);
+    return null;
   }
-
-  return interaction.reply(safePayload);
 }

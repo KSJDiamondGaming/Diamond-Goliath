@@ -4,7 +4,7 @@ const {
   PermissionFlagsBits,
 } = require('discord.js');
 
-const securityIncidentLogger = require('./securityIncidentLogger');
+const securitySystem = require('./securitySystem');
 const guildManager = require('../guild/guildManager');
 
 const {
@@ -16,13 +16,13 @@ const {
   validateBotHierarchy,
   hasDangerousPermissions,
   canManageTargetMember,
-} = require('./securityCore');
+} = require('./securitySystem');
 
 const {
   SEVERITY,
   INCIDENT_TYPES,
   logIncident,
-} = securityIncidentLogger;
+} = securitySystem;
 
 const QUARANTINE_ROLE_NAME = 'Goliath Quarantine';
 
@@ -190,7 +190,7 @@ async function fetchAuditExecutor(guild, auditType) {
       entry,
     };
   } catch (err) {
-    console.error('[AntiNukeManager] Failed to fetch audit executor:', err);
+    console.error('[securitySystem] Failed to fetch audit executor:', err);
     return null;
   }
 }
@@ -211,7 +211,7 @@ async function createEmergencyBackup(guild, reason, stage) {
       type: 'security_emergency',
     });
   } catch (err) {
-    console.error('[AntiNukeManager] Emergency backup failed:', err);
+    console.error('[securitySystem] Emergency backup failed:', err);
     return null;
   }
 }
@@ -234,7 +234,7 @@ async function alertOwner(guild, incident) {
 
     return true;
   } catch (err) {
-    console.error('[AntiNukeManager] Owner alert failed:', err);
+    console.error('[securitySystem] Owner alert failed:', err);
     return false;
   }
 }
@@ -419,7 +419,7 @@ async function quarantineMember(guild, member, config, reason) {
       removedRoleIds: removableRoles.map((role) => role.id),
     };
   } catch (err) {
-    console.error('[AntiNukeManager] Failed to quarantine member:', err);
+    console.error('[securitySystem] Failed to quarantine member:', err);
 
     return {
       success: false,

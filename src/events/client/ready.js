@@ -4,6 +4,10 @@ const {
   restoreLockdownReminders,
 } = require('../../security/lockdownSystem');
 
+const {
+  startbackupWorker,
+} = require('../../security/backup/backupWorker');
+
 module.exports = {
   name: 'clientReady',
   once: true,
@@ -32,15 +36,44 @@ module.exports = {
 
     try {
       await restoreLockdownReminders(client);
-      terminal.success('Lockdown recovery system initialized');
+
+      terminal.success(
+        'Lockdown recovery system initialized'
+      );
     } catch (error) {
-      terminal.error('Lockdown recovery failed', error);
+      terminal.error(
+        'Lockdown recovery failed',
+        error
+      );
+    }
+
+    try {
+      const syncWorker =
+        startbackupWorker();
+
+      if (syncWorker.started) {
+        terminal.success(
+          `Backup sync worker initialized (${syncWorker.intervalMs}ms)`
+        );
+      } else {
+        terminal.warn(
+          `Backup sync worker not started (${syncWorker.reason})`
+        );
+      }
+    } catch (error) {
+      terminal.error(
+        'Backup sync worker failed',
+        error
+      );
     }
 
     try {
       // Future schedulers can be initialized here.
     } catch (err) {
-      terminal.error('Scheduler failed', err);
+      terminal.error(
+        'Scheduler failed',
+        err
+      );
     }
 
     client.isBooting = false;
@@ -65,12 +98,16 @@ module.exports = {
       },
       {
         label: 'Connected Guilds',
-        value: String(client.guilds.cache.size),
-        ok: client.guilds.cache.size > 0,
+        value: String(
+          client.guilds.cache.size
+        ),
+        ok:
+          client.guilds.cache.size > 0,
       },
       {
         label: 'Systems',
-        value: 'Scheduler + Lockdown Recovery',
+        value:
+          'Scheduler + Lockdown Recovery + Backup Sync Worker',
         ok: true,
       },
     ]);

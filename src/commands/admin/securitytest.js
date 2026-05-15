@@ -10,13 +10,23 @@ const {
   logIncident,
   SEVERITY,
   INCIDENT_TYPES,
-} = require('../../security/securityIncidentLogger');
+} = require('../../security/securitySystem');
 
-const BOT_OWNER_ID = process.env.BOT_OWNER_ID || process.env.OWNER_ID;
+const {
+  createServerBackup,
+} = require('../../security/serverBackup');
+
 const BUTTON_PREFIX = 'securitytest:';
 
+function getOwnerIds() {
+  return (process.env.OWNER_IDS || '')
+    .split(',')
+    .map((id) => String(id).trim())
+    .filter(Boolean);
+}
+
 function isOwner(interaction) {
-  return BOT_OWNER_ID && interaction.user.id === BOT_OWNER_ID;
+  return getOwnerIds().includes(String(interaction.user.id));
 }
 
 function incidentType(name, fallback = INCIDENT_TYPES.SUSPICIOUS_ADMIN_ACTION) {
@@ -193,6 +203,29 @@ const TESTS = {
       });
     },
   },
+
+  'manual-backup': {
+    label: 'Manual Backup',
+    emoji: '💾',
+    style: ButtonStyle.Success,
+
+    async run(interaction) {
+      const backup = await createServerBackup(interaction.guild, {
+        type: 'runtime',
+        createdBy: interaction.user.id,
+        reason: `Manual security panel backup by ${interaction.user.tag}`,
+      });
+
+      return {
+        success: true,
+        message: [
+          '',
+          `Backup ID: \`${backup.backupId}\``,
+          `Environment: \`${backup.environment}\``,
+        ].join('\n'),
+      };
+    },
+  },
 };
 
 function buildRows() {
@@ -214,7 +247,7 @@ function buildRows() {
         .setCustomId(`${BUTTON_PREFIX}webhook-abuse`)
         .setLabel(TESTS['webhook-abuse'].label)
         .setEmoji(TESTS['webhook-abuse'].emoji)
-        .setStyle(TESTS['webhook-abuse'].style),
+        .setStyle(TESTS['webhook-abuse'].style)
     ),
 
     new ActionRowBuilder().addComponents(
@@ -234,7 +267,7 @@ function buildRows() {
         .setCustomId(`${BUTTON_PREFIX}incident-log`)
         .setLabel(TESTS['incident-log'].label)
         .setEmoji(TESTS['incident-log'].emoji)
-        .setStyle(TESTS['incident-log'].style),
+        .setStyle(TESTS['incident-log'].style)
     ),
 
     new ActionRowBuilder().addComponents(
@@ -243,6 +276,12 @@ function buildRows() {
         .setLabel('Run Full Safe Test')
         .setEmoji('🧪')
         .setStyle(ButtonStyle.Success),
+
+      new ButtonBuilder()
+        .setCustomId(`${BUTTON_PREFIX}manual-backup`)
+        .setLabel(TESTS['manual-backup'].label)
+        .setEmoji(TESTS['manual-backup'].emoji)
+        .setStyle(TESTS['manual-backup'].style)
     ),
   ];
 }
@@ -251,20 +290,23 @@ async function runTest(interaction, testKey) {
   if (!interaction.guild) {
     return sendSafe(interaction, {
       content: '❌ This can only be used inside a server.',
-      flags: MessageFlags.Ephemeral,
     });
   }
 
   if (!isOwner(interaction)) {
     return sendSafe(interaction, {
-      content: '❌ Owner only. You cannot run Goliath security tests.',
-      flags: MessageFlags.Ephemeral,
+      content: [
+        '❌ Owner only. You cannot run Goliath security tests.',
+        '',
+        `Your ID: \`${interaction.user.id}\``,
+        `OWNER_IDS loaded: \`${getOwnerIds().join(', ') || 'none'}\``,
+      ].join('\n'),
     });
   }
 
   const testsToRun =
     testKey === 'full-run'
-      ? Object.entries(TESTS)
+      ? Object.entries(TESTS).filter(([key]) => key !== 'manual-backup')
       : [[testKey, TESTS[testKey]]];
 
   const results = [];
@@ -276,11 +318,22 @@ async function runTest(interaction, testKey) {
     }
 
     try {
-      await logIncident(interaction.guild, test.build(interaction));
-      results.push(`✅ ${test.emoji} ${test.label}`);
+      if (typeof test.run === 'function') {
+        const result = await test.run(interaction);
+
+        results.push(`✅ ${test.emoji} ${test.label}`);
+
+        if (result?.message) {
+          results.push(result.message);
+        }
+      } else {
+        await logIncident(interaction.guild, test.build(interaction));
+        results.push(`✅ ${test.emoji} ${test.label}`);
+      }
     } catch (error) {
       console.error(`[securitytest] Failed test: ${key}`, error);
       results.push(`❌ ${test.emoji} ${test.label}`);
+      results.push(`\`${error.message}\``);
     }
   }
 
@@ -293,7 +346,6 @@ async function runTest(interaction, testKey) {
       'Safe mode: `true`',
       'Destructive actions: `none`',
     ].join('\n'),
-    flags: MessageFlags.Ephemeral,
   });
 }
 
@@ -303,21 +355,28 @@ module.exports = {
     .setDescription('Owner-only safe test panel for Goliath security systems.'),
 
   async execute(interaction) {
+    await interaction.deferReply({
+      flags: MessageFlags.Ephemeral,
+    });
+
     if (!interaction.guild) {
-      return interaction.reply({
+      return interaction.editReply({
         content: '❌ This command can only be used inside a server.',
-        flags: MessageFlags.Ephemeral,
       });
     }
 
     if (!isOwner(interaction)) {
-      return interaction.reply({
-        content: '❌ Owner only. You cannot open Goliath security tests.',
-        flags: MessageFlags.Ephemeral,
+      return interaction.editReply({
+        content: [
+          '❌ Owner only. You cannot open Goliath security tests.',
+          '',
+          `Your ID: \`${interaction.user.id}\``,
+          `OWNER_IDS loaded: \`${getOwnerIds().join(', ') || 'none'}\``,
+        ].join('\n'),
       });
     }
 
-    return interaction.reply({
+    return interaction.editReply({
       content: [
         '🧪 **Goliath Security Test Panel**',
         '',
@@ -328,9 +387,10 @@ module.exports = {
         'No webhooks will be created or deleted.',
         'No members will be quarantined.',
         'No lockdown will actually be enabled.',
+        '',
+        'Manual Backup creates a real runtime backup.',
       ].join('\n'),
       components: buildRows(),
-      flags: MessageFlags.Ephemeral,
     });
   },
 

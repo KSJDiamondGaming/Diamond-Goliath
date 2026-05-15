@@ -102,7 +102,7 @@ function readIncidents(guildId) {
     const security = guildManager.getGuildSection(guildId, 'security', {});
     return Array.isArray(security.incidents) ? security.incidents : [];
   } catch (err) {
-    console.error('[SecurityIncidentLogger] Failed to read incidents:', err);
+    console.error('[securitySystem] Failed to read incidents:', err);
     return [];
   }
 }
@@ -120,7 +120,7 @@ function writeIncidents(guildId, incidents = [], options = {}) {
 
     return true;
   } catch (err) {
-    console.error('[SecurityIncidentLogger] Failed to write incidents:', err);
+    console.error('[securitySystem] Failed to write incidents:', err);
     return false;
   }
 }
@@ -179,7 +179,7 @@ function updateGuildSecurityState(guildId, incident, options = {}) {
     return true;
   } catch (err) {
     console.error(
-      '[SecurityIncidentLogger] Failed to update guild security state:',
+      '[securitySystem] Failed to update guild security state:',
       err
     );
     return false;
@@ -279,7 +279,7 @@ async function sendIncidentLog(guild, incident) {
 
     return true;
   } catch (err) {
-    console.error('[SecurityIncidentLogger] Failed to send incident log:', err);
+    console.error('[securitySystem] Failed to send incident log:', err);
     return false;
   }
 }
@@ -322,7 +322,7 @@ async function sendOwnerSecurityMirror(incident) {
     return true;
   } catch (err) {
     console.error(
-      '[SecurityIncidentLogger] Failed to send owner security mirror:',
+      '[securitySystem] Failed to send owner security mirror:',
       err
     );
     return false;
