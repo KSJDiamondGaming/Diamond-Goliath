@@ -33,7 +33,7 @@ function normalizeRoleIds(roleIds = []) {
 }
 
 function getIncidentLogger() {
-  return require('./securityIncidentLogger');
+  return require('./securitySystem');
 }
 
 function getLockdownState(guildId) {

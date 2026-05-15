@@ -1,0 +1,16 @@
+{
+  "version": "1A_INTEGRITY_SYSTEM",
+  "backup": {
+    "id": "runtime_2026-05-15T19-55-37-326Z",
+    "type": "runtime",
+    "environment": "DEV",
+    "guildId": "808091031350280213",
+    "path": "C:\\Users\\Morgz\\OneDrive\\KSJ\\KSJ Bots\\Goliath\\src\\runtime\\backups\\DEV\\808091031350280213\\runtime\\runtime_2026-05-15T19-55-37-326Z.json"
+  },
+  "integrity": {
+    "algorithm": "sha256",
+    "hash": "63b4b5d29527e6a68c1fa1cdfeee139c87fafa1353de7667eaa8fb20991e414e",
+    "size": 76009,
+    "generatedAt": "2026-05-15T19:55:37.874Z"
+  }
+}

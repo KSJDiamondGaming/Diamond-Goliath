@@ -1,0 +1,180 @@
+{
+  "guildId": "808091031350280213",
+  "guildName": "KSJ DIAMOND GAMING",
+  "updatedAt": "2026-05-15T19:55:37.877Z",
+  "general": {
+    "enabled": true,
+    "prefix": "!",
+    "timezone": "Europe/London",
+    "updatedAt": "2026-05-15T03:09:39.299Z"
+  },
+  "modules": {
+    "updatedAt": "2026-05-15T03:09:39.301Z"
+  },
+  "automod": {
+    "updatedAt": "2026-05-15T03:09:39.304Z"
+  },
+  "logs": {
+    "enabled": true,
+    "channels": {
+      "general": null,
+      "moderation": null,
+      "admin": null,
+      "automod": null,
+      "member": null,
+      "messageDelete": null,
+      "messageEdit": null,
+      "voice": null
+    },
+    "events": {
+      "moderationActions": true,
+      "adminActions": true,
+      "automodActions": true,
+      "memberJoin": true,
+      "memberLeave": true,
+      "memberUpdate": true,
+      "messageDelete": true,
+      "messageEdit": true,
+      "roleCreate": true,
+      "roleDelete": true,
+      "roleUpdate": true,
+      "channelCreate": true,
+      "channelDelete": true,
+      "channelUpdate": true,
+      "voiceJoin": true,
+      "voiceLeave": true,
+      "voiceMove": true
+    },
+    "updatedAt": "2026-05-15T03:09:39.306Z"
+  },
+  "security": {
+    "enabled": true,
+    "threatLevel": "low",
+    "totalIncidents": 0,
+    "criticalIncidents": 0,
+    "lastIncidentAt": null,
+    "lastIncidentType": null,
+    "lastLockdownAt": null,
+    "lastQuarantineAt": null,
+    "incidents": [],
+    "lockdown": {
+      "active": false,
+      "enabledBy": null,
+      "enabledAt": null,
+      "reason": null,
+      "expiresAt": null,
+      "channels": [],
+      "bypassRoleIds": []
+    },
+    "ownerMonitoring": {
+      "enabled": true,
+      "webhookMirrorEnabled": true
+    },
+    "updatedAt": "2026-05-15T03:09:39.308Z"
+  },
+  "serverBackups": {
+    "enabled": true,
+    "lastBackupId": "runtime_2026-05-15T19-55-37-326Z",
+    "lastBackupAt": "2026-05-15T19:55:37.865Z",
+    "lastBackupBy": "1168285714732036096",
+    "lastBackupReason": "Manual backup from admin panel",
+    "backupCount": 2,
+    "latestBackup": {
+      "backupId": "runtime_2026-05-15T19-55-37-326Z",
+      "backupType": "runtime",
+      "environment": "DEV",
+      "createdAt": "2026-05-15T19:55:37.865Z",
+      "createdBy": "1168285714732036096",
+      "reason": "Manual backup from admin panel",
+      "sourceGuildName": "KSJ DIAMOND GAMING",
+      "roles": 24,
+      "channels": 57,
+      "logsIncluded": true,
+      "integrity": {
+        "verified": true,
+        "algorithm": "sha256",
+        "hash": "a69b2a7c581d31860eb86a1b2a7d8673df4ee0339cbc72c71fbdcaae273532e3",
+        "integrityPath": "C:\\Users\\Morgz\\OneDrive\\KSJ\\KSJ Bots\\Goliath\\src\\runtime\\backups\\DEV\\808091031350280213\\runtime\\runtime_2026-05-15T19-55-37-326Z.json.integrity.json",
+        "generatedAt": "2026-05-15T19:55:37.869Z"
+      }
+    },
+    "storage": {
+      "provider": "local_runtime",
+      "path": "C:\\Users\\Morgz\\OneDrive\\KSJ\\KSJ Bots\\Goliath\\src\\runtime\\backups",
+      "restoreRequiresSupport": true
+    },
+    "retention": {
+      "maxBackups": 3,
+      "autoCleanup": true,
+      "maxRollbacks": 6
+    },
+    "rollbackCount": 0,
+    "updatedAt": "2026-05-15T19:55:37.877Z",
+    "lastBackupType": "runtime",
+    "lastBackupIntegrity": {
+      "verified": true,
+      "algorithm": "sha256",
+      "hash": "a69b2a7c581d31860eb86a1b2a7d8673df4ee0339cbc72c71fbdcaae273532e3",
+      "integrityPath": "C:\\Users\\Morgz\\OneDrive\\KSJ\\KSJ Bots\\Goliath\\src\\runtime\\backups\\DEV\\808091031350280213\\runtime\\runtime_2026-05-15T19-55-37-326Z.json.integrity.json",
+      "generatedAt": "2026-05-15T19:55:37.869Z"
+    }
+  },
+  "cases": {
+    "updatedAt": "2026-05-15T03:09:39.314Z"
+  },
+  "warnings": {
+    "updatedAt": "2026-05-15T03:09:39.317Z"
+  },
+  "welcome": {
+    "updatedAt": "2026-05-15T03:09:39.319Z"
+  },
+  "leave": {
+    "updatedAt": "2026-05-15T03:09:39.324Z"
+  },
+  "tickets": {
+    "updatedAt": "2026-05-15T03:09:39.327Z"
+  },
+  "levels": {
+    "updatedAt": "2026-05-15T03:09:39.330Z"
+  },
+  "reactionRoles": {
+    "updatedAt": "2026-05-15T03:09:39.332Z"
+  },
+  "giveaways": {
+    "updatedAt": "2026-05-15T03:09:39.334Z"
+  },
+  "suggestions": {
+    "updatedAt": "2026-05-15T03:09:39.337Z"
+  },
+  "stats": {
+    "updatedAt": "2026-05-15T03:09:39.339Z"
+  },
+  "autoRoles": {
+    "enabled": false,
+    "roleIds": [],
+    "updatedAt": "2026-05-15T03:09:39.341Z"
+  },
+  "staffRoles": {
+    "roleIds": [],
+    "updatedAt": "2026-05-15T03:09:39.343Z"
+  },
+  "modRoles": {
+    "roleIds": [],
+    "updatedAt": "2026-05-15T03:09:39.347Z"
+  },
+  "embedPresets": {
+    "updatedAt": "2026-05-15T03:09:39.349Z"
+  },
+  "embedDefaults": {
+    "welcome": null,
+    "leave": null,
+    "rules": null,
+    "announcement": null,
+    "suggestion": null,
+    "giveaway": null,
+    "update": null,
+    "event": null,
+    "warning": null,
+    "updatedAt": "2026-05-15T03:09:39.352Z"
+  }
+}

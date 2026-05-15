@@ -5,39 +5,28 @@
   "main": "server.js",
   "type": "commonjs",
   "private": true,
-
   "scripts": {
     "bot": "node server.js",
-
     "bot:dev": "cross-env BOT_MODE=dev node server.js",
     "bot:beta": "cross-env BOT_MODE=beta node server.js",
     "bot:production": "cross-env BOT_MODE=production node server.js",
-
     "bot:dev+beta": "concurrently -n DEV,BETA -c blue,yellow \"npm run bot:dev\" \"npm run bot:beta\"",
-
     "sync": "node src/helpers/commands/syncCommands.js",
-
     "sync:dev": "cross-env BOT_MODE=dev node src/helpers/commands/syncCommands.js",
     "sync:beta": "cross-env BOT_MODE=beta node src/helpers/commands/syncCommands.js",
     "sync:production": "cross-env BOT_MODE=production node src/helpers/commands/syncCommands.js",
-
     "sync:dev+beta": "npm run sync:dev && npm run sync:beta",
-
     "dev": "npm run sync:dev && npm run bot:dev",
     "beta": "npm run sync:beta && npm run bot:beta",
     "production": "npm run sync:production && npm run bot:production",
-
     "dev+beta": "npm run sync:dev+beta && npm run bot:dev+beta",
-
     "api": "node src/dashboard/server.js",
     "api:dev": "cross-env BOT_MODE=dev node src/dashboard/server.js",
     "api:beta": "cross-env BOT_MODE=beta node src/dashboard/server.js",
     "api:production": "cross-env BOT_MODE=production node src/dashboard/server.js",
-
     "dashboard": "vite src/dashboard --host",
     "dashboard:dev": "vite src/dashboard --host"
   },
-
   "dependencies": {
     "better-sqlite3": "^12.8.0",
     "chalk": "^5.6.2",
@@ -46,6 +35,7 @@
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "express-session": "^1.19.0",
+    "googleapis": "^171.4.0",
     "node-fetch": "^2.7.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -53,7 +43,6 @@
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3"
   },
-
   "devDependencies": {
     "concurrently": "^9.2.1",
     "cross-env": "^7.0.3",

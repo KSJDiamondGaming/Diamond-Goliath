@@ -1,4 +1,4 @@
-const antiNukeManager = require('../../security/antiNukeManager');
+const securitySystem = require('../../security/securitySystem');
 
 module.exports = {
   name: 'channelDelete',
@@ -10,7 +10,7 @@ module.exports = {
     try {
       if (!channel?.guild) return;
 
-      await antiNukeManager.handleChannelDelete(channel);
+      await securitySystem.handleChannelDelete(channel);
     } catch (err) {
       console.error('[Event: channelDelete] Error:', err);
     }

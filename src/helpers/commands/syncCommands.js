@@ -154,7 +154,7 @@ function loadCommands(commandsPath, mode) {
 
 function printSyncBanner(mode, commandsPath) {
   console.log('============================================================');
-  console.log('🚀 Syncing KSJ Goliath Commands');
+  console.log('🚀 Syncing Goliath Commands');
   console.log(`🧠 Bot Mode: ${BOT_MODE}`);
   console.log(`📄 Env: ${envFile}`);
   console.log(`🛠️ Command Mode: ${mode.toUpperCase()}`);
