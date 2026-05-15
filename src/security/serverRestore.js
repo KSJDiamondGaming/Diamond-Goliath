@@ -13,6 +13,10 @@ const {
   createRestoreDiffText,
 } = require('./restoreDiffBuilder');
 
+const {
+  validateBackupIntegrity,
+} = require('./backup/backupCore');
+
 const { validateBotHierarchy } = require('./securityCore');
 
 const guildManager = require('../guild/guildManager');
@@ -834,9 +838,26 @@ async function restoreServerBackup(guild, backupId, options = {}) {
     throw new Error('No server backup found for this guild.');
   }
 
-  const backup = readServerBackup(guild.id, finalBackupId);
+const backup = readServerBackup(guild.id, finalBackupId);
 
-  validateRestore(guild, backup, finalBackupId, restoreOptions);
+if (!backup) {
+  throw new Error(`Backup not found: ${finalBackupId}`);
+}
+
+const integrity = validateBackupIntegrity(backup.path);
+
+if (!integrity.valid) {
+  throw new Error(
+    `Backup integrity validation failed: ${integrity.reason}`
+  );
+}
+
+validateRestore(
+  guild,
+  backup,
+  finalBackupId,
+  restoreOptions
+);
 
   const hierarchy = validateBotHierarchy(guild);
 

@@ -1,7 +1,7 @@
 {
   "guildId": "808091031350280213",
   "guildName": "KSJ DIAMOND GAMING",
-  "updatedAt": "2026-05-15T18:37:45.588Z",
+  "updatedAt": "2026-05-15T19:55:37.877Z",
   "general": {
     "enabled": true,
     "prefix": "!",
@@ -74,22 +74,29 @@
   },
   "serverBackups": {
     "enabled": true,
-    "lastBackupId": "runtime_2026-05-15T18-37-45-018Z",
-    "lastBackupAt": "2026-05-15T18:37:45.581Z",
+    "lastBackupId": "runtime_2026-05-15T19-55-37-326Z",
+    "lastBackupAt": "2026-05-15T19:55:37.865Z",
     "lastBackupBy": "1168285714732036096",
     "lastBackupReason": "Manual backup from admin panel",
-    "backupCount": 1,
+    "backupCount": 2,
     "latestBackup": {
-      "backupId": "runtime_2026-05-15T18-37-45-018Z",
+      "backupId": "runtime_2026-05-15T19-55-37-326Z",
       "backupType": "runtime",
       "environment": "DEV",
-      "createdAt": "2026-05-15T18:37:45.581Z",
+      "createdAt": "2026-05-15T19:55:37.865Z",
       "createdBy": "1168285714732036096",
       "reason": "Manual backup from admin panel",
       "sourceGuildName": "KSJ DIAMOND GAMING",
       "roles": 24,
       "channels": 57,
-      "logsIncluded": true
+      "logsIncluded": true,
+      "integrity": {
+        "verified": true,
+        "algorithm": "sha256",
+        "hash": "a69b2a7c581d31860eb86a1b2a7d8673df4ee0339cbc72c71fbdcaae273532e3",
+        "integrityPath": "C:\\Users\\Morgz\\OneDrive\\KSJ\\KSJ Bots\\Goliath\\src\\runtime\\backups\\DEV\\808091031350280213\\runtime\\runtime_2026-05-15T19-55-37-326Z.json.integrity.json",
+        "generatedAt": "2026-05-15T19:55:37.869Z"
+      }
     },
     "storage": {
       "provider": "local_runtime",
@@ -102,8 +109,15 @@
       "maxRollbacks": 6
     },
     "rollbackCount": 0,
-    "updatedAt": "2026-05-15T18:37:45.586Z",
-    "lastBackupType": "runtime"
+    "updatedAt": "2026-05-15T19:55:37.877Z",
+    "lastBackupType": "runtime",
+    "lastBackupIntegrity": {
+      "verified": true,
+      "algorithm": "sha256",
+      "hash": "a69b2a7c581d31860eb86a1b2a7d8673df4ee0339cbc72c71fbdcaae273532e3",
+      "integrityPath": "C:\\Users\\Morgz\\OneDrive\\KSJ\\KSJ Bots\\Goliath\\src\\runtime\\backups\\DEV\\808091031350280213\\runtime\\runtime_2026-05-15T19-55-37-326Z.json.integrity.json",
+      "generatedAt": "2026-05-15T19:55:37.869Z"
+    }
   },
   "cases": {
     "updatedAt": "2026-05-15T03:09:39.314Z"

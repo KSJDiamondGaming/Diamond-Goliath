@@ -108,7 +108,7 @@ function printStartupBanner() {
   };
 
   console.log('============================================================');
-  console.log(`🚀 Starting ${modeLabels[BOT_MODE] || 'KSJ Goliath'}`);
+  console.log(`🚀 Starting ${modeLabels[BOT_MODE] || 'Goliath'}`);
   console.log(`🧠 Mode: ${BOT_MODE}`);
   console.log(`📄 Env: ${loadedEnv.envFile}`);
   console.log('============================================================');

@@ -10,7 +10,7 @@ const {
 const serverBackup = require('./serverBackup');
 const serverRestore = require('./serverRestore');
 
-const RESTORE_REQUEST_VERSION = '1C_DIFF_APPROVAL_PIPELINE';
+const RESTORE_REQUEST_VERSION = '1D_INTEGRITY_STATUS_UI';
 
 const DATA_DIR = path.join(process.cwd(), 'data', 'restoreRequests');
 const PENDING_FILE = path.join(DATA_DIR, 'pending.json');
@@ -286,13 +286,113 @@ function getRestoreSummary(result) {
   );
 }
 
+function getIntegritySummary(integrity) {
+  if (!integrity) {
+    return {
+      failed: true,
+      verified: false,
+      text: [
+        '❌ Backup Integrity Missing',
+        'Restore Blocked',
+        '',
+        'Integrity metadata was not found.',
+      ].join('\n'),
+    };
+  }
+
+  const verified = integrity.verified === true;
+  const hashValid = integrity.hashValid === true;
+  const corruptionCheck =
+    integrity.corruptionCheck === true;
+
+  const failed =
+    !verified ||
+    !hashValid ||
+    !corruptionCheck;
+
+  if (failed) {
+    return {
+      failed: true,
+      verified: false,
+      text: [
+        '❌ Backup Integrity Failed',
+        'Restore Blocked',
+        '',
+        `Algorithm: ${integrity.algorithm || 'Unknown'}`,
+        `Hash Status: ${
+          hashValid ? 'VALID' : 'INVALID'
+        }`,
+        `Corruption Check: ${
+          corruptionCheck ? 'PASSED' : 'FAILED'
+        }`,
+      ].join('\n'),
+    };
+  }
+
+  return {
+    failed: false,
+    verified: true,
+    text: [
+      '✅ Integrity: VERIFIED',
+      `Algorithm: ${integrity.algorithm || 'SHA256'}`,
+      'Hash Status: VALID',
+      'Corruption Check: PASSED',
+    ].join('\n'),
+  };
+}
+
+function buildDecisionButtons(requestId, disabled = false) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`restore_request_approve:${requestId}`)
+      .setLabel('Approve Restore')
+      .setStyle(ButtonStyle.Success)
+      .setDisabled(disabled),
+
+    new ButtonBuilder()
+      .setCustomId(`restore_request_deny:${requestId}`)
+      .setLabel('Deny Restore')
+      .setStyle(ButtonStyle.Danger)
+      .setDisabled(disabled)
+  );
+}
+
 function buildRequestEmbed(request) {
   const preview = request.preview || null;
   const diff = preview?.restoreDiff || null;
+
   const warningText = getTopDiffWarnings(diff);
 
+  const integrity =
+    preview?.integrity || null;
+
+  const integritySummary =
+    getIntegritySummary(integrity);
+
+  const diffBlockers =
+    diff?.summary?.totals?.blockers || 0;
+
+  const integrityFailed =
+    integritySummary.failed;
+
+  const embedColor = integrityFailed
+    ? 0xdc2626
+    : diffBlockers > 0
+      ? 0xf59e0b
+      : 0x22c55e;
+
+  const integrityBanner = integrityFailed
+    ? [
+        'Backup integrity verification failed.',
+        'Restore approval has been blocked.',
+      ].join('\n')
+    : [
+        'Backup integrity verified successfully.',
+        'Restore approval is permitted.',
+      ].join('\n');
+
   const embed = new EmbedBuilder()
-    .setColor(diff?.summary?.totals?.blockers > 0 ? 0xdc2626 : 0xf59e0b)
+    .setColor(embedColor)
     .setTitle('Restore Approval Required')
     .setDescription(
       [
@@ -300,6 +400,8 @@ function buildRequestEmbed(request) {
         '',
         '**No restore has been executed yet.**',
         'A Goliath owner must approve this request first.',
+        '',
+        integrityBanner,
       ].join('\n')
     )
     .addFields(
@@ -333,6 +435,11 @@ function buildRequestEmbed(request) {
         inline: false,
       },
       {
+        name: 'Backup Integrity',
+        value: integritySummary.text,
+        inline: false,
+      },
+      {
         name: 'Restore Diff Preview',
         value: request.previewSummary || 'Preview unavailable.',
         inline: false,
@@ -344,27 +451,11 @@ function buildRequestEmbed(request) {
       }
     )
     .setFooter({
-      text: `KSJ Goliath Restore System • ${RESTORE_REQUEST_VERSION}`,
+      text: `Goliath Restore System • ${RESTORE_REQUEST_VERSION}`,
     })
     .setTimestamp(new Date(request.createdAt));
 
   return embed;
-}
-
-function buildDecisionButtons(requestId, disabled = false) {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`restore_request_approve:${requestId}`)
-      .setLabel('Approve Restore')
-      .setStyle(ButtonStyle.Success)
-      .setDisabled(disabled),
-
-    new ButtonBuilder()
-      .setCustomId(`restore_request_deny:${requestId}`)
-      .setLabel('Deny Restore')
-      .setStyle(ButtonStyle.Danger)
-      .setDisabled(disabled)
-  );
 }
 
 function buildCompletedEmbed(request, status, extra = {}) {
@@ -410,7 +501,7 @@ function buildCompletedEmbed(request, status, extra = {}) {
       }
     )
     .setFooter({
-      text: `KSJ Goliath Restore System • ${RESTORE_REQUEST_VERSION}`,
+      text: `Goliath Restore System • ${RESTORE_REQUEST_VERSION}`,
     })
     .setTimestamp();
 }
@@ -435,8 +526,16 @@ async function sendSupportAlert(client, request) {
     throw new Error('Could not fetch restore request channel.');
   }
 
-  const diffBlockers = request.preview?.restoreDiff?.summary?.totals?.blockers || 0;
-  const disabled = diffBlockers > 0 || !request.previewOk;
+ const diffBlockers =
+  request.preview?.restoreDiff?.summary?.totals?.blockers || 0;
+
+const integrityFailed =
+  request.preview?.integrity?.verified === false;
+
+const disabled =
+  diffBlockers > 0 ||
+  !request.previewOk ||
+  integrityFailed;
 
   const message = await channel.send({
     embeds: [buildRequestEmbed(request)],
@@ -637,6 +736,13 @@ async function approveRestoreRequest(interaction, requestId) {
     return interaction.reply({
       content: 'This request cannot be approved because it does not have a valid restore preview.',
       flags: 64,
+    });
+  }
+
+  if (request.preview?.integrity?.verified === false) {
+  return interaction.reply({
+    content: 'This request cannot be approved because backup integrity verification failed.',
+    flags: 64,
     });
   }
 

@@ -10,7 +10,14 @@ const {
   getBackupRoot,
   getBackupDir,
   ensureBackupDir,
-} = require('./backupPathManager');
+} = require('./backup/backupCore');
+
+const {
+  writeIntegrityFile,
+  validateBackupIntegrity,
+} = require('./backup/backupCore');
+
+const backupSync = require('./backup/backupSync');
 
 const BACKUPS_DIR = getBackupRoot();
 
@@ -73,9 +80,10 @@ function getGuildRollbackDir(guildId) {
 function getBackupFilePath(guildId, backupId, type = 'runtime') {
   const backupType = normaliseBackupType(type);
 
-  const dir = backupType === 'rollback'
-    ? getGuildRollbackDir(guildId)
-    : getGuildBackupDir(guildId, backupType);
+  const dir =
+    backupType === 'rollback'
+      ? getGuildRollbackDir(guildId)
+      : getGuildBackupDir(guildId, backupType);
 
   return path.join(dir, `${backupId}.json`);
 }
@@ -199,6 +207,8 @@ function createBackupSummary(backup) {
     guildId: backup?.guild?.id || null,
     guildName: backup?.guild?.name || null,
 
+    integrity: backup?.integrity || null,
+
     counts: {
       roles: roles.length,
       channels: channels.length,
@@ -225,6 +235,7 @@ function validateServerBackup(backup, options = {}) {
       errors: ['Backup is not a valid object.'],
       warnings,
       summary: null,
+      integrity: null,
     };
   }
 
@@ -306,11 +317,22 @@ function validateServerBackup(backup, options = {}) {
     warnings.push('Backup contains no restorable channels.');
   }
 
+  let integrity = null;
+
+  if (backup.path && fs.existsSync(backup.path)) {
+    integrity = validateBackupIntegrity(backup.path);
+
+    if (!integrity.valid) {
+      warnings.push(`Backup integrity not verified: ${integrity.reason}`);
+    }
+  }
+
   return {
     valid: errors.length === 0,
     errors,
     warnings,
     summary: createBackupSummary(backup),
+    integrity,
   };
 }
 
@@ -328,14 +350,19 @@ function getBackupStats(roles, channels) {
   };
 }
 
+function getEnvironmentName() {
+  return String(process.env.BOT_MODE || 'DEV').toUpperCase();
+}
+
 async function createServerBackup(guild, options = {}) {
   if (!guild) throw new Error('Missing guild.');
 
   const backupType = normaliseBackupType(options.type || options.backupType || 'runtime');
   const backupId = options.backupId || createBackupId(backupType);
+  const environment = getEnvironmentName();
 
   const dir = ensureBackupDir({
-    environment: process.env.BOT_MODE,
+    environment,
     guildId: guild.id,
     backupType,
   });
@@ -366,7 +393,7 @@ async function createServerBackup(guild, options = {}) {
     backupType,
     backupId,
     path: filePath,
-    environment: String(process.env.BOT_MODE || 'DEV').toUpperCase(),
+    environment,
 
     createdAt: new Date().toISOString(),
     createdBy: options.createdBy || options.requestedBy || null,
@@ -386,10 +413,10 @@ async function createServerBackup(guild, options = {}) {
     },
 
     metadata: {
-      source: 'KSJ Goliath',
+      source: 'Goliath',
       backupVersion: BACKUP_SCHEMA_VERSION,
       backupType,
-      environment: String(process.env.BOT_MODE || 'DEV').toUpperCase(),
+      environment,
       isRollbackSnapshot: backupType === 'rollback',
       restoreRequestId: options.restoreRequestId || null,
       createdBySystem: Boolean(options.createdBySystem),
@@ -426,12 +453,62 @@ async function createServerBackup(guild, options = {}) {
 
   writeJson(filePath, backup);
 
+  const integrity = writeIntegrityFile({
+    backupId,
+    environment,
+    guildId: guild.id,
+    backupType,
+    backupPath: filePath,
+    backupData: backup,
+  });
+
+  backup.integrity = {
+    verified: true,
+    algorithm: integrity.integrityRecord.integrity.algorithm,
+    hash: integrity.integrityRecord.integrity.hash,
+    integrityPath: integrity.integrityPath,
+    generatedAt: integrity.integrityRecord.integrity.generatedAt,
+  };
+
+  writeJson(filePath, backup);
+
+  writeIntegrityFile({
+    backupId,
+    environment,
+    guildId: guild.id,
+    backupType,
+    backupPath: filePath,
+    backupData: backup,
+  });
+
   if (backupType === 'rollback') {
     cleanupOldRollbacks(guild.id);
     updateGuildRollbackReference(guild, backup);
   } else {
     cleanupOldBackups(guild.id);
     updateGuildBackupReference(guild, backup);
+  }
+
+  try {
+    backupSync.queueBackupSync({
+      guildId: guild.id,
+      backupId: backup.backupId,
+      backupPath: filePath,
+
+      environment: backup.environment || environment,
+
+      backupType: backup.backupType || backup.type || backupType,
+
+      createdBy: options.requestedBy || options.createdBy || 'system',
+
+      metadata: {
+        restoreRequestId: options.restoreRequestId || null,
+        isRollback: backupType === 'rollback',
+        createdBySystem: Boolean(options.createdBySystem),
+      },
+    });
+  } catch (error) {
+    console.error('[Backup Sync Queue Error]', error);
   }
 
   return {
@@ -447,6 +524,7 @@ function listFilesAsBackupIds(dir) {
   return fs
     .readdirSync(dir)
     .filter((file) => file.endsWith('.json'))
+    .filter((file) => !file.endsWith('.integrity.json'))
     .map((file) => file.replace('.json', ''))
     .sort((a, b) => b.localeCompare(a));
 }
@@ -547,6 +625,7 @@ function getBackupSummaries(guildId) {
       roles: backup.roles?.length || 0,
       channels: backup.channels?.length || 0,
       logsIncluded: Boolean(backup.logs),
+      integrity: backup.integrity || null,
       validation: validateServerBackup(backup, {
         guildId: backup.guild?.id,
       }),
@@ -571,6 +650,7 @@ function getRollbackSummaries(guildId) {
       roles: backup.roles?.length || 0,
       channels: backup.channels?.length || 0,
       logsIncluded: Boolean(backup.logs),
+      integrity: backup.integrity || null,
       validation: validateServerBackup(backup, {
         guildId: backup.guild?.id,
       }),
@@ -585,10 +665,17 @@ function readServerRollback(guildId, rollbackId) {
   return readJson(getBackupFilePath(guildId, rollbackId, 'rollback'));
 }
 
+function deleteFileIfExists(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) return false;
+  fs.unlinkSync(filePath);
+  return true;
+}
+
 function deleteServerBackup(guildId, backupId) {
   const file = findBackupFilePath(guildId, backupId);
   if (!file || !fs.existsSync(file)) return false;
 
+  deleteFileIfExists(`${file}.integrity.json`);
   fs.unlinkSync(file);
   return true;
 }
@@ -597,6 +684,7 @@ function deleteServerRollback(guildId, rollbackId) {
   const file = getBackupFilePath(guildId, rollbackId, 'rollback');
   if (!fs.existsSync(file)) return false;
 
+  deleteFileIfExists(`${file}.integrity.json`);
   fs.unlinkSync(file);
   return true;
 }
@@ -617,6 +705,7 @@ function updateGuildBackupReference(guild, backup) {
     lastBackupBy: backup.createdBy || null,
     lastBackupReason: backup.reason || null,
     lastBackupType: backup.backupType || backup.type || 'runtime',
+    lastBackupIntegrity: backup.integrity || null,
 
     backupCount: backups.length,
     rollbackCount: rollbacks.length,
@@ -632,6 +721,7 @@ function updateGuildBackupReference(guild, backup) {
       roles: backup.roles?.length || 0,
       channels: backup.channels?.length || 0,
       logsIncluded: Boolean(backup.logs),
+      integrity: backup.integrity || null,
     },
 
     storage: {
@@ -663,6 +753,7 @@ function updateGuildRollbackReference(guild, rollback) {
     lastRollbackBy: rollback.createdBy || null,
     lastRollbackReason: rollback.reason || null,
     lastRollbackRestoreRequestId: rollback.restoreRequestId || null,
+    lastRollbackIntegrity: rollback.integrity || null,
 
     backupCount: backups.length,
     rollbackCount: rollbacks.length,
@@ -680,6 +771,7 @@ function updateGuildRollbackReference(guild, rollback) {
       roles: rollback.roles?.length || 0,
       channels: rollback.channels?.length || 0,
       logsIncluded: Boolean(rollback.logs),
+      integrity: rollback.integrity || null,
     },
 
     storage: {
