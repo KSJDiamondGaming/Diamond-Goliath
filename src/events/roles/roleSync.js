@@ -1,5 +1,5 @@
 const guildManager = require('../../guild/guildManager');
-const antiNukeManager = require('../../security/antiNukeManager');
+const securitySystem = require('../../security/securitySystem');
 
 const ROLE_SYNC_LOG_COOLDOWN_MS = 5000;
 const roleSyncLogState = new Map();
@@ -40,7 +40,7 @@ async function refreshGuildRoles(guild) {
 
 async function runAntiNuke(handlerName, ...args) {
   try {
-    const handler = antiNukeManager?.[handlerName];
+    const handler = securitySystem?.[handlerName];
 
     if (typeof handler !== 'function') {
       return null;

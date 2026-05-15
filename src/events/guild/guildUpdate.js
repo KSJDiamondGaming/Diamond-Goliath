@@ -1,6 +1,6 @@
 const {
   handleGuildUpdate,
-} = require('../../security/antiNukeManager');
+} = require('../../security/securitySystem');
 
 module.exports = {
   name: 'guildUpdate',

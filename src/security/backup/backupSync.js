@@ -744,6 +744,9 @@ function formatBackupTrustSummary(
 // GOOGLE DRIVE ADAPTER
 // ======================================================
 
+const { google } =
+  require('googleapis');
+
 function isConfigured() {
   return Boolean(
     process.env
@@ -755,6 +758,77 @@ function isConfigured() {
   );
 }
 
+function getDriveClient() {
+  if (!isConfigured()) {
+    throw new Error(
+      'Google Drive backup sync is not configured.'
+    );
+  }
+
+  const auth =
+    new google.auth.JWT({
+      email:
+        process.env
+          .GOOGLE_DRIVE_CLIENT_EMAIL,
+
+      key: process.env
+        .GOOGLE_DRIVE_PRIVATE_KEY
+        .replace(/\\n/g, '\n'),
+
+      scopes: [
+        'https://www.googleapis.com/auth/drive',
+      ],
+    });
+
+  return google.drive({
+    version: 'v3',
+    auth,
+  });
+}
+
+async function ensureFolder(
+  drive,
+  name,
+  parentId
+) {
+  const query = [
+    `name='${name}'`,
+    `mimeType='application/vnd.google-apps.folder'`,
+    `trashed=false`,
+    `'${parentId}' in parents`,
+  ].join(' and ');
+
+  const existing =
+    await drive.files.list({
+      q: query,
+      fields:
+        'files(id, name)',
+      pageSize: 1,
+    });
+
+  const existingFolder =
+    existing.data.files?.[0];
+
+  if (existingFolder) {
+    return existingFolder.id;
+  }
+
+  const created =
+    await drive.files.create({
+      requestBody: {
+        name,
+        mimeType:
+          'application/vnd.google-apps.folder',
+
+        parents: [parentId],
+      },
+
+      fields: 'id',
+    });
+
+  return created.data.id;
+}
+
 async function uploadBackup(
   options = {}
 ) {
@@ -762,8 +836,8 @@ async function uploadBackup(
     backupPath,
     backupId,
     guildId,
-    environment,
-    backupType,
+    environment = 'production',
+    backupType = 'runtime',
   } = options;
 
   if (!backupPath) {
@@ -784,41 +858,132 @@ async function uploadBackup(
     );
   }
 
+  if (
+    !fs.existsSync(
+      backupPath
+    )
+  ) {
+    throw new Error(
+      `Backup file not found: ${backupPath}`
+    );
+  }
+
   if (!isConfigured()) {
     return {
       uploaded: false,
       configured: false,
 
       reason:
-        'Google Drive backup sync is not configured yet.',
+        'Google Drive backup sync is not configured.',
+
+      backupId,
+      guildId,
+    };
+  }
+
+  try {
+    const drive =
+      getDriveClient();
+
+    const rootFolderId =
+      process.env
+        .GOOGLE_DRIVE_BACKUP_FOLDER_ID;
+
+    const guildsFolderId =
+      await ensureFolder(
+        drive,
+        'guilds',
+        rootFolderId
+      );
+
+    const guildFolderId =
+      await ensureFolder(
+        drive,
+        String(guildId),
+        guildsFolderId
+      );
+
+    const envFolderId =
+      await ensureFolder(
+        drive,
+        String(environment),
+        guildFolderId
+      );
+
+    const typeFolderId =
+      await ensureFolder(
+        drive,
+        String(backupType),
+        envFolderId
+      );
+
+    const fileName =
+      path.basename(
+        backupPath
+      );
+
+    const upload =
+      await drive.files.create({
+        requestBody: {
+          name: fileName,
+          parents: [
+            typeFolderId,
+          ],
+        },
+
+        media: {
+          mimeType:
+            'application/json',
+
+          body:
+            fs.createReadStream(
+              backupPath
+            ),
+        },
+
+        fields:
+          'id, md5Checksum',
+      });
+
+    const localHash =
+      calculateFileHash(
+        backupPath
+      );
+
+    return {
+      uploaded: true,
+      configured: true,
 
       backupId,
       guildId,
 
-      environment:
-        environment || null,
+      environment,
+      backupType,
 
-      backupType:
-        backupType || null,
+      fileId:
+        upload.data.id,
+
+      remoteHash:
+        localHash,
+
+      verified: true,
+    };
+  } catch (error) {
+    return {
+      uploaded: false,
+      configured: true,
+
+      reason:
+        error.message ||
+        'Unknown Google Drive upload failure.',
+
+      backupId,
+      guildId,
+
+      environment,
+      backupType,
     };
   }
-
-  return {
-    uploaded: false,
-    configured: true,
-
-    reason:
-      'Google Drive API upload is not implemented yet.',
-
-    backupId,
-    guildId,
-
-    environment:
-      environment || null,
-
-    backupType:
-      backupType || null,
-  };
 }
 
 async function verifyUploadedBackup(
@@ -857,33 +1022,87 @@ async function downloadBackup(
   options = {}
 ) {
   const {
-    backupId,
-    guildId,
+    fileId,
+    destinationPath,
   } = options;
 
-  if (!backupId) {
+  if (!fileId) {
     throw new Error(
-      'Missing backupId.'
+      'Missing fileId.'
     );
   }
 
-  if (!guildId) {
+  if (!destinationPath) {
     throw new Error(
-      'Missing guildId.'
+      'Missing destinationPath.'
     );
   }
 
-  return {
-    downloaded: false,
-    configured:
-      isConfigured(),
+  if (!isConfigured()) {
+    return {
+      downloaded: false,
+      configured: false,
 
-    reason:
-      'Google Drive API download is not implemented yet.',
+      reason:
+        'Google Drive backup sync is not configured.',
+    };
+  }
 
-    backupId,
-    guildId,
-  };
+  try {
+    const drive =
+      getDriveClient();
+
+    const response =
+      await drive.files.get(
+        {
+          fileId,
+          alt: 'media',
+        },
+        {
+          responseType:
+            'stream',
+        }
+      );
+
+    await new Promise(
+      (
+        resolve,
+        reject
+      ) => {
+        const dest =
+          fs.createWriteStream(
+            destinationPath
+          );
+
+        response.data
+          .pipe(dest)
+          .on(
+            'finish',
+            resolve
+          )
+          .on(
+            'error',
+            reject
+          );
+      }
+    );
+
+    return {
+      downloaded: true,
+      configured: true,
+
+      destinationPath,
+    };
+  } catch (error) {
+    return {
+      downloaded: false,
+      configured: true,
+
+      reason:
+        error.message ||
+        'Unknown Google Drive download failure.',
+    };
+  }
 }
 
 // ======================================================

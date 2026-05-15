@@ -2,7 +2,7 @@ const automodPanel = require('../../functions/automod/automodPanel');
 const embedPanel = require('../../functions/embed/embedPanel');
 
 const { handleAdminNavigation } = require('../../functions/admin/adminPanel');
-const security = require('../../security/securityCore');
+const security = require('../../security/securitySystem');
 const restoreRequestManager = require('../../security/restoreRequestManager');
 
 const panelNav = require('../../helpers/ui/panelNavigation');
