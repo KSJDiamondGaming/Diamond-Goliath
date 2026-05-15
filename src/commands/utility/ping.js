@@ -30,7 +30,7 @@ module.exports = {
       if (denied) return;
 
       if (!interaction.deferred && !interaction.replied) {
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.deferReply({ flags: 64 });
       }
 
       const clientLatency = Math.max(0, Date.now() - interaction.createdTimestamp);
@@ -93,7 +93,7 @@ async function safeReply(interaction, payload) {
 
     return await interaction.reply({
       ...payload,
-      ephemeral: true,
+      flags: 64,
     });
   } catch (error) {
     console.error('❌ Failed to send ping response:', error);

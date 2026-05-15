@@ -8,13 +8,11 @@ const {
   getLatestServerBackupId,
 } = require('./serverBackup');
 
-const {
-  validateBotHierarchy,
-} = require('./securityCore');
+const { validateBotHierarchy } = require('./securityCore');
 
 const guildManager = require('../guild/guildManager');
 
-const RESTORE_VERSION = '3A_SAFE';
+const RESTORE_VERSION = '3B_APPROVAL_SAFE';
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -22,6 +20,36 @@ function asArray(value) {
 
 function asSnowflake(value) {
   return value ? String(value) : null;
+}
+
+function getBotOwnerIds() {
+  const ids = [];
+
+  if (process.env.OWNER_IDS) {
+    ids.push(
+      ...process.env.OWNER_IDS
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean)
+    );
+  }
+
+  if (process.env.BOT_OWNER_ID) ids.push(process.env.BOT_OWNER_ID.trim());
+
+  if (process.env.BOT_OWNER_IDS) {
+    ids.push(
+      ...process.env.BOT_OWNER_IDS
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean)
+    );
+  }
+
+  return [...new Set(ids.filter(Boolean))];
+}
+
+function isBotOwner(userId) {
+  return getBotOwnerIds().includes(String(userId));
 }
 
 function isCategoryType(type) {
@@ -70,7 +98,6 @@ function bitfield(value) {
 
 function hasDangerousRolePermissions(role) {
   const permissions = bitfield(role.permissions);
-
   if (permissions == null) return false;
 
   const dangerousFlags = [
@@ -114,7 +141,6 @@ function getBackupRoles(backup) {
 
 function getBackupCategories(backup) {
   const categories = asArray(backup.categories);
-
   if (categories.length) return categories;
 
   return asArray(backup.channels).filter((channel) =>
@@ -223,9 +249,7 @@ function findExistingChannel(guild, channel, type) {
 }
 
 async function emitProgress(options, payload) {
-  if (typeof options.onProgress !== 'function') {
-    return;
-  }
+  if (typeof options.onProgress !== 'function') return;
 
   const total = Number(payload.total || 0);
   const current = Number(payload.current || 0);
@@ -300,6 +324,11 @@ function createRestoreReport(guild, backupId, options) {
     dryRun: Boolean(options.dryRun),
     cleanupMode: Boolean(options.cleanupMode),
 
+    restoreRequestId: options.restoreRequestId || null,
+    requestedBy: options.requestedBy || null,
+    approvedBy: options.approvedBy || null,
+    rollbackBackupId: options.rollbackBackupId || null,
+
     guildId: guild.id,
     guildName: guild.name,
     backupId,
@@ -363,16 +392,11 @@ function createRestoreReport(guild, backupId, options) {
 }
 
 function validateRestore(guild, backup, backupId, options) {
-  if (!guild) {
-    throw new Error('Missing guild.');
-  }
-
-  if (!backup) {
-    throw new Error(`Backup not found: ${backupId}`);
-  }
+  if (!guild) throw new Error('Missing guild.');
+  if (!backup) throw new Error(`Backup not found: ${backupId}`);
 
   if (!options.confirmed && !options.dryRun) {
-    throw new Error('Restore blocked. Confirmation is required.');
+    throw new Error('Restore blocked. Approval confirmation is required.');
   }
 
   const backupGuildId = getBackupGuildId(backup);
@@ -399,11 +423,8 @@ function getRestoreTotal(backup, options) {
   return total || 1;
 }
 
-// ---------------- ROLES ----------------
-
 async function restoreRoles(guild, backup, maps, report, options, progressState) {
   const roles = getRestorableRoles(backup);
-
   let processed = 0;
 
   for (const role of roles) {
@@ -424,7 +445,6 @@ async function restoreRoles(guild, backup, maps, report, options, progressState)
 
     if (existing && options.skipDuplicates !== false) {
       maps.roles.set(oldRoleId, existing.id);
-
       report.roles.skippedDuplicates += 1;
 
       report.duplicates.roles.push({
@@ -434,7 +454,6 @@ async function restoreRoles(guild, backup, maps, report, options, progressState)
       });
     } else if (options.dryRun) {
       maps.roles.set(oldRoleId, `dry-role-${oldRoleId}`);
-
       report.roles.planned += 1;
     } else {
       const created = await guild.roles.create({
@@ -447,7 +466,6 @@ async function restoreRoles(guild, backup, maps, report, options, progressState)
       });
 
       maps.roles.set(oldRoleId, created.id);
-
       report.roles.created += 1;
 
       report.created.roles.push({
@@ -471,7 +489,6 @@ async function restoreRoles(guild, backup, maps, report, options, progressState)
     };
 
     report.progress.push(progress);
-
     await emitProgress(options, progress);
   }
 
@@ -480,13 +497,10 @@ async function restoreRoles(guild, backup, maps, report, options, progressState)
       const newRoleId = maps.roles.get(getRoleBackupId(role));
       const newRole = newRoleId ? guild.roles.cache.get(newRoleId) : null;
 
-      if (!newRole || typeof role.position !== 'number') {
-        continue;
-      }
+      if (!newRole || typeof role.position !== 'number') continue;
 
       try {
         await newRole.setPosition(role.position, options.reason);
-
         report.roles.positionsRestored += 1;
       } catch (error) {
         report.warnings.push(
@@ -497,11 +511,8 @@ async function restoreRoles(guild, backup, maps, report, options, progressState)
   }
 }
 
-// ---------------- CATEGORIES ----------------
-
 async function restoreCategories(guild, backup, maps, report, options, progressState) {
   const categories = getSortedCategories(backup);
-
   let processed = 0;
 
   for (const category of categories) {
@@ -517,7 +528,6 @@ async function restoreCategories(guild, backup, maps, report, options, progressS
 
     if (existing && options.skipDuplicates !== false) {
       maps.channels.set(oldCategoryId, existing.id);
-
       report.categories.skippedDuplicates += 1;
 
       report.duplicates.categories.push({
@@ -527,7 +537,6 @@ async function restoreCategories(guild, backup, maps, report, options, progressS
       });
     } else if (options.dryRun) {
       maps.channels.set(oldCategoryId, `dry-category-${oldCategoryId}`);
-
       report.categories.planned += 1;
     } else {
       const overwrites = mapPermissionOverwrites(
@@ -544,7 +553,6 @@ async function restoreCategories(guild, backup, maps, report, options, progressS
       });
 
       maps.channels.set(oldCategoryId, created.id);
-
       report.categories.created += 1;
 
       report.created.categories.push({
@@ -568,16 +576,12 @@ async function restoreCategories(guild, backup, maps, report, options, progressS
     };
 
     report.progress.push(progress);
-
     await emitProgress(options, progress);
   }
 }
 
-// ---------------- CHANNELS ----------------
-
 async function restoreChannels(guild, backup, maps, report, options, progressState) {
   const channels = getSortedChannels(backup);
-
   let processed = 0;
 
   for (const channel of channels) {
@@ -593,7 +597,6 @@ async function restoreChannels(guild, backup, maps, report, options, progressSta
 
     if (existing && options.skipDuplicates !== false) {
       maps.channels.set(oldChannelId, existing.id);
-
       report.channels.skippedDuplicates += 1;
 
       report.duplicates.channels.push({
@@ -604,7 +607,6 @@ async function restoreChannels(guild, backup, maps, report, options, progressSta
       });
     } else if (options.dryRun) {
       maps.channels.set(oldChannelId, `dry-channel-${oldChannelId}`);
-
       report.channels.planned += 1;
     } else {
       const parentOldId = getParentBackupId(channel);
@@ -638,7 +640,6 @@ async function restoreChannels(guild, backup, maps, report, options, progressSta
       const created = await guild.channels.create(payload);
 
       maps.channels.set(oldChannelId, created.id);
-
       report.channels.created += 1;
 
       report.created.channels.push({
@@ -663,12 +664,9 @@ async function restoreChannels(guild, backup, maps, report, options, progressSta
     };
 
     report.progress.push(progress);
-
     await emitProgress(options, progress);
   }
 }
-
-// ---------------- CONFIG ----------------
 
 async function restoreGuildConfig(guild, backup, maps, report, options, progressState) {
   const sections = getBackupConfigSections(backup);
@@ -690,7 +688,6 @@ async function restoreGuildConfig(guild, backup, maps, report, options, progress
       report.config.planned += 1;
     } else {
       guildManager.replaceGuildSection(guild.id, section, remapped);
-
       report.config.restored += 1;
       report.config.sections.push(section);
     }
@@ -706,17 +703,12 @@ async function restoreGuildConfig(guild, backup, maps, report, options, progress
     };
 
     report.progress.push(progress);
-
     await emitProgress(options, progress);
   }
 }
 
-// ---------------- CLEANUP ----------------
-
 async function cleanupBeforeRestore(guild, backup, report, options) {
-  if (!options.cleanupMode || options.dryRun) {
-    return;
-  }
+  if (!options.cleanupMode || options.dryRun) return;
 
   const backupRoleNames = new Set(
     getRestorableRoles(backup).map((role) =>
@@ -732,7 +724,6 @@ async function cleanupBeforeRestore(guild, backup, report, options) {
           'restored-category'
         ).toLowerCase()}`
     ),
-
     ...getSortedChannels(backup).map(
       (channel) =>
         `${normalizeChannelType(channel.type)}:${cleanName(
@@ -745,13 +736,10 @@ async function cleanupBeforeRestore(guild, backup, report, options) {
   for (const channel of guild.channels.cache.values()) {
     const key = `${channel.type}:${channel.name.toLowerCase()}`;
 
-    if (!backupChannelKeys.has(key)) {
-      continue;
-    }
+    if (!backupChannelKeys.has(key)) continue;
 
     try {
       await channel.delete(options.reason);
-
       report.cleanup.deletedChannels += 1;
     } catch (error) {
       report.cleanup.skipped.push({
@@ -763,37 +751,37 @@ async function cleanupBeforeRestore(guild, backup, report, options) {
   }
 
   for (const role of guild.roles.cache.values()) {
-  if (
-    role.id === guild.id ||
-    role.managed ||
-    !backupRoleNames.has(role.name.toLowerCase())
-  ) continue;
+    if (
+      role.id === guild.id ||
+      role.managed ||
+      !backupRoleNames.has(role.name.toLowerCase())
+    ) {
+      continue;
+    }
 
-  // Skip if any member of this role is the bot owner
-  const hasBotOwner = role.members.some(member => isBotOwner(member.id));
-  if (hasBotOwner) {
-    report.cleanup.skipped.push({
-      type: 'role',
-      name: role.name,
-      reason: 'Role is assigned to the Goliath bot owner.',
-    });
-    continue;
-  }
+    const hasBotOwner = role.members.some((member) => isBotOwner(member.id));
 
-  try {
-    await role.delete(options.reason);
-    report.cleanup.deletedRoles += 1;
-  } catch (error) {
-    report.cleanup.skipped.push({
-      type: 'role',
-      name: role.name,
-      reason: error.message,
-    });
+    if (hasBotOwner) {
+      report.cleanup.skipped.push({
+        type: 'role',
+        name: role.name,
+        reason: 'Role is assigned to a Goliath owner.',
+      });
+      continue;
+    }
+
+    try {
+      await role.delete(options.reason);
+      report.cleanup.deletedRoles += 1;
+    } catch (error) {
+      report.cleanup.skipped.push({
+        type: 'role',
+        name: role.name,
+        reason: error.message,
+      });
+    }
   }
 }
-}
-
-// ---------------- MAIN RESTORE ----------------
 
 async function restoreServerBackup(guild, backupId, options = {}) {
   const restoreOptions = {
@@ -812,17 +800,27 @@ async function restoreServerBackup(guild, backupId, options = {}) {
     restoreRolePositions: true,
 
     skipDuplicates: true,
-
     cleanupMode: false,
+
+    restoreRequestId: null,
+    requestedBy: null,
+    approvedBy: null,
+    rollbackBackupId: null,
 
     reason: `Goliath safe restore ${RESTORE_VERSION}`,
 
     ...options,
   };
 
-  const backup = readServerBackup(guild.id, backupId);
+  const finalBackupId = backupId || getLatestServerBackupId(guild.id);
 
-  validateRestore(guild, backup, backupId, restoreOptions);
+  if (!finalBackupId) {
+    throw new Error('No server backup found for this guild.');
+  }
+
+  const backup = readServerBackup(guild.id, finalBackupId);
+
+  validateRestore(guild, backup, finalBackupId, restoreOptions);
 
   const hierarchy = validateBotHierarchy(guild);
 
@@ -843,7 +841,7 @@ async function restoreServerBackup(guild, backupId, options = {}) {
   await guild.roles.fetch().catch(() => null);
   await guild.channels.fetch().catch(() => null);
 
-  const report = createRestoreReport(guild, backupId, restoreOptions);
+  const report = createRestoreReport(guild, finalBackupId, restoreOptions);
 
   report.validation = validation;
   report.hierarchy = hierarchy;
@@ -867,7 +865,7 @@ async function restoreServerBackup(guild, backupId, options = {}) {
       phase: 'start',
       step: restoreOptions.dryRun
         ? 'Starting restore preview'
-        : 'Starting safe restore',
+        : 'Starting approved restore',
       current: 0,
       total: progressState.total,
     });
@@ -875,54 +873,26 @@ async function restoreServerBackup(guild, backupId, options = {}) {
     await cleanupBeforeRestore(guild, backup, report, restoreOptions);
 
     if (restoreOptions.restoreRoles) {
-      await restoreRoles(
-        guild,
-        backup,
-        maps,
-        report,
-        restoreOptions,
-        progressState
-      );
+      await restoreRoles(guild, backup, maps, report, restoreOptions, progressState);
     }
 
     if (restoreOptions.restoreCategories) {
-      await restoreCategories(
-        guild,
-        backup,
-        maps,
-        report,
-        restoreOptions,
-        progressState
-      );
+      await restoreCategories(guild, backup, maps, report, restoreOptions, progressState);
     }
 
     if (restoreOptions.restoreChannels) {
-      await restoreChannels(
-        guild,
-        backup,
-        maps,
-        report,
-        restoreOptions,
-        progressState
-      );
+      await restoreChannels(guild, backup, maps, report, restoreOptions, progressState);
     }
 
     if (restoreOptions.restoreConfig) {
-      await restoreGuildConfig(
-        guild,
-        backup,
-        maps,
-        report,
-        restoreOptions,
-        progressState
-      );
+      await restoreGuildConfig(guild, backup, maps, report, restoreOptions, progressState);
     }
 
     await emitProgress(restoreOptions, {
       phase: 'complete',
       step: restoreOptions.dryRun
         ? 'Restore preview complete'
-        : 'Safe restore complete',
+        : 'Approved restore complete',
       current: progressState.total,
       total: progressState.total,
     });
@@ -945,10 +915,51 @@ async function restoreServerBackup(guild, backupId, options = {}) {
   return report;
 }
 
+async function previewRestore(guild, options = {}) {
+  const backupId =
+    options.backupId ||
+    options.selectedBackupId ||
+    getLatestServerBackupId(guild.id);
+
+  const report = await restoreServerBackup(guild, backupId, {
+    ...options,
+    dryRun: true,
+    confirmed: false,
+    reason: options.reason || `Goliath restore preview ${RESTORE_VERSION}`,
+  });
+
+  report.summary = [
+    `Backup: ${report.backupId}`,
+    `Roles planned: ${report.roles.planned}`,
+    `Categories planned: ${report.categories.planned}`,
+    `Channels planned: ${report.channels.planned}`,
+    `Config sections planned: ${report.config.planned}`,
+    `Warnings: ${report.warnings.length}`,
+  ].join('\n');
+
+  return report;
+}
+
+async function executeRestore(guild, options = {}) {
+  const backupId =
+    options.backupId ||
+    options.selectedBackupId ||
+    getLatestServerBackupId(guild.id);
+
+  return restoreServerBackup(guild, backupId, {
+    ...options,
+    dryRun: false,
+    confirmed: true,
+    reason:
+      options.reason ||
+      `Goliath approved restore ${RESTORE_VERSION}${
+        options.restoreRequestId ? ` | Request ${options.restoreRequestId}` : ''
+      }`,
+  });
+}
+
 async function restoreLatestServerBackup(guild, options = {}) {
-  if (!guild) {
-    throw new Error('Missing guild.');
-  }
+  if (!guild) throw new Error('Missing guild.');
 
   const latestBackupId = getLatestServerBackupId(guild.id);
 
@@ -958,7 +969,6 @@ async function restoreLatestServerBackup(guild, options = {}) {
 
   return restoreServerBackup(guild, latestBackupId, {
     ...options,
-
     reason:
       options.reason ||
       `Goliath latest backup restore ${RESTORE_VERSION}`,
@@ -966,6 +976,11 @@ async function restoreLatestServerBackup(guild, options = {}) {
 }
 
 module.exports = {
+  RESTORE_VERSION,
+
+  previewRestore,
+  executeRestore,
+
   restoreServerBackup,
   restoreLatestServerBackup,
 };

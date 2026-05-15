@@ -3,6 +3,7 @@ const embedPanel = require('../../functions/embed/embedPanel');
 
 const { handleAdminNavigation } = require('../../functions/admin/adminPanel');
 const security = require('../../security/securityCore');
+const restoreRequestManager = require('../../security/restoreRequestManager');
 
 const panelNav = require('../../helpers/ui/panelNavigation');
 
@@ -20,6 +21,10 @@ function isAutomodInteraction(interaction) {
 
 function isEmbedInteraction(interaction) {
   return startsWithCustomId(interaction, 'embed:');
+}
+
+function isRestoreInteraction(interaction) {
+  return startsWithCustomId(interaction, 'restore_request_');
 }
 
 function isSecurityTestInteraction(interaction) {
@@ -142,6 +147,16 @@ module.exports = {
   async execute(interaction, client) {
     try {
       const activeClient = client || interaction.client;
+
+      // 0. Restore approval system buttons.
+      // These are handled before protected panel routing so support guild approvals
+      // do not get swallowed by admin/embed/help handlers.
+      if (interaction.isButton() && isRestoreInteraction(interaction)) {
+        const handledRestoreButton =
+          await restoreRequestManager.handleRestoreButton(interaction);
+
+        if (handledRestoreButton) return;
+      }
 
       if (isProtectedPanelInteraction(interaction)) {
         const check = await security.enforceInteractionSecurity(interaction, {

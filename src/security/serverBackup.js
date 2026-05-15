@@ -12,25 +12,47 @@ const BACKUPS_DIR = path.resolve(
 );
 
 const SUPPORTED_BACKUP_VERSIONS = [3];
+const BACKUP_SCHEMA_VERSION = 3;
 
 function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
-function createBackupId() {
-  return new Date().toISOString().replace(/[:.]/g, '-');
+function safeLabel(value, fallback = 'backup') {
+  return String(value || fallback)
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '-')
+    .replace(/-+/g, '-')
+    .slice(0, 40);
+}
+
+function createBackupId(type = 'manual') {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  return `${safeLabel(type)}_${timestamp}`;
 }
 
 function getRetentionLimit() {
   return Number(process.env.SERVER_BACKUP_RETENTION || 4) || 4;
 }
 
+function getRollbackRetentionLimit() {
+  return Number(process.env.SERVER_ROLLBACK_RETENTION || 6) || 6;
+}
+
 function getGuildBackupDir(guildId) {
   return path.join(BACKUPS_DIR, 'guilds', String(guildId), 'backups');
 }
 
-function getBackupFilePath(guildId, backupId) {
-  return path.join(getGuildBackupDir(guildId), `${backupId}.json`);
+function getGuildRollbackDir(guildId) {
+  return path.join(BACKUPS_DIR, 'guilds', String(guildId), 'rollbacks');
+}
+
+function getBackupFilePath(guildId, backupId, type = 'backup') {
+  const dir = type === 'rollback'
+    ? getGuildRollbackDir(guildId)
+    : getGuildBackupDir(guildId);
+
+  return path.join(dir, `${backupId}.json`);
 }
 
 function writeJson(filePath, data) {
@@ -62,15 +84,7 @@ function isValidBitfield(value) {
 }
 
 function isValidChannelType(type) {
-  return [
-    ChannelType.GuildText,
-    ChannelType.GuildAnnouncement,
-    ChannelType.GuildVoice,
-    ChannelType.GuildCategory,
-    ChannelType.GuildStageVoice,
-    ChannelType.GuildForum,
-    ChannelType.GuildMedia,
-  ].includes(type);
+  return typeof type === 'number';
 }
 
 function serializeOverwrite(overwrite) {
@@ -91,6 +105,7 @@ function serializeRole(role) {
     permissions: role.permissions.bitfield.toString(),
     hoist: role.hoist,
     mentionable: role.mentionable,
+    managed: role.managed,
   };
 }
 
@@ -114,8 +129,16 @@ function serializeChannel(channel) {
   };
 }
 
+function getGuildConfigSnapshot(guildId) {
+  if (typeof guildManager.getGuildData === 'function') {
+    return guildManager.getGuildData(guildId) || {};
+  }
+
+  return {};
+}
+
 function getLogsSnapshot(guildId) {
-  const guildData = guildManager.getGuildData(guildId);
+  const guildData = getGuildConfigSnapshot(guildId);
 
   return {
     enabled: guildData.logs?.enabled !== false,
@@ -130,9 +153,12 @@ function createBackupSummary(backup) {
 
   return {
     backupId: backup?.backupId || null,
+    type: backup?.type || 'backup',
     version: backup?.version || null,
     createdAt: backup?.createdAt || null,
     createdBy: backup?.createdBy || null,
+    requestedBy: backup?.requestedBy || null,
+    restoreRequestId: backup?.restoreRequestId || null,
     reason: backup?.reason || null,
     guildId: backup?.guild?.id || null,
     guildName: backup?.guild?.name || null,
@@ -252,13 +278,29 @@ function validateServerBackup(backup, options = {}) {
   };
 }
 
+function getBackupStats(roles, channels) {
+  return {
+    roles: roles.length,
+    channels: channels.length,
+    categories: channels.filter((c) => c.type === ChannelType.GuildCategory).length,
+    textChannels: channels.filter((c) => c.type === ChannelType.GuildText).length,
+    announcementChannels: channels.filter((c) => c.type === ChannelType.GuildAnnouncement).length,
+    voiceChannels: channels.filter((c) => c.type === ChannelType.GuildVoice).length,
+    stageChannels: channels.filter((c) => c.type === ChannelType.GuildStageVoice).length,
+    forumChannels: channels.filter((c) => c.type === ChannelType.GuildForum).length,
+    mediaChannels: channels.filter((c) => c.type === ChannelType.GuildMedia).length,
+  };
+}
+
 async function createServerBackup(guild, options = {}) {
   if (!guild) throw new Error('Missing guild.');
 
+  const type = options.type === 'rollback' ? 'rollback' : 'backup';
+  const backupId = options.backupId || createBackupId(type);
+  const filePath = getBackupFilePath(guild.id, backupId, type);
+
   await guild.roles.fetch().catch(() => null);
   await guild.channels.fetch().catch(() => null);
-
-  const backupId = options.backupId || createBackupId();
 
   const roles = guild.roles.cache
     .filter((role) => role.id !== guild.id && !role.managed)
@@ -273,12 +315,24 @@ async function createServerBackup(guild, options = {}) {
     )
     .map(serializeChannel);
 
+  const guildConfig = getGuildConfigSnapshot(guild.id);
+
   const backup = {
-    version: 3,
+    version: BACKUP_SCHEMA_VERSION,
+    type,
     backupId,
+    path: filePath,
+
     createdAt: new Date().toISOString(),
-    createdBy: options.createdBy || null,
-    reason: options.reason || 'Server backup',
+    createdBy: options.createdBy || options.requestedBy || null,
+    requestedBy: options.requestedBy || null,
+    approvedBy: options.approvedBy || null,
+    restoreRequestId: options.restoreRequestId || null,
+    reason:
+      options.reason ||
+      (type === 'rollback'
+        ? 'Automatic rollback snapshot before restore'
+        : 'Server backup'),
 
     guild: {
       id: guild.id,
@@ -286,15 +340,19 @@ async function createServerBackup(guild, options = {}) {
       icon: guild.iconURL({ extension: 'png', size: 1024 }) || null,
     },
 
-    logs: getLogsSnapshot(guild.id),
-
-    stats: {
-      roles: roles.length,
-      channels: channels.length,
-      categories: channels.filter((c) => c.type === ChannelType.GuildCategory).length,
-      textChannels: channels.filter((c) => c.type === ChannelType.GuildText).length,
-      voiceChannels: channels.filter((c) => c.type === ChannelType.GuildVoice).length,
+    metadata: {
+      source: 'KSJ Goliath',
+      backupVersion: BACKUP_SCHEMA_VERSION,
+      backupType: type,
+      isRollbackSnapshot: type === 'rollback',
+      restoreRequestId: options.restoreRequestId || null,
+      createdBySystem: Boolean(options.createdBySystem),
     },
+
+    logs: getLogsSnapshot(guild.id),
+    guildConfig,
+
+    stats: getBackupStats(roles, channels),
 
     restoreNotes: {
       canRestore: [
@@ -302,6 +360,7 @@ async function createServerBackup(guild, options = {}) {
         'Categories',
         'Channels',
         'Permission overwrites',
+        'Guild configuration references',
         'Log configuration references',
       ],
       cannotRestore: [
@@ -318,16 +377,24 @@ async function createServerBackup(guild, options = {}) {
     channels,
   };
 
-  writeJson(getBackupFilePath(guild.id, backupId), backup);
+  writeJson(filePath, backup);
 
-  cleanupOldBackups(guild.id);
-  updateGuildBackupReference(guild, backup);
+  if (type === 'rollback') {
+    cleanupOldRollbacks(guild.id);
+    updateGuildRollbackReference(guild, backup);
+  } else {
+    cleanupOldBackups(guild.id);
+    updateGuildBackupReference(guild, backup);
+  }
 
-  return backup;
+  return {
+    ...backup,
+    file: filePath,
+    filePath,
+  };
 }
 
-function listServerBackups(guildId) {
-  const dir = getGuildBackupDir(guildId);
+function listFilesAsBackupIds(dir) {
   if (!fs.existsSync(dir)) return [];
 
   return fs
@@ -335,6 +402,14 @@ function listServerBackups(guildId) {
     .filter((file) => file.endsWith('.json'))
     .map((file) => file.replace('.json', ''))
     .sort((a, b) => b.localeCompare(a));
+}
+
+function listServerBackups(guildId) {
+  return listFilesAsBackupIds(getGuildBackupDir(guildId));
+}
+
+function listServerRollbacks(guildId) {
+  return listFilesAsBackupIds(getGuildRollbackDir(guildId));
 }
 
 function getLatestServerBackupId(guildId) {
@@ -348,11 +423,29 @@ function getLatestServerBackupId(guildId) {
   return listServerBackups(guildId)[0] || null;
 }
 
+function getLatestServerRollbackId(guildId) {
+  const section = guildManager.getGuildSection(guildId, 'serverBackups', {});
+
+  if (section.lastRollbackId) {
+    const existing = readServerRollback(guildId, section.lastRollbackId);
+    if (existing) return section.lastRollbackId;
+  }
+
+  return listServerRollbacks(guildId)[0] || null;
+}
+
 function readLatestServerBackup(guildId) {
   const latestBackupId = getLatestServerBackupId(guildId);
   if (!latestBackupId) return null;
 
   return readServerBackup(guildId, latestBackupId);
+}
+
+function readLatestServerRollback(guildId) {
+  const latestRollbackId = getLatestServerRollbackId(guildId);
+  if (!latestRollbackId) return null;
+
+  return readServerRollback(guildId, latestRollbackId);
 }
 
 function cleanupOldBackups(guildId) {
@@ -371,14 +464,55 @@ function cleanupOldBackups(guildId) {
   return deleted;
 }
 
+function cleanupOldRollbacks(guildId) {
+  const maxRollbacks = getRollbackRetentionLimit();
+  const rollbacks = listServerRollbacks(guildId);
+
+  if (rollbacks.length <= maxRollbacks) return 0;
+
+  const oldRollbacks = rollbacks.slice(maxRollbacks);
+  let deleted = 0;
+
+  for (const rollbackId of oldRollbacks) {
+    if (deleteServerRollback(guildId, rollbackId)) deleted += 1;
+  }
+
+  return deleted;
+}
+
 function getBackupSummaries(guildId) {
   return listServerBackups(guildId)
     .map((backupId) => readServerBackup(guildId, backupId))
     .filter(Boolean)
     .map((backup) => ({
       backupId: backup.backupId,
+      type: backup.type || 'backup',
       createdAt: backup.createdAt,
       createdBy: backup.createdBy,
+      requestedBy: backup.requestedBy || null,
+      restoreRequestId: backup.restoreRequestId || null,
+      reason: backup.reason,
+      guildName: backup.guild?.name || null,
+      roles: backup.roles?.length || 0,
+      channels: backup.channels?.length || 0,
+      logsIncluded: Boolean(backup.logs),
+      validation: validateServerBackup(backup, {
+        guildId: backup.guild?.id,
+      }),
+    }));
+}
+
+function getRollbackSummaries(guildId) {
+  return listServerRollbacks(guildId)
+    .map((rollbackId) => readServerRollback(guildId, rollbackId))
+    .filter(Boolean)
+    .map((backup) => ({
+      backupId: backup.backupId,
+      type: backup.type || 'rollback',
+      createdAt: backup.createdAt,
+      createdBy: backup.createdBy,
+      requestedBy: backup.requestedBy || null,
+      restoreRequestId: backup.restoreRequestId || null,
       reason: backup.reason,
       guildName: backup.guild?.name || null,
       roles: backup.roles?.length || 0,
@@ -391,11 +525,23 @@ function getBackupSummaries(guildId) {
 }
 
 function readServerBackup(guildId, backupId) {
-  return readJson(getBackupFilePath(guildId, backupId));
+  return readJson(getBackupFilePath(guildId, backupId, 'backup'));
+}
+
+function readServerRollback(guildId, rollbackId) {
+  return readJson(getBackupFilePath(guildId, rollbackId, 'rollback'));
 }
 
 function deleteServerBackup(guildId, backupId) {
-  const file = getBackupFilePath(guildId, backupId);
+  const file = getBackupFilePath(guildId, backupId, 'backup');
+  if (!fs.existsSync(file)) return false;
+
+  fs.unlinkSync(file);
+  return true;
+}
+
+function deleteServerRollback(guildId, rollbackId) {
+  const file = getBackupFilePath(guildId, rollbackId, 'rollback');
   if (!fs.existsSync(file)) return false;
 
   fs.unlinkSync(file);
@@ -405,9 +551,12 @@ function deleteServerBackup(guildId, backupId) {
 function updateGuildBackupReference(guild, backup) {
   const existing = guildManager.getGuildSection(guild.id, 'serverBackups', {});
   const backups = listServerBackups(guild.id);
+  const rollbacks = listServerRollbacks(guild.id);
   const retentionMax = getRetentionLimit();
 
   guildManager.replaceGuildSection(guild.id, 'serverBackups', {
+    ...existing,
+
     enabled: existing.enabled !== false,
 
     lastBackupId: backup.backupId,
@@ -416,6 +565,7 @@ function updateGuildBackupReference(guild, backup) {
     lastBackupReason: backup.reason || null,
 
     backupCount: backups.length,
+    rollbackCount: rollbacks.length,
 
     latestBackup: {
       backupId: backup.backupId,
@@ -436,6 +586,53 @@ function updateGuildBackupReference(guild, backup) {
 
     retention: {
       maxBackups: retentionMax,
+      maxRollbacks: getRollbackRetentionLimit(),
+      autoCleanup: existing.retention?.autoCleanup !== false,
+    },
+  });
+}
+
+function updateGuildRollbackReference(guild, rollback) {
+  const existing = guildManager.getGuildSection(guild.id, 'serverBackups', {});
+  const backups = listServerBackups(guild.id);
+  const rollbacks = listServerRollbacks(guild.id);
+
+  guildManager.replaceGuildSection(guild.id, 'serverBackups', {
+    ...existing,
+
+    enabled: existing.enabled !== false,
+
+    lastRollbackId: rollback.backupId,
+    lastRollbackAt: rollback.createdAt,
+    lastRollbackBy: rollback.createdBy || null,
+    lastRollbackReason: rollback.reason || null,
+    lastRollbackRestoreRequestId: rollback.restoreRequestId || null,
+
+    backupCount: backups.length,
+    rollbackCount: rollbacks.length,
+
+    latestRollback: {
+      backupId: rollback.backupId,
+      createdAt: rollback.createdAt,
+      createdBy: rollback.createdBy || null,
+      requestedBy: rollback.requestedBy || null,
+      restoreRequestId: rollback.restoreRequestId || null,
+      reason: rollback.reason || null,
+      sourceGuildName: guild.name,
+      roles: rollback.roles?.length || 0,
+      channels: rollback.channels?.length || 0,
+      logsIncluded: Boolean(rollback.logs),
+    },
+
+    storage: {
+      provider: process.env.SERVER_BACKUP_PROVIDER || 'google_drive_desktop',
+      path: BACKUPS_DIR,
+      restoreRequiresSupport: true,
+    },
+
+    retention: {
+      maxBackups: getRetentionLimit(),
+      maxRollbacks: getRollbackRetentionLimit(),
       autoCleanup: existing.retention?.autoCleanup !== false,
     },
   });
@@ -446,14 +643,27 @@ module.exports = {
   SUPPORTED_BACKUP_VERSIONS,
 
   createServerBackup,
+
   listServerBackups,
+  listServerRollbacks,
+
   cleanupOldBackups,
+  cleanupOldRollbacks,
+
   getBackupSummaries,
+  getRollbackSummaries,
+
   readServerBackup,
+  readServerRollback,
+
   deleteServerBackup,
+  deleteServerRollback,
 
   getLatestServerBackupId,
+  getLatestServerRollbackId,
+
   readLatestServerBackup,
+  readLatestServerRollback,
 
   validateServerBackup,
   createBackupSummary,

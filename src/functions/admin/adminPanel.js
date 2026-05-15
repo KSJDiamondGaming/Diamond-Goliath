@@ -16,13 +16,9 @@ const {
 } = require('discord.js');
 
 const guildManager = require('../../guild/guildManager');
-const { restoreServerBackup } = require('../../security/serverRestore');
 const panelNav = require('../../helpers/ui/panelNavigation');
 const { sendAutoModDM } = require('../../functions/automod/automodDm');
-const {
-  canUseRestore,
-  checkRestoreCooldown,
-} = require('../../security/securityCore');
+const restoreRequestManager = require('../../security/restoreRequestManager');
 
 const {
   createServerBackup,
@@ -32,9 +28,6 @@ const {
 } = require('../../security/serverBackup');
 
 const PANEL_COLOR = '#5865F2';
-
-const RESTORE_PENDING = new Map();
-const ACTIVE_RESTORES = new Set();
 
 const LOG_TYPES = {
   automodlog: {
@@ -439,9 +432,10 @@ function buildBackupsPanel(guild, memberDisplayName = 'Unknown User', navState =
       `**Backups Found:** \`${backups.length}\``,
       `**Retention:** Keep latest \`${backupConfig.retention?.maxBackups || process.env.SERVER_BACKUP_RETENTION || 4}\``,
       '',
-      'Create backups: Goliath Owner or Guild Owner.',
-      'Download backups: Goliath Owner or Guild Owner.',
-      'Restore: Goliath Owner only.',
+      'Create backups: Guild Owner.',
+      'Download backups: Guild Owner.',
+      'Restore Requests: Guild Owner.',
+      'Restore Approval: Goliath Owner.',
     ].join('\n'),
     memberDisplayName
   );
@@ -455,7 +449,7 @@ function buildBackupsPanel(guild, memberDisplayName = 'Unknown User', navState =
           ['admin:backup:list', '📦 View Backups', ButtonStyle.Primary],
           ['admin:backup:preview', '🔍 Preview Latest', ButtonStyle.Secondary],
           ['admin:backup:download', '💾 Download Backup', ButtonStyle.Secondary],
-          ['admin:backup:restore', '♻️ Restore', ButtonStyle.Danger],
+          ['admin:backup:requestrestore', '🚨 Request Restore', ButtonStyle.Danger],
         ],
         2
       ),
@@ -853,10 +847,24 @@ function makeComponentIdsUnique(panel) {
 async function updatePanel(interaction, panel, navState = panelNav.createState('admin:home')) {
   const finalPanel = applyNavigationUI(interaction, panel, navState);
 
-  makeComponentIdsUnique(finalPanel); // 👈 THIS LINE FIXES YOUR CRASH
+  makeComponentIdsUnique(finalPanel);
 
-  await interaction.update(finalPanel);
-  return true;
+  if (interaction.deferred || interaction.replied) {
+    await interaction.editReply(finalPanel);
+    return true;
+  }
+
+  try {
+    await interaction.update(finalPanel);
+    return true;
+  } catch (error) {
+    if (error.code === 10062 || error.code === 40060) {
+      await interaction.editReply(finalPanel).catch(() => null);
+      return true;
+    }
+
+    throw error;
+  }
 }
 
 function buildPanelByRoute(route, guild, memberDisplayName, interaction = null, navState = panelNav.createState('admin:home')) {
@@ -865,18 +873,9 @@ function buildPanelByRoute(route, guild, memberDisplayName, interaction = null, 
   if (route === 'admin:modules') return buildModulesPanel(guild, memberDisplayName, navState);
   if (route === 'admin:logs') return buildLogsPanel(guild, memberDisplayName, navState);
   if (route === 'admin:backups') return buildBackupsPanel(guild, memberDisplayName, navState);
-  if (route === 'admin:backup:restore') return buildRestoreSelectPanel(guild, memberDisplayName, navState);
   if (route === 'admin:staffroles') return buildStaffRolesPanel(guild, memberDisplayName, navState);
   if (route === 'admin:modroles') return buildModRolesPanel(guild, memberDisplayName, navState);
   if (route === 'admin:autoRoles') return buildAutoRolesPanel(guild, memberDisplayName, navState);
-
-  if (route === 'admin:backup:restore:confirm' && interaction) {
-    const pending = RESTORE_PENDING.get(getRestoreKey(interaction));
-
-    if (pending?.backupId) {
-      return buildRestoreConfirmPanel(guild, pending.backupId, memberDisplayName, navState);
-    }
-  }
 
   if (route === 'admin:automod') {
     const { buildAutomodPanel } = require('../automod/automodPanel');
@@ -958,34 +957,6 @@ async function handleChannelSelect(interaction, memberDisplayName, navState) {
   );
 }
 
-async function handleRestoreSelect(interaction, memberDisplayName, navState) {
-  const restoreAccess = canUseRestore(interaction);
-
-  if (!restoreAccess.allowed) {
-    return replyNoAccess(interaction, `❌ ${restoreAccess.reason}`);
-  }
-
-  const backupId = interaction.values?.[0];
-
-  if (!backupId) {
-    return replyNoAccess(interaction, '❌ No backup selected.');
-  }
-
-  RESTORE_PENDING.set(getRestoreKey(interaction), {
-    backupId,
-    selectedBy: interaction.user.id,
-    selectedAt: new Date().toISOString(),
-  });
-
-  const state = nextState(navState, 'admin:backup:restore:confirm');
-
-  return updatePanel(
-    interaction,
-    buildRestoreConfirmPanel(interaction.guild, backupId, memberDisplayName, state),
-    state
-  );
-}
-
 function canCreateBackup(interaction) {
   return (
     isBotOwner(interaction) ||
@@ -1001,20 +972,30 @@ async function handleBackupCreate(interaction, memberDisplayName, navState) {
     );
   }
 
-  await interaction.deferUpdate();
+  try {
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferUpdate();
+    }
+  } catch (error) {
+    if (error.code !== 10062 && error.code !== 40060) {
+      throw error;
+    }
+  }
 
   await createServerBackup(interaction.guild, {
     createdBy: interaction.user.id,
     reason: 'Manual backup from admin panel',
   });
 
-  await interaction.editReply(
-    applyNavigationUI(
-      interaction,
-      buildBackupsPanel(interaction.guild, memberDisplayName, navState),
-      navState
-    )
+  const panel = applyNavigationUI(
+    interaction,
+    buildBackupsPanel(interaction.guild, memberDisplayName, navState),
+    navState
   );
+
+  makeComponentIdsUnique(panel);
+
+  await interaction.editReply(panel).catch(() => null);
 
   return true;
 }
@@ -1139,272 +1120,6 @@ async function handleBackupPreview(interaction) {
   });
 }
 
-async function handleBackupRestore(interaction, memberDisplayName, navState) {
-  const restoreAccess = canUseRestore(interaction);
-
-  if (!restoreAccess.allowed) {
-    return replyNoAccess(interaction, `❌ ${restoreAccess.reason}`);
-  }
-
-  const state = nextState(navState, 'admin:backup:restore');
-
-  return updatePanel(
-    interaction,
-    buildRestoreSelectPanel(
-      interaction.guild,
-      memberDisplayName,
-      state
-    ),
-    state
-  );
-}
-
-async function handleBackupRestoreConfirm(interaction) {
-  const restoreAccess = canUseRestore(interaction);
-
-  if (!restoreAccess.allowed) {
-    return replyNoAccess(interaction, `❌ ${restoreAccess.reason}`);
-  }
-
-const cooldown = checkRestoreCooldown(interaction.guildId);
-
-if (!cooldown.allowed) {
-  const minutes = Math.ceil(cooldown.remainingMs / 60000);
-
-  return interaction.reply({
-    content: `⚠️ Restore cooldown active.\nTry again in ${minutes} minute(s).`,
-    flags: 64,
-  });
-}
-
-  const pending = RESTORE_PENDING.get(getRestoreKey(interaction));
-
-  if (!pending?.backupId) {
-    return interaction.reply({
-      content: '❌ No restore backup is selected. Please choose a backup first.',
-      flags: 64,
-    });
-  }
-
-  await interaction.deferReply({ flags: 64 });
-
-  try {
-    const report = await restoreServerBackup(interaction.guild, pending.backupId, {
-      dryRun: true,
-      reason: `Goliath dry-run restore requested by ${interaction.user.tag}`,
-    });
-
-    return interaction.editReply({
-      content: [
-        '🧪 **Restore Dry Run Complete**',
-        '',
-        `**Backup ID:** \`${report.backupId}\``,
-        `**Guild:** \`${report.guildName}\``,
-        '',
-        `**Roles Planned:** \`${report.roles?.planned || 0}\``,
-        `**Categories Planned:** \`${report.categories?.planned || 0}\``,
-        `**Channels Planned:** \`${report.channels?.planned || 0}\``,
-        `**Config Sections Planned:** \`${report.config?.planned || 0}\``,
-        '',
-        report.warnings?.length
-          ? `⚠️ **Warnings:**\n${report.warnings.slice(0, 5).map((w) => `- ${w}`).join('\n')}`
-          : '✅ No warnings.',
-        '',
-        '⚠️ READY FOR REAL RESTORE',
-        'This will rebuild roles, channels, and permissions.',
-      ].join('\n'),
-      components: [
-        row(
-          button('admin:backup:restore:real', '🚨 Run Real Restore', ButtonStyle.Danger),
-          button('admin:backup:restore:cancel', 'Cancel', ButtonStyle.Secondary)
-        ),
-      ],
-    });
-  } catch (error) {
-    return interaction.editReply({
-      content: [
-        '❌ **Restore dry run failed.**',
-        '',
-        `\`${error.message}\``,
-        '',
-        'No server changes were made.',
-      ].join('\n'),
-    });
-  }
-}
-
-async function handleBackupRestoreCancel(interaction, memberDisplayName, navState) {
-  const pending = RESTORE_PENDING.get(getRestoreKey(interaction));
-
-  if (pending?.backupId) {
-    sendRestoreLog(
-      interaction.guild,
-      [
-        '🟡 **Restore Cancelled / No Changes Made**',
-        '',
-        `👤 By: <@${interaction.user.id}>`,
-        `📦 Backup: ${pending.backupId}`,
-        `🕒 Time: ${new Date().toLocaleString()}`,
-      ].join('\n')
-    );
-  }
-
-  RESTORE_PENDING.delete(getRestoreKey(interaction));
-
-  return updatePanel(
-    interaction,
-    buildBackupsPanel(interaction.guild, memberDisplayName, navState),
-    navState
-  );
-}
-
-async function handleFinalRestoreModal(interaction) {
-  const restoreAccess = canUseRestore(interaction);
-
-  if (!restoreAccess.allowed) {
-    return replyNoAccess(interaction, `❌ ${restoreAccess.reason}`);
-  }
-
-  const cooldown = checkRestoreCooldown(interaction.guildId);
-
-  if (!cooldown.allowed) {
-    const minutes = Math.ceil(cooldown.remainingMs / 60000);
-
-    return interaction.reply({
-      content: `⚠️ Restore cooldown active.\nTry again in ${minutes} minute(s).`,
-      flags: 64,
-    });
-  }
-
-  const confirm = interaction.fields.getTextInputValue('confirm');
-
-  if (confirm !== 'RESTORE') {
-    return interaction.reply({
-      content: '❌ You must type RESTORE exactly.',
-      flags: 64,
-    });
-  }
-
-  const pending = RESTORE_PENDING.get(getRestoreKey(interaction));
-  const activeKey = getRestoreKey(interaction);
-
-  if (!pending?.backupId) {
-    return interaction.reply({
-      content: '❌ No backup selected.',
-      flags: 64,
-    });
-  }
-
-  if (ACTIVE_RESTORES.has(activeKey)) {
-    return interaction.reply({
-      content: '⚠️ A restore is already running.',
-      flags: 64,
-    });
-  }
-
-  ACTIVE_RESTORES.add(activeKey);
-
-  const backup = readServerBackup(
-    interaction.guild.id,
-    pending.backupId
-  );
-
-  if (!backup) {
-    ACTIVE_RESTORES.delete(activeKey);
-
-    return interaction.reply({
-      content: '❌ Backup no longer exists.',
-      flags: 64,
-    });
-  }
-
-  const validation = validateServerBackup(backup, {
-    guildId: interaction.guild.id,
-  });
-
-  if (!validation.valid) {
-    ACTIVE_RESTORES.delete(activeKey);
-
-    return interaction.reply({
-      content: [
-        '❌ Backup validation failed.',
-        '',
-        ...validation.errors.slice(0, 5),
-      ].join('\n'),
-      flags: 64,
-    });
-  }
-
-  const restoreStartedAt = Date.now();
-
-  await Promise.race([
-    interaction.deferReply({ flags: 64 }),
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Restore interaction timeout')), 5000)
-    ),
-  ]);
-
-  try {
-    await interaction.editReply({
-      content: '⏳ Restore starting...\n\nProgress: 0%',
-    });
-
-    const report = await restoreServerBackup(interaction.guild, pending.backupId, {
-      dryRun: false,
-      reason: `REAL RESTORE by ${interaction.user.tag}`,
-
-      onProgress: async ({ step, current, total, percent }) => {
-        await interaction.editReply({
-          content: [
-            '⏳ **Restore in progress**',
-            `Duration: ${(Date.now() - restoreStartedAt) / 1000}s`,
-            '',
-            `**Step:** ${step}`,
-            `**Progress:** ${percent}%`,
-            `**Items:** ${current}/${total}`,
-          ].join('\n'),
-        });
-      },
-    });
-
-    sendRestoreLog(
-      interaction.guild,
-      [
-        '🚨 **CRITICAL SECURITY ACTION: Server Restore Executed**',
-        '',
-        `👤 By: <@${interaction.user.id}>`,
-        `📦 Backup: ${pending.backupId}`,
-        `📊 Roles Restored: ${report.roles?.created || 0}`,
-        `📊 Categories Restored: ${report.categories?.created || 0}`,
-        `📊 Channels Restored: ${report.channels?.created || 0}`,
-        `⏱️ Duration: ${Date.now() - restoreStartedAt}ms`,
-        `🕒 Time: ${new Date().toLocaleString()}`,
-      ].join('\n')
-    );
-
-    ACTIVE_RESTORES.delete(activeKey);
-    RESTORE_PENDING.delete(getRestoreKey(interaction));
-
-    return interaction.editReply({
-      content: [
-        '✅ **RESTORE COMPLETE**',
-        '',
-        `Roles: ${report.roles?.created || 0}`,
-        `Categories: ${report.categories?.created || 0}`,
-        `Channels: ${report.channels?.created || 0}`,
-        `Duration: ${(Date.now() - restoreStartedAt) / 1000}s`,
-      ].join('\n'),
-    });
-  } catch (err) {
-    ACTIVE_RESTORES.delete(activeKey);
-    RESTORE_PENDING.delete(getRestoreKey(interaction));
-
-    return interaction.editReply({
-      content: `❌ Restore failed:\n${err.message}`,
-    });
-  }
-}
-
 async function openRoute(interaction, route, memberDisplayName, navState) {
   const state = route === 'admin:home'
     ? panelNav.createState('admin:home')
@@ -1419,6 +1134,14 @@ async function openRoute(interaction, route, memberDisplayName, navState) {
   );
 
   return updatePanel(interaction, panel, state);
+}
+
+async function handleFinalRestoreModal(interaction) {
+  return interaction.reply({
+    content:
+      '❌ Direct restore execution is disabled.\nUse the centralized restore approval system.',
+    flags: 64,
+  });
 }
 
 async function handleAdminNavigation(interaction, navState = panelNav.createState('admin:home')) {
@@ -1450,49 +1173,39 @@ async function handleAdminNavigation(interaction, navState = panelNav.createStat
     return handleChannelSelect(interaction, memberDisplayName, navState);
   }
 
-  if (interaction.isStringSelectMenu()) {
-    if (interaction.customId === 'admin:backup:restore:select') {
-      return handleRestoreSelect(interaction, memberDisplayName, navState);
-    }
-
-    return false;
-  }
-
   if (!interaction.isButton()) return false;
 
   const { customId } = interaction;
 
   if (customId === 'admin:backup:restore:real') {
-    const restoreAccess = canUseRestore(interaction);
-
-  if (!restoreAccess.allowed) {
-    return replyNoAccess(interaction, `❌ ${restoreAccess.reason}`);
-  }
-
-    const pending = RESTORE_PENDING.get(getRestoreKey(interaction));
-
-    if (!pending?.backupId) {
-      return interaction.reply({
-        content: '❌ No backup selected.',
-        flags: 64,
-      });
-    }
-
-    await interaction.showModal(buildRestoreConfirmModal());
-    return true;
-  }
+  return interaction.reply({
+    content:
+      '❌ Direct real restores are disabled.\nAll restores must go through the centralized approval system.',
+    flags: 64,
+  });
+}
 
   if (customId === 'admin:home') {
     return openRoute(interaction, 'admin:home', memberDisplayName, panelNav.createState('admin:home'));
   }
 
+  if (customId === 'admin:backup:requestrestore') {
+  return restoreRequestManager.createRestoreRequest(interaction, {
+    cooldownMs: 1000 * 60 * 30,
+  });
+}
+
   if (customId === 'admin:backup:create') return handleBackupCreate(interaction, memberDisplayName, navState);
   if (customId === 'admin:backup:list') return handleBackupList(interaction);
   if (customId === 'admin:backup:preview') return handleBackupPreview(interaction);
   if (customId === 'admin:backup:download') return handleBackupDownload(interaction);
-  if (customId === 'admin:backup:restore') return handleBackupRestore(interaction, memberDisplayName, navState);
-  if (customId === 'admin:backup:restore:confirm') return handleBackupRestoreConfirm(interaction);
-  if (customId === 'admin:backup:restore:cancel') return handleBackupRestoreCancel(interaction, memberDisplayName, navState);
+  if (customId === 'admin:backup:restore') {
+  return interaction.reply({
+    content:
+      '❌ Direct restore flow is disabled.\nUse the new Restore Request system instead.',
+    flags: 64,
+  });
+}
 
   if (customId === 'admin:purge') {
     await interaction.showModal(buildPurgeModal());
@@ -1611,8 +1324,6 @@ module.exports = {
   buildAdminPanel,
   buildAdminToolsPanel,
   buildBackupsPanel,
-  buildRestoreSelectPanel,
-  buildRestoreConfirmPanel,
   buildStaffRolesPanel,
   buildModRolesPanel,
   buildModulesPanel,
