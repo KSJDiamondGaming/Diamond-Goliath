@@ -1,4 +1,4 @@
-name: Deploy DEV to VPS
+name: Deploy DEV
 
 on:
   push:
@@ -10,31 +10,24 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy Goliath DEV
+      - name: Deploy DEV to VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
-          port: 22
           script: |
             set -e
 
-            echo "🚀 Starting Goliath DEV deployment..."
+            cd /home/goliath/dev
 
-            cd /home/goliath/Diamond-Goliath
-
-            echo "📥 Syncing DEV branch..."
-            git checkout dev
-            git fetch origin dev
+            git fetch origin
             git reset --hard origin/dev
+            git clean -fd
 
-            echo "📦 Installing dependencies..."
             npm install
 
-            echo "♻️ Restarting DEV bot..."
-            BOT_MODE=dev pm2 restart goliath-dev --update-env
-
+            pm2 restart goliath-dev --update-env
             pm2 save
 
-            echo "✅ DEV deployment complete"
+            echo "✅ DEV auto deploy complete"
