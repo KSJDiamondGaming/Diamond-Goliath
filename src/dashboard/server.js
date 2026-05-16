@@ -1,4 +1,28 @@
-require('dotenv').config();
+const path = require('path');
+
+/**
+ * Dashboard API env loading
+ *
+ * Loads the bot mode env first:
+ *   .env.dev
+ *   .env.beta
+ *   .env.production
+ *
+ * Then loads dashboard-specific local settings:
+ *   .env.dashboard.txt
+ *
+ * This keeps the dashboard API connected to the correct bot/runtime mode.
+ */
+const BOT_MODE = String(process.env.BOT_MODE || 'dev').toLowerCase();
+
+require('dotenv').config({
+  path: path.resolve(process.cwd(), `.env.${BOT_MODE}`),
+});
+
+require('dotenv').config({
+  path: path.resolve(process.cwd(), '.env.dashboard.txt'),
+  override: true,
+});
 
 const express = require('express');
 const http = require('http');
@@ -23,8 +47,11 @@ const serverRestoreRoutes = require('../server/routes/serverRestoreRoutes');
 const app = express();
 const server = http.createServer(app);
 
+const PORT = Number(process.env.PORT || 3001);
+const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
+
 app.use(cors({
-  origin: 'http://localhost:5173',
+  origin: CLIENT_URL,
   credentials: true,
 }));
 
@@ -32,7 +59,7 @@ app.use(express.json());
 
 app.use(session({
   name: 'goliath_dashboard_session',
-  secret: process.env.SESSION_SECRET || 'dev-secret',
+  secret: process.env.SESSION_SECRET || 'dev-dashboard-secret',
   resave: false,
   saveUninitialized: false,
   cookie: {
@@ -41,6 +68,18 @@ app.use(session({
     secure: false,
   },
 }));
+
+app.get('/api/health', (req, res) => {
+  res.json({
+    ok: true,
+    service: 'goliath-dashboard-api',
+    mode: BOT_MODE,
+    port: PORT,
+    clientUrl: CLIENT_URL,
+    botApiUrl: process.env.BOT_API_URL || null,
+    timestamp: new Date().toISOString(),
+  });
+});
 
 app.use('/api/auth', auth);
 app.use('/api/discord', discord);
@@ -56,9 +95,15 @@ app.use('/api/cases', cases);
 app.use('/api/server-restore', serverRestoreRoutes);
 
 initSocketHub(server, {
-  clientUrl: 'http://localhost:5173',
+  clientUrl: CLIENT_URL,
 });
 
-server.listen(3001, () => {
-  console.log('🌐 API running on http://localhost:3001');
+server.listen(PORT, () => {
+  console.log('============================================================');
+  console.log(`🌐 Goliath Dashboard API running`);
+  console.log(`🧠 Mode: ${BOT_MODE.toUpperCase()}`);
+  console.log(`🔗 API: http://localhost:${PORT}`);
+  console.log(`🖥️ Client: ${CLIENT_URL}`);
+  console.log(`🤖 Bot API: ${process.env.BOT_API_URL || 'not set'}`);
+  console.log('============================================================');
 });

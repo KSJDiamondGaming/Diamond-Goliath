@@ -5,40 +5,69 @@ const router = express.Router();
 
 const DEBUG = String(process.env.DEBUG || '').toLowerCase() === 'true';
 
-const CLIENT_ID = String(process.env.CLIENT_ID || '').trim();
-const CLIENT_SECRET = String(process.env.CLIENT_SECRET || '').trim();
-const REDIRECT_URI = String(process.env.DISCORD_REDIRECT_URI || '').trim();
-const CLIENT_URL = String(process.env.CLIENT_URL || 'http://localhost:5173').trim();
+function getAuthConfig() {
+  return {
+    clientId: String(process.env.DISCORD_CLIENT_ID || process.env.CLIENT_ID || '').trim(),
+    clientSecret: String(
+      process.env.DISCORD_CLIENT_SECRET || process.env.CLIENT_SECRET || ''
+    ).trim(),
+    redirectUri: String(process.env.DISCORD_REDIRECT_URI || '').trim(),
+    clientUrl: String(
+      process.env.CLIENT_URL || process.env.VITE_CLIENT_URL || 'http://localhost:5173'
+    ).trim(),
+  };
+}
 
-// LOGIN ROUTE
+function getCookieOptions() {
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  return {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? 'none' : 'lax',
+  };
+}
+
+function getDiscordAvatarUrl(user) {
+  if (!user?.id || !user?.avatar) return null;
+
+  const ext = String(user.avatar).startsWith('a_') ? 'gif' : 'png';
+  return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.${ext}?size=256`;
+}
+
 router.get('/login', (req, res) => {
-  if (!CLIENT_ID || !REDIRECT_URI) {
+  const { clientId, clientSecret, redirectUri } = getAuthConfig();
+
+  if (!clientId || !redirectUri) {
     return res.status(500).json({
-      error: 'Missing CLIENT_ID or DISCORD_REDIRECT_URI',
+      error:
+        'Missing Discord OAuth config. Expected DISCORD_CLIENT_ID or CLIENT_ID, and DISCORD_REDIRECT_URI.',
     });
   }
 
-  if (!CLIENT_SECRET) {
+  if (!clientSecret) {
     return res.status(500).json({
-      error: 'Missing CLIENT_SECRET',
+      error:
+        'Missing Discord OAuth secret. Expected DISCORD_CLIENT_SECRET or CLIENT_SECRET.',
     });
   }
 
   const params = new URLSearchParams({
-    client_id: CLIENT_ID,
+    client_id: clientId,
     response_type: 'code',
-    redirect_uri: REDIRECT_URI,
+    redirect_uri: redirectUri,
     scope: 'identify guilds',
   });
 
   const authUrl = `https://discord.com/oauth2/authorize?${params.toString()}`;
 
-  if (DEBUG) console.log('[AUTH] OAuth URL:', authUrl);
+  if (DEBUG) {
+    console.log('[AUTH] OAuth URL:', authUrl);
+  }
 
   return res.redirect(authUrl);
 });
 
-// CHECK AUTH
 router.get('/me', (req, res) => {
   if (!req.session?.user) {
     return res.status(401).json({
@@ -53,36 +82,36 @@ router.get('/me', (req, res) => {
   });
 });
 
-// LOGOUT
 router.post('/logout', (req, res) => {
   req.session.destroy((error) => {
     if (error) {
-      console.error('❌ Logout session destroy failed', error);
+      console.error('❌ Logout session destroy failed:', error);
       return res.status(500).json({ error: 'Logout failed' });
     }
 
-    res.clearCookie('dashboard_session', {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-    });
+    res.clearCookie('goliath_dashboard_session', getCookieOptions());
 
-    return res.json({ success: true });
+    return res.json({
+      success: true,
+    });
   });
 });
 
-// CALLBACK
 router.get('/callback', async (req, res) => {
   try {
     const code = String(req.query.code || '').trim();
+    const { clientId, clientSecret, redirectUri, clientUrl } = getAuthConfig();
 
     if (!code) {
       return res.status(400).send('Missing OAuth code.');
     }
 
-    if (!CLIENT_ID || !CLIENT_SECRET || !REDIRECT_URI) {
+    if (!clientId || !clientSecret || !redirectUri) {
       console.error('❌ OAuth config missing');
-      return res.status(500).send('OAuth configuration error.');
+
+      return res.status(500).send(
+        'OAuth configuration error. Check DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, and DISCORD_REDIRECT_URI.'
+      );
     }
 
     const tokenResponse = await fetch('https://discord.com/api/v10/oauth2/token', {
@@ -91,18 +120,18 @@ router.get('/callback', async (req, res) => {
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: new URLSearchParams({
-        client_id: CLIENT_ID,
-        client_secret: CLIENT_SECRET,
+        client_id: clientId,
+        client_secret: clientSecret,
         grant_type: 'authorization_code',
         code,
-        redirect_uri: REDIRECT_URI,
+        redirect_uri: redirectUri,
       }),
     });
 
     const tokenData = await tokenResponse.json();
 
     if (!tokenResponse.ok) {
-      console.error('❌ Discord token error', tokenData);
+      console.error('❌ Discord token error:', tokenData);
 
       const errorDescription =
         typeof tokenData?.error_description === 'string'
@@ -125,7 +154,7 @@ router.get('/callback', async (req, res) => {
     const userData = await userResponse.json();
 
     if (!userResponse.ok) {
-      console.error('❌ Discord user fetch failed', userData);
+      console.error('❌ Discord user fetch failed:', userData);
       return res.status(500).send('Failed to fetch user.');
     }
 
@@ -134,6 +163,7 @@ router.get('/callback', async (req, res) => {
       username: userData.username,
       global_name: userData.global_name || null,
       avatar: userData.avatar || null,
+      avatarUrl: getDiscordAvatarUrl(userData),
     };
 
     req.session.accessToken = tokenData.access_token;
@@ -146,14 +176,14 @@ router.get('/callback', async (req, res) => {
 
     req.session.save((saveError) => {
       if (saveError) {
-        console.error('❌ Session save failed', saveError);
+        console.error('❌ Session save failed:', saveError);
         return res.status(500).send('Session error.');
       }
 
-      return res.redirect(`${CLIENT_URL}/`);
+      return res.redirect(`${clientUrl}/`);
     });
   } catch (error) {
-    console.error('❌ Auth error', error);
+    console.error('❌ Auth error:', error);
     return res.status(500).send('Authentication failed.');
   }
 });

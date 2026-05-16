@@ -8,7 +8,7 @@ const DATA_PATH = path.join(__dirname, '..', 'data');
 const CASES_PATH = path.join(DATA_PATH, 'modCaseDetails.json');
 
 function getCasesData() {
-  return readJson(CASES_PATH, {});
+  return readJsonSafe(CASES_PATH, {});
 }
 
 function getGuildCaseEntries(guildCases, guildId) {
@@ -27,6 +27,7 @@ function getGuildCaseEntries(guildCases, guildId) {
 
 function getGuildCases(guildId) {
   const cases = getCasesData();
+
   return cases[guildId] && typeof cases[guildId] === 'object'
     ? cases[guildId]
     : {};
@@ -38,8 +39,6 @@ function getGuildWarnings(guildCases, guildId) {
   );
 }
 
-/* ================= RAW CASES ================= */
-
 router.get('/:guildId', (req, res) => {
   try {
     const { guildId } = req.params;
@@ -49,8 +48,6 @@ router.get('/:guildId', (req, res) => {
     return res.status(500).json({ error: 'Failed to load cases' });
   }
 });
-
-/* ================= SORTED CASE LIST ================= */
 
 router.get('/:guildId/list', (req, res) => {
   try {
@@ -64,8 +61,6 @@ router.get('/:guildId/list', (req, res) => {
     return res.status(500).json({ error: 'Failed to load case list' });
   }
 });
-
-/* ================= WARNINGS ================= */
 
 router.get('/:guildId/warnings', (req, res) => {
   try {

@@ -1,3 +1,5 @@
+// src/commands/admin/securitytest.js
+
 const {
   SlashCommandBuilder,
   ActionRowBuilder,
@@ -18,15 +20,26 @@ const {
 
 const BUTTON_PREFIX = 'securitytest:';
 
+// OWNER_ID = Main Goliath owner account.
+// BOT_OWNER_ID = Safe offline Discord Developer Portal application owner.
+const OWNER_ID = String(process.env.OWNER_ID || '').trim();
+const BOT_OWNER_ID = String(process.env.BOT_OWNER_ID || '').trim();
+
 function getOwnerIds() {
-  return (process.env.OWNER_IDS || '')
-    .split(',')
-    .map((id) => String(id).trim())
-    .filter(Boolean);
+  return OWNER_ID ? [OWNER_ID] : [];
+}
+
+function getOwnerId() {
+  return OWNER_ID || null;
+}
+
+function getBotOwnerId() {
+  return BOT_OWNER_ID || null;
 }
 
 function isOwner(interaction) {
-  return getOwnerIds().includes(String(interaction.user.id));
+  const userId = interaction?.user?.id;
+  return Boolean(userId && OWNER_ID && String(userId) === OWNER_ID);
 }
 
 function incidentType(name, fallback = INCIDENT_TYPES.SUSPICIOUS_ADMIN_ACTION) {
@@ -37,12 +50,49 @@ function severity(name, fallback = SEVERITY.HIGH) {
   return SEVERITY[name] || fallback;
 }
 
-async function sendSafe(interaction, payload) {
-  if (interaction.deferred || interaction.replied) {
-    return interaction.editReply(payload);
-  }
+async function deferSafe(interaction) {
+  try {
+    if (interaction.deferred || interaction.replied) {
+      return true;
+    }
 
-  return interaction.reply(payload);
+    if (interaction.isButton?.()) {
+      await interaction.deferReply({
+        flags: MessageFlags.Ephemeral,
+      });
+      return true;
+    }
+
+    await interaction.deferReply({
+      flags: MessageFlags.Ephemeral,
+    });
+
+    return true;
+  } catch (error) {
+    if (error?.code === 10062) {
+      console.warn('[securitytest] Interaction expired before it could be acknowledged.');
+      return false;
+    }
+
+    console.error('[securitytest] Failed to defer interaction:', error);
+    return false;
+  }
+}
+
+async function sendSafe(interaction, payload) {
+  try {
+    if (interaction.deferred || interaction.replied) {
+      return await interaction.editReply(payload);
+    }
+
+    return await interaction.reply({
+      ...payload,
+      flags: payload.flags ?? MessageFlags.Ephemeral,
+    });
+  } catch (error) {
+    console.error('[securitytest] Failed to send interaction response:', error);
+    return null;
+  }
 }
 
 function buildBaseIncident(interaction, overrides = {}) {
@@ -299,7 +349,8 @@ async function runTest(interaction, testKey) {
         '❌ Owner only. You cannot run Goliath security tests.',
         '',
         `Your ID: \`${interaction.user.id}\``,
-        `OWNER_IDS loaded: \`${getOwnerIds().join(', ') || 'none'}\``,
+        `OWNER_ID loaded: \`${getOwnerId() || 'none'}\``,
+        `BOT_OWNER_ID loaded: \`${getBotOwnerId() || 'none'}\``,
       ].join('\n'),
     });
   }
@@ -355,56 +406,83 @@ module.exports = {
     .setDescription('Owner-only safe test panel for Goliath security systems.'),
 
   async execute(interaction) {
-    await interaction.deferReply({
-      flags: MessageFlags.Ephemeral,
-    });
+    const deferred = await deferSafe(interaction);
 
-    if (!interaction.guild) {
-      return interaction.editReply({
-        content: '❌ This command can only be used inside a server.',
-      });
+    if (!deferred) {
+      return;
     }
 
-    if (!isOwner(interaction)) {
-      return interaction.editReply({
+    try {
+      if (!interaction.guild) {
+        return sendSafe(interaction, {
+          content: '❌ This command can only be used inside a server.',
+        });
+      }
+
+      if (!isOwner(interaction)) {
+        return sendSafe(interaction, {
+          content: [
+            '❌ Owner only. You cannot open Goliath security tests.',
+            '',
+            `Your ID: \`${interaction.user.id}\``,
+            `OWNER_ID loaded: \`${getOwnerId() || 'none'}\``,
+            `BOT_OWNER_ID loaded: \`${getBotOwnerId() || 'none'}\``,
+          ].join('\n'),
+        });
+      }
+
+      return sendSafe(interaction, {
         content: [
-          '❌ Owner only. You cannot open Goliath security tests.',
+          '🧪 **Goliath Security Test Panel**',
           '',
-          `Your ID: \`${interaction.user.id}\``,
-          `OWNER_IDS loaded: \`${getOwnerIds().join(', ') || 'none'}\``,
+          'Choose a safe simulated test below.',
+          '',
+          'No channels will be deleted.',
+          'No roles will be deleted.',
+          'No webhooks will be created or deleted.',
+          'No members will be quarantined.',
+          'No lockdown will actually be enabled.',
+          '',
+          'Manual Backup creates a real runtime backup.',
         ].join('\n'),
+        components: buildRows(),
+      });
+    } catch (error) {
+      console.error('[securitytest] Execute error:', error);
+
+      return sendSafe(interaction, {
+        content: '❌ Security test failed. Check the console for details.',
       });
     }
-
-    return interaction.editReply({
-      content: [
-        '🧪 **Goliath Security Test Panel**',
-        '',
-        'Choose a safe simulated test below.',
-        '',
-        'No channels will be deleted.',
-        'No roles will be deleted.',
-        'No webhooks will be created or deleted.',
-        'No members will be quarantined.',
-        'No lockdown will actually be enabled.',
-        '',
-        'Manual Backup creates a real runtime backup.',
-      ].join('\n'),
-      components: buildRows(),
-    });
   },
 
   async handleButton(interaction) {
     if (!interaction.customId?.startsWith(BUTTON_PREFIX)) return false;
 
-    await interaction.deferReply({
-      flags: MessageFlags.Ephemeral,
-    });
+    const deferred = await deferSafe(interaction);
 
-    const testKey = interaction.customId.replace(BUTTON_PREFIX, '');
+    if (!deferred) {
+      return true;
+    }
 
-    await runTest(interaction, testKey);
+    try {
+      const testKey = interaction.customId.replace(BUTTON_PREFIX, '');
 
-    return true;
+      await runTest(interaction, testKey);
+
+      return true;
+    } catch (error) {
+      console.error('[securitytest] Button error:', error);
+
+      await sendSafe(interaction, {
+        content: '❌ Security test button failed. Check the console for details.',
+      });
+
+      return true;
+    }
   },
+
+  getOwnerIds,
+  getOwnerId,
+  getBotOwnerId,
 };

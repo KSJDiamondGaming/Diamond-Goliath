@@ -17,14 +17,22 @@ let cachedBotProfileExpiresAt = 0;
 const guildStatsCache = new Map();
 
 function getBotToken() {
-  return String(process.env.TOKEN || process.env.DISCORD_BOT_TOKEN || '').trim();
+  return String(
+    process.env.DISCORD_TOKEN ||
+      process.env.TOKEN ||
+      process.env.DISCORD_BOT_TOKEN ||
+      process.env.BOT_TOKEN ||
+      ''
+  ).trim();
 }
 
 function requireBotToken() {
   const token = getBotToken();
 
   if (!token) {
-    throw new Error('Missing TOKEN or DISCORD_BOT_TOKEN in env');
+    throw new Error(
+      'Missing bot token in env. Expected DISCORD_TOKEN, TOKEN, DISCORD_BOT_TOKEN, or BOT_TOKEN.'
+    );
   }
 
   return token;
@@ -192,7 +200,7 @@ async function fetchGuildStats(guildId) {
       humans = members.filter((member) => !member?.user?.bot).length;
     }
   } catch (error) {
-      console.warn(
+    console.warn(
       `Could not fetch exact members for guild ${guildId}; using approximate count. ${error.message}`
     );
   }
@@ -220,7 +228,7 @@ async function fetchGuildStats(guildId) {
 }
 
 function getCasesData() {
-  return readJson(CASES_PATH, {});
+  return readJsonSafe(CASES_PATH, {});
 }
 
 function normalizeGuildCases(guildCases, guildId) {
