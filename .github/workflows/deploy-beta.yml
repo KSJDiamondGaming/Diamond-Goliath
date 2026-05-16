@@ -5,6 +5,10 @@ on:
     branches:
       - beta
 
+concurrency:
+  group: deploy-beta
+  cancel-in-progress: true
+
 jobs:
   deploy:
     runs-on: ubuntu-latest

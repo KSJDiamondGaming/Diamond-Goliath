@@ -3,28 +3,34 @@ name: Deploy Production
 on:
   workflow_dispatch:
 
+concurrency:
+  group: deploy-production
+  cancel-in-progress: true
+
 jobs:
-  deploy-production:
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
       - name: Deploy PRODUCTION to VPS
         uses: appleboy/ssh-action@v1.0.3
+
         with:
           host: ${{ secrets.VPS_HOST }}
-          username: root
-          key: ${{ secrets.VPS_SSH_KEY }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+
           script: |
             set -e
 
             echo "🚀 Deploying PRODUCTION..."
 
-            cd /home/goliath/Diamond-Goliath
+            cd /home/goliath/production
 
             echo "📥 Syncing production branch..."
-            git checkout production
             git fetch origin production
             git reset --hard origin/production
+            git clean -fd
 
             echo "📦 Installing dependencies..."
             npm install
