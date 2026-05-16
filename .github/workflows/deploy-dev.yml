@@ -12,22 +12,30 @@ jobs:
     steps:
       - name: Deploy DEV to VPS
         uses: appleboy/ssh-action@v1.0.3
+
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
+
           script: |
             set -e
 
+            echo "🚀 Deploying DEV..."
+
             cd /home/goliath/dev
 
-            git fetch origin
+            echo "📥 Syncing dev branch..."
+            git fetch origin dev
             git reset --hard origin/dev
             git clean -fd
 
+            echo "📦 Installing dependencies..."
             npm install
 
-            pm2 restart goliath-dev --update-env
+            echo "♻️ Restarting dev bot..."
+            BOT_MODE=dev pm2 restart goliath-dev --update-env
+
             pm2 save
 
-            echo "✅ DEV auto deploy complete"
+            echo "✅ DEV deployment complete"
