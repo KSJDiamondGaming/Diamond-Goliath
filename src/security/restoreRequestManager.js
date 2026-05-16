@@ -12,20 +12,63 @@ const serverRestore = require('./serverRestore');
 
 const RESTORE_REQUEST_VERSION = '1D_INTEGRITY_STATUS_UI';
 
-const DATA_DIR = path.join(process.cwd(), 'data', 'restoreRequests');
-const PENDING_FILE = path.join(DATA_DIR, 'pending.json');
-const HISTORY_FILE = path.join(DATA_DIR, 'history.json');
-const AUDIT_FILE = path.join(DATA_DIR, 'audit.json');
+const BOT_MODE = (
+  process.env.BOT_MODE ||
+  'DEV'
+).toLowerCase();
+
+const RUNTIME_ROOT = path.join(
+  process.cwd(),
+  'src',
+  'runtime',
+  BOT_MODE
+);
+
+const RESTORE_DIR = path.join(
+  RUNTIME_ROOT,
+  'recovery',
+  'restoreRequests'
+);
+
+const PENDING_FILE = path.join(
+  RESTORE_DIR,
+  'pending.json'
+);
+
+const HISTORY_FILE = path.join(
+  RESTORE_DIR,
+  'history.json'
+);
+
+const AUDIT_FILE = path.join(
+  RESTORE_DIR,
+  'audit.json'
+);
 
 const DEFAULT_COOLDOWN_MS = 1000 * 60 * 30;
 const activeGuildLocks = new Set();
 
 function ensureStorage() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  if (!fs.existsSync(RESTORE_DIR)) {
+    fs.mkdirSync(RESTORE_DIR, {
+      recursive: true,
+    });
+  }
 
-  for (const file of [PENDING_FILE, HISTORY_FILE, AUDIT_FILE]) {
+  for (const file of [
+    PENDING_FILE,
+    HISTORY_FILE,
+    AUDIT_FILE,
+  ]) {
     if (!fs.existsSync(file)) {
-      fs.writeFileSync(file, JSON.stringify({ requests: [] }, null, 2));
+      fs.writeFileSync(
+        file,
+        JSON.stringify(
+          { requests: [] },
+          null,
+          2
+        )
+      );
     }
   }
 }
