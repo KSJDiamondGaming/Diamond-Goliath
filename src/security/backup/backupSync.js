@@ -24,14 +24,26 @@ const GOOGLE_DRIVE_ADAPTER_VERSION =
 // STORAGE
 // ======================================================
 
-const DATA_DIR = path.join(
+const BOT_MODE = (
+  process.env.BOT_MODE ||
+  'DEV'
+).toLowerCase();
+
+const RUNTIME_ROOT = path.join(
   process.cwd(),
-  'data',
-  'backupSync'
+  'src',
+  'runtime',
+  BOT_MODE
+);
+
+const BACKUP_SYNC_DIR = path.join(
+  RUNTIME_ROOT,
+  'backups',
+  'sync'
 );
 
 const QUEUE_FILE = path.join(
-  DATA_DIR,
+  BACKUP_SYNC_DIR,
   'queue.json'
 );
 
@@ -62,13 +74,24 @@ function nowIso() {
 }
 
 function ensureStorage() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, {
-      recursive: true,
-    });
+  if (
+    !fs.existsSync(
+      BACKUP_SYNC_DIR
+    )
+  ) {
+    fs.mkdirSync(
+      BACKUP_SYNC_DIR,
+      {
+        recursive: true,
+      }
+    );
   }
 
-  if (!fs.existsSync(QUEUE_FILE)) {
+  if (
+    !fs.existsSync(
+      QUEUE_FILE
+    )
+  ) {
     fs.writeFileSync(
       QUEUE_FILE,
       JSON.stringify(
