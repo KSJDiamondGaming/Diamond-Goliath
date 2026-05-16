@@ -1,75 +1,101 @@
 const fs = require('fs');
 const path = require('path');
 
-const VALID_MODES = ['DEV', 'BETA', 'PRODUCTION'];
-
-function normalizeMode(mode) {
-  const normalized = String(mode || process.env.BOT_MODE || 'DEV').toUpperCase();
-
-  return VALID_MODES.includes(normalized) ? normalized : 'DEV';
-}
-
 function ensureDir(dirPath) {
-  if (!fs.existsSync(dirPath)) {
-    fs.mkdirSync(dirPath, { recursive: true });
-    console.log(`📁 Created runtime directory: ${dirPath}`);
+  if (!dirPath) {
+    throw new Error(
+      'ensureDir received invalid path'
+    );
   }
+
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, {
+      recursive: true,
+    });
+  }
+
+  return dirPath;
 }
 
-function bootstrapRuntime(mode) {
-  const runtimeMode = normalizeMode(mode);
-  const modeKey = runtimeMode.toLowerCase();
+function getModeKey(mode) {
+  const value = String(
+    mode || 'DEV'
+  ).toUpperCase();
 
-  const runtimeRoot = path.join(process.cwd(), 'src', 'runtime');
-  const modeRoot = path.join(runtimeRoot, modeKey);
+  if (value === 'PRODUCTION') {
+    return 'production';
+  }
+
+  if (value === 'BETA') {
+    return 'beta';
+  }
+
+  return 'dev';
+}
+
+function bootstrapRuntime(mode = 'DEV') {
+  const modeKey = getModeKey(mode);
+
+  const modeRoot = path.join(
+    process.cwd(),
+    'src',
+    'runtime',
+    modeKey
+  );
 
   const paths = {
-    mode: runtimeMode,
-    modeKey,
-
-    runtimeRoot,
     root: modeRoot,
 
-    backups: path.join(modeRoot, 'backups'),
-    cache: path.join(modeRoot, 'cache'),
-    data: path.join(modeRoot, 'data'),
-    database: path.join(modeRoot, 'database'),
-    guilds: path.join(modeRoot, 'guilds'),
-    incidents: path.join(modeRoot, 'incidents'),
-    logs: path.join(modeRoot, 'logs'),
-    recovery: path.join(modeRoot, 'recovery'),
-    security: path.join(modeRoot, 'security'),
-    snapshots: path.join(modeRoot, 'snapshots'),
-    temp: path.join(modeRoot, 'temp'),
-    translation: path.join(modeRoot, 'translation'),
+    backups: path.join(
+      modeRoot,
+      'backups'
+    ),
+
+    database: path.join(
+      modeRoot,
+      'database'
+    ),
+
+    data: path.join(
+      modeRoot,
+      'data'
+    ),
+
+    restoreRequests: path.join(
+      modeRoot,
+      'data',
+      'restoreRequests'
+    ),
+
+    backupSync: path.join(
+      modeRoot,
+      'data',
+      'backupSync'
+    ),
   };
 
   const requiredDirectories = [
-    paths.runtimeRoot,
     paths.root,
     paths.backups,
-    paths.cache,
-    paths.data,
     paths.database,
-    paths.guilds,
-    paths.incidents,
-    paths.logs,
-    paths.recovery,
-    paths.security,
-    paths.snapshots,
-    paths.temp,
-    paths.translation,
+    paths.data,
+    paths.restoreRequests,
+    paths.backupSync,
   ];
-
-  console.log(`🧱 Bootstrapping runtime folders for ${runtimeMode}...`);
 
   for (const dir of requiredDirectories) {
     ensureDir(dir);
   }
 
-  console.log(`✅ Runtime folders ready: ${paths.root}`);
+  console.log(
+    `✅ Runtime folders ready: ${modeRoot}`
+  );
 
-  return paths;
+  return {
+    mode: modeKey,
+    root: paths.root,
+    ...paths,
+  };
 }
 
 module.exports = {
