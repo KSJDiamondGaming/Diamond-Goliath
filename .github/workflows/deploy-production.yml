@@ -19,7 +19,7 @@ jobs:
 
             echo "🚀 Deploying PRODUCTION..."
 
-            cd /home/goliath/Diamond-Goliath
+            cd /home/goliath/production
 
             echo "📥 Syncing production branch..."
             git checkout production
