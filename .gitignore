@@ -77,3 +77,16 @@ coverage/
 *.bak
 *.old
 *.backup
+# Runtime/generated data
+data/
+src/runtime/
+src/guild/data/
+
+# SQLite runtime files
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite-journal
+
+# Keep placeholders if ever needed
+!.gitkeep
+!important-runtime-files-if-needed
