@@ -13,7 +13,10 @@ const {
   enforceGuildAccess,
   enforceCurrentGuilds,
 } = require('./src/config/guildAccess');
-const { ensureRuntimePaths } = require('./src/config/runtimePaths');
+
+const {
+  bootstrapRuntime,
+} = require('./src/runtime/runtimeBootstrap');
 
 const { startServerBackupScheduler } = require('./src/security/serverBackupScheduler');
 
@@ -228,10 +231,12 @@ function registerProcessSafetyHandlers() {
 async function start() {
   printStartupBanner();
 
-  const runtimePaths = ensureRuntimePaths(BOT_MODE);
+  const runtimePaths = bootstrapRuntime(BOT_MODE);
+
   client.runtimePaths = runtimePaths;
 
-  console.log(`📁 Runtime: ${runtimePaths.root}`);
+  console.log(`📁 Runtime Root: ${runtimePaths.root}`);
+  console.log(`📁 Runtime Mode: ${runtimePaths.mode}`);
 
   const token = getRequiredEnv('DISCORD_TOKEN');
 
