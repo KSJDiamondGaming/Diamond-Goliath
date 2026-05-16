@@ -15,4 +15,23 @@ jobs:
           username: root
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            /home/goliath/deploy-production.sh
+            set -e
+
+            echo "🚀 Deploying PRODUCTION..."
+
+            cd /home/goliath/Diamond-Goliath
+
+            echo "📥 Syncing production branch..."
+            git checkout production
+            git fetch origin production
+            git reset --hard origin/production
+
+            echo "📦 Installing dependencies..."
+            npm install
+
+            echo "♻️ Restarting production bot..."
+            BOT_MODE=production pm2 restart goliath-production --update-env
+
+            pm2 save
+
+            echo "✅ Production deployment complete"

@@ -8,35 +8,31 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy to VPS
+      - name: Deploy to VPS (Beta)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
           script: |
-            cd /home/goliath/beta
+            set -e
 
-            SNAPSHOT_DIR="/home/goliath/runtime/snapshots/beta"
-            SNAPSHOT_NAME="beta-$(date +%Y-%m-%d-%H-%M-%S).tar.gz"
+            echo "🚀 Deploying BETA..."
 
-            mkdir -p "$SNAPSHOT_DIR"
+            cd /home/goliath/Diamond-Goliath
 
-            tar -czf "$SNAPSHOT_DIR/$SNAPSHOT_NAME" \
-              --exclude=node_modules \
-              --exclude=.git \
-              -C /home/goliath beta
+            echo "📦 Creating local backup (runtime system handles snapshots now)"
 
-            cd "$SNAPSHOT_DIR"
-            ls -1t beta-*.tar.gz | tail -n +4 | xargs -r rm --
-
-            cd /home/goliath/beta
-
+            git checkout beta
             git fetch origin
             git reset --hard origin/beta
 
+            echo "📥 Installing dependencies..."
             npm install
 
+            echo "♻️ Restarting bot..."
             BOT_MODE=beta pm2 restart goliath-beta --update-env
 
             pm2 save
+
+            echo "✅ Beta deployment complete"

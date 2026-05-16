@@ -18,37 +18,23 @@ jobs:
           password: ${{ secrets.VPS_PASSWORD }}
           port: 22
           script: |
-            echo "Starting Goliath DEV deployment..."
+            set -e
 
-            cd /home/goliath/dev
+            echo "🚀 Starting Goliath DEV deployment..."
 
-            echo "Creating DEV deployment snapshot..."
-            SNAPSHOT_DIR="/home/goliath/runtime/snapshots/dev"
-            SNAPSHOT_NAME="dev-$(date +%Y-%m-%d-%H-%M-%S).tar.gz"
+            cd /home/goliath/Diamond-Goliath
 
-            mkdir -p "$SNAPSHOT_DIR"
-
-            tar -czf "$SNAPSHOT_DIR/$SNAPSHOT_NAME" \
-              --exclude=node_modules \
-              --exclude=.git \
-              -C /home/goliath dev
-
-            cd "$SNAPSHOT_DIR"
-            ls -1t dev-*.tar.gz | tail -n +4 | xargs -r rm --
-
-            cd /home/goliath/dev
-
-            echo "Pulling latest DEV branch..."
+            echo "📥 Syncing DEV branch..."
+            git checkout dev
             git fetch origin dev
             git reset --hard origin/dev
 
-            echo "Installing dependencies..."
+            echo "📦 Installing dependencies..."
             npm install
 
-            echo "Restarting PM2 DEV bot..."
+            echo "♻️ Restarting DEV bot..."
             BOT_MODE=dev pm2 restart goliath-dev --update-env
 
-            echo "Saving PM2..."
             pm2 save
 
-            echo "DEV deployment complete."
+            echo "✅ DEV deployment complete"
