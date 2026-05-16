@@ -1,38 +1,45 @@
 name: Deploy Beta
 
 on:
+  push:
+    branches:
+      - beta
   workflow_dispatch:
 
+concurrency:
+  group: deploy-beta
+  cancel-in-progress: true
+
 jobs:
-  deploy:
+  deploy-beta:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy to VPS (Beta)
+      - name: Deploy BETA to VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
+          port: 22
           script: |
             set -e
 
             echo "🚀 Deploying BETA..."
 
-            cd /home/goliath/Diamond-Goliath
+            cd /home/goliath/beta
 
-            echo "📦 Creating local backup (runtime system handles snapshots now)"
-
+            echo "📥 Syncing beta branch..."
             git checkout beta
-            git fetch origin
+            git fetch origin beta
             git reset --hard origin/beta
 
-            echo "📥 Installing dependencies..."
+            echo "📦 Installing dependencies..."
             npm install
 
-            echo "♻️ Restarting bot..."
+            echo "♻️ Restarting BETA bot..."
             BOT_MODE=beta pm2 restart goliath-beta --update-env
 
             pm2 save
 
-            echo "✅ Beta deployment complete"
+            echo "✅ BETA deployment complete"

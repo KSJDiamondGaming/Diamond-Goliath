@@ -1,16 +1,21 @@
-name: Deploy DEV to VPS
+name: Deploy DEV
 
 on:
   push:
     branches:
       - dev
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: true
 
 jobs:
-  deploy:
+  deploy-dev:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy Goliath DEV
+      - name: Deploy DEV to VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -20,11 +25,11 @@ jobs:
           script: |
             set -e
 
-            echo "🚀 Starting Goliath DEV deployment..."
+            echo "🚀 Deploying DEV..."
 
-            cd /home/goliath/Diamond-Goliath
+            cd /home/goliath/dev
 
-            echo "📥 Syncing DEV branch..."
+            echo "📥 Syncing dev branch..."
             git checkout dev
             git fetch origin dev
             git reset --hard origin/dev
