@@ -2,13 +2,29 @@ const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
 
-const dataDir = path.join(process.cwd(), 'src', 'runtime');
+const mode = String(
+  process.env.BOT_MODE || 'DEV'
+).toLowerCase();
+
+const dataDir = path.join(
+  process.cwd(),
+  'src',
+  'runtime',
+  mode,
+  'database'
+);
 
 if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
+  fs.mkdirSync(dataDir, {
+    recursive: true,
+  });
 }
 
-const dbPath = path.join(dataDir, 'moderation.sqlite');
+const dbPath = path.join(
+  dataDir,
+  'moderation.sqlite'
+);
+
 const db = new Database(dbPath);
 
 db.pragma('journal_mode = WAL');
@@ -50,11 +66,20 @@ db.exec(`
     expires_at TEXT NOT NULL
   );
 
-  CREATE INDEX IF NOT EXISTS idx_cases_guild_user ON cases(guild_id, user_id);
-  CREATE INDEX IF NOT EXISTS idx_cases_guild_case ON cases(guild_id, case_id);
-  CREATE INDEX IF NOT EXISTS idx_warnings_guild_user ON warnings(guild_id, user_id);
-  CREATE INDEX IF NOT EXISTS idx_warnings_guild_case ON warnings(guild_id, case_id);
-  CREATE INDEX IF NOT EXISTS idx_pending_guild_token ON pending_actions(guild_id, token);
+  CREATE INDEX IF NOT EXISTS idx_cases_guild_user
+    ON cases(guild_id, user_id);
+
+  CREATE INDEX IF NOT EXISTS idx_cases_guild_case
+    ON cases(guild_id, case_id);
+
+  CREATE INDEX IF NOT EXISTS idx_warnings_guild_user
+    ON warnings(guild_id, user_id);
+
+  CREATE INDEX IF NOT EXISTS idx_warnings_guild_case
+    ON warnings(guild_id, case_id);
+
+  CREATE INDEX IF NOT EXISTS idx_pending_guild_token
+    ON pending_actions(guild_id, token);
 `);
 
 module.exports = db;

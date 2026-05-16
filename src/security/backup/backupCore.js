@@ -11,13 +11,6 @@ const crypto = require('crypto');
 // CORE CONSTANTS
 // ======================================================
 
-const DEFAULT_BACKUP_ROOT = path.join(
-  process.cwd(),
-  'src',
-  'runtime',
-  'backups'
-);
-
 const VALID_BACKUP_TYPES = new Set([
   'scheduled',
   'runtime',
@@ -86,8 +79,23 @@ function normaliseEnvironment(environment) {
   return 'DEV';
 }
 
-function getBackupRoot() {
-  return DEFAULT_BACKUP_ROOT;
+function getModeKey(environment) {
+  const env = normaliseEnvironment(environment);
+
+  if (env === 'PRODUCTION') return 'production';
+  if (env === 'BETA') return 'beta';
+
+  return 'dev';
+}
+
+function getBackupRoot(environment) {
+  return path.join(
+    process.cwd(),
+    'src',
+    'runtime',
+    getModeKey(environment),
+    'backups'
+  );
 }
 
 function getGuildBackupRoot({
@@ -98,11 +106,8 @@ function getGuildBackupRoot({
     throw new Error('getGuildBackupRoot requires guildId');
   }
 
-  const env = normaliseEnvironment(environment);
-
   return path.join(
-    getBackupRoot(),
-    env,
+    getBackupRoot(environment),
     String(guildId)
   );
 }
@@ -195,7 +200,7 @@ function createIntegrityRecord({
     backup: {
       id: backupId,
       type: backupType,
-      environment,
+      environment: normaliseEnvironment(environment),
       guildId,
       path: backupPath,
     },
@@ -332,6 +337,7 @@ module.exports = {
   // backup path system
   VALID_BACKUP_TYPES,
   normaliseEnvironment,
+  getModeKey,
   getBackupRoot,
   getGuildBackupRoot,
   getBackupDir,
