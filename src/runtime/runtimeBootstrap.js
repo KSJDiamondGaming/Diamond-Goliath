@@ -1,11 +1,11 @@
 const fs = require('fs');
 const path = require('path');
 
+/* ---------------- DIRECTORY HELPERS ---------------- */
+
 function ensureDir(dirPath) {
   if (!dirPath) {
-    throw new Error(
-      'ensureDir received invalid path'
-    );
+    throw new Error('ensureDir received invalid path');
   }
 
   if (!fs.existsSync(dirPath)) {
@@ -17,10 +17,57 @@ function ensureDir(dirPath) {
   return dirPath;
 }
 
+function validatePath(pathToCheck, label) {
+  if (!fs.existsSync(pathToCheck)) {
+    throw new Error(`Missing required path: ${label}`);
+  }
+
+  console.log(`✅ Path OK: ${label}`);
+  return true;
+}
+
+function validateEnv(name) {
+  const value = process.env[name];
+
+  if (!value || !String(value).trim()) {
+    throw new Error(`Missing environment variable: ${name}`);
+  }
+
+  console.log(`✅ ENV OK: ${name}`);
+  return true;
+}
+
+/* ---------------- SAFE MODULE LOADER ---------------- */
+
+function safeLoad(label, loadFn, logger = console) {
+  try {
+    const result = loadFn();
+
+    logger.log(`✅ ${label} loaded`);
+
+    return {
+      ok: true,
+      label,
+      result,
+      error: null,
+    };
+  } catch (error) {
+    logger.error(`❌ ${label} failed to load`);
+    logger.error(error);
+
+    return {
+      ok: false,
+      label,
+      result: null,
+      error,
+    };
+  }
+}
+
+/* ---------------- MODE / RUNTIME ---------------- */
+
 function getModeKey(mode) {
-  const value = String(
-    mode || 'DEV'
-  ).toUpperCase();
+  const value = String(mode || 'DEV').toUpperCase();
 
   if (value === 'PRODUCTION') {
     return 'production';
@@ -87,9 +134,7 @@ function bootstrapRuntime(mode = 'DEV') {
     ensureDir(dir);
   }
 
-  console.log(
-    `✅ Runtime folders ready: ${modeRoot}`
-  );
+  console.log(`✅ Runtime folders ready: ${modeRoot}`);
 
   return {
     mode: modeKey,
@@ -98,6 +143,66 @@ function bootstrapRuntime(mode = 'DEV') {
   };
 }
 
+/* ---------------- BOOT VALIDATION ---------------- */
+
+function runBootValidation(config = {}) {
+  const {
+    requiredPaths = [],
+    requiredEnv = [],
+  } = config;
+
+  console.log('🩺 Running boot validation...');
+
+  for (const item of requiredPaths) {
+    validatePath(item.path, item.label);
+  }
+
+  for (const envName of requiredEnv) {
+    validateEnv(envName);
+  }
+
+  console.log('✅ Boot validation complete.');
+
+  return true;
+}
+
+/* ---------------- STARTUP FINGERPRINT ---------------- */
+
+function getStartupFingerprint(mode, runtimePaths = {}) {
+  return {
+    botMode: String(mode || 'UNKNOWN').toUpperCase(),
+    runtimeMode: runtimePaths.mode || 'unknown',
+    runtimeRoot: runtimePaths.root || 'unknown',
+    nodeVersion: process.version,
+    platform: process.platform,
+    pid: process.pid,
+    startedAt: new Date().toISOString(),
+  };
+}
+
+function printStartupFingerprint(mode, runtimePaths = {}) {
+  const fingerprint = getStartupFingerprint(mode, runtimePaths);
+
+  console.log('============================================================');
+  console.log('🧠 Goliath Startup Fingerprint');
+  console.log(`🧠 Bot Mode: ${fingerprint.botMode}`);
+  console.log(`🧠 Runtime Mode: ${fingerprint.runtimeMode}`);
+  console.log(`🧠 Runtime Root: ${fingerprint.runtimeRoot}`);
+  console.log(`🧠 Node: ${fingerprint.nodeVersion}`);
+  console.log(`🧠 Platform: ${fingerprint.platform}`);
+  console.log(`🧠 PID: ${fingerprint.pid}`);
+  console.log(`🧠 Started At: ${fingerprint.startedAt}`);
+  console.log('============================================================');
+
+  return fingerprint;
+}
+
+/* ---------------- EXPORTS ---------------- */
+
 module.exports = {
   bootstrapRuntime,
+  runBootValidation,
+  safeLoad,
+  getStartupFingerprint,
+  printStartupFingerprint,
 };

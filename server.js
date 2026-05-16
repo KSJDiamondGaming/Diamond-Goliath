@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+
 const {
   Client,
   Collection,
@@ -9,6 +10,7 @@ const {
 
 const { loadEnvironment } = require('./src/config/envLoader');
 const { getBotModeConfig } = require('./src/config/botModes');
+
 const {
   enforceGuildAccess,
   enforceCurrentGuilds,
@@ -16,9 +18,23 @@ const {
 
 const {
   bootstrapRuntime,
+  runBootValidation,
+  safeLoad,
+  printStartupFingerprint,
 } = require('./src/runtime/runtimeBootstrap');
 
-const { startServerBackupScheduler } = require('./src/security/serverBackupScheduler');
+/* ---------------- SAFE MODULE LOADS ---------------- */
+
+const backupSchedulerModule = safeLoad(
+  'Server Backup Scheduler',
+  () => require('./src/security/serverBackupScheduler')
+);
+
+const startServerBackupScheduler =
+  backupSchedulerModule.ok &&
+  typeof backupSchedulerModule.result?.startServerBackupScheduler === 'function'
+    ? backupSchedulerModule.result.startServerBackupScheduler
+    : null;
 
 /* ---------------- ENV / MODE ---------------- */
 
@@ -177,7 +193,9 @@ function loadEvents() {
       delete require.cache[require.resolve(file)];
 
       const loadedEvent = require(file);
-      const events = Array.isArray(loadedEvent) ? loadedEvent : [loadedEvent];
+      const events = Array.isArray(loadedEvent)
+        ? loadedEvent
+        : [loadedEvent];
 
       for (const event of events) {
         registerEvent(event, file);
@@ -233,10 +251,31 @@ async function start() {
 
   const runtimePaths = bootstrapRuntime(BOT_MODE);
 
+  printStartupFingerprint(BOT_MODE, runtimePaths);
+
   client.runtimePaths = runtimePaths;
 
   console.log(`📁 Runtime Root: ${runtimePaths.root}`);
   console.log(`📁 Runtime Mode: ${runtimePaths.mode}`);
+
+  runBootValidation({
+    requiredPaths: [
+      {
+        path: './src/commands',
+        label: 'Commands Folder',
+      },
+      {
+        path: './src/events',
+        label: 'Events Folder',
+      },
+      {
+        path: './src/security',
+        label: 'Security Folder',
+      },
+    ],
+
+    requiredEnv: ['DISCORD_TOKEN'],
+  });
 
   const token = getRequiredEnv('DISCORD_TOKEN');
 
@@ -261,8 +300,14 @@ async function start() {
     await enforceCurrentGuilds(client, BOT_MODE, activeMode);
 
     if (activeMode.startBackupScheduler) {
-      console.log('💾 Starting server backup scheduler...');
-      startServerBackupScheduler(readyClient);
+      if (startServerBackupScheduler) {
+        console.log('💾 Starting server backup scheduler...');
+        startServerBackupScheduler(readyClient);
+      } else {
+        console.warn(
+          '⚠️ Backup scheduler unavailable. Continuing startup safely.'
+        );
+      }
     } else {
       logDev('💾 Backup scheduler disabled in DEV mode.');
     }
