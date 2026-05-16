@@ -1,4 +1,4 @@
-name: Deploy BETA
+name: Deploy Beta
 
 on:
   push:
@@ -12,33 +12,22 @@ jobs:
     steps:
       - name: Deploy BETA to VPS
         uses: appleboy/ssh-action@v1.0.3
-
         with:
           host: ${{ secrets.VPS_HOST }}
-          username: root
-          key: ${{ secrets.VPS_SSH_KEY }}
-
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
           script: |
             set -e
 
-            echo "🚀 Deploying BETA..."
-
             cd /home/goliath/beta
 
-            echo "🛑 Stopping BETA..."
-            pm2 stop goliath-beta || true
-
-            echo "📥 Syncing BETA branch..."
             git fetch origin
             git reset --hard origin/beta
             git clean -fd
 
-            echo "📦 Installing dependencies..."
             npm install
 
-            echo "🚀 Starting BETA..."
-            pm2 restart ecosystem.config.js --only goliath-beta --update-env
-
+            pm2 restart goliath-beta --update-env
             pm2 save
 
-            echo "✅ BETA deployment complete"
+            echo "✅ BETA auto deploy complete"
