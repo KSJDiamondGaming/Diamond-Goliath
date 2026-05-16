@@ -3,9 +3,12 @@ module.exports = {
     {
       name: 'goliath-dev',
       script: 'server.js',
+      cwd: '/home/goliath/dev',
+
       env: {
         BOT_MODE: 'dev',
       },
+
       watch: false,
       autorestart: true,
       max_memory_restart: '500M',
@@ -14,9 +17,12 @@ module.exports = {
     {
       name: 'goliath-beta',
       script: 'server.js',
+      cwd: '/home/goliath/beta',
+
       env: {
         BOT_MODE: 'beta',
       },
+
       watch: false,
       autorestart: true,
       max_memory_restart: '500M',
@@ -25,9 +31,12 @@ module.exports = {
     {
       name: 'goliath-production',
       script: 'server.js',
+      cwd: '/home/goliath/production',
+
       env: {
         BOT_MODE: 'production',
       },
+
       watch: false,
       autorestart: true,
       max_memory_restart: '1G',

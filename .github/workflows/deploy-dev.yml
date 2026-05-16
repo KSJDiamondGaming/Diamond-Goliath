@@ -1,40 +1,42 @@
-name: Deploy DEV to VPS
+name: Deploy Production
 
 on:
-  push:
-    branches:
-      - dev
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy Goliath DEV
+      - name: Deploy PRODUCTION to VPS
         uses: appleboy/ssh-action@v1.0.3
+
         with:
           host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          password: ${{ secrets.VPS_PASSWORD }}
-          port: 22
+          username: root
+          key: ${{ secrets.VPS_SSH_KEY }}
+
           script: |
             set -e
 
-            echo "🚀 Starting Goliath DEV deployment..."
+            echo "🚀 Deploying PRODUCTION..."
 
-            cd /home/goliath/Diamond-Goliath
+            cd /home/goliath/production
 
-            echo "📥 Syncing DEV branch..."
-            git checkout dev
-            git fetch origin dev
-            git reset --hard origin/dev
+            echo "🛑 Stopping PRODUCTION..."
+            pm2 stop goliath-production || true
+
+            echo "📥 Syncing PRODUCTION branch..."
+            git fetch origin
+            git reset --hard origin/production
+            git clean -fd
 
             echo "📦 Installing dependencies..."
             npm install
 
-            echo "♻️ Restarting DEV bot..."
-            BOT_MODE=dev pm2 restart goliath-dev --update-env
+            echo "🚀 Starting PRODUCTION..."
+            pm2 restart ecosystem.config.js --only goliath-production --update-env
 
             pm2 save
 
-            echo "✅ DEV deployment complete"
+            echo "✅ PRODUCTION deployment complete"
