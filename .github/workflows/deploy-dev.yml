@@ -6,33 +6,35 @@ on:
       - dev
 
 jobs:
-  deploy-dev:
-    runs-on: self-hosted
+  deploy:
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy DEV
-        run: |
-          set -e
+      - name: Deploy Goliath DEV
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: 22
+          script: |
+            set -e
 
-          echo "🚀 Deploying DEV..."
+            echo "🚀 Starting Goliath DEV deployment..."
 
-          cd /home/goliath/dev
+            cd /home/goliath/Diamond-Goliath
 
-          echo "🛑 Stopping DEV..."
-          pm2 stop goliath-dev || true
+            echo "📥 Syncing DEV branch..."
+            git checkout dev
+            git fetch origin dev
+            git reset --hard origin/dev
 
-          echo "📥 Syncing DEV branch..."
-          git fetch origin
-          git reset --hard origin/dev
-          git clean -fd
+            echo "📦 Installing dependencies..."
+            npm install
 
-          echo "📦 Installing dependencies..."
-          npm install
+            echo "♻️ Restarting DEV bot..."
+            BOT_MODE=dev pm2 restart goliath-dev --update-env
 
-          echo "🚀 Restarting DEV..."
-          pm2 restart ecosystem.config.js --only goliath-dev --update-env
+            pm2 save
 
-          echo "💾 Saving PM2..."
-          pm2 save
-
-          echo "✅ DEV deployment complete"
+            echo "✅ DEV deployment complete"
