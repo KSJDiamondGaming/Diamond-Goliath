@@ -5,22 +5,41 @@ const router = express.Router();
 
 const DEBUG = String(process.env.DEBUG || '').toLowerCase() === 'true';
 
-const CLIENT_ID = String(process.env.CLIENT_ID || '').trim();
-const CLIENT_SECRET = String(process.env.CLIENT_SECRET || '').trim();
-const REDIRECT_URI = String(process.env.DISCORD_REDIRECT_URI || '').trim();
-const CLIENT_URL = String(process.env.CLIENT_URL || 'http://localhost:5173').trim();
+const CLIENT_ID = String(
+  process.env.DISCORD_CLIENT_ID ||
+  process.env.CLIENT_ID ||
+  ''
+).trim();
+
+const CLIENT_SECRET = String(
+  process.env.DISCORD_CLIENT_SECRET ||
+  process.env.CLIENT_SECRET ||
+  ''
+).trim();
+
+const REDIRECT_URI = String(
+  process.env.DISCORD_REDIRECT_URI ||
+  ''
+).trim();
+
+const CLIENT_URL = String(
+  process.env.CLIENT_URL ||
+  process.env.DASHBOARD_CLIENT_URL ||
+  process.env.VITE_CLIENT_URL ||
+  'https://goliath.ksjdigital.co.uk'
+).trim();
 
 // LOGIN ROUTE
 router.get('/login', (req, res) => {
   if (!CLIENT_ID || !REDIRECT_URI) {
     return res.status(500).json({
-      error: 'Missing CLIENT_ID or DISCORD_REDIRECT_URI',
+      error: 'Missing DISCORD_CLIENT_ID or DISCORD_REDIRECT_URI',
     });
   }
 
   if (!CLIENT_SECRET) {
     return res.status(500).json({
-      error: 'Missing CLIENT_SECRET',
+      error: 'Missing DISCORD_CLIENT_SECRET',
     });
   }
 
