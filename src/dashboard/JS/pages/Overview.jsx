@@ -48,7 +48,13 @@ function normalizeArray(value) {
   return [];
 }
 
-function buildMetrics({ selectedGuildId, selectedGuildData, statusData, casesData, warningsData }) {
+function buildMetrics({
+  selectedGuildId,
+  selectedGuildData,
+  statusData,
+  casesData,
+  warningsData,
+}) {
   const guildStatus =
     statusData?.guild ||
     statusData?.guilds?.[selectedGuildId] ||
@@ -512,12 +518,13 @@ export default function Overview({
         />
 
         <div style={styles.statsGrid}>
+          <StatCard styles={styles} label="Bot Status" online={metrics.botOnline} />
+          <StatCard styles={styles} label="Backend" online={metrics.backendOnline} />
+          <StatCard styles={styles} label="API Status" online={metrics.apiOnline} />
+
           <StatCard styles={styles} label="Members" value={metrics.members} />
           <StatCard styles={styles} label="Humans" value={metrics.humans} />
           <StatCard styles={styles} label="Bots" value={metrics.bots} />
-          <StatCard styles={styles} label="Bot" online={metrics.botOnline} />
-          <StatCard styles={styles} label="Backend" online={metrics.backendOnline} />
-          <StatCard styles={styles} label="API" online={metrics.apiOnline} />
         </div>
       </section>
 
@@ -570,7 +577,7 @@ export default function Overview({
           <ChartCard
             styles={styles}
             title="Performance"
-            subtitle="Latency, humans, bots"
+            subtitle="Latency, humans, members, bots"
             bars={[
               { label: 'Latency', value: metrics.latencyMs || 1 },
               { label: 'Humans', value: metrics.humans },
