@@ -7,7 +7,7 @@ import {
 } from '../ui/system';
 
 const API_BASE =
-  import.meta.env.VITE_API_BASE || 'http://localhost:3001';
+  import.meta.env.VITE_API_BASE || '';
 
 export default function Restore({
   selectedGuild,

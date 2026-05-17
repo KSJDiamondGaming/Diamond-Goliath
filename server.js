@@ -1,6 +1,11 @@
 const fs = require('fs');
 const path = require('path');
 
+const { loadEnvironment } = require('./src/config/envLoader');
+
+// Load env BEFORE importing routes/modules that read process.env
+loadEnvironment();
+
 const express = require('express');
 const http = require('http');
 const cors = require('cors');
@@ -13,7 +18,6 @@ const {
   Partials,
 } = require('discord.js');
 
-const { loadEnvironment } = require('./src/config/envLoader');
 const { getBotModeConfig } = require('./src/config/botModes');
 
 const {

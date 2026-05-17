@@ -9,7 +9,7 @@ import PageShell, {
 import { PAGE_LAYOUTS } from "../ui/layout";
 import { createLogsPageStyles } from "../ui/components";
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const API_URL = import.meta.env.VITE_API_URL || '';
 
 const DEFAULT_LOGS = {
   enabled: true,
