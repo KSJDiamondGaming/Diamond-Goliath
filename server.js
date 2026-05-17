@@ -1,6 +1,11 @@
 const fs = require('fs');
 const path = require('path');
 
+const express = require('express');
+const http = require('http');
+const cors = require('cors');
+const session = require('express-session');
+
 const {
   Client,
   Collection,
@@ -22,6 +27,20 @@ const {
   safeLoad,
   printStartupFingerprint,
 } = require('./src/runtime/runtimeBootstrap');
+
+const { initSocketHub } = require('./src/server/sockets/socketHub');
+
+const authRoutes = require('./src/server/routes/auth');
+const discordRoutes = require('./src/server/routes/discord');
+const statusRoutes = require('./src/server/routes/status');
+
+const automodRoutes = require('./src/server/routes/config/automod');
+const logsRoutes = require('./src/server/routes/config/logs');
+const messagesRoutes = require('./src/server/routes/config/messages');
+const embedsRoutes = require('./src/server/routes/config/embeds');
+
+const moderationRoutes = require('./src/server/routes/moderation');
+const serverRestoreRoutes = require('./src/server/routes/serverRestoreRoutes');
 
 /* ---------------- SAFE MODULE LOADS ---------------- */
 
@@ -57,6 +76,22 @@ process.env.BOT_MODE = selectedMode;
 const loadedEnv = loadEnvironment(selectedMode);
 const BOT_MODE = selectedMode.toUpperCase();
 const activeMode = getBotModeConfig(BOT_MODE);
+
+const isProduction = process.env.NODE_ENV === 'production';
+
+/*
+  Dashboard/API route compatibility.
+
+  Some dashboard routes check TOKEN or DISCORD_BOT_TOKEN.
+  Main bot env uses DISCORD_TOKEN.
+*/
+if (!process.env.DISCORD_BOT_TOKEN && process.env.DISCORD_TOKEN) {
+  process.env.DISCORD_BOT_TOKEN = process.env.DISCORD_TOKEN;
+}
+
+if (!process.env.TOKEN && process.env.DISCORD_TOKEN) {
+  process.env.TOKEN = process.env.DISCORD_TOKEN;
+}
 
 /* ---------------- CLIENT ---------------- */
 
@@ -131,6 +166,109 @@ function printStartupBanner() {
   console.log(`🧠 Mode: ${BOT_MODE}`);
   console.log(`📄 Env: ${loadedEnv.envFile}`);
   console.log('============================================================');
+}
+
+/* ---------------- DASHBOARD API ---------------- */
+
+function getAllowedOrigins() {
+  const origins = new Set([
+    'https://goliath.ksjdigital.co.uk',
+    'http://localhost:5173',
+  ]);
+
+  const envOrigins = [
+    process.env.CLIENT_URL,
+    process.env.DASHBOARD_CLIENT_URL,
+    process.env.VITE_CLIENT_URL,
+  ];
+
+  for (const origin of envOrigins) {
+    if (origin && String(origin).trim()) {
+      origins.add(String(origin).trim());
+    }
+  }
+
+  return [...origins];
+}
+
+function getDashboardClientUrl() {
+  return String(
+    process.env.CLIENT_URL ||
+      process.env.DASHBOARD_CLIENT_URL ||
+      process.env.VITE_CLIENT_URL ||
+      'https://goliath.ksjdigital.co.uk'
+  ).trim();
+}
+
+function startDashboardApiServer() {
+  const app = express();
+  const apiServer = http.createServer(app);
+
+  const allowedOrigins = getAllowedOrigins();
+  const dashboardClientUrl = getDashboardClientUrl();
+
+  app.set('trust proxy', 1);
+
+  app.use(
+    cors({
+      origin(origin, callback) {
+        if (!origin) return callback(null, true);
+
+        if (allowedOrigins.includes(origin)) {
+          return callback(null, true);
+        }
+
+        return callback(new Error(`CORS blocked origin: ${origin}`));
+      },
+      credentials: true,
+    })
+  );
+
+  app.use(express.json());
+
+  app.use(
+    session({
+      name: 'goliath_dashboard_session',
+      secret: process.env.SESSION_SECRET || 'dev-secret',
+      resave: false,
+      saveUninitialized: false,
+      proxy: true,
+      cookie: {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: isProduction ? 'none' : 'lax',
+      },
+    })
+  );
+
+  app.use('/api/auth', authRoutes);
+  app.use('/api/discord', discordRoutes);
+  app.use('/api/status', statusRoutes);
+
+  app.use('/api/config/automod', automodRoutes);
+  app.use('/api/config/logs', logsRoutes);
+  app.use('/api/config/messages', messagesRoutes);
+  app.use('/api/config/embeds', embedsRoutes);
+
+  app.use('/api/cases', moderationRoutes);
+
+  app.use('/api/server-restore', serverRestoreRoutes);
+
+  initSocketHub(apiServer, {
+    clientUrl: dashboardClientUrl,
+  });
+
+  const apiPort = Number(
+    process.env.PORT ||
+      process.env.BOT_API_PORT ||
+      3001
+  );
+
+  apiServer.listen(apiPort, () => {
+    console.log(`🌐 Dashboard API running on http://localhost:${apiPort}`);
+  });
+
+  return apiServer;
 }
 
 /* ---------------- COMMANDS ---------------- */
@@ -219,7 +357,27 @@ function registerModeProtectionEvents() {
 
 /* ---------------- PROCESS SAFETY ---------------- */
 
-function registerProcessSafetyHandlers() {
+function registerProcessSafetyHandlers(apiServer) {
+  let shuttingDown = false;
+
+  async function shutdown(reason) {
+    if (shuttingDown) return;
+
+    shuttingDown = true;
+
+    console.log(`🛑 ${reason} received. Shutting down Goliath...`);
+
+    if (apiServer) {
+      apiServer.close(() => {
+        console.log('🌐 Dashboard API stopped.');
+      });
+    }
+
+    client.destroy();
+
+    process.exit(0);
+  }
+
   process.on('unhandledRejection', (reason) => {
     console.error('❌ Unhandled Promise Rejection');
     console.error(reason);
@@ -231,17 +389,8 @@ function registerProcessSafetyHandlers() {
     process.exit(1);
   });
 
-  process.on('SIGINT', () => {
-    console.log('🛑 SIGINT received. Shutting down Goliath...');
-    client.destroy();
-    process.exit(0);
-  });
-
-  process.on('SIGTERM', () => {
-    console.log('🛑 SIGTERM received. Shutting down Goliath...');
-    client.destroy();
-    process.exit(0);
-  });
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
 }
 
 /* ---------------- START ---------------- */
@@ -287,7 +436,9 @@ async function start() {
     getRequiredEnv('BETA_GUILD_IDS');
   }
 
-  registerProcessSafetyHandlers();
+  const apiServer = startDashboardApiServer();
+
+  registerProcessSafetyHandlers(apiServer);
   registerModeProtectionEvents();
 
   loadCommands();
