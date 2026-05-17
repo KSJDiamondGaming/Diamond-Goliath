@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { api, joinGuildRoom, listenForGuildUpdate } from '../api';
 import PageShell, {
   EmptyState,
@@ -8,8 +8,6 @@ import PageShell, {
 } from '../shared/PageShell';
 import { PAGE_LAYOUTS } from "../ui/layout";
 import { createLogsPageStyles } from "../ui/components";
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 const DEFAULT_LOGS = {
   enabled: true,

@@ -20,23 +20,35 @@ function initSocketHub(server, options = {}) {
   });
 
   io.on('connection', (socket) => {
-    console.log(`🟢 Dashboard connected: ${socket.id}`);
+    if (process.env.DEBUG === 'true') {
+  console.log(`🟢 Dashboard connected: ${socket.id}`);
+}
+
+    socket.joinedGuildRooms = new Set();
 
     function joinGuildRoom(guildId) {
       const id = String(guildId || '').trim();
       if (!id) return;
 
       const room = getRoomName(id);
-      socket.join(room);
 
-      console.log(`${socket.id} joined ${room}`);
+      if (socket.joinedGuildRooms.has(room)) {
+        return;
+      }
+
+      socket.join(room);
+      socket.joinedGuildRooms.add(room);
+
+      console.log(`🔌 ${socket.id} joined ${room}`);
     }
 
     socket.on('joinGuild', joinGuildRoom);
     socket.on('automod:join', joinGuildRoom);
 
     socket.on('disconnect', () => {
-      console.log(`🔴 Dashboard disconnected: ${socket.id}`);
+      if (process.env.DEBUG === 'true') {
+  console.log(`🔴 Dashboard disconnected: ${socket.id}`);
+}
     });
   });
 

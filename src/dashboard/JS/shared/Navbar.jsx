@@ -371,15 +371,15 @@ function Navbar({
                           type="button"
                           onClick={() => handleNavigate(child)}
                           style={{
-                            ...styles.navItem(
-                              childActive,
-                              expanded,
-                              canNavigate,
-                              childHovered,
-                              childPressed,
-                            ),
-                            paddingLeft: '38px',
-                          }}
+                          ...styles.navItem(
+                            childActive,
+                            expanded,
+                            canNavigate,
+                            childHovered,
+                            childPressed,
+                          ),
+                          padding: expanded ? '10px 12px 10px 38px' : '10px',
+                        }}
                           title={expanded ? undefined : child.label}
                           disabled={!canNavigate || !child.path}
                           aria-current={childActive ? 'page' : undefined}

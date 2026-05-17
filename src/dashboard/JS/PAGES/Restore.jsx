@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import RestoreConfirmModal from '../shared/RestoreConfirmModal';
 
 import {
@@ -7,16 +7,20 @@ import {
 } from '../ui/system';
 
 const API_BASE =
-  import.meta.env.VITE_API_BASE || 'http://localhost:3001';
+  import.meta.env.VITE_API_BASE_URL ||
+  import.meta.env.VITE_API_URL ||
+  'http://localhost:3001';
 
 export default function Restore({
   selectedGuild,
   theme: providedTheme,
 }) {
   const theme = providedTheme || getTheme(true);
-  const styles = createRestorePageStyles(theme);
+  const styles = useMemo(() => createRestorePageStyles(theme), [theme]);
 
-  const guildId = selectedGuild;
+  const guildId = typeof selectedGuild === 'string'
+    ? selectedGuild
+    : selectedGuild?.id || selectedGuild?.guildId || '';
 
   const [backups, setBackups] = useState([]);
   const [selectedBackupId, setSelectedBackupId] = useState('');
@@ -33,14 +37,10 @@ export default function Restore({
   const [showConfirm, setShowConfirm] = useState(false);
 
   const selectedBackupSummary = useMemo(() => {
-    return (
-      backups.find(
-        (backup) => backup.backupId === selectedBackupId,
-      ) || null
-    );
+    return backups.find((backup) => backup.backupId === selectedBackupId) || null;
   }, [backups, selectedBackupId]);
 
-  async function fetchBackups() {
+  const fetchBackups = useCallback(async () => {
     if (!guildId) return;
 
     setLoadingBackups(true);
@@ -48,60 +48,63 @@ export default function Restore({
 
     try {
       const response = await fetch(
-        `${API_BASE}/api/server-restore/${guildId}/backups`,
+        `${API_BASE}/api/server-restore/${encodeURIComponent(guildId)}/backups`,
+        {
+          credentials: 'include',
+        },
       );
 
       const data = await response.json();
 
-      if (!data.success) {
-        throw new Error(
-          data.error || 'Failed to load backups.',
-        );
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to load backups.');
       }
 
-      setBackups(data.backups || []);
+      const nextBackups = Array.isArray(data.backups) ? data.backups : [];
+      setBackups(nextBackups);
 
-      if (
-        !selectedBackupId &&
-        data.backups?.[0]?.backupId
-      ) {
-        setSelectedBackupId(
-          data.backups[0].backupId,
-        );
+      if (!selectedBackupId && nextBackups[0]?.backupId) {
+        setSelectedBackupId(nextBackups[0].backupId);
       }
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'Failed to load backups.');
     } finally {
       setLoadingBackups(false);
     }
-  }
+  }, [guildId, selectedBackupId]);
 
-  async function fetchBackupDetails(backupId) {
-    if (!guildId || !backupId) return;
+  const fetchBackupDetails = useCallback(
+    async (backupId) => {
+      if (!guildId || !backupId) return;
 
-    setSelectedBackup(null);
-    setError('');
+      setSelectedBackup(null);
+      setError('');
 
-    try {
-      const response = await fetch(
-        `${API_BASE}/api/server-restore/${guildId}/backups/${backupId}`,
-      );
-
-      const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(
-          data.error || 'Failed to load backup.',
+      try {
+        const response = await fetch(
+          `${API_BASE}/api/server-restore/${encodeURIComponent(
+            guildId,
+          )}/backups/${encodeURIComponent(backupId)}`,
+          {
+            credentials: 'include',
+          },
         );
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || 'Failed to load backup.');
+        }
+
+        setSelectedBackup(data.backup);
+      } catch (err) {
+        setError(err.message || 'Failed to load backup.');
       }
+    },
+    [guildId],
+  );
 
-      setSelectedBackup(data.backup);
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
-  async function runPreview() {
+  const runPreview = useCallback(async () => {
     if (!guildId || !selectedBackupId) return;
 
     setLoadingPreview(true);
@@ -111,9 +114,10 @@ export default function Restore({
 
     try {
       const response = await fetch(
-        `${API_BASE}/api/server-restore/${guildId}/restore/preview`,
+        `${API_BASE}/api/server-restore/${encodeURIComponent(guildId)}/restore/preview`,
         {
           method: 'POST',
+          credentials: 'include',
           headers: {
             'Content-Type': 'application/json',
           },
@@ -132,83 +136,92 @@ export default function Restore({
 
       const data = await response.json();
 
-      if (!data.success) {
-        throw new Error(
-          data.error || 'Restore preview failed.',
-        );
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Restore preview failed.');
       }
 
       setPreview(data.report);
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'Restore preview failed.');
     } finally {
       setLoadingPreview(false);
     }
-  }
+  }, [guildId, selectedBackupId]);
 
-  async function executeRestore({ cleanupMode }) {
-    if (!guildId || !selectedBackupId) return;
+  const executeRestore = useCallback(
+    async ({ cleanupMode }) => {
+      if (!guildId || !selectedBackupId) return;
 
-    setExecuting(true);
-    setError('');
-    setResult(null);
+      setExecuting(true);
+      setError('');
+      setResult(null);
 
-    try {
-      const response = await fetch(
-        `${API_BASE}/api/server-restore/${guildId}/restore/execute`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            backupId: selectedBackupId,
-            confirmText: 'RESTORE',
-            cleanupMode,
-            options: {
-              restoreRoles: true,
-              restoreCategories: true,
-              restoreChannels: true,
-              restoreConfig: true,
-              restoreRolePositions: true,
+      try {
+        const response = await fetch(
+          `${API_BASE}/api/server-restore/${encodeURIComponent(guildId)}/restore/execute`,
+          {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
             },
-          }),
-        },
-      );
-
-      const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(
-          data.error || 'Restore failed.',
+            body: JSON.stringify({
+              backupId: selectedBackupId,
+              confirmText: 'RESTORE',
+              cleanupMode,
+              options: {
+                restoreRoles: true,
+                restoreCategories: true,
+                restoreChannels: true,
+                restoreConfig: true,
+                restoreRolePositions: true,
+              },
+            }),
+          },
         );
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || 'Restore failed.');
+        }
+
+        setResult(data);
+        setShowConfirm(false);
+
+        await fetchBackups();
+      } catch (err) {
+        setError(err.message || 'Restore failed.');
+      } finally {
+        setExecuting(false);
       }
+    },
+    [fetchBackups, guildId, selectedBackupId],
+  );
 
-      setResult(data);
-      setShowConfirm(false);
-
-      await fetchBackups();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setExecuting(false);
-    }
-  }
+  useEffect(() => {
+    setBackups([]);
+    setSelectedBackupId('');
+    setSelectedBackup(null);
+    setPreview(null);
+    setResult(null);
+    setShowConfirm(false);
+    setError('');
+  }, [guildId]);
 
   useEffect(() => {
     fetchBackups();
-  }, [guildId]);
+  }, [fetchBackups]);
 
   useEffect(() => {
     if (!selectedBackupId) return;
 
     fetchBackupDetails(selectedBackupId);
-
     setPreview(null);
     setResult(null);
-  }, [selectedBackupId]);
+  }, [fetchBackupDetails, selectedBackupId]);
 
-    return (
+  return (
     <div style={styles.page}>
       <section style={styles.hero}>
         <h1 style={styles.heroTitle}>Full Server Restore</h1>
@@ -222,7 +235,7 @@ export default function Restore({
             type="button"
             style={styles.button('soft', loadingBackups)}
             onClick={fetchBackups}
-            disabled={loadingBackups}
+            disabled={loadingBackups || !guildId}
           >
             {loadingBackups ? 'Refreshing...' : 'Refresh Backups'}
           </button>
@@ -309,9 +322,7 @@ export default function Restore({
                     <span style={styles.summaryLabel}>Created</span>
                     <strong>
                       {selectedBackupSummary.createdAt
-                        ? new Date(
-                            selectedBackupSummary.createdAt,
-                          ).toLocaleString()
+                        ? new Date(selectedBackupSummary.createdAt).toLocaleString()
                         : 'Unknown'}
                     </strong>
                   </div>
@@ -340,9 +351,7 @@ export default function Restore({
                       onClick={runPreview}
                       disabled={loadingPreview}
                     >
-                      {loadingPreview
-                        ? 'Running Preview...'
-                        : 'Run Safe Preview'}
+                      {loadingPreview ? 'Running Preview...' : 'Run Safe Preview'}
                     </button>
 
                     <button
@@ -375,7 +384,7 @@ export default function Restore({
               <div style={styles.successBox}>
                 <strong>Can Restore</strong>
                 <ul>
-                  {selectedBackup.restoreNotes.canRestore?.map((item) => (
+                  {(selectedBackup.restoreNotes.canRestore || []).map((item) => (
                     <li key={item}>{item}</li>
                   ))}
                 </ul>
@@ -384,7 +393,7 @@ export default function Restore({
               <div style={styles.dangerBox}>
                 <strong>Cannot Restore</strong>
                 <ul>
-                  {selectedBackup.restoreNotes.cannotRestore?.map((item) => (
+                  {(selectedBackup.restoreNotes.cannotRestore || []).map((item) => (
                     <li key={item}>{item}</li>
                   ))}
                 </ul>

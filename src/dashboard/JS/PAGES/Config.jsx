@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import PageShell, {
   EmptyState,
@@ -7,8 +7,11 @@ import PageShell, {
   StatGrid,
   SummaryStat,
 } from '../shared/PageShell';
-import { SECTION_DEFS } from "../ui/layout";
-import { createAutoModPageStyles } from "../ui/components";
+import { PAGE_LAYOUTS, SECTION_DEFS } from "../ui/layout";
+import {
+  createConfigPageStyles,
+  createDashboardControlStyles,
+} from "../ui/components";
 
 const PAGE_KEY = 'config';
 

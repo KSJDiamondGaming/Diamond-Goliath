@@ -121,11 +121,38 @@ export function joinGuildRoom(guildId) {
   socket.emit('automod:join', guildId);
 }
 
-export function listenForGuildUpdate(handler) {
-  if (typeof handler !== 'function') return () => {};
+export function listenForGuildUpdate(guildIdOrHandler, sectionOrHandler, maybeHandler) {
+  let guildId = '';
+  let section = '';
+  let handler = null;
 
-  const wrapped = (payload) => {
-    handler(payload);
+  if (typeof guildIdOrHandler === 'function') {
+    handler = guildIdOrHandler;
+  } else {
+    guildId = String(guildIdOrHandler || '').trim();
+
+    if (typeof sectionOrHandler === 'function') {
+      handler = sectionOrHandler;
+    } else {
+      section = String(sectionOrHandler || '').trim();
+      handler = maybeHandler;
+    }
+  }
+
+  if (typeof handler !== 'function') {
+    return () => {};
+  }
+
+  const wrapped = (payload = {}) => {
+    if (guildId && String(payload.guildId || '') !== guildId) {
+      return;
+    }
+
+    if (section && String(payload.section || '') !== section) {
+      return;
+    }
+
+    handler(payload.data, payload);
   };
 
   socket.on('guild:update', wrapped);
