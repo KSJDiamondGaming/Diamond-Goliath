@@ -41,6 +41,7 @@ function getDiscordClient(req) {
   return (
     req.app?.locals?.client ||
     req.app?.locals?.discordClient ||
+    req.app?.get?.('client') ||
     req.client ||
     null
   );
@@ -128,9 +129,7 @@ async function discordBotRequest(pathname) {
 function buildBotProfileFromClient(client) {
   const bot = client?.user;
 
-  if (!bot) {
-    return null;
-  }
+  if (!bot) return null;
 
   const avatarUrl = buildDiscordAvatarUrl(bot.id, bot.avatar);
 
@@ -189,13 +188,18 @@ function buildGuildPayloadFromClientGuild(guild) {
   if (!guild) return null;
 
   const iconUrl = buildGuildIconUrl(guild.id, guild.icon);
-
   const memberCount = Number(guild.memberCount || 0);
-  const botCount =
-    guild.members?.cache?.filter((member) => Boolean(member?.user?.bot))?.size ||
-    0;
 
-  const exactMembersAvailable = guild.members?.cache?.size > 0;
+  const cachedMembers = guild.members?.cache;
+  const exactMembersAvailable = Boolean(cachedMembers?.size);
+
+  const bots = exactMembersAvailable
+    ? cachedMembers.filter((member) => Boolean(member?.user?.bot)).size
+    : 0;
+
+  const humans = exactMembersAvailable
+    ? Math.max(memberCount - bots, 0)
+    : memberCount;
 
   return {
     id: guild.id,
@@ -205,10 +209,8 @@ function buildGuildPayloadFromClientGuild(guild) {
     iconURL: iconUrl,
     memberCount,
     members: memberCount,
-    humans: exactMembersAvailable
-      ? Math.max(memberCount - botCount, 0)
-      : memberCount,
-    bots: exactMembersAvailable ? botCount : 0,
+    humans,
+    bots,
     exactMembersAvailable,
     connected: true,
     status: 'connected',

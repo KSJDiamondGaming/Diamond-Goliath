@@ -1,65 +1,141 @@
-// dashboard/server/routes/serverRestoreRoutes.js
+// src/server/routes/serverRestoreRoutes.js
 
 const express = require('express');
 
 const {
   getBackupSummaries,
   readServerBackup,
+  createServerBackup,
 } = require('../../security/serverBackup');
 
-const { restoreServerBackup } = require('../../security/serverRestore');
-const { createServerBackup } = require('../../security/serverBackup');
+const {
+  restoreServerBackup,
+} = require('../../security/serverRestore');
 
 const router = express.Router();
 
 function getClient(req) {
-  return req.app.get('client');
+  return (
+    req.app?.locals?.client ||
+    req.app?.locals?.discordClient ||
+    req.app?.get?.('client') ||
+    req.client ||
+    null
+  );
 }
 
 function getGuild(client, guildId) {
-  return client?.guilds?.cache?.get(String(guildId)) || null;
+  if (!client?.guilds?.cache || !guildId) {
+    return null;
+  }
+
+  return client.guilds.cache.get(String(guildId)) || null;
+}
+
+function isAuthenticated(req) {
+  return Boolean(req.session?.user);
+}
+
+function denyUnauthenticated(res) {
+  return res.status(401).json({
+    success: false,
+    error: 'Not authenticated.',
+  });
+}
+
+function safeNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
 }
 
 function safeBackupSummary(backup) {
+  if (!backup || typeof backup !== 'object') {
+    return null;
+  }
+
+  const channels = Array.isArray(backup.channels) ? backup.channels : [];
+  const roles = Array.isArray(backup.roles) ? backup.roles : [];
+
   return {
     backupId: backup.backupId,
     createdAt: backup.createdAt,
     createdBy: backup.createdBy,
     reason: backup.reason,
+
+    guildId: backup.guild?.id || backup.guildId || null,
     guildName: backup.guild?.name || backup.guildName || null,
-    roles: backup.roles?.length || 0,
-    channels: backup.channels?.length || 0,
-    categories:
-      backup.channels?.filter((channel) => channel.type === 4).length || 0,
+
+    roles: roles.length,
+    channels: channels.length,
+    categories: channels.filter((channel) => Number(channel.type) === 4).length,
+
     logsIncluded: Boolean(backup.logs),
     restoreNotes: backup.restoreNotes || null,
+    version: backup.version || backup.backupVersion || null,
+  };
+}
+
+function normalizeBackups(backups) {
+  if (!Array.isArray(backups)) {
+    return [];
+  }
+
+  return backups
+    .map((backup) => safeBackupSummary(backup) || backup)
+    .filter(Boolean)
+    .sort((a, b) => {
+      const aTime = Date.parse(a.createdAt || 0);
+      const bTime = Date.parse(b.createdAt || 0);
+
+      return safeNumber(bTime) - safeNumber(aTime);
+    });
+}
+
+function getRestoreOptions(input = {}) {
+  if (!input || typeof input !== 'object') {
+    return {};
+  }
+
+  return {
+    restoreRoles: input.restoreRoles !== false,
+    restoreChannels: input.restoreChannels !== false,
+    restorePermissions: input.restorePermissions !== false,
+    restoreCategories: input.restoreCategories !== false,
+    skipDuplicates: input.skipDuplicates !== false,
   };
 }
 
 router.get('/:guildId/backups', async (req, res) => {
   try {
-    const { guildId } = req.params;
+    if (!isAuthenticated(req)) {
+      return denyUnauthenticated(res);
+    }
 
+    const { guildId } = req.params;
     const backups = getBackupSummaries(guildId);
 
-    res.json({
+    return res.json({
       success: true,
-      backups,
+      guildId,
+      backups: normalizeBackups(backups),
     });
   } catch (error) {
     console.error('Failed to list backups:', error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      error: error.message,
+      error: error.message || 'Failed to list backups.',
     });
   }
 });
 
 router.get('/:guildId/backups/:backupId', async (req, res) => {
   try {
-    const { guildId, backupId } = req.params;
+    if (!isAuthenticated(req)) {
+      return denyUnauthenticated(res);
+    }
 
+    const { guildId, backupId } = req.params;
     const backup = readServerBackup(guildId, backupId);
 
     if (!backup) {
@@ -71,6 +147,7 @@ router.get('/:guildId/backups/:backupId', async (req, res) => {
 
     return res.json({
       success: true,
+      guildId,
       backup: safeBackupSummary(backup),
     });
   } catch (error) {
@@ -78,16 +155,20 @@ router.get('/:guildId/backups/:backupId', async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      error: error.message,
+      error: error.message || 'Failed to read backup.',
     });
   }
 });
 
 router.post('/:guildId/restore/preview', async (req, res) => {
   try {
+    if (!isAuthenticated(req)) {
+      return denyUnauthenticated(res);
+    }
+
     const client = getClient(req);
     const { guildId } = req.params;
-    const { backupId, options = {} } = req.body;
+    const { backupId, options = {} } = req.body || {};
 
     const guild = getGuild(client, guildId);
 
@@ -106,7 +187,7 @@ router.post('/:guildId/restore/preview', async (req, res) => {
     }
 
     const report = await restoreServerBackup(guild, backupId, {
-      ...options,
+      ...getRestoreOptions(options),
       dryRun: true,
       confirmed: false,
       cleanupMode: false,
@@ -116,6 +197,8 @@ router.post('/:guildId/restore/preview', async (req, res) => {
 
     return res.json({
       success: true,
+      guildId,
+      backupId,
       report,
     });
   } catch (error) {
@@ -123,13 +206,17 @@ router.post('/:guildId/restore/preview', async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      error: error.message,
+      error: error.message || 'Restore preview failed.',
     });
   }
 });
 
 router.post('/:guildId/restore/execute', async (req, res) => {
   try {
+    if (!isAuthenticated(req)) {
+      return denyUnauthenticated(res);
+    }
+
     const client = getClient(req);
     const { guildId } = req.params;
 
@@ -138,7 +225,7 @@ router.post('/:guildId/restore/execute', async (req, res) => {
       confirmText,
       cleanupMode = false,
       options = {},
-    } = req.body;
+    } = req.body || {};
 
     const guild = getGuild(client, guildId);
 
@@ -164,14 +251,14 @@ router.post('/:guildId/restore/execute', async (req, res) => {
     }
 
     const safetyBackup = await createServerBackup(guild, {
-      createdBy: 'system:pre-restore',
+      createdBy: `dashboard:${req.session.user.id}`,
       reason: `Automatic safety backup before restoring ${backupId}`,
     });
 
     const progress = [];
 
     const report = await restoreServerBackup(guild, backupId, {
-      ...options,
+      ...getRestoreOptions(options),
       dryRun: false,
       confirmed: true,
       cleanupMode: Boolean(cleanupMode),
@@ -184,6 +271,8 @@ router.post('/:guildId/restore/execute', async (req, res) => {
 
     return res.json({
       success: true,
+      guildId,
+      backupId,
       safetyBackup: {
         backupId: safetyBackup.backupId,
         createdAt: safetyBackup.createdAt,
@@ -198,7 +287,7 @@ router.post('/:guildId/restore/execute', async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      error: error.message,
+      error: error.message || 'Restore execution failed.',
     });
   }
 });
