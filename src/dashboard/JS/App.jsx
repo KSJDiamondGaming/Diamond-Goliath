@@ -152,9 +152,11 @@ export default function App() {
   const botStatusLoadedRef = useRef(false);
 
   const [darkMode, setDarkMode] = useState(true);
+
   const [sidebarExpanded, setSidebarExpanded] = useState(() =>
     getStorage(SIDEBAR_EXPANDED_STORAGE_KEY, true)
   );
+
   const [selectedGuild, setSelectedGuild] = useState(() =>
     getStorage(GUILD_STORAGE_KEY, '')
   );
@@ -182,6 +184,7 @@ export default function App() {
   const [botData, setBotData] = useState(cachedBotProfile?.raw || null);
 
   const theme = useMemo(() => getTheme(darkMode), [darkMode]);
+
   const styles = useMemo(
     () => shellStyles(theme, { sidebarExpanded }),
     [theme, sidebarExpanded]
@@ -254,6 +257,7 @@ export default function App() {
 
       setSelectedGuild((currentGuildId) => {
         const storedGuildId = currentGuildId || getStorage(GUILD_STORAGE_KEY, '');
+
         const storedGuildStillExists = nextGuilds.some(
           (guild) => guild.id === storedGuildId
         );
@@ -411,7 +415,7 @@ export default function App() {
   const pageProps = {
     selectedGuild,
     selectedGuildName: selectedGuildData?.name || '',
-    selectedGuildId: selectedGuildData?.id || '',
+    selectedGuildId: selectedGuildData?.id || selectedGuild || '',
     selectedGuildIcon:
       selectedGuildData?.iconUrl ||
       selectedGuildData?.iconURL ||
