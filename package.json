@@ -5,35 +5,39 @@
   "main": "server.js",
   "type": "commonjs",
   "private": true,
-  "scripts": {
-    "bot": "node server.js",
-    "bot:dev": "cross-env BOT_MODE=dev node server.js",
-    "bot:beta": "cross-env BOT_MODE=beta node server.js",
-    "bot:production": "cross-env BOT_MODE=production node server.js",
+ "scripts": {
+  "bot": "node server.js",
+  "bot:dev": "cross-env BOT_MODE=dev node server.js",
+  "bot:beta": "cross-env BOT_MODE=beta node server.js",
+  "bot:production": "cross-env BOT_MODE=production node server.js",
 
-    "bot:dev+beta": "concurrently -n DEV,BETA -c blue,yellow \"npm run bot:dev\" \"npm run bot:beta\"",
+  "sync": "node src/helpers/commands/syncCommands.js",
+  "sync:dev": "cross-env BOT_MODE=dev node src/helpers/commands/syncCommands.js",
+  "sync:beta": "cross-env BOT_MODE=beta node src/helpers/commands/syncCommands.js",
+  "sync:production": "cross-env BOT_MODE=production node src/helpers/commands/syncCommands.js",
+  "sync:dev+beta": "npm run sync:dev && npm run sync:beta",
 
-    "sync": "node src/helpers/commands/syncCommands.js",
-    "sync:dev": "cross-env BOT_MODE=dev node src/helpers/commands/syncCommands.js",
-    "sync:beta": "cross-env BOT_MODE=beta node src/helpers/commands/syncCommands.js",
-    "sync:production": "cross-env BOT_MODE=production node src/helpers/commands/syncCommands.js",
-    "sync:dev+beta": "npm run sync:dev && npm run sync:beta",
+  "dashboard": "vite src/dashboard --host",
+  "dashboard:dev": "vite src/dashboard --host 0.0.0.0 --port 5173 --mode development",
+  "dashboard:beta": "vite src/dashboard --host 0.0.0.0 --port 5183 --mode development",
+  "dashboard:production": "vite src/dashboard --host 0.0.0.0 --port 5193 --mode production",
 
-    "dev": "npm run sync:dev && npm run bot:dev",
-    "beta": "npm run sync:beta && npm run bot:beta",
-    "production": "npm run sync:production && npm run bot:production",
-    "dev+beta": "npm run sync:dev+beta && npm run bot:dev+beta",
+  "dev": "concurrently -n BOT,DASHBOARD -c green,cyan \"npm run bot:dev\" \"npm run dashboard:dev\"",
+  "dev:sync": "npm run sync:dev && npm run dev",
 
-    "api": "node server.js",
-    "api:dev": "cross-env BOT_MODE=dev node server.js",
-    "api:beta": "cross-env BOT_MODE=beta node server.js",
-    "api:production": "cross-env BOT_MODE=production node server.js",
+  "beta": "concurrently -n BOT,DASHBOARD -c yellow,cyan \"npm run bot:beta\" \"npm run dashboard:beta\"",
+  "beta:sync": "npm run sync:beta && npm run beta",
 
-    "dashboard": "vite src/dashboard --host",
-    "dashboard:dev": "vite src/dashboard --host --mode development",
-    "dashboard:beta": "vite src/dashboard --host --mode development",
-    "dashboard:production": "vite src/dashboard --host --mode production"
-  },
+  "production": "npm run bot:production",
+  "production:sync": "npm run sync:production && npm run production",
+
+  "dev+beta": "npm run sync:dev+beta && concurrently -n DEV,BETA -c blue,yellow \"npm run bot:dev\" \"npm run bot:beta\"",
+
+  "api": "node server.js",
+  "api:dev": "cross-env BOT_MODE=dev node server.js",
+  "api:beta": "cross-env BOT_MODE=beta node server.js",
+  "api:production": "cross-env BOT_MODE=production node server.js"
+},
   "dependencies": {
     "better-sqlite3": "^12.8.0",
     "chalk": "^5.6.2",
