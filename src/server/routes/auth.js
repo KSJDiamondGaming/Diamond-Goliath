@@ -80,7 +80,7 @@ router.post('/logout', (req, res) => {
       return res.status(500).json({ error: 'Logout failed' });
     }
 
-    res.clearCookie('dashboard_session', {
+    res.clearCookie('goliath_dashboard_session', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
