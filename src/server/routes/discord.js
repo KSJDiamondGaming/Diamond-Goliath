@@ -8,6 +8,7 @@ const DISCORD_API = 'https://discord.com/api/v10';
 const GUILD_CACHE_TTL_MS = 15 * 1000;
 const CHANNEL_CACHE_TTL_MS = 30 * 1000;
 
+const ADMINISTRATOR_PERMISSION = BigInt(0x8);
 const MANAGE_GUILD_PERMISSION = BigInt(0x20);
 
 const guildCache = new Map();
@@ -18,14 +19,21 @@ function sleep(ms) {
 }
 
 function getBotToken() {
-  return String(process.env.TOKEN || process.env.DISCORD_BOT_TOKEN || '').trim();
+  return String(
+    process.env.DISCORD_TOKEN ||
+      process.env.TOKEN ||
+      process.env.DISCORD_BOT_TOKEN ||
+      ''
+  ).trim();
 }
 
 function requireBotToken() {
   const token = getBotToken();
 
   if (!token) {
-    throw new Error('Missing bot token. Set TOKEN in root .env or dashboard/.env');
+    throw new Error(
+      'Missing bot token. Set DISCORD_TOKEN, TOKEN, or DISCORD_BOT_TOKEN in your environment.'
+    );
   }
 
   return token;
@@ -55,9 +63,52 @@ function hasManageGuildPermission(guild) {
   if (guild?.owner) return true;
 
   try {
-    return (BigInt(guild?.permissions || 0) & MANAGE_GUILD_PERMISSION) === MANAGE_GUILD_PERMISSION;
+    const permissions = BigInt(guild?.permissions || 0);
+
+    const isAdministrator =
+      (permissions & ADMINISTRATOR_PERMISSION) === ADMINISTRATOR_PERMISSION;
+
+    const canManageGuild =
+      (permissions & MANAGE_GUILD_PERMISSION) === MANAGE_GUILD_PERMISSION;
+
+    return isAdministrator || canManageGuild;
   } catch {
     return false;
+  }
+}
+
+function getPermissionDebug(guild) {
+  if (guild?.owner) {
+    return {
+      owner: true,
+      administrator: true,
+      manageGuild: true,
+      allowed: true,
+    };
+  }
+
+  try {
+    const permissions = BigInt(guild?.permissions || 0);
+
+    const administrator =
+      (permissions & ADMINISTRATOR_PERMISSION) === ADMINISTRATOR_PERMISSION;
+
+    const manageGuild =
+      (permissions & MANAGE_GUILD_PERMISSION) === MANAGE_GUILD_PERMISSION;
+
+    return {
+      owner: false,
+      administrator,
+      manageGuild,
+      allowed: administrator || manageGuild,
+    };
+  } catch {
+    return {
+      owner: false,
+      administrator: false,
+      manageGuild: false,
+      allowed: false,
+    };
   }
 }
 
@@ -76,6 +127,22 @@ function getSessionAccessToken(req) {
     req.session?.token ||
     ''
   );
+}
+
+function getClientGuilds(req) {
+  const client =
+    req.app?.locals?.client ||
+    req.app?.locals?.discordClient ||
+    req.client ||
+    null;
+
+  if (!client?.guilds?.cache) return [];
+
+  return [...client.guilds.cache.values()].map((guild) => ({
+    id: guild.id,
+    name: guild.name,
+    icon: guild.icon || null,
+  }));
 }
 
 async function fetchJson(url, options = {}, retryCount = 0) {
@@ -123,7 +190,13 @@ async function fetchUserGuilds(accessToken) {
   });
 }
 
-async function fetchBotGuilds() {
+async function fetchBotGuilds(req) {
+  const clientGuilds = getClientGuilds(req);
+
+  if (clientGuilds.length > 0) {
+    return clientGuilds;
+  }
+
   const botToken = requireBotToken();
 
   return fetchJson(`${DISCORD_API}/users/@me/guilds`, {
@@ -143,6 +216,20 @@ async function fetchGuildChannels(guildId) {
   });
 }
 
+function buildGuildPayload(guild) {
+  const iconUrl = buildGuildIconUrl(guild);
+
+  return {
+    id: guild.id,
+    name: guild.name,
+    icon: guild.icon || null,
+    iconUrl,
+    iconURL: iconUrl,
+    owner: Boolean(guild.owner),
+    permissions: guild.permissions,
+  };
+}
+
 router.get('/guilds', async (req, res) => {
   try {
     const accessToken = getSessionAccessToken(req);
@@ -160,28 +247,22 @@ router.get('/guilds', async (req, res) => {
 
     const [userGuilds, botGuilds] = await Promise.all([
       fetchUserGuilds(accessToken),
-      fetchBotGuilds(),
+      fetchBotGuilds(req),
     ]);
 
-    const botGuildIds = new Set(botGuilds.map((guild) => guild.id));
+    const botGuildIds = new Set(
+      Array.isArray(botGuilds)
+        ? botGuilds.map((guild) => String(guild.id))
+        : []
+    );
 
-    const mutualGuilds = userGuilds
-      .filter((guild) => botGuildIds.has(guild.id))
-      .filter(hasManageGuildPermission)
-      .map((guild) => {
-        const iconUrl = buildGuildIconUrl(guild);
-
-        return {
-          id: guild.id,
-          name: guild.name,
-          icon: guild.icon || null,
-          iconUrl,
-          iconURL: iconUrl,
-          owner: Boolean(guild.owner),
-          permissions: guild.permissions,
-        };
-      })
-      .sort((a, b) => a.name.localeCompare(b.name));
+    const mutualGuilds = Array.isArray(userGuilds)
+      ? userGuilds
+          .filter((guild) => botGuildIds.has(String(guild.id)))
+          .filter(hasManageGuildPermission)
+          .map(buildGuildPayload)
+          .sort((a, b) => a.name.localeCompare(b.name))
+      : [];
 
     setCache(guildCache, cacheKey, mutualGuilds, GUILD_CACHE_TTL_MS);
 
@@ -196,6 +277,69 @@ router.get('/guilds', async (req, res) => {
     }
 
     return res.status(500).json({ error: 'Failed to fetch guilds' });
+  }
+});
+
+router.get('/debug-guilds', async (req, res) => {
+  try {
+    const accessToken = getSessionAccessToken(req);
+
+    if (!req.session?.user || !accessToken) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    const [userGuilds, botGuilds] = await Promise.all([
+      fetchUserGuilds(accessToken),
+      fetchBotGuilds(req),
+    ]);
+
+    const botGuildIds = new Set(
+      Array.isArray(botGuilds)
+        ? botGuilds.map((guild) => String(guild.id))
+        : []
+    );
+
+    return res.json({
+      user: {
+        id: req.session.user.id,
+        username: req.session.user.username,
+        globalName: req.session.user.global_name,
+      },
+      counts: {
+        userGuilds: Array.isArray(userGuilds) ? userGuilds.length : 0,
+        botGuilds: Array.isArray(botGuilds) ? botGuilds.length : 0,
+        mutualGuilds: Array.isArray(userGuilds)
+          ? userGuilds.filter((guild) => botGuildIds.has(String(guild.id))).length
+          : 0,
+        allowedGuilds: Array.isArray(userGuilds)
+          ? userGuilds
+              .filter((guild) => botGuildIds.has(String(guild.id)))
+              .filter(hasManageGuildPermission).length
+          : 0,
+      },
+      userGuilds: Array.isArray(userGuilds)
+        ? userGuilds.map((guild) => ({
+            id: guild.id,
+            name: guild.name,
+            botInGuild: botGuildIds.has(String(guild.id)),
+            permissions: guild.permissions,
+            permissionDebug: getPermissionDebug(guild),
+          }))
+        : [],
+      botGuilds: Array.isArray(botGuilds)
+        ? botGuilds.map((guild) => ({
+            id: guild.id,
+            name: guild.name,
+          }))
+        : [],
+    });
+  } catch (error) {
+    console.error('❌ Failed to debug guilds:', error);
+
+    return res.status(500).json({
+      error: 'Failed to debug guilds',
+      message: error.message,
+    });
   }
 });
 
