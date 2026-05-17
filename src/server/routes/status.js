@@ -1,11 +1,9 @@
-const express = require('express');
+const fs = require('fs');
 const path = require('path');
+const express = require('express');
 
 const router = express.Router();
 
-const { readJsonSafe } = require('../../guild/fileStore');
-
-const CASES_PATH = path.join(__dirname, '..', 'data', 'modCaseDetails.json');
 const DISCORD_API = 'https://discord.com/api/v10';
 
 const BOT_PROFILE_CACHE_TTL_MS = 1000 * 60 * 5;
@@ -16,15 +14,73 @@ let cachedBotProfileExpiresAt = 0;
 
 const guildStatsCache = new Map();
 
+const POSSIBLE_CASE_PATHS = [
+  path.join(__dirname, '..', 'data', 'modCaseDetails.json'),
+  path.join(process.cwd(), 'src', 'server', 'data', 'modCaseDetails.json'),
+  path.join(process.cwd(), 'src', 'data', 'modCaseDetails.json'),
+  path.join(process.cwd(), 'data', 'modCaseDetails.json'),
+];
+
+function findExistingCasesPath() {
+  for (const filePath of POSSIBLE_CASE_PATHS) {
+    if (fs.existsSync(filePath)) {
+      return filePath;
+    }
+  }
+
+  return POSSIBLE_CASE_PATHS[0];
+}
+
+const CASES_PATH = findExistingCasesPath();
+
+function getClient(req) {
+  return req.app.get('client') || req.app.get('discordClient') || null;
+}
+
+function readJsonSafe(filePath, fallback = {}) {
+  try {
+    if (!fs.existsSync(filePath)) {
+      return fallback;
+    }
+
+    const raw = fs.readFileSync(filePath, 'utf8');
+
+    if (!raw || !raw.trim()) {
+      return fallback;
+    }
+
+    const parsed = JSON.parse(raw);
+
+    if (!parsed || typeof parsed !== 'object') {
+      return fallback;
+    }
+
+    return parsed;
+  } catch (error) {
+    console.warn(`⚠️ Failed to read JSON file: ${filePath}`);
+    console.warn(error.message);
+
+    return fallback;
+  }
+}
+
 function getBotToken() {
-  return String(process.env.TOKEN || process.env.DISCORD_BOT_TOKEN || '').trim();
+  return String(
+    process.env.DISCORD_TOKEN ||
+      process.env.TOKEN ||
+      process.env.DISCORD_BOT_TOKEN ||
+      process.env.BOT_TOKEN ||
+      ''
+  ).trim();
 }
 
 function requireBotToken() {
   const token = getBotToken();
 
   if (!token) {
-    throw new Error('Missing TOKEN or DISCORD_BOT_TOKEN in env');
+    throw new Error(
+      'Missing bot token in env. Expected DISCORD_TOKEN, TOKEN, DISCORD_BOT_TOKEN, or BOT_TOKEN.'
+    );
   }
 
   return token;
@@ -141,7 +197,38 @@ async function fetchBotProfileFromToken() {
   return cachedBotProfile;
 }
 
-async function fetchAllGuildMembers(guildId) {
+function getBotProfileFromClient(client) {
+  const user = client?.user;
+
+  if (!user) return null;
+
+  const avatarUrl = user.displayAvatarURL?.({ size: 256 }) || '';
+
+  return {
+    id: user.id,
+    username: user.username || 'Goliath',
+    name: user.globalName || user.username || 'Goliath',
+    tag: user.tag || user.username || null,
+    avatar: user.avatar || null,
+    avatarUrl,
+    avatarURL: avatarUrl,
+    online: Boolean(client?.isReady?.()),
+    latencyMs: Number.isFinite(client?.ws?.ping) ? client.ws.ping : null,
+  };
+}
+
+async function getBotProfile(req) {
+  const client = getClient(req);
+  const clientProfile = getBotProfileFromClient(client);
+
+  if (clientProfile) {
+    return clientProfile;
+  }
+
+  return fetchBotProfileFromToken();
+}
+
+async function fetchAllGuildMembersFromToken(guildId) {
   const members = [];
   let after = '0';
 
@@ -162,13 +249,75 @@ async function fetchAllGuildMembers(guildId) {
   return members;
 }
 
-async function fetchGuildStats(guildId) {
-  const cached = getCached(guildStatsCache, guildId);
+async function getExactMembersFromClient(guild) {
+  if (!guild) return [];
 
-  if (cached) {
-    return cached;
+  try {
+    if (guild.members?.fetch) {
+      const fetched = await guild.members.fetch();
+      return [...fetched.values()];
+    }
+  } catch (error) {
+    console.warn(
+      `Could not fetch members from live client for guild ${guild.id}: ${error.message}`
+    );
   }
 
+  if (guild.members?.cache?.size) {
+    return [...guild.members.cache.values()];
+  }
+
+  return [];
+}
+
+function countMembers(members) {
+  const total = members.length;
+  const bots = members.filter((member) => Boolean(member?.user?.bot)).length;
+  const humans = Math.max(total - bots, 0);
+
+  return {
+    total,
+    humans,
+    bots,
+    exactMembersAvailable: total > 0,
+  };
+}
+
+async function fetchGuildStatsFromClient(client, guildId) {
+  const guild = client?.guilds?.cache?.get(String(guildId));
+
+  if (!guild) return null;
+
+  const members = await getExactMembersFromClient(guild);
+  const counts = countMembers(members);
+
+  const total =
+    counts.total ||
+    Number(guild.memberCount || guild.approximateMemberCount || 0);
+
+  const humans = counts.exactMembersAvailable ? counts.humans : total;
+  const bots = counts.exactMembersAvailable ? counts.bots : 0;
+
+  const iconUrl = guild.iconURL?.({ size: 256 }) || '';
+
+  return {
+    id: guild.id,
+    name: guild.name,
+    icon: guild.icon || null,
+    iconUrl,
+    iconURL: iconUrl,
+    memberCount: total,
+    members: total,
+    humans,
+    bots,
+    exactMembersAvailable: counts.exactMembersAvailable,
+    connected: true,
+    status: 'connected',
+    source: 'client',
+  };
+}
+
+async function fetchGuildStatsFromToken(guildId) {
   const guild = await discordBotRequest(`/guilds/${guildId}?with_counts=true`);
 
   let total = Number(
@@ -183,23 +332,25 @@ async function fetchGuildStats(guildId) {
   let exactMembersAvailable = false;
 
   try {
-    const members = await fetchAllGuildMembers(guildId);
+    const members = await fetchAllGuildMembersFromToken(guildId);
 
     if (members.length > 0) {
+      const counts = countMembers(members);
+
+      total = counts.total;
+      humans = counts.humans;
+      bots = counts.bots;
       exactMembersAvailable = true;
-      total = members.length;
-      bots = members.filter((member) => Boolean(member?.user?.bot)).length;
-      humans = members.filter((member) => !member?.user?.bot).length;
     }
   } catch (error) {
-      console.warn(
+    console.warn(
       `Could not fetch exact members for guild ${guildId}; using approximate count. ${error.message}`
     );
   }
 
   const iconUrl = buildGuildIconUrl(guild.id, guild.icon);
 
-  const data = {
+  return {
     id: guild.id,
     name: guild.name,
     icon: guild.icon || null,
@@ -212,35 +363,77 @@ async function fetchGuildStats(guildId) {
     exactMembersAvailable,
     connected: true,
     status: 'connected',
+    source: 'api',
   };
+}
 
-  setCached(guildStatsCache, guildId, data, GUILD_STATS_CACHE_TTL_MS);
+async function fetchGuildStats(req, guildId) {
+  const cacheKey = `guild:${guildId}`;
+  const cached = getCached(guildStatsCache, cacheKey);
+
+  if (cached) {
+    return cached;
+  }
+
+  const client = getClient(req);
+
+  let data = null;
+
+  try {
+    data = await fetchGuildStatsFromClient(client, guildId);
+  } catch (error) {
+    console.warn(`Live client guild stats failed for ${guildId}: ${error.message}`);
+  }
+
+  if (!data) {
+    data = await fetchGuildStatsFromToken(guildId);
+  }
+
+  setCached(guildStatsCache, cacheKey, data, GUILD_STATS_CACHE_TTL_MS);
 
   return data;
 }
 
 function getCasesData() {
-  return readJson(CASES_PATH, {});
+  return readJsonSafe(CASES_PATH, {});
 }
 
 function normalizeGuildCases(guildCases, guildId) {
-  if (!guildCases || typeof guildCases !== 'object' || Array.isArray(guildCases)) {
+  if (!guildCases) {
     return [];
   }
 
-  return Object.values(guildCases)
-    .filter((entry) => entry && typeof entry === 'object')
-    .map((entry) => ({
-      ...entry,
-      guildId: entry.guildId || guildId,
-    }))
-    .sort((a, b) => Number(b.caseNumber || 0) - Number(a.caseNumber || 0));
+  if (Array.isArray(guildCases)) {
+    return guildCases
+      .filter((entry) => entry && typeof entry === 'object')
+      .map((entry, index) => ({
+        ...entry,
+        guildId: entry.guildId || guildId,
+        caseNumber: entry.caseNumber || entry.case || entry.id || index + 1,
+      }))
+      .sort((a, b) => Number(b.caseNumber || 0) - Number(a.caseNumber || 0));
+  }
+
+  if (typeof guildCases === 'object') {
+    return Object.entries(guildCases)
+      .filter(([, entry]) => entry && typeof entry === 'object')
+      .map(([key, entry]) => ({
+        ...entry,
+        guildId: entry.guildId || guildId,
+        caseNumber: entry.caseNumber || entry.case || entry.id || key,
+      }))
+      .sort((a, b) => Number(b.caseNumber || 0) - Number(a.caseNumber || 0));
+  }
+
+  return [];
 }
 
 function getGuildWarningsFromCases(cases) {
-  return cases.filter(
-    (entry) => String(entry.action || '').toLowerCase() === 'warn'
-  );
+  return cases.filter((entry) => {
+    const action = String(entry.action || entry.type || '').toLowerCase();
+
+    return action === 'warn' || action === 'warning' || action.includes('warn');
+  });
 }
 
 function buildGuildFallback(guildId) {
@@ -257,6 +450,7 @@ function buildGuildFallback(guildId) {
     exactMembersAvailable: false,
     connected: false,
     status: 'missing',
+    source: 'fallback',
   };
 }
 
@@ -277,21 +471,22 @@ function buildGuildMap(guildId, guildPayload) {
       iconUrl: guildPayload.iconUrl,
       iconURL: guildPayload.iconURL,
       exactMembersAvailable: guildPayload.exactMembersAvailable,
+      source: guildPayload.source,
     },
   };
 }
 
-async function buildStatusPayload(guildId) {
+async function buildStatusPayload(req, guildId) {
   let botProfile = emptyBotProfile();
   let botOnline = false;
   let statusError = '';
 
   try {
-    botProfile = await fetchBotProfileFromToken();
-    botOnline = true;
+    botProfile = await getBotProfile(req);
+    botOnline = Boolean(botProfile.online);
   } catch (error) {
     statusError = error.message;
-    console.error('Bot token status check failed', error);
+    console.error('Bot status check failed', error);
   }
 
   let guildPayload = null;
@@ -304,7 +499,7 @@ async function buildStatusPayload(guildId) {
 
   if (guildId && botOnline) {
     try {
-      guildPayload = await fetchGuildStats(guildId);
+      guildPayload = await fetchGuildStats(req, guildId);
 
       memberInfo.total = Number(guildPayload.memberCount || 0);
       memberInfo.humans = Number(guildPayload.humans || 0);
@@ -324,8 +519,8 @@ async function buildStatusPayload(guildId) {
     apiOnline: true,
     botOnline,
 
-    botLatencyMs: null,
-    latencyMs: null,
+    botLatencyMs: botProfile.latencyMs,
+    latencyMs: botProfile.latencyMs,
 
     guildId: guildId || null,
     guild: guildPayload,
@@ -340,7 +535,6 @@ async function buildStatusPayload(guildId) {
     bot: {
       ...botProfile,
       online: botOnline,
-      latencyMs: null,
     },
 
     backend: {
@@ -375,7 +569,7 @@ function buildGuildSnapshot(guildId, statusPayload) {
 router.get('/', async (req, res) => {
   try {
     const guildId = req.query.guildId ? String(req.query.guildId) : null;
-    const payload = await buildStatusPayload(guildId);
+    const payload = await buildStatusPayload(req, guildId);
 
     return res.json(payload);
   } catch (error) {
@@ -432,12 +626,13 @@ router.get('/stream', async (req, res) => {
 
   const sendHeartbeat = () => {
     if (closed) return;
+
     res.write(`: heartbeat ${Date.now()}\n\n`);
   };
 
   const pushSnapshot = async () => {
     try {
-      const statusPayload = await buildStatusPayload(guildId);
+      const statusPayload = await buildStatusPayload(req, guildId);
       const snapshot = buildGuildSnapshot(guildId, statusPayload);
 
       sendEvent('status', snapshot.status);

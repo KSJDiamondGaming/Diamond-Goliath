@@ -153,17 +153,17 @@ async function openExternalAdminPanel(interaction, panel, navState = panelNav.cr
   return true;
 }
 
-const OWNER_IDS = (process.env.OWNER_IDS || '')
+const OWNER_ID = (process.env.OWNER_ID || '')
   .split(',')
   .map((id) => String(id).trim())
   .filter(Boolean);
 
 function getBotOwnerIds() {
-  return [...new Set(OWNER_IDS)];
+  return OWNER_ID ? [OWNER_ID] : [];
 }
 
 function isBotOwner(interaction) {
-  return OWNER_IDS.includes(String(interaction.user.id));
+  return Boolean(OWNER_ID && String(userId) === OWNER_ID);
 }
 
 function isGuildOwner(interaction) {

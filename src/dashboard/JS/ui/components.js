@@ -1735,18 +1735,22 @@ export function createConfigPageStyles(theme) {
       gap: '6px',
       flexWrap: 'wrap',
     },
-    chip: {
-      display: 'inline-flex',
-      alignItems: 'center',
-      minHeight: '26px',
-      padding: '5px 9px',
-      borderRadius: '8px',
-      background: theme.topbarSoft,
-      border: `1px solid ${theme.cardBorder}`,
-      color: theme.cardText,
-      fontSize: '13px',
-      fontWeight: 800,
-    },
+  chip(selected = false) {
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    minHeight: '26px',
+    padding: '5px 9px',
+    borderRadius: '8px',
+    background: selected ? theme.primarySoft : theme.topbarSoft,
+    border: selected
+      ? `1px solid ${theme.primaryBorder}`
+      : `1px solid ${theme.cardBorder}`,
+    color: selected ? '#bfdbfe' : theme.cardText,
+    fontSize: '13px',
+    fontWeight: 800,
+  };
+},
     button(tone = 'primary', disabled = false) {
       return makeButton(theme, tone, disabled);
     },

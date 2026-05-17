@@ -60,17 +60,21 @@ const ACTION_REQUIREMENTS = {
   bulk_ban: STAFF_LEVELS.OWNER,
 };
 
-const OWNER_IDS = (process.env.OWNER_IDS || '')
-  .split(',')
-  .map((id) => String(id).trim())
-  .filter(Boolean);
+// OWNER_ID = Your main Goliath owner account with full access.
+// BOT_OWNER_ID = Safe offline Discord Developer Portal application owner.
+const OWNER_ID = String(process.env.OWNER_ID || '').trim();
+const BOT_OWNER_ID = String(process.env.BOT_OWNER_ID || '').trim();
 
 function getBotOwnerIds() {
-  return [...new Set(OWNER_IDS)];
+  return OWNER_ID ? [OWNER_ID] : [];
 }
 
 function getBotOwnerId() {
-  return OWNER_IDS[0] || null;
+  return OWNER_ID || null;
+}
+
+function getApplicationOwnerId() {
+  return BOT_OWNER_ID || null;
 }
 
 function getId(memberOrUserId) {
@@ -84,7 +88,18 @@ function isBotOwner(memberOrUserId) {
 
   return Boolean(
     id &&
-    OWNER_IDS.includes(String(id))
+    OWNER_ID &&
+    String(id) === OWNER_ID
+  );
+}
+
+function isApplicationOwner(memberOrUserId) {
+  const id = getId(memberOrUserId);
+
+  return Boolean(
+    id &&
+    BOT_OWNER_ID &&
+    String(id) === BOT_OWNER_ID
   );
 }
 
@@ -298,6 +313,7 @@ function checkHierarchyForBulk(
 ) {
   if (!targetMember) return 'User not found.';
   if (targetMember.id === actorUserId) return 'Cannot target yourself.';
+
   if (isGuildOwner(targetMember, guildOwnerId)) {
     return 'Cannot target the server owner.';
   }
@@ -330,9 +346,16 @@ module.exports = {
   ACTION_REQUIREMENTS,
 
   getId,
+
+  // Goliath operational owner helpers.
   getBotOwnerIds,
   getBotOwnerId,
   isBotOwner,
+
+  // Safe Developer Portal application owner helpers.
+  getApplicationOwnerId,
+  isApplicationOwner,
+
   isGuildOwner,
 
   hasPermission,
@@ -351,7 +374,6 @@ module.exports = {
   checkHierarchy,
   checkHierarchyForBulk,
   canActOnTarget,
-  canBotActOnTarget,
   canBotActOnTarget,
   getHierarchySummary,
 };

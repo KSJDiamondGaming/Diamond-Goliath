@@ -1,5 +1,5 @@
 const express = require('express');
-const guildManager = require('../../../guild/guildManager')
+const guildManager = require('../../../guild/guildManager');
 const { emitGuildUpdate } = require('../../sockets/socketHub');
 
 const router = express.Router();
@@ -25,26 +25,20 @@ function normalizeLogChannels(bodyChannels = {}, currentChannels = {}) {
 function normalizeLogEvents(bodyEvents = {}, currentEvents = {}) {
   return {
     ...currentEvents,
-
     moderationActions: bodyEvents.moderationActions !== false,
     adminActions: bodyEvents.adminActions !== false,
     automodActions: bodyEvents.automodActions !== false,
-
     memberJoin: bodyEvents.memberJoin !== false,
     memberLeave: bodyEvents.memberLeave !== false,
     memberUpdate: bodyEvents.memberUpdate !== false,
-
     messageDelete: bodyEvents.messageDelete !== false,
     messageEdit: bodyEvents.messageEdit !== false,
-
     roleCreate: bodyEvents.roleCreate !== false,
     roleDelete: bodyEvents.roleDelete !== false,
     roleUpdate: bodyEvents.roleUpdate !== false,
-
     channelCreate: bodyEvents.channelCreate !== false,
     channelDelete: bodyEvents.channelDelete !== false,
     channelUpdate: bodyEvents.channelUpdate !== false,
-
     voiceJoin: bodyEvents.voiceJoin !== false,
     voiceLeave: bodyEvents.voiceLeave !== false,
     voiceMove: bodyEvents.voiceMove !== false,

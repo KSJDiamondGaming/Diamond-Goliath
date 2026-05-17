@@ -1,4 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  Component,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import { api } from './api';
@@ -10,13 +17,37 @@ import { navItems, ROUTES } from './ui/layout';
 
 import Navbar from './shared/Navbar.jsx';
 import Topbar from './shared/Topbar.jsx';
+
 import Login from './pages/Login.jsx';
+import Overview from './pages/Overview.jsx';
+import AutoMod from './pages/AutoMod.jsx';
+import Admin from './pages/Admin.jsx';
+import Moderation from './pages/Moderation.jsx';
+import Config from './pages/Config.jsx';
+import Cases from './pages/Cases.jsx';
+import Warnings from './pages/Warnings.jsx';
+import Messages from './pages/Messages.jsx';
+import Restore from './pages/Restore.jsx';
+import Logs from './pages/Logs.jsx';
 
 const GUILD_STORAGE_KEY = 'selected_guild';
 const BOT_PROFILE_STORAGE_KEY = 'bot_profile';
 const SIDEBAR_EXPANDED_STORAGE_KEY = 'sidebar_expanded';
 
 const ROUTE_PATHS = ROUTES.map((routeItem) => routeItem.path);
+
+const ROUTE_COMPONENTS = {
+  overview: Overview,
+  config: Config,
+  automod: AutoMod,
+  admin: Admin,
+  moderation: Moderation,
+  cases: Cases,
+  warnings: Warnings,
+  messages: Messages,
+  restore: Restore,
+  logs: Logs,
+};
 
 const GUILD_REQUIRED_ROUTES = new Set([
   'overview',
@@ -26,6 +57,7 @@ const GUILD_REQUIRED_ROUTES = new Set([
   'config',
   'messages',
   'logs',
+  'restore',
   'admin',
   'moderation',
 ]);
@@ -144,6 +176,53 @@ function CenterMessage({ theme, title, text }) {
   );
 }
 
+class PageErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+
+    this.state = {
+      hasError: false,
+      error: null,
+    };
+  }
+
+  static getDerivedStateFromError(error) {
+    return {
+      hasError: true,
+      error,
+    };
+  }
+
+  componentDidCatch(error, info) {
+    console.error('Dashboard page crashed:', error, info);
+  }
+
+  componentDidUpdate(prevProps) {
+    if (prevProps.routeKey !== this.props.routeKey && this.state.hasError) {
+      this.setState({
+        hasError: false,
+        error: null,
+      });
+    }
+  }
+
+  render() {
+    const { theme, children } = this.props;
+
+    if (!this.state.hasError) {
+      return children;
+    }
+
+    return (
+      <CenterMessage
+        theme={theme}
+        title="This dashboard page crashed"
+        text={this.state.error?.message || 'Check the browser console for details.'}
+      />
+    );
+  }
+}
+
 export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -152,11 +231,13 @@ export default function App() {
   const botStatusLoadedRef = useRef(false);
 
   const [darkMode, setDarkMode] = useState(true);
+
   const [sidebarExpanded, setSidebarExpanded] = useState(() =>
-    getStorage(SIDEBAR_EXPANDED_STORAGE_KEY, true)
+    getStorage(SIDEBAR_EXPANDED_STORAGE_KEY, true),
   );
+
   const [selectedGuild, setSelectedGuild] = useState(() =>
-    getStorage(GUILD_STORAGE_KEY, '')
+    getStorage(GUILD_STORAGE_KEY, ''),
   );
 
   const [guilds, setGuilds] = useState([]);
@@ -174,7 +255,7 @@ export default function App() {
         avatar: '',
         raw: null,
       }),
-    []
+    [],
   );
 
   const [botAvatar, setBotAvatar] = useState(cachedBotProfile?.avatar || '');
@@ -182,27 +263,28 @@ export default function App() {
   const [botData, setBotData] = useState(cachedBotProfile?.raw || null);
 
   const theme = useMemo(() => getTheme(darkMode), [darkMode]);
+
   const styles = useMemo(
     () => shellStyles(theme, { sidebarExpanded }),
-    [theme, sidebarExpanded]
+    [theme, sidebarExpanded],
   );
 
   const isLoginPage = location.pathname === '/login';
 
   const selectedGuildData = useMemo(
     () => guilds.find((guild) => guild.id === selectedGuild) || null,
-    [guilds, selectedGuild]
+    [guilds, selectedGuild],
   );
 
   const activeRoute = useMemo(
     () => getRouteForPath(location.pathname),
-    [location.pathname]
+    [location.pathname],
   );
 
-  const ActivePage = activeRoute?.component || null;
+  const ActivePage = activeRoute?.key ? ROUTE_COMPONENTS[activeRoute.key] : null;
 
   const routeNeedsGuild = Boolean(
-    activeRoute?.key && GUILD_REQUIRED_ROUTES.has(activeRoute.key)
+    activeRoute?.key && GUILD_REQUIRED_ROUTES.has(activeRoute.key),
   );
 
   const clearAuthState = useCallback(() => {
@@ -239,7 +321,7 @@ export default function App() {
         return null;
       }
     },
-    [applyBotProfile]
+    [applyBotProfile],
   );
 
   const loadGuilds = useCallback(async ({ force = false } = {}) => {
@@ -254,8 +336,9 @@ export default function App() {
 
       setSelectedGuild((currentGuildId) => {
         const storedGuildId = currentGuildId || getStorage(GUILD_STORAGE_KEY, '');
+
         const storedGuildStillExists = nextGuilds.some(
-          (guild) => guild.id === storedGuildId
+          (guild) => guild.id === storedGuildId,
         );
 
         if (storedGuildStillExists) return storedGuildId;
@@ -291,7 +374,7 @@ export default function App() {
       const authenticated = Boolean(
         authResponse?.authenticated ??
           authResponse?.isAuthenticated ??
-          authResponse?.user
+          authResponse?.user,
       );
 
       if (!authenticated) {
@@ -303,7 +386,7 @@ export default function App() {
       setCurrentUser(normalizeUser(authResponse));
 
       const authBotProfile = normalizeBotProfile(
-        authResponse?.bot || authResponse?.client || authResponse?.application
+        authResponse?.bot || authResponse?.client || authResponse?.application,
       );
 
       if (authBotProfile.avatar || authBotProfile.raw || authBotProfile.name !== 'Goliath') {
@@ -411,7 +494,7 @@ export default function App() {
   const pageProps = {
     selectedGuild,
     selectedGuildName: selectedGuildData?.name || '',
-    selectedGuildId: selectedGuildData?.id || '',
+    selectedGuildId: selectedGuildData?.id || selectedGuild || '',
     selectedGuildIcon:
       selectedGuildData?.iconUrl ||
       selectedGuildData?.iconURL ||
@@ -515,8 +598,10 @@ export default function App() {
                   text="Select a server from the sidebar to continue."
                 />
               ) : ActivePage ? (
-                <ActivePage {...pageProps} />
-              ) : (
+  <PageErrorBoundary theme={theme} routeKey={activeRoute?.key}>
+    <ActivePage {...pageProps} />
+  </PageErrorBoundary>
+) : (
                 <CenterMessage
                   theme={theme}
                   title="Page not found"

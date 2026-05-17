@@ -1,3 +1,5 @@
+// src/events/interaction/interactionCreate.js
+
 const automodPanel = require('../../functions/automod/automodPanel');
 const embedPanel = require('../../functions/embed/embedPanel');
 
@@ -56,19 +58,77 @@ function isProtectedPanelInteraction(interaction) {
   );
 }
 
-async function safeReply(interaction, message) {
-  const payload = {
-    content: message,
-    embeds: [],
-    components: [],
-    flags: 64,
-  };
+async function safeReply(interaction, messageOrPayload) {
+  const payload =
+    typeof messageOrPayload === 'string'
+      ? {
+          content: messageOrPayload,
+          embeds: [],
+          components: [],
+          flags: 64,
+        }
+      : {
+          embeds: [],
+          components: [],
+          flags: 64,
+          ...messageOrPayload,
+        };
 
-  if (interaction.deferred || interaction.replied) {
-    return interaction.editReply(payload).catch(() => null);
+  try {
+    if (interaction.deferred || interaction.replied) {
+      return await interaction.editReply(payload);
+    }
+
+    return await interaction.reply(payload);
+  } catch (error) {
+    if (error?.code === 10062) {
+      console.warn('⚠️ Interaction expired before reply could be sent.');
+      return null;
+    }
+
+    console.error('❌ Failed to reply to interaction:', error);
+    return null;
+  }
+}
+
+async function handleSecurityTestSlashCommand(interaction, activeClient) {
+  if (!interaction.isChatInputCommand() || interaction.commandName !== 'securitytest') {
+    return false;
   }
 
-  return interaction.reply(payload).catch(() => null);
+  const securityTestCommand = activeClient.commands.get('securitytest');
+
+  if (!securityTestCommand?.execute) {
+    await safeReply(
+      interaction,
+      '❌ Security test command is missing. Check the securitytest command file.'
+    );
+
+    return true;
+  }
+
+  await securityTestCommand.execute(interaction, activeClient);
+  return true;
+}
+
+async function handleSecurityTestButton(interaction, activeClient) {
+  if (!interaction.isButton() || !isSecurityTestInteraction(interaction)) {
+    return false;
+  }
+
+  const securityTestCommand = activeClient.commands.get('securitytest');
+
+  if (!securityTestCommand?.handleButton) {
+    await safeReply(
+      interaction,
+      '❌ Security test handler is missing. Check the securitytest command file.'
+    );
+
+    return true;
+  }
+
+  await securityTestCommand.handleButton(interaction, activeClient);
+  return true;
 }
 
 async function handlePurgeModal(interaction) {
@@ -124,34 +184,30 @@ async function handlePanelNavigation(interaction) {
   return handleAdminNavigation(interaction, state);
 }
 
-async function handleSecurityTestButton(interaction, activeClient) {
-  if (!interaction.isButton() || !isSecurityTestInteraction(interaction)) {
-    return false;
-  }
-
-  const securityTestCommand = activeClient.commands.get('securitytest');
-
-  if (!securityTestCommand?.handleButton) {
-    await safeReply(
-      interaction,
-      '❌ Security test handler is missing. Check the securitytest command file.'
-    );
-
-    return true;
-  }
-
-  await securityTestCommand.handleButton(interaction, activeClient);
-  return true;
-}
-
 module.exports = {
   name: 'interactionCreate',
 
   async execute(interaction, client) {
-    try {
-      const activeClient = client || interaction.client;
+    const activeClient = client || interaction.client;
 
-      // 0. Restore approval system buttons.
+    try {
+      /*
+       * FAST PATHS
+       * These must happen before admin/embed/security middleware.
+       * Discord interactions expire quickly if they are not acknowledged.
+       */
+
+      // 0. Security test slash command.
+      if (interaction.isChatInputCommand() && interaction.commandName === 'securitytest') {
+        if (await handleSecurityTestSlashCommand(interaction, activeClient)) return;
+      }
+
+      // 0.5 Security test buttons.
+      if (interaction.isButton() && isSecurityTestInteraction(interaction)) {
+        if (await handleSecurityTestButton(interaction, activeClient)) return;
+      }
+
+      // 1. Restore approval system buttons.
       if (interaction.isButton() && isRestoreInteraction(interaction)) {
         const handledRestoreButton =
           await restoreRequestManager.handleRestoreButton(interaction);
@@ -159,12 +215,7 @@ module.exports = {
         if (handledRestoreButton) return;
       }
 
-      // 0.5 Security test buttons.
-      // Handle these before protected admin/embed/automod routing.
-      if (interaction.isButton() && isSecurityTestInteraction(interaction)) {
-        if (await handleSecurityTestButton(interaction, activeClient)) return;
-      }
-
+      // 2. Protected panel security middleware.
       if (isProtectedPanelInteraction(interaction)) {
         const check = await security.enforceInteractionSecurity(interaction, {
           level: 'admin',
@@ -176,17 +227,17 @@ module.exports = {
         if (!check.allowed) return;
       }
 
-      // 1. Global nav system first.
+      // 3. Global nav system.
       if (isNavigationInteraction(interaction)) {
         if (await handlePanelNavigation(interaction)) return;
       }
 
-      // 2. Admin purge modal.
+      // 4. Admin purge modal.
       if (interaction.isModalSubmit() && interaction.customId === 'admin:purgeModal') {
         return handlePurgeModal(interaction);
       }
 
-      // 3. Embed panel owns embed:* and its own admin:back/admin:home buttons.
+      // 5. Embed panel owns embed:* and its own admin:back/admin:home buttons.
       if (
         isEmbedInteraction(interaction) ||
         interaction.customId === 'admin:back' ||
@@ -195,17 +246,17 @@ module.exports = {
         if (await embedPanel.handleInteraction(interaction)) return;
       }
 
-      // 4. Automod panel.
+      // 6. Automod panel.
       if (isAutomodInteraction(interaction)) {
         if (await automodPanel.handleInteraction(interaction)) return;
       }
 
-      // 5. Admin panel.
+      // 7. Admin panel.
       if (isAdminInteraction(interaction)) {
         if (await handleAdminNavigation(interaction)) return;
       }
 
-      // 6. Slash commands.
+      // 8. Normal slash commands.
       if (interaction.isChatInputCommand()) {
         const command = activeClient.commands.get(interaction.commandName);
 
@@ -216,7 +267,7 @@ module.exports = {
         return command.execute(interaction, activeClient);
       }
 
-      // 7. Help select menu.
+      // 9. Help select menu.
       if (interaction.isStringSelectMenu()) {
         if (interaction.customId === 'help-category-select') {
           const helpCommand = activeClient.commands.get('help');
@@ -229,7 +280,7 @@ module.exports = {
         return false;
       }
 
-      // 8. Help buttons / unhandled buttons.
+      // 10. Help buttons / unhandled buttons.
       if (interaction.isButton()) {
         if (
           interaction.customId === 'help-back-home' ||
@@ -250,15 +301,10 @@ module.exports = {
     } catch (error) {
       console.error('❌ Interaction error:', error);
 
-      try {
-        return safeReply(
-          interaction,
-          '❌ Something went wrong while handling this interaction.'
-        );
-      } catch (replyError) {
-        console.error('❌ Failed to send interaction error response:', replyError);
-        return false;
-      }
+      return safeReply(
+        interaction,
+        '❌ Something went wrong while handling this interaction.'
+      );
     }
   },
 };

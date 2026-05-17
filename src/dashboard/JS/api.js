@@ -62,10 +62,15 @@ async function parseErrorResponse(response) {
 
 async function request(path, options = {}) {
   const method = String(options.method || 'GET').toUpperCase();
+  const force = Boolean(options.force);
+
+  const fetchOptions = { ...options };
+  delete fetchOptions.force;
+
   const cacheKey = `${method}:${path}`;
   const ttl = method === 'GET' ? getCacheTtl(path) : 0;
 
-  if (ttl > 0) {
+  if (!force && ttl > 0) {
     const cached = getCache(cacheKey);
     if (cached) return cached;
   }
@@ -74,9 +79,9 @@ async function request(path, options = {}) {
     credentials: 'include',
     headers: {
       Accept: 'application/json',
-      ...(options.headers || {}),
+      ...(fetchOptions.headers || {}),
     },
-    ...options,
+    ...fetchOptions,
   });
 
   if (response.status === 401) {
@@ -107,7 +112,7 @@ function jsonPost(path, body) {
   });
 }
 
-/* ---------------- SOCKET SYNC (🔥 FIX) ---------------- */
+/* ---------------- SOCKET SYNC ---------------- */
 
 export function joinGuildRoom(guildId) {
   if (!guildId) return;
@@ -116,11 +121,38 @@ export function joinGuildRoom(guildId) {
   socket.emit('automod:join', guildId);
 }
 
-export function listenForGuildUpdate(handler) {
-  if (typeof handler !== 'function') return () => {};
+export function listenForGuildUpdate(guildIdOrHandler, sectionOrHandler, maybeHandler) {
+  let guildId = '';
+  let section = '';
+  let handler = null;
 
-  const wrapped = (payload) => {
-    handler(payload);
+  if (typeof guildIdOrHandler === 'function') {
+    handler = guildIdOrHandler;
+  } else {
+    guildId = String(guildIdOrHandler || '').trim();
+
+    if (typeof sectionOrHandler === 'function') {
+      handler = sectionOrHandler;
+    } else {
+      section = String(sectionOrHandler || '').trim();
+      handler = maybeHandler;
+    }
+  }
+
+  if (typeof handler !== 'function') {
+    return () => {};
+  }
+
+  const wrapped = (payload = {}) => {
+    if (guildId && String(payload.guildId || '') !== guildId) {
+      return;
+    }
+
+    if (section && String(payload.section || '') !== section) {
+      return;
+    }
+
+    handler(payload.data, payload);
   };
 
   socket.on('guild:update', wrapped);
@@ -145,64 +177,112 @@ export const api = {
     return request('/api/auth/logout', { method: 'POST' });
   },
 
-  getAuthMe() {
-    return request('/api/auth/me');
+  getAuthMe(options = {}) {
+    return request('/api/auth/me', options);
   },
 
-  getGuilds() {
-    return request('/api/discord/guilds');
+  getGuilds(options = {}) {
+    return request('/api/discord/guilds', options);
   },
 
-  getGuildChannels(guildId) {
-    return request(`/api/discord/guilds/${guildId}/channels`);
+  getGuildChannels(guildId, options = {}) {
+    if (!guildId) {
+      throw new Error('getGuildChannels requires a guildId');
+    }
+
+    return request(`/api/discord/guilds/${encodeURIComponent(guildId)}/channels`, options);
   },
 
-  getStatus(guildId) {
-    const query = guildId ? `?guildId=${guildId}` : '';
-    return request(`/api/status${query}`);
+  getStatus(guildId, options = {}) {
+    const query = guildId ? `?guildId=${encodeURIComponent(guildId)}` : '';
+    return request(`/api/status${query}`, options);
   },
 
-  getCases(guildId) {
-    return request(`/api/cases/${guildId}`);
+  getCases(guildId, options = {}) {
+    if (!guildId) {
+      throw new Error('getCases requires a guildId');
+    }
+
+    return request(`/api/cases/${encodeURIComponent(guildId)}`, options);
   },
 
-  getWarnings(guildId) {
-    return request(`/api/cases/${guildId}/warnings`);
+  getWarnings(guildId, options = {}) {
+    if (!guildId) {
+      throw new Error('getWarnings requires a guildId');
+    }
+
+    return request(`/api/cases/${encodeURIComponent(guildId)}/warnings`, options);
   },
 
-  getConfig(guildId) {
-    return request(`/api/config/${guildId}`);
+  getConfig(guildId, options = {}) {
+    if (!guildId) {
+      throw new Error('getConfig requires a guildId');
+    }
+
+    return request(`/api/config/${encodeURIComponent(guildId)}`, options);
   },
 
   updateConfig(guildId, body) {
-    return jsonPost(`/api/config/${guildId}`, body);
+    if (!guildId) {
+      throw new Error('updateConfig requires a guildId');
+    }
+
+    return jsonPost(`/api/config/${encodeURIComponent(guildId)}`, body);
   },
 
-  getMessages(guildId) {
-    return request(`/api/config/messages/${guildId}`);
+  getMessages(guildId, options = {}) {
+    if (!guildId) {
+      throw new Error('getMessages requires a guildId');
+    }
+
+    return request(`/api/config/messages/${encodeURIComponent(guildId)}`, options);
   },
 
   saveMessages(guildId, body) {
-    return jsonPost(`/api/config/messages/${guildId}`, body);
+    if (!guildId) {
+      throw new Error('saveMessages requires a guildId');
+    }
+
+    return jsonPost(`/api/config/messages/${encodeURIComponent(guildId)}`, body);
   },
 
-  getAutoModConfig(guildId) {
-    return request(`/api/config/automod/${guildId}`);
+  getAutoModConfig(guildId, options = {}) {
+    if (!guildId) {
+      throw new Error('getAutoModConfig requires a guildId');
+    }
+
+    return request(`/api/config/automod/${encodeURIComponent(guildId)}`, options);
   },
 
   saveAutoModConfig(guildId, body) {
-    return jsonPost(`/api/config/automod/${guildId}`, body);
+    if (!guildId) {
+      throw new Error('saveAutoModConfig requires a guildId');
+    }
+
+    return jsonPost(`/api/config/automod/${encodeURIComponent(guildId)}`, body);
   },
 
   resetAutoModConfig(guildId) {
-    return jsonPost(`/api/config/automod/${guildId}/reset`);
+    if (!guildId) {
+      throw new Error('resetAutoModConfig requires a guildId');
+    }
+
+    return jsonPost(`/api/config/automod/${encodeURIComponent(guildId)}/reset`);
   },
 
-  getLogConfig(guildId) {
-    return request(`/api/config/logs/${guildId}`);
+  getLogConfig(guildId, options = {}) {
+    if (!guildId) {
+      throw new Error('getLogConfig requires a guildId');
+    }
+
+    return request(`/api/config/logs/${encodeURIComponent(guildId)}`, options);
   },
 
   saveLogConfig(guildId, body) {
-    return jsonPost(`/api/config/logs/${guildId}`, body);
+    if (!guildId) {
+      throw new Error('saveLogConfig requires a guildId');
+    }
+
+    return jsonPost(`/api/config/logs/${encodeURIComponent(guildId)}`, body);
   },
 };

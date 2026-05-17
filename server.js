@@ -1,5 +1,10 @@
 const fs = require('fs');
 const path = require('path');
+const http = require('http');
+
+const express = require('express');
+const cors = require('cors');
+const session = require('express-session');
 
 const {
   Client,
@@ -36,7 +41,7 @@ const startServerBackupScheduler =
     ? backupSchedulerModule.result.startServerBackupScheduler
     : null;
 
-/* ---------------- ENV / MODE ---------------- */
+/* ---------------- MODE / ENV ---------------- */
 
 const ALLOWED_MODES = ['dev', 'beta', 'production'];
 
@@ -55,10 +60,42 @@ const selectedMode = resolveBotMode();
 process.env.BOT_MODE = selectedMode;
 
 const loadedEnv = loadEnvironment(selectedMode);
+
+/**
+ * Dashboard-specific env overrides.
+ * Example:
+ *   .env.dashboard.txt
+ *
+ * This lets the dashboard API keep local values like:
+ *   PORT=3001
+ *   CLIENT_URL=http://localhost:5173
+ *   SESSION_SECRET=...
+ */
+require('dotenv').config({
+  path: path.resolve(process.cwd(), '.env.dashboard.txt'),
+  override: true,
+});
+
 const BOT_MODE = selectedMode.toUpperCase();
 const activeMode = getBotModeConfig(BOT_MODE);
 
-/* ---------------- CLIENT ---------------- */
+/* ---------------- DASHBOARD API IMPORTS ---------------- */
+
+const { initSocketHub } = require('./src/server/sockets/socketHub');
+
+const authRoutes = require('./src/server/routes/auth');
+const discordRoutes = require('./src/server/routes/discord');
+const statusRoutes = require('./src/server/routes/status');
+
+const automodRoutes = require('./src/server/routes/config/automod');
+const logsRoutes = require('./src/server/routes/config/logs');
+const messagesRoutes = require('./src/server/routes/config/messages');
+const embedsRoutes = require('./src/server/routes/config/embeds');
+
+const moderationRoutes = require('./src/server/routes/moderation');
+const serverRestoreRoutes = require('./src/server/routes/serverRestoreRoutes');
+
+/* ---------------- DISCORD CLIENT ---------------- */
 
 const client = new Client({
   intents: [
@@ -73,6 +110,10 @@ const client = new Client({
 client.commands = new Collection();
 client.botMode = BOT_MODE;
 client.modeConfig = activeMode;
+
+/* ---------------- SHARED STATE ---------------- */
+
+let dashboardServer = null;
 
 /* ---------------- HELPERS ---------------- */
 
@@ -131,6 +172,79 @@ function printStartupBanner() {
   console.log(`🧠 Mode: ${BOT_MODE}`);
   console.log(`📄 Env: ${loadedEnv.envFile}`);
   console.log('============================================================');
+}
+
+/* ---------------- DASHBOARD API ---------------- */
+
+function startDashboardApi() {
+  const app = express();
+  const server = http.createServer(app);
+
+  const PORT = Number(process.env.PORT || 3001);
+  const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
+
+  app.use(
+    cors({
+      origin: CLIENT_URL,
+      credentials: true,
+    })
+  );
+
+  app.use(express.json());
+
+  app.use(
+    session({
+      name: 'goliath_dashboard_session',
+      secret: process.env.SESSION_SECRET || 'dev-dashboard-secret',
+      resave: false,
+      saveUninitialized: false,
+      cookie: {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: false,
+      },
+    })
+  );
+
+  app.get('/api/health', (req, res) => {
+    res.json({
+      ok: true,
+      service: 'goliath-dashboard-api',
+      mode: selectedMode,
+      port: PORT,
+      clientUrl: CLIENT_URL,
+      botApiUrl: process.env.BOT_API_URL || null,
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  app.use('/api/auth', authRoutes);
+  app.use('/api/discord', discordRoutes);
+  app.use('/api/status', statusRoutes);
+
+  app.use('/api/config/automod', automodRoutes);
+  app.use('/api/config/logs', logsRoutes);
+  app.use('/api/config/messages', messagesRoutes);
+  app.use('/api/config/embeds', embedsRoutes);
+
+  app.use('/api/cases', moderationRoutes);
+  app.use('/api/server-restore', serverRestoreRoutes);
+
+  initSocketHub(server, {
+    clientUrl: CLIENT_URL,
+  });
+
+  server.listen(PORT, () => {
+    console.log('============================================================');
+    console.log('🌐 Goliath Dashboard API running');
+    console.log(`🧠 Mode: ${BOT_MODE}`);
+    console.log(`🔗 API: http://localhost:${PORT}`);
+    console.log(`🖥️ Client: ${CLIENT_URL}`);
+    console.log(`🤖 Bot API: ${process.env.BOT_API_URL || 'not set'}`);
+    console.log('============================================================');
+  });
+
+  return server;
 }
 
 /* ---------------- COMMANDS ---------------- */
@@ -193,9 +307,7 @@ function loadEvents() {
       delete require.cache[require.resolve(file)];
 
       const loadedEvent = require(file);
-      const events = Array.isArray(loadedEvent)
-        ? loadedEvent
-        : [loadedEvent];
+      const events = Array.isArray(loadedEvent) ? loadedEvent : [loadedEvent];
 
       for (const event of events) {
         registerEvent(event, file);
@@ -219,6 +331,31 @@ function registerModeProtectionEvents() {
 
 /* ---------------- PROCESS SAFETY ---------------- */
 
+function shutdown(code = 0) {
+  console.log('🛑 Shutting down Goliath...');
+
+  try {
+    client.destroy();
+  } catch (error) {
+    console.error('⚠️ Failed to destroy Discord client cleanly:', error);
+  }
+
+  if (dashboardServer) {
+    dashboardServer.close(() => {
+      console.log('🌐 Dashboard API stopped.');
+      process.exit(code);
+    });
+
+    setTimeout(() => {
+      process.exit(code);
+    }, 1500);
+
+    return;
+  }
+
+  process.exit(code);
+}
+
 function registerProcessSafetyHandlers() {
   process.on('unhandledRejection', (reason) => {
     console.error('❌ Unhandled Promise Rejection');
@@ -228,27 +365,23 @@ function registerProcessSafetyHandlers() {
   process.on('uncaughtException', (err) => {
     console.error('❌ Uncaught Exception');
     console.error(err);
-    process.exit(1);
+    shutdown(1);
   });
 
   process.on('SIGINT', () => {
-    console.log('🛑 SIGINT received. Shutting down Goliath...');
-    client.destroy();
-    process.exit(0);
+    console.log('🛑 SIGINT received.');
+    shutdown(0);
   });
 
   process.on('SIGTERM', () => {
-    console.log('🛑 SIGTERM received. Shutting down Goliath...');
-    client.destroy();
-    process.exit(0);
+    console.log('🛑 SIGTERM received.');
+    shutdown(0);
   });
 }
 
-/* ---------------- START ---------------- */
+/* ---------------- BOT START ---------------- */
 
-async function start() {
-  printStartupBanner();
-
+async function startBot() {
   const runtimePaths = bootstrapRuntime(BOT_MODE);
 
   printStartupFingerprint(BOT_MODE, runtimePaths);
@@ -287,7 +420,6 @@ async function start() {
     getRequiredEnv('BETA_GUILD_IDS');
   }
 
-  registerProcessSafetyHandlers();
   registerModeProtectionEvents();
 
   loadCommands();
@@ -304,24 +436,41 @@ async function start() {
         console.log('💾 Starting server backup scheduler...');
         startServerBackupScheduler(readyClient);
       } else {
-        console.warn(
-          '⚠️ Backup scheduler unavailable. Continuing startup safely.'
-        );
+        console.warn('⚠️ Backup scheduler unavailable. Continuing startup safely.');
       }
     } else {
       logDev('💾 Backup scheduler disabled in DEV mode.');
     }
 
-    console.log('✅ Goliath startup complete.');
+    console.log('✅ Goliath bot startup complete.');
   });
 
   await client.login(token);
 }
 
+/* ---------------- START ALL ---------------- */
+
+async function start() {
+  printStartupBanner();
+
+  registerProcessSafetyHandlers();
+
+  dashboardServer = startDashboardApi();
+
+  await startBot();
+
+  console.log('✅ Goliath core startup complete.');
+}
+
 start().catch((err) => {
-  console.error('❌ Bot startup failed');
+  console.error('❌ Goliath startup failed');
   console.error(err);
-  process.exit(1);
+  shutdown(1);
 });
 
-module.exports = client;
+module.exports = {
+  client,
+  get dashboardServer() {
+    return dashboardServer;
+  },
+};

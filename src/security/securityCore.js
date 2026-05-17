@@ -4,21 +4,21 @@ const DEFAULT_COOLDOWN_MS = Number(process.env.SECURITY_COOLDOWN_MS || 2500);
 
 const cooldowns = new Map();
 
-const OWNER_IDS = (process.env.OWNER_IDS || '')
+const OWNER_ID = (process.env.OWNER_ID || '')
   .split(',')
   .map((id) => String(id).trim())
   .filter(Boolean);
 
 function getBotOwnerIds() {
-  return [...new Set(OWNER_IDS)];
+  return OWNER_ID ? [OWNER_ID] : [];
 }
 
 function getBotOwnerId() {
-  return OWNER_IDS[0] || null;
+  return OWNER_ID || null;
 }
 
 function isBotOwner(userId) {
-  return OWNER_IDS.includes(String(userId));
+  return Boolean(OWNER_ID && String(userId) === OWNER_ID);
 }
 
 function isGuildOwner(interaction) {
