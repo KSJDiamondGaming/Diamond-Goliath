@@ -8,6 +8,29 @@ const {
   startbackupWorker,
 } = require('../../security/backup/backupWorker');
 
+function getPrimaryGuildIdForMode(mode) {
+  if (mode === 'DEV') {
+    return (
+      process.env.DEV_GUILD_ID ||
+      process.env.MAIN_GUILD_ID ||
+      process.env.GUILD_ID ||
+      null
+    );
+  }
+
+  if (mode === 'BETA') {
+    return (
+      process.env.BETA_GUILD_IDS?.split(',')?.[0]?.trim() ||
+      process.env.BETA_GUILD_ID ||
+      process.env.MAIN_GUILD_ID ||
+      process.env.GUILD_ID ||
+      null
+    );
+  }
+
+  return null;
+}
+
 module.exports = {
   name: 'clientReady',
   once: true,
@@ -24,12 +47,14 @@ module.exports = {
     const modeLabel =
       modeLabels[currentMode] || `${currentMode} MODE`;
 
-    const mainGuildId =
-      process.env.DEV_GUILD_ID ||
-      process.env.BETA_GUILD_IDS?.split(',')[0];
+    const isPublicProduction =
+      currentMode === 'PRODUCTION';
 
-    const mainGuild = mainGuildId
-      ? client.guilds.cache.get(mainGuildId)
+    const primaryGuildId =
+      getPrimaryGuildIdForMode(currentMode);
+
+    const primaryGuild = primaryGuildId
+      ? client.guilds.cache.get(primaryGuildId)
       : null;
 
     terminal.line('🧪 Mode', modeLabel);
@@ -78,7 +103,7 @@ module.exports = {
 
     client.isBooting = false;
 
-    terminal.banner([
+    const bannerItems = [
       {
         label: 'Bot',
         value: 'READY',
@@ -89,28 +114,38 @@ module.exports = {
         value: modeLabel,
         ok: true,
       },
-      {
-        label: 'Main Guild',
-        value: mainGuild
-          ? `${mainGuild.name} (${mainGuild.id})`
+    ];
+
+    if (isPublicProduction) {
+      bannerItems.push({
+        label: 'Public Guilds',
+        value: String(client.guilds.cache.size),
+        ok: client.guilds.cache.size > 0,
+      });
+    } else {
+      bannerItems.push({
+        label: 'Primary Guild',
+        value: primaryGuild
+          ? `${primaryGuild.name} (${primaryGuild.id})`
           : 'Not Connected',
-        ok: Boolean(mainGuild),
-      },
-      {
+        ok: Boolean(primaryGuild),
+      });
+
+      bannerItems.push({
         label: 'Connected Guilds',
-        value: String(
-          client.guilds.cache.size
-        ),
-        ok:
-          client.guilds.cache.size > 0,
-      },
-      {
-        label: 'Systems',
-        value:
-          'Scheduler + Lockdown Recovery + Backup Sync Worker',
-        ok: true,
-      },
-    ]);
+        value: String(client.guilds.cache.size),
+        ok: client.guilds.cache.size > 0,
+      });
+    }
+
+    bannerItems.push({
+      label: 'Systems',
+      value:
+        'Scheduler + Lockdown Recovery + Backup Sync Worker',
+      ok: true,
+    });
+
+    terminal.banner(bannerItems);
 
     terminal.success('Bot ready');
   },
