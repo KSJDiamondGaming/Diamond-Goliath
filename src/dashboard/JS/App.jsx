@@ -18,17 +18,17 @@ import { navItems, ROUTES } from './ui/layout';
 import Navbar from './shared/Navbar.jsx';
 import Topbar from './shared/Topbar.jsx';
 
-import Login from './PAGES/Login.jsx';
-import Overview from './PAGES/Overview.jsx';
-import AutoMod from './PAGES/AutoMod.jsx';
-import Admin from './PAGES/Admin.jsx';
-import Moderation from './PAGES/Moderation.jsx';
-import Config from './PAGES/Config.jsx';
-import Cases from './PAGES/Cases.jsx';
-import Warnings from './PAGES/Warnings.jsx';
-import Messages from './PAGES/Messages.jsx';
-import Restore from './PAGES/Restore.jsx';
-import Logs from './PAGES/Logs.jsx';
+import Login from './pages/Login.jsx';
+import Overview from './pages/Overview.jsx';
+import AutoMod from './pages/AutoMod.jsx';
+import Admin from './pages/Admin.jsx';
+import Moderation from './pages/Moderation.jsx';
+import Config from './pages/Config.jsx';
+import Cases from './pages/Cases.jsx';
+import Warnings from './pages/Warnings.jsx';
+import Messages from './pages/Messages.jsx';
+import Restore from './pages/Restore.jsx';
+import Logs from './pages/Logs.jsx';
 
 const GUILD_STORAGE_KEY = 'selected_guild';
 const BOT_PROFILE_STORAGE_KEY = 'bot_profile';
