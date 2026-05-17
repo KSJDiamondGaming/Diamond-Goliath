@@ -2,12 +2,17 @@ import { io } from 'socket.io-client';
 
 /* ---------------- BASE ---------------- */
 
+const IS_LOCAL_DEV =
+  import.meta.env.DEV ||
+  window.location.hostname === 'localhost' ||
+  window.location.hostname === '127.0.0.1';
+
 const API_BASE =
   import.meta.env.VITE_API_BASE_URL ||
   import.meta.env.VITE_API_URL ||
-  '';
+  (IS_LOCAL_DEV ? 'http://localhost:3001' : '');
 
-const socket = io(API_BASE, {
+const socket = io(API_BASE || window.location.origin, {
   withCredentials: true,
 });
 
@@ -52,7 +57,12 @@ function getCacheTtl(path) {
 /* ---------------- REQUEST ---------------- */
 
 function buildUrl(path) {
-  return `${API_BASE}${path}`;
+  if (/^https?:\/\//i.test(path)) {
+    return path;
+  }
+
+  const safePath = path.startsWith('/') ? path : `/${path}`;
+  return `${API_BASE}${safePath}`;
 }
 
 async function parseErrorResponse(response) {
@@ -85,7 +95,9 @@ async function request(path, options = {}) {
 
   if (!response.ok) {
     const errorText = await parseErrorResponse(response);
-    throw new Error(`Request failed (${response.status}): ${errorText.slice(0, 160)}`);
+    throw new Error(
+      `Request failed (${response.status}): ${errorText.slice(0, 160)}`
+    );
   }
 
   const data = await response.json();
@@ -107,7 +119,7 @@ function jsonPost(path, body) {
   });
 }
 
-/* ---------------- SOCKET SYNC (🔥 FIX) ---------------- */
+/* ---------------- SOCKET SYNC ---------------- */
 
 export function joinGuildRoom(guildId) {
   if (!guildId) return;
@@ -136,6 +148,10 @@ export const api = {
   clearCache,
   clearCacheKey,
 
+  getApiBase() {
+    return API_BASE;
+  },
+
   getLoginUrl() {
     return buildUrl('/api/auth/login');
   },
@@ -151,6 +167,10 @@ export const api = {
 
   getGuilds() {
     return request('/api/discord/guilds');
+  },
+
+  getDebugGuilds() {
+    return request('/api/discord/debug-guilds');
   },
 
   getGuildChannels(guildId) {

@@ -39,6 +39,43 @@ function requireBotToken() {
   return token;
 }
 
+function getBotMode() {
+  return String(
+    process.env.BOT_MODE ||
+      process.env.NODE_ENV ||
+      ''
+  )
+    .trim()
+    .toUpperCase();
+}
+
+function getConfiguredDevGuildIds() {
+  return [
+    process.env.DEV_GUILD_ID,
+    process.env.MAIN_GUILD_ID,
+    process.env.GUILD_ID,
+  ]
+    .filter(Boolean)
+    .flatMap((value) =>
+      String(value)
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean)
+    );
+}
+
+function isConfiguredDevGuild(guildId) {
+  const mode = getBotMode();
+
+  if (mode !== 'DEV') {
+    return false;
+  }
+
+  const configuredGuildIds = getConfiguredDevGuildIds();
+
+  return configuredGuildIds.includes(String(guildId));
+}
+
 function getCache(cache, cacheKey) {
   const cached = cache.get(cacheKey);
 
@@ -77,12 +114,33 @@ function hasManageGuildPermission(guild) {
   }
 }
 
+function canAccessGuild(guild, botGuildIds) {
+  const guildId = String(guild?.id || '');
+
+  if (!guildId) return false;
+
+  const botInGuild = botGuildIds.has(guildId);
+
+  if (!botInGuild) {
+    return false;
+  }
+
+  if (hasManageGuildPermission(guild)) {
+    return true;
+  }
+
+  return isConfiguredDevGuild(guildId);
+}
+
 function getPermissionDebug(guild) {
+  const guildId = String(guild?.id || '');
+
   if (guild?.owner) {
     return {
       owner: true,
       administrator: true,
       manageGuild: true,
+      devGuildBypass: isConfiguredDevGuild(guildId),
       allowed: true,
     };
   }
@@ -96,18 +154,24 @@ function getPermissionDebug(guild) {
     const manageGuild =
       (permissions & MANAGE_GUILD_PERMISSION) === MANAGE_GUILD_PERMISSION;
 
+    const devGuildBypass = isConfiguredDevGuild(guildId);
+
     return {
       owner: false,
       administrator,
       manageGuild,
-      allowed: administrator || manageGuild,
+      devGuildBypass,
+      allowed: administrator || manageGuild || devGuildBypass,
     };
   } catch {
+    const devGuildBypass = isConfiguredDevGuild(guildId);
+
     return {
       owner: false,
       administrator: false,
       manageGuild: false,
-      allowed: false,
+      devGuildBypass,
+      allowed: devGuildBypass,
     };
   }
 }
@@ -258,8 +322,7 @@ router.get('/guilds', async (req, res) => {
 
     const mutualGuilds = Array.isArray(userGuilds)
       ? userGuilds
-          .filter((guild) => botGuildIds.has(String(guild.id)))
-          .filter(hasManageGuildPermission)
+          .filter((guild) => canAccessGuild(guild, botGuildIds))
           .map(buildGuildPayload)
           .sort((a, b) => a.name.localeCompare(b.name))
       : [];
@@ -299,7 +362,17 @@ router.get('/debug-guilds', async (req, res) => {
         : []
     );
 
+    const mutualGuilds = Array.isArray(userGuilds)
+      ? userGuilds.filter((guild) => botGuildIds.has(String(guild.id)))
+      : [];
+
+    const allowedGuilds = mutualGuilds.filter((guild) =>
+      canAccessGuild(guild, botGuildIds)
+    );
+
     return res.json({
+      mode: getBotMode(),
+      configuredDevGuildIds: getConfiguredDevGuildIds(),
       user: {
         id: req.session.user.id,
         username: req.session.user.username,
@@ -308,14 +381,8 @@ router.get('/debug-guilds', async (req, res) => {
       counts: {
         userGuilds: Array.isArray(userGuilds) ? userGuilds.length : 0,
         botGuilds: Array.isArray(botGuilds) ? botGuilds.length : 0,
-        mutualGuilds: Array.isArray(userGuilds)
-          ? userGuilds.filter((guild) => botGuildIds.has(String(guild.id))).length
-          : 0,
-        allowedGuilds: Array.isArray(userGuilds)
-          ? userGuilds
-              .filter((guild) => botGuildIds.has(String(guild.id)))
-              .filter(hasManageGuildPermission).length
-          : 0,
+        mutualGuilds: mutualGuilds.length,
+        allowedGuilds: allowedGuilds.length,
       },
       userGuilds: Array.isArray(userGuilds)
         ? userGuilds.map((guild) => ({
