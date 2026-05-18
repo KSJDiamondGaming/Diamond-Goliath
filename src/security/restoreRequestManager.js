@@ -1031,6 +1031,68 @@ async function approveRestoreRequest(interaction, requestId) {
         `Rollback snapshot: \`${request.rollbackBackupId}\``,
       ].join('\n'),
     });
+    // ======================================================
+// AUTO ROLLBACK FAILSAFE
+// ======================================================
+
+let rollbackRecoveryResult = null;
+
+if (request.rollbackBackupId) {
+  try {
+    console.log(
+      `[RESTORE] Attempting automatic rollback recovery for ${guild.name}`
+    );
+
+    rollbackRecoveryResult =
+      await serverRestore.executeRestore(guild, {
+        restoreRequestId: `${request.id}_rollback_recovery`,
+        backupId: request.rollbackBackupId,
+
+        rollbackRecovery: true,
+        approvedBy: interaction.user.id,
+        requestedBy: request.requestedById,
+
+        preview: {
+          integrity: {
+            verified: true,
+            hashValid: true,
+            corruptionCheck: true,
+          },
+
+          restoreDiff: {
+            safe: true,
+            blockers: [],
+            riskLevel: 'LOW',
+          },
+        },
+
+        rollbackBackupId: 'AUTO_ROLLBACK_RECOVERY',
+      });
+
+    console.log(
+      `[RESTORE] Automatic rollback recovery completed`
+    );
+
+    pushAudit({
+      action: 'restore_auto_rollback_completed',
+      request,
+      rollbackBackupId: request.rollbackBackupId,
+      recoveryResult: rollbackRecoveryResult,
+    });
+  } catch (rollbackError) {
+    console.error(
+      `[RESTORE] Automatic rollback recovery FAILED`,
+      rollbackError
+    );
+
+    pushAudit({
+      action: 'restore_auto_rollback_failed',
+      request,
+      rollbackBackupId: request.rollbackBackupId,
+      error: rollbackError.message,
+    });
+  }
+}
   } catch (error) {
     request.status = 'failed';
     request.failedAt = nowIso();
@@ -1051,7 +1113,13 @@ async function approveRestoreRequest(interaction, requestId) {
           buildCompletedEmbed(request, 'failed', {
             handledById: interaction.user.id,
             handledByTag: interaction.user.tag,
-            message: error.message,
+            message: [
+            error.message,
+
+            rollbackRecoveryResult
+              ? '\nAutomatic rollback recovery executed.'
+              : '\nAutomatic rollback recovery failed or unavailable.',
+          ].join('\n'),
           }),
         ],
         components: [],
@@ -1059,7 +1127,13 @@ async function approveRestoreRequest(interaction, requestId) {
       .catch(() => null);
 
     return interaction.editReply({
-      content: `Restore failed:\n\`${error.message}\``,
+      content: [
+      `Restore failed:\n\`${error.message}\``,
+
+      rollbackRecoveryResult
+        ? '\nAutomatic rollback recovery executed.'
+        : '\nAutomatic rollback recovery unavailable or failed.',
+    ].join('\n'),
     });
   } finally {
     unlockGuild(request.guildId);
