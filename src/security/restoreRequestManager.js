@@ -10,65 +10,29 @@ const {
 const serverBackup = require('./serverBackup');
 const serverRestore = require('./serverRestore');
 
-const RESTORE_REQUEST_VERSION = '1D_INTEGRITY_STATUS_UI';
+const RESTORE_REQUEST_VERSION = '1E_RISK_APPROVAL_UI';
 
-const BOT_MODE = (
-  process.env.BOT_MODE ||
-  'DEV'
-).toLowerCase();
+const BOT_MODE = (process.env.BOT_MODE || 'DEV').toLowerCase();
 
-const RUNTIME_ROOT = path.join(
-  process.cwd(),
-  'src',
-  'runtime',
-  BOT_MODE
-);
+const RUNTIME_ROOT = path.join(process.cwd(), 'src', 'runtime', BOT_MODE);
 
-const RESTORE_DIR = path.join(
-  RUNTIME_ROOT,
-  'recovery',
-  'restoreRequests'
-);
+const RESTORE_DIR = path.join(RUNTIME_ROOT, 'recovery', 'restoreRequests');
 
-const PENDING_FILE = path.join(
-  RESTORE_DIR,
-  'pending.json'
-);
-
-const HISTORY_FILE = path.join(
-  RESTORE_DIR,
-  'history.json'
-);
-
-const AUDIT_FILE = path.join(
-  RESTORE_DIR,
-  'audit.json'
-);
+const PENDING_FILE = path.join(RESTORE_DIR, 'pending.json');
+const HISTORY_FILE = path.join(RESTORE_DIR, 'history.json');
+const AUDIT_FILE = path.join(RESTORE_DIR, 'audit.json');
 
 const DEFAULT_COOLDOWN_MS = 1000 * 60 * 30;
 const activeGuildLocks = new Set();
 
 function ensureStorage() {
   if (!fs.existsSync(RESTORE_DIR)) {
-    fs.mkdirSync(RESTORE_DIR, {
-      recursive: true,
-    });
+    fs.mkdirSync(RESTORE_DIR, { recursive: true });
   }
 
-  for (const file of [
-    PENDING_FILE,
-    HISTORY_FILE,
-    AUDIT_FILE,
-  ]) {
+  for (const file of [PENDING_FILE, HISTORY_FILE, AUDIT_FILE]) {
     if (!fs.existsSync(file)) {
-      fs.writeFileSync(
-        file,
-        JSON.stringify(
-          { requests: [] },
-          null,
-          2
-        )
-      );
+      fs.writeFileSync(file, JSON.stringify({ requests: [] }, null, 2));
     }
   }
 }
@@ -242,40 +206,118 @@ function safeField(value, max = 1000) {
   return text.length > max ? `${text.slice(0, max - 3)}...` : text;
 }
 
+function getLegacyDiffBlockerCount(diff) {
+  return Number(diff?.summary?.totals?.blockers || 0);
+}
+
+function getDiffBlockers(diff) {
+  const blockers = Array.isArray(diff?.blockers) ? diff.blockers : [];
+  const legacyCount = getLegacyDiffBlockerCount(diff);
+
+  if (blockers.length) return blockers;
+  if (legacyCount > 0) return [`${legacyCount} restore diff blocker(s) detected.`];
+
+  return [];
+}
+
+function getRiskSummary(diff) {
+  if (!diff) {
+    return {
+      riskLevel: 'UNKNOWN',
+      riskScore: 0,
+      safe: false,
+      blockers: ['Restore diff unavailable.'],
+      dangerousChanges: 0,
+      recommendation: 'Restore approval blocked until diff preview succeeds.',
+    };
+  }
+
+  const blockers = getDiffBlockers(diff);
+  const riskLevel = diff.riskLevel || 'UNKNOWN';
+  const riskScore = Number(diff.riskScore || 0);
+
+  const dangerousChanges =
+    Number(diff.summary?.dangerousChanges || 0) ||
+    Number(diff.roles?.dangerous?.length || 0);
+
+  return {
+    riskLevel,
+    riskScore,
+    safe: diff.safe !== false && blockers.length === 0,
+    blockers,
+    dangerousChanges,
+    recommendation:
+      diff.approvalRecommendation ||
+      (blockers.length
+        ? 'Restore approval blocked until blockers are resolved.'
+        : 'Restore appears safe.'),
+  };
+}
+
 function formatDiffSummary(diff) {
   if (!diff?.summary) return null;
 
+  const risk = getRiskSummary(diff);
+
+  const roleCreate = diff.summary.roles?.create ?? diff.summary.rolesAdded ?? 0;
+  const roleUpdate = diff.summary.roles?.update ?? diff.summary.rolesChanged ?? 0;
+  const roleSkip = diff.summary.roles?.skip ?? 0;
+  const roleDuplicates = diff.summary.roles?.duplicates ?? 0;
+  const roleWarnings = diff.summary.roles?.warnings ?? 0;
+  const roleRemoved = diff.summary.rolesRemoved ?? 0;
+
+  const channelCreate =
+    diff.summary.channels?.create ?? diff.summary.channelsAdded ?? 0;
+  const channelUpdate =
+    diff.summary.channels?.update ?? diff.summary.channelsChanged ?? 0;
+  const channelSkip = diff.summary.channels?.skip ?? 0;
+  const channelDuplicates = diff.summary.channels?.duplicates ?? 0;
+  const channelWarnings = diff.summary.channels?.warnings ?? 0;
+  const channelRemoved = diff.summary.channelsRemoved ?? 0;
+
+  const permissionRestore = diff.summary.permissions?.restore ?? 0;
+  const permissionSkip = diff.summary.permissions?.skip ?? 0;
+  const permissionWarnings = diff.summary.permissions?.warnings ?? 0;
+
   return safeField(
     [
+      '**Risk**',
+      `Level: \`${risk.riskLevel}\``,
+      `Score: \`${risk.riskScore}\``,
+      `Dangerous changes: \`${risk.dangerousChanges}\``,
+      `Recommendation: ${risk.recommendation}`,
+      '',
       '**Roles**',
-      `+ Create: ${diff.summary.roles?.create || 0}`,
-      `~ Update: ${diff.summary.roles?.update || 0}`,
-      `= Skip: ${diff.summary.roles?.skip || 0}`,
-      `! Duplicates: ${diff.summary.roles?.duplicates || 0}`,
-      `⚠ Warnings: ${diff.summary.roles?.warnings || 0}`,
+      `+ Create: ${roleCreate}`,
+      `~ Update: ${roleUpdate}`,
+      `- Removed: ${roleRemoved}`,
+      `= Skip: ${roleSkip}`,
+      `! Duplicates: ${roleDuplicates}`,
+      `Warnings: ${roleWarnings}`,
       '',
       '**Channels**',
-      `+ Create: ${diff.summary.channels?.create || 0}`,
-      `~ Update: ${diff.summary.channels?.update || 0}`,
-      `= Skip: ${diff.summary.channels?.skip || 0}`,
-      `! Duplicates: ${diff.summary.channels?.duplicates || 0}`,
-      `⚠ Warnings: ${diff.summary.channels?.warnings || 0}`,
+      `+ Create: ${channelCreate}`,
+      `~ Update: ${channelUpdate}`,
+      `- Removed: ${channelRemoved}`,
+      `= Skip: ${channelSkip}`,
+      `! Duplicates: ${channelDuplicates}`,
+      `Warnings: ${channelWarnings}`,
       '',
       '**Permissions**',
-      `↺ Check/restore: ${diff.summary.permissions?.restore || 0}`,
-      `= Skip: ${diff.summary.permissions?.skip || 0}`,
-      `⚠ Warnings: ${diff.summary.permissions?.warnings || 0}`,
+      `Restore/check: ${permissionRestore}`,
+      `Skip: ${permissionSkip}`,
+      `Warnings: ${permissionWarnings}`,
       '',
       '**Safety**',
       `Warnings: ${diff.summary.totals?.warnings || 0}`,
-      `Blockers: ${diff.summary.totals?.blockers || 0}`,
+      `Blockers: ${risk.blockers.length}`,
     ].join('\n')
   );
 }
 
 function getTopDiffWarnings(diff, max = 5) {
   const warnings = Array.isArray(diff?.warnings) ? diff.warnings : [];
-  const blockers = Array.isArray(diff?.blockers) ? diff.blockers : [];
+  const blockers = getDiffBlockers(diff);
 
   const lines = [
     ...blockers.map((item) => `BLOCKER: ${item}`),
@@ -335,7 +377,7 @@ function getIntegritySummary(integrity) {
       failed: true,
       verified: false,
       text: [
-        '❌ Backup Integrity Missing',
+        'Backup Integrity Missing',
         'Restore Blocked',
         '',
         'Integrity metadata was not found.',
@@ -344,30 +386,22 @@ function getIntegritySummary(integrity) {
   }
 
   const verified = integrity.verified === true;
-  const hashValid = integrity.hashValid === true;
-  const corruptionCheck =
-    integrity.corruptionCheck === true;
+  const hashValid = integrity.hashValid !== false;
+  const corruptionCheck = integrity.corruptionCheck !== false;
 
-  const failed =
-    !verified ||
-    !hashValid ||
-    !corruptionCheck;
+  const failed = !verified || !hashValid || !corruptionCheck;
 
   if (failed) {
     return {
       failed: true,
       verified: false,
       text: [
-        '❌ Backup Integrity Failed',
+        'Backup Integrity Failed',
         'Restore Blocked',
         '',
         `Algorithm: ${integrity.algorithm || 'Unknown'}`,
-        `Hash Status: ${
-          hashValid ? 'VALID' : 'INVALID'
-        }`,
-        `Corruption Check: ${
-          corruptionCheck ? 'PASSED' : 'FAILED'
-        }`,
+        `Hash Status: ${hashValid ? 'VALID' : 'INVALID'}`,
+        `Corruption Check: ${corruptionCheck ? 'PASSED' : 'FAILED'}`,
       ].join('\n'),
     };
   }
@@ -376,12 +410,34 @@ function getIntegritySummary(integrity) {
     failed: false,
     verified: true,
     text: [
-      '✅ Integrity: VERIFIED',
+      'Integrity: VERIFIED',
       `Algorithm: ${integrity.algorithm || 'SHA256'}`,
       'Hash Status: VALID',
       'Corruption Check: PASSED',
     ].join('\n'),
   };
+}
+
+function getApprovalBlockers(request) {
+  const blockers = [];
+
+  if (!request.previewOk || !request.preview) {
+    blockers.push('Restore preview is not valid.');
+  }
+
+  const integritySummary = getIntegritySummary(request.preview?.integrity || null);
+
+  if (integritySummary.failed) {
+    blockers.push('Backup integrity verification failed.');
+  }
+
+  const risk = getRiskSummary(request.preview?.restoreDiff || null);
+
+  if (!risk.safe) {
+    blockers.push(...risk.blockers);
+  }
+
+  return [...new Set(blockers)];
 }
 
 function buildDecisionButtons(requestId, disabled = false) {
@@ -396,45 +452,50 @@ function buildDecisionButtons(requestId, disabled = false) {
       .setCustomId(`restore_request_deny:${requestId}`)
       .setLabel('Deny Restore')
       .setStyle(ButtonStyle.Danger)
-      .setDisabled(disabled)
+      .setDisabled(false)
   );
+}
+
+function getRiskColor(riskLevel, hasBlockers, integrityFailed) {
+  if (integrityFailed || hasBlockers || riskLevel === 'CRITICAL') return 0xdc2626;
+  if (riskLevel === 'HIGH') return 0xf97316;
+  if (riskLevel === 'MEDIUM') return 0xf59e0b;
+  return 0x22c55e;
 }
 
 function buildRequestEmbed(request) {
   const preview = request.preview || null;
   const diff = preview?.restoreDiff || null;
+  const risk = getRiskSummary(diff);
 
   const warningText = getTopDiffWarnings(diff);
 
-  const integrity =
-    preview?.integrity || null;
+  const integrity = preview?.integrity || null;
+  const integritySummary = getIntegritySummary(integrity);
 
-  const integritySummary =
-    getIntegritySummary(integrity);
+  const approvalBlockers = getApprovalBlockers(request);
+  const hasBlockers = approvalBlockers.length > 0;
 
-  const diffBlockers =
-    diff?.summary?.totals?.blockers || 0;
+  const embedColor = getRiskColor(
+    risk.riskLevel,
+    hasBlockers,
+    integritySummary.failed
+  );
 
-  const integrityFailed =
-    integritySummary.failed;
-
-  const embedColor = integrityFailed
-    ? 0xdc2626
-    : diffBlockers > 0
-      ? 0xf59e0b
-      : 0x22c55e;
-
-  const integrityBanner = integrityFailed
+  const approvalStatus = hasBlockers
     ? [
-        'Backup integrity verification failed.',
-        'Restore approval has been blocked.',
+        'Restore approval is BLOCKED.',
+        '',
+        ...approvalBlockers.slice(0, 6).map((item) => `- ${item}`),
       ].join('\n')
     : [
-        'Backup integrity verified successfully.',
-        'Restore approval is permitted.',
+        'Restore approval is available.',
+        '',
+        `Risk level: \`${risk.riskLevel}\``,
+        `Risk score: \`${risk.riskScore}\``,
       ].join('\n');
 
-  const embed = new EmbedBuilder()
+  return new EmbedBuilder()
     .setColor(embedColor)
     .setTitle('Restore Approval Required')
     .setDescription(
@@ -443,8 +504,6 @@ function buildRequestEmbed(request) {
         '',
         '**No restore has been executed yet.**',
         'A Goliath owner must approve this request first.',
-        '',
-        integrityBanner,
       ].join('\n')
     )
     .addFields(
@@ -466,6 +525,11 @@ function buildRequestEmbed(request) {
       {
         name: 'Request ID',
         value: `\`${request.id}\``,
+        inline: false,
+      },
+      {
+        name: 'Approval Status',
+        value: safeField(approvalStatus),
         inline: false,
       },
       {
@@ -497,8 +561,6 @@ function buildRequestEmbed(request) {
       text: `Goliath Restore System • ${RESTORE_REQUEST_VERSION}`,
     })
     .setTimestamp(new Date(request.createdAt));
-
-  return embed;
 }
 
 function buildCompletedEmbed(request, status, extra = {}) {
@@ -569,16 +631,7 @@ async function sendSupportAlert(client, request) {
     throw new Error('Could not fetch restore request channel.');
   }
 
- const diffBlockers =
-  request.preview?.restoreDiff?.summary?.totals?.blockers || 0;
-
-const integrityFailed =
-  request.preview?.integrity?.verified === false;
-
-const disabled =
-  diffBlockers > 0 ||
-  !request.previewOk ||
-  integrityFailed;
+  const disabled = getApprovalBlockers(request).length > 0;
 
   const message = await channel.send({
     embeds: [buildRequestEmbed(request)],
@@ -644,7 +697,8 @@ async function createRestoreRequest(interaction, options = {}) {
   await interaction.deferReply({ flags: 64 });
 
   let preview = null;
-  let previewSummary = 'Preview unavailable. Restore approval is blocked until preview succeeds.';
+  let previewSummary =
+    'Preview unavailable. Restore approval is blocked until preview succeeds.';
 
   try {
     preview = await serverRestore.previewRestore(guild, {
@@ -658,8 +712,13 @@ async function createRestoreRequest(interaction, options = {}) {
     previewSummary = `Preview failed: ${error.message}`;
   }
 
-  const diffBlockers = preview?.restoreDiff?.summary?.totals?.blockers || 0;
-  const previewOk = Boolean(preview && preview.available !== false && diffBlockers === 0);
+  const tempRequest = {
+    previewOk: Boolean(preview && preview.available !== false),
+    preview,
+  };
+
+  const previewBlockers = getApprovalBlockers(tempRequest);
+  const previewOk = tempRequest.previewOk && previewBlockers.length === 0;
 
   const request = {
     id: createRequestId(guild.id),
@@ -676,6 +735,9 @@ async function createRestoreRequest(interaction, options = {}) {
     previewOk,
     preview,
     previewSummary,
+
+    risk: getRiskSummary(preview?.restoreDiff || null),
+    approvalBlockers: previewBlockers,
 
     rollbackBackupId: null,
     rollbackPath: null,
@@ -705,6 +767,7 @@ async function createRestoreRequest(interaction, options = {}) {
     pushAudit({
       action: 'restore_preview_failed',
       request,
+      blockers: previewBlockers,
     });
 
     return interaction.editReply({
@@ -712,6 +775,8 @@ async function createRestoreRequest(interaction, options = {}) {
         'Restore request could not be submitted because the preview failed or has blockers.',
         '',
         previewSummary,
+        '',
+        ...previewBlockers.map((item) => `- ${item}`),
       ].join('\n'),
     });
   }
@@ -746,6 +811,9 @@ async function createRestoreRequest(interaction, options = {}) {
       'Restore request submitted.',
       '',
       `Request ID: \`${request.id}\``,
+      `Risk Level: \`${request.risk.riskLevel}\``,
+      `Risk Score: \`${request.risk.riskScore}\``,
+      '',
       'A Goliath owner must approve it before anything is restored.',
     ].join('\n'),
   });
@@ -775,23 +843,15 @@ async function approveRestoreRequest(interaction, requestId) {
     });
   }
 
-  if (!request.previewOk || !request.preview) {
-    return interaction.reply({
-      content: 'This request cannot be approved because it does not have a valid restore preview.',
-      flags: 64,
-    });
-  }
+  const approvalBlockers = getApprovalBlockers(request);
 
-  if (request.preview?.integrity?.verified === false) {
-  return interaction.reply({
-    content: 'This request cannot be approved because backup integrity verification failed.',
-    flags: 64,
-    });
-  }
-
-  if (request.preview?.restoreDiff?.summary?.totals?.blockers > 0) {
+  if (approvalBlockers.length > 0) {
     return interaction.reply({
-      content: 'This request cannot be approved because the restore diff has blockers.',
+      content: [
+        'This restore request cannot be approved because it has blockers.',
+        '',
+        ...approvalBlockers.map((item) => `- ${item}`),
+      ].join('\n'),
       flags: 64,
     });
   }
@@ -831,6 +891,9 @@ async function approveRestoreRequest(interaction, requestId) {
   request.approvedAt = nowIso();
   request.approvedById = interaction.user.id;
   request.approvedByTag = interaction.user.tag;
+  request.approvalBlockers = [];
+  request.risk = getRiskSummary(request.preview?.restoreDiff || null);
+
   upsertPendingRequest(request);
 
   try {
@@ -838,6 +901,7 @@ async function approveRestoreRequest(interaction, requestId) {
       action: 'restore_approved',
       request,
       approvedBy: interaction.user.id,
+      risk: request.risk,
     });
 
     const rollback = await serverBackup.createServerBackup(guild, {
@@ -869,8 +933,6 @@ async function approveRestoreRequest(interaction, requestId) {
       preview: request.preview,
     });
 
-    console.log('RESTORE WARNINGS:', restoreResult?.warnings || []);
-
     request.status = 'completed';
     request.completedAt = nowIso();
     request.restoreResult = restoreResult || { success: true };
@@ -893,6 +955,7 @@ async function approveRestoreRequest(interaction, requestId) {
             message: [
               'Restore completed.',
               '',
+              `Risk Level: \`${request.risk.riskLevel}\``,
               `Rollback snapshot: \`${request.rollbackBackupId}\``,
               '',
               getRestoreSummary(restoreResult),
@@ -907,6 +970,7 @@ async function approveRestoreRequest(interaction, requestId) {
       content: [
         `Restore approved and completed for **${request.guildName}**.`,
         '',
+        `Risk Level: \`${request.risk.riskLevel}\``,
         `Rollback snapshot: \`${request.rollbackBackupId}\``,
       ].join('\n'),
     });
