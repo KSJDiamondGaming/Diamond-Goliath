@@ -10,9 +10,6 @@ const {
   getBackupRoot,
   getBackupDir,
   ensureBackupDir,
-} = require('./backup/backupCore');
-
-const {
   writeIntegrityFile,
   validateBackupIntegrity,
 } = require('./backup/backupCore');
@@ -25,6 +22,17 @@ const SUPPORTED_BACKUP_VERSIONS = [3];
 const BACKUP_SCHEMA_VERSION = 3;
 
 const BACKUP_TYPES_TO_LIST = ['scheduled', 'runtime'];
+
+const DANGEROUS_PERMISSION_NAMES = [
+  'Administrator',
+  'ManageGuild',
+  'ManageRoles',
+  'ManageChannels',
+  'ManageWebhooks',
+  'BanMembers',
+  'KickMembers',
+  'ModerateMembers',
+];
 
 function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true });
@@ -125,8 +133,20 @@ function isValidBitfield(value) {
   }
 }
 
+function isValidSnowflake(value) {
+  return /^\d{16,20}$/.test(String(value || ''));
+}
+
 function isValidChannelType(type) {
   return typeof type === 'number';
+}
+
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function uniqueCount(values = []) {
+  return new Set(values.map((value) => String(value))).size;
 }
 
 function serializeOverwrite(overwrite) {
@@ -190,13 +210,13 @@ function getLogsSnapshot(guildId) {
 }
 
 function createBackupSummary(backup) {
-  const roles = Array.isArray(backup?.roles) ? backup.roles : [];
-  const channels = Array.isArray(backup?.channels) ? backup.channels : [];
+  const roles = asArray(backup?.roles);
+  const channels = asArray(backup?.channels);
 
   return {
     backupId: backup?.backupId || null,
     type: backup?.type || 'runtime',
-    backupType: backup?.metadata?.backupType || backup?.type || 'runtime',
+    backupType: backup?.backupType || backup?.metadata?.backupType || backup?.type || 'runtime',
     version: backup?.version || null,
     createdAt: backup?.createdAt || null,
     createdBy: backup?.createdBy || null,
@@ -228,31 +248,54 @@ function createBackupSummary(backup) {
 function validateServerBackup(backup, options = {}) {
   const errors = [];
   const warnings = [];
+  const blockers = [];
+  const safety = {
+    emptyBackup: false,
+    guildMismatch: false,
+    unsupportedVersion: false,
+    invalidRoles: 0,
+    invalidChannels: 0,
+    invalidOverwrites: 0,
+    duplicateRoleNames: [],
+    duplicateChannelKeys: [],
+    dangerousRoles: [],
+  };
+
+  const strict = options.strict !== false;
 
   if (!isObject(backup)) {
     return {
       valid: false,
+      safe: false,
       errors: ['Backup is not a valid object.'],
       warnings,
+      blockers: ['Backup is not readable.'],
+      safety,
       summary: null,
       integrity: null,
     };
   }
 
+  const roles = asArray(backup.roles);
+  const channels = asArray(backup.channels);
+
   if (!SUPPORTED_BACKUP_VERSIONS.includes(Number(backup.version))) {
+    safety.unsupportedVersion = true;
     errors.push(`Unsupported backup version: ${backup.version || 'missing'}`);
   }
 
   if (!backup.backupId) errors.push('Backup is missing backupId.');
   if (!backup.createdAt) errors.push('Backup is missing createdAt.');
   if (!backup.guild?.id) errors.push('Backup is missing guild.id.');
+  if (!backup.guild?.name) warnings.push('Backup is missing guild.name.');
 
   if (
     options.guildId &&
     backup.guild?.id &&
     String(options.guildId) !== String(backup.guild.id)
   ) {
-    errors.push(
+    safety.guildMismatch = true;
+    blockers.push(
       `Backup guild mismatch. Backup belongs to ${backup.guild.id}, current guild is ${options.guildId}.`
     );
   }
@@ -265,74 +308,274 @@ function validateServerBackup(backup, options = {}) {
     errors.push('Backup channels field is missing or invalid.');
   }
 
-  for (const role of backup.roles || []) {
-    if (!role.id) errors.push(`Role "${role.name || 'unknown'}" is missing id.`);
-    if (!role.name) errors.push(`Role at ${role.id || 'unknown'} is missing name.`);
-
-    if (!isValidBitfield(role.permissions)) {
-      errors.push(`Role "${role.name || role.id}" has invalid permissions.`);
-    }
-
-    if (typeof role.position !== 'number') {
-      warnings.push(`Role "${role.name || role.id}" has no numeric position.`);
-    }
+  if (roles.length === 0 && channels.length === 0) {
+    safety.emptyBackup = true;
+    blockers.push('Backup contains no roles and no channels.');
   }
 
-  for (const channel of backup.channels || []) {
-    if (!channel.id) errors.push(`Channel "${channel.name || 'unknown'}" is missing id.`);
-    if (!channel.name) errors.push(`Channel at ${channel.id || 'unknown'} is missing name.`);
-
-    if (!isValidChannelType(channel.type)) {
-      errors.push(`Channel "${channel.name || channel.id}" has invalid type.`);
-    }
-
-    if (typeof channel.position !== 'number') {
-      warnings.push(`Channel "${channel.name || channel.id}" has no numeric position.`);
-    }
-
-    for (const overwrite of channel.permissionOverwrites || []) {
-      if (!overwrite.id) {
-        errors.push(`Channel "${channel.name}" has overwrite missing id.`);
-      }
-
-      if (overwrite.type === undefined || overwrite.type === null) {
-        errors.push(`Channel "${channel.name}" has overwrite missing type.`);
-      }
-
-      if (!isValidBitfield(overwrite.allow)) {
-        errors.push(`Channel "${channel.name}" has overwrite with invalid allow.`);
-      }
-
-      if (!isValidBitfield(overwrite.deny)) {
-        errors.push(`Channel "${channel.name}" has overwrite with invalid deny.`);
-      }
-    }
-  }
-
-  if ((backup.roles || []).length === 0) {
+  if (roles.length === 0) {
     warnings.push('Backup contains no restorable roles.');
   }
 
-  if ((backup.channels || []).length === 0) {
+  if (channels.length === 0) {
     warnings.push('Backup contains no restorable channels.');
+  }
+
+  const roleNames = roles
+    .map((role) => String(role?.name || '').trim().toLowerCase())
+    .filter(Boolean);
+
+  const duplicateRoleNames = roleNames.filter(
+    (name, index) => roleNames.indexOf(name) !== index
+  );
+
+  safety.duplicateRoleNames = [...new Set(duplicateRoleNames)];
+
+  if (safety.duplicateRoleNames.length) {
+    warnings.push(
+      `Backup contains duplicate role names: ${safety.duplicateRoleNames.join(', ')}`
+    );
+  }
+
+  const channelKeys = channels
+    .map((channel) =>
+      `${channel?.type ?? 'unknown'}:${String(channel?.name || '').trim().toLowerCase()}`
+    )
+    .filter(Boolean);
+
+  const duplicateChannelKeys = channelKeys.filter(
+    (key, index) => channelKeys.indexOf(key) !== index
+  );
+
+  safety.duplicateChannelKeys = [...new Set(duplicateChannelKeys)];
+
+  if (safety.duplicateChannelKeys.length) {
+    warnings.push(
+      `Backup contains duplicate channel names/types: ${safety.duplicateChannelKeys.join(', ')}`
+    );
+  }
+
+  for (const role of roles) {
+    const roleName = role?.name || role?.id || 'unknown role';
+
+    if (!isObject(role)) {
+      safety.invalidRoles += 1;
+      errors.push('Backup contains an invalid role entry.');
+      continue;
+    }
+
+    if (!role.id) {
+      safety.invalidRoles += 1;
+      errors.push(`Role "${roleName}" is missing id.`);
+    } else if (!isValidSnowflake(role.id)) {
+      warnings.push(`Role "${roleName}" has a non-standard id format.`);
+    }
+
+    if (!role.name) {
+      safety.invalidRoles += 1;
+      errors.push(`Role at ${role.id || 'unknown'} is missing name.`);
+    }
+
+    if (role.name === '@everyone') {
+      warnings.push('Backup includes @everyone role. It will not be recreated.');
+    }
+
+    if (!isValidBitfield(role.permissions)) {
+      safety.invalidRoles += 1;
+      errors.push(`Role "${roleName}" has invalid permissions.`);
+    }
+
+    if (typeof role.position !== 'number') {
+      warnings.push(`Role "${roleName}" has no numeric position.`);
+    }
+
+    if (role.managed) {
+      warnings.push(`Role "${roleName}" is managed and should be skipped during restore.`);
+    }
+
+    try {
+      const permissions = BigInt(role.permissions || 0);
+      const dangerousFlags = [];
+
+      const { PermissionFlagsBits } = require('discord.js');
+
+      for (const permissionName of DANGEROUS_PERMISSION_NAMES) {
+        const flag = PermissionFlagsBits[permissionName];
+
+        if (flag && (permissions & flag) === flag) {
+          dangerousFlags.push(permissionName);
+        }
+      }
+
+      if (dangerousFlags.length) {
+        safety.dangerousRoles.push({
+          id: role.id,
+          name: role.name,
+          permissions: dangerousFlags,
+        });
+
+        warnings.push(
+          `Role "${role.name}" contains dangerous permissions: ${dangerousFlags.join(', ')}`
+        );
+      }
+    } catch {
+      // already handled by bitfield validation
+    }
+  }
+
+  for (const channel of channels) {
+    const channelName = channel?.name || channel?.id || 'unknown channel';
+
+    if (!isObject(channel)) {
+      safety.invalidChannels += 1;
+      errors.push('Backup contains an invalid channel entry.');
+      continue;
+    }
+
+    if (!channel.id) {
+      safety.invalidChannels += 1;
+      errors.push(`Channel "${channelName}" is missing id.`);
+    } else if (!isValidSnowflake(channel.id)) {
+      warnings.push(`Channel "${channelName}" has a non-standard id format.`);
+    }
+
+    if (!channel.name) {
+      safety.invalidChannels += 1;
+      errors.push(`Channel at ${channel.id || 'unknown'} is missing name.`);
+    }
+
+    if (!isValidChannelType(channel.type)) {
+      safety.invalidChannels += 1;
+      errors.push(`Channel "${channelName}" has invalid type.`);
+    }
+
+    if (typeof channel.position !== 'number') {
+      warnings.push(`Channel "${channelName}" has no numeric position.`);
+    }
+
+    if (
+      channel.parentId &&
+      !channels.some((candidate) => String(candidate.id) === String(channel.parentId))
+    ) {
+      warnings.push(
+        `Channel "${channelName}" references a parent category that is not in this backup.`
+      );
+    }
+
+    if (
+      channel.permissionOverwrites !== undefined &&
+      !Array.isArray(channel.permissionOverwrites)
+    ) {
+      safety.invalidOverwrites += 1;
+      errors.push(`Channel "${channelName}" has invalid permissionOverwrites.`);
+    }
+
+    for (const overwrite of asArray(channel.permissionOverwrites)) {
+      if (!isObject(overwrite)) {
+        safety.invalidOverwrites += 1;
+        errors.push(`Channel "${channelName}" has an invalid overwrite entry.`);
+        continue;
+      }
+
+      if (!overwrite.id) {
+        safety.invalidOverwrites += 1;
+        errors.push(`Channel "${channelName}" has overwrite missing id.`);
+      } else if (!isValidSnowflake(overwrite.id)) {
+        warnings.push(`Channel "${channelName}" has overwrite with non-standard id.`);
+      }
+
+      if (overwrite.type === undefined || overwrite.type === null) {
+        safety.invalidOverwrites += 1;
+        errors.push(`Channel "${channelName}" has overwrite missing type.`);
+      }
+
+      if (!isValidBitfield(overwrite.allow)) {
+        safety.invalidOverwrites += 1;
+        errors.push(`Channel "${channelName}" has overwrite with invalid allow.`);
+      }
+
+      if (!isValidBitfield(overwrite.deny)) {
+        safety.invalidOverwrites += 1;
+        errors.push(`Channel "${channelName}" has overwrite with invalid deny.`);
+      }
+    }
+  }
+
+  if (backup.stats) {
+    if (
+      typeof backup.stats.roles === 'number' &&
+      backup.stats.roles !== roles.length
+    ) {
+      warnings.push(
+        `Backup role count mismatch. Stats say ${backup.stats.roles}, actual is ${roles.length}.`
+      );
+    }
+
+    if (
+      typeof backup.stats.channels === 'number' &&
+      backup.stats.channels !== channels.length
+    ) {
+      warnings.push(
+        `Backup channel count mismatch. Stats say ${backup.stats.channels}, actual is ${channels.length}.`
+      );
+    }
   }
 
   let integrity = null;
 
-  if (backup.path && fs.existsSync(backup.path)) {
-    integrity = validateBackupIntegrity(backup.path);
+  const backupPath =
+    backup.path ||
+    backup.filePath ||
+    backup.file ||
+    options.backupPath ||
+    null;
+
+  if (backupPath && fs.existsSync(backupPath)) {
+    integrity = validateBackupIntegrity(backupPath);
 
     if (!integrity.valid) {
-      warnings.push(`Backup integrity not verified: ${integrity.reason}`);
+      if (strict) {
+        errors.push(`Backup integrity validation failed: ${integrity.reason}`);
+      } else {
+        warnings.push(`Backup integrity not verified: ${integrity.reason}`);
+      }
     }
+  } else if (strict && options.requireIntegrityPath) {
+    errors.push('Backup integrity could not be checked because backup path is missing.');
+  } else if (!backupPath) {
+    warnings.push('Backup path missing; integrity could not be checked here.');
   }
 
+  const summary = createBackupSummary(backup);
+
+  const safe =
+    errors.length === 0 &&
+    blockers.length === 0 &&
+    !safety.emptyBackup &&
+    !safety.guildMismatch &&
+    !safety.unsupportedVersion;
+
   return {
-    valid: errors.length === 0,
+    valid: errors.length === 0 && blockers.length === 0,
+    safe,
     errors,
     warnings,
-    summary: createBackupSummary(backup),
+    blockers,
+    safety,
+    summary,
     integrity,
+
+    counts: {
+      roles: roles.length,
+      uniqueRoleNames: uniqueCount(roleNames),
+      channels: channels.length,
+      uniqueChannelKeys: uniqueCount(channelKeys),
+      permissionOverwrites: channels.reduce(
+        (total, channel) => total + asArray(channel.permissionOverwrites).length,
+        0
+      ),
+      dangerousRoles: safety.dangerousRoles.length,
+    },
   };
 }
 
@@ -628,6 +871,7 @@ function getBackupSummaries(guildId) {
       integrity: backup.integrity || null,
       validation: validateServerBackup(backup, {
         guildId: backup.guild?.id,
+        strict: false,
       }),
     }));
 }
@@ -653,6 +897,7 @@ function getRollbackSummaries(guildId) {
       integrity: backup.integrity || null,
       validation: validateServerBackup(backup, {
         guildId: backup.guild?.id,
+        strict: false,
       }),
     }));
 }
