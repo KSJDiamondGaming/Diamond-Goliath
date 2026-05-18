@@ -1,14 +1,6 @@
-const path = require('path');
+const { getRuntimePaths } = require('../config/runtimePaths');
 
-const {
-  getRuntimePaths,
-} = require('../config/runtimePaths');
-
-const runtimePaths = getRuntimePaths(
-  process.env.BOT_MODE || 'DEV'
-);
-
-/* ---------------- LOGS ---------------- */
+const runtimePaths = getRuntimePaths(process.env.BOT_MODE || 'DEV');
 
 const DEFAULT_LOGS = Object.freeze({
   enabled: true,
@@ -50,11 +42,8 @@ const DEFAULT_LOGS = Object.freeze({
   },
 });
 
-/* ---------------- SECURITY ---------------- */
-
 const DEFAULT_SECURITY = Object.freeze({
   enabled: true,
-
   threatLevel: 'low',
 
   totalIncidents: 0,
@@ -62,7 +51,6 @@ const DEFAULT_SECURITY = Object.freeze({
 
   lastIncidentAt: null,
   lastIncidentType: null,
-
   lastLockdownAt: null,
   lastQuarantineAt: null,
 
@@ -70,15 +58,11 @@ const DEFAULT_SECURITY = Object.freeze({
 
   lockdown: {
     active: false,
-
     enabledBy: null,
     enabledAt: null,
-
     reason: null,
     expiresAt: null,
-
     channels: [],
-
     bypassRoleIds: [],
   },
 
@@ -87,8 +71,6 @@ const DEFAULT_SECURITY = Object.freeze({
     webhookMirrorEnabled: true,
   },
 });
-
-/* ---------------- SERVER BACKUPS ---------------- */
 
 const DEFAULT_SERVER_BACKUPS = Object.freeze({
   enabled: true,
@@ -102,25 +84,16 @@ const DEFAULT_SERVER_BACKUPS = Object.freeze({
   latestBackup: null,
 
   storage: {
-    provider: 'google_drive_desktop',
-
-    path:
-      process.env.SERVER_BACKUP_DIR ||
-      runtimePaths.backups,
-
+    provider: 'local_runtime',
+    path: process.env.SERVER_BACKUP_DIR || runtimePaths.backups,
     restoreRequiresSupport: true,
   },
 
   retention: {
-    maxBackups: Number(
-      process.env.SERVER_BACKUP_RETENTION || 4
-    ),
-
+    maxBackups: Number(process.env.SERVER_BACKUP_RETENTION || 4),
     autoCleanup: true,
   },
 });
-
-/* ---------------- EMBED DEFAULTS ---------------- */
 
 const DEFAULT_EMBED_DEFAULTS = Object.freeze({
   welcome: null,
@@ -134,19 +107,37 @@ const DEFAULT_EMBED_DEFAULTS = Object.freeze({
   warning: null,
 });
 
-/* ---------------- GUILD DATA ---------------- */
+const DEFAULT_GENERAL_SETTINGS = Object.freeze({
+  prefix: '/',
+  appealUrl: '',
+  dashboardEnabled: true,
+
+  managerRoleIds: [],
+  dashboardAccessRoleIds: [],
+  commandManagerRoleIds: [],
+  restrictedChannelIds: [],
+
+  commandNotFoundEnabled: true,
+  wrongCommandUsageEnabled: true,
+  noCommandPermissionsEnabled: true,
+  disabledInChannelEnabled: false,
+  commandCooldownEnabled: true,
+
+  instantDeleteDataEnabled: false,
+});
 
 const DEFAULT_GUILD_DATA = Object.freeze({
   guildId: null,
   guildName: null,
-
   updatedAt: null,
 
   general: {
     enabled: true,
-    prefix: '!',
+    prefix: '/',
     timezone: 'Europe/London',
   },
+
+  generalSettings: DEFAULT_GENERAL_SETTINGS,
 
   modules: {},
 
@@ -156,7 +147,6 @@ const DEFAULT_GUILD_DATA = Object.freeze({
 
   logs: DEFAULT_LOGS,
   security: DEFAULT_SECURITY,
-
   serverBackups: DEFAULT_SERVER_BACKUPS,
 
   stats: {},
@@ -201,4 +191,5 @@ module.exports = {
   DEFAULT_SECURITY,
   DEFAULT_SERVER_BACKUPS,
   DEFAULT_EMBED_DEFAULTS,
+  DEFAULT_GENERAL_SETTINGS,
 };

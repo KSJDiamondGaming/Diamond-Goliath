@@ -39,6 +39,7 @@ const discordRoutes = require('./src/server/routes/discord');
 const statusRoutes = require('./src/server/routes/status');
 
 const automodRoutes = require('./src/server/routes/config/automod');
+const generalSettingsRoutes = require('./src/server/routes/config/generalSettings');
 const logsRoutes = require('./src/server/routes/config/logs');
 const messagesRoutes = require('./src/server/routes/config/messages');
 const embedsRoutes = require('./src/server/routes/config/embeds');
@@ -249,6 +250,7 @@ function startDashboardApiServer() {
   app.use('/api/discord', discordRoutes);
   app.use('/api/status', statusRoutes);
 
+  app.use('/api/config', generalSettingsRoutes);
   app.use('/api/config/automod', automodRoutes);
   app.use('/api/config/logs', logsRoutes);
   app.use('/api/config/messages', messagesRoutes);

@@ -101,12 +101,12 @@ function SidebarIcon({ type, active, color }) {
         </svg>
       );
 
+    case 'generalSettings':
     case 'config':
       return (
         <svg {...baseProps}>
-          <path d="M12 3l1.7 4.3L18 9l-4.3 1.7L12 15l-1.7-4.3L6 9l4.3-1.7L12 3z" />
-          <path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z" />
-          <path d="M5 14l.8 2.2L8 17l-2.2.8L5 20l-.8-2.2L2 17l2.2-.8L5 14z" />
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1A2 2 0 1 1 4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.3 7A2 2 0 1 1 7.1 4.2l.1.1a1.7 1.7 0 0 0 1.9.3h.1A1.7 1.7 0 0 0 10 3V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.6h.1a1.7 1.7 0 0 0 1.9-.3l.1-.1A2 2 0 1 1 19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9v.1a1.7 1.7 0 0 0 1.6 1h.1a2 2 0 1 1 0 4H21a1.7 1.7 0 0 0-1.6 1z" />
         </svg>
       );
 
@@ -365,20 +365,26 @@ function Navbar({
                       const childHovered = hoveredNavKey === childKey;
                       const childPressed = pressedNavKey === childKey;
 
+                      const baseChildStyle = styles.navItem(
+                        childActive,
+                        expanded,
+                        canNavigate,
+                        childHovered,
+                        childPressed,
+                      );
+
                       return (
                         <button
                           key={child.key}
                           type="button"
                           onClick={() => handleNavigate(child)}
                           style={{
-                            ...styles.navItem(
-                              childActive,
-                              expanded,
-                              canNavigate,
-                              childHovered,
-                              childPressed,
-                            ),
+                            ...baseChildStyle,
+                            paddingTop: baseChildStyle.paddingTop || '12px',
+                            paddingRight: baseChildStyle.paddingRight || '12px',
+                            paddingBottom: baseChildStyle.paddingBottom || '12px',
                             paddingLeft: '38px',
+                            padding: undefined,
                           }}
                           title={expanded ? undefined : child.label}
                           disabled={!canNavigate || !child.path}

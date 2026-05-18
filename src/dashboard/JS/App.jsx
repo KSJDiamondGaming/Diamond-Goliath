@@ -23,7 +23,7 @@ const GUILD_REQUIRED_ROUTES = new Set([
   'cases',
   'warnings',
   'automod',
-  'config',
+  'generalSettings',
   'messages',
   'logs',
   'admin',

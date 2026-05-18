@@ -1,13 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import RestoreConfirmModal from '../shared/RestoreConfirmModal';
+import { api } from '../api';
 
 import {
   createRestorePageStyles,
   getTheme,
 } from '../ui/system';
-
-const API_BASE =
-  import.meta.env.VITE_API_BASE || '';
 
 export default function Restore({
   selectedGuild,
@@ -15,6 +13,7 @@ export default function Restore({
 }) {
   const theme = providedTheme || getTheme(true);
   const styles = createRestorePageStyles(theme);
+  const API_BASE = api.getApiBase();
 
   const guildId = selectedGuild;
 
@@ -33,12 +32,26 @@ export default function Restore({
   const [showConfirm, setShowConfirm] = useState(false);
 
   const selectedBackupSummary = useMemo(() => {
-    return (
-      backups.find(
-        (backup) => backup.backupId === selectedBackupId,
-      ) || null
-    );
+    return backups.find((backup) => backup.backupId === selectedBackupId) || null;
   }, [backups, selectedBackupId]);
+
+  async function readJsonResponse(response, fallbackMessage) {
+    const text = await response.text();
+
+    let data = null;
+
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      throw new Error(fallbackMessage || 'Server returned an invalid response.');
+    }
+
+    if (!response.ok || data.success === false) {
+      throw new Error(data.error || fallbackMessage || 'Request failed.');
+    }
+
+    return data;
+  }
 
   async function fetchBackups() {
     if (!guildId) return;
@@ -49,28 +62,22 @@ export default function Restore({
     try {
       const response = await fetch(
         `${API_BASE}/api/server-restore/${guildId}/backups`,
+        {
+          credentials: 'include',
+        },
       );
 
-      const data = await response.json();
+      const data = await readJsonResponse(response, 'Failed to load backups.');
 
-      if (!data.success) {
-        throw new Error(
-          data.error || 'Failed to load backups.',
-        );
-      }
+      const nextBackups = Array.isArray(data.backups) ? data.backups : [];
 
-      setBackups(data.backups || []);
+      setBackups(nextBackups);
 
-      if (
-        !selectedBackupId &&
-        data.backups?.[0]?.backupId
-      ) {
-        setSelectedBackupId(
-          data.backups[0].backupId,
-        );
+      if (!selectedBackupId && nextBackups[0]?.backupId) {
+        setSelectedBackupId(nextBackups[0].backupId);
       }
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'Failed to load backups.');
     } finally {
       setLoadingBackups(false);
     }
@@ -85,19 +92,16 @@ export default function Restore({
     try {
       const response = await fetch(
         `${API_BASE}/api/server-restore/${guildId}/backups/${backupId}`,
+        {
+          credentials: 'include',
+        },
       );
 
-      const data = await response.json();
+      const data = await readJsonResponse(response, 'Failed to load backup.');
 
-      if (!data.success) {
-        throw new Error(
-          data.error || 'Failed to load backup.',
-        );
-      }
-
-      setSelectedBackup(data.backup);
+      setSelectedBackup(data.backup || null);
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'Failed to load backup.');
     }
   }
 
@@ -114,6 +118,7 @@ export default function Restore({
         `${API_BASE}/api/server-restore/${guildId}/restore/preview`,
         {
           method: 'POST',
+          credentials: 'include',
           headers: {
             'Content-Type': 'application/json',
           },
@@ -130,17 +135,11 @@ export default function Restore({
         },
       );
 
-      const data = await response.json();
+      const data = await readJsonResponse(response, 'Restore preview failed.');
 
-      if (!data.success) {
-        throw new Error(
-          data.error || 'Restore preview failed.',
-        );
-      }
-
-      setPreview(data.report);
+      setPreview(data.report || null);
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'Restore preview failed.');
     } finally {
       setLoadingPreview(false);
     }
@@ -158,6 +157,7 @@ export default function Restore({
         `${API_BASE}/api/server-restore/${guildId}/restore/execute`,
         {
           method: 'POST',
+          credentials: 'include',
           headers: {
             'Content-Type': 'application/json',
           },
@@ -176,20 +176,14 @@ export default function Restore({
         },
       );
 
-      const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(
-          data.error || 'Restore failed.',
-        );
-      }
+      const data = await readJsonResponse(response, 'Restore failed.');
 
       setResult(data);
       setShowConfirm(false);
 
       await fetchBackups();
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'Restore failed.');
     } finally {
       setExecuting(false);
     }
@@ -197,6 +191,7 @@ export default function Restore({
 
   useEffect(() => {
     fetchBackups();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [guildId]);
 
   useEffect(() => {
@@ -206,9 +201,10 @@ export default function Restore({
 
     setPreview(null);
     setResult(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBackupId]);
 
-    return (
+  return (
     <div style={styles.page}>
       <section style={styles.hero}>
         <h1 style={styles.heroTitle}>Full Server Restore</h1>
@@ -309,9 +305,7 @@ export default function Restore({
                     <span style={styles.summaryLabel}>Created</span>
                     <strong>
                       {selectedBackupSummary.createdAt
-                        ? new Date(
-                            selectedBackupSummary.createdAt,
-                          ).toLocaleString()
+                        ? new Date(selectedBackupSummary.createdAt).toLocaleString()
                         : 'Unknown'}
                     </strong>
                   </div>
@@ -340,9 +334,7 @@ export default function Restore({
                       onClick={runPreview}
                       disabled={loadingPreview}
                     >
-                      {loadingPreview
-                        ? 'Running Preview...'
-                        : 'Run Safe Preview'}
+                      {loadingPreview ? 'Running Preview...' : 'Run Safe Preview'}
                     </button>
 
                     <button

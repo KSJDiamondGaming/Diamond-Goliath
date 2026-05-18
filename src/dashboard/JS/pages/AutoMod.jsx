@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { api, joinGuildRoom, listenForGuildUpdate } from '../api';
 import PageShell, {
   LoadingPanel,
@@ -8,7 +8,7 @@ import PageShell, {
   StatGrid,
   SummaryStat,
 } from '../shared/PageShell';
-import { SECTION_DEFS } from "../ui/layout";
+import { PAGE_LAYOUTS, SECTION_DEFS } from "../ui/layout";
 import { createAutoModPageStyles } from "../ui/components";
 
 const PAGE_KEY = 'automod';

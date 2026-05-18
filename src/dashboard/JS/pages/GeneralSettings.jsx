@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import PageShell, {
   EmptyState,
@@ -7,10 +7,13 @@ import PageShell, {
   StatGrid,
   SummaryStat,
 } from '../shared/PageShell';
-import { SECTION_DEFS } from "../ui/layout";
-import { createAutoModPageStyles } from "../ui/components";
+import { PAGE_LAYOUTS } from '../ui/layout';
+import {
+  createConfigPageStyles,
+  createDashboardControlStyles,
+} from '../ui/components';
 
-const PAGE_KEY = 'config';
+const PAGE_KEY = 'generalSettings';
 
 const DEFAULT_FORM = {
   prefix: '/',
@@ -39,7 +42,7 @@ const DEFAULT_OPEN_SECTIONS = {
   data: false,
 };
 
-export default function Config({ selectedGuild, theme }) {
+export default function GeneralSettings({ selectedGuild, theme }) {
   const configStyles = useMemo(() => createConfigPageStyles(theme), [theme]);
   const controlStyles = useMemo(() => createDashboardControlStyles(theme), [theme]);
 
@@ -114,31 +117,33 @@ export default function Config({ selectedGuild, theme }) {
         setSaveMessage('');
 
         const [data, channelsResult] = await Promise.all([
-          api.getConfig(selectedGuild),
+          api.getGeneralSettings(selectedGuild),
           api.getGuildChannels(selectedGuild).catch(() => []),
         ]);
 
         if (!mounted) return;
 
+        const config = data?.config || data || {};
+
         setChannels(Array.isArray(channelsResult) ? channelsResult : []);
 
         setForm({
-          prefix: data?.prefix || '/',
-          appealUrl: data?.appealUrl || '',
-          dashboardEnabled: data?.dashboardEnabled !== false,
+          prefix: config?.prefix || '/',
+          appealUrl: config?.appealUrl || '',
+          dashboardEnabled: config?.dashboardEnabled !== false,
 
-          managerRoleIds: safeArray(data?.managerRoleIds),
-          dashboardAccessRoleIds: safeArray(data?.dashboardAccessRoleIds),
-          commandManagerRoleIds: safeArray(data?.commandManagerRoleIds),
-          restrictedChannelIds: safeArray(data?.restrictedChannelIds),
+          managerRoleIds: safeArray(config?.managerRoleIds),
+          dashboardAccessRoleIds: safeArray(config?.dashboardAccessRoleIds),
+          commandManagerRoleIds: safeArray(config?.commandManagerRoleIds),
+          restrictedChannelIds: safeArray(config?.restrictedChannelIds),
 
-          commandNotFoundEnabled: data?.commandNotFoundEnabled !== false,
-          wrongCommandUsageEnabled: data?.wrongCommandUsageEnabled !== false,
-          noCommandPermissionsEnabled: data?.noCommandPermissionsEnabled !== false,
-          disabledInChannelEnabled: data?.disabledInChannelEnabled === true,
-          commandCooldownEnabled: data?.commandCooldownEnabled !== false,
+          commandNotFoundEnabled: config?.commandNotFoundEnabled !== false,
+          wrongCommandUsageEnabled: config?.wrongCommandUsageEnabled !== false,
+          noCommandPermissionsEnabled: config?.noCommandPermissionsEnabled !== false,
+          disabledInChannelEnabled: config?.disabledInChannelEnabled === true,
+          commandCooldownEnabled: config?.commandCooldownEnabled !== false,
 
-          instantDeleteDataEnabled: data?.instantDeleteDataEnabled === true,
+          instantDeleteDataEnabled: config?.instantDeleteDataEnabled === true,
         });
       } catch (err) {
         console.error(err);
@@ -201,7 +206,7 @@ export default function Config({ selectedGuild, theme }) {
       setSaveMessage('');
       setError('');
 
-      await api.updateConfig(selectedGuild, {
+      await api.updateGeneralSettings(selectedGuild, {
         prefix: form.prefix || '/',
         appealUrl: form.appealUrl || '',
         dashboardEnabled: Boolean(form.dashboardEnabled),

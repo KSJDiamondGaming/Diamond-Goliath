@@ -6,13 +6,11 @@ const router = express.Router();
 const DISCORD_API = 'https://discord.com/api/v10';
 
 const GUILD_CACHE_TTL_MS = 15 * 1000;
-const CHANNEL_CACHE_TTL_MS = 30 * 1000;
 
 const ADMINISTRATOR_PERMISSION = BigInt(0x8);
 const MANAGE_GUILD_PERMISSION = BigInt(0x20);
 
 const guildCache = new Map();
-const channelCache = new Map();
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -40,11 +38,7 @@ function requireBotToken() {
 }
 
 function getBotMode() {
-  return String(
-    process.env.BOT_MODE ||
-      process.env.NODE_ENV ||
-      ''
-  )
+  return String(process.env.BOT_MODE || process.env.NODE_ENV || '')
     .trim()
     .toUpperCase();
 }
@@ -71,9 +65,7 @@ function isConfiguredDevGuild(guildId) {
     return false;
   }
 
-  const configuredGuildIds = getConfiguredDevGuildIds();
-
-  return configuredGuildIds.includes(String(guildId));
+  return getConfiguredDevGuildIds().includes(String(guildId));
 }
 
 function getCache(cache, cacheKey) {
@@ -119,9 +111,7 @@ function canAccessGuild(guild, botGuildIds) {
 
   if (!guildId) return false;
 
-  const botInGuild = botGuildIds.has(guildId);
-
-  if (!botInGuild) {
+  if (!botGuildIds.has(guildId)) {
     return false;
   }
 
@@ -180,6 +170,7 @@ function buildGuildIconUrl(guild) {
   if (!guild?.id || !guild?.icon) return null;
 
   const ext = String(guild.icon).startsWith('a_') ? 'gif' : 'png';
+
   return `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.${ext}?size=256`;
 }
 
@@ -193,12 +184,21 @@ function getSessionAccessToken(req) {
   );
 }
 
-function getClientGuilds(req) {
-  const client =
+function getDiscordClient(req) {
+  return (
     req.app?.locals?.client ||
     req.app?.locals?.discordClient ||
+    req.app?.get?.('client') ||
+    req.app?.get?.('discordClient') ||
     req.client ||
-    null;
+    global.client ||
+    global.discordClient ||
+    null
+  );
+}
+
+function getClientGuilds(req) {
+  const client = getDiscordClient(req);
 
   if (!client?.guilds?.cache) return [];
 
@@ -207,6 +207,16 @@ function getClientGuilds(req) {
     name: guild.name,
     icon: guild.icon || null,
   }));
+}
+
+function getGuildFromClient(req, guildId) {
+  const client = getDiscordClient(req);
+
+  if (!client?.guilds?.cache) {
+    return null;
+  }
+
+  return client.guilds.cache.get(String(guildId)) || null;
 }
 
 async function fetchJson(url, options = {}, retryCount = 0) {
@@ -264,16 +274,6 @@ async function fetchBotGuilds(req) {
   const botToken = requireBotToken();
 
   return fetchJson(`${DISCORD_API}/users/@me/guilds`, {
-    headers: {
-      Authorization: `Bot ${botToken}`,
-    },
-  });
-}
-
-async function fetchGuildChannels(guildId) {
-  const botToken = requireBotToken();
-
-  return fetchJson(`${DISCORD_API}/guilds/${guildId}/channels`, {
     headers: {
       Authorization: `Bot ${botToken}`,
     },
@@ -415,38 +415,122 @@ router.get('/guilds/:guildId/channels', async (req, res) => {
     const { guildId } = req.params;
 
     if (!req.session?.user) {
-      return res.status(401).json({ error: 'Not authenticated' });
+      return res.status(401).json({
+        success: false,
+        error: 'Not authenticated',
+      });
     }
 
-    const cacheKey = `channels:${guildId}`;
-    const cachedChannels = getCache(channelCache, cacheKey);
+    const guild = getGuildFromClient(req, guildId);
 
-    if (cachedChannels) {
-      return res.json(cachedChannels);
+    if (!guild) {
+      return res.status(404).json({
+        success: false,
+        error: 'Guild not found in Discord client cache',
+        guildId,
+      });
     }
 
-    const channels = await fetchGuildChannels(guildId);
+    await guild.channels.fetch().catch(() => null);
 
-    const textChannels = channels
-      .filter((channel) => channel && (channel.type === 0 || channel.type === 5))
+    const channels = guild.channels.cache
+      .filter((channel) => channel?.id && channel?.name)
+      .filter(
+        (channel) =>
+          channel.type === 0 || // GuildText
+          channel.type === 5 // GuildAnnouncement
+      )
       .map((channel) => ({
         id: channel.id,
         name: channel.name,
         type: channel.type,
-        position: channel.position ?? 0,
+        position: channel.rawPosition ?? channel.position ?? 0,
+        parentId: channel.parentId || null,
       }))
       .sort((a, b) => {
-        const diff = a.position - b.position;
-        if (diff !== 0) return diff;
+        const positionDiff = a.position - b.position;
+
+        if (positionDiff !== 0) {
+          return positionDiff;
+        }
+
         return a.name.localeCompare(b.name);
       });
 
-    setCache(channelCache, cacheKey, textChannels, CHANNEL_CACHE_TTL_MS);
-
-    return res.json(textChannels);
+    return res.json({
+      success: true,
+      guildId,
+      count: channels.length,
+      channels,
+    });
   } catch (error) {
     console.error('❌ Failed to fetch guild channels:', error);
-    return res.status(500).json({ error: 'Failed to fetch guild channels' });
+
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to fetch guild channels',
+    });
+  }
+});
+
+router.get('/guilds/:guildId/roles', async (req, res) => {
+  try {
+    const { guildId } = req.params;
+
+    if (!req.session?.user) {
+      return res.status(401).json({
+        success: false,
+        error: 'Not authenticated',
+      });
+    }
+
+    const guild = getGuildFromClient(req, guildId);
+
+    if (!guild) {
+      return res.status(404).json({
+        success: false,
+        error: 'Guild not found in Discord client cache',
+        guildId,
+      });
+    }
+
+    await guild.roles.fetch().catch(() => null);
+
+    const roles = guild.roles.cache
+      .filter((role) => role?.id && role?.name)
+      .filter((role) => role.id !== guild.id)
+      .filter((role) => !role.managed)
+      .map((role) => ({
+        id: role.id,
+        name: role.name,
+        color: role.hexColor || '#99aab5',
+        position: role.position ?? 0,
+        managed: Boolean(role.managed),
+        editable: Boolean(role.editable),
+      }))
+      .sort((a, b) => {
+        const positionDiff = b.position - a.position;
+
+        if (positionDiff !== 0) {
+          return positionDiff;
+        }
+
+        return a.name.localeCompare(b.name);
+      });
+
+    return res.json({
+      success: true,
+      guildId,
+      count: roles.length,
+      roles,
+    });
+  } catch (error) {
+    console.error('❌ Failed to fetch guild roles:', error);
+
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to fetch guild roles',
+    });
   }
 });
 

@@ -2,7 +2,7 @@ import Overview from '../pages/Overview';
 import AutoMod from '../pages/AutoMod';
 import Admin from '../pages/Admin';
 import Moderation from '../pages/Moderation';
-import Config from '../pages/Config';
+import GeneralSettings from '../pages/GeneralSettings';
 import Cases from '../pages/Cases';
 import Warnings from '../pages/Warnings';
 import Messages from '../pages/Messages';
@@ -27,7 +27,7 @@ export const NAV_ITEMS = [
     label: 'Admin',
     icon: 'admin',
     children: [
-      { key: 'config', label: 'General Settings', icon: 'config', path: '/config' },
+      { key: 'generalSettings', label: 'General Settings', icon: 'generalSettings', path: '/generalSettings' },
       { key: 'automod', label: 'Auto Mod', icon: 'automod', path: '/automod' },
       { key: 'admin', label: 'Admin', icon: 'admin', path: '/admin' },
       { key: 'moderation', label: 'Moderation', icon: 'admin', path: '/moderation' },
@@ -52,7 +52,7 @@ export const NAV_BOTTOM = [
 
 export const ROUTES = [
   { key: 'overview', label: 'Overview', icon: 'overview', path: '/overview', component: Overview },
-  { key: 'config', label: 'General Settings', icon: 'config', path: '/config', component: Config },
+  { key: 'generalSettings', label: 'General Settings', icon: 'generalSettings', path: '/generalSettings', component: GeneralSettings },
   { key: 'automod', label: 'Auto Mod', icon: 'automod', path: '/automod', component: AutoMod },
   { key: 'admin', label: 'Admin', icon: 'admin', path: '/admin', component: Admin },
   { key: 'moderation', label: 'Moderation', icon: 'admin', path: '/moderation', component: Moderation },
@@ -73,6 +73,14 @@ export const PAGE_LAYOUTS = {
     sections: [
       { id: 'stats', type: 'stats' },
       { id: 'activity', type: 'list' },
+    ],
+  },
+  generalSettings: {
+    title: 'General Settings',
+    description: 'Manage dashboard and server configuration for the selected server.',
+    emptyDescription: 'Select a server to manage settings.',
+    sections: [
+      { id: 'generalConfig', type: 'config' },
     ],
   },
   automod: {
@@ -105,12 +113,6 @@ export const PAGE_LAYOUTS = {
     description: 'View and manage warning records for the selected server.',
     emptyDescription: 'Select a server to view warnings.',
     sections: [{ id: 'warningTable', type: 'table' }],
-  },
-  config: {
-    title: 'General Settings',
-    description: 'Manage dashboard and server configuration for the selected server.',
-    emptyDescription: 'Select a server to manage settings.',
-    sections: [{ id: 'generalConfig', type: 'config' }],
   },
   messages: {
     title: 'Welcome & Leave',

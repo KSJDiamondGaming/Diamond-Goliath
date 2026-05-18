@@ -173,8 +173,12 @@ export const api = {
     return request('/api/discord/debug-guilds');
   },
 
-  getGuildChannels(guildId) {
+    getGuildChannels(guildId) {
     return request(`/api/discord/guilds/${guildId}/channels`);
+  },
+
+  getGuildRoles(guildId) {
+    return request(`/api/discord/guilds/${guildId}/roles`);
   },
 
   getStatus(guildId) {
@@ -190,12 +194,20 @@ export const api = {
     return request(`/api/cases/${guildId}/warnings`);
   },
 
-  getConfig(guildId) {
-    return request(`/api/config/${guildId}`);
+    getGeneralSettings(guildId) {
+    return request(`/api/config/general/${guildId}`);
   },
 
-  updateConfig(guildId, body) {
-    return jsonPost(`/api/config/${guildId}`, body);
+  updateGeneralSettings(guildId, data) {
+    clearCache();
+
+    return request(`/api/config/general/${guildId}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
+    });
   },
 
   getMessages(guildId) {
