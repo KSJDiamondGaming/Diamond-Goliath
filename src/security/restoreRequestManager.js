@@ -201,6 +201,58 @@ function formatMs(ms) {
   return `${mins} minute${mins === 1 ? '' : 's'}`;
 }
 
+function formatList(items = [], labelKey = 'name', max = 8) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return 'None';
+  }
+
+  return items
+    .slice(0, max)
+    .map(
+      (item) =>
+        `- ${item[labelKey] || item.name || item.role || 'Unknown'}`
+    )
+    .join('\n');
+}
+
+function formatRestoreImpact(diff) {
+  if (!diff) {
+    return 'No restore diff available.';
+  }
+
+  return safeField(
+    [
+      '**Roles Added**',
+      formatList(diff.roles?.added),
+      '',
+
+      '**Roles Removed**',
+      formatList(diff.roles?.removed),
+      '',
+
+      '**Roles Changed**',
+      formatList(
+        diff.roles?.changed?.map((x) => x.after)
+      ),
+      '',
+
+      '**Channels Added**',
+      formatList(diff.channels?.added),
+      '',
+
+      '**Channels Removed**',
+      formatList(diff.channels?.removed),
+      '',
+
+      '**Channels Changed**',
+      formatList(
+        diff.channels?.changed?.map((x) => x.after)
+      ),
+    ].join('\n'),
+    1000
+  );
+}
+
 function safeField(value, max = 1000) {
   const text = String(value || 'None');
   return text.length > max ? `${text.slice(0, max - 3)}...` : text;
@@ -549,6 +601,11 @@ function buildRequestEmbed(request) {
       {
         name: 'Restore Diff Preview',
         value: request.previewSummary || 'Preview unavailable.',
+        inline: false,
+      },
+      {
+        name: 'Restore Impact',
+        value: formatRestoreImpact(diff),
         inline: false,
       },
       {
