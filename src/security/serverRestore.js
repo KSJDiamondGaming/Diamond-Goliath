@@ -986,9 +986,72 @@ async function previewRestore(guild, options = {}) {
 }
 
 async function executeRestore(guild, options = {}) {
+  if (!guild) {
+    throw new Error('Restore blocked: missing guild.');
+  }
+
+  const restoreRequestId = options.restoreRequestId || null;
+  const preview = options.preview || null;
+  const rollbackBackupId = options.rollbackBackupId || null;
+
+  if (!restoreRequestId) {
+    throw new Error('Restore blocked: missing restore request ID.');
+  }
+
+  if (!preview) {
+    throw new Error('Restore blocked: missing validated restore preview.');
+  }
+
+  if (!rollbackBackupId) {
+    throw new Error('Restore blocked: rollback snapshot was not created.');
+  }
+
+  const integrity = preview.integrity || null;
+
+  if (!integrity) {
+    throw new Error('Restore blocked: integrity metadata missing.');
+  }
+
+  if (integrity.verified !== true) {
+    throw new Error('Restore blocked: integrity verification failed.');
+  }
+
+  if (integrity.hashValid === false) {
+    throw new Error('Restore blocked: backup hash invalid.');
+  }
+
+  if (integrity.corruptionCheck === false) {
+    throw new Error('Restore blocked: corruption detected.');
+  }
+
+  const restoreDiff = preview.restoreDiff || null;
+
+  if (!restoreDiff) {
+    throw new Error('Restore blocked: restore diff missing.');
+  }
+
+  if (restoreDiff.safe === false) {
+    throw new Error('Restore blocked: restore diff marked unsafe.');
+  }
+
+  if (Array.isArray(restoreDiff.blockers) && restoreDiff.blockers.length > 0) {
+    throw new Error(
+      `Restore blocked: ${restoreDiff.blockers.join(', ')}`
+    );
+  }
+
+  if (restoreDiff.riskLevel === 'CRITICAL') {
+    throw new Error('Restore blocked: CRITICAL risk restore.');
+  }
+
+  console.log(`[RESTORE] Safety validation passed for ${guild.name}`);
+  console.log(`[RESTORE] Risk Level: ${restoreDiff.riskLevel || 'UNKNOWN'}`);
+  console.log(`[RESTORE] Rollback Snapshot: ${rollbackBackupId}`);
+
   const backupId =
     options.backupId ||
     options.selectedBackupId ||
+    preview.backupId ||
     getLatestServerBackupId(guild.id);
 
   return restoreServerBackup(guild, backupId, {
