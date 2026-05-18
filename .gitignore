@@ -1,18 +1,31 @@
 # ======================
+
 # Dependencies
+
 # ======================
+
 node_modules/
 
 # ======================
-# Environment variables
+
+# Environment Variables / Secrets
+
 # ======================
+
 .env
 .env.*
 !.env.example
 
+# accidental env backups
+
+*.env.backup
+
 # ======================
+
 # Logs
+
 # ======================
+
 logs/
 *.log
 npm-debug.log*
@@ -20,73 +33,124 @@ yarn-debug.log*
 pnpm-debug.log*
 
 # ======================
-# Runtime / temp
+
+# Runtime / Temp
+
 # ======================
+
 tmp/
 temp/
+runtime/
+backups/
+
 *.tmp
+*.temp
+*.pid
+
+# PM2
+
+.pm2/
+.pids/
 
 # ======================
-# OS files
-# ======================
-.DS_Store
-Thumbs.db
+
+# Build Output
 
 # ======================
-# Editor / IDE
-# ======================
-.vscode/
-.idea/
-*.swp
-*.swo
 
-# ======================
-# Build output (client)
-# ======================
-dashboard/client/dist/
 dist/
 build/
 
+# dashboard builds
+
+src/dashboard/dist/
+dashboard/client/dist/
+
+# vite
+
+vite.config.timestamp-*
+
 # ======================
+
 # Cache
+
 # ======================
+
 .cache/
 .eslintcache
 
 # ======================
-# Local data (IMPORTANT)
-# ======================
-server/data/guilds/
-dashboard/server/data/guilds/
+
+# Local Runtime Data
 
 # ======================
-# SQLite (if used)
-# ======================
-*.db
-*.sqlite
-*.sqlite3
 
-# ======================
-# Coverage
-# ======================
-coverage/
-
-# ======================
-# Misc
-# ======================
-*.bak
-*.old
-*.backup
-# Runtime/generated data
 data/
 src/runtime/
 src/guild/data/
 
-# SQLite runtime files
+server/data/guilds/
+dashboard/server/data/guilds/
+
+# ======================
+
+# SQLite / Database Files
+
+# ======================
+
+*.db
+*.sqlite
+*.sqlite3
+
 *.sqlite-shm
 *.sqlite-wal
 *.sqlite-journal
 
-# Keep placeholders if ever needed
+# ======================
+
+# Coverage
+
+# ======================
+
+coverage/
+
+# ======================
+
+# OS Files
+
+# ======================
+
+.DS_Store
+Thumbs.db
+
+# ======================
+
+# Editor / IDE
+
+# ======================
+
+.vscode/
+.idea/
+
+*.swp
+*.swo
+
+# ======================
+
+# Backup / Old Files
+
+# ======================
+
+*.bak
+*.backup
+*.old
+*~
+
+# ======================
+
+# Git Keepers
+
+# ======================
+
 !.gitkeep
 !important-runtime-files-if-needed

@@ -29,3 +29,7 @@ Manage Channels
 View Audit Log
 Manage Webhooks
 Ban/Kick/Timeout if used elsewhere
+
+npm run sync:dev
+npm run promote:beta
+npm run promote:production
