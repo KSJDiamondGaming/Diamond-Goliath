@@ -415,17 +415,28 @@ async function enableLockdown(guild, options = {}) {
     }
   }
 
+  const lockdownExpiresAt =
+  options.durationMs && Number(options.durationMs) > 0
+    ? enabledAt + Number(options.durationMs)
+    : null;
+
   saveLockdownState(guild, {
     active: true,
     enabledBy,
     enabledAt,
     reason,
+
+    lockdownMode: options.lockdownMode || null,
+    severity: options.severity || null,
+    lockdownStartedAt: enabledAt,
+    lockdownExpiresAt,
+
     reminderChannelId,
     reminderUserId,
     lastReminderAt: null,
     channels: savedChannels,
     bypassRoleIds,
-  });
+});
 
   if (reminderChannelId && reminderUserId) {
     startLockdownReminder(guild, reminderChannelId, reminderUserId);
@@ -447,6 +458,12 @@ async function enableLockdown(guild, options = {}) {
     metadata: {
       lockedChannels: locked,
       bypassRoles: bypassRoleIds.length,
+
+      lockdownMode: options.lockdownMode || null,
+      severity: options.severity || null,
+      lockdownStartedAt: enabledAt,
+      lockdownExpiresAt,
+
       reminderEnabled: Boolean(reminderChannelId && reminderUserId),
       reminderChannelId,
       reminderUserId,
@@ -459,6 +476,9 @@ async function enableLockdown(guild, options = {}) {
     locked,
     bypassApplied,
     reason,
+    lockdownMode: options.lockdownMode || null,
+    severity: options.severity || null,
+    expiresAt: lockdownExpiresAt,
   };
 }
 
@@ -552,6 +572,24 @@ async function restoreLockdownReminders(client) {
       const state = getLockdownState(guild.id);
 
       if (!state.active) continue;
+
+      if (
+        state.lockdownExpiresAt &&
+        Date.now() >= Number(state.lockdownExpiresAt)
+      ) {
+        console.log(
+          `[LockdownSystem] Auto restoring expired lockdown for ${guild.name}`
+        );
+
+        await disableLockdown(guild, {
+          reason: 'Automatic lockdown expiry',
+          disabledByTag: 'Goliath Auto Recovery',
+          restoredAutomatically: true,
+        });
+
+        continue;
+      }
+
       if (!state.reminderChannelId || !state.reminderUserId) continue;
       if (activeReminderIntervals.has(guild.id)) continue;
 
