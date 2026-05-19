@@ -47,6 +47,14 @@ const embedsRoutes = require('./src/server/routes/config/embeds');
 const moderationRoutes = require('./src/server/routes/moderation');
 const serverRestoreRoutes = require('./src/server/routes/serverRestoreRoutes');
 
+const {
+  restoreLockdownReminders,
+} = require('./src/security/lockdownSystem');
+
+const {
+  restoreExpiredQuarantines,
+} = require('./src/security/quarantineSystem');
+
 /* ---------------- SAFE MODULE LOADS ---------------- */
 
 const backupSchedulerModule = safeLoad(
@@ -451,26 +459,83 @@ async function start() {
   loadEvents();
 
   client.once('clientReady', async (readyClient) => {
-    console.log(`🤖 Logged in as ${readyClient.user.tag}`);
-    console.log(`🧠 Active mode: ${BOT_MODE}`);
+  console.log(`🤖 Logged in as ${readyClient.user.tag}`);
+  console.log(`🧠 Active mode: ${BOT_MODE}`);
 
-    await enforceCurrentGuilds(client, BOT_MODE, activeMode);
+  await enforceCurrentGuilds(
+    client,
+    BOT_MODE,
+    activeMode
+  );
 
-    if (activeMode.startBackupScheduler) {
-      if (startServerBackupScheduler) {
-        console.log('💾 Starting server backup scheduler...');
-        startServerBackupScheduler(readyClient);
-      } else {
-        console.warn(
-          '⚠️ Backup scheduler unavailable. Continuing startup safely.'
-        );
-      }
+  /* ---------------- SECURITY RECOVERY ---------------- */
+
+  try {
+    console.log(
+      '🛡️ Restoring lockdown recovery systems...'
+    );
+
+    await restoreLockdownReminders(
+      readyClient
+    );
+
+    console.log(
+      '✅ Lockdown recovery restored.'
+    );
+  } catch (error) {
+    console.error(
+      '❌ Failed restoring lockdown recovery'
+    );
+
+    console.error(error);
+  }
+
+  try {
+    console.log(
+      '🚨 Restoring quarantine recovery systems...'
+    );
+
+    await restoreExpiredQuarantines(
+      readyClient
+    );
+
+    console.log(
+      '✅ Quarantine recovery restored.'
+    );
+  } catch (error) {
+    console.error(
+      '❌ Failed restoring quarantine recovery'
+    );
+
+    console.error(error);
+  }
+
+  /* ---------------- BACKUPS ---------------- */
+
+  if (activeMode.startBackupScheduler) {
+    if (startServerBackupScheduler) {
+      console.log(
+        '💾 Starting server backup scheduler...'
+      );
+
+      startServerBackupScheduler(
+        readyClient
+      );
     } else {
-      logDev('💾 Backup scheduler disabled in DEV mode.');
+      console.warn(
+        '⚠️ Backup scheduler unavailable. Continuing startup safely.'
+      );
     }
+  } else {
+    logDev(
+      '💾 Backup scheduler disabled in DEV mode.'
+    );
+  }
 
-    console.log('✅ Goliath startup complete.');
-  });
+  console.log(
+    '✅ Goliath startup complete.'
+  );
+});
 
   await client.login(token);
 }
