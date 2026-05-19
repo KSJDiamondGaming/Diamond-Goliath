@@ -7,6 +7,7 @@ import Cases from '../pages/Cases';
 import Warnings from '../pages/Warnings';
 import Messages from '../pages/Messages';
 import Restore from '../pages/Restore';
+import Security from '../pages/Security';
 
 import Logs from '../pages/Logs';
 
@@ -46,8 +47,26 @@ export const NAV_ITEMS = [
 ];
 
 export const NAV_BOTTOM = [
-  { key: 'restore', label: 'Restore', icon: 'admin', path: '/restore' },
-  { key: 'logs', label: 'Logs', icon: 'logs', path: '/logs' },
+  {
+    key: 'security',
+    label: 'Security',
+    icon: 'admin',
+    path: '/security',
+  },
+
+  {
+    key: 'restore',
+    label: 'Restore',
+    icon: 'admin',
+    path: '/restore',
+  },
+
+  {
+    key: 'logs',
+    label: 'Logs',
+    icon: 'logs',
+    path: '/logs',
+  },
 ];
 
 export const ROUTES = [
@@ -59,6 +78,7 @@ export const ROUTES = [
   { key: 'cases', label: 'Cases', icon: 'cases', path: '/cases', component: Cases },
   { key: 'warnings', label: 'Warnings', icon: 'warnings', path: '/warnings', component: Warnings },
   { key: 'messages', label: 'Welcome & Leave', icon: 'messages', path: '/messages', component: Messages },
+  { key: 'security', label: 'Security', icon: 'admin', path: '/security', component: Security,},
   { key: 'restore', label: 'Restore', icon: 'admin', path: '/restore', component: Restore },
   { key: 'logs', label: 'Logs', icon: 'logs', path: '/logs', component: Logs },
 ];
@@ -123,6 +143,21 @@ export const PAGE_LAYOUTS = {
       { id: 'leave', type: 'config' },
     ],
   },
+    security: {
+    title: 'Security Center',
+    description:
+      'Live anti-nuke, incidents, lockdowns, quarantines, and recovery systems.',
+
+    emptyDescription:
+      'Select a server to view security status.',
+
+    sections: [
+      {
+        id: 'securityOverview',
+        type: 'dashboard',
+      },
+    ],
+  },
   restore: {
     title: 'Server Restore',
     description: 'Preview and safely restore server backups.',
@@ -173,6 +208,11 @@ export const SECTION_DEFS = {
   generalConfig: {
     title: 'General Config',
     description: 'Core dashboard, moderation, and server-wide configuration.',
+  },
+  securityOverview: {
+    title: 'Security Overview',
+    description:
+      'Live protection status, threat monitoring, incidents, and recovery systems.',
   },
   restoreManager: {
     title: 'Restore Manager',
