@@ -22,6 +22,7 @@ const {
   SEVERITY,
   INCIDENT_TYPES,
   logIncident,
+  calculateIncidentSeverity,
 } = securitySystem;
 
 const QUARANTINE_ROLE_NAME = 'Goliath Quarantine';
@@ -260,7 +261,7 @@ async function emergencyLockdown(guild, reason) {
 
   await logIncident(guild, {
     type: INCIDENT_TYPES.EMERGENCY_LOCKDOWN,
-    severity: SEVERITY.CRITICAL,
+    severity: incidentAnalysis.severity,
     reason,
     actionTaken: 'Emergency lockdown panic protection enabled.',
     metadata: {
@@ -399,7 +400,7 @@ async function quarantineMember(guild, member, config, reason) {
 
     await logIncident(guild, {
       type: INCIDENT_TYPES.MEMBER_QUARANTINED || 'member_quarantined',
-      severity: SEVERITY.CRITICAL,
+      severity: incidentAnalysis.severity,
       actorId: member.id,
       actorTag: member.user?.tag || null,
       targetId: member.id,
@@ -523,9 +524,17 @@ async function handleDeleteEvent({
     );
   }
 
+  const incidentAnalysis = calculateIncidentSeverity(massIncidentType, {
+    actionCount: count,
+    threshold: threshold.maxActions,
+    actorIsBot: executor.bot || false,
+    actorTrusted: false,
+    rollbackAvailable: Boolean(beforeBackup),
+  });
+
   const massIncident = await logIncident(guild, {
     type: massIncidentType,
-    severity: SEVERITY.CRITICAL,
+    severity: incidentAnalysis.severity,
     actorId: executor.id,
     actorTag: executor.tag,
     targetId: target?.id || null,
@@ -545,6 +554,8 @@ async function handleDeleteEvent({
       beforeBackupCreated: Boolean(beforeBackup),
       lockdownTriggered,
       quarantine: quarantineResult,
+      severityScore: incidentAnalysis.score,
+      recommendedActions: incidentAnalysis.recommendedActions,
     },
   });
 
@@ -638,7 +649,7 @@ async function handleRoleCreate(role) {
 
   await logIncident(guild, {
     type: INCIDENT_TYPES.DANGEROUS_ROLE_CREATE || 'dangerous_role_create',
-    severity: SEVERITY.CRITICAL,
+    severity: incidentAnalysis.severity,
     actorId: executor.id,
     actorTag: executor.tag,
     targetId: role.id,
@@ -708,7 +719,7 @@ async function handleRoleUpdate(oldRole, newRole) {
     type:
       INCIDENT_TYPES.DANGEROUS_ROLE_PERMISSION_ADDED ||
       'dangerous_role_permission_added',
-    severity: SEVERITY.CRITICAL,
+    severity: incidentAnalysis.severity,
     actorId: executor.id,
     actorTag: executor.tag,
     targetId: newRole.id,
@@ -813,7 +824,7 @@ async function handleWebhookDelete(webhook) {
 
   await logIncident(guild, {
     type: INCIDENT_TYPES.WEBHOOK_DELETE || 'webhook_delete',
-    severity: SEVERITY.CRITICAL,
+    severity: incidentAnalysis.severity,
     actorId: executor.id,
     actorTag: executor.tag,
     targetId: webhook.id,
@@ -885,7 +896,7 @@ async function handleWebhookUpdate(channel) {
       INCIDENT_TYPES.WEBHOOK_UPDATE ||
       'suspicious_webhook_activity',
 
-    severity: SEVERITY.CRITICAL,
+    severity: incidentAnalysis.severity,
 
     actorId: executor.id,
     actorTag: executor.tag,

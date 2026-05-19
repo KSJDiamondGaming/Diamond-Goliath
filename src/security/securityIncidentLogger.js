@@ -249,6 +249,64 @@ function buildIncidentEmbed(incident, options = {}) {
     });
   }
 
+  const metadata = incident.metadata || {};
+
+if (
+  metadata.severityScore !== undefined ||
+  Array.isArray(metadata.recommendedActions) ||
+  metadata.beforeBackupId ||
+  metadata.lockdownTriggered !== undefined ||
+  metadata.quarantine
+) {
+  embed.addFields(
+    {
+      name: 'Severity Score',
+      value: `\`${metadata.severityScore || 0}\``,
+      inline: true,
+    },
+    {
+      name: 'Emergency Lockdown',
+      value: metadata.lockdownTriggered ? 'Enabled' : 'Not Triggered',
+      inline: true,
+    },
+    {
+      name: 'Rollback / Backup Snapshot',
+      value: metadata.beforeBackupId
+        ? `\`${metadata.beforeBackupId}\``
+        : metadata.beforeBackupCreated
+          ? 'Created'
+          : 'None',
+      inline: true,
+    }
+  );
+
+  if (
+    Array.isArray(metadata.recommendedActions) &&
+    metadata.recommendedActions.length
+  ) {
+    embed.addFields({
+      name: 'Recommended Actions',
+      value: metadata.recommendedActions
+        .map((action) => `• ${action}`)
+        .join('\n')
+        .slice(0, 1024),
+      inline: false,
+    });
+  }
+
+  if (metadata.quarantine) {
+    embed.addFields({
+      name: 'Quarantine Result',
+      value: safeString(
+        metadata.quarantine.success
+          ? 'Executor quarantined successfully.'
+          : metadata.quarantine.reason || 'Quarantine failed/skipped.'
+      ).slice(0, 1024),
+      inline: false,
+    });
+  }
+}
+
   if (incident.metadata && Object.keys(incident.metadata).length) {
     embed.addFields({
       name: 'Metadata',
