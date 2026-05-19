@@ -147,6 +147,63 @@ async function restoreQuarantinedMember(
   }
 }
 
+async function restoreExpiredQuarantines(
+  client
+) {
+  if (!client) return;
+
+  for (const [, guild] of client.guilds.cache) {
+    try {
+      const state =
+        getQuarantineState(guild.id);
+
+      if (!state.users) continue;
+
+      for (const userId of Object.keys(
+        state.users
+      )) {
+        const snapshot =
+          state.users[userId];
+
+        if (!snapshot?.expiresAt)
+          continue;
+
+        if (
+          Date.now() <
+          Number(snapshot.expiresAt)
+        ) {
+          continue;
+        }
+
+        const member =
+          await guild.members
+            .fetch(userId)
+            .catch(() => null);
+
+        if (!member) continue;
+
+        console.log(
+          `[QuarantineSystem] Auto restoring ${member.user.tag}`
+        );
+
+        await restoreQuarantinedMember(
+          guild,
+          member,
+          {
+            reason:
+              'Automatic quarantine expiry',
+          }
+        );
+      }
+    } catch (error) {
+      console.warn(
+        `[QuarantineSystem] Failed restore cycle for guild ${guild.id}:`,
+        error.message
+      );
+    }
+  }
+}
+
 module.exports = {
   emptyQuarantineState,
   getQuarantineState,
@@ -156,4 +213,5 @@ module.exports = {
 
   quarantineMember,
   restoreQuarantinedMember,
+  restoreExpiredQuarantines,
 };
