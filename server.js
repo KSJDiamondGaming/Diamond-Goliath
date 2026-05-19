@@ -46,6 +46,7 @@ const embedsRoutes = require('./src/server/routes/config/embeds');
 
 const moderationRoutes = require('./src/server/routes/moderation');
 const serverRestoreRoutes = require('./src/server/routes/serverRestoreRoutes');
+const securityRoutes = require('./src/server/routes/security');
 
 const {
   restoreLockdownReminders,
@@ -267,6 +268,7 @@ function startDashboardApiServer() {
   app.use('/api/cases', moderationRoutes);
 
   app.use('/api/server-restore', serverRestoreRoutes);
+  app.use('/api/security', securityRoutes);
 
   initSocketHub(apiServer, {
     clientUrl: dashboardClientUrl,
