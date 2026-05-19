@@ -20,6 +20,10 @@ const {
 } = require('./securitySystem');
 
 const {
+  quarantineMember,
+} = require('./quarantineSystem');
+
+const {
   SEVERITY,
   INCIDENT_TYPES,
   logIncident,
@@ -502,9 +506,35 @@ async function handleDeleteEvent({
   let afterBackup = null;
   let lockdownTriggered = false;
   let quarantineResult = {
-    success: false,
-    reason: 'Quarantine not attempted.',
-  };
+  success: false,
+  reason: 'Quarantine not attempted.',
+};
+
+if (
+  config.quarantine.enabled &&
+  executor &&
+  executor.id !== guild.ownerId
+) {
+  quarantineResult =
+    await quarantineMember(
+      guild,
+      executor,
+      {
+        reason:
+          config.quarantine.reason ||
+          'Goliath Anti-Nuke quarantine.',
+
+        quarantinedBy:
+          'anti_nuke',
+
+        durationMs:
+          incidentAnalysis.severity ===
+          SEVERITY.CRITICAL
+            ? 1000 * 60 * 60 * 24
+            : 1000 * 60 * 60,
+      }
+    );
+}
 
   if (config.backups.beforeIncident) {
     beforeBackup = await createEmergencyBackup(
