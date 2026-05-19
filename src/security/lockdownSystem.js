@@ -162,6 +162,51 @@ function getBypassRestorePermissions() {
   };
 }
 
+function getLockdownModeFromSeverity(severity = 'low') {
+  switch (String(severity).toLowerCase()) {
+    case 'critical':
+      return {
+        mode: 'emergency',
+        slowmodeSeconds: 21600,
+        lockText: true,
+        lockVoice: true,
+        lockThreads: true,
+        lockCommands: true,
+      };
+
+    case 'high':
+      return {
+        mode: 'high',
+        slowmodeSeconds: 3600,
+        lockText: true,
+        lockVoice: true,
+        lockThreads: true,
+        lockCommands: true,
+      };
+
+    case 'medium':
+      return {
+        mode: 'medium',
+        slowmodeSeconds: 600,
+        lockText: true,
+        lockVoice: false,
+        lockThreads: true,
+        lockCommands: false,
+      };
+
+    case 'low':
+    default:
+      return {
+        mode: 'low',
+        slowmodeSeconds: 60,
+        lockText: false,
+        lockVoice: false,
+        lockThreads: false,
+        lockCommands: false,
+      };
+  }
+}
+
 async function applyBypassRoleOverwrites(channel, guild, bypassRoleIds, isText, isVoice) {
   if (!bypassRoleIds.length) return 0;
 
@@ -556,4 +601,5 @@ module.exports = {
   enableLockdown,
   disableLockdown,
   restoreLockdownReminders,
+  getLockdownModeFromSeverity,
 };
