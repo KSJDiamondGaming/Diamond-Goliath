@@ -12,9 +12,16 @@ function emptyLockdownState() {
     enabledBy: null,
     enabledAt: null,
     reason: null,
+
+    lockdownMode: null,
+    severity: null,
+    lockdownStartedAt: null,
+    lockdownExpiresAt: null,
+
     reminderChannelId: null,
     reminderUserId: null,
     lastReminderAt: null,
+
     channels: [],
     bypassRoleIds: [],
   };
@@ -26,8 +33,8 @@ function normalizeRoleIds(roleIds = []) {
   return [
     ...new Set(
       roleIds
-        .map(roleId => String(roleId || '').trim())
-        .filter(roleId => /^\d{16,20}$/.test(roleId))
+        .map((roleId) => String(roleId || '').trim())
+        .filter((roleId) => /^\d{16,20}$/.test(roleId))
     ),
   ];
 }
@@ -67,7 +74,7 @@ function saveLockdownState(guild, lockdownData) {
 
   return guildManager.updateSecurityConfig(
     guild.id,
-    security => ({
+    (security) => ({
       ...security,
       lastLockdownAt: nextLockdown.active
         ? new Date().toISOString()
@@ -207,6 +214,72 @@ function getLockdownModeFromSeverity(severity = 'low') {
   }
 }
 
+function serializePermissionOverwrites(channel) {
+  try {
+    if (!channel.permissionOverwrites?.cache) return [];
+
+    return channel.permissionOverwrites.cache.map((overwrite) => ({
+      id: overwrite.id,
+      type: overwrite.type,
+      allow: overwrite.allow.bitfield.toString(),
+      deny: overwrite.deny.bitfield.toString(),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+function createChannelSnapshot(channel) {
+  return {
+    id: channel.id,
+    name: channel.name || null,
+    type: channel.type,
+
+    parentId: channel.parentId || null,
+
+    slowmode:
+      typeof channel.rateLimitPerUser === 'number'
+        ? channel.rateLimitPerUser
+        : 0,
+
+    nsfw:
+      typeof channel.nsfw === 'boolean'
+        ? channel.nsfw
+        : false,
+
+    permissionsLocked:
+      typeof channel.permissionsLocked === 'boolean'
+        ? channel.permissionsLocked
+        : null,
+
+    overwrites: serializePermissionOverwrites(channel),
+  };
+}
+
+function buildLockPermissions(isText, isVoice, options = {}) {
+  const perms = {};
+
+  if (isText && options.lockText !== false) {
+    Object.assign(perms, getTextLockPermissions());
+  }
+
+  if (isVoice && options.lockVoice !== false) {
+    Object.assign(perms, getVoiceLockPermissions());
+  }
+
+  return perms;
+}
+
+function getLockdownSlowmode(options = {}) {
+  const value = Number(options.slowmodeSeconds);
+
+  if (!Number.isFinite(value) || value < 0) {
+    return 10;
+  }
+
+  return Math.min(value, 21600);
+}
+
 async function applyBypassRoleOverwrites(channel, guild, bypassRoleIds, isText, isVoice) {
   if (!bypassRoleIds.length) return 0;
 
@@ -276,6 +349,42 @@ async function restoreBypassRoleOverwrites(channel, guild, bypassRoleIds) {
   return restored;
 }
 
+async function restoreOriginalOverwrites(channel, saved, reason) {
+  if (!Array.isArray(saved.overwrites)) return 0;
+
+  let restored = 0;
+  const currentIds = new Set();
+
+  for (const overwrite of saved.overwrites) {
+    if (!overwrite?.id) continue;
+
+    currentIds.add(String(overwrite.id));
+
+    try {
+      await channel.permissionOverwrites.edit(
+        overwrite.id,
+        {
+          allow: BigInt(overwrite.allow || 0),
+          deny: BigInt(overwrite.deny || 0),
+        },
+        {
+          type: overwrite.type,
+          reason,
+        }
+      );
+
+      restored++;
+    } catch (error) {
+      console.warn(
+        `[LockdownSystem] Failed restoring overwrite ${overwrite.id} in #${channel.name}:`,
+        error.message
+      );
+    }
+  }
+
+  return restored;
+}
+
 function startLockdownReminder(guild, reminderChannelId, reminderUserId) {
   if (!guild || !reminderChannelId || !reminderUserId) return false;
 
@@ -287,6 +396,19 @@ function startLockdownReminder(guild, reminderChannelId, reminderUserId) {
 
       if (!latest.active) {
         stopLockdownReminder(guild.id);
+        return;
+      }
+
+      if (
+        latest.lockdownExpiresAt &&
+        Date.now() >= Number(latest.lockdownExpiresAt)
+      ) {
+        await disableLockdown(guild, {
+          reason: 'Automatic lockdown expiry',
+          disabledByTag: 'Goliath Auto Recovery',
+          restoredAutomatically: true,
+        });
+
         return;
       }
 
@@ -353,11 +475,19 @@ async function enableLockdown(guild, options = {}) {
 
   const enabledAt = Date.now();
 
+  const lockdownExpiresAt =
+    options.durationMs && Number(options.durationMs) > 0
+      ? enabledAt + Number(options.durationMs)
+      : null;
+
+  const slowmodeSeconds = getLockdownSlowmode(options);
+
   const savedChannels = [];
   const channels = await guild.channels.fetch();
 
   let locked = 0;
   let bypassApplied = 0;
+  let snapshotsCreated = 0;
 
   for (const [, channel] of channels) {
     if (!channel || !channel.manageable) continue;
@@ -373,11 +503,10 @@ async function enableLockdown(guild, options = {}) {
 
     if (!isText && !isVoice) continue;
 
-    const slowmode = channel.rateLimitPerUser || 0;
-    const perms = {};
+    const snapshot = createChannelSnapshot(channel);
+    const perms = buildLockPermissions(isText, isVoice, options);
 
-    if (isText) Object.assign(perms, getTextLockPermissions());
-    if (isVoice) Object.assign(perms, getVoiceLockPermissions());
+    if (!Object.keys(perms).length) continue;
 
     try {
       await channel.permissionOverwrites.edit(guild.roles.everyone, perms, {
@@ -394,14 +523,12 @@ async function enableLockdown(guild, options = {}) {
 
       bypassApplied += bypassCount;
 
-      savedChannels.push({
-        id: channel.id,
-        slowmode,
-      });
+      savedChannels.push(snapshot);
+      snapshotsCreated++;
 
       if (isText && typeof channel.setRateLimitPerUser === 'function') {
         await channel.setRateLimitPerUser(
-          10,
+          slowmodeSeconds,
           `Lockdown enabled by ${enabledByTag}`
         );
       }
@@ -414,11 +541,6 @@ async function enableLockdown(guild, options = {}) {
       );
     }
   }
-
-  const lockdownExpiresAt =
-  options.durationMs && Number(options.durationMs) > 0
-    ? enabledAt + Number(options.durationMs)
-    : null;
 
   saveLockdownState(guild, {
     active: true,
@@ -436,7 +558,7 @@ async function enableLockdown(guild, options = {}) {
     lastReminderAt: null,
     channels: savedChannels,
     bypassRoleIds,
-});
+  });
 
   if (reminderChannelId && reminderUserId) {
     startLockdownReminder(guild, reminderChannelId, reminderUserId);
@@ -450,17 +572,19 @@ async function enableLockdown(guild, options = {}) {
 
   await logIncident(guild, {
     type: INCIDENT_TYPES.LOCKDOWN_ENABLED,
-    severity: SEVERITY.HIGH,
+    severity: options.severity || SEVERITY.HIGH,
     actorId: enabledBy,
     actorTag: enabledByTag,
     reason,
     actionTaken: 'Server lockdown enabled.',
     metadata: {
       lockedChannels: locked,
+      snapshotsCreated,
       bypassRoles: bypassRoleIds.length,
 
       lockdownMode: options.lockdownMode || null,
       severity: options.severity || null,
+      slowmodeSeconds,
       lockdownStartedAt: enabledAt,
       lockdownExpiresAt,
 
@@ -475,9 +599,11 @@ async function enableLockdown(guild, options = {}) {
     alreadyActive: false,
     locked,
     bypassApplied,
+    snapshotsCreated,
     reason,
     lockdownMode: options.lockdownMode || null,
     severity: options.severity || null,
+    slowmodeSeconds,
     expiresAt: lockdownExpiresAt,
   };
 }
@@ -489,6 +615,7 @@ async function disableLockdown(guild, options = {}) {
       reason: 'Missing guild.',
       restored: 0,
       bypassRestored: 0,
+      overwritesRestored: 0,
     };
   }
 
@@ -501,6 +628,7 @@ async function disableLockdown(guild, options = {}) {
       reason: 'Lockdown is not currently active.',
       restored: 0,
       bypassRestored: 0,
+      overwritesRestored: 0,
     };
   }
 
@@ -510,6 +638,7 @@ async function disableLockdown(guild, options = {}) {
 
   let restored = 0;
   let bypassRestored = 0;
+  let overwritesRestored = 0;
 
   for (const saved of state.channels || []) {
     const channel = await guild.channels.fetch(saved.id).catch(() => null);
@@ -517,6 +646,12 @@ async function disableLockdown(guild, options = {}) {
     if (!channel || !channel.manageable) continue;
 
     try {
+      overwritesRestored += await restoreOriginalOverwrites(
+        channel,
+        saved,
+        `${reason} by ${disabledByTag}`
+      );
+
       await channel.permissionOverwrites.edit(
         guild.roles.everyone,
         getRestorePermissions(),
@@ -533,7 +668,7 @@ async function disableLockdown(guild, options = {}) {
 
       if (typeof channel.setRateLimitPerUser === 'function') {
         await channel.setRateLimitPerUser(
-          saved.slowmode || 0,
+          typeof saved.slowmode === 'number' ? saved.slowmode : 0,
           `${reason} by ${disabledByTag}`
         );
       }
@@ -557,10 +692,28 @@ async function disableLockdown(guild, options = {}) {
 
   clearLockdownState(guild);
 
+  await logIncident(guild, {
+    type: INCIDENT_TYPES.LOCKDOWN_DISABLED,
+    severity: SEVERITY.LOW,
+    reason,
+    actionTaken: options.restoredAutomatically
+      ? 'Lockdown automatically expired and was restored.'
+      : 'Server lockdown disabled and restored.',
+    metadata: {
+      restoredChannels: restored,
+      bypassRestored,
+      overwritesRestored,
+      restoredAutomatically: Boolean(options.restoredAutomatically),
+      disabledByTag,
+    },
+    sendToOwner: false,
+  });
+
   return {
     success: true,
     restored,
     bypassRestored,
+    overwritesRestored,
   };
 }
 
@@ -632,12 +785,17 @@ async function restoreLockdownReminders(client) {
 module.exports = {
   emptyLockdownState,
   normalizeRoleIds,
+
   getLockdownState,
   getBypassRoleIds,
+
   saveLockdownState,
   clearLockdownState,
+
   enableLockdown,
   disableLockdown,
+
   restoreLockdownReminders,
+
   getLockdownModeFromSeverity,
 };
