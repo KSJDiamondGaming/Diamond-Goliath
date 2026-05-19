@@ -251,10 +251,15 @@ async function emergencyLockdown(guild, reason) {
   }
 
   const result = await enableLockdown(guild, {
-    reason: reason || 'Goliath Anti-Nuke emergency lockdown triggered.',
-    enabledBy: 'anti_nuke',
-    enabledByTag: 'Goliath Anti-Nuke',
-  });
+  reason: reason || 'Goliath Anti-Nuke emergency lockdown triggered.',
+  enabledBy: 'anti_nuke',
+  enabledByTag: 'Goliath Anti-Nuke',
+
+  severity: SEVERITY.CRITICAL,
+  lockdownMode: 'emergency',
+
+  durationMs: 1000 * 60 * 60,
+});
 
   if (!result.success) {
     return false;
