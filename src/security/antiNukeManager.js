@@ -10,6 +10,7 @@ const guildManager = require('../guild/guildManager');
 const {
   enableLockdown,
   getLockdownState,
+  getLockdownModeFromSeverity,
 } = require('./lockdownSystem');
 
 const {
@@ -508,11 +509,26 @@ async function handleDeleteEvent({
     );
   }
 
+  const lockdownProfile = getLockdownModeFromSeverity(
+  incidentAnalysis.severity
+);
+
   if (config.lockdown.enabled) {
-    lockdownTriggered = await emergencyLockdown(
-      guild,
-      config.lockdown.reason
-    );
+    const lockdownResult = await enableLockdown(guild, {
+      reason: config.lockdown.reason,
+      enabledBy: 'anti_nuke',
+      enabledByTag: 'Goliath Anti-Nuke',
+
+      severity: incidentAnalysis.severity,
+      lockdownMode: lockdownProfile.mode,
+      slowmodeSeconds: lockdownProfile.slowmodeSeconds,
+      lockText: lockdownProfile.lockText,
+      lockVoice: lockdownProfile.lockVoice,
+      lockThreads: lockdownProfile.lockThreads,
+      lockCommands: lockdownProfile.lockCommands,
+    });
+
+    lockdownTriggered = Boolean(lockdownResult?.success);
   }
 
   if (config.quarantine.enabled && member) {
@@ -553,6 +569,8 @@ async function handleDeleteEvent({
       windowMs: threshold.windowMs,
       beforeBackupCreated: Boolean(beforeBackup),
       lockdownTriggered,
+      lockdownMode: lockdownProfile.mode,
+      lockdownSeverity: incidentAnalysis.severity,
       quarantine: quarantineResult,
       severityScore: incidentAnalysis.score,
       recommendedActions: incidentAnalysis.recommendedActions,
