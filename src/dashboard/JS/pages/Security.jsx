@@ -8,11 +8,20 @@ export default function Security() {
     async function load() {
       try {
         const guildId =
-          localStorage.getItem('guildId');
+        localStorage.getItem('guildId') ||
+        localStorage.getItem('selectedGuildId');
 
-        const response = await fetch(
-          `/api/security/overview?guildId=${guildId}`
-        );
+      if (!guildId || guildId === 'null') {
+        setData({
+          ok: false,
+          error: 'Select a server first.',
+        });
+        return;
+      }
+
+      const response = await fetch(
+        `/api/security/overview?guildId=${guildId}`
+      );
 
         const result = await response.json();
 
