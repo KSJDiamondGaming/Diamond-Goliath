@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';om 'react';
 
 export default function Security() {
   const [loading, setLoading] = useState(true);
