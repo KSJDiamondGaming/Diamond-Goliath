@@ -17,30 +17,6 @@ const {
 } = require('./lockdownSystem');
 
 // ======================================================
-// SECURITY SYSTEM
-// KSJ Goliath Unified Security Layer
-// ======================================================
-//
-// Merged from:
-// - securitySystem.js
-// - securitySystem.js
-// - securitySystem.js
-//
-// Responsibilities:
-// - security permissions
-// - cooldowns
-// - moderation hierarchy
-// - incident logging
-// - webhook mirrors
-// - anti-nuke protection
-// - quarantine system
-// - emergency lockdown
-//
-// IMPORTANT:
-// lockdownSystem.js remains separate.
-// ======================================================
-
-// ======================================================
 // CORE CONSTANTS
 // ======================================================
 
@@ -87,6 +63,81 @@ const SEVERITY = {
   HIGH: 'high',
   CRITICAL: 'critical',
 };
+
+function calculateIncidentSeverity(type, metadata = {}) {
+  let score = 0;
+
+  if (type.includes('mass')) score += 40;
+  if (type.includes('delete')) score += 25;
+  if (type.includes('webhook')) score += 20;
+  if (type.includes('dangerous_role')) score += 30;
+  if (type.includes('lockdown')) score += 50;
+
+  score += Number(metadata.actionCount || 0) * 10;
+  score += Number(metadata.dangerousPermissionCount || 0) * 15;
+
+  if (metadata.actorIsBot) score += 10;
+  if (metadata.actorTrusted === false) score += 15;
+  if (metadata.rollbackAvailable === false) score += 20;
+
+  let severity = SEVERITY.LOW;
+
+  if (score >= 80) {
+    severity = SEVERITY.CRITICAL;
+  } else if (score >= 50) {
+    severity = SEVERITY.HIGH;
+  } else if (score >= 25) {
+    severity = SEVERITY.MEDIUM;
+  }
+
+  return {
+    score,
+    severity,
+    recommendedActions: getRecommendedIncidentActions(
+      score,
+      type,
+      metadata
+    ),
+  };
+}
+
+function getRecommendedIncidentActions(
+  score,
+  type,
+  metadata = {}
+) {
+  const actions = [];
+
+  if (score >= 25) {
+    actions.push('Log incident');
+  }
+
+  if (score >= 50) {
+    actions.push('Notify guild owner');
+  }
+
+  if (score >= 60) {
+    actions.push('Create emergency backup');
+  }
+
+  if (score >= 70) {
+    actions.push('Quarantine actor');
+  }
+
+  if (score >= 80) {
+    actions.push('Enable emergency lockdown');
+  }
+
+  if (type.includes('webhook')) {
+    actions.push('Review webhooks');
+  }
+
+  if (metadata.dangerousPermissionCount > 0) {
+    actions.push('Review dangerous permissions');
+  }
+
+  return [...new Set(actions)];
+}
 
 const INCIDENT_TYPES = {
   CHANNEL_DELETE: 'channel_delete',
@@ -1064,4 +1115,6 @@ module.exports = {
 
   emergencyLockdown,
   addAction,
+  calculateIncidentSeverity,
+  getRecommendedIncidentActions,
 };
