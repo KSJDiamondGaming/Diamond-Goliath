@@ -1,5 +1,9 @@
 const guildManager = require('../guild/guildManager');
 
+const {
+  emitQuarantineUpdate,
+} = require('../server/sockets/socketHub');
+
 function emptyQuarantineState() {
   return {
     users: {},
@@ -25,6 +29,25 @@ function saveQuarantineState(guild, state) {
     }),
     guild
   );
+}
+
+function emitCurrentQuarantineState(
+  guild,
+  action,
+  extra = {}
+) {
+  try {
+    emitQuarantineUpdate(guild.id, {
+      action,
+      quarantine: getQuarantineState(guild.id),
+      ...extra,
+    });
+  } catch (error) {
+    console.warn(
+      '[QuarantineSystem] Failed to emit quarantine update:',
+      error.message
+    );
+  }
 }
 
 async function ensureQuarantineRole(guild) {
@@ -68,12 +91,17 @@ async function quarantineMember(
     .map((r) => r.id);
 
   try {
-    await member.roles.set([role.id], options.reason);
+    await member.roles.set(
+      [role.id],
+      options.reason ||
+        'Goliath quarantine applied.'
+    );
 
     const state = getQuarantineState(guild.id);
 
     state.users[member.id] = {
       memberId: member.id,
+      memberTag: member.user?.tag || null,
 
       quarantinedAt: Date.now(),
 
@@ -94,6 +122,14 @@ async function quarantineMember(
 
     saveQuarantineState(guild, state);
 
+    emitCurrentQuarantineState(
+      guild,
+      'member_quarantined',
+      {
+        memberId: member.id,
+      }
+    );
+
     return {
       success: true,
       roleId: role.id,
@@ -112,6 +148,13 @@ async function restoreQuarantinedMember(
   member,
   options = {}
 ) {
+  if (!guild || !member) {
+    return {
+      success: false,
+      reason: 'Missing guild/member',
+    };
+  }
+
   const state = getQuarantineState(guild.id);
 
   const snapshot =
@@ -134,6 +177,14 @@ async function restoreQuarantinedMember(
     delete state.users[member.id];
 
     saveQuarantineState(guild, state);
+
+    emitCurrentQuarantineState(
+      guild,
+      'member_restored',
+      {
+        memberId: member.id,
+      }
+    );
 
     return {
       success: true,
