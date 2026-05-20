@@ -1,18 +1,26 @@
-async function request(url, options = {}) {
+async function request(
+  url,
+  options = {}
+) {
   const response = await fetch(url, {
     credentials: 'include',
+
     headers: {
       'Content-Type': 'application/json',
       ...(options.headers || {}),
     },
+
     ...options,
   });
 
-  const data = await response.json().catch(() => null);
+  const data = await response
+    .json()
+    .catch(() => null);
 
   if (!response.ok) {
     throw new Error(
-      data?.error || `API request failed: ${response.status}`
+      data?.error ||
+        `API request failed: ${response.status}`
     );
   }
 
@@ -22,16 +30,20 @@ async function request(url, options = {}) {
 export const api = {
   request,
 
+  /* ---------------- CORE ---------------- */
+
   getStatus() {
     return request('/api/status');
   },
+
+  /* ---------------- AUTH ---------------- */
 
   getAuthMe() {
     return request('/api/auth/me');
   },
 
   getLoginUrl() {
-    return '/api/auth/discord';
+    return '/api/auth/login';
   },
 
   logout() {
@@ -40,20 +52,32 @@ export const api = {
     });
   },
 
+  /* ---------------- DISCORD ---------------- */
+
   getGuilds() {
     return request('/api/discord/guilds');
   },
 
+  /* ---------------- CASES ---------------- */
+
   getCases(guildId) {
-    return request(`/api/cases/${guildId}`);
+    return request(
+      `/api/cases/${guildId}`
+    );
   },
 
   getWarnings(guildId) {
-    return request(`/api/cases/${guildId}/warnings`);
+    return request(
+      `/api/cases/${guildId}/warnings`
+    );
   },
 
+  /* ---------------- SECURITY ---------------- */
+
   getSecurityOverview(guildId) {
-    return request(`/api/security/overview?guildId=${guildId}`);
+    return request(
+      `/api/security/overview?guildId=${guildId}`
+    );
   },
 };
 
