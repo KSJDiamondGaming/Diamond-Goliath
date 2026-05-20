@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import RestoreConfirmModal from '../shared/RestoreConfirmModal';
-import { api } from '../api';
+import { api } from '../services/apiClient';
 
 import {
   createRestorePageStyles,

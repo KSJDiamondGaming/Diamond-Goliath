@@ -1,5 +1,3 @@
-import { io } from 'socket.io-client';
-
 /* ---------------- BASE ---------------- */
 
 const IS_LOCAL_DEV =
@@ -11,10 +9,6 @@ const API_BASE =
   import.meta.env.VITE_API_BASE_URL ||
   import.meta.env.VITE_API_URL ||
   (IS_LOCAL_DEV ? 'http://localhost:3001' : '');
-
-const socket = io(API_BASE || window.location.origin, {
-  withCredentials: true,
-});
 
 /* ---------------- CACHE ---------------- */
 
@@ -117,29 +111,6 @@ function jsonPost(path, body) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body || {}),
   });
-}
-
-/* ---------------- SOCKET SYNC ---------------- */
-
-export function joinGuildRoom(guildId) {
-  if (!guildId) return;
-
-  socket.emit('joinGuild', guildId);
-  socket.emit('automod:join', guildId);
-}
-
-export function listenForGuildUpdate(handler) {
-  if (typeof handler !== 'function') return () => {};
-
-  const wrapped = (payload) => {
-    handler(payload);
-  };
-
-  socket.on('guild:update', wrapped);
-
-  return () => {
-    socket.off('guild:update', wrapped);
-  };
 }
 
 /* ---------------- API ---------------- */

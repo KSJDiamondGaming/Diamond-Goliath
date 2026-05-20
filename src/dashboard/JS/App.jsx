@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
-import { api } from './api';
-import { getStorage, removeStorage, setStorage } from './storage';
+import { api } from './services/apiClient';
+import { getStorage, removeStorage, setStorage } from './storage.js';
 
-import { appBaseStyles, shellStyles } from './ui/components';
-import { getTheme } from './ui/theme';
-import { navItems, ROUTES } from './ui/layout';
+import { appBaseStyles, shellStyles } from './ui/components.js';
+import { getTheme } from './ui/theme.js';
+import { navItems, ROUTES } from './ui/layout.js';
 
 import Navbar from './shared/Navbar.jsx';
 import Topbar from './shared/Topbar.jsx';

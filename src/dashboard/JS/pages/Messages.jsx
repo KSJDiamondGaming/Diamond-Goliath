@@ -1,5 +1,5 @@
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { api } from '../api';
+import { api } from '../services/apiClient';
 import PageShell, {
   EmptyState,
   LoadingPanel,

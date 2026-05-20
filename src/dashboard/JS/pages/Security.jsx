@@ -4,7 +4,11 @@ import React, {
   useState,
 } from 'react';
 
-import { io } from 'socket.io-client';
+import {
+  socket,
+  joinGuildRoom,
+  onSocketEvent,
+} from '../services/socketClient';
 
 export default function Security() {
   const [loading, setLoading] = useState(true);
@@ -32,12 +36,13 @@ export default function Security() {
   const guildId = useMemo(() => {
     return (
       localStorage.getItem('guildId') ||
-      localStorage.getItem('selectedGuildId')
+      localStorage.getItem('selectedGuildId') ||
+      ''
     );
   }, []);
 
   useEffect(() => {
-    async function load() {
+    async function loadSecurityOverview() {
       try {
         if (!guildId || guildId === 'null') {
           setData({
@@ -65,7 +70,7 @@ export default function Security() {
       }
     }
 
-    load();
+    loadSecurityOverview();
   }, [guildId]);
 
   useEffect(() => {
@@ -73,111 +78,107 @@ export default function Security() {
       return;
     }
 
-    const socket = io();
+    joinGuildRoom(guildId);
 
-    socket.emit('joinGuild', guildId);
+    const unsubscribe = onSocketEvent(
+      'guild:update',
+      (update) => {
+        if (!update) return;
 
-    socket.on('guild:update', (update) => {
-      if (!update) return;
+        console.log(
+          '[Security] Live update:',
+          update
+        );
 
-      console.log(
-        '[Security] Live update:',
-        update
-      );
+        if (
+          update.type === 'security:event' &&
+          update.incident
+        ) {
+          setData((previous) => {
+            const incidents =
+              previous?.incidents || {};
 
-      if (
-        update.type === 'security:event' &&
-        update.incident
-      ) {
-        setData((previous) => {
-          const current =
-            previous || {};
+            const recent = Array.isArray(
+              incidents.recent
+            )
+              ? incidents.recent
+              : [];
 
-          const incidents =
-            current.incidents || {};
+            return {
+              ...previous,
 
-          const recent = Array.isArray(
-            incidents.recent
-          )
-            ? incidents.recent
-            : [];
+              threatLevel:
+                update.incident.severity ||
+                previous.threatLevel,
 
-          const updatedRecent = [
-            update.incident,
-            ...recent,
-          ].slice(0, 25);
+              incidents: {
+                ...incidents,
 
-          return {
-            ...current,
+                total:
+                  Number(
+                    incidents.total || 0
+                  ) + 1,
 
-            threatLevel:
-              update.incident.severity ||
-              current.threatLevel,
+                critical:
+                  update.incident
+                    .severity ===
+                  'critical'
+                    ? Number(
+                        incidents.critical ||
+                          0
+                      ) + 1
+                    : Number(
+                        incidents.critical ||
+                          0
+                      ),
 
-            incidents: {
-              ...incidents,
+                recent: [
+                  update.incident,
+                  ...recent,
+                ].slice(0, 25),
+              },
+            };
+          });
+        }
 
-              total:
-                Number(
-                  incidents.total || 0
-                ) + 1,
+        if (
+          update.type ===
+          'security:lockdown'
+        ) {
+          setData((previous) => ({
+            ...previous,
 
-              critical:
-                update.incident
-                  .severity ===
-                'critical'
-                  ? Number(
-                      incidents.critical ||
-                        0
-                    ) + 1
-                  : Number(
-                      incidents.critical ||
-                        0
-                    ),
+            lockdown: {
+              ...(previous.lockdown ||
+                {}),
 
-              recent: updatedRecent,
+              ...(update.lockdown ||
+                {}),
             },
-          };
-        });
+          }));
+        }
+
+        if (
+          update.type ===
+          'security:quarantine'
+        ) {
+          setData((previous) => ({
+            ...previous,
+
+            quarantine: {
+              ...(previous.quarantine ||
+                {}),
+
+              ...(update.quarantine ||
+                {}),
+            },
+          }));
+        }
       }
-
-      if (
-        update.type ===
-        'security:lockdown'
-      ) {
-        setData((previous) => ({
-          ...previous,
-
-          lockdown: {
-            ...(previous.lockdown ||
-              {}),
-
-            ...(update.lockdown ||
-              {}),
-          },
-        }));
-      }
-
-      if (
-        update.type ===
-        'security:quarantine'
-      ) {
-        setData((previous) => ({
-          ...previous,
-
-          quarantine: {
-            ...(previous.quarantine ||
-              {}),
-
-            ...(update.quarantine ||
-              {}),
-          },
-        }));
-      }
-    });
+    );
 
     return () => {
-      socket.disconnect();
+      unsubscribe();
     };
   }, [guildId]);
 

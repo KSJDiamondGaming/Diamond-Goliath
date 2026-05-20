@@ -1,5 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { api, joinGuildRoom, listenForGuildUpdate } from '../api';
+import {
+  joinGuildRoom,
+  listenForGuildUpdate,
+} from "../services/socketClient"
 import PageShell, {
   EmptyState,
   LoadingPanel,

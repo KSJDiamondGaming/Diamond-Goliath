@@ -1,5 +1,5 @@
 import React, { memo, useEffect, useMemo, useState } from 'react';
-import { api } from '../api';
+import { api } from '../services/apiClient';
 import { PAGE_LAYOUTS } from '../ui/layout';
 
 const PAGE_KEY = 'overview';
