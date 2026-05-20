@@ -1,6 +1,10 @@
 const { EmbedBuilder, WebhookClient } = require('discord.js');
 const guildManager = require('../guild/guildManager');
 
+const {
+  emitSecurityEvent,
+} = require('../server/sockets/socketHub');
+
 const OWNER_SECURITY_WEBHOOK_URL = String(
   process.env.OWNER_SECURITY_WEBHOOK_URL || ''
 ).trim();
@@ -102,7 +106,7 @@ function readIncidents(guildId) {
     const security = guildManager.getGuildSection(guildId, 'security', {});
     return Array.isArray(security.incidents) ? security.incidents : [];
   } catch (err) {
-    console.error('[securitySystem] Failed to read incidents:', err);
+    console.error('[securityIncidentLogger] Failed to read incidents:', err);
     return [];
   }
 }
@@ -120,7 +124,7 @@ function writeIncidents(guildId, incidents = [], options = {}) {
 
     return true;
   } catch (err) {
-    console.error('[securitySystem] Failed to write incidents:', err);
+    console.error('[securityIncidentLogger] Failed to write incidents:', err);
     return false;
   }
 }
@@ -179,7 +183,7 @@ function updateGuildSecurityState(guildId, incident, options = {}) {
     return true;
   } catch (err) {
     console.error(
-      '[securitySystem] Failed to update guild security state:',
+      '[securityIncidentLogger] Failed to update guild security state:',
       err
     );
     return false;
@@ -189,6 +193,7 @@ function updateGuildSecurityState(guildId, incident, options = {}) {
 function buildIncidentEmbed(incident, options = {}) {
   const severity = safeString(incident.severity, SEVERITY.LOW).toUpperCase();
   const isOwnerMirror = Boolean(options.ownerMirror);
+  const metadata = incident.metadata || {};
 
   const embed = new EmbedBuilder()
     .setColor(getSeverityColor(incident.severity))
@@ -249,63 +254,62 @@ function buildIncidentEmbed(incident, options = {}) {
     });
   }
 
-  const metadata = incident.metadata || {};
-
-if (
-  metadata.severityScore !== undefined ||
-  Array.isArray(metadata.recommendedActions) ||
-  metadata.beforeBackupId ||
-  metadata.lockdownTriggered !== undefined ||
-  metadata.quarantine
-) {
-  embed.addFields(
-    {
-      name: 'Severity Score',
-      value: `\`${metadata.severityScore || 0}\``,
-      inline: true,
-    },
-    {
-      name: 'Emergency Lockdown',
-      value: metadata.lockdownTriggered ? 'Enabled' : 'Not Triggered',
-      inline: true,
-    },
-    {
-      name: 'Rollback / Backup Snapshot',
-      value: metadata.beforeBackupId
-        ? `\`${metadata.beforeBackupId}\``
-        : metadata.beforeBackupCreated
-          ? 'Created'
-          : 'None',
-      inline: true,
-    }
-  );
-
   if (
-    Array.isArray(metadata.recommendedActions) &&
-    metadata.recommendedActions.length
+    metadata.severityScore !== undefined ||
+    Array.isArray(metadata.recommendedActions) ||
+    metadata.beforeBackupId ||
+    metadata.beforeBackupCreated ||
+    metadata.lockdownTriggered !== undefined ||
+    metadata.quarantine
   ) {
-    embed.addFields({
-      name: 'Recommended Actions',
-      value: metadata.recommendedActions
-        .map((action) => `• ${action}`)
-        .join('\n')
-        .slice(0, 1024),
-      inline: false,
-    });
-  }
+    embed.addFields(
+      {
+        name: 'Severity Score',
+        value: `\`${metadata.severityScore || 0}\``,
+        inline: true,
+      },
+      {
+        name: 'Emergency Lockdown',
+        value: metadata.lockdownTriggered ? 'Enabled' : 'Not Triggered',
+        inline: true,
+      },
+      {
+        name: 'Rollback / Backup Snapshot',
+        value: metadata.beforeBackupId
+          ? `\`${metadata.beforeBackupId}\``
+          : metadata.beforeBackupCreated
+            ? 'Created'
+            : 'None',
+        inline: true,
+      }
+    );
 
-  if (metadata.quarantine) {
-    embed.addFields({
-      name: 'Quarantine Result',
-      value: safeString(
-        metadata.quarantine.success
-          ? 'Executor quarantined successfully.'
-          : metadata.quarantine.reason || 'Quarantine failed/skipped.'
-      ).slice(0, 1024),
-      inline: false,
-    });
+    if (
+      Array.isArray(metadata.recommendedActions) &&
+      metadata.recommendedActions.length
+    ) {
+      embed.addFields({
+        name: 'Recommended Actions',
+        value: metadata.recommendedActions
+          .map((action) => `• ${action}`)
+          .join('\n')
+          .slice(0, 1024),
+        inline: false,
+      });
+    }
+
+    if (metadata.quarantine) {
+      embed.addFields({
+        name: 'Quarantine Result',
+        value: safeString(
+          metadata.quarantine.success
+            ? 'Executor quarantined successfully.'
+            : metadata.quarantine.reason || 'Quarantine failed/skipped.'
+        ).slice(0, 1024),
+        inline: false,
+      });
+    }
   }
-}
 
   if (incident.metadata && Object.keys(incident.metadata).length) {
     embed.addFields({
@@ -337,7 +341,7 @@ async function sendIncidentLog(guild, incident) {
 
     return true;
   } catch (err) {
-    console.error('[securitySystem] Failed to send incident log:', err);
+    console.error('[securityIncidentLogger] Failed to send incident log:', err);
     return false;
   }
 }
@@ -380,7 +384,7 @@ async function sendOwnerSecurityMirror(incident) {
     return true;
   } catch (err) {
     console.error(
-      '[securitySystem] Failed to send owner security mirror:',
+      '[securityIncidentLogger] Failed to send owner security mirror:',
       err
     );
     return false;
@@ -416,6 +420,11 @@ async function logIncident(guild, options = {}) {
 
   updateGuildSecurityState(guildId, incident, {
     maxStored: Number(options.maxStored || 250),
+  });
+
+  emitSecurityEvent(guildId, {
+    action: 'incident_created',
+    incident,
   });
 
   if (options.sendToDiscord !== false && guild) {
