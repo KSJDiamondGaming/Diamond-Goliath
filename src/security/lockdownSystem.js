@@ -1,6 +1,10 @@
 const { ChannelType } = require('discord.js');
 const guildManager = require('../guild/guildManager');
 
+const {
+  emitLockdownUpdate,
+} = require('../server/sockets/socketHub');
+
 const activeReminderIntervals = new Map();
 
 const REMINDER_INTERVAL_MS = 5 * 60 * 1000;
@@ -234,7 +238,6 @@ function createChannelSnapshot(channel) {
     id: channel.id,
     name: channel.name || null,
     type: channel.type,
-
     parentId: channel.parentId || null,
 
     slowmode:
@@ -353,12 +356,9 @@ async function restoreOriginalOverwrites(channel, saved, reason) {
   if (!Array.isArray(saved.overwrites)) return 0;
 
   let restored = 0;
-  const currentIds = new Set();
 
   for (const overwrite of saved.overwrites) {
     if (!overwrite?.id) continue;
-
-    currentIds.add(String(overwrite.id));
 
     try {
       await channel.permissionOverwrites.edit(
@@ -383,6 +383,20 @@ async function restoreOriginalOverwrites(channel, saved, reason) {
   }
 
   return restored;
+}
+
+function emitCurrentLockdownState(guild, action) {
+  try {
+    emitLockdownUpdate(guild.id, {
+      action,
+      lockdown: getLockdownState(guild.id),
+    });
+  } catch (error) {
+    console.warn(
+      '[LockdownSystem] Failed to emit lockdown update:',
+      error.message
+    );
+  }
 }
 
 function startLockdownReminder(guild, reminderChannelId, reminderUserId) {
@@ -560,6 +574,8 @@ async function enableLockdown(guild, options = {}) {
     bypassRoleIds,
   });
 
+  emitCurrentLockdownState(guild, 'lockdown_enabled');
+
   if (reminderChannelId && reminderUserId) {
     startLockdownReminder(guild, reminderChannelId, reminderUserId);
   }
@@ -691,6 +707,7 @@ async function disableLockdown(guild, options = {}) {
   } = getIncidentLogger();
 
   clearLockdownState(guild);
+  emitCurrentLockdownState(guild, 'lockdown_disabled');
 
   await logIncident(guild, {
     type: INCIDENT_TYPES.LOCKDOWN_DISABLED,
