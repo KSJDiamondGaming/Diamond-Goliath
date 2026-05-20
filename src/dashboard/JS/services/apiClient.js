@@ -19,8 +19,8 @@ async function request(
   return response.json();
 }
 
-const apiClient = {
+export const api = {
   request,
 };
 
-export default apiClient;
+export default api;
