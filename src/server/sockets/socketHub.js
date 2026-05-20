@@ -79,8 +79,63 @@ function emitGuildUpdate(guildId, payload = {}) {
   }
 }
 
+function emitSecurityEvent(
+  guildId,
+  payload = {}
+) {
+  emitGuildUpdate(guildId, {
+    type: 'security:event',
+    ...payload,
+  });
+}
+
+function emitSecurityOverview(
+  guildId,
+  payload = {}
+) {
+  emitGuildUpdate(guildId, {
+    type: 'security:overview',
+    ...payload,
+  });
+}
+
+function emitLockdownUpdate(
+  guildId,
+  payload = {}
+) {
+  emitGuildUpdate(guildId, {
+    type: 'security:lockdown',
+    ...payload,
+  });
+}
+
+function emitQuarantineUpdate(
+  guildId,
+  payload = {}
+) {
+  emitGuildUpdate(guildId, {
+    type: 'security:quarantine',
+    ...payload,
+  });
+}
+
+function emitRestoreUpdate(
+  guildId,
+  payload = {}
+) {
+  emitGuildUpdate(guildId, {
+    type: 'security:restore',
+    ...payload,
+  });
+}
+
 module.exports = {
   initSocketHub,
   emitGuildUpdate,
   onGuildUpdate,
+  emitSecurityEvent,
+  emitSecurityOverview,
+  emitLockdownUpdate,
+  emitQuarantineUpdate,
+  emitRestoreUpdate,
 };
