@@ -420,6 +420,23 @@ router.get(
             : []
         );
 
+        if (isBotOwnerUser(userId)) {
+  const ownerGuilds = Array.isArray(botGuilds)
+    ? botGuilds
+        .map(buildGuildPayload)
+        .sort((a, b) => a.name.localeCompare(b.name))
+    : [];
+
+  setCache(
+    guildCache,
+    cacheKey,
+    ownerGuilds,
+    GUILD_CACHE_TTL_MS
+  );
+
+  return res.json(ownerGuilds);
+}
+
       const mutualGuilds =
         Array.isArray(userGuilds)
           ? userGuilds
