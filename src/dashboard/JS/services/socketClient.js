@@ -59,7 +59,7 @@ export function disconnectSocket() {
   }
 }
 
-export const socket = getSocket();
+export { socket };
 
 export default {
   socket,
