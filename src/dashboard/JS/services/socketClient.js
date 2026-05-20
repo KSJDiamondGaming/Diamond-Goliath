@@ -38,6 +38,20 @@ export function listenForGuildUpdate(callback) {
   };
 }
 
+export function onSocketEvent(eventName, callback) {
+  if (!eventName || typeof callback !== 'function') {
+    return () => {};
+  }
+
+  const activeSocket = getSocket();
+
+  activeSocket.on(eventName, callback);
+
+  return () => {
+    activeSocket.off(eventName, callback);
+  };
+}
+
 export function disconnectSocket() {
   if (socket) {
     socket.disconnect();
@@ -45,9 +59,13 @@ export function disconnectSocket() {
   }
 }
 
+export const socket = getSocket();
+
 export default {
+  socket,
   getSocket,
   joinGuildRoom,
   listenForGuildUpdate,
+  onSocketEvent,
   disconnectSocket,
 };
