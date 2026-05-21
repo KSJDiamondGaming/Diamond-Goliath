@@ -4,183 +4,220 @@ import React, {
   useState,
 } from 'react';
 
+import { api } from '../services/apiClient';
+
 import {
-  socket,
   joinGuildRoom,
   onSocketEvent,
 } from '../services/socketClient';
 
-export default function Security() {
-  const [loading, setLoading] = useState(true);
+const INITIAL_STATE = {
+  ok: true,
 
-  const [data, setData] = useState({
-    ok: true,
+  threatLevel: 'low',
 
-    threatLevel: 'low',
+  incidents: {
+    total: 0,
+    critical: 0,
+    recent: [],
+  },
 
-    incidents: {
-      total: 0,
-      critical: 0,
-      recent: [],
-    },
+  lockdown: {
+    active: false,
+  },
 
-    lockdown: {
-      active: false,
-    },
+  quarantine: {
+    users: {},
+  },
+};
 
-    quarantine: {
-      users: {},
-    },
-  });
+export default function Security({
+  selectedGuild,
+  selectedGuildId,
+}) {
+  const activeGuildId =
+    selectedGuildId || selectedGuild || '';
 
-  const guildId = useMemo(() => {
-    return (
-      localStorage.getItem('guildId') ||
-      localStorage.getItem('selectedGuildId') ||
-      ''
-    );
-  }, []);
+  const [loading, setLoading] =
+    useState(true);
+
+  const [data, setData] =
+    useState(INITIAL_STATE);
 
   useEffect(() => {
+    if (!activeGuildId) {
+      setLoading(false);
+
+      setData({
+        ok: false,
+        error: 'Select a server first.',
+      });
+
+      return;
+    }
+
+    let cancelled = false;
+
     async function loadSecurityOverview() {
       try {
-        if (!guildId || guildId === 'null') {
-          setData({
-            ok: false,
-            error: 'Select a server first.',
-          });
+        setLoading(true);
 
-          return;
-        }
+        const result =
+          await api.getSecurityOverview(
+            activeGuildId
+          );
 
-        const response = await fetch(
-          `/api/security/overview?guildId=${guildId}`
-        );
+        if (cancelled) return;
 
-        const result = await response.json();
-
-        setData(result);
+        setData({
+          ...INITIAL_STATE,
+          ...result,
+        });
       } catch (error) {
         console.error(
           '[Security] Failed to load:',
           error
         );
+
+        if (cancelled) return;
+
+        setData({
+          ok: false,
+          error:
+            error.message ||
+            'Failed to load security data.',
+        });
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     }
 
     loadSecurityOverview();
-  }, [guildId]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeGuildId]);
 
   useEffect(() => {
-    if (!guildId || guildId === 'null') {
+    if (!activeGuildId) {
       return;
     }
 
-    joinGuildRoom(guildId);
+    joinGuildRoom(activeGuildId);
 
-    const unsubscribe = onSocketEvent(
-      'guild:update',
-      (update) => {
-        if (!update) return;
+    const unsubscribe =
+      onSocketEvent(
+        'guild:update',
+        (update) => {
+          if (!update) return;
 
-        console.log(
-          '[Security] Live update:',
-          update
-        );
+          console.log(
+            '[Security] Live update:',
+            update
+          );
 
-        if (
-          update.type === 'security:event' &&
-          update.incident
-        ) {
-          setData((previous) => {
-            const incidents =
-              previous?.incidents || {};
+          if (
+            update.type ===
+              'security:event' &&
+            update.incident
+          ) {
+            setData((previous) => {
+              const incidents =
+                previous?.incidents || {};
 
-            const recent = Array.isArray(
-              incidents.recent
-            )
-              ? incidents.recent
-              : [];
+              const recent =
+                Array.isArray(
+                  incidents.recent
+                )
+                  ? incidents.recent
+                  : [];
 
-            return {
+              return {
+                ...previous,
+
+                threatLevel:
+                  update.incident
+                    .severity ||
+                  previous.threatLevel,
+
+                incidents: {
+                  ...incidents,
+
+                  total:
+                    Number(
+                      incidents.total ||
+                        0
+                    ) + 1,
+
+                  critical:
+                    update.incident
+                      .severity ===
+                    'critical'
+                      ? Number(
+                          incidents.critical ||
+                            0
+                        ) + 1
+                      : Number(
+                          incidents.critical ||
+                            0
+                        ),
+
+                  recent: [
+                    update.incident,
+                    ...recent,
+                  ].slice(0, 25),
+                },
+              };
+            });
+          }
+
+          if (
+            update.type ===
+            'security:lockdown'
+          ) {
+            setData((previous) => ({
               ...previous,
 
-              threatLevel:
-                update.incident.severity ||
-                previous.threatLevel,
+              lockdown: {
+                ...(previous.lockdown ||
+                  {}),
 
-              incidents: {
-                ...incidents,
-
-                total:
-                  Number(
-                    incidents.total || 0
-                  ) + 1,
-
-                critical:
-                  update.incident
-                    .severity ===
-                  'critical'
-                    ? Number(
-                        incidents.critical ||
-                          0
-                      ) + 1
-                    : Number(
-                        incidents.critical ||
-                          0
-                      ),
-
-                recent: [
-                  update.incident,
-                  ...recent,
-                ].slice(0, 25),
+                ...(update.lockdown ||
+                  {}),
               },
-            };
-          });
+            }));
+          }
+
+          if (
+            update.type ===
+            'security:quarantine'
+          ) {
+            setData((previous) => ({
+              ...previous,
+
+              quarantine: {
+                ...(previous.quarantine ||
+                  {}),
+
+                ...(update.quarantine ||
+                  {}),
+              },
+            }));
+          }
         }
-
-        if (
-          update.type ===
-          'security:lockdown'
-        ) {
-          setData((previous) => ({
-            ...previous,
-
-            lockdown: {
-              ...(previous.lockdown ||
-                {}),
-
-              ...(update.lockdown ||
-                {}),
-            },
-          }));
-        }
-
-        if (
-          update.type ===
-          'security:quarantine'
-        ) {
-          setData((previous) => ({
-            ...previous,
-
-            quarantine: {
-              ...(previous.quarantine ||
-                {}),
-
-              ...(update.quarantine ||
-                {}),
-            },
-          }));
-        }
-      }
-    );
+      );
 
     return () => {
       unsubscribe();
     };
-  }, [guildId]);
+  }, [activeGuildId]);
+
+  const quarantineCount = Object.keys(
+    data.quarantine?.users || {}
+  ).length;
 
   if (loading) {
     return (
@@ -198,10 +235,6 @@ export default function Security() {
       </div>
     );
   }
-
-  const quarantineCount = Object.keys(
-    data.quarantine?.users || {}
-  ).length;
 
   return (
     <div className="p-6 space-y-6">

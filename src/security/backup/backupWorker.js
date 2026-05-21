@@ -12,7 +12,7 @@ const {
 
 // ======================================================
 // BACKUP WORKER
-// KSJ Goliath Background Sync Worker
+// Goliath Background Sync Worker
 // ======================================================
 //
 // Merged from:

@@ -1,20 +1,18 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-
-import { api } from './services/apiClient';
-import { getStorage, removeStorage, setStorage } from './storage.js';
 
 import { appBaseStyles, shellStyles } from './ui/components.js';
 import { getTheme } from './ui/theme.js';
 import { navItems, ROUTES } from './ui/layout.js';
 
+import { useNavbar } from './hooks/useNavbar.js';
+import { useBotStatus } from './hooks/useBotStatus.js';
+import { useGuilds } from './hooks/useGuilds.js';
+import { useAuthSession } from './hooks/useAuthSession.js';
+
 import Navbar from './shared/Navbar.jsx';
 import Topbar from './shared/Topbar.jsx';
 import Login from './pages/Login.jsx';
-
-const GUILD_STORAGE_KEY = 'selected_guild';
-const BOT_PROFILE_STORAGE_KEY = 'bot_profile';
-const SIDEBAR_EXPANDED_STORAGE_KEY = 'sidebar_expanded';
 
 const ROUTE_PATHS = ROUTES.map((routeItem) => routeItem.path);
 
@@ -29,82 +27,6 @@ const GUILD_REQUIRED_ROUTES = new Set([
   'admin',
   'moderation',
 ]);
-
-function normalizeGuilds(payload) {
-  if (Array.isArray(payload)) return payload;
-  if (Array.isArray(payload?.guilds)) return payload.guilds;
-  if (Array.isArray(payload?.data)) return payload.data;
-  return [];
-}
-
-function normalizeUser(payload) {
-  return payload?.user || payload?.me || payload?.data?.user || payload?.data || null;
-}
-
-function getAvatarUrl(user) {
-  if (!user) return '';
-  if (user.avatarUrl) return user.avatarUrl;
-  if (user.avatarURL) return user.avatarURL;
-
-  if (typeof user.avatar === 'string' && user.id) {
-    const ext = user.avatar.startsWith('a_') ? 'gif' : 'png';
-    return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.${ext}?size=256`;
-  }
-
-  return user.image || user.profileImage || '';
-}
-
-function getDisplayName(user) {
-  return (
-    user?.global_name ||
-    user?.globalName ||
-    user?.displayName ||
-    user?.username ||
-    user?.name ||
-    'User'
-  );
-}
-
-function buildDiscordAvatarUrl(entity) {
-  if (!entity) return '';
-
-  if (entity.avatarUrl) return entity.avatarUrl;
-  if (entity.avatarURL) return entity.avatarURL;
-  if (entity.image) return entity.image;
-  if (entity.profileImage) return entity.profileImage;
-
-  const id = entity.id || entity.botId || '';
-  const avatar = entity.avatar || entity.avatarHash || '';
-
-  if (!id || !avatar || typeof avatar !== 'string') return '';
-
-  const ext = avatar.startsWith('a_') ? 'gif' : 'png';
-  return `https://cdn.discordapp.com/avatars/${id}/${avatar}.${ext}?size=256`;
-}
-
-function normalizeBotProfile(payload) {
-  const bot = payload?.bot || payload?.data?.bot || payload?.botData || payload || null;
-
-  if (!bot || typeof bot !== 'object') {
-    return {
-      name: 'Goliath',
-      avatar: '',
-      raw: null,
-    };
-  }
-
-  return {
-    name:
-      bot.name ||
-      bot.username ||
-      bot.displayName ||
-      bot.global_name ||
-      bot.globalName ||
-      'Goliath',
-    avatar: bot.avatarUrl || bot.avatarURL || buildDiscordAvatarUrl(bot) || '',
-    raw: bot,
-  };
-}
 
 function getRouteForPath(pathname) {
   return ROUTES.find((routeItem) => routeItem.path === pathname) || null;
@@ -148,51 +70,29 @@ export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const sessionLoadedRef = useRef(false);
-  const botStatusLoadedRef = useRef(false);
-
   const [darkMode, setDarkMode] = useState(true);
-  const [sidebarExpanded, setSidebarExpanded] = useState(() =>
-    getStorage(SIDEBAR_EXPANDED_STORAGE_KEY, true)
-  );
-  const [selectedGuild, setSelectedGuild] = useState(() =>
-    getStorage(GUILD_STORAGE_KEY, '')
-  );
-
-  const [guilds, setGuilds] = useState([]);
-  const [guildError, setGuildError] = useState('');
-  const [authLoading, setAuthLoading] = useState(true);
-  const [guildsLoading, setGuildsLoading] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [currentUser, setCurrentUser] = useState(null);
-  const [loginPending, setLoginPending] = useState(false);
-
-  const cachedBotProfile = useMemo(
-    () =>
-      getStorage(BOT_PROFILE_STORAGE_KEY, {
-        name: 'Goliath',
-        avatar: '',
-        raw: null,
-      }),
-    []
-  );
-
-  const [botAvatar, setBotAvatar] = useState(cachedBotProfile?.avatar || '');
-  const [botName, setBotName] = useState(cachedBotProfile?.name || 'Goliath');
-  const [botData, setBotData] = useState(cachedBotProfile?.raw || null);
 
   const theme = useMemo(() => getTheme(darkMode), [darkMode]);
+
+  const { navbarExpanded, toggleNavbar } = useNavbar();
+
+  const guildState = useGuilds();
+
+  const botState = useBotStatus();
+
+  const authState = useAuthSession({
+    loadGuilds: guildState.loadGuilds,
+    loadBotStatus: botState.refreshBotStatus,
+    applyBotProfile: botState.applyBotProfile,
+    clearGuilds: guildState.clearGuilds,
+  });
+
   const styles = useMemo(
-    () => shellStyles(theme, { sidebarExpanded }),
-    [theme, sidebarExpanded]
+    () => shellStyles(theme, { sidebarExpanded: navbarExpanded }),
+    [theme, navbarExpanded]
   );
 
   const isLoginPage = location.pathname === '/login';
-
-  const selectedGuildData = useMemo(
-    () => guilds.find((guild) => guild.id === selectedGuild) || null,
-    [guilds, selectedGuild]
-  );
 
   const activeRoute = useMemo(
     () => getRouteForPath(location.pathname),
@@ -205,232 +105,63 @@ export default function App() {
     activeRoute?.key && GUILD_REQUIRED_ROUTES.has(activeRoute.key)
   );
 
-  const clearAuthState = useCallback(() => {
-    setIsAuthenticated(false);
-    setCurrentUser(null);
-    setGuilds([]);
-    setSelectedGuild('');
-    removeStorage(GUILD_STORAGE_KEY);
-  }, []);
-
-  const applyBotProfile = useCallback((profile) => {
-    const safeProfile = {
-      name: profile?.name || 'Goliath',
-      avatar: profile?.avatar || '',
-      raw: profile?.raw || null,
-    };
-
-    setBotName(safeProfile.name);
-    setBotAvatar(safeProfile.avatar);
-    setBotData(safeProfile.raw);
-    setStorage(BOT_PROFILE_STORAGE_KEY, safeProfile);
-  }, []);
-
-  const loadBotStatus = useCallback(
-    async ({ force = false } = {}) => {
-      try {
-        const status = await api.getStatus(undefined, { force });
-        const nextProfile = normalizeBotProfile(status?.bot || status);
-
-        applyBotProfile(nextProfile);
-        return nextProfile;
-      } catch (error) {
-        console.error('Failed to load bot status:', error);
-        return null;
-      }
-    },
-    [applyBotProfile]
-  );
-
-  const loadGuilds = useCallback(async ({ force = false } = {}) => {
-    try {
-      setGuildsLoading(true);
-      setGuildError('');
-
-      const guildResponse = await api.getGuilds({ force });
-      const nextGuilds = normalizeGuilds(guildResponse);
-
-      setGuilds(nextGuilds);
-
-      setSelectedGuild((currentGuildId) => {
-        const storedGuildId = currentGuildId || getStorage(GUILD_STORAGE_KEY, '');
-        const storedGuildStillExists = nextGuilds.some(
-          (guild) => guild.id === storedGuildId
-        );
-
-        if (storedGuildStillExists) return storedGuildId;
-
-        const fallbackGuildId = nextGuilds[0]?.id || '';
-
-        if (fallbackGuildId) {
-          setStorage(GUILD_STORAGE_KEY, fallbackGuildId);
-        } else {
-          removeStorage(GUILD_STORAGE_KEY);
-        }
-
-        return fallbackGuildId;
-      });
-    } catch (error) {
-      console.error('Failed to load guilds:', error);
-      setGuilds([]);
-      setGuildError('Could not load guilds.');
-      setSelectedGuild('');
-      removeStorage(GUILD_STORAGE_KEY);
-    } finally {
-      setGuildsLoading(false);
-    }
-  }, []);
-
-  const loadSession = useCallback(async () => {
-    try {
-      setAuthLoading(true);
-      setGuildError('');
-
-      const authResponse = await api.getAuthMe();
-
-      const authenticated = Boolean(
-        authResponse?.authenticated ??
-          authResponse?.isAuthenticated ??
-          authResponse?.user
-      );
-
-      if (!authenticated) {
-        clearAuthState();
-        return;
-      }
-
-      setIsAuthenticated(true);
-      setCurrentUser(normalizeUser(authResponse));
-
-      const authBotProfile = normalizeBotProfile(
-        authResponse?.bot || authResponse?.client || authResponse?.application
-      );
-
-      if (authBotProfile.avatar || authBotProfile.raw || authBotProfile.name !== 'Goliath') {
-        applyBotProfile(authBotProfile);
-      }
-
-      await Promise.all([loadGuilds(), loadBotStatus()]);
-    } catch (error) {
-      console.error('Session check failed:', error);
-      clearAuthState();
-    } finally {
-      setAuthLoading(false);
-      setLoginPending(false);
-    }
-  }, [applyBotProfile, clearAuthState, loadBotStatus, loadGuilds]);
-
   useEffect(() => {
-    if (botStatusLoadedRef.current) return;
-
-    botStatusLoadedRef.current = true;
-    loadBotStatus();
-  }, [loadBotStatus]);
-
-  useEffect(() => {
-    if (sessionLoadedRef.current) return;
-
-    sessionLoadedRef.current = true;
-    loadSession();
-  }, [loadSession]);
-
-  useEffect(() => {
-    if (!botAvatar && !botData) {
-      loadBotStatus();
-    }
-  }, [botAvatar, botData, loadBotStatus]);
-
-  useEffect(() => {
-    if (selectedGuild) {
-      setStorage(GUILD_STORAGE_KEY, selectedGuild);
-    } else {
-      removeStorage(GUILD_STORAGE_KEY);
-    }
-  }, [selectedGuild]);
-
-  useEffect(() => {
-    setStorage(SIDEBAR_EXPANDED_STORAGE_KEY, sidebarExpanded);
-  }, [sidebarExpanded]);
-
-  useEffect(() => {
-    const handleResize = () => {
-      if (window.innerWidth <= 900) {
-        setSidebarExpanded(false);
-      }
-    };
-
-    handleResize();
-    window.addEventListener('resize', handleResize);
-
-    return () => {
-      window.removeEventListener('resize', handleResize);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (authLoading) return;
+    if (authState.authLoading) return;
 
     if (!isKnownPath(location.pathname)) {
-      navigate(isAuthenticated ? '/overview' : '/login', { replace: true });
+      navigate(authState.isAuthenticated ? '/overview' : '/login', { replace: true });
       return;
     }
 
     if (location.pathname === '/') {
-      navigate(isAuthenticated ? '/overview' : '/login', { replace: true });
+      navigate(authState.isAuthenticated ? '/overview' : '/login', { replace: true });
       return;
     }
 
-    if (!isAuthenticated && location.pathname !== '/login') {
+    if (!authState.isAuthenticated && location.pathname !== '/login') {
       navigate('/login', { replace: true });
       return;
     }
 
-    if (isAuthenticated && location.pathname === '/login') {
+    if (authState.isAuthenticated && location.pathname === '/login') {
       navigate('/overview', { replace: true });
     }
-  }, [authLoading, isAuthenticated, location.pathname, navigate]);
+  }, [
+    authState.authLoading,
+    authState.isAuthenticated,
+    location.pathname,
+    navigate,
+  ]);
 
-  const handleLogin = useCallback(() => {
-    setLoginPending(true);
-    window.location.href = api.getLoginUrl();
-  }, []);
-
-  const handleLogout = useCallback(async () => {
-    try {
-      setAuthLoading(true);
-      await api.logout();
-    } catch (error) {
-      console.error('Logout failed:', error);
-    } finally {
-      clearAuthState();
-      setAuthLoading(false);
-      navigate('/login', { replace: true });
-    }
-  }, [clearAuthState, navigate]);
+  const handleLogout = async () => {
+    await authState.handleLogout();
+    navigate('/login', { replace: true });
+  };
 
   const pageProps = {
-    selectedGuild,
-    selectedGuildName: selectedGuildData?.name || '',
-    selectedGuildId: selectedGuildData?.id || '',
-    selectedGuildIcon:
-      selectedGuildData?.iconUrl ||
-      selectedGuildData?.iconURL ||
-      selectedGuildData?.avatarUrl ||
-      '',
-    selectedGuildData,
-    guilds,
-    guildsLoading,
-    guildError,
+    selectedGuild: guildState.selectedGuild,
+    selectedGuildName: guildState.selectedGuildName,
+    selectedGuildId: guildState.selectedGuildId,
+    selectedGuildIcon: guildState.selectedGuildIcon,
+    selectedGuildData: guildState.selectedGuildData,
+
+    guilds: guildState.guilds,
+    guildsLoading: guildState.guildsLoading,
+    guildError: guildState.guildError,
+
     theme,
-    authLoading,
-    isAuthenticated,
-    handleLogin,
-    loginPending,
-    botName,
-    botAvatar,
-    botData,
-    refreshGuilds: () => loadGuilds({ force: true }),
-    refreshBotStatus: () => loadBotStatus({ force: true }),
+
+    authLoading: authState.authLoading,
+    isAuthenticated: authState.isAuthenticated,
+    handleLogin: authState.handleLogin,
+    loginPending: authState.loginPending,
+
+    botName: botState.botName,
+    botAvatar: botState.botAvatar,
+    botData: botState.botData,
+
+    refreshGuilds: guildState.refreshGuilds,
+    refreshBotStatus: botState.refreshBotStatus,
   };
 
   if (isLoginPage) {
@@ -443,7 +174,7 @@ export default function App() {
             minHeight: '100vh',
             background: theme.pageBg,
             color: theme.cardText,
-            padding: '24px',
+            padding: 24,
           }}
         >
           <Login {...pageProps} />
@@ -460,59 +191,61 @@ export default function App() {
         <div style={styles.grid}>
           <Navbar
             theme={theme}
-            selectedGuild={selectedGuild}
-            setSelectedGuild={setSelectedGuild}
-            guilds={guilds}
-            guildError={guildError}
-            isAuthenticated={isAuthenticated}
-            authLoading={authLoading}
-            guildsLoading={guildsLoading}
+            selectedGuild={guildState.selectedGuild}
+            setSelectedGuild={guildState.setSelectedGuild}
+            guilds={guildState.guilds}
+            guildError={guildState.guildError}
+            isAuthenticated={authState.isAuthenticated}
+            authLoading={authState.authLoading}
+            guildsLoading={guildState.guildsLoading}
             navItems={navItems}
-            botName={botName}
-            botAvatar={botAvatar}
-            botData={botData}
-            expanded={sidebarExpanded}
-            onToggleCollapsed={() => setSidebarExpanded((prev) => !prev)}
+            botName={botState.botName}
+            botAvatar={botState.botAvatar}
+            botData={botState.botData}
+            expanded={navbarExpanded}
+            onToggleCollapsed={toggleNavbar}
           />
 
           <div style={styles.mainColumn}>
             <Topbar
               theme={theme}
-              authLoading={authLoading}
-              isAuthenticated={isAuthenticated}
-              handleLogin={handleLogin}
+              authLoading={authState.authLoading}
+              isAuthenticated={authState.isAuthenticated}
+              handleLogin={authState.handleLogin}
               handleLogout={handleLogout}
-              topbarUserName={getDisplayName(currentUser)}
-              currentUserAvatar={getAvatarUrl(currentUser)}
+              topbarUserName={authState.currentUserName}
+              currentUserAvatar={authState.currentUserAvatar}
               darkMode={darkMode}
               setDarkMode={setDarkMode}
-              loginPending={loginPending}
+              loginPending={authState.loginPending}
             />
 
             <main style={styles.main}>
-              {authLoading ? (
+              {authState.authLoading ? (
                 <CenterMessage
                   theme={theme}
                   title="Loading dashboard..."
                   text="Checking your Discord session and preparing your server tools."
                 />
-              ) : !isAuthenticated ? (
+              ) : !authState.isAuthenticated ? (
                 <CenterMessage
                   theme={theme}
                   title="Not signed in"
                   text="Please login with Discord to access your dashboard."
                 />
-              ) : guildsLoading && guilds.length === 0 ? (
+              ) : guildState.guildsLoading && guildState.guilds.length === 0 ? (
                 <CenterMessage
                   theme={theme}
                   title="Loading servers..."
                   text="Fetching the Discord servers shared with Goliath."
                 />
-              ) : routeNeedsGuild && !selectedGuild ? (
+              ) : routeNeedsGuild &&
+                !guildState.guildsLoading &&
+                !guildState.selectedGuild ? (
                 <CenterMessage
                   theme={theme}
                   title="No server selected"
-                  text="Select a server from the sidebar to continue."
+                  text="Select a server from the navbar to continue."
                 />
               ) : ActivePage ? (
                 <ActivePage {...pageProps} />

@@ -22,7 +22,7 @@ function Login({
   const guildInitial = getNameInitial(selectedGuildName || 'Guild');
   const botInitial = getNameInitial(botName || 'Goliath');
 
-  const avatarSrc = isAuthenticated ? selectedGuildIcon || '' : botAvatar || '';
+  const avatarSrc = botAvatar || selectedGuildIcon || '';
   const showAvatarImage = Boolean(avatarSrc) && !avatarFailed;
 
   const fallbackInitial = isAuthenticated ? guildInitial : botInitial;
@@ -57,16 +57,18 @@ function Login({
 
           {!authLoading && !isAuthenticated ? (
             <button
-              type="button"
-              onClick={handleLogin}
-              disabled={loginPending}
-              style={{
-                ...styles.loginButton,
-                ...styles.loginButtonState(loginPending),
-              }}
-            >
-              {loginPending ? 'Redirecting to Discord...' : 'Login with Discord'}
-            </button>
+            type="button"
+            onClick={() => {
+              setAvatarFailed(false);
+              handleLogin();
+            }}
+            style={{
+              ...styles.loginButton,
+              opacity: loginPending ? 0.9 : 1,
+            }}
+          >
+            {loginPending ? 'Opening Discord...' : 'Login with Discord'}
+          </button>
           ) : null}
         </section>
       </section>

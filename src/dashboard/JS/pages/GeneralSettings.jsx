@@ -272,7 +272,7 @@ export default function GeneralSettings({ selectedGuild, theme }) {
         subtitle={page.emptyDescription || 'Select a server to manage settings.'}
         theme={theme}
       >
-        <EmptyState theme={theme} text="Select a guild from the sidebar to continue." />
+        <EmptyState theme={theme} text="Select a guild from the navbar to continue." />
       </PageShell>
     );
   }

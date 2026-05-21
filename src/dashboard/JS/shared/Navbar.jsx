@@ -1,5 +1,6 @@
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+
 import BotAvatar from './BotAvatar';
 import { NAV_BOTTOM } from '../ui/layout';
 import { navbarStyles } from '../ui/components';
@@ -21,17 +22,20 @@ function isActivePath(currentPath, itemPath) {
   const normalizedCurrent = normalizePath(currentPath);
   const normalizedItem = normalizePath(itemPath);
 
-  if (normalizedItem === '/') return normalizedCurrent === '/';
+  if (normalizedItem === '/') {
+    return normalizedCurrent === '/';
+  }
 
   return normalizedCurrent === normalizedItem || normalizedCurrent.startsWith(`${normalizedItem}/`);
 }
 
 function itemHasActiveChild(currentPath, item) {
   if (!item?.children?.length) return false;
+
   return item.children.some((child) => isActivePath(currentPath, child.path || '/'));
 }
 
-function SidebarIcon({ type, active, color }) {
+function NavbarIcon({ type, active, color }) {
   const stroke = active ? '#93c5fd' : color;
 
   const baseProps = {
@@ -137,6 +141,180 @@ function SidebarIcon({ type, active, color }) {
   }
 }
 
+function NavbarGroup({
+  item,
+  expanded,
+  canNavigate,
+  location,
+  hoveredNavKey,
+  pressedNavKey,
+  theme,
+  styles,
+  handleToggleGroup,
+  handleNavigate,
+  getNavInteractionProps,
+  openGroups,
+}) {
+  const groupOpen = Boolean(openGroups[item.key]);
+  const hasActiveChild = itemHasActiveChild(location.pathname, item);
+  const groupHovered = hoveredNavKey === item.key;
+  const groupPressed = pressedNavKey === item.key;
+
+  return (
+    <div key={item.key} style={{ display: 'grid', gap: '8px' }}>
+      <button
+        type="button"
+        onClick={() => handleToggleGroup(item.key)}
+        style={styles.navItem(
+          hasActiveChild,
+          expanded,
+          canNavigate,
+          groupHovered,
+          groupPressed,
+        )}
+        title={expanded ? undefined : item.label}
+        aria-expanded={groupOpen}
+        {...getNavInteractionProps(item.key)}
+      >
+        <span style={styles.navAccent(hasActiveChild)} />
+
+        <span style={styles.navIcon}>
+          <NavbarIcon
+            type={item.icon}
+            active={hasActiveChild || groupHovered}
+            color={theme.navbarText}
+          />
+        </span>
+
+        {expanded ? (
+          <>
+            <span style={styles.navLabel}>{item.label}</span>
+
+            <span
+              style={{
+                marginLeft: 'auto',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transform: groupOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                transition: 'transform 0.2s ease',
+                color: hasActiveChild || groupHovered ? '#93c5fd' : theme.navbarMuted,
+                fontSize: '12px',
+                lineHeight: 1,
+              }}
+            >
+              ▾
+            </span>
+          </>
+        ) : null}
+      </button>
+
+      <div
+        style={{
+          display: 'grid',
+          gap: '8px',
+          overflow: 'hidden',
+          maxHeight: groupOpen && expanded ? `${item.children.length * 58}px` : '0px',
+          opacity: groupOpen && expanded ? 1 : 0,
+          transform: groupOpen && expanded ? 'translateY(0)' : 'translateY(-6px)',
+          transition: 'max-height 0.24s ease, opacity 0.18s ease, transform 0.2s ease',
+        }}
+      >
+        {item.children.map((child) => {
+          const childKey = `${item.key}-${child.key}`;
+          const childActive = isActivePath(location.pathname, child.path || '/');
+          const childHovered = hoveredNavKey === childKey;
+          const childPressed = pressedNavKey === childKey;
+
+          const baseChildStyle = styles.navItem(
+            childActive,
+            expanded,
+            canNavigate,
+            childHovered,
+            childPressed,
+          );
+
+          return (
+            <button
+              key={child.key}
+              type="button"
+              onClick={() => handleNavigate(child)}
+              style={{
+                ...baseChildStyle,
+                paddingTop: baseChildStyle.paddingTop || '12px',
+                paddingRight: baseChildStyle.paddingRight || '12px',
+                paddingBottom: baseChildStyle.paddingBottom || '12px',
+                paddingLeft: '38px',
+                padding: undefined,
+              }}
+              title={expanded ? undefined : child.label}
+              disabled={!canNavigate || !child.path}
+              aria-current={childActive ? 'page' : undefined}
+              tabIndex={groupOpen && expanded ? 0 : -1}
+              {...getNavInteractionProps(childKey)}
+            >
+              <span style={styles.navAccent(childActive)} />
+
+              <span style={styles.navIcon}>
+                <NavbarIcon
+                  type={child.icon}
+                  active={childActive || childHovered}
+                  color={theme.navbarText}
+                />
+              </span>
+
+              <span style={styles.navLabel}>{child.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function NavbarItem({
+  item,
+  itemKey,
+  expanded,
+  canNavigate,
+  location,
+  hoveredNavKey,
+  pressedNavKey,
+  theme,
+  styles,
+  handleNavigate,
+  getNavInteractionProps,
+}) {
+  const active = isActivePath(location.pathname, item.path || '/');
+  const hovered = hoveredNavKey === itemKey;
+  const pressed = pressedNavKey === itemKey;
+
+  return (
+    <button
+      key={item.key}
+      type="button"
+      onClick={() => handleNavigate(item)}
+      style={styles.navItem(active, expanded, canNavigate, hovered, pressed)}
+      title={expanded ? undefined : item.label}
+      disabled={!canNavigate || !item.path}
+      aria-current={active ? 'page' : undefined}
+      {...getNavInteractionProps(itemKey)}
+    >
+      <span style={styles.navAccent(active)} />
+
+      <span style={styles.navIcon}>
+        <NavbarIcon
+          type={item.icon}
+          active={active || hovered}
+          color={theme.navbarText}
+        />
+      </span>
+
+      {expanded ? <span style={styles.navLabel}>{item.label}</span> : null}
+    </button>
+  );
+}
+
 function Navbar({
   theme,
   selectedGuild,
@@ -165,7 +343,7 @@ function Navbar({
   const [pressedNavKey, setPressedNavKey] = useState('');
 
   const selectedGuildData = useMemo(
-    () => guilds.find((guild) => guild.id === selectedGuild) || null,
+    () => guilds.find((guild) => String(guild.id) === String(selectedGuild)) || null,
     [guilds, selectedGuild],
   );
 
@@ -185,7 +363,7 @@ function Navbar({
     setOpenGroups((prev) => {
       const next = { ...prev };
 
-      safeNavItems.forEach((item) => {
+      [...safeNavItems, ...safeBottomItems].forEach((item) => {
         if (!item?.children?.length) return;
 
         if (typeof next[item.key] !== 'boolean') {
@@ -199,7 +377,7 @@ function Navbar({
 
       return next;
     });
-  }, [location.pathname, safeNavItems]);
+  }, [location.pathname, safeNavItems, safeBottomItems]);
 
   const handleNavigate = useCallback(
     (item) => {
@@ -241,6 +419,62 @@ function Navbar({
     [canNavigate],
   );
 
+  const renderNavEntry = useCallback(
+    (item, itemKeyPrefix = '') => {
+      if (item?.children?.length) {
+        return (
+          <NavbarGroup
+            key={item.key}
+            item={item}
+            expanded={expanded}
+            canNavigate={canNavigate}
+            location={location}
+            hoveredNavKey={hoveredNavKey}
+            pressedNavKey={pressedNavKey}
+            theme={theme}
+            styles={styles}
+            handleToggleGroup={handleToggleGroup}
+            handleNavigate={handleNavigate}
+            getNavInteractionProps={getNavInteractionProps}
+            openGroups={openGroups}
+          />
+        );
+      }
+
+      const itemKey = itemKeyPrefix ? `${itemKeyPrefix}-${item.key}` : item.key;
+
+      return (
+        <NavbarItem
+          key={item.key}
+          item={item}
+          itemKey={itemKey}
+          expanded={expanded}
+          canNavigate={canNavigate}
+          location={location}
+          hoveredNavKey={hoveredNavKey}
+          pressedNavKey={pressedNavKey}
+          theme={theme}
+          styles={styles}
+          handleNavigate={handleNavigate}
+          getNavInteractionProps={getNavInteractionProps}
+        />
+      );
+    },
+    [
+      canNavigate,
+      expanded,
+      getNavInteractionProps,
+      handleNavigate,
+      handleToggleGroup,
+      hoveredNavKey,
+      location,
+      openGroups,
+      pressedNavKey,
+      styles,
+      theme,
+    ],
+  );
+
   return (
     <aside style={styles.root(expanded)}>
       <div style={styles.top}>
@@ -259,8 +493,11 @@ function Navbar({
             {expanded ? (
               <div style={styles.guildSelectWrap}>
                 <select
-                  value={selectedGuild}
-                  onChange={(e) => setSelectedGuild(e.target.value)}
+                  value={selectedGuild || ''}
+                  onChange={(event) => {
+                    const guildId = event.target.value || '';
+                    setSelectedGuild(guildId);
+                  }}
                   disabled={!canPickGuild}
                   style={styles.guildSelect(canPickGuild)}
                 >
@@ -292,186 +529,8 @@ function Navbar({
         ) : null}
 
         <nav style={styles.nav}>
-          {safeNavItems.map((item) => {
-            if (item?.children?.length) {
-              const groupOpen = Boolean(openGroups[item.key]);
-              const hasActiveChild = itemHasActiveChild(location.pathname, item);
-              const groupHovered = hoveredNavKey === item.key;
-              const groupPressed = pressedNavKey === item.key;
-
-              return (
-                <div key={item.key} style={{ display: 'grid', gap: '8px' }}>
-                  <button
-                    type="button"
-                    onClick={() => handleToggleGroup(item.key)}
-                    style={styles.navItem(
-                      hasActiveChild,
-                      expanded,
-                      canNavigate,
-                      groupHovered,
-                      groupPressed,
-                    )}
-                    title={expanded ? undefined : item.label}
-                    aria-expanded={groupOpen}
-                    {...getNavInteractionProps(item.key)}
-                  >
-                    <span style={styles.navAccent(hasActiveChild)} />
-
-                    <span style={styles.navIcon}>
-                      <SidebarIcon
-                        type={item.icon}
-                        active={hasActiveChild || groupHovered}
-                        color={theme.sidebarText}
-                      />
-                    </span>
-
-                    {expanded ? (
-                      <>
-                        <span style={styles.navLabel}>{item.label}</span>
-                        <span
-                          style={{
-                            marginLeft: 'auto',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            transform: groupOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-                            transition: 'transform 0.2s ease',
-                            color: hasActiveChild || groupHovered ? '#93c5fd' : theme.sidebarMuted,
-                            fontSize: '12px',
-                            lineHeight: 1,
-                          }}
-                        >
-                          ▾
-                        </span>
-                      </>
-                    ) : null}
-                  </button>
-
-                  <div
-                    style={{
-                      display: 'grid',
-                      gap: '8px',
-                      overflow: 'hidden',
-                      maxHeight: groupOpen && expanded ? `${item.children.length * 58}px` : '0px',
-                      opacity: groupOpen && expanded ? 1 : 0,
-                      transform: groupOpen && expanded ? 'translateY(0)' : 'translateY(-6px)',
-                      transition:
-                        'max-height 0.24s ease, opacity 0.18s ease, transform 0.2s ease',
-                    }}
-                  >
-                    {item.children.map((child) => {
-                      const childKey = `${item.key}-${child.key}`;
-                      const childActive = isActivePath(location.pathname, child.path || '/');
-                      const childHovered = hoveredNavKey === childKey;
-                      const childPressed = pressedNavKey === childKey;
-
-                      const baseChildStyle = styles.navItem(
-                        childActive,
-                        expanded,
-                        canNavigate,
-                        childHovered,
-                        childPressed,
-                      );
-
-                      return (
-                        <button
-                          key={child.key}
-                          type="button"
-                          onClick={() => handleNavigate(child)}
-                          style={{
-                            ...baseChildStyle,
-                            paddingTop: baseChildStyle.paddingTop || '12px',
-                            paddingRight: baseChildStyle.paddingRight || '12px',
-                            paddingBottom: baseChildStyle.paddingBottom || '12px',
-                            paddingLeft: '38px',
-                            padding: undefined,
-                          }}
-                          title={expanded ? undefined : child.label}
-                          disabled={!canNavigate || !child.path}
-                          aria-current={childActive ? 'page' : undefined}
-                          tabIndex={groupOpen && expanded ? 0 : -1}
-                          {...getNavInteractionProps(childKey)}
-                        >
-                          <span style={styles.navAccent(childActive)} />
-
-                          <span style={styles.navIcon}>
-                            <SidebarIcon
-                              type={child.icon}
-                              active={childActive || childHovered}
-                              color={theme.sidebarText}
-                            />
-                          </span>
-
-                          <span style={styles.navLabel}>{child.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            }
-
-            const active = isActivePath(location.pathname, item.path || '/');
-            const hovered = hoveredNavKey === item.key;
-            const pressed = pressedNavKey === item.key;
-
-            return (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => handleNavigate(item)}
-                style={styles.navItem(active, expanded, canNavigate, hovered, pressed)}
-                title={expanded ? undefined : item.label}
-                disabled={!canNavigate || !item.path}
-                aria-current={active ? 'page' : undefined}
-                {...getNavInteractionProps(item.key)}
-              >
-                <span style={styles.navAccent(active)} />
-
-                <span style={styles.navIcon}>
-                  <SidebarIcon
-                    type={item.icon}
-                    active={active || hovered}
-                    color={theme.sidebarText}
-                  />
-                </span>
-
-                {expanded ? <span style={styles.navLabel}>{item.label}</span> : null}
-              </button>
-            );
-          })}
-
-          {safeBottomItems.map((item) => {
-            const bottomKey = `bottom-${item.key}`;
-            const active = isActivePath(location.pathname, item.path || '/');
-            const hovered = hoveredNavKey === bottomKey;
-            const pressed = pressedNavKey === bottomKey;
-
-            return (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => handleNavigate(item)}
-                style={styles.navItem(active, expanded, canNavigate, hovered, pressed)}
-                title={expanded ? undefined : item.label}
-                disabled={!canNavigate || !item.path}
-                aria-current={active ? 'page' : undefined}
-                {...getNavInteractionProps(bottomKey)}
-              >
-                <span style={styles.navAccent(active)} />
-
-                <span style={styles.navIcon}>
-                  <SidebarIcon
-                    type={item.icon}
-                    active={active || hovered}
-                    color={theme.sidebarText}
-                  />
-                </span>
-
-                {expanded ? <span style={styles.navLabel}>{item.label}</span> : null}
-              </button>
-            );
-          })}
+          {safeNavItems.map((item) => renderNavEntry(item))}
+          {safeBottomItems.map((item) => renderNavEntry(item, 'bottom'))}
         </nav>
       </div>
 

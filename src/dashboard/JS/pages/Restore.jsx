@@ -9,13 +9,17 @@ import {
 
 export default function Restore({
   selectedGuild,
+  selectedGuildId,
   theme: providedTheme,
 }) {
   const theme = providedTheme || getTheme(true);
   const styles = createRestorePageStyles(theme);
-  const API_BASE = api.getApiBase();
+  const API_BASE =
+  import.meta.env.DEV
+    ? 'http://localhost:3001'
+    : '';
 
-  const guildId = selectedGuild;
+  const guildId = selectedGuildId || selectedGuild || '';
 
   const [backups, setBackups] = useState([]);
   const [selectedBackupId, setSelectedBackupId] = useState('');

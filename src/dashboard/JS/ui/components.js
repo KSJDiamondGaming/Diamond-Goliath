@@ -106,7 +106,7 @@ export function appBaseStyles(theme) {
   };
 }
 
-export function shellStyles(theme, { sidebarExpanded = true } = {}) {
+export function shellStyles(theme, { navbarExpanded= true } = {}) {
   return {
     app: {
       minHeight: '100vh',
@@ -116,9 +116,9 @@ export function shellStyles(theme, { sidebarExpanded = true } = {}) {
     grid: {
       display: 'grid',
       gridTemplateColumns: `${
-        sidebarExpanded
-          ? DASHBOARD_LAYOUT.sidebarExpandedWidth
-          : DASHBOARD_LAYOUT.sidebarCollapsedWidth
+        navbarExpanded
+          ? DASHBOARD_LAYOUT.navbarExpandedWidth
+          : DASHBOARD_LAYOUT.navbarCollapsedWidth
       } minmax(0, 1fr)`,
       minHeight: '100vh',
       transition: 'grid-template-columns 0.28s cubic-bezier(0.22, 1, 0.36, 1)',
@@ -153,37 +153,54 @@ export function shellStyles(theme, { sidebarExpanded = true } = {}) {
 
 export function navbarStyles(theme) {
   return {
-    root(expanded = true) {
-      return {
-        minHeight: '100vh',
-        background: theme.sidebarBg,
-        borderRight: `1px solid ${theme.sidebarBorder}`,
-        padding: expanded ? '8px' : '8px 6px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '8px',
-        overflow: 'hidden',
-      };
-    },
-    top: {
-      display: 'flex',
+    root: (expanded) => ({
+  width: expanded ? 280 : 72,
+  minWidth: expanded ? 280 : 72,
+  maxWidth: expanded ? 280 : 72,
+
+  height: '100vh',
+
+  display: 'flex',
+  flexDirection: 'column',
+
+  background: theme.navbarBg,
+  borderRight: `1px solid ${theme.navbarBorder}`,
+
+  transition:
+    'width 0.22s ease, min-width 0.22s ease, max-width 0.22s ease',
+
+  overflow: 'hidden',
+
+  position: 'sticky',
+  top: 0,
+}),
+        top: {
+      display: 'grid',
+      gap: '14px',
+      padding: '14px 12px 10px',
       alignItems: 'center',
-      justifyContent: 'center',
+      justifyItems: 'center',
     },
-    middle: {
+        middle: {
       flex: 1,
       minHeight: 0,
+
       display: 'flex',
       flexDirection: 'column',
-      gap: '14px',
+
+      gap: '10px',
+
       overflow: 'hidden',
-    },
+
+      padding: '6px 8px',
+},
     bottom: {
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      paddingTop: '4px',
-    },
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+
+  padding: '10px 0 18px',
+},
     guildWrap: {
       display: 'grid',
       gap: '8px',
@@ -217,18 +234,24 @@ export function navbarStyles(theme) {
       pointerEvents: 'none',
     },
     guildMini: {
-      width: '42px',
-      height: '42px',
-      borderRadius: '14px',
-      background: theme.softBg,
-      border: `1px solid ${theme.cardBorder}`,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      overflow: 'hidden',
-      boxShadow: theme.shadow,
-      margin: '0 auto',
-    },
+  width: '48px',
+  height: '48px',
+
+  borderRadius: '16px',
+
+  background: theme.softBg,
+  border: `1px solid ${theme.cardBorder}`,
+
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+
+  overflow: 'hidden',
+
+  boxShadow: theme.shadow,
+
+  margin: '0 auto',
+},
     guildMiniAvatar: {
       width: '100%',
       height: '100%',
@@ -247,68 +270,95 @@ export function navbarStyles(theme) {
       color: theme.dangerText,
     },
     nav: {
-      display: 'grid',
-      gap: '8px',
-      alignContent: 'start',
-      overflowY: 'auto',
-      paddingRight: '2px',
-    },
-    navItem(
-      active = false,
-      expanded = true,
-      canNavigate = true,
-      isHovered = false,
-      isPressed = false,
-    ) {
-      const interactive = canNavigate && (isHovered || isPressed);
+  display: 'grid',
 
-      return {
-        width: '100%',
-        minHeight: '44px',
-        padding: expanded ? '10px 12px' : '10px',
-        borderRadius: '14px',
-        border: active || isHovered ? `1px solid ${theme.primaryBorder}` : '1px solid transparent',
-        background: active
-          ? theme.primarySoft
-          : isHovered
-            ? 'rgba(59,130,246,0.08)'
-            : 'transparent',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: expanded ? 'flex-start' : 'center',
-        gap: '10px',
-        color: active || isHovered ? '#93c5fd' : theme.sidebarText,
-        cursor: canNavigate ? 'pointer' : 'not-allowed',
-        textAlign: 'left',
-        fontSize: '14px',
-        fontWeight: active ? 700 : 600,
-        opacity: canNavigate ? 1 : 0.5,
-        transform: isPressed
-          ? 'scale(0.97)'
-          : interactive
-            ? 'translateY(-2px)'
-            : 'translateY(0)',
-        boxShadow: active || isHovered ? theme.shadow : 'none',
-        transition:
-          'background 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.12s ease, box-shadow 0.12s ease',
-        outline: 'none',
-        appearance: 'none',
-      };
-    },
-    navIcon: {
-      display: 'inline-flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      width: '18px',
-      height: '18px',
-      flexShrink: 0,
-    },
-    navLabel: {
-      minWidth: 0,
-      whiteSpace: 'nowrap',
-      overflow: 'hidden',
-      textOverflow: 'ellipsis',
-    },
+  gap: '8px',
+
+  alignContent: 'start',
+
+  overflowY: 'auto',
+
+  padding: '4px 0',
+},
+    navItem(
+  active = false,
+  expanded = true,
+  canNavigate = true,
+  isHovered = false,
+  isPressed = false,
+) {
+  const interactive = canNavigate && (isHovered || isPressed);
+
+  return {
+    position: 'relative',
+
+    width: '100%',
+
+    minHeight: expanded ? '46px' : '50px',
+
+    padding: expanded
+      ? '10px 14px'
+      : '10px',
+
+    borderRadius: '16px',
+
+    border:
+      active || isHovered
+        ? `1px solid ${theme.primaryBorder}`
+        : '1px solid transparent',
+
+    background: active
+      ? theme.primarySoft
+      : isHovered
+        ? 'rgba(59,130,246,0.08)'
+        : 'transparent',
+
+    display: 'flex',
+
+    alignItems: 'center',
+
+    justifyContent: expanded
+      ? 'flex-start'
+      : 'center',
+
+    gap: '12px',
+
+    color:
+      active || isHovered
+        ? '#93c5fd'
+        : theme.navbarText,
+
+    cursor: canNavigate
+      ? 'pointer'
+      : 'not-allowed',
+
+    textAlign: 'left',
+
+    fontSize: '14px',
+
+    fontWeight: active ? 800 : 700,
+
+    opacity: canNavigate ? 1 : 0.5,
+
+    transform: isPressed
+      ? 'scale(0.97)'
+      : interactive
+        ? 'translateY(-1px)'
+        : 'translateY(0)',
+
+    boxShadow:
+      active || isHovered
+        ? theme.shadow
+        : 'none',
+
+    transition:
+      'background 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.12s ease, box-shadow 0.12s ease',
+
+    outline: 'none',
+
+    appearance: 'none',
+  };
+},
     navAccent(active = false) {
       return {
         position: 'absolute',
@@ -330,15 +380,19 @@ export function navbarStyles(theme) {
         width: '36px',
         height: '36px',
         borderRadius: '999px',
-        border: `1px solid ${isHovered ? theme.primaryBorder : theme.topbarSoftBorder}`,
+        border: `1px solid ${
+        isHovered
+          ? 'rgba(59,130,246,0.35)'
+          : 'rgba(255,255,255,0.06)'
+        }`,
         background: isHovered ? theme.softBg : theme.topbarSoft,
-        color: theme.sidebarText,
+        color: theme.navbarText,
         cursor: 'pointer',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         padding: 0,
-        boxShadow: isHovered ? theme.shadow : '0 6px 18px rgba(0,0,0,0.16)',
+        boxShadow: 'none',
         transition:
           'background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.18s ease',
         transform: isHovered ? 'translateY(-1px)' : 'translateY(0)',
@@ -408,7 +462,7 @@ export function botAvatarStyles(theme) {
       whiteSpace: 'nowrap',
       overflow: 'hidden',
       textOverflow: 'ellipsis',
-      color: theme.sidebarText,
+      color: theme.navbarText,
     },
   };
 }
@@ -446,12 +500,16 @@ export function topbarStyles(theme) {
         minHeight: '46px',
         padding: '6px 10px 6px 12px',
         background: isActive ? theme.softBg : theme.topbarSoft,
-        border: `1px solid ${isActive ? theme.primaryBorder : theme.topbarSoftBorder}`,
+        border: `1px solid ${
+        isActive
+          ? 'rgba(59,130,246,0.35)'
+          : 'rgba(255,255,255,0.06)'
+        }`,
         borderRadius: '14px',
         color: theme.cardText,
         cursor: 'pointer',
         transform: isActive ? 'translateY(-1px)' : 'translateY(0)',
-        boxShadow: isActive ? theme.shadow : 'none',
+        boxShadow: 'none',
         transition:
           'transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease',
       };
@@ -576,7 +634,11 @@ export function topbarStyles(theme) {
         alignItems: 'center',
         justifyContent: 'center',
         padding: 0,
-        border: `1px solid ${isHovered ? theme.primaryBorder : theme.topbarSoftBorder}`,
+        border: `1px solid ${
+  isHovered
+    ? 'rgba(59,130,246,0.35)'
+    : 'rgba(255,255,255,0.06)'
+}`,
         background: 'transparent',
         borderRadius: '999px',
         cursor: 'pointer',

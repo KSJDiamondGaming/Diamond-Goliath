@@ -1,8 +1,17 @@
+const API_BASE =
+  import.meta.env.DEV
+    ? 'http://localhost:3001'
+    : '';
+
+function apiUrl(path = '') {
+  return `${API_BASE}${path}`;
+}
+
 async function request(
   url,
   options = {}
 ) {
-  const response = await fetch(url, {
+  const response = await fetch(apiUrl(url), {
     credentials: 'include',
 
     headers: {
@@ -43,7 +52,7 @@ export const api = {
   },
 
   getLoginUrl() {
-    return '/api/auth/login';
+    return apiUrl('/api/auth/login');
   },
 
   logout() {
