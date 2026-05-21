@@ -91,51 +91,64 @@ export const api = {
 
   /* ---------------- GENERAL SETTINGS ---------------- */
 
-  getGeneralSettings(guildId) {
-    return request(
-      `/api/general-settings/${guildId}`,
-    );
-  },
+getGeneralSettings(guildId) {
+  return request(
+    `/api/config/${guildId}`,
+  );
+},
 
-  saveGeneralSettings(
-    guildId,
-    payload,
-  ) {
-    return request(
-      `/api/general-settings/${guildId}`,
-      {
-        method: 'POST',
+saveGeneralSettings(
+  guildId,
+  payload,
+) {
+  return request(
+    `/api/config/${guildId}`,
+    {
+      method: 'POST',
 
-        body: JSON.stringify(
-          payload,
-        ),
-      },
-    );
-  },
+      body: JSON.stringify(
+        payload,
+      ),
+    },
+  );
+},
 
-  /* ---------------- MESSAGES ---------------- */
+/* ---------------- AUTOMOD ---------------- */
 
-  getMessages(guildId) {
-    return request(
-      `/api/messages/${guildId}`,
-    );
-  },
+getAutoModConfig(guildId) {
+  return request(`/api/config/automod/${guildId}`);
+},
 
-  saveMessages(
-    guildId,
-    payload,
-  ) {
-    return request(
-      `/api/messages/${guildId}`,
-      {
-        method: 'POST',
+saveAutoModConfig(guildId, payload) {
+  return request(`/api/config/automod/${guildId}`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+},
 
-        body: JSON.stringify(
-          payload,
-        ),
-      },
-    );
-  },
+/* ---------------- MESSAGES ---------------- */
+
+getMessages(guildId) {
+  return request(
+    `/api/config/messages/${guildId}`,
+  );
+},
+
+saveMessages(
+  guildId,
+  payload,
+) {
+  return request(
+    `/api/config/messages/${guildId}`,
+    {
+      method: 'POST',
+
+      body: JSON.stringify(
+        payload,
+      ),
+    },
+  );
+},
 
   /* ---------------- CASES ---------------- */
 
@@ -158,6 +171,19 @@ export const api = {
       `/api/security/overview?guildId=${guildId}`,
     );
   },
+
+  /* ---------------- LOGS ---------------- */
+
+getLogConfig(guildId) {
+  return request(`/api/config/logs/${guildId}`);
+},
+
+saveLogConfig(guildId, payload) {
+  return request(`/api/config/logs/${guildId}`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+},
 };
 
 export default api;

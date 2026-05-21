@@ -22,17 +22,39 @@ function isActivePath(currentPath, itemPath) {
   const normalizedCurrent = normalizePath(currentPath);
   const normalizedItem = normalizePath(itemPath);
 
-  if (normalizedItem === '/') {
-    return normalizedCurrent === '/';
-  }
+  if (normalizedItem === '/') return normalizedCurrent === '/';
 
-  return normalizedCurrent === normalizedItem || normalizedCurrent.startsWith(`${normalizedItem}/`);
+  return (
+    normalizedCurrent === normalizedItem ||
+    normalizedCurrent.startsWith(`${normalizedItem}/`)
+  );
 }
 
 function itemHasActiveChild(currentPath, item) {
   if (!item?.children?.length) return false;
-
   return item.children.some((child) => isActivePath(currentPath, child.path || '/'));
+}
+
+function useIsMobile(breakpoint = 1024) {
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth < breakpoint;
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    function handleResize() {
+      setIsMobile(window.innerWidth < breakpoint);
+    }
+
+    handleResize();
+    window.addEventListener('resize', handleResize);
+
+    return () => window.removeEventListener('resize', handleResize);
+  }, [breakpoint]);
+
+  return isMobile;
 }
 
 function NavbarIcon({ type, active, color }) {
@@ -139,6 +161,26 @@ function NavbarIcon({ type, active, color }) {
         </svg>
       );
   }
+}
+
+function NavbarSectionLabel({ expanded, children, theme }) {
+  if (!expanded) return null;
+
+  return (
+    <div
+      style={{
+        margin: '14px 8px 4px',
+        color: theme.navbarMuted,
+        fontSize: '10px',
+        fontWeight: 900,
+        letterSpacing: '0.12em',
+        textTransform: 'uppercase',
+        opacity: 0.72,
+      }}
+    >
+      {children}
+    </div>
+  );
 }
 
 function NavbarGroup({
@@ -334,9 +376,13 @@ function Navbar({
   const navigate = useNavigate();
   const styles = useMemo(() => navbarStyles(theme), [theme]);
 
+  const isMobile = useIsMobile(1024);
+  const mobileExpanded = isMobile ? true : expanded;
+
   const safeNavItems = Array.isArray(navItems) ? navItems : [];
   const safeBottomItems = Array.isArray(NAV_BOTTOM) ? NAV_BOTTOM : [];
 
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [openGroups, setOpenGroups] = useState({});
   const [collapseHover, setCollapseHover] = useState(false);
   const [hoveredNavKey, setHoveredNavKey] = useState('');
@@ -379,12 +425,55 @@ function Navbar({
     });
   }, [location.pathname, safeNavItems, safeBottomItems]);
 
+  useEffect(() => {
+    if (!isMobile) {
+      setMobileOpen(false);
+    }
+  }, [isMobile]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined;
+
+    if (isMobile && mobileOpen) {
+      const previousOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+
+      return () => {
+        document.body.style.overflow = previousOverflow;
+      };
+    }
+
+    return undefined;
+  }, [isMobile, mobileOpen]);
+
+  useEffect(() => {
+    if (!mobileOpen) return undefined;
+
+    function handleEscape(event) {
+      if (event.key === 'Escape') {
+        setMobileOpen(false);
+      }
+    }
+
+    document.addEventListener('keydown', handleEscape);
+
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [mobileOpen]);
+
+  const closeMobileNav = useCallback(() => {
+    if (isMobile) {
+      setMobileOpen(false);
+    }
+  }, [isMobile]);
+
   const handleNavigate = useCallback(
     (item) => {
       if (!canNavigate || !item?.path) return;
+
       navigate(normalizePath(item.path));
+      closeMobileNav();
     },
-    [canNavigate, navigate],
+    [canNavigate, navigate, closeMobileNav],
   );
 
   const handleToggleGroup = useCallback((groupKey) => {
@@ -426,7 +515,7 @@ function Navbar({
           <NavbarGroup
             key={item.key}
             item={item}
-            expanded={expanded}
+            expanded={mobileExpanded}
             canNavigate={canNavigate}
             location={location}
             hoveredNavKey={hoveredNavKey}
@@ -448,7 +537,7 @@ function Navbar({
           key={item.key}
           item={item}
           itemKey={itemKey}
-          expanded={expanded}
+          expanded={mobileExpanded}
           canNavigate={canNavigate}
           location={location}
           hoveredNavKey={hoveredNavKey}
@@ -462,7 +551,7 @@ function Navbar({
     },
     [
       canNavigate,
-      expanded,
+      mobileExpanded,
       getNavInteractionProps,
       handleNavigate,
       handleToggleGroup,
@@ -475,81 +564,163 @@ function Navbar({
     ],
   );
 
+  const mobileButtonStyle = {
+    position: 'fixed',
+    top: 14,
+    left: 14,
+    zIndex: 1002,
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    border: `1px solid ${theme.cardBorder}`,
+    background: 'rgba(8,15,30,0.94)',
+    color: theme.cardText || '#fff',
+    display: isMobile ? 'inline-flex' : 'none',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+    boxShadow: '0 14px 40px rgba(0,0,0,0.35)',
+    backdropFilter: 'blur(14px)',
+  };
+
+  const mobileOverlayStyle = {
+    position: 'fixed',
+    inset: 0,
+    zIndex: 1000,
+    background: 'rgba(0,0,0,0.56)',
+    opacity: mobileOpen ? 1 : 0,
+    pointerEvents: mobileOpen ? 'auto' : 'none',
+    transition: 'opacity 0.22s ease',
+    display: isMobile ? 'block' : 'none',
+  };
+
+  const baseRootStyle = styles.root(mobileExpanded);
+
+  const rootStyle = isMobile
+    ? {
+        ...baseRootStyle,
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        bottom: 0,
+        zIndex: 1001,
+        width: 'min(86vw, 320px)',
+        maxWidth: '320px',
+        height: '100dvh',
+        transform: mobileOpen ? 'translateX(0)' : 'translateX(-110%)',
+        transition: 'transform 0.24s ease',
+        overflowY: 'auto',
+        overscrollBehavior: 'contain',
+        borderTopRightRadius: '22px',
+        borderBottomRightRadius: '22px',
+        boxShadow: mobileOpen ? '24px 0 70px rgba(0,0,0,0.45)' : 'none',
+      }
+    : baseRootStyle;
+
   return (
-    <aside style={styles.root(expanded)}>
-      <div style={styles.top}>
-        <BotAvatar
-          theme={theme}
-          botAvatar={botAvatar}
-          botName={botName}
-          botData={botData}
-          expanded={expanded}
-        />
-      </div>
+    <>
+      <button
+        type="button"
+        onClick={() => setMobileOpen((prev) => !prev)}
+        style={mobileButtonStyle}
+        aria-label={mobileOpen ? 'Close navigation menu' : 'Open navigation menu'}
+        aria-expanded={mobileOpen}
+      >
+        {mobileOpen ? '✕' : '☰'}
+      </button>
 
-      <div style={styles.middle}>
-        {isAuthenticated ? (
-          <div style={styles.guildWrap}>
-            {expanded ? (
-              <div style={styles.guildSelectWrap}>
-                <select
-                  value={selectedGuild || ''}
-                  onChange={(event) => {
-                    const guildId = event.target.value || '';
-                    setSelectedGuild(guildId);
-                  }}
-                  disabled={!canPickGuild}
-                  style={styles.guildSelect(canPickGuild)}
-                >
-                  {guildOptions.map((guild) => (
-                    <option key={guild.id || guild.name} value={guild.id}>
-                      {guild.name}
-                    </option>
-                  ))}
-                </select>
+      <div
+        style={mobileOverlayStyle}
+        onClick={() => setMobileOpen(false)}
+        role="presentation"
+      />
 
-                <span style={styles.guildChevron}>▾</span>
-              </div>
-            ) : (
-              <div style={styles.guildMini}>
-                {selectedGuildAvatar ? (
-                  <img
-                    src={selectedGuildAvatar}
-                    alt={selectedGuildData?.name || 'Guild'}
-                    style={styles.guildMiniAvatar}
-                  />
-                ) : (
-                  <div style={styles.guildMiniFallback}>{selectedGuildInitial}</div>
-                )}
-              </div>
-            )}
+      <aside style={rootStyle}>
+        <div style={styles.top}>
+          <BotAvatar
+            theme={theme}
+            botAvatar={botAvatar}
+            botName={botName}
+            botData={botData}
+            expanded={mobileExpanded}
+          />
+        </div>
 
-            {guildError && expanded ? <p style={styles.guildError}>{guildError}</p> : null}
+        <div style={styles.middle}>
+          {isAuthenticated ? (
+            <div style={styles.guildWrap}>
+              {mobileExpanded ? (
+                <div style={styles.guildSelectWrap}>
+                  <select
+                    value={selectedGuild || ''}
+                    onChange={(event) => {
+                      const guildId = event.target.value || '';
+                      setSelectedGuild(guildId);
+                    }}
+                    disabled={!canPickGuild}
+                    style={styles.guildSelect(canPickGuild)}
+                  >
+                    {guildOptions.map((guild) => (
+                      <option key={guild.id || guild.name} value={guild.id}>
+                        {guild.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <span style={styles.guildChevron}>▾</span>
+                </div>
+              ) : (
+                <div style={styles.guildMini}>
+                  {selectedGuildAvatar ? (
+                    <img
+                      src={selectedGuildAvatar}
+                      alt={selectedGuildData?.name || 'Guild'}
+                      style={styles.guildMiniAvatar}
+                    />
+                  ) : (
+                    <div style={styles.guildMiniFallback}>{selectedGuildInitial}</div>
+                  )}
+                </div>
+              )}
+
+              {guildError && mobileExpanded ? <p style={styles.guildError}>{guildError}</p> : null}
+            </div>
+          ) : null}
+
+          <nav style={styles.nav}>
+            <NavbarSectionLabel expanded={mobileExpanded} theme={theme}>
+              Dashboard
+            </NavbarSectionLabel>
+
+            {safeNavItems.map((item) => renderNavEntry(item))}
+
+            {safeBottomItems.length ? (
+              <>
+                {safeBottomItems.map((item) => renderNavEntry(item, 'bottom'))}
+              </>
+            ) : null}
+          </nav>
+        </div>
+
+        {!isMobile ? (
+          <div style={styles.bottom}>
+            <button
+              type="button"
+              onClick={onToggleCollapsed}
+              onMouseEnter={() => setCollapseHover(true)}
+              onMouseLeave={() => setCollapseHover(false)}
+              style={styles.collapseButton(collapseHover)}
+              title={expanded ? 'Collapse Navbar' : 'Expand Navbar'}
+              aria-label={expanded ? 'Collapse Navbar' : 'Expand Navbar'}
+            >
+              <span style={styles.collapseButtonIcon(expanded)}>
+                {styles.collapseButtonGlyph(expanded)}
+              </span>
+            </button>
           </div>
         ) : null}
-
-        <nav style={styles.nav}>
-          {safeNavItems.map((item) => renderNavEntry(item))}
-          {safeBottomItems.map((item) => renderNavEntry(item, 'bottom'))}
-        </nav>
-      </div>
-
-      <div style={styles.bottom}>
-        <button
-          type="button"
-          onClick={onToggleCollapsed}
-          onMouseEnter={() => setCollapseHover(true)}
-          onMouseLeave={() => setCollapseHover(false)}
-          style={styles.collapseButton(collapseHover)}
-          title={expanded ? 'Collapse navbar' : 'Expand navbar'}
-          aria-label={expanded ? 'Collapse navbar' : 'Expand navbar'}
-        >
-          <span style={styles.collapseButtonIcon(expanded)}>
-            {styles.collapseButtonGlyph(expanded)}
-          </span>
-        </button>
-      </div>
-    </aside>
+      </aside>
+    </>
   );
 }
 

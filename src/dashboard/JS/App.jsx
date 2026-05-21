@@ -28,6 +28,28 @@ const GUILD_REQUIRED_ROUTES = new Set([
   'moderation',
 ]);
 
+function useIsMobile(breakpoint = 1024) {
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth < breakpoint;
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    function handleResize() {
+      setIsMobile(window.innerWidth < breakpoint);
+    }
+
+    handleResize();
+    window.addEventListener('resize', handleResize);
+
+    return () => window.removeEventListener('resize', handleResize);
+  }, [breakpoint]);
+
+  return isMobile;
+}
+
 function getRouteForPath(pathname) {
   return ROUTES.find((routeItem) => routeItem.path === pathname) || null;
 }
@@ -40,11 +62,11 @@ function CenterMessage({ theme, title, text }) {
   return (
     <div
       style={{
-        minHeight: 'calc(100vh - 180px)',
+        minHeight: 'calc(100dvh - 180px)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: 24,
+        padding: 'clamp(16px, 3vw, 24px)',
       }}
     >
       <div
@@ -54,12 +76,14 @@ function CenterMessage({ theme, title, text }) {
           background: theme.cardBg,
           color: theme.cardText,
           borderRadius: 24,
-          padding: 28,
+          padding: 'clamp(20px, 4vw, 28px)',
           textAlign: 'center',
           boxShadow: theme.shadow,
         }}
       >
-        <h2 style={{ margin: '0 0 10px', fontSize: 24 }}>{title}</h2>
+        <h2 style={{ margin: '0 0 10px', fontSize: 'clamp(20px, 4vw, 24px)' }}>
+          {title}
+        </h2>
         <p style={{ margin: 0, color: theme.mutedText, lineHeight: 1.6 }}>{text}</p>
       </div>
     </div>
@@ -71,13 +95,13 @@ export default function App() {
   const location = useLocation();
 
   const [darkMode, setDarkMode] = useState(true);
+  const isMobile = useIsMobile(1024);
 
   const theme = useMemo(() => getTheme(darkMode), [darkMode]);
 
   const { navbarExpanded, toggleNavbar } = useNavbar();
 
   const guildState = useGuilds();
-
   const botState = useBotStatus();
 
   const authState = useAuthSession({
@@ -88,21 +112,79 @@ export default function App() {
   });
 
   const styles = useMemo(
-    () => shellStyles(theme, { sidebarExpanded: navbarExpanded }),
-    [theme, navbarExpanded]
+    () => shellStyles(theme, { navbarExpanded }),
+    [theme, navbarExpanded],
   );
+
+  const responsiveStyles = useMemo(() => {
+    const desktopGrid = styles.grid || {};
+    const desktopMainColumn = styles.mainColumn || {};
+    const desktopMain = styles.main || {};
+
+    return {
+      app: {
+        ...styles.app,
+        minHeight: '100dvh',
+        width: '100%',
+        maxWidth: '100%',
+        overflowX: 'hidden',
+      },
+
+      grid: isMobile
+        ? {
+            display: 'block',
+            minHeight: '100dvh',
+            width: '100%',
+            maxWidth: '100%',
+            overflowX: 'hidden',
+          }
+        : {
+            ...desktopGrid,
+            width: '100%',
+            maxWidth: '100%',
+            minWidth: 0,
+            overflowX: 'hidden',
+          },
+
+      mainColumn: isMobile
+        ? {
+            minHeight: '100dvh',
+            width: '100%',
+            maxWidth: '100%',
+            minWidth: 0,
+            overflowX: 'hidden',
+          }
+        : {
+            ...desktopMainColumn,
+            minWidth: 0,
+            maxWidth: '100%',
+            overflowX: 'hidden',
+          },
+
+      main: {
+        ...desktopMain,
+        width: '100%',
+        maxWidth: '100%',
+        minWidth: 0,
+        overflowX: 'hidden',
+        padding: isMobile
+          ? '78px clamp(12px, 4vw, 18px) clamp(18px, 4vw, 28px)'
+          : desktopMain.padding,
+      },
+    };
+  }, [styles, isMobile]);
 
   const isLoginPage = location.pathname === '/login';
 
   const activeRoute = useMemo(
     () => getRouteForPath(location.pathname),
-    [location.pathname]
+    [location.pathname],
   );
 
   const ActivePage = activeRoute?.component || null;
 
   const routeNeedsGuild = Boolean(
-    activeRoute?.key && GUILD_REQUIRED_ROUTES.has(activeRoute.key)
+    activeRoute?.key && GUILD_REQUIRED_ROUTES.has(activeRoute.key),
   );
 
   useEffect(() => {
@@ -171,10 +253,11 @@ export default function App() {
 
         <div
           style={{
-            minHeight: '100vh',
+            minHeight: '100dvh',
             background: theme.pageBg,
             color: theme.cardText,
-            padding: 24,
+            padding: 'clamp(16px, 4vw, 24px)',
+            overflowX: 'hidden',
           }}
         >
           <Login {...pageProps} />
@@ -187,8 +270,8 @@ export default function App() {
     <>
       <style>{appBaseStyles(theme).globalCss}</style>
 
-      <div style={styles.app}>
-        <div style={styles.grid}>
+      <div style={responsiveStyles.app}>
+        <div style={responsiveStyles.grid}>
           <Navbar
             theme={theme}
             selectedGuild={guildState.selectedGuild}
@@ -206,7 +289,7 @@ export default function App() {
             onToggleCollapsed={toggleNavbar}
           />
 
-          <div style={styles.mainColumn}>
+          <div style={responsiveStyles.mainColumn}>
             <Topbar
               theme={theme}
               authLoading={authState.authLoading}
@@ -220,7 +303,7 @@ export default function App() {
               loginPending={authState.loginPending}
             />
 
-            <main style={styles.main}>
+            <main style={responsiveStyles.main}>
               {authState.authLoading ? (
                 <CenterMessage
                   theme={theme}

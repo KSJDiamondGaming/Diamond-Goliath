@@ -96,14 +96,14 @@ export const NAV_ITEMS = [
 
 export const NAV_BOTTOM = [
   {
-    key: 'security',
-    label: 'Security',
+    key: 'securityCenter',
+    label: 'Security Center',
     icon: 'admin',
 
     children: [
       {
-        key: 'securityCenter',
-        label: 'Security Center',
+        key: 'security',
+        label: 'Security',
         icon: 'admin',
         path: '/security',
       },

@@ -3,6 +3,7 @@ import {
   joinGuildRoom,
   listenForGuildUpdate,
 } from "../services/socketClient"
+import { api } from '../services/apiClient';
 import PageShell, {
   LoadingPanel,
   Notice,

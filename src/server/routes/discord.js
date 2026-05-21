@@ -481,4 +481,50 @@ router.get(
   }
 );
 
+router.get('/:guildId/channels', async (req, res) => {
+  try {
+    const { guildId } = req.params;
+
+    const client = getDiscordClient(req);
+
+    if (!client) {
+      return res.status(500).json({
+        error: 'Discord client unavailable',
+      });
+    }
+
+    const guild = await client.guilds.fetch(guildId);
+
+    if (!guild) {
+      return res.status(404).json({
+        error: 'Guild not found',
+      });
+    }
+
+    await guild.channels.fetch();
+
+    const channels = guild.channels.cache
+      .filter((channel) => channel.type === 0)
+      .map((channel) => ({
+        id: channel.id,
+        name: channel.name,
+        type: channel.type,
+      }))
+      .sort((a, b) =>
+        a.name.localeCompare(b.name)
+      );
+
+    return res.json(channels);
+  } catch (error) {
+    console.error(
+      '❌ Failed to fetch guild channels:',
+      error
+    );
+
+    return res.status(500).json({
+      error: 'Failed to fetch channels',
+    });
+  }
+});
+
 module.exports = router;

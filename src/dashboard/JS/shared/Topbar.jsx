@@ -5,6 +5,28 @@ function getInitial(name = '') {
   return name.trim().charAt(0).toUpperCase() || '?';
 }
 
+function useIsMobile(breakpoint = 768) {
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth < breakpoint;
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    function handleResize() {
+      setIsMobile(window.innerWidth < breakpoint);
+    }
+
+    handleResize();
+    window.addEventListener('resize', handleResize);
+
+    return () => window.removeEventListener('resize', handleResize);
+  }, [breakpoint]);
+
+  return isMobile;
+}
+
 function Topbar({
   theme,
   authLoading = false,
@@ -24,6 +46,7 @@ function Topbar({
   const menuRef = useRef(null);
   const menuButtonRef = useRef(null);
 
+  const isMobile = useIsMobile(768);
   const styles = useMemo(() => topbarStyles(theme), [theme]);
   const userInitial = getInitial(topbarUserName);
 
@@ -39,7 +62,7 @@ function Topbar({
   }, [authLoading, isAuthenticated]);
 
   useEffect(() => {
-    if (!menuOpen) return;
+    if (!menuOpen) return undefined;
 
     function handleClickOutside(event) {
       const target = event.target;
@@ -55,9 +78,7 @@ function Topbar({
     }
 
     function handleEscape(event) {
-      if (event.key === 'Escape') {
-        closeMenu();
-      }
+      if (event.key === 'Escape') closeMenu();
     }
 
     document.addEventListener('mousedown', handleClickOutside);
@@ -91,12 +112,80 @@ function Topbar({
     [closeMenu],
   );
 
+  const rootStyle = {
+    ...styles.root,
+    width: '100%',
+    maxWidth: '100%',
+    minWidth: 0,
+    overflow: 'visible',
+  };
+
+  const innerStyle = {
+    ...styles.inner,
+    width: '100%',
+    maxWidth: '100%',
+    minWidth: 0,
+    gap: isMobile ? 10 : styles.inner?.gap,
+    paddingLeft: isMobile ? 64 : styles.inner?.paddingLeft,
+    paddingRight: isMobile ? 12 : styles.inner?.paddingRight,
+  };
+
+  const actionsWrapStyle = {
+    ...styles.actionsWrap,
+    minWidth: 0,
+    maxWidth: '100%',
+    marginLeft: 'auto',
+  };
+
+  const userButtonStyle = {
+    ...styles.userButton(isUserButtonHovered || menuOpen),
+    opacity: authLoading ? 0.7 : 1,
+    cursor: authLoading ? 'not-allowed' : 'pointer',
+    maxWidth: isMobile ? 'calc(100vw - 88px)' : 320,
+    minWidth: 0,
+    overflow: 'hidden',
+  };
+
+  const loginButtonStyle = {
+    ...styles.userButton(false),
+    opacity: authLoading || loginPending ? 0.7 : 1,
+    cursor: authLoading || loginPending ? 'not-allowed' : 'pointer',
+    maxWidth: isMobile ? 'calc(100vw - 88px)' : 320,
+    minWidth: 0,
+    overflow: 'hidden',
+  };
+
+  const userTextStyle = {
+    ...styles.userText,
+    minWidth: 0,
+    overflow: 'hidden',
+  };
+
+  const userNameStyle = {
+    ...styles.userName,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    maxWidth: isMobile ? 132 : 220,
+  };
+
+  const menuStyle = {
+    ...styles.menu,
+    position: 'absolute',
+    right: isMobile ? 8 : styles.menu?.right,
+    left: isMobile ? 'auto' : styles.menu?.left,
+    top: styles.menu?.top,
+    width: isMobile ? 'min(320px, calc(100vw - 24px))' : styles.menu?.width,
+    maxWidth: 'calc(100vw - 24px)',
+    zIndex: 1200,
+  };
+
   return (
-    <header style={styles.root}>
-      <div style={styles.inner}>
+    <header style={rootStyle}>
+      <div style={innerStyle}>
         <div style={styles.left} />
 
-        <div style={styles.actionsWrap}>
+        <div style={actionsWrapStyle}>
           {isAuthenticated ? (
             <>
               <button
@@ -109,27 +198,44 @@ function Topbar({
                 onMouseEnter={() => setIsUserButtonHovered(true)}
                 onMouseLeave={() => setIsUserButtonHovered(false)}
                 onBlur={() => setIsUserButtonHovered(false)}
-                style={{
-                  ...styles.userButton(isUserButtonHovered || menuOpen),
-                  opacity: authLoading ? 0.7 : 1,
-                  cursor: authLoading ? 'not-allowed' : 'pointer',
-                }}
+                style={userButtonStyle}
               >
                 {currentUserAvatar ? (
-                  <img src={currentUserAvatar} alt={topbarUserName} style={styles.avatar} />
+                  <img
+                    src={currentUserAvatar}
+                    alt={topbarUserName}
+                    style={{
+                      ...styles.avatar,
+                      flex: '0 0 auto',
+                    }}
+                  />
                 ) : (
-                  <div style={styles.avatarFallback}>{userInitial}</div>
+                  <div
+                    style={{
+                      ...styles.avatarFallback,
+                      flex: '0 0 auto',
+                    }}
+                  >
+                    {userInitial}
+                  </div>
                 )}
 
-                <div style={styles.userText}>
-                  <div style={styles.userName}>{topbarUserName}</div>
+                <div style={userTextStyle}>
+                  <div style={userNameStyle}>{topbarUserName}</div>
                 </div>
 
-                <span style={styles.chevron(menuOpen)}>▾</span>
+                <span
+                  style={{
+                    ...styles.chevron(menuOpen),
+                    flex: '0 0 auto',
+                  }}
+                >
+                  ▾
+                </span>
               </button>
 
               {menuOpen ? (
-                <div ref={menuRef} style={styles.menu} role="menu">
+                <div ref={menuRef} style={menuStyle} role="menu">
                   <MenuButton
                     styles={styles}
                     hovered={hoveredMenuItem === 'billing'}
@@ -193,19 +299,22 @@ function Topbar({
               type="button"
               onClick={handleLogin}
               disabled={authLoading || loginPending}
-              style={{
-                ...styles.userButton(false),
-                opacity: authLoading || loginPending ? 0.7 : 1,
-                cursor: authLoading || loginPending ? 'not-allowed' : 'pointer',
-              }}
+              style={loginButtonStyle}
             >
-              <div style={styles.userText}>
-                <div style={styles.userName}>
+              <div style={userTextStyle}>
+                <div style={userNameStyle}>
                   {loginPending ? 'Redirecting...' : 'Login'}
                 </div>
               </div>
 
-              <div style={styles.avatarFallback}>↗</div>
+              <div
+                style={{
+                  ...styles.avatarFallback,
+                  flex: '0 0 auto',
+                }}
+              >
+                ↗
+              </div>
             </button>
           )}
         </div>

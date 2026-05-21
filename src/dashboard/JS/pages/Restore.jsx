@@ -1,11 +1,70 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import RestoreConfirmModal from '../shared/RestoreConfirmModal';
-import { api } from '../services/apiClient';
 
-import {
-  createRestorePageStyles,
-  getTheme,
-} from '../ui/system';
+import RestoreConfirmModal from '../shared/RestoreConfirmModal';
+import { getTheme } from '../ui/system';
+
+import PageShell, {
+  SectionCard,
+  StatGrid,
+  SummaryStat,
+  EmptyState,
+  LoadingPanel,
+  Notice,
+  PrimaryButton,
+  SecondaryButton,
+} from '../shared/PageShell';
+
+const API_BASE = import.meta.env.DEV ? 'http://localhost:3001' : '';
+
+function formatDate(value) {
+  if (!value) return 'Unknown';
+
+  try {
+    return new Date(value).toLocaleString();
+  } catch {
+    return 'Unknown';
+  }
+}
+
+function SafeValue({ theme, label, value }) {
+  return (
+    <div
+      style={{
+        background: theme.softBg,
+        border: `1px solid ${theme.cardBorder}`,
+        borderRadius: 14,
+        padding: '13px 14px',
+        display: 'grid',
+        gap: 6,
+        minWidth: 0,
+        overflow: 'hidden',
+      }}
+    >
+      <span
+        style={{
+          color: theme.mutedText,
+          fontSize: 11,
+          fontWeight: 900,
+          textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+        }}
+      >
+        {label}
+      </span>
+
+      <strong
+        style={{
+          color: theme.cardText,
+          fontSize: 14,
+          wordBreak: 'break-word',
+          overflowWrap: 'anywhere',
+        }}
+      >
+        {value}
+      </strong>
+    </div>
+  );
+}
 
 export default function Restore({
   selectedGuild,
@@ -13,18 +72,11 @@ export default function Restore({
   theme: providedTheme,
 }) {
   const theme = providedTheme || getTheme(true);
-  const styles = createRestorePageStyles(theme);
-  const API_BASE =
-  import.meta.env.DEV
-    ? 'http://localhost:3001'
-    : '';
-
   const guildId = selectedGuildId || selectedGuild || '';
 
   const [backups, setBackups] = useState([]);
   const [selectedBackupId, setSelectedBackupId] = useState('');
   const [selectedBackup, setSelectedBackup] = useState(null);
-
   const [preview, setPreview] = useState(null);
   const [result, setResult] = useState(null);
 
@@ -35,9 +87,13 @@ export default function Restore({
   const [error, setError] = useState('');
   const [showConfirm, setShowConfirm] = useState(false);
 
-  const selectedBackupSummary = useMemo(() => {
-    return backups.find((backup) => backup.backupId === selectedBackupId) || null;
-  }, [backups, selectedBackupId]);
+  const selectedBackupSummary = useMemo(
+    () => backups.find((backup) => backup.backupId === selectedBackupId) || null,
+    [backups, selectedBackupId],
+  );
+
+  const backupCount = backups.length;
+  const latestBackup = backups[0] || null;
 
   async function readJsonResponse(response, fallbackMessage) {
     const text = await response.text();
@@ -64,15 +120,11 @@ export default function Restore({
     setError('');
 
     try {
-      const response = await fetch(
-        `${API_BASE}/api/server-restore/${guildId}/backups`,
-        {
-          credentials: 'include',
-        },
-      );
+      const response = await fetch(`${API_BASE}/api/server-restore/${guildId}/backups`, {
+        credentials: 'include',
+      });
 
       const data = await readJsonResponse(response, 'Failed to load backups.');
-
       const nextBackups = Array.isArray(data.backups) ? data.backups : [];
 
       setBackups(nextBackups);
@@ -96,13 +148,10 @@ export default function Restore({
     try {
       const response = await fetch(
         `${API_BASE}/api/server-restore/${guildId}/backups/${backupId}`,
-        {
-          credentials: 'include',
-        },
+        { credentials: 'include' },
       );
 
       const data = await readJsonResponse(response, 'Failed to load backup.');
-
       setSelectedBackup(data.backup || null);
     } catch (err) {
       setError(err.message || 'Failed to load backup.');
@@ -118,29 +167,23 @@ export default function Restore({
     setError('');
 
     try {
-      const response = await fetch(
-        `${API_BASE}/api/server-restore/${guildId}/restore/preview`,
-        {
-          method: 'POST',
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
+      const response = await fetch(`${API_BASE}/api/server-restore/${guildId}/restore/preview`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          backupId: selectedBackupId,
+          options: {
+            restoreRoles: true,
+            restoreCategories: true,
+            restoreChannels: true,
+            restoreConfig: true,
+            restoreRolePositions: true,
           },
-          body: JSON.stringify({
-            backupId: selectedBackupId,
-            options: {
-              restoreRoles: true,
-              restoreCategories: true,
-              restoreChannels: true,
-              restoreConfig: true,
-              restoreRolePositions: true,
-            },
-          }),
-        },
-      );
+        }),
+      });
 
       const data = await readJsonResponse(response, 'Restore preview failed.');
-
       setPreview(data.report || null);
     } catch (err) {
       setError(err.message || 'Restore preview failed.');
@@ -157,28 +200,23 @@ export default function Restore({
     setResult(null);
 
     try {
-      const response = await fetch(
-        `${API_BASE}/api/server-restore/${guildId}/restore/execute`,
-        {
-          method: 'POST',
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
+      const response = await fetch(`${API_BASE}/api/server-restore/${guildId}/restore/execute`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          backupId: selectedBackupId,
+          confirmText: 'RESTORE',
+          cleanupMode,
+          options: {
+            restoreRoles: true,
+            restoreCategories: true,
+            restoreChannels: true,
+            restoreConfig: true,
+            restoreRolePositions: true,
           },
-          body: JSON.stringify({
-            backupId: selectedBackupId,
-            confirmText: 'RESTORE',
-            cleanupMode,
-            options: {
-              restoreRoles: true,
-              restoreCategories: true,
-              restoreChannels: true,
-              restoreConfig: true,
-              restoreRolePositions: true,
-            },
-          }),
-        },
-      );
+        }),
+      });
 
       const data = await readJsonResponse(response, 'Restore failed.');
 
@@ -202,312 +240,326 @@ export default function Restore({
     if (!selectedBackupId) return;
 
     fetchBackupDetails(selectedBackupId);
-
     setPreview(null);
     setResult(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBackupId]);
 
   return (
-    <div style={styles.page}>
-      <section style={styles.hero}>
-        <h1 style={styles.heroTitle}>Full Server Restore</h1>
-        <p style={styles.heroText}>
-          Preview and safely restore roles, categories, channels, permissions,
-          and saved log configuration.
-        </p>
-
-        <div style={styles.actionRow}>
-          <button
-            type="button"
-            style={styles.button('soft', loadingBackups)}
-            onClick={fetchBackups}
-            disabled={loadingBackups}
-          >
-            {loadingBackups ? 'Refreshing...' : 'Refresh Backups'}
-          </button>
-        </div>
-      </section>
-
+    <PageShell
+      title="Full Server Restore"
+      subtitle="Preview and safely restore roles, categories, channels, permissions, and saved configuration."
+      theme={theme}
+      guild={{
+        id: guildId,
+        name: 'Full Server Restore',
+      }}
+      actions={
+        <SecondaryButton
+          theme={theme}
+          onClick={fetchBackups}
+          disabled={loadingBackups || !guildId}
+        >
+          {loadingBackups ? 'Refreshing...' : 'Refresh Backups'}
+        </SecondaryButton>
+      }
+    >
       {!guildId ? (
-        <section style={styles.emptyPanel}>
-          <strong>Select a server.</strong>
-          <span>Choose a server before using restore.</span>
-        </section>
+        <EmptyState theme={theme} text="Select a server before using restore." />
       ) : null}
 
-      {error ? <div style={styles.dangerBox}>{error}</div> : null}
+      {error ? (
+        <Notice theme={theme} tone="danger">
+          {error}
+        </Notice>
+      ) : null}
 
       {guildId ? (
-        <div style={styles.grid}>
-          <section style={styles.panel}>
-            <div style={styles.panelHeader}>
-              <h2 style={styles.panelTitle}>Available Backups</h2>
-              <p style={styles.panelText}>
-                Choose which server backup you want to inspect.
-              </p>
-            </div>
+        <>
+          <StatGrid min="min(190px, 100%)">
+            <SummaryStat
+              theme={theme}
+              label="Backups"
+              value={backupCount}
+              description="Available restore points"
+            />
 
-            <div style={styles.panelBody}>
-              {backups.length === 0 ? (
-                <div style={styles.emptyPanel}>
-                  <strong>No backups found.</strong>
-                  <span>Create a server backup before using restore.</span>
-                </div>
+            <SummaryStat
+              theme={theme}
+              label="Selected"
+              value={selectedBackupSummary ? 'Ready' : 'None'}
+              accent={selectedBackupSummary ? theme.success : theme.warning}
+              description="Current backup selection"
+            />
+
+            <SummaryStat
+              theme={theme}
+              label="Preview"
+              value={preview ? 'Ready' : 'Not Run'}
+              accent={preview ? theme.success : theme.warning}
+              description="Safe dry-run status"
+            />
+
+            <SummaryStat
+              theme={theme}
+              label="Latest Backup"
+              value={latestBackup?.createdAt ? 'Found' : 'None'}
+              description={
+                latestBackup?.createdAt
+                  ? formatDate(latestBackup.createdAt)
+                  : 'No backups loaded'
+              }
+            />
+          </StatGrid>
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns:
+                'repeat(auto-fit, minmax(min(100%, 420px), 1fr))',
+              gap: 'clamp(16px, 3vw, 24px)',
+              alignItems: 'start',
+              width: '100%',
+              maxWidth: '100%',
+              minWidth: 0,
+            }}
+          >
+            <SectionCard
+              theme={theme}
+              title="Available Backups"
+              subtitle="Choose which server backup you want to inspect."
+            >
+              {loadingBackups ? (
+                <LoadingPanel theme={theme} text="Loading backups..." />
+              ) : backups.length === 0 ? (
+                <EmptyState
+                  theme={theme}
+                  text="No backups found. Create a server backup before using restore."
+                />
               ) : (
-                <div style={styles.backupList}>
-                  {backups.map((backup) => (
-                    <button
-                      key={backup.backupId}
-                      type="button"
-                      style={styles.backupButton(
-                        backup.backupId === selectedBackupId,
-                      )}
-                      onClick={() => setSelectedBackupId(backup.backupId)}
-                    >
-                      <span style={styles.backupTitle}>
-                        {backup.guildName || 'Server Backup'}
-                      </span>
+                <div
+                  style={{
+                    display: 'grid',
+                    gap: 12,
+                    width: '100%',
+                    maxWidth: '100%',
+                    minWidth: 0,
+                  }}
+                >
+                  {backups.map((backup) => {
+                    const active = backup.backupId === selectedBackupId;
 
-                      <span style={styles.backupMeta}>
-                        {backup.backupId}
-                      </span>
+                    return (
+                      <button
+                        key={backup.backupId}
+                        type="button"
+                        onClick={() => setSelectedBackupId(backup.backupId)}
+                        style={{
+                          width: '100%',
+                          maxWidth: '100%',
+                          minWidth: 0,
+                          overflow: 'hidden',
+                          border: `1px solid ${
+                            active ? theme.primaryBorder : theme.cardBorder
+                          }`,
+                          background: active ? theme.primarySoft : theme.softBg,
+                          color: theme.cardText,
+                          borderRadius: 16,
+                          padding: 'clamp(14px, 3vw, 16px)',
+                          textAlign: 'left',
+                          cursor: 'pointer',
+                          display: 'grid',
+                          gap: 7,
+                          boxShadow: active ? theme.shadow : 'none',
+                        }}
+                      >
+                        <strong
+                          style={{
+                            fontSize: 15,
+                            overflowWrap: 'break-word',
+                          }}
+                        >
+                          {backup.guildName || 'Server Backup'}
+                        </strong>
 
-                      <span style={styles.backupMeta}>
-                        {backup.roles || 0} roles · {backup.channels || 0}{' '}
-                        channels
-                      </span>
-                    </button>
-                  ))}
+                        <span
+                          style={{
+                            color: theme.mutedText,
+                            fontSize: 12,
+                            overflowWrap: 'anywhere',
+                            wordBreak: 'break-word',
+                          }}
+                        >
+                          {backup.backupId}
+                        </span>
+
+                        <span
+                          style={{
+                            color: theme.mutedText,
+                            fontSize: 13,
+                            fontWeight: 700,
+                            overflowWrap: 'break-word',
+                          }}
+                        >
+                          {backup.roles || 0} roles · {backup.channels || 0} channels
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
-            </div>
-          </section>
+            </SectionCard>
 
-          <section style={styles.panel}>
-            <div style={styles.panelHeader}>
-              <h2 style={styles.panelTitle}>Selected Backup</h2>
-              <p style={styles.panelText}>
-                Review the selected backup before running a safe preview.
-              </p>
-            </div>
-
-            <div style={styles.panelBody}>
+            <SectionCard
+              theme={theme}
+              title="Selected Backup"
+              subtitle="Review the selected backup before running a safe preview."
+            >
               {!selectedBackupSummary ? (
-                <div style={styles.emptyPanel}>
-                  <strong>Select a backup.</strong>
-                  <span>Choose a backup to preview restore impact.</span>
-                </div>
+                <EmptyState theme={theme} text="Choose a backup to preview restore impact." />
               ) : (
                 <>
-                  <div style={styles.summaryRow}>
-                    <span style={styles.summaryLabel}>Backup ID</span>
-                    <strong>{selectedBackupSummary.backupId}</strong>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns:
+                        'repeat(auto-fit, minmax(min(100%, 180px), 1fr))',
+                      gap: 12,
+                      width: '100%',
+                      maxWidth: '100%',
+                      minWidth: 0,
+                    }}
+                  >
+                    <SafeValue theme={theme} label="Backup ID" value={selectedBackupSummary.backupId} />
+                    <SafeValue theme={theme} label="Created" value={formatDate(selectedBackupSummary.createdAt)} />
+                    <SafeValue theme={theme} label="Roles" value={selectedBackupSummary.roles || 0} />
+                    <SafeValue theme={theme} label="Channels" value={selectedBackupSummary.channels || 0} />
+                    <SafeValue theme={theme} label="Logs Included" value={selectedBackupSummary.logsIncluded ? 'Yes' : 'No'} />
                   </div>
 
-                  <div style={styles.summaryRow}>
-                    <span style={styles.summaryLabel}>Created</span>
-                    <strong>
-                      {selectedBackupSummary.createdAt
-                        ? new Date(selectedBackupSummary.createdAt).toLocaleString()
-                        : 'Unknown'}
-                    </strong>
-                  </div>
-
-                  <div style={styles.summaryRow}>
-                    <span style={styles.summaryLabel}>Roles</span>
-                    <strong>{selectedBackupSummary.roles || 0}</strong>
-                  </div>
-
-                  <div style={styles.summaryRow}>
-                    <span style={styles.summaryLabel}>Channels</span>
-                    <strong>{selectedBackupSummary.channels || 0}</strong>
-                  </div>
-
-                  <div style={styles.summaryRow}>
-                    <span style={styles.summaryLabel}>Logs Included</span>
-                    <strong>
-                      {selectedBackupSummary.logsIncluded ? 'Yes' : 'No'}
-                    </strong>
-                  </div>
-
-                  <div style={styles.actionRow}>
-                    <button
-                      type="button"
-                      style={styles.button('primary', loadingPreview)}
-                      onClick={runPreview}
-                      disabled={loadingPreview}
-                    >
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: 12,
+                      flexWrap: 'wrap',
+                      width: '100%',
+                    }}
+                  >
+                    <PrimaryButton onClick={runPreview} disabled={loadingPreview}>
                       {loadingPreview ? 'Running Preview...' : 'Run Safe Preview'}
-                    </button>
+                    </PrimaryButton>
 
                     <button
                       type="button"
-                      style={styles.button('danger', !preview || executing)}
                       onClick={() => setShowConfirm(true)}
                       disabled={!preview || executing}
+                      style={{
+                        border: `1px solid ${theme.dangerBorder}`,
+                        background:
+                          !preview || executing
+                            ? 'rgba(239,68,68,0.08)'
+                            : theme.dangerSoft,
+                        color: theme.dangerText,
+                        padding: '10px 14px',
+                        borderRadius: 12,
+                        cursor: !preview || executing ? 'not-allowed' : 'pointer',
+                        fontWeight: 900,
+                        opacity: !preview || executing ? 0.55 : 1,
+                      }}
                     >
                       Restore This Backup
                     </button>
                   </div>
                 </>
               )}
-            </div>
-          </section>
-        </div>
-      ) : null}
-
-      {selectedBackup?.restoreNotes ? (
-        <section style={styles.panel}>
-          <div style={styles.panelHeader}>
-            <h2 style={styles.panelTitle}>Restore Limits</h2>
-            <p style={styles.panelText}>
-              Some server data cannot be restored by Discord bots.
-            </p>
+            </SectionCard>
           </div>
 
-          <div style={styles.panelBody}>
-            <div style={styles.statGrid}>
-              <div style={styles.successBox}>
-                <strong>Can Restore</strong>
-                <ul>
-                  {selectedBackup.restoreNotes.canRestore?.map((item) => (
-                    <li key={item}>{item}</li>
+          {selectedBackup?.restoreNotes ? (
+            <SectionCard
+              theme={theme}
+              title="Restore Limits"
+              subtitle="Some server data cannot be restored by Discord bots."
+            >
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns:
+                    'repeat(auto-fit, minmax(min(100%, 260px), 1fr))',
+                  gap: 16,
+                  width: '100%',
+                  maxWidth: '100%',
+                  minWidth: 0,
+                }}
+              >
+                <Notice theme={theme} tone="success">
+                  <strong>Can Restore</strong>
+                  <ul>
+                    {selectedBackup.restoreNotes.canRestore?.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </Notice>
+
+                <Notice theme={theme} tone="danger">
+                  <strong>Cannot Restore</strong>
+                  <ul>
+                    {selectedBackup.restoreNotes.cannotRestore?.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </Notice>
+              </div>
+            </SectionCard>
+          ) : null}
+
+          {preview ? (
+            <SectionCard
+              theme={theme}
+              title="Safe Restore Preview"
+              subtitle="This is a dry-run. Nothing has been changed yet."
+            >
+              <StatGrid min="min(180px, 100%)">
+                <SummaryStat theme={theme} label="Roles Planned" value={preview.roles?.planned || 0} />
+                <SummaryStat theme={theme} label="Duplicate Roles" value={preview.roles?.skippedDuplicates || 0} />
+                <SummaryStat theme={theme} label="Categories Planned" value={preview.categories?.planned || 0} />
+                <SummaryStat theme={theme} label="Duplicate Categories" value={preview.categories?.skippedDuplicates || 0} />
+                <SummaryStat theme={theme} label="Channels Planned" value={preview.channels?.planned || 0} />
+                <SummaryStat theme={theme} label="Duplicate Channels" value={preview.channels?.skippedDuplicates || 0} />
+                <SummaryStat theme={theme} label="Config Sections" value={preview.config?.planned || 0} />
+              </StatGrid>
+
+              {preview.warnings?.length ? (
+                <Notice theme={theme} tone="warning">
+                  {preview.warnings.map((warning) => (
+                    <p key={warning}>{warning}</p>
                   ))}
-                </ul>
-              </div>
+                </Notice>
+              ) : null}
+            </SectionCard>
+          ) : null}
 
-              <div style={styles.dangerBox}>
-                <strong>Cannot Restore</strong>
-                <ul>
-                  {selectedBackup.restoreNotes.cannotRestore?.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          </div>
-        </section>
-      ) : null}
+          {result ? (
+            <SectionCard
+              theme={theme}
+              title="Restore Complete"
+              subtitle={`Safety backup created before restore: ${
+                result.safetyBackup?.backupId || 'Unknown'
+              }`}
+            >
+              <Notice theme={theme} tone="success">
+                Restore finished successfully.
+              </Notice>
 
-      {preview ? (
-        <section style={styles.panel}>
-          <div style={styles.panelHeader}>
-            <h2 style={styles.panelTitle}>Safe Restore Preview</h2>
-            <p style={styles.panelText}>
-              This is a dry-run. Nothing has been changed yet.
-            </p>
-          </div>
-
-          <div style={styles.panelBody}>
-            <div style={styles.statGrid}>
-              <div style={styles.statCard}>
-                <p style={styles.statLabel}>Roles Planned</p>
-                <strong style={styles.statValue}>
-                  {preview.roles?.planned || 0}
-                </strong>
-              </div>
-
-              <div style={styles.statCard}>
-                <p style={styles.statLabel}>Duplicate Roles</p>
-                <strong style={styles.statValue}>
-                  {preview.roles?.skippedDuplicates || 0}
-                </strong>
-              </div>
-
-              <div style={styles.statCard}>
-                <p style={styles.statLabel}>Categories Planned</p>
-                <strong style={styles.statValue}>
-                  {preview.categories?.planned || 0}
-                </strong>
-              </div>
-
-              <div style={styles.statCard}>
-                <p style={styles.statLabel}>Duplicate Categories</p>
-                <strong style={styles.statValue}>
-                  {preview.categories?.skippedDuplicates || 0}
-                </strong>
-              </div>
-
-              <div style={styles.statCard}>
-                <p style={styles.statLabel}>Channels Planned</p>
-                <strong style={styles.statValue}>
-                  {preview.channels?.planned || 0}
-                </strong>
-              </div>
-
-              <div style={styles.statCard}>
-                <p style={styles.statLabel}>Duplicate Channels</p>
-                <strong style={styles.statValue}>
-                  {preview.channels?.skippedDuplicates || 0}
-                </strong>
-              </div>
-
-              <div style={styles.statCard}>
-                <p style={styles.statLabel}>Config Sections</p>
-                <strong style={styles.statValue}>
-                  {preview.config?.planned || 0}
-                </strong>
-              </div>
-            </div>
-
-            {preview.warnings?.length ? (
-              <div style={styles.warningBox}>
-                {preview.warnings.map((warning) => (
-                  <p key={warning}>{warning}</p>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        </section>
-      ) : null}
-
-      {result ? (
-        <section style={styles.panel}>
-          <div style={styles.panelHeader}>
-            <h2 style={styles.panelTitle}>Restore Complete</h2>
-            <p style={styles.panelText}>
-              Safety backup created before restore:{' '}
-              <strong>{result.safetyBackup?.backupId}</strong>
-            </p>
-          </div>
-
-          <div style={styles.panelBody}>
-            <div style={styles.successBox}>
-              Restore finished successfully.
-            </div>
-
-            <div style={styles.statGrid}>
-              <div style={styles.statCard}>
-                <p style={styles.statLabel}>Roles Created</p>
-                <strong style={styles.statValue}>
-                  {result.report?.roles?.created || 0}
-                </strong>
-              </div>
-
-              <div style={styles.statCard}>
-                <p style={styles.statLabel}>Categories Created</p>
-                <strong style={styles.statValue}>
-                  {result.report?.categories?.created || 0}
-                </strong>
-              </div>
-
-              <div style={styles.statCard}>
-                <p style={styles.statLabel}>Channels Created</p>
-                <strong style={styles.statValue}>
-                  {result.report?.channels?.created || 0}
-                </strong>
-              </div>
-
-              <div style={styles.statCard}>
-                <p style={styles.statLabel}>Config Restored</p>
-                <strong style={styles.statValue}>
-                  {result.report?.config?.restored || 0}
-                </strong>
-              </div>
-            </div>
-          </div>
-        </section>
+              <StatGrid min="min(180px, 100%)">
+                <SummaryStat theme={theme} label="Roles Created" value={result.report?.roles?.created || 0} />
+                <SummaryStat theme={theme} label="Categories Created" value={result.report?.categories?.created || 0} />
+                <SummaryStat theme={theme} label="Channels Created" value={result.report?.channels?.created || 0} />
+                <SummaryStat theme={theme} label="Config Restored" value={result.report?.config?.restored || 0} />
+              </StatGrid>
+            </SectionCard>
+          ) : null}
+        </>
       ) : null}
 
       {showConfirm ? (
@@ -520,6 +572,6 @@ export default function Restore({
           onConfirm={executeRestore}
         />
       ) : null}
-    </div>
+    </PageShell>
   );
 }

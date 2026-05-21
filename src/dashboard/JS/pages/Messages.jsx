@@ -1,15 +1,22 @@
-import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
+
 import { api } from '../services/apiClient';
+
 import PageShell, {
   EmptyState,
   LoadingPanel,
   Notice,
   PrimaryButton,
+  SectionCard,
+  StatGrid,
+  SummaryStat,
 } from '../shared/PageShell';
-import { PAGE_LAYOUTS } from "../ui/layout";
-import { createMessagesPageStyles } from "../ui/components";
-
-const PAGE_KEY = 'messages';
 
 const DEFAULT_FORM = {
   welcome: {
@@ -17,6 +24,7 @@ const DEFAULT_FORM = {
     channelId: '',
     message: '',
   },
+
   leave: {
     enabled: false,
     channelId: '',
@@ -24,23 +32,110 @@ const DEFAULT_FORM = {
   },
 };
 
+function getGuildId(selectedGuild) {
+  if (!selectedGuild) return '';
+
+  if (typeof selectedGuild === 'string') {
+    return selectedGuild;
+  }
+
+  return selectedGuild.id || selectedGuild.guildId || '';
+}
+
+function Toggle({ enabled, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        width: 56,
+        height: 32,
+        border: 'none',
+        borderRadius: 999,
+        cursor: 'pointer',
+        position: 'relative',
+        background: enabled
+          ? 'rgba(34,197,94,0.24)'
+          : 'rgba(239,68,68,0.18)',
+        transition: 'all 0.2s ease',
+      }}
+    >
+      <span
+        style={{
+          position: 'absolute',
+          top: 4,
+          left: enabled ? 30 : 4,
+          width: 24,
+          height: 24,
+          borderRadius: '50%',
+          background: '#ffffff',
+          transition: 'all 0.2s ease',
+        }}
+      />
+    </button>
+  );
+}
+
+function Select({ theme, children, ...props }) {
+  return (
+    <select
+      {...props}
+      style={{
+        width: '100%',
+        border: `1px solid ${theme.cardBorder}`,
+        background: 'rgba(10,18,35,0.96)',
+        color: theme.cardText,
+        borderRadius: 14,
+        padding: '12px 14px',
+        outline: 'none',
+        fontWeight: 700,
+      }}
+    >
+      {children}
+    </select>
+  );
+}
+
+function Textarea({ theme, ...props }) {
+  return (
+    <textarea
+      {...props}
+      style={{
+        width: '100%',
+        minHeight: 150,
+        resize: 'vertical',
+        border: `1px solid ${theme.cardBorder}`,
+        background: 'rgba(10,18,35,0.96)',
+        color: theme.cardText,
+        borderRadius: 14,
+        padding: 14,
+        outline: 'none',
+        fontWeight: 600,
+        lineHeight: 1.6,
+      }}
+    />
+  );
+}
+
 export default function Messages({ selectedGuild, theme }) {
-  const styles = useMemo(() => createMessagesPageStyles(theme), [theme]);
+  const guildId = getGuildId(selectedGuild);
 
   const [loading, setLoading] = useState(false);
   const [channelsLoading, setChannelsLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+
   const [error, setError] = useState('');
   const [saveMessage, setSaveMessage] = useState('');
+
   const [form, setForm] = useState(DEFAULT_FORM);
   const [channels, setChannels] = useState([]);
 
-  const page = PAGE_LAYOUTS[PAGE_KEY];
-
   const enabledCount = useMemo(() => {
     let count = 0;
-    if (form.welcome.enabled) count++;
-    if (form.leave.enabled) count++;
+
+    if (form.welcome.enabled) count += 1;
+    if (form.leave.enabled) count += 1;
+
     return count;
   }, [form]);
 
@@ -48,12 +143,13 @@ export default function Messages({ selectedGuild, theme }) {
     let mounted = true;
 
     async function loadMessages() {
-      if (!selectedGuild) {
+      if (!guildId) {
         if (mounted) {
           setForm(DEFAULT_FORM);
           setError('');
           setSaveMessage('');
         }
+
         return;
       }
 
@@ -62,47 +158,49 @@ export default function Messages({ selectedGuild, theme }) {
         setError('');
         setSaveMessage('');
 
-        const data = await api.getMessages(selectedGuild);
-        if (!mounted) return;
+        const data = await api.getMessages(guildId);
 
-        const guildConfig =
-          data?.[selectedGuild] ||
-          data?.guilds?.[selectedGuild] ||
-          data?.configs?.[selectedGuild] ||
-          data?.messageConfigs?.[selectedGuild] ||
-          {};
+        if (!mounted) return;
 
         setForm({
           welcome: {
-            enabled: Boolean(guildConfig?.welcome?.enabled),
-            channelId: guildConfig?.welcome?.channelId || '',
-            message: guildConfig?.welcome?.message || '',
+            enabled: Boolean(data?.welcome?.enabled),
+            channelId: data?.welcome?.channelId || '',
+            message: data?.welcome?.message || '',
           },
+
           leave: {
-            enabled: Boolean(guildConfig?.leave?.enabled),
-            channelId: guildConfig?.leave?.channelId || '',
-            message: guildConfig?.leave?.message || '',
+            enabled: Boolean(data?.leave?.enabled),
+            channelId: data?.leave?.channelId || '',
+            message: data?.leave?.message || '',
           },
         });
       } catch (err) {
         console.error(err);
+
         if (!mounted) return;
-        setError('Could not load message config.');
+
+        setError('Could not load message configuration.');
         setForm(DEFAULT_FORM);
       } finally {
-        if (mounted) setLoading(false);
+        if (mounted) {
+          setLoading(false);
+        }
       }
     }
 
     loadMessages();
-    return () => (mounted = false);
-  }, [selectedGuild]);
+
+    return () => {
+      mounted = false;
+    };
+  }, [guildId]);
 
   useEffect(() => {
     let mounted = true;
 
     async function loadChannels() {
-      if (!selectedGuild) {
+      if (!guildId) {
         setChannels([]);
         return;
       }
@@ -110,24 +208,34 @@ export default function Messages({ selectedGuild, theme }) {
       try {
         setChannelsLoading(true);
 
-        const result = await api.getGuildChannels(selectedGuild);
+        const result = await api.getGuildChannels(guildId);
+
         if (!mounted) return;
 
         setChannels(
-          (result || []).filter((c) => Number(c?.type) === 0)
+          (Array.isArray(result) ? result : []).filter(
+            (channel) => Number(channel?.type) === 0,
+          ),
         );
       } catch (err) {
         console.error(err);
+
         if (!mounted) return;
+
         setChannels([]);
       } finally {
-        if (mounted) setChannelsLoading(false);
+        if (mounted) {
+          setChannelsLoading(false);
+        }
       }
     }
 
     loadChannels();
-    return () => (mounted = false);
-  }, [selectedGuild]);
+
+    return () => {
+      mounted = false;
+    };
+  }, [guildId]);
 
   const handleToggle = useCallback((section) => {
     setForm((prev) => ({
@@ -150,111 +258,132 @@ export default function Messages({ selectedGuild, theme }) {
   }, []);
 
   const handleSave = useCallback(async () => {
-    if (!selectedGuild) return;
+    if (!guildId) return;
 
     try {
       setSaving(true);
       setSaveMessage('');
       setError('');
 
-      await api.saveMessages(selectedGuild, form);
+      await api.saveMessages(guildId, {
+        welcomeEnabled: form.welcome.enabled,
+        welcomeChannelId: form.welcome.channelId,
+        welcomeMessage: form.welcome.message,
 
-      setSaveMessage('✅ Saved');
+        leaveEnabled: form.leave.enabled,
+        leaveChannelId: form.leave.channelId,
+        leaveMessage: form.leave.message,
+      });
+
+      setSaveMessage('✅ Messages saved successfully.');
     } catch (err) {
       console.error(err);
-      setSaveMessage('❌ Failed to save');
+      setError('Failed to save messages.');
     } finally {
       setSaving(false);
     }
-  }, [selectedGuild, form]);
+  }, [guildId, form]);
 
   return (
     <PageShell
-      title={page?.title || 'Welcome & Leave'}
-      subtitle={page?.description}
+      title="Welcome & Leave"
+      subtitle="Manage join and leave messages for the selected server."
       theme={theme}
+      guild={{
+        id: guildId,
+        name: 'Welcome & Leave',
+      }}
       actions={
-        selectedGuild && (
+        guildId ? (
           <PrimaryButton onClick={handleSave} disabled={saving}>
             {saving ? 'Saving...' : 'Save'}
           </PrimaryButton>
-        )
+        ) : null
       }
     >
-      {!selectedGuild && (
+      {!guildId ? (
         <EmptyState theme={theme} text="Select a server first." />
-      )}
+      ) : null}
 
-      {error && (
+      {error ? (
         <Notice theme={theme} tone="danger">
           {error}
         </Notice>
-      )}
+      ) : null}
 
-      {saveMessage && (
+      {saveMessage ? (
         <Notice theme={theme} tone="success">
           {saveMessage}
         </Notice>
-      )}
+      ) : null}
 
-      {selectedGuild && (
-        <div style={styles.page}>
-          {/* STATS */}
-          <div style={styles.statsGrid}>
-            <div style={styles.statCard}>
-              <p style={styles.statLabel}>Enabled Flows</p>
-              <p style={styles.statValue}>{enabledCount}/2</p>
-            </div>
+      {guildId ? (
+        <StatGrid min="220px">
+          <SummaryStat
+            theme={theme}
+            label="Enabled Flows"
+            value={`${enabledCount}/2`}
+            accent="#3b82f6"
+            description="Enabled automated message systems"
+          />
 
-            <div style={styles.statCard}>
-              <p style={styles.statLabel}>Welcome</p>
-              <p style={form.welcome.enabled ? styles.statValueSuccess : styles.statValueDanger}>
-                {form.welcome.enabled ? 'Enabled' : 'Disabled'}
-              </p>
-            </div>
+          <SummaryStat
+            theme={theme}
+            label="Welcome"
+            value={form.welcome.enabled ? 'Enabled' : 'Disabled'}
+            accent={form.welcome.enabled ? '#22c55e' : '#ef4444'}
+            description="Welcome message system"
+          />
 
-            <div style={styles.statCard}>
-              <p style={styles.statLabel}>Leave</p>
-              <p style={form.leave.enabled ? styles.statValueSuccess : styles.statValueDanger}>
-                {form.leave.enabled ? 'Enabled' : 'Disabled'}
-              </p>
-            </div>
-          </div>
+          <SummaryStat
+            theme={theme}
+            label="Leave"
+            value={form.leave.enabled ? 'Enabled' : 'Disabled'}
+            accent={form.leave.enabled ? '#22c55e' : '#ef4444'}
+            description="Leave message system"
+          />
+        </StatGrid>
+      ) : null}
 
-          {/* CONTENT */}
-          {loading ? (
-            <LoadingPanel theme={theme} text="Loading..." />
-          ) : (
-            <div style={styles.grid}>
-              <MessagePanel
-                styles={styles}
-                title="Welcome Message"
-                form={form.welcome}
-                channels={channels}
-                channelsLoading={channelsLoading}
-                onToggle={() => handleToggle('welcome')}
-                onChange={(f, v) => handleChange('welcome', f, v)}
-              />
+      {guildId && loading ? (
+        <LoadingPanel theme={theme} text="Loading message configuration..." />
+      ) : null}
 
-              <MessagePanel
-                styles={styles}
-                title="Leave Message"
-                form={form.leave}
-                channels={channels}
-                channelsLoading={channelsLoading}
-                onToggle={() => handleToggle('leave')}
-                onChange={(f, v) => handleChange('leave', f, v)}
-              />
-            </div>
-          )}
+      {guildId && !loading ? (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+            gap: 24,
+          }}
+        >
+          <MessagePanel
+            theme={theme}
+            title="Welcome Message"
+            form={form.welcome}
+            channels={channels}
+            channelsLoading={channelsLoading}
+            onToggle={() => handleToggle('welcome')}
+            onChange={(field, value) => handleChange('welcome', field, value)}
+          />
+
+          <MessagePanel
+            theme={theme}
+            title="Leave Message"
+            form={form.leave}
+            channels={channels}
+            channelsLoading={channelsLoading}
+            onToggle={() => handleToggle('leave')}
+            onChange={(field, value) => handleChange('leave', field, value)}
+          />
         </div>
-      )}
+      ) : null}
     </PageShell>
   );
 }
 
 const MessagePanel = memo(function MessagePanel({
-  styles,
+  theme,
   title,
   form,
   channels,
@@ -263,32 +392,36 @@ const MessagePanel = memo(function MessagePanel({
   onChange,
 }) {
   return (
-    <section style={styles.panel}>
-      <h3 style={styles.panelTitle}>{title}</h3>
-
-      <button onClick={onToggle} style={styles.switchTrack(form.enabled)}>
-        <span style={styles.switchThumb(form.enabled)} />
-      </button>
-
-      <select
-        value={form.channelId}
-        onChange={(e) => onChange('channelId', e.target.value)}
-        style={styles.input}
-        disabled={channelsLoading}
-      >
-        <option value="">Select channel</option>
-        {channels.map((c) => (
-          <option key={c.id} value={c.id}>
-            #{c.name}
+    <SectionCard
+      theme={theme}
+      title={title}
+      actions={<Toggle enabled={form.enabled} onClick={onToggle} />}
+    >
+      <div style={{ display: 'grid', gap: 16 }}>
+        <Select
+          theme={theme}
+          value={form.channelId}
+          onChange={(event) => onChange('channelId', event.target.value)}
+          disabled={channelsLoading}
+        >
+          <option value="">
+            {channelsLoading ? 'Loading channels...' : 'Select channel'}
           </option>
-        ))}
-      </select>
 
-      <textarea
-        value={form.message}
-        onChange={(e) => onChange('message', e.target.value)}
-        style={styles.textarea}
-      />
-    </section>
+          {channels.map((channel) => (
+            <option key={channel.id} value={channel.id}>
+              #{channel.name}
+            </option>
+          ))}
+        </Select>
+
+        <Textarea
+          theme={theme}
+          value={form.message}
+          onChange={(event) => onChange('message', event.target.value)}
+          placeholder="Enter your message..."
+        />
+      </div>
+    </SectionCard>
   );
 });

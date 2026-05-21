@@ -60,7 +60,7 @@ const {
 
 const backupSchedulerModule = safeLoad(
   'Server Backup Scheduler',
-  () => require('./src/security/serverBackupScheduler')
+  () => require('./src/security/serverBackupScheduler'),
 );
 
 const startServerBackupScheduler =
@@ -210,13 +210,19 @@ function getDashboardClientUrl() {
     process.env.CLIENT_URL ||
       process.env.DASHBOARD_CLIENT_URL ||
       process.env.VITE_CLIENT_URL ||
-      'https://goliath.ksjdigital.co.uk'
+      'https://goliath.ksjdigital.co.uk',
   ).trim();
 }
 
 function startDashboardApiServer() {
   const app = express();
   const apiServer = http.createServer(app);
+
+  app.locals.client = client;
+  app.locals.discordClient = client;
+
+  global.client = client;
+  global.discordClient = client;
 
   const allowedOrigins = getAllowedOrigins();
   const dashboardClientUrl = getDashboardClientUrl();
@@ -235,7 +241,7 @@ function startDashboardApiServer() {
         return callback(new Error(`CORS blocked origin: ${origin}`));
       },
       credentials: true,
-    })
+    }),
   );
 
   app.use(express.json());
@@ -252,7 +258,7 @@ function startDashboardApiServer() {
         secure: isProduction,
         sameSite: isProduction ? 'none' : 'lax',
       },
-    })
+    }),
   );
 
   app.use('/api/auth', authRoutes);
@@ -274,11 +280,7 @@ function startDashboardApiServer() {
     clientUrl: dashboardClientUrl,
   });
 
-  const apiPort = Number(
-    process.env.PORT ||
-      process.env.BOT_API_PORT ||
-      3001
-  );
+  const apiPort = Number(process.env.PORT || process.env.BOT_API_PORT || 3001);
 
   apiServer.listen(apiPort, () => {
     console.log(`🌐 Dashboard API running on http://localhost:${apiPort}`);
@@ -347,9 +349,7 @@ function loadEvents() {
       delete require.cache[require.resolve(file)];
 
       const loadedEvent = require(file);
-      const events = Array.isArray(loadedEvent)
-        ? loadedEvent
-        : [loadedEvent];
+      const events = Array.isArray(loadedEvent) ? loadedEvent : [loadedEvent];
 
       for (const event of events) {
         registerEvent(event, file);
@@ -461,83 +461,42 @@ async function start() {
   loadEvents();
 
   client.once('clientReady', async (readyClient) => {
-  console.log(`🤖 Logged in as ${readyClient.user.tag}`);
-  console.log(`🧠 Active mode: ${BOT_MODE}`);
+    console.log(`🤖 Logged in as ${readyClient.user.tag}`);
+    console.log(`🧠 Active mode: ${BOT_MODE}`);
 
-  await enforceCurrentGuilds(
-    client,
-    BOT_MODE,
-    activeMode
-  );
+    await enforceCurrentGuilds(client, BOT_MODE, activeMode);
 
-  /* ---------------- SECURITY RECOVERY ---------------- */
-
-  try {
-    console.log(
-      '🛡️ Restoring lockdown recovery systems...'
-    );
-
-    await restoreLockdownReminders(
-      readyClient
-    );
-
-    console.log(
-      '✅ Lockdown recovery restored.'
-    );
-  } catch (error) {
-    console.error(
-      '❌ Failed restoring lockdown recovery'
-    );
-
-    console.error(error);
-  }
-
-  try {
-    console.log(
-      '🚨 Restoring quarantine recovery systems...'
-    );
-
-    await restoreExpiredQuarantines(
-      readyClient
-    );
-
-    console.log(
-      '✅ Quarantine recovery restored.'
-    );
-  } catch (error) {
-    console.error(
-      '❌ Failed restoring quarantine recovery'
-    );
-
-    console.error(error);
-  }
-
-  /* ---------------- BACKUPS ---------------- */
-
-  if (activeMode.startBackupScheduler) {
-    if (startServerBackupScheduler) {
-      console.log(
-        '💾 Starting server backup scheduler...'
-      );
-
-      startServerBackupScheduler(
-        readyClient
-      );
-    } else {
-      console.warn(
-        '⚠️ Backup scheduler unavailable. Continuing startup safely.'
-      );
+    try {
+      console.log('🛡️ Restoring lockdown recovery systems...');
+      await restoreLockdownReminders(readyClient);
+      console.log('✅ Lockdown recovery restored.');
+    } catch (error) {
+      console.error('❌ Failed restoring lockdown recovery');
+      console.error(error);
     }
-  } else {
-    logDev(
-      '💾 Backup scheduler disabled in DEV mode.'
-    );
-  }
 
-  console.log(
-    '✅ Goliath startup complete.'
-  );
-});
+    try {
+      console.log('🚨 Restoring quarantine recovery systems...');
+      await restoreExpiredQuarantines(readyClient);
+      console.log('✅ Quarantine recovery restored.');
+    } catch (error) {
+      console.error('❌ Failed restoring quarantine recovery');
+      console.error(error);
+    }
+
+    if (activeMode.startBackupScheduler) {
+      if (startServerBackupScheduler) {
+        console.log('💾 Starting server backup scheduler...');
+        startServerBackupScheduler(readyClient);
+      } else {
+        console.warn('⚠️ Backup scheduler unavailable. Continuing startup safely.');
+      }
+    } else {
+      logDev('💾 Backup scheduler disabled in DEV mode.');
+    }
+
+    console.log('✅ Goliath startup complete.');
+  });
 
   await client.login(token);
 }
