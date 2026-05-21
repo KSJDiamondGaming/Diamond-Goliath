@@ -5,40 +5,43 @@
   "main": "server.js",
   "type": "commonjs",
   "private": true,
- "scripts": {
-  "bot": "node server.js",
-  "bot:dev": "cross-env BOT_MODE=dev node server.js",
-  "bot:beta": "cross-env BOT_MODE=beta node server.js",
-  "bot:production": "cross-env BOT_MODE=production node server.js",
+  "scripts": {
+    "bot": "node server.js",
+    "bot:dev": "cross-env BOT_MODE=dev node server.js",
+    "bot:beta": "cross-env BOT_MODE=beta node server.js",
+    "bot:production": "cross-env BOT_MODE=production node server.js",
 
-  "sync:commands": "node src/helpers/commands/syncCommands.js",
-  "sync:commands:dev": "cross-env BOT_MODE=dev node src/helpers/commands/syncCommands.js",
-  "sync:commands:beta": "cross-env BOT_MODE=beta node src/helpers/commands/syncCommands.js",
-  "sync:commands:production": "cross-env BOT_MODE=production node src/helpers/commands/syncCommands.js",
+    "sync:commands": "node src/helpers/commands/syncCommands.js",
+    "sync:commands:dev": "cross-env BOT_MODE=dev node src/helpers/commands/syncCommands.js",
+    "sync:commands:beta": "cross-env BOT_MODE=beta node src/helpers/commands/syncCommands.js",
+    "sync:commands:production": "cross-env BOT_MODE=production node src/helpers/commands/syncCommands.js",
 
-  "sync:dev": "git add . && git commit -m \"dev sync\" && git push origin dev && ssh root@198.186.130.112 \"bash /home/goliath/deploy-dev.sh\"",
-  "promote:beta": "git checkout beta && git merge dev && git push origin beta && ssh root@198.186.130.112 \"bash /home/goliath/deploy-beta.sh\" && git checkout dev",
-  "promote:production": "git checkout production && git merge beta && git push origin production && ssh root@198.186.130.112 \"bash /home/goliath/deploy-production.sh\" && git checkout dev",
+    "sync:dev": "git add . && git commit -m \"dev sync\" && git push origin dev && ssh root@198.186.130.112 \"bash /home/goliath/deploy-dev.sh\"",
+    "promote:beta": "git checkout beta && git merge dev && git push origin beta && ssh root@198.186.130.112 \"bash /home/goliath/deploy-beta.sh\" && git checkout dev",
+    "promote:production": "git checkout production && git merge beta && git push origin production && ssh root@198.186.130.112 \"bash /home/goliath/deploy-production.sh\" && git checkout dev",
 
-  "dashboard": "vite src/dashboard --host",
-  "dashboard:dev": "vite src/dashboard --host 0.0.0.0 --port 5173 --mode development",
-  "dashboard:beta": "vite src/dashboard --host 0.0.0.0 --port 5183 --mode development",
-  "dashboard:production": "vite src/dashboard --host 0.0.0.0 --port 5193 --mode production",
+    "dashboard": "vite src/dashboard --host",
+    "dashboard:dev": "vite src/dashboard --host 0.0.0.0 --port 5173 --mode development",
+    "dashboard:beta": "vite src/dashboard --host 0.0.0.0 --port 5183 --mode development",
+    "dashboard:production": "vite src/dashboard --host 0.0.0.0 --port 5193 --mode production",
+    "dashboard:build": "vite build src/dashboard --outDir src/dashboard/dist --emptyOutDir",
 
-  "dev": "concurrently -n BOT,DASHBOARD -c green,cyan \"npm run bot:dev\" \"npm run dashboard:dev\"",
-  "dev:sync": "npm run sync:commands:dev && npm run dev",
+    "build": "npm run dashboard:build",
 
-  "beta": "concurrently -n BOT,DASHBOARD -c yellow,cyan \"npm run bot:beta\" \"npm run dashboard:beta\"",
-  "beta:sync": "npm run sync:commands:beta && npm run beta",
+    "dev": "concurrently -n BOT,DASHBOARD -c green,cyan \"npm run bot:dev\" \"npm run dashboard:dev\"",
+    "dev:sync": "npm run sync:commands:dev && npm run dev",
 
-  "production": "npm run bot:production",
-  "production:sync": "npm run sync:commands:production && npm run production",
+    "beta": "concurrently -n BOT,DASHBOARD -c yellow,cyan \"npm run bot:beta\" \"npm run dashboard:beta\"",
+    "beta:sync": "npm run sync:commands:beta && npm run beta",
 
-  "api": "node server.js",
-  "api:dev": "cross-env BOT_MODE=dev node server.js",
-  "api:beta": "cross-env BOT_MODE=beta node server.js",
-  "api:production": "cross-env BOT_MODE=production node server.js"
-},
+    "production": "npm run bot:production",
+    "production:sync": "npm run sync:commands:production && npm run production",
+
+    "api": "node server.js",
+    "api:dev": "cross-env BOT_MODE=dev node server.js",
+    "api:beta": "cross-env BOT_MODE=beta node server.js",
+    "api:production": "cross-env BOT_MODE=production node server.js"
+  },
   "dependencies": {
     "better-sqlite3": "^12.8.0",
     "chalk": "^5.6.2",
