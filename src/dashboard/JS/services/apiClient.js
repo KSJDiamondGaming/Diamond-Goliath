@@ -1,7 +1,6 @@
-const API_BASE =
-  import.meta.env.DEV
-    ? 'http://localhost:3001'
-    : '';
+const API_BASE = import.meta.env.DEV
+  ? 'http://localhost:3001'
+  : '';
 
 function apiUrl(path = '') {
   return `${API_BASE}${path}`;
@@ -9,7 +8,7 @@ function apiUrl(path = '') {
 
 async function request(
   url,
-  options = {}
+  options = {},
 ) {
   const response = await fetch(apiUrl(url), {
     credentials: 'include',
@@ -29,7 +28,7 @@ async function request(
   if (!response.ok) {
     throw new Error(
       data?.error ||
-        `API request failed: ${response.status}`
+        `API request failed: ${response.status}`,
     );
   }
 
@@ -41,8 +40,14 @@ export const api = {
 
   /* ---------------- CORE ---------------- */
 
-  getStatus() {
-    return request('/api/status');
+  getStatus(guildId = '') {
+    const query = guildId
+      ? `?guildId=${guildId}`
+      : '';
+
+    return request(
+      `/api/status${query}`,
+    );
   },
 
   /* ---------------- AUTH ---------------- */
@@ -56,28 +61,93 @@ export const api = {
   },
 
   logout() {
-    return request('/api/auth/logout', {
-      method: 'POST',
-    });
+    return request(
+      '/api/auth/logout',
+      {
+        method: 'POST',
+      },
+    );
   },
 
   /* ---------------- DISCORD ---------------- */
 
   getGuilds() {
-    return request('/api/discord/guilds');
+    return request(
+      '/api/discord/guilds',
+    );
+  },
+
+  getGuildChannels(guildId) {
+    return request(
+      `/api/discord/${guildId}/channels`,
+    );
+  },
+
+  getGuildRoles(guildId) {
+    return request(
+      `/api/discord/${guildId}/roles`,
+    );
+  },
+
+  /* ---------------- GENERAL SETTINGS ---------------- */
+
+  getGeneralSettings(guildId) {
+    return request(
+      `/api/general-settings/${guildId}`,
+    );
+  },
+
+  saveGeneralSettings(
+    guildId,
+    payload,
+  ) {
+    return request(
+      `/api/general-settings/${guildId}`,
+      {
+        method: 'POST',
+
+        body: JSON.stringify(
+          payload,
+        ),
+      },
+    );
+  },
+
+  /* ---------------- MESSAGES ---------------- */
+
+  getMessages(guildId) {
+    return request(
+      `/api/messages/${guildId}`,
+    );
+  },
+
+  saveMessages(
+    guildId,
+    payload,
+  ) {
+    return request(
+      `/api/messages/${guildId}`,
+      {
+        method: 'POST',
+
+        body: JSON.stringify(
+          payload,
+        ),
+      },
+    );
   },
 
   /* ---------------- CASES ---------------- */
 
   getCases(guildId) {
     return request(
-      `/api/cases/${guildId}`
+      `/api/cases/${guildId}`,
     );
   },
 
   getWarnings(guildId) {
     return request(
-      `/api/cases/${guildId}/warnings`
+      `/api/cases/${guildId}/warnings`,
     );
   },
 
@@ -85,7 +155,7 @@ export const api = {
 
   getSecurityOverview(guildId) {
     return request(
-      `/api/security/overview?guildId=${guildId}`
+      `/api/security/overview?guildId=${guildId}`,
     );
   },
 };
