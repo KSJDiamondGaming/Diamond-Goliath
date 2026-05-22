@@ -3,7 +3,6 @@ const path = require('path');
 
 const { loadEnvironment } = require('./src/config/envLoader');
 
-// Load env BEFORE importing routes/modules that read process.env
 loadEnvironment();
 
 const express = require('express');
@@ -47,6 +46,7 @@ const embedsRoutes = require('./src/server/routes/config/embeds');
 const moderationRoutes = require('./src/server/routes/moderation');
 const serverRestoreRoutes = require('./src/server/routes/serverRestoreRoutes');
 const securityRoutes = require('./src/server/routes/security');
+const ticketRoutes = require('./src/server/routes/tickets');
 
 const {
   restoreLockdownReminders,
@@ -93,12 +93,6 @@ const activeMode = getBotModeConfig(BOT_MODE);
 
 const isProduction = process.env.NODE_ENV === 'production';
 
-/*
-  Dashboard/API route compatibility.
-
-  Some dashboard routes check TOKEN or DISCORD_BOT_TOKEN.
-  Main bot env uses DISCORD_TOKEN.
-*/
 if (!process.env.DISCORD_BOT_TOKEN && process.env.DISCORD_TOKEN) {
   process.env.DISCORD_BOT_TOKEN = process.env.DISCORD_TOKEN;
 }
@@ -272,6 +266,7 @@ function startDashboardApiServer() {
   app.use('/api/config/embeds', embedsRoutes);
 
   app.use('/api/cases', moderationRoutes);
+  app.use('/api/tickets', ticketRoutes);
 
   app.use('/api/server-restore', serverRestoreRoutes);
   app.use('/api/security', securityRoutes);
@@ -321,13 +316,55 @@ function loadCommands() {
 
 /* ---------------- EVENTS ---------------- */
 
+const registeredEvents = new Set();
+
 function registerEvent(event, file) {
   if (!event?.name || typeof event.execute !== 'function') {
     console.warn(`⚠️ Skipped event in: ${file}`);
     return;
   }
 
-  const handler = (...args) => event.execute(...args, client);
+  const eventKey = `${event.name}:${file}`;
+
+  if (registeredEvents.has(eventKey)) {
+    console.warn(
+      `⚠️ Duplicate event skipped: ${event.name} (${file})`
+    );
+    return;
+  }
+
+  registeredEvents.add(eventKey);
+
+  /*
+  ==========================================
+  CRITICAL INTERACTION SAFETY
+  Prevent duplicate interactionCreate listeners
+  ==========================================
+  */
+
+  if (event.name === 'interactionCreate') {
+    const existing =
+      client.listenerCount('interactionCreate');
+
+    if (existing > 0) {
+      console.warn(
+        `⚠️ Removing ${existing} existing interactionCreate listener(s)`
+      );
+
+      client.removeAllListeners('interactionCreate');
+    }
+  }
+
+  const handler = async (...args) => {
+    try {
+      await event.execute(...args, client);
+    } catch (error) {
+      console.error(
+        `❌ Event execution failed: ${event.name}`
+      );
+      console.error(error);
+    }
+  };
 
   if (event.once) {
     client.once(event.name, handler);
@@ -460,43 +497,10 @@ async function start() {
   loadCommands();
   loadEvents();
 
-  client.once('clientReady', async (readyClient) => {
-    console.log(`🤖 Logged in as ${readyClient.user.tag}`);
-    console.log(`🧠 Active mode: ${BOT_MODE}`);
-
-    await enforceCurrentGuilds(client, BOT_MODE, activeMode);
-
-    try {
-      console.log('🛡️ Restoring lockdown recovery systems...');
-      await restoreLockdownReminders(readyClient);
-      console.log('✅ Lockdown recovery restored.');
-    } catch (error) {
-      console.error('❌ Failed restoring lockdown recovery');
-      console.error(error);
-    }
-
-    try {
-      console.log('🚨 Restoring quarantine recovery systems...');
-      await restoreExpiredQuarantines(readyClient);
-      console.log('✅ Quarantine recovery restored.');
-    } catch (error) {
-      console.error('❌ Failed restoring quarantine recovery');
-      console.error(error);
-    }
-
-    if (activeMode.startBackupScheduler) {
-      if (startServerBackupScheduler) {
-        console.log('💾 Starting server backup scheduler...');
-        startServerBackupScheduler(readyClient);
-      } else {
-        console.warn('⚠️ Backup scheduler unavailable. Continuing startup safely.');
-      }
-    } else {
-      logDev('💾 Backup scheduler disabled in DEV mode.');
-    }
-
-    console.log('✅ Goliath startup complete.');
-  });
+  console.log(
+  '[Debug] interactionCreate listeners:',
+  client.listenerCount('interactionCreate')
+);
 
   await client.login(token);
 }
