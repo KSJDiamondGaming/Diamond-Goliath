@@ -26,6 +26,7 @@ const {
   getPanel,
   updatePanel,
   deployPanel,
+  deletePanel,
 } = require('./ticketPanelManager');
 
 function alreadyHandled(interaction) {
@@ -247,6 +248,12 @@ function buildEditorControls(panelId) {
         .setEmoji('🚀'),
 
       new ButtonBuilder()
+        .setCustomId(`ticket_setup:delete:${panelId}`)
+        .setLabel('Delete Panel')
+        .setStyle(ButtonStyle.Danger)
+        .setEmoji('🗑️'),
+
+      new ButtonBuilder()
         .setCustomId('ticket_setup:back')
         .setLabel('Back')
         .setStyle(ButtonStyle.Secondary)
@@ -451,6 +458,24 @@ async function handleTicketSetupInteraction(interaction) {
     });
 
     await showPanelEditor(interaction, panelId);
+    return true;
+  }
+
+  if (action === 'delete') {
+    const deleted = deletePanel(interaction.guild.id, panelId);
+
+    if (!deleted) {
+      await safeReply(
+        interaction,
+        ephemeralPayload({
+          content: '❌ Ticket panel not found.',
+        })
+      );
+
+      return true;
+    }
+
+    await showSetupHome(interaction);
     return true;
   }
 
