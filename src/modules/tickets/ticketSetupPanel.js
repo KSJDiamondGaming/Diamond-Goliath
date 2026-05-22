@@ -236,13 +236,6 @@ function buildEditorControls(panelId) {
         .setPlaceholder('Set logs channel')
         .setChannelTypes(ChannelType.GuildText)
         .setMinValues(0)
-        .setMaxValues(1),
-
-      new ChannelSelectMenuBuilder()
-        .setCustomId(`ticket_setup:set_archive:${panelId}`)
-        .setPlaceholder('Set archive category')
-        .setChannelTypes(ChannelType.GuildCategory)
-        .setMinValues(0)
         .setMaxValues(1)
     ),
 
