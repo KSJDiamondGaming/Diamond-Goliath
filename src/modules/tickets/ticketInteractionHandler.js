@@ -25,6 +25,7 @@ const ticketManager = require('./ticketManager');
 const ticketStore = require('./ticketStore');
 const ticketTranscriptManager = require('./ticketTranscriptManager');
 const ticketPermissions = require('./ticketPermissions');
+const { handleTicketPanelButton,} = require('./ticketPanelManager');
 
 const {
   handleTicketSetupInteraction,
@@ -618,6 +619,31 @@ async function handleTicketSelect(interaction) {
 }
 
 async function handleTicketInteraction(interaction) {
+  const handledPanelOpen =
+    await handleTicketPanelButton(interaction, interaction.client);
+
+  if (handledPanelOpen) return true;
+
+  const handledSetup =
+    await handleTicketSetupInteraction(interaction);
+
+  if (handledSetup) return true;
+
+  if (interaction.isButton()) {
+    return handleTicketButton(interaction);
+  }
+
+  if (interaction.isModalSubmit()) {
+    return handleTicketModal(interaction);
+  }
+
+  if (interaction.isStringSelectMenu()) {
+    return handleTicketSelect(interaction);
+  }
+
+  return false;
+}
+  
   const handledSetup =
     await handleTicketSetupInteraction(interaction);
 
