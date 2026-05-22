@@ -1,264 +1,167 @@
-const automodPanel = require('../../functions/automod/automodPanel');
-const embedPanel = require('../../functions/embed/embedPanel');
+// src/events/interaction/interactionCreate.js
 
-const { handleAdminNavigation } = require('../../functions/admin/adminPanel');
-const security = require('../../security/securitySystem');
-const restoreRequestManager = require('../../security/restoreRequestManager');
+const { MessageFlags } = require('discord.js');
 
-const panelNav = require('../../helpers/ui/panelNavigation');
+const ticketInteractionHandler = require('../../modules/tickets/ticketInteractionHandler');
 
-function startsWithCustomId(interaction, prefix) {
-  return String(interaction.customId || '').startsWith(prefix);
-}
+const seenInteractions = new Set();
 
-function isAdminInteraction(interaction) {
-  return startsWithCustomId(interaction, 'admin:');
-}
+function markInteraction(interaction) {
+  if (!interaction?.id) return false;
 
-function isAutomodInteraction(interaction) {
-  return startsWithCustomId(interaction, 'automod:');
-}
-
-function isEmbedInteraction(interaction) {
-  return startsWithCustomId(interaction, 'embed:');
-}
-
-function isRestoreInteraction(interaction) {
-  return startsWithCustomId(interaction, 'restore_request_');
-}
-
-function isSecurityTestInteraction(interaction) {
-  return startsWithCustomId(interaction, 'securitytest:');
-}
-
-function isNavigationInteraction(interaction) {
-  return startsWithCustomId(interaction, 'nav|');
-}
-
-function isPanelComponent(interaction) {
-  return (
-    interaction.isButton?.() ||
-    interaction.isRoleSelectMenu?.() ||
-    interaction.isChannelSelectMenu?.() ||
-    interaction.isStringSelectMenu?.() ||
-    interaction.isModalSubmit?.()
-  );
-}
-
-function isProtectedPanelInteraction(interaction) {
-  if (!isPanelComponent(interaction)) return false;
-
-  return (
-    isNavigationInteraction(interaction) ||
-    isAdminInteraction(interaction) ||
-    isAutomodInteraction(interaction) ||
-    isEmbedInteraction(interaction)
-  );
-}
-
-async function safeReply(interaction, message) {
-  const payload = {
-    content: message,
-    embeds: [],
-    components: [],
-    flags: 64,
-  };
-
-  if (interaction.deferred || interaction.replied) {
-    return interaction.editReply(payload).catch(() => null);
-  }
-
-  return interaction.reply(payload).catch(() => null);
-}
-
-async function handlePurgeModal(interaction) {
-  const rawAmount = interaction.fields.getTextInputValue('amount');
-  const amount = Number(rawAmount);
-
-  if (!Number.isInteger(amount) || amount < 1 || amount > 100) {
-    return safeReply(interaction, '❌ Please enter a number between 1 and 100.');
-  }
-
-  if (!interaction.channel?.bulkDelete) {
-    return safeReply(interaction, '❌ This channel does not support bulk delete.');
-  }
-
-  const deleted = await interaction.channel.bulkDelete(amount, true);
-
-  return safeReply(interaction, `✅ Deleted ${deleted.size} message(s).`);
-}
-
-async function handlePanelNavigation(interaction) {
-  const parsed = panelNav.parseCustomId(interaction.customId);
-  if (!parsed) return false;
-
-  let { state, action } = parsed;
-
-  if (action === 'back') {
-    state = panelNav.back(state);
-  }
-
-  if (action === 'home') {
-    interaction.customId = 'admin:home';
-    return handleAdminNavigation(interaction, state);
-  }
-
-  const currentPanel = panelNav.current(state) || 'admin:home';
-
-  if (currentPanel.startsWith('admin:')) {
-    interaction.customId = currentPanel;
-    return handleAdminNavigation(interaction, state);
-  }
-
-  if (currentPanel.startsWith('automod:')) {
-    interaction.customId = currentPanel;
-    return automodPanel.handleInteraction(interaction, state);
-  }
-
-  if (currentPanel.startsWith('embed:')) {
-    interaction.customId = currentPanel;
-    return embedPanel.handleInteraction(interaction, state);
-  }
-
-  interaction.customId = 'admin:home';
-  return handleAdminNavigation(interaction, state);
-}
-
-async function handleSecurityTestButton(interaction, activeClient) {
-  if (!interaction.isButton() || !isSecurityTestInteraction(interaction)) {
+  if (seenInteractions.has(interaction.id)) {
     return false;
   }
 
-  const securityTestCommand = activeClient.commands.get('securitytest');
+  seenInteractions.add(interaction.id);
 
-  if (!securityTestCommand?.handleButton) {
-    await safeReply(
-      interaction,
-      '❌ Security test handler is missing. Check the securitytest command file.'
-    );
+  setTimeout(() => {
+    seenInteractions.delete(interaction.id);
+  }, 60_000);
+
+  return true;
+}
+
+function isUnknownInteraction(error) {
+  return error?.code === 10062;
+}
+
+function isAlreadyAcknowledged(error) {
+  return error?.code === 40060;
+}
+
+async function safeDefer(interaction) {
+  if (!interaction?.isRepliable?.()) return false;
+  if (interaction.deferred || interaction.replied) return true;
+
+  try {
+    await interaction.deferReply({
+      flags: MessageFlags.Ephemeral,
+    });
 
     return true;
-  }
+  } catch (error) {
+    if (isUnknownInteraction(error)) {
+      console.error(
+        `⚠️ Interaction expired before defer: ${interaction.id} / ${interaction.commandName || interaction.customId || 'unknown'}`
+      );
+      return false;
+    }
 
-  await securityTestCommand.handleButton(interaction, activeClient);
-  return true;
+    if (isAlreadyAcknowledged(error)) {
+      return true;
+    }
+
+    throw error;
+  }
+}
+
+async function safeEdit(interaction, payload = {}) {
+  if (!interaction?.isRepliable?.()) return false;
+
+  try {
+    if (interaction.deferred || interaction.replied) {
+      await interaction.editReply(payload);
+      return true;
+    }
+
+    await interaction.reply({
+      ...payload,
+      flags: payload.flags || MessageFlags.Ephemeral,
+    });
+
+    return true;
+  } catch (error) {
+    if (isUnknownInteraction(error) || isAlreadyAcknowledged(error)) {
+      return false;
+    }
+
+    throw error;
+  }
 }
 
 module.exports = {
   name: 'interactionCreate',
 
   async execute(interaction, client) {
+    if (!interaction || !client) return;
+
+    if (!markInteraction(interaction)) {
+      console.warn(
+        `⚠️ Duplicate interaction ignored: ${interaction.id}`
+      );
+      return;
+    }
+
     try {
-      const activeClient = client || interaction.client;
+      /*
+      ==========================================
+      AUTOCOMPLETE
+      Must NOT defer autocomplete.
+      ==========================================
+      */
 
-      // 0. Restore approval system buttons.
-      if (interaction.isButton() && isRestoreInteraction(interaction)) {
-        const handledRestoreButton =
-          await restoreRequestManager.handleRestoreButton(interaction);
+      if (interaction.isAutocomplete()) {
+        const command = client.commands?.get(interaction.commandName);
+        if (!command?.autocomplete) return;
 
-        if (handledRestoreButton) return;
+        await command.autocomplete(interaction, client).catch(console.error);
+        return;
       }
 
-      // 0.5 Security test buttons.
-      // Handle these before protected admin/embed/automod routing.
-      if (interaction.isButton() && isSecurityTestInteraction(interaction)) {
-        if (await handleSecurityTestButton(interaction, activeClient)) return;
-      }
+      /*
+      ==========================================
+      SLASH COMMANDS
+      ==========================================
+      */
 
-      if (isProtectedPanelInteraction(interaction)) {
-        const check = await security.enforceInteractionSecurity(interaction, {
-          level: 'admin',
-          cooldownKey: interaction.customId,
-          cooldownMs: 1500,
-          guildOnly: true,
-        });
-
-        if (!check.allowed) return;
-      }
-
-      // 1. Global nav system first.
-      if (isNavigationInteraction(interaction)) {
-        if (await handlePanelNavigation(interaction)) return;
-      }
-
-      // 2. Admin purge modal.
-      if (interaction.isModalSubmit() && interaction.customId === 'admin:purgeModal') {
-        return handlePurgeModal(interaction);
-      }
-
-      // 3. Embed panel owns embed:* and its own admin:back/admin:home buttons.
-      if (
-        isEmbedInteraction(interaction) ||
-        interaction.customId === 'admin:back' ||
-        interaction.customId === 'admin:home'
-      ) {
-        if (await embedPanel.handleInteraction(interaction)) return;
-      }
-
-      // 4. Automod panel.
-      if (isAutomodInteraction(interaction)) {
-        if (await automodPanel.handleInteraction(interaction)) return;
-      }
-
-      // 5. Admin panel.
-      if (isAdminInteraction(interaction)) {
-        if (await handleAdminNavigation(interaction)) return;
-      }
-
-      // 6. Slash commands.
       if (interaction.isChatInputCommand()) {
-        const command = activeClient.commands.get(interaction.commandName);
+        const deferred = await safeDefer(interaction);
+        if (!deferred) return;
+
+        const command = client.commands?.get(interaction.commandName);
 
         if (!command) {
-          return safeReply(interaction, '❌ Command not found.');
+          await safeEdit(interaction, {
+            content: '❌ Command not found.',
+          });
+          return;
         }
 
-        return command.execute(interaction, activeClient);
-      }
+        try {
+          await command.execute(interaction, client);
+        } catch (error) {
+          console.error(
+            `❌ Command execution failed: ${interaction.commandName}`
+          );
+          console.error(error);
 
-      // 7. Help select menu.
-      if (interaction.isStringSelectMenu()) {
-        if (interaction.customId === 'help-category-select') {
-          const helpCommand = activeClient.commands.get('help');
-
-          if (helpCommand?.handleHelpSelectMenu) {
-            return helpCommand.handleHelpSelectMenu(interaction, activeClient);
-          }
+          await safeEdit(interaction, {
+            content: '❌ An error occurred while executing this command.',
+          });
         }
 
-        return false;
+        return;
       }
 
-      // 8. Help buttons / unhandled buttons.
-      if (interaction.isButton()) {
-        if (
-          interaction.customId === 'help-back-home' ||
-          interaction.customId === 'help-close'
-        ) {
-          const helpCommand = activeClient.commands.get('help');
+      /*
+      ==========================================
+      COMPONENTS / MODALS / SELECTS
+      Ticket handler owns component lifecycle.
+      ==========================================
+      */
 
-          if (helpCommand?.handleHelpButton) {
-            return helpCommand.handleHelpButton(interaction, activeClient);
-          }
-        }
+      const handled =
+        await ticketInteractionHandler.handleTicketInteraction(interaction);
 
-        console.warn('⚠️ Unhandled button:', interaction.customId);
-        return false;
-      }
-
-      return false;
+      if (handled) return;
     } catch (error) {
-      console.error('❌ Interaction error:', error);
+      console.error('❌ interactionCreate fatal error');
+      console.error(error);
 
-      try {
-        return safeReply(
-          interaction,
-          '❌ Something went wrong while handling this interaction.'
-        );
-      } catch (replyError) {
-        console.error('❌ Failed to send interaction error response:', replyError);
-        return false;
-      }
+      await safeEdit(interaction, {
+        content: '❌ Something went wrong while handling this interaction.',
+      }).catch(() => null);
     }
   },
 };

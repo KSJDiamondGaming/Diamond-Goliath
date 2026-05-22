@@ -1,19 +1,42 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const dotenv = require('dotenv');
-const { REST, Routes } = require('discord.js');
+
+const {
+  REST,
+  Routes,
+} = require('discord.js');
+
+const {
+  loadEnvironment,
+} = require('../../config/envLoader');
 
 /* ---------------- ENV / MODE ---------------- */
 
-const ALLOWED_MODES = ['dev', 'beta', 'production'];
-const ALLOWED_COMMAND_MODES = ['guild', 'global'];
+const ALLOWED_MODES = [
+  'dev',
+  'beta',
+  'production',
+];
+
+const ALLOWED_COMMAND_MODES = [
+  'guild',
+  'global',
+];
 
 function resolveBotMode() {
-  const argMode = process.argv[2]?.toLowerCase();
-  const envMode = process.env.BOT_MODE?.toLowerCase();
+  const argMode =
+    process.argv[2]?.toLowerCase();
 
-  if (ALLOWED_MODES.includes(argMode)) return argMode;
-  if (ALLOWED_MODES.includes(envMode)) return envMode;
+  const envMode =
+    process.env.BOT_MODE?.toLowerCase();
+
+  if (ALLOWED_MODES.includes(argMode)) {
+    return argMode;
+  }
+
+  if (ALLOWED_MODES.includes(envMode)) {
+    return envMode;
+  }
 
   return 'dev';
 }
@@ -22,12 +45,10 @@ const selectedMode = resolveBotMode();
 
 process.env.BOT_MODE = selectedMode;
 
-const envFile = `.env.${selectedMode}`;
-const envPath = path.join(process.cwd(), envFile);
-
-dotenv.config({ path: envPath });
+const loadedEnv = loadEnvironment(selectedMode);
 
 const BOT_MODE = selectedMode.toUpperCase();
+const envFile = loadedEnv?.envFile || `.env.${selectedMode}`;
 
 /* ---------------- ENV HELPERS ---------------- */
 
@@ -45,7 +66,9 @@ function firstEnv(names) {
 
 function required(name, value) {
   if (!value || !String(value).trim()) {
-    throw new Error(`❌ Missing ${name} in ${envFile}`);
+    throw new Error(
+      `❌ Missing ${name} in ${envFile}`
+    );
   }
 
   return String(value).trim();
@@ -55,7 +78,9 @@ function requiredAny(names, label = names[0]) {
   const value = firstEnv(names);
 
   if (!value) {
-    throw new Error(`❌ Missing ${label} in ${envFile}`);
+    throw new Error(
+      `❌ Missing ${label} in ${envFile}`
+    );
   }
 
   return value;
@@ -64,31 +89,58 @@ function requiredAny(names, label = names[0]) {
 /* ---------------- ENV VALUES ---------------- */
 
 const TOKEN = requiredAny(
-  ['DISCORD_TOKEN', 'TOKEN'],
+  [
+    'DISCORD_TOKEN',
+    'DISCORD_BOT_TOKEN',
+    'TOKEN',
+  ],
   'DISCORD_TOKEN'
 );
 
 const CLIENT_ID = requiredAny(
-  ['DISCORD_CLIENT_ID', 'CLIENT_ID'],
+  [
+    'DISCORD_CLIENT_ID',
+    'CLIENT_ID',
+    'APPLICATION_ID',
+  ],
   'DISCORD_CLIENT_ID'
 );
 
 const COMMAND_MODE = (() => {
-  const envCommandMode = process.env.COMMAND_MODE?.toLowerCase();
+  const envCommandMode =
+    process.env.COMMAND_MODE?.toLowerCase();
 
-  if (ALLOWED_COMMAND_MODES.includes(envCommandMode)) {
+  if (
+    ALLOWED_COMMAND_MODES.includes(envCommandMode)
+  ) {
     return envCommandMode;
   }
 
-  return BOT_MODE === 'PRODUCTION' ? 'global' : 'guild';
+  return BOT_MODE === 'PRODUCTION'
+    ? 'global'
+    : 'guild';
 })();
 
 const GUILD_IDS =
   BOT_MODE === 'DEV'
-    ? firstEnv(['DEV_GUILD_ID', 'MAIN_GUILD_ID', 'GUILD_ID'])
+    ? firstEnv([
+        'DEV_GUILD_ID',
+        'MAIN_GUILD_ID',
+        'GUILD_ID',
+      ])
     : BOT_MODE === 'BETA'
-      ? firstEnv(['BETA_GUILD_IDS', 'BETA_GUILD_ID', 'MAIN_GUILD_ID', 'GUILD_ID'])
-      : firstEnv(['PRODUCTION_GUILD_IDS', 'MAIN_GUILD_ID', 'GUILD_ID']);
+      ? firstEnv([
+          'BETA_GUILD_IDS',
+          'BETA_GUILD_ID',
+          'MAIN_GUILD_ID',
+          'GUILD_ID',
+        ])
+      : firstEnv([
+          'PRODUCTION_GUILD_IDS',
+          'PRODUCTION_GUILD_ID',
+          'MAIN_GUILD_ID',
+          'GUILD_ID',
+        ]);
 
 /* ---------------- VALIDATION ---------------- */
 
@@ -114,7 +166,9 @@ if (COMMAND_MODE === 'guild') {
 
 /* ---------------- REST ---------------- */
 
-const rest = new REST({ version: '10' }).setToken(TOKEN);
+const rest = new REST({
+  version: '10',
+}).setToken(TOKEN);
 
 /* ---------------- HELPERS ---------------- */
 
@@ -126,15 +180,27 @@ function parseGuildIds(value) {
 }
 
 function getAllJsFiles(dir) {
-  if (!fs.existsSync(dir)) return [];
+  if (!fs.existsSync(dir)) {
+    return [];
+  }
 
   const files = [];
 
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const fullPath = path.join(dir, entry.name);
+  for (
+    const entry of fs.readdirSync(dir, {
+      withFileTypes: true,
+    })
+  ) {
+    const fullPath = path.join(
+      dir,
+      entry.name
+    );
 
     if (entry.isDirectory()) {
-      files.push(...getAllJsFiles(fullPath));
+      files.push(
+        ...getAllJsFiles(fullPath)
+      );
+
       continue;
     }
 
@@ -148,39 +214,65 @@ function getAllJsFiles(dir) {
     }
   }
 
-  return files.sort((a, b) => a.localeCompare(b));
+  return files.sort((a, b) =>
+    a.localeCompare(b)
+  );
 }
 
 function loadCommands(commandsPath, mode) {
-  const commandFiles = getAllJsFiles(commandsPath);
+  const commandFiles =
+    getAllJsFiles(commandsPath);
 
   const commands = [];
   const seen = new Set();
 
   for (const filePath of commandFiles) {
     try {
-      delete require.cache[require.resolve(filePath)];
+      delete require.cache[
+        require.resolve(filePath)
+      ];
 
       const command = require(filePath);
       const name = command?.data?.name;
 
-      if (!command?.data || typeof command.execute !== 'function') {
-        console.warn(`⚠️ Skipped invalid command: ${filePath}`);
+      if (
+        !command?.data ||
+        typeof command.execute !== 'function'
+      ) {
+        console.warn(
+          `⚠️ Skipped invalid command: ${filePath}`
+        );
+
         continue;
       }
 
-      if (!name || typeof name !== 'string') {
-        console.warn(`⚠️ Skipped unnamed command: ${filePath}`);
+      if (
+        !name ||
+        typeof name !== 'string'
+      ) {
+        console.warn(
+          `⚠️ Skipped unnamed command: ${filePath}`
+        );
+
         continue;
       }
 
       if (seen.has(name)) {
-        console.warn(`⚠️ Skipped duplicate command: ${name}`);
+        console.warn(
+          `⚠️ Skipped duplicate command: ${name} (${filePath})`
+        );
+
         continue;
       }
 
-      if (mode === 'global' && command.devOnly === true) {
-        console.log(`🧪 Skipped dev-only command: ${name}`);
+      if (
+        mode === 'global' &&
+        command.devOnly === true
+      ) {
+        console.log(
+          `🧪 Skipped dev-only command: ${name}`
+        );
+
         continue;
       }
 
@@ -189,7 +281,10 @@ function loadCommands(commandsPath, mode) {
 
       console.log(`✅ Loaded command: ${name}`);
     } catch (error) {
-      console.error(`❌ Failed to load command: ${filePath}`);
+      console.error(
+        `❌ Failed to load command: ${filePath}`
+      );
+
       console.error(error);
     }
   }
@@ -213,20 +308,31 @@ function printSyncBanner(mode, commandsPath) {
 async function clearGuildCommands(guildIds) {
   for (const guildId of guildIds) {
     await rest.put(
-      Routes.applicationGuildCommands(CLIENT_ID, guildId),
+      Routes.applicationGuildCommands(
+        CLIENT_ID,
+        guildId
+      ),
       {
         body: [],
       }
     );
 
-    console.log(`🧹 Cleared guild commands: ${guildId}`);
+    console.log(
+      `🧹 Cleared guild commands: ${guildId}`
+    );
   }
 }
 
-async function registerGuildCommands(guildIds, commands) {
+async function registerGuildCommands(
+  guildIds,
+  commands
+) {
   for (const guildId of guildIds) {
     await rest.put(
-      Routes.applicationGuildCommands(CLIENT_ID, guildId),
+      Routes.applicationGuildCommands(
+        CLIENT_ID,
+        guildId
+      ),
       {
         body: commands,
       }
@@ -257,7 +363,9 @@ async function registerGlobalCommands(commands) {
     }
   );
 
-  console.log(`✅ Registered ${commands.length} global command(s)`);
+  console.log(
+    `✅ Registered ${commands.length} global command(s)`
+  );
 }
 
 /* ---------------- SYNC ---------------- */
@@ -265,7 +373,9 @@ async function registerGlobalCommands(commands) {
 async function syncCommands(options = {}) {
   const startedAt = Date.now();
 
-  const mode = String(options.mode || COMMAND_MODE).toLowerCase();
+  const mode = String(
+    options.mode || COMMAND_MODE
+  ).toLowerCase();
 
   const guildIds = parseGuildIds(
     options.guildIds ?? GUILD_IDS
@@ -273,7 +383,11 @@ async function syncCommands(options = {}) {
 
   const commandsPath =
     options.commandsPath ||
-    path.join(process.cwd(), 'src', 'commands');
+    path.join(
+      process.cwd(),
+      'src',
+      'commands'
+    );
 
   if (!ALLOWED_COMMAND_MODES.includes(mode)) {
     throw new Error(
@@ -281,7 +395,10 @@ async function syncCommands(options = {}) {
     );
   }
 
-  if (mode === 'guild' && guildIds.length === 0) {
+  if (
+    mode === 'guild' &&
+    guildIds.length === 0
+  ) {
     throw new Error(
       `❌ No valid guild IDs found for ${BOT_MODE} mode.`
     );
@@ -289,15 +406,25 @@ async function syncCommands(options = {}) {
 
   printSyncBanner(mode, commandsPath);
 
-  const commands = loadCommands(commandsPath, mode);
+  const commands = loadCommands(
+    commandsPath,
+    mode
+  );
 
-  console.log(`📦 Commands loaded: ${commands.length}`);
+  console.log(
+    `📦 Commands loaded: ${commands.length}`
+  );
 
   if (mode === 'guild') {
-    console.log(`🏠 Target guilds: ${guildIds.join(', ')}`);
+    console.log(
+      `🏠 Target guilds: ${guildIds.join(', ')}`
+    );
 
     await clearGuildCommands(guildIds);
-    await registerGuildCommands(guildIds, commands);
+    await registerGuildCommands(
+      guildIds,
+      commands
+    );
   }
 
   if (mode === 'global') {
@@ -305,17 +432,23 @@ async function syncCommands(options = {}) {
     await registerGlobalCommands(commands);
   }
 
-  const durationMs = Date.now() - startedAt;
+  const durationMs =
+    Date.now() - startedAt;
 
   console.log('============================================================');
-  console.log(`🎉 Command sync complete in ${durationMs}ms`);
+  console.log(
+    `🎉 Command sync complete in ${durationMs}ms`
+  );
   console.log('============================================================');
 
   return {
     botMode: BOT_MODE,
     commandMode: mode,
     commands: commands.length,
-    guilds: mode === 'guild' ? guildIds.length : 0,
+    guilds:
+      mode === 'guild'
+        ? guildIds.length
+        : 0,
     durationMs,
   };
 }

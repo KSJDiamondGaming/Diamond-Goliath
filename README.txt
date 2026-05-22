@@ -33,3 +33,6 @@ Ban/Kick/Timeout if used elsewhere
 npm run sync:dev
 npm run promote:beta
 npm run promote:production
+
+tree /F > structure.txt
+tree src /F > src-structure.txt

@@ -1265,6 +1265,14 @@ async function handleAdminNavigation(interaction, navState = panelNav.createStat
       roleIds: current.roleIds || [],
     });
 
+  if (customId === 'admin:tickets') {
+  const {
+    sendSetupPanel,
+  } = require('../../modules/tickets/ticketSetupPanel');
+
+  return sendSetupPanel(interaction);
+}
+
     return updatePanel(
       interaction,
       buildAutoRolesPanel(interaction.guild, memberDisplayName, navState),
