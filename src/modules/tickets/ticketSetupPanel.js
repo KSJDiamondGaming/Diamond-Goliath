@@ -295,6 +295,14 @@ async function showPanelEditor(interaction, panelId) {
 }
 
 function createBasicPanel(guildId, type) {
+  const existing = getPanelList(guildId).find(
+    (panel) => panel.ticketType === type
+  );
+
+  if (existing) {
+    return existing;
+  }
+
   const presets = {
     [TICKET_TYPES.SUPPORT]: {
       name: 'General Support',
