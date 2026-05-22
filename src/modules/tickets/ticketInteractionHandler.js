@@ -4,6 +4,7 @@
  * GOLIATH TICKET INTERACTION HANDLER
  *
  * Handles:
+ * - deployed ticket panel buttons
  * - ticket setup panel interactions
  * - ticket buttons
  * - modals
@@ -25,7 +26,10 @@ const ticketManager = require('./ticketManager');
 const ticketStore = require('./ticketStore');
 const ticketTranscriptManager = require('./ticketTranscriptManager');
 const ticketPermissions = require('./ticketPermissions');
-const { handleTicketPanelButton,} = require('./ticketPanelManager');
+
+const {
+  handleTicketPanelButton,
+} = require('./ticketPanelManager');
 
 const {
   handleTicketSetupInteraction,
@@ -624,26 +628,6 @@ async function handleTicketInteraction(interaction) {
 
   if (handledPanelOpen) return true;
 
-  const handledSetup =
-    await handleTicketSetupInteraction(interaction);
-
-  if (handledSetup) return true;
-
-  if (interaction.isButton()) {
-    return handleTicketButton(interaction);
-  }
-
-  if (interaction.isModalSubmit()) {
-    return handleTicketModal(interaction);
-  }
-
-  if (interaction.isStringSelectMenu()) {
-    return handleTicketSelect(interaction);
-  }
-
-  return false;
-}
-  
   const handledSetup =
     await handleTicketSetupInteraction(interaction);
 
