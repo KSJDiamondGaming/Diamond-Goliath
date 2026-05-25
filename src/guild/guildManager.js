@@ -17,11 +17,19 @@ const {
   DEFAULT_SERVER_BACKUPS,
   DEFAULT_EMBED_DEFAULTS,
   DEFAULT_GENERAL_SETTINGS,
+  DEFAULT_TICKETS,
 } = require('./defaults');
 
 const runtimePaths = getRuntimePaths(process.env.BOT_MODE || 'DEV');
 
 const GUILDS_DIR = runtimePaths.guilds;
+
+const DEFAULT_TICKET_RUNTIME = DEFAULT_TICKETS || {
+  settings: {},
+  panels: [],
+  tickets: [],
+  analytics: {},
+};
 
 const guildCache = new Map();
 
@@ -258,6 +266,20 @@ function normalizeSecurity(source = {}) {
   return security;
 }
 
+function normalizeTickets(source = {}) {
+  const tickets = mergeDeep(
+    DEFAULT_TICKET_RUNTIME,
+    isPlainObject(source.tickets) ? source.tickets : {}
+  );
+
+  tickets.settings = isPlainObject(tickets.settings) ? tickets.settings : {};
+  tickets.panels = Array.isArray(tickets.panels) ? tickets.panels : [];
+  tickets.tickets = Array.isArray(tickets.tickets) ? tickets.tickets : [];
+  tickets.analytics = isPlainObject(tickets.analytics) ? tickets.analytics : {};
+
+  return tickets;
+}
+
 function normalizeServerBackups(source = {}) {
   const serverBackups = mergeDeep(
     DEFAULT_SERVER_BACKUPS,
@@ -302,6 +324,7 @@ function mergeDefaults(data = {}) {
   merged.security = normalizeSecurity(source);
   merged.serverBackups = normalizeServerBackups(source);
   merged.embedDefaults = mergeDeep(DEFAULT_EMBED_DEFAULTS, source.embedDefaults || {});
+  merged.tickets = normalizeTickets(source);
 
   return removeLegacyLogFields(merged);
 }
@@ -339,6 +362,7 @@ function getGuildData(guildId, options = {}) {
     !rawData.embedDefaults ||
     !rawData.serverBackups ||
     !rawData.security ||
+    !rawData.tickets ||
     !rawData.security?.lockdown ||
     !Array.isArray(rawData.security?.lockdown?.bypassRoleIds) ||
     LEGACY_LOG_FIELDS.some((field) =>
@@ -718,6 +742,7 @@ module.exports = {
   DEFAULT_EMBED_DEFAULTS,
   DEFAULT_SERVER_BACKUPS,
   DEFAULT_GENERAL_SETTINGS,
+  DEFAULT_TICKETS: DEFAULT_TICKET_RUNTIME,
 
   getGuildFilePath,
 

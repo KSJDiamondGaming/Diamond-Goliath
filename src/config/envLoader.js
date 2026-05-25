@@ -4,9 +4,16 @@ const dotenv = require('dotenv');
 const { normalizeBotMode, isValidBotMode } = require('./botModes');
 
 function loadEnvironment() {
-  const requestedMode = normalizeBotMode(
-    process.env.BOT_MODE || process.env.NODE_ENV || 'DEV'
-  );
+  const cwd = process.cwd().toLowerCase();
+
+const fallbackMode =
+  cwd.includes('/production') ? 'PRODUCTION'
+  : cwd.includes('/beta') ? 'BETA'
+  : 'DEV';
+
+const requestedMode = normalizeBotMode(
+  process.env.BOT_MODE || fallbackMode
+);
 
   if (!isValidBotMode(requestedMode)) {
     console.error(`❌ Invalid BOT_MODE: ${requestedMode}`);

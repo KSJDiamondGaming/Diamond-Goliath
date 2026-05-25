@@ -1,331 +1,433 @@
 // src/modules/tickets/ticketSocketEvents.js
 
-const TICKET_SOCKET_EVENTS = Object.freeze({
-  CREATED: 'ticket:created',
-  UPDATED: 'ticket:updated',
-  DELETED: 'ticket:deleted',
+const EVENTS = Object.freeze({
+  TICKET_CREATED: 'ticket_created',
+  TICKET_UPDATED: 'ticket_updated',
+  TICKET_CLOSED: 'ticket_closed',
+  TICKET_REOPENED: 'ticket_reopened',
+  TICKET_ARCHIVED: 'ticket_archived',
+  TICKET_DELETED: 'ticket_deleted',
+  TICKET_CLAIMED: 'ticket_claimed',
 
-  CLAIMED: 'ticket:claimed',
-  ASSIGNED: 'ticket:assigned',
+  PANEL_CREATED: 'panel_created',
+  PANEL_UPDATED: 'panel_updated',
+  PANEL_DELETED: 'panel_deleted',
+  PANEL_DEPLOYED: 'panel_deployed',
 
-  CLOSED: 'ticket:closed',
-  REOPENED: 'ticket:reopened',
-  ARCHIVED: 'ticket:archived',
+  TIMELINE_ENTRY: 'ticket_timeline_entry',
 
-  STATUS_CHANGED: 'ticket:status_changed',
-  PRIORITY_CHANGED: 'ticket:priority_changed',
-
-  NOTE_ADDED: 'ticket:note_added',
-  TIMELINE_ADDED: 'ticket:timeline_added',
-
-  CHANNEL_CREATED: 'ticket:channel_created',
-  CHANNEL_CLOSED: 'ticket:channel_closed',
-  CHANNEL_REOPENED: 'ticket:channel_reopened',
-  CHANNEL_ARCHIVED: 'ticket:channel_archived',
-  CHANNEL_DELETED: 'ticket:channel_deleted',
-
-  PANEL_UPDATED: 'ticket:panel_updated',
-  SETTINGS_UPDATED: 'ticket:settings_updated',
-
-  TRANSCRIPT_CREATED: 'ticket:transcript_created',
-  TRANSCRIPT_UPLOADED: 'ticket:transcript_uploaded',
+  ANALYTICS_UPDATED: 'ticket_analytics_updated',
 });
 
-function getGuildRoom(guildId) {
-  return `guild:${guildId}`;
+let socketProvider = null;
+
+function now() {
+  return new Date().toISOString();
 }
 
-function emitTicketEvent(io, guildId, event, payload = {}) {
-  if (!io || !guildId || !event) {
-    return false;
+function setSocketProvider(provider) {
+  socketProvider = provider;
+}
+
+function getSocketServer() {
+  if (!socketProvider) {
+    return null;
   }
 
   try {
-    io.to(getGuildRoom(guildId)).emit(event, {
-      guildId,
-      event,
-      timestamp: new Date().toISOString(),
-      ...payload,
-    });
+    if (typeof socketProvider === 'function') {
+      return socketProvider();
+    }
 
-    return true;
-  } catch (error) {
-    console.error(
-      '[TicketSocketEvents] Failed to emit socket event:',
-      error
-    );
-
-    return false;
+    return socketProvider;
+  } catch {
+    return null;
   }
 }
 
-function emitTicketCreated(io, guildId, ticket) {
-  return emitTicketEvent(
-    io,
+function createPayload(type, guildId, data = {}) {
+  return {
+    type,
+
+    guildId: String(guildId),
+
+    timestamp: now(),
+
+    data,
+  };
+}
+
+function emit(event, guildId, data = {}) {
+  const io = getSocketServer();
+
+  const payload = createPayload(
+    event,
     guildId,
-    TICKET_SOCKET_EVENTS.CREATED,
-    { ticket }
+    data
+  );
+
+  /*
+   * No socket server yet.
+   * Safe noop for early architecture.
+   */
+
+  if (!io) {
+    return payload;
+  }
+
+  try {
+    /*
+     * Guild room
+     */
+
+    io.to(`guild:${guildId}`).emit(
+      event,
+      payload
+    );
+
+    /*
+     * Global admin room
+     */
+
+    io.to('goliath:tickets').emit(
+      event,
+      payload
+    );
+
+    /*
+     * General realtime feed
+     */
+
+    io.emit(
+      'goliath_realtime_event',
+      payload
+    );
+  } catch (error) {
+    console.error(
+      '[TicketSockets] Failed to emit event:',
+      event,
+      error
+    );
+  }
+
+  return payload;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Ticket Events
+|--------------------------------------------------------------------------
+*/
+
+function emitTicketCreated(
+  guildId,
+  ticket
+) {
+  return emit(
+    EVENTS.TICKET_CREATED,
+    guildId,
+    {
+      ticketId:
+        ticket.ticketId,
+
+      displayId:
+        ticket.displayId,
+
+      status:
+        ticket.status,
+
+      type:
+        ticket.type,
+
+      priority:
+        ticket.priority,
+
+      creatorId:
+        ticket.creatorId,
+
+      panelId:
+        ticket.metadata
+          ?.panelId || null,
+
+      createdAt:
+        ticket.createdAt,
+    }
   );
 }
 
-function emitTicketUpdated(io, guildId, ticket) {
-  return emitTicketEvent(
-    io,
+function emitTicketUpdated(
+  guildId,
+  ticket
+) {
+  return emit(
+    EVENTS.TICKET_UPDATED,
     guildId,
-    TICKET_SOCKET_EVENTS.UPDATED,
-    { ticket }
+    {
+      ticketId:
+        ticket.ticketId,
+
+      displayId:
+        ticket.displayId,
+
+      status:
+        ticket.status,
+
+      updatedAt:
+        ticket.updatedAt,
+    }
   );
 }
 
-function emitTicketDeleted(io, guildId, ticketId) {
-  return emitTicketEvent(
-    io,
+function emitTicketClosed(
+  guildId,
+  ticket,
+  actorId = null
+) {
+  return emit(
+    EVENTS.TICKET_CLOSED,
     guildId,
-    TICKET_SOCKET_EVENTS.DELETED,
-    { ticketId }
+    {
+      ticketId:
+        ticket.ticketId,
+
+      displayId:
+        ticket.displayId,
+
+      actorId,
+
+      closedAt:
+        ticket.closedAt,
+    }
   );
 }
 
-function emitTicketClaimed(io, guildId, ticket) {
-  return emitTicketEvent(
-    io,
+function emitTicketClaimed(
+  guildId,
+  ticket,
+  actorId = null
+) {
+  return emit(
+    EVENTS.TICKET_CLAIMED,
     guildId,
-    TICKET_SOCKET_EVENTS.CLAIMED,
-    { ticket }
+    {
+      ticketId:
+        ticket.ticketId,
+
+      displayId:
+        ticket.displayId,
+
+      actorId,
+
+      claimedAt:
+        ticket.claimedAt,
+    }
   );
 }
 
-function emitTicketAssigned(io, guildId, ticket) {
-  return emitTicketEvent(
-    io,
+function emitTicketReopened(
+  guildId,
+  ticket,
+  actorId = null
+) {
+  return emit(
+    EVENTS.TICKET_REOPENED,
     guildId,
-    TICKET_SOCKET_EVENTS.ASSIGNED,
-    { ticket }
+    {
+      ticketId:
+        ticket.ticketId,
+
+      displayId:
+        ticket.displayId,
+
+      actorId,
+
+      reopenedAt:
+        ticket.reopenedAt,
+    }
   );
 }
 
-function emitTicketClosed(io, guildId, ticket) {
-  return emitTicketEvent(
-    io,
+function emitTicketArchived(
+  guildId,
+  ticket,
+  actorId = null
+) {
+  return emit(
+    EVENTS.TICKET_ARCHIVED,
     guildId,
-    TICKET_SOCKET_EVENTS.CLOSED,
-    { ticket }
+    {
+      ticketId:
+        ticket.ticketId,
+
+      displayId:
+        ticket.displayId,
+
+      actorId,
+
+      archivedAt:
+        ticket.archivedAt,
+    }
   );
 }
 
-function emitTicketReopened(io, guildId, ticket) {
-  return emitTicketEvent(
-    io,
+function emitTicketDeleted(
+  guildId,
+  ticketId,
+  displayId = null
+) {
+  return emit(
+    EVENTS.TICKET_DELETED,
     guildId,
-    TICKET_SOCKET_EVENTS.REOPENED,
-    { ticket }
-  );
-}
-
-function emitTicketArchived(io, guildId, ticket) {
-  return emitTicketEvent(
-    io,
-    guildId,
-    TICKET_SOCKET_EVENTS.ARCHIVED,
-    { ticket }
-  );
-}
-
-function emitTicketStatusChanged(io, guildId, ticket) {
-  return emitTicketEvent(
-    io,
-    guildId,
-    TICKET_SOCKET_EVENTS.STATUS_CHANGED,
-    { ticket }
-  );
-}
-
-function emitTicketPriorityChanged(io, guildId, ticket) {
-  return emitTicketEvent(
-    io,
-    guildId,
-    TICKET_SOCKET_EVENTS.PRIORITY_CHANGED,
-    { ticket }
-  );
-}
-
-function emitTicketTimelineAdded(io, guildId, ticketId, entry) {
-  return emitTicketEvent(
-    io,
-    guildId,
-    TICKET_SOCKET_EVENTS.TIMELINE_ADDED,
     {
       ticketId,
+      displayId,
+    }
+  );
+}
+
+/*
+|--------------------------------------------------------------------------
+| Panel Events
+|--------------------------------------------------------------------------
+*/
+
+function emitPanelCreated(
+  guildId,
+  panel
+) {
+  return emit(
+    EVENTS.PANEL_CREATED,
+    guildId,
+    {
+      panelId:
+        panel.panelId,
+
+      name:
+        panel.name,
+
+      type:
+        panel.ticketType,
+    }
+  );
+}
+
+function emitPanelUpdated(
+  guildId,
+  panel
+) {
+  return emit(
+    EVENTS.PANEL_UPDATED,
+    guildId,
+    {
+      panelId:
+        panel.panelId,
+
+      name:
+        panel.name,
+
+      updatedAt:
+        panel.updatedAt,
+    }
+  );
+}
+
+function emitPanelDeleted(
+  guildId,
+  panelId
+) {
+  return emit(
+    EVENTS.PANEL_DELETED,
+    guildId,
+    {
+      panelId,
+    }
+  );
+}
+
+function emitPanelDeployed(
+  guildId,
+  panel
+) {
+  return emit(
+    EVENTS.PANEL_DEPLOYED,
+    guildId,
+    {
+      panelId:
+        panel.panelId,
+
+      deployChannelId:
+        panel.deployChannelId,
+
+      deployMessageId:
+        panel.deployMessageId,
+
+      deployed:
+        panel.deployed === true,
+    }
+  );
+}
+
+/*
+|--------------------------------------------------------------------------
+| Timeline Events
+|--------------------------------------------------------------------------
+*/
+
+function emitTimelineEntry(
+  guildId,
+  ticketId,
+  entry
+) {
+  return emit(
+    EVENTS.TIMELINE_ENTRY,
+    guildId,
+    {
+      ticketId,
+
       entry,
     }
   );
 }
 
-function emitTicketNoteAdded(io, guildId, ticketId, note) {
-  return emitTicketEvent(
-    io,
+/*
+|--------------------------------------------------------------------------
+| Analytics
+|--------------------------------------------------------------------------
+*/
+
+function emitAnalyticsUpdated(
+  guildId,
+  analytics
+) {
+  return emit(
+    EVENTS.ANALYTICS_UPDATED,
     guildId,
-    TICKET_SOCKET_EVENTS.NOTE_ADDED,
-    {
-      ticketId,
-      note,
-    }
-  );
-}
-
-function emitTicketChannelCreated(io, guildId, ticketId, channelId) {
-  return emitTicketEvent(
-    io,
-    guildId,
-    TICKET_SOCKET_EVENTS.CHANNEL_CREATED,
-    {
-      ticketId,
-      channelId,
-    }
-  );
-}
-
-function emitTicketChannelClosed(io, guildId, ticketId, channelId) {
-  return emitTicketEvent(
-    io,
-    guildId,
-    TICKET_SOCKET_EVENTS.CHANNEL_CLOSED,
-    {
-      ticketId,
-      channelId,
-    }
-  );
-}
-
-function emitTicketChannelReopened(io, guildId, ticketId, channelId) {
-  return emitTicketEvent(
-    io,
-    guildId,
-    TICKET_SOCKET_EVENTS.CHANNEL_REOPENED,
-    {
-      ticketId,
-      channelId,
-    }
-  );
-}
-
-function emitTicketChannelArchived(io, guildId, ticketId, channelId) {
-  return emitTicketEvent(
-    io,
-    guildId,
-    TICKET_SOCKET_EVENTS.CHANNEL_ARCHIVED,
-    {
-      ticketId,
-      channelId,
-    }
-  );
-}
-
-function emitTicketChannelDeleted(io, guildId, ticketId, channelId) {
-  return emitTicketEvent(
-    io,
-    guildId,
-    TICKET_SOCKET_EVENTS.CHANNEL_DELETED,
-    {
-      ticketId,
-      channelId,
-    }
-  );
-}
-
-function emitTicketPanelUpdated(io, guildId, panel) {
-  return emitTicketEvent(
-    io,
-    guildId,
-    TICKET_SOCKET_EVENTS.PANEL_UPDATED,
-    { panel }
-  );
-}
-
-function emitTicketSettingsUpdated(io, guildId, settings) {
-  return emitTicketEvent(
-    io,
-    guildId,
-    TICKET_SOCKET_EVENTS.SETTINGS_UPDATED,
-    { settings }
-  );
-}
-
-function emitTranscriptCreated(io, guildId, ticketId, transcript) {
-  return emitTicketEvent(
-    io,
-    guildId,
-    TICKET_SOCKET_EVENTS.TRANSCRIPT_CREATED,
-    {
-      ticketId,
-      transcript,
-    }
-  );
-}
-
-function emitTranscriptUploaded(io, guildId, ticketId, upload) {
-  return emitTicketEvent(
-    io,
-    guildId,
-    TICKET_SOCKET_EVENTS.TRANSCRIPT_UPLOADED,
-    {
-      ticketId,
-      upload,
-    }
-  );
-}
-
-/**
- * General helper for future dashboard/API use.
- */
-function emitForTicket(io, ticket, event, payload = {}) {
-  if (!ticket?.guildId) return false;
-
-  return emitTicketEvent(
-    io,
-    ticket.guildId,
-    event,
-    {
-      ticketId: ticket.ticketId,
-      ticket,
-      ...payload,
-    }
+    analytics
   );
 }
 
 module.exports = {
-  TICKET_SOCKET_EVENTS,
+  EVENTS,
 
-  getGuildRoom,
-  emitTicketEvent,
-  emitForTicket,
+  setSocketProvider,
+  getSocketServer,
+
+  emit,
 
   emitTicketCreated,
   emitTicketUpdated,
-  emitTicketDeleted,
-
-  emitTicketClaimed,
-  emitTicketAssigned,
-
   emitTicketClosed,
+  emitTicketClaimed,
   emitTicketReopened,
   emitTicketArchived,
+  emitTicketDeleted,
 
-  emitTicketStatusChanged,
-  emitTicketPriorityChanged,
+  emitPanelCreated,
+  emitPanelUpdated,
+  emitPanelDeleted,
+  emitPanelDeployed,
 
-  emitTicketTimelineAdded,
-  emitTicketNoteAdded,
+  emitTimelineEntry,
 
-  emitTicketChannelCreated,
-  emitTicketChannelClosed,
-  emitTicketChannelReopened,
-  emitTicketChannelArchived,
-  emitTicketChannelDeleted,
-
-  emitTicketPanelUpdated,
-  emitTicketSettingsUpdated,
-
-  emitTranscriptCreated,
-  emitTranscriptUploaded,
+  emitAnalyticsUpdated,
 };

@@ -4,6 +4,7 @@ const crypto = require('crypto');
 
 const {
   TICKET_STATUS,
+  TICKET_PRIORITY,
 } = require('./ticketDefaults');
 
 const {
@@ -12,6 +13,7 @@ const {
   createTicket,
   updateTicket,
   deleteTicket,
+  getTicketSettings,
 } = require('./ticketStore');
 
 const {
@@ -21,6 +23,25 @@ const {
   addNoteEntry,
 } = require('./ticketTimeline');
 
+const {
+  trackTicketCreated,
+  trackTicketClaimed,
+  trackTicketClosed,
+  trackTicketReopened,
+  trackTicketArchived,
+  trackTicketDeleted,
+} = require('./ticketAnalytics');
+
+const {
+  emitTicketCreated,
+  emitTicketUpdated,
+  emitTicketClosed,
+  emitTicketClaimed,
+  emitTicketReopened,
+  emitTicketArchived,
+  emitTicketDeleted,
+} = require('./ticketSocketEvents');
+
 function generateTicketId() {
   return crypto.randomUUID();
 }
@@ -29,13 +50,61 @@ function now() {
   return new Date().toISOString();
 }
 
+function normalizeStatus(status) {
+  return String(status || TICKET_STATUS.OPEN).toLowerCase();
+}
+
+function normalizePriority(priority) {
+  return String(priority || TICKET_PRIORITY.NORMAL).toLowerCase();
+}
+
+function normalizeTicketType(type = 'ticket') {
+  return (
+    String(type || 'ticket')
+      .toLowerCase()
+      .replace(/_/g, '-')
+      .replace(/[^a-z0-9-]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '') || 'ticket'
+  );
+}
+
+function isValidStatus(status) {
+  return Object.values(TICKET_STATUS).includes(normalizeStatus(status));
+}
+
+function isValidPriority(priority) {
+  return Object.values(TICKET_PRIORITY).includes(normalizePriority(priority));
+}
+
+function uniqueIds(ids = []) {
+  return [...new Set((ids || []).filter(Boolean))];
+}
+
+function getTicketNumberingConfig(guildId) {
+  const settings = getTicketSettings(guildId);
+
+  return {
+    nextNumber: Number(settings?.numbering?.nextNumber || 1),
+    padding: Number(settings?.numbering?.padding || 4),
+  };
+}
+
+function formatTicketDisplayId(type, number, padding = 4) {
+  const cleanType = normalizeTicketType(type);
+  const cleanNumber = Number(number || 1);
+  const paddedNumber = String(cleanNumber).padStart(padding, '0');
+
+  return `${cleanType}-${paddedNumber}`;
+}
+
 async function createNewTicket({
   guildId,
   creatorId,
-  type,
+  type = 'ticket',
   title,
   description = '',
-  priority,
+  priority = TICKET_PRIORITY.NORMAL,
   source,
   sourceId = null,
   formSubmissionId = null,
@@ -48,16 +117,34 @@ async function createNewTicket({
     throw new Error('Missing guildId');
   }
 
+  if (!isValidPriority(priority)) {
+    throw new Error(`Invalid ticket priority: ${priority}`);
+  }
+
+  const cleanType = normalizeTicketType(type);
+  const numbering = getTicketNumberingConfig(guildId);
+  const ticketNumber = numbering.nextNumber;
+  const displayId = formatTicketDisplayId(
+    cleanType,
+    ticketNumber,
+    numbering.padding
+  );
+
   const ticket = createTicket(guildId, {
     ticketId: generateTicketId(),
 
+    number: ticketNumber,
+    ticketNumber,
+    displayId,
+
     creatorId,
 
-    type,
-    title,
+    type: cleanType,
+    title: title || 'Untitled Ticket',
     description,
 
-    priority,
+    status: TICKET_STATUS.OPEN,
+    priority: normalizePriority(priority),
 
     source,
     sourceId,
@@ -66,16 +153,31 @@ async function createNewTicket({
     moderationCaseId,
     securityIncidentId,
 
-    tags,
-    metadata,
+    tags: Array.isArray(tags) ? tags : [],
+
+    metadata: {
+      ...metadata,
+      displayId,
+      createdViaManager: true,
+    },
 
     createdAt: now(),
+    statusChangedAt: now(),
   });
+
+  trackTicketCreated(guildId, ticket);
+  emitTicketCreated(guildId, ticket);
 
   addTicketCreatedEntry(
     guildId,
     ticket.ticketId,
-    creatorId
+    creatorId,
+    {
+      source,
+      sourceId,
+      type: cleanType,
+      displayId,
+    }
   );
 
   return ticket;
@@ -89,23 +191,32 @@ async function closeTicket({
 } = {}) {
   const ticket = getTicket(guildId, ticketId);
 
-  if (!ticket) {
-    return null;
-  }
+  if (!ticket) return null;
 
   if (ticket.status === TICKET_STATUS.CLOSED) {
     return ticket;
   }
 
-  const updatedTicket = updateTicket(
+  const previousStatus = ticket.status;
+
+  const updatedTicket = updateTicket(guildId, ticketId, {
+    status: TICKET_STATUS.CLOSED,
+    closedAt: now(),
+    closedById: actorId || null,
+    closeReason: reason || null,
+    statusChangedAt: now(),
+  });
+
+  trackTicketClosed(guildId, updatedTicket, actorId);
+  emitTicketClosed(guildId, updatedTicket, actorId);
+
+  addStatusChangeEntry(
     guildId,
     ticketId,
-    {
-      status: TICKET_STATUS.CLOSED,
-      closedAt: now(),
-      closedById: actorId || null,
-      closeReason: reason || null,
-    }
+    actorId,
+    previousStatus,
+    TICKET_STATUS.CLOSED,
+    { reason }
   );
 
   return updatedTicket;
@@ -118,21 +229,33 @@ async function reopenTicket({
 } = {}) {
   const ticket = getTicket(guildId, ticketId);
 
-  if (!ticket) {
-    return null;
-  }
+  if (!ticket) return null;
 
   const previousStatus = ticket.status;
 
-  const updatedTicket = updateTicket(
-    guildId,
-    ticketId,
-    {
-      status: TICKET_STATUS.OPEN,
-      closedAt: null,
-      closedById: null,
-    }
-  );
+  if (previousStatus === TICKET_STATUS.OPEN) {
+    return ticket;
+  }
+
+  const updatedTicket = updateTicket(guildId, ticketId, {
+    status: TICKET_STATUS.OPEN,
+
+    reopenedAt: now(),
+    reopenedById: actorId || null,
+
+    closedAt: null,
+    closedById: null,
+    closeReason: null,
+
+    archivedAt: null,
+    archivedById: null,
+    archiveReason: null,
+
+    statusChangedAt: now(),
+  });
+
+  trackTicketReopened(guildId, actorId);
+  emitTicketReopened(guildId, updatedTicket, actorId);
 
   addStatusChangeEntry(
     guildId,
@@ -152,34 +275,32 @@ async function claimTicket({
 } = {}) {
   const ticket = getTicket(guildId, ticketId);
 
-  if (!ticket) {
-    return null;
-  }
-
-  const assignedStaffIds = Array.isArray(
-    ticket.assignedStaffIds
-  )
-    ? [...ticket.assignedStaffIds]
-    : [];
+  if (!ticket) return null;
 
   if (
-    actorId &&
-    !assignedStaffIds.includes(actorId)
+    ticket.status === TICKET_STATUS.CLOSED ||
+    ticket.status === TICKET_STATUS.ARCHIVED
   ) {
-    assignedStaffIds.push(actorId);
+    return ticket;
   }
+
+  const assignedStaffIds = uniqueIds([
+    ...(ticket.assignedStaffIds || []),
+    actorId,
+  ]);
 
   const previousStatus = ticket.status;
 
-  const updatedTicket = updateTicket(
-    guildId,
-    ticketId,
-    {
-      claimedById: actorId,
-      assignedStaffIds,
-      status: TICKET_STATUS.CLAIMED,
-    }
-  );
+  const updatedTicket = updateTicket(guildId, ticketId, {
+    claimedById: actorId || null,
+    claimedAt: ticket.claimedAt || now(),
+    assignedStaffIds,
+    status: TICKET_STATUS.CLAIMED,
+    statusChangedAt: now(),
+  });
+
+  trackTicketClaimed(guildId, updatedTicket, actorId);
+  emitTicketClaimed(guildId, updatedTicket, actorId);
 
   if (previousStatus !== TICKET_STATUS.CLAIMED) {
     addStatusChangeEntry(
@@ -202,30 +323,18 @@ async function assignTicket({
 } = {}) {
   const ticket = getTicket(guildId, ticketId);
 
-  if (!ticket) {
-    return null;
-  }
+  if (!ticket) return null;
 
-  const assignedStaffIds = Array.isArray(
-    ticket.assignedStaffIds
-  )
-    ? [...ticket.assignedStaffIds]
-    : [];
+  const assignedStaffIds = uniqueIds([
+    ...(ticket.assignedStaffIds || []),
+    assignedUserId,
+  ]);
 
-  if (
-    assignedUserId &&
-    !assignedStaffIds.includes(assignedUserId)
-  ) {
-    assignedStaffIds.push(assignedUserId);
-  }
+  const updatedTicket = updateTicket(guildId, ticketId, {
+    assignedStaffIds,
+  });
 
-  const updatedTicket = updateTicket(
-    guildId,
-    ticketId,
-    {
-      assignedStaffIds,
-    }
-  );
+  emitTicketUpdated(guildId, updatedTicket);
 
   addAssignmentEntry(
     guildId,
@@ -242,46 +351,107 @@ async function updateTicketStatus({
   ticketId,
   actorId,
   status,
+  reason = null,
 } = {}) {
   const ticket = getTicket(guildId, ticketId);
 
-  if (!ticket) {
-    return null;
+  if (!ticket) return null;
+
+  const nextStatus = normalizeStatus(status);
+
+  if (!isValidStatus(nextStatus)) {
+    throw new Error(`Invalid ticket status: ${status}`);
   }
 
   const previousStatus = ticket.status;
 
-  if (previousStatus === status) {
+  if (previousStatus === nextStatus) {
     return ticket;
   }
 
   const updates = {
-    status,
+    status: nextStatus,
+    statusChangedAt: now(),
   };
 
-  if (status === TICKET_STATUS.CLOSED) {
+  if (nextStatus === TICKET_STATUS.CLOSED) {
     updates.closedAt = now();
+    updates.closedById = actorId || null;
+    updates.closeReason = reason || null;
   }
 
-  if (status === TICKET_STATUS.ARCHIVED) {
+  if (nextStatus === TICKET_STATUS.ARCHIVED) {
     updates.archivedAt = now();
+    updates.archivedById = actorId || null;
+    updates.archiveReason = reason || null;
   }
 
-  const updatedTicket = updateTicket(
-    guildId,
-    ticketId,
-    updates
-  );
+  if (nextStatus === TICKET_STATUS.OPEN) {
+    updates.reopenedAt = now();
+    updates.reopenedById = actorId || null;
+  }
+
+  const updatedTicket = updateTicket(guildId, ticketId, updates);
+
+  if (nextStatus === TICKET_STATUS.CLOSED) {
+    trackTicketClosed(guildId, updatedTicket, actorId);
+    emitTicketClosed(guildId, updatedTicket, actorId);
+  }
+
+  if (nextStatus === TICKET_STATUS.ARCHIVED) {
+    trackTicketArchived(guildId, updatedTicket, actorId);
+    emitTicketArchived(guildId, updatedTicket, actorId);
+  }
+
+  if (nextStatus === TICKET_STATUS.OPEN) {
+    trackTicketReopened(guildId, actorId);
+    emitTicketReopened(guildId, updatedTicket, actorId);
+  }
+
+  emitTicketUpdated(guildId, updatedTicket);
 
   addStatusChangeEntry(
     guildId,
     ticketId,
     actorId,
     previousStatus,
-    status
+    nextStatus,
+    { reason }
   );
 
   return updatedTicket;
+}
+
+async function changeTicketPriority({
+  guildId,
+  ticketId,
+  actorId,
+  priority,
+} = {}) {
+  const ticket = getTicket(guildId, ticketId);
+
+  if (!ticket) return null;
+
+  const nextPriority = normalizePriority(priority);
+
+  if (!isValidPriority(nextPriority)) {
+    throw new Error(`Invalid ticket priority: ${priority}`);
+  }
+
+  const previousPriority = ticket.priority;
+
+  const updatedTicket = updateTicket(guildId, ticketId, {
+    priority: nextPriority,
+  });
+
+  emitTicketUpdated(guildId, updatedTicket);
+
+  return {
+    ticket: updatedTicket,
+    previousPriority,
+    nextPriority,
+    actorId,
+  };
 }
 
 async function addTicketNote({
@@ -292,8 +462,12 @@ async function addTicketNote({
 } = {}) {
   const ticket = getTicket(guildId, ticketId);
 
-  if (!ticket) {
-    return null;
+  if (!ticket) return null;
+
+  const content = String(note || '').trim();
+
+  if (!content) {
+    throw new Error('Missing note content.');
   }
 
   const notes = Array.isArray(ticket.notes)
@@ -302,22 +476,24 @@ async function addTicketNote({
 
   const noteObject = {
     id: crypto.randomUUID(),
-    authorId: actorId,
-    content: note,
+    authorId: actorId || null,
+    content,
     createdAt: now(),
   };
 
   notes.push(noteObject);
 
-  updateTicket(guildId, ticketId, {
+  const updatedTicket = updateTicket(guildId, ticketId, {
     notes,
   });
+
+  emitTicketUpdated(guildId, updatedTicket);
 
   addNoteEntry(
     guildId,
     ticketId,
     actorId,
-    note
+    content
   );
 
   return noteObject;
@@ -327,31 +503,36 @@ async function archiveTicket({
   guildId,
   ticketId,
   actorId,
+  reason = null,
 } = {}) {
   const ticket = getTicket(guildId, ticketId);
 
-  if (!ticket) {
-    return null;
+  if (!ticket) return null;
+
+  if (ticket.status === TICKET_STATUS.ARCHIVED) {
+    return ticket;
   }
 
   const previousStatus = ticket.status;
 
-  const updatedTicket = updateTicket(
-    guildId,
-    ticketId,
-    {
-      status: TICKET_STATUS.ARCHIVED,
-      archivedAt: now(),
-      archivedById: actorId || null,
-    }
-  );
+  const updatedTicket = updateTicket(guildId, ticketId, {
+    status: TICKET_STATUS.ARCHIVED,
+    archivedAt: now(),
+    archivedById: actorId || null,
+    archiveReason: reason || null,
+    statusChangedAt: now(),
+  });
+
+  trackTicketArchived(guildId, updatedTicket, actorId);
+  emitTicketArchived(guildId, updatedTicket, actorId);
 
   addStatusChangeEntry(
     guildId,
     ticketId,
     actorId,
     previousStatus,
-    TICKET_STATUS.ARCHIVED
+    TICKET_STATUS.ARCHIVED,
+    { reason }
   );
 
   return updatedTicket;
@@ -361,18 +542,58 @@ async function removeTicket({
   guildId,
   ticketId,
 } = {}) {
-  return deleteTicket(guildId, ticketId);
+  const ticket = getTicket(guildId, ticketId);
+  const deleted = deleteTicket(guildId, ticketId);
+
+  if (deleted) {
+    trackTicketDeleted(guildId);
+
+    emitTicketDeleted(
+      guildId,
+      ticketId,
+      ticket?.displayId || null
+    );
+  }
+
+  return deleted;
 }
 
-function getTicketById(
-  guildId,
-  ticketId
-) {
+function getTicketById(guildId, ticketId) {
   return getTicket(guildId, ticketId);
 }
 
 function getGuildTickets(guildId) {
   return getAllTickets(guildId);
+}
+
+function getOpenTickets(guildId) {
+  return getGuildTickets(guildId).filter(
+    (ticket) =>
+      ticket.status !== TICKET_STATUS.CLOSED &&
+      ticket.status !== TICKET_STATUS.ARCHIVED
+  );
+}
+
+function getClosedTickets(guildId) {
+  return getGuildTickets(guildId).filter(
+    (ticket) =>
+      ticket.status === TICKET_STATUS.CLOSED ||
+      ticket.status === TICKET_STATUS.ARCHIVED
+  );
+}
+
+function getTicketsByUser(guildId, userId) {
+  return getGuildTickets(guildId).filter(
+    (ticket) => ticket.creatorId === userId
+  );
+}
+
+function getTicketsByPanel(guildId, panelId) {
+  return getGuildTickets(guildId).filter(
+    (ticket) =>
+      ticket.sourceId === panelId ||
+      ticket.metadata?.panelId === panelId
+  );
 }
 
 /**
@@ -397,6 +618,7 @@ module.exports = {
   assignTicket,
 
   updateTicketStatus,
+  changeTicketPriority,
 
   addTicketNote,
 
@@ -406,6 +628,15 @@ module.exports = {
   getTicketById,
   getGuildTickets,
 
+  getOpenTickets,
+  getClosedTickets,
+  getTicketsByUser,
+  getTicketsByPanel,
+
   getTickets,
   getAllGuildTickets,
+
+  generateTicketId,
+  normalizeTicketType,
+  formatTicketDisplayId,
 };

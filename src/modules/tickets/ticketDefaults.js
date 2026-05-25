@@ -27,281 +27,480 @@ const TICKET_STATUS = Object.freeze({
   ARCHIVED: 'archived',
 });
 
-const ACTIVE_TICKET_STATUSES = Object.freeze([
-  TICKET_STATUS.OPEN,
-  TICKET_STATUS.CLAIMED,
-  TICKET_STATUS.WAITING_USER,
-  TICKET_STATUS.IN_REVIEW,
-  TICKET_STATUS.APPROVED,
-  TICKET_STATUS.DENIED,
-]);
+const ACTIVE_TICKET_STATUSES =
+  Object.freeze([
+    TICKET_STATUS.OPEN,
+    TICKET_STATUS.CLAIMED,
+    TICKET_STATUS.WAITING_USER,
+    TICKET_STATUS.IN_REVIEW,
+    TICKET_STATUS.APPROVED,
+    TICKET_STATUS.DENIED,
+  ]);
 
-const CLOSED_TICKET_STATUSES = Object.freeze([
-  TICKET_STATUS.CLOSED,
-  TICKET_STATUS.ARCHIVED,
-]);
+const CLOSED_TICKET_STATUSES =
+  Object.freeze([
+    TICKET_STATUS.CLOSED,
+    TICKET_STATUS.ARCHIVED,
+  ]);
 
-const TICKET_PRIORITY = Object.freeze({
-  LOW: 'low',
-  NORMAL: 'normal',
-  HIGH: 'high',
-  URGENT: 'urgent',
-});
+const TICKET_PRIORITY =
+  Object.freeze({
+    LOW: 'low',
+    NORMAL: 'normal',
+    HIGH: 'high',
+    URGENT: 'urgent',
+  });
 
-const TICKET_SOURCE = Object.freeze({
-  DISCORD_PANEL: 'discord_panel',
-  DISCORD_COMMAND: 'discord_command',
-  DISCORD_MODAL: 'discord_modal',
+const TICKET_SOURCE =
+  Object.freeze({
+    DISCORD_PANEL:
+      'discord_panel',
 
-  DASHBOARD: 'dashboard',
+    DISCORD_COMMAND:
+      'discord_command',
 
-  FORM_SUBMISSION: 'form_submission',
+    DISCORD_MODAL:
+      'discord_modal',
 
-  MODERATION_CASE: 'moderation_case',
-  SECURITY_INCIDENT: 'security_incident',
+    DASHBOARD:
+      'dashboard',
 
-  SYSTEM: 'system',
-});
+    FORM_SUBMISSION:
+      'form_submission',
 
-const TICKET_TIMELINE_EVENTS = Object.freeze({
-  CREATED: 'ticket_created',
-  CLAIMED: 'ticket_claimed',
-  CLOSED: 'ticket_closed',
-  REOPENED: 'ticket_reopened',
-  ARCHIVED: 'ticket_archived',
-  DELETED: 'ticket_deleted',
+    MODERATION_CASE:
+      'moderation_case',
 
-  STATUS_CHANGED: 'ticket_status_changed',
-  PRIORITY_CHANGED: 'ticket_priority_changed',
+    SECURITY_INCIDENT:
+      'security_incident',
 
-  ASSIGNED: 'ticket_assigned',
+    SYSTEM:
+      'system',
+  });
 
-  USER_ADDED: 'ticket_user_added',
-  USER_REMOVED: 'ticket_user_removed',
+const TICKET_TIMELINE_EVENTS =
+  Object.freeze({
+    CREATED:
+      'ticket_created',
 
-  NOTE_ADDED: 'ticket_note_added',
+    CLAIMED:
+      'ticket_claimed',
 
-  DISCORD_CHANNEL_CREATED: 'discord_channel_created',
-  DISCORD_CHANNEL_CLOSED: 'discord_channel_closed',
-  DISCORD_CHANNEL_REOPENED: 'discord_channel_reopened',
-  DISCORD_CHANNEL_ARCHIVED: 'discord_channel_archived',
-  DISCORD_CHANNEL_DELETED: 'discord_channel_deleted',
+    CLOSED:
+      'ticket_closed',
 
-  TRANSCRIPT_CREATED: 'ticket_transcript_created',
-  TRANSCRIPT_UPLOADED: 'ticket_transcript_uploaded',
+    REOPENED:
+      'ticket_reopened',
 
-  SYSTEM: 'ticket_system',
-});
+    ARCHIVED:
+      'ticket_archived',
 
-const DEFAULT_TICKET_SETTINGS = Object.freeze({
-  enabled: true,
+    DELETED:
+      'ticket_deleted',
 
-  numbering: {
-    nextNumber: 1,
-    prefix: 'TICKET',
-    padding: 4,
-  },
+    STATUS_CHANGED:
+      'ticket_status_changed',
 
-  tickets: {
-    allowMultipleTickets: true,
-    oneActivePerType: true,
+    PRIORITY_CHANGED:
+      'ticket_priority_changed',
 
-    defaultPriority: TICKET_PRIORITY.NORMAL,
-    defaultStatus: TICKET_STATUS.OPEN,
+    ASSIGNED:
+      'ticket_assigned',
 
-    cooldownMs: 60 * 1000,
+    USER_ADDED:
+      'ticket_user_added',
 
-    maxActiveTicketsPerUser: 5,
-  },
+    USER_REMOVED:
+      'ticket_user_removed',
 
-  transcripts: {
+    NOTE_ADDED:
+      'ticket_note_added',
+
+    STAFF_ACTIVITY:
+      'ticket_staff_activity',
+
+    DISCORD_CHANNEL_CREATED:
+      'discord_channel_created',
+
+    DISCORD_CHANNEL_CLOSED:
+      'discord_channel_closed',
+
+    DISCORD_CHANNEL_REOPENED:
+      'discord_channel_reopened',
+
+    DISCORD_CHANNEL_ARCHIVED:
+      'discord_channel_archived',
+
+    DISCORD_CHANNEL_DELETED:
+      'discord_channel_deleted',
+
+    TRANSCRIPT_CREATED:
+      'ticket_transcript_created',
+
+    TRANSCRIPT_UPLOADED:
+      'ticket_transcript_uploaded',
+
+    SYSTEM:
+      'ticket_system',
+  });
+
+const DEFAULT_TICKET_SETTINGS =
+  Object.freeze({
     enabled: true,
 
-    saveHtml: true,
-    saveJson: true,
+    numbering: {
+      nextNumber: 1,
+      prefix: 'TICKET',
+      padding: 4,
+    },
 
-    uploadToDiscord: true,
+    tickets: {
+      allowMultipleTickets: true,
 
-    includeAttachments: true,
-    includeEmbeds: true,
+      oneActivePerType: true,
 
-    autoGenerateOnClose: true,
-    autoGenerateOnArchive: true,
-  },
+      defaultPriority:
+        TICKET_PRIORITY.NORMAL,
 
-  security: {
-    antiSpam: true,
-    antiDuplicateTickets: true,
+      defaultStatus:
+        TICKET_STATUS.OPEN,
 
-    blockBlacklistedUsers: true,
+      cooldownMs:
+        60 * 1000,
 
-    logStaffActions: true,
-  },
+      maxActiveTicketsPerUser: 5,
 
-  recovery: {
-    restorePanelsOnBoot: true,
-    restoreActiveTicketsOnBoot: true,
-    restoreCachesOnBoot: true,
-  },
+      autoArchiveClosedTickets: false,
 
-  dashboard: {
-    realtimeEnabled: true,
-    allowRealtimeSync: true,
-  },
+      autoArchiveHours: 72,
+    },
 
-  metadata: {},
+    transcripts: {
+      enabled: true,
 
-  createdAt: now(),
-  updatedAt: now(),
-});
+      saveHtml: true,
+      saveJson: true,
 
-const DEFAULT_TICKET_PANEL = Object.freeze({
-  enabled: true,
+      uploadToDiscord: true,
 
-  panelId: null,
+      includeAttachments: true,
+      includeEmbeds: true,
 
-  /*
-  ==========================================
-  PANEL INFO
-  ==========================================
-  */
+      includeImages: true,
 
-  name: 'Support Panel',
+      autoGenerateOnClose: true,
 
-  title: 'Open a Ticket',
+      autoGenerateOnArchive: true,
 
-  description:
-    'Need help? Open a ticket and our staff team will assist you.',
+      useEnterpriseHtml: true,
+    },
 
-  buttonLabel: 'Open Ticket',
+    analytics: {
+      enabled: true,
 
-  buttonStyle: 'Primary',
+      realtime: true,
 
-  emoji: '🎫',
+      storeTimelineAnalytics: true,
 
-  color: '#5865F2',
+      trackClaimTimes: true,
 
-  /*
-  ==========================================
-  TICKET CONFIG
-  ==========================================
-  */
+      trackResponseTimes: true,
 
-  ticketType: TICKET_TYPES.SUPPORT,
+      trackCloseTimes: true,
+    },
 
-  ticketPriority: TICKET_PRIORITY.NORMAL,
+    security: {
+      antiSpam: true,
 
-  /*
-  ==========================================
-  OUTPUT CHANNELS
-  ==========================================
-  */
+      antiDuplicateTickets: true,
 
-  panelChannelId: null,
+      blockBlacklistedUsers: true,
 
-  outputCategoryId: null,
+      logStaffActions: true,
 
-  archiveCategoryId: null,
+      requireDeleteConfirmation: true,
+    },
 
-  logsChannelId: null,
+    recovery: {
+      restorePanelsOnBoot: true,
 
-  transcriptsChannelId: null,
+      restoreActiveTicketsOnBoot: true,
 
-  /*
-  ==========================================
-  ROLE ACCESS
-  ==========================================
-  */
+      restoreCachesOnBoot: true,
 
-  staffRoleIds: [],
+      restoreRealtimeStateOnBoot: true,
+    },
 
-  managerRoleIds: [],
+    dashboard: {
+      realtimeEnabled: true,
 
-  viewerRoleIds: [],
+      allowRealtimeSync: true,
 
-  allowedRoleIds: [],
+      enableLivePanelUpdates: true,
 
-  blockedRoleIds: [],
+      enableAnalyticsSync: true,
+    },
 
-  /*
-  ==========================================
-  TICKET BEHAVIOUR
-  ==========================================
-  */
+    discord: {
+      categoryId: null,
 
-  allowUserClose: false,
+      archiveCategoryId: null,
 
-  allowUserAddMembers: false,
+      logsChannelId: null,
 
-  autoAssignStaff: false,
+      transcriptsChannelId: null,
+    },
 
-  autoCloseEnabled: false,
+    permissions: {
+      allowCreatorView: true,
 
-  autoCloseHours: 72,
+      allowUserClose: false,
 
-  createPrivateChannel: true,
+      staffRoleIds: [],
 
-  useThreads: false,
+      managerRoleIds: [],
 
-  /*
-  ==========================================
-  DUPLICATE/SPAM PROTECTION
-  ==========================================
-  */
+      viewerRoleIds: [],
+    },
 
-  oneActivePerType: true,
+    metadata: {},
 
-  cooldownMs: 60 * 1000,
+    createdAt: now(),
+    updatedAt: now(),
+  });
 
-  /*
-  ==========================================
-  NOTIFICATIONS
-  ==========================================
-  */
+const DEFAULT_TICKET_PANEL =
+  Object.freeze({
+    enabled: true,
 
-  dmCreatorOnOpen: true,
+    deployed: false,
 
-  dmCreatorOnClose: true,
+    status: 'draft',
 
-  notifyStaffOnOpen: true,
+    panelId: null,
 
-  /*
-  ==========================================
-  DISCORD MESSAGE
-  ==========================================
-  */
+    /*
+    ==========================================
+    PANEL INFO
+    ==========================================
+    */
 
-  messageId: null,
+    name:
+      'Support Panel',
 
-  /*
-  ==========================================
-  FORM LINKING
-  ==========================================
-  */
+    title:
+      'Open a Ticket',
 
-  linkedFormId: null,
+    description:
+      'Need help? Open a ticket and our staff team will assist you.',
 
-  /*
-  ==========================================
-  METADATA
-  ==========================================
-  */
+    /*
+    ==========================================
+    APPEARANCE
+    ==========================================
+    */
 
-  tags: [],
+    appearance: {
+      title:
+        'Open a Ticket',
 
-  metadata: {},
+      description:
+        'Need help? Open a ticket and our staff team will assist you.',
 
-  createdAt: null,
+      color:
+        '#5865F2',
 
-  updatedAt: null,
-});
+      buttonLabel:
+        'Open Ticket',
+
+      buttonEmoji:
+        '🎫',
+
+      imageUrl: null,
+
+      thumbnailUrl: null,
+
+      footerText:
+        'KSJ Goliath Tickets',
+    },
+
+    buttonLabel:
+      'Open Ticket',
+
+    buttonStyle:
+      'Primary',
+
+    emoji: '🎫',
+
+    color:
+      '#5865F2',
+
+    /*
+    ==========================================
+    TICKET CONFIG
+    ==========================================
+    */
+
+    ticketType:
+      TICKET_TYPES.SUPPORT,
+
+    ticketPriority:
+      TICKET_PRIORITY.NORMAL,
+
+    /*
+    ==========================================
+    OUTPUT CHANNELS
+    ==========================================
+    */
+
+    panelChannelId: null,
+
+    outputCategoryId: null,
+
+    archiveCategoryId: null,
+
+    logsChannelId: null,
+
+    transcriptsChannelId: null,
+
+    /*
+    ==========================================
+    DEPLOYMENT
+    ==========================================
+    */
+
+    deployChannelId: null,
+
+    deployMessageId: null,
+
+    deployedAt: null,
+
+    deployedById: null,
+
+    lastDeployAt: null,
+
+    lastDeployById: null,
+
+    /*
+    ==========================================
+    ROLE ACCESS
+    ==========================================
+    */
+
+    staffRoleIds: [],
+
+    managerRoleIds: [],
+
+    viewerRoleIds: [],
+
+    allowedRoleIds: [],
+
+    blockedRoleIds: [],
+
+    /*
+    ==========================================
+    TICKET BEHAVIOUR
+    ==========================================
+    */
+
+    allowUserClose: false,
+
+    allowUserAddMembers: false,
+
+    autoAssignStaff: false,
+
+    autoCloseEnabled: false,
+
+    autoCloseHours: 72,
+
+    autoArchiveEnabled: false,
+
+    autoArchiveHours: 72,
+
+    createPrivateChannel: true,
+
+    useThreads: false,
+
+    /*
+    ==========================================
+    DUPLICATE/SPAM PROTECTION
+    ==========================================
+    */
+
+    oneActivePerType: true,
+
+    cooldownMs:
+      60 * 1000,
+
+    /*
+    ==========================================
+    NOTIFICATIONS
+    ==========================================
+    */
+
+    dmCreatorOnOpen: true,
+
+    dmCreatorOnClose: true,
+
+    notifyStaffOnOpen: true,
+
+    /*
+    ==========================================
+    DISCORD MESSAGE
+    ==========================================
+    */
+
+    messageId: null,
+
+    /*
+    ==========================================
+    FORM LINKING
+    ==========================================
+    */
+
+    linkedFormId: null,
+
+    /*
+    ==========================================
+    ANALYTICS
+    ==========================================
+    */
+
+    analytics: {
+      opens: 0,
+
+      closes: 0,
+
+      claims: 0,
+
+      archives: 0,
+
+      averageCloseTimeMs: 0,
+    },
+
+    /*
+    ==========================================
+    METADATA
+    ==========================================
+    */
+
+    tags: [],
+
+    metadata: {},
+
+    createdAt: null,
+
+    updatedAt: null,
+  });
 
 function generateDisplayId({
   prefix = 'TICKET',
   number = 1,
   padding = 4,
 } = {}) {
-  return `${prefix}-${String(number).padStart(
+  return `${prefix}-${String(
+    number
+  ).padStart(
     padding,
     '0'
   )}`;
@@ -310,23 +509,29 @@ function generateDisplayId({
 function createDefaultTicket({
   guildId = null,
 
-  ticketId = crypto.randomUUID(),
+  ticketId =
+    crypto.randomUUID(),
 
   number = 1,
 
   creatorId = null,
 
-  type = TICKET_TYPES.SUPPORT,
+  type =
+    TICKET_TYPES.SUPPORT,
 
-  title = 'Untitled Ticket',
+  title =
+    'Untitled Ticket',
 
   description = '',
 
-  status = TICKET_STATUS.OPEN,
+  status =
+    TICKET_STATUS.OPEN,
 
-  priority = TICKET_PRIORITY.NORMAL,
+  priority =
+    TICKET_PRIORITY.NORMAL,
 
-  source = TICKET_SOURCE.SYSTEM,
+  source =
+    TICKET_SOURCE.SYSTEM,
 
   sourceId = null,
 
@@ -353,9 +558,10 @@ function createDefaultTicket({
   return {
     ticketId,
 
-    displayId: generateDisplayId({
-      number,
-    }),
+    displayId:
+      generateDisplayId({
+        number,
+      }),
 
     number,
 
@@ -380,6 +586,11 @@ function createDefaultTicket({
 
     claimedById,
 
+    claimedAt: null,
+
+    reopenedById: null,
+    reopenedAt: null,
+
     assignedStaffIds,
 
     allowedUserIds,
@@ -398,12 +609,29 @@ function createDefaultTicket({
 
     metadata,
 
+    analytics: {
+      firstResponseAt: null,
+
+      averageResponseTimeMs: 0,
+
+      totalMessages: 0,
+
+      totalAttachments: 0,
+    },
+
     transcript: null,
+
+    transcriptUrl: null,
+
+    transcriptMessageId: null,
+
+    transcriptChannelId: null,
 
     createdAt,
     updatedAt: createdAt,
 
-    claimedAt: null,
+    statusChangedAt:
+      createdAt,
 
     closedAt: null,
     closedById: null,
@@ -411,9 +639,12 @@ function createDefaultTicket({
 
     archivedAt: null,
     archivedById: null,
+    archiveReason: null,
 
     deletedAt: null,
     deletedById: null,
+
+    deletedReason: null,
   };
 }
 

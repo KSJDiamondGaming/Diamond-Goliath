@@ -1,6 +1,10 @@
 let io = null;
 const botListeners = new Set();
 
+const {
+  setSocketProvider,
+} = require('../modules/tickets/ticketSocketEvents');
+
 function getRoomName(guildId) {
   return `guild:${guildId}`;
 }
@@ -13,18 +17,28 @@ function initSocketHub(server, options = {}) {
   }
 
   io = new Server(server, {
-    cors: {
-      origin: options?.clientUrl || 'http://localhost:5173',
-      credentials: true,
-    },
-  });
+  cors: {
+    origin:
+      options?.clientUrl ||
+      'http://localhost:5173',
+
+    credentials: true,
+  },
+});
+
+setSocketProvider(() => io);
 
   io.on('connection', (socket) => {
     console.log(`🟢 Dashboard connected: ${socket.id}`);
+    socket.join('goliath:tickets');
 
     function joinGuildRoom(guildId) {
       const id = String(guildId || '').trim();
       if (!id) return;
+
+      socket.on('joinGuild', joinGuildRoom);
+      socket.on('automod:join', joinGuildRoom);
+      socket.on('tickets:joinGuild', joinGuildRoom);
 
       const room = getRoomName(id);
       socket.join(room);

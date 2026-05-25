@@ -3,17 +3,7 @@
 /**
  * GOLIATH TICKET CHANNEL BUTTONS
  *
- * Reusable Discord button/action-row builder for ticket channels.
- *
- * Standardized ticket statuses:
- * - open
- * - claimed
- * - waiting_user
- * - in_review
- * - approved
- * - denied
- * - closed
- * - archived
+ * Enterprise reusable action row system.
  */
 
 const {
@@ -31,10 +21,14 @@ const CUSTOM_IDS = {
   PRIORITY: 'goliath_ticket_priority',
   REOPEN: 'goliath_ticket_reopen',
   DELETE: 'goliath_ticket_delete',
+  DELETE_CONFIRM:
+    'goliath_ticket_delete_confirm',
 };
 
 function normaliseStatus(status) {
-  return String(status || 'open').toLowerCase();
+  return String(
+    status || 'open'
+  ).toLowerCase();
 }
 
 function button(
@@ -44,100 +38,250 @@ function button(
   style = ButtonStyle.Secondary,
   disabled = false
 ) {
-  return new ButtonBuilder()
-    .setCustomId(id)
-    .setLabel(label)
-    .setEmoji(emoji)
-    .setStyle(style)
-    .setDisabled(Boolean(disabled));
+  const builder =
+    new ButtonBuilder()
+      .setCustomId(id)
+      .setLabel(label)
+      .setStyle(style)
+      .setDisabled(
+        Boolean(disabled)
+      );
+
+  if (emoji) {
+    builder.setEmoji(emoji);
+  }
+
+  return builder;
 }
 
-function getTicketActionRows(ticket = {}, options = {}) {
-  const status = normaliseStatus(ticket.status);
+function chunkButtons(
+  buttons = [],
+  max = 5
+) {
+  const rows = [];
 
-  const isClosed = status === 'closed';
-  const isArchived = status === 'archived';
-  const isLocked = isClosed || isArchived;
+  for (
+    let i = 0;
+    i < buttons.length;
+    i += max
+  ) {
+    rows.push(
+      new ActionRowBuilder().addComponents(
+        buttons.slice(i, i + max)
+      )
+    );
+  }
 
-  const allowDelete = Boolean(options.allowDelete);
-  const allowReopen = Boolean(options.allowReopen);
+  return rows;
+}
 
-  const rowOne = new ActionRowBuilder().addComponents(
-    button(
+function buildClaimButton(
+  ticket,
+  isLocked
+) {
+  const claimedById =
+    ticket.claimedById ||
+    null;
+
+  if (claimedById) {
+    return button(
       CUSTOM_IDS.CLAIM,
-      'Claim',
-      '🎫',
-      ButtonStyle.Primary,
+      'Claimed',
+      '✅',
+      ButtonStyle.Success,
+      true
+    );
+  }
+
+  return button(
+    CUSTOM_IDS.CLAIM,
+    'Claim',
+    '🎫',
+    ButtonStyle.Primary,
+    isLocked
+  );
+}
+
+function buildCloseButton(
+  isLocked
+) {
+  return button(
+    CUSTOM_IDS.CLOSE,
+    'Close',
+    '🔒',
+    ButtonStyle.Danger,
+    isLocked
+  );
+}
+
+function buildArchiveButton(
+  isArchived
+) {
+  return button(
+    CUSTOM_IDS.ARCHIVE,
+    'Archive',
+    '📁',
+    ButtonStyle.Secondary,
+    isArchived
+  );
+}
+
+function buildTranscriptButton() {
+  return button(
+    CUSTOM_IDS.TRANSCRIPT,
+    'Transcript',
+    '📄',
+    ButtonStyle.Secondary,
+    false
+  );
+}
+
+function buildAddUserButton(
+  isLocked
+) {
+  return button(
+    CUSTOM_IDS.ADD_USER,
+    'Add User',
+    '👤',
+    ButtonStyle.Secondary,
+    isLocked
+  );
+}
+
+function buildPriorityButton(
+  isLocked
+) {
+  return button(
+    CUSTOM_IDS.PRIORITY,
+    'Priority',
+    '⚠️',
+    ButtonStyle.Secondary,
+    isLocked
+  );
+}
+
+function buildReopenButton() {
+  return button(
+    CUSTOM_IDS.REOPEN,
+    'Reopen',
+    '🔓',
+    ButtonStyle.Success,
+    false
+  );
+}
+
+function buildDeleteButton() {
+  return button(
+    CUSTOM_IDS.DELETE,
+    'Delete',
+    '🗑️',
+    ButtonStyle.Danger,
+    false
+  );
+}
+
+function buildDeleteConfirmButton() {
+  return button(
+    CUSTOM_IDS.DELETE_CONFIRM,
+    'Confirm Delete',
+    '⚠️',
+    ButtonStyle.Danger,
+    false
+  );
+}
+
+function getTicketActionRows(
+  ticket = {},
+  options = {}
+) {
+  const status =
+    normaliseStatus(
+      ticket.status
+    );
+
+  const isClosed =
+    status === 'closed';
+
+  const isArchived =
+    status === 'archived';
+
+  const isLocked =
+    isClosed || isArchived;
+
+  const allowDelete =
+    Boolean(
+      options.allowDelete
+    );
+
+  const allowReopen =
+    Boolean(
+      options.allowReopen
+    );
+
+  const confirmDelete =
+    Boolean(
+      options.confirmDelete
+    );
+
+  const primaryButtons = [
+    buildClaimButton(
+      ticket,
       isLocked
     ),
-    button(
-      CUSTOM_IDS.CLOSE,
-      'Close',
-      '🔒',
-      ButtonStyle.Danger,
+
+    buildCloseButton(
       isLocked
     ),
-    button(
-      CUSTOM_IDS.ARCHIVE,
-      'Archive',
-      '📁',
-      ButtonStyle.Secondary,
+
+    buildArchiveButton(
       isArchived
     ),
-    button(
-      CUSTOM_IDS.TRANSCRIPT,
-      'Transcript',
-      '📄',
-      ButtonStyle.Secondary,
-      false
-    )
-  );
 
-  const rowTwo = new ActionRowBuilder().addComponents(
-    button(
-      CUSTOM_IDS.ADD_USER,
-      'Add User',
-      '👤',
-      ButtonStyle.Secondary,
+    buildTranscriptButton(),
+  ];
+
+  const secondaryButtons = [
+    buildAddUserButton(
       isLocked
     ),
-    button(
-      CUSTOM_IDS.PRIORITY,
-      'Priority',
-      '⚠️',
-      ButtonStyle.Secondary,
-      isLocked
-    )
-  );
 
-  if (allowReopen && isClosed) {
-    rowTwo.addComponents(
-      button(
-        CUSTOM_IDS.REOPEN,
-        'Reopen',
-        '🔓',
-        ButtonStyle.Success,
-        false
-      )
+    buildPriorityButton(
+      isLocked
+    ),
+  ];
+
+  if (
+    allowReopen &&
+    isClosed
+  ) {
+    secondaryButtons.push(
+      buildReopenButton()
     );
   }
 
   if (allowDelete) {
-    rowTwo.addComponents(
-      button(
-        CUSTOM_IDS.DELETE,
-        'Delete',
-        '🗑️',
-        ButtonStyle.Danger,
-        false
-      )
+    secondaryButtons.push(
+      confirmDelete
+        ? buildDeleteConfirmButton()
+        : buildDeleteButton()
     );
   }
 
-  return [rowOne, rowTwo];
+  return [
+    ...chunkButtons(
+      primaryButtons
+    ),
+
+    ...chunkButtons(
+      secondaryButtons
+    ),
+  ];
 }
 
-function getClosedTicketActionRows(ticket = {}, options = {}) {
+function getClosedTicketActionRows(
+  ticket = {},
+  options = {}
+) {
   return getTicketActionRows(
     {
       ...ticket,
@@ -150,18 +294,28 @@ function getClosedTicketActionRows(ticket = {}, options = {}) {
   );
 }
 
-function getArchivedTicketActionRows(ticket = {}, options = {}) {
+function getArchivedTicketActionRows(
+  ticket = {},
+  options = {}
+) {
   return getTicketActionRows(
     {
       ...ticket,
       status: 'archived',
     },
-    options
+    {
+      ...options,
+      allowReopen: false,
+    }
   );
 }
 
-function isTicketButton(customId) {
-  return Object.values(CUSTOM_IDS).includes(customId);
+function isTicketButton(
+  customId
+) {
+  return Object.values(
+    CUSTOM_IDS
+  ).includes(customId);
 }
 
 module.exports = {
@@ -172,4 +326,6 @@ module.exports = {
   getArchivedTicketActionRows,
 
   isTicketButton,
+
+  chunkButtons,
 };

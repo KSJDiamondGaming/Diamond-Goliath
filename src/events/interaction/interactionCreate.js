@@ -6,6 +6,8 @@ const ticketInteractionHandler = require('../../modules/tickets/ticketInteractio
 
 const seenInteractions = new Set();
 
+const security = require('../../security/securityCore');
+
 function markInteraction(interaction) {
   if (!interaction?.id) return false;
 
