@@ -6,7 +6,7 @@ const {
   getGuildSection,
   saveGuildSection,
   updateGuildSection,
-} = require('../../utils/guildManager');
+} = require('../../guild/guildManager');
 
 const {
   DEFAULT_TICKET_SETTINGS,
