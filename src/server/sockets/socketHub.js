@@ -3,7 +3,7 @@ const botListeners = new Set();
 
 const {
   setSocketProvider,
-} = require('../modules/tickets/ticketSocketEvents');
+} = require('../../modules/tickets/ticketSocketEvents');
 
 function getRoomName(guildId) {
   return `guild:${guildId}`;
