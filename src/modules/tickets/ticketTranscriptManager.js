@@ -1,19 +1,6 @@
 'use strict';
 
-/**
- * GOLIATH UNIVERSAL TICKET TRANSCRIPT MANAGER
- *
- * Standardized to existing ticketStore architecture:
- * - ticket.ticketId
- * - ticket.guildId
- * - ticket.discordChannelId
- *
- * Creates:
- * - HTML transcripts
- * - JSON transcripts
- * - saved runtime transcript files
- * - optional upload to transcript/log channel
- */
+// src/modules/tickets/ticketTranscriptManager.js
 
 const fs = require('fs');
 const path = require('path');
@@ -25,6 +12,7 @@ const {
 
 const {
   getTicketSettings,
+  updateTicket,
 } = require('./ticketStore');
 
 function now() {
@@ -52,18 +40,20 @@ function getCreatorId(ticket) {
 }
 
 function getRuntimeRoot() {
-  const mode =
-    process.env.BOT_MODE ||
-    process.env.NODE_ENV ||
-    'dev';
+  const mode = process.env.BOT_MODE || process.env.NODE_ENV || 'dev';
 
-  return path.join(process.cwd(), 'src', 'runtime', mode);
+  return path.join(
+    process.cwd(),
+    'src',
+    'runtime',
+    String(mode).toLowerCase()
+  );
 }
 
 function getTranscriptDir(guildId) {
   return path.join(
     getRuntimeRoot(),
-    'tickets',
+    'guilds',
     String(guildId),
     'transcripts'
   );
@@ -74,7 +64,8 @@ function ensureDir(dir) {
 }
 
 function formatFileName(ticket, ext) {
-  const ticketId = getTicketId(ticket);
+  const ticketId = ticket.displayId || getTicketId(ticket);
+
   const stamp = new Date()
     .toISOString()
     .replace(/[:.]/g, '-');
@@ -99,7 +90,7 @@ async function fetchAllMessages(channel, limit = 1000) {
     );
 
     messages.push(...sorted);
-    before = batch.last().id;
+    before = batch.last()?.id;
 
     if (batch.size < 100) break;
   }
@@ -112,26 +103,27 @@ async function fetchAllMessages(channel, limit = 1000) {
 function serializeMessage(message) {
   return {
     id: message.id,
+
     authorId: message.author?.id || null,
-    authorTag:
-      message.author?.tag ||
-      message.author?.username ||
-      'Unknown',
+    authorTag: message.author?.tag || message.author?.username || 'Unknown',
+    authorAvatar: message.author?.displayAvatarURL?.() || null,
     authorBot: Boolean(message.author?.bot),
+
     content: message.content || '',
-    createdAt:
-      message.createdAt?.toISOString?.() ||
-      null,
-    editedAt:
-      message.editedAt?.toISOString?.() ||
-      null,
+
+    createdAt: message.createdAt?.toISOString?.() || null,
+    editedAt: message.editedAt?.toISOString?.() || null,
+    system: message.system || false,
+
     attachments: [...message.attachments.values()].map((file) => ({
       id: file.id,
       name: file.name,
       url: file.url,
       contentType: file.contentType,
       size: file.size,
+      proxyURL: file.proxyURL,
     })),
+
     embeds: message.embeds.map((embed) => ({
       title: embed.title || null,
       description: embed.description || null,
@@ -139,6 +131,8 @@ function serializeMessage(message) {
       color: embed.color || null,
       fields: embed.fields || [],
     })),
+
+    components: message.components?.map((row) => row.toJSON?.() || row) || [],
   };
 }
 
@@ -164,6 +158,7 @@ function buildJsonTranscript(ticket, messages, meta = {}) {
       updatedAt: ticket.updatedAt || null,
       closedAt: ticket.closedAt || null,
       archivedAt: ticket.archivedAt || null,
+      reopenedAt: ticket.reopenedAt || null,
 
       source: ticket.source || null,
       sourceId: ticket.sourceId || null,
@@ -171,204 +166,318 @@ function buildJsonTranscript(ticket, messages, meta = {}) {
       metadata: ticket.metadata || {},
     },
 
-    meta,
+    analytics: {
+      messageCount: messages.length,
+      userMessages: messages.filter((m) => !m.authorBot).length,
+      botMessages: messages.filter((m) => m.authorBot).length,
+      attachments: messages.reduce(
+        (acc, m) => acc + m.attachments.length,
+        0
+      ),
+      embeds: messages.reduce(
+        (acc, m) => acc + m.embeds.length,
+        0
+      ),
+    },
 
-    messageCount: messages.length,
+    meta,
 
     messages: messages.map(serializeMessage),
   };
 }
 
-function buildHtmlTranscript(ticket, json) {
-  const ticketId = getTicketId(ticket);
-  const channelId = getChannelId(ticket);
+function renderAttachment(file) {
+  const isImage = file.contentType?.startsWith('image/');
 
-  const messagesHtml = json.messages
-    .map((msg) => {
-      const attachments = msg.attachments
-        .map(
-          (file) =>
-            `<li><a href="${safe(file.url)}" target="_blank">${safe(
-              file.name || file.url
-            )}</a></li>`
-        )
-        .join('');
+  return `
+    <div class="attachment">
+      <a href="${safe(file.url)}" target="_blank">
+        ${safe(file.name || 'Attachment')}
+      </a>
 
-      const embeds = msg.embeds
+      ${
+        isImage
+          ? `
+          <div class="attachment-preview">
+            <img src="${safe(file.url)}" alt="${safe(file.name)}" />
+          </div>
+        `
+          : ''
+      }
+    </div>
+  `;
+}
+
+function renderEmbed(embed) {
+  const fields = Array.isArray(embed.fields)
+    ? embed.fields
         .map(
-          (embed) => `
-            <div class="embed">
-              ${
-                embed.title
-                  ? `<div class="embed-title">${safe(embed.title)}</div>`
-                  : ''
-              }
-              ${
-                embed.description
-                  ? `<div class="embed-description">${safe(embed.description)}</div>`
-                  : ''
-              }
+          (field) => `
+            <div class="embed-field">
+              <strong>${safe(field.name)}</strong>
+              <div>${safe(field.value)}</div>
             </div>
           `
         )
-        .join('');
+        .join('')
+    : '';
 
-      return `
-        <div class="message">
-          <div class="message-header">
-            <span class="author">${safe(msg.authorTag)}</span>
-            <span class="time">${safe(msg.createdAt || '')}</span>
-          </div>
-          <div class="content">${safe(msg.content || '') || '<em>No text content</em>'}</div>
-          ${
-            attachments
-              ? `<ul class="attachments">${attachments}</ul>`
-              : ''
-          }
-          ${embeds || ''}
+  return `
+    <div class="embed">
+      ${embed.title ? `<div class="embed-title">${safe(embed.title)}</div>` : ''}
+      ${
+        embed.description
+          ? `<div class="embed-description">${safe(embed.description)}</div>`
+          : ''
+      }
+      ${fields}
+    </div>
+  `;
+}
+
+function renderMessage(msg) {
+  const attachments = msg.attachments.map(renderAttachment).join('');
+  const embeds = msg.embeds.map(renderEmbed).join('');
+
+  return `
+    <div class="message">
+      <div class="message-avatar">
+        ${
+          msg.authorAvatar
+            ? `<img src="${safe(msg.authorAvatar)}" />`
+            : '<div class="avatar-fallback"></div>'
+        }
+      </div>
+
+      <div class="message-body">
+        <div class="message-header">
+          <span class="author">${safe(msg.authorTag)}</span>
+
+          ${msg.authorBot ? '<span class="bot-badge">BOT</span>' : ''}
+
+          ${msg.system ? '<span class="system-badge">SYSTEM</span>' : ''}
+
+          <span class="time">${safe(msg.createdAt || '')}</span>
         </div>
-      `;
-    })
-    .join('\n');
 
-  return `<!DOCTYPE html>
+        <div class="content">
+          ${safe(msg.content || '') || '<em>No text content</em>'}
+        </div>
+
+        ${attachments}
+        ${embeds}
+      </div>
+    </div>
+  `;
+}
+
+function buildHtmlTranscript(ticket, json) {
+  const ticketId = ticket.displayId || getTicketId(ticket);
+  const messagesHtml = json.messages.map(renderMessage).join('\n');
+
+  return `
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Ticket Transcript - ${safe(ticketId)}</title>
-  <style>
-    body {
-      margin: 0;
-      padding: 32px;
-      background: #0b0f19;
-      color: #e5e7eb;
-      font-family: Arial, Helvetica, sans-serif;
-    }
+<meta charset="UTF-8" />
+<title>Goliath Transcript - ${safe(ticketId)}</title>
 
-    .wrap {
-      max-width: 1100px;
-      margin: 0 auto;
-    }
+<style>
+body{
+  margin:0;
+  padding:0;
+  background:#0b0f19;
+  color:#e5e7eb;
+  font-family:Inter,Arial,sans-serif;
+}
 
-    .header {
-      background: #111827;
-      border: 1px solid #1f2937;
-      border-radius: 18px;
-      padding: 24px;
-      margin-bottom: 24px;
-    }
+.wrap{
+  max-width:1200px;
+  margin:0 auto;
+  padding:32px;
+}
 
-    h1 {
-      margin: 0 0 12px;
-      font-size: 28px;
-    }
+.header{
+  background:linear-gradient(135deg,#111827,#0f172a);
+  border:1px solid #1f2937;
+  border-radius:20px;
+  padding:28px;
+  margin-bottom:24px;
+}
 
-    .meta {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 10px;
-      color: #9ca3af;
-      font-size: 14px;
-    }
+h1{
+  margin:0 0 18px;
+  font-size:30px;
+}
 
-    .message {
-      background: #111827;
-      border: 1px solid #1f2937;
-      border-radius: 14px;
-      padding: 16px;
-      margin-bottom: 12px;
-    }
+.meta,
+.analytics{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+  gap:12px;
+}
 
-    .message-header {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 8px;
-    }
+.meta-card,
+.analytics-card{
+  background:#0f172a;
+  border:1px solid #1f2937;
+  border-radius:14px;
+  padding:14px;
+}
 
-    .author {
-      color: #60a5fa;
-      font-weight: 700;
-    }
+.messages{
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+  margin-top:24px;
+}
 
-    .time {
-      color: #6b7280;
-      font-size: 12px;
-    }
+.message{
+  display:flex;
+  gap:14px;
+  background:#111827;
+  border:1px solid #1f2937;
+  border-radius:16px;
+  padding:16px;
+}
 
-    .content {
-      white-space: pre-wrap;
-      line-height: 1.45;
-    }
+.message-avatar img,
+.avatar-fallback{
+  width:42px;
+  height:42px;
+  border-radius:50%;
+  background:#1f2937;
+}
 
-    .attachments {
-      margin-top: 10px;
-    }
+.message-body{
+  flex:1;
+}
 
-    a {
-      color: #93c5fd;
-    }
+.message-header{
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:10px;
+  margin-bottom:6px;
+}
 
-    .embed {
-      margin-top: 10px;
-      padding: 10px 12px;
-      border-left: 4px solid #6366f1;
-      background: #0f172a;
-      border-radius: 8px;
-    }
+.author{
+  font-weight:700;
+  color:#60a5fa;
+}
 
-    .embed-title {
-      font-weight: 700;
-      margin-bottom: 4px;
-    }
+.bot-badge,
+.system-badge{
+  color:white;
+  padding:2px 8px;
+  border-radius:999px;
+  font-size:11px;
+  font-weight:700;
+}
 
-    .embed-description {
-      color: #d1d5db;
-      white-space: pre-wrap;
-    }
+.bot-badge{
+  background:#4f46e5;
+}
 
-    .footer {
-      color: #6b7280;
-      margin-top: 32px;
-      font-size: 13px;
-      text-align: center;
-    }
-  </style>
+.system-badge{
+  background:#64748b;
+}
+
+.time{
+  color:#6b7280;
+  font-size:12px;
+}
+
+.content{
+  white-space:pre-wrap;
+  line-height:1.5;
+}
+
+.attachment{
+  margin-top:12px;
+}
+
+.attachment a{
+  color:#93c5fd;
+}
+
+.attachment-preview img{
+  margin-top:8px;
+  max-width:320px;
+  border-radius:10px;
+}
+
+.embed{
+  margin-top:10px;
+  padding:12px;
+  border-left:4px solid #6366f1;
+  background:#0f172a;
+  border-radius:10px;
+}
+
+.embed-title{
+  font-weight:700;
+  margin-bottom:6px;
+}
+
+.embed-description{
+  color:#d1d5db;
+  white-space:pre-wrap;
+}
+
+.embed-field{
+  margin-top:8px;
+  padding-top:8px;
+  border-top:1px solid #1f2937;
+}
+
+.footer{
+  margin-top:36px;
+  color:#6b7280;
+  text-align:center;
+}
+</style>
 </head>
+
 <body>
-  <main class="wrap">
-    <section class="header">
-      <h1>Goliath Ticket Transcript</h1>
-      <div class="meta">
-        <div><strong>Ticket:</strong> ${safe(ticketId)}</div>
-        <div><strong>Display ID:</strong> ${safe(ticket.displayId || 'N/A')}</div>
-        <div><strong>Status:</strong> ${safe(ticket.status || 'unknown')}</div>
-        <div><strong>Priority:</strong> ${safe(ticket.priority || 'normal')}</div>
-        <div><strong>Guild:</strong> ${safe(ticket.guildId)}</div>
-        <div><strong>Channel:</strong> ${safe(channelId || 'unknown')}</div>
-        <div><strong>Generated:</strong> ${safe(json.generatedAt)}</div>
-        <div><strong>Messages:</strong> ${safe(json.messageCount)}</div>
-      </div>
-    </section>
+<main class="wrap">
 
-    ${messagesHtml || '<p>No messages found.</p>'}
+<section class="header">
+<h1>🎫 Goliath Ticket Transcript</h1>
 
-    <div class="footer">
-      Generated by KSJ Goliath
-    </div>
-  </main>
+<div class="meta">
+<div class="meta-card"><strong>Ticket</strong><br>${safe(ticketId)}</div>
+<div class="meta-card"><strong>Status</strong><br>${safe(ticket.status || 'unknown')}</div>
+<div class="meta-card"><strong>Priority</strong><br>${safe(ticket.priority || 'normal')}</div>
+<div class="meta-card"><strong>Generated</strong><br>${safe(json.generatedAt)}</div>
+</div>
+</section>
+
+<section class="analytics">
+<div class="analytics-card"><strong>Messages</strong><br>${safe(json.analytics.messageCount)}</div>
+<div class="analytics-card"><strong>User Messages</strong><br>${safe(json.analytics.userMessages)}</div>
+<div class="analytics-card"><strong>Bot Messages</strong><br>${safe(json.analytics.botMessages)}</div>
+<div class="analytics-card"><strong>Attachments</strong><br>${safe(json.analytics.attachments)}</div>
+<div class="analytics-card"><strong>Embeds</strong><br>${safe(json.analytics.embeds)}</div>
+</section>
+
+<section class="messages">
+${messagesHtml || '<p>No messages found.</p>'}
+</section>
+
+<div class="footer">Generated by KSJ Goliath</div>
+
+</main>
 </body>
-</html>`;
+</html>
+`;
 }
 
 function getTranscriptTargetChannelId(ticket, options = {}) {
   if (options.channelId) return options.channelId;
   if (options.transcriptChannelId) return options.transcriptChannelId;
-
   if (ticket.transcriptsChannelId) return ticket.transcriptsChannelId;
-  if (ticket.transcriptChannelId) return ticket.transcriptChannelId;
   if (ticket.logsChannelId) return ticket.logsChannelId;
-  if (ticket.logChannelId) return ticket.logChannelId;
 
   const panelMeta = ticket.metadata || {};
 
@@ -380,8 +489,6 @@ function getTranscriptTargetChannelId(ticket, options = {}) {
   return (
     settings?.discord?.transcriptsChannelId ||
     settings?.discord?.logsChannelId ||
-    settings?.transcriptsChannelId ||
-    settings?.logsChannelId ||
     null
   );
 }
@@ -407,7 +514,7 @@ async function createTranscript(client, ticket, options = {}) {
     .catch(() => null);
 
   if (!channel || channel.type !== ChannelType.GuildText) {
-    throw new Error('Ticket channel not found or is not a text channel.');
+    throw new Error('Ticket channel not found or invalid.');
   }
 
   const messages = await fetchAllMessages(
@@ -422,10 +529,7 @@ async function createTranscript(client, ticket, options = {}) {
     reason: options.reason || null,
   });
 
-  const htmlTranscript = buildHtmlTranscript(
-    ticket,
-    jsonTranscript
-  );
+  const htmlTranscript = buildHtmlTranscript(ticket, jsonTranscript);
 
   const dir = getTranscriptDir(ticket.guildId);
   ensureDir(dir);
@@ -437,6 +541,7 @@ async function createTranscript(client, ticket, options = {}) {
   const jsonPath = path.join(dir, jsonFileName);
 
   fs.writeFileSync(htmlPath, htmlTranscript, 'utf8');
+
   fs.writeFileSync(
     jsonPath,
     JSON.stringify(jsonTranscript, null, 2),
@@ -445,6 +550,7 @@ async function createTranscript(client, ticket, options = {}) {
 
   return {
     ticketId: getTicketId(ticket),
+    displayId: ticket.displayId || null,
     guildId: ticket.guildId,
     discordChannelId: channelId,
 
@@ -452,26 +558,18 @@ async function createTranscript(client, ticket, options = {}) {
 
     htmlPath,
     jsonPath,
-
     htmlFileName,
     jsonFileName,
 
     generatedAt: jsonTranscript.generatedAt,
+    analytics: jsonTranscript.analytics,
   };
 }
 
 async function uploadTranscript(client, ticket, transcript, options = {}) {
   if (!client) throw new Error('Missing Discord client.');
-  if (!ticket?.guildId) throw new Error('Missing ticket guildId.');
 
-  if (!transcript?.htmlPath || !transcript?.jsonPath) {
-    throw new Error('Missing transcript files.');
-  }
-
-  const targetChannelId = getTranscriptTargetChannelId(
-    ticket,
-    options
-  );
+  const targetChannelId = getTranscriptTargetChannelId(ticket, options);
 
   if (!targetChannelId) {
     return {
@@ -497,27 +595,21 @@ async function uploadTranscript(client, ticket, transcript, options = {}) {
     };
   }
 
-  const htmlAttachment = new AttachmentBuilder(
-    transcript.htmlPath,
-    {
-      name: transcript.htmlFileName,
-    }
-  );
+  const htmlAttachment = new AttachmentBuilder(transcript.htmlPath, {
+    name: transcript.htmlFileName,
+  });
 
-  const jsonAttachment = new AttachmentBuilder(
-    transcript.jsonPath,
-    {
-      name: transcript.jsonFileName,
-    }
-  );
+  const jsonAttachment = new AttachmentBuilder(transcript.jsonPath, {
+    name: transcript.jsonFileName,
+  });
 
   const message = await channel.send({
     content:
       `📄 **Ticket Transcript Generated**\n` +
-      `> Ticket: \`${getTicketId(ticket)}\`\n` +
-      `> Display ID: \`${ticket.displayId || 'N/A'}\`\n` +
+      `> Ticket: \`${ticket.displayId || getTicketId(ticket)}\`\n` +
       `> Status: \`${ticket.status || 'unknown'}\`\n` +
       `> Messages: \`${transcript.messageCount}\``,
+
     files: [
       htmlAttachment,
       jsonAttachment,
@@ -533,22 +625,36 @@ async function uploadTranscript(client, ticket, transcript, options = {}) {
 }
 
 async function createAndUploadTranscript(client, ticket, options = {}) {
-  const transcript = await createTranscript(
-    client,
-    ticket,
-    options
-  );
+  const transcript = await createTranscript(client, ticket, options);
+  const upload = await uploadTranscript(client, ticket, transcript, options);
 
-  const upload = await uploadTranscript(
-    client,
-    ticket,
-    transcript,
-    options
-  );
+  const transcriptData = {
+    generatedAt: transcript.generatedAt,
+
+    htmlPath: transcript.htmlPath,
+    jsonPath: transcript.jsonPath,
+
+    htmlFileName: transcript.htmlFileName,
+    jsonFileName: transcript.jsonFileName,
+
+    messageCount: transcript.messageCount,
+    analytics: transcript.analytics,
+
+    uploaded: upload.uploaded === true,
+
+    uploadChannelId: upload.channelId || null,
+    uploadMessageId: upload.messageId || null,
+    uploadUrl: upload.url || null,
+  };
+
+  updateTicket(ticket.guildId, ticket.ticketId, {
+    transcript: transcriptData,
+  });
 
   return {
     ...transcript,
     upload,
+    transcriptData,
   };
 }
 
@@ -559,6 +665,7 @@ module.exports = {
 
   buildJsonTranscript,
   buildHtmlTranscript,
+
   fetchAllMessages,
 
   getTicketId,

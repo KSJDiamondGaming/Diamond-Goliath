@@ -2,194 +2,58 @@ const { getRuntimePaths } = require('../config/runtimePaths');
 
 const runtimePaths = getRuntimePaths(process.env.BOT_MODE || 'DEV');
 
-const DEFAULT_LOGS = Object.freeze({
-  enabled: true,
-
-  channels: {
-    general: null,
-    moderation: null,
-    admin: null,
-    automod: null,
-    member: null,
-    messageDelete: null,
-    messageEdit: null,
-    voice: null,
-  },
-
-  events: {
-    moderationActions: true,
-    adminActions: true,
-    automodActions: true,
-
-    memberJoin: true,
-    memberLeave: true,
-    memberUpdate: true,
-
-    messageDelete: true,
-    messageEdit: true,
-
-    roleCreate: true,
-    roleDelete: true,
-    roleUpdate: true,
-
-    channelCreate: true,
-    channelDelete: true,
-    channelUpdate: true,
-
-    voiceJoin: true,
-    voiceLeave: true,
-    voiceMove: true,
-  },
-});
-
-const DEFAULT_SECURITY = Object.freeze({
-  enabled: true,
-  threatLevel: 'low',
-
-  totalIncidents: 0,
-  criticalIncidents: 0,
-
-  lastIncidentAt: null,
-  lastIncidentType: null,
-  lastLockdownAt: null,
-  lastQuarantineAt: null,
-
-  incidents: [],
-
-  lockdown: {
-    active: false,
-    enabledBy: null,
-    enabledAt: null,
-    reason: null,
-    expiresAt: null,
-    channels: [],
-    bypassRoleIds: [],
-  },
-
-  ownerMonitoring: {
+const DEFAULT_TICKETS = Object.freeze({
+  settings: {
     enabled: true,
-    webhookMirrorEnabled: true,
+
+    numbering: {
+      nextNumber: 1,
+      prefix: 'ticket',
+      padding: 4,
+    },
+
+    tickets: {
+      allowMultipleTickets: true,
+      oneActivePerType: true,
+      defaultPriority: 'normal',
+      defaultStatus: 'open',
+      cooldownMs: 60 * 1000,
+      maxActiveTicketsPerUser: 5,
+    },
+
+    permissions: {
+      allowCreatorView: true,
+      allowUserClose: false,
+      staffRoleIds: [],
+      managerRoleIds: [],
+      viewerRoleIds: [],
+    },
+
+    discord: {
+      categoryId: null,
+      archiveCategoryId: null,
+      logsChannelId: null,
+      transcriptsChannelId: null,
+    },
+
+    transcripts: {
+      enabled: true,
+      saveHtml: true,
+      saveJson: true,
+      uploadToDiscord: true,
+      includeAttachments: true,
+      includeEmbeds: true,
+      autoGenerateOnClose: true,
+      autoGenerateOnArchive: true,
+    },
+
+    dashboard: {
+      realtimeEnabled: true,
+      allowRealtimeSync: true,
+    },
   },
+
+  panels: [],
+  tickets: [],
+  analytics: {},
 });
-
-const DEFAULT_SERVER_BACKUPS = Object.freeze({
-  enabled: true,
-
-  lastBackupId: null,
-  lastBackupAt: null,
-  lastBackupBy: null,
-  lastBackupReason: null,
-
-  backupCount: 0,
-  latestBackup: null,
-
-  storage: {
-    provider: 'local_runtime',
-    path: process.env.SERVER_BACKUP_DIR || runtimePaths.backups,
-    restoreRequiresSupport: true,
-  },
-
-  retention: {
-    maxBackups: Number(process.env.SERVER_BACKUP_RETENTION || 4),
-    autoCleanup: true,
-  },
-});
-
-const DEFAULT_EMBED_DEFAULTS = Object.freeze({
-  welcome: null,
-  leave: null,
-  rules: null,
-  announcement: null,
-  suggestion: null,
-  giveaway: null,
-  update: null,
-  event: null,
-  warning: null,
-});
-
-const DEFAULT_GENERAL_SETTINGS = Object.freeze({
-  prefix: '/',
-  appealUrl: '',
-  dashboardEnabled: true,
-
-  managerRoleIds: [],
-  dashboardAccessRoleIds: [],
-  commandManagerRoleIds: [],
-  restrictedChannelIds: [],
-
-  commandNotFoundEnabled: true,
-  wrongCommandUsageEnabled: true,
-  noCommandPermissionsEnabled: true,
-  disabledInChannelEnabled: false,
-  commandCooldownEnabled: true,
-
-  instantDeleteDataEnabled: false,
-});
-
-const DEFAULT_GUILD_DATA = Object.freeze({
-  guildId: null,
-  guildName: null,
-  updatedAt: null,
-
-  general: {
-    enabled: true,
-    prefix: '/',
-    timezone: 'Europe/London',
-  },
-
-  generalSettings: DEFAULT_GENERAL_SETTINGS,
-
-  modules: {},
-
-  automod: {},
-  moderation: {},
-  purge: {},
-
-  logs: DEFAULT_LOGS,
-  security: DEFAULT_SECURITY,
-  serverBackups: DEFAULT_SERVER_BACKUPS,
-
-  stats: {},
-  suggestions: {},
-  polls: {},
-
-  roles: {},
-  birthdays: {},
-  tempVoice: {},
-
-  tickets: {},
-  giveaways: {},
-
-  warnings: {},
-  cases: {},
-
-  welcome: {},
-  leave: {},
-
-  reactionRoles: {},
-
-  autoRoles: {
-    enabled: false,
-    roleIds: [],
-  },
-
-  staffRoles: {
-    roleIds: [],
-  },
-
-  modRoles: {
-    roleIds: [],
-  },
-
-  embedPresets: {},
-  embedDefaults: DEFAULT_EMBED_DEFAULTS,
-});
-
-module.exports = {
-  DEFAULT_GUILD_DATA,
-  DEFAULT_LOGS,
-  DEFAULT_SECURITY,
-  DEFAULT_SERVER_BACKUPS,
-  DEFAULT_EMBED_DEFAULTS,
-  DEFAULT_GENERAL_SETTINGS,
-};

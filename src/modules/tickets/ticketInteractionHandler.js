@@ -1,17 +1,5 @@
 'use strict';
 
-/**
- * GOLIATH TICKET INTERACTION HANDLER
- *
- * Handles:
- * - deployed ticket panel buttons
- * - ticket setup panel interactions
- * - ticket buttons
- * - modals
- * - selects
- * - permission enforcement
- */
-
 const {
   ActionRowBuilder,
   ModalBuilder,
@@ -36,6 +24,10 @@ const {
 } = require('./ticketSetupPanel');
 
 const {
+  refreshDeployedPanel,
+} = require('./ticketPanelManager');
+
+const {
   CUSTOM_IDS,
   isTicketButton,
   getTicketActionRows,
@@ -48,11 +40,15 @@ const { TICKET_ACTIONS } = ticketPermissions;
 const MODAL_IDS = {
   CLOSE: 'goliath_ticket_close_modal',
   ADD_USER: 'goliath_ticket_add_user_modal',
+  PANEL_APPEARANCE: 'goliath_ticket_panel_appearance_modal',
+  DELETE_CONFIRM: 'goliath_ticket_delete_confirm_modal',
 };
 
 const INPUT_IDS = {
   CLOSE_REASON: 'close_reason',
   ADD_USER_ID: 'add_user_id',
+  APPEARANCE_VALUE: 'appearance_value',
+  DELETE_CONFIRM: 'delete_confirm',
 };
 
 const SELECT_IDS = {
@@ -113,6 +109,57 @@ async function safeDefer(interaction, ephemeral = true) {
     throw error;
   }
 }
+
+async function refreshPanelEditor(
+  interaction,
+  panelId
+) {
+  try {
+    const panel =
+      ticketStore.getPanel(
+        interaction.guildId,
+        panelId
+      );
+
+    if (!panel) {
+      return false;
+    }
+
+    const {
+      buildEditorEmbed,
+      buildEditorControls,
+    } = require('./ticketSetupPanel');
+
+    const payload = {
+      embeds: [
+        buildEditorEmbed(panel),
+      ],
+
+      components:
+        buildEditorControls(panelId),
+    };
+
+    if (
+      interaction.deferred ||
+      interaction.replied
+    ) {
+      await interaction.editReply(
+        payload
+      );
+
+      return true;
+    }
+
+    await interaction.update(
+      payload
+    );
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 
 function isTicketModal(customId) {
   return Object.values(MODAL_IDS).includes(customId);
@@ -245,6 +292,27 @@ async function showCloseModal(interaction, ticket) {
 
   modal.addComponents(
     new ActionRowBuilder().addComponents(reason)
+  );
+
+  return interaction.showModal(modal);
+}
+
+async function showAppearanceModal(interaction, panelId, field) {
+  if (alreadyHandled(interaction)) return true;
+
+  const modal = new ModalBuilder()
+    .setCustomId(`${MODAL_IDS.PANEL_APPEARANCE}:${panelId}:${field}`)
+    .setTitle(`Edit ${field}`);
+
+  const input = new TextInputBuilder()
+    .setCustomId(INPUT_IDS.APPEARANCE_VALUE)
+    .setLabel(`New ${field}`)
+    .setStyle(TextInputStyle.Paragraph)
+    .setRequired(false)
+    .setMaxLength(4000);
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(input)
   );
 
   return interaction.showModal(modal);
@@ -387,26 +455,62 @@ async function handleReopen(interaction, ticket) {
   });
 }
 
-async function handleDelete(interaction, ticket) {
-  if (!can(interaction, TICKET_ACTIONS.DELETE, ticket)) {
-    return deny(interaction, 'You cannot delete tickets.');
+async function handleDelete(
+  interaction,
+  ticket
+) {
+  if (
+    !can(
+      interaction,
+      TICKET_ACTIONS.DELETE,
+      ticket
+    )
+  ) {
+    return deny(
+      interaction,
+      'You cannot delete tickets.'
+    );
   }
 
-  const deferred = await safeDefer(interaction, true);
-  if (!deferred) return true;
+  if (alreadyHandled(interaction)) {
+    return true;
+  }
 
-  await ticketActions.deleteTicket(
-    ticket,
-    interaction.user,
-    {
-      client: interaction.client,
-      reason: 'Deleted from ticket channel',
-    }
+  const modal =
+    new ModalBuilder()
+      .setCustomId(
+        MODAL_IDS.DELETE_CONFIRM
+      )
+      .setTitle(
+        'Delete Ticket'
+      );
+
+  const confirm =
+    new TextInputBuilder()
+      .setCustomId(
+        INPUT_IDS.DELETE_CONFIRM
+      )
+      .setLabel(
+        'Type DELETE to confirm'
+      )
+      .setPlaceholder(
+        'DELETE'
+      )
+      .setStyle(
+        TextInputStyle.Short
+      )
+      .setRequired(true)
+      .setMaxLength(20);
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(
+      confirm
+    )
   );
 
-  return safeEditOrReply(interaction, {
-    content: '🗑️ Ticket deleted.',
-  });
+  return interaction.showModal(
+    modal
+  );
 }
 
 async function handleTicketButton(interaction) {
@@ -418,16 +522,17 @@ async function handleTicketButton(interaction) {
 
   const ticket = await getTicketForInteraction(interaction);
 
-  if (!ticket) {
-    await safeReply(
-      interaction,
-      ephemeralPayload({
-        content: '⚠️ No ticket record found for this channel.',
-      })
-    );
+if (!ticket) {
+  await safeReply(
+    interaction,
+    ephemeralPayload({
+      content:
+        '⚠️ No ticket record found for this channel.',
+    })
+  );
 
-    return true;
-  }
+  return true;
+}
 
   try {
     switch (interaction.customId) {
@@ -481,6 +586,61 @@ async function handleTicketButton(interaction) {
 async function handleTicketModal(interaction) {
   if (!interaction.isModalSubmit()) return false;
 
+  if (
+    interaction.customId.startsWith(
+      MODAL_IDS.PANEL_APPEARANCE
+    )
+  ) {
+    const [, panelId, field] = interaction.customId.split(':');
+
+    const value = interaction.fields.getTextInputValue(
+      INPUT_IDS.APPEARANCE_VALUE
+    );
+
+    const panel = ticketStore.getPanel(
+      interaction.guildId,
+      panelId
+    );
+
+    if (!panel) {
+      await safeReply(
+        interaction,
+        ephemeralPayload({
+          content: '❌ Ticket panel not found.',
+        })
+      );
+
+      return true;
+    }
+
+    const updated = ticketStore.updatePanel(
+      interaction.guildId,
+      panelId,
+      {
+        appearance: {
+          ...(panel.appearance || {}),
+          [field]: value || null,
+        },
+      }
+    );
+
+    if (updated?.deployed && interaction.guild) {
+      await refreshDeployedPanel({
+        guild: interaction.guild,
+        panel: updated,
+      }).catch(() => null);
+    }
+
+    await safeReply(
+      interaction,
+      ephemeralPayload({
+        content: `✅ Updated panel appearance: \`${field}\`.`,
+      })
+    );
+
+    return true;
+  }
+
   if (!isTicketModal(interaction.customId)) {
     return false;
   }
@@ -499,6 +659,41 @@ async function handleTicketModal(interaction) {
   }
 
   try {
+    if (interaction.customId === MODAL_IDS.DELETE_CONFIRM) {
+      const confirm = interaction.fields
+        .getTextInputValue(INPUT_IDS.DELETE_CONFIRM)
+        .trim();
+
+      if (confirm.toUpperCase() !== 'DELETE') {
+        await safeReply(
+          interaction,
+          ephemeralPayload({
+            content: '❌ Delete confirmation failed.',
+          })
+        );
+
+        return true;
+      }
+
+      const deferred = await safeDefer(interaction, true);
+      if (!deferred) return true;
+
+      await ticketActions.deleteTicket(
+        ticket,
+        interaction.user,
+        {
+          client: interaction.client,
+          reason: 'Deleted from ticket channel',
+        }
+      );
+
+      await safeEditOrReply(interaction, {
+        content: '🗑️ Ticket deleted.',
+      });
+
+      return true;
+    }
+
     if (interaction.customId === MODAL_IDS.CLOSE) {
       const reason =
         interaction.fields.getTextInputValue(
@@ -563,6 +758,23 @@ async function handleTicketModal(interaction) {
 
 async function handleTicketSelect(interaction) {
   if (!interaction.isStringSelectMenu()) return false;
+
+  if (
+    interaction.customId.startsWith(
+      'ticket_setup:appearance_select:'
+    )
+  ) {
+    const panelId = interaction.customId.split(':')[2];
+    const field = interaction.values?.[0];
+
+    await showAppearanceModal(
+      interaction,
+      panelId,
+      field
+    );
+
+    return true;
+  }
 
   if (!isTicketSelect(interaction.customId)) {
     return false;
