@@ -1616,12 +1616,33 @@ async function updatePanel(interaction, memberDisplayName) {
 }
 
 async function updateEditor(interaction, memberDisplayName) {
-  return interaction.update(buildEditorPanel(interaction, memberDisplayName));
+
+  const payload = buildEditorPanel(interaction, memberDisplayName);
+
+  if (interaction.isModalSubmit()) {
+    return interaction.reply({
+      ...payload,
+      flags: 64,
+    });
+  }
+
+  return interaction.update(payload);
 }
 
 async function updatePresets(interaction, memberDisplayName) {
+
   refreshGuild(interaction.guild.id);
-  return interaction.update(buildPresetsPanel(interaction, memberDisplayName));
+
+  const payload = buildPresetsPanel(interaction, memberDisplayName);
+
+  if (interaction.isModalSubmit()) {
+    return interaction.reply({
+      ...payload,
+      flags: 64,
+    });
+  }
+
+  return interaction.update(payload);
 }
 
 /* ---------------- INTERACTIONS ---------------- */
@@ -1786,7 +1807,10 @@ if (interaction.isChannelSelectMenu()) {
     }
 
     if (interaction.customId === 'embed:fields') {
-      await interaction.update(buildFieldsPanel(interaction, memberDisplayName));
+      await interaction.update(
+        buildFieldsPanel(interaction, memberDisplayName)
+      );
+
       return true;
     }
 
@@ -1980,9 +2004,10 @@ if (interaction.isChannelSelectMenu()) {
       selectedFieldIndex: fieldIndex,
     });
 
-    await interaction.update(
-      buildFieldsPanel(interaction, memberDisplayName)
-    );
+    await interaction.reply({
+  ...buildFieldsPanel(interaction, memberDisplayName),
+  flags: 64,
+  });
 
     return true;
   }
@@ -2004,9 +2029,10 @@ if (interaction.isChannelSelectMenu()) {
       selectedFieldIndex: nextFields.length - 1,
     });
 
-    await interaction.update(
-      buildFieldsPanel(interaction, memberDisplayName)
-    );
+      await interaction.reply({
+    ...buildFieldsPanel(interaction, memberDisplayName),
+    flags: 64,
+    });
 
     return true;
     }
