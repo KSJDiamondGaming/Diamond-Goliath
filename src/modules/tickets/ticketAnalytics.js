@@ -5,6 +5,10 @@ const {
   saveGuildSection,
 } = require('../../guild/guildManager');
 
+const {
+  emitAnalyticsUpdated,
+} = require('./ticketSocketEvents');
+
 function now() {
   return new Date().toISOString();
 }
@@ -85,6 +89,24 @@ function saveAnalytics(
   return tickets.analytics;
 }
 
+function saveAndEmitAnalytics(
+  guildId,
+  analytics
+) {
+  const saved =
+    saveAnalytics(
+      guildId,
+      analytics
+    );
+
+  emitAnalyticsUpdated(
+    guildId,
+    saved
+  );
+
+  return saved;
+}
+
 function incrementCounter(
   object,
   key,
@@ -92,6 +114,66 @@ function incrementCounter(
 ) {
   object[key] =
     Number(object[key] || 0) + amount;
+}
+
+function ensureStaffStats(
+  analytics,
+  actorId
+) {
+  if (!actorId) return null;
+
+  if (!analytics.staff[actorId]) {
+    analytics.staff[actorId] = {
+      claimed: 0,
+      closed: 0,
+      reopened: 0,
+      archived: 0,
+      messages: 0,
+    };
+  }
+
+  return analytics.staff[actorId];
+}
+
+function updateRollingAverage(
+  currentAverage,
+  nextValue
+) {
+  const current =
+    Number(currentAverage || 0);
+
+  const next =
+    Number(nextValue || 0);
+
+  if (next <= 0) {
+    return current;
+  }
+
+  if (current <= 0) {
+    return next;
+  }
+
+  return Math.floor(
+    (current + next) / 2
+  );
+}
+
+function getElapsedMsFrom(
+  isoDate
+) {
+  if (!isoDate) return 0;
+
+  const start =
+    new Date(isoDate).getTime();
+
+  if (!Number.isFinite(start)) {
+    return 0;
+  }
+
+  return Math.max(
+    0,
+    Date.now() - start
+  );
 }
 
 function trackTicketCreated(
@@ -131,7 +213,7 @@ function trackTicketCreated(
   analytics.activity.lastTicketCreatedAt =
     now();
 
-  return saveAnalytics(
+  return saveAndEmitAnalytics(
     guildId,
     analytics
   );
@@ -150,44 +232,31 @@ function trackTicketClaimed(
     'claimed'
   );
 
-  if (actorId) {
-    if (!analytics.staff[actorId]) {
-      analytics.staff[actorId] = {
-        claimed: 0,
-        closed: 0,
-        reopened: 0,
-        messages: 0,
-      };
-    }
+  const staffStats =
+    ensureStaffStats(
+      analytics,
+      actorId
+    );
 
+  if (staffStats) {
     incrementCounter(
-      analytics.staff[actorId],
+      staffStats,
       'claimed'
     );
   }
 
-  if (ticket?.createdAt) {
-    const claimMs =
-      Date.now() -
-      new Date(
-        ticket.createdAt
-      ).getTime();
+  const claimMs =
+    getElapsedMsFrom(
+      ticket?.createdAt
+    );
 
-    const current =
-      Number(
-        analytics.performance
-          .averageClaimTimeMs || 0
-      );
+  analytics.performance.averageClaimTimeMs =
+    updateRollingAverage(
+      analytics.performance.averageClaimTimeMs,
+      claimMs
+    );
 
-    analytics.performance.averageClaimTimeMs =
-      current <= 0
-        ? claimMs
-        : Math.floor(
-            (current + claimMs) / 2
-          );
-  }
-
-  return saveAnalytics(
+  return saveAndEmitAnalytics(
     guildId,
     analytics
   );
@@ -211,47 +280,34 @@ function trackTicketClosed(
     'closed'
   );
 
-  if (actorId) {
-    if (!analytics.staff[actorId]) {
-      analytics.staff[actorId] = {
-        claimed: 0,
-        closed: 0,
-        reopened: 0,
-        messages: 0,
-      };
-    }
+  const staffStats =
+    ensureStaffStats(
+      analytics,
+      actorId
+    );
 
+  if (staffStats) {
     incrementCounter(
-      analytics.staff[actorId],
+      staffStats,
       'closed'
     );
   }
 
-  if (ticket?.createdAt) {
-    const closeMs =
-      Date.now() -
-      new Date(
-        ticket.createdAt
-      ).getTime();
+  const closeMs =
+    getElapsedMsFrom(
+      ticket?.createdAt
+    );
 
-    const current =
-      Number(
-        analytics.performance
-          .averageCloseTimeMs || 0
-      );
-
-    analytics.performance.averageCloseTimeMs =
-      current <= 0
-        ? closeMs
-        : Math.floor(
-            (current + closeMs) / 2
-          );
-  }
+  analytics.performance.averageCloseTimeMs =
+    updateRollingAverage(
+      analytics.performance.averageCloseTimeMs,
+      closeMs
+    );
 
   analytics.activity.lastTicketClosedAt =
     now();
 
-  return saveAnalytics(
+  return saveAndEmitAnalytics(
     guildId,
     analytics
   );
@@ -269,18 +325,15 @@ function trackTicketReopened(
     'reopened'
   );
 
-  if (actorId) {
-    if (!analytics.staff[actorId]) {
-      analytics.staff[actorId] = {
-        claimed: 0,
-        closed: 0,
-        reopened: 0,
-        messages: 0,
-      };
-    }
+  const staffStats =
+    ensureStaffStats(
+      analytics,
+      actorId
+    );
 
+  if (staffStats) {
     incrementCounter(
-      analytics.staff[actorId],
+      staffStats,
       'reopened'
     );
   }
@@ -288,14 +341,16 @@ function trackTicketReopened(
   analytics.activity.lastTicketReopenedAt =
     now();
 
-  return saveAnalytics(
+  return saveAndEmitAnalytics(
     guildId,
     analytics
   );
 }
 
 function trackTicketArchived(
-  guildId
+  guildId,
+  ticket = null,
+  actorId = null
 ) {
   const analytics =
     getAnalytics(guildId);
@@ -310,7 +365,20 @@ function trackTicketArchived(
     'archived'
   );
 
-  return saveAnalytics(
+  const staffStats =
+    ensureStaffStats(
+      analytics,
+      actorId
+    );
+
+  if (staffStats) {
+    incrementCounter(
+      staffStats,
+      'archived'
+    );
+  }
+
+  return saveAndEmitAnalytics(
     guildId,
     analytics
   );
@@ -327,7 +395,7 @@ function trackTicketDeleted(
     'deleted'
   );
 
-  return saveAnalytics(
+  return saveAndEmitAnalytics(
     guildId,
     analytics
   );
@@ -336,6 +404,7 @@ function trackTicketDeleted(
 module.exports = {
   getAnalytics,
   saveAnalytics,
+  saveAndEmitAnalytics,
 
   trackTicketCreated,
   trackTicketClaimed,

@@ -1,3 +1,5 @@
+// src/security/lockdownSystem.js
+
 const { ChannelType } = require('discord.js');
 const guildManager = require('../guild/guildManager');
 
@@ -43,42 +45,57 @@ function normalizeRoleIds(roleIds = []) {
   ];
 }
 
+function normalizeLockdownState(state = {}) {
+  const normalized = {
+    ...emptyLockdownState(),
+    ...(state || {}),
+  };
+
+  normalized.bypassRoleIds = normalizeRoleIds(normalized.bypassRoleIds);
+
+  normalized.channels = Array.isArray(normalized.channels)
+    ? normalized.channels.filter(Boolean)
+    : [];
+
+  return normalized;
+}
+
 function getIncidentLogger() {
   return require('./securitySystem');
 }
 
 function getLockdownState(guildId) {
-  const security = guildManager.getSecurityConfig(guildId);
+  const security =
+    guildManager.getSecurityConfig(
+      guildId
+    ) || {};
 
-  const state = {
-    ...emptyLockdownState(),
-    ...(security.lockdown || {}),
-  };
+  const rawLockdown =
+    security?.lockdown;
 
-  state.bypassRoleIds = normalizeRoleIds(state.bypassRoleIds);
-  state.channels = Array.isArray(state.channels) ? state.channels : [];
+  if (
+    !rawLockdown ||
+    typeof rawLockdown !== 'object' ||
+    Array.isArray(rawLockdown)
+  ) {
+    return normalizeLockdownState();
+  }
 
-  return state;
+  return normalizeLockdownState(
+    rawLockdown
+  );
 }
 
 function getBypassRoleIds(guildId) {
-  const state = getLockdownState(guildId);
-  return normalizeRoleIds(state.bypassRoleIds);
+  return normalizeRoleIds(getLockdownState(guildId).bypassRoleIds);
 }
 
-function saveLockdownState(guild, lockdownData) {
-  const nextLockdown = {
-    ...emptyLockdownState(),
-    ...lockdownData,
-    bypassRoleIds: normalizeRoleIds(lockdownData.bypassRoleIds),
-    channels: Array.isArray(lockdownData.channels)
-      ? lockdownData.channels
-      : [],
-  };
+function saveLockdownState(guild, lockdownData = {}) {
+  const nextLockdown = normalizeLockdownState(lockdownData);
 
   return guildManager.updateSecurityConfig(
     guild.id,
-    (security) => ({
+    (security = {}) => ({
       ...security,
       lastLockdownAt: nextLockdown.active
         ? new Date().toISOString()
@@ -353,11 +370,15 @@ async function restoreBypassRoleOverwrites(channel, guild, bypassRoleIds) {
 }
 
 async function restoreOriginalOverwrites(channel, saved, reason) {
-  if (!Array.isArray(saved.overwrites)) return 0;
+  const overwrites = Array.isArray(saved?.overwrites) ? saved.overwrites : [];
+
+  if (!overwrites.length) {
+    return 0;
+  }
 
   let restored = 0;
 
-  for (const overwrite of saved.overwrites) {
+  for (const overwrite of overwrites) {
     if (!overwrite?.id) continue;
 
     try {
@@ -408,7 +429,7 @@ function startLockdownReminder(guild, reminderChannelId, reminderUserId) {
     try {
       const latest = getLockdownState(guild.id);
 
-      if (!latest.active) {
+      if (!latest || !latest.active) {
         stopLockdownReminder(guild.id);
         return;
       }
@@ -656,7 +677,11 @@ async function disableLockdown(guild, options = {}) {
   let bypassRestored = 0;
   let overwritesRestored = 0;
 
-  for (const saved of state.channels || []) {
+  const savedChannels = Array.isArray(state.channels) ? state.channels : [];
+
+  for (const saved of savedChannels) {
+    if (!saved?.id) continue;
+
     const channel = await guild.channels.fetch(saved.id).catch(() => null);
 
     if (!channel || !channel.manageable) continue;
@@ -741,7 +766,9 @@ async function restoreLockdownReminders(client) {
     try {
       const state = getLockdownState(guild.id);
 
-      if (!state.active) continue;
+      if (!state || !state.active) {
+        continue;
+      }
 
       if (
         state.lockdownExpiresAt &&
@@ -792,9 +819,9 @@ async function restoreLockdownReminders(client) {
       );
     } catch (error) {
       console.warn(
-        `[LockdownSystem] Failed restoring guild ${guild.id}:`,
-        error.message
-      );
+      `[LockdownSystem] Failed restoring guild ${guild.id}:`,
+      error
+    );
     }
   }
 }
@@ -802,6 +829,7 @@ async function restoreLockdownReminders(client) {
 module.exports = {
   emptyLockdownState,
   normalizeRoleIds,
+  normalizeLockdownState,
 
   getLockdownState,
   getBypassRoleIds,

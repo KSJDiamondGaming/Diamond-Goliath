@@ -21,8 +21,30 @@ const {
 } = require('./defaults');
 
 const runtimePaths = getRuntimePaths(process.env.BOT_MODE || 'DEV');
-
 const GUILDS_DIR = runtimePaths.guilds;
+
+const SAFE_DEFAULT_LOGS = DEFAULT_LOGS || {
+  enabled: true,
+  channels: {},
+  events: {},
+};
+
+const SAFE_DEFAULT_SECURITY = DEFAULT_SECURITY || {
+  enabled: true,
+  threatLevel: 'low',
+  totalIncidents: 0,
+  criticalIncidents: 0,
+  incidents: [],
+  lockdown: {
+    active: false,
+    channels: [],
+    bypassRoleIds: [],
+  },
+  ownerMonitoring: {
+    enabled: true,
+    webhookMirrorEnabled: true,
+  },
+};
 
 const DEFAULT_TICKET_RUNTIME = DEFAULT_TICKETS || {
   settings: {},
@@ -150,7 +172,7 @@ function removeLegacyLogFields(data) {
 
 function normalizeGeneralSettings(source = {}) {
   const generalSettings = mergeDeep(
-    DEFAULT_GENERAL_SETTINGS,
+    DEFAULT_GENERAL_SETTINGS || {},
     isPlainObject(source.generalSettings) ? source.generalSettings : {}
   );
 
@@ -168,7 +190,6 @@ function normalizeGeneralSettings(source = {}) {
   generalSettings.noCommandPermissionsEnabled = generalSettings.noCommandPermissionsEnabled !== false;
   generalSettings.disabledInChannelEnabled = generalSettings.disabledInChannelEnabled === true;
   generalSettings.commandCooldownEnabled = generalSettings.commandCooldownEnabled !== false;
-
   generalSettings.instantDeleteDataEnabled = generalSettings.instantDeleteDataEnabled === true;
 
   return generalSettings;
@@ -179,11 +200,22 @@ function normalizeLogType(type = 'general') {
 }
 
 function normalizeLogs(source = {}) {
-  const logs = mergeDeep(DEFAULT_LOGS, isPlainObject(source.logs) ? source.logs : {});
+  const logs = mergeDeep(
+    SAFE_DEFAULT_LOGS,
+    isPlainObject(source.logs) ? source.logs : {}
+  );
 
   logs.enabled = logs.enabled !== false;
-  logs.channels = mergeDeep(DEFAULT_LOGS.channels, logs.channels || {});
-  logs.events = mergeDeep(DEFAULT_LOGS.events, logs.events || {});
+
+  logs.channels = mergeDeep(
+    SAFE_DEFAULT_LOGS?.channels || {},
+    isPlainObject(logs.channels) ? logs.channels : {}
+  );
+
+  logs.events = mergeDeep(
+    SAFE_DEFAULT_LOGS?.events || {},
+    isPlainObject(logs.events) ? logs.events : {}
+  );
 
   const legacyMessageChannelId = normalizeChannelId(source.messageLogChannelId);
   const oldMessageChannelId = normalizeChannelId(logs.channels.message);
@@ -229,7 +261,7 @@ function normalizeLogs(source = {}) {
 
 function normalizeSecurity(source = {}) {
   const security = mergeDeep(
-    DEFAULT_SECURITY,
+    SAFE_DEFAULT_SECURITY,
     isPlainObject(source.security) ? source.security : {}
   );
 
@@ -247,16 +279,24 @@ function normalizeSecurity(source = {}) {
     ? security.incidents.slice(0, 250)
     : [];
 
-  security.lockdown = mergeDeep(DEFAULT_SECURITY.lockdown, security.lockdown || {});
+  security.lockdown = mergeDeep(
+    SAFE_DEFAULT_SECURITY.lockdown || {},
+    isPlainObject(security.lockdown) ? security.lockdown : {}
+  );
+
   security.lockdown.active = security.lockdown.active === true;
+
   security.lockdown.channels = Array.isArray(security.lockdown.channels)
     ? security.lockdown.channels
     : [];
-  security.lockdown.bypassRoleIds = normalizeDiscordIdArray(security.lockdown.bypassRoleIds);
+
+  security.lockdown.bypassRoleIds = normalizeDiscordIdArray(
+    security.lockdown.bypassRoleIds
+  );
 
   security.ownerMonitoring = mergeDeep(
-    DEFAULT_SECURITY.ownerMonitoring,
-    security.ownerMonitoring || {}
+    SAFE_DEFAULT_SECURITY.ownerMonitoring || {},
+    isPlainObject(security.ownerMonitoring) ? security.ownerMonitoring : {}
   );
 
   security.ownerMonitoring.enabled = security.ownerMonitoring.enabled !== false;
@@ -282,20 +322,20 @@ function normalizeTickets(source = {}) {
 
 function normalizeServerBackups(source = {}) {
   const serverBackups = mergeDeep(
-    DEFAULT_SERVER_BACKUPS,
+    DEFAULT_SERVER_BACKUPS || {},
     isPlainObject(source.serverBackups) ? source.serverBackups : {}
   );
 
   serverBackups.enabled = serverBackups.enabled !== false;
 
   serverBackups.storage = mergeDeep(
-    DEFAULT_SERVER_BACKUPS.storage,
-    serverBackups.storage || {}
+    DEFAULT_SERVER_BACKUPS?.storage || {},
+    isPlainObject(serverBackups.storage) ? serverBackups.storage : {}
   );
 
   serverBackups.retention = mergeDeep(
-    DEFAULT_SERVER_BACKUPS.retention,
-    serverBackups.retention || {}
+    DEFAULT_SERVER_BACKUPS?.retention || {},
+    isPlainObject(serverBackups.retention) ? serverBackups.retention : {}
   );
 
   serverBackups.retention.maxBackups = Number(
@@ -317,13 +357,16 @@ function normalizeServerBackups(source = {}) {
 
 function mergeDefaults(data = {}) {
   const source = isPlainObject(data) ? data : {};
-  const merged = mergeDeep(DEFAULT_GUILD_DATA, source);
+  const merged = mergeDeep(DEFAULT_GUILD_DATA || {}, source);
 
   merged.generalSettings = normalizeGeneralSettings(source);
   merged.logs = normalizeLogs(source);
   merged.security = normalizeSecurity(source);
   merged.serverBackups = normalizeServerBackups(source);
-  merged.embedDefaults = mergeDeep(DEFAULT_EMBED_DEFAULTS, source.embedDefaults || {});
+  merged.embedDefaults = mergeDeep(
+    DEFAULT_EMBED_DEFAULTS || {},
+    isPlainObject(source.embedDefaults) ? source.embedDefaults : {}
+  );
   merged.tickets = normalizeTickets(source);
 
   return removeLegacyLogFields(merged);
@@ -351,7 +394,7 @@ function getGuildData(guildId, options = {}) {
   ensureGuildsDir();
 
   const exists = fs.existsSync(filePath);
-  const rawData = read(filePath, DEFAULT_GUILD_DATA);
+  const rawData = read(filePath, DEFAULT_GUILD_DATA || {});
   const data = mergeDefaults(rawData);
 
   data.guildId = safeGuildId;
@@ -473,7 +516,7 @@ function updateGuildSection(guildId, sectionName, updater, fallback = {}, guildO
 }
 
 function getLogChannelId(guildId, type = 'general', fallbackType = 'general') {
-  const logs = getGuildSection(guildId, 'logs', DEFAULT_LOGS);
+  const logs = getGuildSection(guildId, 'logs', SAFE_DEFAULT_LOGS);
   const logType = normalizeLogType(type);
   const fallback = normalizeLogType(fallbackType);
 
@@ -494,13 +537,13 @@ function setLogChannelId(guildId, type = 'general', channelId = null, guildOrMet
         [logType]: safeChannelId,
       },
     }),
-    DEFAULT_LOGS,
+    SAFE_DEFAULT_LOGS,
     guildOrMeta
   );
 }
 
 function isLogEventEnabled(guildId, eventName) {
-  const logs = getGuildSection(guildId, 'logs', DEFAULT_LOGS);
+  const logs = getGuildSection(guildId, 'logs', SAFE_DEFAULT_LOGS);
 
   if (logs.enabled === false) return false;
 
@@ -520,13 +563,13 @@ function setLogEventEnabled(guildId, eventName, enabled = true, guildOrMeta = {}
         [key]: Boolean(enabled),
       },
     }),
-    DEFAULT_LOGS,
+    SAFE_DEFAULT_LOGS,
     guildOrMeta
   );
 }
 
 function getSecurityConfig(guildId) {
-  return getGuildSection(guildId, 'security', DEFAULT_SECURITY);
+  return getGuildSection(guildId, 'security', SAFE_DEFAULT_SECURITY);
 }
 
 function saveSecurityConfig(guildId, config = {}, guildOrMeta = {}) {
@@ -538,13 +581,13 @@ function updateSecurityConfig(guildId, updater, guildOrMeta = {}) {
     guildId,
     'security',
     updater,
-    DEFAULT_SECURITY,
+    SAFE_DEFAULT_SECURITY,
     guildOrMeta
   );
 }
 
 function getServerBackupConfig(guildId) {
-  return getGuildSection(guildId, 'serverBackups', DEFAULT_SERVER_BACKUPS);
+  return getGuildSection(guildId, 'serverBackups', DEFAULT_SERVER_BACKUPS || {});
 }
 
 function saveServerBackupConfig(guildId, config = {}, guildOrMeta = {}) {
@@ -556,7 +599,7 @@ function updateServerBackupConfig(guildId, updater, guildOrMeta = {}) {
     guildId,
     'serverBackups',
     updater,
-    DEFAULT_SERVER_BACKUPS,
+    DEFAULT_SERVER_BACKUPS || {},
     guildOrMeta
   );
 }
@@ -656,7 +699,7 @@ function deleteEmbedPreset(guildId, presetName, guildOrMeta = {}) {
 
 function getEmbedDefaults(guildId) {
   const guildData = getGuildData(guildId);
-  return mergeDeep(DEFAULT_EMBED_DEFAULTS, guildData.embedDefaults || {});
+  return mergeDeep(DEFAULT_EMBED_DEFAULTS || {}, guildData.embedDefaults || {});
 }
 
 function setEmbedDefault(guildId, templateKey, presetName, guildOrMeta = {}) {
@@ -672,10 +715,10 @@ function setEmbedDefault(guildId, templateKey, presetName, guildOrMeta = {}) {
     guildId,
     'embedDefaults',
     (defaults) => ({
-      ...mergeDeep(DEFAULT_EMBED_DEFAULTS, defaults),
+      ...mergeDeep(DEFAULT_EMBED_DEFAULTS || {}, defaults),
       [key]: name,
     }),
-    DEFAULT_EMBED_DEFAULTS,
+    DEFAULT_EMBED_DEFAULTS || {},
     guildOrMeta
   );
 }
@@ -687,10 +730,10 @@ function clearEmbedDefault(guildId, templateKey, guildOrMeta = {}) {
     guildId,
     'embedDefaults',
     (defaults) => ({
-      ...mergeDeep(DEFAULT_EMBED_DEFAULTS, defaults),
+      ...mergeDeep(DEFAULT_EMBED_DEFAULTS || {}, defaults),
       [key]: null,
     }),
-    DEFAULT_EMBED_DEFAULTS,
+    DEFAULT_EMBED_DEFAULTS || {},
     guildOrMeta
   );
 }
@@ -737,8 +780,8 @@ module.exports = {
   GUILDS_DIR,
 
   DEFAULT_GUILD_DATA,
-  DEFAULT_LOGS,
-  DEFAULT_SECURITY,
+  DEFAULT_LOGS: SAFE_DEFAULT_LOGS,
+  DEFAULT_SECURITY: SAFE_DEFAULT_SECURITY,
   DEFAULT_EMBED_DEFAULTS,
   DEFAULT_SERVER_BACKUPS,
   DEFAULT_GENERAL_SETTINGS,
