@@ -3,7 +3,7 @@
 const {
   getGuildSection,
   saveGuildSection,
-} = require('../../utils/guildManager');
+} = require('../../guild/guildManager');
 
 function now() {
   return new Date().toISOString();
