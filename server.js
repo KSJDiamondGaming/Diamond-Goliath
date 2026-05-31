@@ -511,4 +511,18 @@ start().catch((err) => {
   process.exit(1);
 });
 
+process.on("unhandledRejection", (reason) => {
+  console.error("❌ UNHANDLED REJECTION:", reason);
+});
+
+process.on("uncaughtException", (error) => {
+  console.error("❌ UNCAUGHT EXCEPTION:", error);
+});
+
+client.on("interactionCreate", (interaction) => {
+  console.log(
+    `🧩 interactionCreate: ${interaction.type} ${interaction.commandName || interaction.customId || "unknown"}`
+  );
+});
+
 module.exports = client;

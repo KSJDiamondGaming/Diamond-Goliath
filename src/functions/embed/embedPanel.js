@@ -797,34 +797,9 @@ function buildEmbedPanel(interactionOrGuild, memberDisplayName = 'Unknown User')
   const state = getSession(fakeInteraction);
 
   return {
-    embeds: [
-      buildPanelEmbed(state, fakeInteraction, memberDisplayName),
-      buildPreviewEmbed(state, fakeInteraction),
-    ],
+    embeds: buildEditorPanel(fakeInteraction, memberDisplayName).embeds,
 
-    components: [
-      // 🔹 MAIN ACTIONS
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('embed:editor')
-          .setLabel('✏️ Edit Embed')
-          .setStyle(ButtonStyle.Primary),
-
-        new ButtonBuilder()
-          .setCustomId('embed:presets')
-          .setLabel('💾 Presets')
-          .setStyle(ButtonStyle.Primary),
-      ),
-
-        new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('embed:back')
-          .setLabel('⬅️ Back')
-          .setStyle(ButtonStyle.Secondary),
-      ),
-    ],
-  };
-}
+    components: buildEditorPanel(fakeInteraction, memberDisplayName).components, };}
 
 /* ---------------- EDITOR PANEL ---------------- */
 function getUseButtonLabel(templateKey) {
@@ -927,57 +902,66 @@ function buildEditorPanel(interaction, memberDisplayName = 'Unknown User') {
     new ActionRowBuilder().addComponents(colorSelect),
   ];
 
-  components.push(
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('embed:edit-content')
-        .setLabel('✏️ Edit Embed')
-        .setStyle(ButtonStyle.Primary),
+ components.push(
+  new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('embed:edit-content')
+      .setLabel('✏️ Edit')
+      .setStyle(ButtonStyle.Primary),
 
-      new ButtonBuilder()
-        .setCustomId('embed:fields')
-        .setLabel(
-          selectedField
-            ? `📋 Fields (${state.selectedFieldIndex + 1}/${state.fields.length})`
-            : `📋 Fields (${state.fields?.length || 0})`
-        )
-        .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId('embed:fields')
+      .setLabel(`📋 Fields (${state.fields?.length || 0})`)
+      .setStyle(ButtonStyle.Primary),
 
-      new ButtonBuilder()
-        .setCustomId('embed:presets')
-        .setLabel('💾 Presets')
-        .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId('embed:presets')
+      .setLabel('💾 Presets')
+      .setStyle(ButtonStyle.Primary),
 
-      new ButtonBuilder()
-        .setCustomId('embed:use')
-        .setLabel(getUseButtonLabel(state.template))
-        .setStyle(ButtonStyle.Success)
-    )
-  );
+    new ButtonBuilder()
+      .setCustomId('embed:use')
+      .setLabel(getUseButtonLabel(state.template))
+      .setStyle(ButtonStyle.Success)
+  )
+);
 
-  components.push(
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('embed:test-send')
-        .setLabel('🧪 Test')
-        .setStyle(ButtonStyle.Secondary),
+components.push(
+  new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('embed:test-send')
+      .setLabel('🧪 Test')
+      .setStyle(ButtonStyle.Secondary),
 
-      new ButtonBuilder()
-        .setCustomId('embed:helpers')
-        .setLabel('📖 Variables')
-        .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('embed:toggle-ping')
+      .setLabel(
+        state.allowUserPing
+          ? '🔔 Ping ON'
+          : '🔕 Ping OFF'
+      )
+      .setStyle(
+        state.allowUserPing
+          ? ButtonStyle.Success
+          : ButtonStyle.Secondary
+      ),
 
-      new ButtonBuilder()
-        .setCustomId('embed:reset')
-        .setLabel('♻️ Reset')
-        .setStyle(ButtonStyle.Danger),
+    new ButtonBuilder()
+      .setCustomId('embed:helpers')
+      .setLabel('📖 Variables')
+      .setStyle(ButtonStyle.Secondary),
 
-      new ButtonBuilder()
-        .setCustomId('embed:back')
-        .setLabel('⬅️ Back')
-        .setStyle(ButtonStyle.Secondary)
-    )
-  );
+    new ButtonBuilder()
+      .setCustomId('embed:reset')
+      .setLabel('♻️ Reset')
+      .setStyle(ButtonStyle.Danger),
+
+    new ButtonBuilder()
+      .setCustomId('embed:back')
+      .setLabel('⬅️ Back')
+      .setStyle(ButtonStyle.Secondary)
+  )
+);
 
   const embed = new EmbedBuilder()
     .setColor(state.color || PANEL_COLOR)
@@ -1086,27 +1070,32 @@ function buildFieldsPanel(interaction, memberDisplayName = 'Unknown User') {
         : []),
 
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('embed:field-add')
-          .setLabel('➕ Add')
-          .setStyle(ButtonStyle.Success),
+  new ButtonBuilder()
+    .setCustomId('embed:field-add')
+    .setLabel('➕ Add')
+    .setStyle(ButtonStyle.Success),
 
-        new ButtonBuilder()
-          .setCustomId(
-            selectedField
-              ? `embed:field-edit:${state.selectedFieldIndex}`
-              : 'embed:field-edit'
-          )
-          .setLabel('✏️ Edit')
-          .setStyle(ButtonStyle.Primary)
-          .setDisabled(!selectedField),
+  new ButtonBuilder()
+    .setCustomId(
+      selectedField
+        ? `embed:field-edit:${state.selectedFieldIndex}`
+        : 'embed:field-edit'
+    )
+    .setLabel('✏️ Edit')
+    .setStyle(ButtonStyle.Primary)
+    .setDisabled(!selectedField),
 
-        new ButtonBuilder()
-          .setCustomId('embed:field-remove-selected')
-          .setLabel('🗑️ Remove')
-          .setStyle(ButtonStyle.Danger)
-          .setDisabled(!selectedField)
-      ),
+  new ButtonBuilder()
+    .setCustomId('embed:edit-media')
+    .setLabel('🖼️ Media')
+    .setStyle(ButtonStyle.Primary),
+
+  new ButtonBuilder()
+    .setCustomId('embed:field-remove-selected')
+    .setLabel('🗑️ Remove')
+    .setStyle(ButtonStyle.Danger)
+    .setDisabled(!selectedField)
+),
 
       new ActionRowBuilder().addComponents(
         new ButtonBuilder()
@@ -1393,7 +1382,7 @@ function buildPresetsPanel(interaction, memberDisplayName = 'Unknown User') {
         .setStyle(ButtonStyle.Secondary),
 
       new ButtonBuilder()
-        .setCustomId('embed:back')
+        .setCustomId('embed:editor')
         .setLabel('⬅️ Back')
         .setStyle(ButtonStyle.Secondary),
     )
@@ -1645,6 +1634,7 @@ async function updatePresets(interaction, memberDisplayName) {
   return interaction.update(payload);
 }
 
+
 /* ---------------- INTERACTIONS ---------------- */
 
 async function handleInteraction(interaction) {
@@ -1736,10 +1726,13 @@ if (interaction.isChannelSelectMenu()) {
       return true;
     }
 
-    if (interaction.customId === 'embed:editor') {
-      await updateEditor(interaction, memberDisplayName);
-      return true;
-    }
+if (interaction.customId === 'embed:editor') {
+  console.log('🧪 EMBED EDITOR BUTTON CLICKED');
+
+  return interaction.update(
+  buildEditorPanel(interaction, memberDisplayName)
+  );
+}
 
     if (interaction.customId === 'embed:helpers') {
       await interaction.update(buildHelpersPanel(memberDisplayName));
@@ -1870,43 +1863,47 @@ if (interaction.isChannelSelectMenu()) {
     return true;
   }
 
-    if (interaction.customId === 'embed:test-send') {
-      if (!state.channelId) {
-        await interaction.reply({
-          content: 'Select a channel first.',
-          flags: 64,
-        });
+if (interaction.customId === 'embed:test-send') {
+  if (!state.channelId) {
+    await interaction.reply({
+      content: 'Select a channel first.',
+      flags: 64,
+    });
 
-        return true;
-      }
+    return true;
+  }
 
-      const channel =
-        interaction.guild.channels.cache.get(state.channelId) ||
-        (await interaction.guild.channels.fetch(state.channelId).catch(() => null));
+  const channel =
+    interaction.guild.channels.cache.get(state.channelId) ||
+    (await interaction.guild.channels.fetch(state.channelId).catch(() => null));
 
-      if (!channel?.isTextBased()) {
-        await interaction.reply({
-          content: 'Invalid channel.',
-          flags: 64,
-        });
-        return true;
-      }
+  if (!channel?.isTextBased()) {
+    await interaction.reply({
+      content: 'Invalid channel.',
+      flags: 64,
+    });
 
-      await channel.send({
-        content: state.allowUserPing ? `<@${interaction.user.id}>` : '',
-        embeds: [buildPreviewEmbed(state, interaction)],
-        allowedMentions: getAllowedMentionsForState(state, interaction),
-      });
+    return true;
+  }
 
-      await interaction.reply({
-        content: `Sent to <#${state.channelId}>`,
-        flags: 64,
-      });
+  await channel.send({
+    content: state.allowUserPing ? `<@${interaction.user.id}>` : '',
+    embeds: [buildPreviewEmbed(state, interaction)],
+    allowedMentions: getAllowedMentionsForState(state, interaction),
+  });
 
-      return true;
-    }
+  await interaction.reply({
+    content: `Sent to <#${state.channelId}>`,
+    flags: 64,
+  });
 
-  /* ---------------- MODALS ---------------- */
+  return true;
+}
+
+}
+  
+/* ---------------- MODALS ---------------- */
+if (interaction.isModalSubmit()) {
   if (interaction.isModalSubmit()) {
     const state = getSession(interaction);
 
