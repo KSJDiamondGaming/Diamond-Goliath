@@ -36,5 +36,3 @@ npm run promote:production
 
 tree /F > structure.txt
 tree src /F > src-structure.txt
-
-test
