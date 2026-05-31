@@ -58,7 +58,9 @@ const TEMPLATES = {
     color: '#5865F2',
     authorName: '',
     authorIcon: '',
+    authorUrl: '',
     footer: '',
+    footerIcon: '',
     image: '',
     thumbnail: '',
     fields: [],
@@ -565,7 +567,9 @@ function getDefaultState() {
 
     authorName: '',
     authorIcon: '',
+    authorUrl: '',
     footer: '',
+    footerIcon: '',
     image: '',
     thumbnail: '',
 
@@ -604,7 +608,9 @@ function getPresetDataFromState(state) {
 
     authorName: state.authorName || '',
     authorIcon: state.authorIcon || '',
+    authorUrl: state.authorUrl || '',
     footer: state.footer || '',
+    footerIcon: state.footerIcon || '',
     image: state.image || '',
     thumbnail: state.thumbnail || '',
 
@@ -629,7 +635,9 @@ function applyPresetToSession(interaction, presetName, preset) {
 
     authorName: preset.authorName || '',
     authorIcon: preset.authorIcon || '',
+    authorUrl: preset.authorUrl || '',
     footer: preset.footer || '',
+    footerIcon: preset.footerIcon || '',
     image: preset.image || '',
     thumbnail: preset.thumbnail || '',
 
@@ -655,7 +663,9 @@ function applyTemplate(interaction, templateKey) {
 
     authorName: template.authorName || '',
     authorIcon: template.authorIcon || '',
+    authorUrl: template.authorUrl || '',
     footer: template.footer || '',
+    footerIcon: template.footerIcon || '',
     image: template.image || '',
     thumbnail: template.thumbnail || '',
 
@@ -670,6 +680,7 @@ function buildPreviewEmbed(state, interaction) {
 
   const authorName = trim(resolvePreviewText(state.authorName, interaction), 256);
   const authorIconUrl = safeUrl(resolvePreviewText(state.authorIcon, interaction));
+  const authorUrl = safeUrl(resolvePreviewText(state.authorUrl, interaction));
 
   const resolvedAuthorName =
   authorName ||
@@ -682,6 +693,7 @@ function buildPreviewEmbed(state, interaction) {
   embed.setAuthor({
     name: resolvedAuthorName,
     ...(resolvedAuthorIcon ? { iconURL: resolvedAuthorIcon } : {}),
+    ...(authorUrl ? { url: authorUrl } : {}),
   });
 
   if (state.title) {
@@ -694,9 +706,14 @@ function buildPreviewEmbed(state, interaction) {
     );
   }
 
-  if (state.footer) {
+  const footerIconUrl = safeUrl(
+  resolvePreviewText(state.footerIcon, interaction)
+);
+
+  if (state.footer || footerIconUrl) {
     embed.setFooter({
       text: trim(resolvePreviewText(state.footer, interaction), 2048),
+      ...(footerIconUrl ? { iconURL: footerIconUrl } : {}),
     });
   }
 
@@ -1370,16 +1387,7 @@ function buildPresetsPanel(interaction, memberDisplayName = 'Unknown User') {
         .setCustomId('embed:preset-delete-confirm')
         .setLabel('🗑️ Delete')
         .setStyle(ButtonStyle.Danger)
-        .setDisabled(!state.selectedPreset)
-    )
-  );
-
-  components.push(
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('embed:helpers')
-        .setLabel('📖 Variables')
-        .setStyle(ButtonStyle.Secondary),
+        .setDisabled(!state.selectedPreset),
 
       new ButtonBuilder()
         .setCustomId('embed:editor')
@@ -1447,33 +1455,53 @@ function buildMediaModal(state) {
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
           .setCustomId('authorIcon')
-          .setLabel('Author icon URL / variable')
+          .setLabel('Author logo URL / variable')
           .setStyle(TextInputStyle.Short)
           .setRequired(false)
-          .setPlaceholder('{guildIcon}')
+          .setPlaceholder('https://example.com/logo.png or {guildIcon}')
           .setValue(trim(state.authorIcon || '', 1000))
       ),
 
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
           .setCustomId('thumbnail')
-          .setLabel('Thumbnail URL / variable')
+          .setLabel('Small thumbnail URL / variable')
           .setStyle(TextInputStyle.Short)
           .setRequired(false)
-          .setPlaceholder('{guildIcon}')
+          .setPlaceholder('https://example.com/logo.png or {guildIcon}')
           .setValue(trim(state.thumbnail || '', 1000))
       ),
 
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
           .setCustomId('image')
-          .setLabel('Large image URL / variable')
+          .setLabel('Large banner/image URL')
           .setStyle(TextInputStyle.Short)
           .setRequired(false)
           .setPlaceholder('{guildBanner}')
           .setValue(trim(state.image || '', 1000))
-      )
-    );
+      ),
+
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('authorUrl')
+          .setLabel('Author clickable URL')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false)
+          .setPlaceholder('https://ksjdigital.co.uk')
+          .setValue(trim(state.authorUrl || '', 1000))
+      ),
+
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('footerIcon')
+          .setLabel('Footer icon URL / variable')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false)
+          .setPlaceholder('https://example.com/icon.png or {guildIcon}')
+          .setValue(trim(state.footerIcon || '', 1000))
+    ),
+  );
 }
 
 function buildFieldModal(state, fieldIndex = null) {
@@ -1963,11 +1991,13 @@ if (interaction.isModalSubmit()) {
 
       if (interaction.customId.startsWith('embed:save-media:')) {
         markUnsaved(interaction, {
-          ...state,
+        ...state,
           authorIcon: interaction.fields.getTextInputValue('authorIcon'),
+          authorUrl: interaction.fields.getTextInputValue('authorUrl'),
+          footerIcon: interaction.fields.getTextInputValue('footerIcon'),
           thumbnail: interaction.fields.getTextInputValue('thumbnail'),
           image: interaction.fields.getTextInputValue('image'),
-        });
+      });
 
         await updateEditor(interaction, memberDisplayName);
         return true;
