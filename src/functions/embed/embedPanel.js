@@ -701,24 +701,29 @@ function buildPreviewEmbed(state, interaction) {
   }
 
   if (state.description) {
-    embed.setDescription(
-      trim(resolvePreviewText(state.description, interaction), 4096)
-    );
-  }
+  embed.setDescription(
+    trim(resolvePreviewText(state.description, interaction), 4096)
+  );
+}
 
-  const footerIconUrl = safeUrl(
+const footerText = trim(
+  resolvePreviewText(state.footer, interaction),
+  2048
+);
+
+const footerIconUrl = safeUrl(
   resolvePreviewText(state.footerIcon, interaction)
 );
 
-  if (state.footer || footerIconUrl) {
-    embed.setFooter({
-      text: trim(resolvePreviewText(state.footer, interaction), 2048),
-      ...(footerIconUrl ? { iconURL: footerIconUrl } : {}),
-    });
-  }
+if (footerText) {
+  embed.setFooter({
+    text: footerText,
+    ...(footerIconUrl ? { iconURL: footerIconUrl } : {}),
+  });
+}
 
-    const imageUrl = safeUrl(resolvePreviewText(state.image, interaction));
-  if (imageUrl) embed.setImage(imageUrl);
+const imageUrl = safeUrl(resolvePreviewText(state.image, interaction));
+if (imageUrl) embed.setImage(imageUrl);
 
   const thumbnailUrl = safeUrl(
     resolvePreviewText(state.thumbnail, interaction)
