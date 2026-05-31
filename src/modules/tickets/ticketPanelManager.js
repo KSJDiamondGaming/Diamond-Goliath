@@ -570,7 +570,7 @@ async function handleTicketPanelButton(
       content:
         'Tickets can only be opened inside a server.',
 
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
 
     return true;
@@ -586,7 +586,7 @@ async function handleTicketPanelButton(
       content:
         'This ticket panel is no longer available.',
 
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
 
     return true;
@@ -621,14 +621,14 @@ async function handleTicketPanelButton(
         ? `${guard.reason}\nExisting ticket: <#${existingChannelId}>`
         : guard.reason,
 
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
 
     return true;
   }
 
   await interaction.deferReply({
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
   });
 
   const ticket =
