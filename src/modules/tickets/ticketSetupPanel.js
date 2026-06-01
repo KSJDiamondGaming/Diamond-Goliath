@@ -357,3 +357,13 @@ function buildEditorControls(panelId) {
     ),
   ];
 }
+
+module.exports = {
+  sendSetupPanel,
+  handleTicketSetupInteraction,
+
+  buildSetupEmbed,
+  buildEditorEmbed,
+  buildEditorControls,
+  showPanelEditor,
+};
