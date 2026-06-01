@@ -14,6 +14,7 @@ const {
 } = require('./ticketStore');
 
 const {
+  buildTicketChannelName,
   closeTicketChannel,
   archiveTicketChannel,
   reopenTicketChannel,
@@ -796,18 +797,28 @@ async function changePriority(
   actor,
   options = {}
 ) {
-  const ticket = await fetchTicket(ticketOrId, options.guildId);
+  const ticket = await fetchTicket(
+    ticketOrId,
+    options.guildId
+  );
+
   const actorData = getActor(actor);
 
-  const nextPriority = String(priority || '').toLowerCase();
+  const nextPriority =
+    String(priority || '')
+      .toLowerCase()
+      .trim();
 
   if (!Object.values(PRIORITY).includes(nextPriority)) {
-    throw new Error(`Invalid priority: ${priority}`);
+    throw new Error(
+      `Invalid priority: ${priority}`
+    );
   }
 
-  const updated = await saveTicket(ticket, {
-    priority: nextPriority,
-  });
+  const updated =
+    await saveTicket(ticket, {
+      priority: nextPriority,
+    });
 
   ticketTimeline.addPriorityChangeEntry(
     ticket.guildId,
@@ -828,11 +839,44 @@ async function changePriority(
     }
   );
 
-  emitAction(
-    options.io,
-    updated || ticket,
-    ticketSocketEvents.EVENTS.TICKET_UPDATED
-  );
+  /*
+   * Update Discord channel name
+   */
+
+  if (options.client) {
+    try {
+      const channel =
+        await getDiscordChannel(
+          options.client,
+          updated
+        );
+
+      if (
+        channel &&
+        channel.manageable
+      ) {
+        const newName =
+          buildTicketChannelName(
+            updated,
+            channel.guild
+          );
+
+        if (
+          channel.name !== newName
+        ) {
+          await channel.setName(
+            newName,
+            `Priority changed to ${nextPriority}`
+          );
+        }
+      }
+    } catch (error) {
+      console.error(
+        '[Tickets] Failed to update priority channel name:',
+        error
+      );
+    }
+  }
 
   emitAction(
     options.io,

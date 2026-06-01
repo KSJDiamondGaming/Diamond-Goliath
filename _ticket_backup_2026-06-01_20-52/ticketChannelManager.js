@@ -157,7 +157,7 @@ function buildTicketChannelName(ticket, guild = null, panel = null) {
     ticket?.metadata?.priorityIndicators !== false;
 
   const indicator = useIndicator
-    ? `${getPriorityIndicator(ticket.priority)}-`
+    ? `${getPriorityIndicator(ticket.priority)}`
     : '';
 
   return `${indicator}${type}-${username}-${number}`.slice(0, 90);

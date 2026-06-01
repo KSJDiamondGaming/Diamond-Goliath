@@ -92,10 +92,23 @@ function cleanChannelPart(value, fallback = 'user', maxLength = 10) {
 function getPriorityIndicator(priority = 'normal') {
   const cleanPriority = String(priority || 'normal').toLowerCase();
 
-  if (cleanPriority === 'urgent') return '🔴';
-  if (cleanPriority === 'high') return '🟡';
+  if (cleanPriority === 'low') {
+    return '🟢';
+  }
 
-  return '🟢';
+  if (cleanPriority === 'normal') {
+    return '🔵';
+  }
+
+  if (cleanPriority === 'high') {
+    return '🟡';
+  }
+
+  if (cleanPriority === 'urgent') {
+    return '🔴';
+  }
+
+  return '🔵';
 }
 
 function getTicketCreatorName(ticket, guild = null) {
@@ -157,7 +170,7 @@ function buildTicketChannelName(ticket, guild = null, panel = null) {
     ticket?.metadata?.priorityIndicators !== false;
 
   const indicator = useIndicator
-    ? `${getPriorityIndicator(ticket.priority)}-`
+    ? `${getPriorityIndicator(ticket.priority)}`
     : '';
 
   return `${indicator}${type}-${username}-${number}`.slice(0, 90);
