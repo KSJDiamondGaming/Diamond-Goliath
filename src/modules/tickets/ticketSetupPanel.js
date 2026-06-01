@@ -244,6 +244,9 @@ function buildEditorEmbed(panel) {
         `**Priority:** \`${panel.ticketPriority || 'normal'}\``,
         '',
         '**Routing**',
+        `Deploy Channel: ${
+          panel.deployChannelId ? `<#${panel.deployChannelId}>` : '`Not set`'
+        }`,
         `Output Category: ${
           panel.outputCategoryId ? `<#${panel.outputCategoryId}>` : '`Not set`'
         }`,
@@ -252,9 +255,6 @@ function buildEditorEmbed(panel) {
         }`,
         `Archive Category: ${
           panel.archiveCategoryId ? `<#${panel.archiveCategoryId}>` : '`Not set`'
-        }`,
-        `Deploy Channel: ${
-          panel.deployChannelId ? `<#${panel.deployChannelId}>` : '`Not deployed`'
         }`,
         '',
         '**Appearance**',
@@ -269,7 +269,7 @@ function buildEditorEmbed(panel) {
       ].join('\n')
     )
     .setColor(appearance.color || '#5865F2')
-    .setFooter({ text: 'Edit details here. Home panel stays clean.' })
+    .setFooter({ text: 'Set deploy channel + ticket category before deploying.' })
     .setTimestamp();
 }
 
@@ -295,8 +295,17 @@ function buildEditorControls(panelId) {
   return [
     new ActionRowBuilder().addComponents(
       new ChannelSelectMenuBuilder()
+        .setCustomId(`ticket_setup:set_deploy:${panelId}`)
+        .setPlaceholder('Set deploy channel')
+        .setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+        .setMinValues(1)
+        .setMaxValues(1)
+    ),
+
+    new ActionRowBuilder().addComponents(
+      new ChannelSelectMenuBuilder()
         .setCustomId(`ticket_setup:set_output:${panelId}`)
-        .setPlaceholder('Set output category')
+        .setPlaceholder('Set ticket output category')
         .setChannelTypes(ChannelType.GuildCategory)
         .setMinValues(1)
         .setMaxValues(1)
@@ -306,14 +315,6 @@ function buildEditorControls(panelId) {
       new RoleSelectMenuBuilder()
         .setCustomId(`ticket_setup:set_staff:${panelId}`)
         .setPlaceholder('Set staff roles')
-        .setMinValues(0)
-        .setMaxValues(10)
-    ),
-
-    new ActionRowBuilder().addComponents(
-      new RoleSelectMenuBuilder()
-        .setCustomId(`ticket_setup:set_manager:${panelId}`)
-        .setPlaceholder('Set manager roles')
         .setMinValues(0)
         .setMaxValues(10)
     ),
@@ -445,6 +446,24 @@ async function showSetupHome(interaction) {
   });
 }
 
+async function fetchDeployChannel(interaction, panel) {
+  const channelId = panel.deployChannelId;
+
+  if (!channelId) {
+    return null;
+  }
+
+  const channel =
+    interaction.guild.channels.cache.get(channelId) ||
+    (await interaction.guild.channels.fetch(channelId).catch(() => null));
+
+  if (!channel?.isTextBased?.()) {
+    return null;
+  }
+
+  return channel;
+}
+
 async function handleTicketSetupInteraction(interaction) {
   if (!interaction.guild) return false;
 
@@ -485,6 +504,15 @@ async function handleTicketSetupInteraction(interaction) {
 
   if (!panelId) return false;
 
+  if (action === 'set_deploy') {
+    updatePanel(interaction.guild.id, panelId, {
+      deployChannelId: interaction.values?.[0] || null,
+    });
+
+    await showPanelEditor(interaction, panelId);
+    return true;
+  }
+
   if (action === 'set_output') {
     updatePanel(interaction.guild.id, panelId, {
       outputCategoryId: interaction.values?.[0] || null,
@@ -523,18 +551,31 @@ async function handleTicketSetupInteraction(interaction) {
       return true;
     }
 
+    const deployChannel = await fetchDeployChannel(interaction, panel);
+
+    if (!deployChannel) {
+      await safeReply(
+        interaction,
+        ephemeralPayload({
+          content:
+            '❌ Please set a deploy channel first. This is where the ticket panel message will be posted.',
+        })
+      );
+      return true;
+    }
+
     const deferred = await safeDefer(interaction, true);
     if (!deferred) return true;
 
     await deployPanel({
       guild: interaction.guild,
-      channel: interaction.channel,
+      channel: deployChannel,
       panel,
       actorId: interaction.user.id,
     });
 
     await safeEditOrReply(interaction, {
-      content: `✅ Ticket panel **${panel.name}** deployed in ${interaction.channel}.`,
+      content: `✅ Ticket panel **${panel.name}** deployed in ${deployChannel}.`,
     });
 
     return true;
@@ -551,18 +592,31 @@ async function handleTicketSetupInteraction(interaction) {
       return true;
     }
 
+    const deployChannel = await fetchDeployChannel(interaction, panel);
+
+    if (!deployChannel) {
+      await safeReply(
+        interaction,
+        ephemeralPayload({
+          content:
+            '❌ Please set a deploy channel first before redeploying.',
+        })
+      );
+      return true;
+    }
+
     const deferred = await safeDefer(interaction, true);
     if (!deferred) return true;
 
     await redeployPanel({
       guild: interaction.guild,
-      channel: interaction.channel,
+      channel: deployChannel,
       panel,
       actorId: interaction.user.id,
     });
 
     await safeEditOrReply(interaction, {
-      content: `🔄 Ticket panel **${panel.name}** redeployed in ${interaction.channel}.`,
+      content: `🔄 Ticket panel **${panel.name}** redeployed in ${deployChannel}.`,
     });
 
     return true;
