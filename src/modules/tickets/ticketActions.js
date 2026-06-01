@@ -956,7 +956,6 @@ async function changePriority(
     error
   );
 }
-}
 
 emitAction(
   options.io,
