@@ -21,21 +21,21 @@ const {
 } = require('./ticketChannelManager');
 
 const STATUS = {
-  OPEN: 'open',
-  CLAIMED: 'claimed',
-  WAITING_USER: 'waiting_user',
-  IN_REVIEW: 'in_review',
-  APPROVED: 'approved',
-  DENIED: 'denied',
-  CLOSED: 'closed',
-  ARCHIVED: 'archived',
+  OPEN: 'Open',
+  CLAIMED: 'Claimed',
+  WAITING_USER: 'Waiting User',
+  IN_REVIEW: 'In Review',
+  APPROVED: 'Approved',
+  DENIED: 'Denied',
+  CLOSED: 'Closed',
+  ARCHIVED: 'Archived',
 };
 
 const PRIORITY = {
-  LOW: 'low',
-  NORMAL: 'normal',
-  HIGH: 'high',
-  URGENT: 'urgent',
+  LOW: 'Low',
+  NORMAL: 'Normal',
+  HIGH: 'High',
+  URGENT: 'Urgent',
 };
 
 function now() {
