@@ -113,7 +113,7 @@ function buildPanelEmbed(
       },
       {
         name: 'Ticket Type',
-        value: `\`${panel.ticketType || 'support'}\``,
+        value: `\`${panel.ticketType || 'Support'}\``,
         inline: true,
       }
     )
