@@ -46,10 +46,6 @@ const {
 
 const ticketGuard = require('./ticketGuard');
 
-function now() {
-  return new Date().toISOString();
-}
-
 function getTicketChannelId(ticket) {
   return (
     ticket?.discordChannelId ||
@@ -85,6 +81,19 @@ function buildPanelStatusText(panel) {
   return '🟡 Draft';
 }
 
+function formatLabel(value = '') {
+  return String(value || '')
+    .replace(/_/g, ' ')
+    .toLowerCase()
+    .split(' ')
+    .map(
+      (word) =>
+        word.charAt(0).toUpperCase() +
+        word.slice(1)
+    )
+    .join(' ');
+}
+
 function buildPanelEmbed(
   panel = DEFAULT_TICKET_PANEL
 ) {
@@ -113,7 +122,7 @@ function buildPanelEmbed(
       },
       {
         name: 'Ticket Type',
-        value: `\`${panel.ticketType || 'Support'}\``,
+        value: `\`${formatLabel(panel.ticketType || 'support')}\``,
         inline: true,
       }
     )
@@ -210,7 +219,6 @@ async function cleanupDuplicateDeployments({
       {
         deployed: false,
         status: 'draft',
-
         deployChannelId: null,
         deployMessageId: null,
       }
@@ -285,7 +293,6 @@ async function deployPanel({
           embeds: [
             buildPanelEmbed(panel),
           ],
-
           components:
             buildPanelButtons(panel),
         });
@@ -297,18 +304,16 @@ async function deployPanel({
             {
               deployChannelId:
                 channel.id,
-
               deployMessageId:
                 existingMessage.id,
-
               actorId,
             }
           );
 
         emitPanelUpdated(
-        guild.id,
-        deployed
-      );
+          guild.id,
+          deployed
+        );
 
         return deployed;
       }
@@ -325,7 +330,6 @@ async function deployPanel({
       embeds: [
         buildPanelEmbed(panel),
       ],
-
       components:
         buildPanelButtons(panel),
     });
@@ -337,15 +341,13 @@ async function deployPanel({
       {
         deployChannelId:
           channel.id,
-
         deployMessageId:
           message.id,
-
         actorId,
       }
     );
 
-    emitPanelDeployed(
+  emitPanelDeployed(
     guild.id,
     deployed
   );
@@ -399,9 +401,9 @@ async function undeployPanel({
       );
 
     emitPanelUpdated(
-    guild.id,
-    updated
-);
+      guild.id,
+      updated
+    );
 
     return true;
   } catch (error) {
@@ -468,7 +470,6 @@ async function refreshDeployedPanel({
       embeds: [
         buildPanelEmbed(panel),
       ],
-
       components:
         buildPanelButtons(panel),
     });
@@ -494,6 +495,11 @@ async function sendTicketControlMessage({
     panel?.name ||
     'Ticket';
 
+  const displayUser =
+    user?.username ||
+    ticket.metadata?.creatorUsername ||
+    'Unknown';
+
   const embed = new EmbedBuilder()
     .setTitle(
       `🎫 ${ticketTitle}`
@@ -514,17 +520,22 @@ async function sendTicketControlMessage({
       },
       {
         name: 'Status',
-        value: `\`${ticket.status || 'open'}\``,
+        value: `\`${formatLabel(ticket.status || 'open')}\``,
         inline: true,
       },
       {
         name: 'Priority',
-        value: `\`${ticket.priority || panel?.ticketPriority || 'normal'}\``,
+        value: `\`${formatLabel(ticket.priority || 'normal')}\``,
         inline: true,
       },
       {
         name: 'Panel',
         value: `\`${panel?.name || panel?.panelId || 'Unknown'}\``,
+        inline: true,
+      },
+      {
+        name: 'Opened By',
+        value: `\`${displayUser}\``,
         inline: true,
       }
     )
@@ -532,9 +543,7 @@ async function sendTicketControlMessage({
 
   return channel.send({
     content: `<@${user?.id || ticket.creatorId}>`,
-
     embeds: [embed],
-
     components:
       getTicketActionRows(ticket, {
         allowReopen: true,
@@ -573,7 +582,6 @@ async function handleTicketPanelButton(
     await interaction.reply({
       content:
         'Tickets can only be opened inside a server.',
-
       flags: MessageFlags.Ephemeral,
     });
 
@@ -589,7 +597,6 @@ async function handleTicketPanelButton(
     await interaction.reply({
       content:
         'This ticket panel is no longer available.',
-
       flags: MessageFlags.Ephemeral,
     });
 
@@ -599,20 +606,15 @@ async function handleTicketPanelButton(
   const guard =
     await ticketGuard.canCreateTicket({
       guildId: guild.id,
-
       userId:
         interaction.user.id,
-
       type: panel.ticketType,
-
       cooldownMs:
         panel.cooldownMs ||
         60 * 1000,
-
       oneActivePerType:
         panel.oneActivePerType !==
         false,
-
       maxOpenTicketsPerUser:
         panel.maxOpenTicketsPerUser ||
         panel.maxActiveTicketsPerUser ||
@@ -629,7 +631,6 @@ async function handleTicketPanelButton(
       content: existingChannelId
         ? `${guard.reason}\nExisting ticket: <#${existingChannelId}>`
         : guard.reason,
-
       flags: MessageFlags.Ephemeral,
     });
 
@@ -643,62 +644,44 @@ async function handleTicketPanelButton(
   const ticket =
     await createNewTicket({
       guildId: guild.id,
-
       creatorId:
         interaction.user.id,
-
       type:
         panel.ticketType,
-
       title: `${panel.name || 'Ticket'} - ${interaction.user.username}`,
-
       description: `Ticket opened by <@${interaction.user.id}>.`,
-
       priority:
-        panel.ticketPriority,
-
+        String(panel.ticketPriority || 'normal').toLowerCase(),
       source:
         TICKET_SOURCE.DISCORD_PANEL,
-
       sourceId:
         panel.panelId,
-
       metadata: {
         panelId:
           panel.panelId,
-
         openedFromChannelId:
           interaction.channelId,
-
         logsChannelId:
           panel.logsChannelId ||
           null,
-
         transcriptsChannelId:
           panel.transcriptsChannelId ||
           null,
-
         archiveCategoryId:
           panel.archiveCategoryId ||
           null,
-
         deployedAt:
           panel.lastDeployAt ||
           null,
-
         creatorUsername:
           interaction.user.username,
-
         creatorTag:
           interaction.user.tag ||
           interaction.user.username,
-
         priorityIndicators:
           panel.priorityIndicators !== false,
-
         sla:
           panel.sla || null,
-
         reminders:
           panel.reminders || null,
       },
@@ -706,10 +689,8 @@ async function handleTicketPanelButton(
 
   await ticketGuard.markTicketCreated({
     guildId: guild.id,
-
     userId:
       interaction.user.id,
-
     type:
       panel.ticketType,
   });
@@ -725,28 +706,25 @@ async function handleTicketPanelButton(
   if (channel) {
     await sendTicketControlMessage({
       channel,
-
       ticket: {
         ...ticket,
         discordChannelId:
           channel.id,
       },
-
       panel,
-
       user:
         interaction.user,
     });
   }
 
   emitTicketCreated(
-  guild.id,
-  {
-    ...ticket,
-    discordChannelId:
-      channel?.id || null,
-  }
-);
+    guild.id,
+    {
+      ...ticket,
+      discordChannelId:
+        channel?.id || null,
+    }
+  );
 
   await interaction.editReply({
     content: channel
@@ -762,52 +740,52 @@ module.exports = {
   buildPanelButtons,
 
   createPanel: (...args) => {
-  const panel =
-    createPanel(...args);
+    const panel =
+      createPanel(...args);
 
-  if (panel) {
-    emitPanelCreated(
-      args[0],
-      panel
-    );
-  }
+    if (panel) {
+      emitPanelCreated(
+        args[0],
+        panel
+      );
+    }
 
-  return panel;
-},
+    return panel;
+  },
 
-getPanels,
-getPanel,
+  getPanels,
+  getPanel,
 
-updatePanel: (...args) => {
-  const panel =
-    updatePanel(...args);
+  updatePanel: (...args) => {
+    const panel =
+      updatePanel(...args);
 
-  if (panel) {
-    emitPanelUpdated(
-      args[0],
-      panel
-    );
-  }
+    if (panel) {
+      emitPanelUpdated(
+        args[0],
+        panel
+      );
+    }
 
-  return panel;
-},
+    return panel;
+  },
 
-deletePanel: (...args) => {
-  const panelId =
-    args[1];
+  deletePanel: (...args) => {
+    const panelId =
+      args[1];
 
-  const deleted =
-    deletePanel(...args);
+    const deleted =
+      deletePanel(...args);
 
-  if (deleted) {
-    emitPanelDeleted(
-      args[0],
-      panelId
-    );
-  }
+    if (deleted) {
+      emitPanelDeleted(
+        args[0],
+        panelId
+      );
+    }
 
-  return deleted;
-},
+    return deleted;
+  },
 
   deployPanel,
   undeployPanel,
