@@ -46,11 +46,19 @@ function buildTicketChannelName(ticket) {
 }
 
 function getPanelOrGlobalCategory(settings, panel) {
-  return panel?.outputCategoryId || settings.discord?.categoryId || null;
+  return (
+    panel?.outputCategoryId ||
+    settings.discord?.categoryId ||
+    null
+  );
 }
 
 function getArchiveCategory(settings, panel) {
-  return panel?.archiveCategoryId || settings.discord?.archiveCategoryId || null;
+  return (
+    panel?.archiveCategoryId ||
+    settings.discord?.archiveCategoryId ||
+    null
+  );
 }
 
 async function resolveAvailableCategory(guild, categoryId) {
@@ -58,30 +66,42 @@ async function resolveAvailableCategory(guild, categoryId) {
 
   const baseCategory = guild.channels.cache.get(categoryId);
 
-  if (!baseCategory || baseCategory.type !== ChannelType.GuildCategory) {
+  if (
+    !baseCategory ||
+    baseCategory.type !== ChannelType.GuildCategory
+  ) {
     return null;
   }
 
   const MAX_CHANNELS_PER_CATEGORY = 48;
 
   const getChildCount = (id) =>
-    guild.channels.cache.filter((channel) => channel.parentId === id).size;
+    guild.channels.cache.filter(
+      (channel) => channel.parentId === id
+    ).size;
 
   if (getChildCount(baseCategory.id) < MAX_CHANNELS_PER_CATEGORY) {
     return baseCategory.id;
   }
 
-  const baseName = baseCategory.name.replace(/\s+\d+$/, '').trim();
+  const baseName =
+    baseCategory.name
+      .replace(/\s+\d+$/, '')
+      .trim();
 
   const siblingCategories = guild.channels.cache
     .filter(
       (channel) =>
         channel.type === ChannelType.GuildCategory &&
-        (channel.name === baseName || channel.name.startsWith(`${baseName} `))
+        (
+          channel.name === baseName ||
+          channel.name.startsWith(`${baseName} `)
+        )
     )
     .sort((a, b) => {
       const aNum = Number(a.name.match(/(\d+)$/)?.[1] || 1);
       const bNum = Number(b.name.match(/(\d+)$/)?.[1] || 1);
+
       return aNum - bNum;
     });
 
@@ -240,7 +260,9 @@ function validatePermissionOverwrites(overwrites = []) {
   const seen = new Set();
 
   return overwrites.filter((overwrite) => {
-    if (!overwrite?.id || seen.has(overwrite.id)) return false;
+    if (!overwrite?.id || seen.has(overwrite.id)) {
+      return false;
+    }
 
     seen.add(overwrite.id);
     return true;
@@ -329,7 +351,9 @@ async function archiveTicketChannel({
   if (!channel) return null;
 
   if (archiveCategoryId) {
-    await channel.setParent(archiveCategoryId).catch(() => null);
+    await channel
+      .setParent(archiveCategoryId)
+      .catch(() => null);
   }
 
   await channel.permissionOverwrites
@@ -436,7 +460,9 @@ async function reopenTicketChannel({
     .replace(/^closed-/, '')
     .replace(/^archived-/, '');
 
-  await channel.setName(cleanName).catch(() => null);
+  await channel
+    .setName(cleanName)
+    .catch(() => null);
 
   addTimelineEntry(guild.id, ticket.ticketId, {
     type: 'discord_channel_reopened',
@@ -473,7 +499,9 @@ async function deleteTicketChannel({
     },
   });
 
-  await channel.delete(reason).catch(() => null);
+  await channel
+    .delete(reason)
+    .catch(() => null);
 
   return true;
 }
