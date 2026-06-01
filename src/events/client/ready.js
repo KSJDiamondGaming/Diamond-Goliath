@@ -8,6 +8,10 @@ const {
   startbackupWorker,
 } = require('../../security/backup/backupWorker');
 
+const {
+  startupTickets,
+} = require('../../modules/tickets/ticketStartup');
+
 function getPrimaryGuildIdForMode(mode) {
   if (mode === 'DEV') {
     return (
@@ -68,6 +72,20 @@ module.exports = {
     } catch (error) {
       terminal.error(
         'Lockdown recovery failed',
+        error
+      );
+    }
+
+    try {
+      const ticketStartup =
+        await startupTickets(client);
+
+      terminal.success(
+        `Ticket recovery initialized (${ticketStartup.totalActiveTickets || 0} active ticket(s), ${ticketStartup.totalMissingChannels || 0} missing channel(s))`
+      );
+    } catch (error) {
+      terminal.error(
+        'Ticket recovery failed',
         error
       );
     }
@@ -141,7 +159,7 @@ module.exports = {
     bannerItems.push({
       label: 'Systems',
       value:
-        'Scheduler + Lockdown Recovery + Backup Sync Worker',
+        'Scheduler + Lockdown Recovery + Ticket Recovery + Backup Sync Worker',
       ok: true,
     });
 
