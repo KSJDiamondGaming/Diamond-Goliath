@@ -274,9 +274,9 @@ function buildEditorEmbed(panel) {
 }
 
 function buildAppearanceEditor(panelId) {
-  return new ActionRowBuilder().addComponents(
+   new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
-      .setCustomId(`ticket_setup:appearance_select:${panelId}`)
+      .setreturnCustomId(`ticket_setup:appearance_select:${panelId}`)
       .setPlaceholder('Edit panel appearance')
       .addOptions([
         { label: 'Edit Title', value: 'title', emoji: '📝' },
@@ -293,35 +293,42 @@ function buildAppearanceEditor(panelId) {
 
 function buildEditorControls(panelId) {
   return [
-    new ActionRowBuilder().addComponents(
-      new ChannelSelectMenuBuilder()
-        .setCustomId(`ticket_setup:set_deploy:${panelId}`)
-        .setPlaceholder('Set deploy channel')
-        .setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
-        .setMinValues(1)
-        .setMaxValues(1)
-    ),
+  // Ticket Category
+  new ActionRowBuilder().addComponents(
+    new ChannelSelectMenuBuilder()
+      .setCustomId(`ticket_setup:set_output:${panelId}`)
+      .setPlaceholder('📁 Ticket Category')
+      .setChannelTypes(ChannelType.GuildCategory)
+      .setMinValues(1)
+      .setMaxValues(1)
+  ),
 
-    new ActionRowBuilder().addComponents(
-      new ChannelSelectMenuBuilder()
-        .setCustomId(`ticket_setup:set_output:${panelId}`)
-        .setPlaceholder('Set ticket output category')
-        .setChannelTypes(ChannelType.GuildCategory)
-        .setMinValues(1)
-        .setMaxValues(1)
-    ),
+  // Deploy Channel
+  new ActionRowBuilder().addComponents(
+    new ChannelSelectMenuBuilder()
+      .setCustomId(`ticket_setup:set_deploy:${panelId}`)
+      .setPlaceholder('📢 Panel Channel')
+      .setChannelTypes(
+        ChannelType.GuildText,
+        ChannelType.GuildAnnouncement
+      )
+      .setMinValues(1)
+      .setMaxValues(1)
+  ),
 
-    new ActionRowBuilder().addComponents(
-      new RoleSelectMenuBuilder()
-        .setCustomId(`ticket_setup:set_staff:${panelId}`)
-        .setPlaceholder('Set staff roles')
-        .setMinValues(0)
-        .setMaxValues(10)
-    ),
+  // Staff Roles
+  new ActionRowBuilder().addComponents(
+    new RoleSelectMenuBuilder()
+      .setCustomId(`ticket_setup:set_staff:${panelId}`)
+      .setPlaceholder('👥 Staff Roles')
+      .setMinValues(0)
+      .setMaxValues(10)
+  ),
 
-    buildAppearanceEditor(panelId),
+  buildAppearanceEditor(panelId),
 
-    new ActionRowBuilder().addComponents(
+  // Buttons
+  new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId(`ticket_setup:deploy:${panelId}`)
         .setLabel('Deploy')
