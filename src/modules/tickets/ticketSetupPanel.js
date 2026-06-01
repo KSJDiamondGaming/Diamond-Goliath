@@ -261,6 +261,12 @@ function buildEditorEmbed(panel) {
           panel.archiveCategoryId ? `<#${panel.archiveCategoryId}>` : '`Not set`'
         }`,
         '',
+        '**Limits & SLA**',
+        `Max Open Tickets/User: \`${panel.maxOpenTicketsPerUser || 2}\``,
+        `Priority Indicators: \`${panel.priorityIndicators === false ? 'Off' : 'On'}\``,
+        `SLA: \`Low ${panel.sla?.low || 1440}m • Normal ${panel.sla?.normal || 720}m • High ${panel.sla?.high || 120}m • Urgent ${panel.sla?.urgent || 15}m\``,
+        `Reminders: \`${panel.reminders?.enabled === false ? 'Off' : 'On'} • Repeat ${panel.reminders?.repeatMinutes || 60}m\``,
+        '',
         '**Appearance**',
         `Title: \`${appearance.title || 'Not set'}\``,
         `Color: \`${appearance.color || '#5865F2'}\``,
@@ -293,6 +299,13 @@ function buildAppearanceEditor(panelId) {
         { label: 'Edit Banner Image', value: 'imageUrl', emoji: '🖼️' },
         { label: 'Edit Thumbnail', value: 'thumbnailUrl', emoji: '📷' },
         { label: 'Edit Footer', value: 'footerText', emoji: '📌' },
+        { label: 'Max Open Tickets/User', value: 'maxOpenTicketsPerUser', emoji: '🎛️' },
+        { label: 'Cooldown Minutes', value: 'cooldownMinutes', emoji: '⏱️' },
+        { label: 'Low SLA Minutes', value: 'sla.low', emoji: '🟢' },
+        { label: 'Normal SLA Minutes', value: 'sla.normal', emoji: '🟢' },
+        { label: 'High SLA Minutes', value: 'sla.high', emoji: '🟡' },
+        { label: 'Urgent SLA Minutes', value: 'sla.urgent', emoji: '🔴' },
+        { label: 'Reminder Repeat Minutes', value: 'reminders.repeatMinutes', emoji: '🔔' },
       ])
   );
 }

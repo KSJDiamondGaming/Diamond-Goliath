@@ -84,6 +84,34 @@ async function findActiveTicket({ guildId, userId, type }) {
   );
 }
 
+
+async function findActiveTickets({ guildId, userId, type }) {
+  const tickets = await getAllTickets(guildId);
+
+  return tickets.filter((ticket) => {
+    const sameGuild = ticket.guildId === guildId;
+
+    const sameUser =
+      ticket.creatorId === userId ||
+      ticket.userId === userId ||
+      ticket.createdBy === userId;
+
+    const sameType = !type || ticket.type === type;
+
+    const active = ACTIVE_STATUSES.includes(
+      normaliseStatus(ticket.status)
+    );
+
+    return (
+      sameGuild &&
+      sameUser &&
+      sameType &&
+      active &&
+      !ticket.deletedAt
+    );
+  });
+}
+
 function checkCooldown({
   guildId,
   userId,
@@ -141,6 +169,8 @@ async function canCreateTicket({
   type,
   cooldownMs = DEFAULT_COOLDOWN_MS,
   oneActivePerType = true,
+  maxOpenTickets = null,
+  maxOpenTicketsPerUser = null,
 } = {}) {
   if (!guildId) {
     return {
@@ -174,23 +204,37 @@ async function canCreateTicket({
     };
   }
 
-  if (oneActivePerType) {
-    const activeTicket = await findActiveTicket({
-      guildId,
-      userId,
-      type,
-    });
+  const activeTickets = await findActiveTickets({
+    guildId,
+    userId,
+    type,
+  });
 
-    if (activeTicket) {
-      return {
-        allowed: false,
-        reason: `You already have an active ${
-          type || 'ticket'
-        } ticket.`,
-        code: 'DUPLICATE_ACTIVE_TICKET',
-        ticket: activeTicket,
-      };
-    }
+  const configuredMax = Number(
+    maxOpenTicketsPerUser ||
+    maxOpenTickets ||
+    (oneActivePerType ? 1 : 0)
+  );
+
+  if (configuredMax > 0 && activeTickets.length >= configuredMax) {
+    const firstTicket = activeTickets[0] || null;
+
+    return {
+      allowed: false,
+      reason:
+        configuredMax === 1
+          ? `You already have an active ${type || 'ticket'} ticket.`
+          : `You already have ${activeTickets.length}/${configuredMax} active ${
+              type || 'ticket'
+            } tickets.`,
+      code:
+        configuredMax === 1
+          ? 'DUPLICATE_ACTIVE_TICKET'
+          : 'MAX_ACTIVE_TICKETS_REACHED',
+      ticket: firstTicket,
+      tickets: activeTickets,
+      maxOpenTickets: configuredMax,
+    };
   }
 
   return {
@@ -220,6 +264,7 @@ module.exports = {
   markTicketCreated,
 
   findActiveTicket,
+  findActiveTickets,
   checkCooldown,
   setCooldown,
   clearCooldown,

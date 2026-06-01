@@ -170,6 +170,22 @@ const DEFAULT_TICKET_SETTINGS =
 
       maxActiveTicketsPerUser: 5,
 
+      priorityIndicators: true,
+
+      sla: {
+        low: 1440,
+        normal: 720,
+        high: 120,
+        urgent: 15,
+      },
+
+      reminders: {
+        enabled: true,
+        repeat: true,
+        repeatMinutes: 60,
+        pingRoleIds: [],
+      },
+
       autoArchiveClosedTickets: false,
 
       autoArchiveHours: 72,
@@ -429,8 +445,26 @@ const DEFAULT_TICKET_PANEL =
 
     oneActivePerType: true,
 
+    maxOpenTicketsPerUser: 2,
+
     cooldownMs:
       60 * 1000,
+
+    priorityIndicators: true,
+
+    sla: {
+      low: 1440,
+      normal: 720,
+      high: 120,
+      urgent: 15,
+    },
+
+    reminders: {
+      enabled: true,
+      repeat: true,
+      repeatMinutes: 60,
+      pingRoleIds: [],
+    },
 
     /*
     ==========================================

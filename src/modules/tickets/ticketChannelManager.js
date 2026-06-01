@@ -80,30 +80,88 @@ async function ensureBotCategoryPermissions(guild, categoryId) {
   return ensureBotChannelPermissions(category);
 }
 
-function buildTicketChannelName(ticket) {
-  if (!ticket) return 'ticket-0000';
+function cleanChannelPart(value, fallback = 'user', maxLength = 10) {
+  const cleaned = String(value || fallback)
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+    .slice(0, maxLength);
 
-  if (ticket.displayId) {
-    return String(ticket.displayId)
-      .toLowerCase()
-      .replace(/[^a-z0-9-]/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '')
-      .slice(0, 90);
+  return cleaned || fallback;
+}
+
+function getPriorityIndicator(priority = 'normal') {
+  const cleanPriority = String(priority || 'normal').toLowerCase();
+
+  if (cleanPriority === 'urgent') return '🔴';
+  if (cleanPriority === 'high') return '🟡';
+
+  return '🟢';
+}
+
+function getTicketCreatorName(ticket, guild = null) {
+  const metadataName =
+    ticket?.metadata?.creatorUsername ||
+    ticket?.metadata?.creatorTag ||
+    ticket?.creatorUsername ||
+    ticket?.username ||
+    null;
+
+  if (metadataName) return metadataName;
+
+  const creatorId =
+    ticket?.creatorId ||
+    ticket?.userId ||
+    ticket?.createdBy ||
+    null;
+
+  if (creatorId && guild?.members?.cache?.has(creatorId)) {
+    return (
+      guild.members.cache.get(creatorId)?.user?.username ||
+      guild.members.cache.get(creatorId)?.displayName ||
+      creatorId
+    );
   }
+
+  return creatorId || 'user';
+}
+
+function getTicketNumber(ticket) {
+  return (
+    ticket?.number ||
+    ticket?.ticketNumber ||
+    String(ticket?.displayId || '').match(/(\d+)$/)?.[1] ||
+    0
+  );
+}
+
+function buildTicketChannelName(ticket, guild = null, panel = null) {
+  if (!ticket) return 'ticket-user-0000';
 
   const type = String(ticket.type || 'ticket')
     .toLowerCase()
     .replace(/_/g, '-')
     .replace(/[^a-z0-9-]/g, '-')
     .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
+    .replace(/^-|-$/g, '') || 'ticket';
 
-  const number = ticket.number || ticket.ticketNumber || 0;
+  const username = cleanChannelPart(
+    getTicketCreatorName(ticket, guild),
+    'user',
+    10
+  );
 
-  return `${type}-${String(number).padStart(4, '0')}`.slice(0, 90);
+  const number = String(getTicketNumber(ticket)).padStart(4, '0');
+
+  const useIndicator =
+    panel?.priorityIndicators !== false &&
+    ticket?.metadata?.priorityIndicators !== false;
+
+  const indicator = useIndicator
+    ? `${getPriorityIndicator(ticket.priority)}-`
+    : '';
+
+  return `${indicator}${type}-${username}-${number}`.slice(0, 90);
 }
-
 function getPanelOrGlobalCategory(settings, panel) {
   return panel?.outputCategoryId || settings.discord?.categoryId || null;
 }
@@ -321,7 +379,7 @@ async function createTicketChannel({
   );
 
   const channel = await guild.channels.create({
-    name: buildTicketChannelName(ticket),
+    name: buildTicketChannelName(ticket, guild, panel),
     type: ChannelType.GuildText,
     parent: categoryId || undefined,
     permissionOverwrites,
@@ -536,6 +594,8 @@ async function deleteTicketChannel({
 
 module.exports = {
   buildTicketChannelName,
+  cleanChannelPart,
+  getPriorityIndicator,
   buildPermissionOverwrites,
   validatePermissionOverwrites,
   resolveAvailableCategory,

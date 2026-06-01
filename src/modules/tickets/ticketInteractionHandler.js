@@ -613,15 +613,46 @@ async function handleTicketModal(interaction) {
       return true;
     }
 
+    const numericValue = Number(value);
+    const updates = {};
+
+    if (field === 'maxOpenTicketsPerUser') {
+      updates.maxOpenTicketsPerUser = Number.isFinite(numericValue)
+        ? Math.max(1, Math.min(25, Math.floor(numericValue)))
+        : 2;
+    } else if (field === 'cooldownMinutes') {
+      updates.cooldownMs = Number.isFinite(numericValue)
+        ? Math.max(0, Math.floor(numericValue)) * 60 * 1000
+        : 60 * 1000;
+    } else if (field.startsWith('sla.')) {
+      const key = field.split('.')[1];
+
+      updates.sla = {
+        ...(panel.sla || {}),
+        [key]: Number.isFinite(numericValue)
+          ? Math.max(0, Math.floor(numericValue))
+          : panel.sla?.[key] || 0,
+      };
+    } else if (field === 'reminders.repeatMinutes') {
+      updates.reminders = {
+        ...(panel.reminders || {}),
+        enabled: panel.reminders?.enabled !== false,
+        repeat: true,
+        repeatMinutes: Number.isFinite(numericValue)
+          ? Math.max(1, Math.floor(numericValue))
+          : 60,
+      };
+    } else {
+      updates.appearance = {
+        ...(panel.appearance || {}),
+        [field]: value || null,
+      };
+    }
+
     const updated = ticketStore.updatePanel(
       interaction.guildId,
       panelId,
-      {
-        appearance: {
-          ...(panel.appearance || {}),
-          [field]: value || null,
-        },
-      }
+      updates
     );
 
     if (updated?.deployed && interaction.guild) {

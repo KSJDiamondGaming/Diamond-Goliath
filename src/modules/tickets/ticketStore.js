@@ -196,8 +196,30 @@ function normalizePanel(panel = {}) {
     oneActivePerType:
       panel.oneActivePerType !== false,
 
+    maxOpenTicketsPerUser:
+      Number(panel.maxOpenTicketsPerUser || panel.maxActiveTicketsPerUser || 2),
+
     cooldownMs:
       panel.cooldownMs || 60 * 1000,
+
+    priorityIndicators:
+      panel.priorityIndicators !== false,
+
+    sla: {
+      low: Number(panel.sla?.low || 1440),
+      normal: Number(panel.sla?.normal || 720),
+      high: Number(panel.sla?.high || 120),
+      urgent: Number(panel.sla?.urgent || 15),
+    },
+
+    reminders: {
+      enabled: panel.reminders?.enabled !== false,
+      repeat: panel.reminders?.repeat !== false,
+      repeatMinutes: Number(panel.reminders?.repeatMinutes || 60),
+      pingRoleIds: Array.isArray(panel.reminders?.pingRoleIds)
+        ? panel.reminders.pingRoleIds
+        : [],
+    },
 
     appearance: {
       title:

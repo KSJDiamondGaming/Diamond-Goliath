@@ -612,6 +612,11 @@ async function handleTicketPanelButton(
       oneActivePerType:
         panel.oneActivePerType !==
         false,
+
+      maxOpenTicketsPerUser:
+        panel.maxOpenTicketsPerUser ||
+        panel.maxActiveTicketsPerUser ||
+        2,
     });
 
   if (!guard.allowed) {
@@ -680,6 +685,22 @@ async function handleTicketPanelButton(
         deployedAt:
           panel.lastDeployAt ||
           null,
+
+        creatorUsername:
+          interaction.user.username,
+
+        creatorTag:
+          interaction.user.tag ||
+          interaction.user.username,
+
+        priorityIndicators:
+          panel.priorityIndicators !== false,
+
+        sla:
+          panel.sla || null,
+
+        reminders:
+          panel.reminders || null,
       },
     });
 
