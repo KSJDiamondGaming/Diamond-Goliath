@@ -188,7 +188,7 @@ function buildSetupEmbed(guildId) {
       ].join('\n')
     )
     .setColor('#5865F2')
-    .setFooter({ text: 'KSJ Goliath • Ticket System' })
+    .setFooter({ text: 'Goliath • Ticket System' })
     .setTimestamp();
 }
 
@@ -441,7 +441,7 @@ function createBasicPanel(guildId, type) {
       buttonEmoji: type === TICKET_TYPES.APPEAL ? '⚖️' : '🎫',
       imageUrl: null,
       thumbnailUrl: null,
-      footerText: 'KSJ Goliath Tickets',
+      footerText: 'Goliath • Ticket System',
     },
   });
 }

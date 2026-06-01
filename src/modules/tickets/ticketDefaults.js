@@ -337,7 +337,7 @@ const DEFAULT_TICKET_PANEL =
       thumbnailUrl: null,
 
       footerText:
-        'KSJ Goliath Tickets',
+        'Goliath Tickets',
     },
 
     buttonLabel:

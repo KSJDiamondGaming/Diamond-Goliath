@@ -261,7 +261,7 @@ function normalizePanel(panel = {}) {
       footerText:
         appearance.footerText ||
         panel.footerText ||
-        'KSJ Goliath Tickets',
+        'Goliath • Ticket System',
     },
 
     metadata:
