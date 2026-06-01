@@ -14,8 +14,70 @@ const {
   addTimelineEntry,
 } = require('./ticketTimeline');
 
+const BOT_CHANNEL_PERMISSIONS = [
+  PermissionFlagsBits.ViewChannel,
+  PermissionFlagsBits.SendMessages,
+  PermissionFlagsBits.ReadMessageHistory,
+  PermissionFlagsBits.AttachFiles,
+  PermissionFlagsBits.EmbedLinks,
+  PermissionFlagsBits.ManageChannels,
+  PermissionFlagsBits.ManageMessages,
+];
+
 function uniqueIds(ids = []) {
   return [...new Set((ids || []).filter(Boolean))];
+}
+
+function getBotId(guild) {
+  return guild?.members?.me?.id || guild?.client?.user?.id || null;
+}
+
+async function ensureBotReady(guild) {
+  if (!guild) return null;
+
+  if (!guild.members.me) {
+    await guild.members.fetchMe().catch(() => null);
+  }
+
+  return getBotId(guild);
+}
+
+async function ensureBotChannelPermissions(channel) {
+  if (!channel?.guild) return false;
+
+  const botId = await ensureBotReady(channel.guild);
+  if (!botId) return false;
+
+  await channel.permissionOverwrites
+    .edit(botId, {
+      ViewChannel: true,
+      SendMessages: true,
+      ReadMessageHistory: true,
+      AttachFiles: true,
+      EmbedLinks: true,
+      ManageChannels: true,
+      ManageMessages: true,
+    })
+    .catch((error) => {
+      console.error('[Tickets] Failed to repair bot channel permissions:', error);
+      return null;
+    });
+
+  return true;
+}
+
+async function ensureBotCategoryPermissions(guild, categoryId) {
+  if (!guild || !categoryId) return false;
+
+  const category = await guild.channels
+    .fetch(categoryId)
+    .catch(() => null);
+
+  if (!category || category.type !== ChannelType.GuildCategory) {
+    return false;
+  }
+
+  return ensureBotChannelPermissions(category);
 }
 
 function buildTicketChannelName(ticket) {
@@ -37,28 +99,17 @@ function buildTicketChannelName(ticket) {
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
 
-  const number =
-    ticket.number ||
-    ticket.ticketNumber ||
-    0;
+  const number = ticket.number || ticket.ticketNumber || 0;
 
   return `${type}-${String(number).padStart(4, '0')}`.slice(0, 90);
 }
 
 function getPanelOrGlobalCategory(settings, panel) {
-  return (
-    panel?.outputCategoryId ||
-    settings.discord?.categoryId ||
-    null
-  );
+  return panel?.outputCategoryId || settings.discord?.categoryId || null;
 }
 
 function getArchiveCategory(settings, panel) {
-  return (
-    panel?.archiveCategoryId ||
-    settings.discord?.archiveCategoryId ||
-    null
-  );
+  return panel?.archiveCategoryId || settings.discord?.archiveCategoryId || null;
 }
 
 async function resolveAvailableCategory(guild, categoryId) {
@@ -66,47 +117,38 @@ async function resolveAvailableCategory(guild, categoryId) {
 
   const baseCategory = guild.channels.cache.get(categoryId);
 
-  if (
-    !baseCategory ||
-    baseCategory.type !== ChannelType.GuildCategory
-  ) {
+  if (!baseCategory || baseCategory.type !== ChannelType.GuildCategory) {
     return null;
   }
+
+  await ensureBotCategoryPermissions(guild, baseCategory.id);
 
   const MAX_CHANNELS_PER_CATEGORY = 48;
 
   const getChildCount = (id) =>
-    guild.channels.cache.filter(
-      (channel) => channel.parentId === id
-    ).size;
+    guild.channels.cache.filter((channel) => channel.parentId === id).size;
 
   if (getChildCount(baseCategory.id) < MAX_CHANNELS_PER_CATEGORY) {
     return baseCategory.id;
   }
 
-  const baseName =
-    baseCategory.name
-      .replace(/\s+\d+$/, '')
-      .trim();
+  const baseName = baseCategory.name.replace(/\s+\d+$/, '').trim();
 
   const siblingCategories = guild.channels.cache
     .filter(
       (channel) =>
         channel.type === ChannelType.GuildCategory &&
-        (
-          channel.name === baseName ||
-          channel.name.startsWith(`${baseName} `)
-        )
+        (channel.name === baseName || channel.name.startsWith(`${baseName} `))
     )
     .sort((a, b) => {
       const aNum = Number(a.name.match(/(\d+)$/)?.[1] || 1);
       const bNum = Number(b.name.match(/(\d+)$/)?.[1] || 1);
-
       return aNum - bNum;
     });
 
   for (const category of siblingCategories.values()) {
     if (getChildCount(category.id) < MAX_CHANNELS_PER_CATEGORY) {
+      await ensureBotCategoryPermissions(guild, category.id);
       return category.id;
     }
   }
@@ -125,6 +167,8 @@ async function resolveAvailableCategory(guild, categoryId) {
       })
     ),
   });
+
+  await ensureBotCategoryPermissions(guild, newCategory.id);
 
   return newCategory.id;
 }
@@ -156,32 +200,19 @@ function buildPermissionOverwrites({
   settings,
   panel,
 }) {
-  const botId =
-    guild.members.me?.id ||
-    guild.client?.user?.id ||
-    null;
+  const botId = getBotId(guild);
 
   const permissionOverwrites = [
     {
       id: guild.roles.everyone.id,
-      deny: [
-        PermissionFlagsBits.ViewChannel,
-      ],
+      deny: [PermissionFlagsBits.ViewChannel],
     },
   ];
 
   if (botId) {
     permissionOverwrites.push({
       id: botId,
-      allow: [
-        PermissionFlagsBits.ViewChannel,
-        PermissionFlagsBits.SendMessages,
-        PermissionFlagsBits.ReadMessageHistory,
-        PermissionFlagsBits.AttachFiles,
-        PermissionFlagsBits.EmbedLinks,
-        PermissionFlagsBits.ManageChannels,
-        PermissionFlagsBits.ManageMessages,
-      ],
+      allow: BOT_CHANNEL_PERMISSIONS,
     });
   }
 
@@ -247,9 +278,7 @@ function buildPermissionOverwrites({
         PermissionFlagsBits.ViewChannel,
         PermissionFlagsBits.ReadMessageHistory,
       ],
-      deny: [
-        PermissionFlagsBits.SendMessages,
-      ],
+      deny: [PermissionFlagsBits.SendMessages],
     });
   }
 
@@ -260,10 +289,7 @@ function validatePermissionOverwrites(overwrites = []) {
   const seen = new Set();
 
   return overwrites.filter((overwrite) => {
-    if (!overwrite?.id || seen.has(overwrite.id)) {
-      return false;
-    }
-
+    if (!overwrite?.id || seen.has(overwrite.id)) return false;
     seen.add(overwrite.id);
     return true;
   });
@@ -277,16 +303,13 @@ async function createTicketChannel({
 } = {}) {
   if (!guild || !ticket) return null;
 
-  await guild.members.fetchMe().catch(() => null);
+  await ensureBotReady(guild);
 
   const settings = getTicketSettings(guild.id);
 
   const rawCategoryId = getPanelOrGlobalCategory(settings, panel);
 
-  const categoryId = await resolveAvailableCategory(
-    guild,
-    rawCategoryId
-  );
+  const categoryId = await resolveAvailableCategory(guild, rawCategoryId);
 
   const permissionOverwrites = validatePermissionOverwrites(
     buildPermissionOverwrites({
@@ -304,6 +327,8 @@ async function createTicketChannel({
     permissionOverwrites,
     topic: `Ticket ${ticket.displayId || ticket.ticketId}`,
   });
+
+  await ensureBotChannelPermissions(channel);
 
   updateTicket(guild.id, ticket.ticketId, {
     discordChannelId: channel.id,
@@ -350,10 +375,11 @@ async function archiveTicketChannel({
 
   if (!channel) return null;
 
+  await ensureBotChannelPermissions(channel);
+
   if (archiveCategoryId) {
-    await channel
-      .setParent(archiveCategoryId)
-      .catch(() => null);
+    await ensureBotCategoryPermissions(guild, archiveCategoryId);
+    await channel.setParent(archiveCategoryId).catch(() => null);
   }
 
   await channel.permissionOverwrites
@@ -404,6 +430,8 @@ async function closeTicketChannel({
 
   if (!channel) return null;
 
+  await ensureBotChannelPermissions(channel);
+
   if (ticket.creatorId) {
     await channel.permissionOverwrites
       .edit(ticket.creatorId, {
@@ -444,6 +472,8 @@ async function reopenTicketChannel({
 
   if (!channel) return null;
 
+  await ensureBotChannelPermissions(channel);
+
   if (ticket.creatorId) {
     await channel.permissionOverwrites
       .edit(ticket.creatorId, {
@@ -460,9 +490,7 @@ async function reopenTicketChannel({
     .replace(/^closed-/, '')
     .replace(/^archived-/, '');
 
-  await channel
-    .setName(cleanName)
-    .catch(() => null);
+  await channel.setName(cleanName).catch(() => null);
 
   addTimelineEntry(guild.id, ticket.ticketId, {
     type: 'discord_channel_reopened',
@@ -489,6 +517,8 @@ async function deleteTicketChannel({
 
   if (!channel) return false;
 
+  await ensureBotChannelPermissions(channel);
+
   addTimelineEntry(guild.id, ticket.ticketId, {
     type: 'discord_channel_deleted',
     actorId: null,
@@ -499,9 +529,7 @@ async function deleteTicketChannel({
     },
   });
 
-  await channel
-    .delete(reason)
-    .catch(() => null);
+  await channel.delete(reason).catch(() => null);
 
   return true;
 }
@@ -511,6 +539,10 @@ module.exports = {
   buildPermissionOverwrites,
   validatePermissionOverwrites,
   resolveAvailableCategory,
+
+  ensureBotReady,
+  ensureBotChannelPermissions,
+  ensureBotCategoryPermissions,
 
   createTicketChannel,
   archiveTicketChannel,

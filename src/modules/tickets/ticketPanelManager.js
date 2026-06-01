@@ -29,6 +29,7 @@ const {
 
 const {
   createTicketChannel,
+  ensureBotChannelPermissions,
 } = require('./ticketChannelManager');
 
 const {
@@ -260,6 +261,8 @@ async function deployPanel({
     channel,
     panel,
   });
+
+  await ensureBotChannelPermissions(channel);
 
   await cleanupDuplicateDeployments({
     guild,
