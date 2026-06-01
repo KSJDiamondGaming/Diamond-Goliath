@@ -182,7 +182,7 @@ async function createTranscript(ticket, actor, options = {}) {
       emitAction(
         options.io,
         ticket,
-        ticketSocketEvents.TICKET_SOCKET_EVENTS.TRANSCRIPT_CREATED,
+        ticketSocketEvents.EVENTS.TRANSCRIPT_CREATED,
         { transcript }
       );
 
@@ -190,7 +190,7 @@ async function createTranscript(ticket, actor, options = {}) {
         emitAction(
           options.io,
           ticket,
-          ticketSocketEvents.TICKET_SOCKET_EVENTS.TRANSCRIPT_UPLOADED,
+          ticketSocketEvents.EVENTS.TRANSCRIPT_UPLOADED,
           {
             upload: transcript.upload,
           }
@@ -227,7 +227,7 @@ async function maybeCloseChannel(ticket, options = {}) {
     emitAction(
       options.io,
       ticket,
-      ticketSocketEvents.TICKET_SOCKET_EVENTS.CHANNEL_CLOSED,
+      ticketSocketEvents.EVENTS.TICKET_CLOSED,
       {
         channelId: channel.id,
       }
@@ -253,7 +253,7 @@ async function maybeArchiveChannel(ticket, options = {}) {
     emitAction(
       options.io,
       ticket,
-      ticketSocketEvents.TICKET_SOCKET_EVENTS.CHANNEL_ARCHIVED,
+      ticketSocketEvents.EVENTS.TICKET_ARCHIVED,
       {
         channelId: channel.id,
       }
@@ -278,7 +278,7 @@ async function maybeReopenChannel(ticket, options = {}) {
     emitAction(
       options.io,
       ticket,
-      ticketSocketEvents.TICKET_SOCKET_EVENTS.CHANNEL_REOPENED,
+      ticketSocketEvents.EVENTS.TICKET_REOPENED,
       {
         channelId: channel.id,
       }
@@ -306,7 +306,7 @@ async function maybeDeleteChannel(ticket, options = {}) {
     emitAction(
       options.io,
       ticket,
-      ticketSocketEvents.TICKET_SOCKET_EVENTS.CHANNEL_DELETED,
+      ticketSocketEvents.EVENTS.TICKET_DELETED,
       {
         channelId: ticket.discordChannelId,
       }
@@ -359,13 +359,13 @@ async function claim(ticketOrId, actor, options = {}) {
   emitAction(
     options.io,
     saved || updated || ticket,
-    ticketSocketEvents.TICKET_SOCKET_EVENTS.CLAIMED
+    ticketSocketEvents.EVENTS.TICKET_CLAIMED
   );
 
   emitAction(
     options.io,
     saved || updated || ticket,
-    ticketSocketEvents.TICKET_SOCKET_EVENTS.UPDATED
+    ticketSocketEvents.EVENTS.TICKET_UPDATED
   );
 
   return saved || updated;
@@ -421,13 +421,13 @@ async function close(ticketOrId, actor, options = {}) {
   emitAction(
     options.io,
     saved || updated || ticket,
-    ticketSocketEvents.TICKET_SOCKET_EVENTS.CLOSED
+    ticketSocketEvents.EVENTS.TICKET_CLOSED
   );
 
   emitAction(
     options.io,
     saved || updated || ticket,
-    ticketSocketEvents.TICKET_SOCKET_EVENTS.UPDATED
+    ticketSocketEvents.EVENTS.TICKET_UPDATED
   );
 
   return saved || updated;
@@ -467,13 +467,13 @@ async function reopen(ticketOrId, actor, options = {}) {
   emitAction(
     options.io,
     saved || updated || ticket,
-    ticketSocketEvents.TICKET_SOCKET_EVENTS.REOPENED
+    ticketSocketEvents.EVENTS.TICKET_REOPENED
   );
 
   emitAction(
     options.io,
     saved || updated || ticket,
-    ticketSocketEvents.TICKET_SOCKET_EVENTS.UPDATED
+    ticketSocketEvents.EVENTS.TICKET_UPDATED
   );
 
   return saved || updated;
@@ -522,13 +522,13 @@ async function archive(ticketOrId, actor, options = {}) {
   emitAction(
     options.io,
     updated || ticket,
-    ticketSocketEvents.TICKET_SOCKET_EVENTS.ARCHIVED
+    ticketSocketEvents.EVENTS.TICKET_ARCHIVED
   );
 
   emitAction(
     options.io,
     updated || ticket,
-    ticketSocketEvents.TICKET_SOCKET_EVENTS.UPDATED
+    ticketSocketEvents.EVENTS.TICKET_UPDATED
   );
 
   return updated;
@@ -659,7 +659,7 @@ async function addUser(
   emitAction(
     options.io,
     updated || ticket,
-    ticketSocketEvents.TICKET_SOCKET_EVENTS.UPDATED
+    ticketSocketEvents.EVENTS.TICKET_UPDATED
   );
 
   return updated;
@@ -717,7 +717,7 @@ async function removeUser(
   emitAction(
     options.io,
     updated || ticket,
-    ticketSocketEvents.TICKET_SOCKET_EVENTS.UPDATED
+    ticketSocketEvents.EVENTS.TICKET_UPDATED
   );
 
   return updated;
@@ -777,7 +777,7 @@ async function rename(
   emitAction(
     options.io,
     updated || ticket,
-    ticketSocketEvents.TICKET_SOCKET_EVENTS.UPDATED
+    ticketSocketEvents.EVENTS.TICKET_UPDATED
   );
 
   return updated;
@@ -824,13 +824,13 @@ async function changePriority(
   emitAction(
     options.io,
     updated || ticket,
-    ticketSocketEvents.TICKET_SOCKET_EVENTS.PRIORITY_CHANGED
+    ticketSocketEvents.EVENTS.TICKET_UPDATED
   );
 
   emitAction(
     options.io,
     updated || ticket,
-    ticketSocketEvents.TICKET_SOCKET_EVENTS.UPDATED
+    ticketSocketEvents.EVENTS.TICKET_UPDATED
   );
 
   return updated;
@@ -877,13 +877,13 @@ async function changeStatus(
   emitAction(
     options.io,
     saved || updated || ticket,
-    ticketSocketEvents.TICKET_SOCKET_EVENTS.STATUS_CHANGED
+    ticketSocketEvents.EVENTS.TICKET_UPDATED
   );
 
   emitAction(
     options.io,
     saved || updated || ticket,
-    ticketSocketEvents.TICKET_SOCKET_EVENTS.UPDATED
+    ticketSocketEvents.EVENTS.TICKET_UPDATED
   );
 
   return saved || updated;
