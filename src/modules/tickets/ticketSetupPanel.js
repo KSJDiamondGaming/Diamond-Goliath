@@ -17,7 +17,10 @@ const {
   TICKET_PRIORITY,
 } = require('./ticketDefaults');
 
-const { getPanels, getAllTickets } = require('./ticketStore');
+const {
+  getPanels,
+  getAllTickets,
+} = require('./ticketStore');
 
 const {
   createPanel,
@@ -149,8 +152,9 @@ function getSetupStats(guildId) {
 
   const deployedPanels = panels.filter((panel) => panel.deployed).length;
   const draftPanels = panels.filter((panel) => !panel.deployed).length;
+
   const activeTickets = tickets.filter((ticket) =>
-    ['open', 'claimed', 'pending'].includes(
+    ['open', 'claimed', 'pending', 'waiting_user', 'in_review'].includes(
       String(ticket.status || 'open').toLowerCase()
     )
   ).length;
@@ -244,11 +248,11 @@ function buildEditorEmbed(panel) {
         `**Priority:** \`${panel.ticketPriority || 'normal'}\``,
         '',
         '**Routing**',
-        `Deploy Channel: ${
-          panel.deployChannelId ? `<#${panel.deployChannelId}>` : '`Not set`'
-        }`,
-        `Output Category: ${
+        `Ticket Category: ${
           panel.outputCategoryId ? `<#${panel.outputCategoryId}>` : '`Not set`'
+        }`,
+        `Panel Channel: ${
+          panel.deployChannelId ? `<#${panel.deployChannelId}>` : '`Not set`'
         }`,
         `Logs Channel: ${
           panel.logsChannelId ? `<#${panel.logsChannelId}>` : '`Not set`'
@@ -269,7 +273,9 @@ function buildEditorEmbed(panel) {
       ].join('\n')
     )
     .setColor(appearance.color || '#5865F2')
-    .setFooter({ text: 'Set deploy channel + ticket category before deploying.' })
+    .setFooter({
+      text: 'Set Ticket Category + Panel Channel before deploying.',
+    })
     .setTimestamp();
 }
 
@@ -356,6 +362,329 @@ function buildEditorControls(panelId) {
         .setEmoji('⬅️')
     ),
   ];
+}
+
+async function sendSetupPanel(interaction) {
+  const components = [buildSetupButtons()];
+  const panelSelect = buildPanelSelect(interaction.guild.id);
+
+  if (panelSelect) components.push(panelSelect);
+
+  const payload = {
+    embeds: [buildSetupEmbed(interaction.guild.id)],
+    components,
+  };
+
+  if (interaction.deferred || interaction.replied) {
+    return interaction.editReply(payload);
+  }
+
+  return interaction.reply(ephemeralPayload(payload));
+}
+
+async function showPanelEditor(interaction, panelId) {
+  const panel = getPanel(interaction.guild.id, panelId);
+
+  if (!panel) {
+    return safeUpdate(interaction, {
+      content: '❌ Ticket panel not found.',
+      embeds: [],
+      components: [],
+    });
+  }
+
+  return safeUpdate(interaction, {
+    content: null,
+    embeds: [buildEditorEmbed(panel)],
+    components: buildEditorControls(panelId),
+  });
+}
+
+function createBasicPanel(guildId, type) {
+  const existing = getPanelList(guildId).find(
+    (panel) => panel.ticketType === type
+  );
+
+  if (existing) return existing;
+
+  return createPanel(guildId, {
+    name: type === TICKET_TYPES.APPEAL ? 'Ban Appeal' : 'General Support',
+    ticketType: type,
+    ticketPriority:
+      type === TICKET_TYPES.APPEAL
+        ? TICKET_PRIORITY.HIGH
+        : TICKET_PRIORITY.NORMAL,
+    appearance: {
+      title: type === TICKET_TYPES.APPEAL ? 'Submit an Appeal' : 'Need Support?',
+      description:
+        type === TICKET_TYPES.APPEAL
+          ? 'Press the button below to open a private appeal ticket.'
+          : 'Press the button below to open a private support ticket.',
+      color: '#5865F2',
+      buttonLabel:
+        type === TICKET_TYPES.APPEAL
+          ? 'Open Appeal Ticket'
+          : 'Open Support Ticket',
+      buttonEmoji: type === TICKET_TYPES.APPEAL ? '⚖️' : '🎫',
+      imageUrl: null,
+      thumbnailUrl: null,
+      footerText: 'KSJ Goliath Tickets',
+    },
+  });
+}
+
+async function handleNoPermission(interaction) {
+  return safeReply(
+    interaction,
+    ephemeralPayload({
+      content: '❌ You need Manage Server permission.',
+    })
+  );
+}
+
+async function showSetupHome(interaction) {
+  const components = [buildSetupButtons()];
+  const panelSelect = buildPanelSelect(interaction.guild.id);
+
+  if (panelSelect) components.push(panelSelect);
+
+  return safeUpdate(interaction, {
+    content: null,
+    embeds: [buildSetupEmbed(interaction.guild.id)],
+    components,
+  });
+}
+
+async function fetchDeployChannel(interaction, panel) {
+  const channelId = panel.deployChannelId;
+
+  if (!channelId) return null;
+
+  const channel =
+    interaction.guild.channels.cache.get(channelId) ||
+    (await interaction.guild.channels.fetch(channelId).catch(() => null));
+
+  if (!channel?.isTextBased?.()) return null;
+
+  return channel;
+}
+
+async function handleTicketSetupInteraction(interaction) {
+  if (!interaction.guild) return false;
+
+  const customId = interaction.customId || '';
+
+  if (!customId.startsWith('ticket_setup:')) {
+    return false;
+  }
+
+  if (!interaction.memberPermissions?.has('ManageGuild')) {
+    await handleNoPermission(interaction);
+    return true;
+  }
+
+  if (customId === 'ticket_setup:refresh' || customId === 'ticket_setup:back') {
+    await showSetupHome(interaction);
+    return true;
+  }
+
+  if (customId === 'ticket_setup:create_support') {
+    const panel = createBasicPanel(interaction.guild.id, TICKET_TYPES.SUPPORT);
+    await showPanelEditor(interaction, panel.panelId);
+    return true;
+  }
+
+  if (customId === 'ticket_setup:create_appeal') {
+    const panel = createBasicPanel(interaction.guild.id, TICKET_TYPES.APPEAL);
+    await showPanelEditor(interaction, panel.panelId);
+    return true;
+  }
+
+  if (customId === 'ticket_setup:select_panel') {
+    await showPanelEditor(interaction, interaction.values?.[0]);
+    return true;
+  }
+
+  const [, action, panelId] = customId.split(':');
+
+  if (!panelId) return false;
+
+  if (action === 'appearance_select') {
+    return false;
+  }
+
+  if (action === 'set_output') {
+    updatePanel(interaction.guild.id, panelId, {
+      outputCategoryId: interaction.values?.[0] || null,
+    });
+
+    await showPanelEditor(interaction, panelId);
+    return true;
+  }
+
+  if (action === 'set_deploy') {
+    updatePanel(interaction.guild.id, panelId, {
+      deployChannelId: interaction.values?.[0] || null,
+    });
+
+    await showPanelEditor(interaction, panelId);
+    return true;
+  }
+
+  if (action === 'set_staff') {
+    updatePanel(interaction.guild.id, panelId, {
+      staffRoleIds: interaction.values || [],
+    });
+
+    await showPanelEditor(interaction, panelId);
+    return true;
+  }
+
+  if (action === 'set_manager') {
+    updatePanel(interaction.guild.id, panelId, {
+      managerRoleIds: interaction.values || [],
+    });
+
+    await showPanelEditor(interaction, panelId);
+    return true;
+  }
+
+  if (action === 'deploy') {
+    const panel = getPanel(interaction.guild.id, panelId);
+
+    if (!panel) {
+      await safeReply(
+        interaction,
+        ephemeralPayload({ content: '❌ Panel not found.' })
+      );
+      return true;
+    }
+
+    const deployChannel = await fetchDeployChannel(interaction, panel);
+
+    if (!deployChannel) {
+      await safeReply(
+        interaction,
+        ephemeralPayload({
+          content:
+            '❌ Please set a Panel Channel first. This is where the ticket panel message will be posted.',
+        })
+      );
+      return true;
+    }
+
+    const deferred = await safeDefer(interaction, true);
+    if (!deferred) return true;
+
+    await deployPanel({
+      guild: interaction.guild,
+      channel: deployChannel,
+      panel,
+      actorId: interaction.user.id,
+    });
+
+    await safeEditOrReply(interaction, {
+      content: `✅ Ticket panel **${panel.name}** deployed in ${deployChannel}.`,
+    });
+
+    return true;
+  }
+
+  if (action === 'redeploy') {
+    const panel = getPanel(interaction.guild.id, panelId);
+
+    if (!panel) {
+      await safeReply(
+        interaction,
+        ephemeralPayload({ content: '❌ Panel not found.' })
+      );
+      return true;
+    }
+
+    const deployChannel = await fetchDeployChannel(interaction, panel);
+
+    if (!deployChannel) {
+      await safeReply(
+        interaction,
+        ephemeralPayload({
+          content: '❌ Please set a Panel Channel first before redeploying.',
+        })
+      );
+      return true;
+    }
+
+    const deferred = await safeDefer(interaction, true);
+    if (!deferred) return true;
+
+    await redeployPanel({
+      guild: interaction.guild,
+      channel: deployChannel,
+      panel,
+      actorId: interaction.user.id,
+    });
+
+    await safeEditOrReply(interaction, {
+      content: `🔄 Ticket panel **${panel.name}** redeployed in ${deployChannel}.`,
+    });
+
+    return true;
+  }
+
+  if (action === 'undeploy') {
+    const panel = getPanel(interaction.guild.id, panelId);
+
+    if (!panel) {
+      await safeReply(
+        interaction,
+        ephemeralPayload({ content: '❌ Panel not found.' })
+      );
+      return true;
+    }
+
+    const deferred = await safeDefer(interaction, true);
+    if (!deferred) return true;
+
+    const success = await undeployPanel({
+      guild: interaction.guild,
+      panel,
+    });
+
+    await safeEditOrReply(interaction, {
+      content: success
+        ? `📦 Ticket panel **${panel.name}** undeployed.`
+        : '⚠️ This panel was not deployed or the message could not be found.',
+    });
+
+    return true;
+  }
+
+  if (action === 'delete') {
+    const deleted = deletePanel(interaction.guild.id, panelId);
+
+    await safeUpdate(interaction, {
+      content: deleted ? '🗑️ Ticket panel deleted.' : '❌ Ticket panel not found.',
+      embeds: [],
+      components: [],
+    });
+
+    return true;
+  }
+
+  if (action === 'refresh_deployed') {
+    const panel = getPanel(interaction.guild.id, panelId);
+
+    if (panel) {
+      await refreshDeployedPanel({
+        guild: interaction.guild,
+        panel,
+      });
+    }
+
+    await showPanelEditor(interaction, panelId);
+    return true;
+  }
+
+  return false;
 }
 
 module.exports = {
