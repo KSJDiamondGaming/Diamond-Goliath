@@ -42,27 +42,68 @@ function ephemeralPayload(payload = {}) {
 }
 
 async function safeReply(interaction, payload = {}) {
-  if (alreadyHandled(interaction)) {
-    return interaction.followUp(payload).catch(() => null);
-  }
+  try {
+    if (alreadyHandled(interaction)) {
+      return interaction.followUp(payload).catch((error) => {
+        console.error('[TicketsSetup] followUp failed:', error);
+        return null;
+      });
+    }
 
-  return interaction.reply(payload).catch(() => null);
+    return interaction.reply(payload).catch((error) => {
+      console.error('[TicketsSetup] reply failed:', error);
+      return null;
+    });
+  } catch (error) {
+    console.error('[TicketsSetup] safeReply failed:', error);
+    return null;
+  }
 }
 
 async function safeEditOrReply(interaction, payload = {}) {
-  if (interaction.deferred || interaction.replied) {
-    return interaction.editReply(payload).catch(() => null);
-  }
+  try {
+    if (interaction.deferred || interaction.replied) {
+      return interaction.editReply(payload).catch((error) => {
+        console.error('[TicketsSetup] editReply failed:', error);
+        return null;
+      });
+    }
 
-  return interaction.reply(payload).catch(() => null);
+    return interaction.reply(payload).catch((error) => {
+      console.error('[TicketsSetup] reply failed:', error);
+      return null;
+    });
+  } catch (error) {
+    console.error('[TicketsSetup] safeEditOrReply failed:', error);
+    return null;
+  }
 }
 
 async function safeUpdate(interaction, payload = {}) {
-  if (interaction.deferred || interaction.replied) {
-    return interaction.editReply(payload).catch(() => null);
-  }
+  try {
+    if (interaction.deferred || interaction.replied) {
+      return interaction.editReply(payload).catch((error) => {
+        console.error('[TicketsSetup] editReply failed:', error);
+        return null;
+      });
+    }
 
-  return interaction.update(payload).catch(() => null);
+    return interaction.update(payload).catch(async (error) => {
+      console.error('[TicketsSetup] update failed:', error);
+
+      return interaction
+        .reply(
+          ephemeralPayload({
+            content:
+              '❌ Ticket setup panel failed to update. Check VPS logs.',
+          })
+        )
+        .catch(() => null);
+    });
+  } catch (error) {
+    console.error('[TicketsSetup] safeUpdate failed:', error);
+    return null;
+  }
 }
 
 async function safeDefer(interaction, ephemeral = true) {
@@ -282,13 +323,13 @@ function buildEditorControls(panelId) {
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId(`ticket_setup:deploy:${panelId}`)
-        .setLabel('Deploy Here')
+        .setLabel('Deploy')
         .setStyle(ButtonStyle.Success)
         .setEmoji('🚀'),
 
       new ButtonBuilder()
         .setCustomId(`ticket_setup:redeploy:${panelId}`)
-        .setLabel('Redeploy Here')
+        .setLabel('Redeploy')
         .setStyle(ButtonStyle.Primary)
         .setEmoji('🔄'),
 
@@ -296,13 +337,11 @@ function buildEditorControls(panelId) {
         .setCustomId(`ticket_setup:undeploy:${panelId}`)
         .setLabel('Undeploy')
         .setStyle(ButtonStyle.Secondary)
-        .setEmoji('📦')
-    ),
+        .setEmoji('📦'),
 
-    new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId(`ticket_setup:delete:${panelId}`)
-        .setLabel('Delete Panel')
+        .setLabel('Delete')
         .setStyle(ButtonStyle.Danger)
         .setEmoji('🗑️'),
 
