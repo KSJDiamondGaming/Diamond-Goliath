@@ -204,7 +204,7 @@ function buildPanelSelect(guildId) {
       .addOptions(
         panels.map((panel) => ({
           label: String(panel.name || 'Ticket Panel').slice(0, 100),
-          description: `${panel.ticketType || 'support'} • ${
+          description: `${panel.ticketType || 'Support'} • ${
             panel.deployed ? 'deployed' : panel.status || 'draft'
           }`,
           value: panel.panelId,
