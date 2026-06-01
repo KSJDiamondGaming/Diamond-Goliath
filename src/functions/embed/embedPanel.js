@@ -64,6 +64,8 @@ const TEMPLATES = {
     image: '',
     thumbnail: '',
     fields: [],
+
+buttons: [],
   },
 
   welcome: {
@@ -85,6 +87,8 @@ const TEMPLATES = {
     image: '',
     thumbnail: '{userAvatar}',
     fields: [],
+
+buttons: [],
   },
 
   leave: {
@@ -105,6 +109,8 @@ const TEMPLATES = {
     image: '',
     thumbnail: '{userAvatar}',
     fields: [],
+
+buttons: [],
   },
 
   announcement: {
@@ -123,6 +129,8 @@ const TEMPLATES = {
     image: '',
     thumbnail: '{guildIcon}',
     fields: [],
+
+buttons: [],
   },
 
   rules: {
@@ -154,6 +162,8 @@ const TEMPLATES = {
     image: '',
     thumbnail: '',
     fields: [],
+
+buttons: [],
   },
 
   suggestion: {
@@ -176,6 +186,8 @@ const TEMPLATES = {
       { name: 'Status', value: 'Pending', inline: true },
       { name: 'Votes', value: 'Waiting for votes', inline: true },
     ],
+
+    buttons: [],
   },
 
   giveaway: {
@@ -200,6 +212,7 @@ const TEMPLATES = {
       { name: 'Winners', value: '1', inline: true },
       { name: 'Ends', value: 'Soon', inline: true },
     ],
+    buttons: [],
   },
 
   update: {
@@ -221,6 +234,8 @@ const TEMPLATES = {
     image: '',
     thumbnail: '',
     fields: [],
+
+buttons: [],
   },
 
   event: {
@@ -248,6 +263,8 @@ const TEMPLATES = {
       { name: 'Time', value: 'Set time', inline: true },
       { name: 'Location', value: 'Set location', inline: true },
     ],
+
+    buttons: [],
   },
 
   warning: {
@@ -266,6 +283,8 @@ const TEMPLATES = {
     image: '',
     thumbnail: '',
     fields: [],
+
+buttons: [],
   },
 };
 
@@ -574,6 +593,9 @@ function getDefaultState() {
     thumbnail: '',
 
     fields: [],
+
+    buttons: [],
+    selectedButtonIndex: null,
   };
 }
 
@@ -615,6 +637,8 @@ function getPresetDataFromState(state) {
     thumbnail: state.thumbnail || '',
 
     fields: Array.isArray(state.fields) ? clone(state.fields) : [],
+
+    buttons: Array.isArray(state.buttons) ? clone(state.buttons) : [],
   };
 }
 
@@ -642,6 +666,10 @@ function applyPresetToSession(interaction, presetName, preset) {
     thumbnail: preset.thumbnail || '',
 
     fields: Array.isArray(preset.fields) ? clone(preset.fields) : [],
+
+    buttons: Array.isArray(preset.buttons) ? clone(preset.buttons) : [],
+
+    selectedButtonIndex: null,
   });
 }
 
@@ -669,7 +697,14 @@ function applyTemplate(interaction, templateKey) {
     image: template.image || '',
     thumbnail: template.thumbnail || '',
 
-    fields: Array.isArray(template.fields) ? clone(template.fields) : [],
+    fields: Array.isArray(template.fields) 
+    ? clone(template.fields) : [],
+
+    buttons: Array.isArray(template.buttons)
+    ? clone(template.buttons)
+    : [],
+
+    selectedButtonIndex: null,
   });
 }
 
@@ -749,6 +784,59 @@ if (imageUrl) embed.setImage(imageUrl);
 
   embed.setTimestamp();
   return embed;
+}
+
+function normaliseButtonStyle(style) {
+  const value = String(style || 'Primary').toLowerCase();
+
+  if (value === 'secondary') return ButtonStyle.Secondary;
+  if (value === 'success') return ButtonStyle.Success;
+  if (value === 'danger') return ButtonStyle.Danger;
+  if (value === 'link') return ButtonStyle.Link;
+
+  return ButtonStyle.Primary;
+}
+
+function buildButtonComponents(state) {
+  const buttons = Array.isArray(state.buttons)
+    ? state.buttons.slice(0, 25)
+    : [];
+
+  const rows = [];
+
+  for (let i = 0; i < buttons.length; i += 5) {
+    const row = new ActionRowBuilder();
+
+    buttons.slice(i, i + 5).forEach((button, index) => {
+      const style = normaliseButtonStyle(button.style);
+
+      const builder = new ButtonBuilder()
+        .setLabel(trim(button.label || 'Button', 80))
+        .setStyle(style);
+
+      if (button.emoji) {
+        builder.setEmoji(button.emoji);
+      }
+
+      if (style === ButtonStyle.Link) {
+        builder.setURL(
+          safeUrl(button.url) ||
+          'https://ksjdigital.co.uk'
+        );
+      } else {
+        builder.setCustomId(
+          button.id ||
+          `embed-action:${button.action || 'custom'}:${i + index}`
+        );
+      }
+
+      row.addComponents(builder);
+    });
+
+    rows.push(row);
+  }
+
+  return rows;
 }
 
 function buildPanelEmbed(state, interaction, memberDisplayName) {
@@ -933,7 +1021,16 @@ function buildEditorPanel(interaction, memberDisplayName = 'Unknown User') {
 
     new ButtonBuilder()
       .setCustomId('embed:fields')
-      .setLabel(`📋 Fields (${state.fields?.length || 0})`)
+      .setLabel(
+      `📋 Fields & Media (${state.fields?.length || 0})`
+    )
+      .setStyle(ButtonStyle.Primary),
+
+    new ButtonBuilder()
+      .setCustomId('embed:buttons')
+      .setLabel(
+      `🔘 Buttons (${state.buttons?.length || 0})`
+    )
       .setStyle(ButtonStyle.Primary),
 
     new ButtonBuilder()
@@ -987,7 +1084,7 @@ components.push(
 
   const embed = new EmbedBuilder()
     .setColor(state.color || PANEL_COLOR)
-    .setTitle('✏️ Embed Editor')
+    .setTitle('✏️ Embed Studio')
     .setDescription(
       [
         '**Build, customise, preview, and activate embeds for your server.**',
@@ -1012,6 +1109,7 @@ components.push(
             : '🔕 Safe / no ping'
         }`,
         `> **Fields:** ${state.fields?.length || 0}/25`,
+        `> **Buttons:** ${state.buttons?.length || 0}/25`,
         `> **Unsaved Changes:** ${
           state.hasUnsavedChanges
             ? '⚠️ Yes'
@@ -1040,51 +1138,56 @@ components.push(
 }
 
 /* ---------------- SUB PANELS ---------------- */
-function buildFieldsPanel(interaction, memberDisplayName = 'Unknown User') {
+function buildButtonsPanel(interaction, memberDisplayName = 'Unknown User') {
   const state = getSession(interaction);
 
-  const selectedField =
-    Number.isInteger(state.selectedFieldIndex) &&
-    state.fields?.[state.selectedFieldIndex]
-      ? state.fields[state.selectedFieldIndex]
+  const selectedButton =
+    Number.isInteger(state.selectedButtonIndex) &&
+    state.buttons?.[state.selectedButtonIndex]
+      ? state.buttons[state.selectedButtonIndex]
       : null;
 
-  const fieldEmbed = new EmbedBuilder()
+  const buttonEmbed = new EmbedBuilder()
     .setColor(state.color || PANEL_COLOR)
-    .setTitle('📋 Field Management')
+    .setTitle('🔘 Button Management')
     .setDescription(
-      selectedField
+      selectedButton
         ? [
-            '**Selected Field:**',
-            `\`${state.selectedFieldIndex + 1}.\` ${selectedField.name}`,
+            '**Selected Button:**',
+            `\`${state.selectedButtonIndex + 1}.\` ${selectedButton.emoji || ''} ${selectedButton.label || 'Unnamed Button'}`,
             '',
-            `Inline: ${selectedField.inline ? 'Yes' : 'No'}`,
+            `Style: \`${selectedButton.style || 'Primary'}\``,
+            `Action: \`${selectedButton.action || 'none'}\``,
+            selectedButton.url ? `URL: ${selectedButton.url}` : null,
             '',
-            'Manage your embed fields below.',
-          ].join('\n')
+            'Manage your embed buttons below.',
+          ].filter(Boolean).join('\n')
         : [
-            'No field selected.',
+            'No button selected.',
             '',
-            'Add a field to begin.',
+            `Buttons: ${state.buttons?.length || 0}/25`,
+            '',
+            'Add a button to begin.',
           ].join('\n')
     )
     .setFooter({ text: `Requested by ${memberDisplayName}` })
     .setTimestamp();
 
   return {
-    embeds: [fieldEmbed],
+    embeds: [buttonEmbed],
     components: [
-      ...(state.fields?.length
+      ...(state.buttons?.length
         ? [
             new ActionRowBuilder().addComponents(
               new StringSelectMenuBuilder()
-                .setCustomId('embed:field-select')
-                .setPlaceholder('🧩 Select a field')
+                .setCustomId('embed:button-select')
+                .setPlaceholder('🔘 Select a button')
                 .addOptions(
-                  state.fields.map((field, index) => ({
-                    label: `${index + 1}. ${trim(field.name, 80)}`,
+                  state.buttons.map((button, index) => ({
+                    label: `${index + 1}. ${trim(button.label || 'Unnamed Button', 80)}`,
                     value: String(index),
-                    default: state.selectedFieldIndex === index,
+                    description: trim(button.action || button.style || 'Button action', 100),
+                    default: state.selectedButtonIndex === index,
                   }))
                 )
             ),
@@ -1092,47 +1195,42 @@ function buildFieldsPanel(interaction, memberDisplayName = 'Unknown User') {
         : []),
 
       new ActionRowBuilder().addComponents(
-  new ButtonBuilder()
-    .setCustomId('embed:field-add')
-    .setLabel('➕ Add')
-    .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId('embed:button-add')
+          .setLabel('➕ Add')
+          .setStyle(ButtonStyle.Success),
 
-  new ButtonBuilder()
-    .setCustomId(
-      selectedField
-        ? `embed:field-edit:${state.selectedFieldIndex}`
-        : 'embed:field-edit'
-    )
-    .setLabel('✏️ Edit')
-    .setStyle(ButtonStyle.Primary)
-    .setDisabled(!selectedField),
+        new ButtonBuilder()
+          .setCustomId(
+            selectedButton
+              ? `embed:button-edit:${state.selectedButtonIndex}`
+              : 'embed:button-edit'
+          )
+          .setLabel('✏️ Edit')
+          .setStyle(ButtonStyle.Primary)
+          .setDisabled(!selectedButton),
 
-  new ButtonBuilder()
-    .setCustomId('embed:edit-media')
-    .setLabel('🖼️ Media')
-    .setStyle(ButtonStyle.Primary),
-
-  new ButtonBuilder()
-    .setCustomId('embed:field-remove-selected')
-    .setLabel('🗑️ Remove')
-    .setStyle(ButtonStyle.Danger)
-    .setDisabled(!selectedField)
-),
+        new ButtonBuilder()
+          .setCustomId('embed:button-remove-selected')
+          .setLabel('🗑️ Remove')
+          .setStyle(ButtonStyle.Danger)
+          .setDisabled(!selectedButton)
+      ),
 
       new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-          .setCustomId('embed:field-move-up')
+          .setCustomId('embed:button-move-up')
           .setLabel('⬆️ Up')
           .setStyle(ButtonStyle.Secondary)
-          .setDisabled(!selectedField || state.selectedFieldIndex <= 0),
+          .setDisabled(!selectedButton || state.selectedButtonIndex <= 0),
 
         new ButtonBuilder()
-          .setCustomId('embed:field-move-down')
+          .setCustomId('embed:button-move-down')
           .setLabel('⬇️ Down')
           .setStyle(ButtonStyle.Secondary)
           .setDisabled(
-            !selectedField ||
-              state.selectedFieldIndex >= (state.fields?.length || 0) - 1
+            !selectedButton ||
+              state.selectedButtonIndex >= (state.buttons?.length || 0) - 1
           ),
 
         new ButtonBuilder()
@@ -1141,269 +1239,6 @@ function buildFieldsPanel(interaction, memberDisplayName = 'Unknown User') {
           .setStyle(ButtonStyle.Secondary)
       ),
     ],
-  };
-}
-
-function buildHelpersPanel(memberDisplayName = 'Unknown User') {
-  const messageVariables = HELPER_VARIABLES.slice(0, 13)
-    .map((variable) => `\`${variable.name}\` — ${variable.desc}`)
-    .join('\n');
-
-  const defaultVariables = HELPER_VARIABLES.slice(13, 22)
-    .map((variable) => `\`${variable.name}\` — ${variable.desc}`)
-    .join('\n');
-
-  const guildVariables = HELPER_VARIABLES.slice(22)
-    .map((variable) => `\`${variable.name}\` — ${variable.desc}`)
-    .join('\n');
-
-  const embed = new EmbedBuilder()
-    .setColor(PANEL_COLOR)
-    .setTitle('📖 Embed Variables')
-    .setDescription(
-      [
-        'Use these variables inside your title, description, fields, author, footer, image, thumbnail, or author icon.',
-        '',
-        '**MESSAGE SPECIFIC**',
-        messageVariables,
-        '',
-        '**DEFAULT**',
-        defaultVariables,
-        '',
-        '**SERVER / GUILD**',
-        guildVariables,
-        '',
-        '**Examples:**',
-        '`Welcome to {guildName}`',
-        '`Hello {userMention}`',
-        '`{guildIcon}` inside thumbnail',
-        '`{guildIcon}` inside author icon',
-      ].join('\n')
-    )
-    .setFooter({ text: `Requested by ${memberDisplayName}` })
-    .setTimestamp();
-
-      return {
-    embeds: [embed],
-    components: [
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('embed:editor')
-          .setLabel('⬅️ Back')
-          .setStyle(ButtonStyle.Secondary)
-      ),
-    ],
-  };
-}
-
-function buildOverwriteConfirmPanel(presetName, memberDisplayName = 'Unknown User') {
-  return {
-    embeds: [
-      new EmbedBuilder()
-        .setColor('#FFC107')
-        .setTitle('⚠️ Preset Already Exists')
-        .setDescription(
-          [
-            `A preset called **${presetName}** already exists.`,
-            '',
-            'Do you want to overwrite it?',
-          ].join('\n')
-        )
-        .setFooter({ text: `Requested by ${memberDisplayName}` })
-        .setTimestamp(),
-    ],
-    components: [
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`embed:preset-overwrite:${presetName}`)
-          .setLabel('✅ Overwrite')
-          .setStyle(ButtonStyle.Danger),
-
-        new ButtonBuilder()
-          .setCustomId('embed:preset-rename')
-          .setLabel('✏️ Rename')
-          .setStyle(ButtonStyle.Primary),
-
-        new ButtonBuilder()
-          .setCustomId('embed:presets')
-          .setLabel('⬅️ Cancel')
-          .setStyle(ButtonStyle.Secondary)
-      ),
-    ],
-  };
-}
-
-function buildDeleteConfirmPanel(presetName, memberDisplayName = 'Unknown User') {
-  return {
-    embeds: [
-      new EmbedBuilder()
-        .setColor('#ED4245')
-        .setTitle('⚠️ Confirm Preset Delete')
-        .setDescription(
-          [
-            `Are you sure you want to delete **${presetName}**?`,
-            '',
-            'This cannot be undone.',
-          ].join('\n')
-        )
-        .setFooter({ text: `Requested by ${memberDisplayName}` })
-        .setTimestamp(),
-    ],
-    components: [
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('embed:preset-delete')
-          .setLabel('✅ Yes, Delete')
-          .setStyle(ButtonStyle.Danger),
-
-        new ButtonBuilder()
-          .setCustomId('embed:presets')
-          .setLabel('⬅️ Cancel')
-          .setStyle(ButtonStyle.Secondary)
-      ),
-    ],
-  };
-}
-
-function buildPresetsPanel(interaction, memberDisplayName = 'Unknown User') {
-  const state = getSession(interaction);
-  const presets = guildManager.getEmbedPresets(interaction.guild.id) || {};
-
-  const embedDefaults =
-    typeof guildManager.getEmbedDefaults === 'function'
-      ? guildManager.getEmbedDefaults(interaction.guild.id) || {}
-      : {};
-
-  const presetEntries = Object.entries(presets)
-    .filter(([name, value]) => name !== 'updatedAt' && value && typeof value === 'object')
-    .sort(([, a], [, b]) => {
-      const aTime = new Date(a?.updatedAt || 0).getTime();
-      const bTime = new Date(b?.updatedAt || 0).getTime();
-      return bTime - aTime;
-    })
-    .slice(0, 25);
-
-  const currentDefault = embedDefaults[state.template] || null;
-
-  const presetText = presetEntries.length
-    ? presetEntries
-        .map(([name, preset], index) => {
-          const updated = preset?.updatedAt
-            ? new Date(preset.updatedAt).toLocaleString()
-            : 'Unknown';
-
-          const loadedBadge = state.selectedPreset === name ? ' ✅ Loaded' : '';
-          const defaultBadge = currentDefault === name ? ' ⭐ Default' : '';
-
-          return [
-            `**${index + 1}. ${name}**${loadedBadge}${defaultBadge}`,
-            `> Updated: ${updated}`,
-            `> Template: \`${preset.template || 'custom'}\``,
-            `> Fields: ${Array.isArray(preset.fields) ? preset.fields.length : 0}/25`,
-          ].join('\n');
-        })
-        .join('\n\n')
-    : [
-        'No presets saved yet.',
-        '',
-        'Use **Save Current** to store your current embed setup.',
-      ].join('\n');
-
-  const embed = new EmbedBuilder()
-    .setColor(PANEL_COLOR)
-    .setTitle('💾 Embed Presets')
-    .setDescription(
-      [
-        '**Save, load, duplicate, rename, delete, and set default embeds.**',
-        '',
-        `> **Loaded Preset:** ${state.selectedPreset ? `💾 ${state.selectedPreset}` : 'None'}`,
-        `> **Current Template:** ${TEMPLATES[state.template]?.emoji || '🛠️'} ${
-          TEMPLATES[state.template]?.label || 'Custom Embed'
-        }`,
-        `> **Template Default:** ${currentDefault ? `⭐ ${currentDefault}` : 'None'}`,
-        `> **Unsaved Changes:** ${state.hasUnsavedChanges ? '⚠️ Yes' : '✅ No'}`,
-        '',
-        '**Saved Presets**',
-        presetText,
-      ].join('\n')
-    )
-    .setFooter({ text: `Requested by ${memberDisplayName}` })
-    .setTimestamp();
-
-  const components = [];
-
-  if (presetEntries.length) {
-    components.push(
-      new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-          .setCustomId('embed:preset-load')
-          .setPlaceholder('💾 Load a saved preset')
-          .addOptions(
-            presetEntries.map(([name, preset]) => ({
-              label: name.slice(0, 100),
-              description: trim(
-                preset?.title || preset?.description || 'Saved embed preset',
-                100
-              ),
-              value: name,
-              default: state.selectedPreset === name,
-            }))
-          )
-      )
-    );
-  }
-
-  components.push(
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('embed:preset-save')
-        .setLabel(state.selectedPreset ? '💾 Save / Overwrite' : '💾 Save Current')
-        .setStyle(ButtonStyle.Success),
-
-      new ButtonBuilder()
-        .setCustomId('embed:preset-set-default')
-        .setLabel('⭐ Set Default')
-        .setStyle(ButtonStyle.Primary)
-        .setDisabled(!state.selectedPreset),
-
-      new ButtonBuilder()
-        .setCustomId('embed:preset-clear-default')
-        .setLabel('🧹 Clear Default')
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(!currentDefault)
-    )
-  );
-
-  components.push(
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('embed:preset-rename')
-        .setLabel('✏️ Rename')
-        .setStyle(ButtonStyle.Primary)
-        .setDisabled(!state.selectedPreset),
-
-      new ButtonBuilder()
-        .setCustomId('embed:preset-duplicate')
-        .setLabel('📄 Duplicate')
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(!state.selectedPreset),
-
-      new ButtonBuilder()
-        .setCustomId('embed:preset-delete-confirm')
-        .setLabel('🗑️ Delete')
-        .setStyle(ButtonStyle.Danger)
-        .setDisabled(!state.selectedPreset),
-
-      new ButtonBuilder()
-        .setCustomId('embed:editor')
-        .setLabel('⬅️ Back')
-        .setStyle(ButtonStyle.Secondary),
-    )
-  );
-
-  return {
-    embeds: [embed],
-    components,
   };
 }
 
@@ -1558,6 +1393,74 @@ function buildFieldModal(state, fieldIndex = null) {
     );
 }
 
+function buildButtonModal(state, buttonIndex = null) {
+  const isEditing =
+    Number.isInteger(buttonIndex) &&
+    state.buttons?.[buttonIndex];
+
+  const button = isEditing
+    ? state.buttons[buttonIndex]
+    : {
+        label: '',
+        emoji: '',
+        style: 'Primary',
+        action: 'link',
+        url: '',
+      };
+
+  return new ModalBuilder()
+    .setCustomId(
+      isEditing
+        ? `embed:button-save:${buttonIndex}`
+        : 'embed:button-save-new'
+    )
+    .setTitle(
+      isEditing
+        ? 'Edit Button'
+        : 'Add Button'
+    )
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('label')
+          .setLabel('Button Label')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setValue(button.label || '')
+          .setMaxLength(80)
+      ),
+
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('emoji')
+          .setLabel('Emoji')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false)
+          .setValue(button.emoji || '')
+          .setMaxLength(20)
+      ),
+
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('style')
+          .setLabel('Style')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false)
+          .setPlaceholder('Primary, Secondary, Success, Danger, Link')
+          .setValue(button.style || 'Primary')
+      ),
+
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('url')
+          .setLabel('URL (optional)')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false)
+          .setValue(button.url || '')
+      )
+    );
+}
+
 function buildColorModal(state) {
   return new ModalBuilder()
     .setCustomId('embed:save-color')
@@ -1708,6 +1611,22 @@ async function handleInteraction(interaction) {
     return true;
   }
 
+  if (interaction.customId === 'embed:button-select') {
+  saveSession(interaction, {
+    ...state,
+    selectedButtonIndex: Number(interaction.values[0]),
+  });
+
+  await interaction.update(
+    buildButtonsPanel(
+      interaction,
+      memberDisplayName
+    )
+  );
+
+  return true;
+}
+
     if (interaction.customId === 'embed:preset-load') {
       const presetName = interaction.values[0];
       const preset = guildManager.getEmbedPreset(interaction.guild.id, presetName);
@@ -1832,15 +1751,150 @@ if (interaction.customId === 'embed:editor') {
       return true;
     }
 
-    if (interaction.customId === 'embed:fields') {
+    if (interaction.customId === 'embed:buttons') {
       await interaction.update(
-        buildFieldsPanel(interaction, memberDisplayName)
-      );
+      buildButtonsPanel(interaction, memberDisplayName)
+    );
 
       return true;
     }
 
-    if (interaction.customId === 'embed:edit-media') {
+    if (interaction.customId === 'embed:button-add') {
+  await interaction.showModal(
+    buildButtonModal(state)
+  );
+
+  return true;
+}
+
+if (
+  interaction.customId.startsWith(
+    'embed:button-edit'
+  )
+) {
+  const index =
+    Number.isInteger(
+      Number(
+        interaction.customId.split(':')[2]
+      )
+    )
+      ? Number(
+          interaction.customId.split(':')[2]
+        )
+      : state.selectedButtonIndex;
+
+  if (
+    !Number.isInteger(index) ||
+    !state.buttons?.[index]
+  ) {
+    await interaction.reply({
+      content: 'Select a button first.',
+      flags: 64,
+    });
+
+    return true;
+  }
+
+  await interaction.showModal(
+    buildButtonModal(state, index)
+  );
+
+  return true;
+}
+    
+  if (interaction.customId === 'embed:button-remove-selected') {
+  const nextButtons = [...(state.buttons || [])];
+
+  if (Number.isInteger(state.selectedButtonIndex)) {
+    nextButtons.splice(state.selectedButtonIndex, 1);
+  }
+
+  markUnsaved(interaction, {
+    ...state,
+    buttons: nextButtons,
+    selectedButtonIndex: null,
+  });
+
+  await interaction.update(
+    buildButtonsPanel(interaction, memberDisplayName)
+  );
+
+  return true;
+}
+
+if (interaction.customId === 'embed:button-move-up') {
+  const index = state.selectedButtonIndex;
+
+  if (
+    !Number.isInteger(index) ||
+    index <= 0
+  ) {
+    return true;
+  }
+
+  const nextButtons = [...(state.buttons || [])];
+
+  [
+    nextButtons[index - 1],
+    nextButtons[index]
+  ] = [
+    nextButtons[index],
+    nextButtons[index - 1]
+  ];
+
+  markUnsaved(interaction, {
+    ...state,
+    buttons: nextButtons,
+    selectedButtonIndex: index - 1,
+  });
+
+  await interaction.update(
+    buildButtonsPanel(
+      interaction,
+      memberDisplayName
+    )
+  );
+
+  return true;
+}
+
+if (interaction.customId === 'embed:button-move-down') {
+  const index = state.selectedButtonIndex;
+
+  if (
+    !Number.isInteger(index) ||
+    index >= (state.buttons?.length || 0) - 1
+  ) {
+    return true;
+  }
+
+  const nextButtons = [...(state.buttons || [])];
+
+  [
+    nextButtons[index],
+    nextButtons[index + 1]
+  ] = [
+    nextButtons[index + 1],
+    nextButtons[index]
+  ];
+
+  markUnsaved(interaction, {
+    ...state,
+    buttons: nextButtons,
+    selectedButtonIndex: index + 1,
+  });
+
+  await interaction.update(
+    buildButtonsPanel(
+      interaction,
+      memberDisplayName
+    )
+  );
+
+  return true;
+}
+
+if (interaction.customId === 'embed:edit-media') {
       await interaction.showModal(buildMediaModal(state));
       return true;
     }
@@ -1922,8 +1976,9 @@ if (interaction.customId === 'embed:test-send') {
   await channel.send({
     content: state.allowUserPing ? `<@${interaction.user.id}>` : '',
     embeds: [buildPreviewEmbed(state, interaction)],
+    components: buildButtonComponents(state),
     allowedMentions: getAllowedMentionsForState(state, interaction),
-  });
+});
 
   await interaction.reply({
     content: `Sent to <#${state.channelId}>`,
@@ -1937,8 +1992,7 @@ if (interaction.customId === 'embed:test-send') {
   
 /* ---------------- MODALS ---------------- */
 if (interaction.isModalSubmit()) {
-  if (interaction.isModalSubmit()) {
-    const state = getSession(interaction);
+  const state = getSession(interaction);
 
     if (interaction.customId === 'embed:preset-save-modal') {
       const name = interaction.fields.getTextInputValue('name').trim();
@@ -1963,6 +2017,67 @@ if (interaction.isModalSubmit()) {
       await updatePresets(interaction, memberDisplayName);
       return true;
     }
+
+    if (interaction.customId === 'embed:button-save-new') {
+  const nextButtons = [...(state.buttons || [])];
+
+  nextButtons.push({
+    label: interaction.fields.getTextInputValue('label'),
+    emoji: interaction.fields.getTextInputValue('emoji'),
+    style: interaction.fields.getTextInputValue('style') || 'Primary',
+    action: 'link',
+    url: interaction.fields.getTextInputValue('url'),
+  });
+
+  markUnsaved(interaction, {
+    ...state,
+    buttons: nextButtons,
+    selectedButtonIndex: nextButtons.length - 1,
+  });
+
+  await interaction.reply({
+    ...buildButtonsPanel(interaction, memberDisplayName),
+    flags: 64,
+  });
+
+  return true;
+}
+
+if (interaction.customId.startsWith('embed:button-save:')) {
+  const buttonIndex = Number(interaction.customId.split(':')[2]);
+
+  if (!Number.isInteger(buttonIndex) || !state.buttons?.[buttonIndex]) {
+    await interaction.reply({
+      content: 'Button not found.',
+      flags: 64,
+    });
+
+    return true;
+  }
+
+  const nextButtons = [...state.buttons];
+
+  nextButtons[buttonIndex] = {
+    ...nextButtons[buttonIndex],
+    label: interaction.fields.getTextInputValue('label'),
+    emoji: interaction.fields.getTextInputValue('emoji'),
+    style: interaction.fields.getTextInputValue('style') || 'Primary',
+    url: interaction.fields.getTextInputValue('url'),
+  };
+
+  markUnsaved(interaction, {
+    ...state,
+    buttons: nextButtons,
+    selectedButtonIndex: buttonIndex,
+  });
+
+  await interaction.reply({
+    ...buildButtonsPanel(interaction, memberDisplayName),
+    flags: 64,
+  });
+
+  return true;
+}
 
     if (interaction.customId === 'embed:save-color') {
       const hex = interaction.fields.getTextInputValue('hex');
@@ -2072,7 +2187,6 @@ if (interaction.isModalSubmit()) {
 
     return false;
   }
-}
 
 module.exports = {
   buildEmbedPanel,

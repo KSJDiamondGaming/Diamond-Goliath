@@ -89,6 +89,8 @@ const DEFAULT_EMBED = Object.freeze({
   },
 
   fields: [],
+
+  buttons: [],
 });
 
 const DEFAULT_EMBED_DEFAULTS = Object.freeze({
