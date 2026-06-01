@@ -240,6 +240,115 @@ function buildPermissionOverwrites({
   settings,
   panel,
 }) {
+  const botId =
+    guild.members.me?.id ||
+    guild.client?.user?.id ||
+    null;
+
+  const permissionOverwrites = [
+    {
+      id: guild.roles.everyone.id,
+      deny: [
+        PermissionFlagsBits.ViewChannel,
+      ],
+    },
+  ];
+
+  if (botId) {
+    permissionOverwrites.push({
+      id: botId,
+
+      allow: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.ReadMessageHistory,
+        PermissionFlagsBits.AttachFiles,
+        PermissionFlagsBits.EmbedLinks,
+        PermissionFlagsBits.ManageChannels,
+        PermissionFlagsBits.ManageMessages,
+      ],
+    });
+  }
+
+  if (ticket.creatorId) {
+    permissionOverwrites.push({
+      id: ticket.creatorId,
+
+      allow: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.ReadMessageHistory,
+        PermissionFlagsBits.AttachFiles,
+        PermissionFlagsBits.EmbedLinks,
+      ],
+    });
+  }
+
+  const extraUserIds =
+    uniqueIds(ticket.allowedUserIds || []);
+
+  for (const userId of extraUserIds) {
+    permissionOverwrites.push({
+      id: userId,
+
+      allow: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.ReadMessageHistory,
+        PermissionFlagsBits.AttachFiles,
+        PermissionFlagsBits.EmbedLinks,
+      ],
+    });
+  }
+
+  for (const roleId of getPanelOrGlobalStaffRoles(settings, panel)) {
+    permissionOverwrites.push({
+      id: roleId,
+
+      allow: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.ReadMessageHistory,
+        PermissionFlagsBits.AttachFiles,
+        PermissionFlagsBits.EmbedLinks,
+        PermissionFlagsBits.ManageMessages,
+      ],
+    });
+  }
+
+  for (const roleId of getPanelOrGlobalManagerRoles(settings, panel)) {
+    permissionOverwrites.push({
+      id: roleId,
+
+      allow: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.ReadMessageHistory,
+        PermissionFlagsBits.AttachFiles,
+        PermissionFlagsBits.EmbedLinks,
+        PermissionFlagsBits.ManageChannels,
+        PermissionFlagsBits.ManageMessages,
+      ],
+    });
+  }
+
+  for (const roleId of getPanelOrGlobalViewerRoles(settings, panel)) {
+    permissionOverwrites.push({
+      id: roleId,
+
+      allow: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.ReadMessageHistory,
+      ],
+
+      deny: [
+        PermissionFlagsBits.SendMessages,
+      ],
+    });
+  }
+
+  return permissionOverwrites;
+} {
   const permissionOverwrites = [
     {
       id: guild.roles.everyone.id,
