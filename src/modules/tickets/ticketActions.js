@@ -21,6 +21,20 @@ const {
   deleteTicketChannel,
 } = require('./ticketChannelManager');
 
+const {
+  getTicketActionRows,
+  getClosedTicketActionRows,
+  getArchivedTicketActionRows,
+} = require('./ticketChannelButtons');
+
+const {
+  getPanel,
+} = require('./ticketStore');
+
+const {
+  sendTicketControlMessage,
+} = require('./ticketPanelManager');
+
 const STATUS = {
   OPEN: 'open',
   CLAIMED: 'claimed',
@@ -165,6 +179,86 @@ async function getDiscordChannel(client, ticket) {
   return guild.channels
     .fetch(ticket.discordChannelId)
     .catch(() => null);
+}
+
+async function refreshTicketControlMessage(client, ticket) {
+  if (!client || !ticket?.guildId || !ticket?.discordChannelId) {
+    return false;
+  }
+
+  const guild = await getGuildFromClient(client, ticket.guildId);
+  if (!guild) return false;
+
+  const channel = await guild.channels
+    .fetch(ticket.discordChannelId)
+    .catch(() => null);
+
+  if (!channel) return false;
+
+  const messageId =
+    ticket.discordMessageId ||
+    ticket.messageId ||
+    null;
+
+  let message = null;
+
+  if (messageId) {
+    message = await channel.messages
+      .fetch(messageId)
+      .catch(() => null);
+  }
+
+  if (!message) {
+    const messages = await channel.messages
+      .fetch({ limit: 20 })
+      .catch(() => null);
+
+    message = messages?.find(
+      (msg) =>
+        msg.author?.id === client.user?.id &&
+        msg.embeds?.length
+    );
+  }
+
+  if (!message?.editable) return false;
+
+  const panelId = ticket.metadata?.panelId || null;
+  const panel = panelId ? getPanel(ticket.guildId, panelId) : null;
+
+  const payload = await sendTicketControlMessage({
+    channel: {
+      send: async (data) => data,
+    },
+    ticket,
+    panel,
+    user: null,
+  });
+
+  let components = getTicketActionRows(ticket, {
+    allowReopen: true,
+    allowDelete: true,
+  });
+
+  const status = String(ticket.status || 'open').toLowerCase();
+
+  if (status === STATUS.CLOSED) {
+    components = getClosedTicketActionRows(ticket, {
+      allowDelete: true,
+    });
+  }
+
+  if (status === STATUS.ARCHIVED) {
+    components = getArchivedTicketActionRows(ticket, {
+      allowDelete: true,
+    });
+  }
+
+  await message.edit({
+    embeds: payload.embeds || [],
+    components,
+  });
+
+  return true;
 }
 
 async function createTranscript(ticket, actor, options = {}) {
@@ -797,28 +891,20 @@ async function changePriority(
   actor,
   options = {}
 ) {
-  const ticket = await fetchTicket(
-    ticketOrId,
-    options.guildId
-  );
-
+  const ticket = await fetchTicket(ticketOrId, options.guildId);
   const actorData = getActor(actor);
 
-  const nextPriority =
-    String(priority || '')
-      .toLowerCase()
-      .trim();
+  const nextPriority = String(priority || '')
+    .toLowerCase()
+    .trim();
 
   if (!Object.values(PRIORITY).includes(nextPriority)) {
-    throw new Error(
-      `Invalid priority: ${priority}`
-    );
+    throw new Error(`Invalid priority: ${priority}`);
   }
 
-  const updated =
-    await saveTicket(ticket, {
-      priority: nextPriority,
-    });
+  const updated = await saveTicket(ticket, {
+    priority: nextPriority,
+  });
 
   ticketTimeline.addPriorityChangeEntry(
     ticket.guildId,
@@ -839,44 +925,47 @@ async function changePriority(
     }
   );
 
-  /*
-   * Update Discord channel name
-   */
-
   if (options.client) {
     try {
-      const channel =
-        await getDiscordChannel(
-          options.client,
-          updated
+      const channel = await getDiscordChannel(
+        options.client,
+        updated
+      );
+
+      if (channel?.manageable) {
+        const newName = buildTicketChannelName(
+          updated,
+          channel.guild
         );
 
-      if (
-        channel &&
-        channel.manageable
-      ) {
-        const newName =
-          buildTicketChannelName(
-            updated,
-            channel.guild
-          );
-
-        if (
-          channel.name !== newName
-        ) {
+        if (channel.name !== newName) {
           await channel.setName(
             newName,
-            `Priority changed to ${nextPriority}`
+            `Ticket priority changed to ${nextPriority}`
           );
         }
       }
-    } catch (error) {
-      console.error(
-        '[Tickets] Failed to update priority channel name:',
-        error
+
+      await refreshTicketControlMessage(
+        options.client,
+        updated
       );
-    }
-  }
+    } catch (error) {
+  console.error(
+    '[Tickets] Failed to update priority channel/embed:',
+    error
+  );
+}
+}
+
+emitAction(
+  options.io,
+  updated || ticket,
+  ticketSocketEvents.EVENTS.TICKET_UPDATED
+);
+
+return updated;
+}
 
   emitAction(
     options.io,

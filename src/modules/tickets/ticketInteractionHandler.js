@@ -808,15 +808,15 @@ async function handleTicketSelect(interaction) {
         interaction.values?.[0]
       );
 
-      const updated =
-  await ticketActions.changePriority(
-    ticket,
-    priority,
-    interaction.user,
-    {
-      client: interaction.client,
-    }
-  );
+    const updated =
+      await ticketActions.changePriority(
+        ticket,
+        priority,
+        interaction.user,
+      {
+          client: interaction.client,
+     }
+    );
 
       const label = formatPriority(
         updated.priority
