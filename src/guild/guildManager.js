@@ -210,37 +210,37 @@ function normalizeEmbed(embed = {}) {
         .filter((field) => field.name && field.value)
     : [];
 
+      merged.buttons = Array.isArray(merged.buttons)
+    ? merged.buttons
+        .filter(isPlainObject)
+        .slice(0, 25)
+        .map((button) => ({
+          id: cleanString(button.id, 100),
+
+          label: cleanString(button.label, 80),
+
+          emoji: cleanString(button.emoji, 50),
+
+          style: cleanString(
+            button.style || 'Primary',
+            20
+          ),
+
+          url: cleanEmbedUrl(button.url),
+
+          action: cleanString(
+            button.action,
+            100
+          ),
+
+          data: isPlainObject(button.data)
+            ? button.data
+            : {},
+        }))
+    : [];
+
   return merged;
 }
-
-merged.buttons = Array.isArray(merged.buttons)
-  ? merged.buttons
-      .filter(isPlainObject)
-      .slice(0, 25)
-      .map((button) => ({
-        id: cleanString(button.id, 100),
-
-        label: cleanString(button.label, 80),
-
-        emoji: cleanString(button.emoji, 50),
-
-        style: cleanString(
-          button.style || 'Primary',
-          20
-        ),
-
-        url: cleanEmbedUrl(button.url),
-
-        action: cleanString(
-          button.action,
-          100
-        ),
-
-        data: isPlainObject(button.data)
-          ? button.data
-          : {},
-      }))
-  : [];
 
 function normalizeEmbedPresets(source = {}) {
   if (!isPlainObject(source.embedPresets)) return {};
