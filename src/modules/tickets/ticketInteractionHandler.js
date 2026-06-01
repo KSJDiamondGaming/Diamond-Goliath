@@ -17,15 +17,12 @@ const ticketPermissions = require('./ticketPermissions');
 
 const {
   handleTicketPanelButton,
+  refreshDeployedPanel,
 } = require('./ticketPanelManager');
 
 const {
   handleTicketSetupInteraction,
 } = require('./ticketSetupPanel');
-
-const {
-  refreshDeployedPanel,
-} = require('./ticketPanelManager');
 
 const {
   CUSTOM_IDS,
@@ -55,6 +52,13 @@ const SELECT_IDS = {
   PRIORITY: 'goliath_ticket_priority_select',
 };
 
+const PRIORITY_LABELS = {
+  low: 'Low',
+  normal: 'Normal',
+  high: 'High',
+  urgent: 'Urgent',
+};
+
 function alreadyHandled(interaction) {
   return interaction.deferred || interaction.replied;
 }
@@ -64,6 +68,21 @@ function ephemeralPayload(payload = {}) {
     ...payload,
     flags: MessageFlags.Ephemeral,
   };
+}
+
+function formatPriority(priority = 'normal') {
+  const value = String(priority || 'normal').toLowerCase().trim();
+  return PRIORITY_LABELS[value] || 'Normal';
+}
+
+function normalizePriority(priority = 'normal') {
+  const value = String(priority || 'normal').toLowerCase().trim();
+
+  if (Object.prototype.hasOwnProperty.call(PRIORITY_LABELS, value)) {
+    return value;
+  }
+
+  return 'normal';
 }
 
 async function safeReply(interaction, payload = {}) {
@@ -110,16 +129,9 @@ async function safeDefer(interaction, ephemeral = true) {
   }
 }
 
-async function refreshPanelEditor(
-  interaction,
-  panelId
-) {
+async function refreshPanelEditor(interaction, panelId) {
   try {
-    const panel =
-      ticketStore.getPanel(
-        interaction.guildId,
-        panelId
-      );
+    const panel = ticketStore.getPanel(interaction.guildId, panelId);
 
     if (!panel) {
       return false;
@@ -134,32 +146,21 @@ async function refreshPanelEditor(
       embeds: [
         buildEditorEmbed(panel),
       ],
-
       components:
         buildEditorControls(panelId),
     };
 
-    if (
-      interaction.deferred ||
-      interaction.replied
-    ) {
-      await interaction.editReply(
-        payload
-      );
-
+    if (interaction.deferred || interaction.replied) {
+      await interaction.editReply(payload);
       return true;
     }
 
-    await interaction.update(
-      payload
-    );
-
+    await interaction.update(payload);
     return true;
   } catch {
     return false;
   }
 }
-
 
 function isTicketModal(customId) {
   return Object.values(MODAL_IDS).includes(customId);
@@ -404,22 +405,22 @@ async function showPrioritySelect(interaction, ticket) {
     .addOptions(
       {
         label: 'Low',
-        value: ticketActions.PRIORITY.LOW,
+        value: 'low',
         emoji: '🟢',
       },
       {
         label: 'Normal',
-        value: ticketActions.PRIORITY.NORMAL,
+        value: 'normal',
         emoji: '🔵',
       },
       {
         label: 'High',
-        value: ticketActions.PRIORITY.HIGH,
+        value: 'high',
         emoji: '🟠',
       },
       {
         label: 'Urgent',
-        value: ticketActions.PRIORITY.URGENT,
+        value: 'urgent',
         emoji: '🔴',
       }
     );
@@ -455,21 +456,9 @@ async function handleReopen(interaction, ticket) {
   });
 }
 
-async function handleDelete(
-  interaction,
-  ticket
-) {
-  if (
-    !can(
-      interaction,
-      TICKET_ACTIONS.DELETE,
-      ticket
-    )
-  ) {
-    return deny(
-      interaction,
-      'You cannot delete tickets.'
-    );
+async function handleDelete(interaction, ticket) {
+  if (!can(interaction, TICKET_ACTIONS.DELETE, ticket)) {
+    return deny(interaction, 'You cannot delete tickets.');
   }
 
   if (alreadyHandled(interaction)) {
@@ -478,39 +467,23 @@ async function handleDelete(
 
   const modal =
     new ModalBuilder()
-      .setCustomId(
-        MODAL_IDS.DELETE_CONFIRM
-      )
-      .setTitle(
-        'Delete Ticket'
-      );
+      .setCustomId(MODAL_IDS.DELETE_CONFIRM)
+      .setTitle('Delete Ticket');
 
   const confirm =
     new TextInputBuilder()
-      .setCustomId(
-        INPUT_IDS.DELETE_CONFIRM
-      )
-      .setLabel(
-        'Type DELETE to confirm'
-      )
-      .setPlaceholder(
-        'DELETE'
-      )
-      .setStyle(
-        TextInputStyle.Short
-      )
+      .setCustomId(INPUT_IDS.DELETE_CONFIRM)
+      .setLabel('Type DELETE to confirm')
+      .setPlaceholder('DELETE')
+      .setStyle(TextInputStyle.Short)
       .setRequired(true)
       .setMaxLength(20);
 
   modal.addComponents(
-    new ActionRowBuilder().addComponents(
-      confirm
-    )
+    new ActionRowBuilder().addComponents(confirm)
   );
 
-  return interaction.showModal(
-    modal
-  );
+  return interaction.showModal(modal);
 }
 
 async function handleTicketButton(interaction) {
@@ -522,17 +495,17 @@ async function handleTicketButton(interaction) {
 
   const ticket = await getTicketForInteraction(interaction);
 
-if (!ticket) {
-  await safeReply(
-    interaction,
-    ephemeralPayload({
-      content:
-        '⚠️ No ticket record found for this channel.',
-    })
-  );
+  if (!ticket) {
+    await safeReply(
+      interaction,
+      ephemeralPayload({
+        content:
+          '⚠️ No ticket record found for this channel.',
+      })
+    );
 
-  return true;
-}
+    return true;
+  }
 
   try {
     switch (interaction.customId) {
@@ -662,10 +635,15 @@ async function handleTicketModal(interaction) {
       }).catch(() => null);
     }
 
+    await refreshPanelEditor(
+      interaction,
+      panelId
+    ).catch(() => null);
+
     await safeReply(
       interaction,
       ephemeralPayload({
-        content: `✅ Updated panel appearance: \`${field}\`.`,
+        content: `✅ Updated panel setting: \`${field}\`.`,
       })
     );
 
@@ -826,7 +804,9 @@ async function handleTicketSelect(interaction) {
 
   try {
     if (interaction.customId === SELECT_IDS.PRIORITY) {
-      const priority = interaction.values[0];
+      const priority = normalizePriority(
+        interaction.values?.[0]
+      );
 
       const updated =
         await ticketActions.changePriority(
@@ -835,15 +815,19 @@ async function handleTicketSelect(interaction) {
           interaction.user
         );
 
+      const label = formatPriority(
+        updated.priority
+      );
+
       if (alreadyHandled(interaction)) {
         await safeEditOrReply(interaction, {
-          content: `⚠️ Ticket priority changed to \`${updated.priority}\`.`,
+          content: `⚠️ Ticket priority changed to \`${label}\`.`,
           components: [],
         });
       } else {
         await interaction
           .update({
-            content: `⚠️ Ticket priority changed to \`${updated.priority}\`.`,
+            content: `⚠️ Ticket priority changed to \`${label}\`.`,
             components: [],
           })
           .catch(() => null);
