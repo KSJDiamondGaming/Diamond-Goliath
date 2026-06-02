@@ -252,8 +252,8 @@ function buildEditorEmbed(panel) {
       [
         `**Panel ID:** \`${panel.panelId}\``,
         `**Status:** ${getStatusText(panel)}`,
-        `**Type:** \`${panel.ticketType || 'support'}\``,
-        `**Priority:** \`${panel.ticketPriority || 'normal'}\``,
+        `**Type:** \`${panel.ticketType || 'Support'}\``,
+        `**Priority:** \`${panel.ticketPriority || 'Normal'}\``,
         '',
         '**Routing**',
         `Ticket Category: ${
