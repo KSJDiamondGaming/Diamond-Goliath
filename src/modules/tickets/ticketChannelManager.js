@@ -165,16 +165,25 @@ function buildTicketChannelName(ticket, guild = null, panel = null) {
 
   const number = String(getTicketNumber(ticket)).padStart(4, '0');
 
+  const baseName = `${type}-${username}-${number}`;
+
+  const status = String(ticket.status || 'open').toLowerCase();
+
+  if (status === 'archived') {
+    return `📦${baseName}`.slice(0, 90);
+  }
+
   const useIndicator =
     panel?.priorityIndicators !== false &&
     ticket?.metadata?.priorityIndicators !== false;
 
   const indicator = useIndicator
-    ? `${getPriorityIndicator(ticket.priority)}`
+    ? getPriorityIndicator(ticket.priority)
     : '';
 
-  return `${indicator}${type}-${username}-${number}`.slice(0, 90);
+  return `${indicator}${baseName}`.slice(0, 90);
 }
+
 function getPanelOrGlobalCategory(settings, panel) {
   return panel?.outputCategoryId || settings.discord?.categoryId || null;
 }
@@ -468,13 +477,26 @@ async function archiveTicketChannel({
       .catch(() => null);
   }
 
-  const cleanName = channel.name
-    .replace(/^closed-/, '')
-    .replace(/^archived-/, '');
+    const archiveName = buildTicketChannelName(
+    {
+      ...ticket,
+      status: 'archived',
+    },
+    guild,
+    panel
+  );
 
-  await channel
-    .setName(`archived-${cleanName}`.slice(0, 90))
-    .catch(() => null);
+  console.log(
+    '[Tickets] Archive rename check:',
+    channel.name,
+    '=>',
+    archiveName
+  );
+
+  await channel.setName(
+    archiveName,
+    'Ticket archived'
+);
 
   addTimelineEntry(guild.id, ticket.ticketId, {
     type: 'discord_channel_archived',
@@ -557,11 +579,25 @@ async function reopenTicketChannel({
       .catch(() => null);
   }
 
-  const cleanName = channel.name
-    .replace(/^closed-/, '')
-    .replace(/^archived-/, '');
+  const reopenedName = buildTicketChannelName(
+  {
+    ...ticket,
+    status: 'open',
+  },
+  guild
+);
 
-  await channel.setName(cleanName).catch(() => null);
+console.log(
+  '[Tickets] Reopen rename check:',
+  channel.name,
+  '=>',
+  reopenedName
+);
+
+await channel.setName(
+  reopenedName,
+  'Ticket reopened'
+);
 
   addTimelineEntry(guild.id, ticket.ticketId, {
     type: 'discord_channel_reopened',
