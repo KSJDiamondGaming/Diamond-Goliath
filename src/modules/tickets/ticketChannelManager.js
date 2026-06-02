@@ -477,7 +477,7 @@ async function archiveTicketChannel({
       .catch(() => null);
   }
 
-    const archiveName = buildTicketChannelName(
+  const archiveName = buildTicketChannelName(
     {
       ...ticket,
       status: 'archived',
