@@ -942,10 +942,17 @@ async function changePriority(
         );
 
         if (channel.name !== newName) {
-          await channel.setName(
-            newName,
-            `Ticket priority changed to ${nextPriority}`
-          );
+          channel
+            .setName(
+              newName,
+              `Ticket priority changed to ${nextPriority}`
+            )
+            .catch((error) => {
+              console.warn(
+                '[Tickets] Priority rename skipped:',
+                error?.message || error
+               );
+            });
         }
       }
 
