@@ -1,6 +1,9 @@
 'use strict';
 
-const { ChannelType } = require('discord.js');
+const {
+  ChannelType,
+  EmbedBuilder,
+} = require('discord.js');
 
 const ticketManager = require('./ticketManager');
 const ticketTimeline = require('./ticketTimeline');
@@ -214,9 +217,9 @@ async function refreshTicketControlMessage(client, ticket) {
       .catch(() => null);
 
     message = messages?.find(
-      (msg) =>
-        msg.author?.id === client.user?.id &&
-        msg.embeds?.length
+    (msg) =>
+      msg.author?.id === client.user?.id &&
+      msg.embeds?.[0]?.title?.startsWith('🎫')
     );
   }
 
@@ -951,20 +954,12 @@ async function changePriority(
         updated
       );
     } catch (error) {
-  console.error(
-    '[Tickets] Failed to update priority channel/embed:',
-    error
-  );
-}
-
-emitAction(
-  options.io,
-  updated || ticket,
-  ticketSocketEvents.EVENTS.TICKET_UPDATED
-);
-
-return updated;
-}
+      console.error(
+        '[Tickets] Failed to update priority channel/embed:',
+        error
+      );
+    }
+  }
 
   emitAction(
     options.io,
@@ -1011,12 +1006,6 @@ async function changeStatus(
       oldStatus: ticket.status,
       newStatus: nextStatus,
     }
-  );
-
-  emitAction(
-    options.io,
-    saved || updated || ticket,
-    ticketSocketEvents.EVENTS.TICKET_UPDATED
   );
 
   emitAction(

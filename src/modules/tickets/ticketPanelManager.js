@@ -21,6 +21,7 @@ const {
   deletePanel,
   markPanelDeployed,
   markPanelUndeployed,
+  updateTicket,
 } = require('./ticketStore');
 
 const {
@@ -704,6 +705,7 @@ async function handleTicketPanelButton(
     });
 
   if (channel) {
+  const controlMessage =
     await sendTicketControlMessage({
       channel,
       ticket: {
@@ -715,6 +717,17 @@ async function handleTicketPanelButton(
       user:
         interaction.user,
     });
+
+ if (controlMessage?.id) {
+  await updateTicket(
+    guild.id,
+    ticket.ticketId,
+    {
+      discordMessageId:
+        controlMessage.id,
+    }
+  ).catch(() => null);
+}
   }
 
   emitTicketCreated(
