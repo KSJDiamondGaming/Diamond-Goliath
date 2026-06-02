@@ -210,14 +210,14 @@ function buildPanelSelect(guildId) {
       .setCustomId('ticket_setup:select_panel')
       .setPlaceholder('Manage an existing ticket panel')
       .addOptions(
-        panels.map((panel) => ({
-          label: String(panel.name || 'Ticket Panel').slice(0, 100),
-          description: `${panel.ticketType || 'Support'} • ${
-            panel.deployed ? 'Deployed' : panel.status || 'Draft'
-          }`,
-          value: panel.panelId,
-        }))
-      )
+      panels.map((panel) => ({
+        label: String(panel.name || 'Ticket Panel').slice(0, 100),
+        description: `${formatLabel(panel.ticketType || 'Support')} • ${formatLabel(
+          panel.deployed ? 'Deployed' : panel.status || 'Draft'
+        )}`,
+        value: panel.panelId,
+       }))
+    )
   );
 }
 
