@@ -719,6 +719,7 @@ async function handleTicketPanelButton(
     });
 
  if (controlMessage?.id) {
+  try {
   await updateTicket(
     guild.id,
     ticket.ticketId,
@@ -726,9 +727,12 @@ async function handleTicketPanelButton(
       discordMessageId:
         controlMessage.id,
     }
-  ).catch(() => null);
+  );
+} catch {
+  // ignore
 }
-  }
+}
+}
 
   emitTicketCreated(
     guild.id,
