@@ -116,7 +116,7 @@ const DEFAULT_TICKETS = Object.freeze({
     tickets: {
       allowMultipleTickets: true,
       oneActivePerType: true,
-      defaultPriority: 'normal',
+      defaultPriority: 'low',
       defaultStatus: 'open',
       cooldownMs: 60 * 1000,
       maxActiveTicketsPerUser: 5,
