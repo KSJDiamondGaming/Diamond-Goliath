@@ -192,6 +192,14 @@ function buildSetupEmbed(guildId) {
     .setTimestamp();
 }
 
+function formatLabel(value) {
+  const text = String(value || '');
+
+  return text
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
 function buildPanelSelect(guildId) {
   const panels = getPanelList(guildId).slice(0, 25);
 
@@ -205,7 +213,7 @@ function buildPanelSelect(guildId) {
         panels.map((panel) => ({
           label: String(panel.name || 'Ticket Panel').slice(0, 100),
           description: `${panel.ticketType || 'Support'} • ${
-            panel.deployed ? 'deployed' : panel.status || 'draft'
+            panel.deployed ? 'Deployed' : panel.status || 'Draft'
           }`,
           value: panel.panelId,
         }))

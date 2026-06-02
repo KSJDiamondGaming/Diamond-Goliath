@@ -167,7 +167,7 @@ function normalizePanel(panel = {}) {
     lastDeployById: panel.lastDeployById || null,
 
     ticketType: panel.ticketType || 'support',
-    ticketPriority: panel.ticketPriority || 'normal',
+    ticketPriority: panel.ticketPriority || 'low',
 
     outputCategoryId:
       panel.outputCategoryId || null,

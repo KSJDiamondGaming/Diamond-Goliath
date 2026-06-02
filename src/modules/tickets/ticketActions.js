@@ -616,7 +616,17 @@ async function archive(ticketOrId, actor, options = {}) {
     transcript,
   });
 
-  await maybeArchiveChannel(updated || ticket, options);
+  await maybeArchiveChannel(
+    updated || ticket,
+    options
+  );
+
+  if (options.client) {
+    await refreshTicketControlMessage(
+      options.client,
+      updated || ticket
+    );
+  }
 
   await ticketTimeline.addTicketArchivedEntry(
     ticket.guildId,

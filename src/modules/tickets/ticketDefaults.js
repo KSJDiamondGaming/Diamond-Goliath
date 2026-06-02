@@ -160,7 +160,7 @@ const DEFAULT_TICKET_SETTINGS =
       oneActivePerType: true,
 
       defaultPriority:
-        TICKET_PRIORITY.NORMAL,
+        TICKET_PRIORITY.LOW,
 
       defaultStatus:
         TICKET_STATUS.OPEN,
