@@ -298,17 +298,28 @@ function getArchivedTicketActionRows(
   ticket = {},
   options = {}
 ) {
-  return getTicketActionRows(
-    {
-      ...ticket,
-      status: 'archived',
-    },
-    {
-      ...options,
-      allowReopen: false,
-    }
-  );
+  const allowDelete =
+    Boolean(options.allowDelete);
+
+  const confirmDelete =
+    Boolean(options.confirmDelete);
+
+  const buttons = [
+    buildReopenButton(),
+    buildTranscriptButton(),
+  ];
+
+  if (allowDelete) {
+    buttons.push(
+      confirmDelete
+        ? buildDeleteConfirmButton()
+        : buildDeleteButton()
+    );
+  }
+
+  return chunkButtons(buttons);
 }
+
 
 function isTicketButton(
   customId
