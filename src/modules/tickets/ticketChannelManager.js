@@ -487,16 +487,28 @@ async function archiveTicketChannel({
   );
 
   console.log(
-    '[Tickets] Archive rename check:',
-    channel.name,
-    '=>',
-    archiveName
-  );
+  '[Tickets] Archive rename check:',
+  channel.name,
+  '=>',
+  archiveName
+);
 
+try {
   await channel.setName(
     archiveName,
     'Ticket archived'
-);
+  );
+
+  console.log(
+    '[Tickets] Archive channel renamed:',
+    archiveName
+  );
+} catch (error) {
+  console.error(
+    '[Tickets] Archive rename failed:',
+    error
+  );
+}
 
   addTimelineEntry(guild.id, ticket.ticketId, {
     type: 'discord_channel_archived',
