@@ -898,61 +898,97 @@ async function rename(
   return updated;
 }
 
-async function archive(ticketOrId, actor, options = {}) {
+async function changePriority(
+  ticketOrId,
+  priority,
+  actor,
+  options = {}
+) {
   const ticket = await fetchTicket(ticketOrId, options.guildId);
   const actorData = getActor(actor);
 
-  const transcript = await createTranscript(
-    ticket,
-    actor,
-    {
-      ...options,
-      reason: options.reason || 'Ticket archived',
-    }
-  );
+  const nextPriority = String(priority || '')
+    .toLowerCase()
+    .trim();
 
-  const updated = await saveTicket(ticket, {
-    status: STATUS.ARCHIVED,
-    archivedById: actorData.id,
-    archivedAt: now(),
-    archiveReason: options.reason || null,
-    statusChangedAt: now(),
-    transcript,
-  });
-
-  await maybeArchiveChannel(
-    updated || ticket,
-    options
-  );
-
-  if (options.client) {
-    await refreshTicketControlMessage(
-      options.client,
-      updated || ticket
-    );
+  if (!Object.values(PRIORITY).includes(nextPriority)) {
+    throw new Error(`Invalid priority: ${priority}`);
   }
 
-  await ticketTimeline.addTicketArchivedEntry(
+  const updated = await saveTicket(ticket, {
+    priority: nextPriority,
+  });
+
+  ticketTimeline.addPriorityChangeEntry(
     ticket.guildId,
     ticket.ticketId,
-    actorData.id
+    actorData.id,
+    ticket.priority,
+    nextPriority
   );
 
   await addStaffActivity(
     updated || ticket,
     actor,
-    'staff_archived_ticket',
-    `Ticket archived by ${actorData.tag}.`,
+    'staff_changed_priority',
+    `Priority changed from ${ticket.priority} to ${nextPriority} by ${actorData.tag}.`,
     {
-      reason: options.reason || null,
+      oldPriority: ticket.priority,
+      newPriority: nextPriority,
     }
   );
 
-  emitAction(
-    options.io,
-    updated || ticket,
-    ticketSocketEvents.EVENTS.TICKET_ARCHIVED
-  );
+  if (options.client) {
+    try {
+      await refreshTicketControlMessage(
+        options.client,
+        updated
+      );
+
+      const channel = await getDiscordChannel(
+        options.client,
+        updated
+      );
+
+      if (channel?.manageable) {
+        const newName = buildTicketChannelName(
+          updated,
+          channel.guild
+        );
+
+        console.log(
+          '[Tickets] Priority rename check:',
+          channel.name,
+          '=>',
+          newName
+        );
+
+        if (channel.name !== newName) {
+          try {
+            await channel.setName(
+              newName,
+              `Ticket priority changed to ${nextPriority}`
+            );
+
+            console.log(
+              '[Tickets] Channel renamed:',
+              newName
+            );
+          } catch (error) {
+            console.error(
+              '[Tickets] Channel rename failed:',
+              error
+            );
+          }
+        }
+      }
+    } catch (error) {
+      console.error(
+        '[Tickets] Failed to update priority embed:',
+        error
+      );
+    }
+  }
 
   emitAction(
     options.io,
