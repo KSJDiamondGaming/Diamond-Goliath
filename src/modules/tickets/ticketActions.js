@@ -375,9 +375,10 @@ async function maybeReopenChannel(ticket, options = {}) {
   if (!guild) return null;
 
   const channel = await reopenTicketChannel({
-    guild,
-    ticket,
-  });
+  guild,
+  ticket,
+  panel: options.panel || null,
+});
 
   if (channel) {
     emitAction(

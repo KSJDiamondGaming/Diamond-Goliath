@@ -568,6 +568,7 @@ async function closeTicketChannel({
 async function reopenTicketChannel({
   guild,
   ticket,
+  panel = null,
 } = {}) {
   if (!guild || !ticket?.discordChannelId) return null;
 
@@ -592,24 +593,37 @@ async function reopenTicketChannel({
   }
 
   const reopenedName = buildTicketChannelName(
-  {
-    ...ticket,
-    status: 'open',
-  },
-  guild
-);
+    {
+      ...ticket,
+      status: 'open',
+    },
+    guild,
+    panel
+  );
 
-console.log(
-  '[Tickets] Reopen rename check:',
-  channel.name,
-  '=>',
-  reopenedName
-);
+  console.log(
+    '[Tickets] Reopen rename check:',
+    channel.name,
+    '=>',
+    reopenedName
+  );
 
-await channel.setName(
-  reopenedName,
-  'Ticket reopened'
-);
+  try {
+    await channel.setName(
+      reopenedName,
+      'Ticket reopened'
+    );
+
+    console.log(
+      '[Tickets] Reopen channel renamed:',
+      reopenedName
+    );
+  } catch (error) {
+    console.error(
+      '[Tickets] Reopen rename failed:',
+      error
+    );
+  }
 
   addTimelineEntry(guild.id, ticket.ticketId, {
     type: 'discord_channel_reopened',
