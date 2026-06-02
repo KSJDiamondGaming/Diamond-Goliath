@@ -361,7 +361,7 @@ const DEFAULT_TICKET_PANEL =
       TICKET_TYPES.SUPPORT,
 
     ticketPriority:
-      TICKET_PRIORITY.NORMAL,
+      TICKET_PRIORITY.LOW,
 
     /*
     ==========================================
@@ -562,7 +562,7 @@ function createDefaultTicket({
     TICKET_STATUS.OPEN,
 
   priority =
-    TICKET_PRIORITY.NORMAL,
+    TICKET_PRIORITY.LOW,
 
   source =
     TICKET_SOURCE.SYSTEM,

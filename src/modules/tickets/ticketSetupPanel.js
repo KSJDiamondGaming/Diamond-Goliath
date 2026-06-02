@@ -434,7 +434,7 @@ function createBasicPanel(guildId, type) {
     ticketPriority:
       type === TICKET_TYPES.APPEAL
         ? TICKET_PRIORITY.HIGH
-        : TICKET_PRIORITY.NORMAL,
+        : TICKET_PRIORITY.LOW,
     appearance: {
       title: type === TICKET_TYPES.APPEAL ? 'Submit an Appeal' : 'Need Support?',
       description:
