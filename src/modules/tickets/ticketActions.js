@@ -929,44 +929,51 @@ async function changePriority(
   );
 
   if (options.client) {
-    try {
-      const channel = await getDiscordChannel(
-        options.client,
-        updated
+  try {
+    await refreshTicketControlMessage(
+      options.client,
+      updated
+    );
+
+    const channel = await getDiscordChannel(
+      options.client,
+      updated
+    );
+
+    if (channel?.manageable) {
+      const newName = buildTicketChannelName(
+        updated,
+        channel.guild
       );
 
-      if (channel?.manageable) {
-        const newName = buildTicketChannelName(
-          updated,
-          channel.guild
-        );
+      console.log(
+        '[Tickets] Priority rename check:',
+        channel.name,
+        '=>',
+        newName
+      );
 
-        if (channel.name !== newName) {
-          channel
-            .setName(
-              newName,
-              `Ticket priority changed to ${nextPriority}`
-            )
-            .catch((error) => {
-              console.warn(
-                '[Tickets] Priority rename skipped:',
-                error?.message || error
-               );
-            });
-        }
+      if (channel.name !== newName) {
+        channel
+          .setName(
+            newName,
+            `Ticket priority changed to ${nextPriority}`
+          )
+          .catch((error) => {
+            console.warn(
+              '[Tickets] Priority rename skipped:',
+              error?.message || error
+            );
+          });
       }
-
-      await refreshTicketControlMessage(
-        options.client,
-        updated
-      );
-    } catch (error) {
-      console.error(
-        '[Tickets] Failed to update priority channel/embed:',
-        error
-      );
     }
+  } catch (error) {
+    console.error(
+      '[Tickets] Failed to update priority embed:',
+      error
+    );
   }
+}
 
   emitAction(
     options.io,
