@@ -805,36 +805,29 @@ async function handleTicketSelect(interaction) {
   try {
     if (interaction.customId === SELECT_IDS.PRIORITY) {
       const priority = normalizePriority(
-        interaction.values?.[0]
-      );
+  interaction.values?.[0]
+);
 
-    const updated =
-      await ticketActions.changePriority(
-        ticket,
-        priority,
-        interaction.user,
-      {
-          client: interaction.client,
-     }
-    );
+await interaction.deferUpdate();
+
+const updated =
+  await ticketActions.changePriority(
+    ticket,
+    priority,
+    interaction.user,
+    {
+      client: interaction.client,
+    }
+  );
 
       const label = formatPriority(
         updated.priority
       );
 
-      if (alreadyHandled(interaction)) {
-        await safeEditOrReply(interaction, {
-          content: `⚠️ Ticket priority changed to \`${label}\`.`,
-          components: [],
-        });
-      } else {
-        await interaction
-          .update({
-            content: `⚠️ Ticket priority changed to \`${label}\`.`,
-            components: [],
-          })
-          .catch(() => null);
-      }
+            await interaction.editReply({
+        content: `⚠️ Ticket priority changed to \`${label}\`.`,
+        components: [],
+      }).catch(() => null);
 
       return true;
     }
