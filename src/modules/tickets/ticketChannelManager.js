@@ -89,8 +89,8 @@ function cleanChannelPart(value, fallback = 'user', maxLength = 10) {
   return cleaned || fallback;
 }
 
-function getPriorityIndicator(priority = 'normal') {
-  const cleanPriority = String(priority || 'normal').toLowerCase();
+function getPriorityIndicator(priority = 'low') {
+  const cleanPriority = String(priority || 'low').toLowerCase();
 
   if (cleanPriority === 'low') {
     return '🟢';
