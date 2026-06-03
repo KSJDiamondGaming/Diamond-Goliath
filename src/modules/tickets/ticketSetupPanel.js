@@ -50,6 +50,49 @@ const INPUT_IDS = {
   APPEARANCE_VALUE: 'appearance_value',
 };
 
+const PANEL_TYPE_UI = {
+  support: {
+    emoji: '🎟️',
+    name: 'General Support',
+    label: 'Create Support',
+    title: 'Need Support?',
+    description: 'Press the button below to open a private support ticket.',
+    buttonLabel: 'Open Support Ticket',
+    buttonEmoji: '🎟️',
+  },
+  appeal: {
+    emoji: '⚖️',
+    name: 'Ban Appeal',
+    label: 'Create Appeal',
+    title: 'Submit an Appeal',
+    description: 'Press the button below to open a private appeal ticket.',
+    buttonLabel: 'Open Appeal Ticket',
+    buttonEmoji: '⚖️',
+  },
+  report: {
+    emoji: '🚨',
+    name: 'Reports',
+    label: 'Create Report',
+    title: 'Submit a Report',
+    description: 'Press the button below to report an issue privately.',
+    buttonLabel: 'Open Report Ticket',
+    buttonEmoji: '🚨',
+  },
+  application: {
+    emoji: '📝',
+    name: 'Applications',
+    label: 'Create Application',
+    title: 'Submit an Application',
+    description: 'Press the button below to open a private application ticket.',
+    buttonLabel: 'Open Application Ticket',
+    buttonEmoji: '📝',
+  },
+};
+
+function getPanelTypeUi(type = 'support') {
+  return PANEL_TYPE_UI[String(type || 'support').toLowerCase()] || PANEL_TYPE_UI.support;
+}
+
 const APPEARANCE_FIELDS = {
   title: {
     label: 'Embed Title',
@@ -302,7 +345,7 @@ function buildSetupEmbed(guildId) {
   const stats = getSetupStats(guildId);
 
   return new EmbedBuilder()
-    .setTitle('🎫 Goliath Tickets')
+    .setTitle('🎟️ Goliath Tickets')
     .setDescription(
       [
         '**Realtime Platform Expansion**',
@@ -330,15 +373,20 @@ function buildPanelSelect(guildId) {
   return new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
       .setCustomId('ticket_setup:select_panel')
-      .setPlaceholder('Manage an existing ticket panel')
+      .setPlaceholder('👥 Manage an existing ticket panel')
       .addOptions(
-        panels.map((panel) => ({
-          label: String(panel.name || 'Ticket Panel').slice(0, 100),
-          description: `${formatLabel(panel.ticketType || 'Support')} • ${formatLabel(
-            panel.deployed ? 'Deployed' : panel.status || 'Draft'
-          )}`,
-          value: panel.panelId,
-        }))
+        panels.map((panel) => {
+          const ui = getPanelTypeUi(panel.ticketType);
+
+          return {
+            label: String(panel.name || ui.name || 'Ticket Panel').slice(0, 100),
+            description: `${formatLabel(panel.ticketType || 'Support')} • ${formatLabel(
+              panel.deployed ? 'Deployed' : panel.status || 'Draft'
+            )}`,
+            value: panel.panelId,
+            emoji: ui.emoji,
+          };
+        })
       )
   );
 }
@@ -349,7 +397,7 @@ function buildSetupButtons() {
       .setCustomId('ticket_setup:create_support')
       .setLabel('Create Support')
       .setStyle(ButtonStyle.Primary)
-      .setEmoji('🎫'),
+      .setEmoji('🎟️'),
 
     new ButtonBuilder()
       .setCustomId('ticket_setup:create_appeal')
@@ -625,21 +673,19 @@ function buildManagementControls(panel) {
         .setCustomId(`ticket_setup:appearance:${panel.panelId}`)
         .setLabel('Appearance')
         .setStyle(ButtonStyle.Primary)
-        .setEmoji('🎨')
-    ),
+        .setEmoji('🎨'),
 
-    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`ticket_setup:roles:${panel.panelId}`)
+        .setLabel('Manage Roles')
+        .setStyle(ButtonStyle.Primary)
+        .setEmoji('👥'),
+
       new ButtonBuilder()
         .setCustomId(`ticket_setup:set_limit:${panel.panelId}`)
         .setLabel('Ticket Limit')
-        .setStyle(ButtonStyle.Secondary)
-        .setEmoji('🎟️'),
-
-      new ButtonBuilder()
-        .setCustomId(`ticket_setup:set_cooldown:${panel.panelId}`)
-        .setLabel('Cooldown')
-        .setStyle(ButtonStyle.Secondary)
-        .setEmoji('⏱️')
+        .setStyle(ButtonStyle.Primary)
+        .setEmoji('🎟️')
     ),
 
     new ActionRowBuilder().addComponents(
@@ -650,16 +696,25 @@ function buildManagementControls(panel) {
         .setEmoji('🔒'),
 
       new ButtonBuilder()
-        .setCustomId(`ticket_setup:roles:${panel.panelId}`)
-        .setLabel('Manage Roles')
-        .setStyle(ButtonStyle.Primary)
-        .setEmoji('👥')
-    ),
+        .setCustomId(`ticket_setup:set_cooldown:${panel.panelId}`)
+        .setLabel('Cooldown')
+        .setStyle(ButtonStyle.Secondary)
+        .setEmoji('⏱️'),
 
-    new ActionRowBuilder().addComponents(
+      new ChannelSelectMenuBuilder()
+        .setCustomId(`ticket_setup:set_logs:${panel.panelId}`)
+        .setPlaceholder(
+          panel.logsChannelId
+            ? '📜 Logs Channel • Set'
+            : '📜 Logs Channel'
+        )
+        .setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+        .setMinValues(1)
+        .setMaxValues(1),
+
       new ButtonBuilder()
         .setCustomId(`ticket_setup:back_panel:${panel.panelId}`)
-        .setLabel('Back To Panel')
+        .setLabel('Back')
         .setStyle(ButtonStyle.Secondary)
         .setEmoji('⬅️')
     ),
@@ -1322,6 +1377,15 @@ async function handleTicketSetupInteraction(interaction) {
     await showAppearanceEditor(interaction, panelId);
     return true;
   }
+
+  if (action === 'set_logs') {
+  updatePanel(interaction.guild.id, panelId, {
+    logsChannelId: interaction.values?.[0] || null,
+  });
+
+  await showManagementEditor(interaction, panelId);
+  return true;
+}
 
   if (action === 'appearance_select') {
     const field = interaction.values?.[0];
