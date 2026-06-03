@@ -169,9 +169,7 @@ function getStatusText(panel) {
 }
 
 function formatLabel(value) {
-  const text = String(value || '');
-
-  return text
+  return String(value || '')
     .replace(/_/g, ' ')
     .replace(/-/g, ' ')
     .toLowerCase()
@@ -198,24 +196,15 @@ function formatLimit(value) {
 function formatCooldown(ms) {
   const value = Number(ms ?? 60 * 1000);
 
-  if (!Number.isFinite(value) || value <= 0) {
-    return '`Off`';
-  }
+  if (!Number.isFinite(value) || value <= 0) return '`Off`';
 
   const seconds = Math.floor(value / 1000);
-
-  if (seconds < 60) {
-    return `\`${seconds}s\``;
-  }
+  if (seconds < 60) return `\`${seconds}s\``;
 
   const minutes = Math.floor(seconds / 60);
-
-  if (minutes < 60) {
-    return `\`${minutes}m\``;
-  }
+  if (minutes < 60) return `\`${minutes}m\``;
 
   const hours = Math.floor(minutes / 60);
-
   return `\`${hours}h\``;
 }
 
@@ -228,10 +217,7 @@ function getPanelLimit(panel = {}) {
 }
 
 function getPanelCooldownMs(panel = {}) {
-  return Number(
-    panel.cooldownMs ??
-      60 * 1000
-  );
+  return Number(panel.cooldownMs ?? 60 * 1000);
 }
 
 function getSetupStats(guildId) {
@@ -379,32 +365,41 @@ function buildEditorEmbed(panel) {
         `Manager Roles: ${formatRoleCount(panel.managerRoleIds)}`,
         `Viewer Roles: ${formatRoleCount(panel.viewerRoleIds)}`,
         '',
-        '**SLA & Reminders**',
-        `Priority Indicators: \`${panel.priorityIndicators === false ? 'Off' : 'On'}\``,
-        `SLA: \`Low ${panel.sla?.low || 1440}m • Normal ${
-          panel.sla?.normal || 720
-        }m • High ${panel.sla?.high || 120}m • Urgent ${
-          panel.sla?.urgent || 15
-        }m\``,
-        `Reminders: \`${panel.reminders?.enabled === false ? 'Off' : 'On'} • Repeat ${
-          panel.reminders?.repeatMinutes || 60
-        }m\``,
-        '',
         '**Appearance**',
         `Title: \`${appearance.title || 'Not set'}\``,
         `Color: \`${appearance.color || '#5865F2'}\``,
         `Button: \`${appearance.buttonEmoji || '🎫'} ${
           appearance.buttonLabel || 'Open Ticket'
         }\``,
-        `Image: ${appearance.imageUrl ? '`Configured`' : '`Not set`'}`,
-        `Thumbnail: ${appearance.thumbnailUrl ? '`Configured`' : '`Not set`'}`,
-        `Footer: \`${appearance.footerText || 'Not set'}\``,
       ].join('\n')
     )
     .setColor(appearance.color || '#5865F2')
     .setFooter({
-      text: 'Set Ticket Category + Panel Channel before deploying.',
+      text: 'Main editor uses 5 rows. Role editing is inside Manage Roles.',
     })
+    .setTimestamp();
+}
+
+function buildRoleEditorEmbed(panel) {
+  return new EmbedBuilder()
+    .setTitle(`👥 Manage Roles • ${panel.name}`)
+    .setDescription(
+      [
+        `**Panel ID:** \`${panel.panelId}\``,
+        '',
+        '**Current Roles**',
+        `Staff Roles: ${formatRoleCount(panel.staffRoleIds)}`,
+        `Manager Roles: ${formatRoleCount(panel.managerRoleIds)}`,
+        `Viewer Roles: ${formatRoleCount(panel.viewerRoleIds)}`,
+        '',
+        '**Role Access**',
+        'Staff can claim, update, close, reopen and archive tickets.',
+        'Managers can do staff actions plus delete/manage higher-level controls.',
+        'Viewers can read tickets but cannot send messages.',
+      ].join('\n')
+    )
+    .setColor('#5865F2')
+    .setFooter({ text: 'Goliath • Ticket Role Editor' })
     .setTimestamp();
 }
 
@@ -412,13 +407,13 @@ function buildLimitButtons(panelId, panel = {}) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`ticket_setup:set_limit:${panelId}`)
-      .setLabel('Set Ticket Limit')
+      .setLabel('Set Limit')
       .setStyle(ButtonStyle.Primary)
       .setEmoji('🎟️'),
 
     new ButtonBuilder()
       .setCustomId(`ticket_setup:set_cooldown:${panelId}`)
-      .setLabel('Set Cooldown')
+      .setLabel('Cooldown')
       .setStyle(ButtonStyle.Secondary)
       .setEmoji('⏱️'),
 
@@ -430,13 +425,57 @@ function buildLimitButtons(panelId, panel = {}) {
   );
 }
 
+function buildManageRow(panelId) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`ticket_setup:roles:${panelId}`)
+      .setLabel('Manage Roles')
+      .setStyle(ButtonStyle.Primary)
+      .setEmoji('👥'),
+
+    new ButtonBuilder()
+      .setCustomId(`ticket_setup:refresh_deployed:${panelId}`)
+      .setLabel('Refresh Panel')
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji('♻️')
+  );
+}
+
+function buildDeployButtons(panelId) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`ticket_setup:deploy:${panelId}`)
+      .setLabel('Deploy')
+      .setStyle(ButtonStyle.Success)
+      .setEmoji('🚀'),
+
+    new ButtonBuilder()
+      .setCustomId(`ticket_setup:redeploy:${panelId}`)
+      .setLabel('Redeploy')
+      .setStyle(ButtonStyle.Primary)
+      .setEmoji('🔄'),
+
+    new ButtonBuilder()
+      .setCustomId(`ticket_setup:undeploy:${panelId}`)
+      .setLabel('Undeploy')
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji('📦'),
+
+    new ButtonBuilder()
+      .setCustomId(`ticket_setup:delete:${panelId}`)
+      .setLabel('Delete')
+      .setStyle(ButtonStyle.Danger)
+      .setEmoji('🗑️'),
+
+    new ButtonBuilder()
+      .setCustomId('ticket_setup:back')
+      .setLabel('Back')
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji('⬅️')
+  );
+}
+
 function buildEditorControls(panelId) {
-  const panel = getPanelList('').find((item) => item.panelId === panelId);
-
-  if (panel) {
-    return buildEditorControlsForPanel(panel);
-  }
-
   return [
     new ActionRowBuilder().addComponents(
       new ChannelSelectMenuBuilder()
@@ -459,63 +498,11 @@ function buildEditorControls(panelId) {
         .setMaxValues(1)
     ),
 
-    new ActionRowBuilder().addComponents(
-      new RoleSelectMenuBuilder()
-        .setCustomId(`ticket_setup:set_staff:${panelId}`)
-        .setPlaceholder('👥 Staff Roles')
-        .setMinValues(0)
-        .setMaxValues(10)
-    ),
-
-    new ActionRowBuilder().addComponents(
-      new RoleSelectMenuBuilder()
-        .setCustomId(`ticket_setup:set_manager:${panelId}`)
-        .setPlaceholder('🛡️ Manager Roles')
-        .setMinValues(0)
-        .setMaxValues(10)
-    ),
-
-    new ActionRowBuilder().addComponents(
-      new RoleSelectMenuBuilder()
-        .setCustomId(`ticket_setup:set_viewer:${panelId}`)
-        .setPlaceholder('👁️ Viewer Roles')
-        .setMinValues(0)
-        .setMaxValues(10)
-    ),
-
     buildLimitButtons(panelId, {}),
 
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`ticket_setup:deploy:${panelId}`)
-        .setLabel('Deploy')
-        .setStyle(ButtonStyle.Success)
-        .setEmoji('🚀'),
+    buildManageRow(panelId),
 
-      new ButtonBuilder()
-        .setCustomId(`ticket_setup:redeploy:${panelId}`)
-        .setLabel('Redeploy')
-        .setStyle(ButtonStyle.Primary)
-        .setEmoji('🔄'),
-
-      new ButtonBuilder()
-        .setCustomId(`ticket_setup:undeploy:${panelId}`)
-        .setLabel('Undeploy')
-        .setStyle(ButtonStyle.Secondary)
-        .setEmoji('📦'),
-
-      new ButtonBuilder()
-        .setCustomId(`ticket_setup:delete:${panelId}`)
-        .setLabel('Delete')
-        .setStyle(ButtonStyle.Danger)
-        .setEmoji('🗑️'),
-
-      new ButtonBuilder()
-        .setCustomId('ticket_setup:back')
-        .setLabel('Back')
-        .setStyle(ButtonStyle.Secondary)
-        .setEmoji('⬅️')
-    ),
+    buildDeployButtons(panelId),
   ];
 }
 
@@ -542,6 +529,16 @@ function buildEditorControlsForPanel(panel) {
         .setMaxValues(1)
     ),
 
+    buildLimitButtons(panel.panelId, panel),
+
+    buildManageRow(panel.panelId),
+
+    buildDeployButtons(panel.panelId),
+  ];
+}
+
+function buildRoleEditorControls(panel) {
+  return [
     new ActionRowBuilder().addComponents(
       new RoleSelectMenuBuilder()
         .setCustomId(`ticket_setup:set_staff:${panel.panelId}`)
@@ -578,36 +575,10 @@ function buildEditorControlsForPanel(panel) {
         .setMaxValues(10)
     ),
 
-    buildLimitButtons(panel.panelId, panel),
-
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId(`ticket_setup:deploy:${panel.panelId}`)
-        .setLabel('Deploy')
-        .setStyle(ButtonStyle.Success)
-        .setEmoji('🚀'),
-
-      new ButtonBuilder()
-        .setCustomId(`ticket_setup:redeploy:${panel.panelId}`)
-        .setLabel('Redeploy')
-        .setStyle(ButtonStyle.Primary)
-        .setEmoji('🔄'),
-
-      new ButtonBuilder()
-        .setCustomId(`ticket_setup:undeploy:${panel.panelId}`)
-        .setLabel('Undeploy')
-        .setStyle(ButtonStyle.Secondary)
-        .setEmoji('📦'),
-
-      new ButtonBuilder()
-        .setCustomId(`ticket_setup:delete:${panel.panelId}`)
-        .setLabel('Delete')
-        .setStyle(ButtonStyle.Danger)
-        .setEmoji('🗑️'),
-
-      new ButtonBuilder()
-        .setCustomId('ticket_setup:back')
-        .setLabel('Back')
+        .setCustomId(`ticket_setup:back_panel:${panel.panelId}`)
+        .setLabel('Back To Panel')
         .setStyle(ButtonStyle.Secondary)
         .setEmoji('⬅️')
     ),
@@ -632,6 +603,19 @@ async function sendSetupPanel(interaction) {
   return interaction.reply(ephemeralPayload(payload));
 }
 
+async function showSetupHome(interaction) {
+  const components = [buildSetupButtons()];
+  const panelSelect = buildPanelSelect(interaction.guild.id);
+
+  if (panelSelect) components.push(panelSelect);
+
+  return safeUpdate(interaction, {
+    content: null,
+    embeds: [buildSetupEmbed(interaction.guild.id)],
+    components,
+  });
+}
+
 async function showPanelEditor(interaction, panelId) {
   const panel = getPanel(interaction.guild.id, panelId);
 
@@ -647,6 +631,24 @@ async function showPanelEditor(interaction, panelId) {
     content: null,
     embeds: [buildEditorEmbed(panel)],
     components: buildEditorControlsForPanel(panel),
+  });
+}
+
+async function showRoleEditor(interaction, panelId) {
+  const panel = getPanel(interaction.guild.id, panelId);
+
+  if (!panel) {
+    return safeUpdate(interaction, {
+      content: '❌ Ticket panel not found.',
+      embeds: [],
+      components: [],
+    });
+  }
+
+  return safeUpdate(interaction, {
+    content: null,
+    embeds: [buildRoleEditorEmbed(panel)],
+    components: buildRoleEditorControls(panel),
   });
 }
 
@@ -728,19 +730,6 @@ async function handleNoPermission(interaction) {
   );
 }
 
-async function showSetupHome(interaction) {
-  const components = [buildSetupButtons()];
-  const panelSelect = buildPanelSelect(interaction.guild.id);
-
-  if (panelSelect) components.push(panelSelect);
-
-  return safeUpdate(interaction, {
-    content: null,
-    embeds: [buildSetupEmbed(interaction.guild.id)],
-    components,
-  });
-}
-
 async function fetchDeployChannel(interaction, panel) {
   const channelId = panel.deployChannelId;
 
@@ -778,8 +767,6 @@ function showLimitModal(interaction, panelId) {
     );
   }
 
-  const currentLimit = getPanelLimit(panel);
-
   const modal = new ModalBuilder()
     .setCustomId(`${MODAL_IDS.SET_LIMIT}:${panelId}`)
     .setTitle('Set Ticket Limit');
@@ -788,13 +775,11 @@ function showLimitModal(interaction, panelId) {
     .setCustomId(INPUT_IDS.LIMIT)
     .setLabel('Max Open Tickets Per User')
     .setPlaceholder('0 = Unlimited, 1 = One ticket, 2 = Two tickets')
-    .setValue(String(currentLimit))
+    .setValue(String(getPanelLimit(panel)))
     .setRequired(true)
     .setStyle(TextInputStyle.Short);
 
-  modal.addComponents(
-    new ActionRowBuilder().addComponents(input)
-  );
+  modal.addComponents(new ActionRowBuilder().addComponents(input));
 
   return interaction.showModal(modal);
 }
@@ -825,9 +810,7 @@ function showCooldownModal(interaction, panelId) {
     .setRequired(true)
     .setStyle(TextInputStyle.Short);
 
-  modal.addComponents(
-    new ActionRowBuilder().addComponents(input)
-  );
+  modal.addComponents(new ActionRowBuilder().addComponents(input));
 
   return interaction.showModal(modal);
 }
@@ -835,11 +818,7 @@ function showCooldownModal(interaction, panelId) {
 function parseNonNegativeInteger(value) {
   const number = Number(String(value || '').trim());
 
-  if (!Number.isFinite(number)) {
-    return null;
-  }
-
-  if (number < 0) {
+  if (!Number.isFinite(number) || number < 0) {
     return null;
   }
 
@@ -854,8 +833,7 @@ async function handleLimitModal(interaction, panelId) {
     return safeReply(
       interaction,
       ephemeralPayload({
-        content:
-          '❌ Invalid ticket limit. Enter 0 or a whole number above 0.',
+        content: '❌ Invalid ticket limit. Enter 0 or a whole number above 0.',
       })
     );
   }
@@ -885,8 +863,7 @@ async function handleCooldownModal(interaction, panelId) {
     return safeReply(
       interaction,
       ephemeralPayload({
-        content:
-          '❌ Invalid cooldown. Enter 0 or a whole number of seconds.',
+        content: '❌ Invalid cooldown. Enter 0 or a whole number of seconds.',
       })
     );
   }
@@ -911,15 +888,11 @@ async function handleCooldownModal(interaction, panelId) {
 async function handleModalSubmit(interaction) {
   const customId = interaction.customId || '';
 
-  if (!customId.startsWith(`${SETUP_PREFIX}:`)) {
-    return false;
-  }
+  if (!customId.startsWith(`${SETUP_PREFIX}:`)) return false;
 
   const [, modalAction, panelId] = customId.split(':');
 
-  if (!panelId) {
-    return false;
-  }
+  if (!panelId) return false;
 
   if (modalAction === 'limit_modal') {
     await handleLimitModal(interaction, panelId);
@@ -939,9 +912,7 @@ async function handleTicketSetupInteraction(interaction) {
 
   const customId = interaction.customId || '';
 
-  if (!customId.startsWith(`${SETUP_PREFIX}:`)) {
-    return false;
-  }
+  if (!customId.startsWith(`${SETUP_PREFIX}:`)) return false;
 
   if (!interaction.memberPermissions?.has('ManageGuild')) {
     await handleNoPermission(interaction);
@@ -990,8 +961,14 @@ async function handleTicketSetupInteraction(interaction) {
 
   if (!panelId) return false;
 
-  if (action === 'appearance_select') {
-    return false;
+  if (action === 'roles') {
+    await showRoleEditor(interaction, panelId);
+    return true;
+  }
+
+  if (action === 'back_panel') {
+    await showPanelEditor(interaction, panelId);
+    return true;
   }
 
   if (action === 'set_limit') {
@@ -1058,7 +1035,7 @@ async function handleTicketSetupInteraction(interaction) {
       staffRoleIds: interaction.values || [],
     });
 
-    await showPanelEditor(interaction, panelId);
+    await showRoleEditor(interaction, panelId);
     return true;
   }
 
@@ -1067,7 +1044,7 @@ async function handleTicketSetupInteraction(interaction) {
       managerRoleIds: interaction.values || [],
     });
 
-    await showPanelEditor(interaction, panelId);
+    await showRoleEditor(interaction, panelId);
     return true;
   }
 
@@ -1076,7 +1053,7 @@ async function handleTicketSetupInteraction(interaction) {
       viewerRoleIds: interaction.values || [],
     });
 
-    await showPanelEditor(interaction, panelId);
+    await showRoleEditor(interaction, panelId);
     return true;
   }
 
@@ -1084,10 +1061,7 @@ async function handleTicketSetupInteraction(interaction) {
     const panel = getPanel(interaction.guild.id, panelId);
 
     if (!panel) {
-      await safeReply(
-        interaction,
-        ephemeralPayload({ content: '❌ Panel not found.' })
-      );
+      await safeReply(interaction, ephemeralPayload({ content: '❌ Panel not found.' }));
       return true;
     }
 
@@ -1125,10 +1099,7 @@ async function handleTicketSetupInteraction(interaction) {
     const panel = getPanel(interaction.guild.id, panelId);
 
     if (!panel) {
-      await safeReply(
-        interaction,
-        ephemeralPayload({ content: '❌ Panel not found.' })
-      );
+      await safeReply(interaction, ephemeralPayload({ content: '❌ Panel not found.' }));
       return true;
     }
 
@@ -1165,10 +1136,7 @@ async function handleTicketSetupInteraction(interaction) {
     const panel = getPanel(interaction.guild.id, panelId);
 
     if (!panel) {
-      await safeReply(
-        interaction,
-        ephemeralPayload({ content: '❌ Panel not found.' })
-      );
+      await safeReply(interaction, ephemeralPayload({ content: '❌ Panel not found.' }));
       return true;
     }
 
@@ -1224,7 +1192,12 @@ module.exports = {
 
   buildSetupEmbed,
   buildEditorEmbed,
+  buildRoleEditorEmbed,
+
   buildEditorControls,
   buildEditorControlsForPanel,
+  buildRoleEditorControls,
+
   showPanelEditor,
+  showRoleEditor,
 };
