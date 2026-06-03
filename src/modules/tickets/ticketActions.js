@@ -968,18 +968,23 @@ async function changePriority(
         updated
       );
 
+      console.log(
+        '[Tickets] Priority channel manageable:',
+        channel?.manageable
+      );
+
       if (channel?.manageable) {
         const panelId = updated.metadata?.panelId || null;
 
-      const panel = panelId
-        ? getPanel(updated.guildId, panelId)
-        : null;
+        const panel = panelId
+          ? getPanel(updated.guildId, panelId)
+          : null;
 
-      const newName = buildTicketChannelName(
-        updated,
-        channel.guild,
-        panel
-    );
+        const newName = buildTicketChannelName(
+          updated,
+          channel.guild,
+          panel
+        );
 
         console.log(
           '[Tickets] Priority rename check:',
@@ -990,6 +995,10 @@ async function changePriority(
 
         if (channel.name !== newName) {
           try {
+            console.log(
+              '[Tickets] About to rename priority channel'
+            );
+
             await channel.setName(
               newName,
               `Ticket priority changed to ${nextPriority}`
