@@ -1,5 +1,7 @@
 // src/modules/tickets/ticketChannelManager.js
 
+'use strict';
+
 const {
   ChannelType,
   PermissionFlagsBits,
@@ -25,7 +27,13 @@ const BOT_CHANNEL_PERMISSIONS = [
 ];
 
 function uniqueIds(ids = []) {
-  return [...new Set((ids || []).filter(Boolean))];
+  return [
+    ...new Set(
+      (Array.isArray(ids) ? ids : [])
+        .filter(Boolean)
+        .map(String)
+    ),
+  ];
 }
 
 function getBotId(guild) {
@@ -59,7 +67,10 @@ async function ensureBotChannelPermissions(channel) {
       ManageMessages: true,
     })
     .catch((error) => {
-      console.error('[Tickets] Failed to repair bot channel permissions:', error);
+      console.error(
+        '[Tickets] Failed to repair bot channel permissions:',
+        error
+      );
       return null;
     });
 
@@ -92,21 +103,10 @@ function cleanChannelPart(value, fallback = 'user', maxLength = 10) {
 function getPriorityIndicator(priority = 'low') {
   const cleanPriority = String(priority || 'low').toLowerCase();
 
-  if (cleanPriority === 'low') {
-    return '🟢';
-  }
-
-  if (cleanPriority === 'normal') {
-    return '🔵';
-  }
-
-  if (cleanPriority === 'high') {
-    return '🟡';
-  }
-
-  if (cleanPriority === 'urgent') {
-    return '🔴';
-  }
+  if (cleanPriority === 'low') return '🟢';
+  if (cleanPriority === 'normal') return '🔵';
+  if (cleanPriority === 'high') return '🟡';
+  if (cleanPriority === 'urgent') return '🔴';
 
   return '🔵';
 }
@@ -128,9 +128,11 @@ function getTicketCreatorName(ticket, guild = null) {
     null;
 
   if (creatorId && guild?.members?.cache?.has(creatorId)) {
+    const member = guild.members.cache.get(creatorId);
+
     return (
-      guild.members.cache.get(creatorId)?.user?.username ||
-      guild.members.cache.get(creatorId)?.displayName ||
+      member?.user?.username ||
+      member?.displayName ||
       creatorId
     );
   }
@@ -150,12 +152,13 @@ function getTicketNumber(ticket) {
 function buildTicketChannelName(ticket, guild = null, panel = null) {
   if (!ticket) return 'ticket-user-0000';
 
-  const type = String(ticket.type || 'ticket')
-    .toLowerCase()
-    .replace(/_/g, '-')
-    .replace(/[^a-z0-9-]/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '') || 'ticket';
+  const type =
+    String(ticket.type || 'ticket')
+      .toLowerCase()
+      .replace(/_/g, '-')
+      .replace(/[^a-z0-9-]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '') || 'ticket';
 
   const username = cleanChannelPart(
     getTicketCreatorName(ticket, guild),
@@ -185,11 +188,19 @@ function buildTicketChannelName(ticket, guild = null, panel = null) {
 }
 
 function getPanelOrGlobalCategory(settings, panel) {
-  return panel?.outputCategoryId || settings.discord?.categoryId || null;
+  return (
+    panel?.outputCategoryId ||
+    settings.discord?.categoryId ||
+    null
+  );
 }
 
 function getArchiveCategory(settings, panel) {
-  return panel?.archiveCategoryId || settings.discord?.archiveCategoryId || null;
+  return (
+    panel?.archiveCategoryId ||
+    settings.discord?.archiveCategoryId ||
+    null
+  );
 }
 
 async function resolveAvailableCategory(guild, categoryId) {
@@ -212,167 +223,250 @@ async function resolveAvailableCategory(guild, categoryId) {
     return baseCategory.id;
   }
 
-  const baseName = baseCategory.name.replace(/\s+\d+$/, '').trim();
+  const overflowName = `${baseCategory.name} Overflow`;
 
-  const siblingCategories = guild.channels.cache
-    .filter(
-      (channel) =>
-        channel.type === ChannelType.GuildCategory &&
-        (channel.name === baseName || channel.name.startsWith(`${baseName} `))
-    )
-    .sort((a, b) => {
-      const aNum = Number(a.name.match(/(\d+)$/)?.[1] || 1);
-      const bNum = Number(b.name.match(/(\d+)$/)?.[1] || 1);
-      return aNum - bNum;
-    });
+  let overflowCategory = guild.channels.cache.find(
+    (channel) =>
+      channel.type === ChannelType.GuildCategory &&
+      channel.name === overflowName
+  );
 
-  for (const category of siblingCategories.values()) {
-    if (getChildCount(category.id) < MAX_CHANNELS_PER_CATEGORY) {
-      await ensureBotCategoryPermissions(guild, category.id);
-      return category.id;
-    }
+  if (!overflowCategory) {
+    overflowCategory = await guild.channels
+      .create({
+        name: overflowName,
+        type: ChannelType.GuildCategory,
+        permissionOverwrites:
+          baseCategory.permissionOverwrites.cache.map((overwrite) => ({
+            id: overwrite.id,
+            allow: overwrite.allow.bitfield,
+            deny: overwrite.deny.bitfield,
+            type: overwrite.type,
+          })),
+      })
+      .catch((error) => {
+        console.error('[Tickets] Failed to create overflow category:', error);
+        return null;
+      });
   }
 
-  const overflowNumber = siblingCategories.size + 1;
-  const overflowName = `${baseName} ${overflowNumber}`;
+  if (!overflowCategory) return baseCategory.id;
 
-  const newCategory = await guild.channels.create({
-    name: overflowName,
-    type: ChannelType.GuildCategory,
-    permissionOverwrites: baseCategory.permissionOverwrites.cache.map(
-      (overwrite) => ({
-        id: overwrite.id,
-        allow: overwrite.allow.bitfield,
-        deny: overwrite.deny.bitfield,
-      })
+  await ensureBotCategoryPermissions(guild, overflowCategory.id);
+
+  return overflowCategory.id;
+}
+
+function creatorPermissions(userId) {
+  if (!userId) return null;
+
+  return {
+    id: userId,
+    allow: [
+      PermissionFlagsBits.ViewChannel,
+      PermissionFlagsBits.SendMessages,
+      PermissionFlagsBits.ReadMessageHistory,
+      PermissionFlagsBits.AttachFiles,
+      PermissionFlagsBits.EmbedLinks,
+    ],
+  };
+}
+
+function botPermissions(botId) {
+  if (!botId) return null;
+
+  return {
+    id: botId,
+    allow: BOT_CHANNEL_PERMISSIONS,
+  };
+}
+
+function staffPermissions(roleId) {
+  return {
+    id: roleId,
+    allow: [
+      PermissionFlagsBits.ViewChannel,
+      PermissionFlagsBits.SendMessages,
+      PermissionFlagsBits.ReadMessageHistory,
+      PermissionFlagsBits.AttachFiles,
+      PermissionFlagsBits.EmbedLinks,
+    ],
+  };
+}
+
+function managerPermissions(roleId) {
+  return {
+    id: roleId,
+    allow: [
+      PermissionFlagsBits.ViewChannel,
+      PermissionFlagsBits.SendMessages,
+      PermissionFlagsBits.ReadMessageHistory,
+      PermissionFlagsBits.AttachFiles,
+      PermissionFlagsBits.EmbedLinks,
+      PermissionFlagsBits.ManageMessages,
+      PermissionFlagsBits.ManageChannels,
+    ],
+  };
+}
+
+function viewerPermissions(roleId) {
+  return {
+    id: roleId,
+    allow: [
+      PermissionFlagsBits.ViewChannel,
+      PermissionFlagsBits.ReadMessageHistory,
+    ],
+    deny: [
+      PermissionFlagsBits.SendMessages,
+      PermissionFlagsBits.AttachFiles,
+      PermissionFlagsBits.AddReactions,
+    ],
+  };
+}
+
+function getPanelRoleIds(panel = {}) {
+  return {
+    staffRoleIds: uniqueIds(panel.staffRoleIds),
+    managerRoleIds: uniqueIds(panel.managerRoleIds),
+    viewerRoleIds: uniqueIds(panel.viewerRoleIds),
+  };
+}
+
+function getGlobalRoleIds(settings = {}) {
+  const permissions = settings.permissions || {};
+
+  return {
+    staffRoleIds: uniqueIds(
+      permissions.staffRoleIds ||
+        permissions.staffRoles ||
+        []
     ),
-  });
 
-  await ensureBotCategoryPermissions(guild, newCategory.id);
+    managerRoleIds: uniqueIds(
+      permissions.managerRoleIds ||
+        permissions.managerRoles ||
+        []
+    ),
 
-  return newCategory.id;
+    viewerRoleIds: uniqueIds(
+      permissions.viewerRoleIds ||
+        permissions.viewerRoles ||
+        []
+    ),
+  };
 }
 
-function getPanelOrGlobalStaffRoles(settings, panel) {
-  return uniqueIds([
-    ...(settings.permissions?.staffRoleIds || []),
-    ...(panel?.staffRoleIds || []),
-  ]);
+function mergeRoleIds(globalIds = {}, panelIds = {}) {
+  return {
+    staffRoleIds: uniqueIds([
+      ...(globalIds.staffRoleIds || []),
+      ...(panelIds.staffRoleIds || []),
+    ]),
+
+    managerRoleIds: uniqueIds([
+      ...(globalIds.managerRoleIds || []),
+      ...(panelIds.managerRoleIds || []),
+    ]),
+
+    viewerRoleIds: uniqueIds([
+      ...(globalIds.viewerRoleIds || []),
+      ...(panelIds.viewerRoleIds || []),
+    ]),
+  };
 }
 
-function getPanelOrGlobalManagerRoles(settings, panel) {
-  return uniqueIds([
-    ...(settings.permissions?.managerRoleIds || []),
-    ...(panel?.managerRoleIds || []),
-  ]);
-}
-
-function getPanelOrGlobalViewerRoles(settings, panel) {
-  return uniqueIds([
-    ...(settings.permissions?.viewerRoleIds || []),
-    ...(panel?.viewerRoleIds || []),
-  ]);
-}
-
-function buildPermissionOverwrites({
+function buildTicketPermissionOverwrites({
   guild,
   ticket,
-  settings,
-  panel,
-}) {
+  panel = null,
+  settings = {},
+} = {}) {
+  const overwrites = [];
+
+  if (!guild || !ticket) return overwrites;
+
+  const everyoneId = guild.roles.everyone.id;
   const botId = getBotId(guild);
 
-  const permissionOverwrites = [
-    {
-      id: guild.roles.everyone.id,
-      deny: [PermissionFlagsBits.ViewChannel],
-    },
-  ];
+  overwrites.push({
+    id: everyoneId,
+    deny: [
+      PermissionFlagsBits.ViewChannel,
+      PermissionFlagsBits.SendMessages,
+    ],
+  });
 
-  if (botId) {
-    permissionOverwrites.push({
-      id: botId,
-      allow: BOT_CHANNEL_PERMISSIONS,
-    });
+  const botOverwrite = botPermissions(botId);
+  if (botOverwrite) overwrites.push(botOverwrite);
+
+  const creatorId =
+    ticket.creatorId ||
+    ticket.userId ||
+    ticket.createdBy ||
+    null;
+
+  const creatorOverwrite = creatorPermissions(creatorId);
+  if (creatorOverwrite) overwrites.push(creatorOverwrite);
+
+  const roles = mergeRoleIds(
+    getGlobalRoleIds(settings),
+    getPanelRoleIds(panel)
+  );
+
+  for (const roleId of roles.viewerRoleIds) {
+    overwrites.push(viewerPermissions(roleId));
   }
 
-  if (ticket.creatorId) {
-    permissionOverwrites.push({
-      id: ticket.creatorId,
-      allow: [
-        PermissionFlagsBits.ViewChannel,
-        PermissionFlagsBits.SendMessages,
-        PermissionFlagsBits.ReadMessageHistory,
-        PermissionFlagsBits.AttachFiles,
-        PermissionFlagsBits.EmbedLinks,
-      ],
-    });
+  for (const roleId of roles.staffRoleIds) {
+    overwrites.push(staffPermissions(roleId));
   }
 
-  for (const userId of uniqueIds(ticket.allowedUserIds || [])) {
-    permissionOverwrites.push({
-      id: userId,
-      allow: [
-        PermissionFlagsBits.ViewChannel,
-        PermissionFlagsBits.SendMessages,
-        PermissionFlagsBits.ReadMessageHistory,
-        PermissionFlagsBits.AttachFiles,
-        PermissionFlagsBits.EmbedLinks,
-      ],
-    });
+  for (const roleId of roles.managerRoleIds) {
+    overwrites.push(managerPermissions(roleId));
   }
 
-  for (const roleId of getPanelOrGlobalStaffRoles(settings, panel)) {
-    permissionOverwrites.push({
-      id: roleId,
-      allow: [
-        PermissionFlagsBits.ViewChannel,
-        PermissionFlagsBits.SendMessages,
-        PermissionFlagsBits.ReadMessageHistory,
-        PermissionFlagsBits.AttachFiles,
-        PermissionFlagsBits.EmbedLinks,
-        PermissionFlagsBits.ManageMessages,
-      ],
-    });
+  const allowedUsers = uniqueIds(ticket.allowedUserIds);
+
+  for (const userId of allowedUsers) {
+    if (userId === creatorId) continue;
+
+    overwrites.push(creatorPermissions(userId));
   }
 
-  for (const roleId of getPanelOrGlobalManagerRoles(settings, panel)) {
-    permissionOverwrites.push({
-      id: roleId,
-      allow: [
-        PermissionFlagsBits.ViewChannel,
-        PermissionFlagsBits.SendMessages,
-        PermissionFlagsBits.ReadMessageHistory,
-        PermissionFlagsBits.AttachFiles,
-        PermissionFlagsBits.EmbedLinks,
-        PermissionFlagsBits.ManageChannels,
-        PermissionFlagsBits.ManageMessages,
-      ],
-    });
-  }
-
-  for (const roleId of getPanelOrGlobalViewerRoles(settings, panel)) {
-    permissionOverwrites.push({
-      id: roleId,
-      allow: [
-        PermissionFlagsBits.ViewChannel,
-        PermissionFlagsBits.ReadMessageHistory,
-      ],
-      deny: [PermissionFlagsBits.SendMessages],
-    });
-  }
-
-  return permissionOverwrites;
+  return dedupeOverwrites(overwrites);
 }
 
-function validatePermissionOverwrites(overwrites = []) {
-  const seen = new Set();
+function dedupeOverwrites(overwrites = []) {
+  const map = new Map();
 
-  return overwrites.filter((overwrite) => {
-    if (!overwrite?.id || seen.has(overwrite.id)) return false;
-    seen.add(overwrite.id);
-    return true;
-  });
+  for (const overwrite of overwrites) {
+    if (!overwrite?.id) continue;
+
+    const existing = map.get(overwrite.id);
+
+    if (!existing) {
+      map.set(overwrite.id, overwrite);
+      continue;
+    }
+
+    map.set(overwrite.id, {
+      id: overwrite.id,
+      allow: [
+        ...new Set([
+          ...(existing.allow || []),
+          ...(overwrite.allow || []),
+        ]),
+      ],
+      deny: [
+        ...new Set([
+          ...(existing.deny || []),
+          ...(overwrite.deny || []),
+        ]),
+      ],
+    });
+  }
+
+  return [...map.values()];
 }
 
 async function createTicketChannel({
@@ -381,213 +475,259 @@ async function createTicketChannel({
   ticket,
   panel = null,
 } = {}) {
-  if (!guild || !ticket) return null;
+  if (!guild || !ticket) {
+    throw new Error('Missing guild or ticket.');
+  }
 
   await ensureBotReady(guild);
 
   const settings = getTicketSettings(guild.id);
 
-  const rawCategoryId = getPanelOrGlobalCategory(settings, panel);
+  const categoryId = getPanelOrGlobalCategory(settings, panel);
+  const parentId = await resolveAvailableCategory(guild, categoryId);
 
-  const categoryId = await resolveAvailableCategory(guild, rawCategoryId);
+  const name = buildTicketChannelName(ticket, guild, panel);
 
-  const permissionOverwrites = validatePermissionOverwrites(
-    buildPermissionOverwrites({
-      guild,
-      ticket,
-      settings,
-      panel,
-    })
-  );
+  const permissionOverwrites = buildTicketPermissionOverwrites({
+    guild,
+    ticket,
+    panel,
+    settings,
+  });
 
   const channel = await guild.channels.create({
-    name: buildTicketChannelName(ticket, guild, panel),
+    name,
     type: ChannelType.GuildText,
-    parent: categoryId || undefined,
+    parent: parentId || undefined,
+    topic: [
+      `Ticket: ${ticket.displayId || ticket.ticketId}`,
+      `Creator: ${ticket.creatorId || ticket.userId || ticket.createdBy || 'Unknown'}`,
+      `Type: ${ticket.type || 'ticket'}`,
+      `Priority: ${ticket.priority || 'low'}`,
+    ].join(' • '),
     permissionOverwrites,
-    topic: `Ticket ${ticket.displayId || ticket.ticketId}`,
+    reason: `Goliath ticket created: ${
+      ticket.displayId || ticket.ticketId
+    }`,
   });
 
   await ensureBotChannelPermissions(channel);
 
-  updateTicket(guild.id, ticket.ticketId, {
-    discordChannelId: channel.id,
-    metadata: {
-      ...(ticket.metadata || {}),
-      outputCategoryId: categoryId,
-      panelId: panel?.panelId || ticket.metadata?.panelId || null,
-      panelStaffRoleIds: panel?.staffRoleIds || [],
-      panelManagerRoleIds: panel?.managerRoleIds || [],
-      panelViewerRoleIds: panel?.viewerRoleIds || [],
-      logsChannelId: panel?.logsChannelId || null,
-      transcriptsChannelId: panel?.transcriptsChannelId || null,
-      archiveCategoryId: panel?.archiveCategoryId || null,
-    },
-  });
-
-  addTimelineEntry(guild.id, ticket.ticketId, {
-    type: 'discord_channel_created',
-    actorId: null,
-    message: `Discord ticket channel created: ${channel.id}`,
-    metadata: {
+  const updatedTicket = updateTicket(
+    guild.id,
+    ticket.ticketId,
+    {
+      discordChannelId: channel.id,
       channelId: channel.id,
-      categoryId,
-      panelId: panel?.panelId || null,
-    },
-  });
+    }
+  );
+
+  addTimelineEntry(
+    guild.id,
+    ticket.ticketId,
+    {
+      type: 'discord_channel_created',
+      actorId: null,
+      actorTag: 'System',
+      message: `Discord ticket channel created: #${channel.name}`,
+      metadata: {
+        channelId: channel.id,
+        parentId: channel.parentId || null,
+      },
+    }
+  );
 
   return channel;
 }
 
-async function archiveTicketChannel({
+async function syncTicketChannelPermissions({
   guild,
+  channel,
   ticket,
   panel = null,
 } = {}) {
-  if (!guild || !ticket?.discordChannelId) return null;
+  if (!guild || !channel || !ticket) {
+    return false;
+  }
 
   const settings = getTicketSettings(guild.id);
-  const archiveCategoryId = getArchiveCategory(settings, panel);
 
-  const channel = await guild.channels
-    .fetch(ticket.discordChannelId)
-    .catch(() => null);
+  const overwrites = buildTicketPermissionOverwrites({
+    guild,
+    ticket,
+    panel,
+    settings,
+  });
 
-  if (!channel) return null;
+  for (const overwrite of overwrites) {
+    await channel.permissionOverwrites
+      .edit(overwrite.id, {
+        ViewChannel: overwrite.allow?.includes(PermissionFlagsBits.ViewChannel) || false,
+        SendMessages: overwrite.allow?.includes(PermissionFlagsBits.SendMessages) || false,
+        ReadMessageHistory:
+          overwrite.allow?.includes(PermissionFlagsBits.ReadMessageHistory) || false,
+        AttachFiles: overwrite.allow?.includes(PermissionFlagsBits.AttachFiles) || false,
+        EmbedLinks: overwrite.allow?.includes(PermissionFlagsBits.EmbedLinks) || false,
+        ManageChannels:
+          overwrite.allow?.includes(PermissionFlagsBits.ManageChannels) || false,
+        ManageMessages:
+          overwrite.allow?.includes(PermissionFlagsBits.ManageMessages) || false,
+        AddReactions:
+          overwrite.deny?.includes(PermissionFlagsBits.AddReactions) ? false : null,
+      })
+      .catch((error) => {
+        console.error(
+          '[Tickets] Failed to sync ticket channel overwrite:',
+          overwrite.id,
+          error
+        );
+      });
+  }
 
   await ensureBotChannelPermissions(channel);
 
-  if (archiveCategoryId) {
-    await ensureBotCategoryPermissions(guild, archiveCategoryId);
-    await channel.setParent(archiveCategoryId).catch(() => null);
-  }
-
-  await channel.permissionOverwrites
-    .edit(guild.roles.everyone.id, {
-      ViewChannel: false,
-    })
-    .catch(() => null);
-
-  if (ticket.creatorId) {
-    await channel.permissionOverwrites
-      .edit(ticket.creatorId, {
-        ViewChannel: false,
-        SendMessages: false,
-      })
-      .catch(() => null);
-  }
-
-  const archiveName = buildTicketChannelName(
-    {
-      ...ticket,
-      status: 'archived',
-    },
-    guild,
-    panel
-  );
-
-  console.log(
-  '[Tickets] Archive rename check:',
-  channel.name,
-  '=>',
-  archiveName
-);
-
-console.log(
-  '[Tickets] Channel manageable:',
-  channel?.manageable
-);
-
-try {
-  await channel.setName(
-    archiveName,
-    'Ticket archived'
-  );
-
-  console.log(
-    '[Tickets] Archive channel renamed:',
-    archiveName
-  );
-} catch (error) {
-  console.error(
-    '[Tickets] Archive rename failed:',
-    error
-  );
-}
-
-  addTimelineEntry(guild.id, ticket.ticketId, {
-    type: 'discord_channel_archived',
-    actorId: null,
-    message: `Discord ticket channel archived: ${channel.id}`,
-    metadata: {
-      channelId: channel.id,
-      archiveCategoryId,
-    },
-  });
-
-  return channel;
+  return true;
 }
 
 async function closeTicketChannel({
   guild,
+  channel,
   ticket,
+  actorId = null,
 } = {}) {
-  if (!guild || !ticket?.discordChannelId) return null;
+  if (!guild || !channel || !ticket) return false;
 
-  const channel = await guild.channels
-    .fetch(ticket.discordChannelId)
-    .catch(() => null);
+  const name = buildTicketChannelName(
+    {
+      ...ticket,
+      status: 'closed',
+    },
+    guild
+  );
 
-  if (!channel) return null;
+  await channel.setName(name).catch(() => null);
 
-  await ensureBotChannelPermissions(channel);
+  const creatorId =
+    ticket.creatorId ||
+    ticket.userId ||
+    ticket.createdBy ||
+    null;
 
-  if (ticket.creatorId) {
+  if (creatorId) {
     await channel.permissionOverwrites
-      .edit(ticket.creatorId, {
+      .edit(creatorId, {
         SendMessages: false,
+        AttachFiles: false,
       })
       .catch(() => null);
   }
 
-  const cleanName = channel.name
-    .replace(/^closed-/, '')
-    .replace(/^archived-/, '');
+  addTimelineEntry(
+    guild.id,
+    ticket.ticketId,
+    {
+      type: 'discord_channel_closed',
+      actorId,
+      message: 'Discord ticket channel locked after close.',
+      metadata: {
+        channelId: channel.id,
+      },
+    }
+  );
+
+  return true;
+}
+
+async function archiveTicketChannel({
+  guild,
+  channel,
+  ticket,
+  panel = null,
+  actorId = null,
+} = {}) {
+  if (!guild || !channel || !ticket) return false;
+
+  const settings = getTicketSettings(guild.id);
+  const archiveCategoryId = getArchiveCategory(settings, panel);
+
+  const resolvedArchiveId = await resolveAvailableCategory(
+    guild,
+    archiveCategoryId
+  );
 
   await channel
-    .setName(`closed-${cleanName}`.slice(0, 90))
+    .setName(
+      buildTicketChannelName(
+        {
+          ...ticket,
+          status: 'archived',
+        },
+        guild,
+        panel
+      )
+    )
     .catch(() => null);
 
-  addTimelineEntry(guild.id, ticket.ticketId, {
-    type: 'discord_channel_closed',
-    actorId: null,
-    message: `Discord ticket channel closed: ${channel.id}`,
-    metadata: {
-      channelId: channel.id,
-    },
-  });
+  if (resolvedArchiveId) {
+    await channel.setParent(resolvedArchiveId).catch(() => null);
+  }
 
-  return channel;
+  addTimelineEntry(
+    guild.id,
+    ticket.ticketId,
+    {
+      type: 'discord_channel_archived',
+      actorId,
+      message: 'Discord ticket channel archived.',
+      metadata: {
+        channelId: channel.id,
+        archiveCategoryId: resolvedArchiveId || null,
+      },
+    }
+  );
+
+  return true;
 }
 
 async function reopenTicketChannel({
   guild,
+  channel,
   ticket,
   panel = null,
+  actorId = null,
 } = {}) {
-  if (!guild || !ticket?.discordChannelId) return null;
+  if (!guild || !channel || !ticket) return false;
 
-  const channel = await guild.channels
-    .fetch(ticket.discordChannelId)
+  const settings = getTicketSettings(guild.id);
+  const categoryId = getPanelOrGlobalCategory(settings, panel);
+  const resolvedCategoryId = await resolveAvailableCategory(guild, categoryId);
+
+  await channel
+    .setName(
+      buildTicketChannelName(
+        {
+          ...ticket,
+          status: 'open',
+        },
+        guild,
+        panel
+      )
+    )
     .catch(() => null);
 
-  if (!channel) return null;
+  if (resolvedCategoryId) {
+    await channel.setParent(resolvedCategoryId).catch(() => null);
+  }
 
-  await ensureBotChannelPermissions(channel);
+  const creatorId =
+    ticket.creatorId ||
+    ticket.userId ||
+    ticket.createdBy ||
+    null;
 
-  if (ticket.creatorId) {
+  if (creatorId) {
     await channel.permissionOverwrites
-      .edit(ticket.creatorId, {
+      .edit(creatorId, {
         ViewChannel: true,
         SendMessages: true,
         ReadMessageHistory: true,
@@ -597,96 +737,74 @@ async function reopenTicketChannel({
       .catch(() => null);
   }
 
-  const reopenedName = buildTicketChannelName(
-    {
-      ...ticket,
-      status: 'open',
-    },
+  await syncTicketChannelPermissions({
     guild,
-    panel
-  );
-
-  console.log(
-    '[Tickets] Reopen rename check:',
-    channel.name,
-    '=>',
-    reopenedName
-  );
-
-  try {
-    await channel.setName(
-      reopenedName,
-      'Ticket reopened'
-    );
-
-    console.log(
-      '[Tickets] Reopen channel renamed:',
-      reopenedName
-    );
-  } catch (error) {
-    console.error(
-      '[Tickets] Reopen rename failed:',
-      error
-    );
-  }
-
-  addTimelineEntry(guild.id, ticket.ticketId, {
-    type: 'discord_channel_reopened',
-    actorId: null,
-    message: `Discord ticket channel reopened: ${channel.id}`,
-    metadata: {
-      channelId: channel.id,
-    },
+    channel,
+    ticket,
+    panel,
   });
 
-  return channel;
+  addTimelineEntry(
+    guild.id,
+    ticket.ticketId,
+    {
+      type: 'discord_channel_reopened',
+      actorId,
+      message: 'Discord ticket channel reopened.',
+      metadata: {
+        channelId: channel.id,
+        parentId: channel.parentId || null,
+      },
+    }
+  );
+
+  return true;
 }
 
 async function deleteTicketChannel({
   guild,
+  channel,
   ticket,
-  reason = 'Ticket deleted',
+  actorId = null,
 } = {}) {
-  if (!guild || !ticket?.discordChannelId) return false;
+  if (!guild || !channel || !ticket) return false;
 
-  const channel = await guild.channels
-    .fetch(ticket.discordChannelId)
-    .catch(() => null);
+  addTimelineEntry(
+    guild.id,
+    ticket.ticketId,
+    {
+      type: 'discord_channel_deleted',
+      actorId,
+      message: 'Discord ticket channel deleted.',
+      metadata: {
+        channelId: channel.id,
+        channelName: channel.name,
+      },
+    }
+  );
 
-  if (!channel) return false;
-
-  await ensureBotChannelPermissions(channel);
-
-  addTimelineEntry(guild.id, ticket.ticketId, {
-    type: 'discord_channel_deleted',
-    actorId: null,
-    message: `Discord ticket channel deleted: ${channel.id}`,
-    metadata: {
-      channelId: channel.id,
-      reason,
-    },
-  });
-
-  await channel.delete(reason).catch(() => null);
+  await channel.delete('Goliath ticket deleted').catch(() => null);
 
   return true;
 }
 
 module.exports = {
+  BOT_CHANNEL_PERMISSIONS,
+
   buildTicketChannelName,
-  cleanChannelPart,
-  getPriorityIndicator,
-  buildPermissionOverwrites,
-  validatePermissionOverwrites,
-  resolveAvailableCategory,
+  buildTicketPermissionOverwrites,
+
+  createTicketChannel,
+  syncTicketChannelPermissions,
+
+  closeTicketChannel,
+  archiveTicketChannel,
+  reopenTicketChannel,
+  deleteTicketChannel,
 
   ensureBotReady,
   ensureBotChannelPermissions,
   ensureBotCategoryPermissions,
 
-  createTicketChannel,
-  archiveTicketChannel,
-  closeTicketChannel,
-  reopenTicketChannel,
-  deleteTicketChannel,
+  resolveAvailableCategory,
 };

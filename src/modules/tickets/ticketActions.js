@@ -1,7 +1,6 @@
 'use strict';
 
 const {
-  ChannelType,
   EmbedBuilder,
 } = require('discord.js');
 
@@ -14,6 +13,7 @@ const {
   getTicket,
   updateTicket,
   deleteTicket: deleteStoredTicket,
+  getPanel,
 } = require('./ticketStore');
 
 const {
@@ -22,6 +22,7 @@ const {
   archiveTicketChannel,
   reopenTicketChannel,
   deleteTicketChannel,
+  syncTicketChannelPermissions,
 } = require('./ticketChannelManager');
 
 const {
@@ -29,10 +30,6 @@ const {
   getClosedTicketActionRows,
   getArchivedTicketActionRows,
 } = require('./ticketChannelButtons');
-
-const {
-  getPanel,
-} = require('./ticketStore');
 
 const {
   sendTicketControlMessage,
@@ -65,6 +62,20 @@ const PRIORITY_LABELS = {
 
 function now() {
   return new Date().toISOString();
+}
+
+function normaliseStatus(status) {
+  return String(status || STATUS.OPEN).toLowerCase();
+}
+
+function normalisePriority(priority) {
+  const value = String(priority || PRIORITY.NORMAL).toLowerCase();
+
+  if (Object.values(PRIORITY).includes(value)) {
+    return value;
+  }
+
+  return PRIORITY.NORMAL;
 }
 
 function getActor(actor) {
@@ -123,6 +134,20 @@ async function saveTicket(ticket, updates = {}) {
   );
 }
 
+function getTicketPanel(ticket) {
+  if (!ticket?.guildId) return null;
+
+  const panelId =
+    ticket.metadata?.panelId ||
+    ticket.panelId ||
+    ticket.sourceId ||
+    null;
+
+  if (!panelId) return null;
+
+  return getPanel(ticket.guildId, panelId);
+}
+
 function emitAction(io, ticket, event, payload = {}) {
   if (!io || !ticket?.guildId) return false;
 
@@ -152,6 +177,7 @@ async function addStaffActivity(
       {
         type,
         actorId: getActor(actor).id,
+        actorTag: getActor(actor).tag,
         message,
         metadata,
       }
@@ -217,16 +243,15 @@ async function refreshTicketControlMessage(client, ticket) {
       .catch(() => null);
 
     message = messages?.find(
-    (msg) =>
-      msg.author?.id === client.user?.id &&
-      msg.embeds?.[0]?.title?.startsWith('🎫')
+      (msg) =>
+        msg.author?.id === client.user?.id &&
+        msg.embeds?.[0]?.title?.startsWith('🎫')
     );
   }
 
   if (!message?.editable) return false;
 
-  const panelId = ticket.metadata?.panelId || null;
-  const panel = panelId ? getPanel(ticket.guildId, panelId) : null;
+  const panel = getTicketPanel(ticket);
 
   const payload = await sendTicketControlMessage({
     channel: {
@@ -242,7 +267,7 @@ async function refreshTicketControlMessage(client, ticket) {
     allowDelete: true,
   });
 
-  const status = String(ticket.status || 'open').toLowerCase();
+  const status = normaliseStatus(ticket.status);
 
   if (status === STATUS.CLOSED) {
     components = getClosedTicketActionRows(ticket, {
@@ -317,207 +342,187 @@ async function createTranscript(ticket, actor, options = {}) {
   }
 }
 
+async function maybeSyncPermissions(ticket, options = {}) {
+  if (!options.client) return false;
+
+  const guild = await getGuildFromClient(options.client, ticket.guildId);
+  if (!guild) return false;
+
+  const channel = await getDiscordChannel(options.client, ticket);
+  if (!channel) return false;
+
+  const panel = getTicketPanel(ticket);
+
+  return syncTicketChannelPermissions({
+    guild,
+    channel,
+    ticket,
+    panel,
+  });
+}
+
 async function maybeCloseChannel(ticket, options = {}) {
   if (!options.client) return null;
 
-  const guild = await getGuildFromClient(options.client, ticket.guildId);
-  if (!guild) return null;
+  const channel = await getDiscordChannel(options.client, ticket);
+  if (!channel) return null;
 
-  const channel = await closeTicketChannel({
+  const guild = channel.guild;
+  const panel = getTicketPanel(ticket);
+
+  return closeTicketChannel({
     guild,
+    channel,
     ticket,
+    panel,
+    actorId: options.actorId || null,
   });
-
-  if (channel) {
-    emitAction(
-      options.io,
-      ticket,
-      ticketSocketEvents.EVENTS.TICKET_CLOSED,
-      {
-        channelId: channel.id,
-      }
-    );
-  }
-
-  return channel;
 }
 
 async function maybeArchiveChannel(ticket, options = {}) {
   if (!options.client) return null;
 
-  const guild = await getGuildFromClient(options.client, ticket.guildId);
-  if (!guild) return null;
+  const channel = await getDiscordChannel(options.client, ticket);
+  if (!channel) return null;
 
-  const channel = await archiveTicketChannel({
+  const guild = channel.guild;
+  const panel = getTicketPanel(ticket);
+
+  return archiveTicketChannel({
     guild,
+    channel,
     ticket,
-    panel: options.panel || null,
+    panel,
+    actorId: options.actorId || null,
   });
-
-  if (channel) {
-    emitAction(
-      options.io,
-      ticket,
-      ticketSocketEvents.EVENTS.TICKET_ARCHIVED,
-      {
-        channelId: channel.id,
-      }
-    );
-  }
-
-  return channel;
 }
 
 async function maybeReopenChannel(ticket, options = {}) {
   if (!options.client) return null;
 
-  const guild = await getGuildFromClient(options.client, ticket.guildId);
-  if (!guild) return null;
+  const channel = await getDiscordChannel(options.client, ticket);
+  if (!channel) return null;
 
-  const channel = await reopenTicketChannel({
-  guild,
-  ticket,
-  panel: options.panel || null,
-});
+  const guild = channel.guild;
+  const panel = getTicketPanel(ticket);
 
-  if (channel) {
-    emitAction(
-      options.io,
-      ticket,
-      ticketSocketEvents.EVENTS.TICKET_REOPENED,
-      {
-        channelId: channel.id,
-      }
-    );
-  }
-
-  return channel;
+  return reopenTicketChannel({
+    guild,
+    channel,
+    ticket,
+    panel,
+    actorId: options.actorId || null,
+  });
 }
 
 async function maybeDeleteChannel(ticket, options = {}) {
-  if (!options.client || options.deleteDiscordChannel === false) {
-    return false;
-  }
+  if (!options.client) return null;
 
-  const guild = await getGuildFromClient(options.client, ticket.guildId);
-  if (!guild) return false;
+  const channel = await getDiscordChannel(options.client, ticket);
+  if (!channel) return null;
 
-  const deleted = await deleteTicketChannel({
+  const guild = channel.guild;
+
+  return deleteTicketChannel({
     guild,
+    channel,
     ticket,
-    reason: options.reason || 'Ticket deleted',
+    actorId: options.actorId || null,
   });
-
-  if (deleted) {
-    emitAction(
-      options.io,
-      ticket,
-      ticketSocketEvents.EVENTS.TICKET_DELETED,
-      {
-        channelId: ticket.discordChannelId,
-      }
-    );
-  }
-
-  return deleted;
 }
 
 async function claim(ticketOrId, actor, options = {}) {
-  const ticket = await fetchTicket(ticketOrId, options.guildId);
-
-  if (
-    ticket.status === STATUS.CLOSED ||
-    ticket.status === STATUS.ARCHIVED
-  ) {
-    throw new Error('Cannot claim a closed or archived ticket.');
-  }
+  const ticket = await fetchTicket(
+    ticketOrId,
+    options.guildId
+  );
 
   const actorData = getActor(actor);
 
-  const updated = await ticketManager.claimTicket({
-    guildId: ticket.guildId,
-    ticketId: ticket.ticketId,
-    actorId: actorData.id,
-  });
+  if (normaliseStatus(ticket.status) === STATUS.ARCHIVED) {
+    throw new Error('Archived tickets cannot be claimed.');
+  }
 
-  const saved = await saveTicket(updated || ticket, {
+  if (normaliseStatus(ticket.status) === STATUS.CLOSED) {
+    throw new Error('Closed tickets cannot be claimed.');
+  }
+
+  if (ticket.claimedById) {
+    return ticket;
+  }
+
+  const updated = await saveTicket(ticket, {
+    status: STATUS.CLAIMED,
     claimedById: actorData.id,
     claimedAt: now(),
     statusChangedAt: now(),
   });
 
-  await ticketTimeline.addTicketClaimedEntry(
-    ticket.guildId,
-    ticket.ticketId,
-    actorData.id
-  );
-
   await addStaffActivity(
-    saved || updated || ticket,
+    updated,
     actor,
-    'staff_claimed_ticket',
+    'ticket_claimed',
     `Ticket claimed by ${actorData.tag}.`,
     {
       claimedById: actorData.id,
     }
   );
 
-  emitAction(
-    options.io,
-    saved || updated || ticket,
-    ticketSocketEvents.EVENTS.TICKET_CLAIMED
-  );
+  await maybeSyncPermissions(updated, options);
 
   emitAction(
     options.io,
-    saved || updated || ticket,
-    ticketSocketEvents.EVENTS.TICKET_UPDATED
-  );
-
-  return saved || updated;
-}
-
-async function close(ticketOrId, actor, options = {}) {
-  const ticket = await fetchTicket(ticketOrId, options.guildId);
-  const actorData = getActor(actor);
-
-  const transcript = await createTranscript(
-    ticket,
-    actor,
+    updated,
+    ticketSocketEvents.EVENTS.TICKET_CLAIMED,
     {
-      ...options,
-      reason: options.reason || 'Ticket closed',
+      actorId: actorData.id,
     }
   );
 
-  const updated = await ticketManager.closeTicket({
-    guildId: ticket.guildId,
-    ticketId: ticket.ticketId,
-    actorId: actorData.id,
-    reason: options.reason,
-  });
+  await refreshTicketControlMessage(options.client, updated);
 
-  const saved = await saveTicket(updated || ticket, {
-    transcript,
+  return updated;
+}
+
+async function close(ticketOrId, actor, options = {}) {
+  const ticket = await fetchTicket(
+    ticketOrId,
+    options.guildId
+  );
+
+  const actorData = getActor(actor);
+  const currentStatus = normaliseStatus(ticket.status);
+
+  if (currentStatus === STATUS.CLOSED) {
+    return ticket;
+  }
+
+  if (currentStatus === STATUS.ARCHIVED) {
+    throw new Error('Archived tickets cannot be closed.');
+  }
+
+  const updated = await saveTicket(ticket, {
+    status: STATUS.CLOSED,
     closedById: actorData.id,
     closedAt: now(),
     closeReason: options.reason || null,
     statusChangedAt: now(),
   });
 
-  await maybeCloseChannel(saved || updated || ticket, options);
+  await createTranscript(updated, actor, {
+    ...options,
+    reason: options.reason || 'Ticket closed',
+  });
 
-  await ticketTimeline.addTicketClosedEntry(
-    ticket.guildId,
-    ticket.ticketId,
-    actorData.id,
-    options.reason || 'Ticket closed.'
-  );
+  await maybeCloseChannel(updated, {
+    ...options,
+    actorId: actorData.id,
+  });
 
   await addStaffActivity(
-    saved || updated || ticket,
+    updated,
     actor,
-    'staff_closed_ticket',
+    'ticket_closed',
     `Ticket closed by ${actorData.tag}.`,
     {
       reason: options.reason || null,
@@ -526,87 +531,31 @@ async function close(ticketOrId, actor, options = {}) {
 
   emitAction(
     options.io,
-    saved || updated || ticket,
-    ticketSocketEvents.EVENTS.TICKET_CLOSED
+    updated,
+    ticketSocketEvents.EVENTS.TICKET_CLOSED,
+    {
+      actorId: actorData.id,
+      reason: options.reason || null,
+    }
   );
 
-  emitAction(
-    options.io,
-    saved || updated || ticket,
-    ticketSocketEvents.EVENTS.TICKET_UPDATED
-  );
+  await refreshTicketControlMessage(options.client, updated);
 
-  return saved || updated;
-}
-
-async function reopen(ticketOrId, actor, options = {}) {
-  const ticket = await fetchTicket(ticketOrId, options.guildId);
-  const actorData = getActor(actor);
-
-  const updated = await ticketManager.reopenTicket({
-    guildId: ticket.guildId,
-    ticketId: ticket.ticketId,
-    actorId: actorData.id,
-  });
-
-  const saved = await saveTicket(updated || ticket, {
-    reopenedById: actorData.id,
-    reopenedAt: now(),
-    statusChangedAt: now(),
-  });
-
-  await maybeReopenChannel(
-    saved || updated || ticket,
-    options
-  );
-
-  if (options.client) {
-  await refreshTicketControlMessage(
-    options.client,
-    updated || ticket
-  );
-}
-
-  await ticketTimeline.addTicketReopenedEntry(
-    ticket.guildId,
-    ticket.ticketId,
-    actorData.id
-  );
-
-  await addStaffActivity(
-    saved || updated || ticket,
-    actor,
-    'staff_reopened_ticket',
-    `Ticket reopened by ${actorData.tag}.`
-  );
-
-  emitAction(
-    options.io,
-    saved || updated || ticket,
-    ticketSocketEvents.EVENTS.TICKET_REOPENED
-  );
-
-  emitAction(
-    options.io,
-    saved || updated || ticket,
-    ticketSocketEvents.EVENTS.TICKET_UPDATED
-  );
-
-  return saved || updated;
+  return updated;
 }
 
 async function archive(ticketOrId, actor, options = {}) {
-  const ticket = await fetchTicket(ticketOrId, options.guildId);
-  const actorData = getActor(actor);
-
-  const transcript = await createTranscript(
-    ticket,
-    actor,
-    {
-      ...options,
-      reason: options.reason || 'Ticket archived',
-    }
+  const ticket = await fetchTicket(
+    ticketOrId,
+    options.guildId
   );
+
+  const actorData = getActor(actor);
+  const currentStatus = normaliseStatus(ticket.status);
+
+  if (currentStatus === STATUS.ARCHIVED) {
+    return ticket;
+  }
 
   const updated = await saveTicket(ticket, {
     status: STATUS.ARCHIVED,
@@ -614,38 +563,22 @@ async function archive(ticketOrId, actor, options = {}) {
     archivedAt: now(),
     archiveReason: options.reason || null,
     statusChangedAt: now(),
-    transcript,
   });
 
-  await maybeArchiveChannel(
-    updated || ticket,
-    options
-  );
+  await createTranscript(updated, actor, {
+    ...options,
+    reason: options.reason || 'Ticket archived',
+  });
 
-  if (options.client) {
-  try {
-    await refreshTicketControlMessage(
-      options.client,
-      updated || ticket
-    );
-  } catch (error) {
-    console.error(
-      '[Tickets] Archive refresh failed:',
-      error
-    );
-  }
-}
-
-  await ticketTimeline.addTicketArchivedEntry(
-    ticket.guildId,
-    ticket.ticketId,
-    actorData.id
-  );
+  await maybeArchiveChannel(updated, {
+    ...options,
+    actorId: actorData.id,
+  });
 
   await addStaffActivity(
-    updated || ticket,
+    updated,
     actor,
-    'staff_archived_ticket',
+    'ticket_archived',
     `Ticket archived by ${actorData.tag}.`,
     {
       reason: options.reason || null,
@@ -654,450 +587,302 @@ async function archive(ticketOrId, actor, options = {}) {
 
   emitAction(
     options.io,
-    updated || ticket,
-    ticketSocketEvents.EVENTS.TICKET_ARCHIVED
+    updated,
+    ticketSocketEvents.EVENTS.TICKET_ARCHIVED,
+    {
+      actorId: actorData.id,
+      reason: options.reason || null,
+    }
+  );
+
+  await refreshTicketControlMessage(options.client, updated);
+
+  return updated;
+}
+
+async function reopen(ticketOrId, actor, options = {}) {
+  const ticket = await fetchTicket(
+    ticketOrId,
+    options.guildId
+  );
+
+  const actorData = getActor(actor);
+  const currentStatus = normaliseStatus(ticket.status);
+
+  if (
+    currentStatus !== STATUS.CLOSED &&
+    currentStatus !== STATUS.ARCHIVED
+  ) {
+    return ticket;
+  }
+
+  const updated = await saveTicket(ticket, {
+    status: STATUS.OPEN,
+    reopenedById: actorData.id,
+    reopenedAt: now(),
+    closedById: null,
+    closedAt: null,
+    closeReason: null,
+    archivedById: null,
+    archivedAt: null,
+    archiveReason: null,
+    statusChangedAt: now(),
+  });
+
+  await maybeReopenChannel(updated, {
+    ...options,
+    actorId: actorData.id,
+  });
+
+  await addStaffActivity(
+    updated,
+    actor,
+    'ticket_reopened',
+    `Ticket reopened by ${actorData.tag}.`,
+    {}
   );
 
   emitAction(
     options.io,
-    updated || ticket,
-    ticketSocketEvents.EVENTS.TICKET_UPDATED
+    updated,
+    ticketSocketEvents.EVENTS.TICKET_REOPENED,
+    {
+      actorId: actorData.id,
+    }
   );
+
+  await refreshTicketControlMessage(options.client, updated);
 
   return updated;
 }
 
 async function deleteTicket(ticketOrId, actor, options = {}) {
-  if (
-    options.requireConfirmation === true &&
-    options.confirmed !== true
-  ) {
-    throw new Error('Delete confirmation required.');
-  }
+  const ticket = await fetchTicket(
+    ticketOrId,
+    options.guildId
+  );
 
-  const ticket = await fetchTicket(ticketOrId, options.guildId);
   const actorData = getActor(actor);
 
-  const transcript =
-    options.createTranscript === false
-      ? null
-      : await createTranscript(
-          ticket,
-          actor,
-          {
-            ...options,
-            reason: options.reason || 'Ticket deleted',
-          }
-        );
-
-  await saveTicket(ticket, {
-    transcript,
-    deletedById: actorData.id,
-    deletedAt: now(),
-    deleteReason: options.reason || null,
-    statusChangedAt: now(),
+  await createTranscript(ticket, actor, {
+    ...options,
+    reason: options.reason || 'Ticket deleted',
   });
 
-  await ticketTimeline.addTicketDeletedEntry(
-    ticket.guildId,
-    ticket.ticketId,
-    actorData.id,
-    options.reason || 'Ticket deleted.'
-  );
+  await maybeDeleteChannel(ticket, {
+    ...options,
+    actorId: actorData.id,
+  });
 
   await addStaffActivity(
     ticket,
     actor,
-    'staff_deleted_ticket',
+    'ticket_deleted',
     `Ticket deleted by ${actorData.tag}.`,
     {
       reason: options.reason || null,
     }
   );
 
-  await maybeDeleteChannel(ticket, options);
+  const updated = await saveTicket(ticket, {
+    deletedById: actorData.id,
+    deletedAt: now(),
+    statusChangedAt: now(),
+  });
 
-  await deleteStoredTicket(ticket.guildId, ticket.ticketId);
-
-  ticketSocketEvents.emitTicketDeleted(
+  emitAction(
     options.io,
-    ticket.guildId,
-    ticket.ticketId
+    updated,
+    ticketSocketEvents.EVENTS.TICKET_DELETED,
+    {
+      actorId: actorData.id,
+      reason: options.reason || null,
+    }
   );
 
-  return true;
-}
-
-async function addUser(
-  client,
-  ticketOrId,
-  userId,
-  actor,
-  options = {}
-) {
-  const ticket = await fetchTicket(ticketOrId, options.guildId);
-  const actorData = getActor(actor);
-
-  if (!userId) {
-    throw new Error('Missing user id.');
-  }
-
-  const channel = await getDiscordChannel(client, ticket);
-
-  if (channel && channel.type === ChannelType.GuildText) {
-    await channel.permissionOverwrites.edit(
-      userId,
-      {
-        ViewChannel: true,
-        SendMessages: true,
-        ReadMessageHistory: true,
-        AttachFiles: true,
-        EmbedLinks: true,
-      }
+  if (options.hardDelete === true) {
+    deleteStoredTicket(
+      ticket.guildId,
+      ticket.ticketId
     );
   }
 
-  const existingUsers = Array.isArray(ticket.allowedUserIds)
-    ? ticket.allowedUserIds
-    : [];
-
-  const updatedUsers = [
-    ...new Set([
-      ...existingUsers,
-      userId,
-    ]),
-  ];
-
-  const updated = await saveTicket(ticket, {
-    allowedUserIds: updatedUsers,
-  });
-
-  await ticketTimeline.addUserAddedEntry(
-    ticket.guildId,
-    ticket.ticketId,
-    actorData.id,
-    userId
-  );
-
-  await addStaffActivity(
-    updated || ticket,
-    actor,
-    'staff_added_user',
-    `User ${userId} added by ${actorData.tag}.`,
-    {
-      userId,
-    }
-  );
-
-  emitAction(
-    options.io,
-    updated || ticket,
-    ticketSocketEvents.EVENTS.TICKET_UPDATED
-  );
-
   return updated;
 }
 
-async function removeUser(
-  client,
-  ticketOrId,
-  userId,
-  actor,
-  options = {}
-) {
-  const ticket = await fetchTicket(ticketOrId, options.guildId);
-  const actorData = getActor(actor);
-
-  if (!userId) {
-    throw new Error('Missing user id.');
-  }
-
-  const channel = await getDiscordChannel(client, ticket);
-
-  if (channel && channel.type === ChannelType.GuildText) {
-    await channel.permissionOverwrites
-      .delete(userId)
-      .catch(() => null);
-  }
-
-  const existingUsers = Array.isArray(ticket.allowedUserIds)
-    ? ticket.allowedUserIds
-    : [];
-
-  const updatedUsers = existingUsers.filter((id) => id !== userId);
-
-  const updated = await saveTicket(ticket, {
-    allowedUserIds: updatedUsers,
-  });
-
-  await ticketTimeline.addUserRemovedEntry(
-    ticket.guildId,
-    ticket.ticketId,
-    actorData.id,
-    userId
-  );
-
-  await addStaffActivity(
-    updated || ticket,
-    actor,
-    'staff_removed_user',
-    `User ${userId} removed by ${actorData.tag}.`,
-    {
-      userId,
-    }
-  );
-
-  emitAction(
-    options.io,
-    updated || ticket,
-    ticketSocketEvents.EVENTS.TICKET_UPDATED
-  );
-
-  return updated;
-}
-
-async function rename(
-  client,
-  ticketOrId,
-  newName,
-  actor,
-  options = {}
-) {
-  const ticket = await fetchTicket(ticketOrId, options.guildId);
-  const actorData = getActor(actor);
-
-  const cleanName = String(newName || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9-_]/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 90);
-
-  if (!cleanName) {
-    throw new Error('Invalid ticket name.');
-  }
-
-  const channel = await getDiscordChannel(client, ticket);
-
-  if (channel) {
-    await channel.setName(cleanName);
-  }
-
-  const updated = await saveTicket(ticket, {
-    title: cleanName,
-  });
-
-  await ticketTimeline.addTimelineEntry(
-    ticket.guildId,
-    ticket.ticketId,
-    {
-      type: 'ticket_renamed',
-      actorId: actorData.id,
-      message: `Ticket renamed to ${cleanName}.`,
-    }
-  );
-
-  await addStaffActivity(
-    updated || ticket,
-    actor,
-    'staff_renamed_ticket',
-    `Ticket renamed by ${actorData.tag}.`,
-    {
-      newName: cleanName,
-    }
-  );
-
-  emitAction(
-    options.io,
-    updated || ticket,
-    ticketSocketEvents.EVENTS.TICKET_UPDATED
-  );
-
-  return updated;
-}
-
-async function changePriority(
+async function setPriority(
   ticketOrId,
   priority,
   actor,
   options = {}
 ) {
-  const ticket = await fetchTicket(ticketOrId, options.guildId);
+  const ticket = await fetchTicket(
+    ticketOrId,
+    options.guildId
+  );
+
   const actorData = getActor(actor);
+  const cleanPriority = normalisePriority(priority);
+  const previousPriority = normalisePriority(ticket.priority);
 
-  const nextPriority = String(priority || '')
-    .toLowerCase()
-    .trim();
-
-  if (!Object.values(PRIORITY).includes(nextPriority)) {
-    throw new Error(`Invalid priority: ${priority}`);
+  if (previousPriority === cleanPriority) {
+    return ticket;
   }
 
   const updated = await saveTicket(ticket, {
-    priority: nextPriority,
-  });
-
-  ticketTimeline.addPriorityChangeEntry(
-    ticket.guildId,
-    ticket.ticketId,
-    actorData.id,
-    ticket.priority,
-    nextPriority
-  );
-
-  await addStaffActivity(
-    updated || ticket,
-    actor,
-    'staff_changed_priority',
-    `Priority changed from ${ticket.priority} to ${nextPriority} by ${actorData.tag}.`,
-    {
-      oldPriority: ticket.priority,
-      newPriority: nextPriority,
-    }
-  );
-
-  if (options.client) {
-    try {
-      await refreshTicketControlMessage(
-        options.client,
-        updated
-      );
-
-      const channel = await getDiscordChannel(
-        options.client,
-        updated
-      );
-
-      console.log(
-        '[Tickets] Priority channel manageable:',
-        channel?.manageable
-      );
-
-      if (channel?.manageable) {
-        const panelId = updated.metadata?.panelId || null;
-
-        const panel = panelId
-          ? getPanel(updated.guildId, panelId)
-          : null;
-
-        const newName = buildTicketChannelName(
-          updated,
-          channel.guild,
-          panel
-        );
-
-        console.log(
-          '[Tickets] Priority rename check:',
-          channel.name,
-          '=>',
-          newName
-        );
-
-        if (channel.name !== newName) {
-          try {
-            console.log(
-              '[Tickets] About to rename priority channel'
-            );
-
-            await channel.setName(
-              newName,
-              `Ticket priority changed to ${nextPriority}`
-            );
-
-            console.log(
-              '[Tickets] Channel renamed:',
-              newName
-            );
-          } catch (error) {
-            console.error(
-              '[Tickets] Channel rename failed:',
-              error
-            );
-          }
-        }
-      }
-    } catch (error) {
-      console.error(
-        '[Tickets] Failed to update priority embed:',
-        error
-      );
-    }
-  }
-
-  emitAction(
-    options.io,
-    updated || ticket,
-    ticketSocketEvents.EVENTS.TICKET_UPDATED
-  );
-
-  return updated;
-}
-
-async function changeStatus(
-  ticketOrId,
-  status,
-  actor,
-  options = {}
-) {
-  const ticket = await fetchTicket(ticketOrId, options.guildId);
-  const actorData = getActor(actor);
-
-  const nextStatus = String(status || '').toLowerCase();
-
-  if (!Object.values(STATUS).includes(nextStatus)) {
-    throw new Error(`Invalid status: ${status}`);
-  }
-
-  const updated = await ticketManager.updateTicketStatus({
-    guildId: ticket.guildId,
-    ticketId: ticket.ticketId,
-    actorId: actorData.id,
-    status: nextStatus,
-  });
-
-  const saved = await saveTicket(updated || ticket, {
-    status: nextStatus,
+    priority: cleanPriority,
     statusChangedAt: now(),
   });
 
   await addStaffActivity(
-    saved || updated || ticket,
+    updated,
     actor,
-    'staff_changed_status',
-    `Status changed to ${nextStatus} by ${actorData.tag}.`,
+    'ticket_priority_changed',
+    `Priority changed from ${PRIORITY_LABELS[previousPriority]} to ${PRIORITY_LABELS[cleanPriority]} by ${actorData.tag}.`,
     {
-      oldStatus: ticket.status,
-      newStatus: nextStatus,
+      previousPriority,
+      priority: cleanPriority,
+    }
+  );
+
+  const channel = await getDiscordChannel(options.client, updated);
+
+  if (channel) {
+    const panel = getTicketPanel(updated);
+
+    await channel
+      .setName(
+        buildTicketChannelName(updated, channel.guild, panel)
+      )
+      .catch(() => null);
+  }
+
+  emitAction(
+    options.io,
+    updated,
+    ticketSocketEvents.EVENTS.TICKET_UPDATED,
+    {
+      actorId: actorData.id,
+      previousPriority,
+      priority: cleanPriority,
+    }
+  );
+
+  await refreshTicketControlMessage(options.client, updated);
+
+  return updated;
+}
+
+async function assign(ticketOrId, staffId, actor, options = {}) {
+  const ticket = await fetchTicket(
+    ticketOrId,
+    options.guildId
+  );
+
+  const actorData = getActor(actor);
+
+  const assignedStaffIds = [
+    ...new Set([
+      ...(Array.isArray(ticket.assignedStaffIds)
+        ? ticket.assignedStaffIds
+        : []),
+      staffId,
+    ].filter(Boolean)),
+  ];
+
+  const updated = await saveTicket(ticket, {
+    assignedStaffIds,
+  });
+
+  await addStaffActivity(
+    updated,
+    actor,
+    'ticket_assigned',
+    `Ticket assigned by ${actorData.tag}.`,
+    {
+      staffId,
     }
   );
 
   emitAction(
     options.io,
-    saved || updated || ticket,
-    ticketSocketEvents.EVENTS.TICKET_UPDATED
+    updated,
+    ticketSocketEvents.EVENTS.TICKET_UPDATED,
+    {
+      actorId: actorData.id,
+      assignedStaffIds,
+    }
   );
 
-  return saved || updated;
+  await refreshTicketControlMessage(options.client, updated);
+
+  return updated;
+}
+
+async function addNote(ticketOrId, note, actor, options = {}) {
+  const ticket = await fetchTicket(
+    ticketOrId,
+    options.guildId
+  );
+
+  const actorData = getActor(actor);
+
+  const notes = Array.isArray(ticket.notes)
+    ? [...ticket.notes]
+    : [];
+
+  notes.push({
+    id: `${Date.now()}_${Math.random().toString(36).slice(2)}`,
+    actorId: actorData.id,
+    actorTag: actorData.tag,
+    note: String(note || '').slice(0, 2000),
+    createdAt: now(),
+  });
+
+  const updated = await saveTicket(ticket, {
+    notes,
+  });
+
+  await addStaffActivity(
+    updated,
+    actor,
+    'ticket_note_added',
+    `Internal note added by ${actorData.tag}.`,
+    {}
+  );
+
+  emitAction(
+    options.io,
+    updated,
+    ticketSocketEvents.EVENTS.TICKET_UPDATED,
+    {
+      actorId: actorData.id,
+    }
+  );
+
+  await refreshTicketControlMessage(options.client, updated);
+
+  return updated;
 }
 
 module.exports = {
   STATUS,
   PRIORITY,
+  PRIORITY_LABELS,
 
   claim,
   close,
-  reopen,
   archive,
+  reopen,
   deleteTicket,
 
-  addUser,
-  removeUser,
-  rename,
+  setPriority,
+  assign,
+  addNote,
 
-  changePriority,
-  changeStatus,
+  refreshTicketControlMessage,
+  createTranscript,
 
+  getTicketPanel,
   fetchTicket,
-  saveTicket,
-  addStaffActivity,
 };

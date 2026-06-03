@@ -1,11 +1,14 @@
 // src/modules/tickets/ticketPermissions.js
 
+'use strict';
+
 const {
   PermissionsBitField,
 } = require('discord.js');
 
 const {
   getTicketSettings,
+  getPanel,
 } = require('./ticketStore');
 
 const TICKET_ACTIONS = Object.freeze({
@@ -30,11 +33,8 @@ const TICKET_ACTIONS = Object.freeze({
 
   ADD_NOTE: 'add_note',
 
-  MANAGE_SETTINGS:
-    'manage_settings',
-
-  MANAGE_PANELS:
-    'manage_panels',
+  MANAGE_SETTINGS: 'manage_settings',
+  MANAGE_PANELS: 'manage_panels',
 });
 
 const LOCKED_STATUSES = [
@@ -42,455 +42,341 @@ const LOCKED_STATUSES = [
   'archived',
 ];
 
-function normaliseArray(
-  value
-) {
+function normaliseArray(value) {
   if (!Array.isArray(value)) {
     return [];
   }
 
-  return [
-    ...new Set(
-      value.filter(Boolean)
-    ),
-  ];
+  return [...new Set(value.filter(Boolean).map(String))];
 }
 
-function hasRole(
-  member,
-  roleId
-) {
-  if (!member || !roleId) {
+function normaliseStatus(status) {
+  return String(status || 'open').toLowerCase();
+}
+
+function hasRole(member, roleId) {
+  if (!member || !roleId) return false;
+
+  return Boolean(
+    member.roles?.cache?.has(String(roleId))
+  );
+}
+
+function hasAnyRole(member, roleIds = []) {
+  const ids = normaliseArray(roleIds);
+
+  if (!member || !ids.length) {
     return false;
   }
 
-  return member.roles?.cache?.has(
-    roleId
+  return ids.some((roleId) => hasRole(member, roleId));
+}
+
+function isGuildOwner(member) {
+  return member?.guild?.ownerId === member?.id;
+}
+
+function isAdministrator(member) {
+  return Boolean(
+    member?.permissions?.has?.(
+      PermissionsBitField.Flags.Administrator
+    )
   );
 }
 
-function hasAnyRole(
-  member,
-  roleIds = []
-) {
-  if (
-    !member ||
-    !Array.isArray(roleIds)
-  ) {
-    return false;
-  }
-
-  return roleIds.some(
-    (roleId) =>
-      member.roles?.cache?.has(
-        roleId
-      )
+function hasManageGuild(member) {
+  return Boolean(
+    member?.permissions?.has?.(
+      PermissionsBitField.Flags.ManageGuild
+    )
   );
 }
 
-function isGuildOwner(
-  member
-) {
-  return (
-    member?.guild?.ownerId ===
-    member?.id
-  );
-}
-
-function isAdministrator(
-  member
-) {
-  return member?.permissions?.has?.(
-    PermissionsBitField.Flags
-      .Administrator
-  );
-}
-
-function isSystemOverride(
-  member
-) {
+function isSystemOverride(member) {
   return (
     isGuildOwner(member) ||
     isAdministrator(member)
   );
 }
 
-function getPermissionConfig(
-  settings = {}
-) {
+function getPermissionConfig(settings = {}) {
+  const permissions = settings?.permissions || {};
+
   return {
+    administratorOverride:
+      permissions.administratorOverride !== false,
+
     allowCreatorView:
-      settings?.permissions
-        ?.allowCreatorView !==
-      false,
+      permissions.allowCreatorView !== false,
 
     allowUserClose:
-      settings?.permissions
-        ?.allowUserClose ===
-      true,
+      permissions.allowUserClose === true,
 
     managerRoleIds:
       normaliseArray(
-        settings?.permissions
-          ?.managerRoleIds
+        permissions.managerRoleIds ||
+          permissions.managerRoles ||
+          permissions.managers ||
+          []
       ),
 
     staffRoleIds:
       normaliseArray(
-        settings?.permissions
-          ?.staffRoleIds
+        permissions.staffRoleIds ||
+          permissions.staffRoles ||
+          permissions.staff ||
+          []
       ),
 
     viewerRoleIds:
       normaliseArray(
-        settings?.permissions
-          ?.viewerRoleIds
+        permissions.viewerRoleIds ||
+          permissions.viewerRoles ||
+          permissions.viewers ||
+          []
       ),
   };
 }
 
-function getPanelPermissionConfig(
-  panel = {}
-) {
+function getPanelPermissionConfig(panel = {}) {
   return {
     allowUserClose:
-      panel?.allowUserClose ===
-      true,
+      panel?.allowUserClose === true,
 
     managerRoleIds:
-      normaliseArray(
-        panel?.managerRoleIds
-      ),
+      normaliseArray(panel?.managerRoleIds),
 
     staffRoleIds:
-      normaliseArray(
-        panel?.staffRoleIds
-      ),
+      normaliseArray(panel?.staffRoleIds),
 
     viewerRoleIds:
-      normaliseArray(
-        panel?.viewerRoleIds
-      ),
+      normaliseArray(panel?.viewerRoleIds),
   };
 }
 
-function getMergedRoles(
-  globalRoles = [],
-  panelRoles = []
-) {
+function getMergedRoles(globalRoles = [], panelRoles = []) {
   return [
     ...new Set([
-      ...normaliseArray(
-        globalRoles
-      ),
-      ...normaliseArray(
-        panelRoles
-      ),
+      ...normaliseArray(globalRoles),
+      ...normaliseArray(panelRoles),
     ]),
   ];
 }
 
-function isManager(
-  member,
-  settings = {},
-  panel = null
-) {
-  const globalConfig =
-    getPermissionConfig(
-      settings
-    );
+function getTicketPanel(guildId, ticket = null) {
+  if (!guildId || !ticket) return null;
 
-  const panelConfig =
-    getPanelPermissionConfig(
-      panel
-    );
+  const panelId =
+    ticket.metadata?.panelId ||
+    ticket.panelId ||
+    ticket.sourceId ||
+    null;
+
+  if (!panelId) return null;
+
+  return getPanel(guildId, panelId);
+}
+
+function getMergedPermissionConfig(settings = {}, panel = null) {
+  const globalConfig = getPermissionConfig(settings);
+  const panelConfig = getPanelPermissionConfig(panel);
+
+  return {
+    administratorOverride:
+      globalConfig.administratorOverride,
+
+    allowCreatorView:
+      globalConfig.allowCreatorView,
+
+    allowUserClose:
+      panelConfig.allowUserClose ||
+      globalConfig.allowUserClose,
+
+    managerRoleIds:
+      getMergedRoles(
+        globalConfig.managerRoleIds,
+        panelConfig.managerRoleIds
+      ),
+
+    staffRoleIds:
+      getMergedRoles(
+        globalConfig.staffRoleIds,
+        panelConfig.staffRoleIds
+      ),
+
+    viewerRoleIds:
+      getMergedRoles(
+        globalConfig.viewerRoleIds,
+        panelConfig.viewerRoleIds
+      ),
+  };
+}
+
+function isManager(member, settings = {}, panel = null) {
+  const config =
+    getMergedPermissionConfig(settings, panel);
 
   return hasAnyRole(
     member,
-    getMergedRoles(
-      globalConfig.managerRoleIds,
-      panelConfig.managerRoleIds
-    )
+    config.managerRoleIds
   );
 }
 
-function isStaff(
-  member,
-  settings = {},
-  panel = null
-) {
-  const globalConfig =
-    getPermissionConfig(
-      settings
-    );
-
-  const panelConfig =
-    getPanelPermissionConfig(
-      panel
-    );
+function isStaff(member, settings = {}, panel = null) {
+  const config =
+    getMergedPermissionConfig(settings, panel);
 
   return hasAnyRole(
     member,
-    getMergedRoles(
-      globalConfig.staffRoleIds,
-      panelConfig.staffRoleIds
-    )
+    config.staffRoleIds
   );
 }
 
-function isViewer(
-  member,
-  settings = {},
-  panel = null
-) {
-  const globalConfig =
-    getPermissionConfig(
-      settings
-    );
-
-  const panelConfig =
-    getPanelPermissionConfig(
-      panel
-    );
+function isViewer(member, settings = {}, panel = null) {
+  const config =
+    getMergedPermissionConfig(settings, panel);
 
   return hasAnyRole(
     member,
-    getMergedRoles(
-      globalConfig.viewerRoleIds,
-      panelConfig.viewerRoleIds
-    )
+    config.viewerRoleIds
   );
 }
 
-function isCreator(
-  member,
-  ticket
-) {
-  if (!member || !ticket) {
-    return false;
-  }
+function isTicketCreator(member, ticket) {
+  if (!member || !ticket) return false;
+
+  const userId = member.id;
 
   return (
-    ticket.creatorId ===
-    member.id
+    ticket.creatorId === userId ||
+    ticket.userId === userId ||
+    ticket.createdBy === userId
   );
 }
 
-function isAllowedUser(
-  member,
-  ticket
-) {
-  if (!member || !ticket) {
-    return false;
-  }
+function isAllowedTicketUser(member, ticket) {
+  if (!member || !ticket) return false;
 
-  return (
-    Array.isArray(
-      ticket.allowedUserIds
-    ) &&
-    ticket.allowedUserIds.includes(
-      member.id
-    )
-  );
+  const allowedUserIds =
+    normaliseArray(ticket.allowedUserIds);
+
+  return allowedUserIds.includes(String(member.id));
 }
 
-function isTicketLocked(
-  ticket
-) {
+function isLocked(ticket) {
   return LOCKED_STATUSES.includes(
-    String(
-      ticket?.status || ''
-    ).toLowerCase()
+    normaliseStatus(ticket?.status)
   );
 }
 
-function canViewTicket({
-  member,
-  ticket,
-  settings = {},
-  panel = null,
-}) {
-  if (!member || !ticket) {
-    return false;
+function getRoleLevel(member, settings = {}, panel = null) {
+  if (!member) return 'none';
+
+  if (isSystemOverride(member)) {
+    return 'admin';
   }
 
-  if (
-    isSystemOverride(
-      member
-    )
-  ) {
-    return true;
+  if (isManager(member, settings, panel)) {
+    return 'manager';
   }
 
-  if (
-    isManager(
-      member,
-      settings,
-      panel
-    ) ||
-    isStaff(
-      member,
-      settings,
-      panel
-    ) ||
-    isViewer(
-      member,
-      settings,
-      panel
-    )
-  ) {
-    return true;
+  if (isStaff(member, settings, panel)) {
+    return 'staff';
   }
+
+  if (isViewer(member, settings, panel)) {
+    return 'viewer';
+  }
+
+  return 'none';
+}
+
+function canView(member, ticket, settings = {}, panel = null) {
+  if (!member) return false;
 
   const config =
-    getPermissionConfig(
-      settings
-    );
+    getMergedPermissionConfig(settings, panel);
 
   if (
-    config.allowCreatorView &&
-    isCreator(
-      member,
-      ticket
-    )
+    config.administratorOverride &&
+    isSystemOverride(member)
+  ) {
+    return true;
+  }
+
+  if (
+    isManager(member, settings, panel) ||
+    isStaff(member, settings, panel) ||
+    isViewer(member, settings, panel)
   ) {
     return true;
   }
 
   if (
     config.allowCreatorView &&
-    isAllowedUser(
-      member,
-      ticket
-    )
+    isTicketCreator(member, ticket)
   ) {
+    return true;
+  }
+
+  if (isAllowedTicketUser(member, ticket)) {
     return true;
   }
 
   return false;
 }
 
-function canManageTicket({
-  member,
-  settings = {},
-  panel = null,
-}) {
-  if (!member) {
-    return false;
-  }
+function canManagePanels(member, settings = {}, panel = null) {
+  if (!member) return false;
+
+  const config =
+    getMergedPermissionConfig(settings, panel);
 
   if (
-    isSystemOverride(
-      member
-    )
+    config.administratorOverride &&
+    isSystemOverride(member)
   ) {
     return true;
   }
 
-  return isManager(
-    member,
-    settings,
-    panel
-  );
-}
-
-function canStaffAction({
-  member,
-  settings = {},
-  panel = null,
-}) {
-  if (!member) {
-    return false;
+  if (hasManageGuild(member)) {
+    return true;
   }
 
+  return isManager(member, settings, panel);
+}
+
+function canCreate(member, settings = {}, panel = null) {
+  if (!member) return false;
+
+  const config =
+    getMergedPermissionConfig(settings, panel);
+
   if (
-    isSystemOverride(
-      member
-    )
+    config.administratorOverride &&
+    isSystemOverride(member)
   ) {
     return true;
   }
 
-  return (
-    isManager(
-      member,
-      settings,
-      panel
-    ) ||
-    isStaff(
-      member,
-      settings,
-      panel
-    )
-  );
-}
+  if (!panel) return true;
 
-function canUserManageOwnTicket({
-  member,
-  ticket,
-  settings = {},
-  panel = null,
-}) {
+  const allowedRoleIds =
+    normaliseArray(panel.allowedRoleIds);
+
+  const blockedRoleIds =
+    normaliseArray(panel.blockedRoleIds);
+
   if (
-    !member ||
-    !ticket
+    blockedRoleIds.length &&
+    hasAnyRole(member, blockedRoleIds)
   ) {
     return false;
   }
 
   if (
-    !isCreator(
-      member,
-      ticket
-    )
-  ) {
-    return false;
-  }
-
-  if (
-    isTicketLocked(
-      ticket
-    )
-  ) {
-    return false;
-  }
-
-  const globalConfig =
-    getPermissionConfig(
-      settings
-    );
-
-  const panelConfig =
-    getPanelPermissionConfig(
-      panel
-    );
-
-  return (
-    globalConfig.allowUserClose ||
-    panelConfig.allowUserClose
-  );
-}
-
-function canClaimTicket({
-  member,
-  ticket,
-  settings = {},
-  panel = null,
-}) {
-  if (
-    !canStaffAction({
-      member,
-      settings,
-      panel,
-    })
-  ) {
-    return false;
-  }
-
-  if (
-    isTicketLocked(
-      ticket
-    )
+    allowedRoleIds.length &&
+    !hasAnyRole(member, allowedRoleIds)
   ) {
     return false;
   }
@@ -498,105 +384,274 @@ function canClaimTicket({
   return true;
 }
 
-function canDeleteTicket({
-  member,
-  settings = {},
-  panel = null,
-}) {
-  return canManageTicket({
-    member,
-    settings,
-    panel,
-  });
-}
+function canUpdate(member, ticket, settings = {}, panel = null) {
+  if (!member || !ticket) return false;
 
-function can(
-  member,
-  action,
-  ticket = null,
-  panel = null
-) {
-  if (
-    !member ||
-    !member.guild
-  ) {
+  if (isLocked(ticket)) {
     return false;
   }
 
+  const config =
+    getMergedPermissionConfig(settings, panel);
+
+  if (
+    config.administratorOverride &&
+    isSystemOverride(member)
+  ) {
+    return true;
+  }
+
+  return (
+    isManager(member, settings, panel) ||
+    isStaff(member, settings, panel)
+  );
+}
+
+function canClaim(member, ticket, settings = {}, panel = null) {
+  if (!member || !ticket) return false;
+
+  if (isLocked(ticket)) {
+    return false;
+  }
+
+  const config =
+    getMergedPermissionConfig(settings, panel);
+
+  if (
+    config.administratorOverride &&
+    isSystemOverride(member)
+  ) {
+    return true;
+  }
+
+  return (
+    isManager(member, settings, panel) ||
+    isStaff(member, settings, panel)
+  );
+}
+
+function canAssign(member, ticket, settings = {}, panel = null) {
+  if (!member || !ticket) return false;
+
+  if (isLocked(ticket)) {
+    return false;
+  }
+
+  const config =
+    getMergedPermissionConfig(settings, panel);
+
+  if (
+    config.administratorOverride &&
+    isSystemOverride(member)
+  ) {
+    return true;
+  }
+
+  return isManager(member, settings, panel);
+}
+
+function canClose(member, ticket, settings = {}, panel = null) {
+  if (!member || !ticket) return false;
+
+  if (isLocked(ticket)) {
+    return false;
+  }
+
+  const config =
+    getMergedPermissionConfig(settings, panel);
+
+  if (
+    config.administratorOverride &&
+    isSystemOverride(member)
+  ) {
+    return true;
+  }
+
+  if (
+    isManager(member, settings, panel) ||
+    isStaff(member, settings, panel)
+  ) {
+    return true;
+  }
+
+  return (
+    config.allowUserClose &&
+    isTicketCreator(member, ticket)
+  );
+}
+
+function canReopen(member, ticket, settings = {}, panel = null) {
+  if (!member || !ticket) return false;
+
+  const status = normaliseStatus(ticket.status);
+
+  if (!['closed', 'archived'].includes(status)) {
+    return false;
+  }
+
+  const config =
+    getMergedPermissionConfig(settings, panel);
+
+  if (
+    config.administratorOverride &&
+    isSystemOverride(member)
+  ) {
+    return true;
+  }
+
+  return (
+    isManager(member, settings, panel) ||
+    isStaff(member, settings, panel)
+  );
+}
+
+function canApproveOrDeny(member, ticket, settings = {}, panel = null) {
+  if (!member || !ticket) return false;
+
+  if (isLocked(ticket)) {
+    return false;
+  }
+
+  const config =
+    getMergedPermissionConfig(settings, panel);
+
+  if (
+    config.administratorOverride &&
+    isSystemOverride(member)
+  ) {
+    return true;
+  }
+
+  return (
+    isManager(member, settings, panel) ||
+    isStaff(member, settings, panel)
+  );
+}
+
+function canArchive(member, ticket, settings = {}, panel = null) {
+  if (!member || !ticket) return false;
+
+  const status = normaliseStatus(ticket.status);
+
+  if (status === 'archived') {
+    return false;
+  }
+
+  const config =
+    getMergedPermissionConfig(settings, panel);
+
+  if (
+    config.administratorOverride &&
+    isSystemOverride(member)
+  ) {
+    return true;
+  }
+
+  return (
+    isManager(member, settings, panel) ||
+    isStaff(member, settings, panel)
+  );
+}
+
+function canDelete(member, ticket, settings = {}, panel = null) {
+  if (!member || !ticket) return false;
+
+  const config =
+    getMergedPermissionConfig(settings, panel);
+
+  if (
+    config.administratorOverride &&
+    isSystemOverride(member)
+  ) {
+    return true;
+  }
+
+  return isManager(member, settings, panel);
+}
+
+function canAddNote(member, ticket, settings = {}, panel = null) {
+  if (!member || !ticket) return false;
+
+  const config =
+    getMergedPermissionConfig(settings, panel);
+
+  if (
+    config.administratorOverride &&
+    isSystemOverride(member)
+  ) {
+    return true;
+  }
+
+  return (
+    isManager(member, settings, panel) ||
+    isStaff(member, settings, panel)
+  );
+}
+
+function memberGuildId(member) {
+  return member?.guild?.id || null;
+}
+
+function can(member, action, ticket = null) {
+  if (!member) return false;
+
+  const guildId =
+    memberGuildId(member) ||
+    ticket?.guildId ||
+    null;
+
   const settings =
-    getTicketSettings(
-      member.guild.id
-    );
+    guildId ? getTicketSettings(guildId) : {};
+
+  const panel =
+    ticket ? getTicketPanel(guildId, ticket) : null;
 
   switch (action) {
     case TICKET_ACTIONS.VIEW:
-      return canViewTicket({
-        member,
-        ticket,
-        settings,
-        panel,
-      });
+      return canView(member, ticket, settings, panel);
 
     case TICKET_ACTIONS.VIEW_ALL:
-      return canStaffAction({
-        member,
-        settings,
-        panel,
-      });
-
-    case TICKET_ACTIONS.CREATE:
-      return true;
-
-    case TICKET_ACTIONS.UPDATE:
-    case TICKET_ACTIONS.ASSIGN:
-    case TICKET_ACTIONS.ADD_NOTE:
-    case TICKET_ACTIONS.APPROVE:
-    case TICKET_ACTIONS.DENY:
-      return canStaffAction({
-        member,
-        settings,
-        panel,
-      });
-
-    case TICKET_ACTIONS.CLAIM:
-      return canClaimTicket({
-        member,
-        ticket,
-        settings,
-        panel,
-      });
-
-    case TICKET_ACTIONS.CLOSE:
       return (
-        canStaffAction({
-          member,
-          settings,
-          panel,
-        }) ||
-        canUserManageOwnTicket({
-          member,
-          ticket,
-          settings,
-          panel,
-        })
+        isSystemOverride(member) ||
+        isManager(member, settings, panel) ||
+        isStaff(member, settings, panel) ||
+        isViewer(member, settings, panel)
       );
 
+    case TICKET_ACTIONS.CREATE:
+      return canCreate(member, settings, panel);
+
+    case TICKET_ACTIONS.UPDATE:
+      return canUpdate(member, ticket, settings, panel);
+
+    case TICKET_ACTIONS.CLAIM:
+      return canClaim(member, ticket, settings, panel);
+
+    case TICKET_ACTIONS.ASSIGN:
+      return canAssign(member, ticket, settings, panel);
+
+    case TICKET_ACTIONS.CLOSE:
+      return canClose(member, ticket, settings, panel);
+
     case TICKET_ACTIONS.REOPEN:
+      return canReopen(member, ticket, settings, panel);
+
+    case TICKET_ACTIONS.APPROVE:
+    case TICKET_ACTIONS.DENY:
+      return canApproveOrDeny(member, ticket, settings, panel);
+
     case TICKET_ACTIONS.ARCHIVE:
-    case TICKET_ACTIONS.MANAGE_SETTINGS:
-    case TICKET_ACTIONS.MANAGE_PANELS:
-      return canManageTicket({
-        member,
-        settings,
-        panel,
-      });
+      return canArchive(member, ticket, settings, panel);
 
     case TICKET_ACTIONS.DELETE:
-      return canDeleteTicket({
-        member,
-        settings,
-        panel,
-      });
+      return canDelete(member, ticket, settings, panel);
+
+    case TICKET_ACTIONS.ADD_NOTE:
+      return canAddNote(member, ticket, settings, panel);
+
+    case TICKET_ACTIONS.MANAGE_SETTINGS:
+    case TICKET_ACTIONS.MANAGE_PANELS:
+      return canManagePanels(member, settings, panel);
 
     default:
       return false;
@@ -605,34 +660,33 @@ function can(
 
 module.exports = {
   TICKET_ACTIONS,
+  LOCKED_STATUSES,
 
   can,
 
-  hasRole,
-  hasAnyRole,
-
-  isGuildOwner,
-  isAdministrator,
-  isSystemOverride,
+  canView,
+  canCreate,
+  canUpdate,
+  canClaim,
+  canAssign,
+  canClose,
+  canReopen,
+  canApproveOrDeny,
+  canArchive,
+  canDelete,
+  canAddNote,
+  canManagePanels,
 
   isManager,
   isStaff,
   isViewer,
-
-  isCreator,
-  isAllowedUser,
-
-  isTicketLocked,
-
-  canViewTicket,
-  canManageTicket,
-  canStaffAction,
-  canUserManageOwnTicket,
-
-  canClaimTicket,
-  canDeleteTicket,
+  isTicketCreator,
+  isAllowedTicketUser,
+  isSystemOverride,
+  isLocked,
+  getRoleLevel,
 
   getPermissionConfig,
   getPanelPermissionConfig,
-  getMergedRoles,
+  getMergedPermissionConfig,
 };
