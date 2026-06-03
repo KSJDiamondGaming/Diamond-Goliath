@@ -17,15 +17,12 @@ const ticketPermissions = require('./ticketPermissions');
 
 const {
   handleTicketPanelButton,
+  refreshDeployedPanel,
 } = require('./ticketPanelManager');
 
 const {
   handleTicketSetupInteraction,
 } = require('./ticketSetupPanel');
-
-const {
-  refreshDeployedPanel,
-} = require('./ticketPanelManager');
 
 const {
   CUSTOM_IDS,
@@ -55,6 +52,13 @@ const SELECT_IDS = {
   PRIORITY: 'goliath_ticket_priority_select',
 };
 
+const PRIORITY_LABELS = {
+  low: 'Low',
+  normal: 'Normal',
+  high: 'High',
+  urgent: 'Urgent',
+};
+
 function alreadyHandled(interaction) {
   return interaction.deferred || interaction.replied;
 }
@@ -64,6 +68,21 @@ function ephemeralPayload(payload = {}) {
     ...payload,
     flags: MessageFlags.Ephemeral,
   };
+}
+
+function formatPriority(priority = 'normal') {
+  const value = String(priority || 'normal').toLowerCase().trim();
+  return PRIORITY_LABELS[value] || 'Normal';
+}
+
+function normalizePriority(priority = 'normal') {
+  const value = String(priority || 'normal').toLowerCase().trim();
+
+  if (Object.prototype.hasOwnProperty.call(PRIORITY_LABELS, value)) {
+    return value;
+  }
+
+  return 'normal';
 }
 
 async function safeReply(interaction, payload = {}) {
@@ -110,16 +129,9 @@ async function safeDefer(interaction, ephemeral = true) {
   }
 }
 
-async function refreshPanelEditor(
-  interaction,
-  panelId
-) {
+async function refreshPanelEditor(interaction, panelId) {
   try {
-    const panel =
-      ticketStore.getPanel(
-        interaction.guildId,
-        panelId
-      );
+    const panel = ticketStore.getPanel(interaction.guildId, panelId);
 
     if (!panel) {
       return false;
@@ -127,39 +139,38 @@ async function refreshPanelEditor(
 
     const {
       buildEditorEmbed,
+      buildEditorControlsForPanel,
       buildEditorControls,
     } = require('./ticketSetupPanel');
+
+    const controls =
+      typeof buildEditorControlsForPanel === 'function'
+        ? buildEditorControlsForPanel(panel)
+        : buildEditorControls(panelId);
 
     const payload = {
       embeds: [
         buildEditorEmbed(panel),
       ],
-
-      components:
-        buildEditorControls(panelId),
+      components: controls,
     };
 
-    if (
-      interaction.deferred ||
-      interaction.replied
-    ) {
-      await interaction.editReply(
-        payload
-      );
-
+    if (interaction.deferred || interaction.replied) {
+      await interaction.editReply(payload);
       return true;
     }
 
-    await interaction.update(
-      payload
-    );
+    if (typeof interaction.update === 'function') {
+      await interaction.update(payload);
+      return true;
+    }
 
+    await interaction.reply(ephemeralPayload(payload));
     return true;
   } catch {
     return false;
   }
 }
-
 
 function isTicketModal(customId) {
   return Object.values(MODAL_IDS).includes(customId);
@@ -167,6 +178,12 @@ function isTicketModal(customId) {
 
 function isTicketSelect(customId) {
   return Object.values(SELECT_IDS).includes(customId);
+}
+
+function isTicketSetupInteraction(interaction) {
+  const customId = interaction.customId || '';
+
+  return customId.startsWith('ticket_setup:');
 }
 
 async function listTickets(guildId) {
@@ -283,44 +300,54 @@ async function showCloseModal(interaction, ticket) {
     .setCustomId(MODAL_IDS.CLOSE)
     .setTitle('Close Ticket');
 
-  const reason = new TextInputBuilder()
-    .setCustomId(INPUT_IDS.CLOSE_REASON)
-    .setLabel('Reason for closing')
-    .setStyle(TextInputStyle.Paragraph)
-    .setRequired(false)
-    .setMaxLength(500);
-
-  modal.addComponents(
-    new ActionRowBuilder().addComponents(reason)
-  );
-
-  return interaction.showModal(modal);
-}
-
-async function showAppearanceModal(interaction, panelId, field) {
-  if (alreadyHandled(interaction)) return true;
-
-  const modal = new ModalBuilder()
-    .setCustomId(`${MODAL_IDS.PANEL_APPEARANCE}:${panelId}:${field}`)
-    .setTitle(`Edit ${field}`);
-
   const input = new TextInputBuilder()
-    .setCustomId(INPUT_IDS.APPEARANCE_VALUE)
-    .setLabel(`New ${field}`)
-    .setStyle(TextInputStyle.Paragraph)
+    .setCustomId(INPUT_IDS.CLOSE_REASON)
+    .setLabel('Close reason')
+    .setPlaceholder('Optional reason for closing this ticket')
     .setRequired(false)
-    .setMaxLength(4000);
+    .setStyle(TextInputStyle.Paragraph)
+    .setMaxLength(1000);
 
   modal.addComponents(
     new ActionRowBuilder().addComponents(input)
   );
 
-  return interaction.showModal(modal);
+  await interaction.showModal(modal);
+  return true;
+}
+
+async function handleCloseModal(interaction, ticket) {
+  if (!ticket) {
+    return deny(interaction, 'Ticket not found.');
+  }
+
+  const reason =
+    interaction.fields.getTextInputValue(INPUT_IDS.CLOSE_REASON) ||
+    'No reason provided.';
+
+  const updated = await ticketActions.close(
+    ticket,
+    interaction.user,
+    {
+      reason,
+      client: interaction.client,
+      createTranscript: true,
+    }
+  );
+
+  await refreshTicketButtons(interaction, updated);
+
+  return safeReply(
+    interaction,
+    ephemeralPayload({
+      content: `🔒 Ticket closed. Reason: ${reason}`,
+    })
+  );
 }
 
 async function handleArchive(interaction, ticket) {
   if (!can(interaction, TICKET_ACTIONS.ARCHIVE, ticket)) {
-    return deny(interaction, 'You cannot archive tickets.');
+    return deny(interaction, 'You cannot archive this ticket.');
   }
 
   const deferred = await safeDefer(interaction, true);
@@ -331,14 +358,37 @@ async function handleArchive(interaction, ticket) {
     interaction.user,
     {
       client: interaction.client,
-      reason: 'Archived from ticket channel',
+      createTranscript: true,
     }
   );
 
   await refreshTicketButtons(interaction, updated);
 
   return safeEditOrReply(interaction, {
-    content: '📁 Ticket archived and transcript generated.',
+    content: '📁 Ticket archived.',
+  });
+}
+
+async function handleReopen(interaction, ticket) {
+  if (!can(interaction, TICKET_ACTIONS.REOPEN, ticket)) {
+    return deny(interaction, 'You cannot reopen this ticket.');
+  }
+
+  const deferred = await safeDefer(interaction, true);
+  if (!deferred) return true;
+
+  const updated = await ticketActions.reopen(
+    ticket,
+    interaction.user,
+    {
+      client: interaction.client,
+    }
+  );
+
+  await refreshTicketButtons(interaction, updated);
+
+  return safeEditOrReply(interaction, {
+    content: '🔓 Ticket reopened.',
   });
 }
 
@@ -360,16 +410,20 @@ async function handleTranscript(interaction, ticket) {
       }
     );
 
+  if (transcript?.error) {
+    return safeEditOrReply(interaction, {
+      content: `❌ Transcript failed: ${transcript.message}`,
+    });
+  }
+
   return safeEditOrReply(interaction, {
-    content: transcript.upload?.uploaded
-      ? '📄 Transcript generated and uploaded.'
-      : '📄 Transcript generated locally.',
+    content: '📄 Transcript generated.',
   });
 }
 
 async function showAddUserModal(interaction, ticket) {
   if (!can(interaction, TICKET_ACTIONS.UPDATE, ticket)) {
-    return deny(interaction, 'You cannot add users to tickets.');
+    return deny(interaction, 'You cannot add users to this ticket.');
   }
 
   if (alreadyHandled(interaction)) return true;
@@ -378,19 +432,80 @@ async function showAddUserModal(interaction, ticket) {
     .setCustomId(MODAL_IDS.ADD_USER)
     .setTitle('Add User To Ticket');
 
-  const userId = new TextInputBuilder()
+  const input = new TextInputBuilder()
     .setCustomId(INPUT_IDS.ADD_USER_ID)
     .setLabel('User ID')
-    .setPlaceholder('Paste the Discord user ID')
-    .setStyle(TextInputStyle.Short)
+    .setPlaceholder('Enter the Discord user ID to add')
     .setRequired(true)
+    .setStyle(TextInputStyle.Short)
     .setMaxLength(32);
 
   modal.addComponents(
-    new ActionRowBuilder().addComponents(userId)
+    new ActionRowBuilder().addComponents(input)
   );
 
-  return interaction.showModal(modal);
+  await interaction.showModal(modal);
+  return true;
+}
+
+async function handleAddUserModal(interaction, ticket) {
+  if (!ticket) {
+    return deny(interaction, 'Ticket not found.');
+  }
+
+  const userId = interaction.fields
+    .getTextInputValue(INPUT_IDS.ADD_USER_ID)
+    .replace(/[<@!>]/g, '')
+    .trim();
+
+  if (!/^\d{15,25}$/.test(userId)) {
+    return deny(interaction, 'Invalid user ID.');
+  }
+
+  const channel =
+    interaction.channel ||
+    (ticket.discordChannelId
+      ? await interaction.guild.channels
+          .fetch(ticket.discordChannelId)
+          .catch(() => null)
+      : null);
+
+  if (!channel) {
+    return deny(interaction, 'Ticket channel not found.');
+  }
+
+  await channel.permissionOverwrites.edit(userId, {
+    ViewChannel: true,
+    SendMessages: true,
+    ReadMessageHistory: true,
+    AttachFiles: true,
+    EmbedLinks: true,
+  });
+
+  const allowedUserIds = [
+    ...new Set([
+      ...(Array.isArray(ticket.allowedUserIds)
+        ? ticket.allowedUserIds
+        : []),
+      userId,
+    ]),
+  ];
+
+  ticketStore.updateTicket(
+    interaction.guildId,
+    ticket.ticketId,
+    {
+      allowedUserIds,
+      updatedAt: new Date().toISOString(),
+    }
+  );
+
+  return safeReply(
+    interaction,
+    ephemeralPayload({
+      content: `✅ Added <@${userId}> to this ticket.`,
+    })
+  );
 }
 
 async function showPrioritySelect(interaction, ticket) {
@@ -398,50 +513,40 @@ async function showPrioritySelect(interaction, ticket) {
     return deny(interaction, 'You cannot change ticket priority.');
   }
 
-  const menu = new StringSelectMenuBuilder()
+  const current = normalizePriority(ticket.priority);
+
+  const select = new StringSelectMenuBuilder()
     .setCustomId(SELECT_IDS.PRIORITY)
-    .setPlaceholder('Choose ticket priority')
+    .setPlaceholder(`Current: ${formatPriority(current)}`)
     .addOptions(
-      {
-        label: 'Low',
-        value: ticketActions.PRIORITY.LOW,
-        emoji: '🟢',
-      },
-      {
-        label: 'Normal',
-        value: ticketActions.PRIORITY.NORMAL,
-        emoji: '🔵',
-      },
-      {
-        label: 'High',
-        value: ticketActions.PRIORITY.HIGH,
-        emoji: '🟠',
-      },
-      {
-        label: 'Urgent',
-        value: ticketActions.PRIORITY.URGENT,
-        emoji: '🔴',
-      }
+      Object.entries(PRIORITY_LABELS).map(([value, label]) => ({
+        label,
+        value,
+        default: value === current,
+      }))
     );
 
   return safeReply(
     interaction,
     ephemeralPayload({
-      content: '⚠️ Select new ticket priority:',
+      content: 'Choose a new ticket priority:',
       components: [
-        new ActionRowBuilder().addComponents(menu),
+        new ActionRowBuilder().addComponents(select),
       ],
     })
   );
 }
 
-async function handleReopen(interaction, ticket) {
-  if (!can(interaction, TICKET_ACTIONS.REOPEN, ticket)) {
-    return deny(interaction, 'You cannot reopen tickets.');
+async function handlePrioritySelect(interaction, ticket) {
+  if (!ticket) {
+    return deny(interaction, 'Ticket not found.');
   }
 
-  const updated = await ticketActions.reopen(
+  const priority = normalizePriority(interaction.values?.[0]);
+
+  const updated = await ticketActions.setPriority(
     ticket,
+    priority,
     interaction.user,
     {
       client: interaction.client,
@@ -450,414 +555,228 @@ async function handleReopen(interaction, ticket) {
 
   await refreshTicketButtons(interaction, updated);
 
-  return safeReply(interaction, {
-    content: `🔓 Ticket reopened by <@${interaction.user.id}>.`,
-  });
-}
-
-async function handleDelete(
-  interaction,
-  ticket
-) {
-  if (
-    !can(
-      interaction,
-      TICKET_ACTIONS.DELETE,
-      ticket
-    )
-  ) {
-    return deny(
-      interaction,
-      'You cannot delete tickets.'
-    );
-  }
-
-  if (alreadyHandled(interaction)) {
-    return true;
-  }
-
-  const modal =
-    new ModalBuilder()
-      .setCustomId(
-        MODAL_IDS.DELETE_CONFIRM
-      )
-      .setTitle(
-        'Delete Ticket'
-      );
-
-  const confirm =
-    new TextInputBuilder()
-      .setCustomId(
-        INPUT_IDS.DELETE_CONFIRM
-      )
-      .setLabel(
-        'Type DELETE to confirm'
-      )
-      .setPlaceholder(
-        'DELETE'
-      )
-      .setStyle(
-        TextInputStyle.Short
-      )
-      .setRequired(true)
-      .setMaxLength(20);
-
-  modal.addComponents(
-    new ActionRowBuilder().addComponents(
-      confirm
-    )
-  );
-
-  return interaction.showModal(
-    modal
-  );
-}
-
-async function handleTicketButton(interaction) {
-  if (!interaction.isButton()) return false;
-
-  if (!isTicketButton(interaction.customId)) {
-    return false;
-  }
-
-  const ticket = await getTicketForInteraction(interaction);
-
-if (!ticket) {
-  await safeReply(
+  return safeReply(
     interaction,
     ephemeralPayload({
-      content:
-        '⚠️ No ticket record found for this channel.',
+      content: `⚠️ Priority updated to **${formatPriority(priority)}**.`,
     })
   );
+}
 
+async function showDeleteConfirmModal(interaction, ticket) {
+  if (!can(interaction, TICKET_ACTIONS.DELETE, ticket)) {
+    return deny(interaction, 'You cannot delete tickets.');
+  }
+
+  if (alreadyHandled(interaction)) return true;
+
+  const modal = new ModalBuilder()
+    .setCustomId(MODAL_IDS.DELETE_CONFIRM)
+    .setTitle('Delete Ticket');
+
+  const input = new TextInputBuilder()
+    .setCustomId(INPUT_IDS.DELETE_CONFIRM)
+    .setLabel('Type DELETE to confirm')
+    .setPlaceholder('DELETE')
+    .setRequired(true)
+    .setStyle(TextInputStyle.Short)
+    .setMaxLength(20);
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(input)
+  );
+
+  await interaction.showModal(modal);
   return true;
 }
 
-  try {
-    switch (interaction.customId) {
-      case CUSTOM_IDS.CLAIM:
-        await handleClaim(interaction, ticket);
-        return true;
+async function handleDeleteConfirmModal(interaction, ticket) {
+  if (!ticket) {
+    return deny(interaction, 'Ticket not found.');
+  }
 
-      case CUSTOM_IDS.CLOSE:
-        await showCloseModal(interaction, ticket);
-        return true;
+  const value = interaction.fields
+    .getTextInputValue(INPUT_IDS.DELETE_CONFIRM)
+    .trim()
+    .toUpperCase();
 
-      case CUSTOM_IDS.ARCHIVE:
-        await handleArchive(interaction, ticket);
-        return true;
+  if (value !== 'DELETE') {
+    return deny(interaction, 'Delete cancelled. Confirmation did not match.');
+  }
 
-      case CUSTOM_IDS.TRANSCRIPT:
-        await handleTranscript(interaction, ticket);
-        return true;
+  const deferred = await safeDefer(interaction, true);
+  if (!deferred) return true;
 
-      case CUSTOM_IDS.ADD_USER:
-        await showAddUserModal(interaction, ticket);
-        return true;
-
-      case CUSTOM_IDS.PRIORITY:
-        await showPrioritySelect(interaction, ticket);
-        return true;
-
-      case CUSTOM_IDS.REOPEN:
-        await handleReopen(interaction, ticket);
-        return true;
-
-      case CUSTOM_IDS.DELETE:
-        await handleDelete(interaction, ticket);
-        return true;
-
-      default:
-        return false;
+  await ticketActions.deleteTicket(
+    ticket,
+    interaction.user,
+    {
+      client: interaction.client,
+      createTranscript: true,
     }
-  } catch (error) {
-    await safeEditOrReply(
-      interaction,
-      ephemeralPayload({
-        content: `❌ Ticket action failed: ${error.message}`,
-      })
-    );
+  );
 
-    return true;
+  return safeEditOrReply(interaction, {
+    content: '🗑️ Ticket deleted.',
+  });
+}
+
+async function routeTicketButton(interaction, ticket) {
+  const customId = interaction.customId;
+
+  switch (customId) {
+    case CUSTOM_IDS.CLAIM:
+      return handleClaim(interaction, ticket);
+
+    case CUSTOM_IDS.CLOSE:
+      return showCloseModal(interaction, ticket);
+
+    case CUSTOM_IDS.ARCHIVE:
+      return handleArchive(interaction, ticket);
+
+    case CUSTOM_IDS.TRANSCRIPT:
+      return handleTranscript(interaction, ticket);
+
+    case CUSTOM_IDS.ADD_USER:
+      return showAddUserModal(interaction, ticket);
+
+    case CUSTOM_IDS.PRIORITY:
+      return showPrioritySelect(interaction, ticket);
+
+    case CUSTOM_IDS.REOPEN:
+      return handleReopen(interaction, ticket);
+
+    case CUSTOM_IDS.DELETE:
+    case CUSTOM_IDS.DELETE_CONFIRM:
+      return showDeleteConfirmModal(interaction, ticket);
+
+    default:
+      return false;
   }
 }
 
-async function handleTicketModal(interaction) {
-  if (!interaction.isModalSubmit()) return false;
+async function routeTicketModal(interaction, ticket) {
+  const customId = interaction.customId;
 
-  if (
-    interaction.customId.startsWith(
-      MODAL_IDS.PANEL_APPEARANCE
-    )
-  ) {
-    const [, panelId, field] = interaction.customId.split(':');
+  switch (customId) {
+    case MODAL_IDS.CLOSE:
+      return handleCloseModal(interaction, ticket);
 
-    const value = interaction.fields.getTextInputValue(
-      INPUT_IDS.APPEARANCE_VALUE
-    );
+    case MODAL_IDS.ADD_USER:
+      return handleAddUserModal(interaction, ticket);
 
-    const panel = ticketStore.getPanel(
-      interaction.guildId,
-      panelId
-    );
+    case MODAL_IDS.DELETE_CONFIRM:
+      return handleDeleteConfirmModal(interaction, ticket);
 
-    if (!panel) {
-      await safeReply(
+    default:
+      return false;
+  }
+}
+
+async function routeTicketSelect(interaction, ticket) {
+  const customId = interaction.customId;
+
+  switch (customId) {
+    case SELECT_IDS.PRIORITY:
+      return handlePrioritySelect(interaction, ticket);
+
+    default:
+      return false;
+  }
+}
+
+async function handleTicketInteraction(
+  interaction,
+  client = interaction.client,
+  io = null
+) {
+  try {
+    if (!interaction?.guildId) {
+      return false;
+    }
+
+    const customId = interaction.customId || '';
+
+    /*
+     * Ticket setup/admin panel interactions.
+     * This must run early so setup modals/buttons/selects do not get treated
+     * as normal ticket channel controls.
+     */
+
+    if (isTicketSetupInteraction(interaction)) {
+      return handleTicketSetupInteraction(interaction);
+    }
+
+    /*
+     * Public deployed panel button.
+     */
+
+    if (
+      interaction.isButton?.() &&
+      customId.startsWith('ticket_open:')
+    ) {
+      return handleTicketPanelButton(
         interaction,
-        ephemeralPayload({
-          content: '❌ Ticket panel not found.',
-        })
+        client,
+        io
       );
-
-      return true;
     }
 
-    const updated = ticketStore.updatePanel(
-      interaction.guildId,
-      panelId,
-      {
-        appearance: {
-          ...(panel.appearance || {}),
-          [field]: value || null,
-        },
-      }
-    );
+    /*
+     * Existing ticket channel controls.
+     */
 
-    if (updated?.deployed && interaction.guild) {
-      await refreshDeployedPanel({
-        guild: interaction.guild,
-        panel: updated,
-      }).catch(() => null);
-    }
+    if (
+      interaction.isButton?.() &&
+      isTicketButton(customId)
+    ) {
+      const ticket = await getTicketForInteraction(interaction);
 
-    await safeReply(
-      interaction,
-      ephemeralPayload({
-        content: `✅ Updated panel appearance: \`${field}\`.`,
-      })
-    );
-
-    return true;
-  }
-
-  if (!isTicketModal(interaction.customId)) {
-    return false;
-  }
-
-  const ticket = await getTicketForInteraction(interaction);
-
-  if (!ticket) {
-    await safeReply(
-      interaction,
-      ephemeralPayload({
-        content: '⚠️ No ticket record found for this channel.',
-      })
-    );
-
-    return true;
-  }
-
-  try {
-    if (interaction.customId === MODAL_IDS.DELETE_CONFIRM) {
-      const confirm = interaction.fields
-        .getTextInputValue(INPUT_IDS.DELETE_CONFIRM)
-        .trim();
-
-      if (confirm.toUpperCase() !== 'DELETE') {
-        await safeReply(
-          interaction,
-          ephemeralPayload({
-            content: '❌ Delete confirmation failed.',
-          })
-        );
-
-        return true;
+      if (!ticket) {
+        return deny(interaction, 'Ticket not found for this channel.');
       }
 
-      const deferred = await safeDefer(interaction, true);
-      if (!deferred) return true;
-
-      await ticketActions.deleteTicket(
-        ticket,
-        interaction.user,
-        {
-          client: interaction.client,
-          reason: 'Deleted from ticket channel',
-        }
-      );
-
-      await safeEditOrReply(interaction, {
-        content: '🗑️ Ticket deleted.',
-      });
-
-      return true;
+      return routeTicketButton(interaction, ticket);
     }
 
-    if (interaction.customId === MODAL_IDS.CLOSE) {
-      const reason =
-        interaction.fields.getTextInputValue(
-          INPUT_IDS.CLOSE_REASON
-        ) || 'No reason provided';
+    /*
+     * Ticket modals.
+     */
 
-      const deferred = await safeDefer(interaction, true);
-      if (!deferred) return true;
-
-      const updated = await ticketActions.close(
-        ticket,
-        interaction.user,
-        {
-          client: interaction.client,
-          reason,
-        }
-      );
-
-      await refreshTicketButtons(interaction, updated);
-
-      await safeEditOrReply(interaction, {
-        content: '🔒 Ticket closed and transcript generated.',
-      });
-
-      return true;
+    if (
+      interaction.isModalSubmit?.() &&
+      isTicketModal(customId)
+    ) {
+      const ticket = await getTicketForInteraction(interaction);
+      return routeTicketModal(interaction, ticket);
     }
 
-    if (interaction.customId === MODAL_IDS.ADD_USER) {
-      const userId = interaction.fields
-        .getTextInputValue(INPUT_IDS.ADD_USER_ID)
-        .trim();
+    /*
+     * Ticket selects.
+     */
 
-      const deferred = await safeDefer(interaction, true);
-      if (!deferred) return true;
-
-      await ticketActions.addUser(
-        interaction.client,
-        ticket,
-        userId,
-        interaction.user
-      );
-
-      await safeEditOrReply(interaction, {
-        content: `👤 Added <@${userId}> to the ticket.`,
-      });
-
-      return true;
+    if (
+      interaction.isStringSelectMenu?.() &&
+      isTicketSelect(customId)
+    ) {
+      const ticket = await getTicketForInteraction(interaction);
+      return routeTicketSelect(interaction, ticket);
     }
 
     return false;
   } catch (error) {
-    await safeEditOrReply(
-      interaction,
-      ephemeralPayload({
-        content: `❌ Ticket modal action failed: ${error.message}`,
-      })
-    );
+    console.error('[TicketInteractionHandler] Failed:', error);
 
-    return true;
-  }
-}
-
-async function handleTicketSelect(interaction) {
-  if (!interaction.isStringSelectMenu()) return false;
-
-  if (
-    interaction.customId.startsWith(
-      'ticket_setup:appearance_select:'
-    )
-  ) {
-    const panelId = interaction.customId.split(':')[2];
-    const field = interaction.values?.[0];
-
-    await showAppearanceModal(
-      interaction,
-      panelId,
-      field
-    );
-
-    return true;
-  }
-
-  if (!isTicketSelect(interaction.customId)) {
-    return false;
-  }
-
-  const ticket = await getTicketForInteraction(interaction);
-
-  if (!ticket) {
     await safeReply(
       interaction,
       ephemeralPayload({
-        content: '⚠️ No ticket record found for this channel.',
+        content:
+          '❌ Ticket interaction failed. Check VPS logs for details.',
       })
     );
 
     return true;
   }
-
-  try {
-    if (interaction.customId === SELECT_IDS.PRIORITY) {
-      const priority = interaction.values[0];
-
-      const updated =
-        await ticketActions.changePriority(
-          ticket,
-          priority,
-          interaction.user
-        );
-
-      if (alreadyHandled(interaction)) {
-        await safeEditOrReply(interaction, {
-          content: `⚠️ Ticket priority changed to \`${updated.priority}\`.`,
-          components: [],
-        });
-      } else {
-        await interaction
-          .update({
-            content: `⚠️ Ticket priority changed to \`${updated.priority}\`.`,
-            components: [],
-          })
-          .catch(() => null);
-      }
-
-      return true;
-    }
-
-    return false;
-  } catch (error) {
-    await safeReply(
-      interaction,
-      ephemeralPayload({
-        content: `❌ Ticket priority update failed: ${error.message}`,
-      })
-    );
-
-    return true;
-  }
-}
-
-async function handleTicketInteraction(interaction) {
-  const handledPanelOpen =
-    await handleTicketPanelButton(interaction, interaction.client);
-
-  if (handledPanelOpen) return true;
-
-  const handledSetup =
-    await handleTicketSetupInteraction(interaction);
-
-  if (handledSetup) return true;
-
-  if (interaction.isButton()) {
-    return handleTicketButton(interaction);
-  }
-
-  if (interaction.isModalSubmit()) {
-    return handleTicketModal(interaction);
-  }
-
-  if (interaction.isStringSelectMenu()) {
-    return handleTicketSelect(interaction);
-  }
-
-  return false;
 }
 
 module.exports = {
@@ -867,10 +786,9 @@ module.exports = {
 
   handleTicketInteraction,
 
-  handleTicketButton,
-  handleTicketModal,
-  handleTicketSelect,
+  refreshPanelEditor,
 
-  findTicketByChannel,
   getTicketForInteraction,
+  findTicketByChannel,
+  refreshTicketButtons,
 };

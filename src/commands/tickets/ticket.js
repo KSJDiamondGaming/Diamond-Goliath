@@ -18,7 +18,7 @@ module.exports = {
     .addSubcommand((subcommand) =>
       subcommand
         .setName('setup')
-        .setDescription('🛠️ Open the ticket setup panel.')
+        .setDescription('🎫 Open the ticket setup panel.')
     ),
 
   async execute(interaction) {

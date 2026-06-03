@@ -15,6 +15,7 @@ const {
   DEFAULT_LOGS,
   DEFAULT_SECURITY,
   DEFAULT_SERVER_BACKUPS,
+  DEFAULT_EMBED,
   DEFAULT_EMBED_DEFAULTS,
   DEFAULT_GENERAL_SETTINGS,
   DEFAULT_TICKETS,
@@ -23,35 +24,10 @@ const {
 const runtimePaths = getRuntimePaths(process.env.BOT_MODE || 'DEV');
 const GUILDS_DIR = runtimePaths.guilds;
 
-const SAFE_DEFAULT_LOGS = DEFAULT_LOGS || {
-  enabled: true,
-  channels: {},
-  events: {},
-};
-
-const SAFE_DEFAULT_SECURITY = DEFAULT_SECURITY || {
-  enabled: true,
-  threatLevel: 'low',
-  totalIncidents: 0,
-  criticalIncidents: 0,
-  incidents: [],
-  lockdown: {
-    active: false,
-    channels: [],
-    bypassRoleIds: [],
-  },
-  ownerMonitoring: {
-    enabled: true,
-    webhookMirrorEnabled: true,
-  },
-};
-
-const DEFAULT_TICKET_RUNTIME = DEFAULT_TICKETS || {
-  settings: {},
-  panels: [],
-  tickets: [],
-  analytics: {},
-};
+const SAFE_DEFAULT_LOGS = DEFAULT_LOGS || { enabled: true, channels: {}, events: {} };
+const SAFE_DEFAULT_SECURITY = DEFAULT_SECURITY || {};
+const DEFAULT_TICKET_RUNTIME = DEFAULT_TICKETS || {};
+const DEFAULT_EMBED_RUNTIME = DEFAULT_EMBED || {};
 
 const guildCache = new Map();
 
@@ -130,6 +106,38 @@ function sanitizeKey(value, label = 'Key') {
   return key.slice(0, 50);
 }
 
+function cleanString(value, maxLength = 4000) {
+  return String(value || '').trim().slice(0, maxLength);
+}
+
+function cleanEmbedUrl(value) {
+  const url = String(value || '').trim();
+
+  if (!url) return '';
+
+  const allowedPlaceholders = new Set([
+    '{guildIcon}',
+    '{guildBanner}',
+    '{botAvatar}',
+    '{userAvatar}',
+    '{memberAvatar}',
+    '{serverIcon}',
+    '{serverBanner}',
+  ]);
+
+  if (allowedPlaceholders.has(url)) return url;
+
+  try {
+    const parsed = new URL(url);
+
+    if (!['http:', 'https:'].includes(parsed.protocol)) return '';
+
+    return parsed.toString();
+  } catch {
+    return '';
+  }
+}
+
 function getGuildFilePath(guildId) {
   return path.join(GUILDS_DIR, `${normalizeGuildId(guildId)}.json`);
 }
@@ -168,6 +176,108 @@ function removeLegacyLogFields(data) {
   }
 
   return clean;
+}
+
+function normalizeEmbed(embed = {}) {
+  const source = isPlainObject(embed) ? embed : {};
+  const merged = mergeDeep(DEFAULT_EMBED_RUNTIME, source);
+
+  merged.title = cleanString(merged.title, 256);
+  merged.description = cleanString(merged.description, 4096);
+  merged.color = cleanString(merged.color || '#5865F2', 20) || '#5865F2';
+
+  merged.author = isPlainObject(merged.author) ? merged.author : {};
+  merged.author.name = cleanString(merged.author.name, 256);
+  merged.author.iconURL = cleanEmbedUrl(merged.author.iconURL);
+  merged.author.url = cleanEmbedUrl(merged.author.url);
+
+  merged.thumbnailURL = cleanEmbedUrl(merged.thumbnailURL);
+  merged.imageURL = cleanEmbedUrl(merged.imageURL);
+
+  merged.footer = isPlainObject(merged.footer) ? merged.footer : {};
+  merged.footer.text = cleanString(merged.footer.text, 2048);
+  merged.footer.iconURL = cleanEmbedUrl(merged.footer.iconURL);
+
+  merged.fields = Array.isArray(merged.fields)
+    ? merged.fields
+        .filter(isPlainObject)
+        .slice(0, 25)
+        .map((field) => ({
+          name: cleanString(field.name, 256),
+          value: cleanString(field.value, 1024),
+          inline: field.inline === true,
+        }))
+        .filter((field) => field.name && field.value)
+    : [];
+
+      merged.buttons = Array.isArray(merged.buttons)
+    ? merged.buttons
+        .filter(isPlainObject)
+        .slice(0, 25)
+        .map((button) => ({
+          id: cleanString(button.id, 100),
+
+          label: cleanString(button.label, 80),
+
+          emoji: cleanString(button.emoji, 50),
+
+          style: cleanString(
+            button.style || 'Primary',
+            20
+          ),
+
+          url: cleanEmbedUrl(button.url),
+
+          action: cleanString(
+            button.action,
+            100
+          ),
+
+          data: isPlainObject(button.data)
+            ? button.data
+            : {},
+        }))
+    : [];
+
+  return merged;
+}
+
+function normalizeEmbedPresets(source = {}) {
+  if (!isPlainObject(source.embedPresets)) return {};
+
+  const presets = {};
+
+  for (const [presetName, presetData] of Object.entries(source.embedPresets)) {
+    if (!isPlainObject(presetData)) continue;
+
+    const name = sanitizePresetName(presetData.name || presetName);
+
+    presets[name] = {
+      ...normalizeEmbed(presetData),
+      name,
+      updatedAt: presetData.updatedAt || now(),
+    };
+  }
+
+  return presets;
+}
+
+function normalizeEmbedBuilder(source = {}) {
+  const builder = isPlainObject(source.embedBuilder) ? source.embedBuilder : {};
+
+  const templates = {};
+
+  if (isPlainObject(builder.templates)) {
+    for (const [templateKey, templateData] of Object.entries(builder.templates)) {
+      if (!isPlainObject(templateData)) continue;
+      templates[sanitizeTemplateKey(templateKey)] = normalizeEmbed(templateData);
+    }
+  }
+
+  return {
+    draft: normalizeEmbed(builder.draft || {}),
+    templates,
+  };
 }
 
 function normalizeGeneralSettings(source = {}) {
@@ -367,6 +477,8 @@ function mergeDefaults(data = {}) {
     DEFAULT_EMBED_DEFAULTS || {},
     isPlainObject(source.embedDefaults) ? source.embedDefaults : {}
   );
+  merged.embedPresets = normalizeEmbedPresets(source);
+  merged.embedBuilder = normalizeEmbedBuilder(source);
   merged.tickets = normalizeTickets(source);
 
   return removeLegacyLogFields(merged);
@@ -403,6 +515,7 @@ function getGuildData(guildId, options = {}) {
     !exists ||
     !rawData.generalSettings ||
     !rawData.embedDefaults ||
+    !rawData.embedBuilder ||
     !rawData.serverBackups ||
     !rawData.security ||
     !rawData.tickets ||
@@ -663,7 +776,7 @@ function saveEmbedPreset(guildId, presetName, presetData = {}, guildOrMeta = {})
     (presets) => ({
       ...presets,
       [name]: {
-        ...(isPlainObject(presetData) ? clone(presetData) : {}),
+        ...normalizeEmbed(presetData),
         name,
         updatedAt: now(),
       },
@@ -750,6 +863,56 @@ function getEmbedDefaultPreset(guildId, templateKey) {
   return presetName ? getEmbedPreset(guildId, presetName) : null;
 }
 
+function saveEmbedBuilderDraft(guildId, draft = {}, guildOrMeta = {}) {
+  return updateGuildSection(
+    guildId,
+    'embedBuilder',
+    (builder) => ({
+      ...builder,
+      draft: normalizeEmbed(draft),
+    }),
+    { draft: DEFAULT_EMBED_RUNTIME, templates: {} },
+    guildOrMeta
+  );
+}
+
+function getEmbedBuilderDraft(guildId) {
+  const builder = getGuildSection(guildId, 'embedBuilder', {
+    draft: DEFAULT_EMBED_RUNTIME,
+    templates: {},
+  });
+
+  return normalizeEmbed(builder.draft || {});
+}
+
+function saveEmbedTemplate(guildId, templateKey, templateData = {}, guildOrMeta = {}) {
+  const key = sanitizeTemplateKey(templateKey);
+
+  return updateGuildSection(
+    guildId,
+    'embedBuilder',
+    (builder) => ({
+      ...builder,
+      templates: {
+        ...(builder.templates || {}),
+        [key]: normalizeEmbed(templateData),
+      },
+    }),
+    { draft: DEFAULT_EMBED_RUNTIME, templates: {} },
+    guildOrMeta
+  );
+}
+
+function getEmbedTemplate(guildId, templateKey) {
+  const key = sanitizeTemplateKey(templateKey);
+  const builder = getGuildSection(guildId, 'embedBuilder', {
+    draft: DEFAULT_EMBED_RUNTIME,
+    templates: {},
+  });
+
+  return builder.templates?.[key] ? normalizeEmbed(builder.templates[key]) : null;
+}
+
 function reloadGuild(guildId) {
   const safeGuildId = normalizeGuildId(guildId);
 
@@ -782,6 +945,7 @@ module.exports = {
   DEFAULT_GUILD_DATA,
   DEFAULT_LOGS: SAFE_DEFAULT_LOGS,
   DEFAULT_SECURITY: SAFE_DEFAULT_SECURITY,
+  DEFAULT_EMBED,
   DEFAULT_EMBED_DEFAULTS,
   DEFAULT_SERVER_BACKUPS,
   DEFAULT_GENERAL_SETTINGS,
@@ -827,6 +991,11 @@ module.exports = {
   clearEmbedDefault,
   getEmbedDefaultPresetName,
   getEmbedDefaultPreset,
+
+  saveEmbedBuilderDraft,
+  getEmbedBuilderDraft,
+  saveEmbedTemplate,
+  getEmbedTemplate,
 
   reloadGuild,
   clearGuildCache,
