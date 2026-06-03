@@ -437,23 +437,44 @@ async function showPrioritySelect(interaction, ticket) {
 }
 
 async function handleReopen(interaction, ticket) {
-  if (!can(interaction, TICKET_ACTIONS.REOPEN, ticket)) {
-    return deny(interaction, 'You cannot reopen tickets.');
-  }
-
-  const updated = await ticketActions.reopen(
-    ticket,
-    interaction.user,
-    {
-      client: interaction.client,
+  try {
+    if (!can(interaction, TICKET_ACTIONS.REOPEN, ticket)) {
+      return deny(interaction, 'You cannot reopen tickets.');
     }
-  );
 
-  await refreshTicketButtons(interaction, updated);
+    const panelId = ticket.metadata?.panelId || null;
 
-  return safeReply(interaction, {
-    content: `🔓 Ticket reopened by <@${interaction.user.id}>.`,
-  });
+    const panel = panelId
+      ? ticketStore.getPanel(
+          interaction.guildId,
+          panelId
+        )
+      : null;
+
+    const updated = await ticketActions.reopen(
+      ticket,
+      interaction.user,
+      {
+        client: interaction.client,
+        panel,
+      }
+    );
+
+    await refreshTicketButtons(interaction, updated);
+
+    return safeReply(interaction, {
+      content: `🔓 Ticket reopened by <@${interaction.user.id}>.`,
+    });
+  } catch (error) {
+    console.error(
+      '[Tickets] Reopen failed:',
+      error
+    );
+
+    return safeReply(interaction, {
+      content: `❌ Reopen failed: ${error.message}`,
+    });
+  }
 }
 
 async function handleDelete(interaction, ticket) {
