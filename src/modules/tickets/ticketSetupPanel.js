@@ -41,11 +41,64 @@ const SETUP_PREFIX = 'ticket_setup';
 const MODAL_IDS = {
   SET_LIMIT: `${SETUP_PREFIX}:limit_modal`,
   SET_COOLDOWN: `${SETUP_PREFIX}:cooldown_modal`,
+  APPEARANCE: `${SETUP_PREFIX}:appearance_modal`,
 };
 
 const INPUT_IDS = {
   LIMIT: 'ticket_limit',
   COOLDOWN: 'ticket_cooldown',
+  APPEARANCE_VALUE: 'appearance_value',
+};
+
+const APPEARANCE_FIELDS = {
+  title: {
+    label: 'Embed Title',
+    placeholder: 'Need Support?',
+    style: TextInputStyle.Short,
+    maxLength: 256,
+  },
+  description: {
+    label: 'Embed Description',
+    placeholder: 'Press the button below to open a ticket.',
+    style: TextInputStyle.Paragraph,
+    maxLength: 2000,
+  },
+  color: {
+    label: 'Embed Color',
+    placeholder: '#5865F2',
+    style: TextInputStyle.Short,
+    maxLength: 20,
+  },
+  buttonLabel: {
+    label: 'Button Label',
+    placeholder: 'Open Ticket',
+    style: TextInputStyle.Short,
+    maxLength: 80,
+  },
+  buttonEmoji: {
+    label: 'Button Emoji',
+    placeholder: '🎫',
+    style: TextInputStyle.Short,
+    maxLength: 50,
+  },
+  footerText: {
+    label: 'Footer Text',
+    placeholder: 'Goliath • Ticket System',
+    style: TextInputStyle.Short,
+    maxLength: 2048,
+  },
+  imageUrl: {
+    label: 'Image URL',
+    placeholder: 'https://example.com/banner.png',
+    style: TextInputStyle.Short,
+    maxLength: 1000,
+  },
+  thumbnailUrl: {
+    label: 'Thumbnail URL',
+    placeholder: 'https://example.com/icon.png',
+    style: TextInputStyle.Short,
+    maxLength: 1000,
+  },
 };
 
 function alreadyHandled(interaction) {
@@ -177,10 +230,7 @@ function formatLabel(value) {
 }
 
 function formatRoleCount(ids = []) {
-  if (!Array.isArray(ids) || !ids.length) {
-    return '`None`';
-  }
-
+  if (!Array.isArray(ids) || !ids.length) return '`None`';
   return `\`${ids.length}\``;
 }
 
@@ -329,8 +379,6 @@ function buildSetupButtons() {
 
 function buildEditorEmbed(panel) {
   const appearance = panel.appearance || {};
-  const limit = getPanelLimit(panel);
-  const cooldownMs = getPanelCooldownMs(panel);
 
   return new EmbedBuilder()
     .setTitle(`🛠️ ${panel.name}`)
@@ -342,41 +390,75 @@ function buildEditorEmbed(panel) {
         `**Priority:** \`${formatLabel(panel.ticketPriority || 'low')}\``,
         '',
         '**Routing**',
-        `Ticket Category: ${
+        `📁 Ticket Category: ${
           panel.outputCategoryId ? `<#${panel.outputCategoryId}>` : '`Not set`'
         }`,
-        `Panel Channel: ${
+        `📢 Panel Channel: ${
           panel.deployChannelId ? `<#${panel.deployChannelId}>` : '`Not set`'
         }`,
-        `Logs Channel: ${
+        `📜 Logs Channel: ${
           panel.logsChannelId ? `<#${panel.logsChannelId}>` : '`Not set`'
         }`,
-        `Archive Category: ${
+        `📦 Archive Category: ${
           panel.archiveCategoryId ? `<#${panel.archiveCategoryId}>` : '`Not set`'
         }`,
         '',
-        '**Limits**',
-        `Max Open Tickets/User: ${formatLimit(limit)}`,
-        `Cooldown: ${formatCooldown(cooldownMs)}`,
-        `One Active Per Type: \`${panel.oneActivePerType === false ? 'Off' : 'On'}\``,
+        '**Management Summary**',
+        `🎟️ Max Open Tickets/User: ${formatLimit(getPanelLimit(panel))}`,
+        `⏱️ Cooldown: ${formatCooldown(getPanelCooldownMs(panel))}`,
+        `🔒 One Active Per Type: \`${panel.oneActivePerType === false ? 'Off' : 'On'}\``,
         '',
         '**Roles**',
-        `Staff Roles: ${formatRoleCount(panel.staffRoleIds)}`,
-        `Manager Roles: ${formatRoleCount(panel.managerRoleIds)}`,
-        `Viewer Roles: ${formatRoleCount(panel.viewerRoleIds)}`,
+        `👥 Staff Roles: ${formatRoleCount(panel.staffRoleIds)}`,
+        `🛡️ Manager Roles: ${formatRoleCount(panel.managerRoleIds)}`,
+        `👁️ Viewer Roles: ${formatRoleCount(panel.viewerRoleIds)}`,
         '',
         '**Appearance**',
-        `Title: \`${appearance.title || 'Not set'}\``,
-        `Color: \`${appearance.color || '#5865F2'}\``,
-        `Button: \`${appearance.buttonEmoji || '🎫'} ${
+        `🎨 Title: \`${appearance.title || 'Not set'}\``,
+        `🧾 Description: \`${appearance.description ? 'Configured' : 'Not set'}\``,
+        `🎨 Color: \`${appearance.color || '#5865F2'}\``,
+        `🔘 Button: \`${appearance.buttonEmoji || '🎫'} ${
           appearance.buttonLabel || 'Open Ticket'
         }\``,
       ].join('\n')
     )
     .setColor(appearance.color || '#5865F2')
     .setFooter({
-      text: 'Main editor uses 5 rows. Role editing is inside Manage Roles.',
+      text: 'Use Manage Ticket for appearance, limits, cooldowns and roles.',
     })
+    .setTimestamp();
+}
+
+function buildManagementEmbed(panel) {
+  const appearance = panel.appearance || {};
+
+  return new EmbedBuilder()
+    .setTitle(`⚙️ Manage Ticket • ${panel.name}`)
+    .setDescription(
+      [
+        `**Panel ID:** \`${panel.panelId}\``,
+        '',
+        '**Appearance**',
+        `🎨 Title: \`${appearance.title || 'Not set'}\``,
+        `🧾 Description: \`${appearance.description ? 'Configured' : 'Not set'}\``,
+        `🎨 Color: \`${appearance.color || '#5865F2'}\``,
+        `🔘 Button: \`${appearance.buttonEmoji || '🎫'} ${
+          appearance.buttonLabel || 'Open Ticket'
+        }\``,
+        '',
+        '**Ticket Controls**',
+        `🎟️ Ticket Limit: ${formatLimit(getPanelLimit(panel))}`,
+        `⏱️ Cooldown: ${formatCooldown(getPanelCooldownMs(panel))}`,
+        `🔒 One Active Per Type: \`${panel.oneActivePerType === false ? 'Off' : 'On'}\``,
+        '',
+        '**Roles**',
+        `👥 Staff Roles: ${formatRoleCount(panel.staffRoleIds)}`,
+        `🛡️ Manager Roles: ${formatRoleCount(panel.managerRoleIds)}`,
+        `👁️ Viewer Roles: ${formatRoleCount(panel.viewerRoleIds)}`,
+      ].join('\n')
+    )
+    .setColor(appearance.color || '#5865F2')
+    .setFooter({ text: 'Configure all ticket settings in one place.' })
     .setTimestamp();
 }
 
@@ -388,14 +470,14 @@ function buildRoleEditorEmbed(panel) {
         `**Panel ID:** \`${panel.panelId}\``,
         '',
         '**Current Roles**',
-        `Staff Roles: ${formatRoleCount(panel.staffRoleIds)}`,
-        `Manager Roles: ${formatRoleCount(panel.managerRoleIds)}`,
-        `Viewer Roles: ${formatRoleCount(panel.viewerRoleIds)}`,
+        `👥 Staff Roles: ${formatRoleCount(panel.staffRoleIds)}`,
+        `🛡️ Manager Roles: ${formatRoleCount(panel.managerRoleIds)}`,
+        `👁️ Viewer Roles: ${formatRoleCount(panel.viewerRoleIds)}`,
         '',
         '**Role Access**',
-        'Staff can claim, update, close, reopen and archive tickets.',
-        'Managers can do staff actions plus delete/manage higher-level controls.',
-        'Viewers can read tickets but cannot send messages.',
+        '👥 Staff can claim, update, close, reopen and archive tickets.',
+        '🛡️ Managers can do staff actions plus delete/manage higher-level controls.',
+        '👁️ Viewers can read tickets but cannot send messages.',
       ].join('\n')
     )
     .setColor('#5865F2')
@@ -403,45 +485,34 @@ function buildRoleEditorEmbed(panel) {
     .setTimestamp();
 }
 
-function buildLimitButtons(panelId, panel = {}) {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`ticket_setup:set_limit:${panelId}`)
-      .setLabel('Set Limit')
-      .setStyle(ButtonStyle.Primary)
-      .setEmoji('🎟️'),
+function buildAppearanceEmbed(panel) {
+  const appearance = panel.appearance || {};
 
-    new ButtonBuilder()
-      .setCustomId(`ticket_setup:set_cooldown:${panelId}`)
-      .setLabel('Cooldown')
-      .setStyle(ButtonStyle.Secondary)
-      .setEmoji('⏱️'),
-
-    new ButtonBuilder()
-      .setCustomId(`ticket_setup:toggle_one_active:${panelId}`)
-      .setLabel(panel.oneActivePerType === false ? 'One Active: Off' : 'One Active: On')
-      .setStyle(panel.oneActivePerType === false ? ButtonStyle.Secondary : ButtonStyle.Success)
-      .setEmoji('🔒')
-  );
+  return new EmbedBuilder()
+    .setTitle(`🎨 Appearance • ${panel.name}`)
+    .setDescription(
+      [
+        `**Panel ID:** \`${panel.panelId}\``,
+        '',
+        '**Current Appearance**',
+        `🎨 Embed Title: \`${appearance.title || 'Not set'}\``,
+        `🧾 Description: \`${appearance.description ? 'Configured' : 'Not set'}\``,
+        `🎨 Embed Color: \`${appearance.color || '#5865F2'}\``,
+        `🖼️ Image: \`${appearance.imageUrl ? 'Configured' : 'Not set'}\``,
+        `🖼️ Thumbnail: \`${appearance.thumbnailUrl ? 'Configured' : 'Not set'}\``,
+        `🔘 Button Label: \`${appearance.buttonLabel || 'Open Ticket'}\``,
+        `😀 Button Emoji: \`${appearance.buttonEmoji || '🎫'}\``,
+        `📝 Footer Text: \`${appearance.footerText || 'Not set'}\``,
+        '',
+        'Choose what you want to edit from the dropdown below.',
+      ].join('\n')
+    )
+    .setColor(appearance.color || '#5865F2')
+    .setFooter({ text: 'Goliath • Ticket Appearance Editor' })
+    .setTimestamp();
 }
 
-function buildManageRow(panelId) {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`ticket_setup:roles:${panelId}`)
-      .setLabel('Manage Roles')
-      .setStyle(ButtonStyle.Primary)
-      .setEmoji('👥'),
-
-    new ButtonBuilder()
-      .setCustomId(`ticket_setup:refresh_deployed:${panelId}`)
-      .setLabel('Refresh Panel')
-      .setStyle(ButtonStyle.Secondary)
-      .setEmoji('♻️')
-  );
-}
-
-function buildDeployButtons(panelId) {
+function buildDeploymentRow(panelId) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`ticket_setup:deploy:${panelId}`)
@@ -459,8 +530,28 @@ function buildDeployButtons(panelId) {
       .setCustomId(`ticket_setup:undeploy:${panelId}`)
       .setLabel('Undeploy')
       .setStyle(ButtonStyle.Secondary)
-      .setEmoji('📦'),
+      .setEmoji('📦')
+  );
+}
 
+function buildManagementRow(panelId) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`ticket_setup:management:${panelId}`)
+      .setLabel('Manage Ticket')
+      .setStyle(ButtonStyle.Primary)
+      .setEmoji('⚙️'),
+
+    new ButtonBuilder()
+      .setCustomId(`ticket_setup:refresh_deployed:${panelId}`)
+      .setLabel('Refresh Panel')
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji('♻️')
+  );
+}
+
+function buildDangerBackRow(panelId) {
+  return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`ticket_setup:delete:${panelId}`)
       .setLabel('Delete')
@@ -490,50 +581,66 @@ function buildEditorControls(panelId) {
       new ChannelSelectMenuBuilder()
         .setCustomId(`ticket_setup:set_deploy:${panelId}`)
         .setPlaceholder('📢 Panel Channel')
-        .setChannelTypes(
-          ChannelType.GuildText,
-          ChannelType.GuildAnnouncement
-        )
+        .setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
         .setMinValues(1)
         .setMaxValues(1)
     ),
 
-    buildLimitButtons(panelId, {}),
-
-    buildManageRow(panelId),
-
-    buildDeployButtons(panelId),
+    buildDeploymentRow(panelId),
+    buildManagementRow(panelId),
+    buildDangerBackRow(panelId),
   ];
 }
 
 function buildEditorControlsForPanel(panel) {
+  return buildEditorControls(panel.panelId);
+}
+
+function buildManagementControls(panel) {
   return [
     new ActionRowBuilder().addComponents(
-      new ChannelSelectMenuBuilder()
-        .setCustomId(`ticket_setup:set_output:${panel.panelId}`)
-        .setPlaceholder('📁 Ticket Category')
-        .setChannelTypes(ChannelType.GuildCategory)
-        .setMinValues(1)
-        .setMaxValues(1)
+      new ButtonBuilder()
+        .setCustomId(`ticket_setup:appearance:${panel.panelId}`)
+        .setLabel('Appearance')
+        .setStyle(ButtonStyle.Primary)
+        .setEmoji('🎨')
     ),
 
     new ActionRowBuilder().addComponents(
-      new ChannelSelectMenuBuilder()
-        .setCustomId(`ticket_setup:set_deploy:${panel.panelId}`)
-        .setPlaceholder('📢 Panel Channel')
-        .setChannelTypes(
-          ChannelType.GuildText,
-          ChannelType.GuildAnnouncement
-        )
-        .setMinValues(1)
-        .setMaxValues(1)
+      new ButtonBuilder()
+        .setCustomId(`ticket_setup:set_limit:${panel.panelId}`)
+        .setLabel('Ticket Limit')
+        .setStyle(ButtonStyle.Secondary)
+        .setEmoji('🎟️'),
+
+      new ButtonBuilder()
+        .setCustomId(`ticket_setup:set_cooldown:${panel.panelId}`)
+        .setLabel('Cooldown')
+        .setStyle(ButtonStyle.Secondary)
+        .setEmoji('⏱️')
     ),
 
-    buildLimitButtons(panel.panelId, panel),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`ticket_setup:toggle_one_active:${panel.panelId}`)
+        .setLabel(panel.oneActivePerType === false ? 'One Active: Off' : 'One Active: On')
+        .setStyle(panel.oneActivePerType === false ? ButtonStyle.Secondary : ButtonStyle.Success)
+        .setEmoji('🔒'),
 
-    buildManageRow(panel.panelId),
+      new ButtonBuilder()
+        .setCustomId(`ticket_setup:roles:${panel.panelId}`)
+        .setLabel('Manage Roles')
+        .setStyle(ButtonStyle.Primary)
+        .setEmoji('👥')
+    ),
 
-    buildDeployButtons(panel.panelId),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`ticket_setup:back_panel:${panel.panelId}`)
+        .setLabel('Back To Panel')
+        .setStyle(ButtonStyle.Secondary)
+        .setEmoji('⬅️')
+    ),
   ];
 }
 
@@ -577,8 +684,76 @@ function buildRoleEditorControls(panel) {
 
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId(`ticket_setup:back_panel:${panel.panelId}`)
-        .setLabel('Back To Panel')
+        .setCustomId(`ticket_setup:management:${panel.panelId}`)
+        .setLabel('Back To Manage Ticket')
+        .setStyle(ButtonStyle.Secondary)
+        .setEmoji('⬅️')
+    ),
+  ];
+}
+
+function buildAppearanceControls(panel) {
+  return [
+    new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(`ticket_setup:appearance_select:${panel.panelId}`)
+        .setPlaceholder('🎨 Choose appearance setting to edit')
+        .addOptions(
+          {
+            label: 'Embed Title',
+            description: 'Change the panel embed title',
+            value: 'title',
+            emoji: '🎨',
+          },
+          {
+            label: 'Embed Description',
+            description: 'Change the panel embed description',
+            value: 'description',
+            emoji: '🧾',
+          },
+          {
+            label: 'Embed Color',
+            description: 'Set the panel HEX color',
+            value: 'color',
+            emoji: '🎨',
+          },
+          {
+            label: 'Image URL',
+            description: 'Set a large image/banner',
+            value: 'imageUrl',
+            emoji: '🖼️',
+          },
+          {
+            label: 'Thumbnail URL',
+            description: 'Set a small thumbnail/icon',
+            value: 'thumbnailUrl',
+            emoji: '🖼️',
+          },
+          {
+            label: 'Button Label',
+            description: 'Change the open-ticket button text',
+            value: 'buttonLabel',
+            emoji: '🔘',
+          },
+          {
+            label: 'Button Emoji',
+            description: 'Change the open-ticket button emoji',
+            value: 'buttonEmoji',
+            emoji: '😀',
+          },
+          {
+            label: 'Footer Text',
+            description: 'Change the embed footer text',
+            value: 'footerText',
+            emoji: '📝',
+          }
+        )
+    ),
+
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`ticket_setup:management:${panel.panelId}`)
+        .setLabel('Back To Manage Ticket')
         .setStyle(ButtonStyle.Secondary)
         .setEmoji('⬅️')
     ),
@@ -634,6 +809,24 @@ async function showPanelEditor(interaction, panelId) {
   });
 }
 
+async function showManagementEditor(interaction, panelId) {
+  const panel = getPanel(interaction.guild.id, panelId);
+
+  if (!panel) {
+    return safeUpdate(interaction, {
+      content: '❌ Ticket panel not found.',
+      embeds: [],
+      components: [],
+    });
+  }
+
+  return safeUpdate(interaction, {
+    content: null,
+    embeds: [buildManagementEmbed(panel)],
+    components: buildManagementControls(panel),
+  });
+}
+
 async function showRoleEditor(interaction, panelId) {
   const panel = getPanel(interaction.guild.id, panelId);
 
@@ -649,6 +842,24 @@ async function showRoleEditor(interaction, panelId) {
     content: null,
     embeds: [buildRoleEditorEmbed(panel)],
     components: buildRoleEditorControls(panel),
+  });
+}
+
+async function showAppearanceEditor(interaction, panelId) {
+  const panel = getPanel(interaction.guild.id, panelId);
+
+  if (!panel) {
+    return safeUpdate(interaction, {
+      content: '❌ Ticket panel not found.',
+      embeds: [],
+      components: [],
+    });
+  }
+
+  return safeUpdate(interaction, {
+    content: null,
+    embeds: [buildAppearanceEmbed(panel)],
+    components: buildAppearanceControls(panel),
   });
 }
 
@@ -815,14 +1026,60 @@ function showCooldownModal(interaction, panelId) {
   return interaction.showModal(modal);
 }
 
+function showAppearanceModal(interaction, panelId, field) {
+  const panel = getPanel(interaction.guild.id, panelId);
+  const config = APPEARANCE_FIELDS[field];
+
+  if (!panel || !config) {
+    return safeReply(
+      interaction,
+      ephemeralPayload({
+        content: '❌ Appearance setting not found.',
+      })
+    );
+  }
+
+  const appearance = panel.appearance || {};
+  const currentValue = appearance[field] || '';
+
+  const modal = new ModalBuilder()
+    .setCustomId(`${MODAL_IDS.APPEARANCE}:${panelId}:${field}`)
+    .setTitle(config.label);
+
+  const input = new TextInputBuilder()
+    .setCustomId(INPUT_IDS.APPEARANCE_VALUE)
+    .setLabel(config.label)
+    .setPlaceholder(config.placeholder)
+    .setValue(String(currentValue).slice(0, config.maxLength))
+    .setRequired(false)
+    .setStyle(config.style)
+    .setMaxLength(config.maxLength);
+
+  modal.addComponents(new ActionRowBuilder().addComponents(input));
+
+  return interaction.showModal(modal);
+}
+
 function parseNonNegativeInteger(value) {
   const number = Number(String(value || '').trim());
 
-  if (!Number.isFinite(number) || number < 0) {
-    return null;
-  }
+  if (!Number.isFinite(number) || number < 0) return null;
 
   return Math.floor(number);
+}
+
+function normalizeHexColor(value) {
+  const clean = String(value || '').trim();
+
+  if (!clean) return null;
+
+  const withHash = clean.startsWith('#') ? clean : `#${clean}`;
+
+  if (!/^#[0-9a-fA-F]{6}$/.test(withHash)) {
+    return false;
+  }
+
+  return withHash.toUpperCase();
 }
 
 async function handleLimitModal(interaction, panelId) {
@@ -885,12 +1142,70 @@ async function handleCooldownModal(interaction, panelId) {
   );
 }
 
+async function handleAppearanceModal(interaction, panelId, field) {
+  const config = APPEARANCE_FIELDS[field];
+
+  if (!config) {
+    return safeReply(
+      interaction,
+      ephemeralPayload({
+        content: '❌ Appearance setting not found.',
+      })
+    );
+  }
+
+  let value = interaction.fields.getTextInputValue(INPUT_IDS.APPEARANCE_VALUE);
+  value = String(value || '').trim();
+
+  if (field === 'color') {
+    const color = normalizeHexColor(value);
+
+    if (color === false) {
+      return safeReply(
+        interaction,
+        ephemeralPayload({
+          content: '❌ Invalid HEX color. Use something like `#5865F2`.',
+        })
+      );
+    }
+
+    value = color || '#5865F2';
+  }
+
+  const panel = getPanel(interaction.guild.id, panelId);
+
+  if (!panel) {
+    return safeReply(
+      interaction,
+      ephemeralPayload({
+        content: '❌ Ticket panel not found.',
+      })
+    );
+  }
+
+  updatePanel(interaction.guild.id, panelId, {
+    appearance: {
+      ...(panel.appearance || {}),
+      [field]: value || null,
+    },
+  });
+
+  await refreshPanelIfDeployed(interaction, panelId);
+
+  return safeReply(
+    interaction,
+    ephemeralPayload({
+      content: `✅ ${config.label} updated.`,
+    })
+  );
+}
+
 async function handleModalSubmit(interaction) {
   const customId = interaction.customId || '';
 
   if (!customId.startsWith(`${SETUP_PREFIX}:`)) return false;
 
-  const [, modalAction, panelId] = customId.split(':');
+  const [, modalAction, panelId, field] = customId.split(':');
 
   if (!panelId) return false;
 
@@ -901,6 +1216,11 @@ async function handleModalSubmit(interaction) {
 
   if (modalAction === 'cooldown_modal') {
     await handleCooldownModal(interaction, panelId);
+    return true;
+  }
+
+  if (modalAction === 'appearance_modal') {
+    await handleAppearanceModal(interaction, panelId, field);
     return true;
   }
 
@@ -961,13 +1281,29 @@ async function handleTicketSetupInteraction(interaction) {
 
   if (!panelId) return false;
 
-  if (action === 'roles') {
-    await showRoleEditor(interaction, panelId);
+  if (action === 'management') {
+    await showManagementEditor(interaction, panelId);
     return true;
   }
 
   if (action === 'back_panel') {
     await showPanelEditor(interaction, panelId);
+    return true;
+  }
+
+  if (action === 'roles') {
+    await showRoleEditor(interaction, panelId);
+    return true;
+  }
+
+  if (action === 'appearance') {
+    await showAppearanceEditor(interaction, panelId);
+    return true;
+  }
+
+  if (action === 'appearance_select') {
+    const field = interaction.values?.[0];
+    await showAppearanceModal(interaction, panelId, field);
     return true;
   }
 
@@ -1192,12 +1528,18 @@ module.exports = {
 
   buildSetupEmbed,
   buildEditorEmbed,
+  buildManagementEmbed,
   buildRoleEditorEmbed,
+  buildAppearanceEmbed,
 
   buildEditorControls,
   buildEditorControlsForPanel,
+  buildManagementControls,
   buildRoleEditorControls,
+  buildAppearanceControls,
 
   showPanelEditor,
+  showManagementEditor,
   showRoleEditor,
+  showAppearanceEditor,
 };
