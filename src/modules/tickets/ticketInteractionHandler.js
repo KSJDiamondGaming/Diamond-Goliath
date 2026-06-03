@@ -320,27 +320,53 @@ async function showAppearanceModal(interaction, panelId, field) {
 }
 
 async function handleArchive(interaction, ticket) {
-  if (!can(interaction, TICKET_ACTIONS.ARCHIVE, ticket)) {
-    return deny(interaction, 'You cannot archive tickets.');
-  }
+  try {
+    console.log(
+      '[Tickets] Archive clicked:',
+      ticket?.ticketId
+    );
 
-  const deferred = await safeDefer(interaction, true);
-  if (!deferred) return true;
-
-  const updated = await ticketActions.archive(
-    ticket,
-    interaction.user,
-    {
-      client: interaction.client,
-      reason: 'Archived from ticket channel',
+    if (!can(interaction, TICKET_ACTIONS.ARCHIVE, ticket)) {
+      return deny(interaction, 'You cannot archive tickets.');
     }
-  );
 
-  await refreshTicketButtons(interaction, updated);
+    const deferred = await safeDefer(interaction, true);
+    if (!deferred) return true;
 
-  return safeEditOrReply(interaction, {
-    content: '📁 Ticket archived and transcript generated.',
-  });
+    const panelId = ticket.metadata?.panelId || null;
+
+    const panel = panelId
+      ? ticketStore.getPanel(
+          interaction.guildId,
+          panelId
+        )
+      : null;
+
+    const updated = await ticketActions.archive(
+      ticket,
+      interaction.user,
+      {
+        client: interaction.client,
+        reason: 'Archived from ticket channel',
+        panel,
+      }
+    );
+
+    await refreshTicketButtons(interaction, updated);
+
+    return safeEditOrReply(interaction, {
+      content: '📁 Ticket archived and transcript generated.',
+    });
+  } catch (error) {
+    console.error(
+      '[Tickets] Archive failed:',
+      error
+    );
+
+    return safeEditOrReply(interaction, {
+      content: `❌ Archive failed: ${error.message}`,
+    });
+  }
 }
 
 async function handleTranscript(interaction, ticket) {
