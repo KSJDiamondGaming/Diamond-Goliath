@@ -381,42 +381,64 @@ function buildEditorEmbed(panel) {
   const appearance = panel.appearance || {};
 
   return new EmbedBuilder()
-    .setTitle(`🛠️ ${panel.name}`)
+    .setTitle(`🎛️ ${panel.name}`)
     .setDescription(
       [
         `**Panel ID:** \`${panel.panelId}\``,
         `**Status:** ${getStatusText(panel)}`,
         `**Type:** \`${formatLabel(panel.ticketType || 'support')}\``,
         `**Priority:** \`${formatLabel(panel.ticketPriority || 'low')}\``,
+
         '',
         '**Routing**',
         `📁 Ticket Category: ${
-          panel.outputCategoryId ? `<#${panel.outputCategoryId}>` : '`Not set`'
+          panel.outputCategoryId
+            ? `<#${panel.outputCategoryId}>`
+            : '`Not set`'
         }`,
         `📢 Panel Channel: ${
-          panel.deployChannelId ? `<#${panel.deployChannelId}>` : '`Not set`'
+          panel.deployChannelId
+            ? `<#${panel.deployChannelId}>`
+            : '`Not set`'
         }`,
         `📜 Logs Channel: ${
-          panel.logsChannelId ? `<#${panel.logsChannelId}>` : '`Not set`'
+          panel.logsChannelId
+            ? `<#${panel.logsChannelId}>`
+            : '`Not set`'
         }`,
         `📦 Archive Category: ${
-          panel.archiveCategoryId ? `<#${panel.archiveCategoryId}>` : '`Not set`'
+          panel.archiveCategoryId
+            ? `<#${panel.archiveCategoryId}>`
+            : '`Not set`'
         }`,
+
         '',
         '**Management Summary**',
-        `🎟️ Max Open Tickets/User: ${formatLimit(getPanelLimit(panel))}`,
+        `⚙️ Manage Ticket: \`Appearance, limits, cooldowns and roles\``,
+        `🎟️ Ticket Limit: ${formatLimit(getPanelLimit(panel))}`,
         `⏱️ Cooldown: ${formatCooldown(getPanelCooldownMs(panel))}`,
-        `🔒 One Active Per Type: \`${panel.oneActivePerType === false ? 'Off' : 'On'}\``,
+        `🔒 One Active Per Type: \`${
+          panel.oneActivePerType === false
+            ? 'Off'
+            : 'On'
+        }\``,
+
         '',
         '**Roles**',
         `👥 Staff Roles: ${formatRoleCount(panel.staffRoleIds)}`,
         `🛡️ Manager Roles: ${formatRoleCount(panel.managerRoleIds)}`,
         `👁️ Viewer Roles: ${formatRoleCount(panel.viewerRoleIds)}`,
+
         '',
         '**Appearance**',
-        `🎨 Title: \`${appearance.title || 'Not set'}\``,
-        `🧾 Description: \`${appearance.description ? 'Configured' : 'Not set'}\``,
-        `🎨 Color: \`${appearance.color || '#5865F2'}\``,
+        `🎨 Appearance: \`Embed, button, colors and layout\``,
+        `🎨 Embed Title: \`${appearance.title || 'Not set'}\``,
+        `🧾 Embed Description: \`${
+          appearance.description
+            ? 'Configured'
+            : 'Not set'
+        }\``,
+        `🎨 Embed Color: \`${appearance.color || '#5865F2'}\``,
         `🔘 Button: \`${appearance.buttonEmoji || '🎫'} ${
           appearance.buttonLabel || 'Open Ticket'
         }\``,
