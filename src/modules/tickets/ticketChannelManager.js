@@ -493,6 +493,11 @@ async function archiveTicketChannel({
   archiveName
 );
 
+console.log(
+  '[Tickets] Channel manageable:',
+  channel?.manageable
+);
+
 try {
   await channel.setName(
     archiveName,

@@ -561,11 +561,11 @@ async function reopen(ticketOrId, actor, options = {}) {
   );
 
   if (options.client) {
-    await refreshTicketControlMessage(
-      options.client,
-      saved || updated || ticket
-    );
-  }
+  await refreshTicketControlMessage(
+    options.client,
+    updated || ticket
+  );
+}
 
   await ticketTimeline.addTicketReopenedEntry(
     ticket.guildId,
@@ -623,11 +623,18 @@ async function archive(ticketOrId, actor, options = {}) {
   );
 
   if (options.client) {
+  try {
     await refreshTicketControlMessage(
       options.client,
       updated || ticket
     );
+  } catch (error) {
+    console.error(
+      '[Tickets] Archive refresh failed:',
+      error
+    );
   }
+}
 
   await ticketTimeline.addTicketArchivedEntry(
     ticket.guildId,
@@ -962,10 +969,17 @@ async function changePriority(
       );
 
       if (channel?.manageable) {
-        const newName = buildTicketChannelName(
-          updated,
-          channel.guild
-        );
+        const panelId = updated.metadata?.panelId || null;
+
+      const panel = panelId
+        ? getPanel(updated.guildId, panelId)
+        : null;
+
+      const newName = buildTicketChannelName(
+        updated,
+        channel.guild,
+        panel
+    );
 
         console.log(
           '[Tickets] Priority rename check:',
