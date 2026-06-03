@@ -1,4 +1,4 @@
-// functions/embed/embedPanel.js
+// src/functions/embed/embedPanel.js
 
 const {
   EmbedBuilder,
@@ -15,10 +15,11 @@ const {
 
 const { buildAdminPanel } = require('../admin/adminPanel');
 const guildManager = require('../../guild/guildManager');
-const panelNav = require('../../helpers/ui/panelNavigation');
 
 const PANEL_COLOR = '#5865F2';
 const CUSTOM_HEX_VALUE = '__custom_hex__';
+const MAX_FIELDS = 25;
+const MAX_BUTTONS = 25;
 
 const sessions = new Map();
 
@@ -64,8 +65,7 @@ const TEMPLATES = {
     image: '',
     thumbnail: '',
     fields: [],
-
-buttons: [],
+    buttons: [],
   },
 
   welcome: {
@@ -83,12 +83,13 @@ buttons: [],
     color: '#57F287',
     authorName: '{guildName}',
     authorIcon: '{guildIcon}',
+    authorUrl: '',
     footer: 'Member joined',
+    footerIcon: '',
     image: '',
     thumbnail: '{userAvatar}',
     fields: [],
-
-buttons: [],
+    buttons: [],
   },
 
   leave: {
@@ -105,12 +106,13 @@ buttons: [],
     color: '#ED4245',
     authorName: '{guildName}',
     authorIcon: '{guildIcon}',
+    authorUrl: '',
     footer: 'Member left',
+    footerIcon: '',
     image: '',
     thumbnail: '{userAvatar}',
     fields: [],
-
-buttons: [],
+    buttons: [],
   },
 
   announcement: {
@@ -125,12 +127,13 @@ buttons: [],
     color: '#5865F2',
     authorName: '{guildName}',
     authorIcon: '{guildIcon}',
+    authorUrl: '',
     footer: 'Announcement',
+    footerIcon: '',
     image: '',
     thumbnail: '{guildIcon}',
     fields: [],
-
-buttons: [],
+    buttons: [],
   },
 
   rules: {
@@ -158,15 +161,16 @@ buttons: [],
     color: '#5865F2',
     authorName: '{guildName}',
     authorIcon: '{guildIcon}',
+    authorUrl: '',
     footer: 'Please follow the rules',
+    footerIcon: '',
     image: '',
     thumbnail: '',
     fields: [],
-
-buttons: [],
+    buttons: [],
   },
 
-  suggestion: {
+    suggestion: {
     label: 'Suggestion',
     emoji: '💡',
     title: 'New Suggestion',
@@ -179,14 +183,15 @@ buttons: [],
     color: '#FEE75C',
     authorName: '{guildName}',
     authorIcon: '{guildIcon}',
+    authorUrl: '',
     footer: 'Suggestion system',
+    footerIcon: '',
     image: '',
     thumbnail: '',
     fields: [
       { name: 'Status', value: 'Pending', inline: true },
       { name: 'Votes', value: 'Waiting for votes', inline: true },
     ],
-
     buttons: [],
   },
 
@@ -204,7 +209,9 @@ buttons: [],
     color: '#9B59B6',
     authorName: '{guildName}',
     authorIcon: '{guildIcon}',
+    authorUrl: '',
     footer: 'Good luck!',
+    footerIcon: '',
     image: '',
     thumbnail: '',
     fields: [
@@ -230,12 +237,13 @@ buttons: [],
     color: '#3498DB',
     authorName: '{guildName}',
     authorIcon: '{guildIcon}',
+    authorUrl: '',
     footer: 'Update notice',
+    footerIcon: '',
     image: '',
     thumbnail: '',
     fields: [],
-
-buttons: [],
+    buttons: [],
   },
 
   event: {
@@ -255,7 +263,9 @@ buttons: [],
     color: '#E67E22',
     authorName: '{guildName}',
     authorIcon: '{guildIcon}',
+    authorUrl: '',
     footer: 'Event details',
+    footerIcon: '',
     image: '',
     thumbnail: '',
     fields: [
@@ -263,7 +273,6 @@ buttons: [],
       { name: 'Time', value: 'Set time', inline: true },
       { name: 'Location', value: 'Set location', inline: true },
     ],
-
     buttons: [],
   },
 
@@ -279,64 +288,136 @@ buttons: [],
     color: '#ED4245',
     authorName: '{guildName}',
     authorIcon: '{guildIcon}',
+    authorUrl: '',
     footer: 'Moderator notice',
+    footerIcon: '',
     image: '',
     thumbnail: '',
     fields: [],
-
-buttons: [],
+    buttons: [],
   },
 };
-
-const HELPER_VARIABLES = [
-  { name: '{userId}', desc: 'User ID' },
-  { name: '{userTag}', desc: 'User tag/name' },
-  { name: '{userName}', desc: 'Username' },
-  { name: '{userGlobalName}', desc: 'Global display name' },
-  { name: '{userMention}', desc: 'Clickable user mention' },
-  { name: '{userNoPing}', desc: 'Mention style, safe with Ping OFF' },
-  { name: '{guildIcon}', desc: 'User avatar URL' },
-  { name: '{userServerAvatar}', desc: 'Server avatar URL' },
-  { name: '{userNickname}', desc: 'Server nickname' },
-  { name: '{userDisplay}', desc: 'Display name' },
-  { name: '{userCreatedAt}', desc: 'Account created date' },
-  { name: '{userCreatedTimestamp}', desc: 'Account created Discord timestamp' },
-  { name: '{userJoinedAt}', desc: 'Server joined date' },
-  { name: '{userJoinedTimestamp}', desc: 'Server joined Discord timestamp' },
-  { name: '{nowTimestamp}', desc: 'Current Discord timestamp' },
-  { name: '{successEmoji}', desc: 'Success emoji' },
-  { name: '{warningEmoji}', desc: 'Warning emoji' },
-  { name: '{errorEmoji}', desc: 'Error emoji' },
-  { name: '{proofVerifiedEmoji}', desc: 'Verified emoji' },
-  { name: '{successColor}', desc: 'Success colour' },
-  { name: '{warningColor}', desc: 'Warning colour' },
-  { name: '{errorColor}', desc: 'Error colour' },
-  { name: '{proofVerifiedColor}', desc: 'Verified colour' },
-  { name: '{guildId}', desc: 'Server ID' },
-  { name: '{guildName}', desc: 'Server name' },
-  { name: '{server}', desc: 'Server name shortcut' },
-  { name: '{guildIcon}', desc: 'Server icon URL' },
-  { name: '{serverIcon}', desc: 'Server icon URL shortcut' },
-  { name: '{guildBanner}', desc: 'Server banner URL' },
-  { name: '{guildMemberCount}', desc: 'Server member count' },
-  { name: '{memberCount}', desc: 'Member count shortcut' },
-  { name: '{guildVanityCode}', desc: 'Server vanity code' },
-];
-
-/* ---------------- BASIC HELPERS ---------------- */
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value || {}));
 }
 
-function refreshGuild(guildId) {
-  if (typeof guildManager.reloadGuild === 'function') {
-    guildManager.reloadGuild(guildId);
+function getSessionKey(interaction) {
+  return `${interaction.guildId}:${interaction.user.id}`;
+}
+
+function trim(text, max = 4096) {
+  const value = String(text || '');
+  return value.length > max
+    ? `${value.slice(0, max - 3)}...`
+    : value;
+}
+
+function safeUrl(value) {
+  const text = String(value || '').trim();
+
+  if (!text) return undefined;
+
+  try {
+    const url = new URL(text);
+    return ['http:', 'https:'].includes(url.protocol)
+      ? text
+      : undefined;
+  } catch {
+    return undefined;
   }
 }
 
-function getSessionKey(interaction) {
-  return `${interaction.guildId}:${interaction.user.id}`;
+function isValidHexColor(value) {
+  return /^#?[0-9A-Fa-f]{6}$/.test(
+    String(value || '').trim()
+  );
+}
+
+function normalizeHexColor(value) {
+  const text = String(value || '')
+    .trim()
+    .replace('#', '')
+    .toUpperCase();
+
+  return `#${text}`;
+}
+
+function getDefaultState() {
+  return {
+    template: 'custom',
+    selectedPreset: null,
+    selectedFieldIndex: null,
+    selectedButtonIndex: null,
+
+    channelId: null,
+
+    hasUnsavedChanges: false,
+    allowUserPing: false,
+
+    title: TEMPLATES.custom.title,
+    description: TEMPLATES.custom.description,
+    color: TEMPLATES.custom.color,
+
+    authorName: '',
+    authorIcon: '',
+    authorUrl: '',
+
+    footer: '',
+    footerIcon: '',
+
+    image: '',
+    thumbnail: '',
+
+    fields: [],
+    buttons: [],
+  };
+}
+
+function getSession(interaction) {
+  const key = getSessionKey(interaction);
+
+  if (!sessions.has(key)) {
+    sessions.set(key, getDefaultState());
+  }
+
+  return sessions.get(key);
+}
+
+function saveSession(interaction, state) {
+  sessions.set(
+    getSessionKey(interaction),
+    state
+  );
+
+  return state;
+}
+
+function resetSession(interaction) {
+  return saveSession(
+    interaction,
+    getDefaultState()
+  );
+}
+
+function markUnsaved(interaction, nextState = {}) {
+  const current = getSession(interaction);
+
+  return saveSession(interaction, {
+    ...current,
+    ...nextState,
+    hasUnsavedChanges: true,
+  });
+}
+
+function clearUnsaved(interaction, nextState = {}) {
+  const current = getSession(interaction);
+
+  return saveSession(interaction, {
+    ...current,
+    ...nextState,
+    hasUnsavedChanges: false,
+  });
 }
 
 function getMemberDisplayName(interaction) {
@@ -356,49 +437,6 @@ function getUserDisplayName(interaction) {
     interaction.user?.username ||
     'User'
   );
-}
-
-function trim(text, max = 4096) {
-  const value = String(text || '');
-  return value.length > max ? `${value.slice(0, max - 3)}...` : value;
-}
-
-function safeUrl(value) {
-  const text = String(value || '').trim();
-  if (!text) return undefined;
-
-  try {
-    const url = new URL(text);
-    return ['http:', 'https:'].includes(url.protocol) ? text : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function isValidHexColor(value) {
-  return /^#?[0-9A-Fa-f]{6}$/.test(String(value || '').trim());
-}
-
-function normalizeHexColor(value) {
-  const text = String(value || '').trim().replace('#', '').toUpperCase();
-  return `#${text}`;
-}
-
-function formatDate(value) {
-  if (!value) return '';
-
-  try {
-    return new Date(value).toLocaleString();
-  } catch {
-    return '';
-  }
-}
-
-function formatTimestamp(timestamp) {
-  if (!timestamp) return '';
-
-  const seconds = Math.floor(Number(timestamp) / 1000);
-  return Number.isFinite(seconds) ? `<t:${seconds}:R>` : '';
 }
 
 function getUserAvatar(user) {
@@ -437,6 +475,26 @@ function getGuildBanner(guild) {
   );
 }
 
+function formatDate(value) {
+  if (!value) return '';
+
+  try {
+    return new Date(value).toLocaleString();
+  } catch {
+    return '';
+  }
+}
+
+function formatTimestamp(timestamp) {
+  if (!timestamp) return '';
+
+  const seconds = Math.floor(Number(timestamp) / 1000);
+
+  return Number.isFinite(seconds)
+    ? `<t:${seconds}:R>`
+    : '';
+}
+
 function replaceAllVariables(text, variables) {
   let output = String(text || '');
 
@@ -455,167 +513,81 @@ function resolvePreviewText(text, interaction) {
   const userId = user.id || '';
   const username = user.username || 'User';
   const userTag = user.tag || username;
+
   const userDisplay = getUserDisplayName(interaction);
 
   const userAvatar = getUserAvatar(user);
   const userServerAvatar = getMemberAvatar(member, userAvatar);
+
   const guildIcon = getGuildIcon(guild);
   const guildBanner = getGuildBanner(guild);
 
   const userCreatedAt = formatDate(user.createdAt);
   const userCreatedTimestamp = formatTimestamp(user.createdTimestamp);
+
   const userJoinedAt = formatDate(member.joinedAt);
   const userJoinedTimestamp = formatTimestamp(member.joinedTimestamp);
+
   const nowTimestamp = `<t:${Math.floor(Date.now() / 1000)}:R>`;
 
   return replaceAllVariables(text, {
     '{userId}': userId,
     '{userid}': userId,
+
     '{userTag}': userTag,
     '{usertag}': userTag,
+
     '{userName}': username,
     '{username}': username,
+
     '{userGlobalName}': user.globalName || username,
-    '{userglobalnickname}': user.globalName || username,
+
     '{userMention}': userId ? `<@${userId}>` : '',
     '{usermention}': userId ? `<@${userId}>` : '',
+
     '{userNoPing}': userId ? `<@${userId}>` : '',
-    '{user}': userId ? `<@${userId}>` : '',
+
     '{userAvatar}': userAvatar,
     '{useravatarurl}': userAvatar,
+
     '{userServerAvatar}': userServerAvatar,
     '{userserveravatarurl}': userServerAvatar,
+
     '{userNickname}': member.nickname || userDisplay,
-    '{usernickname}': member.nickname || userDisplay,
     '{userDisplay}': userDisplay,
-    '{userdisplayname}': userDisplay,
+
     '{userCreatedAt}': userCreatedAt,
-    '{usercreatedat}': userCreatedAt,
     '{userCreatedTimestamp}': userCreatedTimestamp,
-    '{usercreatedtimestamp}': userCreatedTimestamp,
+
     '{userJoinedAt}': userJoinedAt,
-    '{userjoinedat}': userJoinedAt,
     '{userJoinedTimestamp}': userJoinedTimestamp,
-    '{userjoinedtimestamp}': userJoinedTimestamp,
+
     '{nowTimestamp}': nowTimestamp,
-    '{nowtimestamp}': nowTimestamp,
-    '{successEmoji}': '✅',
-    '{succesemoji}': '✅',
-    '{warningEmoji}': '⚠️',
-    '{warningemoji}': '⚠️',
-    '{errorEmoji}': '❌',
-    '{erroremoji}': '❌',
-    '{proofVerifiedEmoji}': '💎',
-    '{proofverifiedemoji}': '💎',
-    '{successColor}': '#57F287',
-    '{successcolor}': '#57F287',
-    '{warningColor}': '#FEE75C',
-    '{warningcolor}': '#FEE75C',
-    '{errorColor}': '#ED4245',
-    '{errorcolor}': '#ED4245',
-    '{proofVerifiedColor}': '#00D4FF',
-    '{proofverifiedcolor}': '#00D4FF',
+
     '{guildId}': guild.id || '',
-    '{guildid}': guild.id || '',
     '{guildName}': guild.name || 'Server',
-    '{guildname}': guild.name || 'Server',
     '{server}': guild.name || 'Server',
+
     '{guildIcon}': guildIcon,
-    '{guildiconurl}': guildIcon,
     '{serverIcon}': guildIcon,
+
     '{guildBanner}': guildBanner,
-    '{guildbannerurl}': guildBanner,
+
     '{guildMemberCount}': String(guild.memberCount || 0),
-    '{guildmembercount}': String(guild.memberCount || 0),
     '{memberCount}': String(guild.memberCount || 0),
+
     '{guildVanityCode}': guild.vanityURLCode || '',
-    '{guildvanitycode}': guild.vanityURLCode || '',
+
+    '{successEmoji}': '✅',
+    '{warningEmoji}': '⚠️',
+    '{errorEmoji}': '❌',
+    '{proofVerifiedEmoji}': '💎',
+
+    '{successColor}': '#57F287',
+    '{warningColor}': '#FEE75C',
+    '{errorColor}': '#ED4245',
+    '{proofVerifiedColor}': '#00D4FF',
   });
-}
-
-function markUnsaved(interaction, nextState) {
-  const current = getSession(interaction);
-
-  return saveSession(interaction, {
-    ...current,
-    ...(nextState || {}),
-    hasUnsavedChanges: true,
-  });
-}
-
-function clearUnsaved(interaction, nextState) {
-  const current = getSession(interaction);
-
-  return saveSession(interaction, {
-    ...current,
-    ...(nextState || {}),
-    hasUnsavedChanges: false,
-  });
-}
-
-function getAllowedMentionsForState(state, interaction) {
-  if (state.allowUserPing) {
-    return {
-      users: [interaction.user.id],
-      roles: [],
-      repliedUser: false,
-    };
-  }
-
-  return {
-    parse: [],
-    repliedUser: false,
-  };
-}
-
-/* ---------------- SESSION ---------------- */
-
-function getDefaultState() {
-  return {
-    openedFromAdmin: false,
-    template: 'custom',
-    selectedPreset: null,
-    selectedFieldIndex: null,
-    channelId: null,
-    hasUnsavedChanges: false,
-    allowUserPing: false,
-
-    title: TEMPLATES.custom.title,
-    description: TEMPLATES.custom.description,
-    color: TEMPLATES.custom.color,
-
-    authorName: '',
-    authorIcon: '',
-    authorUrl: '',
-    footer: '',
-    footerIcon: '',
-    image: '',
-    thumbnail: '',
-
-    fields: [],
-
-    buttons: [],
-    selectedButtonIndex: null,
-  };
-}
-
-function getSession(interaction) {
-  const key = getSessionKey(interaction);
-
-  if (!sessions.has(key)) {
-    sessions.set(key, getDefaultState());
-  }
-
-  return sessions.get(key);
-}
-
-function saveSession(interaction, state) {
-  sessions.set(getSessionKey(interaction), state);
-  return state;
-}
-
-function resetSession(interaction) {
-  return saveSession(interaction, getDefaultState());
 }
 
 function getPresetDataFromState(state) {
@@ -631,14 +603,20 @@ function getPresetDataFromState(state) {
     authorName: state.authorName || '',
     authorIcon: state.authorIcon || '',
     authorUrl: state.authorUrl || '',
+
     footer: state.footer || '',
     footerIcon: state.footerIcon || '',
+
     image: state.image || '',
     thumbnail: state.thumbnail || '',
 
-    fields: Array.isArray(state.fields) ? clone(state.fields) : [],
+    fields: Array.isArray(state.fields)
+      ? clone(state.fields)
+      : [],
 
-    buttons: Array.isArray(state.buttons) ? clone(state.buttons) : [],
+    buttons: Array.isArray(state.buttons)
+      ? clone(state.buttons)
+      : [],
   };
 }
 
@@ -647,9 +625,13 @@ function applyPresetToSession(interaction, presetName, preset) {
 
   return clearUnsaved(interaction, {
     ...current,
+
     template: preset.template || 'custom',
     selectedPreset: presetName,
+
     selectedFieldIndex: null,
+    selectedButtonIndex: null,
+
     channelId: preset.channelId || current.channelId || null,
     allowUserPing: Boolean(preset.allowUserPing),
 
@@ -660,16 +642,20 @@ function applyPresetToSession(interaction, presetName, preset) {
     authorName: preset.authorName || '',
     authorIcon: preset.authorIcon || '',
     authorUrl: preset.authorUrl || '',
+
     footer: preset.footer || '',
     footerIcon: preset.footerIcon || '',
+
     image: preset.image || '',
     thumbnail: preset.thumbnail || '',
 
-    fields: Array.isArray(preset.fields) ? clone(preset.fields) : [],
+    fields: Array.isArray(preset.fields)
+      ? clone(preset.fields)
+      : [],
 
-    buttons: Array.isArray(preset.buttons) ? clone(preset.buttons) : [],
-
-    selectedButtonIndex: null,
+    buttons: Array.isArray(preset.buttons)
+      ? clone(preset.buttons)
+      : [],
   });
 }
 
@@ -678,12 +664,15 @@ function applyTemplate(interaction, templateKey) {
   const current = getSession(interaction);
 
   return saveSession(interaction, {
+    ...current,
+
     template: templateKey,
     selectedPreset: null,
+
     selectedFieldIndex: null,
-    channelId: current.channelId || null,
+    selectedButtonIndex: null,
+
     hasUnsavedChanges: true,
-    allowUserPing: Boolean(current.allowUserPing),
 
     title: template.title || '',
     description: template.description || '',
@@ -692,73 +681,95 @@ function applyTemplate(interaction, templateKey) {
     authorName: template.authorName || '',
     authorIcon: template.authorIcon || '',
     authorUrl: template.authorUrl || '',
+
     footer: template.footer || '',
     footerIcon: template.footerIcon || '',
+
     image: template.image || '',
     thumbnail: template.thumbnail || '',
 
-    fields: Array.isArray(template.fields) 
-    ? clone(template.fields) : [],
+    fields: Array.isArray(template.fields)
+      ? clone(template.fields)
+      : [],
 
     buttons: Array.isArray(template.buttons)
-    ? clone(template.buttons)
-    : [],
-
-    selectedButtonIndex: null,
+      ? clone(template.buttons)
+      : [],
   });
 }
 
-/* ---------------- EMBED BUILDERS ---------------- */
-
 function buildPreviewEmbed(state, interaction) {
-  const embed = new EmbedBuilder().setColor(state.color || PANEL_COLOR);
+  const embed = new EmbedBuilder()
+    .setColor(state.color || PANEL_COLOR);
 
-  const authorName = trim(resolvePreviewText(state.authorName, interaction), 256);
-  const authorIconUrl = safeUrl(resolvePreviewText(state.authorIcon, interaction));
-  const authorUrl = safeUrl(resolvePreviewText(state.authorUrl, interaction));
+  const resolvedAuthorName = trim(
+    resolvePreviewText(state.authorName, interaction),
+    256
+  );
 
-  const resolvedAuthorName =
-  authorName ||
-  (state.template === 'welcome'
-    ? `Welcome to ${interaction.guild?.name || 'the server'}`
-    : 'Live Embed Preview');
+  const resolvedAuthorIcon = safeUrl(
+    resolvePreviewText(state.authorIcon, interaction)
+  );
 
-  const resolvedAuthorIcon = authorIconUrl;
+  const resolvedAuthorUrl = safeUrl(
+    resolvePreviewText(state.authorUrl, interaction)
+  );
 
   embed.setAuthor({
-    name: resolvedAuthorName,
-    ...(resolvedAuthorIcon ? { iconURL: resolvedAuthorIcon } : {}),
-    ...(authorUrl ? { url: authorUrl } : {}),
+    name:
+      resolvedAuthorName ||
+      (state.template === 'welcome'
+        ? `Welcome to ${interaction.guild?.name || 'the server'}`
+        : 'Live Embed Preview'),
+    ...(resolvedAuthorIcon
+      ? { iconURL: resolvedAuthorIcon }
+      : {}),
+    ...(resolvedAuthorUrl
+      ? { url: resolvedAuthorUrl }
+      : {}),
   });
 
   if (state.title) {
-    embed.setTitle(trim(resolvePreviewText(state.title, interaction), 256));
+    embed.setTitle(
+      trim(
+        resolvePreviewText(state.title, interaction),
+        256
+      )
+    );
   }
 
   if (state.description) {
-  embed.setDescription(
-    trim(resolvePreviewText(state.description, interaction), 4096)
+    embed.setDescription(
+      trim(
+        resolvePreviewText(state.description, interaction),
+        4096
+      )
+    );
+  }
+
+  const footerText = trim(
+    resolvePreviewText(state.footer, interaction),
+    2048
   );
-}
 
-const footerText = trim(
-  resolvePreviewText(state.footer, interaction),
-  2048
-);
+  const footerIcon = safeUrl(
+    resolvePreviewText(state.footerIcon, interaction)
+  );
 
-const footerIconUrl = safeUrl(
-  resolvePreviewText(state.footerIcon, interaction)
-);
+  if (footerText) {
+    embed.setFooter({
+      text: footerText,
+      ...(footerIcon ? { iconURL: footerIcon } : {}),
+    });
+  }
 
-if (footerText) {
-  embed.setFooter({
-    text: footerText,
-    ...(footerIconUrl ? { iconURL: footerIconUrl } : {}),
-  });
-}
+  const imageUrl = safeUrl(
+    resolvePreviewText(state.image, interaction)
+  );
 
-const imageUrl = safeUrl(resolvePreviewText(state.image, interaction));
-if (imageUrl) embed.setImage(imageUrl);
+  if (imageUrl) {
+    embed.setImage(imageUrl);
+  }
 
   const thumbnailUrl = safeUrl(
     resolvePreviewText(state.thumbnail, interaction)
@@ -768,21 +779,30 @@ if (imageUrl) embed.setImage(imageUrl);
     embed.setThumbnail(thumbnailUrl);
   }
 
-  const safeFields = Array.isArray(state.fields) ? state.fields.slice(0, 25) : [];
+  const safeFields = Array.isArray(state.fields)
+    ? state.fields.slice(0, MAX_FIELDS)
+    : [];
 
-  if (safeFields.length) {
-    embed.addFields(
-      safeFields
-        .filter((field) => field?.name && field?.value)
-        .map((field) => ({
-          name: trim(resolvePreviewText(field.name, interaction), 256),
-          value: trim(resolvePreviewText(field.value, interaction), 1024),
-          inline: Boolean(field.inline),
-        }))
-    );
+  const previewFields = safeFields
+    .filter((field) => field?.name && field?.value)
+    .map((field) => ({
+      name: trim(
+        resolvePreviewText(field.name, interaction),
+        256
+      ),
+      value: trim(
+        resolvePreviewText(field.value, interaction),
+        1024
+      ),
+      inline: Boolean(field.inline),
+    }));
+
+  if (previewFields.length) {
+    embed.addFields(previewFields);
   }
 
   embed.setTimestamp();
+
   return embed;
 }
 
@@ -799,7 +819,7 @@ function normaliseButtonStyle(style) {
 
 function buildButtonComponents(state) {
   const buttons = Array.isArray(state.buttons)
-    ? state.buttons.slice(0, 25)
+    ? state.buttons.slice(0, MAX_BUTTONS)
     : [];
 
   const rows = [];
@@ -821,12 +841,12 @@ function buildButtonComponents(state) {
       if (style === ButtonStyle.Link) {
         builder.setURL(
           safeUrl(button.url) ||
-          'https://ksjdigital.co.uk'
+            'https://ksjdigital.co.uk'
         );
       } else {
         builder.setCustomId(
           button.id ||
-          `embed-action:${button.action || 'custom'}:${i + index}`
+            `embed-action:${button.action || 'custom'}:${i + index}`
         );
       }
 
@@ -839,79 +859,21 @@ function buildButtonComponents(state) {
   return rows;
 }
 
-function buildPanelEmbed(state, interaction, memberDisplayName) {
-  const template = TEMPLATES[state.template] || TEMPLATES.custom;
-
-  const selectedField =
-    Number.isInteger(state.selectedFieldIndex) &&
-    state.fields?.[state.selectedFieldIndex]
-      ? state.fields[state.selectedFieldIndex]
-      : null;
-
-  return new EmbedBuilder()
-    .setColor(PANEL_COLOR)
-    .setTitle('🎨 Embed Studio')
-    .setDescription('Create, edit and activate embeds for this server.')
-    .addFields(
-      {
-        name: 'Template',
-        value: `${template.emoji} ${template.label}`,
-        inline: true,
-      },
-      {
-        name: 'Preset',
-        value: state.selectedPreset ? `💾 ${state.selectedPreset}` : 'Not loaded',
-        inline: true,
-      },
-      {
-        name: 'Mentions',
-        value: state.allowUserPing ? 'Ping: ON' : 'Ping: OFF',
-        inline: true,
-      },
-      {
-        name: 'Channel',
-        value: state.channelId ? `<#${state.channelId}>` : 'Not selected',
-        inline: true,
-      },
-      {
-        name: 'Colour',
-        value: `\`${state.color || PANEL_COLOR}\``,
-        inline: true,
-      },
-      {
-        name: 'Fields',
-        value: `${state.fields?.length || 0}/25`,
-        inline: true,
-      },
-      {
-        name: 'Selected Field',
-        value: selectedField
-          ? `${selectedField.name}\nInline: ${selectedField.inline ? 'Yes' : 'No'}`
-          : 'None',
-        inline: false,
-      }
-    )
-    .setFooter({ text: `Requested by ${memberDisplayName}` })
-    .setTimestamp();
-}
-
-function buildEmbedPanel(interactionOrGuild, memberDisplayName = 'Unknown User') {
-  const fakeInteraction = interactionOrGuild?.guild
-    ? interactionOrGuild
-    : {
-        guild: interactionOrGuild,
-        guildId: interactionOrGuild?.id,
-        user: { id: 'system', username: memberDisplayName },
-      };
-
-  const state = getSession(fakeInteraction);
+function getAllowedMentionsForState(state, interaction) {
+  if (state.allowUserPing) {
+    return {
+      users: [interaction.user.id],
+      roles: [],
+      repliedUser: false,
+    };
+  }
 
   return {
-    embeds: buildEditorPanel(fakeInteraction, memberDisplayName).embeds,
+    parse: [],
+    repliedUser: false,
+  };
+}
 
-    components: buildEditorPanel(fakeInteraction, memberDisplayName).components, };}
-
-/* ---------------- EDITOR PANEL ---------------- */
 function getUseButtonLabel(templateKey) {
   const labels = {
     welcome: '✅ Use Welcome',
@@ -954,6 +916,7 @@ function setEmbedDefault(guildId, templateKey, presetName) {
       ...current,
       [templateKey]: presetName,
     });
+
     return true;
   }
 
@@ -962,21 +925,16 @@ function setEmbedDefault(guildId, templateKey, presetName) {
 
 function buildEditorPanel(interaction, memberDisplayName = 'Unknown User') {
   const state = getSession(interaction);
-
-  const selectedField =
-    Number.isInteger(state.selectedFieldIndex) &&
-    state.fields?.[state.selectedFieldIndex]
-      ? state.fields[state.selectedFieldIndex]
-      : null;
+  const template = TEMPLATES[state.template] || TEMPLATES.custom;
 
   const templateSelect = new StringSelectMenuBuilder()
     .setCustomId('embed:template')
     .setPlaceholder('🎨 Choose a premade template')
     .addOptions(
-      Object.entries(TEMPLATES).map(([value, template]) => ({
-        label: template.label,
+      Object.entries(TEMPLATES).map(([value, item]) => ({
+        label: item.label,
         value,
-        emoji: template.emoji,
+        emoji: item.emoji,
         default: state.template === value,
       }))
     );
@@ -984,7 +942,10 @@ function buildEditorPanel(interaction, memberDisplayName = 'Unknown User') {
   const channelSelect = new ChannelSelectMenuBuilder()
     .setCustomId('embed:channel')
     .setPlaceholder('📢 Choose where to send this embed')
-    .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement);
+    .addChannelTypes(
+      ChannelType.GuildText,
+      ChannelType.GuildAnnouncement
+    );
 
   const colorSelect = new StringSelectMenuBuilder()
     .setCustomId('embed:color')
@@ -1006,81 +967,77 @@ function buildEditorPanel(interaction, memberDisplayName = 'Unknown User') {
 
   const components = [
     new ActionRowBuilder().addComponents(templateSelect),
-
     new ActionRowBuilder().addComponents(channelSelect),
-
     new ActionRowBuilder().addComponents(colorSelect),
+
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('embed:edit:content')
+        .setLabel('✏️ Edit')
+        .setStyle(ButtonStyle.Primary),
+
+      new ButtonBuilder()
+        .setCustomId('embed:fields')
+        .setLabel(`📋 Fields & Media (${state.fields?.length || 0})`)
+        .setStyle(ButtonStyle.Primary),
+
+      new ButtonBuilder()
+        .setCustomId('embed:buttons')
+        .setLabel(`🔘 Buttons (${state.buttons?.length || 0})`)
+        .setStyle(ButtonStyle.Primary),
+
+      new ButtonBuilder()
+        .setCustomId('embed:presets')
+        .setLabel('💾 Presets')
+        .setStyle(ButtonStyle.Primary),
+
+      new ButtonBuilder()
+        .setCustomId('embed:use')
+        .setLabel(getUseButtonLabel(state.template))
+        .setStyle(ButtonStyle.Success)
+    ),
+
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('embed:test:send')
+        .setLabel('🧪 Test')
+        .setStyle(ButtonStyle.Secondary),
+
+      new ButtonBuilder()
+        .setCustomId('embed:toggle:ping')
+        .setLabel(
+          state.allowUserPing
+            ? '🔔 Ping ON'
+            : '🔕 Ping OFF'
+        )
+        .setStyle(
+          state.allowUserPing
+            ? ButtonStyle.Success
+            : ButtonStyle.Secondary
+        ),
+
+      new ButtonBuilder()
+        .setCustomId('embed:helpers')
+        .setLabel('📖 Variables')
+        .setStyle(ButtonStyle.Secondary),
+
+      new ButtonBuilder()
+        .setCustomId('embed:reset')
+        .setLabel('♻️ Reset')
+        .setStyle(ButtonStyle.Danger),
+
+      new ButtonBuilder()
+        .setCustomId('embed:back')
+        .setLabel('⬅️ Admin Panel')
+        .setStyle(ButtonStyle.Secondary)
+    ),
   ];
 
- components.push(
-  new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('embed:edit-content')
-      .setLabel('✏️ Edit')
-      .setStyle(ButtonStyle.Primary),
-
-    new ButtonBuilder()
-      .setCustomId('embed:fields')
-      .setLabel(
-      `📋 Fields & Media (${state.fields?.length || 0})`
-    )
-      .setStyle(ButtonStyle.Primary),
-
-    new ButtonBuilder()
-      .setCustomId('embed:buttons')
-      .setLabel(
-      `🔘 Buttons (${state.buttons?.length || 0})`
-    )
-      .setStyle(ButtonStyle.Primary),
-
-    new ButtonBuilder()
-      .setCustomId('embed:presets')
-      .setLabel('💾 Presets')
-      .setStyle(ButtonStyle.Primary),
-
-    new ButtonBuilder()
-      .setCustomId('embed:use')
-      .setLabel(getUseButtonLabel(state.template))
-      .setStyle(ButtonStyle.Success)
-  )
-);
-
-components.push(
-  new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('embed:test-send')
-      .setLabel('🧪 Test')
-      .setStyle(ButtonStyle.Secondary),
-
-    new ButtonBuilder()
-      .setCustomId('embed:toggle-ping')
-      .setLabel(
-        state.allowUserPing
-          ? '🔔 Ping ON'
-          : '🔕 Ping OFF'
-      )
-      .setStyle(
-        state.allowUserPing
-          ? ButtonStyle.Success
-          : ButtonStyle.Secondary
-      ),
-
-    new ButtonBuilder()
-      .setCustomId('embed:helpers')
-      .setLabel('📖 Variables')
-      .setStyle(ButtonStyle.Secondary),
-
-    new ButtonBuilder()
-      .setCustomId('embed:reset')
-      .setLabel('♻️ Reset')
-      .setStyle(ButtonStyle.Danger),
-
-    new ButtonBuilder()
-      .setCustomId('embed:back')
-      .setLabel('⬅️ Back')
-      .setStyle(ButtonStyle.Secondary)
-  )
-);
+  const selectedField =
+    Number.isInteger(state.selectedFieldIndex) &&
+    state.fields?.[state.selectedFieldIndex]
+      ? state.fields[state.selectedFieldIndex]
+      : null;
 
   const embed = new EmbedBuilder()
     .setColor(state.color || PANEL_COLOR)
@@ -1089,9 +1046,7 @@ components.push(
       [
         '**Build, customise, preview, and activate embeds for your server.**',
         '',
-        `> **Template:** ${TEMPLATES[state.template]?.emoji || '🛠️'} ${
-          TEMPLATES[state.template]?.label || 'Custom Embed'
-        }`,
+        `> **Template:** ${template.emoji} ${template.label}`,
         `> **Preset:** ${
           state.selectedPreset
             ? `💾 ${state.selectedPreset}`
@@ -1108,8 +1063,8 @@ components.push(
             ? '🔔 User ping enabled'
             : '🔕 Safe / no ping'
         }`,
-        `> **Fields:** ${state.fields?.length || 0}/25`,
-        `> **Buttons:** ${state.buttons?.length || 0}/25`,
+        `> **Fields:** ${state.fields?.length || 0}/${MAX_FIELDS}`,
+        `> **Buttons:** ${state.buttons?.length || 0}/${MAX_BUTTONS}`,
         `> **Unsaved Changes:** ${
           state.hasUnsavedChanges
             ? '⚠️ Yes'
@@ -1132,12 +1087,170 @@ components.push(
     .setTimestamp();
 
   return {
-    embeds: [embed, buildPreviewEmbed(state, interaction)],
+    embeds: [
+      embed,
+      buildPreviewEmbed(state, interaction),
+    ],
     components,
   };
 }
 
-/* ---------------- SUB PANELS ---------------- */
+function buildEmbedPanel(interactionOrGuild, memberDisplayName = 'Unknown User') {
+  const fakeInteraction = interactionOrGuild?.guild
+    ? interactionOrGuild
+    : {
+        guild: interactionOrGuild,
+        guildId: interactionOrGuild?.id,
+        user: {
+          id: 'system',
+          username: memberDisplayName,
+        },
+      };
+
+  return buildEditorPanel(fakeInteraction, memberDisplayName);
+}
+
+function buildHelpersPanel(memberDisplayName = 'Unknown User') {
+  const embed = new EmbedBuilder()
+    .setColor(PANEL_COLOR)
+    .setTitle('📖 Embed Variables')
+    .setDescription(
+      [
+        '**User Variables**',
+        '`{userMention}` `{userNoPing}` `{userName}` `{userDisplay}`',
+        '`{userAvatar}` `{userServerAvatar}` `{userJoinedTimestamp}`',
+        '',
+        '**Server Variables**',
+        '`{guildName}` `{server}` `{guildIcon}` `{serverIcon}`',
+        '`{guildBanner}` `{guildMemberCount}` `{memberCount}`',
+        '',
+        '**Utility Variables**',
+        '`{nowTimestamp}` `{successEmoji}` `{warningEmoji}` `{errorEmoji}`',
+      ].join('\n')
+    )
+    .setFooter({ text: `Requested by ${memberDisplayName}` })
+    .setTimestamp();
+
+  return {
+    embeds: [embed],
+    components: [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('embed:editor')
+          .setLabel('⬅️ Embed Studio')
+          .setStyle(ButtonStyle.Secondary)
+      ),
+    ],
+  };
+}
+
+function buildFieldsPanel(interaction, memberDisplayName = 'Unknown User') {
+  const state = getSession(interaction);
+
+  const selectedField =
+    Number.isInteger(state.selectedFieldIndex) &&
+    state.fields?.[state.selectedFieldIndex]
+      ? state.fields[state.selectedFieldIndex]
+      : null;
+
+  const embed = new EmbedBuilder()
+    .setColor(state.color || PANEL_COLOR)
+    .setTitle('📋 Fields & Media')
+    .setDescription(
+      selectedField
+        ? [
+            '**Selected Field:**',
+            `\`${state.selectedFieldIndex + 1}.\` **${trim(
+              selectedField.name,
+              120
+            )}**`,
+            '',
+            trim(selectedField.value, 500),
+            '',
+            `Inline: ${selectedField.inline ? 'Yes' : 'No'}`,
+          ].join('\n')
+        : [
+            `Fields: ${state.fields?.length || 0}/${MAX_FIELDS}`,
+            '',
+            'Add, edit, remove, and manage embed fields.',
+            'Use Media to edit images, thumbnails, icons, and URLs.',
+          ].join('\n')
+    )
+    .setFooter({ text: `Requested by ${memberDisplayName}` })
+    .setTimestamp();
+
+  const components = [];
+
+  if (state.fields?.length) {
+    components.push(
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId('embed:field:select')
+          .setPlaceholder('📋 Select a field')
+          .addOptions(
+            state.fields.slice(0, MAX_FIELDS).map((field, index) => ({
+              label: `${index + 1}. ${trim(
+                field.name || 'Unnamed Field',
+                80
+              )}`,
+              value: String(index),
+              description: trim(field.value || 'No value', 100),
+              default: state.selectedFieldIndex === index,
+            }))
+          )
+      )
+    );
+  }
+
+  components.push(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('embed:field:add')
+        .setLabel('➕ Add Field')
+        .setStyle(ButtonStyle.Success)
+        .setDisabled((state.fields?.length || 0) >= MAX_FIELDS),
+
+      new ButtonBuilder()
+        .setCustomId(
+          selectedField
+            ? `embed:field:edit:${state.selectedFieldIndex}`
+            : 'embed:field:edit'
+        )
+        .setLabel('✏️ Edit Field')
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(!selectedField),
+
+      new ButtonBuilder()
+        .setCustomId('embed:field:remove')
+        .setLabel('🗑️ Remove Field')
+        .setStyle(ButtonStyle.Danger)
+        .setDisabled(!selectedField)
+    )
+  );
+
+  components.push(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('embed:media')
+        .setLabel('🖼️ Media')
+        .setStyle(ButtonStyle.Primary),
+
+      new ButtonBuilder()
+        .setCustomId('embed:editor')
+        .setLabel('⬅️ Embed Studio')
+        .setStyle(ButtonStyle.Secondary)
+    )
+  );
+
+  return {
+    embeds: [
+      embed,
+      buildPreviewEmbed(state, interaction),
+    ],
+    components,
+  };
+}
+
 function buildButtonsPanel(interaction, memberDisplayName = 'Unknown User') {
   const state = getSession(interaction);
 
@@ -1147,106 +1260,267 @@ function buildButtonsPanel(interaction, memberDisplayName = 'Unknown User') {
       ? state.buttons[state.selectedButtonIndex]
       : null;
 
-  const buttonEmbed = new EmbedBuilder()
+  const embed = new EmbedBuilder()
     .setColor(state.color || PANEL_COLOR)
     .setTitle('🔘 Button Management')
     .setDescription(
       selectedButton
         ? [
             '**Selected Button:**',
-            `\`${state.selectedButtonIndex + 1}.\` ${selectedButton.emoji || ''} ${selectedButton.label || 'Unnamed Button'}`,
+            `\`${state.selectedButtonIndex + 1}.\` ${
+              selectedButton.emoji || ''
+            } ${selectedButton.label || 'Unnamed Button'}`,
             '',
             `Style: \`${selectedButton.style || 'Primary'}\``,
-            `Action: \`${selectedButton.action || 'none'}\``,
             selectedButton.url ? `URL: ${selectedButton.url}` : null,
-            '',
-            'Manage your embed buttons below.',
-          ].filter(Boolean).join('\n')
+          ]
+            .filter(Boolean)
+            .join('\n')
         : [
-            'No button selected.',
+            `Buttons: ${state.buttons?.length || 0}/${MAX_BUTTONS}`,
             '',
-            `Buttons: ${state.buttons?.length || 0}/25`,
-            '',
-            'Add a button to begin.',
+            'Add, edit, remove, and reorder buttons for this embed.',
+            'Link buttons will open URLs. Other styles create internal custom IDs.',
           ].join('\n')
     )
     .setFooter({ text: `Requested by ${memberDisplayName}` })
     .setTimestamp();
 
-  return {
-    embeds: [buttonEmbed],
-    components: [
-      ...(state.buttons?.length
-        ? [
-            new ActionRowBuilder().addComponents(
-              new StringSelectMenuBuilder()
-                .setCustomId('embed:button-select')
-                .setPlaceholder('🔘 Select a button')
-                .addOptions(
-                  state.buttons.map((button, index) => ({
-                    label: `${index + 1}. ${trim(button.label || 'Unnamed Button', 80)}`,
-                    value: String(index),
-                    description: trim(button.action || button.style || 'Button action', 100),
-                    default: state.selectedButtonIndex === index,
-                  }))
-                )
-            ),
-          ]
-        : []),
+  const components = [];
 
+  if (state.buttons?.length) {
+    components.push(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('embed:button-add')
-          .setLabel('➕ Add')
-          .setStyle(ButtonStyle.Success),
-
-        new ButtonBuilder()
-          .setCustomId(
-            selectedButton
-              ? `embed:button-edit:${state.selectedButtonIndex}`
-              : 'embed:button-edit'
+        new StringSelectMenuBuilder()
+          .setCustomId('embed:button:select')
+          .setPlaceholder('🔘 Select a button')
+          .addOptions(
+            state.buttons.slice(0, MAX_BUTTONS).map((button, index) => ({
+              label: `${index + 1}. ${trim(
+                button.label || 'Unnamed Button',
+                80
+              )}`,
+              value: String(index),
+              description: trim(button.style || 'Button', 100),
+              default: state.selectedButtonIndex === index,
+            }))
           )
-          .setLabel('✏️ Edit')
-          .setStyle(ButtonStyle.Primary)
-          .setDisabled(!selectedButton),
+      )
+    );
+  }
 
-        new ButtonBuilder()
-          .setCustomId('embed:button-remove-selected')
-          .setLabel('🗑️ Remove')
-          .setStyle(ButtonStyle.Danger)
-          .setDisabled(!selectedButton)
-      ),
+  components.push(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('embed:button:add')
+        .setLabel('➕ Add')
+        .setStyle(ButtonStyle.Success)
+        .setDisabled((state.buttons?.length || 0) >= MAX_BUTTONS),
 
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('embed:button-move-up')
-          .setLabel('⬆️ Up')
-          .setStyle(ButtonStyle.Secondary)
-          .setDisabled(!selectedButton || state.selectedButtonIndex <= 0),
+      new ButtonBuilder()
+        .setCustomId(
+          selectedButton
+            ? `embed:button:edit:${state.selectedButtonIndex}`
+            : 'embed:button:edit'
+        )
+        .setLabel('✏️ Edit')
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(!selectedButton),
 
-        new ButtonBuilder()
-          .setCustomId('embed:button-move-down')
-          .setLabel('⬇️ Down')
-          .setStyle(ButtonStyle.Secondary)
-          .setDisabled(
-            !selectedButton ||
-              state.selectedButtonIndex >= (state.buttons?.length || 0) - 1
-          ),
+      new ButtonBuilder()
+        .setCustomId('embed:button:remove')
+        .setLabel('🗑️ Remove')
+        .setStyle(ButtonStyle.Danger)
+        .setDisabled(!selectedButton)
+    )
+  );
 
-        new ButtonBuilder()
-          .setCustomId('embed:editor')
-          .setLabel('⬅️ Back')
-          .setStyle(ButtonStyle.Secondary)
-      ),
-    ],
+  components.push(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('embed:button:up')
+        .setLabel('⬆️ Up')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(!selectedButton || state.selectedButtonIndex <= 0),
+
+      new ButtonBuilder()
+        .setCustomId('embed:button:down')
+        .setLabel('⬇️ Down')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(
+          !selectedButton ||
+            state.selectedButtonIndex >= (state.buttons?.length || 0) - 1
+        ),
+
+      new ButtonBuilder()
+        .setCustomId('embed:editor')
+        .setLabel('⬅️ Embed Studio')
+        .setStyle(ButtonStyle.Secondary)
+    )
+  );
+
+  return {
+    embeds: [embed],
+    components,
   };
 }
 
-/* ---------------- MODALS ---------------- */
+function buildPresetsPanel(interaction, memberDisplayName = 'Unknown User') {
+  const state = getSession(interaction);
+
+  const presets =
+    typeof guildManager.getEmbedPresets === 'function'
+      ? guildManager.getEmbedPresets(interaction.guild.id) || {}
+      : {};
+
+  const presetNames = Object.keys(presets).slice(0, 25);
+
+  const embed = new EmbedBuilder()
+    .setColor(state.color || PANEL_COLOR)
+    .setTitle('💾 Embed Presets')
+    .setDescription(
+      presetNames.length
+        ? 'Load, save, rename, duplicate, or delete embed presets.'
+        : 'No presets saved yet. Save your current embed as a preset to start.'
+    )
+    .addFields(
+      {
+        name: 'Current preset',
+        value: state.selectedPreset
+          ? `💾 ${state.selectedPreset}`
+          : 'None selected',
+        inline: true,
+      },
+      {
+        name: 'Saved presets',
+        value: String(presetNames.length),
+        inline: true,
+      }
+    )
+    .setFooter({ text: `Requested by ${memberDisplayName}` })
+    .setTimestamp();
+
+  const components = [];
+
+  if (presetNames.length) {
+    components.push(
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId('embed:preset:load')
+          .setPlaceholder('💾 Load a preset')
+          .addOptions(
+            presetNames.map((name) => ({
+              label: trim(name, 100),
+              value: name,
+              description: 'Load this preset',
+              default: state.selectedPreset === name,
+            }))
+          )
+      )
+    );
+  }
+
+  components.push(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('embed:preset:save')
+        .setLabel('Save')
+        .setEmoji('💾')
+        .setStyle(ButtonStyle.Success),
+
+      new ButtonBuilder()
+        .setCustomId('embed:preset:rename')
+        .setLabel('Rename')
+        .setEmoji('✏️')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(!state.selectedPreset),
+
+      new ButtonBuilder()
+        .setCustomId('embed:preset:duplicate')
+        .setLabel('Duplicate')
+        .setEmoji('📋')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(!state.selectedPreset),
+
+      new ButtonBuilder()
+        .setCustomId('embed:preset:delete')
+        .setLabel('Delete')
+        .setEmoji('🗑️')
+        .setStyle(ButtonStyle.Danger)
+        .setDisabled(!state.selectedPreset)
+    )
+  );
+
+  components.push(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('embed:editor')
+        .setLabel('⬅️ Embed Studio')
+        .setStyle(ButtonStyle.Secondary)
+    )
+  );
+
+  return {
+    embeds: [embed],
+    components,
+  };
+}
+
+async function updateEditor(interaction, memberDisplayName) {
+  const payload = buildEditorPanel(interaction, memberDisplayName);
+
+  if (interaction.isModalSubmit()) {
+    return interaction.reply({
+      ...payload,
+      flags: 64,
+    });
+  }
+
+  return interaction.update(payload);
+}
+
+async function updateFields(interaction, memberDisplayName) {
+  const payload = buildFieldsPanel(interaction, memberDisplayName);
+
+  if (interaction.isModalSubmit()) {
+    return interaction.reply({
+      ...payload,
+      flags: 64,
+    });
+  }
+
+  return interaction.update(payload);
+}
+
+async function updateButtons(interaction, memberDisplayName) {
+  const payload = buildButtonsPanel(interaction, memberDisplayName);
+
+  if (interaction.isModalSubmit()) {
+    return interaction.reply({
+      ...payload,
+      flags: 64,
+    });
+  }
+
+  return interaction.update(payload);
+}
+
+async function updatePresets(interaction, memberDisplayName) {
+  const payload = buildPresetsPanel(interaction, memberDisplayName);
+
+  if (interaction.isModalSubmit()) {
+    return interaction.reply({
+      ...payload,
+      flags: 64,
+    });
+  }
+
+  return interaction.update(payload);
+}
 
 function buildContentModal(state) {
   return new ModalBuilder()
-    .setCustomId(`embed:save-content:${Date.now()}`)
+    .setCustomId(`embed:modal:content:${Date.now()}`)
     .setTitle('Edit Embed Text')
     .addComponents(
       new ActionRowBuilder().addComponents(
@@ -1289,36 +1563,36 @@ function buildContentModal(state) {
 
 function buildMediaModal(state) {
   return new ModalBuilder()
-    .setCustomId(`embed:save-media:${Date.now()}`)
+    .setCustomId(`embed:modal:media:${Date.now()}`)
     .setTitle('Edit Embed Media')
     .addComponents(
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
           .setCustomId('authorIcon')
-          .setLabel('Author logo URL / variable')
+          .setLabel('Author icon URL / variable')
           .setStyle(TextInputStyle.Short)
           .setRequired(false)
-          .setPlaceholder('https://example.com/logo.png or {guildIcon}')
+          .setPlaceholder('https://example.com/icon.png or {guildIcon}')
           .setValue(trim(state.authorIcon || '', 1000))
       ),
 
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
           .setCustomId('thumbnail')
-          .setLabel('Small thumbnail URL / variable')
+          .setLabel('Thumbnail URL / variable')
           .setStyle(TextInputStyle.Short)
           .setRequired(false)
-          .setPlaceholder('https://example.com/logo.png or {guildIcon}')
+          .setPlaceholder('https://example.com/thumb.png or {userAvatar}')
           .setValue(trim(state.thumbnail || '', 1000))
       ),
 
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
           .setCustomId('image')
-          .setLabel('Large banner/image URL')
+          .setLabel('Large image/banner URL')
           .setStyle(TextInputStyle.Short)
           .setRequired(false)
-          .setPlaceholder('{guildBanner}')
+          .setPlaceholder('https://example.com/banner.png or {guildBanner}')
           .setValue(trim(state.image || '', 1000))
       ),
 
@@ -1340,12 +1614,15 @@ function buildMediaModal(state) {
           .setRequired(false)
           .setPlaceholder('https://example.com/icon.png or {guildIcon}')
           .setValue(trim(state.footerIcon || '', 1000))
-    ),
-  );
+      )
+    );
 }
 
 function buildFieldModal(state, fieldIndex = null) {
-  const isEditing = Number.isInteger(fieldIndex) && state.fields?.[fieldIndex];
+  const isEditing =
+    Number.isInteger(fieldIndex) &&
+    state.fields?.[fieldIndex];
+
   const field = isEditing
     ? state.fields[fieldIndex]
     : {
@@ -1355,8 +1632,16 @@ function buildFieldModal(state, fieldIndex = null) {
       };
 
   return new ModalBuilder()
-    .setCustomId(isEditing ? `embed:field-save:${fieldIndex}` : 'embed:field-save-new')
-    .setTitle(isEditing ? 'Edit Embed Field' : 'Add Embed Field')
+    .setCustomId(
+      isEditing
+        ? `embed:modal:field:${fieldIndex}`
+        : 'embed:modal:field:new'
+    )
+    .setTitle(
+      isEditing
+        ? 'Edit Embed Field'
+        : 'Add Embed Field'
+    )
     .addComponents(
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
@@ -1382,7 +1667,7 @@ function buildFieldModal(state, fieldIndex = null) {
 
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
-          .setCustomId('layout')
+          .setCustomId('inline')
           .setLabel('Inline? yes/no')
           .setStyle(TextInputStyle.Short)
           .setRequired(false)
@@ -1404,15 +1689,14 @@ function buildButtonModal(state, buttonIndex = null) {
         label: '',
         emoji: '',
         style: 'Primary',
-        action: 'link',
         url: '',
       };
 
   return new ModalBuilder()
     .setCustomId(
       isEditing
-        ? `embed:button-save:${buttonIndex}`
-        : 'embed:button-save-new'
+        ? `embed:modal:button:${buttonIndex}`
+        : 'embed:modal:button:new'
     )
     .setTitle(
       isEditing
@@ -1423,10 +1707,10 @@ function buildButtonModal(state, buttonIndex = null) {
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
           .setCustomId('label')
-          .setLabel('Button Label')
+          .setLabel('Button label')
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
-          .setValue(button.label || '')
+          .setValue(trim(button.label || '', 80))
           .setMaxLength(80)
       ),
 
@@ -1436,7 +1720,7 @@ function buildButtonModal(state, buttonIndex = null) {
           .setLabel('Emoji')
           .setStyle(TextInputStyle.Short)
           .setRequired(false)
-          .setValue(button.emoji || '')
+          .setValue(trim(button.emoji || '', 20))
           .setMaxLength(20)
       ),
 
@@ -1447,23 +1731,24 @@ function buildButtonModal(state, buttonIndex = null) {
           .setStyle(TextInputStyle.Short)
           .setRequired(false)
           .setPlaceholder('Primary, Secondary, Success, Danger, Link')
-          .setValue(button.style || 'Primary')
+          .setValue(trim(button.style || 'Primary', 20))
       ),
 
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
           .setCustomId('url')
-          .setLabel('URL (optional)')
+          .setLabel('URL for Link button')
           .setStyle(TextInputStyle.Short)
           .setRequired(false)
-          .setValue(button.url || '')
+          .setPlaceholder('https://example.com')
+          .setValue(trim(button.url || '', 1000))
       )
     );
 }
 
 function buildColorModal(state) {
   return new ModalBuilder()
-    .setCustomId('embed:save-color')
+    .setCustomId('embed:modal:color')
     .setTitle('Custom HEX Colour')
     .addComponents(
       new ActionRowBuilder().addComponents(
@@ -1481,7 +1766,7 @@ function buildColorModal(state) {
 
 function buildPresetSaveModal(state) {
   return new ModalBuilder()
-    .setCustomId('embed:preset-save-modal')
+    .setCustomId('embed:modal:preset:save')
     .setTitle('Save Embed Preset')
     .addComponents(
       new ActionRowBuilder().addComponents(
@@ -1497,10 +1782,10 @@ function buildPresetSaveModal(state) {
     );
 }
 
-function buildRenameModal(currentName = '') {
+function buildPresetRenameModal(state) {
   return new ModalBuilder()
-    .setCustomId('embed:preset-rename-modal')
-    .setTitle('Rename Preset')
+    .setCustomId('embed:modal:preset:rename')
+    .setTitle('Rename Embed Preset')
     .addComponents(
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
@@ -1508,18 +1793,20 @@ function buildRenameModal(currentName = '') {
           .setLabel('New preset name')
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
-          .setValue(trim(currentName, 50))
+          .setValue(trim(state.selectedPreset || '', 50))
           .setMaxLength(50)
       )
     );
 }
 
-function buildDuplicateModal(currentName = '') {
-  const suggestedName = currentName ? `${currentName} Copy` : 'Preset Copy';
+function buildPresetDuplicateModal(state) {
+  const suggestedName = state.selectedPreset
+    ? `${state.selectedPreset} Copy`
+    : 'Preset Copy';
 
   return new ModalBuilder()
-    .setCustomId('embed:preset-duplicate-modal')
-    .setTitle('Duplicate Preset')
+    .setCustomId('embed:modal:preset:duplicate')
+    .setTitle('Duplicate Embed Preset')
     .addComponents(
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
@@ -1527,430 +1814,99 @@ function buildDuplicateModal(currentName = '') {
           .setLabel('New duplicate name')
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
-          .setPlaceholder('rules copy, welcome alt...')
           .setValue(trim(suggestedName, 50))
           .setMaxLength(50)
       )
     );
 }
 
-/* ---------------- UPDATE HELPERS ---------------- */
+async function handleSelectMenu(interaction, memberDisplayName) {
+  const state = getSession(interaction);
 
-async function updatePanel(interaction, memberDisplayName) {
-  return interaction.update(buildEmbedPanel(interaction, memberDisplayName));
-}
-
-async function updateEditor(interaction, memberDisplayName) {
-
-  const payload = buildEditorPanel(interaction, memberDisplayName);
-
-  if (interaction.isModalSubmit()) {
-    return interaction.reply({
-      ...payload,
-      flags: 64,
-    });
-  }
-
-  return interaction.update(payload);
-}
-
-async function updatePresets(interaction, memberDisplayName) {
-
-  refreshGuild(interaction.guild.id);
-
-  const payload = buildPresetsPanel(interaction, memberDisplayName);
-
-  if (interaction.isModalSubmit()) {
-    return interaction.reply({
-      ...payload,
-      flags: 64,
-    });
-  }
-
-  return interaction.update(payload);
-}
-
-
-/* ---------------- INTERACTIONS ---------------- */
-
-async function handleInteraction(interaction) {
-  if (!interaction.customId?.startsWith('embed:')) return false;
-
-  const memberDisplayName = getMemberDisplayName(interaction);
-
-  /* ---------------- SELECT MENUS ---------------- */
-  if (interaction.isStringSelectMenu()) {
-    const state = getSession(interaction);
-
-    if (interaction.customId === 'embed:template') {
-      applyTemplate(interaction, interaction.values[0]);
-      await updateEditor(interaction, memberDisplayName);
-      return true;
-    }
-
-    if (interaction.customId === 'embed:color') {
-      const selectedColor = interaction.values[0];
-
-      if (selectedColor === CUSTOM_HEX_VALUE) {
-        await interaction.showModal(buildColorModal(state));
-        return true;
-      }
-
-      markUnsaved(interaction, { ...state, color: selectedColor });
-      await updateEditor(interaction, memberDisplayName);
-      return true;
-    }
-
-    if (interaction.customId === 'embed:field-select') {
-    saveSession(interaction, {
-      ...state,
-      selectedFieldIndex: Number(interaction.values[0]),
-    });
-
-    await interaction.update(buildFieldsPanel(interaction, memberDisplayName));
+  if (interaction.customId === 'embed:template') {
+    applyTemplate(interaction, interaction.values[0]);
+    await updateEditor(interaction, memberDisplayName);
     return true;
   }
 
-  if (interaction.customId === 'embed:button-select') {
-  saveSession(interaction, {
-    ...state,
-    selectedButtonIndex: Number(interaction.values[0]),
-  });
+  if (interaction.customId === 'embed:color') {
+    const selectedColor = interaction.values[0];
 
-  await interaction.update(
-    buildButtonsPanel(
-      interaction,
-      memberDisplayName
-    )
-  );
-
-  return true;
-}
-
-    if (interaction.customId === 'embed:preset-load') {
-      const presetName = interaction.values[0];
-      const preset = guildManager.getEmbedPreset(interaction.guild.id, presetName);
-
-      if (!preset) {
-        await interaction.reply({ content: 'Preset not found.', flags: 64 });
-        return true;
-      }
-
-      applyPresetToSession(interaction, presetName, preset);
-      await updatePresets(interaction, memberDisplayName);
+    if (selectedColor === CUSTOM_HEX_VALUE) {
+      await interaction.showModal(buildColorModal(state));
       return true;
     }
-  }
 
-  /* ---------------- CHANNEL SELECT ---------------- */
-if (interaction.isChannelSelectMenu()) {
-  const state = getSession(interaction);
-
-  if (interaction.customId === 'embed:channel') {
     markUnsaved(interaction, {
-      ...state,
-      channelId: interaction.values[0],
+      color: selectedColor,
     });
 
     await updateEditor(interaction, memberDisplayName);
     return true;
   }
-}
 
-  /* ---------------- BUTTONS ---------------- */
-  if (interaction.isButton()) {
-
-    // Let NAV system handle its own buttons
-    if (interaction.customId.startsWith('nav|')) return false;
-
-    if (!interaction.customId.startsWith('embed:')) return false;
-
-    const state = getSession(interaction);
-
-    if (interaction.customId === 'embed:back') {
-      await interaction.update(
-        buildAdminPanel(
-          interaction.guild,
-          memberDisplayName
-        )
-      );
-
-      return true;
-    }
-
-if (interaction.customId === 'embed:editor') {
-  console.log('🧪 EMBED EDITOR BUTTON CLICKED');
-
-  return interaction.update(
-  buildEditorPanel(interaction, memberDisplayName)
-  );
-}
-
-    if (interaction.customId === 'embed:helpers') {
-      await interaction.update(buildHelpersPanel(memberDisplayName));
-      return true;
-    }
-
-    if (interaction.customId === 'embed:presets') {
-      await updatePresets(interaction, memberDisplayName);
-      return true;
-    }
-
-    if (interaction.customId === 'embed:toggle-ping') {
-      markUnsaved(interaction, {
-        ...state,
-        allowUserPing: !state.allowUserPing,
-      });
-
-      await updateEditor(interaction, memberDisplayName);
-      return true;
-    }
-
-    if (interaction.customId === 'embed:field-add') {
-      await interaction.showModal(buildFieldModal(state));
-      return true;
-    }
-
-    if (interaction.customId.startsWith('embed:field-edit')) {
-      const indexFromId = interaction.customId.split(':')[2];
-      const fieldIndex = Number.isInteger(Number(indexFromId))
-        ? Number(indexFromId)
-        : state.selectedFieldIndex;
-
-      if (!Number.isInteger(fieldIndex) || !state.fields?.[fieldIndex]) {
-        await interaction.reply({
-          content: 'Select a field first.',
-          flags: 64,
-        });
-        return true;
-      }
-
-      await interaction.showModal(buildFieldModal(state, fieldIndex));
-      return true;
-    }
-
-    if (interaction.customId === 'embed:field-remove-selected') {
-      const nextFields = [...(state.fields || [])];
-
-      if (Number.isInteger(state.selectedFieldIndex)) {
-        nextFields.splice(state.selectedFieldIndex, 1);
-      }
-
-      markUnsaved(interaction, {
-        ...state,
-        fields: nextFields,
-        selectedFieldIndex: null,
-      });
-
-      await updateEditor(interaction, memberDisplayName);
-      return true;
-    }
-
-    if (interaction.customId === 'embed:edit-content') {
-      await interaction.showModal(buildContentModal(state));
-      return true;
-    }
-
-    if (interaction.customId === 'embed:buttons') {
-      await interaction.update(
-      buildButtonsPanel(interaction, memberDisplayName)
-    );
-
-      return true;
-    }
-
-    if (interaction.customId === 'embed:button-add') {
-  await interaction.showModal(
-    buildButtonModal(state)
-  );
-
-  return true;
-}
-
-if (
-  interaction.customId.startsWith(
-    'embed:button-edit'
-  )
-) {
-  const index =
-    Number.isInteger(
-      Number(
-        interaction.customId.split(':')[2]
-      )
-    )
-      ? Number(
-          interaction.customId.split(':')[2]
-        )
-      : state.selectedButtonIndex;
-
-  if (
-    !Number.isInteger(index) ||
-    !state.buttons?.[index]
-  ) {
-    await interaction.reply({
-      content: 'Select a button first.',
-      flags: 64,
+  if (interaction.customId === 'embed:field:select') {
+    saveSession(interaction, {
+      ...state,
+      selectedFieldIndex: Number(interaction.values[0]),
     });
 
+    await updateFields(interaction, memberDisplayName);
     return true;
   }
 
-  await interaction.showModal(
-    buildButtonModal(state, index)
-  );
+  if (interaction.customId === 'embed:button:select') {
+    saveSession(interaction, {
+      ...state,
+      selectedButtonIndex: Number(interaction.values[0]),
+    });
 
-  return true;
-}
-    
-  if (interaction.customId === 'embed:button-remove-selected') {
-  const nextButtons = [...(state.buttons || [])];
-
-  if (Number.isInteger(state.selectedButtonIndex)) {
-    nextButtons.splice(state.selectedButtonIndex, 1);
-  }
-
-  markUnsaved(interaction, {
-    ...state,
-    buttons: nextButtons,
-    selectedButtonIndex: null,
-  });
-
-  await interaction.update(
-    buildButtonsPanel(interaction, memberDisplayName)
-  );
-
-  return true;
-}
-
-if (interaction.customId === 'embed:button-move-up') {
-  const index = state.selectedButtonIndex;
-
-  if (
-    !Number.isInteger(index) ||
-    index <= 0
-  ) {
+    await updateButtons(interaction, memberDisplayName);
     return true;
   }
 
-  const nextButtons = [...(state.buttons || [])];
+  if (interaction.customId === 'embed:preset:load') {
+    const presetName = interaction.values[0];
 
-  [
-    nextButtons[index - 1],
-    nextButtons[index]
-  ] = [
-    nextButtons[index],
-    nextButtons[index - 1]
-  ];
+    const preset =
+      typeof guildManager.getEmbedPreset === 'function'
+        ? guildManager.getEmbedPreset(interaction.guild.id, presetName)
+        : null;
 
-  markUnsaved(interaction, {
-    ...state,
-    buttons: nextButtons,
-    selectedButtonIndex: index - 1,
-  });
-
-  await interaction.update(
-    buildButtonsPanel(
-      interaction,
-      memberDisplayName
-    )
-  );
-
-  return true;
-}
-
-if (interaction.customId === 'embed:button-move-down') {
-  const index = state.selectedButtonIndex;
-
-  if (
-    !Number.isInteger(index) ||
-    index >= (state.buttons?.length || 0) - 1
-  ) {
-    return true;
-  }
-
-  const nextButtons = [...(state.buttons || [])];
-
-  [
-    nextButtons[index],
-    nextButtons[index + 1]
-  ] = [
-    nextButtons[index + 1],
-    nextButtons[index]
-  ];
-
-  markUnsaved(interaction, {
-    ...state,
-    buttons: nextButtons,
-    selectedButtonIndex: index + 1,
-  });
-
-  await interaction.update(
-    buildButtonsPanel(
-      interaction,
-      memberDisplayName
-    )
-  );
-
-  return true;
-}
-
-if (interaction.customId === 'embed:edit-media') {
-      await interaction.showModal(buildMediaModal(state));
-      return true;
-    }
-
-    if (interaction.customId === 'embed:preset-save') {
-      await interaction.showModal(buildPresetSaveModal(state));
-      return true;
-    }
-
-    if (interaction.customId === 'embed:reset') {
-      resetSession(interaction);
-      await updatePanel(interaction, memberDisplayName);
-      return true;
-    }
-
-    if (interaction.customId === 'embed:use') {
-    if (!state.channelId) {
+    if (!preset) {
       await interaction.reply({
-        content: 'Select a channel first before activating this embed.',
+        content: 'Preset not found.',
         flags: 64,
       });
 
       return true;
     }
 
-    const presetName = getAutoPresetName(state);
-
-    guildManager.saveEmbedPreset(
-      interaction.guild.id,
-      presetName,
-      getPresetDataFromState(state),
-      interaction.guild
-    );
-
-    const success = setEmbedDefault(
-      interaction.guild.id,
-      state.template,
-      presetName
-    );
-
-    clearUnsaved(interaction, {
-      ...state,
-      selectedPreset: presetName,
-    });
-
-    await interaction.reply({
-      content: success
-        ? `✅ ${TEMPLATES[state.template]?.label || 'Embed'} is now active in <#${state.channelId}>`
-        : '⚠️ Preset saved, but default assignment failed.',
-      flags: 64,
-    });
-
+    applyPresetToSession(interaction, presetName, preset);
+    await updatePresets(interaction, memberDisplayName);
     return true;
   }
 
-if (interaction.customId === 'embed:test-send') {
+  return false;
+}
+
+async function handleChannelSelect(interaction, memberDisplayName) {
+  const state = getSession(interaction);
+
+  if (interaction.customId !== 'embed:channel') {
+    return false;
+  }
+
+  markUnsaved(interaction, {
+    ...state,
+    channelId: interaction.values[0],
+  });
+
+  await updateEditor(interaction, memberDisplayName);
+  return true;
+}
+
+async function sendTestEmbed(interaction, state) {
   if (!state.channelId) {
     await interaction.reply({
       content: 'Select a channel first.',
@@ -1962,7 +1918,9 @@ if (interaction.customId === 'embed:test-send') {
 
   const channel =
     interaction.guild.channels.cache.get(state.channelId) ||
-    (await interaction.guild.channels.fetch(state.channelId).catch(() => null));
+    (await interaction.guild.channels
+      .fetch(state.channelId)
+      .catch(() => null));
 
   if (!channel?.isTextBased()) {
     await interaction.reply({
@@ -1974,157 +1932,592 @@ if (interaction.customId === 'embed:test-send') {
   }
 
   await channel.send({
-    content: state.allowUserPing ? `<@${interaction.user.id}>` : '',
+    content: state.allowUserPing
+      ? `<@${interaction.user.id}>`
+      : '',
     embeds: [buildPreviewEmbed(state, interaction)],
     components: buildButtonComponents(state),
     allowedMentions: getAllowedMentionsForState(state, interaction),
-});
+  });
 
   await interaction.reply({
-    content: `Sent to <#${state.channelId}>`,
+    content: `✅ Test embed sent to <#${state.channelId}>`,
     flags: 64,
   });
 
   return true;
 }
 
-}
-  
-/* ---------------- MODALS ---------------- */
-if (interaction.isModalSubmit()) {
-  const state = getSession(interaction);
-
-    if (interaction.customId === 'embed:preset-save-modal') {
-      const name = interaction.fields.getTextInputValue('name').trim();
-
-      if (!name) {
-        await interaction.reply({ content: 'Name required.', flags: 64 });
-        return true;
-      }
-
-      guildManager.saveEmbedPreset(
-        interaction.guild.id,
-        name,
-        getPresetDataFromState(state),
-        interaction.guild
-      );
-
-      clearUnsaved(interaction, {
-        ...state,
-        selectedPreset: name,
-      });
-
-      await updatePresets(interaction, memberDisplayName);
-      return true;
-    }
-
-    if (interaction.customId === 'embed:button-save-new') {
-  const nextButtons = [...(state.buttons || [])];
-
-  nextButtons.push({
-    label: interaction.fields.getTextInputValue('label'),
-    emoji: interaction.fields.getTextInputValue('emoji'),
-    style: interaction.fields.getTextInputValue('style') || 'Primary',
-    action: 'link',
-    url: interaction.fields.getTextInputValue('url'),
-  });
-
-  markUnsaved(interaction, {
-    ...state,
-    buttons: nextButtons,
-    selectedButtonIndex: nextButtons.length - 1,
-  });
-
-  await interaction.reply({
-    ...buildButtonsPanel(interaction, memberDisplayName),
-    flags: 64,
-  });
-
-  return true;
-}
-
-if (interaction.customId.startsWith('embed:button-save:')) {
-  const buttonIndex = Number(interaction.customId.split(':')[2]);
-
-  if (!Number.isInteger(buttonIndex) || !state.buttons?.[buttonIndex]) {
+async function activateEmbed(interaction, state) {
+  if (!state.channelId) {
     await interaction.reply({
-      content: 'Button not found.',
+      content: 'Select a channel first before activating this embed.',
       flags: 64,
     });
 
     return true;
   }
 
-  const nextButtons = [...state.buttons];
+  const presetName = getAutoPresetName(state);
 
-  nextButtons[buttonIndex] = {
-    ...nextButtons[buttonIndex],
-    label: interaction.fields.getTextInputValue('label'),
-    emoji: interaction.fields.getTextInputValue('emoji'),
-    style: interaction.fields.getTextInputValue('style') || 'Primary',
-    url: interaction.fields.getTextInputValue('url'),
-  };
+  if (typeof guildManager.saveEmbedPreset === 'function') {
+    guildManager.saveEmbedPreset(
+      interaction.guild.id,
+      presetName,
+      getPresetDataFromState(state),
+      interaction.guild
+    );
+  }
 
-  markUnsaved(interaction, {
+  const success = setEmbedDefault(
+    interaction.guild.id,
+    state.template,
+    presetName
+  );
+
+  clearUnsaved(interaction, {
     ...state,
-    buttons: nextButtons,
-    selectedButtonIndex: buttonIndex,
+    selectedPreset: presetName,
   });
 
   await interaction.reply({
-    ...buildButtonsPanel(interaction, memberDisplayName),
+    content: success
+      ? `✅ ${TEMPLATES[state.template]?.label || 'Embed'} is now active in <#${state.channelId}>`
+      : '⚠️ Preset saved, but default assignment failed.',
     flags: 64,
   });
 
   return true;
 }
 
-    if (interaction.customId === 'embed:save-color') {
-      const hex = interaction.fields.getTextInputValue('hex');
+async function deleteSelectedPreset(interaction, state, memberDisplayName) {
+  if (!state.selectedPreset) {
+    await interaction.reply({
+      content: 'No preset selected.',
+      flags: 64,
+    });
 
-      if (!isValidHexColor(hex)) {
-        await interaction.reply({ content: 'Invalid HEX.', flags: 64 });
-        return true;
-      }
+    return true;
+  }
 
-      markUnsaved(interaction, {
-        ...state,
-        color: normalizeHexColor(hex),
+  if (typeof guildManager.deleteEmbedPreset === 'function') {
+    guildManager.deleteEmbedPreset(
+      interaction.guild.id,
+      state.selectedPreset
+    );
+  }
+
+  clearUnsaved(interaction, {
+    ...state,
+    selectedPreset: null,
+  });
+
+  await updatePresets(interaction, memberDisplayName);
+  return true;
+}
+
+async function handleButton(interaction, memberDisplayName) {
+  const state = getSession(interaction);
+
+  if (interaction.customId === 'embed:back') {
+    await interaction.update(
+      buildAdminPanel(interaction.guild, memberDisplayName)
+    );
+
+    return true;
+  }
+
+  if (interaction.customId === 'embed:editor') {
+    await interaction.update(
+      buildEditorPanel(interaction, memberDisplayName)
+    );
+
+    return true;
+  }
+
+  if (interaction.customId === 'embed:helpers') {
+    await interaction.update(
+      buildHelpersPanel(memberDisplayName)
+    );
+
+    return true;
+  }
+
+  if (interaction.customId === 'embed:presets') {
+    await updatePresets(interaction, memberDisplayName);
+    return true;
+  }
+
+  if (interaction.customId === 'embed:fields') {
+    await updateFields(interaction, memberDisplayName);
+    return true;
+  }
+
+  if (interaction.customId === 'embed:buttons') {
+    await updateButtons(interaction, memberDisplayName);
+    return true;
+  }
+
+  if (interaction.customId === 'embed:toggle:ping') {
+    markUnsaved(interaction, {
+      allowUserPing: !state.allowUserPing,
+    });
+
+    await updateEditor(interaction, memberDisplayName);
+    return true;
+  }
+
+  if (interaction.customId === 'embed:edit:content') {
+    await interaction.showModal(buildContentModal(state));
+    return true;
+  }
+
+  if (interaction.customId === 'embed:media') {
+    await interaction.showModal(buildMediaModal(state));
+    return true;
+  }
+
+  if (interaction.customId === 'embed:field:add') {
+    await interaction.showModal(buildFieldModal(state));
+    return true;
+  }
+
+  if (interaction.customId.startsWith('embed:field:edit')) {
+    const index = Number(interaction.customId.split(':')[3]);
+    const fieldIndex = Number.isInteger(index)
+      ? index
+      : state.selectedFieldIndex;
+
+    if (!Number.isInteger(fieldIndex) || !state.fields?.[fieldIndex]) {
+      await interaction.reply({
+        content: 'Select a field first.',
+        flags: 64,
       });
 
-      await updateEditor(interaction, memberDisplayName);
       return true;
     }
 
-    if (interaction.customId.startsWith('embed:save-content:')) {
-      markUnsaved(interaction, {
-        ...state,
-        title: interaction.fields.getTextInputValue('title'),
-        description: interaction.fields.getTextInputValue('description'),
-        authorName: interaction.fields.getTextInputValue('authorName'),
-        footer: interaction.fields.getTextInputValue('footer'),
+    await interaction.showModal(
+      buildFieldModal(state, fieldIndex)
+    );
+
+    return true;
+  }
+
+  if (interaction.customId === 'embed:field:remove') {
+    if (!Number.isInteger(state.selectedFieldIndex)) {
+      await interaction.reply({
+        content: 'Select a field first.',
+        flags: 64,
       });
 
-      await updateEditor(interaction, memberDisplayName);
       return true;
     }
 
-      if (interaction.customId.startsWith('embed:save-media:')) {
-        markUnsaved(interaction, {
-        ...state,
-          authorIcon: interaction.fields.getTextInputValue('authorIcon'),
-          authorUrl: interaction.fields.getTextInputValue('authorUrl'),
-          footerIcon: interaction.fields.getTextInputValue('footerIcon'),
-          thumbnail: interaction.fields.getTextInputValue('thumbnail'),
-          image: interaction.fields.getTextInputValue('image'),
+    const nextFields = [...(state.fields || [])];
+    nextFields.splice(state.selectedFieldIndex, 1);
+
+    markUnsaved(interaction, {
+      fields: nextFields,
+      selectedFieldIndex: null,
+    });
+
+    await updateFields(interaction, memberDisplayName);
+    return true;
+  }
+
+    if (interaction.customId === 'embed:button:add') {
+    await interaction.showModal(buildButtonModal(state));
+    return true;
+  }
+
+  if (interaction.customId.startsWith('embed:button:edit')) {
+    const index = Number(interaction.customId.split(':')[3]);
+    const buttonIndex = Number.isInteger(index)
+      ? index
+      : state.selectedButtonIndex;
+
+    if (!Number.isInteger(buttonIndex) || !state.buttons?.[buttonIndex]) {
+      await interaction.reply({
+        content: 'Select a button first.',
+        flags: 64,
       });
 
-        await updateEditor(interaction, memberDisplayName);
-        return true;
-      }
+      return true;
+    }
 
-    if (interaction.customId.startsWith('embed:field-save:')) {
-    const fieldIndex = Number(interaction.customId.split(':')[2]);
+    await interaction.showModal(
+      buildButtonModal(state, buttonIndex)
+    );
+
+    return true;
+  }
+
+  if (interaction.customId === 'embed:button:remove') {
+    if (!Number.isInteger(state.selectedButtonIndex)) {
+      await interaction.reply({
+        content: 'Select a button first.',
+        flags: 64,
+      });
+
+      return true;
+    }
+
+    const nextButtons = [...(state.buttons || [])];
+    nextButtons.splice(state.selectedButtonIndex, 1);
+
+    markUnsaved(interaction, {
+      buttons: nextButtons,
+      selectedButtonIndex: null,
+    });
+
+    await updateButtons(interaction, memberDisplayName);
+    return true;
+  }
+
+  if (interaction.customId === 'embed:button:up') {
+    const index = state.selectedButtonIndex;
+
+    if (!Number.isInteger(index) || index <= 0) {
+      return true;
+    }
+
+    const nextButtons = [...(state.buttons || [])];
+
+    [
+      nextButtons[index - 1],
+      nextButtons[index],
+    ] = [
+      nextButtons[index],
+      nextButtons[index - 1],
+    ];
+
+    markUnsaved(interaction, {
+      buttons: nextButtons,
+      selectedButtonIndex: index - 1,
+    });
+
+    await updateButtons(interaction, memberDisplayName);
+    return true;
+  }
+
+  if (interaction.customId === 'embed:button:down') {
+    const index = state.selectedButtonIndex;
+
+    if (
+      !Number.isInteger(index) ||
+      index >= (state.buttons?.length || 0) - 1
+    ) {
+      return true;
+    }
+
+    const nextButtons = [...(state.buttons || [])];
+
+    [
+      nextButtons[index],
+      nextButtons[index + 1],
+    ] = [
+      nextButtons[index + 1],
+      nextButtons[index],
+    ];
+
+    markUnsaved(interaction, {
+      buttons: nextButtons,
+      selectedButtonIndex: index + 1,
+    });
+
+    await updateButtons(interaction, memberDisplayName);
+    return true;
+  }
+
+  if (interaction.customId === 'embed:preset:save') {
+    await interaction.showModal(buildPresetSaveModal(state));
+    return true;
+  }
+
+  if (interaction.customId === 'embed:preset:rename') {
+    if (!state.selectedPreset) {
+      await interaction.reply({
+        content: 'No preset selected.',
+        flags: 64,
+      });
+
+      return true;
+    }
+
+    await interaction.showModal(
+      buildPresetRenameModal(state)
+    );
+
+    return true;
+  }
+
+  if (interaction.customId === 'embed:preset:duplicate') {
+    if (!state.selectedPreset) {
+      await interaction.reply({
+        content: 'No preset selected.',
+        flags: 64,
+      });
+
+      return true;
+    }
+
+    await interaction.showModal(
+      buildPresetDuplicateModal(state)
+    );
+
+    return true;
+  }
+
+  if (interaction.customId === 'embed:preset:delete') {
+    return deleteSelectedPreset(
+      interaction,
+      state,
+      memberDisplayName
+    );
+  }
+
+  if (interaction.customId === 'embed:reset') {
+    resetSession(interaction);
+    await updateEditor(interaction, memberDisplayName);
+    return true;
+  }
+
+  if (interaction.customId === 'embed:test:send') {
+    return sendTestEmbed(interaction, state);
+  }
+
+  if (interaction.customId === 'embed:use') {
+    return activateEmbed(interaction, state);
+  }
+
+  return false;
+}
+
+async function handleModal(interaction, memberDisplayName) {
+  const state = getSession(interaction);
+
+  if (interaction.customId === 'embed:modal:preset:save') {
+    const name = interaction.fields
+      .getTextInputValue('name')
+      .trim();
+
+    if (!name) {
+      await interaction.reply({
+        content: 'Name required.',
+        flags: 64,
+      });
+
+      return true;
+    }
+
+    if (typeof guildManager.saveEmbedPreset === 'function') {
+      guildManager.saveEmbedPreset(
+        interaction.guild.id,
+        name,
+        getPresetDataFromState(state),
+        interaction.guild
+      );
+    }
+
+    clearUnsaved(interaction, {
+      ...state,
+      selectedPreset: name,
+    });
+
+    await updatePresets(interaction, memberDisplayName);
+    return true;
+  }
+
+  if (interaction.customId === 'embed:modal:preset:rename') {
+    const newName = interaction.fields
+      .getTextInputValue('name')
+      .trim();
+
+    if (!newName) {
+      await interaction.reply({
+        content: 'Name required.',
+        flags: 64,
+      });
+
+      return true;
+    }
+
+    if (!state.selectedPreset) {
+      await interaction.reply({
+        content: 'No preset selected.',
+        flags: 64,
+      });
+
+      return true;
+    }
+
+    const oldName = state.selectedPreset;
+
+    const preset =
+      typeof guildManager.getEmbedPreset === 'function'
+        ? guildManager.getEmbedPreset(interaction.guild.id, oldName)
+        : null;
+
+    if (!preset) {
+      await interaction.reply({
+        content: 'Preset not found.',
+        flags: 64,
+      });
+
+      return true;
+    }
+
+    if (typeof guildManager.saveEmbedPreset === 'function') {
+      guildManager.saveEmbedPreset(
+        interaction.guild.id,
+        newName,
+        preset,
+        interaction.guild
+      );
+    }
+
+    if (typeof guildManager.deleteEmbedPreset === 'function') {
+      guildManager.deleteEmbedPreset(
+        interaction.guild.id,
+        oldName
+      );
+    }
+
+    clearUnsaved(interaction, {
+      ...state,
+      selectedPreset: newName,
+    });
+
+    await updatePresets(interaction, memberDisplayName);
+    return true;
+  }
+
+  if (interaction.customId === 'embed:modal:preset:duplicate') {
+    const newName = interaction.fields
+      .getTextInputValue('name')
+      .trim();
+
+    if (!newName) {
+      await interaction.reply({
+        content: 'Name required.',
+        flags: 64,
+      });
+
+      return true;
+    }
+
+    if (!state.selectedPreset) {
+      await interaction.reply({
+        content: 'No preset selected.',
+        flags: 64,
+      });
+
+      return true;
+    }
+
+    const preset =
+      typeof guildManager.getEmbedPreset === 'function'
+        ? guildManager.getEmbedPreset(
+            interaction.guild.id,
+            state.selectedPreset
+          )
+        : null;
+
+    if (!preset) {
+      await interaction.reply({
+        content: 'Preset not found.',
+        flags: 64,
+      });
+
+      return true;
+    }
+
+    if (typeof guildManager.saveEmbedPreset === 'function') {
+      guildManager.saveEmbedPreset(
+        interaction.guild.id,
+        newName,
+        preset,
+        interaction.guild
+      );
+    }
+
+    clearUnsaved(interaction, {
+      ...state,
+      selectedPreset: newName,
+    });
+
+    await updatePresets(interaction, memberDisplayName);
+    return true;
+  }
+
+  if (interaction.customId.startsWith('embed:modal:content')) {
+    markUnsaved(interaction, {
+      title: interaction.fields.getTextInputValue('title'),
+      description: interaction.fields.getTextInputValue('description'),
+      authorName: interaction.fields.getTextInputValue('authorName'),
+      footer: interaction.fields.getTextInputValue('footer'),
+    });
+
+    await updateEditor(interaction, memberDisplayName);
+    return true;
+  }
+
+  if (interaction.customId.startsWith('embed:modal:media')) {
+    markUnsaved(interaction, {
+      authorIcon: interaction.fields.getTextInputValue('authorIcon'),
+      authorUrl: interaction.fields.getTextInputValue('authorUrl'),
+      footerIcon: interaction.fields.getTextInputValue('footerIcon'),
+      thumbnail: interaction.fields.getTextInputValue('thumbnail'),
+      image: interaction.fields.getTextInputValue('image'),
+    });
+
+    await updateFields(interaction, memberDisplayName);
+    return true;
+  }
+
+  if (interaction.customId === 'embed:modal:color') {
+    const hex = interaction.fields.getTextInputValue('hex');
+
+    if (!isValidHexColor(hex)) {
+      await interaction.reply({
+        content: 'Invalid HEX colour.',
+        flags: 64,
+      });
+
+      return true;
+    }
+
+    markUnsaved(interaction, {
+      color: normalizeHexColor(hex),
+    });
+
+    await updateEditor(interaction, memberDisplayName);
+    return true;
+  }
+
+  if (interaction.customId === 'embed:modal:field:new') {
+    const nextFields = [...(state.fields || [])];
+
+    nextFields.push({
+      name: interaction.fields.getTextInputValue('name'),
+      value: interaction.fields.getTextInputValue('value'),
+      inline: /^y(es)?|true|1$/i.test(
+        interaction.fields.getTextInputValue('inline') || ''
+      ),
+    });
+
+    markUnsaved(interaction, {
+      fields: nextFields,
+      selectedFieldIndex: nextFields.length - 1,
+    });
+
+    await updateFields(interaction, memberDisplayName);
+    return true;
+  }
+
+  if (interaction.customId.startsWith('embed:modal:field:')) {
+    const fieldIndex = Number(interaction.customId.split(':')[3]);
 
     if (!Number.isInteger(fieldIndex) || !state.fields?.[fieldIndex]) {
       await interaction.reply({
@@ -2141,52 +2534,97 @@ if (interaction.customId.startsWith('embed:button-save:')) {
       name: interaction.fields.getTextInputValue('name'),
       value: interaction.fields.getTextInputValue('value'),
       inline: /^y(es)?|true|1$/i.test(
-        interaction.fields.getTextInputValue('layout') || ''
+        interaction.fields.getTextInputValue('inline') || ''
       ),
     };
 
     markUnsaved(interaction, {
-      ...state,
       fields: nextFields,
       selectedFieldIndex: fieldIndex,
     });
 
-    await interaction.reply({
-  ...buildFieldsPanel(interaction, memberDisplayName),
-  flags: 64,
-  });
-
+    await updateFields(interaction, memberDisplayName);
     return true;
   }
 
-  if (interaction.customId === 'embed:field-save-new') {
-    const nextFields = [...(state.fields || [])];
+  if (interaction.customId === 'embed:modal:button:new') {
+    const nextButtons = [...(state.buttons || [])];
 
-    nextFields.push({
-      name: interaction.fields.getTextInputValue('name'),
-      value: interaction.fields.getTextInputValue('value'),
-      inline: /^y(es)?|true|1$/i.test(
-        interaction.fields.getTextInputValue('layout') || ''
-      ),
+    nextButtons.push({
+      label: interaction.fields.getTextInputValue('label'),
+      emoji: interaction.fields.getTextInputValue('emoji'),
+      style: interaction.fields.getTextInputValue('style') || 'Primary',
+      url: interaction.fields.getTextInputValue('url'),
     });
 
     markUnsaved(interaction, {
-      ...state,
-      fields: nextFields,
-      selectedFieldIndex: nextFields.length - 1,
+      buttons: nextButtons,
+      selectedButtonIndex: nextButtons.length - 1,
     });
 
-      await interaction.reply({
-    ...buildFieldsPanel(interaction, memberDisplayName),
-    flags: 64,
-    });
-
+    await updateButtons(interaction, memberDisplayName);
     return true;
-    }
   }
 
+  if (interaction.customId.startsWith('embed:modal:button:')) {
+    const buttonIndex = Number(interaction.customId.split(':')[3]);
+
+    if (!Number.isInteger(buttonIndex) || !state.buttons?.[buttonIndex]) {
+      await interaction.reply({
+        content: 'Button not found.',
+        flags: 64,
+      });
+
+      return true;
+    }
+
+    const nextButtons = [...(state.buttons || [])];
+
+    nextButtons[buttonIndex] = {
+      ...nextButtons[buttonIndex],
+      label: interaction.fields.getTextInputValue('label'),
+      emoji: interaction.fields.getTextInputValue('emoji'),
+      style: interaction.fields.getTextInputValue('style') || 'Primary',
+      url: interaction.fields.getTextInputValue('url'),
+    };
+
+    markUnsaved(interaction, {
+      buttons: nextButtons,
+      selectedButtonIndex: buttonIndex,
+    });
+
+    await updateButtons(interaction, memberDisplayName);
+    return true;
+  }
+
+  return false;
+}
+
+async function handleInteraction(interaction) {
+  if (!interaction.customId?.startsWith('embed:')) {
     return false;
   }
+
+  const memberDisplayName = getMemberDisplayName(interaction);
+
+  if (interaction.isStringSelectMenu()) {
+    return handleSelectMenu(interaction, memberDisplayName);
+  }
+
+  if (interaction.isChannelSelectMenu()) {
+    return handleChannelSelect(interaction, memberDisplayName);
+  }
+
+  if (interaction.isButton()) {
+    return handleButton(interaction, memberDisplayName);
+  }
+
+  if (interaction.isModalSubmit()) {
+    return handleModal(interaction, memberDisplayName);
+  }
+
+  return false;
+}
 
 module.exports = {
   buildEmbedPanel,
