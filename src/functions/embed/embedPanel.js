@@ -1534,6 +1534,101 @@ function buildDuplicateModal(currentName = '') {
     );
 }
 
+function buildPresetsPanel(interaction, memberDisplayName = 'Unknown User') {
+  const state = getSession(interaction);
+
+  const presets =
+    typeof guildManager.getEmbedPresets === 'function'
+      ? guildManager.getEmbedPresets(interaction.guild.id) || {}
+      : {};
+
+  const presetNames = Object.keys(presets).slice(0, 25);
+
+  const embed = new EmbedBuilder()
+    .setColor(state.color || PANEL_COLOR)
+    .setTitle('💾 Embed Presets')
+    .setDescription(
+      presetNames.length
+        ? 'Load, save, rename, duplicate, or delete embed presets.'
+        : 'No presets saved yet. Save your current embed as a preset to start.'
+    )
+    .addFields(
+      {
+        name: 'Current preset',
+        value: state.selectedPreset ? `💾 ${state.selectedPreset}` : 'None selected',
+        inline: true,
+      },
+      {
+        name: 'Saved presets',
+        value: String(presetNames.length),
+        inline: true,
+      }
+    )
+    .setFooter({ text: `Requested by ${memberDisplayName}` })
+    .setTimestamp();
+
+  const components = [];
+
+  if (presetNames.length) {
+    components.push(
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId('embed:preset-load')
+          .setPlaceholder('💾 Load a preset')
+          .addOptions(
+            presetNames.map((name) => ({
+              label: trim(name, 100),
+              value: name,
+              description: 'Load this preset',
+              default: state.selectedPreset === name,
+            }))
+          )
+      )
+    );
+  }
+
+  components.push(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('embed:preset-save')
+        .setLabel('💾 Save')
+        .setStyle(ButtonStyle.Success),
+
+      new ButtonBuilder()
+        .setCustomId('embed:preset-rename')
+        .setLabel('✏️ Rename')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(!state.selectedPreset),
+
+      new ButtonBuilder()
+        .setCustomId('embed:preset-duplicate')
+        .setLabel('📋 Duplicate')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(!state.selectedPreset),
+
+      new ButtonBuilder()
+        .setCustomId('embed:preset-delete')
+        .setLabel('🗑️ Delete')
+        .setStyle(ButtonStyle.Danger)
+        .setDisabled(!state.selectedPreset)
+    )
+  );
+
+  components.push(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('embed:editor')
+        .setLabel('⬅️ Embed Studio')
+        .setStyle(ButtonStyle.Secondary)
+    )
+  );
+
+  return {
+    embeds: [embed],
+    components,
+  };
+}
+
 /* ---------------- UPDATE HELPERS ---------------- */
 
 async function updatePanel(interaction, memberDisplayName) {
