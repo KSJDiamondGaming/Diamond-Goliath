@@ -1920,6 +1920,26 @@ if (interaction.customId === 'embed:edit-media') {
       return true;
     }
 
+    const channel =
+  interaction.guild.channels.cache.get(state.channelId) ||
+  (await interaction.guild.channels.fetch(state.channelId).catch(() => null));
+
+if (!channel?.isTextBased()) {
+  await interaction.reply({
+    content: 'Invalid channel.',
+    flags: 64,
+  });
+
+  return true;
+}
+
+await channel.send({
+  content: state.allowUserPing ? `<@${interaction.user.id}>` : '',
+  embeds: [buildPreviewEmbed(state, interaction)],
+  components: buildButtonComponents(state),
+  allowedMentions: getAllowedMentionsForState(state, interaction),
+});
+
     const presetName = getAutoPresetName(state);
 
     guildManager.saveEmbedPreset(
@@ -1942,7 +1962,7 @@ if (interaction.customId === 'embed:edit-media') {
 
     await interaction.reply({
       content: success
-        ? `✅ ${TEMPLATES[state.template]?.label || 'Embed'} is now active in <#${state.channelId}>`
+      ? `✅ ${TEMPLATES[state.template]?.label || 'Embed'} posted to <#${state.channelId}> and saved as active`
         : '⚠️ Preset saved, but default assignment failed.',
       flags: 64,
     });
@@ -1950,44 +1970,16 @@ if (interaction.customId === 'embed:edit-media') {
     return true;
   }
 
-if (interaction.customId === 'embed:test-send') {
-  if (!state.channelId) {
+  if (interaction.customId === 'embed:test-send') {
     await interaction.reply({
-      content: 'Select a channel first.',
+      content: '🧪 Test Preview — only you can see this.',
+      embeds: [buildPreviewEmbed(state, interaction)],
+      components: buildButtonComponents(state),
       flags: 64,
     });
 
     return true;
   }
-
-  const channel =
-    interaction.guild.channels.cache.get(state.channelId) ||
-    (await interaction.guild.channels.fetch(state.channelId).catch(() => null));
-
-  if (!channel?.isTextBased()) {
-    await interaction.reply({
-      content: 'Invalid channel.',
-      flags: 64,
-    });
-
-    return true;
-  }
-
-  await channel.send({
-    content: state.allowUserPing ? `<@${interaction.user.id}>` : '',
-    embeds: [buildPreviewEmbed(state, interaction)],
-    components: buildButtonComponents(state),
-    allowedMentions: getAllowedMentionsForState(state, interaction),
-});
-
-  await interaction.reply({
-    content: `Sent to <#${state.channelId}>`,
-    flags: 64,
-  });
-
-  return true;
-}
-
 }
   
 /* ---------------- MODALS ---------------- */
