@@ -575,6 +575,8 @@ function getDefaultState() {
     openedFromAdmin: false,
     template: 'custom',
     selectedPreset: null,
+    pendingPresetName: null,
+    showTimestamp: true,
     selectedFieldIndex: null,
     channelId: null,
     hasUnsavedChanges: false,
@@ -623,6 +625,7 @@ function getPresetDataFromState(state) {
     template: state.template || 'custom',
     channelId: state.channelId || null,
     allowUserPing: Boolean(state.allowUserPing),
+    showTimestamp: state.showTimestamp !== false,
 
     title: state.title || '',
     description: state.description || '',
@@ -649,9 +652,11 @@ function applyPresetToSession(interaction, presetName, preset) {
     ...current,
     template: preset.template || 'custom',
     selectedPreset: presetName,
+    pendingPresetName: null,
     selectedFieldIndex: null,
     channelId: preset.channelId || current.channelId || null,
     allowUserPing: Boolean(preset.allowUserPing),
+    showTimestamp: preset.showTimestamp !== false,
 
     title: preset.title || '',
     description: preset.description || '',
@@ -782,8 +787,11 @@ if (imageUrl) embed.setImage(imageUrl);
     );
   }
 
+  if (state.showTimestamp !== false) {
   embed.setTimestamp();
-  return embed;
+}
+
+return embed;
 }
 
 function normaliseButtonStyle(style) {
@@ -1015,22 +1023,8 @@ function buildEditorPanel(interaction, memberDisplayName = 'Unknown User') {
  components.push(
   new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId('embed:edit-content')
-      .setLabel('✏️ Edit')
-      .setStyle(ButtonStyle.Primary),
-
-    new ButtonBuilder()
-      .setCustomId('embed:fields')
-      .setLabel(
-      `📋 Fields & Media (${state.fields?.length || 0})`
-    )
-      .setStyle(ButtonStyle.Primary),
-
-    new ButtonBuilder()
-      .setCustomId('embed:buttons')
-      .setLabel(
-      `🔘 Buttons (${state.buttons?.length || 0})`
-    )
+      .setCustomId('embed:builder')
+      .setLabel('🛠️ Builder')
       .setStyle(ButtonStyle.Primary),
 
     new ButtonBuilder()
@@ -1039,41 +1033,14 @@ function buildEditorPanel(interaction, memberDisplayName = 'Unknown User') {
       .setStyle(ButtonStyle.Primary),
 
     new ButtonBuilder()
-      .setCustomId('embed:use')
-      .setLabel(getUseButtonLabel(state.template))
-      .setStyle(ButtonStyle.Success)
-  )
-);
-
-components.push(
-  new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
       .setCustomId('embed:test-send')
       .setLabel('🧪 Test')
       .setStyle(ButtonStyle.Secondary),
 
     new ButtonBuilder()
-      .setCustomId('embed:toggle-ping')
-      .setLabel(
-        state.allowUserPing
-          ? '🔔 Ping ON'
-          : '🔕 Ping OFF'
-      )
-      .setStyle(
-        state.allowUserPing
-          ? ButtonStyle.Success
-          : ButtonStyle.Secondary
-      ),
-
-    new ButtonBuilder()
-      .setCustomId('embed:helpers')
-      .setLabel('📖 Variables')
-      .setStyle(ButtonStyle.Secondary),
-
-    new ButtonBuilder()
-      .setCustomId('embed:reset')
-      .setLabel('♻️ Reset')
-      .setStyle(ButtonStyle.Danger),
+      .setCustomId('embed:use')
+      .setLabel(getUseButtonLabel(state.template))
+      .setStyle(ButtonStyle.Success),
 
     new ButtonBuilder()
       .setCustomId('embed:back')
@@ -1138,6 +1105,94 @@ components.push(
 }
 
 /* ---------------- SUB PANELS ---------------- */
+function buildBuilderPanel(interaction, memberDisplayName = 'Unknown User') {
+  const state = getSession(interaction);
+
+  const embed = new EmbedBuilder()
+    .setColor(state.color || PANEL_COLOR)
+    .setTitle('🛠️ Embed Builder')
+    .setDescription('Edit your embed content, media, buttons, mentions, timestamp, and variables.')
+    .setFooter({ text: `Requested by ${memberDisplayName}` })
+    .setTimestamp();
+
+  return {
+    embeds: [embed, buildPreviewEmbed(state, interaction)],
+    components: [
+          new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('embed:edit-content')
+        .setLabel('✏️ Content')
+        .setStyle(ButtonStyle.Primary),
+
+      new ButtonBuilder()
+        .setCustomId('embed:edit-media')
+        .setLabel('🖼️ Media')
+        .setStyle(ButtonStyle.Primary),
+
+      new ButtonBuilder()
+        .setCustomId('embed:fields')
+        .setLabel(`📋 Fields (${state.fields?.length || 0})`)
+        .setStyle(ButtonStyle.Primary),
+
+      new ButtonBuilder()
+        .setCustomId('embed:buttons')
+        .setLabel(`🔘 Buttons (${state.buttons?.length || 0})`)
+        .setStyle(ButtonStyle.Primary),
+
+      new ButtonBuilder()
+        .setCustomId('embed:editor')
+        .setLabel('⬅️ Studio')
+        .setStyle(ButtonStyle.Secondary)
+    ),
+
+      new ActionRowBuilder().addComponents(
+  new ButtonBuilder()
+    .setCustomId('embed:toggle-ping')
+    .setLabel(
+      state.allowUserPing
+        ? '🔔 Ping ON'
+        : '🔕 Ping OFF'
+    )
+    .setStyle(
+      state.allowUserPing
+        ? ButtonStyle.Success
+        : ButtonStyle.Secondary
+    ),
+
+  new ButtonBuilder()
+    .setCustomId('embed:toggle-timestamp')
+    .setLabel(
+      state.showTimestamp === false
+        ? '🕒 Timestamp OFF'
+        : '🕒 Timestamp ON'
+    )
+    .setStyle(
+      state.showTimestamp === false
+        ? ButtonStyle.Secondary
+        : ButtonStyle.Success
+    ),
+
+  new ButtonBuilder()
+    .setCustomId('embed:helpers')
+    .setLabel('📖 Variables')
+    .setStyle(ButtonStyle.Secondary)
+),
+
+      new ActionRowBuilder().addComponents(
+  new ButtonBuilder()
+    .setCustomId('embed:reset')
+    .setLabel('♻️ Reset')
+    .setStyle(ButtonStyle.Danger),
+
+  new ButtonBuilder()
+    .setCustomId('embed:back')
+    .setLabel('⬅️ Back')
+    .setStyle(ButtonStyle.Secondary)
+)
+    ],
+  };
+}
+
 function buildButtonsPanel(interaction, memberDisplayName = 'Unknown User') {
   const state = getSession(interaction);
 
@@ -1573,8 +1628,8 @@ function buildPresetsPanel(interaction, memberDisplayName = 'Unknown User') {
     components.push(
       new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
-          .setCustomId('embed:preset-load')
-          .setPlaceholder('💾 Load a preset')
+          .setCustomId('embed:preset-select')
+          .setPlaceholder('💾 Select a preset')
           .addOptions(
             presetNames.map((name) => ({
               label: trim(name, 100),
@@ -1627,6 +1682,96 @@ function buildPresetsPanel(interaction, memberDisplayName = 'Unknown User') {
     embeds: [embed],
     components,
   };
+}
+
+function buildHelpersPanel(memberDisplayName = 'Unknown User') {
+  const embed = new EmbedBuilder()
+    .setColor(PANEL_COLOR)
+    .setTitle('📖 Embed Variables')
+    .setDescription(
+      HELPER_VARIABLES.map((v) => `\`${v.name}\` — ${v.desc}`).join('\n')
+    )
+    .setFooter({ text: `Requested by ${memberDisplayName}` })
+    .setTimestamp();
+
+  return {
+    embeds: [embed],
+    components: [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('embed:builder')
+          .setLabel('⬅️ Builder')
+          .setStyle(ButtonStyle.Secondary)
+      ),
+    ],
+  };
+}
+
+function buildFieldsPanel(interaction, memberDisplayName = 'Unknown User') {
+  const state = getSession(interaction);
+
+  const embed = new EmbedBuilder()
+    .setColor(state.color || PANEL_COLOR)
+    .setTitle('📋 Field Management')
+    .setDescription(`Fields: ${state.fields?.length || 0}/25`)
+    .setFooter({ text: `Requested by ${memberDisplayName}` })
+    .setTimestamp();
+
+  return {
+    embeds: [embed],
+    components: [
+      ...(state.fields?.length
+        ? [
+            new ActionRowBuilder().addComponents(
+              new StringSelectMenuBuilder()
+                .setCustomId('embed:field-select')
+                .setPlaceholder('📋 Select a field')
+                .addOptions(
+                  state.fields.map((field, index) => ({
+                    label: `${index + 1}. ${trim(field.name || 'Unnamed Field', 80)}`,
+                    value: String(index),
+                    description: trim(field.value || 'Field value', 100),
+                    default: state.selectedFieldIndex === index,
+                  }))
+                )
+            ),
+          ]
+        : []),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('embed:field-add')
+          .setLabel('➕ Add')
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId('embed:field-edit')
+          .setLabel('✏️ Edit')
+          .setStyle(ButtonStyle.Primary)
+          .setDisabled(!Number.isInteger(state.selectedFieldIndex)),
+        new ButtonBuilder()
+          .setCustomId('embed:field-remove-selected')
+          .setLabel('🗑️ Remove')
+          .setStyle(ButtonStyle.Danger)
+          .setDisabled(!Number.isInteger(state.selectedFieldIndex)),
+        new ButtonBuilder()
+          .setCustomId('embed:builder')
+          .setLabel('⬅️ Builder')
+          .setStyle(ButtonStyle.Secondary)
+      ),
+    ],
+  };
+}
+
+async function updateFields(interaction, memberDisplayName) {
+  const payload = buildFieldsPanel(interaction, memberDisplayName);
+
+  if (interaction.isModalSubmit()) {
+    return interaction.reply({
+      ...payload,
+      flags: 64,
+    });
+  }
+
+  return interaction.update(payload);
 }
 
 /* ---------------- UPDATE HELPERS ---------------- */
@@ -1722,22 +1867,40 @@ async function handleInteraction(interaction) {
   return true;
 }
 
-    if (interaction.customId === 'embed:preset-load') {
-      const presetName = interaction.values[0];
-      const preset = guildManager.getEmbedPreset(interaction.guild.id, presetName);
+      if (interaction.customId === 'embed:preset-select') {
+  const presetName = interaction.values[0];
 
-      if (!preset) {
-        await interaction.reply({ content: 'Preset not found.', flags: 64 });
-        return true;
-      }
+  const preset = guildManager.getEmbedPreset(
+    interaction.guild.id,
+    presetName
+  );
 
-      applyPresetToSession(interaction, presetName, preset);
-      await updatePresets(interaction, memberDisplayName);
-      return true;
-    }
+  if (!preset) {
+    await interaction.reply({
+      content: 'Preset not found.',
+      flags: 64,
+    });
+
+    return true;
   }
 
-  /* ---------------- CHANNEL SELECT ---------------- */
+  applyPresetToSession(
+    interaction,
+    presetName,
+    preset
+  );
+
+    await updateEditor(
+    interaction,
+    memberDisplayName
+  );
+
+    return true;
+  }
+
+}
+
+/* ---------------- CHANNEL SELECT ---------------- */
 if (interaction.isChannelSelectMenu()) {
   const state = getSession(interaction);
 
@@ -1763,15 +1926,15 @@ if (interaction.isChannelSelectMenu()) {
     const state = getSession(interaction);
 
     if (interaction.customId === 'embed:back') {
-      await interaction.update(
-        buildAdminPanel(
-          interaction.guild,
-          memberDisplayName
-        )
-      );
+  await interaction.update(
+    buildEditorPanel(
+      interaction,
+      memberDisplayName
+    )
+  );
 
-      return true;
-    }
+  return true;
+}
 
 if (interaction.customId === 'embed:editor') {
   console.log('🧪 EMBED EDITOR BUTTON CLICKED');
@@ -1780,6 +1943,11 @@ if (interaction.customId === 'embed:editor') {
   buildEditorPanel(interaction, memberDisplayName)
   );
 }
+
+    if (interaction.customId === 'embed:builder') {
+      await interaction.update(buildBuilderPanel(interaction, memberDisplayName));
+      return true;
+  }
 
     if (interaction.customId === 'embed:helpers') {
       await interaction.update(buildHelpersPanel(memberDisplayName));
@@ -1800,6 +1968,16 @@ if (interaction.customId === 'embed:editor') {
       await updateEditor(interaction, memberDisplayName);
       return true;
     }
+
+    if (interaction.customId === 'embed:toggle-timestamp') {
+      markUnsaved(interaction, {
+        ...state,
+        showTimestamp: state.showTimestamp === false,
+      });
+
+      await updateEditor(interaction, memberDisplayName);
+      return true;
+  }
 
     if (interaction.customId === 'embed:field-add') {
       await interaction.showModal(buildFieldModal(state));
@@ -1843,6 +2021,11 @@ if (interaction.customId === 'embed:editor') {
 
     if (interaction.customId === 'embed:edit-content') {
       await interaction.showModal(buildContentModal(state));
+      return true;
+    }
+
+    if (interaction.customId === 'embed:fields') {
+      await updateFields(interaction, memberDisplayName);
       return true;
     }
 
@@ -1999,25 +2182,93 @@ if (interaction.customId === 'embed:edit-media') {
       return true;
     }
 
-    if (interaction.customId === 'embed:reset') {
-      resetSession(interaction);
-      await updatePanel(interaction, memberDisplayName);
+    if (interaction.customId === 'embed:preset-load') {
+      const presetName = state.pendingPresetName || state.selectedPreset;
+      const preset = guildManager.getEmbedPreset(interaction.guild.id, presetName);
+
+      if (!preset) {
+        await interaction.reply({ content: 'Preset not found.', flags: 64 });
+        return true;
+      }
+
+      applyPresetToSession(interaction, presetName, preset);
+      await updateEditor(interaction, memberDisplayName);
       return true;
     }
 
-    if (interaction.customId === 'embed:use') {
-    if (!state.channelId) {
-      await interaction.reply({
-        content: 'Select a channel first before activating this embed.',
-        flags: 64,
+    if (interaction.customId === 'embed:preset-delete') {
+      const presetName = state.pendingPresetName || state.selectedPreset;
+
+      if (!presetName) {
+        await interaction.reply({
+          content: 'Select a preset first.',
+          flags: 64,
+        });
+        return true;
+      }
+
+      const presets =
+        typeof guildManager.getEmbedPresets === 'function'
+          ? guildManager.getEmbedPresets(interaction.guild.id) || {}
+          : {};
+
+      if (!presets[presetName]) {
+        await interaction.reply({
+          content: 'Preset not found.',
+          flags: 64,
+        });
+        return true;
+      }
+
+      delete presets[presetName];
+
+      if (typeof guildManager.replaceGuildSection === 'function') {
+        guildManager.replaceGuildSection(
+          interaction.guild.id,
+          'embedPresets',
+          presets
+        );
+      }
+
+      clearUnsaved(interaction, {
+        ...state,
+        selectedPreset: null,
+        pendingPresetName: null,
       });
 
+      await updatePresets(interaction, memberDisplayName);
       return true;
     }
 
-    const channel =
+    if (interaction.customId === 'embed:reset') {
+  resetSession(interaction);
+
+  await interaction.update(
+    buildBuilderPanel(
+      interaction,
+      memberDisplayName
+    )
+  );
+
+  return true;
+}
+
+if (interaction.customId === 'embed:test-send') {
+  await interaction.reply({
+    content: '🧪 Test Preview — only you can see this.',
+    embeds: [buildPreviewEmbed(state, interaction)],
+    components: buildButtonComponents(state),
+    flags: 64,
+  });
+
+  return true;
+}
+
+if (interaction.customId === 'embed:use') {
+
+const channel =
   interaction.guild.channels.cache.get(state.channelId) ||
-  (await interaction.guild.channels.fetch(state.channelId).catch(() => null));
+(await interaction.guild.channels.fetch(state.channelId).catch(() => null));
 
 if (!channel?.isTextBased()) {
   await interaction.reply({
@@ -2062,21 +2313,11 @@ await channel.send({
       flags: 64,
     });
 
-    return true;
+      return true;
+    }
+
   }
 
-  if (interaction.customId === 'embed:test-send') {
-    await interaction.reply({
-      content: '🧪 Test Preview — only you can see this.',
-      embeds: [buildPreviewEmbed(state, interaction)],
-      components: buildButtonComponents(state),
-      flags: 64,
-    });
-
-    return true;
-  }
-}
-  
 /* ---------------- MODALS ---------------- */
 if (interaction.isModalSubmit()) {
   const state = getSession(interaction);
@@ -2268,12 +2509,12 @@ if (interaction.customId.startsWith('embed:button-save:')) {
     flags: 64,
     });
 
-    return true;
+        return true;
     }
   }
 
-    return false;
-  }
+  return false;
+}
 
 module.exports = {
   buildEmbedPanel,
