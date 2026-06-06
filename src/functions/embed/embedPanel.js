@@ -1159,12 +1159,12 @@ function buildBuilderPanel(interaction, memberDisplayName = 'Unknown User') {
   new ButtonBuilder()
     .setCustomId('embed:toggle-timestamp')
     .setLabel(
-      state.showTimestamp === false
+      state.showTimestamp
         ? '🕒 Timestamp OFF'
         : '🕒 Timestamp ON'
     )
     .setStyle(
-      state.showTimestamp === false
+      state.showTimestamp
         ? ButtonStyle.Success
         : ButtonStyle.Secondary
     ),
