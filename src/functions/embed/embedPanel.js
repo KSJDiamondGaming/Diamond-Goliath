@@ -1121,7 +1121,7 @@ function buildBuilderPanel(interaction, memberDisplayName = 'Unknown User') {
           new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('embed:edit-content')
-        .setLabel('✏️ Content')
+        .setLabel('✏️ Edit')
         .setStyle(ButtonStyle.Primary),
 
       new ButtonBuilder()
@@ -1138,11 +1138,6 @@ function buildBuilderPanel(interaction, memberDisplayName = 'Unknown User') {
         .setCustomId('embed:buttons')
         .setLabel(`🔘 Buttons (${state.buttons?.length || 0})`)
         .setStyle(ButtonStyle.Primary),
-
-      new ButtonBuilder()
-        .setCustomId('embed:editor')
-        .setLabel('⬅️ Studio')
-        .setStyle(ButtonStyle.Secondary)
     ),
 
       new ActionRowBuilder().addComponents(
@@ -1166,11 +1161,7 @@ function buildBuilderPanel(interaction, memberDisplayName = 'Unknown User') {
         ? '🕒 Timestamp OFF'
         : '🕒 Timestamp ON'
     )
-    .setStyle(
-      state.showTimestamp === false
-        ? ButtonStyle.Secondary
-        : ButtonStyle.Success
-    ),
+    .setStyle(ButtonStyle.Secondary),
 
   new ButtonBuilder()
     .setCustomId('embed:helpers')
@@ -1178,12 +1169,14 @@ function buildBuilderPanel(interaction, memberDisplayName = 'Unknown User') {
     .setStyle(ButtonStyle.Secondary)
 ),
 
-      new ActionRowBuilder().addComponents(
-  new ButtonBuilder()
+  new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
     .setCustomId('embed:reset')
     .setLabel('♻️ Reset')
-    .setStyle(ButtonStyle.Danger),
+    .setStyle(ButtonStyle.Danger)
+),
 
+new ActionRowBuilder().addComponents(
   new ButtonBuilder()
     .setCustomId('embed:back')
     .setLabel('⬅️ Back')
@@ -1673,7 +1666,7 @@ function buildPresetsPanel(interaction, memberDisplayName = 'Unknown User') {
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('embed:editor')
-        .setLabel('⬅️ Embed Studio')
+        .setLabel('⬅️ Back')
         .setStyle(ButtonStyle.Secondary)
     )
   );
@@ -1700,7 +1693,7 @@ function buildHelpersPanel(memberDisplayName = 'Unknown User') {
       new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId('embed:builder')
-          .setLabel('⬅️ Builder')
+          .setLabel('⬅️ Back')
           .setStyle(ButtonStyle.Secondary)
       ),
     ],
@@ -1969,14 +1962,20 @@ if (interaction.customId === 'embed:editor') {
       return true;
     }
 
-    if (interaction.customId === 'embed:toggle-timestamp') {
-      markUnsaved(interaction, {
-        ...state,
-        showTimestamp: state.showTimestamp === false,
-      });
+      if (interaction.customId === 'embed:toggle-timestamp') {
+    markUnsaved(interaction, {
+      ...state,
+      showTimestamp: state.showTimestamp === false,
+    });
 
-      await updateEditor(interaction, memberDisplayName);
-      return true;
+    await interaction.update(
+      buildBuilderPanel(
+        interaction,
+        memberDisplayName
+      )
+    );
+
+    return true;
   }
 
     if (interaction.customId === 'embed:field-add') {
