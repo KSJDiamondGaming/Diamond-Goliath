@@ -1164,7 +1164,7 @@ function buildBuilderPanel(interaction, memberDisplayName = 'Unknown User') {
         : '🕒 Timestamp ON'
     )
     .setStyle(
-      state.allowUserPing
+      state.showTimestamp === false
         ? ButtonStyle.Success
         : ButtonStyle.Secondary
     ),
