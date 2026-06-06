@@ -13,10 +13,7 @@ const {
   TextInputStyle,
 } = require('discord.js');
 
-const { buildAdminPanel } = require('../admin/adminPanel');
 const guildManager = require('../../guild/guildManager');
-const panelNav = require('../../helpers/ui/panelNavigation');
-
 const PANEL_COLOR = '#5865F2';
 const CUSTOM_HEX_VALUE = '__custom_hex__';
 
@@ -747,12 +744,16 @@ function buildPreviewEmbed(state, interaction) {
 }
 
 const footerText = trim(
-  resolvePreviewText(state.footer, interaction),
+  typeof state.footer === 'string'
+    ? resolvePreviewText(state.footer, interaction)
+    : '',
   2048
 );
 
 const footerIconUrl = safeUrl(
-  resolvePreviewText(state.footerIcon, interaction)
+  typeof state.footerIcon === 'string'
+    ? resolvePreviewText(state.footerIcon, interaction)
+    : ''
 );
 
 if (footerText) {
@@ -807,8 +808,8 @@ function normaliseButtonStyle(style) {
 
 function buildButtonComponents(state) {
   const buttons = Array.isArray(state.buttons)
-    ? state.buttons.slice(0, 25)
-    : [];
+  ? state.buttons.slice(0, 20)
+  : [];
 
   const rows = [];
 
@@ -826,17 +827,19 @@ function buildButtonComponents(state) {
         builder.setEmoji(button.emoji);
       }
 
-      if (style === ButtonStyle.Link) {
-        builder.setURL(
-          safeUrl(button.url) ||
-          'https://ksjdigital.co.uk'
-        );
+      const url = safeUrl(button.url);
+
+      if (url) {
+        builder
+          .setStyle(ButtonStyle.Link)
+          .setURL(url);
       } else {
-        builder.setCustomId(
-          button.id ||
-          `embed-action:${button.action || 'custom'}:${i + index}`
-        );
-      }
+        builder
+          .setCustomId(
+            button.id ||
+            `embed-action:${button.action || 'custom'}:${i + index}`
+          );
+    }
 
       row.addComponents(builder);
     });
@@ -914,10 +917,13 @@ function buildEmbedPanel(interactionOrGuild, memberDisplayName = 'Unknown User')
 
   const state = getSession(fakeInteraction);
 
-  return {
-    embeds: buildEditorPanel(fakeInteraction, memberDisplayName).embeds,
+  const payload = buildEditorPanel(fakeInteraction, memberDisplayName);
 
-    components: buildEditorPanel(fakeInteraction, memberDisplayName).components, };}
+  return {
+    embeds: payload.embeds,
+    components: payload.components,
+  };
+}
 
 /* ---------------- EDITOR PANEL ---------------- */
 function getUseButtonLabel(templateKey) {
@@ -1455,7 +1461,7 @@ function buildButtonModal(state, buttonIndex = null) {
     : {
         label: '',
         emoji: '',
-        style: 'Primary',
+        style: 'Link',
         action: 'link',
         url: '',
       };
@@ -2245,14 +2251,11 @@ if (interaction.customId === 'embed:edit-media') {
       return true;
     }
 
-    if (interaction.customId === 'embed:reset') {
+ if (interaction.customId === 'embed:reset') {
   resetSession(interaction);
 
   await interaction.update(
-    buildBuilderPanel(
-      interaction,
-      memberDisplayName
-    )
+    buildBuilderPanel(interaction, memberDisplayName)
   );
 
   return true;
@@ -2260,7 +2263,7 @@ if (interaction.customId === 'embed:edit-media') {
 
 if (interaction.customId === 'embed:test-send') {
   await interaction.reply({
-    content: '🧪 Test Preview — only you can see this.',
+    content: '🧪 Test Preview',
     embeds: [buildPreviewEmbed(state, interaction)],
     components: buildButtonComponents(state),
     flags: 64,
