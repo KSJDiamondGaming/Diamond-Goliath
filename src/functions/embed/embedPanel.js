@@ -1032,6 +1032,7 @@ function buildEditorPanel(interaction, memberDisplayName = 'Unknown User') {
       .setLabel('💾 Presets')
       .setStyle(ButtonStyle.Primary),
 
+  new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('embed:test-send')
       .setLabel('🧪 Test')
@@ -1043,7 +1044,6 @@ function buildEditorPanel(interaction, memberDisplayName = 'Unknown User') {
       .setStyle(ButtonStyle.Success)
   ),
 
-  new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('embed:back')
       .setLabel('⬅️ Back')
