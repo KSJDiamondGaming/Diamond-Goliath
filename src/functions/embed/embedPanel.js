@@ -1023,7 +1023,6 @@ function buildEditorPanel(interaction, memberDisplayName = 'Unknown User') {
  components.push(
   new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-<<<<<<< Updated upstream
       .setCustomId('embed:builder')
       .setLabel('🛠️ Builder')
       .setStyle(ButtonStyle.Primary),
@@ -1042,41 +1041,6 @@ function buildEditorPanel(interaction, memberDisplayName = 'Unknown User') {
       .setCustomId('embed:use')
       .setLabel(getUseButtonLabel(state.template))
       .setStyle(ButtonStyle.Success),
-=======
-      .setCustomId('embed:edit-content')
-      .setLabel('✏️ Edit Embed')
-      .setStyle(ButtonStyle.Primary),
-
-    new ButtonBuilder()
-      .setCustomId('embed:edit-media')
-      .setLabel('🖼️ Media')
-      .setStyle(ButtonStyle.Primary),
-
-    new ButtonBuilder()
-      .setCustomId('embed:fields')
-      .setLabel(
-        selectedField
-          ? `📋 Fields (${state.selectedFieldIndex + 1}/${state.fields.length})`
-          : `📋 Fields (${state.fields?.length || 0})`
-      )
-      .setStyle(ButtonStyle.Primary),
-
-    new ButtonBuilder()
-      .setCustomId('embed:presets')
-      .setLabel('💾 Presets')
-      .setStyle(ButtonStyle.Primary)
-  )
-);
-
-components.push(
-  new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('embed:use')
-      .setLabel(getUseButtonLabel(state.template))
-      .setStyle(ButtonStyle.Success)
-  )
-);
->>>>>>> Stashed changes
 
     new ButtonBuilder()
       .setCustomId('embed:back')
@@ -1174,17 +1138,12 @@ function buildBuilderPanel(interaction, memberDisplayName = 'Unknown User') {
         .setCustomId('embed:buttons')
         .setLabel(`🔘 Buttons (${state.buttons?.length || 0})`)
         .setStyle(ButtonStyle.Primary),
-
-      new ButtonBuilder()
-        .setCustomId('embed:editor')
-        .setLabel('⬅️ Studio')
-        .setStyle(ButtonStyle.Secondary)
     ),
 
-      new ActionRowBuilder().addComponents(
-  new ButtonBuilder()
-    .setCustomId('embed:toggle-ping')
-    .setLabel(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+      .setCustomId('embed:toggle-ping')
+      .setLabel(
       state.allowUserPing
         ? '🔔 Ping ON'
         : '🔕 Ping OFF'
@@ -1202,10 +1161,7 @@ function buildBuilderPanel(interaction, memberDisplayName = 'Unknown User') {
         ? '🕒 Timestamp OFF'
         : '🕒 Timestamp ON'
     )
-    .setStyle(
-      state.showTimestamp === false
-        ? ButtonStyle.Secondary
-        : ButtonStyle.Success
+    .setStyle(ButtonStyle.Secondary
     ),
 
   new ButtonBuilder()
@@ -1852,12 +1808,9 @@ async function updatePresets(interaction, memberDisplayName) {
 async function handleInteraction(interaction) {
   if (!interaction.customId?.startsWith('embed:')) return false;
 
-  console.log(`[EMBED] ${interaction.customId}`);
-
   const memberDisplayName = getMemberDisplayName(interaction);
 
   /* ---------------- SELECT MENUS ---------------- */
-
   if (interaction.isStringSelectMenu()) {
     const state = getSession(interaction);
 
@@ -1875,24 +1828,20 @@ async function handleInteraction(interaction) {
         return true;
       }
 
-      markUnsaved(interaction, {
-        ...state,
-        color: selectedColor,
-      });
-
+      markUnsaved(interaction, { ...state, color: selectedColor });
       await updateEditor(interaction, memberDisplayName);
       return true;
     }
 
     if (interaction.customId === 'embed:field-select') {
-      saveSession(interaction, {
-        ...state,
-        selectedFieldIndex: Number(interaction.values[0]),
-      });
+    saveSession(interaction, {
+      ...state,
+      selectedFieldIndex: Number(interaction.values[0]),
+    });
 
-      await interaction.update(buildFieldsPanel(interaction, memberDisplayName));
-      return true;
-    }
+    await interaction.update(buildFieldsPanel(interaction, memberDisplayName));
+    return true;
+  }
 
   if (interaction.customId === 'embed:button-select') {
   saveSession(interaction, {
@@ -1900,7 +1849,6 @@ async function handleInteraction(interaction) {
     selectedButtonIndex: Number(interaction.values[0]),
   });
 
-<<<<<<< Updated upstream
   await interaction.update(
     buildButtonsPanel(
       interaction,
@@ -1947,47 +1895,29 @@ async function handleInteraction(interaction) {
 /* ---------------- CHANNEL SELECT ---------------- */
 if (interaction.isChannelSelectMenu()) {
   const state = getSession(interaction);
-=======
-      if (!preset) {
-        await interaction.reply({
-          content: 'Preset not found.',
-          flags: 64,
-        });
-        return true;
-      }
 
-      applyPresetToSession(interaction, presetName, preset);
-      await updateEditor(interaction, memberDisplayName);
-      return true;
-    }
+  if (interaction.customId === 'embed:channel') {
+    markUnsaved(interaction, {
+      ...state,
+      channelId: interaction.values[0],
+    });
+
+    await updateEditor(interaction, memberDisplayName);
+    return true;
   }
-
-  /* ---------------- CHANNEL SELECT ---------------- */
->>>>>>> Stashed changes
-
-  if (interaction.isChannelSelectMenu()) {
-    const state = getSession(interaction);
-
-    if (interaction.customId === 'embed:channel') {
-      markUnsaved(interaction, {
-        ...state,
-        channelId: interaction.values[0],
-      });
-
-      await updateEditor(interaction, memberDisplayName);
-      return true;
-    }
-  }
+}
 
   /* ---------------- BUTTONS ---------------- */
-
   if (interaction.isButton()) {
+
+    // Let NAV system handle its own buttons
     if (interaction.customId.startsWith('nav|')) return false;
+
+    if (!interaction.customId.startsWith('embed:')) return false;
 
     const state = getSession(interaction);
 
     if (interaction.customId === 'embed:back') {
-<<<<<<< Updated upstream
   await interaction.update(
     buildEditorPanel(
       interaction,
@@ -1997,13 +1927,6 @@ if (interaction.isChannelSelectMenu()) {
 
   return true;
 }
-=======
-      await interaction.update(
-        buildAdminPanel(interaction.guild, memberDisplayName)
-      );
-      return true;
-    }
->>>>>>> Stashed changes
 
 if (interaction.customId === 'embed:editor') {
   console.log('🧪 EMBED EDITOR BUTTON CLICKED');
@@ -2034,17 +1957,22 @@ if (interaction.customId === 'embed:editor') {
         allowUserPing: !state.allowUserPing,
       });
 
-      await updateEditor(interaction, memberDisplayName);
+      await interaction.update(
+        buildBuilderPanel(interaction, memberDisplayName)
+      );
+
       return true;
     }
 
     if (interaction.customId === 'embed:toggle-timestamp') {
       markUnsaved(interaction, {
         ...state,
-        showTimestamp: state.showTimestamp === false,
+        showTimestamp: !state.showTimestamp,
       });
 
-      await updateEditor(interaction, memberDisplayName);
+      await interaction.update(
+        buildBuilderPanel(interaction, memberDisplayName)
+  );
       return true;
   }
 
@@ -2072,21 +2000,24 @@ if (interaction.customId === 'embed:editor') {
     }
 
     if (interaction.customId === 'embed:field-remove-selected') {
-      const nextFields = [...(state.fields || [])];
+  const nextFields = [...(state.fields || [])];
 
-      if (Number.isInteger(state.selectedFieldIndex)) {
-        nextFields.splice(state.selectedFieldIndex, 1);
-      }
+  if (Number.isInteger(state.selectedFieldIndex)) {
+    nextFields.splice(state.selectedFieldIndex, 1);
+  }
 
-      markUnsaved(interaction, {
-        ...state,
-        fields: nextFields,
-        selectedFieldIndex: null,
-      });
+  markUnsaved(interaction, {
+    ...state,
+    fields: nextFields,
+    selectedFieldIndex: null,
+  });
 
-      await updateEditor(interaction, memberDisplayName);
-      return true;
-    }
+  await interaction.update(
+    buildFieldsPanel(interaction, memberDisplayName)
+  );
+
+  return true;
+}
 
     if (interaction.customId === 'embed:edit-content') {
       await interaction.showModal(buildContentModal(state));
@@ -2094,7 +2025,6 @@ if (interaction.customId === 'embed:editor') {
     }
 
     if (interaction.customId === 'embed:fields') {
-<<<<<<< Updated upstream
       await updateFields(interaction, memberDisplayName);
       return true;
     }
@@ -2104,9 +2034,6 @@ if (interaction.customId === 'embed:editor') {
       buildButtonsPanel(interaction, memberDisplayName)
     );
 
-=======
-      await interaction.update(buildFieldsPanel(interaction, memberDisplayName));
->>>>>>> Stashed changes
       return true;
     }
 
@@ -2269,25 +2196,17 @@ if (interaction.customId === 'embed:edit-media') {
       return true;
     }
 
-<<<<<<< Updated upstream
     if (interaction.customId === 'embed:preset-delete') {
       const presetName = state.pendingPresetName || state.selectedPreset;
 
       if (!presetName) {
         await interaction.reply({
           content: 'Select a preset first.',
-=======
-    if (interaction.customId === 'embed:use') {
-      if (!state.channelId) {
-        await interaction.reply({
-          content: 'Select a channel first before activating this embed.',
->>>>>>> Stashed changes
           flags: 64,
         });
         return true;
       }
 
-<<<<<<< Updated upstream
       const presets =
         typeof guildManager.getEmbedPresets === 'function'
           ? guildManager.getEmbedPresets(interaction.guild.id) || {}
@@ -2315,40 +2234,12 @@ if (interaction.customId === 'embed:edit-media') {
         ...state,
         selectedPreset: null,
         pendingPresetName: null,
-=======
-      const presetName = getAutoPresetName(state);
-
-      guildManager.saveEmbedPreset(
-        interaction.guild.id,
-        presetName,
-        getPresetDataFromState(state),
-        interaction.guild
-      );
-
-      const success = setEmbedDefault(
-        interaction.guild.id,
-        state.template,
-        presetName
-      );
-
-      clearUnsaved(interaction, {
-        ...state,
-        selectedPreset: presetName,
-      });
-
-      await interaction.reply({
-        content: success
-          ? `✅ ${TEMPLATES[state.template]?.label || 'Embed'} is now active in <#${state.channelId}>`
-          : '⚠️ Preset saved, but default assignment failed.',
-        flags: 64,
->>>>>>> Stashed changes
       });
 
       await updatePresets(interaction, memberDisplayName);
       return true;
     }
 
-<<<<<<< Updated upstream
     if (interaction.customId === 'embed:reset') {
   resetSession(interaction);
 
@@ -2421,65 +2312,21 @@ await channel.send({
         : '⚠️ Preset saved, but default assignment failed.',
       flags: 64,
     });
-=======
-    if (interaction.customId === 'embed:test-send') {
-      if (!state.channelId) {
-        await interaction.reply({
-          content: 'Select a channel first.',
-          flags: 64,
-        });
-        return true;
-      }
-
-      const channel =
-        interaction.guild.channels.cache.get(state.channelId) ||
-        (await interaction.guild.channels.fetch(state.channelId).catch(() => null));
-
-      if (!channel?.isTextBased()) {
-        await interaction.reply({
-          content: 'Invalid channel.',
-          flags: 64,
-        });
-        return true;
-      }
-
-      await channel.send({
-        content: state.allowUserPing ? `<@${interaction.user.id}>` : '',
-        embeds: [buildPreviewEmbed(state, interaction)],
-        allowedMentions: getAllowedMentionsForState(state, interaction),
-      });
-
-      await interaction.reply({
-        content: `Sent to <#${state.channelId}>`,
-        flags: 64,
-      });
->>>>>>> Stashed changes
 
       return true;
     }
-  }
 
-<<<<<<< Updated upstream
   }
 
 /* ---------------- MODALS ---------------- */
 if (interaction.isModalSubmit()) {
   const state = getSession(interaction);
-=======
-  /* ---------------- MODALS ---------------- */
-
-  if (interaction.isModalSubmit()) {
-    const state = getSession(interaction);
->>>>>>> Stashed changes
 
     if (interaction.customId === 'embed:preset-save-modal') {
       const name = interaction.fields.getTextInputValue('name').trim();
 
       if (!name) {
-        await interaction.reply({
-          content: 'Name required.',
-          flags: 64,
-        });
+        await interaction.reply({ content: 'Name required.', flags: 64 });
         return true;
       }
 
@@ -2495,11 +2342,7 @@ if (interaction.isModalSubmit()) {
         selectedPreset: name,
       });
 
-      await interaction.reply({
-        content: `✅ Preset saved as **${name}**.`,
-        flags: 64,
-      });
-
+      await updatePresets(interaction, memberDisplayName);
       return true;
     }
 
@@ -2568,10 +2411,7 @@ if (interaction.customId.startsWith('embed:button-save:')) {
       const hex = interaction.fields.getTextInputValue('hex');
 
       if (!isValidHexColor(hex)) {
-        await interaction.reply({
-          content: 'Invalid HEX.',
-          flags: 64,
-        });
+        await interaction.reply({ content: 'Invalid HEX.', flags: 64 });
         return true;
       }
 
@@ -2593,7 +2433,6 @@ if (interaction.customId.startsWith('embed:button-save:')) {
         footer: interaction.fields.getTextInputValue('footer'),
       });
 
-<<<<<<< Updated upstream
       await updateEditor(interaction, memberDisplayName);
       return true;
     }
@@ -2616,94 +2455,61 @@ if (interaction.customId.startsWith('embed:button-save:')) {
     const fieldIndex = Number(interaction.customId.split(':')[2]);
 
     if (!Number.isInteger(fieldIndex) || !state.fields?.[fieldIndex]) {
-=======
->>>>>>> Stashed changes
       await interaction.reply({
-        content: '✅ Embed content saved.',
+        content: 'Field not found.',
         flags: 64,
       });
 
       return true;
     }
 
-    if (interaction.customId.startsWith('embed:save-media:')) {
-      markUnsaved(interaction, {
-        ...state,
-        authorIcon: interaction.fields.getTextInputValue('authorIcon'),
-        thumbnail: interaction.fields.getTextInputValue('thumbnail'),
-        image: interaction.fields.getTextInputValue('image'),
-      });
+    const nextFields = [...(state.fields || [])];
+
+    nextFields[fieldIndex] = {
+      name: interaction.fields.getTextInputValue('name'),
+      value: interaction.fields.getTextInputValue('value'),
+      inline: /^y(es)?|true|1$/i.test(
+        interaction.fields.getTextInputValue('layout') || ''
+      ),
+    };
+
+    markUnsaved(interaction, {
+      ...state,
+      fields: nextFields,
+      selectedFieldIndex: fieldIndex,
+    });
+
+    await interaction.reply({
+  ...buildFieldsPanel(interaction, memberDisplayName),
+  flags: 64,
+  });
+
+    return true;
+  }
+
+  if (interaction.customId === 'embed:field-save-new') {
+    const nextFields = [...(state.fields || [])];
+
+    nextFields.push({
+      name: interaction.fields.getTextInputValue('name'),
+      value: interaction.fields.getTextInputValue('value'),
+      inline: /^y(es)?|true|1$/i.test(
+        interaction.fields.getTextInputValue('layout') || ''
+      ),
+    });
+
+    markUnsaved(interaction, {
+      ...state,
+      fields: nextFields,
+      selectedFieldIndex: nextFields.length - 1,
+    });
 
       await interaction.reply({
-        content: '✅ Embed media saved.',
-        flags: 64,
-      });
+    ...buildFieldsPanel(interaction, memberDisplayName),
+    flags: 64,
+    });
 
-<<<<<<< Updated upstream
         return true;
-=======
-      return true;
-    }
-
-    if (interaction.customId.startsWith('embed:field-save:')) {
-      const fieldIndex = Number(interaction.customId.split(':')[2]);
-
-      if (!Number.isInteger(fieldIndex) || !state.fields?.[fieldIndex]) {
-        await interaction.reply({
-          content: 'Field not found.',
-          flags: 64,
-        });
-        return true;
-      }
-
-      const nextFields = [...(state.fields || [])];
-
-      nextFields[fieldIndex] = {
-        name: interaction.fields.getTextInputValue('name'),
-        value: interaction.fields.getTextInputValue('value'),
-        inline: /^y(es)?|true|1$/i.test(
-          interaction.fields.getTextInputValue('layout') || ''
-        ),
-      };
-
-      markUnsaved(interaction, {
-        ...state,
-        fields: nextFields,
-        selectedFieldIndex: fieldIndex,
-      });
-
-      await interaction.reply({
-        content: '✅ Field updated.',
-        flags: 64,
-      });
-
-      return true;
-    }
-
-    if (interaction.customId === 'embed:field-save-new') {
-      const nextFields = [...(state.fields || [])];
-
-      nextFields.push({
-        name: interaction.fields.getTextInputValue('name'),
-        value: interaction.fields.getTextInputValue('value'),
-        inline: /^y(es)?|true|1$/i.test(
-          interaction.fields.getTextInputValue('layout') || ''
-        ),
-      });
-
-      markUnsaved(interaction, {
-        ...state,
-        fields: nextFields,
-        selectedFieldIndex: nextFields.length - 1,
-      });
-
-      await interaction.reply({
-        content: '✅ Field added.',
-        flags: 64,
-      });
-
-      return true;
->>>>>>> Stashed changes
     }
   }
 
