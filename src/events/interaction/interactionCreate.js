@@ -1,4 +1,4 @@
-// src/events/interaction/interactionCreate.js
+// src/events/interactionCreate.js
 
 const { MessageFlags } = require('discord.js');
 
@@ -63,7 +63,9 @@ async function safeDefer(interaction) {
   } catch (error) {
     if (isUnknownInteraction(error)) {
       console.error(
-        `⚠️ Interaction expired before defer: ${interaction.id} / ${interaction.commandName || interaction.customId || 'unknown'}`
+        `⚠️ Interaction expired before defer: ${interaction.id} / ${
+          interaction.commandName || interaction.customId || 'unknown'
+        }`
       );
       return false;
     }
@@ -131,17 +133,28 @@ module.exports = {
   async execute(interaction, client) {
     if (!interaction || !client) return;
 
+    console.log(
+      `[INTERACTION] ${
+        interaction.customId ||
+        interaction.commandName ||
+        interaction.type
+      }`
+    );
+
     if (!markInteraction(interaction)) {
       console.warn(`⚠️ Duplicate interaction ignored: ${interaction.id}`);
       return;
     }
 
+<<<<<<< Updated upstream
     console.log(
       `🧩 interactionCreate: ${
         interaction.type
       } ${interaction.commandName || interaction.customId || 'unknown'}`
     );
 
+=======
+>>>>>>> Stashed changes
     try {
       if (interaction.isAutocomplete()) {
         const command = client.commands?.get(interaction.commandName);
@@ -169,6 +182,7 @@ module.exports = {
         } catch (error) {
           console.error(`❌ Command execution failed: ${interaction.commandName}`);
           console.error(error);
+          console.error(error?.stack);
 
           await safeEdit(interaction, {
             content: '❌ An error occurred while executing this command.',
@@ -179,6 +193,7 @@ module.exports = {
       }
 
       if (interaction.customId?.startsWith('embed:')) {
+<<<<<<< Updated upstream
         const handled = await handleEmbedInteraction(interaction, client);
         if (handled) return;
       }
@@ -191,9 +206,26 @@ module.exports = {
       console.warn(
         `⚠️ Unhandled interaction: ${interaction.commandName || interaction.customId || 'unknown'}`
       );
+=======
+        console.log(`[EMBED] ${interaction.customId}`);
+
+        const handled = await embedPanel.handleInteraction(interaction, client);
+        if (handled) return;
+      }
+
+      if (typeof ticketInteractionHandler?.handleTicketInteraction === 'function') {
+        const handled = await ticketInteractionHandler.handleTicketInteraction(
+          interaction,
+          client
+        );
+
+        if (handled) return;
+      }
+>>>>>>> Stashed changes
     } catch (error) {
       console.error('❌ interactionCreate fatal error');
       console.error(error);
+      console.error(error?.stack);
 
       await safeEdit(interaction, {
         content: '❌ Something went wrong while handling this interaction.',
