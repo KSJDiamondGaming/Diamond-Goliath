@@ -1030,7 +1030,8 @@ function buildEditorPanel(interaction, memberDisplayName = 'Unknown User') {
     new ButtonBuilder()
       .setCustomId('embed:presets')
       .setLabel('💾 Presets')
-      .setStyle(ButtonStyle.Primary),
+      .setStyle(ButtonStyle.Primary)
+  ),
 
   new ActionRowBuilder().addComponents(
     new ButtonBuilder()
@@ -1041,8 +1042,7 @@ function buildEditorPanel(interaction, memberDisplayName = 'Unknown User') {
     new ButtonBuilder()
       .setCustomId('embed:use')
       .setLabel(getUseButtonLabel(state.template))
-      .setStyle(ButtonStyle.Success)
-  ),
+      .setStyle(ButtonStyle.Success),
 
     new ButtonBuilder()
       .setCustomId('embed:back')
