@@ -1163,7 +1163,10 @@ function buildBuilderPanel(interaction, memberDisplayName = 'Unknown User') {
         ? '🕒 Timestamp OFF'
         : '🕒 Timestamp ON'
     )
-    .setStyle(ButtonStyle.Secondary
+    .setStyle(
+      state.allowUserPing
+        ? ButtonStyle.Success
+        : ButtonStyle.Secondary
     ),
 
   new ButtonBuilder()
@@ -1667,7 +1670,7 @@ function buildPresetsPanel(interaction, memberDisplayName = 'Unknown User') {
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('embed:editor')
-        .setLabel('⬅️ Embed Studio')
+        .setLabel('⬅️ Back')
         .setStyle(ButtonStyle.Secondary)
     )
   );
@@ -1694,7 +1697,7 @@ function buildHelpersPanel(memberDisplayName = 'Unknown User') {
       new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId('embed:builder')
-          .setLabel('⬅️ Builder')
+          .setLabel('⬅️ Back')
           .setStyle(ButtonStyle.Secondary)
       ),
     ],
@@ -2426,32 +2429,40 @@ if (interaction.customId.startsWith('embed:button-save:')) {
       return true;
     }
 
-    if (interaction.customId.startsWith('embed:save-content:')) {
-      markUnsaved(interaction, {
-        ...state,
-        title: interaction.fields.getTextInputValue('title'),
-        description: interaction.fields.getTextInputValue('description'),
-        authorName: interaction.fields.getTextInputValue('authorName'),
-        footer: interaction.fields.getTextInputValue('footer'),
-      });
+      if (interaction.customId.startsWith('embed:save-content:')) {
+    markUnsaved(interaction, {
+      ...state,
+      title: interaction.fields.getTextInputValue('title'),
+      description: interaction.fields.getTextInputValue('description'),
+      authorName: interaction.fields.getTextInputValue('authorName'),
+      footer: interaction.fields.getTextInputValue('footer'),
+    });
 
-      await updateEditor(interaction, memberDisplayName);
-      return true;
-    }
+    await interaction.reply({
+      ...buildBuilderPanel(interaction, memberDisplayName),
+      flags: 64,
+    });
+
+    return true;
+  }
 
       if (interaction.customId.startsWith('embed:save-media:')) {
-        markUnsaved(interaction, {
-        ...state,
-          authorIcon: interaction.fields.getTextInputValue('authorIcon'),
-          authorUrl: interaction.fields.getTextInputValue('authorUrl'),
-          footerIcon: interaction.fields.getTextInputValue('footerIcon'),
-          thumbnail: interaction.fields.getTextInputValue('thumbnail'),
-          image: interaction.fields.getTextInputValue('image'),
-      });
+  markUnsaved(interaction, {
+    ...state,
+    authorIcon: interaction.fields.getTextInputValue('authorIcon'),
+    authorUrl: interaction.fields.getTextInputValue('authorUrl'),
+    footerIcon: interaction.fields.getTextInputValue('footerIcon'),
+    thumbnail: interaction.fields.getTextInputValue('thumbnail'),
+    image: interaction.fields.getTextInputValue('image'),
+  });
 
-        await updateEditor(interaction, memberDisplayName);
-        return true;
-      }
+  await interaction.reply({
+    ...buildBuilderPanel(interaction, memberDisplayName),
+    flags: 64,
+  });
+
+  return true;
+}
 
     if (interaction.customId.startsWith('embed:field-save:')) {
     const fieldIndex = Number(interaction.customId.split(':')[2]);
