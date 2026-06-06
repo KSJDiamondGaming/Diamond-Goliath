@@ -1030,7 +1030,12 @@ function buildEditorPanel(interaction, memberDisplayName = 'Unknown User') {
     new ButtonBuilder()
       .setCustomId('embed:presets')
       .setLabel('💾 Presets')
-      .setStyle(ButtonStyle.Primary)
+      .setStyle(ButtonStyle.Primary),
+
+    new ButtonBuilder()
+      .setCustomId('embed:use')
+      .setLabel(getUseButtonLabel(state.template))
+      .setStyle(ButtonStyle.Success)
   ),
 
   new ActionRowBuilder().addComponents(
@@ -1038,11 +1043,6 @@ function buildEditorPanel(interaction, memberDisplayName = 'Unknown User') {
       .setCustomId('embed:test-send')
       .setLabel('🧪 Test')
       .setStyle(ButtonStyle.Secondary),
-
-    new ButtonBuilder()
-      .setCustomId('embed:use')
-      .setLabel(getUseButtonLabel(state.template))
-      .setStyle(ButtonStyle.Success),
 
     new ButtonBuilder()
       .setCustomId('embed:back')
