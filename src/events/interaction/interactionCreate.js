@@ -1,4 +1,4 @@
-// src/events/interactionCreate.js
+// src/events/interaction/interactionCreate.js
 
 const { MessageFlags } = require('discord.js');
 
@@ -9,7 +9,6 @@ const seenInteractions = new Set();
 
 function markInteraction(interaction) {
   if (!interaction?.id) return false;
-
   if (seenInteractions.has(interaction.id)) return false;
 
   seenInteractions.add(interaction.id);
@@ -83,7 +82,11 @@ async function runHandler(name, handler, interaction, client) {
     const handled = await handler(interaction, client);
 
     if (handled) {
-      console.log(`✅ Interaction handled by ${name}: ${interaction.customId || interaction.commandName}`);
+      console.log(
+        `✅ Interaction handled by ${name}: ${
+          interaction.customId || interaction.commandName
+        }`
+      );
       return true;
     }
 
@@ -146,15 +149,12 @@ module.exports = {
       return;
     }
 
-<<<<<<< Updated upstream
     console.log(
       `🧩 interactionCreate: ${
         interaction.type
       } ${interaction.commandName || interaction.customId || 'unknown'}`
     );
 
-=======
->>>>>>> Stashed changes
     try {
       if (interaction.isAutocomplete()) {
         const command = client.commands?.get(interaction.commandName);
@@ -193,23 +193,7 @@ module.exports = {
       }
 
       if (interaction.customId?.startsWith('embed:')) {
-<<<<<<< Updated upstream
         const handled = await handleEmbedInteraction(interaction, client);
-        if (handled) return;
-      }
-
-      const ticketHandled =
-        await ticketInteractionHandler.handleTicketInteraction(interaction);
-
-      if (ticketHandled) return;
-
-      console.warn(
-        `⚠️ Unhandled interaction: ${interaction.commandName || interaction.customId || 'unknown'}`
-      );
-=======
-        console.log(`[EMBED] ${interaction.customId}`);
-
-        const handled = await embedPanel.handleInteraction(interaction, client);
         if (handled) return;
       }
 
@@ -221,7 +205,12 @@ module.exports = {
 
         if (handled) return;
       }
->>>>>>> Stashed changes
+
+      console.warn(
+        `⚠️ Unhandled interaction: ${
+          interaction.commandName || interaction.customId || 'unknown'
+        }`
+      );
     } catch (error) {
       console.error('❌ interactionCreate fatal error');
       console.error(error);
