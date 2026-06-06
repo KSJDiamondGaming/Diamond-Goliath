@@ -1953,14 +1953,20 @@ if (interaction.customId === 'embed:editor') {
     }
 
     if (interaction.customId === 'embed:toggle-ping') {
-      markUnsaved(interaction, {
-        ...state,
-        allowUserPing: !state.allowUserPing,
-      });
+  markUnsaved(interaction, {
+    ...state,
+    allowUserPing: !state.allowUserPing,
+  });
 
-      await updateEditor(interaction, memberDisplayName);
-      return true;
-    }
+  await interaction.update(
+    buildBuilderPanel(
+      interaction,
+      memberDisplayName
+    )
+  );
+
+  return true;
+}
 
       if (interaction.customId === 'embed:toggle-timestamp') {
     markUnsaved(interaction, {
@@ -2014,7 +2020,12 @@ if (interaction.customId === 'embed:editor') {
         selectedFieldIndex: null,
       });
 
-      await updateEditor(interaction, memberDisplayName);
+      await interaction.update(
+        buildFieldsPanel(
+          interaction,
+          memberDisplayName
+        )
+    );
       return true;
     }
 
@@ -2024,9 +2035,15 @@ if (interaction.customId === 'embed:editor') {
     }
 
     if (interaction.customId === 'embed:fields') {
-      await updateFields(interaction, memberDisplayName);
+      await interaction.update(
+        buildFieldsPanel(
+          interaction,
+          memberDisplayName
+        )
+      );
+
       return true;
-    }
+  }
 
     if (interaction.customId === 'embed:buttons') {
       await interaction.update(
