@@ -74,15 +74,21 @@ function buildStickyPayload(sticky) {
   };
 }
 
-async function deleteOldSticky(channel, sticky) {
-  if (!sticky?.lastMessageId) return;
+async function fetchLastSticky(channel, sticky) {
+  if (!sticky?.lastMessageId) return null;
+  return channel.messages.fetch(sticky.lastMessageId).catch(() => null);
+}
 
-  try {
-    const message = await channel.messages.fetch(sticky.lastMessageId);
-    if (message?.deletable) await message.delete();
-  } catch (error) {
-    // Missing/deleted sticky messages are safe to ignore.
-  }
+async function deleteOldSticky(channel, sticky) {
+  const message = await fetchLastSticky(channel, sticky);
+  if (message?.deletable) await message.delete().catch(() => null);
+}
+
+async function editOldSticky(channel, sticky) {
+  const message = await fetchLastSticky(channel, sticky);
+  if (!message?.editable) return null;
+  await message.edit(buildStickyPayload(sticky));
+  return message;
 }
 
 function isCoolingDown(sticky) {
@@ -146,19 +152,25 @@ async function handleStickyMessage(message, client) {
   if (!sticky?.enabled) return;
   if (message.id === sticky.lastMessageId) return;
 
-  sticky.messageCount = Number(sticky.messageCount || 0) + 1;
+  const nextCount = Number(sticky.messageCount || 0) + 1;
 
   stickyStore.updateChannelSticky(
     message.guild.id,
     message.channel.id,
-    { messageCount: sticky.messageCount },
+    { messageCount: nextCount },
     client
   );
 
-  if (sticky.messageCount < Number(sticky.repostEvery || 10)) return;
-  if (isCoolingDown(sticky)) return;
+  if (nextCount < Number(sticky.repostEvery || 10)) return;
 
-  await repostSticky(message.channel, sticky, client);
+  const freshSticky = stickyStore.getChannelSticky(message.guild.id, message.channel.id, client) || {
+    ...sticky,
+    messageCount: nextCount,
+  };
+
+  if (isCoolingDown(freshSticky)) return;
+
+  await repostSticky(message.channel, freshSticky, client);
 }
 
 async function createSticky(channel, input, client) {
@@ -171,15 +183,29 @@ async function createSticky(channel, input, client) {
     client
   );
 
-  const sent = await repostSticky(channel, sticky, client, {
+  const edited = await editOldSticky(channel, sticky);
+  const sent = edited || await repostSticky(channel, sticky, client, {
     actor: stickyInput.actor,
     actorId: stickyInput.updatedBy,
     manual: true,
   });
 
+  if (edited) {
+    stickyStore.updateChannelSticky(
+      channel.guild.id,
+      channel.id,
+      {
+        lastMessageId: edited.id,
+        lastPostedAt: new Date().toISOString(),
+        messageCount: 0,
+      },
+      client
+    );
+  }
+
   logStickyTimeline(
     channel,
-    'Sticky created',
+    edited ? 'Sticky updated' : 'Sticky created',
     {
       actor: stickyInput.actor,
       actorId: stickyInput.updatedBy,
@@ -188,6 +214,7 @@ async function createSticky(channel, input, client) {
         repostEvery: sticky.repostEvery,
         cooldownSeconds: sticky.cooldownSeconds,
         messageId: sent?.id || null,
+        edited: Boolean(edited),
       },
     },
     client
