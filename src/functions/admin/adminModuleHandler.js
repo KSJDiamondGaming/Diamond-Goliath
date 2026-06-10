@@ -4,6 +4,9 @@
 
 const {
   ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  EmbedBuilder,
   MessageFlags,
   ModalBuilder,
   TextInputBuilder,
@@ -15,6 +18,7 @@ function isAdminModuleInteraction(interaction) {
 
   return (
     [
+      'admin:modules',
       'admin:giveaways',
       'admin:starboard',
       'admin:tempvoice',
@@ -92,12 +96,56 @@ function getModalValue(interaction, id, fallback = '') {
   return interaction.fields?.getTextInputValue(id)?.trim() || fallback;
 }
 
-function buildModulesPayload(interaction) {
-  const adminPanel = require('./adminPanel');
-  return adminPanel.buildModulesPanel(
-    interaction.guild,
-    getMemberDisplayName(interaction)
-  );
+function moduleButton(customId, label, style = ButtonStyle.Primary) {
+  return new ButtonBuilder()
+    .setCustomId(customId)
+    .setLabel(label)
+    .setStyle(style);
+}
+
+function moduleRow(...buttons) {
+  return new ActionRowBuilder().addComponents(...buttons);
+}
+
+function buildModulesPayload() {
+  const embed = new EmbedBuilder()
+    .setColor('#5865F2')
+    .setTitle('🧩 Modules')
+    .setDescription('Manage optional server modules from here.')
+    .addFields(
+      { name: '🎨 Embed Studio', value: 'Create and send custom embeds', inline: true },
+      { name: '🎭 Join Roles', value: 'Auto roles when members join', inline: true },
+      { name: '📌 Sticky Notes', value: 'Persistent channel notes', inline: true },
+      { name: '💡 Suggestions', value: 'Suggestion system', inline: true },
+      { name: '🎟️ Tickets', value: 'Support ticket system', inline: true },
+      { name: '🎉 Giveaways', value: 'Create and manage giveaways', inline: true },
+      { name: '⭐ Starboard', value: 'Highlight starred messages', inline: true },
+      { name: '🎤 Temp Voice', value: 'Join-to-create voice rooms', inline: true },
+      { name: '📊 Stats / Polls / Fun', value: 'Coming later', inline: true }
+    )
+    .setFooter({ text: 'Navigation: Admin Hub › Modules' })
+    .setTimestamp();
+
+  return {
+    embeds: [embed],
+    components: [
+      moduleRow(
+        moduleButton('admin:embed', '🎨 Embed'),
+        moduleButton('admin:autoRoles', '🎭 Join Roles'),
+        moduleButton('admin:sticky', '📌 Sticky')
+      ),
+      moduleRow(
+        moduleButton('admin:suggestions', '💡 Suggestions'),
+        moduleButton('admin:tickets', '🎟️ Tickets'),
+        moduleButton('admin:giveaways', '🎉 Giveaways')
+      ),
+      moduleRow(
+        moduleButton('admin:starboard', '⭐ Starboard'),
+        moduleButton('admin:tempvoice', '🎤 Temp Voice'),
+        moduleButton('admin:back', '⬅️ Back', ButtonStyle.Secondary)
+      ),
+    ],
+  };
 }
 
 function buildGiveawaysPayload(interaction) {
@@ -364,7 +412,7 @@ async function handleAdminModuleInteraction(interaction, client) {
     if (interaction.customId === 'tempvoice:createModal') return handleTempVoiceCreateModal(interaction);
   }
 
-  if (interaction.customId === 'admin:back' || interaction.customId === 'suggestions:back') {
+  if (interaction.customId === 'admin:modules' || interaction.customId === 'admin:back' || interaction.customId === 'suggestions:back') {
     return updateOrReply(interaction, buildModulesPayload(interaction)).then(() => true);
   }
 
