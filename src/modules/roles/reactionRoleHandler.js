@@ -1,132 +1,122 @@
+'use strict';
+
+// src/modules/roles/reactionRoleHandler.js
+
 const roleStore = require('./roleStore');
+const roleManager = require('./roleManager');
 
-function getRoleConfig(guildId, client) {
-  if (typeof roleStore.loadRoleData === 'function') {
-    return roleStore.loadRoleData(guildId, client);
+function emojiMatches(configEmoji, reactionEmoji) {
+  const expected = String(configEmoji || '').trim();
+  if (!expected || !reactionEmoji) return false;
+
+  const emojiId = reactionEmoji.id || null;
+  const emojiName = reactionEmoji.name || null;
+  const fullCustom = emojiId && emojiName ? `<:${emojiName}:${emojiId}>` : null;
+
+  return (
+    expected === emojiName ||
+    expected === emojiId ||
+    expected === fullCustom ||
+    expected.includes(`:${emojiId}>`)
+  );
+}
+
+function findPanelByMessage(guildId, messageId) {
+  return roleStore
+    .getReactionPanels(guildId)
+    .find((panel) => panel.enabled !== false && panel.messageId === messageId) || null;
+}
+
+function findRoleByEmoji(panel, reactionEmoji) {
+  return (panel.roles || []).find(
+    (role) => role.enabled !== false && emojiMatches(role.emoji, reactionEmoji)
+  ) || null;
+}
+
+function canUseReactionRoles(panel) {
+  return Boolean(panel && Array.isArray(panel.roles) && panel.roles.some((role) => role.emoji));
+}
+
+async function handleReactionAdd(reaction, user) {
+  if (user?.bot) return null;
+
+  if (reaction?.partial) {
+    await reaction.fetch().catch(() => null);
   }
 
-  if (typeof roleStore.loadRoles === 'function') {
-    return roleStore.loadRoles(guildId, client);
+  if (reaction?.message?.partial) {
+    await reaction.message.fetch().catch(() => null);
   }
 
-  return { reactionRoles: {}, buttonRoles: {} };
-}
+  const message = reaction?.message;
+  const guild = message?.guild;
 
-function saveRoleConfig(guildId, data, client) {
-  if (typeof roleStore.saveRoleData === 'function') {
-    return roleStore.saveRoleData(guildId, data, client);
-  }
+  if (!guild?.id || !message?.id) return null;
 
-  if (typeof roleStore.saveRoles === 'function') {
-    return roleStore.saveRoles(guildId, data, client);
-  }
+  const panel = findPanelByMessage(guild.id, message.id);
+  if (!canUseReactionRoles(panel)) return null;
 
-  return data;
-}
-
-function canManageRole(guild, role) {
-  const botMember = guild?.members?.me;
-  if (!botMember || !role) return false;
-
-  return botMember.roles.highest.position > role.position && !role.managed;
-}
-
-async function toggleMemberRole(member, roleId) {
-  if (!member || !roleId) return null;
-
-  const role = member.guild.roles.cache.get(roleId);
-  if (!canManageRole(member.guild, role)) return null;
-
-  if (member.roles.cache.has(roleId)) {
-    await member.roles.remove(roleId, 'Goliath reaction/button role toggle');
-    return { action: 'removed', role };
-  }
-
-  await member.roles.add(roleId, 'Goliath reaction/button role toggle');
-  return { action: 'added', role };
-}
-
-function getReactionRole(data, messageId, emojiKey) {
-  const entries = data.reactionRoles || {};
-  const messageConfig = entries[messageId];
-
-  if (!messageConfig) return null;
-
-  return messageConfig.roles?.[emojiKey] || null;
-}
-
-function getButtonRole(data, customId) {
-  const entries = data.buttonRoles || {};
-  return entries[customId] || null;
-}
-
-async function handleReactionRole(reaction, user, client) {
-  if (!reaction?.message?.guild || user?.bot) return null;
-
-  if (reaction.partial) await reaction.fetch().catch(() => null);
-  if (reaction.message?.partial) await reaction.message.fetch().catch(() => null);
-
-  const guild = reaction.message.guild;
-  const emojiKey = reaction.emoji.id || reaction.emoji.name;
-  const data = getRoleConfig(guild.id, client);
-  const roleId = getReactionRole(data, reaction.message.id, emojiKey);
-
-  if (!roleId) return null;
+  const roleConfig = findRoleByEmoji(panel, reaction.emoji);
+  if (!roleConfig) return null;
 
   const member = await guild.members.fetch(user.id).catch(() => null);
-  return toggleMemberRole(member, roleId);
+  if (!member) return null;
+
+  const fakeInteraction = {
+    guild,
+    guildId: guild.id,
+    member,
+    user,
+  };
+
+  return roleManager.applyRoleToggle(
+    fakeInteraction,
+    panel.panelId || panel.id,
+    roleConfig.id || roleConfig.roleId
+  );
 }
 
-async function handleButtonRole(interaction, client) {
-  if (!interaction?.guild || !interaction.isButton?.()) return null;
+async function handleReactionRemove(reaction, user) {
+  if (user?.bot) return null;
 
-  const data = getRoleConfig(interaction.guild.id, client);
-  const roleId = getButtonRole(data, interaction.customId);
-
-  if (!roleId) return null;
-
-  const result = await toggleMemberRole(interaction.member, roleId);
-
-  if (!interaction.replied && !interaction.deferred) {
-    const label = result?.role?.name || 'role';
-    const action = result?.action === 'removed' ? 'removed from' : 'added to';
-
-    await interaction.reply({
-      content: result
-        ? `✅ ${label} ${action} your roles.`
-        : '⚠️ I could not update that role. Please check my permissions and role position.',
-      ephemeral: true,
-    });
+  if (reaction?.partial) {
+    await reaction.fetch().catch(() => null);
   }
 
-  return result;
-}
+  if (reaction?.message?.partial) {
+    await reaction.message.fetch().catch(() => null);
+  }
 
-function registerReactionRole(guildId, messageId, emojiKey, roleId, client) {
-  const data = getRoleConfig(guildId, client);
+  const message = reaction?.message;
+  const guild = message?.guild;
 
-  data.reactionRoles = data.reactionRoles || {};
-  data.reactionRoles[messageId] = data.reactionRoles[messageId] || { roles: {} };
-  data.reactionRoles[messageId].roles[emojiKey] = roleId;
+  if (!guild?.id || !message?.id) return null;
 
-  saveRoleConfig(guildId, data, client);
-  return data.reactionRoles[messageId];
-}
+  const panel = findPanelByMessage(guild.id, message.id);
+  if (!canUseReactionRoles(panel)) return null;
 
-function registerButtonRole(guildId, customId, roleId, client) {
-  const data = getRoleConfig(guildId, client);
+  const roleConfig = findRoleByEmoji(panel, reaction.emoji);
+  if (!roleConfig || roleConfig.mode === roleManager.ROLE_MODES.ADD || roleConfig.mode === roleManager.ROLE_MODES.VERIFY) {
+    return null;
+  }
 
-  data.buttonRoles = data.buttonRoles || {};
-  data.buttonRoles[customId] = roleId;
+  const member = await guild.members.fetch(user.id).catch(() => null);
+  if (!member || !member.roles.cache.has(roleConfig.roleId)) return null;
 
-  saveRoleConfig(guildId, data, client);
-  return data.buttonRoles[customId];
+  const role = guild.roles.cache.get(roleConfig.roleId) || await guild.roles.fetch(roleConfig.roleId).catch(() => null);
+  const safety = roleManager.validateRoleSafety(guild, role);
+
+  if (!safety.ok) return null;
+
+  await member.roles.remove(role, 'Goliath reaction role removed');
+  roleStore.addAnalytics(guild.id, { removed: 1 });
+
+  return { ok: true, message: `Removed ${role.name}.` };
 }
 
 module.exports = {
-  handleReactionRole,
-  handleButtonRole,
-  registerReactionRole,
-  registerButtonRole,
-  toggleMemberRole,
+  handleReactionAdd,
+  handleReactionRemove,
+  findPanelByMessage,
+  findRoleByEmoji,
 };
