@@ -13,33 +13,35 @@ const {
   TextInputStyle,
 } = require('discord.js');
 
+const MODULE_IDS = new Set([
+  'admin:modules',
+  'admin:giveaways',
+  'admin:starboard',
+  'admin:tempvoice',
+  'admin:sticky',
+  'admin:suggestions',
+  'admin:back',
+  'giveaway:create',
+  'giveaway:refresh',
+  'giveaway:createModal',
+  'starboard:configure',
+  'starboard:refresh',
+  'starboard:configureModal',
+  'tempvoice:create',
+  'tempvoice:refresh',
+  'tempvoice:createModal',
+  'suggestions:refresh',
+  'suggestions:pending',
+  'suggestions:back',
+]);
+
 function isAdminModuleInteraction(interaction) {
   const customId = interaction?.customId || '';
+  return MODULE_IDS.has(customId) || customId.startsWith('sticky:');
+}
 
-  return (
-    [
-      'admin:modules',
-      'admin:giveaways',
-      'admin:starboard',
-      'admin:tempvoice',
-      'admin:sticky',
-      'admin:suggestions',
-      'admin:back',
-      'giveaway:create',
-      'giveaway:refresh',
-      'giveaway:createModal',
-      'starboard:configure',
-      'starboard:refresh',
-      'starboard:configureModal',
-      'tempvoice:create',
-      'tempvoice:refresh',
-      'tempvoice:createModal',
-      'suggestions:refresh',
-      'suggestions:pending',
-      'suggestions:back',
-    ].includes(customId) ||
-    customId.startsWith('sticky:')
-  );
+function isExpiredInteraction(error) {
+  return error?.code === 10062 || error?.code === 40060;
 }
 
 async function updateOrReply(interaction, payload) {
@@ -48,15 +50,45 @@ async function updateOrReply(interaction, payload) {
     flags: payload.flags || MessageFlags.Ephemeral,
   };
 
-  if (interaction.deferred || interaction.replied) {
-    return interaction.editReply(finalPayload).catch(() => null);
-  }
+  try {
+    if (interaction.deferred || interaction.replied) {
+      await interaction.editReply(finalPayload);
+      return true;
+    }
 
-  if (typeof interaction.update === 'function' && interaction.isButton?.()) {
-    return interaction.update(payload).catch(() => interaction.reply(finalPayload).catch(() => null));
-  }
+    if (interaction.isButton?.() || interaction.isStringSelectMenu?.()) {
+      await interaction.update(payload);
+      return true;
+    }
 
-  return interaction.reply(finalPayload).catch(() => null);
+    await interaction.reply(finalPayload);
+    return true;
+  } catch (error) {
+    if (isExpiredInteraction(error)) return false;
+
+    try {
+      await interaction.reply(finalPayload);
+      return true;
+    } catch (replyError) {
+      if (isExpiredInteraction(replyError)) return false;
+      throw replyError;
+    }
+  }
+}
+
+async function showModalSafe(interaction, modal) {
+  try {
+    if (interaction.deferred || interaction.replied) return true;
+    await interaction.showModal(modal);
+    return true;
+  } catch (error) {
+    if (isExpiredInteraction(error)) {
+      console.warn(`⚠️ Modal interaction expired: ${interaction.customId}`);
+      return true;
+    }
+
+    throw error;
+  }
 }
 
 function getMemberDisplayName(interaction) {
@@ -97,10 +129,7 @@ function getModalValue(interaction, id, fallback = '') {
 }
 
 function moduleButton(customId, label, style = ButtonStyle.Primary) {
-  return new ButtonBuilder()
-    .setCustomId(customId)
-    .setLabel(label)
-    .setStyle(style);
+  return new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style);
 }
 
 function moduleRow(...buttons) {
@@ -150,7 +179,6 @@ function buildModulesPayload() {
 
 function buildGiveawaysPayload(interaction) {
   const giveawayMenu = require('../../modules/giveaways/giveawayMenu');
-
   return {
     embeds: [giveawayMenu.buildGiveawayMenuEmbed(interaction.guildId)],
     components: giveawayMenu.buildGiveawayMenuRows(),
@@ -159,7 +187,6 @@ function buildGiveawaysPayload(interaction) {
 
 function buildStarboardPayload(interaction) {
   const starboardMenu = require('../../modules/starboard/starboardMenu');
-
   return {
     embeds: [starboardMenu.buildStarboardEmbed(interaction.guildId)],
     components: starboardMenu.buildStarboardMenuRows(),
@@ -168,7 +195,6 @@ function buildStarboardPayload(interaction) {
 
 function buildTempVoicePayload(interaction) {
   const tempVoiceMenu = require('../../modules/tempvoice/tempVoiceMenu');
-
   return {
     embeds: [tempVoiceMenu.buildTempVoiceEmbed(interaction.guildId)],
     components: tempVoiceMenu.buildTempVoiceMenuRows(),
@@ -177,7 +203,6 @@ function buildTempVoicePayload(interaction) {
 
 function buildStickyPayload(interaction, client) {
   const stickyMenu = require('../../modules/sticky/stickyMenu');
-
   return {
     embeds: [stickyMenu.buildStickyStatusEmbed(interaction.guildId, interaction.channelId, client)],
     components: stickyMenu.buildStickyMenuRows(interaction.channelId),
@@ -186,7 +211,6 @@ function buildStickyPayload(interaction, client) {
 
 function buildSuggestionsPayload(interaction, client, options = {}) {
   const suggestionMenu = require('../../modules/suggestions/suggestionMenu');
-
   return {
     embeds: [suggestionMenu.buildSuggestionListEmbed(interaction.guildId, client, options)],
     components: suggestionMenu.buildSuggestionMenuRows(),
@@ -288,10 +312,11 @@ async function handleGiveawayCreateModal(interaction) {
   const channel = await getChannel(interaction, channelId);
 
   if (!channel?.send) {
-    return updateOrReply(interaction, {
+    await updateOrReply(interaction, {
       content: '❌ Could not find a text channel for the giveaway.',
       flags: MessageFlags.Ephemeral,
-    }).then(() => true);
+    });
+    return true;
   }
 
   const giveaway = await giveawayManager.createGiveaway(channel, {
@@ -302,12 +327,12 @@ async function handleGiveawayCreateModal(interaction) {
     hostId: interaction.user.id,
   });
 
-  return updateOrReply(interaction, {
-    content: giveaway
-      ? `✅ Giveaway created in <#${channel.id}>.`
-      : '❌ Giveaway could not be created.',
+  await updateOrReply(interaction, {
+    content: giveaway ? `✅ Giveaway created in <#${channel.id}>.` : '❌ Giveaway could not be created.',
     flags: MessageFlags.Ephemeral,
-  }).then(() => true);
+  });
+
+  return true;
 }
 
 async function handleStarboardConfigModal(interaction) {
@@ -315,10 +340,11 @@ async function handleStarboardConfigModal(interaction) {
   const channelId = cleanDiscordId(getModalValue(interaction, 'channelId'));
 
   if (!channelId) {
-    return updateOrReply(interaction, {
+    await updateOrReply(interaction, {
       content: '❌ Please provide a valid starboard channel ID or mention.',
       flags: MessageFlags.Ephemeral,
-    }).then(() => true);
+    });
+    return true;
   }
 
   starboardManager.configureStarboard(interaction.guildId, {
@@ -328,7 +354,8 @@ async function handleStarboardConfigModal(interaction) {
     emoji: getModalValue(interaction, 'emoji', '⭐'),
   });
 
-  return updateOrReply(interaction, buildStarboardPayload(interaction)).then(() => true);
+  await updateOrReply(interaction, buildStarboardPayload(interaction));
+  return true;
 }
 
 async function handleTempVoiceCreateModal(interaction) {
@@ -336,10 +363,11 @@ async function handleTempVoiceCreateModal(interaction) {
   const joinChannelId = cleanDiscordId(getModalValue(interaction, 'joinChannelId'));
 
   if (!joinChannelId) {
-    return updateOrReply(interaction, {
+    await updateOrReply(interaction, {
       content: '❌ Please provide a valid voice channel ID or mention.',
       flags: MessageFlags.Ephemeral,
-    }).then(() => true);
+    });
+    return true;
   }
 
   tempVoiceManager.createHub(interaction.guildId, {
@@ -350,7 +378,8 @@ async function handleTempVoiceCreateModal(interaction) {
     createdBy: interaction.user.id,
   });
 
-  return updateOrReply(interaction, buildTempVoicePayload(interaction)).then(() => true);
+  await updateOrReply(interaction, buildTempVoicePayload(interaction));
+  return true;
 }
 
 async function handleStickyAction(interaction, client) {
@@ -358,10 +387,11 @@ async function handleStickyAction(interaction, client) {
   const channel = await getChannel(interaction, channelId || interaction.channelId);
 
   if (!channel) {
-    return updateOrReply(interaction, {
+    await updateOrReply(interaction, {
       content: '❌ Could not find that channel.',
       flags: MessageFlags.Ephemeral,
-    }).then(() => true);
+    });
+    return true;
   }
 
   const stickyManager = require('../../modules/sticky/stickyManager');
@@ -372,10 +402,11 @@ async function handleStickyAction(interaction, client) {
     const sticky = stickyStore.getChannelSticky(interaction.guildId, channel.id, client);
 
     if (!sticky) {
-      return updateOrReply(interaction, {
+      await updateOrReply(interaction, {
         content: '❌ No sticky message is configured for this channel.',
         flags: MessageFlags.Ephemeral,
-      }).then(() => true);
+      });
+      return true;
     }
 
     await stickyManager.repostSticky(channel, sticky, client, {
@@ -386,25 +417,16 @@ async function handleStickyAction(interaction, client) {
     });
   }
 
-  if (action === 'pause') {
-    await stickyManager.pauseSticky(channel, client, actor);
-  }
+  if (action === 'pause') await stickyManager.pauseSticky(channel, client, actor);
+  if (action === 'resume') await stickyManager.resumeSticky(channel, client, actor);
+  if (action === 'delete') await stickyManager.removeSticky(channel, client, actor);
 
-  if (action === 'resume') {
-    await stickyManager.resumeSticky(channel, client, actor);
-  }
-
-  if (action === 'delete') {
-    await stickyManager.removeSticky(channel, client, actor);
-  }
-
-  return updateOrReply(interaction, buildStickyPayload(interaction, client)).then(() => true);
+  await updateOrReply(interaction, buildStickyPayload(interaction, client));
+  return true;
 }
 
 async function handleAdminModuleInteraction(interaction, client) {
-  if (!interaction?.guildId || !isAdminModuleInteraction(interaction)) {
-    return false;
-  }
+  if (!interaction?.guildId || !isAdminModuleInteraction(interaction)) return false;
 
   if (interaction.isModalSubmit?.()) {
     if (interaction.customId === 'giveaway:createModal') return handleGiveawayCreateModal(interaction);
@@ -413,53 +435,52 @@ async function handleAdminModuleInteraction(interaction, client) {
   }
 
   if (interaction.customId === 'admin:modules' || interaction.customId === 'admin:back' || interaction.customId === 'suggestions:back') {
-    return updateOrReply(interaction, buildModulesPayload(interaction)).then(() => true);
+    await updateOrReply(interaction, buildModulesPayload(interaction));
+    return true;
   }
 
   if (interaction.customId === 'admin:giveaways' || interaction.customId === 'giveaway:refresh') {
-    return updateOrReply(interaction, buildGiveawaysPayload(interaction)).then(() => true);
+    await updateOrReply(interaction, buildGiveawaysPayload(interaction));
+    return true;
   }
 
   if (interaction.customId === 'giveaway:create') {
-    await interaction.showModal(buildGiveawayCreateModal(interaction.channelId));
-    return true;
+    return showModalSafe(interaction, buildGiveawayCreateModal(interaction.channelId));
   }
 
   if (interaction.customId === 'admin:starboard' || interaction.customId === 'starboard:refresh') {
-    return updateOrReply(interaction, buildStarboardPayload(interaction)).then(() => true);
+    await updateOrReply(interaction, buildStarboardPayload(interaction));
+    return true;
   }
 
   if (interaction.customId === 'starboard:configure') {
-    await interaction.showModal(buildStarboardConfigModal());
-    return true;
+    return showModalSafe(interaction, buildStarboardConfigModal());
   }
 
   if (interaction.customId === 'admin:tempvoice' || interaction.customId === 'tempvoice:refresh') {
-    return updateOrReply(interaction, buildTempVoicePayload(interaction)).then(() => true);
-  }
-
-  if (interaction.customId === 'tempvoice:create') {
-    await interaction.showModal(buildTempVoiceCreateModal(interaction.channelId));
+    await updateOrReply(interaction, buildTempVoicePayload(interaction));
     return true;
   }
 
-  if (interaction.customId === 'admin:sticky') {
-    return updateOrReply(interaction, buildStickyPayload(interaction, client)).then(() => true);
+  if (interaction.customId === 'tempvoice:create') {
+    return showModalSafe(interaction, buildTempVoiceCreateModal(interaction.channelId));
   }
 
-  if (interaction.customId?.startsWith('sticky:')) {
-    return handleStickyAction(interaction, client);
+  if (interaction.customId === 'admin:sticky') {
+    await updateOrReply(interaction, buildStickyPayload(interaction, client));
+    return true;
   }
+
+  if (interaction.customId?.startsWith('sticky:')) return handleStickyAction(interaction, client);
 
   if (interaction.customId === 'admin:suggestions' || interaction.customId === 'suggestions:refresh') {
-    return updateOrReply(interaction, buildSuggestionsPayload(interaction, client)).then(() => true);
+    await updateOrReply(interaction, buildSuggestionsPayload(interaction, client));
+    return true;
   }
 
   if (interaction.customId === 'suggestions:pending') {
-    return updateOrReply(
-      interaction,
-      buildSuggestionsPayload(interaction, client, { status: 'pending' })
-    ).then(() => true);
+    await updateOrReply(interaction, buildSuggestionsPayload(interaction, client, { status: 'pending' }));
+    return true;
   }
 
   return false;
