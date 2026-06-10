@@ -2,7 +2,13 @@
 
 // src/functions/admin/adminModuleHandler.js
 
-const { MessageFlags } = require('discord.js');
+const {
+  ActionRowBuilder,
+  MessageFlags,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+} = require('discord.js');
 
 function isAdminModuleInteraction(interaction) {
   const customId = interaction?.customId || '';
@@ -17,10 +23,13 @@ function isAdminModuleInteraction(interaction) {
       'admin:back',
       'giveaway:create',
       'giveaway:refresh',
+      'giveaway:createModal',
       'starboard:configure',
       'starboard:refresh',
+      'starboard:configureModal',
       'tempvoice:create',
       'tempvoice:refresh',
+      'tempvoice:createModal',
       'suggestions:refresh',
       'suggestions:pending',
       'suggestions:back',
@@ -55,16 +64,32 @@ function getMemberDisplayName(interaction) {
   );
 }
 
-function buildNotReadyPayload(title, description) {
-  return {
-    content: [
-      `⚠️ **${title}**`,
-      description,
-      '',
-      'The backend is loaded. The full setup flow will be wired next.',
-    ].join('\n'),
-    flags: MessageFlags.Ephemeral,
-  };
+function cleanDiscordId(value) {
+  const id = String(value || '').replace(/[<#>@!&]/g, '').trim();
+  return /^\d{15,25}$/.test(id) ? id : null;
+}
+
+function numberOr(value, fallback, min = 1, max = 999) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(max, Math.max(min, Math.floor(number)));
+}
+
+function modalInput(id, label, style, options = {}) {
+  return new ActionRowBuilder().addComponents(
+    new TextInputBuilder()
+      .setCustomId(id)
+      .setLabel(label)
+      .setStyle(style)
+      .setRequired(options.required !== false)
+      .setPlaceholder(options.placeholder || '')
+      .setValue(options.value || '')
+      .setMaxLength(options.maxLength || (style === TextInputStyle.Paragraph ? 1000 : 100))
+  );
+}
+
+function getModalValue(interaction, id, fallback = '') {
+  return interaction.fields?.getTextInputValue(id)?.trim() || fallback;
 }
 
 function buildModulesPayload(interaction) {
@@ -120,9 +145,164 @@ function buildSuggestionsPayload(interaction, client, options = {}) {
   };
 }
 
+function buildGiveawayCreateModal(channelId) {
+  return new ModalBuilder()
+    .setCustomId('giveaway:createModal')
+    .setTitle('Create Giveaway')
+    .addComponents(
+      modalInput('prize', 'Prize', TextInputStyle.Short, {
+        placeholder: 'Nitro, game key, VIP role...',
+        maxLength: 100,
+      }),
+      modalInput('duration', 'Duration', TextInputStyle.Short, {
+        placeholder: '10m, 2h, 1d',
+        value: '1h',
+        maxLength: 20,
+      }),
+      modalInput('winnerCount', 'Winners', TextInputStyle.Short, {
+        placeholder: '1',
+        value: '1',
+        maxLength: 3,
+      }),
+      modalInput('channelId', 'Channel ID / mention', TextInputStyle.Short, {
+        placeholder: 'Leave as current channel or paste channel ID',
+        value: channelId || '',
+        required: false,
+        maxLength: 40,
+      }),
+      modalInput('description', 'Description', TextInputStyle.Paragraph, {
+        placeholder: 'React with 🎉 to enter.',
+        required: false,
+        maxLength: 800,
+      })
+    );
+}
+
+function buildStarboardConfigModal() {
+  return new ModalBuilder()
+    .setCustomId('starboard:configureModal')
+    .setTitle('Configure Starboard')
+    .addComponents(
+      modalInput('channelId', 'Starboard channel ID / mention', TextInputStyle.Short, {
+        placeholder: '#starboard or channel ID',
+        maxLength: 40,
+      }),
+      modalInput('threshold', 'Star threshold', TextInputStyle.Short, {
+        placeholder: '3',
+        value: '3',
+        maxLength: 3,
+      }),
+      modalInput('emoji', 'Emoji', TextInputStyle.Short, {
+        placeholder: '⭐',
+        value: '⭐',
+        required: false,
+        maxLength: 40,
+      })
+    );
+}
+
+function buildTempVoiceCreateModal(channelId) {
+  return new ModalBuilder()
+    .setCustomId('tempvoice:createModal')
+    .setTitle('Create Temp Voice Hub')
+    .addComponents(
+      modalInput('joinChannelId', 'Join channel ID / mention', TextInputStyle.Short, {
+        placeholder: 'Voice channel users join to create rooms',
+        value: channelId || '',
+        maxLength: 40,
+      }),
+      modalInput('categoryId', 'Category ID / mention', TextInputStyle.Short, {
+        placeholder: 'Optional category for created rooms',
+        required: false,
+        maxLength: 40,
+      }),
+      modalInput('nameTemplate', 'Room name template', TextInputStyle.Short, {
+        placeholder: "{username}'s Channel",
+        value: "{username}'s Channel",
+        maxLength: 80,
+      }),
+      modalInput('userLimit', 'User limit', TextInputStyle.Short, {
+        placeholder: '0 = unlimited',
+        value: '0',
+        maxLength: 3,
+      })
+    );
+}
+
 async function getChannel(interaction, channelId) {
   return interaction.guild?.channels?.cache?.get(channelId) ||
     await interaction.guild?.channels?.fetch(channelId).catch(() => null);
+}
+
+async function handleGiveawayCreateModal(interaction) {
+  const giveawayManager = require('../../modules/giveaways/giveawayManager');
+  const channelId = cleanDiscordId(getModalValue(interaction, 'channelId')) || interaction.channelId;
+  const channel = await getChannel(interaction, channelId);
+
+  if (!channel?.send) {
+    return updateOrReply(interaction, {
+      content: '❌ Could not find a text channel for the giveaway.',
+      flags: MessageFlags.Ephemeral,
+    }).then(() => true);
+  }
+
+  const giveaway = await giveawayManager.createGiveaway(channel, {
+    prize: getModalValue(interaction, 'prize', 'Giveaway Prize'),
+    duration: getModalValue(interaction, 'duration', '1h'),
+    winnerCount: numberOr(getModalValue(interaction, 'winnerCount'), 1, 1, 25),
+    description: getModalValue(interaction, 'description', 'React with 🎉 to enter.'),
+    hostId: interaction.user.id,
+  });
+
+  return updateOrReply(interaction, {
+    content: giveaway
+      ? `✅ Giveaway created in <#${channel.id}>.`
+      : '❌ Giveaway could not be created.',
+    flags: MessageFlags.Ephemeral,
+  }).then(() => true);
+}
+
+async function handleStarboardConfigModal(interaction) {
+  const starboardManager = require('../../modules/starboard/starboardManager');
+  const channelId = cleanDiscordId(getModalValue(interaction, 'channelId'));
+
+  if (!channelId) {
+    return updateOrReply(interaction, {
+      content: '❌ Please provide a valid starboard channel ID or mention.',
+      flags: MessageFlags.Ephemeral,
+    }).then(() => true);
+  }
+
+  starboardManager.configureStarboard(interaction.guildId, {
+    enabled: true,
+    channelId,
+    threshold: numberOr(getModalValue(interaction, 'threshold'), 3, 1, 50),
+    emoji: getModalValue(interaction, 'emoji', '⭐'),
+  });
+
+  return updateOrReply(interaction, buildStarboardPayload(interaction)).then(() => true);
+}
+
+async function handleTempVoiceCreateModal(interaction) {
+  const tempVoiceManager = require('../../modules/tempvoice/tempVoiceManager');
+  const joinChannelId = cleanDiscordId(getModalValue(interaction, 'joinChannelId'));
+
+  if (!joinChannelId) {
+    return updateOrReply(interaction, {
+      content: '❌ Please provide a valid voice channel ID or mention.',
+      flags: MessageFlags.Ephemeral,
+    }).then(() => true);
+  }
+
+  tempVoiceManager.createHub(interaction.guildId, {
+    joinChannelId,
+    categoryId: cleanDiscordId(getModalValue(interaction, 'categoryId')),
+    nameTemplate: getModalValue(interaction, 'nameTemplate', "{username}'s Channel"),
+    userLimit: numberOr(getModalValue(interaction, 'userLimit'), 0, 0, 99),
+    createdBy: interaction.user.id,
+  });
+
+  return updateOrReply(interaction, buildTempVoicePayload(interaction)).then(() => true);
 }
 
 async function handleStickyAction(interaction, client) {
@@ -178,6 +358,12 @@ async function handleAdminModuleInteraction(interaction, client) {
     return false;
   }
 
+  if (interaction.isModalSubmit?.()) {
+    if (interaction.customId === 'giveaway:createModal') return handleGiveawayCreateModal(interaction);
+    if (interaction.customId === 'starboard:configureModal') return handleStarboardConfigModal(interaction);
+    if (interaction.customId === 'tempvoice:createModal') return handleTempVoiceCreateModal(interaction);
+  }
+
   if (interaction.customId === 'admin:back' || interaction.customId === 'suggestions:back') {
     return updateOrReply(interaction, buildModulesPayload(interaction)).then(() => true);
   }
@@ -187,10 +373,8 @@ async function handleAdminModuleInteraction(interaction, client) {
   }
 
   if (interaction.customId === 'giveaway:create') {
-    return updateOrReply(
-      interaction,
-      buildNotReadyPayload('Create Giveaway', 'Giveaway creation controls are not connected to a modal yet.')
-    ).then(() => true);
+    await interaction.showModal(buildGiveawayCreateModal(interaction.channelId));
+    return true;
   }
 
   if (interaction.customId === 'admin:starboard' || interaction.customId === 'starboard:refresh') {
@@ -198,10 +382,8 @@ async function handleAdminModuleInteraction(interaction, client) {
   }
 
   if (interaction.customId === 'starboard:configure') {
-    return updateOrReply(
-      interaction,
-      buildNotReadyPayload('Configure Starboard', 'Starboard configuration controls are not connected to a setup modal yet.')
-    ).then(() => true);
+    await interaction.showModal(buildStarboardConfigModal());
+    return true;
   }
 
   if (interaction.customId === 'admin:tempvoice' || interaction.customId === 'tempvoice:refresh') {
@@ -209,10 +391,8 @@ async function handleAdminModuleInteraction(interaction, client) {
   }
 
   if (interaction.customId === 'tempvoice:create') {
-    return updateOrReply(
-      interaction,
-      buildNotReadyPayload('Create Temp Voice Hub', 'Temp Voice hub creation controls are not connected to a setup modal yet.')
-    ).then(() => true);
+    await interaction.showModal(buildTempVoiceCreateModal(interaction.channelId));
+    return true;
   }
 
   if (interaction.customId === 'admin:sticky') {
