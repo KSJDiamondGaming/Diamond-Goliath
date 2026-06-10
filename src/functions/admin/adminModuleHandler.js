@@ -120,6 +120,59 @@ function buildSuggestionsPayload(interaction, client, options = {}) {
   };
 }
 
+async function getChannel(interaction, channelId) {
+  return interaction.guild?.channels?.cache?.get(channelId) ||
+    await interaction.guild?.channels?.fetch(channelId).catch(() => null);
+}
+
+async function handleStickyAction(interaction, client) {
+  const [, action, channelId] = String(interaction.customId || '').split(':');
+  const channel = await getChannel(interaction, channelId || interaction.channelId);
+
+  if (!channel) {
+    return updateOrReply(interaction, {
+      content: '❌ Could not find that channel.',
+      flags: MessageFlags.Ephemeral,
+    }).then(() => true);
+  }
+
+  const stickyManager = require('../../modules/sticky/stickyManager');
+  const stickyStore = require('../../modules/sticky/stickyStore');
+  const actor = getMemberDisplayName(interaction);
+
+  if (action === 'repost') {
+    const sticky = stickyStore.getChannelSticky(interaction.guildId, channel.id, client);
+
+    if (!sticky) {
+      return updateOrReply(interaction, {
+        content: '❌ No sticky message is configured for this channel.',
+        flags: MessageFlags.Ephemeral,
+      }).then(() => true);
+    }
+
+    await stickyManager.repostSticky(channel, sticky, client, {
+      actor,
+      actorId: interaction.user.id,
+      actorTag: interaction.user.tag,
+      manual: true,
+    });
+  }
+
+  if (action === 'pause') {
+    await stickyManager.pauseSticky(channel, client, actor);
+  }
+
+  if (action === 'resume') {
+    await stickyManager.resumeSticky(channel, client, actor);
+  }
+
+  if (action === 'delete') {
+    await stickyManager.removeSticky(channel, client, actor);
+  }
+
+  return updateOrReply(interaction, buildStickyPayload(interaction, client)).then(() => true);
+}
+
 async function handleAdminModuleInteraction(interaction, client) {
   if (!interaction?.guildId || !isAdminModuleInteraction(interaction)) {
     return false;
@@ -167,10 +220,7 @@ async function handleAdminModuleInteraction(interaction, client) {
   }
 
   if (interaction.customId?.startsWith('sticky:')) {
-    return updateOrReply(
-      interaction,
-      buildNotReadyPayload('Sticky Controls', 'Sticky action buttons are visible, but action handlers are not connected yet.')
-    ).then(() => true);
+    return handleStickyAction(interaction, client);
   }
 
   if (interaction.customId === 'admin:suggestions' || interaction.customId === 'suggestions:refresh') {
