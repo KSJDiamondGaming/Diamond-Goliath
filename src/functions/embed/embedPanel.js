@@ -1084,7 +1084,7 @@ function buildEditorPanel(interaction, memberDisplayName = 'Unknown User') {
             : '🔕 Safe / no ping'
         }`,
         `> **Fields:** ${state.fields?.length || 0}/25`,
-        `> **Buttons:** ${state.buttons?.length || 0}/25`,
+        `> **Buttons:** ${state.buttons?.length || 0}/20`,
         `> **Unsaved Changes:** ${
           state.hasUnsavedChanges
             ? '⚠️ Yes'
@@ -1223,7 +1223,7 @@ function buildButtonsPanel(interaction, memberDisplayName = 'Unknown User') {
         : [
             'No button selected.',
             '',
-            `Buttons: ${state.buttons?.length || 0}/25`,
+            `Buttons: ${state.buttons?.length || 0}/20`,
             '',
             'Add a button to begin.',
           ].join('\n')
@@ -2049,6 +2049,16 @@ if (interaction.customId === 'embed:editor') {
     }
 
     if (interaction.customId === 'embed:button-add') {
+
+  if ((state.buttons?.length || 0) >= 20) {
+    await interaction.reply({
+      content: '⚠️ Maximum button limit reached (20/20).',
+      flags: 64,
+    });
+
+    return true;
+  }
+
   await interaction.showModal(
     buildButtonModal(state)
   );
@@ -2262,10 +2272,24 @@ if (interaction.customId === 'embed:edit-media') {
 }
 
 if (interaction.customId === 'embed:test-send') {
+
+  if ((state.buttons?.length || 0) > 20) {
+    await interaction.reply({
+      content: '⚠️ Too many buttons. Maximum is 20.',
+      flags: 64,
+    });
+
+    return true;
+  }
+
   await interaction.reply({
     content: '🧪 Test Preview',
     embeds: [buildPreviewEmbed(state, interaction)],
     components: buildButtonComponents(state),
+    allowedMentions: getAllowedMentionsForState(
+      state,
+      interaction
+    ),
     flags: 64,
   });
 
@@ -2274,55 +2298,64 @@ if (interaction.customId === 'embed:test-send') {
 
 if (interaction.customId === 'embed:use') {
 
-const channel =
-  interaction.guild.channels.cache.get(state.channelId) ||
-(await interaction.guild.channels.fetch(state.channelId).catch(() => null));
+  if ((state.buttons?.length || 0) > 20) {
+    await interaction.reply({
+      content: '⚠️ Too many buttons. Maximum is 20.',
+      flags: 64,
+    });
 
-if (!channel?.isTextBased()) {
+    return true;
+  }
+
+  const channel =
+    interaction.guild.channels.cache.get(state.channelId) ||
+    (await interaction.guild.channels.fetch(state.channelId).catch(() => null));
+
+  if (!channel?.isTextBased()) {
+    await interaction.reply({
+      content: 'Invalid channel.',
+      flags: 64,
+    });
+
+    return true;
+  }
+
+  await channel.send({
+    content: state.allowUserPing ? `<@${interaction.user.id}>` : '',
+    embeds: [buildPreviewEmbed(state, interaction)],
+    components: buildButtonComponents(state),
+    allowedMentions: getAllowedMentionsForState(state, interaction),
+  });
+
+  const presetName = getAutoPresetName(state);
+
+  guildManager.saveEmbedPreset(
+    interaction.guild.id,
+    presetName,
+    getPresetDataFromState(state),
+    interaction.guild
+  );
+
+  const success = setEmbedDefault(
+    interaction.guild.id,
+    state.template,
+    presetName
+  );
+
+  clearUnsaved(interaction, {
+    ...state,
+    selectedPreset: presetName,
+  });
+
   await interaction.reply({
-    content: 'Invalid channel.',
+    content: success
+      ? `✅ ${TEMPLATES[state.template]?.label || 'Embed'} posted to <#${state.channelId}> and saved as active`
+      : '⚠️ Preset saved, but default assignment failed.',
     flags: 64,
   });
 
   return true;
 }
-
-await channel.send({
-  content: state.allowUserPing ? `<@${interaction.user.id}>` : '',
-  embeds: [buildPreviewEmbed(state, interaction)],
-  components: buildButtonComponents(state),
-  allowedMentions: getAllowedMentionsForState(state, interaction),
-});
-
-    const presetName = getAutoPresetName(state);
-
-    guildManager.saveEmbedPreset(
-      interaction.guild.id,
-      presetName,
-      getPresetDataFromState(state),
-      interaction.guild
-    );
-
-    const success = setEmbedDefault(
-      interaction.guild.id,
-      state.template,
-      presetName
-    );
-
-    clearUnsaved(interaction, {
-      ...state,
-      selectedPreset: presetName,
-    });
-
-    await interaction.reply({
-      content: success
-      ? `✅ ${TEMPLATES[state.template]?.label || 'Embed'} posted to <#${state.channelId}> and saved as active`
-        : '⚠️ Preset saved, but default assignment failed.',
-      flags: 64,
-    });
-
-      return true;
-    }
 
   }
 
@@ -2355,14 +2388,42 @@ if (interaction.isModalSubmit()) {
     }
 
     if (interaction.customId === 'embed:button-save-new') {
+
+  if ((state.buttons?.length || 0) >= 20) {
+    await interaction.reply({
+      content: '⚠️ Maximum button limit reached (20/20).',
+      flags: 64,
+    });
+
+    return true;
+  }
+
+  const style =
+    interaction.fields.getTextInputValue('style') || 'Primary';
+
+  const url =
+    interaction.fields.getTextInputValue('url');
+
+  if (
+    String(style).toLowerCase() === 'link' &&
+    !safeUrl(url)
+  ) {
+    await interaction.reply({
+      content: '⚠️ Link buttons require a valid URL.',
+      flags: 64,
+    });
+
+    return true;
+  }
+
   const nextButtons = [...(state.buttons || [])];
 
   nextButtons.push({
     label: interaction.fields.getTextInputValue('label'),
     emoji: interaction.fields.getTextInputValue('emoji'),
-    style: interaction.fields.getTextInputValue('style') || 'Primary',
+    style,
     action: 'link',
-    url: interaction.fields.getTextInputValue('url'),
+    url,
   });
 
   markUnsaved(interaction, {
@@ -2391,14 +2452,32 @@ if (interaction.customId.startsWith('embed:button-save:')) {
     return true;
   }
 
+  const style =
+    interaction.fields.getTextInputValue('style') || 'Primary';
+
+  const url =
+    interaction.fields.getTextInputValue('url');
+
+  if (
+    String(style).toLowerCase() === 'link' &&
+    !safeUrl(url)
+  ) {
+    await interaction.reply({
+      content: '⚠️ Link buttons require a valid URL.',
+      flags: 64,
+    });
+
+    return true;
+  }
+
   const nextButtons = [...state.buttons];
 
   nextButtons[buttonIndex] = {
     ...nextButtons[buttonIndex],
     label: interaction.fields.getTextInputValue('label'),
     emoji: interaction.fields.getTextInputValue('emoji'),
-    style: interaction.fields.getTextInputValue('style') || 'Primary',
-    url: interaction.fields.getTextInputValue('url'),
+    style,
+    url,
   };
 
   markUnsaved(interaction, {
