@@ -4,6 +4,7 @@
 
 const { handleReactionAdd } = require('../../modules/roles/reactionRoleHandler');
 const { enterGiveaway } = require('../../modules/giveaways/giveawayManager');
+const { handleStarReactionAdd } = require('../../modules/starboard/starboardManager');
 
 module.exports = {
   name: 'messageReactionAdd',
@@ -12,6 +13,7 @@ module.exports = {
     try {
       await handleReactionAdd(reaction, user, client);
       await enterGiveaway(reaction, user, client);
+      await handleStarReactionAdd(reaction, user, client);
     } catch (error) {
       console.error('[EVENT: messageReactionAdd]', error);
     }
