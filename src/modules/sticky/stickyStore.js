@@ -62,6 +62,13 @@ function getChannelSticky(guildId, channelId, client) {
   return data.channels[channelId] || null;
 }
 
+function pickNumber(value, fallback) {
+  if (value === 0 || value === '0') return 0;
+  if (value === null || value === undefined || value === '') return Number(fallback);
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : Number(fallback);
+}
+
 function setChannelSticky(guildId, channelId, sticky, client) {
   const data = loadStickyData(guildId, client);
   const now = new Date().toISOString();
@@ -73,8 +80,8 @@ function setChannelSticky(guildId, channelId, sticky, client) {
     type: sticky.type || existing.type || 'text',
     content: sticky.content ?? existing.content ?? '',
     embed: sticky.embed ?? existing.embed ?? null,
-    repostEvery: Number(sticky.repostEvery || existing.repostEvery || 10),
-    cooldownSeconds: Number(sticky.cooldownSeconds || existing.cooldownSeconds || 60),
+    repostEvery: pickNumber(sticky.repostEvery, existing.repostEvery ?? 10),
+    cooldownSeconds: pickNumber(sticky.cooldownSeconds, existing.cooldownSeconds ?? 60),
     messageCount: Number(existing.messageCount || 0),
     lastMessageId: existing.lastMessageId || null,
     lastPostedAt: existing.lastPostedAt || null,
