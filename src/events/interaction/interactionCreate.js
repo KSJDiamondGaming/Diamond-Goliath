@@ -3,6 +3,7 @@
 const { MessageFlags } = require('discord.js');
 
 const ticketInteractionHandler = require('../../modules/tickets/ticketInteractionHandler');
+const roleInteractionHandler = require('../../modules/roles/roleInteractionHandler');
 const embedPanel = require('../../functions/embed/embedPanel');
 
 const seenInteractions = new Set();
@@ -194,6 +195,15 @@ module.exports = {
 
       if (interaction.customId?.startsWith('embed:')) {
         const handled = await handleEmbedInteraction(interaction, client);
+        if (handled) return;
+      }
+
+      if (typeof roleInteractionHandler?.handleRoleInteraction === 'function') {
+        const handled = await roleInteractionHandler.handleRoleInteraction(
+          interaction,
+          client
+        );
+
         if (handled) return;
       }
 
