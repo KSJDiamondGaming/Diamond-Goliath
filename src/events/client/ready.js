@@ -16,6 +16,10 @@ const {
   startupRoles,
 } = require('../../modules/roles/roleStartup');
 
+const {
+  startGiveawayScheduler,
+} = require('../../modules/giveaways/giveawayManager');
+
 function getPrimaryGuildIdForMode(mode) {
   if (mode === 'DEV') {
     return (
@@ -129,7 +133,14 @@ module.exports = {
     }
 
     try {
-      // Future schedulers can be initialized here.
+      const giveawayScheduler =
+        startGiveawayScheduler(client);
+
+      if (giveawayScheduler) {
+        terminal.success('Giveaway scheduler initialized');
+      } else {
+        terminal.warn('Giveaway scheduler already running or unavailable');
+      }
     } catch (err) {
       terminal.error(
         'Scheduler failed',
@@ -177,7 +188,7 @@ module.exports = {
     bannerItems.push({
       label: 'Systems',
       value:
-        'Scheduler + Lockdown Recovery + Ticket Recovery + Role System + Backup Sync Worker',
+        'Scheduler + Lockdown Recovery + Ticket Recovery + Role System + Giveaway Scheduler + Backup Sync Worker',
       ok: true,
     });
 
