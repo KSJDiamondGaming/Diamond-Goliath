@@ -1,5 +1,6 @@
 const { EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const stickyStore = require('./stickyStore');
+const { TYPES, createTimelineEvent } = require('../timeline/timelineManager');
 
 function canManageSticky(member) {
   return Boolean(
@@ -18,6 +19,25 @@ function canBotManageChannel(channel, guildMember) {
   );
 }
 
+function logStickyTimeline(channel, title, input = {}, client) {
+  if (!channel?.guild) return null;
+
+  return createTimelineEvent(
+    channel.guild.id,
+    {
+      type: TYPES.STICKY,
+      title,
+      description: input.description || null,
+      actor: input.actor || null,
+      actorId: input.actorId || null,
+      actorTag: input.actorTag || null,
+      channelId: channel.id,
+      meta: input.meta || {},
+    },
+    client
+  );
+}
+
 function normaliseStickyInput(input = {}) {
   return {
     type: input.type === 'embed' ? 'embed' : 'text',
@@ -26,6 +46,7 @@ function normaliseStickyInput(input = {}) {
     repostEvery: Math.max(1, Number(input.repostEvery || 10)),
     cooldownSeconds: Math.max(10, Number(input.cooldownSeconds || 60)),
     updatedBy: input.updatedBy || null,
+    actor: input.actor || null,
   };
 }
 
@@ -73,7 +94,7 @@ function isCoolingDown(sticky) {
   return Date.now() - lastPosted < cooldownMs;
 }
 
-async function repostSticky(channel, sticky, client) {
+async function repostSticky(channel, sticky, client, options = {}) {
   if (!channel?.guild || !sticky?.enabled) return null;
 
   const botMember = channel.guild.members.me;
@@ -90,6 +111,22 @@ async function repostSticky(channel, sticky, client) {
       lastMessageId: sent.id,
       lastPostedAt: new Date().toISOString(),
       messageCount: 0,
+    },
+    client
+  );
+
+  logStickyTimeline(
+    channel,
+    options.manual ? 'Sticky reposted manually' : 'Sticky reposted',
+    {
+      actor: options.actor || null,
+      actorId: options.actorId || null,
+      actorTag: options.actorTag || null,
+      meta: {
+        messageId: sent.id,
+        type: sticky.type || 'text',
+        manual: Boolean(options.manual),
+      },
     },
     client
   );
@@ -123,26 +160,56 @@ async function handleStickyMessage(message, client) {
 }
 
 async function createSticky(channel, input, client) {
+  const stickyInput = normaliseStickyInput(input);
+
   const sticky = stickyStore.setChannelSticky(
     channel.guild.id,
     channel.id,
-    normaliseStickyInput(input),
+    stickyInput,
     client
   );
 
-  return repostSticky(channel, sticky, client);
+  const sent = await repostSticky(channel, sticky, client, {
+    actor: stickyInput.actor,
+    actorId: stickyInput.updatedBy,
+    manual: true,
+  });
+
+  logStickyTimeline(
+    channel,
+    'Sticky created',
+    {
+      actor: stickyInput.actor,
+      actorId: stickyInput.updatedBy,
+      meta: {
+        type: sticky.type,
+        repostEvery: sticky.repostEvery,
+        cooldownSeconds: sticky.cooldownSeconds,
+        messageId: sent?.id || null,
+      },
+    },
+    client
+  );
+
+  return sent;
 }
 
-async function pauseSticky(channel, client) {
-  return stickyStore.updateChannelSticky(
+async function pauseSticky(channel, client, actor = null) {
+  const sticky = stickyStore.updateChannelSticky(
     channel.guild.id,
     channel.id,
     { enabled: false },
     client
   );
+
+  if (sticky) {
+    logStickyTimeline(channel, 'Sticky paused', { actor }, client);
+  }
+
+  return sticky;
 }
 
-async function resumeSticky(channel, client) {
+async function resumeSticky(channel, client, actor = null) {
   const sticky = stickyStore.updateChannelSticky(
     channel.guild.id,
     channel.id,
@@ -151,15 +218,37 @@ async function resumeSticky(channel, client) {
   );
 
   if (!sticky) return null;
-  await repostSticky(channel, sticky, client);
+
+  await repostSticky(channel, sticky, client, {
+    actor,
+    manual: true,
+  });
+
+  logStickyTimeline(channel, 'Sticky resumed', { actor }, client);
+
   return sticky;
 }
 
-async function removeSticky(channel, client) {
+async function removeSticky(channel, client, actor = null) {
   const sticky = stickyStore.deleteChannelSticky(channel.guild.id, channel.id, client);
 
   if (sticky?.lastMessageId) {
     await deleteOldSticky(channel, sticky);
+  }
+
+  if (sticky) {
+    logStickyTimeline(
+      channel,
+      'Sticky deleted',
+      {
+        actor,
+        meta: {
+          lastMessageId: sticky.lastMessageId || null,
+          type: sticky.type || 'text',
+        },
+      },
+      client
+    );
   }
 
   return sticky;
