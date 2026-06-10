@@ -44,7 +44,7 @@ function normaliseStickyInput(input = {}) {
     content: String(input.content || '').trim(),
     embed: input.embed || null,
     repostEvery: Math.max(1, Number(input.repostEvery || 10)),
-    cooldownSeconds: Math.max(10, Number(input.cooldownSeconds || 60)),
+    cooldownSeconds: Math.max(0, Number(input.cooldownSeconds ?? 60)),
     updatedBy: input.updatedBy || null,
     actor: input.actor || null,
   };
@@ -86,10 +86,12 @@ async function deleteOldSticky(channel, sticky) {
 }
 
 function isCoolingDown(sticky) {
+  const cooldownSeconds = Number(sticky.cooldownSeconds ?? 60);
+  if (cooldownSeconds <= 0) return false;
   if (!sticky.lastPostedAt) return false;
 
   const lastPosted = new Date(sticky.lastPostedAt).getTime();
-  const cooldownMs = Number(sticky.cooldownSeconds || 60) * 1000;
+  const cooldownMs = cooldownSeconds * 1000;
 
   return Date.now() - lastPosted < cooldownMs;
 }
