@@ -1051,16 +1051,21 @@ function buildEditorPanel(interaction, memberDisplayName = 'Unknown User') {
   ),
 
   new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('embed:test-send')
-      .setLabel('🧪 Test')
-      .setStyle(ButtonStyle.Secondary),
+  new ButtonBuilder()
+    .setCustomId('embed:update-existing')
+    .setLabel('♻️ Update Existing')
+    .setStyle(ButtonStyle.Secondary),
 
-    new ButtonBuilder()
-      .setCustomId('embed:back')
-      .setLabel('⬅️ Back')
-      .setStyle(ButtonStyle.Secondary)
-  )
+  new ButtonBuilder()
+    .setCustomId('embed:test-send')
+    .setLabel('🧪 Test')
+    .setStyle(ButtonStyle.Secondary),
+
+  new ButtonBuilder()
+    .setCustomId('embed:back')
+    .setLabel('⬅️ Back')
+    .setStyle(ButtonStyle.Secondary)
+)
 );
 
   const embed = new EmbedBuilder()
@@ -2277,6 +2282,64 @@ if (interaction.customId === 'embed:edit-media') {
   return true;
 }
 
+if (interaction.customId === 'embed:update-existing') {
+
+  const deployment = getEmbedDeployment(
+    interaction.guild.id,
+    getDeploymentKeyFromState(state)
+  );
+
+  if (!deployment) {
+    await interaction.reply({
+      content: '⚠️ No deployed embed found. Use the embed first.',
+      flags: 64,
+    });
+
+    return true;
+  }
+
+  try {
+    const channel = await interaction.guild.channels.fetch(
+      deployment.channelId
+    );
+
+    const message = await channel.messages.fetch(
+      deployment.messageId
+    );
+
+    await message.edit({
+      content: state.allowUserPing
+        ? `<@${interaction.user.id}>`
+        : '',
+      embeds: [buildPreviewEmbed(state, interaction)],
+      components: buildButtonComponents(state),
+      allowedMentions: getAllowedMentionsForState(
+        state,
+        interaction
+      ),
+    });
+
+    await interaction.reply({
+      content: '✅ Existing embed updated.',
+      flags: 64,
+    });
+
+  } catch (error) {
+    console.error(
+      'Failed to update existing embed:',
+      error
+    );
+
+    await interaction.reply({
+      content:
+        '⚠️ Original embed not found. Use the embed again to repost it.',
+      flags: 64,
+    });
+  }
+
+  return true;
+}
+
 if (interaction.customId === 'embed:test-send') {
 
   if ((state.buttons?.length || 0) > 20) {
@@ -2326,7 +2389,7 @@ if (interaction.customId === 'embed:use') {
     return true;
   }
 
-  await channel.send({
+  const sentMessage = await channel.send({
     content: state.allowUserPing ? `<@${interaction.user.id}>` : '',
     embeds: [buildPreviewEmbed(state, interaction)],
     components: buildButtonComponents(state),
@@ -2340,6 +2403,22 @@ if (interaction.customId === 'embed:use') {
     presetName,
     getPresetDataFromState(state),
     interaction.guild
+  );
+
+  saveEmbedDeployment(
+    interaction.guild.id,
+    getDeploymentKeyFromState({
+      ...state,
+      selectedPreset: presetName,
+    }),
+    {
+      channelId: channel.id,
+      messageId: sentMessage.id,
+      template: state.template,
+      preset: presetName,
+      createdBy: interaction.user.id,
+      lastUpdatedBy: interaction.user.id,
+    }
   );
 
   const success = setEmbedDefault(
