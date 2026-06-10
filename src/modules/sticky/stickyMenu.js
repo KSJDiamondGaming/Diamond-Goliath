@@ -8,7 +8,8 @@ function buildStickyStatusEmbed(guildId, channelId, client) {
     return new EmbedBuilder()
       .setColor('#f59e0b')
       .setTitle('Sticky Messages')
-      .setDescription('No sticky message is configured for this channel.');
+      .setDescription('No sticky message is configured for this channel. Use **Set Sticky** to create one.')
+      .setFooter({ text: 'Sticky messages repost at the bottom of the channel after normal chat activity.' });
   }
 
   return new EmbedBuilder()
@@ -19,6 +20,7 @@ function buildStickyStatusEmbed(guildId, channelId, client) {
       { name: 'Type', value: sticky.type || 'text', inline: true },
       { name: 'Repost Every', value: `${sticky.repostEvery || 10} messages`, inline: true },
       { name: 'Cooldown', value: `${sticky.cooldownSeconds || 60}s`, inline: true },
+      { name: 'Content', value: String(sticky.content || 'No content set.').slice(0, 1000), inline: false },
       { name: 'Last Message ID', value: sticky.lastMessageId || 'Not posted yet', inline: false }
     )
     .setTimestamp(new Date(sticky.updatedAt || Date.now()));
@@ -28,9 +30,13 @@ function buildStickyMenuRows(channelId) {
   return [
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
+        .setCustomId(`sticky:setup:${channelId}`)
+        .setLabel('Set Sticky')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
         .setCustomId(`sticky:repost:${channelId}`)
         .setLabel('Repost Now')
-        .setStyle(ButtonStyle.Primary),
+        .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId(`sticky:pause:${channelId}`)
         .setLabel('Pause')
@@ -43,6 +49,12 @@ function buildStickyMenuRows(channelId) {
         .setCustomId(`sticky:delete:${channelId}`)
         .setLabel('Delete')
         .setStyle(ButtonStyle.Danger),
+    ),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('admin:back')
+        .setLabel('Back')
+        .setStyle(ButtonStyle.Secondary),
     ),
   ];
 }
