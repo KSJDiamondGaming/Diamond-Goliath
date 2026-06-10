@@ -71,7 +71,7 @@ function buildPanelsPayload(guildId) {
     ? visiblePanels.map((panel, index) => {
         const roleCount = Array.isArray(panel.roles) ? panel.roles.length : 0;
         const location = panel.channelId && panel.messageId
-          ? `<#${panel.channelId}> / `${panel.messageId}``
+          ? `<#${panel.channelId}> / \`${panel.messageId}\``
           : 'Not deployed';
 
         return [
