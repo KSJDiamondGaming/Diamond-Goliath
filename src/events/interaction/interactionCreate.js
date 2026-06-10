@@ -136,13 +136,27 @@ async function handleEmbedInteraction(interaction, client) {
 
 async function handleNavigationInteraction(interaction) {
   const parsed = panelNav.parseCustomId(interaction.customId);
-  if (!parsed) return false;
+  if (!parsed || parsed.action !== 'back') return false;
 
-  const state = parsed.action === 'back'
-    ? panelNav.back(parsed.state)
-    : parsed.state;
+  const memberDisplayName =
+    interaction.member?.displayName ||
+    interaction.user?.displayName ||
+    interaction.user?.username ||
+    'Unknown User';
 
-  return adminPanel.handleAdminNavigation(interaction, state);
+  const payload = adminPanel.buildAdminPanel(interaction.guild, memberDisplayName);
+
+  if (interaction.deferred || interaction.replied) {
+    await interaction.editReply(payload).catch(() => null);
+    return true;
+  }
+
+  await interaction.update(payload).catch(() => interaction.reply({
+    ...payload,
+    flags: MessageFlags.Ephemeral,
+  }).catch(() => null));
+
+  return true;
 }
 
 module.exports = {
