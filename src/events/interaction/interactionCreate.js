@@ -5,6 +5,8 @@ const { MessageFlags } = require('discord.js');
 const ticketInteractionHandler = require('../../modules/tickets/ticketInteractionHandler');
 const roleInteractionHandler = require('../../modules/roles/roleInteractionHandler');
 const embedPanel = require('../../functions/embed/embedPanel');
+const adminPanel = require('../../functions/admin/adminPanel');
+const adminModuleHandler = require('../../functions/admin/adminModuleHandler');
 
 const seenInteractions = new Set();
 
@@ -195,6 +197,24 @@ module.exports = {
 
       if (interaction.customId?.startsWith('embed:')) {
         const handled = await handleEmbedInteraction(interaction, client);
+        if (handled) return;
+      }
+
+      if (typeof adminModuleHandler?.handleAdminModuleInteraction === 'function') {
+        const handled = await adminModuleHandler.handleAdminModuleInteraction(
+          interaction,
+          client
+        );
+
+        if (handled) return;
+      }
+
+      if (typeof adminPanel?.handleAdminNavigation === 'function') {
+        const handled = await adminPanel.handleAdminNavigation(
+          interaction,
+          undefined
+        );
+
         if (handled) return;
       }
 
