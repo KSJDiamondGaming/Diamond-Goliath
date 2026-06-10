@@ -12,6 +12,10 @@ const {
   startupTickets,
 } = require('../../modules/tickets/ticketStartup');
 
+const {
+  startupRoles,
+} = require('../../modules/roles/roleStartup');
+
 function getPrimaryGuildIdForMode(mode) {
   if (mode === 'DEV') {
     return (
@@ -91,6 +95,20 @@ module.exports = {
     }
 
     try {
+      const roleStartup =
+        await startupRoles(client);
+
+      terminal.success(
+        `Role system initialized (${roleStartup.enabledGuilds || 0} enabled guild(s), ${roleStartup.timedRoleRules || 0} timed rule(s))`
+      );
+    } catch (error) {
+      terminal.error(
+        'Role system failed',
+        error
+      );
+    }
+
+    try {
       const syncWorker =
         startbackupWorker();
 
@@ -159,7 +177,7 @@ module.exports = {
     bannerItems.push({
       label: 'Systems',
       value:
-        'Scheduler + Lockdown Recovery + Ticket Recovery + Backup Sync Worker',
+        'Scheduler + Lockdown Recovery + Ticket Recovery + Role System + Backup Sync Worker',
       ok: true,
     });
 
