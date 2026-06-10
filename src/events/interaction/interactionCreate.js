@@ -7,6 +7,7 @@ const roleInteractionHandler = require('../../modules/roles/roleInteractionHandl
 const embedPanel = require('../../functions/embed/embedPanel');
 const adminPanel = require('../../functions/admin/adminPanel');
 const adminModuleHandler = require('../../functions/admin/adminModuleHandler');
+const panelNav = require('../../helpers/ui/panelNavigation');
 
 const seenInteractions = new Set();
 
@@ -133,6 +134,17 @@ async function handleEmbedInteraction(interaction, client) {
   return true;
 }
 
+async function handleNavigationInteraction(interaction) {
+  const parsed = panelNav.parseCustomId(interaction.customId);
+  if (!parsed) return false;
+
+  const state = parsed.action === 'back'
+    ? panelNav.back(parsed.state)
+    : parsed.state;
+
+  return adminPanel.handleAdminNavigation(interaction, state);
+}
+
 module.exports = {
   name: 'interactionCreate',
 
@@ -197,6 +209,11 @@ module.exports = {
 
       if (interaction.customId?.startsWith('embed:')) {
         const handled = await handleEmbedInteraction(interaction, client);
+        if (handled) return;
+      }
+
+      if (interaction.customId?.startsWith('nav|')) {
+        const handled = await handleNavigationInteraction(interaction);
         if (handled) return;
       }
 
