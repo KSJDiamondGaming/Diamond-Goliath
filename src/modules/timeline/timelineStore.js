@@ -1,12 +1,31 @@
+'use strict';
+
+// src/modules/timeline/timelineStore.js
+
 const fs = require('fs');
 const path = require('path');
 
-const DEFAULT_DATA = {
+const {
+  getModuleSection,
+  saveModuleSection,
+  updateModuleSection,
+} = require('../../guild/moduleSectionManager');
+
+const DEFAULT_DATA = Object.freeze({
   enabled: true,
   events: [],
-};
+});
 
+const MODULE = 'timeline';
 const MAX_EVENTS = 250;
+
+function clone(value) {
+  return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
 
 function getRuntimeRoot(client) {
   return (
@@ -16,50 +35,89 @@ function getRuntimeRoot(client) {
   );
 }
 
-function getTimelinePath(guildId, client) {
+function getLegacyTimelinePath(guildId, client) {
   return path.join(getRuntimeRoot(client), 'guilds', guildId, 'timeline.json');
 }
 
-function cloneDefaultData() {
-  return JSON.parse(JSON.stringify(DEFAULT_DATA));
+function normalizeTimeline(data = {}) {
+  const source = isPlainObject(data) ? data : {};
+
+  return {
+    ...clone(DEFAULT_DATA),
+    ...clone(source),
+    enabled: source.enabled !== false,
+    events: Array.isArray(source.events)
+      ? source.events.slice(0, MAX_EVENTS)
+      : [],
+    updatedAt: source.updatedAt || new Date().toISOString(),
+  };
 }
 
-function ensureDir(filePath) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+function readLegacyTimeline(guildId, client) {
+  const legacyPath = getLegacyTimelinePath(guildId, client);
+
+  if (!fs.existsSync(legacyPath)) return null;
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(legacyPath, 'utf8'));
+    return normalizeTimeline(parsed);
+  } catch (error) {
+    console.error(`❌ Failed to read legacy timeline.json for guild ${guildId}`);
+    console.error(error);
+    return null;
+  }
+}
+
+function removeLegacyTimeline(guildId, client) {
+  const legacyPath = getLegacyTimelinePath(guildId, client);
+
+  try {
+    if (fs.existsSync(legacyPath)) {
+      fs.unlinkSync(legacyPath);
+    }
+  } catch (error) {
+    console.warn(`⚠️ Failed to remove legacy timeline.json for guild ${guildId}`);
+    console.warn(error?.message || error);
+  }
+}
+
+function hasRealTimelineData(data = {}) {
+  return (
+    data.updatedAt ||
+    data.createdAt ||
+    (Array.isArray(data.events) && data.events.length > 0) ||
+    data.enabled === false
+  );
+}
+
+function migrateLegacyTimelineIfNeeded(guildId, client) {
+  const current = getModuleSection(guildId, MODULE, DEFAULT_DATA);
+
+  if (hasRealTimelineData(current)) {
+    removeLegacyTimeline(guildId, client);
+    return normalizeTimeline(current);
+  }
+
+  const legacy = readLegacyTimeline(guildId, client);
+  if (!legacy) return normalizeTimeline(current);
+
+  const migrated = saveModuleSection(guildId, MODULE, legacy);
+  removeLegacyTimeline(guildId, client);
+
+  return normalizeTimeline(migrated);
 }
 
 function loadTimeline(guildId, client) {
-  const filePath = getTimelinePath(guildId, client);
-
-  if (!fs.existsSync(filePath)) {
-    return cloneDefaultData();
-  }
-
-  try {
-    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-
-    return {
-      ...cloneDefaultData(),
-      ...parsed,
-      events: Array.isArray(parsed.events) ? parsed.events : [],
-    };
-  } catch (error) {
-    console.error(`❌ Failed to load timeline for guild ${guildId}`);
-    console.error(error);
-    return cloneDefaultData();
-  }
+  return migrateLegacyTimelineIfNeeded(guildId, client);
 }
 
 function saveTimeline(guildId, data, client) {
-  const filePath = getTimelinePath(guildId, client);
-
-  ensureDir(filePath);
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-
-  return data;
+  const saved = saveModuleSection(guildId, MODULE, normalizeTimeline(data));
+  removeLegacyTimeline(guildId, client);
+  return normalizeTimeline(saved);
 }
 
-function addTimelineEvent(guildId, event, client) {
+function addTimelineEvent(guildId, event = {}, client) {
   const data = loadTimeline(guildId, client);
 
   if (!data.enabled) return null;
@@ -73,15 +131,25 @@ function addTimelineEvent(guildId, event, client) {
     actorTag: event.actorTag || null,
     channelId: event.channelId || null,
     targetId: event.targetId || null,
-    meta: event.meta || {},
+    meta: isPlainObject(event.meta) ? event.meta : {},
     createdAt: new Date().toISOString(),
   };
 
-  data.events.unshift(timelineEvent);
-  data.events = data.events.slice(0, MAX_EVENTS);
+  const saved = updateModuleSection(
+    guildId,
+    MODULE,
+    (current) => {
+      const normalized = normalizeTimeline(current);
+      return {
+        ...normalized,
+        events: [timelineEvent, ...normalized.events].slice(0, MAX_EVENTS),
+      };
+    },
+    DEFAULT_DATA
+  );
 
-  saveTimeline(guildId, data, client);
-  return timelineEvent;
+  removeLegacyTimeline(guildId, client);
+  return normalizeTimeline(saved).events[0] || timelineEvent;
 }
 
 function listTimelineEvents(guildId, options = {}, client) {
@@ -99,9 +167,8 @@ function listTimelineEvents(guildId, options = {}, client) {
 
 function clearTimeline(guildId, client) {
   const data = loadTimeline(guildId, client);
-  data.events = [];
-  saveTimeline(guildId, data, client);
-  return data;
+  const saved = saveTimeline(guildId, { ...data, events: [] }, client);
+  return saved;
 }
 
 module.exports = {
