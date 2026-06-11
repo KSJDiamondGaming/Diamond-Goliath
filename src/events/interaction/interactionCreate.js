@@ -32,6 +32,14 @@ function isAlreadyAcknowledged(error) {
   return error?.code === 40060;
 }
 
+function isExpiredOrAcknowledged(error) {
+  return isUnknownInteraction(error) || isAlreadyAcknowledged(error);
+}
+
+function interactionLabel(interaction) {
+  return interaction?.customId || interaction?.commandName || interaction?.type || 'unknown';
+}
+
 async function safeEdit(interaction, payload = {}) {
   if (!interaction?.isRepliable?.()) return false;
 
@@ -48,7 +56,7 @@ async function safeEdit(interaction, payload = {}) {
 
     return true;
   } catch (error) {
-    if (isUnknownInteraction(error) || isAlreadyAcknowledged(error)) return false;
+    if (isExpiredOrAcknowledged(error)) return false;
     throw error;
   }
 }
@@ -65,11 +73,7 @@ async function safeDefer(interaction) {
     return true;
   } catch (error) {
     if (isUnknownInteraction(error)) {
-      console.error(
-        `⚠️ Interaction expired before defer: ${interaction.id} / ${
-          interaction.commandName || interaction.customId || 'unknown'
-        }`
-      );
+      console.warn(`⚠️ Interaction expired before defer: ${interaction.id} / ${interactionLabel(interaction)}`);
       return false;
     }
 
@@ -86,16 +90,22 @@ async function runHandler(name, handler, interaction, client) {
     const handled = await handler(interaction, client);
 
     if (handled) {
-      console.log(
-        `✅ Interaction handled by ${name}: ${
-          interaction.customId || interaction.commandName
-        }`
-      );
+      console.log(`✅ Interaction handled by ${name}: ${interactionLabel(interaction)}`);
       return true;
     }
 
     return false;
   } catch (error) {
+    if (isUnknownInteraction(error)) {
+      console.warn(`⚠️ ${name} interaction expired before response: ${interaction.id} / ${interactionLabel(interaction)}`);
+      return true;
+    }
+
+    if (isAlreadyAcknowledged(error)) {
+      console.warn(`⚠️ ${name} interaction was already acknowledged: ${interaction.id} / ${interactionLabel(interaction)}`);
+      return true;
+    }
+
     console.error(`❌ Interaction handler failed: ${name}`);
     console.error(error);
 
@@ -146,17 +156,27 @@ async function handleNavigationInteraction(interaction) {
 
   const payload = adminPanel.buildAdminPanel(interaction.guild, memberDisplayName);
 
-  if (interaction.deferred || interaction.replied) {
-    await interaction.editReply(payload).catch(() => null);
+  try {
+    if (interaction.deferred || interaction.replied) {
+      await interaction.editReply(payload);
+      return true;
+    }
+
+    if (typeof interaction.update === 'function') {
+      await interaction.update(payload);
+      return true;
+    }
+
+    await interaction.reply({
+      ...payload,
+      flags: MessageFlags.Ephemeral,
+    });
+
     return true;
+  } catch (error) {
+    if (isExpiredOrAcknowledged(error)) return true;
+    throw error;
   }
-
-  await interaction.update(payload).catch(() => interaction.reply({
-    ...payload,
-    flags: MessageFlags.Ephemeral,
-  }).catch(() => null));
-
-  return true;
 }
 
 module.exports = {
@@ -165,31 +185,23 @@ module.exports = {
   async execute(interaction, client) {
     if (!interaction || !client) return;
 
-    console.log(
-      `[INTERACTION] ${
-        interaction.customId ||
-        interaction.commandName ||
-        interaction.type
-      }`
-    );
+    console.log(`[INTERACTION] ${interactionLabel(interaction)}`);
 
     if (!markInteraction(interaction)) {
       console.warn(`⚠️ Duplicate interaction ignored: ${interaction.id}`);
       return;
     }
 
-    console.log(
-      `🧩 interactionCreate: ${
-        interaction.type
-      } ${interaction.commandName || interaction.customId || 'unknown'}`
-    );
+    console.log(`🧩 interactionCreate: ${interaction.type} ${interactionLabel(interaction)}`);
 
     try {
       if (interaction.isAutocomplete()) {
         const command = client.commands?.get(interaction.commandName);
         if (!command?.autocomplete) return;
 
-        await command.autocomplete(interaction, client).catch(console.error);
+        await command.autocomplete(interaction, client).catch((error) => {
+          if (!isExpiredOrAcknowledged(error)) console.error(error);
+        });
         return;
       }
 
@@ -209,6 +221,11 @@ module.exports = {
         try {
           await command.execute(interaction, client);
         } catch (error) {
+          if (isExpiredOrAcknowledged(error)) {
+            console.warn(`⚠️ Command interaction expired/already acknowledged: ${interaction.commandName}`);
+            return;
+          }
+
           console.error(`❌ Command execution failed: ${interaction.commandName}`);
           console.error(error);
           console.error(error?.stack);
@@ -232,47 +249,32 @@ module.exports = {
       }
 
       if (typeof adminModuleHandler?.handleAdminModuleInteraction === 'function') {
-        const handled = await adminModuleHandler.handleAdminModuleInteraction(
-          interaction,
-          client
-        );
-
+        const handled = await adminModuleHandler.handleAdminModuleInteraction(interaction, client);
         if (handled) return;
       }
 
       if (typeof adminPanel?.handleAdminNavigation === 'function') {
-        const handled = await adminPanel.handleAdminNavigation(
-          interaction,
-          undefined
-        );
-
+        const handled = await adminPanel.handleAdminNavigation(interaction, undefined);
         if (handled) return;
       }
 
       if (typeof roleInteractionHandler?.handleRoleInteraction === 'function') {
-        const handled = await roleInteractionHandler.handleRoleInteraction(
-          interaction,
-          client
-        );
-
+        const handled = await roleInteractionHandler.handleRoleInteraction(interaction, client);
         if (handled) return;
       }
 
       if (typeof ticketInteractionHandler?.handleTicketInteraction === 'function') {
-        const handled = await ticketInteractionHandler.handleTicketInteraction(
-          interaction,
-          client
-        );
-
+        const handled = await ticketInteractionHandler.handleTicketInteraction(interaction, client);
         if (handled) return;
       }
 
-      console.warn(
-        `⚠️ Unhandled interaction: ${
-          interaction.commandName || interaction.customId || 'unknown'
-        }`
-      );
+      console.warn(`⚠️ Unhandled interaction: ${interactionLabel(interaction)}`);
     } catch (error) {
+      if (isExpiredOrAcknowledged(error)) {
+        console.warn(`⚠️ Interaction expired/already acknowledged in top-level handler: ${interaction.id} / ${interactionLabel(interaction)}`);
+        return;
+      }
+
       console.error('❌ interactionCreate fatal error');
       console.error(error);
       console.error(error?.stack);
