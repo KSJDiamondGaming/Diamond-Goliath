@@ -4,6 +4,7 @@ const { MessageFlags } = require('discord.js');
 
 const ticketInteractionHandler = require('../../modules/tickets/ticketInteractionHandler');
 const roleInteractionHandler = require('../../modules/roles/roleInteractionHandler');
+const formManager = require('../../modules/forms/formManager');
 const embedPanel = require('../../functions/embed/embedPanel');
 const adminPanel = require('../../functions/admin/adminPanel');
 const adminModuleHandler = require('../../functions/admin/adminModuleHandler');
@@ -260,6 +261,11 @@ module.exports = {
         }
 
         return;
+      }
+
+      if (interaction.customId?.startsWith('form:')) {
+        const handled = await formManager.handleFormInteraction(interaction, client);
+        if (handled) return;
       }
 
       if (interaction.customId?.startsWith('embed:')) {
