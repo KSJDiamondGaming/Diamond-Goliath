@@ -3,12 +3,12 @@
 // src/modules/roles/roleStore.js
 
 const crypto = require('crypto');
-
+const guildManager = require('../../guild/guildManager');
 const {
-  getGuildSection,
-  saveGuildSection,
-  updateGuildSection,
-} = require('../../guild/guildManager');
+  getModuleSection,
+  saveModuleSection,
+  updateModuleSection,
+} = require('../../guild/moduleSectionManager');
 
 const SECTION = 'roles';
 
@@ -21,9 +21,7 @@ function clone(value) {
 }
 
 function asObject(value, fallback = {}) {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? value
-    : fallback;
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : fallback;
 }
 
 function asArray(value) {
@@ -31,8 +29,7 @@ function asArray(value) {
 }
 
 function cleanString(value, fallback = '', maxLength = 1000) {
-  const text = String(value ?? fallback).trim();
-  return text.slice(0, maxLength);
+  return String(value ?? fallback).trim().slice(0, maxLength);
 }
 
 function cleanDiscordId(value) {
@@ -93,15 +90,14 @@ function normalizeReactionRole(role = {}) {
     label: cleanString(role.label || role.name || 'Role', 'Role', 80),
     emoji: cleanString(role.emoji || '', '', 40),
     description: cleanString(role.description || '', '', 200),
-    mode: ['toggle', 'add', 'remove', 'verify'].includes(role.mode)
-      ? role.mode
-      : 'toggle',
+    mode: ['toggle', 'add', 'remove', 'verify'].includes(role.mode) ? role.mode : 'toggle',
     groupId: role.groupId ? cleanKey(role.groupId) : null,
     maxPerGroup: cleanNonNegativeInt(role.maxPerGroup, 0),
     enabled: role.enabled !== false,
     createdAt: role.createdAt || now(),
     createdBy: cleanDiscordId(role.createdBy),
     updatedAt: role.updatedAt || role.createdAt || now(),
+    updatedBy: cleanDiscordId(role.updatedBy),
   };
 }
 
@@ -116,7 +112,11 @@ function normalizeReactionPanel(panel = {}) {
     id: panelId,
     enabled: panel.enabled !== false,
     title: cleanString(panel.title || 'Reaction Roles', 'Reaction Roles', 100),
-    description: cleanString(panel.description || 'Use the buttons below to manage your roles.', '', 1000),
+    description: cleanString(
+      panel.description || 'Use the buttons below to manage your roles.',
+      '',
+      1000
+    ),
     channelId: cleanDiscordId(panel.channelId),
     messageId: cleanDiscordId(panel.messageId),
     source: cleanString(panel.source || 'roles', 'roles', 50),
@@ -184,11 +184,10 @@ function normalizeRolesSection(section = {}) {
       ...asObject(source.settings, {}),
     },
     reactionPanels: Object.fromEntries(
-      Object.entries(reactionPanels)
-        .map(([id, panel]) => {
-          const normalized = normalizeReactionPanel({ ...panel, panelId: panel.panelId || id });
-          return [normalized.panelId, normalized];
-        })
+      Object.entries(reactionPanels).map(([id, panel]) => {
+        const normalized = normalizeReactionPanel({ ...panel, panelId: panel.panelId || id });
+        return [normalized.panelId, normalized];
+      })
     ),
     timedRoles: Object.fromEntries(
       Object.entries(timedRoles)
@@ -210,25 +209,60 @@ function normalizeRolesSection(section = {}) {
       assigned: cleanNonNegativeInt(source.analytics?.assigned, 0),
       removed: cleanNonNegativeInt(source.analytics?.removed, 0),
     },
+    createdAt: source.createdAt || base.createdAt,
     updatedAt: source.updatedAt || now(),
   };
 }
 
-function getRolesSection(guildId) {
-  return normalizeRolesSection(
-    getGuildSection(guildId, SECTION, defaultRolesSection())
+function hasRealRoleData(section = {}) {
+  return Boolean(
+    section.updatedAt ||
+      section.createdAt ||
+      Object.keys(asObject(section.reactionPanels, {})).length ||
+      Object.keys(asObject(section.timedRoles, {})).length ||
+      Object.keys(asObject(section.joinRoles, {})).length ||
+      cleanNonNegativeInt(section.analytics?.assigned, 0) > 0 ||
+      cleanNonNegativeInt(section.analytics?.removed, 0) > 0 ||
+      section.enabled === false
   );
+}
+
+function migrateLegacyRolesIfNeeded(guildId) {
+  const moduleRoles = getModuleSection(guildId, SECTION, defaultRolesSection());
+
+  if (hasRealRoleData(moduleRoles)) {
+    return normalizeRolesSection(moduleRoles);
+  }
+
+  let legacyRoles = null;
+
+  try {
+    legacyRoles = guildManager.getGuildSection(guildId, SECTION, null);
+  } catch {
+    legacyRoles = null;
+  }
+
+  if (!hasRealRoleData(legacyRoles || {})) {
+    return normalizeRolesSection(moduleRoles);
+  }
+
+  const migrated = saveModuleSection(guildId, SECTION, normalizeRolesSection(legacyRoles));
+  return normalizeRolesSection(migrated);
+}
+
+function getRolesSection(guildId) {
+  return migrateLegacyRolesIfNeeded(guildId);
 }
 
 function saveRolesSection(guildId, section, guildOrMeta = {}) {
   return normalizeRolesSection(
-    saveGuildSection(guildId, SECTION, normalizeRolesSection(section), guildOrMeta)
+    saveModuleSection(guildId, SECTION, normalizeRolesSection(section), guildOrMeta)
   );
 }
 
 function updateRolesSection(guildId, updater, guildOrMeta = {}) {
   return normalizeRolesSection(
-    updateGuildSection(
+    updateModuleSection(
       guildId,
       SECTION,
       (current) => {
@@ -292,12 +326,7 @@ function deleteReactionPanel(guildId, panelId, guildOrMeta = {}) {
     (section) => {
       const reactionPanels = { ...(section.reactionPanels || {}) };
       delete reactionPanels[key];
-
-      return {
-        ...section,
-        reactionPanels,
-        updatedAt: now(),
-      };
+      return { ...section, reactionPanels, updatedAt: now() };
     },
     guildOrMeta
   );
@@ -345,12 +374,7 @@ function deleteTimedRole(guildId, ruleId, guildOrMeta = {}) {
     (section) => {
       const timedRoles = { ...(section.timedRoles || {}) };
       delete timedRoles[key];
-
-      return {
-        ...section,
-        timedRoles,
-        updatedAt: now(),
-      };
+      return { ...section, timedRoles, updatedAt: now() };
     },
     guildOrMeta
   );
