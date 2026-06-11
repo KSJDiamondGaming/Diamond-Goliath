@@ -1,5 +1,5 @@
 const { EmbedBuilder, PermissionFlagsBits } = require('discord.js');
-const stickyStore = require('./stickyStore');
+const stickyStore = require('./stickyGuildStore');
 const { TYPES, createTimelineEvent } = require('../timeline/timelineManager');
 
 function canManageSticky(member) {
