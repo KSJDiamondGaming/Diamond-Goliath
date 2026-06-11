@@ -163,6 +163,11 @@ function isAdminBackAlias(customId = '') {
   return customId === 'admin:back' || customId === 'admin:home' || customId === 'admin:main';
 }
 
+function isModuleInteraction(interaction) {
+  return typeof adminModuleHandler?.isAdminModuleInteraction === 'function' &&
+    adminModuleHandler.isAdminModuleInteraction(interaction);
+}
+
 async function handleNavigationInteraction(interaction) {
   const parsed = panelNav.parseCustomId(interaction.customId);
   if ((!parsed || parsed.action !== 'back') && !isAdminBackAlias(interaction.customId)) return false;
@@ -271,13 +276,13 @@ module.exports = {
         if (handled) return;
       }
 
-      if (interaction.customId?.startsWith('nav|') || isAdminBackAlias(interaction.customId)) {
-        const handled = await handleNavigationInteraction(interaction);
+      if (isModuleInteraction(interaction)) {
+        const handled = await adminModuleHandler.handleAdminModuleInteraction(interaction, client);
         if (handled) return;
       }
 
-      if (typeof adminModuleHandler?.handleAdminModuleInteraction === 'function') {
-        const handled = await adminModuleHandler.handleAdminModuleInteraction(interaction, client);
+      if (interaction.customId?.startsWith('nav|') || isAdminBackAlias(interaction.customId)) {
+        const handled = await handleNavigationInteraction(interaction);
         if (handled) return;
       }
 
