@@ -7,24 +7,17 @@ const fs = require('fs');
 const path = require('path');
 
 const { getRuntimePaths } = require('../src/config/runtimePaths');
+const guildManager = require('../src/guild/guildManager');
 
 const mode = String(process.env.BOT_MODE || process.argv[2] || 'dev').toLowerCase();
 const runtimePaths = getRuntimePaths(mode);
 const guildsDir = runtimePaths.guilds;
 
-const EXPECTED_MODULES = [
-  'autoRoles',
-  'giveaways',
-  'tempVoice',
-  'starboard',
-  'sticky',
-  'timeline',
-  'roles',
-  'forms',
-];
+const EXPECTED_MODULES = Object.keys(guildManager.DEFAULT_MODULES || {});
 
 const LEGACY_TOP_LEVEL_KEYS = [
   ...EXPECTED_MODULES,
+  'autoRoles',
   'suggestions',
 ];
 
@@ -46,17 +39,21 @@ function isPlainObject(value) {
 }
 
 function checkGuildFile(filePath) {
-  const data = readJson(filePath);
+  const raw = readJson(filePath);
   const guildId = path.basename(filePath, '.json');
 
-  if (data.__error) {
+  if (raw.__error) {
     return {
       guildId,
       ok: false,
-      errors: [`Invalid JSON: ${data.__error}`],
+      errors: [`Invalid JSON: ${raw.__error}`],
       warnings: [],
     };
   }
+
+  // getGuildData intentionally goes through the real guild manager path.
+  // It auto-initializes missing module defaults and rewrites this guild JSON when needed.
+  const data = guildManager.getGuildData(guildId, { forceReload: true });
 
   const errors = [];
   const warnings = [];
@@ -67,14 +64,14 @@ function checkGuildFile(filePath) {
   }
 
   for (const key of LEGACY_TOP_LEVEL_KEYS) {
-    if (isPlainObject(data[key])) {
+    if (isPlainObject(raw[key])) {
       errors.push(`Legacy top-level module still present: ${key}`);
     }
   }
 
   for (const key of EXPECTED_MODULES) {
     if (!isPlainObject(modules[key])) {
-      warnings.push(`modules.${key} is missing or empty.`);
+      warnings.push(`modules.${key} is missing or not an object.`);
     }
   }
 
