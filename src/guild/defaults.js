@@ -159,6 +159,62 @@ const DEFAULT_TICKETS = Object.freeze({
   analytics: {},
 });
 
+const DEFAULT_MODULES = Object.freeze({
+  sticky: {
+    enabled: true,
+    channels: {},
+  },
+  starboard: {
+    enabled: true,
+    channelId: null,
+    threshold: 3,
+    emoji: '⭐',
+    allowBotMessages: false,
+    allowSelfStar: false,
+    posts: {},
+  },
+  giveaways: {
+    enabled: true,
+    giveaways: {},
+    settings: {
+      defaultWinnerCount: 1,
+      allowBotEntries: false,
+    },
+  },
+  tempVoice: {
+    enabled: true,
+    hubs: {},
+    channels: {},
+    settings: {
+      defaultUserLimit: 0,
+      deleteWhenEmpty: true,
+    },
+  },
+  roles: {
+    enabled: true,
+    settings: {
+      allowSelfRemove: true,
+      auditLog: true,
+      dailyTimedRoleCheck: true,
+    },
+    reactionPanels: {},
+    timedRoles: {},
+    joinRoles: {},
+    analytics: {
+      assigned: 0,
+      removed: 0,
+    },
+  },
+  suggestions: {
+    enabled: true,
+    items: {},
+  },
+  timeline: {
+    enabled: true,
+    events: [],
+  },
+});
+
 const DEFAULT_GUILD_DATA = Object.freeze({
   guildId: null,
   guildName: null,
@@ -179,7 +235,7 @@ const DEFAULT_GUILD_DATA = Object.freeze({
     templates: {},
   },
 
-  modules: {},
+  modules: DEFAULT_MODULES,
 
   tickets: DEFAULT_TICKETS,
 });
@@ -193,4 +249,5 @@ module.exports = {
   DEFAULT_EMBED,
   DEFAULT_EMBED_DEFAULTS,
   DEFAULT_TICKETS,
+  DEFAULT_MODULES,
 };
