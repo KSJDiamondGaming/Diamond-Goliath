@@ -3,7 +3,7 @@ const { getRuntimePaths } = require('../config/runtimePaths');
 const runtimePaths = getRuntimePaths(process.env.BOT_MODE || 'DEV');
 
 const DEFAULT_GENERAL_SETTINGS = Object.freeze({
-  prefix: '/',
+  prefix: '!',
   appealUrl: '',
   dashboardEnabled: true,
 
@@ -212,6 +212,31 @@ const DEFAULT_MODULES = Object.freeze({
   timeline: {
     enabled: true,
     events: [],
+    settings: {
+      maxEvents: 250,
+      auditEnabled: true,
+    },
+    stats: {
+      totalEvents: 0,
+      clearedEvents: 0,
+    },
+  },
+  forms: {
+    enabled: true,
+    settings: {
+      defaultAction: 'create_ticket',
+      dmSubmitter: true,
+      requireStaffReview: true,
+    },
+    forms: {},
+    submissions: {},
+    panels: {},
+    analytics: {
+      submitted: 0,
+      ticketsCreated: 0,
+      approved: 0,
+      denied: 0,
+    },
   },
 });
 
