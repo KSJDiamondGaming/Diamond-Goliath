@@ -19,6 +19,7 @@ const {
   DEFAULT_EMBED_DEFAULTS,
   DEFAULT_GENERAL_SETTINGS,
   DEFAULT_TICKETS,
+  DEFAULT_MODULES,
 } = require('./defaults');
 
 const runtimePaths = getRuntimePaths(process.env.BOT_MODE || 'DEV');
@@ -28,6 +29,7 @@ const SAFE_DEFAULT_LOGS = DEFAULT_LOGS || { enabled: true, channels: {}, events:
 const SAFE_DEFAULT_SECURITY = DEFAULT_SECURITY || {};
 const DEFAULT_TICKET_RUNTIME = DEFAULT_TICKETS || {};
 const DEFAULT_EMBED_RUNTIME = DEFAULT_EMBED || {};
+const DEFAULT_MODULE_RUNTIME = DEFAULT_MODULES || {};
 
 const guildCache = new Map();
 
@@ -38,7 +40,7 @@ const LEGACY_LOG_FIELDS = [
   'automodLogChannelId',
   'memberLogChannelId',
   'messageLogChannelId',
-  'voiceLogChannelId',
+  'voiceLogChannelId'
 ];
 
 const LOG_CHANNEL_ALIASES = {
@@ -159,6 +161,15 @@ function mergeDeep(defaults = {}, source = {}) {
   return output;
 }
 
+function hasMissingDefaultModules(rawData = {}) {
+  if (!isPlainObject(DEFAULT_MODULE_RUNTIME)) return false;
+  if (!isPlainObject(rawData.modules)) return true;
+
+  return Object.keys(DEFAULT_MODULE_RUNTIME).some(
+    (moduleName) => !isPlainObject(rawData.modules[moduleName])
+  );
+}
+
 function resolveGuildMeta(guildOrMeta = {}) {
   if (!isPlainObject(guildOrMeta)) return {};
 
@@ -210,36 +221,30 @@ function normalizeEmbed(embed = {}) {
         .filter((field) => field.name && field.value)
     : [];
 
-      merged.buttons = Array.isArray(merged.buttons)
+  merged.buttons = Array.isArray(merged.buttons)
     ? merged.buttons
         .filter(isPlainObject)
         .slice(0, 25)
         .map((button) => ({
           id: cleanString(button.id, 100),
-
           label: cleanString(button.label, 80),
-
           emoji: cleanString(button.emoji, 50),
-
-          style: cleanString(
-            button.style || 'Primary',
-            20
-          ),
-
+          style: cleanString(button.style || 'Primary', 20),
           url: cleanEmbedUrl(button.url),
-
-          action: cleanString(
-            button.action,
-            100
-          ),
-
-          data: isPlainObject(button.data)
-            ? button.data
-            : {},
+          action: cleanString(button.action, 100),
+          data: isPlainObject(button.data) ? button.data : {},
         }))
     : [];
 
   return merged;
+}
+
+function sanitizePresetName(name) {
+  return sanitizeKey(name, 'Preset name');
+}
+
+function sanitizeTemplateKey(templateKey) {
+  return sanitizeKey(templateKey, 'Template key');
 }
 
 function normalizeEmbedPresets(source = {}) {
@@ -249,9 +254,7 @@ function normalizeEmbedPresets(source = {}) {
 
   for (const [presetName, presetData] of Object.entries(source.embedPresets)) {
     if (!isPlainObject(presetData)) continue;
-
     const name = sanitizePresetName(presetData.name || presetName);
-
     presets[name] = {
       ...normalizeEmbed(presetData),
       name,
@@ -264,7 +267,6 @@ function normalizeEmbedPresets(source = {}) {
 
 function normalizeEmbedBuilder(source = {}) {
   const builder = isPlainObject(source.embedBuilder) ? source.embedBuilder : {};
-
   const templates = {};
 
   if (isPlainObject(builder.templates)) {
@@ -286,7 +288,7 @@ function normalizeGeneralSettings(source = {}) {
     isPlainObject(source.generalSettings) ? source.generalSettings : {}
   );
 
-  generalSettings.prefix = String(generalSettings.prefix || '/').trim() || '/';
+  generalSettings.prefix = String(generalSettings.prefix || '!').trim() || '!';
   generalSettings.appealUrl = String(generalSettings.appealUrl || '').trim();
   generalSettings.dashboardEnabled = generalSettings.dashboardEnabled !== false;
 
@@ -305,10 +307,6 @@ function normalizeGeneralSettings(source = {}) {
   return generalSettings;
 }
 
-function normalizeLogType(type = 'general') {
-  return LOG_CHANNEL_ALIASES[type] || 'general';
-}
-
 function normalizeLogs(source = {}) {
   const logs = mergeDeep(
     SAFE_DEFAULT_LOGS,
@@ -316,57 +314,27 @@ function normalizeLogs(source = {}) {
   );
 
   logs.enabled = logs.enabled !== false;
-
-  logs.channels = mergeDeep(
-    SAFE_DEFAULT_LOGS?.channels || {},
-    isPlainObject(logs.channels) ? logs.channels : {}
-  );
-
-  logs.events = mergeDeep(
-    SAFE_DEFAULT_LOGS?.events || {},
-    isPlainObject(logs.events) ? logs.events : {}
-  );
+  logs.channels = mergeDeep(SAFE_DEFAULT_LOGS?.channels || {}, isPlainObject(logs.channels) ? logs.channels : {});
+  logs.events = mergeDeep(SAFE_DEFAULT_LOGS?.events || {}, isPlainObject(logs.events) ? logs.events : {});
 
   const legacyMessageChannelId = normalizeChannelId(source.messageLogChannelId);
   const oldMessageChannelId = normalizeChannelId(logs.channels.message);
 
-  logs.channels.general =
-    normalizeChannelId(logs.channels.general) ||
-    normalizeChannelId(source.logsChannelId);
-
-  logs.channels.moderation =
-    normalizeChannelId(logs.channels.moderation) ||
-    normalizeChannelId(source.modLogChannelId);
-
-  logs.channels.admin =
-    normalizeChannelId(logs.channels.admin) ||
-    normalizeChannelId(source.adminLogChannelId);
-
-  logs.channels.automod =
-    normalizeChannelId(logs.channels.automod) ||
-    normalizeChannelId(source.automodLogChannelId);
-
-  logs.channels.member =
-    normalizeChannelId(logs.channels.member) ||
-    normalizeChannelId(source.memberLogChannelId);
-
-  logs.channels.messageDelete =
-    normalizeChannelId(logs.channels.messageDelete) ||
-    oldMessageChannelId ||
-    legacyMessageChannelId;
-
-  logs.channels.messageEdit =
-    normalizeChannelId(logs.channels.messageEdit) ||
-    oldMessageChannelId ||
-    legacyMessageChannelId;
-
-  logs.channels.voice =
-    normalizeChannelId(logs.channels.voice) ||
-    normalizeChannelId(source.voiceLogChannelId);
+  logs.channels.general = normalizeChannelId(logs.channels.general) || normalizeChannelId(source.logsChannelId);
+  logs.channels.moderation = normalizeChannelId(logs.channels.moderation) || normalizeChannelId(source.modLogChannelId);
+  logs.channels.admin = normalizeChannelId(logs.channels.admin) || normalizeChannelId(source.adminLogChannelId);
+  logs.channels.automod = normalizeChannelId(logs.channels.automod) || normalizeChannelId(source.automodLogChannelId);
+  logs.channels.member = normalizeChannelId(logs.channels.member) || normalizeChannelId(source.memberLogChannelId);
+  logs.channels.messageDelete = normalizeChannelId(logs.channels.messageDelete) || oldMessageChannelId || legacyMessageChannelId;
+  logs.channels.messageEdit = normalizeChannelId(logs.channels.messageEdit) || oldMessageChannelId || legacyMessageChannelId;
+  logs.channels.voice = normalizeChannelId(logs.channels.voice) || normalizeChannelId(source.voiceLogChannelId);
 
   delete logs.channels.message;
-
   return logs;
+}
+
+function normalizeLogType(type = 'general') {
+  return LOG_CHANNEL_ALIASES[type] || 'general';
 }
 
 function normalizeSecurity(source = {}) {
@@ -384,34 +352,14 @@ function normalizeSecurity(source = {}) {
 
   security.totalIncidents = Number(security.totalIncidents || 0);
   security.criticalIncidents = Number(security.criticalIncidents || 0);
-
-  security.incidents = Array.isArray(security.incidents)
-    ? security.incidents.slice(0, 250)
-    : [];
-
-  security.lockdown = mergeDeep(
-    SAFE_DEFAULT_SECURITY.lockdown || {},
-    isPlainObject(security.lockdown) ? security.lockdown : {}
-  );
-
+  security.incidents = Array.isArray(security.incidents) ? security.incidents.slice(0, 250) : [];
+  security.lockdown = mergeDeep(SAFE_DEFAULT_SECURITY.lockdown || {}, isPlainObject(security.lockdown) ? security.lockdown : {});
   security.lockdown.active = security.lockdown.active === true;
-
-  security.lockdown.channels = Array.isArray(security.lockdown.channels)
-    ? security.lockdown.channels
-    : [];
-
-  security.lockdown.bypassRoleIds = normalizeDiscordIdArray(
-    security.lockdown.bypassRoleIds
-  );
-
-  security.ownerMonitoring = mergeDeep(
-    SAFE_DEFAULT_SECURITY.ownerMonitoring || {},
-    isPlainObject(security.ownerMonitoring) ? security.ownerMonitoring : {}
-  );
-
+  security.lockdown.channels = Array.isArray(security.lockdown.channels) ? security.lockdown.channels : [];
+  security.lockdown.bypassRoleIds = normalizeDiscordIdArray(security.lockdown.bypassRoleIds);
+  security.ownerMonitoring = mergeDeep(SAFE_DEFAULT_SECURITY.ownerMonitoring || {}, isPlainObject(security.ownerMonitoring) ? security.ownerMonitoring : {});
   security.ownerMonitoring.enabled = security.ownerMonitoring.enabled !== false;
-  security.ownerMonitoring.webhookMirrorEnabled =
-    security.ownerMonitoring.webhookMirrorEnabled !== false;
+  security.ownerMonitoring.webhookMirrorEnabled = security.ownerMonitoring.webhookMirrorEnabled !== false;
 
   return security;
 }
@@ -437,32 +385,20 @@ function normalizeServerBackups(source = {}) {
   );
 
   serverBackups.enabled = serverBackups.enabled !== false;
-
-  serverBackups.storage = mergeDeep(
-    DEFAULT_SERVER_BACKUPS?.storage || {},
-    isPlainObject(serverBackups.storage) ? serverBackups.storage : {}
-  );
-
-  serverBackups.retention = mergeDeep(
-    DEFAULT_SERVER_BACKUPS?.retention || {},
-    isPlainObject(serverBackups.retention) ? serverBackups.retention : {}
-  );
-
-  serverBackups.retention.maxBackups = Number(
-    serverBackups.retention.maxBackups ||
-      process.env.SERVER_BACKUP_RETENTION ||
-      4
-  );
-
-  serverBackups.retention.autoCleanup =
-    serverBackups.retention.autoCleanup !== false;
-
-  serverBackups.storage.path =
-    serverBackups.storage.path ||
-    process.env.SERVER_BACKUP_DIR ||
-    runtimePaths.backups;
+  serverBackups.storage = mergeDeep(DEFAULT_SERVER_BACKUPS?.storage || {}, isPlainObject(serverBackups.storage) ? serverBackups.storage : {});
+  serverBackups.retention = mergeDeep(DEFAULT_SERVER_BACKUPS?.retention || {}, isPlainObject(serverBackups.retention) ? serverBackups.retention : {});
+  serverBackups.retention.maxBackups = Number(serverBackups.retention.maxBackups || process.env.SERVER_BACKUP_RETENTION || 4);
+  serverBackups.retention.autoCleanup = serverBackups.retention.autoCleanup !== false;
+  serverBackups.storage.path = serverBackups.storage.path || process.env.SERVER_BACKUP_DIR || runtimePaths.backups;
 
   return serverBackups;
+}
+
+function normalizeModules(source = {}) {
+  return mergeDeep(
+    DEFAULT_MODULE_RUNTIME,
+    isPlainObject(source.modules) ? source.modules : {}
+  );
 }
 
 function mergeDefaults(data = {}) {
@@ -473,12 +409,10 @@ function mergeDefaults(data = {}) {
   merged.logs = normalizeLogs(source);
   merged.security = normalizeSecurity(source);
   merged.serverBackups = normalizeServerBackups(source);
-  merged.embedDefaults = mergeDeep(
-    DEFAULT_EMBED_DEFAULTS || {},
-    isPlainObject(source.embedDefaults) ? source.embedDefaults : {}
-  );
+  merged.embedDefaults = mergeDeep(DEFAULT_EMBED_DEFAULTS || {}, isPlainObject(source.embedDefaults) ? source.embedDefaults : {});
   merged.embedPresets = normalizeEmbedPresets(source);
   merged.embedBuilder = normalizeEmbedBuilder(source);
+  merged.modules = normalizeModules(source);
   merged.tickets = normalizeTickets(source);
 
   return removeLegacyLogFields(merged);
@@ -487,11 +421,8 @@ function mergeDefaults(data = {}) {
 function cacheGuildData(guildId, data) {
   const safeGuildId = normalizeGuildId(guildId);
   const nextData = mergeDefaults(data);
-
   nextData.guildId = safeGuildId;
-
   guildCache.set(safeGuildId, clone(nextData));
-
   return clone(nextData);
 }
 
@@ -519,11 +450,11 @@ function getGuildData(guildId, options = {}) {
     !rawData.serverBackups ||
     !rawData.security ||
     !rawData.tickets ||
+    !rawData.modules ||
+    hasMissingDefaultModules(rawData) ||
     !rawData.security?.lockdown ||
     !Array.isArray(rawData.security?.lockdown?.bypassRoleIds) ||
-    LEGACY_LOG_FIELDS.some((field) =>
-      Object.prototype.hasOwnProperty.call(rawData, field)
-    );
+    LEGACY_LOG_FIELDS.some((field) => Object.prototype.hasOwnProperty.call(rawData, field));
 
   if (needsRewrite) {
     data.updatedAt = now();
@@ -545,12 +476,10 @@ function saveGuildData(guildId, data = {}, guildOrMeta = {}) {
   });
 
   nextData.guildId = safeGuildId;
-  nextData.guildName =
-    meta.guildName || cleanGuildName(nextData.guildName) || null;
+  nextData.guildName = meta.guildName || cleanGuildName(nextData.guildName) || null;
   nextData.updatedAt = now();
 
   write(filePath, nextData);
-
   return cacheGuildData(safeGuildId, nextData);
 }
 
@@ -591,14 +520,7 @@ function replaceGuildSection(guildId, sectionName, sectionData = {}, guildOrMeta
     updatedAt: now(),
   };
 
-  const updatedGuild = saveGuildData(
-    guildId,
-    {
-      [sectionName]: nextSection,
-    },
-    guildOrMeta
-  );
-
+  const updatedGuild = saveGuildData(guildId, { [sectionName]: nextSection }, guildOrMeta);
   return clone(updatedGuild[sectionName] || {});
 }
 
@@ -620,19 +542,13 @@ function updateGuildSection(guildId, sectionName, updater, fallback = {}, guildO
   const current = getGuildSection(guildId, sectionName, fallback);
   const next = typeof updater === 'function' ? updater(clone(current)) : updater;
 
-  return replaceGuildSection(
-    guildId,
-    sectionName,
-    isPlainObject(next) ? next : {},
-    guildOrMeta
-  );
+  return replaceGuildSection(guildId, sectionName, isPlainObject(next) ? next : {}, guildOrMeta);
 }
 
 function getLogChannelId(guildId, type = 'general', fallbackType = 'general') {
   const logs = getGuildSection(guildId, 'logs', SAFE_DEFAULT_LOGS);
   const logType = normalizeLogType(type);
   const fallback = normalizeLogType(fallbackType);
-
   return logs.channels?.[logType] || logs.channels?.[fallback] || null;
 }
 
@@ -657,9 +573,7 @@ function setLogChannelId(guildId, type = 'general', channelId = null, guildOrMet
 
 function isLogEventEnabled(guildId, eventName) {
   const logs = getGuildSection(guildId, 'logs', SAFE_DEFAULT_LOGS);
-
   if (logs.enabled === false) return false;
-
   return logs.events?.[eventName] !== false;
 }
 
@@ -690,13 +604,7 @@ function saveSecurityConfig(guildId, config = {}, guildOrMeta = {}) {
 }
 
 function updateSecurityConfig(guildId, updater, guildOrMeta = {}) {
-  return updateGuildSection(
-    guildId,
-    'security',
-    updater,
-    SAFE_DEFAULT_SECURITY,
-    guildOrMeta
-  );
+  return updateGuildSection(guildId, 'security', updater, SAFE_DEFAULT_SECURITY, guildOrMeta);
 }
 
 function getServerBackupConfig(guildId) {
@@ -708,13 +616,7 @@ function saveServerBackupConfig(guildId, config = {}, guildOrMeta = {}) {
 }
 
 function updateServerBackupConfig(guildId, updater, guildOrMeta = {}) {
-  return updateGuildSection(
-    guildId,
-    'serverBackups',
-    updater,
-    DEFAULT_SERVER_BACKUPS || {},
-    guildOrMeta
-  );
+  return updateGuildSection(guildId, 'serverBackups', updater, DEFAULT_SERVER_BACKUPS || {}, guildOrMeta);
 }
 
 function isModuleEnabled(guildId, moduleName) {
@@ -725,7 +627,6 @@ function isModuleEnabled(guildId, moduleName) {
   if (config == null) return true;
   if (typeof config === 'boolean') return config !== false;
   if (isPlainObject(config)) return config.enabled !== false;
-
   return true;
 }
 
@@ -747,14 +648,6 @@ function setModuleEnabled(guildId, moduleName, enabled = true, guildOrMeta = {})
   );
 }
 
-function sanitizePresetName(name) {
-  return sanitizeKey(name, 'Preset name');
-}
-
-function sanitizeTemplateKey(templateKey) {
-  return sanitizeKey(templateKey, 'Template key');
-}
-
 function getEmbedPresets(guildId) {
   return getGuildSection(guildId, 'embedPresets', {});
 }
@@ -763,7 +656,6 @@ function getEmbedPreset(guildId, presetName) {
   const name = sanitizePresetName(presetName);
   const presets = getEmbedPresets(guildId);
   const preset = presets[name];
-
   return isPlainObject(preset) ? clone(preset) : null;
 }
 
@@ -854,7 +746,6 @@ function clearEmbedDefault(guildId, templateKey, guildOrMeta = {}) {
 function getEmbedDefaultPresetName(guildId, templateKey) {
   const key = sanitizeTemplateKey(templateKey);
   const defaults = getEmbedDefaults(guildId);
-
   return defaults[key] || null;
 }
 
@@ -915,9 +806,7 @@ function getEmbedTemplate(guildId, templateKey) {
 
 function reloadGuild(guildId) {
   const safeGuildId = normalizeGuildId(guildId);
-
   guildCache.delete(safeGuildId);
-
   return getGuildData(safeGuildId, { forceReload: true });
 }
 
@@ -926,7 +815,6 @@ function clearGuildCache(guildId) {
     guildCache.delete(normalizeGuildId(guildId));
     return;
   }
-
   guildCache.clear();
 }
 
@@ -950,6 +838,7 @@ module.exports = {
   DEFAULT_SERVER_BACKUPS,
   DEFAULT_GENERAL_SETTINGS,
   DEFAULT_TICKETS: DEFAULT_TICKET_RUNTIME,
+  DEFAULT_MODULES: DEFAULT_MODULE_RUNTIME,
 
   getGuildFilePath,
 
