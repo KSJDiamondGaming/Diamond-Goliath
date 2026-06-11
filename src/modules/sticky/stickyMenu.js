@@ -1,5 +1,5 @@
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
-const stickyStore = require('./stickyStore');
+const stickyStore = require('./stickyGuildStore');
 
 function buildStickyStatusEmbed(guildId, channelId, client) {
   const sticky = stickyStore.getChannelSticky(guildId, channelId, client);
@@ -18,8 +18,8 @@ function buildStickyStatusEmbed(guildId, channelId, client) {
     .setDescription(sticky.enabled ? 'Sticky message is active.' : 'Sticky message is paused.')
     .addFields(
       { name: 'Type', value: sticky.type || 'text', inline: true },
-      { name: 'Repost Every', value: `${sticky.repostEvery || 10} messages`, inline: true },
-      { name: 'Cooldown', value: `${sticky.cooldownSeconds || 60}s`, inline: true },
+      { name: 'Repost Every', value: `${sticky.repostEvery ?? 10} messages`, inline: true },
+      { name: 'Cooldown', value: `${sticky.cooldownSeconds ?? 60}s`, inline: true },
       { name: 'Content', value: String(sticky.content || 'No content set.').slice(0, 1000), inline: false },
       { name: 'Last Message ID', value: sticky.lastMessageId || 'Not posted yet', inline: false }
     )
