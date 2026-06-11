@@ -5,6 +5,7 @@
 const guildManager = require('../guild/guildManager');
 
 const DEFAULT_PREFIX = '!';
+const LEGACY_UNSET_PREFIX = '/';
 const MIN_PREFIX_LENGTH = 1;
 const MAX_PREFIX_LENGTH = 5;
 
@@ -34,9 +35,14 @@ function getGeneralSettings(guildId) {
 
 function getGuildPrefix(guildId) {
   const settings = getGeneralSettings(guildId);
+  const storedPrefix = String(settings.prefix || '').trim();
 
   try {
-    return normalizePrefix(settings.prefix || DEFAULT_PREFIX);
+    if (!storedPrefix || storedPrefix === LEGACY_UNSET_PREFIX) {
+      return DEFAULT_PREFIX;
+    }
+
+    return normalizePrefix(storedPrefix);
   } catch {
     return DEFAULT_PREFIX;
   }
@@ -101,6 +107,7 @@ function getPrefixInfo(guildId) {
 
 module.exports = {
   DEFAULT_PREFIX,
+  LEGACY_UNSET_PREFIX,
   normalizePrefix,
   getGuildPrefix,
   setGuildPrefix,
