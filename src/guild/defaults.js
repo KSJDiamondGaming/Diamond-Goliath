@@ -238,6 +238,32 @@ const DEFAULT_MODULES = Object.freeze({
       denied: 0,
     },
   },
+  translation: {
+    enabled: false,
+    settings: {
+      provider: 'manual',
+      autoDetect: true,
+      threadMode: true,
+      translateEdits: false,
+      defaultSourceLanguage: 'auto',
+      defaultTargetLanguage: 'en',
+      targetLanguages: ['en'],
+      maxCharacters: 1500,
+      cooldownMs: 10000,
+      createThreadForManual: true,
+      createThreadForAuto: true,
+      logTranslations: true,
+    },
+    channels: {},
+    userPreferences: {},
+    cache: {},
+    analytics: {
+      manualTranslations: 0,
+      autoTranslations: 0,
+      threadsCreated: 0,
+      failedTranslations: 0,
+    },
+  },
 });
 
 const DEFAULT_GUILD_DATA = Object.freeze({
