@@ -1,3 +1,5 @@
+const { AuditLogEvent } = require('discord.js');
+
 const securitySystem = require('../../security/securitySystem');
 
 module.exports = {
@@ -19,7 +21,7 @@ module.exports = {
         typeof securitySystem.fetchAuditExecutor === 'function'
           ? await securitySystem.fetchAuditExecutor(
               channel.guild,
-              securitySystem.AuditLogEvent?.ChannelDelete || 12
+              AuditLogEvent.ChannelDelete
             )
           : null;
 
