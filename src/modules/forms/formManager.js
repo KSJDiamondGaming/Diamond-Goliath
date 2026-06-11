@@ -13,6 +13,7 @@ const {
 } = require('discord.js');
 
 const formStore = require('./formStore');
+const formTicketBridge = require('./formTicketBridge');
 
 const CUSTOM_ID_PREFIX = 'form';
 const MAX_MODAL_FIELDS = 5;
@@ -167,6 +168,27 @@ function collectModalAnswers(interaction, form) {
   return answers;
 }
 
+function buildSubmissionReply(form, submission, bridgeResult) {
+  if (bridgeResult?.ok && bridgeResult.ticket) {
+    return [
+      `✅ Your **${form.name}** submission was received.`,
+      `Reference: \`${submission.submissionId}\``,
+      `Ticket: \`${bridgeResult.ticket.displayId || bridgeResult.ticket.ticketId}\``,
+      bridgeResult.channel ? `Channel: <#${bridgeResult.channel.id}>` : 'Staff ticket record created. Channel creation is pending/recoverable.',
+    ].join('\n');
+  }
+
+  if (bridgeResult?.skipped) {
+    return `✅ Your **${form.name}** submission was received. Reference: \`${submission.submissionId}\``;
+  }
+
+  return [
+    `✅ Your **${form.name}** submission was received.`,
+    `Reference: \`${submission.submissionId}\``,
+    '⚠️ Staff ticket creation failed, but the submission was saved for recovery.',
+  ].join('\n');
+}
+
 async function handleFormInteraction(interaction) {
   const parsed = parseFormCustomId(interaction.customId);
   if (!parsed || !interaction.guildId) return false;
@@ -199,8 +221,14 @@ async function handleFormInteraction(interaction) {
       status: 'pending',
     }, interaction.guild);
 
+    const bridgeResult = await formTicketBridge.createTicketForSubmission({
+      interaction,
+      form,
+      submission,
+    });
+
     await interaction.reply({
-      content: `✅ Your **${form.name}** submission was received. Reference: \`${submission.submissionId}\``,
+      content: buildSubmissionReply(form, submission, bridgeResult),
       flags: 64,
     });
 
