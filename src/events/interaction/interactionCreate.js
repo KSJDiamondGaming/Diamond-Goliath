@@ -8,6 +8,7 @@ const embedPanel = require('../../functions/embed/embedPanel');
 const adminPanel = require('../../functions/admin/adminPanel');
 const adminModuleHandler = require('../../functions/admin/adminModuleHandler');
 const panelNav = require('../../helpers/ui/panelNavigation');
+const helpCommand = require('../../commands/utility/help');
 
 const seenInteractions = new Set();
 
@@ -144,9 +145,27 @@ async function handleEmbedInteraction(interaction, client) {
   return true;
 }
 
+async function handleHelpInteraction(interaction) {
+  if (!interaction.customId) return false;
+
+  if (interaction.customId === 'help-category-select') {
+    return helpCommand.handleHelpSelectMenu(interaction);
+  }
+
+  if (interaction.customId === 'help-back-home' || interaction.customId === 'help-close') {
+    return helpCommand.handleHelpButton(interaction);
+  }
+
+  return false;
+}
+
+function isAdminBackAlias(customId = '') {
+  return customId === 'admin:back' || customId === 'admin:home' || customId === 'admin:main';
+}
+
 async function handleNavigationInteraction(interaction) {
   const parsed = panelNav.parseCustomId(interaction.customId);
-  if (!parsed || parsed.action !== 'back') return false;
+  if ((!parsed || parsed.action !== 'back') && !isAdminBackAlias(interaction.customId)) return false;
 
   const memberDisplayName =
     interaction.member?.displayName ||
@@ -243,7 +262,16 @@ module.exports = {
         if (handled) return;
       }
 
-      if (interaction.customId?.startsWith('nav|')) {
+      if (
+        interaction.customId === 'help-category-select' ||
+        interaction.customId === 'help-back-home' ||
+        interaction.customId === 'help-close'
+      ) {
+        const handled = await handleHelpInteraction(interaction);
+        if (handled) return;
+      }
+
+      if (interaction.customId?.startsWith('nav|') || isAdminBackAlias(interaction.customId)) {
         const handled = await handleNavigationInteraction(interaction);
         if (handled) return;
       }
