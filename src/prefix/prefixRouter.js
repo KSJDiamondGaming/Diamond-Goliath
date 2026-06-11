@@ -3,6 +3,7 @@
 // src/prefix/prefixRouter.js
 
 const { EmbedBuilder, PermissionFlagsBits } = require('discord.js');
+const guildManager = require('../guild/guildManager');
 
 const {
   getGuildPrefix,
@@ -18,6 +19,14 @@ function canManagePrefix(message) {
     message.member?.permissions?.has?.(PermissionFlagsBits.Administrator) ||
       message.member?.permissions?.has?.(PermissionFlagsBits.ManageGuild)
   );
+}
+
+function getGuildSettings(message) {
+  try {
+    return guildManager.getGuildData(message.guild.id)?.generalSettings || {};
+  } catch {
+    return {};
+  }
 }
 
 function parsePrefixMessage(message, client) {
@@ -190,7 +199,15 @@ async function handlePrefixCommand(message, client) {
     return true;
   }
 
-  return false;
+  const settings = getGuildSettings(message);
+  if (settings.commandNotFoundEnabled !== false) {
+    await reply(message, {
+      content: `⚠️ Unknown prefix command. Try \`${parsed.guildPrefix}help\` or use slash commands with \`/help\`.`,
+    });
+    return true;
+  }
+
+  return true;
 }
 
 module.exports = {
