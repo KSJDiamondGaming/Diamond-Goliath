@@ -5,10 +5,12 @@ const {
   saveGuildData,
 } = require('../../../guild/guildManager');
 
+const { DEFAULT_PREFIX, normalizePrefix } = require('../../../prefix/prefixStore');
+
 const router = express.Router();
 
 const DEFAULT_GENERAL_SETTINGS = {
-  prefix: '/',
+  prefix: DEFAULT_PREFIX,
   appealUrl: '',
   dashboardEnabled: true,
 
@@ -32,7 +34,7 @@ function safeArray(value) {
 
 function normalize(data = {}) {
   return {
-    prefix: data.prefix || '/',
+    prefix: normalizePrefix(data.prefix || DEFAULT_PREFIX),
     appealUrl: data.appealUrl || '',
     dashboardEnabled: data.dashboardEnabled !== false,
 
@@ -101,9 +103,9 @@ router.post('/:guildId', (req, res) => {
     console.error('❌ Failed to save general settings');
     console.error(error);
 
-    return res.status(500).json({
+    return res.status(400).json({
       success: false,
-      error: 'Failed to save general settings.',
+      error: error.message || 'Failed to save general settings.',
     });
   }
 });
