@@ -2,6 +2,7 @@
 
 // scripts/migrate-guild-modules.js
 // Moves old top-level module config into src/runtime/{mode}/guilds/{guildId}.json -> modules{}
+// Also removes legacy nested runtime files/folders once the guild JSON is consolidated.
 
 const fs = require('fs');
 const path = require('path');
@@ -21,6 +22,21 @@ const MODULE_KEYS = [
   'roles',
   'timeline',
   'suggestions',
+];
+
+const LEGACY_NESTED_FILES = [
+  'sticky.json',
+  'timeline.json',
+];
+
+const LEGACY_RUNTIME_DIRS = [
+  'sticky',
+  'timeline',
+  'roles',
+  'autoRoles',
+  'giveaways',
+  'tempVoice',
+  'starboard',
 ];
 
 function isPlainObject(value) {
@@ -72,6 +88,20 @@ function removeDirIfEmpty(dirPath) {
   }
 }
 
+function removeLegacyGuildRuntime(guildId) {
+  const nestedGuildDir = path.join(guildsDir, guildId);
+
+  for (const fileName of LEGACY_NESTED_FILES) {
+    removeFileIfExists(path.join(nestedGuildDir, fileName));
+  }
+
+  for (const dirName of LEGACY_RUNTIME_DIRS) {
+    removeDirIfEmpty(path.join(nestedGuildDir, dirName));
+  }
+
+  removeDirIfEmpty(nestedGuildDir);
+}
+
 function migrateGuildFile(filePath) {
   const data = readJson(filePath);
   if (!isPlainObject(data)) return false;
@@ -99,9 +129,7 @@ function migrateGuildFile(filePath) {
     writeJson(filePath, data);
   }
 
-  const legacyNestedSticky = path.join(guildsDir, guildId, 'sticky.json');
-  removeFileIfExists(legacyNestedSticky);
-  removeDirIfEmpty(path.dirname(legacyNestedSticky));
+  removeLegacyGuildRuntime(guildId);
 
   return changed;
 }
