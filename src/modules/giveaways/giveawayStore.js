@@ -6,11 +6,11 @@ const crypto = require('crypto');
 
 const {
   getGuildSection,
-  saveGuildSection,
   updateGuildSection,
 } = require('../../guild/guildManager');
 
 const SECTION = 'giveaways';
+const MODULES_SECTION = 'modules';
 
 function now() {
   return new Date().toISOString();
@@ -106,32 +106,36 @@ function normalizeSection(section = {}) {
   };
 }
 
+function getModules(guildId) {
+  const modules = getGuildSection(guildId, MODULES_SECTION, {});
+  return modules && typeof modules === 'object' ? modules : {};
+}
+
 function getGiveawaySection(guildId) {
-  return normalizeSection(
-    getGuildSection(guildId, SECTION, defaultGiveawaySection())
-  );
+  return normalizeSection(getModules(guildId)[SECTION] || defaultGiveawaySection());
 }
 
 function saveGiveawaySection(guildId, section, meta = {}) {
-  return normalizeSection(
-    saveGuildSection(guildId, SECTION, normalizeSection(section), meta)
+  const normalized = normalizeSection(section);
+
+  updateGuildSection(
+    guildId,
+    MODULES_SECTION,
+    (modules = {}) => ({
+      ...(modules && typeof modules === 'object' ? modules : {}),
+      [SECTION]: normalized,
+    }),
+    {},
+    meta
   );
+
+  return normalized;
 }
 
 function updateGiveawaySection(guildId, updater, meta = {}) {
-  return normalizeSection(
-    updateGuildSection(
-      guildId,
-      SECTION,
-      (current) => {
-        const normalized = normalizeSection(current);
-        const next = typeof updater === 'function' ? updater(normalized) : updater;
-        return normalizeSection(next);
-      },
-      defaultGiveawaySection(),
-      meta
-    )
-  );
+  const current = getGiveawaySection(guildId);
+  const next = typeof updater === 'function' ? updater(current) : updater;
+  return saveGiveawaySection(guildId, normalizeSection(next), meta);
 }
 
 function saveGiveaway(guildId, giveaway, meta = {}) {
