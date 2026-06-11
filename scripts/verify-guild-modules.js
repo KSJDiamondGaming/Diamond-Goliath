@@ -20,6 +20,7 @@ const EXPECTED_MODULES = [
   'sticky',
   'timeline',
   'roles',
+  'forms',
 ];
 
 const LEGACY_TOP_LEVEL_KEYS = [
