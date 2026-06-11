@@ -6,11 +6,11 @@ const crypto = require('crypto');
 
 const {
   getGuildSection,
-  saveGuildSection,
   updateGuildSection,
 } = require('../../guild/guildManager');
 
 const SECTION = 'starboard';
+const MODULES_SECTION = 'modules';
 
 function now() {
   return new Date().toISOString();
@@ -93,32 +93,37 @@ function normalizeSection(section = {}) {
   };
 }
 
+function getModules(guildId) {
+  const modules = getGuildSection(guildId, MODULES_SECTION, {});
+  return modules && typeof modules === 'object' ? modules : {};
+}
+
 function getStarboardSection(guildId) {
-  return normalizeSection(
-    getGuildSection(guildId, SECTION, defaultStarboardSection())
-  );
+  const modules = getModules(guildId);
+  return normalizeSection(modules[SECTION] || defaultStarboardSection());
 }
 
 function saveStarboardSection(guildId, section, meta = {}) {
-  return normalizeSection(
-    saveGuildSection(guildId, SECTION, normalizeSection(section), meta)
+  const normalized = normalizeSection(section);
+
+  updateGuildSection(
+    guildId,
+    MODULES_SECTION,
+    (modules = {}) => ({
+      ...(modules && typeof modules === 'object' ? modules : {}),
+      [SECTION]: normalized,
+    }),
+    {},
+    meta
   );
+
+  return normalized;
 }
 
 function updateStarboardSection(guildId, updater, meta = {}) {
-  return normalizeSection(
-    updateGuildSection(
-      guildId,
-      SECTION,
-      (current) => {
-        const normalized = normalizeSection(current);
-        const next = typeof updater === 'function' ? updater(normalized) : updater;
-        return normalizeSection(next);
-      },
-      defaultStarboardSection(),
-      meta
-    )
-  );
+  const current = getStarboardSection(guildId);
+  const next = typeof updater === 'function' ? updater(current) : updater;
+  return saveStarboardSection(guildId, normalizeSection(next), meta);
 }
 
 function savePost(guildId, post, meta = {}) {
