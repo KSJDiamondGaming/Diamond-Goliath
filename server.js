@@ -48,6 +48,7 @@ const serverRestoreRoutes = require('./src/server/routes/serverRestoreRoutes');
 const securityRoutes = require('./src/server/routes/security');
 const ticketRoutes = require('./src/server/routes/tickets');
 const formsRoutes = require('./src/server/routes/forms');
+const translationRoutes = require('./src/server/routes/translation');
 
 const {
   restoreLockdownReminders,
@@ -269,6 +270,7 @@ function startDashboardApiServer() {
   app.use('/api/cases', moderationRoutes);
   app.use('/api/tickets', ticketRoutes);
   app.use('/api/forms', formsRoutes);
+  app.use('/api/translation', translationRoutes);
 
   app.use('/api/server-restore', serverRestoreRoutes);
   app.use('/api/security', securityRoutes);
