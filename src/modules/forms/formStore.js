@@ -119,6 +119,7 @@ function normalizeForm(form = {}) {
     panelId: source.panelId ? cleanKey(source.panelId) : null,
     staffRoleIds: Array.isArray(source.staffRoleIds) ? source.staffRoleIds.map(cleanDiscordId).filter(Boolean) : [],
     logChannelId: cleanDiscordId(source.logChannelId),
+    outputCategoryId: cleanDiscordId(source.outputCategoryId),
     fields: Array.isArray(source.fields)
       ? source.fields.map(normalizeField).slice(0, 5)
       : [],
@@ -302,6 +303,49 @@ function saveSubmission(guildId, submission, guildOrMeta = {}) {
   }), guildOrMeta).submissions[normalized.submissionId];
 }
 
+function updateSubmission(guildId, submissionId, updates = {}, guildOrMeta = {}) {
+  const safeId = cleanKey(submissionId, 'submission');
+
+  return updateFormsSection(guildId, (section) => {
+    const existing = section.submissions[safeId];
+    if (!existing) return section;
+
+    const normalized = normalizeSubmission({
+      ...existing,
+      ...(isPlainObject(updates) ? updates : {}),
+      submissionId: safeId,
+      updatedAt: now(),
+    });
+
+    return {
+      ...section,
+      submissions: {
+        ...section.submissions,
+        [safeId]: normalized,
+      },
+      updatedAt: now(),
+    };
+  }, guildOrMeta).submissions[safeId] || null;
+}
+
+function incrementAnalytics(guildId, increments = {}, guildOrMeta = {}) {
+  return updateFormsSection(guildId, (section) => {
+    const analytics = { ...section.analytics };
+
+    for (const [key, amount] of Object.entries(increments || {})) {
+      const value = Number(amount || 0);
+      if (!Number.isFinite(value)) continue;
+      analytics[key] = Math.max(0, Number(analytics[key] || 0) + value);
+    }
+
+    return {
+      ...section,
+      analytics,
+      updatedAt: now(),
+    };
+  }, guildOrMeta).analytics;
+}
+
 module.exports = {
   MODULE,
   FIELD_TYPES,
@@ -322,4 +366,6 @@ module.exports = {
   savePanel,
   getPanel,
   saveSubmission,
+  updateSubmission,
+  incrementAnalytics,
 };
