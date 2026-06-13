@@ -20,27 +20,73 @@ const {
   startGiveawayScheduler,
 } = require('../../modules/giveaways/giveawayManager');
 
-function getPrimaryGuildIdForMode(mode) {
+function getEnvList(name) {
+  const value = process.env[name];
+
+  if (!value) return [];
+
+  return String(value)
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function getPrimaryGuildIdsForMode(mode) {
   if (mode === 'DEV') {
-    return (
-      process.env.DEV_GUILD_ID ||
-      process.env.MAIN_GUILD_ID ||
-      process.env.GUILD_ID ||
-      null
-    );
+    return [
+      ...getEnvList('DEV_GUILD_ID'),
+      ...getEnvList('MAIN_GUILD_ID'),
+      ...getEnvList('GUILD_ID'),
+    ];
   }
 
   if (mode === 'BETA') {
-    return (
-      process.env.BETA_GUILD_IDS?.split(',')?.[0]?.trim() ||
-      process.env.BETA_GUILD_ID ||
-      process.env.MAIN_GUILD_ID ||
-      process.env.GUILD_ID ||
-      null
-    );
+    return [
+      ...getEnvList('BETA_GUILD_IDS'),
+      ...getEnvList('BETA_GUILD_ID'),
+      ...getEnvList('MAIN_GUILD_ID'),
+      ...getEnvList('GUILD_ID'),
+    ];
+  }
+
+  return [];
+}
+
+function findPrimaryGuild(client, mode) {
+  const guildIds = getPrimaryGuildIdsForMode(mode);
+
+  for (const guildId of guildIds) {
+    const guild = client.guilds.cache.get(guildId);
+
+    if (guild) {
+      return guild;
+    }
   }
 
   return null;
+}
+
+function getConnectedGuildSummary(client) {
+  return client.guilds.cache
+    .map((guild) => `${guild.name} (${guild.id})`)
+    .join(', ');
+}
+
+async function safeRun(label, action, successMessage) {
+  try {
+    const result = await action();
+
+    if (typeof successMessage === 'function') {
+      terminal.success(successMessage(result));
+    } else if (successMessage) {
+      terminal.success(successMessage);
+    }
+
+    return result;
+  } catch (error) {
+    terminal.error(`${label} failed`, error);
+    return null;
+  }
 }
 
 module.exports = {
@@ -56,97 +102,70 @@ module.exports = {
       PRODUCTION: 'PRODUCTION (Public Bot)',
     };
 
-    const modeLabel =
-      modeLabels[currentMode] || `${currentMode} MODE`;
+    const modeLabel = modeLabels[currentMode] || `${currentMode} MODE`;
+    const isPublicProduction = currentMode === 'PRODUCTION';
 
-    const isPublicProduction =
-      currentMode === 'PRODUCTION';
-
-    const primaryGuildId =
-      getPrimaryGuildIdForMode(currentMode);
-
-    const primaryGuild = primaryGuildId
-      ? client.guilds.cache.get(primaryGuildId)
-      : null;
+    const primaryGuild = findPrimaryGuild(client, currentMode);
+    const connectedGuildSummary = getConnectedGuildSummary(client);
 
     terminal.line('🧪 Mode', modeLabel);
 
-    try {
-      await restoreLockdownReminders(client);
-
-      terminal.success(
-        'Lockdown recovery system initialized'
-      );
-    } catch (error) {
-      terminal.error(
-        'Lockdown recovery failed',
-        error
+    if (!isPublicProduction && !primaryGuild) {
+      terminal.warn(
+        `Primary guild not found. Connected guilds: ${
+          connectedGuildSummary || 'None'
+        }`
       );
     }
 
-    try {
-      const ticketStartup =
-        await startupTickets(client);
+    await safeRun(
+      'Lockdown recovery',
+      () => restoreLockdownReminders(client),
+      'Lockdown recovery system initialized'
+    );
 
-      terminal.success(
-        `Ticket recovery initialized (${ticketStartup.totalActiveTickets || 0} active ticket(s), ${ticketStartup.totalMissingChannels || 0} missing channel(s))`
-      );
-    } catch (error) {
-      terminal.error(
-        'Ticket recovery failed',
-        error
-      );
-    }
+    await safeRun(
+      'Ticket recovery',
+      () => startupTickets(client),
+      (ticketStartup) =>
+        `Ticket recovery initialized (${ticketStartup?.totalActiveTickets || 0} active ticket(s), ${ticketStartup?.totalMissingChannels || 0} missing channel(s))`
+    );
 
-    try {
-      const roleStartup =
-        await startupRoles(client);
+    await safeRun(
+      'Role system',
+      () => startupRoles(client),
+      (roleStartup) =>
+        `Role system initialized (${roleStartup?.enabledGuilds || 0} enabled guild(s), ${roleStartup?.timedRoleRules || 0} timed rule(s))`
+    );
 
-      terminal.success(
-        `Role system initialized (${roleStartup.enabledGuilds || 0} enabled guild(s), ${roleStartup.timedRoleRules || 0} timed rule(s))`
-      );
-    } catch (error) {
-      terminal.error(
-        'Role system failed',
-        error
-      );
-    }
+    await safeRun(
+      'Backup sync worker',
+      () => startbackupWorker(),
+      (syncWorker) => {
+        if (syncWorker?.started) {
+          return `Backup sync worker initialized (${syncWorker.intervalMs}ms)`;
+        }
 
-    try {
-      const syncWorker =
-        startbackupWorker();
-
-      if (syncWorker.started) {
-        terminal.success(
-          `Backup sync worker initialized (${syncWorker.intervalMs}ms)`
-        );
-      } else {
         terminal.warn(
-          `Backup sync worker not started (${syncWorker.reason})`
+          `Backup sync worker not started (${syncWorker?.reason || 'unknown reason'})`
         );
+
+        return null;
       }
-    } catch (error) {
-      terminal.error(
-        'Backup sync worker failed',
-        error
-      );
-    }
+    );
 
-    try {
-      const giveawayScheduler =
-        startGiveawayScheduler(client);
+    await safeRun(
+      'Giveaway scheduler',
+      () => startGiveawayScheduler(client),
+      (giveawayScheduler) => {
+        if (giveawayScheduler) {
+          return 'Giveaway scheduler initialized';
+        }
 
-      if (giveawayScheduler) {
-        terminal.success('Giveaway scheduler initialized');
-      } else {
         terminal.warn('Giveaway scheduler already running or unavailable');
+        return null;
       }
-    } catch (err) {
-      terminal.error(
-        'Scheduler failed',
-        err
-      );
-    }
+    );
 
     client.isBooting = false;
 
@@ -193,7 +212,6 @@ module.exports = {
     });
 
     terminal.banner(bannerItems);
-
     terminal.success('Bot ready');
   },
 };

@@ -16,25 +16,45 @@ function shouldLogRoleSync(guildId) {
   return true;
 }
 
+async function getLiveGuild(guild) {
+  if (!guild?.client || !guild?.id) {
+    return null;
+  }
+
+  return guild.client.guilds.fetch(guild.id).catch(() => null);
+}
+
 async function refreshGuildRoles(guild) {
   try {
     if (!guild) return;
 
-    await guild.roles.fetch();
+    const liveGuild = await getLiveGuild(guild);
+
+    if (!liveGuild) {
+      console.warn(
+        `[roleSync] Skipped ${guild.name || guild.id}: guild is not available.`
+      );
+      return;
+    }
+
+    await liveGuild.roles.fetch();
 
     if (typeof guildManager.syncGuildMeta === 'function') {
-      guildManager.syncGuildMeta(guild);
+      guildManager.syncGuildMeta(liveGuild);
     }
 
     if (typeof guildManager.reloadGuild === 'function') {
-      guildManager.reloadGuild(guild.id);
+      guildManager.reloadGuild(liveGuild.id);
     }
 
-    if (shouldLogRoleSync(guild.id)) {
-      console.log(`[roleSync] Role cache synced for ${guild.name}`);
+    if (shouldLogRoleSync(liveGuild.id)) {
+      console.log(`[roleSync] Role cache synced for ${liveGuild.name}`);
     }
   } catch (error) {
-    console.error(`[roleSync] Failed to refresh roles for ${guild?.name || 'Unknown Guild'}:`, error);
+    console.error(
+      `[roleSync] Failed to refresh roles for ${guild?.name || 'Unknown Guild'}:`,
+      error
+    );
   }
 }
 
@@ -62,6 +82,7 @@ module.exports = [
         if (!role?.guild) return;
 
         await runAntiNuke('handleRoleCreate', role);
+        await new Promise((resolve) => setTimeout(resolve, 2000));
         await refreshGuildRoles(role.guild);
       } catch (error) {
         console.error('[roleSync] roleCreate error:', error);

@@ -8,7 +8,7 @@ const MODE_CONFIG = Object.freeze({
   [BOT_MODES.DEV]: {
     name: BOT_MODES.DEV,
     label: 'Development',
-    strictGuildAccess: true,
+    strictGuildAccess: false,
     commandDeployType: 'GUILD',
     verboseLogging: true,
     startBackupScheduler: false,

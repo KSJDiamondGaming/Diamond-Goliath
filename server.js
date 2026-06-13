@@ -395,7 +395,27 @@ function loadEvents() {
 
 function registerModeProtectionEvents() {
   client.on('guildCreate', async (guild) => {
+    console.log(
+      `[guildCreate] Joined guild: ${guild.name} (${guild.id})`
+    );
+
     await enforceGuildAccess(guild, BOT_MODE, activeMode);
+
+    console.log(
+      '[guildCreate] Guild cache:',
+      client.guilds.cache.map(g => `${g.name} (${g.id})`).join(', ') || 'None'
+    );
+  });
+
+  client.on('guildDelete', async (guild) => {
+    console.warn(
+      `[guildDelete] Removed from guild: ${guild.name} (${guild.id})`
+    );
+
+    console.warn(
+      '[guildDelete] Guild cache:',
+      client.guilds.cache.map(g => `${g.name} (${g.id})`).join(', ') || 'None'
+    );
   });
 }
 
