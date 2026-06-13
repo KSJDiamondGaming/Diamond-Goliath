@@ -17,6 +17,7 @@
     "sync:commands:production": "cross-env BOT_MODE=production node src/helpers/commands/syncCommands.js",
 
     "sync:dev": "git add . && git commit -m \"dev sync\" && git push origin dev && ssh root@198.186.130.112 \"bash /home/goliath/deploy-dev.sh\"",
+    "auto:dev": "powershell -ExecutionPolicy Bypass -File scripts/auto-push-dev.ps1",
     "promote:beta": "git checkout beta && git merge dev && git push origin beta && ssh root@198.186.130.112 \"bash /home/goliath/deploy-beta.sh\" && git checkout dev",
     "promote:production": "git checkout production && git merge beta && git push origin production && ssh root@198.186.130.112 \"bash /home/goliath/deploy-production.sh\" && git checkout dev",
 
@@ -48,7 +49,7 @@
     "cors": "^2.8.6",
     "discord.js": "^14.15.0",
     "dotenv": "^16.6.1",
-    "express": "^4.19.2",
+    "express": "^4.19.0",
     "express-session": "^1.19.0",
     "googleapis": "^171.4.0",
     "node-fetch": "^2.7.0",
