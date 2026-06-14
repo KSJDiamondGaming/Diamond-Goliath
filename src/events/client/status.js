@@ -2,49 +2,78 @@ const { ActivityType } = require('discord.js');
 
 const STATUS_INTERVAL_MS = 180_000;
 
-function getStatuses(client) {
-  const mode = client.botMode || process.env.BOT_MODE?.toUpperCase() || 'DEV';
-
-  if (mode === 'DEV') {
-    return {
-      presence: 'online',
-      activities: [
-        { name: '🟢 DEV | Testing', type: ActivityType.Watching },
-        { name: '🛠️ KSJ Development', type: ActivityType.Watching },
-        { name: '⚠️ Experimental Features', type: ActivityType.Watching },
-        { name: '🔧 Testing New Modules', type: ActivityType.Competing },
-      ],
-    };
-  }
-
-  if (mode === 'BETA') {
-    return {
-      presence: 'online',
-      activities: [
-        { name: '🟡 BETA | Testing', type: ActivityType.Watching },
-        { name: '🚧 Upcoming Features', type: ActivityType.Playing },
-        { name: '🔍 Beta Feedback', type: ActivityType.Watching },
-        { name: '⚡ Stability Testing', type: ActivityType.Competing },
-      ],
-    };
-  }
-
-  return {
+const MODE_CONFIG = {
+  DEV: {
     presence: 'online',
+    badge: '🟣',
+    label: 'DEV',
+    activities: [
+      { name: '🟣 DEV | Building Goliath', type: ActivityType.Watching },
+      { name: '🧪 Testing New Modules', type: ActivityType.Playing },
+      { name: '🛠️ KSJ Development Server', type: ActivityType.Watching },
+      { name: '⚙️ Dashboard Changes', type: ActivityType.Watching },
+      { name: '🎟️ Ticket System Tests', type: ActivityType.Playing },
+      { name: '📋 Forms Engine Tests', type: ActivityType.Watching },
+      { name: '🌐 Translation Experiments', type: ActivityType.Competing },
+      { name: '🔒 Security Center Checks', type: ActivityType.Watching },
+    ],
+  },
+
+  BETA: {
+    presence: 'online',
+    badge: '🟡',
+    label: 'BETA',
+    activities: [
+      { name: '🟡 BETA | Staging Goliath', type: ActivityType.Watching },
+      { name: '🚧 Testing Upcoming Features', type: ActivityType.Playing },
+      { name: '🔍 Watching Beta Feedback', type: ActivityType.Watching },
+      { name: '⚡ Stability Testing', type: ActivityType.Competing },
+      { name: '🎟️ Validating Ticket Tools', type: ActivityType.Watching },
+      { name: '📋 Reviewing Forms Flow', type: ActivityType.Watching },
+      { name: '🌐 Testing Translation Hub', type: ActivityType.Competing },
+      { name: '🛡️ Security Systems Online', type: ActivityType.Watching },
+    ],
+  },
+
+  PRODUCTION: {
+    presence: 'online',
+    badge: '🔵',
+    label: 'Goliath',
     activities: [
       { name: '🔵 Goliath | Protecting Servers', type: ActivityType.Watching },
-      {
-        name: `🛡️ Protecting ${client.guilds.cache.size} Servers`,
-        type: ActivityType.Watching,
-      },
+      { name: '🛡️ Server Security', type: ActivityType.Watching },
       { name: '🎟️ Managing Tickets', type: ActivityType.Playing },
       { name: '📋 Processing Forms', type: ActivityType.Watching },
-      { name: '🔒 Monitoring Security', type: ActivityType.Watching },
-      { name: '🌐 Translating Communities', type: ActivityType.Competing },
+      { name: '🔒 Monitoring Threats', type: ActivityType.Watching },
+      { name: '🌐 Supporting Communities', type: ActivityType.Competing },
       { name: '⚡ Powered by KSJ Digital', type: ActivityType.Watching },
       { name: '/help', type: ActivityType.Listening },
     ],
-  };
+  },
+};
+
+function getMode(client) {
+  return (client.botMode || process.env.BOT_MODE || 'DEV').toUpperCase();
+}
+
+function getStatuses(client) {
+  const mode = getMode(client);
+  const config = MODE_CONFIG[mode] || MODE_CONFIG.DEV;
+
+  if (mode === 'PRODUCTION') {
+    return {
+      ...config,
+      activities: [
+        ...config.activities,
+        {
+          name: `🛡️ Protecting ${client.guilds.cache.size} Servers`,
+          type: ActivityType.Watching,
+        },
+      ],
+    };
+  }
+
+  return config;
 }
 
 function startStatusRotation(client) {
@@ -61,7 +90,7 @@ function startStatusRotation(client) {
     const activity = config.activities[index % config.activities.length];
 
     client.user.setPresence({
-      status: config.presence,
+      status: 'online',
       activities: [activity],
     });
 
@@ -70,10 +99,7 @@ function startStatusRotation(client) {
 
   rotate();
 
-  client.statusRotationInterval = setInterval(
-    rotate,
-    STATUS_INTERVAL_MS
-  );
+  client.statusRotationInterval = setInterval(rotate, STATUS_INTERVAL_MS);
 }
 
 module.exports = {
