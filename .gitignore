@@ -154,3 +154,4 @@ Thumbs.db
 
 !.gitkeep
 !important-runtime-files-if-needed
+package-lock.json
