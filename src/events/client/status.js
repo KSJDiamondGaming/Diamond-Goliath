@@ -13,72 +13,57 @@ function getTotalMembers(client) {
   );
 }
 
-function formatUptime(seconds) {
-  const days = Math.floor(seconds / 86_400);
-  const hours = Math.floor((seconds % 86_400) / 3_600);
-  const minutes = Math.floor((seconds % 3_600) / 60);
-
-  if (days > 0) return `${days}d ${hours}h`;
-  if (hours > 0) return `${hours}h ${minutes}m`;
-
-  return `${minutes}m`;
-}
-
 function getDynamicStats(client) {
   return {
     guildCount: client.guilds.cache.size,
     memberCount: getTotalMembers(client).toLocaleString(),
-    uptime: formatUptime(process.uptime()),
   };
 }
 
-function buildDevActivities(client) {
-  const { uptime } = getDynamicStats(client);
-
+function buildDevActivities() {
   return [
     { name: '🔵 DEV | Building Goliath', type: ActivityType.Watching },
     { name: '🧪 Testing New Modules', type: ActivityType.Playing },
     { name: '🛠️ KSJ Development Server', type: ActivityType.Watching },
     { name: '⚙️ Dashboard Changes', type: ActivityType.Watching },
     { name: '📊 Dashboard Online', type: ActivityType.Watching },
-    { name: `⏱️ Online for ${uptime}`, type: ActivityType.Watching },
     { name: '🎟️ Ticket System Tests', type: ActivityType.Playing },
     { name: '📋 Forms Engine Tests', type: ActivityType.Watching },
-    { name: '🌐 Translation Experiments', type: ActivityType.Competing },
+    { name: '🌐 Translation Hub Tests', type: ActivityType.Competing },
     { name: '🔒 Security Center Checks', type: ActivityType.Watching },
+    { name: '💾 Backup System Tests', type: ActivityType.Watching },
   ];
 }
 
-function buildBetaActivities(client) {
-  const { uptime } = getDynamicStats(client);
-
+function buildBetaActivities() {
   return [
     { name: '🟡 BETA | Staging Goliath', type: ActivityType.Watching },
     { name: '🚧 Testing Upcoming Features', type: ActivityType.Playing },
     { name: '🔍 Watching Beta Feedback', type: ActivityType.Watching },
     { name: '⚡ Stability Testing', type: ActivityType.Competing },
     { name: '📊 Dashboard Online', type: ActivityType.Watching },
-    { name: `⏱️ Online for ${uptime}`, type: ActivityType.Watching },
     { name: '🎟️ Validating Ticket Tools', type: ActivityType.Watching },
     { name: '📋 Reviewing Forms Flow', type: ActivityType.Watching },
     { name: '🌐 Testing Translation Hub', type: ActivityType.Competing },
     { name: '🛡️ Security Systems Online', type: ActivityType.Watching },
+    { name: '💾 Backup Systems Ready', type: ActivityType.Watching },
   ];
 }
 
 function buildProductionActivities(client) {
-  const { guildCount, memberCount, uptime } = getDynamicStats(client);
+  const { guildCount, memberCount } = getDynamicStats(client);
 
   return [
     { name: '🟢 Goliath | Protecting Servers', type: ActivityType.Watching },
     { name: `🛡️ Protecting ${guildCount} Servers`, type: ActivityType.Watching },
     { name: `👥 Watching ${memberCount} Members`, type: ActivityType.Watching },
-    { name: `⏱️ Online for ${uptime}`, type: ActivityType.Watching },
     { name: '📊 Dashboard Online', type: ActivityType.Watching },
     { name: '🎟️ Managing Tickets', type: ActivityType.Playing },
     { name: '📋 Processing Forms', type: ActivityType.Watching },
     { name: '🔒 Monitoring Threats', type: ActivityType.Watching },
-    { name: '🌐 Supporting Communities', type: ActivityType.Competing },
+    { name: '🌐 Translation Hub Ready', type: ActivityType.Competing },
+    { name: '🧰 Server Tools Online', type: ActivityType.Watching },
+    { name: '💾 Backup Systems Ready', type: ActivityType.Watching },
     { name: '⚡ Powered by KSJ Digital', type: ActivityType.Watching },
     { name: '/help', type: ActivityType.Listening },
   ];
@@ -92,10 +77,10 @@ function buildActivities(client) {
   }
 
   if (mode === 'BETA') {
-    return buildBetaActivities(client);
+    return buildBetaActivities();
   }
 
-  return buildDevActivities(client);
+  return buildDevActivities();
 }
 
 function startStatusRotation(client) {
