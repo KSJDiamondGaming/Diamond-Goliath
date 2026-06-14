@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../services/apiClient.js';
 
 const FILTERS = [
-  { key: 'all', label: '🌐 All Guilds' },
+  { key: 'all', label: 'All Guilds' },
   { key: 'DEV', label: '🟢 DEV Guilds' },
   { key: 'BETA', label: '🟡 BETA Guilds' },
   { key: 'PRODUCTION', label: '🔴 Production Guilds' },
@@ -110,7 +110,7 @@ export default function OwnerGlobalView({ theme, currentUser }) {
   if (!isOwner) {
     return (
       <section style={{ ...cardStyle, padding: 24 }}>
-        <h1 style={{ margin: '0 0 8px', fontSize: 26 }}>Owner Global View</h1>
+        <h1 style={{ margin: '0 0 8px', fontSize: 26 }}>Owner View</h1>
         <p style={{ margin: 0, color: theme.mutedText }}>You do not have permission to view this page.</p>
       </section>
     );
@@ -124,9 +124,9 @@ export default function OwnerGlobalView({ theme, currentUser }) {
             <p style={{ margin: '0 0 8px', color: '#93c5fd', fontWeight: 900, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
               KSJ Owner Mode
             </p>
-            <h1 style={{ margin: 0, fontSize: 'clamp(26px, 4vw, 36px)' }}>Owner Global View</h1>
+            <h1 style={{ margin: 0, fontSize: 'clamp(26px, 4vw, 36px)' }}>👑 Owner View</h1>
             <p style={{ margin: '10px 0 0', color: theme.mutedText, lineHeight: 1.6 }}>
-              View every guild connected to the current Goliath runtime. Cross-environment aggregation can be added in Phase 2.
+              Administrative access across Goliath deployments.
             </p>
           </div>
 
