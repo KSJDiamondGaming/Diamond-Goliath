@@ -10,6 +10,7 @@ import Forms from '../pages/Forms';
 import Restore from '../pages/Restore';
 import Security from '../pages/Security';
 import Logs from '../pages/Logs';
+import OwnerGlobalView from '../pages/OwnerGlobalView';
 
 export const DASHBOARD_LAYOUT = {
   navbarExpandedWidth: '280px',
@@ -143,6 +144,15 @@ export const ROUTES = [
   },
 
   {
+    key: 'ownerView',
+    label: 'Owner View',
+    icon: 'admin',
+    path: '/owner',
+    component: OwnerGlobalView,
+    ownerOnly: true,
+  },
+
+  {
     key: 'generalSettings',
     label: 'General Settings',
     icon: 'generalSettings',
@@ -250,6 +260,12 @@ export const PAGE_LAYOUTS = {
         type: 'list',
       },
     ],
+  },
+
+  ownerView: {
+    title: 'Owner View',
+    description: 'KSJ-only administrative access across Goliath deployments.',
+    sections: [],
   },
 
   generalSettings: {

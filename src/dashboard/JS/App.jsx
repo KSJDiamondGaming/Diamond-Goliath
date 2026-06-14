@@ -112,6 +112,8 @@ export default function App() {
     clearGuilds: guildState.clearGuilds,
   });
 
+  const isOwner = authState.currentUser?.isOwner === true;
+
   const styles = useMemo(
     () => shellStyles(theme, { navbarExpanded }),
     [theme, navbarExpanded],
@@ -208,10 +210,17 @@ export default function App() {
 
     if (authState.isAuthenticated && location.pathname === '/login') {
       navigate('/overview', { replace: true });
+      return;
+    }
+
+    if (authState.isAuthenticated && activeRoute?.ownerOnly && !isOwner) {
+      navigate('/overview', { replace: true });
     }
   }, [
+    activeRoute,
     authState.authLoading,
     authState.isAuthenticated,
+    isOwner,
     location.pathname,
     navigate,
   ]);
@@ -233,6 +242,9 @@ export default function App() {
     guildError: guildState.guildError,
 
     theme,
+
+    currentUser: authState.currentUser,
+    isOwner,
 
     authLoading: authState.authLoading,
     isAuthenticated: authState.isAuthenticated,
@@ -298,6 +310,7 @@ export default function App() {
               handleLogin={authState.handleLogin}
               handleLogout={handleLogout}
               topbarUserName={authState.currentUserName}
+              currentUser={authState.currentUser}
               currentUserAvatar={authState.currentUserAvatar}
               darkMode={darkMode}
               setDarkMode={setDarkMode}
@@ -316,6 +329,12 @@ export default function App() {
                   theme={theme}
                   title="Not signed in"
                   text="Please login with Discord to access your dashboard."
+                />
+              ) : activeRoute?.ownerOnly && !isOwner ? (
+                <CenterMessage
+                  theme={theme}
+                  title="Owner access required"
+                  text="This dashboard view is restricted to KSJ owner accounts."
                 />
               ) : guildState.guildsLoading && guildState.guilds.length === 0 ? (
                 <CenterMessage

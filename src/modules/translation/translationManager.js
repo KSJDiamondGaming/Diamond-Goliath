@@ -1,10 +1,11 @@
 'use strict';
 
 // src/modules/translation/translationManager.js
-// Provider-ready manager. No external translation calls are made yet.
+// Public translation API used by commands, dashboard, and future thread systems.
 
 const { EmbedBuilder } = require('discord.js');
 const translationStore = require('./translationStore');
+const translationProviderManager = require('./translationProviderManager');
 
 const LANGUAGE_LABELS = Object.freeze({
   auto: 'Auto Detect',
@@ -39,8 +40,17 @@ function normalizeLanguage(code = 'en') {
   return clean || 'en';
 }
 
+function providerLabel(provider = 'manual') {
+  const clean = String(provider || 'manual').toLowerCase();
+  if (clean === 'openai') return 'OpenAI';
+  if (clean === 'deepl') return 'DeepL';
+  if (clean === 'google') return 'Google Translate';
+  return 'Manual / Not Connected';
+}
+
 function buildOverviewEmbed(guildId) {
   const section = translationStore.getTranslationSection(guildId);
+  const providerStatus = translationProviderManager.getProviderStatus(section);
   const channelCount = Object.keys(section.channels || {}).length;
   const userCount = Object.keys(section.userPreferences || {}).length;
   const targetLanguages = section.settings?.targetLanguages || ['en'];
@@ -50,7 +60,8 @@ function buildOverviewEmbed(guildId) {
     .setTitle('🌐 Goliath Translation')
     .setDescription([
       `**Status:** ${section.enabled ? '🟢 Enabled' : '🔴 Disabled'}`,
-      `**Provider:** \`${section.settings?.provider || 'manual'}\``,
+      `**Provider:** \`${providerLabel(providerStatus.selectedProvider)}\`` ,
+      `**Provider Health:** ${providerStatus.providers?.[providerStatus.selectedProvider]?.healthy ? '🟢 Healthy' : '🟠 Needs Attention'}`,
       `**Default Target:** ${languageLabel(section.settings?.defaultTargetLanguage || 'en')}`,
       `**Targets:** ${targetLanguages.map(languageLabel).join(', ')}`,
       `**Thread Mode:** ${section.settings?.threadMode !== false ? 'Enabled' : 'Disabled'}`,
@@ -95,79 +106,84 @@ function buildChannelEmbed(guildId, channelId) {
     .setTimestamp(new Date());
 }
 
-function buildProviderNotConnectedEmbed({ text, targetLanguage, sourceLanguage = 'auto' } = {}) {
+function buildProviderNotConnectedEmbed({ text, targetLanguage, sourceLanguage = 'auto', result = null } = {}) {
+  const errorMessage = result?.errorMessage || result?.error || 'The translation provider is not connected yet.';
+  const errorCode = result?.errorCode ? `\n**Error Code:** \`${result.errorCode}\`` : '';
+
   return new EmbedBuilder()
     .setColor(0xfaa61a)
-    .setTitle('🌐 Translation Provider Not Connected')
+    .setTitle('🌐 Translation Provider Issue')
     .setDescription([
-      'The translation system is configured, but no real provider is connected yet.',
+      errorMessage,
+      errorCode,
       '',
       `**Source:** ${languageLabel(sourceLanguage)}`,
       `**Target:** ${languageLabel(targetLanguage || 'en')}`,
       '',
       '**Text queued for translation:**',
       `>>> ${String(text || '').slice(0, 1500) || '_No text provided._'}`,
-    ].join('\n'))
-    .setFooter({ text: 'Next step: connect OpenAI, DeepL, or Google provider' })
+    ].filter(Boolean).join('\n'))
+    .setFooter({ text: 'Configure OpenAI, DeepL, or Google Translate provider settings' })
     .setTimestamp(new Date());
 }
 
-async function translateText({ guildId, text, targetLanguage = 'en', sourceLanguage = 'auto', mode = 'manual' } = {}) {
+async function translateText({ guildId, text, targetLanguage = 'en', sourceLanguage = 'auto', mode = 'manual', options = {} } = {}) {
   const section = translationStore.getTranslationSection(guildId);
-  const provider = section.settings?.provider || 'manual';
-  const safeText = String(text || '').trim().slice(0, section.settings?.maxCharacters || 1500);
+  const provider = translationProviderManager.getConfiguredProvider(section);
+  const maxCharacters = section.settings?.maxCharacters || 1500;
+  const safeText = String(text || '').trim().slice(0, maxCharacters);
   const safeTarget = normalizeLanguage(targetLanguage || section.settings?.defaultTargetLanguage || 'en');
   const safeSource = normalizeLanguage(sourceLanguage || section.settings?.defaultSourceLanguage || 'auto');
 
   if (!safeText) {
-    return {
-      ok: false,
-      provider,
-      sourceLanguage: safeSource,
-      targetLanguage: safeTarget,
+    return translationProviderManager.createFailure(provider, 'EMPTY_TEXT', 'No text provided.', {
       originalText: '',
-      translatedText: '',
-      error: 'No text provided.',
-    };
-  }
-
-  if (provider === 'manual') {
-    translationStore.incrementAnalytics(guildId, {
-      failedTranslations: 1,
-    });
-
-    return {
-      ok: false,
-      provider,
       sourceLanguage: safeSource,
       targetLanguage: safeTarget,
-      originalText: safeText,
-      translatedText: '',
-      error: 'Translation provider is not connected yet.',
-    };
+    });
   }
 
-  // Future provider integration point.
+  const result = await translationProviderManager.translateText({
+    section,
+    guildId,
+    text: safeText,
+    sourceLanguage: safeSource,
+    targetLanguage: safeTarget,
+    options,
+  });
+
   translationStore.incrementAnalytics(guildId, {
-    [mode === 'auto' ? 'autoTranslations' : 'manualTranslations']: 1,
+    [result.success ? (mode === 'auto' ? 'autoTranslations' : 'manualTranslations') : 'failedTranslations']: 1,
   });
 
   return {
-    ok: true,
-    provider,
-    sourceLanguage: safeSource,
-    targetLanguage: safeTarget,
-    originalText: safeText,
-    translatedText: safeText,
+    ...result,
+    provider: result.provider || provider,
+    originalText: result.originalText || safeText,
+    translatedText: result.translatedText || '',
+    sourceLanguage: result.sourceLanguage || safeSource,
+    targetLanguage: result.targetLanguage || safeTarget,
   };
+}
+
+function getProviderStatus(guildId) {
+  const section = translationStore.getTranslationSection(guildId);
+  return translationProviderManager.getProviderStatus(section);
+}
+
+function listProviders() {
+  return translationProviderManager.listProviders();
 }
 
 module.exports = {
   LANGUAGE_LABELS,
   languageLabel,
   normalizeLanguage,
+  providerLabel,
   buildOverviewEmbed,
   buildChannelEmbed,
   buildProviderNotConnectedEmbed,
   translateText,
+  getProviderStatus,
+  listProviders,
 };
