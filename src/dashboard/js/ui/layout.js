@@ -10,7 +10,7 @@ import Forms from '../pages/Forms';
 import Restore from '../pages/Restore';
 import Security from '../pages/Security';
 import Logs from '../pages/Logs';
-import OwnerGlobalView from '../pages/OwnerGlobalView';
+import OwnerView from '../pages/OwnerView';
 
 export const DASHBOARD_LAYOUT = {
   navbarExpandedWidth: '280px',
@@ -148,7 +148,7 @@ export const ROUTES = [
     label: 'Owner View',
     icon: 'admin',
     path: '/owner',
-    component: OwnerGlobalView,
+    component: OwnerView,
     ownerOnly: true,
   },
 
