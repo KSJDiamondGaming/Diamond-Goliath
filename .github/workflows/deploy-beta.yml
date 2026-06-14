@@ -37,9 +37,13 @@ jobs:
             echo "📦 Installing dependencies..."
             npm install
 
+            echo "🏗️ Building dashboard..."
+            npm run build
+
             echo "♻️ Restarting BETA bot..."
             BOT_MODE=beta pm2 restart goliath-beta --update-env
 
             pm2 save
+            pm2 status
 
             echo "✅ BETA deployment complete"
