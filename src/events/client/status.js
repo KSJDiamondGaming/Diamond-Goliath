@@ -78,5 +78,3 @@ function startStatusRotation(client) {
 module.exports = {
   startStatusRotation,
 };
-
-//test
