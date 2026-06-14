@@ -1,0 +1,44 @@
+name: Promote DEV to BETA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: promote-dev-to-beta
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Promote dev to beta
+        run: |
+          set -e
+
+          echo "🚀 Promoting DEV → BETA"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git fetch origin dev beta
+
+          git checkout beta
+          git reset --hard origin/beta
+
+          echo "🔀 Merging dev into beta..."
+          git merge origin/dev --no-edit
+
+          echo "📤 Pushing beta..."
+          git push origin beta
+
+          echo "✅ DEV promoted to BETA"
