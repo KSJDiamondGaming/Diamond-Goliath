@@ -26,7 +26,7 @@ const {
 
 const {
   startStatusRotation,
-} = require('./status');
+} = require('../../modules/status/statusRotation');
 
 function getEnvList(name) {
   const value = process.env[name];
