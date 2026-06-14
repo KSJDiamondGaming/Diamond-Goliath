@@ -24,7 +24,7 @@ function normalizeGuilds(payload) {
   return [];
 }
 
-export default function OwnerGlobalView({ theme, currentUser }) {
+export default function OwnerView({ theme, currentUser }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [ownerPayload, setOwnerPayload] = useState(null);
