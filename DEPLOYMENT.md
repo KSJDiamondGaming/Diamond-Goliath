@@ -25,7 +25,6 @@ git add .
 git commit -m "Owner View fix"
 git push origin dev
 
-
 git checkout beta
 git merge dev
 git push origin beta
