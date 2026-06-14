@@ -1,13 +1,3 @@
-Branches:
-dev = daily development
-beta = stable testing/default branch
-production = final release
-
-Deploy:
-dev = automatic
-beta = manual GitHub Action
-production = manual GitHub Action
-
 VPS:
 /home/goliath/dev
 /home/goliath/beta
@@ -28,3 +18,18 @@ tree src /F > src-structure.txt
 /home/goliath/dev
 /home/goliath/beta
 /home/goliath/production
+
+
+
+git add .
+git commit -m "Owner View fix"
+git push origin dev
+
+
+git checkout beta
+git merge dev
+git push origin beta
+
+git checkout production
+git merge beta
+git push origin production
