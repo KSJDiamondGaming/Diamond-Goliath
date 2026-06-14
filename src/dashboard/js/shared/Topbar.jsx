@@ -50,7 +50,12 @@ function Topbar({
   const isMobile = useIsMobile(768);
   const styles = useMemo(() => topbarStyles(theme), [theme]);
   const userInitial = getInitial(topbarUserName);
+
   const isOwner = currentUser?.isOwner === true;
+
+  const isOwnerView =
+    typeof window !== 'undefined' &&
+    window.location.pathname.startsWith('/owner');
 
   const closeMenu = useCallback(() => {
     setMenuOpen(false);
@@ -259,15 +264,27 @@ function Topbar({
                   />
 
                   {isOwner ? (
-                    <MenuButton
-                      styles={styles}
-                      hovered={hoveredMenuItem === 'owner'}
-                      onHover={() => setHoveredMenuItem('owner')}
-                      onLeave={() => setHoveredMenuItem('')}
-                      onClick={() => goToPath('/owner')}
-                      icon="👑"
-                      label="Owner View"
-                    />
+                    isOwnerView ? (
+                      <MenuButton
+                        styles={styles}
+                        hovered={hoveredMenuItem === 'return'}
+                        onHover={() => setHoveredMenuItem('return')}
+                        onLeave={() => setHoveredMenuItem('')}
+                        onClick={() => goToPath('/dashboard')}
+                        icon="🏠"
+                        label="Return"
+                      />
+                    ) : (
+                      <MenuButton
+                        styles={styles}
+                        hovered={hoveredMenuItem === 'owner'}
+                        onHover={() => setHoveredMenuItem('owner')}
+                        onLeave={() => setHoveredMenuItem('')}
+                        onClick={() => goToPath('/owner')}
+                        icon="👑"
+                        label="Owner View"
+                      />
+                    )
                   ) : null}
 
                   <div style={styles.themeRow}>
