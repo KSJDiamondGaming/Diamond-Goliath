@@ -17,6 +17,10 @@ const {
 } = require('../../modules/roles/roleStartup');
 
 const {
+  startupTranslation,
+} = require('../../modules/translation/translationStartup');
+
+const {
   startGiveawayScheduler,
 } = require('../../modules/giveaways/giveawayManager');
 
@@ -149,6 +153,13 @@ module.exports = {
     );
 
     await safeRun(
+      'Translation recovery',
+      () => startupTranslation(client),
+      (translationStartup) =>
+        `Translation recovery initialized (${translationStartup?.channelsRecovered || 0} channel(s))`
+    );
+
+    await safeRun(
       'Backup sync worker',
       () => startbackupWorker(),
       (syncWorker) => {
@@ -217,7 +228,7 @@ module.exports = {
     bannerItems.push({
       label: 'Systems',
       value:
-        'Status Rotation + Scheduler + Lockdown Recovery + Ticket Recovery + Role System + Giveaway Scheduler + Backup Sync Worker',
+        'Status Rotation + Scheduler + Lockdown Recovery + Ticket Recovery + Role System + Translation Recovery + Giveaway Scheduler + Backup Sync Worker',
       ok: true,
     });
 
