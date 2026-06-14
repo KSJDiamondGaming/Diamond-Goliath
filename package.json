@@ -25,7 +25,7 @@
     "dashboard:dev": "vite src/dashboard --host 0.0.0.0 --port 5173 --mode development",
     "dashboard:beta": "vite src/dashboard --host 0.0.0.0 --port 5183 --mode development",
     "dashboard:production": "vite src/dashboard --host 0.0.0.0 --port 5193 --mode production",
-    "dashboard:build": "vite build src/dashboard --outDir src/dashboard/dist --emptyOutDir",
+    "dashboard:build": "vite build src/dashboard --outDir ../../dist --emptyOutDir",
 
     "build": "npm run dashboard:build",
 
