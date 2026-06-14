@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 
 import { appBaseStyles, shellStyles } from './ui/components.js';
 import { getTheme } from './ui/theme.js';
-import { navItems, ROUTES } from './ui/layout.js';
+import { navItems, OWNER_NAV_ITEM, ROUTES } from './ui/layout.js';
 
 import { useNavbar } from './hooks/useNavbar.js';
 import { useBotStatus } from './hooks/useBotStatus.js';
@@ -112,6 +112,13 @@ export default function App() {
     clearGuilds: guildState.clearGuilds,
   });
 
+  const isOwner = authState.currentUser?.isOwner === true;
+
+  const ownerNavItems = useMemo(
+    () => (isOwner ? [OWNER_NAV_ITEM, ...navItems] : navItems),
+    [isOwner],
+  );
+
   const styles = useMemo(
     () => shellStyles(theme, { navbarExpanded }),
     [theme, navbarExpanded],
@@ -208,10 +215,17 @@ export default function App() {
 
     if (authState.isAuthenticated && location.pathname === '/login') {
       navigate('/overview', { replace: true });
+      return;
+    }
+
+    if (authState.isAuthenticated && activeRoute?.ownerOnly && !isOwner) {
+      navigate('/overview', { replace: true });
     }
   }, [
+    activeRoute,
     authState.authLoading,
     authState.isAuthenticated,
+    isOwner,
     location.pathname,
     navigate,
   ]);
@@ -233,6 +247,9 @@ export default function App() {
     guildError: guildState.guildError,
 
     theme,
+
+    currentUser: authState.currentUser,
+    isOwner,
 
     authLoading: authState.authLoading,
     isAuthenticated: authState.isAuthenticated,
@@ -282,7 +299,7 @@ export default function App() {
             isAuthenticated={authState.isAuthenticated}
             authLoading={authState.authLoading}
             guildsLoading={guildState.guildsLoading}
-            navItems={navItems}
+            navItems={ownerNavItems}
             botName={botState.botName}
             botAvatar={botState.botAvatar}
             botData={botState.botData}
@@ -316,6 +333,12 @@ export default function App() {
                   theme={theme}
                   title="Not signed in"
                   text="Please login with Discord to access your dashboard."
+                />
+              ) : activeRoute?.ownerOnly && !isOwner ? (
+                <CenterMessage
+                  theme={theme}
+                  title="Owner access required"
+                  text="This dashboard view is restricted to KSJ owner accounts."
                 />
               ) : guildState.guildsLoading && guildState.guilds.length === 0 ? (
                 <CenterMessage
