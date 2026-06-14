@@ -13,8 +13,12 @@ const MODULE = 'forms';
 const FIELD_TYPES = Object.freeze({
   SHORT: 'short',
   PARAGRAPH: 'paragraph',
+  NUMBER: 'number',
   SELECT: 'select',
+  CHECKBOX: 'checkbox',
   BOOLEAN: 'boolean',
+  USER_MENTION: 'user_mention',
+  ROLE_MENTION: 'role_mention',
 });
 
 const FORM_ACTIONS = Object.freeze({
@@ -59,6 +63,21 @@ function createId(prefix = 'form') {
   return `${prefix}_${crypto.randomUUID().slice(0, 8)}`;
 }
 
+function normalizeFieldType(value) {
+  const type = String(value || '').trim().toLowerCase();
+
+  if (type === 'long' || type === 'long_text' || type === 'textarea') {
+    return FIELD_TYPES.PARAGRAPH;
+  }
+
+  if (type === 'dropdown') return FIELD_TYPES.SELECT;
+  if (type === 'yes_no' || type === 'yesno') return FIELD_TYPES.BOOLEAN;
+  if (type === 'user' || type === 'member') return FIELD_TYPES.USER_MENTION;
+  if (type === 'role') return FIELD_TYPES.ROLE_MENTION;
+
+  return Object.values(FIELD_TYPES).includes(type) ? type : FIELD_TYPES.SHORT;
+}
+
 function defaultFormsSection() {
   return {
     enabled: true,
@@ -83,7 +102,7 @@ function defaultFormsSection() {
 
 function normalizeField(field = {}, index = 0) {
   const source = isPlainObject(field) ? field : {};
-  const type = Object.values(FIELD_TYPES).includes(source.type) ? source.type : FIELD_TYPES.SHORT;
+  const type = normalizeFieldType(source.type);
   const id = cleanKey(source.id || source.key || `field-${index + 1}`, `field-${index + 1}`);
 
   return {
