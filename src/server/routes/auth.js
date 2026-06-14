@@ -56,11 +56,11 @@ if (!user?.id || !user?.avatar) return null;
 
 const ext = user.avatar.startsWith('a_') ? 'gif' : 'png';
 
-return "https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.${ext}?size=256";
+return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.${ext}?size=256`;
 }
 
 function safeRedirectUrl(url) {
-return String(url || 'https://goliath.ksjdigital.co.uk').replace(//+$/, '');
+return String(url || 'https://goliath.ksjdigital.co.uk').replace(/\/+$/, '');
 }
 
 function getOwnerIds() {
@@ -100,7 +100,7 @@ redirect_uri: redirectUri,
 scope: 'identify guilds',
 });
 
-const authUrl = "https://discord.com/oauth2/authorize?${params.toString()}";
+const authUrl = `https://discord.com/oauth2/authorize?${params.toString()}`;
 
 if (isDebug()) {
 console.log('[AUTH] OAuth URL:', authUrl);
