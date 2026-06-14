@@ -10,6 +10,7 @@ import Forms from '../pages/Forms';
 import Restore from '../pages/Restore';
 import Security from '../pages/Security';
 import Logs from '../pages/Logs';
+import OwnerGlobalView from '../pages/OwnerGlobalView';
 
 export const DASHBOARD_LAYOUT = {
   navbarExpandedWidth: '280px',
@@ -19,6 +20,13 @@ export const DASHBOARD_LAYOUT = {
   cardRadius: '20px',
   cardPadding: '24px',
   sectionPadding: '18px',
+};
+
+export const OWNER_NAV_ITEM = {
+  key: 'ownerGlobalView',
+  label: 'Owner Global View',
+  icon: 'admin',
+  path: '/owner',
 };
 
 export const NAV_ITEMS = [
@@ -143,6 +151,15 @@ export const ROUTES = [
   },
 
   {
+    key: 'ownerGlobalView',
+    label: 'Owner Global View',
+    icon: 'admin',
+    path: '/owner',
+    component: OwnerGlobalView,
+    ownerOnly: true,
+  },
+
+  {
     key: 'generalSettings',
     label: 'General Settings',
     icon: 'generalSettings',
@@ -250,6 +267,12 @@ export const PAGE_LAYOUTS = {
         type: 'list',
       },
     ],
+  },
+
+  ownerGlobalView: {
+    title: 'Owner Global View',
+    description: 'KSJ-only global guild registry and runtime overview.',
+    sections: [],
   },
 
   generalSettings: {
