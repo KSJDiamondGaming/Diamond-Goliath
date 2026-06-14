@@ -36,9 +36,15 @@ function cleanDiscordId(value, label = 'Discord ID') {
 
 async function getGuild(req, guildId) {
   const client = req.app.locals.discordClient || req.app.locals.client;
-  const guild = client?.guilds?.cache?.get?.(guildId) || await client?.guilds?.fetch?.(guildId).catch(() => null);
-  if (!guild) throw new Error('Guild is not available to the Discord client.');
-  return guild;
+  const cachedGuild = client?.guilds?.cache?.get?.(guildId);
+  if (cachedGuild) return cachedGuild;
+
+  const fetchedGuild = typeof client?.guilds?.fetch === 'function'
+    ? await client.guilds.fetch(guildId).catch(() => null)
+    : null;
+
+  if (!fetchedGuild) throw new Error('Guild is not available to the Discord client.');
+  return fetchedGuild;
 }
 
 router.get('/:guildId/overview', (req, res) => {
