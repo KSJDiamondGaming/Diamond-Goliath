@@ -1,4 +1,3 @@
-```js
 const { ActivityType } = require('discord.js');
 
 const STATUS_INTERVAL_MS = 180_000;
