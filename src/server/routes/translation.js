@@ -4,7 +4,6 @@
 
 const express = require('express');
 
-require('../../modules/translation/translationStoreExtensions');
 const translationStore = require('../../modules/translation/translationStore');
 const translationThreadManager = require('../../modules/translation/translationThreadManager');
 
