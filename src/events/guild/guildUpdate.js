@@ -1,21 +1,19 @@
-const {
-  handleGuildUpdate,
-} = require('../../security/securitySystem');
+const handlerModule = require('../../security/securitySystem');
 
 module.exports = {
   name: 'guildUpdate',
 
   async execute(oldGuild, newGuild) {
     try {
-      await handleGuildUpdate(
-        oldGuild,
-        newGuild
-      );
+      const handler = handlerModule.handleGuildUpdate;
+
+      if (typeof handler !== 'function') {
+        return;
+      }
+
+      await handler(oldGuild, newGuild);
     } catch (error) {
-      console.error(
-        '[guildUpdate] Failed to process guild update:',
-        error
-      );
+      console.error('[guildUpdate] Failed to process guild update:', error);
     }
   },
 };

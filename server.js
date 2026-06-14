@@ -47,6 +47,8 @@ const moderationRoutes = require('./src/server/routes/moderation');
 const serverRestoreRoutes = require('./src/server/routes/serverRestoreRoutes');
 const securityRoutes = require('./src/server/routes/security');
 const ticketRoutes = require('./src/server/routes/tickets');
+const formsRoutes = require('./src/server/routes/forms');
+const translationRoutes = require('./src/server/routes/translation');
 
 const {
   restoreLockdownReminders,
@@ -267,6 +269,8 @@ function startDashboardApiServer() {
 
   app.use('/api/cases', moderationRoutes);
   app.use('/api/tickets', ticketRoutes);
+  app.use('/api/forms', formsRoutes);
+  app.use('/api/translation', translationRoutes);
 
   app.use('/api/server-restore', serverRestoreRoutes);
   app.use('/api/security', securityRoutes);
@@ -335,22 +339,11 @@ function registerEvent(event, file) {
 
   registeredEvents.add(eventKey);
 
-  /*
-  ==========================================
-  CRITICAL INTERACTION SAFETY
-  Prevent duplicate interactionCreate listeners
-  ==========================================
-  */
-
   if (event.name === 'interactionCreate') {
-    const existing =
-      client.listenerCount('interactionCreate');
+    const existing = client.listenerCount('interactionCreate');
 
     if (existing > 0) {
-      console.warn(
-        `⚠️ Removing ${existing} existing interactionCreate listener(s)`
-      );
-
+      console.warn(`⚠️ Removing ${existing} existing interactionCreate listener(s)`);
       client.removeAllListeners('interactionCreate');
     }
   }
@@ -359,9 +352,7 @@ function registerEvent(event, file) {
     try {
       await event.execute(...args, client);
     } catch (error) {
-      console.error(
-        `❌ Event execution failed: ${event.name}`
-      );
+      console.error(`❌ Event execution failed: ${event.name}`);
       console.error(error);
     }
   };
@@ -404,7 +395,27 @@ function loadEvents() {
 
 function registerModeProtectionEvents() {
   client.on('guildCreate', async (guild) => {
+    console.log(
+      `[guildCreate] Joined guild: ${guild.name} (${guild.id})`
+    );
+
     await enforceGuildAccess(guild, BOT_MODE, activeMode);
+
+    console.log(
+      '[guildCreate] Guild cache:',
+      client.guilds.cache.map(g => `${g.name} (${g.id})`).join(', ') || 'None'
+    );
+  });
+
+  client.on('guildDelete', async (guild) => {
+    console.warn(
+      `[guildDelete] Removed from guild: ${guild.name} (${guild.id})`
+    );
+
+    console.warn(
+      '[guildDelete] Guild cache:',
+      client.guilds.cache.map(g => `${g.name} (${g.id})`).join(', ') || 'None'
+    );
   });
 }
 
@@ -498,9 +509,9 @@ async function start() {
   loadEvents();
 
   console.log(
-  '[Debug] interactionCreate listeners:',
-  client.listenerCount('interactionCreate')
-);
+    '[Debug] interactionCreate listeners:',
+    client.listenerCount('interactionCreate')
+  );
 
   await client.login(token);
 }
@@ -511,18 +522,12 @@ start().catch((err) => {
   process.exit(1);
 });
 
-process.on("unhandledRejection", (reason) => {
-  console.error("❌ UNHANDLED REJECTION:", reason);
+process.on('unhandledRejection', (reason) => {
+  console.error('❌ UNHANDLED REJECTION:', reason);
 });
 
-process.on("uncaughtException", (error) => {
-  console.error("❌ UNCAUGHT EXCEPTION:", error);
-});
-
-client.on("interactionCreate", (interaction) => {
-  console.log(
-    `🧩 interactionCreate: ${interaction.type} ${interaction.commandName || interaction.customId || "unknown"}`
-  );
+process.on('uncaughtException', (error) => {
+  console.error('❌ UNCAUGHT EXCEPTION:', error);
 });
 
 module.exports = client;

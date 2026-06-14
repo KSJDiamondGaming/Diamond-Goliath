@@ -6,6 +6,7 @@ import GeneralSettings from '../pages/GeneralSettings';
 import Cases from '../pages/Cases';
 import Warnings from '../pages/Warnings';
 import Messages from '../pages/Messages';
+import Forms from '../pages/Forms';
 import Restore from '../pages/Restore';
 import Security from '../pages/Security';
 import Logs from '../pages/Logs';
@@ -89,6 +90,13 @@ export const NAV_ITEMS = [
         label: 'Welcome & Leave',
         icon: 'messages',
         path: '/messages',
+      },
+
+      {
+        key: 'forms',
+        label: 'Forms',
+        icon: 'modules',
+        path: '/forms',
       },
     ],
   },
@@ -188,6 +196,14 @@ export const ROUTES = [
     icon: 'messages',
     path: '/messages',
     component: Messages,
+  },
+
+  {
+    key: 'forms',
+    label: 'Forms',
+    icon: 'modules',
+    path: '/forms',
+    component: Forms,
   },
 
   {
@@ -355,6 +371,23 @@ export const PAGE_LAYOUTS = {
     ],
   },
 
+  forms: {
+    title: 'Forms',
+
+    description:
+      'Manage universal forms for appeals, applications, reports, support and custom workflows.',
+
+    emptyDescription:
+      'Select a server to manage forms.',
+
+    sections: [
+      {
+        id: 'formsManager',
+        type: 'dashboard',
+      },
+    ],
+  },
+
   security: {
     title: 'Security Center',
 
@@ -460,6 +493,13 @@ export const SECTION_DEFS = {
 
     description:
       'Configure the leave message sent when a user leaves the server.',
+  },
+
+  formsManager: {
+    title: 'Forms Manager',
+
+    description:
+      'Create, edit, disable and connect universal forms to ticket workflows.',
   },
 
   generalConfig: {

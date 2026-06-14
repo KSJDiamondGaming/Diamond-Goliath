@@ -29,19 +29,3 @@ Manage Channels
 View Audit Log
 Manage Webhooks
 Ban/Kick/Timeout if used elsewhere
-
-npm run sync:dev
-npm run promote:beta
-npm run promote:production
-
-tree /F > structure.txt
-tree src /F > src-structure.txt
-
-<<<<<<< Updated upstream
-/home/goliath/dev
-=======
-
-/home/goliath/dev
-/home/goliath/beta
-/home/goliath/production
->>>>>>> Stashed changes

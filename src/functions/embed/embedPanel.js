@@ -13,6 +13,12 @@ const {
   TextInputStyle,
 } = require('discord.js');
 
+const {
+  saveEmbedDeployment,
+  getEmbedDeployment,
+  getDeploymentKeyFromState,
+} = require('./embedDeploymentStore');
+
 const guildManager = require('../../guild/guildManager');
 const PANEL_COLOR = '#5865F2';
 const CUSTOM_HEX_VALUE = '__custom_hex__';
@@ -1045,16 +1051,21 @@ function buildEditorPanel(interaction, memberDisplayName = 'Unknown User') {
   ),
 
   new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('embed:test-send')
-      .setLabel('🧪 Test')
-      .setStyle(ButtonStyle.Secondary),
+  new ButtonBuilder()
+    .setCustomId('embed:update-existing')
+    .setLabel('♻️ Update Existing')
+    .setStyle(ButtonStyle.Secondary),
 
-    new ButtonBuilder()
-      .setCustomId('embed:back')
-      .setLabel('⬅️ Back')
-      .setStyle(ButtonStyle.Secondary)
-  )
+  new ButtonBuilder()
+    .setCustomId('embed:test-send')
+    .setLabel('🧪 Test')
+    .setStyle(ButtonStyle.Secondary),
+
+  new ButtonBuilder()
+    .setCustomId('embed:back')
+    .setLabel('⬅️ Back')
+    .setStyle(ButtonStyle.Secondary)
+)
 );
 
   const embed = new EmbedBuilder()
@@ -1084,7 +1095,7 @@ function buildEditorPanel(interaction, memberDisplayName = 'Unknown User') {
             : '🔕 Safe / no ping'
         }`,
         `> **Fields:** ${state.fields?.length || 0}/25`,
-        `> **Buttons:** ${state.buttons?.length || 0}/25`,
+        `> **Buttons:** ${state.buttons?.length || 0}/20`,
         `> **Unsaved Changes:** ${
           state.hasUnsavedChanges
             ? '⚠️ Yes'
@@ -1223,7 +1234,7 @@ function buildButtonsPanel(interaction, memberDisplayName = 'Unknown User') {
         : [
             'No button selected.',
             '',
-            `Buttons: ${state.buttons?.length || 0}/25`,
+            `Buttons: ${state.buttons?.length || 0}/20`,
             '',
             'Add a button to begin.',
           ].join('\n')
@@ -2049,6 +2060,16 @@ if (interaction.customId === 'embed:editor') {
     }
 
     if (interaction.customId === 'embed:button-add') {
+
+  if ((state.buttons?.length || 0) >= 20) {
+    await interaction.reply({
+      content: '⚠️ Maximum button limit reached (20/20).',
+      flags: 64,
+    });
+
+    return true;
+  }
+
   await interaction.showModal(
     buildButtonModal(state)
   );
@@ -2261,11 +2282,83 @@ if (interaction.customId === 'embed:edit-media') {
   return true;
 }
 
+if (interaction.customId === 'embed:update-existing') {
+
+  const deployment = getEmbedDeployment(
+    interaction.guild.id,
+    getDeploymentKeyFromState(state)
+  );
+
+  if (!deployment) {
+    await interaction.reply({
+      content: '⚠️ No deployed embed found. Use the embed first.',
+      flags: 64,
+    });
+
+    return true;
+  }
+
+  try {
+    const channel = await interaction.guild.channels.fetch(
+      deployment.channelId
+    );
+
+    const message = await channel.messages.fetch(
+      deployment.messageId
+    );
+
+    await message.edit({
+      content: state.allowUserPing
+        ? `<@${interaction.user.id}>`
+        : '',
+      embeds: [buildPreviewEmbed(state, interaction)],
+      components: buildButtonComponents(state),
+      allowedMentions: getAllowedMentionsForState(
+        state,
+        interaction
+      ),
+    });
+
+    await interaction.reply({
+      content: '✅ Existing embed updated.',
+      flags: 64,
+    });
+
+  } catch (error) {
+    console.error(
+      'Failed to update existing embed:',
+      error
+    );
+
+    await interaction.reply({
+      content:
+        '⚠️ Original embed not found. Use the embed again to repost it.',
+      flags: 64,
+    });
+  }
+
+  return true;
+}
+
 if (interaction.customId === 'embed:test-send') {
+
+  if ((state.buttons?.length || 0) > 20) {
+    await interaction.reply({
+      content: '⚠️ Too many buttons. Maximum is 20.',
+      flags: 64,
+    });
+
+    return true;
+  }
+
   await interaction.reply({
     content: '🧪 Test Preview',
     embeds: [buildPreviewEmbed(state, interaction)],
     components: buildButtonComponents(state),
+    allowedMentions: getAllowedMentionsForState(
+      state,
+      interaction
+    ),
     flags: 64,
   });
 
@@ -2274,55 +2367,80 @@ if (interaction.customId === 'embed:test-send') {
 
 if (interaction.customId === 'embed:use') {
 
-const channel =
-  interaction.guild.channels.cache.get(state.channelId) ||
-(await interaction.guild.channels.fetch(state.channelId).catch(() => null));
+  if ((state.buttons?.length || 0) > 20) {
+    await interaction.reply({
+      content: '⚠️ Too many buttons. Maximum is 20.',
+      flags: 64,
+    });
 
-if (!channel?.isTextBased()) {
+    return true;
+  }
+
+  const channel =
+    interaction.guild.channels.cache.get(state.channelId) ||
+    (await interaction.guild.channels.fetch(state.channelId).catch(() => null));
+
+  if (!channel?.isTextBased()) {
+    await interaction.reply({
+      content: 'Invalid channel.',
+      flags: 64,
+    });
+
+    return true;
+  }
+
+  const sentMessage = await channel.send({
+    content: state.allowUserPing ? `<@${interaction.user.id}>` : '',
+    embeds: [buildPreviewEmbed(state, interaction)],
+    components: buildButtonComponents(state),
+    allowedMentions: getAllowedMentionsForState(state, interaction),
+  });
+
+  const presetName = getAutoPresetName(state);
+
+  guildManager.saveEmbedPreset(
+    interaction.guild.id,
+    presetName,
+    getPresetDataFromState(state),
+    interaction.guild
+  );
+
+  saveEmbedDeployment(
+    interaction.guild.id,
+    getDeploymentKeyFromState({
+      ...state,
+      selectedPreset: presetName,
+    }),
+    {
+      channelId: channel.id,
+      messageId: sentMessage.id,
+      template: state.template,
+      preset: presetName,
+      createdBy: interaction.user.id,
+      lastUpdatedBy: interaction.user.id,
+    }
+  );
+
+  const success = setEmbedDefault(
+    interaction.guild.id,
+    state.template,
+    presetName
+  );
+
+  clearUnsaved(interaction, {
+    ...state,
+    selectedPreset: presetName,
+  });
+
   await interaction.reply({
-    content: 'Invalid channel.',
+    content: success
+      ? `✅ ${TEMPLATES[state.template]?.label || 'Embed'} posted to <#${state.channelId}> and saved as active`
+      : '⚠️ Preset saved, but default assignment failed.',
     flags: 64,
   });
 
   return true;
 }
-
-await channel.send({
-  content: state.allowUserPing ? `<@${interaction.user.id}>` : '',
-  embeds: [buildPreviewEmbed(state, interaction)],
-  components: buildButtonComponents(state),
-  allowedMentions: getAllowedMentionsForState(state, interaction),
-});
-
-    const presetName = getAutoPresetName(state);
-
-    guildManager.saveEmbedPreset(
-      interaction.guild.id,
-      presetName,
-      getPresetDataFromState(state),
-      interaction.guild
-    );
-
-    const success = setEmbedDefault(
-      interaction.guild.id,
-      state.template,
-      presetName
-    );
-
-    clearUnsaved(interaction, {
-      ...state,
-      selectedPreset: presetName,
-    });
-
-    await interaction.reply({
-      content: success
-      ? `✅ ${TEMPLATES[state.template]?.label || 'Embed'} posted to <#${state.channelId}> and saved as active`
-        : '⚠️ Preset saved, but default assignment failed.',
-      flags: 64,
-    });
-
-      return true;
-    }
 
   }
 
@@ -2355,14 +2473,42 @@ if (interaction.isModalSubmit()) {
     }
 
     if (interaction.customId === 'embed:button-save-new') {
+
+  if ((state.buttons?.length || 0) >= 20) {
+    await interaction.reply({
+      content: '⚠️ Maximum button limit reached (20/20).',
+      flags: 64,
+    });
+
+    return true;
+  }
+
+  const style =
+    interaction.fields.getTextInputValue('style') || 'Primary';
+
+  const url =
+    interaction.fields.getTextInputValue('url');
+
+  if (
+    String(style).toLowerCase() === 'link' &&
+    !safeUrl(url)
+  ) {
+    await interaction.reply({
+      content: '⚠️ Link buttons require a valid URL.',
+      flags: 64,
+    });
+
+    return true;
+  }
+
   const nextButtons = [...(state.buttons || [])];
 
   nextButtons.push({
     label: interaction.fields.getTextInputValue('label'),
     emoji: interaction.fields.getTextInputValue('emoji'),
-    style: interaction.fields.getTextInputValue('style') || 'Primary',
+    style,
     action: 'link',
-    url: interaction.fields.getTextInputValue('url'),
+    url,
   });
 
   markUnsaved(interaction, {
@@ -2391,14 +2537,32 @@ if (interaction.customId.startsWith('embed:button-save:')) {
     return true;
   }
 
+  const style =
+    interaction.fields.getTextInputValue('style') || 'Primary';
+
+  const url =
+    interaction.fields.getTextInputValue('url');
+
+  if (
+    String(style).toLowerCase() === 'link' &&
+    !safeUrl(url)
+  ) {
+    await interaction.reply({
+      content: '⚠️ Link buttons require a valid URL.',
+      flags: 64,
+    });
+
+    return true;
+  }
+
   const nextButtons = [...state.buttons];
 
   nextButtons[buttonIndex] = {
     ...nextButtons[buttonIndex],
     label: interaction.fields.getTextInputValue('label'),
     emoji: interaction.fields.getTextInputValue('emoji'),
-    style: interaction.fields.getTextInputValue('style') || 'Primary',
-    url: interaction.fields.getTextInputValue('url'),
+    style,
+    url,
   };
 
   markUnsaved(interaction, {

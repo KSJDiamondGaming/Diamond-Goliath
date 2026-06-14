@@ -5,10 +5,17 @@ const {
   saveGuildData,
 } = require('../../../guild/guildManager');
 
+const {
+  DEFAULT_PREFIX,
+  LEGACY_UNSET_PREFIX,
+  getGuildPrefix,
+  normalizePrefix,
+} = require('../../../prefix/prefixStore');
+
 const router = express.Router();
 
 const DEFAULT_GENERAL_SETTINGS = {
-  prefix: '/',
+  prefix: DEFAULT_PREFIX,
   appealUrl: '',
   dashboardEnabled: true,
 
@@ -30,9 +37,23 @@ function safeArray(value) {
   return Array.isArray(value) ? value.filter(Boolean) : [];
 }
 
-function normalize(data = {}) {
+function normalizePrefixForSave(value) {
+  const raw = String(value || '').trim();
+
+  if (!raw || raw === LEGACY_UNSET_PREFIX) {
+    return DEFAULT_PREFIX;
+  }
+
+  return normalizePrefix(raw);
+}
+
+function normalize(data = {}, options = {}) {
+  const prefix = options.guildId
+    ? getGuildPrefix(options.guildId)
+    : normalizePrefixForSave(data.prefix || DEFAULT_PREFIX);
+
   return {
-    prefix: data.prefix || '/',
+    prefix,
     appealUrl: data.appealUrl || '',
     dashboardEnabled: data.dashboardEnabled !== false,
 
@@ -62,7 +83,7 @@ router.get('/:guildId', (req, res) => {
       guildId,
       config: {
         ...DEFAULT_GENERAL_SETTINGS,
-        ...normalize(guildData.generalSettings || {}),
+        ...normalize(guildData.generalSettings || {}, { guildId }),
       },
     });
   } catch (error) {
@@ -83,6 +104,7 @@ router.post('/:guildId', (req, res) => {
     const updatedConfig = normalize({
       ...DEFAULT_GENERAL_SETTINGS,
       ...(req.body || {}),
+      prefix: normalizePrefixForSave(req.body?.prefix),
     });
 
     saveGuildData(guildId, {
@@ -101,9 +123,9 @@ router.post('/:guildId', (req, res) => {
     console.error('❌ Failed to save general settings');
     console.error(error);
 
-    return res.status(500).json({
+    return res.status(400).json({
       success: false,
-      error: 'Failed to save general settings.',
+      error: error.message || 'Failed to save general settings.',
     });
   }
 });

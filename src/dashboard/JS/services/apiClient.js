@@ -91,64 +91,64 @@ export const api = {
 
   /* ---------------- GENERAL SETTINGS ---------------- */
 
-getGeneralSettings(guildId) {
-  return request(
-    `/api/config/${guildId}`,
-  );
-},
+  getGeneralSettings(guildId) {
+    return request(
+      `/api/config/${guildId}`,
+    );
+  },
 
-saveGeneralSettings(
-  guildId,
-  payload,
-) {
-  return request(
-    `/api/config/${guildId}`,
-    {
+  saveGeneralSettings(
+    guildId,
+    payload,
+  ) {
+    return request(
+      `/api/config/${guildId}`,
+      {
+        method: 'POST',
+
+        body: JSON.stringify(
+          payload,
+        ),
+      },
+    );
+  },
+
+  /* ---------------- AUTOMOD ---------------- */
+
+  getAutoModConfig(guildId) {
+    return request(`/api/config/automod/${guildId}`);
+  },
+
+  saveAutoModConfig(guildId, payload) {
+    return request(`/api/config/automod/${guildId}`, {
       method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
 
-      body: JSON.stringify(
-        payload,
-      ),
-    },
-  );
-},
+  /* ---------------- MESSAGES ---------------- */
 
-/* ---------------- AUTOMOD ---------------- */
+  getMessages(guildId) {
+    return request(
+      `/api/config/messages/${guildId}`,
+    );
+  },
 
-getAutoModConfig(guildId) {
-  return request(`/api/config/automod/${guildId}`);
-},
+  saveMessages(
+    guildId,
+    payload,
+  ) {
+    return request(
+      `/api/config/messages/${guildId}`,
+      {
+        method: 'POST',
 
-saveAutoModConfig(guildId, payload) {
-  return request(`/api/config/automod/${guildId}`, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-},
-
-/* ---------------- MESSAGES ---------------- */
-
-getMessages(guildId) {
-  return request(
-    `/api/config/messages/${guildId}`,
-  );
-},
-
-saveMessages(
-  guildId,
-  payload,
-) {
-  return request(
-    `/api/config/messages/${guildId}`,
-    {
-      method: 'POST',
-
-      body: JSON.stringify(
-        payload,
-      ),
-    },
-  );
-},
+        body: JSON.stringify(
+          payload,
+        ),
+      },
+    );
+  },
 
   /* ---------------- CASES ---------------- */
 
@@ -164,6 +164,68 @@ saveMessages(
     );
   },
 
+  /* ---------------- FORMS ---------------- */
+
+  getFormsOverview(guildId) {
+    return request(`/api/forms/${guildId}/overview`);
+  },
+
+  getFormsConfig(guildId) {
+    return request(`/api/forms/${guildId}`);
+  },
+
+  getForms(guildId) {
+    return request(`/api/forms/${guildId}/forms`);
+  },
+
+  getForm(guildId, formId) {
+    return request(`/api/forms/${guildId}/forms/${formId}`);
+  },
+
+  createForm(guildId, payload) {
+    return request(`/api/forms/${guildId}/forms`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  updateForm(guildId, formId, payload) {
+    return request(`/api/forms/${guildId}/forms/${formId}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  setFormEnabled(guildId, formId, enabled) {
+    return request(`/api/forms/${guildId}/forms/${formId}/enabled`, {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled }),
+    });
+  },
+
+  getFormPanels(guildId) {
+    return request(`/api/forms/${guildId}/panels`);
+  },
+
+  getFormSubmissions(guildId, query = '') {
+    const suffix = query ? `?${query}` : '';
+    return request(`/api/forms/${guildId}/submissions${suffix}`);
+  },
+
+  updateFormSubmissionStatus(guildId, submissionId, status, extra = {}) {
+    return request(`/api/forms/${guildId}/submissions/${submissionId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status, ...extra }),
+    });
+  },
+
+  updateFormsSettings(guildId, payload) {
+    return request(`/api/forms/${guildId}/settings`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
+
   /* ---------------- SECURITY ---------------- */
 
   getSecurityOverview(guildId) {
@@ -174,16 +236,16 @@ saveMessages(
 
   /* ---------------- LOGS ---------------- */
 
-getLogConfig(guildId) {
-  return request(`/api/config/logs/${guildId}`);
-},
+  getLogConfig(guildId) {
+    return request(`/api/config/logs/${guildId}`);
+  },
 
-saveLogConfig(guildId, payload) {
-  return request(`/api/config/logs/${guildId}`, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-},
+  saveLogConfig(guildId, payload) {
+    return request(`/api/config/logs/${guildId}`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
 };
 
 export default api;
