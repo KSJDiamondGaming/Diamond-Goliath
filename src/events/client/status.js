@@ -40,7 +40,7 @@ const MODE_CONFIG = {
     badge: '🔵',
     label: 'Goliath',
     activities: [
-      { name: '🔵 Goliath | Protecting Servers', type: ActivityType.Watching },
+      { name: '🟢 Goliath | Protecting Servers', type: ActivityType.Watching },
       { name: '🛡️ Server Security', type: ActivityType.Watching },
       { name: '🎟️ Managing Tickets', type: ActivityType.Playing },
       { name: '📋 Processing Forms', type: ActivityType.Watching },
