@@ -2,6 +2,9 @@ const { runAutomod } = require('../../modules/automod/service');
 const { handleStickyMessage } = require('../../modules/sticky/stickyManager');
 const { handlePrefixCommand } = require('../../prefix/prefixRouter');
 
+require('../../modules/translation/translationStoreExtensions');
+const translationThreadManager = require('../../modules/translation/translationThreadManager');
+
 module.exports = {
   name: 'messageCreate',
 
@@ -15,6 +18,7 @@ module.exports = {
       const handledPrefixCommand = await handlePrefixCommand(message, client);
       if (handledPrefixCommand) return;
 
+      await translationThreadManager.handleMessageCreate(message, client);
       await handleStickyMessage(message, client);
     } catch (error) {
       console.error('[EVENT: messageCreate]', error);
