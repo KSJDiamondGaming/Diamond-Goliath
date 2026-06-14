@@ -21,7 +21,6 @@ const { getBotModeConfig } = require('./src/config/botModes');
 
 const {
 enforceGuildAccess,
-enforceCurrentGuilds,
 } = require('./src/config/guildAccess');
 
 const {
@@ -50,14 +49,6 @@ const securityRoutes = require('./src/server/routes/security');
 const ticketRoutes = require('./src/server/routes/tickets');
 const formsRoutes = require('./src/server/routes/forms');
 const translationRoutes = require('./src/server/routes/translation');
-
-const {
-restoreLockdownReminders,
-} = require('./src/security/lockdownSystem');
-
-const {
-restoreExpiredQuarantines,
-} = require('./src/security/quarantineSystem');
 
 /* ---------------- SAFE MODULE LOADS ---------------- */
 
@@ -122,17 +113,11 @@ client.modeConfig = activeMode;
 
 /* ---------------- HELPERS ---------------- */
 
-function logDev(message) {
-if (activeMode.verboseLogging) {
-console.log(message);
-}
-}
-
 function getRequiredEnv(name) {
 const value = process.env[name];
 
 if (!value || !String(value).trim()) {
-console.error("❌ Missing required environment variable: ${name}");
+console.error(`❌ Missing required environment variable: ${name}`);
 process.exit(1);
 }
 
@@ -160,7 +145,6 @@ if (
 ) {
   results.push(fullPath);
 }
-
 }
 
 return results.sort((a, b) => a.localeCompare(b));
@@ -174,9 +158,9 @@ PRODUCTION: '🔴 GOLIATH PRODUCTION',
 };
 
 console.log('============================================================');
-console.log("🚀 Starting ${modeLabels[BOT_MODE] || 'Goliath'}");
-console.log("🧠 Mode: ${BOT_MODE}");
-console.log("📄 Env: ${loadedEnv.envFile}");
+console.log(`🚀 Starting ${modeLabels[BOT_MODE] || 'Goliath'}`);
+console.log(`🧠 Mode: ${BOT_MODE}`);
+console.log(`📄 Env: ${loadedEnv.envFile}`);
 console.log('============================================================');
 }
 
@@ -240,7 +224,6 @@ if (!origin) return callback(null, true);
   },
   credentials: true,
 }),
-
 );
 
 app.use(express.json());
@@ -286,7 +269,7 @@ clientUrl: dashboardClientUrl,
 const apiPort = Number(process.env.PORT || process.env.BOT_API_PORT || 3001);
 
 apiServer.listen(apiPort, () => {
-console.log("🌐 Dashboard API running on http://localhost:${apiPort}");
+console.log(`🌐 Dashboard API running on http://localhost:${apiPort}`);
 });
 
 return apiServer;
@@ -298,7 +281,7 @@ function loadCommands() {
 const commandsPath = path.join(process.cwd(), 'src', 'commands');
 const files = getAllJsFiles(commandsPath);
 
-console.log("📦 Loading commands from: ${commandsPath}");
+console.log(`📦 Loading commands from: ${commandsPath}`);
 
 for (const file of files) {
 try {
@@ -313,32 +296,28 @@ delete require.cache[require.resolve(file)];
 
   client.commands.set(command.data.name, command);
   console.log(`✅ Command: ${command.data.name}`);
-} catch (err) {
+} catch (error) {
   console.error(`❌ Command failed: ${file}`);
-  console.error(err);
+  console.error(error);
+}
 }
 
-}
-
-console.log("✅ Loaded ${client.commands.size} command(s).");
+console.log(`✅ Loaded ${client.commands.size} command(s).`);
 }
 
 /* ---------------- EVENTS ---------------- */
-
 const registeredEvents = new Set();
 
 function registerEvent(event, file) {
 if (!event?.name || typeof event.execute !== 'function') {
-console.warn("⚠️ Skipped event in: ${file}");
+console.warn(`⚠️ Skipped event in: ${file}`);
 return;
 }
 
-const eventKey = "${event.name}:${file}";
+const eventKey = `${event.name}:${file}`;
 
 if (registeredEvents.has(eventKey)) {
-console.warn(
-"⚠️ Duplicate event skipped: ${event.name} (${file})"
-);
+console.warn(`⚠️ Duplicate event skipped: ${event.name} (${file})`);
 return;
 }
 
@@ -351,14 +330,13 @@ if (existing > 0) {
   console.warn(`⚠️ Removing ${existing} existing interactionCreate listener(s)`);
   client.removeAllListeners('interactionCreate');
 }
-
 }
 
 const handler = async (...args) => {
 try {
 await event.execute(...args, client);
 } catch (error) {
-console.error("❌ Event execution failed: ${event.name}");
+console.error(`❌ Event execution failed: ${event.name}`);
 console.error(error);
 }
 };
@@ -369,14 +347,14 @@ client.once(event.name, handler);
 client.on(event.name, handler);
 }
 
-console.log("🧩 Event: ${event.name}");
+console.log(`🧩 Event: ${event.name}`);
 }
 
 function loadEvents() {
 const eventsPath = path.join(__dirname, 'src', 'events');
 const files = getAllJsFiles(eventsPath);
 
-console.log("📦 Loading events from: ${eventsPath}");
+console.log(`📦 Loading events from: ${eventsPath}`);
 
 for (const file of files) {
 try {
@@ -388,9 +366,9 @@ delete require.cache[require.resolve(file)];
   for (const event of events) {
     registerEvent(event, file);
   }
-} catch (err) {
+} catch (error) {
   console.error(`❌ Event failed: ${file}`);
-  console.error(err);
+  console.error(error);
 }
 
 }
@@ -402,27 +380,23 @@ console.log('✅ Event loading complete.');
 
 function registerModeProtectionEvents() {
 client.on('guildCreate', async (guild) => {
-console.log(
-"[guildCreate] Joined guild: ${guild.name} (${guild.id})"
-);
+console.log(`[guildCreate] Joined guild: ${guild.name} (${guild.id})`);
 
 await enforceGuildAccess(guild, BOT_MODE, activeMode);
 
 console.log(
   '[guildCreate] Guild cache:',
-  client.guilds.cache.map(g => `${g.name} (${g.id})`).join(', ') || 'None'
+  client.guilds.cache.map((g) => `${g.name} (${g.id})`).join(', ') || 'None',
 );
 
 });
 
 client.on('guildDelete', async (guild) => {
-console.warn(
-"[guildDelete] Removed from guild: ${guild.name} (${guild.id})"
-);
+console.warn(`[guildDelete] Removed from guild: ${guild.name} (${guild.id})`);
 
 console.warn(
   '[guildDelete] Guild cache:',
-  client.guilds.cache.map(g => `${g.name} (${g.id})`).join(', ') || 'None'
+  client.guilds.cache.map((g) => `${g.name} (${g.id})`).join(', ') || 'None',
 );
 
 });
@@ -449,7 +423,6 @@ if (apiServer) {
 client.destroy();
 
 process.exit(0);
-
 }
 
 process.on('unhandledRejection', (reason) => {
@@ -457,9 +430,9 @@ console.error('❌ Unhandled Promise Rejection');
 console.error(reason);
 });
 
-process.on('uncaughtException', (err) => {
+process.on('uncaughtException', (error) => {
 console.error('❌ Uncaught Exception');
-console.error(err);
+console.error(error);
 process.exit(1);
 });
 
@@ -468,7 +441,6 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 }
 
 /* ---------------- START ---------------- */
-
 async function start() {
 printStartupBanner();
 
@@ -478,8 +450,8 @@ printStartupFingerprint(BOT_MODE, runtimePaths);
 
 client.runtimePaths = runtimePaths;
 
-console.log("📁 Runtime Root: ${runtimePaths.root}");
-console.log("📁 Runtime Mode: ${runtimePaths.mode}");
+console.log(`📁 Runtime Root: ${runtimePaths.root}`);
+console.log(`📁 Runtime Mode: ${runtimePaths.mode}`);
 
 runBootValidation({
 requiredPaths: [
@@ -496,9 +468,7 @@ path: './src/security',
 label: 'Security Folder',
 },
 ],
-
 requiredEnv: ['DISCORD_TOKEN'],
-
 });
 
 const token = getRequiredEnv('DISCORD_TOKEN');
@@ -516,20 +486,24 @@ const apiServer = startDashboardApiServer();
 registerProcessSafetyHandlers(apiServer);
 registerModeProtectionEvents();
 
+if (startServerBackupScheduler) {
+startServerBackupScheduler(client);
+}
+
 loadCommands();
 loadEvents();
 
 console.log(
 '[Debug] interactionCreate listeners:',
-client.listenerCount('interactionCreate')
+client.listenerCount('interactionCreate'),
 );
 
 await client.login(token);
 }
 
-start().catch((err) => {
+start().catch((error) => {
 console.error('❌ Bot startup failed');
-console.error(err);
+console.error(error);
 process.exit(1);
 });
 
