@@ -8,7 +8,7 @@ const MODE_CONFIG = {
     badge: '🟣',
     label: 'DEV',
     activities: [
-      { name: '🟣 DEV | Building Goliath', type: ActivityType.Watching },
+      { name: '🔵 DEV | Building Goliath', type: ActivityType.Watching },
       { name: '🧪 Testing New Modules', type: ActivityType.Playing },
       { name: '🛠️ KSJ Development Server', type: ActivityType.Watching },
       { name: '⚙️ Dashboard Changes', type: ActivityType.Watching },
