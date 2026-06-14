@@ -5,7 +5,7 @@ const STATUS_INTERVAL_MS = 180_000;
 const MODE_CONFIG = {
   DEV: {
     presence: 'online',
-    badge: '🟣',
+    badge: 'v',
     label: 'DEV',
     activities: [
       { name: '🔵 DEV | Building Goliath', type: ActivityType.Watching },
