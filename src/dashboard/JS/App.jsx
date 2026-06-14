@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 
 import { appBaseStyles, shellStyles } from './ui/components.js';
 import { getTheme } from './ui/theme.js';
-import { navItems, OWNER_NAV_ITEM, ROUTES } from './ui/layout.js';
+import { navItems, ROUTES } from './ui/layout.js';
 
 import { useNavbar } from './hooks/useNavbar.js';
 import { useBotStatus } from './hooks/useBotStatus.js';
@@ -113,11 +113,6 @@ export default function App() {
   });
 
   const isOwner = authState.currentUser?.isOwner === true;
-
-  const ownerNavItems = useMemo(
-    () => (isOwner ? [OWNER_NAV_ITEM, ...navItems] : navItems),
-    [isOwner],
-  );
 
   const styles = useMemo(
     () => shellStyles(theme, { navbarExpanded }),
@@ -299,7 +294,7 @@ export default function App() {
             isAuthenticated={authState.isAuthenticated}
             authLoading={authState.authLoading}
             guildsLoading={guildState.guildsLoading}
-            navItems={ownerNavItems}
+            navItems={navItems}
             botName={botState.botName}
             botAvatar={botState.botAvatar}
             botData={botState.botData}
@@ -315,6 +310,7 @@ export default function App() {
               handleLogin={authState.handleLogin}
               handleLogout={handleLogout}
               topbarUserName={authState.currentUserName}
+              currentUser={authState.currentUser}
               currentUserAvatar={authState.currentUserAvatar}
               darkMode={darkMode}
               setDarkMode={setDarkMode}
