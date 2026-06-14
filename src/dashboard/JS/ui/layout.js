@@ -22,13 +22,6 @@ export const DASHBOARD_LAYOUT = {
   sectionPadding: '18px',
 };
 
-export const OWNER_NAV_ITEM = {
-  key: 'ownerGlobalView',
-  label: 'Owner Global View',
-  icon: 'admin',
-  path: '/owner',
-};
-
 export const NAV_ITEMS = [
   {
     key: 'overview',
@@ -151,8 +144,8 @@ export const ROUTES = [
   },
 
   {
-    key: 'ownerGlobalView',
-    label: 'Owner Global View',
+    key: 'ownerView',
+    label: 'Owner View',
     icon: 'admin',
     path: '/owner',
     component: OwnerGlobalView,
@@ -269,9 +262,9 @@ export const PAGE_LAYOUTS = {
     ],
   },
 
-  ownerGlobalView: {
-    title: 'Owner Global View',
-    description: 'KSJ-only global guild registry and runtime overview.',
+  ownerView: {
+    title: 'Owner View',
+    description: 'KSJ-only administrative access across Goliath deployments.',
     sections: [],
   },
 
