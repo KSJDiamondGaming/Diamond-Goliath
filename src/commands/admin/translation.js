@@ -4,7 +4,6 @@ const { SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('disco
 
 const translationStore = require('../../modules/translation/translationStore');
 const translationManager = require('../../modules/translation/translationManager');
-require('../../modules/translation/translationStoreExtensions');
 const translationThreadManager = require('../../modules/translation/translationThreadManager');
 const { enforceCommandAccess } = require('../../helpers/ui/commandAccess');
 
