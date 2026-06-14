@@ -11,24 +11,24 @@ const cors = require('cors');
 const session = require('express-session');
 
 const {
-  Client,
-  Collection,
-  GatewayIntentBits,
-  Partials,
+Client,
+Collection,
+GatewayIntentBits,
+Partials,
 } = require('discord.js');
 
 const { getBotModeConfig } = require('./src/config/botModes');
 
 const {
-  enforceGuildAccess,
-  enforceCurrentGuilds,
+enforceGuildAccess,
+enforceCurrentGuilds,
 } = require('./src/config/guildAccess');
 
 const {
-  bootstrapRuntime,
-  runBootValidation,
-  safeLoad,
-  printStartupFingerprint,
+bootstrapRuntime,
+runBootValidation,
+safeLoad,
+printStartupFingerprint,
 } = require('./src/runtime/runtimeBootstrap');
 
 const { initSocketHub } = require('./src/server/sockets/socketHub');
@@ -36,6 +36,7 @@ const { initSocketHub } = require('./src/server/sockets/socketHub');
 const authRoutes = require('./src/server/routes/auth');
 const discordRoutes = require('./src/server/routes/discord');
 const statusRoutes = require('./src/server/routes/status');
+const ownerRoutes = require('./src/server/routes/owner');
 
 const automodRoutes = require('./src/server/routes/config/automod');
 const generalSettingsRoutes = require('./src/server/routes/config/generalSettings');
@@ -51,38 +52,38 @@ const formsRoutes = require('./src/server/routes/forms');
 const translationRoutes = require('./src/server/routes/translation');
 
 const {
-  restoreLockdownReminders,
+restoreLockdownReminders,
 } = require('./src/security/lockdownSystem');
 
 const {
-  restoreExpiredQuarantines,
+restoreExpiredQuarantines,
 } = require('./src/security/quarantineSystem');
 
 /* ---------------- SAFE MODULE LOADS ---------------- */
 
 const backupSchedulerModule = safeLoad(
-  'Server Backup Scheduler',
-  () => require('./src/security/serverBackupScheduler'),
+'Server Backup Scheduler',
+() => require('./src/security/serverBackupScheduler'),
 );
 
 const startServerBackupScheduler =
-  backupSchedulerModule.ok &&
-  typeof backupSchedulerModule.result?.startServerBackupScheduler === 'function'
-    ? backupSchedulerModule.result.startServerBackupScheduler
-    : null;
+backupSchedulerModule.ok &&
+typeof backupSchedulerModule.result?.startServerBackupScheduler === 'function'
+? backupSchedulerModule.result.startServerBackupScheduler
+: null;
 
 /* ---------------- ENV / MODE ---------------- */
 
 const ALLOWED_MODES = ['dev', 'beta', 'production'];
 
 function resolveBotMode() {
-  const argMode = process.argv[2]?.toLowerCase();
-  const envMode = process.env.BOT_MODE?.toLowerCase();
+const argMode = process.argv[2]?.toLowerCase();
+const envMode = process.env.BOT_MODE?.toLowerCase();
 
-  if (ALLOWED_MODES.includes(argMode)) return argMode;
-  if (ALLOWED_MODES.includes(envMode)) return envMode;
+if (ALLOWED_MODES.includes(argMode)) return argMode;
+if (ALLOWED_MODES.includes(envMode)) return envMode;
 
-  return 'dev';
+return 'dev';
 }
 
 const selectedMode = resolveBotMode();
@@ -96,23 +97,23 @@ const activeMode = getBotModeConfig(BOT_MODE);
 const isProduction = process.env.NODE_ENV === 'production';
 
 if (!process.env.DISCORD_BOT_TOKEN && process.env.DISCORD_TOKEN) {
-  process.env.DISCORD_BOT_TOKEN = process.env.DISCORD_TOKEN;
+process.env.DISCORD_BOT_TOKEN = process.env.DISCORD_TOKEN;
 }
 
 if (!process.env.TOKEN && process.env.DISCORD_TOKEN) {
-  process.env.TOKEN = process.env.DISCORD_TOKEN;
+process.env.TOKEN = process.env.DISCORD_TOKEN;
 }
 
 /* ---------------- CLIENT ---------------- */
 
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-  ],
-  partials: [Partials.Channel, Partials.Message],
+intents: [
+GatewayIntentBits.Guilds,
+GatewayIntentBits.GuildMembers,
+GatewayIntentBits.GuildMessages,
+GatewayIntentBits.MessageContent,
+],
+partials: [Partials.Channel, Partials.Message],
 });
 
 client.commands = new Collection();
@@ -122,200 +123,204 @@ client.modeConfig = activeMode;
 /* ---------------- HELPERS ---------------- */
 
 function logDev(message) {
-  if (activeMode.verboseLogging) {
-    console.log(message);
-  }
+if (activeMode.verboseLogging) {
+console.log(message);
+}
 }
 
 function getRequiredEnv(name) {
-  const value = process.env[name];
+const value = process.env[name];
 
-  if (!value || !String(value).trim()) {
-    console.error(`❌ Missing required environment variable: ${name}`);
-    process.exit(1);
-  }
+if (!value || !String(value).trim()) {
+console.error("❌ Missing required environment variable: ${name}");
+process.exit(1);
+}
 
-  return value;
+return value;
 }
 
 function getAllJsFiles(dir) {
-  if (!fs.existsSync(dir)) return [];
+if (!fs.existsSync(dir)) return [];
 
-  const results = [];
+const results = [];
 
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const fullPath = path.join(dir, entry.name);
+for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+const fullPath = path.join(dir, entry.name);
 
-    if (entry.isDirectory()) {
-      results.push(...getAllJsFiles(fullPath));
-      continue;
-    }
+if (entry.isDirectory()) {
+  results.push(...getAllJsFiles(fullPath));
+  continue;
+}
 
-    if (
-      entry.isFile() &&
-      entry.name.endsWith('.js') &&
-      !entry.name.endsWith('.test.js') &&
-      !entry.name.endsWith('.spec.js')
-    ) {
-      results.push(fullPath);
-    }
-  }
+if (
+  entry.isFile() &&
+  entry.name.endsWith('.js') &&
+  !entry.name.endsWith('.test.js') &&
+  !entry.name.endsWith('.spec.js')
+) {
+  results.push(fullPath);
+}
 
-  return results.sort((a, b) => a.localeCompare(b));
+}
+
+return results.sort((a, b) => a.localeCompare(b));
 }
 
 function printStartupBanner() {
-  const modeLabels = {
-    DEV: '🟢 GOLIATH DEV',
-    BETA: '🟡 GOLIATH BETA',
-    PRODUCTION: '🔴 GOLIATH PRODUCTION',
-  };
+const modeLabels = {
+DEV: '🟢 GOLIATH DEV',
+BETA: '🟡 GOLIATH BETA',
+PRODUCTION: '🔴 GOLIATH PRODUCTION',
+};
 
-  console.log('============================================================');
-  console.log(`🚀 Starting ${modeLabels[BOT_MODE] || 'Goliath'}`);
-  console.log(`🧠 Mode: ${BOT_MODE}`);
-  console.log(`📄 Env: ${loadedEnv.envFile}`);
-  console.log('============================================================');
+console.log('============================================================');
+console.log("🚀 Starting ${modeLabels[BOT_MODE] || 'Goliath'}");
+console.log("🧠 Mode: ${BOT_MODE}");
+console.log("📄 Env: ${loadedEnv.envFile}");
+console.log('============================================================');
 }
 
 /* ---------------- DASHBOARD API ---------------- */
 
 function getAllowedOrigins() {
-  const origins = new Set([
-    'https://goliath.ksjdigital.co.uk',
-    'http://localhost:5173',
-  ]);
+const origins = new Set([
+'https://goliath.ksjdigital.co.uk',
+'http://localhost:5173',
+]);
 
-  const envOrigins = [
-    process.env.CLIENT_URL,
-    process.env.DASHBOARD_CLIENT_URL,
-    process.env.VITE_CLIENT_URL,
-  ];
+const envOrigins = [
+process.env.CLIENT_URL,
+process.env.DASHBOARD_CLIENT_URL,
+process.env.VITE_CLIENT_URL,
+];
 
-  for (const origin of envOrigins) {
-    if (origin && String(origin).trim()) {
-      origins.add(String(origin).trim());
-    }
-  }
+for (const origin of envOrigins) {
+if (origin && String(origin).trim()) {
+origins.add(String(origin).trim());
+}
+}
 
-  return [...origins];
+return [...origins];
 }
 
 function getDashboardClientUrl() {
-  return String(
-    process.env.CLIENT_URL ||
-      process.env.DASHBOARD_CLIENT_URL ||
-      process.env.VITE_CLIENT_URL ||
-      'https://goliath.ksjdigital.co.uk',
-  ).trim();
+return String(
+process.env.CLIENT_URL ||
+process.env.DASHBOARD_CLIENT_URL ||
+process.env.VITE_CLIENT_URL ||
+'https://goliath.ksjdigital.co.uk',
+).trim();
 }
 
 function startDashboardApiServer() {
-  const app = express();
-  const apiServer = http.createServer(app);
+const app = express();
+const apiServer = http.createServer(app);
 
-  app.locals.client = client;
-  app.locals.discordClient = client;
+app.locals.client = client;
+app.locals.discordClient = client;
 
-  global.client = client;
-  global.discordClient = client;
+global.client = client;
+global.discordClient = client;
 
-  const allowedOrigins = getAllowedOrigins();
-  const dashboardClientUrl = getDashboardClientUrl();
+const allowedOrigins = getAllowedOrigins();
+const dashboardClientUrl = getDashboardClientUrl();
 
-  app.set('trust proxy', 1);
+app.set('trust proxy', 1);
 
-  app.use(
-    cors({
-      origin(origin, callback) {
-        if (!origin) return callback(null, true);
+app.use(
+cors({
+origin(origin, callback) {
+if (!origin) return callback(null, true);
 
-        if (allowedOrigins.includes(origin)) {
-          return callback(null, true);
-        }
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
 
-        return callback(new Error(`CORS blocked origin: ${origin}`));
-      },
-      credentials: true,
-    }),
-  );
+    return callback(new Error(`CORS blocked origin: ${origin}`));
+  },
+  credentials: true,
+}),
 
-  app.use(express.json());
+);
 
-  app.use(
-    session({
-      name: 'goliath_dashboard_session',
-      secret: process.env.SESSION_SECRET || 'dev-secret',
-      resave: false,
-      saveUninitialized: false,
-      proxy: true,
-      cookie: {
-        httpOnly: true,
-        secure: isProduction,
-        sameSite: isProduction ? 'none' : 'lax',
-      },
-    }),
-  );
+app.use(express.json());
 
-  app.use('/api/auth', authRoutes);
-  app.use('/api/discord', discordRoutes);
-  app.use('/api/status', statusRoutes);
+app.use(
+session({
+name: 'goliath_dashboard_session',
+secret: process.env.SESSION_SECRET || 'dev-secret',
+resave: false,
+saveUninitialized: false,
+proxy: true,
+cookie: {
+httpOnly: true,
+secure: isProduction,
+sameSite: isProduction ? 'none' : 'lax',
+},
+}),
+);
 
-  app.use('/api/config', generalSettingsRoutes);
-  app.use('/api/config/automod', automodRoutes);
-  app.use('/api/config/logs', logsRoutes);
-  app.use('/api/config/messages', messagesRoutes);
-  app.use('/api/config/embeds', embedsRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/discord', discordRoutes);
+app.use('/api/status', statusRoutes);
+app.use('/api/owner', ownerRoutes);
 
-  app.use('/api/cases', moderationRoutes);
-  app.use('/api/tickets', ticketRoutes);
-  app.use('/api/forms', formsRoutes);
-  app.use('/api/translation', translationRoutes);
+app.use('/api/config', generalSettingsRoutes);
+app.use('/api/config/automod', automodRoutes);
+app.use('/api/config/logs', logsRoutes);
+app.use('/api/config/messages', messagesRoutes);
+app.use('/api/config/embeds', embedsRoutes);
 
-  app.use('/api/server-restore', serverRestoreRoutes);
-  app.use('/api/security', securityRoutes);
+app.use('/api/cases', moderationRoutes);
+app.use('/api/tickets', ticketRoutes);
+app.use('/api/forms', formsRoutes);
+app.use('/api/translation', translationRoutes);
 
-  initSocketHub(apiServer, {
-    clientUrl: dashboardClientUrl,
-  });
+app.use('/api/server-restore', serverRestoreRoutes);
+app.use('/api/security', securityRoutes);
 
-  const apiPort = Number(process.env.PORT || process.env.BOT_API_PORT || 3001);
+initSocketHub(apiServer, {
+clientUrl: dashboardClientUrl,
+});
 
-  apiServer.listen(apiPort, () => {
-    console.log(`🌐 Dashboard API running on http://localhost:${apiPort}`);
-  });
+const apiPort = Number(process.env.PORT || process.env.BOT_API_PORT || 3001);
 
-  return apiServer;
+apiServer.listen(apiPort, () => {
+console.log("🌐 Dashboard API running on http://localhost:${apiPort}");
+});
+
+return apiServer;
 }
 
 /* ---------------- COMMANDS ---------------- */
 
 function loadCommands() {
-  const commandsPath = path.join(process.cwd(), 'src', 'commands');
-  const files = getAllJsFiles(commandsPath);
+const commandsPath = path.join(process.cwd(), 'src', 'commands');
+const files = getAllJsFiles(commandsPath);
 
-  console.log(`📦 Loading commands from: ${commandsPath}`);
+console.log("📦 Loading commands from: ${commandsPath}");
 
-  for (const file of files) {
-    try {
-      delete require.cache[require.resolve(file)];
+for (const file of files) {
+try {
+delete require.cache[require.resolve(file)];
 
-      const command = require(file);
+  const command = require(file);
 
-      if (!command?.data?.name || typeof command.execute !== 'function') {
-        console.warn(`⚠️ Skipped command: ${file}`);
-        continue;
-      }
-
-      client.commands.set(command.data.name, command);
-      console.log(`✅ Command: ${command.data.name}`);
-    } catch (err) {
-      console.error(`❌ Command failed: ${file}`);
-      console.error(err);
-    }
+  if (!command?.data?.name || typeof command.execute !== 'function') {
+    console.warn(`⚠️ Skipped command: ${file}`);
+    continue;
   }
 
-  console.log(`✅ Loaded ${client.commands.size} command(s).`);
+  client.commands.set(command.data.name, command);
+  console.log(`✅ Command: ${command.data.name}`);
+} catch (err) {
+  console.error(`❌ Command failed: ${file}`);
+  console.error(err);
+}
+
+}
+
+console.log("✅ Loaded ${client.commands.size} command(s).");
 }
 
 /* ---------------- EVENTS ---------------- */
@@ -323,211 +328,217 @@ function loadCommands() {
 const registeredEvents = new Set();
 
 function registerEvent(event, file) {
-  if (!event?.name || typeof event.execute !== 'function') {
-    console.warn(`⚠️ Skipped event in: ${file}`);
-    return;
-  }
+if (!event?.name || typeof event.execute !== 'function') {
+console.warn("⚠️ Skipped event in: ${file}");
+return;
+}
 
-  const eventKey = `${event.name}:${file}`;
+const eventKey = "${event.name}:${file}";
 
-  if (registeredEvents.has(eventKey)) {
-    console.warn(
-      `⚠️ Duplicate event skipped: ${event.name} (${file})`
-    );
-    return;
-  }
+if (registeredEvents.has(eventKey)) {
+console.warn(
+"⚠️ Duplicate event skipped: ${event.name} (${file})"
+);
+return;
+}
 
-  registeredEvents.add(eventKey);
+registeredEvents.add(eventKey);
 
-  if (event.name === 'interactionCreate') {
-    const existing = client.listenerCount('interactionCreate');
+if (event.name === 'interactionCreate') {
+const existing = client.listenerCount('interactionCreate');
 
-    if (existing > 0) {
-      console.warn(`⚠️ Removing ${existing} existing interactionCreate listener(s)`);
-      client.removeAllListeners('interactionCreate');
-    }
-  }
+if (existing > 0) {
+  console.warn(`⚠️ Removing ${existing} existing interactionCreate listener(s)`);
+  client.removeAllListeners('interactionCreate');
+}
 
-  const handler = async (...args) => {
-    try {
-      await event.execute(...args, client);
-    } catch (error) {
-      console.error(`❌ Event execution failed: ${event.name}`);
-      console.error(error);
-    }
-  };
+}
 
-  if (event.once) {
-    client.once(event.name, handler);
-  } else {
-    client.on(event.name, handler);
-  }
+const handler = async (...args) => {
+try {
+await event.execute(...args, client);
+} catch (error) {
+console.error("❌ Event execution failed: ${event.name}");
+console.error(error);
+}
+};
 
-  console.log(`🧩 Event: ${event.name}`);
+if (event.once) {
+client.once(event.name, handler);
+} else {
+client.on(event.name, handler);
+}
+
+console.log("🧩 Event: ${event.name}");
 }
 
 function loadEvents() {
-  const eventsPath = path.join(__dirname, 'src', 'events');
-  const files = getAllJsFiles(eventsPath);
+const eventsPath = path.join(__dirname, 'src', 'events');
+const files = getAllJsFiles(eventsPath);
 
-  console.log(`📦 Loading events from: ${eventsPath}`);
+console.log("📦 Loading events from: ${eventsPath}");
 
-  for (const file of files) {
-    try {
-      delete require.cache[require.resolve(file)];
+for (const file of files) {
+try {
+delete require.cache[require.resolve(file)];
 
-      const loadedEvent = require(file);
-      const events = Array.isArray(loadedEvent) ? loadedEvent : [loadedEvent];
+  const loadedEvent = require(file);
+  const events = Array.isArray(loadedEvent) ? loadedEvent : [loadedEvent];
 
-      for (const event of events) {
-        registerEvent(event, file);
-      }
-    } catch (err) {
-      console.error(`❌ Event failed: ${file}`);
-      console.error(err);
-    }
+  for (const event of events) {
+    registerEvent(event, file);
   }
+} catch (err) {
+  console.error(`❌ Event failed: ${file}`);
+  console.error(err);
+}
 
-  console.log('✅ Event loading complete.');
+}
+
+console.log('✅ Event loading complete.');
 }
 
 /* ---------------- MODE EVENTS ---------------- */
 
 function registerModeProtectionEvents() {
-  client.on('guildCreate', async (guild) => {
-    console.log(
-      `[guildCreate] Joined guild: ${guild.name} (${guild.id})`
-    );
+client.on('guildCreate', async (guild) => {
+console.log(
+"[guildCreate] Joined guild: ${guild.name} (${guild.id})"
+);
 
-    await enforceGuildAccess(guild, BOT_MODE, activeMode);
+await enforceGuildAccess(guild, BOT_MODE, activeMode);
 
-    console.log(
-      '[guildCreate] Guild cache:',
-      client.guilds.cache.map(g => `${g.name} (${g.id})`).join(', ') || 'None'
-    );
-  });
+console.log(
+  '[guildCreate] Guild cache:',
+  client.guilds.cache.map(g => `${g.name} (${g.id})`).join(', ') || 'None'
+);
 
-  client.on('guildDelete', async (guild) => {
-    console.warn(
-      `[guildDelete] Removed from guild: ${guild.name} (${guild.id})`
-    );
+});
 
-    console.warn(
-      '[guildDelete] Guild cache:',
-      client.guilds.cache.map(g => `${g.name} (${g.id})`).join(', ') || 'None'
-    );
-  });
+client.on('guildDelete', async (guild) => {
+console.warn(
+"[guildDelete] Removed from guild: ${guild.name} (${guild.id})"
+);
+
+console.warn(
+  '[guildDelete] Guild cache:',
+  client.guilds.cache.map(g => `${g.name} (${g.id})`).join(', ') || 'None'
+);
+
+});
 }
 
 /* ---------------- PROCESS SAFETY ---------------- */
 
 function registerProcessSafetyHandlers(apiServer) {
-  let shuttingDown = false;
+let shuttingDown = false;
 
-  async function shutdown(reason) {
-    if (shuttingDown) return;
+async function shutdown(reason) {
+if (shuttingDown) return;
 
-    shuttingDown = true;
+shuttingDown = true;
 
-    console.log(`🛑 ${reason} received. Shutting down Goliath...`);
+console.log(`🛑 ${reason} received. Shutting down Goliath...`);
 
-    if (apiServer) {
-      apiServer.close(() => {
-        console.log('🌐 Dashboard API stopped.');
-      });
-    }
-
-    client.destroy();
-
-    process.exit(0);
-  }
-
-  process.on('unhandledRejection', (reason) => {
-    console.error('❌ Unhandled Promise Rejection');
-    console.error(reason);
+if (apiServer) {
+  apiServer.close(() => {
+    console.log('🌐 Dashboard API stopped.');
   });
+}
 
-  process.on('uncaughtException', (err) => {
-    console.error('❌ Uncaught Exception');
-    console.error(err);
-    process.exit(1);
-  });
+client.destroy();
 
-  process.on('SIGINT', () => shutdown('SIGINT'));
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.exit(0);
+
+}
+
+process.on('unhandledRejection', (reason) => {
+console.error('❌ Unhandled Promise Rejection');
+console.error(reason);
+});
+
+process.on('uncaughtException', (err) => {
+console.error('❌ Uncaught Exception');
+console.error(err);
+process.exit(1);
+});
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
 }
 
 /* ---------------- START ---------------- */
 
 async function start() {
-  printStartupBanner();
+printStartupBanner();
 
-  const runtimePaths = bootstrapRuntime(BOT_MODE);
+const runtimePaths = bootstrapRuntime(BOT_MODE);
 
-  printStartupFingerprint(BOT_MODE, runtimePaths);
+printStartupFingerprint(BOT_MODE, runtimePaths);
 
-  client.runtimePaths = runtimePaths;
+client.runtimePaths = runtimePaths;
 
-  console.log(`📁 Runtime Root: ${runtimePaths.root}`);
-  console.log(`📁 Runtime Mode: ${runtimePaths.mode}`);
+console.log("📁 Runtime Root: ${runtimePaths.root}");
+console.log("📁 Runtime Mode: ${runtimePaths.mode}");
 
-  runBootValidation({
-    requiredPaths: [
-      {
-        path: './src/commands',
-        label: 'Commands Folder',
-      },
-      {
-        path: './src/events',
-        label: 'Events Folder',
-      },
-      {
-        path: './src/security',
-        label: 'Security Folder',
-      },
-    ],
+runBootValidation({
+requiredPaths: [
+{
+path: './src/commands',
+label: 'Commands Folder',
+},
+{
+path: './src/events',
+label: 'Events Folder',
+},
+{
+path: './src/security',
+label: 'Security Folder',
+},
+],
 
-    requiredEnv: ['DISCORD_TOKEN'],
-  });
+requiredEnv: ['DISCORD_TOKEN'],
 
-  const token = getRequiredEnv('DISCORD_TOKEN');
+});
 
-  if (BOT_MODE === 'DEV') {
-    getRequiredEnv('DEV_GUILD_ID');
-  }
+const token = getRequiredEnv('DISCORD_TOKEN');
 
-  if (BOT_MODE === 'BETA') {
-    getRequiredEnv('BETA_GUILD_IDS');
-  }
+if (BOT_MODE === 'DEV') {
+getRequiredEnv('DEV_GUILD_ID');
+}
 
-  const apiServer = startDashboardApiServer();
+if (BOT_MODE === 'BETA') {
+getRequiredEnv('BETA_GUILD_IDS');
+}
 
-  registerProcessSafetyHandlers(apiServer);
-  registerModeProtectionEvents();
+const apiServer = startDashboardApiServer();
 
-  loadCommands();
-  loadEvents();
+registerProcessSafetyHandlers(apiServer);
+registerModeProtectionEvents();
 
-  console.log(
-    '[Debug] interactionCreate listeners:',
-    client.listenerCount('interactionCreate')
-  );
+loadCommands();
+loadEvents();
 
-  await client.login(token);
+console.log(
+'[Debug] interactionCreate listeners:',
+client.listenerCount('interactionCreate')
+);
+
+await client.login(token);
 }
 
 start().catch((err) => {
-  console.error('❌ Bot startup failed');
-  console.error(err);
-  process.exit(1);
+console.error('❌ Bot startup failed');
+console.error(err);
+process.exit(1);
 });
 
 process.on('unhandledRejection', (reason) => {
-  console.error('❌ UNHANDLED REJECTION:', reason);
+console.error('❌ UNHANDLED REJECTION:', reason);
 });
 
 process.on('uncaughtException', (error) => {
-  console.error('❌ UNCAUGHT EXCEPTION:', error);
+console.error('❌ UNCAUGHT EXCEPTION:', error);
 });
 
 module.exports = client;
