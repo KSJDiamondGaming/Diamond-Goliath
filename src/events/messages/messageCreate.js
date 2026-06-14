@@ -1,8 +1,6 @@
 const { runAutomod } = require('../../modules/automod/service');
 const { handleStickyMessage } = require('../../modules/sticky/stickyManager');
 const { handlePrefixCommand } = require('../../prefix/prefixRouter');
-
-require('../../modules/translation/translationStoreExtensions');
 const translationThreadManager = require('../../modules/translation/translationThreadManager');
 
 module.exports = {
