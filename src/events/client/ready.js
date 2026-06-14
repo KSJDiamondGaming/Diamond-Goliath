@@ -20,6 +20,10 @@ const {
   startGiveawayScheduler,
 } = require('../../modules/giveaways/giveawayManager');
 
+const {
+  startStatusRotation,
+} = require('./status');
+
 function getEnvList(name) {
   const value = process.env[name];
 
@@ -119,6 +123,12 @@ module.exports = {
     }
 
     await safeRun(
+      'Status rotation',
+      () => startStatusRotation(client),
+      `Status rotation initialized (${currentMode})`
+    );
+
+    await safeRun(
       'Lockdown recovery',
       () => restoreLockdownReminders(client),
       'Lockdown recovery system initialized'
@@ -207,7 +217,7 @@ module.exports = {
     bannerItems.push({
       label: 'Systems',
       value:
-        'Scheduler + Lockdown Recovery + Ticket Recovery + Role System + Giveaway Scheduler + Backup Sync Worker',
+        'Status Rotation + Scheduler + Lockdown Recovery + Ticket Recovery + Role System + Giveaway Scheduler + Backup Sync Worker',
       ok: true,
     });
 

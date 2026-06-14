@@ -1,6 +1,6 @@
 const { ActivityType } = require('discord.js');
 
-const STATUS_INTERVAL_MS = 60_000;
+const STATUS_INTERVAL_MS = 180_000;
 
 function getStatuses(client) {
   const mode = client.botMode || process.env.BOT_MODE?.toUpperCase() || 'DEV';
@@ -9,8 +9,8 @@ function getStatuses(client) {
     return {
       presence: 'online',
       activities: [
+        { name: '🟢 DEV | Testing', type: ActivityType.Watching },
         { name: '🛠️ KSJ Development', type: ActivityType.Watching },
-        { name: '🤖 Goliath DEV', type: ActivityType.Playing },
         { name: '⚠️ Experimental Features', type: ActivityType.Watching },
         { name: '🔧 Testing New Modules', type: ActivityType.Competing },
       ],
@@ -21,7 +21,7 @@ function getStatuses(client) {
     return {
       presence: 'online',
       activities: [
-        { name: '🧪 Beta Testing Environment', type: ActivityType.Watching },
+        { name: '🟡 BETA | Testing', type: ActivityType.Watching },
         { name: '🚧 Upcoming Features', type: ActivityType.Playing },
         { name: '🔍 Beta Feedback', type: ActivityType.Watching },
         { name: '⚡ Stability Testing', type: ActivityType.Competing },
@@ -32,6 +32,7 @@ function getStatuses(client) {
   return {
     presence: 'online',
     activities: [
+      { name: '🔵 Goliath | Protecting Servers', type: ActivityType.Watching },
       {
         name: `🛡️ Protecting ${client.guilds.cache.size} Servers`,
         type: ActivityType.Watching,
