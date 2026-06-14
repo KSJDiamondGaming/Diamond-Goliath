@@ -19,8 +19,8 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
-          username: root
-          key: ${{ secrets.VPS_SSH_KEY }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
           port: 22
           script: |
             set -e
@@ -37,9 +37,13 @@ jobs:
             echo "📦 Installing dependencies..."
             npm install
 
+            echo "🏗️ Building dashboard..."
+            npm run build
+
             echo "♻️ Restarting PRODUCTION bot..."
             BOT_MODE=production pm2 restart goliath-production --update-env
 
             pm2 save
+            pm2 status
 
             echo "✅ PRODUCTION deployment complete"
