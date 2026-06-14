@@ -54,8 +54,9 @@ function Topbar({
   const isOwner = currentUser?.isOwner === true;
 
   const isOwnerView =
-    typeof window !== 'undefined' &&
-    window.location.pathname.startsWith('/owner');
+  currentUser?.isOwner === true &&
+  typeof window !== 'undefined' &&
+  window.location.pathname.toLowerCase().includes('owner');
 
   const closeMenu = useCallback(() => {
     setMenuOpen(false);
