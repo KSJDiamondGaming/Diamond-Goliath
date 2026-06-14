@@ -5,7 +5,7 @@ const STATUS_INTERVAL_MS = 180_000;
 const MODE_CONFIG = {
   DEV: {
     presence: 'online',
-    badge: 'v',
+    badge: '🔵',
     label: 'DEV',
     activities: [
       { name: '🔵 DEV | Building Goliath', type: ActivityType.Watching },
@@ -37,7 +37,7 @@ const MODE_CONFIG = {
 
   PRODUCTION: {
     presence: 'online',
-    badge: '🔵',
+    badge: '🟢',
     label: 'Goliath',
     activities: [
       { name: '🟢 Goliath | Protecting Servers', type: ActivityType.Watching },
