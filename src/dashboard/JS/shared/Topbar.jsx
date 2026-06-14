@@ -34,6 +34,7 @@ function Topbar({
   handleLogin = () => {},
   handleLogout = () => {},
   topbarUserName = 'User',
+  currentUser = null,
   currentUserAvatar,
   darkMode = true,
   setDarkMode = () => {},
@@ -49,6 +50,7 @@ function Topbar({
   const isMobile = useIsMobile(768);
   const styles = useMemo(() => topbarStyles(theme), [theme]);
   const userInitial = getInitial(topbarUserName);
+  const isOwner = currentUser?.isOwner === true;
 
   const closeMenu = useCallback(() => {
     setMenuOpen(false);
@@ -255,6 +257,18 @@ function Topbar({
                     icon="?"
                     label="Documentation"
                   />
+
+                  {isOwner ? (
+                    <MenuButton
+                      styles={styles}
+                      hovered={hoveredMenuItem === 'owner'}
+                      onHover={() => setHoveredMenuItem('owner')}
+                      onLeave={() => setHoveredMenuItem('')}
+                      onClick={() => goToPath('/owner')}
+                      icon="👑"
+                      label="Owner View"
+                    />
+                  ) : null}
 
                   <div style={styles.themeRow}>
                     <div style={styles.themeCopy}>

@@ -69,6 +69,16 @@ export const api = {
     );
   },
 
+  /* ---------------- OWNER ---------------- */
+
+  getOwnerMe() {
+    return request('/api/owner/me');
+  },
+
+  getOwnerGuilds() {
+    return request('/api/owner/guilds');
+  },
+
   /* ---------------- DISCORD ---------------- */
 
   getGuilds() {

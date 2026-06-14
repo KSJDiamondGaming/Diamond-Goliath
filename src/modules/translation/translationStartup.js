@@ -2,8 +2,6 @@
 
 // src/modules/translation/translationStartup.js
 
-require('./translationStoreExtensions');
-
 const translationThreadManager = require('./translationThreadManager');
 
 async function startupTranslation(client) {
