@@ -45,6 +45,11 @@ function cleanLanguageCode(value, fallback = 'en') {
   return code || fallback;
 }
 
+function cleanProvider(value, fallback = 'manual') {
+  const provider = String(value || fallback).trim().toLowerCase();
+  return SUPPORTED_PROVIDERS.includes(provider) ? provider : fallback;
+}
+
 function cleanDiscordId(value) {
   const id = String(value || '').replace(/[<@#!&>]/g, '').trim();
   return /^\d{15,25}$/.test(id) ? id : null;
@@ -60,11 +65,39 @@ function cleanIdMap(value = {}) {
   );
 }
 
+function normalizeProviderSettings(settings = {}) {
+  const source = isPlainObject(settings) ? settings : {};
+
+  return {
+    openai: {
+      enabled: source.openai?.enabled !== false,
+      model: cleanString(source.openai?.model || process.env.OPENAI_TRANSLATION_MODEL || 'gpt-4o-mini', 'gpt-4o-mini', 80),
+      apiKeyConfigured: Boolean(process.env.OPENAI_API_KEY || source.openai?.apiKeyConfigured === true),
+    },
+    deepl: {
+      enabled: source.deepl?.enabled !== false,
+      apiKeyConfigured: Boolean(process.env.DEEPL_API_KEY || source.deepl?.apiKeyConfigured === true),
+    },
+    google: {
+      enabled: source.google?.enabled !== false,
+      apiKeyConfigured: Boolean(process.env.GOOGLE_TRANSLATE_API_KEY || source.google?.apiKeyConfigured === true),
+    },
+    fallbackOrder: Array.isArray(source.fallbackOrder)
+      ? source.fallbackOrder.map((provider) => cleanProvider(provider, null)).filter(Boolean).filter((provider) => provider !== 'manual')
+      : [],
+  };
+}
+
 function defaultTranslationSection() {
+  const providerSettings = normalizeProviderSettings();
+
   return {
     enabled: false,
+    provider: 'manual',
+    providerSettings,
     settings: {
       provider: 'manual',
+      providerSettings,
       autoDetect: true,
       threadMode: true,
       translateEdits: false,
@@ -127,18 +160,23 @@ function normalizeTranslationSection(section = {}) {
   const source = isPlainObject(section) ? section : {};
   const rawSettings = isPlainObject(source.settings) ? source.settings : {};
 
-  const provider = SUPPORTED_PROVIDERS.includes(rawSettings.provider)
-    ? rawSettings.provider
-    : base.settings.provider;
+  const provider = cleanProvider(source.provider || rawSettings.provider || base.provider);
+  const providerSettings = normalizeProviderSettings({
+    ...(isPlainObject(rawSettings.providerSettings) ? rawSettings.providerSettings : {}),
+    ...(isPlainObject(source.providerSettings) ? source.providerSettings : {}),
+  });
 
   return {
     ...base,
     ...clone(source),
     enabled: source.enabled === true,
+    provider,
+    providerSettings,
     settings: {
       ...base.settings,
       ...clone(rawSettings),
       provider,
+      providerSettings,
       autoDetect: rawSettings.autoDetect !== false,
       threadMode: rawSettings.threadMode !== false,
       translateEdits: rawSettings.translateEdits === true,
@@ -261,6 +299,37 @@ function incrementAnalytics(guildId, increments = {}, guildOrMeta = {}) {
   }, guildOrMeta).analytics;
 }
 
+function setProvider(guildId, provider = 'manual', guildOrMeta = {}) {
+  const safeProvider = cleanProvider(provider);
+
+  return updateTranslationSection(guildId, (section) => ({
+    ...section,
+    provider: safeProvider,
+    settings: {
+      ...section.settings,
+      provider: safeProvider,
+    },
+    updatedAt: now(),
+  }), guildOrMeta);
+}
+
+function saveProviderSettings(guildId, provider, settings = {}, guildOrMeta = {}) {
+  const safeProvider = cleanProvider(provider, null);
+  if (!safeProvider || safeProvider === 'manual') throw new Error('Invalid translation provider.');
+
+  return updateTranslationSection(guildId, (section) => ({
+    ...section,
+    providerSettings: normalizeProviderSettings({
+      ...section.providerSettings,
+      [safeProvider]: {
+        ...(section.providerSettings?.[safeProvider] || {}),
+        ...(isPlainObject(settings) ? settings : {}),
+      },
+    }),
+    updatedAt: now(),
+  }), guildOrMeta);
+}
+
 module.exports = {
   MODULE,
   SUPPORTED_PROVIDERS,
@@ -268,6 +337,7 @@ module.exports = {
   normalizeTranslationSection,
   normalizeChannelConfig,
   normalizeUserPreference,
+  normalizeProviderSettings,
   getTranslationSection,
   saveTranslationSection,
   updateTranslationSection,
@@ -275,4 +345,6 @@ module.exports = {
   saveChannelConfig,
   saveUserPreference,
   incrementAnalytics,
+  setProvider,
+  saveProviderSettings,
 };
