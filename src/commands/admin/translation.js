@@ -4,6 +4,8 @@ const { SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('disco
 
 const translationStore = require('../../modules/translation/translationStore');
 const translationManager = require('../../modules/translation/translationManager');
+require('../../modules/translation/translationStoreExtensions');
+const translationThreadManager = require('../../modules/translation/translationThreadManager');
 const { enforceCommandAccess } = require('../../helpers/ui/commandAccess');
 
 async function reply(interaction, payload) {
@@ -154,11 +156,22 @@ module.exports = {
         enabled: mode !== 'disabled',
         mode,
         targetLanguages: targetLanguages.length ? targetLanguages : ['en'],
+        languages: targetLanguages.length ? targetLanguages : ['en'],
         threadMode: threadMode !== false,
+        autoCreateThreads: true,
       }, interaction.guild);
 
+      let threadSummary = null;
+
+      if (mode !== 'disabled' && threadMode !== false) {
+        threadSummary = await translationThreadManager.ensureThreadsForChannel(interaction.guild, channel.id);
+      }
+
       await reply(interaction, {
-        content: `✅ Translation configured for ${channel}.`,
+        content: [
+          `✅ Translation configured for ${channel}.`,
+          threadSummary?.created?.length ? `🧵 Created ${threadSummary.created.length} translation thread(s).` : null,
+        ].filter(Boolean).join('\n'),
         embeds: [translationManager.buildChannelEmbed(guildId, channel.id)],
       });
       return;
@@ -173,7 +186,7 @@ module.exports = {
       }, interaction.guild);
 
       await reply(interaction, {
-        content: `✅ Translation disabled for ${channel}.`,
+        content: `✅ Translation disabled for ${channel}. Existing threads were kept for audit/recovery.`,
         embeds: [translationManager.buildChannelEmbed(guildId, channel.id)],
       });
       return;
