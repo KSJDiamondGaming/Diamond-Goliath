@@ -574,6 +574,7 @@ export default function OwnerView({ theme, currentUser, onSelectGuild, onReturnT
   const [ownerPayload, setOwnerPayload] = useState(null);
   const [activeFilter, setActiveFilter] = useState('all');
   const [activeAction, setActiveAction] = useState(null);
+  const [platformRuntime, setPlatformRuntime] = useState(null);
 
   const isOwner = currentUser?.isOwner === true;
 
@@ -615,6 +616,29 @@ export default function OwnerView({ theme, currentUser, onSelectGuild, onReturnT
       cancelled = true;
     };
   }, [isOwner]);
+
+  useEffect(() => {
+  let cancelled = false;
+
+  async function loadRuntime() {
+    try {
+      const response =
+        await api.getPlatformRuntime();
+
+      if (!cancelled) {
+        setPlatformRuntime(response.runtime);
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
+  loadRuntime();
+
+  return () => {
+    cancelled = true;
+  };
+}, []);
 
   const guilds = useMemo(() => normalizeGuilds(ownerPayload), [ownerPayload]);
 
@@ -811,6 +835,94 @@ export default function OwnerView({ theme, currentUser, onSelectGuild, onReturnT
           accent="#f87171"
         />
       </section>
+
+      <section
+  style={{
+    ...cardStyle,
+    padding: 18,
+    display: 'grid',
+    gap: 16,
+  }}
+>
+  <div>
+    <strong>📊 Platform Runtime Monitor</strong>
+    <div
+      style={{
+        color: theme.mutedText,
+        fontSize: 13,
+        marginTop: 4,
+      }}
+    >
+      Live runtime information from the current environment.
+    </div>
+  </div>
+
+  <div
+    style={{
+      display: 'grid',
+      gridTemplateColumns:
+        'repeat(auto-fit, minmax(180px, 1fr))',
+      gap: 12,
+    }}
+  >
+    <div style={cardStyle}>
+      <div style={{ padding: 14 }}>
+        <strong>Mode</strong>
+        <div>{platformRuntime?.mode || 'Loading...'}</div>
+      </div>
+    </div>
+
+    <div style={cardStyle}>
+      <div style={{ padding: 14 }}>
+        <strong>Hostname</strong>
+        <div>{platformRuntime?.hostname || 'Loading...'}</div>
+      </div>
+    </div>
+
+    <div style={cardStyle}>
+      <div style={{ padding: 14 }}>
+        <strong>Node</strong>
+        <div>{platformRuntime?.nodeVersion || 'Loading...'}</div>
+      </div>
+    </div>
+
+    <div style={cardStyle}>
+      <div style={{ padding: 14 }}>
+        <strong>CPU Count</strong>
+        <div>{platformRuntime?.cpuCount || 0}</div>
+      </div>
+    </div>
+
+    <div style={cardStyle}>
+      <div style={{ padding: 14 }}>
+        <strong>Memory Used</strong>
+        <div>
+          {platformRuntime?.memory?.used
+            ? `${(
+                platformRuntime.memory.used /
+                1024 /
+                1024 /
+                1024
+              ).toFixed(2)} GB`
+            : 'Loading...'}
+        </div>
+      </div>
+    </div>
+
+    <div style={cardStyle}>
+      <div style={{ padding: 14 }}>
+        <strong>Uptime</strong>
+        <div>
+          {platformRuntime?.uptime
+            ? `${Math.floor(
+                platformRuntime.uptime / 3600
+              )} Hours`
+            : 'Loading...'}
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
 
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
         {OWNER_SECTIONS.map((section) => (
