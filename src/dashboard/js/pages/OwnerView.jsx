@@ -218,6 +218,39 @@ function SectionCard({ theme, section }) {
 }
 
 function OwnerActionModal({ theme, action, guild, onClose }) {
+  const [runtimeData, setRuntimeData] = React.useState(null);
+  const [loadingRuntime, setLoadingRuntime] = React.useState(false);
+
+  React.useEffect(() => {
+    if (action !== 'runtime') return;
+
+    let cancelled = false;
+
+    async function loadRuntime() {
+      try {
+        setLoadingRuntime(true);
+
+        const response =
+          await api.getPlatformRuntime();
+
+        if (!cancelled) {
+          setRuntimeData(response.runtime);
+        }
+      } catch (error) {
+        console.error(error);
+      } finally {
+        if (!cancelled) {
+          setLoadingRuntime(false);
+        }
+      }
+    }
+
+    loadRuntime();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [action]);
   if (!action || !guild) return null;
 
   const guildName = getGuildName(guild);
@@ -357,29 +390,80 @@ function OwnerActionModal({ theme, action, guild, onClose }) {
     }
 
     if (action === 'runtime') {
-      return (
-        <div style={{ display: 'grid', gap: 12 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
+  return (
+    <div style={{ display: 'grid', gap: 12 }}>
+      {loadingRuntime ? (
+        <div style={infoCardStyle}>
+          Loading runtime data...
+        </div>
+      ) : (
+        <>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns:
+                'repeat(auto-fit, minmax(180px, 1fr))',
+              gap: 12,
+            }}
+          >
             <div style={infoCardStyle}>
-              <strong>CPU Usage</strong>
-              <p style={mutedLineStyle}>Pending Runtime Monitor</p>
+              <strong>Runtime Mode</strong>
+              <p style={mutedLineStyle}>
+                {runtimeData?.mode || 'Unknown'}
+              </p>
             </div>
+
             <div style={infoCardStyle}>
-              <strong>Memory Usage</strong>
-              <p style={mutedLineStyle}>Pending Runtime Monitor</p>
+              <strong>Hostname</strong>
+              <p style={mutedLineStyle}>
+                {runtimeData?.hostname || 'Unknown'}
+              </p>
             </div>
+
+            <div style={infoCardStyle}>
+              <strong>Node Version</strong>
+              <p style={mutedLineStyle}>
+                {runtimeData?.nodeVersion || 'Unknown'}
+              </p>
+            </div>
+
+            <div style={infoCardStyle}>
+              <strong>CPU Count</strong>
+              <p style={mutedLineStyle}>
+                {runtimeData?.cpuCount || 0}
+              </p>
+            </div>
+
+            <div style={infoCardStyle}>
+              <strong>Memory Used</strong>
+              <p style={mutedLineStyle}>
+                {runtimeData?.memory?.used
+                  ? `${(
+                      runtimeData.memory.used /
+                      1024 /
+                      1024 /
+                      1024
+                    ).toFixed(2)} GB`
+                  : 'Unknown'}
+              </p>
+            </div>
+
             <div style={infoCardStyle}>
               <strong>Uptime</strong>
-              <p style={mutedLineStyle}>Pending Runtime Monitor</p>
+              <p style={mutedLineStyle}>
+                {runtimeData?.uptime
+                  ? `${Math.floor(
+                      runtimeData.uptime / 3600
+                    )} Hours`
+                  : 'Unknown'}
+              </p>
             </div>
           </div>
-
-          <div style={{ ...infoCardStyle, gap: 0 }}>
-            {renderDataRows(runtimeRows)}
-          </div>
-        </div>
-      );
-    }
+        </>
+      )}
+    </div>
+  );
+}
 
     if (action === 'security') {
       return (
