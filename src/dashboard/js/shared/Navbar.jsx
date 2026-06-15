@@ -413,7 +413,7 @@ function Navbar({
         if (!item?.children?.length) return;
 
         if (typeof next[item.key] !== 'boolean') {
-          next[item.key] = true;
+          next[item.key] = false;
         }
 
         if (itemHasActiveChild(location.pathname, item)) {
