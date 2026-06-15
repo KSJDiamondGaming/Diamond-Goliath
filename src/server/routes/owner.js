@@ -36,6 +36,18 @@ function isOwnerUser(userId) {
   return getOwnerIds().includes(String(userId));
 }
 
+function isInternalOwnerRequest(req) {
+  const token = String(process.env.OWNER_INTERNAL_TOKEN || '').trim();
+
+  if (!token) return false;
+
+  const headerToken = String(
+    req.headers['x-goliath-owner-token'] || '',
+  ).trim();
+
+  return headerToken === token;
+}
+
 function requireOwner(req, res, next) {
   if (!req.session?.user) {
     return res.status(401).json({
@@ -52,6 +64,14 @@ function requireOwner(req, res, next) {
   }
 
   return next();
+}
+
+function requireOwnerOrInternal(req, res, next) {
+  if (isInternalOwnerRequest(req)) {
+    return next();
+  }
+
+  return requireOwner(req, res, next);
 }
 
 function getRuntimeMode() {
@@ -103,13 +123,15 @@ function buildOwnerGuildPayload(guild, forcedEnvironment = null) {
   };
 }
 
-async function fetchEnvironmentGuilds(port, environment, cookie) {
+async function fetchEnvironmentGuilds(port, environment) {
   try {
+    const token = String(process.env.OWNER_INTERNAL_TOKEN || '').trim();
+
     const response = await fetch(
       `http://127.0.0.1:${port}/api/owner/guilds`,
       {
         headers: {
-          Cookie: cookie || '',
+          'x-goliath-owner-token': token,
         },
       },
     );
@@ -161,7 +183,7 @@ router.get('/me', requireOwner, (req, res) => {
    OWNER GUILDS
 ================================================== */
 
-router.get('/guilds', requireOwner, (req, res) => {
+router.get('/guilds', requireOwnerOrInternal, (req, res) => {
   const client = getDiscordClient(req);
   const mode = getRuntimeMode();
 
@@ -194,14 +216,11 @@ router.get('/guilds', requireOwner, (req, res) => {
 
 router.get('/guilds/all', requireOwner, async (req, res) => {
   try {
-    const cookie = req.headers.cookie || '';
-
     const results = await Promise.all(
       ENVIRONMENT_PORTS.map((environmentConfig) =>
         fetchEnvironmentGuilds(
           environmentConfig.port,
           environmentConfig.environment,
-          cookie,
         ),
       ),
     );
