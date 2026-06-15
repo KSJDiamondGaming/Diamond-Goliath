@@ -214,7 +214,7 @@ router.get('/guilds', requireOwnerOrInternal, (req, res) => {
   });
 });
 
-router.get('/guilds/all', requireOwner, async (req, res) => {
+router.get('/guilds/all', requireOwnerOrInternal, async (req, res) => {
   try {
     const results = await Promise.all(
       ENVIRONMENT_PORTS.map((environmentConfig) =>
