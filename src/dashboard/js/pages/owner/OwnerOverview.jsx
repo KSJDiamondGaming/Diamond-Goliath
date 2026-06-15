@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
-import { api } from '../services/apiClient.js';
+import { api } from '../../services/apiClient.js';
 
 const FILTERS = [
   { key: 'all', label: 'All Guilds', icon: '🌐' },
@@ -1231,3 +1231,4 @@ export default function OwnerView({ theme, currentUser, onSelectGuild, onReturnT
     </div>
   );
 }
+
