@@ -115,10 +115,15 @@ async function fetchEnvironmentGuilds(port, environment, cookie) {
     );
 
     if (!response.ok) {
+      console.warn(
+        `[OWNER GUILDS ALL] ${environment} returned ${response.status}`,
+      );
+
       return [];
     }
 
     const payload = await response.json();
+
     const guilds = Array.isArray(payload.guilds)
       ? payload.guilds
       : [];
@@ -210,11 +215,19 @@ router.get('/guilds/all', requireOwner, async (req, res) => {
       ...betaGuilds,
       ...productionGuilds,
     ].sort((a, b) => {
-      const envCompare = String(a.environment).localeCompare(
-        String(b.environment),
-      );
+      const environmentOrder = {
+        DEV: 1,
+        BETA: 2,
+        PRODUCTION: 3,
+      };
 
-      if (envCompare !== 0) return envCompare;
+      const environmentCompare =
+        (environmentOrder[a.environment] || 99) -
+        (environmentOrder[b.environment] || 99);
+
+      if (environmentCompare !== 0) {
+        return environmentCompare;
+      }
 
       return String(a.name || '').localeCompare(
         String(b.name || ''),
@@ -224,12 +237,16 @@ router.get('/guilds/all', requireOwner, async (req, res) => {
     return res.json({
       success: true,
       owner: true,
+
       mode: 'GLOBAL',
       runtimeMode: 'GLOBAL',
+
       guilds,
+
       dev: devGuilds,
       beta: betaGuilds,
       production: productionGuilds,
+
       environments: {
         dev: {
           port: 3001,
