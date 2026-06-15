@@ -79,6 +79,22 @@ export const api = {
     return request('/api/owner/guilds');
   },
 
+  getPlatformRuntime() {
+  return request('/api/owner/runtime');
+},
+
+getOwnerRuntime(guildId) {
+  return request(
+    `/api/status?guildId=${guildId}`
+  );
+},
+
+getOwnerSecurity(guildId) {
+  return request(
+    `/api/security/overview?guildId=${guildId}`
+  );
+},
+
   /* ---------------- DISCORD ---------------- */
 
   getGuilds() {

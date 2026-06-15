@@ -217,11 +217,279 @@ function SectionCard({ theme, section }) {
   );
 }
 
-export default function OwnerView({ theme, currentUser }) {
+function OwnerActionModal({ theme, action, guild, onClose }) {
+  if (!action || !guild) return null;
+
+  const guildName = getGuildName(guild);
+  const guildId = getGuildId(guild);
+  const environment = getEnvironmentMode(guild) || 'UNKNOWN';
+  const connected = isGuildConnected(guild);
+
+  const overlayStyle = {
+    position: 'fixed',
+    inset: 0,
+    zIndex: 9999,
+    background: 'rgba(2,6,23,0.72)',
+    backdropFilter: 'blur(10px)',
+    display: 'grid',
+    placeItems: 'center',
+    padding: 18,
+  };
+
+  const modalStyle = {
+    width: 'min(820px, 100%)',
+    maxHeight: 'min(86vh, 820px)',
+    border: `1px solid ${theme.cardBorder}`,
+    background: theme.cardBg,
+    color: theme.cardText,
+    borderRadius: 22,
+    boxShadow: theme.shadow,
+    overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column',
+  };
+
+  const rowStyle = {
+    display: 'flex',
+    justifyContent: 'space-between',
+    gap: 14,
+    padding: '12px 0',
+    borderBottom: `1px solid ${theme.cardBorder}`,
+  };
+
+  const buttonStyle = {
+    border: `1px solid ${theme.cardBorder}`,
+    background: 'rgba(15,23,42,0.26)',
+    color: theme.cardText,
+    borderRadius: 12,
+    padding: '9px 12px',
+    cursor: 'pointer',
+    fontWeight: 850,
+  };
+
+  const pillStyle = {
+    border: `1px solid ${theme.cardBorder}`,
+    borderRadius: 999,
+    padding: '5px 9px',
+    color: theme.mutedText,
+    background: 'rgba(15,23,42,0.20)',
+    fontSize: 12,
+    fontWeight: 850,
+  };
+
+  const infoCardStyle = {
+    border: `1px solid ${theme.cardBorder}`,
+    borderRadius: 16,
+    padding: 14,
+    background: 'rgba(15,23,42,0.18)',
+    display: 'grid',
+    gap: 8,
+  };
+
+  const mutedLineStyle = {
+    margin: 0,
+    color: theme.mutedText,
+    fontSize: 13,
+    lineHeight: 1.55,
+  };
+
+  const titleMap = {
+    manage: '⚙️ Manage Guild',
+    runtime: '📊 Runtime Data',
+    security: '🛡️ Security Overview',
+  };
+
+  const descriptionMap = {
+    manage: 'Guild administration overview. This panel is ready for owner-only guild management actions.',
+    runtime: 'Runtime inspection panel. This is prepared for CPU, memory, uptime, version, commit SHA, JSON sync, and backup data.',
+    security: 'Guild security overview. This is prepared for lockdowns, quarantines, anti-nuke events, webhook incidents, warnings, and audit events.',
+  };
+
+  const runtimeRows = [
+    ['Runtime Environment', getEnvironmentBadge(environment)],
+    ['Runtime Status', connected ? 'Online' : 'Bot Missing'],
+    ['Guild JSON', 'Ready for API data'],
+    ['Last Sync', 'Pending backend endpoint'],
+    ['Last Backup', 'Pending backend endpoint'],
+    ['Commit SHA', 'Pending runtime monitor'],
+  ];
+
+  const securityRows = [
+    ['Lockdowns', 'Pending backend data'],
+    ['Quarantines', 'Pending backend data'],
+    ['Anti-Nuke Events', 'Pending backend data'],
+    ['Webhook Incidents', 'Pending backend data'],
+    ['Channel Delete Events', 'Pending backend data'],
+    ['Security Warnings', 'Pending backend data'],
+  ];
+
+  const manageActions = [
+    { label: 'Refresh Guild Cache', description: 'Future action to reload guild metadata from Discord and runtime storage.' },
+    { label: 'Rebuild Settings', description: 'Future action to validate and repair missing module defaults in guild JSON.' },
+    { label: 'Sync Runtime Data', description: 'Future action to force a safe guild JSON sync for this environment.' },
+    { label: 'Open Security Tools', description: 'Future shortcut into this guild security panel.' },
+  ];
+
+  function renderDataRows(rows) {
+    return rows.map(([label, value]) => (
+      <div key={label} style={rowStyle}>
+        <strong>{label}</strong>
+        <span style={{ color: theme.mutedText, textAlign: 'right' }}>{value}</span>
+      </div>
+    ));
+  }
+
+  function renderActionContent() {
+    if (action === 'manage') {
+      return (
+        <div style={{ display: 'grid', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 12 }}>
+            {manageActions.map((item) => (
+              <div key={item.label} style={infoCardStyle}>
+                <strong>{item.label}</strong>
+                <p style={mutedLineStyle}>{item.description}</p>
+                <span style={pillStyle}>Coming next</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    if (action === 'runtime') {
+      return (
+        <div style={{ display: 'grid', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
+            <div style={infoCardStyle}>
+              <strong>CPU Usage</strong>
+              <p style={mutedLineStyle}>Pending Runtime Monitor</p>
+            </div>
+            <div style={infoCardStyle}>
+              <strong>Memory Usage</strong>
+              <p style={mutedLineStyle}>Pending Runtime Monitor</p>
+            </div>
+            <div style={infoCardStyle}>
+              <strong>Uptime</strong>
+              <p style={mutedLineStyle}>Pending Runtime Monitor</p>
+            </div>
+          </div>
+
+          <div style={{ ...infoCardStyle, gap: 0 }}>
+            {renderDataRows(runtimeRows)}
+          </div>
+        </div>
+      );
+    }
+
+    if (action === 'security') {
+      return (
+        <div style={{ display: 'grid', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
+            <div style={infoCardStyle}>
+              <strong>Current Risk</strong>
+              <p style={mutedLineStyle}>Pending Security API</p>
+            </div>
+            <div style={infoCardStyle}>
+              <strong>Open Incidents</strong>
+              <p style={mutedLineStyle}>Pending Security API</p>
+            </div>
+            <div style={infoCardStyle}>
+              <strong>Last Incident</strong>
+              <p style={mutedLineStyle}>Pending Security API</p>
+            </div>
+          </div>
+
+          <div style={{ ...infoCardStyle, gap: 0 }}>
+            {renderDataRows(securityRows)}
+          </div>
+        </div>
+      );
+    }
+
+    return null;
+  }
+
+  return (
+    <div style={overlayStyle} role="dialog" aria-modal="true">
+      <div style={modalStyle}>
+        <div
+          style={{
+            padding: 18,
+            borderBottom: `1px solid ${theme.cardBorder}`,
+            display: 'flex',
+            justifyContent: 'space-between',
+            gap: 12,
+            alignItems: 'flex-start',
+          }}
+        >
+          <div>
+            <h2 style={{ margin: 0, fontSize: 22 }}>{titleMap[action] || 'Owner Action'}</h2>
+            <p style={{ margin: '8px 0 0', color: theme.mutedText, lineHeight: 1.55 }}>
+              {descriptionMap[action] || 'Owner action panel.'}
+            </p>
+          </div>
+
+          <button type="button" style={buttonStyle} onClick={onClose}>
+            Close
+          </button>
+        </div>
+
+        <div style={{ padding: 18, overflowY: 'auto', display: 'grid', gap: 16 }}>
+          <div style={{ ...infoCardStyle, gap: 0 }}>
+            <div style={rowStyle}>
+              <strong>Guild</strong>
+              <span>{guildName}</span>
+            </div>
+
+            <div style={rowStyle}>
+              <strong>Guild ID</strong>
+              <span style={{ fontFamily: 'monospace', color: theme.mutedText }}>{guildId}</span>
+            </div>
+
+            <div style={rowStyle}>
+              <strong>Environment</strong>
+              <span>{getEnvironmentBadge(environment)}</span>
+            </div>
+
+            <div style={rowStyle}>
+              <strong>Members</strong>
+              <span>{formatNumber(guild.memberCount)}</span>
+            </div>
+
+            <div style={{ ...rowStyle, borderBottom: 0 }}>
+              <strong>Bot Status</strong>
+              <span style={{ color: connected ? '#86efac' : '#fca5a5', fontWeight: 900 }}>
+                {connected ? 'Connected' : 'Missing'}
+              </span>
+            </div>
+          </div>
+
+          {renderActionContent()}
+
+          <div
+            style={{
+              border: `1px dashed ${theme.cardBorder}`,
+              borderRadius: 16,
+              padding: 16,
+              color: theme.mutedText,
+              lineHeight: 1.6,
+              background: 'rgba(15,23,42,0.18)',
+            }}
+          >
+            UI is now ready for backend endpoints. Next backend routes should be owner-only and return guild-specific runtime/security data from guild JSON and runtime process metadata.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function OwnerView({ theme, currentUser, onSelectGuild, onReturnToDashboard }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [ownerPayload, setOwnerPayload] = useState(null);
   const [activeFilter, setActiveFilter] = useState('all');
+  const [activeAction, setActiveAction] = useState(null);
 
   const isOwner = currentUser?.isOwner === true;
 
@@ -312,6 +580,18 @@ export default function OwnerView({ theme, currentUser }) {
     boxShadow: theme.shadow,
   };
 
+  const actionButtonStyle = {
+    border: `1px solid ${theme.cardBorder}`,
+    background: 'rgba(15,23,42,0.26)',
+    color: theme.cardText,
+    borderRadius: 10,
+    padding: '7px 10px',
+    cursor: 'pointer',
+    fontWeight: 850,
+    fontSize: 12,
+    whiteSpace: 'nowrap',
+  };
+
   const heroStyle = {
     ...cardStyle,
     padding: 24,
@@ -320,6 +600,24 @@ export default function OwnerView({ theme, currentUser }) {
     background:
       'linear-gradient(135deg, rgba(59,130,246,0.18), rgba(15,23,42,0.06) 45%, rgba(168,85,247,0.12))',
   };
+
+  function handleOpenGuild(guild) {
+    if (typeof onSelectGuild === 'function') {
+      onSelectGuild(guild);
+    }
+
+    if (typeof onReturnToDashboard === 'function') {
+      onReturnToDashboard();
+    }
+  }
+
+  function handleOwnerAction(action, guild) {
+    setActiveAction({ action, guild });
+  }
+
+  function closeOwnerAction() {
+    setActiveAction(null);
+  }
 
   if (!isOwner) {
     return (
@@ -495,7 +793,7 @@ export default function OwnerView({ theme, currentUser }) {
           <div style={{ padding: 22, color: theme.mutedText }}>No guilds found for this filter.</div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1040 }}>
               <thead>
                 <tr style={{ color: theme.mutedText, textAlign: 'left', fontSize: 13 }}>
                   <th style={{ padding: '14px 18px' }}>Environment</th>
@@ -503,6 +801,7 @@ export default function OwnerView({ theme, currentUser }) {
                   <th style={{ padding: '14px 18px' }}>Guild ID</th>
                   <th style={{ padding: '14px 18px' }}>Members</th>
                   <th style={{ padding: '14px 18px' }}>Bot</th>
+                  <th style={{ padding: '14px 18px' }}>Actions</th>
                 </tr>
               </thead>
 
@@ -570,6 +869,46 @@ export default function OwnerView({ theme, currentUser }) {
                           {connected ? 'Connected' : 'Missing'}
                         </span>
                       </td>
+
+                      <td style={{ padding: '14px 18px' }}>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          <button
+                            type="button"
+                            style={actionButtonStyle}
+                            onClick={() => handleOpenGuild(guild)}
+                            title={`Open ${guildName}`}
+                          >
+                            Open Guild
+                          </button>
+
+                          <button
+                            type="button"
+                            style={actionButtonStyle}
+                            onClick={() => handleOwnerAction('manage', guild)}
+                            title={`Manage ${guildName}`}
+                          >
+                            Manage
+                          </button>
+
+                          <button
+                            type="button"
+                            style={actionButtonStyle}
+                            onClick={() => handleOwnerAction('runtime', guild)}
+                            title={`View runtime data for ${guildName}`}
+                          >
+                            Runtime
+                          </button>
+
+                          <button
+                            type="button"
+                            style={actionButtonStyle}
+                            onClick={() => handleOwnerAction('security', guild)}
+                            title={`View security for ${guildName}`}
+                          >
+                            Security
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
@@ -578,6 +917,13 @@ export default function OwnerView({ theme, currentUser }) {
           </div>
         )}
       </section>
+
+      <OwnerActionModal
+        theme={theme}
+        action={activeAction?.action}
+        guild={activeAction?.guild}
+        onClose={closeOwnerAction}
+      />
     </div>
   );
 }

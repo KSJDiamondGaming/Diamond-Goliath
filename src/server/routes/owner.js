@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const os = require('os');
 
 const router = express.Router();
 
@@ -36,7 +37,9 @@ function requireOwner(req, res, next) {
 }
 
 function getRuntimeMode() {
-  return String(process.env.BOT_MODE || 'dev').trim().toUpperCase();
+  return String(process.env.BOT_MODE || 'dev')
+    .trim()
+    .toUpperCase();
 }
 
 function getDiscordClient(req) {
@@ -52,7 +55,10 @@ function getDiscordClient(req) {
 function buildGuildIconUrl(guild) {
   if (!guild?.id || !guild?.icon) return null;
 
-  const ext = String(guild.icon).startsWith('a_') ? 'gif' : 'png';
+  const ext = String(guild.icon).startsWith('a_')
+    ? 'gif'
+    : 'png';
+
   return `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.${ext}?size=256`;
 }
 
@@ -79,6 +85,10 @@ function buildOwnerGuildPayload(guild) {
   };
 }
 
+/* ==================================================
+   OWNER INFO
+================================================== */
+
 router.get('/me', requireOwner, (req, res) => {
   return res.json({
     success: true,
@@ -87,6 +97,10 @@ router.get('/me', requireOwner, (req, res) => {
     mode: getRuntimeMode(),
   });
 });
+
+/* ==================================================
+   OWNER GUILDS
+================================================== */
 
 router.get('/guilds', requireOwner, (req, res) => {
   const client = getDiscordClient(req);
@@ -117,6 +131,48 @@ router.get('/guilds', requireOwner, (req, res) => {
     guilds,
     ...byEnvironment,
   });
+});
+
+/* ==================================================
+   RUNTIME MONITOR
+================================================== */
+
+router.get('/runtime', requireOwner, async (req, res) => {
+  try {
+    const totalMemory = os.totalmem();
+    const freeMemory = os.freemem();
+
+    return res.json({
+      success: true,
+
+      runtime: {
+        mode: getRuntimeMode(),
+
+        uptime: process.uptime(),
+
+        nodeVersion: process.version,
+
+        platform: process.platform,
+
+        hostname: os.hostname(),
+
+        cpuCount: os.cpus().length,
+
+        memory: {
+          total: totalMemory,
+          free: freeMemory,
+          used: totalMemory - freeMemory,
+        },
+      },
+    });
+  } catch (error) {
+    console.error('[OWNER RUNTIME]', error);
+
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
 });
 
 module.exports = router;
