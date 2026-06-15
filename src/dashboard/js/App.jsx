@@ -24,6 +24,7 @@ const GUILD_REQUIRED_ROUTES = new Set([
   'generalSettings',
   'messages',
   'forms',
+  'modules',
   'logs',
   'admin',
   'moderation',
