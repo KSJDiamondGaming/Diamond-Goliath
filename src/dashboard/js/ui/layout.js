@@ -12,6 +12,14 @@ import Restore from '../pages/Restore';
 import Security from '../pages/Security';
 import Logs from '../pages/Logs';
 import OwnerView from '../pages/owner/OwnerOverview';
+import OwnerGlobalServers from '../pages/owner/GlobalServers';
+import OwnerRuntimeMonitor from '../pages/owner/RuntimeMonitor';
+import OwnerSecurityCenter from '../pages/owner/SecurityCenter';
+import OwnerBackupCenter from '../pages/owner/BackupCenter';
+import OwnerDeploymentCenter from '../pages/owner/DeploymentCenter';
+import OwnerFormsHub from '../pages/owner/FormsHub';
+import OwnerTicketsHub from '../pages/owner/TicketsHub';
+import OwnerTranslationHub from '../pages/owner/TranslationHub';
 
 export const DASHBOARD_LAYOUT = {
   navbarExpandedWidth: '280px',
@@ -64,6 +72,14 @@ export const NAV_BOTTOM = [
 export const ROUTES = [
   { key: 'overview', label: 'Overview', icon: 'overview', path: '/overview', component: Overview },
   { key: 'ownerView', label: 'Owner View', icon: 'admin', path: '/owner', component: OwnerView, ownerOnly: true },
+  { key: 'ownerServers', label: 'Global Servers', icon: 'modules', path: '/owner/servers', component: OwnerGlobalServers, ownerOnly: true },
+  { key: 'ownerRuntime', label: 'Runtime Monitor', icon: 'admin', path: '/owner/runtime', component: OwnerRuntimeMonitor, ownerOnly: true },
+  { key: 'ownerSecurity', label: 'Owner Security', icon: 'admin', path: '/owner/security', component: OwnerSecurityCenter, ownerOnly: true },
+  { key: 'ownerBackups', label: 'Backup Center', icon: 'admin', path: '/owner/backups', component: OwnerBackupCenter, ownerOnly: true },
+  { key: 'ownerDeployments', label: 'Deployment Center', icon: 'modules', path: '/owner/deployments', component: OwnerDeploymentCenter, ownerOnly: true },
+  { key: 'ownerForms', label: 'Forms Hub', icon: 'modules', path: '/owner/forms', component: OwnerFormsHub, ownerOnly: true },
+  { key: 'ownerTickets', label: 'Tickets Hub', icon: 'modules', path: '/owner/tickets', component: OwnerTicketsHub, ownerOnly: true },
+  { key: 'ownerTranslation', label: 'Translation Hub', icon: 'modules', path: '/owner/translation', component: OwnerTranslationHub, ownerOnly: true },
   { key: 'modules', label: 'Modules', icon: 'modules', path: '/modules', component: Modules },
   { key: 'generalSettings', label: 'General Settings', icon: 'generalSettings', path: '/generalSettings', component: GeneralSettings },
   { key: 'automod', label: 'AutoMod', icon: 'automod', path: '/automod', component: AutoMod },
@@ -84,6 +100,14 @@ export const navBottomItems = NAV_BOTTOM;
 export const PAGE_LAYOUTS = {
   overview: { title: 'Overview', description: 'Server insights and activity', sections: [{ id: 'stats', type: 'stats' }, { id: 'activity', type: 'list' }] },
   ownerView: { title: 'Owner View', description: 'Owner-only platform dashboard.', sections: [] },
+  ownerServers: { title: 'Global Servers', description: 'Owner-level server registry across all environments.', sections: [] },
+  ownerRuntime: { title: 'Runtime Monitor', description: 'Owner-level runtime monitoring across DEV, BETA and PRODUCTION.', sections: [] },
+  ownerSecurity: { title: 'Owner Security', description: 'Global security centre across all environments.', sections: [] },
+  ownerBackups: { title: 'Backup Center', description: 'Owner-level backup and restore monitoring.', sections: [] },
+  ownerDeployments: { title: 'Deployment Center', description: 'Deployment queue, history and environment status.', sections: [] },
+  ownerForms: { title: 'Forms Hub', description: 'Global forms and submissions overview.', sections: [] },
+  ownerTickets: { title: 'Tickets Hub', description: 'Global tickets overview.', sections: [] },
+  ownerTranslation: { title: 'Translation Hub', description: 'Global translation system overview.', sections: [] },
   modules: { title: 'Modules', description: 'Optional Goliath features in one scalable grid.', emptyDescription: 'Select a server to view modules.', sections: [{ id: 'modulesGrid', type: 'dashboard' }] },
   generalSettings: { title: 'General Settings', description: 'Manage server configuration.', emptyDescription: 'Select a server to manage settings.', sections: [{ id: 'generalConfig', type: 'config' }] },
   automod: { title: 'AutoMod', description: 'Manage filters and rules', sections: [{ id: 'rules', type: 'config' }, { id: 'filters', type: 'config' }] },
@@ -114,4 +138,5 @@ export const SECTION_DEFS = {
   restoreManager: { title: 'Restore Manager', description: 'Preview and restore backups.' },
   logManager: { title: 'Log Manager', description: 'Choose log channels.' },
 };
+
 
