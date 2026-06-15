@@ -76,12 +76,12 @@ export const api = {
   },
 
   getOwnerGuilds() {
-    return request('/api/owner/guilds');
+    return request('/api/owner/guilds/all');
   },
 
   getPlatformRuntime() {
-  return request('/api/owner/runtime');
-},
+    return request('/api/owner/runtime');
+  },
 
 getOwnerRuntime(guildId) {
   return request(
