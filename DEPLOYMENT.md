@@ -19,7 +19,7 @@ tree src /F > src-structure.txt
 /home/goliath/beta
 /home/goliath/production
 
-
+npm run build
 
 git add .
 git commit -m "Owner View fix"
