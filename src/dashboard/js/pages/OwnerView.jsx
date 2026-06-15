@@ -575,6 +575,8 @@ export default function OwnerView({ theme, currentUser, onSelectGuild, onReturnT
   const [activeFilter, setActiveFilter] = useState('all');
   const [activeAction, setActiveAction] = useState(null);
   const [platformRuntime, setPlatformRuntime] = useState(null);
+  const [securityOverview, setSecurityOverview] = useState(null);
+  const [securityLoading, setSecurityLoading] = useState(false);
 
   const isOwner = currentUser?.isOwner === true;
 
@@ -647,6 +649,42 @@ export default function OwnerView({ theme, currentUser, onSelectGuild, onReturnT
 
     return guilds.filter((guild) => getEnvironmentMode(guild) === activeFilter);
   }, [activeFilter, guilds]);
+
+  useEffect(() => {
+    if (!filteredGuilds.length) return;
+
+    let cancelled = false;
+
+    async function loadSecurityOverview() {
+      try {
+        setSecurityLoading(true);
+
+        const response = await api.getSecurityOverview(
+          getGuildId(filteredGuilds[0])
+        );
+
+        if (!cancelled) {
+          setSecurityOverview(response);
+        }
+      } catch (securityError) {
+        console.error(securityError);
+
+        if (!cancelled) {
+          setSecurityOverview(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setSecurityLoading(false);
+        }
+      }
+    }
+
+    loadSecurityOverview();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [filteredGuilds]);
 
   const stats = useMemo(() => {
     const totals = {
@@ -923,6 +961,76 @@ export default function OwnerView({ theme, currentUser, onSelectGuild, onReturnT
     </div>
   </div>
 </section>
+
+      <section
+        style={{
+          ...cardStyle,
+          padding: 18,
+          display: 'grid',
+          gap: 16,
+        }}
+      >
+        <div>
+          <strong>🛡️ Global Security Center</strong>
+          <div
+            style={{
+              color: theme.mutedText,
+              fontSize: 13,
+              marginTop: 4,
+            }}
+          >
+            Live security overview from the selected environment.
+          </div>
+        </div>
+
+        {securityLoading ? (
+          <div style={{ color: theme.mutedText }}>Loading security data...</div>
+        ) : (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+              gap: 12,
+            }}
+          >
+            <OwnerStatCard
+              theme={theme}
+              icon="🚨"
+              label="Incidents"
+              value={securityOverview?.incidents?.total || 0}
+              sublabel="Total security incidents"
+              accent="#f87171"
+            />
+
+            <OwnerStatCard
+              theme={theme}
+              icon="🔥"
+              label="Critical"
+              value={securityOverview?.incidents?.critical || 0}
+              sublabel="Critical incidents"
+              accent="#fb7185"
+            />
+
+            <OwnerStatCard
+              theme={theme}
+              icon="🔒"
+              label="Lockdown"
+              value={securityOverview?.lockdown?.active ? 'YES' : 'NO'}
+              sublabel="Current lockdown state"
+              accent="#facc15"
+            />
+
+            <OwnerStatCard
+              theme={theme}
+              icon="🚷"
+              label="Quarantined"
+              value={Object.keys(securityOverview?.quarantine?.users || {}).length}
+              sublabel="Users currently quarantined"
+              accent="#a78bfa"
+            />
+          </div>
+        )}
+      </section>
 
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
         {OWNER_SECTIONS.map((section) => (
