@@ -11,7 +11,7 @@ import Modules from '../pages/Modules';
 import Restore from '../pages/Restore';
 import Security from '../pages/Security';
 import Logs from '../pages/Logs';
-import OwnerView from '../pages/OwnerView';
+import OwnerView from '../pages/owner/OwnerOverview';
 
 export const DASHBOARD_LAYOUT = {
   navbarExpandedWidth: '280px',
@@ -114,3 +114,4 @@ export const SECTION_DEFS = {
   restoreManager: { title: 'Restore Manager', description: 'Preview and restore backups.' },
   logManager: { title: 'Log Manager', description: 'Choose log channels.' },
 };
+
