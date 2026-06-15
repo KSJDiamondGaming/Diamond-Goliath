@@ -6,10 +6,7 @@ function apiUrl(path = '') {
   return `${API_BASE}${path}`;
 }
 
-async function request(
-  url,
-  options = {},
-) {
+async function request(url, options = {}) {
   const response = await fetch(apiUrl(url), {
     credentials: 'include',
 
@@ -45,9 +42,7 @@ export const api = {
       ? `?guildId=${guildId}`
       : '';
 
-    return request(
-      `/api/status${query}`,
-    );
+    return request(`/api/status${query}`);
   },
 
   /* ---------------- AUTH ---------------- */
@@ -61,12 +56,9 @@ export const api = {
   },
 
   logout() {
-    return request(
-      '/api/auth/logout',
-      {
-        method: 'POST',
-      },
-    );
+    return request('/api/auth/logout', {
+      method: 'POST',
+    });
   },
 
   /* ---------------- OWNER ---------------- */
@@ -76,31 +68,29 @@ export const api = {
   },
 
   getOwnerGuilds() {
-    return request('/api/owner/guilds');
+    return request('/api/owner/guilds/all');
   },
 
   getPlatformRuntime() {
-  return request('/api/owner/runtime');
-},
+    return request('/api/owner/runtime');
+  },
 
-getOwnerRuntime(guildId) {
-  return request(
-    `/api/status?guildId=${guildId}`
-  );
-},
+  getOwnerRuntime(guildId) {
+    return request(
+      `/api/status?guildId=${guildId}`,
+    );
+  },
 
-getOwnerSecurity(guildId) {
-  return request(
-    `/api/security/overview?guildId=${guildId}`
-  );
-},
+  getOwnerSecurity(guildId) {
+    return request(
+      `/api/security/overview?guildId=${guildId}`,
+    );
+  },
 
   /* ---------------- DISCORD ---------------- */
 
   getGuilds() {
-    return request(
-      '/api/discord/guilds',
-    );
+    return request('/api/discord/guilds');
   },
 
   getGuildChannels(guildId) {
@@ -118,38 +108,32 @@ getOwnerSecurity(guildId) {
   /* ---------------- GENERAL SETTINGS ---------------- */
 
   getGeneralSettings(guildId) {
-    return request(
-      `/api/config/${guildId}`,
-    );
+    return request(`/api/config/${guildId}`);
   },
 
-  saveGeneralSettings(
-    guildId,
-    payload,
-  ) {
-    return request(
-      `/api/config/${guildId}`,
-      {
-        method: 'POST',
-
-        body: JSON.stringify(
-          payload,
-        ),
-      },
-    );
+  saveGeneralSettings(guildId, payload) {
+    return request(`/api/config/${guildId}`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
   },
 
   /* ---------------- AUTOMOD ---------------- */
 
   getAutoModConfig(guildId) {
-    return request(`/api/config/automod/${guildId}`);
+    return request(
+      `/api/config/automod/${guildId}`,
+    );
   },
 
   saveAutoModConfig(guildId, payload) {
-    return request(`/api/config/automod/${guildId}`, {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
+    return request(
+      `/api/config/automod/${guildId}`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      },
+    );
   },
 
   /* ---------------- MESSAGES ---------------- */
@@ -160,18 +144,12 @@ getOwnerSecurity(guildId) {
     );
   },
 
-  saveMessages(
-    guildId,
-    payload,
-  ) {
+  saveMessages(guildId, payload) {
     return request(
       `/api/config/messages/${guildId}`,
       {
         method: 'POST',
-
-        body: JSON.stringify(
-          payload,
-        ),
+        body: JSON.stringify(payload),
       },
     );
   },
@@ -179,9 +157,7 @@ getOwnerSecurity(guildId) {
   /* ---------------- CASES ---------------- */
 
   getCases(guildId) {
-    return request(
-      `/api/cases/${guildId}`,
-    );
+    return request(`/api/cases/${guildId}`);
   },
 
   getWarnings(guildId) {
@@ -193,7 +169,9 @@ getOwnerSecurity(guildId) {
   /* ---------------- FORMS ---------------- */
 
   getFormsOverview(guildId) {
-    return request(`/api/forms/${guildId}/overview`);
+    return request(
+      `/api/forms/${guildId}/overview`,
+    );
   },
 
   getFormsConfig(guildId) {
@@ -201,55 +179,87 @@ getOwnerSecurity(guildId) {
   },
 
   getForms(guildId) {
-    return request(`/api/forms/${guildId}/forms`);
+    return request(
+      `/api/forms/${guildId}/forms`,
+    );
   },
 
   getForm(guildId, formId) {
-    return request(`/api/forms/${guildId}/forms/${formId}`);
+    return request(
+      `/api/forms/${guildId}/forms/${formId}`,
+    );
   },
 
   createForm(guildId, payload) {
-    return request(`/api/forms/${guildId}/forms`, {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
+    return request(
+      `/api/forms/${guildId}/forms`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      },
+    );
   },
 
   updateForm(guildId, formId, payload) {
-    return request(`/api/forms/${guildId}/forms/${formId}`, {
-      method: 'PUT',
-      body: JSON.stringify(payload),
-    });
+    return request(
+      `/api/forms/${guildId}/forms/${formId}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      },
+    );
   },
 
   setFormEnabled(guildId, formId, enabled) {
-    return request(`/api/forms/${guildId}/forms/${formId}/enabled`, {
-      method: 'PATCH',
-      body: JSON.stringify({ enabled }),
-    });
+    return request(
+      `/api/forms/${guildId}/forms/${formId}/enabled`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled }),
+      },
+    );
   },
 
   getFormPanels(guildId) {
-    return request(`/api/forms/${guildId}/panels`);
+    return request(
+      `/api/forms/${guildId}/panels`,
+    );
   },
 
   getFormSubmissions(guildId, query = '') {
     const suffix = query ? `?${query}` : '';
-    return request(`/api/forms/${guildId}/submissions${suffix}`);
+
+    return request(
+      `/api/forms/${guildId}/submissions${suffix}`,
+    );
   },
 
-  updateFormSubmissionStatus(guildId, submissionId, status, extra = {}) {
-    return request(`/api/forms/${guildId}/submissions/${submissionId}/status`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status, ...extra }),
-    });
+  updateFormSubmissionStatus(
+    guildId,
+    submissionId,
+    status,
+    extra = {},
+  ) {
+    return request(
+      `/api/forms/${guildId}/submissions/${submissionId}/status`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({
+          status,
+          ...extra,
+        }),
+      },
+    );
   },
 
   updateFormsSettings(guildId, payload) {
-    return request(`/api/forms/${guildId}/settings`, {
-      method: 'PATCH',
-      body: JSON.stringify(payload),
-    });
+    return request(
+      `/api/forms/${guildId}/settings`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      },
+    );
   },
 
   /* ---------------- SECURITY ---------------- */
@@ -263,14 +273,19 @@ getOwnerSecurity(guildId) {
   /* ---------------- LOGS ---------------- */
 
   getLogConfig(guildId) {
-    return request(`/api/config/logs/${guildId}`);
+    return request(
+      `/api/config/logs/${guildId}`,
+    );
   },
 
   saveLogConfig(guildId, payload) {
-    return request(`/api/config/logs/${guildId}`, {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
+    return request(
+      `/api/config/logs/${guildId}`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      },
+    );
   },
 };
 

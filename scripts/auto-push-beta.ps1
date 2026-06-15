@@ -10,8 +10,8 @@ param(
 
 $ErrorActionPreference = "Continue"
 
-function Log-Info($msg) { Write-Host "[auto-dev] $msg" -ForegroundColor Cyan }
-function Log-Ok($msg) { Write-Host "[auto-dev] $msg" -ForegroundColor Green }
+function Log-Info($msg) { Write-Host "[auto-beta] $msg" -ForegroundColor Cyan }
+function Log-Ok($msg) { Write-Host "[auto-beta] $msg" -ForegroundColor Green }
 function Log-Warn($msg) { Write-Host "[auto-dev] $msg" -ForegroundColor Yellow }
 function Log-Error($msg) { Write-Host "[auto-dev] $msg" -ForegroundColor Red }
 

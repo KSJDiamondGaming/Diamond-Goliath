@@ -5,6 +5,24 @@ const os = require('os');
 
 const router = express.Router();
 
+const ENVIRONMENT_PORTS = [
+  {
+    key: 'dev',
+    environment: 'DEV',
+    port: 3001,
+  },
+  {
+    key: 'beta',
+    environment: 'BETA',
+    port: 3011,
+  },
+  {
+    key: 'production',
+    environment: 'PRODUCTION',
+    port: 3021,
+  },
+];
+
 function getOwnerIds() {
   return String(process.env.OWNER_IDS || '')
     .split(',')
@@ -62,8 +80,8 @@ function buildGuildIconUrl(guild) {
   return `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.${ext}?size=256`;
 }
 
-function buildOwnerGuildPayload(guild) {
-  const mode = getRuntimeMode();
+function buildOwnerGuildPayload(guild, forcedEnvironment = null) {
+  const mode = forcedEnvironment || getRuntimeMode();
   const iconUrl = buildGuildIconUrl(guild);
 
   return {
@@ -83,6 +101,42 @@ function buildOwnerGuildPayload(guild) {
     connected: true,
     status: 'connected',
   };
+}
+
+async function fetchEnvironmentGuilds(port, environment, cookie) {
+  try {
+    const response = await fetch(
+      `http://127.0.0.1:${port}/api/owner/guilds`,
+      {
+        headers: {
+          Cookie: cookie || '',
+        },
+      },
+    );
+
+    if (!response.ok) {
+      return [];
+    }
+
+    const payload = await response.json();
+    const guilds = Array.isArray(payload.guilds)
+      ? payload.guilds
+      : [];
+
+    return guilds.map((guild) => ({
+      ...guild,
+      environment,
+      runtimeMode: environment,
+      sourcePort: port,
+    }));
+  } catch (error) {
+    console.error(
+      `[OWNER GUILDS ALL] ${environment} failed:`,
+      error.message,
+    );
+
+    return [];
+  }
 }
 
 /* ==================================================
@@ -114,7 +168,7 @@ router.get('/guilds', requireOwner, (req, res) => {
   }
 
   const guilds = [...client.guilds.cache.values()]
-    .map(buildOwnerGuildPayload)
+    .map((guild) => buildOwnerGuildPayload(guild, mode))
     .sort((a, b) => a.name.localeCompare(b.name));
 
   const byEnvironment = {
@@ -131,6 +185,74 @@ router.get('/guilds', requireOwner, (req, res) => {
     guilds,
     ...byEnvironment,
   });
+});
+
+router.get('/guilds/all', requireOwner, async (req, res) => {
+  try {
+    const cookie = req.headers.cookie || '';
+
+    const results = await Promise.all(
+      ENVIRONMENT_PORTS.map((environmentConfig) =>
+        fetchEnvironmentGuilds(
+          environmentConfig.port,
+          environmentConfig.environment,
+          cookie,
+        ),
+      ),
+    );
+
+    const devGuilds = results[0] || [];
+    const betaGuilds = results[1] || [];
+    const productionGuilds = results[2] || [];
+
+    const guilds = [
+      ...devGuilds,
+      ...betaGuilds,
+      ...productionGuilds,
+    ].sort((a, b) => {
+      const envCompare = String(a.environment).localeCompare(
+        String(b.environment),
+      );
+
+      if (envCompare !== 0) return envCompare;
+
+      return String(a.name || '').localeCompare(
+        String(b.name || ''),
+      );
+    });
+
+    return res.json({
+      success: true,
+      owner: true,
+      mode: 'GLOBAL',
+      runtimeMode: 'GLOBAL',
+      guilds,
+      dev: devGuilds,
+      beta: betaGuilds,
+      production: productionGuilds,
+      environments: {
+        dev: {
+          port: 3001,
+          guilds: devGuilds.length,
+        },
+        beta: {
+          port: 3011,
+          guilds: betaGuilds.length,
+        },
+        production: {
+          port: 3021,
+          guilds: productionGuilds.length,
+        },
+      },
+    });
+  } catch (error) {
+    console.error('[OWNER GUILDS ALL]', error);
+
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
 });
 
 /* ==================================================
