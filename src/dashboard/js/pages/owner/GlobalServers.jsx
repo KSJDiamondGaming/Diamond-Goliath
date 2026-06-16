@@ -5,6 +5,7 @@ import useOwnerGuilds from '../../hooks/useOwnerGuilds.js';
 import { setStorage } from '../../storage.js';
 
 const GUILD_STORAGE_KEY = 'selected_guild';
+const OWNER_MANAGED_GUILD_KEY = 'owner_managed_guild';
 
 function getGuildId(guild) {
   return String(guild?.guildId || guild?.id || '');
@@ -12,6 +13,31 @@ function getGuildId(guild) {
 
 function getGuildEnvironment(guild) {
   return String(guild?.environment || guild?.runtimeMode || '').toUpperCase();
+}
+
+function getGuildName(guild) {
+  return guild?.name || guild?.guildName || 'Unknown Guild';
+}
+
+function getGuildIcon(guild) {
+  return guild?.iconUrl || guild?.iconURL || guild?.icon || guild?.avatarUrl || '';
+}
+
+function createManagedGuildPayload(guild) {
+  const guildId = getGuildId(guild);
+
+  return {
+    id: guildId,
+    guildId,
+    name: getGuildName(guild),
+    guildName: getGuildName(guild),
+    environment: getGuildEnvironment(guild),
+    runtimeMode: getGuildEnvironment(guild),
+    iconUrl: getGuildIcon(guild),
+    memberCount: guild?.memberCount ?? null,
+    status: guild?.status || 'Connected',
+    ownerManaged: true,
+  };
 }
 
 export default function GlobalServers({ theme }) {
@@ -24,6 +50,7 @@ export default function GlobalServers({ theme }) {
     if (!guildId) return;
 
     setStorage(GUILD_STORAGE_KEY, guildId);
+    setStorage(OWNER_MANAGED_GUILD_KEY, createManagedGuildPayload(guild));
     window.location.assign(path);
   }
 
@@ -109,7 +136,7 @@ export default function GlobalServers({ theme }) {
                   <tr key={(guild.environment || guild.runtimeMode || 'env') + '-' + guildId}>
                     <td style={cellStyle(theme)}>{environment}</td>
                     <td style={cellStyle(theme)}>
-                      <strong>{guild.name || guild.guildName || 'Unknown Guild'}</strong>
+                      <strong>{getGuildName(guild)}</strong>
                     </td>
                     <td style={cellStyle(theme)}>{guildId}</td>
                     <td style={cellStyle(theme)}>{guild.memberCount ?? 'Unknown'}</td>
@@ -121,7 +148,7 @@ export default function GlobalServers({ theme }) {
                     <td style={cellStyle(theme)}>
                       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                         <ActionButton label="Open Guild" theme={theme} onClick={() => openGuildDashboard(guild, '/overview')} />
-                        <ActionButton label="Manage Guild" theme={theme} onClick={() => openGuildDashboard(guild, '/generalSettings')} />
+                        <ActionButton label="Manage Guild" theme={theme} onClick={() => openGuildDashboard(guild, '/overview')} />
                         <ActionButton label="Runtime" theme={theme} onClick={() => openOwnerRuntime(guild)} />
                         <ActionButton label="Security" theme={theme} onClick={() => openGuildDashboard(guild, '/security')} />
                       </div>
