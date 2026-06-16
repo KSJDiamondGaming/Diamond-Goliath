@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
-import { api } from '../services/apiClient';
+import { api } from '../../services/apiClient';
 
 import {
   joinGuildRoom,
   onSocketEvent,
-} from '../services/socketClient';
+} from '../../services/socketClient';
 
 import PageShell, {
   SectionCard,
@@ -14,7 +14,7 @@ import PageShell, {
   EmptyState,
   LoadingPanel,
   Notice,
-} from '../shared/PageShell';
+} from '../../shared/PageShell';
 
 const INITIAL_STATE = {
   ok: true,

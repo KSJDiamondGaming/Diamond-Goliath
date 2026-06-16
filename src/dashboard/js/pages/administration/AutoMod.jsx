@@ -2,8 +2,8 @@ import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   joinGuildRoom,
   listenForGuildUpdate,
-} from "../services/socketClient"
-import { api } from '../services/apiClient';
+} from "../../services/socketClient"
+import { api } from '../../services/apiClient';
 import PageShell, {
   LoadingPanel,
   Notice,
@@ -11,9 +11,9 @@ import PageShell, {
   SectionCard,
   StatGrid,
   SummaryStat,
-} from '../shared/PageShell';
-import { PAGE_LAYOUTS, SECTION_DEFS } from "../ui/layout";
-import { createAutoModPageStyles } from "../ui/components";
+} from '../../shared/PageShell';
+import { PAGE_LAYOUTS, SECTION_DEFS } from "../../ui/layout";
+import { createAutoModPageStyles } from "../../ui/components";
 
 const PAGE_KEY = 'automod';
 
@@ -864,3 +864,4 @@ const MultiPunishmentSelect = memo(function MultiPunishmentSelect({
     </div>
   );
 });
+

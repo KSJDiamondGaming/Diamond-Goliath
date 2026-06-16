@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
-import RestoreConfirmModal from '../shared/RestoreConfirmModal';
-import { getTheme } from '../ui/system';
+import RestoreConfirmModal from '../../shared/RestoreConfirmModal';
+import { getTheme } from '../../ui/system';
 
 import PageShell, {
   SectionCard,
@@ -12,7 +12,7 @@ import PageShell, {
   Notice,
   PrimaryButton,
   SecondaryButton,
-} from '../shared/PageShell';
+} from '../../shared/PageShell';
 
 const API_BASE = import.meta.env.DEV ? 'http://localhost:3001' : '';
 

@@ -6,12 +6,12 @@ import React, {
   useState,
 } from 'react';
 
-import { api } from '../services/apiClient';
+import { api } from '../../services/apiClient';
 
 import {
   joinGuildRoom,
   listenForGuildUpdate,
-} from '../services/socketClient';
+} from '../../services/socketClient';
 
 import PageShell, {
   SectionCard,
@@ -21,7 +21,7 @@ import PageShell, {
   SecondaryButton,
   StatGrid,
   SummaryStat,
-} from '../shared/PageShell';
+} from '../../shared/PageShell';
 
 function getGuildId(selectedGuild) {
   if (!selectedGuild) return '';

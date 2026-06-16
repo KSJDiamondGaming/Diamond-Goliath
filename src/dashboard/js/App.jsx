@@ -14,7 +14,7 @@ import { useAuthSession } from './hooks/useAuthSession.js';
 import Navbar from './shared/Navbar.jsx';
 import OwnerSidebar from './pages/owner/components/OwnerSidebar.jsx';
 import Topbar from './shared/Topbar.jsx';
-import Login from './pages/Login.jsx';
+import Login from './pages/core/Login.jsx';
 
 const ROUTE_PATHS = ROUTES.map((routeItem) => routeItem.path);
 
@@ -157,6 +157,7 @@ export default function App() {
         const payload = await api.getOwnerGuilds();
         console.log('[Owner Guilds Payload]', payload);
         const nextGuilds = normalizeOwnerGuilds(payload);
+        console.log('[Normalized Owner Guilds]', nextGuilds);
 
         if (cancelled) return;
 
@@ -454,6 +455,8 @@ export default function App() {
     </>
   );
 }
+
+
 
 
 

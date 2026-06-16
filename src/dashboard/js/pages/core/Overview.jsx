@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
-import { api } from '../services/apiClient';
+import { api } from '../../services/apiClient';
 
 import PageShell, {
   SectionCard,
@@ -9,7 +9,7 @@ import PageShell, {
   LoadingPanel,
   EmptyState,
   Notice,
-} from '../shared/PageShell';
+} from '../../shared/PageShell';
 
 const REFRESH_MS = 20000;
 
