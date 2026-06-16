@@ -1188,7 +1188,7 @@ export default function OwnerView({ theme, currentUser, onSelectGuild, onReturnT
                           <button
                             type="button"
                             style={actionButtonStyle}
-                            onClick={() => handleOwnerAction('manage', guild)}
+                            onClick={() => handleOpenGuild(guild)}
                             title={`Manage ${guildName}`}
                           >
                             Manage
@@ -1231,4 +1231,5 @@ export default function OwnerView({ theme, currentUser, onSelectGuild, onReturnT
     </div>
   );
 }
+
 

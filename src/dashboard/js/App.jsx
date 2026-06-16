@@ -327,6 +327,31 @@ export default function App() {
     navigate('/owner/servers');
   };
 
+  const openOwnerManagedGuild = (guild, path = '/overview') => {
+    const rawGuildId = String(guild?.guildId || guild?.id || '').split(':').pop();
+    const managedGuild = normalizeManagedGuild({
+      ...guild,
+      id: rawGuildId,
+      guildId: rawGuildId,
+    });
+
+    if (!managedGuild?.guildId) return;
+
+    setOwnerManagedGuild(managedGuild);
+    setStorage(OWNER_MANAGED_GUILD_KEY, managedGuild);
+    setStorage(GUILD_STORAGE_KEY, managedGuild.guildId);
+
+    const searchParams = new URLSearchParams();
+    searchParams.set('ownerGuildId', managedGuild.guildId);
+    searchParams.set('ownerGuildName', managedGuild.guildName || managedGuild.name);
+
+    if (managedGuild.environment || managedGuild.runtimeMode) {
+      searchParams.set('ownerGuildEnvironment', managedGuild.environment || managedGuild.runtimeMode);
+    }
+
+    navigate(path + '?' + searchParams.toString());
+  };
+
   const setClientSelectedGuild = (value) => {
     if (ownerManageActive && String(value) !== String(ownerManagedGuild?.guildId)) {
       clearOwnerManagedGuild();
@@ -472,6 +497,8 @@ export default function App() {
     ownerManageActive,
     ownerManagedGuild,
     clearOwnerManagedGuild,
+    onSelectGuild: openOwnerManagedGuild,
+    onReturnToDashboard: () => {},
 
     theme,
 
@@ -611,3 +638,4 @@ export default function App() {
     </>
   );
 }
+
