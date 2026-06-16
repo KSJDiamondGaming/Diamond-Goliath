@@ -5,6 +5,7 @@ import { appBaseStyles, shellStyles } from './ui/components.js';
 import { getTheme } from './ui/theme.js';
 import { api } from './services/apiClient.js';
 import { navItems, ROUTES } from './ui/layout.js';
+import { getStorage, removeStorage } from './storage.js';
 
 import { useNavbar } from './hooks/useNavbar.js';
 import { useBotStatus } from './hooks/useBotStatus.js';
@@ -17,6 +18,7 @@ import Topbar from './shared/Topbar.jsx';
 import Login from './pages/core/Login.jsx';
 
 const ROUTE_PATHS = ROUTES.map((routeItem) => routeItem.path);
+const OWNER_MANAGED_GUILD_KEY = 'owner_managed_guild';
 
 const GUILD_REQUIRED_ROUTES = new Set([
   'overview',
@@ -51,6 +53,23 @@ function normalizeOwnerGuilds(payload) {
       iconUrl: guild.iconUrl || guild.iconURL || guild.icon || '',
     };
   });
+}
+
+function normalizeManagedGuild(value) {
+  if (!value || typeof value !== 'object') return null;
+
+  const guildId = String(value.guildId || value.id || '').trim();
+  if (!guildId) return null;
+
+  return {
+    ...value,
+    id: guildId,
+    guildId,
+    name: value.name || value.guildName || 'Owner Managed Guild',
+    guildName: value.guildName || value.name || 'Owner Managed Guild',
+    iconUrl: value.iconUrl || value.iconURL || value.icon || value.avatarUrl || '',
+    ownerManaged: true,
+  };
 }
 
 function useIsMobile(breakpoint = 1024) {
@@ -115,6 +134,57 @@ function CenterMessage({ theme, title, text }) {
   );
 }
 
+function OwnerManagedBanner({ theme, guild, onReturn }) {
+  if (!guild) return null;
+
+  return (
+    <section
+      style={{
+        border: '1px solid rgba(250,204,21,0.35)',
+        background: 'linear-gradient(135deg, rgba(250,204,21,0.13), rgba(59,130,246,0.10))',
+        color: theme.cardText,
+        borderRadius: 18,
+        padding: '14px 16px',
+        marginBottom: 18,
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        gap: 12,
+        flexWrap: 'wrap',
+        boxShadow: theme.shadow,
+      }}
+    >
+      <div>
+        <div style={{ color: '#fde68a', fontWeight: 950, letterSpacing: '0.08em', textTransform: 'uppercase', fontSize: 12 }}>
+          👑 Owner Mode
+        </div>
+        <div style={{ marginTop: 4, fontWeight: 900 }}>
+          Managing {guild.name || guild.guildName || guild.guildId}
+        </div>
+        <div style={{ marginTop: 2, color: theme.mutedText, fontSize: 13 }}>
+          You are viewing this guild through the normal client dashboard with owner access.
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onClick={onReturn}
+        style={{
+          border: '1px solid rgba(250,204,21,0.35)',
+          background: 'rgba(15,23,42,0.55)',
+          color: '#fde68a',
+          borderRadius: 12,
+          padding: '10px 12px',
+          fontWeight: 900,
+          cursor: 'pointer',
+        }}
+      >
+        Return to Owner View
+      </button>
+    </section>
+  );
+}
+
 export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -143,6 +213,20 @@ export default function App() {
   const [ownerGuildError, setOwnerGuildError] = useState('');
   const [ownerGuildsLoading, setOwnerGuildsLoading] = useState(false);
   const [selectedOwnerGuild, setSelectedOwnerGuild] = useState('');
+  const [ownerManagedGuild, setOwnerManagedGuild] = useState(() => normalizeManagedGuild(getStorage(OWNER_MANAGED_GUILD_KEY, null)));
+
+  const ownerManageActive = Boolean(isOwner && !isOwnerRoute && ownerManagedGuild?.guildId);
+  const effectiveSelectedGuild = ownerManageActive ? ownerManagedGuild.guildId : guildState.selectedGuild;
+  const effectiveSelectedGuildData = ownerManageActive ? ownerManagedGuild : guildState.selectedGuildData;
+
+  const effectiveGuilds = useMemo(() => {
+    if (!ownerManageActive || !ownerManagedGuild) return guildState.guilds;
+
+    const exists = guildState.guilds.some((guild) => String(guild.id) === String(ownerManagedGuild.guildId));
+    if (exists) return guildState.guilds;
+
+    return [ownerManagedGuild, ...guildState.guilds];
+  }, [guildState.guilds, ownerManageActive, ownerManagedGuild]);
 
   useEffect(() => {
     if (!isOwnerRoute || !isOwner || !authState.isAuthenticated) return undefined;
@@ -155,9 +239,7 @@ export default function App() {
         setOwnerGuildError('');
 
         const payload = await api.getOwnerGuilds();
-        console.log('[Owner Guilds Payload]', payload);
         const nextGuilds = normalizeOwnerGuilds(payload);
-        console.log('[Normalized Owner Guilds]', nextGuilds);
 
         if (cancelled) return;
 
@@ -186,9 +268,41 @@ export default function App() {
     };
   }, [authState.isAuthenticated, isOwner, isOwnerRoute]);
 
-  const navbarGuilds = isOwnerRoute && isOwner ? ownerGuilds : guildState.guilds;
-  const navbarSelectedGuild = isOwnerRoute && isOwner ? selectedOwnerGuild : guildState.selectedGuild;
-  const setNavbarSelectedGuild = isOwnerRoute && isOwner ? setSelectedOwnerGuild : guildState.setSelectedGuild;
+  useEffect(() => {
+    function handleOwnerManagedGuildChange() {
+      setOwnerManagedGuild(normalizeManagedGuild(getStorage(OWNER_MANAGED_GUILD_KEY, null)));
+    }
+
+    window.addEventListener('storage', handleOwnerManagedGuildChange);
+    window.addEventListener('focus', handleOwnerManagedGuildChange);
+
+    return () => {
+      window.removeEventListener('storage', handleOwnerManagedGuildChange);
+      window.removeEventListener('focus', handleOwnerManagedGuildChange);
+    };
+  }, []);
+
+  const clearOwnerManagedGuild = () => {
+    removeStorage(OWNER_MANAGED_GUILD_KEY);
+    setOwnerManagedGuild(null);
+  };
+
+  const returnToOwnerView = () => {
+    clearOwnerManagedGuild();
+    navigate('/owner/servers');
+  };
+
+  const setClientSelectedGuild = (value) => {
+    if (ownerManageActive && String(value) !== String(ownerManagedGuild?.guildId)) {
+      clearOwnerManagedGuild();
+    }
+
+    guildState.setSelectedGuild(value);
+  };
+
+  const navbarGuilds = isOwnerRoute && isOwner ? ownerGuilds : effectiveGuilds;
+  const navbarSelectedGuild = isOwnerRoute && isOwner ? selectedOwnerGuild : effectiveSelectedGuild;
+  const setNavbarSelectedGuild = isOwnerRoute && isOwner ? setSelectedOwnerGuild : setClientSelectedGuild;
   const navbarGuildError = isOwnerRoute && isOwner ? ownerGuildError : guildState.guildError;
   const navbarGuildsLoading = isOwnerRoute && isOwner ? ownerGuildsLoading : guildState.guildsLoading;
 
@@ -304,20 +418,25 @@ export default function App() {
   ]);
 
   const handleLogout = async () => {
+    clearOwnerManagedGuild();
     await authState.handleLogout();
     navigate('/login', { replace: true });
   };
 
   const pageProps = {
-    selectedGuild: guildState.selectedGuild,
-    selectedGuildName: guildState.selectedGuildName,
-    selectedGuildId: guildState.selectedGuildId,
-    selectedGuildIcon: guildState.selectedGuildIcon,
-    selectedGuildData: guildState.selectedGuildData,
+    selectedGuild: effectiveSelectedGuild,
+    selectedGuildName: effectiveSelectedGuildData?.name || effectiveSelectedGuildData?.guildName || '',
+    selectedGuildId: effectiveSelectedGuildData?.guildId || effectiveSelectedGuildData?.id || effectiveSelectedGuild || '',
+    selectedGuildIcon: effectiveSelectedGuildData?.iconUrl || effectiveSelectedGuildData?.iconURL || effectiveSelectedGuildData?.avatarUrl || '',
+    selectedGuildData: effectiveSelectedGuildData,
 
-    guilds: guildState.guilds,
+    guilds: effectiveGuilds,
     guildsLoading: guildState.guildsLoading,
     guildError: guildState.guildError,
+
+    ownerManageActive,
+    ownerManagedGuild,
+    clearOwnerManagedGuild,
 
     theme,
 
@@ -373,22 +492,22 @@ export default function App() {
               setSelectedGuild={setNavbarSelectedGuild}
             />
           ) : (
-          <Navbar
-            theme={theme}
-            selectedGuild={navbarSelectedGuild}
-            setSelectedGuild={setNavbarSelectedGuild}
-            guilds={navbarGuilds}
-            guildError={navbarGuildError}
-            isAuthenticated={authState.isAuthenticated}
-            authLoading={authState.authLoading}
-            guildsLoading={navbarGuildsLoading}
-            navItems={navItems}
-            botName={botState.botName}
-            botAvatar={botState.botAvatar}
+            <Navbar
+              theme={theme}
+              selectedGuild={navbarSelectedGuild}
+              setSelectedGuild={setNavbarSelectedGuild}
+              guilds={navbarGuilds}
+              guildError={navbarGuildError}
+              isAuthenticated={authState.isAuthenticated}
+              authLoading={authState.authLoading}
+              guildsLoading={navbarGuildsLoading}
+              navItems={navItems}
+              botName={botState.botName}
+              botAvatar={botState.botAvatar}
               botData={botState.botData}
-            expanded={navbarExpanded}
-            onToggleCollapsed={toggleNavbar}
-          />
+              expanded={navbarExpanded}
+              onToggleCollapsed={toggleNavbar}
+            />
           )}
 
           <div style={responsiveStyles.mainColumn}>
@@ -407,6 +526,10 @@ export default function App() {
             />
 
             <main style={responsiveStyles.main}>
+              {ownerManageActive ? (
+                <OwnerManagedBanner theme={theme} guild={ownerManagedGuild} onReturn={returnToOwnerView} />
+              ) : null}
+
               {authState.authLoading ? (
                 <CenterMessage
                   theme={theme}
@@ -425,15 +548,13 @@ export default function App() {
                   title="Owner access required"
                   text="This dashboard view is restricted to KSJ owner accounts."
                 />
-              ) : guildState.guildsLoading && guildState.guilds.length === 0 ? (
+              ) : guildState.guildsLoading && guildState.guilds.length === 0 && !ownerManageActive ? (
                 <CenterMessage
                   theme={theme}
                   title="Loading servers..."
                   text="Fetching the Discord servers shared with Goliath."
                 />
-              ) : routeNeedsGuild &&
-                !guildState.guildsLoading &&
-                !guildState.selectedGuild ? (
+              ) : routeNeedsGuild && !guildState.guildsLoading && !effectiveSelectedGuild ? (
                 <CenterMessage
                   theme={theme}
                   title="No server selected"
@@ -455,15 +576,3 @@ export default function App() {
     </>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
