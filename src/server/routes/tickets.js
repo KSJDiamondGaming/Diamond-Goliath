@@ -16,7 +16,80 @@ const {
   removeTicket,
 } = require("../../modules/tickets/ticketManager");
 
+const {
+  getPanels,
+  getTicketSection,
+} = require("../../modules/tickets/ticketStore");
+
 const router = express.Router();
+
+function countByStatus(tickets = [], status) {
+  return tickets.filter((ticket) => ticket.status === status).length;
+}
+
+function isToday(dateValue) {
+  if (!dateValue) return false;
+
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) return false;
+
+  const now = new Date();
+
+  return (
+    date.getUTCFullYear() === now.getUTCFullYear() &&
+    date.getUTCMonth() === now.getUTCMonth() &&
+    date.getUTCDate() === now.getUTCDate()
+  );
+}
+
+/*
+==================================================
+GET TICKET OVERVIEW
+==================================================
+*/
+
+router.get("/:guildId/overview", async (req, res) => {
+  try {
+    const { guildId } = req.params;
+    const tickets = getGuildTickets(guildId);
+    const panels = getPanels(guildId).panels || [];
+    const section = getTicketSection(guildId);
+
+    const openCount = countByStatus(tickets, "open");
+    const claimedCount = countByStatus(tickets, "claimed");
+    const closedCount = countByStatus(tickets, "closed");
+    const archivedCount = countByStatus(tickets, "archived");
+    const closedTodayCount = tickets.filter((ticket) => isToday(ticket.closedAt)).length;
+    const transcriptCount = tickets.filter((ticket) => ticket.transcript).length;
+
+    return res.json({
+      success: true,
+      guildId,
+      overview: {
+        enabled: section.settings?.enabled !== false,
+        ticketCount: tickets.length,
+        openCount,
+        claimedCount,
+        closedCount,
+        archivedCount,
+        activeCount: openCount + claimedCount,
+        closedTodayCount,
+        transcriptCount,
+        panelCount: panels.length,
+        deployedPanelCount: panels.filter((panel) => panel.deployed || (panel.channelId && panel.messageId)).length,
+        analytics: section.analytics || {},
+        settings: section.settings || {},
+      },
+    });
+  } catch (error) {
+    console.error("[TicketsRoute] OVERVIEW:", error);
+
+    return res.status(500).json({
+      success: false,
+      error: "Failed to fetch ticket overview.",
+    });
+  }
+});
 
 /*
 ==================================================
