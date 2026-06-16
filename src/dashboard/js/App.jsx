@@ -157,6 +157,7 @@ export default function App() {
         const payload = await api.getOwnerGuilds();
         console.log('[Owner Guilds Payload]', payload);
         const nextGuilds = normalizeOwnerGuilds(payload);
+        console.log('[Normalized Owner Guilds]', nextGuilds);
 
         if (cancelled) return;
 
@@ -454,6 +455,7 @@ export default function App() {
     </>
   );
 }
+
 
 
 
