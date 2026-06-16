@@ -349,7 +349,15 @@ export default function App() {
       searchParams.set('ownerGuildEnvironment', managedGuild.environment || managedGuild.runtimeMode);
     }
 
-    navigate(path + '?' + searchParams.toString());
+    const nextPath = path + '?' + searchParams.toString();
+
+    console.debug('[App] openOwnerManagedGuild', {
+      rawGuild: guild,
+      managedGuild,
+      nextPath,
+  });
+
+    navigate(nextPath);
   };
 
   const setClientSelectedGuild = (value) => {
