@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 
 import { appBaseStyles, shellStyles } from './ui/components.js';
 import { getTheme } from './ui/theme.js';
+import { api } from './services/apiClient.js';
 import { navItems, ROUTES } from './ui/layout.js';
 
 import { useNavbar } from './hooks/useNavbar.js';
@@ -11,6 +12,7 @@ import { useGuilds } from './hooks/useGuilds.js';
 import { useAuthSession } from './hooks/useAuthSession.js';
 
 import Navbar from './shared/Navbar.jsx';
+import OwnerSidebar from './pages/owner/components/OwnerSidebar.jsx';
 import Topbar from './shared/Topbar.jsx';
 import Login from './pages/Login.jsx';
 
@@ -24,10 +26,32 @@ const GUILD_REQUIRED_ROUTES = new Set([
   'generalSettings',
   'messages',
   'forms',
+  'modules',
   'logs',
   'admin',
   'moderation',
 ]);
+
+function normalizeOwnerGuilds(payload) {
+  const guilds = Array.isArray(payload?.guilds) ? payload.guilds : [];
+
+  return guilds.map((guild, index) => {
+    const environment = String(guild.environment || guild.runtimeMode || '').toUpperCase();
+    const guildId = String(guild.guildId || guild.id || index);
+    const guildName = guild.name || guild.guildName || 'Unknown Guild';
+    const environmentLabel = environment === 'PRODUCTION' ? 'PROD' : environment || 'ENV';
+
+    return {
+      ...guild,
+      id: environment + ':' + guildId,
+      guildId,
+      rawName: guildName,
+      name: environmentLabel + ' - ' + guildName,
+      environment,
+      iconUrl: guild.iconUrl || guild.iconURL || guild.icon || '',
+    };
+  });
+}
 
 function useIsMobile(breakpoint = 1024) {
   const [isMobile, setIsMobile] = useState(() => {
@@ -113,6 +137,59 @@ export default function App() {
   });
 
   const isOwner = authState.currentUser?.isOwner === true;
+  const isOwnerRoute = location.pathname.toLowerCase().startsWith('/owner');
+
+  const [ownerGuilds, setOwnerGuilds] = useState([]);
+  const [ownerGuildError, setOwnerGuildError] = useState('');
+  const [ownerGuildsLoading, setOwnerGuildsLoading] = useState(false);
+  const [selectedOwnerGuild, setSelectedOwnerGuild] = useState('');
+
+  useEffect(() => {
+    if (!isOwnerRoute || !isOwner || !authState.isAuthenticated) return undefined;
+
+    let cancelled = false;
+
+    async function loadOwnerGuilds() {
+      try {
+        setOwnerGuildsLoading(true);
+        setOwnerGuildError('');
+
+        const payload = await api.getOwnerGuilds();
+        console.log('[Owner Guilds Payload]', payload);
+        const nextGuilds = normalizeOwnerGuilds(payload);
+
+        if (cancelled) return;
+
+        setOwnerGuilds(nextGuilds);
+        setSelectedOwnerGuild((currentValue) => {
+          const stillExists = nextGuilds.some((guild) => guild.id === currentValue);
+          return stillExists ? currentValue : nextGuilds[0]?.id || '';
+        });
+      } catch (error) {
+        if (!cancelled) {
+          setOwnerGuilds([]);
+          setSelectedOwnerGuild('');
+          setOwnerGuildError(error.message || 'Could not load owner guilds.');
+        }
+      } finally {
+        if (!cancelled) {
+          setOwnerGuildsLoading(false);
+        }
+      }
+    }
+
+    loadOwnerGuilds();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authState.isAuthenticated, isOwner, isOwnerRoute]);
+
+  const navbarGuilds = isOwnerRoute && isOwner ? ownerGuilds : guildState.guilds;
+  const navbarSelectedGuild = isOwnerRoute && isOwner ? selectedOwnerGuild : guildState.selectedGuild;
+  const setNavbarSelectedGuild = isOwnerRoute && isOwner ? setSelectedOwnerGuild : guildState.setSelectedGuild;
+  const navbarGuildError = isOwnerRoute && isOwner ? ownerGuildError : guildState.guildError;
+  const navbarGuildsLoading = isOwnerRoute && isOwner ? ownerGuildsLoading : guildState.guildsLoading;
 
   const styles = useMemo(
     () => shellStyles(theme, { navbarExpanded }),
@@ -285,22 +362,33 @@ export default function App() {
 
       <div style={responsiveStyles.app}>
         <div style={responsiveStyles.grid}>
+          {isOwnerRoute && isOwner ? (
+            <OwnerSidebar
+              theme={theme}
+              botName={botState.botName}
+              botAvatar={botState.botAvatar}
+              guilds={navbarGuilds}
+              selectedGuild={navbarSelectedGuild}
+              setSelectedGuild={setNavbarSelectedGuild}
+            />
+          ) : (
           <Navbar
             theme={theme}
-            selectedGuild={guildState.selectedGuild}
-            setSelectedGuild={guildState.setSelectedGuild}
-            guilds={guildState.guilds}
-            guildError={guildState.guildError}
+            selectedGuild={navbarSelectedGuild}
+            setSelectedGuild={setNavbarSelectedGuild}
+            guilds={navbarGuilds}
+            guildError={navbarGuildError}
             isAuthenticated={authState.isAuthenticated}
             authLoading={authState.authLoading}
-            guildsLoading={guildState.guildsLoading}
+            guildsLoading={navbarGuildsLoading}
             navItems={navItems}
             botName={botState.botName}
             botAvatar={botState.botAvatar}
-            botData={botState.botData}
+              botData={botState.botData}
             expanded={navbarExpanded}
             onToggleCollapsed={toggleNavbar}
           />
+          )}
 
           <div style={responsiveStyles.mainColumn}>
             <Topbar
@@ -366,3 +454,13 @@ export default function App() {
     </>
   );
 }
+
+
+
+
+
+
+
+
+
+
