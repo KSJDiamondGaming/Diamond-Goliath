@@ -23,6 +23,10 @@ const ENVIRONMENT_PORTS = [
   },
 ];
 
+function shouldLogEnvironmentUnavailable() {
+  return process.env.NODE_ENV === 'production';
+}
+
 function getOwnerIds() {
   return String(process.env.OWNER_IDS || '')
     .split(',')
@@ -157,10 +161,12 @@ async function fetchEnvironmentGuilds(port, environment) {
       sourcePort: port,
     }));
   } catch (error) {
-    console.warn(
-      `[OWNER GUILDS ALL] ${environment} unavailable on port ${port}:`,
+    if (shouldLogEnvironmentUnavailable()) {
+      console.warn(
+        `[OWNER GUILDS ALL] ${environment} unavailable on port ${port}:`,
         error.message,
-    );
+      );
+    }
 
     return [];
   }
@@ -169,7 +175,6 @@ async function fetchEnvironmentGuilds(port, environment) {
 /* ==================================================
    OWNER INFO
 ================================================== */
-
 router.get('/me', requireOwner, (req, res) => {
   return res.json({
     success: true,
@@ -182,7 +187,6 @@ router.get('/me', requireOwner, (req, res) => {
 /* ==================================================
    OWNER GUILDS
 ================================================== */
-
 router.get('/guilds', requireOwnerOrInternal, (req, res) => {
   const client = getDiscordClient(req);
   const mode = getRuntimeMode();
@@ -294,7 +298,6 @@ router.get('/guilds/all', requireOwnerOrInternal, async (req, res) => {
 /* ==================================================
    RUNTIME MONITOR
 ================================================== */
-
 router.get('/runtime', requireOwner, async (req, res) => {
   try {
     const totalMemory = os.totalmem();
