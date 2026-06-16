@@ -747,15 +747,20 @@ export default function OwnerView({ theme, currentUser, onSelectGuild, onReturnT
       'linear-gradient(135deg, rgba(59,130,246,0.18), rgba(15,23,42,0.06) 45%, rgba(168,85,247,0.12))',
   };
 
-  function handleOpenGuild(guild) {
-    if (typeof onSelectGuild === 'function') {
-      onSelectGuild(guild);
-    }
+  function handleOpenGuild(guild, path = '/overview') {
+  console.debug('[OwnerOverview] handleOpenGuild', {
+    guild,
+    path,
+    guildId: getGuildId(guild),
+  });
 
-    if (typeof onReturnToDashboard === 'function') {
-      onReturnToDashboard();
-    }
+  if (typeof onSelectGuild === 'function') {
+    onSelectGuild(guild, path);
+    return;
   }
+
+  console.warn('[OwnerOverview] Missing onSelectGuild handler');
+}
 
   function handleOwnerAction(action, guild) {
     setActiveAction({ action, guild });
