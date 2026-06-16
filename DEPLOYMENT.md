@@ -32,3 +32,5 @@ git push origin beta
 git checkout production
 git merge beta
 git push origin production
+
+npm run dev

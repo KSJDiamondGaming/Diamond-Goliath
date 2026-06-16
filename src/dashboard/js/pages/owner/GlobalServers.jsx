@@ -8,7 +8,7 @@ const GUILD_STORAGE_KEY = 'selected_guild';
 const OWNER_MANAGED_GUILD_KEY = 'owner_managed_guild';
 
 function getGuildId(guild) {
-  return String(guild?.guildId || guild?.id || '');
+  return String(guild?.guildId || guild?.id || '').split(':').pop();
 }
 
 function getGuildEnvironment(guild) {
@@ -16,7 +16,7 @@ function getGuildEnvironment(guild) {
 }
 
 function getGuildName(guild) {
-  return guild?.name || guild?.guildName || 'Unknown Guild';
+  return guild?.rawName || guild?.guildName || guild?.name || 'Unknown Guild';
 }
 
 function getGuildIcon(guild) {
@@ -25,14 +25,17 @@ function getGuildIcon(guild) {
 
 function createManagedGuildPayload(guild) {
   const guildId = getGuildId(guild);
+  const guildName = getGuildName(guild);
+  const environment = getGuildEnvironment(guild);
 
   return {
     id: guildId,
     guildId,
-    name: getGuildName(guild),
-    guildName: getGuildName(guild),
-    environment: getGuildEnvironment(guild),
-    runtimeMode: getGuildEnvironment(guild),
+    name: guildName,
+    guildName,
+    rawName: guildName,
+    environment,
+    runtimeMode: environment,
     iconUrl: getGuildIcon(guild),
     memberCount: guild?.memberCount ?? null,
     status: guild?.status || 'Connected',
@@ -41,8 +44,8 @@ function createManagedGuildPayload(guild) {
 }
 
 function createOwnerManagedPath(guild, path = '/overview') {
-  const searchParams = new URLSearchParams();
   const payload = createManagedGuildPayload(guild);
+  const searchParams = new URLSearchParams();
 
   searchParams.set('ownerGuildId', payload.guildId);
   searchParams.set('ownerGuildName', payload.guildName);
@@ -51,33 +54,29 @@ function createOwnerManagedPath(guild, path = '/overview') {
     searchParams.set('ownerGuildEnvironment', payload.environment);
   }
 
-  return path + '?' + searchParams.toString();
+  return `${path}?${searchParams.toString()}`;
 }
 
-export default function GlobalServers({ theme }) {
+export default function GlobalServers({ theme, onSelectGuild }) {
   const navigate = useNavigate();
   const { guilds, loading, error } = useOwnerGuilds();
 
   function openGuildDashboard(guild, path = '/overview') {
-  const guildId = getGuildId(guild);
+    const guildId = getGuildId(guild);
+    if (!guildId) return;
 
-  console.debug('[GlobalServers] openGuildDashboard', {
-    guild,
-    path,
-    guildId,
-  });
+    const payload = createManagedGuildPayload(guild);
 
-  if (!guildId) return;
+    setStorage(GUILD_STORAGE_KEY, guildId);
+    setStorage(OWNER_MANAGED_GUILD_KEY, payload);
 
-  if (typeof onSelectGuild === 'function') {
-    onSelectGuild(guild, path);
-    return;
+    if (typeof onSelectGuild === 'function') {
+      onSelectGuild(payload, path);
+      return;
+    }
+
+    window.location.assign(createOwnerManagedPath(payload, path));
   }
-
-  setStorage(GUILD_STORAGE_KEY, guildId);
-  setStorage(OWNER_MANAGED_GUILD_KEY, createManagedGuildPayload(guild));
-  window.location.assign(createOwnerManagedPath(guild, path));
-}
 
   function openOwnerRuntime(guild) {
     const guildId = getGuildId(guild);
@@ -155,27 +154,55 @@ export default function GlobalServers({ theme }) {
                   guild.environment === 'PRODUCTION'
                     ? 'PROD'
                     : guild.environment || guild.runtimeMode || 'ENV';
+
                 const guildId = getGuildId(guild);
+                const rowKey = `${getGuildEnvironment(guild) || 'ENV'}-${guildId}`;
 
                 return (
-                  <tr key={(guild.environment || guild.runtimeMode || 'env') + '-' + guildId}>
+                  <tr key={rowKey}>
                     <td style={cellStyle(theme)}>{environment}</td>
+
                     <td style={cellStyle(theme)}>
                       <strong>{getGuildName(guild)}</strong>
                     </td>
+
                     <td style={cellStyle(theme)}>{guildId}</td>
-                    <td style={cellStyle(theme)}>{guild.memberCount ?? 'Unknown'}</td>
+
+                    <td style={cellStyle(theme)}>
+                      {guild.memberCount ?? 'Unknown'}
+                    </td>
+
                     <td style={cellStyle(theme)}>
                       <span style={{ color: '#86efac', fontWeight: 900 }}>
                         {guild.status || 'Connected'}
                       </span>
                     </td>
+
                     <td style={cellStyle(theme)}>
                       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                        <ActionButton label="Open Guild" theme={theme} onClick={() => openGuildDashboard(guild, '/overview')} />
-                        <ActionButton label="Manage Guild" theme={theme} onClick={() => openGuildDashboard(guild, '/overview')} />
-                        <ActionButton label="Runtime" theme={theme} onClick={() => openOwnerRuntime(guild)} />
-                        <ActionButton label="Security" theme={theme} onClick={() => openGuildDashboard(guild, '/security')} />
+                        <ActionButton
+                          label="Open Guild"
+                          theme={theme}
+                          onClick={() => openGuildDashboard(guild, '/overview')}
+                        />
+
+                        <ActionButton
+                          label="Manage Guild"
+                          theme={theme}
+                          onClick={() => openGuildDashboard(guild, '/overview')}
+                        />
+
+                        <ActionButton
+                          label="Runtime"
+                          theme={theme}
+                          onClick={() => openOwnerRuntime(guild)}
+                        />
+
+                        <ActionButton
+                          label="Security"
+                          theme={theme}
+                          onClick={() => openGuildDashboard(guild, '/security')}
+                        />
                       </div>
                     </td>
                   </tr>

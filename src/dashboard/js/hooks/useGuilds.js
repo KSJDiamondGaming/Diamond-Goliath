@@ -10,15 +10,15 @@ function normalizeGuildId(value) {
   if (!value) return '';
 
   if (typeof value === 'string') {
-    return value;
-  }
-
-  if (typeof value === 'object' && value.id) {
-    return String(value.id);
+    return value.split(':').pop();
   }
 
   if (typeof value === 'object' && value.guildId) {
-    return String(value.guildId);
+    return String(value.guildId).split(':').pop();
+  }
+
+  if (typeof value === 'object' && value.id) {
+    return String(value.id).split(':').pop();
   }
 
   return '';
@@ -37,16 +37,39 @@ function getOwnerManagedGuildId() {
 }
 
 export function useGuilds() {
-  const [selectedGuild, setSelectedGuildState] = useState(() =>
-    normalizeGuildId(getStorage(GUILD_STORAGE_KEY, ''))
-  );
+  const [selectedGuild, setSelectedGuildState] = useState(() => {
+    const ownerManagedGuildId = getOwnerManagedGuildId();
+
+    if (ownerManagedGuildId) {
+      setStorage(GUILD_STORAGE_KEY, ownerManagedGuildId);
+      return ownerManagedGuildId;
+    }
+
+    return normalizeGuildId(getStorage(GUILD_STORAGE_KEY, ''));
+  });
 
   const [guilds, setGuilds] = useState([]);
   const [guildError, setGuildError] = useState('');
   const [guildsLoading, setGuildsLoading] = useState(false);
 
   const setSelectedGuild = useCallback((value) => {
-    setSelectedGuildState(normalizeGuildId(value));
+    const ownerManagedGuildId = getOwnerManagedGuildId();
+
+    if (ownerManagedGuildId) {
+      setSelectedGuildState(ownerManagedGuildId);
+      setStorage(GUILD_STORAGE_KEY, ownerManagedGuildId);
+      return;
+    }
+
+    const guildId = normalizeGuildId(value);
+
+    setSelectedGuildState(guildId);
+
+    if (guildId) {
+      setStorage(GUILD_STORAGE_KEY, guildId);
+    } else {
+      removeStorage(GUILD_STORAGE_KEY);
+    }
   }, []);
 
   const clearGuilds = useCallback(() => {
@@ -79,7 +102,7 @@ export function useGuilds() {
         const preferredGuildId = currentGuildId || storedGuildId;
 
         const stillExists = nextGuilds.some(
-          (guild) => String(guild.id) === String(preferredGuildId)
+          (guild) => normalizeGuildId(guild) === preferredGuildId,
         );
 
         if (stillExists) {
@@ -87,7 +110,7 @@ export function useGuilds() {
           return preferredGuildId;
         }
 
-        const fallbackGuildId = nextGuilds[0]?.id ? String(nextGuilds[0].id) : '';
+        const fallbackGuildId = normalizeGuildId(nextGuilds[0]);
 
         if (fallbackGuildId) {
           setStorage(GUILD_STORAGE_KEY, fallbackGuildId);
@@ -119,7 +142,17 @@ export function useGuilds() {
 
   useEffect(() => {
     const ownerManagedGuildId = getOwnerManagedGuildId();
-    const safeGuildId = ownerManagedGuildId || normalizeGuildId(selectedGuild);
+
+    if (ownerManagedGuildId) {
+      if (selectedGuild !== ownerManagedGuildId) {
+        setSelectedGuildState(ownerManagedGuildId);
+      }
+
+      setStorage(GUILD_STORAGE_KEY, ownerManagedGuildId);
+      return;
+    }
+
+    const safeGuildId = normalizeGuildId(selectedGuild);
 
     if (safeGuildId) {
       setStorage(GUILD_STORAGE_KEY, safeGuildId);
@@ -128,12 +161,14 @@ export function useGuilds() {
     }
   }, [selectedGuild]);
 
-  const selectedGuildData = useMemo(
-    () =>
-      guilds.find((guild) => String(guild.id) === String(selectedGuild)) ||
-      null,
-    [guilds, selectedGuild]
-  );
+  const selectedGuildData = useMemo(() => {
+    const selectedGuildId = normalizeGuildId(selectedGuild);
+
+    return (
+      guilds.find((guild) => normalizeGuildId(guild) === selectedGuildId) ||
+      null
+    );
+  }, [guilds, selectedGuild]);
 
   return {
     guilds,
