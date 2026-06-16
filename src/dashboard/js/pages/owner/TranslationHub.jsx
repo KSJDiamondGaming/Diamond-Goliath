@@ -8,6 +8,25 @@ const HUB_AREAS = [
   { title: 'Analytics', description: 'View translation volume and usage metrics.', status: 'Pending API' },
 ];
 
+const THREAD_TESTS = [
+  'Enable translation module',
+  'Configure automatic channel translation',
+  'Create language threads',
+  'Store threadMappings in modules.translation',
+  'Track thread analytics',
+  'Write translation logs',
+];
+
+const STORAGE_RULES = [
+  'modules.translation.settings',
+  'modules.translation.channels',
+  'modules.translation.threadChannels',
+  'modules.translation.threadMappings',
+  'modules.translation.userPreferences',
+  'modules.translation.analytics',
+  'modules.translation.logs',
+];
+
 export default function TranslationHub({ theme }) {
   const { guilds, loading, error } = useOwnerGuilds();
   const card = { border: '1px solid ' + theme.cardBorder, background: theme.cardBg, color: theme.cardText, borderRadius: 20, padding: 18, boxShadow: theme.shadow };
@@ -34,6 +53,23 @@ export default function TranslationHub({ theme }) {
         {HUB_AREAS.map((area) => <div key={area.title} style={card}><div style={{display:'flex',justifyContent:'space-between'}}><strong>{area.title}</strong><span>{area.status}</span></div><p style={{color:theme.mutedText}}>{area.description}</p></div>)}
       </section>
 
+      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(320px,1fr))', gap: 14 }}>
+        <section style={card}>
+          <h3 style={{ marginTop: 0 }}>Thread System Test Plan</h3>
+          <div style={{ display: 'grid', gap: 8 }}>
+            {THREAD_TESTS.map((item) => <CheckRow key={item} label={item} theme={theme} />)}
+          </div>
+        </section>
+
+        <section style={card}>
+          <h3 style={{ marginTop: 0 }}>Locked Storage Paths</h3>
+          <p style={{ color: theme.mutedText }}>Everything stays inside guild JSON under modules.translation. No standalone translation JSON files.</p>
+          <div style={{ display: 'grid', gap: 8 }}>
+            {STORAGE_RULES.map((item) => <code key={item} style={{ color:'#67e8f9' }}>{item}</code>)}
+          </div>
+        </section>
+      </section>
+
       <section style={card}>
         <h3 style={{ marginTop: 0 }}>Translation Providers</h3>
         <div style={{ display: 'grid', gap: 10 }}>
@@ -48,3 +84,4 @@ export default function TranslationHub({ theme }) {
 
 function StatCard({ title, value, theme }) { return <div style={{ border:'1px solid '+theme.cardBorder, background:theme.cardBg,borderRadius:18,padding:18 }}><div style={{color:theme.mutedText}}>{title}</div><div style={{fontSize:24,fontWeight:900,marginTop:8}}>{value}</div></div>; }
 function ProviderRow({ name, status, theme }) { return <div style={{ border:'1px solid '+theme.cardBorder,borderRadius:14,padding:14,display:'flex',justifyContent:'space-between'}}><strong>{name}</strong><span style={{color:'#22c55e',fontWeight:900}}>{status}</span></div>; }
+function CheckRow({ label, theme }) { return <div style={{border:'1px solid '+theme.cardBorder,borderRadius:12,padding:10,display:'flex',gap:10}}><span style={{color:'#22c55e',fontWeight:900}}>✓</span><span>{label}</span></div>; }
