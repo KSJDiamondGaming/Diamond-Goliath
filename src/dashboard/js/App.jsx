@@ -14,7 +14,7 @@ import { useAuthSession } from './hooks/useAuthSession.js';
 import Navbar from './shared/Navbar.jsx';
 import OwnerSidebar from './pages/owner/components/OwnerSidebar.jsx';
 import Topbar from './shared/Topbar.jsx';
-import Login from './pages/Login.jsx';
+import Login from './pages/core/Login.jsx';
 
 const ROUTE_PATHS = ROUTES.map((routeItem) => routeItem.path);
 
@@ -455,6 +455,7 @@ export default function App() {
     </>
   );
 }
+
 
 
 
