@@ -3,7 +3,14 @@ import { useLocation, useNavigate } from 'react-router-dom';
 
 import { OWNER_NAV_ITEMS } from '../../../shared/ownerNav.js';
 
-function OwnerSidebar({ theme, botName = 'Goliath', botAvatar }) {
+function OwnerSidebar({
+  theme,
+  botName = 'Goliath',
+  botAvatar,
+  guilds = [],
+  selectedGuild = '',
+  setSelectedGuild = () => {},
+}) {
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -16,7 +23,7 @@ function OwnerSidebar({ theme, botName = 'Goliath', botAvatar }) {
         background: 'rgba(3,7,18,0.92)',
         padding: 14,
         display: 'grid',
-        gridTemplateRows: 'auto auto 1fr auto',
+        gridTemplateRows: 'auto auto auto 1fr auto',
         gap: 14,
       }}
     >
@@ -26,6 +33,30 @@ function OwnerSidebar({ theme, botName = 'Goliath', botAvatar }) {
         ) : null}
         <strong style={{ color: theme.cardText }}>{botName}</strong>
       </div>
+
+      <select
+        value={selectedGuild}
+        onChange={(event) => setSelectedGuild(event.target.value)}
+        style={{
+          width: '100%',
+          borderRadius: 12,
+          padding: '10px',
+          background: 'rgba(15,23,42,0.9)',
+          color: theme.cardText,
+          border: '1px solid rgba(59,130,246,0.25)',
+          fontWeight: 800,
+        }}
+      >
+        {guilds.length ? (
+          guilds.map((guild) => (
+            <option key={guild.id} value={guild.id}>
+              {guild.name}
+            </option>
+          ))
+        ) : (
+          <option value="">No guilds found</option>
+        )}
+      </select>
 
       <div
         style={{
@@ -100,5 +131,3 @@ function OwnerSidebar({ theme, botName = 'Goliath', botAvatar }) {
 }
 
 export default memo(OwnerSidebar);
-
-
