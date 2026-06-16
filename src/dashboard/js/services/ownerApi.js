@@ -20,6 +20,10 @@ export const ownerApi = {
   getFormsOverview(guildId) {
     return api.getFormsOverview(guildId);
   },
+
+  getTicketsOverview(guildId) {
+    return api.request(`/api/tickets/${guildId}/overview`);
+  },
 };
 
 export default ownerApi;
