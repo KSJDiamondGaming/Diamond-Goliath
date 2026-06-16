@@ -1,32 +1,33 @@
 import React from 'react';
 
 import useOwnerGuilds from '../../hooks/useOwnerGuilds.js';
+import ownerApi from '../../services/ownerApi.js';
 
 const TICKET_AREAS = [
   {
     title: 'Ticket Panels',
     description: 'Manage deployed panels, redeploy status, appearance, role access and per-panel limits.',
-    status: 'UI Foundation',
+    status: 'API Ready',
   },
   {
     title: 'Tickets',
     description: 'View open, claimed, archived, reopened and closed tickets across connected guilds.',
-    status: 'Pending API',
+    status: 'API Ready',
   },
   {
     title: 'Transcripts',
     description: 'Browse generated transcripts and prepare for transcript channel/user copy delivery.',
-    status: 'Pending API',
+    status: 'Partial Data',
   },
   {
     title: 'Analytics',
     description: 'Track ticket volume, closure rate, claim activity, response time and panel usage.',
-    status: 'Pending API',
+    status: 'Partial Data',
   },
   {
     title: 'Settings',
     description: 'Configure cooldowns, one-active rules, logs, transcripts and form-to-ticket workflows.',
-    status: 'UI Foundation',
+    status: 'API Ready',
   },
 ];
 
@@ -51,8 +52,59 @@ const PANEL_CONTROLS = [
   'Logs',
 ];
 
+function getGuildId(guild = {}) {
+  return String(guild.guildId || guild.id || '');
+}
+
+function getGuildName(guild = {}) {
+  return guild.name || guild.guildName || 'Unknown Guild';
+}
+
 export default function TicketsHub({ theme }) {
-  const { guilds, loading, error } = useOwnerGuilds();
+  const { guilds, selectedGuild, setSelectedGuild, loading, error } = useOwnerGuilds();
+  const [overview, setOverview] = React.useState(null);
+  const [ticketsLoading, setTicketsLoading] = React.useState(false);
+  const [ticketsError, setTicketsError] = React.useState('');
+
+  const selectedGuildRecord = guilds.find((guild) => getGuildId(guild) === selectedGuild);
+  const selectedGuildName = selectedGuildRecord ? getGuildName(selectedGuildRecord) : 'No guild selected';
+
+  React.useEffect(() => {
+    if (!selectedGuild) {
+      setOverview(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadTicketsOverview() {
+      try {
+        setTicketsLoading(true);
+        setTicketsError('');
+
+        const payload = await ownerApi.getTicketsOverview(selectedGuild);
+
+        if (!cancelled) {
+          setOverview(payload?.overview || null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setOverview(null);
+          setTicketsError(err.message || 'Failed to load tickets overview.');
+        }
+      } finally {
+        if (!cancelled) {
+          setTicketsLoading(false);
+        }
+      }
+    }
+
+    loadTicketsOverview();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedGuild]);
 
   const card = {
     border: '1px solid ' + theme.cardBorder,
@@ -75,7 +127,7 @@ export default function TicketsHub({ theme }) {
         </h1>
 
         <p style={{ marginTop: 8, color: theme.mutedText }}>
-          Universal ticket dashboard foundation for panels, tickets, transcripts, analytics and settings.
+          Universal ticket dashboard with live overview data from guild ticket storage.
         </p>
       </section>
 
@@ -85,6 +137,40 @@ export default function TicketsHub({ theme }) {
         </section>
       ) : null}
 
+      {ticketsError ? (
+        <section style={{ ...card, color: '#fca5a5' }}>
+          {ticketsError}
+        </section>
+      ) : null}
+
+      <section style={{ ...card, display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div>
+          <strong>Selected Guild</strong>
+          <div style={{ color: theme.mutedText, marginTop: 4 }}>{selectedGuildName}</div>
+        </div>
+
+        <select
+          value={selectedGuild}
+          onChange={(event) => setSelectedGuild(event.target.value)}
+          disabled={loading || guilds.length === 0}
+          style={{
+            border: '1px solid ' + theme.cardBorder,
+            background: 'rgba(15,23,42,0.55)',
+            color: theme.cardText,
+            borderRadius: 12,
+            padding: '10px 12px',
+            minWidth: 260,
+            fontWeight: 800,
+          }}
+        >
+          {guilds.map((guild) => (
+            <option key={getGuildId(guild)} value={getGuildId(guild)}>
+              {getGuildName(guild)}
+            </option>
+          ))}
+        </select>
+      </section>
+
       <section
         style={{
           display: 'grid',
@@ -93,10 +179,11 @@ export default function TicketsHub({ theme }) {
         }}
       >
         <StatCard title="Connected Guilds" value={loading ? 'Loading' : String(guilds.length)} theme={theme} />
-        <StatCard title="Open Tickets" value="Pending API" theme={theme} />
-        <StatCard title="Claimed Tickets" value="Pending API" theme={theme} />
-        <StatCard title="Closed Today" value="Pending API" theme={theme} />
-        <StatCard title="Transcripts" value="Pending API" theme={theme} />
+        <StatCard title="Open Tickets" value={ticketsLoading ? 'Loading' : String(overview?.openCount ?? 0)} theme={theme} />
+        <StatCard title="Claimed Tickets" value={ticketsLoading ? 'Loading' : String(overview?.claimedCount ?? 0)} theme={theme} />
+        <StatCard title="Closed Tickets" value={ticketsLoading ? 'Loading' : String(overview?.closedCount ?? 0)} theme={theme} />
+        <StatCard title="Archived Tickets" value={ticketsLoading ? 'Loading' : String(overview?.archivedCount ?? 0)} theme={theme} />
+        <StatCard title="Transcripts" value={ticketsLoading ? 'Loading' : String(overview?.transcriptCount ?? 0)} theme={theme} />
       </section>
 
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 14 }}>
@@ -134,17 +221,14 @@ export default function TicketsHub({ theme }) {
       </section>
 
       <section style={card}>
-        <h3 style={{ marginTop: 0 }}>Recent Ticket Activity</h3>
+        <h3 style={{ marginTop: 0 }}>Ticket Analytics</h3>
 
-        <div
-          style={{
-            border: '1px dashed ' + theme.cardBorder,
-            borderRadius: 14,
-            padding: 20,
-            color: theme.mutedText,
-          }}
-        >
-          Ticket activity feed coming soon. This panel is ready for ticket creation, claim, close, archive, reopen and transcript events.
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 10 }}>
+          <MiniMetric title="Total Tickets" value={overview?.ticketCount ?? 0} theme={theme} />
+          <MiniMetric title="Active Tickets" value={overview?.activeCount ?? 0} theme={theme} />
+          <MiniMetric title="Closed Today" value={overview?.closedTodayCount ?? 0} theme={theme} />
+          <MiniMetric title="Panels" value={overview?.panelCount ?? 0} theme={theme} />
+          <MiniMetric title="Deployed Panels" value={overview?.deployedPanelCount ?? 0} theme={theme} />
         </div>
       </section>
     </div>
@@ -201,5 +285,14 @@ function Pill({ label, theme }) {
     >
       {label}
     </span>
+  );
+}
+
+function MiniMetric({ title, value, theme }) {
+  return (
+    <div style={{ border: '1px solid ' + theme.cardBorder, borderRadius: 14, padding: 12 }}>
+      <div style={{ color: theme.mutedText, fontSize: 12 }}>{title}</div>
+      <div style={{ marginTop: 6, fontSize: 20, fontWeight: 900 }}>{value}</div>
+    </div>
   );
 }
