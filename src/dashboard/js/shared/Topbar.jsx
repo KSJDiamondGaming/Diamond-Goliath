@@ -5,6 +5,17 @@ function getInitial(name = '') {
   return name.trim().charAt(0).toUpperCase() || '?';
 }
 
+function getOwnerManagedSearch() {
+  if (typeof window === 'undefined') return '';
+
+  const searchParams = new URLSearchParams(window.location.search || '');
+  const ownerGuildId = searchParams.get('ownerGuildId');
+
+  if (!ownerGuildId) return '';
+
+  return '?' + searchParams.toString();
+}
+
 function useIsMobile(breakpoint = 768) {
   const [isMobile, setIsMobile] = useState(() => {
     if (typeof window === 'undefined') return false;
@@ -54,9 +65,9 @@ function Topbar({
   const isOwner = currentUser?.isOwner === true;
 
   const isOwnerView =
-  currentUser?.isOwner === true &&
-  typeof window !== 'undefined' &&
-  window.location.pathname.toLowerCase().includes('owner');
+    currentUser?.isOwner === true &&
+    typeof window !== 'undefined' &&
+    window.location.pathname.toLowerCase().includes('owner');
 
   const closeMenu = useCallback(() => {
     setMenuOpen(false);
@@ -110,11 +121,11 @@ function Topbar({
   }, [closeMenu, handleLogout]);
 
   const goToPath = useCallback(
-    (path) => {
+    (path, { preserveOwnerQuery = false } = {}) => {
       closeMenu();
 
       if (typeof window !== 'undefined') {
-        window.location.href = path;
+        window.location.href = path + (preserveOwnerQuery ? getOwnerManagedSearch() : '');
       }
     },
     [closeMenu],
@@ -271,7 +282,7 @@ function Topbar({
                         hovered={hoveredMenuItem === 'return'}
                         onHover={() => setHoveredMenuItem('return')}
                         onLeave={() => setHoveredMenuItem('')}
-                        onClick={() => goToPath('/dashboard')}
+                        onClick={() => goToPath('/overview', { preserveOwnerQuery: true })}
                         icon="🏠"
                         label="Return"
                       />
