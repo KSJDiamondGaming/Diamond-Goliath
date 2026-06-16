@@ -5,7 +5,7 @@ import { appBaseStyles, shellStyles } from './ui/components.js';
 import { getTheme } from './ui/theme.js';
 import { api } from './services/apiClient.js';
 import { navItems, ROUTES } from './ui/layout.js';
-import { getStorage, removeStorage } from './storage.js';
+import { getStorage, removeStorage, setStorage } from './storage.js';
 
 import { useNavbar } from './hooks/useNavbar.js';
 import { useBotStatus } from './hooks/useBotStatus.js';
@@ -19,6 +19,7 @@ import Login from './pages/core/Login.jsx';
 
 const ROUTE_PATHS = ROUTES.map((routeItem) => routeItem.path);
 const OWNER_MANAGED_GUILD_KEY = 'owner_managed_guild';
+const GUILD_STORAGE_KEY = 'selected_guild';
 
 const GUILD_REQUIRED_ROUTES = new Set([
   'overview',
@@ -67,9 +68,28 @@ function normalizeManagedGuild(value) {
     guildId,
     name: value.name || value.guildName || 'Owner Managed Guild',
     guildName: value.guildName || value.name || 'Owner Managed Guild',
+    environment: value.environment || value.runtimeMode || '',
+    runtimeMode: value.runtimeMode || value.environment || '',
     iconUrl: value.iconUrl || value.iconURL || value.icon || value.avatarUrl || '',
     ownerManaged: true,
   };
+}
+
+function createManagedGuildFromSearch(search) {
+  const searchParams = new URLSearchParams(search || '');
+  const guildId = searchParams.get('ownerGuildId');
+
+  if (!guildId) return null;
+
+  return normalizeManagedGuild({
+    id: guildId,
+    guildId,
+    name: searchParams.get('ownerGuildName') || 'Owner Managed Guild',
+    guildName: searchParams.get('ownerGuildName') || 'Owner Managed Guild',
+    environment: searchParams.get('ownerGuildEnvironment') || '',
+    runtimeMode: searchParams.get('ownerGuildEnvironment') || '',
+    ownerManaged: true,
+  });
 }
 
 function useIsMobile(breakpoint = 1024) {
@@ -137,6 +157,8 @@ function CenterMessage({ theme, title, text }) {
 function OwnerManagedBanner({ theme, guild, onReturn }) {
   if (!guild) return null;
 
+  const environment = guild.environment || guild.runtimeMode || 'CURRENT';
+
   return (
     <section
       style={{
@@ -162,7 +184,7 @@ function OwnerManagedBanner({ theme, guild, onReturn }) {
           Managing {guild.name || guild.guildName || guild.guildId}
         </div>
         <div style={{ marginTop: 2, color: theme.mutedText, fontSize: 13 }}>
-          You are viewing this guild through the normal client dashboard with owner access.
+          Environment: {environment} · Guild ID: {guild.guildId || guild.id}
         </div>
       </div>
 
@@ -213,7 +235,10 @@ export default function App() {
   const [ownerGuildError, setOwnerGuildError] = useState('');
   const [ownerGuildsLoading, setOwnerGuildsLoading] = useState(false);
   const [selectedOwnerGuild, setSelectedOwnerGuild] = useState('');
-  const [ownerManagedGuild, setOwnerManagedGuild] = useState(() => normalizeManagedGuild(getStorage(OWNER_MANAGED_GUILD_KEY, null)));
+  const [ownerManagedGuild, setOwnerManagedGuild] = useState(() =>
+    normalizeManagedGuild(getStorage(OWNER_MANAGED_GUILD_KEY, null)) ||
+    createManagedGuildFromSearch(typeof window !== 'undefined' ? window.location.search : '')
+  );
 
   const ownerManageActive = Boolean(isOwner && !isOwnerRoute && ownerManagedGuild?.guildId);
   const effectiveSelectedGuild = ownerManageActive ? ownerManagedGuild.guildId : guildState.selectedGuild;
@@ -267,6 +292,16 @@ export default function App() {
       cancelled = true;
     };
   }, [authState.isAuthenticated, isOwner, isOwnerRoute]);
+
+  useEffect(() => {
+    const managedGuildFromSearch = createManagedGuildFromSearch(location.search);
+
+    if (!managedGuildFromSearch) return;
+
+    setOwnerManagedGuild(managedGuildFromSearch);
+    setStorage(OWNER_MANAGED_GUILD_KEY, managedGuildFromSearch);
+    setStorage(GUILD_STORAGE_KEY, managedGuildFromSearch.guildId);
+  }, [location.search]);
 
   useEffect(() => {
     function handleOwnerManagedGuildChange() {
