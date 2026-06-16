@@ -1,8 +1,8 @@
 import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import ModuleCard from '../ui/ModuleCard.jsx';
-import { futureModules, moduleRegistry } from '../shared/moduleRegistry.js';
+import ModuleCard from '../../ui/ModuleCard.jsx';
+import { futureModules, moduleRegistry } from '../../shared/moduleRegistry.js';
 
 export default function Modules({ theme, selectedGuild }) {
   const navigate = useNavigate();
@@ -131,3 +131,4 @@ export default function Modules({ theme, selectedGuild }) {
     </div>
   );
 }
+

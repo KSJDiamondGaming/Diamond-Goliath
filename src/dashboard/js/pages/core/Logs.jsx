@@ -3,9 +3,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   joinGuildRoom,
   listenForGuildUpdate,
-} from '../services/socketClient';
+} from '../../services/socketClient';
 
-import { api } from '../services/apiClient';
+import { api } from '../../services/apiClient';
 
 import PageShell, {
   SectionCard,
@@ -15,7 +15,7 @@ import PageShell, {
   LoadingPanel,
   Notice,
   PrimaryButton,
-} from '../shared/PageShell';
+} from '../../shared/PageShell';
 
 const DEFAULT_LOGS = {
   enabled: true,
