@@ -383,10 +383,7 @@ export default function App() {
             navItems={navItems}
             botName={botState.botName}
             botAvatar={botState.botAvatar}
-              guilds={navbarGuilds}
-              selectedGuild={navbarSelectedGuild}
-              setSelectedGuild={setNavbarSelectedGuild}
-            botData={botState.botData}
+              botData={botState.botData}
             expanded={navbarExpanded}
             onToggleCollapsed={toggleNavbar}
           />
@@ -456,6 +453,7 @@ export default function App() {
     </>
   );
 }
+
 
 
 
