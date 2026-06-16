@@ -16,6 +16,10 @@ export const ownerApi = {
   getRuntimeDetails(guildId) {
     return api.getOwnerRuntime(guildId);
   },
+
+  getFormsOverview(guildId) {
+    return api.getFormsOverview(guildId);
+  },
 };
 
 export default ownerApi;
