@@ -748,18 +748,41 @@ export default function OwnerView({ theme, currentUser, onSelectGuild, onReturnT
   };
 
   function handleOpenGuild(guild, path = '/overview') {
-  console.debug('[OwnerOverview] handleOpenGuild', {
-    guild,
-    path,
-    guildId: getGuildId(guild),
-  });
+  const guildId = String(getGuildId(guild) || '').split(':').pop();
+
+  if (!guildId) return;
+
+  const environment = getEnvironmentMode(guild);
+  const guildName = getGuildName(guild);
+
+  const managedGuild = {
+    ...guild,
+    id: guildId,
+    guildId,
+    name: guildName,
+    guildName,
+    rawName: guildName,
+    environment,
+    runtimeMode: environment,
+    iconUrl: getGuildIcon(guild),
+    ownerManaged: true,
+  };
 
   if (typeof onSelectGuild === 'function') {
-    onSelectGuild(guild, path);
+    onSelectGuild(managedGuild, path);
     return;
   }
 
-  console.warn('[OwnerOverview] Missing onSelectGuild handler');
+  const searchParams = new URLSearchParams();
+
+  searchParams.set('ownerGuildId', guildId);
+  searchParams.set('ownerGuildName', guildName);
+
+  if (environment) {
+    searchParams.set('ownerGuildEnvironment', environment);
+  }
+
+  window.location.assign(path + '?' + searchParams.toString());
 }
 
   function handleOwnerAction(action, guild) {
@@ -1122,7 +1145,10 @@ export default function OwnerView({ theme, currentUser, onSelectGuild, onReturnT
                   const connected = isGuildConnected(guild);
 
                   return (
-                    <tr key={guildId} style={{ borderTop: `1px solid ${theme.cardBorder}` }}>
+                    <tr
+                  key={`${getEnvironmentMode(guild) || 'ENV'}-${guildId}`}
+                  style={{ borderTop: `1px solid ${theme.cardBorder}` }}
+                    >
                       <td style={{ padding: '14px 18px', fontWeight: 850 }}>
                         {getEnvironmentBadge(getEnvironmentMode(guild))}
                       </td>
