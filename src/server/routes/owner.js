@@ -157,9 +157,9 @@ async function fetchEnvironmentGuilds(port, environment) {
       sourcePort: port,
     }));
   } catch (error) {
-    console.error(
-      `[OWNER GUILDS ALL] ${environment} failed:`,
-      error.message,
+    console.warn(
+      `[OWNER GUILDS ALL] ${environment} unavailable on port ${port}:`,
+        error.message,
     );
 
     return [];
