@@ -4,6 +4,7 @@ import { api } from '../services/apiClient.js';
 import { getStorage, removeStorage, setStorage } from '../storage.js';
 
 const GUILD_STORAGE_KEY = 'selected_guild';
+const OWNER_MANAGED_GUILD_KEY = 'owner_managed_guild';
 
 function normalizeGuildId(value) {
   if (!value) return '';
@@ -16,6 +17,10 @@ function normalizeGuildId(value) {
     return String(value.id);
   }
 
+  if (typeof value === 'object' && value.guildId) {
+    return String(value.guildId);
+  }
+
   return '';
 }
 
@@ -24,6 +29,11 @@ function normalizeGuilds(payload) {
   if (Array.isArray(payload?.guilds)) return payload.guilds;
   if (Array.isArray(payload?.data)) return payload.data;
   return [];
+}
+
+function getOwnerManagedGuildId() {
+  const ownerManagedGuild = getStorage(OWNER_MANAGED_GUILD_KEY, null);
+  return normalizeGuildId(ownerManagedGuild);
 }
 
 export function useGuilds() {
@@ -57,6 +67,13 @@ export function useGuilds() {
       setGuilds(nextGuilds);
 
       setSelectedGuildState((currentValue) => {
+        const ownerManagedGuildId = getOwnerManagedGuildId();
+
+        if (ownerManagedGuildId) {
+          setStorage(GUILD_STORAGE_KEY, ownerManagedGuildId);
+          return ownerManagedGuildId;
+        }
+
         const currentGuildId = normalizeGuildId(currentValue);
         const storedGuildId = normalizeGuildId(getStorage(GUILD_STORAGE_KEY, ''));
         const preferredGuildId = currentGuildId || storedGuildId;
@@ -85,15 +102,24 @@ export function useGuilds() {
 
       setGuilds([]);
       setGuildError('Could not load guilds.');
-      setSelectedGuildState('');
-      removeStorage(GUILD_STORAGE_KEY);
+
+      const ownerManagedGuildId = getOwnerManagedGuildId();
+
+      if (ownerManagedGuildId) {
+        setSelectedGuildState(ownerManagedGuildId);
+        setStorage(GUILD_STORAGE_KEY, ownerManagedGuildId);
+      } else {
+        setSelectedGuildState('');
+        removeStorage(GUILD_STORAGE_KEY);
+      }
     } finally {
       setGuildsLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    const safeGuildId = normalizeGuildId(selectedGuild);
+    const ownerManagedGuildId = getOwnerManagedGuildId();
+    const safeGuildId = ownerManagedGuildId || normalizeGuildId(selectedGuild);
 
     if (safeGuildId) {
       setStorage(GUILD_STORAGE_KEY, safeGuildId);
