@@ -40,6 +40,20 @@ function createManagedGuildPayload(guild) {
   };
 }
 
+function createOwnerManagedPath(guild, path = '/overview') {
+  const searchParams = new URLSearchParams();
+  const payload = createManagedGuildPayload(guild);
+
+  searchParams.set('ownerGuildId', payload.guildId);
+  searchParams.set('ownerGuildName', payload.guildName);
+
+  if (payload.environment) {
+    searchParams.set('ownerGuildEnvironment', payload.environment);
+  }
+
+  return path + '?' + searchParams.toString();
+}
+
 export default function GlobalServers({ theme }) {
   const navigate = useNavigate();
   const { guilds, loading, error } = useOwnerGuilds();
@@ -51,7 +65,7 @@ export default function GlobalServers({ theme }) {
 
     setStorage(GUILD_STORAGE_KEY, guildId);
     setStorage(OWNER_MANAGED_GUILD_KEY, createManagedGuildPayload(guild));
-    window.location.assign(path);
+    window.location.assign(createOwnerManagedPath(guild, path));
   }
 
   function openOwnerRuntime(guild) {
