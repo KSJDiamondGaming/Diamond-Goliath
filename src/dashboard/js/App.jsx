@@ -12,6 +12,7 @@ import { useGuilds } from './hooks/useGuilds.js';
 import { useAuthSession } from './hooks/useAuthSession.js';
 
 import Navbar from './shared/Navbar.jsx';
+import OwnerSidebar from './pages/owner/components/OwnerSidebar.jsx';
 import Topbar from './shared/Topbar.jsx';
 import Login from './pages/Login.jsx';
 
@@ -360,6 +361,13 @@ export default function App() {
 
       <div style={responsiveStyles.app}>
         <div style={responsiveStyles.grid}>
+          {isOwnerRoute && isOwner ? (
+            <OwnerSidebar
+              theme={theme}
+              botName={botState.botName}
+              botAvatar={botState.botAvatar}
+            />
+          ) : (
           <Navbar
             theme={theme}
             selectedGuild={navbarSelectedGuild}
@@ -376,6 +384,7 @@ export default function App() {
             expanded={navbarExpanded}
             onToggleCollapsed={toggleNavbar}
           />
+          )}
 
           <div style={responsiveStyles.mainColumn}>
             <Topbar
@@ -441,6 +450,7 @@ export default function App() {
     </>
   );
 }
+
 
 
 
