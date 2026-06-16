@@ -1,17 +1,17 @@
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { api } from '../services/apiClient';
+import { api } from '../../services/apiClient';
 import PageShell, {
   EmptyState,
   LoadingPanel,
   Notice,
   StatGrid,
   SummaryStat,
-} from '../shared/PageShell';
-import { PAGE_LAYOUTS } from '../ui/layout';
+} from '../../shared/PageShell';
+import { PAGE_LAYOUTS } from '../../ui/layout';
 import {
   createConfigPageStyles,
   createDashboardControlStyles,
-} from '../ui/components';
+} from '../../ui/components';
 
 const PAGE_KEY = 'generalSettings';
 

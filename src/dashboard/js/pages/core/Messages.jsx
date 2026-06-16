@@ -6,7 +6,7 @@ import React, {
   useState,
 } from 'react';
 
-import { api } from '../services/apiClient';
+import { api } from '../../services/apiClient';
 
 import PageShell, {
   EmptyState,
@@ -16,7 +16,7 @@ import PageShell, {
   SectionCard,
   StatGrid,
   SummaryStat,
-} from '../shared/PageShell';
+} from '../../shared/PageShell';
 
 const DEFAULT_FORM = {
   welcome: {

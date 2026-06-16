@@ -1,9 +1,42 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 
 import useOwnerGuilds from '../../hooks/useOwnerGuilds.js';
+import { setStorage } from '../../storage.js';
+
+const GUILD_STORAGE_KEY = 'selected_guild';
+
+function getGuildId(guild) {
+  return String(guild?.guildId || guild?.id || '');
+}
+
+function getGuildEnvironment(guild) {
+  return String(guild?.environment || guild?.runtimeMode || '').toUpperCase();
+}
 
 export default function GlobalServers({ theme }) {
+  const navigate = useNavigate();
   const { guilds, loading, error } = useOwnerGuilds();
+
+  function openGuildDashboard(guild, path = '/overview') {
+    const guildId = getGuildId(guild);
+
+    if (!guildId) return;
+
+    setStorage(GUILD_STORAGE_KEY, guildId);
+    window.location.assign(path);
+  }
+
+  function openOwnerRuntime(guild) {
+    const guildId = getGuildId(guild);
+    const environment = getGuildEnvironment(guild);
+    const searchParams = new URLSearchParams();
+
+    if (environment) searchParams.set('environment', environment);
+    if (guildId) searchParams.set('guildId', guildId);
+
+    navigate('/owner/runtime' + (searchParams.toString() ? '?' + searchParams.toString() : ''));
+  }
 
   const card = {
     border: '1px solid ' + theme.cardBorder,
@@ -42,7 +75,7 @@ export default function GlobalServers({ theme }) {
         </div>
 
         <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
             <thead>
               <tr>
                 {['Environment', 'Guild', 'Guild ID', 'Members', 'Bot Status', 'Actions'].map((heading) => (
@@ -70,14 +103,15 @@ export default function GlobalServers({ theme }) {
                   guild.environment === 'PRODUCTION'
                     ? 'PROD'
                     : guild.environment || guild.runtimeMode || 'ENV';
+                const guildId = getGuildId(guild);
 
                 return (
-                  <tr key={(guild.environment || guild.runtimeMode || 'env') + '-' + (guild.guildId || guild.id)}>
+                  <tr key={(guild.environment || guild.runtimeMode || 'env') + '-' + guildId}>
                     <td style={cellStyle(theme)}>{environment}</td>
                     <td style={cellStyle(theme)}>
                       <strong>{guild.name || guild.guildName || 'Unknown Guild'}</strong>
                     </td>
-                    <td style={cellStyle(theme)}>{guild.guildId || guild.id}</td>
+                    <td style={cellStyle(theme)}>{guildId}</td>
                     <td style={cellStyle(theme)}>{guild.memberCount ?? 'Unknown'}</td>
                     <td style={cellStyle(theme)}>
                       <span style={{ color: '#86efac', fontWeight: 900 }}>
@@ -86,9 +120,10 @@ export default function GlobalServers({ theme }) {
                     </td>
                     <td style={cellStyle(theme)}>
                       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                        <ActionButton label="Open Guild" theme={theme} />
-                        <ActionButton label="Runtime" theme={theme} />
-                        <ActionButton label="Security" theme={theme} />
+                        <ActionButton label="Open Guild" theme={theme} onClick={() => openGuildDashboard(guild, '/overview')} />
+                        <ActionButton label="Manage Guild" theme={theme} onClick={() => openGuildDashboard(guild, '/generalSettings')} />
+                        <ActionButton label="Runtime" theme={theme} onClick={() => openOwnerRuntime(guild)} />
+                        <ActionButton label="Security" theme={theme} onClick={() => openGuildDashboard(guild, '/security')} />
                       </div>
                     </td>
                   </tr>
@@ -119,10 +154,11 @@ function cellStyle(theme) {
   };
 }
 
-function ActionButton({ label, theme }) {
+function ActionButton({ label, theme, onClick }) {
   return (
     <button
       type="button"
+      onClick={onClick}
       style={{
         border: '1px solid rgba(59,130,246,0.32)',
         background: 'rgba(37,99,235,0.12)',

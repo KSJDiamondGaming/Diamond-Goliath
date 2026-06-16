@@ -1,19 +1,18 @@
 import React, { useMemo } from 'react';
 import PageShell, {
   EmptyState,
-  Notice,
   SectionCard,
-} from '../shared/PageShell';
-import { PAGE_LAYOUTS } from "../ui/layout";
-import { createSharedComponentStyles } from "../ui/components";
+} from '../../shared/PageShell';
+import { PAGE_LAYOUTS } from "../../ui/layout";
+import { createSharedComponentStyles } from "../../ui/components";
 
-export default function Moderation({ selectedGuild, theme }) {
+export default function Admin({ selectedGuild, theme }) {
   const styles = useMemo(() => createSharedComponentStyles(theme), [theme]);
 
-  const page = PAGE_LAYOUTS.moderation || {
-    title: 'Moderation',
-    description: 'Central moderation tools.',
-    emptyDescription: 'Select a server to manage moderation.',
+  const page = PAGE_LAYOUTS.admin || {
+    title: 'Admin',
+    description: 'Core system configuration.',
+    emptyDescription: 'Select a server to manage admin settings.',
   };
 
   return (
@@ -27,37 +26,30 @@ export default function Moderation({ selectedGuild, theme }) {
       theme={theme}
     >
       {!selectedGuild && (
-        <EmptyState theme={theme} text="Select a server to manage moderation." />
+        <EmptyState theme={theme} text="Select a server to manage admin settings." />
       )}
 
       {selectedGuild && (
         <div style={styles.futurePage}>
           
+          {/* MAIN PANEL */}
           <SectionCard theme={theme}>
             <div style={styles.futureInnerPanel}>
-              <h3 style={{ margin: 0 }}>⚔️ Moderation Hub</h3>
+              <h3 style={{ margin: 0 }}>⚙️ Admin Control Center</h3>
               <p style={{ margin: 0, opacity: 0.7 }}>
-                This will become your central control for all moderation systems.
+                Manage core bot configuration and system-level controls.
               </p>
             </div>
           </SectionCard>
 
+          {/* GRID */}
           <div style={styles.futureGrid}>
-            
-            <div style={styles.futurePanel}>
-              <div style={styles.futureInnerPanel}>
-                <h4 style={{ margin: 0 }}>📂 Cases</h4>
-                <p style={{ margin: 0 }}>
-                  View and manage moderation case history.
-                </p>
-              </div>
-            </div>
 
             <div style={styles.futurePanel}>
               <div style={styles.futureInnerPanel}>
-                <h4 style={{ margin: 0 }}>⚠️ Warnings</h4>
+                <h4 style={{ margin: 0 }}>🧩 General Settings</h4>
                 <p style={{ margin: 0 }}>
-                  Track user warnings and enforcement actions.
+                  Configure prefixes, system settings, and core behaviour.
                 </p>
               </div>
             </div>
@@ -66,16 +58,25 @@ export default function Moderation({ selectedGuild, theme }) {
               <div style={styles.futureInnerPanel}>
                 <h4 style={{ margin: 0 }}>🤖 AutoMod</h4>
                 <p style={{ margin: 0 }}>
-                  Configure automated moderation filters and punishments.
+                  Manage filters, spam protection, and automated actions.
                 </p>
               </div>
             </div>
 
             <div style={styles.futurePanel}>
               <div style={styles.futureInnerPanel}>
-                <h4 style={{ margin: 0 }}>🔐 Permissions</h4>
+                <h4 style={{ margin: 0 }}>📨 Messages</h4>
                 <p style={{ margin: 0 }}>
-                  Control moderator roles and permissions.
+                  Configure welcome and leave messages.
+                </p>
+              </div>
+            </div>
+
+            <div style={styles.futurePanel}>
+              <div style={styles.futureInnerPanel}>
+                <h4 style={{ margin: 0 }}>📜 Logs</h4>
+                <p style={{ margin: 0 }}>
+                  Control logging channels and audit tracking.
                 </p>
               </div>
             </div>
@@ -86,3 +87,4 @@ export default function Moderation({ selectedGuild, theme }) {
     </PageShell>
   );
 }
+

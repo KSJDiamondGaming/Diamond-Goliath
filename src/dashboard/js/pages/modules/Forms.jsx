@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { api } from '../services/apiClient';
+import { api } from '../../services/apiClient';
 import PageShell, {
   EmptyState,
   LoadingPanel,
@@ -7,8 +7,8 @@ import PageShell, {
   SectionCard,
   StatGrid,
   SummaryStat,
-} from '../shared/PageShell';
-import { PAGE_LAYOUTS } from '../ui/layout';
+} from '../../shared/PageShell';
+import { PAGE_LAYOUTS } from '../../ui/layout';
 
 const PAGE_KEY = 'forms';
 
@@ -457,3 +457,4 @@ export default function Forms({ selectedGuild, selectedGuildData, theme }) {
     </PageShell>
   );
 }
+

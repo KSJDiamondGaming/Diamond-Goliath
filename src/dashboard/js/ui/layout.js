@@ -1,16 +1,16 @@
-import Overview from '../pages/Overview';
-import AutoMod from '../pages/AutoMod';
-import Admin from '../pages/Admin';
-import Moderation from '../pages/Moderation';
-import GeneralSettings from '../pages/GeneralSettings';
-import Cases from '../pages/Cases';
-import Warnings from '../pages/Warnings';
-import Messages from '../pages/Messages';
-import Forms from '../pages/Forms';
-import Modules from '../pages/Modules';
-import Restore from '../pages/Restore';
-import Security from '../pages/Security';
-import Logs from '../pages/Logs';
+import Overview from '../pages/core/Overview';
+import AutoMod from '../pages/administration/AutoMod';
+import Admin from '../pages/administration/Admin';
+import Moderation from '../pages/moderation/Moderation';
+import GeneralSettings from '../pages/administration/GeneralSettings';
+import Cases from '../pages/moderation/Cases';
+import Warnings from '../pages/moderation/Warnings';
+import Messages from '../pages/core/Messages';
+import Forms from '../pages/modules/Forms';
+import Modules from '../pages/modules/Modules';
+import Restore from '../pages/security/Restore';
+import Security from '../pages/security/Security';
+import Logs from '../pages/core/Logs';
 import OwnerView from '../pages/owner/OwnerOverview';
 import OwnerGlobalServers from '../pages/owner/GlobalServers';
 import OwnerRuntimeMonitor from '../pages/owner/RuntimeMonitor';
@@ -138,5 +138,9 @@ export const SECTION_DEFS = {
   restoreManager: { title: 'Restore Manager', description: 'Preview and restore backups.' },
   logManager: { title: 'Log Manager', description: 'Choose log channels.' },
 };
+
+
+
+
 
 

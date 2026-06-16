@@ -1,11 +1,11 @@
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 
-import { api } from '../services/apiClient';
+import { api } from '../../services/apiClient';
 
 import {
   joinGuildRoom,
   listenForGuildUpdate,
-} from '../services/socketClient';
+} from '../../services/socketClient';
 
 import PageShell, {
   SectionCard,
@@ -15,7 +15,7 @@ import PageShell, {
   LoadingPanel,
   Notice,
   SecondaryButton,
-} from '../shared/PageShell';
+} from '../../shared/PageShell';
 
 const ACTION_TONES = {
   ban: 'danger',
