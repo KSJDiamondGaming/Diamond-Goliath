@@ -46,6 +46,25 @@ const QUESTION_TYPES = [
   'Attachment / Link',
 ];
 
+const WORKFLOW_STEPS = [
+  'Form template created',
+  'User submits form',
+  'Submission stored in modules.forms',
+  'Submission action evaluated',
+  'Private review ticket created',
+  'Staff review and decision logged',
+  'Analytics updated',
+];
+
+const ACTION_TYPES = [
+  'Create Ticket',
+  'Log Submission Only',
+  'Notify Staff',
+  'DM User',
+  'Require Manual Review',
+  'Auto-Assign Panel',
+];
+
 export default function FormsHub({ theme }) {
   const { guilds, loading, error } = useOwnerGuilds();
 
@@ -127,6 +146,32 @@ export default function FormsHub({ theme }) {
         </section>
       </section>
 
+      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(320px,1fr))', gap: 14 }}>
+        <section style={card}>
+          <h3 style={{ marginTop: 0 }}>Forms → Tickets Workflow</h3>
+          <p style={{ marginTop: 0, color: theme.mutedText }}>
+            Locked universal flow for form submissions that create staff review tickets.
+          </p>
+          <div style={{ display: 'grid', gap: 8 }}>
+            {WORKFLOW_STEPS.map((step, index) => (
+              <WorkflowRow key={step} number={index + 1} label={step} theme={theme} />
+            ))}
+          </div>
+        </section>
+
+        <section style={card}>
+          <h3 style={{ marginTop: 0 }}>Submission Actions</h3>
+          <p style={{ marginTop: 0, color: theme.mutedText }}>
+            First dashboard-ready action types for the universal forms engine.
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {ACTION_TYPES.map((action) => (
+              <Pill key={action} label={action} theme={theme} />
+            ))}
+          </div>
+        </section>
+      </section>
+
       <section style={card}>
         <h3 style={{ marginTop: 0 }}>Recent Form Activity</h3>
 
@@ -195,5 +240,23 @@ function Pill({ label, theme }) {
     >
       {label}
     </span>
+  );
+}
+
+function WorkflowRow({ number, label, theme }) {
+  return (
+    <div
+      style={{
+        border: '1px solid ' + theme.cardBorder,
+        borderRadius: 12,
+        padding: 10,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+      }}
+    >
+      <span style={{ color: '#c4b5fd', fontWeight: 900 }}>{number}</span>
+      <span>{label}</span>
+    </div>
   );
 }
