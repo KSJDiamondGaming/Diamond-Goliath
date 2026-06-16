@@ -18,6 +18,15 @@ function normalizePath(path = '') {
   return path.startsWith('/') ? path : `/${path}`;
 }
 
+function getOwnerManagedSearch(search = '') {
+  const params = new URLSearchParams(search || '');
+  const ownerGuildId = params.get('ownerGuildId');
+
+  if (!ownerGuildId) return '';
+
+  return `?${params.toString()}`;
+}
+
 function isActivePath(currentPath, itemPath) {
   const normalizedCurrent = normalizePath(currentPath);
   const normalizedItem = normalizePath(itemPath);
@@ -470,10 +479,10 @@ function Navbar({
     (item) => {
       if (!canNavigate || !item?.path) return;
 
-      navigate(normalizePath(item.path));
+      navigate(normalizePath(item.path) + getOwnerManagedSearch(location.search));
       closeMobileNav();
     },
-    [canNavigate, navigate, closeMobileNav],
+    [canNavigate, navigate, closeMobileNav, location.search],
   );
 
   const handleToggleGroup = useCallback((groupKey) => {
