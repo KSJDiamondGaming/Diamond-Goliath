@@ -755,24 +755,6 @@ export default function OwnerView({ theme, currentUser, onSelectGuild, onReturnT
   const environment = getEnvironmentMode(guild);
   const guildName = getGuildName(guild);
 
-  const managedGuild = {
-    ...guild,
-    id: guildId,
-    guildId,
-    name: guildName,
-    guildName,
-    rawName: guildName,
-    environment,
-    runtimeMode: environment,
-    iconUrl: getGuildIcon(guild),
-    ownerManaged: true,
-  };
-
-  if (typeof onSelectGuild === 'function') {
-    onSelectGuild(managedGuild, path);
-    return;
-  }
-
   const searchParams = new URLSearchParams();
 
   searchParams.set('ownerGuildId', guildId);
