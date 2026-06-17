@@ -62,21 +62,17 @@ export default function GlobalServers({ theme, onSelectGuild }) {
   const { guilds, loading, error } = useOwnerGuilds();
 
   function openGuildDashboard(guild, path = '/overview') {
-    const guildId = getGuildId(guild);
-    if (!guildId) return;
+  const guildId = getGuildId(guild);
 
-    const payload = createManagedGuildPayload(guild);
+  if (!guildId) return;
 
-    setStorage(GUILD_STORAGE_KEY, guildId);
-    setStorage(OWNER_MANAGED_GUILD_KEY, payload);
+  const payload = createManagedGuildPayload(guild);
 
-    if (typeof onSelectGuild === 'function') {
-      onSelectGuild(payload, path);
-      return;
-    }
+  setStorage(GUILD_STORAGE_KEY, guildId);
+  setStorage(OWNER_MANAGED_GUILD_KEY, payload);
 
-    window.location.assign(createOwnerManagedPath(payload, path));
-  }
+  window.location.assign(createOwnerManagedPath(payload, path));
+}
 
   function openOwnerRuntime(guild) {
     const guildId = getGuildId(guild);
