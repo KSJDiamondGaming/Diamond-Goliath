@@ -1,6 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+import { api } from '../../services/apiClient.js';
 import ModuleCard from '../../ui/ModuleCard.jsx';
 import { MODULE_CATEGORIES, MODULE_STATUSES, futureModules, moduleRegistry } from '../../shared/moduleRegistry.js';
 
@@ -18,12 +19,73 @@ function getGuildName(guild, selectedGuild) {
   return guild?.guildName || guild?.rawName || guild?.name || selectedGuild || 'No server selected';
 }
 
+function getGuildId(selectedGuild, selectedGuildData) {
+  const id = selectedGuildData?.guildId || selectedGuildData?.id || selectedGuild || '';
+  return String(id).split(':').pop().trim();
+}
+
+function mergeModuleState(registryModules, moduleState) {
+  return registryModules.map((module) => {
+    const saved = moduleState?.[module.key];
+    const savedEnabled = typeof saved === 'boolean'
+      ? saved
+      : saved && typeof saved === 'object'
+        ? saved.enabled === true
+        : module.enabled === true;
+
+    return {
+      ...module,
+      enabled: savedEnabled,
+      savedConfig: saved && typeof saved === 'object' ? saved : {},
+    };
+  });
+}
+
 export default function Modules({ theme, selectedGuild, selectedGuildData }) {
   const navigate = useNavigate();
+  const guildId = getGuildId(selectedGuild, selectedGuildData);
 
-  const modules = useMemo(() => (
+  const [moduleState, setModuleState] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [savingKey, setSavingKey] = useState('');
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadModules() {
+      if (!guildId) {
+        setModuleState({});
+        return;
+      }
+
+      setLoading(true);
+      setError('');
+
+      try {
+        const result = await api.getGuildModules(guildId);
+        if (!active) return;
+        setModuleState(result.modules || {});
+      } catch (loadError) {
+        if (!active) return;
+        setError(loadError.message || 'Failed to load guild module states.');
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+
+    loadModules();
+
+    return () => {
+      active = false;
+    };
+  }, [guildId]);
+
+  const registryModules = useMemo(() => (
     [...moduleRegistry].sort((a, b) => (a.priority || 999) - (b.priority || 999))
   ), []);
+
+  const modules = useMemo(() => mergeModuleState(registryModules, moduleState), [registryModules, moduleState]);
 
   const groups = useMemo(() => (
     Object.values(MODULE_CATEGORIES)
@@ -33,9 +95,9 @@ export default function Modules({ theme, selectedGuild, selectedGuildData }) {
 
   const stats = useMemo(() => ({
     total: modules.length,
+    enabled: modules.filter((module) => module.enabled).length,
     live: modules.filter((module) => module.status === MODULE_STATUSES.live).length,
     backendReady: modules.filter((module) => module.status === MODULE_STATUSES.backendReady).length,
-    pending: modules.filter((module) => [MODULE_STATUSES.uiPending, MODULE_STATUSES.planned].includes(module.status)).length,
   }), [modules]);
 
   const cardStyle = {
@@ -47,9 +109,33 @@ export default function Modules({ theme, selectedGuild, selectedGuildData }) {
   };
 
   function handleOpenModule(module) {
-    if (!module?.route) return;
+    if (!module?.route || module.enabled !== true) return;
     const existingRoutes = new Set(['/automod', '/forms', '/generalSettings', '/logs', '/messages', '/restore', '/security']);
     if (existingRoutes.has(module.route)) navigate(module.route);
+  }
+
+  async function handleToggleModule(module, enabled) {
+    if (!guildId || !module?.key) return;
+
+    const previousState = moduleState;
+    const nextModuleConfig = {
+      ...(typeof previousState[module.key] === 'object' ? previousState[module.key] : {}),
+      enabled,
+    };
+
+    setSavingKey(module.key);
+    setError('');
+    setModuleState({ ...previousState, [module.key]: nextModuleConfig });
+
+    try {
+      const result = await api.setGuildModuleEnabled(guildId, module.key, enabled);
+      setModuleState(result.modules || { ...previousState, [module.key]: nextModuleConfig });
+    } catch (saveError) {
+      setModuleState(previousState);
+      setError(saveError.message || 'Failed to save module state.');
+    } finally {
+      setSavingKey('');
+    }
   }
 
   return (
@@ -59,14 +145,14 @@ export default function Modules({ theme, selectedGuild, selectedGuildData }) {
           <div>
             <p style={{ margin: '0 0 8px', color: '#93c5fd', fontWeight: 950, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Goliath Modules Hub</p>
             <h1 style={{ margin: 0, fontSize: 'clamp(28px, 4vw, 42px)', letterSpacing: '-0.04em' }}>Modules</h1>
-            <p style={{ margin: '10px 0 0', color: theme.mutedText, lineHeight: 1.6, maxWidth: 820 }}>One central grid for every Goliath feature. This page connects guild management to future module dashboards.</p>
+            <p style={{ margin: '10px 0 0', color: theme.mutedText, lineHeight: 1.6, maxWidth: 840 }}>Enable or disable each Goliath module for this guild. Enabled modules show a cog so their own settings page can be opened.</p>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))', gap: 12 }}>
             <StatCard theme={theme} label="Total Modules" value={stats.total} hint="Registered in hub" />
-            <StatCard theme={theme} label="Live Routes" value={stats.live} hint="Openable now" />
+            <StatCard theme={theme} label="Enabled" value={stats.enabled} hint="Saved to guild JSON" />
+            <StatCard theme={theme} label="Live Routes" value={stats.live} hint="Config pages ready" />
             <StatCard theme={theme} label="Backend Ready" value={stats.backendReady} hint="UI polish next" />
-            <StatCard theme={theme} label="Pending" value={stats.pending} hint="Roadmap modules" />
           </div>
         </div>
       </section>
@@ -74,7 +160,11 @@ export default function Modules({ theme, selectedGuild, selectedGuildData }) {
       <section style={{ ...cardStyle, padding: 18 }}>
         <div style={{ color: theme.mutedText, fontSize: 12, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Active Context</div>
         <div style={{ marginTop: 5, fontWeight: 950 }}>{getGuildName(selectedGuildData, selectedGuild)}</div>
-        {!selectedGuild ? <div style={{ marginTop: 6, color: '#fde68a', fontSize: 13, fontWeight: 900 }}>Select a server from the navbar to manage modules.</div> : null}
+        <div style={{ marginTop: 5, color: theme.mutedText, fontSize: 13 }}>
+          {guildId ? `Saving module states to modules.{moduleKey}.enabled in guild ${guildId}.json` : 'Select a server from the navbar to manage modules.'}
+          {loading ? ' · Loading states...' : ''}
+        </div>
+        {error ? <div style={{ marginTop: 8, color: '#fca5a5', fontSize: 13, fontWeight: 850 }}>{error}</div> : null}
       </section>
 
       {groups.map((group) => (
@@ -86,7 +176,14 @@ export default function Modules({ theme, selectedGuild, selectedGuildData }) {
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 250px), 1fr))', gap: 14 }}>
             {group.modules.map((module) => (
-              <ModuleCard key={module.key} module={module} theme={theme} onOpen={handleOpenModule} />
+              <ModuleCard
+                key={module.key}
+                module={module}
+                theme={theme}
+                onOpen={handleOpenModule}
+                onToggle={handleToggleModule}
+                saving={savingKey === module.key}
+              />
             ))}
           </div>
         </section>
