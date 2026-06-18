@@ -20,8 +20,8 @@ function ModuleToggle({ enabled, disabled, onToggle }) {
       }}
       aria-pressed={enabled}
       style={{
-        width: 52,
-        height: 28,
+        width: 48,
+        height: 26,
         borderRadius: 999,
         border: `1px solid ${enabled ? '#34d39988' : '#64748b66'}`,
         background: enabled ? 'rgba(34,197,94,0.28)' : 'rgba(100,116,139,0.20)',
@@ -29,6 +29,7 @@ function ModuleToggle({ enabled, disabled, onToggle }) {
         position: 'relative',
         padding: 3,
         opacity: disabled ? 0.55 : 1,
+        flex: '0 0 auto',
       }}
       title={enabled ? 'Disable module' : 'Enable module'}
     >
@@ -36,9 +37,9 @@ function ModuleToggle({ enabled, disabled, onToggle }) {
         style={{
           position: 'absolute',
           top: 3,
-          left: enabled ? 27 : 3,
-          width: 20,
-          height: 20,
+          left: enabled ? 25 : 3,
+          width: 18,
+          height: 18,
           borderRadius: 999,
           background: enabled ? '#86efac' : '#cbd5e1',
           transition: 'left 0.18s ease',
@@ -69,12 +70,12 @@ function ModuleCard({ module, theme, onOpen, onToggle, saving }) {
         borderRadius: 22,
         boxShadow: hovered ? '0 22px 60px rgba(0,0,0,0.32)' : theme.shadow,
         padding: 18,
-        minHeight: 190,
+        minHeight: 172,
         textAlign: 'left',
         display: 'grid',
-        gap: 14,
+        gap: 16,
         alignContent: 'space-between',
-        opacity: enabled ? 1 : 0.82,
+        opacity: enabled ? 1 : 0.84,
         transform: hovered ? 'translateY(-2px)' : 'translateY(0)',
         transition: 'transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, opacity 0.18s ease',
         position: 'relative',
@@ -96,24 +97,24 @@ function ModuleCard({ module, theme, onOpen, onToggle, saving }) {
       />
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, position: 'relative' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div
-            style={{
-              width: 48,
-              height: 48,
-              borderRadius: 16,
-              display: 'grid',
-              placeItems: 'center',
-              border: `1px solid ${enabled ? statusStyle.border : '#64748b55'}`,
-              background: enabled ? statusStyle.bg : 'rgba(100,116,139,0.10)',
-              color: enabled ? statusStyle.text : theme.mutedText,
-              fontWeight: 950,
-              fontSize: 13,
-            }}
-          >
-            {module.icon}
-          </div>
+        <div
+          style={{
+            width: 44,
+            height: 44,
+            borderRadius: 15,
+            display: 'grid',
+            placeItems: 'center',
+            border: `1px solid ${enabled ? statusStyle.border : '#64748b55'}`,
+            background: enabled ? statusStyle.bg : 'rgba(100,116,139,0.10)',
+            color: enabled ? statusStyle.text : theme.mutedText,
+            fontWeight: 950,
+            fontSize: 13,
+          }}
+        >
+          {module.icon}
+        </div>
 
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {enabled && canOpen ? (
             <button
               type="button"
@@ -122,15 +123,18 @@ function ModuleCard({ module, theme, onOpen, onToggle, saving }) {
                 onOpen?.(module);
               }}
               style={{
-                width: 36,
-                height: 36,
-                borderRadius: 12,
+                width: 30,
+                height: 30,
+                borderRadius: 10,
                 border: `1px solid ${statusStyle.border}`,
                 background: statusStyle.bg,
                 color: statusStyle.text,
                 cursor: 'pointer',
-                fontSize: 16,
+                fontSize: 14,
                 fontWeight: 950,
+                display: 'grid',
+                placeItems: 'center',
+                lineHeight: 1,
               }}
               title={`Configure ${module.name}`}
               aria-label={`Configure ${module.name}`}
@@ -138,15 +142,15 @@ function ModuleCard({ module, theme, onOpen, onToggle, saving }) {
               ⚙
             </button>
           ) : null}
-        </div>
 
-        <ModuleToggle enabled={enabled} disabled={saving} onToggle={(nextEnabled) => onToggle?.(module, nextEnabled)} />
+          <ModuleToggle enabled={enabled} disabled={saving} onToggle={(nextEnabled) => onToggle?.(module, nextEnabled)} />
+        </div>
       </div>
 
-      <div style={{ position: 'relative', display: 'grid', gap: 10 }}>
+      <div style={{ position: 'relative', display: 'grid', gap: 8 }}>
         <div>
           <strong style={{ display: 'block', fontSize: 17 }}>{module.name}</strong>
-          <span style={{ display: 'block', color: theme.mutedText, fontSize: 12, fontWeight: 850, marginTop: 6 }}>
+          <span style={{ display: 'block', color: theme.mutedText, fontSize: 12, fontWeight: 850, marginTop: 5 }}>
             {module.category}
           </span>
         </div>
@@ -155,26 +159,11 @@ function ModuleCard({ module, theme, onOpen, onToggle, saving }) {
           {module.summary || 'Module dashboard page pending.'}
         </p>
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-          <span
-            style={{
-              border: `1px solid ${enabled ? statusStyle.border : '#64748b55'}`,
-              background: enabled ? statusStyle.bg : 'rgba(100,116,139,0.10)',
-              color: enabled ? statusStyle.text : theme.mutedText,
-              borderRadius: 999,
-              padding: '5px 9px',
-              fontSize: 11,
-              fontWeight: 950,
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {enabled ? statusMeta.label : 'Disabled'}
+        {saving ? (
+          <span style={{ color: statusStyle.text, fontSize: 12, fontWeight: 950 }}>
+            Saving...
           </span>
-
-          <span style={{ color: enabled && canOpen ? statusStyle.text : theme.mutedText, fontSize: 12, fontWeight: 950 }}>
-            {saving ? 'Saving...' : enabled && canOpen ? 'Configure with cog' : enabled ? 'Enabled' : 'Toggle on to configure'}
-          </span>
-        </div>
+        ) : null}
       </div>
     </div>
   );
