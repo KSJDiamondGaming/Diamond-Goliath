@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { api } from '../../services/apiClient.js';
 import ModuleCard from '../../ui/ModuleCard.jsx';
-import { MODULE_STATUSES, futureModules, moduleRegistry } from '../../shared/moduleRegistry.js';
+import { MODULE_STATUSES, moduleRegistry } from '../../shared/moduleRegistry.js';
 
 function StatCard({ theme, label, value, hint }) {
   return (
@@ -93,7 +93,7 @@ export default function Modules({ theme, selectedGuild, selectedGuildData }) {
     total: modules.length,
     enabled: modules.filter((module) => module.enabled).length,
     backendReady: modules.filter((module) => module.status === MODULE_STATUSES.backendReady).length,
-    planned: modules.filter((module) => module.status === MODULE_STATUSES.planned).length,
+    comingSoon: modules.filter((module) => [MODULE_STATUSES.planned, MODULE_STATUSES.uiPending].includes(module.status)).length,
   }), [modules]);
 
   const cardStyle = {
@@ -148,7 +148,7 @@ export default function Modules({ theme, selectedGuild, selectedGuildData }) {
             <StatCard theme={theme} label="Feature Modules" value={stats.total} hint="Alphabetical grid" />
             <StatCard theme={theme} label="Enabled" value={stats.enabled} hint="Saved to guild JSON" />
             <StatCard theme={theme} label="Backend Ready" value={stats.backendReady} hint="Storage/API ready" />
-            <StatCard theme={theme} label="Planned" value={stats.planned} hint="Roadmap modules" />
+            <StatCard theme={theme} label="Coming Soon" value={stats.comingSoon} hint="Roadmap placeholders" />
           </div>
         </div>
       </section>
@@ -174,19 +174,6 @@ export default function Modules({ theme, selectedGuild, selectedGuildData }) {
             saving={savingKey === module.key}
           />
         ))}
-      </section>
-
-      <section style={{ ...cardStyle, padding: 18, display: 'grid', gap: 12 }}>
-        <div>
-          <strong>Future Modules</strong>
-          <div style={{ color: theme.mutedText, fontSize: 13, marginTop: 4 }}>These roadmap items will move into the main grid as storage, APIs or dashboard routes are added.</div>
-        </div>
-
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {futureModules.map((name) => (
-            <span key={name} style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(148,163,184,0.08)', color: theme.mutedText, borderRadius: 999, padding: '6px 10px', fontSize: 12, fontWeight: 850 }}>{name}</span>
-          ))}
-        </div>
       </section>
     </div>
   );
