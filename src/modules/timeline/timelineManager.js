@@ -1,4 +1,5 @@
 const timelineStore = require('./timelineStore');
+const { isModuleEnabled } = require('../../guild/guildManager');
 
 const TYPES = {
   SYSTEM: 'system',
@@ -43,6 +44,7 @@ function cleanText(value, fallback, maxLength) {
 
 function createTimelineEvent(guildId, input = {}, client) {
   if (!guildId) return null;
+  if (!isModuleEnabled(guildId, 'timeline')) return null;
 
   const actor = getActorInfo(input.actor);
 
@@ -74,11 +76,15 @@ function createTimelineEvent(guildId, input = {}, client) {
 
 function listTimeline(guildId, options = {}, client) {
   if (!guildId) return [];
+  if (!isModuleEnabled(guildId, 'timeline')) return [];
+
   return timelineStore.listTimelineEvents(guildId, options, client);
 }
 
 function clearTimeline(guildId, client) {
   if (!guildId) return null;
+  if (!isModuleEnabled(guildId, 'timeline')) return null;
+
   return timelineStore.clearTimeline(guildId, client);
 }
 
