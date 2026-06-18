@@ -14,6 +14,7 @@ const {
 
 const formStore = require('./formStore');
 const formTicketBridge = require('./formTicketBridge');
+const { isModuleEnabled } = require('../../guild/guildManager');
 
 const CUSTOM_ID_PREFIX = 'form';
 const MAX_MODAL_FIELDS = 5;
@@ -43,20 +44,20 @@ function buildFormsOverviewEmbed(guildId) {
 
   return new EmbedBuilder()
     .setColor(section.enabled === false ? 0xed4245 : 0x5865f2)
-    .setTitle('📝 Universal Forms')
+    .setTitle('Universal Forms')
     .setDescription([
       '**One clean form engine for applications, appeals, reports and support.**',
       '',
-      `> **Status:** ${section.enabled === false ? '🔴 Disabled' : '🟢 Enabled'}`,
+      `> **Status:** ${section.enabled === false ? 'Disabled' : 'Enabled'}`,
       `> **Forms:** ${enabledForms.length}/${forms.length} active`,
       `> **Submissions:** ${section.analytics?.submitted || 0}`,
       `> **Tickets Created:** ${section.analytics?.ticketsCreated || 0}`,
       '',
       forms.length
-        ? forms.slice(0, 10).map((form, index) => `**${index + 1}. ${form.name}** — ${form.enabled === false ? 'Disabled' : form.action}`).join('\n')
+        ? forms.slice(0, 10).map((form, index) => `**${index + 1}. ${form.name}** - ${form.enabled === false ? 'Disabled' : form.action}`).join('\n')
         : 'No forms created yet. Dashboard builder can wire into this store next.',
     ].join('\n'))
-    .setFooter({ text: 'Goliath Forms • Universal forms + tickets foundation' })
+    .setFooter({ text: 'Goliath Forms - Universal forms + tickets foundation' })
     .setTimestamp(new Date());
 }
 
@@ -68,7 +69,7 @@ function buildFormPanelEmbed(panel = {}, forms = []) {
       panel.description || 'Choose a form below.',
       '',
       forms.length
-        ? forms.map((form) => `• **${form.name}** — ${form.description || 'Submit for staff review.'}`).join('\n')
+        ? forms.map((form) => `- **${form.name}** - ${form.description || 'Submit for staff review.'}`).join('\n')
         : 'No forms are currently available.',
     ].join('\n'))
     .setFooter({ text: 'Goliath Forms' })
@@ -134,6 +135,10 @@ async function deployFormPanel(channel, panel, guildOrMeta = {}) {
     throw new Error('A sendable channel is required.');
   }
 
+  if (!isModuleEnabled(channel.guild.id, 'forms')) {
+    throw new Error('Forms module is disabled for this server.');
+  }
+
   const forms = panel.formIds
     .map((formId) => formStore.getForm(channel.guild.id, formId))
     .filter(Boolean);
@@ -171,21 +176,21 @@ function collectModalAnswers(interaction, form) {
 function buildSubmissionReply(form, submission, bridgeResult) {
   if (bridgeResult?.ok && bridgeResult.ticket) {
     return [
-      `✅ Your **${form.name}** submission was received.`,
-      `Reference: \`${submission.submissionId}\``,
-      `Ticket: \`${bridgeResult.ticket.displayId || bridgeResult.ticket.ticketId}\``,
+      `Your **${form.name}** submission was received.`,
+      `Reference: ${submission.submissionId}`,
+      `Ticket: ${bridgeResult.ticket.displayId || bridgeResult.ticket.ticketId}`,
       bridgeResult.channel ? `Channel: <#${bridgeResult.channel.id}>` : 'Staff ticket record created. Channel creation is pending/recoverable.',
     ].join('\n');
   }
 
   if (bridgeResult?.skipped) {
-    return `✅ Your **${form.name}** submission was received. Reference: \`${submission.submissionId}\``;
+    return `Your **${form.name}** submission was received. Reference: ${submission.submissionId}`;
   }
 
   return [
-    `✅ Your **${form.name}** submission was received.`,
-    `Reference: \`${submission.submissionId}\``,
-    '⚠️ Staff ticket creation failed, but the submission was saved for recovery.',
+    `Your **${form.name}** submission was received.`,
+    `Reference: ${submission.submissionId}`,
+    'Staff ticket creation failed, but the submission was saved for recovery.',
   ].join('\n');
 }
 
@@ -193,11 +198,20 @@ async function handleFormInteraction(interaction) {
   const parsed = parseFormCustomId(interaction.customId);
   if (!parsed || !interaction.guildId) return false;
 
+  if (!isModuleEnabled(interaction.guildId, 'forms')) {
+    await interaction.reply({
+      content: 'Forms are currently disabled on this server.',
+      flags: 64,
+    });
+
+    return true;
+  }
+
   if (parsed.action === 'open') {
     const form = formStore.getForm(interaction.guildId, parsed.id);
 
     if (!form || form.enabled === false) {
-      await interaction.reply({ content: '⚠️ This form is no longer available.', flags: 64 });
+      await interaction.reply({ content: 'This form is no longer available.', flags: 64 });
       return true;
     }
 
@@ -209,7 +223,7 @@ async function handleFormInteraction(interaction) {
     const form = formStore.getForm(interaction.guildId, parsed.id);
 
     if (!form || form.enabled === false) {
-      await interaction.reply({ content: '⚠️ This form is no longer available.', flags: 64 });
+      await interaction.reply({ content: 'This form is no longer available.', flags: 64 });
       return true;
     }
 
