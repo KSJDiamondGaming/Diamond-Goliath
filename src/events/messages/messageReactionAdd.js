@@ -5,15 +5,38 @@
 const { handleReactionAdd } = require('../../modules/roles/reactionRoleHandler');
 const { enterGiveaway } = require('../../modules/giveaways/giveawayManager');
 const { handleStarReactionAdd } = require('../../modules/starboard/starboardManager');
+const { isModuleEnabled } = require('../../guild/guildManager');
+
+async function getReactionGuildId(reaction) {
+  if (reaction?.partial) {
+    await reaction.fetch().catch(() => null);
+  }
+
+  if (reaction?.message?.partial) {
+    await reaction.message.fetch().catch(() => null);
+  }
+
+  return reaction?.message?.guild?.id || null;
+}
 
 module.exports = {
   name: 'messageReactionAdd',
 
   async execute(reaction, user, client) {
     try {
-      await handleReactionAdd(reaction, user, client);
-      await enterGiveaway(reaction, user, client);
-      await handleStarReactionAdd(reaction, user, client);
+      const guildId = await getReactionGuildId(reaction);
+
+      if (isModuleEnabled(guildId, 'roles')) {
+        await handleReactionAdd(reaction, user, client);
+      }
+
+      if (isModuleEnabled(guildId, 'giveaways')) {
+        await enterGiveaway(reaction, user, client);
+      }
+
+      if (isModuleEnabled(guildId, 'starboard')) {
+        await handleStarReactionAdd(reaction, user, client);
+      }
     } catch (error) {
       console.error('[EVENT: messageReactionAdd]', error);
     }
