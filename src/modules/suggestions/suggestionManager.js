@@ -1,5 +1,6 @@
 const { EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const suggestionStore = require('./suggestionStore');
+const { isModuleEnabled } = require('../../guild/guildManager');
 
 const STATUS = {
   PENDING: 'pending',
@@ -53,6 +54,7 @@ function getStatusColor(status) {
 
 async function postSuggestion(channel, input, client) {
   if (!channel?.guild) return null;
+  if (!isModuleEnabled(channel.guild.id, 'suggestions')) return null;
 
   const suggestion = suggestionStore.createSuggestion(
     channel.guild.id,
@@ -83,6 +85,7 @@ async function postSuggestion(channel, input, client) {
 }
 
 function setSuggestionStatus(guildId, suggestionId, status, actor, client) {
+  if (!isModuleEnabled(guildId, 'suggestions')) return null;
   if (!Object.values(STATUS).includes(status)) return null;
 
   return suggestionStore.updateSuggestion(
@@ -99,6 +102,8 @@ function setSuggestionStatus(guildId, suggestionId, status, actor, client) {
 }
 
 function toggleVote(guildId, suggestionId, userId, voteType, client) {
+  if (!isModuleEnabled(guildId, 'suggestions')) return null;
+
   const suggestion = suggestionStore.getSuggestion(guildId, suggestionId, client);
   if (!suggestion || !userId) return null;
 
