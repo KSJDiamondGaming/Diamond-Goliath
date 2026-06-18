@@ -4,6 +4,13 @@
 
 const { ChannelType, PermissionFlagsBits } = require('discord.js');
 const tempVoiceStore = require('./tempVoiceStore');
+const { isModuleEnabled } = require('../../guild/guildManager');
+
+function assertTempVoiceModuleEnabled(guildId) {
+  if (!isModuleEnabled(guildId, 'tempVoice')) {
+    throw new Error('Temp Voice module is disabled for this server.');
+  }
+}
 
 function safeChannelName(name) {
   return String(name || 'Temp Voice')
@@ -33,6 +40,7 @@ async function createTempChannel(newState, hub, client) {
   const member = newState.member;
 
   if (!guild || !member || !hub?.joinChannelId) return null;
+  if (!isModuleEnabled(guild.id, 'tempVoice')) return null;
   if (!canManageVoice(guild)) return null;
 
   const parent = hub.categoryId || newState.channel?.parentId || null;
@@ -96,13 +104,15 @@ async function handleVoiceStateUpdate(oldState, newState, client) {
     if (!guild?.id) return null;
 
     if (newState.channelId && newState.channelId !== oldState.channelId) {
-      const section = tempVoiceStore.getTempVoiceSection(guild.id);
+      if (isModuleEnabled(guild.id, 'tempVoice')) {
+        const section = tempVoiceStore.getTempVoiceSection(guild.id);
 
-      if (section.enabled !== false) {
-        const hub = tempVoiceStore.findHubByJoinChannel(guild.id, newState.channelId);
+        if (section.enabled !== false) {
+          const hub = tempVoiceStore.findHubByJoinChannel(guild.id, newState.channelId);
 
-        if (hub) {
-          await createTempChannel(newState, hub, client);
+          if (hub) {
+            await createTempChannel(newState, hub, client);
+          }
         }
       }
     }
@@ -119,6 +129,8 @@ async function handleVoiceStateUpdate(oldState, newState, client) {
 }
 
 function createHub(guildId, input = {}) {
+  assertTempVoiceModuleEnabled(guildId);
+
   return tempVoiceStore.saveHub(guildId, {
     joinChannelId: input.joinChannelId,
     categoryId: input.categoryId,
