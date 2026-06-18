@@ -53,7 +53,6 @@ function ModuleToggle({ enabled, disabled, onToggle }) {
 function ModuleCard({ module, theme, onOpen, onToggle, saving }) {
   const [hovered, setHovered] = useState(false);
   const enabled = module?.enabled === true;
-  const canOpen = Boolean(module?.route);
   const statusMeta = getModuleStatusMeta(module?.status);
   const statusStyle = STATUS_STYLES[statusMeta.tone] || STATUS_STYLES.muted;
 
@@ -115,7 +114,7 @@ function ModuleCard({ module, theme, onOpen, onToggle, saving }) {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {enabled && canOpen ? (
+          {enabled ? (
             <button
               type="button"
               onClick={(event) => {
