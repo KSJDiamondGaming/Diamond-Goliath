@@ -139,6 +139,19 @@ getOwnerSecurity(guildId) {
     );
   },
 
+  /* ---------------- MODULES ---------------- */
+
+  getGuildModules(guildId) {
+    return request(`/api/modules/${guildId}`);
+  },
+
+  setGuildModuleEnabled(guildId, moduleKey, enabled) {
+    return request(`/api/modules/${guildId}/${moduleKey}/enabled`, {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled }),
+    });
+  },
+
   /* ---------------- AUTOMOD ---------------- */
 
   getAutoModConfig(guildId) {
