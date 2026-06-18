@@ -40,7 +40,12 @@ jobs:
             echo "🏗️ Building dashboard..."
             npm run build
 
-            echo "♻️ Restarting DEV bot..."
+            echo "🌐 Publishing DEV dashboard..."
+            mkdir -p /var/www/goliath-dev-dashboard
+            rm -rf /var/www/goliath-dev-dashboard/*
+            cp -r dist/* /var/www/goliath-dev-dashboard/
+
+            echo "♻️ Restarting DEV bot/API..."
             BOT_MODE=dev pm2 restart goliath-dev --update-env
 
             pm2 save
