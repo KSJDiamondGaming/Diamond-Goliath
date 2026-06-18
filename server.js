@@ -49,6 +49,7 @@ const securityRoutes = require('./src/server/routes/security');
 const ticketRoutes = require('./src/server/routes/tickets');
 const formsRoutes = require('./src/server/routes/forms');
 const translationRoutes = require('./src/server/routes/translation');
+const modulesRoutes = require('./src/server/routes/modules');
 
 /* ---------------- SAFE MODULE LOADS ---------------- */
 
@@ -258,6 +259,7 @@ app.use('/api/cases', moderationRoutes);
 app.use('/api/tickets', ticketRoutes);
 app.use('/api/forms', formsRoutes);
 app.use('/api/translation', translationRoutes);
+app.use('/api/modules', modulesRoutes);
 
 app.use('/api/server-restore', serverRestoreRoutes);
 app.use('/api/security', securityRoutes);
@@ -351,7 +353,7 @@ console.log(`🧩 Event: ${event.name}`);
 }
 
 function loadEvents() {
-const eventsPath = path.join(__dirname, 'src', 'events');
+const eventsPath = path.join(process.cwd(), 'src', 'events');
 const files = getAllJsFiles(eventsPath);
 
 console.log(`📦 Loading events from: ${eventsPath}`);
@@ -359,160 +361,62 @@ console.log(`📦 Loading events from: ${eventsPath}`);
 for (const file of files) {
 try {
 delete require.cache[require.resolve(file)];
-
-  const loadedEvent = require(file);
-  const events = Array.isArray(loadedEvent) ? loadedEvent : [loadedEvent];
-
-  for (const event of events) {
-    registerEvent(event, file);
-  }
+const event = require(file);
+registerEvent(event, file);
 } catch (error) {
-  console.error(`❌ Event failed: ${file}`);
-  console.error(error);
+console.error(`❌ Event failed: ${file}`);
+console.error(error);
 }
-
 }
 
 console.log('✅ Event loading complete.');
-}
-
-/* ---------------- MODE EVENTS ---------------- */
-
-function registerModeProtectionEvents() {
-client.on('guildCreate', async (guild) => {
-console.log(`[guildCreate] Joined guild: ${guild.name} (${guild.id})`);
-
-await enforceGuildAccess(guild, BOT_MODE, activeMode);
-
-console.log(
-  '[guildCreate] Guild cache:',
-  client.guilds.cache.map((g) => `${g.name} (${g.id})`).join(', ') || 'None',
-);
-
-});
-
-client.on('guildDelete', async (guild) => {
-console.warn(`[guildDelete] Removed from guild: ${guild.name} (${guild.id})`);
-
-console.warn(
-  '[guildDelete] Guild cache:',
-  client.guilds.cache.map((g) => `${g.name} (${g.id})`).join(', ') || 'None',
-);
-
-});
+console.log(`[Debug] interactionCreate listeners: ${client.listenerCount('interactionCreate')}`);
 }
 
 /* ---------------- PROCESS SAFETY ---------------- */
 
-function registerProcessSafetyHandlers(apiServer) {
-let shuttingDown = false;
-
-async function shutdown(reason) {
-if (shuttingDown) return;
-
-shuttingDown = true;
-
-console.log(`🛑 ${reason} received. Shutting down Goliath...`);
-
-if (apiServer) {
-  apiServer.close(() => {
-    console.log('🌐 Dashboard API stopped.');
-  });
-}
-
-client.destroy();
-
-process.exit(0);
-}
-
 process.on('unhandledRejection', (reason) => {
-console.error('❌ Unhandled Promise Rejection');
+console.error('❌ Unhandled Rejection');
 console.error(reason);
 });
 
 process.on('uncaughtException', (error) => {
 console.error('❌ Uncaught Exception');
 console.error(error);
-process.exit(1);
 });
 
-process.on('SIGINT', () => shutdown('SIGINT'));
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-}
+process.on('SIGINT', async () => {
+console.log('🛑 SIGINT received. Shutting down Goliath...');
+if (client?.destroy) client.destroy();
+process.exit(0);
+});
 
 /* ---------------- START ---------------- */
+
 async function start() {
 printStartupBanner();
 
-const runtimePaths = bootstrapRuntime(BOT_MODE);
-
-printStartupFingerprint(BOT_MODE, runtimePaths);
-
-client.runtimePaths = runtimePaths;
-
-console.log(`📁 Runtime Root: ${runtimePaths.root}`);
-console.log(`📁 Runtime Mode: ${runtimePaths.mode}`);
-
-runBootValidation({
-requiredPaths: [
-{
-path: './src/commands',
-label: 'Commands Folder',
-},
-{
-path: './src/events',
-label: 'Events Folder',
-},
-{
-path: './src/security',
-label: 'Security Folder',
-},
-],
-requiredEnv: ['DISCORD_TOKEN'],
-});
-
-const token = getRequiredEnv('DISCORD_TOKEN');
-
-if (BOT_MODE === 'DEV') {
-getRequiredEnv('DEV_GUILD_ID');
-}
-
-if (BOT_MODE === 'BETA') {
-getRequiredEnv('BETA_GUILD_IDS');
-}
-
-const apiServer = startDashboardApiServer();
-
-registerProcessSafetyHandlers(apiServer);
-registerModeProtectionEvents();
+bootstrapRuntime(BOT_MODE);
+printStartupFingerprint(BOT_MODE);
+runBootValidation();
 
 if (startServerBackupScheduler) {
-startServerBackupScheduler(client);
+try {
+startServerBackupScheduler({ intervalDays: 7, maxBackups: 3 });
+} catch (error) {
+console.error('❌ Failed to start server backup scheduler');
+console.error(error);
+}
 }
 
 loadCommands();
 loadEvents();
 
-console.log(
-'[Debug] interactionCreate listeners:',
-client.listenerCount('interactionCreate'),
-);
+const apiServer = startDashboardApiServer();
+client.dashboardApiServer = apiServer;
 
+const token = getRequiredEnv('DISCORD_TOKEN');
 await client.login(token);
 }
 
-start().catch((error) => {
-console.error('❌ Bot startup failed');
-console.error(error);
-process.exit(1);
-});
-
-process.on('unhandledRejection', (reason) => {
-console.error('❌ UNHANDLED REJECTION:', reason);
-});
-
-process.on('uncaughtException', (error) => {
-console.error('❌ UNCAUGHT EXCEPTION:', error);
-});
-
-module.exports = client;
+start();
