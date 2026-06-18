@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { api } from '../../services/apiClient.js';
 import ModuleCard from '../../ui/ModuleCard.jsx';
-import { MODULE_CATEGORIES, MODULE_STATUSES, futureModules, moduleRegistry } from '../../shared/moduleRegistry.js';
+import { MODULE_STATUSES, futureModules, moduleRegistry } from '../../shared/moduleRegistry.js';
 
 function StatCard({ theme, label, value, hint }) {
   return (
@@ -82,22 +82,18 @@ export default function Modules({ theme, selectedGuild, selectedGuildData }) {
   }, [guildId]);
 
   const registryModules = useMemo(() => (
-    [...moduleRegistry].sort((a, b) => (a.priority || 999) - (b.priority || 999))
+    [...moduleRegistry].sort((a, b) => a.name.localeCompare(b.name))
   ), []);
 
-  const modules = useMemo(() => mergeModuleState(registryModules, moduleState), [registryModules, moduleState]);
-
-  const groups = useMemo(() => (
-    Object.values(MODULE_CATEGORIES)
-      .map((category) => ({ category, modules: modules.filter((module) => module.category === category) }))
-      .filter((group) => group.modules.length > 0)
-  ), [modules]);
+  const modules = useMemo(() => (
+    mergeModuleState(registryModules, moduleState).sort((a, b) => a.name.localeCompare(b.name))
+  ), [registryModules, moduleState]);
 
   const stats = useMemo(() => ({
     total: modules.length,
     enabled: modules.filter((module) => module.enabled).length,
-    live: modules.filter((module) => module.status === MODULE_STATUSES.live).length,
     backendReady: modules.filter((module) => module.status === MODULE_STATUSES.backendReady).length,
+    planned: modules.filter((module) => module.status === MODULE_STATUSES.planned).length,
   }), [modules]);
 
   const cardStyle = {
@@ -110,7 +106,7 @@ export default function Modules({ theme, selectedGuild, selectedGuildData }) {
 
   function handleOpenModule(module) {
     if (!module?.route || module.enabled !== true) return;
-    const existingRoutes = new Set(['/automod', '/forms', '/generalSettings', '/logs', '/messages', '/restore', '/security']);
+    const existingRoutes = new Set(['/forms']);
     if (existingRoutes.has(module.route)) navigate(module.route);
   }
 
@@ -145,14 +141,14 @@ export default function Modules({ theme, selectedGuild, selectedGuildData }) {
           <div>
             <p style={{ margin: '0 0 8px', color: '#93c5fd', fontWeight: 950, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Goliath Modules Hub</p>
             <h1 style={{ margin: 0, fontSize: 'clamp(28px, 4vw, 42px)', letterSpacing: '-0.04em' }}>Modules</h1>
-            <p style={{ margin: '10px 0 0', color: theme.mutedText, lineHeight: 1.6, maxWidth: 840 }}>Enable or disable each Goliath module for this guild. Enabled modules show a cog so their own settings page can be opened.</p>
+            <p style={{ margin: '10px 0 0', color: theme.mutedText, lineHeight: 1.6, maxWidth: 840 }}>Enable or disable optional feature modules for this guild. Core dashboard pages such as Security, Logs, Restore and General Settings stay in the sidebar.</p>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))', gap: 12 }}>
-            <StatCard theme={theme} label="Total Modules" value={stats.total} hint="Registered in hub" />
+            <StatCard theme={theme} label="Feature Modules" value={stats.total} hint="Alphabetical grid" />
             <StatCard theme={theme} label="Enabled" value={stats.enabled} hint="Saved to guild JSON" />
-            <StatCard theme={theme} label="Live Routes" value={stats.live} hint="Config pages ready" />
-            <StatCard theme={theme} label="Backend Ready" value={stats.backendReady} hint="UI polish next" />
+            <StatCard theme={theme} label="Backend Ready" value={stats.backendReady} hint="Storage/API ready" />
+            <StatCard theme={theme} label="Planned" value={stats.planned} hint="Roadmap modules" />
           </div>
         </div>
       </section>
@@ -161,33 +157,24 @@ export default function Modules({ theme, selectedGuild, selectedGuildData }) {
         <div style={{ color: theme.mutedText, fontSize: 12, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Active Context</div>
         <div style={{ marginTop: 5, fontWeight: 950 }}>{getGuildName(selectedGuildData, selectedGuild)}</div>
         <div style={{ marginTop: 5, color: theme.mutedText, fontSize: 13 }}>
-          {guildId ? `Saving module states to modules.{moduleKey}.enabled in guild ${guildId}.json` : 'Select a server from the navbar to manage modules.'}
+          {guildId ? `Saving feature module states to modules.{moduleKey}.enabled in guild ${guildId}.json` : 'Select a server from the navbar to manage modules.'}
           {loading ? ' · Loading states...' : ''}
         </div>
         {error ? <div style={{ marginTop: 8, color: '#fca5a5', fontSize: 13, fontWeight: 850 }}>{error}</div> : null}
       </section>
 
-      {groups.map((group) => (
-        <section key={group.category} style={{ display: 'grid', gap: 12 }}>
-          <div>
-            <h2 style={{ margin: 0, fontSize: 18, color: theme.cardText }}>{group.category}</h2>
-            <p style={{ margin: '4px 0 0', color: theme.mutedText, fontSize: 13 }}>{group.modules.length} module{group.modules.length === 1 ? '' : 's'}</p>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 250px), 1fr))', gap: 14 }}>
-            {group.modules.map((module) => (
-              <ModuleCard
-                key={module.key}
-                module={module}
-                theme={theme}
-                onOpen={handleOpenModule}
-                onToggle={handleToggleModule}
-                saving={savingKey === module.key}
-              />
-            ))}
-          </div>
-        </section>
-      ))}
+      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 250px), 1fr))', gap: 14 }}>
+        {modules.map((module) => (
+          <ModuleCard
+            key={module.key}
+            module={module}
+            theme={theme}
+            onOpen={handleOpenModule}
+            onToggle={handleToggleModule}
+            saving={savingKey === module.key}
+          />
+        ))}
+      </section>
 
       <section style={{ ...cardStyle, padding: 18, display: 'grid', gap: 12 }}>
         <div>
