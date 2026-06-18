@@ -5,15 +5,38 @@
 const { handleReactionRemove } = require('../../modules/roles/reactionRoleHandler');
 const { leaveGiveaway } = require('../../modules/giveaways/giveawayManager');
 const { handleStarReactionRemove } = require('../../modules/starboard/starboardManager');
+const { isModuleEnabled } = require('../../guild/guildManager');
+
+async function getReactionGuildId(reaction) {
+  if (reaction?.partial) {
+    await reaction.fetch().catch(() => null);
+  }
+
+  if (reaction?.message?.partial) {
+    await reaction.message.fetch().catch(() => null);
+  }
+
+  return reaction?.message?.guild?.id || null;
+}
 
 module.exports = {
   name: 'messageReactionRemove',
 
   async execute(reaction, user, client) {
     try {
-      await handleReactionRemove(reaction, user, client);
-      await leaveGiveaway(reaction, user, client);
-      await handleStarReactionRemove(reaction, user, client);
+      const guildId = await getReactionGuildId(reaction);
+
+      if (isModuleEnabled(guildId, 'roles')) {
+        await handleReactionRemove(reaction, user, client);
+      }
+
+      if (isModuleEnabled(guildId, 'giveaways')) {
+        await leaveGiveaway(reaction, user, client);
+      }
+
+      if (isModuleEnabled(guildId, 'starboard')) {
+        await handleStarReactionRemove(reaction, user, client);
+      }
     } catch (error) {
       console.error('[EVENT: messageReactionRemove]', error);
     }
