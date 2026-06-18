@@ -7,6 +7,7 @@ const {
 const guildManager = require('../guild/guildManager');
 
 const CHECK_EVERY_MS = 60 * 60 * 1000; // checks hourly
+const INITIAL_DELAY_MS = 30 * 1000;
 
 let started = false;
 
@@ -46,6 +47,16 @@ function shouldBackup(guildId) {
   if (!lastBackupAt) return true;
 
   return Date.now() - lastBackupAt >= daysToMs(getIntervalDays());
+}
+
+function getClientGuilds(client) {
+  const guilds = client?.guilds?.cache;
+
+  if (!guilds || typeof guilds.values !== 'function') {
+    return null;
+  }
+
+  return [...guilds.values()];
 }
 
 function cleanupOldBackups(guildId) {
@@ -98,16 +109,23 @@ async function backupGuild(guild) {
 async function runServerBackupCycle(client) {
   if (!isEnabled()) return [];
 
+  const guilds = getClientGuilds(client);
+
+  if (!guilds) {
+    console.warn('💾 Server backup cycle skipped: Discord client is not ready yet.');
+    return [];
+  }
+
   const results = [];
 
-  for (const guild of client.guilds.cache.values()) {
+  for (const guild of guilds) {
     try {
       const result = await backupGuild(guild);
       if (result) results.push(result);
 
       if (result?.skipped) {
         console.log(`💾 Backup skipped: ${guild.name} | ${result.reason}`);
-      } else {
+      } else if (result) {
         console.log(
           `💾 Backup created: ${guild.name} | ${result.backupId} | old deleted: ${result.deletedOldBackups}`
         );
@@ -137,15 +155,17 @@ function startServerBackupScheduler(client) {
     `💾 Server backup scheduler started | every ${getIntervalDays()} day(s) | keep ${getRetentionLimit()}`
   );
 
-  runServerBackupCycle(client).catch((error) => {
-    console.error('❌ Initial server backup cycle failed:', error);
-  });
+  setTimeout(() => {
+    runServerBackupCycle(client).catch((error) => {
+      console.error('❌ Initial server backup cycle failed:', error);
+    });
+  }, INITIAL_DELAY_MS).unref?.();
 
   setInterval(() => {
     runServerBackupCycle(client).catch((error) => {
       console.error('❌ Scheduled server backup cycle failed:', error);
     });
-  }, CHECK_EVERY_MS);
+  }, CHECK_EVERY_MS).unref?.();
 }
 
 module.exports = {
