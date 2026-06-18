@@ -42,6 +42,8 @@ const {
   emitTicketDeleted,
 } = require('./ticketSocketEvents');
 
+const { isModuleEnabled } = require('../../guild/guildManager');
+
 function generateTicketId() {
   return crypto.randomUUID();
 }
@@ -98,6 +100,16 @@ function formatTicketDisplayId(type, number, padding = 4) {
   return `${cleanType}-${paddedNumber}`;
 }
 
+function assertTicketsModuleEnabled(guildId) {
+  if (!guildId) {
+    throw new Error('Missing guildId');
+  }
+
+  if (!isModuleEnabled(guildId, 'tickets')) {
+    throw new Error('Tickets module is disabled for this server.');
+  }
+}
+
 async function createNewTicket({
   guildId,
   creatorId,
@@ -113,9 +125,7 @@ async function createNewTicket({
   tags = [],
   metadata = {},
 } = {}) {
-  if (!guildId) {
-    throw new Error('Missing guildId');
-  }
+  assertTicketsModuleEnabled(guildId);
 
   if (!isValidPriority(priority)) {
     throw new Error(`Invalid ticket priority: ${priority}`);
@@ -189,6 +199,8 @@ async function closeTicket({
   actorId,
   reason = null,
 } = {}) {
+  assertTicketsModuleEnabled(guildId);
+
   const ticket = getTicket(guildId, ticketId);
 
   if (!ticket) return null;
@@ -227,6 +239,8 @@ async function reopenTicket({
   ticketId,
   actorId,
 } = {}) {
+  assertTicketsModuleEnabled(guildId);
+
   const ticket = getTicket(guildId, ticketId);
 
   if (!ticket) return null;
@@ -273,6 +287,8 @@ async function claimTicket({
   ticketId,
   actorId,
 } = {}) {
+  assertTicketsModuleEnabled(guildId);
+
   const ticket = getTicket(guildId, ticketId);
 
   if (!ticket) return null;
@@ -321,6 +337,8 @@ async function assignTicket({
   actorId,
   assignedUserId,
 } = {}) {
+  assertTicketsModuleEnabled(guildId);
+
   const ticket = getTicket(guildId, ticketId);
 
   if (!ticket) return null;
@@ -353,6 +371,8 @@ async function updateTicketStatus({
   status,
   reason = null,
 } = {}) {
+  assertTicketsModuleEnabled(guildId);
+
   const ticket = getTicket(guildId, ticketId);
 
   if (!ticket) return null;
@@ -428,6 +448,8 @@ async function changeTicketPriority({
   actorId,
   priority,
 } = {}) {
+  assertTicketsModuleEnabled(guildId);
+
   const ticket = getTicket(guildId, ticketId);
 
   if (!ticket) return null;
@@ -460,6 +482,8 @@ async function addTicketNote({
   actorId,
   note,
 } = {}) {
+  assertTicketsModuleEnabled(guildId);
+
   const ticket = getTicket(guildId, ticketId);
 
   if (!ticket) return null;
@@ -505,6 +529,8 @@ async function archiveTicket({
   actorId,
   reason = null,
 } = {}) {
+  assertTicketsModuleEnabled(guildId);
+
   const ticket = getTicket(guildId, ticketId);
 
   if (!ticket) return null;
@@ -542,6 +568,8 @@ async function removeTicket({
   guildId,
   ticketId,
 } = {}) {
+  assertTicketsModuleEnabled(guildId);
+
   const ticket = getTicket(guildId, ticketId);
   const deleted = deleteTicket(guildId, ticketId);
 
