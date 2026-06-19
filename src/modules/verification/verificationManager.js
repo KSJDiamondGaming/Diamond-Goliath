@@ -260,16 +260,14 @@ module.exports = {
 
   buildVerificationEmbed,
   buildVerificationRows,
-<<<<<<< Updated upstream
+
   configureVerification,
   setVerificationEnabled,
-=======
 
   toggleVerification,
   getVerificationStatus,
   updateVerificationSettings,
 
->>>>>>> Stashed changes
   deployVerificationPanel,
   verifyMember,
   handleVerificationInteraction,
