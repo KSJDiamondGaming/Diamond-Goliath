@@ -162,13 +162,19 @@ function removeBotRole(guildId, roleId, meta = {}) {
 }
 
 function updateSettings(guildId, settings = {}, meta = {}) {
+  const input = settings && typeof settings === 'object' ? settings : {};
+
   return updateAutoRolesSection(guildId, (section) => ({
     ...section,
     settings: {
       ...(section.settings || {}),
-      ...(settings && typeof settings === 'object' ? settings : {}),
-      applyToBots: settings.applyToBots === true,
-      auditLog: settings.auditLog !== false,
+      ...input,
+      applyToBots: typeof input.applyToBots === 'boolean'
+        ? input.applyToBots
+        : section.settings?.applyToBots === true,
+      auditLog: typeof input.auditLog === 'boolean'
+        ? input.auditLog
+        : section.settings?.auditLog !== false,
     },
     updatedAt: now(),
   }), meta);
