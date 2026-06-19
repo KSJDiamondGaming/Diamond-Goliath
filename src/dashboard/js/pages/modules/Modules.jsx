@@ -106,8 +106,7 @@ export default function Modules({ theme, selectedGuild, selectedGuildData }) {
 
   function handleOpenModule(module) {
     if (!module?.route || module.enabled !== true) return;
-    const existingRoutes = new Set(['/forms', '/verification', '/autoroles']);
-    if (existingRoutes.has(module.route)) navigate(module.route);
+    navigate(module.route);
   }
 
   async function handleToggleModule(module, enabled) {
@@ -141,11 +140,11 @@ export default function Modules({ theme, selectedGuild, selectedGuildData }) {
           <div>
             <p style={{ margin: '0 0 8px', color: '#93c5fd', fontWeight: 950, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Goliath Modules Hub</p>
             <h1 style={{ margin: 0, fontSize: 'clamp(28px, 4vw, 42px)', letterSpacing: '-0.04em' }}>Modules</h1>
-            <p style={{ margin: '10px 0 0', color: theme.mutedText, lineHeight: 1.6, maxWidth: 840 }}>Enable or disable optional feature modules for this guild. Core dashboard pages such as Security, Logs, Restore and General Settings stay in the sidebar.</p>
+            <p style={{ margin: '10px 0 0', color: theme.mutedText, lineHeight: 1.6, maxWidth: 840 }}>Enable a module, then open it from this grid. Module pages stay hidden from the sidebar to keep navigation clean.</p>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))', gap: 12 }}>
-            <StatCard theme={theme} label="Feature Modules" value={stats.total} hint="Alphabetical grid" />
+            <StatCard theme={theme} label="Feature Modules" value={stats.total} hint="Grid launcher" />
             <StatCard theme={theme} label="Enabled" value={stats.enabled} hint="Saved to guild JSON" />
             <StatCard theme={theme} label="Backend Ready" value={stats.backendReady} hint="Storage/API ready" />
             <StatCard theme={theme} label="Coming Soon" value={stats.comingSoon} hint="Roadmap placeholders" />
