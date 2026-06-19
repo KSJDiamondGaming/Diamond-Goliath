@@ -3,7 +3,7 @@
 // src/prefix/prefixRouter.js
 
 const { EmbedBuilder, PermissionFlagsBits } = require('discord.js');
-const guildManager = require('../guild/guildManager');
+const guildManager = require('../../guild/guildManager');
 
 const {
   getGuildPrefix,

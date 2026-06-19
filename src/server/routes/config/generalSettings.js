@@ -10,7 +10,7 @@ const {
   LEGACY_UNSET_PREFIX,
   getGuildPrefix,
   normalizePrefix,
-} = require('../../../prefix/prefixStore');
+} = require('../../../modules/prefix/prefixStore');
 
 const router = express.Router();
 

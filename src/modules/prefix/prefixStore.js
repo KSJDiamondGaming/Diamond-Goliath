@@ -2,7 +2,7 @@
 
 // src/prefix/prefixStore.js
 
-const guildManager = require('../guild/guildManager');
+const guildManager = require('../../guild/guildManager');
 
 const DEFAULT_PREFIX = '!';
 const LEGACY_UNSET_PREFIX = '/';
