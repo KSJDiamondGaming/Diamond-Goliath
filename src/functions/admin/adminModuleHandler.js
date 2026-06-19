@@ -13,6 +13,11 @@ const {
   TextInputStyle,
 } = require('discord.js');
 
+const {
+  buildAutoRolesPayload,
+  buildVerificationPayload,
+} = require('./adminRegisteredModulePayloads');
+
 const MODULE_IDS = new Set([
   'admin:modules',
   'admin:embed',
@@ -195,24 +200,6 @@ function buildModulesPayload() {
         moduleButton('admin:back', '⬅️ Back', ButtonStyle.Secondary)
       ),
     ],
-  };
-}
-
-function buildVerificationPayload(interaction) {
-  const verificationMenu = require('../../modules/verification/verificationMenu');
-
-  return {
-    embeds: [verificationMenu.buildVerificationMenuEmbed(interaction.guildId)],
-    components: verificationMenu.buildVerificationMenuRows(),
-  };
-}
-
-function buildAutoRolesPayload(interaction) {
-  const autoRoleMenu = require('../../modules/autoRoles/autoRoleMenu');
-
-  return {
-    embeds: [autoRoleMenu.buildAutoRolesEmbed(interaction.guildId)],
-    components: autoRoleMenu.buildAutoRolesMenuRows(),
   };
 }
 
