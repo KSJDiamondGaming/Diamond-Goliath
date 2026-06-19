@@ -100,8 +100,8 @@ export default function Tickets({ theme, selectedGuild, selectedGuildData }) {
     setError('');
     try {
       const [overviewPayload, ticketsPayload] = await Promise.all([
-        api.getTicketsOverview(guildId),
-        api.getTickets(guildId),
+        api.request(`/api/tickets/${guildId}/overview`),
+        api.request(`/api/tickets/${guildId}`),
       ]);
       setOverview(overviewPayload.overview || {});
       setTickets(normalizeTickets(ticketsPayload));
