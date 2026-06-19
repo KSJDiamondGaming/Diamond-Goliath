@@ -34,8 +34,58 @@ function buildAutoRolesPayload(interaction) {
   };
 }
 
+function buildGiveawaysPayload(interaction) {
+  const giveawayMenu = requireModuleMenu('giveaways');
+
+  return {
+    embeds: [giveawayMenu.buildGiveawayMenuEmbed(interaction.guildId)],
+    components: giveawayMenu.buildGiveawayMenuRows(),
+  };
+}
+
+function buildStarboardPayload(interaction) {
+  const starboardMenu = requireModuleMenu('starboard');
+
+  return {
+    embeds: [starboardMenu.buildStarboardEmbed(interaction.guildId)],
+    components: starboardMenu.buildStarboardMenuRows(),
+  };
+}
+
+function buildTempVoicePayload(interaction) {
+  const tempVoiceMenu = requireModuleMenu('tempVoice');
+
+  return {
+    embeds: [tempVoiceMenu.buildTempVoiceEmbed(interaction.guildId)],
+    components: tempVoiceMenu.buildTempVoiceMenuRows(),
+  };
+}
+
+function buildStickyPayload(interaction, client) {
+  const stickyMenu = requireModuleMenu('sticky');
+
+  return {
+    embeds: [stickyMenu.buildStickyStatusEmbed(interaction.guildId, interaction.channelId, client)],
+    components: stickyMenu.buildStickyMenuRows(interaction.channelId),
+  };
+}
+
+function buildSuggestionsPayload(interaction, client, options = {}) {
+  const suggestionMenu = requireModuleMenu('suggestions');
+
+  return {
+    embeds: [suggestionMenu.buildSuggestionListEmbed(interaction.guildId, client, options)],
+    components: suggestionMenu.buildSuggestionMenuRows(),
+  };
+}
+
 module.exports = {
   requireModuleMenu,
   buildVerificationPayload,
   buildAutoRolesPayload,
+  buildGiveawaysPayload,
+  buildStarboardPayload,
+  buildTempVoicePayload,
+  buildStickyPayload,
+  buildSuggestionsPayload,
 };
