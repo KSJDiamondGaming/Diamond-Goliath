@@ -49,6 +49,7 @@ const securityRoutes = require('./src/server/routes/security');
 const ticketRoutes = require('./src/server/routes/tickets');
 const formsRoutes = require('./src/server/routes/forms');
 const translationRoutes = require('./src/server/routes/translation');
+const socialRoutes = require('./src/server/routes/social');
 const modulesRoutes = require('./src/server/routes/modules');
 
 /* ---------------- SAFE MODULE LOADS ---------------- */
@@ -259,6 +260,7 @@ app.use('/api/cases', moderationRoutes);
 app.use('/api/tickets', ticketRoutes);
 app.use('/api/forms', formsRoutes);
 app.use('/api/translation', translationRoutes);
+app.use('/api/social', socialRoutes);
 app.use('/api/modules', modulesRoutes);
 
 app.use('/api/server-restore', serverRestoreRoutes);
@@ -374,8 +376,7 @@ console.log(`📦 Loading events from: ${eventsPath}`);
 for (const file of files) {
 try {
 delete require.cache[require.resolve(file)];
-const event = require(file);
-registerEventExport(event, file);
+registerEventExport(require(file), file);
 } catch (error) {
 console.error(`❌ Event failed: ${file}`);
 console.error(error);
@@ -386,50 +387,50 @@ console.log('✅ Event loading complete.');
 console.log(`[Debug] interactionCreate listeners: ${client.listenerCount('interactionCreate')}`);
 }
 
-/* ---------------- PROCESS SAFETY ---------------- */
+/* ---------------- STARTUP ---------------- */
 
-process.on('unhandledRejection', (reason) => {
-console.error('❌ Unhandled Rejection');
-console.error(reason);
-});
-
-process.on('uncaughtException', (error) => {
-console.error('❌ Uncaught Exception');
-console.error(error);
-});
-
-process.on('SIGINT', async () => {
-console.log('🛑 SIGINT received. Shutting down Goliath...');
-if (client?.destroy) client.destroy();
-process.exit(0);
-});
-
-/* ---------------- START ---------------- */
-
-async function start() {
+async function main() {
 printStartupBanner();
 
-bootstrapRuntime(BOT_MODE);
-printStartupFingerprint(BOT_MODE);
-runBootValidation();
+bootstrapRuntime();
+
+printStartupFingerprint({
+botMode: BOT_MODE,
+});
+
+runBootValidation({
+mode: selectedMode,
+});
 
 if (startServerBackupScheduler) {
-try {
-startServerBackupScheduler({ intervalDays: 7, maxBackups: 3 });
-} catch (error) {
-console.error('❌ Failed to start server backup scheduler');
-console.error(error);
-}
+startServerBackupScheduler(client, {
+intervalDays: 7,
+maxBackups: 3,
+});
 }
 
 loadCommands();
 loadEvents();
 
-const apiServer = startDashboardApiServer();
-client.dashboardApiServer = apiServer;
+startDashboardApiServer();
 
-const token = getRequiredEnv('DISCORD_TOKEN');
+const token = getRequiredEnv('DISCORD_BOT_TOKEN');
+
 await client.login(token);
 }
 
-start();
+main().catch((error) => {
+console.error('❌ Fatal startup error');
+console.error(error);
+process.exit(1);
+});
+
+process.on('SIGINT', () => {
+console.log('🛑 SIGINT received. Shutting down Goliath...');
+process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+console.log('🛑 SIGTERM received. Shutting down Goliath...');
+process.exit(0);
+});
