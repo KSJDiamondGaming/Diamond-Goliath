@@ -264,11 +264,35 @@ export default function App() {
     const desktopGrid = styles.grid || {};
     const desktopMainColumn = styles.mainColumn || {};
     const desktopMain = styles.main || {};
+    const fixedShell = {
+      height: '100dvh',
+      minHeight: '100dvh',
+      width: '100%',
+      maxWidth: '100%',
+      overflow: 'hidden',
+      overflowX: 'hidden',
+    };
+
     return {
-      app: { ...styles.app, minHeight: '100dvh', width: '100%', maxWidth: '100%', overflowX: 'hidden' },
-      grid: isMobile ? { display: 'block', minHeight: '100dvh', width: '100%', maxWidth: '100%', overflowX: 'hidden' } : { ...desktopGrid, width: '100%', maxWidth: '100%', minWidth: 0, overflowX: 'hidden' },
-      mainColumn: isMobile ? { minHeight: '100dvh', width: '100%', maxWidth: '100%', minWidth: 0, overflowX: 'hidden' } : { ...desktopMainColumn, minWidth: 0, maxWidth: '100%', overflowX: 'hidden' },
-      main: { ...desktopMain, width: '100%', maxWidth: '100%', minWidth: 0, overflowX: 'hidden', padding: isMobile ? '78px clamp(12px, 4vw, 18px) clamp(18px, 4vw, 28px)' : desktopMain.padding },
+      app: { ...styles.app, ...fixedShell },
+      grid: isMobile
+        ? { display: 'block', ...fixedShell }
+        : { ...desktopGrid, ...fixedShell, minWidth: 0 },
+      mainColumn: isMobile
+        ? { height: '100dvh', minHeight: '100dvh', width: '100%', maxWidth: '100%', minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }
+        : { ...desktopMainColumn, height: '100dvh', minHeight: '100dvh', minWidth: 0, maxWidth: '100%', overflow: 'hidden' },
+      main: {
+        ...desktopMain,
+        width: '100%',
+        maxWidth: '100%',
+        minWidth: 0,
+        flex: 1,
+        minHeight: 0,
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        WebkitOverflowScrolling: 'touch',
+        padding: isMobile ? '78px clamp(12px, 4vw, 18px) clamp(18px, 4vw, 28px)' : desktopMain.padding,
+      },
     };
   }, [styles, isMobile]);
 
