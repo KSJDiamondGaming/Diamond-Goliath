@@ -68,6 +68,16 @@ export const moduleRegistry = [
     summary: 'Role utilities, role automation and future reaction-role controls.',
   },
   {
+    key: 'social',
+    name: 'Social Alerts',
+    icon: 'SA',
+    route: '/social',
+    category: MODULE_CATEGORIES.feature,
+    status: MODULE_STATUSES.backendReady,
+    enabled: false,
+    summary: 'Multi-platform creator alerts for Twitch, YouTube, TikTok, Kick and more.',
+  },
+  {
     key: 'starboard',
     name: 'Starboard',
     icon: 'ST',
