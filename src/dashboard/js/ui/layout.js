@@ -56,18 +56,7 @@ export const NAV_ITEMS = [
       { key: 'warnings', label: 'Warnings', icon: 'warnings', path: '/warnings' },
     ],
   },
-  {
-    key: 'modulesGroup',
-    label: 'Modules',
-    icon: 'modules',
-    children: [
-      { key: 'modules', label: 'Modules Hub', icon: 'modules', path: '/modules' },
-      { key: 'verification', label: 'Verification', icon: 'modules', path: '/verification' },
-      { key: 'autoRoles', label: 'Auto Roles', icon: 'modules', path: '/autoroles' },
-      { key: 'forms', label: 'Forms', icon: 'modules', path: '/forms' },
-      { key: 'tickets', label: 'Tickets', icon: 'modules', path: '/tickets' },
-    ],
-  },
+  { key: 'modules', label: 'Modules', icon: 'modules', path: '/modules' },
 ];
 
 export const NAV_BOTTOM = [
@@ -95,9 +84,9 @@ export const ROUTES = [
   { key: 'ownerTickets', label: 'Tickets Hub', icon: 'modules', path: '/owner/tickets', component: OwnerTicketsHub, ownerOnly: true },
   { key: 'ownerTranslation', label: 'Translation Hub', icon: 'modules', path: '/owner/translation', component: OwnerTranslationHub, ownerOnly: true },
   { key: 'modules', label: 'Modules', icon: 'modules', path: '/modules', component: Modules },
-  { key: 'verification', label: 'Verification', icon: 'modules', path: '/verification', component: Verification },
-  { key: 'autoRoles', label: 'Auto Roles', icon: 'modules', path: '/autoroles', component: AutoRoles },
-  { key: 'tickets', label: 'Tickets', icon: 'modules', path: '/tickets', component: Tickets },
+  { key: 'verification', label: 'Verification', icon: 'modules', path: '/verification', component: Verification, hidden: true },
+  { key: 'autoRoles', label: 'Auto Roles', icon: 'modules', path: '/autoroles', component: AutoRoles, hidden: true },
+  { key: 'tickets', label: 'Tickets', icon: 'modules', path: '/tickets', component: Tickets, hidden: true },
   { key: 'generalSettings', label: 'General Settings', icon: 'generalSettings', path: '/generalSettings', component: GeneralSettings },
   { key: 'automod', label: 'AutoMod', icon: 'automod', path: '/automod', component: AutoMod },
   { key: 'admin', label: 'Admin', icon: 'admin', path: '/admin', component: Admin },
@@ -105,7 +94,7 @@ export const ROUTES = [
   { key: 'cases', label: 'Cases', icon: 'cases', path: '/cases', component: Cases },
   { key: 'warnings', label: 'Warnings', icon: 'warnings', path: '/warnings', component: Warnings },
   { key: 'messages', label: 'Welcome & Leave', icon: 'messages', path: '/messages', component: Messages },
-  { key: 'forms', label: 'Forms', icon: 'modules', path: '/forms', component: Forms },
+  { key: 'forms', label: 'Forms', icon: 'modules', path: '/forms', component: Forms, hidden: true },
   { key: 'security', label: 'Security', icon: 'admin', path: '/security', component: Security },
   { key: 'restore', label: 'Restore', icon: 'admin', path: '/restore', component: Restore },
   { key: 'logs', label: 'Logs', icon: 'logs', path: '/logs', component: Logs },
