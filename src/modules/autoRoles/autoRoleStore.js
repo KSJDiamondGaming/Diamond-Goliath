@@ -93,6 +93,14 @@ function updateAutoRolesSection(guildId, updater, meta = {}) {
   ));
 }
 
+function setEnabled(guildId, enabled = true, meta = {}) {
+  return updateAutoRolesSection(guildId, (section) => ({
+    ...section,
+    enabled: enabled !== false,
+    updatedAt: now(),
+  }), meta);
+}
+
 function setJoinRoles(guildId, roleIds = [], meta = {}) {
   return updateAutoRolesSection(guildId, (section) => ({
     ...section,
@@ -114,10 +122,54 @@ function addJoinRole(guildId, roleId, meta = {}) {
 
 function removeJoinRole(guildId, roleId, meta = {}) {
   const safeRoleId = cleanDiscordId(roleId);
+  if (!safeRoleId) throw new Error('A valid role ID is required.');
 
   return updateAutoRolesSection(guildId, (section) => ({
     ...section,
     joinRoles: (section.joinRoles || []).filter((id) => id !== safeRoleId),
+    updatedAt: now(),
+  }), meta);
+}
+
+function setBotRoles(guildId, roleIds = [], meta = {}) {
+  return updateAutoRolesSection(guildId, (section) => ({
+    ...section,
+    botRoles: cleanRoleIds(roleIds),
+    updatedAt: now(),
+  }), meta);
+}
+
+function addBotRole(guildId, roleId, meta = {}) {
+  const safeRoleId = cleanDiscordId(roleId);
+  if (!safeRoleId) throw new Error('A valid role ID is required.');
+
+  return updateAutoRolesSection(guildId, (section) => ({
+    ...section,
+    botRoles: [...new Set([...(section.botRoles || []), safeRoleId])],
+    updatedAt: now(),
+  }), meta);
+}
+
+function removeBotRole(guildId, roleId, meta = {}) {
+  const safeRoleId = cleanDiscordId(roleId);
+  if (!safeRoleId) throw new Error('A valid role ID is required.');
+
+  return updateAutoRolesSection(guildId, (section) => ({
+    ...section,
+    botRoles: (section.botRoles || []).filter((id) => id !== safeRoleId),
+    updatedAt: now(),
+  }), meta);
+}
+
+function updateSettings(guildId, settings = {}, meta = {}) {
+  return updateAutoRolesSection(guildId, (section) => ({
+    ...section,
+    settings: {
+      ...(section.settings || {}),
+      ...(settings && typeof settings === 'object' ? settings : {}),
+      applyToBots: settings.applyToBots === true,
+      auditLog: settings.auditLog !== false,
+    },
     updatedAt: now(),
   }), meta);
 }
@@ -136,13 +188,20 @@ function incrementAnalytics(guildId, increments = {}, meta = {}) {
 
 module.exports = {
   MODULE,
+  cleanDiscordId,
+  cleanRoleIds,
   defaultAutoRolesSection,
   normalizeAutoRolesSection,
   getAutoRolesSection,
   saveAutoRolesSection,
   updateAutoRolesSection,
+  setEnabled,
   setJoinRoles,
   addJoinRole,
   removeJoinRole,
+  setBotRoles,
+  addBotRole,
+  removeBotRole,
+  updateSettings,
   incrementAnalytics,
 };
