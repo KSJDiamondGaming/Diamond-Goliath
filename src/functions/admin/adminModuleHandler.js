@@ -23,6 +23,20 @@ const {
   buildVerificationPayload,
 } = require('./adminRegisteredModulePayloads');
 
+const {
+  resolveAdminModuleKey,
+} = require('../../modules/admin/moduleInteractionRouter');
+
+const MODULE_PAYLOAD_BUILDERS = {
+  autoRoles: (interaction) => buildAutoRolesPayload(interaction),
+  verification: (interaction) => buildVerificationPayload(interaction),
+  giveaways: (interaction) => buildGiveawaysPayload(interaction),
+  starboard: (interaction) => buildStarboardPayload(interaction),
+  tempVoice: (interaction) => buildTempVoicePayload(interaction),
+  sticky: (interaction, client) => buildStickyPayload(interaction, client),
+  suggestions: (interaction, client) => buildSuggestionsPayload(interaction, client, interaction.customId === 'suggestions:pending' ? { status: 'pending' } : {}),
+};
+
 const MODULE_IDS = new Set([
   'admin:modules',
   'admin:embed',
@@ -224,6 +238,16 @@ function buildTicketsPlaceholderPayload() {
       ),
     ],
   };
+}
+
+function buildRegisteredModulePayload(interaction, client) {
+  const moduleKey = resolveAdminModuleKey(interaction.customId);
+  if (!moduleKey) return null;
+
+  const builder = MODULE_PAYLOAD_BUILDERS[moduleKey];
+  if (!builder) return null;
+
+  return builder(interaction, client);
 }
 
 function buildGiveawayCreateModal(channelId) {
@@ -512,13 +536,9 @@ async function handleAdminModuleInteraction(interaction, client) {
     return true;
   }
 
-  if (interaction.customId === 'admin:autoRoles' || interaction.customId === 'autoRoles:refresh') {
-    await updateOrReply(interaction, buildAutoRolesPayload(interaction));
-    return true;
-  }
-
-  if (interaction.customId === 'admin:verification' || interaction.customId === 'verification:refresh') {
-    await updateOrReply(interaction, buildVerificationPayload(interaction));
+  const registeredPayload = buildRegisteredModulePayload(interaction, client);
+  if (registeredPayload) {
+    await updateOrReply(interaction, registeredPayload);
     return true;
   }
 
@@ -527,50 +547,20 @@ async function handleAdminModuleInteraction(interaction, client) {
     return true;
   }
 
-  if (interaction.customId === 'admin:giveaways' || interaction.customId === 'giveaway:refresh') {
-    await updateOrReply(interaction, buildGiveawaysPayload(interaction));
-    return true;
-  }
-
   if (interaction.customId === 'giveaway:create') {
     return showModalSafe(interaction, buildGiveawayCreateModal(interaction.channelId));
-  }
-
-  if (interaction.customId === 'admin:starboard' || interaction.customId === 'starboard:refresh') {
-    await updateOrReply(interaction, buildStarboardPayload(interaction));
-    return true;
   }
 
   if (interaction.customId === 'starboard:configure') {
     return showModalSafe(interaction, buildStarboardConfigModal());
   }
 
-  if (interaction.customId === 'admin:tempvoice' || interaction.customId === 'tempvoice:refresh') {
-    await updateOrReply(interaction, buildTempVoicePayload(interaction));
-    return true;
-  }
-
   if (interaction.customId === 'tempvoice:create') {
     return showModalSafe(interaction, buildTempVoiceCreateModal(interaction.channelId));
   }
 
-  if (interaction.customId === 'admin:sticky') {
-    await updateOrReply(interaction, buildStickyPayload(interaction, client));
-    return true;
-  }
-
   if (interaction.customId?.startsWith('sticky:')) {
     return handleStickyAction(interaction, client);
-  }
-
-  if (interaction.customId === 'admin:suggestions' || interaction.customId === 'suggestions:refresh') {
-    await updateOrReply(interaction, buildSuggestionsPayload(interaction, client));
-    return true;
-  }
-
-  if (interaction.customId === 'suggestions:pending') {
-    await updateOrReply(interaction, buildSuggestionsPayload(interaction, client, { status: 'pending' }));
-    return true;
   }
 
   return false;
