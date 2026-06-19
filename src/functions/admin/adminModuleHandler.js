@@ -15,6 +15,11 @@ const {
 
 const {
   buildAutoRolesPayload,
+  buildGiveawaysPayload,
+  buildStarboardPayload,
+  buildStickyPayload,
+  buildSuggestionsPayload,
+  buildTempVoicePayload,
   buildVerificationPayload,
 } = require('./adminRegisteredModulePayloads');
 
@@ -200,51 +205,6 @@ function buildModulesPayload() {
         moduleButton('admin:back', '⬅️ Back', ButtonStyle.Secondary)
       ),
     ],
-  };
-}
-
-function buildGiveawaysPayload(interaction) {
-  const giveawayMenu = require('../../modules/giveaways/giveawayMenu');
-
-  return {
-    embeds: [giveawayMenu.buildGiveawayMenuEmbed(interaction.guildId)],
-    components: giveawayMenu.buildGiveawayMenuRows(),
-  };
-}
-
-function buildStarboardPayload(interaction) {
-  const starboardMenu = require('../../modules/starboard/starboardMenu');
-
-  return {
-    embeds: [starboardMenu.buildStarboardEmbed(interaction.guildId)],
-    components: starboardMenu.buildStarboardMenuRows(),
-  };
-}
-
-function buildTempVoicePayload(interaction) {
-  const tempVoiceMenu = require('../../modules/tempvoice/tempVoiceMenu');
-
-  return {
-    embeds: [tempVoiceMenu.buildTempVoiceEmbed(interaction.guildId)],
-    components: tempVoiceMenu.buildTempVoiceMenuRows(),
-  };
-}
-
-function buildStickyPayload(interaction, client) {
-  const stickyMenu = require('../../modules/sticky/stickyMenu');
-
-  return {
-    embeds: [stickyMenu.buildStickyStatusEmbed(interaction.guildId, interaction.channelId, client)],
-    components: stickyMenu.buildStickyMenuRows(interaction.channelId),
-  };
-}
-
-function buildSuggestionsPayload(interaction, client, options = {}) {
-  const suggestionMenu = require('../../modules/suggestions/suggestionMenu');
-
-  return {
-    embeds: [suggestionMenu.buildSuggestionListEmbed(interaction.guildId, client, options)],
-    components: suggestionMenu.buildSuggestionMenuRows(),
   };
 }
 
