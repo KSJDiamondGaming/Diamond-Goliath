@@ -57,6 +57,10 @@ function listModules() {
   return Object.values(MODULE_REGISTRY).map(({ key, label }) => ({ key, label }));
 }
 
+function hasModule(moduleKey) {
+  return Boolean(MODULE_REGISTRY[moduleKey]);
+}
+
 function getModuleDefinition(moduleKey) {
   const definition = MODULE_REGISTRY[moduleKey];
   if (!definition) return null;
@@ -67,6 +71,12 @@ function getModuleDefinition(moduleKey) {
     manager: safeRequire(definition.managerPath),
     store: safeRequire(definition.storePath),
   };
+}
+
+function getAllModuleDefinitions() {
+  return Object.keys(MODULE_REGISTRY)
+    .map((key) => getModuleDefinition(key))
+    .filter(Boolean);
 }
 
 function requireModuleDefinition(moduleKey) {
@@ -80,6 +90,8 @@ function requireModuleDefinition(moduleKey) {
 module.exports = {
   MODULE_REGISTRY,
   listModules,
+  hasModule,
+  getAllModuleDefinitions,
   getModuleDefinition,
   requireModuleDefinition,
 };
