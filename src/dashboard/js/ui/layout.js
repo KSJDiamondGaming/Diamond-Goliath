@@ -10,6 +10,7 @@ import Modules from '../pages/modules/Modules';
 import Verification from '../pages/modules/Verification';
 import AutoRoles from '../pages/modules/AutoRoles';
 import Tickets from '../pages/modules/Tickets';
+import Social from '../pages/modules/Social';
 import Restore from '../pages/security/Restore';
 import Security from '../pages/security/Security';
 import Logs from '../pages/core/Logs';
@@ -85,6 +86,7 @@ export const ROUTES = [
   { key: 'verification', label: 'Verification', icon: 'modules', path: '/verification', component: Verification, hidden: true },
   { key: 'autoRoles', label: 'Auto Roles', icon: 'modules', path: '/autoroles', component: AutoRoles, hidden: true },
   { key: 'tickets', label: 'Tickets', icon: 'modules', path: '/tickets', component: Tickets, hidden: true },
+  { key: 'social', label: 'Social Alerts', icon: 'modules', path: '/social', component: Social, hidden: true },
   { key: 'generalSettings', label: 'General Settings', icon: 'generalSettings', path: '/generalSettings', component: GeneralSettings },
   { key: 'automod', label: 'AutoMod', icon: 'automod', path: '/automod', component: AutoMod },
   { key: 'admin', label: 'Admin', icon: 'admin', path: '/admin', component: Admin },
@@ -115,6 +117,7 @@ export const PAGE_LAYOUTS = {
   verification: { title: 'Verification', description: 'Member verification, role settings, panels and analytics.', emptyDescription: 'Select a server to manage verification.', sections: [{ id: 'verificationDashboard', type: 'dashboard' }] },
   autoRoles: { title: 'Auto Roles', description: 'Join roles, bot roles and assignment analytics.', emptyDescription: 'Select a server to manage auto roles.', sections: [{ id: 'autoRolesDashboard', type: 'dashboard' }] },
   tickets: { title: 'Tickets', description: 'Open tickets, claims, closures, transcripts and analytics.', emptyDescription: 'Select a server to manage tickets.', sections: [{ id: 'ticketsDashboard', type: 'dashboard' }] },
+  social: { title: 'Social Alerts', description: 'Creator alerts across Twitch, YouTube, TikTok, Kick and more.', emptyDescription: 'Select a server to manage social alerts.', sections: [{ id: 'socialDashboard', type: 'dashboard' }] },
   generalSettings: { title: 'General Settings', description: 'Manage server configuration.', emptyDescription: 'Select a server to manage settings.', sections: [{ id: 'generalConfig', type: 'config' }] },
   automod: { title: 'AutoMod', description: 'Manage filters and rules', sections: [{ id: 'rules', type: 'config' }, { id: 'filters', type: 'config' }] },
   admin: { title: 'Admin', description: 'Core system configuration and control panel.', emptyDescription: 'Select a server to manage admin settings.', sections: [{ id: 'adminHub', type: 'future' }] },
@@ -134,6 +137,7 @@ export const SECTION_DEFS = {
   verificationDashboard: { title: 'Verification Dashboard', description: 'Configure verification roles, panels and analytics.' },
   autoRolesDashboard: { title: 'Auto Roles Dashboard', description: 'Configure join roles, bot roles and analytics.' },
   ticketsDashboard: { title: 'Tickets Dashboard', description: 'Review ticket queues, claims, transcripts and analytics.' },
+  socialDashboard: { title: 'Social Alerts Dashboard', description: 'Manage creator accounts and social notification alerts.' },
   rules: { title: 'Rules', description: 'Manage core automod rules.' },
   filters: { title: 'Filters', description: 'Manage filters and logs.' },
   warningTable: { title: 'Warnings', description: 'Browse warning history.' },
