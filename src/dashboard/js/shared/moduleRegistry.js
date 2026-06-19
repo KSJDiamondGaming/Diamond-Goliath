@@ -111,7 +111,7 @@ export const moduleRegistry = [
     key: 'tickets',
     name: 'Tickets',
     icon: 'TK',
-    route: null,
+    route: '/tickets',
     category: MODULE_CATEGORIES.feature,
     status: MODULE_STATUSES.backendReady,
     enabled: false,
