@@ -3,7 +3,6 @@ import AutoMod from '../pages/administration/AutoMod';
 import Admin from '../pages/administration/Admin';
 import Moderation from '../pages/moderation/Moderation';
 import GeneralSettings from '../pages/administration/GeneralSettings';
-import Cases from '../pages/moderation/Cases';
 import Warnings from '../pages/moderation/Warnings';
 import Messages from '../pages/core/Messages';
 import Forms from '../pages/modules/Forms';
@@ -51,7 +50,6 @@ export const NAV_ITEMS = [
     label: 'Moderation',
     icon: 'admin',
     children: [
-      { key: 'cases', label: 'Cases', icon: 'cases', path: '/cases' },
       { key: 'moderation', label: 'Moderation', icon: 'admin', path: '/moderation' },
       { key: 'warnings', label: 'Warnings', icon: 'warnings', path: '/warnings' },
     ],
@@ -91,7 +89,6 @@ export const ROUTES = [
   { key: 'automod', label: 'AutoMod', icon: 'automod', path: '/automod', component: AutoMod },
   { key: 'admin', label: 'Admin', icon: 'admin', path: '/admin', component: Admin },
   { key: 'moderation', label: 'Moderation', icon: 'admin', path: '/moderation', component: Moderation },
-  { key: 'cases', label: 'Cases', icon: 'cases', path: '/cases', component: Cases },
   { key: 'warnings', label: 'Warnings', icon: 'warnings', path: '/warnings', component: Warnings },
   { key: 'messages', label: 'Welcome & Leave', icon: 'messages', path: '/messages', component: Messages },
   { key: 'forms', label: 'Forms', icon: 'modules', path: '/forms', component: Forms, hidden: true },
@@ -122,7 +119,6 @@ export const PAGE_LAYOUTS = {
   automod: { title: 'AutoMod', description: 'Manage filters and rules', sections: [{ id: 'rules', type: 'config' }, { id: 'filters', type: 'config' }] },
   admin: { title: 'Admin', description: 'Core system configuration and control panel.', emptyDescription: 'Select a server to manage admin settings.', sections: [{ id: 'adminHub', type: 'future' }] },
   moderation: { title: 'Moderation', description: 'Central moderation tools for this server.', emptyDescription: 'Select a server to manage moderation.', sections: [{ id: 'moderationHub', type: 'future' }] },
-  cases: { title: 'Cases', description: 'Moderation history', sections: [{ id: 'caseTable', type: 'table' }] },
   warnings: { title: 'Warnings', description: 'View and manage warning records.', emptyDescription: 'Select a server to view warnings.', sections: [{ id: 'warningTable', type: 'table' }] },
   messages: { title: 'Welcome & Leave', description: 'Manage join and leave messages.', emptyDescription: 'Select a server to manage messages.', sections: [{ id: 'welcome', type: 'config' }, { id: 'leave', type: 'config' }] },
   forms: { title: 'Forms', description: 'Manage universal forms and workflows.', emptyDescription: 'Select a server to manage forms.', sections: [{ id: 'formsManager', type: 'dashboard' }] },
@@ -140,7 +136,6 @@ export const SECTION_DEFS = {
   ticketsDashboard: { title: 'Tickets Dashboard', description: 'Review ticket queues, claims, transcripts and analytics.' },
   rules: { title: 'Rules', description: 'Manage core automod rules.' },
   filters: { title: 'Filters', description: 'Manage filters and logs.' },
-  caseTable: { title: 'Cases', description: 'Browse case history.' },
   warningTable: { title: 'Warnings', description: 'Browse warning history.' },
   welcome: { title: 'Welcome Message', description: 'Configure the welcome message.' },
   leave: { title: 'Leave Message', description: 'Configure the leave message.' },
