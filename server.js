@@ -352,6 +352,19 @@ client.on(event.name, handler);
 console.log(`🧩 Event: ${event.name}`);
 }
 
+function registerEventExport(eventExport, file) {
+const events = Array.isArray(eventExport) ? eventExport : [eventExport];
+
+if (!events.length) {
+console.warn(`⚠️ Skipped empty event export in: ${file}`);
+return;
+}
+
+for (const event of events) {
+registerEvent(event, file);
+}
+}
+
 function loadEvents() {
 const eventsPath = path.join(process.cwd(), 'src', 'events');
 const files = getAllJsFiles(eventsPath);
@@ -362,7 +375,7 @@ for (const file of files) {
 try {
 delete require.cache[require.resolve(file)];
 const event = require(file);
-registerEvent(event, file);
+registerEventExport(event, file);
 } catch (error) {
 console.error(`❌ Event failed: ${file}`);
 console.error(error);
