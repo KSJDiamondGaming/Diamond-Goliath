@@ -83,17 +83,17 @@ export const api = {
     return request('/api/owner/runtime');
   },
 
-getOwnerRuntime(guildId) {
-  return request(
-    `/api/status?guildId=${guildId}`
-  );
-},
+  getOwnerRuntime(guildId) {
+    return request(
+      `/api/status?guildId=${guildId}`,
+    );
+  },
 
-getOwnerSecurity(guildId) {
-  return request(
-    `/api/security/overview?guildId=${guildId}`
-  );
-},
+  getOwnerSecurity(guildId) {
+    return request(
+      `/api/security/overview?guildId=${guildId}`,
+    );
+  },
 
   /* ---------------- DISCORD ---------------- */
 
@@ -150,6 +150,108 @@ getOwnerSecurity(guildId) {
       method: 'PATCH',
       body: JSON.stringify({ enabled }),
     });
+  },
+
+  /* ---------------- VERIFICATION ---------------- */
+
+  getVerification(guildId) {
+    return request(`/api/modules/${guildId}/verification`);
+  },
+
+  setVerificationEnabled(guildId, enabled) {
+    return request(`/api/modules/${guildId}/verification/enabled`, {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled }),
+    });
+  },
+
+  saveVerificationSettings(guildId, settings) {
+    return request(`/api/modules/${guildId}/verification/settings`, {
+      method: 'PATCH',
+      body: JSON.stringify({ settings }),
+    });
+  },
+
+  saveVerificationConfig(guildId, payload) {
+    return request(`/api/modules/${guildId}/verification`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  saveVerificationPanel(guildId, payload) {
+    return request(`/api/modules/${guildId}/verification/panels`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  deployVerificationPanel(guildId, payload) {
+    return request(`/api/modules/${guildId}/verification/panels/deploy`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  getVerificationAnalytics(guildId) {
+    return request(`/api/modules/${guildId}/verification/analytics`);
+  },
+
+  /* ---------------- AUTO ROLES ---------------- */
+
+  getAutoRoles(guildId) {
+    return request(`/api/modules/${guildId}/auto-roles`);
+  },
+
+  setAutoRolesEnabled(guildId, enabled) {
+    return request(`/api/modules/${guildId}/auto-roles/enabled`, {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled }),
+    });
+  },
+
+  saveAutoRolesSettings(guildId, settings) {
+    return request(`/api/modules/${guildId}/auto-roles/settings`, {
+      method: 'PATCH',
+      body: JSON.stringify({ settings }),
+    });
+  },
+
+  saveAutoRolesConfig(guildId, payload) {
+    return request(`/api/modules/${guildId}/auto-roles`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  addJoinAutoRole(guildId, roleId) {
+    return request(`/api/modules/${guildId}/auto-roles/join`, {
+      method: 'POST',
+      body: JSON.stringify({ roleId }),
+    });
+  },
+
+  removeJoinAutoRole(guildId, roleId) {
+    return request(`/api/modules/${guildId}/auto-roles/join/${roleId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  addBotAutoRole(guildId, roleId) {
+    return request(`/api/modules/${guildId}/auto-roles/bots`, {
+      method: 'POST',
+      body: JSON.stringify({ roleId }),
+    });
+  },
+
+  removeBotAutoRole(guildId, roleId) {
+    return request(`/api/modules/${guildId}/auto-roles/bots/${roleId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  getAutoRolesAnalytics(guildId) {
+    return request(`/api/modules/${guildId}/auto-roles/analytics`);
   },
 
   /* ---------------- AUTOMOD ---------------- */
