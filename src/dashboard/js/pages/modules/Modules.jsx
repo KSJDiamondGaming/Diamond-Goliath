@@ -106,7 +106,7 @@ export default function Modules({ theme, selectedGuild, selectedGuildData }) {
 
   function handleOpenModule(module) {
     if (!module?.route || module.enabled !== true) return;
-    const existingRoutes = new Set(['/forms']);
+    const existingRoutes = new Set(['/forms', '/verification', '/autoroles']);
     if (existingRoutes.has(module.route)) navigate(module.route);
   }
 
