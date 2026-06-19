@@ -1,99 +1,7 @@
-const { EmbedBuilder, PermissionsBitField, AuditLogEvent } = require('discord.js');
+const { EmbedBuilder, AuditLogEvent } = require('discord.js');
 const { buildPreviewEmbed, TEMPLATES } = require('../../functions/embed/embedPanel');
 const guildManager = require('../../guild/guildManager');
-
-/* ---------------- AUTO / JOIN ROLES ---------------- */
-
-function getJoinRolesConfig(guildId) {
-  const autoRoles = guildManager.getGuildSection(guildId, 'autoRoles', null);
-  const joinRoles = guildManager.getGuildSection(guildId, 'joinRoles', null);
-
-  const enabled = Boolean(autoRoles?.enabled || joinRoles?.enabled);
-
-  const roleIds = [
-    ...(Array.isArray(autoRoles?.roleIds) ? autoRoles.roleIds : []),
-    ...(Array.isArray(joinRoles?.roleIds) ? joinRoles.roleIds : []),
-    ...(Array.isArray(autoRoles?.roles) ? autoRoles.roles : []),
-    ...(Array.isArray(joinRoles?.roles) ? joinRoles.roles : []),
-  ];
-
-  return {
-    enabled,
-    roleIds: [...new Set(roleIds.filter(Boolean).map(String))],
-  };
-}
-
-async function getBotMember(guild) {
-  return guild.members.me || guild.members.fetchMe().catch(() => null);
-}
-
-function canBotManageRole(botMember, role) {
-  if (!botMember || !role) return false;
-  if (role.managed) return false;
-
-  const hasPermission = botMember.permissions.has(PermissionsBitField.Flags.ManageRoles);
-  const botAboveRole = botMember.roles.highest.position > role.position;
-
-  return hasPermission && botAboveRole;
-}
-
-async function applyJoinRoles(member) {
-  const guild = member.guild;
-  const config = getJoinRolesConfig(guild.id);
-
-  console.log('[joinRoles] Config:', {
-    guild: guild.name,
-    enabled: config.enabled,
-    roleIds: config.roleIds,
-  });
-
-  if (!config.enabled || !config.roleIds.length) return [];
-
-  const botMember = await getBotMember(guild);
-
-  if (!botMember) {
-    console.warn('[joinRoles] Could not fetch bot member.');
-    return [];
-  }
-
-  const addedRoles = [];
-
-  for (const roleId of config.roleIds) {
-    try {
-      const role =
-        guild.roles.cache.get(roleId) ||
-        (await guild.roles.fetch(roleId).catch(() => null));
-
-      if (!role) {
-        console.warn(`[joinRoles] Role not found: ${roleId}`);
-        continue;
-      }
-
-      if (member.roles.cache.has(role.id)) {
-        addedRoles.push(role);
-        continue;
-      }
-
-      if (!canBotManageRole(botMember, role)) {
-        console.warn(`[joinRoles] Cannot manage role: ${role.name} (${role.id})`);
-        continue;
-      }
-
-      await member.roles.add(role, 'Automatic join role');
-      addedRoles.push(role);
-
-      console.log(`[joinRoles] Added ${role.name} to ${member.user.tag}`);
-    } catch (error) {
-      console.error(`[joinRoles] Failed to add role ${roleId}:`, error);
-    }
-  }
-
-  if (addedRoles.length) {
-    await member.fetch(true).catch(() => null);
-  }
-
-  return addedRoles;
-}
+const autoRoleManager = require('../../modules/autoRoles/autoRoleManager');
 
 /* ---------------- SHARED HELPERS ---------------- */
 
@@ -495,7 +403,11 @@ module.exports = [
     name: 'guildMemberAdd',
 
     async execute(member) {
-      const addedRoles = await applyJoinRoles(member);
+      const addedRoles =
+        (await autoRoleManager.applyAutoRoles(member).catch((error) => {
+          console.error('[autoRoles] Failed to apply auto roles:', error);
+          return [];
+        })) || [];
 
       await sendPublicMemberEmbed(member, 'welcome');
 

@@ -1,326 +1,429 @@
-// src/events/interaction/interactionCreate.js
+const { EmbedBuilder, AuditLogEvent } = require('discord.js');
+const { buildPreviewEmbed, TEMPLATES } = require('../../functions/embed/embedPanel');
+const guildManager = require('../../guild/guildManager');
+const autoRoleManager = require('../../modules/autoRoles/autoRoleManager');
 
-const { MessageFlags } = require('discord.js');
+/* ---------------- SHARED HELPERS ---------------- */
 
-const ticketInteractionHandler = require('../../modules/tickets/ticketInteractionHandler');
-const roleInteractionHandler = require('../../modules/roles/roleInteractionHandler');
-const formManager = require('../../modules/forms/formManager');
-const embedPanel = require('../../functions/embed/embedPanel');
-const adminPanel = require('../../functions/admin/adminPanel');
-const adminModuleHandler = require('../../functions/admin/adminModuleHandler');
-const panelNav = require('../../helpers/ui/panelNavigation');
-const helpCommand = require('../../commands/utility/help');
-
-const seenInteractions = new Set();
-
-function markInteraction(interaction) {
-  if (!interaction?.id) return false;
-  if (seenInteractions.has(interaction.id)) return false;
-
-  seenInteractions.add(interaction.id);
-
-  setTimeout(() => {
-    seenInteractions.delete(interaction.id);
-  }, 60_000);
-
-  return true;
+function formatTimestamp(timestamp, style = 'R') {
+  return timestamp ? `<t:${Math.floor(timestamp / 1000)}:${style}>` : 'Unknown';
 }
 
-function isUnknownInteraction(error) {
-  return error?.code === 10062;
+function formatUser(user) {
+  if (!user) return 'Unknown User';
+  return `${user} \`${user.tag || user.username || user.id}\``;
 }
 
-function isAlreadyAcknowledged(error) {
-  return error?.code === 40060;
-}
-
-function isExpiredOrAcknowledged(error) {
-  return isUnknownInteraction(error) || isAlreadyAcknowledged(error);
-}
-
-function interactionLabel(interaction) {
-  return interaction?.customId || interaction?.commandName || interaction?.type || 'unknown';
-}
-
-async function safeEdit(interaction, payload = {}) {
-  if (!interaction?.isRepliable?.()) return false;
-
-  try {
-    if (interaction.deferred || interaction.replied) {
-      await interaction.editReply(payload);
-      return true;
-    }
-
-    await interaction.reply({
-      ...payload,
-      flags: payload.flags || MessageFlags.Ephemeral,
-    });
-
-    return true;
-  } catch (error) {
-    if (isExpiredOrAcknowledged(error)) return false;
-    throw error;
-  }
-}
-
-async function safeDefer(interaction) {
-  if (!interaction?.isRepliable?.()) return false;
-  if (interaction.deferred || interaction.replied) return true;
-
-  try {
-    await interaction.deferReply({
-      flags: MessageFlags.Ephemeral,
-    });
-
-    return true;
-  } catch (error) {
-    if (isUnknownInteraction(error)) {
-      console.warn(`⚠️ Interaction expired before defer: ${interaction.id} / ${interactionLabel(interaction)}`);
-      return false;
-    }
-
-    if (isAlreadyAcknowledged(error)) return true;
-
-    throw error;
-  }
-}
-
-async function runHandler(name, handler, interaction, client) {
-  if (!handler) return false;
-
-  try {
-    const handled = await handler(interaction, client);
-
-    if (handled) {
-      console.log(`✅ Interaction handled by ${name}: ${interactionLabel(interaction)}`);
-      return true;
-    }
-
-    return false;
-  } catch (error) {
-    if (isUnknownInteraction(error)) {
-      console.warn(`⚠️ ${name} interaction expired before response: ${interaction.id} / ${interactionLabel(interaction)}`);
-      return true;
-    }
-
-    if (isAlreadyAcknowledged(error)) {
-      console.warn(`⚠️ ${name} interaction was already acknowledged: ${interaction.id} / ${interactionLabel(interaction)}`);
-      return true;
-    }
-
-    console.error(`❌ Interaction handler failed: ${name}`);
-    console.error(error);
-
-    await safeEdit(interaction, {
-      content: `❌ ${name} failed. Check VPS logs.`,
-    }).catch(() => null);
-
-    return true;
-  }
-}
-
-async function handleEmbedInteraction(interaction, client) {
-  if (!interaction.customId?.startsWith('embed:')) return false;
-
-  console.log(`🧩 Routing embed interaction: ${interaction.customId}`);
-
-  const possibleHandlers = [
-    embedPanel.handleInteraction,
-    embedPanel.handleEmbedInteraction,
-    embedPanel.handleEmbedPanel,
-    embedPanel.execute,
-    typeof embedPanel === 'function' ? embedPanel : null,
-  ].filter(Boolean);
-
-  for (const handler of possibleHandlers) {
-    const handled = await runHandler('embedPanel', handler, interaction, client);
-    if (handled) return true;
-  }
-
-  console.error('❌ No valid embedPanel handler export found.');
-
-  await safeEdit(interaction, {
-    content: '❌ Embed panel handler is missing. Check embedPanel.js exports.',
+function getAvatar(member) {
+  return member.displayAvatarURL({
+    extension: 'png',
+    size: 256,
   });
-
-  return true;
 }
 
-async function handleHelpInteraction(interaction) {
-  if (!interaction.customId) return false;
+function getRolesText(member, addedRoles = []) {
+  const roles = member.roles.cache
+    .filter((role) => role.id !== member.guild.id)
+    .sort((a, b) => b.position - a.position)
+    .map((role) => role.toString());
 
-  if (interaction.customId === 'help-category-select') {
-    return helpCommand.handleHelpSelectMenu(interaction);
+  for (const role of addedRoles) {
+    if (!roles.includes(role.toString())) roles.push(role.toString());
   }
 
-  if (interaction.customId === 'help-back-home' || interaction.customId === 'help-close') {
-    return helpCommand.handleHelpButton(interaction);
+  if (!roles.length) return 'No roles';
+
+  return roles.join(', ').slice(0, 1024);
+}
+
+function isLogEnabled(guildId, eventName) {
+  if (typeof guildManager.isLogEventEnabled !== 'function') return true;
+  return guildManager.isLogEventEnabled(guildId, eventName) !== false;
+}
+
+/* ---------------- PUBLIC WELCOME / LEAVE EMBEDS ---------------- */
+
+function getDefaultPresetName(guildId, type) {
+  if (typeof guildManager.getEmbedDefaultPreset === 'function') {
+    const value = guildManager.getEmbedDefaultPreset(guildId, type);
+
+    if (typeof value === 'string') return value;
+    if (value?.name) return value.name;
+    if (value?.presetName) return value.presetName;
   }
 
-  return false;
+  const defaults =
+    typeof guildManager.getEmbedDefaults === 'function'
+      ? guildManager.getEmbedDefaults(guildId)
+      : null;
+
+  return defaults?.[type] || null;
 }
 
-function isAdminBackAlias(customId = '') {
-  return customId === 'admin:back' || customId === 'admin:home' || customId === 'admin:main';
+function getDefaultPresetData(guildId, type) {
+  const defaultPresetName = getDefaultPresetName(guildId, type);
+
+  if (defaultPresetName && typeof guildManager.getEmbedPreset === 'function') {
+    const preset = guildManager.getEmbedPreset(guildId, defaultPresetName);
+    if (preset) return preset;
+  }
+
+  const directDefault =
+    typeof guildManager.getEmbedDefaultPreset === 'function'
+      ? guildManager.getEmbedDefaultPreset(guildId, type)
+      : null;
+
+  if (directDefault && typeof directDefault === 'object') return directDefault;
+
+  return null;
 }
 
-function isModuleInteraction(interaction) {
-  return typeof adminModuleHandler?.isAdminModuleInteraction === 'function' &&
-    adminModuleHandler.isAdminModuleInteraction(interaction);
+async function sendPublicMemberEmbed(member, type) {
+  try {
+    const guild = member.guild;
+
+    const defaultPreset = getDefaultPresetData(guild.id, type);
+
+    const sectionConfig =
+      guildManager.getGuildSection(guild.id, type, null) ||
+      guildManager.getGuildSection(guild.id, `${type}Settings`, null) ||
+      {};
+
+    const messageData = {
+      ...(TEMPLATES[type] || {}),
+      ...(sectionConfig || {}),
+      ...(defaultPreset || {}),
+    };
+
+    const channelId =
+      messageData.channelId ||
+      sectionConfig.channelId ||
+      guildManager.getGuildSection(guild.id, `${type}Settings`, {})?.channelId ||
+      guildManager.getGuildSection(guild.id, type, {})?.channelId ||
+      null;
+
+    if (!channelId) return;
+
+    const channel =
+      guild.channels.cache.get(channelId) ||
+      (await guild.channels.fetch(channelId).catch(() => null));
+
+    if (!channel?.isTextBased()) return;
+
+    const fakeInteraction = {
+      guild,
+      guildId: guild.id,
+      user: member.user,
+      member,
+    };
+
+    await channel.send({
+      content: messageData.allowUserPing ? `<@${member.user.id}>` : '',
+      embeds: [buildPreviewEmbed(messageData, fakeInteraction)],
+      allowedMentions: messageData.allowUserPing
+        ? { users: [member.user.id], roles: [], repliedUser: false }
+        : { parse: [], repliedUser: false },
+    });
+  } catch (error) {
+    console.error(`[joinLeave] Failed to send public ${type} embed:`, error);
+  }
 }
 
-async function handleNavigationInteraction(interaction) {
-  const parsed = panelNav.parseCustomId(interaction.customId);
-  if ((!parsed || parsed.action !== 'back') && !isAdminBackAlias(interaction.customId)) return false;
+/* ---------------- REMOVAL DETECTION ---------------- */
 
-  const memberDisplayName =
-    interaction.member?.displayName ||
-    interaction.user?.displayName ||
-    interaction.user?.username ||
-    'Unknown User';
+const REMOVAL_TYPES = {
+  left: {
+    key: 'left',
+    title: '👋 Member Left',
+    color: '#ED4245',
+    eventName: 'memberLeave',
+    reasonLabel: 'No reason - user left normally',
+  },
 
-  const payload = adminPanel.buildAdminPanel(interaction.guild, memberDisplayName);
+  kicked: {
+    key: 'kicked',
+    title: '👢 Member Kicked',
+    color: '#FAA61A',
+    eventName: 'memberKick',
+    auditType: AuditLogEvent.MemberKick,
+    reasonLabel: 'No reason provided',
+  },
+
+  banned: {
+    key: 'banned',
+    title: '🔨 Member Banned',
+    color: '#ED4245',
+    eventName: 'memberBan',
+    auditType: AuditLogEvent.MemberBanAdd,
+    reasonLabel: 'No reason provided',
+  },
+
+  pruned: {
+    key: 'pruned',
+    title: '🧹 Member Pruned / Removed',
+    color: '#FEE75C',
+    eventName: 'memberPrune',
+    auditType: AuditLogEvent.MemberPrune,
+    reasonLabel: 'Possible prune or bulk removal',
+  },
+
+  removed: {
+    key: 'removed',
+    title: '🚪 Member Removed',
+    color: '#ED4245',
+    eventName: 'memberRemove',
+    reasonLabel: 'Removal type unknown',
+  },
+};
+
+async function findRecentAuditLog(guild, userId, auditType, maxAgeMs = 15000) {
+  if (!auditType) return null;
 
   try {
-    if (interaction.deferred || interaction.replied) {
-      await interaction.editReply(payload);
-      return true;
-    }
-
-    if (typeof interaction.update === 'function') {
-      await interaction.update(payload);
-      return true;
-    }
-
-    await interaction.reply({
-      ...payload,
-      flags: MessageFlags.Ephemeral,
+    const logs = await guild.fetchAuditLogs({
+      limit: 10,
+      type: auditType,
     });
 
-    return true;
+    return (
+      logs.entries.find((entry) => {
+        const targetId = entry.target?.id;
+        const isTarget = !targetId || targetId === userId;
+        const isRecent = Date.now() - entry.createdTimestamp < maxAgeMs;
+
+        return isTarget && isRecent;
+      }) || null
+    );
   } catch (error) {
-    if (isExpiredOrAcknowledged(error)) return true;
-    throw error;
+    console.warn(`[joinLeave] Audit log check failed for ${auditType}:`, error.message);
+    return null;
   }
 }
 
-module.exports = {
-  name: 'interactionCreate',
+async function detectRemoval(member) {
+  const guild = member.guild;
+  const userId = member.user.id;
 
-  async execute(interaction, client) {
-    if (!interaction || !client) return;
+  const banLog = await findRecentAuditLog(
+    guild,
+    userId,
+    AuditLogEvent.MemberBanAdd,
+    20000
+  );
 
-    console.log(`[INTERACTION] ${interactionLabel(interaction)}`);
+  if (banLog) {
+    return {
+      ...REMOVAL_TYPES.banned,
+      auditLog: banLog,
+    };
+  }
 
-    if (!markInteraction(interaction)) {
-      console.warn(`⚠️ Duplicate interaction ignored: ${interaction.id}`);
+  const kickLog = await findRecentAuditLog(
+    guild,
+    userId,
+    AuditLogEvent.MemberKick,
+    20000
+  );
+
+  if (kickLog) {
+    return {
+      ...REMOVAL_TYPES.kicked,
+      auditLog: kickLog,
+    };
+  }
+
+  const pruneLog = await findRecentAuditLog(
+    guild,
+    userId,
+    AuditLogEvent.MemberPrune,
+    30000
+  );
+
+  if (pruneLog) {
+    return {
+      ...REMOVAL_TYPES.pruned,
+      auditLog: pruneLog,
+    };
+  }
+
+  return {
+    ...REMOVAL_TYPES.left,
+    auditLog: null,
+  };
+}
+
+/* ---------------- ADMIN MEMBER LOGS ---------------- */
+
+async function getAdminMemberLogChannel(guild) {
+  const channelId =
+    guildManager.getLogChannelId(guild.id, 'member') ||
+    guildManager.getLogChannelId(guild.id, 'admin') ||
+    guildManager.getLogChannelId(guild.id, 'general');
+
+  if (!channelId) return null;
+
+  const channel =
+    guild.channels.cache.get(channelId) ||
+    (await guild.channels.fetch(channelId).catch(() => null));
+
+  return channel?.isTextBased() ? channel : null;
+}
+
+function buildAdminJoinLog(member, addedRoles = []) {
+  const guild = member.guild;
+
+  return new EmbedBuilder()
+    .setColor('#57F287')
+    .setTitle('👥 Member Joined')
+    .setThumbnail(getAvatar(member))
+    .addFields(
+      { name: 'User', value: formatUser(member.user), inline: true },
+      { name: 'User ID', value: `\`${member.user.id}\``, inline: true },
+      { name: 'Type', value: member.user.bot ? '🤖 Bot' : '👤 User', inline: true },
+      {
+        name: 'Account Created',
+        value: `${formatTimestamp(member.user.createdTimestamp, 'R')}\n${formatTimestamp(
+          member.user.createdTimestamp,
+          'F'
+        )}`,
+        inline: true,
+      },
+      {
+        name: 'Joined Server',
+        value: `${formatTimestamp(member.joinedTimestamp, 'R')}\n${formatTimestamp(
+          member.joinedTimestamp,
+          'F'
+        )}`,
+        inline: true,
+      },
+      { name: 'Member Count', value: `\`${guild.memberCount}\``, inline: true },
+      { name: 'Roles', value: getRolesText(member, addedRoles), inline: false }
+    )
+    .setFooter({ text: 'Admin Log' })
+    .setTimestamp();
+}
+
+function buildAdminRemovalLog(member, removal) {
+  const guild = member.guild;
+  const auditLog = removal?.auditLog || null;
+  const reason = auditLog?.reason || removal?.reasonLabel || 'No reason provided';
+  const moderator = auditLog?.executor || null;
+
+  const embed = new EmbedBuilder()
+    .setColor(removal.color || '#ED4245')
+    .setTitle(removal.title || '🚪 Member Removed')
+    .setThumbnail(getAvatar(member))
+    .addFields(
+      { name: 'User', value: formatUser(member.user), inline: true },
+      { name: 'User ID', value: `\`${member.user.id}\``, inline: true },
+      { name: 'Type', value: member.user.bot ? '🤖 Bot' : '👤 User', inline: true },
+      {
+        name: 'Removal Type',
+        value: `\`${removal.key || 'unknown'}\``,
+        inline: true,
+      },
+      {
+        name: 'Account Created',
+        value: `${formatTimestamp(member.user.createdTimestamp, 'R')}\n${formatTimestamp(
+          member.user.createdTimestamp,
+          'F'
+        )}`,
+        inline: true,
+      },
+      {
+        name: 'Joined Server',
+        value: member.joinedTimestamp
+          ? `${formatTimestamp(member.joinedTimestamp, 'R')}\n${formatTimestamp(
+              member.joinedTimestamp,
+              'F'
+            )}`
+          : 'Unknown',
+        inline: true,
+      },
+      { name: 'Member Count', value: `\`${guild.memberCount}\``, inline: true },
+      { name: 'Roles', value: getRolesText(member), inline: false },
+      { name: 'Reason', value: String(reason).slice(0, 1024), inline: false }
+    )
+    .setFooter({ text: 'Admin Log' })
+    .setTimestamp();
+
+  if (moderator) {
+    embed.addFields({
+      name: 'Moderator',
+      value: formatUser(moderator),
+      inline: true,
+    });
+  }
+
+  return embed;
+}
+
+async function sendAdminMemberJoinLog(member, addedRoles = []) {
+  try {
+    const guild = member.guild;
+
+    if (!isLogEnabled(guild.id, 'memberJoin')) return;
+
+    const channel = await getAdminMemberLogChannel(guild);
+    if (!channel) return;
+
+    await channel.send({
+      embeds: [buildAdminJoinLog(member, addedRoles)],
+    });
+  } catch (error) {
+    console.error('[joinLeave] Failed to send admin member join log:', error);
+  }
+}
+
+async function sendAdminMemberRemovalLog(member, removal) {
+  try {
+    const guild = member.guild;
+
+    const logEventName = removal?.eventName || 'memberRemove';
+
+    if (!isLogEnabled(guild.id, logEventName) && !isLogEnabled(guild.id, 'memberLeave')) {
       return;
     }
 
-    console.log(`🧩 interactionCreate: ${interaction.type} ${interactionLabel(interaction)}`);
+    const channel = await getAdminMemberLogChannel(guild);
+    if (!channel) return;
 
-    try {
-      if (interaction.isAutocomplete()) {
-        const command = client.commands?.get(interaction.commandName);
-        if (!command?.autocomplete) return;
+    await channel.send({
+      embeds: [buildAdminRemovalLog(member, removal)],
+    });
+  } catch (error) {
+    console.error('[joinLeave] Failed to send admin member removal log:', error);
+  }
+}
 
-        await command.autocomplete(interaction, client).catch((error) => {
-          if (!isExpiredOrAcknowledged(error)) console.error(error);
-        });
-        return;
-      }
+/* ---------------- EVENTS ---------------- */
 
-      if (interaction.isChatInputCommand()) {
-        const deferred = await safeDefer(interaction);
-        if (!deferred) return;
+module.exports = [
+  {
+    name: 'guildMemberAdd',
 
-        const command = client.commands?.get(interaction.commandName);
+    async execute(member) {
+      const addedRoles =
+        (await autoRoleManager.applyAutoRoles(member).catch((error) => {
+          console.error('[autoRoles] Failed to apply auto roles:', error);
+          return [];
+        })) || [];
 
-        if (!command) {
-          await safeEdit(interaction, {
-            content: '❌ Command not found.',
-          });
-          return;
-        }
+      await sendPublicMemberEmbed(member, 'welcome');
 
-        try {
-          await command.execute(interaction, client);
-        } catch (error) {
-          if (isExpiredOrAcknowledged(error)) {
-            console.warn(`⚠️ Command interaction expired/already acknowledged: ${interaction.commandName}`);
-            return;
-          }
-
-          console.error(`❌ Command execution failed: ${interaction.commandName}`);
-          console.error(error);
-          console.error(error?.stack);
-
-          await safeEdit(interaction, {
-            content: '❌ An error occurred while executing this command.',
-          });
-        }
-
-        return;
-      }
-
-      if (interaction.customId?.startsWith('form:')) {
-        const handled = await formManager.handleFormInteraction(interaction, client);
-        if (handled) return;
-      }
-
-      if (interaction.customId?.startsWith('embed:')) {
-        const handled = await handleEmbedInteraction(interaction, client);
-        if (handled) return;
-      }
-
-      if (
-        interaction.customId === 'help-category-select' ||
-        interaction.customId === 'help-back-home' ||
-        interaction.customId === 'help-close'
-      ) {
-        const handled = await handleHelpInteraction(interaction);
-        if (handled) return;
-      }
-
-      if (isModuleInteraction(interaction)) {
-        const handled = await adminModuleHandler.handleAdminModuleInteraction(interaction, client);
-        if (handled) return;
-      }
-
-      if (interaction.customId?.startsWith('nav|') || isAdminBackAlias(interaction.customId)) {
-        const handled = await handleNavigationInteraction(interaction);
-        if (handled) return;
-      }
-
-      if (typeof adminPanel?.handleAdminNavigation === 'function') {
-        const handled = await adminPanel.handleAdminNavigation(interaction, undefined);
-        if (handled) return;
-      }
-
-      if (typeof roleInteractionHandler?.handleRoleInteraction === 'function') {
-        const handled = await roleInteractionHandler.handleRoleInteraction(interaction, client);
-        if (handled) return;
-      }
-
-      if (typeof ticketInteractionHandler?.handleTicketInteraction === 'function') {
-        const handled = await ticketInteractionHandler.handleTicketInteraction(interaction, client);
-        if (handled) return;
-      }
-
-      console.warn(`⚠️ Unhandled interaction: ${interactionLabel(interaction)}`);
-    } catch (error) {
-      if (isExpiredOrAcknowledged(error)) {
-        console.warn(`⚠️ Interaction expired/already acknowledged in top-level handler: ${interaction.id} / ${interactionLabel(interaction)}`);
-        return;
-      }
-
-      console.error('❌ interactionCreate fatal error');
-      console.error(error);
-      console.error(error?.stack);
-
-      await safeEdit(interaction, {
-        content: '❌ Something went wrong while handling this interaction.',
-      }).catch(() => null);
-    }
+      await sendAdminMemberJoinLog(member, addedRoles);
+    },
   },
-};
+
+  {
+    name: 'guildMemberRemove',
+
+    async execute(member) {
+      const removal = await detectRemoval(member);
+
+      await sendPublicMemberEmbed(member, 'leave');
+
+      await sendAdminMemberRemovalLog(member, removal);
+    },
+  },
+];
