@@ -10,6 +10,7 @@ import Forms from '../pages/modules/Forms';
 import Modules from '../pages/modules/Modules';
 import Verification from '../pages/modules/Verification';
 import AutoRoles from '../pages/modules/AutoRoles';
+import Tickets from '../pages/modules/Tickets';
 import Restore from '../pages/security/Restore';
 import Security from '../pages/security/Security';
 import Logs from '../pages/core/Logs';
@@ -64,6 +65,7 @@ export const NAV_ITEMS = [
       { key: 'verification', label: 'Verification', icon: 'modules', path: '/verification' },
       { key: 'autoRoles', label: 'Auto Roles', icon: 'modules', path: '/autoroles' },
       { key: 'forms', label: 'Forms', icon: 'modules', path: '/forms' },
+      { key: 'tickets', label: 'Tickets', icon: 'modules', path: '/tickets' },
     ],
   },
 ];
@@ -95,6 +97,7 @@ export const ROUTES = [
   { key: 'modules', label: 'Modules', icon: 'modules', path: '/modules', component: Modules },
   { key: 'verification', label: 'Verification', icon: 'modules', path: '/verification', component: Verification },
   { key: 'autoRoles', label: 'Auto Roles', icon: 'modules', path: '/autoroles', component: AutoRoles },
+  { key: 'tickets', label: 'Tickets', icon: 'modules', path: '/tickets', component: Tickets },
   { key: 'generalSettings', label: 'General Settings', icon: 'generalSettings', path: '/generalSettings', component: GeneralSettings },
   { key: 'automod', label: 'AutoMod', icon: 'automod', path: '/automod', component: AutoMod },
   { key: 'admin', label: 'Admin', icon: 'admin', path: '/admin', component: Admin },
@@ -125,6 +128,7 @@ export const PAGE_LAYOUTS = {
   modules: { title: 'Modules', description: 'Optional Goliath features in one scalable grid.', emptyDescription: 'Select a server to view modules.', sections: [{ id: 'modulesGrid', type: 'dashboard' }] },
   verification: { title: 'Verification', description: 'Member verification, role settings, panels and analytics.', emptyDescription: 'Select a server to manage verification.', sections: [{ id: 'verificationDashboard', type: 'dashboard' }] },
   autoRoles: { title: 'Auto Roles', description: 'Join roles, bot roles and assignment analytics.', emptyDescription: 'Select a server to manage auto roles.', sections: [{ id: 'autoRolesDashboard', type: 'dashboard' }] },
+  tickets: { title: 'Tickets', description: 'Open tickets, claims, closures, transcripts and analytics.', emptyDescription: 'Select a server to manage tickets.', sections: [{ id: 'ticketsDashboard', type: 'dashboard' }] },
   generalSettings: { title: 'General Settings', description: 'Manage server configuration.', emptyDescription: 'Select a server to manage settings.', sections: [{ id: 'generalConfig', type: 'config' }] },
   automod: { title: 'AutoMod', description: 'Manage filters and rules', sections: [{ id: 'rules', type: 'config' }, { id: 'filters', type: 'config' }] },
   admin: { title: 'Admin', description: 'Core system configuration and control panel.', emptyDescription: 'Select a server to manage admin settings.', sections: [{ id: 'adminHub', type: 'future' }] },
@@ -144,6 +148,7 @@ export const SECTION_DEFS = {
   modulesGrid: { title: 'Modules Grid', description: 'Browse optional Goliath features.' },
   verificationDashboard: { title: 'Verification Dashboard', description: 'Configure verification roles, panels and analytics.' },
   autoRolesDashboard: { title: 'Auto Roles Dashboard', description: 'Configure join roles, bot roles and analytics.' },
+  ticketsDashboard: { title: 'Tickets Dashboard', description: 'Review ticket queues, claims, transcripts and analytics.' },
   rules: { title: 'Rules', description: 'Manage core automod rules.' },
   filters: { title: 'Filters', description: 'Manage filters and logs.' },
   caseTable: { title: 'Cases', description: 'Browse case history.' },
