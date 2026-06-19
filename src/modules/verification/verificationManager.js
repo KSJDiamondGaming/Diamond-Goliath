@@ -52,6 +52,11 @@ function buildVerificationRows(panel = {}) {
   ];
 }
 
+function cleanDiscordId(value) {
+  const id = String(value || '').replace(/[<@&#!>]/g, '').trim();
+  return /^\d{15,25}$/.test(id) ? id : null;
+}
+
 async function fetchRole(guild, roleId) {
   if (!guild || !roleId) return null;
   return guild.roles.cache.get(roleId) || guild.roles.fetch(roleId).catch(() => null);
@@ -91,6 +96,27 @@ async function verifyMember(interaction) {
     verificationStore.incrementAnalytics(guildId, { failed: 1 });
     return { ok: false, message: error.message || 'Verification failed.' };
   }
+}
+
+function configureVerification(guildId, input = {}, meta = {}) {
+  return verificationStore.updateVerificationSection(guildId, (section) => ({
+    ...section,
+    enabled: typeof input.enabled === 'boolean' ? input.enabled : section.enabled,
+    settings: {
+      ...(section.settings || {}),
+      ...(input.settings && typeof input.settings === 'object' ? input.settings : {}),
+      verifiedRoleId: cleanDiscordId(input.settings?.verifiedRoleId ?? section.settings?.verifiedRoleId),
+      unverifiedRoleId: cleanDiscordId(input.settings?.unverifiedRoleId ?? section.settings?.unverifiedRoleId),
+      logChannelId: cleanDiscordId(input.settings?.logChannelId ?? section.settings?.logChannelId),
+      dmOnVerify: input.settings?.dmOnVerify !== false,
+      requireButton: input.settings?.requireButton !== false,
+    },
+    updatedAt: new Date().toISOString(),
+  }), meta);
+}
+
+function setVerificationEnabled(guildId, enabled = true, meta = {}) {
+  return configureVerification(guildId, { enabled: enabled === true }, meta);
 }
 
 async function deployVerificationPanel(channel, input = {}, meta = {}) {
@@ -138,6 +164,8 @@ module.exports = {
   parseVerifyCustomId,
   buildVerificationEmbed,
   buildVerificationRows,
+  configureVerification,
+  setVerificationEnabled,
   deployVerificationPanel,
   verifyMember,
   handleVerificationInteraction,
