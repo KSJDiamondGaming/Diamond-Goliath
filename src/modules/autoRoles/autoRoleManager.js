@@ -35,6 +35,17 @@ async function fetchRole(guild, roleId) {
   return guild.roles.cache.get(roleId) || guild.roles.fetch(roleId).catch(() => null);
 }
 
+async function validateManageableRole(guild, roleId) {
+  const role = await fetchRole(guild, roleId);
+
+  if (!role) throw new Error('Role not found.');
+  if (!canBotManageRole(guild, role)) {
+    throw new Error('I cannot manage that role. Move my role above it and make sure I have Manage Roles.');
+  }
+
+  return role;
+}
+
 async function applyAutoRoles(member) {
   const guild = member?.guild;
 
@@ -91,8 +102,9 @@ function configureAutoRoles(guildId, input = {}, meta = {}) {
 
   return autoRoleStore.updateAutoRolesSection(guildId, (section) => ({
     ...section,
-    joinRoles: Array.isArray(input.joinRoles) ? input.joinRoles : section.joinRoles,
-    botRoles: Array.isArray(input.botRoles) ? input.botRoles : section.botRoles,
+    enabled: typeof input.enabled === 'boolean' ? input.enabled : section.enabled,
+    joinRoles: Array.isArray(input.joinRoles) ? autoRoleStore.cleanRoleIds(input.joinRoles) : section.joinRoles,
+    botRoles: Array.isArray(input.botRoles) ? autoRoleStore.cleanRoleIds(input.botRoles) : section.botRoles,
     settings: {
       ...section.settings,
       ...(input.settings && typeof input.settings === 'object' ? input.settings : {}),
@@ -101,9 +113,43 @@ function configureAutoRoles(guildId, input = {}, meta = {}) {
   }), meta);
 }
 
+function setAutoRolesEnabled(guildId, enabled = true, meta = {}) {
+  return autoRoleStore.setEnabled(guildId, enabled, meta);
+}
+
+async function addAutoRole(guild, roleId, options = {}, meta = {}) {
+  if (!guild?.id) throw new Error('Guild is required.');
+  const role = await validateManageableRole(guild, roleId);
+  const section = options.bot === true
+    ? autoRoleStore.addBotRole(guild.id, role.id, meta)
+    : autoRoleStore.addJoinRole(guild.id, role.id, meta);
+
+  return { role, section };
+}
+
+function removeAutoRole(guildId, roleId, options = {}, meta = {}) {
+  return options.bot === true
+    ? autoRoleStore.removeBotRole(guildId, roleId, meta)
+    : autoRoleStore.removeJoinRole(guildId, roleId, meta);
+}
+
+function setApplyToBots(guildId, applyToBots = false, meta = {}) {
+  return autoRoleStore.updateSettings(guildId, { applyToBots: applyToBots === true }, meta);
+}
+
+function getAutoRoleAnalytics(guildId) {
+  return autoRoleStore.getAutoRolesSection(guildId).analytics || { assigned: 0, failed: 0 };
+}
+
 module.exports = {
   canManageAutoRoles,
   canBotManageRole,
+  validateManageableRole,
   applyAutoRoles,
   configureAutoRoles,
+  setAutoRolesEnabled,
+  addAutoRole,
+  removeAutoRole,
+  setApplyToBots,
+  getAutoRoleAnalytics,
 };
