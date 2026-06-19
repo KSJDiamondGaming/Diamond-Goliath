@@ -2,7 +2,14 @@ import React, { useEffect, useMemo, useState } from 'react';
 
 import { api } from '../../services/apiClient.js';
 
-const PLATFORMS = ['twitch', 'youtube', 'tiktok', 'kick', 'instagram', 'x'];
+const PLATFORMS = [
+  { value: 'twitch', label: 'Twitch' },
+  { value: 'youtube', label: 'YouTube' },
+  { value: 'tiktok', label: 'TikTok' },
+  { value: 'kick', label: 'Kick' },
+  { value: 'instagram', label: 'Instagram' },
+  { value: 'x', label: 'X' },
+];
 const ALERT_TYPES = ['live', 'upload', 'short', 'post'];
 
 function getGuildId(selectedGuild, selectedGuildData) {
@@ -14,6 +21,10 @@ function normalizeAccounts(config) {
   if (Array.isArray(config?.accounts)) return config.accounts;
   if (config?.accounts && typeof config.accounts === 'object') return Object.values(config.accounts);
   return [];
+}
+
+function formatPlatform(platform) {
+  return PLATFORMS.find((item) => item.value === platform)?.label || String(platform || '').toUpperCase();
 }
 
 function StatCard({ theme, label, value, hint }) {
@@ -29,7 +40,7 @@ function StatCard({ theme, label, value, hint }) {
 function PlatformPill({ theme, platform }) {
   return (
     <span style={{ border: `1px solid ${theme.cardBorder}`, color: theme.cardText, background: 'rgba(59,130,246,0.14)', borderRadius: 999, padding: '5px 9px', fontSize: 12, fontWeight: 950, textTransform: 'uppercase' }}>
-      {platform}
+      {formatPlatform(platform)}
     </span>
   );
 }
@@ -169,7 +180,7 @@ export default function Social({ theme, selectedGuild, selectedGuildData }) {
 
         <form onSubmit={saveAccount} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))', gap: 12 }}>
           <select value={form.platform} onChange={(event) => updateForm('platform', event.target.value)} style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(15,23,42,0.35)', color: theme.cardText, borderRadius: 14, padding: 12, fontWeight: 850 }}>
-            {PLATFORMS.map((platform) => <option key={platform} value={platform}>{platform}</option>)}
+            {PLATFORMS.map((platform) => <option key={platform.value} value={platform.value}>{platform.label}</option>)}
           </select>
           <input value={form.displayName} onChange={(event) => updateForm('displayName', event.target.value)} placeholder="Display name" style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(15,23,42,0.35)', color: theme.cardText, borderRadius: 14, padding: 12, fontWeight: 850 }} />
           <input value={form.username} onChange={(event) => updateForm('username', event.target.value)} placeholder="Username / channel ID" required style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(15,23,42,0.35)', color: theme.cardText, borderRadius: 14, padding: 12, fontWeight: 850 }} />
