@@ -99,17 +99,23 @@ async function verifyMember(interaction) {
 }
 
 function configureVerification(guildId, input = {}, meta = {}) {
+  const settingsInput = input.settings && typeof input.settings === 'object' ? input.settings : {};
+
   return verificationStore.updateVerificationSection(guildId, (section) => ({
     ...section,
     enabled: typeof input.enabled === 'boolean' ? input.enabled : section.enabled,
     settings: {
       ...(section.settings || {}),
-      ...(input.settings && typeof input.settings === 'object' ? input.settings : {}),
-      verifiedRoleId: cleanDiscordId(input.settings?.verifiedRoleId ?? section.settings?.verifiedRoleId),
-      unverifiedRoleId: cleanDiscordId(input.settings?.unverifiedRoleId ?? section.settings?.unverifiedRoleId),
-      logChannelId: cleanDiscordId(input.settings?.logChannelId ?? section.settings?.logChannelId),
-      dmOnVerify: input.settings?.dmOnVerify !== false,
-      requireButton: input.settings?.requireButton !== false,
+      ...settingsInput,
+      verifiedRoleId: cleanDiscordId(settingsInput.verifiedRoleId ?? section.settings?.verifiedRoleId),
+      unverifiedRoleId: cleanDiscordId(settingsInput.unverifiedRoleId ?? section.settings?.unverifiedRoleId),
+      logChannelId: cleanDiscordId(settingsInput.logChannelId ?? section.settings?.logChannelId),
+      dmOnVerify: typeof settingsInput.dmOnVerify === 'boolean'
+        ? settingsInput.dmOnVerify
+        : section.settings?.dmOnVerify !== false,
+      requireButton: typeof settingsInput.requireButton === 'boolean'
+        ? settingsInput.requireButton
+        : section.settings?.requireButton !== false,
     },
     updatedAt: new Date().toISOString(),
   }), meta);
