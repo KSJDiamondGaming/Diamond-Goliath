@@ -30,6 +30,16 @@ function canBotManageRole(guild, role) {
   );
 }
 
+function canBotManageMember(member) {
+  const botMember = getBotMember(member?.guild);
+
+  if (!botMember || !member) return false;
+  if (member.id === botMember.id) return false;
+  if (member.guild?.ownerId === member.id) return false;
+
+  return botMember.roles.highest.position > member.roles.highest.position;
+}
+
 async function fetchRole(guild, roleId) {
   if (!guild || !roleId) return null;
   return guild.roles.cache.get(roleId) || guild.roles.fetch(roleId).catch(() => null);
@@ -56,19 +66,25 @@ async function applyAutoRoles(member) {
 
   if (section.enabled === false) return [];
   if (member.user?.bot && section.settings?.applyToBots !== true) return [];
+  if (!canBotManageMember(member)) return [];
 
   const roleIds = member.user?.bot ? section.botRoles || [] : section.joinRoles || [];
+  const uniqueRoleIds = autoRoleStore.cleanRoleIds(roleIds);
 
-  if (!roleIds.length) return [];
+  if (!uniqueRoleIds.length) return [];
 
   const addedRoles = [];
   let failed = 0;
 
-  for (const roleId of roleIds) {
+  for (const roleId of uniqueRoleIds) {
     const role = await fetchRole(guild, roleId);
 
-    if (!role || member.roles.cache.has(role.id)) {
-      if (role) addedRoles.push(role);
+    if (!role) {
+      failed += 1;
+      continue;
+    }
+
+    if (member.roles.cache.has(role.id)) {
       continue;
     }
 
@@ -144,6 +160,7 @@ function getAutoRoleAnalytics(guildId) {
 module.exports = {
   canManageAutoRoles,
   canBotManageRole,
+  canBotManageMember,
   validateManageableRole,
   applyAutoRoles,
   configureAutoRoles,
