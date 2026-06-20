@@ -88,8 +88,7 @@ export default function Modules({ theme, selectedGuild, selectedGuildData }) {
   const stats = useMemo(() => ({
     total: modules.length,
     enabled: modules.filter((module) => module.enabled).length,
-    backendReady: modules.filter((module) => module.status === MODULE_STATUSES.backendReady).length,
-    comingSoon: modules.filter((module) => [MODULE_STATUSES.planned, MODULE_STATUSES.uiPending].includes(module.status)).length,
+    dashboardReady: modules.filter((module) => module.status === MODULE_STATUSES.backendReady || module.status === MODULE_STATUSES.live).length,
   }), [modules]);
 
   const cardStyle = {
@@ -101,10 +100,7 @@ export default function Modules({ theme, selectedGuild, selectedGuildData }) {
   };
 
   function handleOpenModule(module) {
-    if (!module?.route) {
-      setError(`${module?.name || 'This module'} does not have a dashboard page yet.`);
-      return;
-    }
+    if (!module?.route) return;
 
     if (module.enabled !== true) {
       setError(`Enable ${module.name} before opening its dashboard page.`);
@@ -152,8 +148,7 @@ export default function Modules({ theme, selectedGuild, selectedGuildData }) {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))', gap: 12 }}>
             <StatCard theme={theme} label="Feature Modules" value={stats.total} hint="Grid launcher" />
             <StatCard theme={theme} label="Enabled" value={stats.enabled} hint="Saved to guild JSON" />
-            <StatCard theme={theme} label="Backend Ready" value={stats.backendReady} hint="Storage/API ready" />
-            <StatCard theme={theme} label="Coming Soon" value={stats.comingSoon} hint="Roadmap placeholders" />
+            <StatCard theme={theme} label="Dashboard Ready" value={stats.dashboardReady} hint="Every module opens" />
           </div>
         </div>
       </section>
