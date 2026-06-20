@@ -16,15 +16,17 @@ const {
   addTimelineEntry,
 } = require('./ticketTimeline');
 
-const BOT_CHANNEL_PERMISSIONS = [
-  PermissionFlagsBits.ViewChannel,
-  PermissionFlagsBits.SendMessages,
-  PermissionFlagsBits.ReadMessageHistory,
-  PermissionFlagsBits.AttachFiles,
-  PermissionFlagsBits.EmbedLinks,
-  PermissionFlagsBits.ManageChannels,
-  PermissionFlagsBits.ManageMessages,
-];
+const {
+  TICKET_CHANNEL_PERMISSIONS,
+  getBotId,
+  getBotMember,
+  guardChannelAccess,
+  guardCategoryAccess,
+  syncBotToChannel,
+  syncBotToCategory,
+} = require('../../utils/goliathPermissionGuard');
+
+const BOT_CHANNEL_PERMISSIONS = TICKET_CHANNEL_PERMISSIONS;
 
 function uniqueIds(ids = []) {
   return [
@@ -36,59 +38,47 @@ function uniqueIds(ids = []) {
   ];
 }
 
-function getBotId(guild) {
-  return guild?.members?.me?.id || guild?.client?.user?.id || null;
-}
-
 async function ensureBotReady(guild) {
-  if (!guild) return null;
-
-  if (!guild.members.me) {
-    await guild.members.fetchMe().catch(() => null);
-  }
-
-  return getBotId(guild);
+  const botMember = await getBotMember(guild);
+  return botMember?.id || getBotId(guild);
 }
 
 async function ensureBotChannelPermissions(channel) {
   if (!channel?.guild) return false;
 
-  const botId = await ensureBotReady(channel.guild);
-  if (!botId) return false;
+  const result = await syncBotToChannel(
+    channel.guild,
+    channel.id,
+    BOT_CHANNEL_PERMISSIONS,
+    {
+      scope: 'tickets.channel_sync',
+      reason: 'Goliath ticket channel permission sync',
+    }
+  ).catch((error) => {
+    console.error('[Tickets] Failed to repair bot channel permissions:', error);
+    return null;
+  });
 
-  await channel.permissionOverwrites
-    .edit(botId, {
-      ViewChannel: true,
-      SendMessages: true,
-      ReadMessageHistory: true,
-      AttachFiles: true,
-      EmbedLinks: true,
-      ManageChannels: true,
-      ManageMessages: true,
-    })
-    .catch((error) => {
-      console.error(
-        '[Tickets] Failed to repair bot channel permissions:',
-        error
-      );
-      return null;
-    });
-
-  return true;
+  return Boolean(result?.ok);
 }
 
 async function ensureBotCategoryPermissions(guild, categoryId) {
   if (!guild || !categoryId) return false;
 
-  const category = await guild.channels
-    .fetch(categoryId)
-    .catch(() => null);
+  const result = await syncBotToCategory(
+    guild,
+    categoryId,
+    BOT_CHANNEL_PERMISSIONS,
+    {
+      scope: 'tickets.category_sync',
+      reason: 'Goliath ticket category permission sync',
+    }
+  ).catch((error) => {
+    console.error('[Tickets] Failed to repair bot category permissions:', error);
+    return null;
+  });
 
-  if (!category || category.type !== ChannelType.GuildCategory) {
-    return false;
-  }
-
-  return ensureBotChannelPermissions(category);
+  return Boolean(result?.ok);
 }
 
 function cleanChannelPart(value, fallback = 'user', maxLength = 10) {
@@ -212,7 +202,17 @@ async function resolveAvailableCategory(guild, categoryId) {
     return null;
   }
 
-  await ensureBotCategoryPermissions(guild, baseCategory.id);
+  await guardCategoryAccess(
+    guild,
+    baseCategory.id,
+    BOT_CHANNEL_PERMISSIONS,
+    {
+      scope: 'tickets.category',
+      autoFix: true,
+      throwOnFail: true,
+      reason: 'Goliath ticket category validation',
+    }
+  );
 
   const MAX_CHANNELS_PER_CATEGORY = 48;
 
@@ -252,7 +252,17 @@ async function resolveAvailableCategory(guild, categoryId) {
 
   if (!overflowCategory) return baseCategory.id;
 
-  await ensureBotCategoryPermissions(guild, overflowCategory.id);
+  await guardCategoryAccess(
+    guild,
+    overflowCategory.id,
+    BOT_CHANNEL_PERMISSIONS,
+    {
+      scope: 'tickets.overflow_category',
+      autoFix: true,
+      throwOnFail: true,
+      reason: 'Goliath ticket overflow category validation',
+    }
+  );
 
   return overflowCategory.id;
 }
@@ -511,9 +521,19 @@ async function createTicketChannel({
     }`,
   });
 
-  await ensureBotChannelPermissions(channel);
+  await guardChannelAccess(
+    guild,
+    channel.id,
+    BOT_CHANNEL_PERMISSIONS,
+    {
+      scope: 'tickets.created_channel',
+      autoFix: true,
+      throwOnFail: true,
+      reason: 'Goliath ticket channel validation after create',
+    }
+  );
 
-  const updatedTicket = updateTicket(
+  updateTicket(
     guild.id,
     ticket.ticketId,
     {
@@ -550,6 +570,18 @@ async function syncTicketChannelPermissions({
     return false;
   }
 
+  await guardChannelAccess(
+    guild,
+    channel.id,
+    BOT_CHANNEL_PERMISSIONS,
+    {
+      scope: 'tickets.channel_sync',
+      autoFix: true,
+      throwOnFail: true,
+      reason: 'Goliath ticket channel validation before sync',
+    }
+  );
+
   const settings = getTicketSettings(guild.id);
 
   const overwrites = buildTicketPermissionOverwrites({
@@ -584,7 +616,17 @@ async function syncTicketChannelPermissions({
       });
   }
 
-  await ensureBotChannelPermissions(channel);
+  await guardChannelAccess(
+    guild,
+    channel.id,
+    BOT_CHANNEL_PERMISSIONS,
+    {
+      scope: 'tickets.channel_sync_complete',
+      autoFix: true,
+      throwOnFail: true,
+      reason: 'Goliath ticket channel validation after sync',
+    }
+  );
 
   return true;
 }
@@ -596,6 +638,18 @@ async function closeTicketChannel({
   actorId = null,
 } = {}) {
   if (!guild || !channel || !ticket) return false;
+
+  await guardChannelAccess(
+    guild,
+    channel.id,
+    BOT_CHANNEL_PERMISSIONS,
+    {
+      scope: 'tickets.close_channel',
+      autoFix: true,
+      throwOnFail: true,
+      reason: 'Goliath ticket close validation',
+    }
+  );
 
   const name = buildTicketChannelName(
     {
@@ -647,6 +701,18 @@ async function archiveTicketChannel({
 } = {}) {
   if (!guild || !channel || !ticket) return false;
 
+  await guardChannelAccess(
+    guild,
+    channel.id,
+    BOT_CHANNEL_PERMISSIONS,
+    {
+      scope: 'tickets.archive_channel',
+      autoFix: true,
+      throwOnFail: true,
+      reason: 'Goliath ticket archive validation',
+    }
+  );
+
   const settings = getTicketSettings(guild.id);
   const archiveCategoryId = getArchiveCategory(settings, panel);
 
@@ -697,6 +763,18 @@ async function reopenTicketChannel({
   actorId = null,
 } = {}) {
   if (!guild || !channel || !ticket) return false;
+
+  await guardChannelAccess(
+    guild,
+    channel.id,
+    BOT_CHANNEL_PERMISSIONS,
+    {
+      scope: 'tickets.reopen_channel',
+      autoFix: true,
+      throwOnFail: true,
+      reason: 'Goliath ticket reopen validation',
+    }
+  );
 
   const settings = getTicketSettings(guild.id);
   const categoryId = getPanelOrGlobalCategory(settings, panel);
@@ -768,6 +846,18 @@ async function deleteTicketChannel({
   actorId = null,
 } = {}) {
   if (!guild || !channel || !ticket) return false;
+
+  await guardChannelAccess(
+    guild,
+    channel.id,
+    BOT_CHANNEL_PERMISSIONS,
+    {
+      scope: 'tickets.delete_channel',
+      autoFix: false,
+      throwOnFail: true,
+      reason: 'Goliath ticket delete validation',
+    }
+  );
 
   addTimelineEntry(
     guild.id,
