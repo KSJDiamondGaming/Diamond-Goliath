@@ -1,0 +1,1 @@
+import React from 'react'; export default function TempVoice({ theme }) { return (<div style={{display:'grid',gap:16}}><section style={{border:`1px solid ${theme.cardBorder}`,background:theme.cardBg,borderRadius:22,padding:24}}><h1>Temp Voice</h1><p>Overview, Settings, Analytics and Discord Resources for the Temp Voice module.</p></section></div>); }
