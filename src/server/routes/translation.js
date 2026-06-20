@@ -6,7 +6,11 @@ const express = require('express');
 
 const translationStore = require('../../modules/translation/translationStore');
 const translationThreadManager = require('../../modules/translation/translationThreadManager');
-const { isGoliathPermissionError } = require('../../helpers/goliathPermissionGuard');
+const {
+  DEFAULT_BOT_CHANNEL_PERMISSIONS,
+  guardChannelAccess,
+  isGoliathPermissionError,
+} = require('../../helpers/goliathPermissionGuard');
 
 const router = express.Router();
 
@@ -66,6 +70,28 @@ async function getGuild(req, guildId) {
 
   if (!fetchedGuild) throw new Error('Guild is not available to the Discord client.');
   return fetchedGuild;
+}
+
+async function guardTranslationChannelConfig(guild, channelId) {
+  const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
+
+  if (!channel?.isTextBased?.()) {
+    throw new Error('Translation channel must be a valid text or announcement channel.');
+  }
+
+  await guardChannelAccess(
+    guild,
+    channel.id,
+    DEFAULT_BOT_CHANNEL_PERMISSIONS,
+    {
+      scope: 'translation.channel_config',
+      autoFix: true,
+      throwOnFail: true,
+      reason: 'Goliath translation channel configuration validation',
+    }
+  );
+
+  return channel;
 }
 
 router.get('/:guildId/overview', (req, res) => {
@@ -148,11 +174,13 @@ router.get('/:guildId/channels/:channelId', (req, res) => {
   }
 });
 
-router.put('/:guildId/channels/:channelId', (req, res) => {
+router.put('/:guildId/channels/:channelId', async (req, res) => {
   try {
     const guildId = getGuildId(req);
     const channelId = cleanDiscordId(req.params.channelId, 'channel ID');
-    const channel = translationStore.saveChannelConfig(guildId, channelId, req.body || {});
+    const guild = await getGuild(req, guildId);
+    await guardTranslationChannelConfig(guild, channelId);
+    const channel = translationStore.saveChannelConfig(guildId, channelId, req.body || {}, guild);
     return success(res, { guildId, channelId, channel });
   } catch (error) {
     return failure(res, error, 400);
@@ -181,6 +209,7 @@ router.post('/:guildId/threads/channels/:channelId/enable', async (req, res) => 
     const guildId = getGuildId(req);
     const channelId = cleanDiscordId(req.params.channelId, 'channel ID');
     const guild = await getGuild(req, guildId);
+    await guardTranslationChannelConfig(guild, channelId);
     const channel = translationStore.saveChannelConfig(guildId, channelId, {
       ...(req.body || {}),
       enabled: true,
