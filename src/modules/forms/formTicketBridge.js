@@ -7,6 +7,11 @@ const { EmbedBuilder } = require('discord.js');
 const formStore = require('./formStore');
 const ticketManager = require('../tickets/ticketManager');
 const ticketChannelManager = require('../tickets/ticketChannelManager');
+const {
+  TICKET_CHANNEL_PERMISSIONS,
+  guardCategoryAccess,
+  isGoliathPermissionError,
+} = require('../../helpers/goliathPermissionGuard');
 
 function formatAnswerValue(value) {
   const text = String(value ?? '').trim();
@@ -24,6 +29,10 @@ function buildAnswerLines(form, submission) {
   });
 }
 
+function buildUserMention(userId) {
+  return userId ? '<@' + userId + '>' : null;
+}
+
 function buildSubmissionTicketEmbed(form, submission, ticket) {
   const answerLines = buildAnswerLines(form, submission);
 
@@ -33,7 +42,7 @@ function buildSubmissionTicketEmbed(form, submission, ticket) {
     .setDescription([
       `**Submission ID:** \`${submission.submissionId}\``,
       `**Ticket:** \`${ticket.displayId || ticket.ticketId}\``,
-      `**User:** ${submission.userId ? `<@${submission.userId}>` : submission.userTag || 'Unknown'}`,
+      `**User:** ${buildUserMention(submission.userId) || submission.userTag || 'Unknown'}`,
       `**Form:** \`${form.formId}\``,
       '',
       answerLines.length ? answerLines.join('\n\n') : '_No answers captured._',
@@ -42,6 +51,22 @@ function buildSubmissionTicketEmbed(form, submission, ticket) {
     .setTimestamp(new Date());
 
   return embed;
+}
+
+async function validateFormTicketTarget(interaction, form) {
+  if (!interaction?.guild || !form?.outputCategoryId) return null;
+
+  return guardCategoryAccess(
+    interaction.guild,
+    form.outputCategoryId,
+    TICKET_CHANNEL_PERMISSIONS,
+    {
+      scope: 'forms.ticket_bridge',
+      autoFix: true,
+      throwOnFail: true,
+      reason: 'Goliath forms to ticket category validation',
+    }
+  );
 }
 
 async function createTicketForSubmission({
@@ -69,6 +94,8 @@ async function createTicketForSubmission({
   }
 
   try {
+    await validateFormTicketTarget(interaction, form);
+
     const answerSummary = buildAnswerLines(form, submission).join('\n\n').slice(0, 3500);
 
     const ticket = await ticketManager.createNewTicket({
@@ -105,11 +132,15 @@ async function createTicketForSubmission({
       });
     } catch (channelError) {
       console.error('[Forms] Failed to create ticket channel for submission:', channelError);
+
+      if (isGoliathPermissionError(channelError)) {
+        throw channelError;
+      }
     }
 
     if (channel?.send) {
       await channel.send({
-        content: submission.userId ? `<@${submission.userId}>` : undefined,
+        content: buildUserMention(submission.userId) || undefined,
         embeds: [buildSubmissionTicketEmbed(form, submission, ticket)],
         allowedMentions: { users: submission.userId ? [submission.userId] : [] },
       }).catch((error) => {
@@ -141,6 +172,7 @@ async function createTicketForSubmission({
       ticket: null,
       channel: null,
       error: error.message || 'Ticket bridge failed.',
+      guard: isGoliathPermissionError(error) ? error.details : null,
     };
   }
 }
