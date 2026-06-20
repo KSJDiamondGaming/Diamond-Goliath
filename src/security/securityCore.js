@@ -1,13 +1,15 @@
 const { PermissionFlagsBits, MessageFlags } = require('discord.js');
 
 const DEFAULT_COOLDOWN_MS = Number(process.env.SECURITY_COOLDOWN_MS || 2500);
+const MAX_COOLDOWN_MS = 60 * 60 * 1000;
+const MAX_COOLDOWN_ENTRIES = 5000;
 
 const cooldowns = new Map();
 
 const OWNER_IDS = (process.env.OWNER_IDS || '')
   .split(',')
   .map((id) => String(id).trim())
-  .filter(Boolean);
+  .filter((id) => /^\d{15,25}$/.test(id));
 
 function getBotOwnerIds() {
   return [...new Set(OWNER_IDS)];
@@ -134,10 +136,28 @@ function canModerateTarget(interaction, targetMember) {
   };
 }
 
+function normalizeCooldownMs(ms = DEFAULT_COOLDOWN_MS) {
+  const value = Number(ms);
+  if (!Number.isFinite(value) || value <= 0) return DEFAULT_COOLDOWN_MS;
+  return Math.min(Math.floor(value), MAX_COOLDOWN_MS);
+}
+
+function pruneCooldowns(now = Date.now()) {
+  if (cooldowns.size <= MAX_COOLDOWN_ENTRIES) return;
+
+  for (const [key, expiresAt] of cooldowns.entries()) {
+    if (expiresAt <= now || cooldowns.size > MAX_COOLDOWN_ENTRIES) {
+      cooldowns.delete(key);
+    }
+
+    if (cooldowns.size <= MAX_COOLDOWN_ENTRIES) break;
+  }
+}
+
 function checkCooldown(userId, key = 'global', ms = DEFAULT_COOLDOWN_MS) {
   const safeUserId = String(userId || '');
-  const safeKey = String(key || 'global');
-  const cooldownMs = Number(ms || DEFAULT_COOLDOWN_MS);
+  const safeKey = String(key || 'global').slice(0, 120);
+  const cooldownMs = normalizeCooldownMs(ms);
 
   if (!safeUserId) {
     return {
@@ -154,6 +174,8 @@ function checkCooldown(userId, key = 'global', ms = DEFAULT_COOLDOWN_MS) {
   }
 
   const now = Date.now();
+  pruneCooldowns(now);
+
   const cooldownKey = `${safeUserId}:${safeKey}`;
   const expiresAt = cooldowns.get(cooldownKey) || 0;
 
@@ -182,11 +204,16 @@ async function safeDeny(interaction, message) {
     flags: MessageFlags.Ephemeral,
   };
 
-  if (interaction.deferred || interaction.replied) {
-    return interaction.editReply(payload);
-  }
+  try {
+    if (interaction.deferred || interaction.replied) {
+      return await interaction.editReply(payload);
+    }
 
-  return interaction.reply(payload);
+    return await interaction.reply(payload);
+  } catch (error) {
+    console.warn('[SecurityCore] Failed to send denial response:', error?.message || error);
+    return null;
+  }
 }
 
 async function enforceInteractionSecurity(interaction, options = {}) {
@@ -379,12 +406,10 @@ function canManageTargetMember(guild, targetMember) {
     return { allowed: false, reason: 'Invalid guild or target member.' };
   }
 
-  // Block bot owner
   if (isBotOwner(targetMember.id)) {
     return { allowed: false, reason: 'Cannot manage the Goliath owner.' };
   }
 
-  // Block server owner
   if (targetMember.id === guild.ownerId) {
     return { allowed: false, reason: 'Cannot manage server owner.' };
   }
