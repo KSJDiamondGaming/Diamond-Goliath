@@ -1,1 +1,6 @@
-import React from 'react'; export default function Timeline({ theme }) { return (<div style={{display:'grid',gap:16}}><section style={{border:`1px solid ${theme.cardBorder}`,background:theme.cardBg,borderRadius:22,padding:24}}><h1>Timeline</h1><p>Overview, Settings, Analytics and Discord Resources for the Timeline module.</p></section></div>); }
+import React from 'react';
+import ModuleResourceMini from './shared/ModuleResourceMini.jsx';
+
+export default function Timeline(props) {
+  return <ModuleResourceMini {...props} title="Timeline" description="Shared dashboard for module settings, analytics and resources." />;
+}
