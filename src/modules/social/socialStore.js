@@ -77,6 +77,39 @@ function normalizeAlertTypes(value) {
   return cleaned.length ? [...new Set(cleaned)] : [ALERT_TYPES.LIVE];
 }
 
+function cleanAccountIdentifier(value = '') {
+  const raw = cleanString(value, '', 500);
+  if (!raw) return { username: '', url: '', channelId: '' };
+
+  const urlLike = /^https?:\/\//i.test(raw);
+  const url = urlLike ? raw : '';
+  let username = raw;
+  let channelId = '';
+
+  if (urlLike) {
+    try {
+      const parsed = new URL(raw);
+      const pathParts = parsed.pathname.split('/').filter(Boolean);
+      const first = pathParts[0] || '';
+      const second = pathParts[1] || '';
+
+      if (parsed.hostname.includes('youtube.com') && ['channel', 'c', 'user'].includes(first)) {
+        username = second || first;
+        channelId = first === 'channel' ? second : '';
+      } else if (parsed.hostname.includes('youtube.com') && first.startsWith('@')) {
+        username = first.replace(/^@/, '');
+      } else {
+        username = first.replace(/^@/, '');
+      }
+    } catch {
+      username = raw;
+    }
+  }
+
+  username = cleanString(username.replace(/^@/, '').split(/[?#]/)[0], '', 160);
+  return { username, url, channelId };
+}
+
 function defaultTemplates() {
   return {
     live: {
@@ -102,6 +135,17 @@ function defaultTemplates() {
   };
 }
 
+function defaultProviders() {
+  return {
+    instagram: { enabled: true, status: 'not_configured' },
+    kick: { enabled: true, status: 'not_implemented' },
+    tiktok: { enabled: true, status: 'not_configured' },
+    twitch: { enabled: true, status: 'not_configured' },
+    x: { enabled: true, status: 'not_configured' },
+    youtube: { enabled: true, status: 'not_configured' },
+  };
+}
+
 function defaultSocialSection() {
   return {
     enabled: true,
@@ -109,7 +153,10 @@ function defaultSocialSection() {
       checkIntervalMs: 300000,
       suppressDuplicates: true,
       defaultMentionMode: 'role',
+      credentialOwner: 'Goliath',
+      credentialEmail: 'goliath@ksjdigital.co.uk',
     },
+    providers: defaultProviders(),
     accounts: {},
     templates: defaultTemplates(),
     analytics: {
@@ -127,7 +174,8 @@ function defaultSocialSection() {
 function normalizeAccount(account = {}) {
   const source = isPlainObject(account) ? account : {};
   const platform = normalizePlatform(source.platform);
-  const username = cleanString(source.username || source.handle || source.channelId || '', '', 120);
+  const identifier = cleanAccountIdentifier(source.username || source.handle || source.channelId || source.url || '');
+  const username = identifier.username;
   const accountId = cleanKey(source.accountId || source.id || `${platform}-${username || createId('account')}`);
 
   return {
@@ -137,7 +185,8 @@ function normalizeAccount(account = {}) {
     platform,
     displayName: cleanString(source.displayName || username || platform, platform, 120),
     username,
-    externalId: cleanString(source.externalId || source.channelId || '', '', 160),
+    url: cleanString(source.url || identifier.url, '', 500),
+    externalId: cleanString(source.externalId || source.channelId || identifier.channelId, '', 160),
     alertChannelId: cleanDiscordId(source.alertChannelId),
     mentionRoleId: cleanDiscordId(source.mentionRoleId),
     mentionMode: ['none', 'role', 'everyone', 'here'].includes(source.mentionMode) ? source.mentionMode : 'role',
@@ -150,6 +199,21 @@ function normalizeAccount(account = {}) {
     updatedAt: source.updatedAt || source.createdAt || now(),
     updatedBy: cleanDiscordId(source.updatedBy),
   };
+}
+
+function normalizeProviders(providers = {}) {
+  const base = defaultProviders();
+  const source = isPlainObject(providers) ? providers : {};
+
+  return Object.fromEntries(
+    Object.entries(base).map(([id, defaults]) => [
+      id,
+      {
+        ...defaults,
+        ...(isPlainObject(source[id]) ? clone(source[id]) : {}),
+      },
+    ])
+  );
 }
 
 function normalizeSocialSection(section = {}) {
@@ -171,6 +235,7 @@ function normalizeSocialSection(section = {}) {
       ...base.settings,
       ...(isPlainObject(source.settings) ? clone(source.settings) : {}),
     },
+    providers: normalizeProviders(source.providers),
     accounts,
     templates: {
       ...base.templates,
@@ -257,6 +322,8 @@ module.exports = {
   ALERT_TYPES,
   createId,
   cleanKey,
+  cleanAccountIdentifier,
+  defaultProviders,
   defaultSocialSection,
   normalizeAccount,
   normalizeSocialSection,
