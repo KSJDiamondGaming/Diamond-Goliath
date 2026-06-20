@@ -5,15 +5,11 @@ export const MODULE_CATEGORIES = {
 export const MODULE_STATUSES = {
   live: 'Live',
   backendReady: 'Backend Ready',
-  uiPending: 'UI Pending',
-  planned: 'Planned',
 };
 
 export const MODULE_STATUS_META = {
   [MODULE_STATUSES.live]: { label: 'Live', tone: 'success' },
-  [MODULE_STATUSES.backendReady]: { label: 'Backend Ready', tone: 'info' },
-  [MODULE_STATUSES.uiPending]: { label: 'Coming Soon', tone: 'warning' },
-  [MODULE_STATUSES.planned]: { label: 'Coming Soon', tone: 'muted' },
+  [MODULE_STATUSES.backendReady]: { label: 'Dashboard Ready', tone: 'info' },
 };
 
 export const moduleRegistry = [
@@ -41,31 +37,11 @@ export const moduleRegistry = [
     key: 'giveaways',
     name: 'Giveaways',
     icon: 'GW',
-    route: null,
+    route: '/giveaways',
     category: MODULE_CATEGORIES.feature,
     status: MODULE_STATUSES.backendReady,
     enabled: false,
     summary: 'Create and manage server giveaways.',
-  },
-  {
-    key: 'prefix',
-    name: 'Prefix',
-    icon: 'PX',
-    route: null,
-    category: MODULE_CATEGORIES.feature,
-    status: MODULE_STATUSES.live,
-    enabled: true,
-    summary: 'Configure the server command prefix and prefix command behaviour.',
-  },
-  {
-    key: 'roles',
-    name: 'Roles',
-    icon: 'RL',
-    route: null,
-    category: MODULE_CATEGORIES.feature,
-    status: MODULE_STATUSES.backendReady,
-    enabled: false,
-    summary: 'Role utilities, role automation and future reaction-role controls.',
   },
   {
     key: 'social',
@@ -81,7 +57,7 @@ export const moduleRegistry = [
     key: 'starboard',
     name: 'Starboard',
     icon: 'ST',
-    route: null,
+    route: '/starboard',
     category: MODULE_CATEGORIES.feature,
     status: MODULE_STATUSES.backendReady,
     enabled: false,
@@ -91,27 +67,17 @@ export const moduleRegistry = [
     key: 'sticky',
     name: 'Sticky Messages',
     icon: 'SM',
-    route: null,
+    route: '/sticky',
     category: MODULE_CATEGORIES.feature,
     status: MODULE_STATUSES.backendReady,
     enabled: false,
     summary: 'Keep important channel messages pinned to the bottom of chat.',
   },
   {
-    key: 'suggestions',
-    name: 'Suggestions',
-    icon: 'SG',
-    route: null,
-    category: MODULE_CATEGORIES.feature,
-    status: MODULE_STATUSES.backendReady,
-    enabled: false,
-    summary: 'Collect, review and manage community suggestions.',
-  },
-  {
     key: 'tempVoice',
     name: 'Temp Voice',
     icon: 'TV',
-    route: null,
+    route: '/tempvoice',
     category: MODULE_CATEGORIES.feature,
     status: MODULE_STATUSES.backendReady,
     enabled: false,
@@ -131,7 +97,7 @@ export const moduleRegistry = [
     key: 'timeline',
     name: 'Timeline',
     icon: 'TL',
-    route: null,
+    route: '/timeline',
     category: MODULE_CATEGORIES.feature,
     status: MODULE_STATUSES.backendReady,
     enabled: false,
@@ -141,7 +107,7 @@ export const moduleRegistry = [
     key: 'translation',
     name: 'Translation',
     icon: 'TR',
-    route: null,
+    route: '/translation',
     category: MODULE_CATEGORIES.feature,
     status: MODULE_STATUSES.backendReady,
     enabled: false,
@@ -162,7 +128,7 @@ export const moduleRegistry = [
 export const futureModules = [];
 
 export function getModuleStatusMeta(status) {
-  return MODULE_STATUS_META[status] || MODULE_STATUS_META[MODULE_STATUSES.planned];
+  return MODULE_STATUS_META[status] || MODULE_STATUS_META[MODULE_STATUSES.backendReady];
 }
 
 export default moduleRegistry;
