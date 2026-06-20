@@ -299,6 +299,25 @@ router.post('/:guildId/verification/panels/deploy', async (req, res) => {
   }
 });
 
+router.post('/:guildId/verification/panels/:panelId/refresh', async (req, res) => {
+  try {
+    const guildId = getGuildId(req);
+    const guild = await fetchGuild(req, guildId);
+    if (!guild) throw new Error('Guild is unavailable.');
+
+    const panel = await verificationManager.refreshVerificationPanel(
+      guild,
+      req.params.panelId,
+      req.body || {},
+      { actorId: req.body?.actorId }
+    );
+
+    return success(res, { guildId, panel });
+  } catch (error) {
+    return failure(res, error, 400);
+  }
+});
+
 router.get('/:guildId/verification/analytics', (req, res) => {
   try {
     const guildId = getGuildId(req);
