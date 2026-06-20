@@ -21,6 +21,10 @@ const {
   getTicketSettings,
 } = require("../../modules/tickets/ticketStore");
 
+const {
+  isGoliathPermissionError,
+} = require("../../helpers/goliathPermissionGuard");
+
 const router = express.Router();
 
 function countByStatus(tickets = [], status) {
@@ -33,6 +37,33 @@ function isToday(dateValue) {
   if (Number.isNaN(date.getTime())) return false;
   const now = new Date();
   return date.getUTCFullYear() === now.getUTCFullYear() && date.getUTCMonth() === now.getUTCMonth() && date.getUTCDate() === now.getUTCDate();
+}
+
+function failure(res, error, fallbackMessage, fallbackStatus = 500) {
+  if (isGoliathPermissionError(error)) {
+    const details = error.details || {};
+
+    return res.status(403).json({
+      success: false,
+      code: error.code,
+      error: error.message,
+      message: details.message || error.message,
+      scope: details.scope || null,
+      guildId: details.guildId || null,
+      channelId: details.channelId || null,
+      channelName: details.channelName || null,
+      missingPermissions: details.missingPermissions || [],
+      failures: details.failures || [],
+      metadata: details.metadata || {},
+      autoFixAvailable: Boolean(details.autoFixAvailable),
+      confirmationRequired: Boolean(details.confirmationRequired),
+    });
+  }
+
+  return res.status(fallbackStatus).json({
+    success: false,
+    error: fallbackMessage,
+  });
 }
 
 router.get("/:guildId/overview", async (req, res) => {
@@ -66,7 +97,7 @@ router.get("/:guildId/overview", async (req, res) => {
     });
   } catch (error) {
     console.error("[TicketsRoute] OVERVIEW:", error);
-    return res.status(500).json({ success: false, error: "Failed to fetch ticket overview." });
+    return failure(res, error, "Failed to fetch ticket overview.");
   }
 });
 
@@ -77,7 +108,7 @@ router.get("/:guildId", async (req, res) => {
     return res.json({ success: true, count: tickets.length, tickets });
   } catch (error) {
     console.error("[TicketsRoute] GET ALL:", error);
-    return res.status(500).json({ success: false, error: "Failed to fetch tickets." });
+    return failure(res, error, "Failed to fetch tickets.");
   }
 });
 
@@ -89,7 +120,7 @@ router.get("/:guildId/:ticketId", async (req, res) => {
     return res.json({ success: true, ticket });
   } catch (error) {
     console.error("[TicketsRoute] GET ONE:", error);
-    return res.status(500).json({ success: false, error: "Failed to fetch ticket." });
+    return failure(res, error, "Failed to fetch ticket.");
   }
 });
 
@@ -101,7 +132,7 @@ router.post("/:guildId", async (req, res) => {
     return res.status(201).json({ success: true, ticket });
   } catch (error) {
     console.error("[TicketsRoute] CREATE:", error);
-    return res.status(500).json({ success: false, error: "Failed to create ticket." });
+    return failure(res, error, "Failed to create ticket.");
   }
 });
 
@@ -114,7 +145,7 @@ router.post("/:guildId/:ticketId/claim", async (req, res) => {
     return res.json({ success: true, ticket });
   } catch (error) {
     console.error("[TicketsRoute] CLAIM:", error);
-    return res.status(500).json({ success: false, error: "Failed to claim ticket." });
+    return failure(res, error, "Failed to claim ticket.");
   }
 });
 
@@ -127,7 +158,7 @@ router.post("/:guildId/:ticketId/assign", async (req, res) => {
     return res.json({ success: true, ticket });
   } catch (error) {
     console.error("[TicketsRoute] ASSIGN:", error);
-    return res.status(500).json({ success: false, error: "Failed to assign ticket." });
+    return failure(res, error, "Failed to assign ticket.");
   }
 });
 
@@ -140,7 +171,7 @@ router.patch("/:guildId/:ticketId/status", async (req, res) => {
     return res.json({ success: true, ticket });
   } catch (error) {
     console.error("[TicketsRoute] STATUS:", error);
-    return res.status(500).json({ success: false, error: "Failed to update status." });
+    return failure(res, error, "Failed to update status.");
   }
 });
 
@@ -153,7 +184,7 @@ router.post("/:guildId/:ticketId/note", async (req, res) => {
     return res.json({ success: true, note: noteData });
   } catch (error) {
     console.error("[TicketsRoute] NOTE:", error);
-    return res.status(500).json({ success: false, error: "Failed to add note." });
+    return failure(res, error, "Failed to add note.");
   }
 });
 
@@ -166,7 +197,7 @@ router.post("/:guildId/:ticketId/close", async (req, res) => {
     return res.json({ success: true, ticket });
   } catch (error) {
     console.error("[TicketsRoute] CLOSE:", error);
-    return res.status(500).json({ success: false, error: "Failed to close ticket." });
+    return failure(res, error, "Failed to close ticket.");
   }
 });
 
@@ -179,7 +210,7 @@ router.post("/:guildId/:ticketId/reopen", async (req, res) => {
     return res.json({ success: true, ticket });
   } catch (error) {
     console.error("[TicketsRoute] REOPEN:", error);
-    return res.status(500).json({ success: false, error: "Failed to reopen ticket." });
+    return failure(res, error, "Failed to reopen ticket.");
   }
 });
 
@@ -192,7 +223,7 @@ router.post("/:guildId/:ticketId/archive", async (req, res) => {
     return res.json({ success: true, ticket });
   } catch (error) {
     console.error("[TicketsRoute] ARCHIVE:", error);
-    return res.status(500).json({ success: false, error: "Failed to archive ticket." });
+    return failure(res, error, "Failed to archive ticket.");
   }
 });
 
@@ -203,7 +234,7 @@ router.delete("/:guildId/:ticketId", async (req, res) => {
     return res.json({ success });
   } catch (error) {
     console.error("[TicketsRoute] DELETE:", error);
-    return res.status(500).json({ success: false, error: "Failed to delete ticket." });
+    return failure(res, error, "Failed to delete ticket.");
   }
 });
 
