@@ -50,6 +50,7 @@ const securityRoutes = require('./src/server/routes/security');
 const ticketRoutes = require('./src/server/routes/tickets');
 const formsRoutes = require('./src/server/routes/forms');
 const translationRoutes = require('./src/server/routes/translation');
+const permissionHealthRoutes = require('./src/server/routes/permissionHealth');
 const socialRoutes = require('./src/server/routes/social');
 const modulesRoutes = require('./src/server/routes/modules');
 
@@ -273,6 +274,7 @@ app.use('/api/cases', moderationRoutes);
 app.use('/api/tickets', ticketRoutes);
 app.use('/api/forms', formsRoutes);
 app.use('/api/translation', translationRoutes);
+app.use('/api/permission-health', permissionHealthRoutes);
 app.use('/api/social', socialRoutes);
 app.use('/api/modules', modulesRoutes);
 
