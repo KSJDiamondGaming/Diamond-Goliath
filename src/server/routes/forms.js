@@ -5,7 +5,10 @@
 const express = require('express');
 
 const formStore = require('../../modules/forms/formStore');
-const { isGoliathPermissionError } = require('../../helpers/goliathPermissionGuard');
+const {
+  isGoliathPermissionError,
+  validateRoleSelection,
+} = require('../../helpers/goliathPermissionGuard');
 
 const router = express.Router();
 
@@ -48,6 +51,36 @@ function getGuildId(req) {
     throw new Error('Invalid guild ID.');
   }
   return guildId;
+}
+
+async function fetchGuild(req, guildId) {
+  const client = req.app?.locals?.client || req.app?.locals?.discordClient || global.client || global.discordClient;
+  if (!client?.guilds?.fetch) return null;
+  return client.guilds.cache.get(guildId) || client.guilds.fetch(guildId).catch(() => null);
+}
+
+function cleanRoleIds(roleIds = []) {
+  return [...new Set(
+    (Array.isArray(roleIds) ? roleIds : [roleIds])
+      .map((roleId) => String(roleId || '').replace(/[<@&>]/g, '').trim())
+      .filter((roleId) => /^\d{15,25}$/.test(roleId))
+  )];
+}
+
+async function guardFormStaffRoles(req, guildId, input = {}, scope = 'forms.staff_roles') {
+  const roleIds = cleanRoleIds(input.staffRoleIds || input.settings?.staffRoleIds || []);
+  if (!roleIds.length) return null;
+
+  const guild = await fetchGuild(req, guildId);
+  if (!guild) throw new Error('Guild is unavailable.');
+
+  const result = await validateRoleSelection(guild, roleIds, {
+    scope,
+    requireManageable: true,
+  });
+
+  if (!result.ok) throw result.toError();
+  return result;
 }
 
 function sortByNewest(items = []) {
@@ -147,9 +180,11 @@ router.get('/:guildId/forms/:formId', (req, res) => {
   }
 });
 
-router.post('/:guildId/forms', (req, res) => {
+router.post('/:guildId/forms', async (req, res) => {
   try {
     const guildId = getGuildId(req);
+    await guardFormStaffRoles(req, guildId, req.body || {}, 'forms.create_staff_roles');
+
     const saved = formStore.saveForm(guildId, req.body || {});
 
     return success(res, {
@@ -161,9 +196,11 @@ router.post('/:guildId/forms', (req, res) => {
   }
 });
 
-router.put('/:guildId/forms/:formId', (req, res) => {
+router.put('/:guildId/forms/:formId', async (req, res) => {
   try {
     const guildId = getGuildId(req);
+    await guardFormStaffRoles(req, guildId, req.body || {}, 'forms.update_staff_roles');
+
     const saved = formStore.saveForm(guildId, {
       ...(req.body || {}),
       formId: req.params.formId,
@@ -321,9 +358,11 @@ router.patch('/:guildId/submissions/:submissionId/status', (req, res) => {
   }
 });
 
-router.patch('/:guildId/settings', (req, res) => {
+router.patch('/:guildId/settings', async (req, res) => {
   try {
     const guildId = getGuildId(req);
+    await guardFormStaffRoles(req, guildId, req.body || {}, 'forms.settings_staff_roles');
+
     const section = formStore.updateFormsSection(guildId, (current) => ({
       ...current,
       enabled: req.body?.enabled !== false,
