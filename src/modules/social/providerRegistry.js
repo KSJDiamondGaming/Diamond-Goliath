@@ -2,6 +2,8 @@
 
 // src/modules/social/providerRegistry.js
 
+const twitchProvider = require('./providers/twitchProvider');
+
 const PROVIDER_STATUSES = Object.freeze({
   READY: 'ready',
   NOT_CONFIGURED: 'not_configured',
@@ -14,8 +16,9 @@ const providerDefinitions = Object.freeze({
     id: 'twitch',
     label: 'Twitch',
     supportedAlertTypes: ['live'],
-    status: PROVIDER_STATUSES.NOT_CONFIGURED,
+    status: PROVIDER_STATUSES.READY,
     requiredEnv: ['TWITCH_CLIENT_ID', 'TWITCH_CLIENT_SECRET'],
+    handler: twitchProvider,
   },
   youtube: {
     id: 'youtube',
@@ -68,18 +71,25 @@ async function checkAccount(account = {}) {
     return {
       success: false,
       status: PROVIDER_STATUSES.ERROR,
+      providerStatus: PROVIDER_STATUSES.ERROR,
       error: `Unsupported social platform: ${account.platform || 'unknown'}`,
     };
+  }
+
+  if (provider.handler?.checkAccount && provider.status !== PROVIDER_STATUSES.NOT_CONFIGURED) {
+    return provider.handler.checkAccount(account);
   }
 
   return {
     success: false,
     status: provider.status,
+    providerStatus: provider.status,
     platform: provider.id,
     provider: provider.label,
     accountId: account.accountId,
     username: account.username,
     supportedAlertTypes: provider.supportedAlertTypes,
+    checkedAt: new Date().toISOString(),
     error: provider.status === PROVIDER_STATUSES.NOT_CONFIGURED
       ? `${provider.label} provider is missing required environment variables.`
       : `${provider.label} provider polling is not implemented yet.`,
