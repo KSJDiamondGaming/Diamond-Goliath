@@ -130,6 +130,24 @@ async function guardAutoRoleConfig(req, guildId, input = {}) {
   return guardManageableRoles(guild, roleIds, 'auto_roles.config_roles');
 }
 
+async function guardVerificationRoles(req, guildId, input = {}) {
+  const settings = input.settings && typeof input.settings === 'object'
+    ? input.settings
+    : input;
+
+  const roleIds = [
+    settings?.verifiedRoleId,
+    settings?.unverifiedRoleId,
+  ].filter(Boolean);
+
+  if (!roleIds.length) return null;
+
+  const guild = await fetchGuild(req, guildId);
+  if (!guild) throw new Error('Guild is unavailable.');
+
+  return guardManageableRoles(guild, roleIds, 'verification.roles');
+}
+
 router.get('/:guildId/auto-roles', (req, res) => {
   try {
     const guildId = getGuildId(req);
@@ -300,9 +318,11 @@ router.patch('/:guildId/verification/enabled', (req, res) => {
   }
 });
 
-router.patch('/:guildId/verification/settings', (req, res) => {
+router.patch('/:guildId/verification/settings', async (req, res) => {
   try {
     const guildId = getGuildId(req);
+    await guardVerificationRoles(req, guildId, req.body || {});
+
     const config = verificationManager.configureVerification(guildId, {
       settings: req.body?.settings || req.body || {},
     }, {
@@ -315,9 +335,11 @@ router.patch('/:guildId/verification/settings', (req, res) => {
   }
 });
 
-router.put('/:guildId/verification', (req, res) => {
+router.put('/:guildId/verification', async (req, res) => {
   try {
     const guildId = getGuildId(req);
+    await guardVerificationRoles(req, guildId, req.body || {});
+
     const config = verificationManager.configureVerification(guildId, req.body || {}, {
       actorId: req.body?.actorId,
     });
