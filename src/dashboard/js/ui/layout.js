@@ -29,6 +29,7 @@ import OwnerDeploymentCenter from '../pages/owner/DeploymentCenter';
 import OwnerFormsHub from '../pages/owner/FormsHub';
 import OwnerTicketsHub from '../pages/owner/TicketsHub';
 import OwnerTranslationHub from '../pages/owner/TranslationHub';
+import OwnerPermissionHealth from '../pages/owner/PermissionHealth';
 
 export const DASHBOARD_LAYOUT = {
   navbarExpandedWidth: '280px',
@@ -83,6 +84,7 @@ export const ROUTES = [
   { key: 'ownerServers', label: 'Global Servers', icon: 'modules', path: '/owner/servers', component: OwnerGlobalServers, ownerOnly: true },
   { key: 'ownerRuntime', label: 'Runtime Monitor', icon: 'admin', path: '/owner/runtime', component: OwnerRuntimeMonitor, ownerOnly: true },
   { key: 'ownerSecurity', label: 'Owner Security', icon: 'admin', path: '/owner/security', component: OwnerSecurityCenter, ownerOnly: true },
+  { key: 'ownerPermissionHealth', label: 'Permission Health', icon: 'admin', path: '/owner/permission-health', component: OwnerPermissionHealth, ownerOnly: true },
   { key: 'ownerBackups', label: 'Backup Center', icon: 'admin', path: '/owner/backups', component: OwnerBackupCenter, ownerOnly: true },
   { key: 'ownerDeployments', label: 'Deployment Center', icon: 'modules', path: '/owner/deployments', component: OwnerDeploymentCenter, ownerOnly: true },
   { key: 'ownerForms', label: 'Forms Hub', icon: 'modules', path: '/owner/forms', component: OwnerFormsHub, ownerOnly: true },
@@ -120,6 +122,7 @@ export const PAGE_LAYOUTS = {
   ownerServers: { title: 'Global Servers', description: 'Owner-level server registry across all environments.', sections: [] },
   ownerRuntime: { title: 'Runtime Monitor', description: 'Owner-level runtime monitoring across DEV, BETA and PRODUCTION.', sections: [] },
   ownerSecurity: { title: 'Owner Security', description: 'Global security centre across all environments.', sections: [] },
+  ownerPermissionHealth: { title: 'Permission Health', description: 'Owner-level Goliath access and hierarchy scan.', sections: [] },
   ownerBackups: { title: 'Backup Center', description: 'Owner-level backup and restore monitoring.', sections: [] },
   ownerDeployments: { title: 'Deployment Center', description: 'Deployment queue, history and environment status.', sections: [] },
   ownerForms: { title: 'Forms Hub', description: 'Global forms and submissions overview.', sections: [] },
