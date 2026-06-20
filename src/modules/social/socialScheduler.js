@@ -13,6 +13,49 @@ function getIntervalMs(options = {}) {
   return Number.isFinite(value) && value >= 60000 ? value : 300000;
 }
 
+function buildProviderMetadata(result = {}) {
+  return {
+    providerStatus: result.providerStatus || result.status || 'unknown',
+    lastCheckedAt: result.checkedAt || new Date().toISOString(),
+    lastError: result.success ? '' : result.error || '',
+    isLive: result.isLive === true,
+    lastTitle: result.title || '',
+    lastGameName: result.gameName || '',
+    lastViewerCount: Number(result.viewerCount || 0),
+  };
+}
+
+async function handleProviderResult(guildId, account, result, client) {
+  const metadata = buildProviderMetadata(result);
+  const updates = {
+    externalId: result.externalId || account.externalId,
+    metadata: {
+      ...(account.metadata || {}),
+      provider: metadata,
+    },
+    lastSeen: {
+      ...(account.lastSeen || {}),
+      lastCheckedAt: metadata.lastCheckedAt,
+      lastProviderStatus: metadata.providerStatus,
+      lastProviderError: metadata.lastError,
+      lastLiveState: metadata.isLive ? 'live' : 'offline',
+    },
+  };
+
+  socialManager.updateAccount(guildId, account.accountId, updates, { action: 'social_provider_check' });
+
+  if (result.success && result.isLive && result.contentId) {
+    const refreshedAccount = {
+      ...account,
+      ...updates,
+    };
+
+    return socialManager.sendLiveAlert(guildId, refreshedAccount, result, client, { action: 'social_provider_live_alert' });
+  }
+
+  return { success: false, skipped: true, reason: result.error || 'no_alert' };
+}
+
 async function runSocialCheck(client, options = {}) {
   if (running) {
     return { skipped: true, reason: 'already_running' };
@@ -29,10 +72,14 @@ async function runSocialCheck(client, options = {}) {
 
     for (const guildId of guildIds) {
       const config = socialManager.getConfig(guildId);
+      if (config.enabled === false) continue;
+
       const accounts = (config.accounts || []).filter((account) => account.enabled !== false);
 
       for (const account of accounts) {
-        results.push(await providerRegistry.checkAccount(account));
+        const result = await providerRegistry.checkAccount(account);
+        const alertResult = await handleProviderResult(guildId, account, result, client);
+        results.push({ ...result, alertResult });
       }
     }
 
