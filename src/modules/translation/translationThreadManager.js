@@ -2,11 +2,28 @@
 
 // src/modules/translation/translationThreadManager.js
 
-const { ChannelType } = require('discord.js');
+const { ChannelType, PermissionFlagsBits } = require('discord.js');
 
 const translationStore = require('./translationStore');
 const translationProviderManager = require('./translationProviderManager');
 const translationManager = require('./translationManager');
+const {
+  DEFAULT_BOT_CHANNEL_PERMISSIONS,
+  guardChannelAccess,
+} = require('../../helpers/goliathPermissionGuard');
+
+const TRANSLATION_SOURCE_PERMISSIONS = [
+  ...DEFAULT_BOT_CHANNEL_PERMISSIONS,
+  PermissionFlagsBits.CreatePublicThreads,
+  PermissionFlagsBits.SendMessagesInThreads,
+];
+
+const TRANSLATION_THREAD_PERMISSIONS = [
+  PermissionFlagsBits.ViewChannel,
+  PermissionFlagsBits.SendMessagesInThreads,
+  PermissionFlagsBits.ReadMessageHistory,
+  PermissionFlagsBits.EmbedLinks,
+];
 
 function now() {
   return new Date().toISOString();
@@ -59,16 +76,52 @@ async function fetchThread(clientOrGuild, threadId) {
   return fetchChannel(clientOrGuild, threadId);
 }
 
+async function guardTranslationSourceChannel(sourceChannel, scope = 'translation.source_channel') {
+  if (!sourceChannel?.guild?.id) return null;
+
+  return guardChannelAccess(
+    sourceChannel.guild,
+    sourceChannel.id,
+    TRANSLATION_SOURCE_PERMISSIONS,
+    {
+      scope,
+      autoFix: true,
+      throwOnFail: true,
+      reason: 'Goliath translation source channel validation',
+    }
+  );
+}
+
+async function guardTranslationThread(thread, scope = 'translation.thread') {
+  if (!thread?.guild?.id) return null;
+
+  return guardChannelAccess(
+    thread.guild,
+    thread.id,
+    TRANSLATION_THREAD_PERMISSIONS,
+    {
+      scope,
+      autoFix: true,
+      throwOnFail: true,
+      reason: 'Goliath translation thread validation',
+    }
+  );
+}
+
 async function createLanguageThread(sourceChannel, languageCode) {
   if (!isTextSourceChannel(sourceChannel)) {
     throw new Error('Translation source channel must be a text or announcement channel.');
   }
+
+  await guardTranslationSourceChannel(sourceChannel, 'translation.thread_create');
 
   const thread = await sourceChannel.threads.create({
     name: buildThreadName(languageCode),
     autoArchiveDuration: 10080,
     reason: `Goliath translation thread: ${languageCode}`,
   });
+
+  await guardTranslationThread(thread, 'translation.created_thread');
 
   return thread;
 }
@@ -110,6 +163,8 @@ async function ensureThreadsForChannel(guild, channelId, options = {}) {
     };
   }
 
+  await guardTranslationSourceChannel(sourceChannel, 'translation.thread_setup');
+
   const targetLanguages = getTargetLanguages(section, config);
   const created = [];
   const recovered = [];
@@ -129,6 +184,7 @@ async function ensureThreadsForChannel(guild, channelId, options = {}) {
         threadChannelsCreated: 1,
       }, guild);
     } else if (thread) {
+      await guardTranslationThread(thread, 'translation.thread_recovery');
       recovered.push({ languageCode, threadId: thread.id });
     }
 
@@ -175,6 +231,7 @@ async function recoverGuildThreads(guild) {
         ok: false,
         sourceChannelId: channelId,
         reason: error.message,
+        guard: error.details || null,
       });
 
       translationStore.incrementAnalytics(guild.id, {
@@ -218,6 +275,8 @@ async function handleMessageCreate(message) {
       const thread = await fetchThread(message.guild, mapping.threadId);
       if (!thread) throw new Error(`Missing translation thread for ${targetLanguage}.`);
 
+      await guardTranslationThread(thread, 'translation.thread_send');
+
       const result = await translationProviderManager.translateText({
         provider: latestSection.settings?.provider || 'manual',
         text: message.content,
@@ -246,7 +305,7 @@ async function handleMessageCreate(message) {
 
       sent.push({ targetLanguage, threadId: thread.id, messageId: translatedMessage.id });
     } catch (error) {
-      failed.push({ targetLanguage, error: error.message });
+      failed.push({ targetLanguage, error: error.message, guard: error.details || null });
       translationStore.incrementAnalytics(guildId, {
         failedTranslations: 1,
         threadFailures: 1,
