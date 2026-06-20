@@ -7,6 +7,10 @@ const socialManager = require('../../modules/social/socialManager');
 
 const router = express.Router();
 
+function getDiscordClient(req) {
+  return req.app?.locals?.client || req.app?.locals?.discordClient || global.client || global.discordClient || null;
+}
+
 router.get('/:guildId/overview', (req, res) => {
   try {
     const { guildId } = req.params;
@@ -72,16 +76,21 @@ router.delete('/:guildId/accounts/:accountId', (req, res) => {
   }
 });
 
-router.post('/:guildId/accounts/:accountId/test', (req, res) => {
+router.post('/:guildId/accounts/:accountId/test', async (req, res) => {
   try {
     const { guildId, accountId } = req.params;
-    const config = socialManager.getConfig(guildId);
-    const account = config.accounts.find((item) => item.accountId === accountId || item.id === accountId);
-    if (!account) return res.status(404).json({ success: false, error: 'Social account not found.' });
-    return res.json({ success: true, alert: socialManager.buildTestAlert(account) });
+    const result = await socialManager.sendTestAlert(guildId, accountId, getDiscordClient(req), {
+      actorId: req.session?.user?.id,
+    });
+
+    if (!result.success) {
+      return res.status(result.status || 400).json(result);
+    }
+
+    return res.json(result);
   } catch (error) {
     console.error('[SocialRoute] TEST:', error);
-    return res.status(500).json({ success: false, error: 'Failed to build test alert.' });
+    return res.status(500).json({ success: false, error: 'Failed to send test alert.' });
   }
 });
 
