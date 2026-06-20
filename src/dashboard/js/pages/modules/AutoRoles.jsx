@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
 import { api } from '../../services/apiClient.js';
+import { RoleSelect } from '../../ui/DiscordResourceSelects.jsx';
 
 function getGuildId(selectedGuild, selectedGuildData) {
   const id = selectedGuildData?.guildId || selectedGuildData?.id || selectedGuild || '';
@@ -25,18 +26,6 @@ function StatCard({ theme, label, value, hint }) {
       <div style={{ marginTop: 8, fontSize: 28, fontWeight: 950, color: theme.cardText }}>{value}</div>
       {hint ? <div style={{ marginTop: 4, color: theme.mutedText, fontSize: 12 }}>{hint}</div> : null}
     </div>
-  );
-}
-
-function RoleSelector({ theme, roles, value, onChange, label }) {
-  return (
-    <label style={{ display: 'grid', gap: 8 }}>
-      <span style={{ color: theme.mutedText, fontSize: 12, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</span>
-      <select value={value || ''} onChange={(event) => onChange(event.target.value)} style={{ width: '100%', border: `1px solid ${theme.cardBorder}`, background: 'rgba(15,23,42,0.55)', color: theme.cardText, borderRadius: 14, padding: '12px 14px', fontWeight: 800 }}>
-        <option value="">Choose a role</option>
-        {roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}
-      </select>
-    </label>
   );
 }
 
@@ -82,19 +71,28 @@ export default function AutoRoles({ theme, selectedGuild, selectedGuildData }) {
     boxShadow: theme.shadow,
   }), [theme]);
 
+  async function loadRoles() {
+    const rolePayload = await api.getGuildRoles(guildId);
+    const cachedRoles = normalizeList(rolePayload, 'roles');
+    if (cachedRoles.length > 0) return cachedRoles;
+
+    const syncedResources = await api.request(`/api/discord/${guildId}/resources/sync`, { method: 'POST' });
+    return normalizeList(syncedResources, 'roles');
+  }
+
   async function load() {
     if (!guildId) return;
     setLoading(true);
     setError('');
     setNotice('');
     try {
-      const [autoRoles, rolePayload] = await Promise.all([
+      const [autoRoles, roleList] = await Promise.all([
         api.getAutoRoles(guildId),
-        api.getGuildRoles(guildId),
+        loadRoles(),
       ]);
       setConfig(autoRoles.config || {});
       setOverview(autoRoles.overview || {});
-      setRoles(normalizeList(rolePayload, 'roles'));
+      setRoles(roleList);
     } catch (loadError) {
       setError(loadError.message || 'Failed to load auto roles dashboard.');
     } finally {
@@ -105,6 +103,22 @@ export default function AutoRoles({ theme, selectedGuild, selectedGuildData }) {
   useEffect(() => {
     load();
   }, [guildId]);
+
+  async function refreshDiscordResources() {
+    if (!guildId) return;
+    setSaving('resources');
+    setError('');
+    setNotice('');
+    try {
+      const resources = await api.request(`/api/discord/${guildId}/resources/sync`, { method: 'POST' });
+      setRoles(normalizeList(resources, 'roles'));
+      setNotice('Discord roles refreshed from the shared resource cache.');
+    } catch (syncError) {
+      setError(syncError.message || 'Failed to refresh Discord roles.');
+    } finally {
+      setSaving('');
+    }
+  }
 
   async function toggleEnabled() {
     if (!guildId) return;
@@ -200,7 +214,7 @@ export default function AutoRoles({ theme, selectedGuild, selectedGuildData }) {
         <StatCard theme={theme} label="Status" value={overview.enabled || config?.enabled ? 'Enabled' : 'Disabled'} hint={loading ? 'Loading...' : 'Saved to guild JSON'} />
         <StatCard theme={theme} label="Join Roles" value={overview.joinRoleCount ?? joinRoles.length} hint="Members" />
         <StatCard theme={theme} label="Bot Roles" value={overview.botRoleCount ?? botRoles.length} hint="Bots" />
-        <StatCard theme={theme} label="Assigned" value={analytics.totalAssigned ?? analytics.assignments ?? 0} hint="Analytics counter" />
+        <StatCard theme={theme} label="Available Roles" value={roles.length} hint="Discord cache" />
       </section>
 
       {(error || notice) ? <section style={{ ...cardStyle, padding: 16, color: error ? '#fca5a5' : '#86efac', fontWeight: 850 }}>{error || notice}</section> : null}
@@ -211,14 +225,17 @@ export default function AutoRoles({ theme, selectedGuild, selectedGuildData }) {
             <h2 style={{ margin: 0 }}>Module Status</h2>
             <p style={{ margin: '6px 0 0', color: theme.mutedText }}>Turn Auto Roles on or off while preserving role configuration.</p>
           </div>
-          <button type="button" onClick={toggleEnabled} disabled={saving === 'enabled'} style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(37,99,235,0.22)', color: theme.cardText, borderRadius: 14, padding: '11px 14px', fontWeight: 950, cursor: 'pointer' }}>{saving === 'enabled' ? 'Saving...' : overview.enabled || config?.enabled ? 'Disable' : 'Enable'}</button>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <button type="button" onClick={refreshDiscordResources} disabled={saving === 'resources'} style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(52,211,153,0.16)', color: theme.cardText, borderRadius: 14, padding: '11px 14px', fontWeight: 950, cursor: 'pointer' }}>{saving === 'resources' ? 'Refreshing...' : 'Refresh Roles'}</button>
+            <button type="button" onClick={toggleEnabled} disabled={saving === 'enabled'} style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(37,99,235,0.22)', color: theme.cardText, borderRadius: 14, padding: '11px 14px', fontWeight: 950, cursor: 'pointer' }}>{saving === 'enabled' ? 'Saving...' : overview.enabled || config?.enabled ? 'Disable' : 'Enable'}</button>
+          </div>
         </div>
       </section>
 
       <section style={{ ...cardStyle, padding: 22, display: 'grid', gap: 16 }}>
         <h2 style={{ margin: 0 }}>Join Roles</h2>
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 12, alignItems: 'end' }}>
-          <RoleSelector theme={theme} roles={roles} value={joinRoleId} onChange={setJoinRoleId} label="Add Join Role" />
+          <RoleSelect theme={theme} resources={roles} value={joinRoleId} onChange={setJoinRoleId} label="Add Join Role" disabled={roles.length === 0} />
           <button type="button" onClick={() => addRole('join')} disabled={saving === 'join' || !joinRoleId} style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(22,163,74,0.22)', color: theme.cardText, borderRadius: 14, padding: '12px 14px', fontWeight: 950, cursor: 'pointer' }}>{saving === 'join' ? 'Adding...' : 'Add'}</button>
         </div>
         <RoleList theme={theme} title="Current Join Roles" roles={roles} selectedRoles={joinRoles} removingRole={removingRole} onRemove={(roleId) => removeRole('join', roleId)} />
@@ -230,7 +247,7 @@ export default function AutoRoles({ theme, selectedGuild, selectedGuildData }) {
           <input type="checkbox" checked={settings.applyToBots === true} onChange={(event) => setApplyToBots(event.target.checked)} /> Apply configured roles to bots when they join
         </label>
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 12, alignItems: 'end' }}>
-          <RoleSelector theme={theme} roles={roles} value={botRoleId} onChange={setBotRoleId} label="Add Bot Role" />
+          <RoleSelect theme={theme} resources={roles} value={botRoleId} onChange={setBotRoleId} label="Add Bot Role" disabled={roles.length === 0} />
           <button type="button" onClick={() => addRole('bot')} disabled={saving === 'bot' || !botRoleId} style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(22,163,74,0.22)', color: theme.cardText, borderRadius: 14, padding: '12px 14px', fontWeight: 950, cursor: 'pointer' }}>{saving === 'bot' ? 'Adding...' : 'Add'}</button>
         </div>
         <RoleList theme={theme} title="Current Bot Roles" roles={roles} selectedRoles={botRoles} removingRole={removingRole} onRemove={(roleId) => removeRole('bot', roleId)} />
