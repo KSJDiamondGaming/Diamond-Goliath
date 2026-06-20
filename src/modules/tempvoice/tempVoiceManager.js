@@ -1,7 +1,5 @@
 'use strict';
 
-// src/modules/tempvoice/tempVoiceManager.js
-
 const { ChannelType, PermissionFlagsBits } = require('discord.js');
 const tempVoiceStore = require('./tempVoiceStore');
 const { isModuleEnabled } = require('../../guild/guildManager');
@@ -22,9 +20,7 @@ function safeChannelName(name) {
 
 function buildChannelName(template, member) {
   const username = member?.displayName || member?.user?.username || 'Member';
-  return safeChannelName(
-    String(template || '{username}\'s Channel').replaceAll('{username}', username)
-  );
+  return safeChannelName(String(template || '{username}\'s Channel').replaceAll('{username}', username));
 }
 
 function canManageVoice(guild) {
@@ -35,7 +31,7 @@ function canManageVoice(guild) {
   );
 }
 
-async function createTempChannel(newState, hub, client) {
+async function createTempChannel(newState, hub) {
   const guild = newState.guild;
   const member = newState.member;
 
@@ -43,29 +39,20 @@ async function createTempChannel(newState, hub, client) {
   if (!isModuleEnabled(guild.id, 'tempVoice')) return null;
   if (!canManageVoice(guild)) return null;
 
+  if (member.voice?.channelId !== hub.joinChannelId) return null;
+
   const parent = hub.categoryId || newState.channel?.parentId || null;
-  const channelName = buildChannelName(hub.nameTemplate, member);
 
   const channel = await guild.channels.create({
-    name: channelName,
+    name: buildChannelName(hub.nameTemplate, member),
     type: ChannelType.GuildVoice,
     parent,
     bitrate: hub.bitrate > 0 ? hub.bitrate : undefined,
     userLimit: hub.userLimit > 0 ? hub.userLimit : undefined,
     reason: `Goliath temp voice created for ${member.user?.tag || member.id}`,
-    permissionOverwrites: [
-      {
-        id: member.id,
-        allow: [
-          PermissionFlagsBits.ViewChannel,
-          PermissionFlagsBits.Connect,
-          PermissionFlagsBits.Speak,
-          PermissionFlagsBits.ManageChannels,
-          PermissionFlagsBits.MoveMembers,
-        ],
-      },
-    ],
-  });
+  }).catch(() => null);
+
+  if (!channel) return null;
 
   tempVoiceStore.saveTempChannel(guild.id, {
     channelId: channel.id,
@@ -87,7 +74,7 @@ async function cleanupTempChannel(oldState) {
   const tempChannel = tempVoiceStore.getTempChannel(guild.id, oldChannel.id);
   if (!tempChannel) return null;
 
-  if (oldChannel.members.size > 0) return null;
+  if ((oldChannel.members?.size || 0) > 0) return null;
 
   tempVoiceStore.deleteTempChannel(guild.id, oldChannel.id);
 
@@ -98,21 +85,19 @@ async function cleanupTempChannel(oldState) {
   return tempChannel;
 }
 
-async function handleVoiceStateUpdate(oldState, newState, client) {
+async function handleVoiceStateUpdate(oldState, newState) {
   try {
     const guild = newState.guild || oldState.guild;
     if (!guild?.id) return null;
 
     if (newState.channelId && newState.channelId !== oldState.channelId) {
-      if (isModuleEnabled(guild.id, 'tempVoice')) {
-        const section = tempVoiceStore.getTempVoiceSection(guild.id);
+      const section = tempVoiceStore.getTempVoiceSection(guild.id);
 
-        if (section.enabled !== false) {
-          const hub = tempVoiceStore.findHubByJoinChannel(guild.id, newState.channelId);
+      if (section.enabled !== false && isModuleEnabled(guild.id, 'tempVoice')) {
+        const hub = tempVoiceStore.findHubByJoinChannel(guild.id, newState.channelId);
 
-          if (hub) {
-            await createTempChannel(newState, hub, client);
-          }
+        if (hub) {
+          await createTempChannel(newState, hub);
         }
       }
     }
