@@ -95,6 +95,10 @@ export const api = {
     );
   },
 
+  getPermissionHealth(guildId) {
+    return request(`/api/permission-health/${guildId}`);
+  },
+
   /* ---------------- DISCORD ---------------- */
 
   getGuilds() {
