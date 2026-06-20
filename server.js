@@ -65,6 +65,17 @@ typeof backupSchedulerModule.result?.startServerBackupScheduler === 'function'
 ? backupSchedulerModule.result.startServerBackupScheduler
 : null;
 
+const socialSchedulerModule = safeLoad(
+'Social Scheduler',
+() => require('./src/modules/social/socialScheduler'),
+);
+
+const startSocialScheduler =
+socialSchedulerModule.ok &&
+typeof socialSchedulerModule.result?.startSocialScheduler === 'function'
+? socialSchedulerModule.result.startSocialScheduler
+: null;
+
 /* ---------------- ENV / MODE ---------------- */
 
 const ALLOWED_MODES = ['dev', 'beta', 'production'];
@@ -163,7 +174,7 @@ console.log('============================================================');
 console.log(`🚀 Starting ${modeLabels[BOT_MODE] || 'Goliath'}`);
 console.log(`🧠 Mode: ${BOT_MODE}`);
 console.log(`📄 Env: ${loadedEnv.envFile}`);
-console.log('============================================================');
+console.log('================================================------------');
 }
 
 /* ---------------- DASHBOARD API ---------------- */
@@ -413,6 +424,18 @@ loadCommands();
 loadEvents();
 
 startDashboardApiServer();
+
+if (startSocialScheduler) {
+client.once('ready', () => {
+try {
+startSocialScheduler(client);
+console.log('✅ Social scheduler initialized');
+} catch (error) {
+console.error('❌ Social scheduler failed to start');
+console.error(error);
+}
+});
+}
 
 const token = getRequiredEnv('DISCORD_BOT_TOKEN');
 
