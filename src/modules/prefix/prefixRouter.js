@@ -14,6 +14,14 @@ const {
   normalizePrefix,
 } = require('./prefixStore');
 
+const BUILT_IN_COMMANDS = new Set([
+  'prefix',
+  'setprefix',
+  'help',
+  'commands',
+  'ping',
+]);
+
 function canManagePrefix(message) {
   return Boolean(
     message.member?.permissions?.has?.(PermissionFlagsBits.Administrator) ||
@@ -48,14 +56,15 @@ function parsePrefixMessage(message, client) {
   if (!usedPrefix) return null;
 
   const parts = body.split(/\s+/).filter(Boolean);
-  const commandName = String(parts.shift() || '').toLowerCase();
+  const commandName = String(parts.shift() || '').toLowerCase().slice(0, 80);
 
   return {
     usedPrefix,
     guildPrefix,
     commandName,
-    args: parts,
-    rawArgs: parts.join(' '),
+    args: parts.slice(0, 50),
+    rawArgs: parts.join(' ').slice(0, 1800),
+    mentionTriggered: Boolean(mentionPrefix),
   };
 }
 
@@ -99,7 +108,7 @@ function buildHelpEmbed(message) {
       '',
       '**Slash commands remain fully supported**',
       commandNames.length
-        ? commandNames.map((name) => `\`/${name}\``).join(' ')
+        ? commandNames.map((name) => `\`/${name}\``).join(' ').slice(0, 3500)
         : '`/help`',
     ].join('\n'))
     .setFooter({ text: 'Goliath supports slash commands and server prefixes.' })
@@ -108,12 +117,19 @@ function buildHelpEmbed(message) {
 
 async function reply(message, payload) {
   return message.reply({
-    allowedMentions: { repliedUser: false },
+    allowedMentions: { repliedUser: false, users: [], roles: [] },
     ...payload,
   }).catch((error) => {
-    console.error('[PrefixRouter] Failed to reply:', error);
+    console.error('[PrefixRouter] Failed to reply:', error?.message || error);
     return null;
   });
+}
+
+function shouldReplyUnknownCommand(parsed, client) {
+  if (!parsed?.commandName) return false;
+  if (BUILT_IN_COMMANDS.has(parsed.commandName)) return true;
+  if (client.commands?.has?.(parsed.commandName)) return true;
+  return parsed.mentionTriggered;
 }
 
 async function handlePrefixCommand(message, client) {
@@ -191,16 +207,21 @@ async function handlePrefixCommand(message, client) {
   const command = client.commands?.get?.(parsed.commandName);
 
   if (command?.messageExecute) {
-    await command.messageExecute(message, parsed.args, {
-      prefix: parsed.guildPrefix,
-      usedPrefix: parsed.usedPrefix,
-      rawArgs: parsed.rawArgs,
-    });
+    try {
+      await command.messageExecute(message, parsed.args, {
+        prefix: parsed.guildPrefix,
+        usedPrefix: parsed.usedPrefix,
+        rawArgs: parsed.rawArgs,
+      });
+    } catch (error) {
+      console.error(`[PrefixRouter] Command failed: ${parsed.commandName}`, error);
+      await reply(message, { content: '❌ That prefix command failed. Please try again or use the slash command version.' });
+    }
     return true;
   }
 
   const settings = getGuildSettings(message);
-  if (settings.commandNotFoundEnabled !== false) {
+  if (settings.commandNotFoundEnabled !== false && shouldReplyUnknownCommand(parsed, client)) {
     await reply(message, {
       content: `⚠️ Unknown prefix command. Try \`${parsed.guildPrefix}help\` or use slash commands with \`/help\`.`,
     });
