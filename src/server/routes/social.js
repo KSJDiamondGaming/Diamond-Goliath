@@ -24,6 +24,23 @@ function buildProviderMetadata(result = {}) {
   };
 }
 
+router.get('/:guildId/providers', (req, res) => {
+  try {
+    const { guildId } = req.params;
+    return res.json({
+      success: true,
+      guildId,
+      ownerManaged: true,
+      credentialOwner: 'Goliath',
+      credentialEmail: 'goliath@ksjdigital.co.uk',
+      providers: providerRegistry.listProviders(),
+    });
+  } catch (error) {
+    console.error('[SocialRoute] PROVIDERS:', error);
+    return res.status(500).json({ success: false, error: 'Failed to fetch social providers.' });
+  }
+});
+
 router.get('/:guildId/overview', (req, res) => {
   try {
     const { guildId } = req.params;
