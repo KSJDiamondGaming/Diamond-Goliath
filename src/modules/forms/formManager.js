@@ -15,6 +15,10 @@ const {
 const formStore = require('./formStore');
 const formTicketBridge = require('./formTicketBridge');
 const { isModuleEnabled } = require('../../guild/guildManager');
+const {
+  DEFAULT_BOT_CHANNEL_PERMISSIONS,
+  guardChannelAccess,
+} = require('../../helpers/goliathPermissionGuard');
 
 const CUSTOM_ID_PREFIX = 'form';
 const MAX_MODAL_FIELDS = 5;
@@ -138,6 +142,18 @@ async function deployFormPanel(channel, panel, guildOrMeta = {}) {
   if (!isModuleEnabled(channel.guild.id, 'forms')) {
     throw new Error('Forms module is disabled for this server.');
   }
+
+  await guardChannelAccess(
+    channel.guild,
+    channel.id,
+    DEFAULT_BOT_CHANNEL_PERMISSIONS,
+    {
+      scope: 'forms.panel_deployment',
+      autoFix: true,
+      throwOnFail: true,
+      reason: 'Goliath forms panel deployment validation',
+    }
+  );
 
   const forms = panel.formIds
     .map((formId) => formStore.getForm(channel.guild.id, formId))
