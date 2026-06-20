@@ -66,8 +66,16 @@ function safeLoad(label, loadFn, logger = console) {
 
 /* ---------------- MODE / RUNTIME ---------------- */
 
+function normalizeModeValue(mode) {
+  if (mode && typeof mode === 'object') {
+    return mode.botMode || mode.mode || mode.runtimeMode || 'DEV';
+  }
+
+  return mode || 'DEV';
+}
+
 function getModeKey(mode) {
-  const value = String(mode || 'DEV').toUpperCase();
+  const value = String(normalizeModeValue(mode)).toUpperCase();
 
   if (value === 'PRODUCTION') {
     return 'production';
@@ -169,8 +177,10 @@ function runBootValidation(config = {}) {
 /* ---------------- STARTUP FINGERPRINT ---------------- */
 
 function getStartupFingerprint(mode, runtimePaths = {}) {
+  const modeValue = normalizeModeValue(mode);
+
   return {
-    botMode: String(mode || 'UNKNOWN').toUpperCase(),
+    botMode: String(modeValue || 'UNKNOWN').toUpperCase(),
     runtimeMode: runtimePaths.mode || 'unknown',
     runtimeRoot: runtimePaths.root || 'unknown',
     nodeVersion: process.version,
