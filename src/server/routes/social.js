@@ -4,11 +4,24 @@
 
 const express = require('express');
 const socialManager = require('../../modules/social/socialManager');
+const providerRegistry = require('../../modules/social/providerRegistry');
 
 const router = express.Router();
 
 function getDiscordClient(req) {
   return req.app?.locals?.client || req.app?.locals?.discordClient || global.client || global.discordClient || null;
+}
+
+function buildProviderMetadata(result = {}) {
+  return {
+    providerStatus: result.providerStatus || result.status || 'unknown',
+    lastCheckedAt: result.checkedAt || new Date().toISOString(),
+    lastError: result.success ? '' : result.error || '',
+    isLive: result.isLive === true,
+    lastTitle: result.title || '',
+    lastGameName: result.gameName || '',
+    lastViewerCount: Number(result.viewerCount || 0),
+  };
 }
 
 router.get('/:guildId/overview', (req, res) => {
@@ -73,6 +86,34 @@ router.delete('/:guildId/accounts/:accountId', (req, res) => {
   } catch (error) {
     console.error('[SocialRoute] REMOVE ACCOUNT:', error);
     return res.status(500).json({ success: false, error: 'Failed to remove social account.' });
+  }
+});
+
+router.post('/:guildId/accounts/:accountId/check', async (req, res) => {
+  try {
+    const { guildId, accountId } = req.params;
+    const config = socialManager.getConfig(guildId);
+    const account = config.accounts.find((item) => item.accountId === accountId || item.id === accountId);
+    if (!account) return res.status(404).json({ success: false, error: 'Social account not found.' });
+
+    const result = await providerRegistry.checkAccount(account);
+    const metadata = buildProviderMetadata(result);
+    const updated = socialManager.updateAccount(guildId, account.accountId, {
+      externalId: result.externalId || account.externalId,
+      metadata: { ...(account.metadata || {}), provider: metadata },
+      lastSeen: {
+        ...(account.lastSeen || {}),
+        lastCheckedAt: metadata.lastCheckedAt,
+        lastProviderStatus: metadata.providerStatus,
+        lastProviderError: metadata.lastError,
+        lastLiveState: metadata.isLive ? 'live' : 'offline',
+      },
+    }, { action: 'social_manual_provider_check', actorId: req.session?.user?.id });
+
+    return res.json({ success: true, result, account: updated });
+  } catch (error) {
+    console.error('[SocialRoute] CHECK:', error);
+    return res.status(500).json({ success: false, error: 'Failed to check social account.' });
   }
 });
 
