@@ -14,8 +14,14 @@ const TYPES = {
   EMBED: 'embed',
 };
 
+const MAX_META_JSON_LENGTH = 8000;
+
 function isDev(client) {
   return String(client?.botMode || process.env.BOT_MODE || '').toUpperCase() === 'DEV';
+}
+
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 function getActorInfo(actor) {
@@ -42,6 +48,18 @@ function cleanText(value, fallback, maxLength) {
   return text.slice(0, maxLength);
 }
 
+function sanitizeMeta(meta = {}) {
+  if (!isPlainObject(meta)) return {};
+
+  try {
+    const json = JSON.stringify(meta);
+    if (!json || json.length > MAX_META_JSON_LENGTH) return {};
+    return JSON.parse(json);
+  } catch {
+    return {};
+  }
+}
+
 function createTimelineEvent(guildId, input = {}, client) {
   if (!guildId) return null;
   if (!isModuleEnabled(guildId, 'timeline')) return null;
@@ -60,7 +78,7 @@ function createTimelineEvent(guildId, input = {}, client) {
       actorTag: input.actorTag || actor.actorTag,
       channelId: input.channelId || input.channel?.id || null,
       targetId: input.targetId || input.target?.id || null,
-      meta: input.meta || {},
+      meta: sanitizeMeta(input.meta),
     },
     client
   );
