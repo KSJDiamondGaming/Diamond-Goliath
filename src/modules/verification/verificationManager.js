@@ -22,6 +22,32 @@ function canManageVerification(member) {
   );
 }
 
+function getBotMember(guild) {
+  return guild?.members?.me || guild?.members?.cache?.get(guild.client.user.id) || null;
+}
+
+function canBotManageMember(member) {
+  const botMember = getBotMember(member?.guild);
+
+  if (!botMember || !member) return false;
+  if (member.id === botMember.id) return false;
+  if (member.guild?.ownerId === member.id) return false;
+
+  return botMember.roles.highest.position > member.roles.highest.position;
+}
+
+function canBotManageRole(guild, role) {
+  const botMember = getBotMember(guild);
+
+  if (!botMember || !role) return false;
+  if (role.managed || role.id === guild.id) return false;
+
+  return Boolean(
+    botMember.permissions.has(PermissionFlagsBits.ManageRoles) &&
+      botMember.roles.highest.position > role.position
+  );
+}
+
 function buildVerifyCustomId(panelId) {
   return `${CUSTOM_ID_PREFIX}:button:${panelId}`;
 }
@@ -40,9 +66,7 @@ function buildVerificationEmbed(panel = {}) {
   return new EmbedBuilder()
     .setColor('#57f287')
     .setTitle(panel.title || 'Member Verification')
-    .setDescription(
-      panel.description || 'Press the button below to complete server onboarding.'
-    )
+    .setDescription(panel.description || 'Press the button below to complete server onboarding.')
     .setFooter({ text: 'Goliath Verification' })
     .setTimestamp(new Date());
 }
@@ -111,6 +135,27 @@ function updateVerificationSettings(guildId, settings = {}, meta = {}) {
   );
 }
 
+function resolveRoleActionStatus(guild, member, role, action) {
+  if (!role) return { ok: true, skipped: true };
+
+  if (action === 'add' && member.roles.cache.has(role.id)) {
+    return { ok: true, skipped: true };
+  }
+
+  if (action === 'remove' && !member.roles.cache.has(role.id)) {
+    return { ok: true, skipped: true };
+  }
+
+  if (!canBotManageRole(guild, role)) {
+    return {
+      ok: false,
+      message: `I cannot manage the ${role.name} role. Move my role above it and make sure I have Manage Roles.`,
+    };
+  }
+
+  return { ok: true, skipped: false };
+}
+
 async function verifyMember(interaction) {
   const guild = interaction?.guild;
   const guildId = interaction?.guildId || guild?.id;
@@ -138,15 +183,32 @@ async function verifyMember(interaction) {
     return { ok: false, message: 'Member not found.' };
   }
 
+  if (!canBotManageMember(member)) {
+    verificationStore.incrementAnalytics(guildId, { failed: 1 });
+    return { ok: false, message: 'I cannot manage your member roles in this server.' };
+  }
+
   const verifiedRole = await fetchRole(guild, section.settings?.verifiedRoleId);
   const unverifiedRole = await fetchRole(guild, section.settings?.unverifiedRoleId);
 
+  const verifiedRoleStatus = resolveRoleActionStatus(guild, member, verifiedRole, 'add');
+  if (!verifiedRoleStatus.ok) {
+    verificationStore.incrementAnalytics(guildId, { failed: 1 });
+    return { ok: false, message: verifiedRoleStatus.message };
+  }
+
+  const unverifiedRoleStatus = resolveRoleActionStatus(guild, member, unverifiedRole, 'remove');
+  if (!unverifiedRoleStatus.ok) {
+    verificationStore.incrementAnalytics(guildId, { failed: 1 });
+    return { ok: false, message: unverifiedRoleStatus.message };
+  }
+
   try {
-    if (verifiedRole && !member.roles.cache.has(verifiedRole.id)) {
+    if (verifiedRole && !verifiedRoleStatus.skipped) {
       await member.roles.add(verifiedRole, 'Goliath verification completed');
     }
 
-    if (unverifiedRole && member.roles.cache.has(unverifiedRole.id)) {
+    if (unverifiedRole && !unverifiedRoleStatus.skipped) {
       await member.roles.remove(unverifiedRole, 'Goliath verification completed');
     }
 
@@ -254,6 +316,8 @@ module.exports = {
   CUSTOM_ID_PREFIX,
 
   canManageVerification,
+  canBotManageRole,
+  canBotManageMember,
 
   buildVerifyCustomId,
   parseVerifyCustomId,
