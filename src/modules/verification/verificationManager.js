@@ -87,6 +87,12 @@ function cleanDiscordId(value) {
   return /^\d{15,25}$/.test(id) ? id : null;
 }
 
+function cleanRoleId(value, guildId) {
+  const roleId = cleanDiscordId(value);
+  if (!roleId || roleId === guildId) return null;
+  return roleId;
+}
+
 async function fetchRole(guild, roleId) {
   if (!guild || !roleId) return null;
 
@@ -136,7 +142,7 @@ function updateVerificationSettings(guildId, settings = {}, meta = {}) {
 }
 
 function resolveRoleActionStatus(guild, member, role, action) {
-  if (!role) return { ok: true, skipped: true };
+  if (!role || role.id === guild.id) return { ok: true, skipped: true };
 
   if (action === 'add' && member.roles.cache.has(role.id)) {
     return { ok: true, skipped: true };
@@ -188,8 +194,8 @@ async function verifyMember(interaction) {
     return { ok: false, message: 'I cannot manage your member roles in this server.' };
   }
 
-  const verifiedRole = await fetchRole(guild, section.settings?.verifiedRoleId);
-  const unverifiedRole = await fetchRole(guild, section.settings?.unverifiedRoleId);
+  const verifiedRole = await fetchRole(guild, cleanRoleId(section.settings?.verifiedRoleId, guildId));
+  const unverifiedRole = await fetchRole(guild, cleanRoleId(section.settings?.unverifiedRoleId, guildId));
 
   const verifiedRoleStatus = resolveRoleActionStatus(guild, member, verifiedRole, 'add');
   if (!verifiedRoleStatus.ok) {
@@ -240,8 +246,8 @@ function configureVerification(guildId, input = {}, meta = {}) {
     settings: {
       ...(section.settings || {}),
       ...settingsInput,
-      verifiedRoleId: cleanDiscordId(settingsInput.verifiedRoleId ?? section.settings?.verifiedRoleId),
-      unverifiedRoleId: cleanDiscordId(settingsInput.unverifiedRoleId ?? section.settings?.unverifiedRoleId),
+      verifiedRoleId: cleanRoleId(settingsInput.verifiedRoleId ?? section.settings?.verifiedRoleId, guildId),
+      unverifiedRoleId: cleanRoleId(settingsInput.unverifiedRoleId ?? section.settings?.unverifiedRoleId, guildId),
       logChannelId: cleanDiscordId(settingsInput.logChannelId ?? section.settings?.logChannelId),
       dmOnVerify: typeof settingsInput.dmOnVerify === 'boolean'
         ? settingsInput.dmOnVerify
@@ -258,6 +264,18 @@ function setVerificationEnabled(guildId, enabled = true, meta = {}) {
   return configureVerification(guildId, { enabled: enabled === true }, meta);
 }
 
+async function fetchPanelMessage(guild, panel) {
+  const channelId = panel?.channelId;
+  const messageId = panel?.messageId;
+
+  if (!guild || !channelId || !messageId) return null;
+
+  const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
+  if (!channel?.messages?.fetch) return null;
+
+  return channel.messages.fetch(messageId).catch(() => null);
+}
+
 async function deployVerificationPanel(channel, input = {}, meta = {}) {
   if (!channel?.guild?.id || !channel?.send) {
     throw new Error('A sendable channel is required.');
@@ -267,17 +285,42 @@ async function deployVerificationPanel(channel, input = {}, meta = {}) {
     throw new Error('Verification module is disabled.');
   }
 
+  const existingPanel = input.panelId
+    ? verificationStore.getPanel(channel.guild.id, input.panelId)
+    : null;
+
   const panel = verificationStore.savePanel(
     channel.guild.id,
     {
+      ...(existingPanel || {}),
+      panelId: input.panelId || existingPanel?.panelId,
       title: input.title,
       description: input.description,
       buttonLabel: input.buttonLabel,
       channelId: channel.id,
-      createdBy: input.createdBy,
+      createdBy: input.createdBy || existingPanel?.createdBy,
     },
     meta
   );
+
+  const existingMessage = await fetchPanelMessage(channel.guild, panel);
+
+  if (existingMessage?.editable) {
+    const edited = await existingMessage.edit({
+      embeds: [buildVerificationEmbed(panel)],
+      components: buildVerificationRows(panel),
+    });
+
+    return verificationStore.savePanel(
+      channel.guild.id,
+      {
+        ...panel,
+        channelId: edited.channelId || channel.id,
+        messageId: edited.id,
+      },
+      meta
+    );
+  }
 
   const message = await channel.send({
     embeds: [buildVerificationEmbed(panel)],
@@ -293,6 +336,22 @@ async function deployVerificationPanel(channel, input = {}, meta = {}) {
     },
     meta
   );
+}
+
+async function refreshVerificationPanel(guild, panelId, input = {}, meta = {}) {
+  if (!guild?.id) throw new Error('Guild is unavailable.');
+  const panel = verificationStore.getPanel(guild.id, panelId);
+  if (!panel) throw new Error('Verification panel not found.');
+
+  const channelId = input.channelId || panel.channelId;
+  const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
+  if (!channel?.send) throw new Error('Panel channel is unavailable or not sendable.');
+
+  return deployVerificationPanel(channel, {
+    ...panel,
+    ...input,
+    panelId: panel.panelId,
+  }, meta);
 }
 
 async function handleVerificationInteraction(interaction) {
@@ -333,6 +392,7 @@ module.exports = {
   updateVerificationSettings,
 
   deployVerificationPanel,
+  refreshVerificationPanel,
   verifyMember,
   handleVerificationInteraction,
 };
