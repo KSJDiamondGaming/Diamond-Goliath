@@ -5,6 +5,7 @@
 const express = require('express');
 
 const formStore = require('../../modules/forms/formStore');
+const { isGoliathPermissionError } = require('../../helpers/goliathPermissionGuard');
 
 const router = express.Router();
 
@@ -14,6 +15,27 @@ function success(res, payload = {}) {
 
 function failure(res, error, status = 500) {
   console.error('[Forms API]', error);
+
+  if (isGoliathPermissionError(error)) {
+    const details = error.details || {};
+
+    return res.status(403).json({
+      success: false,
+      code: error.code,
+      error: error.message,
+      message: details.message || error.message,
+      scope: details.scope || null,
+      guildId: details.guildId || null,
+      channelId: details.channelId || null,
+      channelName: details.channelName || null,
+      missingPermissions: details.missingPermissions || [],
+      failures: details.failures || [],
+      metadata: details.metadata || {},
+      autoFixAvailable: Boolean(details.autoFixAvailable),
+      confirmationRequired: Boolean(details.confirmationRequired),
+    });
+  }
+
   return res.status(status).json({
     success: false,
     error: error.message || 'Forms API request failed.',
