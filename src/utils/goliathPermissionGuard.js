@@ -252,40 +252,75 @@ async function syncBotToCategory(guild, categoryId, permissions = TICKET_CHANNEL
 
 async function guardChannelAccess(guild, channelId, requiredPermissions = DEFAULT_BOT_CHANNEL_PERMISSIONS, options = {}) {
   const result = await validateChannelAccess(guild, channelId, requiredPermissions, options);
+  return resolveGuardResult({
+    guild,
+    targetId: channelId,
+    targetType: 'channel',
+    requiredPermissions,
+    result,
+    options,
+  });
+}
 
-  if (!result.ok && options.autoFix === true) {
-    const syncResult = await syncBotToChannel(guild, channelId, requiredPermissions, options).catch((error) => buildGuardResult({
-      scope: options.scope || 'channel',
+async function guardCategoryAccess(guild, categoryId, requiredPermissions = MANAGE_CHANNEL_PERMISSIONS, options = {}) {
+  const result = await validateCategoryAccess(guild, categoryId, requiredPermissions, options);
+  return resolveGuardResult({
+    guild,
+    targetId: categoryId,
+    targetType: 'category',
+    requiredPermissions,
+    result,
+    options,
+  });
+}
+
+async function resolveGuardResult({ guild, targetId, targetType, requiredPermissions, result, options = {} } = {}) {
+  if (result?.ok) return result;
+
+  const canAttemptAutoFix = options.autoFix === true && isAutoFixableResult(result);
+
+  if (canAttemptAutoFix && options.requireConfirmation === true) {
+    const confirmation = buildAutoFixConfirmation(result, {
+      targetId,
+      targetType,
+      requiredPermissions,
+      scope: options.scope,
+    });
+
+    if (options.throwOnFail !== false) return confirmation;
+    return confirmation;
+  }
+
+  if (canAttemptAutoFix) {
+    const syncResult = await applyPermissionAutoFix(guild, targetId, targetType, requiredPermissions, options).catch((error) => buildGuardResult({
+      scope: options.scope || targetType,
       guild,
-      channelId,
+      channelId: targetId,
       ok: false,
-      failures: [{ type: 'sync', reason: 'sync_failed', message: 'Goliath tried to repair its permissions but Discord rejected the update.', error: error.message, fix: 'Move the Goliath bot role higher and give it permission to manage the selected channel/category.' }],
+      failures: [{
+        type: 'sync',
+        reason: 'sync_failed',
+        message: 'Goliath tried to repair its permissions but Discord rejected the update.',
+        error: error.message,
+        fix: 'Move the Goliath bot role higher and give it permission to manage the selected channel/category.',
+      }],
+      metadata: { autoFixAttempted: true },
     }));
 
     if (syncResult.ok) return syncResult;
+    result = syncResult;
   }
 
   if (!result.ok && options.throwOnFail !== false) throw result.toError();
   return result;
 }
 
-async function guardCategoryAccess(guild, categoryId, requiredPermissions = MANAGE_CHANNEL_PERMISSIONS, options = {}) {
-  const result = await validateCategoryAccess(guild, categoryId, requiredPermissions, options);
-
-  if (!result.ok && options.autoFix === true) {
-    const syncResult = await syncBotToCategory(guild, categoryId, requiredPermissions, options).catch((error) => buildGuardResult({
-      scope: options.scope || 'category',
-      guild,
-      channelId: categoryId,
-      ok: false,
-      failures: [{ type: 'sync', reason: 'sync_failed', message: 'Goliath tried to repair its category permissions but Discord rejected the update.', error: error.message, fix: 'Move the Goliath bot role higher and give it permission to manage the selected category.' }],
-    }));
-
-    if (syncResult.ok) return syncResult;
+async function applyPermissionAutoFix(guild, targetId, targetType = 'channel', requiredPermissions = DEFAULT_BOT_CHANNEL_PERMISSIONS, options = {}) {
+  if (targetType === 'category') {
+    return syncBotToCategory(guild, targetId, requiredPermissions, options);
   }
 
-  if (!result.ok && options.throwOnFail !== false) throw result.toError();
-  return result;
+  return syncBotToChannel(guild, targetId, requiredPermissions, options);
 }
 
 async function validateTicketDeployment(guild, config = {}) {
@@ -318,6 +353,62 @@ async function validateTicketDeployment(guild, config = {}) {
   }
 
   return buildGuardResult({ scope: 'ticket_deployment', guild, ok: failures.length === 0, failures, metadata: { categoryIds, roleIds } });
+}
+
+function isAutoFixableResult(result = {}) {
+  if (!result || result.ok) return false;
+
+  const failures = result.failures || [];
+  if (!failures.length) return false;
+
+  return failures.every((failure) => (
+    failure.reason === 'missing_channel_permission' ||
+    failure.reason === 'missing_category_permission'
+  ));
+}
+
+function buildAutoFixConfirmation(result = {}, context = {}) {
+  const confirmation = buildGuardResult({
+    scope: result.scope,
+    guild: { id: result.guildId },
+    channel: result.channel,
+    channelId: result.channelId,
+    ok: false,
+    failures: result.failures,
+    metadata: {
+      ...(result.metadata || {}),
+      autoFixAvailable: true,
+      confirmationRequired: true,
+      targetId: context.targetId || result.channelId,
+      targetType: context.targetType || 'channel',
+      requiredPermissions: normalisePermissions(context.requiredPermissions).map(permissionLabel),
+      actionId: context.scope || result.scope || 'global_permission_guard',
+    },
+  });
+
+  confirmation.autoFixAvailable = true;
+  confirmation.confirmationRequired = true;
+  confirmation.message = buildAutoFixMessage(confirmation);
+  return confirmation;
+}
+
+function buildAutoFixMessage(result = {}) {
+  const target = result.channel ? formatChannel(result.channel) : 'the selected Discord target';
+  const missing = unique((result.failures || []).map((failure) => failure.permissionName || failure.message).filter(Boolean));
+
+  const lines = [
+    '⚠️ Goliath needs additional permissions.',
+    '',
+    `Target: ${target}`,
+  ];
+
+  if (missing.length) {
+    lines.push('', 'Missing:');
+    for (const item of missing.slice(0, 10)) lines.push(`• ${item}`);
+  }
+
+  lines.push('', 'Would you like Goliath to automatically repair this setup?', '[✅ Auto Fix] [❌ Cancel]');
+  return lines.join('\n');
 }
 
 function formatChannel(channel) {
@@ -360,6 +451,8 @@ function buildGuardResult({ scope, guild, channel, channelId, ok, failures = [],
     failures,
     missingPermissions: unique(failures.map((failure) => failure.permissionName).filter(Boolean)),
     metadata,
+    autoFixAvailable: Boolean(metadata.autoFixAvailable),
+    confirmationRequired: Boolean(metadata.confirmationRequired),
   };
 
   result.message = result.ok ? 'Goliath has the required access.' : buildUserMessage(result);
@@ -373,6 +466,8 @@ function buildGuardResult({ scope, guild, channel, channelId, ok, failures = [],
     failures: result.failures,
     missingPermissions: result.missingPermissions,
     metadata: result.metadata,
+    autoFixAvailable: result.autoFixAvailable,
+    confirmationRequired: result.confirmationRequired,
     message: result.message,
   });
 
@@ -402,6 +497,10 @@ module.exports = {
   guardCategoryAccess,
   syncBotToChannel,
   syncBotToCategory,
+  applyPermissionAutoFix,
+  isAutoFixableResult,
+  buildAutoFixConfirmation,
+  buildAutoFixMessage,
   permissionLabel,
   permissionsToOverwritePayload,
   buildGuardResult,
