@@ -1,78 +1,59 @@
 'use strict';
 
-// src/server/routes/discordResources.js
-
 const express = require('express');
-
-const {
-  getDiscordResources,
-  syncDiscordResources,
-} = require('../../guild/discordResourceManager');
+const { getDiscordResources, syncDiscordResources } = require('../../guild/discordResourceManager');
 
 const router = express.Router();
 
 function getDiscordClient(req) {
-  return (
-    req.app?.locals?.client ||
-    req.app?.locals?.discordClient ||
-    global.client ||
-    global.discordClient ||
-    null
-  );
+  return req.app?.locals?.client || req.app?.locals?.discordClient || global.client || global.discordClient || null;
 }
 
 function isAuthenticated(req) {
   return Boolean(req.session?.user);
 }
 
+function readCache(guildId, extra = {}) {
+  return { ...getDiscordResources(guildId), ...extra };
+}
+
 async function fetchGuild(req, guildId) {
   const client = getDiscordClient(req);
-
-  if (!client?.guilds) {
-    throw new Error('Discord client unavailable');
-  }
+  if (!client?.guilds) return null;
 
   const cachedGuild = client.guilds.cache?.get(String(guildId));
   if (cachedGuild) return cachedGuild;
 
-  if (typeof client.guilds.fetch !== 'function') {
-    throw new Error('Discord guild fetch unavailable');
-  }
+  if (client.isReady && !client.isReady()) return null;
+  if (typeof client.guilds.fetch !== 'function') return null;
 
-  return client.guilds.fetch(String(guildId));
+  return client.guilds.fetch(String(guildId)).catch(() => null);
 }
 
 router.get('/:guildId/resources', async (req, res) => {
   try {
-    if (!isAuthenticated(req)) {
-      return res.status(401).json({ error: 'Not authenticated' });
-    }
-
-    const resources = getDiscordResources(req.params.guildId);
-    return res.json(resources);
+    if (!isAuthenticated(req)) return res.status(401).json({ error: 'Not authenticated' });
+    return res.json(readCache(req.params.guildId));
   } catch (error) {
-    console.error('❌ Failed to read Discord resources:', error);
-    return res.status(500).json({ error: 'Failed to read Discord resources' });
+    console.error('Failed to read Discord resources:', error);
+    return res.json({ lastSync: null, guild: null, channels: [], categories: [], roles: [], emojis: [], warning: 'Resource cache unavailable' });
   }
 });
 
 router.post('/:guildId/resources/sync', async (req, res) => {
   try {
-    if (!isAuthenticated(req)) {
-      return res.status(401).json({ error: 'Not authenticated' });
-    }
+    if (!isAuthenticated(req)) return res.status(401).json({ error: 'Not authenticated' });
 
     const guild = await fetchGuild(req, req.params.guildId);
-
     if (!guild) {
-      return res.status(404).json({ error: 'Guild not found' });
+      return res.json(readCache(req.params.guildId, { warning: 'Discord client or guild unavailable. Returned cached resources.' }));
     }
 
     const resources = await syncDiscordResources(guild);
     return res.json(resources);
   } catch (error) {
-    console.error('❌ Failed to sync Discord resources:', error);
-    return res.status(500).json({ error: 'Failed to sync Discord resources' });
+    console.error('Failed to sync Discord resources:', error);
+    return res.json(readCache(req.params.guildId, { warning: 'Live Discord sync failed. Returned cached resources.' }));
   }
 });
 
