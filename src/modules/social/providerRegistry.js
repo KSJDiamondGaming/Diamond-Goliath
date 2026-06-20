@@ -3,6 +3,11 @@
 // src/modules/social/providerRegistry.js
 
 const twitchProvider = require('./providers/twitchProvider');
+const youtubeProvider = require('./providers/youtubeProvider');
+const kickProvider = require('./providers/kickProvider');
+const tiktokProvider = require('./providers/tiktokProvider');
+const instagramProvider = require('./providers/instagramProvider');
+const xProvider = require('./providers/xProvider');
 
 const PROVIDER_STATUSES = Object.freeze({
   READY: 'ready',
@@ -12,34 +17,47 @@ const PROVIDER_STATUSES = Object.freeze({
 });
 
 const providerDefinitions = Object.freeze({
-  twitch: {
-    id: 'twitch',
-    label: 'Twitch',
-    supportedAlertTypes: ['live'],
-    status: PROVIDER_STATUSES.READY,
-    requiredEnv: ['TWITCH_CLIENT_ID', 'TWITCH_CLIENT_SECRET'],
-    handler: twitchProvider,
-  },
-  youtube: {
-    id: 'youtube',
-    label: 'YouTube',
-    supportedAlertTypes: ['upload', 'short', 'live'],
-    status: PROVIDER_STATUSES.NOT_CONFIGURED,
-    requiredEnv: ['YOUTUBE_API_KEY'],
+  instagram: {
+    id: 'instagram',
+    label: 'Instagram',
+    supportedAlertTypes: ['post'],
+    requiredEnv: ['INSTAGRAM_APP_ID', 'INSTAGRAM_APP_SECRET'],
+    handler: instagramProvider,
   },
   kick: {
     id: 'kick',
     label: 'Kick',
     supportedAlertTypes: ['live'],
-    status: PROVIDER_STATUSES.NOT_IMPLEMENTED,
     requiredEnv: [],
+    handler: kickProvider,
   },
   tiktok: {
     id: 'tiktok',
     label: 'TikTok',
     supportedAlertTypes: ['post', 'live'],
-    status: PROVIDER_STATUSES.NOT_IMPLEMENTED,
-    requiredEnv: [],
+    requiredEnv: ['TIKTOK_CLIENT_ID', 'TIKTOK_CLIENT_SECRET'],
+    handler: tiktokProvider,
+  },
+  twitch: {
+    id: 'twitch',
+    label: 'Twitch',
+    supportedAlertTypes: ['live'],
+    requiredEnv: ['TWITCH_CLIENT_ID', 'TWITCH_CLIENT_SECRET'],
+    handler: twitchProvider,
+  },
+  x: {
+    id: 'x',
+    label: 'X',
+    supportedAlertTypes: ['post'],
+    requiredEnv: ['X_CLIENT_ID', 'X_CLIENT_SECRET'],
+    handler: xProvider,
+  },
+  youtube: {
+    id: 'youtube',
+    label: 'YouTube',
+    supportedAlertTypes: ['upload', 'short', 'live'],
+    requiredEnv: ['YOUTUBE_API_KEY'],
+    handler: youtubeProvider,
   },
 });
 
@@ -51,11 +69,13 @@ function getProvider(platform) {
   const provider = providerDefinitions[String(platform || '').toLowerCase()] || null;
   if (!provider) return null;
 
-  if (provider.requiredEnv.length && !hasRequiredEnv(provider.requiredEnv)) {
-    return { ...provider, status: PROVIDER_STATUSES.NOT_CONFIGURED };
-  }
+  const status = provider.requiredEnv.length && !hasRequiredEnv(provider.requiredEnv)
+    ? PROVIDER_STATUSES.NOT_CONFIGURED
+    : provider.handler?.id === 'twitch'
+      ? PROVIDER_STATUSES.READY
+      : PROVIDER_STATUSES.NOT_IMPLEMENTED;
 
-  return provider;
+  return { ...provider, status };
 }
 
 function listProviders() {
@@ -76,7 +96,7 @@ async function checkAccount(account = {}) {
     };
   }
 
-  if (provider.handler?.checkAccount && provider.status !== PROVIDER_STATUSES.NOT_CONFIGURED) {
+  if (provider.handler?.checkAccount) {
     return provider.handler.checkAccount(account);
   }
 
@@ -91,7 +111,7 @@ async function checkAccount(account = {}) {
     supportedAlertTypes: provider.supportedAlertTypes,
     checkedAt: new Date().toISOString(),
     error: provider.status === PROVIDER_STATUSES.NOT_CONFIGURED
-      ? `${provider.label} provider is missing required environment variables.`
+      ? `${provider.label} provider is missing global Goliath credentials.`
       : `${provider.label} provider polling is not implemented yet.`,
   };
 }
