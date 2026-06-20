@@ -30,12 +30,16 @@ function canBotManageMember(member) {
   const botMember = getBotMember(member?.guild);
 
   if (!botMember || !member) return false;
+
+  // Never allow Goliath to target itself
   if (member.id === botMember.id) return false;
+
+  // Protect Goliath owner IDs globally
   const { isBotOwner } = require('../../security/securityCore');
 
-if (isBotOwner(member.id)) return false;
+  if (isBotOwner(member.id)) return false;
 
-  return botMember.roles.highest.position > member.roles.highest.position;
+  return true;
 }
 
 function canBotManageRole(guild, role) {
