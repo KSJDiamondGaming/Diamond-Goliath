@@ -11,6 +11,10 @@ const autoRoleStore = require('../../modules/autoRoles/autoRoleStore');
 const autoRoleManager = require('../../modules/autoRoles/autoRoleManager');
 const verificationStore = require('../../modules/verification/verificationStore');
 const verificationManager = require('../../modules/verification/verificationManager');
+const {
+  isGoliathPermissionError,
+  validateRoleSelection,
+} = require('../../helpers/goliathPermissionGuard');
 
 const router = express.Router();
 
@@ -20,6 +24,25 @@ function success(res, payload = {}) {
 
 function failure(res, error, status = 500) {
   console.error('[Modules API]', error);
+
+  if (isGoliathPermissionError(error)) {
+    const details = error.details || {};
+
+    return res.status(403).json({
+      success: false,
+      code: error.code,
+      error: error.message,
+      message: details.message || error.message,
+      scope: details.scope || null,
+      guildId: details.guildId || null,
+      failures: details.failures || [],
+      missingPermissions: details.missingPermissions || [],
+      metadata: details.metadata || {},
+      autoFixAvailable: Boolean(details.autoFixAvailable),
+      confirmationRequired: Boolean(details.confirmationRequired),
+    });
+  }
+
   return res.status(status).json({
     success: false,
     error: error.message || 'Modules API request failed.',
@@ -80,6 +103,33 @@ async function fetchChannel(req, guildId, channelId) {
   return channel;
 }
 
+async function guardManageableRoles(guild, roleIds = [], scope = 'roles') {
+  const cleanRoleIds = autoRoleStore.cleanRoleIds(roleIds);
+  if (!cleanRoleIds.length) return null;
+
+  const result = await validateRoleSelection(guild, cleanRoleIds, {
+    scope,
+    requireManageable: true,
+  });
+
+  if (!result.ok) throw result.toError();
+  return result;
+}
+
+async function guardAutoRoleConfig(req, guildId, input = {}) {
+  const roleIds = [
+    ...(Array.isArray(input.joinRoles) ? input.joinRoles : []),
+    ...(Array.isArray(input.botRoles) ? input.botRoles : []),
+  ];
+
+  if (!roleIds.length) return null;
+
+  const guild = await fetchGuild(req, guildId);
+  if (!guild) throw new Error('Guild is unavailable.');
+
+  return guardManageableRoles(guild, roleIds, 'auto_roles.config_roles');
+}
+
 router.get('/:guildId/auto-roles', (req, res) => {
   try {
     const guildId = getGuildId(req);
@@ -127,9 +177,11 @@ router.patch('/:guildId/auto-roles/settings', (req, res) => {
   }
 });
 
-router.put('/:guildId/auto-roles', (req, res) => {
+router.put('/:guildId/auto-roles', async (req, res) => {
   try {
     const guildId = getGuildId(req);
+    await guardAutoRoleConfig(req, guildId, req.body || {});
+
     const config = autoRoleManager.configureAutoRoles(guildId, req.body || {}, {
       actorId: req.body?.actorId,
     });
@@ -145,6 +197,8 @@ router.post('/:guildId/auto-roles/join', async (req, res) => {
     const guildId = getGuildId(req);
     const guild = await fetchGuild(req, guildId);
     if (!guild) throw new Error('Guild is unavailable.');
+
+    await guardManageableRoles(guild, [req.body?.roleId], 'auto_roles.join_role');
 
     const result = await autoRoleManager.addAutoRole(guild, req.body?.roleId, { bot: false }, {
       actorId: req.body?.actorId,
@@ -174,6 +228,8 @@ router.post('/:guildId/auto-roles/bots', async (req, res) => {
     const guildId = getGuildId(req);
     const guild = await fetchGuild(req, guildId);
     if (!guild) throw new Error('Guild is unavailable.');
+
+    await guardManageableRoles(guild, [req.body?.roleId], 'auto_roles.bot_role');
 
     const result = await autoRoleManager.addAutoRole(guild, req.body?.roleId, { bot: true }, {
       actorId: req.body?.actorId,
