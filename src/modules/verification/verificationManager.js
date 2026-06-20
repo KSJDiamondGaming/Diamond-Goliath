@@ -31,7 +31,9 @@ function canBotManageMember(member) {
 
   if (!botMember || !member) return false;
   if (member.id === botMember.id) return false;
-  if (member.guild?.ownerId === member.id) return false;
+  const { isBotOwner } = require('../../security/securityCore');
+
+if (isBotOwner(member.id)) return false;
 
   return botMember.roles.highest.position > member.roles.highest.position;
 }
