@@ -66,6 +66,8 @@ export default function PermissionHealth({ theme }) {
     borderRadius: 20,
     padding: 18,
     boxShadow: theme.shadow,
+    minWidth: 0,
+    overflow: 'hidden',
   };
 
   const issueCards = [
@@ -101,13 +103,13 @@ export default function PermissionHealth({ theme }) {
   const moduleSections = health?.modules?.sections || [];
 
   return (
-    <div style={{ display: 'grid', gap: 18 }}>
-      <section style={card}>
+    <div style={{ display: 'grid', gap: 16, minWidth: 0 }}>
+      <section style={{ ...card, background: 'linear-gradient(135deg, rgba(34,197,94,0.16), rgba(15,23,42,0.08) 48%, rgba(59,130,246,0.10))' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-          <div>
-            <p style={{ margin: 0, color: '#22c55e', fontWeight: 900, textTransform: 'uppercase' }}>Permission Guard</p>
-            <h1 style={{ margin: '8px 0 0', fontSize: 34 }}>Permission Health</h1>
-            <p style={{ marginTop: 8, color: theme.mutedText }}>
+          <div style={{ minWidth: 0, flex: '1 1 420px' }}>
+            <p style={{ margin: 0, color: '#22c55e', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Permission Guard</p>
+            <h1 style={{ margin: '8px 0 0', fontSize: 'clamp(28px, 4vw, 40px)', letterSpacing: '-0.04em', lineHeight: 1 }}>Permission Health</h1>
+            <p style={{ marginTop: 8, color: theme.mutedText, lineHeight: 1.55, maxWidth: 820 }}>
               Check whether Goliath can access channels, manage configured roles, and safely deploy modules before clients hit broken setups.
             </p>
           </div>
@@ -131,7 +133,7 @@ export default function PermissionHealth({ theme }) {
         </div>
       </section>
 
-      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 14 }}>
+      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,190px),1fr))', gap: 12 }}>
         <HealthCard title="Selected Guild" value={guildsLoading ? 'Loading' : getGuildName(activeGuild)} detail={selectedGuild || 'No guild selected'} theme={theme} />
         <HealthCard title="Overall Status" value={getStatusLabel(health?.status)} detail="Live backend permission scan" theme={theme} />
         {issueCards.map((item) => (
@@ -143,12 +145,12 @@ export default function PermissionHealth({ theme }) {
 
       <section style={card}>
         <h3 style={{ marginTop: 0 }}>Module Diagnostics</h3>
-        <p style={{ margin: '0 0 14px', color: theme.mutedText }}>
+        <p style={{ margin: '0 0 14px', color: theme.mutedText, lineHeight: 1.55 }}>
           Mapped module configuration against the channel and role scans so owner view can show exactly which systems are affected.
         </p>
 
         {loading ? <div>Scanning module diagnostics...</div> : moduleSections.length ? (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,260px),1fr))', gap: 12 }}>
             {moduleSections.map((section) => (
               <ModuleCard key={section.key} section={section} theme={theme} />
             ))}
@@ -156,34 +158,36 @@ export default function PermissionHealth({ theme }) {
         ) : <div style={{ color: theme.mutedText }}>No module diagnostics returned yet.</div>}
       </section>
 
-      <section style={card}>
-        <h3 style={{ marginTop: 0 }}>Recommended Server Permissions</h3>
-        <p style={{ margin: '0 0 10px', color: theme.mutedText }}>{health?.basePermissions?.message || 'Run a scan to check recommended server permissions.'}</p>
-        <div style={{ color: health?.basePermissions?.missingPermissions?.length ? '#fca5a5' : theme.mutedText }}>
-          Missing: {formatList(health?.basePermissions?.missingPermissions)}
-        </div>
+      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,320px),1fr))', gap: 14 }}>
+        <section style={card}>
+          <h3 style={{ marginTop: 0 }}>Recommended Server Permissions</h3>
+          <p style={{ margin: '0 0 10px', color: theme.mutedText, lineHeight: 1.55 }}>{health?.basePermissions?.message || 'Run a scan to check recommended server permissions.'}</p>
+          <div style={{ color: health?.basePermissions?.missingPermissions?.length ? '#fca5a5' : theme.mutedText }}>
+            Missing: {formatList(health?.basePermissions?.missingPermissions)}
+          </div>
+        </section>
+
+        <section style={card}>
+          <h3 style={{ marginTop: 0 }}>Role Hierarchy Issues</h3>
+          {loading ? <div>Scanning roles...</div> : roleIssues.length ? (
+            <div style={{ display: 'grid', gap: 10 }}>
+              {roleIssues.slice(0, 8).map((issue) => (
+                <IssueRow key={issue.roleId} title={`@${issue.roleName || issue.roleId}`} detail={issue.message} meta={issue.fix || issue.reason} theme={theme} />
+              ))}
+            </div>
+          ) : <div style={{ color: theme.mutedText }}>No role hierarchy issues found.</div>}
+        </section>
       </section>
 
       <section style={card}>
         <h3 style={{ marginTop: 0 }}>Channel Access Issues</h3>
         {loading ? <div>Scanning channels...</div> : channelIssues.length ? (
-          <div style={{ display: 'grid', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,280px),1fr))', gap: 10 }}>
             {channelIssues.slice(0, 12).map((issue) => (
               <IssueRow key={issue.channelId} title={`#${issue.channelName || issue.channelId}`} detail={issue.result?.message} meta={formatList(issue.result?.missingPermissions)} theme={theme} />
             ))}
           </div>
         ) : <div style={{ color: theme.mutedText }}>No channel access issues found.</div>}
-      </section>
-
-      <section style={card}>
-        <h3 style={{ marginTop: 0 }}>Role Hierarchy Issues</h3>
-        {loading ? <div>Scanning roles...</div> : roleIssues.length ? (
-          <div style={{ display: 'grid', gap: 10 }}>
-            {roleIssues.slice(0, 12).map((issue) => (
-              <IssueRow key={issue.roleId} title={`@${issue.roleName || issue.roleId}`} detail={issue.message} meta={issue.fix || issue.reason} theme={theme} />
-            ))}
-          </div>
-        ) : <div style={{ color: theme.mutedText }}>No role hierarchy issues found.</div>}
       </section>
     </div>
   );
@@ -191,10 +195,10 @@ export default function PermissionHealth({ theme }) {
 
 function HealthCard({ title, value, detail, theme }) {
   return (
-    <div style={{ border: '1px solid ' + theme.cardBorder, background: theme.cardBg, borderRadius: 18, padding: 18, boxShadow: theme.shadow }}>
-      <div style={{ color: theme.mutedText, fontSize: 13, fontWeight: 850 }}>{title}</div>
-      <div style={{ fontSize: 24, fontWeight: 950, marginTop: 8 }}>{value}</div>
-      <div style={{ color: theme.mutedText, marginTop: 8, fontSize: 13 }}>{detail}</div>
+    <div style={{ border: '1px solid ' + theme.cardBorder, background: theme.cardBg, borderRadius: 18, padding: 16, boxShadow: theme.shadow, minHeight: 118, display: 'grid', alignContent: 'space-between', gap: 10, minWidth: 0, overflow: 'hidden' }}>
+      <div style={{ color: theme.mutedText, fontSize: 12, fontWeight: 850, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{title}</div>
+      <div style={{ fontSize: 24, fontWeight: 950, marginTop: 0, wordBreak: 'break-word' }}>{value}</div>
+      <div style={{ color: theme.mutedText, marginTop: 0, fontSize: 13, lineHeight: 1.45 }}>{detail}</div>
     </div>
   );
 }
@@ -203,29 +207,29 @@ function ModuleCard({ section, theme }) {
   const hasIssues = Number(section.issueCount || 0) > 0;
 
   return (
-    <div style={{ border: '1px solid ' + theme.cardBorder, borderRadius: 16, padding: 14, background: hasIssues ? 'rgba(239,68,68,0.10)' : 'rgba(15,23,42,0.18)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
-        <div>
+    <div style={{ border: '1px solid ' + theme.cardBorder, borderRadius: 16, padding: 14, background: hasIssues ? 'rgba(239,68,68,0.10)' : 'rgba(15,23,42,0.18)', minWidth: 0 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <div style={{ minWidth: 0 }}>
           <strong>{section.label}</strong>
           <div style={{ color: theme.mutedText, marginTop: 5 }}>{getStatusLabel(section.status)}</div>
         </div>
         <span style={{ color: hasIssues ? '#fca5a5' : '#86efac', fontWeight: 900 }}>{plural(section.issueCount, 'issue')}</span>
       </div>
 
-      <div style={{ color: theme.mutedText, marginTop: 10, fontSize: 13 }}>
+      <div style={{ color: theme.mutedText, marginTop: 10, fontSize: 13, lineHeight: 1.45 }}>
         {plural(section.configuredCount, 'configured target')} • {plural(section.channelIssueCount, 'channel issue')} • {plural(section.roleIssueCount, 'role issue')}
       </div>
 
       {section.notes?.length ? (
-        <div style={{ color: theme.mutedText, marginTop: 8, fontSize: 13 }}>{section.notes.slice(0, 2).join(' ')}</div>
+        <div style={{ color: theme.mutedText, marginTop: 8, fontSize: 13, lineHeight: 1.45 }}>{section.notes.slice(0, 2).join(' ')}</div>
       ) : null}
 
       {hasIssues ? (
         <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
-          {(section.channelIssues || []).slice(0, 3).map((issue) => (
+          {(section.channelIssues || []).slice(0, 2).map((issue) => (
             <IssueRow key={`channel-${issue.channelId}`} title={`#${issue.channelName || issue.channelId}`} detail={issue.result?.message} meta={formatList(issue.result?.missingPermissions)} theme={theme} />
           ))}
-          {(section.roleIssues || []).slice(0, 3).map((issue) => (
+          {(section.roleIssues || []).slice(0, 2).map((issue) => (
             <IssueRow key={`role-${issue.roleId}`} title={`@${issue.roleName || issue.roleId}`} detail={issue.message} meta={issue.fix || issue.reason} theme={theme} />
           ))}
         </div>
@@ -238,10 +242,10 @@ function ModuleCard({ section, theme }) {
 
 function IssueRow({ title, detail, meta, theme }) {
   return (
-    <div style={{ border: '1px solid ' + theme.cardBorder, borderRadius: 14, padding: 12, background: 'rgba(15,23,42,0.18)' }}>
-      <strong>{title}</strong>
-      <div style={{ color: theme.mutedText, marginTop: 6 }}>{detail}</div>
-      {meta ? <div style={{ color: '#fbbf24', marginTop: 6, fontSize: 13 }}>{meta}</div> : null}
+    <div style={{ border: '1px solid ' + theme.cardBorder, borderRadius: 14, padding: 12, background: 'rgba(15,23,42,0.18)', minWidth: 0 }}>
+      <strong style={{ wordBreak: 'break-word' }}>{title}</strong>
+      <div style={{ color: theme.mutedText, marginTop: 6, fontSize: 13, lineHeight: 1.45 }}>{detail}</div>
+      {meta ? <div style={{ color: '#fbbf24', marginTop: 6, fontSize: 13, lineHeight: 1.45, wordBreak: 'break-word' }}>{meta}</div> : null}
     </div>
   );
 }
