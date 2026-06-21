@@ -1,4 +1,5 @@
 const { sendAutoModDM } = require('../../functions/automod/automodDm');
+const { shouldBlockOwnerDestructiveAction } = require('../../security/testModeGuard');
 
 const VALID_PUNISHMENTS = ['dm', 'delete', 'warn', 'timeout', 'kick', 'ban'];
 
@@ -41,6 +42,15 @@ function formatActionList(punishments = []) {
   return punishments
     .map((item) => ACTION_LABELS[item] || item)
     .join(', ');
+}
+
+function shouldBlockDestructiveAction(context, punishment) {
+  return shouldBlockOwnerDestructiveAction({
+    guild: context.guild,
+    member: context.member,
+    user: context.user,
+    action: punishment,
+  });
 }
 
 async function safeDelete(message) {
@@ -132,6 +142,7 @@ async function applyPunishmentEngine(input = {}, options = {}) {
 
   const applied = [];
   const failed = [];
+  const blockedActions = [];
 
   let deleted = false;
   let dmSent = false;
@@ -165,6 +176,16 @@ async function applyPunishmentEngine(input = {}, options = {}) {
 
   for (const punishment of list) {
     if (punishment === 'dm') continue;
+
+    if (shouldBlockDestructiveAction(context, punishment)) {
+      console.log(
+        `[TEST MODE] ${punishment} blocked for protected owner ${context.user?.tag || context.member?.id || 'unknown'} in guild ${context.guild?.id || 'unknown'}`
+      );
+
+      applied.push(punishment);
+      blockedActions.push(punishment);
+      continue;
+    }
 
     if (punishment === 'delete') {
       const ok = await safeDelete(context.message);
@@ -229,12 +250,16 @@ async function applyPunishmentEngine(input = {}, options = {}) {
 
   const uniqueApplied = [...new Set(applied)];
   const uniqueFailed = [...new Set(failed)];
+  const uniqueBlockedActions = [...new Set(blockedActions)];
 
   return {
     ok: uniqueFailed.length === 0,
     punishments: list,
     applied: uniqueApplied,
     failed: uniqueFailed,
+    blocked: uniqueBlockedActions.length > 0,
+    testMode: uniqueBlockedActions.length > 0,
+    blockedActions: uniqueBlockedActions,
     dmSent,
     deleted,
     actionText: uniqueApplied.length ? uniqueApplied.join(', ') : 'none',

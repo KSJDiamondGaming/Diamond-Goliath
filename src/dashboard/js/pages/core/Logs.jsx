@@ -110,28 +110,31 @@ function ConfigRow({
       style={{
         background: theme.softBg,
         border: `1px solid ${theme.cardBorder}`,
-        borderRadius: 18,
-        padding: 18,
+        borderRadius: 16,
+        padding: 14,
         display: 'grid',
-        gap: 14,
+        gap: 12,
+        minWidth: 0,
+        overflow: 'hidden',
       }}
     >
       <div
         style={{
           display: 'flex',
           justifyContent: 'space-between',
-          gap: 16,
+          gap: 12,
           alignItems: 'flex-start',
           flexWrap: 'wrap',
         }}
       >
-        <div style={{ display: 'grid', gap: 6 }}>
+        <div style={{ display: 'grid', gap: 5, minWidth: 0, flex: '1 1 220px' }}>
           <h4
             style={{
               margin: 0,
               color: theme.cardText,
-              fontSize: 16,
-              fontWeight: 900,
+              fontSize: 15,
+              fontWeight: 950,
+              lineHeight: 1.25,
             }}
           >
             {title}
@@ -141,8 +144,8 @@ function ConfigRow({
             style={{
               margin: 0,
               color: theme.mutedText,
-              fontSize: 14,
-              lineHeight: 1.5,
+              fontSize: 13,
+              lineHeight: 1.45,
             }}
           >
             {description}
@@ -168,12 +171,13 @@ function ConfigRow({
               : '#fca5a5',
 
             borderRadius: 999,
-            padding: '7px 12px',
+            padding: '7px 11px',
             cursor: 'pointer',
             fontSize: 12,
-            fontWeight: 900,
+            fontWeight: 950,
             textTransform: 'uppercase',
             letterSpacing: '0.04em',
+            whiteSpace: 'nowrap',
           }}
         >
           {enabled ? 'Enabled' : 'Disabled'}
@@ -188,10 +192,11 @@ function ConfigRow({
           border: `1px solid ${theme.cardBorder}`,
           background: 'rgba(10,18,35,0.96)',
           color: theme.cardText,
-          borderRadius: 14,
-          padding: '12px 14px',
+          borderRadius: 12,
+          padding: '10px 12px',
           outline: 'none',
-          fontWeight: 700,
+          fontWeight: 800,
+          minWidth: 0,
         }}
       >
         <option value="">Select channel</option>
@@ -416,7 +421,7 @@ export default function Logs({
 
       {selectedGuild && !loading ? (
         <>
-          <StatGrid min="200px">
+          <StatGrid min="190px">
             <SummaryStat
               theme={theme}
               label="Logging"
@@ -458,57 +463,60 @@ export default function Logs({
             />
           </StatGrid>
 
-          {LOG_GROUPS.map((group) => (
-            <SectionCard
-              key={group.key}
-              theme={theme}
-              title={group.label}
-              subtitle={group.description}
-            >
-              <div
-                style={{
-                  display: 'grid',
-                  gap: 16,
-                }}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,360px),1fr))', gap: 14 }}>
+            {LOG_GROUPS.map((group) => (
+              <SectionCard
+                key={group.key}
+                theme={theme}
+                title={group.label}
+                subtitle={group.description}
+                padding="16px"
               >
-                {group.items.map((item) => {
-                  const enabled =
-                    logs.events?.[
-                      item.eventKey
-                    ] !== false;
+                <div
+                  style={{
+                    display: 'grid',
+                    gap: 12,
+                  }}
+                >
+                  {group.items.map((item) => {
+                    const enabled =
+                      logs.events?.[
+                        item.eventKey
+                      ] !== false;
 
-                  const selectedChannel =
-                    logs.channels?.[
-                      item.channelKey
-                    ] || '';
+                    const selectedChannel =
+                      logs.channels?.[
+                        item.channelKey
+                      ] || '';
 
-                  return (
-                    <ConfigRow
-                      key={item.key}
-                      theme={theme}
-                      title={item.label}
-                      description={item.description}
-                      enabled={enabled}
-                      channel={selectedChannel}
-                      channels={channels}
-                      onToggle={() =>
-                        updateEvent(
-                          item.eventKey,
-                          !enabled,
-                        )
-                      }
-                      onChannelChange={(value) =>
-                        updateChannel(
-                          item.channelKey,
-                          value,
-                        )
-                      }
-                    />
-                  );
-                })}
-              </div>
-            </SectionCard>
-          ))}
+                    return (
+                      <ConfigRow
+                        key={item.key}
+                        theme={theme}
+                        title={item.label}
+                        description={item.description}
+                        enabled={enabled}
+                        channel={selectedChannel}
+                        channels={channels}
+                        onToggle={() =>
+                          updateEvent(
+                            item.eventKey,
+                            !enabled,
+                          )
+                        }
+                        onChannelChange={(value) =>
+                          updateChannel(
+                            item.channelKey,
+                            value,
+                          )
+                        }
+                      />
+                    );
+                  })}
+                </div>
+              </SectionCard>
+            ))}
+          </div>
         </>
       ) : null}
     </PageShell>

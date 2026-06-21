@@ -3,6 +3,8 @@
 const express = require('express');
 const os = require('os');
 
+const guildManager = require('../../guild/guildManager');
+
 const router = express.Router();
 
 const ENVIRONMENT_PORTS = [
@@ -127,6 +129,92 @@ function buildOwnerGuildPayload(guild, forcedEnvironment = null) {
   };
 }
 
+function normaliseSecurityIncidents(security = {}) {
+  const incidents = Array.isArray(security.incidents)
+    ? security.incidents
+    : [];
+
+  return incidents
+    .filter(Boolean)
+    .map((incident) => ({
+      ...incident,
+      severity: incident.severity || incident.level || 'info',
+      type: incident.type || incident.eventType || incident.action || 'security_event',
+      timestamp: incident.timestamp || incident.createdAt || incident.time || null,
+    }));
+}
+
+function buildGuildSecurityOverview(guild, environment = getRuntimeMode()) {
+  const guildId = guild.guildId || guild.id;
+  const security = guildManager.getSecurityConfig(guildId) || {};
+  const incidents = normaliseSecurityIncidents(security);
+  const lockdown = security.lockdown || { active: false };
+  const quarantine = security.quarantine || { users: {} };
+  const quarantinedCount = Object.keys(quarantine.users || {}).length;
+  const criticalIncidents = incidents.filter((incident) => String(incident.severity || '').toLowerCase() === 'critical').length;
+  const webhookIncidents = incidents.filter((incident) => String(incident.type || '').toLowerCase().includes('webhook')).length;
+
+  return {
+    guildId,
+    guildName: guild.guildName || guild.name || 'Unknown Guild',
+    environment,
+    threatLevel: security.threatLevel || 'low',
+    incidentCount: Number(security.totalIncidents || incidents.length || 0),
+    criticalIncidents: Number(security.criticalIncidents || criticalIncidents || 0),
+    webhookIncidents,
+    lockdownActive: Boolean(lockdown.active),
+    quarantinedCount,
+    recentIncidents: incidents.slice(0, 10),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function summariseSecurityGuilds(guildSecurity = []) {
+  const totals = {
+    guilds: guildSecurity.length,
+    incidents: 0,
+    critical: 0,
+    lockdowns: 0,
+    quarantinedUsers: 0,
+    webhookIncidents: 0,
+    protectedGuilds: 0,
+  };
+
+  const recentIncidents = [];
+
+  for (const item of guildSecurity) {
+    totals.incidents += Number(item.incidentCount || 0);
+    totals.critical += Number(item.criticalIncidents || 0);
+    totals.lockdowns += item.lockdownActive ? 1 : 0;
+    totals.quarantinedUsers += Number(item.quarantinedCount || 0);
+    totals.webhookIncidents += Number(item.webhookIncidents || 0);
+
+    if (item.threatLevel !== 'unknown') {
+      totals.protectedGuilds += 1;
+    }
+
+    for (const incident of item.recentIncidents || []) {
+      recentIncidents.push({
+        ...incident,
+        guildId: item.guildId,
+        guildName: item.guildName,
+        environment: item.environment,
+      });
+    }
+  }
+
+  recentIncidents.sort((a, b) => {
+    const left = new Date(a.timestamp || 0).getTime();
+    const right = new Date(b.timestamp || 0).getTime();
+    return right - left;
+  });
+
+  return {
+    totals,
+    recentIncidents: recentIncidents.slice(0, 25),
+  };
+}
+
 async function fetchEnvironmentGuilds(port, environment) {
   try {
     const token = String(process.env.OWNER_INTERNAL_TOKEN || '').trim();
@@ -164,6 +252,48 @@ async function fetchEnvironmentGuilds(port, environment) {
     if (shouldLogEnvironmentUnavailable()) {
       console.warn(
         `[OWNER GUILDS ALL] ${environment} unavailable on port ${port}:`,
+        error.message,
+      );
+    }
+
+    return [];
+  }
+}
+
+async function fetchEnvironmentSecurity(port, environment) {
+  try {
+    const token = String(process.env.OWNER_INTERNAL_TOKEN || '').trim();
+
+    const response = await fetch(
+      `http://127.0.0.1:${port}/api/owner/security`,
+      {
+        headers: {
+          'x-goliath-owner-token': token,
+        },
+      },
+    );
+
+    if (!response.ok) {
+      console.warn(
+        `[OWNER SECURITY ALL] ${environment} returned ${response.status}`,
+      );
+
+      return [];
+    }
+
+    const payload = await response.json();
+    const guilds = Array.isArray(payload.guilds) ? payload.guilds : [];
+
+    return guilds.map((guild) => ({
+      ...guild,
+      environment,
+      runtimeMode: environment,
+      sourcePort: port,
+    }));
+  } catch (error) {
+    if (shouldLogEnvironmentUnavailable()) {
+      console.warn(
+        `[OWNER SECURITY ALL] ${environment} unavailable on port ${port}:`,
         error.message,
       );
     }
@@ -296,6 +426,81 @@ router.get('/guilds/all', requireOwnerOrInternal, async (req, res) => {
 });
 
 /* ==================================================
+   GLOBAL SECURITY CENTER
+================================================== */
+router.get('/security', requireOwnerOrInternal, (req, res) => {
+  const client = getDiscordClient(req);
+  const mode = getRuntimeMode();
+
+  if (!client?.guilds?.cache) {
+    return res.status(503).json({
+      success: false,
+      error: 'Discord client unavailable.',
+    });
+  }
+
+  const guilds = [...client.guilds.cache.values()]
+    .map((guild) => buildGuildSecurityOverview(buildOwnerGuildPayload(guild, mode), mode))
+    .sort((a, b) => String(a.guildName || '').localeCompare(String(b.guildName || '')));
+
+  const summary = summariseSecurityGuilds(guilds);
+
+  return res.json({
+    success: true,
+    owner: true,
+    mode,
+    runtimeMode: mode,
+    guilds,
+    ...summary,
+    updatedAt: new Date().toISOString(),
+  });
+});
+
+router.get('/security/all', requireOwner, async (req, res) => {
+  try {
+    const requestedEnvironment = String(req.query.environment || 'all').toUpperCase();
+    const results = await Promise.all(
+      ENVIRONMENT_PORTS.map((environmentConfig) =>
+        fetchEnvironmentSecurity(
+          environmentConfig.port,
+          environmentConfig.environment,
+        ),
+      ),
+    );
+
+    let guilds = [
+      ...(results[0] || []),
+      ...(results[1] || []),
+      ...(results[2] || []),
+    ];
+
+    if (requestedEnvironment !== 'ALL') {
+      guilds = guilds.filter((guild) => String(guild.environment || '').toUpperCase() === requestedEnvironment);
+    }
+
+    const summary = summariseSecurityGuilds(guilds);
+
+    return res.json({
+      success: true,
+      owner: true,
+      mode: 'GLOBAL',
+      runtimeMode: 'GLOBAL',
+      environment: requestedEnvironment,
+      guilds,
+      ...summary,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('[OWNER SECURITY ALL]', error);
+
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+/* ==================================================
    RUNTIME MONITOR
 ================================================== */
 router.get('/runtime', requireOwner, async (req, res) => {
@@ -312,11 +517,9 @@ router.get('/runtime', requireOwner, async (req, res) => {
         uptime: process.uptime(),
 
         nodeVersion: process.version,
-
         platform: process.platform,
 
         hostname: os.hostname(),
-
         cpuCount: os.cpus().length,
 
         memory: {

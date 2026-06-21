@@ -1,4 +1,5 @@
 const guildManager = require('../guild/guildManager');
+const { shouldUseDryRunForOwner } = require('./testModeGuard');
 
 const {
   emitQuarantineUpdate,
@@ -68,6 +69,41 @@ async function ensureQuarantineRole(guild) {
   return role;
 }
 
+function createQuarantineDryRunResult(guild, member, options = {}) {
+  const snapshotRoles = member.roles.cache
+    .filter((role) => role.id !== guild.id)
+    .map((role) => role.id);
+
+  emitCurrentQuarantineState(
+    guild,
+    'member_quarantine_dry_run',
+    {
+      memberId: member.id,
+      testMode: true,
+      dryRun: true,
+    }
+  );
+
+  console.log(
+    `[TEST MODE] Quarantine prevented for owner ${member.user?.tag || member.id} in guild ${guild.id}`
+  );
+
+  return {
+    success: true,
+    testMode: true,
+    dryRun: true,
+    action: 'quarantine',
+    executed: false,
+    roleId: null,
+    snapshotRoles,
+    memberId: member.id,
+    memberTag: member.user?.tag || null,
+    reason:
+      options.reason ||
+      'Development test override prevented owner quarantine.',
+  };
+}
+
 async function quarantineMember(
   guild,
   member,
@@ -78,6 +114,14 @@ async function quarantineMember(
       success: false,
       reason: 'Missing guild/member',
     };
+  }
+
+  if (shouldUseDryRunForOwner({
+    guild,
+    member,
+    action: 'quarantine',
+  })) {
+    return createQuarantineDryRunResult(guild, member, options);
   }
 
   const role = await ensureQuarantineRole(guild);
