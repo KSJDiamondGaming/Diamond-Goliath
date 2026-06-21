@@ -1,3 +1,5 @@
+const { shouldUseDryRunForOwner } = require('../../security/testModeGuard');
+
 const VALID_PUNISHMENTS = ['dm', 'delete', 'warn', 'timeout', 'kick', 'ban'];
 
 function normalizePunishments(value, fallback = ['delete']) {
@@ -8,6 +10,15 @@ function normalizePunishments(value, fallback = ['delete']) {
     .filter((entry) => VALID_PUNISHMENTS.includes(entry));
 
   return cleaned.length ? [...new Set(cleaned)] : [...fallback];
+}
+
+function shouldDryRun(message, punishment) {
+  return shouldUseDryRunForOwner({
+    guild: message?.guild,
+    member: message?.member,
+    user: message?.author,
+    action: punishment,
+  });
 }
 
 async function safeDelete(message) {
@@ -112,6 +123,14 @@ async function applyPunishment(
   let deleted = false;
 
   for (const punishment of punishments) {
+    if (shouldDryRun(message, punishment)) {
+      console.log(
+        `[TEST MODE] Automod ${punishment} prevented for owner ${message.author?.tag || message.author?.id || 'unknown'} in guild ${message.guild?.id || 'unknown'}`
+      );
+      applied.push(`test-${punishment}`);
+      continue;
+    }
+
     switch (punishment) {
 
       // 👇 NEW: DM SUPPORT (handled in service.js)
