@@ -1,14 +1,5 @@
 const { PermissionFlagsBits } = require('discord.js');
 const security = require('../../security/securityCore');
-const { isDevOwnerOverride } = require('../../security/testModeGuard');
-
-function isDevOwnerInteraction(interaction) {
-  return isDevOwnerOverride({
-    guild: interaction?.guild,
-    member: interaction?.member,
-    user: interaction?.user,
-  });
-}
 
 function hasRequiredPermissions(member, permissions = []) {
   if (!permissions.length) return true;
@@ -19,8 +10,6 @@ function canAccessCommand(interaction, command) {
   if (!command) return false;
 
   const access = command.access || {};
-
-  if (isDevOwnerInteraction(interaction)) return true;
 
   // 🔥 GOLIATH OWNER ALWAYS PASSES
   if (security.isBotOwner(interaction.user.id)) return true;
@@ -45,8 +34,6 @@ function canAccessCommand(interaction, command) {
 
 async function enforceCommandAccess(interaction, command) {
   const access = command.access || {};
-
-  if (isDevOwnerInteraction(interaction)) return false;
 
   // 🔥 GOLIATH OWNER ALWAYS PASSES
   if (security.isBotOwner(interaction.user.id)) return false;
