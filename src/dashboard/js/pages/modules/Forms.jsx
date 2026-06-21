@@ -11,16 +11,17 @@ import PageShell, {
 import { PAGE_LAYOUTS } from '../../ui/layout';
 
 const PAGE_KEY = 'forms';
+const MAX_FIELDS = 5;
 
 const QUESTION_TYPES = [
   { value: 'short', label: 'Short Text' },
-  { value: 'paragraph', label: 'Long Text' },
+  { value: 'paragraph', label: 'Paragraph' },
   { value: 'number', label: 'Number' },
   { value: 'select', label: 'Dropdown' },
   { value: 'checkbox', label: 'Checkbox' },
   { value: 'boolean', label: 'Yes/No' },
-  { value: 'user_mention', label: 'User Mention' },
-  { value: 'role_mention', label: 'Role Mention' },
+  { value: 'user_mention', label: 'User Select' },
+  { value: 'role_mention', label: 'Role Select' },
 ];
 
 const EMPTY_FORM = {
@@ -38,8 +39,78 @@ const EMPTY_FORM = {
   fields: [],
 };
 
+const FORM_TEMPLATES = [
+  {
+    key: 'staff_application',
+    name: 'Staff Application',
+    description: 'Apply to join the server staff team.',
+    buttonLabel: 'Apply Now',
+    action: 'create_ticket',
+    fields: [
+      { id: 'age', type: 'number', label: 'How old are you?', placeholder: 'Enter your age', required: true, maxLength: 10 },
+      { id: 'timezone', type: 'short', label: 'What is your timezone?', placeholder: 'GMT / EST / etc', required: true, maxLength: 80 },
+      { id: 'experience', type: 'paragraph', label: 'What staff experience do you have?', placeholder: 'Tell us about previous experience.', required: true, maxLength: 1000 },
+      { id: 'why_you', type: 'paragraph', label: 'Why should we choose you?', placeholder: 'Explain why you are a good fit.', required: true, maxLength: 1000 },
+    ],
+  },
+  {
+    key: 'ban_appeal',
+    name: 'Ban Appeal',
+    description: 'Appeal a ban, timeout or moderation action.',
+    buttonLabel: 'Submit Appeal',
+    action: 'create_ticket',
+    fields: [
+      { id: 'username', type: 'short', label: 'Discord username', placeholder: 'Your Discord username', required: true, maxLength: 100 },
+      { id: 'reason', type: 'paragraph', label: 'Why were you punished?', placeholder: 'Explain what happened.', required: true, maxLength: 1000 },
+      { id: 'appeal', type: 'paragraph', label: 'Why should this be reviewed?', placeholder: 'Explain your appeal.', required: true, maxLength: 1000 },
+    ],
+  },
+  {
+    key: 'support_request',
+    name: 'Support Request',
+    description: 'Get help from the support team.',
+    buttonLabel: 'Get Support',
+    action: 'create_ticket',
+    fields: [
+      { id: 'topic', type: 'select', label: 'Support topic', placeholder: '', required: true, options: ['Account', 'Discord', 'Website', 'Bot', 'Other'], maxLength: 400 },
+      { id: 'issue', type: 'paragraph', label: 'What do you need help with?', placeholder: 'Describe the issue.', required: true, maxLength: 1200 },
+    ],
+  },
+  {
+    key: 'report_player',
+    name: 'Report Player',
+    description: 'Report another member or player to staff.',
+    buttonLabel: 'Report Player',
+    action: 'create_ticket',
+    fields: [
+      { id: 'reported_user', type: 'user_mention', label: 'Who are you reporting?', placeholder: 'User ID or mention', required: true, maxLength: 100 },
+      { id: 'reason', type: 'paragraph', label: 'What happened?', placeholder: 'Include details and evidence.', required: true, maxLength: 1200 },
+      { id: 'evidence', type: 'short', label: 'Evidence link', placeholder: 'Optional screenshot/video link', required: false, maxLength: 300 },
+    ],
+  },
+  {
+    key: 'generic_form',
+    name: 'Generic Form',
+    description: 'A clean blank form for custom workflows.',
+    buttonLabel: 'Open Form',
+    action: 'create_ticket',
+    fields: [
+      { id: 'message', type: 'paragraph', label: 'Message', placeholder: 'Write your response here.', required: true, maxLength: 1000 },
+    ],
+  },
+];
+
 function safeArray(value) {
   return Array.isArray(value) ? value : [];
+}
+
+function makeSafeId(value, fallback = 'form') {
+  return String(value || fallback)
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9-_]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '') || fallback;
 }
 
 function normalizeFormForEditor(form = {}) {
@@ -66,6 +137,23 @@ function createField(index) {
     minLength: 0,
     maxLength: 400,
   };
+}
+
+function cloneTemplate(template) {
+  return normalizeFormForEditor({
+    ...EMPTY_FORM,
+    formId: '',
+    name: template.name,
+    description: template.description,
+    buttonLabel: template.buttonLabel,
+    action: template.action,
+    ticketType: template.key,
+    fields: safeArray(template.fields).slice(0, MAX_FIELDS).map((field, index) => ({
+      ...createField(index),
+      ...field,
+      id: makeSafeId(field.id || `field-${index + 1}`, `field-${index + 1}`),
+    })),
+  });
 }
 
 function inputStyle(theme) {
@@ -135,6 +223,36 @@ function FieldLabel({ theme, children }) {
   );
 }
 
+function FormPreview({ theme, form }) {
+  const fields = safeArray(form.fields);
+
+  return (
+    <div style={{ display: 'grid', gap: 14, padding: 16, border: `1px solid ${theme.cardBorder}`, borderRadius: 18, background: 'rgba(15,23,42,0.30)' }}>
+      <div style={{ display: 'grid', gap: 6 }}>
+        <strong style={{ color: theme.cardText, fontSize: 18 }}>{form.name || 'Untitled Form'}</strong>
+        <span style={{ color: theme.mutedText, lineHeight: 1.5 }}>{form.description || 'No description set.'}</span>
+      </div>
+
+      {fields.length ? fields.map((field, index) => (
+        <div key={`${field.id || index}-preview`} style={{ display: 'grid', gap: 7 }}>
+          <strong style={{ color: theme.cardText, fontSize: 13 }}>{field.label || `Question ${index + 1}`} {field.required !== false ? <span style={{ color: '#fca5a5' }}>*</span> : null}</strong>
+          {field.type === 'paragraph' ? (
+            <textarea disabled rows={3} placeholder={field.placeholder || 'Long answer'} style={{ ...inputStyle(theme), opacity: 0.8 }} />
+          ) : field.type === 'select' || field.type === 'checkbox' || field.type === 'boolean' ? (
+            <select disabled style={{ ...inputStyle(theme), opacity: 0.8 }}>
+              <option>{safeArray(field.options)[0] || (field.type === 'boolean' ? 'Yes / No' : 'Select an option')}</option>
+            </select>
+          ) : (
+            <input disabled placeholder={field.placeholder || QUESTION_TYPES.find((type) => type.value === field.type)?.label || 'Answer'} style={{ ...inputStyle(theme), opacity: 0.8 }} />
+          )}
+        </div>
+      )) : <EmptyState theme={theme} title="No preview fields" text="Add questions to preview the Discord modal fields." />}
+
+      <button type="button" disabled style={{ ...buttonStyle(theme), opacity: 0.75, cursor: 'not-allowed', justifySelf: 'start' }}>{form.buttonLabel || 'Open Form'}</button>
+    </div>
+  );
+}
+
 function FormEditor({ theme, form, setForm, channels, roles, panels }) {
   const styles = useMemo(
     () => ({
@@ -178,7 +296,7 @@ function FormEditor({ theme, form, setForm, channels, roles, panels }) {
   const addQuestion = useCallback(() => {
     setForm((prev) => {
       const fields = safeArray(prev.fields);
-      if (fields.length >= 5) return prev;
+      if (fields.length >= MAX_FIELDS) return prev;
       return { ...prev, fields: [...fields, createField(fields.length)] };
     });
   }, [setForm]);
@@ -188,6 +306,34 @@ function FormEditor({ theme, form, setForm, channels, roles, panels }) {
       ...prev,
       fields: safeArray(prev.fields).filter((_, fieldIndex) => fieldIndex !== index),
     }));
+  }, [setForm]);
+
+  const duplicateQuestion = useCallback((index) => {
+    setForm((prev) => {
+      const fields = safeArray(prev.fields);
+      if (fields.length >= MAX_FIELDS) return prev;
+      const source = fields[index] || createField(index);
+      const nextField = {
+        ...source,
+        id: makeSafeId(`${source.id || 'field'}-copy`, `field-${fields.length + 1}`),
+        label: `${source.label || `Question ${index + 1}`} Copy`,
+      };
+      return {
+        ...prev,
+        fields: [...fields.slice(0, index + 1), nextField, ...fields.slice(index + 1)],
+      };
+    });
+  }, [setForm]);
+
+  const moveQuestion = useCallback((index, direction) => {
+    setForm((prev) => {
+      const fields = [...safeArray(prev.fields)];
+      const targetIndex = index + direction;
+      if (targetIndex < 0 || targetIndex >= fields.length) return prev;
+      const [item] = fields.splice(index, 1);
+      fields.splice(targetIndex, 0, item);
+      return { ...prev, fields };
+    });
   }, [setForm]);
 
   const toggleRole = useCallback((roleId) => {
@@ -202,68 +348,90 @@ function FormEditor({ theme, form, setForm, channels, roles, panels }) {
   }, [setForm]);
 
   return (
-    <div style={{ display: 'grid', gap: 16 }}>
-      <div style={styles.block}>
-        <h3 style={styles.heading}>Form Info</h3>
-        <div style={styles.grid}>
-          <FieldLabel theme={theme}>Title<input style={inputStyle(theme)} value={form.name} onChange={(event) => update('name', event.target.value)} /></FieldLabel>
-          <FieldLabel theme={theme}>Button Text<input style={inputStyle(theme)} value={form.buttonLabel} onChange={(event) => update('buttonLabel', event.target.value)} /></FieldLabel>
-          <FieldLabel theme={theme}>Description<textarea rows={4} style={inputStyle(theme)} value={form.description} onChange={(event) => update('description', event.target.value)} /></FieldLabel>
-          <FieldLabel theme={theme}>Log Channel<select style={inputStyle(theme)} value={form.logChannelId} onChange={(event) => update('logChannelId', event.target.value)}><option value="">No log channel</option>{channels.map((channel) => <option key={channel.id} value={channel.id}>#{channel.name || channel.id}</option>)}</select></FieldLabel>
-        </div>
-      </div>
-
-      <div style={styles.block}>
-        <h3 style={styles.heading}>Questions</h3>
-        {safeArray(form.fields).length === 0 ? (
-          <EmptyState theme={theme} title="No questions yet" text="Add questions to build this universal form." />
-        ) : safeArray(form.fields).map((field, index) => (
-          <div key={`${field.id}-${index}`} style={{ display: 'grid', gap: 12, padding: 14, border: `1px solid ${theme.cardBorder}`, borderRadius: 16, background: 'rgba(15,23,42,0.45)' }}>
-            <div style={styles.grid}>
-              <FieldLabel theme={theme}>Question Label<input style={inputStyle(theme)} value={field.label || ''} onChange={(event) => updateField(index, { label: event.target.value })} /></FieldLabel>
-              <FieldLabel theme={theme}>Question Type<select style={inputStyle(theme)} value={field.type || 'short'} onChange={(event) => updateField(index, { type: event.target.value })}>{QUESTION_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}</select></FieldLabel>
-              <FieldLabel theme={theme}>Placeholder<input style={inputStyle(theme)} value={field.placeholder || ''} onChange={(event) => updateField(index, { placeholder: event.target.value })} /></FieldLabel>
-              <FieldLabel theme={theme}>Options, comma separated<input style={inputStyle(theme)} value={safeArray(field.options).join(', ')} onChange={(event) => updateField(index, { options: event.target.value.split(',').map((item) => item.trim()).filter(Boolean) })} /></FieldLabel>
-            </div>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-              <button type="button" style={buttonStyle(theme, field.required !== false ? 'success' : 'soft')} onClick={() => updateField(index, { required: field.required === false })}>{field.required !== false ? 'Required' : 'Optional'}</button>
-              <button type="button" style={buttonStyle(theme, 'danger')} onClick={() => removeQuestion(index)}>Remove Question</button>
-            </div>
-          </div>
-        ))}
-        <button type="button" style={buttonStyle(theme, 'soft')} onClick={addQuestion} disabled={safeArray(form.fields).length >= 5}>+ Add Question</button>
-      </div>
-
-      <div style={styles.block}>
-        <h3 style={styles.heading}>Submission Behaviour</h3>
-        <div style={styles.grid}>
-          <FieldLabel theme={theme}>Action<select style={inputStyle(theme)} value={form.action} onChange={(event) => update('action', event.target.value)}><option value="create_ticket">Create Ticket</option><option value="log_only">Log Only</option><option value="none">No Action</option></select></FieldLabel>
-          <FieldLabel theme={theme}>Panel<select style={inputStyle(theme)} value={form.panelId} onChange={(event) => update('panelId', event.target.value)}><option value="">No panel assigned</option>{panels.map((panel) => <option key={panel.panelId} value={panel.panelId}>{panel.title || panel.panelId}</option>)}</select></FieldLabel>
-        </div>
-      </div>
-
-      <div style={styles.block}>
-        <h3 style={styles.heading}>Ticket Integration</h3>
-        <div style={styles.grid}>
-          <FieldLabel theme={theme}>Ticket Type<input style={inputStyle(theme)} value={form.ticketType} onChange={(event) => update('ticketType', event.target.value)} /></FieldLabel>
-          <FieldLabel theme={theme}>Ticket Category<select style={inputStyle(theme)} value={form.outputCategoryId} onChange={(event) => update('outputCategoryId', event.target.value)}><option value="">No category selected</option>{channels.filter((channel) => channel.type === 4 || channel.type === 'category' || channel.type === 'GUILD_CATEGORY').map((channel) => <option key={channel.id} value={channel.id}>{channel.name || channel.id}</option>)}</select></FieldLabel>
-        </div>
-        <div style={{ display: 'grid', gap: 10 }}>
-          <div style={{ color: theme.mutedText, fontSize: 12, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Staff Roles</div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {roles.length === 0 ? <span style={{ color: theme.mutedText }}>No roles loaded.</span> : roles.map((role) => (
-              <button key={role.id} type="button" style={buttonStyle(theme, safeArray(form.staffRoleIds).includes(role.id) ? 'success' : 'soft')} onClick={() => toggleRole(role.id)}>{role.name || role.id}</button>
-            ))}
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.35fr) minmax(min(360px, 100%), 0.65fr)', gap: 16, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gap: 16, minWidth: 0 }}>
+        <div style={styles.block}>
+          <h3 style={styles.heading}>Form Info</h3>
+          <div style={styles.grid}>
+            <FieldLabel theme={theme}>Title<input style={inputStyle(theme)} value={form.name} onChange={(event) => update('name', event.target.value)} /></FieldLabel>
+            <FieldLabel theme={theme}>Button Text<input style={inputStyle(theme)} value={form.buttonLabel} onChange={(event) => update('buttonLabel', event.target.value)} /></FieldLabel>
+            <FieldLabel theme={theme}>Description<textarea rows={4} style={inputStyle(theme)} value={form.description} onChange={(event) => update('description', event.target.value)} /></FieldLabel>
+            <FieldLabel theme={theme}>Log Channel<select style={inputStyle(theme)} value={form.logChannelId} onChange={(event) => update('logChannelId', event.target.value)}><option value="">No log channel</option>{channels.map((channel) => <option key={channel.id} value={channel.id}>#{channel.name || channel.id}</option>)}</select></FieldLabel>
           </div>
         </div>
+
+        <div style={styles.block}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            <h3 style={styles.heading}>Questions</h3>
+            <span style={{ color: theme.mutedText, fontSize: 12, fontWeight: 900 }}>{safeArray(form.fields).length}/{MAX_FIELDS} Discord modal fields</span>
+          </div>
+          {safeArray(form.fields).length === 0 ? (
+            <EmptyState theme={theme} title="No questions yet" text="Add questions to build this universal form." />
+          ) : safeArray(form.fields).map((field, index) => (
+            <div key={`${field.id}-${index}`} style={{ display: 'grid', gap: 12, padding: 14, border: `1px solid ${theme.cardBorder}`, borderRadius: 16, background: 'rgba(15,23,42,0.45)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                <strong style={{ color: theme.cardText }}>Question {index + 1}</strong>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button type="button" style={buttonStyle(theme, 'soft')} onClick={() => moveQuestion(index, -1)} disabled={index === 0}>↑ Move Up</button>
+                  <button type="button" style={buttonStyle(theme, 'soft')} onClick={() => moveQuestion(index, 1)} disabled={index === safeArray(form.fields).length - 1}>↓ Move Down</button>
+                </div>
+              </div>
+              <div style={styles.grid}>
+                <FieldLabel theme={theme}>Question Label<input style={inputStyle(theme)} value={field.label || ''} onChange={(event) => updateField(index, { label: event.target.value })} /></FieldLabel>
+                <FieldLabel theme={theme}>Field ID<input style={inputStyle(theme)} value={field.id || ''} onChange={(event) => updateField(index, { id: makeSafeId(event.target.value, `field-${index + 1}`) })} /></FieldLabel>
+                <FieldLabel theme={theme}>Question Type<select style={inputStyle(theme)} value={field.type || 'short'} onChange={(event) => updateField(index, { type: event.target.value })}>{QUESTION_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}</select></FieldLabel>
+                <FieldLabel theme={theme}>Placeholder<input style={inputStyle(theme)} value={field.placeholder || ''} onChange={(event) => updateField(index, { placeholder: event.target.value })} /></FieldLabel>
+                <FieldLabel theme={theme}>Options, comma separated<input style={inputStyle(theme)} value={safeArray(field.options).join(', ')} onChange={(event) => updateField(index, { options: event.target.value.split(',').map((item) => item.trim()).filter(Boolean) })} /></FieldLabel>
+                <FieldLabel theme={theme}>Max Length<input type="number" style={inputStyle(theme)} value={field.maxLength || 400} onChange={(event) => updateField(index, { maxLength: Number(event.target.value || 400) })} /></FieldLabel>
+              </div>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                <button type="button" style={buttonStyle(theme, field.required !== false ? 'success' : 'soft')} onClick={() => updateField(index, { required: field.required === false })}>{field.required !== false ? 'Required' : 'Optional'}</button>
+                <button type="button" style={buttonStyle(theme, 'soft')} onClick={() => duplicateQuestion(index)} disabled={safeArray(form.fields).length >= MAX_FIELDS}>Duplicate Question</button>
+                <button type="button" style={buttonStyle(theme, 'danger')} onClick={() => removeQuestion(index)}>Remove Question</button>
+              </div>
+            </div>
+          ))}
+          <button type="button" style={buttonStyle(theme, 'soft')} onClick={addQuestion} disabled={safeArray(form.fields).length >= MAX_FIELDS}>+ Add Question</button>
+        </div>
+
+        <div style={styles.block}>
+          <h3 style={styles.heading}>Submission Behaviour</h3>
+          <div style={styles.grid}>
+            <FieldLabel theme={theme}>Action<select style={inputStyle(theme)} value={form.action} onChange={(event) => update('action', event.target.value)}><option value="create_ticket">Create Ticket</option><option value="log_only">Log Only</option><option value="none">No Action</option></select></FieldLabel>
+            <FieldLabel theme={theme}>Panel<select style={inputStyle(theme)} value={form.panelId} onChange={(event) => update('panelId', event.target.value)}><option value="">No panel assigned</option>{panels.map((panel) => <option key={panel.panelId} value={panel.panelId}>{panel.title || panel.panelId}</option>)}</select></FieldLabel>
+          </div>
+        </div>
+
+        <div style={styles.block}>
+          <h3 style={styles.heading}>Ticket Integration</h3>
+          <div style={styles.grid}>
+            <FieldLabel theme={theme}>Ticket Type<input style={inputStyle(theme)} value={form.ticketType} onChange={(event) => update('ticketType', event.target.value)} /></FieldLabel>
+            <FieldLabel theme={theme}>Ticket Category<select style={inputStyle(theme)} value={form.outputCategoryId} onChange={(event) => update('outputCategoryId', event.target.value)}><option value="">No category selected</option>{channels.filter((channel) => channel.type === 4 || channel.type === 'category' || channel.type === 'GUILD_CATEGORY').map((channel) => <option key={channel.id} value={channel.id}>{channel.name || channel.id}</option>)}</select></FieldLabel>
+          </div>
+          <div style={{ display: 'grid', gap: 10 }}>
+            <div style={{ color: theme.mutedText, fontSize: 12, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Staff Roles</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {roles.length === 0 ? <span style={{ color: theme.mutedText }}>No roles loaded.</span> : roles.map((role) => (
+                <button key={role.id} type="button" style={buttonStyle(theme, safeArray(form.staffRoleIds).includes(role.id) ? 'success' : 'soft')} onClick={() => toggleRole(role.id)}>{role.name || role.id}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div style={styles.block}>
+          <h3 style={styles.heading}>Permissions, Cooldowns, Logs & Analytics</h3>
+          <Notice theme={theme} tone="info">
+            Forms Builder V1 is aligned to the current modules.forms schema. Role gates, cooldowns and advanced validation can be added in the next backend schema expansion.
+          </Notice>
+        </div>
       </div>
 
-      <div style={styles.block}>
-        <h3 style={styles.heading}>Permissions, Cooldowns, Logs & Analytics</h3>
-        <Notice theme={theme} tone="info">
-          The current backend stores core form details, questions, ticket output, staff roles and log channel. Allowed roles, blocked roles and cooldown UI are reserved for the next backend schema expansion so this page stays aligned with modules.forms.
-        </Notice>
-      </div>
+      <aside style={{ display: 'grid', gap: 16, minWidth: 0, position: 'sticky', top: 12 }}>
+        <div style={styles.block}>
+          <h3 style={styles.heading}>Live Preview</h3>
+          <FormPreview theme={theme} form={form} />
+        </div>
+      </aside>
     </div>
   );
 }
@@ -338,6 +506,10 @@ export default function Forms({ selectedGuild, selectedGuildData, theme }) {
     }));
   }, []);
 
+  const startTemplate = useCallback((template) => {
+    setEditingForm(cloneTemplate(template));
+  }, []);
+
   const startEdit = useCallback((form) => {
     setEditingForm(normalizeFormForEditor(form));
   }, []);
@@ -357,7 +529,11 @@ export default function Forms({ selectedGuild, selectedGuildData, theme }) {
         outputCategoryId: editingForm.outputCategoryId || null,
         ticketType: editingForm.ticketType || editingForm.formId || editingForm.name,
         staffRoleIds: safeArray(editingForm.staffRoleIds),
-        fields: safeArray(editingForm.fields),
+        fields: safeArray(editingForm.fields).slice(0, MAX_FIELDS).map((field, index) => ({
+          ...field,
+          id: makeSafeId(field.id || `field-${index + 1}`, `field-${index + 1}`),
+          label: field.label || `Question ${index + 1}`,
+        })),
       };
 
       if (payload.formId) {
@@ -376,6 +552,33 @@ export default function Forms({ selectedGuild, selectedGuildData, theme }) {
       setSaving(false);
     }
   }, [editingForm, loadForms, selectedGuild]);
+
+  const duplicateForm = useCallback(async (form) => {
+    if (!selectedGuild || !form) return;
+
+    try {
+      setSaving(true);
+      setError('');
+      setNotice('');
+
+      await api.createForm(selectedGuild, {
+        ...form,
+        formId: '',
+        id: '',
+        name: `${form.name || 'Form'} Copy`,
+        ticketType: `${form.ticketType || form.formId || 'form'}-copy`,
+        panelId: form.panelId || null,
+      });
+
+      setNotice('✅ Form duplicated.');
+      await loadForms();
+    } catch (err) {
+      console.error(err);
+      setError(err.message || 'Could not duplicate form.');
+    } finally {
+      setSaving(false);
+    }
+  }, [loadForms, selectedGuild]);
 
   const toggleForm = useCallback(async (form) => {
     if (!selectedGuild || !form?.formId) return;
@@ -409,6 +612,22 @@ export default function Forms({ selectedGuild, selectedGuildData, theme }) {
         <SummaryStat theme={theme} label="Submissions" value={stats.submissionCount || stats.analytics?.submitted || 0} description="All-time submissions" />
         <SummaryStat theme={theme} label="Tickets Created" value={stats.analytics?.ticketsCreated || 0} description="Form to ticket workflow" />
       </StatGrid>
+
+      <SectionCard
+        theme={theme}
+        title="Form Templates"
+        subtitle="Create common forms quickly, then customise questions, ticket output and staff roles."
+      >
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(220px, 100%), 1fr))', gap: 12 }}>
+          {FORM_TEMPLATES.map((template) => (
+            <div key={template.key} style={{ display: 'grid', gap: 10, padding: 15, border: `1px solid ${theme.cardBorder}`, borderRadius: 16, background: theme.softBg }}>
+              <strong style={{ color: theme.cardText }}>{template.name}</strong>
+              <span style={{ color: theme.mutedText, lineHeight: 1.45 }}>{template.description}</span>
+              <button type="button" style={buttonStyle(theme, 'soft')} onClick={() => startTemplate(template)}>Use Template</button>
+            </div>
+          ))}
+        </div>
+      </SectionCard>
 
       {editingForm ? (
         <SectionCard
@@ -448,6 +667,7 @@ export default function Forms({ selectedGuild, selectedGuildData, theme }) {
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                   <button type="button" style={buttonStyle(theme, form.enabled !== false ? 'success' : 'soft')} onClick={() => toggleForm(form)}>{form.enabled !== false ? 'Enabled' : 'Disabled'}</button>
                   <button type="button" style={buttonStyle(theme, 'soft')} onClick={() => startEdit(form)}>Edit</button>
+                  <button type="button" style={buttonStyle(theme, 'soft')} onClick={() => duplicateForm(form)} disabled={saving}>Duplicate</button>
                 </div>
               </div>
             ))}
@@ -457,4 +677,3 @@ export default function Forms({ selectedGuild, selectedGuildData, theme }) {
     </PageShell>
   );
 }
-
