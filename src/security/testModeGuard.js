@@ -1,5 +1,13 @@
 const DEVELOPMENT_TEST_GUILD_ID = process.env.TEST_GUILD_ID || '1515201360386068642';
-const RUNTIME_SAFE_ACTIONS = new Set(['timeout', 'kick', 'ban', 'quarantine', 'role-set']);
+const OWNER_PROTECTED_ACTIONS = new Set([
+  'timeout',
+  'kick',
+  'ban',
+  'quarantine',
+  'role-set',
+  'role-remove',
+  'remove-roles',
+]);
 
 function text(value) {
   return String(value || '').trim();
@@ -48,19 +56,37 @@ function isOwnerSubject({ guild = null, member = null, user = null, userId = '' 
   return configuredOwnerIds().has(id);
 }
 
-function shouldUseDryRunForOwner({ guild = null, member = null, user = null, userId = '', action = '' } = {}) {
+function isDevOwnerOverride({ guild = null, guildId = '', member = null, user = null, userId = '' } = {}) {
   return (
     devRuntimeActive() &&
-    inDevelopmentTestGuild(guild) &&
-    RUNTIME_SAFE_ACTIONS.has(text(action).toLowerCase()) &&
+    inDevelopmentTestGuild(guild || guildId) &&
     isOwnerSubject({ guild, member, user, userId })
   );
 }
 
+function isProtectedOwnerAction(action = '') {
+  return OWNER_PROTECTED_ACTIONS.has(text(action).toLowerCase());
+}
+
+function shouldBlockOwnerDestructiveAction({ guild = null, guildId = '', member = null, user = null, userId = '', action = '' } = {}) {
+  return (
+    isDevOwnerOverride({ guild, guildId, member, user, userId }) &&
+    isProtectedOwnerAction(action)
+  );
+}
+
+function shouldUseDryRunForOwner(input = {}) {
+  return shouldBlockOwnerDestructiveAction(input);
+}
+
 module.exports = {
   DEVELOPMENT_TEST_GUILD_ID,
+  OWNER_PROTECTED_ACTIONS,
   devRuntimeActive,
   inDevelopmentTestGuild,
   isOwnerSubject,
+  isDevOwnerOverride,
+  isProtectedOwnerAction,
+  shouldBlockOwnerDestructiveAction,
   shouldUseDryRunForOwner,
 };
