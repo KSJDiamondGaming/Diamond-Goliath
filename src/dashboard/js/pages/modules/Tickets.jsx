@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
+import TicketPanelManagement from './TicketPanelManagement.jsx';
 import { api } from '../../services/apiClient.js';
 
 function getGuildId(selectedGuild, selectedGuildData) {
@@ -155,15 +156,6 @@ function TicketDetail({ theme, ticket, acting, onAction }) {
   );
 }
 
-function MiniMetric({ theme, title, value }) {
-  return (
-    <div style={{ border: `1px solid ${theme.cardBorder}`, borderRadius: 14, padding: 12, background: 'rgba(15,23,42,0.22)' }}>
-      <div style={{ color: theme.mutedText, fontSize: 12, fontWeight: 900 }}>{title}</div>
-      <div style={{ marginTop: 6, fontSize: 22, fontWeight: 950 }}>{value}</div>
-    </div>
-  );
-}
-
 function RecentActivity({ theme, tickets = [] }) {
   const recent = [...tickets]
     .sort((a, b) => Date.parse(b.updatedAt || b.createdAt || 0) - Date.parse(a.updatedAt || a.createdAt || 0))
@@ -202,6 +194,8 @@ export default function Tickets({ theme, selectedGuild, selectedGuildData, user 
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
+  const panels = Array.isArray(overview.panels) ? overview.panels : [];
+
   const cardStyle = useMemo(() => ({
     border: `1px solid ${theme.cardBorder}`,
     background: theme.cardBg,
@@ -239,7 +233,10 @@ export default function Tickets({ theme, selectedGuild, selectedGuildData, user 
     load();
   }, [guildId]);
 
-  const selectedTicket = useMemo(() => tickets.find((ticket) => ticketId(ticket) === selectedTicketId) || null, [tickets, selectedTicketId]);
+  const selectedTicket = useMemo(
+    () => tickets.find((ticket) => ticketId(ticket) === selectedTicketId) || null,
+    [tickets, selectedTicketId],
+  );
 
   const filteredTickets = useMemo(() => {
     const lowerQuery = query.trim().toLowerCase();
@@ -248,19 +245,27 @@ export default function Tickets({ theme, selectedGuild, selectedGuildData, user 
       const status = String(ticket.status || '').toLowerCase();
       if (filter === 'active' && !['open', 'claimed'].includes(status)) return false;
       if (!['all', 'active'].includes(filter) && status !== filter) return false;
-
       if (!lowerQuery) return true;
 
-      return [ticketId(ticket), ticketTitle(ticket), getCreator(ticket), getAssigned(ticket), ticket.type, ticket.priority, ticket.description]
-        .some((value) => String(value || '').toLowerCase().includes(lowerQuery));
+      return [
+        ticketId(ticket),
+        ticketTitle(ticket),
+        getCreator(ticket),
+        getAssigned(ticket),
+        ticket.type,
+        ticket.priority,
+        ticket.description,
+      ].some((value) => String(value || '').toLowerCase().includes(lowerQuery));
     });
 
     output = [...output].sort((a, b) => {
       if (sortMode === 'oldest') return Date.parse(a.createdAt || 0) - Date.parse(b.createdAt || 0);
+
       if (sortMode === 'priority') {
         const score = { urgent: 4, high: 3, normal: 2, low: 1 };
         return (score[String(b.priority || 'normal').toLowerCase()] || 0) - (score[String(a.priority || 'normal').toLowerCase()] || 0);
       }
+
       return Date.parse(b.createdAt || b.updatedAt || 0) - Date.parse(a.createdAt || a.updatedAt || 0);
     });
 
@@ -287,7 +292,9 @@ export default function Tickets({ theme, selectedGuild, selectedGuildData, user 
       });
 
       if (result.ticket) {
-        setTickets((current) => current.map((item) => (ticketId(item) === id ? result.ticket : item)));
+        setTickets((current) => current.map((item) => (
+          ticketId(item) === id ? result.ticket : item
+        )));
         setSelectedTicketId(ticketId(result.ticket));
       }
 
@@ -300,7 +307,9 @@ export default function Tickets({ theme, selectedGuild, selectedGuildData, user 
     }
   }
 
-  if (!guildId) return <div style={{ ...cardStyle, padding: 24 }}>Select a server from the navbar to manage tickets.</div>;
+  if (!guildId) {
+    return <div style={{ ...cardStyle, padding: 24 }}>Select a server from the navbar to manage tickets.</div>;
+  }
 
   return (
     <div style={{ display: 'grid', gap: 18 }}>
@@ -334,15 +343,11 @@ export default function Tickets({ theme, selectedGuild, selectedGuildData, user 
         <RecentActivity theme={theme} tickets={tickets} />
       </section>
 
-      <section style={{ ...cardStyle, padding: 20 }}>
-        <h3 style={{ margin: '0 0 12px' }}>Panel Deployment Summary</h3>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 150px), 1fr))', gap: 10 }}>
-          <MiniMetric theme={theme} title="Panels" value={overview.panelCount ?? 0} />
-          <MiniMetric theme={theme} title="Deployed" value={overview.deployedPanelCount ?? 0} />
-          <MiniMetric theme={theme} title="Archived" value={overview.archivedCount ?? 0} />
-          <MiniMetric theme={theme} title="Closed Today" value={overview.closedTodayCount ?? 0} />
-        </div>
-      </section>
+      <TicketPanelManagement
+        theme={theme}
+        panels={panels}
+        overview={overview}
+      />
 
       <section style={{ ...cardStyle, padding: 18, display: 'grid', gap: 14 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
