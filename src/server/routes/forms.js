@@ -5,6 +5,7 @@
 const express = require('express');
 
 const formStore = require('../../modules/forms/formStore');
+const formManager = require('../../modules/forms/formManager');
 const {
   isGoliathPermissionError,
   validateRoleSelection,
@@ -59,6 +60,16 @@ async function fetchGuild(req, guildId) {
   return client.guilds.cache.get(guildId) || client.guilds.fetch(guildId).catch(() => null);
 }
 
+async function fetchGuildChannel(req, guildId, channelId) {
+  const guild = await fetchGuild(req, guildId);
+  if (!guild) throw new Error('Guild is unavailable.');
+
+  const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
+  if (!channel) throw new Error('Panel channel is unavailable.');
+
+  return channel;
+}
+
 function cleanRoleIds(roleIds = []) {
   return [...new Set(
     (Array.isArray(roleIds) ? roleIds : [roleIds])
@@ -110,6 +121,12 @@ function filterSubmissions(submissions = [], query = {}) {
   }
 
   return result;
+}
+
+function getPanelForms(guildId, panel) {
+  return (panel.formIds || [])
+    .map((formId) => formStore.getForm(guildId, formId))
+    .filter(Boolean);
 }
 
 router.get('/:guildId/overview', (req, res) => {
@@ -277,6 +294,71 @@ router.put('/:guildId/panels/:panelId', (req, res) => {
     return success(res, {
       guildId,
       panel,
+    });
+  } catch (error) {
+    return failure(res, error, 400);
+  }
+});
+
+router.post('/:guildId/panels/:panelId/deploy', async (req, res) => {
+  try {
+    const guildId = getGuildId(req);
+    const panel = formStore.getPanel(guildId, req.params.panelId);
+
+    if (!panel) {
+      return failure(res, new Error('Panel not found.'), 404);
+    }
+
+    if (!panel.channelId) {
+      throw new Error('Panel needs a target channel before deployment.');
+    }
+
+    const channel = await fetchGuildChannel(req, guildId, panel.channelId);
+    const saved = await formManager.deployFormPanel(channel, panel, channel.guild);
+
+    return success(res, {
+      guildId,
+      panel: saved,
+      message: 'Panel deployed.',
+    });
+  } catch (error) {
+    return failure(res, error, 400);
+  }
+});
+
+router.post('/:guildId/panels/:panelId/refresh', async (req, res) => {
+  try {
+    const guildId = getGuildId(req);
+    const panel = formStore.getPanel(guildId, req.params.panelId);
+
+    if (!panel) {
+      return failure(res, new Error('Panel not found.'), 404);
+    }
+
+    if (!panel.channelId || !panel.messageId) {
+      throw new Error('Panel must be deployed before it can be refreshed.');
+    }
+
+    const channel = await fetchGuildChannel(req, guildId, panel.channelId);
+    const message = await channel.messages.fetch(panel.messageId).catch(() => null);
+
+    if (!message) {
+      throw new Error('Existing panel message was not found. Deploy a new panel instead.');
+    }
+
+    const forms = getPanelForms(guildId, panel);
+
+    await message.edit({
+      embeds: [formManager.buildFormPanelEmbed(panel, forms)],
+      components: formManager.buildFormPanelRows(panel, forms),
+    });
+
+    const saved = formStore.savePanel(guildId, panel, channel.guild);
+
+    return success(res, {
+      guildId,
+      panel: saved,
+      message: 'Panel refreshed.',
     });
   } catch (error) {
     return failure(res, error, 400);
