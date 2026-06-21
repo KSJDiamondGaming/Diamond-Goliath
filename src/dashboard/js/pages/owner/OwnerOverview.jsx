@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
 import { api } from '../../services/apiClient.js';
+import GlobalSecurityCenter from './GlobalSecurityCenter.jsx';
 
 const FILTERS = [
   { key: 'all', label: 'All Guilds', icon: '🌐' },
@@ -10,7 +11,7 @@ const FILTERS = [
 ];
 
 const OWNER_SECTIONS = [
-  ['🛡️', 'Global Security Center', 'Security events, incidents and server protection status.', 'Ready'],
+  ['🛡️', 'Global Security Center', 'Security activity, incidents and protection status.', 'Live'],
   ['📝', 'Global Forms', 'Applications, appeals, reports, support and custom forms.', 'Ready'],
   ['🎟️', 'Global Tickets', 'Open, closed, claimed tickets and transcripts.', 'Ready'],
   ['🌍', 'Translation Hub', 'Channels, languages, threads and provider status.', 'Next'],
@@ -137,8 +138,6 @@ export default function OwnerView({ theme, currentUser }) {
   const [ownerPayload, setOwnerPayload] = useState(null);
   const [activeFilter, setActiveFilter] = useState('all');
   const [platformRuntime, setPlatformRuntime] = useState(null);
-  const [securityOverview, setSecurityOverview] = useState(null);
-  const [securityLoading, setSecurityLoading] = useState(false);
 
   const isOwner = currentUser?.isOwner === true;
 
@@ -186,11 +185,11 @@ export default function OwnerView({ theme, currentUser }) {
       }
     }
 
-    loadRuntime();
+    if (isOwner) loadRuntime();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [isOwner]);
 
   const guilds = useMemo(() => normalizeGuilds(ownerPayload), [ownerPayload]);
 
@@ -198,29 +197,6 @@ export default function OwnerView({ theme, currentUser }) {
     if (activeFilter === 'all') return guilds;
     return guilds.filter((guild) => getEnvironmentMode(guild) === activeFilter);
   }, [activeFilter, guilds]);
-
-  useEffect(() => {
-    if (!filteredGuilds.length) return undefined;
-    let cancelled = false;
-
-    async function loadSecurityOverview() {
-      try {
-        setSecurityLoading(true);
-        const response = await api.getSecurityOverview(getGuildId(filteredGuilds[0]));
-        if (!cancelled) setSecurityOverview(response);
-      } catch (securityError) {
-        console.error(securityError);
-        if (!cancelled) setSecurityOverview(null);
-      } finally {
-        if (!cancelled) setSecurityLoading(false);
-      }
-    }
-
-    loadSecurityOverview();
-    return () => {
-      cancelled = true;
-    };
-  }, [filteredGuilds]);
 
   const stats = useMemo(() => {
     const totals = { all: guilds.length, DEV: 0, BETA: 0, PRODUCTION: 0, members: 0, connected: 0, missing: 0 };
@@ -289,48 +265,96 @@ export default function OwnerView({ theme, currentUser }) {
         <RuntimeCard theme={theme} label="PRODUCTION" status="ONLINE" description="Live public Goliath environment and runtime services." icon="🟢" accent="#22c55e" />
       </section>
 
-      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,360px),1fr))', gap: 14 }}>
-        <section style={{ ...cardStyle, padding: 18, display: 'grid', gap: 14 }}>
-          <strong>📊 Platform Runtime Monitor</strong>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', gap: 10 }}>
-            <SmallMetric theme={theme} label="Mode" value={platformRuntime?.mode || 'Loading...'} />
-            <SmallMetric theme={theme} label="Hostname" value={platformRuntime?.hostname || 'Loading...'} />
-            <SmallMetric theme={theme} label="Node" value={platformRuntime?.nodeVersion || 'Loading...'} />
-            <SmallMetric theme={theme} label="CPU" value={platformRuntime?.cpuCount || 0} />
-            <SmallMetric theme={theme} label="Memory" value={formatMemory(platformRuntime?.memory?.used)} />
-            <SmallMetric theme={theme} label="Uptime" value={formatUptime(platformRuntime?.uptime)} />
-          </div>
-        </section>
-        <section style={{ ...cardStyle, padding: 18, display: 'grid', gap: 14 }}>
-          <strong>🛡️ Global Security Center</strong>
-          {securityLoading ? <div style={{ color: theme.mutedText }}>Loading security data...</div> : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', gap: 10 }}>
-              <SmallMetric theme={theme} label="Incidents" value={securityOverview?.incidents?.total || 0} accent="#f87171" />
-              <SmallMetric theme={theme} label="Critical" value={securityOverview?.incidents?.critical || 0} accent="#fb7185" />
-              <SmallMetric theme={theme} label="Lockdown" value={securityOverview?.lockdown?.active ? 'YES' : 'NO'} accent="#facc15" />
-              <SmallMetric theme={theme} label="Protected" value={Object.keys(securityOverview?.quarantine?.users || {}).length} accent="#a78bfa" />
-            </div>
-          )}
-        </section>
+      <section style={card(theme, { padding: 18, display: 'grid', gap: 14 })}>
+        <strong>📊 Platform Runtime Monitor</strong>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', gap: 10 }}>
+          <SmallMetric theme={theme} label="Mode" value={platformRuntime?.mode || 'Loading...'} />
+          <SmallMetric theme={theme} label="Hostname" value={platformRuntime?.hostname || 'Loading...'} />
+          <SmallMetric theme={theme} label="Node" value={platformRuntime?.nodeVersion || 'Loading...'} />
+          <SmallMetric theme={theme} label="CPU" value={platformRuntime?.cpuCount || 0} />
+          <SmallMetric theme={theme} label="Memory" value={formatMemory(platformRuntime?.memory?.used)} />
+          <SmallMetric theme={theme} label="Uptime" value={formatUptime(platformRuntime?.uptime)} />
+        </div>
       </section>
 
-      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,240px),1fr))', gap: 12 }}>{OWNER_SECTIONS.map((section) => <SectionCard key={section[1]} theme={theme} section={section} />)}</section>
+      <GlobalSecurityCenter theme={theme} />
 
-      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', gap: 10 }}>{FILTERS.map((filter) => {
-        const count = filter.key === 'all' ? stats.all : stats[filter.key] || 0;
-        const active = activeFilter === filter.key;
-        return <button key={filter.key} type="button" onClick={() => setActiveFilter(filter.key)} style={{ ...cardStyle, cursor: 'pointer', padding: 14, textAlign: 'left', borderColor: active ? '#93c5fd' : theme.cardBorder, background: active ? 'rgba(59,130,246,0.16)' : theme.cardBg }}><div style={{ fontWeight: 950 }}>{filter.icon} {filter.label}</div><div style={{ marginTop: 6, color: theme.mutedText, fontSize: 13 }}>{count} guild{count === 1 ? '' : 's'}</div></button>;
-      })}</section>
+      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,240px),1fr))', gap: 12 }}>
+        {OWNER_SECTIONS.map((section) => <SectionCard key={section[1]} theme={theme} section={section} />)}
+      </section>
+
+      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', gap: 10 }}>
+        {FILTERS.map((filter) => {
+          const count = filter.key === 'all' ? stats.all : stats[filter.key] || 0;
+          const active = activeFilter === filter.key;
+          return (
+            <button key={filter.key} type="button" onClick={() => setActiveFilter(filter.key)} style={{ ...cardStyle, cursor: 'pointer', padding: 14, textAlign: 'left', borderColor: active ? '#93c5fd' : theme.cardBorder, background: active ? 'rgba(59,130,246,0.16)' : theme.cardBg }}>
+              <div style={{ fontWeight: 950 }}>{filter.icon} {filter.label}</div>
+              <div style={{ marginTop: 6, color: theme.mutedText, fontSize: 13 }}>{count} guild{count === 1 ? '' : 's'}</div>
+            </button>
+          );
+        })}
+      </section>
 
       <section style={{ ...cardStyle, overflow: 'hidden' }}>
-        <div style={{ padding: 16, borderBottom: `1px solid ${theme.cardBorder}`, display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}><div><strong>Global Server List</strong><div style={{ color: theme.mutedText, fontSize: 13, marginTop: 4 }}>Guild registry across DEV, BETA and PRODUCTION.</div></div><span style={{ color: theme.mutedText }}>{filteredGuilds.length} shown</span></div>
-        {loading ? <div style={{ padding: 22, color: theme.mutedText }}>Loading owner guilds...</div> : error ? <div style={{ padding: 22, color: '#fca5a5' }}>{error}</div> : filteredGuilds.length === 0 ? <div style={{ padding: 22, color: theme.mutedText }}>No guilds found for this filter.</div> : <div style={{ overflowX: 'auto' }}><table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 920 }}><thead><tr style={{ color: theme.mutedText, textAlign: 'left', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}><th style={{ padding: '12px 16px' }}>Environment</th><th style={{ padding: '12px 16px' }}>Guild</th><th style={{ padding: '12px 16px' }}>Guild ID</th><th style={{ padding: '12px 16px' }}>Members</th><th style={{ padding: '12px 16px' }}>Bot</th><th style={{ padding: '12px 16px' }}>Actions</th></tr></thead><tbody>{filteredGuilds.map((guild) => {
-          const guildName = getGuildName(guild);
-          const guildId = getGuildId(guild);
-          const guildIcon = getGuildIcon(guild);
-          const connected = isGuildConnected(guild);
-          return <tr key={`${getEnvironmentMode(guild) || 'ENV'}-${guildId}`} style={{ borderTop: `1px solid ${theme.cardBorder}` }}><td style={{ padding: '12px 16px', fontWeight: 850 }}>{getEnvironmentBadge(getEnvironmentMode(guild))}</td><td style={{ padding: '12px 16px' }}><div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>{guildIcon ? <img src={guildIcon} alt="" style={{ width: 32, height: 32, borderRadius: 10, objectFit: 'cover' }} /> : <div style={{ width: 32, height: 32, borderRadius: 10, display: 'grid', placeItems: 'center', background: 'rgba(148,163,184,0.14)', fontWeight: 950 }}>{guildName.charAt(0).toUpperCase()}</div>}<strong>{guildName}</strong></div></td><td style={{ padding: '12px 16px', color: theme.mutedText, fontFamily: 'monospace', fontSize: 12 }}>{guildId}</td><td style={{ padding: '12px 16px' }}>{formatNumber(guild.memberCount)}</td><td style={{ padding: '12px 16px' }}><span style={{ border: `1px solid ${connected ? '#22c55e55' : '#f8717155'}`, color: connected ? '#86efac' : '#fca5a5', background: connected ? 'rgba(34,197,94,0.10)' : 'rgba(248,113,113,0.10)', borderRadius: 999, padding: '5px 9px', fontSize: 12, fontWeight: 900 }}>{connected ? 'Connected' : 'Missing'}</span></td><td style={{ padding: '12px 16px' }}><div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}><button type="button" style={actionButtonStyle} onClick={() => handleOpenGuild(guild)}>Open</button><button type="button" style={actionButtonStyle} onClick={() => handleOpenGuild(guild)}>Manage</button><button type="button" style={actionButtonStyle} onClick={() => handleOpenGuild(guild, '/security')}>Security</button></div></td></tr>;
-        })}</tbody></table></div>}
+        <div style={{ padding: 16, borderBottom: `1px solid ${theme.cardBorder}`, display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <strong>Global Server List</strong>
+            <div style={{ color: theme.mutedText, fontSize: 13, marginTop: 4 }}>Guild registry across DEV, BETA and PRODUCTION.</div>
+          </div>
+          <span style={{ color: theme.mutedText }}>{filteredGuilds.length} shown</span>
+        </div>
+
+        {loading ? <div style={{ padding: 22, color: theme.mutedText }}>Loading owner guilds...</div> : null}
+        {error ? <div style={{ padding: 22, color: '#fca5a5' }}>{error}</div> : null}
+        {!loading && !error && filteredGuilds.length === 0 ? <div style={{ padding: 22, color: theme.mutedText }}>No guilds found for this filter.</div> : null}
+
+        {!loading && !error && filteredGuilds.length ? (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 920 }}>
+              <thead>
+                <tr style={{ color: theme.mutedText, textAlign: 'left', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  <th style={{ padding: '12px 16px' }}>Environment</th>
+                  <th style={{ padding: '12px 16px' }}>Guild</th>
+                  <th style={{ padding: '12px 16px' }}>Guild ID</th>
+                  <th style={{ padding: '12px 16px' }}>Members</th>
+                  <th style={{ padding: '12px 16px' }}>Bot</th>
+                  <th style={{ padding: '12px 16px' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredGuilds.map((guild) => {
+                  const guildName = getGuildName(guild);
+                  const guildId = getGuildId(guild);
+                  const guildIcon = getGuildIcon(guild);
+                  const connected = isGuildConnected(guild);
+
+                  return (
+                    <tr key={`${getEnvironmentMode(guild) || 'ENV'}-${guildId}`} style={{ borderTop: `1px solid ${theme.cardBorder}` }}>
+                      <td style={{ padding: '12px 16px', fontWeight: 850 }}>{getEnvironmentBadge(getEnvironmentMode(guild))}</td>
+                      <td style={{ padding: '12px 16px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                          {guildIcon ? <img src={guildIcon} alt="" style={{ width: 32, height: 32, borderRadius: 10, objectFit: 'cover' }} /> : <div style={{ width: 32, height: 32, borderRadius: 10, display: 'grid', placeItems: 'center', background: 'rgba(148,163,184,0.14)', fontWeight: 950 }}>{guildName.charAt(0).toUpperCase()}</div>}
+                          <strong>{guildName}</strong>
+                        </div>
+                      </td>
+                      <td style={{ padding: '12px 16px', color: theme.mutedText, fontFamily: 'monospace', fontSize: 12 }}>{guildId}</td>
+                      <td style={{ padding: '12px 16px' }}>{formatNumber(guild.memberCount)}</td>
+                      <td style={{ padding: '12px 16px' }}><span style={{ border: `1px solid ${connected ? '#22c55e55' : '#f8717155'}`, color: connected ? '#86efac' : '#fca5a5', background: connected ? 'rgba(34,197,94,0.10)' : 'rgba(248,113,113,0.10)', borderRadius: 999, padding: '5px 9px', fontSize: 12, fontWeight: 900 }}>{connected ? 'Connected' : 'Missing'}</span></td>
+                      <td style={{ padding: '12px 16px' }}>
+                        <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+                          <button type="button" style={actionButtonStyle} onClick={() => handleOpenGuild(guild)}>Open</button>
+                          <button type="button" style={actionButtonStyle} onClick={() => handleOpenGuild(guild)}>Manage</button>
+                          <button type="button" style={actionButtonStyle} onClick={() => handleOpenGuild(guild, '/security')}>Security</button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
       </section>
     </div>
   );
