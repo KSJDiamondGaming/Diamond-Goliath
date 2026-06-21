@@ -1,4 +1,4 @@
-const { shouldUseDryRunForOwner } = require('../../security/testModeGuard');
+const { shouldBlockOwnerDestructiveAction } = require('../../security/testModeGuard');
 
 const VALID_PUNISHMENTS = ['dm', 'delete', 'warn', 'timeout', 'kick', 'ban'];
 
@@ -12,8 +12,8 @@ function normalizePunishments(value, fallback = ['delete']) {
   return cleaned.length ? [...new Set(cleaned)] : [...fallback];
 }
 
-function shouldDryRun(message, punishment) {
-  return shouldUseDryRunForOwner({
+function shouldBlockDestructiveAction(message, punishment) {
+  return shouldBlockOwnerDestructiveAction({
     guild: message?.guild,
     member: message?.member,
     user: message?.author,
@@ -123,11 +123,11 @@ async function applyPunishment(
   let deleted = false;
 
   for (const punishment of punishments) {
-    if (shouldDryRun(message, punishment)) {
+    if (shouldBlockDestructiveAction(message, punishment)) {
       console.log(
-        `[TEST MODE] Automod ${punishment} prevented for owner ${message.author?.tag || message.author?.id || 'unknown'} in guild ${message.guild?.id || 'unknown'}`
+        `[TEST MODE] Automod ${punishment} blocked for protected owner ${message.author?.tag || message.author?.id || 'unknown'} in guild ${message.guild?.id || 'unknown'}`
       );
-      applied.push(`test-${punishment}`);
+      applied.push(`blocked-${punishment}`);
       continue;
     }
 
