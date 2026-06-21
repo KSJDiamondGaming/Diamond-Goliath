@@ -1,5 +1,5 @@
 const { sendAutoModDM } = require('../../functions/automod/automodDm');
-const { shouldUseDryRunForOwner } = require('../../security/testModeGuard');
+const { shouldBlockOwnerDestructiveAction } = require('../../security/testModeGuard');
 
 const VALID_PUNISHMENTS = ['dm', 'delete', 'warn', 'timeout', 'kick', 'ban'];
 
@@ -44,8 +44,8 @@ function formatActionList(punishments = []) {
     .join(', ');
 }
 
-function shouldDryRunPunishment(context, punishment) {
-  return shouldUseDryRunForOwner({
+function shouldBlockDestructiveAction(context, punishment) {
+  return shouldBlockOwnerDestructiveAction({
     guild: context.guild,
     member: context.member,
     user: context.user,
@@ -142,7 +142,7 @@ async function applyPunishmentEngine(input = {}, options = {}) {
 
   const applied = [];
   const failed = [];
-  const dryRunActions = [];
+  const blockedActions = [];
 
   let deleted = false;
   let dmSent = false;
@@ -177,13 +177,13 @@ async function applyPunishmentEngine(input = {}, options = {}) {
   for (const punishment of list) {
     if (punishment === 'dm') continue;
 
-    if (shouldDryRunPunishment(context, punishment)) {
+    if (shouldBlockDestructiveAction(context, punishment)) {
       console.log(
-        `[TEST MODE] ${punishment} prevented for owner ${context.user?.tag || context.member?.id || 'unknown'} in guild ${context.guild?.id || 'unknown'}`
+        `[TEST MODE] ${punishment} blocked for protected owner ${context.user?.tag || context.member?.id || 'unknown'} in guild ${context.guild?.id || 'unknown'}`
       );
 
       applied.push(punishment);
-      dryRunActions.push(punishment);
+      blockedActions.push(punishment);
       continue;
     }
 
@@ -250,16 +250,16 @@ async function applyPunishmentEngine(input = {}, options = {}) {
 
   const uniqueApplied = [...new Set(applied)];
   const uniqueFailed = [...new Set(failed)];
-  const uniqueDryRunActions = [...new Set(dryRunActions)];
+  const uniqueBlockedActions = [...new Set(blockedActions)];
 
   return {
     ok: uniqueFailed.length === 0,
     punishments: list,
     applied: uniqueApplied,
     failed: uniqueFailed,
-    dryRun: uniqueDryRunActions.length > 0,
-    testMode: uniqueDryRunActions.length > 0,
-    dryRunActions: uniqueDryRunActions,
+    blocked: uniqueBlockedActions.length > 0,
+    testMode: uniqueBlockedActions.length > 0,
+    blockedActions: uniqueBlockedActions,
     dmSent,
     deleted,
     actionText: uniqueApplied.length ? uniqueApplied.join(', ') : 'none',
