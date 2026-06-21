@@ -56,7 +56,7 @@ function isOwnerSubject({ guild = null, member = null, user = null, userId = '' 
   return configuredOwnerIds().has(id);
 }
 
-function isDevOwnerOverride({ guild = null, guildId = '', member = null, user = null, userId = '' } = {}) {
+function isDevOwnerHierarchyOverride({ guild = null, guildId = '', member = null, user = null, userId = '' } = {}) {
   return (
     devRuntimeActive() &&
     inDevelopmentTestGuild(guild || guildId) &&
@@ -70,13 +70,9 @@ function isProtectedOwnerAction(action = '') {
 
 function shouldBlockOwnerDestructiveAction({ guild = null, guildId = '', member = null, user = null, userId = '', action = '' } = {}) {
   return (
-    isDevOwnerOverride({ guild, guildId, member, user, userId }) &&
+    isDevOwnerHierarchyOverride({ guild, guildId, member, user, userId }) &&
     isProtectedOwnerAction(action)
   );
-}
-
-function shouldUseDryRunForOwner(input = {}) {
-  return shouldBlockOwnerDestructiveAction(input);
 }
 
 module.exports = {
@@ -85,8 +81,7 @@ module.exports = {
   devRuntimeActive,
   inDevelopmentTestGuild,
   isOwnerSubject,
-  isDevOwnerOverride,
+  isDevOwnerHierarchyOverride,
   isProtectedOwnerAction,
   shouldBlockOwnerDestructiveAction,
-  shouldUseDryRunForOwner,
 };
