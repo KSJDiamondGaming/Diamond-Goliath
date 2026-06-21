@@ -2300,12 +2300,16 @@ if (interaction.customId === 'embed:update-existing') {
 
   try {
     const channel = await interaction.guild.channels.fetch(
-      deployment.channelId
-    );
+  deployment.channelId
+);
 
-    const message = await channel.messages.fetch(
-      deployment.messageId
-    );
+if (!channel?.isTextBased()) {
+  throw new Error('Invalid deployment channel');
+}
+
+const message = await channel.messages.fetch(
+  deployment.messageId
+);
 
     await message.edit({
       content: state.allowUserPing
@@ -2325,17 +2329,25 @@ if (interaction.customId === 'embed:update-existing') {
     });
 
   } catch (error) {
-    console.error(
-      'Failed to update existing embed:',
-      error
-    );
+  console.error(
+    'Failed to update existing embed:',
+    error
+  );
 
-    await interaction.reply({
-      content:
-        '⚠️ Original embed not found. Use the embed again to repost it.',
-      flags: 64,
-    });
-  }
+  const isPermissionError =
+  error?.code === 50001 || // Missing Access
+  error?.code === 50013 || // Missing Permissions
+  error?.code === 10003;   // Unknown Channel
+
+  const message = isPermissionError
+  ? '❌ I no longer have permission to edit that embed.'
+  : '⚠️ Original embed not found. Use the embed again to repost it.';
+
+  await interaction.reply({
+    content: message,
+    flags: 64,
+  });
+}
 
   return true;
 }
@@ -2389,12 +2401,26 @@ if (interaction.customId === 'embed:use') {
     return true;
   }
 
-  const sentMessage = await channel.send({
+  let sentMessage;
+
+try {
+  sentMessage = await channel.send({
     content: state.allowUserPing ? `<@${interaction.user.id}>` : '',
     embeds: [buildPreviewEmbed(state, interaction)],
     components: buildButtonComponents(state),
     allowedMentions: getAllowedMentionsForState(state, interaction),
   });
+} catch (error) {
+  console.error('Embed send failed:', error);
+
+  await interaction.reply({
+    content:
+      '❌ I cannot send messages to that channel. Check Send Messages, Embed Links and View Channel permissions.',
+    flags: 64,
+  });
+
+  return true;
+}
 
   const presetName = getAutoPresetName(state);
 
