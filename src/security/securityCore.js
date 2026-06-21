@@ -1,4 +1,5 @@
 const { PermissionFlagsBits, MessageFlags } = require('discord.js');
+const { isDevOwnerHierarchyOverride } = require('./testModeGuard');
 
 const DEFAULT_COOLDOWN_MS = Number(process.env.SECURITY_COOLDOWN_MS || 2500);
 const MAX_COOLDOWN_MS = 60 * 60 * 1000;
@@ -29,6 +30,23 @@ function isGuildOwner(interaction) {
       interaction?.user &&
       interaction.guild.ownerId === interaction.user.id
   );
+}
+
+function isDevOwnerHierarchyInteraction(interaction) {
+  return isDevOwnerHierarchyOverride({
+    guild: interaction?.guild,
+    member: interaction?.member,
+    user: interaction?.user,
+  });
+}
+
+function isDevOwnerHierarchyTarget(guild, targetMember) {
+  return isDevOwnerHierarchyOverride({
+    guild,
+    member: targetMember,
+    user: targetMember?.user,
+    userId: targetMember?.id,
+  });
 }
 
 function hasPermission(interaction, level = 'mod') {
@@ -83,6 +101,9 @@ function canModerateTarget(interaction, targetMember) {
   const guild = interaction.guild;
   const moderator = interaction.member;
   const botMember = guild.members.me;
+  const hierarchyOverride =
+    isDevOwnerHierarchyInteraction(interaction) ||
+    isDevOwnerHierarchyTarget(guild, targetMember);
 
   if (isBotOwner(interaction.user.id)) {
     return {
@@ -91,14 +112,14 @@ function canModerateTarget(interaction, targetMember) {
     };
   }
 
-  if (targetMember.id === guild.ownerId) {
+  if (!hierarchyOverride && targetMember.id === guild.ownerId) {
     return {
       allowed: false,
       reason: 'You cannot moderate the server owner.',
     };
   }
 
-  if (targetMember.id === interaction.user.id) {
+  if (!hierarchyOverride && targetMember.id === interaction.user.id) {
     return {
       allowed: false,
       reason: 'You cannot moderate yourself.',
@@ -116,14 +137,14 @@ function canModerateTarget(interaction, targetMember) {
   const targetHighest = targetMember.roles?.highest?.position ?? 0;
   const botHighest = botMember?.roles?.highest?.position ?? 0;
 
-  if (moderator.id !== guild.ownerId && moderatorHighest <= targetHighest) {
+  if (!hierarchyOverride && moderator.id !== guild.ownerId && moderatorHighest <= targetHighest) {
     return {
       allowed: false,
       reason: 'That user has an equal or higher role than you.',
     };
   }
 
-  if (botMember && botHighest <= targetHighest) {
+  if (!hierarchyOverride && botMember && botHighest <= targetHighest) {
     return {
       allowed: false,
       reason: 'That user has an equal or higher role than the bot.',
@@ -133,6 +154,7 @@ function canModerateTarget(interaction, targetMember) {
   return {
     allowed: true,
     reason: null,
+    hierarchyOverride,
   };
 }
 
@@ -371,13 +393,20 @@ function hasDangerousPermissions(member) {
   );
 }
 
-function canManageTargetRole(guild, role) {
+function canManageTargetRole(guild, role, actor = null) {
   if (!guild?.members?.me || !role) {
     return {
       allowed: false,
       reason: 'Invalid guild or role.',
     };
   }
+
+  const hierarchyOverride = isDevOwnerHierarchyOverride({
+    guild,
+    member: actor,
+    user: actor?.user || actor,
+    userId: actor?.id,
+  });
 
   const botHighest = guild.members.me.roles.highest.position;
 
@@ -388,7 +417,7 @@ function canManageTargetRole(guild, role) {
     };
   }
 
-  if (role.position >= botHighest) {
+  if (!hierarchyOverride && role.position >= botHighest) {
     return {
       allowed: false,
       reason: 'Role is above bot hierarchy.',
@@ -398,6 +427,7 @@ function canManageTargetRole(guild, role) {
   return {
     allowed: true,
     reason: null,
+    hierarchyOverride,
   };
 }
 
@@ -406,22 +436,24 @@ function canManageTargetMember(guild, targetMember) {
     return { allowed: false, reason: 'Invalid guild or target member.' };
   }
 
-  if (isBotOwner(targetMember.id)) {
+  const hierarchyOverride = isDevOwnerHierarchyTarget(guild, targetMember);
+
+  if (!hierarchyOverride && isBotOwner(targetMember.id)) {
     return { allowed: false, reason: 'Cannot manage the Goliath owner.' };
   }
 
-  if (targetMember.id === guild.ownerId) {
+  if (!hierarchyOverride && targetMember.id === guild.ownerId) {
     return { allowed: false, reason: 'Cannot manage server owner.' };
   }
 
   const botHighest = guild.members.me.roles.highest.position;
   const targetHighest = targetMember.roles.highest.position;
 
-  if (targetHighest >= botHighest) {
+  if (!hierarchyOverride && targetHighest >= botHighest) {
     return { allowed: false, reason: 'Target is above bot hierarchy.' };
   }
 
-  return { allowed: true, reason: null };
+  return { allowed: true, reason: null, hierarchyOverride };
 }
 
 module.exports = {
@@ -431,6 +463,8 @@ module.exports = {
   getBotOwnerId,
   isBotOwner,
   isGuildOwner,
+  isDevOwnerHierarchyInteraction,
+  isDevOwnerHierarchyTarget,
   hasPermission,
   canModerateTarget,
   checkCooldown,
