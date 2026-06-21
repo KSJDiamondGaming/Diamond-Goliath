@@ -15,12 +15,17 @@ function getStatusLabel(status) {
   if (status === 'healthy') return '🟢 Healthy';
   if (status === 'warning') return '🟡 Warning';
   if (status === 'critical') return '🔴 Critical';
+  if (status === 'idle') return '⚪ Not Configured';
   return '⚪ Unknown';
 }
 
 function formatList(items = [], fallback = 'None') {
   if (!Array.isArray(items) || !items.length) return fallback;
   return items.slice(0, 6).join(', ');
+}
+
+function plural(value, label) {
+  return `${Number(value || 0)} ${label}${Number(value || 0) === 1 ? '' : 's'}`;
 }
 
 export default function PermissionHealth({ theme }) {
@@ -80,6 +85,11 @@ export default function PermissionHealth({ theme }) {
       detail: `${health?.roles?.checked || 0} roles checked`,
     },
     {
+      title: 'Module Issues',
+      value: String(health?.summary?.moduleIssueCount || 0),
+      detail: `${health?.summary?.moduleConfiguredCount || 0} configured targets mapped`,
+    },
+    {
       title: 'Total Issues',
       value: String(health?.summary?.issueCount || 0),
       detail: health?.checkedAt ? `Last checked ${new Date(health.checkedAt).toLocaleString()}` : 'Not checked yet',
@@ -88,6 +98,7 @@ export default function PermissionHealth({ theme }) {
 
   const channelIssues = health?.channels?.issues || [];
   const roleIssues = health?.roles?.issues || [];
+  const moduleSections = health?.modules?.sections || [];
 
   return (
     <div style={{ display: 'grid', gap: 18 }}>
@@ -131,6 +142,21 @@ export default function PermissionHealth({ theme }) {
       {error ? <section style={{ ...card, color: '#fca5a5' }}>{error}</section> : null}
 
       <section style={card}>
+        <h3 style={{ marginTop: 0 }}>Module Diagnostics</h3>
+        <p style={{ margin: '0 0 14px', color: theme.mutedText }}>
+          Mapped module configuration against the channel and role scans so owner view can show exactly which systems are affected.
+        </p>
+
+        {loading ? <div>Scanning module diagnostics...</div> : moduleSections.length ? (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 12 }}>
+            {moduleSections.map((section) => (
+              <ModuleCard key={section.key} section={section} theme={theme} />
+            ))}
+          </div>
+        ) : <div style={{ color: theme.mutedText }}>No module diagnostics returned yet.</div>}
+      </section>
+
+      <section style={card}>
         <h3 style={{ marginTop: 0 }}>Recommended Server Permissions</h3>
         <p style={{ margin: '0 0 10px', color: theme.mutedText }}>{health?.basePermissions?.message || 'Run a scan to check recommended server permissions.'}</p>
         <div style={{ color: health?.basePermissions?.missingPermissions?.length ? '#fca5a5' : theme.mutedText }}>
@@ -169,6 +195,43 @@ function HealthCard({ title, value, detail, theme }) {
       <div style={{ color: theme.mutedText, fontSize: 13, fontWeight: 850 }}>{title}</div>
       <div style={{ fontSize: 24, fontWeight: 950, marginTop: 8 }}>{value}</div>
       <div style={{ color: theme.mutedText, marginTop: 8, fontSize: 13 }}>{detail}</div>
+    </div>
+  );
+}
+
+function ModuleCard({ section, theme }) {
+  const hasIssues = Number(section.issueCount || 0) > 0;
+
+  return (
+    <div style={{ border: '1px solid ' + theme.cardBorder, borderRadius: 16, padding: 14, background: hasIssues ? 'rgba(239,68,68,0.10)' : 'rgba(15,23,42,0.18)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+        <div>
+          <strong>{section.label}</strong>
+          <div style={{ color: theme.mutedText, marginTop: 5 }}>{getStatusLabel(section.status)}</div>
+        </div>
+        <span style={{ color: hasIssues ? '#fca5a5' : '#86efac', fontWeight: 900 }}>{plural(section.issueCount, 'issue')}</span>
+      </div>
+
+      <div style={{ color: theme.mutedText, marginTop: 10, fontSize: 13 }}>
+        {plural(section.configuredCount, 'configured target')} • {plural(section.channelIssueCount, 'channel issue')} • {plural(section.roleIssueCount, 'role issue')}
+      </div>
+
+      {section.notes?.length ? (
+        <div style={{ color: theme.mutedText, marginTop: 8, fontSize: 13 }}>{section.notes.slice(0, 2).join(' ')}</div>
+      ) : null}
+
+      {hasIssues ? (
+        <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
+          {(section.channelIssues || []).slice(0, 3).map((issue) => (
+            <IssueRow key={`channel-${issue.channelId}`} title={`#${issue.channelName || issue.channelId}`} detail={issue.result?.message} meta={formatList(issue.result?.missingPermissions)} theme={theme} />
+          ))}
+          {(section.roleIssues || []).slice(0, 3).map((issue) => (
+            <IssueRow key={`role-${issue.roleId}`} title={`@${issue.roleName || issue.roleId}`} detail={issue.message} meta={issue.fix || issue.reason} theme={theme} />
+          ))}
+        </div>
+      ) : (
+        <div style={{ color: theme.mutedText, marginTop: 10, fontSize: 13 }}>{section.recommendation}</div>
+      )}
     </div>
   );
 }
