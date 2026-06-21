@@ -37,6 +37,7 @@ const discordResourceRoutes = require('./src/server/routes/discordResources');
 const discordRoutes = require('./src/server/routes/discord');
 const statusRoutes = require('./src/server/routes/status');
 const ownerRoutes = require('./src/server/routes/owner');
+const ownerTranslationRoutes = require('./src/server/routes/ownerTranslation');
 
 const automodRoutes = require('./src/server/routes/config/automod');
 const generalSettingsRoutes = require('./src/server/routes/config/generalSettings');
@@ -217,7 +218,6 @@ const apiServer = http.createServer(app);
 
 app.locals.client = client;
 app.locals.discordClient = client;
-
 global.client = client;
 global.discordClient = client;
 
@@ -262,6 +262,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/discord', discordResourceRoutes);
 app.use('/api/discord', discordRoutes);
 app.use('/api/status', statusRoutes);
+app.use('/api/owner/translation', ownerTranslationRoutes);
 app.use('/api/owner', ownerRoutes);
 
 app.use('/api/config', generalSettingsRoutes);
@@ -418,46 +419,20 @@ mode: selectedMode,
 });
 
 if (startServerBackupScheduler) {
-startServerBackupScheduler(client, {
-intervalDays: 7,
-maxBackups: 3,
-});
+startServerBackupScheduler(client);
+}
+
+if (startSocialScheduler) {
+startSocialScheduler(client);
 }
 
 loadCommands();
 loadEvents();
-
 startDashboardApiServer();
 
-if (startSocialScheduler) {
-client.once('ready', () => {
-try {
-startSocialScheduler(client);
-console.log('✅ Social scheduler initialized');
-} catch (error) {
-console.error('❌ Social scheduler failed to start');
-console.error(error);
-}
-});
+getRequiredEnv('DISCORD_BOT_TOKEN');
+
+client.login(process.env.DISCORD_BOT_TOKEN);
 }
 
-const token = getRequiredEnv('DISCORD_BOT_TOKEN');
-
-await client.login(token);
-}
-
-main().catch((error) => {
-console.error('❌ Fatal startup error');
-console.error(error);
-process.exit(1);
-});
-
-process.on('SIGINT', () => {
-console.log('🛑 SIGINT received. Shutting down Goliath...');
-process.exit(0);
-});
-
-process.on('SIGTERM', () => {
-console.log('🛑 SIGTERM received. Shutting down Goliath...');
-process.exit(0);
-});
+main();
