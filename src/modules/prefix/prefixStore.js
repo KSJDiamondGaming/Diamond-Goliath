@@ -4,7 +4,7 @@
 
 const guildManager = require('../../guild/guildManager');
 
-const DEFAULT_PREFIX = '!';
+const DEFAULT_PREFIX = '/';
 const LEGACY_UNSET_PREFIX = '/';
 const MIN_PREFIX_LENGTH = 1;
 const MAX_PREFIX_LENGTH = 5;
