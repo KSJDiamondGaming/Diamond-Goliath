@@ -49,6 +49,10 @@ function formatDate(value) {
   return date.toLocaleString();
 }
 
+function formatPercent(value) {
+  return `${Number(value || 0).toFixed(1)}%`;
+}
+
 function getFormId(form = {}) {
   return form.formId || form.id || form.key || form.name || 'unknown';
 }
@@ -61,11 +65,29 @@ function getPanelName(panel = {}) {
   return panel.name || panel.title || panel.label || 'Unnamed Panel';
 }
 
+function getFormAction(form = {}) {
+  return form.action || form.submissionAction || form.settings?.action || 'Manual review';
+}
+
+function getFormPanelId(form = {}) {
+  return form.panelId || form.targetPanelId || form.ticketPanelId || form.settings?.panelId || '';
+}
+
+function getFormCategoryId(form = {}) {
+  return form.categoryId || form.outputCategoryId || form.ticketCategoryId || form.settings?.categoryId || form.settings?.outputCategoryId || '';
+}
+
+function getStaffRoleIds(form = {}) {
+  if (Array.isArray(form.staffRoleIds)) return form.staffRoleIds;
+  if (Array.isArray(form.settings?.staffRoleIds)) return form.settings.staffRoleIds;
+  return [];
+}
+
 function statusColor(status, theme) {
   const value = String(status || '').toLowerCase();
-  if (['enabled', 'active', 'approved', 'deployed'].includes(value)) return '#86efac';
-  if (['pending', 'review', 'draft'].includes(value)) return '#fcd34d';
-  if (['denied', 'disabled', 'closed'].includes(value)) return '#fca5a5';
+  if (['enabled', 'active', 'approved', 'deployed', 'healthy'].includes(value)) return '#86efac';
+  if (['pending', 'review', 'draft', 'warning'].includes(value)) return '#fcd34d';
+  if (['denied', 'disabled', 'closed', 'missing'].includes(value)) return '#fca5a5';
   return theme.mutedText;
 }
 
@@ -120,7 +142,7 @@ function FormsList({ forms, theme }) {
           {forms.slice(0, 8).map((form) => {
             const enabled = form.enabled !== false;
             const questionCount = Array.isArray(form.questions) ? form.questions.length : Number(form.questionCount || 0);
-            const staffRoleCount = Array.isArray(form.staffRoleIds) ? form.staffRoleIds.length : 0;
+            const staffRoleCount = getStaffRoleIds(form).length;
 
             return (
               <div key={getFormId(form)} style={{ border: '1px solid ' + theme.cardBorder, borderRadius: 15, padding: 13, background: 'rgba(15,23,42,0.22)', display: 'grid', gap: 9 }}>
@@ -135,7 +157,7 @@ function FormsList({ forms, theme }) {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,140px),1fr))', gap: 8, color: theme.mutedText, fontSize: 13 }}>
                   <div><strong style={{ color: theme.cardText }}>Questions:</strong> {questionCount}</div>
                   <div><strong style={{ color: theme.cardText }}>Staff Roles:</strong> {staffRoleCount}</div>
-                  <div><strong style={{ color: theme.cardText }}>Action:</strong> {form.action || form.submissionAction || 'Manual review'}</div>
+                  <div><strong style={{ color: theme.cardText }}>Action:</strong> {getFormAction(form)}</div>
                   <div><strong style={{ color: theme.cardText }}>Updated:</strong> {formatDate(form.updatedAt || form.createdAt)}</div>
                 </div>
               </div>
@@ -228,6 +250,92 @@ function SubmissionsList({ submissions, theme, filter, setFilter }) {
           ))}
         </div>
       ) : <div style={{ color: theme.mutedText }}>No submissions match this filter.</div>}
+    </section>
+  );
+}
+
+function WorkflowHealth({ forms, panels, submissions, theme, card }) {
+  const totalSubmissions = submissions.length;
+  const approved = submissions.filter((s) => String(s.status || '').toLowerCase() === 'approved').length;
+  const denied = submissions.filter((s) => String(s.status || '').toLowerCase() === 'denied').length;
+  const pending = submissions.filter((s) => String(s.status || 'pending').toLowerCase() === 'pending').length;
+  const closed = submissions.filter((s) => String(s.status || '').toLowerCase() === 'closed').length;
+  const ticketConversions = submissions.filter((s) => Boolean(s.ticketId)).length;
+
+  const approvalRate = totalSubmissions ? (approved / totalSubmissions) * 100 : 0;
+  const denialRate = totalSubmissions ? (denied / totalSubmissions) * 100 : 0;
+  const conversionRate = totalSubmissions ? (ticketConversions / totalSubmissions) * 100 : 0;
+
+  const formsMissingRoles = forms.filter((form) => getStaffRoleIds(form).length === 0).length;
+  const formsMissingActions = forms.filter((form) => !form.action && !form.submissionAction && !form.settings?.action).length;
+  const formsMissingCategory = forms.filter((form) => !getFormCategoryId(form)).length;
+  const undeployedPanels = panels.filter((panel) => !panel.channelId || !panel.messageId).length;
+
+  return (
+    <>
+      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 14 }}>
+        <StatCard title="Approval Rate" value={formatPercent(approvalRate)} hint={`${approved} approved`} theme={theme} accent="#86efac" />
+        <StatCard title="Denial Rate" value={formatPercent(denialRate)} hint={`${denied} denied`} theme={theme} accent="#fca5a5" />
+        <StatCard title="Ticket Conversion" value={formatPercent(conversionRate)} hint={`${ticketConversions} tickets created`} theme={theme} accent="#93c5fd" />
+        <StatCard title="Pending Review" value={pending} hint={`${closed} closed`} theme={theme} accent="#fcd34d" />
+      </section>
+
+      <section style={card}>
+        <h3 style={{ marginTop: 0 }}>Forms → Ticket Workflow Health</h3>
+        <p style={{ marginTop: 0, color: theme.mutedText }}>
+          Checks whether forms have actions, staff roles, category targets, and deployed panels ready for ticket workflows.
+        </p>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 12 }}>
+          <MiniMetric title="Missing Staff Roles" value={formsMissingRoles} theme={theme} />
+          <MiniMetric title="Missing Actions" value={formsMissingActions} theme={theme} />
+          <MiniMetric title="Missing Categories" value={formsMissingCategory} theme={theme} />
+          <MiniMetric title="Undeployed Panels" value={undeployedPanels} theme={theme} />
+        </div>
+      </section>
+    </>
+  );
+}
+
+function FormTicketMapping({ forms, panels, theme, card }) {
+  return (
+    <section style={{ ...card, display: 'grid', gap: 12 }}>
+      <div>
+        <div style={{ color: theme.mutedText, fontSize: 12, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Workflow Mapping</div>
+        <h3 style={{ margin: '6px 0 0' }}>Forms → Ticket Mapping</h3>
+      </div>
+
+      {forms.length ? (
+        <div style={{ display: 'grid', gap: 10 }}>
+          {forms.slice(0, 10).map((form) => {
+            const panelId = getFormPanelId(form);
+            const categoryId = getFormCategoryId(form);
+            const staffRoleCount = getStaffRoleIds(form).length;
+            const panel = panels.find((item) => item.panelId === panelId || item.id === panelId || item.formId === getFormId(form));
+            const panelDeployed = Boolean(panel?.channelId && panel?.messageId);
+            const healthy = staffRoleCount > 0 && Boolean(getFormAction(form)) && Boolean(categoryId || panelDeployed);
+
+            return (
+              <div key={getFormId(form)} style={{ border: '1px solid ' + theme.cardBorder, borderRadius: 15, padding: 13, background: 'rgba(15,23,42,0.22)', display: 'grid', gap: 9 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                  <div>
+                    <strong>{getFormName(form)}</strong>
+                    <div style={{ color: theme.mutedText, marginTop: 4, fontSize: 13 }}>{getFormAction(form)}</div>
+                  </div>
+                  <StatusPill theme={theme} status={healthy ? 'healthy' : 'warning'} />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,150px),1fr))', gap: 8, color: theme.mutedText, fontSize: 13 }}>
+                  <div><strong style={{ color: theme.cardText }}>Panel:</strong> {panel ? getPanelName(panel) : 'Not mapped'}</div>
+                  <div><strong style={{ color: theme.cardText }}>Panel Status:</strong> {panelDeployed ? 'Deployed' : 'Not deployed'}</div>
+                  <div><strong style={{ color: theme.cardText }}>Category:</strong> {categoryId || 'Missing'}</div>
+                  <div><strong style={{ color: theme.cardText }}>Staff Roles:</strong> {staffRoleCount}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : <div style={{ color: theme.mutedText }}>No forms available for workflow mapping yet.</div>}
     </section>
   );
 }
@@ -347,6 +455,10 @@ export default function FormsHub({ theme }) {
         <FormsList forms={forms} theme={theme} />
         <PanelsList panels={panels} theme={theme} />
       </section>
+
+      <WorkflowHealth forms={forms} panels={panels} submissions={submissions} theme={theme} card={card} />
+
+      <FormTicketMapping forms={forms} panels={panels} theme={theme} card={card} />
 
       <SubmissionsList submissions={submissions} theme={theme} filter={submissionFilter} setFilter={setSubmissionFilter} />
 
