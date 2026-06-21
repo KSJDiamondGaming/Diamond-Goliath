@@ -156,19 +156,45 @@ router.get("/:guildId/overview", async (req, res) => {
       success: true,
       guildId,
       overview: {
-        enabled: settings.enabled !== false,
-        ticketCount: tickets.length,
-        openCount,
-        claimedCount,
-        closedCount,
-        archivedCount,
-        activeCount: openCount + claimedCount,
-        closedTodayCount: tickets.filter((ticket) => isToday(ticket.closedAt)).length,
-        transcriptCount: tickets.filter((ticket) => ticket.transcript).length,
-        panelCount: panels.length,
-        deployedPanelCount: panels.filter((panel) => panel.deployed || (panel.channelId && panel.messageId)).length,
-        settings,
-      },
+  enabled: settings.enabled !== false,
+  ticketCount: tickets.length,
+  openCount,
+  claimedCount,
+  closedCount,
+  archivedCount,
+  activeCount: openCount + claimedCount,
+  closedTodayCount: tickets.filter((ticket) => isToday(ticket.closedAt)).length,
+  transcriptCount: tickets.filter((ticket) => ticket.transcript).length,
+
+  panelCount: panels.length,
+
+  deployedPanelCount: panels.filter(
+    (panel) => panel.deployed || (panel.channelId && panel.messageId)
+  ).length,
+
+  panels: panels.map((panel) => ({
+    id: panel.id || null,
+    name: panel.name || "Unnamed Panel",
+    type: panel.type || "support",
+
+    deployed: Boolean(
+      panel.deployed ||
+      (panel.channelId && panel.messageId)
+    ),
+
+    channelId: panel.channelId || null,
+    messageId: panel.messageId || null,
+
+    ticketLimit: panel.ticketLimit || 0,
+    cooldown: panel.cooldown || 0,
+
+    staffRoles: Array.isArray(panel.staffRoles)
+      ? panel.staffRoles
+      : [],
+  })),
+
+  settings,
+},
     });
   } catch (error) {
     console.error("[TicketsRoute] OVERVIEW:", error);
