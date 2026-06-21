@@ -19,10 +19,14 @@ const {
 const {
   getPanels,
   getTicketSettings,
+  saveTicketSettings,
 } = require("../../modules/tickets/ticketStore");
 
 const {
+  MANAGE_CHANNEL_PERMISSIONS,
+  guardCategoryAccess,
   isGoliathPermissionError,
+  validateRoleSelection,
 } = require("../../helpers/goliathPermissionGuard");
 
 const router = express.Router();
@@ -37,6 +41,77 @@ function isToday(dateValue) {
   if (Number.isNaN(date.getTime())) return false;
   const now = new Date();
   return date.getUTCFullYear() === now.getUTCFullYear() && date.getUTCMonth() === now.getUTCMonth() && date.getUTCDate() === now.getUTCDate();
+}
+
+function cleanDiscordId(value) {
+  const id = String(value || "").replace(/[<@#!&>]/g, "").trim();
+  return /^\d{15,25}$/.test(id) ? id : null;
+}
+
+function cleanDiscordIds(values = []) {
+  return [...new Set((Array.isArray(values) ? values : [values]).map(cleanDiscordId).filter(Boolean))];
+}
+
+async function fetchGuild(req, guildId) {
+  const client = req.app?.locals?.client || req.app?.locals?.discordClient || global.client || global.discordClient;
+  if (!client?.guilds?.fetch) return null;
+  return client.guilds.cache.get(guildId) || client.guilds.fetch(guildId).catch(() => null);
+}
+
+function getTicketRoleIds(settings = {}) {
+  const permissions = settings.permissions || {};
+
+  return cleanDiscordIds([
+    ...(settings.staffRoleIds || []),
+    ...(settings.managerRoleIds || []),
+    ...(settings.viewerRoleIds || []),
+    ...(permissions.staffRoles || []),
+    ...(permissions.managerRoles || []),
+    ...(permissions.viewerRoles || []),
+  ]);
+}
+
+function getTicketCategoryIds(settings = {}) {
+  const tickets = settings.tickets || {};
+
+  return cleanDiscordIds([
+    settings.categoryId,
+    settings.outputCategoryId,
+    settings.archiveCategoryId,
+    tickets.categoryId,
+    tickets.outputCategoryId,
+    tickets.archiveCategoryId,
+  ]);
+}
+
+async function guardTicketSettings(req, guildId, settings = {}) {
+  const roleIds = getTicketRoleIds(settings);
+  const categoryIds = getTicketCategoryIds(settings);
+
+  if (!roleIds.length && !categoryIds.length) return null;
+
+  const guild = await fetchGuild(req, guildId);
+  if (!guild) throw new Error("Guild is unavailable.");
+
+  if (roleIds.length) {
+    const roleResult = await validateRoleSelection(guild, roleIds, {
+      scope: "ticket_settings.roles",
+      requireManageable: false,
+    });
+
+    if (!roleResult.ok) throw roleResult.toError();
+  }
+
+  for (const categoryId of categoryIds) {
+    await guardCategoryAccess(guild, categoryId, MANAGE_CHANNEL_PERMISSIONS, {
+      scope: "ticket_settings.categories",
+      autoFix: true,
+      throwOnFail: true,
+      reason: "Goliath ticket settings permission validation",
+    });
+  }
+
+  return true;
 }
 
 function failure(res, error, fallbackMessage, fallbackStatus = 500) {
@@ -62,7 +137,7 @@ function failure(res, error, fallbackMessage, fallbackStatus = 500) {
 
   return res.status(fallbackStatus).json({
     success: false,
-    error: fallbackMessage,
+    error: error.message || fallbackMessage,
   });
 }
 
@@ -98,6 +173,32 @@ router.get("/:guildId/overview", async (req, res) => {
   } catch (error) {
     console.error("[TicketsRoute] OVERVIEW:", error);
     return failure(res, error, "Failed to fetch ticket overview.");
+  }
+});
+
+router.get("/:guildId/settings", async (req, res) => {
+  try {
+    const { guildId } = req.params;
+    const settings = getTicketSettings(guildId) || {};
+    return res.json({ success: true, guildId, settings });
+  } catch (error) {
+    console.error("[TicketsRoute] SETTINGS GET:", error);
+    return failure(res, error, "Failed to fetch ticket settings.");
+  }
+});
+
+router.patch("/:guildId/settings", async (req, res) => {
+  try {
+    const { guildId } = req.params;
+    const settings = req.body?.settings || req.body || {};
+
+    await guardTicketSettings(req, guildId, settings);
+
+    const savedSettings = saveTicketSettings(guildId, settings);
+    return res.json({ success: true, guildId, settings: savedSettings });
+  } catch (error) {
+    console.error("[TicketsRoute] SETTINGS PATCH:", error);
+    return failure(res, error, "Failed to update ticket settings.", 400);
   }
 });
 
