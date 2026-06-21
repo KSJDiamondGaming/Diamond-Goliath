@@ -237,16 +237,16 @@ function buildModuleDiagnostics(guildId, channelHealth, roleHealth) {
   const autoRoles = autoRoleStore.getAutoRolesSection(guildId);
   const verification = verificationStore.getVerificationSection(guildId);
   const forms = formStore.getFormsSection(guildId);
-  const tickets = ticketStore.getTicketSection(guildId);
+  const ticketSettings = ticketStore.getTicketSettings(guildId) || {};
+  const ticketPanels = ticketStore.getPanels(guildId)?.panels || [];
+  const ticketList = ticketStore.getAllTickets(guildId) || [];
   const translation = translationStore.getTranslationSection(guildId);
   const embedDeployments = Object.values(getAllEmbedDeployments(guildId) || {});
 
   const formList = Object.values(forms.forms || {});
   const formPanels = Object.values(forms.panels || {});
-  const ticketPanels = Array.isArray(tickets.panels) ? tickets.panels : [];
   const translationChannels = Object.values(translation.channels || translation.threadChannels || {});
 
-  const ticketSettings = tickets.settings || {};
   const ticketPermissions = ticketSettings.permissions || {};
   const ticketCategorySettings = ticketSettings.tickets || ticketSettings.discord || {};
 
@@ -336,7 +336,7 @@ function buildModuleDiagnostics(guildId, channelHealth, roleHealth) {
       ]),
       channelIssueMap,
       roleIssueMap,
-      notes: [`${tickets.tickets?.length || 0} tickets stored.`],
+      notes: [`${ticketList.length} tickets stored.`],
     }),
     buildModuleDiagnostic({
       key: 'translation',
