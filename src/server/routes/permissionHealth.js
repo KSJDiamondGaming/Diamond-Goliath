@@ -5,6 +5,15 @@
 const express = require('express');
 const { PermissionFlagsBits } = require('discord.js');
 
+const autoRoleStore = require('../../modules/autoRoles/autoRoleStore');
+const verificationStore = require('../../modules/verification/verificationStore');
+const formStore = require('../../modules/forms/formStore');
+const ticketStore = require('../../modules/tickets/ticketStore');
+const translationStore = require('../../modules/translation/translationStore');
+const {
+  getAllEmbedDeployments,
+} = require('../../functions/embed/embedDeploymentStore');
+
 const {
   DEFAULT_BOT_CHANNEL_PERMISSIONS,
   canManageRole,
@@ -32,6 +41,19 @@ function cleanDiscordId(value, label = 'Discord ID') {
   const id = String(value || '').replace(/\D/g, '');
   if (!id || id.length < 15) throw new Error(`Invalid ${label}.`);
   return id;
+}
+
+function cleanId(value) {
+  const id = String(value || '').replace(/[<@#!&>]/g, '').trim();
+  return /^\d{15,25}$/.test(id) ? id : null;
+}
+
+function uniqueIds(values = []) {
+  return [...new Set((Array.isArray(values) ? values : [values]).map(cleanId).filter(Boolean))];
+}
+
+function uniqueFromObjects(items = [], getter) {
+  return uniqueIds(items.flatMap((item) => getter(item) || []));
 }
 
 async function getGuild(req, guildId) {
@@ -64,6 +86,44 @@ function getOverallStatus(issueCount = 0, warningCount = 0) {
   if (issueCount > 0) return 'critical';
   if (warningCount > 0) return 'warning';
   return 'healthy';
+}
+
+function getSectionStatus(issueCount = 0, configuredCount = 0) {
+  if (issueCount > 0) return 'critical';
+  if (configuredCount > 0) return 'healthy';
+  return 'idle';
+}
+
+function buildModuleDiagnostic({ key, label, configuredCount, channelIds = [], roleIds = [], channelIssueMap, roleIssueMap, notes = [] }) {
+  const channelIssues = uniqueIds(channelIds)
+    .map((id) => channelIssueMap.get(id))
+    .filter(Boolean);
+
+  const roleIssues = uniqueIds(roleIds)
+    .map((id) => roleIssueMap.get(id))
+    .filter(Boolean);
+
+  const issueCount = channelIssues.length + roleIssues.length;
+
+  return {
+    key,
+    label,
+    status: getSectionStatus(issueCount, configuredCount),
+    configuredCount,
+    issueCount,
+    channelIssueCount: channelIssues.length,
+    roleIssueCount: roleIssues.length,
+    channelIds: uniqueIds(channelIds),
+    roleIds: uniqueIds(roleIds),
+    channelIssues,
+    roleIssues,
+    notes: notes.filter(Boolean),
+    recommendation: issueCount
+      ? 'Fix the affected channel permissions or move Goliath above the affected roles.'
+      : configuredCount
+        ? 'No configured permission issues found for this module.'
+        : 'No active configuration found yet.',
+  };
 }
 
 async function checkGuildBasePermissions(guild) {
@@ -166,6 +226,149 @@ async function checkRoles(guild, limit = 100) {
   };
 }
 
+function buildModuleDiagnostics(guildId, channelHealth, roleHealth) {
+  const channelIssueMap = new Map(
+    (channelHealth.issues || []).map((issue) => [issue.channelId, issue])
+  );
+  const roleIssueMap = new Map(
+    (roleHealth.issues || []).map((issue) => [issue.roleId, issue])
+  );
+
+  const autoRoles = autoRoleStore.getAutoRolesSection(guildId);
+  const verification = verificationStore.getVerificationSection(guildId);
+  const forms = formStore.getFormsSection(guildId);
+  const tickets = ticketStore.getTicketSection(guildId);
+  const translation = translationStore.getTranslationSection(guildId);
+  const embedDeployments = Object.values(getAllEmbedDeployments(guildId) || {});
+
+  const formList = Object.values(forms.forms || {});
+  const formPanels = Object.values(forms.panels || {});
+  const ticketPanels = Array.isArray(tickets.panels) ? tickets.panels : [];
+  const translationChannels = Object.values(translation.channels || translation.threadChannels || {});
+
+  const ticketSettings = tickets.settings || {};
+  const ticketPermissions = ticketSettings.permissions || {};
+  const ticketCategorySettings = ticketSettings.tickets || ticketSettings.discord || {};
+
+  const sections = [
+    buildModuleDiagnostic({
+      key: 'autoRoles',
+      label: 'Auto Roles',
+      configuredCount: (autoRoles.joinRoles || []).length + (autoRoles.botRoles || []).length,
+      roleIds: [...(autoRoles.joinRoles || []), ...(autoRoles.botRoles || [])],
+      channelIssueMap,
+      roleIssueMap,
+      notes: [autoRoles.enabled === false ? 'Auto Roles is disabled.' : 'Auto Roles is enabled.'],
+    }),
+    buildModuleDiagnostic({
+      key: 'verification',
+      label: 'Verification',
+      configuredCount: Object.keys(verification.panels || {}).length + uniqueIds([
+        verification.settings?.verifiedRoleId,
+        verification.settings?.unverifiedRoleId,
+        verification.settings?.logChannelId,
+      ]).length,
+      roleIds: [verification.settings?.verifiedRoleId, verification.settings?.unverifiedRoleId],
+      channelIds: [
+        verification.settings?.logChannelId,
+        ...Object.values(verification.panels || {}).map((panel) => panel.channelId),
+      ],
+      channelIssueMap,
+      roleIssueMap,
+      notes: [verification.enabled === false ? 'Verification is disabled.' : 'Verification is enabled.'],
+    }),
+    buildModuleDiagnostic({
+      key: 'forms',
+      label: 'Forms',
+      configuredCount: formList.length + formPanels.length,
+      roleIds: uniqueFromObjects(formList, (form) => [
+        ...(form.staffRoleIds || []),
+        ...(form.managerRoleIds || []),
+        ...(form.viewerRoleIds || []),
+      ]),
+      channelIds: [
+        ...formList.map((form) => form.outputCategoryId),
+        ...formPanels.flatMap((panel) => [panel.channelId, panel.outputCategoryId]),
+      ],
+      channelIssueMap,
+      roleIssueMap,
+      notes: [forms.enabled === false ? 'Forms is disabled.' : 'Forms is enabled.'],
+    }),
+    buildModuleDiagnostic({
+      key: 'tickets',
+      label: 'Tickets',
+      configuredCount: ticketPanels.length + uniqueIds([
+        ticketSettings.categoryId,
+        ticketSettings.outputCategoryId,
+        ticketSettings.archiveCategoryId,
+        ticketCategorySettings.categoryId,
+        ticketCategorySettings.outputCategoryId,
+        ticketCategorySettings.archiveCategoryId,
+      ]).length,
+      roleIds: uniqueIds([
+        ...(ticketSettings.staffRoleIds || []),
+        ...(ticketSettings.managerRoleIds || []),
+        ...(ticketSettings.viewerRoleIds || []),
+        ...(ticketPermissions.staffRoleIds || ticketPermissions.staffRoles || []),
+        ...(ticketPermissions.managerRoleIds || ticketPermissions.managerRoles || []),
+        ...(ticketPermissions.viewerRoleIds || ticketPermissions.viewerRoles || []),
+        ...ticketPanels.flatMap((panel) => [
+          ...(panel.staffRoleIds || []),
+          ...(panel.managerRoleIds || []),
+          ...(panel.viewerRoleIds || []),
+        ]),
+      ]),
+      channelIds: uniqueIds([
+        ticketSettings.categoryId,
+        ticketSettings.outputCategoryId,
+        ticketSettings.archiveCategoryId,
+        ticketCategorySettings.categoryId,
+        ticketCategorySettings.outputCategoryId,
+        ticketCategorySettings.archiveCategoryId,
+        ...ticketPanels.flatMap((panel) => [
+          panel.channelId,
+          panel.deployChannelId,
+          panel.outputCategoryId,
+          panel.archiveCategoryId,
+          panel.logsChannelId,
+          panel.transcriptsChannelId,
+        ]),
+      ]),
+      channelIssueMap,
+      roleIssueMap,
+      notes: [`${tickets.tickets?.length || 0} tickets stored.`],
+    }),
+    buildModuleDiagnostic({
+      key: 'translation',
+      label: 'Translation',
+      configuredCount: translationChannels.length,
+      channelIds: [
+        ...Object.keys(translation.channels || {}),
+        ...Object.keys(translation.threadChannels || {}),
+      ],
+      channelIssueMap,
+      roleIssueMap,
+      notes: [translation.enabled === false ? 'Translation is disabled.' : 'Translation is enabled.'],
+    }),
+    buildModuleDiagnostic({
+      key: 'embeds',
+      label: 'Embed Studio',
+      configuredCount: embedDeployments.length,
+      channelIds: embedDeployments.map((deployment) => deployment.channelId),
+      channelIssueMap,
+      roleIssueMap,
+      notes: [`${embedDeployments.length} embed deployment records found.`],
+    }),
+  ];
+
+  return {
+    sectionCount: sections.length,
+    issueCount: sections.reduce((total, section) => total + section.issueCount, 0),
+    configuredCount: sections.reduce((total, section) => total + section.configuredCount, 0),
+    sections,
+  };
+}
+
 router.get('/:guildId', async (req, res) => {
   try {
     const guildId = cleanDiscordId(req.params.guildId, 'guild ID');
@@ -176,6 +379,8 @@ router.get('/:guildId', async (req, res) => {
       checkChannels(guild, req.query.channelLimit),
       checkRoles(guild, req.query.roleLimit),
     ]);
+
+    const modules = buildModuleDiagnostics(guildId, channelHealth, roleHealth);
 
     const issueCount =
       (basePermissions.ok ? 0 : basePermissions.missingPermissions.length || 1) +
@@ -191,10 +396,13 @@ router.get('/:guildId', async (req, res) => {
         basePermissionIssueCount: basePermissions.ok ? 0 : basePermissions.missingPermissions.length || 1,
         channelIssueCount: channelHealth.issueCount,
         roleIssueCount: roleHealth.issueCount,
+        moduleIssueCount: modules.issueCount,
+        moduleConfiguredCount: modules.configuredCount,
       },
       basePermissions,
       channels: channelHealth,
       roles: roleHealth,
+      modules,
     });
   } catch (error) {
     return failure(res, error, 400);
