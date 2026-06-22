@@ -8,6 +8,7 @@ const {
 } = require('../../config/plans');
 const subscriptionManager = require('../../managers/subscriptionManager');
 const entitlementManager = require('../../managers/entitlementManager');
+const redemptionManager = require('../../billing/redemptionManager');
 
 const router = express.Router();
 
@@ -30,6 +31,26 @@ function getGuildId(req) {
     throw new Error('Invalid guild ID.');
   }
   return guildId;
+}
+
+function getOwnerIds() {
+  return String(process.env.OWNER_IDS || '')
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean);
+}
+
+function requireOwner(req, res, next) {
+  const userId = req.session?.user?.id;
+  if (!userId) {
+    return res.status(401).json({ success: false, error: 'Not authenticated.' });
+  }
+
+  if (!getOwnerIds().includes(String(userId))) {
+    return res.status(403).json({ success: false, error: 'Owner access required.' });
+  }
+
+  return next();
 }
 
 function publicPlan(plan) {
@@ -79,6 +100,58 @@ router.get('/entitlements/:guildId', (req, res) => {
       ...summary,
       plan: publicPlan(summary.plan),
     });
+  } catch (error) {
+    return failure(res, error, 400);
+  }
+});
+
+router.post('/redeem/:guildId', (req, res) => {
+  try {
+    const guildId = getGuildId(req);
+    const result = redemptionManager.redeemCode(
+      guildId,
+      req.body?.code,
+      req.session?.user?.id || 'dashboard',
+    );
+
+    return success(res, {
+      guildId,
+      code: result.code,
+      subscription: result.subscription,
+      entitlements: entitlementManager.getEntitlementSummary(guildId),
+    });
+  } catch (error) {
+    return failure(res, error, 400);
+  }
+});
+
+router.get('/codes', requireOwner, (req, res) => {
+  try {
+    return success(res, { codes: redemptionManager.listCodes() });
+  } catch (error) {
+    return failure(res, error, 500);
+  }
+});
+
+router.post('/codes/generate', requireOwner, (req, res) => {
+  try {
+    const codes = redemptionManager.generateCodes({
+      plan: req.body?.plan,
+      duration: req.body?.duration,
+      quantity: req.body?.quantity,
+      createdBy: req.session?.user?.id || 'owner',
+    });
+
+    return success(res, { codes });
+  } catch (error) {
+    return failure(res, error, 400);
+  }
+});
+
+router.post('/codes/:code/revoke', requireOwner, (req, res) => {
+  try {
+    const code = redemptionManager.revokeCode(req.params.code, req.session?.user?.id || 'owner');
+    return success(res, { code });
   } catch (error) {
     return failure(res, error, 400);
   }
