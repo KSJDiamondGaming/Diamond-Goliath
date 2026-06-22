@@ -10,69 +10,64 @@ const PLAN_COPY = {
     badge: 'Starter access',
     displayName: 'Basic',
     icon: '🆓',
+    includes: 'Core Goliath access.',
   },
   plus: {
-    headline: 'For growing communities that need higher limits and more flexibility.',
+    headline: 'Includes Basic, plus higher limits and growth tools.',
     idealFor: 'Gaming communities, creators and active Discord servers.',
     badge: 'Recommended',
     displayName: 'Plus',
     icon: '⭐',
+    includes: 'Includes Basic, plus:',
   },
   pro: {
-    headline: 'Unlock the complete Goliath platform with every premium system included.',
+    headline: 'Includes Plus, plus the complete premium platform.',
     idealFor: 'Large communities, businesses and professional Discord servers.',
     badge: 'Full platform',
     displayName: 'Pro',
     icon: '👑',
+    includes: 'Includes Plus, plus:',
   },
   lifetime: {
-    headline: 'Founder and reward tier with Pro access forever.',
+    headline: 'Includes Pro, with lifetime access controlled by KSJ Digital.',
     idealFor: 'Founders, beta testers, giveaways and owner-granted rewards.',
     badge: 'Limited availability',
     displayName: 'Lifetime',
     icon: '💎',
+    includes: 'Includes Pro, plus:',
   },
 };
 
 const PLAN_PRICING = {
-  free: {
-    price: '£0',
-    cadence: 'Free',
-    note: 'No payment required.',
-  },
-  plus: {
-    price: '£4.99',
-    cadence: 'per month',
-    note: 'Stripe and PayPal checkout coming soon.',
-  },
-  pro: {
-    price: '£9.99',
-    cadence: 'per month',
-    note: 'Stripe and PayPal checkout coming soon.',
-  },
-  lifetime: {
-    price: 'Not publicly sold',
-    cadence: 'KSJ Digital controlled',
-    note: 'Only appears when KSJ Digital makes Lifetime available.',
-  },
+  free: { price: '£0', cadence: 'Free', note: 'No payment required.' },
+  plus: { price: '£4.99', cadence: 'per month', note: 'Stripe and PayPal checkout coming soon.' },
+  pro: { price: '£9.99', cadence: 'per month', note: 'Stripe and PayPal checkout coming soon.' },
+  lifetime: { price: 'Not publicly sold', cadence: 'KSJ Digital controlled', note: 'Only appears when KSJ Digital makes Lifetime available.' },
 };
 
 const FEATURE_LABELS = {
-  'tickets.basic': { icon: '🎫', label: 'Ticket System', description: 'Create and manage support tickets for your community.' },
+  'tickets.basic': { icon: '🎫', label: 'Ticket System', description: 'Create and manage support tickets.' },
   'tickets.advanced': { icon: '🎟️', label: 'Advanced Tickets', description: 'Higher limits and more flexible ticket workflows.' },
-  'forms.basic': { icon: '📝', label: 'Forms System', description: 'Run applications, reports, appeals and custom forms.' },
-  'forms.advanced': { icon: '📋', label: 'Advanced Forms', description: 'Expanded form workflows for growing communities.' },
-  'embeds.basic': { icon: '✨', label: 'Embed Builder', description: 'Create clean, professional Discord embeds.' },
-  'embeds.presets': { icon: '💾', label: 'Embed Presets', description: 'Save more reusable embed designs and templates.' },
-  'moderation.basic': { icon: '🛡️', label: 'Moderation Tools', description: 'Core moderation utilities and safety controls.' },
+  'forms.basic': { icon: '📝', label: 'Forms System', description: 'Applications, appeals, reports and custom forms.' },
+  'forms.advanced': { icon: '📋', label: 'Advanced Forms', description: 'Expanded form limits and workflows.' },
+  'embeds.basic': { icon: '✨', label: 'Embed Builder', description: 'Create professional Discord embeds.' },
+  'embeds.presets': { icon: '💾', label: 'Embed Presets', description: 'Save reusable embed designs and templates.' },
+  'moderation.basic': { icon: '🛡️', label: 'Moderation Tools', description: 'Core moderation utilities.' },
   'dashboard.basic': { icon: '📊', label: 'Dashboard Access', description: 'Manage Goliath from the web dashboard.' },
-  'security.basic': { icon: '🔐', label: 'Basic Security', description: 'Essential server protection features.' },
-  'security.advanced': { icon: '🛡️', label: 'Advanced Security Center', description: 'Professional security and incident control systems.' },
-  'backup.restore': { icon: '♻️', label: 'Backup & Restore Center', description: 'Restore server configuration from protected backups.' },
-  'translation.hub': { icon: '🌍', label: 'Translation Hub', description: 'Multilingual community tools, providers and translation workflows.' },
-  'analytics.basic': { icon: '📈', label: 'Basic Analytics', description: 'Simple insights for community activity and usage.' },
-  'analytics.advanced': { icon: '📊', label: 'Advanced Analytics', description: 'Deeper reporting across premium Goliath systems.' },
-  'modules.premium': { icon: '👑', label: 'Future Premium Modules', description: 'Access to future Pro-level Goliath systems.' },
+  'security.basic': { icon: '🔐', label: 'Basic Security', description: 'Essential server protection.' },
+  'security.advanced': { icon: '🛡️', label: 'Advanced Security Center', description: 'Professional security and incident control.' },
+  'backup.restore': { icon: '♻️', label: 'Backup & Restore Center', description: 'Restore protected server configuration backups.' },
+  'translation.hub': { icon: '🌍', label: 'Translation Hub', description: 'Multilingual community tools and workflows.' },
+  'analytics.basic': { icon: '📈', label: 'Basic Analytics', description: 'Simple community insights.' },
+  'analytics.advanced': { icon: '📊', label: 'Advanced Analytics', description: 'Deeper premium reporting.' },
+  'modules.premium': { icon: '👑', label: 'Future Premium Modules', description: 'Access future Pro-level systems.' },
+};
+
+const PLAN_FEATURE_GROUPS = {
+  free: ['tickets.basic', 'forms.basic', 'embeds.basic', 'moderation.basic', 'dashboard.basic', 'security.basic'],
+  plus: ['tickets.advanced', 'forms.advanced', 'embeds.presets', 'analytics.basic'],
+  pro: ['translation.hub', 'security.advanced', 'backup.restore', 'analytics.advanced', 'modules.premium'],
+  lifetime: ['modules.premium'],
 };
 
 const LIMIT_LABELS = {
@@ -158,12 +153,19 @@ function FeatureListItem({ theme, feature }) {
   );
 }
 
+function getDisplayFeatures(plan) {
+  const grouped = PLAN_FEATURE_GROUPS[plan.id];
+  if (grouped?.length) return grouped;
+  return asArray(plan.features);
+}
+
 function PlanCard({ theme, plan, current, onUpgrade }) {
   const copy = planCopy(plan.id);
-  const pricing = PLAN_PRICING[plan.id] || PLAN_PRICING.free;
+  const pricing = { ...(PLAN_PRICING[plan.id] || PLAN_PRICING.free), ...(plan.pricing || {}) };
   const limits = plan.limits || {};
   const hidden = plan.public === false;
   const featured = plan.id === 'plus';
+  const displayFeatures = getDisplayFeatures(plan);
 
   const border = current ? '#86efac' : featured ? '#facc15' : hidden ? 'rgba(250,204,21,0.42)' : theme.cardBorder;
   const background = current
@@ -193,12 +195,11 @@ function PlanCard({ theme, plan, current, onUpgrade }) {
         <span style={{ color: theme.mutedText, fontSize: 12, lineHeight: 1.45 }}>{pricing.note}</span>
       </div>
 
-      <div style={{ color: theme.mutedText, fontSize: 13, lineHeight: 1.55 }}>
-        {copy.headline}
-      </div>
+      <div style={{ color: theme.mutedText, fontSize: 13, lineHeight: 1.55 }}>{copy.headline}</div>
 
-      <div style={{ display: 'grid', gap: 8 }}>
-        {asArray(plan.features).map((feature) => <FeatureListItem key={feature} theme={theme} feature={feature} />)}
+      <div style={{ display: 'grid', gap: 9 }}>
+        <strong style={{ color: theme.cardText, fontSize: 13 }}>{copy.includes}</strong>
+        {displayFeatures.map((feature) => <FeatureListItem key={feature} theme={theme} feature={feature} />)}
       </div>
 
       <div style={{ borderTop: `1px solid ${theme.cardBorder}`, paddingTop: 12, display: 'grid', gap: 8 }}>
