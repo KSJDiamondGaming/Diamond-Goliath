@@ -8,6 +8,7 @@ import Warnings from '../pages/moderation/Warnings';
 import Messages from '../pages/core/Messages';
 import Forms from '../pages/modules/Forms';
 import Modules from '../pages/modules/Modules';
+import EmbedStudio from '../pages/modules/EmbedStudio';
 import Verification from '../pages/modules/Verification';
 import AutoRoles from '../pages/modules/AutoRoles';
 import Tickets from '../pages/modules/Tickets';
@@ -18,6 +19,9 @@ import Sticky from '../pages/modules/Sticky';
 import TempVoice from '../pages/modules/TempVoice';
 import Timeline from '../pages/modules/Timeline';
 import Translation from '../pages/modules/Translation';
+import ReactionRoles from '../pages/modules/ReactionRoles';
+import WelcomeLeave from '../pages/modules/WelcomeLeave';
+import Leveling from '../pages/modules/Leveling';
 import Restore from '../pages/security/Restore';
 import Security from '../pages/security/Security';
 import Logs from '../pages/core/Logs';
@@ -93,8 +97,12 @@ export const ROUTES = [
   { key: 'ownerTickets', label: 'Tickets Hub', icon: 'modules', path: '/owner/tickets', component: OwnerTicketsHub, ownerOnly: true },
   { key: 'ownerTranslation', label: 'Translation Hub', icon: 'modules', path: '/owner/translation', component: OwnerTranslationHub, ownerOnly: true },
   { key: 'modules', label: 'Modules', icon: 'modules', path: '/modules', component: Modules },
+  { key: 'embedStudio', label: 'Embed Studio', icon: 'modules', path: '/embed-studio', component: EmbedStudio, hidden: true },
   { key: 'verification', label: 'Verification', icon: 'modules', path: '/verification', component: Verification, hidden: true },
   { key: 'autoRoles', label: 'Auto Roles', icon: 'modules', path: '/autoroles', component: AutoRoles, hidden: true },
+  { key: 'reactionRoles', label: 'Reaction Roles', icon: 'modules', path: '/reaction-roles', component: ReactionRoles, hidden: true },
+  { key: 'welcome', label: 'Welcome & Leave', icon: 'messages', path: '/welcome-leave', component: WelcomeLeave, hidden: true },
+  { key: 'leveling', label: 'Leveling', icon: 'modules', path: '/leveling', component: Leveling, hidden: true },
   { key: 'forms', label: 'Forms', icon: 'modules', path: '/forms', component: Forms, hidden: true },
   { key: 'giveaways', label: 'Giveaways', icon: 'modules', path: '/giveaways', component: Giveaways, hidden: true },
   { key: 'social', label: 'Social Alerts', icon: 'modules', path: '/social', component: Social, hidden: true },
@@ -110,7 +118,7 @@ export const ROUTES = [
   { key: 'moderation', label: 'Moderation', icon: 'admin', path: '/moderation', component: Moderation },
   { key: 'cases', label: 'Cases', icon: 'warnings', path: '/cases', component: Cases },
   { key: 'warnings', label: 'Warnings', icon: 'warnings', path: '/warnings', component: Warnings },
-  { key: 'messages', label: 'Welcome & Leave', icon: 'messages', path: '/messages', component: Messages },
+  { key: 'messages', label: 'Welcome & Leave Legacy', icon: 'messages', path: '/messages', component: Messages },
   { key: 'security', label: 'Security', icon: 'admin', path: '/security', component: Security },
   { key: 'restore', label: 'Restore', icon: 'admin', path: '/restore', component: Restore },
   { key: 'logs', label: 'Logs', icon: 'logs', path: '/logs', component: Logs },
@@ -132,8 +140,12 @@ export const PAGE_LAYOUTS = {
   ownerTickets: { title: 'Tickets Hub', description: 'Global tickets overview.', sections: [] },
   ownerTranslation: { title: 'Translation Hub', description: 'Global translation system overview.', sections: [] },
   modules: { title: 'Modules', description: 'Optional Goliath features in one scalable grid.', emptyDescription: 'Select a server to view modules.', sections: [{ id: 'modulesGrid', type: 'dashboard' }] },
+  embedStudio: { title: 'Embed Studio', description: 'Build, preview and save Discord embeds.', emptyDescription: 'Select a server to manage Embed Studio.', sections: [{ id: 'embedStudioDashboard', type: 'dashboard' }] },
   verification: { title: 'Verification', description: 'Member verification, role settings, panels and analytics.', emptyDescription: 'Select a server to manage verification.', sections: [{ id: 'verificationDashboard', type: 'dashboard' }] },
   autoRoles: { title: 'Auto Roles', description: 'Join roles, bot roles and assignment analytics.', emptyDescription: 'Select a server to manage auto roles.', sections: [{ id: 'autoRolesDashboard', type: 'dashboard' }] },
+  reactionRoles: { title: 'Reaction Roles', description: 'Manage role menus, emoji mappings and reaction role panels.', emptyDescription: 'Select a server to manage reaction roles.', sections: [{ id: 'reactionRolesDashboard', type: 'dashboard' }] },
+  welcome: { title: 'Welcome & Leave', description: 'Manage welcome, leave and DM welcome messages.', emptyDescription: 'Select a server to manage Welcome & Leave.', sections: [{ id: 'welcomeLeaveDashboard', type: 'dashboard' }] },
+  leveling: { title: 'Leveling', description: 'Manage XP, levels, rewards and leaderboards.', emptyDescription: 'Select a server to manage leveling.', sections: [{ id: 'levelingDashboard', type: 'dashboard' }] },
   forms: { title: 'Forms', description: 'Manage universal forms and workflows.', emptyDescription: 'Select a server to manage forms.', sections: [{ id: 'formsManager', type: 'dashboard' }] },
   giveaways: { title: 'Giveaways', description: 'Create, monitor and review server giveaways.', emptyDescription: 'Select a server to manage giveaways.', sections: [{ id: 'giveawaysDashboard', type: 'dashboard' }] },
   social: { title: 'Social Alerts', description: 'Creator alerts across Twitch, YouTube, TikTok, Kick and more.', emptyDescription: 'Select a server to manage social alerts.', sections: [{ id: 'socialDashboard', type: 'dashboard' }] },
@@ -149,7 +161,7 @@ export const PAGE_LAYOUTS = {
   moderation: { title: 'Moderation', description: 'Central moderation tools for this server.', emptyDescription: 'Select a server to manage moderation.', sections: [{ id: 'moderationHub', type: 'future' }] },
   cases: { title: 'Cases', description: 'View moderation case history.', emptyDescription: 'Select a server to view cases.', sections: [{ id: 'caseTable', type: 'table' }] },
   warnings: { title: 'Warnings', description: 'View and manage warning records.', emptyDescription: 'Select a server to view warnings.', sections: [{ id: 'warningTable', type: 'table' }] },
-  messages: { title: 'Welcome & Leave', description: 'Manage join and leave messages.', emptyDescription: 'Select a server to manage messages.', sections: [{ id: 'welcome', type: 'config' }, { id: 'leave', type: 'config' }] },
+  messages: { title: 'Welcome & Leave Legacy', description: 'Manage join and leave messages.', emptyDescription: 'Select a server to manage messages.', sections: [{ id: 'welcome', type: 'config' }, { id: 'leave', type: 'config' }] },
   security: { title: 'Security Center', description: 'Live protection and recovery overview.', emptyDescription: 'Select a server to view security status.', sections: [{ id: 'securityOverview', type: 'dashboard' }] },
   restore: { title: 'Server Restore', description: 'Preview and restore server backups.', emptyDescription: 'Select a server to restore from backup.', sections: [{ id: 'restoreManager', type: 'config' }] },
   logs: { title: 'Logs', description: 'Manage log channels.', emptyDescription: 'Select a server to manage log channels.', sections: [{ id: 'logManager', type: 'config' }] },
@@ -159,8 +171,12 @@ export const SECTION_DEFS = {
   stats: { title: 'Server Stats', description: 'Live system and guild status.' },
   activity: { title: 'Recent Activity', description: 'Quick status indicators.' },
   modulesGrid: { title: 'Modules Grid', description: 'Browse optional Goliath features.' },
+  embedStudioDashboard: { title: 'Embed Studio', description: 'Build, preview and save Discord embeds.' },
   verificationDashboard: { title: 'Verification Dashboard', description: 'Configure verification roles, panels and analytics.' },
   autoRolesDashboard: { title: 'Auto Roles Dashboard', description: 'Configure join roles, bot roles and analytics.' },
+  reactionRolesDashboard: { title: 'Reaction Roles Dashboard', description: 'Configure reaction role panels and emoji mappings.' },
+  welcomeLeaveDashboard: { title: 'Welcome & Leave Dashboard', description: 'Configure welcome, leave and DM welcome messages.' },
+  levelingDashboard: { title: 'Leveling Dashboard', description: 'Configure XP, levels, rewards and leaderboards.' },
   formsManager: { title: 'Forms Manager', description: 'Create and manage forms.' },
   giveawaysDashboard: { title: 'Giveaways Dashboard', description: 'Create and review server giveaways.' },
   socialDashboard: { title: 'Social Alerts Dashboard', description: 'Manage creator accounts and social notification alerts.' },
