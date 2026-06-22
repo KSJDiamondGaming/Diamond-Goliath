@@ -80,6 +80,17 @@ typeof socialSchedulerModule.result?.startSocialScheduler === 'function'
 ? socialSchedulerModule.result.startSocialScheduler
 : null;
 
+const subscriptionWorkerModule = safeLoad(
+'Subscription Worker',
+() => require('./src/workers/subscriptionWorker'),
+);
+
+const startSubscriptionWorker =
+subscriptionWorkerModule.ok &&
+typeof subscriptionWorkerModule.result?.startSubscriptionWorker === 'function'
+? subscriptionWorkerModule.result.startSubscriptionWorker
+: null;
+
 /* ---------------- ENV / MODE ---------------- */
 
 const ALLOWED_MODES = ['dev', 'beta', 'production'];
@@ -426,6 +437,10 @@ startServerBackupScheduler(client);
 
 if (startSocialScheduler) {
 startSocialScheduler(client);
+}
+
+if (startSubscriptionWorker) {
+startSubscriptionWorker();
 }
 
 loadCommands();
