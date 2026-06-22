@@ -182,6 +182,12 @@ export const api = {
     });
   },
 
+  deleteEmbedDeployment(guildId, key) {
+    return request(`/api/modules/${guildId}/embed-studio/deployments/${encodeURIComponent(key)}`, {
+      method: 'DELETE',
+    });
+  },
+
   /* ---------------- VERIFICATION ---------------- */
 
   getVerification(guildId) {
