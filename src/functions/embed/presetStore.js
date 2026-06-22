@@ -1,18 +1,13 @@
-const fs = require('fs');
-const path = require('path');
+'use strict';
 
-const PRESETS_DIR = path.join(process.cwd(), 'src', 'data', 'presets');
+const guildManager = require('../../guild/guildManager');
+
+const PRESETS_DIR = null;
 
 const presetCache = new Map();
 
-/* ---------------- BASIC HELPERS ---------------- */
-
 function clone(value) {
   return JSON.parse(JSON.stringify(value || {}));
-}
-
-function ensureDir() {
-  fs.mkdirSync(PRESETS_DIR, { recursive: true });
 }
 
 function normalizeGuildId(guildId) {
@@ -37,47 +32,11 @@ function sanitizePresetName(name) {
     .slice(0, 50);
 }
 
-function getFile(guildId) {
-  ensureDir();
-  return path.join(PRESETS_DIR, `${normalizeGuildId(guildId)}.json`);
-}
-
-function readJson(filePath, fallback = {}) {
-  try {
-    if (!fs.existsSync(filePath)) return clone(fallback);
-
-    const raw = fs.readFileSync(filePath, 'utf8');
-    if (!raw.trim()) return clone(fallback);
-
-    const parsed = JSON.parse(raw);
-
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return clone(fallback);
-    }
-
-    return parsed;
-  } catch (error) {
-    console.error(`Failed to read presets JSON from ${filePath}:`, error);
-    return clone(fallback);
-  }
-}
-
-function writeJson(filePath, data) {
-  ensureDir();
-
-  const tempPath = `${filePath}.tmp`;
-
-  fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), 'utf8');
-  fs.renameSync(tempPath, filePath);
-}
-
 function stripMeta(data = {}) {
   const cloned = clone(data);
   delete cloned.updatedAt;
   return cloned;
 }
-
-/* ---------------- LOAD / SAVE ---------------- */
 
 function loadPresets(guildId, options = {}) {
   const safeGuildId = normalizeGuildId(guildId);
@@ -86,9 +45,7 @@ function loadPresets(guildId, options = {}) {
     return clone(presetCache.get(safeGuildId));
   }
 
-  const file = getFile(safeGuildId);
-  const presets = readJson(file, {});
-
+  const presets = guildManager.getEmbedPresets(safeGuildId) || {};
   presetCache.set(safeGuildId, clone(presets));
 
   return clone(presets);
@@ -96,45 +53,30 @@ function loadPresets(guildId, options = {}) {
 
 function savePresets(guildId, data = {}) {
   const safeGuildId = normalizeGuildId(guildId);
-  const file = getFile(safeGuildId);
-
-  const presets =
-    data && typeof data === 'object' && !Array.isArray(data) ? data : {};
+  const presets = data && typeof data === 'object' && !Array.isArray(data) ? data : {};
 
   const nextData = {
     ...clone(presets),
     updatedAt: new Date().toISOString(),
   };
 
-  writeJson(file, nextData);
+  guildManager.saveGuildSection(safeGuildId, 'embedPresets', nextData);
   presetCache.set(safeGuildId, clone(nextData));
 
   return clone(nextData);
 }
 
-/* ---------------- CORE ---------------- */
-
 function savePreset(guildId, name, embedData = {}) {
   const presetName = sanitizePresetName(name);
-  const presets = stripMeta(loadPresets(guildId));
-
-  presets[presetName] = {
-    ...clone(embedData),
-    name: presetName,
-    updatedAt: new Date().toISOString(),
-  };
-
-  const saved = savePresets(guildId, presets);
-  return clone(saved[presetName]);
+  const savedPreset = guildManager.saveEmbedPreset(guildId, presetName, embedData);
+  presetCache.delete(normalizeGuildId(guildId));
+  return clone(savedPreset);
 }
 
 function getPreset(guildId, name) {
   const presetName = sanitizePresetName(name);
-  const presets = loadPresets(guildId);
-
-  return presets[presetName] && typeof presets[presetName] === 'object'
-    ? clone(presets[presetName])
-    : null;
+  const preset = guildManager.getEmbedPreset(guildId, presetName);
+  return preset && typeof preset === 'object' ? clone(preset) : null;
 }
 
 function getAllPresets(guildId) {
@@ -143,16 +85,9 @@ function getAllPresets(guildId) {
 
 function deletePreset(guildId, name) {
   const presetName = sanitizePresetName(name);
-  const presets = stripMeta(loadPresets(guildId));
-
-  if (!Object.prototype.hasOwnProperty.call(presets, presetName)) {
-    return false;
-  }
-
-  delete presets[presetName];
-  savePresets(guildId, presets);
-
-  return true;
+  const deleted = guildManager.deleteEmbedPreset(guildId, presetName);
+  presetCache.delete(normalizeGuildId(guildId));
+  return deleted;
 }
 
 function renamePreset(guildId, oldName, newName) {
@@ -160,13 +95,8 @@ function renamePreset(guildId, oldName, newName) {
   const nextName = sanitizePresetName(newName);
   const presets = stripMeta(loadPresets(guildId));
 
-  if (!presets[currentName]) {
-    return null;
-  }
-
-  if (presets[nextName]) {
-    throw new Error(`Preset "${nextName}" already exists.`);
-  }
+  if (!presets[currentName]) return null;
+  if (presets[nextName]) throw new Error(`Preset "${nextName}" already exists.`);
 
   presets[nextName] = {
     ...clone(presets[currentName]),
@@ -175,7 +105,6 @@ function renamePreset(guildId, oldName, newName) {
   };
 
   delete presets[currentName];
-
   const saved = savePresets(guildId, presets);
   return clone(saved[nextName]);
 }
@@ -185,13 +114,8 @@ function duplicatePreset(guildId, sourceName, duplicateName) {
   const newPresetName = sanitizePresetName(duplicateName);
   const presets = stripMeta(loadPresets(guildId));
 
-  if (!presets[sourcePresetName]) {
-    return null;
-  }
-
-  if (presets[newPresetName]) {
-    throw new Error(`Preset "${newPresetName}" already exists.`);
-  }
+  if (!presets[sourcePresetName]) return null;
+  if (presets[newPresetName]) throw new Error(`Preset "${newPresetName}" already exists.`);
 
   presets[newPresetName] = {
     ...clone(presets[sourcePresetName]),
@@ -203,12 +127,13 @@ function duplicatePreset(guildId, sourceName, duplicateName) {
   return clone(saved[newPresetName]);
 }
 
-/* ---------------- CACHE ---------------- */
-
 function reloadPresets(guildId) {
   const safeGuildId = normalizeGuildId(guildId);
-
   presetCache.delete(safeGuildId);
+
+  if (typeof guildManager.reloadGuild === 'function') {
+    guildManager.reloadGuild(safeGuildId);
+  }
 
   return loadPresets(safeGuildId, { forceReload: true });
 }
@@ -221,8 +146,6 @@ function clearPresetCache(guildId = null) {
 
   presetCache.clear();
 }
-
-/* ---------------- EXPORTS ---------------- */
 
 module.exports = {
   PRESETS_DIR,
