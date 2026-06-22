@@ -170,6 +170,30 @@ export const api = {
     return request(`/api/billing/entitlements/${guildId}`);
   },
 
+  /* ---------------- TRANSLATION ---------------- */
+
+  getTranslationConfig(guildId) {
+    return request(`/api/translation/${guildId}`);
+  },
+
+  getTranslationProvider(guildId) {
+    return request(`/api/translation/${guildId}/provider`);
+  },
+
+  saveTranslationProvider(guildId, payload) {
+    return request(`/api/translation/${guildId}/provider`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  setTranslationEnabled(guildId, enabled) {
+    return request(`/api/translation/${guildId}/enabled`, {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled }),
+    });
+  },
+
   /* ---------------- EMBED STUDIO ---------------- */
 
   getEmbedStudio(guildId) {
@@ -259,191 +283,4 @@ export const api = {
   getAutoRoles(guildId) {
     return request(`/api/modules/${guildId}/auto-roles`);
   },
-
-  setAutoRolesEnabled(guildId, enabled) {
-    return request(`/api/modules/${guildId}/auto-roles/enabled`, {
-      method: 'PATCH',
-      body: JSON.stringify({ enabled }),
-    });
-  },
-
-  saveAutoRolesSettings(guildId, settings) {
-    return request(`/api/modules/${guildId}/auto-roles/settings`, {
-      method: 'PATCH',
-      body: JSON.stringify({ settings }),
-    });
-  },
-
-  saveAutoRolesConfig(guildId, payload) {
-    return request(`/api/modules/${guildId}/auto-roles`, {
-      method: 'PUT',
-      body: JSON.stringify(payload),
-    });
-  },
-
-  addJoinAutoRole(guildId, roleId) {
-    return request(`/api/modules/${guildId}/auto-roles/join`, {
-      method: 'POST',
-      body: JSON.stringify({ roleId }),
-    });
-  },
-
-  removeJoinAutoRole(guildId, roleId) {
-    return request(`/api/modules/${guildId}/auto-roles/join/${roleId}`, {
-      method: 'DELETE',
-    });
-  },
-
-  addBotAutoRole(guildId, roleId) {
-    return request(`/api/modules/${guildId}/auto-roles/bots`, {
-      method: 'POST',
-      body: JSON.stringify({ roleId }),
-    });
-  },
-
-  removeBotAutoRole(guildId, roleId) {
-    return request(`/api/modules/${guildId}/auto-roles/bots/${roleId}`, {
-      method: 'DELETE',
-    });
-  },
-
-  getAutoRolesAnalytics(guildId) {
-    return request(`/api/modules/${guildId}/auto-roles/analytics`);
-  },
-
-  /* ---------------- AUTOMOD ---------------- */
-
-  getAutoModConfig(guildId) {
-    return request(`/api/config/automod/${guildId}`);
-  },
-
-  saveAutoModConfig(guildId, payload) {
-    return request(`/api/config/automod/${guildId}`, {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-  },
-
-  /* ---------------- MESSAGES ---------------- */
-
-  getMessages(guildId) {
-    return request(
-      `/api/config/messages/${guildId}`,
-    );
-  },
-
-  saveMessages(
-    guildId,
-    payload,
-  ) {
-    return request(
-      `/api/config/messages/${guildId}`,
-      {
-        method: 'POST',
-
-        body: JSON.stringify(
-          payload,
-        ),
-      },
-    );
-  },
-
-  /* ---------------- CASES ---------------- */
-
-  getCases(guildId) {
-    return request(
-      `/api/cases/${guildId}`,
-    );
-  },
-
-  getWarnings(guildId) {
-    return request(
-      `/api/cases/${guildId}/warnings`,
-    );
-  },
-
-  /* ---------------- FORMS ---------------- */
-
-  getFormsOverview(guildId) {
-    return request(`/api/forms/${guildId}/overview`);
-  },
-
-  getFormsConfig(guildId) {
-    return request(`/api/forms/${guildId}`);
-  },
-
-  getForms(guildId) {
-    return request(`/api/forms/${guildId}/forms`);
-  },
-
-  getForm(guildId, formId) {
-    return request(`/api/forms/${guildId}/forms/${formId}`);
-  },
-
-  createForm(guildId, payload) {
-    return request(`/api/forms/${guildId}/forms`, {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-  },
-
-  updateForm(guildId, formId, payload) {
-    return request(`/api/forms/${guildId}/forms/${formId}`, {
-      method: 'PUT',
-      body: JSON.stringify(payload),
-    });
-  },
-
-  setFormEnabled(guildId, formId, enabled) {
-    return request(`/api/forms/${guildId}/forms/${formId}/enabled`, {
-      method: 'PATCH',
-      body: JSON.stringify({ enabled }),
-    });
-  },
-
-  getFormPanels(guildId) {
-    return request(`/api/forms/${guildId}/panels`);
-  },
-
-  getFormSubmissions(guildId, query = '') {
-    const suffix = query ? `?${query}` : '';
-    return request(`/api/forms/${guildId}/submissions${suffix}`);
-  },
-
-  updateFormSubmissionStatus(guildId, submissionId, status, extra = {}) {
-    return request(`/api/forms/${guildId}/submissions/${submissionId}/status`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status, ...extra }),
-    });
-  },
-
-  updateFormsSettings(guildId, payload) {
-    return request(`/api/forms/${guildId}/settings`, {
-      method: 'PATCH',
-      body: JSON.stringify(payload),
-    });
-  },
-
-  /* ---------------- SECURITY ---------------- */
-
-  getSecurityOverview(guildId) {
-    return request(
-      `/api/security/overview?guildId=${guildId}`,
-    );
-  },
-
-  /* ---------------- LOGS ---------------- */
-
-  getLogConfig(guildId) {
-    return request(`/api/config/logs/${guildId}`);
-  },
-
-  saveLogConfig(guildId, payload) {
-    return request(`/api/config/logs/${guildId}`, {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-  },
 };
-
-export default api;
