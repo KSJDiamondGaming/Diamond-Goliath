@@ -8,28 +8,36 @@ const PLAN_COPY = {
     headline: 'Perfect for small communities getting started with Goliath.',
     idealFor: 'Small communities, new servers and trial setups.',
     badge: 'Starter access',
+    displayName: 'Basic',
+    icon: '🆓',
   },
   plus: {
     headline: 'For growing communities that need higher limits and more flexibility.',
     idealFor: 'Gaming communities, creators and active Discord servers.',
-    badge: 'Growth plan',
+    badge: 'Recommended',
+    displayName: 'Plus',
+    icon: '⭐',
   },
   pro: {
     headline: 'Unlock the complete Goliath platform with every premium system included.',
     idealFor: 'Large communities, businesses and professional Discord servers.',
     badge: 'Full platform',
+    displayName: 'Pro',
+    icon: '👑',
   },
   lifetime: {
     headline: 'Founder and reward tier with Pro access forever.',
     idealFor: 'Founders, beta testers, giveaways and owner-granted rewards.',
     badge: 'Hidden reward tier',
+    displayName: 'Lifetime',
+    icon: '💎',
   },
 };
 
 const PLAN_PRICING = {
   free: {
     price: '£0',
-    cadence: 'forever',
+    cadence: 'Free',
     note: 'No payment required.',
   },
   plus: {
@@ -86,6 +94,18 @@ function asArray(value) {
   return [];
 }
 
+function planCopy(planId) {
+  return PLAN_COPY[planId] || PLAN_COPY.free;
+}
+
+function planDisplayName(plan = {}) {
+  return planCopy(plan.id || plan.plan).displayName || plan.name || 'Basic';
+}
+
+function planDisplayIcon(plan = {}) {
+  return planCopy(plan.id || plan.plan).icon || plan.icon || '';
+}
+
 function featureInfo(feature) {
   return FEATURE_LABELS[feature] || {
     icon: '✅',
@@ -139,24 +159,37 @@ function FeatureListItem({ theme, feature }) {
 }
 
 function PlanCard({ theme, plan, current, onUpgrade }) {
-  const copy = PLAN_COPY[plan.id] || PLAN_COPY.free;
+  const copy = planCopy(plan.id);
   const pricing = PLAN_PRICING[plan.id] || PLAN_PRICING.free;
   const limits = plan.limits || {};
   const hidden = plan.public === false;
+  const featured = plan.id === 'plus';
+
+  const border = current ? '#86efac' : featured ? '#facc15' : hidden ? 'rgba(250,204,21,0.42)' : theme.cardBorder;
+  const background = current
+    ? 'rgba(34,197,94,0.10)'
+    : featured
+      ? 'linear-gradient(180deg, rgba(250,204,21,0.16), rgba(15,23,42,0.26))'
+      : hidden
+        ? 'rgba(250,204,21,0.08)'
+        : 'rgba(15,23,42,0.24)';
 
   return (
-    <div style={{ border: `1px solid ${current ? '#86efac' : hidden ? 'rgba(250,204,21,0.42)' : theme.cardBorder}`, background: current ? 'rgba(34,197,94,0.10)' : hidden ? 'rgba(250,204,21,0.08)' : 'rgba(15,23,42,0.24)', borderRadius: 18, padding: 16, display: 'grid', gap: 14 }}>
+    <div style={{ border: `1px solid ${border}`, background, borderRadius: 18, padding: 16, display: 'grid', gap: 14, boxShadow: featured ? '0 0 34px rgba(250,204,21,0.14)' : undefined }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
         <div>
-          <strong style={{ color: theme.cardText, fontSize: 22 }}>{plan.icon} {plan.name}</strong>
-          <div style={{ marginTop: 6, color: current ? '#86efac' : '#fde68a', fontSize: 12, fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{copy.badge}</div>
+          <strong style={{ color: theme.cardText, fontSize: 22 }}>{copy.icon} {copy.displayName}</strong>
+          <div style={{ marginTop: 6, color: featured ? '#facc15' : current ? '#86efac' : '#fde68a', fontSize: 12, fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{copy.badge}</div>
         </div>
-        {current ? <span style={{ color: '#86efac', fontWeight: 950, fontSize: 12, textTransform: 'uppercase' }}>Current</span> : null}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+          {featured ? <span style={{ border: '1px solid rgba(250,204,21,0.45)', background: 'rgba(250,204,21,0.16)', color: '#fde68a', borderRadius: 999, padding: '5px 8px', fontWeight: 950, fontSize: 11, textTransform: 'uppercase' }}>Recommended</span> : null}
+          {current ? <span style={{ color: '#86efac', fontWeight: 950, fontSize: 12, textTransform: 'uppercase' }}>Current</span> : null}
+        </div>
       </div>
 
-      <div style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(15,23,42,0.30)', borderRadius: 14, padding: 13, display: 'grid', gap: 2 }}>
+      <div style={{ border: `1px solid ${featured ? 'rgba(250,204,21,0.42)' : theme.cardBorder}`, background: 'rgba(15,23,42,0.30)', borderRadius: 14, padding: 13, display: 'grid', gap: 2 }}>
         <strong style={{ color: theme.cardText, fontSize: plan.id === 'lifetime' ? 20 : 28, lineHeight: 1 }}>{pricing.price}</strong>
-        <span style={{ color: theme.mutedText, fontSize: 12, fontWeight: 850, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{pricing.cadence}</span>
+        <span style={{ color: featured ? '#fde68a' : theme.mutedText, fontSize: 12, fontWeight: 850, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{pricing.cadence}</span>
         <span style={{ color: theme.mutedText, fontSize: 12, lineHeight: 1.45 }}>{pricing.note}</span>
       </div>
 
@@ -185,8 +218,8 @@ function PlanCard({ theme, plan, current, onUpgrade }) {
       </div>
 
       {!current && !hidden ? (
-        <button type="button" onClick={() => onUpgrade?.(plan)} style={{ border: '1px solid rgba(250,204,21,0.45)', background: 'rgba(250,204,21,0.14)', color: '#fde68a', borderRadius: 12, padding: '11px 13px', fontWeight: 950, cursor: 'pointer' }}>
-          Upgrade to {plan.name}
+        <button type="button" onClick={() => onUpgrade?.(plan)} style={{ border: `1px solid ${featured ? 'rgba(250,204,21,0.55)' : 'rgba(250,204,21,0.45)'}`, background: featured ? 'rgba(250,204,21,0.22)' : 'rgba(250,204,21,0.14)', color: '#fde68a', borderRadius: 12, padding: '11px 13px', fontWeight: 950, cursor: 'pointer' }}>
+          Upgrade to {copy.displayName}
         </button>
       ) : null}
     </div>
@@ -265,7 +298,7 @@ export default function Billing({ theme, selectedGuild, selectedGuildData, isOwn
   }
 
   function handleUpgrade(plan) {
-    setNotice(`${plan.name} checkout is coming soon. Stripe and PayPal will both connect to this upgrade button.`);
+    setNotice(`${planDisplayName(plan)} checkout is coming soon. Stripe and PayPal will both connect to this upgrade button.`);
   }
 
   if (!guildId) {
@@ -288,7 +321,7 @@ export default function Billing({ theme, selectedGuild, selectedGuildData, isOwn
       {loading ? <LoadingPanel theme={theme} text="Loading billing..." /> : null}
 
       <StatGrid min="min(190px, 100%)">
-        <SummaryStat theme={theme} label="Current Plan" value={`${currentPlan.icon || ''} ${currentPlan.name || subscription.plan || 'Free'}`} accent="#86efac" description="Guild subscription plan" />
+        <SummaryStat theme={theme} label="Current Plan" value={`${planDisplayIcon(currentPlan)} ${planDisplayName(currentPlan)}`} accent="#86efac" description="Guild subscription plan" />
         <SummaryStat theme={theme} label="Status" value={subscription.status || 'active'} accent="#3b82f6" description="Subscription status" />
         <SummaryStat theme={theme} label="Source" value={subscription.source || 'system'} accent="#a855f7" description="How access was granted" />
         <SummaryStat theme={theme} label="Expires" value={formatDate(subscription.expiresAt)} accent="#f59e0b" description="Renewal or expiry date" />
