@@ -27,7 +27,7 @@ const OWNER_MANAGED_GUILD_KEY = 'owner_managed_guild';
 const GUILD_STORAGE_KEY = 'selected_guild';
 const ROUTE_PATHS = ROUTES.map((routeItem) => routeItem.path);
 const GUILD_REQUIRED_ROUTES = new Set([
-  'overview', 'cases', 'warnings', 'automod', 'generalSettings',
+  'overview', 'billing', 'cases', 'warnings', 'automod', 'generalSettings',
   'messages', 'forms', 'modules', 'logs', 'admin', 'moderation',
   'embedStudio',
 ]);
