@@ -53,18 +53,21 @@ function ModuleToggle({ enabled, disabled, onToggle }) {
 function ModuleCard({ module, theme, onOpen, onToggle, saving }) {
   const [hovered, setHovered] = useState(false);
   const enabled = module?.enabled === true;
+  const locked = module?.locked === true;
   const statusMeta = getModuleStatusMeta(module?.status);
-  const statusStyle = STATUS_STYLES[statusMeta.tone] || STATUS_STYLES.muted;
+  const statusStyle = locked ? STATUS_STYLES.warning : STATUS_STYLES[statusMeta.tone] || STATUS_STYLES.muted;
 
   return (
     <div
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
-        border: `1px solid ${enabled ? statusStyle.border : theme.cardBorder}`,
-        background: enabled
-          ? 'linear-gradient(135deg, rgba(15,23,42,0.78), rgba(15,23,42,0.34))'
-          : theme.cardBg,
+        border: `1px solid ${locked ? '#facc1566' : enabled ? statusStyle.border : theme.cardBorder}`,
+        background: locked
+          ? 'linear-gradient(135deg, rgba(250,204,21,0.10), rgba(15,23,42,0.58))'
+          : enabled
+            ? 'linear-gradient(135deg, rgba(15,23,42,0.78), rgba(15,23,42,0.34))'
+            : theme.cardBg,
         color: theme.cardText,
         borderRadius: 22,
         boxShadow: hovered ? '0 22px 60px rgba(0,0,0,0.32)' : theme.shadow,
@@ -74,7 +77,7 @@ function ModuleCard({ module, theme, onOpen, onToggle, saving }) {
         display: 'grid',
         gap: 16,
         alignContent: 'space-between',
-        opacity: enabled ? 1 : 0.84,
+        opacity: locked ? 0.92 : enabled ? 1 : 0.84,
         transform: hovered ? 'translateY(-2px)' : 'translateY(0)',
         transition: 'transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, opacity 0.18s ease',
         position: 'relative',
@@ -90,7 +93,7 @@ function ModuleCard({ module, theme, onOpen, onToggle, saving }) {
           width: 118,
           height: 118,
           borderRadius: 999,
-          background: enabled ? statusStyle.glow : '#64748b18',
+          background: locked ? '#facc1522' : enabled ? statusStyle.glow : '#64748b18',
           filter: 'blur(4px)',
         }}
       />
@@ -103,18 +106,18 @@ function ModuleCard({ module, theme, onOpen, onToggle, saving }) {
             borderRadius: 15,
             display: 'grid',
             placeItems: 'center',
-            border: `1px solid ${enabled ? statusStyle.border : '#64748b55'}`,
-            background: enabled ? statusStyle.bg : 'rgba(100,116,139,0.10)',
-            color: enabled ? statusStyle.text : theme.mutedText,
+            border: `1px solid ${locked ? '#facc1566' : enabled ? statusStyle.border : '#64748b55'}`,
+            background: locked ? 'rgba(250,204,21,0.12)' : enabled ? statusStyle.bg : 'rgba(100,116,139,0.10)',
+            color: locked ? '#fde68a' : enabled ? statusStyle.text : theme.mutedText,
             fontWeight: 950,
             fontSize: 13,
           }}
         >
-          {module.icon}
+          {locked ? '🔒' : module.icon}
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {enabled ? (
+          {enabled && !locked ? (
             <button
               type="button"
               onClick={(event) => {
@@ -142,20 +145,20 @@ function ModuleCard({ module, theme, onOpen, onToggle, saving }) {
             </button>
           ) : null}
 
-          <ModuleToggle enabled={enabled} disabled={saving} onToggle={(nextEnabled) => onToggle?.(module, nextEnabled)} />
+          <ModuleToggle enabled={enabled} disabled={saving || locked} onToggle={(nextEnabled) => onToggle?.(module, nextEnabled)} />
         </div>
       </div>
 
       <div style={{ position: 'relative', display: 'grid', gap: 8 }}>
         <div>
           <strong style={{ display: 'block', fontSize: 17 }}>{module.name}</strong>
-          <span style={{ display: 'block', color: theme.mutedText, fontSize: 12, fontWeight: 850, marginTop: 5 }}>
-            {module.category}
+          <span style={{ display: 'block', color: locked ? '#fde68a' : theme.mutedText, fontSize: 12, fontWeight: 850, marginTop: 5 }}>
+            {locked ? `Requires ${String(module.requiredPlan || 'pro').toUpperCase()}` : module.category}
           </span>
         </div>
 
         <p style={{ margin: 0, color: theme.mutedText, fontSize: 13, lineHeight: 1.45 }}>
-          {module.summary || 'Module dashboard page pending.'}
+          {locked ? `Unlock ${module.name} from Billing to use ${module.requiredFeature}.` : module.summary || 'Module dashboard page pending.'}
         </p>
 
         {saving ? (
