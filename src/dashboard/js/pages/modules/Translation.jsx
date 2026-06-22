@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 
 import { api } from '../../services/apiClient.js';
 import PageShell, { SectionCard, EmptyState, LoadingPanel, Notice, SecondaryButton, StatGrid, SummaryStat } from '../../shared/PageShell';
+import PremiumLock from '../../shared/PremiumLock.jsx';
 
 function getGuildId(selectedGuild, selectedGuildData) {
   const id = selectedGuildData?.guildId || selectedGuildData?.id || selectedGuild || '';
@@ -83,6 +84,7 @@ function PreferenceCard({ theme, preference }) {
 export default function Translation({ theme, selectedGuild, selectedGuildData }) {
   const guildId = getGuildId(selectedGuild, selectedGuildData);
   const [config, setConfig] = useState({});
+  const [entitlements, setEntitlements] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -93,6 +95,7 @@ export default function Translation({ theme, selectedGuild, selectedGuildData })
   const preferences = useMemo(() => asArray(config.userLanguages || config.preferences || config.userPreferences), [config]);
   const providers = useMemo(() => asArray(config.providers || settings.providers), [config, settings]);
   const threads = useMemo(() => asArray(config.threads || config.translationThreads), [config]);
+  const hasTranslationAccess = Array.isArray(entitlements?.features) && entitlements.features.includes('translation.hub');
 
   async function load() {
     if (!guildId) return;
@@ -101,6 +104,14 @@ export default function Translation({ theme, selectedGuild, selectedGuildData })
     setNotice('');
 
     try {
+      const entitlementPayload = await api.getBillingEntitlements(guildId);
+      setEntitlements(entitlementPayload);
+
+      if (!Array.isArray(entitlementPayload.features) || !entitlementPayload.features.includes('translation.hub')) {
+        setConfig({ enabled: false, settings: {}, channels: {}, userLanguages: {}, analytics: {} });
+        return;
+      }
+
       const payload = await api.getGuildModules(guildId);
       const modules = payload.modules || {};
       setConfig(modules.translation || { enabled: false, settings: {}, channels: {}, userLanguages: {}, analytics: {} });
@@ -116,7 +127,7 @@ export default function Translation({ theme, selectedGuild, selectedGuildData })
   }, [guildId]);
 
   async function toggleEnabled() {
-    if (!guildId) return;
+    if (!guildId || !hasTranslationAccess) return;
     setLoading(true);
     setError('');
     setNotice('');
@@ -141,6 +152,21 @@ export default function Translation({ theme, selectedGuild, selectedGuildData })
     );
   }
 
+  if (!loading && entitlements && !hasTranslationAccess) {
+    return (
+      <PageShell title="Translation Hub" subtitle="Translation Hub is a premium Goliath Pro feature." theme={theme} guild={{ id: guildId, name: 'Translation Hub' }}>
+        <PremiumLock
+          theme={theme}
+          title="Translation Hub"
+          featureKey="translation.hub"
+          currentPlan={entitlements.plan}
+          requiredPlan={{ name: 'Pro', icon: '👑' }}
+          message="Realtime multilingual channels, provider integration and translation threads require Goliath Pro."
+        />
+      </PageShell>
+    );
+  }
+
   const providerName = settings.provider || config.provider || providers[0]?.name || providers[0]?.id || 'Not connected';
   const providerReady = Boolean(settings.provider || config.provider || providers.length);
 
@@ -150,7 +176,7 @@ export default function Translation({ theme, selectedGuild, selectedGuildData })
       subtitle="Manage multilingual channels, language preferences, providers and translation analytics."
       theme={theme}
       guild={{ id: guildId, name: 'Translation Hub' }}
-      actions={<SecondaryButton theme={theme} onClick={toggleEnabled} disabled={loading}>{config.enabled === true ? 'Disable' : 'Enable'}</SecondaryButton>}
+      actions={<SecondaryButton theme={theme} onClick={toggleEnabled} disabled={loading || !hasTranslationAccess}>{config.enabled === true ? 'Disable' : 'Enable'}</SecondaryButton>}
     >
       {error ? <Notice theme={theme} tone="danger">{error}</Notice> : null}
       {notice ? <Notice theme={theme} tone="success">{notice}</Notice> : null}
