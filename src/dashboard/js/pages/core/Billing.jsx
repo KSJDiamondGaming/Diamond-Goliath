@@ -78,6 +78,19 @@ const LIMIT_LABELS = {
   translationsPerMonth: 'Translations Per Month',
 };
 
+const COMPARISON_ROWS = [
+  { label: 'Ticket Panels', basic: '2', plus: '15', pro: 'Unlimited' },
+  { label: 'Forms', basic: '3', plus: '25', pro: 'Unlimited' },
+  { label: 'Embed Presets', basic: '5', plus: '50', pro: 'Unlimited' },
+  { label: 'Ticket System', basic: '✓', plus: '✓', pro: '✓' },
+  { label: 'Forms System', basic: '✓', plus: '✓', pro: '✓' },
+  { label: 'Embed Builder', basic: '✓', plus: '✓', pro: '✓' },
+  { label: 'Translation Hub', basic: '—', plus: '—', pro: '✓' },
+  { label: 'Backup & Restore', basic: '—', plus: '—', pro: '✓' },
+  { label: 'Advanced Security', basic: '—', plus: '—', pro: '✓' },
+  { label: 'Advanced Analytics', basic: '—', plus: '—', pro: '✓' },
+];
+
 function getGuildId(selectedGuild, selectedGuildData) {
   const id = selectedGuildData?.guildId || selectedGuildData?.id || selectedGuild || '';
   return String(id).split(':').pop().trim();
@@ -227,6 +240,35 @@ function PlanCard({ theme, plan, current, onUpgrade }) {
   );
 }
 
+function FeatureComparison({ theme }) {
+  return (
+    <SectionCard theme={theme} title="Plan Comparison" subtitle="A cleaner side-by-side view of what each public plan unlocks.">
+      <div style={{ overflowX: 'auto', border: `1px solid ${theme.cardBorder}`, borderRadius: 16 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 680 }}>
+          <thead>
+            <tr style={{ background: 'rgba(15,23,42,0.46)' }}>
+              <th style={{ padding: 14, textAlign: 'left', color: theme.mutedText, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Feature</th>
+              <th style={{ padding: 14, textAlign: 'center', color: '#93c5fd' }}>🆓 Basic</th>
+              <th style={{ padding: 14, textAlign: 'center', color: '#facc15' }}>⭐ Plus</th>
+              <th style={{ padding: 14, textAlign: 'center', color: '#c084fc' }}>👑 Pro</th>
+            </tr>
+          </thead>
+          <tbody>
+            {COMPARISON_ROWS.map((row) => (
+              <tr key={row.label} style={{ borderTop: `1px solid ${theme.cardBorder}` }}>
+                <td style={{ padding: 13, color: theme.cardText, fontWeight: 900 }}>{row.label}</td>
+                <td style={{ padding: 13, textAlign: 'center', color: row.basic === '—' ? theme.mutedText : theme.cardText, fontWeight: 900 }}>{row.basic}</td>
+                <td style={{ padding: 13, textAlign: 'center', color: row.plus === '—' ? theme.mutedText : '#fde68a', fontWeight: 950 }}>{row.plus}</td>
+                <td style={{ padding: 13, textAlign: 'center', color: row.pro === '—' ? theme.mutedText : '#ddd6fe', fontWeight: 950 }}>{row.pro}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </SectionCard>
+  );
+}
+
 export default function Billing({ theme, selectedGuild, selectedGuildData }) {
   const guildId = getGuildId(selectedGuild, selectedGuildData);
   const [plansPayload, setPlansPayload] = useState(null);
@@ -361,6 +403,8 @@ export default function Billing({ theme, selectedGuild, selectedGuildData }) {
           {plans.map((plan) => <PlanCard key={plan.id} theme={theme} plan={plan} current={plan.id === subscription.plan} onUpgrade={handleUpgrade} />)}
         </div>
       </SectionCard>
+
+      <FeatureComparison theme={theme} />
 
       <SectionCard theme={theme} title="Payment Options" subtitle="Stripe and PayPal support will connect here in a later billing phase.">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 12 }}>
