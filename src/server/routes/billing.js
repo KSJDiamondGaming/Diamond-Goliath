@@ -10,6 +10,7 @@ const subscriptionManager = require('../../managers/subscriptionManager');
 const entitlementManager = require('../../managers/entitlementManager');
 const redemptionManager = require('../../billing/redemptionManager');
 const subscriptionAdminManager = require('../../billing/subscriptionAdminManager');
+const billingSettingsManager = require('../../billing/billingSettingsManager');
 
 const router = express.Router();
 
@@ -41,6 +42,11 @@ function getOwnerIds() {
     .filter(Boolean);
 }
 
+function isOwnerRequest(req) {
+  const userId = req.session?.user?.id;
+  return Boolean(userId && getOwnerIds().includes(String(userId)));
+}
+
 function requireOwner(req, res, next) {
   const userId = req.session?.user?.id;
   if (!userId) {
@@ -70,12 +76,43 @@ function publicPlan(plan) {
   };
 }
 
+function shouldExposePlan(plan, settings, ownerView = false) {
+  if (plan.public !== false) return true;
+  if (plan.id === 'lifetime') return settings.publicLifetimeEnabled === true || ownerView;
+  return ownerView;
+}
+
 router.get('/plans', (req, res) => {
   try {
-    const plans = Object.values(PLAN_DEFINITIONS).map(publicPlan);
-    return success(res, { plans });
+    const settings = billingSettingsManager.getBillingSettings();
+    const ownerView = isOwnerRequest(req) && req.query?.owner === 'true';
+    const plans = Object.values(PLAN_DEFINITIONS)
+      .filter((plan) => shouldExposePlan(plan, settings, ownerView))
+      .map(publicPlan);
+
+    return success(res, { plans, settings: { publicLifetimeEnabled: settings.publicLifetimeEnabled } });
   } catch (error) {
     return failure(res, error, 500);
+  }
+});
+
+router.get('/settings', requireOwner, (req, res) => {
+  try {
+    return success(res, { settings: billingSettingsManager.getBillingSettings() });
+  } catch (error) {
+    return failure(res, error, 500);
+  }
+});
+
+router.patch('/settings', requireOwner, (req, res) => {
+  try {
+    const settings = billingSettingsManager.updateBillingSettings({
+      publicLifetimeEnabled: req.body?.publicLifetimeEnabled === true,
+    }, actor(req));
+
+    return success(res, { settings });
+  } catch (error) {
+    return failure(res, error, 400);
   }
 });
 
