@@ -4,7 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { appBaseStyles, shellStyles } from './ui/components.js';
 import { getTheme } from './ui/theme.js';
 import { api } from './services/apiClient.js';
-import { navItems, ROUTES } from './ui/layout.js';
+import { navItems, ROUTES as BASE_ROUTES } from './ui/layout.js';
 import { getStorage, removeStorage, setStorage } from './storage.js';
 
 import { useNavbar } from './hooks/useNavbar.js';
@@ -16,6 +16,12 @@ import Navbar from './shared/Navbar.jsx';
 import OwnerSidebar from './pages/owner/components/OwnerSidebar.jsx';
 import Topbar from './shared/Topbar.jsx';
 import Login from './pages/core/Login.jsx';
+import EmbedStudio from './pages/modules/EmbedStudio.jsx';
+
+const ROUTES = [
+  ...BASE_ROUTES,
+  { key: 'embedStudio', label: 'Embed Studio', icon: 'modules', path: '/embed-studio', component: EmbedStudio },
+];
 
 const OWNER_MANAGED_GUILD_KEY = 'owner_managed_guild';
 const GUILD_STORAGE_KEY = 'selected_guild';
@@ -23,6 +29,7 @@ const ROUTE_PATHS = ROUTES.map((routeItem) => routeItem.path);
 const GUILD_REQUIRED_ROUTES = new Set([
   'overview', 'cases', 'warnings', 'automod', 'generalSettings',
   'messages', 'forms', 'modules', 'logs', 'admin', 'moderation',
+  'embedStudio',
 ]);
 
 function normalizeOwnerGuilds(payload) {
