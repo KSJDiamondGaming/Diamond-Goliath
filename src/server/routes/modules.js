@@ -16,6 +16,10 @@ const autoRoleManager = require('../../modules/autoRoles/autoRoleManager');
 const verificationStore = require('../../modules/verification/verificationStore');
 const verificationManager = require('../../modules/verification/verificationManager');
 const {
+  getAllEmbedDeployments,
+  deleteEmbedDeployment,
+} = require('../../functions/embed/embedDeploymentStore');
+const {
   isGoliathPermissionError,
   validateRoleSelection,
 } = require('../../helpers/goliathPermissionGuard');
@@ -65,6 +69,12 @@ function cleanPresetName(value) {
   const name = String(value || '').trim().slice(0, 50);
   if (!name) throw new Error('Preset name is required.');
   return name;
+}
+
+function cleanDeploymentKey(value) {
+  const key = String(value || '').trim().slice(0, 100);
+  if (!key) throw new Error('Deployment key is required.');
+  return key;
 }
 
 function normalizeModuleMap(modules = {}) {
@@ -297,19 +307,24 @@ router.get('/:guildId/auto-roles/analytics', (req, res) => {
 router.get('/:guildId/embed-studio', (req, res) => {
   try {
     const guildId = getGuildId(req);
-    const builder = getGuildSection(guildId, 'embedBuilder', { draft: {}, templates: {} });
+    const builder = getGuildSection(guildId, 'embedBuilder', { draft: {}, templates: {}, deployments: {} });
     const presets = getGuildSection(guildId, 'embedPresets', {});
     const defaults = getGuildSection(guildId, 'embedDefaults', {});
+    const deployments = getAllEmbedDeployments(guildId);
 
     return success(res, {
       guildId,
-      builder,
+      builder: {
+        ...builder,
+        deployments,
+      },
       presets,
       defaults,
       overview: {
         draftSaved: Boolean(builder?.draft),
         presetCount: Object.keys(presets || {}).filter((key) => key !== 'updatedAt').length,
         templateCount: Object.keys(builder?.templates || {}).length,
+        deploymentCount: Object.keys(deployments || {}).length,
       },
     });
   } catch (error) {
@@ -320,7 +335,7 @@ router.get('/:guildId/embed-studio', (req, res) => {
 router.post('/:guildId/embed-studio/draft', (req, res) => {
   try {
     const guildId = getGuildId(req);
-    const current = getGuildSection(guildId, 'embedBuilder', { draft: {}, templates: {} });
+    const current = getGuildSection(guildId, 'embedBuilder', { draft: {}, templates: {}, deployments: {} });
     const draft = {
       content: String(req.body?.content || '').slice(0, 2000),
       embed: req.body?.embed && typeof req.body.embed === 'object' ? req.body.embed : {},
@@ -363,6 +378,29 @@ router.delete('/:guildId/embed-studio/presets/:name', (req, res) => {
     const presets = getGuildSection(guildId, 'embedPresets', {});
 
     return success(res, { guildId, name, deleted, presets });
+  } catch (error) {
+    return failure(res, error, 400);
+  }
+});
+
+router.delete('/:guildId/embed-studio/deployments/:key', (req, res) => {
+  try {
+    const guildId = getGuildId(req);
+    const key = cleanDeploymentKey(req.params.key);
+    const deleted = deleteEmbedDeployment(guildId, key);
+    const builder = getGuildSection(guildId, 'embedBuilder', { draft: {}, templates: {}, deployments: {} });
+    const deployments = getAllEmbedDeployments(guildId);
+
+    return success(res, {
+      guildId,
+      key,
+      deleted,
+      builder: {
+        ...builder,
+        deployments,
+      },
+      deployments,
+    });
   } catch (error) {
     return failure(res, error, 400);
   }
