@@ -29,6 +29,7 @@ import Logs from '../pages/core/Logs';
 import OwnerView from '../pages/owner/OwnerOverview';
 import OwnerGlobalServers from '../pages/owner/GlobalServers';
 import OwnerRuntimeMonitor from '../pages/owner/RuntimeMonitor';
+import OwnerBillingAdmin from '../pages/owner/BillingAdmin';
 import OwnerSecurityCenter from '../pages/owner/SecurityCenter';
 import OwnerBackupCenter from '../pages/owner/BackupCenter';
 import OwnerDeploymentCenter from '../pages/owner/DeploymentCenter';
@@ -91,6 +92,7 @@ export const ROUTES = [
   { key: 'ownerView', label: 'Owner View', icon: 'admin', path: '/owner', component: OwnerView, ownerOnly: true },
   { key: 'ownerServers', label: 'Global Servers', icon: 'modules', path: '/owner/servers', component: OwnerGlobalServers, ownerOnly: true },
   { key: 'ownerRuntime', label: 'Runtime Monitor', icon: 'admin', path: '/owner/runtime', component: OwnerRuntimeMonitor, ownerOnly: true },
+  { key: 'ownerBilling', label: 'Billing Admin', icon: 'admin', path: '/owner/billing', component: OwnerBillingAdmin, ownerOnly: true },
   { key: 'ownerSecurity', label: 'Owner Security', icon: 'admin', path: '/owner/security', component: OwnerSecurityCenter, ownerOnly: true },
   { key: 'ownerPermissionHealth', label: 'Permission Health', icon: 'admin', path: '/owner/permission-health', component: OwnerPermissionHealth, ownerOnly: true },
   { key: 'ownerBackups', label: 'Backup Center', icon: 'admin', path: '/owner/backups', component: OwnerBackupCenter, ownerOnly: true },
@@ -135,6 +137,7 @@ export const PAGE_LAYOUTS = {
   ownerView: { title: 'Owner View', description: 'Owner-only platform dashboard.', sections: [] },
   ownerServers: { title: 'Global Servers', description: 'Owner-level server registry across all environments.', sections: [] },
   ownerRuntime: { title: 'Runtime Monitor', description: 'Owner-level runtime monitoring across DEV, BETA and PRODUCTION.', sections: [] },
+  ownerBilling: { title: 'Billing Admin', description: 'Generate and manage premium access codes.', sections: [] },
   ownerSecurity: { title: 'Owner Security', description: 'Global security centre across all environments.', sections: [] },
   ownerPermissionHealth: { title: 'Permission Health', description: 'Owner-level Goliath access and hierarchy scan.', sections: [] },
   ownerBackups: { title: 'Backup Center', description: 'Owner-level backup and restore monitoring.', sections: [] },
