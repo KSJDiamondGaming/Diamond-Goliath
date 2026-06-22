@@ -219,6 +219,18 @@ async function verifyMember(interaction) {
   const verifiedRole = await fetchRole(guild, cleanRoleId(section.settings?.verifiedRoleId, guildId));
   const unverifiedRole = await fetchRole(guild, cleanRoleId(section.settings?.unverifiedRoleId, guildId));
 
+  if (verifiedRole && member.roles.cache.has(verifiedRole.id)) {
+    return { ok: true, message: 'You are already verified.' };
+  }
+
+  if (unverifiedRole && !member.roles.cache.has(unverifiedRole.id)) {
+    verificationStore.incrementAnalytics(guildId, { failed: 1 });
+    return {
+      ok: false,
+      message: `You need the ${unverifiedRole.name} role before you can verify.`,
+    };
+  }
+
   const verifiedRoleStatus = resolveRoleActionStatus(guild, member, verifiedRole, 'add');
   if (!verifiedRoleStatus.ok) {
     verificationStore.incrementAnalytics(guildId, { failed: 1 });
