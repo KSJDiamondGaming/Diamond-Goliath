@@ -64,7 +64,7 @@ function actor(req) {
   return req.session?.user?.id || 'owner';
 }
 
-function publicPlan(plan) {
+function publicPlan(plan, settings = billingSettingsManager.getBillingSettings()) {
   return {
     id: plan.id,
     name: plan.name,
@@ -73,6 +73,7 @@ function publicPlan(plan) {
     rank: plan.rank,
     features: [...(plan.features || [])],
     limits: { ...(plan.limits || {}) },
+    pricing: { ...(settings.pricing?.[plan.id] || {}) },
   };
 }
 
@@ -88,9 +89,15 @@ router.get('/plans', (req, res) => {
     const ownerView = isOwnerRequest(req) && req.query?.owner === 'true';
     const plans = Object.values(PLAN_DEFINITIONS)
       .filter((plan) => shouldExposePlan(plan, settings, ownerView))
-      .map(publicPlan);
+      .map((plan) => publicPlan(plan, settings));
 
-    return success(res, { plans, settings: { publicLifetimeEnabled: settings.publicLifetimeEnabled } });
+    return success(res, {
+      plans,
+      settings: {
+        publicLifetimeEnabled: settings.publicLifetimeEnabled,
+        pricing: settings.pricing,
+      },
+    });
   } catch (error) {
     return failure(res, error, 500);
   }
@@ -108,6 +115,7 @@ router.patch('/settings', requireOwner, (req, res) => {
   try {
     const settings = billingSettingsManager.updateBillingSettings({
       publicLifetimeEnabled: req.body?.publicLifetimeEnabled === true,
+      pricing: req.body?.pricing || {},
     }, actor(req));
 
     return success(res, { settings });
@@ -119,8 +127,9 @@ router.patch('/settings', requireOwner, (req, res) => {
 router.get('/subscription/:guildId', (req, res) => {
   try {
     const guildId = getGuildId(req);
+    const settings = billingSettingsManager.getBillingSettings();
     const subscription = subscriptionManager.getSubscription(guildId);
-    const plan = publicPlan(getPlanDefinition(subscription.plan));
+    const plan = publicPlan(getPlanDefinition(subscription.plan), settings);
 
     return success(res, {
       guildId,
@@ -135,12 +144,13 @@ router.get('/subscription/:guildId', (req, res) => {
 router.get('/entitlements/:guildId', (req, res) => {
   try {
     const guildId = getGuildId(req);
+    const settings = billingSettingsManager.getBillingSettings();
     const summary = entitlementManager.getEntitlementSummary(guildId);
 
     return success(res, {
       guildId,
       ...summary,
-      plan: publicPlan(summary.plan),
+      plan: publicPlan(summary.plan, settings),
     });
   } catch (error) {
     return failure(res, error, 400);
