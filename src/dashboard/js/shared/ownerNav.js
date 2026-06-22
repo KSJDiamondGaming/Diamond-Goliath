@@ -2,6 +2,7 @@ export const OWNER_NAV_ITEMS = [
   { key: 'ownerOverview', label: 'Owner Overview', icon: 'overview', path: '/owner' },
   { key: 'ownerServers', label: 'Global Servers', icon: 'modules', path: '/owner/servers' },
   { key: 'ownerRuntime', label: 'Runtime Monitor', icon: 'admin', path: '/owner/runtime' },
+  { key: 'ownerBilling', label: 'Billing Admin', icon: 'admin', path: '/owner/billing' },
   { key: 'ownerSecurity', label: 'Global Security', icon: 'admin', path: '/owner/security' },
   { key: 'ownerForms', label: 'Forms Hub', icon: 'modules', path: '/owner/forms' },
   { key: 'ownerTickets', label: 'Tickets Hub', icon: 'modules', path: '/owner/tickets' },
@@ -13,7 +14,7 @@ export const OWNER_NAV_ITEMS = [
 export const OWNER_NAV_GROUPS = [
   {
     title: 'Control Centre',
-    items: ['ownerOverview', 'ownerServers', 'ownerRuntime'],
+    items: ['ownerOverview', 'ownerServers', 'ownerRuntime', 'ownerBilling'],
   },
   {
     title: 'Operations',
