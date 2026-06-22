@@ -24,6 +24,16 @@ export const moduleRegistry = [
     summary: 'Assign roles automatically when members join or meet conditions.',
   },
   {
+    key: 'embedBuilder',
+    name: 'Embed Studio',
+    icon: 'ES',
+    route: '/embed-studio',
+    category: MODULE_CATEGORIES.feature,
+    status: MODULE_STATUSES.backendReady,
+    enabled: true,
+    summary: 'Build, preview, save and manage Discord embeds from the dashboard.',
+  },
+  {
     key: 'forms',
     name: 'Forms',
     icon: 'FM',
