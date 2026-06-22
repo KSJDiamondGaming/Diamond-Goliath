@@ -26,6 +26,29 @@ const PLAN_COPY = {
   },
 };
 
+const PLAN_PRICING = {
+  free: {
+    price: '£0',
+    cadence: 'forever',
+    note: 'No payment required.',
+  },
+  plus: {
+    price: '£4.99',
+    cadence: 'per month',
+    note: 'Stripe and PayPal checkout coming soon.',
+  },
+  pro: {
+    price: '£9.99',
+    cadence: 'per month',
+    note: 'Stripe and PayPal checkout coming soon.',
+  },
+  lifetime: {
+    price: 'Not publicly sold',
+    cadence: 'owner granted',
+    note: 'Hidden founder, reward and manual entitlement tier.',
+  },
+};
+
 const FEATURE_LABELS = {
   'tickets.basic': { icon: '🎫', label: 'Ticket System', description: 'Create and manage support tickets for your community.' },
   'tickets.advanced': { icon: '🎟️', label: 'Advanced Tickets', description: 'Higher limits and more flexible ticket workflows.' },
@@ -115,18 +138,26 @@ function FeatureListItem({ theme, feature }) {
   );
 }
 
-function PlanCard({ theme, plan, current }) {
+function PlanCard({ theme, plan, current, onUpgrade }) {
   const copy = PLAN_COPY[plan.id] || PLAN_COPY.free;
+  const pricing = PLAN_PRICING[plan.id] || PLAN_PRICING.free;
   const limits = plan.limits || {};
+  const hidden = plan.public === false;
 
   return (
-    <div style={{ border: `1px solid ${current ? '#86efac' : theme.cardBorder}`, background: current ? 'rgba(34,197,94,0.10)' : 'rgba(15,23,42,0.24)', borderRadius: 18, padding: 16, display: 'grid', gap: 14 }}>
+    <div style={{ border: `1px solid ${current ? '#86efac' : hidden ? 'rgba(250,204,21,0.42)' : theme.cardBorder}`, background: current ? 'rgba(34,197,94,0.10)' : hidden ? 'rgba(250,204,21,0.08)' : 'rgba(15,23,42,0.24)', borderRadius: 18, padding: 16, display: 'grid', gap: 14 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
         <div>
           <strong style={{ color: theme.cardText, fontSize: 22 }}>{plan.icon} {plan.name}</strong>
           <div style={{ marginTop: 6, color: current ? '#86efac' : '#fde68a', fontSize: 12, fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{copy.badge}</div>
         </div>
         {current ? <span style={{ color: '#86efac', fontWeight: 950, fontSize: 12, textTransform: 'uppercase' }}>Current</span> : null}
+      </div>
+
+      <div style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(15,23,42,0.30)', borderRadius: 14, padding: 13, display: 'grid', gap: 2 }}>
+        <strong style={{ color: theme.cardText, fontSize: plan.id === 'lifetime' ? 20 : 28, lineHeight: 1 }}>{pricing.price}</strong>
+        <span style={{ color: theme.mutedText, fontSize: 12, fontWeight: 850, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{pricing.cadence}</span>
+        <span style={{ color: theme.mutedText, fontSize: 12, lineHeight: 1.45 }}>{pricing.note}</span>
       </div>
 
       <div style={{ color: theme.mutedText, fontSize: 13, lineHeight: 1.55 }}>
@@ -152,11 +183,17 @@ function PlanCard({ theme, plan, current }) {
       <div style={{ color: theme.mutedText, fontSize: 12, lineHeight: 1.45 }}>
         <strong style={{ color: theme.cardText }}>Ideal for:</strong> {copy.idealFor}
       </div>
+
+      {!current && !hidden ? (
+        <button type="button" onClick={() => onUpgrade?.(plan)} style={{ border: '1px solid rgba(250,204,21,0.45)', background: 'rgba(250,204,21,0.14)', color: '#fde68a', borderRadius: 12, padding: '11px 13px', fontWeight: 950, cursor: 'pointer' }}>
+          Upgrade to {plan.name}
+        </button>
+      ) : null}
     </div>
   );
 }
 
-export default function Billing({ theme, selectedGuild, selectedGuildData }) {
+export default function Billing({ theme, selectedGuild, selectedGuildData, isOwner = false }) {
   const guildId = getGuildId(selectedGuild, selectedGuildData);
   const [plansPayload, setPlansPayload] = useState(null);
   const [subscriptionPayload, setSubscriptionPayload] = useState(null);
@@ -164,6 +201,7 @@ export default function Billing({ theme, selectedGuild, selectedGuildData }) {
   const [loading, setLoading] = useState(false);
   const [redeeming, setRedeeming] = useState(false);
   const [redeemCode, setRedeemCode] = useState('');
+  const [showHiddenPlans, setShowHiddenPlans] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
@@ -172,6 +210,9 @@ export default function Billing({ theme, selectedGuild, selectedGuildData }) {
   const currentPlan = subscriptionPayload?.plan || entitlementsPayload?.plan || {};
   const features = asArray(entitlementsPayload?.features || currentPlan.features);
   const limits = entitlementsPayload?.limits || currentPlan.limits || {};
+  const visiblePlans = useMemo(() => (
+    plans.filter((plan) => plan.public !== false || showHiddenPlans || plan.id === subscription.plan)
+  ), [plans, showHiddenPlans, subscription.plan]);
 
   const loadBilling = useCallback(async () => {
     if (!guildId) return;
@@ -221,6 +262,10 @@ export default function Billing({ theme, selectedGuild, selectedGuildData }) {
     } finally {
       setRedeeming(false);
     }
+  }
+
+  function handleUpgrade(plan) {
+    setNotice(`${plan.name} checkout is coming soon. Stripe and PayPal will both connect to this upgrade button.`);
   }
 
   if (!guildId) {
@@ -277,9 +322,18 @@ export default function Billing({ theme, selectedGuild, selectedGuildData }) {
         </div>
       </SectionCard>
 
-      <SectionCard theme={theme} title="Available Plans" subtitle="Choose the Goliath tier that matches your community size and needs.">
+      <SectionCard
+        theme={theme}
+        title="Choose Your Plan"
+        subtitle="Lifetime is hidden by default because it is an owner-granted reward tier, not a public paid plan."
+        actions={isOwner ? (
+          <button type="button" onClick={() => setShowHiddenPlans((value) => !value)} style={{ border: '1px solid rgba(250,204,21,0.35)', background: showHiddenPlans ? 'rgba(250,204,21,0.16)' : 'rgba(15,23,42,0.36)', color: '#fde68a', borderRadius: 12, padding: '10px 12px', fontWeight: 950, cursor: 'pointer' }}>
+            {showHiddenPlans ? 'Hide Hidden Plans' : 'Show Hidden Plans'}
+          </button>
+        ) : null}
+      >
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))', gap: 14 }}>
-          {plans.map((plan) => <PlanCard key={plan.id} theme={theme} plan={plan} current={plan.id === subscription.plan} />)}
+          {visiblePlans.map((plan) => <PlanCard key={plan.id} theme={theme} plan={plan} current={plan.id === subscription.plan} onUpgrade={handleUpgrade} />)}
         </div>
       </SectionCard>
 
