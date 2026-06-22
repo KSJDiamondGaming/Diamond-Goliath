@@ -4,6 +4,13 @@ import { api } from '../../services/apiClient.js';
 import PageShell, { SectionCard, EmptyState, LoadingPanel, Notice, SecondaryButton, StatGrid, SummaryStat } from '../../shared/PageShell';
 import PremiumLock from '../../shared/PremiumLock.jsx';
 
+const PROVIDER_OPTIONS = [
+  { id: 'manual', label: 'Manual / Not configured' },
+  { id: 'openai', label: 'OpenAI' },
+  { id: 'deepl', label: 'DeepL' },
+  { id: 'google', label: 'Google Translate' },
+];
+
 function getGuildId(selectedGuild, selectedGuildData) {
   const id = selectedGuildData?.guildId || selectedGuildData?.id || selectedGuild || '';
   return String(id).split(':').pop().trim();
@@ -36,13 +43,21 @@ function DetailRow({ theme, label, value, hint }) {
   );
 }
 
-function StatusPill({ theme, enabled, label }) {
+function fieldStyle(theme) {
+  return {
+    border: `1px solid ${theme.cardBorder}`,
+    background: 'rgba(15,23,42,0.48)',
+    color: theme.cardText,
+    borderRadius: 12,
+    padding: '11px 12px',
+    fontWeight: 900,
+    minWidth: 0,
+  };
+}
+
+function StatusPill({ enabled, label }) {
   const tone = enabled ? '#86efac' : '#fcd34d';
-  return (
-    <span style={{ border: `1px solid ${tone}`, color: tone, borderRadius: 999, padding: '5px 9px', fontSize: 12, fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-      {label || (enabled ? 'enabled' : 'disabled')}
-    </span>
-  );
+  return <span style={{ border: `1px solid ${tone}`, color: tone, borderRadius: 999, padding: '5px 9px', fontSize: 12, fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label || (enabled ? 'enabled' : 'disabled')}</span>;
 }
 
 function ChannelCard({ theme, channel }) {
@@ -57,7 +72,7 @@ function ChannelCard({ theme, channel }) {
           <div style={{ color: theme.mutedText, fontSize: 12, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{channel.channelId || channel.sourceChannelId || 'translation_channel'}</div>
           <h3 style={{ margin: '5px 0 0', color: theme.cardText }}>{channel.name || channel.channelName || 'Translation Channel'}</h3>
         </div>
-        <StatusPill theme={theme} enabled={enabled} />
+        <StatusPill enabled={enabled} />
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))', gap: 10 }}>
         <DetailRow theme={theme} label="Source" value={sourceLanguage} />
@@ -74,7 +89,7 @@ function PreferenceCard({ theme, preference }) {
     <div style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(15,23,42,0.24)', borderRadius: 14, padding: 13, display: 'grid', gap: 8 }}>
       <strong style={{ color: theme.cardText }}>{preference.userTag || preference.username || preference.userId || preference.id || 'Unknown user'}</strong>
       <div style={{ color: theme.mutedText, fontSize: 13, lineHeight: 1.5 }}>
-        <div><strong style={{ color: theme.cardText }}>Language:</strong> {preference.language || preference.locale || 'Not set'}</div>
+        <div><strong style={{ color: theme.cardText }}>Language:</strong> {preference.language || preference.locale || preference.preferredLanguage || 'Not set'}</div>
         <div><strong style={{ color: theme.cardText }}>Updated:</strong> {formatDate(preference.updatedAt)}</div>
       </div>
     </div>
@@ -84,8 +99,11 @@ function PreferenceCard({ theme, preference }) {
 export default function Translation({ theme, selectedGuild, selectedGuildData }) {
   const guildId = getGuildId(selectedGuild, selectedGuildData);
   const [config, setConfig] = useState({});
+  const [providerStatus, setProviderStatus] = useState(null);
+  const [providerForm, setProviderForm] = useState({ provider: 'manual', defaultLanguage: 'en', sourceLanguage: 'auto' });
   const [entitlements, setEntitlements] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [savingProvider, setSavingProvider] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
@@ -93,8 +111,7 @@ export default function Translation({ theme, selectedGuild, selectedGuildData })
   const analytics = config.analytics || {};
   const channels = useMemo(() => asArray(config.channels || config.channelPairs || config.configuredChannels), [config]);
   const preferences = useMemo(() => asArray(config.userLanguages || config.preferences || config.userPreferences), [config]);
-  const providers = useMemo(() => asArray(config.providers || settings.providers), [config, settings]);
-  const threads = useMemo(() => asArray(config.threads || config.translationThreads), [config]);
+  const threads = useMemo(() => asArray(config.threads || config.translationThreads || config.threadMappings), [config]);
   const hasTranslationAccess = Array.isArray(entitlements?.features) && entitlements.features.includes('translation.hub');
 
   async function load() {
@@ -109,12 +126,25 @@ export default function Translation({ theme, selectedGuild, selectedGuildData })
 
       if (!Array.isArray(entitlementPayload.features) || !entitlementPayload.features.includes('translation.hub')) {
         setConfig({ enabled: false, settings: {}, channels: {}, userLanguages: {}, analytics: {} });
+        setProviderStatus(null);
         return;
       }
 
-      const payload = await api.getGuildModules(guildId);
-      const modules = payload.modules || {};
-      setConfig(modules.translation || { enabled: false, settings: {}, channels: {}, userLanguages: {}, analytics: {} });
+      const [configPayload, providerPayload] = await Promise.all([
+        api.getTranslationConfig(guildId),
+        api.getTranslationProvider(guildId),
+      ]);
+
+      const nextConfig = configPayload.config || { enabled: false, settings: {}, channels: {}, userLanguages: {}, analytics: {} };
+      const nextProvider = providerPayload.provider || nextConfig.providerStatus || null;
+
+      setConfig(nextConfig);
+      setProviderStatus(nextProvider);
+      setProviderForm({
+        provider: nextProvider?.provider || nextConfig.provider || nextConfig.settings?.provider || 'manual',
+        defaultLanguage: nextProvider?.defaultLanguage || nextConfig.settings?.defaultTargetLanguage || 'en',
+        sourceLanguage: nextProvider?.sourceLanguage || nextConfig.settings?.defaultSourceLanguage || 'auto',
+      });
     } catch (loadError) {
       setError(loadError.message || 'Failed to load Translation Hub.');
     } finally {
@@ -134,13 +164,32 @@ export default function Translation({ theme, selectedGuild, selectedGuildData })
 
     try {
       const enabled = config.enabled !== true;
-      const result = await api.setGuildModuleEnabled(guildId, 'translation', enabled);
-      setConfig(result.modules?.translation || { ...config, enabled });
+      const result = await api.setTranslationEnabled(guildId, enabled);
+      setConfig(result.config || { ...config, enabled });
       setNotice(`Translation Hub ${enabled ? 'enabled' : 'disabled'}.`);
     } catch (saveError) {
       setError(saveError.message || 'Failed to update Translation Hub status.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function saveProvider(event) {
+    event.preventDefault();
+    if (!guildId || !hasTranslationAccess) return;
+    setSavingProvider(true);
+    setError('');
+    setNotice('');
+
+    try {
+      const result = await api.saveTranslationProvider(guildId, providerForm);
+      setConfig(result.config || config);
+      setProviderStatus(result.provider || null);
+      setNotice('Translation provider settings saved. API keys are never returned to the dashboard.');
+    } catch (saveError) {
+      setError(saveError.message || 'Failed to save provider settings.');
+    } finally {
+      setSavingProvider(false);
     }
   }
 
@@ -162,13 +211,15 @@ export default function Translation({ theme, selectedGuild, selectedGuildData })
           currentPlan={entitlements.plan}
           requiredPlan={{ name: 'Pro', icon: '👑' }}
           message="Realtime multilingual channels, provider integration and translation threads require Goliath Pro."
+          unlocks={['OpenAI, DeepL or Google provider support', 'Realtime translation channels', 'User language profiles', 'Translation threads', 'Translation analytics']}
         />
       </PageShell>
     );
   }
 
-  const providerName = settings.provider || config.provider || providers[0]?.name || providers[0]?.id || 'Not connected';
-  const providerReady = Boolean(settings.provider || config.provider || providers.length);
+  const providerName = providerStatus?.label || settings.provider || config.provider || 'Not configured';
+  const providerReady = Boolean(providerStatus?.ready);
+  const providerState = providerStatus?.status || (providerReady ? 'ready' : 'not_configured');
 
   return (
     <PageShell
@@ -184,43 +235,59 @@ export default function Translation({ theme, selectedGuild, selectedGuildData })
 
       <StatGrid min="min(190px, 100%)">
         <SummaryStat theme={theme} label="Status" value={config.enabled === true ? 'Enabled' : 'Disabled'} accent={config.enabled === true ? '#22c55e' : '#f59e0b'} description="modules.translation.enabled" />
+        <SummaryStat theme={theme} label="Provider" value={providerReady ? 'Ready' : 'Missing'} accent={providerReady ? '#22c55e' : '#f59e0b'} description={providerName} />
         <SummaryStat theme={theme} label="Channels" value={channels.length} accent="#3b82f6" description="Configured translation channels" />
         <SummaryStat theme={theme} label="Threads" value={threads.length} accent="#a855f7" description="Translation threads" />
         <SummaryStat theme={theme} label="Users" value={preferences.length} accent="#22c55e" description="Language preferences" />
-        <SummaryStat theme={theme} label="Provider" value={providerReady ? 'Ready' : 'Missing'} accent={providerReady ? '#22c55e' : '#f59e0b'} description={providerName} />
       </StatGrid>
+
+      <SectionCard theme={theme} title="Provider Configuration" subtitle="Choose the translation provider and default language. API keys stay server-side and are never exposed here.">
+        <form onSubmit={saveProvider} style={{ display: 'grid', gap: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 210px), 1fr))', gap: 12 }}>
+            <label style={{ display: 'grid', gap: 6, color: theme.mutedText, fontWeight: 900 }}>
+              Provider
+              <select value={providerForm.provider} onChange={(event) => setProviderForm((current) => ({ ...current, provider: event.target.value }))} style={fieldStyle(theme)}>
+                {PROVIDER_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+              </select>
+            </label>
+            <label style={{ display: 'grid', gap: 6, color: theme.mutedText, fontWeight: 900 }}>
+              Source Language
+              <input value={providerForm.sourceLanguage} onChange={(event) => setProviderForm((current) => ({ ...current, sourceLanguage: event.target.value }))} placeholder="auto" style={fieldStyle(theme)} />
+            </label>
+            <label style={{ display: 'grid', gap: 6, color: theme.mutedText, fontWeight: 900 }}>
+              Default Language
+              <input value={providerForm.defaultLanguage} onChange={(event) => setProviderForm((current) => ({ ...current, defaultLanguage: event.target.value }))} placeholder="en" style={fieldStyle(theme)} />
+            </label>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 12 }}>
+            <DetailRow theme={theme} label="Provider Status" value={providerState.replace(/_/g, ' ')} />
+            <DetailRow theme={theme} label="API Key" value={providerStatus?.apiKeyConfigured ? 'Configured' : 'Missing'} hint="Set provider API keys in the server environment." />
+            <DetailRow theme={theme} label="Dashboard Safety" value="Keys hidden" hint="The API never returns provider secrets." />
+          </div>
+          <button type="submit" disabled={savingProvider} style={{ justifySelf: 'start', border: '1px solid rgba(34,197,94,0.42)', background: savingProvider ? 'rgba(34,197,94,0.10)' : 'rgba(34,197,94,0.18)', color: '#bbf7d0', borderRadius: 12, padding: '11px 13px', fontWeight: 950, cursor: savingProvider ? 'not-allowed' : 'pointer' }}>
+            {savingProvider ? 'Saving...' : 'Save Provider Settings'}
+          </button>
+        </form>
+      </SectionCard>
 
       <SectionCard theme={theme} title="Translation Analytics" subtitle="Usage data from modules.translation.analytics.">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))', gap: 12 }}>
-          <DetailRow theme={theme} label="Messages Translated" value={formatNumber(analytics.messagesTranslated ?? analytics.translated ?? 0)} />
+          <DetailRow theme={theme} label="Messages Translated" value={formatNumber(analytics.messagesTranslated ?? analytics.translated ?? analytics.manualTranslations ?? 0)} />
           <DetailRow theme={theme} label="Characters" value={formatNumber(analytics.charactersTranslated ?? analytics.characters ?? 0)} />
-          <DetailRow theme={theme} label="Failures" value={formatNumber(analytics.failed ?? analytics.failures ?? 0)} />
+          <DetailRow theme={theme} label="Failures" value={formatNumber(analytics.failed ?? analytics.failures ?? analytics.failedTranslations ?? 0)} />
           <DetailRow theme={theme} label="Last Translation" value={formatDate(analytics.lastTranslationAt || analytics.lastTranslatedAt)} />
         </div>
       </SectionCard>
 
       <SectionCard theme={theme} title="Channel Management" subtitle="Configured channel language pairs and output behaviour.">
         <div style={{ display: 'grid', gap: 12 }}>
-          {channels.length ? channels.map((channel, index) => (
-            <ChannelCard key={channel.id || channel.channelId || channel.sourceChannelId || index} theme={theme} channel={channel} />
-          )) : <EmptyState theme={theme} text="No translation channels configured yet." />}
-        </div>
-      </SectionCard>
-
-      <SectionCard theme={theme} title="Provider Status" subtitle="Provider-ready status and future premium gating information.">
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 12 }}>
-          <DetailRow theme={theme} label="Provider" value={providerName} />
-          <DetailRow theme={theme} label="Mode" value={settings.mode || config.mode || 'Provider-ready'} />
-          <DetailRow theme={theme} label="Fallback" value={settings.fallbackProvider || 'Not set'} />
-          <DetailRow theme={theme} label="Premium Gate" value="translation.hub" hint="Ready for entitlement checks." />
+          {channels.length ? channels.map((channel, index) => <ChannelCard key={channel.id || channel.channelId || channel.sourceChannelId || index} theme={theme} channel={channel} />) : <EmptyState theme={theme} text="No translation channels configured yet." />}
         </div>
       </SectionCard>
 
       <SectionCard theme={theme} title="User Language Preferences" subtitle="Stored user language preferences for automatic translation flows.">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))', gap: 12 }}>
-          {preferences.length ? preferences.slice(0, 12).map((preference, index) => (
-            <PreferenceCard key={preference.userId || preference.id || index} theme={theme} preference={preference} />
-          )) : <EmptyState theme={theme} text="No user language preferences stored yet." />}
+          {preferences.length ? preferences.slice(0, 12).map((preference, index) => <PreferenceCard key={preference.userId || preference.id || index} theme={theme} preference={preference} />) : <EmptyState theme={theme} text="No user language preferences stored yet." />}
         </div>
       </SectionCard>
 
@@ -230,15 +297,6 @@ export default function Translation({ theme, selectedGuild, selectedGuildData })
           <DetailRow theme={theme} label="Thread Mode" value={settings.threadMode || config.threadMode || 'Planned'} />
           <DetailRow theme={theme} label="Auto Create" value={settings.autoCreateThreads === true ? 'On' : 'Off'} />
           <DetailRow theme={theme} label="Last Thread" value={formatDate(analytics.lastThreadAt)} />
-        </div>
-      </SectionCard>
-
-      <SectionCard theme={theme} title="Management Roadmap" subtitle="This hub is ready for provider integration, thread management and premium gating.">
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 12 }}>
-          <DetailRow theme={theme} label="Provider Integration" value="Next" hint="Connect a translation provider backend." />
-          <DetailRow theme={theme} label="Thread System" value="Next" hint="Per-language translation threads." />
-          <DetailRow theme={theme} label="Premium Gate" value="Ready" hint="Gate with entitlement translation.hub." />
-          <DetailRow theme={theme} label="Analytics" value="Ready" hint="Messages, characters and failures are surfaced here." />
         </div>
       </SectionCard>
     </PageShell>
