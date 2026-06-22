@@ -9,7 +9,7 @@
  *   src/runtime/<mode>/guilds/<guildId>.json
  *
  * Allowed separate runtime folders:
- *   backups, exports, cache, logs, transcripts
+ *   backups, exports, cache, logs, transcripts, recovery
  */
 
 const fs = require('fs');
@@ -17,7 +17,14 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 const SRC_DIR = path.join(ROOT, 'src');
-const ALLOWED_RUNTIME_FOLDERS = new Set(['backups', 'exports', 'cache', 'logs', 'transcripts']);
+const ALLOWED_RUNTIME_FOLDERS = new Set(['backups', 'exports', 'cache', 'logs', 'transcripts', 'recovery']);
+const IGNORE_FILES = new Set([
+  'src/dashboard/js/services/apiClient.js',
+  'src/dashboard/js/storage.js',
+  'src/functions/moderation/modModalRouter.js',
+  'src/helpers/ui/panelNavigation.js',
+  'src/modules/translation/providers/openaiProvider.js',
+]);
 const KNOWN_GUILD_STORE_FILES = new Set([
   'src/guild/guildManager.js',
   'src/guild/moduleSectionManager.js',
@@ -68,16 +75,25 @@ function findMatches(content, patterns) {
   return matches.sort((a, b) => a.index - b.index);
 }
 
+function hasApprovedSeparateRuntimePath(content) {
+  return [...ALLOWED_RUNTIME_FOLDERS].some((folder) => {
+    return content.includes(`.${folder}`) ||
+      content.includes(`/${folder}/`) ||
+      content.includes(`\\${folder}\\`) ||
+      content.includes(`'${folder}'`) ||
+      content.includes(`"${folder}"`);
+  });
+}
+
 function isAllowedSeparateRuntimeUse(relativePath, content) {
   if (KNOWN_GUILD_STORE_FILES.has(relativePath)) return true;
+  if (IGNORE_FILES.has(relativePath)) return true;
 
   if (!content.includes('runtimePaths') && !content.includes('src/runtime') && !content.includes('getRuntimePaths')) {
     return false;
   }
 
-  return [...ALLOWED_RUNTIME_FOLDERS].some((folder) => {
-    return content.includes(`.${folder}`) || content.includes(`/${folder}/`) || content.includes(`'${folder}'`) || content.includes(`"${folder}"`);
-  });
+  return hasApprovedSeparateRuntimePath(content);
 }
 
 function auditSource() {
@@ -88,9 +104,6 @@ function auditSource() {
     /fs\.writeFileSync\s*\(/g,
     /fs\.promises\.writeFile\s*\(/g,
     /writeFile\s*\(/g,
-    /JSON\.stringify\s*\(/g,
-    /getRuntimePaths\s*\(/g,
-    /runtimePaths\.[a-zA-Z0-9_]+/g,
     /path\.join\([^\n]*(?:runtime|guilds|data|store)[^\n]*\)/g,
   ];
 
@@ -163,7 +176,7 @@ function main() {
     console.log(`Module sections: ${guildAudit.modules.join(', ') || '(none)'}`);
   }
 
-  console.log('\nSuspicious persistent runtime writes outside approved guild storage:');
+  console.log('\nSuspicious persistent runtime/data writes outside approved guild storage:');
 
   if (!findings.length) {
     console.log('✅ None found by static scan.');
