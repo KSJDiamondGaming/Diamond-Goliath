@@ -23,6 +23,7 @@ const {
   isGoliathPermissionError,
   validateRoleSelection,
 } = require('../../helpers/goliathPermissionGuard');
+const { requirePlanLimit } = require('../middleware/requirePlanLimit');
 
 const router = express.Router();
 
@@ -75,6 +76,13 @@ function cleanDeploymentKey(value) {
   const key = String(value || '').trim().slice(0, 100);
   if (!key) throw new Error('Deployment key is required.');
   return key;
+}
+
+function countEmbedPresetsForLimit(req) {
+  const guildId = getGuildId(req);
+  const name = cleanPresetName(req.body?.name);
+  const presets = getGuildSection(guildId, 'embedPresets', {});
+  return Object.keys(presets || {}).filter((key) => key !== 'updatedAt' && key !== name).length;
 }
 
 function normalizeModuleMap(modules = {}) {
@@ -352,23 +360,29 @@ router.post('/:guildId/embed-studio/draft', (req, res) => {
   }
 });
 
-router.post('/:guildId/embed-studio/presets', (req, res) => {
-  try {
-    const guildId = getGuildId(req);
-    const name = cleanPresetName(req.body?.name);
-    const preset = saveEmbedPreset(guildId, name, {
-      ...(req.body?.embed && typeof req.body.embed === 'object' ? req.body.embed : {}),
-      content: String(req.body?.content || '').slice(0, 2000),
-      embed: req.body?.embed && typeof req.body.embed === 'object' ? req.body.embed : {},
-      name,
-    });
-    const presets = getGuildSection(guildId, 'embedPresets', {});
+router.post(
+  '/:guildId/embed-studio/presets',
+  requirePlanLimit('embedPresets', countEmbedPresetsForLimit, {
+    upgradeHint: 'Upgrade to Plus or Pro to save more embed presets.',
+  }),
+  (req, res) => {
+    try {
+      const guildId = getGuildId(req);
+      const name = cleanPresetName(req.body?.name);
+      const preset = saveEmbedPreset(guildId, name, {
+        ...(req.body?.embed && typeof req.body.embed === 'object' ? req.body.embed : {}),
+        content: String(req.body?.content || '').slice(0, 2000),
+        embed: req.body?.embed && typeof req.body.embed === 'object' ? req.body.embed : {},
+        name,
+      });
+      const presets = getGuildSection(guildId, 'embedPresets', {});
 
-    return success(res, { guildId, name, preset, presets });
-  } catch (error) {
-    return failure(res, error, 400);
+      return success(res, { guildId, name, preset, presets });
+    } catch (error) {
+      return failure(res, error, 400);
+    }
   }
-});
+);
 
 router.delete('/:guildId/embed-studio/presets/:name', (req, res) => {
   try {
@@ -543,7 +557,7 @@ router.get('/:guildId', (req, res) => {
       modules: normalizeModuleMap(guildData.modules || {}),
     });
   } catch (error) {
-    console.error('❌ Failed to load guild modules');
+    console.error('Failed to load guild modules');
     console.error(error);
 
     return res.status(500).json({
@@ -568,7 +582,7 @@ router.patch('/:guildId/:moduleKey/enabled', (req, res) => {
       modules: normalizeModuleMap(modules || {}),
     });
   } catch (error) {
-    console.error('❌ Failed to update guild module state');
+    console.error('Failed to update guild module state');
     console.error(error);
 
     return res.status(400).json({
