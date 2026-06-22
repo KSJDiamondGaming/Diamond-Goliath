@@ -156,6 +156,32 @@ export const api = {
     });
   },
 
+  /* ---------------- EMBED STUDIO ---------------- */
+
+  getEmbedStudio(guildId) {
+    return request(`/api/modules/${guildId}/embed-studio`);
+  },
+
+  saveEmbedDraft(guildId, payload) {
+    return request(`/api/modules/${guildId}/embed-studio/draft`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  saveEmbedPreset(guildId, name, payload) {
+    return request(`/api/modules/${guildId}/embed-studio/presets`, {
+      method: 'POST',
+      body: JSON.stringify({ name, ...payload }),
+    });
+  },
+
+  deleteEmbedPreset(guildId, name) {
+    return request(`/api/modules/${guildId}/embed-studio/presets/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    });
+  },
+
   /* ---------------- VERIFICATION ---------------- */
 
   getVerification(guildId) {
