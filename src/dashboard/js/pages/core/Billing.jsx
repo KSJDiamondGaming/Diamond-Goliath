@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { api } from '../../services/apiClient.js';
 import PageShell, { EmptyState, LoadingPanel, Notice, SectionCard, StatGrid, SummaryStat } from '../../shared/PageShell.jsx';
@@ -66,7 +66,10 @@ export default function Billing({ theme, selectedGuild, selectedGuildData }) {
   const [subscriptionPayload, setSubscriptionPayload] = useState(null);
   const [entitlementsPayload, setEntitlementsPayload] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [redeeming, setRedeeming] = useState(false);
+  const [redeemCode, setRedeemCode] = useState('');
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
 
   const plans = useMemo(() => asArray(plansPayload?.plans), [plansPayload]);
   const subscription = subscriptionPayload?.subscription || entitlementsPayload?.subscription || {};
@@ -74,35 +77,55 @@ export default function Billing({ theme, selectedGuild, selectedGuildData }) {
   const features = asArray(entitlementsPayload?.features || currentPlan.features);
   const limits = entitlementsPayload?.limits || currentPlan.limits || {};
 
-  useEffect(() => {
-    if (!guildId) return undefined;
-    let cancelled = false;
+  const loadBilling = useCallback(async () => {
+    if (!guildId) return;
+    setLoading(true);
+    setError('');
 
-    async function loadBilling() {
-      setLoading(true);
-      setError('');
+    try {
+      const [plansResult, subscriptionResult, entitlementResult] = await Promise.all([
+        api.getBillingPlans(),
+        api.getBillingSubscription(guildId),
+        api.getBillingEntitlements(guildId),
+      ]);
 
-      try {
-        const [plansResult, subscriptionResult, entitlementResult] = await Promise.all([
-          api.getBillingPlans(),
-          api.getBillingSubscription(guildId),
-          api.getBillingEntitlements(guildId),
-        ]);
-
-        if (cancelled) return;
-        setPlansPayload(plansResult);
-        setSubscriptionPayload(subscriptionResult);
-        setEntitlementsPayload(entitlementResult);
-      } catch (loadError) {
-        if (!cancelled) setError(loadError.message || 'Failed to load billing details.');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+      setPlansPayload(plansResult);
+      setSubscriptionPayload(subscriptionResult);
+      setEntitlementsPayload(entitlementResult);
+    } catch (loadError) {
+      setError(loadError.message || 'Failed to load billing details.');
+    } finally {
+      setLoading(false);
     }
-
-    loadBilling();
-    return () => { cancelled = true; };
   }, [guildId]);
+
+  useEffect(() => {
+    loadBilling();
+  }, [loadBilling]);
+
+  async function handleRedeem(event) {
+    event.preventDefault();
+    if (!guildId || !redeemCode.trim()) return;
+
+    setRedeeming(true);
+    setError('');
+    setNotice('');
+
+    try {
+      const result = await api.request(`/api/billing/redeem/${guildId}`, {
+        method: 'POST',
+        body: JSON.stringify({ code: redeemCode }),
+      });
+
+      setRedeemCode('');
+      setNotice(`Code redeemed. ${result.subscription?.plan || 'Subscription'} is now active.`);
+      await loadBilling();
+    } catch (redeemError) {
+      setError(redeemError.message || 'Failed to redeem code.');
+    } finally {
+      setRedeeming(false);
+    }
+  }
 
   if (!guildId) {
     return (
@@ -120,6 +143,7 @@ export default function Billing({ theme, selectedGuild, selectedGuildData }) {
       guild={{ id: guildId, name: selectedGuildData?.name || selectedGuildData?.guildName || 'Selected Server', iconUrl: selectedGuildData?.iconUrl || selectedGuildData?.iconURL }}
     >
       {error ? <Notice theme={theme} tone="danger">{error}</Notice> : null}
+      {notice ? <Notice theme={theme} tone="success">{notice}</Notice> : null}
       {loading ? <LoadingPanel theme={theme} text="Loading billing..." /> : null}
 
       <StatGrid min="min(190px, 100%)">
@@ -128,6 +152,20 @@ export default function Billing({ theme, selectedGuild, selectedGuildData }) {
         <SummaryStat theme={theme} label="Source" value={subscription.source || 'system'} accent="#a855f7" description="How access was granted" />
         <SummaryStat theme={theme} label="Expires" value={formatDate(subscription.expiresAt)} accent="#f59e0b" description="Renewal or expiry date" />
       </StatGrid>
+
+      <SectionCard theme={theme} title="Redeem Code" subtitle="Apply a Plus, Pro or Lifetime access code to this server.">
+        <form onSubmit={handleRedeem} style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          <input
+            value={redeemCode}
+            onChange={(event) => setRedeemCode(event.target.value.toUpperCase())}
+            placeholder="GOL-PRO-3M-XXXXX"
+            style={{ flex: '1 1 260px', minWidth: 0, border: `1px solid ${theme.cardBorder}`, background: 'rgba(15,23,42,0.48)', color: theme.cardText, borderRadius: 12, padding: '12px 14px', fontWeight: 800 }}
+          />
+          <button type="submit" disabled={redeeming || !redeemCode.trim()} style={{ border: '1px solid rgba(34,197,94,0.42)', background: redeeming ? 'rgba(34,197,94,0.10)' : 'rgba(34,197,94,0.18)', color: '#bbf7d0', borderRadius: 12, padding: '12px 14px', fontWeight: 950, cursor: redeeming ? 'not-allowed' : 'pointer' }}>
+            {redeeming ? 'Redeeming...' : 'Redeem Code'}
+          </button>
+        </form>
+      </SectionCard>
 
       <SectionCard theme={theme} title="Plan Features" subtitle="Features currently unlocked for this server.">
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -152,7 +190,6 @@ export default function Billing({ theme, selectedGuild, selectedGuildData }) {
       <SectionCard theme={theme} title="Next Billing Actions" subtitle="Placeholders for the next billing phases.">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 12 }}>
           <DetailCard theme={theme} label="Upgrade" value="Coming soon" hint="Stripe checkout will connect here later." />
-          <DetailCard theme={theme} label="Redeem Code" value="Coming soon" hint="GOL-PLUS / GOL-PRO / GOL-LIFE code redemption." />
           <DetailCard theme={theme} label="Billing History" value="Coming soon" hint="Invoices and subscription events after Stripe integration." />
         </div>
       </SectionCard>
