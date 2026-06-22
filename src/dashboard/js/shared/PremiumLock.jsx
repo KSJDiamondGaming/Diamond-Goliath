@@ -1,7 +1,11 @@
 import React from 'react';
 
 function formatPlanName(plan = {}) {
-  return `${plan.icon || '🔒'} ${plan.name || plan.requiredPlanName || 'Pro'}`.trim();
+  const id = String(plan.id || plan.plan || '').toLowerCase();
+  const fallbackName = id === 'free' ? 'Basic' : 'Pro';
+  const name = plan.name || plan.requiredPlanName || fallbackName;
+  const icon = plan.icon || (id === 'free' ? '🆓' : '👑');
+  return `${icon} ${name}`.trim();
 }
 
 export default function PremiumLock({
@@ -11,9 +15,12 @@ export default function PremiumLock({
   requiredPlan = null,
   currentPlan = null,
   message = '',
+  unlocks = [],
+  ctaLabel = 'Open Billing',
 }) {
   const required = formatPlanName(requiredPlan || { name: 'Pro', icon: '👑' });
-  const current = formatPlanName(currentPlan || { name: 'Free', icon: '🆓' });
+  const current = formatPlanName(currentPlan || { name: 'Basic', icon: '🆓' });
+  const unlockList = Array.isArray(unlocks) ? unlocks.filter(Boolean) : [];
 
   return (
     <section
@@ -30,7 +37,7 @@ export default function PremiumLock({
       }}
     >
       <div style={{ display: 'grid', gap: 8 }}>
-        <div style={{ color: '#fde68a', fontSize: 13, fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.08em' }}>🔒 Premium Locked</div>
+        <div style={{ color: '#fde68a', fontSize: 13, fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.08em' }}>🔒 Goliath Pro Feature</div>
         <h2 style={{ margin: 0, fontSize: 'clamp(24px, 4vw, 36px)', letterSpacing: '-0.04em' }}>{title}</h2>
         <p style={{ margin: 0, color: theme.mutedText, lineHeight: 1.6, maxWidth: 760 }}>
           {message || `This feature requires Goliath ${required}.`}
@@ -54,6 +61,17 @@ export default function PremiumLock({
         ) : null}
       </div>
 
+      {unlockList.length ? (
+        <div style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(15,23,42,0.28)', borderRadius: 18, padding: 16, display: 'grid', gap: 10 }}>
+          <strong style={{ color: theme.cardText }}>Upgrade to unlock:</strong>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 8 }}>
+            {unlockList.map((item) => (
+              <span key={item} style={{ color: theme.mutedText, fontSize: 13, fontWeight: 800 }}>✓ {item}</span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       <button
         type="button"
         onClick={() => { window.location.href = '/billing'; }}
@@ -68,7 +86,7 @@ export default function PremiumLock({
           cursor: 'pointer',
         }}
       >
-        Open Billing
+        {ctaLabel}
       </button>
     </section>
   );
