@@ -9,6 +9,7 @@ const {
 const subscriptionManager = require('../../managers/subscriptionManager');
 const entitlementManager = require('../../managers/entitlementManager');
 const redemptionManager = require('../../billing/redemptionManager');
+const subscriptionAdminManager = require('../../billing/subscriptionAdminManager');
 
 const router = express.Router();
 
@@ -51,6 +52,10 @@ function requireOwner(req, res, next) {
   }
 
   return next();
+}
+
+function actor(req) {
+  return req.session?.user?.id || 'owner';
 }
 
 function publicPlan(plan) {
@@ -139,7 +144,7 @@ router.post('/codes/generate', requireOwner, (req, res) => {
       plan: req.body?.plan,
       duration: req.body?.duration,
       quantity: req.body?.quantity,
-      createdBy: req.session?.user?.id || 'owner',
+      createdBy: actor(req),
     });
 
     return success(res, { codes });
@@ -150,8 +155,73 @@ router.post('/codes/generate', requireOwner, (req, res) => {
 
 router.post('/codes/:code/revoke', requireOwner, (req, res) => {
   try {
-    const code = redemptionManager.revokeCode(req.params.code, req.session?.user?.id || 'owner');
+    const code = redemptionManager.revokeCode(req.params.code, actor(req));
     return success(res, { code });
+  } catch (error) {
+    return failure(res, error, 400);
+  }
+});
+
+router.get('/subscriptions', requireOwner, (req, res) => {
+  try {
+    return success(res, {
+      subscriptions: subscriptionAdminManager.listSubscriptions(),
+      history: subscriptionAdminManager.listHistory(100),
+    });
+  } catch (error) {
+    return failure(res, error, 500);
+  }
+});
+
+router.post('/subscriptions/grant', requireOwner, (req, res) => {
+  try {
+    const subscription = subscriptionAdminManager.grantSubscription({
+      guildId: req.body?.guildId,
+      plan: req.body?.plan,
+      duration: req.body?.duration,
+      actor: actor(req),
+    });
+
+    return success(res, {
+      guildId: req.body?.guildId,
+      subscription,
+      entitlements: entitlementManager.getEntitlementSummary(req.body?.guildId),
+    });
+  } catch (error) {
+    return failure(res, error, 400);
+  }
+});
+
+router.post('/subscriptions/extend', requireOwner, (req, res) => {
+  try {
+    const subscription = subscriptionAdminManager.extendSubscription({
+      guildId: req.body?.guildId,
+      duration: req.body?.duration,
+      actor: actor(req),
+    });
+
+    return success(res, {
+      guildId: req.body?.guildId,
+      subscription,
+      entitlements: entitlementManager.getEntitlementSummary(req.body?.guildId),
+    });
+  } catch (error) {
+    return failure(res, error, 400);
+  }
+});
+
+router.post('/subscriptions/remove', requireOwner, (req, res) => {
+  try {
+    const subscription = subscriptionAdminManager.removeSubscription({
+      guildId: req.body?.guildId,
+      actor: actor(req),
+    });
+
+    return success(res, {
+      guildId: req.body?.guildId,
+      subscription,
+      entitlements: entitlementManager.getEntitlementSummary(req.body?.guildId),
+    });
   } catch (error) {
     return failure(res, error, 400);
   }
