@@ -141,6 +141,8 @@ export const moduleRegistry = [
     category: MODULE_CATEGORIES.feature,
     status: MODULE_STATUSES.backendReady,
     enabled: false,
+    requiredFeature: 'translation.hub',
+    requiredPlan: 'pro',
     summary: 'Language preferences, provider-ready storage and translation controls.',
   },
   {
