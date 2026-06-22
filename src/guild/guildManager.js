@@ -16,6 +16,7 @@ const {
   DEFAULT_GENERAL_SETTINGS,
   DEFAULT_TICKETS,
   DEFAULT_MODULES,
+  DEFAULT_SUBSCRIPTION,
 } = require('./defaults');
 
 const {
@@ -35,6 +36,12 @@ const SAFE_DEFAULT_SECURITY = DEFAULT_SECURITY || {};
 const DEFAULT_TICKET_RUNTIME = DEFAULT_TICKETS || {};
 const DEFAULT_EMBED_RUNTIME = DEFAULT_EMBED || {};
 const DEFAULT_MODULE_RUNTIME = DEFAULT_MODULES || {};
+const DEFAULT_SUBSCRIPTION_RUNTIME = DEFAULT_SUBSCRIPTION || {
+  plan: 'free',
+  status: 'active',
+  source: 'system',
+  expiresAt: null,
+};
 
 const guildCache = new Map();
 
@@ -221,6 +228,16 @@ function sanitizeTemplateKey(templateKey) {
   return sanitizeKey(templateKey, 'Template key');
 }
 
+function normalizeSubscription(source = {}) {
+  const subscription = mergeDeep(DEFAULT_SUBSCRIPTION_RUNTIME, isPlainObject(source) ? source : {});
+  subscription.plan = String(subscription.plan || 'free').trim().toLowerCase() || 'free';
+  if (!['free', 'plus', 'pro', 'lifetime'].includes(subscription.plan)) subscription.plan = 'free';
+  subscription.status = String(subscription.status || 'active').trim().toLowerCase() || 'active';
+  subscription.source = String(subscription.source || 'system').trim().toLowerCase() || 'system';
+  subscription.expiresAt = subscription.expiresAt || null;
+  return subscription;
+}
+
 function normalizeEmbedPresets(source = {}) {
   const rawPresets = getRoutedSection(source, 'embedPresets', {});
   if (!isPlainObject(rawPresets)) return {};
@@ -368,6 +385,7 @@ function mergeDefaults(data = {}) {
     guildName: cleanGuildName(source.guildName || source.name || base.guildName),
     createdAt: source.createdAt || base.createdAt || now(),
     updatedAt: source.updatedAt || base.updatedAt || now(),
+    subscription: normalizeSubscription(source.subscription || base.subscription),
     modules: buildModules(source),
   };
 
@@ -405,6 +423,7 @@ function getGuildData(guildId, options = {}) {
   const needsRewrite =
     !exists ||
     !isPlainObject(rawData.modules) ||
+    !isPlainObject(rawData.subscription) ||
     hasMissingDefaultModules(rawData) ||
     hasLegacyTopLevelSections(rawData) ||
     LEGACY_LOG_FIELDS.some((field) => Object.prototype.hasOwnProperty.call(rawData, field));
@@ -754,6 +773,7 @@ module.exports = {
   GUILDS_DIR,
 
   DEFAULT_GUILD_DATA,
+  DEFAULT_SUBSCRIPTION: DEFAULT_SUBSCRIPTION_RUNTIME,
   DEFAULT_LOGS: SAFE_DEFAULT_LOGS,
   DEFAULT_SECURITY: SAFE_DEFAULT_SECURITY,
   DEFAULT_EMBED,
