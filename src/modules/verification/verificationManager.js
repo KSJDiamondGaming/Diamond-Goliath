@@ -15,6 +15,8 @@ const { isModuleEnabled } = require('../../guild/guildManager');
 
 const CUSTOM_ID_PREFIX = 'verify';
 const DEV_TEST_GUILD_ID = '1515201360386068642';
+const REQUIREMENTS_MESSAGE =
+  'You do not currently meet the requirements to complete verification. If you believe this is an error, please contact a staff member.';
 
 function canManageVerification(member) {
   return Boolean(
@@ -42,15 +44,10 @@ function canBotManageMember(member) {
 
   if (!botMember || !member) return false;
 
-  // Never allow Goliath to target itself
   if (member.id === botMember.id) return false;
 
-  // Allow owner account testing in the development guild only.
-  // This does not bypass Discord API role hierarchy; it only prevents
-  // Goliath's own global owner-protection guard from blocking test flow.
   if (isDevOwnerTestMember(member)) return true;
 
-  // Protect Goliath owner IDs globally
   const { isBotOwner } = require('../../security/securityCore');
 
   if (isBotOwner(member.id)) return false;
@@ -192,15 +189,7 @@ async function verifyMember(interaction) {
     return { ok: false, message: 'Server unavailable.' };
   }
 
-  if (!isModuleEnabled(guildId, 'verification')) {
-    return { ok: false, message: 'Verification is disabled.' };
-  }
-
   const section = verificationStore.getVerificationSection(guildId);
-
-  if (section.enabled !== true) {
-    return { ok: false, message: 'Verification is disabled.' };
-  }
 
   const member =
     interaction.member ||
@@ -211,11 +200,6 @@ async function verifyMember(interaction) {
     return { ok: false, message: 'Member not found.' };
   }
 
-  if (!canBotManageMember(member)) {
-    verificationStore.incrementAnalytics(guildId, { failed: 1 });
-    return { ok: false, message: 'I cannot manage your member roles in this server.' };
-  }
-
   const verifiedRole = await fetchRole(guild, cleanRoleId(section.settings?.verifiedRoleId, guildId));
   const unverifiedRole = await fetchRole(guild, cleanRoleId(section.settings?.unverifiedRoleId, guildId));
 
@@ -223,12 +207,24 @@ async function verifyMember(interaction) {
     return { ok: true, message: 'You are already verified.' };
   }
 
+  if (!isModuleEnabled(guildId, 'verification') || section.enabled !== true) {
+    verificationStore.incrementAnalytics(guildId, { failed: 1 });
+    return {
+      ok: false,
+      message: 'Verification is currently unavailable. Please contact a staff member if you believe this is an error.',
+    };
+  }
+
+  if (!canBotManageMember(member)) {
+    verificationStore.incrementAnalytics(guildId, { failed: 1 });
+    return { ok: false, message: 'I cannot manage your member roles in this server.' };
+  }
+
   if (unverifiedRole && !member.roles.cache.has(unverifiedRole.id)) {
     verificationStore.incrementAnalytics(guildId, { failed: 1 });
     return {
       ok: false,
-      message:
-  'You do not currently meet the requirements to complete verification. If you believe this is an error, please contact a staff member.',
+      message: REQUIREMENTS_MESSAGE,
     };
   }
 
