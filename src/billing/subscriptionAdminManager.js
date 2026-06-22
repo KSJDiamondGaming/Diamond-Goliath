@@ -178,10 +178,48 @@ function removeSubscription({ guildId, actor = 'owner' } = {}) {
   return subscription;
 }
 
+function processExpiredSubscriptions({ actor = 'subscription_worker' } = {}) {
+  const expired = [];
+  const checkedAt = now();
+
+  for (const filePath of guildManager.listGuildFiles()) {
+    const guildId = path.basename(filePath, '.json');
+    const current = subscriptionManager.getSubscription(guildId, { forceReload: true });
+
+    if (current.plan === PLAN_IDS.FREE || current.plan === PLAN_IDS.LIFETIME) continue;
+    if (!current.expiresAt) continue;
+
+    const expiryTime = new Date(current.expiresAt).getTime();
+    if (!Number.isFinite(expiryTime) || expiryTime > Date.now()) continue;
+
+    const subscription = subscriptionManager.clearSubscription(guildId, 'expired');
+    const history = addHistory({
+      action: 'expire',
+      actor,
+      guildId,
+      previousPlan: current.plan,
+      previousExpiresAt: current.expiresAt,
+      plan: subscription.plan,
+      expiresAt: subscription.expiresAt,
+      checkedAt,
+    });
+
+    expired.push({ guildId, previous: current, subscription, history });
+  }
+
+  return {
+    checkedAt,
+    expiredCount: expired.length,
+    expired,
+  };
+}
+
 module.exports = {
   listSubscriptions,
   listHistory,
+  addHistory,
   grantSubscription,
   extendSubscription,
   removeSubscription,
+  processExpiredSubscriptions,
 };
