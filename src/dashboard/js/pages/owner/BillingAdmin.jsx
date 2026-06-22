@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
 import { api } from '../../services/apiClient.js';
+import BillingSettingsPanel, { normalizeBillingSettings } from './BillingSettingsPanel.jsx';
 
 function card(theme, extra = {}) {
   return {
@@ -121,6 +122,7 @@ export default function BillingAdmin({ theme }) {
   const [codes, setCodes] = useState([]);
   const [subscriptions, setSubscriptions] = useState([]);
   const [history, setHistory] = useState([]);
+  const [settings, setSettings] = useState(normalizeBillingSettings());
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -132,19 +134,24 @@ export default function BillingAdmin({ theme }) {
   const redeemedCodes = useMemo(() => codes.filter((code) => code.used), [codes]);
   const revokedCodes = useMemo(() => codes.filter((code) => code.revoked), [codes]);
   const premiumSubscriptions = useMemo(() => subscriptions.filter((item) => item.subscription?.plan && item.subscription.plan !== 'free'), [subscriptions]);
+  const plusSubscriptions = useMemo(() => subscriptions.filter((item) => item.subscription?.plan === 'plus'), [subscriptions]);
+  const proSubscriptions = useMemo(() => subscriptions.filter((item) => item.subscription?.plan === 'pro'), [subscriptions]);
+  const lifetimeSubscriptions = useMemo(() => subscriptions.filter((item) => item.subscription?.plan === 'lifetime'), [subscriptions]);
 
   async function loadBillingAdmin() {
     setLoading(true);
     setError('');
 
     try {
-      const [codesPayload, subscriptionsPayload] = await Promise.all([
+      const [codesPayload, subscriptionsPayload, settingsPayload] = await Promise.all([
         api.request('/api/billing/codes'),
         api.request('/api/billing/subscriptions'),
+        api.request('/api/billing/settings'),
       ]);
       setCodes(Array.isArray(codesPayload.codes) ? codesPayload.codes : []);
       setSubscriptions(Array.isArray(subscriptionsPayload.subscriptions) ? subscriptionsPayload.subscriptions : []);
       setHistory(Array.isArray(subscriptionsPayload.history) ? subscriptionsPayload.history : []);
+      setSettings(normalizeBillingSettings(settingsPayload.settings || {}));
     } catch (loadError) {
       setError(loadError.message || 'Failed to load billing admin.');
       setCodes([]);
@@ -158,6 +165,25 @@ export default function BillingAdmin({ theme }) {
   useEffect(() => {
     loadBillingAdmin();
   }, []);
+
+  async function saveSettings() {
+    setBusy(true);
+    setError('');
+    setNotice('');
+
+    try {
+      const payload = await api.request('/api/billing/settings', {
+        method: 'PATCH',
+        body: JSON.stringify(settings),
+      });
+      setSettings(normalizeBillingSettings(payload.settings || {}));
+      setNotice('Billing settings saved.');
+    } catch (settingsError) {
+      setError(settingsError.message || 'Failed to save billing settings.');
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function generateCodes(event) {
     event.preventDefault();
@@ -259,7 +285,7 @@ export default function BillingAdmin({ theme }) {
         <p style={{ margin: 0, color: '#fde68a', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Owner Billing</p>
         <h1 style={{ margin: '8px 0 0', fontSize: 'clamp(28px, 4vw, 42px)', letterSpacing: '-0.04em', lineHeight: 1 }}>💎 Billing Admin</h1>
         <p style={{ margin: '10px 0 0', color: theme.mutedText, lineHeight: 1.6, maxWidth: 860 }}>
-          Generate codes, grant plans directly, extend subscriptions and manage premium access for Goliath guilds.
+          Generate codes, grant plans directly, control Lifetime availability, update pricing and manage premium access for Goliath guilds.
         </p>
       </section>
 
@@ -272,7 +298,12 @@ export default function BillingAdmin({ theme }) {
         <StatCard theme={theme} label="Active Codes" value={activeCodes.length} detail="Unused and available" accent="#86efac" />
         <StatCard theme={theme} label="Redeemed" value={redeemedCodes.length} detail="Applied to guilds" accent="#93c5fd" />
         <StatCard theme={theme} label="Premium Guilds" value={premiumSubscriptions.length} detail="Plus, Pro or Lifetime" accent="#fde68a" />
+        <StatCard theme={theme} label="Plus Guilds" value={plusSubscriptions.length} detail="Growth plan guilds" accent="#facc15" />
+        <StatCard theme={theme} label="Pro Guilds" value={proSubscriptions.length} detail="Full platform guilds" accent="#c084fc" />
+        <StatCard theme={theme} label="Lifetime Guilds" value={lifetimeSubscriptions.length} detail="Owner-granted lifetime" accent="#67e8f9" />
       </section>
+
+      <BillingSettingsPanel theme={theme} settings={settings} onChange={setSettings} onSave={saveSettings} busy={busy} card={card} />
 
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,320px),1fr))', gap: 14 }}>
         <section style={card(theme)}>
@@ -284,7 +315,7 @@ export default function BillingAdmin({ theme }) {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,150px),1fr))', gap: 12 }}>
               <label style={{ display: 'grid', gap: 6, color: theme.mutedText, fontWeight: 900 }}>Plan
                 <select value={grantForm.plan} onChange={(event) => setGrantForm((current) => ({ ...current, plan: event.target.value, duration: event.target.value === 'lifetime' ? 'lifetime' : current.duration }))} style={inputStyle(theme)}>
-                  <option value="free">Free</option>
+                  <option value="free">Basic</option>
                   <option value="plus">Plus</option>
                   <option value="pro">Pro</option>
                   <option value="lifetime">Lifetime</option>
