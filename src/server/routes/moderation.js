@@ -1,33 +1,36 @@
+'use strict';
+
 const express = require('express');
-const fs = require('fs');
-const path = require('path');
+const guildManager = require('../../guild/guildManager');
 
 const router = express.Router();
 
-const DATA_PATH = path.join(__dirname, '..', 'data');
-const CASES_PATH = path.join(DATA_PATH, 'modCaseDetails.json');
+function normalizeGuildId(guildId) {
+  const id = String(guildId || '').trim();
 
-function readJsonSafe(filePath, fallback = {}) {
-  try {
-    if (!fs.existsSync(filePath)) {
-      return fallback;
-    }
-
-    const raw = fs.readFileSync(filePath, 'utf8');
-
-    if (!raw.trim()) {
-      return fallback;
-    }
-
-    return JSON.parse(raw);
-  } catch (error) {
-    console.warn(`Failed to read JSON file: ${filePath}`, error.message);
-    return fallback;
+  if (!/^\d{16,20}$/.test(id)) {
+    return null;
   }
+
+  return id;
 }
 
-function getCasesData() {
-  return readJsonSafe(CASES_PATH, {});
+function getGuildModeration(guildId) {
+  const safeGuildId = normalizeGuildId(guildId);
+  if (!safeGuildId) return { enabled: true, cases: {}, analytics: {} };
+
+  return guildManager.getGuildSection(safeGuildId, 'moderation', {
+    enabled: true,
+    cases: {},
+    analytics: {},
+  });
+}
+
+function getGuildCases(guildId) {
+  const moderation = getGuildModeration(guildId);
+  return moderation.cases && typeof moderation.cases === 'object' && !Array.isArray(moderation.cases)
+    ? moderation.cases
+    : {};
 }
 
 function getGuildCaseEntries(guildCases, guildId) {
@@ -44,14 +47,6 @@ function getGuildCaseEntries(guildCases, guildId) {
     .sort((a, b) => Number(b.caseNumber || 0) - Number(a.caseNumber || 0));
 }
 
-function getGuildCases(guildId) {
-  const cases = getCasesData();
-
-  return cases[guildId] && typeof cases[guildId] === 'object'
-    ? cases[guildId]
-    : {};
-}
-
 function getGuildWarnings(guildCases, guildId) {
   return getGuildCaseEntries(guildCases, guildId).filter(
     (entry) => String(entry.action || '').toLowerCase() === 'warn'
@@ -62,12 +57,10 @@ function getGuildWarnings(guildCases, guildId) {
 
 router.get('/:guildId', (req, res) => {
   try {
-    const { guildId } = req.params;
+    const guildId = normalizeGuildId(req.params.guildId);
 
     if (!guildId) {
-      return res.status(400).json({
-        error: 'Missing guild ID.',
-      });
+      return res.status(400).json({ error: 'Missing or invalid guild ID.' });
     }
 
     return res.json(getGuildCases(guildId));
@@ -85,12 +78,10 @@ router.get('/:guildId', (req, res) => {
 
 router.get('/:guildId/list', (req, res) => {
   try {
-    const { guildId } = req.params;
+    const guildId = normalizeGuildId(req.params.guildId);
 
     if (!guildId) {
-      return res.status(400).json({
-        error: 'Missing guild ID.',
-      });
+      return res.status(400).json({ error: 'Missing or invalid guild ID.' });
     }
 
     const guildCases = getGuildCases(guildId);
@@ -111,12 +102,10 @@ router.get('/:guildId/list', (req, res) => {
 
 router.get('/:guildId/warnings', (req, res) => {
   try {
-    const { guildId } = req.params;
+    const guildId = normalizeGuildId(req.params.guildId);
 
     if (!guildId) {
-      return res.status(400).json({
-        error: 'Missing guild ID.',
-      });
+      return res.status(400).json({ error: 'Missing or invalid guild ID.' });
     }
 
     const guildCases = getGuildCases(guildId);
