@@ -43,13 +43,10 @@ function canBotManageMember(member) {
   const botMember = getBotMember(member?.guild);
 
   if (!botMember || !member) return false;
-
   if (member.id === botMember.id) return false;
-
   if (isDevOwnerTestMember(member)) return true;
 
   const { isBotOwner } = require('../../security/securityCore');
-
   if (isBotOwner(member.id)) return false;
 
   return true;
@@ -204,11 +201,12 @@ async function verifyMember(interaction) {
   const unverifiedRole = await fetchRole(guild, cleanRoleId(section.settings?.unverifiedRoleId, guildId));
 
   if (verifiedRole && member.roles.cache.has(verifiedRole.id)) {
+    verificationStore.incrementAnalytics(guildId, { alreadyVerified: 1 });
     return { ok: true, message: 'You are already verified.' };
   }
 
   if (section.enabled !== true) {
-    verificationStore.incrementAnalytics(guildId, { failed: 1 });
+    verificationStore.incrementAnalytics(guildId, { failed: 1, unavailable: 1 });
     return {
       ok: false,
       message: 'Verification is currently unavailable. Please contact a staff member if you believe this is an error.',
@@ -216,12 +214,12 @@ async function verifyMember(interaction) {
   }
 
   if (!canBotManageMember(member)) {
-    verificationStore.incrementAnalytics(guildId, { failed: 1 });
+    verificationStore.incrementAnalytics(guildId, { failed: 1, roleManageFailed: 1 });
     return { ok: false, message: 'I cannot manage your member roles in this server.' };
   }
 
   if (unverifiedRole && !member.roles.cache.has(unverifiedRole.id)) {
-    verificationStore.incrementAnalytics(guildId, { failed: 1 });
+    verificationStore.incrementAnalytics(guildId, { failed: 1, requirementBlocked: 1 });
     return {
       ok: false,
       message: REQUIREMENTS_MESSAGE,
@@ -230,13 +228,13 @@ async function verifyMember(interaction) {
 
   const verifiedRoleStatus = resolveRoleActionStatus(guild, member, verifiedRole, 'add');
   if (!verifiedRoleStatus.ok) {
-    verificationStore.incrementAnalytics(guildId, { failed: 1 });
+    verificationStore.incrementAnalytics(guildId, { failed: 1, roleManageFailed: 1 });
     return { ok: false, message: verifiedRoleStatus.message };
   }
 
   const unverifiedRoleStatus = resolveRoleActionStatus(guild, member, unverifiedRole, 'remove');
   if (!unverifiedRoleStatus.ok) {
-    verificationStore.incrementAnalytics(guildId, { failed: 1 });
+    verificationStore.incrementAnalytics(guildId, { failed: 1, roleManageFailed: 1 });
     return { ok: false, message: unverifiedRoleStatus.message };
   }
 
@@ -259,7 +257,7 @@ async function verifyMember(interaction) {
 
     return { ok: true, message: 'Verification complete.' };
   } catch (error) {
-    verificationStore.incrementAnalytics(guildId, { failed: 1 });
+    verificationStore.incrementAnalytics(guildId, { failed: 1, roleManageFailed: 1 });
 
     return {
       ok: false,
