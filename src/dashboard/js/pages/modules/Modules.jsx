@@ -26,7 +26,7 @@ function mergeModuleState(registryModules, moduleState) {
     const savedEnabled = typeof saved === 'boolean'
       ? saved
       : saved && typeof saved === 'object'
-        ? saved.enabled === true
+        ? saved.enabled !== false && (saved.enabled === true || module.enabled === true)
         : module.enabled === true;
 
     return {
