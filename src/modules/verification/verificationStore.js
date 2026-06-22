@@ -29,8 +29,32 @@ function cleanString(value, fallback = '', maxLength = 1000) {
   return String(value ?? fallback).trim().slice(0, maxLength);
 }
 
+function cleanDate(value) {
+  const date = value ? new Date(value) : null;
+  return date && Number.isFinite(date.getTime()) ? date.toISOString() : null;
+}
+
+function cleanCount(value) {
+  return Math.max(0, Number(value || 0));
+}
+
 function createId(prefix = 'verify') {
   return `${prefix}_${crypto.randomUUID().slice(0, 8)}`;
+}
+
+function defaultAnalytics() {
+  return {
+    verified: 0,
+    failed: 0,
+    alreadyVerified: 0,
+    requirementBlocked: 0,
+    unavailable: 0,
+    roleManageFailed: 0,
+    lastVerificationAt: null,
+    lastFailedAt: null,
+    lastRequirementBlockedAt: null,
+    lastUnavailableAt: null,
+  };
 }
 
 function defaultVerificationSection() {
@@ -44,12 +68,29 @@ function defaultVerificationSection() {
       requireButton: true,
     },
     panels: {},
-    analytics: {
-      verified: 0,
-      failed: 0,
-    },
+    analytics: defaultAnalytics(),
     createdAt: now(),
     updatedAt: now(),
+  };
+}
+
+function normalizeAnalytics(analytics = {}) {
+  const source = analytics && typeof analytics === 'object' ? analytics : {};
+  const base = defaultAnalytics();
+
+  return {
+    ...base,
+    ...clone(source),
+    verified: cleanCount(source.verified),
+    failed: cleanCount(source.failed),
+    alreadyVerified: cleanCount(source.alreadyVerified),
+    requirementBlocked: cleanCount(source.requirementBlocked),
+    unavailable: cleanCount(source.unavailable),
+    roleManageFailed: cleanCount(source.roleManageFailed),
+    lastVerificationAt: cleanDate(source.lastVerificationAt),
+    lastFailedAt: cleanDate(source.lastFailedAt),
+    lastRequirementBlockedAt: cleanDate(source.lastRequirementBlockedAt),
+    lastUnavailableAt: cleanDate(source.lastUnavailableAt),
   };
 }
 
@@ -96,10 +137,7 @@ function normalizeVerificationSection(section = {}) {
         return [normalized.panelId, normalized];
       })
     ),
-    analytics: {
-      verified: Math.max(0, Number(source.analytics?.verified || 0)),
-      failed: Math.max(0, Number(source.analytics?.failed || 0)),
-    },
+    analytics: normalizeAnalytics(source.analytics),
     createdAt: source.createdAt || base.createdAt,
     updatedAt: source.updatedAt || now(),
   };
@@ -149,21 +187,39 @@ function getPanel(guildId, panelId) {
 }
 
 function incrementAnalytics(guildId, increments = {}, meta = {}) {
-  return updateVerificationSection(guildId, (section) => ({
-    ...section,
-    analytics: {
-      ...section.analytics,
-      verified: Math.max(0, Number(section.analytics?.verified || 0) + Number(increments.verified || 0)),
-      failed: Math.max(0, Number(section.analytics?.failed || 0) + Number(increments.failed || 0)),
-    },
-    updatedAt: now(),
-  }), meta).analytics;
+  const timestamp = now();
+
+  return updateVerificationSection(guildId, (section) => {
+    const analytics = normalizeAnalytics(section.analytics);
+    const nextAnalytics = {
+      ...analytics,
+      verified: cleanCount(analytics.verified + Number(increments.verified || 0)),
+      failed: cleanCount(analytics.failed + Number(increments.failed || 0)),
+      alreadyVerified: cleanCount(analytics.alreadyVerified + Number(increments.alreadyVerified || 0)),
+      requirementBlocked: cleanCount(analytics.requirementBlocked + Number(increments.requirementBlocked || 0)),
+      unavailable: cleanCount(analytics.unavailable + Number(increments.unavailable || 0)),
+      roleManageFailed: cleanCount(analytics.roleManageFailed + Number(increments.roleManageFailed || 0)),
+    };
+
+    if (Number(increments.verified || 0) > 0) nextAnalytics.lastVerificationAt = timestamp;
+    if (Number(increments.failed || 0) > 0) nextAnalytics.lastFailedAt = timestamp;
+    if (Number(increments.requirementBlocked || 0) > 0) nextAnalytics.lastRequirementBlockedAt = timestamp;
+    if (Number(increments.unavailable || 0) > 0) nextAnalytics.lastUnavailableAt = timestamp;
+
+    return {
+      ...section,
+      analytics: nextAnalytics,
+      updatedAt: timestamp,
+    };
+  }, meta).analytics;
 }
 
 module.exports = {
   MODULE,
   createId,
+  defaultAnalytics,
   defaultVerificationSection,
+  normalizeAnalytics,
   normalizeVerificationSection,
   getVerificationSection,
   saveVerificationSection,
