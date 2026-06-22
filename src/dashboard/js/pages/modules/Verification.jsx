@@ -20,12 +20,46 @@ function roleName(roles, roleId) {
   return roles.find((role) => String(role.id) === String(roleId))?.name || roleId;
 }
 
+function channelName(channels, channelId) {
+  if (!channelId) return 'Not set';
+  const channel = channels.find((item) => String(item.id) === String(channelId));
+  return channel?.name ? `#${channel.name}` : channelId;
+}
+
+function formatDate(value) {
+  if (!value) return 'Never';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'Never' : date.toLocaleString();
+}
+
+function boolLabel(value) {
+  return value === false ? 'Off' : 'On';
+}
+
 function StatCard({ theme, label, value, hint }) {
   return (
     <div style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(15,23,42,0.34)', borderRadius: 18, padding: 16 }}>
       <div style={{ color: theme.mutedText, fontSize: 12, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
-      <div style={{ marginTop: 8, fontSize: 28, fontWeight: 950, color: theme.cardText }}>{value}</div>
-      {hint ? <div style={{ marginTop: 4, color: theme.mutedText, fontSize: 12 }}>{hint}</div> : null}
+      <div style={{ marginTop: 8, fontSize: 28, fontWeight: 950, color: theme.cardText, overflowWrap: 'anywhere' }}>{value}</div>
+      {hint ? <div style={{ marginTop: 4, color: theme.mutedText, fontSize: 12, overflowWrap: 'anywhere' }}>{hint}</div> : null}
+    </div>
+  );
+}
+
+function DetailRow({ theme, label, value }) {
+  return (
+    <div style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(15,23,42,0.28)', borderRadius: 14, padding: '12px 14px', display: 'grid', gap: 4 }}>
+      <div style={{ color: theme.mutedText, fontSize: 11, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
+      <div style={{ color: theme.cardText, fontWeight: 900, overflowWrap: 'anywhere' }}>{value || 'Not set'}</div>
+    </div>
+  );
+}
+
+function SectionHeader({ theme, title, description }) {
+  return (
+    <div>
+      <h2 style={{ margin: 0 }}>{title}</h2>
+      {description ? <p style={{ margin: '6px 0 0', color: theme.mutedText, lineHeight: 1.55 }}>{description}</p> : null}
     </div>
   );
 }
@@ -70,6 +104,9 @@ export default function Verification({ theme, selectedGuild, selectedGuildData }
   const panels = Object.values(config?.panels || {});
   const analytics = overview.analytics || config?.analytics || {};
   const usableRoles = roles.filter((role) => String(role.id) !== String(guildId));
+  const activePanel = useMemo(() => (
+    panels.find((item) => String(item.panelId || item.id) === String(selectedPanelId)) || null
+  ), [panels, selectedPanelId]);
 
   const cardStyle = useMemo(() => ({
     border: `1px solid ${theme.cardBorder}`,
@@ -249,6 +286,8 @@ export default function Verification({ theme, selectedGuild, selectedGuildData }
     return <div style={{ ...cardStyle, padding: 24 }}>Select a server from the navbar to manage verification.</div>;
   }
 
+  const panelHealthy = Boolean((activePanel || panel)?.channelId && (activePanel || panel)?.messageId);
+
   return (
     <div style={{ display: 'grid', gap: 18 }}>
       <section style={{ ...cardStyle, padding: 24, background: 'linear-gradient(135deg, rgba(59,130,246,0.18), rgba(15,23,42,0.08) 46%, rgba(52,211,153,0.14))' }}>
@@ -268,14 +307,53 @@ export default function Verification({ theme, selectedGuild, selectedGuildData }
 
       <section style={{ ...cardStyle, padding: 22, display: 'grid', gap: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-          <div>
-            <h2 style={{ margin: 0 }}>Status Overview</h2>
-            <p style={{ margin: '6px 0 0', color: theme.mutedText }}>Turn verification on or off without touching other module data.</p>
-          </div>
+          <SectionHeader theme={theme} title="Status Overview" description="Turn verification on or off without touching other module data." />
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <button type="button" onClick={refreshDiscordResources} disabled={saving === 'resources'} style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(52,211,153,0.16)', color: theme.cardText, borderRadius: 14, padding: '11px 14px', fontWeight: 950, cursor: 'pointer' }}>{saving === 'resources' ? 'Refreshing...' : 'Refresh Roles'}</button>
             <button type="button" onClick={toggleEnabled} disabled={saving === 'enabled'} style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(37,99,235,0.22)', color: theme.cardText, borderRadius: 14, padding: '11px 14px', fontWeight: 950, cursor: 'pointer' }}>{saving === 'enabled' ? 'Saving...' : overview.enabled || config?.enabled ? 'Disable' : 'Enable'}</button>
           </div>
+        </div>
+      </section>
+
+      <section style={{ ...cardStyle, padding: 22, display: 'grid', gap: 16 }}>
+        <SectionHeader theme={theme} title="Verification Analytics" description="Live verification analytics stored in modules.verification.analytics." />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 160px), 1fr))', gap: 12 }}>
+          <StatCard theme={theme} label="Verified" value={analytics.verified ?? 0} />
+          <StatCard theme={theme} label="Failed" value={analytics.failed ?? 0} />
+          <StatCard theme={theme} label="Already Verified" value={analytics.alreadyVerified ?? 0} />
+          <StatCard theme={theme} label="Requirement Blocked" value={analytics.requirementBlocked ?? 0} />
+          <StatCard theme={theme} label="Unavailable" value={analytics.unavailable ?? 0} />
+          <StatCard theme={theme} label="Role Errors" value={analytics.roleManageFailed ?? 0} hint="Role manage failed" />
+        </div>
+      </section>
+
+      <section style={{ ...cardStyle, padding: 22, display: 'grid', gap: 16 }}>
+        <SectionHeader theme={theme} title="Verification Activity" description="Latest verification timestamps from the same guild JSON analytics object." />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 12 }}>
+          <DetailRow theme={theme} label="Last Verification" value={formatDate(analytics.lastVerificationAt)} />
+          <DetailRow theme={theme} label="Last Failed" value={formatDate(analytics.lastFailedAt)} />
+          <DetailRow theme={theme} label="Last Requirement Blocked" value={formatDate(analytics.lastRequirementBlockedAt)} />
+          <DetailRow theme={theme} label="Last Unavailable" value={formatDate(analytics.lastUnavailableAt)} />
+        </div>
+      </section>
+
+      <section style={{ ...cardStyle, padding: 22, display: 'grid', gap: 16 }}>
+        <SectionHeader theme={theme} title="Configuration Summary" description="Current verification role and behaviour settings." />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 12 }}>
+          <DetailRow theme={theme} label="Verified Role" value={roleName(roles, settings.verifiedRoleId)} />
+          <DetailRow theme={theme} label="Unverified Role" value={roleName(roles, settings.unverifiedRoleId)} />
+          <DetailRow theme={theme} label="DM On Verify" value={boolLabel(settings.dmOnVerify)} />
+          <DetailRow theme={theme} label="Require Button" value={boolLabel(settings.requireButton)} />
+        </div>
+      </section>
+
+      <section style={{ ...cardStyle, padding: 22, display: 'grid', gap: 16 }}>
+        <SectionHeader theme={theme} title="Panel Health" description="Shows whether the selected panel has enough stored metadata to be refreshed safely." />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 12 }}>
+          <DetailRow theme={theme} label="Status" value={panelHealthy ? 'Healthy' : 'Needs deployment metadata'} />
+          <DetailRow theme={theme} label="Panel ID" value={(activePanel || panel)?.panelId || (activePanel || panel)?.id || 'New panel'} />
+          <DetailRow theme={theme} label="Channel" value={channelName(channels, (activePanel || panel)?.channelId)} />
+          <DetailRow theme={theme} label="Message ID" value={(activePanel || panel)?.messageId || 'Not deployed'} />
         </div>
       </section>
 
@@ -299,15 +377,6 @@ export default function Verification({ theme, selectedGuild, selectedGuildData }
         </div>
         <TextField theme={theme} label="Description" value={panel.description} onChange={(value) => setPanel((current) => ({ ...current, description: value }))} />
         <button type="button" onClick={deployOrRefreshPanel} disabled={saving === 'panel'} style={{ justifySelf: 'start', border: `1px solid ${theme.cardBorder}`, background: 'rgba(22,163,74,0.22)', color: theme.cardText, borderRadius: 14, padding: '11px 14px', fontWeight: 950, cursor: 'pointer' }}>{saving === 'panel' ? 'Saving...' : selectedPanelId ? 'Refresh Existing Panel' : 'Deploy New Verification Panel'}</button>
-      </section>
-
-      <section style={{ ...cardStyle, padding: 22 }}>
-        <h2 style={{ margin: 0 }}>Analytics</h2>
-        <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 160px), 1fr))', gap: 12 }}>
-          <StatCard theme={theme} label="Total Verified" value={analytics.totalVerified ?? analytics.verified ?? 0} />
-          <StatCard theme={theme} label="Failed Attempts" value={analytics.failedAttempts ?? analytics.failed ?? 0} />
-          <StatCard theme={theme} label="Recent" value={analytics.recentVerifications ?? analytics.recent ?? 0} />
-        </div>
       </section>
     </div>
   );
