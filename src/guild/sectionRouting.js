@@ -9,6 +9,7 @@ const LEGACY_SECTION_MAP = Object.freeze({
   embedDefaults: 'modules.embedDefaults',
   embedPresets: 'modules.embedPresets',
   serverBackups: 'modules.serverBackups',
+  moderation: 'modules.moderation',
 });
 
 const LEGACY_TOP_LEVEL_SECTIONS = Object.freeze(Object.keys(LEGACY_SECTION_MAP));
