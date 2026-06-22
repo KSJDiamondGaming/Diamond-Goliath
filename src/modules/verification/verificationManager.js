@@ -227,7 +227,8 @@ async function verifyMember(interaction) {
     verificationStore.incrementAnalytics(guildId, { failed: 1 });
     return {
       ok: false,
-      message: `You need the ${unverifiedRole.name} role before you can verify.`,
+      message:
+  'You do not currently meet the requirements to complete verification. If you believe this is an error, please contact a staff member.',
     };
   }
 
