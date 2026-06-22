@@ -4,6 +4,10 @@ const express = require('express');
 
 const {
   getGuildData,
+  getGuildSection,
+  saveGuildSection,
+  saveEmbedPreset,
+  deleteEmbedPreset,
   setModuleEnabled,
 } = require('../../guild/guildManager');
 
@@ -55,6 +59,12 @@ function getGuildId(req) {
     throw new Error('Invalid guild ID.');
   }
   return guildId;
+}
+
+function cleanPresetName(value) {
+  const name = String(value || '').trim().slice(0, 50);
+  if (!name) throw new Error('Preset name is required.');
+  return name;
 }
 
 function normalizeModuleMap(modules = {}) {
@@ -279,6 +289,80 @@ router.get('/:guildId/auto-roles/analytics', (req, res) => {
       guildId,
       analytics: autoRoleManager.getAutoRoleAnalytics(guildId),
     });
+  } catch (error) {
+    return failure(res, error, 400);
+  }
+});
+
+router.get('/:guildId/embed-studio', (req, res) => {
+  try {
+    const guildId = getGuildId(req);
+    const builder = getGuildSection(guildId, 'embedBuilder', { draft: {}, templates: {} });
+    const presets = getGuildSection(guildId, 'embedPresets', {});
+    const defaults = getGuildSection(guildId, 'embedDefaults', {});
+
+    return success(res, {
+      guildId,
+      builder,
+      presets,
+      defaults,
+      overview: {
+        draftSaved: Boolean(builder?.draft),
+        presetCount: Object.keys(presets || {}).filter((key) => key !== 'updatedAt').length,
+        templateCount: Object.keys(builder?.templates || {}).length,
+      },
+    });
+  } catch (error) {
+    return failure(res, error, 400);
+  }
+});
+
+router.post('/:guildId/embed-studio/draft', (req, res) => {
+  try {
+    const guildId = getGuildId(req);
+    const current = getGuildSection(guildId, 'embedBuilder', { draft: {}, templates: {} });
+    const draft = {
+      content: String(req.body?.content || '').slice(0, 2000),
+      embed: req.body?.embed && typeof req.body.embed === 'object' ? req.body.embed : {},
+      updatedAt: new Date().toISOString(),
+    };
+    const builder = saveGuildSection(guildId, 'embedBuilder', {
+      ...current,
+      draft,
+    });
+
+    return success(res, { guildId, builder, draft });
+  } catch (error) {
+    return failure(res, error, 400);
+  }
+});
+
+router.post('/:guildId/embed-studio/presets', (req, res) => {
+  try {
+    const guildId = getGuildId(req);
+    const name = cleanPresetName(req.body?.name);
+    const preset = saveEmbedPreset(guildId, name, {
+      ...(req.body?.embed && typeof req.body.embed === 'object' ? req.body.embed : {}),
+      content: String(req.body?.content || '').slice(0, 2000),
+      embed: req.body?.embed && typeof req.body.embed === 'object' ? req.body.embed : {},
+      name,
+    });
+    const presets = getGuildSection(guildId, 'embedPresets', {});
+
+    return success(res, { guildId, name, preset, presets });
+  } catch (error) {
+    return failure(res, error, 400);
+  }
+});
+
+router.delete('/:guildId/embed-studio/presets/:name', (req, res) => {
+  try {
+    const guildId = getGuildId(req);
+    const name = cleanPresetName(req.params.name);
+    const deleted = deleteEmbedPreset(guildId, name);
+    const presets = getGuildSection(guildId, 'embedPresets', {});
+
+    return success(res, { guildId, name, deleted, presets });
   } catch (error) {
     return failure(res, error, 400);
   }
