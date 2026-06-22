@@ -6,6 +6,7 @@ const express = require('express');
 
 const translationStore = require('../../modules/translation/translationStore');
 const translationThreadManager = require('../../modules/translation/translationThreadManager');
+const providerManager = require('../../modules/translation/providers/providerManager');
 const { requireEntitlement } = require('../middleware/requireEntitlement');
 const {
   DEFAULT_BOT_CHANNEL_PERMISSIONS,
@@ -95,12 +96,29 @@ async function guardTranslationChannelConfig(guild, channelId) {
   return channel;
 }
 
+function publicTranslationConfig(guildId) {
+  const section = translationStore.getTranslationSection(guildId);
+  const providerStatus = providerManager.getProviderStatus(guildId);
+
+  return {
+    ...section,
+    providerStatus,
+    providerSettings: providerStatus.supportedProviders,
+    settings: {
+      ...(section.settings || {}),
+      providerStatus,
+      providerSettings: providerStatus.supportedProviders,
+    },
+  };
+}
+
 router.use('/:guildId', requireEntitlement('translation.hub'));
 
 router.get('/:guildId/overview', (req, res) => {
   try {
     const guildId = getGuildId(req);
     const section = translationStore.getTranslationSection(guildId);
+    const providerStatus = providerManager.getProviderStatus(guildId);
     const channelConfigs = Object.values(section.channels || {});
     const userPreferences = Object.values(section.userPreferences || {});
 
@@ -108,7 +126,11 @@ router.get('/:guildId/overview', (req, res) => {
       guildId,
       overview: {
         enabled: section.enabled === true,
-        provider: section.settings?.provider || 'manual',
+        provider: providerStatus.provider,
+        providerLabel: providerStatus.label,
+        providerReady: providerStatus.ready,
+        providerStatus: providerStatus.status,
+        apiKeyConfigured: providerStatus.apiKeyConfigured,
         autoDetect: section.settings?.autoDetect !== false,
         threadMode: section.settings?.threadMode !== false,
         defaultTargetLanguage: section.settings?.defaultTargetLanguage || 'en',
@@ -127,7 +149,35 @@ router.get('/:guildId/overview', (req, res) => {
 router.get('/:guildId', (req, res) => {
   try {
     const guildId = getGuildId(req);
-    return success(res, { guildId, config: translationStore.getTranslationSection(guildId) });
+    return success(res, { guildId, config: publicTranslationConfig(guildId) });
+  } catch (error) {
+    return failure(res, error, 400);
+  }
+});
+
+router.get('/:guildId/provider', (req, res) => {
+  try {
+    const guildId = getGuildId(req);
+    return success(res, { guildId, provider: providerManager.getProviderStatus(guildId) });
+  } catch (error) {
+    return failure(res, error, 400);
+  }
+});
+
+router.patch('/:guildId/provider', (req, res) => {
+  try {
+    const guildId = getGuildId(req);
+    const config = providerManager.saveProviderConfig(guildId, req.body || {});
+    return success(res, {
+      guildId,
+      config: publicTranslationConfig(guildId),
+      provider: providerManager.getProviderStatus(guildId),
+      saved: {
+        provider: config.provider,
+        defaultTargetLanguage: config.settings?.defaultTargetLanguage || 'en',
+        defaultSourceLanguage: config.settings?.defaultSourceLanguage || 'auto',
+      },
+    });
   } catch (error) {
     return failure(res, error, 400);
   }
@@ -137,7 +187,7 @@ router.patch('/:guildId/enabled', (req, res) => {
   try {
     const guildId = getGuildId(req);
     const config = translationStore.setTranslationEnabled(guildId, req.body?.enabled === true);
-    return success(res, { guildId, config });
+    return success(res, { guildId, config: publicTranslationConfig(guildId), rawConfig: config });
   } catch (error) {
     return failure(res, error, 400);
   }
@@ -146,11 +196,16 @@ router.patch('/:guildId/enabled', (req, res) => {
 router.patch('/:guildId/settings', (req, res) => {
   try {
     const guildId = getGuildId(req);
+    const sanitizedSettings = { ...(req.body?.settings || req.body || {}) };
+    delete sanitizedSettings.apiKey;
+    delete sanitizedSettings.apiSecret;
+    delete sanitizedSettings.token;
+
     const config = translationStore.updateTranslationSection(guildId, (current) => ({
       ...current,
-      settings: { ...(current.settings || {}), ...(req.body?.settings || req.body || {}) },
+      settings: { ...(current.settings || {}), ...sanitizedSettings },
     }));
-    return success(res, { guildId, config });
+    return success(res, { guildId, config: publicTranslationConfig(guildId), rawConfig: config });
   } catch (error) {
     return failure(res, error, 400);
   }
