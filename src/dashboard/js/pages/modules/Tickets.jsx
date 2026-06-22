@@ -55,12 +55,46 @@ function priorityTone(priority, theme) {
   return theme.mutedText;
 }
 
+function countTickets(tickets, status) {
+  return tickets.filter((ticket) => String(ticket.status || '').toLowerCase() === status).length;
+}
+
+function uniqueCount(values) {
+  return new Set(values.filter(Boolean).map((value) => String(value))).size;
+}
+
+function topEntries(map, limit = 5) {
+  return Object.entries(map)
+    .sort(([, a], [, b]) => Number(b || 0) - Number(a || 0))
+    .slice(0, limit);
+}
+
 function StatCard({ theme, label, value, hint, accent = '#93c5fd' }) {
   return (
     <div style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(15,23,42,0.34)', borderRadius: 18, padding: 16 }}>
       <div style={{ color: theme.mutedText, fontSize: 12, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
-      <div style={{ marginTop: 8, fontSize: 28, fontWeight: 950, color: accent }}>{value}</div>
-      {hint ? <div style={{ marginTop: 4, color: theme.mutedText, fontSize: 12 }}>{hint}</div> : null}
+      <div style={{ marginTop: 8, fontSize: 28, fontWeight: 950, color: accent, overflowWrap: 'anywhere' }}>{value}</div>
+      {hint ? <div style={{ marginTop: 4, color: theme.mutedText, fontSize: 12, overflowWrap: 'anywhere' }}>{hint}</div> : null}
+    </div>
+  );
+}
+
+function DetailRow({ theme, label, value, hint }) {
+  return (
+    <div style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(15,23,42,0.28)', borderRadius: 14, padding: 13, display: 'grid', gap: 4 }}>
+      <div style={{ color: theme.mutedText, fontSize: 11, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
+      <div style={{ color: theme.cardText, fontWeight: 950, overflowWrap: 'anywhere' }}>{value || 'None'}</div>
+      {hint ? <div style={{ color: theme.mutedText, fontSize: 12, overflowWrap: 'anywhere' }}>{hint}</div> : null}
+    </div>
+  );
+}
+
+function SectionHeader({ theme, title, description }) {
+  return (
+    <div>
+      <div style={{ color: theme.mutedText, fontSize: 12, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Ticket Dashboard</div>
+      <h3 style={{ margin: '6px 0 0' }}>{title}</h3>
+      {description ? <p style={{ margin: '8px 0 0', color: theme.mutedText, lineHeight: 1.5 }}>{description}</p> : null}
     </div>
   );
 }
@@ -181,7 +215,102 @@ function RecentActivity({ theme, tickets = [] }) {
   );
 }
 
-export default function Tickets({ theme, selectedGuild, selectedGuildData, user }) {
+function TicketAnalytics({ theme, tickets = [], overview = {}, cardStyle }) {
+  const byType = tickets.reduce((map, ticket) => {
+    const key = String(ticket.type || 'support').toLowerCase();
+    return { ...map, [key]: (map[key] || 0) + 1 };
+  }, {});
+
+  const byPriority = tickets.reduce((map, ticket) => {
+    const key = String(ticket.priority || 'normal').toLowerCase();
+    return { ...map, [key]: (map[key] || 0) + 1 };
+  }, {});
+
+  const assignedTickets = tickets.filter((ticket) => !['', 'Unassigned', 'unassigned'].includes(String(getAssigned(ticket) || '')));
+  const staffCount = uniqueCount(assignedTickets.map(getAssigned));
+  const creatorCount = uniqueCount(tickets.map(getCreator));
+  const transcriptCount = overview.transcriptCount ?? tickets.filter((ticket) => ticket.transcript).length;
+
+  return (
+    <section style={{ ...cardStyle, padding: 20, display: 'grid', gap: 14 }}>
+      <SectionHeader theme={theme} title="Ticket Analytics" description="Computed from the current ticket list plus modules.tickets overview data." />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))', gap: 10 }}>
+        <DetailRow theme={theme} label="Total Tickets" value={overview.totalCount ?? tickets.length} />
+        <DetailRow theme={theme} label="Unique Creators" value={creatorCount} />
+        <DetailRow theme={theme} label="Assigned Staff" value={staffCount} />
+        <DetailRow theme={theme} label="Transcripts" value={transcriptCount} />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))', gap: 12 }}>
+        <div style={{ border: `1px solid ${theme.cardBorder}`, borderRadius: 16, padding: 14, background: 'rgba(15,23,42,0.22)' }}>
+          <h4 style={{ margin: '0 0 10px' }}>Ticket Types</h4>
+          {topEntries(byType).length ? topEntries(byType).map(([type, count]) => (
+            <DetailRow key={type} theme={theme} label={type} value={count} />
+          )) : <div style={{ color: theme.mutedText }}>No ticket types yet.</div>}
+        </div>
+
+        <div style={{ border: `1px solid ${theme.cardBorder}`, borderRadius: 16, padding: 14, background: 'rgba(15,23,42,0.22)' }}>
+          <h4 style={{ margin: '0 0 10px' }}>Priority Mix</h4>
+          {topEntries(byPriority).length ? topEntries(byPriority).map(([priority, count]) => (
+            <DetailRow key={priority} theme={theme} label={priority} value={count} />
+          )) : <div style={{ color: theme.mutedText }}>No priority data yet.</div>}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function StaffActivity({ theme, tickets = [], cardStyle }) {
+  const claimedMap = tickets.reduce((map, ticket) => {
+    const assigned = getAssigned(ticket);
+    if (!assigned || String(assigned).toLowerCase() === 'unassigned') return map;
+    return { ...map, [assigned]: (map[assigned] || 0) + 1 };
+  }, {});
+
+  const closedMap = tickets.reduce((map, ticket) => {
+    const status = String(ticket.status || '').toLowerCase();
+    if (!['closed', 'archived'].includes(status)) return map;
+    const assigned = getAssigned(ticket);
+    if (!assigned || String(assigned).toLowerCase() === 'unassigned') return map;
+    return { ...map, [assigned]: (map[assigned] || 0) + 1 };
+  }, {});
+
+  return (
+    <section style={{ ...cardStyle, padding: 20, display: 'grid', gap: 14 }}>
+      <SectionHeader theme={theme} title="Staff Activity" description="Claim and closure visibility from current ticket ownership data." />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))', gap: 12 }}>
+        <div style={{ border: `1px solid ${theme.cardBorder}`, borderRadius: 16, padding: 14, background: 'rgba(15,23,42,0.22)' }}>
+          <h4 style={{ margin: '0 0 10px' }}>Claims / Ownership</h4>
+          {topEntries(claimedMap).length ? topEntries(claimedMap).map(([staff, count]) => (
+            <DetailRow key={staff} theme={theme} label={staff} value={count} />
+          )) : <div style={{ color: theme.mutedText }}>No claimed tickets yet.</div>}
+        </div>
+
+        <div style={{ border: `1px solid ${theme.cardBorder}`, borderRadius: 16, padding: 14, background: 'rgba(15,23,42,0.22)' }}>
+          <h4 style={{ margin: '0 0 10px' }}>Closed / Archived</h4>
+          {topEntries(closedMap).length ? topEntries(closedMap).map(([staff, count]) => (
+            <DetailRow key={staff} theme={theme} label={staff} value={count} />
+          )) : <div style={{ color: theme.mutedText }}>No closure ownership yet.</div>}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FormsIntegrationCard({ theme, overview = {}, cardStyle }) {
+  return (
+    <section style={{ ...cardStyle, padding: 20, display: 'grid', gap: 14 }}>
+      <SectionHeader theme={theme} title="Forms → Tickets Workflow" description="Prepared for universal form submissions creating staff-review tickets." />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 190px), 1fr))', gap: 10 }}>
+        <DetailRow theme={theme} label="Ticket Module" value={overview.enabled === false ? 'Disabled' : 'Enabled'} />
+        <DetailRow theme={theme} label="Panels" value={overview.panelCount ?? 0} />
+        <DetailRow theme={theme} label="Form Bridge" value="Ready for integration" />
+      </div>
+    </section>
+  );
+}
+
+export default function Tickets({ theme, selectedGuild, selectedGuildData, user, currentUser }) {
   const guildId = getGuildId(selectedGuild, selectedGuildData);
   const [overview, setOverview] = useState({});
   const [tickets, setTickets] = useState([]);
@@ -238,6 +367,14 @@ export default function Tickets({ theme, selectedGuild, selectedGuildData, user 
     [tickets, selectedTicketId],
   );
 
+  const statusCounts = useMemo(() => ({
+    open: countTickets(tickets, 'open'),
+    claimed: countTickets(tickets, 'claimed'),
+    closed: countTickets(tickets, 'closed'),
+    archived: countTickets(tickets, 'archived'),
+    urgent: tickets.filter((ticket) => String(ticket.priority || '').toLowerCase() === 'urgent').length,
+  }), [tickets]);
+
   const filteredTickets = useMemo(() => {
     const lowerQuery = query.trim().toLowerCase();
 
@@ -281,7 +418,7 @@ export default function Tickets({ theme, selectedGuild, selectedGuildData, user 
     setNotice('');
 
     try {
-      const actorId = user?.id || selectedGuildData?.userId || 'dashboard';
+      const actorId = currentUser?.id || user?.id || selectedGuildData?.userId || 'dashboard';
       const payload = action === 'close'
         ? { actorId, reason: 'Closed from Goliath dashboard.' }
         : { actorId };
@@ -329,11 +466,13 @@ export default function Tickets({ theme, selectedGuild, selectedGuildData, user 
 
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 170px), 1fr))', gap: 12 }}>
         <StatCard theme={theme} label="Status" value={overview.enabled === false ? 'Disabled' : 'Enabled'} hint={loading ? 'Loading...' : 'Ticket module'} />
-        <StatCard theme={theme} label="Active" value={overview.activeCount ?? 0} hint="Open + claimed" accent="#86efac" />
-        <StatCard theme={theme} label="Open" value={overview.openCount ?? 0} hint="Awaiting staff" accent="#86efac" />
-        <StatCard theme={theme} label="Claimed" value={overview.claimedCount ?? 0} hint="Owned by staff" />
-        <StatCard theme={theme} label="Closed" value={overview.closedCount ?? 0} hint={`${overview.closedTodayCount ?? 0} closed today`} accent="#fcd34d" />
-        <StatCard theme={theme} label="Transcripts" value={overview.transcriptCount ?? 0} hint="Saved transcripts" accent="#c4b5fd" />
+        <StatCard theme={theme} label="Active" value={overview.activeCount ?? (statusCounts.open + statusCounts.claimed)} hint="Open + claimed" accent="#86efac" />
+        <StatCard theme={theme} label="Open" value={overview.openCount ?? statusCounts.open} hint="Awaiting staff" accent="#86efac" />
+        <StatCard theme={theme} label="Claimed" value={overview.claimedCount ?? statusCounts.claimed} hint="Owned by staff" />
+        <StatCard theme={theme} label="Closed" value={overview.closedCount ?? statusCounts.closed} hint={`${overview.closedTodayCount ?? 0} closed today`} accent="#fcd34d" />
+        <StatCard theme={theme} label="Archived" value={overview.archivedCount ?? statusCounts.archived} hint="Stored for review" accent="#c4b5fd" />
+        <StatCard theme={theme} label="Urgent" value={statusCounts.urgent} hint="Priority queue" accent="#fca5a5" />
+        <StatCard theme={theme} label="Transcripts" value={overview.transcriptCount ?? tickets.filter((ticket) => ticket.transcript).length} hint="Saved transcripts" accent="#c4b5fd" />
       </section>
 
       {(error || notice) ? <section style={{ ...cardStyle, padding: 16, color: error ? '#fca5a5' : '#86efac', fontWeight: 850 }}>{error || notice}</section> : null}
@@ -342,6 +481,10 @@ export default function Tickets({ theme, selectedGuild, selectedGuildData, user 
         <TicketDetail theme={theme} ticket={selectedTicket} acting={acting} onAction={handleTicketAction} />
         <RecentActivity theme={theme} tickets={tickets} />
       </section>
+
+      <TicketAnalytics theme={theme} tickets={tickets} overview={overview} cardStyle={cardStyle} />
+      <StaffActivity theme={theme} tickets={tickets} cardStyle={cardStyle} />
+      <FormsIntegrationCard theme={theme} overview={overview} cardStyle={cardStyle} />
 
       <TicketPanelManagement
         theme={theme}
