@@ -14,6 +14,7 @@ const verificationStore = require('./verificationStore');
 const { isModuleEnabled } = require('../../guild/guildManager');
 
 const CUSTOM_ID_PREFIX = 'verify';
+const DEV_TEST_GUILD_ID = '1515201360386068642';
 
 function canManageVerification(member) {
   return Boolean(
@@ -26,6 +27,16 @@ function getBotMember(guild) {
   return guild?.members?.me || guild?.members?.cache?.get(guild.client.user.id) || null;
 }
 
+function isDevOwnerTestMember(member) {
+  if (!member?.id || member.guild?.id !== DEV_TEST_GUILD_ID) return false;
+
+  const botMode = String(process.env.BOT_MODE || '').trim().toLowerCase();
+  if (botMode !== 'dev') return false;
+
+  const { isBotOwner } = require('../../security/securityCore');
+  return isBotOwner(member.id);
+}
+
 function canBotManageMember(member) {
   const botMember = getBotMember(member?.guild);
 
@@ -33,6 +44,11 @@ function canBotManageMember(member) {
 
   // Never allow Goliath to target itself
   if (member.id === botMember.id) return false;
+
+  // Allow owner account testing in the development guild only.
+  // This does not bypass Discord API role hierarchy; it only prevents
+  // Goliath's own global owner-protection guard from blocking test flow.
+  if (isDevOwnerTestMember(member)) return true;
 
   // Protect Goliath owner IDs globally
   const { isBotOwner } = require('../../security/securityCore');
