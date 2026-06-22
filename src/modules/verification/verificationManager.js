@@ -207,7 +207,7 @@ async function verifyMember(interaction) {
     return { ok: true, message: 'You are already verified.' };
   }
 
-  if (!isModuleEnabled(guildId, 'verification') || section.enabled !== true) {
+  if (section.enabled !== true) {
     verificationStore.incrementAnalytics(guildId, { failed: 1 });
     return {
       ok: false,
