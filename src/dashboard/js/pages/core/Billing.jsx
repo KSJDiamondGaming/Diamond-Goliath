@@ -28,7 +28,7 @@ const PLAN_COPY = {
   lifetime: {
     headline: 'Founder and reward tier with Pro access forever.',
     idealFor: 'Founders, beta testers, giveaways and owner-granted rewards.',
-    badge: 'Hidden reward tier',
+    badge: 'Limited availability',
     displayName: 'Lifetime',
     icon: '💎',
   },
@@ -52,8 +52,8 @@ const PLAN_PRICING = {
   },
   lifetime: {
     price: 'Not publicly sold',
-    cadence: 'owner granted',
-    note: 'Hidden founder, reward and manual entitlement tier.',
+    cadence: 'KSJ Digital controlled',
+    note: 'Only appears when KSJ Digital makes Lifetime available.',
   },
 };
 
@@ -226,7 +226,7 @@ function PlanCard({ theme, plan, current, onUpgrade }) {
   );
 }
 
-export default function Billing({ theme, selectedGuild, selectedGuildData, isOwner = false }) {
+export default function Billing({ theme, selectedGuild, selectedGuildData }) {
   const guildId = getGuildId(selectedGuild, selectedGuildData);
   const [plansPayload, setPlansPayload] = useState(null);
   const [subscriptionPayload, setSubscriptionPayload] = useState(null);
@@ -234,7 +234,6 @@ export default function Billing({ theme, selectedGuild, selectedGuildData, isOwn
   const [loading, setLoading] = useState(false);
   const [redeeming, setRedeeming] = useState(false);
   const [redeemCode, setRedeemCode] = useState('');
-  const [showHiddenPlans, setShowHiddenPlans] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
@@ -243,9 +242,6 @@ export default function Billing({ theme, selectedGuild, selectedGuildData, isOwn
   const currentPlan = subscriptionPayload?.plan || entitlementsPayload?.plan || {};
   const features = asArray(entitlementsPayload?.features || currentPlan.features);
   const limits = entitlementsPayload?.limits || currentPlan.limits || {};
-  const visiblePlans = useMemo(() => (
-    plans.filter((plan) => plan.public !== false || showHiddenPlans || plan.id === subscription.plan)
-  ), [plans, showHiddenPlans, subscription.plan]);
 
   const loadBilling = useCallback(async () => {
     if (!guildId) return;
@@ -358,15 +354,10 @@ export default function Billing({ theme, selectedGuild, selectedGuildData, isOwn
       <SectionCard
         theme={theme}
         title="Choose Your Plan"
-        subtitle="Lifetime is hidden by default because it is an owner-granted reward tier, not a public paid plan."
-        actions={isOwner ? (
-          <button type="button" onClick={() => setShowHiddenPlans((value) => !value)} style={{ border: '1px solid rgba(250,204,21,0.35)', background: showHiddenPlans ? 'rgba(250,204,21,0.16)' : 'rgba(15,23,42,0.36)', color: '#fde68a', borderRadius: 12, padding: '10px 12px', fontWeight: 950, cursor: 'pointer' }}>
-            {showHiddenPlans ? 'Hide Hidden Plans' : 'Show Hidden Plans'}
-          </button>
-        ) : null}
+        subtitle="Lifetime only appears here when KSJ Digital makes it publicly available."
       >
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))', gap: 14 }}>
-          {visiblePlans.map((plan) => <PlanCard key={plan.id} theme={theme} plan={plan} current={plan.id === subscription.plan} onUpgrade={handleUpgrade} />)}
+          {plans.map((plan) => <PlanCard key={plan.id} theme={theme} plan={plan} current={plan.id === subscription.plan} onUpgrade={handleUpgrade} />)}
         </div>
       </SectionCard>
 
