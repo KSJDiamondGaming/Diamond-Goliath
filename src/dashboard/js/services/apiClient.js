@@ -156,6 +156,20 @@ export const api = {
     });
   },
 
+  /* ---------------- BILLING ---------------- */
+
+  getBillingPlans() {
+    return request('/api/billing/plans');
+  },
+
+  getBillingSubscription(guildId) {
+    return request(`/api/billing/subscription/${guildId}`);
+  },
+
+  getBillingEntitlements(guildId) {
+    return request(`/api/billing/entitlements/${guildId}`);
+  },
+
   /* ---------------- EMBED STUDIO ---------------- */
 
   getEmbedStudio(guildId) {
