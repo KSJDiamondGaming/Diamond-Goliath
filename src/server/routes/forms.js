@@ -6,6 +6,7 @@ const express = require('express');
 
 const formStore = require('../../modules/forms/formStore');
 const formManager = require('../../modules/forms/formManager');
+const planLimitManager = require('../../managers/planLimitManager');
 const {
   isGoliathPermissionError,
   validateRoleSelection,
@@ -37,6 +38,22 @@ function failure(res, error, status = 500) {
       metadata: details.metadata || {},
       autoFixAvailable: Boolean(details.autoFixAvailable),
       confirmationRequired: Boolean(details.confirmationRequired),
+    });
+  }
+
+  if (error?.code === 'PLAN_LIMIT_REACHED') {
+    return res.status(403).json({
+      success: false,
+      code: error.code,
+      error: error.message,
+      limitKey: error.limitKey,
+      label: error.label,
+      currentPlan: error.currentPlan,
+      currentPlanName: error.currentPlanName,
+      currentCount: error.currentCount,
+      limit: error.limit,
+      remaining: error.remaining,
+      upgradeHint: error.upgradeHint,
     });
   }
 
@@ -92,6 +109,13 @@ async function guardFormStaffRoles(req, guildId, input = {}, scope = 'forms.staf
 
   if (!result.ok) throw result.toError();
   return result;
+}
+
+function assertFormLimit(guildId) {
+  const currentForms = formStore.listForms(guildId).length;
+  return planLimitManager.assertCanCreateResource(guildId, 'forms', currentForms, {
+    upgradeHint: 'Upgrade to Plus for 25 forms or Pro for unlimited forms.',
+  });
 }
 
 function sortByNewest(items = []) {
@@ -201,6 +225,7 @@ router.post('/:guildId/forms', async (req, res) => {
   try {
     const guildId = getGuildId(req);
     await guardFormStaffRoles(req, guildId, req.body || {}, 'forms.create_staff_roles');
+    assertFormLimit(guildId);
 
     const saved = formStore.saveForm(guildId, req.body || {});
 
@@ -217,6 +242,9 @@ router.put('/:guildId/forms/:formId', async (req, res) => {
   try {
     const guildId = getGuildId(req);
     await guardFormStaffRoles(req, guildId, req.body || {}, 'forms.update_staff_roles');
+
+    const existing = formStore.getForm(guildId, req.params.formId);
+    if (!existing) assertFormLimit(guildId);
 
     const saved = formStore.saveForm(guildId, {
       ...(req.body || {}),
