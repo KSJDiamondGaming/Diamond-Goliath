@@ -6,6 +6,7 @@ const express = require('express');
 
 const translationStore = require('../../modules/translation/translationStore');
 const translationThreadManager = require('../../modules/translation/translationThreadManager');
+const { requireEntitlement } = require('../middleware/requireEntitlement');
 const {
   DEFAULT_BOT_CHANNEL_PERMISSIONS,
   guardChannelAccess,
@@ -93,6 +94,8 @@ async function guardTranslationChannelConfig(guild, channelId) {
 
   return channel;
 }
+
+router.use('/:guildId', requireEntitlement('translation.hub'));
 
 router.get('/:guildId/overview', (req, res) => {
   try {
