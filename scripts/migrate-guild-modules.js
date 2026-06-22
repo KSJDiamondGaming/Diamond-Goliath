@@ -1,7 +1,7 @@
 'use strict';
 
 // scripts/migrate-guild-modules.js
-// Moves old top-level module config into src/runtime/{mode}/guilds/{guildId}.json -> modules{}
+// Moves legacy top-level guild config into src/runtime/{mode}/guilds/{guildId}.json -> modules{}
 // Also removes legacy nested runtime files/folders once the guild JSON is consolidated.
 
 const fs = require('fs');
@@ -22,6 +22,17 @@ const MODULE_KEYS = [
   'roles',
   'timeline',
   'suggestions',
+  'forms',
+  'translation',
+  'verification',
+  'tickets',
+  'security',
+  'serverBackups',
+  'logs',
+  'generalSettings',
+  'embedBuilder',
+  'embedDefaults',
+  'embedPresets',
 ];
 
 const LEGACY_NESTED_FILES = [
@@ -102,6 +113,18 @@ function removeLegacyGuildRuntime(guildId) {
   removeDirIfEmpty(nestedGuildDir);
 }
 
+function moveSectionToModules(data, modules, key, guildId) {
+  if (!isPlainObject(data[key])) return false;
+
+  modules[key] = isPlainObject(modules[key])
+    ? { ...data[key], ...modules[key] }
+    : data[key];
+
+  delete data[key];
+  console.log(`✅ Moved ${key} -> modules.${key} for guild ${guildId}`);
+  return true;
+}
+
 function migrateGuildFile(filePath) {
   const data = readJson(filePath);
   if (!isPlainObject(data)) return false;
@@ -111,21 +134,15 @@ function migrateGuildFile(filePath) {
   let changed = false;
 
   for (const key of MODULE_KEYS) {
-    if (isPlainObject(data[key])) {
-      modules[key] = isPlainObject(modules[key])
-        ? { ...data[key], ...modules[key] }
-        : data[key];
-
-      delete data[key];
+    if (moveSectionToModules(data, modules, key, guildId)) {
       changed = true;
-      console.log(`✅ Moved ${key} -> modules.${key} for guild ${guildId}`);
     }
   }
 
   data.modules = modules;
-  data.updatedAt = new Date().toISOString();
 
   if (changed) {
+    data.updatedAt = new Date().toISOString();
     writeJson(filePath, data);
   }
 
