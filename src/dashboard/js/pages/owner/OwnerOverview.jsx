@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 
 import { api } from '../../services/apiClient.js';
 import GlobalSecurityCenter from './GlobalSecurityCenter.jsx';
+import OwnerOperationsPanel from './OwnerOperationsPanel.jsx';
 
 const FILTERS = [
   { key: 'all', label: 'All Guilds', icon: '🌐' },
@@ -11,12 +12,12 @@ const FILTERS = [
 ];
 
 const OWNER_SECTIONS = [
+  ['📊', 'Owner Operations', 'Runtime monitor, deployment centre and service health.', 'New'],
   ['🛡️', 'Global Security Center', 'Security activity, incidents and protection status.', 'Live'],
   ['📝', 'Global Forms', 'Applications, appeals, reports, support and custom forms.', 'Ready'],
   ['🎟️', 'Global Tickets', 'Open, closed, claimed tickets and transcripts.', 'Ready'],
-  ['🌍', 'Translation Hub', 'Channels, languages, threads and provider status.', 'Next'],
+  ['🌍', 'Translation Hub', 'Channels, languages, threads and provider status.', 'Ready'],
   ['💾', 'Backup Center', 'Backups, restore points and future Drive sync.', 'Online'],
-  ['🚀', 'Deployment Center', 'Versions, commits, queues, history and rollbacks.', 'Online'],
 ];
 
 function getEnvironmentMode(guild = {}) {
@@ -55,17 +56,6 @@ function formatNumber(value = 0) {
   return Number(value || 0).toLocaleString();
 }
 
-function formatMemory(bytes) {
-  if (!bytes) return 'Loading...';
-  return `${(Number(bytes) / 1024 / 1024 / 1024).toFixed(2)} GB`;
-}
-
-function formatUptime(seconds) {
-  if (!seconds) return 'Loading...';
-  const hours = Math.floor(Number(seconds) / 3600);
-  return `${hours} hour${hours === 1 ? '' : 's'}`;
-}
-
 function card(theme, extra = {}) {
   return {
     border: `1px solid ${theme.cardBorder}`,
@@ -91,27 +81,6 @@ function StatCard({ theme, label, value, sublabel, icon, accent = '#93c5fd' }) {
         <div style={{ color: accent, fontSize: 29, fontWeight: 950, lineHeight: 1 }}>{value}</div>
         {sublabel ? <div style={{ color: theme.mutedText, fontSize: 13, marginTop: 7, lineHeight: 1.4 }}>{sublabel}</div> : null}
       </div>
-    </div>
-  );
-}
-
-function SmallMetric({ theme, label, value, accent = '#93c5fd' }) {
-  return (
-    <div style={card(theme, { padding: 14, background: 'rgba(15,23,42,0.18)' })}>
-      <div style={{ color: theme.mutedText, fontSize: 12, fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</div>
-      <div style={{ color: accent, fontSize: 22, fontWeight: 950, marginTop: 7, wordBreak: 'break-word' }}>{value}</div>
-    </div>
-  );
-}
-
-function RuntimeCard({ theme, label, status, description, icon, accent }) {
-  return (
-    <div style={card(theme, { padding: 15, display: 'grid', gap: 9 })}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
-        <strong>{icon} {label}</strong>
-        <span style={{ border: `1px solid ${accent}55`, color: accent, background: `${accent}14`, borderRadius: 999, padding: '5px 9px', fontSize: 12, fontWeight: 950 }}>{status}</span>
-      </div>
-      <p style={{ margin: 0, color: theme.mutedText, lineHeight: 1.5, fontSize: 13 }}>{description}</p>
     </div>
   );
 }
@@ -240,7 +209,7 @@ export default function OwnerView({ theme, currentUser }) {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ minWidth: 0, flex: '1 1 420px' }}>
             <p style={{ margin: '0 0 8px', color: '#93c5fd', fontWeight: 950, letterSpacing: '0.08em', textTransform: 'uppercase' }}>KSJ Owner Control Centre</p>
-            <h1 style={{ margin: 0, fontSize: 'clamp(28px, 4vw, 42px)', letterSpacing: '-0.04em', lineHeight: 1 }}>👑 Goliath Owner View</h1>
+            <h1 style={{ margin: 0, fontSize: 'clamp(28px, 4vw, 42px)', letterSpacing: '-0.04em', lineHeight: 1 }}>👑 Goliath Owner Operations</h1>
             <p style={{ margin: '10px 0 0', color: theme.mutedText, lineHeight: 1.55, maxWidth: 780 }}>Platform-level monitoring for guilds, runtime environments, security, forms, tickets, translation, backups and deployments.</p>
           </div>
           <div style={{ border: `1px solid ${theme.cardBorder}`, borderRadius: 16, padding: '12px 15px', background: 'rgba(15,23,42,0.30)', minWidth: 170 }}>
@@ -259,24 +228,7 @@ export default function OwnerView({ theme, currentUser }) {
         <StatCard theme={theme} label="PROD" value={formatNumber(stats.PRODUCTION)} sublabel="Live" icon="🟢" accent="#22c55e" />
       </section>
 
-      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,230px),1fr))', gap: 12 }}>
-        <RuntimeCard theme={theme} label="DEV" status="ONLINE" description="Fast testing, owner-only experiments and dashboard iteration." icon="🔵" accent="#60a5fa" />
-        <RuntimeCard theme={theme} label="BETA" status="ONLINE" description="Staging environment for testing releases before production." icon="🟡" accent="#facc15" />
-        <RuntimeCard theme={theme} label="PRODUCTION" status="ONLINE" description="Live public Goliath environment and runtime services." icon="🟢" accent="#22c55e" />
-      </section>
-
-      <section style={card(theme, { padding: 18, display: 'grid', gap: 14 })}>
-        <strong>📊 Platform Runtime Monitor</strong>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', gap: 10 }}>
-          <SmallMetric theme={theme} label="Mode" value={platformRuntime?.mode || 'Loading...'} />
-          <SmallMetric theme={theme} label="Hostname" value={platformRuntime?.hostname || 'Loading...'} />
-          <SmallMetric theme={theme} label="Node" value={platformRuntime?.nodeVersion || 'Loading...'} />
-          <SmallMetric theme={theme} label="CPU" value={platformRuntime?.cpuCount || 0} />
-          <SmallMetric theme={theme} label="Memory" value={formatMemory(platformRuntime?.memory?.used)} />
-          <SmallMetric theme={theme} label="Uptime" value={formatUptime(platformRuntime?.uptime)} />
-        </div>
-      </section>
-
+      <OwnerOperationsPanel theme={theme} runtime={platformRuntime} ownerPayload={ownerPayload} stats={stats} />
       <GlobalSecurityCenter theme={theme} />
 
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,240px),1fr))', gap: 12 }}>
