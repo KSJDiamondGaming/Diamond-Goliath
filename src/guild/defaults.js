@@ -20,6 +20,13 @@ const DEFAULT_GENERAL_SETTINGS = Object.freeze({
   instantDeleteDataEnabled: false,
 });
 
+const DEFAULT_SUBSCRIPTION = Object.freeze({
+  plan: 'free',
+  status: 'active',
+  source: 'system',
+  expiresAt: null,
+});
+
 const DEFAULT_LOGS = Object.freeze({
   enabled: true,
 
@@ -273,6 +280,8 @@ const DEFAULT_GUILD_DATA = Object.freeze({
   createdAt: null,
   updatedAt: null,
 
+  subscription: DEFAULT_SUBSCRIPTION,
+
   generalSettings: DEFAULT_GENERAL_SETTINGS,
   logs: DEFAULT_LOGS,
   security: DEFAULT_SECURITY,
@@ -293,6 +302,7 @@ const DEFAULT_GUILD_DATA = Object.freeze({
 
 module.exports = {
   DEFAULT_GUILD_DATA,
+  DEFAULT_SUBSCRIPTION,
   DEFAULT_GENERAL_SETTINGS,
   DEFAULT_LOGS,
   DEFAULT_SECURITY,
