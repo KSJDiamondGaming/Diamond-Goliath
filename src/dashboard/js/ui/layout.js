@@ -1,4 +1,5 @@
 import Overview from '../pages/core/Overview';
+import Billing from '../pages/core/Billing';
 import AutoMod from '../pages/administration/AutoMod';
 import Admin from '../pages/administration/Admin';
 import Moderation from '../pages/moderation/Moderation';
@@ -86,6 +87,7 @@ export const NAV_BOTTOM = [
 
 export const ROUTES = [
   { key: 'overview', label: 'Overview', icon: 'overview', path: '/overview', component: Overview },
+  { key: 'billing', label: 'Billing', icon: 'admin', path: '/billing', component: Billing, hidden: true },
   { key: 'ownerView', label: 'Owner View', icon: 'admin', path: '/owner', component: OwnerView, ownerOnly: true },
   { key: 'ownerServers', label: 'Global Servers', icon: 'modules', path: '/owner/servers', component: OwnerGlobalServers, ownerOnly: true },
   { key: 'ownerRuntime', label: 'Runtime Monitor', icon: 'admin', path: '/owner/runtime', component: OwnerRuntimeMonitor, ownerOnly: true },
@@ -129,6 +131,7 @@ export const navBottomItems = NAV_BOTTOM;
 
 export const PAGE_LAYOUTS = {
   overview: { title: 'Overview', description: 'Server insights and activity', sections: [{ id: 'stats', type: 'stats' }, { id: 'activity', type: 'list' }] },
+  billing: { title: 'Billing', description: 'Current plan, subscription status and feature entitlements.', emptyDescription: 'Select a server to view billing.', sections: [{ id: 'billingDashboard', type: 'dashboard' }] },
   ownerView: { title: 'Owner View', description: 'Owner-only platform dashboard.', sections: [] },
   ownerServers: { title: 'Global Servers', description: 'Owner-level server registry across all environments.', sections: [] },
   ownerRuntime: { title: 'Runtime Monitor', description: 'Owner-level runtime monitoring across DEV, BETA and PRODUCTION.', sections: [] },
@@ -170,6 +173,7 @@ export const PAGE_LAYOUTS = {
 export const SECTION_DEFS = {
   stats: { title: 'Server Stats', description: 'Live system and guild status.' },
   activity: { title: 'Recent Activity', description: 'Quick status indicators.' },
+  billingDashboard: { title: 'Billing Dashboard', description: 'Current plan, limits and entitlements.' },
   modulesGrid: { title: 'Modules Grid', description: 'Browse optional Goliath features.' },
   embedStudioDashboard: { title: 'Embed Studio', description: 'Build, preview and save Discord embeds.' },
   verificationDashboard: { title: 'Verification Dashboard', description: 'Configure verification roles, panels and analytics.' },
