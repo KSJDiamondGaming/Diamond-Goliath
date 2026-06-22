@@ -20,7 +20,9 @@ function getGuildId(selectedGuild, selectedGuildData) {
   return String(id).split(':').pop().trim();
 }
 
-function mergeModuleState(registryModules, moduleState) {
+function mergeModuleState(registryModules, moduleState, features = []) {
+  const featureSet = new Set(features);
+
   return registryModules.map((module) => {
     const saved = moduleState?.[module.key];
     const savedEnabled = typeof saved === 'boolean'
@@ -28,10 +30,12 @@ function mergeModuleState(registryModules, moduleState) {
       : saved && typeof saved === 'object'
         ? saved.enabled !== false && (saved.enabled === true || module.enabled === true)
         : module.enabled === true;
+    const locked = Boolean(module.requiredFeature && !featureSet.has(module.requiredFeature));
 
     return {
       ...module,
       enabled: savedEnabled,
+      locked,
       savedConfig: saved && typeof saved === 'object' ? saved : {},
     };
   });
@@ -42,6 +46,7 @@ export default function Modules({ theme, selectedGuild, selectedGuildData }) {
   const guildId = getGuildId(selectedGuild, selectedGuildData);
 
   const [moduleState, setModuleState] = useState({});
+  const [entitlementFeatures, setEntitlementFeatures] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [savingKey, setSavingKey] = useState('');
@@ -52,6 +57,7 @@ export default function Modules({ theme, selectedGuild, selectedGuildData }) {
     async function loadModules() {
       if (!guildId) {
         setModuleState({});
+        setEntitlementFeatures([]);
         return;
       }
 
@@ -59,9 +65,13 @@ export default function Modules({ theme, selectedGuild, selectedGuildData }) {
       setError('');
 
       try {
-        const result = await api.getGuildModules(guildId);
+        const [modulesResult, entitlementsResult] = await Promise.all([
+          api.getGuildModules(guildId),
+          api.getBillingEntitlements(guildId).catch(() => ({ features: [] })),
+        ]);
         if (!active) return;
-        setModuleState(result.modules || {});
+        setModuleState(modulesResult.modules || {});
+        setEntitlementFeatures(Array.isArray(entitlementsResult.features) ? entitlementsResult.features : []);
       } catch (loadError) {
         if (!active) return;
         setError(loadError.message || 'Failed to load guild module states.');
@@ -82,12 +92,13 @@ export default function Modules({ theme, selectedGuild, selectedGuildData }) {
   ), []);
 
   const modules = useMemo(() => (
-    mergeModuleState(registryModules, moduleState).sort((a, b) => a.name.localeCompare(b.name))
-  ), [registryModules, moduleState]);
+    mergeModuleState(registryModules, moduleState, entitlementFeatures).sort((a, b) => a.name.localeCompare(b.name))
+  ), [registryModules, moduleState, entitlementFeatures]);
 
   const stats = useMemo(() => ({
     total: modules.length,
     enabled: modules.filter((module) => module.enabled).length,
+    locked: modules.filter((module) => module.locked).length,
     dashboardReady: modules.filter((module) => module.status === MODULE_STATUSES.backendReady || module.status === MODULE_STATUSES.live).length,
   }), [modules]);
 
@@ -102,6 +113,11 @@ export default function Modules({ theme, selectedGuild, selectedGuildData }) {
   function handleOpenModule(module) {
     if (!module?.route) return;
 
+    if (module.locked) {
+      setError(`${module.name} requires Goliath ${String(module.requiredPlan || 'pro').toUpperCase()}. Open Billing to unlock it.`);
+      return;
+    }
+
     if (module.enabled !== true) {
       setError(`Enable ${module.name} before opening its dashboard page.`);
       return;
@@ -113,6 +129,11 @@ export default function Modules({ theme, selectedGuild, selectedGuildData }) {
 
   async function handleToggleModule(module, enabled) {
     if (!guildId || !module?.key) return;
+
+    if (module.locked) {
+      setError(`${module.name} requires Goliath ${String(module.requiredPlan || 'pro').toUpperCase()}. Open Billing to unlock it.`);
+      return;
+    }
 
     const previousState = moduleState;
     const nextModuleConfig = {
@@ -142,12 +163,13 @@ export default function Modules({ theme, selectedGuild, selectedGuildData }) {
           <div>
             <p style={{ margin: '0 0 8px', color: '#93c5fd', fontWeight: 950, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Goliath Modules Hub</p>
             <h1 style={{ margin: 0, fontSize: 'clamp(28px, 4vw, 42px)', letterSpacing: '-0.04em' }}>Modules</h1>
-            <p style={{ margin: '10px 0 0', color: theme.mutedText, lineHeight: 1.6, maxWidth: 840 }}>Enable a module, then open it from this grid. Module pages stay hidden from the sidebar to keep navigation clean.</p>
+            <p style={{ margin: '10px 0 0', color: theme.mutedText, lineHeight: 1.6, maxWidth: 840 }}>Enable a module, then open it from this grid. Premium modules are locked until the server has the required plan.</p>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))', gap: 12 }}>
             <StatCard theme={theme} label="Feature Modules" value={stats.total} hint="Grid launcher" />
             <StatCard theme={theme} label="Enabled" value={stats.enabled} hint="Saved to guild JSON" />
+            <StatCard theme={theme} label="Locked" value={stats.locked} hint="Premium gated" />
             <StatCard theme={theme} label="Dashboard Ready" value={stats.dashboardReady} hint="Every module opens" />
           </div>
         </div>
