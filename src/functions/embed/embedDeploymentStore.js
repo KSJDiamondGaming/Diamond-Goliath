@@ -4,7 +4,7 @@
 
 const guildManager = require('../../guild/guildManager');
 
-const EMBED_DEPLOYMENTS_SECTION = 'embedDeployments';
+const EMBED_DEPLOYMENTS_SECTION = 'embedBuilder.deployments';
 const DEPLOYMENT_STATUS = Object.freeze({
   ACTIVE: 'active',
   NOT_DEPLOYED: 'not_deployed',
@@ -69,15 +69,18 @@ function normalizeDeployment(key, deployment = {}) {
   };
 }
 
-function getAllEmbedDeployments(guildId) {
+function getEmbedBuilderSection(guildId) {
   refreshGuild(guildId);
+  return guildManager.getGuildSection(guildId, 'embedBuilder', {
+    draft: {},
+    templates: {},
+    deployments: {},
+  });
+}
 
-  const guildData =
-    typeof guildManager.getGuildData === 'function'
-      ? guildManager.getGuildData(guildId) || {}
-      : {};
-
-  const deployments = clone(guildData[EMBED_DEPLOYMENTS_SECTION] || {});
+function getAllEmbedDeployments(guildId) {
+  const builder = getEmbedBuilderSection(guildId);
+  const deployments = clone(builder.deployments || {});
 
   return Object.fromEntries(
     Object.entries(deployments)
@@ -92,11 +95,18 @@ function getEmbedDeployment(guildId, key) {
 }
 
 function saveDeployments(guildId, deployments) {
-  if (typeof guildManager.replaceGuildSection !== 'function') return null;
+  if (typeof guildManager.saveGuildSection !== 'function') return null;
 
-  guildManager.replaceGuildSection(guildId, EMBED_DEPLOYMENTS_SECTION, deployments);
+  const currentBuilder = getEmbedBuilderSection(guildId);
+  const nextBuilder = {
+    ...currentBuilder,
+    deployments: clone(deployments),
+    updatedAt: now(),
+  };
+
+  guildManager.saveGuildSection(guildId, 'embedBuilder', nextBuilder);
   refreshGuild(guildId);
-  return deployments;
+  return nextBuilder.deployments;
 }
 
 function saveEmbedDeployment(guildId, key, deployment) {
