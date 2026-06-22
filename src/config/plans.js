@@ -54,7 +54,7 @@ const PRO_FEATURES = Object.freeze([
 const PLAN_DEFINITIONS = Object.freeze({
   [PLAN_IDS.FREE]: Object.freeze({
     id: PLAN_IDS.FREE,
-    name: 'Free',
+    name: 'Basic',
     icon: '🆓',
     public: true,
     rank: 0,
