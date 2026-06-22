@@ -24,6 +24,16 @@ export const moduleRegistry = [
     summary: 'Assign roles automatically when members join or meet conditions.',
   },
   {
+    key: 'moderation',
+    name: 'Cases',
+    icon: 'CS',
+    route: '/cases',
+    category: MODULE_CATEGORIES.feature,
+    status: MODULE_STATUSES.backendReady,
+    enabled: true,
+    summary: 'Review moderation cases, warnings and case history from guild JSON.',
+  },
+  {
     key: 'embedBuilder',
     name: 'Embed Studio',
     icon: 'ES',
