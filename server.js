@@ -45,6 +45,7 @@ const logsRoutes = require('./src/server/routes/config/logs');
 const messagesRoutes = require('./src/server/routes/config/messages');
 const embedsRoutes = require('./src/server/routes/config/embeds');
 
+const billingRoutes = require('./src/server/routes/billing');
 const moderationRoutes = require('./src/server/routes/moderation');
 const serverRestoreRoutes = require('./src/server/routes/serverRestoreRoutes');
 const securityRoutes = require('./src/server/routes/security');
@@ -271,6 +272,7 @@ app.use('/api/config/logs', logsRoutes);
 app.use('/api/config/messages', messagesRoutes);
 app.use('/api/config/embeds', embedsRoutes);
 
+app.use('/api/billing', billingRoutes);
 app.use('/api/cases', moderationRoutes);
 app.use('/api/tickets', ticketRoutes);
 app.use('/api/forms', formsRoutes);
