@@ -3,6 +3,55 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../../services/apiClient.js';
 import PageShell, { EmptyState, LoadingPanel, Notice, SectionCard, StatGrid, SummaryStat } from '../../shared/PageShell.jsx';
 
+const PLAN_COPY = {
+  free: {
+    headline: 'Perfect for small communities getting started with Goliath.',
+    idealFor: 'Small communities, new servers and trial setups.',
+    badge: 'Starter access',
+  },
+  plus: {
+    headline: 'For growing communities that need higher limits and more flexibility.',
+    idealFor: 'Gaming communities, creators and active Discord servers.',
+    badge: 'Growth plan',
+  },
+  pro: {
+    headline: 'Unlock the complete Goliath platform with every premium system included.',
+    idealFor: 'Large communities, businesses and professional Discord servers.',
+    badge: 'Full platform',
+  },
+  lifetime: {
+    headline: 'Founder and reward tier with Pro access forever.',
+    idealFor: 'Founders, beta testers, giveaways and owner-granted rewards.',
+    badge: 'Hidden reward tier',
+  },
+};
+
+const FEATURE_LABELS = {
+  'tickets.basic': { icon: '🎫', label: 'Ticket System', description: 'Create and manage support tickets for your community.' },
+  'tickets.advanced': { icon: '🎟️', label: 'Advanced Tickets', description: 'Higher limits and more flexible ticket workflows.' },
+  'forms.basic': { icon: '📝', label: 'Forms System', description: 'Run applications, reports, appeals and custom forms.' },
+  'forms.advanced': { icon: '📋', label: 'Advanced Forms', description: 'Expanded form workflows for growing communities.' },
+  'embeds.basic': { icon: '✨', label: 'Embed Builder', description: 'Create clean, professional Discord embeds.' },
+  'embeds.presets': { icon: '💾', label: 'Embed Presets', description: 'Save more reusable embed designs and templates.' },
+  'moderation.basic': { icon: '🛡️', label: 'Moderation Tools', description: 'Core moderation utilities and safety controls.' },
+  'dashboard.basic': { icon: '📊', label: 'Dashboard Access', description: 'Manage Goliath from the web dashboard.' },
+  'security.basic': { icon: '🔐', label: 'Basic Security', description: 'Essential server protection features.' },
+  'security.advanced': { icon: '🛡️', label: 'Advanced Security Center', description: 'Professional security and incident control systems.' },
+  'backup.restore': { icon: '♻️', label: 'Backup & Restore Center', description: 'Restore server configuration from protected backups.' },
+  'translation.hub': { icon: '🌍', label: 'Translation Hub', description: 'Multilingual community tools, providers and translation workflows.' },
+  'analytics.basic': { icon: '📈', label: 'Basic Analytics', description: 'Simple insights for community activity and usage.' },
+  'analytics.advanced': { icon: '📊', label: 'Advanced Analytics', description: 'Deeper reporting across premium Goliath systems.' },
+  'modules.premium': { icon: '👑', label: 'Future Premium Modules', description: 'Access to future Pro-level Goliath systems.' },
+};
+
+const LIMIT_LABELS = {
+  ticketPanels: 'Ticket Panels',
+  forms: 'Forms',
+  embedPresets: 'Embed Presets',
+  activeTicketsPerUser: 'Active Tickets Per User',
+  translationsPerMonth: 'Translations Per Month',
+};
+
 function getGuildId(selectedGuild, selectedGuildData) {
   const id = selectedGuildData?.guildId || selectedGuildData?.id || selectedGuild || '';
   return String(id).split(':').pop().trim();
@@ -12,6 +61,14 @@ function asArray(value) {
   if (Array.isArray(value)) return value;
   if (value && typeof value === 'object') return Object.values(value);
   return [];
+}
+
+function featureInfo(feature) {
+  return FEATURE_LABELS[feature] || {
+    icon: '✅',
+    label: String(feature || '').replace(/[._-]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()),
+    description: 'Included with this Goliath plan.',
+  };
 }
 
 function formatDate(value) {
@@ -25,6 +82,10 @@ function formatLimit(value) {
   return Number(value).toLocaleString();
 }
 
+function formatLimitLabel(key) {
+  return LIMIT_LABELS[key] || String(key || '').replace(/([A-Z])/g, ' $1').replace(/^./, (letter) => letter.toUpperCase());
+}
+
 function DetailCard({ theme, label, value, hint }) {
   return (
     <div style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(15,23,42,0.28)', borderRadius: 14, padding: 13, display: 'grid', gap: 4 }}>
@@ -36,25 +97,60 @@ function DetailCard({ theme, label, value, hint }) {
 }
 
 function FeaturePill({ theme, feature }) {
+  const info = featureInfo(feature);
   return (
-    <span style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(15,23,42,0.34)', color: theme.cardText, borderRadius: 999, padding: '7px 10px', fontSize: 12, fontWeight: 900 }}>
-      {feature}
+    <span title={info.description} style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(15,23,42,0.34)', color: theme.cardText, borderRadius: 999, padding: '7px 10px', fontSize: 12, fontWeight: 900 }}>
+      {info.icon} {info.label}
     </span>
   );
 }
 
-function PlanCard({ theme, plan, current }) {
+function FeatureListItem({ theme, feature }) {
+  const info = featureInfo(feature);
   return (
-    <div style={{ border: `1px solid ${current ? '#86efac' : theme.cardBorder}`, background: current ? 'rgba(34,197,94,0.10)' : 'rgba(15,23,42,0.24)', borderRadius: 18, padding: 16, display: 'grid', gap: 10 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
-        <strong style={{ color: theme.cardText, fontSize: 18 }}>{plan.icon} {plan.name}</strong>
+    <div style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(15,23,42,0.22)', borderRadius: 14, padding: 12, display: 'grid', gap: 5 }}>
+      <strong style={{ color: theme.cardText }}>{info.icon} {info.label}</strong>
+      <span style={{ color: theme.mutedText, fontSize: 12, lineHeight: 1.45 }}>{info.description}</span>
+    </div>
+  );
+}
+
+function PlanCard({ theme, plan, current }) {
+  const copy = PLAN_COPY[plan.id] || PLAN_COPY.free;
+  const limits = plan.limits || {};
+
+  return (
+    <div style={{ border: `1px solid ${current ? '#86efac' : theme.cardBorder}`, background: current ? 'rgba(34,197,94,0.10)' : 'rgba(15,23,42,0.24)', borderRadius: 18, padding: 16, display: 'grid', gap: 14 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+        <div>
+          <strong style={{ color: theme.cardText, fontSize: 22 }}>{plan.icon} {plan.name}</strong>
+          <div style={{ marginTop: 6, color: current ? '#86efac' : '#fde68a', fontSize: 12, fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{copy.badge}</div>
+        </div>
         {current ? <span style={{ color: '#86efac', fontWeight: 950, fontSize: 12, textTransform: 'uppercase' }}>Current</span> : null}
       </div>
-      <div style={{ color: theme.mutedText, fontSize: 13, lineHeight: 1.5 }}>
-        {plan.public === false ? 'Hidden owner-granted plan.' : 'Available Goliath plan.'}
+
+      <div style={{ color: theme.mutedText, fontSize: 13, lineHeight: 1.55 }}>
+        {copy.headline}
       </div>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        {asArray(plan.features).slice(0, 5).map((feature) => <FeaturePill key={feature} theme={theme} feature={feature} />)}
+
+      <div style={{ display: 'grid', gap: 8 }}>
+        {asArray(plan.features).map((feature) => <FeatureListItem key={feature} theme={theme} feature={feature} />)}
+      </div>
+
+      <div style={{ borderTop: `1px solid ${theme.cardBorder}`, paddingTop: 12, display: 'grid', gap: 8 }}>
+        <strong style={{ color: theme.cardText }}>Plan Limits</strong>
+        <div style={{ display: 'grid', gap: 6 }}>
+          {Object.entries(limits).map(([key, value]) => (
+            <div key={key} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, color: theme.mutedText, fontSize: 13 }}>
+              <span>{formatLimitLabel(key)}</span>
+              <strong style={{ color: theme.cardText }}>{formatLimit(value)}</strong>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ color: theme.mutedText, fontSize: 12, lineHeight: 1.45 }}>
+        <strong style={{ color: theme.cardText }}>Ideal for:</strong> {copy.idealFor}
       </div>
     </div>
   );
@@ -167,30 +263,31 @@ export default function Billing({ theme, selectedGuild, selectedGuildData }) {
         </form>
       </SectionCard>
 
-      <SectionCard theme={theme} title="Plan Features" subtitle="Features currently unlocked for this server.">
+      <SectionCard theme={theme} title="Unlocked Features" subtitle="Customer-facing features currently available for this server.">
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {features.length ? features.map((feature) => <FeaturePill key={feature} theme={theme} feature={feature} />) : <EmptyState theme={theme} text="No feature entitlements found." />}
         </div>
       </SectionCard>
 
-      <SectionCard theme={theme} title="Current Limits" subtitle="Plan limits from the entitlement system.">
+      <SectionCard theme={theme} title="Current Limits" subtitle="Usage limits for this server's current Goliath plan.">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 190px), 1fr))', gap: 12 }}>
           {Object.keys(limits).length ? Object.entries(limits).map(([key, value]) => (
-            <DetailCard key={key} theme={theme} label={key} value={formatLimit(value)} />
+            <DetailCard key={key} theme={theme} label={formatLimitLabel(key)} value={formatLimit(value)} />
           )) : <EmptyState theme={theme} text="No plan limits found." />}
         </div>
       </SectionCard>
 
-      <SectionCard theme={theme} title="Available Plans" subtitle="Billing navigation lives in the topbar. This page is not a sidebar module.">
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))', gap: 12 }}>
+      <SectionCard theme={theme} title="Available Plans" subtitle="Choose the Goliath tier that matches your community size and needs.">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))', gap: 14 }}>
           {plans.map((plan) => <PlanCard key={plan.id} theme={theme} plan={plan} current={plan.id === subscription.plan} />)}
         </div>
       </SectionCard>
 
-      <SectionCard theme={theme} title="Next Billing Actions" subtitle="Placeholders for the next billing phases.">
+      <SectionCard theme={theme} title="Payment Options" subtitle="Stripe and PayPal support will connect here in a later billing phase.">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 12 }}>
-          <DetailCard theme={theme} label="Upgrade" value="Coming soon" hint="Stripe checkout will connect here later." />
-          <DetailCard theme={theme} label="Billing History" value="Coming soon" hint="Invoices and subscription events after Stripe integration." />
+          <DetailCard theme={theme} label="Card Payments" value="Stripe Coming Soon" hint="Debit card, credit card, Apple Pay and Google Pay." />
+          <DetailCard theme={theme} label="PayPal" value="PayPal Coming Soon" hint="PayPal checkout will feed into the same subscription system." />
+          <DetailCard theme={theme} label="Billing History" value="Coming Soon" hint="Invoices and subscription events after payment integration." />
         </div>
       </SectionCard>
     </PageShell>
