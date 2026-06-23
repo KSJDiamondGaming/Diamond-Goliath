@@ -124,6 +124,14 @@ function getFormId(ticket = {}) {
   );
 }
 
+function getTicketChannelId(ticket = {}) {
+  return ticket.discordChannelId || ticket.channelId || null;
+}
+
+function getTicketControlMessageId(ticket = {}) {
+  return ticket.discordMessageId || ticket.messageId || null;
+}
+
 function getFormSubmission(guildId, ticket = {}) {
   const submissionId = getFormSubmissionId(ticket);
   if (!guildId || !submissionId) return null;
@@ -151,16 +159,26 @@ function updateSubmissionRecoveryState(guildId, submission, updates = {}, guild 
 }
 
 async function ensureControlMessage({ guild, channel, ticket, form } = {}) {
-  if (!guild || !channel?.send || !ticket) return null;
+  if (!guild || !channel?.send || !ticket) {
+    return {
+      message: null,
+      ticket,
+    };
+  }
 
-  const existingMessageId = ticket.discordMessageId || ticket.messageId;
+  const existingMessageId = getTicketControlMessageId(ticket);
 
   if (existingMessageId) {
     const existing = await channel.messages
       ?.fetch(existingMessageId)
       .catch(() => null);
 
-    if (existing) return existing;
+    if (existing) {
+      return {
+        message: existing,
+        ticket,
+      };
+    }
   }
 
   const panel = buildFormTicketPanel(form, ticket);
@@ -175,15 +193,27 @@ async function ensureControlMessage({ guild, channel, ticket, form } = {}) {
     return null;
   });
 
-  if (message?.id) {
-    ticketStore.updateTicket(guild.id, ticket.ticketId, {
-      discordMessageId: message.id,
-      messageId: message.id,
-      updatedAt: now(),
-    });
+  if (!message?.id) {
+    return {
+      message: null,
+      ticket,
+    };
   }
 
-  return message;
+  const updatedTicket = ticketStore.updateTicket(guild.id, ticket.ticketId, {
+    discordMessageId: message.id,
+    messageId: message.id,
+    updatedAt: now(),
+  }) || {
+    ...ticket,
+    discordMessageId: message.id,
+    messageId: message.id,
+  };
+
+  return {
+    message,
+    ticket: updatedTicket,
+  };
 }
 
 async function recoverFormTicketSubmission({
@@ -208,24 +238,34 @@ async function recoverFormTicketSubmission({
     };
   }
 
-  const channelId = ticket.discordChannelId || ticket.channelId || submission.ticketChannelId;
+  const channelId = getTicketChannelId(ticket) || submission.ticketChannelId;
   let channel = await fetchChannel(guild, channelId);
 
   if (channel) {
-    await ensureControlMessage({ guild, channel, ticket, form });
+    const control = await ensureControlMessage({
+      guild,
+      channel,
+      ticket,
+      form,
+    });
+
+    const recoveredTicket = control?.ticket || ticket;
+    const controlMessageId =
+      control?.message?.id ||
+      getTicketControlMessageId(recoveredTicket);
 
     const updatedSubmission = updateSubmissionRecoveryState(
       guild.id,
       submission,
       {
-        ticketId: ticket.ticketId,
+        ticketId: recoveredTicket.ticketId,
         ticketChannelId: channel.id,
         workflow: {
           ticketCreated: true,
-          ticketId: ticket.ticketId,
-          ticketDisplayId: ticket.displayId,
+          ticketId: recoveredTicket.ticketId,
+          ticketDisplayId: recoveredTicket.displayId,
           ticketChannelId: channel.id,
-          ticketControlMessageId: ticket.discordMessageId || ticket.messageId || null,
+          ticketControlMessageId: controlMessageId || null,
           channelRecovered: true,
         },
       },
@@ -236,16 +276,18 @@ async function recoverFormTicketSubmission({
       type: 'ticket_channel_relinked',
       label: 'Ticket channel relinked during recovery',
       metadata: {
-        ticketId: ticket.ticketId,
+        ticketId: recoveredTicket.ticketId,
         channelId: channel.id,
+        controlMessageId: controlMessageId || null,
       },
     }, guild);
 
     return {
-      ticketId: ticket.ticketId,
-      displayId: ticket.displayId,
+      ticketId: recoveredTicket.ticketId,
+      displayId: recoveredTicket.displayId,
       submissionId: submission.submissionId,
       channelId: channel.id,
+      controlMessageId: controlMessageId || null,
       recovered: true,
       recreated: false,
       submission: updatedSubmission,
@@ -273,19 +315,30 @@ async function recoverFormTicketSubmission({
     panel,
   });
 
-  await ensureControlMessage({ guild, channel, ticket, form });
+  const control = await ensureControlMessage({
+    guild,
+    channel,
+    ticket,
+    form,
+  });
+
+  const recoveredTicket = control?.ticket || ticket;
+  const controlMessageId =
+    control?.message?.id ||
+    getTicketControlMessageId(recoveredTicket);
 
   const updatedSubmission = updateSubmissionRecoveryState(
     guild.id,
     submission,
     {
-      ticketId: ticket.ticketId,
+      ticketId: recoveredTicket.ticketId,
       ticketChannelId: channel?.id || null,
       workflow: {
         ticketCreated: true,
-        ticketId: ticket.ticketId,
-        ticketDisplayId: ticket.displayId,
+        ticketId: recoveredTicket.ticketId,
+        ticketDisplayId: recoveredTicket.displayId,
         ticketChannelId: channel?.id || null,
+        ticketControlMessageId: controlMessageId || null,
         channelRecreated: true,
       },
     },
@@ -296,16 +349,18 @@ async function recoverFormTicketSubmission({
     type: 'ticket_channel_recreated',
     label: 'Missing ticket channel recreated during recovery',
     metadata: {
-      ticketId: ticket.ticketId,
+      ticketId: recoveredTicket.ticketId,
       channelId: channel?.id || null,
+      controlMessageId: controlMessageId || null,
     },
   }, guild);
 
   return {
-    ticketId: ticket.ticketId,
-    displayId: ticket.displayId,
+    ticketId: recoveredTicket.ticketId,
+    displayId: recoveredTicket.displayId,
     submissionId: submission.submissionId,
     channelId: channel?.id || null,
+    controlMessageId: controlMessageId || null,
     recovered: true,
     recreated: true,
     submission: updatedSubmission,
@@ -337,16 +392,14 @@ async function recoverGuildTickets(client, guildId, options = {}) {
   }
 
   for (const ticket of activeTickets) {
-    const channel = await fetchChannel(
-      guild,
-      ticket.discordChannelId
-    );
+    const currentChannelId = getTicketChannelId(ticket);
+    const channel = await fetchChannel(guild, currentChannelId);
 
     if (!channel) {
       results.missingChannels.push({
         ticketId: ticket.ticketId,
         displayId: ticket.displayId,
-        discordChannelId: ticket.discordChannelId,
+        discordChannelId: currentChannelId,
       });
     } else {
       results.validChannels.push({
