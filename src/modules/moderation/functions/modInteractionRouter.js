@@ -14,7 +14,7 @@ const {
   checkHierarchy,
 } = require('./moderationChecks');
 
-const { fetchTarget } = require('../../helpers/ui/targetHelpers');
+const { fetchTarget } = require('../../../helpers/ui/targetHelpers');
 
 const {
   buildReasonModal,
@@ -22,24 +22,24 @@ const {
   buildCaseIdModal,
   buildEditCaseModal,
   buildCaseNoteModal,
-} = require('../../helpers/ui/modalBuilders');
+} = require('../../../helpers/ui/modalBuilders');
 
 const {
   buildConfirmRow,
   buildConfirmCustomId,
   parseConfirmActionContext,
-} = require('../../helpers/ui/pendingActionHelpers');
+} = require('../../../helpers/ui/pendingActionHelpers');
 
 const {
   safeReply,
   ephemeralError,
-} = require('../../helpers/ui/interactionResponse');
+} = require('../../../helpers/ui/interactionResponse');
 
 const { buildDashboardPayload } = require('./dashboardService');
 const { executePendingAction } = require('./modActionExecutor');
 
-const { getCaseById } = require('../../logging/cases/caseStore');
-const { createPendingAction } = require('../../logging/stores/pendingActionStore');
+const { getCaseById } = require('../../../logging/cases/caseStore');
+const { createPendingAction } = require('../../../logging/stores/pendingActionStore');
 
 const DEFAULT_DASHBOARD_CONTEXT = {
   view: 'cases',

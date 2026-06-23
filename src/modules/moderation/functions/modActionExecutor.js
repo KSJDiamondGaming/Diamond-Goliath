@@ -2,17 +2,17 @@ const {
   createCase,
   getCaseById,
   updateCaseStatus,
-} = require('../../logging/cases/caseStore');
+} = require('../../../logging/cases/caseStore');
 
-const { deleteWarningByCaseId } = require('../../logging/warnings/warningStore');
+const { deleteWarningByCaseId } = require('../../../logging/warnings/warningStore');
 
 const {
   getPendingAction,
   deletePendingAction,
-} = require('../../logging/stores/pendingActionStore');
+} = require('../../../logging/stores/pendingActionStore');
 
-const { fetchTarget } = require('../../helpers/ui/targetHelpers');
-const { normalizeDashboardContext } = require('../../helpers/ui/pendingActionHelpers');
+const { fetchTarget } = require('../../../helpers/ui/targetHelpers');
+const { normalizeDashboardContext } = require('../../../helpers/ui/pendingActionHelpers');
 
 const { checkHierarchy } = require('./moderationChecks');
 const { refreshDashboard } = require('./dashboardService');
@@ -20,12 +20,12 @@ const { refreshDashboard } = require('./dashboardService');
 const {
   safeReply,
   ephemeralError,
-} = require('../../helpers/ui/interactionResponse');
+} = require('../../../helpers/ui/interactionResponse');
 
-const { applyPunishmentEngine } = require('../../modules/automod/functions/punishmentEngine');
+const { applyPunishmentEngine } = require('../../automod/functions/punishmentEngine');
 
 // If this path is different in your project, only change this line.
-const { sendModLog } = require('../../logging/modlogs/moderationActionLog');
+const { sendModLog } = require('../../../logging/modlogs/moderationActionLog');
 
 function cleanError(error) {
   return String(error || '').replace(/^❌\s*/, '');

@@ -15,12 +15,12 @@ const {
   isValidTimeoutDuration,
   getWarningExpiry,
   parseDeleteDays,
-} = require('../../helpers/ui/targetHelpers');
+} = require('../../../helpers/ui/targetHelpers');
 
 const {
   safeReply,
   ephemeralError,
-} = require('../../helpers/ui/interactionResponse');
+} = require('../../../helpers/ui/interactionResponse');
 
 const { buildDashboardPayload, refreshDashboard } = require('./dashboardService');
 const { executePendingAction } = require('./modActionExecutor');
@@ -32,13 +32,13 @@ const {
   buildCaseIdModal,
   buildEditCaseModal,
   buildCaseNoteModal,
-} = require('../../helpers/ui/modalBuilders');
+} = require('../../../helpers/ui/modalBuilders');
 
 const {
   buildConfirmRow,
   buildConfirmCustomId,
   parseConfirmActionContext,
-} = require('../../helpers/ui/pendingActionHelpers');
+} = require('../../../helpers/ui/pendingActionHelpers');
 
 const {
   createCase,
@@ -46,14 +46,14 @@ const {
   updateCaseReason,
   updateCaseNote,
   clearCaseNote,
-} = require('../../logging/cases/caseStore');
+} = require('../../../logging/cases/caseStore');
 
 const {
   addWarning,
   getWarningByCaseId,
-} = require('../../logging/warnings/warningStore');
+} = require('../../../logging/warnings/warningStore');
 
-const { createPendingAction } = require('../../logging/stores/pendingActionStore');
+const { createPendingAction } = require('../../../logging/stores/pendingActionStore');
 const { handleEscalation, getRepeatReasonInfo } = require('./escalationSystem');
 
 const DEFAULT_CONTEXT = {

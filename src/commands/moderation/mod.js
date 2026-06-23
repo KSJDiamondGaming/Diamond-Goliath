@@ -5,7 +5,7 @@ const {
 
 const { enforceCommandAccess } = require('../../helpers/ui/commandAccess');
 const { errorEmbed } = require('../../helpers/ui/embeds');
-const modPanel = require('../../functions/moderation/modPanel');
+const modPanel = require('../../modules/moderation/functions/modPanel');
 
 module.exports = {
   category: 'Moderation',

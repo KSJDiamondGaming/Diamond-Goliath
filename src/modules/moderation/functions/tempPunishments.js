@@ -1,4 +1,4 @@
-const guildStore = require('../../guild/store');
+const guildStore = require('../../../guild/store');
 
 function getTempPunishments(guildId) {
   const moderation = guildStore.getGuildSection(guildId, 'moderation', {});

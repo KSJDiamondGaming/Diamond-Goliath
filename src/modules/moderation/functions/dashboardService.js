@@ -3,13 +3,13 @@ const {
   UserSelectMenuBuilder,
 } = require('discord.js');
 
-const { getWarningCountForUser } = require('../../logging/warnings/warningStore');
+const { getWarningCountForUser } = require('../../../logging/warnings/warningStore');
 
 const {
   getCaseCountForUser,
   getCasesForUser,
   getFilteredCases,
-} = require('../../logging/cases/caseStore');
+} = require('../../../logging/cases/caseStore');
 
 const {
   formatCaseSummary,
@@ -23,14 +23,14 @@ const {
   buildCasesEmbed,
   buildAnalyticsEmbed,
   buildActionSelect,
-} = require('../../helpers/ui/dashboardBuilders');
+} = require('../../../helpers/ui/dashboardBuilders');
 
 const {
   buildCaseFilterButtons,
   buildCasesPageButtons,
-} = require('../../helpers/ui/caseComponentBuilders');
+} = require('../../../helpers/ui/caseComponentBuilders');
 
-const { normalizeDashboardContext } = require('../../helpers/ui/pendingActionHelpers');
+const { normalizeDashboardContext } = require('../../../helpers/ui/pendingActionHelpers');
 
 const {
   canUseModAction,
@@ -45,7 +45,7 @@ const {
   createSecondaryButton,
   createSuccessButton,
   createDangerButton,
-} = require('../../helpers/ui/embeds');
+} = require('../../../helpers/ui/embeds');
 
 const allowedViews = new Set([
   'overview',
