@@ -31,8 +31,34 @@ const {
 
 const router = express.Router();
 
+function normaliseStatus(status) {
+  return String(status || "open").toLowerCase();
+}
+
 function countByStatus(tickets = [], status) {
-  return tickets.filter((ticket) => ticket.status === status).length;
+  return tickets.filter((ticket) => normaliseStatus(ticket.status) === status).length;
+}
+
+function isDeletedTicket(ticket = {}) {
+  return normaliseStatus(ticket.status) === "deleted" || Boolean(ticket.deletedAt);
+}
+
+function isFormTicket(ticket = {}) {
+  return (
+    ticket.source === "form" ||
+    Boolean(ticket.formSubmissionId) ||
+    Boolean(ticket.metadata?.submissionId)
+  );
+}
+
+function hasMissingChannelRecord(ticket = {}) {
+  const status = normaliseStatus(ticket.status);
+
+  if (["closed", "archived", "deleted"].includes(status)) {
+    return false;
+  }
+
+  return !ticket.discordChannelId && !ticket.channelId;
 }
 
 function isToday(dateValue) {
@@ -141,6 +167,54 @@ function failure(res, error, fallbackMessage, fallbackStatus = 500) {
   });
 }
 
+function serialisePanel(panel = {}) {
+  return {
+    id: panel.panelId || panel.id || null,
+    panelId: panel.panelId || panel.id || null,
+    name: panel.name || panel.title || panel.appearance?.title || "Unnamed Panel",
+    title: panel.title || panel.appearance?.title || panel.name || "Unnamed Panel",
+    type: panel.ticketType || panel.type || "support",
+    ticketType: panel.ticketType || panel.type || "support",
+
+    deployed: Boolean(
+      panel.deployed ||
+      (panel.deployChannelId && panel.deployMessageId) ||
+      (panel.channelId && panel.messageId)
+    ),
+
+    channelId: panel.deployChannelId || panel.channelId || null,
+    messageId: panel.deployMessageId || panel.messageId || null,
+    deployChannelId: panel.deployChannelId || panel.channelId || null,
+    deployMessageId: panel.deployMessageId || panel.messageId || null,
+
+    ticketLimit:
+      panel.maxOpenTicketsPerUser ??
+      panel.maxActiveTicketsPerUser ??
+      panel.ticketLimit ??
+      0,
+
+    cooldown:
+      panel.cooldownMs ??
+      panel.cooldown ??
+      0,
+
+    cooldownMs:
+      panel.cooldownMs ??
+      panel.cooldown ??
+      0,
+
+    staffRoles: Array.isArray(panel.staffRoles) ? panel.staffRoles : panel.staffRoleIds || [],
+    staffRoleIds: panel.staffRoleIds || panel.staffRoles || [],
+    managerRoleIds: panel.managerRoleIds || [],
+    viewerRoleIds: panel.viewerRoleIds || [],
+
+    outputCategoryId: panel.outputCategoryId || null,
+    archiveCategoryId: panel.archiveCategoryId || null,
+    transcriptsChannelId: panel.transcriptsChannelId || null,
+    logsChannelId: panel.logsChannelId || null,
+  };
+}
+
 router.get("/:guildId/overview", async (req, res) => {
   try {
     const { guildId } = req.params;
@@ -151,50 +225,40 @@ router.get("/:guildId/overview", async (req, res) => {
     const claimedCount = countByStatus(tickets, "claimed");
     const closedCount = countByStatus(tickets, "closed");
     const archivedCount = countByStatus(tickets, "archived");
+    const deletedCount = tickets.filter(isDeletedTicket).length;
+    const formTicketCount = tickets.filter(isFormTicket).length;
+    const missingChannelRecordCount = tickets.filter(hasMissingChannelRecord).length;
 
     return res.json({
       success: true,
       guildId,
       overview: {
-  enabled: settings.enabled !== false,
-  ticketCount: tickets.length,
-  openCount,
-  claimedCount,
-  closedCount,
-  archivedCount,
-  activeCount: openCount + claimedCount,
-  closedTodayCount: tickets.filter((ticket) => isToday(ticket.closedAt)).length,
-  transcriptCount: tickets.filter((ticket) => ticket.transcript).length,
+        enabled: settings.enabled !== false,
+        ticketCount: tickets.length,
+        totalCount: tickets.length,
+        openCount,
+        claimedCount,
+        closedCount,
+        archivedCount,
+        deletedCount,
+        formTicketCount,
+        missingChannelRecordCount,
+        activeCount: openCount + claimedCount,
+        closedTodayCount: tickets.filter((ticket) => isToday(ticket.closedAt)).length,
+        archivedTodayCount: tickets.filter((ticket) => isToday(ticket.archivedAt)).length,
+        deletedTodayCount: tickets.filter((ticket) => isToday(ticket.deletedAt)).length,
+        transcriptCount: tickets.filter((ticket) => ticket.transcript || ticket.transcriptId || ticket.transcriptUrl).length,
 
-  panelCount: panels.length,
+        panelCount: panels.length,
 
-  deployedPanelCount: panels.filter(
-    (panel) => panel.deployed || (panel.channelId && panel.messageId)
-  ).length,
+        deployedPanelCount: panels.filter(
+          (panel) => panel.deployed || (panel.deployChannelId && panel.deployMessageId) || (panel.channelId && panel.messageId)
+        ).length,
 
-  panels: panels.map((panel) => ({
-    id: panel.id || null,
-    name: panel.name || "Unnamed Panel",
-    type: panel.type || "support",
+        panels: panels.map(serialisePanel),
 
-    deployed: Boolean(
-      panel.deployed ||
-      (panel.channelId && panel.messageId)
-    ),
-
-    channelId: panel.channelId || null,
-    messageId: panel.messageId || null,
-
-    ticketLimit: panel.ticketLimit || 0,
-    cooldown: panel.cooldown || 0,
-
-    staffRoles: Array.isArray(panel.staffRoles)
-      ? panel.staffRoles
-      : [],
-  })),
-
-  settings,
-},
+        settings,
+      },
     });
   } catch (error) {
     console.error("[TicketsRoute] OVERVIEW:", error);
