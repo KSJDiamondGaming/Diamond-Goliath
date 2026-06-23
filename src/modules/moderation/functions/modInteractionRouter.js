@@ -14,7 +14,7 @@ const {
   checkHierarchy,
 } = require('./moderationChecks');
 
-const { fetchTarget } = require('../../../helpers/ui/targetHelpers');
+const { fetchTarget } = require('../../../core/ui/targetHelpers');
 
 const {
   buildReasonModal,
@@ -22,18 +22,18 @@ const {
   buildCaseIdModal,
   buildEditCaseModal,
   buildCaseNoteModal,
-} = require('../../../helpers/ui/modalBuilders');
+} = require('../../../core/ui/modalBuilders');
 
 const {
   buildConfirmRow,
   buildConfirmCustomId,
   parseConfirmActionContext,
-} = require('../../../helpers/ui/pendingActionHelpers');
+} = require('../../../core/ui/pendingActionHelpers');
 
 const {
   safeReply,
   ephemeralError,
-} = require('../../../helpers/ui/interactionResponse');
+} = require('../../../core/ui/interactionResponse');
 
 const { buildDashboardPayload } = require('./dashboardService');
 const { executePendingAction } = require('./modActionExecutor');

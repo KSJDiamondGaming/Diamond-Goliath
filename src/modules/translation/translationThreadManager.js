@@ -10,7 +10,7 @@ const translationManager = require('./translationManager');
 const {
   DEFAULT_BOT_CHANNEL_PERMISSIONS,
   guardChannelAccess,
-} = require('../../helpers/goliathPermissionGuard');
+} = require('../../core/security/goliathPermissionGuard');
 
 const TRANSLATION_SOURCE_PERMISSIONS = [
   ...DEFAULT_BOT_CHANNEL_PERMISSIONS,

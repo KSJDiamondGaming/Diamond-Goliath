@@ -7,17 +7,17 @@ const {
   parseDuration,
   isValidTimeoutDuration,
   isValidDeleteDays,
-} = require('../../../helpers/ui/targetHelpers');
+} = require('../../../core/ui/targetHelpers');
 
 const {
   getBulkActionProgressEmbed,
   getBulkActionSummaryEmbed,
-} = require('../../../helpers/ui/caseComponentBuilders');
+} = require('../../../core/ui/caseComponentBuilders');
 
 const {
   safeReply,
   safeEditReply,
-} = require('../../../helpers/ui/interactionResponse');
+} = require('../../../core/ui/interactionResponse');
 
 const { applyPunishmentEngine } = require('../../automod/functions/punishmentEngine');
 

@@ -22,7 +22,7 @@ const {
 const {
   isGoliathPermissionError,
   validateRoleSelection,
-} = require('../../helpers/goliathPermissionGuard');
+} = require('../../core/security/goliathPermissionGuard');
 const { requirePlanLimit } = require('../middleware/requirePlanLimit');
 
 const router = express.Router();

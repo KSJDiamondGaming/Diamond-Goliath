@@ -24,7 +24,7 @@ const {
   guardCategoryAccess,
   syncBotToChannel,
   syncBotToCategory,
-} = require('../../helpers/goliathPermissionGuard');
+} = require('../../core/security/goliathPermissionGuard');
 
 const BOT_CHANNEL_PERMISSIONS = TICKET_CHANNEL_PERMISSIONS;
 

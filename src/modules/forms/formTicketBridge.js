@@ -11,7 +11,7 @@ const {
   TICKET_CHANNEL_PERMISSIONS,
   guardCategoryAccess,
   isGoliathPermissionError,
-} = require('../../helpers/goliathPermissionGuard');
+} = require('../../core/security/goliathPermissionGuard');
 
 function now() {
   return new Date().toISOString();

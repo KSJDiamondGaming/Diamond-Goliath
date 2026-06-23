@@ -7,7 +7,7 @@ const { routeModInteraction } = require('./modInteractionRouter');
 const { routeModModal } = require('./modModalRouter');
 const { hasModPermission } = require('./moderationChecks');
 
-const panelNav = require('../../../helpers/ui/panelNavigation');
+const panelNav = require('../../../core/ui/panelNavigation');
 
 const DEFAULT_VIEW = 'overview';
 

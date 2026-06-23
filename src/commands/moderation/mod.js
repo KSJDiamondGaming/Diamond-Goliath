@@ -3,8 +3,8 @@ const {
   PermissionFlagsBits,
 } = require('discord.js');
 
-const { enforceCommandAccess } = require('../../helpers/ui/commandAccess');
-const { errorEmbed } = require('../../helpers/ui/embeds');
+const { enforceCommandAccess } = require('../../core/ui/commandAccess');
+const { errorEmbed } = require('../../core/ui/embeds');
 const modPanel = require('../../modules/moderation/functions/modPanel');
 
 module.exports = {

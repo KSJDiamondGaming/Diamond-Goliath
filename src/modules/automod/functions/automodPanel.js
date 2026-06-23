@@ -12,7 +12,7 @@ const {
 } = require('discord.js');
 
 const automod = require('./automodStore');
-const panelNav = require('../../../helpers/ui/panelNavigation');
+const panelNav = require('../../../core/ui/panelNavigation');
 
 const PANEL_COLOR = '#5865F2';
 const SUCCESS_COLOR = '#57F287';

@@ -16,7 +16,7 @@ const {
 } = require('discord.js');
 
 const guildManager = require('../../../core/guild/guildManager');
-const panelNav = require('../../../helpers/ui/panelNavigation');
+const panelNav = require('../../../core/ui/panelNavigation');
 const { sendAutoModDM } = require('../../automod/functions/automodDm');
 const restoreRequestManager = require('../../../core/security/restoreRequestManager');
 

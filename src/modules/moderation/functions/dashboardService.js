@@ -23,14 +23,14 @@ const {
   buildCasesEmbed,
   buildAnalyticsEmbed,
   buildActionSelect,
-} = require('../../../helpers/ui/dashboardBuilders');
+} = require('../../../core/ui/dashboardBuilders');
 
 const {
   buildCaseFilterButtons,
   buildCasesPageButtons,
-} = require('../../../helpers/ui/caseComponentBuilders');
+} = require('../../../core/ui/caseComponentBuilders');
 
-const { normalizeDashboardContext } = require('../../../helpers/ui/pendingActionHelpers');
+const { normalizeDashboardContext } = require('../../../core/ui/pendingActionHelpers');
 
 const {
   canUseModAction,
@@ -45,7 +45,7 @@ const {
   createSecondaryButton,
   createSuccessButton,
   createDangerButton,
-} = require('../../../helpers/ui/embeds');
+} = require('../../../core/ui/embeds');
 
 const allowedViews = new Set([
   'overview',

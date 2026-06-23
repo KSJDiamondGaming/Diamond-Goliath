@@ -20,7 +20,7 @@ const {
   getBotMember,
   permissionLabel,
   validateChannelAccess,
-} = require('../../helpers/goliathPermissionGuard');
+} = require('../../core/security/goliathPermissionGuard');
 
 const router = express.Router();
 

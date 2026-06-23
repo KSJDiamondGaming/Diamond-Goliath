@@ -18,7 +18,7 @@ const { isModuleEnabled } = require('../../core/guild/guildManager');
 const {
   DEFAULT_BOT_CHANNEL_PERMISSIONS,
   guardChannelAccess,
-} = require('../../helpers/goliathPermissionGuard');
+} = require('../../core/security/goliathPermissionGuard');
 
 const CUSTOM_ID_PREFIX = 'form';
 const MAX_MODAL_FIELDS = 5;

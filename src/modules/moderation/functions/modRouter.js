@@ -15,12 +15,12 @@ const {
   isValidTimeoutDuration,
   getWarningExpiry,
   parseDeleteDays,
-} = require('../../../helpers/ui/targetHelpers');
+} = require('../../../core/ui/targetHelpers');
 
 const {
   safeReply,
   ephemeralError,
-} = require('../../../helpers/ui/interactionResponse');
+} = require('../../../core/ui/interactionResponse');
 
 const { buildDashboardPayload, refreshDashboard } = require('./dashboardService');
 const { executePendingAction } = require('./modActionExecutor');
@@ -32,13 +32,13 @@ const {
   buildCaseIdModal,
   buildEditCaseModal,
   buildCaseNoteModal,
-} = require('../../../helpers/ui/modalBuilders');
+} = require('../../../core/ui/modalBuilders');
 
 const {
   buildConfirmRow,
   buildConfirmCustomId,
   parseConfirmActionContext,
-} = require('../../../helpers/ui/pendingActionHelpers');
+} = require('../../../core/ui/pendingActionHelpers');
 
 const {
   createCase,

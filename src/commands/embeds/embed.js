@@ -3,9 +3,9 @@ const {
   PermissionFlagsBits,
 } = require('discord.js');
 
-const { errorEmbed } = require('../../helpers/ui/embeds');
+const { errorEmbed } = require('../../core/ui/embeds');
 const { buildEmbedPanel } = require('../../modules/embed/functions/embedPanel');
-const { enforceCommandAccess } = require('../../helpers/ui/commandAccess');
+const { enforceCommandAccess } = require('../../core/ui/commandAccess');
 
 module.exports = {
   category: 'Embeds',

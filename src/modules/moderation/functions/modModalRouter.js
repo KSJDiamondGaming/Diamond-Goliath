@@ -17,7 +17,7 @@ const {
   isValidTimeoutDuration,
   getWarningExpiry,
   parseDeleteDays,
-} = require('../../../helpers/ui/targetHelpers');
+} = require('../../../core/ui/targetHelpers');
 
 const {
   getStatusLabel,
@@ -30,14 +30,14 @@ const { refreshDashboard, buildDashboardPayload } = require('./dashboardService'
 const {
   safeReply,
   ephemeralError,
-} = require('../../../helpers/ui/interactionResponse');
+} = require('../../../core/ui/interactionResponse');
 
-const { buildCaseDetailButtons } = require('../../../helpers/ui/caseComponentBuilders');
+const { buildCaseDetailButtons } = require('../../../core/ui/caseComponentBuilders');
 
 const {
   buildConfirmRow,
   buildConfirmCustomId,
-} = require('../../../helpers/ui/pendingActionHelpers');
+} = require('../../../core/ui/pendingActionHelpers');
 
 const {
   createCase,

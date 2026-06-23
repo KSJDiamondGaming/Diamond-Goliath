@@ -11,8 +11,8 @@ const {
   deletePendingAction,
 } = require('../../../core/logging/stores/pendingActionStore');
 
-const { fetchTarget } = require('../../../helpers/ui/targetHelpers');
-const { normalizeDashboardContext } = require('../../../helpers/ui/pendingActionHelpers');
+const { fetchTarget } = require('../../../core/ui/targetHelpers');
+const { normalizeDashboardContext } = require('../../../core/ui/pendingActionHelpers');
 
 const { checkHierarchy } = require('./moderationChecks');
 const { refreshDashboard } = require('./dashboardService');
@@ -20,7 +20,7 @@ const { refreshDashboard } = require('./dashboardService');
 const {
   safeReply,
   ephemeralError,
-} = require('../../../helpers/ui/interactionResponse');
+} = require('../../../core/ui/interactionResponse');
 
 const { applyPunishmentEngine } = require('../../automod/functions/punishmentEngine');
 
