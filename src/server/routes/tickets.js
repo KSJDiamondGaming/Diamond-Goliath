@@ -16,6 +16,8 @@ const {
   removeTicket,
 } = require("../../modules/tickets/ticketManager");
 
+const ticketRecovery = require("../../modules/tickets/ticketRecovery");
+
 const {
   getPanels,
   getTicketSettings,
@@ -82,6 +84,10 @@ async function fetchGuild(req, guildId) {
   const client = req.app?.locals?.client || req.app?.locals?.discordClient || global.client || global.discordClient;
   if (!client?.guilds?.fetch) return null;
   return client.guilds.cache.get(guildId) || client.guilds.fetch(guildId).catch(() => null);
+}
+
+function getDiscordClient(req) {
+  return req.app?.locals?.client || req.app?.locals?.discordClient || global.client || global.discordClient || null;
 }
 
 function getTicketRoleIds(settings = {}) {
@@ -215,6 +221,25 @@ function serialisePanel(panel = {}) {
   };
 }
 
+function summariseRecovery(result = {}) {
+  const formResults = Array.isArray(result.formTicketRecovery)
+    ? result.formTicketRecovery
+    : [];
+
+  return {
+    guildId: result.guildId,
+    guildFound: result.guildFound !== false,
+    totalTickets: result.totalTickets || 0,
+    activeTickets: result.activeTickets || 0,
+    missingChannels: result.missingChannels?.length || 0,
+    validChannels: result.validChannels?.length || 0,
+    formTicketsChecked: formResults.length,
+    formTicketsRecovered: formResults.filter((item) => item.recovered).length,
+    formTicketChannelsRecreated: formResults.filter((item) => item.recreated).length,
+    formTicketsRecoverable: formResults.filter((item) => item.recoverable).length,
+  };
+}
+
 router.get("/:guildId/overview", async (req, res) => {
   try {
     const { guildId } = req.params;
@@ -263,6 +288,39 @@ router.get("/:guildId/overview", async (req, res) => {
   } catch (error) {
     console.error("[TicketsRoute] OVERVIEW:", error);
     return failure(res, error, "Failed to fetch ticket overview.");
+  }
+});
+
+router.post("/:guildId/recovery", async (req, res) => {
+  try {
+    const { guildId } = req.params;
+    const client = getDiscordClient(req);
+
+    if (!client) {
+      return res.status(503).json({
+        success: false,
+        error: "Discord client is unavailable.",
+      });
+    }
+
+    const createMissingChannels = req.body?.createMissingChannels === true;
+
+    const result = await ticketRecovery.recoverGuildTickets(
+      client,
+      guildId,
+      { createMissingChannels }
+    );
+
+    return res.json({
+      success: true,
+      guildId,
+      mode: createMissingChannels ? "recreate_missing_channels" : "scan_only",
+      summary: summariseRecovery(result),
+      result,
+    });
+  } catch (error) {
+    console.error("[TicketsRoute] RECOVERY:", error);
+    return failure(res, error, "Failed to run ticket recovery.");
   }
 });
 
