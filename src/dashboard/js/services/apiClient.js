@@ -23,8 +23,20 @@ async function request(url, options = {}) {
   return data;
 }
 
+function buildQuery(params = {}) {
+  const query = new URLSearchParams();
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === '') return;
+    query.set(key, String(value));
+  });
+
+  return query.toString();
+}
+
 export const api = {
   request,
+  buildQuery,
   getStatus: (guildId = '') => request(`/api/status${guildId ? `?guildId=${guildId}` : ''}`),
   getAuthMe: () => request('/api/auth/me'),
   getLoginUrl: () => apiUrl('/api/auth/login'),
@@ -78,6 +90,7 @@ export const api = {
   getCases: (guildId) => request(`/api/cases/${guildId}`),
   getWarnings: (guildId) => request(`/api/cases/${guildId}/warnings`),
   getFormsOverview: (guildId) => request(`/api/forms/${guildId}/overview`),
+  getFormsWorkflowOverview: (guildId) => request(`/api/forms/${guildId}/overview`),
   getFormsConfig: (guildId) => request(`/api/forms/${guildId}`),
   getForms: (guildId) => request(`/api/forms/${guildId}/forms`),
   getForm: (guildId, formId) => request(`/api/forms/${guildId}/forms/${formId}`),
@@ -86,7 +99,13 @@ export const api = {
   setFormEnabled: (guildId, formId, enabled) => request(`/api/forms/${guildId}/forms/${formId}/enabled`, { method: 'PATCH', body: JSON.stringify({ enabled }) }),
   getFormPanels: (guildId) => request(`/api/forms/${guildId}/panels`),
   getFormSubmissions: (guildId, query = '') => request(`/api/forms/${guildId}/submissions${query ? `?${query}` : ''}`),
+  getFilteredFormSubmissions: (guildId, filters = {}) => {
+    const query = buildQuery(filters);
+    return request(`/api/forms/${guildId}/submissions${query ? `?${query}` : ''}`);
+  },
+  getFormSubmission: (guildId, submissionId) => request(`/api/forms/${guildId}/submissions/${submissionId}`),
   updateFormSubmissionStatus: (guildId, submissionId, status, extra = {}) => request(`/api/forms/${guildId}/submissions/${submissionId}/status`, { method: 'PATCH', body: JSON.stringify({ status, ...extra }) }),
+  requestFormSubmissionInfo: (guildId, submissionId, extra = {}) => request(`/api/forms/${guildId}/submissions/${submissionId}/status`, { method: 'PATCH', body: JSON.stringify({ status: 'request_info', ...extra }) }),
   updateFormsSettings: (guildId, payload) => request(`/api/forms/${guildId}/settings`, { method: 'PATCH', body: JSON.stringify(payload) }),
   getSecurityOverview: (guildId) => request(`/api/security/overview?guildId=${guildId}`),
   getLogConfig: (guildId) => request(`/api/config/logs/${guildId}`),
