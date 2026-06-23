@@ -6,11 +6,11 @@ const {
   getBackupSummaries,
   readServerBackup,
   createServerBackup,
-} = require('../../security/serverBackup');
+} = require('../../core/security/serverBackup');
 
 const {
   restoreServerBackup,
-} = require('../../security/serverRestore');
+} = require('../../core/security/serverRestore');
 
 const { requireEntitlement } = require('../middleware/requireEntitlement');
 

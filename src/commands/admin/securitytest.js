@@ -10,11 +10,11 @@ const {
   logIncident,
   SEVERITY,
   INCIDENT_TYPES,
-} = require('../../security/securitySystem');
+} = require('../../core/security/securitySystem');
 
 const {
   createServerBackup,
-} = require('../../security/serverBackup');
+} = require('../../core/security/serverBackup');
 
 const BUTTON_PREFIX = 'securitytest:';
 

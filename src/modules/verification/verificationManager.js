@@ -35,7 +35,7 @@ function isDevOwnerTestMember(member) {
   const botMode = String(process.env.BOT_MODE || '').trim().toLowerCase();
   if (botMode !== 'dev') return false;
 
-  const { isBotOwner } = require('../../security/securityCore');
+  const { isBotOwner } = require('../../core/security/securityCore');
   return isBotOwner(member.id);
 }
 
@@ -46,7 +46,7 @@ function canBotManageMember(member) {
   if (member.id === botMember.id) return false;
   if (isDevOwnerTestMember(member)) return true;
 
-  const { isBotOwner } = require('../../security/securityCore');
+  const { isBotOwner } = require('../../core/security/securityCore');
   if (isBotOwner(member.id)) return false;
 
   return true;

@@ -1,9 +1,9 @@
 const { EmbedBuilder, WebhookClient } = require('discord.js');
-const guildManager = require('../core/guild/guildManager');
+const guildManager = require('../guild/guildManager');
 
 const {
   emitSecurityEvent,
-} = require('../server/sockets/socketHub');
+} = require('../../server/sockets/socketHub');
 
 const OWNER_SECURITY_WEBHOOK_URL = String(
   process.env.OWNER_SECURITY_WEBHOOK_URL || ''

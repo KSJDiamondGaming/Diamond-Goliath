@@ -1,5 +1,5 @@
 const guildManager = require('../../core/guild/guildManager');
-const securitySystem = require('../../security/securitySystem');
+const securitySystem = require('../../core/security/securitySystem');
 
 const ROLE_SYNC_LOG_COOLDOWN_MS = 5000;
 const roleSyncLogState = new Map();

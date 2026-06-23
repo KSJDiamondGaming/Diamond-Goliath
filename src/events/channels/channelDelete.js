@@ -1,6 +1,6 @@
 const { AuditLogEvent } = require('discord.js');
 
-const securitySystem = require('../../security/securitySystem');
+const securitySystem = require('../../core/security/securitySystem');
 
 module.exports = {
   name: 'channelDelete',

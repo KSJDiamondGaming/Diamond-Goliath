@@ -61,7 +61,7 @@ const modulesRoutes = require('./src/server/routes/modules');
 
 const backupSchedulerModule = safeLoad(
 'Server Backup Scheduler',
-() => require('./src/security/serverBackupScheduler'),
+() => require('./src/core/security/serverBackupScheduler'),
 );
 
 const startServerBackupScheduler =

@@ -2,7 +2,7 @@
 
 const {
   handleWebhookUpdate,
-} = require('../../security/securitySystem');
+} = require('../../core/security/securitySystem');
 
 module.exports = {
   name: 'webhookUpdate',

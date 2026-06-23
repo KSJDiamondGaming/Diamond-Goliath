@@ -1,9 +1,9 @@
-const guildManager = require('../core/guild/guildManager');
+const guildManager = require('../guild/guildManager');
 const { shouldUseDryRunForOwner } = require('./testModeGuard');
 
 const {
   emitQuarantineUpdate,
-} = require('../server/sockets/socketHub');
+} = require('../../server/sockets/socketHub');
 
 function emptyQuarantineState() {
   return {

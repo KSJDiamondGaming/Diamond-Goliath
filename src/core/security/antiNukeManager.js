@@ -5,7 +5,7 @@ const {
 } = require('discord.js');
 
 const securitySystem = require('./securitySystem');
-const guildManager = require('../core/guild/guildManager');
+const guildManager = require('../guild/guildManager');
 
 const {
   enableLockdown,
@@ -203,7 +203,7 @@ async function fetchAuditExecutor(guild, auditType) {
 
 async function createEmergencyBackup(guild, reason, stage) {
   try {
-    const { createServerBackup } = require('../security/serverBackup');
+    const { createServerBackup } = require('./serverBackup');
 
     if (typeof createServerBackup !== 'function') {
       return null;

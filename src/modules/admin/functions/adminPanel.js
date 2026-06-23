@@ -18,14 +18,14 @@ const {
 const guildManager = require('../../../core/guild/guildManager');
 const panelNav = require('../../../helpers/ui/panelNavigation');
 const { sendAutoModDM } = require('../../automod/functions/automodDm');
-const restoreRequestManager = require('../../../security/restoreRequestManager');
+const restoreRequestManager = require('../../../core/security/restoreRequestManager');
 
 const {
   createServerBackup,
   listServerBackups,
   readServerBackup,
   validateServerBackup,
-} = require('../../../security/serverBackup');
+} = require('../../../core/security/serverBackup');
 
 const PANEL_COLOR = '#5865F2';
 

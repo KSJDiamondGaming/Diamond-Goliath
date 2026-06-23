@@ -1,11 +1,11 @@
 // src/security/lockdownSystem.js
 
 const { ChannelType } = require('discord.js');
-const guildManager = require('../core/guild/guildManager');
+const guildManager = require('../guild/guildManager');
 
 const {
   emitLockdownUpdate,
-} = require('../server/sockets/socketHub');
+} = require('../../server/sockets/socketHub');
 
 const activeReminderIntervals = new Map();
 
