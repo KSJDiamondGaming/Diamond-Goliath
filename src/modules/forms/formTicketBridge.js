@@ -7,6 +7,8 @@ const { EmbedBuilder } = require('discord.js');
 const formStore = require('./formStore');
 const ticketManager = require('../tickets/ticketManager');
 const ticketChannelManager = require('../tickets/ticketChannelManager');
+const { sendTicketControlMessage } = require('../tickets/ticketPanelManager');
+const { updateTicket } = require('../tickets/ticketStore');
 const {
   TICKET_CHANNEL_PERMISSIONS,
   guardCategoryAccess,
@@ -76,6 +78,21 @@ function buildStaffPingContent(form, submission) {
   ].filter(Boolean).join(' ') || undefined;
 }
 
+function buildFormTicketPanel(form = {}) {
+  return {
+    panelId: form.formId || null,
+    name: form.name || 'Form Submission',
+    ticketType: form.ticketType || form.formId || 'form',
+    staffRoleIds: form.staffRoleIds || [],
+    managerRoleIds: form.managerRoleIds || [],
+    viewerRoleIds: form.viewerRoleIds || [],
+    outputCategoryId: form.outputCategoryId || null,
+    archiveCategoryId: form.archiveCategoryId || null,
+    logsChannelId: form.logsChannelId || null,
+    transcriptsChannelId: form.transcriptsChannelId || null,
+  };
+}
+
 async function sendConfirmationDm(interaction, form, submission, bridgeResult) {
   const actions = getWorkflowActions(form);
   if (actions.sendDm === false || !submission.userId) return false;
@@ -137,6 +154,7 @@ async function createTicketForSubmission({ interaction, form, submission } = {})
   }
 
   const actions = getWorkflowActions(form);
+  const panel = buildFormTicketPanel(form);
 
   formStore.addSubmissionTimeline(interaction.guildId, submission.submissionId, {
     type: 'submitted',
@@ -174,6 +192,8 @@ async function createTicketForSubmission({ interaction, form, submission } = {})
         submitterTag: submission.userTag,
         creatorUsername: interaction.user?.username,
         creatorTag: interaction.user?.tag,
+        panelId: form.formId,
+        sourcePanelId: form.formId,
         workflow: {
           actions,
           createdAt: now(),
@@ -189,15 +209,14 @@ async function createTicketForSubmission({ interaction, form, submission } = {})
     }, interaction.guild);
 
     let channel = null;
+    let savedTicket = ticket;
+
     try {
       channel = await ticketChannelManager.createTicketChannel({
         client: interaction.client,
         guild: interaction.guild,
         ticket,
-        panel: {
-          staffRoleIds: form.staffRoleIds || [],
-          outputCategoryId: form.outputCategoryId || null,
-        },
+        panel,
       });
     } catch (channelError) {
       console.error('[Forms] Failed to create ticket channel for submission:', channelError);
@@ -210,9 +229,26 @@ async function createTicketForSubmission({ interaction, form, submission } = {})
     }
 
     if (channel?.send) {
+      const controlMessage = await sendTicketControlMessage({
+        channel,
+        ticket: savedTicket,
+        panel,
+        user: interaction.user,
+      }).catch((error) => {
+        console.error('[Forms] Failed to post ticket control message:', error);
+        return null;
+      });
+
+      if (controlMessage?.id) {
+        savedTicket = updateTicket(interaction.guildId, ticket.ticketId, {
+          discordMessageId: controlMessage.id,
+          messageId: controlMessage.id,
+        }) || savedTicket;
+      }
+
       await channel.send({
         content: buildStaffPingContent(form, submission),
-        embeds: [buildSubmissionTicketEmbed(form, submission, ticket)],
+        embeds: [buildSubmissionTicketEmbed(form, submission, savedTicket)],
         allowedMentions: {
           users: submission.userId ? [submission.userId] : [],
           roles: actions.pingRoleIds || [],
@@ -227,22 +263,23 @@ async function createTicketForSubmission({ interaction, form, submission } = {})
     }
 
     const updatedSubmission = formStore.updateSubmission(interaction.guildId, submission.submissionId, {
-      ticketId: ticket.ticketId,
+      ticketId: savedTicket.ticketId,
       ticketChannelId: channel?.id || null,
       status: 'pending',
       workflow: {
         ...(submission.workflow || {}),
         ticketCreated: true,
-        ticketId: ticket.ticketId,
-        ticketDisplayId: ticket.displayId,
+        ticketId: savedTicket.ticketId,
+        ticketDisplayId: savedTicket.displayId,
         ticketChannelId: channel?.id || null,
+        ticketControlMessageId: savedTicket.discordMessageId || savedTicket.messageId || null,
         ticketCreatedAt: now(),
       },
     }, interaction.guild);
 
     formStore.incrementAnalytics(interaction.guildId, { ticketsCreated: 1 }, interaction.guild);
 
-    const result = { ok: true, ticket, channel, submission: updatedSubmission };
+    const result = { ok: true, ticket: savedTicket, channel, submission: updatedSubmission };
     await sendConfirmationDm(interaction, form, updatedSubmission || submission, result);
 
     return result;
