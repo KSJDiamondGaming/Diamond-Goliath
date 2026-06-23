@@ -378,6 +378,57 @@ function FormsIntegrationCard({ theme, overview = {}, cardStyle }) {
   );
 }
 
+function RecoveryControls({ theme, cardStyle, running, result, onScan, onRecreate }) {
+  const summary = result?.summary || null;
+  const mode = result?.mode || null;
+  const canRecreate = !running;
+
+  return (
+    <section style={{ ...cardStyle, padding: 20, display: 'grid', gap: 14 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <SectionHeader
+          theme={theme}
+          title="Ticket Recovery Controls"
+          description="Scan ticket records, relink Forms → Tickets data, restore missing control messages, and explicitly recreate missing form-ticket channels when needed."
+        />
+
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <button type="button" onClick={onScan} disabled={running} style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(37,99,235,0.22)', color: theme.cardText, borderRadius: 999, padding: '10px 14px', fontWeight: 950, cursor: running ? 'wait' : 'pointer' }}>
+            {running ? 'Running...' : 'Scan Recovery'}
+          </button>
+
+          <button type="button" onClick={onRecreate} disabled={!canRecreate} style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(202,138,4,0.20)', color: theme.cardText, borderRadius: 999, padding: '10px 14px', fontWeight: 950, cursor: canRecreate ? 'pointer' : 'wait' }}>
+            Recreate Missing Form Channels
+          </button>
+        </div>
+      </div>
+
+      {summary ? (
+        <div style={{ display: 'grid', gap: 12 }}>
+          <div style={{ color: theme.mutedText, fontSize: 13 }}>
+            Last run: <strong style={{ color: theme.cardText }}>{mode === 'recreate_missing_channels' ? 'Recreate missing channels' : 'Scan only'}</strong>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 160px), 1fr))', gap: 10 }}>
+            <DetailRow theme={theme} label="Total Tickets" value={summary.totalTickets} />
+            <DetailRow theme={theme} label="Active Tickets" value={summary.activeTickets} />
+            <DetailRow theme={theme} label="Missing Channels" value={summary.missingChannels} tone={summary.missingChannels ? '#fca5a5' : undefined} />
+            <DetailRow theme={theme} label="Valid Channels" value={summary.validChannels} />
+            <DetailRow theme={theme} label="Form Checked" value={summary.formTicketsChecked} />
+            <DetailRow theme={theme} label="Form Recovered" value={summary.formTicketsRecovered} tone={summary.formTicketsRecovered ? '#86efac' : undefined} />
+            <DetailRow theme={theme} label="Recreated" value={summary.formTicketChannelsRecreated} tone={summary.formTicketChannelsRecreated ? '#86efac' : undefined} />
+            <DetailRow theme={theme} label="Recoverable" value={summary.formTicketsRecoverable} tone={summary.formTicketsRecoverable ? '#fcd34d' : undefined} />
+          </div>
+        </div>
+      ) : (
+        <div style={{ color: theme.mutedText, fontSize: 13 }}>
+          No recovery scan has been run from this dashboard session yet.
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function Tickets({ theme, selectedGuild, selectedGuildData, user, currentUser }) {
   const guildId = getGuildId(selectedGuild, selectedGuildData);
   const [overview, setOverview] = useState({});
@@ -388,6 +439,8 @@ export default function Tickets({ theme, selectedGuild, selectedGuildData, user,
   const [sortMode, setSortMode] = useState('newest');
   const [loading, setLoading] = useState(false);
   const [acting, setActing] = useState(false);
+  const [recoveryRunning, setRecoveryRunning] = useState(false);
+  const [recoveryResult, setRecoveryResult] = useState(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
@@ -524,6 +577,29 @@ export default function Tickets({ theme, selectedGuild, selectedGuildData, user,
     }
   }
 
+  async function handleTicketRecovery(createMissingChannels = false) {
+    if (!guildId) return;
+
+    setRecoveryRunning(true);
+    setError('');
+    setNotice('');
+
+    try {
+      const result = await api.request(`/api/tickets/${guildId}/recovery`, {
+        method: 'POST',
+        body: JSON.stringify({ createMissingChannels }),
+      });
+
+      setRecoveryResult(result);
+      setNotice(createMissingChannels ? 'Ticket recovery completed with missing-channel recreation enabled.' : 'Ticket recovery scan completed.');
+      await load();
+    } catch (recoveryError) {
+      setError(recoveryError.message || 'Failed to run ticket recovery.');
+    } finally {
+      setRecoveryRunning(false);
+    }
+  }
+
   if (!guildId) {
     return <div style={{ ...cardStyle, padding: 24 }}>Select a server from the navbar to manage tickets.</div>;
   }
@@ -561,6 +637,15 @@ export default function Tickets({ theme, selectedGuild, selectedGuildData, user,
       </section>
 
       {(error || notice) ? <section style={{ ...cardStyle, padding: 16, color: error ? '#fca5a5' : '#86efac', fontWeight: 850 }}>{error || notice}</section> : null}
+
+      <RecoveryControls
+        theme={theme}
+        cardStyle={cardStyle}
+        running={recoveryRunning}
+        result={recoveryResult}
+        onScan={() => handleTicketRecovery(false)}
+        onRecreate={() => handleTicketRecovery(true)}
+      />
 
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,340px),1fr))', gap: 18 }}>
         <TicketDetail theme={theme} ticket={selectedTicket} acting={acting} onAction={handleTicketAction} />
