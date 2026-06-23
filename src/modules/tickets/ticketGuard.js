@@ -44,6 +44,10 @@ function normaliseType(type) {
     .trim();
 }
 
+function normalisePanelId(panelId) {
+  return panelId ? String(panelId).trim() : null;
+}
+
 function formatTypeLabel(type) {
   return String(type || 'ticket')
     .replace(/_/g, ' ')
@@ -98,7 +102,25 @@ function isSameType(ticket, type) {
   );
 }
 
-async function findActiveTicket({ guildId, userId, type } = {}) {
+function getTicketPanelId(ticket = {}) {
+  return (
+    ticket.panelId ||
+    ticket.sourceId ||
+    ticket.metadata?.panelId ||
+    ticket.metadata?.sourcePanelId ||
+    null
+  );
+}
+
+function isSamePanel(ticket, panelId) {
+  const cleanPanelId = normalisePanelId(panelId);
+
+  if (!cleanPanelId) return true;
+
+  return normalisePanelId(getTicketPanelId(ticket)) === cleanPanelId;
+}
+
+async function findActiveTicket({ guildId, userId, type, panelId = null } = {}) {
   const tickets = await getAllTickets(guildId);
 
   return (
@@ -107,13 +129,14 @@ async function findActiveTicket({ guildId, userId, type } = {}) {
         ticket.guildId === guildId &&
         isSameUser(ticket, userId) &&
         isSameType(ticket, type) &&
+        isSamePanel(ticket, panelId) &&
         isActiveTicket(ticket)
       );
     }) || null
   );
 }
 
-async function findActiveTickets({ guildId, userId, type } = {}) {
+async function findActiveTickets({ guildId, userId, type, panelId = null } = {}) {
   const tickets = await getAllTickets(guildId);
 
   return tickets.filter((ticket) => {
@@ -121,6 +144,7 @@ async function findActiveTickets({ guildId, userId, type } = {}) {
       ticket.guildId === guildId &&
       isSameUser(ticket, userId) &&
       isSameType(ticket, type) &&
+      isSamePanel(ticket, panelId) &&
       isActiveTicket(ticket)
     );
   });
@@ -228,20 +252,23 @@ function buildLimitReason({
   type,
   count,
   max,
+  panelScoped = false,
 } = {}) {
   const label = formatTypeLabel(type);
+  const scope = panelScoped ? ' from this panel' : '';
 
   if (max === 1) {
-    return `You already have an active ${label} ticket.`;
+    return `You already have an active ${label} ticket${scope}.`;
   }
 
-  return `You already have ${count}/${max} active ${label} tickets.`;
+  return `You already have ${count}/${max} active ${label} tickets${scope}.`;
 }
 
 async function checkPanelLimit({
   guildId,
   userId,
   type,
+  panelId = null,
   maxOpenTicketsPerUser = null,
   maxOpenTickets = null,
   maxActiveTicketsPerUser = null,
@@ -258,6 +285,7 @@ async function checkPanelLimit({
     guildId,
     userId,
     type,
+    panelId,
   });
 
   if (configuredMax === 0) {
@@ -267,6 +295,7 @@ async function checkPanelLimit({
       count: activeTickets.length,
       maxOpenTickets: 0,
       maxOpenTicketsPerUser: 0,
+      panelId: normalisePanelId(panelId),
       tickets: activeTickets,
     };
   }
@@ -280,6 +309,7 @@ async function checkPanelLimit({
         type,
         count: activeTickets.length,
         max: configuredMax,
+        panelScoped: Boolean(panelId),
       }),
       code:
         configuredMax === 1
@@ -290,6 +320,7 @@ async function checkPanelLimit({
       count: activeTickets.length,
       maxOpenTickets: configuredMax,
       maxOpenTicketsPerUser: configuredMax,
+      panelId: normalisePanelId(panelId),
       unlimited: false,
     };
   }
@@ -300,6 +331,7 @@ async function checkPanelLimit({
     count: activeTickets.length,
     maxOpenTickets: configuredMax,
     maxOpenTicketsPerUser: configuredMax,
+    panelId: normalisePanelId(panelId),
     tickets: activeTickets,
   };
 }
@@ -308,6 +340,7 @@ async function canCreateTicket({
   guildId,
   userId,
   type,
+  panelId = null,
   cooldownMs = DEFAULT_COOLDOWN_MS,
   oneActivePerType = true,
   maxOpenTickets = null,
@@ -352,6 +385,7 @@ async function canCreateTicket({
     guildId,
     userId,
     type,
+    panelId,
     oneActivePerType,
     maxOpenTickets,
     maxOpenTicketsPerUser,
@@ -368,6 +402,7 @@ async function canCreateTicket({
     count: limit.count,
     maxOpenTickets: limit.maxOpenTickets,
     maxOpenTicketsPerUser: limit.maxOpenTicketsPerUser,
+    panelId: limit.panelId,
     unlimited: limit.unlimited,
   };
 }
@@ -406,4 +441,6 @@ module.exports = {
   formatTypeLabel,
   normaliseStatus,
   normaliseType,
+  normalisePanelId,
+  getTicketPanelId,
 };
