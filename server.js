@@ -51,6 +51,7 @@ const serverRestoreRoutes = require('./src/server/routes/serverRestoreRoutes');
 const securityRoutes = require('./src/server/routes/security');
 const ticketRoutes = require('./src/server/routes/tickets');
 const formsRoutes = require('./src/server/routes/forms');
+const transcriptRoutes = require('./src/server/routes/transcripts');
 const translationRoutes = require('./src/server/routes/translation');
 const permissionHealthRoutes = require('./src/server/routes/permissionHealth');
 const socialRoutes = require('./src/server/routes/social');
@@ -287,6 +288,7 @@ app.use('/api/billing', billingRoutes);
 app.use('/api/cases', moderationRoutes);
 app.use('/api/tickets', ticketRoutes);
 app.use('/api/forms', formsRoutes);
+app.use('/api/transcripts', transcriptRoutes);
 app.use('/api/translation', translationRoutes);
 app.use('/api/permission-health', permissionHealthRoutes);
 app.use('/api/social', socialRoutes);
@@ -360,96 +362,79 @@ if (event.name === 'interactionCreate') {
 const existing = client.listenerCount('interactionCreate');
 
 if (existing > 0) {
-  console.warn(`⚠️ Removing ${existing} existing interactionCreate listener(s)`);
-  client.removeAllListeners('interactionCreate');
+  console.warn(
+    `⚠️ interactionCreate already has ${existing} listener(s); registering additional handler from ${file}`,
+  );
 }
 }
 
-const handler = async (...args) => {
+client.on(event.name, async (...args) => {
 try {
-await event.execute(...args, client);
+await event.execute(...args);
 } catch (error) {
-console.error(`❌ Event execution failed: ${event.name}`);
+console.error(`❌ Event error: ${event.name}`);
 console.error(error);
 }
-};
-
-if (event.once) {
-client.once(event.name, handler);
-} else {
-client.on(event.name, handler);
+});
 }
 
-console.log(`🧩 Event: ${event.name}`);
-}
+async function start() {
+printStartupBanner();
 
-function registerEventExport(eventExport, file) {
-const events = Array.isArray(eventExport) ? eventExport : [eventExport];
+bootstrapRuntime({ mode: selectedMode });
+printStartupFingerprint({ mode: BOT_MODE });
 
-if (!events.length) {
-console.warn(`⚠️ Skipped empty event export in: ${file}`);
-return;
-}
+runBootValidation({
+mode: selectedMode,
+});
 
-for (const event of events) {
-registerEvent(event, file);
-}
-}
+getRequiredEnv('DISCORD_BOT_TOKEN');
+getRequiredEnv('DISCORD_CLIENT_ID');
 
-function loadEvents() {
+loadCommands();
+
 const eventsPath = path.join(process.cwd(), 'src', 'events');
-const files = getAllJsFiles(eventsPath);
 
-console.log(`📦 Loading events from: ${eventsPath}`);
-
-for (const file of files) {
+for (const file of getAllJsFiles(eventsPath)) {
 try {
-delete require.cache[require.resolve(file)];
-registerEventExport(require(file), file);
+const event = require(file);
+registerEvent(event, file);
 } catch (error) {
 console.error(`❌ Event failed: ${file}`);
 console.error(error);
 }
 }
 
-console.log('✅ Event loading complete.');
-console.log(`[Debug] interactionCreate listeners: ${client.listenerCount('interactionCreate')}`);
-}
-
-/* ---------------- STARTUP ---------------- */
-
-async function main() {
-printStartupBanner();
-
-bootstrapRuntime();
-
-printStartupFingerprint({
-botMode: BOT_MODE,
-});
-
-runBootValidation({
-mode: selectedMode,
-});
+startDashboardApiServer();
 
 if (startServerBackupScheduler) {
+try {
 startServerBackupScheduler(client);
+} catch (error) {
+console.error('⚠️ Failed to start Server Backup Scheduler:', error);
+}
 }
 
 if (startSocialScheduler) {
+try {
 startSocialScheduler(client);
+} catch (error) {
+console.error('⚠️ Failed to start Social Scheduler:', error);
+}
 }
 
 if (startSubscriptionWorker) {
-startSubscriptionWorker();
+try {
+startSubscriptionWorker(client);
+} catch (error) {
+console.error('⚠️ Failed to start Subscription Worker:', error);
+}
 }
 
-loadCommands();
-loadEvents();
-startDashboardApiServer();
-
-getRequiredEnv('DISCORD_BOT_TOKEN');
-
-client.login(process.env.DISCORD_BOT_TOKEN);
+await client.login(process.env.DISCORD_BOT_TOKEN);
 }
 
-main();
+start().catch((error) => {
+console.error('❌ Fatal startup error:', error);
+process.exit(1);
+});
