@@ -397,8 +397,12 @@ const eventsPath = path.join(process.cwd(), 'src', 'events');
 
 for (const file of getAllJsFiles(eventsPath)) {
 try {
-const event = require(file);
-registerEvent(event, file);
+const loadedEvent = require(file);
+const events = Array.isArray(loadedEvent) ? loadedEvent : [loadedEvent];
+
+for (const event of events) {
+  registerEvent(event, file);
+}
 } catch (error) {
 console.error(`❌ Event failed: ${file}`);
 console.error(error);
@@ -438,5 +442,6 @@ start().catch((error) => {
 console.error('❌ Fatal startup error:', error);
 process.exit(1);
 });
+
 
 
