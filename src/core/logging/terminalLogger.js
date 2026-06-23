@@ -7,7 +7,7 @@ const DEBUG = String(process.env.DEBUG || '').toLowerCase() === 'true';
 
 const {
   getRuntimePaths,
-} = require('../config/runtimePaths');
+} = require('../../config/runtimePaths');
 
 const runtimePaths = getRuntimePaths(
   process.env.BOT_MODE || 'DEV'

@@ -1,4 +1,4 @@
-const voiceLog = require('../../logging/voice/voiceLog');
+const voiceLog = require('../../core/logging/voice/voiceLog');
 const tempVoiceManager = require('../../modules/tempvoice/tempVoiceManager');
 
 module.exports = {

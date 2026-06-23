@@ -1,4 +1,4 @@
-const terminal = require('../../logging/terminalLogger').createLogger('bot');
+const terminal = require('../../core/logging/terminalLogger').createLogger('bot');
 
 const {
   restoreLockdownReminders,

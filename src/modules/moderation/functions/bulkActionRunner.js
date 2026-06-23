@@ -1,5 +1,5 @@
-const { createCase } = require('../../../logging/cases/caseStore');
-const { addWarning } = require('../../../logging/warnings/warningStore');
+const { createCase } = require('../../../core/logging/cases/caseStore');
+const { addWarning } = require('../../../core/logging/warnings/warningStore');
 const { handleEscalation, getRepeatReasonInfo } = require('./escalationSystem');
 const { checkHierarchyForBulk } = require('./moderationChecks');
 
@@ -22,7 +22,7 @@ const {
 const { applyPunishmentEngine } = require('../../automod/functions/punishmentEngine');
 
 // If this path is different in your project, only change this line.
-const { sendModLog } = require('../../../logging/modlogs/moderationActionLog');
+const { sendModLog } = require('../../../core/logging/modlogs/moderationActionLog');
 
 const ACTION_LABELS = {
   warn: 'Bulk Warn',

@@ -1,6 +1,6 @@
 const { EmbedBuilder } = require('discord.js');
 const guildManager = require('../../core/guild/guildManager');
-const messageLog = require('../../logging/message/messageLog');
+const messageLog = require('../message/messageLog');
 
 module.exports = [
   {

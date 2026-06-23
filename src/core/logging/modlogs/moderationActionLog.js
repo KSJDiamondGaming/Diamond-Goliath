@@ -1,5 +1,5 @@
 const { EmbedBuilder } = require('discord.js');
-const guildManager = require('../../core/guild/guildManager');
+const guildManager = require('../../guild/guildManager');
 
 const MODERATION_ACTION_LABELS = {
   delete: 'Message Deleted',

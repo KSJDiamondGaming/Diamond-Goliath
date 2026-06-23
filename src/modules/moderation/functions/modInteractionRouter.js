@@ -38,8 +38,8 @@ const {
 const { buildDashboardPayload } = require('./dashboardService');
 const { executePendingAction } = require('./modActionExecutor');
 
-const { getCaseById } = require('../../../logging/cases/caseStore');
-const { createPendingAction } = require('../../../logging/stores/pendingActionStore');
+const { getCaseById } = require('../../../core/logging/cases/caseStore');
+const { createPendingAction } = require('../../../core/logging/stores/pendingActionStore');
 
 const DEFAULT_DASHBOARD_CONTEXT = {
   view: 'cases',

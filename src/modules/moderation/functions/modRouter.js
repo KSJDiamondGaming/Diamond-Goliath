@@ -46,14 +46,14 @@ const {
   updateCaseReason,
   updateCaseNote,
   clearCaseNote,
-} = require('../../../logging/cases/caseStore');
+} = require('../../../core/logging/cases/caseStore');
 
 const {
   addWarning,
   getWarningByCaseId,
-} = require('../../../logging/warnings/warningStore');
+} = require('../../../core/logging/warnings/warningStore');
 
-const { createPendingAction } = require('../../../logging/stores/pendingActionStore');
+const { createPendingAction } = require('../../../core/logging/stores/pendingActionStore');
 const { handleEscalation, getRepeatReasonInfo } = require('./escalationSystem');
 
 const DEFAULT_CONTEXT = {

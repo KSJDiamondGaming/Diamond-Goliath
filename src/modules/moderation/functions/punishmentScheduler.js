@@ -3,7 +3,7 @@
 const {
   getPunishments,
   removePunishment,
-} = require('../logging/modlogs/tempPunishmentsStore');
+} = require('../../../core/logging/stores/tempPunishmentsStore');
 
 const INTERVAL_MS = 30_000;
 

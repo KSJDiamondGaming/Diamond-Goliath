@@ -3,13 +3,13 @@ const {
   UserSelectMenuBuilder,
 } = require('discord.js');
 
-const { getWarningCountForUser } = require('../../../logging/warnings/warningStore');
+const { getWarningCountForUser } = require('../../../core/logging/warnings/warningStore');
 
 const {
   getCaseCountForUser,
   getCasesForUser,
   getFilteredCases,
-} = require('../../../logging/cases/caseStore');
+} = require('../../../core/logging/cases/caseStore');
 
 const {
   formatCaseSummary,

@@ -2,14 +2,14 @@ const {
   createCase,
   getCaseById,
   updateCaseStatus,
-} = require('../../../logging/cases/caseStore');
+} = require('../../../core/logging/cases/caseStore');
 
-const { deleteWarningByCaseId } = require('../../../logging/warnings/warningStore');
+const { deleteWarningByCaseId } = require('../../../core/logging/warnings/warningStore');
 
 const {
   getPendingAction,
   deletePendingAction,
-} = require('../../../logging/stores/pendingActionStore');
+} = require('../../../core/logging/stores/pendingActionStore');
 
 const { fetchTarget } = require('../../../helpers/ui/targetHelpers');
 const { normalizeDashboardContext } = require('../../../helpers/ui/pendingActionHelpers');
@@ -25,7 +25,7 @@ const {
 const { applyPunishmentEngine } = require('../../automod/functions/punishmentEngine');
 
 // If this path is different in your project, only change this line.
-const { sendModLog } = require('../../../logging/modlogs/moderationActionLog');
+const { sendModLog } = require('../../../core/logging/modlogs/moderationActionLog');
 
 function cleanError(error) {
   return String(error || '').replace(/^❌\s*/, '');
