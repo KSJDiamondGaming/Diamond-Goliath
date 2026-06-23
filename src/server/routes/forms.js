@@ -123,6 +123,65 @@ function getPanelForms(guildId, panel) {
   return (panel.formIds || []).map((formId) => formStore.getForm(guildId, formId)).filter(Boolean);
 }
 
+function submissionStatus(submission = {}) {
+  return String(submission.status || 'pending').toLowerCase();
+}
+
+function ticketIdForSubmission(submission = {}) {
+  return submission.ticketId || submission.workflow?.ticketId || null;
+}
+
+function ticketChannelIdForSubmission(submission = {}) {
+  return submission.ticketChannelId || submission.workflow?.ticketChannelId || null;
+}
+
+function ticketControlMessageIdForSubmission(submission = {}) {
+  return submission.ticketControlMessageId || submission.workflow?.ticketControlMessageId || null;
+}
+
+function countSubmissionStatuses(submissions = []) {
+  return submissions.reduce((counts, submission) => {
+    const status = submissionStatus(submission);
+    counts[status] = (counts[status] || 0) + 1;
+    return counts;
+  }, {});
+}
+
+function formBreakdown(forms = [], submissions = []) {
+  return forms.map((form) => {
+    const formSubmissions = submissions.filter((submission) => submission.formId === form.formId);
+    const statusCounts = countSubmissionStatuses(formSubmissions);
+
+    return {
+      formId: form.formId,
+      name: form.name || form.formId,
+      enabled: form.enabled !== false,
+      action: form.action || 'create_ticket',
+      ticketType: form.ticketType || form.formId,
+      submissionCount: formSubmissions.length,
+      pendingCount: statusCounts.pending || 0,
+      approvedCount: statusCounts.approved || 0,
+      deniedCount: statusCounts.denied || 0,
+      ticketLinkedCount: formSubmissions.filter(ticketIdForSubmission).length,
+    };
+  });
+}
+
+function recentSubmissionSummary(submission = {}) {
+  return {
+    submissionId: submission.submissionId,
+    formId: submission.formId,
+    status: submissionStatus(submission),
+    userId: submission.userId || null,
+    userTag: submission.userTag || null,
+    ticketId: ticketIdForSubmission(submission),
+    ticketChannelId: ticketChannelIdForSubmission(submission),
+    ticketControlMessageId: ticketControlMessageIdForSubmission(submission),
+    createdAt: submission.createdAt || null,
+    reviewedAt: submission.reviewedAt || null,
+  };
+}
+
 router.get('/:guildId/overview', (req, res) => {
   try {
     const guildId = getGuildId(req);
@@ -130,16 +189,31 @@ router.get('/:guildId/overview', (req, res) => {
     const forms = Object.values(section.forms || {});
     const panels = Object.values(section.panels || {});
     const submissions = Object.values(section.submissions || {});
+    const statusCounts = countSubmissionStatuses(submissions);
+    const ticketLinkedSubmissionCount = submissions.filter(ticketIdForSubmission).length;
+    const ticketChannelLinkedSubmissionCount = submissions.filter(ticketChannelIdForSubmission).length;
+
     return success(res, {
       guildId,
       overview: {
         enabled: section.enabled !== false,
         formCount: forms.length,
         enabledFormCount: forms.filter((form) => form.enabled !== false).length,
+        disabledFormCount: forms.filter((form) => form.enabled === false).length,
         panelCount: panels.length,
         deployedPanelCount: panels.filter((panel) => panel.channelId && panel.messageId).length,
         submissionCount: submissions.length,
-        pendingSubmissionCount: submissions.filter((submission) => submission.status === 'pending').length,
+        pendingSubmissionCount: statusCounts.pending || 0,
+        approvedSubmissionCount: statusCounts.approved || 0,
+        deniedSubmissionCount: statusCounts.denied || 0,
+        closedSubmissionCount: statusCounts.closed || 0,
+        requestInfoSubmissionCount: statusCounts.request_info || 0,
+        ticketLinkedSubmissionCount,
+        ticketChannelLinkedSubmissionCount,
+        missingTicketChannelCount: submissions.filter((submission) => ticketIdForSubmission(submission) && !ticketChannelIdForSubmission(submission)).length,
+        statusCounts,
+        formBreakdown: formBreakdown(forms, submissions),
+        recentSubmissions: sortByNewest(submissions).slice(0, 10).map(recentSubmissionSummary),
         analytics: section.analytics || {},
         settings: section.settings || {},
       },
