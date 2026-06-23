@@ -1,10 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import { appBaseStyles, shellStyles } from './ui/components.js';
 import { getTheme } from './ui/theme.js';
 import { api } from './services/apiClient.js';
-import { navItems, ROUTES as BASE_ROUTES } from './ui/layout.js';
+import { navItems, ROUTES } from './ui/layout.js';
 import { getStorage, removeStorage, setStorage } from './storage.js';
 
 import { useNavbar } from './hooks/useNavbar.js';
@@ -16,12 +16,6 @@ import Navbar from './shared/Navbar.jsx';
 import OwnerSidebar from './pages/owner/components/OwnerSidebar.jsx';
 import Topbar from './shared/Topbar.jsx';
 import Login from './pages/core/Login.jsx';
-import EmbedStudio from './pages/modules/EmbedStudio.jsx';
-
-const ROUTES = [
-  ...BASE_ROUTES,
-  { key: 'embedStudio', label: 'Embed Studio', icon: 'modules', path: '/embed-studio', component: EmbedStudio },
-];
 
 const OWNER_MANAGED_GUILD_KEY = 'owner_managed_guild';
 const GUILD_STORAGE_KEY = 'selected_guild';
@@ -271,35 +265,13 @@ export default function App() {
     const desktopGrid = styles.grid || {};
     const desktopMainColumn = styles.mainColumn || {};
     const desktopMain = styles.main || {};
-    const fixedShell = {
-      height: '100dvh',
-      minHeight: '100dvh',
-      width: '100%',
-      maxWidth: '100%',
-      overflow: 'hidden',
-      overflowX: 'hidden',
-    };
+    const fixedShell = { height: '100dvh', minHeight: '100dvh', width: '100%', maxWidth: '100%', overflow: 'hidden', overflowX: 'hidden' };
 
     return {
       app: { ...styles.app, ...fixedShell },
-      grid: isMobile
-        ? { display: 'block', ...fixedShell }
-        : { ...desktopGrid, ...fixedShell, minWidth: 0 },
-      mainColumn: isMobile
-        ? { height: '100dvh', minHeight: '100dvh', width: '100%', maxWidth: '100%', minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }
-        : { ...desktopMainColumn, height: '100dvh', minHeight: '100dvh', minWidth: 0, maxWidth: '100%', overflow: 'hidden' },
-      main: {
-        ...desktopMain,
-        width: '100%',
-        maxWidth: '100%',
-        minWidth: 0,
-        flex: 1,
-        minHeight: 0,
-        overflowY: 'auto',
-        overflowX: 'hidden',
-        WebkitOverflowScrolling: 'touch',
-        padding: isMobile ? '78px clamp(12px, 4vw, 18px) clamp(18px, 4vw, 28px)' : desktopMain.padding,
-      },
+      grid: isMobile ? { display: 'block', ...fixedShell } : { ...desktopGrid, ...fixedShell, minWidth: 0 },
+      mainColumn: isMobile ? { height: '100dvh', minHeight: '100dvh', width: '100%', maxWidth: '100%', minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' } : { ...desktopMainColumn, height: '100dvh', minHeight: '100dvh', minWidth: 0, maxWidth: '100%', overflow: 'hidden' },
+      main: { ...desktopMain, width: '100%', maxWidth: '100%', minWidth: 0, flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', padding: isMobile ? '78px clamp(12px, 4vw, 18px) clamp(18px, 4vw, 28px)' : desktopMain.padding },
     };
   }, [styles, isMobile]);
 
@@ -401,7 +373,9 @@ export default function App() {
               ) : routeNeedsGuild && !guildState.guildsLoading && !effectiveSelectedGuild ? (
                 <CenterMessage theme={theme} title="No server selected" text="Select a server from the navbar to continue." />
               ) : ActivePage ? (
-                <ActivePage {...pageProps} />
+                <Suspense fallback={<CenterMessage theme={theme} title="Loading page..." text="Preparing this dashboard module." />}>
+                  <ActivePage {...pageProps} />
+                </Suspense>
               ) : (
                 <CenterMessage theme={theme} title="Page not found" text="That dashboard page does not exist." />
               )}
