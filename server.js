@@ -28,7 +28,7 @@ bootstrapRuntime,
 runBootValidation,
 safeLoad,
 printStartupFingerprint,
-} = require('./src/runtime/runtimeBootstrap');
+} = require('./src/core/runtime/runtimeBootstrap');
 
 const { initSocketHub } = require('./src/server/sockets/socketHub');
 
