@@ -9,7 +9,7 @@ const {
   getModuleSection,
   saveModuleSection,
   updateModuleSection,
-} = require('../../guild/moduleSectionManager');
+} = require('../../core/guild/moduleSectionManager');
 
 const MODULE = 'suggestions';
 

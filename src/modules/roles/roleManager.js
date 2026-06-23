@@ -11,7 +11,7 @@ const {
 } = require('discord.js');
 
 const roleStore = require('./roleStore');
-const { isModuleEnabled } = require('../../guild/guildManager');
+const { isModuleEnabled } = require('../../core/guild/guildManager');
 
 const CUSTOM_ID_PREFIX = 'role_toggle';
 const MAX_BUTTONS_PER_ROW = 5;

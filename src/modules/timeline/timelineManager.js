@@ -1,5 +1,5 @@
 const timelineStore = require('./timelineStore');
-const { isModuleEnabled } = require('../../guild/guildManager');
+const { isModuleEnabled } = require('../../core/guild/guildManager');
 
 const TYPES = {
   SYSTEM: 'system',

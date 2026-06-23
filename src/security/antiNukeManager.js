@@ -5,7 +5,7 @@ const {
 } = require('discord.js');
 
 const securitySystem = require('./securitySystem');
-const guildManager = require('../guild/guildManager');
+const guildManager = require('../core/guild/guildManager');
 
 const {
   enableLockdown,

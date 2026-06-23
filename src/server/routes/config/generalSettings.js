@@ -3,7 +3,7 @@ const express = require('express');
 const {
   getGuildData,
   saveGuildData,
-} = require('../../../guild/guildManager');
+} = require('../../../core/guild/guildManager');
 
 const {
   DEFAULT_PREFIX,

@@ -1,6 +1,6 @@
 const { EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const suggestionStore = require('./suggestionStore');
-const { isModuleEnabled } = require('../../guild/guildManager');
+const { isModuleEnabled } = require('../../core/guild/guildManager');
 
 const STATUS = {
   PENDING: 'pending',

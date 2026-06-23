@@ -1,6 +1,6 @@
 'use strict';
 
-const guildManager = require('../../guild/guildManager');
+const guildManager = require('../../core/guild/guildManager');
 const { PLAN_IDS, normalizePlanId, getPlanDefinition } = require('../../config/plans');
 
 const ACTIVE_STATUS = 'active';

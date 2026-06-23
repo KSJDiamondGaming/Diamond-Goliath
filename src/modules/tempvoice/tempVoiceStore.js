@@ -7,7 +7,7 @@ const crypto = require('crypto');
 const {
   getGuildSection,
   updateGuildSection,
-} = require('../../guild/guildManager');
+} = require('../../core/guild/guildManager');
 
 const SECTION = 'tempVoice';
 const MODULES_SECTION = 'modules';

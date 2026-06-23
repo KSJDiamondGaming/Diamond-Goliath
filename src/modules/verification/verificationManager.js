@@ -11,7 +11,7 @@ const {
 } = require('discord.js');
 
 const verificationStore = require('./verificationStore');
-const { isModuleEnabled } = require('../../guild/guildManager');
+const { isModuleEnabled } = require('../../core/guild/guildManager');
 
 const CUSTOM_ID_PREFIX = 'verify';
 const DEV_TEST_GUILD_ID = '1515201360386068642';

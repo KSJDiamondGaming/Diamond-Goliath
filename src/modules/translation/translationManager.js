@@ -6,7 +6,7 @@
 const { EmbedBuilder } = require('discord.js');
 const translationStore = require('./translationStore');
 const translationProviderManager = require('./translationProviderManager');
-const { isModuleEnabled } = require('../../guild/guildManager');
+const { isModuleEnabled } = require('../../core/guild/guildManager');
 
 const LANGUAGE_LABELS = Object.freeze({
   auto: 'Auto Detect',

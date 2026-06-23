@@ -4,7 +4,7 @@
 
 const { EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const giveawayStore = require('./giveawayStore');
-const { isModuleEnabled } = require('../../guild/guildManager');
+const { isModuleEnabled } = require('../../core/guild/guildManager');
 
 const ENTER_EMOJI = '🎉';
 

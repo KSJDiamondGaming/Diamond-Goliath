@@ -1,4 +1,4 @@
-const guildManager = require('../guild/guildManager');
+const guildManager = require('../core/guild/guildManager');
 const { shouldUseDryRunForOwner } = require('./testModeGuard');
 
 const {

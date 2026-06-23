@@ -1,7 +1,7 @@
 const { EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const stickyStore = require('./stickyGuildStore');
 const { TYPES, createTimelineEvent } = require('../timeline/timelineManager');
-const { isModuleEnabled } = require('../../guild/guildManager');
+const { isModuleEnabled } = require('../../core/guild/guildManager');
 
 function assertStickyModuleEnabled(guildId) {
   if (!isModuleEnabled(guildId, 'sticky')) {

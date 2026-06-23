@@ -5,7 +5,7 @@
 const { handleReactionAdd } = require('../../modules/roles/reactionRoleHandler');
 const { enterGiveaway } = require('../../modules/giveaways/giveawayManager');
 const { handleStarReactionAdd } = require('../../modules/starboard/starboardManager');
-const { isModuleEnabled } = require('../../guild/guildManager');
+const { isModuleEnabled } = require('../../core/guild/guildManager');
 
 async function getReactionGuildId(reaction) {
   if (reaction?.partial) {

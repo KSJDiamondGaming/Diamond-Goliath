@@ -3,7 +3,7 @@
 const {
   getGuildSection,
   saveGuildSection,
-} = require('../../guild/guildManager');
+} = require('../../core/guild/guildManager');
 
 const {
   emitAnalyticsUpdated,

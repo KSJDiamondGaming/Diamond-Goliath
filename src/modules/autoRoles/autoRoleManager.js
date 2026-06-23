@@ -4,7 +4,7 @@
 
 const { PermissionFlagsBits } = require('discord.js');
 const autoRoleStore = require('./autoRoleStore');
-const { isModuleEnabled } = require('../../guild/guildManager');
+const { isModuleEnabled } = require('../../core/guild/guildManager');
 
 function canManageAutoRoles(member) {
   return Boolean(

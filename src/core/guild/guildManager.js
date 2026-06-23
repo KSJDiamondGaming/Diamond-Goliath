@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const { getRuntimePaths } = require('../config/runtimePaths');
+const { getRuntimePaths } = require('../../config/runtimePaths');
 const { clone, ensureDir, read, write } = require('./fileStore');
 
 const {

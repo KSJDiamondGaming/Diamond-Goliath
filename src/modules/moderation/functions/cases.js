@@ -1,4 +1,4 @@
-const guildStore = require('../guild/guildManager');
+const guildStore = require('../../../core/guild/guildManager');
 
 function getGuildCases(guildId) {
   return guildStore.getGuildSection(guildId, 'cases', {});

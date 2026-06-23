@@ -9,7 +9,7 @@ const {
   WebhookClient,
 } = require('discord.js');
 
-const guildManager = require('../guild/guildManager');
+const guildManager = require('../core/guild/guildManager');
 
 const {
   enableLockdown,

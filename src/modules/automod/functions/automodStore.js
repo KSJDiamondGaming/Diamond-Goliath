@@ -1,7 +1,7 @@
 // functions/automod/automodStore.js
 
 const { EmbedBuilder, PermissionsBitField } = require('discord.js');
-const guildManager = require('../../../guild/guildManager');
+const guildManager = require('../../../core/guild/guildManager');
 
 const spamTracker = new Map();
 const repeatTracker = new Map();

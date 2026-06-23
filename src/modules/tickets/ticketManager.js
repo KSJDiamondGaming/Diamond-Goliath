@@ -42,7 +42,7 @@ const {
   emitTicketDeleted,
 } = require('./ticketSocketEvents');
 
-const { isModuleEnabled } = require('../../guild/guildManager');
+const { isModuleEnabled } = require('../../core/guild/guildManager');
 
 function generateTicketId() {
   return crypto.randomUUID();

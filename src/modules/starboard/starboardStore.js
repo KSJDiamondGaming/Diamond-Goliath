@@ -7,7 +7,7 @@ const crypto = require('crypto');
 const {
   getGuildSection,
   updateGuildSection,
-} = require('../../guild/guildManager');
+} = require('../../core/guild/guildManager');
 
 const SECTION = 'starboard';
 const MODULES_SECTION = 'modules';

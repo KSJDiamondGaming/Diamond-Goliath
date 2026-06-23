@@ -19,7 +19,7 @@ const {
 
 const { validateBotHierarchy } = require('./securitySystem');
 
-const guildManager = require('../guild/guildManager');
+const guildManager = require('../core/guild/guildManager');
 
 const RESTORE_VERSION = '3C_DIFF_PREVIEW_SAFE';
 

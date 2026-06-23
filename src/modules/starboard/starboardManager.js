@@ -4,7 +4,7 @@
 
 const { EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const starboardStore = require('./starboardStore');
-const { isModuleEnabled } = require('../../guild/guildManager');
+const { isModuleEnabled } = require('../../core/guild/guildManager');
 
 const IMAGE_EXTENSION_PATTERN = /\.(png|jpe?g|gif|webp)(\?.*)?$/i;
 

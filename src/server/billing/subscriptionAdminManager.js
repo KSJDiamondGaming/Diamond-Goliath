@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const guildManager = require('../../guild/guildManager');
+const guildManager = require('../../core/guild/guildManager');
 const { getRuntimeRoot } = require('../../config/runtimePaths');
 const { PLAN_IDS, normalizePlanId, getPlanDefinition } = require('../../config/plans');
 const subscriptionManager = require('./subscriptionManager');

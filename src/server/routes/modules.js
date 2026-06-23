@@ -9,7 +9,7 @@ const {
   saveEmbedPreset,
   deleteEmbedPreset,
   setModuleEnabled,
-} = require('../../guild/guildManager');
+} = require('../../core/guild/guildManager');
 
 const autoRoleStore = require('../../modules/autoRoles/autoRoleStore');
 const autoRoleManager = require('../../modules/autoRoles/autoRoleManager');

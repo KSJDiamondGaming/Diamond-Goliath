@@ -15,7 +15,7 @@ const {
   PermissionFlagsBits,
 } = require('discord.js');
 
-const guildManager = require('../../../guild/guildManager');
+const guildManager = require('../../../core/guild/guildManager');
 const panelNav = require('../../../helpers/ui/panelNavigation');
 const { sendAutoModDM } = require('../../automod/functions/automodDm');
 const restoreRequestManager = require('../../../security/restoreRequestManager');

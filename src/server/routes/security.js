@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 
-const guildManager = require('../../guild/guildManager');
+const guildManager = require('../../core/guild/guildManager');
 const { requireEntitlement } = require('../middleware/requireEntitlement');
 
 function getGuildId(req) {

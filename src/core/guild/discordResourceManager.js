@@ -1,6 +1,6 @@
 'use strict';
 
-// src/guild/discordResourceManager.js
+// src/core/guild/discordResourceManager.js
 
 const {
   getGuildSection,

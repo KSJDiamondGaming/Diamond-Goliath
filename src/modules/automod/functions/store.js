@@ -1,4 +1,4 @@
-const guildStore = require('../../../guild/guildManager')
+const guildStore = require('../../../core/guild/guildManager')
 const defaultConfig = require('./config');
 const { normalizePunishments } = require('./actions');
 

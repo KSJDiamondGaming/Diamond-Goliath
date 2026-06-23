@@ -3,12 +3,12 @@
 // src/modules/roles/roleStore.js
 
 const crypto = require('crypto');
-const guildManager = require('../../guild/guildManager');
+const guildManager = require('../../core/guild/guildManager');
 const {
   getModuleSection,
   saveModuleSection,
   updateModuleSection,
-} = require('../../guild/moduleSectionManager');
+} = require('../../core/guild/moduleSectionManager');
 
 const SECTION = 'roles';
 

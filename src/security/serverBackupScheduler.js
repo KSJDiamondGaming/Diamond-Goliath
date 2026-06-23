@@ -4,7 +4,7 @@ const {
   deleteServerBackup,
 } = require('./serverBackup');
 
-const guildManager = require('../guild/guildManager');
+const guildManager = require('../core/guild/guildManager');
 
 const CHECK_EVERY_MS = 60 * 60 * 1000; // checks hourly
 const INITIAL_DELAY_MS = 30 * 1000;

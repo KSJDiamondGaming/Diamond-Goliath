@@ -1,4 +1,4 @@
-const { getRuntimePaths } = require('../config/runtimePaths');
+const { getRuntimePaths } = require('../../config/runtimePaths');
 
 const runtimePaths = getRuntimePaths(process.env.BOT_MODE || 'DEV');
 

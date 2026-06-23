@@ -2,7 +2,7 @@
 
 const { ChannelType, PermissionFlagsBits } = require('discord.js');
 const tempVoiceStore = require('./tempVoiceStore');
-const { isModuleEnabled } = require('../../guild/guildManager');
+const { isModuleEnabled } = require('../../core/guild/guildManager');
 
 function assertTempVoiceModuleEnabled(guildId) {
   if (!isModuleEnabled(guildId, 'tempVoice')) {

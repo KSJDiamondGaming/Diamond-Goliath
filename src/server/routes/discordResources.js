@@ -1,7 +1,7 @@
 'use strict';
 
 const express = require('express');
-const { getDiscordResources, syncDiscordResources } = require('../../guild/discordResourceManager');
+const { getDiscordResources, syncDiscordResources } = require('../../core/guild/discordResourceManager');
 
 const router = express.Router();
 

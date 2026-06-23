@@ -1,6 +1,6 @@
 'use strict';
 
-// src/guild/moduleSectionManager.js
+// src/core/guild/moduleSectionManager.js
 
 const {
   getGuildSection,

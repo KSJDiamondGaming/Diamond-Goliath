@@ -6,7 +6,7 @@ const {
   getGuildSection,
   saveGuildSection,
   updateGuildSection,
-} = require('../../guild/guildManager');
+} = require('../../core/guild/guildManager');
 const planLimitManager = require('../../server/billing/planLimitManager');
 
 const {

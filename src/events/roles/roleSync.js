@@ -1,4 +1,4 @@
-const guildManager = require('../../guild/guildManager');
+const guildManager = require('../../core/guild/guildManager');
 const securitySystem = require('../../security/securitySystem');
 
 const ROLE_SYNC_LOG_COOLDOWN_MS = 5000;

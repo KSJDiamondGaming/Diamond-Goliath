@@ -14,7 +14,7 @@ const {
 
 const formStore = require('./formStore');
 const formTicketBridge = require('./formTicketBridge');
-const { isModuleEnabled } = require('../../guild/guildManager');
+const { isModuleEnabled } = require('../../core/guild/guildManager');
 const {
   DEFAULT_BOT_CHANNEL_PERMISSIONS,
   guardChannelAccess,
