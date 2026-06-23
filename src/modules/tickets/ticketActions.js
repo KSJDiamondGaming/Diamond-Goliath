@@ -44,6 +44,7 @@ const STATUS = {
   DENIED: 'denied',
   CLOSED: 'closed',
   ARCHIVED: 'archived',
+  DELETED: 'deleted',
 };
 
 const PRIORITY = {
@@ -685,6 +686,7 @@ async function deleteTicket(ticketOrId, actor, options = {}) {
   );
 
   const updated = await saveTicket(ticket, {
+    status: STATUS.DELETED,
     deletedById: actorData.id,
     deletedAt: now(),
     statusChangedAt: now(),
