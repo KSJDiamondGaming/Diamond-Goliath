@@ -17,7 +17,7 @@ const {
 
 const guildManager = require('../../../guild/guildManager');
 const panelNav = require('../../../helpers/ui/panelNavigation');
-const { sendAutoModDM } = require('../../../functions/automod/automodDm');
+const { sendAutoModDM } = require('../../automod/functions/automodDm');
 const restoreRequestManager = require('../../../security/restoreRequestManager');
 
 const {

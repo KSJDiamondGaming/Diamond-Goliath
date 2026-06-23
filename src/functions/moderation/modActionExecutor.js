@@ -22,7 +22,7 @@ const {
   ephemeralError,
 } = require('../../helpers/ui/interactionResponse');
 
-const { applyPunishmentEngine } = require('../automod/punishmentEngine');
+const { applyPunishmentEngine } = require('../../modules/automod/functions/punishmentEngine');
 
 // If this path is different in your project, only change this line.
 const { sendModLog } = require('../../logging/modlogs/moderationActionLog');
