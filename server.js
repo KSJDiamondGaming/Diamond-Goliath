@@ -83,7 +83,7 @@ typeof socialSchedulerModule.result?.startSocialScheduler === 'function'
 
 const subscriptionWorkerModule = safeLoad(
 'Subscription Worker',
-() => require('./src/workers/subscriptionWorker'),
+() => require('./src/server/billing/subscriptionWorker'),
 );
 
 const startSubscriptionWorker =

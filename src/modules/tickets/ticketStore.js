@@ -7,7 +7,7 @@ const {
   saveGuildSection,
   updateGuildSection,
 } = require('../../guild/guildManager');
-const planLimitManager = require('../../managers/planLimitManager');
+const planLimitManager = require('../../server/billing/planLimitManager');
 
 const {
   DEFAULT_TICKET_SETTINGS,

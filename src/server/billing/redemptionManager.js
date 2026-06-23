@@ -4,9 +4,9 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
-const { getRuntimeRoot } = require('../config/runtimePaths');
-const subscriptionManager = require('../managers/subscriptionManager');
-const { PLAN_IDS, normalizePlanId } = require('../config/plans');
+const { getRuntimeRoot } = require('../../config/runtimePaths');
+const subscriptionManager = require('./subscriptionManager');
+const { PLAN_IDS, normalizePlanId } = require('../../config/plans');
 
 const CODE_PREFIX = 'GOL';
 const VALID_DURATIONS = Object.freeze({

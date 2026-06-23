@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const { getRuntimeRoot } = require('../config/runtimePaths');
+const { getRuntimeRoot } = require('../../config/runtimePaths');
 
 const DEFAULT_PRICING = Object.freeze({
   free: Object.freeze({ price: '£0', cadence: 'Free', note: 'No payment required.' }),

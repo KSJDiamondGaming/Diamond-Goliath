@@ -6,7 +6,7 @@ const express = require('express');
 
 const formStore = require('../../modules/forms/formStore');
 const formManager = require('../../modules/forms/formManager');
-const planLimitManager = require('../../managers/planLimitManager');
+const planLimitManager = require('../billing/planLimitManager');
 const {
   isGoliathPermissionError,
   validateRoleSelection,

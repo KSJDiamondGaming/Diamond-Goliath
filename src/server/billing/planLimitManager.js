@@ -1,7 +1,7 @@
 'use strict';
 
 const subscriptionManager = require('./subscriptionManager');
-const { getPlanDefinition, getPlanLimits } = require('../config/plans');
+const { getPlanDefinition, getPlanLimits } = require('../../config/plans');
 
 const LIMIT_LABELS = Object.freeze({
   ticketPanels: 'Ticket Panels',

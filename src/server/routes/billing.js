@@ -6,11 +6,11 @@ const {
   PLAN_DEFINITIONS,
   getPlanDefinition,
 } = require('../../config/plans');
-const subscriptionManager = require('../../managers/subscriptionManager');
-const entitlementManager = require('../../managers/entitlementManager');
-const redemptionManager = require('../../billing/redemptionManager');
-const subscriptionAdminManager = require('../../billing/subscriptionAdminManager');
-const billingSettingsManager = require('../../billing/billingSettingsManager');
+const subscriptionManager = require('../billing/subscriptionManager');
+const entitlementManager = require('../billing/entitlementManager');
+const redemptionManager = require('../billing/redemptionManager');
+const subscriptionAdminManager = require('../billing/subscriptionAdminManager');
+const billingSettingsManager = require('../billing/billingSettingsManager');
 
 const router = express.Router();
 

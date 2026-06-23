@@ -7,7 +7,7 @@ const {
   getPlanLimits,
   planHasFeature,
   getRequiredPlanForFeature,
-} = require('../config/plans');
+} = require('../../config/plans');
 
 const subscriptionManager = require('./subscriptionManager');
 

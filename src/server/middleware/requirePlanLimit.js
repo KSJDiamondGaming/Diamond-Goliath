@@ -1,6 +1,6 @@
 'use strict';
 
-const planLimitManager = require('../../managers/planLimitManager');
+const planLimitManager = require('../billing/planLimitManager');
 
 function countFromRequest(req, counter) {
   if (typeof counter === 'function') return counter(req);
