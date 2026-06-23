@@ -81,7 +81,7 @@ async function handleStickyAction(interaction, client) {
   }
 
   const stickyManager = require('../../../modules/sticky/stickyManager');
-  const stickyStore = require('../../../modules/sticky/stickyGuildStore');
+  const stickyStore = require('../../../sticky/stickyGuildStore');
   const actor = getMemberDisplayName(interaction);
 
   if (action === 'repost') {

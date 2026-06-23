@@ -15,17 +15,17 @@ const {
   PermissionFlagsBits,
 } = require('discord.js');
 
-const guildManager = require('../../guild/guildManager');
-const panelNav = require('../../helpers/ui/panelNavigation');
-const { sendAutoModDM } = require('../../functions/automod/automodDm');
-const restoreRequestManager = require('../../security/restoreRequestManager');
+const guildManager = require('../../../guild/guildManager');
+const panelNav = require('../../../helpers/ui/panelNavigation');
+const { sendAutoModDM } = require('../../../functions/automod/automodDm');
+const restoreRequestManager = require('../../../security/restoreRequestManager');
 
 const {
   createServerBackup,
   listServerBackups,
   readServerBackup,
   validateServerBackup,
-} = require('../../security/serverBackup');
+} = require('../../../security/serverBackup');
 
 const PANEL_COLOR = '#5865F2';
 

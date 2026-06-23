@@ -1,5 +1,5 @@
 const { PermissionsBitField } = require('discord.js');
-const guildManager = require('../../guild/guildManager');
+const guildManager = require('../../../guild/guildManager');
 
 /* ---------------- CONSTANTS ---------------- */
 
