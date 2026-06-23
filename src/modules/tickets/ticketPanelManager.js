@@ -468,6 +468,7 @@ async function handleTicketPanelButton(
     guildId: guild.id,
     userId: interaction.user.id,
     type: panel.ticketType,
+    panelId: panel.panelId,
     cooldownMs: resolvePanelCooldown(panel),
     oneActivePerType: panel.oneActivePerType !== false,
     maxOpenTicketsPerUser:
