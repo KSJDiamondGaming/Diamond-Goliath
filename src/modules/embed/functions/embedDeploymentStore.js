@@ -2,7 +2,7 @@
 
 // functions/embed/embedDeploymentStore.js
 
-const guildManager = require('../../guild/guildManager');
+const guildManager = require('../../../guild/guildManager');
 
 const EMBED_DEPLOYMENTS_SECTION = 'embedBuilder.deployments';
 const DEPLOYMENT_STATUS = Object.freeze({

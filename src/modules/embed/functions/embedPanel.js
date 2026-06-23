@@ -19,7 +19,7 @@ const {
   getDeploymentKeyFromState,
 } = require('./embedDeploymentStore');
 
-const guildManager = require('../../guild/guildManager');
+const guildManager = require('../../../guild/guildManager');
 const PANEL_COLOR = '#5865F2';
 const CUSTOM_HEX_VALUE = '__custom_hex__';
 

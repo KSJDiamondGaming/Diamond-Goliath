@@ -4,7 +4,7 @@ const {
 } = require('discord.js');
 
 const { errorEmbed } = require('../../helpers/ui/embeds');
-const { buildEmbedPanel } = require('../../functions/embed/embedPanel');
+const { buildEmbedPanel } = require('../../modules/embed/functions/embedPanel');
 const { enforceCommandAccess } = require('../../helpers/ui/commandAccess');
 
 module.exports = {

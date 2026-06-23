@@ -1,5 +1,5 @@
 const { EmbedBuilder, AuditLogEvent } = require('discord.js');
-const { buildPreviewEmbed, TEMPLATES } = require('../../functions/embed/embedPanel');
+const { buildPreviewEmbed, TEMPLATES } = require('../../modules/embed/functions/embedPanel');
 const guildManager = require('../../guild/guildManager');
 const autoRoleManager = require('../../modules/autoRoles/autoRoleManager');
 

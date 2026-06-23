@@ -1,6 +1,6 @@
 'use strict';
 
-const guildManager = require('../../guild/guildManager');
+const guildManager = require('../../../guild/guildManager');
 
 const PRESETS_DIR = null;
 

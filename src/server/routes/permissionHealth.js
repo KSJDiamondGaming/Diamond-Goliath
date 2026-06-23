@@ -12,7 +12,7 @@ const ticketStore = require('../../modules/tickets/ticketStore');
 const translationStore = require('../../modules/translation/translationStore');
 const {
   getAllEmbedDeployments,
-} = require('../../functions/embed/embedDeploymentStore');
+} = require('../../modules/embed/functions/embedDeploymentStore');
 
 const {
   DEFAULT_BOT_CHANNEL_PERMISSIONS,

@@ -18,7 +18,7 @@ const verificationManager = require('../../modules/verification/verificationMana
 const {
   getAllEmbedDeployments,
   deleteEmbedDeployment,
-} = require('../../functions/embed/embedDeploymentStore');
+} = require('../../modules/embed/functions/embedDeploymentStore');
 const {
   isGoliathPermissionError,
   validateRoleSelection,
