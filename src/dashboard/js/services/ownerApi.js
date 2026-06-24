@@ -37,7 +37,23 @@ export const ownerApi = {
   },
 
   getTicketsOverview(guildId) {
-    return api.request(`/api/tickets/${cleanGuildId(guildId)}/overview`);
+    return api.getTicketOverview(cleanGuildId(guildId));
+  },
+
+  getTickets(guildId) {
+    return api.getTickets(cleanGuildId(guildId));
+  },
+
+  runTicketRecovery(guildId, createMissingChannels = false) {
+    return api.runTicketRecovery(cleanGuildId(guildId), createMissingChannels);
+  },
+
+  scanTicketRecovery(guildId) {
+    return api.runTicketRecoveryScan(cleanGuildId(guildId));
+  },
+
+  recreateMissingTicketChannels(guildId) {
+    return api.recreateMissingTicketChannels(cleanGuildId(guildId));
   },
 };
 
