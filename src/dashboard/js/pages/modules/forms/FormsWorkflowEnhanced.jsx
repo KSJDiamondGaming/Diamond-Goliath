@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { api } from '../../../services/apiClient.js';
 import LegacyForms from '../Forms.jsx';
@@ -14,6 +14,13 @@ function getGuildId(selectedGuild, selectedGuildData) {
 export default function FormsWorkflowEnhanced(props) {
   const { selectedGuild, selectedGuildData, theme } = props;
   const guildId = getGuildId(selectedGuild, selectedGuildData);
+  const legacyProps = useMemo(() => ({
+    ...props,
+    selectedGuild: guildId || selectedGuild,
+    selectedGuildData: selectedGuildData
+      ? { ...selectedGuildData, id: guildId || selectedGuildData.id, guildId: guildId || selectedGuildData.guildId }
+      : selectedGuildData,
+  }), [guildId, props, selectedGuild, selectedGuildData]);
   const [overview, setOverview] = useState(null);
   const [error, setError] = useState('');
 
@@ -52,7 +59,7 @@ export default function FormsWorkflowEnhanced(props) {
           {error}
         </section>
       ) : null}
-      <LegacyForms {...props} />
+      <LegacyForms {...legacyProps} />
     </div>
   );
 }
