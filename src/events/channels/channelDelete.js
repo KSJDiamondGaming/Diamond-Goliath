@@ -1,6 +1,22 @@
 const { AuditLogEvent } = require('discord.js');
 
 const securitySystem = require('../../core/security/securitySystem');
+const {
+  emitSyncEvent,
+} = require('../../server/sockets/socketHub');
+
+function emitChannelDeleted(channel) {
+  if (!channel?.guild?.id) return null;
+
+  return emitSyncEvent('channel.deleted', channel.guild.id, {
+    module: 'channels',
+    scope: 'channels',
+    channelId: channel.id,
+    channelName: channel.name || null,
+    channelType: channel.type || null,
+    parentId: channel.parentId || null,
+  });
+}
 
 module.exports = {
   name: 'channelDelete',
@@ -14,6 +30,7 @@ module.exports = {
 
       if (typeof securitySystem.handleChannelDelete === 'function') {
         await securitySystem.handleChannelDelete(channel);
+        emitChannelDeleted(channel);
         return;
       }
 
@@ -42,6 +59,8 @@ module.exports = {
           },
         });
       }
+
+      emitChannelDeleted(channel);
     } catch (err) {
       console.error('[Event: channelDelete] Error:', err);
     }
