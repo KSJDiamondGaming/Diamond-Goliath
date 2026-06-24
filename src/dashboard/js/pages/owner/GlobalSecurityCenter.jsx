@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 
 import { api } from '../../services/apiClient.js';
+import { listenForGuildUpdate } from '../../services/socketClient.js';
 
 const ENVIRONMENT_OPTIONS = [
   { key: 'all', label: 'All' },
@@ -26,6 +27,11 @@ function environmentBadge(environment = '') {
   if (mode === 'BETA') return '🟡 BETA';
   if (mode === 'PRODUCTION') return '🟢 PROD';
   return '⚪ UNKNOWN';
+}
+
+function isSecurityEvent(event = {}) {
+  const name = String(event.event || event.type || '').toLowerCase();
+  return name.startsWith('security.') || name.startsWith('security:');
 }
 
 function card(theme, extra = {}) {
@@ -71,11 +77,14 @@ export default function GlobalSecurityCenter({ theme }) {
   const [environment, setEnvironment] = useState('all');
   const [payload, setPayload] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
 
-  async function loadSecurity() {
+  const loadSecurity = useCallback(async ({ quiet = false } = {}) => {
     try {
-      setLoading(true);
+      if (quiet) setRefreshing(true);
+      else setLoading(true);
+
       setError('');
 
       const query = environment && environment !== 'all'
@@ -90,12 +99,23 @@ export default function GlobalSecurityCenter({ theme }) {
       setError(loadError.message || 'Failed to load global security overview.');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  }
+  }, [environment]);
 
   useEffect(() => {
     loadSecurity();
-  }, [environment]);
+  }, [loadSecurity]);
+
+  useEffect(() => {
+    return listenForGuildUpdate((data, payloadEvent) => {
+      const event = payloadEvent || data;
+
+      if (!isSecurityEvent(event)) return;
+
+      loadSecurity({ quiet: true });
+    });
+  }, [loadSecurity]);
 
   const totals = payload?.totals || {};
   const incidents = payload?.recentIncidents || [];
@@ -110,7 +130,8 @@ export default function GlobalSecurityCenter({ theme }) {
           <p style={{ margin: '8px 0 0', color: theme.mutedText, lineHeight: 1.55 }}>Cross-environment security snapshot covering incidents, lockdowns, quarantines and webhook events.</p>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          {refreshing ? <span style={{ color: theme.mutedText, fontSize: 12, fontWeight: 850 }}>Live refresh...</span> : null}
           {ENVIRONMENT_OPTIONS.map((option) => {
             const active = environment === option.key;
             return (
