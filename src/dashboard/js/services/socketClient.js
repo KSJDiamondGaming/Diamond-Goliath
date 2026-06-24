@@ -53,6 +53,14 @@ function eventMatchesModule(event, moduleName) {
   );
 }
 
+function resolveGuildUpdateData(event) {
+  if (!event || typeof event !== 'object') {
+    return event;
+  }
+
+  return event.data || event.config || event.payload || event.state || event;
+}
+
 export function getSocket() {
   if (!socket) {
     socket = io(resolveSocketUrl(), {
@@ -201,7 +209,7 @@ export function listenForGuildUpdate(...args) {
     'guild:update',
     (event) => {
       if (!eventMatchesModule(event, moduleName)) return;
-      callback(event);
+      callback(resolveGuildUpdateData(event), event);
     }
   );
 }
