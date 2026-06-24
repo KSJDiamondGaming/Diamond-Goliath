@@ -32,6 +32,22 @@ export const ownerApi = {
     return api.getFormsWorkflowOverview(cleanGuildId(guildId));
   },
 
+  getForms(guildId) {
+    return api.getForms(cleanGuildId(guildId));
+  },
+
+  getFormPanels(guildId) {
+    return api.getFormPanels(cleanGuildId(guildId));
+  },
+
+  getFormSubmissions(guildId, query = 'limit=50') {
+    return api.getFormSubmissions(cleanGuildId(guildId), query);
+  },
+
+  getFilteredFormSubmissions(guildId, filters = {}) {
+    return api.getFilteredFormSubmissions(cleanGuildId(guildId), filters);
+  },
+
   getFormSubmissionWorkflow(guildId, submissionId) {
     return api.getFormSubmissionWorkflow(cleanGuildId(guildId), submissionId);
   },
