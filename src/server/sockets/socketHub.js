@@ -13,6 +13,10 @@ const {
   setSocketProvider: setEmbedSocketProvider,
 } = require('../../modules/embed/functions/embedSocketEvents');
 
+const {
+  setSocketProvider: setCaseSocketProvider,
+} = require('../../core/logging/cases/caseSocketEvents');
+
 function getRoomName(guildId) {
   return `guild:${guildId}`;
 }
@@ -37,6 +41,7 @@ function initSocketHub(server, options = {}) {
   setTicketSocketProvider(() => io);
   setFormSocketProvider(() => io);
   setEmbedSocketProvider(() => io);
+  setCaseSocketProvider(() => io);
 
   io.on('connection', (socket) => {
     console.log(`🟢 Dashboard connected: ${socket.id}`);
@@ -57,6 +62,7 @@ function initSocketHub(server, options = {}) {
     socket.on('tickets:joinGuild', joinGuildRoom);
     socket.on('forms:joinGuild', joinGuildRoom);
     socket.on('embeds:joinGuild', joinGuildRoom);
+    socket.on('cases:joinGuild', joinGuildRoom);
 
     socket.on('disconnect', () => {
       console.log(`🔴 Dashboard disconnected: ${socket.id}`);
