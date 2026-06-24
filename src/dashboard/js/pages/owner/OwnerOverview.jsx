@@ -62,6 +62,26 @@ function formatNumber(value = 0) {
   return Number(value || 0).toLocaleString();
 }
 
+function getRealtimeEventKey(event = {}) {
+  const data = event.data || event.payload || event;
+
+  return [
+    event.guildId || data.guildId || 'global',
+    event.event || event.type || 'event',
+    data.ticketId,
+    data.submissionId,
+    data.formId,
+    data.caseId,
+    data.roleId,
+    data.channelId,
+    data.messageId,
+    data.key,
+    event.timestamp || event.updatedAt || data.updatedAt || data.createdAt,
+  ]
+    .filter(Boolean)
+    .join(':');
+}
+
 function formatRealtimeLabel(event = {}) {
   const name = String(event.event || event.type || 'realtime.event');
 
@@ -180,7 +200,7 @@ function GlobalRealtimeFeed({ theme, events = [] }) {
             const detail = formatRealtimeDetail(event);
 
             return (
-              <div key={`${event.event || event.type || 'event'}-${event.timestamp || event.updatedAt || index}`} style={{ display: 'grid', gridTemplateColumns: '86px 1fr', gap: 12, padding: '13px 16px', borderTop: index === 0 ? 'none' : `1px solid ${theme.cardBorder}` }}>
+              <div key={getRealtimeEventKey(event) || index} style={{ display: 'grid', gridTemplateColumns: '86px 1fr', gap: 12, padding: '13px 16px', borderTop: index === 0 ? 'none' : `1px solid ${theme.cardBorder}` }}>
                 <div style={{ color: theme.mutedText, fontSize: 12, fontWeight: 900, fontFamily: 'monospace' }}>{formatRealtimeTime(event)}</div>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -270,7 +290,15 @@ export default function OwnerView({ theme, currentUser }) {
     });
 
     return listenForRealtimeFeed((event) => {
-      setRealtimeEvents((current) => [event, ...current].slice(0, MAX_REALTIME_EVENTS));
+      setRealtimeEvents((current) => {
+        const nextKey = getRealtimeEventKey(event);
+
+        if (nextKey && current.some((item) => getRealtimeEventKey(item) === nextKey)) {
+          return current;
+        }
+
+        return [event, ...current].slice(0, MAX_REALTIME_EVENTS);
+      });
     });
   }, [isOwner, guilds]);
 
