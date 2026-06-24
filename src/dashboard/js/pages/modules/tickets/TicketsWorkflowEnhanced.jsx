@@ -33,8 +33,8 @@ export default function TicketsWorkflowEnhanced(props) {
       }
 
       const [overviewPayload, ticketsPayload] = await Promise.all([
-        api.request(`/api/tickets/${guildId}/overview`),
-        api.request(`/api/tickets/${guildId}`),
+        api.getTicketOverview(guildId),
+        api.getTickets(guildId),
       ]).catch(() => [null, null]);
 
       if (cancelled) return;
