@@ -36,10 +36,6 @@ function initSocketHub(server, options = {}) {
       const id = String(guildId || '').trim();
       if (!id) return;
 
-      socket.on('joinGuild', joinGuildRoom);
-      socket.on('automod:join', joinGuildRoom);
-      socket.on('tickets:joinGuild', joinGuildRoom);
-
       const room = getRoomName(id);
       socket.join(room);
 
@@ -48,6 +44,7 @@ function initSocketHub(server, options = {}) {
 
     socket.on('joinGuild', joinGuildRoom);
     socket.on('automod:join', joinGuildRoom);
+    socket.on('tickets:joinGuild', joinGuildRoom);
 
     socket.on('disconnect', () => {
       console.log(`🔴 Dashboard disconnected: ${socket.id}`);
@@ -72,7 +69,7 @@ function onGuildUpdate(listener) {
 function emitGuildUpdate(guildId, payload = {}) {
   const id = String(guildId || '').trim();
 
-  if (!id) return;
+  if (!id) return null;
 
   const update = {
     guildId: id,
@@ -91,50 +88,51 @@ function emitGuildUpdate(guildId, payload = {}) {
       console.error('Guild update listener failed:', error);
     }
   }
+
+  return update;
+}
+
+function normaliseSyncEvent(event) {
+  return String(event || '').trim();
+}
+
+function emitDirectSyncEvent(guildId, event, update) {
+  const id = String(guildId || '').trim();
+  const eventName = normaliseSyncEvent(event);
+
+  if (!io || !id || !eventName || !update) {
+    return;
+  }
+
+  io.to(getRoomName(id)).emit(eventName, update);
+  io.to(getRoomName(id)).emit('goliath_realtime_event', update);
 }
 
 /**
  * GOLIATH STANDARD SYNC LAYER
- * Centralised event emitter for Discord ↔ Dashboard sync
+ * Centralised event emitter for Discord ↔ Dashboard sync.
+ *
+ * Always emits:
+ * - guild:update              legacy/dashboard-wide refresh channel
+ * - direct event name         ticket.created, form.submitted, etc.
+ * - goliath_realtime_event    global live activity feed
  */
 function emitSyncEvent(event, guildId, payload = {}) {
-  // basic mapping layer (expand later)
-  switch (event) {
-    case 'ticket.updated':
-    case 'ticket.created':
-    case 'ticket.closed':
-      return emitGuildUpdate(guildId, {
-        type: event,
-        ...payload,
-      });
+  const eventName = normaliseSyncEvent(event);
 
-    case 'form.submitted':
-    case 'form.updated':
-      return emitGuildUpdate(guildId, {
-        type: event,
-        ...payload,
-      });
-
-    case 'embed.created':
-    case 'embed.updated':
-      return emitGuildUpdate(guildId, {
-        type: event,
-        ...payload,
-      });
-
-    case 'case.created':
-    case 'case.updated':
-      return emitGuildUpdate(guildId, {
-        type: event,
-        ...payload,
-      });
-
-    default:
-      return emitGuildUpdate(guildId, {
-        type: event,
-        ...payload,
-      });
+  if (!eventName) {
+    return null;
   }
+
+  const update = emitGuildUpdate(guildId, {
+    type: eventName,
+    event: eventName,
+    ...(payload && typeof payload === 'object' ? payload : {}),
+  });
+
+  emitDirectSyncEvent(guildId, eventName, update);
+
+  return update;
 }
 
 function emitSecurityEvent(
