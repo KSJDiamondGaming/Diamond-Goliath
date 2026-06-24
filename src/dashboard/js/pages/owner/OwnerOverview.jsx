@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../../services/apiClient.js';
 import {
   joinGuildRoom,
+  listenForGuildUpdate,
   listenForRealtimeFeed,
 } from '../../services/socketClient.js';
 import GlobalSecurityCenter from './GlobalSecurityCenter.jsx';
@@ -62,6 +63,11 @@ function formatNumber(value = 0) {
   return Number(value || 0).toLocaleString();
 }
 
+function isSecurityRealtimeEvent(event = {}) {
+  const name = String(event.event || event.type || '').toLowerCase();
+  return name.startsWith('security.') || name.startsWith('security:');
+}
+
 function getRealtimeEventKey(event = {}) {
   const data = event.data || event.payload || event;
 
@@ -80,6 +86,16 @@ function getRealtimeEventKey(event = {}) {
   ]
     .filter(Boolean)
     .join(':');
+}
+
+function addRealtimeEvent(current, event) {
+  const nextKey = getRealtimeEventKey(event);
+
+  if (nextKey && current.some((item) => getRealtimeEventKey(item) === nextKey)) {
+    return current;
+  }
+
+  return [event, ...current].slice(0, MAX_REALTIME_EVENTS);
 }
 
 function formatRealtimeLabel(event = {}) {
@@ -186,7 +202,7 @@ function GlobalRealtimeFeed({ theme, events = [] }) {
       <div style={{ padding: 16, borderBottom: `1px solid ${theme.cardBorder}`, display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
         <div>
           <strong>Global Realtime Activity</strong>
-          <div style={{ color: theme.mutedText, fontSize: 13, marginTop: 4 }}>Live events from tickets, forms, embeds, cases, roles and channels.</div>
+          <div style={{ color: theme.mutedText, fontSize: 13, marginTop: 4 }}>Live events from tickets, forms, embeds, cases, roles, channels and security.</div>
         </div>
         <span style={{ color: theme.mutedText }}>{events.length} live event{events.length === 1 ? '' : 's'}</span>
       </div>
@@ -289,17 +305,22 @@ export default function OwnerView({ theme, currentUser }) {
       if (guildId && guildId !== 'Unknown') joinGuildRoom(guildId);
     });
 
-    return listenForRealtimeFeed((event) => {
-      setRealtimeEvents((current) => {
-        const nextKey = getRealtimeEventKey(event);
-
-        if (nextKey && current.some((item) => getRealtimeEventKey(item) === nextKey)) {
-          return current;
-        }
-
-        return [event, ...current].slice(0, MAX_REALTIME_EVENTS);
-      });
+    const unsubscribeFeed = listenForRealtimeFeed((event) => {
+      setRealtimeEvents((current) => addRealtimeEvent(current, event));
     });
+
+    const unsubscribeSecurity = listenForGuildUpdate((data, payloadEvent) => {
+      const event = payloadEvent || data;
+
+      if (!isSecurityRealtimeEvent(event)) return;
+
+      setRealtimeEvents((current) => addRealtimeEvent(current, event));
+    });
+
+    return () => {
+      unsubscribeFeed?.();
+      unsubscribeSecurity?.();
+    };
   }, [isOwner, guilds]);
 
   const filteredGuilds = useMemo(() => {
