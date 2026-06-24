@@ -9,6 +9,13 @@ function cleanGuildId(selectedGuild, selectedGuildData) {
   return String(value).split(':').pop().trim();
 }
 
+function normalizeTicketList(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.tickets)) return payload.tickets;
+  if (Array.isArray(payload?.data)) return payload.data;
+  return [];
+}
+
 export default function TicketsWorkflowEnhanced(props) {
   const { selectedGuild, selectedGuildData, theme } = props;
   const guildId = cleanGuildId(selectedGuild, selectedGuildData);
@@ -32,7 +39,7 @@ export default function TicketsWorkflowEnhanced(props) {
 
       if (cancelled) return;
       setOverview(overviewPayload?.overview || null);
-      setTickets(Array.isArray(ticketsPayload?.tickets) ? ticketsPayload.tickets : []);
+      setTickets(normalizeTicketList(ticketsPayload));
     }
 
     load();
