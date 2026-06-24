@@ -1,7 +1,6 @@
 import React from 'react';
 
 import useOwnerGuilds from '../../hooks/useOwnerGuilds.js';
-import { api } from '../../services/apiClient.js';
 import ownerApi from '../../services/ownerApi.js';
 
 const FORM_TEMPLATES = [
@@ -83,11 +82,23 @@ function getStaffRoleIds(form = {}) {
   return [];
 }
 
+function getSubmissionTicketId(submission = {}) {
+  return submission.ticketId || submission.workflow?.ticketId || null;
+}
+
+function getSubmissionTicketChannelId(submission = {}) {
+  return submission.ticketChannelId || submission.workflow?.ticketChannelId || null;
+}
+
+function isMissingTicketChannel(submission = {}) {
+  return Boolean(getSubmissionTicketId(submission) && !getSubmissionTicketChannelId(submission));
+}
+
 function statusColor(status, theme) {
   const value = String(status || '').toLowerCase();
   if (['enabled', 'active', 'approved', 'deployed', 'healthy'].includes(value)) return '#86efac';
-  if (['pending', 'review', 'draft', 'warning'].includes(value)) return '#fcd34d';
-  if (['denied', 'disabled', 'closed', 'missing'].includes(value)) return '#fca5a5';
+  if (['pending', 'review', 'draft', 'warning', 'request_info'].includes(value)) return '#fcd34d';
+  if (['denied', 'disabled', 'closed', 'missing', 'recovery needed'].includes(value)) return '#fca5a5';
   return theme.mutedText;
 }
 
@@ -221,9 +232,9 @@ function SubmissionsList({ submissions, theme, filter, setFilter }) {
         </div>
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {['pending', 'approved', 'denied', 'closed', 'all'].map((status) => (
+          {['pending', 'approved', 'denied', 'request_info', 'closed', 'all'].map((status) => (
             <button key={status} type="button" onClick={() => setFilter(status)} style={{ border: '1px solid ' + (filter === status ? '#c4b5fd' : theme.cardBorder), background: filter === status ? 'rgba(139,92,246,0.22)' : 'rgba(15,23,42,0.30)', color: theme.cardText, borderRadius: 999, padding: '8px 10px', fontWeight: 900, cursor: 'pointer', textTransform: 'capitalize' }}>
-              {status}
+              {status.replace('_', ' ')}
             </button>
           ))}
         </div>
@@ -232,19 +243,20 @@ function SubmissionsList({ submissions, theme, filter, setFilter }) {
       {filtered.length ? (
         <div style={{ display: 'grid', gap: 10 }}>
           {filtered.slice(0, 10).map((submission) => (
-            <div key={submission.submissionId || submission.id || `${submission.formId}-${submission.createdAt}`} style={{ border: '1px solid ' + theme.cardBorder, borderRadius: 15, padding: 13, background: 'rgba(15,23,42,0.22)', display: 'grid', gap: 9 }}>
+            <div key={submission.submissionId || submission.id || `${submission.formId}-${submission.createdAt}`} style={{ border: '1px solid ' + (isMissingTicketChannel(submission) ? '#fca5a5' : theme.cardBorder), borderRadius: 15, padding: 13, background: 'rgba(15,23,42,0.22)', display: 'grid', gap: 9 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
                 <div>
                   <strong>{submission.formName || submission.formId || 'Unknown Form'}</strong>
-                  <div style={{ color: theme.mutedText, marginTop: 4, fontSize: 13 }}>User: {submission.userId || 'Unknown user'}</div>
+                  <div style={{ color: theme.mutedText, marginTop: 4, fontSize: 13 }}>User: {submission.userTag || submission.userId || 'Unknown user'}</div>
                 </div>
-                <StatusPill theme={theme} status={submission.status || 'pending'} />
+                <StatusPill theme={theme} status={isMissingTicketChannel(submission) ? 'missing' : (submission.status || 'pending')} />
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,140px),1fr))', gap: 8, color: theme.mutedText, fontSize: 13 }}>
                 <div><strong style={{ color: theme.cardText }}>Created:</strong> {formatDate(submission.createdAt)}</div>
                 <div><strong style={{ color: theme.cardText }}>Reviewed:</strong> {formatDate(submission.reviewedAt)}</div>
-                <div><strong style={{ color: theme.cardText }}>Ticket:</strong> {submission.ticketId || 'None'}</div>
+                <div><strong style={{ color: theme.cardText }}>Ticket:</strong> {getSubmissionTicketId(submission) || 'None'}</div>
+                <div><strong style={{ color: theme.cardText }}>Channel:</strong> {getSubmissionTicketChannelId(submission) || 'None'}</div>
               </div>
             </div>
           ))}
@@ -254,13 +266,16 @@ function SubmissionsList({ submissions, theme, filter, setFilter }) {
   );
 }
 
-function WorkflowHealth({ forms, panels, submissions, theme, card }) {
-  const totalSubmissions = submissions.length;
-  const approved = submissions.filter((s) => String(s.status || '').toLowerCase() === 'approved').length;
-  const denied = submissions.filter((s) => String(s.status || '').toLowerCase() === 'denied').length;
-  const pending = submissions.filter((s) => String(s.status || 'pending').toLowerCase() === 'pending').length;
-  const closed = submissions.filter((s) => String(s.status || '').toLowerCase() === 'closed').length;
-  const ticketConversions = submissions.filter((s) => Boolean(s.ticketId)).length;
+function WorkflowHealth({ forms, panels, submissions, overview = {}, theme, card }) {
+  const totalSubmissions = overview.submissionCount ?? submissions.length;
+  const approved = overview.approvedSubmissionCount ?? submissions.filter((s) => String(s.status || '').toLowerCase() === 'approved').length;
+  const denied = overview.deniedSubmissionCount ?? submissions.filter((s) => String(s.status || '').toLowerCase() === 'denied').length;
+  const pending = overview.pendingSubmissionCount ?? submissions.filter((s) => String(s.status || 'pending').toLowerCase() === 'pending').length;
+  const closed = overview.closedSubmissionCount ?? submissions.filter((s) => String(s.status || '').toLowerCase() === 'closed').length;
+  const requestInfo = overview.requestInfoSubmissionCount ?? submissions.filter((s) => String(s.status || '').toLowerCase() === 'request_info').length;
+  const ticketConversions = overview.ticketLinkedSubmissionCount ?? submissions.filter((s) => Boolean(getSubmissionTicketId(s))).length;
+  const channelLinked = overview.ticketChannelLinkedSubmissionCount ?? submissions.filter((s) => Boolean(getSubmissionTicketChannelId(s))).length;
+  const missingChannels = overview.missingTicketChannelCount ?? submissions.filter(isMissingTicketChannel).length;
 
   const approvalRate = totalSubmissions ? (approved / totalSubmissions) * 100 : 0;
   const denialRate = totalSubmissions ? (denied / totalSubmissions) * 100 : 0;
@@ -278,12 +293,15 @@ function WorkflowHealth({ forms, panels, submissions, theme, card }) {
         <StatCard title="Denial Rate" value={formatPercent(denialRate)} hint={`${denied} denied`} theme={theme} accent="#fca5a5" />
         <StatCard title="Ticket Conversion" value={formatPercent(conversionRate)} hint={`${ticketConversions} tickets created`} theme={theme} accent="#93c5fd" />
         <StatCard title="Pending Review" value={pending} hint={`${closed} closed`} theme={theme} accent="#fcd34d" />
+        <StatCard title="Request Info" value={requestInfo} hint="Waiting on user" theme={theme} accent="#fcd34d" />
+        <StatCard title="Channel Linked" value={channelLinked} hint="Ticket channels linked" theme={theme} accent="#93c5fd" />
+        <StatCard title="Missing Channels" value={missingChannels} hint="Recovery risk" theme={theme} accent={missingChannels ? '#fca5a5' : '#86efac'} />
       </section>
 
       <section style={card}>
         <h3 style={{ marginTop: 0 }}>Forms → Ticket Workflow Health</h3>
         <p style={{ marginTop: 0, color: theme.mutedText }}>
-          Checks whether forms have actions, staff roles, category targets, and deployed panels ready for ticket workflows.
+          Checks whether forms have actions, staff roles, category targets, deployed panels and recoverable ticket channel links.
         </p>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 12 }}>
@@ -291,6 +309,7 @@ function WorkflowHealth({ forms, panels, submissions, theme, card }) {
           <MiniMetric title="Missing Actions" value={formsMissingActions} theme={theme} />
           <MiniMetric title="Missing Categories" value={formsMissingCategory} theme={theme} />
           <MiniMetric title="Undeployed Panels" value={undeployedPanels} theme={theme} />
+          <MiniMetric title="Missing Ticket Channels" value={missingChannels} theme={theme} />
         </div>
       </section>
     </>
@@ -371,10 +390,10 @@ export default function FormsHub({ theme }) {
         setFormsError('');
 
         const [overviewPayload, formsPayload, panelsPayload, submissionsPayload] = await Promise.all([
-          ownerApi.getFormsOverview(selectedGuild),
-          api.request(`/api/forms/${selectedGuild}/forms`),
-          api.request(`/api/forms/${selectedGuild}/panels`),
-          api.request(`/api/forms/${selectedGuild}/submissions?limit=50`),
+          ownerApi.getFormsWorkflowOverview(selectedGuild),
+          ownerApi.getForms(selectedGuild),
+          ownerApi.getFormPanels(selectedGuild),
+          ownerApi.getFormSubmissions(selectedGuild, 'limit=50'),
         ]);
 
         if (!cancelled) {
@@ -402,6 +421,8 @@ export default function FormsHub({ theme }) {
       cancelled = true;
     };
   }, [selectedGuild]);
+
+  const missingChannelCount = overview?.missingTicketChannelCount ?? submissions.filter(isMissingTicketChannel).length;
 
   const card = {
     border: '1px solid ' + theme.cardBorder,
@@ -443,12 +464,25 @@ export default function FormsHub({ theme }) {
         </select>
       </section>
 
+      <section style={{ ...card, display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div>
+          <strong>Forms Workflow Health</strong>
+          <div style={{ color: theme.mutedText, marginTop: 4 }}>
+            {missingChannelCount ? 'Some form-created tickets are missing linked channels.' : 'No missing form ticket channels detected.'}
+          </div>
+        </div>
+        <StatusPill theme={theme} status={missingChannelCount ? 'recovery needed' : 'healthy'} />
+      </section>
+
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', gap: 14 }}>
         <StatCard title="Connected Guilds" value={loading ? 'Loading' : String(guilds.length)} hint="Owner accessible" theme={theme} />
         <StatCard title="Active Forms" value={formsLoading ? 'Loading' : String(overview?.enabledFormCount ?? 0)} hint="Enabled templates" theme={theme} accent="#86efac" />
         <StatCard title="Total Forms" value={formsLoading ? 'Loading' : String(overview?.formCount ?? 0)} hint="Saved forms" theme={theme} />
         <StatCard title="Submissions" value={formsLoading ? 'Loading' : String(overview?.submissionCount ?? 0)} hint="Lifetime stored" theme={theme} />
         <StatCard title="Pending Review" value={formsLoading ? 'Loading' : String(overview?.pendingSubmissionCount ?? 0)} hint="Needs staff action" theme={theme} accent="#fcd34d" />
+        <StatCard title="Ticket Linked" value={formsLoading ? 'Loading' : String(overview?.ticketLinkedSubmissionCount ?? 0)} hint="Forms bridge" theme={theme} accent="#93c5fd" />
+        <StatCard title="Channel Linked" value={formsLoading ? 'Loading' : String(overview?.ticketChannelLinkedSubmissionCount ?? 0)} hint="Ticket channel links" theme={theme} accent="#93c5fd" />
+        <StatCard title="Missing Channels" value={formsLoading ? 'Loading' : String(missingChannelCount)} hint="Recovery risk" theme={theme} accent={missingChannelCount ? '#fca5a5' : '#86efac'} />
       </section>
 
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,340px),1fr))', gap: 14 }}>
@@ -456,7 +490,7 @@ export default function FormsHub({ theme }) {
         <PanelsList panels={panels} theme={theme} />
       </section>
 
-      <WorkflowHealth forms={forms} panels={panels} submissions={submissions} theme={theme} card={card} />
+      <WorkflowHealth forms={forms} panels={panels} submissions={submissions} overview={overview || {}} theme={theme} card={card} />
 
       <FormTicketMapping forms={forms} panels={panels} theme={theme} card={card} />
 
@@ -486,8 +520,9 @@ export default function FormsHub({ theme }) {
         <section style={card}>
           <h3 style={{ marginTop: 0 }}>Forms Analytics</h3>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 10 }}>
-            <MiniMetric title="Approved" value={analytics.approved ?? 0} theme={theme} />
-            <MiniMetric title="Denied" value={analytics.denied ?? 0} theme={theme} />
+            <MiniMetric title="Approved" value={analytics.approved ?? overview?.approvedSubmissionCount ?? 0} theme={theme} />
+            <MiniMetric title="Denied" value={analytics.denied ?? overview?.deniedSubmissionCount ?? 0} theme={theme} />
+            <MiniMetric title="Request Info" value={overview?.requestInfoSubmissionCount ?? 0} theme={theme} />
             <MiniMetric title="Panels" value={overview?.panelCount ?? 0} theme={theme} />
             <MiniMetric title="Deployed Panels" value={overview?.deployedPanelCount ?? 0} theme={theme} />
           </div>
