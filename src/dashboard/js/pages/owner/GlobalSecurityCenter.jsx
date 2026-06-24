@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 
 import { api } from '../../services/apiClient.js';
-import { listenForGuildUpdate } from '../../services/socketClient.js';
+import useRealtimeSecurity from '../../hooks/useRealtimeSecurity.js';
 
 const ENVIRONMENT_OPTIONS = [
   { key: 'all', label: 'All' },
@@ -27,11 +27,6 @@ function environmentBadge(environment = '') {
   if (mode === 'BETA') return '🟡 BETA';
   if (mode === 'PRODUCTION') return '🟢 PROD';
   return '⚪ UNKNOWN';
-}
-
-function isSecurityEvent(event = {}) {
-  const name = String(event.event || event.type || '').toLowerCase();
-  return name.startsWith('security.') || name.startsWith('security:');
 }
 
 function card(theme, extra = {}) {
@@ -79,6 +74,7 @@ export default function GlobalSecurityCenter({ theme }) {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const realtimeSecurity = useRealtimeSecurity();
 
   const loadSecurity = useCallback(async ({ quiet = false } = {}) => {
     try {
@@ -108,14 +104,10 @@ export default function GlobalSecurityCenter({ theme }) {
   }, [loadSecurity]);
 
   useEffect(() => {
-    return listenForGuildUpdate((data, payloadEvent) => {
-      const event = payloadEvent || data;
+    if (!realtimeSecurity.latestEvent) return;
 
-      if (!isSecurityEvent(event)) return;
-
-      loadSecurity({ quiet: true });
-    });
-  }, [loadSecurity]);
+    loadSecurity({ quiet: true });
+  }, [realtimeSecurity.latestEvent, loadSecurity]);
 
   const totals = payload?.totals || {};
   const incidents = payload?.recentIncidents || [];
