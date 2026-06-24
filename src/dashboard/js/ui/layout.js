@@ -14,7 +14,7 @@ const Modules = lazy(() => import('../pages/modules/Modules'));
 const EmbedStudio = lazy(() => import('../pages/modules/EmbedStudio'));
 const Verification = lazy(() => import('../pages/modules/Verification'));
 const AutoRoles = lazy(() => import('../pages/modules/AutoRoles'));
-const Tickets = lazy(() => import('../pages/modules/Tickets'));
+const Tickets = lazy(() => import('../pages/modules/tickets/TicketsWorkflowEnhanced'));
 const Social = lazy(() => import('../pages/modules/Social'));
 const Giveaways = lazy(() => import('../pages/modules/Giveaways'));
 const Starboard = lazy(() => import('../pages/modules/Starboard'));
