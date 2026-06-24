@@ -9,6 +9,14 @@ const {
   updateModuleSection,
 } = require('../../core/guild/moduleSectionManager');
 
+const {
+  emitFormUpdated,
+  emitFormSubmitted,
+  emitFormSubmissionUpdated,
+  emitFormPanelUpdated,
+  emitFormAnalyticsUpdated,
+} = require('./formSocketEvents');
+
 const MODULE = 'forms';
 const FIELD_TYPES = Object.freeze({
   SHORT: 'short',
@@ -20,14 +28,12 @@ const FIELD_TYPES = Object.freeze({
   USER_MENTION: 'user_mention',
   ROLE_MENTION: 'role_mention',
 });
-
 const FORM_ACTIONS = Object.freeze({
   NONE: 'none',
   CREATE_TICKET: 'create_ticket',
   LOG_ONLY: 'log_only',
   STORE_ONLY: 'store_only',
 });
-
 const SUBMISSION_STATUSES = Object.freeze(['pending', 'approved', 'denied', 'closed', 'request_info']);
 
 function now() {
@@ -285,11 +291,14 @@ function updateFormsSection(guildId, updater, guildOrMeta = {}) {
 
 function saveForm(guildId, form, guildOrMeta = {}) {
   const normalized = normalizeForm(form);
-  return updateFormsSection(guildId, (section) => ({
+  const saved = updateFormsSection(guildId, (section) => ({
     ...section,
     forms: { ...section.forms, [normalized.formId]: { ...(section.forms[normalized.formId] || {}), ...normalized, updatedAt: now() } },
     updatedAt: now(),
   }), guildOrMeta).forms[normalized.formId];
+
+  emitFormUpdated(guildId, saved);
+  return saved;
 }
 
 function getForm(guildId, formId) {
@@ -302,11 +311,14 @@ function listForms(guildId) {
 
 function savePanel(guildId, panel, guildOrMeta = {}) {
   const normalized = normalizePanel(panel);
-  return updateFormsSection(guildId, (section) => ({
+  const saved = updateFormsSection(guildId, (section) => ({
     ...section,
     panels: { ...section.panels, [normalized.panelId]: { ...(section.panels[normalized.panelId] || {}), ...normalized, updatedAt: now() } },
     updatedAt: now(),
   }), guildOrMeta).panels[normalized.panelId];
+
+  emitFormPanelUpdated(guildId, saved);
+  return saved;
 }
 
 function getPanel(guildId, panelId) {
@@ -316,32 +328,54 @@ function getPanel(guildId, panelId) {
 function saveSubmission(guildId, submission, guildOrMeta = {}) {
   const normalized = normalizeSubmission(submission);
   const isNew = !getFormsSection(guildId).submissions[normalized.submissionId];
-  return updateFormsSection(guildId, (section) => ({
+  const saved = updateFormsSection(guildId, (section) => ({
     ...section,
     submissions: { ...section.submissions, [normalized.submissionId]: { ...(section.submissions[normalized.submissionId] || {}), ...normalized, updatedAt: now() } },
     analytics: { ...section.analytics, submitted: section.analytics.submitted + (isNew ? 1 : 0) },
     updatedAt: now(),
   }), guildOrMeta).submissions[normalized.submissionId];
+
+  if (isNew) {
+    emitFormSubmitted(guildId, saved);
+  } else {
+    emitFormSubmissionUpdated(guildId, saved);
+  }
+
+  emitFormAnalyticsUpdated(guildId, getFormsSection(guildId).analytics);
+
+  return saved;
 }
 
 function updateSubmission(guildId, submissionId, updates = {}, guildOrMeta = {}) {
   const safeId = cleanKey(submissionId, 'submission');
-  return updateFormsSection(guildId, (section) => {
+  const saved = updateFormsSection(guildId, (section) => {
     const existing = section.submissions[safeId];
     if (!existing) return section;
     const normalized = normalizeSubmission({ ...existing, ...(isPlainObject(updates) ? updates : {}), submissionId: safeId, updatedAt: now() });
     return { ...section, submissions: { ...section.submissions, [safeId]: normalized }, updatedAt: now() };
   }, guildOrMeta).submissions[safeId] || null;
+
+  if (saved) {
+    emitFormSubmissionUpdated(guildId, saved);
+  }
+
+  return saved;
 }
 
 function addSubmissionTimeline(guildId, submissionId, event = {}, guildOrMeta = {}) {
   const safeId = cleanKey(submissionId, 'submission');
-  return updateFormsSection(guildId, (section) => {
+  const saved = updateFormsSection(guildId, (section) => {
     const existing = section.submissions[safeId];
     if (!existing) return section;
     const timeline = [...(existing.timeline || []), normalizeTimelineEvent(event)].slice(-50);
     return { ...section, submissions: { ...section.submissions, [safeId]: { ...existing, timeline, updatedAt: now() } }, updatedAt: now() };
   }, guildOrMeta).submissions[safeId] || null;
+
+  if (saved) {
+    emitFormSubmissionUpdated(guildId, saved);
+  }
+
+  return saved;
 }
 
 function recordSubmissionDecision(guildId, submissionId, decision = {}, guildOrMeta = {}) {
@@ -369,15 +403,18 @@ function recordSubmissionDecision(guildId, submissionId, decision = {}, guildOrM
 }
 
 function incrementAnalytics(guildId, increments = {}, guildOrMeta = {}) {
-  return updateFormsSection(guildId, (section) => {
-    const analytics = { ...section.analytics };
+  const analytics = updateFormsSection(guildId, (section) => {
+    const nextAnalytics = { ...section.analytics };
     for (const [key, amount] of Object.entries(increments || {})) {
       const value = Number(amount || 0);
       if (!Number.isFinite(value)) continue;
-      analytics[key] = Math.max(0, Number(analytics[key] || 0) + value);
+      nextAnalytics[key] = Math.max(0, Number(nextAnalytics[key] || 0) + value);
     }
-    return { ...section, analytics, updatedAt: now() };
+    return { ...section, analytics: nextAnalytics, updatedAt: now() };
   }, guildOrMeta).analytics;
+
+  emitFormAnalyticsUpdated(guildId, analytics);
+  return analytics;
 }
 
 module.exports = {
