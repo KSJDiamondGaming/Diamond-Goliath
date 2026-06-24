@@ -9,7 +9,7 @@ const Cases = lazy(() => import('../pages/moderation/Cases'));
 const GeneralSettings = lazy(() => import('../pages/administration/GeneralSettings'));
 const Warnings = lazy(() => import('../pages/moderation/Warnings'));
 const Messages = lazy(() => import('../pages/core/Messages'));
-const Forms = lazy(() => import('../pages/modules/Forms'));
+const Forms = lazy(() => import('../pages/modules/forms/FormsWorkflowEnhanced'));
 const Modules = lazy(() => import('../pages/modules/Modules'));
 const EmbedStudio = lazy(() => import('../pages/modules/EmbedStudio'));
 const Verification = lazy(() => import('../pages/modules/Verification'));
