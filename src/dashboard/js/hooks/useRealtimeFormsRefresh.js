@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { useRealtimeForms } from './useRealtimeForms';
+import { useRealtimeForms } from './useRealtimeForms.js';
 
 export function useRealtimeFormsRefresh(guildId, onRefresh, delay = 350) {
   const realtime = useRealtimeForms(guildId);
