@@ -2,8 +2,12 @@ let io = null;
 const botListeners = new Set();
 
 const {
-  setSocketProvider,
+  setSocketProvider: setTicketSocketProvider,
 } = require('../../modules/tickets/ticketSocketEvents');
+
+const {
+  setSocketProvider: setFormSocketProvider,
+} = require('../../modules/forms/formSocketEvents');
 
 function getRoomName(guildId) {
   return `guild:${guildId}`;
@@ -26,7 +30,8 @@ function initSocketHub(server, options = {}) {
     },
   });
 
-  setSocketProvider(() => io);
+  setTicketSocketProvider(() => io);
+  setFormSocketProvider(() => io);
 
   io.on('connection', (socket) => {
     console.log(`🟢 Dashboard connected: ${socket.id}`);
@@ -45,6 +50,7 @@ function initSocketHub(server, options = {}) {
     socket.on('joinGuild', joinGuildRoom);
     socket.on('automod:join', joinGuildRoom);
     socket.on('tickets:joinGuild', joinGuildRoom);
+    socket.on('forms:joinGuild', joinGuildRoom);
 
     socket.on('disconnect', () => {
       console.log(`🔴 Dashboard disconnected: ${socket.id}`);
