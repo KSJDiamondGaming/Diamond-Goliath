@@ -71,6 +71,21 @@ export function joinGuildRoom(guildId) {
     id
   );
 
+  activeSocket.emit(
+    'forms:joinGuild',
+    id
+  );
+
+  activeSocket.emit(
+    'embeds:joinGuild',
+    id
+  );
+
+  activeSocket.emit(
+    'cases:joinGuild',
+    id
+  );
+
   return activeSocket;
 }
 
@@ -229,7 +244,7 @@ export function listenForTimelineEntry(
 
 /*
 |--------------------------------------------------------------------------
-| Panel Events
+| Ticket Panel Events
 |--------------------------------------------------------------------------
 */
 
@@ -271,7 +286,7 @@ export function listenForPanelDeployed(
 
 /*
 |--------------------------------------------------------------------------
-| Analytics
+| Ticket Analytics
 |--------------------------------------------------------------------------
 */
 
@@ -280,6 +295,132 @@ export function listenForAnalyticsUpdated(
 ) {
   return onSocketEvents(
     ['ticket.analytics.updated', 'ticket_analytics_updated'],
+    callback
+  );
+}
+
+/*
+|--------------------------------------------------------------------------
+| Form Events
+|--------------------------------------------------------------------------
+*/
+
+export function listenForFormUpdated(
+  callback
+) {
+  return onSocketEvents(
+    ['form.updated', 'form_updated'],
+    callback
+  );
+}
+
+export function listenForFormSubmitted(
+  callback
+) {
+  return onSocketEvents(
+    ['form.submitted', 'form_submitted'],
+    callback
+  );
+}
+
+export function listenForFormSubmissionUpdated(
+  callback
+) {
+  return onSocketEvents(
+    ['form.submission.updated', 'form_submission_updated'],
+    callback
+  );
+}
+
+export function listenForFormPanelUpdated(
+  callback
+) {
+  return onSocketEvents(
+    ['form.panel.updated', 'form_panel_updated'],
+    callback
+  );
+}
+
+export function listenForFormAnalyticsUpdated(
+  callback
+) {
+  return onSocketEvents(
+    ['form.analytics.updated', 'form_analytics_updated'],
+    callback
+  );
+}
+
+/*
+|--------------------------------------------------------------------------
+| Embed Events
+|--------------------------------------------------------------------------
+*/
+
+export function listenForEmbedUpdated(
+  callback
+) {
+  return onSocketEvents(
+    ['embed.updated', 'embed_updated'],
+    callback
+  );
+}
+
+export function listenForEmbedStatusUpdated(
+  callback
+) {
+  return onSocketEvents(
+    ['embed.status.updated', 'embed_status_updated'],
+    callback
+  );
+}
+
+export function listenForEmbedDeleted(
+  callback
+) {
+  return onSocketEvents(
+    ['embed.deleted', 'embed_deleted'],
+    callback
+  );
+}
+
+/*
+|--------------------------------------------------------------------------
+| Case Events
+|--------------------------------------------------------------------------
+*/
+
+export function listenForCaseCreated(
+  callback
+) {
+  return onSocketEvents(
+    ['case.created', 'case_created'],
+    callback
+  );
+}
+
+export function listenForCaseUpdated(
+  callback
+) {
+  return onSocketEvents(
+    ['case.updated', 'case_updated'],
+    callback
+  );
+}
+
+export function listenForCaseStatusUpdated(
+  callback
+) {
+  return onSocketEvents(
+    ['case.status.updated', 'case_status_updated'],
+    callback
+  );
+}
+
+export function listenForCaseNoteUpdated(
+  callback
+) {
+  return onSocketEvents(
+    ['case.note.updated', 'case_note_updated'],
     callback
   );
 }
@@ -343,6 +484,21 @@ export default {
   listenForPanelDeployed,
 
   listenForAnalyticsUpdated,
+
+  listenForFormUpdated,
+  listenForFormSubmitted,
+  listenForFormSubmissionUpdated,
+  listenForFormPanelUpdated,
+  listenForFormAnalyticsUpdated,
+
+  listenForEmbedUpdated,
+  listenForEmbedStatusUpdated,
+  listenForEmbedDeleted,
+
+  listenForCaseCreated,
+  listenForCaseUpdated,
+  listenForCaseStatusUpdated,
+  listenForCaseNoteUpdated,
 
   listenForRealtimeFeed,
 };
