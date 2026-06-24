@@ -1,4 +1,10 @@
 const db = require('../../../modules/moderation/functions/moderationStore');
+const {
+  emitCaseCreated,
+  emitCaseUpdated,
+  emitCaseStatusUpdated,
+  emitCaseNoteUpdated,
+} = require('./caseSocketEvents');
 
 function mapCase(row) {
   if (!row) return null;
@@ -53,7 +59,13 @@ function createCase({
     createdAt
   );
 
-  return getCaseById(guildId, result.lastInsertRowid);
+  const created = getCaseById(guildId, result.lastInsertRowid);
+
+  if (created) {
+    emitCaseCreated(guildId, created);
+  }
+
+  return created;
 }
 
 /* ---------------- GET ---------------- */
@@ -169,7 +181,13 @@ function updateCaseReason(guildId, caseId, newReason) {
   const result = stmt.run(newReason, updatedAt, guildId, Number(caseId));
   if (!result.changes) return null;
 
-  return getCaseById(guildId, caseId);
+  const updated = getCaseById(guildId, caseId);
+
+  if (updated) {
+    emitCaseUpdated(guildId, updated);
+  }
+
+  return updated;
 }
 
 function updateCaseStatus(guildId, caseId, status) {
@@ -184,7 +202,13 @@ function updateCaseStatus(guildId, caseId, status) {
   const result = stmt.run(status, updatedAt, guildId, Number(caseId));
   if (!result.changes) return null;
 
-  return getCaseById(guildId, caseId);
+  const updated = getCaseById(guildId, caseId);
+
+  if (updated) {
+    emitCaseStatusUpdated(guildId, updated);
+  }
+
+  return updated;
 }
 
 function updateCaseNote(guildId, caseId, note) {
@@ -205,7 +229,13 @@ function updateCaseNote(guildId, caseId, note) {
 
   if (!result.changes) return null;
 
-  return getCaseById(guildId, caseId);
+  const updated = getCaseById(guildId, caseId);
+
+  if (updated) {
+    emitCaseNoteUpdated(guildId, updated);
+  }
+
+  return updated;
 }
 
 function clearCaseNote(guildId, caseId) {
@@ -220,7 +250,13 @@ function clearCaseNote(guildId, caseId) {
   const result = stmt.run(updatedAt, guildId, Number(caseId));
   if (!result.changes) return null;
 
-  return getCaseById(guildId, caseId);
+  const updated = getCaseById(guildId, caseId);
+
+  if (updated) {
+    emitCaseNoteUpdated(guildId, updated);
+  }
+
+  return updated;
 }
 
 /* ---------------- EXPORT ---------------- */
