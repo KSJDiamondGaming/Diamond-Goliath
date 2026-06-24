@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 
 import { api } from '../../../services/apiClient.js';
+import useRealtimeTickets from '../../../hooks/useRealtimeTickets.js';
 import LegacyTickets from '../Tickets.jsx';
 import TicketWorkflowSummary from './TicketWorkflowSummary.jsx';
 
@@ -21,37 +22,68 @@ export default function TicketsWorkflowEnhanced(props) {
   const guildId = cleanGuildId(selectedGuild, selectedGuildData);
   const [overview, setOverview] = useState(null);
   const [tickets, setTickets] = useState([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const realtime = useRealtimeTickets(guildId);
 
-  useEffect(() => {
-    let cancelled = false;
+  const load = useCallback(async ({ quiet = false } = {}) => {
+    if (!guildId) {
+      setOverview(null);
+      setTickets([]);
+      return;
+    }
 
-    async function load() {
-      if (!guildId) {
-        setOverview(null);
-        setTickets([]);
-        return;
-      }
+    try {
+      if (quiet) setRefreshing(true);
 
       const [overviewPayload, ticketsPayload] = await Promise.all([
         api.getTicketOverview(guildId),
         api.getTickets(guildId),
       ]).catch(() => [null, null]);
 
-      if (cancelled) return;
       setOverview(overviewPayload?.overview || null);
       setTickets(normalizeTicketList(ticketsPayload));
+    } finally {
+      if (quiet) setRefreshing(false);
+    }
+  }, [guildId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadInitial() {
+      if (cancelled) return;
+      await load();
     }
 
-    load();
+    loadInitial();
 
     return () => {
       cancelled = true;
     };
-  }, [guildId]);
+  }, [load]);
+
+  useEffect(() => {
+    if (!guildId || !realtime.latestEvent) return undefined;
+
+    const timeout = setTimeout(() => {
+      load({ quiet: true });
+    }, 350);
+
+    return () => clearTimeout(timeout);
+  }, [guildId, realtime.latestEvent, load]);
 
   return (
     <div style={{ display: 'grid', gap: 18 }}>
-      {overview ? <TicketWorkflowSummary theme={theme} overview={overview} tickets={tickets} /> : null}
+      {overview ? (
+        <TicketWorkflowSummary
+          theme={theme}
+          overview={overview}
+          tickets={tickets}
+          realtime={realtime}
+          refreshing={refreshing}
+        />
+      ) : null}
+
       <LegacyTickets
         {...props}
         selectedGuild={guildId || selectedGuild}
