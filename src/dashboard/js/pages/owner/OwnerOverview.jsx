@@ -1,6 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
 import { api } from '../../services/apiClient.js';
+import {
+  joinGuildRoom,
+  listenForRealtimeFeed,
+} from '../../services/socketClient.js';
 import GlobalSecurityCenter from './GlobalSecurityCenter.jsx';
 import OwnerOperationsPanel from './OwnerOperationsPanel.jsx';
 
@@ -19,6 +23,8 @@ const OWNER_SECTIONS = [
   ['🌍', 'Translation Hub', 'Channels, languages, threads and provider status.', 'Ready'],
   ['💾', 'Backup Center', 'Backups, restore points and future Drive sync.', 'Online'],
 ];
+
+const MAX_REALTIME_EVENTS = 50;
 
 function getEnvironmentMode(guild = {}) {
   return String(guild.environment || guild.runtimeMode || '').toUpperCase();
@@ -54,6 +60,59 @@ function normalizeGuilds(payload) {
 
 function formatNumber(value = 0) {
   return Number(value || 0).toLocaleString();
+}
+
+function formatRealtimeLabel(event = {}) {
+  const name = String(event.event || event.type || 'realtime.event');
+
+  return name
+    .replace(/[_:.]/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function formatRealtimeTime(event = {}) {
+  const value = event.timestamp || event.updatedAt || event.data?.createdAt || event.data?.updatedAt;
+  const date = value ? new Date(value) : new Date();
+
+  if (Number.isNaN(date.getTime())) return 'Now';
+
+  return date.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
+
+function formatRealtimeDetail(event = {}) {
+  const data = event.data || event.payload || event;
+
+  return [
+    data.guildName,
+    data.displayId,
+    data.ticketId,
+    data.formId,
+    data.submissionId,
+    data.caseId ? `Case #${data.caseId}` : null,
+    data.roleName,
+    data.channelName,
+    data.key,
+  ]
+    .filter(Boolean)
+    .join(' • ');
+}
+
+function getRealtimeAccent(event = {}) {
+  const name = String(event.event || event.type || '').toLowerCase();
+
+  if (name.startsWith('ticket')) return '#60a5fa';
+  if (name.startsWith('form')) return '#c084fc';
+  if (name.startsWith('embed')) return '#34d399';
+  if (name.startsWith('case')) return '#f97316';
+  if (name.startsWith('role')) return '#facc15';
+  if (name.startsWith('channel')) return '#38bdf8';
+  if (name.startsWith('security')) return '#f87171';
+
+  return '#93c5fd';
 }
 
 function card(theme, extra = {}) {
@@ -101,12 +160,52 @@ function SectionCard({ theme, section }) {
   );
 }
 
+function GlobalRealtimeFeed({ theme, events = [] }) {
+  return (
+    <section style={card(theme, { padding: 0 })}>
+      <div style={{ padding: 16, borderBottom: `1px solid ${theme.cardBorder}`, display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <strong>Global Realtime Activity</strong>
+          <div style={{ color: theme.mutedText, fontSize: 13, marginTop: 4 }}>Live events from tickets, forms, embeds, cases, roles and channels.</div>
+        </div>
+        <span style={{ color: theme.mutedText }}>{events.length} live event{events.length === 1 ? '' : 's'}</span>
+      </div>
+
+      {events.length === 0 ? (
+        <div style={{ padding: 18, color: theme.mutedText }}>No realtime activity received yet.</div>
+      ) : (
+        <div style={{ display: 'grid', maxHeight: 360, overflow: 'auto' }}>
+          {events.map((event, index) => {
+            const accent = getRealtimeAccent(event);
+            const detail = formatRealtimeDetail(event);
+
+            return (
+              <div key={`${event.event || event.type || 'event'}-${event.timestamp || event.updatedAt || index}`} style={{ display: 'grid', gridTemplateColumns: '86px 1fr', gap: 12, padding: '13px 16px', borderTop: index === 0 ? 'none' : `1px solid ${theme.cardBorder}` }}>
+                <div style={{ color: theme.mutedText, fontSize: 12, fontWeight: 900, fontFamily: 'monospace' }}>{formatRealtimeTime(event)}</div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ width: 8, height: 8, borderRadius: 999, background: accent, boxShadow: `0 0 18px ${accent}` }} />
+                    <strong style={{ color: accent }}>{formatRealtimeLabel(event)}</strong>
+                    {event.guildId ? <span style={{ color: theme.mutedText, fontSize: 12, fontFamily: 'monospace' }}>{event.guildId}</span> : null}
+                  </div>
+                  {detail ? <div style={{ color: theme.mutedText, fontSize: 13, marginTop: 4, overflowWrap: 'anywhere' }}>{detail}</div> : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function OwnerView({ theme, currentUser }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [ownerPayload, setOwnerPayload] = useState(null);
   const [activeFilter, setActiveFilter] = useState('all');
   const [platformRuntime, setPlatformRuntime] = useState(null);
+  const [realtimeEvents, setRealtimeEvents] = useState([]);
 
   const isOwner = currentUser?.isOwner === true;
 
@@ -161,6 +260,19 @@ export default function OwnerView({ theme, currentUser }) {
   }, [isOwner]);
 
   const guilds = useMemo(() => normalizeGuilds(ownerPayload), [ownerPayload]);
+
+  useEffect(() => {
+    if (!isOwner || !guilds.length) return undefined;
+
+    guilds.forEach((guild) => {
+      const guildId = String(getGuildId(guild) || '').split(':').pop().trim();
+      if (guildId && guildId !== 'Unknown') joinGuildRoom(guildId);
+    });
+
+    return listenForRealtimeFeed((event) => {
+      setRealtimeEvents((current) => [event, ...current].slice(0, MAX_REALTIME_EVENTS));
+    });
+  }, [isOwner, guilds]);
 
   const filteredGuilds = useMemo(() => {
     if (activeFilter === 'all') return guilds;
@@ -227,6 +339,8 @@ export default function OwnerView({ theme, currentUser }) {
         <StatCard theme={theme} label="BETA" value={formatNumber(stats.BETA)} sublabel="Staging" icon="🟡" accent="#facc15" />
         <StatCard theme={theme} label="PROD" value={formatNumber(stats.PRODUCTION)} sublabel="Live" icon="🟢" accent="#22c55e" />
       </section>
+
+      <GlobalRealtimeFeed theme={theme} events={realtimeEvents} />
 
       <OwnerOperationsPanel theme={theme} runtime={platformRuntime} ownerPayload={ownerPayload} stats={stats} />
       <GlobalSecurityCenter theme={theme} />
