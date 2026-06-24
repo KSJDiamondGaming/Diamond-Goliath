@@ -107,6 +107,27 @@ export function onSocketEvent(
   };
 }
 
+export function onSocketEvents(
+  eventNames,
+  callback
+) {
+  const names = Array.isArray(eventNames)
+    ? eventNames.filter(Boolean)
+    : [eventNames].filter(Boolean);
+
+  if (!names.length || typeof callback !== 'function') {
+    return () => {};
+  }
+
+  const unsubscribers = names.map((eventName) =>
+    onSocketEvent(eventName, callback)
+  );
+
+  return () => {
+    unsubscribers.forEach((unsubscribe) => unsubscribe?.());
+  };
+}
+
 /*
 |--------------------------------------------------------------------------
 | Guild Updates
@@ -131,8 +152,8 @@ export function listenForGuildUpdate(
 export function listenForTicketCreated(
   callback
 ) {
-  return onSocketEvent(
-    'ticket_created',
+  return onSocketEvents(
+    ['ticket.created', 'ticket_created'],
     callback
   );
 }
@@ -140,8 +161,8 @@ export function listenForTicketCreated(
 export function listenForTicketUpdated(
   callback
 ) {
-  return onSocketEvent(
-    'ticket_updated',
+  return onSocketEvents(
+    ['ticket.updated', 'ticket_updated'],
     callback
   );
 }
@@ -149,8 +170,8 @@ export function listenForTicketUpdated(
 export function listenForTicketClosed(
   callback
 ) {
-  return onSocketEvent(
-    'ticket_closed',
+  return onSocketEvents(
+    ['ticket.closed', 'ticket_closed'],
     callback
   );
 }
@@ -158,8 +179,8 @@ export function listenForTicketClosed(
 export function listenForTicketClaimed(
   callback
 ) {
-  return onSocketEvent(
-    'ticket_claimed',
+  return onSocketEvents(
+    ['ticket.claimed', 'ticket_claimed'],
     callback
   );
 }
@@ -167,8 +188,8 @@ export function listenForTicketClaimed(
 export function listenForTicketReopened(
   callback
 ) {
-  return onSocketEvent(
-    'ticket_reopened',
+  return onSocketEvents(
+    ['ticket.reopened', 'ticket_reopened'],
     callback
   );
 }
@@ -176,8 +197,8 @@ export function listenForTicketReopened(
 export function listenForTicketArchived(
   callback
 ) {
-  return onSocketEvent(
-    'ticket_archived',
+  return onSocketEvents(
+    ['ticket.archived', 'ticket_archived'],
     callback
   );
 }
@@ -185,8 +206,8 @@ export function listenForTicketArchived(
 export function listenForTicketDeleted(
   callback
 ) {
-  return onSocketEvent(
-    'ticket_deleted',
+  return onSocketEvents(
+    ['ticket.deleted', 'ticket_deleted'],
     callback
   );
 }
@@ -200,8 +221,8 @@ export function listenForTicketDeleted(
 export function listenForTimelineEntry(
   callback
 ) {
-  return onSocketEvent(
-    'ticket_timeline_entry',
+  return onSocketEvents(
+    ['ticket.timeline.entry', 'ticket_timeline_entry'],
     callback
   );
 }
@@ -215,8 +236,8 @@ export function listenForTimelineEntry(
 export function listenForPanelCreated(
   callback
 ) {
-  return onSocketEvent(
-    'panel_created',
+  return onSocketEvents(
+    ['panel.created', 'panel_created'],
     callback
   );
 }
@@ -224,8 +245,8 @@ export function listenForPanelCreated(
 export function listenForPanelUpdated(
   callback
 ) {
-  return onSocketEvent(
-    'panel_updated',
+  return onSocketEvents(
+    ['panel.updated', 'panel_updated'],
     callback
   );
 }
@@ -233,8 +254,8 @@ export function listenForPanelUpdated(
 export function listenForPanelDeleted(
   callback
 ) {
-  return onSocketEvent(
-    'panel_deleted',
+  return onSocketEvents(
+    ['panel.deleted', 'panel_deleted'],
     callback
   );
 }
@@ -242,8 +263,8 @@ export function listenForPanelDeleted(
 export function listenForPanelDeployed(
   callback
 ) {
-  return onSocketEvent(
-    'panel_deployed',
+  return onSocketEvents(
+    ['panel.deployed', 'panel_deployed'],
     callback
   );
 }
@@ -257,8 +278,8 @@ export function listenForPanelDeployed(
 export function listenForAnalyticsUpdated(
   callback
 ) {
-  return onSocketEvent(
-    'ticket_analytics_updated',
+  return onSocketEvents(
+    ['ticket.analytics.updated', 'ticket_analytics_updated'],
     callback
   );
 }
@@ -302,6 +323,7 @@ export default {
   joinGuildRoom,
 
   onSocketEvent,
+  onSocketEvents,
 
   listenForGuildUpdate,
 
