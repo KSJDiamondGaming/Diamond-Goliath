@@ -104,6 +104,7 @@ export const api = {
     return request(`/api/forms/${guildId}/submissions${query ? `?${query}` : ''}`);
   },
   getFormSubmission: (guildId, submissionId) => request(`/api/forms/${guildId}/submissions/${submissionId}`),
+  getFormSubmissionWorkflow: (guildId, submissionId) => request(`/api/forms/${guildId}/submissions/${submissionId}/workflow`),
   updateFormSubmissionStatus: (guildId, submissionId, status, extra = {}) => request(`/api/forms/${guildId}/submissions/${submissionId}/status`, { method: 'PATCH', body: JSON.stringify({ status, ...extra }) }),
   requestFormSubmissionInfo: (guildId, submissionId, extra = {}) => request(`/api/forms/${guildId}/submissions/${submissionId}/status`, { method: 'PATCH', body: JSON.stringify({ status: 'request_info', ...extra }) }),
   updateFormsSettings: (guildId, payload) => request(`/api/forms/${guildId}/settings`, { method: 'PATCH', body: JSON.stringify(payload) }),
