@@ -17,6 +17,10 @@ const {
 } = require('./ticketTimeline');
 
 const {
+  buildTicketChannelName: buildCleanTicketChannelName,
+} = require('./ticketNaming');
+
+const {
   TICKET_CHANNEL_PERMISSIONS,
   getBotId,
   getBotMember,
@@ -81,100 +85,8 @@ async function ensureBotCategoryPermissions(guild, categoryId) {
   return Boolean(result?.ok);
 }
 
-function cleanChannelPart(value, fallback = 'user', maxLength = 10) {
-  const cleaned = String(value || fallback)
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, '')
-    .slice(0, maxLength);
-
-  return cleaned || fallback;
-}
-
-function getPriorityIndicator(priority = 'low') {
-  const cleanPriority = String(priority || 'low').toLowerCase();
-
-  if (cleanPriority === 'low') return '🟢';
-  if (cleanPriority === 'normal') return '🔵';
-  if (cleanPriority === 'high') return '🟡';
-  if (cleanPriority === 'urgent') return '🔴';
-
-  return '🔵';
-}
-
-function getTicketCreatorName(ticket, guild = null) {
-  const metadataName =
-    ticket?.metadata?.creatorUsername ||
-    ticket?.metadata?.creatorTag ||
-    ticket?.creatorUsername ||
-    ticket?.username ||
-    null;
-
-  if (metadataName) return metadataName;
-
-  const creatorId =
-    ticket?.creatorId ||
-    ticket?.userId ||
-    ticket?.createdBy ||
-    null;
-
-  if (creatorId && guild?.members?.cache?.has(creatorId)) {
-    const member = guild.members.cache.get(creatorId);
-
-    return (
-      member?.user?.username ||
-      member?.displayName ||
-      creatorId
-    );
-  }
-
-  return creatorId || 'user';
-}
-
-function getTicketNumber(ticket) {
-  return (
-    ticket?.number ||
-    ticket?.ticketNumber ||
-    String(ticket?.displayId || '').match(/(\d+)$/)?.[1] ||
-    0
-  );
-}
-
-function buildTicketChannelName(ticket, guild = null, panel = null) {
-  if (!ticket) return 'ticket-user-0000';
-
-  const type =
-    String(ticket.type || 'ticket')
-      .toLowerCase()
-      .replace(/_/g, '-')
-      .replace(/[^a-z0-9-]/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '') || 'ticket';
-
-  const username = cleanChannelPart(
-    getTicketCreatorName(ticket, guild),
-    'user',
-    10
-  );
-
-  const number = String(getTicketNumber(ticket)).padStart(4, '0');
-
-  const baseName = `${type}-${username}-${number}`;
-
-  const status = String(ticket.status || 'open').toLowerCase();
-
-  if (status === 'archived') {
-    return `📦${baseName}`.slice(0, 90);
-  }
-
-  const useIndicator =
-    panel?.priorityIndicators !== false &&
-    ticket?.metadata?.priorityIndicators !== false;
-
-  const indicator = useIndicator
-    ? getPriorityIndicator(ticket.priority)
-    : '';
-
-  return `${indicator}${baseName}`.slice(0, 90);
+function buildTicketChannelName(ticket, guild = null) {
+  return buildCleanTicketChannelName(ticket, guild);
 }
 
 function getPanelOrGlobalCategory(settings, panel) {
@@ -496,7 +408,7 @@ async function createTicketChannel({
   const categoryId = getPanelOrGlobalCategory(settings, panel);
   const parentId = await resolveAvailableCategory(guild, categoryId);
 
-  const name = buildTicketChannelName(ticket, guild, panel);
+  const name = buildTicketChannelName(ticket, guild);
 
   const permissionOverwrites = buildTicketPermissionOverwrites({
     guild,
@@ -651,13 +563,7 @@ async function closeTicketChannel({
     }
   );
 
-  const name = buildTicketChannelName(
-    {
-      ...ticket,
-      status: 'closed',
-    },
-    guild
-  );
+  const name = buildTicketChannelName(ticket, guild);
 
   await channel.setName(name).catch(() => null);
 
@@ -722,16 +628,7 @@ async function archiveTicketChannel({
   );
 
   await channel
-    .setName(
-      buildTicketChannelName(
-        {
-          ...ticket,
-          status: 'archived',
-        },
-        guild,
-        panel
-      )
-    )
+    .setName(buildTicketChannelName(ticket, guild))
     .catch(() => null);
 
   if (resolvedArchiveId) {
@@ -781,16 +678,7 @@ async function reopenTicketChannel({
   const resolvedCategoryId = await resolveAvailableCategory(guild, categoryId);
 
   await channel
-    .setName(
-      buildTicketChannelName(
-        {
-          ...ticket,
-          status: 'open',
-        },
-        guild,
-        panel
-      )
-    )
+    .setName(buildTicketChannelName(ticket, guild))
     .catch(() => null);
 
   if (resolvedCategoryId) {

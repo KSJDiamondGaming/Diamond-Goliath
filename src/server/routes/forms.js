@@ -8,6 +8,10 @@ const formStore = require('../../modules/forms/formStore');
 const formManager = require('../../modules/forms/formManager');
 const planLimitManager = require('../billing/planLimitManager');
 const {
+  buildFormsWorkflowOverview,
+  buildSubmissionWorkflowSummary,
+} = require('../../modules/forms/formWorkflowSummary');
+const {
   isGoliathPermissionError,
   validateRoleSelection,
 } = require('../../core/security/goliathPermissionGuard');
@@ -130,16 +134,19 @@ router.get('/:guildId/overview', (req, res) => {
     const forms = Object.values(section.forms || {});
     const panels = Object.values(section.panels || {});
     const submissions = Object.values(section.submissions || {});
+    const workflowOverview = buildFormsWorkflowOverview(forms, submissions);
+
     return success(res, {
       guildId,
       overview: {
         enabled: section.enabled !== false,
         formCount: forms.length,
         enabledFormCount: forms.filter((form) => form.enabled !== false).length,
+        disabledFormCount: forms.filter((form) => form.enabled === false).length,
         panelCount: panels.length,
         deployedPanelCount: panels.filter((panel) => panel.channelId && panel.messageId).length,
         submissionCount: submissions.length,
-        pendingSubmissionCount: submissions.filter((submission) => submission.status === 'pending').length,
+        ...workflowOverview,
         analytics: section.analytics || {},
         settings: section.settings || {},
       },
@@ -295,6 +302,19 @@ router.get('/:guildId/submissions/:submissionId', (req, res) => {
     const submission = section.submissions?.[formStore.cleanKey(req.params.submissionId)];
     if (!submission) return failure(res, new Error('Submission not found.'), 404);
     return success(res, { guildId, submission });
+  } catch (error) {
+    return failure(res, error, 400);
+  }
+});
+
+router.get('/:guildId/submissions/:submissionId/workflow', (req, res) => {
+  try {
+    const guildId = getGuildId(req);
+    const section = formStore.getFormsSection(guildId);
+    const submission = section.submissions?.[formStore.cleanKey(req.params.submissionId)];
+    if (!submission) return failure(res, new Error('Submission not found.'), 404);
+    const form = formStore.getForm(guildId, submission.formId);
+    return success(res, { guildId, workflow: buildSubmissionWorkflowSummary(form, submission) });
   } catch (error) {
     return failure(res, error, 400);
   }

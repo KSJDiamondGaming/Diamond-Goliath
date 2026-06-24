@@ -60,9 +60,35 @@ function getGuildName(guild = {}) {
   return guild.name || guild.guildName || 'Unknown Guild';
 }
 
+function normalizeTickets(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.tickets)) return payload.tickets;
+  if (Array.isArray(payload?.data)) return payload.data;
+  return [];
+}
+
+function ticketStatus(ticket = {}) {
+  return String(ticket.status || 'open').toLowerCase();
+}
+
+function isFormTicket(ticket = {}) {
+  return ticket.source === 'form' || Boolean(ticket.formSubmissionId) || Boolean(ticket.metadata?.submissionId);
+}
+
+function isMissingTicketChannel(ticket = {}) {
+  const status = ticketStatus(ticket);
+  if (['closed', 'archived', 'deleted'].includes(status)) return false;
+  return !ticket.discordChannelId && !ticket.channelId;
+}
+
+function countTickets(tickets = [], predicate) {
+  return tickets.filter(predicate).length;
+}
+
 export default function TicketsHub({ theme }) {
   const { guilds, selectedGuild, setSelectedGuild, loading, error } = useOwnerGuilds();
   const [overview, setOverview] = React.useState(null);
+  const [tickets, setTickets] = React.useState([]);
   const [ticketsLoading, setTicketsLoading] = React.useState(false);
   const [ticketsError, setTicketsError] = React.useState('');
 
@@ -72,6 +98,7 @@ export default function TicketsHub({ theme }) {
   React.useEffect(() => {
     if (!selectedGuild) {
       setOverview(null);
+      setTickets([]);
       return;
     }
 
@@ -82,14 +109,19 @@ export default function TicketsHub({ theme }) {
         setTicketsLoading(true);
         setTicketsError('');
 
-        const payload = await ownerApi.getTicketsOverview(selectedGuild);
+        const [overviewPayload, ticketsPayload] = await Promise.all([
+          ownerApi.getTicketsOverview(selectedGuild),
+          ownerApi.getTickets(selectedGuild),
+        ]);
 
         if (!cancelled) {
-          setOverview(payload?.overview || null);
+          setOverview(overviewPayload?.overview || null);
+          setTickets(normalizeTickets(ticketsPayload));
         }
       } catch (err) {
         if (!cancelled) {
           setOverview(null);
+          setTickets([]);
           setTicketsError(err.message || 'Failed to load tickets overview.');
         }
       } finally {
@@ -105,6 +137,11 @@ export default function TicketsHub({ theme }) {
       cancelled = true;
     };
   }, [selectedGuild]);
+
+  const formTicketCount = overview?.formTicketCount ?? countTickets(tickets, isFormTicket);
+  const missingChannelCount = overview?.missingChannelRecordCount ?? countTickets(tickets, isMissingTicketChannel);
+  const deletedCount = overview?.deletedCount ?? countTickets(tickets, (ticket) => ticketStatus(ticket) === 'deleted' || ticket.deletedAt);
+  const activeCount = overview?.activeCount ?? countTickets(tickets, (ticket) => ['open', 'claimed'].includes(ticketStatus(ticket)));
 
   const card = {
     border: '1px solid ' + theme.cardBorder,
@@ -171,6 +208,27 @@ export default function TicketsHub({ theme }) {
         </select>
       </section>
 
+      <section style={{ ...card, display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div>
+          <strong>Ticket Health</strong>
+          <div style={{ color: theme.mutedText, marginTop: 4 }}>
+            {missingChannelCount ? 'Recovery attention is needed for missing ticket channels.' : 'No active missing ticket channels detected.'}
+          </div>
+        </div>
+        <span style={{
+          border: `1px solid ${missingChannelCount ? '#fca5a5' : '#86efac'}`,
+          color: missingChannelCount ? '#fca5a5' : '#86efac',
+          borderRadius: 999,
+          padding: '7px 10px',
+          fontSize: 12,
+          fontWeight: 950,
+          textTransform: 'uppercase',
+          letterSpacing: '0.06em',
+        }}>
+          {missingChannelCount ? 'Recovery Needed' : 'Healthy'}
+        </span>
+      </section>
+
       <section
         style={{
           display: 'grid',
@@ -184,6 +242,10 @@ export default function TicketsHub({ theme }) {
         <StatCard title="Closed Tickets" value={ticketsLoading ? 'Loading' : String(overview?.closedCount ?? 0)} theme={theme} />
         <StatCard title="Archived Tickets" value={ticketsLoading ? 'Loading' : String(overview?.archivedCount ?? 0)} theme={theme} />
         <StatCard title="Transcripts" value={ticketsLoading ? 'Loading' : String(overview?.transcriptCount ?? 0)} theme={theme} />
+        <StatCard title="Active Tickets" value={ticketsLoading ? 'Loading' : String(activeCount)} theme={theme} />
+        <StatCard title="Form Tickets" value={ticketsLoading ? 'Loading' : String(formTicketCount)} theme={theme} />
+        <StatCard title="Missing Channels" value={ticketsLoading ? 'Loading' : String(missingChannelCount)} theme={theme} accent={missingChannelCount ? '#fca5a5' : '#86efac'} />
+        <StatCard title="Deleted Tickets" value={ticketsLoading ? 'Loading' : String(deletedCount)} theme={theme} />
       </section>
 
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 14 }}>
@@ -224,18 +286,20 @@ export default function TicketsHub({ theme }) {
         <h3 style={{ marginTop: 0 }}>Ticket Analytics</h3>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 10 }}>
-          <MiniMetric title="Total Tickets" value={overview?.ticketCount ?? 0} theme={theme} />
-          <MiniMetric title="Active Tickets" value={overview?.activeCount ?? 0} theme={theme} />
+          <MiniMetric title="Total Tickets" value={overview?.ticketCount ?? tickets.length} theme={theme} />
+          <MiniMetric title="Active Tickets" value={activeCount} theme={theme} />
           <MiniMetric title="Closed Today" value={overview?.closedTodayCount ?? 0} theme={theme} />
           <MiniMetric title="Panels" value={overview?.panelCount ?? 0} theme={theme} />
           <MiniMetric title="Deployed Panels" value={overview?.deployedPanelCount ?? 0} theme={theme} />
+          <MiniMetric title="Forms Bridge" value={formTicketCount} theme={theme} />
+          <MiniMetric title="Recovery Risk" value={missingChannelCount} theme={theme} />
         </div>
       </section>
     </div>
   );
 }
 
-function StatCard({ title, value, theme }) {
+function StatCard({ title, value, theme, accent }) {
   return (
     <div
       style={{
@@ -246,7 +310,7 @@ function StatCard({ title, value, theme }) {
       }}
     >
       <div style={{ color: theme.mutedText }}>{title}</div>
-      <div style={{ fontSize: 24, fontWeight: 900, marginTop: 8 }}>{value}</div>
+      <div style={{ fontSize: 24, fontWeight: 900, marginTop: 8, color: accent || theme.cardText }}>{value}</div>
     </div>
   );
 }

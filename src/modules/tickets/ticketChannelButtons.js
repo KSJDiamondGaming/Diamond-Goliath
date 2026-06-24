@@ -41,6 +41,10 @@ const ARCHIVED_STATUSES = [
   'archived',
 ];
 
+const DELETED_STATUSES = [
+  'deleted',
+];
+
 function normaliseStatus(status) {
   return String(status || 'open').toLowerCase();
 }
@@ -63,10 +67,24 @@ function isArchivedStatus(status) {
   );
 }
 
+function isDeletedStatus(status) {
+  return DELETED_STATUSES.includes(
+    normaliseStatus(status)
+  );
+}
+
+function isDeletedTicket(ticket = {}) {
+  return (
+    isDeletedStatus(ticket.status) ||
+    Boolean(ticket.deletedAt)
+  );
+}
+
 function isLockedStatus(status) {
   return (
     isClosedStatus(status) ||
-    isArchivedStatus(status)
+    isArchivedStatus(status) ||
+    isDeletedStatus(status)
   );
 }
 
@@ -210,7 +228,11 @@ function buildDeleteConfirmButton(disabled = false) {
 
 function getTicketActionButtons(ticket = {}, options = {}) {
   const status = normaliseStatus(ticket.status);
-  const locked = isLockedStatus(status);
+  const locked = isLockedStatus(status) || isDeletedTicket(ticket);
+
+  if (isDeletedTicket(ticket)) {
+    return [];
+  }
 
   const allowArchive =
     options.allowArchive !== false;
@@ -235,6 +257,10 @@ function getTicketActionButtons(ticket = {}, options = {}) {
 }
 
 function getClosedTicketActionButtons(ticket = {}, options = {}) {
+  if (isDeletedTicket(ticket)) {
+    return [];
+  }
+
   const allowReopen =
     options.allowReopen !== false;
 
@@ -256,6 +282,10 @@ function getClosedTicketActionButtons(ticket = {}, options = {}) {
 }
 
 function getArchivedTicketActionButtons(ticket = {}, options = {}) {
+  if (isDeletedTicket(ticket)) {
+    return [];
+  }
+
   const allowReopen =
     options.allowReopen !== false;
 
@@ -272,6 +302,15 @@ function getArchivedTicketActionButtons(ticket = {}, options = {}) {
   ].filter(Boolean);
 }
 
+function getDeletedTicketActionButtons(ticket = {}, options = {}) {
+  const allowTranscript =
+    options.allowTranscript === true;
+
+  return [
+    allowTranscript ? buildTranscriptButton(false) : null,
+  ].filter(Boolean);
+}
+
 function getDeleteConfirmActionRows(options = {}) {
   const disabled =
     options.disabled === true;
@@ -283,6 +322,12 @@ function getDeleteConfirmActionRows(options = {}) {
 
 function getTicketActionRows(ticket = {}, options = {}) {
   const status = normaliseStatus(ticket.status);
+
+  if (isDeletedTicket(ticket)) {
+    return chunkButtons(
+      getDeletedTicketActionButtons(ticket, options)
+    );
+  }
 
   if (isArchivedStatus(status)) {
     return getArchivedTicketActionRows(ticket, options);
@@ -309,6 +354,12 @@ function getArchivedTicketActionRows(ticket = {}, options = {}) {
   );
 }
 
+function getDeletedTicketActionRows(ticket = {}, options = {}) {
+  return chunkButtons(
+    getDeletedTicketActionButtons(ticket, options)
+  );
+}
+
 function isTicketButton(customId) {
   return Object.values(CUSTOM_IDS).includes(customId);
 }
@@ -331,11 +382,14 @@ module.exports = {
   OPEN_STATUSES,
   CLOSED_STATUSES,
   ARCHIVED_STATUSES,
+  DELETED_STATUSES,
 
   normaliseStatus,
   isOpenStatus,
   isClosedStatus,
   isArchivedStatus,
+  isDeletedStatus,
+  isDeletedTicket,
   isLockedStatus,
 
   button,
@@ -354,10 +408,12 @@ module.exports = {
   getTicketActionButtons,
   getClosedTicketActionButtons,
   getArchivedTicketActionButtons,
+  getDeletedTicketActionButtons,
 
   getTicketActionRows,
   getClosedTicketActionRows,
   getArchivedTicketActionRows,
+  getDeletedTicketActionRows,
   getDeleteConfirmActionRows,
 
   isTicketButton,
