@@ -13,6 +13,30 @@ function resolveSocketUrl() {
   return undefined;
 }
 
+function eventMatchesModule(event, moduleName) {
+  const scope = String(moduleName || '').trim();
+
+  if (!scope) return true;
+
+  const names = [
+    event?.event,
+    event?.type,
+    event?.module,
+    event?.scope,
+  ]
+    .filter(Boolean)
+    .map((value) => String(value).toLowerCase());
+
+  const lowerScope = scope.toLowerCase();
+
+  return names.some((name) =>
+    name === lowerScope ||
+    name.startsWith(`${lowerScope}.`) ||
+    name.startsWith(`${lowerScope}_`) ||
+    name.includes(lowerScope)
+  );
+}
+
 export function getSocket() {
   if (!socket) {
     socket = io(resolveSocketUrl(), {
@@ -149,12 +173,20 @@ export function onSocketEvents(
 |--------------------------------------------------------------------------
 */
 
-export function listenForGuildUpdate(
-  callback
-) {
+export function listenForGuildUpdate(...args) {
+  const callback = args.find((arg) => typeof arg === 'function');
+  const moduleName = args.length >= 3 ? args[1] : null;
+
+  if (typeof callback !== 'function') {
+    return () => {};
+  }
+
   return onSocketEvent(
     'guild:update',
-    callback
+    (event) => {
+      if (!eventMatchesModule(event, moduleName)) return;
+      callback(event);
+    }
   );
 }
 
