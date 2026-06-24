@@ -3,6 +3,11 @@
 // functions/embed/embedDeploymentStore.js
 
 const guildManager = require('../../../core/guild/guildManager');
+const {
+  emitEmbedUpdated,
+  emitEmbedStatusUpdated,
+  emitEmbedDeleted,
+} = require('./embedSocketEvents');
 
 const EMBED_DEPLOYMENTS_SECTION = 'embedBuilder.deployments';
 const DEPLOYMENT_STATUS = Object.freeze({
@@ -126,7 +131,13 @@ function saveEmbedDeployment(guildId, key, deployment) {
   });
 
   const saved = saveDeployments(guildId, deployments);
-  return saved ? deployments[safeKey] : null;
+  const result = saved ? deployments[safeKey] : null;
+
+  if (result) {
+    emitEmbedUpdated(guildId, result);
+  }
+
+  return result;
 }
 
 function markEmbedDeploymentStatus(guildId, key, status, meta = {}) {
@@ -144,7 +155,13 @@ function markEmbedDeploymentStatus(guildId, key, status, meta = {}) {
   });
 
   const saved = saveDeployments(guildId, deployments);
-  return saved ? deployments[safeKey] : null;
+  const result = saved ? deployments[safeKey] : null;
+
+  if (result) {
+    emitEmbedStatusUpdated(guildId, result);
+  }
+
+  return result;
 }
 
 function deleteEmbedDeployment(guildId, key) {
@@ -154,7 +171,13 @@ function deleteEmbedDeployment(guildId, key) {
   if (!deployments[safeKey]) return false;
 
   delete deployments[safeKey];
-  return Boolean(saveDeployments(guildId, deployments));
+  const deleted = Boolean(saveDeployments(guildId, deployments));
+
+  if (deleted) {
+    emitEmbedDeleted(guildId, safeKey);
+  }
+
+  return deleted;
 }
 
 function getDeploymentKeyFromState(state = {}) {
