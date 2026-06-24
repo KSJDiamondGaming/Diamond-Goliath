@@ -17,16 +17,16 @@ function initSocketHub(server, options = {}) {
   }
 
   io = new Server(server, {
-  cors: {
-    origin:
-      options?.clientUrl ||
-      'http://localhost:5173',
+    cors: {
+      origin:
+        options?.clientUrl ||
+        'http://localhost:5173',
 
-    credentials: true,
-  },
-});
+      credentials: true,
+    },
+  });
 
-setSocketProvider(() => io);
+  setSocketProvider(() => io);
 
   io.on('connection', (socket) => {
     console.log(`🟢 Dashboard connected: ${socket.id}`);
@@ -93,6 +93,50 @@ function emitGuildUpdate(guildId, payload = {}) {
   }
 }
 
+/**
+ * GOLIATH STANDARD SYNC LAYER
+ * Centralised event emitter for Discord ↔ Dashboard sync
+ */
+function emitSyncEvent(event, guildId, payload = {}) {
+  // basic mapping layer (expand later)
+  switch (event) {
+    case 'ticket.updated':
+    case 'ticket.created':
+    case 'ticket.closed':
+      return emitGuildUpdate(guildId, {
+        type: event,
+        ...payload,
+      });
+
+    case 'form.submitted':
+    case 'form.updated':
+      return emitGuildUpdate(guildId, {
+        type: event,
+        ...payload,
+      });
+
+    case 'embed.created':
+    case 'embed.updated':
+      return emitGuildUpdate(guildId, {
+        type: event,
+        ...payload,
+      });
+
+    case 'case.created':
+    case 'case.updated':
+      return emitGuildUpdate(guildId, {
+        type: event,
+        ...payload,
+      });
+
+    default:
+      return emitGuildUpdate(guildId, {
+        type: event,
+        ...payload,
+      });
+  }
+}
+
 function emitSecurityEvent(
   guildId,
   payload = {}
@@ -146,6 +190,7 @@ function emitRestoreUpdate(
 module.exports = {
   initSocketHub,
   emitGuildUpdate,
+  emitSyncEvent,
   onGuildUpdate,
   emitSecurityEvent,
   emitSecurityOverview,
