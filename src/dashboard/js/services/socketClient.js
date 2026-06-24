@@ -13,10 +13,26 @@ function resolveSocketUrl() {
   return undefined;
 }
 
-function eventMatchesModule(event, moduleName) {
-  const scope = String(moduleName || '').trim();
+function normaliseScopeVariants(scope) {
+  const value = String(scope || '').trim().toLowerCase();
 
-  if (!scope) return true;
+  if (!value) return [];
+
+  const variants = new Set([value]);
+
+  if (value.endsWith('s') && value.length > 1) {
+    variants.add(value.slice(0, -1));
+  } else {
+    variants.add(`${value}s`);
+  }
+
+  return [...variants];
+}
+
+function eventMatchesModule(event, moduleName) {
+  const scopes = normaliseScopeVariants(moduleName);
+
+  if (!scopes.length) return true;
 
   const names = [
     event?.event,
@@ -27,13 +43,13 @@ function eventMatchesModule(event, moduleName) {
     .filter(Boolean)
     .map((value) => String(value).toLowerCase());
 
-  const lowerScope = scope.toLowerCase();
-
   return names.some((name) =>
-    name === lowerScope ||
-    name.startsWith(`${lowerScope}.`) ||
-    name.startsWith(`${lowerScope}_`) ||
-    name.includes(lowerScope)
+    scopes.some((scope) =>
+      name === scope ||
+      name.startsWith(`${scope}.`) ||
+      name.startsWith(`${scope}_`) ||
+      name.includes(scope)
+    )
   );
 }
 
