@@ -13,6 +13,26 @@ function resolveSocketUrl() {
   return undefined;
 }
 
+function resolveGuildId(guild) {
+  if (!guild) return '';
+
+  if (typeof guild === 'string' || typeof guild === 'number') {
+    return String(guild).trim();
+  }
+
+  if (typeof guild === 'object') {
+    return String(
+      guild.id ||
+      guild.guildId ||
+      guild.serverId ||
+      guild.value ||
+      ''
+    ).trim();
+  }
+
+  return String(guild || '').trim();
+}
+
 function normaliseScopeVariants(scope) {
   const value = String(scope || '').trim().toLowerCase();
 
@@ -101,9 +121,9 @@ export function getSocket() {
 */
 
 export function joinGuildRoom(guildId) {
-  const id = String(guildId || '').trim();
+  const id = resolveGuildId(guildId);
 
-  if (!id || id === 'null') {
+  if (!id || id === 'null' || id === '[object Object]') {
     return null;
   }
 
