@@ -216,22 +216,11 @@ export default function Cases({ selectedGuild, theme }) {
 
     joinGuildRoom(guildId);
 
-    return listenForGuildUpdate(guildId, 'cases', (data) => {
-      const nextCases = normalizeCases(data, guildId);
-
-      setCases(nextCases);
-
-      setSelectedCase((current) => {
-        if (!current) return null;
-
-        const currentKey = getCaseKey(current);
-
-        return nextCases.find((item) => getCaseKey(item) === currentKey) || null;
-      });
-
+    return listenForGuildUpdate(guildId, 'cases', async () => {
+      await loadCases({ quiet: true });
       setSyncMessage('✅ Cases synced live.');
     });
-  }, [guildId]);
+  }, [guildId, loadCases]);
 
   useEffect(() => {
     if (!syncMessage) return undefined;
