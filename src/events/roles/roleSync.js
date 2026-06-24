@@ -1,5 +1,8 @@
 const guildManager = require('../../core/guild/guildManager');
 const securitySystem = require('../../core/security/securitySystem');
+const {
+  emitSyncEvent,
+} = require('../../server/sockets/socketHub');
 
 const ROLE_SYNC_LOG_COOLDOWN_MS = 5000;
 const roleSyncLogState = new Map();
@@ -24,7 +27,23 @@ async function getLiveGuild(guild) {
   return guild.client.guilds.fetch(guild.id).catch(() => null);
 }
 
-async function refreshGuildRoles(guild) {
+function emitRoleSyncEvent(guild, event, role, extra = {}) {
+  const guildId = guild?.id || role?.guild?.id;
+
+  if (!guildId) return null;
+
+  return emitSyncEvent(event, guildId, {
+    module: 'roles',
+    scope: 'roles',
+    roleId: role?.id || null,
+    roleName: role?.name || null,
+    roleColor: role?.hexColor || null,
+    rolePosition: Number.isFinite(role?.position) ? role.position : null,
+    ...extra,
+  });
+}
+
+async function refreshGuildRoles(guild, context = {}) {
   try {
     if (!guild) return;
 
@@ -45,6 +64,12 @@ async function refreshGuildRoles(guild) {
 
     if (typeof guildManager.reloadGuild === 'function') {
       guildManager.reloadGuild(liveGuild.id);
+    }
+
+    if (context.event && context.role) {
+      emitRoleSyncEvent(liveGuild, context.event, context.role, {
+        syncedAt: new Date().toISOString(),
+      });
     }
 
     if (shouldLogRoleSync(liveGuild.id)) {
@@ -83,7 +108,10 @@ module.exports = [
 
         await runAntiNuke('handleRoleCreate', role);
         await new Promise((resolve) => setTimeout(resolve, 2000));
-        await refreshGuildRoles(role.guild);
+        await refreshGuildRoles(role.guild, {
+          event: 'role.created',
+          role,
+        });
       } catch (error) {
         console.error('[roleSync] roleCreate error:', error);
       }
@@ -98,7 +126,11 @@ module.exports = [
         if (!newRole?.guild) return;
 
         await runAntiNuke('handleRoleUpdate', oldRole, newRole);
-        await refreshGuildRoles(newRole.guild);
+        await refreshGuildRoles(newRole.guild, {
+          event: 'role.updated',
+          role: newRole,
+          oldRoleName: oldRole?.name || null,
+        });
       } catch (error) {
         console.error('[roleSync] roleUpdate error:', error);
       }
@@ -113,7 +145,10 @@ module.exports = [
         if (!role?.guild) return;
 
         await runAntiNuke('handleRoleDelete', role);
-        await refreshGuildRoles(role.guild);
+        await refreshGuildRoles(role.guild, {
+          event: 'role.deleted',
+          role,
+        });
       } catch (error) {
         console.error('[roleSync] roleDelete error:', error);
       }
