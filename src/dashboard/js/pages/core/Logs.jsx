@@ -59,7 +59,7 @@ const SETTINGS = [
   ['useWebhooks', 'Use webhooks', 'Goliath can use webhook-style messages for cleaner log output.'],
 ].sort((a, b) => a[1].localeCompare(b[1]));
 
-function eventKey(label = '') {
+function keyFromLabel(label = '') {
   return String(label)
     .replace(/[^a-zA-Z0-9 ]/g, '')
     .trim()
@@ -80,11 +80,7 @@ const LOG_SECTIONS = SECTION_BLUEPRINTS.map(([key, label, description, categorie
       key: categoryKey,
       label: categoryLabel,
       defaultChannelKey,
-      items: labels.map((labelText) => ({
-        label: labelText,
-        eventKey: eventKey(labelText),
-        channelKey: eventKey(labelText),
-      })).sort((a, b) => a.label.localeCompare(b.label)),
+      items: labels.map((labelText) => ({ label: labelText, eventKey: keyFromLabel(labelText), channelKey: keyFromLabel(labelText) })).sort((a, b) => a.label.localeCompare(b.label)),
     }))
     .sort((a, b) => a.label.localeCompare(b.label)),
 })).sort((a, b) => a.label.localeCompare(b.label));
@@ -189,6 +185,10 @@ function cleanChannels(payload = []) {
     .sort((a, b) => String(a.name).localeCompare(String(b.name)));
 }
 
+function hint(isOpen) {
+  return isOpen ? 'Click to collapse' : 'Click to expand';
+}
+
 function Toggle({ checked, onChange, disabled = false }) {
   return (
     <button
@@ -285,7 +285,7 @@ export default function Logs({ selectedGuild, theme }) {
   const [logs, setLogs] = useState(DEFAULT_LOGS);
   const [search, setSearch] = useState('');
   const [bulkChannel, setBulkChannel] = useState('');
-  const [openPanels, setOpenPanels] = useState({ logging: true, settings: true });
+  const [openPanels, setOpenPanels] = useState({ logging: false, settings: false });
   const [openSections, setOpenSections] = useState({ adminLogs: false, discordLogs: false, generalLogs: false, modLogs: false, moduleLogs: false });
   const [openCategories, setOpenCategories] = useState(CATEGORY_OPEN_DEFAULTS);
   const [ignoredUser, setIgnoredUser] = useState('');
@@ -345,6 +345,10 @@ export default function Logs({ selectedGuild, theme }) {
     let mounted = true;
     loadedRef.current = false;
     clearTimeout(saveTimer.current);
+
+    setOpenPanels({ logging: false, settings: false });
+    setOpenSections({ adminLogs: false, discordLogs: false, generalLogs: false, modLogs: false, moduleLogs: false });
+    setOpenCategories(CATEGORY_OPEN_DEFAULTS);
 
     async function loadData() {
       if (!guildId) {
@@ -507,9 +511,9 @@ export default function Logs({ selectedGuild, theme }) {
           </StatGrid>
 
           <section style={{ background: 'linear-gradient(180deg, rgba(8,15,30,0.98), rgba(6,12,24,0.98))', border: `1px solid ${theme.cardBorder}`, borderRadius: 22, boxShadow: theme.shadow, overflow: 'hidden' }}>
-            <button type="button" onClick={() => setOpenPanels((prev) => ({ ...prev, logging: !prev.logging }))} style={{ width: '100%', border: 0, background: 'transparent', color: theme.cardText, padding: 'clamp(16px, 2vw, 22px)', display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'center', cursor: 'pointer', textAlign: 'left' }}>
+            <button type="button" title={hint(openPanels.logging)} onClick={() => setOpenPanels((prev) => ({ ...prev, logging: !prev.logging }))} style={{ width: '100%', border: 0, background: 'transparent', color: theme.cardText, padding: 'clamp(16px, 2vw, 22px)', display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'center', cursor: 'pointer', textAlign: 'left' }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 12, fontWeight: 950, fontSize: 26 }}><span style={{ width: 36, height: 36, borderRadius: 10, display: 'grid', placeItems: 'center', background: 'rgba(255,255,255,0.08)' }}>▰</span>Logging</span>
-              <span style={{ color: theme.mutedText, fontWeight: 950 }}>{openPanels.logging ? 'Open' : 'Closed'}</span>
+              <span style={{ color: theme.mutedText, fontWeight: 950 }}>{hint(openPanels.logging)}</span>
             </button>
 
             {openPanels.logging ? (
@@ -533,9 +537,9 @@ export default function Logs({ selectedGuild, theme }) {
 
                     return (
                       <div key={section.key} style={{ border: `1px solid ${theme.cardBorder}`, borderRadius: 18, overflow: 'hidden', background: 'rgba(15,23,42,0.38)' }}>
-                        <button type="button" onClick={() => setOpenSections((prev) => ({ ...prev, [section.key]: !sectionOpen }))} style={{ width: '100%', border: 0, background: 'rgba(15,23,42,0.84)', color: theme.cardText, padding: '15px 16px', display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'center', cursor: 'pointer', textAlign: 'left' }}>
+                        <button type="button" title={hint(sectionOpen)} onClick={() => setOpenSections((prev) => ({ ...prev, [section.key]: !sectionOpen }))} style={{ width: '100%', border: 0, background: 'rgba(15,23,42,0.84)', color: theme.cardText, padding: '15px 16px', display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'center', cursor: 'pointer', textAlign: 'left' }}>
                           <span style={{ display: 'grid', gap: 4 }}><strong style={{ fontSize: 18 }}>{section.label}</strong><span style={{ color: theme.mutedText, fontSize: 13, lineHeight: 1.4 }}>{section.description}</span></span>
-                          <span style={{ color: theme.mutedText, fontSize: 12, fontWeight: 950, whiteSpace: 'nowrap' }}>{activeCount}/{sectionItems.length}</span>
+                          <span style={{ color: theme.mutedText, fontSize: 12, fontWeight: 950, whiteSpace: 'nowrap' }}>{hint(sectionOpen)} • {activeCount}/{sectionItems.length}</span>
                         </button>
 
                         {sectionOpen ? (
@@ -549,7 +553,7 @@ export default function Logs({ selectedGuild, theme }) {
                               return (
                                 <div key={category.key} style={{ border: `1px solid ${theme.cardBorder}`, borderRadius: 14, overflow: 'hidden', background: 'rgba(6,12,24,0.40)' }}>
                                   <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) auto', gap: 10, padding: 12, alignItems: 'center' }}>
-                                    <button type="button" onClick={() => setOpenCategories((prev) => ({ ...prev, [category.key]: !categoryOpen }))} style={{ border: 0, background: 'transparent', color: theme.cardText, padding: 0, cursor: 'pointer', textAlign: 'left', display: 'grid', gap: 3 }}><strong>{category.label}</strong><span style={{ color: theme.mutedText, fontSize: 12 }}>{categoryActiveCount}/{category.items.length} enabled</span></button>
+                                    <button type="button" title={hint(categoryOpen)} onClick={() => setOpenCategories((prev) => ({ ...prev, [category.key]: !categoryOpen }))} style={{ border: 0, background: 'transparent', color: theme.cardText, padding: 0, cursor: 'pointer', textAlign: 'left', display: 'grid', gap: 3 }}><strong>{category.label}</strong><span style={{ color: theme.mutedText, fontSize: 12 }}>{hint(categoryOpen)} • {categoryActiveCount}/{category.items.length} enabled</span></button>
                                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end' }}><CategorySelect theme={theme} channels={channels} value={firstChannel} onChange={(value) => setCategoryDestination(category, value)} disabled={!channels.length} /><Toggle checked={categoryEnabled} onChange={(value) => setCategoryEvents(category, value)} /></div>
                                   </div>
 
@@ -575,7 +579,7 @@ export default function Logs({ selectedGuild, theme }) {
           </section>
 
           <section style={{ background: 'linear-gradient(180deg, rgba(8,15,30,0.98), rgba(6,12,24,0.98))', border: `1px solid ${theme.cardBorder}`, borderRadius: 22, boxShadow: theme.shadow, overflow: 'hidden' }}>
-            <button type="button" onClick={() => setOpenPanels((prev) => ({ ...prev, settings: !prev.settings }))} style={{ width: '100%', border: 0, background: 'transparent', color: theme.cardText, padding: 'clamp(16px, 2vw, 22px)', display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'center', cursor: 'pointer', textAlign: 'left' }}><span><h2 style={{ margin: 0, fontSize: 22 }}>Logging Settings</h2><span style={{ display: 'block', marginTop: 6, color: theme.mutedText, lineHeight: 1.5 }}>Noise controls merged into the main logging page.</span></span><span style={{ color: theme.mutedText, fontWeight: 950 }}>{openPanels.settings ? 'Open' : 'Closed'}</span></button>
+            <button type="button" title={hint(openPanels.settings)} onClick={() => setOpenPanels((prev) => ({ ...prev, settings: !prev.settings }))} style={{ width: '100%', border: 0, background: 'transparent', color: theme.cardText, padding: 'clamp(16px, 2vw, 22px)', display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'center', cursor: 'pointer', textAlign: 'left' }}><span><h2 style={{ margin: 0, fontSize: 22 }}>Logging Settings</h2><span style={{ display: 'block', marginTop: 6, color: theme.mutedText, lineHeight: 1.5 }}>Noise controls merged into the main logging page.</span></span><span style={{ color: theme.mutedText, fontWeight: 950 }}>{hint(openPanels.settings)}</span></button>
 
             {openPanels.settings ? (
               <div style={{ display: 'grid', gap: 10, padding: '0 clamp(16px, 2vw, 22px) clamp(16px, 2vw, 22px)' }}>
