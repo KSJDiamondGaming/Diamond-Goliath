@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { joinGuildRoom, listenForGuildUpdate } from '../../services/socketClient';
 import { api } from '../../services/apiClient';
@@ -12,76 +12,79 @@ import PageShell, {
   SummaryStat,
 } from '../../shared/PageShell';
 
-const LOG_SECTIONS = [
-  {
-    key: 'adminLogs',
-    label: 'Admin Logs',
-    description: 'Configuration, permission, role, webhook, application and server management logs.',
-    categories: [
-      ['applications', 'Applications', 'admin', [['appAdd', 'App Add'], ['appCommandPermissionUpdate', 'App Command Permission Update'], ['appRemove', 'App Remove']]],
-      ['roles', 'Roles', 'admin', [['roleColorUpdate', 'Role Color Update'], ['roleCreate', 'Role Create'], ['roleDelete', 'Role Delete'], ['roleNameUpdate', 'Role Name Update'], ['rolePermissionsUpdate', 'Role Permissions Update'], ['rolePositionUpdate', 'Role Position Update']]],
-      ['server', 'Server', 'admin', [['guildBannerUpdate', 'Server Banner Update'], ['guildBoostUpdate', 'Server Boost Update'], ['guildIconUpdate', 'Server Icon Update'], ['guildNameUpdate', 'Server Name Update'], ['guildOwnerUpdate', 'Server Owner Update'], ['guildVerificationLevelUpdate', 'Verification Level Update']]],
-      ['webhooks', 'Webhooks', 'admin', [['webhookAvatarUpdate', 'Webhook Avatar Update'], ['webhookChannelUpdate', 'Webhook Channel Update'], ['webhookCreate', 'Webhook Create'], ['webhookDelete', 'Webhook Delete'], ['webhookNameUpdate', 'Webhook Name Update']]],
-    ],
-  },
-  {
-    key: 'discordLogs',
-    label: 'Discord Logs',
-    description: 'Native Discord activity such as channels, messages, members, voice and thread updates.',
-    categories: [
-      ['channels', 'Channels', 'general', [['channelBitrateUpdate', 'Channel Bitrate Update'], ['channelCreate', 'Channel Create'], ['channelDefaultArchiveDurationUpdate', 'Channel Default Archive Duration Update'], ['channelDefaultReactionEmojiUpdate', 'Channel Default Reaction Emoji Update'], ['channelDefaultSortOrderUpdate', 'Channel Default Sort Order Update'], ['channelDefaultThreadSlowModeUpdate', 'Channel Default Thread Slow Mode Update'], ['channelDelete', 'Channel Delete'], ['channelForumLayoutUpdate', 'Channel Forum Layout Update'], ['channelForumTagsUpdate', 'Channel Forum Tags Update'], ['channelNameUpdate', 'Channel Name Update'], ['channelNsfwUpdate', 'Channel NSFW Update'], ['channelParentUpdate', 'Channel Parent Update'], ['channelPermissionsUpdate', 'Channel Permissions Update'], ['channelPinsUpdate', 'Channel Pins Update'], ['channelRtcRegionUpdate', 'Channel RTC Region Update'], ['channelSlowModeUpdate', 'Channel Slow Mode Update'], ['channelTopicUpdate', 'Channel Topic Update'], ['channelTypeUpdate', 'Channel Type Update'], ['channelUserLimitUpdate', 'Channel User Limit Update'], ['channelVideoQualityUpdate', 'Channel Video Quality Update'], ['channelVoiceStatusUpdate', 'Channel Voice Status Update']]],
-      ['emojis', 'Emojis', 'general', [['emojiCreate', 'Emoji Create'], ['emojiDelete', 'Emoji Delete'], ['emojiNameUpdate', 'Emoji Name Update'], ['emojiRolesUpdate', 'Emoji Roles Update']]],
-      ['events', 'Events', 'general', [['eventCreate', 'Event Create'], ['eventDelete', 'Event Delete'], ['eventNameUpdate', 'Event Name Update'], ['eventStatusUpdate', 'Event Status Update'], ['eventUserAdd', 'Event User Add'], ['eventUserRemove', 'Event User Remove']]],
-      ['invites', 'Invites', 'general', [['inviteCreate', 'Invite Create'], ['inviteDelete', 'Invite Delete'], ['inviteUse', 'Invite Use']]],
-      ['messages', 'Messages', 'messageDelete', [['messageBulkDelete', 'Message Bulk Delete'], ['messageDelete', 'Message Delete'], ['messageEdit', 'Message Edit'], ['messagePin', 'Message Pin'], ['messageUnpin', 'Message Unpin']]],
-      ['polls', 'Polls', 'general', [['pollCreate', 'Poll Create'], ['pollDelete', 'Poll Delete'], ['pollVoteAdd', 'Poll Vote Add'], ['pollVoteRemove', 'Poll Vote Remove']]],
-      ['soundboard', 'Soundboard', 'general', [['soundboardSoundCreate', 'Soundboard Sound Create'], ['soundboardSoundDelete', 'Soundboard Sound Delete'], ['soundboardSoundEmojiUpdate', 'Soundboard Sound Emoji Update'], ['soundboardSoundNameUpdate', 'Soundboard Sound Name Update']]],
-      ['stage', 'Stage', 'voice', [['stageCreate', 'Stage Create'], ['stageDelete', 'Stage Delete'], ['stagePrivacyLevelUpdate', 'Stage Privacy Level Update'], ['stageTopicUpdate', 'Stage Topic Update']]],
-      ['threads', 'Threads', 'general', [['threadArchiveUpdate', 'Thread Archive Update'], ['threadCreate', 'Thread Create'], ['threadDelete', 'Thread Delete'], ['threadLockedUpdate', 'Thread Locked Update'], ['threadMemberAdd', 'Thread Member Add'], ['threadMemberRemove', 'Thread Member Remove'], ['threadNameUpdate', 'Thread Name Update']]],
-      ['users', 'Users', 'member', [['memberJoin', 'Member Join'], ['memberLeave', 'Member Leave'], ['memberNicknameUpdate', 'Member Nickname Update'], ['memberRolesUpdate', 'Member Roles Update'], ['memberTimeoutUpdate', 'Member Timeout Update'], ['userAvatarUpdate', 'User Avatar Update'], ['userUsernameUpdate', 'Username Update']]],
-      ['voice', 'Voice', 'voice', [['voiceDeafUpdate', 'Voice Deaf Update'], ['voiceJoin', 'Voice Join'], ['voiceLeave', 'Voice Leave'], ['voiceMove', 'Voice Move'], ['voiceMuteUpdate', 'Voice Mute Update'], ['voiceStreamUpdate', 'Voice Stream Update'], ['voiceVideoUpdate', 'Voice Video Update']]],
-    ],
-  },
-  {
-    key: 'generalLogs',
-    label: 'General Logs',
-    description: 'General-purpose activity that does not need specialist moderation or admin routing.',
-    categories: [
-      ['generalActivity', 'General Activity', 'general', [['generalActivity', 'General Activity'], ['guildSync', 'Guild Sync'], ['resourceUpdate', 'Resource Update']]],
-    ],
-  },
-  {
-    key: 'modLogs',
-    label: 'Mod Logs',
-    description: 'Moderation, cases, warnings, lockdown and quarantine logs.',
-    categories: [
-      ['moderation', 'Moderation', 'moderation', [['caseCreate', 'Case Create'], ['lockdownStart', 'Lockdown Start'], ['moderationActions', 'Moderation Actions'], ['quarantineAdd', 'Quarantine Add'], ['warningCreate', 'Warning Create']]],
-    ],
-  },
-  {
-    key: 'moduleLogs',
-    label: 'Module Logs',
-    description: 'Goliath module output such as AutoMod, forms, tickets, sticky, translation and verification.',
-    categories: [
-      ['automod', 'AutoMod', 'automod', [['automodActions', 'Goliath AutoMod Actions'], ['autoModRuleActionsUpdate', 'Discord AutoMod Actions Update'], ['autoModRuleChannelsUpdate', 'Discord AutoMod Channels Update'], ['autoModRuleContentUpdate', 'Discord AutoMod Content Update'], ['autoModRuleCreate', 'Discord AutoMod Rule Create'], ['autoModRuleDelete', 'Discord AutoMod Rule Delete'], ['autoModRuleNameUpdate', 'Discord AutoMod Name Update'], ['autoModRuleRolesUpdate', 'Discord AutoMod Roles Update'], ['autoModRuleToggle', 'Discord AutoMod Rule Toggle'], ['autoModRuleWhitelistUpdate', 'Discord AutoMod Whitelist Update']]],
-      ['forms', 'Forms', 'admin', [['formCreated', 'Form Created'], ['formSubmitted', 'Form Submitted'], ['formUpdated', 'Form Updated']]],
-      ['giveaways', 'Giveaways', 'general', [['giveawayCreated', 'Giveaway Created'], ['giveawayEnded', 'Giveaway Ended'], ['giveawayRerolled', 'Giveaway Rerolled']]],
-      ['sticky', 'Sticky Messages', 'general', [['stickyCreated', 'Sticky Created'], ['stickyDeleted', 'Sticky Deleted'], ['stickyUpdated', 'Sticky Updated']]],
-      ['tickets', 'Tickets', 'moderation', [['ticketClosed', 'Ticket Closed'], ['ticketCreated', 'Ticket Created'], ['ticketDeleted', 'Ticket Deleted'], ['ticketReopened', 'Ticket Reopened'], ['ticketUpdated', 'Ticket Updated']]],
-      ['translation', 'Translation', 'general', [['translationChannelUpdated', 'Translation Channel Updated'], ['translationProviderUpdated', 'Translation Provider Updated'], ['translationThreadCreated', 'Translation Thread Created']]],
-      ['verification', 'Verification', 'admin', [['verificationPanelDeployed', 'Verification Panel Deployed'], ['verificationSettingsUpdated', 'Verification Settings Updated'], ['verificationSuccess', 'Verification Success']]],
-    ],
-  },
-].map((section) => ({
-  ...section,
-  categories: section.categories
-    .map(([key, label, defaultChannelKey, items]) => ({
-      key,
-      label,
+const SECTION_BLUEPRINTS = [
+  ['adminLogs', 'Admin Logs', 'Configuration, permission, role, webhook, application and server management logs.', [
+    ['applications', 'Applications', 'admin', ['App Add', 'App Command Permission Update', 'App Remove']],
+    ['roles', 'Roles', 'admin', ['Role Color Update', 'Role Create', 'Role Delete', 'Role Name Update', 'Role Permissions Update', 'Role Position Update']],
+    ['server', 'Server', 'admin', ['Server Banner Update', 'Server Boost Update', 'Server Icon Update', 'Server Name Update', 'Server Owner Update', 'Verification Level Update']],
+    ['webhooks', 'Webhooks', 'admin', ['Webhook Avatar Update', 'Webhook Channel Update', 'Webhook Create', 'Webhook Delete', 'Webhook Name Update']],
+  ]],
+  ['discordLogs', 'Discord Logs', 'Native Discord activity such as channels, messages, members, voice and thread updates.', [
+    ['channels', 'Channels', 'general', ['Channel Bitrate Update', 'Channel Create', 'Channel Default Archive Duration Update', 'Channel Default Reaction Emoji Update', 'Channel Default Sort Order Update', 'Channel Default Thread Slow Mode Update', 'Channel Delete', 'Channel Forum Layout Update', 'Channel Forum Tags Update', 'Channel Name Update', 'Channel NSFW Update', 'Channel Parent Update', 'Channel Permissions Update', 'Channel Pins Update', 'Channel RTC Region Update', 'Channel Slow Mode Update', 'Channel Topic Update', 'Channel Type Update', 'Channel User Limit Update', 'Channel Video Quality Update', 'Channel Voice Status Update']],
+    ['emojis', 'Emojis', 'general', ['Emoji Create', 'Emoji Delete', 'Emoji Name Update', 'Emoji Roles Update']],
+    ['events', 'Events', 'general', ['Event Create', 'Event Delete', 'Event Name Update', 'Event Status Update', 'Event User Add', 'Event User Remove']],
+    ['invites', 'Invites', 'general', ['Invite Create', 'Invite Delete', 'Invite Use']],
+    ['messages', 'Messages', 'messageDelete', ['Message Bulk Delete', 'Message Delete', 'Message Edit', 'Message Pin', 'Message Unpin']],
+    ['polls', 'Polls', 'general', ['Poll Create', 'Poll Delete', 'Poll Vote Add', 'Poll Vote Remove']],
+    ['soundboard', 'Soundboard', 'general', ['Soundboard Sound Create', 'Soundboard Sound Delete', 'Soundboard Sound Emoji Update', 'Soundboard Sound Name Update']],
+    ['stage', 'Stage', 'voice', ['Stage Create', 'Stage Delete', 'Stage Privacy Level Update', 'Stage Topic Update']],
+    ['threads', 'Threads', 'general', ['Thread Archive Update', 'Thread Create', 'Thread Delete', 'Thread Locked Update', 'Thread Member Add', 'Thread Member Remove', 'Thread Name Update']],
+    ['users', 'Users', 'member', ['Member Join', 'Member Leave', 'Member Nickname Update', 'Member Roles Update', 'Member Timeout Update', 'User Avatar Update', 'Username Update']],
+    ['voice', 'Voice', 'voice', ['Voice Deaf Update', 'Voice Join', 'Voice Leave', 'Voice Move', 'Voice Mute Update', 'Voice Stream Update', 'Voice Video Update']],
+  ]],
+  ['generalLogs', 'General Logs', 'General-purpose activity that does not need specialist moderation or admin routing.', [
+    ['generalActivity', 'General Activity', 'general', ['General Activity', 'Guild Sync', 'Resource Update']],
+  ]],
+  ['modLogs', 'Mod Logs', 'Moderation, cases, warnings, lockdown and quarantine logs.', [
+    ['moderation', 'Moderation', 'moderation', ['Case Create', 'Lockdown Start', 'Moderation Actions', 'Quarantine Add', 'Warning Create']],
+  ]],
+  ['moduleLogs', 'Module Logs', 'Goliath module output such as AutoMod, forms, tickets, sticky, translation and verification.', [
+    ['automod', 'AutoMod', 'automod', ['Discord AutoMod Actions Update', 'Discord AutoMod Channels Update', 'Discord AutoMod Content Update', 'Discord AutoMod Name Update', 'Discord AutoMod Roles Update', 'Discord AutoMod Rule Create', 'Discord AutoMod Rule Delete', 'Discord AutoMod Rule Toggle', 'Discord AutoMod Whitelist Update', 'Goliath AutoMod Actions']],
+    ['forms', 'Forms', 'admin', ['Form Created', 'Form Submitted', 'Form Updated']],
+    ['giveaways', 'Giveaways', 'general', ['Giveaway Created', 'Giveaway Ended', 'Giveaway Rerolled']],
+    ['sticky', 'Sticky Messages', 'general', ['Sticky Created', 'Sticky Deleted', 'Sticky Updated']],
+    ['tickets', 'Tickets', 'moderation', ['Ticket Closed', 'Ticket Created', 'Ticket Deleted', 'Ticket Reopened', 'Ticket Updated']],
+    ['translation', 'Translation', 'general', ['Translation Channel Updated', 'Translation Provider Updated', 'Translation Thread Created']],
+    ['verification', 'Verification', 'admin', ['Verification Panel Deployed', 'Verification Settings Updated', 'Verification Success']],
+  ]],
+];
+
+const SETTINGS = [
+  ['applyIgnoreToUsersInVoice', 'Apply ignore to users in voice', 'Voice logs are not sent when a user is ignored from Logging.'],
+  ['ignoreEmbeds', 'Ignore embeds', 'Messages containing embeds are ignored from Logging.'],
+  ['logDeletedForwardedMessages', 'Log deleted forwarded messages', 'Forwarded messages are logged by Message Delete.'],
+  ['logDeletedPollsWithMessageDelete', 'Log deleted polls with Message Delete', 'If disabled, only poll-specific delete logs are used for deleted polls.'],
+  ['logDeletedStickyMessages', 'Log deleted sticky messages', 'Disable this to avoid noisy sticky message delete logs.'],
+  ['logUnrecognizableMessageDeletions', 'Log unrecognizable message deletions', 'Usually noisy. These are old uncached deletions without a known executor.'],
+  ['useWebhooks', 'Use webhooks', 'Goliath can use webhook-style messages for cleaner log output.'],
+].sort((a, b) => a[1].localeCompare(b[1]));
+
+function eventKey(label = '') {
+  return String(label)
+    .replace(/[^a-zA-Z0-9 ]/g, '')
+    .trim()
+    .split(/\s+/)
+    .map((part, index) => {
+      const lower = part.toLowerCase();
+      return index === 0 ? lower : `${lower.charAt(0).toUpperCase()}${lower.slice(1)}`;
+    })
+    .join('');
+}
+
+const LOG_SECTIONS = SECTION_BLUEPRINTS.map(([key, label, description, categories]) => ({
+  key,
+  label,
+  description,
+  categories: categories
+    .map(([categoryKey, categoryLabel, defaultChannelKey, labels]) => ({
+      key: categoryKey,
+      label: categoryLabel,
       defaultChannelKey,
-      items: items
-        .map(([eventKey, labelText]) => ({ eventKey, channelKey: eventKey, label: labelText }))
-        .sort((a, b) => a.label.localeCompare(b.label)),
+      items: labels.map((labelText) => ({
+        label: labelText,
+        eventKey: eventKey(labelText),
+        channelKey: eventKey(labelText),
+      })).sort((a, b) => a.label.localeCompare(b.label)),
     }))
     .sort((a, b) => a.label.localeCompare(b.label)),
 })).sort((a, b) => a.label.localeCompare(b.label));
@@ -133,16 +136,6 @@ const DEFAULT_LOGS = {
   settings: DEFAULT_SETTINGS,
 };
 
-const SETTINGS = [
-  ['applyIgnoreToUsersInVoice', 'Apply ignore to users in voice', 'Voice logs are not sent when a user is ignored from Logging.'],
-  ['ignoreEmbeds', 'Ignore embeds', 'Messages containing embeds are ignored from Logging.'],
-  ['logDeletedForwardedMessages', 'Log deleted forwarded messages', 'Forwarded messages are logged by Message Delete.'],
-  ['logDeletedPollsWithMessageDelete', 'Log deleted polls with Message Delete', 'If disabled, only poll-specific delete logs are used for deleted polls.'],
-  ['logDeletedStickyMessages', 'Log deleted sticky messages', 'Disable this to avoid noisy sticky message delete logs.'],
-  ['logUnrecognizableMessageDeletions', 'Log unrecognizable message deletions', 'Usually noisy. These are old uncached deletions without a known executor.'],
-  ['useWebhooks', 'Use webhooks', 'Goliath can use webhook-style messages for cleaner log output.'],
-].sort((a, b) => a[1].localeCompare(b[1]));
-
 function getGuildId(selectedGuild) {
   if (!selectedGuild) return '';
   if (typeof selectedGuild === 'string') return selectedGuild;
@@ -182,7 +175,7 @@ function normalizeLogs(config = {}) {
   };
 }
 
-function extractResourceList(payload, key) {
+function extractList(payload, key) {
   if (Array.isArray(payload)) return payload;
   if (Array.isArray(payload?.[key])) return payload[key];
   if (Array.isArray(payload?.data)) return payload.data;
@@ -191,7 +184,7 @@ function extractResourceList(payload, key) {
 }
 
 function cleanChannels(payload = []) {
-  return extractResourceList(payload, 'channels')
+  return extractList(payload, 'channels')
     .filter((channel) => channel?.id && channel?.name)
     .sort((a, b) => String(a.name).localeCompare(String(b.name)));
 }
@@ -252,7 +245,7 @@ function CategorySelect({ theme, channels, value, onChange, disabled = false }) 
       onChange={(event) => onChange(event.target.value || null)}
       disabled={disabled}
       style={{
-        width: 220,
+        width: 230,
         maxWidth: '100%',
         border: `1px solid ${theme.cardBorder}`,
         background: 'rgba(15,23,42,0.95)',
@@ -266,9 +259,7 @@ function CategorySelect({ theme, channels, value, onChange, disabled = false }) 
       }}
     >
       <option value="">{channels.length ? 'Set category destination' : 'No channels loaded'}</option>
-      {channels.map((channel) => (
-        <option key={channel.id} value={channel.id}>#{channel.name}</option>
-      ))}
+      {channels.map((channel) => <option key={channel.id} value={channel.id}>#{channel.name}</option>)}
     </select>
   );
 }
@@ -285,56 +276,75 @@ function SettingRow({ theme, title, text, checked, onChange }) {
   );
 }
 
-function PanelHeader({ theme, title, description, open, onToggle, right = null }) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      style={{
-        width: '100%',
-        border: 0,
-        background: 'transparent',
-        color: theme.cardText,
-        display: 'flex',
-        justifyContent: 'space-between',
-        gap: 14,
-        alignItems: 'center',
-        cursor: 'pointer',
-        textAlign: 'left',
-        padding: 0,
-      }}
-    >
-      <span style={{ display: 'grid', gap: 5 }}>
-        <strong style={{ fontSize: 24 }}>{title}</strong>
-        {description ? <span style={{ color: theme.mutedText, lineHeight: 1.45 }}>{description}</span> : null}
-      </span>
-      <span style={{ display: 'flex', gap: 10, alignItems: 'center', color: theme.mutedText, fontWeight: 950 }}>
-        {right}
-        {open ? 'Hide' : 'Show'}
-      </span>
-    </button>
-  );
-}
-
 export default function Logs({ selectedGuild, theme }) {
   const guildId = getGuildId(selectedGuild);
+  const saveTimer = useRef(null);
+  const loadedRef = useRef(false);
+
   const [channels, setChannels] = useState([]);
   const [logs, setLogs] = useState(DEFAULT_LOGS);
   const [search, setSearch] = useState('');
   const [bulkChannel, setBulkChannel] = useState('');
-  const [open, setOpen] = useState({ adminLogs: true, discordLogs: true, generalLogs: true, modLogs: true, moduleLogs: true });
+  const [openPanels, setOpenPanels] = useState({ logging: true, settings: true });
+  const [openSections, setOpenSections] = useState({ adminLogs: false, discordLogs: false, generalLogs: false, modLogs: false, moduleLogs: false });
   const [openCategories, setOpenCategories] = useState(CATEGORY_OPEN_DEFAULTS);
-  const [loggingOpen, setLoggingOpen] = useState(true);
-  const [settingsOpen, setSettingsOpen] = useState(true);
-  const [syncingResources, setSyncingResources] = useState(false);
   const [ignoredUser, setIgnoredUser] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [saveMessage, setSaveMessage] = useState('');
 
+  const saveNow = useCallback(async (nextLogs, quiet = false) => {
+    if (!guildId) return;
+
+    try {
+      setSaving(true);
+      setError('');
+
+      const saved = await api.saveLogConfig(guildId, normalizeLogs(nextLogs));
+
+      if (saved?.config) {
+        setLogs(normalizeLogs(saved.config));
+      }
+
+      setSaveMessage(quiet ? '✅ Auto-saved.' : '✅ Logging saved successfully.');
+    } catch (err) {
+      console.error(err);
+      setError(err.message || 'Failed to save logging.');
+    } finally {
+      setSaving(false);
+    }
+  }, [guildId]);
+
+  const queueSave = useCallback((nextLogs) => {
+    if (!loadedRef.current || !guildId) return;
+
+    clearTimeout(saveTimer.current);
+    setSaveMessage('Saving...');
+    saveTimer.current = setTimeout(() => saveNow(nextLogs, true), 450);
+  }, [guildId, saveNow]);
+
+  const updateLogs = useCallback((updater) => {
+    setLogs((prev) => {
+      const next = normalizeLogs(typeof updater === 'function' ? updater(prev) : updater);
+      queueSave(next);
+      return next;
+    });
+  }, [queueSave]);
+
+  const loadChannels = useCallback(async () => {
+    const cached = cleanChannels(await api.getGuildChannels(guildId).catch(() => []));
+    if (cached.length) return cached;
+
+    return cleanChannels(
+      await api.request(`/api/discord/${guildId}/resources/sync`, { method: 'POST' }).catch(() => [])
+    );
+  }, [guildId]);
+
   useEffect(() => {
     let mounted = true;
+    loadedRef.current = false;
+    clearTimeout(saveTimer.current);
 
     async function loadData() {
       if (!guildId) {
@@ -352,42 +362,43 @@ export default function Logs({ selectedGuild, theme }) {
         setLoading(true);
         setError('');
         setSaveMessage('');
-        const [logsRes, channelsRes] = await Promise.all([api.getLogConfig(guildId), api.getGuildChannels(guildId)]);
-        if (!mounted) return;
-        setLogs(normalizeLogs(logsRes?.config || logsRes || {}));
 
-        const cachedChannels = cleanChannels(channelsRes);
-        if (cachedChannels.length) {
-          setChannels(cachedChannels);
-        } else {
-          setSyncingResources(true);
-          const synced = await api.request(`/api/discord/${guildId}/resources/sync`, { method: 'POST' }).catch(() => null);
-          if (!mounted) return;
-          setChannels(cleanChannels(synced));
-        }
+        const [logsRes, channelList] = await Promise.all([
+          api.getLogConfig(guildId),
+          loadChannels(),
+        ]);
+
+        if (!mounted) return;
+
+        setLogs(normalizeLogs(logsRes?.config || logsRes || {}));
+        setChannels(channelList);
+        loadedRef.current = true;
       } catch (err) {
         console.error(err);
         if (!mounted) return;
         setError(err.message || 'Failed to load logging settings.');
         setChannels([]);
       } finally {
-        if (mounted) {
-          setLoading(false);
-          setSyncingResources(false);
-        }
+        if (mounted) setLoading(false);
       }
     }
 
     loadData();
-    return () => { mounted = false; };
-  }, [guildId]);
+
+    return () => {
+      mounted = false;
+      clearTimeout(saveTimer.current);
+    };
+  }, [guildId, loadChannels]);
 
   useEffect(() => {
     if (!guildId) return undefined;
     joinGuildRoom(guildId);
+
     return listenForGuildUpdate(guildId, 'logs', (data, payload = {}) => {
+      if (payload.source === 'dashboard') return;
       setLogs(normalizeLogs(data));
-      setSaveMessage(payload.source === 'dashboard' ? '✅ Logs synced live.' : '🔄 Logs updated live.');
+      setSaveMessage('🔄 Logs updated live.');
     });
   }, [guildId]);
 
@@ -419,38 +430,38 @@ export default function Logs({ selectedGuild, theme }) {
   const configuredCategories = CATEGORY_DATA.filter((category) => Boolean(logs.channels?.[category.items[0]?.channelKey])).length;
 
   function setEnabled(enabled) {
-    setLogs((prev) => normalizeLogs({ ...prev, enabled }));
+    updateLogs((prev) => ({ ...prev, enabled }));
   }
 
-  function updateEvent(eventKey, enabled) {
-    setLogs((prev) => normalizeLogs({ ...prev, events: { ...prev.events, [eventKey]: enabled } }));
+  function updateEvent(key, enabled) {
+    updateLogs((prev) => ({ ...prev, events: { ...prev.events, [key]: enabled } }));
   }
 
   function updateSetting(key, value) {
-    setLogs((prev) => normalizeLogs({ ...prev, settings: { ...prev.settings, [key]: value } }));
+    updateLogs((prev) => ({ ...prev, settings: { ...prev.settings, [key]: value } }));
   }
 
   function setAllCategories(channelId) {
-    setLogs((prev) => {
+    updateLogs((prev) => {
       const next = { ...prev.channels };
       allItems.forEach((item) => { next[item.channelKey] = channelId || null; });
-      return normalizeLogs({ ...prev, channels: next });
+      return { ...prev, channels: next };
     });
   }
 
   function setCategoryDestination(category, channelId) {
-    setLogs((prev) => {
+    updateLogs((prev) => {
       const next = { ...prev.channels, [category.defaultChannelKey]: channelId || null };
       category.items.forEach((item) => { next[item.channelKey] = channelId || null; });
-      return normalizeLogs({ ...prev, channels: next });
+      return { ...prev, channels: next };
     });
   }
 
   function setCategoryEvents(category, enabled) {
-    setLogs((prev) => {
+    updateLogs((prev) => {
       const next = { ...prev.events };
       category.items.forEach((item) => { next[item.eventKey] = enabled; });
-      return normalizeLogs({ ...prev, events: next });
+      return { ...prev, events: next };
     });
   }
 
@@ -459,10 +470,10 @@ export default function Logs({ selectedGuild, theme }) {
   }
 
   function setAllEvents(enabled) {
-    setLogs((prev) => {
+    updateLogs((prev) => {
       const next = { ...prev.events };
       allItems.forEach((item) => { next[item.eventKey] = enabled; });
-      return normalizeLogs({ ...prev, events: next });
+      return { ...prev, events: next };
     });
   }
 
@@ -473,46 +484,13 @@ export default function Logs({ selectedGuild, theme }) {
     setIgnoredUser('');
   }
 
-  async function refreshDiscordResources() {
-    if (!guildId) return;
-    try {
-      setSyncingResources(true);
-      setError('');
-      const synced = await api.request(`/api/discord/${guildId}/resources/sync`, { method: 'POST' });
-      setChannels(cleanChannels(synced));
-      setSaveMessage('✅ Discord channels synced.');
-    } catch (err) {
-      console.error(err);
-      setError(err.message || 'Failed to sync Discord channels.');
-    } finally {
-      setSyncingResources(false);
-    }
-  }
-
-  async function handleSave() {
-    if (!guildId) return;
-    try {
-      setSaving(true);
-      setError('');
-      setSaveMessage('');
-      const saved = await api.saveLogConfig(guildId, normalizeLogs(logs));
-      if (saved?.config) setLogs(normalizeLogs(saved.config));
-      setSaveMessage('✅ Logging saved successfully.');
-    } catch (err) {
-      console.error(err);
-      setError(err.message || 'Failed to save logging.');
-    } finally {
-      setSaving(false);
-    }
-  }
-
   return (
     <PageShell
       title="Logging"
       subtitle="Configure server logging categories, destinations and noise-control settings on one page."
       theme={theme}
       guild={{ id: guildId, name: selectedGuild?.name || selectedGuild?.guildName || 'Logging' }}
-      actions={<><Toggle checked={logs.enabled} onChange={setEnabled} disabled={!guildId || saving} /><PrimaryButton onClick={handleSave} disabled={!guildId || saving}>{saving ? 'Saving...' : 'Save Changes'}</PrimaryButton></>}
+      actions={<><Toggle checked={logs.enabled} onChange={setEnabled} disabled={!guildId || saving} /><PrimaryButton onClick={() => saveNow(logs)} disabled={!guildId || saving}>{saving ? 'Saving...' : 'Save Now'}</PrimaryButton></>}
     >
       {!selectedGuild ? <EmptyState theme={theme} title="Select a guild" text="Select a guild to manage logging." /> : null}
       {error ? <Notice theme={theme} tone="danger">{error}</Notice> : null}
@@ -525,40 +503,38 @@ export default function Logs({ selectedGuild, theme }) {
             <SummaryStat theme={theme} label="Logging" value={logs.enabled ? 'Enabled' : 'Disabled'} accent={logs.enabled ? theme.success : theme.danger} description="Global logging state" />
             <SummaryStat theme={theme} label="Types Enabled" value={`${enabledEvents}/${allItems.length}`} accent="#60a5fa" description="Tracked log types" />
             <SummaryStat theme={theme} label="Types Routed" value={routedEvents} accent="#f59e0b" description="Types with a destination" />
-            <SummaryStat theme={theme} label="Channels Loaded" value={channels.length} accent="#22c55e" description={`${configuredCategories}/${CATEGORY_DATA.length} categories routed`} />
+            <SummaryStat theme={theme} label="Categories" value={`${configuredCategories}/${CATEGORY_DATA.length}`} accent="#22c55e" description="Configured destinations" />
           </StatGrid>
 
-          <section style={{ background: 'linear-gradient(180deg, rgba(8,15,30,0.98), rgba(6,12,24,0.98))', border: `1px solid ${theme.cardBorder}`, borderRadius: 22, padding: 'clamp(16px, 2vw, 22px)', boxShadow: theme.shadow, display: 'grid', gap: loggingOpen ? 18 : 0 }}>
-            <PanelHeader theme={theme} title="Logging" description="Click to show or hide logging categories." open={loggingOpen} onToggle={() => setLoggingOpen((prev) => !prev)} right={`${enabledEvents}/${allItems.length}`} />
+          <section style={{ background: 'linear-gradient(180deg, rgba(8,15,30,0.98), rgba(6,12,24,0.98))', border: `1px solid ${theme.cardBorder}`, borderRadius: 22, boxShadow: theme.shadow, overflow: 'hidden' }}>
+            <button type="button" onClick={() => setOpenPanels((prev) => ({ ...prev, logging: !prev.logging }))} style={{ width: '100%', border: 0, background: 'transparent', color: theme.cardText, padding: 'clamp(16px, 2vw, 22px)', display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'center', cursor: 'pointer', textAlign: 'left' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 12, fontWeight: 950, fontSize: 26 }}><span style={{ width: 36, height: 36, borderRadius: 10, display: 'grid', placeItems: 'center', background: 'rgba(255,255,255,0.08)' }}>▰</span>Logging</span>
+              <span style={{ color: theme.mutedText, fontWeight: 950 }}>{openPanels.logging ? 'Open' : 'Closed'}</span>
+            </button>
 
-            {loggingOpen ? (
-              <>
+            {openPanels.logging ? (
+              <div style={{ display: 'grid', gap: 18, padding: '0 clamp(16px, 2vw, 22px) clamp(16px, 2vw, 22px)' }}>
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                   <CategorySelect theme={theme} channels={channels} value={bulkChannel} onChange={setBulkChannel} disabled={!channels.length} />
                   <Button theme={theme} onClick={() => setAllCategories(bulkChannel)} disabled={!bulkChannel}>Set destination for all</Button>
                   <Button theme={theme} onClick={() => setAllCategories(null)}>Clear destinations</Button>
                   <Button theme={theme} onClick={() => setAllEvents(true)}>Enable all</Button>
                   <Button theme={theme} onClick={() => setAllEvents(false)}>Disable all</Button>
-                  <Button theme={theme} onClick={refreshDiscordResources} disabled={syncingResources}>{syncingResources ? 'Syncing...' : 'Sync Discord Channels'}</Button>
+                  <Button theme={theme} onClick={async () => setChannels(await loadChannels())}>Refresh Channels</Button>
                 </div>
-
-                {!channels.length ? <Notice theme={theme} tone="warning">No Discord channels are loaded yet. Use “Sync Discord Channels”, then choose destinations.</Notice> : null}
 
                 <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search log categories or types" style={{ width: '100%', border: `1px solid ${theme.cardBorder}`, background: 'rgba(15,23,42,0.86)', color: theme.cardText, borderRadius: 12, padding: '13px 14px', outline: 'none', fontWeight: 850 }} />
 
                 <div style={{ display: 'grid', gap: 14 }}>
                   {filteredSections.map((section) => {
-                    const sectionOpen = open[section.key] !== false;
+                    const sectionOpen = Boolean(openSections[section.key]);
                     const sectionItems = section.categories.flatMap((category) => category.items);
                     const activeCount = sectionItems.filter((item) => logs.events?.[item.eventKey] !== false).length;
 
                     return (
                       <div key={section.key} style={{ border: `1px solid ${theme.cardBorder}`, borderRadius: 18, overflow: 'hidden', background: 'rgba(15,23,42,0.38)' }}>
-                        <button type="button" onClick={() => setOpen((prev) => ({ ...prev, [section.key]: !sectionOpen }))} style={{ width: '100%', border: 0, background: 'rgba(15,23,42,0.84)', color: theme.cardText, padding: '15px 16px', display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'center', cursor: 'pointer', textAlign: 'left' }}>
-                          <span style={{ display: 'grid', gap: 4 }}>
-                            <strong style={{ fontSize: 18 }}>{section.label}</strong>
-                            <span style={{ color: theme.mutedText, fontSize: 13, lineHeight: 1.4 }}>{section.description}</span>
-                          </span>
+                        <button type="button" onClick={() => setOpenSections((prev) => ({ ...prev, [section.key]: !sectionOpen }))} style={{ width: '100%', border: 0, background: 'rgba(15,23,42,0.84)', color: theme.cardText, padding: '15px 16px', display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'center', cursor: 'pointer', textAlign: 'left' }}>
+                          <span style={{ display: 'grid', gap: 4 }}><strong style={{ fontSize: 18 }}>{section.label}</strong><span style={{ color: theme.mutedText, fontSize: 13, lineHeight: 1.4 }}>{section.description}</span></span>
                           <span style={{ color: theme.mutedText, fontSize: 12, fontWeight: 950, whiteSpace: 'nowrap' }}>{activeCount}/{sectionItems.length}</span>
                         </button>
 
@@ -573,25 +549,15 @@ export default function Logs({ selectedGuild, theme }) {
                               return (
                                 <div key={category.key} style={{ border: `1px solid ${theme.cardBorder}`, borderRadius: 14, overflow: 'hidden', background: 'rgba(6,12,24,0.40)' }}>
                                   <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) auto', gap: 10, padding: 12, alignItems: 'center' }}>
-                                    <button type="button" onClick={() => setOpenCategories((prev) => ({ ...prev, [category.key]: !categoryOpen }))} style={{ border: 0, background: 'transparent', color: theme.cardText, padding: 0, cursor: 'pointer', textAlign: 'left', display: 'grid', gap: 3 }}>
-                                      <strong>{category.label}</strong>
-                                      <span style={{ color: theme.mutedText, fontSize: 12 }}>{categoryActiveCount}/{category.items.length} enabled</span>
-                                    </button>
-                                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end' }}>
-                                      <CategorySelect theme={theme} channels={channels} value={firstChannel} onChange={(value) => setCategoryDestination(category, value)} disabled={!channels.length} />
-                                      <Toggle checked={categoryEnabled} onChange={(value) => setCategoryEvents(category, value)} />
-                                    </div>
+                                    <button type="button" onClick={() => setOpenCategories((prev) => ({ ...prev, [category.key]: !categoryOpen }))} style={{ border: 0, background: 'transparent', color: theme.cardText, padding: 0, cursor: 'pointer', textAlign: 'left', display: 'grid', gap: 3 }}><strong>{category.label}</strong><span style={{ color: theme.mutedText, fontSize: 12 }}>{categoryActiveCount}/{category.items.length} enabled</span></button>
+                                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end' }}><CategorySelect theme={theme} channels={channels} value={firstChannel} onChange={(value) => setCategoryDestination(category, value)} disabled={!channels.length} /><Toggle checked={categoryEnabled} onChange={(value) => setCategoryEvents(category, value)} /></div>
                                   </div>
 
                                   {categoryOpen ? (
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,230px),1fr))', gap: 8, padding: '0 12px 12px' }}>
                                       {category.items.map((item) => {
                                         const enabled = logs.events?.[item.eventKey] !== false;
-                                        return (
-                                          <button key={item.eventKey} type="button" onClick={() => updateEvent(item.eventKey, !enabled)} style={{ border: `1px solid ${enabled ? 'rgba(59,130,246,0.32)' : theme.cardBorder}`, background: enabled ? 'rgba(59,130,246,0.12)' : 'rgba(15,23,42,0.44)', color: enabled ? theme.cardText : theme.mutedText, borderRadius: 10, padding: '9px 10px', cursor: 'pointer', fontSize: 12, fontWeight: 900, textAlign: 'left' }}>
-                                            {item.label}
-                                          </button>
-                                        );
+                                        return <button key={item.eventKey} type="button" onClick={() => updateEvent(item.eventKey, !enabled)} style={{ border: `1px solid ${enabled ? 'rgba(59,130,246,0.32)' : theme.cardBorder}`, background: enabled ? 'rgba(59,130,246,0.12)' : 'rgba(15,23,42,0.44)', color: enabled ? theme.cardText : theme.mutedText, borderRadius: 10, padding: '9px 10px', cursor: 'pointer', fontSize: 12, fontWeight: 900, textAlign: 'left' }}>{item.label}</button>;
                                       })}
                                     </div>
                                   ) : null}
@@ -604,31 +570,21 @@ export default function Logs({ selectedGuild, theme }) {
                     );
                   })}
                 </div>
-              </>
+              </div>
             ) : null}
           </section>
 
-          <section style={{ background: 'linear-gradient(180deg, rgba(8,15,30,0.98), rgba(6,12,24,0.98))', border: `1px solid ${theme.cardBorder}`, borderRadius: 22, padding: 'clamp(16px, 2vw, 22px)', boxShadow: theme.shadow, display: 'grid', gap: settingsOpen ? 14 : 0 }}>
-            <PanelHeader theme={theme} title="Logging Settings" description="Click to show or hide noise-control settings." open={settingsOpen} onToggle={() => setSettingsOpen((prev) => !prev)} />
+          <section style={{ background: 'linear-gradient(180deg, rgba(8,15,30,0.98), rgba(6,12,24,0.98))', border: `1px solid ${theme.cardBorder}`, borderRadius: 22, boxShadow: theme.shadow, overflow: 'hidden' }}>
+            <button type="button" onClick={() => setOpenPanels((prev) => ({ ...prev, settings: !prev.settings }))} style={{ width: '100%', border: 0, background: 'transparent', color: theme.cardText, padding: 'clamp(16px, 2vw, 22px)', display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'center', cursor: 'pointer', textAlign: 'left' }}><span><h2 style={{ margin: 0, fontSize: 22 }}>Logging Settings</h2><span style={{ display: 'block', marginTop: 6, color: theme.mutedText, lineHeight: 1.5 }}>Noise controls merged into the main logging page.</span></span><span style={{ color: theme.mutedText, fontWeight: 950 }}>{openPanels.settings ? 'Open' : 'Closed'}</span></button>
 
-            {settingsOpen ? (
-              <div style={{ display: 'grid', gap: 10 }}>
-                {SETTINGS.map(([key, title, text]) => (
-                  <SettingRow key={key} theme={theme} title={title} text={text} checked={Boolean(logs.settings[key])} onChange={(value) => updateSetting(key, value)} />
-                ))}
-
+            {openPanels.settings ? (
+              <div style={{ display: 'grid', gap: 10, padding: '0 clamp(16px, 2vw, 22px) clamp(16px, 2vw, 22px)' }}>
+                {SETTINGS.map(([key, title, text]) => <SettingRow key={key} theme={theme} title={title} text={text} checked={Boolean(logs.settings[key])} onChange={(value) => updateSetting(key, value)} />)}
                 <div style={{ background: 'rgba(15,23,42,0.72)', border: `1px solid ${theme.cardBorder}`, borderRadius: 14, padding: 16, display: 'grid', gap: 10 }}>
                   <h3 style={{ margin: 0, color: theme.cardText, fontSize: 16, fontWeight: 950 }}>Ignore users</h3>
                   <p style={{ margin: 0, color: theme.mutedText, fontSize: 13 }}>Actions from users listed below are ignored from Logging.</p>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <input value={ignoredUser} onChange={(event) => setIgnoredUser(event.target.value)} placeholder="User ID" style={{ flex: '1 1 260px', border: `1px solid ${theme.cardBorder}`, background: 'rgba(6,12,24,0.9)', color: theme.cardText, borderRadius: 10, padding: '10px 12px', outline: 'none' }} />
-                    <PrimaryButton onClick={addIgnoredUser}>Add</PrimaryButton>
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    {logs.settings.ignoredUsers.length ? logs.settings.ignoredUsers.map((value) => (
-                      <button key={value} type="button" onClick={() => updateSetting('ignoredUsers', logs.settings.ignoredUsers.filter((item) => item !== value))} style={{ border: `1px solid ${theme.cardBorder}`, background: theme.softBg, color: theme.cardText, borderRadius: 999, padding: '7px 10px', cursor: 'pointer', fontWeight: 850 }}>{value} ×</button>
-                    )) : <span style={{ color: theme.mutedText, fontWeight: 800 }}>No users added</span>}
-                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><input value={ignoredUser} onChange={(event) => setIgnoredUser(event.target.value)} placeholder="User ID" style={{ flex: '1 1 260px', border: `1px solid ${theme.cardBorder}`, background: 'rgba(6,12,24,0.9)', color: theme.cardText, borderRadius: 10, padding: '10px 12px', outline: 'none' }} /><PrimaryButton onClick={addIgnoredUser}>Add</PrimaryButton></div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{logs.settings.ignoredUsers.length ? logs.settings.ignoredUsers.map((value) => <button key={value} type="button" onClick={() => updateSetting('ignoredUsers', logs.settings.ignoredUsers.filter((item) => item !== value))} style={{ border: `1px solid ${theme.cardBorder}`, background: theme.softBg, color: theme.cardText, borderRadius: 999, padding: '7px 10px', cursor: 'pointer', fontWeight: 850 }}>{value} ×</button>) : <span style={{ color: theme.mutedText, fontWeight: 800 }}>No users added</span>}</div>
                 </div>
               </div>
             ) : null}
