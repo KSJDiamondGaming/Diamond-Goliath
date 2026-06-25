@@ -61,8 +61,20 @@ function cleanDiscordId(value, label = 'Discord ID') {
   return id;
 }
 
+function getDiscordClient(req) {
+  return (
+    req.client ||
+    req.app?.get?.('goliath.client') ||
+    req.app?.locals?.discordClient ||
+    req.app?.locals?.client ||
+    global.client ||
+    global.discordClient ||
+    null
+  );
+}
+
 async function getGuild(req, guildId) {
-  const client = req.app.locals.discordClient || req.app.locals.client;
+  const client = getDiscordClient(req);
   const cachedGuild = client?.guilds?.cache?.get?.(guildId);
   if (cachedGuild) return cachedGuild;
 
@@ -239,7 +251,26 @@ router.put('/:guildId/channels/:channelId', async (req, res) => {
     const guild = await getGuild(req, guildId);
     await guardTranslationChannelConfig(guild, channelId);
     const channel = translationStore.saveChannelConfig(guildId, channelId, req.body || {}, guild);
-    return success(res, { guildId, channelId, channel });
+    return success(res, { guildId, channelId, channel, config: publicTranslationConfig(guildId) });
+  } catch (error) {
+    return failure(res, error, 400);
+  }
+});
+
+router.delete('/:guildId/channels/:channelId', (req, res) => {
+  try {
+    const guildId = getGuildId(req);
+    const channelId = cleanDiscordId(req.params.channelId, 'channel ID');
+    const config = translationStore.updateTranslationSection(guildId, (current) => {
+      const channels = { ...(current.channels || {}) };
+      const threadChannels = { ...(current.threadChannels || {}) };
+      const threadMappings = { ...(current.threadMappings || {}) };
+      delete channels[channelId];
+      delete threadChannels[channelId];
+      delete threadMappings[channelId];
+      return { ...current, channels, threadChannels, threadMappings };
+    });
+    return success(res, { guildId, channelId, config: publicTranslationConfig(guildId), rawConfig: config });
   } catch (error) {
     return failure(res, error, 400);
   }
@@ -276,7 +307,7 @@ router.post('/:guildId/threads/channels/:channelId/enable', async (req, res) => 
       autoCreateThreads: true,
     }, guild);
     const recovery = await translationThreadManager.ensureThreadsForChannel(guild, channelId);
-    return success(res, { guildId, channelId, channel, recovery });
+    return success(res, { guildId, channelId, channel, recovery, config: publicTranslationConfig(guildId) });
   } catch (error) {
     return failure(res, error, 400);
   }
@@ -287,7 +318,7 @@ router.post('/:guildId/threads/channels/:channelId/disable', (req, res) => {
     const guildId = getGuildId(req);
     const channelId = cleanDiscordId(req.params.channelId, 'channel ID');
     const channel = translationStore.saveChannelConfig(guildId, channelId, { enabled: false, mode: 'disabled' });
-    return success(res, { guildId, channelId, channel });
+    return success(res, { guildId, channelId, channel, config: publicTranslationConfig(guildId) });
   } catch (error) {
     return failure(res, error, 400);
   }
@@ -299,7 +330,7 @@ router.post('/:guildId/threads/channels/:channelId/recover', async (req, res) =>
     const channelId = cleanDiscordId(req.params.channelId, 'channel ID');
     const guild = await getGuild(req, guildId);
     const recovery = await translationThreadManager.ensureThreadsForChannel(guild, channelId, { recovery: true });
-    return success(res, { guildId, channelId, recovery });
+    return success(res, { guildId, channelId, recovery, config: publicTranslationConfig(guildId) });
   } catch (error) {
     return failure(res, error, 400);
   }
