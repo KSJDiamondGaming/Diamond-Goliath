@@ -7,6 +7,8 @@ const { getRuntimePaths } = require('../../config/runtimePaths');
 
 const DEV_MODE = 'dev';
 const FILE_NAME = 'testDevOverride.json';
+const PAYWALL_BYPASS_DEFAULT_ENABLED = true;
+const PAYWALL_BYPASS_PLAN = 'lifetime';
 
 function mode() {
   return String(process.env.BOT_MODE || 'DEV').toLowerCase();
@@ -41,6 +43,32 @@ function defaultState() {
     enabled: false,
     updatedAt: null,
     updatedBy: null,
+    paywallBypass: {
+      enabled: PAYWALL_BYPASS_DEFAULT_ENABLED,
+      plan: PAYWALL_BYPASS_PLAN,
+      updatedAt: null,
+      updatedBy: 'system',
+      note: 'DEV only. Set enabled false to test real plans, vouchers and locked paywall behaviour.',
+    },
+  };
+}
+
+function normaliseState(state = {}) {
+  const defaults = defaultState();
+  const paywallBypass = {
+    ...defaults.paywallBypass,
+    ...(state.paywallBypass || {}),
+  };
+
+  return {
+    ...defaults,
+    ...state,
+    enabled: state.enabled === true,
+    paywallBypass: {
+      ...paywallBypass,
+      enabled: paywallBypass.enabled === true,
+      plan: String(paywallBypass.plan || PAYWALL_BYPASS_PLAN).trim().toLowerCase(),
+    },
   };
 }
 
@@ -51,11 +79,7 @@ function readState() {
     const filePath = getFilePath();
     if (!fs.existsSync(filePath)) return defaultState();
     const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    return {
-      ...defaultState(),
-      ...parsed,
-      enabled: parsed.enabled === true,
-    };
+    return normaliseState(parsed);
   } catch (error) {
     console.warn('[TestDevOverride] Failed to read state:', error.message);
     return defaultState();
@@ -66,12 +90,11 @@ function writeState(nextState = {}) {
   if (!isDevMode()) return defaultState();
 
   ensureFolder();
-  const state = {
-    ...defaultState(),
+  const state = normaliseState({
+    ...readState(),
     ...nextState,
-    enabled: nextState.enabled === true,
     updatedAt: new Date().toISOString(),
-  };
+  });
 
   fs.writeFileSync(getFilePath(), JSON.stringify(state, null, 2));
   return state;
@@ -109,11 +132,37 @@ function shouldBypassGuard() {
   return isEnabled();
 }
 
+function shouldBypassPaywall() {
+  const state = readState();
+  return isDevMode() && state.paywallBypass?.enabled === true;
+}
+
+function getPaywallBypassPlan() {
+  return shouldBypassPaywall() ? readState().paywallBypass.plan || PAYWALL_BYPASS_PLAN : null;
+}
+
+function getPaywallBypassState() {
+  const state = readState();
+  return {
+    active: shouldBypassPaywall(),
+    ...state.paywallBypass,
+  };
+}
+
 function buildBypassMetadata(extra = {}) {
   return {
     ...extra,
     testDevOverride: true,
     warning: 'Goliath DEV safety guard bypassed. Discord API permissions are still enforced by Discord.',
+  };
+}
+
+function buildPaywallBypassMetadata(extra = {}) {
+  return {
+    ...extra,
+    testDevPaywallBypass: true,
+    plan: getPaywallBypassPlan(),
+    warning: 'Goliath DEV paywall bypass active. Disable paywallBypass.enabled in testDevOverride.json to test plans, vouchers and locked billing behaviour.',
   };
 }
 
@@ -125,5 +174,9 @@ module.exports = {
   isEnabled,
   toggle,
   shouldBypassGuard,
+  shouldBypassPaywall,
+  getPaywallBypassPlan,
+  getPaywallBypassState,
   buildBypassMetadata,
+  buildPaywallBypassMetadata,
 };
