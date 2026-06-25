@@ -6,6 +6,7 @@ const express = require('express');
 
 const formStore = require('../../modules/forms/formStore');
 const formManager = require('../../modules/forms/formManager');
+const ticketStore = require('../../modules/tickets/ticketStore');
 const planLimitManager = require('../billing/planLimitManager');
 const {
   buildFormsWorkflowOverview,
@@ -72,8 +73,20 @@ function getGuildId(req) {
   return guildId;
 }
 
+function getDiscordClient(req) {
+  return (
+    req.client ||
+    req.app?.get?.('goliath.client') ||
+    req.app?.locals?.client ||
+    req.app?.locals?.discordClient ||
+    global.client ||
+    global.discordClient ||
+    null
+  );
+}
+
 async function fetchGuild(req, guildId) {
-  const client = req.app?.locals?.client || req.app?.locals?.discordClient || global.client || global.discordClient;
+  const client = getDiscordClient(req);
   if (!client?.guilds?.fetch) return null;
   return client.guilds.cache.get(guildId) || client.guilds.fetch(guildId).catch(() => null);
 }
@@ -125,6 +138,61 @@ function filterSubmissions(submissions = [], query = {}) {
 
 function getPanelForms(guildId, panel) {
   return (panel.formIds || []).map((formId) => formStore.getForm(guildId, formId)).filter(Boolean);
+}
+
+function buildDecisionTicketUpdates(submission, decision = {}) {
+  const status = String(decision.status || submission.status || '').trim().toLowerCase();
+  const reviewedAt = decision.reviewedAt || new Date().toISOString();
+  const reviewedBy = decision.reviewedBy || decision.actorId || submission.reviewedBy || null;
+  const notes = String(decision.notes || submission.decision?.notes || '').trim();
+  const ticketStatus = ['approved', 'denied'].includes(status) ? 'closed' : 'open';
+
+  return {
+    status: ticketStatus,
+    closedById: ticketStatus === 'closed' ? reviewedBy : undefined,
+    closedAt: ticketStatus === 'closed' ? reviewedAt : undefined,
+    closeReason: ticketStatus === 'closed' ? `Form submission ${status}${notes ? `: ${notes}` : ''}` : undefined,
+    metadata: {
+      formWorkflow: {
+        submissionId: submission.submissionId,
+        formId: submission.formId,
+        status,
+        reviewedBy,
+        reviewedAt,
+        notes,
+      },
+    },
+    tags: [...new Set([...(submission.workflow?.ticketTags || []), 'form', `form-${status}`])],
+    timeline: [
+      ...(Array.isArray(submission.workflow?.ticketTimeline) ? submission.workflow.ticketTimeline : []),
+      {
+        id: `form-decision-${Date.now()}`,
+        type: 'form_decision',
+        label: `Form decision: ${status}`,
+        actorId: reviewedBy,
+        metadata: { submissionId: submission.submissionId, formId: submission.formId, notes },
+        createdAt: reviewedAt,
+      },
+    ],
+  };
+}
+
+function syncLinkedTicketDecision(guildId, submission, decision = {}) {
+  const ticketId = submission?.ticketId || submission?.workflow?.ticketId;
+  if (!ticketId) return null;
+
+  const existingTicket = ticketStore.getTicket(guildId, ticketId);
+  if (!existingTicket) return null;
+
+  const updates = buildDecisionTicketUpdates(submission, decision);
+  updates.tags = [...new Set([...(existingTicket.tags || []), ...(updates.tags || [])])];
+  updates.timeline = [...(existingTicket.timeline || []), ...(updates.timeline || [])].slice(-100);
+
+  Object.keys(updates).forEach((key) => {
+    if (updates[key] === undefined) delete updates[key];
+  });
+
+  return ticketStore.updateTicket(guildId, ticketId, updates);
 }
 
 router.get('/:guildId/overview', (req, res) => {
@@ -327,13 +395,32 @@ router.patch('/:guildId/submissions/:submissionId/status', (req, res) => {
     if (!formStore.SUBMISSION_STATUSES.includes(status)) throw new Error('Invalid submission status.');
 
     let updated;
+    let linkedTicket = null;
+    const actorId = req.session?.user?.id || req.body?.reviewedBy || null;
+
     if (['approved', 'denied', 'request_info'].includes(status)) {
       updated = formStore.recordSubmissionDecision(guildId, req.params.submissionId, {
         status,
-        reviewedBy: req.session?.user?.id || req.body?.reviewedBy || null,
+        reviewedBy: actorId,
         notes: req.body?.notes || '',
         templateKey: req.body?.templateKey || status,
       });
+
+      if (updated) {
+        linkedTicket = syncLinkedTicketDecision(guildId, updated, {
+          status,
+          reviewedBy: actorId,
+          notes: req.body?.notes || '',
+          reviewedAt: updated.reviewedAt,
+        });
+
+        formStore.addSubmissionTimeline(guildId, req.params.submissionId, {
+          type: linkedTicket ? 'ticket_synced' : 'ticket_sync_skipped',
+          label: linkedTicket ? 'Linked ticket updated' : 'No linked ticket to update',
+          actorId,
+          metadata: { ticketId: linkedTicket?.ticketId || updated.ticketId || null, status },
+        });
+      }
     } else {
       updated = formStore.updateSubmission(guildId, req.params.submissionId, {
         status,
@@ -344,13 +431,14 @@ router.patch('/:guildId/submissions/:submissionId/status', (req, res) => {
         formStore.addSubmissionTimeline(guildId, req.params.submissionId, {
           type: `status_${status}`,
           label: `Status changed to ${status}`,
-          actorId: req.session?.user?.id || req.body?.reviewedBy || null,
+          actorId,
         });
       }
     }
 
-    if (!updated) return failure(res, new Error('Submission not found.'), 404);
-    return success(res, { guildId, submission: updated });
+    const finalSubmission = updated ? formStore.getFormsSection(guildId).submissions?.[formStore.cleanKey(req.params.submissionId)] || updated : null;
+    if (!finalSubmission) return failure(res, new Error('Submission not found.'), 404);
+    return success(res, { guildId, submission: finalSubmission, linkedTicket });
   } catch (error) {
     return failure(res, error, 400);
   }
