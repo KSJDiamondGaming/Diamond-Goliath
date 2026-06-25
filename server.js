@@ -57,6 +57,7 @@ const socialRoutes = require('./src/server/routes/social');
 const modulesRoutes = require('./src/server/routes/modules');
 const pollsRoutes = require('./src/server/routes/polls');
 const statsRoutes = require('./src/server/routes/stats');
+const starboardRoutes = require('./src/server/routes/starboard');
 
 /* ---------------- SAFE MODULE LOADS ---------------- */
 
@@ -296,6 +297,7 @@ app.use('/api/social', socialRoutes);
 app.use('/api/modules', modulesRoutes);
 app.use('/api/polls', pollsRoutes);
 app.use('/api/stats', statsRoutes);
+app.use('/api/starboard', starboardRoutes);
 
 app.use(express.static(path.join(process.cwd(), 'dist')));
 
