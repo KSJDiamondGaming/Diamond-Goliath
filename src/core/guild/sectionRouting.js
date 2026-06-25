@@ -11,6 +11,8 @@ const LEGACY_SECTION_MAP = Object.freeze({
   serverBackups: 'modules.serverBackups',
   moderation: 'modules.moderation',
   discord: 'modules.discord',
+  polls: 'modules.polls',
+  stats: 'modules.stats',
 });
 
 const LEGACY_TOP_LEVEL_SECTIONS = Object.freeze(Object.keys(LEGACY_SECTION_MAP));
@@ -31,12 +33,10 @@ function getPathParts(sectionName) {
 
 function getValueAtPath(source, pathParts) {
   let current = source;
-
   for (const part of pathParts) {
     if (!isPlainObject(current)) return undefined;
     current = current[part];
   }
-
   return current;
 }
 
@@ -46,12 +46,10 @@ function setValueAtPath(source, pathParts, value) {
 
   pathParts.forEach((part, index) => {
     const isLast = index === pathParts.length - 1;
-
     if (isLast) {
       current[part] = clone(value);
       return;
     }
-
     current[part] = isPlainObject(current[part]) ? clone(current[part]) : {};
     current = current[part];
   });
@@ -74,13 +72,10 @@ function setRoutedSection(source, sectionName, sectionData = {}) {
 
 function removeLegacyTopLevelSections(source = {}) {
   if (!isPlainObject(source)) return {};
-
   const clean = clone(source);
-
   for (const sectionName of LEGACY_TOP_LEVEL_SECTIONS) {
     delete clean[sectionName];
   }
-
   return clean;
 }
 
