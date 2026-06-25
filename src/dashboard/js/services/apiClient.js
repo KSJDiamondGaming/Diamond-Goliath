@@ -116,6 +116,13 @@ export const api = {
   getSecurityOverview: (guildId) => request(`/api/security/overview?guildId=${guildId}`),
   getLogConfig: (guildId) => request(`/api/config/logs/${guildId}`),
   saveLogConfig: (guildId, payload) => request(`/api/config/logs/${guildId}`, { method: 'POST', body: JSON.stringify(payload) }),
+  getPolls: (guildId) => request(`/api/polls/${guildId}`),
+  savePollSettings: (guildId, settings) => request(`/api/polls/${guildId}/settings`, { method: 'PATCH', body: JSON.stringify({ settings }) }),
+  createPoll: (guildId, payload) => request(`/api/polls/${guildId}/polls`, { method: 'POST', body: JSON.stringify(payload) }),
+  deployPoll: (guildId, pollId, payload = {}) => request(`/api/polls/${guildId}/polls/${pollId}/deploy`, { method: 'POST', body: JSON.stringify(payload) }),
+  setPollStatus: (guildId, pollId, status) => request(`/api/polls/${guildId}/polls/${pollId}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
+  deletePoll: (guildId, pollId) => request(`/api/polls/${guildId}/polls/${pollId}`, { method: 'DELETE' }),
+  getStatsOverview: (guildId) => request(`/api/stats/${guildId}/overview`),
 };
 
 export default api;
