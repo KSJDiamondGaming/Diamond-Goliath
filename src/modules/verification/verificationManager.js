@@ -12,9 +12,9 @@ const {
 
 const verificationStore = require('./verificationStore');
 const { isModuleEnabled } = require('../../core/guild/guildManager');
+const testDevOverride = require('../../core/dev/testDevOverrideManager');
 
 const CUSTOM_ID_PREFIX = 'verify';
-const DEV_TEST_GUILD_ID = '1515201360386068642';
 const REQUIREMENTS_MESSAGE =
   'You do not currently meet the requirements to complete verification. If you believe this is an error, please contact a staff member.';
 
@@ -30,13 +30,12 @@ function getBotMember(guild) {
 }
 
 function isDevOwnerTestMember(member) {
-  if (!member?.id || member.guild?.id !== DEV_TEST_GUILD_ID) return false;
-
-  const botMode = String(process.env.BOT_MODE || '').trim().toLowerCase();
-  if (botMode !== 'dev') return false;
-
-  const { isBotOwner } = require('../../core/security/securityCore');
-  return isBotOwner(member.id);
+  return testDevOverride.isDevOwnerHierarchyOverride({
+    guild: member?.guild,
+    member,
+    user: member?.user,
+    userId: member?.id,
+  });
 }
 
 function canBotManageMember(member) {
