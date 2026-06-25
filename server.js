@@ -55,6 +55,8 @@ const translationRoutes = require('./src/server/routes/translation');
 const permissionHealthRoutes = require('./src/server/routes/permissionHealth');
 const socialRoutes = require('./src/server/routes/social');
 const modulesRoutes = require('./src/server/routes/modules');
+const pollsRoutes = require('./src/server/routes/polls');
+const statsRoutes = require('./src/server/routes/stats');
 
 /* ---------------- SAFE MODULE LOADS ---------------- */
 
@@ -292,6 +294,8 @@ app.use('/api/translation', translationRoutes);
 app.use('/api/permissions', permissionHealthRoutes);
 app.use('/api/social', socialRoutes);
 app.use('/api/modules', modulesRoutes);
+app.use('/api/polls', pollsRoutes);
+app.use('/api/stats', statsRoutes);
 
 app.use(express.static(path.join(process.cwd(), 'dist')));
 
@@ -372,7 +376,7 @@ if (existing > 0) {
 
 client.on(event.name, async (...args) => {
 try {
-await event.execute(...args);
+await event.execute(...args, client);
 } catch (error) {
 console.error(`❌ Event error: ${event.name}`);
 console.error(error);
