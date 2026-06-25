@@ -7,6 +7,7 @@ const { Events, MessageFlags } = require('discord.js');
 const verificationManager = require('../../modules/verification/verificationManager');
 const ticketInteractionHandler = require('../../modules/tickets/ticketInteractionHandler');
 const roleInteractionHandler = require('../../modules/roles/roleInteractionHandler');
+const pollsManager = require('../../modules/polls/pollsManager');
 
 async function safeInteractionError(interaction) {
   const payload = {
@@ -46,6 +47,10 @@ module.exports = {
 
       if (interaction.isButton?.() && verificationManager.parseVerifyCustomId(interaction.customId)) {
         await verificationManager.handleVerificationInteraction(interaction);
+        return;
+      }
+
+      if (interaction.isButton?.() && await pollsManager.vote(interaction)) {
         return;
       }
 
