@@ -139,7 +139,6 @@ const REMOVAL_TYPES = {
     eventName: 'memberLeave',
     reasonLabel: 'No reason - user left normally',
   },
-
   kicked: {
     key: 'kicked',
     title: '👢 Member Kicked',
@@ -148,7 +147,6 @@ const REMOVAL_TYPES = {
     auditType: AuditLogEvent.MemberKick,
     reasonLabel: 'No reason provided',
   },
-
   banned: {
     key: 'banned',
     title: '🔨 Member Banned',
@@ -157,7 +155,6 @@ const REMOVAL_TYPES = {
     auditType: AuditLogEvent.MemberBanAdd,
     reasonLabel: 'No reason provided',
   },
-
   pruned: {
     key: 'pruned',
     title: '🧹 Member Pruned / Removed',
@@ -166,7 +163,6 @@ const REMOVAL_TYPES = {
     auditType: AuditLogEvent.MemberPrune,
     reasonLabel: 'Possible prune or bulk removal',
   },
-
   removed: {
     key: 'removed',
     title: '🚪 Member Removed',
@@ -190,7 +186,6 @@ async function findRecentAuditLog(guild, userId, auditType, maxAgeMs = 15000) {
         const targetId = entry.target?.id;
         const isTarget = !targetId || targetId === userId;
         const isRecent = Date.now() - entry.createdTimestamp < maxAgeMs;
-
         return isTarget && isRecent;
       }) || null
     );
@@ -204,61 +199,22 @@ async function detectRemoval(member) {
   const guild = member.guild;
   const userId = member.user.id;
 
-  const banLog = await findRecentAuditLog(
-    guild,
-    userId,
-    AuditLogEvent.MemberBanAdd,
-    20000
-  );
+  const banLog = await findRecentAuditLog(guild, userId, AuditLogEvent.MemberBanAdd, 20000);
+  if (banLog) return { ...REMOVAL_TYPES.banned, auditLog: banLog };
 
-  if (banLog) {
-    return {
-      ...REMOVAL_TYPES.banned,
-      auditLog: banLog,
-    };
-  }
+  const kickLog = await findRecentAuditLog(guild, userId, AuditLogEvent.MemberKick, 20000);
+  if (kickLog) return { ...REMOVAL_TYPES.kicked, auditLog: kickLog };
 
-  const kickLog = await findRecentAuditLog(
-    guild,
-    userId,
-    AuditLogEvent.MemberKick,
-    20000
-  );
+  const pruneLog = await findRecentAuditLog(guild, userId, AuditLogEvent.MemberPrune, 30000);
+  if (pruneLog) return { ...REMOVAL_TYPES.pruned, auditLog: pruneLog };
 
-  if (kickLog) {
-    return {
-      ...REMOVAL_TYPES.kicked,
-      auditLog: kickLog,
-    };
-  }
-
-  const pruneLog = await findRecentAuditLog(
-    guild,
-    userId,
-    AuditLogEvent.MemberPrune,
-    30000
-  );
-
-  if (pruneLog) {
-    return {
-      ...REMOVAL_TYPES.pruned,
-      auditLog: pruneLog,
-    };
-  }
-
-  return {
-    ...REMOVAL_TYPES.left,
-    auditLog: null,
-  };
+  return { ...REMOVAL_TYPES.left, auditLog: null };
 }
 
 /* ---------------- ADMIN MEMBER LOGS ---------------- */
 
-async function getAdminMemberLogChannel(guild) {
-  const channelId =
-    guildManager.getLogChannelId(guild.id, 'member') ||
-    guildManager.getLogChannelId(guild.id, 'admin') ||
-    guildManager.getLogChannelId(guild.id, 'general');
+async function getAdminMemberLogChannel(guild, eventName = 'memberJoin') {
+  const channelId = guildManager.getLogChannelId(guild.id, eventName, 'member');
 
   if (!channelId) return null;
 
@@ -282,18 +238,12 @@ function buildAdminJoinLog(member, addedRoles = []) {
       { name: 'Type', value: member.user.bot ? '🤖 Bot' : '👤 User', inline: true },
       {
         name: 'Account Created',
-        value: `${formatTimestamp(member.user.createdTimestamp, 'R')}\n${formatTimestamp(
-          member.user.createdTimestamp,
-          'F'
-        )}`,
+        value: `${formatTimestamp(member.user.createdTimestamp, 'R')}\n${formatTimestamp(member.user.createdTimestamp, 'F')}`,
         inline: true,
       },
       {
         name: 'Joined Server',
-        value: `${formatTimestamp(member.joinedTimestamp, 'R')}\n${formatTimestamp(
-          member.joinedTimestamp,
-          'F'
-        )}`,
+        value: `${formatTimestamp(member.joinedTimestamp, 'R')}\n${formatTimestamp(member.joinedTimestamp, 'F')}`,
         inline: true,
       },
       { name: 'Member Count', value: `\`${guild.memberCount}\``, inline: true },
@@ -317,26 +267,16 @@ function buildAdminRemovalLog(member, removal) {
       { name: 'User', value: formatUser(member.user), inline: true },
       { name: 'User ID', value: `\`${member.user.id}\``, inline: true },
       { name: 'Type', value: member.user.bot ? '🤖 Bot' : '👤 User', inline: true },
-      {
-        name: 'Removal Type',
-        value: `\`${removal.key || 'unknown'}\``,
-        inline: true,
-      },
+      { name: 'Removal Type', value: `\`${removal.key || 'unknown'}\``, inline: true },
       {
         name: 'Account Created',
-        value: `${formatTimestamp(member.user.createdTimestamp, 'R')}\n${formatTimestamp(
-          member.user.createdTimestamp,
-          'F'
-        )}`,
+        value: `${formatTimestamp(member.user.createdTimestamp, 'R')}\n${formatTimestamp(member.user.createdTimestamp, 'F')}`,
         inline: true,
       },
       {
         name: 'Joined Server',
         value: member.joinedTimestamp
-          ? `${formatTimestamp(member.joinedTimestamp, 'R')}\n${formatTimestamp(
-              member.joinedTimestamp,
-              'F'
-            )}`
+          ? `${formatTimestamp(member.joinedTimestamp, 'R')}\n${formatTimestamp(member.joinedTimestamp, 'F')}`
           : 'Unknown',
         inline: true,
       },
@@ -348,11 +288,7 @@ function buildAdminRemovalLog(member, removal) {
     .setTimestamp();
 
   if (moderator) {
-    embed.addFields({
-      name: 'Moderator',
-      value: formatUser(moderator),
-      inline: true,
-    });
+    embed.addFields({ name: 'Moderator', value: formatUser(moderator), inline: true });
   }
 
   return embed;
@@ -361,15 +297,13 @@ function buildAdminRemovalLog(member, removal) {
 async function sendAdminMemberJoinLog(member, addedRoles = []) {
   try {
     const guild = member.guild;
+    const eventName = 'memberJoin';
+    if (!isLogEnabled(guild.id, eventName)) return;
 
-    if (!isLogEnabled(guild.id, 'memberJoin')) return;
-
-    const channel = await getAdminMemberLogChannel(guild);
+    const channel = await getAdminMemberLogChannel(guild, eventName);
     if (!channel) return;
 
-    await channel.send({
-      embeds: [buildAdminJoinLog(member, addedRoles)],
-    });
+    await channel.send({ embeds: [buildAdminJoinLog(member, addedRoles)] });
   } catch (error) {
     console.error('[joinLeave] Failed to send admin member join log:', error);
   }
@@ -378,19 +312,14 @@ async function sendAdminMemberJoinLog(member, addedRoles = []) {
 async function sendAdminMemberRemovalLog(member, removal) {
   try {
     const guild = member.guild;
-
     const logEventName = removal?.eventName || 'memberRemove';
 
-    if (!isLogEnabled(guild.id, logEventName) && !isLogEnabled(guild.id, 'memberLeave')) {
-      return;
-    }
+    if (!isLogEnabled(guild.id, logEventName) && !isLogEnabled(guild.id, 'memberLeave')) return;
 
-    const channel = await getAdminMemberLogChannel(guild);
+    const channel = await getAdminMemberLogChannel(guild, logEventName);
     if (!channel) return;
 
-    await channel.send({
-      embeds: [buildAdminRemovalLog(member, removal)],
-    });
+    await channel.send({ embeds: [buildAdminRemovalLog(member, removal)] });
   } catch (error) {
     console.error('[joinLeave] Failed to send admin member removal log:', error);
   }
@@ -401,7 +330,6 @@ async function sendAdminMemberRemovalLog(member, removal) {
 module.exports = [
   {
     name: 'guildMemberAdd',
-
     async execute(member) {
       const addedRoles =
         (await autoRoleManager.applyAutoRoles(member).catch((error) => {
@@ -410,19 +338,14 @@ module.exports = [
         })) || [];
 
       await sendPublicMemberEmbed(member, 'welcome');
-
       await sendAdminMemberJoinLog(member, addedRoles);
     },
   },
-
   {
     name: 'guildMemberRemove',
-
     async execute(member) {
       const removal = await detectRemoval(member);
-
       await sendPublicMemberEmbed(member, 'leave');
-
       await sendAdminMemberRemovalLog(member, removal);
     },
   },
