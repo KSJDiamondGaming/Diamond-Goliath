@@ -33,7 +33,6 @@ printStartupFingerprint,
 const { initSocketHub } = require('./src/server/sockets/socketHub');
 
 const authRoutes = require('./src/server/routes/auth');
-const discordResourceRoutes = require('./src/server/routes/discordResources');
 const discordRoutes = require('./src/server/routes/discord');
 const statusRoutes = require('./src/server/routes/status');
 const ownerRoutes = require('./src/server/routes/owner');
@@ -276,7 +275,6 @@ app.use('/api/auth', authRoutes);
 app.use('/api/status', statusRoutes);
 app.use('/api/owner', ownerRoutes);
 app.use('/api/owner/translation', ownerTranslationRoutes);
-app.use('/api/discord', discordResourceRoutes);
 app.use('/api/discord', discordRoutes);
 app.use('/api/config/automod', automodRoutes);
 app.use('/api/config/general', generalSettingsRoutes);
