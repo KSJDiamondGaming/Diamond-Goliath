@@ -1,6 +1,89 @@
 const { EmbedBuilder } = require('discord.js');
 const guildManager = require('../guild/guildManager');
 
+const EVENT_NAME_MAP = {
+  'member.join': 'memberJoin',
+  'member.leave': 'memberLeave',
+  'member.remove': 'memberRemove',
+  'member.kick': 'memberKick',
+  'member.ban': 'memberBan',
+
+  'message.delete': 'messageDelete',
+  'message.bulkDelete': 'messageBulkDelete',
+  'message.edit': 'messageEdit',
+  'message.pin': 'messagePin',
+  'message.unpin': 'messageUnpin',
+
+  'voice.join': 'voiceJoin',
+  'voice.leave': 'voiceLeave',
+  'voice.move': 'voiceMove',
+  'voice.deafUpdate': 'voiceDeafUpdate',
+  'voice.muteUpdate': 'voiceMuteUpdate',
+  'voice.streamUpdate': 'voiceStreamUpdate',
+  'voice.videoUpdate': 'voiceVideoUpdate',
+
+  'channel.create': 'channelCreate',
+  'channel.delete': 'channelDelete',
+  'channel.update': 'channelUpdate',
+  'channel.nameUpdate': 'channelNameUpdate',
+  'channel.topicUpdate': 'channelTopicUpdate',
+  'channel.permissionsUpdate': 'channelPermissionsUpdate',
+  'channel.nsfwUpdate': 'channelNsfwUpdate',
+  'channel.parentUpdate': 'channelParentUpdate',
+  'channel.slowModeUpdate': 'channelSlowModeUpdate',
+  'channel.typeUpdate': 'channelTypeUpdate',
+  'channel.userLimitUpdate': 'channelUserLimitUpdate',
+  'channel.bitrateUpdate': 'channelBitrateUpdate',
+  'channel.rtcRegionUpdate': 'channelRtcRegionUpdate',
+  'channel.videoQualityUpdate': 'channelVideoQualityUpdate',
+
+  'role.create': 'roleCreate',
+  'role.delete': 'roleDelete',
+  'role.update': 'roleUpdate',
+  'role.nameUpdate': 'roleNameUpdate',
+  'role.colorUpdate': 'roleColorUpdate',
+  'role.permissionsUpdate': 'rolePermissionsUpdate',
+  'role.positionUpdate': 'rolePositionUpdate',
+
+  'webhook.create': 'webhookCreate',
+  'webhook.delete': 'webhookDelete',
+  'webhook.update': 'webhookNameUpdate',
+  'webhook.nameUpdate': 'webhookNameUpdate',
+  'webhook.channelUpdate': 'webhookChannelUpdate',
+  'webhook.avatarUpdate': 'webhookAvatarUpdate',
+
+  'emoji.create': 'emojiCreate',
+  'emoji.delete': 'emojiDelete',
+  'emoji.nameUpdate': 'emojiNameUpdate',
+  'emoji.rolesUpdate': 'emojiRolesUpdate',
+
+  'invite.create': 'inviteCreate',
+  'invite.delete': 'inviteDelete',
+  'invite.use': 'inviteUse',
+
+  'thread.create': 'threadCreate',
+  'thread.delete': 'threadDelete',
+  'thread.nameUpdate': 'threadNameUpdate',
+  'thread.archiveUpdate': 'threadArchiveUpdate',
+  'thread.lockedUpdate': 'threadLockedUpdate',
+  'thread.memberAdd': 'threadMemberAdd',
+  'thread.memberRemove': 'threadMemberRemove',
+
+  'guild.nameUpdate': 'guildNameUpdate',
+  'guild.iconUpdate': 'guildIconUpdate',
+  'guild.bannerUpdate': 'guildBannerUpdate',
+  'guild.ownerUpdate': 'guildOwnerUpdate',
+  'guild.verificationLevelUpdate': 'guildVerificationLevelUpdate',
+  'guild.boostUpdate': 'guildBoostUpdate',
+
+  'event.create': 'eventCreate',
+  'event.delete': 'eventDelete',
+  'event.nameUpdate': 'eventNameUpdate',
+  'event.statusUpdate': 'eventStatusUpdate',
+  'event.userAdd': 'eventUserAdd',
+  'event.userRemove': 'eventUserRemove',
+};
+
 function resolveChannelType(type = '') {
   if (type.startsWith('automod')) return 'automod';
   if (type.startsWith('moderation')) return 'moderation';
@@ -9,14 +92,19 @@ function resolveChannelType(type = '') {
   if (type.startsWith('voice')) return 'voice';
 
   if (type.startsWith('message')) {
-    if (type.includes('delete')) return 'messageDelete';
-    if (type.includes('edit')) return 'messageEdit';
+    if (type.toLowerCase().includes('delete')) return 'messageDelete';
+    if (type.toLowerCase().includes('edit')) return 'messageEdit';
     return 'messageDelete';
   }
 
   if (type.startsWith('channel')) return 'general';
   if (type.startsWith('role')) return 'admin';
   if (type.startsWith('webhook')) return 'admin';
+  if (type.startsWith('emoji')) return 'general';
+  if (type.startsWith('invite')) return 'general';
+  if (type.startsWith('thread')) return 'general';
+  if (type.startsWith('guild')) return 'admin';
+  if (type.startsWith('event')) return 'general';
   if (type.startsWith('ticket')) return 'moderation';
   if (type.startsWith('form')) return 'admin';
   if (type.startsWith('verification')) return 'admin';
@@ -28,33 +116,16 @@ function resolveChannelType(type = '') {
 }
 
 function resolveEventName(type = '') {
-  if (type === 'member.join') return 'memberJoin';
-  if (type === 'member.leave') return 'memberLeave';
-  if (type === 'member.remove') return 'memberRemove';
-  if (type === 'member.kick') return 'memberKick';
-  if (type === 'member.ban') return 'memberBan';
+  const key = String(type || '').trim();
+  if (EVENT_NAME_MAP[key]) return EVENT_NAME_MAP[key];
 
-  if (type === 'message.delete') return 'messageDelete';
-  if (type === 'message.edit') return 'messageEdit';
+  if (key.startsWith('automod')) return 'automodActions';
+  if (key.startsWith('moderation')) return 'moderationActions';
+  if (key.startsWith('admin')) return 'adminActions';
+  if (key.startsWith('member')) return 'memberUpdate';
+  if (key.startsWith('voice')) return 'voiceMove';
 
-  if (type === 'voice.join') return 'voiceJoin';
-  if (type === 'voice.leave') return 'voiceLeave';
-  if (type === 'voice.move') return 'voiceMove';
-
-  if (type === 'channel.create') return 'channelCreate';
-  if (type === 'channel.delete') return 'channelDelete';
-  if (type === 'channel.update') return 'channelUpdate';
-  if (type === 'channel.nameUpdate') return 'channelNameUpdate';
-  if (type === 'channel.topicUpdate') return 'channelTopicUpdate';
-  if (type === 'channel.permissionsUpdate') return 'channelPermissionsUpdate';
-
-  if (type.startsWith('automod')) return 'automodActions';
-  if (type.startsWith('moderation')) return 'moderationActions';
-  if (type.startsWith('admin')) return 'adminActions';
-  if (type.startsWith('member')) return 'memberUpdate';
-  if (type.startsWith('voice')) return 'voiceMove';
-
-  return type;
+  return key;
 }
 
 function formatType(type = 'general') {
@@ -97,67 +168,26 @@ function buildEmbed(type, data = {}) {
 
   const fields = [];
 
-  if (data.user) {
-    fields.push({
-      name: 'User',
-      value: formatUser(data.user),
-      inline: false,
-    });
-  }
-
-  if (data.executor) {
-    fields.push({
-      name: 'Executor',
-      value: formatUser(data.executor),
-      inline: false,
-    });
-  }
-
-  if (data.target) {
-    fields.push({
-      name: 'Target',
-      value: formatUser(data.target),
-      inline: false,
-    });
-  }
-
-  if (data.reason) {
-    fields.push({
-      name: 'Reason',
-      value: String(data.reason).slice(0, 1024),
-      inline: false,
-    });
-  }
+  if (data.user) fields.push({ name: 'User', value: formatUser(data.user), inline: false });
+  if (data.executor) fields.push({ name: 'Executor', value: formatUser(data.executor), inline: false });
+  if (data.target) fields.push({ name: 'Target', value: formatUser(data.target), inline: false });
+  if (data.reason) fields.push({ name: 'Reason', value: String(data.reason).slice(0, 1024), inline: false });
 
   fields.push(...normalizeFields(data.fields));
 
-  if (fields.length) {
-    embed.addFields(fields);
-  }
-
-  if (data.description) {
-    embed.setDescription(String(data.description).slice(0, 4096));
-  }
-
-  if (data.url) {
-    embed.setURL(data.url);
-  }
+  if (fields.length) embed.addFields(fields);
+  if (data.description) embed.setDescription(String(data.description).slice(0, 4096));
+  if (data.url) embed.setURL(data.url);
 
   return embed;
 }
 
 async function resolveLogChannel(guild, eventName, channelType) {
-  const channelId = guildManager.getLogChannelId(
-    guild.id,
-    eventName,
-    channelType || 'general'
-  );
+  const channelId = guildManager.getLogChannelId(guild.id, eventName, channelType || 'general');
 
   if (!channelId) return null;
 
-  const channel =
-    guild.channels.cache.get(channelId) ||
-    (await guild.channels.fetch(channelId).catch(() => null));
+  const channel = guild.channels.cache.get(channelId) || (await guild.channels.fetch(channelId).catch(() => null));
 
   return channel?.isTextBased() ? channel : null;
 }
@@ -168,9 +198,7 @@ async function send(guild, type, data = {}) {
   try {
     const eventName = resolveEventName(type);
 
-    if (!guildManager.isLogEventEnabled(guild.id, eventName)) {
-      return false;
-    }
+    if (!guildManager.isLogEventEnabled(guild.id, eventName)) return false;
 
     const channelType = resolveChannelType(eventName || type);
     const channel = await resolveLogChannel(guild, eventName, channelType);
@@ -178,7 +206,6 @@ async function send(guild, type, data = {}) {
     if (!channel) return false;
 
     const embed = buildEmbed(type, data);
-
     await channel.send({ embeds: [embed] });
     return true;
   } catch (error) {
