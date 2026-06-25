@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 
 const guildManager = require('../../core/guild/guildManager');
+const serverBackup = require('../../core/security/serverBackup');
 
 const router = express.Router();
 
@@ -48,6 +49,20 @@ function requireOwnerOrInternal(req, res, next) {
 
 function getRuntimeMode() {
   return String(process.env.BOT_MODE || 'dev').trim().toUpperCase();
+}
+
+function getEnvironmentKey(environment = getRuntimeMode()) {
+  const env = String(environment || 'DEV').toUpperCase();
+  if (env === 'PRODUCTION' || env === 'PROD') return 'production';
+  if (env === 'BETA') return 'beta';
+  return 'dev';
+}
+
+function getEnvironmentLabel(environment = getRuntimeMode()) {
+  const env = String(environment || 'DEV').toUpperCase();
+  if (env === 'PRODUCTION' || env === 'PROD') return 'PRODUCTION';
+  if (env === 'BETA') return 'BETA';
+  return 'DEV';
 }
 
 function getDiscordClient(req) {
@@ -160,13 +175,208 @@ function getBuildTime() {
   return String(process.env.BUILD_TIME || process.env.BUILD_DATE || process.env.DEPLOYED_AT || '').trim() || null;
 }
 
-function getRuntimePathsStatus() {
-  const base = path.join(process.cwd(), 'src', 'runtime', String(process.env.BOT_MODE || 'dev').toLowerCase());
+function getRuntimePathsStatus(environment = getRuntimeMode()) {
+  const base = path.join(process.cwd(), 'src', 'runtime', getEnvironmentKey(environment));
   const folders = ['guilds', 'logs', 'backups', 'data', 'cache'];
   return Object.fromEntries(folders.map((folder) => {
     const fullPath = path.join(base, folder);
     return [folder, { path: fullPath, exists: fs.existsSync(fullPath) }];
   }));
+}
+
+function safeReadJson(filePath, fallback = null) {
+  try {
+    if (!filePath || !fs.existsSync(filePath)) return fallback;
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return fallback;
+  }
+}
+
+function getDirectorySize(dirPath) {
+  if (!dirPath || !fs.existsSync(dirPath)) return 0;
+  let total = 0;
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const fullPath = path.join(dirPath, entry.name);
+    try {
+      if (entry.isDirectory()) total += getDirectorySize(fullPath);
+      else total += fs.statSync(fullPath).size;
+    } catch {
+      // Ignore files that vanish mid-scan.
+    }
+  }
+
+  return total;
+}
+
+function formatBytes(bytes = 0) {
+  const value = Number(bytes || 0);
+  if (!Number.isFinite(value) || value <= 0) return '0 B';
+
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const index = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1);
+  const amount = value / Math.pow(1024, index);
+
+  return `${amount >= 10 || index === 0 ? amount.toFixed(0) : amount.toFixed(1)} ${units[index]}`;
+}
+
+function scanBackupFiles(backupsPath, environment = getRuntimeMode()) {
+  if (!backupsPath || !fs.existsSync(backupsPath)) return [];
+
+  const results = [];
+  const guildFolders = fs.readdirSync(backupsPath, { withFileTypes: true }).filter((entry) => entry.isDirectory());
+
+  for (const guildFolder of guildFolders) {
+    const guildId = guildFolder.name;
+    const guildRoot = path.join(backupsPath, guildId);
+    const typeFolders = fs.readdirSync(guildRoot, { withFileTypes: true }).filter((entry) => entry.isDirectory());
+
+    for (const typeFolder of typeFolders) {
+      const backupType = typeFolder.name;
+      const typeRoot = path.join(guildRoot, backupType);
+      const files = fs.readdirSync(typeRoot, { withFileTypes: true })
+        .filter((entry) => entry.isFile() && entry.name.endsWith('.json') && !entry.name.endsWith('.integrity.json'));
+
+      for (const file of files) {
+        const filePath = path.join(typeRoot, file.name);
+        const backup = safeReadJson(filePath, {});
+        const stats = fs.statSync(filePath);
+        const integrityPath = `${filePath}.integrity.json`;
+        const integrity = safeReadJson(integrityPath, null);
+        const validation = (() => {
+          try {
+            return serverBackup.validateServerBackup(backup, { guildId: backup?.guild?.id || guildId, strict: false });
+          } catch (error) {
+            return { valid: false, safe: false, errors: [error.message], warnings: [], blockers: [error.message] };
+          }
+        })();
+
+        results.push({
+          id: backup.backupId || file.name.replace(/\.json$/, ''),
+          backupId: backup.backupId || file.name.replace(/\.json$/, ''),
+          environment,
+          guildId: backup.guild?.id || guildId,
+          guildName: backup.guild?.name || 'Unknown Guild',
+          backupType: backup.backupType || backup.type || backup.metadata?.backupType || backupType,
+          createdAt: backup.createdAt || stats.mtime.toISOString(),
+          createdBy: backup.createdBy || backup.requestedBy || 'system',
+          reason: backup.reason || 'Server backup',
+          path: filePath,
+          sizeBytes: stats.size,
+          sizeLabel: formatBytes(stats.size),
+          roles: Array.isArray(backup.roles) ? backup.roles.length : 0,
+          channels: Array.isArray(backup.channels) ? backup.channels.length : 0,
+          integrity: {
+            exists: Boolean(integrity),
+            verified: Boolean(backup.integrity?.verified || integrity?.integrity?.hash),
+            generatedAt: backup.integrity?.generatedAt || integrity?.integrity?.generatedAt || null,
+            path: integrityPath,
+          },
+          validation: {
+            valid: validation.valid !== false,
+            safe: validation.safe !== false,
+            warnings: Array.isArray(validation.warnings) ? validation.warnings.length : 0,
+            errors: Array.isArray(validation.errors) ? validation.errors.length : 0,
+            blockers: Array.isArray(validation.blockers) ? validation.blockers.length : 0,
+          },
+        });
+      }
+    }
+  }
+
+  return results.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+}
+
+function readRestoreQueue(environment = getRuntimeMode()) {
+  const recoveryRoot = path.join(process.cwd(), 'src', 'runtime', getEnvironmentKey(environment), 'recovery', 'restoreRequests');
+  const pending = safeReadJson(path.join(recoveryRoot, 'pending.json'), { requests: [] });
+  const history = safeReadJson(path.join(recoveryRoot, 'history.json'), { requests: [] });
+  const audit = safeReadJson(path.join(recoveryRoot, 'audit.json'), { requests: [] });
+
+  const pendingRequests = Array.isArray(pending.requests) ? pending.requests : [];
+  const historyRequests = Array.isArray(history.requests) ? history.requests : [];
+  const auditRequests = Array.isArray(audit.requests) ? audit.requests : [];
+
+  return {
+    path: recoveryRoot,
+    exists: fs.existsSync(recoveryRoot),
+    pending: pendingRequests.slice(0, 25),
+    history: historyRequests.slice(0, 25),
+    audit: auditRequests.slice(0, 25),
+    counts: {
+      pending: pendingRequests.length,
+      history: historyRequests.length,
+      audit: auditRequests.length,
+      failed: historyRequests.filter((request) => String(request.status || '').toLowerCase() === 'failed').length,
+    },
+  };
+}
+
+function buildBackupOverview(req, forcedEnvironment = getRuntimeMode()) {
+  const environment = getEnvironmentLabel(forcedEnvironment);
+  const runtimePaths = getRuntimePathsStatus(environment);
+  const backupsPath = runtimePaths.backups?.path;
+  const restorePoints = scanBackupFiles(backupsPath, environment);
+  const restoreQueue = readRestoreQueue(environment);
+  const backupSizeBytes = getDirectorySize(backupsPath);
+  const lastBackupAt = restorePoints[0]?.createdAt || null;
+  const failedIntegrity = restorePoints.filter((backup) => !backup.integrity?.exists || backup.validation?.valid === false).length;
+  const warnings = [];
+
+  if (!runtimePaths.backups?.exists) warnings.push('Backup folder missing');
+  if (failedIntegrity) warnings.push(`${failedIntegrity} backup integrity/validation issue(s)`);
+  if (restoreQueue.counts.failed) warnings.push(`${restoreQueue.counts.failed} failed restore request(s)`);
+
+  return {
+    environment,
+    mode: environment,
+    status: getDiscordClient(req)?.isReady?.() ? 'online' : 'degraded',
+    runtimePaths,
+    backups: {
+      path: backupsPath,
+      restorePoints: restorePoints.length,
+      sizeBytes: backupSizeBytes,
+      sizeLabel: formatBytes(backupSizeBytes),
+      lastBackupAt,
+      failedIntegrity,
+      recent: restorePoints.slice(0, 15),
+    },
+    restoreQueue,
+    services: {
+      backupWorker: 'available',
+      restoreQueue: restoreQueue.exists ? 'available' : 'not_initialised',
+    },
+    checkedAt: new Date().toISOString(),
+    warnings,
+    warning: warnings[0] || '',
+  };
+}
+
+function summariseBackupEnvironments(environments = []) {
+  const totalSizeBytes = environments.reduce((sum, environment) => sum + Number(environment.backups?.sizeBytes || 0), 0);
+  const restorePoints = environments.reduce((sum, environment) => sum + Number(environment.backups?.restorePoints || 0), 0);
+  const restoreQueuePending = environments.reduce((sum, environment) => sum + Number(environment.restoreQueue?.counts?.pending || 0), 0);
+  const failed = environments.reduce((sum, environment) => sum + Number(environment.backups?.failedIntegrity || 0) + Number(environment.restoreQueue?.counts?.failed || 0), 0);
+  const warnings = environments.reduce((sum, environment) => sum + (Array.isArray(environment.warnings) ? environment.warnings.length : environment.warning ? 1 : 0), 0);
+  const lastBackupAt = environments
+    .map((environment) => environment.backups?.lastBackupAt)
+    .filter(Boolean)
+    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] || null;
+
+  return {
+    environments: environments.length,
+    ready: environments.filter((environment) => environment.runtimePaths?.backups?.exists && environment.status !== 'offline').length,
+    restorePoints,
+    totalSizeBytes,
+    totalSizeLabel: formatBytes(totalSizeBytes),
+    restoreQueuePending,
+    failed,
+    warnings,
+    lastBackupAt,
+    health: warnings || failed ? 'attention' : 'healthy',
+  };
 }
 
 function buildModuleSummary() {
@@ -253,7 +463,7 @@ function buildRuntimePayload(req, forcedEnvironment = getRuntimeMode()) {
       backupWorker: 'available',
       socketHub: 'available',
     },
-    runtimePaths: getRuntimePathsStatus(),
+    runtimePaths: getRuntimePathsStatus(forcedEnvironment),
     modules: buildModuleSummary(),
     checkedAt: new Date().toISOString(),
   };
@@ -270,51 +480,75 @@ function summariseRuntimeEnvironments(environments = []) {
   };
 }
 
-async function fetchEnvironmentGuilds(port, environment) {
+async function fetchInternalJson(port, route, fallback, logLabel, environment, options = {}) {
   try {
     const token = String(process.env.OWNER_INTERNAL_TOKEN || '').trim();
-    const response = await fetch(`http://127.0.0.1:${port}/api/owner/guilds`, { headers: { 'x-goliath-owner-token': token } });
+    const response = await fetch(`http://127.0.0.1:${port}${route}`, {
+      method: options.method || 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goliath-owner-token': token,
+      },
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
     if (!response.ok) {
-      console.warn(`[OWNER GUILDS ALL] ${environment} returned ${response.status}`);
-      return [];
+      if (options.returnOffline) return { environment, mode: environment, status: 'offline', port, error: `HTTP ${response.status}` };
+      console.warn(`[${logLabel}] ${environment} returned ${response.status}`);
+      return fallback;
     }
-    const payload = await response.json();
-    const guilds = Array.isArray(payload.guilds) ? payload.guilds : [];
-    return guilds.map((guild) => ({ ...guild, environment, runtimeMode: environment, sourcePort: port }));
+    return response.json();
   } catch (error) {
-    if (shouldLogEnvironmentUnavailable()) console.warn(`[OWNER GUILDS ALL] ${environment} unavailable on port ${port}:`, error.message);
-    return [];
+    if (shouldLogEnvironmentUnavailable()) console.warn(`[${logLabel}] ${environment} unavailable on port ${port}:`, error.message);
+    if (options.returnOffline) return { environment, mode: environment, status: 'offline', port, error: error.message };
+    return fallback;
   }
+}
+
+async function fetchEnvironmentGuilds(port, environment) {
+  const payload = await fetchInternalJson(port, '/api/owner/guilds', { guilds: [] }, 'OWNER GUILDS ALL', environment);
+  const guilds = Array.isArray(payload.guilds) ? payload.guilds : [];
+  return guilds.map((guild) => ({ ...guild, environment, runtimeMode: environment, sourcePort: port }));
 }
 
 async function fetchEnvironmentSecurity(port, environment) {
-  try {
-    const token = String(process.env.OWNER_INTERNAL_TOKEN || '').trim();
-    const response = await fetch(`http://127.0.0.1:${port}/api/owner/security`, { headers: { 'x-goliath-owner-token': token } });
-    if (!response.ok) {
-      console.warn(`[OWNER SECURITY ALL] ${environment} returned ${response.status}`);
-      return [];
-    }
-    const payload = await response.json();
-    const guilds = Array.isArray(payload.guilds) ? payload.guilds : [];
-    return guilds.map((guild) => ({ ...guild, environment, runtimeMode: environment, sourcePort: port }));
-  } catch (error) {
-    if (shouldLogEnvironmentUnavailable()) console.warn(`[OWNER SECURITY ALL] ${environment} unavailable on port ${port}:`, error.message);
-    return [];
-  }
+  const payload = await fetchInternalJson(port, '/api/owner/security', { guilds: [] }, 'OWNER SECURITY ALL', environment);
+  const guilds = Array.isArray(payload.guilds) ? payload.guilds : [];
+  return guilds.map((guild) => ({ ...guild, environment, runtimeMode: environment, sourcePort: port }));
 }
 
 async function fetchEnvironmentRuntime(port, environment) {
-  try {
-    const token = String(process.env.OWNER_INTERNAL_TOKEN || '').trim();
-    const response = await fetch(`http://127.0.0.1:${port}/api/owner/runtime/local`, { headers: { 'x-goliath-owner-token': token } });
-    if (!response.ok) return { environment, mode: environment, status: 'offline', port, error: `HTTP ${response.status}` };
-    const payload = await response.json();
-    return { ...(payload.runtime || {}), environment, mode: environment, port, sourcePort: port };
-  } catch (error) {
-    if (shouldLogEnvironmentUnavailable()) console.warn(`[OWNER RUNTIME ALL] ${environment} unavailable on port ${port}:`, error.message);
-    return { environment, mode: environment, status: 'offline', port, error: error.message };
+  const payload = await fetchInternalJson(port, '/api/owner/runtime/local', null, 'OWNER RUNTIME ALL', environment, { returnOffline: true });
+  if (payload?.status === 'offline') return payload;
+  return { ...(payload.runtime || {}), environment, mode: environment, port, sourcePort: port };
+}
+
+async function fetchEnvironmentBackups(port, environment) {
+  const payload = await fetchInternalJson(port, '/api/owner/backups/local', null, 'OWNER BACKUPS ALL', environment, { returnOffline: true });
+  if (payload?.status === 'offline') {
+    return {
+      environment,
+      mode: environment,
+      status: 'offline',
+      sourcePort: port,
+      port,
+      runtimePaths: getRuntimePathsStatus(environment),
+      backups: { restorePoints: 0, sizeBytes: 0, sizeLabel: '0 B', recent: [], failedIntegrity: 0 },
+      restoreQueue: { pending: [], history: [], audit: [], counts: { pending: 0, history: 0, audit: 0, failed: 0 } },
+      warnings: [payload.error || 'Environment unavailable'],
+      warning: payload.error || 'Environment unavailable',
+      checkedAt: new Date().toISOString(),
+    };
   }
+
+  return { ...(payload.environment || payload), environment, mode: environment, sourcePort: port, port };
+}
+
+async function proxyManualBackup(port, environment, body) {
+  return fetchInternalJson(port, '/api/owner/backups/manual/local', null, 'OWNER MANUAL BACKUP', environment, {
+    method: 'POST',
+    body,
+    returnOffline: true,
+  });
 }
 
 /* ==================================================
@@ -379,6 +613,118 @@ router.get('/security/all', requireOwner, async (req, res) => {
     return res.json({ success: true, owner: true, mode: 'GLOBAL', runtimeMode: 'GLOBAL', environment: requestedEnvironment, guilds, ...summary, updatedAt: new Date().toISOString() });
   } catch (error) {
     console.error('[OWNER SECURITY ALL]', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/* ==================================================
+   BACKUP CENTER V2
+================================================== */
+router.get('/backups/local', requireOwnerOrInternal, (req, res) => {
+  try {
+    const environment = buildBackupOverview(req, getRuntimeMode());
+    return res.json({
+      success: true,
+      owner: true,
+      mode: environment.environment,
+      runtimeMode: environment.environment,
+      environment,
+      environments: [environment],
+      summary: summariseBackupEnvironments([environment]),
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('[OWNER BACKUPS LOCAL]', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.get('/backups', requireOwner, async (req, res) => {
+  try {
+    const requestedEnvironment = String(req.query.environment || 'all').toUpperCase();
+    let environments = await Promise.all(ENVIRONMENT_PORTS.map((environmentConfig) => fetchEnvironmentBackups(environmentConfig.port, environmentConfig.environment)));
+    if (requestedEnvironment !== 'ALL') environments = environments.filter((environment) => String(environment.environment || '').toUpperCase() === requestedEnvironment);
+
+    return res.json({
+      success: true,
+      owner: true,
+      mode: 'GLOBAL',
+      runtimeMode: 'GLOBAL',
+      environment: requestedEnvironment,
+      environments,
+      summary: summariseBackupEnvironments(environments),
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('[OWNER BACKUPS]', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.post('/backups/manual/local', requireOwnerOrInternal, async (req, res) => {
+  try {
+    const client = getDiscordClient(req);
+    const guildId = String(req.body?.guildId || '').trim();
+    const reason = String(req.body?.reason || 'Manual owner backup').trim();
+
+    if (!client?.guilds?.cache) return res.status(503).json({ success: false, error: 'Discord client unavailable.' });
+    if (!guildId) return res.status(400).json({ success: false, error: 'guildId is required.' });
+
+    const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
+    if (!guild) return res.status(404).json({ success: false, error: 'Guild not found in this runtime.' });
+
+    const backup = await serverBackup.createServerBackup(guild, {
+      type: 'runtime',
+      requestedBy: req.session?.user?.id || 'owner-internal',
+      createdBy: req.session?.user?.id || 'owner-internal',
+      reason,
+    });
+
+    return res.json({
+      success: true,
+      owner: true,
+      environment: getRuntimeMode(),
+      backup: {
+        backupId: backup.backupId,
+        backupType: backup.backupType || backup.type || 'runtime',
+        guildId: backup.guild?.id || guild.id,
+        guildName: backup.guild?.name || guild.name,
+        createdAt: backup.createdAt,
+        createdBy: backup.createdBy || null,
+        reason: backup.reason,
+        path: backup.filePath || backup.file || backup.path || null,
+        roles: backup.roles?.length || 0,
+        channels: backup.channels?.length || 0,
+        integrity: backup.integrity || null,
+      },
+      overview: buildBackupOverview(req, getRuntimeMode()),
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('[OWNER MANUAL BACKUP LOCAL]', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.post('/backups/manual', requireOwner, async (req, res) => {
+  try {
+    const targetEnvironment = getEnvironmentLabel(req.body?.environment || getRuntimeMode());
+    const target = ENVIRONMENT_PORTS.find((item) => item.environment === targetEnvironment);
+
+    if (!target) return res.status(400).json({ success: false, error: 'Invalid environment.' });
+
+    const payload = await proxyManualBackup(target.port, target.environment, {
+      guildId: req.body?.guildId,
+      reason: req.body?.reason || 'Manual owner backup',
+    });
+
+    if (payload?.status === 'offline') {
+      return res.status(503).json({ success: false, error: payload.error || `${target.environment} is unavailable.` });
+    }
+
+    return res.json(payload);
+  } catch (error) {
+    console.error('[OWNER MANUAL BACKUP]', error);
     return res.status(500).json({ success: false, error: error.message });
   }
 });
