@@ -16,6 +16,7 @@ import Navbar from './shared/Navbar.jsx';
 import OwnerSidebar from './pages/owner/components/OwnerSidebar.jsx';
 import Topbar from './shared/Topbar.jsx';
 import Login from './pages/core/Login.jsx';
+import DashboardErrorBoundary from './shared/DashboardErrorBoundary.jsx';
 
 const OWNER_MANAGED_GUILD_KEY = 'owner_managed_guild';
 const GUILD_STORAGE_KEY = 'selected_guild';
@@ -373,9 +374,11 @@ export default function App() {
               ) : routeNeedsGuild && !guildState.guildsLoading && !effectiveSelectedGuild ? (
                 <CenterMessage theme={theme} title="No server selected" text="Select a server from the navbar to continue." />
               ) : ActivePage ? (
-                <Suspense fallback={<CenterMessage theme={theme} title="Loading page..." text="Preparing this dashboard module." />}>
-                  <ActivePage {...pageProps} />
-                </Suspense>
+                <DashboardErrorBoundary theme={theme} resetKey={location.pathname}>
+                  <Suspense fallback={<CenterMessage theme={theme} title="Loading page..." text="Preparing this dashboard module." />}>
+                    <ActivePage {...pageProps} />
+                  </Suspense>
+                </DashboardErrorBoundary>
               ) : (
                 <CenterMessage theme={theme} title="Page not found" text="That dashboard page does not exist." />
               )}
