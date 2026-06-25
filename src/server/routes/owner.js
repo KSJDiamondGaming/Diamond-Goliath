@@ -20,8 +20,17 @@ function shouldLogEnvironmentUnavailable() {
   return process.env.NODE_ENV === 'production';
 }
 
+function splitIds(value) {
+  return String(value || '').split(',').map((id) => id.trim()).filter(Boolean);
+}
+
 function getOwnerIds() {
-  return String(process.env.OWNER_IDS || '').split(',').map((id) => id.trim()).filter(Boolean);
+  return [...new Set([
+    ...splitIds(process.env.OWNER_ID),
+    ...splitIds(process.env.OWNER_IDS),
+    ...splitIds(process.env.BOT_OWNER_ID),
+    ...splitIds(process.env.BOT_OWNER_IDS),
+  ])];
 }
 
 function isOwnerUser(userId) {
