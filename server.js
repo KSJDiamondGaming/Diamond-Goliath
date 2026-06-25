@@ -58,6 +58,7 @@ const modulesRoutes = require('./src/server/routes/modules');
 const pollsRoutes = require('./src/server/routes/polls');
 const statsRoutes = require('./src/server/routes/stats');
 const starboardRoutes = require('./src/server/routes/starboard');
+const tempVoiceRoutes = require('./src/server/routes/tempVoice');
 
 /* ---------------- SAFE MODULE LOADS ---------------- */
 
@@ -298,6 +299,7 @@ app.use('/api/modules', modulesRoutes);
 app.use('/api/polls', pollsRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/starboard', starboardRoutes);
+app.use('/api/temp-voice', tempVoiceRoutes);
 
 app.use(express.static(path.join(process.cwd(), 'dist')));
 
