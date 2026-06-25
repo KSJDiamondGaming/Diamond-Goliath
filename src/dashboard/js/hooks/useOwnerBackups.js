@@ -20,31 +20,52 @@ function normaliseEnvironment(environment = {}) {
   const backupPath = environment.runtimePaths?.backups || {};
   const status = String(environment.status || 'offline').toLowerCase();
   const backupWorker = environment.services?.backupWorker || 'unknown';
+  const restoreQueue = environment.restoreQueue || { pending: [], history: [], audit: [], counts: {} };
+  const backups = environment.backups || {};
   const checkedAt = environment.checkedAt || new Date().toISOString();
-  const warning = environment.error || (!backupPath.exists ? 'Backup folder missing' : status === 'offline' ? 'Runtime offline' : '');
+  const warnings = Array.isArray(environment.warnings) ? environment.warnings : environment.warning ? [environment.warning] : [];
+  const warning = warnings[0] || (!backupPath.exists ? 'Backup folder missing' : status === 'offline' ? 'Runtime offline' : '');
 
   return {
     id: name,
     environment: name,
     status,
     backupWorker,
-    backupPath: backupPath.path || '',
+    backupPath: backups.path || backupPath.path || '',
     backupFolderReady: Boolean(backupPath.exists),
-    restorePoints: Number(environment.backups?.restorePoints || 0),
-    backupSizeBytes: Number(environment.backups?.sizeBytes || 0),
-    backupSizeLabel: formatBytes(environment.backups?.sizeBytes || 0),
-    lastBackupAt: environment.backups?.lastBackupAt || null,
+    restorePoints: Number(backups.restorePoints || 0),
+    backupSizeBytes: Number(backups.sizeBytes || 0),
+    backupSizeLabel: backups.sizeLabel || formatBytes(backups.sizeBytes || 0),
+    lastBackupAt: backups.lastBackupAt || null,
+    failedIntegrity: Number(backups.failedIntegrity || 0),
+    recentBackups: Array.isArray(backups.recent) ? backups.recent : [],
+    restoreQueue: {
+      path: restoreQueue.path || '',
+      exists: Boolean(restoreQueue.exists),
+      pending: Array.isArray(restoreQueue.pending) ? restoreQueue.pending : [],
+      history: Array.isArray(restoreQueue.history) ? restoreQueue.history : [],
+      audit: Array.isArray(restoreQueue.audit) ? restoreQueue.audit : [],
+      counts: {
+        pending: Number(restoreQueue.counts?.pending || 0),
+        history: Number(restoreQueue.counts?.history || 0),
+        audit: Number(restoreQueue.counts?.audit || 0),
+        failed: Number(restoreQueue.counts?.failed || 0),
+      },
+    },
     checkedAt,
+    warnings,
     warning,
     port: environment.port || environment.sourcePort || null,
   };
 }
 
 function buildSummary(environments = []) {
-  const warnings = environments.filter((environment) => environment.warning);
+  const warnings = environments.filter((environment) => environment.warning || environment.warnings?.length);
   const ready = environments.filter((environment) => environment.backupFolderReady && environment.status !== 'offline');
   const totalSizeBytes = environments.reduce((sum, environment) => sum + Number(environment.backupSizeBytes || 0), 0);
   const restorePoints = environments.reduce((sum, environment) => sum + Number(environment.restorePoints || 0), 0);
+  const restoreQueuePending = environments.reduce((sum, environment) => sum + Number(environment.restoreQueue?.counts?.pending || 0), 0);
+  const failed = environments.reduce((sum, environment) => sum + Number(environment.failedIntegrity || 0) + Number(environment.restoreQueue?.counts?.failed || 0), 0);
   const lastBackupAt = environments
     .map((environment) => environment.lastBackupAt)
     .filter(Boolean)
@@ -54,29 +75,21 @@ function buildSummary(environments = []) {
     environments: environments.length,
     ready: ready.length,
     warnings: warnings.length,
-    failed: environments.filter((environment) => environment.status === 'offline' || !environment.backupFolderReady).length,
+    failed,
     restorePoints,
+    restoreQueuePending,
     totalSizeBytes,
     totalSizeLabel: formatBytes(totalSizeBytes),
     lastBackupAt,
-    health: warnings.length ? 'attention' : 'healthy',
+    health: warnings.length || failed ? 'attention' : 'healthy',
   };
 }
 
-function normaliseRuntimePayload(payload = {}) {
-  const runtime = payload.runtime || {};
-  const environments = Array.isArray(payload.environments)
-    ? payload.environments
-    : Array.isArray(runtime.environments)
-      ? runtime.environments
-      : [];
-
-  const currentEnvironment = runtime?.environment || runtime?.mode ? [runtime] : [];
-  const merged = [...environments, ...currentEnvironment]
+function normaliseBackupPayload(payload = {}) {
+  const environments = Array.isArray(payload.environments) ? payload.environments : payload.environment ? [payload.environment] : [];
+  const merged = environments
     .map(normaliseEnvironment)
-    .filter((environment, index, list) => (
-      list.findIndex((item) => item.environment === environment.environment) === index
-    ))
+    .filter((environment, index, list) => list.findIndex((item) => item.environment === environment.environment) === index)
     .sort((a, b) => {
       const aIndex = ENVIRONMENT_ORDER.indexOf(a.environment);
       const bIndex = ENVIRONMENT_ORDER.indexOf(b.environment);
@@ -85,34 +98,63 @@ function normaliseRuntimePayload(payload = {}) {
 
   return {
     environments: merged,
-    summary: buildSummary(merged),
-    updatedAt: payload.updatedAt || runtime.checkedAt || new Date().toISOString(),
+    summary: payload.summary ? { ...buildSummary(merged), ...payload.summary, totalSizeLabel: payload.summary.totalSizeLabel || formatBytes(payload.summary.totalSizeBytes || 0) } : buildSummary(merged),
+    updatedAt: payload.updatedAt || new Date().toISOString(),
   };
 }
 
-export default function useOwnerBackups() {
+export default function useOwnerBackups(defaultEnvironment = 'all') {
+  const [environmentFilter, setEnvironmentFilter] = useState(defaultEnvironment);
   const [state, setState] = useState({
     environments: [],
     summary: buildSummary([]),
     updatedAt: null,
   });
   const [loading, setLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState('');
+  const [actionMessage, setActionMessage] = useState('');
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (nextEnvironment = environmentFilter) => {
     try {
       setLoading(true);
       setError('');
 
-      const payload = await api.getPlatformRuntime();
-      setState(normaliseRuntimePayload(payload));
+      const payload = await api.getOwnerBackups(nextEnvironment);
+      setState(normaliseBackupPayload(payload));
     } catch (err) {
       setState({ environments: [], summary: buildSummary([]), updatedAt: null });
       setError(err.message || 'Failed to load backup data.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [environmentFilter]);
+
+  const changeEnvironment = useCallback((nextEnvironment) => {
+    setEnvironmentFilter(nextEnvironment);
+    refresh(nextEnvironment);
+  }, [refresh]);
+
+  const createManualBackup = useCallback(async ({ environment, guildId, reason }) => {
+    try {
+      setActionLoading(true);
+      setActionMessage('');
+      setError('');
+
+      const payload = await api.createOwnerManualBackup({ environment, guildId, reason });
+      const backupId = payload.backup?.backupId || 'created';
+      setActionMessage(`Manual backup ${backupId} completed for ${payload.backup?.guildName || guildId}.`);
+      await refresh(environmentFilter);
+      return payload;
+    } catch (err) {
+      const message = err.message || 'Manual backup failed.';
+      setActionMessage('');
+      setError(message);
+      throw err;
+    } finally {
+      setActionLoading(false);
+    }
+  }, [environmentFilter, refresh]);
 
   useEffect(() => {
     let cancelled = false;
@@ -121,8 +163,8 @@ export default function useOwnerBackups() {
       try {
         setLoading(true);
         setError('');
-        const payload = await api.getPlatformRuntime();
-        if (!cancelled) setState(normaliseRuntimePayload(payload));
+        const payload = await api.getOwnerBackups(environmentFilter);
+        if (!cancelled) setState(normaliseBackupPayload(payload));
       } catch (err) {
         if (!cancelled) {
           setState({ environments: [], summary: buildSummary([]), updatedAt: null });
@@ -138,17 +180,26 @@ export default function useOwnerBackups() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [environmentFilter]);
 
   const backups = useMemo(() => state.environments, [state.environments]);
+  const recentBackups = useMemo(() => backups.flatMap((environment) => environment.recentBackups.map((backup) => ({ ...backup, environment: backup.environment || environment.environment }))).sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()), [backups]);
+  const restoreQueue = useMemo(() => backups.flatMap((environment) => environment.restoreQueue.pending.map((request) => ({ ...request, environment: environment.environment }))), [backups]);
 
   return {
     backups,
     environments: state.environments,
+    recentBackups,
+    restoreQueue,
     summary: state.summary,
     updatedAt: state.updatedAt,
+    environmentFilter,
     loading,
+    actionLoading,
     error,
+    actionMessage,
     refresh,
+    changeEnvironment,
+    createManualBackup,
   };
 }
