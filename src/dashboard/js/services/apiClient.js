@@ -48,7 +48,7 @@ export const api = {
   createOwnerManualBackup: (payload) => request('/api/owner/backups/manual', { method: 'POST', body: JSON.stringify(payload) }),
   getOwnerRuntime: (guildId) => request(`/api/status?guildId=${guildId}`),
   getOwnerSecurity: (guildId) => request(`/api/security/overview?guildId=${guildId}`),
-  getPermissionHealth: (guildId) => request(`/api/permission-health/${guildId}`),
+  getPermissionHealth: (guildId) => request(`/api/permissions/${guildId}`),
   getGuilds: () => request('/api/discord/guilds'),
   getGuildChannels: (guildId) => request(`/api/discord/${guildId}/channels`),
   getGuildRoles: (guildId) => request(`/api/discord/${guildId}/roles`),
