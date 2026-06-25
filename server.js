@@ -131,6 +131,7 @@ intents: [
 GatewayIntentBits.Guilds,
 GatewayIntentBits.GuildMembers,
 GatewayIntentBits.GuildMessages,
+GatewayIntentBits.GuildVoiceStates,
 GatewayIntentBits.MessageContent,
 ],
 partials: [Partials.Channel, Partials.Message],
@@ -218,84 +219,86 @@ return [...origins];
 
 function getDashboardClientUrl() {
 return String(
-process.env.CLIENT_URL ||
 process.env.DASHBOARD_CLIENT_URL ||
-process.env.VITE_CLIENT_URL ||
-'https://goliath.ksjdigital.co.uk',
-).trim();
+process.env.CLIENT_URL ||
+'http://localhost:5173',
+).replace(/\/$/, '');
 }
 
 function startDashboardApiServer() {
 const app = express();
 const apiServer = http.createServer(app);
-
-app.locals.client = client;
-app.locals.discordClient = client;
-global.client = client;
-global.discordClient = client;
-
-const allowedOrigins = getAllowedOrigins();
 const dashboardClientUrl = getDashboardClientUrl();
 
 app.set('trust proxy', 1);
+app.set('goliath.client', client);
+
+const allowedOrigins = getAllowedOrigins();
 
 app.use(
 cors({
 origin(origin, callback) {
-if (!origin) return callback(null, true);
+  if (!origin || allowedOrigins.includes(origin)) {
+    callback(null, true);
+    return;
+  }
 
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-
-    return callback(new Error(`CORS blocked origin: ${origin}`));
-  },
-  credentials: true,
+  callback(new Error(`CORS blocked origin: ${origin}`));
+},
+credentials: true,
 }),
 );
 
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 
 app.use(
 session({
-name: 'goliath_dashboard_session',
-secret: process.env.SESSION_SECRET || 'dev-secret',
+secret: process.env.SESSION_SECRET || process.env.DASHBOARD_SESSION_SECRET || 'goliath-dev-session',
 resave: false,
 saveUninitialized: false,
-proxy: true,
 cookie: {
-httpOnly: true,
-secure: isProduction,
-sameSite: isProduction ? 'none' : 'lax',
+  httpOnly: true,
+  secure: isProduction,
+  sameSite: isProduction ? 'none' : 'lax',
+  maxAge: 1000 * 60 * 60 * 24 * 7,
 },
 }),
 );
 
-app.use('/api/auth', authRoutes);
+app.use((req, res, next) => {
+req.client = client;
+req.io = req.app.get('io');
+next();
+});
+
+app.use('/auth', authRoutes);
+app.use('/api/status', statusRoutes);
+app.use('/api/owner', ownerRoutes);
+app.use('/api/owner/translation', ownerTranslationRoutes);
 app.use('/api/discord', discordResourceRoutes);
 app.use('/api/discord', discordRoutes);
-app.use('/api/status', statusRoutes);
-app.use('/api/owner/translation', ownerTranslationRoutes);
-app.use('/api/owner', ownerRoutes);
-
-app.use('/api/config', generalSettingsRoutes);
 app.use('/api/config/automod', automodRoutes);
+app.use('/api/config/general', generalSettingsRoutes);
 app.use('/api/config/logs', logsRoutes);
 app.use('/api/config/messages', messagesRoutes);
 app.use('/api/config/embeds', embedsRoutes);
-
 app.use('/api/billing', billingRoutes);
-app.use('/api/cases', moderationRoutes);
+app.use('/api/moderation', moderationRoutes);
+app.use('/api/restore', serverRestoreRoutes);
+app.use('/api/security', securityRoutes);
 app.use('/api/tickets', ticketRoutes);
 app.use('/api/forms', formsRoutes);
 app.use('/api/transcripts', transcriptRoutes);
 app.use('/api/translation', translationRoutes);
-app.use('/api/permission-health', permissionHealthRoutes);
+app.use('/api/permissions', permissionHealthRoutes);
 app.use('/api/social', socialRoutes);
 app.use('/api/modules', modulesRoutes);
 
-app.use('/api/server-restore', serverRestoreRoutes);
-app.use('/api/security', securityRoutes);
+app.use(express.static(path.join(process.cwd(), 'dist')));
+
+app.get('*', (req, res) => {
+res.sendFile(path.join(process.cwd(), 'dist', 'index.html'));
+});
 
 initSocketHub(apiServer, {
 clientUrl: dashboardClientUrl,
@@ -442,6 +445,3 @@ start().catch((error) => {
 console.error('❌ Fatal startup error:', error);
 process.exit(1);
 });
-
-
-
