@@ -1,6 +1,7 @@
 'use strict';
 
 const { ChannelType, PermissionFlagsBits, PermissionsBitField } = require('discord.js');
+const testDevOverride = require('../dev/testDevOverrideManager');
 
 const DEFAULT_BOT_CHANNEL_PERMISSIONS = [
   PermissionFlagsBits.ViewChannel,
@@ -70,6 +71,18 @@ async function fetchChannel(guild, channelId) {
   return guild.channels?.cache?.get(id) || guild.channels?.fetch?.(id).catch(() => null) || null;
 }
 
+function bypassResult(scope, guild, channel, channelId, metadata = {}) {
+  return buildGuardResult({
+    scope,
+    guild,
+    channel,
+    channelId,
+    ok: true,
+    failures: [],
+    metadata: testDevOverride.buildBypassMetadata(metadata),
+  });
+}
+
 async function canManageRole(guild, roleId) {
   const role = await fetchRole(guild, roleId);
   const botMember = await getBotMember(guild);
@@ -89,6 +102,10 @@ async function canManageRole(guild, roleId) {
 
   if (role.id === guild.id) {
     return { ok: false, roleId: role.id, roleName: role.name, reason: 'everyone_role', message: 'The @everyone role cannot be managed as a normal assignable role.' };
+  }
+
+  if (testDevOverride.shouldBypassGuard()) {
+    return { ok: true, roleId: role.id, roleName: role.name, bypassed: true, metadata: testDevOverride.buildBypassMetadata({ reason: 'canManageRole' }) };
   }
 
   if (!botMember.permissions?.has(PermissionFlagsBits.ManageRoles)) {
@@ -131,6 +148,10 @@ async function validateRoleSelection(guild, roleIds = [], options = {}) {
     if (!result.ok) failures.push({ type: 'role', ...result });
   }
 
+  if (failures.length && testDevOverride.shouldBypassGuard()) {
+    return bypassResult(options.scope || 'roles', guild, null, null, { roles, originalFailures: failures });
+  }
+
   return buildGuardResult({ scope: options.scope || 'roles', guild, ok: failures.length === 0, failures, metadata: { roles } });
 }
 
@@ -156,6 +177,13 @@ async function validateChannelAccess(guild, channelId, requiredPermissions = DEF
       channel,
       ok: false,
       failures: [{ type: 'guild', reason: 'bot_member_not_found', message: 'Goliath could not read its own server member profile.' }],
+    });
+  }
+
+  if (testDevOverride.shouldBypassGuard()) {
+    return bypassResult(options.scope || 'channel', guild, channel, channel.id, {
+      requiredPermissions: permissions.map(permissionLabel),
+      channelType: channel.type,
     });
   }
 
@@ -186,7 +214,7 @@ async function validateCategoryAccess(guild, categoryId, requiredPermissions = M
   const result = await validateChannelAccess(guild, categoryId, requiredPermissions, { ...options, scope: options.scope || 'category' });
   const category = result.channel || await fetchChannel(guild, categoryId);
 
-  if (result.ok && category?.type !== ChannelType.GuildCategory) {
+  if (result.ok && !result.metadata?.testDevOverride && category?.type !== ChannelType.GuildCategory) {
     return buildGuardResult({
       scope: options.scope || 'category',
       guild,
@@ -263,6 +291,13 @@ async function guardCategoryAccess(guild, categoryId, requiredPermissions = MANA
 async function resolveGuardResult({ guild, targetId, targetType, requiredPermissions, result, options = {} } = {}) {
   if (result?.ok) return result;
 
+  if (testDevOverride.shouldBypassGuard()) {
+    return bypassResult(options.scope || targetType || 'global', guild, result?.channel || null, targetId, {
+      originalResult: typeof result.toJSON === 'function' ? result.toJSON() : result,
+      requiredPermissions: normalisePermissions(requiredPermissions).map(permissionLabel),
+    });
+  }
+
   const canAttemptAutoFix = options.autoFix === true && isAutoFixableResult(result);
 
   if (canAttemptAutoFix && options.requireConfirmation === true) {
@@ -325,6 +360,10 @@ async function validateTicketDeployment(guild, config = {}) {
   if (roleIds.length) {
     const roleResult = await validateRoleSelection(guild, roleIds, { scope: 'ticket_roles', requireManageable: false });
     if (!roleResult.ok) failures.push(...roleResult.failures);
+  }
+
+  if (failures.length && testDevOverride.shouldBypassGuard()) {
+    return bypassResult('ticket_deployment', guild, null, null, { categoryIds, roleIds, originalFailures: failures });
   }
 
   return buildGuardResult({ scope: 'ticket_deployment', guild, ok: failures.length === 0, failures, metadata: { categoryIds, roleIds } });
@@ -419,7 +458,11 @@ function buildGuardResult({ scope, guild, channel, channelId, ok, failures = [],
     confirmationRequired: Boolean(metadata.confirmationRequired),
   };
 
-  result.message = result.ok ? 'Goliath has the required access.' : buildUserMessage(result);
+  result.message = result.ok
+    ? metadata.testDevOverride
+      ? 'Goliath DEV test override bypassed this guard. Discord API permissions are still enforced.'
+      : 'Goliath has the required access.'
+    : buildUserMessage(result);
 
   result.toJSON = () => ({
     ok: result.ok,
