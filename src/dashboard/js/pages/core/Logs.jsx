@@ -132,6 +132,20 @@ const DEFAULT_LOGS = {
   settings: DEFAULT_SETTINGS,
 };
 
+const disclosureHintStyles = `
+  .logs-page [data-disclosure-hint] {
+    opacity: 0;
+    transform: translateX(4px);
+    transition: opacity 160ms ease, transform 160ms ease;
+  }
+
+  .logs-page [data-disclosure-button]:hover [data-disclosure-hint],
+  .logs-page [data-disclosure-button]:focus-visible [data-disclosure-hint] {
+    opacity: 1;
+    transform: translateX(0);
+  }
+`;
+
 function getGuildId(selectedGuild) {
   if (!selectedGuild) return '';
   if (typeof selectedGuild === 'string') return selectedGuild;
@@ -186,6 +200,10 @@ function cleanChannels(payload = []) {
 }
 
 function hint(isOpen) {
+  return isOpen ? 'Collapse' : 'Expand';
+}
+
+function tooltipHint(isOpen) {
   return isOpen ? 'Click to collapse' : 'Click to expand';
 }
 
@@ -496,13 +514,15 @@ export default function Logs({ selectedGuild, theme }) {
       guild={{ id: guildId, name: selectedGuild?.name || selectedGuild?.guildName || 'Logging' }}
       actions={<><Toggle checked={logs.enabled} onChange={setEnabled} disabled={!guildId || saving} /><PrimaryButton onClick={() => saveNow(logs)} disabled={!guildId || saving}>{saving ? 'Saving...' : 'Save Now'}</PrimaryButton></>}
     >
+      <style>{disclosureHintStyles}</style>
+
       {!selectedGuild ? <EmptyState theme={theme} title="Select a guild" text="Select a guild to manage logging." /> : null}
       {error ? <Notice theme={theme} tone="danger">{error}</Notice> : null}
       {saveMessage ? <Notice theme={theme} tone={saveMessage.startsWith('❌') ? 'danger' : 'success'}>{saveMessage}</Notice> : null}
       {selectedGuild && loading ? <LoadingPanel theme={theme} text="Loading logging page..." /> : null}
 
       {selectedGuild && !loading ? (
-        <>
+        <div className="logs-page" style={{ display: 'grid', gap: 16 }}>
           <StatGrid min="170px">
             <SummaryStat theme={theme} label="Logging" value={logs.enabled ? 'Enabled' : 'Disabled'} accent={logs.enabled ? theme.success : theme.danger} description="Global logging state" />
             <SummaryStat theme={theme} label="Types Enabled" value={`${enabledEvents}/${allItems.length}`} accent="#60a5fa" description="Tracked log types" />
@@ -511,9 +531,9 @@ export default function Logs({ selectedGuild, theme }) {
           </StatGrid>
 
           <section style={{ background: 'linear-gradient(180deg, rgba(8,15,30,0.98), rgba(6,12,24,0.98))', border: `1px solid ${theme.cardBorder}`, borderRadius: 22, boxShadow: theme.shadow, overflow: 'hidden' }}>
-            <button type="button" title={hint(openPanels.logging)} onClick={() => setOpenPanels((prev) => ({ ...prev, logging: !prev.logging }))} style={{ width: '100%', border: 0, background: 'transparent', color: theme.cardText, padding: 'clamp(16px, 2vw, 22px)', display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'center', cursor: 'pointer', textAlign: 'left' }}>
+            <button data-disclosure-button type="button" aria-expanded={openPanels.logging} title={tooltipHint(openPanels.logging)} onClick={() => setOpenPanels((prev) => ({ ...prev, logging: !prev.logging }))} style={{ width: '100%', border: 0, background: 'transparent', color: theme.cardText, padding: 'clamp(16px, 2vw, 22px)', display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'center', cursor: 'pointer', textAlign: 'left' }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 12, fontWeight: 950, fontSize: 26 }}><span style={{ width: 36, height: 36, borderRadius: 10, display: 'grid', placeItems: 'center', background: 'rgba(255,255,255,0.08)' }}>▰</span>Logging</span>
-              <span style={{ color: theme.mutedText, fontWeight: 950 }}>{hint(openPanels.logging)}</span>
+              <span data-disclosure-hint style={{ color: theme.mutedText, fontWeight: 950 }}>{hint(openPanels.logging)}</span>
             </button>
 
             {openPanels.logging ? (
@@ -537,9 +557,9 @@ export default function Logs({ selectedGuild, theme }) {
 
                     return (
                       <div key={section.key} style={{ border: `1px solid ${theme.cardBorder}`, borderRadius: 18, overflow: 'hidden', background: 'rgba(15,23,42,0.38)' }}>
-                        <button type="button" title={hint(sectionOpen)} onClick={() => setOpenSections((prev) => ({ ...prev, [section.key]: !sectionOpen }))} style={{ width: '100%', border: 0, background: 'rgba(15,23,42,0.84)', color: theme.cardText, padding: '15px 16px', display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'center', cursor: 'pointer', textAlign: 'left' }}>
+                        <button type="button" aria-expanded={sectionOpen} title={tooltipHint(sectionOpen)} onClick={() => setOpenSections((prev) => ({ ...prev, [section.key]: !sectionOpen }))} style={{ width: '100%', border: 0, background: 'rgba(15,23,42,0.84)', color: theme.cardText, padding: '15px 16px', display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'center', cursor: 'pointer', textAlign: 'left' }}>
                           <span style={{ display: 'grid', gap: 4 }}><strong style={{ fontSize: 18 }}>{section.label}</strong><span style={{ color: theme.mutedText, fontSize: 13, lineHeight: 1.4 }}>{section.description}</span></span>
-                          <span style={{ color: theme.mutedText, fontSize: 12, fontWeight: 950, whiteSpace: 'nowrap' }}>{hint(sectionOpen)} • {activeCount}/{sectionItems.length}</span>
+                          <span style={{ color: theme.mutedText, fontSize: 12, fontWeight: 950, whiteSpace: 'nowrap' }}>{activeCount}/{sectionItems.length}</span>
                         </button>
 
                         {sectionOpen ? (
@@ -553,7 +573,7 @@ export default function Logs({ selectedGuild, theme }) {
                               return (
                                 <div key={category.key} style={{ border: `1px solid ${theme.cardBorder}`, borderRadius: 14, overflow: 'hidden', background: 'rgba(6,12,24,0.40)' }}>
                                   <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) auto', gap: 10, padding: 12, alignItems: 'center' }}>
-                                    <button type="button" title={hint(categoryOpen)} onClick={() => setOpenCategories((prev) => ({ ...prev, [category.key]: !categoryOpen }))} style={{ border: 0, background: 'transparent', color: theme.cardText, padding: 0, cursor: 'pointer', textAlign: 'left', display: 'grid', gap: 3 }}><strong>{category.label}</strong><span style={{ color: theme.mutedText, fontSize: 12 }}>{hint(categoryOpen)} • {categoryActiveCount}/{category.items.length} enabled</span></button>
+                                    <button type="button" aria-expanded={categoryOpen} title={tooltipHint(categoryOpen)} onClick={() => setOpenCategories((prev) => ({ ...prev, [category.key]: !categoryOpen }))} style={{ border: 0, background: 'transparent', color: theme.cardText, padding: 0, cursor: 'pointer', textAlign: 'left', display: 'grid', gap: 3 }}><strong>{category.label}</strong><span style={{ color: theme.mutedText, fontSize: 12 }}>{categoryActiveCount}/{category.items.length} enabled</span></button>
                                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end' }}><CategorySelect theme={theme} channels={channels} value={firstChannel} onChange={(value) => setCategoryDestination(category, value)} disabled={!channels.length} /><Toggle checked={categoryEnabled} onChange={(value) => setCategoryEvents(category, value)} /></div>
                                   </div>
 
@@ -579,7 +599,10 @@ export default function Logs({ selectedGuild, theme }) {
           </section>
 
           <section style={{ background: 'linear-gradient(180deg, rgba(8,15,30,0.98), rgba(6,12,24,0.98))', border: `1px solid ${theme.cardBorder}`, borderRadius: 22, boxShadow: theme.shadow, overflow: 'hidden' }}>
-            <button type="button" title={hint(openPanels.settings)} onClick={() => setOpenPanels((prev) => ({ ...prev, settings: !prev.settings }))} style={{ width: '100%', border: 0, background: 'transparent', color: theme.cardText, padding: 'clamp(16px, 2vw, 22px)', display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'center', cursor: 'pointer', textAlign: 'left' }}><span><h2 style={{ margin: 0, fontSize: 22 }}>Logging Settings</h2><span style={{ display: 'block', marginTop: 6, color: theme.mutedText, lineHeight: 1.5 }}>Noise controls merged into the main logging page.</span></span><span style={{ color: theme.mutedText, fontWeight: 950 }}>{hint(openPanels.settings)}</span></button>
+            <button data-disclosure-button type="button" aria-expanded={openPanels.settings} title={tooltipHint(openPanels.settings)} onClick={() => setOpenPanels((prev) => ({ ...prev, settings: !prev.settings }))} style={{ width: '100%', border: 0, background: 'transparent', color: theme.cardText, padding: 'clamp(16px, 2vw, 22px)', display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'center', cursor: 'pointer', textAlign: 'left' }}>
+              <h2 style={{ margin: 0, fontSize: 22 }}>Logging Settings</h2>
+              <span data-disclosure-hint style={{ color: theme.mutedText, fontWeight: 950 }}>{hint(openPanels.settings)}</span>
+            </button>
 
             {openPanels.settings ? (
               <div style={{ display: 'grid', gap: 10, padding: '0 clamp(16px, 2vw, 22px) clamp(16px, 2vw, 22px)' }}>
@@ -593,7 +616,7 @@ export default function Logs({ selectedGuild, theme }) {
               </div>
             ) : null}
           </section>
-        </>
+        </div>
       ) : null}
     </PageShell>
   );
