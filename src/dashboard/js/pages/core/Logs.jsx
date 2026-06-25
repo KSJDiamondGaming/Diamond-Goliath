@@ -182,8 +182,16 @@ function normalizeLogs(config = {}) {
   };
 }
 
-function cleanChannels(channels = []) {
-  return (Array.isArray(channels) ? channels : [])
+function extractResourceList(payload, key) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.[key])) return payload[key];
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.resources?.[key])) return payload.resources[key];
+  return [];
+}
+
+function cleanChannels(payload = []) {
+  return extractResourceList(payload, 'channels')
     .filter((channel) => channel?.id && channel?.name)
     .sort((a, b) => String(a.name).localeCompare(String(b.name)));
 }
@@ -237,11 +245,12 @@ function Button({ theme, children, onClick, disabled = false }) {
   );
 }
 
-function CategorySelect({ theme, channels, value, onChange }) {
+function CategorySelect({ theme, channels, value, onChange, disabled = false }) {
   return (
     <select
       value={value || ''}
       onChange={(event) => onChange(event.target.value || null)}
+      disabled={disabled}
       style={{
         width: 220,
         maxWidth: '100%',
@@ -253,9 +262,10 @@ function CategorySelect({ theme, channels, value, onChange }) {
         outline: 'none',
         fontSize: 12,
         fontWeight: 900,
+        opacity: disabled ? 0.65 : 1,
       }}
     >
-      <option value="">Set category destination</option>
+      <option value="">{channels.length ? 'Set category destination' : 'No channels loaded'}</option>
       {channels.map((channel) => (
         <option key={channel.id} value={channel.id}>#{channel.name}</option>
       ))}
@@ -275,6 +285,37 @@ function SettingRow({ theme, title, text, checked, onChange }) {
   );
 }
 
+function PanelHeader({ theme, title, description, open, onToggle, right = null }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      style={{
+        width: '100%',
+        border: 0,
+        background: 'transparent',
+        color: theme.cardText,
+        display: 'flex',
+        justifyContent: 'space-between',
+        gap: 14,
+        alignItems: 'center',
+        cursor: 'pointer',
+        textAlign: 'left',
+        padding: 0,
+      }}
+    >
+      <span style={{ display: 'grid', gap: 5 }}>
+        <strong style={{ fontSize: 24 }}>{title}</strong>
+        {description ? <span style={{ color: theme.mutedText, lineHeight: 1.45 }}>{description}</span> : null}
+      </span>
+      <span style={{ display: 'flex', gap: 10, alignItems: 'center', color: theme.mutedText, fontWeight: 950 }}>
+        {right}
+        {open ? 'Hide' : 'Show'}
+      </span>
+    </button>
+  );
+}
+
 export default function Logs({ selectedGuild, theme }) {
   const guildId = getGuildId(selectedGuild);
   const [channels, setChannels] = useState([]);
@@ -283,6 +324,9 @@ export default function Logs({ selectedGuild, theme }) {
   const [bulkChannel, setBulkChannel] = useState('');
   const [open, setOpen] = useState({ adminLogs: true, discordLogs: true, generalLogs: true, modLogs: true, moduleLogs: true });
   const [openCategories, setOpenCategories] = useState(CATEGORY_OPEN_DEFAULTS);
+  const [loggingOpen, setLoggingOpen] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(true);
+  const [syncingResources, setSyncingResources] = useState(false);
   const [ignoredUser, setIgnoredUser] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -311,14 +355,26 @@ export default function Logs({ selectedGuild, theme }) {
         const [logsRes, channelsRes] = await Promise.all([api.getLogConfig(guildId), api.getGuildChannels(guildId)]);
         if (!mounted) return;
         setLogs(normalizeLogs(logsRes?.config || logsRes || {}));
-        setChannels(cleanChannels(channelsRes));
+
+        const cachedChannels = cleanChannels(channelsRes);
+        if (cachedChannels.length) {
+          setChannels(cachedChannels);
+        } else {
+          setSyncingResources(true);
+          const synced = await api.request(`/api/discord/${guildId}/resources/sync`, { method: 'POST' }).catch(() => null);
+          if (!mounted) return;
+          setChannels(cleanChannels(synced));
+        }
       } catch (err) {
         console.error(err);
         if (!mounted) return;
         setError(err.message || 'Failed to load logging settings.');
         setChannels([]);
       } finally {
-        if (mounted) setLoading(false);
+        if (mounted) {
+          setLoading(false);
+          setSyncingResources(false);
+        }
       }
     }
 
@@ -417,6 +473,22 @@ export default function Logs({ selectedGuild, theme }) {
     setIgnoredUser('');
   }
 
+  async function refreshDiscordResources() {
+    if (!guildId) return;
+    try {
+      setSyncingResources(true);
+      setError('');
+      const synced = await api.request(`/api/discord/${guildId}/resources/sync`, { method: 'POST' });
+      setChannels(cleanChannels(synced));
+      setSaveMessage('✅ Discord channels synced.');
+    } catch (err) {
+      console.error(err);
+      setError(err.message || 'Failed to sync Discord channels.');
+    } finally {
+      setSyncingResources(false);
+    }
+  }
+
   async function handleSave() {
     if (!guildId) return;
     try {
@@ -453,111 +525,113 @@ export default function Logs({ selectedGuild, theme }) {
             <SummaryStat theme={theme} label="Logging" value={logs.enabled ? 'Enabled' : 'Disabled'} accent={logs.enabled ? theme.success : theme.danger} description="Global logging state" />
             <SummaryStat theme={theme} label="Types Enabled" value={`${enabledEvents}/${allItems.length}`} accent="#60a5fa" description="Tracked log types" />
             <SummaryStat theme={theme} label="Types Routed" value={routedEvents} accent="#f59e0b" description="Types with a destination" />
-            <SummaryStat theme={theme} label="Categories" value={`${configuredCategories}/${CATEGORY_DATA.length}`} accent="#22c55e" description="Configured destinations" />
+            <SummaryStat theme={theme} label="Channels Loaded" value={channels.length} accent="#22c55e" description={`${configuredCategories}/${CATEGORY_DATA.length} categories routed`} />
           </StatGrid>
 
-          <section style={{ background: 'linear-gradient(180deg, rgba(8,15,30,0.98), rgba(6,12,24,0.98))', border: `1px solid ${theme.cardBorder}`, borderRadius: 22, padding: 'clamp(16px, 2vw, 22px)', boxShadow: theme.shadow, display: 'grid', gap: 18 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 18, flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, color: theme.cardText, fontWeight: 950, fontSize: 26 }}>
-                <span style={{ width: 36, height: 36, borderRadius: 10, display: 'grid', placeItems: 'center', background: 'rgba(255,255,255,0.08)' }}>▰</span>
-                Logging
-              </div>
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-                <CategorySelect theme={theme} channels={channels} value={bulkChannel} onChange={setBulkChannel} />
-                <Button theme={theme} onClick={() => setAllCategories(bulkChannel)} disabled={!bulkChannel}>Set destination for all</Button>
-                <Button theme={theme} onClick={() => setAllCategories(null)}>Clear destinations</Button>
-                <Button theme={theme} onClick={() => setAllEvents(true)}>Enable all</Button>
-                <Button theme={theme} onClick={() => setAllEvents(false)}>Disable all</Button>
-              </div>
-            </div>
+          <section style={{ background: 'linear-gradient(180deg, rgba(8,15,30,0.98), rgba(6,12,24,0.98))', border: `1px solid ${theme.cardBorder}`, borderRadius: 22, padding: 'clamp(16px, 2vw, 22px)', boxShadow: theme.shadow, display: 'grid', gap: loggingOpen ? 18 : 0 }}>
+            <PanelHeader theme={theme} title="Logging" description="Click to show or hide logging categories." open={loggingOpen} onToggle={() => setLoggingOpen((prev) => !prev)} right={`${enabledEvents}/${allItems.length}`} />
 
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search log categories or types" style={{ width: '100%', border: `1px solid ${theme.cardBorder}`, background: 'rgba(15,23,42,0.86)', color: theme.cardText, borderRadius: 12, padding: '13px 14px', outline: 'none', fontWeight: 850 }} />
+            {loggingOpen ? (
+              <>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <CategorySelect theme={theme} channels={channels} value={bulkChannel} onChange={setBulkChannel} disabled={!channels.length} />
+                  <Button theme={theme} onClick={() => setAllCategories(bulkChannel)} disabled={!bulkChannel}>Set destination for all</Button>
+                  <Button theme={theme} onClick={() => setAllCategories(null)}>Clear destinations</Button>
+                  <Button theme={theme} onClick={() => setAllEvents(true)}>Enable all</Button>
+                  <Button theme={theme} onClick={() => setAllEvents(false)}>Disable all</Button>
+                  <Button theme={theme} onClick={refreshDiscordResources} disabled={syncingResources}>{syncingResources ? 'Syncing...' : 'Sync Discord Channels'}</Button>
+                </div>
 
-            <div style={{ display: 'grid', gap: 14 }}>
-              {filteredSections.map((section) => {
-                const sectionOpen = open[section.key] !== false;
-                const sectionItems = section.categories.flatMap((category) => category.items);
-                const activeCount = sectionItems.filter((item) => logs.events?.[item.eventKey] !== false).length;
+                {!channels.length ? <Notice theme={theme} tone="warning">No Discord channels are loaded yet. Use “Sync Discord Channels”, then choose destinations.</Notice> : null}
 
-                return (
-                  <div key={section.key} style={{ border: `1px solid ${theme.cardBorder}`, borderRadius: 18, overflow: 'hidden', background: 'rgba(15,23,42,0.38)' }}>
-                    <button type="button" onClick={() => setOpen((prev) => ({ ...prev, [section.key]: !sectionOpen }))} style={{ width: '100%', border: 0, background: 'rgba(15,23,42,0.84)', color: theme.cardText, padding: '15px 16px', display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'center', cursor: 'pointer', textAlign: 'left' }}>
-                      <span style={{ display: 'grid', gap: 4 }}>
-                        <strong style={{ fontSize: 18 }}>{section.label}</strong>
-                        <span style={{ color: theme.mutedText, fontSize: 13, lineHeight: 1.4 }}>{section.description}</span>
-                      </span>
-                      <span style={{ color: theme.mutedText, fontSize: 12, fontWeight: 950, whiteSpace: 'nowrap' }}>{activeCount}/{sectionItems.length}</span>
-                    </button>
+                <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search log categories or types" style={{ width: '100%', border: `1px solid ${theme.cardBorder}`, background: 'rgba(15,23,42,0.86)', color: theme.cardText, borderRadius: 12, padding: '13px 14px', outline: 'none', fontWeight: 850 }} />
 
-                    {sectionOpen ? (
-                      <div style={{ display: 'grid', gap: 12, padding: 14 }}>
-                        {section.categories.map((category) => {
-                          const categoryOpen = Boolean(openCategories[category.key]);
-                          const firstChannel = logs.channels?.[category.items[0]?.channelKey] || '';
-                          const categoryEnabled = isCategoryEnabled(category);
-                          const categoryActiveCount = category.items.filter((item) => logs.events?.[item.eventKey] !== false).length;
+                <div style={{ display: 'grid', gap: 14 }}>
+                  {filteredSections.map((section) => {
+                    const sectionOpen = open[section.key] !== false;
+                    const sectionItems = section.categories.flatMap((category) => category.items);
+                    const activeCount = sectionItems.filter((item) => logs.events?.[item.eventKey] !== false).length;
 
-                          return (
-                            <div key={category.key} style={{ border: `1px solid ${theme.cardBorder}`, borderRadius: 14, overflow: 'hidden', background: 'rgba(6,12,24,0.40)' }}>
-                              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) auto', gap: 10, padding: 12, alignItems: 'center' }}>
-                                <button type="button" onClick={() => setOpenCategories((prev) => ({ ...prev, [category.key]: !categoryOpen }))} style={{ border: 0, background: 'transparent', color: theme.cardText, padding: 0, cursor: 'pointer', textAlign: 'left', display: 'grid', gap: 3 }}>
-                                  <strong>{category.label}</strong>
-                                  <span style={{ color: theme.mutedText, fontSize: 12 }}>{categoryActiveCount}/{category.items.length} enabled</span>
-                                </button>
-                                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end' }}>
-                                  <CategorySelect theme={theme} channels={channels} value={firstChannel} onChange={(value) => setCategoryDestination(category, value)} />
-                                  <Toggle checked={categoryEnabled} onChange={(value) => setCategoryEvents(category, value)} />
+                    return (
+                      <div key={section.key} style={{ border: `1px solid ${theme.cardBorder}`, borderRadius: 18, overflow: 'hidden', background: 'rgba(15,23,42,0.38)' }}>
+                        <button type="button" onClick={() => setOpen((prev) => ({ ...prev, [section.key]: !sectionOpen }))} style={{ width: '100%', border: 0, background: 'rgba(15,23,42,0.84)', color: theme.cardText, padding: '15px 16px', display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'center', cursor: 'pointer', textAlign: 'left' }}>
+                          <span style={{ display: 'grid', gap: 4 }}>
+                            <strong style={{ fontSize: 18 }}>{section.label}</strong>
+                            <span style={{ color: theme.mutedText, fontSize: 13, lineHeight: 1.4 }}>{section.description}</span>
+                          </span>
+                          <span style={{ color: theme.mutedText, fontSize: 12, fontWeight: 950, whiteSpace: 'nowrap' }}>{activeCount}/{sectionItems.length}</span>
+                        </button>
+
+                        {sectionOpen ? (
+                          <div style={{ display: 'grid', gap: 12, padding: 14 }}>
+                            {section.categories.map((category) => {
+                              const categoryOpen = Boolean(openCategories[category.key]);
+                              const firstChannel = logs.channels?.[category.items[0]?.channelKey] || '';
+                              const categoryEnabled = isCategoryEnabled(category);
+                              const categoryActiveCount = category.items.filter((item) => logs.events?.[item.eventKey] !== false).length;
+
+                              return (
+                                <div key={category.key} style={{ border: `1px solid ${theme.cardBorder}`, borderRadius: 14, overflow: 'hidden', background: 'rgba(6,12,24,0.40)' }}>
+                                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) auto', gap: 10, padding: 12, alignItems: 'center' }}>
+                                    <button type="button" onClick={() => setOpenCategories((prev) => ({ ...prev, [category.key]: !categoryOpen }))} style={{ border: 0, background: 'transparent', color: theme.cardText, padding: 0, cursor: 'pointer', textAlign: 'left', display: 'grid', gap: 3 }}>
+                                      <strong>{category.label}</strong>
+                                      <span style={{ color: theme.mutedText, fontSize: 12 }}>{categoryActiveCount}/{category.items.length} enabled</span>
+                                    </button>
+                                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end' }}>
+                                      <CategorySelect theme={theme} channels={channels} value={firstChannel} onChange={(value) => setCategoryDestination(category, value)} disabled={!channels.length} />
+                                      <Toggle checked={categoryEnabled} onChange={(value) => setCategoryEvents(category, value)} />
+                                    </div>
+                                  </div>
+
+                                  {categoryOpen ? (
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,230px),1fr))', gap: 8, padding: '0 12px 12px' }}>
+                                      {category.items.map((item) => {
+                                        const enabled = logs.events?.[item.eventKey] !== false;
+                                        return (
+                                          <button key={item.eventKey} type="button" onClick={() => updateEvent(item.eventKey, !enabled)} style={{ border: `1px solid ${enabled ? 'rgba(59,130,246,0.32)' : theme.cardBorder}`, background: enabled ? 'rgba(59,130,246,0.12)' : 'rgba(15,23,42,0.44)', color: enabled ? theme.cardText : theme.mutedText, borderRadius: 10, padding: '9px 10px', cursor: 'pointer', fontSize: 12, fontWeight: 900, textAlign: 'left' }}>
+                                            {item.label}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  ) : null}
                                 </div>
-                              </div>
-
-                              {categoryOpen ? (
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,230px),1fr))', gap: 8, padding: '0 12px 12px' }}>
-                                  {category.items.map((item) => {
-                                    const enabled = logs.events?.[item.eventKey] !== false;
-                                    return (
-                                      <button key={item.eventKey} type="button" onClick={() => updateEvent(item.eventKey, !enabled)} style={{ border: `1px solid ${enabled ? 'rgba(59,130,246,0.32)' : theme.cardBorder}`, background: enabled ? 'rgba(59,130,246,0.12)' : 'rgba(15,23,42,0.44)', color: enabled ? theme.cardText : theme.mutedText, borderRadius: 10, padding: '9px 10px', cursor: 'pointer', fontSize: 12, fontWeight: 900, textAlign: 'left' }}>
-                                        {item.label}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              ) : null}
-                            </div>
-                          );
-                        })}
+                              );
+                            })}
+                          </div>
+                        ) : null}
                       </div>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
+                    );
+                  })}
+                </div>
+              </>
+            ) : null}
           </section>
 
-          <section style={{ background: 'linear-gradient(180deg, rgba(8,15,30,0.98), rgba(6,12,24,0.98))', border: `1px solid ${theme.cardBorder}`, borderRadius: 22, padding: 'clamp(16px, 2vw, 22px)', boxShadow: theme.shadow, display: 'grid', gap: 14 }}>
-            <div>
-              <h2 style={{ margin: 0, fontSize: 22 }}>Logging Settings</h2>
-              <p style={{ margin: '6px 0 0', color: theme.mutedText, lineHeight: 1.5 }}>Noise controls merged into the main logging page.</p>
-            </div>
+          <section style={{ background: 'linear-gradient(180deg, rgba(8,15,30,0.98), rgba(6,12,24,0.98))', border: `1px solid ${theme.cardBorder}`, borderRadius: 22, padding: 'clamp(16px, 2vw, 22px)', boxShadow: theme.shadow, display: 'grid', gap: settingsOpen ? 14 : 0 }}>
+            <PanelHeader theme={theme} title="Logging Settings" description="Click to show or hide noise-control settings." open={settingsOpen} onToggle={() => setSettingsOpen((prev) => !prev)} />
 
-            <div style={{ display: 'grid', gap: 10 }}>
-              {SETTINGS.map(([key, title, text]) => (
-                <SettingRow key={key} theme={theme} title={title} text={text} checked={Boolean(logs.settings[key])} onChange={(value) => updateSetting(key, value)} />
-              ))}
+            {settingsOpen ? (
+              <div style={{ display: 'grid', gap: 10 }}>
+                {SETTINGS.map(([key, title, text]) => (
+                  <SettingRow key={key} theme={theme} title={title} text={text} checked={Boolean(logs.settings[key])} onChange={(value) => updateSetting(key, value)} />
+                ))}
 
-              <div style={{ background: 'rgba(15,23,42,0.72)', border: `1px solid ${theme.cardBorder}`, borderRadius: 14, padding: 16, display: 'grid', gap: 10 }}>
-                <h3 style={{ margin: 0, color: theme.cardText, fontSize: 16, fontWeight: 950 }}>Ignore users</h3>
-                <p style={{ margin: 0, color: theme.mutedText, fontSize: 13 }}>Actions from users listed below are ignored from Logging.</p>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <input value={ignoredUser} onChange={(event) => setIgnoredUser(event.target.value)} placeholder="User ID" style={{ flex: '1 1 260px', border: `1px solid ${theme.cardBorder}`, background: 'rgba(6,12,24,0.9)', color: theme.cardText, borderRadius: 10, padding: '10px 12px', outline: 'none' }} />
-                  <PrimaryButton onClick={addIgnoredUser}>Add</PrimaryButton>
-                </div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {logs.settings.ignoredUsers.length ? logs.settings.ignoredUsers.map((value) => (
-                    <button key={value} type="button" onClick={() => updateSetting('ignoredUsers', logs.settings.ignoredUsers.filter((item) => item !== value))} style={{ border: `1px solid ${theme.cardBorder}`, background: theme.softBg, color: theme.cardText, borderRadius: 999, padding: '7px 10px', cursor: 'pointer', fontWeight: 850 }}>{value} ×</button>
-                  )) : <span style={{ color: theme.mutedText, fontWeight: 800 }}>No users added</span>}
+                <div style={{ background: 'rgba(15,23,42,0.72)', border: `1px solid ${theme.cardBorder}`, borderRadius: 14, padding: 16, display: 'grid', gap: 10 }}>
+                  <h3 style={{ margin: 0, color: theme.cardText, fontSize: 16, fontWeight: 950 }}>Ignore users</h3>
+                  <p style={{ margin: 0, color: theme.mutedText, fontSize: 13 }}>Actions from users listed below are ignored from Logging.</p>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <input value={ignoredUser} onChange={(event) => setIgnoredUser(event.target.value)} placeholder="User ID" style={{ flex: '1 1 260px', border: `1px solid ${theme.cardBorder}`, background: 'rgba(6,12,24,0.9)', color: theme.cardText, borderRadius: 10, padding: '10px 12px', outline: 'none' }} />
+                    <PrimaryButton onClick={addIgnoredUser}>Add</PrimaryButton>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {logs.settings.ignoredUsers.length ? logs.settings.ignoredUsers.map((value) => (
+                      <button key={value} type="button" onClick={() => updateSetting('ignoredUsers', logs.settings.ignoredUsers.filter((item) => item !== value))} style={{ border: `1px solid ${theme.cardBorder}`, background: theme.softBg, color: theme.cardText, borderRadius: 999, padding: '7px 10px', cursor: 'pointer', fontWeight: 850 }}>{value} ×</button>
+                    )) : <span style={{ color: theme.mutedText, fontWeight: 800 }}>No users added</span>}
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : null}
           </section>
         </>
       ) : null}
