@@ -10,13 +10,30 @@ const {
 } = require('../../config/plans');
 
 const subscriptionManager = require('./subscriptionManager');
+const testDevOverride = require('../../core/dev/testDevOverrideManager');
+
+function getDevPlan() {
+  return testDevOverride.shouldBypassPaywall() ? testDevOverride.getPaywallBypassPlan() || PLAN_IDS.LIFETIME : null;
+}
 
 function getPlan(guildId) {
-  return subscriptionManager.getActivePlan(guildId);
+  return getDevPlan() || subscriptionManager.getActivePlan(guildId);
 }
 
 function getSubscription(guildId) {
-  return subscriptionManager.getSubscription(guildId);
+  const devPlan = getDevPlan();
+  if (!devPlan) return subscriptionManager.getSubscription(guildId);
+
+  return {
+    guildId: String(guildId || ''),
+    plan: devPlan,
+    status: 'dev_test_override',
+    source: 'testdev',
+    active: true,
+    startedAt: null,
+    expiresAt: null,
+    devTest: testDevOverride.buildPaywallBypassMetadata(),
+  };
 }
 
 function getCurrentPlanDefinition(guildId) {
@@ -32,6 +49,7 @@ function getLimits(guildId) {
 }
 
 function canUseFeature(guildId, featureKey) {
+  if (testDevOverride.shouldBypassPaywall()) return true;
   return planHasFeature(getPlan(guildId), featureKey);
 }
 
@@ -49,10 +67,12 @@ function requireFeature(guildId, featureKey) {
 }
 
 function isPremium(guildId) {
+  if (testDevOverride.shouldBypassPaywall()) return true;
   return subscriptionManager.hasActivePremium(guildId);
 }
 
 function isPro(guildId) {
+  if (testDevOverride.shouldBypassPaywall()) return true;
   return subscriptionManager.hasActivePro(guildId);
 }
 
@@ -66,6 +86,7 @@ function getLimit(guildId, limitKey, fallback = null) {
 }
 
 function isWithinLimit(guildId, limitKey, currentValue) {
+  if (testDevOverride.shouldBypassPaywall()) return true;
   const limit = getLimit(guildId, limitKey, null);
   if (limit == null) return true;
   return Number(currentValue || 0) < Number(limit);
@@ -86,6 +107,7 @@ function requireWithinLimit(guildId, limitKey, currentValue) {
 function getEntitlementSummary(guildId) {
   const subscription = getSubscription(guildId);
   const plan = getCurrentPlanDefinition(guildId);
+  const devState = testDevOverride.getPaywallBypassState();
 
   return {
     subscription,
@@ -95,6 +117,7 @@ function getEntitlementSummary(guildId) {
     premium: isPremium(guildId),
     pro: isPro(guildId),
     lifetime: isLifetime(guildId),
+    devTestEntitlements: devState.active ? devState : null,
   };
 }
 
