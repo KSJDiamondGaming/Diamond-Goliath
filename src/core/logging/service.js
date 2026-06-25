@@ -14,18 +14,25 @@ function resolveChannelType(type = '') {
     return 'messageDelete';
   }
 
+  if (type.startsWith('channel')) return 'general';
+  if (type.startsWith('role')) return 'admin';
+  if (type.startsWith('webhook')) return 'admin';
+  if (type.startsWith('ticket')) return 'moderation';
+  if (type.startsWith('form')) return 'admin';
+  if (type.startsWith('verification')) return 'admin';
+  if (type.startsWith('translation')) return 'general';
+  if (type.startsWith('giveaway')) return 'general';
+  if (type.startsWith('sticky')) return 'general';
+
   return 'general';
 }
 
 function resolveEventName(type = '') {
-  if (type.startsWith('automod')) return 'automodActions';
-  if (type.startsWith('moderation')) return 'moderationActions';
-  if (type.startsWith('admin')) return 'adminActions';
-  if (type.startsWith('member')) return 'memberUpdate';
-  if (type.startsWith('voice')) return 'voiceMove';
-
   if (type === 'member.join') return 'memberJoin';
   if (type === 'member.leave') return 'memberLeave';
+  if (type === 'member.remove') return 'memberRemove';
+  if (type === 'member.kick') return 'memberKick';
+  if (type === 'member.ban') return 'memberBan';
 
   if (type === 'message.delete') return 'messageDelete';
   if (type === 'message.edit') return 'messageEdit';
@@ -33,6 +40,19 @@ function resolveEventName(type = '') {
   if (type === 'voice.join') return 'voiceJoin';
   if (type === 'voice.leave') return 'voiceLeave';
   if (type === 'voice.move') return 'voiceMove';
+
+  if (type === 'channel.create') return 'channelCreate';
+  if (type === 'channel.delete') return 'channelDelete';
+  if (type === 'channel.update') return 'channelUpdate';
+  if (type === 'channel.nameUpdate') return 'channelNameUpdate';
+  if (type === 'channel.topicUpdate') return 'channelTopicUpdate';
+  if (type === 'channel.permissionsUpdate') return 'channelPermissionsUpdate';
+
+  if (type.startsWith('automod')) return 'automodActions';
+  if (type.startsWith('moderation')) return 'moderationActions';
+  if (type.startsWith('admin')) return 'adminActions';
+  if (type.startsWith('member')) return 'memberUpdate';
+  if (type.startsWith('voice')) return 'voiceMove';
 
   return type;
 }
@@ -119,7 +139,27 @@ function buildEmbed(type, data = {}) {
     embed.setDescription(String(data.description).slice(0, 4096));
   }
 
+  if (data.url) {
+    embed.setURL(data.url);
+  }
+
   return embed;
+}
+
+async function resolveLogChannel(guild, eventName, channelType) {
+  const channelId = guildManager.getLogChannelId(
+    guild.id,
+    eventName,
+    channelType || 'general'
+  );
+
+  if (!channelId) return null;
+
+  const channel =
+    guild.channels.cache.get(channelId) ||
+    (await guild.channels.fetch(channelId).catch(() => null));
+
+  return channel?.isTextBased() ? channel : null;
 }
 
 async function send(guild, type, data = {}) {
@@ -132,20 +172,10 @@ async function send(guild, type, data = {}) {
       return false;
     }
 
-    const channelType = resolveChannelType(type);
-    const channelId = guildManager.getLogChannelId(
-      guild.id,
-      channelType,
-      'general'
-    );
+    const channelType = resolveChannelType(eventName || type);
+    const channel = await resolveLogChannel(guild, eventName, channelType);
 
-    if (!channelId) return false;
-
-    const channel =
-      guild.channels.cache.get(channelId) ||
-      (await guild.channels.fetch(channelId).catch(() => null));
-
-    if (!channel || !channel.isTextBased()) return false;
+    if (!channel) return false;
 
     const embed = buildEmbed(type, data);
 
@@ -162,4 +192,5 @@ module.exports = {
   buildEmbed,
   resolveChannelType,
   resolveEventName,
+  resolveLogChannel,
 };
