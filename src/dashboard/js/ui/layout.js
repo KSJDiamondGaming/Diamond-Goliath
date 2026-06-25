@@ -25,6 +25,8 @@ const Translation = lazy(() => import('../pages/modules/Translation'));
 const ReactionRoles = lazy(() => import('../pages/modules/ReactionRoles'));
 const WelcomeLeave = lazy(() => import('../pages/modules/WelcomeLeave'));
 const Leveling = lazy(() => import('../pages/modules/Leveling'));
+const Polls = lazy(() => import('../pages/modules/Polls'));
+const Stats = lazy(() => import('../pages/modules/Stats'));
 const Restore = lazy(() => import('../pages/security/Restore'));
 const Security = lazy(() => import('../pages/security/Security'));
 const Logs = lazy(() => import('../pages/core/Logs'));
@@ -111,6 +113,8 @@ export const ROUTES = [
   { key: 'leveling', label: 'Leveling', icon: 'modules', path: '/leveling', component: Leveling, hidden: true },
   { key: 'forms', label: 'Forms', icon: 'modules', path: '/forms', component: Forms, hidden: true },
   { key: 'giveaways', label: 'Giveaways', icon: 'modules', path: '/giveaways', component: Giveaways, hidden: true },
+  { key: 'polls', label: 'Polls', icon: 'modules', path: '/polls', component: Polls, hidden: true },
+  { key: 'stats', label: 'Stats', icon: 'overview', path: '/stats', component: Stats, hidden: true },
   { key: 'social', label: 'Social Alerts', icon: 'modules', path: '/social', component: Social, hidden: true },
   { key: 'starboard', label: 'Starboard', icon: 'modules', path: '/starboard', component: Starboard, hidden: true },
   { key: 'sticky', label: 'Sticky Messages', icon: 'modules', path: '/sticky', component: Sticky, hidden: true },
@@ -156,6 +160,8 @@ export const PAGE_LAYOUTS = {
   leveling: { title: 'Leveling', description: 'Manage XP, levels, rewards and leaderboards.', emptyDescription: 'Select a server to manage leveling.', sections: [{ id: 'levelingDashboard', type: 'dashboard' }] },
   forms: { title: 'Forms', description: 'Manage universal forms and workflows.', emptyDescription: 'Select a server to manage forms.', sections: [{ id: 'formsManager', type: 'dashboard' }] },
   giveaways: { title: 'Giveaways', description: 'Create, monitor and review server giveaways.', emptyDescription: 'Select a server to manage giveaways.', sections: [{ id: 'giveawaysDashboard', type: 'dashboard' }] },
+  polls: { title: 'Polls', description: 'Create, deploy and review community polls.', emptyDescription: 'Select a server to manage polls.', sections: [{ id: 'pollsDashboard', type: 'dashboard' }] },
+  stats: { title: 'Stats', description: 'Server, module and workflow statistics.', emptyDescription: 'Select a server to view stats.', sections: [{ id: 'statsDashboard', type: 'dashboard' }] },
   social: { title: 'Social Alerts', description: 'Creator alerts across Twitch, YouTube, TikTok, Kick and more.', emptyDescription: 'Select a server to manage social alerts.', sections: [{ id: 'socialDashboard', type: 'dashboard' }] },
   starboard: { title: 'Starboard', description: 'Highlight popular community messages.', emptyDescription: 'Select a server to manage starboard.', sections: [{ id: 'starboardDashboard', type: 'dashboard' }] },
   sticky: { title: 'Sticky Messages', description: 'Keep important messages visible in channels.', emptyDescription: 'Select a server to manage sticky messages.', sections: [{ id: 'stickyDashboard', type: 'dashboard' }] },
@@ -188,6 +194,8 @@ export const SECTION_DEFS = {
   levelingDashboard: { title: 'Leveling Dashboard', description: 'Configure XP, levels, rewards and leaderboards.' },
   formsManager: { title: 'Forms Manager', description: 'Create and manage forms.' },
   giveawaysDashboard: { title: 'Giveaways Dashboard', description: 'Create and review server giveaways.' },
+  pollsDashboard: { title: 'Polls Dashboard', description: 'Create, deploy and review community polls.' },
+  statsDashboard: { title: 'Stats Dashboard', description: 'Review server, module and workflow statistics.' },
   socialDashboard: { title: 'Social Alerts Dashboard', description: 'Manage creator accounts and social notification alerts.' },
   starboardDashboard: { title: 'Starboard Dashboard', description: 'Configure starboard channel and thresholds.' },
   stickyDashboard: { title: 'Sticky Messages Dashboard', description: 'Configure sticky channel messages.' },
