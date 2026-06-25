@@ -272,6 +272,7 @@ next();
 });
 
 app.use('/auth', authRoutes);
+app.use('/api/auth', authRoutes);
 app.use('/api/status', statusRoutes);
 app.use('/api/owner', ownerRoutes);
 app.use('/api/owner/translation', ownerTranslationRoutes);
