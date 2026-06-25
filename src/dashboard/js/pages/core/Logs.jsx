@@ -87,6 +87,7 @@ const LOG_SECTIONS = [
 })).sort((a, b) => a.label.localeCompare(b.label));
 
 const CATEGORY_DATA = LOG_SECTIONS.flatMap((section) => section.categories);
+const CATEGORY_OPEN_DEFAULTS = CATEGORY_DATA.reduce((acc, category) => ({ ...acc, [category.key]: false }), {});
 
 const CHANNEL_DEFAULTS = CATEGORY_DATA.reduce((acc, category) => {
   acc[category.defaultChannelKey] = null;
@@ -194,20 +195,21 @@ function Toggle({ checked, onChange, disabled = false }) {
       disabled={disabled}
       onClick={() => onChange(!checked)}
       style={{
-        width: 42,
-        height: 24,
-        borderRadius: 999,
-        border: checked ? '1px solid rgba(34,197,94,0.55)' : '1px solid rgba(148,163,184,0.24)',
-        background: checked ? 'rgba(34,197,94,0.9)' : 'rgba(148,163,184,0.24)',
+        border: checked ? '1px solid rgba(34,197,94,0.45)' : '1px solid rgba(239,68,68,0.45)',
+        background: checked ? 'rgba(34,197,94,0.14)' : 'rgba(239,68,68,0.14)',
+        color: checked ? '#86efac' : '#fca5a5',
         cursor: disabled ? 'not-allowed' : 'pointer',
-        padding: 2,
-        display: 'flex',
-        justifyContent: checked ? 'flex-end' : 'flex-start',
-        alignItems: 'center',
         opacity: disabled ? 0.6 : 1,
+        borderRadius: 999,
+        padding: '8px 12px',
+        minWidth: 96,
+        fontSize: 12,
+        fontWeight: 950,
+        textTransform: 'uppercase',
+        letterSpacing: '0.04em',
       }}
     >
-      <span style={{ width: 18, height: 18, borderRadius: '50%', background: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.35)' }} />
+      {checked ? 'Enabled' : 'Disabled'}
     </button>
   );
 }
@@ -280,6 +282,7 @@ export default function Logs({ selectedGuild, theme }) {
   const [search, setSearch] = useState('');
   const [bulkChannel, setBulkChannel] = useState('');
   const [open, setOpen] = useState({ adminLogs: true, discordLogs: true, generalLogs: true, modLogs: true, moduleLogs: true });
+  const [openCategories, setOpenCategories] = useState(CATEGORY_OPEN_DEFAULTS);
   const [ignoredUser, setIgnoredUser] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -395,6 +398,10 @@ export default function Logs({ selectedGuild, theme }) {
     });
   }
 
+  function isCategoryEnabled(category) {
+    return category.items.every((item) => logs.events?.[item.eventKey] !== false);
+  }
+
   function setAllEvents(enabled) {
     setLogs((prev) => {
       const next = { ...prev.events };
@@ -485,33 +492,36 @@ export default function Logs({ selectedGuild, theme }) {
                     {sectionOpen ? (
                       <div style={{ display: 'grid', gap: 12, padding: 14 }}>
                         {section.categories.map((category) => {
+                          const categoryOpen = Boolean(openCategories[category.key]);
                           const firstChannel = logs.channels?.[category.items[0]?.channelKey] || '';
+                          const categoryEnabled = isCategoryEnabled(category);
                           const categoryActiveCount = category.items.filter((item) => logs.events?.[item.eventKey] !== false).length;
 
                           return (
-                            <div key={category.key} style={{ border: `1px solid ${theme.cardBorder}`, borderRadius: 14, padding: 12, background: 'rgba(6,12,24,0.40)', display: 'grid', gap: 10 }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-                                <div style={{ display: 'grid', gap: 3 }}>
+                            <div key={category.key} style={{ border: `1px solid ${theme.cardBorder}`, borderRadius: 14, overflow: 'hidden', background: 'rgba(6,12,24,0.40)' }}>
+                              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) auto', gap: 10, padding: 12, alignItems: 'center' }}>
+                                <button type="button" onClick={() => setOpenCategories((prev) => ({ ...prev, [category.key]: !categoryOpen }))} style={{ border: 0, background: 'transparent', color: theme.cardText, padding: 0, cursor: 'pointer', textAlign: 'left', display: 'grid', gap: 3 }}>
                                   <strong>{category.label}</strong>
                                   <span style={{ color: theme.mutedText, fontSize: 12 }}>{categoryActiveCount}/{category.items.length} enabled</span>
-                                </div>
-                                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                                </button>
+                                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end' }}>
                                   <CategorySelect theme={theme} channels={channels} value={firstChannel} onChange={(value) => setCategoryDestination(category, value)} />
-                                  <Button theme={theme} onClick={() => setCategoryEvents(category, true)}>Enable</Button>
-                                  <Button theme={theme} onClick={() => setCategoryEvents(category, false)}>Disable</Button>
+                                  <Toggle checked={categoryEnabled} onChange={(value) => setCategoryEvents(category, value)} />
                                 </div>
                               </div>
 
-                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,230px),1fr))', gap: 8 }}>
-                                {category.items.map((item) => {
-                                  const enabled = logs.events?.[item.eventKey] !== false;
-                                  return (
-                                    <button key={item.eventKey} type="button" onClick={() => updateEvent(item.eventKey, !enabled)} style={{ border: `1px solid ${enabled ? 'rgba(59,130,246,0.32)' : theme.cardBorder}`, background: enabled ? 'rgba(59,130,246,0.12)' : 'rgba(15,23,42,0.44)', color: enabled ? theme.cardText : theme.mutedText, borderRadius: 10, padding: '9px 10px', cursor: 'pointer', fontSize: 12, fontWeight: 900, textAlign: 'left' }}>
-                                      {item.label}
-                                    </button>
-                                  );
-                                })}
-                              </div>
+                              {categoryOpen ? (
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,230px),1fr))', gap: 8, padding: '0 12px 12px' }}>
+                                  {category.items.map((item) => {
+                                    const enabled = logs.events?.[item.eventKey] !== false;
+                                    return (
+                                      <button key={item.eventKey} type="button" onClick={() => updateEvent(item.eventKey, !enabled)} style={{ border: `1px solid ${enabled ? 'rgba(59,130,246,0.32)' : theme.cardBorder}`, background: enabled ? 'rgba(59,130,246,0.12)' : 'rgba(15,23,42,0.44)', color: enabled ? theme.cardText : theme.mutedText, borderRadius: 10, padding: '9px 10px', cursor: 'pointer', fontSize: 12, fontWeight: 900, textAlign: 'left' }}>
+                                        {item.label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              ) : null}
                             </div>
                           );
                         })}
