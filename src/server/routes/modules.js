@@ -112,9 +112,21 @@ function normalizeModuleMap(modules = {}) {
   return output;
 }
 
+function getDiscordClient(req) {
+  return (
+    req.client ||
+    req.app?.get?.('goliath.client') ||
+    req.app?.locals?.client ||
+    req.app?.locals?.discordClient ||
+    global.client ||
+    global.discordClient ||
+    null
+  );
+}
+
 async function fetchGuild(req, guildId) {
-  const client = req.app?.locals?.client || req.app?.locals?.discordClient || global.client || global.discordClient;
-  if (!client?.guilds?.fetch) return null;
+  const client = getDiscordClient(req);
+  if (!client?.guilds) return null;
   return client.guilds.cache.get(guildId) || client.guilds.fetch(guildId).catch(() => null);
 }
 
@@ -340,26 +352,6 @@ router.get('/:guildId/embed-studio', (req, res) => {
   }
 });
 
-router.post('/:guildId/embed-studio/draft', (req, res) => {
-  try {
-    const guildId = getGuildId(req);
-    const current = getGuildSection(guildId, 'embedBuilder', { draft: {}, templates: {}, deployments: {} });
-    const draft = {
-      content: String(req.body?.content || '').slice(0, 2000),
-      embed: req.body?.embed && typeof req.body.embed === 'object' ? req.body.embed : {},
-      updatedAt: new Date().toISOString(),
-    };
-    const builder = saveGuildSection(guildId, 'embedBuilder', {
-      ...current,
-      draft,
-    });
-
-    return success(res, { guildId, builder, draft });
-  } catch (error) {
-    return failure(res, error, 400);
-  }
-});
-
 router.post(
   '/:guildId/embed-studio/presets',
   requirePlanLimit('embedPresets', countEmbedPresetsForLimit, {
@@ -417,178 +409,6 @@ router.delete('/:guildId/embed-studio/deployments/:key', (req, res) => {
     });
   } catch (error) {
     return failure(res, error, 400);
-  }
-});
-
-router.get('/:guildId/verification', (req, res) => {
-  try {
-    const guildId = getGuildId(req);
-    const config = verificationStore.getVerificationSection(guildId);
-
-    return success(res, {
-      guildId,
-      config,
-      overview: {
-        enabled: config.enabled === true,
-        panelCount: Object.keys(config.panels || {}).length,
-        verifiedRoleId: config.settings?.verifiedRoleId || null,
-        unverifiedRoleId: config.settings?.unverifiedRoleId || null,
-        analytics: config.analytics || {},
-      },
-    });
-  } catch (error) {
-    return failure(res, error, 400);
-  }
-});
-
-router.patch('/:guildId/verification/enabled', (req, res) => {
-  try {
-    const guildId = getGuildId(req);
-    const config = verificationManager.setVerificationEnabled(guildId, req.body?.enabled === true, {
-      actorId: req.body?.actorId,
-    });
-
-    return success(res, { guildId, config });
-  } catch (error) {
-    return failure(res, error, 400);
-  }
-});
-
-router.patch('/:guildId/verification/settings', async (req, res) => {
-  try {
-    const guildId = getGuildId(req);
-    await guardVerificationRoles(req, guildId, req.body || {});
-
-    const config = verificationManager.configureVerification(guildId, {
-      settings: req.body?.settings || req.body || {},
-    }, {
-      actorId: req.body?.actorId,
-    });
-
-    return success(res, { guildId, config });
-  } catch (error) {
-    return failure(res, error, 400);
-  }
-});
-
-router.put('/:guildId/verification', async (req, res) => {
-  try {
-    const guildId = getGuildId(req);
-    await guardVerificationRoles(req, guildId, req.body || {});
-
-    const config = verificationManager.configureVerification(guildId, req.body || {}, {
-      actorId: req.body?.actorId,
-    });
-
-    return success(res, { guildId, config });
-  } catch (error) {
-    return failure(res, error, 400);
-  }
-});
-
-router.post('/:guildId/verification/panels', (req, res) => {
-  try {
-    const guildId = getGuildId(req);
-    const panel = verificationStore.savePanel(guildId, req.body || {}, {
-      actorId: req.body?.actorId,
-    });
-
-    return success(res, { guildId, panel });
-  } catch (error) {
-    return failure(res, error, 400);
-  }
-});
-
-router.post('/:guildId/verification/panels/deploy', async (req, res) => {
-  try {
-    const guildId = getGuildId(req);
-    const channel = await fetchChannel(req, guildId, req.body?.channelId);
-    const panel = await verificationManager.deployVerificationPanel(channel, req.body || {}, {
-      actorId: req.body?.actorId,
-    });
-
-    return success(res, { guildId, panel });
-  } catch (error) {
-    return failure(res, error, 400);
-  }
-});
-
-router.post('/:guildId/verification/panels/:panelId/refresh', async (req, res) => {
-  try {
-    const guildId = getGuildId(req);
-    const guild = await fetchGuild(req, guildId);
-    if (!guild) throw new Error('Guild is unavailable.');
-
-    const panel = await verificationManager.refreshVerificationPanel(
-      guild,
-      req.params.panelId,
-      req.body || {},
-      { actorId: req.body?.actorId }
-    );
-
-    return success(res, { guildId, panel });
-  } catch (error) {
-    return failure(res, error, 400);
-  }
-});
-
-router.get('/:guildId/verification/analytics', (req, res) => {
-  try {
-    const guildId = getGuildId(req);
-    const config = verificationStore.getVerificationSection(guildId);
-    return success(res, {
-      guildId,
-      analytics: config.analytics || {},
-      panels: Object.values(config.panels || {}),
-    });
-  } catch (error) {
-    return failure(res, error, 400);
-  }
-});
-
-router.get('/:guildId', (req, res) => {
-  try {
-    const { guildId } = req.params;
-    const guildData = getGuildData(guildId);
-
-    return res.json({
-      success: true,
-      guildId,
-      modules: normalizeModuleMap(guildData.modules || {}),
-    });
-  } catch (error) {
-    console.error('Failed to load guild modules');
-    console.error(error);
-
-    return res.status(500).json({
-      success: false,
-      error: error.message || 'Failed to load guild modules.',
-    });
-  }
-});
-
-router.patch('/:guildId/:moduleKey/enabled', (req, res) => {
-  try {
-    const { guildId, moduleKey } = req.params;
-    const enabled = req.body?.enabled === true;
-
-    const modules = setModuleEnabled(guildId, moduleKey, enabled);
-
-    return res.json({
-      success: true,
-      guildId,
-      moduleKey,
-      enabled,
-      modules: normalizeModuleMap(modules || {}),
-    });
-  } catch (error) {
-    console.error('Failed to update guild module state');
-    console.error(error);
-
-    return res.status(400).json({
-      success: false,
-      error: error.message || 'Failed to update guild module state.',
-    });
   }
 });
 
