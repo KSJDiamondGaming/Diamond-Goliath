@@ -44,6 +44,8 @@ export const api = {
   getOwnerMe: () => request('/api/owner/me'),
   getOwnerGuilds: () => request('/api/owner/guilds/all'),
   getPlatformRuntime: () => request('/api/owner/runtime'),
+  getOwnerBackups: (environment = 'all') => request(`/api/owner/backups?environment=${encodeURIComponent(environment)}`),
+  createOwnerManualBackup: (payload) => request('/api/owner/backups/manual', { method: 'POST', body: JSON.stringify(payload) }),
   getOwnerRuntime: (guildId) => request(`/api/status?guildId=${guildId}`),
   getOwnerSecurity: (guildId) => request(`/api/security/overview?guildId=${guildId}`),
   getPermissionHealth: (guildId) => request(`/api/permission-health/${guildId}`),
