@@ -245,6 +245,34 @@ const DEFAULT_MODULES = Object.freeze({
       denied: 0,
     },
   },
+  polls: {
+    enabled: false,
+    settings: {
+      defaultChannelId: null,
+      allowMultipleVotes: false,
+      anonymousVotes: false,
+      autoCloseHours: 24,
+    },
+    polls: {},
+    analytics: {
+      created: 0,
+      deployed: 0,
+      closed: 0,
+      votes: 0,
+    },
+  },
+  stats: {
+    enabled: false,
+    settings: {
+      showLiveGuildStats: true,
+      showModuleStats: true,
+      showStoredWorkflowStats: true,
+    },
+    snapshots: [],
+    analytics: {
+      viewed: 0,
+    },
+  },
   translation: {
     enabled: false,
     settings: {
