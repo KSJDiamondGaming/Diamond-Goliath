@@ -1,6 +1,6 @@
 'use strict';
 
-const subscriptionManager = require('./subscriptionManager');
+const entitlementManager = require('./entitlementManager');
 const { getPlanDefinition, getPlanLimits } = require('../../config/plans');
 
 const LIMIT_LABELS = Object.freeze({
@@ -17,16 +17,20 @@ function cleanLimitKey(limitKey) {
   return key;
 }
 
+function getActivePlan(guildId) {
+  return entitlementManager.getPlan(guildId);
+}
+
 function getPlanLimit(guildId, limitKey) {
   const key = cleanLimitKey(limitKey);
-  const plan = subscriptionManager.getActivePlan(guildId);
+  const plan = getActivePlan(guildId);
   const limits = getPlanLimits(plan);
   return Object.prototype.hasOwnProperty.call(limits, key) ? limits[key] : null;
 }
 
 function getPlanLimitSummary(guildId, limitKey) {
   const key = cleanLimitKey(limitKey);
-  const plan = subscriptionManager.getActivePlan(guildId);
+  const plan = getActivePlan(guildId);
   const planDefinition = getPlanDefinition(plan);
   const limit = getPlanLimit(guildId, key);
 
