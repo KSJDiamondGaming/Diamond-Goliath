@@ -41,6 +41,7 @@ module.exports = {
     }
 
     const state = testDevOverride.toggle(interaction.user.id);
+    const billing = testDevOverride.getPaywallBypassState();
 
     if (state.blocked) {
       return interaction.editReply({ content: `❌ ${state.reason || 'Toggle blocked.'}` });
@@ -52,10 +53,16 @@ module.exports = {
         '',
         `Mode: \`${modeLabel()}\``,
         `Updated by: \`${interaction.user.id}\``,
+        `Billing test unlock: \`${billing.active ? 'ON' : 'OFF'}\``,
+        `Billing test plan: \`${billing.plan || 'none'}\``,
         '',
         state.enabled
-          ? 'Goliath guard checks can now be bypassed for DEV owner testing.'
+          ? 'Goliath guard checks can now be skipped for DEV owner testing.'
           : 'Goliath guard checks are now operating normally.',
+        '',
+        billing.active
+          ? 'All billing-gated modules and limits are open in DEV. Edit the DEV test JSON and set the billing unlock to false when testing vouchers or plan locks.'
+          : 'Billing, vouchers, plan locks and limits are being tested normally.',
         '',
         'Discord API permissions are still enforced by Discord.',
       ].join('\n'),
