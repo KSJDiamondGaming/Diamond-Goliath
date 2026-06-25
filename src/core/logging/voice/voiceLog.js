@@ -1,10 +1,8 @@
 const { EmbedBuilder } = require('discord.js');
 const guildManager = require('../../guild/guildManager');
 
-async function getLogChannel(guild) {
-  const id =
-    guildManager.getLogChannelId(guild.id, 'voice') ||
-    guildManager.getLogChannelId(guild.id, 'general');
+async function getLogChannel(guild, eventName) {
+  const id = guildManager.getLogChannelId(guild.id, eventName, 'voice');
 
   if (!id) return null;
 
@@ -55,7 +53,7 @@ async function handleVoiceStateUpdate(oldState, newState) {
 
     if (!guildManager.isLogEventEnabled(guild.id, eventName)) return;
 
-    const logChannel = await getLogChannel(guild);
+    const logChannel = await getLogChannel(guild, eventName);
     if (!logChannel) return;
 
     const embed = new EmbedBuilder()
