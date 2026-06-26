@@ -54,6 +54,12 @@ function main() {
   );
 
   assertContains(
+    'src/dashboard/js/pages/modules/TempVoice.jsx',
+    'Activity Log',
+    'Frontend Temp Voice activity log panel'
+  );
+
+  assertContains(
     'src/dashboard/js/pages/modules/tempvoice/TempVoiceControlCentre.jsx',
     '/api/temp-voice/${guildId}/channels/${channelId}/controls',
     'Frontend Temp Voice channel controls contract'
@@ -99,6 +105,30 @@ function main() {
     'src/server/routes/tempVoice.js',
     "router.delete('/:guildId/channels/:channelId'",
     'Backend Temp Voice channel close route'
+  );
+
+  assertContains(
+    'src/modules/tempvoice/tempVoiceInteractionHandler.js',
+    'buildControlRows',
+    'Discord Temp Voice owner panel buttons'
+  );
+
+  assertContains(
+    'src/events/interactions/interactionCreate.js',
+    'handleTempVoiceInteraction',
+    'Discord Temp Voice interaction wiring'
+  );
+
+  assertContains(
+    'src/modules/tempvoice/tempVoiceManager.js',
+    'postOwnerPanel',
+    'Temp Voice owner panel posting'
+  );
+
+  assertContains(
+    'src/modules/tempvoice/tempVoiceStore.js',
+    'addActivity',
+    'Temp Voice activity storage'
   );
 
   console.log('✅ Dashboard API contracts OK');
