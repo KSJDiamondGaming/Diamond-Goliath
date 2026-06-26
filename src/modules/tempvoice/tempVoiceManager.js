@@ -46,7 +46,7 @@ function hasMoveMembers(guild) {
 }
 
 function canManageVoice(guild) {
-  return Boolean(hasManageChannels(guild) && hasMoveMembers(guild));
+  return hasManageChannels(guild) && hasMoveMembers(guild);
 }
 
 function canControlTempChannel(member, tempChannel) {
@@ -134,7 +134,6 @@ async function createTempChannel(newState, hub) {
   if (!guild || !member || !hub?.joinChannelId) return null;
   if (!isModuleEnabled(guild.id, 'tempVoice')) return null;
   if (!hasManageChannels(guild)) return null;
-
   if (member.voice?.channelId !== hub.joinChannelId) return null;
 
   const section = tempVoiceStore.getTempVoiceSection(guild.id);
@@ -182,13 +181,11 @@ async function createTempChannel(newState, hub) {
 async function cleanupTempChannel(oldState) {
   const guild = oldState.guild;
   const oldChannel = oldState.channel;
-
   if (!guild || !oldChannel) return null;
 
   const section = tempVoiceStore.getTempVoiceSection(guild.id);
   const tempChannel = section.channels?.[oldChannel.id] || null;
   if (!tempChannel) return null;
-
   if ((oldChannel.members?.size || 0) > 0) return null;
 
   tempVoiceStore.deleteTempChannel(guild.id, oldChannel.id);
@@ -208,13 +205,9 @@ async function handleVoiceStateUpdate(oldState, newState) {
 
     if (newState.channelId && newState.channelId !== oldState.channelId) {
       const section = tempVoiceStore.getTempVoiceSection(guild.id);
-
       if (section.enabled !== false && isModuleEnabled(guild.id, 'tempVoice')) {
         const hub = tempVoiceStore.findHubByJoinChannel(guild.id, newState.channelId);
-
-        if (hub) {
-          await createTempChannel(newState, hub);
-        }
+        if (hub) await createTempChannel(newState, hub);
       }
     }
 
@@ -421,3 +414,51 @@ async function claimTempChannel(guild, channelId, actorId) {
 }
 
 async function kickMemberFromTempChannel(guild, channelId, actorId, targetId, block = false) {
+  if (!guild?.id) throw new Error('Guild is required.');
+  assertTempVoiceModuleEnabled(guild.id);
+  const { tempChannel, channel } = await getTrackedVoiceChannel(guild, channelId);
+  await assertCanControl(guild, tempChannel, actorId);
+  const target = await getMember(guild, targetId);
+  if (!target) throw new Error('Target member was not found.');
+  if (target.voice?.channelId === channelId) {
+    await target.voice.disconnect('Temp Voice owner kick').catch(() => null);
+  }
+  const updates = {};
+  if (block) {
+    await channel.permissionOverwrites.edit(target.id, { ViewChannel: true, Connect: false }).catch(() => null);
+    updates.blockedUserIds = [...new Set([...(tempChannel.blockedUserIds || []), target.id])];
+  }
+  const updated = tempVoiceStore.updateTempChannel(guild.id, channelId, updates, { actorId, action: block ? 'temp_voice_block_user' : 'temp_voice_kick_user' });
+  activity(guild.id, block ? 'member_restricted' : 'member_removed', block ? 'Member restricted from temporary voice channel' : 'Member removed from temporary voice channel', updated || tempChannel, { actorId, targetId: target.id });
+  return updated;
+}
+
+async function deleteOwnedTempChannel(guild, channelId, actorId) {
+  const tempChannel = tempVoiceStore.getTempChannel(guild.id, channelId);
+  if (!tempChannel) throw new Error('Temporary voice channel is not tracked.');
+
+  await assertCanControl(guild, tempChannel, actorId);
+
+  const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
+  tempVoiceStore.deleteTempChannel(guild.id, channelId, { actorId });
+  activity(guild.id, 'channel_deleted', 'Temporary voice channel closed', tempChannel, { actorId });
+
+  if (channel?.deletable) {
+    await channel.delete('Temp Voice owner delete').catch(() => null);
+  }
+
+  return tempChannel;
+}
+
+module.exports = {
+  handleVoiceStateUpdate,
+  deployHub,
+  createHub,
+  getHubs,
+  createTempChannel,
+  cleanupTempChannel,
+  updateTempChannelControls,
+  claimTempChannel,
+  kickMemberFromTempChannel,
+  deleteOwnedTempChannel,
+};
