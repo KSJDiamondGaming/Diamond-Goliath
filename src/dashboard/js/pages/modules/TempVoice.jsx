@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 
 import { api } from '../../services/apiClient';
 import PageShell, { EmptyState, LoadingPanel, Notice, PrimaryButton, StatGrid, SummaryStat } from '../../shared/PageShell';
+import TempVoiceControlCentre from './tempvoice/TempVoiceControlCentre.jsx';
 
 function getGuildId(selectedGuild, selectedGuildData) {
   return String(selectedGuildData?.guildId || selectedGuildData?.id || selectedGuild || '').split(':').pop().trim();
@@ -157,20 +158,6 @@ export default function TempVoice({ theme, selectedGuild, selectedGuildData }) {
     }
   }
 
-  async function deleteTrackedChannel(channelId) {
-    setSaving(true);
-    setError('');
-    try {
-      await api.request(`/api/temp-voice/${guildId}/channels/${channelId}`, { method: 'DELETE' });
-      setMessage('✅ Temp Voice channel removed.');
-      await load();
-    } catch (deleteError) {
-      setError(deleteError.message || 'Failed to remove channel.');
-    } finally {
-      setSaving(false);
-    }
-  }
-
   if (!guildId) return <EmptyState theme={theme} title="Select a guild" text="Select a guild to manage Temp Voice." />;
   if (loading && !config) return <LoadingPanel theme={theme} text="Loading Temp Voice..." />;
 
@@ -184,6 +171,8 @@ export default function TempVoice({ theme, selectedGuild, selectedGuildData }) {
         <SummaryStat theme={theme} label="Hubs" value={`${overview?.enabledHubs || 0}/${overview?.hubs || 0}`} accent="#60a5fa" description="Enabled hubs" />
         <SummaryStat theme={theme} label="Live Channels" value={overview?.liveChannels || 0} accent="#a78bfa" description="Tracked and present" />
         <SummaryStat theme={theme} label="Tracked" value={overview?.trackedChannels || 0} accent="#f59e0b" description="Stored temp channels" />
+        <SummaryStat theme={theme} label="Locked" value={overview?.lockedChannels || 0} accent="#facc15" description="Locked temp channels" />
+        <SummaryStat theme={theme} label="Hidden" value={overview?.hiddenChannels || 0} accent="#38bdf8" description="Hidden temp channels" />
       </StatGrid>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 420px), 1fr))', gap: 16 }}>
@@ -220,9 +209,9 @@ export default function TempVoice({ theme, selectedGuild, selectedGuildData }) {
             <Check theme={theme} checked={settingsDraft.allowOwnerLock} onChange={(value) => setSettingsDraft({ ...settingsDraft, allowOwnerLock: value })} label="Owners can lock/unlock" />
             <Check theme={theme} checked={settingsDraft.allowOwnerHide} onChange={(value) => setSettingsDraft({ ...settingsDraft, allowOwnerHide: value })} label="Owners can hide/show" />
             <Check theme={theme} checked={settingsDraft.allowOwnerLimit} onChange={(value) => setSettingsDraft({ ...settingsDraft, allowOwnerLimit: value })} label="Owners can change user limit" />
-            <Check theme={theme} checked={settingsDraft.allowOwnerPermits} onChange={(value) => setSettingsDraft({ ...settingsDraft, allowOwnerPermits: value })} label="Owners can allow/block users and roles" />
+            <Check theme={theme} checked={settingsDraft.allowOwnerPermits} onChange={(value) => setSettingsDraft({ ...settingsDraft, allowOwnerPermits: value })} label="Owners can manage access exceptions" />
             <Check theme={theme} checked={settingsDraft.allowOwnerTransfer} onChange={(value) => setSettingsDraft({ ...settingsDraft, allowOwnerTransfer: value })} label="Owners can transfer ownership" />
-            <Check theme={theme} checked={settingsDraft.allowOwnerDelete} onChange={(value) => setSettingsDraft({ ...settingsDraft, allowOwnerDelete: value })} label="Owners can delete their channel" />
+            <Check theme={theme} checked={settingsDraft.allowOwnerDelete} onChange={(value) => setSettingsDraft({ ...settingsDraft, allowOwnerDelete: value })} label="Owners can remove their channel" />
             <PrimaryButton onClick={saveSettings} disabled={saving}>{saving ? 'Saving...' : 'Save Controls'}</PrimaryButton>
           </div>
         </Card>
@@ -231,15 +220,21 @@ export default function TempVoice({ theme, selectedGuild, selectedGuildData }) {
       <Card theme={theme}>
         <h2 style={{ margin: '0 0 14px' }}>Configured Hubs</h2>
         <div style={{ display: 'grid', gap: 10 }}>
-          {hubs.length ? hubs.map((hub) => <div key={hub.hubId} style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(15,23,42,0.5)', borderRadius: 14, padding: 12, display: 'grid', gap: 8 }}><strong>{voiceChannels.find((channel) => channel.id === hub.joinChannelId)?.name || hub.joinChannelName || hub.joinChannelId}</strong><span style={{ color: theme.mutedText, fontSize: 13 }}>Template: {hub.nameTemplate} · Limit: {hub.userLimit || 'None'} · Category: {categories.find((category) => category.id === hub.categoryId)?.name || hub.categoryName || 'Auto'} · Defaults: {hub.lockedByDefault ? 'Locked' : 'Open'} / {hub.hiddenByDefault ? 'Hidden' : 'Visible'}</span><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><button type="button" onClick={() => setHubDraft({ ...defaultHub, ...hub })} style={{ border: `1px solid ${theme.cardBorder}`, background: theme.softBg, color: theme.cardText, borderRadius: 10, padding: '9px 11px', fontWeight: 900 }}>Edit</button><button type="button" onClick={() => deleteHub(hub.hubId)} style={{ border: '1px solid rgba(248,113,113,0.35)', background: 'rgba(248,113,113,0.12)', color: '#fca5a5', borderRadius: 10, padding: '9px 11px', fontWeight: 900 }}>Delete</button></div></div>) : <EmptyState theme={theme} title="No hubs configured" text="Deploy a category and hub channel, or attach an existing voice channel." />}
+          {hubs.length ? hubs.map((hub) => <div key={hub.hubId} style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(15,23,42,0.5)', borderRadius: 14, padding: 12, display: 'grid', gap: 8 }}><strong>{voiceChannels.find((channel) => channel.id === hub.joinChannelId)?.name || hub.joinChannelName || hub.joinChannelId}</strong><span style={{ color: theme.mutedText, fontSize: 13 }}>Template: {hub.nameTemplate} · Limit: {hub.userLimit || 'None'} · Category: {categories.find((category) => category.id === hub.categoryId)?.name || hub.categoryName || 'Auto'} · Defaults: {hub.lockedByDefault ? 'Locked' : 'Open'} / {hub.hiddenByDefault ? 'Hidden' : 'Visible'}</span><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><button type="button" onClick={() => setHubDraft({ ...defaultHub, ...hub })} style={{ border: `1px solid ${theme.cardBorder}`, background: theme.softBg, color: theme.cardText, borderRadius: 10, padding: '9px 11px', fontWeight: 900 }}>Edit</button><button type="button" onClick={() => deleteHub(hub.hubId)} style={{ border: '1px solid rgba(248,113,113,0.35)', background: 'rgba(248,113,113,0.12)', color: '#fca5a5', borderRadius: 10, padding: '9px 11px', fontWeight: 900 }}>Remove</button></div></div>) : <EmptyState theme={theme} title="No hubs configured" text="Deploy a category and hub channel, or attach an existing voice channel." />}
         </div>
       </Card>
 
       <Card theme={theme}>
-        <h2 style={{ margin: '0 0 14px' }}>Tracked Temporary Channels</h2>
-        <div style={{ display: 'grid', gap: 10 }}>
-          {trackedChannels.length ? trackedChannels.map((channel) => <div key={channel.channelId} style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(15,23,42,0.5)', borderRadius: 14, padding: 12, display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}><span><strong>{channel.name || channel.channelId}</strong><br /><small style={{ color: theme.mutedText }}>Owner: {channel.ownerId} · Limit: {channel.userLimit || 'None'} · {channel.locked ? 'Locked' : 'Unlocked'} · {channel.hidden ? 'Hidden' : 'Visible'} · Status: {channel.activityStatus || 'None'}</small></span><button type="button" onClick={() => deleteTrackedChannel(channel.channelId)} style={{ border: '1px solid rgba(248,113,113,0.35)', background: 'rgba(248,113,113,0.12)', color: '#fca5a5', borderRadius: 10, padding: '9px 11px', fontWeight: 900 }}>Delete</button></div>) : <EmptyState theme={theme} title="No active temporary channels" text="Created temporary channels will appear here." />}
-        </div>
+        <h2 style={{ margin: '0 0 14px' }}>Temp Voice Control Centre</h2>
+        <TempVoiceControlCentre
+          theme={theme}
+          guildId={guildId}
+          channels={trackedChannels}
+          saving={saving}
+          onRefresh={load}
+          onMessage={setMessage}
+          onError={setError}
+        />
       </Card>
     </PageShell>
   );
