@@ -56,12 +56,12 @@ async function applyBaseTempPermissions(channel, hub = {}) {
   const everyoneId = channel.guild?.roles?.everyone?.id;
   if (!everyoneId) return;
 
-  const deny = {};
-  if (hub.lockedByDefault) deny.Connect = true;
-  if (hub.hiddenByDefault) deny.ViewChannel = true;
+  const overwrites = {};
+  if (hub.lockedByDefault) overwrites.Connect = false;
+  if (hub.hiddenByDefault) overwrites.ViewChannel = false;
 
-  if (Object.keys(deny).length) {
-    await channel.permissionOverwrites.edit(everyoneId, { deny }).catch(() => null);
+  if (Object.keys(overwrites).length) {
+    await channel.permissionOverwrites.edit(everyoneId, overwrites).catch(() => null);
   }
 }
 
