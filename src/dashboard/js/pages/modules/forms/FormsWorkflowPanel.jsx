@@ -1,5 +1,6 @@
 import React from 'react';
 
+import { api } from '../../../services/apiClient.js';
 import { FormsWorkflowBreakdown, FormsWorkflowCards } from './FormsWorkflowCards.jsx';
 
 function getNumber(value = 0) {
@@ -40,6 +41,28 @@ function StatusPill({ label }) {
     <span style={{ border: `1px solid ${tone}`, color: tone, borderRadius: 999, padding: '4px 8px', fontSize: 11, fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
       {String(label || 'pending').replace(/_/g, ' ')}
     </span>
+  );
+}
+
+function QueueButton({ children, onClick, disabled = false }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        border: '1px solid rgba(148,163,184,0.26)',
+        background: disabled ? 'rgba(15,23,42,0.20)' : 'rgba(15,23,42,0.42)',
+        color: disabled ? '#64748b' : '#e5e7eb',
+        borderRadius: 10,
+        padding: '7px 9px',
+        fontSize: 12,
+        fontWeight: 900,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+      }}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -90,22 +113,47 @@ function WorkflowActionHints({ theme, overview = {} }) {
   );
 }
 
-function FormsReviewQueue({ theme, overview = {} }) {
+function FormsReviewQueue({ theme, overview = {}, guildId = '', onRefresh }) {
   const cardBorder = theme?.cardBorder || 'rgba(148,163,184,0.22)';
   const cardText = theme?.cardText || '#e5e7eb';
   const mutedText = theme?.mutedText || '#94a3b8';
   const recent = Array.isArray(overview.recentSubmissions) ? overview.recentSubmissions : [];
   const queue = recent.filter(isActiveSubmission).slice(0, 8);
+  const [busyId, setBusyId] = React.useState('');
+  const [notice, setNotice] = React.useState('');
+  const [error, setError] = React.useState('');
+  const [noteDrafts, setNoteDrafts] = React.useState({});
+
+  async function runAction(submissionId, label, request) {
+    if (!guildId || !submissionId) return;
+    try {
+      setBusyId(`${submissionId}:${label}`);
+      setNotice('');
+      setError('');
+      await request();
+      setNotice(`${label} saved.`);
+      if (typeof onRefresh === 'function') await onRefresh();
+    } catch (err) {
+      setError(err.message || `${label} failed.`);
+    } finally {
+      setBusyId('');
+    }
+  }
+
+  const buttonBusy = (submissionId, label) => busyId === `${submissionId}:${label}`;
 
   return (
     <div style={{ border: `1px solid ${cardBorder}`, background: 'rgba(15,23,42,0.24)', borderRadius: 16, padding: 14, display: 'grid', gap: 12 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
         <div>
           <strong style={{ color: cardText }}>Review Queue</strong>
-          <p style={{ margin: '5px 0 0', color: mutedText, fontSize: 13, lineHeight: 1.45 }}>Dashboard-only view of submissions that need staff attention.</p>
+          <p style={{ margin: '5px 0 0', color: mutedText, fontSize: 13, lineHeight: 1.45 }}>Staff workflow controls for active form submissions.</p>
         </div>
         <StatusPill label={queue.length ? 'active' : 'clear'} />
       </div>
+
+      {notice ? <div style={{ color: '#86efac', fontSize: 13, fontWeight: 850 }}>{notice}</div> : null}
+      {error ? <div style={{ color: '#fca5a5', fontSize: 13, fontWeight: 850 }}>{error}</div> : null}
 
       {!queue.length ? (
         <div style={{ border: `1px dashed ${cardBorder}`, borderRadius: 14, padding: 14, color: mutedText }}>No active submissions in the recent queue.</div>
@@ -114,8 +162,10 @@ function FormsReviewQueue({ theme, overview = {} }) {
           {queue.map((submission) => {
             const status = getSubmissionStatus(submission);
             const missing = submission.missingTicketChannel === true;
+            const submissionId = submission.submissionId;
+            const noteValue = noteDrafts[submissionId] || '';
             return (
-              <div key={submission.submissionId || `${submission.formId}-${submission.createdAt}`} style={{ border: `1px solid ${missing ? '#fca5a5' : cardBorder}`, borderRadius: 14, padding: 12, background: 'rgba(2,6,23,0.22)', display: 'grid', gap: 8 }}>
+              <div key={submission.submissionId || `${submission.formId}-${submission.createdAt}`} style={{ border: `1px solid ${missing ? '#fca5a5' : cardBorder}`, borderRadius: 14, padding: 12, background: 'rgba(2,6,23,0.22)', display: 'grid', gap: 9 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
                   <strong style={{ color: cardText }}>{text(submission.formId, 'Unknown Form')}</strong>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -130,6 +180,31 @@ function FormsReviewQueue({ theme, overview = {} }) {
                 <div style={{ color: mutedText, fontSize: 12, overflowWrap: 'anywhere' }}>
                   Submission: {submission.submissionId || 'unknown'}{submission.ticketId ? ` · Ticket: ${submission.ticketId}` : ''}
                 </div>
+
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <QueueButton disabled={!guildId || !submissionId || buttonBusy(submissionId, 'Assign')} onClick={() => runAction(submissionId, 'Assign', () => api.request(`/api/forms/${guildId}/submissions/${submissionId}/workflow/reviewer`, { method: 'PATCH', body: JSON.stringify({}) }))}>Assign to me</QueueButton>
+                  <QueueButton disabled={!guildId || !submissionId || buttonBusy(submissionId, 'Reviewing')} onClick={() => runAction(submissionId, 'Reviewing', () => api.request(`/api/forms/${guildId}/submissions/${submissionId}/workflow/state`, { method: 'PATCH', body: JSON.stringify({ state: 'reviewing' }) }))}>Mark reviewing</QueueButton>
+                  <QueueButton disabled={!guildId || !submissionId || buttonBusy(submissionId, 'Request info')} onClick={() => runAction(submissionId, 'Request info', () => api.request(`/api/forms/${guildId}/submissions/${submissionId}/workflow/state`, { method: 'PATCH', body: JSON.stringify({ state: 'request_info' }) }))}>Request info</QueueButton>
+                  <QueueButton disabled={!guildId || !submissionId || buttonBusy(submissionId, 'Close')} onClick={() => runAction(submissionId, 'Close', () => api.request(`/api/forms/${guildId}/submissions/${submissionId}/workflow/state`, { method: 'PATCH', body: JSON.stringify({ state: 'closed' }) }))}>Close</QueueButton>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 8 }}>
+                  <input
+                    value={noteValue}
+                    onChange={(event) => setNoteDrafts((current) => ({ ...current, [submissionId]: event.target.value }))}
+                    placeholder="Add private staff note..."
+                    style={{ border: `1px solid ${cardBorder}`, background: 'rgba(15,23,42,0.55)', color: cardText, borderRadius: 10, padding: '8px 10px', minWidth: 0 }}
+                  />
+                  <QueueButton
+                    disabled={!guildId || !submissionId || !noteValue.trim() || buttonBusy(submissionId, 'Note')}
+                    onClick={() => runAction(submissionId, 'Note', async () => {
+                      await api.request(`/api/forms/${guildId}/submissions/${submissionId}/workflow/notes`, { method: 'POST', body: JSON.stringify({ note: noteValue }) });
+                      setNoteDrafts((current) => ({ ...current, [submissionId]: '' }));
+                    })}
+                  >
+                    Add note
+                  </QueueButton>
+                </div>
               </div>
             );
           })}
@@ -139,7 +214,7 @@ function FormsReviewQueue({ theme, overview = {} }) {
   );
 }
 
-export default function FormsWorkflowPanel({ theme, overview = {} }) {
+export default function FormsWorkflowPanel({ theme, overview = {}, guildId = '', onRefresh }) {
   const cardBorder = theme?.cardBorder || 'rgba(148,163,184,0.22)';
   const cardBg = theme?.cardBg || 'rgba(15,23,42,0.40)';
   const cardText = theme?.cardText || '#e5e7eb';
@@ -222,7 +297,7 @@ export default function FormsWorkflowPanel({ theme, overview = {} }) {
         <WorkflowStep theme={theme} index="5" title="Archive" detail="Linked tickets carry workflow metadata for transcript, recovery and analytics visibility." status={missingChannels ? 'danger' : 'ready'} />
       </div>
 
-      <FormsReviewQueue theme={theme} overview={overview} />
+      <FormsReviewQueue theme={theme} overview={overview} guildId={guildId} onRefresh={onRefresh} />
       <WorkflowActionHints theme={theme} overview={overview} />
       <FormsWorkflowBreakdown theme={theme} overview={overview} />
     </section>
