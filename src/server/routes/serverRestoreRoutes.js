@@ -6,11 +6,16 @@ const {
   getBackupSummaries,
   readServerBackup,
   createServerBackup,
+  validateServerBackup,
 } = require('../../core/security/serverBackup');
 
 const {
   restoreServerBackup,
 } = require('../../core/security/serverRestore');
+
+const {
+  buildRestoreComparison,
+} = require('../../core/security/serverRestoreCompare');
 
 const { requireEntitlement } = require('../middleware/requireEntitlement');
 
@@ -21,6 +26,7 @@ function getClient(req) {
     req.app?.locals?.client ||
     req.app?.locals?.discordClient ||
     req.app?.get?.('client') ||
+    req.app?.get?.('goliath.client') ||
     req.client ||
     null
   );
@@ -71,6 +77,7 @@ function safeBackupSummary(backup) {
     logsIncluded: Boolean(backup.logs),
     restoreNotes: backup.restoreNotes || null,
     version: backup.version || backup.backupVersion || null,
+    validation: validateServerBackup(backup, { guildId: backup.guild?.id, strict: false }),
   };
 }
 
@@ -144,6 +151,55 @@ router.get('/:guildId/backups/:backupId', async (req, res) => {
     return res.status(500).json({
       success: false,
       error: error.message || 'Failed to read backup.',
+    });
+  }
+});
+
+router.post('/:guildId/restore/compare', async (req, res) => {
+  try {
+    const client = getClient(req);
+    const { guildId } = req.params;
+    const { backupId } = req.body || {};
+    const guild = getGuild(client, guildId);
+
+    if (!guild) {
+      return res.status(404).json({
+        success: false,
+        error: 'Guild not found or bot is not in this server.',
+      });
+    }
+
+    if (!backupId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing backupId.',
+      });
+    }
+
+    const backup = readServerBackup(guildId, backupId);
+    if (!backup) {
+      return res.status(404).json({
+        success: false,
+        error: 'Backup not found.',
+      });
+    }
+
+    const validation = validateServerBackup(backup, { guildId, strict: false });
+    const comparison = await buildRestoreComparison(guild, backup);
+
+    return res.json({
+      success: true,
+      guildId,
+      backupId,
+      validation,
+      comparison,
+    });
+  } catch (error) {
+    console.error('Restore comparison failed:', error);
+
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Restore comparison failed.',
     });
   }
 });
