@@ -7,6 +7,42 @@ function getNumber(value = 0) {
   return Number.isFinite(number) ? number : 0;
 }
 
+function text(value, fallback = 'Unknown') {
+  return String(value || fallback).trim();
+}
+
+function formatDate(value) {
+  if (!value) return 'Not recorded';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Not recorded';
+  return date.toLocaleString();
+}
+
+function getSubmissionStatus(submission = {}) {
+  return String(submission.status || submission.reviewState || 'pending').toLowerCase();
+}
+
+function isActiveSubmission(submission = {}) {
+  return ['pending', 'request_info', 'reviewing', 'under_review'].includes(getSubmissionStatus(submission));
+}
+
+function statusTone(status = '') {
+  const value = String(status || '').toLowerCase();
+  if (value === 'approved') return '#86efac';
+  if (value === 'denied' || value === 'missing') return '#fca5a5';
+  if (value === 'request_info' || value === 'pending' || value === 'reviewing' || value === 'under_review') return '#fcd34d';
+  return '#93c5fd';
+}
+
+function StatusPill({ label }) {
+  const tone = statusTone(label);
+  return (
+    <span style={{ border: `1px solid ${tone}`, color: tone, borderRadius: 999, padding: '4px 8px', fontSize: 11, fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+      {String(label || 'pending').replace(/_/g, ' ')}
+    </span>
+  );
+}
+
 function WorkflowStep({ theme, index, title, detail, status = 'ready' }) {
   const mutedText = theme?.mutedText || '#94a3b8';
   const cardText = theme?.cardText || '#e5e7eb';
@@ -50,6 +86,55 @@ function WorkflowActionHints({ theme, overview = {} }) {
       {hints.map((hint) => (
         <span key={hint} style={{ color: theme?.mutedText || '#94a3b8', lineHeight: 1.45 }}>• {hint}</span>
       ))}
+    </div>
+  );
+}
+
+function FormsReviewQueue({ theme, overview = {} }) {
+  const cardBorder = theme?.cardBorder || 'rgba(148,163,184,0.22)';
+  const cardText = theme?.cardText || '#e5e7eb';
+  const mutedText = theme?.mutedText || '#94a3b8';
+  const recent = Array.isArray(overview.recentSubmissions) ? overview.recentSubmissions : [];
+  const queue = recent.filter(isActiveSubmission).slice(0, 8);
+
+  return (
+    <div style={{ border: `1px solid ${cardBorder}`, background: 'rgba(15,23,42,0.24)', borderRadius: 16, padding: 14, display: 'grid', gap: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div>
+          <strong style={{ color: cardText }}>Review Queue</strong>
+          <p style={{ margin: '5px 0 0', color: mutedText, fontSize: 13, lineHeight: 1.45 }}>Dashboard-only view of submissions that need staff attention.</p>
+        </div>
+        <StatusPill label={queue.length ? 'active' : 'clear'} />
+      </div>
+
+      {!queue.length ? (
+        <div style={{ border: `1px dashed ${cardBorder}`, borderRadius: 14, padding: 14, color: mutedText }}>No active submissions in the recent queue.</div>
+      ) : (
+        <div style={{ display: 'grid', gap: 10 }}>
+          {queue.map((submission) => {
+            const status = getSubmissionStatus(submission);
+            const missing = submission.missingTicketChannel === true;
+            return (
+              <div key={submission.submissionId || `${submission.formId}-${submission.createdAt}`} style={{ border: `1px solid ${missing ? '#fca5a5' : cardBorder}`, borderRadius: 14, padding: 12, background: 'rgba(2,6,23,0.22)', display: 'grid', gap: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                  <strong style={{ color: cardText }}>{text(submission.formId, 'Unknown Form')}</strong>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    <StatusPill label={status} />
+                    {submission.ticketId ? <StatusPill label="ticket" /> : null}
+                    {missing ? <StatusPill label="missing" /> : null}
+                  </div>
+                </div>
+                <div style={{ color: mutedText, fontSize: 13, lineHeight: 1.45 }}>
+                  User: {text(submission.userTag || submission.userId, 'Unknown')} · Created: {formatDate(submission.createdAt)}
+                </div>
+                <div style={{ color: mutedText, fontSize: 12, overflowWrap: 'anywhere' }}>
+                  Submission: {submission.submissionId || 'unknown'}{submission.ticketId ? ` · Ticket: ${submission.ticketId}` : ''}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -137,6 +222,7 @@ export default function FormsWorkflowPanel({ theme, overview = {} }) {
         <WorkflowStep theme={theme} index="5" title="Archive" detail="Linked tickets carry workflow metadata for transcript, recovery and analytics visibility." status={missingChannels ? 'danger' : 'ready'} />
       </div>
 
+      <FormsReviewQueue theme={theme} overview={overview} />
       <WorkflowActionHints theme={theme} overview={overview} />
       <FormsWorkflowBreakdown theme={theme} overview={overview} />
     </section>
