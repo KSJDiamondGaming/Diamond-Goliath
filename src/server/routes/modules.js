@@ -66,6 +66,14 @@ function getGuildId(req) {
   return guildId;
 }
 
+function cleanModuleKey(value) {
+  const key = String(value || '').trim();
+  if (!/^[a-zA-Z0-9_-]{2,80}$/.test(key)) {
+    throw new Error('Invalid module key.');
+  }
+  return key;
+}
+
 function cleanPresetName(value) {
   const name = String(value || '').trim().slice(0, 50);
   if (!name) throw new Error('Preset name is required.');
@@ -188,6 +196,45 @@ async function guardVerificationRoles(req, guildId, input = {}) {
   return guardManageableRoles(guild, roleIds, 'verification.roles');
 }
 
+router.get('/:guildId', (req, res) => {
+  try {
+    const guildId = getGuildId(req);
+    const data = getGuildData(guildId) || {};
+    const modules = normalizeModuleMap(data.modules || {});
+
+    return success(res, {
+      guildId,
+      modules,
+      summary: {
+        total: Object.keys(modules).length,
+        enabled: Object.values(modules).filter((module) => module?.enabled !== false).length,
+      },
+    });
+  } catch (error) {
+    return failure(res, error, 400);
+  }
+});
+
+router.patch('/:guildId/:moduleKey/enabled', (req, res) => {
+  try {
+    const guildId = getGuildId(req);
+    const moduleKey = cleanModuleKey(req.params.moduleKey);
+    const enabled = req.body?.enabled === true;
+
+    setModuleEnabled(guildId, moduleKey, enabled);
+    const modules = normalizeModuleMap(getGuildSection(guildId, 'modules', {}));
+
+    return success(res, {
+      guildId,
+      moduleKey,
+      enabled,
+      modules,
+    });
+  } catch (error) {
+    return failure(res, error, 400);
+  }
+});
+
 router.get('/:guildId/auto-roles', (req, res) => {
   try {
     const guildId = getGuildId(req);
@@ -258,155 +305,11 @@ router.post('/:guildId/auto-roles/join', async (req, res) => {
 
     await guardManageableRoles(guild, [req.body?.roleId], 'auto_roles.join_role');
 
-    const result = await autoRoleManager.addAutoRole(guild, req.body?.roleId, { bot: false }, {
-      actorId: req.body?.actorId,
-    });
-
-    return success(res, { guildId, roleId: result.role.id, config: result.section });
-  } catch (error) {
-    return failure(res, error, 400);
-  }
-});
-
-router.delete('/:guildId/auto-roles/join/:roleId', (req, res) => {
-  try {
-    const guildId = getGuildId(req);
-    const config = autoRoleManager.removeAutoRole(guildId, req.params.roleId, { bot: false }, {
+    const config = autoRoleManager.addJoinRole(guildId, req.body?.roleId, {
       actorId: req.body?.actorId,
     });
 
     return success(res, { guildId, config });
-  } catch (error) {
-    return failure(res, error, 400);
-  }
-});
-
-router.post('/:guildId/auto-roles/bots', async (req, res) => {
-  try {
-    const guildId = getGuildId(req);
-    const guild = await fetchGuild(req, guildId);
-    if (!guild) throw new Error('Guild is unavailable.');
-
-    await guardManageableRoles(guild, [req.body?.roleId], 'auto_roles.bot_role');
-
-    const result = await autoRoleManager.addAutoRole(guild, req.body?.roleId, { bot: true }, {
-      actorId: req.body?.actorId,
-    });
-
-    return success(res, { guildId, roleId: result.role.id, config: result.section });
-  } catch (error) {
-    return failure(res, error, 400);
-  }
-});
-
-router.delete('/:guildId/auto-roles/bots/:roleId', (req, res) => {
-  try {
-    const guildId = getGuildId(req);
-    const config = autoRoleManager.removeAutoRole(guildId, req.params.roleId, { bot: true }, {
-      actorId: req.body?.actorId,
-    });
-
-    return success(res, { guildId, config });
-  } catch (error) {
-    return failure(res, error, 400);
-  }
-});
-
-router.get('/:guildId/auto-roles/analytics', (req, res) => {
-  try {
-    const guildId = getGuildId(req);
-    return success(res, {
-      guildId,
-      analytics: autoRoleManager.getAutoRoleAnalytics(guildId),
-    });
-  } catch (error) {
-    return failure(res, error, 400);
-  }
-});
-
-router.get('/:guildId/embed-studio', (req, res) => {
-  try {
-    const guildId = getGuildId(req);
-    const builder = getGuildSection(guildId, 'embedBuilder', { draft: {}, templates: {}, deployments: {} });
-    const presets = getGuildSection(guildId, 'embedPresets', {});
-    const defaults = getGuildSection(guildId, 'embedDefaults', {});
-    const deployments = getAllEmbedDeployments(guildId);
-
-    return success(res, {
-      guildId,
-      builder: {
-        ...builder,
-        deployments,
-      },
-      presets,
-      defaults,
-      overview: {
-        draftSaved: Boolean(builder?.draft),
-        presetCount: Object.keys(presets || {}).filter((key) => key !== 'updatedAt').length,
-        templateCount: Object.keys(builder?.templates || {}).length,
-        deploymentCount: Object.keys(deployments || {}).length,
-      },
-    });
-  } catch (error) {
-    return failure(res, error, 400);
-  }
-});
-
-router.post(
-  '/:guildId/embed-studio/presets',
-  requirePlanLimit('embedPresets', countEmbedPresetsForLimit, {
-    upgradeHint: 'Upgrade to Plus or Pro to save more embed presets.',
-  }),
-  (req, res) => {
-    try {
-      const guildId = getGuildId(req);
-      const name = cleanPresetName(req.body?.name);
-      const preset = saveEmbedPreset(guildId, name, {
-        ...(req.body?.embed && typeof req.body.embed === 'object' ? req.body.embed : {}),
-        content: String(req.body?.content || '').slice(0, 2000),
-        embed: req.body?.embed && typeof req.body.embed === 'object' ? req.body.embed : {},
-        name,
-      });
-      const presets = getGuildSection(guildId, 'embedPresets', {});
-
-      return success(res, { guildId, name, preset, presets });
-    } catch (error) {
-      return failure(res, error, 400);
-    }
-  }
-);
-
-router.delete('/:guildId/embed-studio/presets/:name', (req, res) => {
-  try {
-    const guildId = getGuildId(req);
-    const name = cleanPresetName(req.params.name);
-    const deleted = deleteEmbedPreset(guildId, name);
-    const presets = getGuildSection(guildId, 'embedPresets', {});
-
-    return success(res, { guildId, name, deleted, presets });
-  } catch (error) {
-    return failure(res, error, 400);
-  }
-});
-
-router.delete('/:guildId/embed-studio/deployments/:key', (req, res) => {
-  try {
-    const guildId = getGuildId(req);
-    const key = cleanDeploymentKey(req.params.key);
-    const deleted = deleteEmbedDeployment(guildId, key);
-    const builder = getGuildSection(guildId, 'embedBuilder', { draft: {}, templates: {}, deployments: {} });
-    const deployments = getAllEmbedDeployments(guildId);
-
-    return success(res, {
-      guildId,
-      key,
-      deleted,
-      builder: {
-        ...builder,
-        deployments,
-      },
-      deployments,
-    });
   } catch (error) {
     return failure(res, error, 400);
   }
