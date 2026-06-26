@@ -14,6 +14,21 @@ const {
 
 const router = express.Router();
 
+const DEFAULT_DASHBOARD_PERMISSIONS = {
+  enabled: true,
+  syncDiscordRoles: false,
+  managerRoleIds: [],
+  roleAccess: {},
+  moduleAccess: {},
+  presets: {
+    owner: ['view', 'edit', 'deploy', 'delete', 'sync'],
+    admin: ['view', 'edit', 'deploy', 'sync'],
+    moderator: ['view', 'edit'],
+    support: ['view'],
+    viewer: ['view'],
+  },
+};
+
 const DEFAULT_GENERAL_SETTINGS = {
   prefix: DEFAULT_PREFIX,
   appealUrl: '',
@@ -23,6 +38,7 @@ const DEFAULT_GENERAL_SETTINGS = {
   dashboardAccessRoleIds: [],
   commandManagerRoleIds: [],
   restrictedChannelIds: [],
+  dashboardPermissions: DEFAULT_DASHBOARD_PERMISSIONS,
 
   commandNotFoundEnabled: true,
   wrongCommandUsageEnabled: true,
@@ -34,7 +50,45 @@ const DEFAULT_GENERAL_SETTINGS = {
 };
 
 function safeArray(value) {
-  return Array.isArray(value) ? value.filter(Boolean) : [];
+  return Array.isArray(value) ? [...new Set(value.map(String).filter(Boolean))] : [];
+}
+
+function safeObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function normalizePermissionList(value) {
+  const allowed = new Set(['view', 'edit', 'deploy', 'delete', 'sync', 'admin']);
+  return safeArray(value).filter((permission) => allowed.has(permission));
+}
+
+function normalizeDashboardPermissions(value = {}) {
+  const source = safeObject(value);
+  const roleAccess = safeObject(source.roleAccess);
+  const moduleAccess = safeObject(source.moduleAccess);
+
+  return {
+    ...DEFAULT_DASHBOARD_PERMISSIONS,
+    ...source,
+    enabled: source.enabled !== false,
+    syncDiscordRoles: source.syncDiscordRoles === true,
+    managerRoleIds: safeArray(source.managerRoleIds),
+    roleAccess: Object.fromEntries(
+      Object.entries(roleAccess).map(([roleId, access]) => [String(roleId), normalizePermissionList(access)])
+    ),
+    moduleAccess: Object.fromEntries(
+      Object.entries(moduleAccess).map(([moduleKey, perRole]) => [
+        String(moduleKey),
+        Object.fromEntries(
+          Object.entries(safeObject(perRole)).map(([roleId, access]) => [String(roleId), normalizePermissionList(access)])
+        ),
+      ])
+    ),
+    presets: {
+      ...DEFAULT_DASHBOARD_PERMISSIONS.presets,
+      ...safeObject(source.presets),
+    },
+  };
 }
 
 function normalizePrefixForSave(value) {
@@ -61,6 +115,7 @@ function normalize(data = {}, options = {}) {
     dashboardAccessRoleIds: safeArray(data.dashboardAccessRoleIds),
     commandManagerRoleIds: safeArray(data.commandManagerRoleIds),
     restrictedChannelIds: safeArray(data.restrictedChannelIds),
+    dashboardPermissions: normalizeDashboardPermissions(data.dashboardPermissions),
 
     commandNotFoundEnabled: data.commandNotFoundEnabled !== false,
     wrongCommandUsageEnabled: data.wrongCommandUsageEnabled !== false,
