@@ -56,6 +56,10 @@ async function fetchGuild(req, guildId) {
   return client.guilds.cache.get(guildId) || client.guilds.fetch(guildId).catch(() => null);
 }
 
+function getActorId(req) {
+  return cleanId(req.session?.user?.id || req.body?.actorId || req.query?.actorId);
+}
+
 function overview(section, guild = null) {
   const hubs = Object.values(section.hubs || {});
   const channels = Object.values(section.channels || {});
@@ -67,6 +71,9 @@ function overview(section, guild = null) {
     enabledHubs: hubs.filter((hub) => hub.enabled !== false).length,
     trackedChannels: channels.length,
     liveChannels: liveChannels.length,
+    lockedChannels: channels.filter((channel) => channel.locked).length,
+    hiddenChannels: channels.filter((channel) => channel.hidden).length,
+    blockedUsers: channels.reduce((sum, channel) => sum + (channel.blockedUserIds?.length || 0), 0),
     defaultUserLimit: section.settings?.defaultUserLimit || 0,
     deleteWhenEmpty: section.settings?.deleteWhenEmpty !== false,
     ownerPanelEnabled: section.settings?.ownerPanelEnabled !== false,
@@ -234,10 +241,38 @@ router.patch('/:guildId/channels/:channelId/controls', async (req, res) => {
     const channel = await tempVoiceManager.updateTempChannelControls(
       guild,
       req.params.channelId,
-      cleanId(req.body?.actorId),
+      getActorId(req),
       prepareChannelControls(req.body?.controls || req.body || {})
     );
 
+    const config = tempVoiceStore.getTempVoiceSection(guildId);
+    return success(res, { guildId, channel, config, overview: overview(config, guild) });
+  } catch (error) {
+    return failure(res, error, 400);
+  }
+});
+
+router.post('/:guildId/channels/:channelId/claim', async (req, res) => {
+  try {
+    const guildId = getGuildId(req);
+    const guild = await fetchGuild(req, guildId);
+    if (!guild) throw new Error('Guild is not available to the bot.');
+    const channel = await tempVoiceManager.claimTempChannel(guild, req.params.channelId, getActorId(req));
+    const config = tempVoiceStore.getTempVoiceSection(guildId);
+    return success(res, { guildId, channel, config, overview: overview(config, guild) });
+  } catch (error) {
+    return failure(res, error, 400);
+  }
+});
+
+router.post('/:guildId/channels/:channelId/kick', async (req, res) => {
+  try {
+    const guildId = getGuildId(req);
+    const guild = await fetchGuild(req, guildId);
+    const targetId = cleanId(req.body?.targetId || req.body?.userId);
+    if (!guild) throw new Error('Guild is not available to the bot.');
+    if (!targetId) throw new Error('Target user ID is required.');
+    const channel = await tempVoiceManager.kickMemberFromTempChannel(guild, req.params.channelId, getActorId(req), targetId, req.body?.block === true);
     const config = tempVoiceStore.getTempVoiceSection(guildId);
     return success(res, { guildId, channel, config, overview: overview(config, guild) });
   } catch (error) {
@@ -250,8 +285,8 @@ router.delete('/:guildId/channels/:channelId', async (req, res) => {
     const guildId = getGuildId(req);
     const guild = await fetchGuild(req, guildId);
 
-    if (guild && req.body?.actorId) {
-      await tempVoiceManager.deleteOwnedTempChannel(guild, req.params.channelId, cleanId(req.body.actorId));
+    if (guild && getActorId(req)) {
+      await tempVoiceManager.deleteOwnedTempChannel(guild, req.params.channelId, getActorId(req));
     } else {
       tempVoiceStore.deleteTempChannel(guildId, req.params.channelId, { actorId: req.body?.actorId });
       const channel = guild?.channels?.cache?.get(req.params.channelId) || await guild?.channels?.fetch?.(req.params.channelId).catch(() => null);
