@@ -37,12 +37,16 @@ function buildChannelName(template, member) {
   return safeChannelName(String(template || '{username}\'s Channel').replaceAll('{username}', username));
 }
 
+function hasManageChannels(guild) {
+  return Boolean(guild?.members?.me?.permissions?.has(PermissionFlagsBits.ManageChannels));
+}
+
+function hasMoveMembers(guild) {
+  return Boolean(guild?.members?.me?.permissions?.has(PermissionFlagsBits.MoveMembers));
+}
+
 function canManageVoice(guild) {
-  const botMember = guild?.members?.me;
-  return Boolean(
-    botMember?.permissions?.has(PermissionFlagsBits.ManageChannels) &&
-    botMember?.permissions?.has(PermissionFlagsBits.MoveMembers)
-  );
+  return Boolean(hasManageChannels(guild) && hasMoveMembers(guild));
 }
 
 function canControlTempChannel(member, tempChannel) {
@@ -129,7 +133,7 @@ async function createTempChannel(newState, hub) {
 
   if (!guild || !member || !hub?.joinChannelId) return null;
   if (!isModuleEnabled(guild.id, 'tempVoice')) return null;
-  if (!canManageVoice(guild)) return null;
+  if (!hasManageChannels(guild)) return null;
 
   if (member.voice?.channelId !== hub.joinChannelId) return null;
 
@@ -145,7 +149,10 @@ async function createTempChannel(newState, hub) {
     bitrate: hub.bitrate > 0 ? hub.bitrate : undefined,
     userLimit: userLimit > 0 ? userLimit : undefined,
     reason: `Goliath temp voice created for ${member.user?.tag || member.id}`,
-  }).catch(() => null);
+  }).catch((error) => {
+    console.error('[TempVoice] Failed to create temporary channel:', error);
+    return null;
+  });
 
   if (!channel) return null;
 
@@ -165,7 +172,9 @@ async function createTempChannel(newState, hub) {
   activity(guild.id, 'channel_created', 'Temporary voice channel created', tempChannel, { actorId: member.id });
   tempChannel = await postOwnerPanel(channel, tempChannel);
 
-  await member.voice.setChannel(channel, 'Goliath temp voice join-to-create').catch(() => null);
+  if (hasMoveMembers(guild)) {
+    await member.voice.setChannel(channel, 'Goliath temp voice join-to-create').catch(() => null);
+  }
 
   return channel;
 }
@@ -229,14 +238,20 @@ async function deployHub(guild, input = {}) {
 
   assertTempVoiceModuleEnabled(guild.id);
 
-  if (!canManageVoice(guild)) {
-    throw new Error('Goliath needs Manage Channels and Move Members to deploy Temp Voice.');
+  if (!hasManageChannels(guild)) {
+    throw new Error('Goliath needs Manage Channels to deploy Temp Voice channels.');
+  }
+
+  const warnings = [];
+  if (!hasMoveMembers(guild)) {
+    warnings.push('Goliath is missing Move Members. Hub deployment can work, but automatic move into new temp channels will not work until that permission is granted.');
   }
 
   let categoryId = tempVoiceStore.cleanDiscordId(input.categoryId);
+  let category = categoryId ? guild.channels.cache.get(categoryId) || await guild.channels.fetch(categoryId).catch(() => null) : null;
 
   if (!categoryId && input.createCategory !== false) {
-    const category = await guild.channels.create({
+    category = await guild.channels.create({
       name: safeChannelName(input.categoryName || 'Temporary Voice Channels'),
       type: ChannelType.GuildCategory,
       reason: 'Goliath Temp Voice dashboard deployment',
@@ -245,9 +260,10 @@ async function deployHub(guild, input = {}) {
   }
 
   let joinChannelId = tempVoiceStore.cleanDiscordId(input.joinChannelId);
+  let joinChannel = joinChannelId ? guild.channels.cache.get(joinChannelId) || await guild.channels.fetch(joinChannelId).catch(() => null) : null;
 
   if (!joinChannelId) {
-    const joinChannel = await guild.channels.create({
+    joinChannel = await guild.channels.create({
       name: safeChannelName(input.joinChannelName || '➕ Create Temp Voice'),
       type: ChannelType.GuildVoice,
       parent: categoryId || undefined,
@@ -257,11 +273,22 @@ async function deployHub(guild, input = {}) {
     joinChannelId = joinChannel.id;
   }
 
-  return tempVoiceStore.saveHub(guild.id, {
+  const hub = tempVoiceStore.saveHub(guild.id, {
     ...input,
     joinChannelId,
     categoryId,
   }, { actorId: input.actorId });
+
+  return {
+    hub,
+    created: {
+      categoryId,
+      categoryName: category?.name || null,
+      joinChannelId,
+      joinChannelName: joinChannel?.name || null,
+    },
+    warnings,
+  };
 }
 
 function createHub(guildId, input = {}) {
@@ -394,51 +421,3 @@ async function claimTempChannel(guild, channelId, actorId) {
 }
 
 async function kickMemberFromTempChannel(guild, channelId, actorId, targetId, block = false) {
-  if (!guild?.id) throw new Error('Guild is required.');
-  assertTempVoiceModuleEnabled(guild.id);
-  const { tempChannel, channel } = await getTrackedVoiceChannel(guild, channelId);
-  await assertCanControl(guild, tempChannel, actorId);
-  const target = await getMember(guild, targetId);
-  if (!target) throw new Error('Target member was not found.');
-  if (target.voice?.channelId === channelId) {
-    await target.voice.disconnect('Temp Voice owner kick').catch(() => null);
-  }
-  const updates = {};
-  if (block) {
-    await channel.permissionOverwrites.edit(target.id, { ViewChannel: true, Connect: false }).catch(() => null);
-    updates.blockedUserIds = [...new Set([...(tempChannel.blockedUserIds || []), target.id])];
-  }
-  const updated = tempVoiceStore.updateTempChannel(guild.id, channelId, updates, { actorId, action: block ? 'temp_voice_block_user' : 'temp_voice_kick_user' });
-  activity(guild.id, block ? 'member_restricted' : 'member_removed', block ? 'Member restricted from temporary voice channel' : 'Member removed from temporary voice channel', updated || tempChannel, { actorId, targetId: target.id });
-  return updated;
-}
-
-async function deleteOwnedTempChannel(guild, channelId, actorId) {
-  const tempChannel = tempVoiceStore.getTempChannel(guild.id, channelId);
-  if (!tempChannel) throw new Error('Temporary voice channel is not tracked.');
-
-  await assertCanControl(guild, tempChannel, actorId);
-
-  const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
-  tempVoiceStore.deleteTempChannel(guild.id, channelId, { actorId });
-  activity(guild.id, 'channel_deleted', 'Temporary voice channel closed', tempChannel, { actorId });
-
-  if (channel?.deletable) {
-    await channel.delete('Temp Voice owner delete').catch(() => null);
-  }
-
-  return tempChannel;
-}
-
-module.exports = {
-  handleVoiceStateUpdate,
-  deployHub,
-  createHub,
-  getHubs,
-  createTempChannel,
-  cleanupTempChannel,
-  updateTempChannelControls,
-  claimTempChannel,
-  kickMemberFromTempChannel,
-  deleteOwnedTempChannel,
-};
