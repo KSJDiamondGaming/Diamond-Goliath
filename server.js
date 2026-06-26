@@ -36,6 +36,7 @@ const authRoutes = require('./src/server/routes/auth');
 const discordRoutes = require('./src/server/routes/discord');
 const statusRoutes = require('./src/server/routes/status');
 const ownerRoutes = require('./src/server/routes/owner');
+const ownerDiagnosticsRoutes = require('./src/server/routes/ownerDiagnostics');
 const ownerTranslationRoutes = require('./src/server/routes/ownerTranslation');
 
 const automodRoutes = require('./src/server/routes/config/automod');
@@ -277,6 +278,7 @@ next();
 app.use('/auth', authRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/status', statusRoutes);
+app.use('/api/owner/diagnostics', ownerDiagnosticsRoutes);
 app.use('/api/owner', ownerRoutes);
 app.use('/api/owner/translation', ownerTranslationRoutes);
 app.use('/api/discord', discordRoutes);
