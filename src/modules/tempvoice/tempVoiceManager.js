@@ -2,6 +2,7 @@
 
 const { ChannelType, PermissionFlagsBits } = require('discord.js');
 const tempVoiceStore = require('./tempVoiceStore');
+const { buildControlRows, buildPanelContent } = require('./tempVoiceInteractionHandler');
 const { isModuleEnabled, setModuleEnabled } = require('../../core/guild/guildManager');
 
 function assertTempVoiceModuleEnabled(guildId) {
@@ -97,6 +98,31 @@ async function applyOwnerPermission(channel, ownerId) {
   }).catch(() => null);
 }
 
+function activity(guildId, type, label, channelData = {}, extra = {}) {
+  tempVoiceStore.addActivity(guildId, {
+    type,
+    label,
+    channelId: channelData.channelId,
+    ownerId: channelData.ownerId,
+    actorId: extra.actorId,
+    targetId: extra.targetId,
+    metadata: extra.metadata || {},
+  }, { actorId: extra.actorId, action: `temp_voice_${type}` });
+}
+
+async function postOwnerPanel(channel, tempChannel) {
+  const section = tempVoiceStore.getTempVoiceSection(channel.guild.id);
+  if (section.settings?.ownerPanelEnabled === false || !channel?.send) return tempChannel;
+
+  const message = await channel.send({
+    content: buildPanelContent(tempChannel),
+    components: buildControlRows(channel.id, tempChannel),
+  }).catch(() => null);
+
+  if (!message?.id) return tempChannel;
+  return tempVoiceStore.updateTempChannel(channel.guild.id, channel.id, { controlMessageId: message.id }, { action: 'temp_voice_owner_panel' }) || tempChannel;
+}
+
 async function createTempChannel(newState, hub) {
   const guild = newState.guild;
   const member = newState.member;
@@ -126,7 +152,7 @@ async function createTempChannel(newState, hub) {
   await applyBaseTempPermissions(channel, hub);
   await applyOwnerPermission(channel, member.id);
 
-  tempVoiceStore.saveTempChannel(guild.id, {
+  let tempChannel = tempVoiceStore.saveTempChannel(guild.id, {
     channelId: channel.id,
     ownerId: member.id,
     hubId: hub.hubId || hub.id,
@@ -135,6 +161,9 @@ async function createTempChannel(newState, hub) {
     locked: hub.lockedByDefault === true,
     hidden: hub.hiddenByDefault === true,
   });
+
+  activity(guild.id, 'channel_created', 'Temporary voice channel created', tempChannel, { actorId: member.id });
+  tempChannel = await postOwnerPanel(channel, tempChannel);
 
   await member.voice.setChannel(channel, 'Goliath temp voice join-to-create').catch(() => null);
 
@@ -154,6 +183,7 @@ async function cleanupTempChannel(oldState) {
   if ((oldChannel.members?.size || 0) > 0) return null;
 
   tempVoiceStore.deleteTempChannel(guild.id, oldChannel.id);
+  activity(guild.id, 'channel_deleted', 'Temporary voice channel deleted after becoming empty', tempChannel, { actorId: tempChannel.ownerId });
 
   if (section.settings?.deleteWhenEmpty !== false && oldChannel.deletable) {
     await oldChannel.delete('Goliath temp voice empty cleanup').catch(() => null);
@@ -270,12 +300,14 @@ async function updateTempChannelControls(guild, channelId, actorId, input = {}) 
   const section = tempVoiceStore.getTempVoiceSection(guild.id);
   const settings = section.settings || {};
   const updates = {};
+  const eventTypes = [];
 
   if (Object.prototype.hasOwnProperty.call(input, 'name')) {
     if (!settings.allowOwnerRename && actorId === tempChannel.ownerId) throw new Error('Channel rename is disabled.');
     const name = safeChannelName(input.name);
     await channel.setName(name, 'Temp Voice owner rename').catch(() => null);
     updates.name = name;
+    eventTypes.push(['channel_renamed', 'Temporary voice channel renamed']);
   }
 
   if (Object.prototype.hasOwnProperty.call(input, 'activityStatus')) {
@@ -285,6 +317,7 @@ async function updateTempChannelControls(guild, channelId, actorId, input = {}) 
       await channel.setStatus(activityStatus || null, 'Temp Voice owner status').catch(() => null);
     }
     updates.activityStatus = activityStatus;
+    eventTypes.push(['channel_status_changed', 'Temporary voice status changed']);
   }
 
   if (Object.prototype.hasOwnProperty.call(input, 'userLimit')) {
@@ -292,6 +325,7 @@ async function updateTempChannelControls(guild, channelId, actorId, input = {}) 
     const userLimit = cleanLimit(input.userLimit, tempChannel.userLimit || 0);
     await channel.setUserLimit(userLimit, 'Temp Voice owner limit').catch(() => null);
     updates.userLimit = userLimit;
+    eventTypes.push(['channel_limit_changed', 'Temporary voice user limit changed']);
   }
 
   if (Object.prototype.hasOwnProperty.call(input, 'locked')) {
@@ -299,6 +333,7 @@ async function updateTempChannelControls(guild, channelId, actorId, input = {}) 
     const locked = input.locked === true;
     await channel.permissionOverwrites.edit(guild.roles.everyone.id, { Connect: locked ? false : null }).catch(() => null);
     updates.locked = locked;
+    eventTypes.push([locked ? 'channel_locked' : 'channel_unlocked', locked ? 'Temporary voice channel locked' : 'Temporary voice channel unlocked']);
   }
 
   if (Object.prototype.hasOwnProperty.call(input, 'hidden')) {
@@ -306,6 +341,7 @@ async function updateTempChannelControls(guild, channelId, actorId, input = {}) 
     const hidden = input.hidden === true;
     await channel.permissionOverwrites.edit(guild.roles.everyone.id, { ViewChannel: hidden ? false : null }).catch(() => null);
     updates.hidden = hidden;
+    eventTypes.push([hidden ? 'channel_hidden' : 'channel_shown', hidden ? 'Temporary voice channel hidden' : 'Temporary voice channel shown']);
   }
 
   if (settings.allowOwnerPermits !== false) {
@@ -330,10 +366,15 @@ async function updateTempChannelControls(guild, channelId, actorId, input = {}) 
     if (ownerId) {
       await applyOwnerPermission(channel, ownerId);
       updates.ownerId = ownerId;
+      eventTypes.push(['channel_transferred', 'Temporary voice ownership transferred']);
     }
   }
 
-  return tempVoiceStore.updateTempChannel(guild.id, channelId, updates, { actorId });
+  const updated = tempVoiceStore.updateTempChannel(guild.id, channelId, updates, { actorId });
+  for (const [type, label] of eventTypes) {
+    activity(guild.id, type, label, updated || tempChannel, { actorId });
+  }
+  return updated;
 }
 
 async function claimTempChannel(guild, channelId, actorId) {
@@ -347,7 +388,9 @@ async function claimTempChannel(guild, channelId, actorId) {
   const actorIsManager = actor.permissions.has(PermissionFlagsBits.ManageChannels) || actor.permissions.has(PermissionFlagsBits.ManageGuild);
   if (ownerStillInside && !actorIsManager) throw new Error('This channel still has an active owner.');
   await applyOwnerPermission(channel, actorId);
-  return tempVoiceStore.updateTempChannel(guild.id, channelId, { ownerId: actorId }, { actorId, action: 'temp_voice_claim' });
+  const updated = tempVoiceStore.updateTempChannel(guild.id, channelId, { ownerId: actorId }, { actorId, action: 'temp_voice_claim' });
+  activity(guild.id, 'channel_claimed', 'Temporary voice channel claimed', updated || tempChannel, { actorId });
+  return updated;
 }
 
 async function kickMemberFromTempChannel(guild, channelId, actorId, targetId, block = false) {
@@ -365,7 +408,9 @@ async function kickMemberFromTempChannel(guild, channelId, actorId, targetId, bl
     await channel.permissionOverwrites.edit(target.id, { ViewChannel: true, Connect: false }).catch(() => null);
     updates.blockedUserIds = [...new Set([...(tempChannel.blockedUserIds || []), target.id])];
   }
-  return tempVoiceStore.updateTempChannel(guild.id, channelId, updates, { actorId, action: block ? 'temp_voice_block_user' : 'temp_voice_kick_user' });
+  const updated = tempVoiceStore.updateTempChannel(guild.id, channelId, updates, { actorId, action: block ? 'temp_voice_block_user' : 'temp_voice_kick_user' });
+  activity(guild.id, block ? 'member_restricted' : 'member_removed', block ? 'Member restricted from temporary voice channel' : 'Member removed from temporary voice channel', updated || tempChannel, { actorId, targetId: target.id });
+  return updated;
 }
 
 async function deleteOwnedTempChannel(guild, channelId, actorId) {
@@ -376,6 +421,7 @@ async function deleteOwnedTempChannel(guild, channelId, actorId) {
 
   const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
   tempVoiceStore.deleteTempChannel(guild.id, channelId, { actorId });
+  activity(guild.id, 'channel_deleted', 'Temporary voice channel closed', tempChannel, { actorId });
 
   if (channel?.deletable) {
     await channel.delete('Temp Voice owner delete').catch(() => null);
