@@ -4,7 +4,7 @@
 
 const { EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const starboardStore = require('./starboardStore');
-const { isModuleEnabled } = require('../../core/guild/guildManager');
+const { isModuleEnabled, setModuleEnabled } = require('../../core/guild/guildManager');
 
 const IMAGE_EXTENSION_PATTERN = /\.(png|jpe?g|gif|webp)(\?.*)?$/i;
 
@@ -241,15 +241,23 @@ async function handleStarReactionRemove(reaction, user, client) {
 }
 
 function configureStarboard(guildId, input = {}) {
-  if (!isModuleEnabled(guildId, 'starboard')) {
+  const hasEnabledInput = Object.prototype.hasOwnProperty.call(input, 'enabled');
+  const requestedEnabled = hasEnabledInput ? input.enabled === true : undefined;
+  const currentlyEnabled = isModuleEnabled(guildId, 'starboard');
+
+  if (!currentlyEnabled && requestedEnabled !== true) {
     throw new Error('Starboard module is disabled for this server.');
+  }
+
+  if (hasEnabledInput) {
+    setModuleEnabled(guildId, 'starboard', requestedEnabled);
   }
 
   return starboardStore.updateStarboardSection(
     guildId,
     (section) => ({
       ...section,
-      enabled: input.enabled ?? section.enabled,
+      enabled: hasEnabledInput ? requestedEnabled : section.enabled,
       channelId: input.channelId ?? section.channelId,
       threshold: input.threshold ?? section.threshold,
       emoji: input.emoji ?? section.emoji,
