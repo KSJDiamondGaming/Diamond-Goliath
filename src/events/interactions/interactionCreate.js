@@ -8,6 +8,7 @@ const verificationManager = require('../../modules/verification/verificationMana
 const ticketInteractionHandler = require('../../modules/tickets/ticketInteractionHandler');
 const roleInteractionHandler = require('../../modules/roles/roleInteractionHandler');
 const pollsManager = require('../../modules/polls/pollsManager');
+const tempVoiceInteractionHandler = require('../../modules/tempvoice/tempVoiceInteractionHandler');
 const testSecurityCommand = require('../../commands/admin/testsecurity');
 
 async function safeInteractionError(interaction) {
@@ -47,6 +48,10 @@ module.exports = {
       }
 
       if (interaction.isButton?.() && await testSecurityCommand.handleButton(interaction)) {
+        return;
+      }
+
+      if (interaction.isButton?.() && await tempVoiceInteractionHandler.handleTempVoiceInteraction(interaction, client)) {
         return;
       }
 
