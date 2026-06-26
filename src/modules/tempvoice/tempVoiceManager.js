@@ -52,6 +52,27 @@ function canControlTempChannel(member, tempChannel) {
   );
 }
 
+async function getMember(guild, memberId) {
+  if (!guild || !memberId) return null;
+  return guild.members.cache.get(memberId) || guild.members.fetch(memberId).catch(() => null);
+}
+
+async function getTrackedVoiceChannel(guild, channelId) {
+  const tempChannel = tempVoiceStore.getTempChannel(guild.id, channelId);
+  if (!tempChannel) throw new Error('Temporary voice channel is not tracked.');
+  const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
+  if (!channel) throw new Error('Temporary voice channel no longer exists in Discord.');
+  return { tempChannel, channel };
+}
+
+async function assertCanControl(guild, tempChannel, actorId) {
+  const actor = await getMember(guild, actorId);
+  if (!canControlTempChannel(actor, tempChannel)) {
+    throw new Error('You do not own this temporary voice channel.');
+  }
+  return actor;
+}
+
 async function applyBaseTempPermissions(channel, hub = {}) {
   const everyoneId = channel.guild?.roles?.everyone?.id;
   if (!everyoneId) return;
@@ -243,22 +264,11 @@ async function updateTempChannelControls(guild, channelId, actorId, input = {}) 
   if (!guild?.id) throw new Error('Guild is required.');
   assertTempVoiceModuleEnabled(guild.id);
 
-  const tempChannel = tempVoiceStore.getTempChannel(guild.id, channelId);
-  if (!tempChannel) throw new Error('Temporary voice channel is not tracked.');
-
-  const actor = actorId
-    ? guild.members.cache.get(actorId) || await guild.members.fetch(actorId).catch(() => null)
-    : null;
-
-  if (!canControlTempChannel(actor, tempChannel)) {
-    throw new Error('You do not own this temporary voice channel.');
-  }
+  const { tempChannel, channel } = await getTrackedVoiceChannel(guild, channelId);
+  await assertCanControl(guild, tempChannel, actorId);
 
   const section = tempVoiceStore.getTempVoiceSection(guild.id);
   const settings = section.settings || {};
-  const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
-  if (!channel) throw new Error('Temporary voice channel no longer exists in Discord.');
-
   const updates = {};
 
   if (Object.prototype.hasOwnProperty.call(input, 'name')) {
@@ -326,17 +336,43 @@ async function updateTempChannelControls(guild, channelId, actorId, input = {}) 
   return tempVoiceStore.updateTempChannel(guild.id, channelId, updates, { actorId });
 }
 
+async function claimTempChannel(guild, channelId, actorId) {
+  if (!guild?.id) throw new Error('Guild is required.');
+  assertTempVoiceModuleEnabled(guild.id);
+  const { tempChannel, channel } = await getTrackedVoiceChannel(guild, channelId);
+  const actor = await getMember(guild, actorId);
+  if (!actor) throw new Error('Claiming member was not found.');
+  const currentOwner = tempChannel.ownerId ? await getMember(guild, tempChannel.ownerId) : null;
+  const ownerStillInside = Boolean(currentOwner?.voice?.channelId === channelId);
+  const actorIsManager = actor.permissions.has(PermissionFlagsBits.ManageChannels) || actor.permissions.has(PermissionFlagsBits.ManageGuild);
+  if (ownerStillInside && !actorIsManager) throw new Error('This channel still has an active owner.');
+  await applyOwnerPermission(channel, actorId);
+  return tempVoiceStore.updateTempChannel(guild.id, channelId, { ownerId: actorId }, { actorId, action: 'temp_voice_claim' });
+}
+
+async function kickMemberFromTempChannel(guild, channelId, actorId, targetId, block = false) {
+  if (!guild?.id) throw new Error('Guild is required.');
+  assertTempVoiceModuleEnabled(guild.id);
+  const { tempChannel, channel } = await getTrackedVoiceChannel(guild, channelId);
+  await assertCanControl(guild, tempChannel, actorId);
+  const target = await getMember(guild, targetId);
+  if (!target) throw new Error('Target member was not found.');
+  if (target.voice?.channelId === channelId) {
+    await target.voice.disconnect('Temp Voice owner kick').catch(() => null);
+  }
+  const updates = {};
+  if (block) {
+    await channel.permissionOverwrites.edit(target.id, { ViewChannel: true, Connect: false }).catch(() => null);
+    updates.blockedUserIds = [...new Set([...(tempChannel.blockedUserIds || []), target.id])];
+  }
+  return tempVoiceStore.updateTempChannel(guild.id, channelId, updates, { actorId, action: block ? 'temp_voice_block_user' : 'temp_voice_kick_user' });
+}
+
 async function deleteOwnedTempChannel(guild, channelId, actorId) {
   const tempChannel = tempVoiceStore.getTempChannel(guild.id, channelId);
   if (!tempChannel) throw new Error('Temporary voice channel is not tracked.');
 
-  const actor = actorId
-    ? guild.members.cache.get(actorId) || await guild.members.fetch(actorId).catch(() => null)
-    : null;
-
-  if (!canControlTempChannel(actor, tempChannel)) {
-    throw new Error('You do not own this temporary voice channel.');
-  }
+  await assertCanControl(guild, tempChannel, actorId);
 
   const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
   tempVoiceStore.deleteTempChannel(guild.id, channelId, { actorId });
@@ -356,5 +392,7 @@ module.exports = {
   createTempChannel,
   cleanupTempChannel,
   updateTempChannelControls,
+  claimTempChannel,
+  kickMemberFromTempChannel,
   deleteOwnedTempChannel,
 };
