@@ -41,6 +41,42 @@ function main() {
     'Backend modules toggle route'
   );
 
+  assertContains(
+    'src/dashboard/js/pages/modules/TempVoice.jsx',
+    'api.request(`/api/temp-voice/${guildId}`)',
+    'Frontend Temp Voice loader contract'
+  );
+
+  assertContains(
+    'src/dashboard/js/pages/modules/TempVoice.jsx',
+    'TempVoiceControlCentre',
+    'Frontend Temp Voice control centre wiring'
+  );
+
+  assertContains(
+    'src/dashboard/js/pages/modules/tempvoice/TempVoiceControlCentre.jsx',
+    '/api/temp-voice/${guildId}/channels/${channelId}/controls',
+    'Frontend Temp Voice channel controls contract'
+  );
+
+  assertContains(
+    'src/dashboard/js/pages/modules/tempvoice/TempVoiceControlCentre.jsx',
+    '/api/temp-voice/${guildId}/channels/${channelId}/claim',
+    'Frontend Temp Voice claim contract'
+  );
+
+  assertContains(
+    'src/server/routes/tempVoice.js',
+    "router.patch('/:guildId/channels/:channelId/controls'",
+    'Backend Temp Voice controls route'
+  );
+
+  assertContains(
+    'src/server/routes/tempVoice.js',
+    "router.post('/:guildId/channels/:channelId/claim'",
+    'Backend Temp Voice claim route'
+  );
+
   console.log('✅ Dashboard API contracts OK');
 }
 
