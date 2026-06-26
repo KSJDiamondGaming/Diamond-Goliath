@@ -42,6 +42,7 @@ export const api = {
   getLoginUrl: () => apiUrl('/api/auth/login'),
   logout: () => request('/api/auth/logout', { method: 'POST' }),
   getOwnerMe: () => request('/api/owner/me'),
+  getOwnerDiagnostics: () => request('/api/owner/diagnostics'),
   getOwnerGuilds: () => request('/api/owner/guilds/all'),
   getPlatformRuntime: () => request('/api/owner/runtime'),
   getOwnerBackups: (environment = 'all') => request(`/api/owner/backups?environment=${encodeURIComponent(environment)}`),
