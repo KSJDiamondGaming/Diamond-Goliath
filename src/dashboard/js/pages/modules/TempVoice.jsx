@@ -28,6 +28,12 @@ function Check({ checked, onChange, label, theme }) {
   return <label style={{ color: theme.mutedText, fontWeight: 850 }}><input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} /> {label}</label>;
 }
 
+function formatDate(value) {
+  if (!value) return 'Not recorded';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'Not recorded' : date.toLocaleString();
+}
+
 const defaultHub = { joinChannelId: '', joinChannelName: '➕ Create Temp Voice', categoryId: '', categoryName: 'Temporary Voice Channels', nameTemplate: "{username}'s Channel", userLimit: 0, bitrate: 0, enabled: true, createCategory: true, lockedByDefault: false, hiddenByDefault: false, ownerControlsEnabled: true };
 
 export default function TempVoice({ theme, selectedGuild, selectedGuildData }) {
@@ -45,6 +51,8 @@ export default function TempVoice({ theme, selectedGuild, selectedGuildData }) {
 
   const hubs = useMemo(() => Object.values(config?.hubs || {}).sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))), [config]);
   const trackedChannels = useMemo(() => Object.values(config?.channels || {}).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))), [config]);
+  const analytics = overview?.analytics || {};
+  const activity = Array.isArray(overview?.activity) ? overview.activity : [];
 
   async function load() {
     if (!guildId) return;
@@ -171,8 +179,8 @@ export default function TempVoice({ theme, selectedGuild, selectedGuildData }) {
         <SummaryStat theme={theme} label="Hubs" value={`${overview?.enabledHubs || 0}/${overview?.hubs || 0}`} accent="#60a5fa" description="Enabled hubs" />
         <SummaryStat theme={theme} label="Live Channels" value={overview?.liveChannels || 0} accent="#a78bfa" description="Tracked and present" />
         <SummaryStat theme={theme} label="Tracked" value={overview?.trackedChannels || 0} accent="#f59e0b" description="Stored temp channels" />
-        <SummaryStat theme={theme} label="Locked" value={overview?.lockedChannels || 0} accent="#facc15" description="Locked temp channels" />
-        <SummaryStat theme={theme} label="Hidden" value={overview?.hiddenChannels || 0} accent="#38bdf8" description="Hidden temp channels" />
+        <SummaryStat theme={theme} label="Created" value={analytics.totalCreated || 0} accent="#22c55e" description="Lifetime channels" />
+        <SummaryStat theme={theme} label="Last Activity" value={analytics.lastActivityAt ? 'Active' : 'None'} accent="#38bdf8" description={formatDate(analytics.lastActivityAt)} />
       </StatGrid>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 420px), 1fr))', gap: 16 }}>
@@ -226,15 +234,14 @@ export default function TempVoice({ theme, selectedGuild, selectedGuildData }) {
 
       <Card theme={theme}>
         <h2 style={{ margin: '0 0 14px' }}>Temp Voice Control Centre</h2>
-        <TempVoiceControlCentre
-          theme={theme}
-          guildId={guildId}
-          channels={trackedChannels}
-          saving={saving}
-          onRefresh={load}
-          onMessage={setMessage}
-          onError={setError}
-        />
+        <TempVoiceControlCentre theme={theme} guildId={guildId} channels={trackedChannels} saving={saving} onRefresh={load} onMessage={setMessage} onError={setError} />
+      </Card>
+
+      <Card theme={theme}>
+        <h2 style={{ margin: '0 0 14px' }}>Activity Log</h2>
+        <div style={{ display: 'grid', gap: 10 }}>
+          {activity.length ? activity.map((entry) => <div key={entry.id} style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(15,23,42,0.5)', borderRadius: 14, padding: 12, display: 'grid', gap: 5 }}><strong>{entry.label || entry.type}</strong><span style={{ color: theme.mutedText, fontSize: 13 }}>Channel: {entry.channelId || 'Unknown'} · Actor: {entry.actorId || 'System'} · Target: {entry.targetId || 'None'} · {formatDate(entry.createdAt)}</span></div>) : <EmptyState theme={theme} title="No Temp Voice activity yet" text="Created channels and owner controls will appear here." />}
+        </div>
       </Card>
     </PageShell>
   );
