@@ -34,6 +34,11 @@ function cleanNonNegativeInt(value, fallback = 0) {
   return Math.max(0, Math.floor(cleanNumber(value, fallback)));
 }
 
+function cleanDiscordIdArray(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map(cleanDiscordId).filter(Boolean))];
+}
+
 function createId(prefix = 'tempvoice') {
   return `${prefix}_${crypto.randomUUID().slice(0, 8)}`;
 }
@@ -46,6 +51,15 @@ function defaultTempVoiceSection() {
     settings: {
       defaultUserLimit: 0,
       deleteWhenEmpty: true,
+      ownerPanelEnabled: true,
+      allowOwnerRename: true,
+      allowOwnerStatus: true,
+      allowOwnerLock: true,
+      allowOwnerHide: true,
+      allowOwnerLimit: true,
+      allowOwnerPermits: true,
+      allowOwnerTransfer: true,
+      allowOwnerDelete: true,
     },
     createdAt: now(),
     updatedAt: now(),
@@ -60,10 +74,15 @@ function normalizeHub(hub = {}) {
     id: hubId,
     enabled: hub.enabled !== false,
     joinChannelId: cleanDiscordId(hub.joinChannelId),
+    joinChannelName: cleanString(hub.joinChannelName || hub.name || '➕ Create Temp Voice', '➕ Create Temp Voice', 80),
     categoryId: cleanDiscordId(hub.categoryId),
+    categoryName: cleanString(hub.categoryName || 'Temporary Voice Channels', 'Temporary Voice Channels', 80),
     nameTemplate: cleanString(hub.nameTemplate || '{username}\'s Channel', '{username}\'s Channel', 80),
     userLimit: cleanNonNegativeInt(hub.userLimit, 0),
     bitrate: cleanNonNegativeInt(hub.bitrate, 0),
+    lockedByDefault: hub.lockedByDefault === true,
+    hiddenByDefault: hub.hiddenByDefault === true,
+    ownerControlsEnabled: hub.ownerControlsEnabled !== false,
     createdBy: cleanDiscordId(hub.createdBy),
     createdAt: hub.createdAt || now(),
     updatedAt: hub.updatedAt || hub.createdAt || now(),
@@ -76,6 +95,16 @@ function normalizeChannel(channel = {}) {
     ownerId: cleanDiscordId(channel.ownerId),
     hubId: cleanString(channel.hubId || '', '', 80) || null,
     guildId: cleanDiscordId(channel.guildId),
+    name: cleanString(channel.name || '', '', 80),
+    activityStatus: cleanString(channel.activityStatus || '', '', 120),
+    userLimit: cleanNonNegativeInt(channel.userLimit, 0),
+    locked: channel.locked === true,
+    hidden: channel.hidden === true,
+    allowedUserIds: cleanDiscordIdArray(channel.allowedUserIds),
+    blockedUserIds: cleanDiscordIdArray(channel.blockedUserIds),
+    allowedRoleIds: cleanDiscordIdArray(channel.allowedRoleIds),
+    blockedRoleIds: cleanDiscordIdArray(channel.blockedRoleIds),
+    controlMessageId: cleanDiscordId(channel.controlMessageId),
     createdAt: channel.createdAt || now(),
     updatedAt: channel.updatedAt || channel.createdAt || now(),
   };
@@ -96,6 +125,15 @@ function normalizeSection(section = {}) {
       ...(source.settings || {}),
       defaultUserLimit: cleanNonNegativeInt(source.settings?.defaultUserLimit, 0),
       deleteWhenEmpty: source.settings?.deleteWhenEmpty !== false,
+      ownerPanelEnabled: source.settings?.ownerPanelEnabled !== false,
+      allowOwnerRename: source.settings?.allowOwnerRename !== false,
+      allowOwnerStatus: source.settings?.allowOwnerStatus !== false,
+      allowOwnerLock: source.settings?.allowOwnerLock !== false,
+      allowOwnerHide: source.settings?.allowOwnerHide !== false,
+      allowOwnerLimit: source.settings?.allowOwnerLimit !== false,
+      allowOwnerPermits: source.settings?.allowOwnerPermits !== false,
+      allowOwnerTransfer: source.settings?.allowOwnerTransfer !== false,
+      allowOwnerDelete: source.settings?.allowOwnerDelete !== false,
     },
     hubs: Object.fromEntries(
       Object.entries(hubs)
@@ -153,6 +191,10 @@ function getHubs(guildId) {
   return Object.values(getTempVoiceSection(guildId).hubs || {});
 }
 
+function getHub(guildId, hubId) {
+  return getTempVoiceSection(guildId).hubs?.[hubId] || null;
+}
+
 function saveHub(guildId, hub, meta = {}) {
   const normalized = normalizeHub(hub);
 
@@ -205,6 +247,27 @@ function getTempChannel(guildId, channelId) {
   return getTempVoiceSection(guildId).channels?.[channelId] || null;
 }
 
+function updateTempChannel(guildId, channelId, updater, meta = {}) {
+  return updateTempVoiceSection(
+    guildId,
+    (section) => {
+      const current = section.channels?.[channelId];
+      if (!current) return section;
+      const next = typeof updater === 'function' ? updater(current) : updater;
+
+      return {
+        ...section,
+        channels: {
+          ...(section.channels || {}),
+          [channelId]: normalizeChannel({ ...current, ...next, channelId, updatedAt: now() }),
+        },
+        updatedAt: now(),
+      };
+    },
+    meta
+  ).channels?.[channelId] || null;
+}
+
 function deleteTempChannel(guildId, channelId, meta = {}) {
   return updateTempVoiceSection(
     guildId,
@@ -233,9 +296,11 @@ module.exports = {
   saveTempVoiceSection,
   updateTempVoiceSection,
   getHubs,
+  getHub,
   saveHub,
   findHubByJoinChannel,
   saveTempChannel,
   getTempChannel,
+  updateTempChannel,
   deleteTempChannel,
 };
