@@ -64,6 +64,7 @@ function overview(section, guild = null) {
   const hubs = Object.values(section.hubs || {});
   const channels = Object.values(section.channels || {});
   const liveChannels = guild ? channels.filter((channel) => guild.channels.cache.has(channel.channelId)) : channels;
+  const activity = Array.isArray(section.activity) ? [...section.activity].slice(-25).reverse() : [];
 
   return {
     enabled: section.enabled !== false,
@@ -77,6 +78,8 @@ function overview(section, guild = null) {
     defaultUserLimit: section.settings?.defaultUserLimit || 0,
     deleteWhenEmpty: section.settings?.deleteWhenEmpty !== false,
     ownerPanelEnabled: section.settings?.ownerPanelEnabled !== false,
+    analytics: section.analytics || {},
+    activity,
     updatedAt: section.updatedAt || null,
   };
 }
