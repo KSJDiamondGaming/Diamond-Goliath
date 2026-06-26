@@ -1,5 +1,7 @@
 import React from 'react';
 
+import OwnerDiagnosticsPanel from './OwnerDiagnosticsPanel.jsx';
+
 const ENVIRONMENTS = [
   { key: 'DEV', label: 'DEV', icon: '🔵', branch: 'dev', port: 3001 },
   { key: 'BETA', label: 'BETA', icon: '🟡', branch: 'beta', port: 3011 },
@@ -56,7 +58,7 @@ export default function OwnerOperationsPanel({ theme, runtime = {}, ownerPayload
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
         <div>
           <h3 style={{ margin: 0 }}>📊 Owner Operations</h3>
-          <p style={{ margin: '8px 0 0', color: theme.mutedText }}>Runtime Monitor, Deployment Centre and Service Health foundation.</p>
+          <p style={{ margin: '8px 0 0', color: theme.mutedText }}>Runtime Monitor, Deployment Centre, Service Health and Owner Diagnostics.</p>
         </div>
         <span style={{ border: '1px solid rgba(134,239,172,0.5)', color: '#86efac', background: 'rgba(34,197,94,0.10)', borderRadius: 999, padding: '7px 11px', fontWeight: 950 }}>{mode}</span>
       </div>
@@ -93,6 +95,8 @@ export default function OwnerOperationsPanel({ theme, runtime = {}, ownerPayload
           </tbody>
         </table>
       </div>
+
+      <OwnerDiagnosticsPanel theme={theme} />
     </section>
   );
 }
