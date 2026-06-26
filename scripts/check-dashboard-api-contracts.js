@@ -36,6 +36,10 @@ function main() {
   assertContains('src/server/routes/tempVoice.js', "router.post('/:guildId/channels/:channelId/claim'", 'Backend Temp Voice claim route');
   assertContains('src/server/routes/tempVoice.js', "router.post('/:guildId/channels/:channelId/kick'", 'Backend Temp Voice member control route');
   assertContains('src/server/routes/tempVoice.js', "router.delete('/:guildId/channels/:channelId'", 'Backend Temp Voice channel close route');
+  assertContains('src/server/routes/tempVoice.js', 'syncHubToDiscord', 'Backend Temp Voice hub edit Discord sync');
+  assertContains('src/server/routes/tempVoice.js', 'deleteHubDiscordResources', 'Backend Temp Voice hub delete Discord cleanup');
+  assertContains('src/server/routes/tempVoice.js', "router.put('/:guildId/hubs/:hubId'", 'Backend Temp Voice hub edit route');
+  assertContains('src/server/routes/tempVoice.js', "router.delete('/:guildId/hubs/:hubId'", 'Backend Temp Voice hub delete route');
   assertContains('src/modules/tempvoice/tempVoiceInteractionHandler.js', 'buildControlRows', 'Discord Temp Voice owner panel buttons');
   assertContains('src/events/interactions/interactionCreate.js', 'handleTempVoiceInteraction', 'Discord Temp Voice interaction wiring');
   assertContains('src/modules/tempvoice/tempVoiceManager.js', 'postOwnerPanel', 'Temp Voice owner panel posting');
