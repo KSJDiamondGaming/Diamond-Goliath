@@ -66,6 +66,18 @@ function main() {
   );
 
   assertContains(
+    'src/dashboard/js/pages/modules/tempvoice/TempVoiceControlCentre.jsx',
+    '/api/temp-voice/${guildId}/channels/${channelId}/kick',
+    'Frontend Temp Voice member control contract'
+  );
+
+  assertContains(
+    'src/dashboard/js/pages/modules/tempvoice/TempVoiceControlCentre.jsx',
+    '/api/temp-voice/${guildId}/channels/${channelId}`',
+    'Frontend Temp Voice channel close contract'
+  );
+
+  assertContains(
     'src/server/routes/tempVoice.js',
     "router.patch('/:guildId/channels/:channelId/controls'",
     'Backend Temp Voice controls route'
@@ -75,6 +87,18 @@ function main() {
     'src/server/routes/tempVoice.js',
     "router.post('/:guildId/channels/:channelId/claim'",
     'Backend Temp Voice claim route'
+  );
+
+  assertContains(
+    'src/server/routes/tempVoice.js',
+    "router.post('/:guildId/channels/:channelId/kick'",
+    'Backend Temp Voice member control route'
+  );
+
+  assertContains(
+    'src/server/routes/tempVoice.js',
+    "router.delete('/:guildId/channels/:channelId'",
+    'Backend Temp Voice channel close route'
   );
 
   console.log('✅ Dashboard API contracts OK');
