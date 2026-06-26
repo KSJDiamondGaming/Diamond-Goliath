@@ -5,6 +5,7 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 const LAYOUT_FILE = path.join(ROOT, 'src', 'dashboard', 'js', 'ui', 'layout.js');
+const MODULE_REGISTRY_FILE = path.join(ROOT, 'src', 'dashboard', 'js', 'shared', 'moduleRegistry.js');
 
 function read(filePath) {
   return fs.readFileSync(filePath, 'utf8');
@@ -40,6 +41,12 @@ function extractRouteKeys(source) {
   return [...routesBlockMatch[1].matchAll(/key:\s*['"]([^'"]+)['"]/g)].map((match) => match[1]);
 }
 
+function extractRoutePaths(source) {
+  const routesBlockMatch = source.match(/export\s+const\s+ROUTES\s*=\s*\[([\s\S]*?)\];/);
+  assert(routesBlockMatch, 'ROUTES export not found in layout.js');
+  return [...routesBlockMatch[1].matchAll(/path:\s*['"]([^'"]+)['"]/g)].map((match) => match[1]);
+}
+
 function extractPageLayoutKeys(source) {
   const blockMatch = source.match(/export\s+const\s+PAGE_LAYOUTS\s*=\s*\{([\s\S]*?)\n\};/);
   assert(blockMatch, 'PAGE_LAYOUTS export not found in layout.js');
@@ -59,8 +66,14 @@ function extractSectionKeys(source) {
   return [...blockMatch[1].matchAll(/\n\s*([a-zA-Z0-9_]+):\s*\{/g)].map((match) => match[1]);
 }
 
+function extractModuleRoutes(source) {
+  const regex = /route:\s*['"]([^'"]+)['"]/g;
+  return [...source.matchAll(regex)].map((match) => match[1]);
+}
+
 function main() {
   const source = stripComments(read(LAYOUT_FILE));
+  const moduleRegistrySource = stripComments(read(MODULE_REGISTRY_FILE));
 
   const lazyImports = extractLazyImports(source);
   assert(lazyImports.length > 0, 'No lazy page imports found in layout.js');
@@ -75,6 +88,7 @@ function main() {
   );
 
   const routeKeys = extractRouteKeys(source);
+  const routePaths = new Set(extractRoutePaths(source));
   const layoutKeys = new Set(extractPageLayoutKeys(source));
   const missingLayouts = routeKeys.filter((key) => !layoutKeys.has(key));
 
@@ -92,7 +106,15 @@ function main() {
     `Missing SECTION_DEFS entries:\n${missingSections.map((id) => `- ${id}`).join('\n')}`
   );
 
-  console.log(`✅ Dashboard pages OK (${lazyImports.length} lazy pages, ${routeKeys.length} routes)`);
+  const moduleRoutes = extractModuleRoutes(moduleRegistrySource);
+  const missingModuleRoutes = moduleRoutes.filter((route) => !routePaths.has(route));
+
+  assert(
+    missingModuleRoutes.length === 0,
+    `Module registry routes missing from ROUTES:\n${missingModuleRoutes.map((route) => `- ${route}`).join('\n')}`
+  );
+
+  console.log(`✅ Dashboard pages OK (${lazyImports.length} lazy pages, ${routeKeys.length} routes, ${moduleRoutes.length} module launchers)`);
 }
 
 main();
