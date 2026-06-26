@@ -22,6 +22,13 @@ function main() {
   assertContains('src/server/routes/modules.js', "router.get('/:guildId'", 'Backend modules root route');
   assertContains('src/server/routes/modules.js', "router.patch('/:guildId/:moduleKey/enabled'", 'Backend modules toggle route');
 
+  assertContains('src/server/routes/config/generalSettings.js', 'dashboardPermissions', 'Admin dashboard permission persistence');
+  assertContains('src/server/routes/config/generalSettings.js', 'moduleAccess', 'Admin per-module permission persistence');
+  assertContains('src/server/routes/config/generalSettings.js', 'roleAccess', 'Admin per-role permission persistence');
+  assertContains('src/dashboard/js/pages/administration/Admin.jsx', 'Dashboard Access Matrix', 'Admin permission matrix UI');
+  assertContains('src/dashboard/js/pages/administration/Admin.jsx', 'Save Permission Matrix', 'Admin permission matrix save action');
+  assertContains('src/dashboard/js/pages/administration/Admin.jsx', 'setModulePermission', 'Admin per-module permission editor');
+
   assertContains('src/server/routes/ownerDiagnostics.js', "router.get('/deployments'", 'Deployment Centre diagnostics API route');
   assertContains('src/server/routes/ownerDiagnostics.js', 'buildDeploymentPayload', 'Deployment Centre payload builder');
 
