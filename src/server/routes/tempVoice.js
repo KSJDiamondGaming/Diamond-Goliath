@@ -38,6 +38,14 @@ function cleanNumber(value, fallback = 0) {
   return Math.max(0, Math.floor(Number.isFinite(number) ? number : fallback));
 }
 
+function hasOwn(input, key) {
+  return Object.prototype.hasOwnProperty.call(input || {}, key);
+}
+
+function cleanIdArray(value) {
+  return Array.isArray(value) ? [...new Set(value.map(cleanId).filter(Boolean))] : undefined;
+}
+
 function getClient(req) {
   return req.client || req.app?.get?.('goliath.client') || req.app?.locals?.client || global.client || null;
 }
@@ -61,15 +69,34 @@ function overview(section, guild = null) {
     liveChannels: liveChannels.length,
     defaultUserLimit: section.settings?.defaultUserLimit || 0,
     deleteWhenEmpty: section.settings?.deleteWhenEmpty !== false,
+    ownerPanelEnabled: section.settings?.ownerPanelEnabled !== false,
     updatedAt: section.updatedAt || null,
   };
 }
 
 function prepareSettings(input = {}) {
-  return {
-    defaultUserLimit: cleanNumber(input.defaultUserLimit, 0),
-    deleteWhenEmpty: input.deleteWhenEmpty !== false,
-  };
+  const settings = {};
+
+  for (const [key, fallback] of [['defaultUserLimit', 0]]) {
+    if (hasOwn(input, key)) settings[key] = cleanNumber(input[key], fallback);
+  }
+
+  for (const key of [
+    'deleteWhenEmpty',
+    'ownerPanelEnabled',
+    'allowOwnerRename',
+    'allowOwnerStatus',
+    'allowOwnerLock',
+    'allowOwnerHide',
+    'allowOwnerLimit',
+    'allowOwnerPermits',
+    'allowOwnerTransfer',
+    'allowOwnerDelete',
+  ]) {
+    if (hasOwn(input, key)) settings[key] = input[key] !== false;
+  }
+
+  return settings;
 }
 
 function prepareHub(input = {}) {
@@ -77,12 +104,36 @@ function prepareHub(input = {}) {
     hubId: input.hubId || input.id,
     enabled: input.enabled !== false,
     joinChannelId: cleanId(input.joinChannelId),
+    joinChannelName: cleanString(input.joinChannelName, '➕ Create Temp Voice', 80),
     categoryId: cleanId(input.categoryId),
+    categoryName: cleanString(input.categoryName, 'Temporary Voice Channels', 80),
     nameTemplate: cleanString(input.nameTemplate, "{username}'s Channel", 80),
     userLimit: cleanNumber(input.userLimit, 0),
     bitrate: cleanNumber(input.bitrate, 0),
-    createdBy: cleanId(input.createdBy),
+    lockedByDefault: input.lockedByDefault === true,
+    hiddenByDefault: input.hiddenByDefault === true,
+    ownerControlsEnabled: input.ownerControlsEnabled !== false,
+    createCategory: input.createCategory !== false,
+    createdBy: cleanId(input.createdBy || input.actorId),
+    actorId: cleanId(input.actorId),
   };
+}
+
+function prepareChannelControls(input = {}) {
+  const controls = {};
+
+  if (hasOwn(input, 'name')) controls.name = cleanString(input.name, 'Temp Voice', 80);
+  if (hasOwn(input, 'activityStatus')) controls.activityStatus = cleanString(input.activityStatus, '', 120);
+  if (hasOwn(input, 'userLimit')) controls.userLimit = cleanNumber(input.userLimit, 0);
+  if (hasOwn(input, 'locked')) controls.locked = input.locked === true;
+  if (hasOwn(input, 'hidden')) controls.hidden = input.hidden === true;
+  if (hasOwn(input, 'ownerId')) controls.ownerId = cleanId(input.ownerId);
+
+  for (const key of ['allowedUserIds', 'blockedUserIds', 'allowedRoleIds', 'blockedRoleIds']) {
+    if (hasOwn(input, key)) controls[key] = cleanIdArray(input[key]) || [];
+  }
+
+  return controls;
 }
 
 router.get('/:guildId', async (req, res) => {
@@ -121,10 +172,24 @@ router.patch('/:guildId/settings', async (req, res) => {
   }
 });
 
+router.post('/:guildId/hubs/deploy', async (req, res) => {
+  try {
+    const guildId = getGuildId(req);
+    const guild = await fetchGuild(req, guildId);
+    if (!guild) throw new Error('Guild is not available to the bot.');
+
+    const hub = await tempVoiceManager.deployHub(guild, prepareHub(req.body || {}));
+    const config = tempVoiceStore.getTempVoiceSection(guildId);
+    return success(res, { guildId, hub, config, overview: overview(config, guild) });
+  } catch (error) {
+    return failure(res, error, 400);
+  }
+});
+
 router.post('/:guildId/hubs', async (req, res) => {
   try {
     const guildId = getGuildId(req);
-    const hub = tempVoiceStore.saveHub(guildId, prepareHub(req.body || {}), { actorId: req.body?.actorId });
+    const hub = tempVoiceManager.createHub(guildId, prepareHub(req.body || {}));
     const config = tempVoiceStore.getTempVoiceSection(guildId);
     const guild = await fetchGuild(req, guildId);
     return success(res, { guildId, hub, config, overview: overview(config, guild) });
@@ -160,13 +225,40 @@ router.delete('/:guildId/hubs/:hubId', async (req, res) => {
   }
 });
 
+router.patch('/:guildId/channels/:channelId/controls', async (req, res) => {
+  try {
+    const guildId = getGuildId(req);
+    const guild = await fetchGuild(req, guildId);
+    if (!guild) throw new Error('Guild is not available to the bot.');
+
+    const channel = await tempVoiceManager.updateTempChannelControls(
+      guild,
+      req.params.channelId,
+      cleanId(req.body?.actorId),
+      prepareChannelControls(req.body?.controls || req.body || {})
+    );
+
+    const config = tempVoiceStore.getTempVoiceSection(guildId);
+    return success(res, { guildId, channel, config, overview: overview(config, guild) });
+  } catch (error) {
+    return failure(res, error, 400);
+  }
+});
+
 router.delete('/:guildId/channels/:channelId', async (req, res) => {
   try {
     const guildId = getGuildId(req);
-    const config = tempVoiceStore.deleteTempChannel(guildId, req.params.channelId, { actorId: req.body?.actorId });
     const guild = await fetchGuild(req, guildId);
-    const channel = guild?.channels?.cache?.get(req.params.channelId) || await guild?.channels?.fetch?.(req.params.channelId).catch(() => null);
-    if (channel?.deletable) await channel.delete('Goliath Temp Voice dashboard delete').catch(() => null);
+
+    if (guild && req.body?.actorId) {
+      await tempVoiceManager.deleteOwnedTempChannel(guild, req.params.channelId, cleanId(req.body.actorId));
+    } else {
+      tempVoiceStore.deleteTempChannel(guildId, req.params.channelId, { actorId: req.body?.actorId });
+      const channel = guild?.channels?.cache?.get(req.params.channelId) || await guild?.channels?.fetch?.(req.params.channelId).catch(() => null);
+      if (channel?.deletable) await channel.delete('Goliath Temp Voice dashboard delete').catch(() => null);
+    }
+
+    const config = tempVoiceStore.getTempVoiceSection(guildId);
     return success(res, { guildId, config, overview: overview(config, guild) });
   } catch (error) {
     return failure(res, error, 400);
