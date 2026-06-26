@@ -45,15 +45,40 @@ function summarize(config) {
   };
 }
 
+function hasOwn(input, key) {
+  return Object.prototype.hasOwnProperty.call(input || {}, key);
+}
+
 function prepareSettings(input = {}) {
-  return {
-    enabled: input.enabled !== undefined ? input.enabled === true : undefined,
-    channelId: input.channelId === '' ? null : cleanChannelId(input.channelId),
-    threshold: input.threshold !== undefined ? Math.max(1, Math.floor(Number(input.threshold) || 3)) : undefined,
-    emoji: input.emoji !== undefined ? String(input.emoji || '⭐').trim().slice(0, 40) || '⭐' : undefined,
-    allowBotMessages: input.allowBotMessages !== undefined ? input.allowBotMessages === true : undefined,
-    allowSelfStar: input.allowSelfStar !== undefined ? input.allowSelfStar === true : undefined,
-  };
+  const settings = {};
+
+  if (hasOwn(input, 'enabled')) {
+    settings.enabled = input.enabled === true;
+  }
+
+  if (hasOwn(input, 'channelId')) {
+    settings.channelId = input.channelId === '' || input.channelId === null
+      ? null
+      : cleanChannelId(input.channelId);
+  }
+
+  if (hasOwn(input, 'threshold')) {
+    settings.threshold = Math.max(1, Math.floor(Number(input.threshold) || 3));
+  }
+
+  if (hasOwn(input, 'emoji')) {
+    settings.emoji = String(input.emoji || '⭐').trim().slice(0, 40) || '⭐';
+  }
+
+  if (hasOwn(input, 'allowBotMessages')) {
+    settings.allowBotMessages = input.allowBotMessages === true;
+  }
+
+  if (hasOwn(input, 'allowSelfStar')) {
+    settings.allowSelfStar = input.allowSelfStar === true;
+  }
+
+  return settings;
 }
 
 router.get('/:guildId', (req, res) => {
@@ -85,7 +110,7 @@ router.patch('/:guildId/settings', (req, res) => {
     const settings = prepareSettings(req.body?.settings || req.body || {});
     const config = starboardStore.updateStarboardSection(guildId, (section) => ({
       ...section,
-      ...Object.fromEntries(Object.entries(settings).filter(([, value]) => value !== undefined)),
+      ...settings,
       updatedAt: starboardStore.now(),
     }), { actorId: req.body?.actorId });
 
