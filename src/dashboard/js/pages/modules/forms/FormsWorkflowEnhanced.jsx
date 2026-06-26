@@ -46,7 +46,7 @@ export default function FormsWorkflowEnhanced(props) {
 
   return (
     <div style={{ display: 'grid', gap: 18 }}>
-      {overview ? <FormsWorkflowPanel theme={theme} overview={overview} /> : null}
+      {overview ? <FormsWorkflowPanel theme={theme} overview={overview} guildId={guildId} onRefresh={loadWorkflowOverview} /> : null}
       {error ? (
         <section style={{
           border: `1px solid ${theme?.cardBorder || 'rgba(148,163,184,0.22)'}`,
