@@ -56,6 +56,12 @@ async function fetchGuild(req, guildId) {
   return client.guilds.cache.get(guildId) || client.guilds.fetch(guildId).catch(() => null);
 }
 
+async function fetchDiscordChannel(guild, channelId) {
+  const id = cleanId(channelId);
+  if (!guild || !id) return null;
+  return guild.channels.cache.get(id) || await guild.channels.fetch(id).catch(() => null);
+}
+
 function getActorId(req) {
   return cleanId(req.session?.user?.id || req.body?.actorId || req.query?.actorId);
 }
@@ -146,6 +152,65 @@ function prepareChannelControls(input = {}) {
   return controls;
 }
 
+async function syncHubToDiscord(guild, beforeHub = {}, nextHub = {}) {
+  const result = { updated: [], warnings: [] };
+  if (!guild) return result;
+
+  const joinChannel = await fetchDiscordChannel(guild, nextHub.joinChannelId || beforeHub.joinChannelId);
+  if (joinChannel) {
+    if (nextHub.joinChannelName && joinChannel.name !== nextHub.joinChannelName) {
+      await joinChannel.setName(nextHub.joinChannelName, 'Goliath Temp Voice hub edit').then(() => result.updated.push('joinChannelName')).catch((error) => result.warnings.push(`Join channel rename failed: ${error.message}`));
+    }
+
+    if (nextHub.categoryId && joinChannel.parentId !== nextHub.categoryId) {
+      await joinChannel.setParent(nextHub.categoryId, { reason: 'Goliath Temp Voice hub category edit' }).then(() => result.updated.push('joinChannelParent')).catch((error) => result.warnings.push(`Join channel category move failed: ${error.message}`));
+    }
+  } else if (nextHub.joinChannelId) {
+    result.warnings.push('Saved hub, but the Discord join channel was not found.');
+  }
+
+  const category = await fetchDiscordChannel(guild, nextHub.categoryId || beforeHub.categoryId);
+  if (category && nextHub.categoryName && category.name !== nextHub.categoryName) {
+    await category.setName(nextHub.categoryName, 'Goliath Temp Voice category edit').then(() => result.updated.push('categoryName')).catch((error) => result.warnings.push(`Category rename failed: ${error.message}`));
+  } else if (nextHub.categoryId && !category) {
+    result.warnings.push('Saved hub, but the Discord category was not found.');
+  }
+
+  return result;
+}
+
+async function deleteHubDiscordResources(guild, section, hubId, hub = {}) {
+  const result = { deleted: [], skipped: [], warnings: [] };
+  if (!guild || !hub) return result;
+
+  const trackedChannels = Object.values(section.channels || {}).filter((channel) => channel.hubId === hubId || channel.hubId === hub.hubId);
+  for (const trackedChannel of trackedChannels) {
+    const channel = await fetchDiscordChannel(guild, trackedChannel.channelId);
+    if (channel?.deletable) {
+      await channel.delete('Goliath Temp Voice hub removal').then(() => result.deleted.push(`temp:${trackedChannel.channelId}`)).catch((error) => result.warnings.push(`Temp channel delete failed: ${error.message}`));
+    }
+  }
+
+  const joinChannel = await fetchDiscordChannel(guild, hub.joinChannelId);
+  if (joinChannel?.deletable) {
+    await joinChannel.delete('Goliath Temp Voice hub removal').then(() => result.deleted.push(`join:${hub.joinChannelId}`)).catch((error) => result.warnings.push(`Join channel delete failed: ${error.message}`));
+  } else if (hub.joinChannelId) {
+    result.skipped.push(`join:${hub.joinChannelId}`);
+  }
+
+  const category = await fetchDiscordChannel(guild, hub.categoryId);
+  if (category) {
+    const remainingChildren = guild.channels.cache.filter((channel) => channel.parentId === category.id);
+    if (remainingChildren.size === 0 && category.deletable) {
+      await category.delete('Goliath Temp Voice empty category removal').then(() => result.deleted.push(`category:${hub.categoryId}`)).catch((error) => result.warnings.push(`Category delete failed: ${error.message}`));
+    } else {
+      result.skipped.push(`category:${hub.categoryId}:not-empty-or-not-deletable`);
+    }
+  }
+
+  return result;
+}
+
 router.get('/:guildId', async (req, res) => {
   try {
     const guildId = getGuildId(req);
@@ -188,9 +253,9 @@ router.post('/:guildId/hubs/deploy', async (req, res) => {
     const guild = await fetchGuild(req, guildId);
     if (!guild) throw new Error('Guild is not available to the bot.');
 
-    const hub = await tempVoiceManager.deployHub(guild, prepareHub(req.body || {}));
+    const deployment = await tempVoiceManager.deployHub(guild, prepareHub(req.body || {}));
     const config = tempVoiceStore.getTempVoiceSection(guildId);
-    return success(res, { guildId, hub, config, overview: overview(config, guild) });
+    return success(res, { guildId, hub: deployment.hub || deployment, deployment, config, overview: overview(config, guild) });
   } catch (error) {
     return failure(res, error, 400);
   }
@@ -211,10 +276,15 @@ router.post('/:guildId/hubs', async (req, res) => {
 router.put('/:guildId/hubs/:hubId', async (req, res) => {
   try {
     const guildId = getGuildId(req);
-    const hub = tempVoiceStore.saveHub(guildId, prepareHub({ ...(req.body || {}), hubId: req.params.hubId }), { actorId: req.body?.actorId });
-    const config = tempVoiceStore.getTempVoiceSection(guildId);
     const guild = await fetchGuild(req, guildId);
-    return success(res, { guildId, hub, config, overview: overview(config, guild) });
+    const beforeConfig = tempVoiceStore.getTempVoiceSection(guildId);
+    const beforeHub = beforeConfig.hubs?.[req.params.hubId] || null;
+    if (!beforeHub) throw new Error('Temp Voice hub was not found.');
+
+    const nextHub = tempVoiceStore.saveHub(guildId, prepareHub({ ...(req.body || {}), hubId: req.params.hubId }), { actorId: req.body?.actorId });
+    const sync = await syncHubToDiscord(guild, beforeHub, nextHub);
+    const config = tempVoiceStore.getTempVoiceSection(guildId);
+    return success(res, { guildId, hub: nextHub, sync, config, overview: overview(config, guild) });
   } catch (error) {
     return failure(res, error, 400);
   }
@@ -223,13 +293,22 @@ router.put('/:guildId/hubs/:hubId', async (req, res) => {
 router.delete('/:guildId/hubs/:hubId', async (req, res) => {
   try {
     const guildId = getGuildId(req);
+    const guild = await fetchGuild(req, guildId);
+    const beforeConfig = tempVoiceStore.getTempVoiceSection(guildId);
+    const hub = beforeConfig.hubs?.[req.params.hubId] || null;
+    if (!hub) throw new Error('Temp Voice hub was not found.');
+
+    const sync = await deleteHubDiscordResources(guild, beforeConfig, req.params.hubId, hub);
     const config = tempVoiceStore.updateTempVoiceSection(guildId, (section) => {
       const hubs = { ...(section.hubs || {}) };
+      const channels = { ...(section.channels || {}) };
       delete hubs[req.params.hubId];
-      return { ...section, hubs, updatedAt: tempVoiceStore.now() };
+      for (const [channelId, channel] of Object.entries(channels)) {
+        if (channel.hubId === req.params.hubId || channel.hubId === hub.hubId) delete channels[channelId];
+      }
+      return { ...section, hubs, channels, updatedAt: tempVoiceStore.now() };
     }, { actorId: req.body?.actorId });
-    const guild = await fetchGuild(req, guildId);
-    return success(res, { guildId, config, overview: overview(config, guild) });
+    return success(res, { guildId, sync, config, overview: overview(config, guild) });
   } catch (error) {
     return failure(res, error, 400);
   }
