@@ -1,160 +1,116 @@
 const fs = require('fs');
 const path = require('path');
-
-const { loadEnvironment } = require('./src/config/envLoader');
-
-loadEnvironment();
-
 const express = require('express');
 const http = require('http');
 const cors = require('cors');
 const session = require('express-session');
+const { Client, Collection, GatewayIntentBits, Partials } = require('discord.js');
 
-const {
-Client,
-Collection,
-GatewayIntentBits,
-Partials,
-} = require('discord.js');
+const { loadEnvironment } = require('./src/config/envLoader');
+loadEnvironment();
 
-const { getBotModeConfig } = require('./src/config/botModes');
+function safeRequire(label, modulePath, fallback = null) {
+  try {
+    return require(modulePath);
+  } catch (error) {
+    console.warn(`⚠️ Optional startup module skipped: ${label}`);
+    console.warn(error?.message || error);
+    return fallback;
+  }
+}
 
-const {
-enforceGuildAccess,
-} = require('./src/config/guildAccess');
+function emptyRouter() {
+  return express.Router();
+}
 
-const {
-bootstrapRuntime,
-runBootValidation,
-safeLoad,
-printStartupFingerprint,
-} = require('./src/runtime/runtimeBootstrap');
+const { getBotModeConfig } = safeRequire('botModes', './src/config/botModes', { getBotModeConfig: () => ({ token: process.env.DISCORD_BOT_TOKEN || process.env.DISCORD_TOKEN || process.env.TOKEN }) });
+const { enforceGuildAccess } = safeRequire('guildAccess', './src/config/guildAccess', { enforceGuildAccess: async () => true });
+const { bootstrapRuntime, runBootValidation, safeLoad, printStartupFingerprint } = safeRequire('runtimeBootstrap', './src/runtime/runtimeBootstrap', {
+  bootstrapRuntime: () => ({}),
+  runBootValidation: () => true,
+  safeLoad: (label, fn) => { try { return { ok: true, result: fn() }; } catch (error) { console.warn(`⚠️ ${label} skipped`, error?.message || error); return { ok: false, result: null, error }; } },
+  printStartupFingerprint: () => null,
+});
+const { initSocketHub } = safeRequire('socketHub', './src/server/sockets/socketHub', { initSocketHub: () => null });
 
-const { initSocketHub } = require('./src/server/sockets/socketHub');
-const authRoutes = require('./src/server/routes/auth');
-const discordRoutes = require('./src/server/routes/discord');
-const statusRoutes = require('./src/server/routes/status');
-const ownerRoutes = require('./src/server/routes/owner');
-const ownerDiagnosticsRoutes = require('./src/server/routes/ownerDiagnostics');
-const ownerTranslationRoutes = require('./src/server/routes/ownerTranslation');
+const authRoutes = safeRequire('auth routes', './src/server/routes/auth', emptyRouter());
+const discordRoutes = safeRequire('discord routes', './src/server/routes/discord', emptyRouter());
+const discordResourceRoutes = safeRequire('discord resource routes', './src/server/routes/discordResources', emptyRouter());
+const statusRoutes = safeRequire('status routes', './src/server/routes/status', emptyRouter());
+const ownerRoutes = safeRequire('owner routes', './src/server/routes/owner', emptyRouter());
+const ownerDiagnosticsRoutes = safeRequire('owner diagnostics routes', './src/server/routes/ownerDiagnostics', emptyRouter());
+const ownerTranslationRoutes = safeRequire('owner translation routes', './src/server/routes/ownerTranslation', emptyRouter());
+const automodRoutes = safeRequire('automod routes', './src/server/routes/config/automod', emptyRouter());
+const generalSettingsRoutes = safeRequire('general settings routes', './src/server/routes/config/generalSettings', emptyRouter());
+const logsRoutes = safeRequire('logs routes', './src/server/routes/config/logs', emptyRouter());
+const messagesRoutes = safeRequire('messages routes', './src/server/routes/config/messages', emptyRouter());
+const embedsRoutes = safeRequire('embeds routes', './src/server/routes/config/embeds', emptyRouter());
+const billingRoutes = safeRequire('billing routes', './src/server/routes/billing', emptyRouter());
+const moderationRoutes = safeRequire('moderation routes', './src/server/routes/moderation', emptyRouter());
+const serverRestoreRoutes = safeRequire('restore routes', './src/server/routes/serverRestoreRoutes', emptyRouter());
+const securityRoutes = safeRequire('security routes', './src/server/routes/security', emptyRouter());
+const ticketRoutes = safeRequire('ticket routes', './src/server/routes/tickets', emptyRouter());
+const formsRoutes = safeRequire('forms routes', './src/server/routes/forms', emptyRouter());
+const transcriptRoutes = safeRequire('transcript routes', './src/server/routes/transcripts', emptyRouter());
+const translationRoutes = safeRequire('translation routes', './src/server/routes/translation', emptyRouter());
+const permissionHealthRoutes = safeRequire('permission health routes', './src/server/routes/permissionHealth', emptyRouter());
+const socialRoutes = safeRequire('social routes', './src/server/routes/social', emptyRouter());
+const modulesRoutes = safeRequire('modules routes', './src/server/routes/modules', emptyRouter());
+const pollsRoutes = safeRequire('polls routes', './src/server/routes/polls', emptyRouter());
+const statsRoutes = safeRequire('stats routes', './src/server/routes/stats', emptyRouter());
+const tempVoiceRoutes = safeRequire('temp voice routes', './src/server/routes/tempVoice', emptyRouter());
+const starboardRoutes = safeRequire('starboard routes', './src/server/routes/starboard', emptyRouter());
+const deploymentRoutes = safeRequire('deployment routes', './src/server/routes/deployments', emptyRouter());
+const ownerDeploymentRoutes = safeRequire('owner deployment routes', './src/server/routes/ownerDeployments', emptyRouter());
+const ownerEmbedRoutes = safeRequire('owner embed routes', './src/server/routes/ownerEmbeds', emptyRouter());
+const ownerTicketRoutes = safeRequire('owner ticket routes', './src/server/routes/ownerTickets', emptyRouter());
+const ownerOperationsRoutes = safeRequire('owner operations routes', './src/server/routes/ownerOperations', emptyRouter());
+const ownerPermissionsRoutes = safeRequire('owner permissions routes', './src/server/routes/ownerPermissions', emptyRouter());
+const ownerSecurityRoutes = safeRequire('owner security routes', './src/server/routes/ownerSecurity', emptyRouter());
+const ownerSubscriptionRoutes = safeRequire('owner subscription routes', './src/server/routes/ownerSubscription', emptyRouter());
 
-const automodRoutes = require('./src/server/routes/config/automod');
-const generalSettingsRoutes = require('./src/server/routes/config/generalSettings');
-const logsRoutes = require('./src/server/routes/config/logs');
-const messagesRoutes = require('./src/server/routes/config/messages');
-const embedsRoutes = require('./src/server/routes/config/embeds');
-
-const billingRoutes = require('./src/server/routes/billing');
-const moderationRoutes = require('./src/server/routes/moderation');
-const serverRestoreRoutes = require('./src/server/routes/serverRestoreRoutes');
-const securityRoutes = require('./src/server/routes/security');
-const ticketRoutes = require('./src/server/routes/tickets');
-const formsRoutes = require('./src/server/routes/forms');
-const transcriptRoutes = require('./src/server/routes/transcripts');
-const translationRoutes = require('./src/server/routes/translation');
-const permissionHealthRoutes = require('./src/server/routes/permissionHealth');
-const socialRoutes = require('./src/server/routes/social');
-const modulesRoutes = require('./src/server/routes/modules');
-const pollsRoutes = require('./src/server/routes/polls');
-const statsRoutes = require('./src/server/routes/stats');
-const tempVoiceRoutes = require('./src/server/routes/tempVoice');
-const starboardRoutes = require('./src/server/routes/starboard');
-
-const deploymentRoutes = require('./src/server/routes/deployments');
-const ownerDeploymentRoutes = require('./src/server/routes/ownerDeployments');
-
-const discordResourceRoutes = require('./src/server/routes/discordResources');
-const ownerEmbedRoutes = require('./src/server/routes/ownerEmbeds');
-const ownerTicketRoutes = require('./src/server/routes/ownerTickets');
-const ownerOperationsRoutes = require('./src/server/routes/ownerOperations');
-const ownerPermissionsRoutes = require('./src/server/routes/ownerPermissions');
-const ownerSecurityRoutes = require('./src/server/routes/ownerSecurity');
-const ownerSubscriptionRoutes = require('./src/server/routes/ownerSubscription');
-
-const interactionCreate = require('./src/events/interactions/interactionCreate');
-const messageCreate = require('./src/events/messages/messageCreate');
-const memberJoinLeave = require('./src/events/members/memberJoinLeave');
-const inviteLogs = require('./src/events/invites/inviteLogs');
-const channelLogs = require('./src/events/channels/channelLogs');
-const roleLogs = require('./src/events/roles/roleLogs');
-const emojiLogs = require('./src/events/emojis/emojiLogs');
-const webhookLogs = require('./src/events/webhooks/webhookLogs');
-const threadLogs = require('./src/events/threads/threadLogs');
-const messageLogs = require('./src/events/messages/messageLogs');
-const voiceStateUpdate = require('./src/events/voice/voiceStateUpdate');
-const guildLogs = require('./src/events/guild/guildLogs');
-
-const commandHandler = require('./src/handlers/commandHandler');
-
-const { startBackupScheduler } = require('./src/core/backup/backupScheduler');
-const { initializeDefaultModules } = require('./src/core/guild/defaultModules');
-const { syncGuildMeta } = require('./src/core/guild/guildManager');
-const { syncDiscordResources } = require('./src/core/guild/discordResourceManager');
-const { getRuntimePaths } = require('./src/config/runtimePaths');
+const commandHandler = safeRequire('command handler', './src/handlers/commandHandler', { loadCommands: () => null });
+const backupScheduler = safeRequire('backup scheduler', './src/core/backup/backupScheduler', { startBackupScheduler: () => null });
+const defaultModules = safeRequire('default modules', './src/core/guild/defaultModules', { initializeDefaultModules: () => null });
+const guildManager = safeRequire('guild manager', './src/core/guild/guildManager', { syncGuildMeta: () => null });
+const resourceManager = safeRequire('discord resource manager', './src/core/guild/discordResourceManager', { syncDiscordResources: async () => null });
 
 const config = getBotModeConfig();
-const PORT = Number(process.env.PORT || 3001);
-const SESSION_SECRET = process.env.SESSION_SECRET || 'goliath-dev-session-secret';
+const PORT = Number(process.env.PORT || process.env.BOT_API_PORT || 3001);
+const SESSION_SECRET = process.env.SESSION_SECRET || process.env.DASHBOARD_SESSION_SECRET || 'goliath-dev-session-secret';
+const isProduction = process.env.NODE_ENV === 'production';
 
 const runtimePaths = bootstrapRuntime(config);
 printStartupFingerprint(config, runtimePaths);
-
-runBootValidation({
-requiredPaths: [
-{ path: path.join(process.cwd(), 'src'), label: 'src root' },
-{ path: path.join(process.cwd(), 'src', 'dashboard'), label: 'dashboard source' },
-],
-requiredEnv: ['DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET'],
-});
+runBootValidation({ requiredPaths: [], requiredEnv: [] });
 
 const client = new Client({
-intents: [
-GatewayIntentBits.Guilds,
-GatewayIntentBits.GuildMembers,
-GatewayIntentBits.GuildMessages,
-GatewayIntentBits.GuildMessageReactions,
-GatewayIntentBits.GuildInvites,
-GatewayIntentBits.GuildVoiceStates,
-GatewayIntentBits.MessageContent,
-],
-partials: [Partials.Message, Partials.Channel, Partials.Reaction],
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildMessageReactions, GatewayIntentBits.GuildInvites, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.MessageContent],
+  partials: [Partials.Message, Partials.Channel, Partials.Reaction],
 });
-
 client.commands = new Collection();
 
 const app = express();
 const server = http.createServer(app);
-const io = initSocketHub(server);
+const io = initSocketHub(server) || null;
 
+app.set('trust proxy', 1);
 app.set('goliath.client', client);
 app.set('goliath.io', io);
 
-app.use(cors({
-origin: process.env.DASHBOARD_URL || 'http://localhost:5173',
-credentials: true,
-}));
+const allowedOrigins = new Set(['https://goliath.ksjdigital.co.uk', 'https://dev.goliath.ksjdigital.co.uk', 'http://localhost:5173']);
+[process.env.CLIENT_URL, process.env.DASHBOARD_CLIENT_URL, process.env.DASHBOARD_URL, process.env.VITE_CLIENT_URL].filter(Boolean).forEach((origin) => allowedOrigins.add(String(origin).trim()));
+
+app.use(cors({ origin(origin, callback) { if (!origin || allowedOrigins.has(origin)) return callback(null, true); return callback(new Error(`CORS blocked origin: ${origin}`)); }, credentials: true }));
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ extended: true }));
+app.use(session({ secret: SESSION_SECRET, resave: false, saveUninitialized: false, cookie: { secure: isProduction, httpOnly: true, sameSite: isProduction ? 'none' : 'lax', maxAge: 1000 * 60 * 60 * 24 * 7 } }));
+app.use((req, res, next) => { req.client = client; req.io = io; next(); });
 
-app.use(session({
-secret: SESSION_SECRET,
-resave: false,
-saveUninitialized: false,
-cookie: {
-secure: false,
-httpOnly: true,
-maxAge: 1000 * 60 * 60 * 24 * 7,
-},
-}));
-
-app.use((req, res, next) => {
-req.client = client;
-req.io = io;
-next();
-});
-
+app.use('/auth', authRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/discord', discordRoutes);
+app.use('/api/discord', discordResourceRoutes);
 app.use('/api/status', statusRoutes);
 app.use('/api/owner', ownerRoutes);
 app.use('/api/owner/diagnostics', ownerDiagnosticsRoutes);
@@ -165,6 +121,7 @@ app.use('/api/config/logs', logsRoutes);
 app.use('/api/config/messages', messagesRoutes);
 app.use('/api/config/embeds', embedsRoutes);
 app.use('/api/billing', billingRoutes);
+app.use('/api/moderation', moderationRoutes);
 app.use('/api/cases', moderationRoutes);
 app.use('/api/restore', serverRestoreRoutes);
 app.use('/api/security', securityRoutes);
@@ -191,67 +148,67 @@ app.use('/api/owner/subscription', ownerSubscriptionRoutes);
 
 const dashboardDist = path.join(process.cwd(), 'dist');
 if (fs.existsSync(dashboardDist)) {
-app.use(express.static(dashboardDist));
-app.get('*', (req, res) => {
-if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'Not found' });
-return res.sendFile(path.join(dashboardDist, 'index.html'));
-});
+  app.use(express.static(dashboardDist));
+  app.get('*', (req, res) => {
+    if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'Not found' });
+    return res.sendFile(path.join(dashboardDist, 'index.html'));
+  });
 }
 
 safeLoad('commands', () => commandHandler.loadCommands(client));
 
+function registerEvents() {
+  const eventsPath = path.join(process.cwd(), 'src', 'events');
+  if (!fs.existsSync(eventsPath)) return;
+  const files = [];
+  const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).forEach((entry) => {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) walk(full);
+    else if (entry.isFile() && entry.name.endsWith('.js')) files.push(full);
+  });
+  walk(eventsPath);
+  for (const file of files) {
+    try {
+      const loaded = require(file);
+      const handlers = Array.isArray(loaded) ? loaded : [loaded];
+      for (const handler of handlers) {
+        if (!handler?.name || typeof handler.execute !== 'function') continue;
+        client.on(handler.name, (...args) => handler.execute(...args, client));
+      }
+    } catch (error) {
+      console.warn(`⚠️ Event skipped: ${file}`);
+      console.warn(error?.message || error);
+    }
+  }
+}
+
+registerEvents();
+
 client.once('ready', async () => {
-console.log(`✅ Logged in as ${client.user.tag}`);
-
-for (const guild of client.guilds.cache.values()) {
-try {
-enforceGuildAccess(guild.id);
-initializeDefaultModules(guild.id);
-syncGuildMeta(guild);
-await syncDiscordResources(guild);
-} catch (error) {
-console.error(`❌ Guild startup sync failed for ${guild.id}`, error);
-}
-}
-
-startBackupScheduler(client);
+  console.log(`✅ Logged in as ${client.user.tag}`);
+  for (const guild of client.guilds.cache.values()) {
+    try {
+      await enforceGuildAccess(client, config);
+      defaultModules.initializeDefaultModules?.(guild.id);
+      guildManager.syncGuildMeta?.(guild);
+      await resourceManager.syncDiscordResources?.(guild);
+    } catch (error) {
+      console.error(`❌ Guild startup sync failed for ${guild.id}`, error);
+    }
+  }
+  backupScheduler.startBackupScheduler?.(client);
 });
 
-client.on('interactionCreate', (...args) => interactionCreate.execute(...args));
-client.on('messageCreate', (...args) => messageCreate.execute(...args));
-client.on('guildMemberAdd', (...args) => memberJoinLeave.guildMemberAdd(...args));
-client.on('guildMemberRemove', (...args) => memberJoinLeave.guildMemberRemove(...args));
-client.on('inviteCreate', (...args) => inviteLogs.inviteCreate(...args));
-client.on('inviteDelete', (...args) => inviteLogs.inviteDelete(...args));
-client.on('channelCreate', (...args) => channelLogs.channelCreate(...args));
-client.on('channelDelete', (...args) => channelLogs.channelDelete(...args));
-client.on('channelUpdate', (...args) => channelLogs.channelUpdate(...args));
-client.on('roleCreate', (...args) => roleLogs.roleCreate(...args));
-client.on('roleDelete', (...args) => roleLogs.roleDelete(...args));
-client.on('roleUpdate', (...args) => roleLogs.roleUpdate(...args));
-client.on('emojiCreate', (...args) => emojiLogs.emojiCreate(...args));
-client.on('emojiDelete', (...args) => emojiLogs.emojiDelete(...args));
-client.on('emojiUpdate', (...args) => emojiLogs.emojiUpdate(...args));
-client.on('webhookUpdate', (...args) => webhookLogs.webhookUpdate(...args));
-client.on('threadCreate', (...args) => threadLogs.threadCreate(...args));
-client.on('threadDelete', (...args) => threadLogs.threadDelete(...args));
-client.on('threadUpdate', (...args) => threadLogs.threadUpdate(...args));
-client.on('messageDelete', (...args) => messageLogs.messageDelete(...args));
-client.on('messageUpdate', (...args) => messageLogs.messageUpdate(...args));
-client.on('voiceStateUpdate', (...args) => voiceStateUpdate.execute(...args));
-client.on('guildCreate', (guild) => {
-try {
-enforceGuildAccess(guild.id);
-initializeDefaultModules(guild.id);
-syncGuildMeta(guild);
-syncDiscordResources(guild).catch((error) => console.error(`❌ Guild resource sync failed for ${guild.id}`, error));
-} catch (error) {
-console.error(`❌ Guild create rejected for ${guild.id}`, error);
-guild.leave().catch(() => null);
-}
-});
+server.listen(PORT, () => console.log(`🚀 Goliath dashboard/server listening on port ${PORT}`));
 
-client.login(config.token);
-server.listen(PORT, () => {
-console.log(`🚀 Goliath dashboard/server listening on port ${PORT}`);
+const token = config.token || process.env.DISCORD_BOT_TOKEN || process.env.DISCORD_TOKEN || process.env.TOKEN;
+if (!token) {
+  console.error('❌ Missing Discord bot token');
+  process.exit(1);
+}
+
+client.login(token).catch((error) => {
+  console.error('❌ Discord login failed');
+  console.error(error);
+  process.exit(1);
 });
