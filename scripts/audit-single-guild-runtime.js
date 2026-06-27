@@ -15,8 +15,9 @@
 const fs = require('fs');
 const path = require('path');
 
-const ROOT = path.resolve(__dirname, '..');
-const SRC_DIR = path.join(ROOT, 'src');
+const { printHeader, readJson, relative, resolveRoot, walk } = require('./lib/scriptUtils');
+
+const SRC_DIR = resolveRoot('src');
 const ALLOWED_RUNTIME_FOLDERS = new Set(['backups', 'exports', 'cache', 'logs', 'transcripts', 'recovery']);
 const IGNORE_FILES = new Set([
   'src/dashboard/js/services/apiClient.js',
@@ -30,27 +31,6 @@ const KNOWN_GUILD_STORE_FILES = new Set([
   'src/guild/moduleSectionManager.js',
   'src/guild/fileStore.js',
 ]);
-
-function toPosix(filePath) {
-  return path.relative(ROOT, filePath).replace(/\\/g, '/');
-}
-
-function walk(dir, files = []) {
-  if (!fs.existsSync(dir)) return files;
-
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === 'dist') continue;
-
-    const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      walk(fullPath, files);
-    } else if (entry.isFile() && entry.name.endsWith('.js')) {
-      files.push(fullPath);
-    }
-  }
-
-  return files;
-}
 
 function lineNumberFor(content, index) {
   return content.slice(0, index).split('\n').length;
@@ -96,6 +76,15 @@ function isAllowedSeparateRuntimeUse(relativePath, content) {
   return hasApprovedSeparateRuntimePath(content);
 }
 
+function usesGuildStorage(content) {
+  return content.includes("require('../../guild/guildManager')") ||
+    content.includes("require('../guild/guildManager')") ||
+    content.includes('moduleSectionManager') ||
+    content.includes('getGuildSection') ||
+    content.includes('updateGuildSection') ||
+    content.includes('saveGuildSection');
+}
+
 function auditSource() {
   const files = walk(SRC_DIR);
   const findings = [];
@@ -108,21 +97,12 @@ function auditSource() {
   ];
 
   for (const file of files) {
-    const relativePath = toPosix(file);
+    const relativePath = relative(file);
     const content = fs.readFileSync(file, 'utf8');
     const matches = findMatches(content, suspiciousPatterns);
 
     if (!matches.length) continue;
-
-    const allowed = isAllowedSeparateRuntimeUse(relativePath, content);
-    const usesGuildManager = content.includes("require('../../guild/guildManager')") ||
-      content.includes("require('../guild/guildManager')") ||
-      content.includes('moduleSectionManager') ||
-      content.includes('getGuildSection') ||
-      content.includes('updateGuildSection') ||
-      content.includes('saveGuildSection');
-
-    if (allowed || usesGuildManager) continue;
+    if (isAllowedSeparateRuntimeUse(relativePath, content) || usesGuildStorage(content)) continue;
 
     findings.push({
       file: relativePath,
@@ -139,39 +119,43 @@ function auditSource() {
 function auditGuildJson(mode, guildId) {
   if (!mode || !guildId) return null;
 
-  const guildFile = path.join(ROOT, 'src', 'runtime', mode, 'guilds', `${guildId}.json`);
-  if (!fs.existsSync(guildFile)) {
+  const guildFile = resolveRoot('src', 'runtime', mode, 'guilds', `${guildId}.json`);
+  const result = readJson(guildFile);
+
+  if (!result.ok) {
     return {
-      exists: false,
-      path: toPosix(guildFile),
+      exists: fs.existsSync(guildFile),
+      path: relative(guildFile),
+      error: result.error,
       sections: [],
       modules: [],
     };
   }
 
-  const data = JSON.parse(fs.readFileSync(guildFile, 'utf8'));
+  const data = result.data;
   return {
     exists: true,
-    path: toPosix(guildFile),
+    path: relative(guildFile),
     sections: Object.keys(data).sort(),
     modules: Object.keys(data.modules || {}).sort(),
   };
 }
 
 function main() {
-  const mode = process.argv[2] || process.env.BOT_MODE || 'dev';
+  const mode = String(process.argv[2] || process.env.BOT_MODE || 'dev').toLowerCase();
   const guildId = process.argv[3] || process.env.GUILD_ID || process.env.DEV_GUILD_ID || '';
   const findings = auditSource();
-  const guildAudit = auditGuildJson(String(mode).toLowerCase(), guildId);
+  const guildAudit = auditGuildJson(mode, guildId);
 
-  console.log('\nGoliath single guild runtime audit');
-  console.log('==================================');
-  console.log(`Mode: ${String(mode).toLowerCase()}`);
-  console.log(`Guild: ${guildId || '(not supplied)'}`);
+  printHeader('Goliath single guild runtime audit', {
+    Mode: mode,
+    Guild: guildId || '(not supplied)',
+  });
 
   if (guildAudit) {
     console.log(`Guild JSON: ${guildAudit.path}`);
     console.log(`Exists: ${guildAudit.exists ? 'yes' : 'no'}`);
+    if (guildAudit.error) console.log(`Error: ${guildAudit.error}`);
     console.log(`Top-level sections: ${guildAudit.sections.join(', ') || '(none)'}`);
     console.log(`Module sections: ${guildAudit.modules.join(', ') || '(none)'}`);
   }
