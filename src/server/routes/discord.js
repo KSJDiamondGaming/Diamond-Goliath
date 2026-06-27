@@ -21,12 +21,7 @@ function sleep(ms) {
 }
 
 function getBotToken() {
-  return String(
-    process.env.DISCORD_TOKEN ||
-      process.env.TOKEN ||
-      process.env.DISCORD_BOT_TOKEN ||
-      ''
-  ).trim();
+  return String(process.env.DISCORD_TOKEN || process.env.TOKEN || process.env.DISCORD_BOT_TOKEN || '').trim();
 }
 
 function requireBotToken() {
@@ -36,9 +31,7 @@ function requireBotToken() {
 }
 
 function getBotMode() {
-  return String(process.env.BOT_MODE || process.env.NODE_ENV || 'production')
-    .trim()
-    .toUpperCase();
+  return String(process.env.BOT_MODE || process.env.NODE_ENV || 'production').trim().toUpperCase();
 }
 
 function getOwnerIds() {
@@ -190,17 +183,27 @@ function serialiseChannel(channel) {
 }
 
 function buildLiveResources(guild) {
-  const allChannels = [...(guild.channels.cache?.values?.() || [])].map(serialiseChannel).filter(Boolean).sort((a, b) => {
-    const pos = (a.position || 0) - (b.position || 0);
-    return pos || String(a.name).localeCompare(String(b.name));
-  });
+  const allChannels = [...(guild.channels.cache?.values?.() || [])]
+    .map(serialiseChannel)
+    .filter(Boolean)
+    .sort((a, b) => {
+      const pos = (a.position || 0) - (b.position || 0);
+      return pos || String(a.name).localeCompare(String(b.name));
+    });
+
   return {
     lastSync: new Date().toISOString(),
     guild: { id: guild.id, name: guild.name, iconUrl: guild.iconURL?.({ extension: 'png', size: 128 }) || null },
     channels: allChannels.filter((channel) => channel.type !== ChannelType.GuildCategory),
     categories: allChannels.filter((channel) => channel.type === ChannelType.GuildCategory),
-    roles: [...(guild.roles.cache?.values?.() || [])].filter((role) => role.id !== guild.id).map(serialiseRole).filter(Boolean).sort((a, b) => (b.position || 0) - (a.position || 0)),
-    emojis: [...(guild.emojis.cache?.values?.() || [])].map((emoji) => ({ id: emoji.id, name: emoji.name, animated: emoji.animated === true })).sort((a, b) => String(a.name).localeCompare(String(b.name))),
+    roles: [...(guild.roles.cache?.values?.() || [])]
+      .filter((role) => role.id !== guild.id)
+      .map(serialiseRole)
+      .filter(Boolean)
+      .sort((a, b) => (b.position || 0) - (a.position || 0)),
+    emojis: [...(guild.emojis.cache?.values?.() || [])]
+      .map((emoji) => ({ id: emoji.id, name: emoji.name, animated: emoji.animated === true }))
+      .sort((a, b) => String(a.name).localeCompare(String(b.name))),
   };
 }
 
@@ -244,6 +247,29 @@ function cleanRolePermissions(value) {
   const selected = Array.isArray(value) ? value : [];
   const allowed = selected.filter((name) => typeof name === 'string' && PermissionFlagsBits[name]);
   return new PermissionsBitField(allowed.map((name) => PermissionFlagsBits[name]));
+}
+
+function buildRolePositionPayload(guild, requestedRoleIds = []) {
+  const me = guild.members.me;
+  const botHighestPosition = me?.roles?.highest?.position ?? 0;
+  const roleMap = new Map(guild.roles.cache.map((role) => [role.id, role]));
+  const editableRoles = requestedRoleIds
+    .map((id) => roleMap.get(String(id)))
+    .filter((role) => role && role.id !== guild.id && !role.managed && role.position < botHighestPosition);
+
+  if (!editableRoles.length) return [];
+
+  const editableIds = new Set(editableRoles.map((role) => role.id));
+  const currentEditable = [...guild.roles.cache.values()]
+    .filter((role) => role.id !== guild.id && !role.managed && role.position < botHighestPosition)
+    .sort((a, b) => b.position - a.position);
+
+  const requestedOrdered = editableRoles;
+  const remaining = currentEditable.filter((role) => !editableIds.has(role.id));
+  const mergedTopDown = [...requestedOrdered, ...remaining];
+  const positions = currentEditable.map((role) => role.position).sort((a, b) => b - a);
+
+  return mergedTopDown.map((role, index) => ({ role, position: positions[index] })).filter((item) => Number.isFinite(item.position));
 }
 
 router.get('/guilds', async (req, res) => {
@@ -344,6 +370,26 @@ router.post('/:guildId/roles', async (req, res) => {
   } catch (error) {
     console.error('Failed to create Discord role:', error);
     return res.status(400).json({ success: false, error: error.message || 'Failed to create Discord role.' });
+  }
+});
+
+router.patch('/:guildId/roles/order', async (req, res) => {
+  try {
+    if (!isAuthenticated(req)) return res.status(401).json({ error: 'Not authenticated' });
+    const guild = await fetchGuild(req, req.params.guildId);
+    if (!guild) return res.status(404).json({ error: 'Guild is not available to the bot.' });
+    if (!botCanManageRoles(guild)) return res.status(403).json({ error: 'Goliath needs Manage Roles to reorder guild roles.' });
+
+    const roleIds = Array.isArray(req.body?.roleIds) ? req.body.roleIds.map(String).filter(Boolean) : [];
+    const positions = buildRolePositionPayload(guild, roleIds);
+    if (!positions.length) return res.status(400).json({ success: false, error: 'No editable roles were provided. Goliath cannot move managed roles, @everyone, or roles above its own highest role.' });
+
+    await guild.roles.setPositions(positions, 'Goliath dashboard role reorder');
+    const resources = await syncDiscordResources(guild).catch(() => buildLiveResources(guild));
+    return res.json({ success: true, roles: Array.isArray(resources.roles) ? resources.roles : buildLiveResources(guild).roles });
+  } catch (error) {
+    console.error('Failed to reorder Discord roles:', error);
+    return res.status(400).json({ success: false, error: error.message || 'Failed to reorder Discord roles.' });
   }
 });
 
