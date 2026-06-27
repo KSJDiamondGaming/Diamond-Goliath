@@ -179,6 +179,13 @@ function parseGuildIds(value) {
     .filter((id) => /^\d{16,20}$/.test(id));
 }
 
+function getDiscordErrorSummary(error) {
+  const code = error?.code ? `Discord ${error.code}` : 'Error';
+  const status = error?.status ? `HTTP ${error.status}` : '';
+  const message = error?.rawError?.message || error?.message || String(error);
+  return [code, status, message].filter(Boolean).join(' · ');
+}
+
 function getAllJsFiles(dir) {
   if (!fs.existsSync(dir)) {
     return [];
@@ -305,42 +312,63 @@ function printSyncBanner(mode, commandsPath) {
 
 /* ---------------- DISCORD API ---------------- */
 
-async function clearGuildCommands(guildIds) {
-  for (const guildId of guildIds) {
-    await rest.put(
-      Routes.applicationGuildCommands(
-        CLIENT_ID,
-        guildId
-      ),
-      {
-        body: [],
-      }
-    );
+async function clearGuildCommands(guildId) {
+  await rest.put(
+    Routes.applicationGuildCommands(
+      CLIENT_ID,
+      guildId
+    ),
+    {
+      body: [],
+    }
+  );
 
-    console.log(
-      `🧹 Cleared guild commands: ${guildId}`
-    );
-  }
+  console.log(
+    `🧹 Cleared guild commands: ${guildId}`
+  );
 }
 
 async function registerGuildCommands(
-  guildIds,
+  guildId,
   commands
 ) {
-  for (const guildId of guildIds) {
-    await rest.put(
-      Routes.applicationGuildCommands(
-        CLIENT_ID,
-        guildId
-      ),
-      {
-        body: commands,
-      }
-    );
+  await rest.put(
+    Routes.applicationGuildCommands(
+      CLIENT_ID,
+      guildId
+    ),
+    {
+      body: commands,
+    }
+  );
 
-    console.log(
-      `✅ Registered ${commands.length} command(s) for guild: ${guildId}`
-    );
+  console.log(
+    `✅ Registered ${commands.length} command(s) for guild: ${guildId}`
+  );
+}
+
+async function syncGuildCommands(guildId, commands) {
+  try {
+    await clearGuildCommands(guildId);
+    await registerGuildCommands(guildId, commands);
+
+    return {
+      guildId,
+      ok: true,
+      commands: commands.length,
+    };
+  } catch (error) {
+    const reason = getDiscordErrorSummary(error);
+    console.warn(`❌ Guild command sync failed for ${guildId}: ${reason}`);
+
+    return {
+      guildId,
+      ok: false,
+      commands: 0,
+      reason,
+      code: error?.code,
+      status: error?.status,
+    };
   }
 }
 
@@ -366,6 +394,26 @@ async function registerGlobalCommands(commands) {
   console.log(
     `✅ Registered ${commands.length} global command(s)`
   );
+}
+
+function printGuildSyncSummary(results) {
+  const successful = results.filter((result) => result.ok);
+  const failed = results.filter((result) => !result.ok);
+
+  console.log('============================================================');
+  console.log('📋 Guild Command Sync Summary');
+  console.log(`✅ Successful: ${successful.length}`);
+  console.log(`❌ Failed: ${failed.length}`);
+
+  for (const result of successful) {
+    console.log(`✅ ${result.guildId} — ${result.commands} command(s)`);
+  }
+
+  for (const result of failed) {
+    console.log(`❌ ${result.guildId} — ${result.reason}`);
+  }
+
+  console.log('============================================================');
 }
 
 /* ---------------- SYNC ---------------- */
@@ -415,16 +463,22 @@ async function syncCommands(options = {}) {
     `📦 Commands loaded: ${commands.length}`
   );
 
+  let guildResults = [];
+
   if (mode === 'guild') {
     console.log(
       `🏠 Target guilds: ${guildIds.join(', ')}`
     );
 
-    await clearGuildCommands(guildIds);
-    await registerGuildCommands(
-      guildIds,
-      commands
-    );
+    for (const guildId of guildIds) {
+      guildResults.push(await syncGuildCommands(guildId, commands));
+    }
+
+    printGuildSyncSummary(guildResults);
+
+    if (!guildResults.some((result) => result.ok)) {
+      throw new Error('❌ Command sync failed for every target guild.');
+    }
   }
 
   if (mode === 'global') {
@@ -435,9 +489,13 @@ async function syncCommands(options = {}) {
   const durationMs =
     Date.now() - startedAt;
 
+  const failedGuilds = guildResults.filter((result) => !result.ok).length;
+
   console.log('============================================================');
   console.log(
-    `🎉 Command sync complete in ${durationMs}ms`
+    failedGuilds
+      ? `⚠️ Command sync completed with ${failedGuilds} guild failure(s) in ${durationMs}ms`
+      : `🎉 Command sync complete in ${durationMs}ms`
   );
   console.log('============================================================');
 
@@ -449,6 +507,9 @@ async function syncCommands(options = {}) {
       mode === 'guild'
         ? guildIds.length
         : 0,
+    successfulGuilds: guildResults.filter((result) => result.ok).length,
+    failedGuilds,
+    guildResults,
     durationMs,
   };
 }
@@ -469,4 +530,5 @@ module.exports = {
   parseGuildIds,
   getAllJsFiles,
   loadCommands,
+  syncGuildCommands,
 };
