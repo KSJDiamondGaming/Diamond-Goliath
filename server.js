@@ -9,12 +9,28 @@ const { Client, Collection, GatewayIntentBits, Partials } = require('discord.js'
 const { loadEnvironment } = require('./src/config/envLoader');
 loadEnvironment();
 
-function safeRequire(label, modulePath, fallback = null) {
+function isMissingOptionalModule(error, modulePath) {
+  if (error?.code !== 'MODULE_NOT_FOUND') return false;
+  const message = String(error.message || '');
+  return message.includes(modulePath) || message.includes(modulePath.replace(/^\.\//, ''));
+}
+
+function safeRequire(label, modulePath, fallback = null, options = {}) {
   try {
     return require(modulePath);
   } catch (error) {
-    console.warn(`⚠️ Optional startup module skipped: ${label}`);
-    console.warn(error?.message || error);
+    const optional = options.optional !== false;
+    const missingOptionalModule = optional && isMissingOptionalModule(error, modulePath);
+
+    if (missingOptionalModule) {
+      if (process.env.GOLIATH_VERBOSE_OPTIONAL_MODULES === 'true') {
+        console.info(`ℹ️ Optional startup module unavailable: ${label}`);
+      }
+      return fallback;
+    }
+
+    console.warn(`⚠️ Startup module failed: ${label}`);
+    console.warn(error?.stack || error?.message || error);
     return fallback;
   }
 }
@@ -23,46 +39,46 @@ function emptyRouter() {
   return express.Router();
 }
 
-const { getBotModeConfig } = safeRequire('botModes', './src/config/botModes', { getBotModeConfig: () => ({ token: process.env.DISCORD_BOT_TOKEN || process.env.DISCORD_TOKEN || process.env.TOKEN }) });
-const { enforceGuildAccess } = safeRequire('guildAccess', './src/config/guildAccess', { enforceGuildAccess: async () => true });
+const { getBotModeConfig } = safeRequire('botModes', './src/config/botModes', { getBotModeConfig: () => ({ token: process.env.DISCORD_BOT_TOKEN || process.env.DISCORD_TOKEN || process.env.TOKEN }) }, { optional: false });
+const { enforceGuildAccess } = safeRequire('guildAccess', './src/config/guildAccess', { enforceGuildAccess: async () => true }, { optional: false });
 const { bootstrapRuntime, runBootValidation, safeLoad, printStartupFingerprint } = safeRequire('runtimeBootstrap', './src/runtime/runtimeBootstrap', {
   bootstrapRuntime: () => ({}),
   runBootValidation: () => true,
   safeLoad: (label, fn) => { try { return { ok: true, result: fn() }; } catch (error) { console.warn(`⚠️ ${label} skipped`, error?.message || error); return { ok: false, result: null, error }; } },
   printStartupFingerprint: () => null,
-});
-const { initSocketHub } = safeRequire('socketHub', './src/server/sockets/socketHub', { initSocketHub: () => null });
+}, { optional: false });
+const { initSocketHub } = safeRequire('socketHub', './src/server/sockets/socketHub', { initSocketHub: () => null }, { optional: false });
 
-const authRoutes = safeRequire('auth routes', './src/server/routes/auth', emptyRouter());
-const discordRoutes = safeRequire('discord routes', './src/server/routes/discord', emptyRouter());
-const discordRoleEditorRoutes = safeRequire('discord role editor routes', './src/server/routes/discordRoleEditor', emptyRouter());
-const discordResourceRoutes = safeRequire('discord resource routes', './src/server/routes/discordResources', emptyRouter());
-const statusRoutes = safeRequire('status routes', './src/server/routes/status', emptyRouter());
-const ownerRoutes = safeRequire('owner routes', './src/server/routes/owner', emptyRouter());
-const ownerDiagnosticsRoutes = safeRequire('owner diagnostics routes', './src/server/routes/ownerDiagnostics', emptyRouter());
-const ownerTranslationRoutes = safeRequire('owner translation routes', './src/server/routes/ownerTranslation', emptyRouter());
-const automodRoutes = safeRequire('automod routes', './src/server/routes/config/automod', emptyRouter());
-const generalSettingsRoutes = safeRequire('general settings routes', './src/server/routes/config/generalSettings', emptyRouter());
-const logsRoutes = safeRequire('logs routes', './src/server/routes/config/logs', emptyRouter());
-const messagesRoutes = safeRequire('messages routes', './src/server/routes/config/messages', emptyRouter());
-const embedsRoutes = safeRequire('embeds routes', './src/server/routes/config/embeds', emptyRouter());
-const billingRoutes = safeRequire('billing routes', './src/server/routes/billing', emptyRouter());
-const moderationRoutes = safeRequire('moderation routes', './src/server/routes/moderation', emptyRouter());
-const serverRestoreRoutes = safeRequire('restore routes', './src/server/routes/serverRestoreRoutes', emptyRouter());
-const securityRoutes = safeRequire('security routes', './src/server/routes/security', emptyRouter());
-const ticketRoutes = safeRequire('ticket routes', './src/server/routes/tickets', emptyRouter());
-const formsRoutes = safeRequire('forms routes', './src/server/routes/forms', emptyRouter());
-const transcriptRoutes = safeRequire('transcript routes', './src/server/routes/transcripts', emptyRouter());
-const translationRoutes = safeRequire('translation routes', './src/server/routes/translation', emptyRouter());
-const permissionHealthRoutes = safeRequire('permission health routes', './src/server/routes/permissionHealth', emptyRouter());
-const socialRoutes = safeRequire('social routes', './src/server/routes/social', emptyRouter());
-const modulesRoutes = safeRequire('modules routes', './src/server/routes/modules', emptyRouter());
-const pollsRoutes = safeRequire('polls routes', './src/server/routes/polls', emptyRouter());
-const statsRoutes = safeRequire('stats routes', './src/server/routes/stats', emptyRouter());
-const tempVoiceRoutes = safeRequire('temp voice routes', './src/server/routes/tempVoice', emptyRouter());
-const starboardRoutes = safeRequire('starboard routes', './src/server/routes/starboard', emptyRouter());
+const authRoutes = safeRequire('auth routes', './src/server/routes/auth', emptyRouter(), { optional: false });
+const discordRoutes = safeRequire('discord routes', './src/server/routes/discord', emptyRouter(), { optional: false });
+const discordRoleEditorRoutes = safeRequire('discord role editor routes', './src/server/routes/discordRoleEditor', emptyRouter(), { optional: false });
+const discordResourceRoutes = safeRequire('discord resource routes', './src/server/routes/discordResources', emptyRouter(), { optional: false });
+const statusRoutes = safeRequire('status routes', './src/server/routes/status', emptyRouter(), { optional: false });
+const ownerRoutes = safeRequire('owner routes', './src/server/routes/owner', emptyRouter(), { optional: false });
+const ownerDiagnosticsRoutes = safeRequire('owner diagnostics routes', './src/server/routes/ownerDiagnostics', emptyRouter(), { optional: false });
+const ownerTranslationRoutes = safeRequire('owner translation routes', './src/server/routes/ownerTranslation', emptyRouter(), { optional: false });
+const automodRoutes = safeRequire('automod routes', './src/server/routes/config/automod', emptyRouter(), { optional: false });
+const generalSettingsRoutes = safeRequire('general settings routes', './src/server/routes/config/generalSettings', emptyRouter(), { optional: false });
+const logsRoutes = safeRequire('logs routes', './src/server/routes/config/logs', emptyRouter(), { optional: false });
+const messagesRoutes = safeRequire('messages routes', './src/server/routes/config/messages', emptyRouter(), { optional: false });
+const embedsRoutes = safeRequire('embeds routes', './src/server/routes/config/embeds', emptyRouter(), { optional: false });
+const billingRoutes = safeRequire('billing routes', './src/server/routes/billing', emptyRouter(), { optional: false });
+const moderationRoutes = safeRequire('moderation routes', './src/server/routes/moderation', emptyRouter(), { optional: false });
+const serverRestoreRoutes = safeRequire('restore routes', './src/server/routes/serverRestoreRoutes', emptyRouter(), { optional: false });
+const securityRoutes = safeRequire('security routes', './src/server/routes/security', emptyRouter(), { optional: false });
+const ticketRoutes = safeRequire('ticket routes', './src/server/routes/tickets', emptyRouter(), { optional: false });
+const formsRoutes = safeRequire('forms routes', './src/server/routes/forms', emptyRouter(), { optional: false });
+const transcriptRoutes = safeRequire('transcript routes', './src/server/routes/transcripts', emptyRouter(), { optional: false });
+const translationRoutes = safeRequire('translation routes', './src/server/routes/translation', emptyRouter(), { optional: false });
+const permissionHealthRoutes = safeRequire('permission health routes', './src/server/routes/permissionHealth', emptyRouter(), { optional: false });
+const socialRoutes = safeRequire('social routes', './src/server/routes/social', emptyRouter(), { optional: false });
+const modulesRoutes = safeRequire('modules routes', './src/server/routes/modules', emptyRouter(), { optional: false });
+const pollsRoutes = safeRequire('polls routes', './src/server/routes/polls', emptyRouter(), { optional: false });
+const statsRoutes = safeRequire('stats routes', './src/server/routes/stats', emptyRouter(), { optional: false });
+const tempVoiceRoutes = safeRequire('temp voice routes', './src/server/routes/tempVoice', emptyRouter(), { optional: false });
+const starboardRoutes = safeRequire('starboard routes', './src/server/routes/starboard', emptyRouter(), { optional: false });
 const deploymentRoutes = safeRequire('deployment routes', './src/server/routes/deployments', emptyRouter());
-const ownerDeploymentRoutes = safeRequire('owner deployment routes', './src/server/routes/ownerDeployments', emptyRouter());
+const ownerDeploymentRoutes = safeRequire('owner deployment routes', './src/server/routes/ownerDeployments', emptyRouter(), { optional: false });
 const ownerEmbedRoutes = safeRequire('owner embed routes', './src/server/routes/ownerEmbeds', emptyRouter());
 const ownerTicketRoutes = safeRequire('owner ticket routes', './src/server/routes/ownerTickets', emptyRouter());
 const ownerOperationsRoutes = safeRequire('owner operations routes', './src/server/routes/ownerOperations', emptyRouter());
@@ -73,8 +89,8 @@ const ownerSubscriptionRoutes = safeRequire('owner subscription routes', './src/
 const commandHandler = safeRequire('command handler', './src/handlers/commandHandler', { loadCommands: () => null });
 const backupScheduler = safeRequire('backup scheduler', './src/core/backup/backupScheduler', { startBackupScheduler: () => null });
 const defaultModules = safeRequire('default modules', './src/core/guild/defaultModules', { initializeDefaultModules: () => null });
-const guildManager = safeRequire('guild manager', './src/core/guild/guildManager', { syncGuildMeta: () => null });
-const resourceManager = safeRequire('discord resource manager', './src/core/guild/discordResourceManager', { syncDiscordResources: async () => null });
+const guildManager = safeRequire('guild manager', './src/core/guild/guildManager', { syncGuildMeta: () => null }, { optional: false });
+const resourceManager = safeRequire('discord resource manager', './src/core/guild/discordResourceManager', { syncDiscordResources: async () => null }, { optional: false });
 
 const config = getBotModeConfig();
 const botMode = String(config?.mode || process.env.BOT_MODE || 'DEV').toUpperCase();
@@ -187,7 +203,7 @@ function registerEvents() {
 
 registerEvents();
 
-client.once('ready', async () => {
+client.once('clientReady', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
   for (const guild of client.guilds.cache.values()) {
     try {
