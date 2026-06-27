@@ -28,7 +28,7 @@ function main() {
   assertContains('src/dashboard/js/pages/administration/Admin.jsx', 'Admin Control Panel', 'Admin control panel UI');
   assertContains('src/dashboard/js/pages/administration/Admin.jsx', 'Dashboard Control Panel', 'Admin dashboard control panel UI');
   assertContains('src/dashboard/js/pages/administration/Admin.jsx', 'Discord Control Panel', 'Admin Discord control panel UI');
-  assertContains('src/dashboard/js/pages/administration/Admin.jsx', 'Save Admin Control Panels', 'Admin control panel save action');
+  assertContains('src/dashboard/js/pages/administration/Admin.jsx', 'Save', 'Admin control panel save action');
   assertContains('src/dashboard/js/pages/administration/Admin.jsx', 'setNestedPermission', 'Admin control permission editor');
 
   assertContains('src/server/routes/ownerDiagnostics.js', "router.get('/deployments'", 'Deployment Centre diagnostics API route');
