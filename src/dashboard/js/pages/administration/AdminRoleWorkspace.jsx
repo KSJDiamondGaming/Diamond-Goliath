@@ -7,6 +7,7 @@ import { createSharedComponentStyles } from '../../ui/components';
 import AccessControlCard from './AccessControlCard';
 import CommandAccessPanel, { COMMAND_ACCESS_ITEMS, getConfiguredCommandAccessCount } from './CommandAccessPanel';
 import ModuleAccessPanel, { MODULE_ACCESS_ITEMS, getConfiguredModuleAccessCount } from './ModuleAccessPanel';
+import PermissionPresetsPanel from './PermissionPresetsPanel';
 import RoleCreatorFull from './RoleCreatorFull';
 import RoleEditorCard from './RoleEditorCardFull';
 
@@ -49,6 +50,15 @@ function normalizeAccess(access = {}) {
     roles: Array.isArray(access.roles) ? access.roles : [],
     users: Array.isArray(access.users) ? access.users : [],
   };
+}
+
+function addRoleToAccessGroup(group = {}, keys = [], roleId) {
+  const next = { ...group };
+  keys.forEach((key) => {
+    const access = normalizeAccess(next[key]);
+    next[key] = { ...access, roles: [...new Set([...access.roles, roleId])] };
+  });
+  return next;
 }
 
 function normalizeGeneral(config = {}) {
@@ -156,6 +166,26 @@ export default function AdminRoleWorkspace({ selectedGuild, theme }) {
 
   function setFullAccessRole(roleId, enabled) {
     updatePermissions((current) => ({ ...current, managerRoleIds: enabled ? [...new Set([...(current.managerRoleIds || []), roleId])] : (current.managerRoleIds || []).filter((id) => id !== roleId) }));
+  }
+
+  function applyPermissionPreset(roleId, preset) {
+    if (!roleId || !preset) return;
+    updatePermissions((current) => {
+      const nextAccessControl = { ...defaultAccessControl(), ...(current.accessControl || {}) };
+      const nextManagerRoleIds = preset.fullAccess ? [...new Set([...(current.managerRoleIds || []), roleId])] : (current.managerRoleIds || []);
+      return {
+        ...current,
+        accessControl: {
+          ...nextAccessControl,
+          commands: addRoleToAccessGroup(nextAccessControl.commands, preset.commands, roleId),
+          dashboardPages: addRoleToAccessGroup(nextAccessControl.dashboardPages, preset.dashboardPages, roleId),
+          modules: addRoleToAccessGroup(nextAccessControl.modules, preset.modules, roleId),
+        },
+        managerRoleIds: nextManagerRoleIds,
+      };
+    });
+    const roleName = roles.find((role) => role.id === roleId)?.name || 'role';
+    setNotice(`✅ Applied ${preset.label} preset to ${roleName}. Save Access to persist.`);
   }
 
   function setCommandAccess(commandKey, access) {
@@ -332,8 +362,9 @@ export default function AdminRoleWorkspace({ selectedGuild, theme }) {
       {notice ? <Notice theme={theme} tone="success">{notice}</Notice> : null}
       {loading ? <LoadingPanel theme={theme} text="Loading admin role workspace..." /> : null}
       {!loading ? <>
-        <SectionCard theme={theme}><div style={{ display: 'grid', gap: 18, padding: 'clamp(18px,2.6vw,24px)', border: `1px solid ${theme.primaryBorder || theme.cardBorder}`, borderRadius: 18, background: 'linear-gradient(135deg, rgba(59,130,246,0.18), rgba(15,23,42,0.10) 55%, rgba(168,85,247,0.14))' }}><div><h2 style={{ margin: 0, fontSize: 'clamp(26px,3vw,38px)' }}>Admin Role Workspace</h2><p style={{ margin: '10px 0 0', color: theme.mutedText, lineHeight: 1.6 }}>Create roles, edit existing roles, control dashboard, module and command access, and sync hierarchy with Discord.</p></div><StatGrid min="min(170px,100%)"><SummaryStat theme={theme} label="Guild Roles" value={roles.length} accent="#c084fc" description="Available Discord roles" /><SummaryStat theme={theme} label="Page Access" value={`${configuredDashboardPages}/${DASHBOARD_ACCESS_ITEMS.length}`} accent="#34d399" description="Dashboard pages configured" /><SummaryStat theme={theme} label="Module Access" value={`${configuredModules}/${MODULE_ACCESS_ITEMS.length}`} accent="#60a5fa" description="Modules configured" /><SummaryStat theme={theme} label="Command Access" value={`${configuredCommands}/${COMMAND_ACCESS_ITEMS.length}`} accent="#facc15" description="Commands configured" /></StatGrid></div></SectionCard>
+        <SectionCard theme={theme}><div style={{ display: 'grid', gap: 18, padding: 'clamp(18px,2.6vw,24px)', border: `1px solid ${theme.primaryBorder || theme.cardBorder}`, borderRadius: 18, background: 'linear-gradient(135deg, rgba(59,130,246,0.18), rgba(15,23,42,0.10) 55%, rgba(168,85,247,0.14))' }}><div><h2 style={{ margin: 0, fontSize: 'clamp(26px,3vw,38px)' }}>Admin Role Workspace</h2><p style={{ margin: '10px 0 0', color: theme.mutedText, lineHeight: 1.6 }}>Create roles, edit existing roles, apply permission presets, control access and sync hierarchy with Discord.</p></div><StatGrid min="min(170px,100%)"><SummaryStat theme={theme} label="Guild Roles" value={roles.length} accent="#c084fc" description="Available Discord roles" /><SummaryStat theme={theme} label="Page Access" value={`${configuredDashboardPages}/${DASHBOARD_ACCESS_ITEMS.length}`} accent="#34d399" description="Dashboard pages configured" /><SummaryStat theme={theme} label="Module Access" value={`${configuredModules}/${MODULE_ACCESS_ITEMS.length}`} accent="#60a5fa" description="Modules configured" /><SummaryStat theme={theme} label="Command Access" value={`${configuredCommands}/${COMMAND_ACCESS_ITEMS.length}`} accent="#facc15" description="Commands configured" /></StatGrid></div></SectionCard>
         <Panel theme={theme} title="Role Creator" subtitle="Create new Discord roles using the full permission matrix." open><RoleCreatorFull creating={creatingRole} onCreate={createRole} onSync={refreshGuildRoles} theme={theme} /></Panel>
+        <Panel theme={theme} title="Permission Presets" subtitle="Apply a starter access profile to any Discord role, then tweak the cards below if needed." open action={<button type="button" onClick={saveAccessControl} disabled={savingAccess} style={button(theme, 'success', savingAccess)}>{savingAccess ? 'Saving...' : 'Save Access'}</button>}><PermissionPresetsPanel onApply={applyPermissionPreset} roles={orderedRoles} selectedRoleId={selectedRoleId} theme={theme} /></Panel>
         <Panel theme={theme} title="Dashboard Access" subtitle="Control which roles or specific Discord user IDs can access each dashboard page. Empty means guild owner only." open action={<button type="button" onClick={saveAccessControl} disabled={savingAccess} style={button(theme, 'success', savingAccess)}>{savingAccess ? 'Saving...' : 'Save Access'}</button>}>
           <div style={{ display: 'grid', gap: 12 }}>{DASHBOARD_ACCESS_ITEMS.map(([key, label, description]) => <AccessControlCard key={key} access={dashboardPagesAccess[key]} description={description} guildRoles={orderedRoles} onChange={(nextAccess) => setDashboardAccess(key, nextAccess)} theme={theme} title={label} />)}</div>
         </Panel>
