@@ -28,10 +28,9 @@ bootstrapRuntime,
 runBootValidation,
 safeLoad,
 printStartupFingerprint,
-} = require('./src/core/runtime/runtimeBootstrap');
+} = require('./src/runtime/runtimeBootstrap');
 
 const { initSocketHub } = require('./src/server/sockets/socketHub');
-
 const authRoutes = require('./src/server/routes/auth');
 const discordRoutes = require('./src/server/routes/discord');
 const statusRoutes = require('./src/server/routes/status');
@@ -58,237 +57,115 @@ const socialRoutes = require('./src/server/routes/social');
 const modulesRoutes = require('./src/server/routes/modules');
 const pollsRoutes = require('./src/server/routes/polls');
 const statsRoutes = require('./src/server/routes/stats');
-const starboardRoutes = require('./src/server/routes/starboard');
 const tempVoiceRoutes = require('./src/server/routes/tempVoice');
+const starboardRoutes = require('./src/server/routes/starboard');
 
-/* ---------------- SAFE MODULE LOADS ---------------- */
+const deploymentRoutes = require('./src/server/routes/deployments');
+const ownerDeploymentRoutes = require('./src/server/routes/ownerDeployments');
 
-const backupSchedulerModule = safeLoad(
-'Server Backup Scheduler',
-() => require('./src/core/security/serverBackupScheduler'),
-);
+const discordResourceRoutes = require('./src/server/routes/discordResources');
+const ownerEmbedRoutes = require('./src/server/routes/ownerEmbeds');
+const ownerTicketRoutes = require('./src/server/routes/ownerTickets');
+const ownerOperationsRoutes = require('./src/server/routes/ownerOperations');
+const ownerPermissionsRoutes = require('./src/server/routes/ownerPermissions');
+const ownerSecurityRoutes = require('./src/server/routes/ownerSecurity');
+const ownerSubscriptionRoutes = require('./src/server/routes/ownerSubscription');
 
-const startServerBackupScheduler =
-backupSchedulerModule.ok &&
-typeof backupSchedulerModule.result?.startServerBackupScheduler === 'function'
-? backupSchedulerModule.result.startServerBackupScheduler
-: null;
+const interactionCreate = require('./src/events/interactions/interactionCreate');
+const messageCreate = require('./src/events/messages/messageCreate');
+const memberJoinLeave = require('./src/events/members/memberJoinLeave');
+const inviteLogs = require('./src/events/invites/inviteLogs');
+const channelLogs = require('./src/events/channels/channelLogs');
+const roleLogs = require('./src/events/roles/roleLogs');
+const emojiLogs = require('./src/events/emojis/emojiLogs');
+const webhookLogs = require('./src/events/webhooks/webhookLogs');
+const threadLogs = require('./src/events/threads/threadLogs');
+const messageLogs = require('./src/events/messages/messageLogs');
+const voiceStateUpdate = require('./src/events/voice/voiceStateUpdate');
+const guildLogs = require('./src/events/guild/guildLogs');
 
-const socialSchedulerModule = safeLoad(
-'Social Scheduler',
-() => require('./src/modules/social/socialScheduler'),
-);
+const commandHandler = require('./src/handlers/commandHandler');
 
-const startSocialScheduler =
-socialSchedulerModule.ok &&
-typeof socialSchedulerModule.result?.startSocialScheduler === 'function'
-? socialSchedulerModule.result.startSocialScheduler
-: null;
+const { startBackupScheduler } = require('./src/core/backup/backupScheduler');
+const { initializeDefaultModules } = require('./src/core/guild/defaultModules');
+const { syncGuildMeta } = require('./src/core/guild/guildManager');
+const { syncDiscordResources } = require('./src/core/guild/discordResourceManager');
+const { getRuntimePaths } = require('./src/config/runtimePaths');
 
-const subscriptionWorkerModule = safeLoad(
-'Subscription Worker',
-() => require('./src/server/billing/subscriptionWorker'),
-);
+const config = getBotModeConfig();
+const PORT = Number(process.env.PORT || 3001);
+const SESSION_SECRET = process.env.SESSION_SECRET || 'goliath-dev-session-secret';
 
-const startSubscriptionWorker =
-subscriptionWorkerModule.ok &&
-typeof subscriptionWorkerModule.result?.startSubscriptionWorker === 'function'
-? subscriptionWorkerModule.result.startSubscriptionWorker
-: null;
+const runtimePaths = bootstrapRuntime(config);
+printStartupFingerprint(config, runtimePaths);
 
-/* ---------------- ENV / MODE ---------------- */
-
-const ALLOWED_MODES = ['dev', 'beta', 'production'];
-
-function resolveBotMode() {
-const argMode = process.argv[2]?.toLowerCase();
-const envMode = process.env.BOT_MODE?.toLowerCase();
-
-if (ALLOWED_MODES.includes(argMode)) return argMode;
-if (ALLOWED_MODES.includes(envMode)) return envMode;
-
-return 'dev';
-}
-
-const selectedMode = resolveBotMode();
-
-process.env.BOT_MODE = selectedMode;
-
-const loadedEnv = loadEnvironment(selectedMode);
-const BOT_MODE = selectedMode.toUpperCase();
-const activeMode = getBotModeConfig(BOT_MODE);
-
-const isProduction = process.env.NODE_ENV === 'production';
-
-if (!process.env.DISCORD_BOT_TOKEN && process.env.DISCORD_TOKEN) {
-process.env.DISCORD_BOT_TOKEN = process.env.DISCORD_TOKEN;
-}
-
-if (!process.env.TOKEN && process.env.DISCORD_TOKEN) {
-process.env.TOKEN = process.env.DISCORD_TOKEN;
-}
-
-/* ---------------- CLIENT ---------------- */
+runBootValidation({
+requiredPaths: [
+{ path: path.join(process.cwd(), 'src'), label: 'src root' },
+{ path: path.join(process.cwd(), 'src', 'dashboard'), label: 'dashboard source' },
+],
+requiredEnv: ['DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET'],
+});
 
 const client = new Client({
 intents: [
 GatewayIntentBits.Guilds,
 GatewayIntentBits.GuildMembers,
 GatewayIntentBits.GuildMessages,
+GatewayIntentBits.GuildMessageReactions,
+GatewayIntentBits.GuildInvites,
 GatewayIntentBits.GuildVoiceStates,
 GatewayIntentBits.MessageContent,
 ],
-partials: [Partials.Channel, Partials.Message],
+partials: [Partials.Message, Partials.Channel, Partials.Reaction],
 });
 
 client.commands = new Collection();
-client.botMode = BOT_MODE;
-client.modeConfig = activeMode;
 
-/* ---------------- HELPERS ---------------- */
-
-function getRequiredEnv(name) {
-const value = process.env[name];
-
-if (!value || !String(value).trim()) {
-console.error(`❌ Missing required environment variable: ${name}`);
-process.exit(1);
-}
-
-return value;
-}
-
-function getAllJsFiles(dir) {
-if (!fs.existsSync(dir)) return [];
-
-const results = [];
-
-for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-const fullPath = path.join(dir, entry.name);
-
-if (entry.isDirectory()) {
-  results.push(...getAllJsFiles(fullPath));
-  continue;
-}
-
-if (
-  entry.isFile() &&
-  entry.name.endsWith('.js') &&
-  !entry.name.endsWith('.test.js') &&
-  !entry.name.endsWith('.spec.js')
-) {
-  results.push(fullPath);
-}
-}
-
-return results.sort((a, b) => a.localeCompare(b));
-}
-
-function printStartupBanner() {
-const modeLabels = {
-DEV: '🟢 GOLIATH DEV',
-BETA: '🟡 GOLIATH BETA',
-PRODUCTION: '🔴 GOLIATH PRODUCTION',
-};
-
-console.log('============================================================');
-console.log(`🚀 Starting ${modeLabels[BOT_MODE] || 'Goliath'}`);
-console.log(`🧠 Mode: ${BOT_MODE}`);
-console.log(`📄 Env: ${loadedEnv.envFile}`);
-console.log('================================================------------');
-}
-
-/* ---------------- DASHBOARD API ---------------- */
-
-function getAllowedOrigins() {
-const origins = new Set([
-'https://goliath.ksjdigital.co.uk',
-'http://localhost:5173',
-]);
-
-const envOrigins = [
-process.env.CLIENT_URL,
-process.env.DASHBOARD_CLIENT_URL,
-process.env.VITE_CLIENT_URL,
-];
-
-for (const origin of envOrigins) {
-if (origin && String(origin).trim()) {
-origins.add(String(origin).trim());
-}
-}
-
-return [...origins];
-}
-
-function getDashboardClientUrl() {
-return String(
-process.env.DASHBOARD_CLIENT_URL ||
-process.env.CLIENT_URL ||
-'http://localhost:5173',
-).replace(/\/$/, '');
-}
-
-function startDashboardApiServer() {
 const app = express();
-const apiServer = http.createServer(app);
-const dashboardClientUrl = getDashboardClientUrl();
+const server = http.createServer(app);
+const io = initSocketHub(server);
 
-app.set('trust proxy', 1);
 app.set('goliath.client', client);
+app.set('goliath.io', io);
 
-const allowedOrigins = getAllowedOrigins();
-
-app.use(
-cors({
-origin(origin, callback) {
-  if (!origin || allowedOrigins.includes(origin)) {
-    callback(null, true);
-    return;
-  }
-
-  callback(new Error(`CORS blocked origin: ${origin}`));
-},
+app.use(cors({
+origin: process.env.DASHBOARD_URL || 'http://localhost:5173',
 credentials: true,
-}),
-);
+}));
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: true }));
 
-app.use(express.json({ limit: '1mb' }));
-
-app.use(
-session({
-secret: process.env.SESSION_SECRET || process.env.DASHBOARD_SESSION_SECRET || 'goliath-dev-session',
+app.use(session({
+secret: SESSION_SECRET,
 resave: false,
 saveUninitialized: false,
 cookie: {
-  httpOnly: true,
-  secure: isProduction,
-  sameSite: isProduction ? 'none' : 'lax',
-  maxAge: 1000 * 60 * 60 * 24 * 7,
+secure: false,
+httpOnly: true,
+maxAge: 1000 * 60 * 60 * 24 * 7,
 },
-}),
-);
+}));
 
 app.use((req, res, next) => {
 req.client = client;
-req.io = req.app.get('io');
+req.io = io;
 next();
 });
 
-app.use('/auth', authRoutes);
 app.use('/api/auth', authRoutes);
-app.use('/api/status', statusRoutes);
-app.use('/api/owner/diagnostics', ownerDiagnosticsRoutes);
-app.use('/api/owner', ownerRoutes);
-app.use('/api/owner/translation', ownerTranslationRoutes);
 app.use('/api/discord', discordRoutes);
+app.use('/api/status', statusRoutes);
+app.use('/api/owner', ownerRoutes);
+app.use('/api/owner/diagnostics', ownerDiagnosticsRoutes);
+app.use('/api/owner/translation', ownerTranslationRoutes);
 app.use('/api/config/automod', automodRoutes);
 app.use('/api/config/general', generalSettingsRoutes);
 app.use('/api/config/logs', logsRoutes);
 app.use('/api/config/messages', messagesRoutes);
 app.use('/api/config/embeds', embedsRoutes);
 app.use('/api/billing', billingRoutes);
-app.use('/api/moderation', moderationRoutes);
+app.use('/api/cases', moderationRoutes);
 app.use('/api/restore', serverRestoreRoutes);
 app.use('/api/security', securityRoutes);
 app.use('/api/tickets', ticketRoutes);
@@ -300,157 +177,81 @@ app.use('/api/social', socialRoutes);
 app.use('/api/modules', modulesRoutes);
 app.use('/api/polls', pollsRoutes);
 app.use('/api/stats', statsRoutes);
-app.use('/api/starboard', starboardRoutes);
 app.use('/api/temp-voice', tempVoiceRoutes);
+app.use('/api/starboard', starboardRoutes);
+app.use('/api/deployments', deploymentRoutes);
+app.use('/api/owner/deployments', ownerDeploymentRoutes);
+app.use('/api/resources', discordResourceRoutes);
+app.use('/api/owner/embeds', ownerEmbedRoutes);
+app.use('/api/owner/tickets', ownerTicketRoutes);
+app.use('/api/owner/operations', ownerOperationsRoutes);
+app.use('/api/owner/permissions', ownerPermissionsRoutes);
+app.use('/api/owner/security', ownerSecurityRoutes);
+app.use('/api/owner/subscription', ownerSubscriptionRoutes);
 
-app.use(express.static(path.join(process.cwd(), 'dist')));
-
+const dashboardDist = path.join(process.cwd(), 'dist');
+if (fs.existsSync(dashboardDist)) {
+app.use(express.static(dashboardDist));
 app.get('*', (req, res) => {
-res.sendFile(path.join(process.cwd(), 'dist', 'index.html'));
-});
-
-initSocketHub(apiServer, {
-clientUrl: dashboardClientUrl,
-});
-
-const apiPort = Number(process.env.PORT || process.env.BOT_API_PORT || 3001);
-
-apiServer.listen(apiPort, () => {
-console.log(`🌐 Dashboard API running on http://localhost:${apiPort}`);
-});
-
-return apiServer;
-}
-
-/* ---------------- COMMANDS ---------------- */
-
-function loadCommands() {
-const commandsPath = path.join(process.cwd(), 'src', 'commands');
-const files = getAllJsFiles(commandsPath);
-
-console.log(`📦 Loading commands from: ${commandsPath}`);
-
-for (const file of files) {
-try {
-delete require.cache[require.resolve(file)];
-
-  const command = require(file);
-
-  if (!command?.data?.name || typeof command.execute !== 'function') {
-    console.warn(`⚠️ Skipped command: ${file}`);
-    continue;
-  }
-
-  client.commands.set(command.data.name, command);
-  console.log(`✅ Command: ${command.data.name}`);
-} catch (error) {
-  console.error(`❌ Command failed: ${file}`);
-  console.error(error);
-}
-}
-
-console.log(`✅ Loaded ${client.commands.size} command(s).`);
-}
-
-/* ---------------- EVENTS ---------------- */
-const registeredEvents = new Set();
-
-function registerEvent(event, file) {
-if (!event?.name || typeof event.execute !== 'function') {
-console.warn(`⚠️ Skipped event in: ${file}`);
-return;
-}
-
-const eventKey = `${event.name}:${file}`;
-
-if (registeredEvents.has(eventKey)) {
-console.warn(`⚠️ Duplicate event skipped: ${event.name} (${file})`);
-return;
-}
-
-registeredEvents.add(eventKey);
-
-if (event.name === 'interactionCreate') {
-const existing = client.listenerCount('interactionCreate');
-
-if (existing > 0) {
-  console.warn(
-    `⚠️ interactionCreate already has ${existing} listener(s); registering additional handler from ${file}`,
-  );
-}
-}
-
-client.on(event.name, async (...args) => {
-try {
-await event.execute(...args, client);
-} catch (error) {
-console.error(`❌ Event error: ${event.name}`);
-console.error(error);
-}
+if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'Not found' });
+return res.sendFile(path.join(dashboardDist, 'index.html'));
 });
 }
 
-async function start() {
-printStartupBanner();
+safeLoad('commands', () => commandHandler.loadCommands(client));
 
-bootstrapRuntime({ mode: selectedMode });
-printStartupFingerprint({ mode: BOT_MODE });
+client.once('ready', async () => {
+console.log(`✅ Logged in as ${client.user.tag}`);
 
-runBootValidation({
-mode: selectedMode,
+for (const guild of client.guilds.cache.values()) {
+try {
+enforceGuildAccess(guild.id);
+initializeDefaultModules(guild.id);
+syncGuildMeta(guild);
+await syncDiscordResources(guild);
+} catch (error) {
+console.error(`❌ Guild startup sync failed for ${guild.id}`, error);
+}
+}
+
+startBackupScheduler(client);
 });
 
-getRequiredEnv('DISCORD_BOT_TOKEN');
-getRequiredEnv('DISCORD_CLIENT_ID');
-
-loadCommands();
-
-const eventsPath = path.join(process.cwd(), 'src', 'events');
-
-for (const file of getAllJsFiles(eventsPath)) {
+client.on('interactionCreate', (...args) => interactionCreate.execute(...args));
+client.on('messageCreate', (...args) => messageCreate.execute(...args));
+client.on('guildMemberAdd', (...args) => memberJoinLeave.guildMemberAdd(...args));
+client.on('guildMemberRemove', (...args) => memberJoinLeave.guildMemberRemove(...args));
+client.on('inviteCreate', (...args) => inviteLogs.inviteCreate(...args));
+client.on('inviteDelete', (...args) => inviteLogs.inviteDelete(...args));
+client.on('channelCreate', (...args) => channelLogs.channelCreate(...args));
+client.on('channelDelete', (...args) => channelLogs.channelDelete(...args));
+client.on('channelUpdate', (...args) => channelLogs.channelUpdate(...args));
+client.on('roleCreate', (...args) => roleLogs.roleCreate(...args));
+client.on('roleDelete', (...args) => roleLogs.roleDelete(...args));
+client.on('roleUpdate', (...args) => roleLogs.roleUpdate(...args));
+client.on('emojiCreate', (...args) => emojiLogs.emojiCreate(...args));
+client.on('emojiDelete', (...args) => emojiLogs.emojiDelete(...args));
+client.on('emojiUpdate', (...args) => emojiLogs.emojiUpdate(...args));
+client.on('webhookUpdate', (...args) => webhookLogs.webhookUpdate(...args));
+client.on('threadCreate', (...args) => threadLogs.threadCreate(...args));
+client.on('threadDelete', (...args) => threadLogs.threadDelete(...args));
+client.on('threadUpdate', (...args) => threadLogs.threadUpdate(...args));
+client.on('messageDelete', (...args) => messageLogs.messageDelete(...args));
+client.on('messageUpdate', (...args) => messageLogs.messageUpdate(...args));
+client.on('voiceStateUpdate', (...args) => voiceStateUpdate.execute(...args));
+client.on('guildCreate', (guild) => {
 try {
-const loadedEvent = require(file);
-const events = Array.isArray(loadedEvent) ? loadedEvent : [loadedEvent];
-
-for (const event of events) {
-  registerEvent(event, file);
-}
+enforceGuildAccess(guild.id);
+initializeDefaultModules(guild.id);
+syncGuildMeta(guild);
+syncDiscordResources(guild).catch((error) => console.error(`❌ Guild resource sync failed for ${guild.id}`, error));
 } catch (error) {
-console.error(`❌ Event failed: ${file}`);
-console.error(error);
+console.error(`❌ Guild create rejected for ${guild.id}`, error);
+guild.leave().catch(() => null);
 }
-}
+});
 
-startDashboardApiServer();
-
-if (startServerBackupScheduler) {
-try {
-startServerBackupScheduler(client);
-} catch (error) {
-console.error('⚠️ Failed to start Server Backup Scheduler:', error);
-}
-}
-
-if (startSocialScheduler) {
-try {
-startSocialScheduler(client);
-} catch (error) {
-console.error('⚠️ Failed to start Social Scheduler:', error);
-}
-}
-
-if (startSubscriptionWorker) {
-try {
-startSubscriptionWorker(client);
-} catch (error) {
-console.error('⚠️ Failed to start Subscription Worker:', error);
-}
-}
-
-await client.login(process.env.DISCORD_BOT_TOKEN);
-}
-
-start().catch((error) => {
-console.error('❌ Fatal startup error:', error);
-process.exit(1);
+client.login(config.token);
+server.listen(PORT, () => {
+console.log(`🚀 Goliath dashboard/server listening on port ${PORT}`);
 });
