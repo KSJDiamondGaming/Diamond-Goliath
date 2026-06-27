@@ -59,7 +59,7 @@ const DISCORD_ACTIONS = [
   ['manage', 'Manage'],
   ['sync', 'Sync'],
   ['create', 'Create'],
-  ['override', 'Override'],
+  ['admin', 'Advanced'],
 ];
 
 function getGuildId(selectedGuild) {
@@ -206,11 +206,7 @@ export default function Admin({ selectedGuild, theme }) {
       setDashboardRoleId(role.id);
       setDiscordRoleId(role.id);
       addManagerRole(role.id);
-      setGlobalRolePermission(role.id, 'view', true);
-      setGlobalRolePermission(role.id, 'edit', true);
-      setGlobalRolePermission(role.id, 'configure', true);
-      setGlobalRolePermission(role.id, 'deploy', true);
-      setGlobalRolePermission(role.id, 'manage', true);
+      ['view', 'edit', 'configure', 'deploy', 'manage'].forEach((action) => setGlobalRolePermission(role.id, action, true));
       setNotice(`✅ Created Discord role ${role.name}. Save Admin Control Panels to persist access.`);
     } catch (err) { console.error(err); setError(err.message || 'Failed to create Discord role.'); }
     finally { setCreatingRole(false); }
