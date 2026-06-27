@@ -18,6 +18,7 @@ const DEFAULT_DASHBOARD_PERMISSIONS = {
   enabled: true,
   syncDiscordRoles: false,
   managerRoleIds: [],
+  roleOrder: [],
   roleAccess: {},
   moduleAccess: {},
   discordAccess: {},
@@ -83,6 +84,7 @@ function normalizeDashboardPermissions(value = {}) {
     enabled: source.enabled !== false,
     syncDiscordRoles: source.syncDiscordRoles === true,
     managerRoleIds: safeArray(source.managerRoleIds),
+    roleOrder: safeArray(source.roleOrder),
     roleAccess: Object.fromEntries(
       Object.entries(roleAccess).map(([roleId, access]) => [String(roleId), normalizePermissionList(access)])
     ),
