@@ -3,7 +3,7 @@ import { lazy } from 'react';
 const Overview = lazy(() => import('../pages/core/Overview'));
 const Billing = lazy(() => import('../pages/core/Billing'));
 const AutoMod = lazy(() => import('../pages/administration/AutoMod'));
-const Admin = lazy(() => import('../pages/administration/Admin'));
+const Admin = lazy(() => import('../pages/administration/AdminRoleWorkspace'));
 const Moderation = lazy(() => import('../pages/moderation/Moderation'));
 const Cases = lazy(() => import('../pages/moderation/Cases'));
 const GeneralSettings = lazy(() => import('../pages/administration/GeneralSettings'));
