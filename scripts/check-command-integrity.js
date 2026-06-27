@@ -1,34 +1,9 @@
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
+const { printHeader, relative, resolveRoot, walk } = require('./lib/scriptUtils');
 
-const ROOT = path.resolve(__dirname, '..');
-const COMMANDS_DIR = path.join(ROOT, 'src', 'commands');
+const COMMANDS_DIR = resolveRoot('src', 'commands');
 const IGNORE_SUFFIXES = ['.test.js', '.spec.js'];
-
-function toPosix(filePath) {
-  return path.relative(ROOT, filePath).replace(/\\/g, '/');
-}
-
-function walk(dir, files = []) {
-  if (!fs.existsSync(dir)) return files;
-
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const fullPath = path.join(dir, entry.name);
-
-    if (entry.isDirectory()) {
-      walk(fullPath, files);
-      continue;
-    }
-
-    if (entry.isFile() && entry.name.endsWith('.js') && !IGNORE_SUFFIXES.some((suffix) => entry.name.endsWith(suffix))) {
-      files.push(fullPath);
-    }
-  }
-
-  return files.sort((a, b) => a.localeCompare(b));
-}
 
 function getCommandJson(command) {
   if (!command?.data) return null;
@@ -38,14 +13,13 @@ function getCommandJson(command) {
 }
 
 function validateCommand(filePath, command, seenNames) {
-  const relativePath = toPosix(filePath);
   const errors = [];
   const warnings = [];
   const json = getCommandJson(command);
 
   if (!command || typeof command !== 'object') {
     errors.push('Command module must export an object.');
-    return { file: relativePath, name: '(unknown)', errors, warnings };
+    return { file: relative(filePath), name: '(unknown)', errors, warnings };
   }
 
   if (!command.data) errors.push('Missing data export.');
@@ -53,7 +27,7 @@ function validateCommand(filePath, command, seenNames) {
 
   if (!json || typeof json !== 'object') {
     errors.push('Command data cannot be converted to JSON.');
-    return { file: relativePath, name: '(unknown)', errors, warnings };
+    return { file: relative(filePath), name: '(unknown)', errors, warnings };
   }
 
   const name = json.name || command.data?.name || '(unknown)';
@@ -73,16 +47,16 @@ function validateCommand(filePath, command, seenNames) {
     errors.push(`Command JSON is not serializable: ${error.message}`);
   }
 
-  return { file: relativePath, name, errors, warnings };
+  return { file: relative(filePath), name, errors, warnings };
 }
 
 function auditCommands() {
-  const files = walk(COMMANDS_DIR);
+  const files = walk(COMMANDS_DIR, { ignoreSuffixes: IGNORE_SUFFIXES });
   const seenNames = new Set();
   const results = [];
 
   if (!files.length) {
-    throw new Error(`No command files found in ${toPosix(COMMANDS_DIR)}`);
+    throw new Error(`No command files found in ${relative(COMMANDS_DIR)}`);
   }
 
   for (const filePath of files) {
@@ -92,7 +66,7 @@ function auditCommands() {
       results.push(validateCommand(filePath, command, seenNames));
     } catch (error) {
       results.push({
-        file: toPosix(filePath),
+        file: relative(filePath),
         name: '(import failed)',
         errors: [`Failed to import command: ${error.message}`],
         warnings: [],
@@ -109,13 +83,12 @@ function main() {
   const warned = results.filter((result) => result.warnings.length && !result.errors.length);
   const passed = results.filter((result) => !result.errors.length && !result.warnings.length);
 
-  console.log('============================================================');
-  console.log('🧪 Goliath Command Integrity Check');
-  console.log(`Commands scanned: ${results.length}`);
-  console.log(`✅ Passed: ${passed.length}`);
-  console.log(`⚠️ Warnings: ${warned.length}`);
-  console.log(`❌ Failed: ${failed.length}`);
-  console.log('============================================================');
+  printHeader('🧪 Goliath Command Integrity Check', {
+    'Commands scanned': results.length,
+    'Passed': passed.length,
+    'Warnings': warned.length,
+    'Failed': failed.length,
+  });
 
   for (const result of results) {
     if (!result.errors.length && !result.warnings.length) continue;
