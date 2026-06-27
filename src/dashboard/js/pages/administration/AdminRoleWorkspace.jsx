@@ -4,8 +4,22 @@ import { api } from '../../services/apiClient';
 import PageShell, { EmptyState, LoadingPanel, Notice, SectionCard, StatGrid, SummaryStat } from '../../shared/PageShell';
 import { PAGE_LAYOUTS } from '../../ui/layout';
 import { createSharedComponentStyles } from '../../ui/components';
+import AccessControlCard from './AccessControlCard';
 import RoleCreatorFull from './RoleCreatorFull';
 import RoleEditorCard from './RoleEditorCardFull';
+
+const DASHBOARD_ACCESS_ITEMS = [
+  ['overview', 'Overview', 'Main server overview and live status.'],
+  ['moderation', 'Moderation', 'Moderation tools and staff actions.'],
+  ['cases', 'Cases', 'Moderation case history.'],
+  ['logs', 'Logs', 'Dashboard and server log configuration.'],
+  ['tickets', 'Tickets', 'Ticket queues, claims and transcripts.'],
+  ['forms', 'Forms', 'Universal forms and submissions.'],
+  ['billing', 'Billing', 'Subscription and entitlement details.'],
+  ['translation', 'Translation', 'Translation settings and provider controls.'],
+  ['security', 'Security', 'Security centre and protection overview.'],
+  ['restore', 'Restore', 'Backup preview and restore controls.'],
+];
 
 function getGuildId(selectedGuild) {
   if (!selectedGuild) return '';
@@ -20,12 +34,26 @@ function normalizeArray(payload, key) {
   return [];
 }
 
+function defaultAccessControl() {
+  return { dashboardPages: {} };
+}
+
 function defaultPermissions() {
-  return { enabled: true, managerRoleIds: [], moduleAccess: {}, roleAccess: {}, roleOrder: [], syncDiscordRoles: false };
+  return { accessControl: defaultAccessControl(), enabled: true, managerRoleIds: [], moduleAccess: {}, roleAccess: {}, roleOrder: [], syncDiscordRoles: false };
+}
+
+function normalizeAccess(access = {}) {
+  return {
+    roles: Array.isArray(access.roles) ? access.roles : [],
+    users: Array.isArray(access.users) ? access.users : [],
+  };
 }
 
 function normalizeGeneral(config = {}) {
-  return { ...config, dashboardPermissions: { ...defaultPermissions(), ...(config.dashboardPermissions || {}), syncDiscordRoles: false } };
+  const dashboardPermissions = { ...defaultPermissions(), ...(config.dashboardPermissions || {}), syncDiscordRoles: false };
+  dashboardPermissions.accessControl = { ...defaultAccessControl(), ...(dashboardPermissions.accessControl || {}) };
+  dashboardPermissions.accessControl.dashboardPages = dashboardPermissions.accessControl.dashboardPages || {};
+  return { ...config, dashboardPermissions };
 }
 
 function button(theme, tone = 'soft', disabled = false) {
@@ -63,12 +91,20 @@ export default function AdminRoleWorkspace({ selectedGuild, theme }) {
   const [notice, setNotice] = useState('');
   const [roleSyncReport, setRoleSyncReport] = useState(null);
   const [roles, setRoles] = useState([]);
+  const [savingAccess, setSavingAccess] = useState(false);
   const [savingOrder, setSavingOrder] = useState(false);
   const [savingRole, setSavingRole] = useState(false);
   const [selectedRoleId, setSelectedRoleId] = useState('');
 
   const permissions = general.dashboardPermissions || defaultPermissions();
+  const accessControl = permissions.accessControl || defaultAccessControl();
+  const dashboardPagesAccess = accessControl.dashboardPages || {};
   const fullAccessRoleIds = permissions.managerRoleIds || [];
+  const configuredDashboardPages = DASHBOARD_ACCESS_ITEMS.filter(([key]) => {
+    const access = normalizeAccess(dashboardPagesAccess[key]);
+    return access.roles.length || access.users.length;
+  }).length;
+
   const orderedRoles = useMemo(() => {
     const order = permissions.roleOrder || [];
     return [...roles].sort((a, b) => {
@@ -112,6 +148,15 @@ export default function AdminRoleWorkspace({ selectedGuild, theme }) {
 
   function setFullAccessRole(roleId, enabled) {
     updatePermissions((current) => ({ ...current, managerRoleIds: enabled ? [...new Set([...(current.managerRoleIds || []), roleId])] : (current.managerRoleIds || []).filter((id) => id !== roleId) }));
+  }
+
+  function setDashboardAccess(pageKey, access) {
+    updatePermissions((current) => {
+      const nextAccessControl = { ...defaultAccessControl(), ...(current.accessControl || {}) };
+      const dashboardPages = { ...(nextAccessControl.dashboardPages || {}) };
+      dashboardPages[pageKey] = normalizeAccess(access);
+      return { ...current, accessControl: { ...nextAccessControl, dashboardPages } };
+    });
   }
 
   function reorderRole(draggedId, targetId) {
@@ -203,6 +248,22 @@ export default function AdminRoleWorkspace({ selectedGuild, theme }) {
     }
   }
 
+  async function saveAccessControl() {
+    try {
+      setSavingAccess(true);
+      setError('');
+      const nextPermissions = { ...permissions, accessControl, syncDiscordRoles: false };
+      const saved = await api.saveGeneralSettings(guildId, { ...general, dashboardPermissions: nextPermissions });
+      setGeneral(normalizeGeneral(saved?.config || { ...general, dashboardPermissions: nextPermissions }));
+      setNotice('✅ Dashboard access control saved.');
+    } catch (err) {
+      console.error(err);
+      setError(err.message || 'Failed to save dashboard access control.');
+    } finally {
+      setSavingAccess(false);
+    }
+  }
+
   async function saveOrder() {
     try {
       setSavingOrder(true);
@@ -245,8 +306,11 @@ export default function AdminRoleWorkspace({ selectedGuild, theme }) {
       {notice ? <Notice theme={theme} tone="success">{notice}</Notice> : null}
       {loading ? <LoadingPanel theme={theme} text="Loading admin role workspace..." /> : null}
       {!loading ? <>
-        <SectionCard theme={theme}><div style={{ display: 'grid', gap: 18, padding: 'clamp(18px,2.6vw,24px)', border: `1px solid ${theme.primaryBorder || theme.cardBorder}`, borderRadius: 18, background: 'linear-gradient(135deg, rgba(59,130,246,0.18), rgba(15,23,42,0.10) 55%, rgba(168,85,247,0.14))' }}><div><h2 style={{ margin: 0, fontSize: 'clamp(26px,3vw,38px)' }}>Admin Role Workspace</h2><p style={{ margin: '10px 0 0', color: theme.mutedText, lineHeight: 1.6 }}>Create roles, edit existing roles, assign dashboard full access and sync hierarchy with Discord.</p></div><StatGrid min="min(170px,100%)"><SummaryStat theme={theme} label="Guild Roles" value={roles.length} accent="#c084fc" description="Available Discord roles" /><SummaryStat theme={theme} label="Full Access" value={fullAccessRoleIds.length} accent="#60a5fa" description="Goliath full access roles" /><SummaryStat theme={theme} label="Selected" value={selectedRole?.name || 'None'} accent="#34d399" description="Role editor target" /><SummaryStat theme={theme} label="Synced" value={roleSyncReport ? 'Report' : 'Ready'} accent="#facc15" description="Hierarchy status" /></StatGrid></div></SectionCard>
+        <SectionCard theme={theme}><div style={{ display: 'grid', gap: 18, padding: 'clamp(18px,2.6vw,24px)', border: `1px solid ${theme.primaryBorder || theme.cardBorder}`, borderRadius: 18, background: 'linear-gradient(135deg, rgba(59,130,246,0.18), rgba(15,23,42,0.10) 55%, rgba(168,85,247,0.14))' }}><div><h2 style={{ margin: 0, fontSize: 'clamp(26px,3vw,38px)' }}>Admin Role Workspace</h2><p style={{ margin: '10px 0 0', color: theme.mutedText, lineHeight: 1.6 }}>Create roles, edit existing roles, control dashboard access and sync hierarchy with Discord.</p></div><StatGrid min="min(170px,100%)"><SummaryStat theme={theme} label="Guild Roles" value={roles.length} accent="#c084fc" description="Available Discord roles" /><SummaryStat theme={theme} label="Full Access" value={fullAccessRoleIds.length} accent="#60a5fa" description="Goliath full access roles" /><SummaryStat theme={theme} label="Page Access" value={`${configuredDashboardPages}/${DASHBOARD_ACCESS_ITEMS.length}`} accent="#34d399" description="Dashboard pages configured" /><SummaryStat theme={theme} label="Synced" value={roleSyncReport ? 'Report' : 'Ready'} accent="#facc15" description="Hierarchy status" /></StatGrid></div></SectionCard>
         <Panel theme={theme} title="Role Creator" subtitle="Create new Discord roles using the full permission matrix." open><RoleCreatorFull creating={creatingRole} onCreate={createRole} onSync={refreshGuildRoles} theme={theme} /></Panel>
+        <Panel theme={theme} title="Dashboard Access" subtitle="Control which roles or specific Discord user IDs can access each dashboard page. Empty means guild owner only." open action={<button type="button" onClick={saveAccessControl} disabled={savingAccess} style={button(theme, 'success', savingAccess)}>{savingAccess ? 'Saving...' : 'Save Access'}</button>}>
+          <div style={{ display: 'grid', gap: 12 }}>{DASHBOARD_ACCESS_ITEMS.map(([key, label, description]) => <AccessControlCard key={key} access={dashboardPagesAccess[key]} description={description} guildRoles={orderedRoles} onChange={(nextAccess) => setDashboardAccess(key, nextAccess)} theme={theme} title={label} />)}</div>
+        </Panel>
         <Panel theme={theme} title="Role Hierarchy & Editor" subtitle="Drag roles to reorder. Select a role to edit its Discord settings." open action={<button type="button" onClick={saveOrder} disabled={savingOrder} style={button(theme, 'success', savingOrder)}>{savingOrder ? 'Saving...' : 'Save Order'}</button>}>
           <div style={{ display: 'grid', gap: 14 }}>{renderRoleSyncReport()}<div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px,0.85fr) minmax(320px,1.15fr)', gap: 14, alignItems: 'start' }}><div style={{ display: 'grid', gap: 10 }}>{orderedRoles.length ? orderedRoles.map((role) => {
             const hasFullAccess = fullAccessRoleIds.includes(role.id);
