@@ -1,18 +1,17 @@
 'use strict';
 
-// scripts/verify-guild-modules.js
-// Quick read-only checker for consolidated guild module data.
+// Read-only checker for consolidated guild module data.
 
 const fs = require('fs');
 const path = require('path');
 
 const { getRuntimePaths } = require('../src/config/runtimePaths');
 const guildManager = require('../src/guild/guildManager');
+const { isPlainObject, printHeader, readJson, relative } = require('./lib/scriptUtils');
 
 const mode = String(process.env.BOT_MODE || process.argv[2] || 'dev').toLowerCase();
 const runtimePaths = getRuntimePaths(mode);
 const guildsDir = runtimePaths.guilds;
-
 const EXPECTED_MODULES = Object.keys(guildManager.DEFAULT_MODULES || {});
 
 const LEGACY_TOP_LEVEL_KEYS = [
@@ -26,35 +25,21 @@ const LEGACY_NESTED_FILES = [
   'timeline.json',
 ];
 
-function readJson(filePath) {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-  } catch (error) {
-    return { __error: error.message };
-  }
-}
-
-function isPlainObject(value) {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
-
 function checkGuildFile(filePath) {
-  const raw = readJson(filePath);
+  const rawResult = readJson(filePath);
   const guildId = path.basename(filePath, '.json');
 
-  if (raw.__error) {
+  if (!rawResult.ok) {
     return {
       guildId,
       ok: false,
-      errors: [`Invalid JSON: ${raw.__error}`],
+      errors: [`Invalid JSON: ${rawResult.error}`],
       warnings: [],
     };
   }
 
-  // getGuildData intentionally goes through the real guild manager path.
-  // It auto-initializes missing module defaults and rewrites this guild JSON when needed.
+  const raw = rawResult.data;
   const data = guildManager.getGuildData(guildId, { forceReload: true });
-
   const errors = [];
   const warnings = [];
   const modules = isPlainObject(data.modules) ? data.modules : {};
@@ -91,29 +76,30 @@ function checkGuildFile(filePath) {
   };
 }
 
-function run() {
-  console.log('============================================================');
-  console.log('🧪 Goliath Guild Module Verification');
-  console.log(`Mode: ${mode}`);
-  console.log(`Guilds Dir: ${guildsDir}`);
-  console.log('============================================================');
+function getGuildFiles() {
+  if (!fs.existsSync(guildsDir)) return [];
 
-  if (!fs.existsSync(guildsDir)) {
-    console.log('No guilds directory found. Nothing to verify.');
-    return;
-  }
-
-  const files = fs
+  return fs
     .readdirSync(guildsDir)
     .filter((file) => /^\d{16,25}\.json$/.test(file))
     .map((file) => path.join(guildsDir, file));
+}
+
+function run() {
+  printHeader('🧪 Goliath Guild Module Verification', {
+    Mode: mode,
+    'Guilds Dir': relative(guildsDir),
+  });
+
+  const files = getGuildFiles();
 
   if (!files.length) {
-    console.log('No guild JSON files found.');
+    console.log('No guild JSON files found. Nothing to verify.');
     return;
   }
 
   let failed = 0;
+  let warningCount = 0;
 
   for (const filePath of files) {
     const result = checkGuildFile(filePath);
@@ -130,11 +116,14 @@ function run() {
     }
 
     if (!result.ok) failed += 1;
+    warningCount += result.warnings.length;
   }
 
-  console.log('\n============================================================');
-  console.log(failed ? `❌ Verification complete. Guilds needing attention: ${failed}` : '✅ Verification complete. All guild files passed.');
-  console.log('============================================================');
+  printHeader(failed ? '❌ Verification complete' : '✅ Verification complete', {
+    'Guild files scanned': files.length,
+    'Guilds needing attention': failed,
+    Warnings: warningCount,
+  });
 
   if (failed) process.exitCode = 1;
 }
