@@ -20,12 +20,12 @@ const DEFAULT_DASHBOARD_PERMISSIONS = {
   managerRoleIds: [],
   roleAccess: {},
   moduleAccess: {},
+  discordAccess: {},
   presets: {
-    owner: ['view', 'edit', 'deploy', 'delete', 'sync'],
-    admin: ['view', 'edit', 'deploy', 'sync'],
-    moderator: ['view', 'edit'],
-    support: ['view'],
-    viewer: ['view'],
+    full: ['view', 'edit', 'configure', 'deploy', 'delete', 'manage', 'sync'],
+    manage: ['view', 'edit', 'configure', 'deploy', 'sync'],
+    limited: ['view', 'edit'],
+    view: ['view'],
   },
 };
 
@@ -58,14 +58,24 @@ function safeObject(value) {
 }
 
 function normalizePermissionList(value) {
-  const allowed = new Set(['view', 'edit', 'deploy', 'delete', 'sync', 'admin']);
+  const allowed = new Set(['view', 'edit', 'configure', 'deploy', 'delete', 'manage', 'sync', 'admin', 'use', 'create']);
   return safeArray(value).filter((permission) => allowed.has(permission));
+}
+
+function normalizeAccessMap(value = {}) {
+  return Object.fromEntries(
+    Object.entries(safeObject(value)).map(([moduleKey, perRole]) => [
+      String(moduleKey),
+      Object.fromEntries(
+        Object.entries(safeObject(perRole)).map(([roleId, access]) => [String(roleId), normalizePermissionList(access)])
+      ),
+    ])
+  );
 }
 
 function normalizeDashboardPermissions(value = {}) {
   const source = safeObject(value);
   const roleAccess = safeObject(source.roleAccess);
-  const moduleAccess = safeObject(source.moduleAccess);
 
   return {
     ...DEFAULT_DASHBOARD_PERMISSIONS,
@@ -76,14 +86,8 @@ function normalizeDashboardPermissions(value = {}) {
     roleAccess: Object.fromEntries(
       Object.entries(roleAccess).map(([roleId, access]) => [String(roleId), normalizePermissionList(access)])
     ),
-    moduleAccess: Object.fromEntries(
-      Object.entries(moduleAccess).map(([moduleKey, perRole]) => [
-        String(moduleKey),
-        Object.fromEntries(
-          Object.entries(safeObject(perRole)).map(([roleId, access]) => [String(roleId), normalizePermissionList(access)])
-        ),
-      ])
-    ),
+    moduleAccess: normalizeAccessMap(source.moduleAccess),
+    discordAccess: normalizeAccessMap(source.discordAccess),
     presets: {
       ...DEFAULT_DASHBOARD_PERMISSIONS.presets,
       ...safeObject(source.presets),
@@ -130,58 +134,25 @@ function normalize(data = {}, options = {}) {
 router.get('/:guildId', (req, res) => {
   try {
     const { guildId } = req.params;
-
     const guildData = getGuildData(guildId);
-
-    return res.json({
-      success: true,
-      guildId,
-      config: {
-        ...DEFAULT_GENERAL_SETTINGS,
-        ...normalize(guildData.generalSettings || {}, { guildId }),
-      },
-    });
+    return res.json({ success: true, guildId, config: { ...DEFAULT_GENERAL_SETTINGS, ...normalize(guildData.generalSettings || {}, { guildId }) } });
   } catch (error) {
     console.error('❌ Failed to load general settings');
     console.error(error);
-
-    return res.status(500).json({
-      success: false,
-      error: 'Failed to load general settings.',
-    });
+    return res.status(500).json({ success: false, error: 'Failed to load general settings.' });
   }
 });
 
 router.post('/:guildId', (req, res) => {
   try {
     const { guildId } = req.params;
-
-    const updatedConfig = normalize({
-      ...DEFAULT_GENERAL_SETTINGS,
-      ...(req.body || {}),
-      prefix: normalizePrefixForSave(req.body?.prefix),
-    });
-
-    saveGuildData(guildId, {
-      generalSettings: {
-        ...updatedConfig,
-        updatedAt: new Date().toISOString(),
-      },
-    });
-
-    return res.json({
-      success: true,
-      guildId,
-      config: updatedConfig,
-    });
+    const updatedConfig = normalize({ ...DEFAULT_GENERAL_SETTINGS, ...(req.body || {}), prefix: normalizePrefixForSave(req.body?.prefix) });
+    saveGuildData(guildId, { generalSettings: { ...updatedConfig, updatedAt: new Date().toISOString() } });
+    return res.json({ success: true, guildId, config: updatedConfig });
   } catch (error) {
     console.error('❌ Failed to save general settings');
     console.error(error);
-
-    return res.status(400).json({
-      success: false,
-      error: error.message || 'Failed to save general settings.',
-    });
+    return res.status(400).json({ success: false, error: error.message || 'Failed to save general settings.' });
   }
 });
 
