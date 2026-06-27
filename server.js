@@ -35,6 +35,7 @@ const { initSocketHub } = safeRequire('socketHub', './src/server/sockets/socketH
 
 const authRoutes = safeRequire('auth routes', './src/server/routes/auth', emptyRouter());
 const discordRoutes = safeRequire('discord routes', './src/server/routes/discord', emptyRouter());
+const discordRoleEditorRoutes = safeRequire('discord role editor routes', './src/server/routes/discordRoleEditor', emptyRouter());
 const discordResourceRoutes = safeRequire('discord resource routes', './src/server/routes/discordResources', emptyRouter());
 const statusRoutes = safeRequire('status routes', './src/server/routes/status', emptyRouter());
 const ownerRoutes = safeRequire('owner routes', './src/server/routes/owner', emptyRouter());
@@ -110,6 +111,7 @@ app.use((req, res, next) => { req.client = client; req.io = io; next(); });
 app.use('/auth', authRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/discord', discordRoutes);
+app.use('/api/discord', discordRoleEditorRoutes);
 app.use('/api/discord', discordResourceRoutes);
 app.use('/api/status', statusRoutes);
 app.use('/api/owner', ownerRoutes);
