@@ -6,10 +6,10 @@
   "type": "commonjs",
   "private": true,
   "scripts": {
-    "bot": "node server.js",
-    "bot:dev": "cross-env BOT_MODE=dev node server.js",
-    "bot:beta": "cross-env BOT_MODE=beta node server.js",
-    "bot:production": "cross-env BOT_MODE=production node server.js",
+    "bot": "node -r ./src/runtime/warningFilter.js server.js",
+    "bot:dev": "cross-env BOT_MODE=dev node -r ./src/runtime/warningFilter.js server.js",
+    "bot:beta": "cross-env BOT_MODE=beta node -r ./src/runtime/warningFilter.js server.js",
+    "bot:production": "cross-env BOT_MODE=production node -r ./src/runtime/warningFilter.js server.js",
     "sync:commands": "node src/core/commandRegistry/syncCommands.js",
     "sync:commands:dev": "cross-env BOT_MODE=dev node src/core/commandRegistry/syncCommands.js",
     "sync:commands:beta": "cross-env BOT_MODE=beta node src/core/commandRegistry/syncCommands.js",
@@ -34,10 +34,10 @@
     "beta:sync": "npm run sync:commands:beta && npm run beta",
     "production": "npm run bot:production",
     "production:sync": "npm run sync:commands:production && npm run production",
-    "api": "node server.js",
-    "api:dev": "cross-env BOT_MODE=dev node server.js",
-    "api:beta": "cross-env BOT_MODE=beta node server.js",
-    "api:production": "cross-env BOT_MODE=production node server.js"
+    "api": "node -r ./src/runtime/warningFilter.js server.js",
+    "api:dev": "cross-env BOT_MODE=dev node -r ./src/runtime/warningFilter.js server.js",
+    "api:beta": "cross-env BOT_MODE=beta node -r ./src/runtime/warningFilter.js server.js",
+    "api:production": "cross-env BOT_MODE=production node -r ./src/runtime/warningFilter.js server.js"
   },
   "dependencies": {
     "better-sqlite3": "^12.8.0",
