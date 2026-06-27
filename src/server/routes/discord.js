@@ -249,27 +249,77 @@ function cleanRolePermissions(value) {
   return new PermissionsBitField(allowed.map((name) => PermissionFlagsBits[name]));
 }
 
-function buildRolePositionPayload(guild, requestedRoleIds = []) {
-  const me = guild.members.me;
-  const botHighestPosition = me?.roles?.highest?.position ?? 0;
-  const roleMap = new Map(guild.roles.cache.map((role) => [role.id, role]));
-  const editableRoles = requestedRoleIds
-    .map((id) => roleMap.get(String(id)))
-    .filter((role) => role && role.id !== guild.id && !role.managed && role.position < botHighestPosition);
+function describeRole(role, reason = '') {
+  return {
+    id: role?.id || '',
+    managed: role?.managed === true,
+    name: role?.name || 'Unknown role',
+    position: Number.isFinite(role?.position) ? role.position : 0,
+    reason,
+  };
+}
 
-  if (!editableRoles.length) return [];
+function buildRolePositionPlan(guild, requestedRoleIds = []) {
+  const me = guild.members.me;
+  const botHighest = me?.roles?.highest || null;
+  const botHighestPosition = botHighest?.position ?? 0;
+  const roleMap = new Map(guild.roles.cache.map((role) => [role.id, role]));
+  const requestedIds = [...new Set(requestedRoleIds.map(String).filter(Boolean))];
+  const editableRoles = [];
+  const skippedRoles = [];
+
+  requestedIds.forEach((id) => {
+    const role = roleMap.get(id);
+    if (!role) {
+      skippedRoles.push({ id, managed: false, name: 'Unknown role', position: 0, reason: 'Role no longer exists in Discord cache.' });
+      return;
+    }
+    if (role.id === guild.id) {
+      skippedRoles.push(describeRole(role, '@everyone cannot be moved.'));
+      return;
+    }
+    if (role.managed) {
+      skippedRoles.push(describeRole(role, 'Managed integration/bot roles cannot be moved.'));
+      return;
+    }
+    if (role.id === me?.roles?.botRole?.id) {
+      skippedRoles.push(describeRole(role, 'Goliath cannot move its own bot role.'));
+      return;
+    }
+    if (role.position >= botHighestPosition) {
+      skippedRoles.push(describeRole(role, 'Role is at or above Goliath’s highest role. Move the Goliath bot role higher in Discord.'));
+      return;
+    }
+    editableRoles.push(role);
+  });
 
   const editableIds = new Set(editableRoles.map((role) => role.id));
   const currentEditable = [...guild.roles.cache.values()]
-    .filter((role) => role.id !== guild.id && !role.managed && role.position < botHighestPosition)
+    .filter((role) => role.id !== guild.id && !role.managed && role.id !== me?.roles?.botRole?.id && role.position < botHighestPosition)
     .sort((a, b) => b.position - a.position);
-
-  const requestedOrdered = editableRoles;
   const remaining = currentEditable.filter((role) => !editableIds.has(role.id));
-  const mergedTopDown = [...requestedOrdered, ...remaining];
-  const positions = currentEditable.map((role) => role.position).sort((a, b) => b - a);
+  const mergedTopDown = [...editableRoles, ...remaining];
+  const availablePositions = currentEditable.map((role) => role.position).sort((a, b) => b - a);
+  const positions = mergedTopDown
+    .map((role, index) => ({ role, position: availablePositions[index] }))
+    .filter((item) => Number.isFinite(item.position) && item.role.position !== item.position);
 
-  return mergedTopDown.map((role, index) => ({ role, position: positions[index] })).filter((item) => Number.isFinite(item.position));
+  const diagnostics = {
+    appliedRoles: positions.map(({ role, position }) => ({ id: role.id, name: role.name, previousPosition: role.position, requestedPosition: position })),
+    bot: {
+      highestRoleId: botHighest?.id || null,
+      highestRoleName: botHighest?.name || null,
+      highestRolePosition: botHighestPosition,
+      id: me?.id || null,
+      manageableRoleCount: currentEditable.length,
+    },
+    editableRoles: editableRoles.map((role) => describeRole(role)),
+    payload: positions.map(({ role, position }) => ({ id: role.id, name: role.name, position })),
+    requestedRoleIds: requestedIds,
+    skippedRoles,
+  };
+
+  return { diagnostics, positions };
 }
 
 router.get('/guilds', async (req, res) => {
@@ -381,12 +431,33 @@ router.patch('/:guildId/roles/order', async (req, res) => {
     if (!botCanManageRoles(guild)) return res.status(403).json({ error: 'Goliath needs Manage Roles to reorder guild roles.' });
 
     const roleIds = Array.isArray(req.body?.roleIds) ? req.body.roleIds.map(String).filter(Boolean) : [];
-    const positions = buildRolePositionPayload(guild, roleIds);
-    if (!positions.length) return res.status(400).json({ success: false, error: 'No editable roles were provided. Goliath cannot move managed roles, @everyone, or roles above its own highest role.' });
+    const { diagnostics, positions } = buildRolePositionPlan(guild, roleIds);
+    if (!positions.length) {
+      return res.status(400).json({
+        success: false,
+        diagnostics,
+        error: 'No Discord role positions changed. Goliath can only move unmanaged roles below its own highest role.',
+      });
+    }
+
+    console.info('Goliath role hierarchy sync payload:', {
+      guildId: guild.id,
+      payload: diagnostics.payload,
+      skipped: diagnostics.skippedRoles,
+    });
 
     await guild.roles.setPositions(positions, 'Goliath dashboard role reorder');
+    await guild.roles.fetch().catch(() => null);
     const resources = await syncDiscordResources(guild).catch(() => buildLiveResources(guild));
-    return res.json({ success: true, roles: Array.isArray(resources.roles) ? resources.roles : buildLiveResources(guild).roles });
+    const roles = Array.isArray(resources.roles) ? resources.roles : buildLiveResources(guild).roles;
+    return res.json({
+      success: true,
+      diagnostics: {
+        ...diagnostics,
+        refreshedOrder: roles.map((role) => ({ id: role.id, name: role.name, position: role.position })),
+      },
+      roles,
+    });
   } catch (error) {
     console.error('Failed to reorder Discord roles:', error);
     return res.status(400).json({ success: false, error: error.message || 'Failed to reorder Discord roles.' });
