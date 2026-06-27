@@ -23,11 +23,13 @@ function main() {
   assertContains('src/server/routes/modules.js', "router.patch('/:guildId/:moduleKey/enabled'", 'Backend modules toggle route');
 
   assertContains('src/server/routes/config/generalSettings.js', 'dashboardPermissions', 'Admin dashboard permission persistence');
-  assertContains('src/server/routes/config/generalSettings.js', 'moduleAccess', 'Admin per-module permission persistence');
+  assertContains('src/server/routes/config/generalSettings.js', 'moduleAccess', 'Admin dashboard control persistence');
   assertContains('src/server/routes/config/generalSettings.js', 'roleAccess', 'Admin per-role permission persistence');
-  assertContains('src/dashboard/js/pages/administration/Admin.jsx', 'Dashboard Access Matrix', 'Admin permission matrix UI');
-  assertContains('src/dashboard/js/pages/administration/Admin.jsx', 'Save Permission Matrix', 'Admin permission matrix save action');
-  assertContains('src/dashboard/js/pages/administration/Admin.jsx', 'setModulePermission', 'Admin per-module permission editor');
+  assertContains('src/dashboard/js/pages/administration/Admin.jsx', 'Admin Control Panel', 'Admin control panel UI');
+  assertContains('src/dashboard/js/pages/administration/Admin.jsx', 'Dashboard Control Panel', 'Admin dashboard control panel UI');
+  assertContains('src/dashboard/js/pages/administration/Admin.jsx', 'Discord Control Panel', 'Admin Discord control panel UI');
+  assertContains('src/dashboard/js/pages/administration/Admin.jsx', 'Save Admin Control Panels', 'Admin control panel save action');
+  assertContains('src/dashboard/js/pages/administration/Admin.jsx', 'setNestedPermission', 'Admin control permission editor');
 
   assertContains('src/server/routes/ownerDiagnostics.js', "router.get('/deployments'", 'Deployment Centre diagnostics API route');
   assertContains('src/server/routes/ownerDiagnostics.js', 'buildDeploymentPayload', 'Deployment Centre payload builder');
