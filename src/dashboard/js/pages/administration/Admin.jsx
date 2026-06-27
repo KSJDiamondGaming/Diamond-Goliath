@@ -71,6 +71,61 @@ const ROLE_COLORS = [
   ['#111827', 'Dark'],
 ];
 
+const DISCORD_PERMISSION_GROUPS = [
+  ['General Server Permissions', [
+    ['ViewChannel', 'View Channels'],
+    ['ManageChannels', 'Manage Channels'],
+    ['ManageRoles', 'Manage Roles'],
+    ['CreateGuildExpressions', 'Create Expressions'],
+    ['ManageGuildExpressions', 'Manage Expressions'],
+    ['ViewAuditLog', 'View Audit Log'],
+    ['ManageWebhooks', 'Manage Webhooks'],
+    ['ManageGuild', 'Manage Server'],
+  ]],
+  ['Membership Permissions', [
+    ['CreateInstantInvite', 'Create Invite'],
+    ['ChangeNickname', 'Change Nickname'],
+    ['ManageNicknames', 'Manage Nicknames'],
+    ['KickMembers', 'Kick Members'],
+    ['BanMembers', 'Ban Members'],
+    ['ModerateMembers', 'Timeout Members'],
+  ]],
+  ['Text Channel Permissions', [
+    ['SendMessages', 'Send Messages'],
+    ['SendMessagesInThreads', 'Send Messages in Threads'],
+    ['CreatePublicThreads', 'Create Public Threads'],
+    ['CreatePrivateThreads', 'Create Private Threads'],
+    ['EmbedLinks', 'Embed Links'],
+    ['AttachFiles', 'Attach Files'],
+    ['AddReactions', 'Add Reactions'],
+    ['UseExternalEmojis', 'Use External Emoji'],
+    ['UseExternalStickers', 'Use External Stickers'],
+    ['MentionEveryone', 'Mention @everyone'],
+    ['ManageMessages', 'Manage Messages'],
+    ['ManageThreads', 'Manage Threads'],
+    ['ReadMessageHistory', 'Read Message History'],
+    ['SendTTSMessages', 'Send TTS Messages'],
+    ['UseApplicationCommands', 'Use App Commands'],
+  ]],
+  ['Voice Channel Permissions', [
+    ['Connect', 'Connect'],
+    ['Speak', 'Speak'],
+    ['Stream', 'Video / Stream'],
+    ['UseVAD', 'Use Voice Activity'],
+    ['PrioritySpeaker', 'Priority Speaker'],
+    ['MuteMembers', 'Mute Members'],
+    ['DeafenMembers', 'Deafen Members'],
+    ['MoveMembers', 'Move Members'],
+    ['UseEmbeddedActivities', 'Use Activities'],
+    ['RequestToSpeak', 'Request to Speak'],
+  ]],
+  ['Events & Advanced', [
+    ['CreateEvents', 'Create Events'],
+    ['ManageEvents', 'Manage Events'],
+    ['Administrator', 'Administrator'],
+  ]],
+];
+
 function getGuildId(selectedGuild) {
   if (!selectedGuild) return '';
   if (typeof selectedGuild === 'string') return selectedGuild;
@@ -85,7 +140,7 @@ function normalizeArray(payload, key) {
 }
 
 function defaultPermissions() {
-  return { enabled: true, syncDiscordRoles: false, managerRoleIds: [], roleAccess: {}, moduleAccess: {}, discordAccess: {} };
+  return { enabled: true, syncDiscordRoles: false, managerRoleIds: [], roleOrder: [], roleAccess: {}, moduleAccess: {}, discordAccess: {} };
 }
 
 function normalizeGeneral(config = {}) {
@@ -122,8 +177,8 @@ function roleName(roles, roleId) {
   return roles.find((role) => role.id === roleId)?.name || roleId;
 }
 
-function Panel({ theme, title, subtitle, action, children }) {
-  return <SectionCard theme={theme}><div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'flex-start', marginBottom: 16 }}><div><h2 style={{ margin: 0, fontSize: 22 }}>{title}</h2>{subtitle ? <p style={{ margin: '7px 0 0', color: theme.mutedText, lineHeight: 1.55 }}>{subtitle}</p> : null}</div>{action ? <div style={{ flexShrink: 0 }}>{action}</div> : null}</div>{children}</SectionCard>;
+function Panel({ theme, title, subtitle, action, children, onHeaderClick }) {
+  return <SectionCard theme={theme}><div role={onHeaderClick ? 'button' : undefined} tabIndex={onHeaderClick ? 0 : undefined} onClick={onHeaderClick} onKeyDown={(event) => { if (onHeaderClick && (event.key === 'Enter' || event.key === ' ')) onHeaderClick(); }} style={{ display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'flex-start', marginBottom: 16, cursor: onHeaderClick ? 'pointer' : 'default' }}><div><h2 style={{ margin: 0, fontSize: 22 }}>{title}</h2>{subtitle ? <p style={{ margin: '7px 0 0', color: theme.mutedText, lineHeight: 1.55 }}>{subtitle}</p> : null}</div>{action ? <div onClick={(event) => event.stopPropagation()} style={{ flexShrink: 0 }}>{action}</div> : null}</div>{children}</SectionCard>;
 }
 
 export default function Admin({ selectedGuild, theme }) {
@@ -144,13 +199,24 @@ export default function Admin({ selectedGuild, theme }) {
   const [newRoleColor, setNewRoleColor] = useState('#3b82f6');
   const [newRoleHoist, setNewRoleHoist] = useState(false);
   const [newRoleMentionable, setNewRoleMentionable] = useState(false);
-  const [openSections, setOpenSections] = useState({ dashboard: true, discord: false });
+  const [newRolePermissions, setNewRolePermissions] = useState(['ViewChannel', 'SendMessages', 'ReadMessageHistory', 'UseApplicationCommands']);
+  const [openSections, setOpenSections] = useState({ creator: true, access: true, dashboard: true, discord: false });
   const [customOpen, setCustomOpen] = useState({});
 
   const permissions = general.dashboardPermissions || defaultPermissions();
   const fullAccessRoleIds = permissions.managerRoleIds || [];
   const configuredDashboardCount = Object.keys(permissions.moduleAccess || {}).filter((controlKey) => Object.values(permissions.moduleAccess?.[controlKey] || {}).some((items) => items?.length)).length;
   const configuredDiscordCount = Object.keys(permissions.discordAccess || {}).filter((controlKey) => Object.values(permissions.discordAccess?.[controlKey] || {}).some((items) => items?.length)).length;
+
+  const orderedRoles = useMemo(() => {
+    const order = permissions.roleOrder || [];
+    return [...roles].sort((a, b) => {
+      const aIndex = order.indexOf(a.id);
+      const bIndex = order.indexOf(b.id);
+      if (aIndex !== -1 || bIndex !== -1) return (aIndex === -1 ? 9999 : aIndex) - (bIndex === -1 ? 9999 : bIndex);
+      return (b.position || 0) - (a.position || 0);
+    });
+  }, [roles, permissions.roleOrder]);
 
   useEffect(() => {
     let mounted = true;
@@ -178,6 +244,16 @@ export default function Admin({ selectedGuild, theme }) {
 
   function updatePermissions(updater) {
     setGeneral((current) => ({ ...current, dashboardPermissions: { ...updater(current.dashboardPermissions || defaultPermissions()), syncDiscordRoles: false } }));
+  }
+
+  function moveRole(roleId, direction) {
+    const ids = orderedRoles.map((role) => role.id);
+    const index = ids.indexOf(roleId);
+    const nextIndex = index + direction;
+    if (index < 0 || nextIndex < 0 || nextIndex >= ids.length) return;
+    const next = [...ids];
+    [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+    updatePermissions((current) => ({ ...current, roleOrder: next }));
   }
 
   function setFullAccessRole(roleId, enabled) {
@@ -222,10 +298,14 @@ export default function Admin({ selectedGuild, theme }) {
     setOpenSections((current) => ({ ...current, [section]: !current[section] }));
   }
 
+  function setRolePermission(permission, enabled) {
+    setNewRolePermissions((current) => enabled ? [...new Set([...current, permission])] : current.filter((item) => item !== permission));
+  }
+
   async function createRole() {
     try {
       setCreatingRole(true); setError('');
-      const response = await api.createGuildRole(guildId, { name: newRoleName, color: newRoleColor, hoist: newRoleHoist, mentionable: newRoleMentionable });
+      const response = await api.createGuildRole(guildId, { name: newRoleName, color: newRoleColor, hoist: newRoleHoist, mentionable: newRoleMentionable, permissions: newRolePermissions });
       const role = response?.role;
       if (!role?.id) throw new Error('Discord did not return the created role.');
       setRoles((current) => [role, ...current.filter((item) => item.id !== role.id)]);
@@ -233,9 +313,20 @@ export default function Admin({ selectedGuild, theme }) {
       setDiscordRoleId(role.id);
       setFullAccessRole(role.id, true);
       setRoleAccessMode(role.id, 'full');
-      setNotice(`✅ Created Discord role ${role.name}. Save Goliath Dashboard Access to persist access.`);
+      setNotice(`✅ Created Discord role ${role.name}. Save Goliath Dashboard Access to persist access/order.`);
     } catch (err) { console.error(err); setError(err.message || 'Failed to create Discord role.'); }
     finally { setCreatingRole(false); }
+  }
+
+  async function refreshGuildRoles() {
+    try {
+      setLoading(true); setError('');
+      const rolesRes = await api.getGuildRoles(guildId);
+      const nextRoles = normalizeArray(rolesRes, 'roles');
+      setRoles(nextRoles);
+      setNotice('✅ Synced latest roles from Discord.');
+    } catch (err) { console.error(err); setError(err.message || 'Failed to sync roles from Discord.'); }
+    finally { setLoading(false); }
   }
 
   async function saveControlPanels() {
@@ -265,7 +356,7 @@ export default function Admin({ selectedGuild, theme }) {
 
   function CollapsiblePanel({ sectionKey, title, subtitle, children }) {
     const open = openSections[sectionKey] !== false;
-    return <Panel theme={theme} title={title} subtitle={subtitle} action={<div style={{ display: 'flex', gap: 8 }}><button type="button" onClick={saveControlPanels} disabled={saving} style={button(theme, 'success', saving)}>{saving ? 'Saving...' : 'Save'}</button><button type="button" onClick={() => toggleSection(sectionKey)} style={button(theme, 'soft')}>{open ? 'Collapse' : 'Expand'}</button></div>}>{open ? children : null}</Panel>;
+    return <Panel theme={theme} title={title} subtitle={subtitle} onHeaderClick={() => toggleSection(sectionKey)} action={<div style={{ display: 'flex', gap: 8 }}><button type="button" onClick={saveControlPanels} disabled={saving} style={button(theme, 'success', saving)}>{saving ? 'Saving...' : 'Save'}</button><button type="button" onClick={() => toggleSection(sectionKey)} style={button(theme, 'soft')}>{open ? 'Collapse' : 'Expand'}</button></div>}>{open ? children : null}</Panel>;
   }
 
   return (
@@ -283,8 +374,8 @@ export default function Admin({ selectedGuild, theme }) {
             </div>
           </SectionCard>
 
-          <Panel theme={theme} title="Role Creator" subtitle="Create new Discord roles for this guild. Name, colour and visibility settings sync directly to Discord." action={<button type="button" onClick={createRole} disabled={creatingRole || !newRoleName.trim()} style={button(theme, 'success', creatingRole || !newRoleName.trim())}>{creatingRole ? 'Creating...' : 'Create Role'}</button>}>
-            <div style={{ display: 'grid', gap: 14 }}>
+          <Panel theme={theme} title="Role Creator" subtitle="Create new Discord roles and choose Discord permissions before syncing to the guild." onHeaderClick={() => toggleSection('creator')} action={<div style={{ display: 'flex', gap: 8 }}><button type="button" onClick={refreshGuildRoles} style={button(theme, 'soft')}>Sync from Discord</button><button type="button" onClick={createRole} disabled={creatingRole || !newRoleName.trim()} style={button(theme, 'success', creatingRole || !newRoleName.trim())}>{creatingRole ? 'Creating...' : 'Create Role'}</button></div>}>
+            {openSections.creator !== false ? <div style={{ display: 'grid', gap: 14 }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px,1.5fr) minmax(160px,0.8fr) minmax(130px,0.6fr)', gap: 10 }}>
                 <Field theme={theme} label="Role Name"><input value={newRoleName} onChange={(event) => setNewRoleName(event.target.value)} placeholder="Goliath Dashboard Access" style={input(theme)} /></Field>
                 <Field theme={theme} label="Colour Preset"><select value={newRoleColor} onChange={(event) => setNewRoleColor(event.target.value)} style={input(theme)}>{ROLE_COLORS.map(([hex, label]) => <option key={hex} value={hex}>{label} — {hex}</option>)}</select></Field>
@@ -294,18 +385,21 @@ export default function Admin({ selectedGuild, theme }) {
                 <OptionCheckbox theme={theme} label="Show role separately" checked={newRoleHoist} onChange={setNewRoleHoist} />
                 <OptionCheckbox theme={theme} label="Allow mentions" checked={newRoleMentionable} onChange={setNewRoleMentionable} />
               </div>
-            </div>
+              <div style={{ display: 'grid', gap: 12 }}>
+                {DISCORD_PERMISSION_GROUPS.map(([group, items]) => <div key={group} style={{ border: `1px solid ${theme.cardBorder}`, borderRadius: 14, padding: 12 }}><strong>{group}</strong><div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>{items.map(([key, label]) => <OptionCheckbox key={key} theme={theme} label={label} checked={newRolePermissions.includes(key)} onChange={(checked) => setRolePermission(key, checked)} />)}</div></div>)}
+              </div>
+            </div> : null}
           </Panel>
 
-          <Panel theme={theme} title="Goliath Dashboard Access" subtitle="Select one or more existing roles that should have full Goliath dashboard access." action={<button type="button" onClick={saveControlPanels} disabled={saving} style={button(theme, 'success', saving)}>{saving ? 'Saving...' : 'Save'}</button>}>
-            <div style={{ display: 'grid', gap: 10 }}>
-              {roles.length ? roles.map((role) => <label key={role.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', border: `1px solid ${fullAccessRoleIds.includes(role.id) ? 'rgba(34,197,94,0.35)' : theme.cardBorder}`, background: fullAccessRoleIds.includes(role.id) ? 'rgba(34,197,94,0.08)' : 'rgba(15,23,42,0.18)', borderRadius: 14, padding: 12 }}><span style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span style={{ width: 10, height: 10, borderRadius: 999, background: role.color || '#94a3b8', display: 'inline-block' }} /> <strong>{role.name}</strong></span><input type="checkbox" checked={fullAccessRoleIds.includes(role.id)} onChange={(event) => setFullAccessRole(role.id, event.target.checked)} /></label>) : <div style={{ color: theme.mutedText }}>No Discord roles found.</div>}
-            </div>
+          <Panel theme={theme} title="Goliath Dashboard Access" subtitle="Select full dashboard access roles. Use the arrows to reorder how roles appear inside Goliath." onHeaderClick={() => toggleSection('access')} action={<button type="button" onClick={saveControlPanels} disabled={saving} style={button(theme, 'success', saving)}>{saving ? 'Saving...' : 'Save'}</button>}>
+            {openSections.access !== false ? <div style={{ display: 'grid', gap: 10 }}>
+              {orderedRoles.length ? orderedRoles.map((role, index) => <label key={role.id} style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto auto auto', gap: 10, alignItems: 'center', border: `1px solid ${fullAccessRoleIds.includes(role.id) ? 'rgba(34,197,94,0.35)' : theme.cardBorder}`, background: fullAccessRoleIds.includes(role.id) ? 'rgba(34,197,94,0.08)' : 'rgba(15,23,42,0.18)', borderRadius: 14, padding: 12 }}><span style={{ width: 10, height: 10, borderRadius: 999, background: role.color || '#94a3b8', display: 'inline-block' }} /><strong>{role.name}</strong><button type="button" disabled={index === 0} onClick={(event) => { event.preventDefault(); moveRole(role.id, -1); }} style={button(theme, 'soft', index === 0)}>↑</button><button type="button" disabled={index === orderedRoles.length - 1} onClick={(event) => { event.preventDefault(); moveRole(role.id, 1); }} style={button(theme, 'soft', index === orderedRoles.length - 1)}>↓</button><input type="checkbox" checked={fullAccessRoleIds.includes(role.id)} onChange={(event) => setFullAccessRole(role.id, event.target.checked)} /></label>) : <div style={{ color: theme.mutedText }}>No Discord roles found.</div>}
+            </div> : null}
           </Panel>
 
           <CollapsiblePanel sectionKey="dashboard" title="Dashboard Control Panel" subtitle="Set full access quickly, or use custom access for selected dashboard areas.">
             <div style={{ display: 'grid', gap: 14 }}>
-              <Field theme={theme} label="Dashboard Role / ID to Configure"><select value={dashboardRoleId} onChange={(event) => setDashboardRoleId(event.target.value)} style={input(theme)}>{roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select></Field>
+              <Field theme={theme} label="Dashboard Role / ID to Configure"><select value={dashboardRoleId} onChange={(event) => setDashboardRoleId(event.target.value)} style={input(theme)}>{orderedRoles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select></Field>
               {dashboardRoleId ? <div style={{ border: `1px solid ${theme.cardBorder}`, borderRadius: 16, padding: 14, display: 'grid', gap: 12 }}><strong>Global dashboard access for {roleName(roles, dashboardRoleId)}</strong><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{accessButton(theme, (permissions.roleAccess?.[dashboardRoleId] || []).includes('manage'), 'Full Access', () => setRoleAccessMode(dashboardRoleId, (permissions.roleAccess?.[dashboardRoleId] || []).includes('manage') ? 'none' : 'full'))}{accessButton(theme, (permissions.roleAccess?.[dashboardRoleId] || []).includes('edit') && !(permissions.roleAccess?.[dashboardRoleId] || []).includes('manage'), 'Custom Access', () => setRoleAccessMode(dashboardRoleId, (permissions.roleAccess?.[dashboardRoleId] || []).includes('edit') ? 'none' : 'custom'))}</div></div> : null}
               {renderControlRows(DASHBOARD_CONTROLS, 'moduleAccess', dashboardRoleId)}
             </div>
@@ -313,7 +407,7 @@ export default function Admin({ selectedGuild, theme }) {
 
           <CollapsiblePanel sectionKey="discord" title="Discord Control Panel" subtitle="Set full access quickly, or use custom access for command and guild-side controls.">
             <div style={{ display: 'grid', gap: 14 }}>
-              <Field theme={theme} label="Discord Role / ID to Configure"><select value={discordRoleId} onChange={(event) => setDiscordRoleId(event.target.value)} style={input(theme)}>{roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select></Field>
+              <Field theme={theme} label="Discord Role / ID to Configure"><select value={discordRoleId} onChange={(event) => setDiscordRoleId(event.target.value)} style={input(theme)}>{orderedRoles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select></Field>
               {renderControlRows(DISCORD_CONTROLS, 'discordAccess', discordRoleId)}
             </div>
           </CollapsiblePanel>
