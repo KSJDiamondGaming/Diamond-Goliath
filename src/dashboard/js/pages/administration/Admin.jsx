@@ -95,7 +95,7 @@ function input(theme) {
 }
 
 function button(theme, tone = 'primary', disabled = false) {
-  const tones = { primary: ['rgba(59,130,246,0.16)', 'rgba(59,130,246,0.35)', '#bfdbfe'], success: ['rgba(34,197,94,0.13)', 'rgba(34,197,94,0.32)', '#86efac'], soft: ['rgba(148,163,184,0.10)', theme.cardBorder, theme.cardText] };
+  const tones = { primary: ['rgba(59,130,246,0.16)', 'rgba(59,130,246,0.35)', '#bfdbfe'], success: ['rgba(34,197,94,0.13)', 'rgba(34,197,94,0.32)', '#86efac'], danger: ['rgba(239,68,68,0.13)', 'rgba(239,68,68,0.32)', '#fca5a5'], soft: ['rgba(148,163,184,0.10)', theme.cardBorder, theme.cardText] };
   const [background, border, color] = tones[tone] || tones.primary;
   return { border: `1px solid ${border}`, background, color, borderRadius: 12, padding: '10px 12px', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.55 : 1, fontWeight: 950 };
 }
@@ -112,6 +112,10 @@ function PermissionCheckbox({ theme, checked, label, onChange }) {
   return <label style={{ display: 'inline-flex', alignItems: 'center', gap: 7, border: `1px solid ${checked ? 'rgba(34,197,94,0.35)' : theme.cardBorder}`, background: checked ? 'rgba(34,197,94,0.10)' : 'rgba(15,23,42,0.22)', borderRadius: 999, padding: '7px 10px', color: checked ? '#86efac' : theme.mutedText, fontWeight: 900, fontSize: 12 }}><input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />{label}</label>;
 }
 
+function roleName(roles, roleId) {
+  return roles.find((role) => role.id === roleId)?.name || roleId;
+}
+
 export default function Admin({ selectedGuild, theme }) {
   const styles = useMemo(() => createSharedComponentStyles(theme), [theme]);
   const guildId = getGuildId(selectedGuild);
@@ -123,10 +127,13 @@ export default function Admin({ selectedGuild, theme }) {
   const [notice, setNotice] = useState('');
   const [roles, setRoles] = useState([]);
   const [general, setGeneral] = useState(normalizeGeneral());
-  const [selectedRoleId, setSelectedRoleId] = useState('');
+  const [dashboardRoleId, setDashboardRoleId] = useState('');
+  const [discordRoleId, setDiscordRoleId] = useState('');
+  const [managerRoleId, setManagerRoleId] = useState('');
+  const [openSections, setOpenSections] = useState({ dashboard: true, discord: false, sync: false });
 
   const permissions = general.dashboardPermissions || defaultPermissions();
-  const selectedRole = roles.find((role) => role.id === selectedRoleId);
+  const managerRoleIds = permissions.managerRoleIds || [];
   const configuredRoleCount = Object.keys(permissions.roleAccess || {}).filter((roleId) => (permissions.roleAccess?.[roleId] || []).length).length;
   const configuredDashboardCount = Object.keys(permissions.moduleAccess || {}).filter((controlKey) => Object.values(permissions.moduleAccess?.[controlKey] || {}).some((items) => items?.length)).length;
   const configuredDiscordCount = Object.keys(permissions.discordAccess || {}).filter((controlKey) => Object.values(permissions.discordAccess?.[controlKey] || {}).some((items) => items?.length)).length;
@@ -145,7 +152,9 @@ export default function Admin({ selectedGuild, theme }) {
         const nextRoles = normalizeArray(rolesRes, 'roles');
         setRoles(nextRoles);
         setGeneral(normalizeGeneral(generalRes?.config || generalRes || {}));
-        setSelectedRoleId(nextRoles[0]?.id || '');
+        setDashboardRoleId(nextRoles[0]?.id || '');
+        setDiscordRoleId(nextRoles[0]?.id || '');
+        setManagerRoleId(nextRoles[0]?.id || '');
       } catch (err) {
         console.error(err); if (mounted) setError('Failed to load admin control panels.');
       } finally { if (mounted) setLoading(false); }
@@ -158,7 +167,7 @@ export default function Admin({ selectedGuild, theme }) {
     setGeneral((current) => ({ ...current, dashboardPermissions: updater(current.dashboardPermissions || defaultPermissions()) }));
   }
 
-  function setRolePermission(roleId, permission, enabled) {
+  function setGlobalRolePermission(roleId, permission, enabled) {
     updatePermissions((current) => {
       const existing = new Set(current.roleAccess?.[roleId] || []);
       if (enabled) existing.add(permission); else existing.delete(permission);
@@ -178,6 +187,19 @@ export default function Admin({ selectedGuild, theme }) {
     });
   }
 
+  function addManagerRole() {
+    if (!managerRoleId) return;
+    updatePermissions((current) => ({ ...current, managerRoleIds: [...new Set([...(current.managerRoleIds || []), managerRoleId])] }));
+  }
+
+  function removeManagerRole(roleId) {
+    updatePermissions((current) => ({ ...current, managerRoleIds: (current.managerRoleIds || []).filter((id) => id !== roleId) }));
+  }
+
+  function toggleSection(section) {
+    setOpenSections((current) => ({ ...current, [section]: !current[section] }));
+  }
+
   async function saveControlPanels() {
     try {
       setSaving(true); setError('');
@@ -188,8 +210,13 @@ export default function Admin({ selectedGuild, theme }) {
     finally { setSaving(false); }
   }
 
-  function renderControlRows(items, bucket, actions) {
+  function renderControlRows(items, bucket, actions, selectedRoleId) {
     return <div style={{ overflowX: 'auto' }}><div style={{ display: 'grid', gap: 8, minWidth: 760 }}>{items.map(([controlKey, label]) => <div key={controlKey} style={{ border: `1px solid ${theme.cardBorder}`, borderRadius: 14, padding: 12, display: 'grid', gridTemplateColumns: '240px 1fr', gap: 12, alignItems: 'center' }}><strong>{label}</strong><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{actions.map(([key, actionLabel]) => <PermissionCheckbox key={key} theme={theme} label={actionLabel} checked={(permissions[bucket]?.[controlKey]?.[selectedRoleId] || []).includes(key)} onChange={(checked) => setNestedPermission(bucket, controlKey, selectedRoleId, key, checked)} />)}</div></div>)}</div></div>;
+  }
+
+  function CollapsiblePanel({ sectionKey, title, subtitle, children }) {
+    const open = openSections[sectionKey] !== false;
+    return <SectionCard theme={theme}><button type="button" onClick={() => toggleSection(sectionKey)} style={{ width: '100%', border: 0, background: 'transparent', color: theme.cardText, textAlign: 'left', cursor: 'pointer', padding: 0, display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'center' }}><span><strong style={{ fontSize: 20 }}>{title}</strong><span style={{ display: 'block', color: theme.mutedText, fontSize: 13, marginTop: 5, lineHeight: 1.45 }}>{subtitle}</span></span><span style={{ color: theme.mutedText, fontWeight: 950 }}>{open ? 'Collapse ▲' : 'Expand ▼'}</span></button>{open ? <div style={{ marginTop: 16 }}>{children}</div> : null}</SectionCard>;
   }
 
   return (
@@ -203,36 +230,45 @@ export default function Admin({ selectedGuild, theme }) {
           <SectionCard theme={theme}>
             <div style={{ display: 'grid', gap: 18, padding: 'clamp(18px,2.6vw,24px)', border: `1px solid ${theme.primaryBorder || theme.cardBorder}`, borderRadius: 18, background: 'linear-gradient(135deg, rgba(59,130,246,0.18), rgba(15,23,42,0.10) 55%, rgba(168,85,247,0.14))' }}>
               <div><p style={{ margin: '0 0 8px', color: '#93c5fd', fontWeight: 950, letterSpacing: '0.08em', textTransform: 'uppercase', fontSize: 12 }}>Goliath Administration</p><h2 style={{ margin: 0, fontSize: 'clamp(24px,3vw,34px)' }}>🛠️ Admin Control Panel</h2><p style={{ margin: '10px 0 0', color: theme.mutedText, lineHeight: 1.6 }}>Control who can see and manage dashboard pages, then separately control Discord commands, role sync and guild-side permissions.</p></div>
-              <StatGrid min="min(170px,100%)"><SummaryStat theme={theme} label="Guild Roles" value={roles.length} accent="#c084fc" description="Available Discord roles" /><SummaryStat theme={theme} label="Global Roles" value={configuredRoleCount} accent="#60a5fa" description="Roles with global dashboard access" /><SummaryStat theme={theme} label="Dashboard Rules" value={configuredDashboardCount} accent="#34d399" description="Dashboard controls configured" /><SummaryStat theme={theme} label="Discord Rules" value={configuredDiscordCount} accent="#facc15" description="Discord controls configured" /></StatGrid>
+              <StatGrid min="min(170px,100%)"><SummaryStat theme={theme} label="Guild Roles" value={roles.length} accent="#c084fc" description="Available Discord roles" /><SummaryStat theme={theme} label="Manager Roles" value={managerRoleIds.length} accent="#60a5fa" description="Roles with full admin control" /><SummaryStat theme={theme} label="Dashboard Rules" value={configuredDashboardCount} accent="#34d399" description="Dashboard controls configured" /><SummaryStat theme={theme} label="Discord Rules" value={configuredDiscordCount} accent="#facc15" description="Discord controls configured" /></StatGrid>
             </div>
           </SectionCard>
 
-          <SectionCard theme={theme} title="🎛️ Role / ID Selector" subtitle="Choose the Discord role first, then assign what that role can do in the dashboard and in Discord.">
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,260px),1fr))', gap: 12 }}>
-              <Field theme={theme} label="Discord Role / ID to Configure"><select value={selectedRoleId} onChange={(event) => setSelectedRoleId(event.target.value)} style={input(theme)}>{roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select></Field>
-              <ToggleRow theme={theme} title="Allow dashboard to sync changes into Discord" description="Saved as a preference. Create/sync buttons will remain guarded behind confirmation and hierarchy checks." enabled={permissions.syncDiscordRoles === true} onClick={() => updatePermissions((current) => ({ ...current, syncDiscordRoles: !current.syncDiscordRoles }))} />
+          <SectionCard theme={theme} title="👑 Manager Roles" subtitle="Roles added here are able to fully manage Goliath and its features. All roles with administrator or manage guild permissions can also be treated as managers by the permission engine.">
+            <div style={{ display: 'grid', gap: 12 }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {managerRoleIds.length ? managerRoleIds.map((roleId) => <button key={roleId} type="button" onClick={() => removeManagerRole(roleId)} title="Remove manager role" style={{ ...button(theme, 'soft'), padding: '7px 10px', borderRadius: 8 }}>● {roleName(roles, roleId)} ×</button>) : <span style={{ color: theme.mutedText }}>No manager roles configured.</span>}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 10 }}>
+                <select value={managerRoleId} onChange={(event) => setManagerRoleId(event.target.value)} style={input(theme)}><option value="">Select role to add</option>{roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select>
+                <button type="button" onClick={addManagerRole} disabled={!managerRoleId || managerRoleIds.includes(managerRoleId)} style={button(theme, 'primary', !managerRoleId || managerRoleIds.includes(managerRoleId))}>+</button>
+              </div>
+              <ToggleRow theme={theme} title="Allow dashboard to sync changes into Discord" description="When off, Dashboard Control Panel and Discord Control Panel can use different access setups. Create/sync buttons stay guarded by confirmation and hierarchy checks." enabled={permissions.syncDiscordRoles === true} onClick={() => updatePermissions((current) => ({ ...current, syncDiscordRoles: !current.syncDiscordRoles }))} />
             </div>
-            {selectedRole ? <div style={{ marginTop: 14, border: `1px solid ${theme.cardBorder}`, borderRadius: 16, padding: 14, display: 'grid', gap: 12 }}>
-              <strong>Global dashboard access for {selectedRole.name}</strong>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{DASHBOARD_ACTIONS.map(([key, label]) => <PermissionCheckbox key={key} theme={theme} label={label} checked={(permissions.roleAccess?.[selectedRole.id] || []).includes(key)} onChange={(checked) => setRolePermission(selectedRole.id, key, checked)} />)}</div>
-            </div> : null}
           </SectionCard>
 
-          <SectionCard theme={theme} title="🖥️ Dashboard Control Panel" subtitle="Page-by-page dashboard permissions. This covers AutoMod, General Settings, Moderation, Cases, Warnings, every module page, logs, security and restore.">
-            {renderControlRows(DASHBOARD_CONTROLS, 'moduleAccess', DASHBOARD_ACTIONS)}
-          </SectionCard>
+          <CollapsiblePanel sectionKey="dashboard" title="🖥️ Dashboard Control Panel" subtitle="Choose a dashboard role here. This can be different from Discord command access if sync is off.">
+            <div style={{ display: 'grid', gap: 14 }}>
+              <Field theme={theme} label="Dashboard Role / ID to Configure"><select value={dashboardRoleId} onChange={(event) => setDashboardRoleId(event.target.value)} style={input(theme)}>{roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select></Field>
+              {dashboardRoleId ? <div style={{ border: `1px solid ${theme.cardBorder}`, borderRadius: 16, padding: 14, display: 'grid', gap: 12 }}><strong>Global dashboard access for {roleName(roles, dashboardRoleId)}</strong><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{DASHBOARD_ACTIONS.map(([key, label]) => <PermissionCheckbox key={key} theme={theme} label={label} checked={(permissions.roleAccess?.[dashboardRoleId] || []).includes(key)} onChange={(checked) => setGlobalRolePermission(dashboardRoleId, key, checked)} />)}</div></div> : null}
+              {renderControlRows(DASHBOARD_CONTROLS, 'moduleAccess', DASHBOARD_ACTIONS, dashboardRoleId)}
+            </div>
+          </CollapsiblePanel>
 
-          <SectionCard theme={theme} title="🤖 Discord Control Panel" subtitle="Discord-side access for commands, role sync, guild permissions and module Discord actions. This can match dashboard access or stay separate.">
-            {renderControlRows(DISCORD_CONTROLS, 'discordAccess', DISCORD_ACTIONS)}
-          </SectionCard>
+          <CollapsiblePanel sectionKey="discord" title="🤖 Discord Control Panel" subtitle="Choose a Discord role here. This controls commands, sync, guild permissions and module Discord actions.">
+            <div style={{ display: 'grid', gap: 14 }}>
+              <Field theme={theme} label="Discord Role / ID to Configure"><select value={discordRoleId} onChange={(event) => setDiscordRoleId(event.target.value)} style={input(theme)}>{roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select></Field>
+              {renderControlRows(DISCORD_CONTROLS, 'discordAccess', DISCORD_ACTIONS, discordRoleId)}
+            </div>
+          </CollapsiblePanel>
 
-          <SectionCard theme={theme} title="🔄 Discord Role Creation & Sync" subtitle="Next build: create/map Discord roles from this page and safely apply command or guild permissions.">
+          <CollapsiblePanel sectionKey="sync" title="🔄 Discord Role Creation & Sync" subtitle="Create/map Discord roles from this page and safely apply command or guild permissions.">
             <div style={{ display: 'grid', gap: 12 }}>
               <button type="button" disabled style={button(theme, 'primary', true)}>Create Discord Role</button>
               <button type="button" disabled style={button(theme, 'success', true)}>Sync Selected Role</button>
               <div style={{ color: theme.mutedText, lineHeight: 1.55 }}>Role creation and sync will use confirmation, hierarchy checks, and audit logging before making changes in the guild.</div>
             </div>
-          </SectionCard>
+          </CollapsiblePanel>
 
           <PrimaryButton onClick={saveControlPanels} disabled={saving}>{saving ? 'Saving...' : 'Save Admin Control Panels'}</PrimaryButton>
         </> : null}
