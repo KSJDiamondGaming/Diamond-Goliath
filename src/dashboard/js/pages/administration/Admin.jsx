@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
 import { api } from '../../services/apiClient';
-import PageShell, { EmptyState, LoadingPanel, Notice, PrimaryButton, SectionCard, StatGrid, SummaryStat } from '../../shared/PageShell';
+import PageShell, { EmptyState, LoadingPanel, Notice, SectionCard, StatGrid, SummaryStat } from '../../shared/PageShell';
 import { PAGE_LAYOUTS } from '../../ui/layout';
 import { createSharedComponentStyles } from '../../ui/components';
 
@@ -45,20 +45,18 @@ const DISCORD_CONTROLS = [
   ['backup-restore-commands', 'Backup / Restore Commands'],
 ];
 
-const DASHBOARD_ACTIONS = [
-  ['view', 'View'],
-  ['edit', 'Edit'],
-  ['configure', 'Configure'],
-  ['deploy', 'Deploy'],
-  ['delete', 'Delete'],
-  ['manage', 'Manage'],
+const FULL_ACCESS_ACTIONS = ['view', 'edit', 'configure', 'deploy', 'delete', 'manage'];
+const CUSTOM_ACCESS_ACTIONS = ['edit'];
+const DASHBOARD_CUSTOM_OPTIONS = [
+  ['view', 'Can view'],
+  ['configure', 'Can configure'],
+  ['deploy', 'Can deploy'],
+  ['delete', 'Can delete'],
 ];
-
-const DISCORD_ACTIONS = [
-  ['use', 'Use'],
-  ['manage', 'Manage'],
-  ['sync', 'Sync'],
-  ['create', 'Create'],
+const DISCORD_CUSTOM_OPTIONS = [
+  ['use', 'Can use'],
+  ['create', 'Can create'],
+  ['sync', 'Can sync'],
   ['admin', 'Advanced'],
 ];
 
@@ -102,18 +100,21 @@ function button(theme, tone = 'primary', disabled = false) {
   const tones = {
     primary: ['rgba(59,130,246,0.16)', 'rgba(59,130,246,0.35)', '#bfdbfe'],
     success: ['rgba(34,197,94,0.13)', 'rgba(34,197,94,0.32)', '#86efac'],
-    danger: ['rgba(239,68,68,0.13)', 'rgba(239,68,68,0.32)', '#fca5a5'],
     soft: ['rgba(148,163,184,0.10)', theme.cardBorder, theme.cardText],
   };
   const [background, border, color] = tones[tone] || tones.primary;
   return { border: `1px solid ${border}`, background, color, borderRadius: 12, padding: '10px 12px', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.55 : 1, fontWeight: 950 };
 }
 
+function accessButton(theme, active, label, onClick) {
+  return <button type="button" onClick={onClick} style={button(theme, active ? 'success' : 'soft')}>{label}</button>;
+}
+
 function Field({ theme, label, children }) {
   return <label style={{ display: 'grid', gap: 7, minWidth: 0 }}><span style={{ color: theme.mutedText, fontSize: 12, fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</span>{children}</label>;
 }
 
-function PermissionCheckbox({ theme, checked, label, onChange }) {
+function OptionCheckbox({ theme, checked, label, onChange }) {
   return <label style={{ display: 'inline-flex', alignItems: 'center', gap: 7, border: `1px solid ${checked ? 'rgba(34,197,94,0.35)' : theme.cardBorder}`, background: checked ? 'rgba(34,197,94,0.10)' : 'rgba(15,23,42,0.22)', borderRadius: 999, padding: '7px 10px', color: checked ? '#86efac' : theme.mutedText, fontWeight: 900, fontSize: 12 }}><input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />{label}</label>;
 }
 
@@ -144,6 +145,7 @@ export default function Admin({ selectedGuild, theme }) {
   const [newRoleHoist, setNewRoleHoist] = useState(false);
   const [newRoleMentionable, setNewRoleMentionable] = useState(false);
   const [openSections, setOpenSections] = useState({ dashboard: true, discord: false });
+  const [customOpen, setCustomOpen] = useState({});
 
   const permissions = general.dashboardPermissions || defaultPermissions();
   const fullAccessRoleIds = permissions.managerRoleIds || [];
@@ -183,11 +185,13 @@ export default function Admin({ selectedGuild, theme }) {
     updatePermissions((current) => ({ ...current, managerRoleIds: enabled ? [...new Set([...(current.managerRoleIds || []), roleId])] : (current.managerRoleIds || []).filter((id) => id !== roleId) }));
   }
 
-  function setGlobalRolePermission(roleId, permission, enabled) {
+  function setRoleAccessMode(roleId, mode) {
     updatePermissions((current) => {
-      const existing = new Set(current.roleAccess?.[roleId] || []);
-      if (enabled) existing.add(permission); else existing.delete(permission);
-      return { ...current, roleAccess: { ...(current.roleAccess || {}), [roleId]: [...existing] } };
+      const next = { ...(current.roleAccess || {}) };
+      if (mode === 'full') next[roleId] = [...FULL_ACCESS_ACTIONS];
+      else if (mode === 'custom') next[roleId] = [...CUSTOM_ACCESS_ACTIONS];
+      else next[roleId] = [];
+      return { ...current, roleAccess: next };
     });
   }
 
@@ -201,6 +205,17 @@ export default function Admin({ selectedGuild, theme }) {
       parent[controlKey] = perRole;
       return { ...current, [bucket]: parent };
     });
+  }
+
+  function setControlAccessMode(bucket, controlKey, roleId, mode) {
+    const fullActions = bucket === 'discordAccess' ? ['use', 'manage', 'sync', 'create', 'admin'] : FULL_ACCESS_ACTIONS;
+    const customActions = bucket === 'discordAccess' ? ['use'] : CUSTOM_ACCESS_ACTIONS;
+    updatePermissions((current) => {
+      const parent = { ...(current[bucket] || {}) };
+      parent[controlKey] = { ...(parent[controlKey] || {}), [roleId]: mode === 'full' ? fullActions : mode === 'custom' ? customActions : [] };
+      return { ...current, [bucket]: parent };
+    });
+    if (mode === 'custom') setCustomOpen((current) => ({ ...current, [`${bucket}:${controlKey}:${roleId}`]: true }));
   }
 
   function toggleSection(section) {
@@ -217,7 +232,7 @@ export default function Admin({ selectedGuild, theme }) {
       setDashboardRoleId(role.id);
       setDiscordRoleId(role.id);
       setFullAccessRole(role.id, true);
-      ['view', 'edit', 'configure', 'deploy', 'manage'].forEach((action) => setGlobalRolePermission(role.id, action, true));
+      setRoleAccessMode(role.id, 'full');
       setNotice(`✅ Created Discord role ${role.name}. Save Goliath Dashboard Access to persist access.`);
     } catch (err) { console.error(err); setError(err.message || 'Failed to create Discord role.'); }
     finally { setCreatingRole(false); }
@@ -233,8 +248,19 @@ export default function Admin({ selectedGuild, theme }) {
     finally { setSaving(false); }
   }
 
-  function renderControlRows(items, bucket, actions, selectedRoleId) {
-    return <div style={{ overflowX: 'auto' }}><div style={{ display: 'grid', gap: 8, minWidth: 760 }}>{items.map(([controlKey, label]) => <div key={controlKey} style={{ border: `1px solid ${theme.cardBorder}`, borderRadius: 14, padding: 12, display: 'grid', gridTemplateColumns: '240px 1fr', gap: 12, alignItems: 'center' }}><strong>{label}</strong><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{actions.map(([key, actionLabel]) => <PermissionCheckbox key={key} theme={theme} label={actionLabel} checked={(permissions[bucket]?.[controlKey]?.[selectedRoleId] || []).includes(key)} onChange={(checked) => setNestedPermission(bucket, controlKey, selectedRoleId, key, checked)} />)}</div></div>)}</div></div>;
+  function renderCustomOptions(bucket, controlKey, selectedRoleId) {
+    const options = bucket === 'discordAccess' ? DISCORD_CUSTOM_OPTIONS : DASHBOARD_CUSTOM_OPTIONS;
+    return <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', paddingTop: 10 }}>{options.map(([key, label]) => <OptionCheckbox key={key} theme={theme} label={label} checked={(permissions[bucket]?.[controlKey]?.[selectedRoleId] || []).includes(key)} onChange={(checked) => setNestedPermission(bucket, controlKey, selectedRoleId, key, checked)} />)}</div>;
+  }
+
+  function renderControlRows(items, bucket, selectedRoleId) {
+    return <div style={{ display: 'grid', gap: 8 }}>{items.map(([controlKey, label]) => {
+      const access = permissions[bucket]?.[controlKey]?.[selectedRoleId] || [];
+      const isFull = access.includes('manage') || access.includes('admin');
+      const isCustom = access.length > 0 && !isFull;
+      const customKey = `${bucket}:${controlKey}:${selectedRoleId}`;
+      return <div key={controlKey} style={{ border: `1px solid ${isFull || isCustom ? 'rgba(34,197,94,0.28)' : theme.cardBorder}`, background: isFull ? 'rgba(34,197,94,0.08)' : 'rgba(15,23,42,0.18)', borderRadius: 14, padding: 12 }}><div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) auto auto', gap: 10, alignItems: 'center' }}><strong>{label}</strong>{accessButton(theme, isFull, 'Full Access', () => setControlAccessMode(bucket, controlKey, selectedRoleId, isFull ? 'none' : 'full'))}{accessButton(theme, isCustom, 'Custom Access', () => setControlAccessMode(bucket, controlKey, selectedRoleId, isCustom ? 'none' : 'custom'))}</div>{isCustom && customOpen[customKey] !== false ? renderCustomOptions(bucket, controlKey, selectedRoleId) : null}</div>;
+    })}</div>;
   }
 
   function CollapsiblePanel({ sectionKey, title, subtitle, children }) {
@@ -252,7 +278,7 @@ export default function Admin({ selectedGuild, theme }) {
         {!loading ? <>
           <SectionCard theme={theme}>
             <div style={{ display: 'grid', gap: 18, padding: 'clamp(18px,2.6vw,24px)', border: `1px solid ${theme.primaryBorder || theme.cardBorder}`, borderRadius: 18, background: 'linear-gradient(135deg, rgba(59,130,246,0.18), rgba(15,23,42,0.10) 55%, rgba(168,85,247,0.14))' }}>
-              <div><h2 style={{ margin: 0, fontSize: 'clamp(26px,3vw,38px)' }}>🛠️ Admin Control Panel</h2><p style={{ margin: '10px 0 0', color: theme.mutedText, lineHeight: 1.6 }}>Control dashboard access, Discord commands and guild-side permissions.</p></div>
+              <div><h2 style={{ margin: 0, fontSize: 'clamp(26px,3vw,38px)' }}>Admin Control Panel</h2><p style={{ margin: '10px 0 0', color: theme.mutedText, lineHeight: 1.6 }}>Control dashboard access, Discord commands and guild-side permissions.</p></div>
               <StatGrid min="min(170px,100%)"><SummaryStat theme={theme} label="Guild Roles" value={roles.length} accent="#c084fc" description="Available Discord roles" /><SummaryStat theme={theme} label="Full Access" value={fullAccessRoleIds.length} accent="#60a5fa" description="Goliath full access roles" /><SummaryStat theme={theme} label="Dashboard Rules" value={configuredDashboardCount} accent="#34d399" description="Dashboard controls configured" /><SummaryStat theme={theme} label="Discord Rules" value={configuredDiscordCount} accent="#facc15" description="Discord controls configured" /></StatGrid>
             </div>
           </SectionCard>
@@ -265,30 +291,30 @@ export default function Admin({ selectedGuild, theme }) {
                 <Field theme={theme} label="Hex Colour"><input value={newRoleColor} onChange={(event) => setNewRoleColor(event.target.value)} placeholder="#3b82f6" style={input(theme)} /></Field>
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-                <PermissionCheckbox theme={theme} label="Show role separately" checked={newRoleHoist} onChange={setNewRoleHoist} />
-                <PermissionCheckbox theme={theme} label="Allow mentions" checked={newRoleMentionable} onChange={setNewRoleMentionable} />
+                <OptionCheckbox theme={theme} label="Show role separately" checked={newRoleHoist} onChange={setNewRoleHoist} />
+                <OptionCheckbox theme={theme} label="Allow mentions" checked={newRoleMentionable} onChange={setNewRoleMentionable} />
               </div>
             </div>
           </Panel>
 
-          <Panel theme={theme} title="Goliath Dashboard Access" subtitle="Select one or more existing roles that should have full Goliath dashboard access. This does not rename or copy another bot's structure." action={<button type="button" onClick={saveControlPanels} disabled={saving} style={button(theme, 'success', saving)}>{saving ? 'Saving...' : 'Save'}</button>}>
-            <div style={{ display: 'grid', gap: 12 }}>
+          <Panel theme={theme} title="Goliath Dashboard Access" subtitle="Select one or more existing roles that should have full Goliath dashboard access." action={<button type="button" onClick={saveControlPanels} disabled={saving} style={button(theme, 'success', saving)}>{saving ? 'Saving...' : 'Save'}</button>}>
+            <div style={{ display: 'grid', gap: 10 }}>
               {roles.length ? roles.map((role) => <label key={role.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', border: `1px solid ${fullAccessRoleIds.includes(role.id) ? 'rgba(34,197,94,0.35)' : theme.cardBorder}`, background: fullAccessRoleIds.includes(role.id) ? 'rgba(34,197,94,0.08)' : 'rgba(15,23,42,0.18)', borderRadius: 14, padding: 12 }}><span style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span style={{ width: 10, height: 10, borderRadius: 999, background: role.color || '#94a3b8', display: 'inline-block' }} /> <strong>{role.name}</strong></span><input type="checkbox" checked={fullAccessRoleIds.includes(role.id)} onChange={(event) => setFullAccessRole(role.id, event.target.checked)} /></label>) : <div style={{ color: theme.mutedText }}>No Discord roles found.</div>}
             </div>
           </Panel>
 
-          <CollapsiblePanel sectionKey="dashboard" title="Dashboard Control Panel" subtitle="Choose a dashboard role and define exactly what dashboard pages and controls it can use.">
+          <CollapsiblePanel sectionKey="dashboard" title="Dashboard Control Panel" subtitle="Set full access quickly, or use custom access for selected dashboard areas.">
             <div style={{ display: 'grid', gap: 14 }}>
               <Field theme={theme} label="Dashboard Role / ID to Configure"><select value={dashboardRoleId} onChange={(event) => setDashboardRoleId(event.target.value)} style={input(theme)}>{roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select></Field>
-              {dashboardRoleId ? <div style={{ border: `1px solid ${theme.cardBorder}`, borderRadius: 16, padding: 14, display: 'grid', gap: 12 }}><strong>Global dashboard access for {roleName(roles, dashboardRoleId)}</strong><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{DASHBOARD_ACTIONS.map(([key, label]) => <PermissionCheckbox key={key} theme={theme} label={label} checked={(permissions.roleAccess?.[dashboardRoleId] || []).includes(key)} onChange={(checked) => setGlobalRolePermission(dashboardRoleId, key, checked)} />)}</div></div> : null}
-              {renderControlRows(DASHBOARD_CONTROLS, 'moduleAccess', DASHBOARD_ACTIONS, dashboardRoleId)}
+              {dashboardRoleId ? <div style={{ border: `1px solid ${theme.cardBorder}`, borderRadius: 16, padding: 14, display: 'grid', gap: 12 }}><strong>Global dashboard access for {roleName(roles, dashboardRoleId)}</strong><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{accessButton(theme, (permissions.roleAccess?.[dashboardRoleId] || []).includes('manage'), 'Full Access', () => setRoleAccessMode(dashboardRoleId, (permissions.roleAccess?.[dashboardRoleId] || []).includes('manage') ? 'none' : 'full'))}{accessButton(theme, (permissions.roleAccess?.[dashboardRoleId] || []).includes('edit') && !(permissions.roleAccess?.[dashboardRoleId] || []).includes('manage'), 'Custom Access', () => setRoleAccessMode(dashboardRoleId, (permissions.roleAccess?.[dashboardRoleId] || []).includes('edit') ? 'none' : 'custom'))}</div></div> : null}
+              {renderControlRows(DASHBOARD_CONTROLS, 'moduleAccess', dashboardRoleId)}
             </div>
           </CollapsiblePanel>
 
-          <CollapsiblePanel sectionKey="discord" title="Discord Control Panel" subtitle="Choose a Discord role. This controls commands, guild permissions and module Discord actions.">
+          <CollapsiblePanel sectionKey="discord" title="Discord Control Panel" subtitle="Set full access quickly, or use custom access for command and guild-side controls.">
             <div style={{ display: 'grid', gap: 14 }}>
               <Field theme={theme} label="Discord Role / ID to Configure"><select value={discordRoleId} onChange={(event) => setDiscordRoleId(event.target.value)} style={input(theme)}>{roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select></Field>
-              {renderControlRows(DISCORD_CONTROLS, 'discordAccess', DISCORD_ACTIONS, discordRoleId)}
+              {renderControlRows(DISCORD_CONTROLS, 'discordAccess', discordRoleId)}
             </div>
           </CollapsiblePanel>
         </> : null}
