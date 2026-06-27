@@ -17,7 +17,11 @@ async function request(url, options = {}) {
   const data = await response.json().catch(() => null);
 
   if (!response.ok) {
-    throw new Error(data?.error || `API request failed: ${response.status}`);
+    const error = new Error(data?.error || `API request failed: ${response.status}`);
+    error.data = data;
+    error.diagnostics = data?.diagnostics || null;
+    error.status = response.status;
+    throw error;
   }
 
   return data;
