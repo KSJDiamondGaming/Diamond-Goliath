@@ -4,6 +4,7 @@ import { api } from '../../services/apiClient';
 import PageShell, { EmptyState, LoadingPanel, Notice, SectionCard, StatGrid, SummaryStat } from '../../shared/PageShell';
 import { PAGE_LAYOUTS } from '../../ui/layout';
 import { createSharedComponentStyles } from '../../ui/components';
+import RoleEditorCard from './RoleEditorCard';
 
 const DASHBOARD_CONTROLS = [
   ['overview', 'Overview'], ['admin', 'Admin'], ['automod', 'AutoMod'], ['general-settings', 'General Settings'],
@@ -121,6 +122,8 @@ export default function Admin({ selectedGuild, theme }) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [creatingRole, setCreatingRole] = useState(false);
+  const [savingRole, setSavingRole] = useState(false);
+  const [deletingRole, setDeletingRole] = useState(false);
   const [draggingRoleId, setDraggingRoleId] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -128,6 +131,7 @@ export default function Admin({ selectedGuild, theme }) {
   const [general, setGeneral] = useState(normalizeGeneral());
   const [dashboardRoleId, setDashboardRoleId] = useState('');
   const [discordRoleId, setDiscordRoleId] = useState('');
+  const [selectedRoleId, setSelectedRoleId] = useState('');
   const [newRoleName, setNewRoleName] = useState('Goliath Dashboard Access');
   const [newRoleColor, setNewRoleColor] = useState('#3b82f6');
   const [newRoleHoist, setNewRoleHoist] = useState(false);
@@ -151,6 +155,7 @@ export default function Admin({ selectedGuild, theme }) {
       return (b.position || 0) - (a.position || 0);
     });
   }, [roles, permissions.roleOrder]);
+  const selectedRole = useMemo(() => roles.find((role) => role.id === selectedRoleId) || orderedRoles[0] || null, [orderedRoles, roles, selectedRoleId]);
 
   useEffect(() => {
     let mounted = true;
@@ -168,6 +173,7 @@ export default function Admin({ selectedGuild, theme }) {
         setGeneral(normalizeGeneral(generalRes?.config || generalRes || {}));
         setDashboardRoleId(nextRoles[0]?.id || '');
         setDiscordRoleId(nextRoles[0]?.id || '');
+        setSelectedRoleId(nextRoles[0]?.id || '');
       } catch (err) {
         console.error(err);
         if (mounted) setError('Failed to load admin control panels.');
@@ -241,7 +247,9 @@ export default function Admin({ selectedGuild, theme }) {
       setError('');
       setRoleSyncReport(null);
       const rolesRes = await api.getGuildRoles(guildId);
-      setRoles(normalizeArray(rolesRes, 'roles'));
+      const nextRoles = normalizeArray(rolesRes, 'roles');
+      setRoles(nextRoles);
+      setSelectedRoleId((current) => current || nextRoles[0]?.id || '');
       setNotice('✅ Synced latest roles from Discord.');
     } catch (err) {
       console.error(err);
@@ -261,6 +269,7 @@ export default function Admin({ selectedGuild, theme }) {
       if (!role?.id) throw new Error('Discord did not return the created role.');
       setRoles((current) => [role, ...current.filter((item) => item.id !== role.id)]);
       updatePermissions((current) => ({ ...current, roleOrder: [role.id, ...(current.roleOrder || []).filter((id) => id !== role.id)] }));
+      setSelectedRoleId(role.id);
       setDashboardRoleId(role.id);
       setDiscordRoleId(role.id);
       setFullAccessRole(role.id, true);
@@ -271,6 +280,43 @@ export default function Admin({ selectedGuild, theme }) {
       setError(err.message || 'Failed to create Discord role.');
     } finally {
       setCreatingRole(false);
+    }
+  }
+
+  async function saveSelectedRole(draft) {
+    if (!selectedRole?.id) return;
+    try {
+      setSavingRole(true);
+      setError('');
+      const response = await api.updateGuildRole(guildId, selectedRole.id, draft);
+      if (Array.isArray(response?.roles)) setRoles(response.roles);
+      else if (response?.role) setRoles((current) => current.map((role) => role.id === response.role.id ? response.role : role));
+      setNotice(`✅ Updated Discord role ${response?.role?.name || draft.name}.`);
+    } catch (err) {
+      console.error(err);
+      setError(err.message || 'Failed to update Discord role.');
+    } finally {
+      setSavingRole(false);
+    }
+  }
+
+  async function deleteSelectedRole(role) {
+    if (!role?.id) return;
+    const confirmed = window.confirm(`Delete Discord role "${role.name}"? This cannot be undone.`);
+    if (!confirmed) return;
+    try {
+      setDeletingRole(true);
+      setError('');
+      const response = await api.deleteGuildRole(guildId, role.id);
+      const nextRoles = Array.isArray(response?.roles) ? response.roles : roles.filter((item) => item.id !== role.id);
+      setRoles(nextRoles);
+      setSelectedRoleId(nextRoles[0]?.id || '');
+      setNotice(`✅ Deleted Discord role ${role.name}.`);
+    } catch (err) {
+      console.error(err);
+      setError(err.message || 'Failed to delete Discord role.');
+    } finally {
+      setDeletingRole(false);
     }
   }
 
@@ -373,14 +419,18 @@ export default function Admin({ selectedGuild, theme }) {
             </div>
           </Panel>
 
-          <Panel theme={theme} title="Role Hierarchy" subtitle="Drag roles to reorder Discord hierarchy. Save will sync movable roles and report anything Discord blocks." open={openSections.access !== false} onHeaderClick={() => toggleSection('access')} action={<button type="button" onClick={saveControlPanels} disabled={saving} style={button(theme, 'success', saving)}>{saving ? 'Saving...' : 'Save'}</button>}>
-            <div style={{ display: 'grid', gap: 12 }}>
+          <Panel theme={theme} title="Role Hierarchy" subtitle="Drag roles to reorder Discord hierarchy. Select a role to edit it." open={openSections.access !== false} onHeaderClick={() => toggleSection('access')} action={<button type="button" onClick={saveControlPanels} disabled={saving} style={button(theme, 'success', saving)}>{saving ? 'Saving...' : 'Save Order'}</button>}>
+            <div style={{ display: 'grid', gap: 14 }}>
               {renderRoleSyncReport()}
-              <div style={{ display: 'grid', gap: 10 }}>{orderedRoles.length ? orderedRoles.map((role) => {
-                const hasFullAccess = fullAccessRoleIds.includes(role.id);
-                const isDragging = draggingRoleId === role.id;
-                return <div key={role.id} draggable onDragStart={(event) => { setDraggingRoleId(role.id); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', role.id); }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; }} onDrop={(event) => { event.preventDefault(); reorderRole(event.dataTransfer.getData('text/plain') || draggingRoleId, role.id); setDraggingRoleId(''); }} onDragEnd={() => setDraggingRoleId('')} style={{ display: 'grid', gridTemplateColumns: '34px auto 1fr auto', gap: 10, alignItems: 'center', border: `1px solid ${hasFullAccess ? 'rgba(34,197,94,0.35)' : theme.cardBorder}`, background: isDragging ? 'rgba(59,130,246,0.18)' : hasFullAccess ? 'rgba(34,197,94,0.08)' : 'rgba(15,23,42,0.18)', borderRadius: 14, padding: 12, cursor: 'grab', opacity: isDragging ? 0.65 : 1 }}><span title="Drag to reorder" style={{ color: theme.mutedText, fontWeight: 950, letterSpacing: '-0.2em', userSelect: 'none' }}>⋮⋮</span><span style={{ width: 10, height: 10, borderRadius: 999, background: role.color || '#94a3b8', display: 'inline-block' }} /><strong>{role.name}</strong><Pill theme={theme} active={hasFullAccess} label="Full Access" onClick={() => setFullAccessRole(role.id, !hasFullAccess)} /></div>;
-              }) : <div style={{ color: theme.mutedText }}>No Discord roles found.</div>}</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px,0.85fr) minmax(320px,1.15fr)', gap: 14, alignItems: 'start' }}>
+                <div style={{ display: 'grid', gap: 10 }}>{orderedRoles.length ? orderedRoles.map((role) => {
+                  const hasFullAccess = fullAccessRoleIds.includes(role.id);
+                  const isDragging = draggingRoleId === role.id;
+                  const isSelected = selectedRole?.id === role.id;
+                  return <div key={role.id} draggable onClick={() => setSelectedRoleId(role.id)} onDragStart={(event) => { setDraggingRoleId(role.id); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', role.id); }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; }} onDrop={(event) => { event.preventDefault(); reorderRole(event.dataTransfer.getData('text/plain') || draggingRoleId, role.id); setDraggingRoleId(''); }} onDragEnd={() => setDraggingRoleId('')} style={{ display: 'grid', gridTemplateColumns: '34px auto 1fr auto', gap: 10, alignItems: 'center', border: `1px solid ${isSelected ? 'rgba(96,165,250,0.55)' : hasFullAccess ? 'rgba(34,197,94,0.35)' : theme.cardBorder}`, background: isDragging ? 'rgba(59,130,246,0.18)' : isSelected ? 'rgba(59,130,246,0.12)' : hasFullAccess ? 'rgba(34,197,94,0.08)' : 'rgba(15,23,42,0.18)', borderRadius: 14, padding: 12, cursor: 'grab', opacity: isDragging ? 0.65 : 1 }}><span title="Drag to reorder" style={{ color: theme.mutedText, fontWeight: 950, letterSpacing: '-0.2em', userSelect: 'none' }}>⋮⋮</span><span style={{ width: 10, height: 10, borderRadius: 999, background: role.color || '#94a3b8', display: 'inline-block' }} /><strong>{role.name}</strong><Pill theme={theme} active={hasFullAccess} label="Full Access" onClick={() => setFullAccessRole(role.id, !hasFullAccess)} /></div>;
+                }) : <div style={{ color: theme.mutedText }}>No Discord roles found.</div>}</div>
+                <RoleEditorCard role={selectedRole} theme={theme} onSave={saveSelectedRole} onDelete={deleteSelectedRole} saving={savingRole} deleting={deletingRole} />
+              </div>
             </div>
           </Panel>
 
