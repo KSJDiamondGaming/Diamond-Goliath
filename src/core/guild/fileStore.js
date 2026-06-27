@@ -9,6 +9,18 @@ function clone(value) {
   }
 }
 
+function sortKeys(value) {
+  if (Array.isArray(value)) return value.map(sortKeys);
+  if (!value || typeof value !== 'object') return value;
+
+  return Object.keys(value)
+    .sort((a, b) => a.localeCompare(b))
+    .reduce((sorted, key) => {
+      sorted[key] = sortKeys(value[key]);
+      return sorted;
+    }, {});
+}
+
 function ensureDir(dirPath) {
   if (!dirPath || typeof dirPath !== 'string') return false;
 
@@ -39,7 +51,7 @@ function write(filePath, data = {}) {
     ensureDir(path.dirname(filePath));
 
     const tempPath = `${filePath}.tmp`;
-    const json = JSON.stringify(data ?? {}, null, 2);
+    const json = JSON.stringify(sortKeys(data ?? {}), null, 2);
 
     fs.writeFileSync(tempPath, json, 'utf8');
 
