@@ -1,29 +1,9 @@
 'use strict';
 
-const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const ROOT = path.resolve(__dirname, '..');
-const IGNORE_DIRS = new Set(['node_modules', '.git', 'dist', 'coverage', '.vite']);
-
-function walk(dir, files = []) {
-  if (!fs.existsSync(dir)) return files;
-
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (IGNORE_DIRS.has(entry.name)) continue;
-    const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      walk(fullPath, files);
-      continue;
-    }
-    if (entry.isFile() && entry.name.endsWith('.js')) {
-      files.push(fullPath);
-    }
-  }
-
-  return files;
-}
+const { ROOT, printHeader, relative, resolveRoot, walk } = require('./lib/scriptUtils');
 
 function checkFile(filePath) {
   const result = spawnSync(process.execPath, ['--check', filePath], {
@@ -32,13 +12,13 @@ function checkFile(filePath) {
   });
 
   if (result.status !== 0) {
-    const relative = path.relative(ROOT, filePath);
-    throw new Error(`Syntax check failed: ${relative}\n${result.stderr || result.stdout}`);
+    throw new Error(`Syntax check failed: ${relative(filePath)}\n${result.stderr || result.stdout}`);
   }
 }
 
 function requireSmoke(relativePath) {
-  const fullPath = path.join(ROOT, relativePath);
+  const fullPath = resolveRoot(relativePath);
+
   try {
     require(fullPath);
   } catch (error) {
@@ -47,7 +27,12 @@ function requireSmoke(relativePath) {
 }
 
 function main() {
-  const files = [path.join(ROOT, 'server.js'), ...walk(path.join(ROOT, 'src')), ...walk(path.join(ROOT, 'scripts'))];
+  const files = [
+    resolveRoot('server.js'),
+    ...walk(resolveRoot('src')),
+    ...walk(resolveRoot('scripts')),
+  ];
+
   const uniqueFiles = [...new Set(files)].filter((file) => !file.includes(`${path.sep}dashboard${path.sep}`));
 
   for (const file of uniqueFiles) {
@@ -60,7 +45,9 @@ function main() {
   requireSmoke('src/server/routes/modules.js');
   requireSmoke('src/server/routes/ownerDiagnostics.js');
 
-  console.log(`✅ Server syntax OK (${uniqueFiles.length} files checked)`);
+  printHeader('✅ Server syntax OK', {
+    'Files checked': uniqueFiles.length,
+  });
 }
 
 main();
