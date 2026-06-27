@@ -8,6 +8,7 @@ import AccessControlCard from './AccessControlCard';
 import CommandAccessPanel, { COMMAND_ACCESS_ITEMS, getConfiguredCommandAccessCount } from './CommandAccessPanel';
 import ModuleAccessPanel, { MODULE_ACCESS_ITEMS, getConfiguredModuleAccessCount } from './ModuleAccessPanel';
 import PermissionPresetsPanel from './PermissionPresetsPanel';
+import ProtectedActionsAccessPanel, { PROTECTED_ACTION_ITEMS, getConfiguredProtectedActionAccessCount } from './ProtectedActionsAccessPanel';
 import RoleCreatorFull from './RoleCreatorFull';
 import RoleEditorCard from './RoleEditorCardFull';
 
@@ -38,7 +39,7 @@ function normalizeArray(payload, key) {
 }
 
 function defaultAccessControl() {
-  return { commands: {}, dashboardPages: {}, modules: {} };
+  return { commands: {}, dashboardPages: {}, modules: {}, protectedActions: {} };
 }
 
 function defaultPermissions() {
@@ -67,6 +68,7 @@ function normalizeGeneral(config = {}) {
   dashboardPermissions.accessControl.commands = dashboardPermissions.accessControl.commands || {};
   dashboardPermissions.accessControl.dashboardPages = dashboardPermissions.accessControl.dashboardPages || {};
   dashboardPermissions.accessControl.modules = dashboardPermissions.accessControl.modules || {};
+  dashboardPermissions.accessControl.protectedActions = dashboardPermissions.accessControl.protectedActions || {};
   return { ...config, dashboardPermissions };
 }
 
@@ -115,6 +117,7 @@ export default function AdminRoleWorkspace({ selectedGuild, theme }) {
   const commandAccess = accessControl.commands || {};
   const dashboardPagesAccess = accessControl.dashboardPages || {};
   const modulesAccess = accessControl.modules || {};
+  const protectedActionsAccess = accessControl.protectedActions || {};
   const fullAccessRoleIds = permissions.managerRoleIds || [];
   const configuredCommands = getConfiguredCommandAccessCount(commandAccess);
   const configuredDashboardPages = DASHBOARD_ACCESS_ITEMS.filter(([key]) => {
@@ -122,6 +125,7 @@ export default function AdminRoleWorkspace({ selectedGuild, theme }) {
     return access.roles.length || access.users.length;
   }).length;
   const configuredModules = getConfiguredModuleAccessCount(modulesAccess);
+  const configuredProtectedActions = getConfiguredProtectedActionAccessCount(protectedActionsAccess);
 
   const orderedRoles = useMemo(() => {
     const order = permissions.roleOrder || [];
@@ -212,6 +216,15 @@ export default function AdminRoleWorkspace({ selectedGuild, theme }) {
       const modules = { ...(nextAccessControl.modules || {}) };
       modules[moduleKey] = normalizeAccess(access);
       return { ...current, accessControl: { ...nextAccessControl, modules } };
+    });
+  }
+
+  function setProtectedActionAccess(actionKey, access) {
+    updatePermissions((current) => {
+      const nextAccessControl = { ...defaultAccessControl(), ...(current.accessControl || {}) };
+      const protectedActions = { ...(nextAccessControl.protectedActions || {}) };
+      protectedActions[actionKey] = normalizeAccess(access);
+      return { ...current, accessControl: { ...nextAccessControl, protectedActions } };
     });
   }
 
@@ -362,7 +375,7 @@ export default function AdminRoleWorkspace({ selectedGuild, theme }) {
       {notice ? <Notice theme={theme} tone="success">{notice}</Notice> : null}
       {loading ? <LoadingPanel theme={theme} text="Loading admin role workspace..." /> : null}
       {!loading ? <>
-        <SectionCard theme={theme}><div style={{ display: 'grid', gap: 18, padding: 'clamp(18px,2.6vw,24px)', border: `1px solid ${theme.primaryBorder || theme.cardBorder}`, borderRadius: 18, background: 'linear-gradient(135deg, rgba(59,130,246,0.18), rgba(15,23,42,0.10) 55%, rgba(168,85,247,0.14))' }}><div><h2 style={{ margin: 0, fontSize: 'clamp(26px,3vw,38px)' }}>Admin Role Workspace</h2><p style={{ margin: '10px 0 0', color: theme.mutedText, lineHeight: 1.6 }}>Create roles, edit existing roles, apply permission presets, control access and sync hierarchy with Discord.</p></div><StatGrid min="min(170px,100%)"><SummaryStat theme={theme} label="Guild Roles" value={roles.length} accent="#c084fc" description="Available Discord roles" /><SummaryStat theme={theme} label="Page Access" value={`${configuredDashboardPages}/${DASHBOARD_ACCESS_ITEMS.length}`} accent="#34d399" description="Dashboard pages configured" /><SummaryStat theme={theme} label="Module Access" value={`${configuredModules}/${MODULE_ACCESS_ITEMS.length}`} accent="#60a5fa" description="Modules configured" /><SummaryStat theme={theme} label="Command Access" value={`${configuredCommands}/${COMMAND_ACCESS_ITEMS.length}`} accent="#facc15" description="Commands configured" /></StatGrid></div></SectionCard>
+        <SectionCard theme={theme}><div style={{ display: 'grid', gap: 18, padding: 'clamp(18px,2.6vw,24px)', border: `1px solid ${theme.primaryBorder || theme.cardBorder}`, borderRadius: 18, background: 'linear-gradient(135deg, rgba(59,130,246,0.18), rgba(15,23,42,0.10) 55%, rgba(168,85,247,0.14))' }}><div><h2 style={{ margin: 0, fontSize: 'clamp(26px,3vw,38px)' }}>Admin Role Workspace</h2><p style={{ margin: '10px 0 0', color: theme.mutedText, lineHeight: 1.6 }}>Create roles, edit existing roles, apply permission presets, control access and sync hierarchy with Discord.</p></div><StatGrid min="min(170px,100%)"><SummaryStat theme={theme} label="Guild Roles" value={roles.length} accent="#c084fc" description="Available Discord roles" /><SummaryStat theme={theme} label="Page Access" value={`${configuredDashboardPages}/${DASHBOARD_ACCESS_ITEMS.length}`} accent="#34d399" description="Dashboard pages configured" /><SummaryStat theme={theme} label="Module Access" value={`${configuredModules}/${MODULE_ACCESS_ITEMS.length}`} accent="#60a5fa" description="Modules configured" /><SummaryStat theme={theme} label="Protected Actions" value={`${configuredProtectedActions}/${PROTECTED_ACTION_ITEMS.length}`} accent="#facc15" description="High-impact actions configured" /></StatGrid></div></SectionCard>
         <Panel theme={theme} title="Role Creator" subtitle="Create new Discord roles using the full permission matrix." open><RoleCreatorFull creating={creatingRole} onCreate={createRole} onSync={refreshGuildRoles} theme={theme} /></Panel>
         <Panel theme={theme} title="Permission Presets" subtitle="Apply a starter access profile to any Discord role, then tweak the cards below if needed." open action={<button type="button" onClick={saveAccessControl} disabled={savingAccess} style={button(theme, 'success', savingAccess)}>{savingAccess ? 'Saving...' : 'Save Access'}</button>}><PermissionPresetsPanel onApply={applyPermissionPreset} roles={orderedRoles} selectedRoleId={selectedRoleId} theme={theme} /></Panel>
         <Panel theme={theme} title="Dashboard Access" subtitle="Control which roles or specific Discord user IDs can access each dashboard page. Empty means guild owner only." open action={<button type="button" onClick={saveAccessControl} disabled={savingAccess} style={button(theme, 'success', savingAccess)}>{savingAccess ? 'Saving...' : 'Save Access'}</button>}>
@@ -373,6 +386,9 @@ export default function AdminRoleWorkspace({ selectedGuild, theme }) {
         </Panel>
         <Panel theme={theme} title="Command Access" subtitle="Control which roles or specific Discord user IDs can use key Goliath commands. Empty means guild owner only." open action={<button type="button" onClick={saveAccessControl} disabled={savingAccess} style={button(theme, 'success', savingAccess)}>{savingAccess ? 'Saving...' : 'Save Access'}</button>}>
           <CommandAccessPanel commandAccess={commandAccess} guildRoles={orderedRoles} onChange={setCommandAccess} theme={theme} />
+        </Panel>
+        <Panel theme={theme} title="Protected Actions" subtitle="Control who can use high-impact dashboard actions. Empty means guild owner only." open action={<button type="button" onClick={saveAccessControl} disabled={savingAccess} style={button(theme, 'success', savingAccess)}>{savingAccess ? 'Saving...' : 'Save Access'}</button>}>
+          <ProtectedActionsAccessPanel guildRoles={orderedRoles} onChange={setProtectedActionAccess} protectedActions={protectedActionsAccess} theme={theme} />
         </Panel>
         <Panel theme={theme} title="Role Hierarchy & Editor" subtitle="Drag roles to reorder. Select a role to edit its Discord settings." open action={<button type="button" onClick={saveOrder} disabled={savingOrder} style={button(theme, 'success', savingOrder)}>{savingOrder ? 'Saving...' : 'Save Order'}</button>}>
           <div style={{ display: 'grid', gap: 14 }}>{renderRoleSyncReport()}<div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px,0.85fr) minmax(320px,1.15fr)', gap: 14, alignItems: 'start' }}><div style={{ display: 'grid', gap: 10 }}>{orderedRoles.length ? orderedRoles.map((role) => {
