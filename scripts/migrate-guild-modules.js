@@ -1,13 +1,13 @@
 'use strict';
 
-// scripts/migrate-guild-modules.js
-// Moves legacy top-level guild config into src/runtime/{mode}/guilds/{guildId}.json -> modules{}
-// Also removes legacy nested runtime files/folders once the guild JSON is consolidated.
+// Moves legacy top-level guild config into src/runtime/{mode}/guilds/{guildId}.json -> modules{}.
+// Also removes empty legacy nested runtime files/folders once the guild JSON is consolidated.
 
 const fs = require('fs');
 const path = require('path');
 
 const { getRuntimePaths } = require('../src/config/runtimePaths');
+const { isPlainObject, printHeader, readJson, relative } = require('./lib/scriptUtils');
 
 const mode = String(process.env.BOT_MODE || process.argv[2] || 'dev').toLowerCase();
 const runtimePaths = getRuntimePaths(mode);
@@ -50,23 +50,6 @@ const LEGACY_RUNTIME_DIRS = [
   'starboard',
 ];
 
-function isPlainObject(value) {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
-
-function readJson(filePath) {
-  try {
-    if (!fs.existsSync(filePath)) return null;
-    const raw = fs.readFileSync(filePath, 'utf8');
-    if (!raw.trim()) return null;
-    return JSON.parse(raw);
-  } catch (error) {
-    console.error(`❌ Failed to read JSON: ${filePath}`);
-    console.error(error);
-    return null;
-  }
-}
-
 function writeJson(filePath, data) {
   const tmpPath = `${filePath}.tmp`;
   fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), 'utf8');
@@ -75,27 +58,32 @@ function writeJson(filePath, data) {
 
 function removeFileIfExists(filePath) {
   try {
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-      console.log(`🧹 Removed legacy file: ${filePath}`);
-    }
+    if (!fs.existsSync(filePath)) return false;
+
+    fs.unlinkSync(filePath);
+    console.log(`🧹 Removed legacy file: ${relative(filePath)}`);
+    return true;
   } catch (error) {
-    console.warn(`⚠️ Could not remove legacy file: ${filePath}`);
+    console.warn(`⚠️ Could not remove legacy file: ${relative(filePath)}`);
     console.warn(error.message);
+    return false;
   }
 }
 
 function removeDirIfEmpty(dirPath) {
   try {
-    if (!fs.existsSync(dirPath)) return;
+    if (!fs.existsSync(dirPath)) return false;
+
     const entries = fs.readdirSync(dirPath);
-    if (entries.length === 0) {
-      fs.rmdirSync(dirPath);
-      console.log(`🧹 Removed empty legacy folder: ${dirPath}`);
-    }
+    if (entries.length) return false;
+
+    fs.rmdirSync(dirPath);
+    console.log(`🧹 Removed empty legacy folder: ${relative(dirPath)}`);
+    return true;
   } catch (error) {
-    console.warn(`⚠️ Could not remove folder: ${dirPath}`);
+    console.warn(`⚠️ Could not remove folder: ${relative(dirPath)}`);
     console.warn(error.message);
+    return false;
   }
 }
 
@@ -126,7 +114,14 @@ function moveSectionToModules(data, modules, key, guildId) {
 }
 
 function migrateGuildFile(filePath) {
-  const data = readJson(filePath);
+  const result = readJson(filePath);
+
+  if (!result.ok) {
+    console.warn(`⚠️ Skipped ${relative(filePath)}: ${result.error}`);
+    return false;
+  }
+
+  const data = result.data;
   if (!isPlainObject(data)) return false;
 
   const guildId = String(data.guildId || path.basename(filePath, '.json'));
@@ -151,22 +146,27 @@ function migrateGuildFile(filePath) {
   return changed;
 }
 
-function run() {
-  console.log('============================================================');
-  console.log('🧩 Goliath Guild Module Migration');
-  console.log(`Mode: ${mode}`);
-  console.log(`Guilds Dir: ${guildsDir}`);
-  console.log('============================================================');
+function getGuildFiles() {
+  if (!fs.existsSync(guildsDir)) return [];
 
-  if (!fs.existsSync(guildsDir)) {
-    console.log('No guilds directory found. Nothing to migrate.');
-    return;
-  }
-
-  const files = fs
+  return fs
     .readdirSync(guildsDir)
     .filter((file) => /^\d{16,25}\.json$/.test(file))
     .map((file) => path.join(guildsDir, file));
+}
+
+function run() {
+  printHeader('🧩 Goliath Guild Module Migration', {
+    Mode: mode,
+    'Guilds Dir': relative(guildsDir),
+  });
+
+  const files = getGuildFiles();
+
+  if (!files.length) {
+    console.log('No guild JSON files found. Nothing to migrate.');
+    return;
+  }
 
   let migrated = 0;
 
@@ -174,9 +174,10 @@ function run() {
     if (migrateGuildFile(filePath)) migrated += 1;
   }
 
-  console.log('============================================================');
-  console.log(`✅ Migration complete. Updated guild files: ${migrated}`);
-  console.log('============================================================');
+  printHeader('✅ Migration complete', {
+    'Guild files scanned': files.length,
+    'Guild files updated': migrated,
+  });
 }
 
 run();
