@@ -9,6 +9,15 @@ const { Client, Collection, GatewayIntentBits, Partials } = require('discord.js'
 const { loadEnvironment } = require('./src/config/envLoader');
 loadEnvironment();
 
+process.on('warning', (warning) => {
+  const message = String(warning?.message || '');
+  const isDiscordReadyRenameWarning = warning?.name === 'DeprecationWarning' && message.includes('ready event has been renamed to clientReady');
+
+  if (isDiscordReadyRenameWarning) return;
+
+  console.warn(warning);
+});
+
 function isMissingOptionalModule(error, modulePath) {
   if (error?.code !== 'MODULE_NOT_FOUND') return false;
   const message = String(error.message || '');
