@@ -3,6 +3,7 @@
 const express = require('express');
 const {
   ChannelType,
+  PermissionFlagsBits,
 } = require('discord.js');
 
 const {
@@ -38,6 +39,19 @@ function readCache(guildId, extra = {}) {
 function readList(guildId, key) {
   const resources = readCache(guildId);
   return Array.isArray(resources[key]) ? resources[key] : [];
+}
+
+function serialiseRole(role) {
+  if (!role?.id || !role?.name) return null;
+  return {
+    id: role.id,
+    name: role.name,
+    position: role.position || 0,
+    color: role.hexColor || '#000000',
+    hoist: role.hoist === true,
+    mentionable: role.mentionable === true,
+    managed: role.managed === true,
+  };
 }
 
 function serialiseChannel(channel) {
@@ -76,12 +90,8 @@ function buildLiveResources(guild) {
     categories: allChannels.filter((channel) => channel.type === ChannelType.GuildCategory),
     roles: [...(guild.roles.cache?.values?.() || [])]
       .filter((role) => role.id !== guild.id)
-      .map((role) => ({
-        id: role.id,
-        name: role.name,
-        position: role.position || 0,
-        color: role.hexColor || '#000000',
-      }))
+      .map(serialiseRole)
+      .filter(Boolean)
       .sort((a, b) => (b.position || 0) - (a.position || 0)),
     emojis: [...(guild.emojis.cache?.values?.() || [])]
       .map((emoji) => ({
@@ -126,6 +136,23 @@ async function getLiveOrCachedResources(req, guildId) {
   return buildLiveResources(guild);
 }
 
+function cleanRoleName(value) {
+  const name = String(value || '').trim().slice(0, 80);
+  if (name.length < 2) throw new Error('Role name must be at least 2 characters.');
+  if (name === '@everyone') throw new Error('@everyone cannot be created or replaced.');
+  return name;
+}
+
+function cleanRoleColor(value) {
+  const color = String(value || '').trim();
+  return /^#[0-9a-fA-F]{6}$/.test(color) ? color : undefined;
+}
+
+function botCanManageRoles(guild) {
+  const me = guild.members.me;
+  return Boolean(me?.permissions?.has?.(PermissionFlagsBits.ManageRoles));
+}
+
 router.get('/:guildId/resources', async (req, res) => {
   try {
     if (!isAuthenticated(req)) return res.status(401).json({ error: 'Not authenticated' });
@@ -166,6 +193,29 @@ router.get('/:guildId/roles', async (req, res) => {
   } catch (error) {
     console.error('Failed to read Discord roles:', error);
     return res.json(readList(req.params.guildId, 'roles'));
+  }
+});
+
+router.post('/:guildId/roles', async (req, res) => {
+  try {
+    if (!isAuthenticated(req)) return res.status(401).json({ error: 'Not authenticated' });
+    const guild = await fetchGuild(req, req.params.guildId);
+    if (!guild) return res.status(404).json({ error: 'Guild is not available to the bot.' });
+    if (!botCanManageRoles(guild)) return res.status(403).json({ error: 'Goliath needs Manage Roles to create guild roles.' });
+
+    const role = await guild.roles.create({
+      name: cleanRoleName(req.body?.name),
+      color: cleanRoleColor(req.body?.color),
+      hoist: req.body?.hoist === true,
+      mentionable: req.body?.mentionable === true,
+      reason: 'Goliath dashboard role creation',
+    });
+
+    await syncDiscordResources(guild).catch(() => null);
+    return res.status(201).json({ success: true, role: serialiseRole(role), hierarchy: { botHighestRole: guild.members.me?.roles?.highest?.id || null } });
+  } catch (error) {
+    console.error('Failed to create Discord role:', error);
+    return res.status(400).json({ success: false, error: error.message || 'Failed to create Discord role.' });
   }
 });
 
