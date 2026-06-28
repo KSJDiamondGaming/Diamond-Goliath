@@ -5,6 +5,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 concurrency:
   group: promote-beta-to-production
@@ -15,30 +16,27 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout production
         uses: actions/checkout@v4
         with:
+          ref: production
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Promote beta to production
+      - name: Merge beta into working tree
         run: |
           set -e
-
-          echo "🚀 Promoting BETA → PRODUCTION"
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
           git fetch origin beta production
-
-          git checkout production
-          git reset --hard origin/production
-
-          echo "🔀 Merging beta into production..."
           git merge origin/beta --no-edit
 
-          echo "📤 Pushing production..."
-          git push origin production
+      - name: Open promotion pull request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: automation/promote-beta-to-production
+          base: production
+          title: Promote BETA to PRODUCTION
+          commit-message: Promote BETA to PRODUCTION
+          body: |
+            Automated BETA to PRODUCTION promotion.
 
-          echo "✅ BETA promoted to PRODUCTION"
+            This PR exists because production is protected and direct workflow pushes are blocked.

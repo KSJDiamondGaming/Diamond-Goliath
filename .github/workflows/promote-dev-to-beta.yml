@@ -5,6 +5,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 concurrency:
   group: promote-dev-to-beta
@@ -15,30 +16,27 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout beta
         uses: actions/checkout@v4
         with:
+          ref: beta
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Promote dev to beta
+      - name: Merge dev into working tree
         run: |
           set -e
-
-          echo "🚀 Promoting DEV → BETA"
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
           git fetch origin dev beta
-
-          git checkout beta
-          git reset --hard origin/beta
-
-          echo "🔀 Merging dev into beta..."
           git merge origin/dev --no-edit
 
-          echo "📤 Pushing beta..."
-          git push origin beta
+      - name: Open promotion pull request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: automation/promote-dev-to-beta
+          base: beta
+          title: Promote DEV to BETA
+          commit-message: Promote DEV to BETA
+          body: |
+            Automated DEV to BETA promotion.
 
-          echo "✅ DEV promoted to BETA"
+            This PR exists because beta is protected and direct workflow pushes are blocked.
