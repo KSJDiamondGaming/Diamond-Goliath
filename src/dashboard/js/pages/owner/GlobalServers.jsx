@@ -185,7 +185,13 @@ export default function GlobalServers({ theme, onSelectGuild }) {
                         <ActionButton
                           label="Manage Guild"
                           theme={theme}
-                          onClick={() => openGuildDashboard(guild, '/overview')}
+                          onClick={() => openGuildDashboard(guild, '/modules')}
+                        />
+
+                        <ActionButton
+                          label="Modules"
+                          theme={theme}
+                          onClick={() => openGuildDashboard(guild, '/modules')}
                         />
 
                         <ActionButton

@@ -7,13 +7,13 @@ const {
 const {
   canAccessCommand,
   enforceCommandAccess,
-} = require('../../helpers/ui/commandAccess');
+} = require('../../core/ui/commandAccess');
 
 const {
   baseEmbed,
   createSecondaryButton,
   createDangerButton,
-} = require('../../helpers/ui/embeds');
+} = require('../../core/ui/embeds');
 
 const CATEGORY_META = {
   Utility: {

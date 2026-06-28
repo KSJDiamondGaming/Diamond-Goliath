@@ -1,49 +1,118 @@
 const { AuditLogEvent } = require('discord.js');
 
-const securitySystem = require('../../security/securitySystem');
+const securitySystem = require('../../core/security/securitySystem');
+const {
+  emitSyncEvent,
+} = require('../../server/sockets/socketHub');
 
-module.exports = {
-  name: 'channelDelete',
+function channelPayload(channel, extra = {}) {
+  return {
+    module: 'channels',
+    scope: 'channels',
+    channelId: channel?.id || null,
+    channelName: channel?.name || null,
+    channelType: channel?.type || null,
+    parentId: channel?.parentId || null,
+    position: Number.isFinite(channel?.position) ? channel.position : null,
+    ...extra,
+  };
+}
 
-  /**
-   * @param {import('discord.js').GuildChannel} channel
-   */
-  async execute(channel) {
-    try {
-      if (!channel?.guild) return;
+function emitChannelEvent(eventName, channel, extra = {}) {
+  if (!channel?.guild?.id) return null;
 
-      if (typeof securitySystem.handleChannelDelete === 'function') {
-        await securitySystem.handleChannelDelete(channel);
-        return;
-      }
+  return emitSyncEvent(
+    eventName,
+    channel.guild.id,
+    channelPayload(channel, extra)
+  );
+}
 
-      const executor =
-        typeof securitySystem.fetchAuditExecutor === 'function'
-          ? await securitySystem.fetchAuditExecutor(
-              channel.guild,
-              AuditLogEvent.ChannelDelete
-            )
-          : null;
+async function handleChannelDelete(channel) {
+  if (!channel?.guild) return;
 
-      if (typeof securitySystem.logIncident === 'function') {
-        await securitySystem.logIncident(channel.guild, {
-          type: securitySystem.INCIDENT_TYPES?.CHANNEL_DELETE || 'channel_delete',
-          severity: securitySystem.SEVERITY?.MEDIUM || 'medium',
-          actorId: executor?.id || null,
-          actorTag: executor?.tag || null,
-          targetId: channel.id,
-          targetName: channel.name || null,
-          targetType: channel.type || 'channel',
-          reason: 'Channel deleted.',
-          actionTaken: 'Logged channel delete event.',
-          metadata: {
-            fallbackHook: true,
-            actorIsBot: executor?.bot || false,
-          },
+  if (typeof securitySystem.handleChannelDelete === 'function') {
+    await securitySystem.handleChannelDelete(channel);
+    emitChannelEvent('channel.deleted', channel);
+    return;
+  }
+
+  const executor =
+    typeof securitySystem.fetchAuditExecutor === 'function'
+      ? await securitySystem.fetchAuditExecutor(
+          channel.guild,
+          AuditLogEvent.ChannelDelete
+        )
+      : null;
+
+  if (typeof securitySystem.logIncident === 'function') {
+    await securitySystem.logIncident(channel.guild, {
+      type: securitySystem.INCIDENT_TYPES?.CHANNEL_DELETE || 'channel_delete',
+      severity: securitySystem.SEVERITY?.MEDIUM || 'medium',
+      actorId: executor?.id || null,
+      actorTag: executor?.tag || null,
+      targetId: channel.id,
+      targetName: channel.name || null,
+      targetType: channel.type || 'channel',
+      reason: 'Channel deleted.',
+      actionTaken: 'Logged channel delete event.',
+      metadata: {
+        fallbackHook: true,
+        actorIsBot: executor?.bot || false,
+      },
+    });
+  }
+
+  emitChannelEvent('channel.deleted', channel);
+}
+
+module.exports = [
+  {
+    name: 'channelCreate',
+
+    async execute(channel) {
+      try {
+        if (!channel?.guild) return;
+
+        emitChannelEvent('channel.created', channel, {
+          syncedAt: new Date().toISOString(),
         });
+      } catch (error) {
+        console.error('[Event: channelCreate] Error:', error);
       }
-    } catch (err) {
-      console.error('[Event: channelDelete] Error:', err);
-    }
+    },
   },
-};
+
+  {
+    name: 'channelUpdate',
+
+    async execute(oldChannel, newChannel) {
+      try {
+        if (!newChannel?.guild) return;
+
+        emitChannelEvent('channel.updated', newChannel, {
+          oldChannelName: oldChannel?.name || null,
+          oldParentId: oldChannel?.parentId || null,
+          syncedAt: new Date().toISOString(),
+        });
+      } catch (error) {
+        console.error('[Event: channelUpdate] Error:', error);
+      }
+    },
+  },
+
+  {
+    name: 'channelDelete',
+
+    /**
+     * @param {import('discord.js').GuildChannel} channel
+     */
+    async execute(channel) {
+      try {
+        await handleChannelDelete(channel);
+      } catch (err) {
+        console.error('[Event: channelDelete] Error:', err);
+      }
+    },
+  },
+];

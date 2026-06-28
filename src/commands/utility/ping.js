@@ -1,11 +1,11 @@
 const { SlashCommandBuilder } = require('discord.js');
 
-const { enforceCommandAccess } = require('../../helpers/ui/commandAccess');
+const { enforceCommandAccess } = require('../../core/ui/commandAccess');
 const {
   baseEmbed,
   statusText,
   formatUptime,
-} = require('../../helpers/ui/embeds');
+} = require('../../core/ui/embeds');
 
 module.exports = {
   category: 'Utility',

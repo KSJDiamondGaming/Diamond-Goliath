@@ -1,31 +1,19 @@
 # ======================
-
 # Dependencies
-
 # ======================
-
 node_modules/
 
 # ======================
-
 # Environment Variables / Secrets
-
 # ======================
-
 .env
 .env.*
 !.env.example
-
-# accidental env backups
-
 *.env.backup
 
 # ======================
-
 # Logs
-
 # ======================
-
 logs/
 *.log
 npm-debug.log*
@@ -33,125 +21,88 @@ yarn-debug.log*
 pnpm-debug.log*
 
 # ======================
-
 # Runtime / Temp
-
 # ======================
-
 tmp/
 temp/
 runtime/
 backups/
-
 *.tmp
 *.temp
 *.pid
 
 # PM2
-
 .pm2/
 .pids/
 
 # ======================
-
 # Build Output
-
 # ======================
-
 dist/
 build/
-
-# dashboard builds
-
 src/dashboard/dist/
 dashboard/client/dist/
-
-# vite
-
 vite.config.timestamp-*
 
 # ======================
-
 # Cache
-
 # ======================
-
 .cache/
 .eslintcache
 
 # ======================
-
 # Local Runtime Data
-
 # ======================
-
 data/
-src/runtime/
 src/guild/data/
-
 server/data/guilds/
 dashboard/server/data/guilds/
 
-# ======================
+# Keep runtime bootstrap source tracked, ignore generated runtime state
+src/runtime/*
+!src/runtime/runtimeBootstrap.js
+!src/runtime/.gitkeep
 
+# ======================
 # SQLite / Database Files
-
 # ======================
-
 *.db
 *.sqlite
 *.sqlite3
-
 *.sqlite-shm
 *.sqlite-wal
 *.sqlite-journal
 
 # ======================
-
 # Coverage
-
 # ======================
-
 coverage/
 
 # ======================
-
 # OS Files
-
 # ======================
-
 .DS_Store
 Thumbs.db
 
 # ======================
-
 # Editor / IDE
-
 # ======================
-
 .vscode/
 .idea/
-
 *.swp
 *.swo
 
 # ======================
-
 # Backup / Old Files
-
 # ======================
-
 *.bak
 *.backup
 *.old
 *~
 
 # ======================
-
 # Git Keepers
-
 # ======================
-
 !.gitkeep
 !important-runtime-files-if-needed
 package-lock.json

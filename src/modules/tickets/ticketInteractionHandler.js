@@ -269,10 +269,27 @@ function can(interaction, action, ticket) {
   );
 }
 
-async function handleClaim(interaction, ticket) {
-  if (!can(interaction, TICKET_ACTIONS.CLAIM, ticket)) {
-    return deny(interaction, 'You cannot claim tickets.');
+function ensureTicketPermission(interaction, action, ticket, message) {
+  if (!ticket) {
+    return deny(interaction, 'Ticket not found.');
   }
+
+  if (!can(interaction, action, ticket)) {
+    return deny(interaction, message);
+  }
+
+  return null;
+}
+
+async function handleClaim(interaction, ticket) {
+  const denied = ensureTicketPermission(
+    interaction,
+    TICKET_ACTIONS.CLAIM,
+    ticket,
+    'You cannot claim tickets.'
+  );
+
+  if (denied) return denied;
 
   const updated = await ticketActions.claim(
     ticket,
@@ -290,9 +307,14 @@ async function handleClaim(interaction, ticket) {
 }
 
 async function showCloseModal(interaction, ticket) {
-  if (!can(interaction, TICKET_ACTIONS.CLOSE, ticket)) {
-    return deny(interaction, 'You cannot close this ticket.');
-  }
+  const denied = ensureTicketPermission(
+    interaction,
+    TICKET_ACTIONS.CLOSE,
+    ticket,
+    'You cannot close this ticket.'
+  );
+
+  if (denied) return denied;
 
   if (alreadyHandled(interaction)) return true;
 
@@ -317,9 +339,14 @@ async function showCloseModal(interaction, ticket) {
 }
 
 async function handleCloseModal(interaction, ticket) {
-  if (!ticket) {
-    return deny(interaction, 'Ticket not found.');
-  }
+  const denied = ensureTicketPermission(
+    interaction,
+    TICKET_ACTIONS.CLOSE,
+    ticket,
+    'You cannot close this ticket.'
+  );
+
+  if (denied) return denied;
 
   const reason =
     interaction.fields.getTextInputValue(INPUT_IDS.CLOSE_REASON) ||
@@ -346,9 +373,14 @@ async function handleCloseModal(interaction, ticket) {
 }
 
 async function handleArchive(interaction, ticket) {
-  if (!can(interaction, TICKET_ACTIONS.ARCHIVE, ticket)) {
-    return deny(interaction, 'You cannot archive this ticket.');
-  }
+  const denied = ensureTicketPermission(
+    interaction,
+    TICKET_ACTIONS.ARCHIVE,
+    ticket,
+    'You cannot archive this ticket.'
+  );
+
+  if (denied) return denied;
 
   const deferred = await safeDefer(interaction, true);
   if (!deferred) return true;
@@ -370,9 +402,14 @@ async function handleArchive(interaction, ticket) {
 }
 
 async function handleReopen(interaction, ticket) {
-  if (!can(interaction, TICKET_ACTIONS.REOPEN, ticket)) {
-    return deny(interaction, 'You cannot reopen this ticket.');
-  }
+  const denied = ensureTicketPermission(
+    interaction,
+    TICKET_ACTIONS.REOPEN,
+    ticket,
+    'You cannot reopen this ticket.'
+  );
+
+  if (denied) return denied;
 
   const deferred = await safeDefer(interaction, true);
   if (!deferred) return true;
@@ -393,9 +430,14 @@ async function handleReopen(interaction, ticket) {
 }
 
 async function handleTranscript(interaction, ticket) {
-  if (!can(interaction, TICKET_ACTIONS.VIEW, ticket)) {
-    return deny(interaction, 'You cannot generate transcripts.');
-  }
+  const denied = ensureTicketPermission(
+    interaction,
+    TICKET_ACTIONS.VIEW,
+    ticket,
+    'You cannot generate transcripts.'
+  );
+
+  if (denied) return denied;
 
   const deferred = await safeDefer(interaction, true);
   if (!deferred) return true;
@@ -422,9 +464,14 @@ async function handleTranscript(interaction, ticket) {
 }
 
 async function showAddUserModal(interaction, ticket) {
-  if (!can(interaction, TICKET_ACTIONS.UPDATE, ticket)) {
-    return deny(interaction, 'You cannot add users to this ticket.');
-  }
+  const denied = ensureTicketPermission(
+    interaction,
+    TICKET_ACTIONS.UPDATE,
+    ticket,
+    'You cannot add users to this ticket.'
+  );
+
+  if (denied) return denied;
 
   if (alreadyHandled(interaction)) return true;
 
@@ -449,9 +496,14 @@ async function showAddUserModal(interaction, ticket) {
 }
 
 async function handleAddUserModal(interaction, ticket) {
-  if (!ticket) {
-    return deny(interaction, 'Ticket not found.');
-  }
+  const denied = ensureTicketPermission(
+    interaction,
+    TICKET_ACTIONS.UPDATE,
+    ticket,
+    'You cannot add users to this ticket.'
+  );
+
+  if (denied) return denied;
 
   const userId = interaction.fields
     .getTextInputValue(INPUT_IDS.ADD_USER_ID)
@@ -509,9 +561,14 @@ async function handleAddUserModal(interaction, ticket) {
 }
 
 async function showPrioritySelect(interaction, ticket) {
-  if (!can(interaction, TICKET_ACTIONS.UPDATE, ticket)) {
-    return deny(interaction, 'You cannot change ticket priority.');
-  }
+  const denied = ensureTicketPermission(
+    interaction,
+    TICKET_ACTIONS.UPDATE,
+    ticket,
+    'You cannot change ticket priority.'
+  );
+
+  if (denied) return denied;
 
   const current = normalizePriority(ticket.priority);
 
@@ -538,9 +595,14 @@ async function showPrioritySelect(interaction, ticket) {
 }
 
 async function handlePrioritySelect(interaction, ticket) {
-  if (!ticket) {
-    return deny(interaction, 'Ticket not found.');
-  }
+  const denied = ensureTicketPermission(
+    interaction,
+    TICKET_ACTIONS.UPDATE,
+    ticket,
+    'You cannot change ticket priority.'
+  );
+
+  if (denied) return denied;
 
   const priority = normalizePriority(interaction.values?.[0]);
 
@@ -564,9 +626,14 @@ async function handlePrioritySelect(interaction, ticket) {
 }
 
 async function showDeleteConfirmModal(interaction, ticket) {
-  if (!can(interaction, TICKET_ACTIONS.DELETE, ticket)) {
-    return deny(interaction, 'You cannot delete tickets.');
-  }
+  const denied = ensureTicketPermission(
+    interaction,
+    TICKET_ACTIONS.DELETE,
+    ticket,
+    'You cannot delete tickets.'
+  );
+
+  if (denied) return denied;
 
   if (alreadyHandled(interaction)) return true;
 
@@ -591,9 +658,14 @@ async function showDeleteConfirmModal(interaction, ticket) {
 }
 
 async function handleDeleteConfirmModal(interaction, ticket) {
-  if (!ticket) {
-    return deny(interaction, 'Ticket not found.');
-  }
+  const denied = ensureTicketPermission(
+    interaction,
+    TICKET_ACTIONS.DELETE,
+    ticket,
+    'You cannot delete tickets.'
+  );
+
+  if (denied) return denied;
 
   const value = interaction.fields
     .getTextInputValue(INPUT_IDS.DELETE_CONFIRM)

@@ -16,7 +16,7 @@ import {
   listenForPanelDeployed,
   listenForAnalyticsUpdated,
   listenForRealtimeFeed,
-} from '../socketClient';
+} from '../services/socketClient';
 
 const MAX_EVENTS = 100;
 

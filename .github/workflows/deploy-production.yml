@@ -1,4 +1,4 @@
-name: Deploy Production
+name: Deploy PRODUCTION
 
 on:
   push:
@@ -40,7 +40,12 @@ jobs:
             echo "🏗️ Building dashboard..."
             npm run build
 
-            echo "♻️ Restarting PRODUCTION bot..."
+            echo "🌐 Publishing PRODUCTION dashboard..."
+            mkdir -p /var/www/goliath-dashboard
+            rm -rf /var/www/goliath-dashboard/*
+            cp -r dist/* /var/www/goliath-dashboard/
+
+            echo "♻️ Restarting PRODUCTION bot/API..."
             BOT_MODE=production pm2 restart goliath-production --update-env
 
             pm2 save

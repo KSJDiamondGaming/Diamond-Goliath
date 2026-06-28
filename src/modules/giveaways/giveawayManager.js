@@ -4,8 +4,15 @@
 
 const { EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const giveawayStore = require('./giveawayStore');
+const { isModuleEnabled } = require('../../core/guild/guildManager');
 
 const ENTER_EMOJI = '🎉';
+
+function assertGiveawaysModuleEnabled(guildId) {
+  if (!isModuleEnabled(guildId, 'giveaways')) {
+    throw new Error('Giveaways module is disabled for this server.');
+  }
+}
 
 function canManageGiveaways(member) {
   return Boolean(
@@ -88,6 +95,7 @@ function pickWinners(entries = [], count = 1) {
 
 async function createGiveaway(channel, input = {}) {
   if (!channel?.guild) return null;
+  assertGiveawaysModuleEnabled(channel.guild.id);
 
   const durationMs = parseDurationMs(input.duration || input.durationMs);
   const giveaway = giveawayStore.saveGiveaway(channel.guild.id, {
@@ -120,6 +128,7 @@ async function enterGiveaway(reaction, user) {
   const guild = message?.guild;
 
   if (!guild?.id || !message?.id) return null;
+  if (!isModuleEnabled(guild.id, 'giveaways')) return null;
 
   const giveaway = giveawayStore
     .getActiveGiveaways(guild.id)
@@ -147,6 +156,7 @@ async function leaveGiveaway(reaction, user) {
   const guild = message?.guild;
 
   if (!guild?.id || !message?.id) return null;
+  if (!isModuleEnabled(guild.id, 'giveaways')) return null;
 
   const giveaway = giveawayStore
     .getActiveGiveaways(guild.id)
@@ -161,6 +171,7 @@ async function leaveGiveaway(reaction, user) {
 
 async function refreshGiveawayMessage(client, guildId, giveaway) {
   if (!client || !giveaway?.channelId || !giveaway?.messageId) return null;
+  if (!isModuleEnabled(guildId, 'giveaways')) return null;
 
   const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
   const channel = guild?.channels?.cache?.get(giveaway.channelId) || await guild?.channels?.fetch(giveaway.channelId).catch(() => null);
@@ -173,6 +184,8 @@ async function refreshGiveawayMessage(client, guildId, giveaway) {
 }
 
 async function endGiveaway(client, guildId, giveawayId) {
+  assertGiveawaysModuleEnabled(guildId);
+
   const giveaway = giveawayStore.getGiveaway(guildId, giveawayId);
   if (!giveaway || giveaway.status !== 'active') return null;
 
@@ -201,6 +214,8 @@ async function endGiveaway(client, guildId, giveawayId) {
 }
 
 async function rerollGiveaway(client, guildId, giveawayId) {
+  assertGiveawaysModuleEnabled(guildId);
+
   const giveaway = giveawayStore.getGiveaway(guildId, giveawayId);
   if (!giveaway) return null;
 
@@ -215,6 +230,8 @@ async function checkExpiredGiveaways(client) {
   const results = [];
 
   for (const guild of client.guilds.cache.values()) {
+    if (!isModuleEnabled(guild.id, 'giveaways')) continue;
+
     const active = giveawayStore.getActiveGiveaways(guild.id);
 
     for (const giveaway of active) {

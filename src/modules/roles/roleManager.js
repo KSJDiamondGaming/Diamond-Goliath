@@ -11,6 +11,7 @@ const {
 } = require('discord.js');
 
 const roleStore = require('./roleStore');
+const { isModuleEnabled } = require('../../core/guild/guildManager');
 
 const CUSTOM_ID_PREFIX = 'role_toggle';
 const MAX_BUTTONS_PER_ROW = 5;
@@ -23,6 +24,14 @@ const ROLE_MODES = {
   REMOVE: 'remove',
   VERIFY: 'verify',
 };
+
+function isRolesModuleEnabled(guildId) {
+  return isModuleEnabled(guildId, 'roles');
+}
+
+function isTimedRolesModuleEnabled(guildId) {
+  return isModuleEnabled(guildId, 'timedRoles');
+}
 
 function nowMs() {
   return Date.now();
@@ -206,6 +215,13 @@ async function removeExclusiveGroupRoles(member, panel, selectedRole) {
 }
 
 async function applyRoleToggle(interaction, panelId, roleKey) {
+  if (!isRolesModuleEnabled(interaction.guildId)) {
+    return {
+      ok: false,
+      message: 'Role system is currently disabled on this server.',
+    };
+  }
+
   const section = roleStore.getRolesSection(interaction.guildId);
 
   if (section.enabled === false) {
@@ -300,6 +316,10 @@ async function createReactionPanel({
     throw new Error('Guild is required.');
   }
 
+  if (!isRolesModuleEnabled(guild.id)) {
+    throw new Error('Role system is disabled for this server.');
+  }
+
   if (!channel?.send) {
     throw new Error('A sendable channel is required.');
   }
@@ -342,6 +362,10 @@ function attachPanelToMessage({
     throw new Error('guildId, channelId and messageId are required.');
   }
 
+  if (!isRolesModuleEnabled(guildId)) {
+    throw new Error('Role system is disabled for this server.');
+  }
+
   return roleStore.saveReactionPanel(guildId, {
     title,
     description,
@@ -355,6 +379,8 @@ function attachPanelToMessage({
 }
 
 async function refreshPanelMessage(client, guildId, panelId) {
+  if (!isRolesModuleEnabled(guildId)) return null;
+
   const panel = roleStore.getReactionPanel(guildId, panelId);
   if (!panel?.channelId || !panel?.messageId) return null;
 
@@ -417,6 +443,8 @@ async function applyTimedRoleRule(guild, rule) {
 
 async function runTimedRoleChecks(guild) {
   if (!guild?.id) return [];
+  if (!isRolesModuleEnabled(guild.id)) return [];
+  if (!isTimedRolesModuleEnabled(guild.id)) return [];
 
   const section = roleStore.getRolesSection(guild.id);
   if (section.enabled === false) return [];

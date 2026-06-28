@@ -1,7 +1,7 @@
 const {
   getModuleSection,
   saveModuleSection,
-} = require('../../guild/moduleSectionManager');
+} = require('../../core/guild/moduleSectionManager');
 
 const MODULE_KEY = 'sticky';
 

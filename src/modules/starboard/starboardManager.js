@@ -4,6 +4,9 @@
 
 const { EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const starboardStore = require('./starboardStore');
+const { isModuleEnabled, setModuleEnabled } = require('../../core/guild/guildManager');
+
+const IMAGE_EXTENSION_PATTERN = /\.(png|jpe?g|gif|webp)(\?.*)?$/i;
 
 function canManageStarboard(member) {
   return Boolean(
@@ -12,27 +15,49 @@ function canManageStarboard(member) {
   );
 }
 
+function normalizeEmojiToken(value) {
+  return String(value || '').trim();
+}
+
 function emojiMatches(expected, reactionEmoji) {
-  const wanted = String(expected || '⭐').trim();
+  const wanted = normalizeEmojiToken(expected || '⭐');
   const emojiId = reactionEmoji?.id || null;
   const emojiName = reactionEmoji?.name || null;
-  const fullCustom = emojiId && emojiName ? `<:${emojiName}:${emojiId}>` : null;
 
-  return (
-    wanted === emojiName ||
-    wanted === emojiId ||
-    wanted === fullCustom ||
-    wanted.includes(`:${emojiId}>`)
-  );
+  if (!wanted || !emojiName) return false;
+
+  const customEmojiForms = emojiId && emojiName
+    ? new Set([
+        emojiId,
+        emojiName,
+        `<:${emojiName}:${emojiId}>`,
+        `<a:${emojiName}:${emojiId}>`,
+      ])
+    : new Set([emojiName]);
+
+  if (customEmojiForms.has(wanted)) return true;
+
+  return Boolean(emojiId && wanted.includes(`:${emojiId}>`));
 }
 
 function buildMessageUrl(guildId, channelId, messageId) {
   return `https://discord.com/channels/${guildId}/${channelId}/${messageId}`;
 }
 
-function buildStarboardEmbed(message, starCount) {
+function isImageAttachment(attachment) {
+  return Boolean(
+    attachment?.url &&
+    (
+      attachment.contentType?.startsWith?.('image/') ||
+      IMAGE_EXTENSION_PATTERN.test(attachment.url)
+    )
+  );
+}
+
+function buildStarboardEmbed(message, starCount, section = {}) {
   const content = message.content || '*No text content*';
-  const firstAttachment = message.attachments?.first?.();
+  const firstAttachment = message.attachments?.find?.(isImageAttachment) || message.attachments?.first?.();
+  const emoji = section.emoji || '⭐';
 
   const embed = new EmbedBuilder()
     .setColor('#facc15')
@@ -45,10 +70,10 @@ function buildStarboardEmbed(message, starCount) {
       name: 'Original Message',
       value: `[Jump to message](${buildMessageUrl(message.guild.id, message.channel.id, message.id)})`,
     })
-    .setFooter({ text: `⭐ ${starCount} star${starCount === 1 ? '' : 's'}` })
+    .setFooter({ text: `${emoji} ${starCount} star${starCount === 1 ? '' : 's'}` })
     .setTimestamp(message.createdAt || new Date());
 
-  if (firstAttachment?.url && firstAttachment.contentType?.startsWith?.('image/')) {
+  if (isImageAttachment(firstAttachment)) {
     embed.setImage(firstAttachment.url);
   }
 
@@ -56,35 +81,66 @@ function buildStarboardEmbed(message, starCount) {
 }
 
 async function fetchMessageFromReaction(reaction) {
-  if (reaction?.partial) {
-    await reaction.fetch().catch(() => null);
-  }
-
-  if (reaction?.message?.partial) {
-    await reaction.message.fetch().catch(() => null);
-  }
-
+  if (reaction?.partial) await reaction.fetch().catch(() => null);
+  if (reaction?.message?.partial) await reaction.message.fetch().catch(() => null);
   return reaction?.message || null;
 }
 
 async function getStarUsers(reaction) {
   const users = await reaction.users.fetch().catch(() => null);
   if (!users) return [];
+  return [...users.values()].filter((user) => !user.bot).map((user) => user.id);
+}
 
-  return [...users.values()]
-    .filter((user) => !user.bot)
-    .map((user) => user.id);
+async function resolveStarboardChannel(message, section) {
+  const channelId = section?.channelId;
+  if (!message?.guild?.channels || !channelId) return null;
+
+  const channel =
+    message.guild.channels.cache.get(channelId) ||
+    await message.guild.channels.fetch(channelId).catch(() => null);
+
+  if (!channel?.send) return null;
+
+  const me = message.guild.members.me;
+  const permissions = me && channel.permissionsFor?.(me);
+
+  if (permissions) {
+    const requiredPermissions = [
+      PermissionFlagsBits.ViewChannel,
+      PermissionFlagsBits.SendMessages,
+      PermissionFlagsBits.EmbedLinks,
+    ];
+
+    const hasRequiredPermissions = requiredPermissions.every((permission) => permissions.has(permission));
+    if (!hasRequiredPermissions) return null;
+  }
+
+  return channel;
+}
+
+function buildStarboardMessageContent(message, section, starCount) {
+  const emoji = section.emoji || '⭐';
+  return `${emoji} **${starCount}** <#${message.channel.id}>`;
+}
+
+function buildPostPayload(message, starboardMessage, starUserIds) {
+  return {
+    messageId: message.id,
+    channelId: message.channel.id,
+    authorId: message.author?.id,
+    starboardMessageId: starboardMessage?.id,
+    starUserIds,
+  };
 }
 
 async function upsertStarboardPost(client, message, section, starUserIds) {
-  const starboardChannel =
-    message.guild.channels.cache.get(section.channelId) ||
-    await message.guild.channels.fetch(section.channelId).catch(() => null);
-
-  if (!starboardChannel?.send) return null;
+  const starboardChannel = await resolveStarboardChannel(message, section);
+  if (!starboardChannel) return null;
 
   const existing = starboardStore.getPost(message.guild.id, message.id);
-  const embed = buildStarboardEmbed(message, starUserIds.length);
+  const embed = buildStarboardEmbed(message, starUserIds.length, section);
+  const content = buildStarboardMessageContent(message, section, starUserIds.length);
 
   if (existing?.starboardMessageId) {
     const starboardMessage = await starboardChannel.messages
@@ -92,37 +148,37 @@ async function upsertStarboardPost(client, message, section, starUserIds) {
       .catch(() => null);
 
     if (starboardMessage?.editable) {
-      await starboardMessage.edit({ embeds: [embed] });
+      await starboardMessage.edit({ content, embeds: [embed] }).catch(() => null);
 
-      return starboardStore.savePost(message.guild.id, {
-        ...existing,
-        starUserIds,
-      });
+      return starboardStore.savePost(
+        message.guild.id,
+        {
+          ...existing,
+          starUserIds,
+          channelId: message.channel.id,
+          authorId: message.author?.id,
+        }
+      );
     }
   }
 
-  const sent = await starboardChannel.send({
-    content: `⭐ **${starUserIds.length}** <#${message.channel.id}>`,
-    embeds: [embed],
-  });
+  const sent = await starboardChannel
+    .send({ content, embeds: [embed] })
+    .catch(() => null);
 
-  return starboardStore.savePost(message.guild.id, {
-    messageId: message.id,
-    channelId: message.channel.id,
-    authorId: message.author?.id,
-    starboardMessageId: sent.id,
-    starUserIds,
-  });
+  if (!sent) return null;
+
+  return starboardStore.savePost(
+    message.guild.id,
+    buildPostPayload(message, sent, starUserIds)
+  );
 }
 
 async function removeStarboardPost(client, message, section) {
   const existing = starboardStore.getPost(message.guild.id, message.id);
   if (!existing?.starboardMessageId) return null;
 
-  const starboardChannel =
-    message.guild.channels.cache.get(section.channelId) ||
-    await message.guild.channels.fetch(section.channelId).catch(() => null);
-
+  const starboardChannel = await resolveStarboardChannel(message, section);
   const starboardMessage = await starboardChannel?.messages
     ?.fetch(existing.starboardMessageId)
     .catch(() => null);
@@ -142,6 +198,7 @@ async function handleStarReactionAdd(reaction, user, client) {
   const guild = message?.guild;
 
   if (!guild?.id || !message?.id) return null;
+  if (!isModuleEnabled(guild.id, 'starboard')) return null;
 
   const section = starboardStore.getStarboardSection(guild.id);
 
@@ -152,7 +209,6 @@ async function handleStarReactionAdd(reaction, user, client) {
   if (message.channel?.id === section.channelId) return null;
 
   const starUserIds = await getStarUsers(reaction);
-
   if (starUserIds.length < section.threshold) return null;
 
   return upsertStarboardPost(client, message, section, starUserIds);
@@ -165,6 +221,7 @@ async function handleStarReactionRemove(reaction, user, client) {
   const guild = message?.guild;
 
   if (!guild?.id || !message?.id) return null;
+  if (!isModuleEnabled(guild.id, 'starboard')) return null;
 
   const section = starboardStore.getStarboardSection(guild.id);
 
@@ -184,16 +241,31 @@ async function handleStarReactionRemove(reaction, user, client) {
 }
 
 function configureStarboard(guildId, input = {}) {
-  return starboardStore.updateStarboardSection(guildId, (section) => ({
-    ...section,
-    enabled: input.enabled ?? section.enabled,
-    channelId: input.channelId ?? section.channelId,
-    threshold: input.threshold ?? section.threshold,
-    emoji: input.emoji ?? section.emoji,
-    allowBotMessages: input.allowBotMessages ?? section.allowBotMessages,
-    allowSelfStar: input.allowSelfStar ?? section.allowSelfStar,
-    updatedAt: starboardStore.now(),
-  }));
+  const hasEnabledInput = Object.prototype.hasOwnProperty.call(input, 'enabled');
+  const requestedEnabled = hasEnabledInput ? input.enabled === true : undefined;
+  const currentlyEnabled = isModuleEnabled(guildId, 'starboard');
+
+  if (!currentlyEnabled && requestedEnabled !== true) {
+    throw new Error('Starboard module is disabled for this server.');
+  }
+
+  if (hasEnabledInput) {
+    setModuleEnabled(guildId, 'starboard', requestedEnabled);
+  }
+
+  return starboardStore.updateStarboardSection(
+    guildId,
+    (section) => ({
+      ...section,
+      enabled: hasEnabledInput ? requestedEnabled : section.enabled,
+      channelId: input.channelId ?? section.channelId,
+      threshold: input.threshold ?? section.threshold,
+      emoji: input.emoji ?? section.emoji,
+      allowBotMessages: input.allowBotMessages ?? section.allowBotMessages,
+      allowSelfStar: input.allowSelfStar ?? section.allowSelfStar,
+      updatedAt: starboardStore.now(),
+    })
+  );
 }
 
 module.exports = {

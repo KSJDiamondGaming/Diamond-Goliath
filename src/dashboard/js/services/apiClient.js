@@ -1,6 +1,4 @@
-const API_BASE = import.meta.env.DEV
-  ? 'http://localhost:3001'
-  : '';
+const API_BASE = import.meta.env.DEV ? 'http://localhost:3001' : '';
 
 function apiUrl(path = '') {
   return `${API_BASE}${path}`;
@@ -9,284 +7,104 @@ function apiUrl(path = '') {
 async function request(url, options = {}) {
   const response = await fetch(apiUrl(url), {
     credentials: 'include',
-
     headers: {
       'Content-Type': 'application/json',
       ...(options.headers || {}),
     },
-
     ...options,
   });
 
-  const data = await response
-    .json()
-    .catch(() => null);
+  const data = await response.json().catch(() => null);
 
   if (!response.ok) {
-    throw new Error(
-      data?.error ||
-        `API request failed: ${response.status}`,
-    );
+    const error = new Error(data?.error || `API request failed: ${response.status}`);
+    error.data = data;
+    error.diagnostics = data?.diagnostics || null;
+    error.status = response.status;
+    throw error;
   }
 
   return data;
 }
 
+function buildQuery(params = {}) {
+  const query = new URLSearchParams();
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === '') return;
+    query.set(key, String(value));
+  });
+
+  return query.toString();
+}
+
 export const api = {
   request,
-
-  /* ---------------- CORE ---------------- */
-
-  getStatus(guildId = '') {
-    const query = guildId
-      ? `?guildId=${guildId}`
-      : '';
-
-    return request(`/api/status${query}`);
-  },
-
-  /* ---------------- AUTH ---------------- */
-
-  getAuthMe() {
-    return request('/api/auth/me');
-  },
-
-  getLoginUrl() {
-    return apiUrl('/api/auth/login');
-  },
-
-  logout() {
-    return request('/api/auth/logout', {
-      method: 'POST',
-    });
-  },
-
-  /* ---------------- OWNER ---------------- */
-
-  getOwnerMe() {
-    return request('/api/owner/me');
-  },
-
-  getOwnerGuilds() {
-    return request('/api/owner/guilds/all');
-  },
-
-  getPlatformRuntime() {
-    return request('/api/owner/runtime');
-  },
-
-  getOwnerRuntime(guildId) {
-    return request(
-      `/api/status?guildId=${guildId}`,
-    );
-  },
-
-  getOwnerSecurity(guildId) {
-    return request(
-      `/api/security/overview?guildId=${guildId}`,
-    );
-  },
-
-  /* ---------------- DISCORD ---------------- */
-
-  getGuilds() {
-    return request('/api/discord/guilds');
-  },
-
-  getGuildChannels(guildId) {
-    return request(
-      `/api/discord/${guildId}/channels`,
-    );
-  },
-
-  getGuildRoles(guildId) {
-    return request(
-      `/api/discord/${guildId}/roles`,
-    );
-  },
-
-  /* ---------------- GENERAL SETTINGS ---------------- */
-
-  getGeneralSettings(guildId) {
-    return request(`/api/config/${guildId}`);
-  },
-
-  saveGeneralSettings(guildId, payload) {
-    return request(`/api/config/${guildId}`, {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-  },
-
-  /* ---------------- AUTOMOD ---------------- */
-
-  getAutoModConfig(guildId) {
-    return request(
-      `/api/config/automod/${guildId}`,
-    );
-  },
-
-  saveAutoModConfig(guildId, payload) {
-    return request(
-      `/api/config/automod/${guildId}`,
-      {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      },
-    );
-  },
-
-  /* ---------------- MESSAGES ---------------- */
-
-  getMessages(guildId) {
-    return request(
-      `/api/config/messages/${guildId}`,
-    );
-  },
-
-  saveMessages(guildId, payload) {
-    return request(
-      `/api/config/messages/${guildId}`,
-      {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      },
-    );
-  },
-
-  /* ---------------- CASES ---------------- */
-
-  getCases(guildId) {
-    return request(`/api/cases/${guildId}`);
-  },
-
-  getWarnings(guildId) {
-    return request(
-      `/api/cases/${guildId}/warnings`,
-    );
-  },
-
-  /* ---------------- FORMS ---------------- */
-
-  getFormsOverview(guildId) {
-    return request(
-      `/api/forms/${guildId}/overview`,
-    );
-  },
-
-  getFormsConfig(guildId) {
-    return request(`/api/forms/${guildId}`);
-  },
-
-  getForms(guildId) {
-    return request(
-      `/api/forms/${guildId}/forms`,
-    );
-  },
-
-  getForm(guildId, formId) {
-    return request(
-      `/api/forms/${guildId}/forms/${formId}`,
-    );
-  },
-
-  createForm(guildId, payload) {
-    return request(
-      `/api/forms/${guildId}/forms`,
-      {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      },
-    );
-  },
-
-  updateForm(guildId, formId, payload) {
-    return request(
-      `/api/forms/${guildId}/forms/${formId}`,
-      {
-        method: 'PUT',
-        body: JSON.stringify(payload),
-      },
-    );
-  },
-
-  setFormEnabled(guildId, formId, enabled) {
-    return request(
-      `/api/forms/${guildId}/forms/${formId}/enabled`,
-      {
-        method: 'PATCH',
-        body: JSON.stringify({ enabled }),
-      },
-    );
-  },
-
-  getFormPanels(guildId) {
-    return request(
-      `/api/forms/${guildId}/panels`,
-    );
-  },
-
-  getFormSubmissions(guildId, query = '') {
-    const suffix = query ? `?${query}` : '';
-
-    return request(
-      `/api/forms/${guildId}/submissions${suffix}`,
-    );
-  },
-
-  updateFormSubmissionStatus(
-    guildId,
-    submissionId,
-    status,
-    extra = {},
-  ) {
-    return request(
-      `/api/forms/${guildId}/submissions/${submissionId}/status`,
-      {
-        method: 'PATCH',
-        body: JSON.stringify({
-          status,
-          ...extra,
-        }),
-      },
-    );
-  },
-
-  updateFormsSettings(guildId, payload) {
-    return request(
-      `/api/forms/${guildId}/settings`,
-      {
-        method: 'PATCH',
-        body: JSON.stringify(payload),
-      },
-    );
-  },
-
-  /* ---------------- SECURITY ---------------- */
-
-  getSecurityOverview(guildId) {
-    return request(
-      `/api/security/overview?guildId=${guildId}`,
-    );
-  },
-
-  /* ---------------- LOGS ---------------- */
-
-  getLogConfig(guildId) {
-    return request(
-      `/api/config/logs/${guildId}`,
-    );
-  },
-
-  saveLogConfig(guildId, payload) {
-    return request(
-      `/api/config/logs/${guildId}`,
-      {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      },
-    );
-  },
+  buildQuery,
+  getStatus: (guildId = '') => request(`/api/status${guildId ? `?guildId=${guildId}` : ''}`),
+  getAuthMe: () => request('/api/auth/me'),
+  getLoginUrl: () => apiUrl('/api/auth/login'),
+  logout: () => request('/api/auth/logout', { method: 'POST' }),
+  getOwnerMe: () => request('/api/owner/me'),
+  getOwnerDiagnostics: () => request('/api/owner/diagnostics'),
+  getOwnerGuilds: () => request('/api/owner/guilds/all'),
+  getPlatformRuntime: () => request('/api/owner/runtime'),
+  getOwnerBackups: (environment = 'all') => request(`/api/owner/backups?environment=${encodeURIComponent(environment)}`),
+  createOwnerManualBackup: (payload) => request('/api/owner/backups/manual', { method: 'POST', body: JSON.stringify(payload) }),
+  getOwnerRuntime: (guildId) => request(`/api/status?guildId=${guildId}`),
+  getOwnerSecurity: (guildId) => request(`/api/security/overview?guildId=${guildId}`),
+  getPermissionHealth: (guildId) => request(`/api/permissions/${guildId}`),
+  getRestoreBackups: (guildId) => request(`/api/restore/${guildId}/backups`),
+  getRestoreBackup: (guildId, backupId) => request(`/api/restore/${guildId}/backups/${encodeURIComponent(backupId)}`),
+  compareRestoreBackup: (guildId, backupId) => request(`/api/restore/${guildId}/restore/compare`, { method: 'POST', body: JSON.stringify({ backupId }) }),
+  previewRestoreBackup: (guildId, backupId, options = {}) => request(`/api/restore/${guildId}/restore/preview`, { method: 'POST', body: JSON.stringify({ backupId, options }) }),
+  executeRestoreBackup: (guildId, payload = {}) => request(`/api/restore/${guildId}/restore/execute`, { method: 'POST', body: JSON.stringify(payload) }),
+  getGuilds: () => request('/api/discord/guilds'),
+  getGuildChannels: (guildId) => request(`/api/discord/${guildId}/channels`),
+  getGuildRoles: (guildId) => request(`/api/discord/${guildId}/roles`),
+  createGuildRole: (guildId, payload) => request(`/api/discord/${guildId}/roles`, { method: 'POST', body: JSON.stringify(payload) }),
+  updateGuildRole: (guildId, roleId, payload) => request(`/api/discord/${guildId}/roles/${encodeURIComponent(roleId)}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+  deleteGuildRole: (guildId, roleId) => request(`/api/discord/${guildId}/roles/${encodeURIComponent(roleId)}`, { method: 'DELETE' }),
+  reorderGuildRoles: (guildId, roleIds) => request(`/api/discord/${guildId}/roles/order`, { method: 'PATCH', body: JSON.stringify({ roleIds }) }),
+  getGeneralSettings: (guildId) => request(`/api/config/general/${guildId}`),
+  saveGeneralSettings: (guildId, payload) => request(`/api/config/general/${guildId}`, { method: 'POST', body: JSON.stringify(payload) }),
+  getGuildModules: (guildId) => request(`/api/modules/${guildId}`),
+  setGuildModuleEnabled: (guildId, moduleKey, enabled) => request(`/api/modules/${guildId}/${moduleKey}/enabled`, { method: 'PATCH', body: JSON.stringify({ enabled }) }),
+  getBillingPlans: () => request('/api/billing/plans'),
+  getBillingSubscription: (guildId) => request(`/api/billing/subscription/${guildId}`),
+  getBillingEntitlements: (guildId) => request(`/api/billing/entitlements/${guildId}`),
+  getTranslationConfig: (guildId) => request(`/api/translation/${guildId}`),
+  getTranslationProvider: (guildId) => request(`/api/translation/${guildId}/provider`),
+  saveTranslationProvider: (guildId, payload) => request(`/api/translation/${guildId}/provider`, { method: 'PATCH', body: JSON.stringify(payload) }),
+  setTranslationEnabled: (guildId, enabled) => request(`/api/translation/${guildId}/enabled`, { method: 'PATCH', body: JSON.stringify({ enabled }) }),
+  getEmbedStudio: (guildId) => request(`/api/modules/${guildId}/embed-studio`),
+  saveEmbedDraft: (guildId, payload) => request(`/api/modules/${guildId}/embed-studio/draft`, { method: 'POST', body: JSON.stringify(payload) }),
+  saveEmbedPreset: (guildId, name, payload) => request(`/api/modules/${guildId}/embed-studio/presets`, { method: 'POST', body: JSON.stringify({ name, ...payload }) }),
+  deleteEmbedPreset: (guildId, name) => request(`/api/modules/${guildId}/embed-studio/presets/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+  deleteEmbedDeployment: (guildId, key) => request(`/api/modules/${guildId}/embed-studio/deployments/${encodeURIComponent(key)}`, { method: 'DELETE' }),
+  getVerification: (guildId) => request(`/api/modules/${guildId}/verification`),
+  setVerificationEnabled: (guildId, enabled) => request(`/api/modules/${guildId}/verification/enabled`, { method: 'PATCH', body: JSON.stringify({ enabled }) }),
+  saveVerificationSettings: (guildId, settings) => request(`/api/modules/${guildId}/verification/settings`, { method: 'PATCH', body: JSON.stringify({ settings }) }),
+  saveVerificationConfig: (guildId, payload) => request(`/api/modules/${guildId}/verification`, { method: 'PUT', body: JSON.stringify(payload) }),
+  saveVerificationPanel: (guildId, payload) => request(`/api/modules/${guildId}/verification/panels`, { method: 'POST', body: JSON.stringify(payload) }),
+  deployVerificationPanel: (guildId, payload) => request(`/api/modules/${guildId}/verification/panels/deploy`, { method: 'POST', body: JSON.stringify(payload) }),
+  refreshVerificationPanel: (guildId, panelId, payload) => request(`/api/modules/${guildId}/verification/panels/${panelId}/refresh`, { method: 'POST', body: JSON.stringify(payload) }),
+  getVerificationAnalytics: (guildId) => request(`/api/modules/${guildId}/verification/analytics`),
+  getAutoRoles: (guildId) => request(`/api/modules/${guildId}/auto-roles`),
+  setAutoRolesEnabled: (guildId, enabled) => request(`/api/modules/${guildId}/auto-roles/enabled`, { method: 'PATCH', body: JSON.stringify({ enabled }) }),
+  saveAutoRolesSettings: (guildId, settings) => request(`/api/modules/${guildId}/auto-roles/settings`, { method: 'PATCH', body: JSON.stringify({ settings }) }),
+  saveAutoRolesConfig: (guildId, payload) => request(`/api/modules/${guildId}/auto-roles`, { method: 'PUT', body: JSON.stringify(payload) }),
+  addJoinAutoRole: (guildId, roleId) => request(`/api/modules/${guildId}/auto-roles/join`, { method: 'POST', body: JSON.stringify({ roleId }) }),
+  removeJoinAutoRole: (guildId, roleId) => request(`/api/modules/${guildId}/auto-roles/join/${roleId}`, { method: 'DELETE' }),
+  addBotAutoRole: (guildId, roleId) => request(`/api/modules/${guildId}/auto-roles/bots`, { method: 'POST', body: JSON.stringify({ roleId }) }),
+  removeBotAutoRole: (guildId, roleId) => request(`/api/modules/${guildId}/auto-roles/bots/${roleId}`, { method: 'DELETE' }),
+  getAutoRolesAnalytics: (guildId) => request(`/api/modules/${guildId}/auto-roles/analytics`),
+  getAutoModConfig: (guildId) => request(`/api/config/automod/${guildId}`),
+  saveAutoModConfig: (guildId, payload) => request(`/api/config/automod/${guildId}`, { method: 'POST', body: JSON.stringify(payload) }),
+  getMessages: (guildId) => request(`/api/config/messages/${guildId}`),
+  saveMessages: (guildId, payload) => request(`/api/config/messages/${guildId}`, { method: 'POST', body: JSON.stringify(payload) }),
+  getCases: (guildId) => request(`/api/cases/${guildId}`),
+  getWarnings: (guildId) => request(`/api/cases/${guildId}/warnings`),
 };
 
 export default api;

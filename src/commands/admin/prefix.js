@@ -11,9 +11,9 @@ const {
   setGuildPrefix,
   resetGuildPrefix,
   normalizePrefix,
-} = require('../../prefix/prefixStore');
+} = require('../../modules/prefix/prefixStore');
 
-const { enforceCommandAccess } = require('../../helpers/ui/commandAccess');
+const { enforceCommandAccess } = require('../../core/ui/commandAccess');
 
 function buildPrefixEmbed(interaction) {
   const info = getPrefixInfo(interaction.guild.id);

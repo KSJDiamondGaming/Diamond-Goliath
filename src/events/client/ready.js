@@ -1,12 +1,12 @@
-const terminal = require('../../logging/terminalLogger').createLogger('bot');
+const terminal = require('../../core/logging/terminalLogger').createLogger('bot');
 
 const {
   restoreLockdownReminders,
-} = require('../../security/lockdownSystem');
+} = require('../../core/security/lockdownSystem');
 
 const {
   startbackupWorker,
-} = require('../../security/backup/backupWorker');
+} = require('../../core/security/backup/backupWorker');
 
 const {
   startupTickets,

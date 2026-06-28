@@ -40,6 +40,7 @@ const TICKET_ACTIONS = Object.freeze({
 const LOCKED_STATUSES = [
   'closed',
   'archived',
+  'deleted',
 ];
 
 function normaliseArray(value) {
@@ -263,9 +264,19 @@ function isAllowedTicketUser(member, ticket) {
   return allowedUserIds.includes(String(member.id));
 }
 
+function isDeleted(ticket) {
+  return (
+    normaliseStatus(ticket?.status) === 'deleted' ||
+    Boolean(ticket?.deletedAt)
+  );
+}
+
 function isLocked(ticket) {
-  return LOCKED_STATUSES.includes(
-    normaliseStatus(ticket?.status)
+  return (
+    isDeleted(ticket) ||
+    LOCKED_STATUSES.includes(
+      normaliseStatus(ticket?.status)
+    )
   );
 }
 
@@ -481,7 +492,7 @@ function canClose(member, ticket, settings = {}, panel = null) {
 }
 
 function canReopen(member, ticket, settings = {}, panel = null) {
-  if (!member || !ticket) return false;
+  if (!member || !ticket || isDeleted(ticket)) return false;
 
   const status = normaliseStatus(ticket.status);
 
@@ -529,7 +540,7 @@ function canApproveOrDeny(member, ticket, settings = {}, panel = null) {
 }
 
 function canArchive(member, ticket, settings = {}, panel = null) {
-  if (!member || !ticket) return false;
+  if (!member || !ticket || isDeleted(ticket)) return false;
 
   const status = normaliseStatus(ticket.status);
 
@@ -554,7 +565,7 @@ function canArchive(member, ticket, settings = {}, panel = null) {
 }
 
 function canDelete(member, ticket, settings = {}, panel = null) {
-  if (!member || !ticket) return false;
+  if (!member || !ticket || isDeleted(ticket)) return false;
 
   const config =
     getMergedPermissionConfig(settings, panel);
@@ -683,6 +694,7 @@ module.exports = {
   isTicketCreator,
   isAllowedTicketUser,
   isSystemOverride,
+  isDeleted,
   isLocked,
   getRoleLevel,
 

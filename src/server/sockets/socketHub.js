@@ -2,8 +2,20 @@ let io = null;
 const botListeners = new Set();
 
 const {
-  setSocketProvider,
+  setSocketProvider: setTicketSocketProvider,
 } = require('../../modules/tickets/ticketSocketEvents');
+
+const {
+  setSocketProvider: setFormSocketProvider,
+} = require('../../modules/forms/formSocketEvents');
+
+const {
+  setSocketProvider: setEmbedSocketProvider,
+} = require('../../modules/embed/functions/embedSocketEvents');
+
+const {
+  setSocketProvider: setCaseSocketProvider,
+} = require('../../core/logging/cases/caseSocketEvents');
 
 function getRoomName(guildId) {
   return `guild:${guildId}`;
@@ -17,16 +29,19 @@ function initSocketHub(server, options = {}) {
   }
 
   io = new Server(server, {
-  cors: {
-    origin:
-      options?.clientUrl ||
-      'http://localhost:5173',
+    cors: {
+      origin:
+        options?.clientUrl ||
+        'http://localhost:5173',
 
-    credentials: true,
-  },
-});
+      credentials: true,
+    },
+  });
 
-setSocketProvider(() => io);
+  setTicketSocketProvider(() => io);
+  setFormSocketProvider(() => io);
+  setEmbedSocketProvider(() => io);
+  setCaseSocketProvider(() => io);
 
   io.on('connection', (socket) => {
     console.log(`🟢 Dashboard connected: ${socket.id}`);
@@ -36,10 +51,6 @@ setSocketProvider(() => io);
       const id = String(guildId || '').trim();
       if (!id) return;
 
-      socket.on('joinGuild', joinGuildRoom);
-      socket.on('automod:join', joinGuildRoom);
-      socket.on('tickets:joinGuild', joinGuildRoom);
-
       const room = getRoomName(id);
       socket.join(room);
 
@@ -48,6 +59,10 @@ setSocketProvider(() => io);
 
     socket.on('joinGuild', joinGuildRoom);
     socket.on('automod:join', joinGuildRoom);
+    socket.on('tickets:joinGuild', joinGuildRoom);
+    socket.on('forms:joinGuild', joinGuildRoom);
+    socket.on('embeds:joinGuild', joinGuildRoom);
+    socket.on('cases:joinGuild', joinGuildRoom);
 
     socket.on('disconnect', () => {
       console.log(`🔴 Dashboard disconnected: ${socket.id}`);
@@ -72,7 +87,7 @@ function onGuildUpdate(listener) {
 function emitGuildUpdate(guildId, payload = {}) {
   const id = String(guildId || '').trim();
 
-  if (!id) return;
+  if (!id) return null;
 
   const update = {
     guildId: id,
@@ -91,6 +106,51 @@ function emitGuildUpdate(guildId, payload = {}) {
       console.error('Guild update listener failed:', error);
     }
   }
+
+  return update;
+}
+
+function normaliseSyncEvent(event) {
+  return String(event || '').trim();
+}
+
+function emitDirectSyncEvent(guildId, event, update) {
+  const id = String(guildId || '').trim();
+  const eventName = normaliseSyncEvent(event);
+
+  if (!io || !id || !eventName || !update) {
+    return;
+  }
+
+  io.to(getRoomName(id)).emit(eventName, update);
+  io.to(getRoomName(id)).emit('goliath_realtime_event', update);
+}
+
+/**
+ * GOLIATH STANDARD SYNC LAYER
+ * Centralised event emitter for Discord ↔ Dashboard sync.
+ *
+ * Always emits:
+ * - guild:update              legacy/dashboard-wide refresh channel
+ * - direct event name         ticket.created, form.submitted, etc.
+ * - goliath_realtime_event    global live activity feed
+ */
+function emitSyncEvent(event, guildId, payload = {}) {
+  const eventName = normaliseSyncEvent(event);
+
+  if (!eventName) {
+    return null;
+  }
+
+  const update = emitGuildUpdate(guildId, {
+    type: eventName,
+    event: eventName,
+    ...(payload && typeof payload === 'object' ? payload : {}),
+  });
+
+  emitDirectSyncEvent(guildId, eventName, update);
+
+  return update;
 }
 
 function emitSecurityEvent(
@@ -146,6 +206,7 @@ function emitRestoreUpdate(
 module.exports = {
   initSocketHub,
   emitGuildUpdate,
+  emitSyncEvent,
   onGuildUpdate,
   emitSecurityEvent,
   emitSecurityOverview,

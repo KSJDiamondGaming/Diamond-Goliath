@@ -15,6 +15,13 @@ npm run promote:production
 tree /F > structure.txt
 tree src /F > src-structure.txt
 
+Get-ChildItem .\src -Recurse -File |
+>> ForEach-Object {
+>>     $_.FullName.Replace((Get-Location).Path + "\", "")
+>> } |
+>> Sort-Object |
+>> Out-File goliath-files.txt
+
 /home/goliath/dev
 /home/goliath/beta
 /home/goliath/production

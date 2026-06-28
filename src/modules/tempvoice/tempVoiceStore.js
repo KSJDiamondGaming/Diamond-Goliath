@@ -7,7 +7,7 @@ const crypto = require('crypto');
 const {
   getGuildSection,
   updateGuildSection,
-} = require('../../guild/guildManager');
+} = require('../../core/guild/guildManager');
 
 const SECTION = 'tempVoice';
 const MODULES_SECTION = 'modules';
@@ -34,8 +34,32 @@ function cleanNonNegativeInt(value, fallback = 0) {
   return Math.max(0, Math.floor(cleanNumber(value, fallback)));
 }
 
+function cleanDiscordIdArray(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map(cleanDiscordId).filter(Boolean))];
+}
+
 function createId(prefix = 'tempvoice') {
   return `${prefix}_${crypto.randomUUID().slice(0, 8)}`;
+}
+
+function defaultAnalytics() {
+  return {
+    totalCreated: 0,
+    totalDeleted: 0,
+    totalClaimed: 0,
+    totalLocked: 0,
+    totalUnlocked: 0,
+    totalHidden: 0,
+    totalShown: 0,
+    totalRenamed: 0,
+    totalLimitChanges: 0,
+    totalStatusChanges: 0,
+    totalTransfers: 0,
+    totalMembersRemoved: 0,
+    totalMembersRestricted: 0,
+    lastActivityAt: null,
+  };
 }
 
 function defaultTempVoiceSection() {
@@ -46,7 +70,18 @@ function defaultTempVoiceSection() {
     settings: {
       defaultUserLimit: 0,
       deleteWhenEmpty: true,
+      ownerPanelEnabled: true,
+      allowOwnerRename: true,
+      allowOwnerStatus: true,
+      allowOwnerLock: true,
+      allowOwnerHide: true,
+      allowOwnerLimit: true,
+      allowOwnerPermits: true,
+      allowOwnerTransfer: true,
+      allowOwnerDelete: true,
     },
+    analytics: defaultAnalytics(),
+    activity: [],
     createdAt: now(),
     updatedAt: now(),
   };
@@ -60,10 +95,15 @@ function normalizeHub(hub = {}) {
     id: hubId,
     enabled: hub.enabled !== false,
     joinChannelId: cleanDiscordId(hub.joinChannelId),
+    joinChannelName: cleanString(hub.joinChannelName || hub.name || '➕ Create Temp Voice', '➕ Create Temp Voice', 80),
     categoryId: cleanDiscordId(hub.categoryId),
+    categoryName: cleanString(hub.categoryName || 'Temporary Voice Channels', 'Temporary Voice Channels', 80),
     nameTemplate: cleanString(hub.nameTemplate || '{username}\'s Channel', '{username}\'s Channel', 80),
     userLimit: cleanNonNegativeInt(hub.userLimit, 0),
     bitrate: cleanNonNegativeInt(hub.bitrate, 0),
+    lockedByDefault: hub.lockedByDefault === true,
+    hiddenByDefault: hub.hiddenByDefault === true,
+    ownerControlsEnabled: hub.ownerControlsEnabled !== false,
     createdBy: cleanDiscordId(hub.createdBy),
     createdAt: hub.createdAt || now(),
     updatedAt: hub.updatedAt || hub.createdAt || now(),
@@ -76,9 +116,46 @@ function normalizeChannel(channel = {}) {
     ownerId: cleanDiscordId(channel.ownerId),
     hubId: cleanString(channel.hubId || '', '', 80) || null,
     guildId: cleanDiscordId(channel.guildId),
+    name: cleanString(channel.name || '', '', 80),
+    activityStatus: cleanString(channel.activityStatus || '', '', 120),
+    userLimit: cleanNonNegativeInt(channel.userLimit, 0),
+    locked: channel.locked === true,
+    hidden: channel.hidden === true,
+    allowedUserIds: cleanDiscordIdArray(channel.allowedUserIds),
+    blockedUserIds: cleanDiscordIdArray(channel.blockedUserIds),
+    allowedRoleIds: cleanDiscordIdArray(channel.allowedRoleIds),
+    blockedRoleIds: cleanDiscordIdArray(channel.blockedRoleIds),
+    controlMessageId: cleanDiscordId(channel.controlMessageId),
     createdAt: channel.createdAt || now(),
     updatedAt: channel.updatedAt || channel.createdAt || now(),
   };
+}
+
+function normalizeActivityEntry(entry = {}) {
+  return {
+    id: cleanString(entry.id || createId('tv_event'), 'tv_event', 80),
+    type: cleanString(entry.type || 'event', 'event', 80),
+    label: cleanString(entry.label || 'Temp Voice event', 'Temp Voice event', 180),
+    channelId: cleanDiscordId(entry.channelId),
+    ownerId: cleanDiscordId(entry.ownerId),
+    actorId: cleanDiscordId(entry.actorId),
+    targetId: cleanDiscordId(entry.targetId),
+    metadata: entry.metadata && typeof entry.metadata === 'object' ? entry.metadata : {},
+    createdAt: entry.createdAt || now(),
+  };
+}
+
+function normalizeAnalytics(analytics = {}) {
+  const base = defaultAnalytics();
+  const next = { ...base, ...(analytics && typeof analytics === 'object' ? analytics : {}) };
+
+  for (const key of Object.keys(base)) {
+    if (key === 'lastActivityAt') continue;
+    next[key] = cleanNonNegativeInt(next[key], 0);
+  }
+
+  next.lastActivityAt = next.lastActivityAt || null;
+  return next;
 }
 
 function normalizeSection(section = {}) {
@@ -96,6 +173,15 @@ function normalizeSection(section = {}) {
       ...(source.settings || {}),
       defaultUserLimit: cleanNonNegativeInt(source.settings?.defaultUserLimit, 0),
       deleteWhenEmpty: source.settings?.deleteWhenEmpty !== false,
+      ownerPanelEnabled: source.settings?.ownerPanelEnabled !== false,
+      allowOwnerRename: source.settings?.allowOwnerRename !== false,
+      allowOwnerStatus: source.settings?.allowOwnerStatus !== false,
+      allowOwnerLock: source.settings?.allowOwnerLock !== false,
+      allowOwnerHide: source.settings?.allowOwnerHide !== false,
+      allowOwnerLimit: source.settings?.allowOwnerLimit !== false,
+      allowOwnerPermits: source.settings?.allowOwnerPermits !== false,
+      allowOwnerTransfer: source.settings?.allowOwnerTransfer !== false,
+      allowOwnerDelete: source.settings?.allowOwnerDelete !== false,
     },
     hubs: Object.fromEntries(
       Object.entries(hubs)
@@ -113,6 +199,8 @@ function normalizeSection(section = {}) {
         })
         .filter(([, channel]) => channel.channelId && channel.ownerId)
     ),
+    analytics: normalizeAnalytics(source.analytics),
+    activity: Array.isArray(source.activity) ? source.activity.map(normalizeActivityEntry).slice(-150) : [],
     updatedAt: source.updatedAt || now(),
   };
 }
@@ -151,6 +239,47 @@ function updateTempVoiceSection(guildId, updater, meta = {}) {
 
 function getHubs(guildId) {
   return Object.values(getTempVoiceSection(guildId).hubs || {});
+}
+
+function getHub(guildId, hubId) {
+  return getTempVoiceSection(guildId).hubs?.[hubId] || null;
+}
+
+function addActivity(guildId, event = {}, meta = {}) {
+  const entry = normalizeActivityEntry(event);
+  const counterMap = {
+    channel_created: 'totalCreated',
+    channel_deleted: 'totalDeleted',
+    channel_claimed: 'totalClaimed',
+    channel_locked: 'totalLocked',
+    channel_unlocked: 'totalUnlocked',
+    channel_hidden: 'totalHidden',
+    channel_shown: 'totalShown',
+    channel_renamed: 'totalRenamed',
+    channel_limit_changed: 'totalLimitChanges',
+    channel_status_changed: 'totalStatusChanges',
+    channel_transferred: 'totalTransfers',
+    member_removed: 'totalMembersRemoved',
+    member_restricted: 'totalMembersRestricted',
+  };
+
+  return updateTempVoiceSection(
+    guildId,
+    (section) => {
+      const analytics = normalizeAnalytics(section.analytics);
+      const counter = counterMap[entry.type];
+      if (counter) analytics[counter] = cleanNonNegativeInt(analytics[counter], 0) + 1;
+      analytics.lastActivityAt = entry.createdAt;
+
+      return {
+        ...section,
+        analytics,
+        activity: [...(section.activity || []), entry].slice(-150),
+        updatedAt: now(),
+      };
+    },
+    meta
+  );
 }
 
 function saveHub(guildId, hub, meta = {}) {
@@ -205,6 +334,27 @@ function getTempChannel(guildId, channelId) {
   return getTempVoiceSection(guildId).channels?.[channelId] || null;
 }
 
+function updateTempChannel(guildId, channelId, updater, meta = {}) {
+  return updateTempVoiceSection(
+    guildId,
+    (section) => {
+      const current = section.channels?.[channelId];
+      if (!current) return section;
+      const next = typeof updater === 'function' ? updater(current) : updater;
+
+      return {
+        ...section,
+        channels: {
+          ...(section.channels || {}),
+          [channelId]: normalizeChannel({ ...current, ...next, channelId, updatedAt: now() }),
+        },
+        updatedAt: now(),
+      };
+    },
+    meta
+  ).channels?.[channelId] || null;
+}
+
 function deleteTempChannel(guildId, channelId, meta = {}) {
   return updateTempVoiceSection(
     guildId,
@@ -233,9 +383,12 @@ module.exports = {
   saveTempVoiceSection,
   updateTempVoiceSection,
   getHubs,
+  getHub,
   saveHub,
   findHubByJoinChannel,
   saveTempChannel,
   getTempChannel,
+  updateTempChannel,
   deleteTempChannel,
+  addActivity,
 };

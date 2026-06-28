@@ -6,6 +6,7 @@
 const { EmbedBuilder } = require('discord.js');
 const translationStore = require('./translationStore');
 const translationProviderManager = require('./translationProviderManager');
+const { isModuleEnabled } = require('../../core/guild/guildManager');
 
 const LANGUAGE_LABELS = Object.freeze({
   auto: 'Auto Detect',
@@ -48,20 +49,26 @@ function providerLabel(provider = 'manual') {
   return 'Manual / Not Connected';
 }
 
+function isTranslationModuleEnabled(guildId) {
+  return isModuleEnabled(guildId, 'translation');
+}
+
 function buildOverviewEmbed(guildId) {
   const section = translationStore.getTranslationSection(guildId);
+  const moduleEnabled = isTranslationModuleEnabled(guildId);
   const providerStatus = translationProviderManager.getProviderStatus(section);
   const channelCount = Object.keys(section.channels || {}).length;
   const userCount = Object.keys(section.userPreferences || {}).length;
   const targetLanguages = section.settings?.targetLanguages || ['en'];
 
   return new EmbedBuilder()
-    .setColor(section.enabled ? 0x57f287 : 0xed4245)
-    .setTitle('🌐 Goliath Translation')
+    .setColor(moduleEnabled && section.enabled ? 0x57f287 : 0xed4245)
+    .setTitle('Goliath Translation')
     .setDescription([
-      `**Status:** ${section.enabled ? '🟢 Enabled' : '🔴 Disabled'}`,
+      `**Module:** ${moduleEnabled ? 'Enabled' : 'Disabled'}`,
+      `**Status:** ${section.enabled ? 'Enabled' : 'Disabled'}`,
       `**Provider:** \`${providerLabel(providerStatus.selectedProvider)}\`` ,
-      `**Provider Health:** ${providerStatus.providers?.[providerStatus.selectedProvider]?.healthy ? '🟢 Healthy' : '🟠 Needs Attention'}`,
+      `**Provider Health:** ${providerStatus.providers?.[providerStatus.selectedProvider]?.healthy ? 'Healthy' : 'Needs Attention'}`,
       `**Default Target:** ${languageLabel(section.settings?.defaultTargetLanguage || 'en')}`,
       `**Targets:** ${targetLanguages.map(languageLabel).join(', ')}`,
       `**Thread Mode:** ${section.settings?.threadMode !== false ? 'Enabled' : 'Disabled'}`,
@@ -76,28 +83,30 @@ function buildOverviewEmbed(guildId) {
       `Threads: ${section.analytics?.threadsCreated || 0}`,
       `Failed: ${section.analytics?.failedTranslations || 0}`,
     ].join('\n'))
-    .setFooter({ text: 'Goliath Translation • Config stored in modules.translation' })
+    .setFooter({ text: 'Goliath Translation - Config stored in modules.translation' })
     .setTimestamp(new Date());
 }
 
 function buildChannelEmbed(guildId, channelId) {
   const section = translationStore.getTranslationSection(guildId);
+  const moduleEnabled = isTranslationModuleEnabled(guildId);
   const config = section.channels?.[channelId];
 
   if (!config) {
     return new EmbedBuilder()
       .setColor(0xed4245)
-      .setTitle('🌐 Translation Channel')
+      .setTitle('Translation Channel')
       .setDescription(`No translation config found for <#${channelId}>.`)
       .setTimestamp(new Date());
   }
 
   return new EmbedBuilder()
-    .setColor(config.enabled !== false ? 0x57f287 : 0xed4245)
-    .setTitle('🌐 Translation Channel')
+    .setColor(moduleEnabled && config.enabled !== false ? 0x57f287 : 0xed4245)
+    .setTitle('Translation Channel')
     .setDescription([
       `**Channel:** <#${channelId}>`,
-      `**Status:** ${config.enabled !== false ? '🟢 Enabled' : '🔴 Disabled'}`,
+      `**Module:** ${moduleEnabled ? 'Enabled' : 'Disabled'}`,
+      `**Status:** ${config.enabled !== false ? 'Enabled' : 'Disabled'}`,
       `**Mode:** \`${config.mode}\``,
       `**Thread Mode:** ${config.threadMode !== false ? 'Enabled' : 'Disabled'}`,
       `**Source:** ${languageLabel(config.sourceLanguage || 'auto')}`,
@@ -112,7 +121,7 @@ function buildProviderNotConnectedEmbed({ text, targetLanguage, sourceLanguage =
 
   return new EmbedBuilder()
     .setColor(0xfaa61a)
-    .setTitle('🌐 Translation Provider Issue')
+    .setTitle('Translation Provider Issue')
     .setDescription([
       errorMessage,
       errorCode,
@@ -134,6 +143,22 @@ async function translateText({ guildId, text, targetLanguage = 'en', sourceLangu
   const safeText = String(text || '').trim().slice(0, maxCharacters);
   const safeTarget = normalizeLanguage(targetLanguage || section.settings?.defaultTargetLanguage || 'en');
   const safeSource = normalizeLanguage(sourceLanguage || section.settings?.defaultSourceLanguage || 'auto');
+
+  if (!isTranslationModuleEnabled(guildId)) {
+    return translationProviderManager.createFailure(provider, 'MODULE_DISABLED', 'Translation module is disabled for this server.', {
+      originalText: safeText,
+      sourceLanguage: safeSource,
+      targetLanguage: safeTarget,
+    });
+  }
+
+  if (section.enabled === false) {
+    return translationProviderManager.createFailure(provider, 'SECTION_DISABLED', 'Translation is disabled for this server.', {
+      originalText: safeText,
+      sourceLanguage: safeSource,
+      targetLanguage: safeTarget,
+    });
+  }
 
   if (!safeText) {
     return translationProviderManager.createFailure(provider, 'EMPTY_TEXT', 'No text provided.', {
