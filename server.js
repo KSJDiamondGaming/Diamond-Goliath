@@ -107,7 +107,7 @@ const PORT = Number(process.env.PORT || process.env.BOT_API_PORT || 3001);
 const SESSION_SECRET = process.env.SESSION_SECRET || process.env.DASHBOARD_SESSION_SECRET || 'goliath-dev-session-secret';
 const isProduction = process.env.NODE_ENV === 'production';
 
-const runtimePaths = bootstrapRuntime(config);
+const runtimePaths = bootstrapRuntime(botMode);
 printStartupFingerprint(config, runtimePaths);
 runBootValidation({ requiredPaths: [], requiredEnv: [] });
 
