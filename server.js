@@ -101,8 +101,8 @@ const defaultModules = safeRequire('default modules', './src/core/guild/defaultM
 const guildManager = safeRequire('guild manager', './src/core/guild/guildManager', { syncGuildMeta: () => null }, { optional: false });
 const resourceManager = safeRequire('discord resource manager', './src/core/guild/discordResourceManager', { syncDiscordResources: async () => null }, { optional: false });
 
-const config = getBotModeConfig();
-const botMode = String(config?.mode || process.env.BOT_MODE || 'DEV').toUpperCase();
+const config = getBotModeConfig(process.env.BOT_MODE);
+const botMode = String(process.env.BOT_MODE || config?.name || 'DEV').toUpperCase();
 const PORT = Number(process.env.PORT || process.env.BOT_API_PORT || 3001);
 const SESSION_SECRET = process.env.SESSION_SECRET || process.env.DASHBOARD_SESSION_SECRET || 'goliath-dev-session-secret';
 const isProduction = process.env.NODE_ENV === 'production';
