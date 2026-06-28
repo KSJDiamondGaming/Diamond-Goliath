@@ -8,7 +8,7 @@ const {
 const {
   enableLockdown,
   disableLockdown,
-} = require('../../security/lockdownSystem');
+} = require('../../core/security/lockdownSystem');
 
 module.exports = {
   data: new SlashCommandBuilder()

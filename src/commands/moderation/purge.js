@@ -4,12 +4,12 @@ const {
   ChannelType,
 } = require('discord.js');
 
-const { enforceCommandAccess } = require('../../helpers/ui/commandAccess');
+const { enforceCommandAccess } = require('../../core/ui/commandAccess');
 const {
   baseEmbed,
   errorEmbed,
   warningEmbed,
-} = require('../../helpers/ui/embeds');
+} = require('../../core/ui/embeds');
 
 module.exports = {
   category: 'Moderation',

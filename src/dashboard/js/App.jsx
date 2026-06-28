@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import { appBaseStyles, shellStyles } from './ui/components.js';
@@ -16,13 +16,15 @@ import Navbar from './shared/Navbar.jsx';
 import OwnerSidebar from './pages/owner/components/OwnerSidebar.jsx';
 import Topbar from './shared/Topbar.jsx';
 import Login from './pages/core/Login.jsx';
+import DashboardErrorBoundary from './shared/DashboardErrorBoundary.jsx';
 
 const OWNER_MANAGED_GUILD_KEY = 'owner_managed_guild';
 const GUILD_STORAGE_KEY = 'selected_guild';
 const ROUTE_PATHS = ROUTES.map((routeItem) => routeItem.path);
 const GUILD_REQUIRED_ROUTES = new Set([
-  'overview', 'cases', 'warnings', 'automod', 'generalSettings',
+  'overview', 'billing', 'cases', 'warnings', 'automod', 'generalSettings',
   'messages', 'forms', 'modules', 'logs', 'admin', 'moderation',
+  'embedStudio',
 ]);
 
 function normalizeOwnerGuilds(payload) {
@@ -264,11 +266,13 @@ export default function App() {
     const desktopGrid = styles.grid || {};
     const desktopMainColumn = styles.mainColumn || {};
     const desktopMain = styles.main || {};
+    const fixedShell = { height: '100dvh', minHeight: '100dvh', width: '100%', maxWidth: '100%', overflow: 'hidden', overflowX: 'hidden' };
+
     return {
-      app: { ...styles.app, minHeight: '100dvh', width: '100%', maxWidth: '100%', overflowX: 'hidden' },
-      grid: isMobile ? { display: 'block', minHeight: '100dvh', width: '100%', maxWidth: '100%', overflowX: 'hidden' } : { ...desktopGrid, width: '100%', maxWidth: '100%', minWidth: 0, overflowX: 'hidden' },
-      mainColumn: isMobile ? { minHeight: '100dvh', width: '100%', maxWidth: '100%', minWidth: 0, overflowX: 'hidden' } : { ...desktopMainColumn, minWidth: 0, maxWidth: '100%', overflowX: 'hidden' },
-      main: { ...desktopMain, width: '100%', maxWidth: '100%', minWidth: 0, overflowX: 'hidden', padding: isMobile ? '78px clamp(12px, 4vw, 18px) clamp(18px, 4vw, 28px)' : desktopMain.padding },
+      app: { ...styles.app, ...fixedShell },
+      grid: isMobile ? { display: 'block', ...fixedShell } : { ...desktopGrid, ...fixedShell, minWidth: 0 },
+      mainColumn: isMobile ? { height: '100dvh', minHeight: '100dvh', width: '100%', maxWidth: '100%', minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' } : { ...desktopMainColumn, height: '100dvh', minHeight: '100dvh', minWidth: 0, maxWidth: '100%', overflow: 'hidden' },
+      main: { ...desktopMain, width: '100%', maxWidth: '100%', minWidth: 0, flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', padding: isMobile ? '78px clamp(12px, 4vw, 18px) clamp(18px, 4vw, 28px)' : desktopMain.padding },
     };
   }, [styles, isMobile]);
 
@@ -370,7 +374,11 @@ export default function App() {
               ) : routeNeedsGuild && !guildState.guildsLoading && !effectiveSelectedGuild ? (
                 <CenterMessage theme={theme} title="No server selected" text="Select a server from the navbar to continue." />
               ) : ActivePage ? (
-                <ActivePage {...pageProps} />
+                <DashboardErrorBoundary theme={theme} resetKey={location.pathname}>
+                  <Suspense fallback={<CenterMessage theme={theme} title="Loading page..." text="Preparing this dashboard module." />}>
+                    <ActivePage {...pageProps} />
+                  </Suspense>
+                </DashboardErrorBoundary>
               ) : (
                 <CenterMessage theme={theme} title="Page not found" text="That dashboard page does not exist." />
               )}

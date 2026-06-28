@@ -5,7 +5,7 @@ const { SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('disco
 const translationStore = require('../../modules/translation/translationStore');
 const translationManager = require('../../modules/translation/translationManager');
 const translationThreadManager = require('../../modules/translation/translationThreadManager');
-const { enforceCommandAccess } = require('../../helpers/ui/commandAccess');
+const { enforceCommandAccess } = require('../../core/ui/commandAccess');
 
 async function reply(interaction, payload) {
   const data = { ...payload, flags: 64 };

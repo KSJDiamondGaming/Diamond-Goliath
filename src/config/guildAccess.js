@@ -9,12 +9,22 @@ function getEnvList(name) {
     .filter(Boolean);
 }
 
+function normaliseBotMode(botMode) {
+  return String(botMode || process.env.BOT_MODE || 'DEV').toUpperCase();
+}
+
+function normaliseModeConfig(modeConfig) {
+  return modeConfig && typeof modeConfig === 'object' ? modeConfig : {};
+}
+
 function getAllowedGuildIds(botMode) {
-  if (botMode === 'DEV') {
+  const safeBotMode = normaliseBotMode(botMode);
+
+  if (safeBotMode === 'DEV') {
     return getEnvList('DEV_GUILD_ID');
   }
 
-  if (botMode === 'BETA') {
+  if (safeBotMode === 'BETA') {
     return getEnvList('BETA_GUILD_IDS');
   }
 
@@ -22,7 +32,9 @@ function getAllowedGuildIds(botMode) {
 }
 
 function isGuildAllowed(guildId, botMode, modeConfig) {
-  if (!modeConfig.strictGuildAccess) {
+  const safeConfig = normaliseModeConfig(modeConfig);
+
+  if (!safeConfig.strictGuildAccess) {
     return true;
   }
 
@@ -32,65 +44,69 @@ function isGuildAllowed(guildId, botMode, modeConfig) {
     return true;
   }
 
-  return allowedGuildIds.includes(guildId);
+  return allowedGuildIds.includes(String(guildId));
 }
 
 async function enforceGuildAccess(guild, botMode, modeConfig) {
-if (!guild) return false;
+  if (!guild) return false;
 
-if (!modeConfig.strictGuildAccess) {
-return true;
+  const safeConfig = normaliseModeConfig(modeConfig);
+  const safeBotMode = normaliseBotMode(botMode);
+
+  if (!safeConfig.strictGuildAccess) {
+    return true;
+  }
+
+  const allowedGuildIds = getAllowedGuildIds(safeBotMode);
+
+  console.log('====================================');
+  console.log('[Guild Access Debug]');
+  console.log('Bot Mode:', safeBotMode);
+  console.log('Guild Name:', guild.name);
+  console.log('Guild ID:', guild.id);
+  console.log('Allowed Guild IDs:', allowedGuildIds);
+  console.log('====================================');
+
+  if (!allowedGuildIds.length) {
+    console.warn(
+      `⚠️ ${safeBotMode} mode has strict guild access enabled, but no allowed guild IDs are configured.`
+    );
+    return true;
+  }
+
+  if (allowedGuildIds.includes(String(guild.id))) {
+    console.log(`✅ Authorized guild: ${guild.name} (${guild.id})`);
+    return true;
+  }
+
+  console.warn(
+    `🚫 ${safeBotMode} bot was added to unauthorized guild: ${guild.name} (${guild.id})`
+  );
+
+  try {
+    await guild.leave();
+    console.warn(`👋 Left unauthorized guild: ${guild.name} (${guild.id})`);
+  } catch (err) {
+    console.error(
+      `❌ Failed to leave unauthorized guild: ${guild.name} (${guild.id})`
+    );
+    console.error(err);
+  }
+
+  return false;
 }
-
-const allowedGuildIds = getAllowedGuildIds(botMode);
-
-console.log('====================================');
-console.log('[Guild Access Debug]');
-console.log('Bot Mode:', botMode);
-console.log('Guild Name:', guild.name);
-console.log('Guild ID:', guild.id);
-console.log('Allowed Guild IDs:', allowedGuildIds);
-console.log('====================================');
-
-if (!allowedGuildIds.length) {
-console.warn(
-`⚠️ ${botMode} mode has strict guild access enabled, but no allowed guild IDs are configured.`
-);
-return true;
-}
-
-if (allowedGuildIds.includes(guild.id)) {
-console.log(`✅ Authorized guild: ${guild.name} (${guild.id})`);
-return true;
-}
-
-console.warn(
-`🚫 ${botMode} bot was added to unauthorized guild: ${guild.name} (${guild.id})`
-);
-
-try {
-await guild.leave();
-console.warn(`👋 Left unauthorized guild: ${guild.name} (${guild.id})`);
-} catch (err) {
-console.error(
-`❌ Failed to leave unauthorized guild: ${guild.name} (${guild.id})`
-);
-console.error(err);
-}
-
-return false;
-}
-
 
 async function enforceCurrentGuilds(client, botMode, modeConfig) {
   if (!client?.guilds?.cache) return;
 
-  if (!modeConfig.strictGuildAccess) {
+  const safeConfig = normaliseModeConfig(modeConfig);
+
+  if (!safeConfig.strictGuildAccess) {
     return;
   }
 
   for (const guild of client.guilds.cache.values()) {
-    await enforceGuildAccess(guild, botMode, modeConfig);
+    await enforceGuildAccess(guild, botMode, safeConfig);
   }
 }
 

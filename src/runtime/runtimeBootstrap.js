@@ -9,9 +9,7 @@ function ensureDir(dirPath) {
   }
 
   if (!fs.existsSync(dirPath)) {
-    fs.mkdirSync(dirPath, {
-      recursive: true,
-    });
+    fs.mkdirSync(dirPath, { recursive: true });
   }
 
   return dirPath;
@@ -42,92 +40,53 @@ function validateEnv(name) {
 function safeLoad(label, loadFn, logger = console) {
   try {
     const result = loadFn();
-
     logger.log(`✅ ${label} loaded`);
-
-    return {
-      ok: true,
-      label,
-      result,
-      error: null,
-    };
+    return { ok: true, label, result, error: null };
   } catch (error) {
     logger.error(`❌ ${label} failed to load`);
     logger.error(error);
-
-    return {
-      ok: false,
-      label,
-      result: null,
-      error,
-    };
+    return { ok: false, label, result: null, error };
   }
 }
 
 /* ---------------- MODE / RUNTIME ---------------- */
 
+function normalizeModeValue(mode) {
+  if (mode && typeof mode === 'object') {
+    return mode.botMode || mode.mode || mode.runtimeMode || 'DEV';
+  }
+
+  return mode || 'DEV';
+}
+
 function getModeKey(mode) {
-  const value = String(mode || 'DEV').toUpperCase();
+  const value = String(normalizeModeValue(mode)).toUpperCase();
 
-  if (value === 'PRODUCTION') {
-    return 'production';
-  }
-
-  if (value === 'BETA') {
-    return 'beta';
-  }
-
+  if (value === 'PRODUCTION') return 'production';
+  if (value === 'BETA') return 'beta';
   return 'dev';
 }
 
 function bootstrapRuntime(mode = 'DEV') {
   const modeKey = getModeKey(mode);
-
-  const modeRoot = path.join(
-    process.cwd(),
-    'src',
-    'runtime',
-    modeKey
-  );
+  const modeRoot = path.join(process.cwd(), 'src', 'runtime', modeKey);
 
   const paths = {
     root: modeRoot,
-
-    backups: path.join(
-      modeRoot,
-      'backups'
-    ),
-
-    database: path.join(
-      modeRoot,
-      'database'
-    ),
-
-    data: path.join(
-      modeRoot,
-      'data'
-    ),
-
-    restoreRequests: path.join(
-      modeRoot,
-      'data',
-      'restoreRequests'
-    ),
-
-    backupSync: path.join(
-      modeRoot,
-      'data',
-      'backupSync'
-    ),
+    backups: path.join(modeRoot, 'backups'),
+    data: path.join(modeRoot, 'data'),
+    guilds: path.join(modeRoot, 'guilds'),
+    logs: path.join(modeRoot, 'logs'),
+    security: path.join(modeRoot, 'security'),
   };
 
   const requiredDirectories = [
     paths.root,
     paths.backups,
-    paths.database,
     paths.data,
-    paths.restoreRequests,
-    paths.backupSync,
+    paths.guilds,
+    paths.logs,
+    paths.security,
   ];
 
   for (const dir of requiredDirectories) {
@@ -138,7 +97,6 @@ function bootstrapRuntime(mode = 'DEV') {
 
   return {
     mode: modeKey,
-    root: paths.root,
     ...paths,
   };
 }
@@ -146,10 +104,7 @@ function bootstrapRuntime(mode = 'DEV') {
 /* ---------------- BOOT VALIDATION ---------------- */
 
 function runBootValidation(config = {}) {
-  const {
-    requiredPaths = [],
-    requiredEnv = [],
-  } = config;
+  const { requiredPaths = [], requiredEnv = [] } = config;
 
   console.log('🩺 Running boot validation...');
 
@@ -162,15 +117,16 @@ function runBootValidation(config = {}) {
   }
 
   console.log('✅ Boot validation complete.');
-
   return true;
 }
 
 /* ---------------- STARTUP FINGERPRINT ---------------- */
 
 function getStartupFingerprint(mode, runtimePaths = {}) {
+  const modeValue = normalizeModeValue(mode);
+
   return {
-    botMode: String(mode || 'UNKNOWN').toUpperCase(),
+    botMode: String(modeValue || 'UNKNOWN').toUpperCase(),
     runtimeMode: runtimePaths.mode || 'unknown',
     runtimeRoot: runtimePaths.root || 'unknown',
     nodeVersion: process.version,

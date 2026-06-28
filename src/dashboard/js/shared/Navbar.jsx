@@ -237,27 +237,7 @@ function NavbarGroup({
           />
         </span>
 
-        {expanded ? (
-          <>
-            <span style={styles.navLabel}>{item.label}</span>
-
-            <span
-              style={{
-                marginLeft: 'auto',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transform: groupOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-                transition: 'transform 0.2s ease',
-                color: hasActiveChild || groupHovered ? '#93c5fd' : theme.navbarMuted,
-                fontSize: '12px',
-                lineHeight: 1,
-              }}
-            >
-              ▾
-            </span>
-          </>
-        ) : null}
+        {expanded ? <span style={styles.navLabel}>{item.label}</span> : null}
       </button>
 
       <div

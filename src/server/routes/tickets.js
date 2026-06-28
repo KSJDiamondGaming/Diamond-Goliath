@@ -16,15 +16,51 @@ const {
   removeTicket,
 } = require("../../modules/tickets/ticketManager");
 
+const ticketRecovery = require("../../modules/tickets/ticketRecovery");
+
 const {
   getPanels,
   getTicketSettings,
+  saveTicketSettings,
 } = require("../../modules/tickets/ticketStore");
+
+const {
+  MANAGE_CHANNEL_PERMISSIONS,
+  guardCategoryAccess,
+  isGoliathPermissionError,
+  validateRoleSelection,
+} = require("../../core/security/goliathPermissionGuard");
 
 const router = express.Router();
 
+function normaliseStatus(status) {
+  return String(status || "open").toLowerCase();
+}
+
 function countByStatus(tickets = [], status) {
-  return tickets.filter((ticket) => ticket.status === status).length;
+  return tickets.filter((ticket) => normaliseStatus(ticket.status) === status).length;
+}
+
+function isDeletedTicket(ticket = {}) {
+  return normaliseStatus(ticket.status) === "deleted" || Boolean(ticket.deletedAt);
+}
+
+function isFormTicket(ticket = {}) {
+  return (
+    ticket.source === "form" ||
+    Boolean(ticket.formSubmissionId) ||
+    Boolean(ticket.metadata?.submissionId)
+  );
+}
+
+function hasMissingChannelRecord(ticket = {}) {
+  const status = normaliseStatus(ticket.status);
+
+  if (["closed", "archived", "deleted"].includes(status)) {
+    return false;
+  }
+
+  return !ticket.discordChannelId && !ticket.channelId;
 }
 
 function isToday(dateValue) {
@@ -33,6 +69,175 @@ function isToday(dateValue) {
   if (Number.isNaN(date.getTime())) return false;
   const now = new Date();
   return date.getUTCFullYear() === now.getUTCFullYear() && date.getUTCMonth() === now.getUTCMonth() && date.getUTCDate() === now.getUTCDate();
+}
+
+function cleanDiscordId(value) {
+  const id = String(value || "").replace(/[<@#!&>]/g, "").trim();
+  return /^\d{15,25}$/.test(id) ? id : null;
+}
+
+function cleanDiscordIds(values = []) {
+  return [...new Set((Array.isArray(values) ? values : [values]).map(cleanDiscordId).filter(Boolean))];
+}
+
+async function fetchGuild(req, guildId) {
+  const client = req.app?.locals?.client || req.app?.locals?.discordClient || global.client || global.discordClient;
+  if (!client?.guilds?.fetch) return null;
+  return client.guilds.cache.get(guildId) || client.guilds.fetch(guildId).catch(() => null);
+}
+
+function getDiscordClient(req) {
+  return req.app?.locals?.client || req.app?.locals?.discordClient || global.client || global.discordClient || null;
+}
+
+function getTicketRoleIds(settings = {}) {
+  const permissions = settings.permissions || {};
+
+  return cleanDiscordIds([
+    ...(settings.staffRoleIds || []),
+    ...(settings.managerRoleIds || []),
+    ...(settings.viewerRoleIds || []),
+    ...(permissions.staffRoles || []),
+    ...(permissions.managerRoles || []),
+    ...(permissions.viewerRoles || []),
+  ]);
+}
+
+function getTicketCategoryIds(settings = {}) {
+  const tickets = settings.tickets || {};
+
+  return cleanDiscordIds([
+    settings.categoryId,
+    settings.outputCategoryId,
+    settings.archiveCategoryId,
+    tickets.categoryId,
+    tickets.outputCategoryId,
+    tickets.archiveCategoryId,
+  ]);
+}
+
+async function guardTicketSettings(req, guildId, settings = {}) {
+  const roleIds = getTicketRoleIds(settings);
+  const categoryIds = getTicketCategoryIds(settings);
+
+  if (!roleIds.length && !categoryIds.length) return null;
+
+  const guild = await fetchGuild(req, guildId);
+  if (!guild) throw new Error("Guild is unavailable.");
+
+  if (roleIds.length) {
+    const roleResult = await validateRoleSelection(guild, roleIds, {
+      scope: "ticket_settings.roles",
+      requireManageable: false,
+    });
+
+    if (!roleResult.ok) throw roleResult.toError();
+  }
+
+  for (const categoryId of categoryIds) {
+    await guardCategoryAccess(guild, categoryId, MANAGE_CHANNEL_PERMISSIONS, {
+      scope: "ticket_settings.categories",
+      autoFix: true,
+      throwOnFail: true,
+      reason: "Goliath ticket settings permission validation",
+    });
+  }
+
+  return true;
+}
+
+function failure(res, error, fallbackMessage, fallbackStatus = 500) {
+  if (isGoliathPermissionError(error)) {
+    const details = error.details || {};
+
+    return res.status(403).json({
+      success: false,
+      code: error.code,
+      error: error.message,
+      message: details.message || error.message,
+      scope: details.scope || null,
+      guildId: details.guildId || null,
+      channelId: details.channelId || null,
+      channelName: details.channelName || null,
+      missingPermissions: details.missingPermissions || [],
+      failures: details.failures || [],
+      metadata: details.metadata || {},
+      autoFixAvailable: Boolean(details.autoFixAvailable),
+      confirmationRequired: Boolean(details.confirmationRequired),
+    });
+  }
+
+  return res.status(fallbackStatus).json({
+    success: false,
+    error: error.message || fallbackMessage,
+  });
+}
+
+function serialisePanel(panel = {}) {
+  return {
+    id: panel.panelId || panel.id || null,
+    panelId: panel.panelId || panel.id || null,
+    name: panel.name || panel.title || panel.appearance?.title || "Unnamed Panel",
+    title: panel.title || panel.appearance?.title || panel.name || "Unnamed Panel",
+    type: panel.ticketType || panel.type || "support",
+    ticketType: panel.ticketType || panel.type || "support",
+
+    deployed: Boolean(
+      panel.deployed ||
+      (panel.deployChannelId && panel.deployMessageId) ||
+      (panel.channelId && panel.messageId)
+    ),
+
+    channelId: panel.deployChannelId || panel.channelId || null,
+    messageId: panel.deployMessageId || panel.messageId || null,
+    deployChannelId: panel.deployChannelId || panel.channelId || null,
+    deployMessageId: panel.deployMessageId || panel.messageId || null,
+
+    ticketLimit:
+      panel.maxOpenTicketsPerUser ??
+      panel.maxActiveTicketsPerUser ??
+      panel.ticketLimit ??
+      0,
+
+    cooldown:
+      panel.cooldownMs ??
+      panel.cooldown ??
+      0,
+
+    cooldownMs:
+      panel.cooldownMs ??
+      panel.cooldown ??
+      0,
+
+    staffRoles: Array.isArray(panel.staffRoles) ? panel.staffRoles : panel.staffRoleIds || [],
+    staffRoleIds: panel.staffRoleIds || panel.staffRoles || [],
+    managerRoleIds: panel.managerRoleIds || [],
+    viewerRoleIds: panel.viewerRoleIds || [],
+
+    outputCategoryId: panel.outputCategoryId || null,
+    archiveCategoryId: panel.archiveCategoryId || null,
+    transcriptsChannelId: panel.transcriptsChannelId || null,
+    logsChannelId: panel.logsChannelId || null,
+  };
+}
+
+function summariseRecovery(result = {}) {
+  const formResults = Array.isArray(result.formTicketRecovery)
+    ? result.formTicketRecovery
+    : [];
+
+  return {
+    guildId: result.guildId,
+    guildFound: result.guildFound !== false,
+    totalTickets: result.totalTickets || 0,
+    activeTickets: result.activeTickets || 0,
+    missingChannels: result.missingChannels?.length || 0,
+    validChannels: result.validChannels?.length || 0,
+    formTicketsChecked: formResults.length,
+    formTicketsRecovered: formResults.filter((item) => item.recovered).length,
+    formTicketChannelsRecreated: formResults.filter((item) => item.recreated).length,
+    formTicketsRecoverable: formResults.filter((item) => item.recoverable).length,
+  };
 }
 
 router.get("/:guildId/overview", async (req, res) => {
@@ -45,6 +250,9 @@ router.get("/:guildId/overview", async (req, res) => {
     const claimedCount = countByStatus(tickets, "claimed");
     const closedCount = countByStatus(tickets, "closed");
     const archivedCount = countByStatus(tickets, "archived");
+    const deletedCount = tickets.filter(isDeletedTicket).length;
+    const formTicketCount = tickets.filter(isFormTicket).length;
+    const missingChannelRecordCount = tickets.filter(hasMissingChannelRecord).length;
 
     return res.json({
       success: true,
@@ -52,21 +260,93 @@ router.get("/:guildId/overview", async (req, res) => {
       overview: {
         enabled: settings.enabled !== false,
         ticketCount: tickets.length,
+        totalCount: tickets.length,
         openCount,
         claimedCount,
         closedCount,
         archivedCount,
+        deletedCount,
+        formTicketCount,
+        missingChannelRecordCount,
         activeCount: openCount + claimedCount,
         closedTodayCount: tickets.filter((ticket) => isToday(ticket.closedAt)).length,
-        transcriptCount: tickets.filter((ticket) => ticket.transcript).length,
+        archivedTodayCount: tickets.filter((ticket) => isToday(ticket.archivedAt)).length,
+        deletedTodayCount: tickets.filter((ticket) => isToday(ticket.deletedAt)).length,
+        transcriptCount: tickets.filter((ticket) => ticket.transcript || ticket.transcriptId || ticket.transcriptUrl).length,
+
         panelCount: panels.length,
-        deployedPanelCount: panels.filter((panel) => panel.deployed || (panel.channelId && panel.messageId)).length,
+
+        deployedPanelCount: panels.filter(
+          (panel) => panel.deployed || (panel.deployChannelId && panel.deployMessageId) || (panel.channelId && panel.messageId)
+        ).length,
+
+        panels: panels.map(serialisePanel),
+
         settings,
       },
     });
   } catch (error) {
     console.error("[TicketsRoute] OVERVIEW:", error);
-    return res.status(500).json({ success: false, error: "Failed to fetch ticket overview." });
+    return failure(res, error, "Failed to fetch ticket overview.");
+  }
+});
+
+router.post("/:guildId/recovery", async (req, res) => {
+  try {
+    const { guildId } = req.params;
+    const client = getDiscordClient(req);
+
+    if (!client) {
+      return res.status(503).json({
+        success: false,
+        error: "Discord client is unavailable.",
+      });
+    }
+
+    const createMissingChannels = req.body?.createMissingChannels === true;
+
+    const result = await ticketRecovery.recoverGuildTickets(
+      client,
+      guildId,
+      { createMissingChannels }
+    );
+
+    return res.json({
+      success: true,
+      guildId,
+      mode: createMissingChannels ? "recreate_missing_channels" : "scan_only",
+      summary: summariseRecovery(result),
+      result,
+    });
+  } catch (error) {
+    console.error("[TicketsRoute] RECOVERY:", error);
+    return failure(res, error, "Failed to run ticket recovery.");
+  }
+});
+
+router.get("/:guildId/settings", async (req, res) => {
+  try {
+    const { guildId } = req.params;
+    const settings = getTicketSettings(guildId) || {};
+    return res.json({ success: true, guildId, settings });
+  } catch (error) {
+    console.error("[TicketsRoute] SETTINGS GET:", error);
+    return failure(res, error, "Failed to fetch ticket settings.");
+  }
+});
+
+router.patch("/:guildId/settings", async (req, res) => {
+  try {
+    const { guildId } = req.params;
+    const settings = req.body?.settings || req.body || {};
+
+    await guardTicketSettings(req, guildId, settings);
+
+    const savedSettings = saveTicketSettings(guildId, settings);
+    return res.json({ success: true, guildId, settings: savedSettings });
+  } catch (error) {
+    console.error("[TicketsRoute] SETTINGS PATCH:", error);
+    return failure(res, error, "Failed to update ticket settings.", 400);
   }
 });
 
@@ -77,7 +357,7 @@ router.get("/:guildId", async (req, res) => {
     return res.json({ success: true, count: tickets.length, tickets });
   } catch (error) {
     console.error("[TicketsRoute] GET ALL:", error);
-    return res.status(500).json({ success: false, error: "Failed to fetch tickets." });
+    return failure(res, error, "Failed to fetch tickets.");
   }
 });
 
@@ -89,7 +369,7 @@ router.get("/:guildId/:ticketId", async (req, res) => {
     return res.json({ success: true, ticket });
   } catch (error) {
     console.error("[TicketsRoute] GET ONE:", error);
-    return res.status(500).json({ success: false, error: "Failed to fetch ticket." });
+    return failure(res, error, "Failed to fetch ticket.");
   }
 });
 
@@ -101,7 +381,7 @@ router.post("/:guildId", async (req, res) => {
     return res.status(201).json({ success: true, ticket });
   } catch (error) {
     console.error("[TicketsRoute] CREATE:", error);
-    return res.status(500).json({ success: false, error: "Failed to create ticket." });
+    return failure(res, error, "Failed to create ticket.");
   }
 });
 
@@ -114,7 +394,7 @@ router.post("/:guildId/:ticketId/claim", async (req, res) => {
     return res.json({ success: true, ticket });
   } catch (error) {
     console.error("[TicketsRoute] CLAIM:", error);
-    return res.status(500).json({ success: false, error: "Failed to claim ticket." });
+    return failure(res, error, "Failed to claim ticket.");
   }
 });
 
@@ -127,7 +407,7 @@ router.post("/:guildId/:ticketId/assign", async (req, res) => {
     return res.json({ success: true, ticket });
   } catch (error) {
     console.error("[TicketsRoute] ASSIGN:", error);
-    return res.status(500).json({ success: false, error: "Failed to assign ticket." });
+    return failure(res, error, "Failed to assign ticket.");
   }
 });
 
@@ -140,7 +420,7 @@ router.patch("/:guildId/:ticketId/status", async (req, res) => {
     return res.json({ success: true, ticket });
   } catch (error) {
     console.error("[TicketsRoute] STATUS:", error);
-    return res.status(500).json({ success: false, error: "Failed to update status." });
+    return failure(res, error, "Failed to update status.");
   }
 });
 
@@ -153,7 +433,7 @@ router.post("/:guildId/:ticketId/note", async (req, res) => {
     return res.json({ success: true, note: noteData });
   } catch (error) {
     console.error("[TicketsRoute] NOTE:", error);
-    return res.status(500).json({ success: false, error: "Failed to add note." });
+    return failure(res, error, "Failed to add note.");
   }
 });
 
@@ -166,7 +446,7 @@ router.post("/:guildId/:ticketId/close", async (req, res) => {
     return res.json({ success: true, ticket });
   } catch (error) {
     console.error("[TicketsRoute] CLOSE:", error);
-    return res.status(500).json({ success: false, error: "Failed to close ticket." });
+    return failure(res, error, "Failed to close ticket.");
   }
 });
 
@@ -179,7 +459,7 @@ router.post("/:guildId/:ticketId/reopen", async (req, res) => {
     return res.json({ success: true, ticket });
   } catch (error) {
     console.error("[TicketsRoute] REOPEN:", error);
-    return res.status(500).json({ success: false, error: "Failed to reopen ticket." });
+    return failure(res, error, "Failed to reopen ticket.");
   }
 });
 
@@ -192,7 +472,7 @@ router.post("/:guildId/:ticketId/archive", async (req, res) => {
     return res.json({ success: true, ticket });
   } catch (error) {
     console.error("[TicketsRoute] ARCHIVE:", error);
-    return res.status(500).json({ success: false, error: "Failed to archive ticket." });
+    return failure(res, error, "Failed to archive ticket.");
   }
 });
 
@@ -203,7 +483,7 @@ router.delete("/:guildId/:ticketId", async (req, res) => {
     return res.json({ success });
   } catch (error) {
     console.error("[TicketsRoute] DELETE:", error);
-    return res.status(500).json({ success: false, error: "Failed to delete ticket." });
+    return failure(res, error, "Failed to delete ticket.");
   }
 });
 

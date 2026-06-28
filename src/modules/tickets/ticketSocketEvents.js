@@ -19,6 +19,24 @@ const EVENTS = Object.freeze({
   ANALYTICS_UPDATED: 'ticket_analytics_updated',
 });
 
+const STANDARD_EVENTS = Object.freeze({
+  ticket_created: 'ticket.created',
+  ticket_updated: 'ticket.updated',
+  ticket_closed: 'ticket.closed',
+  ticket_reopened: 'ticket.reopened',
+  ticket_archived: 'ticket.archived',
+  ticket_deleted: 'ticket.deleted',
+  ticket_claimed: 'ticket.claimed',
+
+  panel_created: 'panel.created',
+  panel_updated: 'panel.updated',
+  panel_deleted: 'panel.deleted',
+  panel_deployed: 'panel.deployed',
+
+  ticket_timeline_entry: 'ticket.timeline.entry',
+  ticket_analytics_updated: 'ticket.analytics.updated',
+});
+
 let socketProvider = null;
 
 function now() {
@@ -45,16 +63,48 @@ function getSocketServer() {
   }
 }
 
+function getRoomName(guildId) {
+  return `guild:${guildId}`;
+}
+
+function getStandardEvent(event) {
+  return STANDARD_EVENTS[event] || event;
+}
+
 function createPayload(type, guildId, data = {}) {
+  const event = getStandardEvent(type);
+
   return {
     type,
+    event,
 
     guildId: String(guildId),
 
     timestamp: now(),
+    updatedAt: now(),
 
     data,
   };
+}
+
+function emitToTargets(io, guildId, legacyEvent, standardEvent, payload) {
+  const guildRoom = getRoomName(guildId);
+
+  const emitNames = [
+    legacyEvent,
+    standardEvent,
+  ].filter((eventName, index, list) =>
+    eventName && list.indexOf(eventName) === index
+  );
+
+  for (const eventName of emitNames) {
+    io.to(guildRoom).emit(eventName, payload);
+    io.to('goliath:tickets').emit(eventName, payload);
+  }
+
+  io.to(guildRoom).emit('guild:update', payload);
+  io.to(guildRoom).emit('goliath_realtime_event', payload);
+  io.to('goliath:tickets').emit('goliath_realtime_event', payload);
 }
 
 function emit(event, guildId, data = {}) {
@@ -76,30 +126,11 @@ function emit(event, guildId, data = {}) {
   }
 
   try {
-    /*
-     * Guild room
-     */
-
-    io.to(`guild:${guildId}`).emit(
+    emitToTargets(
+      io,
+      guildId,
       event,
-      payload
-    );
-
-    /*
-     * Global admin room
-     */
-
-    io.to('goliath:tickets').emit(
-      event,
-      payload
-    );
-
-    /*
-     * General realtime feed
-     */
-
-    io.emit(
-      'goliath_realtime_event',
+      payload.event,
       payload
     );
   } catch (error) {
@@ -111,6 +142,45 @@ function emit(event, guildId, data = {}) {
   }
 
   return payload;
+}
+
+function emitForTicket(io, ticket, event, data = {}) {
+  if (!io || !ticket?.guildId) {
+    return false;
+  }
+
+  const payload = createPayload(
+    event,
+    ticket.guildId,
+    {
+      ticketId: ticket.ticketId,
+      displayId: ticket.displayId,
+      status: ticket.status,
+      type: ticket.type,
+      priority: ticket.priority,
+      ...data,
+    }
+  );
+
+  try {
+    emitToTargets(
+      io,
+      ticket.guildId,
+      event,
+      payload.event,
+      payload
+    );
+
+    return payload;
+  } catch (error) {
+    console.error(
+      '[TicketSockets] Failed to emit ticket event:',
+      event,
+      error
+    );
+
+    return false;
+  }
 }
 
 /*
@@ -408,11 +478,13 @@ function emitAnalyticsUpdated(
 
 module.exports = {
   EVENTS,
+  STANDARD_EVENTS,
 
   setSocketProvider,
   getSocketServer,
 
   emit,
+  emitForTicket,
 
   emitTicketCreated,
   emitTicketUpdated,

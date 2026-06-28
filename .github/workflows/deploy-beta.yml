@@ -1,4 +1,4 @@
-name: Deploy Beta
+name: Deploy BETA
 
 on:
   push:
@@ -40,7 +40,12 @@ jobs:
             echo "🏗️ Building dashboard..."
             npm run build
 
-            echo "♻️ Restarting BETA bot..."
+            echo "🌐 Publishing BETA dashboard..."
+            mkdir -p /var/www/goliath-beta-dashboard
+            rm -rf /var/www/goliath-beta-dashboard/*
+            cp -r dist/* /var/www/goliath-beta-dashboard/
+
+            echo "♻️ Restarting BETA bot/API..."
             BOT_MODE=beta pm2 restart goliath-beta --update-env
 
             pm2 save

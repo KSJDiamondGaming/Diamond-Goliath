@@ -1,6 +1,13 @@
 const { EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const stickyStore = require('./stickyGuildStore');
 const { TYPES, createTimelineEvent } = require('../timeline/timelineManager');
+const { isModuleEnabled } = require('../../core/guild/guildManager');
+
+function assertStickyModuleEnabled(guildId) {
+  if (!isModuleEnabled(guildId, 'sticky')) {
+    throw new Error('Sticky Messages module is disabled for this server.');
+  }
+}
 
 function canManageSticky(member) {
   return Boolean(
@@ -104,6 +111,7 @@ function isCoolingDown(sticky) {
 
 async function repostSticky(channel, sticky, client, options = {}) {
   if (!channel?.guild || !sticky?.enabled) return null;
+  if (!isModuleEnabled(channel.guild.id, 'sticky')) return null;
 
   const botMember = channel.guild.members.me;
   if (!canBotManageChannel(channel, botMember)) return null;
@@ -144,6 +152,7 @@ async function repostSticky(channel, sticky, client, options = {}) {
 
 async function handleStickyMessage(message, client) {
   if (!message?.guild || !message?.channel || message.author?.bot) return;
+  if (!isModuleEnabled(message.guild.id, 'sticky')) return;
 
   const data = stickyStore.loadStickyData(message.guild.id, client);
   if (!data.enabled) return;
@@ -174,6 +183,8 @@ async function handleStickyMessage(message, client) {
 }
 
 async function createSticky(channel, input, client) {
+  assertStickyModuleEnabled(channel?.guild?.id);
+
   const stickyInput = normaliseStickyInput(input);
 
   const sticky = stickyStore.setChannelSticky(
@@ -224,6 +235,8 @@ async function createSticky(channel, input, client) {
 }
 
 async function pauseSticky(channel, client, actor = null) {
+  assertStickyModuleEnabled(channel?.guild?.id);
+
   const sticky = stickyStore.updateChannelSticky(
     channel.guild.id,
     channel.id,
@@ -239,6 +252,8 @@ async function pauseSticky(channel, client, actor = null) {
 }
 
 async function resumeSticky(channel, client, actor = null) {
+  assertStickyModuleEnabled(channel?.guild?.id);
+
   const sticky = stickyStore.updateChannelSticky(
     channel.guild.id,
     channel.id,
@@ -259,6 +274,8 @@ async function resumeSticky(channel, client, actor = null) {
 }
 
 async function removeSticky(channel, client, actor = null) {
+  assertStickyModuleEnabled(channel?.guild?.id);
+
   const sticky = stickyStore.deleteChannelSticky(channel.guild.id, channel.id, client);
 
   if (sticky?.lastMessageId) {
