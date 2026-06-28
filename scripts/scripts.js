@@ -8,10 +8,10 @@ const command = process.argv[2];
 console.log('Mode:', mode);
 
 const actions = {
-  check: () => require('./actions/check')(),
-  audit: () => require('./actions/audit')(),
-  guilds: () => require('./actions/guilds')(),
-  runtime: () => require('./actions/runtime')(),
+  check: () => require('./check')(),
+  audit: () => require('./audit')(),
+  guilds: () => require('./guilds')(),
+  runtime: () => require('./runtime')(),
 };
 
 if (!command) {
