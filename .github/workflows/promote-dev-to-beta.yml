@@ -1,4 +1,4 @@
-name: Promote DEV to BETA
+name: Release to BETA
 
 on:
   workflow_dispatch:
@@ -6,13 +6,14 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write
 
 concurrency:
-  group: promote-dev-to-beta
+  group: release-to-beta
   cancel-in-progress: false
 
 jobs:
-  promote:
+  release-beta:
     runs-on: ubuntu-latest
 
     steps:
@@ -27,21 +28,33 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Merge dev into working tree
+      - name: Merge DEV into release branch
         run: |
           set -e
           git fetch origin dev beta
           git merge origin/dev --no-edit
 
-      - name: Open promotion pull request
+      - name: Create release PR
+        id: cpr
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          branch: automation/promote-dev-to-beta
+          branch: automation/release-to-beta
           base: beta
-          title: Promote DEV to BETA
-          commit-message: Promote DEV to BETA
+          title: Release DEV to BETA
+          commit-message: Release DEV to BETA
           body: |
-            Automated DEV to BETA promotion.
+            Automated release from DEV to BETA.
 
-            This PR exists because beta is protected and direct workflow pushes are blocked.
+      - name: Auto-merge release PR
+        if: steps.cpr.outputs.pull-request-number != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr merge ${{ steps.cpr.outputs.pull-request-number }} --merge --delete-branch
+
+      - name: Deploy BETA
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run "Deploy BETA" --repo KSJHub/Goliath --ref beta
