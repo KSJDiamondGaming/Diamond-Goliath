@@ -25,11 +25,7 @@
     "dashboard:dev": "vite src/dashboard --host 0.0.0.0 --port 5173 --mode development",
     "dashboard:beta": "vite src/dashboard --host 0.0.0.0 --port 5183 --mode development",
     "dashboard:production": "vite src/dashboard --host 0.0.0.0 --port 5193 --mode production",
-    "check:server-syntax": "node scripts/check-server-syntax.js",
-    "check:dashboard-pages": "node scripts/check-dashboard-pages.js",
-    "check:dashboard-api": "node scripts/check-dashboard-api-contracts.js",
-    "check:commands": "node scripts/check-command-integrity.js",
-    "check": "npm run check:server-syntax && npm run check:dashboard-pages && npm run check:dashboard-api && npm run check:commands",
+    "check": "node scripts/scripts.js check",
     "dashboard:build": "npm run check && vite build src/dashboard --outDir ../../dist --emptyOutDir",
     "build": "npm run dashboard:build",
     "dev": "concurrently -n BOT,DASHBOARD -c green,cyan \"npm run bot:dev\" \"npm run dashboard:dev\"",
@@ -41,7 +37,9 @@
     "api": "node -r ./src/runtime/warningFilter.js server.js",
     "api:dev": "cross-env BOT_MODE=dev node -r ./src/runtime/warningFilter.js server.js",
     "api:beta": "cross-env BOT_MODE=beta node -r ./src/runtime/warningFilter.js server.js",
-    "api:production": "cross-env BOT_MODE=production node -r ./src/runtime/warningFilter.js server.js"
+    "api:production": "cross-env BOT_MODE=production node -r ./src/runtime/warningFilter.js server.js",
+    "audit": "node scripts/scripts.js runtime",
+    "guilds:verify": "node scripts/scripts.js guilds"
   },
   "dependencies": {
     "better-sqlite3": "^12.8.0",
