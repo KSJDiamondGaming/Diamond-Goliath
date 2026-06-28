@@ -49,6 +49,15 @@ function readJson(filePath) {
   }
 }
 
+function resolveModule(candidates, label) {
+  for (const candidate of candidates) {
+    const filePath = root(...candidate);
+    if (fs.existsSync(`${filePath}.js`) || fs.existsSync(filePath)) return require(filePath);
+  }
+
+  throw new Error(`${label} not found. Tried: ${candidates.map((candidate) => candidate.join('/')).join(', ')}`);
+}
+
 function checkSyntax() {
   const files = [root('server.js'), ...walk(root('src')), ...walk(root('scripts'))]
     .filter((file) => !file.includes(`${path.sep}dashboard${path.sep}`));
@@ -174,11 +183,22 @@ function checkAll() {
 }
 
 function verifyGuilds() {
-  const { getRuntimePaths } = require(root('src', 'config', 'runtimePaths'));
-  const guildManager = require(root('src', 'guild', 'guildManager'));
+  const { getRuntimePaths } = resolveModule([
+    ['src', 'config', 'runtimePaths'],
+    ['src', 'core', 'runtime', 'runtimePaths'],
+  ], 'runtimePaths');
+  const guildManager = resolveModule([
+    ['src', 'core', 'guild', 'guildManager'],
+    ['src', 'guild', 'guildManager'],
+  ], 'guildManager');
+  const defaults = resolveModule([
+    ['src', 'core', 'guild', 'defaults'],
+    ['src', 'guild', 'defaults'],
+  ], 'guild defaults');
   const runtimePaths = getRuntimePaths(MODE);
   const guildsDir = runtimePaths.guilds;
-  const expectedModules = Object.keys(guildManager.DEFAULT_MODULES || {});
+  const defaultModules = guildManager.DEFAULT_MODULES || defaults.DEFAULT_MODULES || defaults.defaultModules || {};
+  const expectedModules = Object.keys(defaultModules);
   const files = fs.existsSync(guildsDir)
     ? fs.readdirSync(guildsDir).filter((file) => /^\d{16,25}\.json$/.test(file)).map((file) => path.join(guildsDir, file))
     : [];
@@ -194,7 +214,9 @@ function verifyGuilds() {
       continue;
     }
 
-    const guildData = guildManager.getGuildData(guildId, { forceReload: true });
+    const guildData = typeof guildManager.getGuildData === 'function'
+      ? guildManager.getGuildData(guildId, { forceReload: true })
+      : data;
     const modules = guildData.modules && typeof guildData.modules === 'object' ? guildData.modules : {};
     if (!guildData.modules || typeof guildData.modules !== 'object') {
       console.log(`❌ ${guildId}: missing modules object`);
