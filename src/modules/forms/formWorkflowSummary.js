@@ -45,6 +45,38 @@ function isMissingTicketChannel(submission = {}) {
   return isTicketLinked(submission) && !isTicketChannelLinked(submission);
 }
 
+function formCreatesTicket(form = {}) {
+  const actions = form.actions || form.workflowActions || {};
+  return form.action === 'create_ticket' || actions.createTicket === true;
+}
+
+function formReadiness(form = {}) {
+  const issues = [];
+  const fields = Array.isArray(form.fields) ? form.fields : [];
+
+  if (form.enabled === false) issues.push('Form is disabled.');
+  if (!fields.length) issues.push('Form has no questions configured.');
+
+  if (formCreatesTicket(form)) {
+    if (!form.ticketType) issues.push('Ticket type is missing.');
+    if (!form.outputCategoryId) issues.push('Output category is missing.');
+  }
+
+  fields.forEach((field, index) => {
+    if (!field.id) issues.push(`Question ${index + 1} is missing an ID.`);
+    if (!field.label) issues.push(`Question ${index + 1} is missing a label.`);
+    if ((field.type === 'select' || field.type === 'checkbox') && (!Array.isArray(field.options) || !field.options.length)) {
+      issues.push(`${field.label || `Question ${index + 1}`} needs options.`);
+    }
+  });
+
+  return {
+    ready: issues.length === 0,
+    issueCount: issues.length,
+    issues,
+  };
+}
+
 function buildSubmissionWorkflowSummary(form = null, submission = {}) {
   const ticketId = getTicketId(submission);
   const ticketChannelId = getTicketChannelId(submission);
@@ -60,6 +92,7 @@ function buildSubmissionWorkflowSummary(form = null, submission = {}) {
       outputCategoryId: form.outputCategoryId || null,
       logChannelId: form.logChannelId || null,
       staffRoleIds: Array.isArray(form.staffRoleIds) ? form.staffRoleIds : [],
+      readiness: formReadiness(form),
     } : null,
 
     submission: {
@@ -116,13 +149,19 @@ function buildFormsWorkflowOverview(forms = [], submissions = []) {
       counts[status] = (counts[status] || 0) + 1;
       return counts;
     }, {});
+    const readiness = formReadiness(form);
 
     return {
       formId: form.formId,
       name: form.name || form.formId,
       enabled: form.enabled !== false,
+      ready: readiness.ready,
+      readiness,
       action: form.action || 'create_ticket',
+      createsTicket: formCreatesTicket(form),
       ticketType: form.ticketType || form.formId,
+      outputCategoryId: form.outputCategoryId || null,
+      fieldCount: Array.isArray(form.fields) ? form.fields.length : 0,
       submissionCount: formSubmissions.length,
       pendingCount: formStatusCounts.pending || 0,
       approvedCount: formStatusCounts.approved || 0,
@@ -131,6 +170,10 @@ function buildFormsWorkflowOverview(forms = [], submissions = []) {
       missingTicketChannelCount: formSubmissions.filter(isMissingTicketChannel).length,
     };
   });
+
+  const readyFormCount = formBreakdown.filter((form) => form.ready).length;
+  const ticketFormCount = formBreakdown.filter((form) => form.createsTicket).length;
+  const notReadyFormCount = formBreakdown.length - readyFormCount;
 
   const recentSubmissions = [...submissions]
     .sort((a, b) => (Date.parse(b.createdAt || b.updatedAt || 0) || 0) - (Date.parse(a.createdAt || a.updatedAt || 0) || 0))
@@ -159,6 +202,9 @@ function buildFormsWorkflowOverview(forms = [], submissions = []) {
     ticketLinkedSubmissionCount,
     ticketChannelLinkedSubmissionCount,
     missingTicketChannelCount,
+    readyFormCount,
+    notReadyFormCount,
+    ticketFormCount,
     formBreakdown,
     recentSubmissions,
   };
@@ -173,6 +219,8 @@ module.exports = {
   isTicketLinked,
   isTicketChannelLinked,
   isMissingTicketChannel,
+  formCreatesTicket,
+  formReadiness,
   buildSubmissionWorkflowSummary,
   buildFormsWorkflowOverview,
 };
