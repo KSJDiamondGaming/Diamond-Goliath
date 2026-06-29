@@ -102,7 +102,12 @@ module.exports = {
   once: true,
 
   async execute(client) {
-    const currentMode = client.botMode || 'DEV';
+    const currentMode = String(
+  client.botMode ||
+  client.config?.mode ||
+  process.env.BOT_MODE ||
+  'DEV'
+).toUpperCase();
 
     const modeLabels = {
       DEV: 'DEV (Main Guild Only)',
