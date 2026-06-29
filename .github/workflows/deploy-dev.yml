@@ -22,33 +22,4 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
           port: 22
-          script: |
-            set -e
-
-            echo "🚀 Deploying DEV..."
-
-            cd /home/goliath/dev
-
-            echo "📥 Syncing dev branch..."
-            git checkout dev
-            git fetch origin dev
-            git reset --hard origin/dev
-
-            echo "📦 Installing dependencies..."
-            npm install
-
-            echo "🏗️ Building dashboard..."
-            npm run build
-
-            echo "🌐 Publishing DEV dashboard..."
-            mkdir -p /var/www/goliath-dev-dashboard
-            rm -rf /var/www/goliath-dev-dashboard/*
-            cp -r dist/* /var/www/goliath-dev-dashboard/
-
-            echo "♻️ Restarting DEV bot/API..."
-            BOT_MODE=dev pm2 restart goliath-dev --update-env
-
-            pm2 save
-            pm2 status
-
-            echo "✅ DEV deployment complete"
+          script: bash /home/goliath/deploy-dev.sh
