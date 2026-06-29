@@ -7,6 +7,7 @@ const BOT_MODES = Object.freeze({
 const MODE_CONFIG = Object.freeze({
   [BOT_MODES.DEV]: {
     name: BOT_MODES.DEV,
+    mode: BOT_MODES.DEV,
     label: 'Development',
     strictGuildAccess: false,
     commandDeployType: 'GUILD',
@@ -17,6 +18,7 @@ const MODE_CONFIG = Object.freeze({
 
   [BOT_MODES.BETA]: {
     name: BOT_MODES.BETA,
+    mode: BOT_MODES.BETA,
     label: 'Beta',
     strictGuildAccess: true,
     commandDeployType: 'GUILD',
@@ -27,6 +29,7 @@ const MODE_CONFIG = Object.freeze({
 
   [BOT_MODES.PRODUCTION]: {
     name: BOT_MODES.PRODUCTION,
+    mode: BOT_MODES.PRODUCTION,
     label: 'Production',
     strictGuildAccess: false,
     commandDeployType: 'GLOBAL',
