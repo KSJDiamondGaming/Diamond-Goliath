@@ -8,6 +8,8 @@
  * raw submission storage shape.
  */
 
+const workflowHelpers = require('./formWorkflowHelpers');
+
 function normaliseStatus(submission = {}) {
   return String(submission.status || 'pending').toLowerCase();
 }
@@ -82,6 +84,7 @@ function buildSubmissionWorkflowSummary(form = null, submission = {}) {
   const ticketChannelId = getTicketChannelId(submission);
   const ticketControlMessageId = getTicketControlMessageId(submission);
   const workflow = submission.workflow || {};
+  const review = workflowHelpers.buildReviewSnapshot(submission);
 
   return {
     form: form ? {
@@ -99,6 +102,7 @@ function buildSubmissionWorkflowSummary(form = null, submission = {}) {
       submissionId: submission.submissionId || null,
       formId: submission.formId || form?.formId || null,
       status: normaliseStatus(submission),
+      workflowState: review.workflowState,
       userId: submission.userId || null,
       userTag: submission.userTag || null,
       createdAt: submission.createdAt || null,
@@ -118,16 +122,21 @@ function buildSubmissionWorkflowSummary(form = null, submission = {}) {
       missingChannel: Boolean(ticketId && !ticketChannelId),
     },
 
+    review,
+
     workflow: {
       ...workflow,
       ticketLinked: Boolean(ticketId),
       ticketChannelLinked: Boolean(ticketChannelId),
       ticketControlMessageLinked: Boolean(ticketControlMessageId),
       missingTicketChannel: Boolean(ticketId && !ticketChannelId),
+      reviewState: review.workflowState,
+      nextAction: review.nextAction,
     },
 
     answers: submission.answers || {},
-    timeline: Array.isArray(submission.timeline) ? submission.timeline : [],
+    notes: workflowHelpers.getNotes(submission),
+    timeline: workflowHelpers.buildWorkflowTimeline(submission),
   };
 }
 
@@ -141,6 +150,9 @@ function buildFormsWorkflowOverview(forms = [], submissions = []) {
   const ticketLinkedSubmissionCount = submissions.filter(isTicketLinked).length;
   const ticketChannelLinkedSubmissionCount = submissions.filter(isTicketChannelLinked).length;
   const missingTicketChannelCount = submissions.filter(isMissingTicketChannel).length;
+  const assignedSubmissionCount = submissions.filter((submission) => Boolean(workflowHelpers.getReviewerId(submission))).length;
+  const unassignedSubmissionCount = submissions.filter((submission) => workflowHelpers.isOpenReview(submission) && !workflowHelpers.getReviewerId(submission)).length;
+  const noteCount = submissions.reduce((total, submission) => total + workflowHelpers.getNotes(submission).length, 0);
 
   const formBreakdown = forms.map((form) => {
     const formSubmissions = submissions.filter((submission) => submission.formId === form.formId);
@@ -164,8 +176,11 @@ function buildFormsWorkflowOverview(forms = [], submissions = []) {
       fieldCount: Array.isArray(form.fields) ? form.fields.length : 0,
       submissionCount: formSubmissions.length,
       pendingCount: formStatusCounts.pending || 0,
+      requestInfoCount: formStatusCounts.request_info || 0,
       approvedCount: formStatusCounts.approved || 0,
       deniedCount: formStatusCounts.denied || 0,
+      assignedCount: formSubmissions.filter((submission) => Boolean(workflowHelpers.getReviewerId(submission))).length,
+      unassignedCount: formSubmissions.filter((submission) => workflowHelpers.isOpenReview(submission) && !workflowHelpers.getReviewerId(submission)).length,
       ticketLinkedCount: formSubmissions.filter(isTicketLinked).length,
       missingTicketChannelCount: formSubmissions.filter(isMissingTicketChannel).length,
     };
@@ -178,19 +193,26 @@ function buildFormsWorkflowOverview(forms = [], submissions = []) {
   const recentSubmissions = [...submissions]
     .sort((a, b) => (Date.parse(b.createdAt || b.updatedAt || 0) || 0) - (Date.parse(a.createdAt || a.updatedAt || 0) || 0))
     .slice(0, 10)
-    .map((submission) => ({
-      submissionId: submission.submissionId || null,
-      formId: submission.formId || null,
-      status: normaliseStatus(submission),
-      userId: submission.userId || null,
-      userTag: submission.userTag || null,
-      ticketId: getTicketId(submission),
-      ticketChannelId: getTicketChannelId(submission),
-      ticketControlMessageId: getTicketControlMessageId(submission),
-      missingTicketChannel: isMissingTicketChannel(submission),
-      createdAt: submission.createdAt || null,
-      reviewedAt: submission.reviewedAt || null,
-    }));
+    .map((submission) => {
+      const review = workflowHelpers.buildReviewSnapshot(submission);
+      return {
+        submissionId: submission.submissionId || null,
+        formId: submission.formId || null,
+        status: normaliseStatus(submission),
+        workflowState: review.workflowState,
+        nextAction: review.nextAction,
+        reviewerId: review.reviewerId,
+        userId: submission.userId || null,
+        userTag: submission.userTag || null,
+        ticketId: getTicketId(submission),
+        ticketChannelId: getTicketChannelId(submission),
+        ticketControlMessageId: getTicketControlMessageId(submission),
+        missingTicketChannel: isMissingTicketChannel(submission),
+        noteCount: review.noteCount,
+        createdAt: submission.createdAt || null,
+        reviewedAt: submission.reviewedAt || null,
+      };
+    });
 
   return {
     statusCounts,
@@ -199,6 +221,9 @@ function buildFormsWorkflowOverview(forms = [], submissions = []) {
     deniedSubmissionCount: statusCounts.denied || 0,
     closedSubmissionCount: statusCounts.closed || 0,
     requestInfoSubmissionCount: statusCounts.request_info || 0,
+    assignedSubmissionCount,
+    unassignedSubmissionCount,
+    noteCount,
     ticketLinkedSubmissionCount,
     ticketChannelLinkedSubmissionCount,
     missingTicketChannelCount,
