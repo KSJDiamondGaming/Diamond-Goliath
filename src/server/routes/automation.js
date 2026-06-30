@@ -3,6 +3,7 @@
 const express = require('express');
 const registry = require('../../modules/automation/automationRegistry');
 const store = require('../../modules/automation/automationStore');
+const simulator = require('../../modules/automation/automationSimulator');
 
 const router = express.Router();
 
@@ -11,7 +12,7 @@ function ok(res, payload = {}) {
 }
 
 function fail(res, error, status = 400) {
-  return res.status(status).json({
+  return res.status(error.status || status).json({
     success: false,
     error: error.message || 'Automation request failed.',
     validation: error.validation || null,
@@ -73,6 +74,16 @@ router.get('/:guildId/executions', (req, res) => {
   try {
     const id = guildId(req);
     return ok(res, { guildId: id, executions: store.getExecutions(id) });
+  } catch (error) {
+    return fail(res, error);
+  }
+});
+
+router.post('/:guildId/rules/:ruleId/simulate', (req, res) => {
+  try {
+    const id = guildId(req);
+    const simulation = simulator.simulateStoredRule(id, req.params.ruleId, req.body?.context || {});
+    return ok(res, { guildId: id, simulation, executions: store.getExecutions(id) });
   } catch (error) {
     return fail(res, error);
   }
