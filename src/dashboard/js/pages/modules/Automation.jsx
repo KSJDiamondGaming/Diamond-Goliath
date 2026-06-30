@@ -18,6 +18,10 @@ function button(theme, disabled = false) {
   return { border: `1px solid ${theme.cardBorder}`, background: 'rgba(15,23,42,0.35)', color: theme.cardText, borderRadius: 12, padding: '9px 11px', fontWeight: 950, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.55 : 1 };
 }
 
+function automationRequest(path, options = {}) {
+  return api.request(`/api/automation${path}`, options);
+}
+
 export default function Automation({ theme, selectedGuild, selectedGuildData }) {
   const guildId = getGuildId(selectedGuild, selectedGuildData);
   const [registry, setRegistry] = useState({ triggers: [], actions: [] });
@@ -39,8 +43,8 @@ export default function Automation({ theme, selectedGuild, selectedGuildData }) 
     setError('');
     try {
       const [registryPayload, automationPayload] = await Promise.all([
-        api.getAutomationRegistry(),
-        api.getAutomation(guildId),
+        automationRequest('/registry'),
+        automationRequest(`/${guildId}`),
       ]);
       setRegistry({ triggers: registryPayload.triggers || [], actions: registryPayload.actions || [] });
       setRules(automationPayload.rules || []);
@@ -60,11 +64,14 @@ export default function Automation({ theme, selectedGuild, selectedGuildData }) 
     setError('');
     setNotice('');
     try {
-      const payload = await api.saveAutomationRule(guildId, {
-        name,
-        trigger,
-        enabled: true,
-        actions: [{ action, config: { message: 'Automation rule executed.' } }],
+      const payload = await automationRequest(`/${guildId}/rules`, {
+        method: 'POST',
+        body: JSON.stringify({
+          name,
+          trigger,
+          enabled: true,
+          actions: [{ action, config: { message: 'Automation rule executed.' } }],
+        }),
       });
       setRules(payload.rules || []);
       setNotice('Automation rule saved.');
@@ -81,7 +88,7 @@ export default function Automation({ theme, selectedGuild, selectedGuildData }) 
     setError('');
     setNotice('');
     try {
-      const payload = await api.deleteAutomationRule(guildId, ruleId);
+      const payload = await automationRequest(`/${guildId}/rules/${encodeURIComponent(ruleId)}`, { method: 'DELETE' });
       setRules(payload.rules || []);
       setNotice('Automation rule deleted.');
     } catch (err) {
@@ -97,10 +104,13 @@ export default function Automation({ theme, selectedGuild, selectedGuildData }) 
     setError('');
     setNotice('');
     try {
-      const payload = await api.testAutomationLog(guildId, {
-        ruleId: rule?.ruleId || null,
-        trigger: rule?.trigger || 'manual.test',
-        message: rule ? `Manual test for ${rule.name}` : 'Manual automation dashboard test.',
+      const payload = await automationRequest(`/${guildId}/test-log`, {
+        method: 'POST',
+        body: JSON.stringify({
+          ruleId: rule?.ruleId || null,
+          trigger: rule?.trigger || 'manual.test',
+          message: rule ? `Manual test for ${rule.name}` : 'Manual automation dashboard test.',
+        }),
       });
       setExecutions(payload.executions || []);
       setNotice('Test log written.');
