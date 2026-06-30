@@ -30,7 +30,7 @@ const Stats = lazy(() => import('../pages/modules/Stats'));
 const Restore = lazy(() => import('../pages/security/Restore'));
 const Security = lazy(() => import('../pages/security/Security'));
 const Logs = lazy(() => import('../pages/core/Logs'));
-const OwnerView = lazy(() => import('../pages/owner/OwnerOverview'));
+const OwnerView = lazy(() => import('../pages/owner/OwnerOverviewPhase2'));
 const OwnerGlobalServers = lazy(() => import('../pages/owner/GlobalServers'));
 const OwnerRuntimeMonitor = lazy(() => import('../pages/owner/RuntimeMonitor'));
 const OwnerBillingAdmin = lazy(() => import('../pages/owner/BillingAdmin'));
