@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../../../services/apiClient.js';
 import useRealtimeTickets from '../../../hooks/useRealtimeTickets.js';
 import LegacyTickets from '../Tickets.jsx';
+import TicketPanelBuilder from './TicketPanelBuilder.jsx';
 import TicketReviewWorkspace from './TicketReviewWorkspace.jsx';
 import TicketWorkflowSummary from './TicketWorkflowSummary.jsx';
 
@@ -21,6 +22,13 @@ function normalizeTicketList(payload) {
 function normalizeRoleList(payload) {
   if (Array.isArray(payload)) return payload;
   if (Array.isArray(payload?.roles)) return payload.roles;
+  if (Array.isArray(payload?.data)) return payload.data;
+  return [];
+}
+
+function normalizeChannelList(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.channels)) return payload.channels;
   if (Array.isArray(payload?.data)) return payload.data;
   return [];
 }
@@ -49,12 +57,16 @@ export default function TicketsWorkflowEnhanced(props) {
   const [overview, setOverview] = useState(null);
   const [tickets, setTickets] = useState([]);
   const [roles, setRoles] = useState([]);
+  const [channels, setChannels] = useState([]);
   const [selectedTicketId, setSelectedTicketId] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [acting, setActing] = useState(false);
+  const [panelBusy, setPanelBusy] = useState(false);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const realtime = useRealtimeTickets(guildId);
+
+  const panels = Array.isArray(overview?.panels) ? overview.panels : [];
 
   const selectedTicket = useMemo(
     () => tickets.find((ticket) => ticketId(ticket) === selectedTicketId) || tickets[0] || null,
@@ -66,6 +78,7 @@ export default function TicketsWorkflowEnhanced(props) {
       setOverview(null);
       setTickets([]);
       setRoles([]);
+      setChannels([]);
       setSelectedTicketId('');
       return;
     }
@@ -74,16 +87,18 @@ export default function TicketsWorkflowEnhanced(props) {
       if (quiet) setRefreshing(true);
       setError('');
 
-      const [overviewPayload, ticketsPayload, rolesPayload] = await Promise.all([
+      const [overviewPayload, ticketsPayload, rolesPayload, channelsPayload] = await Promise.all([
         api.getTicketOverview ? api.getTicketOverview(guildId) : api.request(`/api/tickets/${guildId}/overview`),
         api.getTickets ? api.getTickets(guildId) : api.request(`/api/tickets/${guildId}`),
         api.getGuildRoles ? api.getGuildRoles(guildId).catch(() => []) : Promise.resolve([]),
-      ]).catch(() => [null, null, []]);
+        api.getGuildChannels ? api.getGuildChannels(guildId).catch(() => []) : Promise.resolve([]),
+      ]).catch(() => [null, null, [], []]);
 
       const nextTickets = normalizeTicketList(ticketsPayload);
       setOverview(overviewPayload?.overview || null);
       setTickets(nextTickets);
       setRoles(normalizeRoleList(rolesPayload));
+      setChannels(normalizeChannelList(channelsPayload));
 
       if (selectedTicketId && !nextTickets.some((ticket) => ticketId(ticket) === selectedTicketId)) {
         setSelectedTicketId('');
@@ -144,6 +159,25 @@ export default function TicketsWorkflowEnhanced(props) {
     }
   }
 
+  async function runPanelRequest(callback, successMessage) {
+    if (!guildId) return null;
+    setPanelBusy(true);
+    setError('');
+    setNotice('');
+
+    try {
+      const result = await callback();
+      setNotice(successMessage);
+      await load({ quiet: true });
+      return result;
+    } catch (panelError) {
+      setError(panelError.message || 'Panel action failed.');
+      return null;
+    } finally {
+      setPanelBusy(false);
+    }
+  }
+
   async function handleAction(action, ticket) {
     const actorId = getActorId(props);
     const payload = action === 'close'
@@ -185,6 +219,44 @@ export default function TicketsWorkflowEnhanced(props) {
     if (result) setNotice('Ticket note added.');
   }
 
+  async function handleSavePanel(panel) {
+    const panelId = panel.panelId || panel.id;
+    return runPanelRequest(() => api.request(
+      panelId ? `/api/tickets/${guildId}/panels/${encodeURIComponent(panelId)}` : `/api/tickets/${guildId}/panels`,
+      {
+        method: panelId ? 'PUT' : 'POST',
+        body: JSON.stringify(panel),
+      },
+    ), 'Ticket panel saved.');
+  }
+
+  async function handleDeployPanel(panel) {
+    const saved = panel.panelId || panel.id ? null : await handleSavePanel(panel);
+    const panelId = panel.panelId || panel.id || saved?.panel?.panelId || saved?.panel?.id;
+    if (!panelId) {
+      setError('Save the panel before deploying it.');
+      return null;
+    }
+
+    return runPanelRequest(() => api.request(`/api/tickets/${guildId}/panels/${encodeURIComponent(panelId)}/deploy`, {
+      method: 'POST',
+      body: JSON.stringify({ ...panel, actorId: getActorId(props) }),
+    }), 'Ticket panel deployed.');
+  }
+
+  async function handleRefreshPanel(panel) {
+    const panelId = panel.panelId || panel.id;
+    if (!panelId) {
+      setError('Save the panel before refreshing deployment.');
+      return null;
+    }
+
+    return runPanelRequest(() => api.request(`/api/tickets/${guildId}/panels/${encodeURIComponent(panelId)}/refresh`, {
+      method: 'POST',
+      body: JSON.stringify({ actorId: getActorId(props) }),
+    }), 'Ticket panel deployment refreshed.');
+  }
+
   return (
     <div style={{ display: 'grid', gap: 18 }}>
       {overview ? (
@@ -202,6 +274,17 @@ export default function TicketsWorkflowEnhanced(props) {
           {error || notice}
         </section>
       ) : null}
+
+      <TicketPanelBuilder
+        theme={theme}
+        channels={channels}
+        roles={roles}
+        selectedPanel={panels[0] || null}
+        busy={panelBusy}
+        onSave={handleSavePanel}
+        onDeploy={handleDeployPanel}
+        onRefreshPanel={handleRefreshPanel}
+      />
 
       <TicketReviewWorkspace
         theme={theme}
