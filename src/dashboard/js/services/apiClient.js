@@ -78,6 +78,7 @@ export const api = {
   saveTranslationProvider: (guildId, payload) => request(`/api/translation/${guildId}/provider`, { method: 'PATCH', body: JSON.stringify(payload) }),
   setTranslationEnabled: (guildId, enabled) => request(`/api/translation/${guildId}/enabled`, { method: 'PATCH', body: JSON.stringify({ enabled }) }),
   getFormsOverview: (guildId) => request(`/api/forms/${guildId}/overview`),
+  getFormsWorkflowOverview: (guildId) => request(`/api/forms/${guildId}/overview`),
   getFormsConfig: (guildId) => request(`/api/forms/${guildId}`),
   getForms: (guildId) => request(`/api/forms/${guildId}/forms`),
   getForm: (guildId, formId) => request(`/api/forms/${guildId}/forms/${encodeURIComponent(formId)}`),
