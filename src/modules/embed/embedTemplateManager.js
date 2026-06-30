@@ -129,14 +129,8 @@ function normalizeEmbed(embed = {}) {
     title: String(source.title || '').slice(0, 256),
     description: String(source.description || '').slice(0, 4096),
     color: String(source.color || '#5865F2').slice(0, 16),
-    author: {
-      ...DEFAULT_EMBED.author,
-      ...asObject(source.author, {}),
-    },
-    footer: {
-      ...DEFAULT_EMBED.footer,
-      ...asObject(source.footer, {}),
-    },
+    author: { ...DEFAULT_EMBED.author, ...asObject(source.author, {}) },
+    footer: { ...DEFAULT_EMBED.footer, ...asObject(source.footer, {}) },
     fields: Array.isArray(source.fields)
       ? source.fields.slice(0, 25).map((field) => ({
         name: String(field.name || 'Field').slice(0, 256),
@@ -161,24 +155,16 @@ function extractVariables(value, found = new Set()) {
     for (const match of value.matchAll(/\{[a-zA-Z0-9_.:-]+\}/g)) found.add(match[0]);
     return found;
   }
-
   if (Array.isArray(value)) {
     value.forEach((item) => extractVariables(item, found));
     return found;
   }
-
-  if (value && typeof value === 'object') {
-    Object.values(value).forEach((item) => extractVariables(item, found));
-  }
-
+  if (value && typeof value === 'object') Object.values(value).forEach((item) => extractVariables(item, found));
   return found;
 }
 
 function variablesForTemplateType(templateType = 'global') {
-  return [...new Set([
-    ...MODULE_VARIABLES.global,
-    ...(MODULE_VARIABLES[templateType] || []),
-  ])];
+  return [...new Set([...MODULE_VARIABLES.global, ...(MODULE_VARIABLES[templateType] || [])])];
 }
 
 function normalizeTemplate(input = {}) {
@@ -211,14 +197,9 @@ function normalizeTemplate(input = {}) {
 function getEmbedSection(guildId) {
   const section = getGuildSection(guildId, 'embedStudio', {});
   const presets = asObject(section.presets || section.templates, {});
-
   return {
     ...section,
-    templates: {
-      ...clone(DEFAULT_TEMPLATES),
-      ...presets,
-      ...asObject(section.templates, {}),
-    },
+    templates: { ...clone(DEFAULT_TEMPLATES), ...presets, ...asObject(section.templates, {}) },
     bindings: asObject(section.bindings, {}),
     history: Array.isArray(section.history) ? section.history : [],
   };
@@ -226,9 +207,7 @@ function getEmbedSection(guildId) {
 
 function listTemplates(guildId) {
   const section = getEmbedSection(guildId);
-  return Object.fromEntries(
-    Object.entries(section.templates || {}).map(([key, template]) => [key, normalizeTemplate({ ...template, templateId: key })])
-  );
+  return Object.fromEntries(Object.entries(section.templates || {}).map(([key, template]) => [key, normalizeTemplate({ ...template, templateId: key })]));
 }
 
 function getTemplate(guildId, templateId) {
@@ -238,55 +217,31 @@ function getTemplate(guildId, templateId) {
 
 function saveTemplate(guildId, input = {}) {
   const template = normalizeTemplate(input);
-
   const section = updateGuildSection(guildId, 'embedStudio', (current = {}) => {
     const existingTemplates = asObject(current.templates || current.presets, {});
     const previous = existingTemplates[template.templateId];
     const history = Array.isArray(current.history) ? current.history : [];
-
     return {
       ...current,
-      templates: {
-        ...existingTemplates,
-        [template.templateId]: {
-          ...template,
-          version: Number(previous?.version || 0) + 1,
-        },
-      },
-      history: previous ? [
-        ...history.slice(-49),
-        {
-          templateId: template.templateId,
-          version: previous.version || 1,
-          snapshot: previous,
-          archivedAt: now(),
-        },
-      ] : history,
+      templates: { ...existingTemplates, [template.templateId]: { ...template, version: Number(previous?.version || 0) + 1 } },
+      history: previous ? [...history.slice(-49), { templateId: template.templateId, version: previous.version || 1, snapshot: previous, archivedAt: now() }] : history,
       updatedAt: now(),
     };
   }, {});
-
   return normalizeTemplate(section.templates?.[template.templateId] || template);
 }
 
 function deleteTemplate(guildId, templateId) {
   const key = cleanKey(templateId);
   let deleted = false;
-
   updateGuildSection(guildId, 'embedStudio', (current = {}) => {
     const templates = { ...asObject(current.templates || current.presets, {}) };
     if (templates[key]) {
       delete templates[key];
       deleted = true;
     }
-
-    return {
-      ...current,
-      templates,
-      updatedAt: now(),
-    };
+    return { ...current, templates, updatedAt: now() };
   }, {});
-
   return deleted;
 }
 
@@ -295,19 +250,11 @@ function bindTemplate(guildId, moduleKey, slot, templateId) {
   const slotName = cleanKey(slot);
   const template = getTemplate(guildId, templateId);
   if (!template) throw new Error('Template not found.');
-
   updateGuildSection(guildId, 'embedStudio', (current = {}) => ({
     ...current,
-    bindings: {
-      ...asObject(current.bindings, {}),
-      [moduleName]: {
-        ...asObject(current.bindings?.[moduleName], {}),
-        [slotName]: template.templateId,
-      },
-    },
+    bindings: { ...asObject(current.bindings, {}), [moduleName]: { ...asObject(current.bindings?.[moduleName], {}), [slotName]: template.templateId } },
     updatedAt: now(),
   }), {});
-
   return { module: moduleName, slot: slotName, templateId: template.templateId, template };
 }
 
@@ -315,6 +262,29 @@ function getBinding(guildId, moduleKey, slot) {
   const section = getEmbedSection(guildId);
   const templateId = section.bindings?.[cleanKey(moduleKey)]?.[cleanKey(slot)] || null;
   return templateId ? getTemplate(guildId, templateId) : null;
+}
+
+function replaceVariables(value, variables = {}) {
+  if (typeof value === 'string') {
+    return value.replace(/\{[a-zA-Z0-9_.:-]+\}/g, (match) => String(variables[match] ?? variables[match.slice(1, -1)] ?? match));
+  }
+  if (Array.isArray(value)) return value.map((item) => replaceVariables(item, variables));
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, replaceVariables(item, variables)]));
+  }
+  return value;
+}
+
+function renderTemplate(template = {}, variables = {}) {
+  const normalized = normalizeTemplate(template);
+  const content = replaceVariables(normalized.content, variables);
+  const embed = normalizeEmbed(replaceVariables(normalized.embed, variables));
+  return { ...normalized, content, embed };
+}
+
+function renderBinding(guildId, moduleKey, slot, variables = {}, fallbackTemplateId = null) {
+  const template = getBinding(guildId, moduleKey, slot) || (fallbackTemplateId ? getTemplate(guildId, fallbackTemplateId) : null);
+  return template ? renderTemplate(template, variables) : null;
 }
 
 module.exports = {
@@ -333,4 +303,7 @@ module.exports = {
   deleteTemplate,
   bindTemplate,
   getBinding,
+  replaceVariables,
+  renderTemplate,
+  renderBinding,
 };
