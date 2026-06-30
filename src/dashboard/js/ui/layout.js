@@ -2,6 +2,7 @@ import { lazy } from 'react';
 
 const Overview = lazy(() => import('../pages/core/Overview'));
 const Billing = lazy(() => import('../pages/core/Billing'));
+const Notifications = lazy(() => import('../pages/core/Notifications'));
 const AutoMod = lazy(() => import('../pages/administration/AutoMod'));
 const Admin = lazy(() => import('../pages/administration/AdminRoleWorkspace'));
 const Moderation = lazy(() => import('../pages/moderation/Moderation'));
@@ -88,12 +89,14 @@ export const NAV_BOTTOM = [
       { key: 'security', label: 'Security', icon: 'admin', path: '/security' },
     ],
   },
+  { key: 'notifications', label: 'Notifications', icon: 'logs', path: '/notifications' },
   { key: 'logs', label: 'Logs', icon: 'logs', path: '/logs' },
 ];
 
 export const ROUTES = [
   { key: 'overview', label: 'Overview', icon: 'overview', path: '/overview', component: Overview },
   { key: 'billing', label: 'Billing', icon: 'admin', path: '/billing', component: Billing, hidden: true },
+  { key: 'notifications', label: 'Notifications', icon: 'logs', path: '/notifications', component: Notifications },
   { key: 'ownerView', label: 'Owner View', icon: 'admin', path: '/owner', component: OwnerView, ownerOnly: true },
   { key: 'ownerServers', label: 'Global Servers', icon: 'modules', path: '/owner/servers', component: OwnerGlobalServers, ownerOnly: true },
   { key: 'ownerRuntime', label: 'Runtime Monitor', icon: 'admin', path: '/owner/runtime', component: OwnerRuntimeMonitor, ownerOnly: true },
@@ -142,6 +145,7 @@ export const navBottomItems = NAV_BOTTOM;
 export const PAGE_LAYOUTS = {
   overview: { title: 'Overview', description: 'Server insights and activity', sections: [{ id: 'stats', type: 'stats' }, { id: 'activity', type: 'list' }] },
   billing: { title: 'Billing', description: 'Current plan, subscription status and feature entitlements.', emptyDescription: 'Select a server to view billing.', sections: [{ id: 'billingDashboard', type: 'dashboard' }] },
+  notifications: { title: 'Notifications', description: 'Global notification centre.', emptyDescription: 'Select a server to view notifications.', sections: [{ id: 'notificationsDashboard', type: 'dashboard' }] },
   ownerView: { title: 'Owner View', description: 'Owner-only platform dashboard.', sections: [] },
   ownerServers: { title: 'Global Servers', description: 'Owner-level server registry across all environments.', sections: [] },
   ownerRuntime: { title: 'Runtime Monitor', description: 'Owner-level runtime monitoring across DEV, BETA and PRODUCTION.', sections: [] },
@@ -189,6 +193,7 @@ export const SECTION_DEFS = {
   activity: { title: 'Recent Activity', description: 'Quick status indicators.' },
   billingDashboard: { title: 'Billing Dashboard', description: 'Current plan, limits and entitlements.' },
   modulesGrid: { title: 'Modules Grid', description: 'Browse optional Goliath features.' },
+  notificationsDashboard: { title: 'Notifications', description: 'Unified alert and activity inbox.' },
   automationDashboard: { title: 'Automation Dashboard', description: 'Rules, triggers and execution history.' },
   embedStudioDashboard: { title: 'Embed Studio', description: 'Build, preview and save Discord embeds.' },
   verificationDashboard: { title: 'Verification Dashboard', description: 'Configure verification roles, panels and analytics.' },
