@@ -3,6 +3,19 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../../services/apiClient.js';
 import OwnerCommandCentrePanel from './OwnerCommandCentrePanel.jsx';
 
+const FALLBACK_THEME = {
+  mode: 'dark',
+  cardBorder: 'rgba(148,163,184,0.22)',
+  cardBg: 'rgba(15,23,42,0.42)',
+  cardText: '#e5e7eb',
+  mutedText: '#94a3b8',
+  shadow: '0 18px 50px rgba(0,0,0,0.25)',
+};
+
+function safeTheme(theme) {
+  return { ...FALLBACK_THEME, ...(theme || {}) };
+}
+
 function guildId(guild = {}) {
   return guild.guildId || guild.id || 'Unknown';
 }
@@ -24,12 +37,13 @@ function formatNumber(value = 0) {
 }
 
 function card(theme, extra = {}) {
+  const viewTheme = safeTheme(theme);
   return {
-    border: `1px solid ${theme.cardBorder}`,
-    background: theme.cardBg,
-    color: theme.cardText,
+    border: `1px solid ${viewTheme.cardBorder}`,
+    background: viewTheme.cardBg,
+    color: viewTheme.cardText,
     borderRadius: 20,
-    boxShadow: theme.shadow,
+    boxShadow: viewTheme.shadow,
     minWidth: 0,
     overflow: 'hidden',
     ...extra,
@@ -45,29 +59,31 @@ function envBadge(env = '') {
 }
 
 function Stat({ theme, label, value, hint, accent = '#93c5fd' }) {
+  const viewTheme = safeTheme(theme);
   return (
-    <div style={card(theme, { padding: 16, display: 'grid', gap: 8 })}>
-      <span style={{ color: theme.mutedText, fontSize: 11, fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</span>
+    <div style={card(viewTheme, { padding: 16, display: 'grid', gap: 8 })}>
+      <span style={{ color: viewTheme.mutedText, fontSize: 11, fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</span>
       <strong style={{ color: accent, fontSize: 28, lineHeight: 1 }}>{value}</strong>
-      {hint ? <span style={{ color: theme.mutedText, fontSize: 13 }}>{hint}</span> : null}
+      {hint ? <span style={{ color: viewTheme.mutedText, fontSize: 13 }}>{hint}</span> : null}
     </div>
   );
 }
 
 function GuildTable({ theme, guilds = [] }) {
+  const viewTheme = safeTheme(theme);
   return (
-    <section style={card(theme)}>
-      <div style={{ padding: 16, borderBottom: `1px solid ${theme.cardBorder}`, display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+    <section style={card(viewTheme)}>
+      <div style={{ padding: 16, borderBottom: `1px solid ${viewTheme.cardBorder}`, display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
         <div>
           <strong>Global Server Registry</strong>
-          <div style={{ color: theme.mutedText, fontSize: 13, marginTop: 4 }}>Guilds known across DEV, BETA and PRODUCTION.</div>
+          <div style={{ color: viewTheme.mutedText, fontSize: 13, marginTop: 4 }}>Guilds known across DEV, BETA and PRODUCTION.</div>
         </div>
-        <span style={{ color: theme.mutedText }}>{guilds.length} guild{guilds.length === 1 ? '' : 's'}</span>
+        <span style={{ color: viewTheme.mutedText }}>{guilds.length} guild{guilds.length === 1 ? '' : 's'}</span>
       </div>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
           <thead>
-            <tr style={{ color: theme.mutedText, textAlign: 'left', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            <tr style={{ color: viewTheme.mutedText, textAlign: 'left', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
               <th style={{ padding: '12px 16px' }}>Environment</th>
               <th style={{ padding: '12px 16px' }}>Guild</th>
               <th style={{ padding: '12px 16px' }}>Guild ID</th>
@@ -83,15 +99,15 @@ function GuildTable({ theme, guilds = [] }) {
               const env = environment(guild);
               const isConnected = connected(guild);
               return (
-                <tr key={`${env}-${id}`} style={{ borderTop: `1px solid ${theme.cardBorder}` }}>
+                <tr key={`${env}-${id}`} style={{ borderTop: `1px solid ${viewTheme.cardBorder}` }}>
                   <td style={{ padding: '12px 16px', fontWeight: 850 }}>{envBadge(env)}</td>
                   <td style={{ padding: '12px 16px' }}><strong>{name}</strong></td>
-                  <td style={{ padding: '12px 16px', color: theme.mutedText, fontFamily: 'monospace', fontSize: 12 }}>{id}</td>
+                  <td style={{ padding: '12px 16px', color: viewTheme.mutedText, fontFamily: 'monospace', fontSize: 12 }}>{id}</td>
                   <td style={{ padding: '12px 16px' }}>{formatNumber(guild.memberCount)}</td>
                   <td style={{ padding: '12px 16px' }}><span style={{ border: `1px solid ${isConnected ? '#22c55e55' : '#f8717155'}`, color: isConnected ? '#86efac' : '#fca5a5', background: isConnected ? 'rgba(34,197,94,0.10)' : 'rgba(248,113,113,0.10)', borderRadius: 999, padding: '5px 9px', fontSize: 12, fontWeight: 900 }}>{isConnected ? 'Connected' : 'Missing'}</span></td>
                   <td style={{ padding: '12px 16px' }}>
-                    <button type="button" onClick={() => openGuild(guild, '/overview')} style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(15,23,42,0.26)', color: theme.cardText, borderRadius: 10, padding: '7px 10px', cursor: 'pointer', fontWeight: 850, fontSize: 12 }}>Open</button>
-                    <button type="button" onClick={() => openGuild(guild, '/security')} style={{ marginLeft: 7, border: `1px solid ${theme.cardBorder}`, background: 'rgba(15,23,42,0.26)', color: theme.cardText, borderRadius: 10, padding: '7px 10px', cursor: 'pointer', fontWeight: 850, fontSize: 12 }}>Security</button>
+                    <button type="button" onClick={() => openGuild(guild, '/overview')} style={{ border: `1px solid ${viewTheme.cardBorder}`, background: 'rgba(15,23,42,0.26)', color: viewTheme.cardText, borderRadius: 10, padding: '7px 10px', cursor: 'pointer', fontWeight: 850, fontSize: 12 }}>Open</button>
+                    <button type="button" onClick={() => openGuild(guild, '/security')} style={{ marginLeft: 7, border: `1px solid ${viewTheme.cardBorder}`, background: 'rgba(15,23,42,0.26)', color: viewTheme.cardText, borderRadius: 10, padding: '7px 10px', cursor: 'pointer', fontWeight: 850, fontSize: 12 }}>Security</button>
                   </td>
                 </tr>
               );
@@ -112,6 +128,7 @@ function openGuild(guild, path = '/overview') {
 }
 
 export default function OwnerOverviewPhase2({ theme, currentUser }) {
+  const viewTheme = safeTheme(theme);
   const [ownerPayload, setOwnerPayload] = useState(null);
   const [runtimePayload, setRuntimePayload] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -175,26 +192,26 @@ export default function OwnerOverviewPhase2({ theme, currentUser }) {
 
   if (!isOwner) {
     return (
-      <section style={card(theme, { padding: 24 })}>
+      <section style={card(viewTheme, { padding: 24 })}>
         <h1 style={{ margin: '0 0 8px', fontSize: 26 }}>Owner View</h1>
-        <p style={{ margin: 0, color: theme.mutedText }}>You do not have permission to view this page.</p>
+        <p style={{ margin: 0, color: viewTheme.mutedText }}>You do not have permission to view this page.</p>
       </section>
     );
   }
 
   return (
     <div style={{ display: 'grid', gap: 16, minWidth: 0 }}>
-      <section style={card(theme, { padding: 'clamp(18px, 2.4vw, 24px)', background: 'linear-gradient(135deg, rgba(59,130,246,0.18), rgba(15,23,42,0.06) 45%, rgba(168,85,247,0.12))' })}>
+      <section style={card(viewTheme, { padding: 'clamp(18px, 2.4vw, 24px)', background: 'linear-gradient(135deg, rgba(59,130,246,0.18), rgba(15,23,42,0.06) 45%, rgba(168,85,247,0.12))' })}>
         <p style={{ margin: '0 0 8px', color: '#93c5fd', fontWeight: 950, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Owner View Phase 2</p>
         <h1 style={{ margin: 0, fontSize: 'clamp(28px, 4vw, 42px)', letterSpacing: '-0.04em', lineHeight: 1 }}>👑 Goliath Command Centre</h1>
-        <p style={{ margin: '10px 0 0', color: theme.mutedText, lineHeight: 1.55, maxWidth: 820 }}>Platform-level operations across guilds, runtime environments, security, tickets, forms, translation, backups and deployments.</p>
+        <p style={{ margin: '10px 0 0', color: viewTheme.mutedText, lineHeight: 1.55, maxWidth: 820 }}>Platform-level operations across guilds, runtime environments, security, tickets, forms, translation, backups and deployments.</p>
       </section>
 
-      {error ? <section style={card(theme, { padding: 16, color: '#fca5a5' })}>{error}</section> : null}
-      {loading ? <section style={card(theme, { padding: 16, color: theme.mutedText })}>Loading command centre...</section> : null}
+      {error ? <section style={card(viewTheme, { padding: 16, color: '#fca5a5' })}>{error}</section> : null}
+      {loading ? <section style={card(viewTheme, { padding: 16, color: viewTheme.mutedText })}>Loading command centre...</section> : null}
 
       <OwnerCommandCentrePanel
-        theme={theme}
+        theme={viewTheme}
         guilds={guilds}
         runtime={runtimePayload || {}}
         realtimeEvents={[]}
@@ -202,15 +219,15 @@ export default function OwnerOverviewPhase2({ theme, currentUser }) {
       />
 
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,170px),1fr))', gap: 12 }}>
-        <Stat theme={theme} label="Total Servers" value={formatNumber(stats.guilds)} hint="registered guilds" accent="#60a5fa" />
-        <Stat theme={theme} label="Members" value={formatNumber(stats.members)} hint="visible members" accent="#34d399" />
-        <Stat theme={theme} label="Connected" value={formatNumber(stats.connected)} hint={`${stats.missing} missing`} accent="#22c55e" />
-        <Stat theme={theme} label="DEV" value={formatNumber(stats.dev)} hint="development" accent="#60a5fa" />
-        <Stat theme={theme} label="BETA" value={formatNumber(stats.beta)} hint="staging" accent="#facc15" />
-        <Stat theme={theme} label="PROD" value={formatNumber(stats.production)} hint="live" accent="#22c55e" />
+        <Stat theme={viewTheme} label="Total Servers" value={formatNumber(stats.guilds)} hint="registered guilds" accent="#60a5fa" />
+        <Stat theme={viewTheme} label="Members" value={formatNumber(stats.members)} hint="visible members" accent="#34d399" />
+        <Stat theme={viewTheme} label="Connected" value={formatNumber(stats.connected)} hint={`${stats.missing} missing`} accent="#22c55e" />
+        <Stat theme={viewTheme} label="DEV" value={formatNumber(stats.dev)} hint="development" accent="#60a5fa" />
+        <Stat theme={viewTheme} label="BETA" value={formatNumber(stats.beta)} hint="staging" accent="#facc15" />
+        <Stat theme={viewTheme} label="PROD" value={formatNumber(stats.production)} hint="live" accent="#22c55e" />
       </section>
 
-      <GuildTable theme={theme} guilds={guilds} />
+      <GuildTable theme={viewTheme} guilds={guilds} />
     </div>
   );
 }
