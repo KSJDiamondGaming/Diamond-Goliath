@@ -4,6 +4,7 @@ import { api } from '../../../services/apiClient.js';
 import useRealtimeTickets from '../../../hooks/useRealtimeTickets.js';
 import LegacyTickets from '../Tickets.jsx';
 import TicketPanelBuilder from './TicketPanelBuilder.jsx';
+import TicketQueueAnalytics from './TicketQueueAnalytics.jsx';
 import TicketReviewWorkspace from './TicketReviewWorkspace.jsx';
 import TicketWorkflowSummary from './TicketWorkflowSummary.jsx';
 
@@ -268,6 +269,8 @@ export default function TicketsWorkflowEnhanced(props) {
           refreshing={refreshing}
         />
       ) : null}
+
+      <TicketQueueAnalytics theme={theme} tickets={tickets} />
 
       {(error || notice) ? (
         <section style={{ ...cardStyle(theme), padding: 16, color: error ? '#fca5a5' : '#86efac', fontWeight: 850 }}>
