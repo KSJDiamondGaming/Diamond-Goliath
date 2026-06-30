@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 
 import { api } from '../../../services/apiClient.js';
 import LegacyForms from '../Forms.jsx';
+import FormsFinalPolishPanel from './FormsFinalPolishPanel.jsx';
 import FormsWorkflowPanel from './FormsWorkflowPanel.jsx';
 
 function getGuildId(selectedGuild, selectedGuildData) {
@@ -9,6 +10,13 @@ function getGuildId(selectedGuild, selectedGuildData) {
     .split(':')
     .pop()
     .trim();
+}
+
+function list(value, key) {
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.[key])) return value[key];
+  if (Array.isArray(value?.data)) return value.data;
+  return [];
 }
 
 export default function FormsWorkflowEnhanced(props) {
@@ -22,21 +30,35 @@ export default function FormsWorkflowEnhanced(props) {
     }
     : selectedGuildData;
   const [overview, setOverview] = useState(null);
+  const [forms, setForms] = useState([]);
+  const [submissions, setSubmissions] = useState([]);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
 
   const loadWorkflowOverview = useCallback(async () => {
     if (!guildId) {
       setOverview(null);
+      setForms([]);
+      setSubmissions([]);
       setError('');
       return;
     }
 
     try {
+      setRefreshing(true);
       setError('');
-      const result = await api.getFormsWorkflowOverview(guildId);
-      setOverview(result?.overview || null);
+      const [overviewResult, formsResult, submissionsResult] = await Promise.all([
+        api.getFormsOverview(guildId),
+        api.getForms(guildId),
+        api.getFormSubmissions(guildId, 'limit=200'),
+      ]);
+      setOverview(overviewResult?.overview || null);
+      setForms(list(formsResult, 'forms'));
+      setSubmissions(list(submissionsResult, 'submissions'));
     } catch (err) {
       setError(err.message || 'Could not load Forms workflow overview.');
+    } finally {
+      setRefreshing(false);
     }
   }, [guildId]);
 
@@ -47,6 +69,13 @@ export default function FormsWorkflowEnhanced(props) {
   return (
     <div style={{ display: 'grid', gap: 18 }}>
       {overview ? <FormsWorkflowPanel theme={theme} overview={overview} guildId={guildId} onRefresh={loadWorkflowOverview} /> : null}
+      <FormsFinalPolishPanel
+        theme={theme}
+        forms={forms}
+        submissions={submissions}
+        refreshing={refreshing}
+        onRefresh={loadWorkflowOverview}
+      />
       {error ? (
         <section style={{
           border: `1px solid ${theme?.cardBorder || 'rgba(148,163,184,0.22)'}`,

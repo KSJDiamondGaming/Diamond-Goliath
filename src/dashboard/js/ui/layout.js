@@ -11,7 +11,8 @@ const Warnings = lazy(() => import('../pages/moderation/Warnings'));
 const Messages = lazy(() => import('../pages/core/Messages'));
 const Forms = lazy(() => import('../pages/modules/forms/FormsWorkflowEnhanced'));
 const Modules = lazy(() => import('../pages/modules/Modules'));
-const EmbedStudio = lazy(() => import('../pages/modules/EmbedStudio'));
+const Automation = lazy(() => import('../pages/modules/Automation'));
+const EmbedStudio = lazy(() => import('../pages/modules/embed/EmbedStudioEnhanced'));
 const Verification = lazy(() => import('../pages/modules/Verification'));
 const AutoRoles = lazy(() => import('../pages/modules/AutoRoles'));
 const Tickets = lazy(() => import('../pages/modules/tickets/TicketsWorkflowEnhanced'));
@@ -30,7 +31,7 @@ const Stats = lazy(() => import('../pages/modules/Stats'));
 const Restore = lazy(() => import('../pages/security/Restore'));
 const Security = lazy(() => import('../pages/security/Security'));
 const Logs = lazy(() => import('../pages/core/Logs'));
-const OwnerView = lazy(() => import('../pages/owner/OwnerOverview'));
+const OwnerView = lazy(() => import('../pages/owner/OwnerOverviewPhase2'));
 const OwnerGlobalServers = lazy(() => import('../pages/owner/GlobalServers'));
 const OwnerRuntimeMonitor = lazy(() => import('../pages/owner/RuntimeMonitor'));
 const OwnerBillingAdmin = lazy(() => import('../pages/owner/BillingAdmin'));
@@ -105,6 +106,7 @@ export const ROUTES = [
   { key: 'ownerTickets', label: 'Tickets Hub', icon: 'modules', path: '/owner/tickets', component: OwnerTicketsHub, ownerOnly: true },
   { key: 'ownerTranslation', label: 'Translation Hub', icon: 'modules', path: '/owner/translation', component: OwnerTranslationHub, ownerOnly: true },
   { key: 'modules', label: 'Modules', icon: 'modules', path: '/modules', component: Modules },
+  { key: 'automation', label: 'Automation', icon: 'modules', path: '/automation', component: Automation, hidden: true },
   { key: 'embedStudio', label: 'Embed Studio', icon: 'modules', path: '/embed-studio', component: EmbedStudio, hidden: true },
   { key: 'verification', label: 'Verification', icon: 'modules', path: '/verification', component: Verification, hidden: true },
   { key: 'autoRoles', label: 'Auto Roles', icon: 'modules', path: '/autoroles', component: AutoRoles, hidden: true },
@@ -152,6 +154,7 @@ export const PAGE_LAYOUTS = {
   ownerTickets: { title: 'Tickets Hub', description: 'Global tickets overview.', sections: [] },
   ownerTranslation: { title: 'Translation Hub', description: 'Global translation system overview.', sections: [] },
   modules: { title: 'Modules', description: 'Optional Goliath features in one scalable grid.', emptyDescription: 'Select a server to view modules.', sections: [{ id: 'modulesGrid', type: 'dashboard' }] },
+  automation: { title: 'Automation', description: 'Minimal rules, triggers and safe execution logs.', emptyDescription: 'Select a server to manage automation.', sections: [{ id: 'automationDashboard', type: 'dashboard' }] },
   embedStudio: { title: 'Embed Studio', description: 'Build, preview and save Discord embeds.', emptyDescription: 'Select a server to manage Embed Studio.', sections: [{ id: 'embedStudioDashboard', type: 'dashboard' }] },
   verification: { title: 'Verification', description: 'Member verification, role settings, panels and analytics.', emptyDescription: 'Select a server to manage verification.', sections: [{ id: 'verificationDashboard', type: 'dashboard' }] },
   autoRoles: { title: 'Auto Roles', description: 'Join roles, bot roles and assignment analytics.', emptyDescription: 'Select a server to manage auto roles.', sections: [{ id: 'autoRolesDashboard', type: 'dashboard' }] },
@@ -165,10 +168,10 @@ export const PAGE_LAYOUTS = {
   social: { title: 'Social Alerts', description: 'Creator alerts across Twitch, YouTube, TikTok, Kick and more.', emptyDescription: 'Select a server to manage social alerts.', sections: [{ id: 'socialDashboard', type: 'dashboard' }] },
   starboard: { title: 'Starboard', description: 'Highlight popular community messages.', emptyDescription: 'Select a server to manage starboard.', sections: [{ id: 'starboardDashboard', type: 'dashboard' }] },
   sticky: { title: 'Sticky Messages', description: 'Keep important messages visible in channels.', emptyDescription: 'Select a server to manage sticky messages.', sections: [{ id: 'stickyDashboard', type: 'dashboard' }] },
-  tempVoice: { title: 'Temp Voice', description: 'Create temporary voice hubs and owner controls.', emptyDescription: 'Select a server to manage temp voice.', sections: [{ id: 'tempVoiceDashboard', type: 'dashboard' }] },
-  tickets: { title: 'Tickets', description: 'Open tickets, claims, closures, transcripts and analytics.', emptyDescription: 'Select a server to manage tickets.', sections: [{ id: 'ticketsDashboard', type: 'dashboard' }] },
-  timeline: { title: 'Timeline', description: 'Review timeline-driven server events and updates.', emptyDescription: 'Select a server to manage timeline.', sections: [{ id: 'timelineDashboard', type: 'dashboard' }] },
-  translation: { title: 'Translation', description: 'Manage channels, language preferences and translation settings.', emptyDescription: 'Select a server to manage translation.', sections: [{ id: 'translationDashboard', type: 'dashboard' }] },
+  tempVoice: { title: 'Temp Voice', description: 'Temporary voice channel creation, limits and cleanup.', emptyDescription: 'Select a server to manage Temp Voice.', sections: [{ id: 'tempVoiceDashboard', type: 'dashboard' }] },
+  tickets: { title: 'Tickets', description: 'Ticket panels, queues and transcripts.', emptyDescription: 'Select a server to manage tickets.', sections: [{ id: 'ticketsDashboard', type: 'dashboard' }] },
+  timeline: { title: 'Timeline', description: 'Timeline and activity feed.', emptyDescription: 'Select a server to manage timeline.', sections: [{ id: 'timelineDashboard', type: 'dashboard' }] },
+  translation: { title: 'Translation', description: 'Translation providers, threads and language preferences.', emptyDescription: 'Select a server to manage translation.', sections: [{ id: 'translationDashboard', type: 'dashboard' }] },
   generalSettings: { title: 'General Settings', description: 'Manage server configuration.', emptyDescription: 'Select a server to manage settings.', sections: [{ id: 'generalConfig', type: 'config' }] },
   automod: { title: 'AutoMod', description: 'Manage filters and rules', sections: [{ id: 'rules', type: 'config' }, { id: 'filters', type: 'config' }] },
   admin: { title: 'Admin', description: 'Core system configuration and control panel.', emptyDescription: 'Select a server to manage admin settings.', sections: [{ id: 'adminHub', type: 'future' }] },
@@ -186,6 +189,7 @@ export const SECTION_DEFS = {
   activity: { title: 'Recent Activity', description: 'Quick status indicators.' },
   billingDashboard: { title: 'Billing Dashboard', description: 'Current plan, limits and entitlements.' },
   modulesGrid: { title: 'Modules Grid', description: 'Browse optional Goliath features.' },
+  automationDashboard: { title: 'Automation Dashboard', description: 'Rules, triggers and execution history.' },
   embedStudioDashboard: { title: 'Embed Studio', description: 'Build, preview and save Discord embeds.' },
   verificationDashboard: { title: 'Verification Dashboard', description: 'Configure verification roles, panels and analytics.' },
   autoRolesDashboard: { title: 'Auto Roles Dashboard', description: 'Configure join roles, bot roles and analytics.' },

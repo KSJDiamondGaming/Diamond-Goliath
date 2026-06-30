@@ -1,6 +1,7 @@
 import React from 'react';
 
 import useOwnerRuntime from '../../hooks/useOwnerRuntime.js';
+import RuntimeHealthPanel from './runtime/RuntimeHealthPanel.jsx';
 
 function formatBytes(bytes = 0) {
   const value = Number(bytes || 0);
@@ -31,7 +32,7 @@ function percent(used = 0, total = 0) {
 }
 
 export default function RuntimeMonitor({ theme }) {
-  const { runtime, loading, error } = useOwnerRuntime();
+  const { runtime, loading, error, refresh } = useOwnerRuntime();
   const card = { border: '1px solid ' + theme.cardBorder, background: theme.cardBg, color: theme.cardText, borderRadius: 20, padding: 18, boxShadow: theme.shadow, minWidth: 0, overflow: 'hidden' };
 
   const environments = runtime?.environments || [];
@@ -54,6 +55,8 @@ export default function RuntimeMonitor({ theme }) {
       </section>
 
       {error ? <section style={{ ...card, color: '#fca5a5' }}>{error}</section> : null}
+
+      <RuntimeHealthPanel theme={theme} runtime={runtime || {}} loading={loading} onRefresh={refresh} />
 
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))', gap: 14 }}>
         <Stat theme={theme} title="Environments" value={`${summary.online || 0}/${summary.total || environments.length || 0}`} detail={`${summary.offline || 0} offline`} />

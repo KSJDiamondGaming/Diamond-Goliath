@@ -1,10 +1,12 @@
 import React from 'react';
+
 import useOwnerGuilds from '../../hooks/useOwnerGuilds.js';
 import useOwnerSecurity from '../../hooks/useOwnerSecurity.js';
+import SecurityPolishPanel from './security/SecurityPolishPanel.jsx';
 
 export default function SecurityCenter({ theme }) {
   const { guilds, selectedGuild, loading: guildsLoading } = useOwnerGuilds();
-  const { security, loading, error } = useOwnerSecurity(selectedGuild);
+  const { security, loading, error, refresh } = useOwnerSecurity(selectedGuild);
 
   const card = { border: '1px solid ' + theme.cardBorder, background: theme.cardBg, color: theme.cardText, borderRadius: 20, padding: 18, boxShadow: theme.shadow };
 
@@ -18,6 +20,15 @@ export default function SecurityCenter({ theme }) {
         <h1 style={{ margin: '8px 0 0', fontSize: 34 }}>Security Center</h1>
         <p style={{ marginTop: 8, color: theme.mutedText }}>Cross-guild security monitoring, incidents, lockdowns and quarantines.</p>
       </section>
+
+      <SecurityPolishPanel
+        theme={theme}
+        security={security || {}}
+        guilds={guilds || []}
+        selectedGuildName={guildsLoading ? 'Loading guilds...' : selectedGuildName}
+        loading={loading}
+        onRefresh={refresh}
+      />
 
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 14 }}>
         <SecurityCard title='Selected Guild' value={guildsLoading ? 'Loading' : selectedGuildName} theme={theme} />

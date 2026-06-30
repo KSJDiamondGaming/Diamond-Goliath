@@ -126,17 +126,36 @@ function getTargetLanguages(section, config) {
   )].slice(0, 10);
 }
 
+function threadNeedsReplacement(thread) {
+  return !thread || thread.archived === true || thread.locked === true;
+}
+
+function threadState(thread) {
+  if (!thread) return 'missing';
+  if (thread.locked === true) return 'locked';
+  if (thread.archived === true) return 'archived';
+  return 'active';
+}
+
+function markThreadMapping(guildId, channelId, languageCode, mapping, patch = {}, guildOrMeta = {}) {
+  return translationStore.saveThreadMapping(guildId, channelId, languageCode, {
+    ...(mapping || {}),
+    ...patch,
+    languageCode,
+  }, guildOrMeta);
+}
+
 async function ensureThreadsForChannel(guild, channelId, options = {}) {
   const section = translationStore.getTranslationSection(guild.id);
   const config = getChannelConfig(section, channelId);
 
   if (!config || config.enabled === false || config.threadMode === false) {
-    return { ok: false, reason: 'Translation threads are not enabled for this channel.', created: [], recovered: [] };
+    return { ok: false, reason: 'Translation threads are not enabled for this channel.', created: [], recovered: [], replaced: [], missing: [] };
   }
 
   const sourceChannel = await fetchChannel(guild, channelId);
   if (!isTextSourceChannel(sourceChannel)) {
-    return { ok: false, reason: 'Source channel is missing or is not a supported text channel.', created: [], recovered: [] };
+    return { ok: false, reason: 'Source channel is missing or is not a supported text channel.', created: [], recovered: [], replaced: [], missing: [] };
   }
 
   await guardTranslationSourceChannel(sourceChannel, 'translation.thread_setup');
@@ -144,34 +163,71 @@ async function ensureThreadsForChannel(guild, channelId, options = {}) {
   const targetLanguages = getTargetLanguages(section, config);
   const created = [];
   const recovered = [];
+  const replaced = [];
+  const missing = [];
+  const failures = [];
 
   for (const languageCode of targetLanguages) {
     const currentMapping = section.threadMappings?.[channelId]?.[languageCode] || null;
     let thread = currentMapping?.threadId ? await fetchThread(guild, currentMapping.threadId) : null;
+    const previousState = threadState(thread);
 
-    if (!thread && config.autoCreateThreads !== false) {
-      thread = await createLanguageThread(sourceChannel, languageCode);
-      created.push({ languageCode, threadId: thread.id });
-      translationStore.incrementAnalytics(guild.id, { threadsCreated: 1, threadChannelsCreated: 1 }, guild);
-    } else if (thread) {
-      await guardTranslationThread(thread, 'translation.thread_recovery');
-      recovered.push({ languageCode, threadId: thread.id });
-    }
+    try {
+      if (threadNeedsReplacement(thread)) {
+        if (config.autoCreateThreads === false) {
+          missing.push({ languageCode, threadId: currentMapping?.threadId || null, reason: previousState });
+          markThreadMapping(guild.id, channelId, languageCode, currentMapping, {
+            active: false,
+            archived: previousState === 'archived',
+            locked: previousState === 'locked',
+            recoveredAt: options.recovery ? now() : currentMapping?.recoveredAt || null,
+          }, guild);
+          continue;
+        }
 
-    if (thread) {
-      translationStore.saveThreadMapping(guild.id, channelId, languageCode, {
+        thread = await createLanguageThread(sourceChannel, languageCode);
+
+        if (currentMapping?.threadId) {
+          replaced.push({
+            languageCode,
+            oldThreadId: currentMapping.threadId,
+            oldState: previousState,
+            threadId: thread.id,
+          });
+        } else {
+          created.push({ languageCode, threadId: thread.id });
+        }
+
+        translationStore.incrementAnalytics(guild.id, { threadsCreated: 1, threadChannelsCreated: 1 }, guild);
+      } else {
+        await guardTranslationThread(thread, 'translation.thread_recovery');
+        recovered.push({ languageCode, threadId: thread.id });
+      }
+
+      markThreadMapping(guild.id, channelId, languageCode, currentMapping, {
         threadId: thread.id,
-        languageCode,
         threadName: thread.name,
         active: true,
         archived: thread.archived === true,
         locked: thread.locked === true,
         recoveredAt: options.recovery ? now() : currentMapping?.recoveredAt || null,
       }, guild);
+    } catch (error) {
+      failures.push({ languageCode, error: error.message, guard: error.details || null });
+      translationStore.incrementAnalytics(guild.id, { failedTranslations: 1, threadFailures: 1 }, guild);
     }
   }
 
-  return { ok: true, sourceChannelId: channelId, created, recovered, languages: targetLanguages };
+  return {
+    ok: failures.length === 0,
+    sourceChannelId: channelId,
+    created,
+    recovered,
+    replaced,
+    missing,
+    failures,
+    languages: targetLanguages,
+  };
 }
 
 async function recoverGuildThreads(guild) {
@@ -211,13 +267,14 @@ async function handleMessageCreate(message) {
   if (config.mode !== 'auto') return null;
   if (config.threadMode === false) return null;
 
-  await ensureThreadsForChannel(message.guild, message.channelId);
+  const recovery = await ensureThreadsForChannel(message.guild, message.channelId);
 
   const latestSection = translationStore.getTranslationSection(guildId);
+  const latestConfig = getChannelConfig(latestSection, message.channelId) || config;
   const mappings = latestSection.threadMappings?.[message.channelId] || {};
-  const targetLanguages = getTargetLanguages(latestSection, config);
+  const targetLanguages = getTargetLanguages(latestSection, latestConfig);
   const sent = [];
-  const failed = [];
+  const failed = [...(recovery.failures || [])];
 
   for (const targetLanguage of targetLanguages) {
     const mapping = mappings[targetLanguage];
@@ -225,7 +282,9 @@ async function handleMessageCreate(message) {
 
     try {
       const thread = await fetchThread(message.guild, mapping.threadId);
-      if (!thread) throw new Error(`Missing translation thread for ${targetLanguage}.`);
+      if (threadNeedsReplacement(thread)) {
+        throw new Error(`Translation thread for ${targetLanguage} is ${threadState(thread)}. Run thread recovery.`);
+      }
 
       await guardTranslationThread(thread, 'translation.thread_send');
 
@@ -233,7 +292,7 @@ async function handleMessageCreate(message) {
         section: latestSection,
         guildId,
         text: message.content,
-        sourceLanguage: config.sourceLanguage || latestSection.settings?.defaultSourceLanguage || 'auto',
+        sourceLanguage: latestConfig.sourceLanguage || latestSection.settings?.defaultSourceLanguage || 'auto',
         targetLanguage,
       });
 
@@ -249,6 +308,9 @@ async function handleMessageCreate(message) {
         lastMessageId: message.id,
         lastTranslatedMessageId: translatedMessage.id,
         lastTranslatedAt: now(),
+        active: true,
+        archived: false,
+        locked: false,
       }, message.guild);
 
       translationStore.incrementAnalytics(guildId, { autoTranslations: 1, threadTranslations: 1 }, message.guild);
@@ -268,7 +330,7 @@ async function handleMessageCreate(message) {
     failed,
   }, message.guild);
 
-  return { ok: failed.length === 0, sent, failed };
+  return { ok: failed.length === 0, recovery, sent, failed };
 }
 
 module.exports = {

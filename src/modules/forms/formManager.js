@@ -126,7 +126,7 @@ function buildFormModal(form) {
       .setCustomId(field.id)
       .setLabel(String(field.label || field.id).slice(0, 45))
       .setStyle(textInputStyleForField(field))
-      .setPlaceholder(String(field.placeholder || '').slice(0, 100))
+      .setPlaceholder(String(field.placeholder || field.options?.join(', ') || '').slice(0, 100))
       .setRequired(field.required !== false)
       .setMaxLength(Math.min(Math.max(Number(field.maxLength || 400), 1), 4000))
   )));
@@ -176,17 +176,106 @@ async function deployFormPanel(channel, panel, guildOrMeta = {}) {
   }, guildOrMeta);
 }
 
-function collectModalAnswers(interaction, form) {
-  const answers = {};
+function getModalFields(form) {
   const fields = Array.isArray(form.fields) && form.fields.length
     ? form.fields.slice(0, MAX_MODAL_FIELDS)
-    : [{ id: 'message', label: 'Message' }];
+    : [{ id: 'message', label: 'Message', type: formStore.FIELD_TYPES.PARAGRAPH, required: true, maxLength: 1000 }];
 
-  for (const field of fields) {
-    answers[field.id] = interaction.fields?.getTextInputValue(field.id) || '';
+  return fields;
+}
+
+function normalizeAnswerValue(field, value) {
+  const raw = String(value ?? '').trim();
+
+  if (field.type === formStore.FIELD_TYPES.NUMBER) {
+    return raw.replace(/,/g, '').trim();
   }
 
-  return answers;
+  if (field.type === formStore.FIELD_TYPES.BOOLEAN) {
+    const clean = raw.toLowerCase();
+    if (['yes', 'y', 'true', '1'].includes(clean)) return 'Yes';
+    if (['no', 'n', 'false', '0'].includes(clean)) return 'No';
+  }
+
+  if (field.type === formStore.FIELD_TYPES.USER_MENTION || field.type === formStore.FIELD_TYPES.ROLE_MENTION) {
+    return raw.replace(/[<>]/g, '').trim();
+  }
+
+  return raw;
+}
+
+function validateAnswer(field, value) {
+  const label = field.label || field.id || 'Question';
+  const answer = normalizeAnswerValue(field, value);
+  const errors = [];
+  const minLength = Math.max(0, Number(field.minLength || 0));
+  const maxLength = Math.min(Math.max(Number(field.maxLength || 400), 1), 4000);
+
+  if (field.required !== false && !answer) {
+    errors.push(`${label} is required.`);
+    return { answer, errors };
+  }
+
+  if (!answer) return { answer, errors };
+
+  if (answer.length < minLength) {
+    errors.push(`${label} must be at least ${minLength} characters.`);
+  }
+
+  if (answer.length > maxLength) {
+    errors.push(`${label} must be ${maxLength} characters or fewer.`);
+  }
+
+  if (field.type === formStore.FIELD_TYPES.NUMBER && !/^-?\d+(\.\d+)?$/.test(answer)) {
+    errors.push(`${label} must be a valid number.`);
+  }
+
+  if (field.type === formStore.FIELD_TYPES.BOOLEAN && !['Yes', 'No'].includes(answer)) {
+    errors.push(`${label} must be yes or no.`);
+  }
+
+  if ((field.type === formStore.FIELD_TYPES.SELECT || field.type === formStore.FIELD_TYPES.CHECKBOX) && Array.isArray(field.options) && field.options.length) {
+    const allowed = field.options.map((option) => String(option).trim().toLowerCase());
+    const selected = answer.split(',').map((option) => option.trim().toLowerCase()).filter(Boolean);
+    const invalid = selected.filter((option) => !allowed.includes(option));
+
+    if (invalid.length) {
+      errors.push(`${label} must match one of: ${field.options.join(', ')}.`);
+    }
+  }
+
+  if (field.type === formStore.FIELD_TYPES.USER_MENTION && !/^@?!?\d{15,25}$|^\d{15,25}$/.test(answer)) {
+    errors.push(`${label} must be a valid user mention or user ID.`);
+  }
+
+  if (field.type === formStore.FIELD_TYPES.ROLE_MENTION && !/^@?&?\d{15,25}$|^\d{15,25}$/.test(answer)) {
+    errors.push(`${label} must be a valid role mention or role ID.`);
+  }
+
+  return { answer, errors };
+}
+
+function collectModalAnswers(interaction, form) {
+  const answers = {};
+  const errors = [];
+
+  for (const field of getModalFields(form)) {
+    const rawValue = interaction.fields?.getTextInputValue(field.id) || '';
+    const result = validateAnswer(field, rawValue);
+    answers[field.id] = result.answer;
+    errors.push(...result.errors);
+  }
+
+  return { answers, errors };
+}
+
+function buildValidationErrorReply(errors = []) {
+  return [
+    'Your form could not be submitted yet.',
+    '',
+    errors.slice(0, 8).map((error) => `• ${error}`).join('\n'),
+    errors.length > 8 ? `• ${errors.length - 8} more issue(s).` : null,
+  ].filter(Boolean).join('\n').slice(0, 1900);
 }
 
 function buildSubmissionReply(form, submission, bridgeResult) {
@@ -243,12 +332,27 @@ async function handleFormInteraction(interaction) {
       return true;
     }
 
+    const { answers, errors } = collectModalAnswers(interaction, form);
+
+    if (errors.length) {
+      await interaction.reply({
+        content: buildValidationErrorReply(errors),
+        flags: 64,
+      });
+      return true;
+    }
+
     const submission = formStore.saveSubmission(interaction.guildId, {
       formId: form.formId,
       userId: interaction.user.id,
       userTag: interaction.user.tag,
-      answers: collectModalAnswers(interaction, form),
+      answers,
       status: 'pending',
+      workflow: {
+        source: 'discord_modal',
+        submittedAt: new Date().toISOString(),
+        modalFieldCount: Object.keys(answers).length,
+      },
     }, interaction.guild);
 
     const bridgeResult = await formTicketBridge.createTicketForSubmission({
@@ -278,5 +382,7 @@ module.exports = {
   buildFormPanelRows,
   buildFormModal,
   deployFormPanel,
+  collectModalAnswers,
+  validateAnswer,
   handleFormInteraction,
 };
