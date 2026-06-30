@@ -1,6 +1,10 @@
 'use strict';
 
+// src/modules/translation/providers/providerManager.js
+// Dashboard/API compatibility wrapper around the live translation provider router.
+
 const translationStore = require('../translationStore');
+const translationProviderManager = require('../translationProviderManager');
 
 const PROVIDER_LABELS = Object.freeze({
   manual: 'Manual / Not configured',
@@ -15,62 +19,132 @@ const ENV_KEYS = Object.freeze({
   google: 'GOOGLE_TRANSLATE_API_KEY',
 });
 
-function getConfiguredFromEnv(provider) {
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizeProvider(provider = 'manual') {
+  return translationProviderManager.normalizeProvider(provider);
+}
+
+function cleanLanguageCode(value, fallback = 'en') {
+  const clean = String(value || fallback)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z-]/g, '')
+    .slice(0, 12);
+
+  return clean || fallback;
+}
+
+function envKeyConfigured(provider) {
   const envKey = ENV_KEYS[provider];
   return Boolean(envKey && process.env[envKey]);
 }
 
-function normalizeProvider(provider = 'manual') {
-  const value = String(provider || 'manual').trim().toLowerCase();
-  return Object.prototype.hasOwnProperty.call(PROVIDER_LABELS, value) ? value : 'manual';
+function providerStatusCode(provider, providerInfo = {}) {
+  if (provider === 'manual') return 'not_configured';
+  if (providerInfo.healthy === true) return 'ready';
+  if (providerInfo.errorCode === translationProviderManager.ERROR_CODES.MISSING_API_KEY) return 'missing_api_key';
+  if (providerInfo.enabled === false) return 'disabled';
+  return providerInfo.errorCode ? 'error' : 'not_configured';
 }
 
 function getProviderStatus(guildId) {
   const section = translationStore.getTranslationSection(guildId);
-  const provider = normalizeProvider(section.provider || section.settings?.provider);
-  const providerSettings = section.providerSettings || section.settings?.providerSettings || {};
-  const providerConfig = providerSettings[provider] || {};
-  const apiKeyConfigured = provider === 'manual'
-    ? false
-    : Boolean(getConfiguredFromEnv(provider) || providerConfig.apiKeyConfigured === true);
+  const selectedProvider = translationProviderManager.getConfiguredProvider(section);
+  const liveStatus = translationProviderManager.getProviderStatus(section);
+  const selectedInfo = liveStatus.providers?.[selectedProvider] || {};
+
+  const supportedProviders = translationProviderManager.listProviders().map((providerMeta) => {
+    const id = normalizeProvider(providerMeta.id);
+    const providerInfo = liveStatus.providers?.[id] || {};
+
+    return {
+      ...providerMeta,
+      id,
+      label: PROVIDER_LABELS[id] || providerMeta.label || id,
+      enabled: id === 'manual' ? false : providerInfo.enabled !== false,
+      selected: id === selectedProvider,
+      healthy: id === 'manual' ? false : providerInfo.healthy === true,
+      ready: id === 'manual' ? false : providerInfo.healthy === true,
+      status: providerStatusCode(id, providerInfo),
+      apiKeyConfigured: id === 'manual'
+        ? false
+        : envKeyConfigured(id) || providerInfo.apiKeyConfigured === true,
+      errorCode: providerInfo.errorCode || null,
+      errorMessage: providerInfo.errorMessage || null,
+    };
+  });
 
   return {
-    provider,
-    label: PROVIDER_LABELS[provider] || provider,
+    provider: selectedProvider,
+    selectedProvider,
+    label: PROVIDER_LABELS[selectedProvider] || selectedProvider,
     defaultLanguage: section.settings?.defaultTargetLanguage || 'en',
+    defaultTargetLanguage: section.settings?.defaultTargetLanguage || 'en',
     sourceLanguage: section.settings?.defaultSourceLanguage || 'auto',
-    apiKeyConfigured,
-    ready: provider !== 'manual' && apiKeyConfigured,
-    status: provider === 'manual'
-      ? 'not_configured'
-      : apiKeyConfigured
-        ? 'ready'
-        : 'missing_api_key',
-    supportedProviders: Object.entries(PROVIDER_LABELS).map(([id, label]) => ({
-      id,
-      label,
-      apiKeyConfigured: id === 'manual' ? false : getConfiguredFromEnv(id) || Boolean(providerSettings[id]?.apiKeyConfigured),
-    })),
+    defaultSourceLanguage: section.settings?.defaultSourceLanguage || 'auto',
+    apiKeyConfigured: selectedProvider === 'manual'
+      ? false
+      : envKeyConfigured(selectedProvider) || selectedInfo.apiKeyConfigured === true,
+    ready: selectedProvider !== 'manual' && selectedInfo.healthy === true,
+    healthy: selectedProvider !== 'manual' && selectedInfo.healthy === true,
+    status: providerStatusCode(selectedProvider, selectedInfo),
+    errorCode: selectedInfo.errorCode || null,
+    errorMessage: selectedInfo.errorMessage || null,
+    providers: liveStatus.providers || {},
+    supportedProviders,
   };
 }
 
 function sanitizeProviderSettings(input = {}) {
-  const provider = normalizeProvider(input.provider || input.settings?.provider);
-  const defaultLanguage = String(input.defaultLanguage || input.defaultTargetLanguage || input.settings?.defaultTargetLanguage || 'en')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z-]/g, '')
-    .slice(0, 12) || 'en';
-  const sourceLanguage = String(input.sourceLanguage || input.defaultSourceLanguage || input.settings?.defaultSourceLanguage || 'auto')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z-]/g, '')
-    .slice(0, 12) || 'auto';
+  const source = isPlainObject(input) ? input : {};
+  const rawProviderSettings = isPlainObject(source.providerSettings)
+    ? source.providerSettings
+    : isPlainObject(source.settings?.providerSettings)
+      ? source.settings.providerSettings
+      : {};
+
+  const provider = normalizeProvider(source.provider || source.settings?.provider);
+  const defaultTargetLanguage = cleanLanguageCode(
+    source.defaultLanguage || source.defaultTargetLanguage || source.settings?.defaultTargetLanguage,
+    'en'
+  );
+  const defaultSourceLanguage = cleanLanguageCode(
+    source.sourceLanguage || source.defaultSourceLanguage || source.settings?.defaultSourceLanguage,
+    'auto'
+  );
+
+  const providerSettings = {
+    openai: {
+      enabled: rawProviderSettings.openai?.enabled !== false,
+      model: String(rawProviderSettings.openai?.model || process.env.OPENAI_TRANSLATION_MODEL || 'gpt-4o-mini')
+        .trim()
+        .slice(0, 80) || 'gpt-4o-mini',
+      apiKeyConfigured: envKeyConfigured('openai') || rawProviderSettings.openai?.apiKeyConfigured === true,
+    },
+    deepl: {
+      enabled: rawProviderSettings.deepl?.enabled !== false,
+      apiKeyConfigured: envKeyConfigured('deepl') || rawProviderSettings.deepl?.apiKeyConfigured === true,
+    },
+    google: {
+      enabled: rawProviderSettings.google?.enabled !== false,
+      apiKeyConfigured: envKeyConfigured('google') || rawProviderSettings.google?.apiKeyConfigured === true,
+    },
+    fallbackOrder: Array.isArray(rawProviderSettings.fallbackOrder)
+      ? rawProviderSettings.fallbackOrder
+        .map(normalizeProvider)
+        .filter((fallbackProvider) => fallbackProvider !== 'manual' && fallbackProvider !== provider)
+        .filter((fallbackProvider, index, providers) => providers.indexOf(fallbackProvider) === index)
+      : [],
+  };
 
   return {
     provider,
-    defaultTargetLanguage: defaultLanguage,
-    defaultSourceLanguage: sourceLanguage,
+    defaultTargetLanguage,
+    defaultSourceLanguage,
+    providerSettings,
   };
 }
 
@@ -80,41 +154,56 @@ function saveProviderConfig(guildId, input = {}) {
   return translationStore.updateTranslationSection(guildId, (section) => ({
     ...section,
     provider: settings.provider,
+    providerSettings: {
+      ...(section.providerSettings || {}),
+      ...settings.providerSettings,
+    },
     settings: {
       ...(section.settings || {}),
       provider: settings.provider,
+      providerSettings: {
+        ...(section.settings?.providerSettings || section.providerSettings || {}),
+        ...settings.providerSettings,
+      },
       defaultTargetLanguage: settings.defaultTargetLanguage,
       defaultSourceLanguage: settings.defaultSourceLanguage,
     },
+    languages: Array.from(new Set([
+      ...(section.languages || []),
+      settings.defaultTargetLanguage,
+    ])).filter(Boolean),
     updatedAt: new Date().toISOString(),
   }));
 }
 
-async function translate({ guildId, text, fromLanguage = 'auto', toLanguage = 'en' } = {}) {
-  const status = getProviderStatus(guildId);
-  if (!status.ready) {
-    const error = new Error('Translation provider is not configured.');
-    error.code = 'TRANSLATION_PROVIDER_NOT_READY';
-    error.provider = status.provider;
-    error.status = status.status;
+async function translate({ guildId, text, fromLanguage = 'auto', toLanguage = 'en', options = {} } = {}) {
+  const section = translationStore.getTranslationSection(guildId);
+  const result = await translationProviderManager.translateText({
+    section,
+    guildId,
+    text,
+    sourceLanguage: fromLanguage,
+    targetLanguage: toLanguage,
+    options,
+  });
+
+  if (!result.success) {
+    const error = new Error(result.errorMessage || result.error || 'Translation provider is not configured.');
+    error.code = result.errorCode || 'TRANSLATION_PROVIDER_NOT_READY';
+    error.provider = result.provider;
+    error.status = result.errorCode || 'error';
+    error.retryable = result.retryable === true;
     throw error;
   }
 
-  return {
-    provider: status.provider,
-    fromLanguage,
-    toLanguage,
-    originalText: String(text || ''),
-    translatedText: String(text || ''),
-    simulated: true,
-    note: 'Provider adapter scaffold is ready; live provider calls are intentionally not enabled yet.',
-  };
+  return result;
 }
 
 module.exports = {
   PROVIDER_LABELS,
   normalizeProvider,
   getProviderStatus,
+  sanitizeProviderSettings,
   saveProviderConfig,
   translate,
 };

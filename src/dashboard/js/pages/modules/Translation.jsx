@@ -44,12 +44,70 @@ function fieldStyle(theme) {
 }
 
 function DetailRow({ theme, label, value, hint }) {
-  return <div style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(15,23,42,0.28)', borderRadius: 14, padding: 13, display: 'grid', gap: 4 }}><div style={{ color: theme.mutedText, fontSize: 11, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div><div style={{ color: theme.cardText, fontWeight: 950, overflowWrap: 'anywhere' }}>{value || 'None'}</div>{hint ? <div style={{ color: theme.mutedText, fontSize: 12, overflowWrap: 'anywhere' }}>{hint}</div> : null}</div>;
+  return <div style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(15,23,42,0.28)', borderRadius: 14, padding: 13, display: 'grid', gap: 4 }}><div style={{ color: theme.mutedText, fontSize: 11, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div><div style={{ color: theme.cardText, fontWeight: 950, overflowWrap: 'anywhere', textTransform: typeof value === 'string' && value.includes('_') ? 'capitalize' : 'none' }}>{value || 'None'}</div>{hint ? <div style={{ color: theme.mutedText, fontSize: 12, overflowWrap: 'anywhere' }}>{hint}</div> : null}</div>;
 }
 
 function StatusPill({ enabled, label }) {
   const tone = enabled ? '#86efac' : '#fca5a5';
   return <span style={{ border: `1px solid ${tone}`, color: tone, borderRadius: 999, padding: '5px 9px', fontSize: 12, fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label || (enabled ? 'enabled' : 'disabled')}</span>;
+}
+
+function ReadinessBanner({ theme, enabled, providerReady, channels, threads, providerName, providerError }) {
+  const ready = enabled && providerReady && channels.length > 0;
+  const tone = ready ? '#86efac' : '#fcd34d';
+  const title = ready ? 'Translation Hub is ready' : 'Translation Hub needs setup';
+  const items = [
+    enabled ? 'Hub enabled' : 'Enable the Translation Hub',
+    providerReady ? `${providerName} provider ready` : 'Connect a provider API key',
+    channels.length ? `${channels.length} channel${channels.length === 1 ? '' : 's'} configured` : 'Add a translation channel',
+    threads.length ? `${threads.length} language thread${threads.length === 1 ? '' : 's'} mapped` : 'Recover/create language threads',
+  ];
+
+  return (
+    <div style={{ border: `1px solid ${tone}`, background: ready ? 'rgba(34,197,94,0.10)' : 'rgba(245,158,11,0.10)', borderRadius: 20, padding: 16, display: 'grid', gap: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <h2 style={{ margin: 0, color: theme.cardText }}>{title}</h2>
+          <p style={{ margin: '6px 0 0', color: theme.mutedText, lineHeight: 1.55 }}>{ready ? 'Provider, channels and thread mappings are in place.' : 'Finish the checklist below before expecting live thread translations.'}</p>
+          {providerError ? <p style={{ margin: '6px 0 0', color: '#fca5a5', lineHeight: 1.45 }}>{providerError}</p> : null}
+        </div>
+        <StatusPill enabled={ready} label={ready ? 'Ready' : 'Setup'} />
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 190px), 1fr))', gap: 8 }}>
+        {items.map((item, index) => {
+          const done = index === 0 ? enabled : index === 1 ? providerReady : index === 2 ? channels.length > 0 : threads.length > 0;
+          return <div key={item} style={{ border: `1px solid ${done ? 'rgba(134,239,172,0.35)' : 'rgba(252,211,77,0.35)'}`, borderRadius: 12, padding: 10, color: done ? '#bbf7d0' : '#fde68a', fontWeight: 900 }}>{done ? '✅' : '⚠️'} {item}</div>;
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ProviderHealthGrid({ theme, providerStatus }) {
+  const providers = providerStatus?.supportedProviders || PROVIDER_OPTIONS.map((option) => ({ ...option, status: option.id === 'manual' ? 'not_configured' : 'unknown' }));
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 190px), 1fr))', gap: 10 }}>
+      {providers.map((provider) => {
+        const isManual = provider.id === 'manual';
+        const healthy = provider.healthy || provider.ready;
+        const selected = provider.selected || providerStatus?.provider === provider.id;
+        const tone = isManual ? '#94a3b8' : healthy ? '#86efac' : provider.apiKeyConfigured ? '#fcd34d' : '#fca5a5';
+        const status = isManual ? 'Fallback only' : healthy ? 'Ready' : provider.apiKeyConfigured ? 'Check provider' : 'Missing key';
+
+        return (
+          <div key={provider.id} style={{ border: `1px solid ${selected ? tone : theme.cardBorder}`, background: selected ? 'rgba(15,23,42,0.42)' : 'rgba(15,23,42,0.22)', borderRadius: 15, padding: 13, display: 'grid', gap: 5 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+              <strong style={{ color: theme.cardText }}>{provider.label}</strong>
+              {selected ? <span style={{ color: tone, fontSize: 11, fontWeight: 950 }}>SELECTED</span> : null}
+            </div>
+            <span style={{ color: tone, fontWeight: 950 }}>{status}</span>
+            {provider.errorMessage ? <span style={{ color: theme.mutedText, fontSize: 12, lineHeight: 1.4 }}>{provider.errorMessage}</span> : null}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function ChannelCard({ theme, channel, resourceChannel, onDisable, onRemove }) {
@@ -103,6 +161,7 @@ export default function Translation({ theme, selectedGuild, selectedGuildData })
   const channels = useMemo(() => asArray(config.channels || config.channelPairs || config.configuredChannels), [config]);
   const preferences = useMemo(() => asArray(config.userLanguages || config.preferences || config.userPreferences), [config]);
   const threads = useMemo(() => flattenThreads(config.threadMappings || config.threads || config.translationThreads), [config]);
+  const activeThreads = useMemo(() => threads.filter((thread) => thread?.active !== false && !thread?.archived && !thread?.locked), [threads]);
   const textChannels = useMemo(() => (resources.channels || []).filter((channel) => channel.type === 0 || channel.type === 5 || channel.type === 'GuildText' || channel.type === 'GuildAnnouncement'), [resources]);
   const channelById = useMemo(() => Object.fromEntries(textChannels.map((channel) => [String(channel.id), channel])), [textChannels]);
   const hasTranslationAccess = Array.isArray(entitlements?.features) && entitlements.features.includes('translation.hub');
@@ -259,6 +318,7 @@ export default function Translation({ theme, selectedGuild, selectedGuildData })
   const providerName = providerStatus?.label || settings.provider || config.provider || 'Not configured';
   const providerReady = Boolean(providerStatus?.ready);
   const providerState = providerStatus?.status || (providerReady ? 'ready' : 'not_configured');
+  const providerError = providerStatus?.errorMessage || (providerReady ? '' : providerState === 'missing_api_key' ? 'Selected provider is missing its server-side API key.' : 'Select and configure a provider before enabling live translations.');
 
   return (
     <PageShell title="Translation Hub" subtitle="Manage multilingual channels, providers, language threads and translation analytics." theme={theme} guild={{ id: guildId, name: 'Translation Hub' }} actions={<><button type="button" onClick={toggleEnabled} disabled={saving || loading || !hasTranslationAccess} style={{ border: config.enabled === true ? '1px solid rgba(34,197,94,0.45)' : '1px solid rgba(239,68,68,0.45)', background: config.enabled === true ? 'rgba(34,197,94,0.14)' : 'rgba(239,68,68,0.14)', color: config.enabled === true ? '#86efac' : '#fca5a5', borderRadius: 999, padding: '9px 13px', fontWeight: 950 }}>{config.enabled === true ? 'Enabled' : 'Disabled'}</button><PrimaryButton onClick={load} disabled={loading}>Refresh</PrimaryButton></>}>
@@ -266,12 +326,14 @@ export default function Translation({ theme, selectedGuild, selectedGuildData })
       {notice ? <Notice theme={theme} tone="success">{notice}</Notice> : null}
       {loading ? <LoadingPanel theme={theme} text="Loading Translation Hub..." /> : null}
 
+      <ReadinessBanner theme={theme} enabled={config.enabled === true} providerReady={providerReady} channels={channels} threads={activeThreads} providerName={providerName} providerError={providerError} />
+
       <StatGrid min="min(190px, 100%)">
-        <SummaryStat theme={theme} label="Status" value={config.enabled === true ? 'Enabled' : 'Disabled'} accent={config.enabled === true ? '#22c55e' : '#f59e0b'} description="modules.translation.enabled" />
-        <SummaryStat theme={theme} label="Provider" value={providerReady ? 'Ready' : 'Missing'} accent={providerReady ? '#22c55e' : '#f59e0b'} description={providerName} />
+        <SummaryStat theme={theme} label="Hub" value={config.enabled === true ? 'Enabled' : 'Disabled'} accent={config.enabled === true ? '#22c55e' : '#f59e0b'} description="modules.translation.enabled" />
+        <SummaryStat theme={theme} label="Provider" value={providerReady ? 'Ready' : 'Needs Setup'} accent={providerReady ? '#22c55e' : '#f59e0b'} description={providerName} />
         <SummaryStat theme={theme} label="Channels" value={channels.length} accent="#3b82f6" description="Configured translation channels" />
-        <SummaryStat theme={theme} label="Threads" value={threads.length} accent="#a855f7" description="Mapped language threads" />
-        <SummaryStat theme={theme} label="Users" value={preferences.length} accent="#22c55e" description="Language preferences" />
+        <SummaryStat theme={theme} label="Threads" value={`${activeThreads.length}/${threads.length}`} accent="#a855f7" description="Active / mapped language threads" />
+        <SummaryStat theme={theme} label="Failures" value={formatNumber(analytics.failedTranslations ?? analytics.failed ?? analytics.failures ?? 0)} accent="#f97316" description="Provider or thread failures" />
       </StatGrid>
 
       <SectionCard theme={theme} title="Provider Configuration" subtitle="Choose the translation provider and default languages. API keys are configured on the server only.">
@@ -279,18 +341,20 @@ export default function Translation({ theme, selectedGuild, selectedGuildData })
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 210px), 1fr))', gap: 12 }}>
             <label style={{ display: 'grid', gap: 6, color: theme.mutedText, fontWeight: 900 }}>Provider<select value={providerForm.provider} onChange={(event) => setProviderForm((current) => ({ ...current, provider: event.target.value }))} style={fieldStyle(theme)}>{PROVIDER_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
             <label style={{ display: 'grid', gap: 6, color: theme.mutedText, fontWeight: 900 }}>Source Language<input value={providerForm.sourceLanguage} onChange={(event) => setProviderForm((current) => ({ ...current, sourceLanguage: event.target.value }))} placeholder="auto" style={fieldStyle(theme)} /></label>
-            <label style={{ display: 'grid', gap: 6, color: theme.mutedText, fontWeight: 900 }}>Default Language<input value={providerForm.defaultLanguage} onChange={(event) => setProviderForm((current) => ({ ...current, defaultLanguage: event.target.value }))} placeholder="en" style={fieldStyle(theme)} /></label>
+            <label style={{ display: 'grid', gap: 6, color: theme.mutedText, fontWeight: 900 }}>Default Target<input value={providerForm.defaultLanguage} onChange={(event) => setProviderForm((current) => ({ ...current, defaultLanguage: event.target.value }))} placeholder="en" style={fieldStyle(theme)} /></label>
           </div>
+          <ProviderHealthGrid theme={theme} providerStatus={providerStatus} />
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 12 }}>
-            <DetailRow theme={theme} label="Provider Status" value={providerState.replace(/_/g, ' ')} />
-            <DetailRow theme={theme} label="API Key" value={providerStatus?.apiKeyConfigured ? 'Configured' : 'Missing'} hint="Set provider API keys in the server environment." />
-            <DetailRow theme={theme} label="Dashboard Safety" value="Keys hidden" hint="The API never returns provider secrets." />
+            <DetailRow theme={theme} label="Selected Provider" value={providerName} />
+            <DetailRow theme={theme} label="Provider Status" value={providerState.replace(/_/g, ' ')} hint={providerStatus?.errorMessage || ''} />
+            <DetailRow theme={theme} label="API Key" value={providerStatus?.apiKeyConfigured ? 'Configured' : 'Missing'} hint="Set provider API keys in the VPS .env files. Secrets are never returned to the dashboard." />
           </div>
           <button type="submit" disabled={saving} style={{ justifySelf: 'start', border: '1px solid rgba(34,197,94,0.42)', background: saving ? 'rgba(34,197,94,0.10)' : 'rgba(34,197,94,0.18)', color: '#bbf7d0', borderRadius: 12, padding: '11px 13px', fontWeight: 950, cursor: saving ? 'not-allowed' : 'pointer' }}>{saving ? 'Saving...' : 'Save Provider Settings'}</button>
         </form>
       </SectionCard>
 
       <SectionCard theme={theme} title="Add Translation Channel" subtitle="Pick a Discord text channel, choose language behaviour, and optionally create language threads.">
+        {!providerReady ? <Notice theme={theme} tone="warning">Provider is not ready yet. You can configure channels now, but live translations will fail until the selected provider has a valid API key.</Notice> : null}
         <form onSubmit={saveChannel} style={{ display: 'grid', gap: 14 }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 12 }}>
             <label style={{ display: 'grid', gap: 6, color: theme.mutedText, fontWeight: 900 }}>Source Channel<select value={channelForm.channelId} onChange={(event) => setChannelForm((current) => ({ ...current, channelId: event.target.value }))} style={fieldStyle(theme)}><option value="">Select text channel</option>{textChannels.map((channel) => <option key={channel.id} value={channel.id}>#{channel.name}</option>)}</select></label>
@@ -307,10 +371,11 @@ export default function Translation({ theme, selectedGuild, selectedGuildData })
 
       <SectionCard theme={theme} title="Translation Analytics" subtitle="Usage data from modules.translation.analytics.">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))', gap: 12 }}>
-          <DetailRow theme={theme} label="Messages Translated" value={formatNumber(analytics.messagesTranslated ?? analytics.translated ?? analytics.manualTranslations ?? 0)} />
+          <DetailRow theme={theme} label="Manual Translations" value={formatNumber(analytics.manualTranslations ?? 0)} />
+          <DetailRow theme={theme} label="Auto Translations" value={formatNumber(analytics.autoTranslations ?? 0)} />
           <DetailRow theme={theme} label="Thread Translations" value={formatNumber(analytics.threadTranslations ?? 0)} />
           <DetailRow theme={theme} label="Threads Created" value={formatNumber(analytics.threadsCreated ?? 0)} />
-          <DetailRow theme={theme} label="Failures" value={formatNumber(analytics.failed ?? analytics.failures ?? analytics.failedTranslations ?? 0)} />
+          <DetailRow theme={theme} label="Failures" value={formatNumber(analytics.failedTranslations ?? analytics.failed ?? analytics.failures ?? 0)} />
           <DetailRow theme={theme} label="Last Translation" value={formatDate(analytics.lastTranslationAt || analytics.lastTranslatedAt)} />
         </div>
       </SectionCard>

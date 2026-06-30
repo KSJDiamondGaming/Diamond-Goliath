@@ -82,6 +82,7 @@ const translationRoutes = safeRequire('translation routes', './src/server/routes
 const permissionHealthRoutes = safeRequire('permission health routes', './src/server/routes/permissionHealth', emptyRouter(), { optional: false });
 const socialRoutes = safeRequire('social routes', './src/server/routes/social', emptyRouter(), { optional: false });
 const modulesRoutes = safeRequire('modules routes', './src/server/routes/modules', emptyRouter(), { optional: false });
+const automationRoutes = safeRequire('automation routes', './src/server/routes/automation', emptyRouter(), { optional: false });
 const pollsRoutes = safeRequire('polls routes', './src/server/routes/polls', emptyRouter(), { optional: false });
 const statsRoutes = safeRequire('stats routes', './src/server/routes/stats', emptyRouter(), { optional: false });
 const tempVoiceRoutes = safeRequire('temp voice routes', './src/server/routes/tempVoice', emptyRouter(), { optional: false });
@@ -160,6 +161,7 @@ app.use('/api/translation', translationRoutes);
 app.use('/api/permissions', permissionHealthRoutes);
 app.use('/api/social', socialRoutes);
 app.use('/api/modules', modulesRoutes);
+app.use('/api/automation', automationRoutes);
 app.use('/api/polls', pollsRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/temp-voice', tempVoiceRoutes);
@@ -221,22 +223,23 @@ client.once('clientReady', async () => {
       guildManager.syncGuildMeta?.(guild);
       await resourceManager.syncDiscordResources?.(guild);
     } catch (error) {
-      console.error(`❌ Guild startup sync failed for ${guild.id}`, error);
+      console.error(`❌ Startup sync failed for ${guild.name}:`, error.message);
     }
   }
-  backupScheduler.startBackupScheduler?.(client);
+  backupScheduler.startBackupScheduler?.();
 });
 
-server.listen(PORT, () => console.log(`🚀 Goliath dashboard/server listening on port ${PORT}`));
-
-const token = config.token || process.env.DISCORD_BOT_TOKEN || process.env.DISCORD_TOKEN || process.env.TOKEN;
-if (!token) {
-  console.error('❌ Missing Discord bot token');
-  process.exit(1);
-}
-
-client.login(token).catch((error) => {
-  console.error('❌ Discord login failed');
-  console.error(error);
-  process.exit(1);
+client.on('guildCreate', async (guild) => {
+  try {
+    const allowed = await enforceGuildAccess(guild, botMode, config);
+    if (!allowed) return;
+    defaultModules.initializeDefaultModules?.(guild.id);
+    guildManager.syncGuildMeta?.(guild);
+    await resourceManager.syncDiscordResources?.(guild);
+  } catch (error) {
+    console.error(`❌ Failed to initialise guild ${guild.name}:`, error.message);
+  }
 });
+
+server.listen(PORT, () => console.log(`🌐 Dashboard server running on port ${PORT}`));
+client.login(config.token).catch((error) => { console.error('❌ Discord login failed:', error.message); });
