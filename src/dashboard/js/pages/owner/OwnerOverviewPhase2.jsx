@@ -35,7 +35,8 @@ function connected(guild = {}) {
 
 function formatNumber(value = 0) {
   return Number(value || 0).toLocaleString();
-}\n
+}
+
 function card(theme, extra = {}) {
   const viewTheme = safeTheme(theme);
   return {
