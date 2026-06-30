@@ -11,6 +11,7 @@ const Warnings = lazy(() => import('../pages/moderation/Warnings'));
 const Messages = lazy(() => import('../pages/core/Messages'));
 const Forms = lazy(() => import('../pages/modules/forms/FormsWorkflowEnhanced'));
 const Modules = lazy(() => import('../pages/modules/Modules'));
+const Automation = lazy(() => import('../pages/modules/Automation'));
 const EmbedStudio = lazy(() => import('../pages/modules/embed/EmbedStudioEnhanced'));
 const Verification = lazy(() => import('../pages/modules/Verification'));
 const AutoRoles = lazy(() => import('../pages/modules/AutoRoles'));
@@ -105,6 +106,7 @@ export const ROUTES = [
   { key: 'ownerTickets', label: 'Tickets Hub', icon: 'modules', path: '/owner/tickets', component: OwnerTicketsHub, ownerOnly: true },
   { key: 'ownerTranslation', label: 'Translation Hub', icon: 'modules', path: '/owner/translation', component: OwnerTranslationHub, ownerOnly: true },
   { key: 'modules', label: 'Modules', icon: 'modules', path: '/modules', component: Modules },
+  { key: 'automation', label: 'Automation', icon: 'modules', path: '/automation', component: Automation, hidden: true },
   { key: 'embedStudio', label: 'Embed Studio', icon: 'modules', path: '/embed-studio', component: EmbedStudio, hidden: true },
   { key: 'verification', label: 'Verification', icon: 'modules', path: '/verification', component: Verification, hidden: true },
   { key: 'autoRoles', label: 'Auto Roles', icon: 'modules', path: '/autoroles', component: AutoRoles, hidden: true },
@@ -152,6 +154,7 @@ export const PAGE_LAYOUTS = {
   ownerTickets: { title: 'Tickets Hub', description: 'Global tickets overview.', sections: [] },
   ownerTranslation: { title: 'Translation Hub', description: 'Global translation system overview.', sections: [] },
   modules: { title: 'Modules', description: 'Optional Goliath features in one scalable grid.', emptyDescription: 'Select a server to view modules.', sections: [{ id: 'modulesGrid', type: 'dashboard' }] },
+  automation: { title: 'Automation', description: 'Minimal rules, triggers and safe execution logs.', emptyDescription: 'Select a server to manage automation.', sections: [{ id: 'automationDashboard', type: 'dashboard' }] },
   embedStudio: { title: 'Embed Studio', description: 'Build, preview and save Discord embeds.', emptyDescription: 'Select a server to manage Embed Studio.', sections: [{ id: 'embedStudioDashboard', type: 'dashboard' }] },
   verification: { title: 'Verification', description: 'Member verification, role settings, panels and analytics.', emptyDescription: 'Select a server to manage verification.', sections: [{ id: 'verificationDashboard', type: 'dashboard' }] },
   autoRoles: { title: 'Auto Roles', description: 'Join roles, bot roles and assignment analytics.', emptyDescription: 'Select a server to manage auto roles.', sections: [{ id: 'autoRolesDashboard', type: 'dashboard' }] },
@@ -186,6 +189,7 @@ export const SECTION_DEFS = {
   activity: { title: 'Recent Activity', description: 'Quick status indicators.' },
   billingDashboard: { title: 'Billing Dashboard', description: 'Current plan, limits and entitlements.' },
   modulesGrid: { title: 'Modules Grid', description: 'Browse optional Goliath features.' },
+  automationDashboard: { title: 'Automation Dashboard', description: 'Rules, triggers and execution history.' },
   embedStudioDashboard: { title: 'Embed Studio', description: 'Build, preview and save Discord embeds.' },
   verificationDashboard: { title: 'Verification Dashboard', description: 'Configure verification roles, panels and analytics.' },
   autoRolesDashboard: { title: 'Auto Roles Dashboard', description: 'Configure join roles, bot roles and analytics.' },
