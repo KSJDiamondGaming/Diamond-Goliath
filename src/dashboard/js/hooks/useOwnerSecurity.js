@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import ownerApi from '../services/ownerApi.js';
 
@@ -7,15 +7,37 @@ export default function useOwnerSecurity(guildId) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => {
+  const refresh = useCallback(async () => {
     if (!guildId) {
       setSecurity(null);
-      return;
+      return null;
     }
 
+    try {
+      setLoading(true);
+      setError('');
+
+      const payload = await ownerApi.getSecurity(guildId);
+      setSecurity(payload || null);
+      return payload || null;
+    } catch (err) {
+      setSecurity(null);
+      setError(err.message || 'Failed to load security data.');
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, [guildId]);
+
+  useEffect(() => {
     let cancelled = false;
 
     async function loadSecurity() {
+      if (!guildId) {
+        setSecurity(null);
+        return;
+      }
+
       try {
         setLoading(true);
         setError('');
@@ -28,10 +50,7 @@ export default function useOwnerSecurity(guildId) {
       } catch (err) {
         if (!cancelled) {
           setSecurity(null);
-          setError(
-            err.message ||
-            'Failed to load security data.',
-          );
+          setError(err.message || 'Failed to load security data.');
         }
       } finally {
         if (!cancelled) {
@@ -51,5 +70,6 @@ export default function useOwnerSecurity(guildId) {
     security,
     loading,
     error,
+    refresh,
   };
 }
