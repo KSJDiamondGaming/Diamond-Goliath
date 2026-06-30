@@ -4,6 +4,7 @@ const express = require('express');
 const registry = require('../../modules/automation/automationRegistry');
 const store = require('../../modules/automation/automationStore');
 const simulator = require('../../modules/automation/automationSimulator');
+const notifications = require('../../modules/notifications/notificationStore');
 
 const router = express.Router();
 
@@ -23,6 +24,19 @@ function guildId(req) {
   const id = String(req.params.guildId || '').trim();
   if (!/^\d{15,25}$/.test(id)) throw new Error('Invalid guild ID.');
   return id;
+}
+
+function notify(guildId, payload = {}) {
+  try {
+    return notifications.addNotification(guildId, {
+      source: 'automation',
+      route: '/automation',
+      ...payload,
+    });
+  } catch (error) {
+    console.warn('[AutomationRoute] Notification skipped:', error.message || error);
+    return null;
+  }
 }
 
 router.get('/registry', (req, res) => ok(res, {
@@ -54,6 +68,12 @@ router.post('/:guildId/rules', (req, res) => {
   try {
     const id = guildId(req);
     const rule = store.saveRule(id, req.body || {});
+    notify(id, {
+      level: 'success',
+      title: 'Automation rule saved',
+      message: `${rule.name || 'Automation rule'} is ready for ${rule.trigger || 'its trigger'}.`,
+      metadata: { ruleId: rule.ruleId, trigger: rule.trigger },
+    });
     return ok(res, { guildId: id, rule, rules: store.listRules(id) });
   } catch (error) {
     return fail(res, error);
@@ -64,6 +84,14 @@ router.delete('/:guildId/rules/:ruleId', (req, res) => {
   try {
     const id = guildId(req);
     const deleted = store.deleteRule(id, req.params.ruleId);
+    if (deleted) {
+      notify(id, {
+        level: 'warning',
+        title: 'Automation rule deleted',
+        message: 'An automation rule was deleted from this server.',
+        metadata: { ruleId: req.params.ruleId },
+      });
+    }
     return ok(res, { guildId: id, deleted, rules: store.listRules(id) });
   } catch (error) {
     return fail(res, error);
@@ -83,6 +111,12 @@ router.post('/:guildId/rules/:ruleId/simulate', (req, res) => {
   try {
     const id = guildId(req);
     const simulation = simulator.simulateStoredRule(id, req.params.ruleId, req.body?.context || {});
+    notify(id, {
+      level: simulation.status === 'would_run' ? 'success' : 'warning',
+      title: 'Automation simulation complete',
+      message: `${simulation.name || 'Automation rule'} finished simulation with status: ${simulation.status}.`,
+      metadata: { ruleId: simulation.ruleId, trigger: simulation.trigger, status: simulation.status },
+    });
     return ok(res, { guildId: id, simulation, executions: store.getExecutions(id) });
   } catch (error) {
     return fail(res, error);
@@ -98,6 +132,12 @@ router.post('/:guildId/test-log', (req, res) => {
       status: 'test_logged',
       message: req.body?.message || 'Manual automation test log.',
       context: req.body?.context || {},
+    });
+    notify(id, {
+      level: 'info',
+      title: 'Automation test log written',
+      message: entry.message || 'Manual automation test log.',
+      metadata: { executionId: entry.id, ruleId: entry.ruleId, trigger: entry.trigger },
     });
     return ok(res, { guildId: id, entry, executions: store.getExecutions(id) });
   } catch (error) {
