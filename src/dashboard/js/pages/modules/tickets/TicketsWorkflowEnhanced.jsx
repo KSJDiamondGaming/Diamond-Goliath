@@ -6,6 +6,7 @@ import LegacyTickets from '../Tickets.jsx';
 import TicketPanelBuilder from './TicketPanelBuilder.jsx';
 import TicketQueueAnalytics from './TicketQueueAnalytics.jsx';
 import TicketReviewWorkspace from './TicketReviewWorkspace.jsx';
+import TicketTranscriptCentre from './TicketTranscriptCentre.jsx';
 import TicketWorkflowSummary from './TicketWorkflowSummary.jsx';
 
 function cleanGuildId(selectedGuild, selectedGuildData) {
@@ -271,6 +272,8 @@ export default function TicketsWorkflowEnhanced(props) {
       ) : null}
 
       <TicketQueueAnalytics theme={theme} tickets={tickets} />
+
+      <TicketTranscriptCentre theme={theme} tickets={tickets} />
 
       {(error || notice) ? (
         <section style={{ ...cardStyle(theme), padding: 16, color: error ? '#fca5a5' : '#86efac', fontWeight: 850 }}>
