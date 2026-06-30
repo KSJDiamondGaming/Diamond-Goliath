@@ -18,6 +18,7 @@ const {
 
 const ticketRecovery = require("../../modules/tickets/ticketRecovery");
 const ticketPanelManager = require("../../modules/tickets/ticketPanelManager");
+const ticketTranscriptManager = require("../../modules/tickets/ticketTranscriptManager");
 
 const {
   getPanels,
@@ -48,11 +49,7 @@ function isDeletedTicket(ticket = {}) {
 }
 
 function isFormTicket(ticket = {}) {
-  return (
-    ticket.source === "form" ||
-    Boolean(ticket.formSubmissionId) ||
-    Boolean(ticket.metadata?.submissionId)
-  );
+  return ticket.source === "form" || Boolean(ticket.formSubmissionId) || Boolean(ticket.metadata?.submissionId);
 }
 
 function hasMissingChannelRecord(ticket = {}) {
@@ -121,10 +118,7 @@ async function guardTicketSettings(req, guildId, settings = {}) {
   if (!guild) throw new Error("Guild is unavailable.");
 
   if (roleIds.length) {
-    const roleResult = await validateRoleSelection(guild, roleIds, {
-      scope: "ticket_settings.roles",
-      requireManageable: false,
-    });
+    const roleResult = await validateRoleSelection(guild, roleIds, { scope: "ticket_settings.roles", requireManageable: false });
     if (!roleResult.ok) throw roleResult.toError();
   }
 
@@ -160,10 +154,7 @@ function failure(res, error, fallbackMessage, fallbackStatus = 500) {
     });
   }
 
-  return res.status(fallbackStatus).json({
-    success: false,
-    error: error.message || fallbackMessage,
-  });
+  return res.status(fallbackStatus).json({ success: false, error: error.message || fallbackMessage });
 }
 
 function serialisePanel(panel = {}) {
@@ -257,6 +248,22 @@ async function resolveDeployChannel(req, guildId, panel, explicitChannelId = nul
   return { guild, channel };
 }
 
+async function createRouteTranscript(req, guildId, ticket, reason = "Dashboard ticket action") {
+  const client = getDiscordClient(req);
+  if (!client || !ticket) return null;
+  try {
+    const ticketWithGuild = { ...ticket, guildId: ticket.guildId || guildId };
+    return await ticketTranscriptManager.createAndUploadTranscript(client, ticketWithGuild, {
+      generatedBy: req.body?.actorId || "dashboard",
+      reason,
+      transcriptLimit: req.body?.transcriptLimit,
+    });
+  } catch (error) {
+    console.warn("[TicketsRoute] Transcript generation failed:", error.message || error);
+    return { error: true, message: error.message || "Transcript generation failed." };
+  }
+}
+
 router.get("/:guildId/overview", async (req, res) => {
   try {
     const { guildId } = req.params;
@@ -271,31 +278,27 @@ router.get("/:guildId/overview", async (req, res) => {
     const formTicketCount = tickets.filter(isFormTicket).length;
     const missingChannelRecordCount = tickets.filter(hasMissingChannelRecord).length;
 
-    return res.json({
-      success: true,
-      guildId,
-      overview: {
-        enabled: settings.enabled !== false,
-        ticketCount: tickets.length,
-        totalCount: tickets.length,
-        openCount,
-        claimedCount,
-        closedCount,
-        archivedCount,
-        deletedCount,
-        formTicketCount,
-        missingChannelRecordCount,
-        activeCount: openCount + claimedCount,
-        closedTodayCount: tickets.filter((ticket) => isToday(ticket.closedAt)).length,
-        archivedTodayCount: tickets.filter((ticket) => isToday(ticket.archivedAt)).length,
-        deletedTodayCount: tickets.filter((ticket) => isToday(ticket.deletedAt)).length,
-        transcriptCount: tickets.filter((ticket) => ticket.transcript || ticket.transcriptId || ticket.transcriptUrl).length,
-        panelCount: panels.length,
-        deployedPanelCount: panels.filter((panel) => panel.deployed || (panel.deployChannelId && panel.deployMessageId) || (panel.channelId && panel.messageId)).length,
-        panels: panels.map(serialisePanel),
-        settings,
-      },
-    });
+    return res.json({ success: true, guildId, overview: {
+      enabled: settings.enabled !== false,
+      ticketCount: tickets.length,
+      totalCount: tickets.length,
+      openCount,
+      claimedCount,
+      closedCount,
+      archivedCount,
+      deletedCount,
+      formTicketCount,
+      missingChannelRecordCount,
+      activeCount: openCount + claimedCount,
+      closedTodayCount: tickets.filter((ticket) => isToday(ticket.closedAt)).length,
+      archivedTodayCount: tickets.filter((ticket) => isToday(ticket.archivedAt)).length,
+      deletedTodayCount: tickets.filter((ticket) => isToday(ticket.deletedAt)).length,
+      transcriptCount: tickets.filter((ticket) => ticket.transcript || ticket.transcriptId || ticket.transcriptUrl).length,
+      panelCount: panels.length,
+      deployedPanelCount: panels.filter((panel) => panel.deployed || (panel.deployChannelId && panel.deployMessageId) || (panel.channelId && panel.messageId)).length,
+      panels: panels.map(serialisePanel),
+      settings,
+    } });
   } catch (error) {
     console.error("[TicketsRoute] OVERVIEW:", error);
     return failure(res, error, "Failed to fetch ticket overview.");
@@ -379,9 +382,7 @@ router.post("/:guildId/panels/:panelId/deploy", async (req, res) => {
     const { guildId, panelId } = req.params;
     let panel = getPanel(guildId, panelId);
     if (!panel) return res.status(404).json({ success: false, error: "Panel not found." });
-    if (req.body && Object.keys(req.body).length) {
-      panel = ticketPanelManager.updatePanel(guildId, panelId, cleanPanelPayload({ ...panel, ...req.body }));
-    }
+    if (req.body && Object.keys(req.body).length) panel = ticketPanelManager.updatePanel(guildId, panelId, cleanPanelPayload({ ...panel, ...req.body }));
     const { guild, channel } = await resolveDeployChannel(req, guildId, panel, req.body?.deployChannelId || req.body?.channelId);
     const deployed = await ticketPanelManager.deployPanel({ guild, channel, panel, actorId: req.body?.actorId || "dashboard" });
     return res.json({ success: true, guildId, panel: serialisePanel(deployed), panels: getPanels(guildId).panels.map(serialisePanel) });
@@ -425,6 +426,32 @@ router.get("/:guildId", async (req, res) => {
   } catch (error) {
     console.error("[TicketsRoute] GET ALL:", error);
     return failure(res, error, "Failed to fetch tickets.");
+  }
+});
+
+router.post("/:guildId/:ticketId/transcript", async (req, res) => {
+  try {
+    const { guildId, ticketId } = req.params;
+    const ticket = getTicketById(guildId, ticketId);
+    if (!ticket) return res.status(404).json({ success: false, error: "Ticket not found." });
+    const transcript = await createRouteTranscript(req, guildId, ticket, req.body?.reason || "Manual dashboard transcript");
+    const updatedTicket = getTicketById(guildId, ticketId) || ticket;
+    return res.json({ success: true, guildId, ticket: updatedTicket, transcript });
+  } catch (error) {
+    console.error("[TicketsRoute] TRANSCRIPT:", error);
+    return failure(res, error, "Failed to generate transcript.", 400);
+  }
+});
+
+router.get("/:guildId/:ticketId/transcript", async (req, res) => {
+  try {
+    const { guildId, ticketId } = req.params;
+    const ticket = getTicketById(guildId, ticketId);
+    if (!ticket) return res.status(404).json({ success: false, error: "Ticket not found." });
+    return res.json({ success: true, guildId, ticketId, transcript: ticket.transcript || null });
+  } catch (error) {
+    console.error("[TicketsRoute] TRANSCRIPT GET:", error);
+    return failure(res, error, "Failed to fetch ticket transcript.");
   }
 });
 
@@ -484,7 +511,11 @@ router.patch("/:guildId/:ticketId/status", async (req, res) => {
     const { actorId, status } = req.body;
     const ticket = await updateTicketStatus({ guildId, ticketId, actorId, status });
     if (!ticket) return res.status(404).json({ success: false, error: "Ticket not found." });
-    return res.json({ success: true, ticket });
+    let transcript = null;
+    if (["closed", "archived"].includes(normaliseStatus(status)) && req.body?.createTranscript !== false) {
+      transcript = await createRouteTranscript(req, guildId, ticket, `Ticket status changed to ${normaliseStatus(status)}`);
+    }
+    return res.json({ success: true, ticket: getTicketById(guildId, ticketId) || ticket, transcript });
   } catch (error) {
     console.error("[TicketsRoute] STATUS:", error);
     return failure(res, error, "Failed to update status.");
@@ -510,7 +541,8 @@ router.post("/:guildId/:ticketId/close", async (req, res) => {
     const { actorId, reason } = req.body;
     const ticket = await closeTicket({ guildId, ticketId, actorId, reason });
     if (!ticket) return res.status(404).json({ success: false, error: "Ticket not found." });
-    return res.json({ success: true, ticket });
+    const transcript = req.body?.createTranscript === false ? null : await createRouteTranscript(req, guildId, ticket, reason || "Ticket closed");
+    return res.json({ success: true, ticket: getTicketById(guildId, ticketId) || ticket, transcript });
   } catch (error) {
     console.error("[TicketsRoute] CLOSE:", error);
     return failure(res, error, "Failed to close ticket.");
@@ -536,7 +568,8 @@ router.post("/:guildId/:ticketId/archive", async (req, res) => {
     const { actorId } = req.body;
     const ticket = await archiveTicket({ guildId, ticketId, actorId });
     if (!ticket) return res.status(404).json({ success: false, error: "Ticket not found." });
-    return res.json({ success: true, ticket });
+    const transcript = req.body?.createTranscript === false ? null : await createRouteTranscript(req, guildId, ticket, "Ticket archived");
+    return res.json({ success: true, ticket: getTicketById(guildId, ticketId) || ticket, transcript });
   } catch (error) {
     console.error("[TicketsRoute] ARCHIVE:", error);
     return failure(res, error, "Failed to archive ticket.");
