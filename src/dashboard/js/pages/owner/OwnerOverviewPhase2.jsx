@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
 import { api } from '../../services/apiClient.js';
+import OwnerAnalyticsPanel from './OwnerAnalyticsPanel.jsx';
 import OwnerCommandCentrePanel from './OwnerCommandCentrePanel.jsx';
 
 const FALLBACK_THEME = {
@@ -34,8 +35,7 @@ function connected(guild = {}) {
 
 function formatNumber(value = 0) {
   return Number(value || 0).toLocaleString();
-}
-
+}\n
 function card(theme, extra = {}) {
   const viewTheme = safeTheme(theme);
   return {
@@ -217,6 +217,8 @@ export default function OwnerOverviewPhase2({ theme, currentUser }) {
         realtimeEvents={[]}
         onOpenRoute={(route) => window.location.assign(route)}
       />
+
+      <OwnerAnalyticsPanel theme={viewTheme} guilds={guilds} runtime={runtimePayload || {}} />
 
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,170px),1fr))', gap: 12 }}>
         <Stat theme={viewTheme} label="Total Servers" value={formatNumber(stats.guilds)} hint="registered guilds" accent="#60a5fa" />
