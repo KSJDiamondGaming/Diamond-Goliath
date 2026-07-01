@@ -57,6 +57,7 @@ const { bootstrapRuntime, runBootValidation, safeLoad, printStartupFingerprint }
   printStartupFingerprint: () => null,
 }, { optional: false });
 const { initSocketHub } = safeRequire('socketHub', './src/server/sockets/socketHub', { initSocketHub: () => null }, { optional: false });
+safeRequire('backup notification wiring', './src/modules/notifications/wireBackupNotifications', { wireBackupNotifications: () => false }).wireBackupNotifications?.();
 
 const authRoutes = safeRequire('auth routes', './src/server/routes/auth', emptyRouter(), { optional: false });
 const discordRoutes = safeRequire('discord routes', './src/server/routes/discord', emptyRouter(), { optional: false });
