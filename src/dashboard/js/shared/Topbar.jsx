@@ -50,10 +50,12 @@ function Topbar({
   darkMode = true,
   setDarkMode = () => {},
   loginPending = false,
+  notificationSummary = null,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [isUserButtonHovered, setIsUserButtonHovered] = useState(false);
   const [hoveredMenuItem, setHoveredMenuItem] = useState('');
+  const [bellHovered, setBellHovered] = useState(false);
 
   const menuRef = useRef(null);
   const menuButtonRef = useRef(null);
@@ -61,6 +63,7 @@ function Topbar({
   const isMobile = useIsMobile(768);
   const styles = useMemo(() => topbarStyles(theme), [theme]);
   const userInitial = getInitial(topbarUserName);
+  const unreadNotifications = Number(notificationSummary?.unread || 0);
 
   const isOwner = currentUser?.isOwner === true;
 
@@ -160,7 +163,7 @@ function Topbar({
     ...styles.userButton(isUserButtonHovered || menuOpen),
     opacity: authLoading ? 0.7 : 1,
     cursor: authLoading ? 'not-allowed' : 'pointer',
-    maxWidth: isMobile ? 'calc(100vw - 88px)' : 320,
+    maxWidth: isMobile ? 'calc(100vw - 138px)' : 320,
     minWidth: 0,
     overflow: 'hidden',
   };
@@ -172,6 +175,24 @@ function Topbar({
     maxWidth: isMobile ? 'calc(100vw - 88px)' : 320,
     minWidth: 0,
     overflow: 'hidden',
+  };
+
+  const bellButtonStyle = {
+    border: `1px solid ${unreadNotifications ? 'rgba(59,130,246,0.75)' : theme.cardBorder}`,
+    background: bellHovered || unreadNotifications ? 'rgba(59,130,246,0.16)' : 'rgba(15,23,42,0.30)',
+    color: theme.cardText,
+    borderRadius: 14,
+    height: 42,
+    minWidth: 42,
+    padding: '0 12px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    cursor: 'pointer',
+    fontWeight: 950,
+    position: 'relative',
+    boxShadow: unreadNotifications ? '0 0 22px rgba(59,130,246,0.25)' : 'none',
   };
 
   const userTextStyle = {
@@ -208,6 +229,20 @@ function Topbar({
           {isAuthenticated ? (
             <>
               <button
+                type="button"
+                title="Notifications"
+                aria-label={`Notifications${unreadNotifications ? `, ${unreadNotifications} unread` : ''}`}
+                onClick={() => goToPath('/notifications', { preserveOwnerQuery: true })}
+                onMouseEnter={() => setBellHovered(true)}
+                onMouseLeave={() => setBellHovered(false)}
+                onBlur={() => setBellHovered(false)}
+                style={bellButtonStyle}
+              >
+                <span aria-hidden="true">🔔</span>
+                {unreadNotifications ? <span style={{ color: '#93c5fd' }}>{unreadNotifications > 99 ? '99+' : unreadNotifications}</span> : null}
+              </button>
+
+              <button
                 ref={menuButtonRef}
                 type="button"
                 aria-haspopup="menu"
@@ -220,144 +255,48 @@ function Topbar({
                 style={userButtonStyle}
               >
                 {currentUserAvatar ? (
-                  <img
-                    src={currentUserAvatar}
-                    alt={topbarUserName}
-                    style={{
-                      ...styles.avatar,
-                      flex: '0 0 auto',
-                    }}
-                  />
+                  <img src={currentUserAvatar} alt={topbarUserName} style={{ ...styles.avatar, flex: '0 0 auto' }} />
                 ) : (
-                  <div
-                    style={{
-                      ...styles.avatarFallback,
-                      flex: '0 0 auto',
-                    }}
-                  >
-                    {userInitial}
-                  </div>
+                  <div style={{ ...styles.avatarFallback, flex: '0 0 auto' }}>{userInitial}</div>
                 )}
 
                 <div style={userTextStyle}>
                   <div style={userNameStyle}>{topbarUserName}</div>
                 </div>
 
-                <span
-                  style={{
-                    ...styles.chevron(menuOpen),
-                    flex: '0 0 auto',
-                  }}
-                >
-                  ▾
-                </span>
+                <span style={{ ...styles.chevron(menuOpen), flex: '0 0 auto' }}>▾</span>
               </button>
 
               {menuOpen ? (
                 <div ref={menuRef} style={menuStyle} role="menu">
-                  <MenuButton
-                    styles={styles}
-                    hovered={hoveredMenuItem === 'billing'}
-                    onHover={() => setHoveredMenuItem('billing')}
-                    onLeave={() => setHoveredMenuItem('')}
-                    onClick={() => goToPath('/billing')}
-                    icon="£"
-                    label="Billing"
-                  />
-
-                  <MenuButton
-                    styles={styles}
-                    hovered={hoveredMenuItem === 'docs'}
-                    onHover={() => setHoveredMenuItem('docs')}
-                    onLeave={() => setHoveredMenuItem('')}
-                    onClick={() => goToPath('/docs')}
-                    icon="?"
-                    label="Documentation"
-                  />
+                  <MenuButton styles={styles} hovered={hoveredMenuItem === 'notifications'} onHover={() => setHoveredMenuItem('notifications')} onLeave={() => setHoveredMenuItem('')} onClick={() => goToPath('/notifications', { preserveOwnerQuery: true })} icon="🔔" label="Notifications" />
+                  <MenuButton styles={styles} hovered={hoveredMenuItem === 'timeline'} onHover={() => setHoveredMenuItem('timeline')} onLeave={() => setHoveredMenuItem('')} onClick={() => goToPath('/timeline', { preserveOwnerQuery: true })} icon="🕘" label="Activity Timeline" />
+                  <MenuButton styles={styles} hovered={hoveredMenuItem === 'billing'} onHover={() => setHoveredMenuItem('billing')} onLeave={() => setHoveredMenuItem('')} onClick={() => goToPath('/billing')} icon="£" label="Billing" />
+                  <MenuButton styles={styles} hovered={hoveredMenuItem === 'docs'} onHover={() => setHoveredMenuItem('docs')} onLeave={() => setHoveredMenuItem('')} onClick={() => goToPath('/docs')} icon="?" label="Documentation" />
 
                   {isOwner ? (
                     isOwnerView ? (
-                      <MenuButton
-                        styles={styles}
-                        hovered={hoveredMenuItem === 'return'}
-                        onHover={() => setHoveredMenuItem('return')}
-                        onLeave={() => setHoveredMenuItem('')}
-                        onClick={() => goToPath('/overview', { preserveOwnerQuery: true })}
-                        icon="🏠"
-                        label="Return"
-                      />
+                      <MenuButton styles={styles} hovered={hoveredMenuItem === 'return'} onHover={() => setHoveredMenuItem('return')} onLeave={() => setHoveredMenuItem('')} onClick={() => goToPath('/overview', { preserveOwnerQuery: true })} icon="🏠" label="Return" />
                     ) : (
-                      <MenuButton
-                        styles={styles}
-                        hovered={hoveredMenuItem === 'owner'}
-                        onHover={() => setHoveredMenuItem('owner')}
-                        onLeave={() => setHoveredMenuItem('')}
-                        onClick={() => goToPath('/owner')}
-                        icon="👑"
-                        label="Owner View"
-                      />
+                      <MenuButton styles={styles} hovered={hoveredMenuItem === 'owner'} onHover={() => setHoveredMenuItem('owner')} onLeave={() => setHoveredMenuItem('')} onClick={() => goToPath('/owner')} icon="👑" label="Owner View" />
                     )
                   ) : null}
 
                   <div style={styles.themeRow}>
-                    <div style={styles.themeCopy}>
-                      <span style={styles.themeLabel}>Dark mode</span>
-                    </div>
-
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={darkMode}
-                      aria-label={`Switch to ${darkMode ? 'light' : 'dark'} mode`}
-                      onClick={handleThemeToggle}
-                      onMouseEnter={() => setHoveredMenuItem('theme')}
-                      onMouseLeave={() => setHoveredMenuItem('')}
-                      onBlur={() => setHoveredMenuItem('')}
-                      style={styles.themeSwitch(!darkMode, hoveredMenuItem === 'theme')}
-                    >
-                      <span style={styles.themeSwitchTrack}>
-                        <span style={styles.themeIconLeft}>☾</span>
-                        <span style={styles.themeIconRight}>☀</span>
-                        <span style={styles.themeThumb(!darkMode)} />
-                      </span>
+                    <div style={styles.themeCopy}><span style={styles.themeLabel}>Dark mode</span></div>
+                    <button type="button" role="switch" aria-checked={darkMode} aria-label={`Switch to ${darkMode ? 'light' : 'dark'} mode`} onClick={handleThemeToggle} onMouseEnter={() => setHoveredMenuItem('theme')} onMouseLeave={() => setHoveredMenuItem('')} onBlur={() => setHoveredMenuItem('')} style={styles.themeSwitch(!darkMode, hoveredMenuItem === 'theme')}>
+                      <span style={styles.themeSwitchTrack}><span style={styles.themeIconLeft}>☾</span><span style={styles.themeIconRight}>☀</span><span style={styles.themeThumb(!darkMode)} /></span>
                     </button>
                   </div>
 
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={onLogoutClick}
-                    onMouseEnter={() => setHoveredMenuItem('logout')}
-                    onMouseLeave={() => setHoveredMenuItem('')}
-                    onBlur={() => setHoveredMenuItem('')}
-                    style={styles.logoutButton(hoveredMenuItem === 'logout')}
-                  >
-                    Log out
-                  </button>
+                  <button type="button" role="menuitem" onClick={onLogoutClick} onMouseEnter={() => setHoveredMenuItem('logout')} onMouseLeave={() => setHoveredMenuItem('')} onBlur={() => setHoveredMenuItem('')} style={styles.logoutButton(hoveredMenuItem === 'logout')}>Log out</button>
                 </div>
               ) : null}
             </>
           ) : (
-            <button
-              type="button"
-              onClick={handleLogin}
-              disabled={authLoading || loginPending}
-              style={loginButtonStyle}
-            >
-              <div style={userTextStyle}>
-                <div style={userNameStyle}>
-                  {loginPending ? 'Redirecting...' : 'Login'}
-                </div>
-              </div>
-
-              <div
-                style={{
-                  ...styles.avatarFallback,
-                  flex: '0 0 auto',
-                }}
-              >
-                ↗
-              </div>
+            <button type="button" onClick={handleLogin} disabled={authLoading || loginPending} style={loginButtonStyle}>
+              <div style={userTextStyle}><div style={userNameStyle}>{loginPending ? 'Redirecting...' : 'Login'}</div></div>
+              <div style={{ ...styles.avatarFallback, flex: '0 0 auto' }}>↗</div>
             </button>
           )}
         </div>
@@ -366,25 +305,9 @@ function Topbar({
   );
 }
 
-const MenuButton = memo(function MenuButton({
-  styles,
-  hovered = false,
-  onHover,
-  onLeave,
-  onClick,
-  icon,
-  label,
-}) {
+const MenuButton = memo(function MenuButton({ styles, hovered = false, onHover, onLeave, onClick, icon, label }) {
   return (
-    <button
-      type="button"
-      role="menuitem"
-      onClick={onClick}
-      onMouseEnter={onHover}
-      onMouseLeave={onLeave}
-      onBlur={onLeave}
-      style={styles.menuButton(hovered)}
-    >
+    <button type="button" role="menuitem" onClick={onClick} onMouseEnter={onHover} onMouseLeave={onLeave} onBlur={onLeave} style={styles.menuButton(hovered)}>
       <span style={styles.menuButtonIcon}>{icon}</span>
       <span style={styles.menuButtonLabel}>{label}</span>
     </button>
