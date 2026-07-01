@@ -2,6 +2,7 @@
 
 const crypto = require('crypto');
 const { getGuildSection, updateGuildSection } = require('../../core/guild/guildManager');
+const activity = require('../activity/activityStore');
 
 function now() { return new Date().toISOString(); }
 function obj(value) { return value && typeof value === 'object' && !Array.isArray(value) ? value : {}; }
@@ -36,12 +37,37 @@ function listNotifications(guildId, options = {}) {
   return items.slice(0, Math.max(1, Math.min(200, Number(options.limit || 100))));
 }
 
+function mirrorActivity(guildId, notification) {
+  if (!guildId || notification.metadata?.skipActivity === true) return null;
+  try {
+    return activity.logActivity(guildId, {
+      module: notification.source,
+      event: notification.metadata?.event || `${notification.source}.notification`,
+      title: notification.title,
+      message: notification.message,
+      severity: notification.level,
+      route: notification.route,
+      actorId: notification.metadata?.actorId || notification.metadata?.userId || notification.metadata?.createdBy || null,
+      targetId: notification.metadata?.ticketId || notification.metadata?.submissionId || notification.metadata?.backupId || notification.metadata?.ruleId || null,
+      createdAt: notification.createdAt,
+      metadata: {
+        ...notification.metadata,
+        notificationId: notification.id,
+      },
+    });
+  } catch (error) {
+    console.warn('[NotificationStore] Activity mirror skipped:', error.message || error);
+    return null;
+  }
+}
+
 function addNotification(guildId, input = {}) {
   const notification = normalise(input);
   updateGuildSection(guildId, 'notifications', (current = base()) => {
     const next = { ...base(), ...obj(current) };
     return { ...next, notifications: [notification, ...(next.notifications || [])].slice(0, 300), updatedAt: now() };
   }, base());
+  mirrorActivity(guildId, notification);
   return notification;
 }
 
