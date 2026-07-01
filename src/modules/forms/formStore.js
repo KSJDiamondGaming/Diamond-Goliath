@@ -8,6 +8,7 @@ const {
   saveModuleSection,
   updateModuleSection,
 } = require('../../core/guild/moduleSectionManager');
+const notifications = require('../notifications/notificationStore');
 
 const {
   emitFormUpdated,
@@ -38,6 +39,19 @@ const SUBMISSION_STATUSES = Object.freeze(['pending', 'approved', 'denied', 'clo
 
 function now() {
   return new Date().toISOString();
+}
+
+function notify(guildId, payload = {}) {
+  try {
+    return notifications.addNotification(guildId, {
+      source: 'forms',
+      route: '/forms',
+      ...payload,
+    });
+  } catch (error) {
+    console.warn('[FormStore] Notification skipped:', error.message || error);
+    return null;
+  }
 }
 
 function clone(value) {
@@ -337,6 +351,12 @@ function saveSubmission(guildId, submission, guildOrMeta = {}) {
 
   if (isNew) {
     emitFormSubmitted(guildId, saved);
+    notify(guildId, {
+      level: 'info',
+      title: 'New form submission',
+      message: `${saved.userTag || saved.userId || 'A member'} submitted ${saved.formId}.`,
+      metadata: { submissionId: saved.submissionId, formId: saved.formId, userId: saved.userId },
+    });
   } else {
     emitFormSubmissionUpdated(guildId, saved);
   }
@@ -348,6 +368,7 @@ function saveSubmission(guildId, submission, guildOrMeta = {}) {
 
 function updateSubmission(guildId, submissionId, updates = {}, guildOrMeta = {}) {
   const safeId = cleanKey(submissionId, 'submission');
+  const before = getFormsSection(guildId).submissions[safeId] || null;
   const saved = updateFormsSection(guildId, (section) => {
     const existing = section.submissions[safeId];
     if (!existing) return section;
@@ -357,6 +378,14 @@ function updateSubmission(guildId, submissionId, updates = {}, guildOrMeta = {})
 
   if (saved) {
     emitFormSubmissionUpdated(guildId, saved);
+    if (before && before.status !== saved.status) {
+      notify(guildId, {
+        level: ['approved'].includes(saved.status) ? 'success' : ['denied', 'request_info'].includes(saved.status) ? 'warning' : 'info',
+        title: 'Form submission updated',
+        message: `Submission ${saved.submissionId} changed from ${before.status} to ${saved.status}.`,
+        metadata: { submissionId: saved.submissionId, formId: saved.formId, status: saved.status },
+      });
+    }
   }
 
   return saved;
@@ -396,6 +425,14 @@ function recordSubmissionDecision(guildId, submissionId, decision = {}, guildOrM
   };
   const submission = updateSubmission(guildId, submissionId, updates, guildOrMeta);
   addSubmissionTimeline(guildId, submissionId, { type: `decision_${status}`, label: `Decision: ${status}`, actorId: reviewedBy, metadata: updates.decision }, guildOrMeta);
+  if (submission) {
+    notify(guildId, {
+      level: status === 'approved' ? 'success' : status === 'denied' ? 'warning' : 'info',
+      title: 'Form decision recorded',
+      message: `Submission ${submission.submissionId} was marked ${status}.`,
+      metadata: { submissionId: submission.submissionId, formId: submission.formId, status, reviewedBy },
+    });
+  }
   if (status === 'approved') incrementAnalytics(guildId, { approved: 1 }, guildOrMeta);
   if (status === 'denied') incrementAnalytics(guildId, { denied: 1 }, guildOrMeta);
   if (status === 'request_info') incrementAnalytics(guildId, { requestInfo: 1 }, guildOrMeta);
