@@ -1,0 +1,85 @@
+'use strict';
+
+const notifications = require('./notificationStore');
+
+function ownerGuildId(fallbackGuildId = null) {
+  return process.env.OWNER_NOTIFICATION_GUILD_ID || process.env.PRIMARY_GUILD_ID || process.env.GUILD_ID || fallbackGuildId || null;
+}
+
+function notify(guildId, payload = {}, options = {}) {
+  const targetGuildId = ownerGuildId(guildId);
+  if (!targetGuildId) return null;
+
+  try {
+    return notifications.addNotificationOnce(targetGuildId, {
+      source: 'backup',
+      route: '/owner/backups',
+      ...payload,
+    }, options);
+  } catch (error) {
+    console.warn('[BackupNotifications] skipped:', error.message || error);
+    return null;
+  }
+}
+
+function backupCompleted(backup = {}) {
+  const backupId = backup.backupId || backup.id || 'unknown';
+  const backupType = backup.backupType || backup.type || 'runtime';
+  const guildId = backup.guildId || backup.guild?.id || null;
+  const guildName = backup.guildName || backup.guild?.name || 'Unknown Guild';
+  const environment = backup.environment || backup.metadata?.environment || process.env.BOT_MODE || 'DEV';
+  const roles = backup.roles?.length ?? backup.roles ?? backup.counts?.roles ?? 0;
+  const channels = backup.channels?.length ?? backup.channels ?? backup.counts?.channels ?? 0;
+  const level = backupType === 'rollback' ? 'warning' : 'success';
+  const title = backupType === 'rollback' ? 'Rollback snapshot created' : 'Backup completed';
+
+  return notify(guildId, {
+    level,
+    title,
+    message: `${guildName} ${backupType} backup ${backupId} completed with ${roles} roles and ${channels} channels.`,
+    metadata: { backupId, backupType, guildId, guildName, environment, roles, channels, fingerprint: `backup:completed:${environment}:${backupId}` },
+  }, { fingerprint: `backup:completed:${environment}:${backupId}`, windowMs: 24 * 60 * 60_000 });
+}
+
+function backupFailed(details = {}) {
+  const guildId = details.guildId || details.guild?.id || null;
+  const environment = details.environment || process.env.BOT_MODE || 'DEV';
+  const backupType = details.backupType || details.type || 'runtime';
+  const message = details.error || details.message || 'Backup failed.';
+
+  return notify(guildId, {
+    level: 'danger',
+    title: 'Backup failed',
+    message,
+    metadata: { guildId, environment, backupType, error: message, fingerprint: `backup:failed:${environment}:${guildId || 'owner'}:${message}` },
+  }, { fingerprint: `backup:failed:${environment}:${guildId || 'owner'}:${message}`, windowMs: 15 * 60_000 });
+}
+
+function backupIntegrityWarning(backup = {}, warning = 'Backup integrity needs attention.') {
+  const backupId = backup.backupId || backup.id || 'unknown';
+  const guildId = backup.guildId || backup.guild?.id || null;
+  const environment = backup.environment || backup.metadata?.environment || process.env.BOT_MODE || 'DEV';
+
+  return notify(guildId, {
+    level: 'warning',
+    title: 'Backup integrity warning',
+    message: warning,
+    metadata: { backupId, guildId, environment, warning, fingerprint: `backup:integrity:${environment}:${backupId}` },
+  }, { fingerprint: `backup:integrity:${environment}:${backupId}`, windowMs: 24 * 60 * 60_000 });
+}
+
+function restoreQueueFailed(environment = process.env.BOT_MODE || 'DEV', count = 1, message = 'Restore queue has failed request(s).') {
+  return notify(null, {
+    level: 'danger',
+    title: 'Restore queue failure',
+    message: `${count} failed restore request(s): ${message}`,
+    metadata: { environment, count, fingerprint: `backup:restore-failed:${environment}:${count}` },
+  }, { fingerprint: `backup:restore-failed:${environment}:${count}`, windowMs: 15 * 60_000 });
+}
+
+module.exports = {
+  backupCompleted,
+  backupFailed,
+  backupIntegrityWarning,
+  restoreQueueFailed,
+};
