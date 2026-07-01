@@ -85,6 +85,7 @@ const socialRoutes = safeRequire('social routes', './src/server/routes/social', 
 const modulesRoutes = safeRequire('modules routes', './src/server/routes/modules', emptyRouter(), { optional: false });
 const automationRoutes = safeRequire('automation routes', './src/server/routes/automation', emptyRouter(), { optional: false });
 const notificationRoutes = safeRequire('notification routes', './src/server/routes/notifications', emptyRouter(), { optional: false });
+const activityRoutes = safeRequire('activity routes', './src/server/routes/activity', emptyRouter(), { optional: false });
 const pollsRoutes = safeRequire('polls routes', './src/server/routes/polls', emptyRouter(), { optional: false });
 const statsRoutes = safeRequire('stats routes', './src/server/routes/stats', emptyRouter(), { optional: false });
 const tempVoiceRoutes = safeRequire('temp voice routes', './src/server/routes/tempVoice', emptyRouter(), { optional: false });
@@ -173,6 +174,7 @@ app.use('/api/social', socialRoutes);
 app.use('/api/modules', modulesRoutes);
 app.use('/api/automation', automationRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/activity', activityRoutes);
 app.use('/api/polls', pollsRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/temp-voice', tempVoiceRoutes);
