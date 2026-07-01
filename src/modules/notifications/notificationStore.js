@@ -45,6 +45,19 @@ function addNotification(guildId, input = {}) {
   return notification;
 }
 
+function addNotificationOnce(guildId, input = {}, options = {}) {
+  const fingerprint = text(options.fingerprint || input.metadata?.fingerprint || `${input.source || 'system'}:${input.title || 'Notification'}`, 200);
+  const windowMs = Math.max(60_000, Number(options.windowMs || 10 * 60_000));
+  const cutoff = Date.now() - windowMs;
+  const existing = listNotifications(guildId, { limit: 300 }).find((item) => {
+    const itemFingerprint = item.metadata?.fingerprint || `${item.source}:${item.title}`;
+    const createdAt = Date.parse(item.createdAt || 0) || 0;
+    return itemFingerprint === fingerprint && createdAt >= cutoff;
+  });
+  if (existing) return existing;
+  return addNotification(guildId, { ...input, metadata: { ...(input.metadata || {}), fingerprint } });
+}
+
 function markRead(guildId, notificationId, read = true) {
   let updated = null;
   updateGuildSection(guildId, 'notifications', (current = base()) => {
@@ -83,4 +96,4 @@ function summary(guildId) {
   };
 }
 
-module.exports = { listNotifications, addNotification, markRead, markAllRead, clearNotifications, summary };
+module.exports = { listNotifications, addNotification, addNotificationOnce, markRead, markAllRead, clearNotifications, summary };
