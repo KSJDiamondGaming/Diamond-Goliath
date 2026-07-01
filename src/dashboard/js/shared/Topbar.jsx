@@ -15,8 +15,7 @@ function useIsMobile(breakpoint = 768) {
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
     function handleResize() { setIsMobile(window.innerWidth < breakpoint); }
-    handleResize();
-    window.addEventListener('resize', handleResize);
+    handleResize(); window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, [breakpoint]);
   return isMobile;
@@ -60,14 +59,9 @@ function Topbar({
   const isOwner = currentUser?.isOwner === true;
   const isOwnerView = currentUser?.isOwner === true && typeof window !== 'undefined' && window.location.pathname.toLowerCase().includes('owner');
 
-  const closeMenu = useCallback(() => {
-    setMenuOpen(false); setHoveredMenuItem(''); setIsUserButtonHovered(false);
-  }, []);
+  const closeMenu = useCallback(() => { setMenuOpen(false); setHoveredMenuItem(''); setIsUserButtonHovered(false); }, []);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
-  const toggleMenu = useCallback(() => {
-    if (authLoading || !isAuthenticated) return;
-    setDrawerOpen(false); setMenuOpen((prev) => !prev);
-  }, [authLoading, isAuthenticated]);
+  const toggleMenu = useCallback(() => { if (authLoading || !isAuthenticated) return; setDrawerOpen(false); setMenuOpen((prev) => !prev); }, [authLoading, isAuthenticated]);
 
   const loadDrawer = useCallback(async () => {
     if (!guildId) return;
@@ -82,12 +76,20 @@ function Topbar({
     }
   }, [guildId]);
 
-  const toggleDrawer = useCallback(() => {
-    if (authLoading || !isAuthenticated) return;
-    setMenuOpen(false);
-    setDrawerOpen((open) => !open);
-  }, [authLoading, isAuthenticated]);
+  const markAllRead = useCallback(async () => {
+    if (!guildId) return;
+    setDrawerLoading(true); setDrawerError('');
+    try {
+      const payload = await api.request(`/api/notifications/${guildId}/mark-all-read`, { method: 'POST' });
+      setNotifications((payload.notifications || []).slice(0, 6));
+    } catch (error) {
+      setDrawerError(error.message || 'Could not mark notifications read.');
+    } finally {
+      setDrawerLoading(false);
+    }
+  }, [guildId]);
 
+  const toggleDrawer = useCallback(() => { if (authLoading || !isAuthenticated) return; setMenuOpen(false); setDrawerOpen((open) => !open); }, [authLoading, isAuthenticated]);
   useEffect(() => { if (drawerOpen) loadDrawer(); }, [drawerOpen, loadDrawer]);
 
   useEffect(() => {
@@ -98,22 +100,13 @@ function Topbar({
       closeMenu(); closeDrawer();
     }
     function handleEscape(event) { if (event.key === 'Escape') { closeMenu(); closeDrawer(); } }
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('touchstart', handleClickOutside);
-    document.addEventListener('keydown', handleEscape);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('touchstart', handleClickOutside);
-      document.removeEventListener('keydown', handleEscape);
-    };
+    document.addEventListener('mousedown', handleClickOutside); document.addEventListener('touchstart', handleClickOutside); document.addEventListener('keydown', handleEscape);
+    return () => { document.removeEventListener('mousedown', handleClickOutside); document.removeEventListener('touchstart', handleClickOutside); document.removeEventListener('keydown', handleEscape); };
   }, [menuOpen, drawerOpen, closeMenu, closeDrawer]);
 
   const handleThemeToggle = useCallback(() => setDarkMode((prev) => !prev), [setDarkMode]);
   const onLogoutClick = useCallback(() => { closeMenu(); handleLogout(); }, [closeMenu, handleLogout]);
-  const goToPath = useCallback((path, { preserveOwnerQuery = false } = {}) => {
-    closeMenu(); closeDrawer();
-    if (typeof window !== 'undefined') window.location.href = path + (preserveOwnerQuery ? getOwnerManagedSearch() : '');
-  }, [closeMenu, closeDrawer]);
+  const goToPath = useCallback((path, { preserveOwnerQuery = false } = {}) => { closeMenu(); closeDrawer(); if (typeof window !== 'undefined') window.location.href = path + (preserveOwnerQuery ? getOwnerManagedSearch() : ''); }, [closeMenu, closeDrawer]);
 
   const rootStyle = { ...styles.root, width: '100%', maxWidth: '100%', minWidth: 0, overflow: 'visible' };
   const innerStyle = { ...styles.inner, width: '100%', maxWidth: '100%', minWidth: 0, gap: isMobile ? 10 : styles.inner?.gap, paddingLeft: isMobile ? 64 : styles.inner?.paddingLeft, paddingRight: isMobile ? 12 : styles.inner?.paddingRight };
@@ -124,7 +117,8 @@ function Topbar({
   const userTextStyle = { ...styles.userText, minWidth: 0, overflow: 'hidden' };
   const userNameStyle = { ...styles.userName, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? 132 : 220 };
   const menuStyle = { ...styles.menu, position: 'absolute', right: isMobile ? 8 : styles.menu?.right, left: isMobile ? 'auto' : styles.menu?.left, top: styles.menu?.top, width: isMobile ? 'min(320px, calc(100vw - 24px))' : styles.menu?.width, maxWidth: 'calc(100vw - 24px)', zIndex: 1200 };
-  const drawerStyle = { position: 'absolute', top: 54, right: isMobile ? 0 : 88, width: 'min(380px, calc(100vw - 24px))', maxHeight: 'min(560px, calc(100dvh - 90px))', overflow: 'auto', border: `1px solid ${theme.cardBorder}`, background: 'rgba(15,23,42,0.96)', color: theme.cardText, borderRadius: 18, padding: 14, boxShadow: theme.shadow, zIndex: 1300, backdropFilter: 'blur(18px)' };
+  const drawerStyle = { position: 'absolute', top: 54, right: isMobile ? 0 : 88, width: 'min(390px, calc(100vw - 24px))', maxHeight: 'min(560px, calc(100dvh - 90px))', overflow: 'auto', border: `1px solid ${theme.cardBorder}`, background: 'rgba(15,23,42,0.96)', color: theme.cardText, borderRadius: 18, padding: 14, boxShadow: theme.shadow, zIndex: 1300, backdropFilter: 'blur(18px)' };
+  const smallButton = { border: `1px solid ${theme.cardBorder}`, background: 'rgba(59,130,246,0.12)', color: '#93c5fd', borderRadius: 10, padding: '7px 9px', fontWeight: 900, cursor: 'pointer' };
 
   return (
     <header style={rootStyle}>
@@ -139,9 +133,13 @@ function Topbar({
 
               {drawerOpen ? (
                 <div ref={drawerRef} style={drawerStyle} role="dialog" aria-label="Recent notifications">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', marginBottom: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
                     <strong>Notifications</strong>
-                    <button type="button" onClick={() => goToPath('/notifications', { preserveOwnerQuery: true })} style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(59,130,246,0.12)', color: '#93c5fd', borderRadius: 10, padding: '7px 9px', fontWeight: 900, cursor: 'pointer' }}>View all</button>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <button type="button" onClick={loadDrawer} disabled={drawerLoading} style={{ ...smallButton, opacity: drawerLoading ? 0.65 : 1 }}>Refresh</button>
+                      <button type="button" onClick={markAllRead} disabled={drawerLoading || !notifications.length} style={{ ...smallButton, opacity: drawerLoading || !notifications.length ? 0.65 : 1 }}>Mark read</button>
+                      <button type="button" onClick={() => goToPath('/notifications', { preserveOwnerQuery: true })} style={smallButton}>View all</button>
+                    </div>
                   </div>
                   {drawerLoading ? <p style={{ color: theme.mutedText, margin: 0 }}>Loading...</p> : drawerError ? <p style={{ color: '#fca5a5', margin: 0 }}>{drawerError}</p> : notifications.length ? (
                     <div style={{ display: 'grid', gap: 8 }}>
