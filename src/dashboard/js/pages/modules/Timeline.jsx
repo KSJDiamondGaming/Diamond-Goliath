@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
+import EmptyState from '../../shared/EmptyState.jsx';
 import { api } from '../../services/apiClient.js';
 
 const fallback = { cardBorder: 'rgba(148,163,184,0.22)', cardBg: 'rgba(15,23,42,0.42)', cardText: '#e5e7eb', mutedText: '#94a3b8', shadow: '0 18px 50px rgba(0,0,0,0.25)' };
@@ -133,7 +134,7 @@ export default function Timeline({ theme, selectedGuild, selectedGuildData }) {
               <button type="button" onClick={() => setModuleFilter(entry.module)} style={button(x)}>{iconFor(entry.module)} Filter module</button>
             </div>
           </article>
-        )) : <span style={{ color: x.mutedText }}>No activity entries yet.</span>}
+        )) : <EmptyState theme={x} icon="🕘" title="No activity recorded yet" description="Tickets, forms, automation, security, runtime, deployment and backup events will be written here as they happen." />}
       </section>
     </div>
   );
