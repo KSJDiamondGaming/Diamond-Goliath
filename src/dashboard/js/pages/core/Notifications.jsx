@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 
+import EmptyState from '../../shared/EmptyState.jsx';
 import { api } from '../../services/apiClient.js';
 import { buildNotificationRoute } from '../../utils/notificationLinks.js';
 
@@ -101,7 +102,7 @@ export default function Notifications({ theme, selectedGuild, selectedGuildData 
               <button type="button" onClick={() => markRead(item, !item.read)} disabled={busy} style={button(t, busy)}>{item.read ? 'Mark unread' : 'Mark read'}</button>
             </div>
           </article>
-        )) : <span style={{ color: t.mutedText }}>No notifications yet.</span>}
+        )) : <EmptyState theme={t} icon="🔔" title="You're all caught up" description="Alerts from Tickets, Forms, Automation, Security, Runtime, Deployments and Backups will appear here." />}
       </section>
     </div>
   );
