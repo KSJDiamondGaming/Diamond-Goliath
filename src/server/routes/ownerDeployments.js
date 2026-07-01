@@ -4,6 +4,7 @@ const express = require('express');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const notifications = require('../../modules/notifications/notificationStore');
 
 const router = express.Router();
 
@@ -122,6 +123,39 @@ function getDiscordClient(req) {
   return req.client || req.app?.get?.('goliath.client') || req.app?.locals?.client || global.client || null;
 }
 
+function notifyDeployment(deployment = {}) {
+  try {
+    const environment = String(deployment.environment || getRuntimeMode()).toUpperCase();
+    const sourceGuildId = process.env.OWNER_NOTIFICATION_GUILD_ID || process.env.PRIMARY_GUILD_ID || process.env.GUILD_ID || null;
+    if (!sourceGuildId) return null;
+
+    if (deployment.status === 'offline' || deployment.health === 'offline') {
+      return notifications.addNotificationOnce(sourceGuildId, {
+        level: 'danger',
+        source: 'deployment',
+        title: `${environment} deployment offline`,
+        message: deployment.warnings?.[0] || deployment.error || `${environment} is unavailable.`,
+        route: '/owner/deployments',
+        metadata: { environment, status: deployment.status, health: deployment.health, port: deployment.port, commitSha: deployment.commitSha || null },
+      }, { fingerprint: `deployment:offline:${environment}`, windowMs: 10 * 60_000 });
+    }
+
+    if (deployment.health === 'attention' || deployment.warnings?.length) {
+      return notifications.addNotificationOnce(sourceGuildId, {
+        level: 'warning',
+        source: 'deployment',
+        title: `${environment} deployment needs attention`,
+        message: deployment.warnings?.[0] || 'Deployment health reported attention.',
+        route: '/owner/deployments',
+        metadata: { environment, status: deployment.status, health: deployment.health, branch: deployment.branch, commitSha: deployment.commitSha || null, warnings: deployment.warnings || [] },
+      }, { fingerprint: `deployment:attention:${environment}:${deployment.warnings?.[0] || 'warning'}`, windowMs: 15 * 60_000 });
+    }
+  } catch (error) {
+    console.warn('[OwnerDeployments] notification skipped:', error.message || error);
+  }
+  return null;
+}
+
 function buildLocalDeployment(req, environment = getRuntimeMode()) {
   const config = getEnvironmentConfig(environment);
   const client = getDiscordClient(req);
@@ -221,6 +255,7 @@ async function fetchInternalDeployment(port, environment) {
 router.get('/local', requireOwnerOrInternal, (req, res) => {
   try {
     const deployment = buildLocalDeployment(req, getRuntimeMode());
+    notifyDeployment(deployment);
     return res.json({ success: true, owner: true, deployment, deployments: [deployment], summary: summarise([deployment]), updatedAt: new Date().toISOString() });
   } catch (error) {
     console.error('[OWNER DEPLOYMENTS LOCAL]', error);
@@ -233,6 +268,7 @@ router.get('/', requireOwner, async (req, res) => {
     const requestedEnvironment = String(req.query.environment || 'all').toUpperCase();
     let deployments = await Promise.all(ENVIRONMENT_PORTS.map((item) => fetchInternalDeployment(item.port, item.environment)));
     if (requestedEnvironment !== 'ALL') deployments = deployments.filter((item) => String(item.environment || '').toUpperCase() === requestedEnvironment);
+    deployments.forEach(notifyDeployment);
     return res.json({ success: true, owner: true, mode: 'GLOBAL', deployments, summary: summarise(deployments), updatedAt: new Date().toISOString() });
   } catch (error) {
     console.error('[OWNER DEPLOYMENTS]', error);
