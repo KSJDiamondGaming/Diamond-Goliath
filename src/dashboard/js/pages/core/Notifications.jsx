@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 
 import { api } from '../../services/apiClient.js';
+import { buildNotificationRoute } from '../../utils/notificationLinks.js';
 
 const fallback = { cardBorder: 'rgba(148,163,184,0.22)', cardBg: 'rgba(15,23,42,0.42)', cardText: '#e5e7eb', mutedText: '#94a3b8', shadow: '0 18px 50px rgba(0,0,0,0.25)' };
 function themeOf(theme) { return { ...fallback, ...(theme || {}) }; }
@@ -59,6 +60,10 @@ export default function Notifications({ theme, selectedGuild, selectedGuildData 
     finally { setBusy(false); }
   }
 
+  function openNotification(item) {
+    window.location.assign(buildNotificationRoute(item));
+  }
+
   if (!guildId) return <section style={card(t)}><h2>Select a server</h2><p style={{ color: t.mutedText }}>Select a server to view notifications.</p></section>;
 
   return (
@@ -91,7 +96,10 @@ export default function Notifications({ theme, selectedGuild, selectedGuildData 
             <strong style={{ color: tone(item.level) }}>{item.title}</strong>
             <span style={{ color: t.mutedText, fontSize: 12 }}>{item.source} · {item.createdAt}</span>
             <p style={{ margin: 0, color: t.mutedText }}>{item.message || 'No message.'}</p>
-            <button type="button" onClick={() => markRead(item, !item.read)} disabled={busy} style={button(t, busy)}>{item.read ? 'Mark unread' : 'Mark read'}</button>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button type="button" onClick={() => openNotification(item)} style={button(t)}>Open</button>
+              <button type="button" onClick={() => markRead(item, !item.read)} disabled={busy} style={button(t, busy)}>{item.read ? 'Mark unread' : 'Mark read'}</button>
+            </div>
           </article>
         )) : <span style={{ color: t.mutedText }}>No notifications yet.</span>}
       </section>
