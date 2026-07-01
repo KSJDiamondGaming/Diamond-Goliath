@@ -144,6 +144,7 @@ export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
   const [darkMode, setDarkMode] = useState(true);
+  const [notificationSummary, setNotificationSummary] = useState(null);
   const isMobile = useIsMobile(1024);
   const theme = useMemo(() => getTheme(darkMode), [darkMode]);
   const { navbarExpanded, toggleNavbar } = useNavbar();
@@ -179,6 +180,33 @@ export default function App() {
     const exists = guildState.guilds.some((guild) => String(guild.id) === String(activeOwnerManagedGuild.guildId));
     return exists ? guildState.guilds : [activeOwnerManagedGuild, ...guildState.guilds];
   }, [guildState.guilds, ownerManageActive, activeOwnerManagedGuild]);
+
+  useEffect(() => {
+    if (!authState.isAuthenticated || !effectiveSelectedGuild) {
+      setNotificationSummary(null);
+      return undefined;
+    }
+
+    let cancelled = false;
+    let intervalId = null;
+
+    async function loadNotificationsSummary() {
+      try {
+        const guildId = String(effectiveSelectedGuild).split(':').pop();
+        const payload = await api.request(`/api/notifications/${guildId}?limit=10`);
+        if (!cancelled) setNotificationSummary(payload.summary || null);
+      } catch {
+        if (!cancelled) setNotificationSummary(null);
+      }
+    }
+
+    loadNotificationsSummary();
+    intervalId = window.setInterval(loadNotificationsSummary, 30000);
+    return () => {
+      cancelled = true;
+      if (intervalId) window.clearInterval(intervalId);
+    };
+  }, [authState.isAuthenticated, effectiveSelectedGuild, location.pathname]);
 
   useEffect(() => {
     if (!isOwnerRoute || !isOwner || !authState.isAuthenticated) return undefined;
@@ -276,7 +304,7 @@ export default function App() {
     };
   }, [styles, isMobile]);
 
-  const activeRoute = useMemo(() => getRouteForPath(location.pathname), [location.pathname]);
+  const activeRoute = getRouteForPath(location.pathname);
   const ActivePage = activeRoute?.component || null;
   const routeNeedsGuild = Boolean(activeRoute?.key && GUILD_REQUIRED_ROUTES.has(activeRoute.key));
 
@@ -360,7 +388,7 @@ export default function App() {
             <Navbar theme={theme} selectedGuild={navbarSelectedGuild} setSelectedGuild={setNavbarSelectedGuild} guilds={navbarGuilds} guildError={navbarGuildError} isAuthenticated={authState.isAuthenticated} authLoading={authState.authLoading} guildsLoading={navbarGuildsLoading} navItems={navItems} botName={botState.botName} botAvatar={botState.botAvatar} botData={botState.botData} expanded={navbarExpanded} onToggleCollapsed={toggleNavbar} />
           )}
           <div style={responsiveStyles.mainColumn}>
-            <Topbar theme={theme} authLoading={authState.authLoading} isAuthenticated={authState.isAuthenticated} handleLogin={authState.handleLogin} handleLogout={handleLogout} topbarUserName={authState.currentUserName} currentUser={authState.currentUser} currentUserAvatar={authState.currentUserAvatar} darkMode={darkMode} setDarkMode={setDarkMode} loginPending={authState.loginPending} />
+            <Topbar theme={theme} authLoading={authState.authLoading} isAuthenticated={authState.isAuthenticated} handleLogin={authState.handleLogin} handleLogout={handleLogout} topbarUserName={authState.currentUserName} currentUser={authState.currentUser} currentUserAvatar={authState.currentUserAvatar} darkMode={darkMode} setDarkMode={setDarkMode} loginPending={authState.loginPending} notificationSummary={notificationSummary} />
             <main style={responsiveStyles.main}>
               {ownerManageActive ? <OwnerManagedBanner theme={theme} guild={activeOwnerManagedGuild} onReturn={returnToOwnerView} /> : null}
               {authState.authLoading ? (
