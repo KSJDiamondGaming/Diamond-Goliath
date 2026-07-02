@@ -16,10 +16,13 @@ export default function EmptyState({
   theme,
   icon = '🧩',
   title = 'Nothing here yet',
-  description = 'Items will appear here when there is activity.',
+  description,
+  text,
   action = null,
 }) {
   const t = themeOf(theme);
+  const body = description || text || 'Items will appear here when there is activity.';
+
   return (
     <div style={{
       border: `1px dashed ${t.cardBorder}`,
@@ -48,7 +51,7 @@ export default function EmptyState({
         {icon}
       </div>
       <strong style={{ fontSize: 18 }}>{title}</strong>
-      <p style={{ margin: 0, color: t.mutedText, lineHeight: 1.55, maxWidth: 520 }}>{description}</p>
+      <p style={{ margin: 0, color: t.mutedText, lineHeight: 1.55, maxWidth: 520 }}>{body}</p>
       {action ? <div style={{ marginTop: 4 }}>{action}</div> : null}
     </div>
   );
