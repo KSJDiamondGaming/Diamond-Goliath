@@ -1,5 +1,7 @@
 import React, { useMemo } from 'react';
 
+import EmptyState from '../../../shared/EmptyState.jsx';
+
 function safeArray(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -155,7 +157,7 @@ export default function TicketQueueAnalytics({ theme, tickets = [] }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: 14 }}>
         <div style={cardStyle(theme)}>
           <strong>Workload</strong>
-          {data.workload.length ? data.workload.map((item) => <WorkloadRow key={item.assignee} theme={theme} item={item} />) : <span style={{ color: theme.mutedText }}>No active tickets.</span>}
+          {data.workload.length ? data.workload.map((item) => <WorkloadRow key={item.assignee} theme={theme} item={item} />) : <EmptyState theme={theme} icon="🎫" title="No active tickets" description="Open tickets will appear here with workload, ownership and queue-age details." />}
         </div>
 
         <div style={cardStyle(theme)}>
@@ -179,7 +181,7 @@ export default function TicketQueueAnalytics({ theme, tickets = [] }) {
             </div>
             <span style={{ color: toneForAge(ageMs(ticket)), fontWeight: 950 }}>{formatDuration(ageMs(ticket))}</span>
           </div>
-        )) : <span style={{ color: theme.mutedText }}>No ticket risks detected.</span>}
+        )) : <EmptyState theme={theme} icon="✅" title="No ticket risks detected" description="Unassigned, old or recovery-needed tickets will appear here when attention is required." />}
       </div>
     </section>
   );
