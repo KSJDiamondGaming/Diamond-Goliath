@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
+import EmptyState from '../../shared/EmptyState.jsx';
 import { api } from '../../services/apiClient.js';
 import { RoleSelect } from '../../ui/DiscordResourceSelects.jsx';
 
@@ -29,12 +30,17 @@ function StatCard({ theme, label, value, hint }) {
   );
 }
 
-function RoleList({ theme, title, roles, selectedRoles, onRemove, removingRole }) {
+function RoleList({ theme, title, roles, selectedRoles, onRemove, removingRole, type = 'join' }) {
   return (
     <section style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(15,23,42,0.28)', borderRadius: 18, padding: 16, display: 'grid', gap: 12 }}>
       <h3 style={{ margin: 0 }}>{title}</h3>
       {selectedRoles.length === 0 ? (
-        <div style={{ color: theme.mutedText, fontSize: 13 }}>No roles configured yet.</div>
+        <EmptyState
+          theme={theme}
+          icon={type === 'bot' ? '🤖' : '👥'}
+          title={type === 'bot' ? 'No bot roles configured' : 'No join roles configured'}
+          description={type === 'bot' ? 'Add roles here when bots should receive automatic roles on join.' : 'Add roles here when new members should receive automatic roles on join.'}
+        />
       ) : selectedRoles.map((roleId) => (
         <div key={roleId} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', border: `1px solid ${theme.cardBorder}`, borderRadius: 14, padding: '10px 12px' }}>
           <span style={{ fontWeight: 900 }}>{roleName(roles, roleId)}</span>
@@ -199,7 +205,7 @@ export default function AutoRoles({ theme, selectedGuild, selectedGuildData }) {
   }
 
   if (!guildId) {
-    return <div style={{ ...cardStyle, padding: 24 }}>Select a server from the navbar to manage Auto Roles.</div>;
+    return <EmptyState theme={theme} icon="👥" title="Select a server" description="Select a server from the navbar to manage Auto Roles." />;
   }
 
   return (
@@ -238,7 +244,7 @@ export default function AutoRoles({ theme, selectedGuild, selectedGuildData }) {
           <RoleSelect theme={theme} resources={roles} value={joinRoleId} onChange={setJoinRoleId} label="Add Join Role" disabled={roles.length === 0} />
           <button type="button" onClick={() => addRole('join')} disabled={saving === 'join' || !joinRoleId} style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(22,163,74,0.22)', color: theme.cardText, borderRadius: 14, padding: '12px 14px', fontWeight: 950, cursor: 'pointer' }}>{saving === 'join' ? 'Adding...' : 'Add'}</button>
         </div>
-        <RoleList theme={theme} title="Current Join Roles" roles={roles} selectedRoles={joinRoles} removingRole={removingRole} onRemove={(roleId) => removeRole('join', roleId)} />
+        <RoleList theme={theme} title="Current Join Roles" roles={roles} selectedRoles={joinRoles} removingRole={removingRole} onRemove={(roleId) => removeRole('join', roleId)} type="join" />
       </section>
 
       <section style={{ ...cardStyle, padding: 22, display: 'grid', gap: 16 }}>
@@ -250,7 +256,7 @@ export default function AutoRoles({ theme, selectedGuild, selectedGuildData }) {
           <RoleSelect theme={theme} resources={roles} value={botRoleId} onChange={setBotRoleId} label="Add Bot Role" disabled={roles.length === 0} />
           <button type="button" onClick={() => addRole('bot')} disabled={saving === 'bot' || !botRoleId} style={{ border: `1px solid ${theme.cardBorder}`, background: 'rgba(22,163,74,0.22)', color: theme.cardText, borderRadius: 14, padding: '12px 14px', fontWeight: 950, cursor: 'pointer' }}>{saving === 'bot' ? 'Adding...' : 'Add'}</button>
         </div>
-        <RoleList theme={theme} title="Current Bot Roles" roles={roles} selectedRoles={botRoles} removingRole={removingRole} onRemove={(roleId) => removeRole('bot', roleId)} />
+        <RoleList theme={theme} title="Current Bot Roles" roles={roles} selectedRoles={botRoles} removingRole={removingRole} onRemove={(roleId) => removeRole('bot', roleId)} type="bot" />
       </section>
 
       <section style={{ ...cardStyle, padding: 22 }}>
