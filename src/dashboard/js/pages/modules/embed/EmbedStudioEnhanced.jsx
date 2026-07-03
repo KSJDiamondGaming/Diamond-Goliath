@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 
 import { api } from '../../../services/apiClient.js';
-import LegacyEmbedStudio from '../EmbedStudio.jsx';
 import SharedEmbedTemplatesPanel from './SharedEmbedTemplatesPanel.jsx';
 
 function getGuildId(selectedGuild, selectedGuildData) {
@@ -84,7 +83,6 @@ export default function EmbedStudioEnhanced(props) {
         onSaveTemplate={saveTemplate}
         onBindTemplate={bindTemplate}
       />
-      <LegacyEmbedStudio {...props} />
     </div>
   );
 }
