@@ -9,7 +9,6 @@ const Moderation = lazy(() => import('../pages/moderation/Moderation'));
 const Cases = lazy(() => import('../pages/moderation/Cases'));
 const GeneralSettings = lazy(() => import('../pages/administration/GeneralSettings'));
 const Warnings = lazy(() => import('../pages/moderation/Warnings'));
-const Messages = lazy(() => import('../pages/core/Messages'));
 const Forms = lazy(() => import('../pages/modules/forms/FormsWorkflowEnhanced'));
 const Modules = lazy(() => import('../pages/modules/Modules'));
 const Automation = lazy(() => import('../pages/modules/Automation'));
@@ -133,7 +132,6 @@ export const ROUTES = [
   { key: 'moderation', label: 'Moderation', icon: 'admin', path: '/moderation', component: Moderation },
   { key: 'cases', label: 'Cases', icon: 'warnings', path: '/cases', component: Cases },
   { key: 'warnings', label: 'Warnings', icon: 'warnings', path: '/warnings', component: Warnings },
-  { key: 'messages', label: 'Welcome & Leave Legacy', icon: 'messages', path: '/messages', component: Messages },
   { key: 'security', label: 'Security', icon: 'admin', path: '/security', component: Security },
   { key: 'restore', label: 'Restore', icon: 'admin', path: '/restore', component: Restore },
   { key: 'logs', label: 'Logs', icon: 'logs', path: '/logs', component: Logs },
@@ -182,7 +180,6 @@ export const PAGE_LAYOUTS = {
   moderation: { title: 'Moderation', description: 'Central moderation tools for this server.', emptyDescription: 'Select a server to manage moderation.', sections: [{ id: 'moderationHub', type: 'future' }] },
   cases: { title: 'Cases', description: 'View moderation case history.', emptyDescription: 'Select a server to view cases.', sections: [{ id: 'caseTable', type: 'table' }] },
   warnings: { title: 'Warnings', description: 'View and manage warning records.', emptyDescription: 'Select a server to view warnings.', sections: [{ id: 'warningTable', type: 'table' }] },
-  messages: { title: 'Welcome & Leave Legacy', description: 'Manage join and leave messages.', emptyDescription: 'Select a server to manage messages.', sections: [{ id: 'welcome', type: 'config' }, { id: 'leave', type: 'config' }] },
   security: { title: 'Security Center', description: 'Live protection and recovery overview.', emptyDescription: 'Select a server to view security status.', sections: [{ id: 'securityOverview', type: 'dashboard' }] },
   restore: { title: 'Server Restore', description: 'Preview and restore server backups.', emptyDescription: 'Select a server to restore from backup.', sections: [{ id: 'restoreManager', type: 'config' }] },
   logs: { title: 'Logs', description: 'Manage log channels.', emptyDescription: 'Select a server to manage log channels.', sections: [{ id: 'logManager', type: 'config' }] },
@@ -218,8 +215,6 @@ export const SECTION_DEFS = {
   filters: { title: 'Filters', description: 'Manage filters and logs.' },
   caseTable: { title: 'Cases', description: 'Browse moderation case history.' },
   warningTable: { title: 'Warnings', description: 'Browse warning history.' },
-  welcome: { title: 'Welcome Message', description: 'Configure the welcome message.' },
-  leave: { title: 'Leave Message', description: 'Configure the leave message.' },
   generalConfig: { title: 'General Config', description: 'Core server configuration.' },
   securityOverview: { title: 'Security Overview', description: 'Live protection status.' },
   restoreManager: { title: 'Restore Manager', description: 'Preview and restore backups.' },
