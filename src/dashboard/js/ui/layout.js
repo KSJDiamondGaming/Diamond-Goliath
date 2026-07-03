@@ -24,7 +24,6 @@ const TempVoice = lazy(() => import('../pages/modules/TempVoice'));
 const Timeline = lazy(() => import('../pages/modules/Timeline'));
 const Translation = lazy(() => import('../pages/modules/Translation'));
 const ReactionRoles = lazy(() => import('../pages/modules/ReactionRoles'));
-const WelcomeLeave = lazy(() => import('../pages/modules/WelcomeLeave'));
 const Leveling = lazy(() => import('../pages/modules/Leveling'));
 const Polls = lazy(() => import('../pages/modules/Polls'));
 const Stats = lazy(() => import('../pages/modules/Stats'));
@@ -113,7 +112,6 @@ export const ROUTES = [
   { key: 'verification', label: 'Verification', icon: 'modules', path: '/verification', component: Verification, hidden: true },
   { key: 'autoRoles', label: 'Auto Roles', icon: 'modules', path: '/autoroles', component: AutoRoles, hidden: true },
   { key: 'reactionRoles', label: 'Reaction Roles', icon: 'modules', path: '/reaction-roles', component: ReactionRoles, hidden: true },
-  { key: 'welcome', label: 'Welcome & Leave', icon: 'messages', path: '/welcome-leave', component: WelcomeLeave, hidden: true },
   { key: 'leveling', label: 'Leveling', icon: 'modules', path: '/leveling', component: Leveling, hidden: true },
   { key: 'forms', label: 'Forms', icon: 'modules', path: '/forms', component: Forms, hidden: true },
   { key: 'giveaways', label: 'Giveaways', icon: 'modules', path: '/giveaways', component: Giveaways, hidden: true },
@@ -161,7 +159,6 @@ export const PAGE_LAYOUTS = {
   verification: { title: 'Verification', description: 'Member verification, role settings, panels and analytics.', emptyDescription: 'Select a server to manage verification.', sections: [{ id: 'verificationDashboard', type: 'dashboard' }] },
   autoRoles: { title: 'Auto Roles', description: 'Join roles, bot roles and assignment analytics.', emptyDescription: 'Select a server to manage auto roles.', sections: [{ id: 'autoRolesDashboard', type: 'dashboard' }] },
   reactionRoles: { title: 'Reaction Roles', description: 'Manage role menus, emoji mappings and reaction role panels.', emptyDescription: 'Select a server to manage reaction roles.', sections: [{ id: 'reactionRolesDashboard', type: 'dashboard' }] },
-  welcome: { title: 'Welcome & Leave', description: 'Manage welcome, leave and DM welcome messages.', emptyDescription: 'Select a server to manage Welcome & Leave.', sections: [{ id: 'welcomeLeaveDashboard', type: 'dashboard' }] },
   leveling: { title: 'Leveling', description: 'Manage XP, levels, rewards and leaderboards.', emptyDescription: 'Select a server to manage leveling.', sections: [{ id: 'levelingDashboard', type: 'dashboard' }] },
   forms: { title: 'Forms', description: 'Manage universal forms and workflows.', emptyDescription: 'Select a server to manage forms.', sections: [{ id: 'formsManager', type: 'dashboard' }] },
   giveaways: { title: 'Giveaways', description: 'Create, monitor and review server giveaways.', emptyDescription: 'Select a server to manage giveaways.', sections: [{ id: 'giveawaysDashboard', type: 'dashboard' }] },
@@ -196,7 +193,6 @@ export const SECTION_DEFS = {
   verificationDashboard: { title: 'Verification Dashboard', description: 'Configure verification roles, panels and analytics.' },
   autoRolesDashboard: { title: 'Auto Roles Dashboard', description: 'Configure join roles, bot roles and analytics.' },
   reactionRolesDashboard: { title: 'Reaction Roles Dashboard', description: 'Configure reaction role panels and emoji mappings.' },
-  welcomeLeaveDashboard: { title: 'Welcome & Leave Dashboard', description: 'Configure welcome, leave and DM welcome messages.' },
   levelingDashboard: { title: 'Leveling Dashboard', description: 'Configure XP, levels, rewards and leaderboards.' },
   formsManager: { title: 'Forms Manager', description: 'Create and manage forms.' },
   giveawaysDashboard: { title: 'Giveaways Dashboard', description: 'Create and review server giveaways.' },
