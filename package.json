@@ -25,6 +25,7 @@
     "dashboard:dev": "vite src/dashboard --host 0.0.0.0 --port 5173 --mode development",
     "dashboard:beta": "vite src/dashboard --host 0.0.0.0 --port 5183 --mode development",
     "dashboard:production": "vite src/dashboard --host 0.0.0.0 --port 5193 --mode production",
+    "dashboard:audit-files": "node scripts/dashboard-file-audit.js",
     "check": "node scripts/scripts.js check",
     "dashboard:build": "npm run check && vite build src/dashboard --outDir ../../dist --emptyOutDir",
     "build": "npm run dashboard:build",
