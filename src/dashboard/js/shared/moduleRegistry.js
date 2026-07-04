@@ -175,16 +175,6 @@ export const moduleRegistry = [
     enabled: false,
     summary: 'Member verification and onboarding protection.',
   },
-  {
-    key: 'welcome',
-    name: 'Welcome & Leave',
-    icon: 'WL',
-    route: '/welcome-leave',
-    category: MODULE_CATEGORIES.feature,
-    status: MODULE_STATUSES.backendReady,
-    enabled: false,
-    summary: 'Welcome messages, leave messages, DM welcomes and join/leave analytics.',
-  },
 ].sort((a, b) => a.name.localeCompare(b.name));
 
 export const futureModules = [];
