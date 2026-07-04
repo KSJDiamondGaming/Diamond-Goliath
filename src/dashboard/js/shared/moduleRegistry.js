@@ -24,6 +24,16 @@ export const moduleRegistry = [
     summary: 'Assign roles automatically when members join or meet conditions.',
   },
   {
+    key: 'automation',
+    name: 'Automation',
+    icon: 'AU',
+    route: '/automation',
+    category: MODULE_CATEGORIES.feature,
+    status: MODULE_STATUSES.backendReady,
+    enabled: false,
+    summary: 'Rules, triggers and execution history for server workflows.',
+  },
+  {
     key: 'embedBuilder',
     name: 'Embed Studio',
     icon: 'ES',
