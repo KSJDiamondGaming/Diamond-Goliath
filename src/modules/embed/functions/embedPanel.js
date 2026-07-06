@@ -78,14 +78,22 @@ function replaceVars(text, i) {
   return out;
 }
 
-function splitMediaLine(description) {
+function isIconUrl(url) { return /\/icons\/|\/avatars\//i.test(String(url || '')); }
+function extractMediaLines(description) {
   const lines = String(description || '').split('\n');
-  const index = lines.findIndex((line) => line.trim());
-  if (index < 0) return { description, mediaUrl: null };
-  const first = lines[index].trim();
-  if (!safeUrl(first)) return { description, mediaUrl: null };
-  lines.splice(index, 1);
-  return { description: lines.join('\n').trimStart(), mediaUrl: first };
+  const kept = [];
+  let thumbnailUrl = null;
+  let imageUrl = null;
+  for (const line of lines) {
+    const text = line.trim();
+    const url = safeUrl(text);
+    if (url) {
+      if (isIconUrl(url) && !thumbnailUrl) { thumbnailUrl = url; continue; }
+      if (!isIconUrl(url) && !imageUrl) { imageUrl = url; continue; }
+    }
+    kept.push(line);
+  }
+  return { description: kept.join('\n').trim(), thumbnailUrl, imageUrl };
 }
 
 function basePanel(data = {}) { return { title: data.title || '', description: data.description || '', color: data.color || PANEL_COLOR, authorName: data.authorName || '', authorIcon: data.authorIcon || '', authorUrl: data.authorUrl || '', footer: data.footer || '', footerIcon: data.footerIcon || '', image: data.image || '', thumbnail: data.thumbnail || '', fields: Array.isArray(data.fields) ? clone(data.fields).slice(0, 25) : [] }; }
@@ -105,16 +113,24 @@ function setDefault(guildId, template, preset) { if (typeof guildManager.setEmbe
 
 function buildEmbedFromPanel(p, i, showTimestamp) {
   const e = new EmbedBuilder().setColor(p.color || PANEL_COLOR);
-  const authorName = trim(replaceVars(p.authorName, i), 256), authorIcon = safeUrl(replaceVars(p.authorIcon, i)), authorUrl = safeUrl(replaceVars(p.authorUrl, i));
-  if (authorName || authorIcon) e.setAuthor({ name: authorName || 'Live Embed Preview', ...(authorIcon ? { iconURL: authorIcon } : {}), ...(authorUrl ? { url: authorUrl } : {}) });
+  let authorName = trim(replaceVars(p.authorName, i), 256);
+  let authorIcon = safeUrl(replaceVars(p.authorIcon, i));
+  const authorUrl = safeUrl(replaceVars(p.authorUrl, i));
+  const authorNameUrl = safeUrl(authorName);
+  if (authorNameUrl && !authorIcon) { authorIcon = authorNameUrl; authorName = replaceVars('{guildName}', i); }
+  if (authorName || authorIcon) e.setAuthor({ name: authorName || replaceVars('{guildName}', i) || 'Embed', ...(authorIcon ? { iconURL: authorIcon } : {}), ...(authorUrl ? { url: authorUrl } : {}) });
   if (p.title) e.setTitle(trim(replaceVars(p.title, i), 256));
-  const media = splitMediaLine(replaceVars(p.description, i));
+  const media = extractMediaLines(replaceVars(p.description, i));
   if (media.description) e.setDescription(trim(media.description, 4096));
-  const footer = trim(replaceVars(p.footer, i), 2048), footerIcon = safeUrl(replaceVars(p.footerIcon, i));
+  let footer = trim(replaceVars(p.footer, i), 2048);
+  let footerIcon = safeUrl(replaceVars(p.footerIcon, i));
+  const footerUrl = safeUrl(footer);
+  if (footerUrl && !footerIcon) { footerIcon = footerUrl; footer = ''; }
   if (footer) e.setFooter({ text: footer, ...(footerIcon ? { iconURL: footerIcon } : {}) });
+  else if (footerIcon) e.setFooter({ text: replaceVars('{guildName}', i) || 'Embed', iconURL: footerIcon });
   const image = safeUrl(replaceVars(p.image, i)), thumb = safeUrl(replaceVars(p.thumbnail, i));
-  if (image) e.setImage(image); else if (media.mediaUrl && !/\/icons\//i.test(media.mediaUrl)) e.setImage(media.mediaUrl);
-  if (thumb) e.setThumbnail(thumb); else if (media.mediaUrl && /\/icons\//i.test(media.mediaUrl)) e.setThumbnail(media.mediaUrl);
+  if (image) e.setImage(image); else if (media.imageUrl) e.setImage(media.imageUrl);
+  if (thumb) e.setThumbnail(thumb); else if (media.thumbnailUrl) e.setThumbnail(media.thumbnailUrl);
   const fields = (p.fields || []).filter(f => f?.name && f?.value).slice(0, 25).map(f => ({ name: trim(replaceVars(f.name, i), 256), value: trim(replaceVars(f.value, i), 1024), inline: Boolean(f.inline) }));
   if (fields.length) e.addFields(fields);
   if (showTimestamp !== false) e.setTimestamp();
@@ -125,7 +141,7 @@ function buildPreviewEmbed(state, i) { return buildPreviewEmbeds(state, i)[0]; }
 function buttonRows(state) { const rows = [], buttons = (state.buttons || []).slice(0, MAX_BUTTONS); for (let i = 0; i < buttons.length; i += 5) { const row = new ActionRowBuilder(); buttons.slice(i, i + 5).forEach((b, offset) => { const style = ({ secondary: ButtonStyle.Secondary, success: ButtonStyle.Success, danger: ButtonStyle.Danger, link: ButtonStyle.Link })[String(b.style || 'Primary').toLowerCase()] || ButtonStyle.Primary; const builder = new ButtonBuilder().setLabel(trim(b.label || 'Button', 80)).setStyle(style); if (b.emoji) builder.setEmoji(b.emoji); const url = safeUrl(b.url); if (url) builder.setStyle(ButtonStyle.Link).setURL(url); else builder.setCustomId(b.id || `embed-action:${b.action || 'custom'}:${i + offset}`); row.addComponents(builder); }); rows.push(row); } return rows; }
 
 function buildEmbedPanel(interactionOrGuild, memberDisplayName = 'Unknown User') { const fake = interactionOrGuild?.guild ? interactionOrGuild : { guild: interactionOrGuild, guildId: interactionOrGuild?.id, user: { id: 'system' } }; return buildEditorPanel(fake, memberDisplayName); }
-function mainEmbed(s, who) { return new EmbedBuilder().setColor(s.color || PANEL_COLOR).setTitle('✏️ Embed Studio').setDescription(['**Build embeds with separate coloured panels in one Discord message.**', '', `> **Template:** ${(TEMPLATES[s.template] || TEMPLATES.custom).emoji} ${(TEMPLATES[s.template] || TEMPLATES.custom).label}`, `> **Preset:** ${s.selectedPreset ? `💾 ${s.selectedPreset}` : 'None loaded'}`, `> **Channel:** ${s.channelId ? `<#${s.channelId}>` : 'Not selected'}`, `> **Selected Panel:** ${s.selectedPanelIndex + 1}/${s.panels.length}`, `> **Panel Colour:** \`${s.color || PANEL_COLOR}\``, `> **Fields:** ${(s.fields || []).length}/25`, `> **Buttons:** ${(s.buttons || []).length}/20`, `> **Mentions:** ${s.allowUserPing ? '🔔 User ping enabled' : '🔕 Safe / no ping'}`, `> **Unsaved Changes:** ${s.hasUnsavedChanges ? '⚠️ Yes' : '✅ No'}`, '', 'Tip: put `{guildIcon}` or `{userAvatar}` on its own line for a thumbnail, or `{guildBanner}` for a banner.'].join('\n')).setFooter({ text: `Requested by ${who}` }).setTimestamp(); }
+function mainEmbed(s, who) { return new EmbedBuilder().setColor(s.color || PANEL_COLOR).setTitle('✏️ Embed Studio').setDescription(['**Build embeds with separate coloured panels in one Discord message.**', '', `> **Template:** ${(TEMPLATES[s.template] || TEMPLATES.custom).emoji} ${(TEMPLATES[s.template] || TEMPLATES.custom).label}`, `> **Preset:** ${s.selectedPreset ? `💾 ${s.selectedPreset}` : 'None loaded'}`, `> **Channel:** ${s.channelId ? `<#${s.channelId}>` : 'Not selected'}`, `> **Selected Panel:** ${s.selectedPanelIndex + 1}/${s.panels.length}`, `> **Panel Colour:** \`${s.color || PANEL_COLOR}\``, `> **Fields:** ${(s.fields || []).length}/25`, `> **Buttons:** ${(s.buttons || []).length}/20`, `> **Mentions:** ${s.allowUserPing ? '🔔 User ping enabled' : '🔕 Safe / no ping'}`, `> **Unsaved Changes:** ${s.hasUnsavedChanges ? '⚠️ Yes' : '✅ No'}`, '', 'Server icon: use **Media → Small thumbnail URL** = `{guildIcon}`. Author/Footer icon fields also accept `{guildIcon}`.'].join('\n')).setFooter({ text: `Requested by ${who}` }).setTimestamp(); }
 function buildEditorPanel(i, who = 'Unknown User') { const s = getSession(i); return { embeds: [mainEmbed(s, who), ...buildPreviewEmbeds(s, i)], components: [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('embed:template').setPlaceholder('🎨 Choose template').addOptions(Object.entries(TEMPLATES).map(([value, t]) => ({ label: t.label, value, emoji: t.emoji, default: s.template === value })))), new ActionRowBuilder().addComponents(new ChannelSelectMenuBuilder().setCustomId('embed:channel').setPlaceholder('📢 Choose channel').addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)), new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('embed:color').setPlaceholder('🌈 Selected panel colour').addOptions([...COLORS.map(c => ({ label: c.label, value: c.value, emoji: c.emoji, default: s.color === c.value })), { label: 'Custom HEX', value: CUSTOM_HEX_VALUE, emoji: '🎨', description: 'Enter your own HEX colour' }])), new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('embed:panel-select').setPlaceholder('🧩 Select content panel').addOptions(s.panels.map((p, n) => ({ label: `${n + 1}. ${trim(p.title || p.authorName || 'Content Panel', 80)}`, value: String(n), description: trim(p.description || p.color, 100), default: s.selectedPanelIndex === n })))), new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('embed:builder').setLabel('🛠️ Builder').setStyle(ButtonStyle.Primary), new ButtonBuilder().setCustomId('embed:presets').setLabel('💾 Presets').setStyle(ButtonStyle.Primary), new ButtonBuilder().setCustomId('embed:use').setLabel('✅ Use Embed').setStyle(ButtonStyle.Success))] }; }
 function simplePanel(title, desc, state, who) { return new EmbedBuilder().setColor(state.color || PANEL_COLOR).setTitle(title).setDescription(desc).setFooter({ text: `Requested by ${who}` }).setTimestamp(); }
 function buildBuilderPanel(i, who = 'Unknown User') { const s = getSession(i); return { embeds: [simplePanel('🛠️ Embed Builder', `Editing panel **${s.selectedPanelIndex + 1}/${s.panels.length}**.`, s, who), ...buildPreviewEmbeds(s, i)], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('embed:edit-content').setLabel('✏️ Content').setStyle(ButtonStyle.Primary), new ButtonBuilder().setCustomId('embed:edit-media').setLabel('🖼️ Media').setStyle(ButtonStyle.Primary), new ButtonBuilder().setCustomId('embed:fields').setLabel(`📋 Fields (${(s.fields || []).length})`).setStyle(ButtonStyle.Primary), new ButtonBuilder().setCustomId('embed:panels').setLabel(`🧩 Panels (${s.panels.length})`).setStyle(ButtonStyle.Primary), new ButtonBuilder().setCustomId('embed:buttons').setLabel(`🔘 Buttons (${(s.buttons || []).length})`).setStyle(ButtonStyle.Primary)), new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('embed:toggle-ping').setLabel(s.allowUserPing ? '🔔 Ping ON' : '🔕 Ping OFF').setStyle(s.allowUserPing ? ButtonStyle.Success : ButtonStyle.Secondary), new ButtonBuilder().setCustomId('embed:toggle-timestamp').setLabel(s.showTimestamp ? '🕒 Timestamp ON' : '🕒 Timestamp OFF').setStyle(s.showTimestamp ? ButtonStyle.Success : ButtonStyle.Secondary), new ButtonBuilder().setCustomId('embed:helpers').setLabel('📖 Variables').setStyle(ButtonStyle.Secondary)), new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('embed:test-send').setLabel('🧪 Test').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId('embed:update-existing').setLabel('♻️ Update Existing').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId('embed:reset').setLabel('♻️ Reset').setStyle(ButtonStyle.Danger), new ButtonBuilder().setCustomId('embed:back').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary))] }; }
@@ -136,7 +152,7 @@ function buildPresetsPanel(i, who) { refreshGuild(i.guild.id); const s = getSess
 function buildHelpersPanel(who) { return { embeds: [new EmbedBuilder().setColor(PANEL_COLOR).setTitle('📖 Embed Variables').setDescription(HELPERS.map(h => `\`${h}\``).join('\n')).setFooter({ text: `Requested by ${who}` }).setTimestamp()], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('embed:builder').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary))] }; }
 function modal(id, title, inputs) { return new ModalBuilder().setCustomId(id).setTitle(title).addComponents(...inputs.map(input => new ActionRowBuilder().addComponents(input))); }
 function input(id, label, style, value = '', required = false, max) { const t = new TextInputBuilder().setCustomId(id).setLabel(label).setStyle(style).setRequired(required).setValue(trim(value, max || 4000)); if (max) t.setMaxLength(max); return t; }
-function contentModal(s) { return modal(`embed:save-content:${Date.now()}`, 'Edit Panel Text', [input('title', 'Panel title', TextInputStyle.Short, s.title, false, 256), input('description', 'Panel message/content', TextInputStyle.Paragraph, s.description, false, 4000), input('authorName', 'Author name', TextInputStyle.Short, s.authorName, false, 256), input('footer', 'Footer text', TextInputStyle.Short, s.footer, false, 2048)]); }
+function contentModal(s) { return modal(`embed:save-content:${Date.now()}`, 'Edit Panel Text', [input('title', 'Panel title', TextInputStyle.Short, s.title, false, 256), input('description', 'Panel message/content', TextInputStyle.Paragraph, s.description, false, 4000), input('authorName', 'Author name or icon variable', TextInputStyle.Short, s.authorName, false, 256), input('footer', 'Footer text or icon variable', TextInputStyle.Short, s.footer, false, 2048)]); }
 function mediaModal(s) { return modal(`embed:save-media:${Date.now()}`, 'Edit Panel Media', [input('authorIcon', 'Author logo URL / variable', TextInputStyle.Short, s.authorIcon), input('thumbnail', 'Small thumbnail URL / variable', TextInputStyle.Short, s.thumbnail), input('image', 'Large banner/image URL', TextInputStyle.Short, s.image), input('authorUrl', 'Author clickable URL', TextInputStyle.Short, s.authorUrl), input('footerIcon', 'Footer icon URL / variable', TextInputStyle.Short, s.footerIcon)]); }
 function fieldModal(s, n = null) { const f = Number.isInteger(n) ? s.fields[n] : {}; return modal(Number.isInteger(n) ? `embed:field-save:${n}` : 'embed:field-save-new', Number.isInteger(n) ? 'Edit Field' : 'Add Field', [input('name', 'Field name', TextInputStyle.Short, f.name, true, 256), input('value', 'Field value', TextInputStyle.Paragraph, f.value, true, 1024), input('layout', 'Inline? yes/no', TextInputStyle.Short, f.inline ? 'yes' : 'no', false, 10)]); }
 function buttonModal(s, n = null) { const b = Number.isInteger(n) ? s.buttons[n] : { style: 'Link' }; return modal(Number.isInteger(n) ? `embed:button-save:${n}` : 'embed:button-save-new', Number.isInteger(n) ? 'Edit Button' : 'Add Button', [input('label', 'Button Label', TextInputStyle.Short, b.label, true, 80), input('emoji', 'Emoji', TextInputStyle.Short, b.emoji, false, 20), input('style', 'Style', TextInputStyle.Short, b.style || 'Link'), input('url', 'URL', TextInputStyle.Short, b.url)]); }
