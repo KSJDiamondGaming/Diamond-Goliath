@@ -26,10 +26,30 @@ const MAX_BUTTONS = 20;
 const sessions = new Map();
 
 const COLORS = [
-  ['Deep Blue', '#2F80ED', '🔷'], ['Royal Blue', '#4169E1', '🔵'], ['Sky Blue', '#00BFFF', '🩵'],
-  ['Cyan', '#00D4FF', '💧'], ['Green', '#57F287', '🟢'], ['Gold', '#FFD700', '🏆'],
-  ['Orange', '#E67E22', '🟠'], ['Red', '#ED4245', '🔴'], ['Purple', '#9B59B6', '🟣'],
-  ['Pink', '#EB459E', '🌸'], ['Dark', '#2B2D31', '⬛'], ['White', '#FFFFFF', '🤍'],
+  ['Deep Blue', '#2F80ED', '🔷'],
+  ['Royal Blue', '#4169E1', '🔵'],
+  ['Sky Blue', '#00BFFF', '🩵'],
+  ['Electric Blue', '#007BFF', '⚡'],
+  ['Cyan', '#00D4FF', '💧'],
+  ['Teal', '#1ABC9C', '🌊'],
+  ['Green', '#57F287', '🟢'],
+  ['Emerald', '#2ECC71', '💚'],
+  ['Lime', '#BFFF00', '🍏'],
+  ['Yellow', '#FEE75C', '🟡'],
+  ['Gold', '#FFD700', '🏆'],
+  ['Amber', '#FFC107', '🌟'],
+  ['Orange', '#E67E22', '🟠'],
+  ['Dark Orange', '#FF8C00', '🔥'],
+  ['Red', '#ED4245', '🔴'],
+  ['Crimson', '#DC143C', '❤️'],
+  ['Rose', '#FF4D6D', '🌹'],
+  ['Discord Blurple', '#5865F2', '🔮'],
+  ['Purple', '#9B59B6', '🟣'],
+  ['Violet', '#8A2BE2', '🪻'],
+  ['Pink', '#EB459E', '🌸'],
+  ['Hot Pink', '#FF69B4', '💖'],
+  ['Dark', '#2B2D31', '⬛'],
+  ['White', '#FFFFFF', '🤍'],
 ].map(([label, value, emoji]) => ({ label, value, emoji }));
 
 const TEMPLATES = {
@@ -45,13 +65,48 @@ const TEMPLATES = {
   warning: { label: 'Warning Notice', emoji: '⚠️', title: 'Warning', description: ['This is an official notice for **{guildName}**.', '', 'Please make sure you follow the server rules.'].join('\n'), color: '#ED4245', footer: 'Moderator notice' },
 };
 
-const HELPERS = ['{userMention}', '{userDisplay}', '{userAvatar}', '{guildName}', '{guildIcon}', '{guildBanner}', '{guildMemberCount}', '{nowTimestamp}', '{successEmoji}', '{warningEmoji}', '{errorEmoji}'];
+const HELPERS = [
+  ['{userId}', 'User ID'],
+  ['{userTag}', 'User tag/name'],
+  ['{userName}', 'Username'],
+  ['{userGlobalName}', 'Global display name'],
+  ['{userMention}', 'Clickable user mention'],
+  ['{userNoPing}', 'Mention text, safe with Ping OFF'],
+  ['{userAvatar}', 'User avatar URL'],
+  ['{userServerAvatar}', 'Server avatar URL'],
+  ['{userNickname}', 'Server nickname'],
+  ['{userDisplay}', 'Display name'],
+  ['{userCreatedAt}', 'Account created date'],
+  ['{userCreatedTimestamp}', 'Account created Discord timestamp'],
+  ['{userJoinedAt}', 'Server joined date'],
+  ['{userJoinedTimestamp}', 'Server joined Discord timestamp'],
+  ['{nowTimestamp}', 'Current Discord timestamp'],
+  ['{successEmoji}', 'Success emoji'],
+  ['{warningEmoji}', 'Warning emoji'],
+  ['{errorEmoji}', 'Error emoji'],
+  ['{proofVerifiedEmoji}', 'Verified emoji'],
+  ['{successColor}', 'Success colour'],
+  ['{warningColor}', 'Warning colour'],
+  ['{errorColor}', 'Error colour'],
+  ['{proofVerifiedColor}', 'Verified colour'],
+  ['{guildId}', 'Server ID'],
+  ['{guildName}', 'Server name'],
+  ['{server}', 'Server name shortcut'],
+  ['{guildIcon}', 'Server icon URL'],
+  ['{serverIcon}', 'Server icon URL shortcut'],
+  ['{guildBanner}', 'Server banner URL'],
+  ['{guildMemberCount}', 'Server member count'],
+  ['{memberCount}', 'Member count shortcut'],
+  ['{guildVanityCode}', 'Server vanity code'],
+].map(([name, desc]) => ({ name, desc }));
 
 function clone(v) { return JSON.parse(JSON.stringify(v || {})); }
 function trim(v, max = 4096) { v = String(v || ''); return v.length > max ? `${v.slice(0, max - 3)}...` : v; }
 function safeUrl(v) { try { const text = String(v || '').trim(); if (!text) return undefined; const url = new URL(text); return ['http:', 'https:'].includes(url.protocol) ? text : undefined; } catch { return undefined; } }
 function validHex(v) { return /^#?[0-9A-Fa-f]{6}$/.test(String(v || '').trim()); }
 function normHex(v) { return `#${String(v || '').trim().replace('#', '').toUpperCase()}`; }
+function formatDate(v) { try { return v ? new Date(v).toLocaleString() : ''; } catch { return ''; } }
+function formatTimestamp(v) { const seconds = Math.floor(Number(v) / 1000); return Number.isFinite(seconds) ? `<t:${seconds}:R>` : ''; }
 function avatar(entity) { return entity?.displayAvatarURL?.({ extension: 'png', size: 256 }) || ''; }
 function guildIcon(guild) { return guild?.iconURL?.({ extension: 'png', size: 256 }) || ''; }
 function guildBanner(guild) { return guild?.bannerURL?.({ extension: 'png', size: 1024 }) || ''; }
@@ -61,14 +116,84 @@ function refreshGuild(guildId) { if (typeof guildManager.reloadGuild === 'functi
 function key(i) { return `${i.guildId}:${i.user.id}`; }
 function replaceVars(text, i) {
   const user = i.user || {}, member = i.member || {}, guild = i.guild || {};
-  const userAvatar = avatar(user), serverIcon = guildIcon(guild);
+  const userId = user.id || '';
+  const userAvatar = avatar(user), userServerAvatar = avatar(member) || userAvatar;
+  const serverIcon = guildIcon(guild), serverBanner = guildBanner(guild);
   const vars = {
-    '{userMention}': user.id ? `<@${user.id}>` : '', '{userNoPing}': user.id ? `<@${user.id}>` : '', '{userDisplay}': userName(i), '{userName}': user.username || 'User', '{userAvatar}': userAvatar, '{userServerAvatar}': avatar(member) || userAvatar,
-    '{guildName}': guild.name || 'Server', '{server}': guild.name || 'Server', '{guildIcon}': serverIcon, '{serverIcon}': serverIcon, '{guildBanner}': guildBanner(guild), '{guildMemberCount}': String(guild.memberCount || 0), '{memberCount}': String(guild.memberCount || 0), '{nowTimestamp}': `<t:${Math.floor(Date.now() / 1000)}:R>`,
-    '{successEmoji}': '✅', '{warningEmoji}': '⚠️', '{errorEmoji}': '❌', '{successColor}': '#57F287', '{warningColor}': '#FEE75C', '{errorColor}': '#ED4245',
+    '{userId}': userId,
+    '{userid}': userId,
+    '{userTag}': user.tag || user.username || 'User',
+    '{usertag}': user.tag || user.username || 'User',
+    '{userName}': user.username || 'User',
+    '{username}': user.username || 'User',
+    '{userGlobalName}': user.globalName || user.username || 'User',
+    '{userglobalname}': user.globalName || user.username || 'User',
+    '{userMention}': userId ? `<@${userId}>` : '',
+    '{usermention}': userId ? `<@${userId}>` : '',
+    '{userNoPing}': userId ? `<@${userId}>` : '',
+    '{usernoping}': userId ? `<@${userId}>` : '',
+    '{user}': userId ? `<@${userId}>` : '',
+    '{userAvatar}': userAvatar,
+    '{useravatar}': userAvatar,
+    '{useravatarurl}': userAvatar,
+    '{userServerAvatar}': userServerAvatar,
+    '{userserveravatar}': userServerAvatar,
+    '{userserveravatarurl}': userServerAvatar,
+    '{userNickname}': member.nickname || userName(i),
+    '{usernickname}': member.nickname || userName(i),
+    '{userDisplay}': userName(i),
+    '{userdisplay}': userName(i),
+    '{userdisplayname}': userName(i),
+    '{userCreatedAt}': formatDate(user.createdAt),
+    '{usercreatedat}': formatDate(user.createdAt),
+    '{userCreatedTimestamp}': formatTimestamp(user.createdTimestamp),
+    '{usercreatedtimestamp}': formatTimestamp(user.createdTimestamp),
+    '{userJoinedAt}': formatDate(member.joinedAt),
+    '{userjoinedat}': formatDate(member.joinedAt),
+    '{userJoinedTimestamp}': formatTimestamp(member.joinedTimestamp),
+    '{userjoinedtimestamp}': formatTimestamp(member.joinedTimestamp),
+    '{nowTimestamp}': `<t:${Math.floor(Date.now() / 1000)}:R>`,
+    '{nowtimestamp}': `<t:${Math.floor(Date.now() / 1000)}:R>`,
+    '{successEmoji}': '✅',
+    '{succesemoji}': '✅',
+    '{sucessemoji}': '✅',
+    '{warningEmoji}': '⚠️',
+    '{warningemoji}': '⚠️',
+    '{errorEmoji}': '❌',
+    '{erroremoji}': '❌',
+    '{proofVerifiedEmoji}': '💎',
+    '{proofverifiedemoji}': '💎',
+    '{successColor}': '#57F287',
+    '{successcolor}': '#57F287',
+    '{warningColor}': '#FEE75C',
+    '{warningcolor}': '#FEE75C',
+    '{errorColor}': '#ED4245',
+    '{errorcolor}': '#ED4245',
+    '{proofVerifiedColor}': '#00D4FF',
+    '{proofverifiedcolor}': '#00D4FF',
+    '{guildId}': guild.id || '',
+    '{guildid}': guild.id || '',
+    '{guildName}': guild.name || 'Server',
+    '{guildname}': guild.name || 'Server',
+    '{server}': guild.name || 'Server',
+    '{guildIcon}': serverIcon,
+    '{guildicon}': serverIcon,
+    '{guildiconurl}': serverIcon,
+    '{serverIcon}': serverIcon,
+    '{servericon}': serverIcon,
+    '{servericonurl}': serverIcon,
+    '{guildBanner}': serverBanner,
+    '{guildbanner}': serverBanner,
+    '{guildbannerurl}': serverBanner,
+    '{guildMemberCount}': String(guild.memberCount || 0),
+    '{guildmembercount}': String(guild.memberCount || 0),
+    '{memberCount}': String(guild.memberCount || 0),
+    '{membercount}': String(guild.memberCount || 0),
+    '{guildVanityCode}': guild.vanityURLCode || '',
+    '{guildvanitycode}': guild.vanityURLCode || '',
   };
   let out = String(text || '');
-  Object.entries(vars).forEach(([k, v]) => { out = out.replaceAll(k, v); out = out.replaceAll(k.toLowerCase(), v); });
+  Object.entries(vars).forEach(([k, v]) => { out = out.replaceAll(k, v); });
   return out;
 }
 function panel(data = {}) { return { title: data.title || '', description: data.description || '', color: data.color || PANEL_COLOR, authorName: data.authorName || '', authorIcon: data.authorIcon || '', authorUrl: data.authorUrl || '', footer: data.footer || '', footerIcon: data.footerIcon || '', image: data.image || '', thumbnail: data.thumbnail || '', fields: Array.isArray(data.fields) ? clone(data.fields).slice(0, 25) : [] }; }
@@ -92,7 +217,7 @@ function setDefault(guildId, template, preset) { if (typeof guildManager.setEmbe
 function buildEmbedFromPanel(p, i, showTimestamp) { const e = new EmbedBuilder().setColor(p.color || PANEL_COLOR); const authorName = trim(replaceVars(p.authorName, i), 256); const authorIcon = safeUrl(replaceVars(p.authorIcon, i)); const authorUrl = safeUrl(replaceVars(p.authorUrl, i)); if (authorName || authorIcon) e.setAuthor({ name: authorName || 'Live Embed Preview', ...(authorIcon ? { iconURL: authorIcon } : {}), ...(authorUrl ? { url: authorUrl } : {}) }); if (p.title) e.setTitle(trim(replaceVars(p.title, i), 256)); if (p.description) e.setDescription(trim(replaceVars(p.description, i), 4096)); const footer = trim(replaceVars(p.footer, i), 2048); const footerIcon = safeUrl(replaceVars(p.footerIcon, i)); if (footer) e.setFooter({ text: footer, ...(footerIcon ? { iconURL: footerIcon } : {}) }); const image = safeUrl(replaceVars(p.image, i)); if (image) e.setImage(image); const thumb = safeUrl(replaceVars(p.thumbnail, i)); if (thumb) e.setThumbnail(thumb); const fields = (p.fields || []).filter(f => f?.name && f?.value).slice(0, 25).map(f => ({ name: trim(replaceVars(f.name, i), 256), value: trim(replaceVars(f.value, i), 1024), inline: Boolean(f.inline) })); if (fields.length) e.addFields(fields); if (showTimestamp !== false) e.setTimestamp(); return e; }
 function buildPreviewEmbeds(state, i) { const s = sync(state); return s.panels.slice(0, MAX_PANELS).map(p => buildEmbedFromPanel(p, i, s.showTimestamp)); }
 function buildPreviewEmbed(state, i) { return buildPreviewEmbeds(state, i)[0]; }
-function buttonRows(state) { const buttons = (state.buttons || []).slice(0, MAX_BUTTONS); const rows = []; for (let i = 0; i < buttons.length; i += 5) { const row = new ActionRowBuilder(); buttons.slice(i, i + 5).forEach((b, offset) => { const style = ({ secondary: ButtonStyle.Secondary, success: ButtonStyle.Success, danger: ButtonStyle.Danger, link: ButtonStyle.Link })[String(b.style || 'Primary').toLowerCase()] || ButtonStyle.Primary; const builder = new ButtonBuilder().setLabel(trim(b.label || 'Button', 80)).setStyle(style); if (b.emoji) builder.setEmoji(b.emoji); const url = safeUrl(b.url); if (url) builder.setStyle(ButtonStyle.Link).setURL(url); else builder.setCustomId(b.id || `embed-action:${b.action || 'custom'}:${i + offset}`); row.addComponents(builder); }); rows.push(row); } return rows; }
+function buttonRows(state) { const buttons = (state.buttons || []).slice(0, MAX_BUTTONS); const rows = []; for (let i = 0; i < buttons.length; i += 5) { const row = new ActionRowBuilder(); buttons.slice(i, i + 5).forEach((b, offset) => { const style = ({ secondary: ButtonStyle.Secondary, success: ButtonStyle.Success, danger: ButtonStyle.Danger, link: ButtonStyle.Link })[String(b.style || 'Primary').toLowerCase()] || ButtonStyle.Primary; const builder = new ButtonBuilder().setLabel(trim(b.label || 'Button', 80)).setStyle(style); if (b.emoji) builder.setEmoji(b.emoji); const url = safeUrl(b.url); if (url) builder.setStyle(ButtonStyle.Link).setURL(url); else builder.setCustomId(b.id || `embed-action:${button.action || 'custom'}:${i + offset}`); row.addComponents(builder); }); rows.push(row); } return rows; }
 
 function buildEmbedPanel(interactionOrGuild, memberDisplayName = 'Unknown User') { const fake = interactionOrGuild?.guild ? interactionOrGuild : { guild: interactionOrGuild, guildId: interactionOrGuild?.id, user: { id: 'system' } }; return buildEditorPanel(fake, memberDisplayName); }
 function buildEditorPanel(i, who = 'Unknown User') {
@@ -100,7 +225,7 @@ function buildEditorPanel(i, who = 'Unknown User') {
   const rows = [
     new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('embed:template').setPlaceholder('🎨 Choose template').addOptions(Object.entries(TEMPLATES).map(([value, t]) => ({ label: t.label, value, emoji: t.emoji, default: s.template === value })))),
     new ActionRowBuilder().addComponents(new ChannelSelectMenuBuilder().setCustomId('embed:channel').setPlaceholder('📢 Choose channel').addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)),
-    new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('embed:color').setPlaceholder('🌈 Selected panel colour').addOptions([...COLORS.map(c => ({ label: c.label, value: c.value, emoji: c.emoji, default: s.color === c.value })), { label: 'Custom HEX', value: CUSTOM_HEX_VALUE, emoji: '🎨' }])),
+    new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('embed:color').setPlaceholder('🌈 Selected panel colour').addOptions([...COLORS.map(c => ({ label: c.label, value: c.value, emoji: c.emoji, default: s.color === c.value })), { label: 'Custom HEX', value: CUSTOM_HEX_VALUE, emoji: '🎨', description: 'Enter your own HEX colour' }])),
     new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('embed:panel-select').setPlaceholder('🧩 Select content panel').addOptions(s.panels.map((p, n) => ({ label: `${n + 1}. ${trim(p.title || p.authorName || 'Content Panel', 80)}`, value: String(n), description: trim(p.description || p.color, 100), default: s.selectedPanelIndex === n })))),
     new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('embed:builder').setLabel('🛠️ Builder').setStyle(ButtonStyle.Primary), new ButtonBuilder().setCustomId('embed:presets').setLabel('💾 Presets').setStyle(ButtonStyle.Primary), new ButtonBuilder().setCustomId('embed:use').setLabel('✅ Use Embed').setStyle(ButtonStyle.Success)),
   ];
@@ -113,7 +238,7 @@ function buildPanelsPanel(i, who) { const s = getSession(i); const rows = [new A
 function buildFieldsPanel(i, who) { const s = getSession(i); const rows = []; if ((s.fields || []).length) rows.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('embed:field-select').setPlaceholder('📋 Select field').addOptions(s.fields.map((f, n) => ({ label: `${n + 1}. ${trim(f.name || 'Field', 80)}`, value: String(n), description: trim(f.value || 'Value', 100), default: s.selectedFieldIndex === n }))))); rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('embed:field-add').setLabel('➕ Add').setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId('embed:field-edit').setLabel('✏️ Edit').setStyle(ButtonStyle.Primary).setDisabled(!Number.isInteger(s.selectedFieldIndex)), new ButtonBuilder().setCustomId('embed:field-remove-selected').setLabel('🗑️ Remove').setStyle(ButtonStyle.Danger).setDisabled(!Number.isInteger(s.selectedFieldIndex)), new ButtonBuilder().setCustomId('embed:builder').setLabel('⬅️ Builder').setStyle(ButtonStyle.Secondary))); return { embeds: [simplePanel('📋 Field Management', `Panel ${s.selectedPanelIndex + 1}/${s.panels.length} fields: ${(s.fields || []).length}/25`, s, who)], components: rows }; }
 function buildButtonsPanel(i, who) { const s = getSession(i); const rows = []; if ((s.buttons || []).length) rows.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('embed:button-select').setPlaceholder('🔘 Select button').addOptions(s.buttons.map((b, n) => ({ label: `${n + 1}. ${trim(b.label || 'Button', 80)}`, value: String(n), description: trim(b.url || b.style || 'Button', 100), default: s.selectedButtonIndex === n }))))); rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('embed:button-add').setLabel('➕ Add').setStyle(ButtonStyle.Success).setDisabled((s.buttons || []).length >= MAX_BUTTONS), new ButtonBuilder().setCustomId('embed:button-edit').setLabel('✏️ Edit').setStyle(ButtonStyle.Primary).setDisabled(!Number.isInteger(s.selectedButtonIndex)), new ButtonBuilder().setCustomId('embed:button-remove-selected').setLabel('🗑️ Remove').setStyle(ButtonStyle.Danger).setDisabled(!Number.isInteger(s.selectedButtonIndex))), new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('embed:button-move-up').setLabel('⬆️ Up').setStyle(ButtonStyle.Secondary).setDisabled(!Number.isInteger(s.selectedButtonIndex) || s.selectedButtonIndex <= 0), new ButtonBuilder().setCustomId('embed:button-move-down').setLabel('⬇️ Down').setStyle(ButtonStyle.Secondary).setDisabled(!Number.isInteger(s.selectedButtonIndex) || s.selectedButtonIndex >= (s.buttons || []).length - 1), new ButtonBuilder().setCustomId('embed:builder').setLabel('⬅️ Builder').setStyle(ButtonStyle.Secondary))); return { embeds: [simplePanel('🔘 Button Management', `Buttons: ${(s.buttons || []).length}/${MAX_BUTTONS}`, s, who)], components: rows }; }
 function buildPresetsPanel(i, who) { refreshGuild(i.guild.id); const s = getSession(i); const presets = typeof guildManager.getEmbedPresets === 'function' ? guildManager.getEmbedPresets(i.guild.id) || {} : {}; const names = Object.keys(presets).slice(0, 25); const rows = []; if (names.length) rows.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('embed:preset-select').setPlaceholder('💾 Select preset').addOptions(names.map(name => ({ label: trim(name, 100), value: name, description: 'Load this preset', default: s.selectedPreset === name }))))); rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('embed:preset-save').setLabel('💾 Save').setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId('embed:preset-delete').setLabel('🗑️ Delete').setStyle(ButtonStyle.Danger).setDisabled(!s.selectedPreset), new ButtonBuilder().setCustomId('embed:editor').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary))); return { embeds: [simplePanel('💾 Embed Presets', names.length ? `Saved presets: **${names.length}**` : 'No presets saved yet.', s, who)], components: rows }; }
-function buildHelpersPanel(who) { return { embeds: [new EmbedBuilder().setColor(PANEL_COLOR).setTitle('📖 Embed Variables').setDescription(HELPERS.map(h => `\`${h}\``).join('\n')).setFooter({ text: `Requested by ${who}` }).setTimestamp()], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('embed:builder').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary))] }; }
+function buildHelpersPanel(who) { return { embeds: [new EmbedBuilder().setColor(PANEL_COLOR).setTitle('📖 Embed Variables').setDescription(HELPERS.map(h => `\`${h.name}\` — ${h.desc}`).join('\n')).setFooter({ text: `Requested by ${who}` }).setTimestamp()], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('embed:builder').setLabel('⬅️ Back').setStyle(ButtonStyle.Secondary))] }; }
 function modal(id, title, inputs) { return new ModalBuilder().setCustomId(id).setTitle(title).addComponents(...inputs.map(input => new ActionRowBuilder().addComponents(input))); }
 function input(id, label, style, value = '', required = false, max) { const i = new TextInputBuilder().setCustomId(id).setLabel(label).setStyle(style).setRequired(required).setValue(trim(value, max || 4000)); if (max) i.setMaxLength(max); return i; }
 function contentModal(s) { return modal(`embed:save-content:${Date.now()}`, 'Edit Panel Text', [input('title', 'Panel title', TextInputStyle.Short, s.title, false, 256), input('description', 'Panel message/content', TextInputStyle.Paragraph, s.description, false, 4000), input('authorName', 'Author name', TextInputStyle.Short, s.authorName, false, 256), input('footer', 'Footer text', TextInputStyle.Short, s.footer, false, 2048)]); }
