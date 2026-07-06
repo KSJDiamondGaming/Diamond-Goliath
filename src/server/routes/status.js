@@ -4,6 +4,7 @@ const path = require('path');
 const router = express.Router();
 
 const { readJsonSafe } = require('../../core/guild/fileStore');
+const notifications = require('../../modules/notifications/notificationStore');
 
 const CASES_PATH = path.join(__dirname, '..', 'data', 'modCaseDetails.json');
 const DISCORD_API = 'https://discord.com/api/v10';
@@ -15,6 +16,62 @@ let cachedBotProfile = null;
 let cachedBotProfileExpiresAt = 0;
 
 const guildStatsCache = new Map();
+
+function notifyRuntime(guildId, payload = {}, options = {}) {
+  if (!guildId) return null;
+  try {
+    return notifications.addNotificationOnce(guildId, {
+      source: 'runtime',
+      route: '/overview',
+      ...payload,
+    }, options);
+  } catch (error) {
+    console.warn('[StatusRoute] notification skipped:', error.message || error);
+    return null;
+  }
+}
+
+function evaluateRuntimeNotifications(guildId, statusPayload = {}) {
+  if (!guildId) return;
+  const latency = Number(statusPayload.latencyMs ?? statusPayload.botLatencyMs ?? 0);
+  const guildMissing = statusPayload.guild && statusPayload.guild.connected === false;
+
+  if (!statusPayload.botOnline) {
+    notifyRuntime(guildId, {
+      level: 'danger',
+      title: 'Bot runtime offline',
+      message: statusPayload.error || 'Goliath bot is currently reporting offline.',
+      metadata: { botOnline: false, error: statusPayload.error || null },
+    }, { fingerprint: 'runtime:bot-offline', windowMs: 10 * 60_000 });
+  }
+
+  if (statusPayload.error) {
+    notifyRuntime(guildId, {
+      level: 'warning',
+      title: 'Runtime status warning',
+      message: statusPayload.error,
+      metadata: { error: statusPayload.error },
+    }, { fingerprint: `runtime:error:${statusPayload.error}`, windowMs: 10 * 60_000 });
+  }
+
+  if (guildMissing) {
+    notifyRuntime(guildId, {
+      level: 'warning',
+      title: 'Guild connection missing',
+      message: 'The selected guild could not be confirmed from runtime status.',
+      metadata: { guildId },
+    }, { fingerprint: `runtime:guild-missing:${guildId}`, windowMs: 15 * 60_000 });
+  }
+
+  if (latency >= 300) {
+    notifyRuntime(guildId, {
+      level: 'warning',
+      title: 'High bot latency',
+      message: `Discord websocket latency is ${latency}ms.`,
+      metadata: { latencyMs: latency },
+    }, { fingerprint: 'runtime:high-latency', windowMs: 15 * 60_000 });
+  }
+}
 
 function getBotToken() {
   return String(
@@ -463,10 +520,19 @@ router.get('/', async (req, res) => {
   try {
     const guildId = req.query.guildId ? String(req.query.guildId) : null;
     const payload = await buildStatusPayload(req, guildId);
+    evaluateRuntimeNotifications(guildId, payload);
 
     return res.json(payload);
   } catch (error) {
     console.error('Status route failed', error);
+
+    const guildId = req.query.guildId ? String(req.query.guildId) : null;
+    notifyRuntime(guildId, {
+      level: 'danger',
+      title: 'Runtime status failed',
+      message: error.message || 'Failed to load status.',
+      metadata: { error: error.message || 'Failed to load status.' },
+    }, { fingerprint: `runtime:status-failed:${error.message || 'unknown'}`, windowMs: 10 * 60_000 });
 
     return res.status(500).json({
       ok: false,
@@ -474,7 +540,7 @@ router.get('/', async (req, res) => {
       backendOnline: true,
       apiOnline: true,
       botOnline: false,
-      guildId: req.query.guildId ? String(req.query.guildId) : null,
+      guildId,
       guild: null,
       members: 0,
       memberCount: 0,
@@ -525,6 +591,7 @@ router.get('/stream', async (req, res) => {
   const pushSnapshot = async () => {
     try {
       const statusPayload = await buildStatusPayload(req, guildId);
+      evaluateRuntimeNotifications(guildId, statusPayload);
       const snapshot = buildGuildSnapshot(guildId, statusPayload);
 
       sendEvent('status', snapshot.status);
@@ -533,6 +600,12 @@ router.get('/stream', async (req, res) => {
       sendEvent('snapshot', snapshot);
     } catch (error) {
       console.error('SSE status stream failed:', error);
+      notifyRuntime(guildId, {
+        level: 'warning',
+        title: 'Runtime stream warning',
+        message: error.message || 'Failed to refresh live status.',
+        metadata: { error: error.message || 'Failed to refresh live status.' },
+      }, { fingerprint: `runtime:stream:${error.message || 'unknown'}`, windowMs: 10 * 60_000 });
 
       sendEvent('status', {
         ok: false,

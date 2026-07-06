@@ -126,7 +126,7 @@ export default function Leveling({ theme, selectedGuild, selectedGuildData }) {
   if (!guildId) {
     return (
       <PageShell title="Leveling" subtitle="Select a server to manage XP and levels." theme={theme}>
-        <EmptyState theme={theme} text="Select a server to manage leveling." />
+        <EmptyState theme={theme} title="Select a server" text="Choose a server from the navbar to manage XP settings, rewards and leaderboards." />
       </PageShell>
     );
   }
@@ -147,6 +147,10 @@ export default function Leveling({ theme, selectedGuild, selectedGuildData }) {
       {error ? <Notice theme={theme} tone="danger">{error}</Notice> : null}
       {notice ? <Notice theme={theme} tone="success">{notice}</Notice> : null}
       {loading ? <LoadingPanel theme={theme} text="Loading Leveling..." /> : null}
+
+      {config.enabled !== true && !loading ? (
+        <EmptyState theme={theme} title="Leveling is disabled" text="Enable Leveling when you are ready to award XP, track member progress and build a server leaderboard." />
+      ) : null}
 
       <StatGrid min="min(190px, 100%)">
         <SummaryStat theme={theme} label="Status" value={config.enabled === true ? 'Enabled' : 'Disabled'} accent={config.enabled === true ? '#22c55e' : '#f59e0b'} description="modules.leveling.enabled" />
@@ -176,10 +180,10 @@ export default function Leveling({ theme, selectedGuild, selectedGuildData }) {
       </SectionCard>
 
       <SectionCard theme={theme} title="Level Rewards" subtitle="Configured level role rewards from modules.leveling.">
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: rewards.length ? 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))' : '1fr', gap: 12 }}>
           {rewards.length ? rewards.map((reward, index) => (
             <RewardCard key={reward.id || reward.roleId || index} theme={theme} reward={reward} index={index} />
-          )) : <EmptyState theme={theme} text="No level rewards configured yet." />}
+          )) : <EmptyState theme={theme} title="No level rewards configured" text="Role rewards will appear here once levels are mapped to Discord roles." />}
         </div>
       </SectionCard>
 
@@ -187,7 +191,7 @@ export default function Leveling({ theme, selectedGuild, selectedGuildData }) {
         <div style={{ display: 'grid', gap: 10 }}>
           {leaderboard.length ? leaderboard.map((user, index) => (
             <LeaderboardRow key={user.userId || user.id || index} theme={theme} user={user} index={index} />
-          )) : <EmptyState theme={theme} text="No leaderboard data stored yet." />}
+          )) : <EmptyState theme={theme} title="No leaderboard data yet" text="Members will appear here after they earn XP from messages or future XP actions." />}
         </div>
       </SectionCard>
 

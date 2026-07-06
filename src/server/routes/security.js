@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 
 const guildManager = require('../../core/guild/guildManager');
+const notifications = require('../../modules/notifications/notificationStore');
 const { requireEntitlement } = require('../middleware/requireEntitlement');
 
 function getGuildId(req) {
@@ -14,6 +15,42 @@ function asArray(value) {
 
 function asObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function notifySecurity(guildId, overview = {}) {
+  try {
+    const score = Number(overview.protectionScore || 100);
+    const threat = String(overview.threatLevel || 'low').toLowerCase();
+    const critical = Number(overview.incidents?.critical || 0);
+    const high = Number(overview.incidents?.high || 0);
+    const lockdown = Boolean(overview.lockdown?.active);
+    const quarantined = Number(overview.quarantineCount || 0);
+
+    if (threat === 'critical' || critical > 0 || score < 55 || lockdown) {
+      return notifications.addNotificationOnce(guildId, {
+        level: 'danger',
+        source: 'security',
+        title: 'Critical security attention needed',
+        message: `Threat ${threat}, score ${score}, critical incidents ${critical}, lockdown ${lockdown ? 'active' : 'inactive'}.`,
+        route: '/security',
+        metadata: { threat, score, critical, high, lockdown, quarantined },
+      }, { fingerprint: `security:critical:${threat}:${critical}:${lockdown}`, windowMs: 15 * 60_000 });
+    }
+
+    if (threat === 'high' || high > 0 || score < 75 || quarantined > 0) {
+      return notifications.addNotificationOnce(guildId, {
+        level: 'warning',
+        source: 'security',
+        title: 'Security warning detected',
+        message: `Threat ${threat}, score ${score}, high incidents ${high}, quarantined users ${quarantined}.`,
+        route: '/security',
+        metadata: { threat, score, critical, high, quarantined },
+      }, { fingerprint: `security:warning:${threat}:${high}:${quarantined}`, windowMs: 15 * 60_000 });
+    }
+  } catch (error) {
+    console.warn('[Security Routes] notification skipped:', error.message || error);
+  }
+  return null;
 }
 
 function normaliseIncident(incident = {}) {
@@ -129,7 +166,9 @@ router.get('/overview', async (req, res) => {
   try {
     const guildId = getGuildId(req);
     if (!guildId) return res.status(400).json({ ok: false, success: false, error: 'Missing guildId.' });
-    return res.json(buildOverview(guildId));
+    const overview = buildOverview(guildId);
+    notifySecurity(guildId, overview);
+    return res.json(overview);
   } catch (error) {
     console.error('[Security Routes] overview failed:', error);
     return res.status(500).json({ ok: false, success: false, error: error.message });
@@ -140,6 +179,7 @@ router.get('/:guildId/advanced', requireEntitlement('security.advanced'), async 
   try {
     const guildId = getGuildId(req);
     const overview = buildOverview(guildId);
+    notifySecurity(guildId, overview);
     const security = guildManager.getSecurityConfig(guildId) || {};
     const incidents = overview.incidents.recent || [];
 

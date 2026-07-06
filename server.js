@@ -57,6 +57,7 @@ const { bootstrapRuntime, runBootValidation, safeLoad, printStartupFingerprint }
   printStartupFingerprint: () => null,
 }, { optional: false });
 const { initSocketHub } = safeRequire('socketHub', './src/server/sockets/socketHub', { initSocketHub: () => null }, { optional: false });
+safeRequire('backup notification wiring', './src/modules/notifications/wireBackupNotifications', { wireBackupNotifications: () => false }).wireBackupNotifications?.();
 
 const authRoutes = safeRequire('auth routes', './src/server/routes/auth', emptyRouter(), { optional: false });
 const discordRoutes = safeRequire('discord routes', './src/server/routes/discord', emptyRouter(), { optional: false });
@@ -83,6 +84,8 @@ const permissionHealthRoutes = safeRequire('permission health routes', './src/se
 const socialRoutes = safeRequire('social routes', './src/server/routes/social', emptyRouter(), { optional: false });
 const modulesRoutes = safeRequire('modules routes', './src/server/routes/modules', emptyRouter(), { optional: false });
 const automationRoutes = safeRequire('automation routes', './src/server/routes/automation', emptyRouter(), { optional: false });
+const notificationRoutes = safeRequire('notification routes', './src/server/routes/notifications', emptyRouter(), { optional: false });
+const activityRoutes = safeRequire('activity routes', './src/server/routes/activity', emptyRouter(), { optional: false });
 const pollsRoutes = safeRequire('polls routes', './src/server/routes/polls', emptyRouter(), { optional: false });
 const statsRoutes = safeRequire('stats routes', './src/server/routes/stats', emptyRouter(), { optional: false });
 const tempVoiceRoutes = safeRequire('temp voice routes', './src/server/routes/tempVoice', emptyRouter(), { optional: false });
@@ -95,6 +98,7 @@ const ownerOperationsRoutes = safeRequire('owner operations routes', './src/serv
 const ownerPermissionsRoutes = safeRequire('owner permissions routes', './src/server/routes/ownerPermissions', emptyRouter());
 const ownerSecurityRoutes = safeRequire('owner security routes', './src/server/routes/ownerSecurity', emptyRouter());
 const ownerSubscriptionRoutes = safeRequire('owner subscription routes', './src/server/routes/ownerSubscription', emptyRouter());
+const publicCommunityRoutes = safeRequire('public community routes', './src/server/routes/publicCommunity', emptyRouter(), { optional: false });
 
 const commandHandler = safeRequire('command handler', './src/handlers/commandHandler', { loadCommands: () => null });
 const backupScheduler = safeRequire('backup scheduler', './src/core/backup/backupScheduler', { startBackupScheduler: () => null });
@@ -126,8 +130,14 @@ app.set('trust proxy', 1);
 app.set('goliath.client', client);
 app.set('goliath.io', io);
 
-const allowedOrigins = new Set(['https://goliath.ksjdigital.co.uk', 'https://dev.goliath.ksjdigital.co.uk', 'http://localhost:5173']);
-[process.env.CLIENT_URL, process.env.DASHBOARD_CLIENT_URL, process.env.DASHBOARD_URL, process.env.VITE_CLIENT_URL].filter(Boolean).forEach((origin) => allowedOrigins.add(String(origin).trim()));
+const allowedOrigins = new Set([
+  'https://goliath.ksjdigital.co.uk',
+  'https://dev.goliath.ksjdigital.co.uk',
+  'https://twotonetaj.ksjdigital.co.uk',
+  'http://localhost:5173',
+  'http://localhost:5174',
+]);
+[process.env.CLIENT_URL, process.env.DASHBOARD_CLIENT_URL, process.env.DASHBOARD_URL, process.env.VITE_CLIENT_URL, process.env.TWOTONETAJ_CLIENT_URL].filter(Boolean).forEach((origin) => allowedOrigins.add(String(origin).trim()));
 
 app.use(cors({ origin(origin, callback) { if (!origin || allowedOrigins.has(origin)) return callback(null, true); return callback(new Error(`CORS blocked origin: ${origin}`)); }, credentials: true }));
 app.use(express.json({ limit: '25mb' }));
@@ -141,6 +151,7 @@ app.use('/api/discord', discordRoutes);
 app.use('/api/discord', discordRoleEditorRoutes);
 app.use('/api/discord', discordResourceRoutes);
 app.use('/api/status', statusRoutes);
+app.use('/api/public/community', publicCommunityRoutes);
 app.use('/api/owner', ownerRoutes);
 app.use('/api/owner/diagnostics', ownerDiagnosticsRoutes);
 app.use('/api/owner/translation', ownerTranslationRoutes);
@@ -162,6 +173,8 @@ app.use('/api/permissions', permissionHealthRoutes);
 app.use('/api/social', socialRoutes);
 app.use('/api/modules', modulesRoutes);
 app.use('/api/automation', automationRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/activity', activityRoutes);
 app.use('/api/polls', pollsRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/temp-voice', tempVoiceRoutes);

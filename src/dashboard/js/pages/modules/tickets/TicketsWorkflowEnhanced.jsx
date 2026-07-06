@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { api } from '../../../services/apiClient.js';
 import useRealtimeTickets from '../../../hooks/useRealtimeTickets.js';
-import LegacyTickets from '../Tickets.jsx';
 import TicketPanelBuilder from './TicketPanelBuilder.jsx';
 import TicketQueueAnalytics from './TicketQueueAnalytics.jsx';
 import TicketReviewWorkspace from './TicketReviewWorkspace.jsx';
@@ -272,7 +271,6 @@ export default function TicketsWorkflowEnhanced(props) {
       ) : null}
 
       <TicketQueueAnalytics theme={theme} tickets={tickets} />
-
       <TicketTranscriptCentre theme={theme} tickets={tickets} />
 
       {(error || notice) ? (
@@ -301,12 +299,6 @@ export default function TicketsWorkflowEnhanced(props) {
         onAssign={handleAssign}
         onStatus={handleStatus}
         onNote={handleNote}
-      />
-
-      <LegacyTickets
-        {...props}
-        selectedGuild={guildId || selectedGuild}
-        selectedGuildData={selectedGuildData ? { ...selectedGuildData, id: guildId, guildId } : selectedGuildData}
       />
     </div>
   );

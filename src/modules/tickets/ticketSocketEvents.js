@@ -1,5 +1,7 @@
 // src/modules/tickets/ticketSocketEvents.js
 
+const notifications = require('../notifications/notificationStore');
+
 const EVENTS = Object.freeze({
   TICKET_CREATED: 'ticket_created',
   TICKET_UPDATED: 'ticket_updated',
@@ -41,6 +43,19 @@ let socketProvider = null;
 
 function now() {
   return new Date().toISOString();
+}
+
+function notify(guildId, payload = {}) {
+  try {
+    return notifications.addNotification(guildId, {
+      source: 'tickets',
+      route: '/tickets',
+      ...payload,
+    });
+  } catch (error) {
+    console.warn('[TicketSockets] Notification skipped:', error.message || error);
+    return null;
+  }
 }
 
 function setSocketProvider(provider) {
@@ -193,6 +208,13 @@ function emitTicketCreated(
   guildId,
   ticket
 ) {
+  notify(guildId, {
+    level: 'info',
+    title: 'Ticket created',
+    message: `${ticket.displayId || ticket.ticketId} was opened.`,
+    metadata: { ticketId: ticket.ticketId, displayId: ticket.displayId, status: ticket.status, type: ticket.type },
+  });
+
   return emit(
     EVENTS.TICKET_CREATED,
     guildId,
@@ -253,6 +275,13 @@ function emitTicketClosed(
   ticket,
   actorId = null
 ) {
+  notify(guildId, {
+    level: 'success',
+    title: 'Ticket closed',
+    message: `${ticket.displayId || ticket.ticketId} was closed.`,
+    metadata: { ticketId: ticket.ticketId, displayId: ticket.displayId, actorId },
+  });
+
   return emit(
     EVENTS.TICKET_CLOSED,
     guildId,
@@ -276,6 +305,13 @@ function emitTicketClaimed(
   ticket,
   actorId = null
 ) {
+  notify(guildId, {
+    level: 'info',
+    title: 'Ticket claimed',
+    message: `${ticket.displayId || ticket.ticketId} was claimed.`,
+    metadata: { ticketId: ticket.ticketId, displayId: ticket.displayId, actorId },
+  });
+
   return emit(
     EVENTS.TICKET_CLAIMED,
     guildId,
@@ -299,6 +335,13 @@ function emitTicketReopened(
   ticket,
   actorId = null
 ) {
+  notify(guildId, {
+    level: 'warning',
+    title: 'Ticket reopened',
+    message: `${ticket.displayId || ticket.ticketId} was reopened.`,
+    metadata: { ticketId: ticket.ticketId, displayId: ticket.displayId, actorId },
+  });
+
   return emit(
     EVENTS.TICKET_REOPENED,
     guildId,
@@ -322,6 +365,13 @@ function emitTicketArchived(
   ticket,
   actorId = null
 ) {
+  notify(guildId, {
+    level: 'success',
+    title: 'Ticket archived',
+    message: `${ticket.displayId || ticket.ticketId} was archived.`,
+    metadata: { ticketId: ticket.ticketId, displayId: ticket.displayId, actorId },
+  });
+
   return emit(
     EVENTS.TICKET_ARCHIVED,
     guildId,
@@ -345,6 +395,13 @@ function emitTicketDeleted(
   ticketId,
   displayId = null
 ) {
+  notify(guildId, {
+    level: 'warning',
+    title: 'Ticket deleted',
+    message: `${displayId || ticketId} was deleted.`,
+    metadata: { ticketId, displayId },
+  });
+
   return emit(
     EVENTS.TICKET_DELETED,
     guildId,
