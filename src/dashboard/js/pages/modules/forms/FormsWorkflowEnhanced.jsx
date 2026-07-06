@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 
 import { api } from '../../../services/apiClient.js';
-import LegacyForms from '../Forms.jsx';
 import FormsFinalPolishPanel from './FormsFinalPolishPanel.jsx';
 import FormsWorkflowPanel from './FormsWorkflowPanel.jsx';
 
@@ -22,13 +21,6 @@ function list(value, key) {
 export default function FormsWorkflowEnhanced(props) {
   const { selectedGuild, selectedGuildData, theme } = props;
   const guildId = getGuildId(selectedGuild, selectedGuildData);
-  const cleanSelectedGuildData = selectedGuildData
-    ? {
-      ...selectedGuildData,
-      id: guildId || selectedGuildData.id,
-      guildId: guildId || selectedGuildData.guildId,
-    }
-    : selectedGuildData;
   const [overview, setOverview] = useState(null);
   const [forms, setForms] = useState([]);
   const [submissions, setSubmissions] = useState([]);
@@ -88,11 +80,6 @@ export default function FormsWorkflowEnhanced(props) {
           {error}
         </section>
       ) : null}
-      <LegacyForms
-        {...props}
-        selectedGuild={guildId || selectedGuild}
-        selectedGuildData={cleanSelectedGuildData}
-      />
     </div>
   );
 }

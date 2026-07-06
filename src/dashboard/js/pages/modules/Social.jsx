@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+import EmptyState from '../../shared/EmptyState.jsx';
 import { api } from '../../services/apiClient.js';
 import SocialProviderStatusPanel from './SocialProviderStatusPanel.jsx';
 import { getProviderStatusLabel } from './socialProviderStatus.js';
@@ -291,7 +292,7 @@ export default function Social({ theme, selectedGuild, selectedGuildData }) {
     }
   }
 
-  if (!guildId) return <div style={{ ...cardStyle, padding: 24 }}>Select a server from the navbar to manage social alerts.</div>;
+  if (!guildId) return <EmptyState theme={theme} icon="🔗" title="Select a server" description="Select a server from the navbar to manage creator alerts, announcement channels and tracked social accounts." />;
 
   return (
     <div style={{ display: 'grid', gap: 18 }}>
@@ -317,6 +318,18 @@ export default function Social({ theme, selectedGuild, selectedGuildData }) {
 
       {(error || notice) ? <section style={{ ...cardStyle, padding: 16, color: error ? '#fca5a5' : '#86efac', fontWeight: 850 }}>{error || notice}</section> : null}
 
+      {accounts.length === 0 && !loading ? (
+        <section style={{ ...cardStyle, padding: 22 }}>
+          <EmptyState theme={theme} icon="🔗" title="No social platforms connected yet" description="Add YouTube, Twitch, Kick or another supported platform to automate creator announcements and activity alerts." />
+        </section>
+      ) : null}
+
+      {(channels.length === 0 && !loading) ? (
+        <section style={{ ...cardStyle, padding: 16, color: '#fcd34d', fontWeight: 850 }}>
+          No announcement channels are loaded yet. Refresh Discord resources or check bot access before saving alert destinations.
+        </section>
+      ) : null}
+
       <section style={{ ...cardStyle, padding: 22, display: 'grid', gap: 16 }}>
         <div><div style={{ color: theme.mutedText, fontSize: 12, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Add Creator Account</div><p style={{ margin: '6px 0 0', color: theme.mutedText }}>Add one account per creator/platform combination.</p></div>
         <AccountForm theme={theme} values={form} channels={channels} roles={roles} onChange={updateForm} onPlatformChange={updatePlatform} onToggleAlertType={toggleAlertType} submitLabel="Save Account" saving={saving} onSubmit={saveAccount} />
@@ -324,7 +337,7 @@ export default function Social({ theme, selectedGuild, selectedGuildData }) {
 
       <section style={{ ...cardStyle, padding: 22, display: 'grid', gap: 12 }}>
         <div style={{ color: theme.mutedText, fontSize: 12, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Tracked Accounts</div>
-        {accounts.length === 0 ? <div style={{ color: theme.mutedText, padding: 14 }}>No social accounts added yet.</div> : accounts.map((account) => {
+        {accounts.length === 0 ? <EmptyState theme={theme} icon="📢" title="No tracked accounts" description="Saved creator accounts will appear here with status checks, alert testing and edit controls." /> : accounts.map((account) => {
           const enabled = account.enabled !== false;
           const isEditing = editingAccountId === account.accountId;
           const checking = checkingId === account.accountId;

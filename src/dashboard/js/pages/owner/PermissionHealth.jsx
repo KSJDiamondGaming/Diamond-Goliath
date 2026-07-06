@@ -98,6 +98,7 @@ export default function PermissionHealth({ theme }) {
   const dangerousRoles = health?.roles?.dangerousRoles || [];
   const moduleSections = health?.modules?.sections || [];
   const summary = health?.summary || {};
+  const allHealthy = Boolean(health && !loading && !error && Number(summary.issueCount || 0) === 0 && status === 'healthy');
 
   return (
     <div style={{ display: 'grid', gap: 16, minWidth: 0 }}>
@@ -146,16 +147,18 @@ export default function PermissionHealth({ theme }) {
       </section>
 
       {error ? <section style={{ ...card, color: '#fca5a5' }}>{error}</section> : null}
+      {!selectedGuild ? <HealthyPanel theme={theme} title="Select a guild to scan" text="Choose a server from Owner View to inspect permissions, roles and module readiness." /> : null}
+      {allHealthy ? <HealthyPanel theme={theme} title="Everything looks healthy" text="All permission, role hierarchy, channel access and module readiness checks passed for this server." /> : null}
 
       <CollapsibleCard id="categories" title="Diagnostic Categories" subtitle="High-level health groups from the backend scan." open={open.categories} setOpen={setOpen} theme={theme}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,240px),1fr))', gap: 12 }}>
-          {categories.length ? categories.map((category) => <CategoryCard key={category.key} category={category} theme={theme} />) : <Muted theme={theme}>No categories returned yet.</Muted>}
+          {categories.length ? categories.map((category) => <CategoryCard key={category.key} category={category} theme={theme} />) : <Muted theme={theme}>No categories returned yet. Run or refresh the scan to populate diagnostics.</Muted>}
         </div>
       </CollapsibleCard>
 
       <CollapsibleCard id="recommendations" title="Recommendations" subtitle="Priority fixes generated from the scan." open={open.recommendations} setOpen={setOpen} theme={theme}>
         <div style={{ display: 'grid', gap: 10 }}>
-          {recommendations.length ? recommendations.map((item, index) => <IssueRow key={`${item}-${index}`} title={`Recommendation ${index + 1}`} detail={item} theme={theme} />) : <Muted theme={theme}>No recommendations. Server health looks clean.</Muted>}
+          {recommendations.length ? recommendations.map((item, index) => <IssueRow key={`${item}-${index}`} title={`Recommendation ${index + 1}`} detail={item} meta="Review this item in Discord, then refresh the scan." theme={theme} />) : <HealthyPanel theme={theme} title="No recommendations" text="Server health looks clean. Priority fixes will appear here if future scans find issues." compact />}
         </div>
       </CollapsibleCard>
 
@@ -164,14 +167,14 @@ export default function PermissionHealth({ theme }) {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,260px),1fr))', gap: 12 }}>
             {moduleSections.map((section) => <ModuleCard key={section.key} section={section} theme={theme} />)}
           </div>
-        ) : <Muted theme={theme}>No module diagnostics returned yet.</Muted>}
+        ) : <HealthyPanel theme={theme} title="No module issues returned" text="Module readiness checks will appear here when configured targets are scanned." compact />}
       </CollapsibleCard>
 
       <CollapsibleCard id="permissions" title="Bot Permissions" subtitle="Required and recommended Goliath server permissions." open={open.permissions} setOpen={setOpen} theme={theme}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,260px),1fr))', gap: 12 }}>
           <DetailCard theme={theme} label="Result" value={health?.basePermissions?.message || 'Run a scan to check permissions.'} />
-          <DetailCard theme={theme} label="Missing Required" value={formatList(health?.basePermissions?.missingPermissions)} danger={health?.basePermissions?.missingPermissions?.length > 0} />
-          <DetailCard theme={theme} label="Missing Recommended" value={formatList(health?.basePermissions?.missingRecommendedPermissions)} danger={health?.basePermissions?.missingRecommendedPermissions?.length > 0} />
+          <DetailCard theme={theme} label="Missing Required" value={formatList(health?.basePermissions?.missingPermissions)} danger={health?.basePermissions?.missingPermissions?.length > 0} hint={health?.basePermissions?.missingPermissions?.length ? 'Fix these first. Required permissions can break core modules.' : 'All required permissions look good.'} />
+          <DetailCard theme={theme} label="Missing Recommended" value={formatList(health?.basePermissions?.missingRecommendedPermissions)} danger={health?.basePermissions?.missingRecommendedPermissions?.length > 0} hint={health?.basePermissions?.missingRecommendedPermissions?.length ? 'Recommended permissions improve module coverage.' : 'No recommended permission gaps found.'} />
           <DetailCard theme={theme} label="Goliath Highest Role" value={health?.basePermissions?.botRoleName || 'Unknown'} hint={health?.basePermissions?.botRoleId || ''} />
         </div>
       </CollapsibleCard>
@@ -180,11 +183,11 @@ export default function PermissionHealth({ theme }) {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,320px),1fr))', gap: 12 }}>
           <section style={{ display: 'grid', gap: 10 }}>
             <h3 style={{ margin: 0 }}>Hierarchy Issues</h3>
-            {loading ? <Muted theme={theme}>Scanning roles...</Muted> : roleIssues.length ? roleIssues.slice(0, 12).map((issue) => <IssueRow key={issue.roleId} title={`@${issue.roleName || issue.roleId}`} detail={issue.message} meta={issue.fix || issue.reason} theme={theme} />) : <Muted theme={theme}>No role hierarchy issues found.</Muted>}
+            {loading ? <Muted theme={theme}>Scanning roles...</Muted> : roleIssues.length ? roleIssues.slice(0, 12).map((issue) => <IssueRow key={issue.roleId} title={`@${issue.roleName || issue.roleId}`} detail={issue.message} meta={issue.fix || issue.reason} theme={theme} />) : <HealthyPanel theme={theme} title="No role hierarchy issues" text="Goliath can manage the roles returned by the scan." compact />}
           </section>
           <section style={{ display: 'grid', gap: 10 }}>
             <h3 style={{ margin: 0 }}>Administrator Roles</h3>
-            {dangerousRoles.length ? dangerousRoles.slice(0, 12).map((role) => <IssueRow key={role.roleId} title={`@${role.roleName || role.roleId}`} detail={role.message} meta="Review whether this role really needs Administrator." theme={theme} />) : <Muted theme={theme}>No administrator role warnings returned.</Muted>}
+            {dangerousRoles.length ? dangerousRoles.slice(0, 12).map((role) => <IssueRow key={role.roleId} title={`@${role.roleName || role.roleId}`} detail={role.message} meta="Review whether this role really needs Administrator." theme={theme} />) : <HealthyPanel theme={theme} title="No administrator role warnings" text="No risky administrator-role warnings were returned by the scan." compact />}
           </section>
         </div>
       </CollapsibleCard>
@@ -194,7 +197,7 @@ export default function PermissionHealth({ theme }) {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,280px),1fr))', gap: 10 }}>
             {channelIssues.slice(0, 24).map((issue) => <IssueRow key={issue.channelId} title={`#${issue.channelName || issue.channelId}`} detail={issue.result?.message} meta={formatList(issue.result?.missingPermissions)} theme={theme} />)}
           </div>
-        ) : <Muted theme={theme}>No channel access issues found.</Muted>}
+        ) : <HealthyPanel theme={theme} title="No channel access issues" text="Goliath can access the channels returned by the scan." compact />}
       </CollapsibleCard>
     </div>
   );
@@ -231,7 +234,11 @@ function ModuleCard({ section, theme }) {
 }
 
 function IssueRow({ title, detail, meta, theme }) {
-  return <div style={{ border: '1px solid ' + theme.cardBorder, borderRadius: 14, padding: 12, background: 'rgba(15,23,42,0.18)', minWidth: 0 }}><strong style={{ wordBreak: 'break-word' }}>{title}</strong><div style={{ color: theme.mutedText, marginTop: 6, fontSize: 13, lineHeight: 1.45 }}>{detail}</div>{meta ? <div style={{ color: '#fbbf24', marginTop: 6, fontSize: 13, lineHeight: 1.45, wordBreak: 'break-word' }}>{meta}</div> : null}</div>;
+  return <div style={{ border: '1px solid ' + theme.cardBorder, borderRadius: 14, padding: 12, background: 'rgba(15,23,42,0.18)', minWidth: 0 }}><strong style={{ wordBreak: 'break-word' }}>{title}</strong><div style={{ color: theme.mutedText, marginTop: 6, fontSize: 13, lineHeight: 1.45 }}>{detail}</div>{meta ? <div style={{ color: '#fbbf24', marginTop: 6, fontSize: 13, lineHeight: 1.45, wordBreak: 'break-word' }}>Fix: {meta}</div> : null}</div>;
+}
+
+function HealthyPanel({ theme, title, text, compact = false }) {
+  return <div style={{ border: `1px dashed ${theme.cardBorder}`, background: 'rgba(15,23,42,0.20)', borderRadius: 16, padding: compact ? 14 : 18, display: 'grid', gap: 6, textAlign: 'center', color: theme.mutedText }}><strong style={{ color: theme.cardText }}>✅ {title}</strong><span style={{ lineHeight: 1.5 }}>{text}</span></div>;
 }
 
 function Muted({ theme, children }) {

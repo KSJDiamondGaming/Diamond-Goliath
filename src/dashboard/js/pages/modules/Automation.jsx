@@ -27,6 +27,7 @@ export default function Automation({ theme, selectedGuild, selectedGuildData }) 
   const [registry, setRegistry] = useState({ triggers: [], actions: [] });
   const [rules, setRules] = useState([]);
   const [executions, setExecutions] = useState([]);
+  const [simulation, setSimulation] = useState(null);
   const [name, setName] = useState('New automation rule');
   const [trigger, setTrigger] = useState('form.submitted');
   const [action, setAction] = useState('log.event');
@@ -121,6 +122,29 @@ export default function Automation({ theme, selectedGuild, selectedGuildData }) 
     }
   }
 
+  async function simulateRule(rule) {
+    if (!guildId || !rule?.ruleId) return;
+    setSaving(true);
+    setError('');
+    setNotice('');
+    setSimulation(null);
+    try {
+      const payload = await api.simulateAutomationRule(guildId, rule.ruleId, {
+        guildId,
+        trigger: rule.trigger,
+        source: 'dashboard.simulate',
+        status: 'test',
+      });
+      setSimulation(payload.simulation || null);
+      setExecutions(payload.executions || executions);
+      setNotice('Simulation complete.');
+    } catch (err) {
+      setError(err.message || 'Failed to simulate automation rule.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div style={{ display: 'grid', gap: 18 }}>
       <section style={{ ...card(theme), background: 'linear-gradient(135deg, rgba(59,130,246,0.18), rgba(15,23,42,0.08), rgba(168,85,247,0.12))' }}>
@@ -152,10 +176,12 @@ export default function Automation({ theme, selectedGuild, selectedGuildData }) 
         </div>
       </section>
 
+      {simulation ? <SimulationPanel theme={theme} simulation={simulation} /> : null}
+
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))', gap: 14 }}>
         <section style={{ ...card(theme), display: 'grid', gap: 10 }}>
           <h3 style={{ margin: 0 }}>Rules</h3>
-          {rules.length ? rules.map((rule) => <div key={rule.ruleId} style={{ border: `1px solid ${theme.cardBorder}`, borderRadius: 14, padding: 12, display: 'grid', gap: 7 }}><strong>{rule.name}</strong><span style={{ color: theme.mutedText, fontSize: 12 }}>{rule.trigger} · {rule.enabled ? 'Enabled' : 'Disabled'}</span><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><button type="button" onClick={() => testLog(rule)} style={button(theme, saving)}>Test Log</button><button type="button" onClick={() => deleteRule(rule.ruleId)} style={button(theme, saving)}>Delete</button></div></div>) : <span style={{ color: theme.mutedText }}>No automation rules yet.</span>}
+          {rules.length ? rules.map((rule) => <div key={rule.ruleId} style={{ border: `1px solid ${theme.cardBorder}`, borderRadius: 14, padding: 12, display: 'grid', gap: 7 }}><strong>{rule.name}</strong><span style={{ color: theme.mutedText, fontSize: 12 }}>{rule.trigger} · {rule.enabled ? 'Enabled' : 'Disabled'}</span><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><button type="button" onClick={() => simulateRule(rule)} disabled={saving} style={button(theme, saving)}>Simulate</button><button type="button" onClick={() => testLog(rule)} disabled={saving} style={button(theme, saving)}>Test Log</button><button type="button" onClick={() => deleteRule(rule.ruleId)} disabled={saving} style={button(theme, saving)}>Delete</button></div></div>) : <span style={{ color: theme.mutedText }}>No automation rules yet.</span>}
         </section>
 
         <section style={{ ...card(theme), display: 'grid', gap: 10 }}>
@@ -164,6 +190,29 @@ export default function Automation({ theme, selectedGuild, selectedGuildData }) 
         </section>
       </section>
     </div>
+  );
+}
+
+function SimulationPanel({ theme, simulation }) {
+  const statusTone = simulation.status === 'would_run' ? '#86efac' : simulation.status === 'conditions_failed' ? '#fcd34d' : '#fca5a5';
+  return (
+    <section style={{ ...card(theme), display: 'grid', gap: 12, borderColor: `${statusTone}88` }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+        <div>
+          <h3 style={{ margin: 0 }}>Simulation Result</h3>
+          <p style={{ margin: '6px 0 0', color: theme.mutedText }}>{simulation.name} · {simulation.trigger}</p>
+        </div>
+        <strong style={{ color: statusTone, textTransform: 'uppercase' }}>{simulation.status}</strong>
+      </div>
+      <div style={{ display: 'grid', gap: 8 }}>
+        <strong>Conditions</strong>
+        {simulation.conditions?.length ? simulation.conditions.map((condition, index) => <div key={`${condition.field}-${index}`} style={{ color: condition.passed ? '#86efac' : '#fca5a5', fontSize: 13 }}>{condition.passed ? '✓' : '×'} {condition.field || 'condition'} {condition.operator} {String(condition.expected ?? '')}</div>) : <span style={{ color: theme.mutedText }}>No conditions. Rule can continue.</span>}
+      </div>
+      <div style={{ display: 'grid', gap: 8 }}>
+        <strong>Actions</strong>
+        {simulation.actions?.length ? simulation.actions.map((item) => <div key={`${item.action}-${item.index}`} style={{ border: `1px solid ${theme.cardBorder}`, borderRadius: 12, padding: 10 }}><strong>{item.wouldRun ? '✓' : '○'} {item.label}</strong><div style={{ color: theme.mutedText, fontSize: 12 }}>{item.action} · {item.disabled ? 'disabled' : item.safe ? 'safe' : 'future action'}</div></div>) : <span style={{ color: theme.mutedText }}>No actions configured.</span>}
+      </div>
+    </section>
   );
 }
 

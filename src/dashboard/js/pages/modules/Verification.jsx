@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
+import EmptyState from '../../shared/EmptyState.jsx';
 import { api } from '../../services/apiClient.js';
 import { ChannelSelect, RoleSelect } from '../../ui/DiscordResourceSelects.jsx';
 
@@ -283,7 +284,7 @@ export default function Verification({ theme, selectedGuild, selectedGuildData }
   }
 
   if (!guildId) {
-    return <div style={{ ...cardStyle, padding: 24 }}>Select a server from the navbar to manage verification.</div>;
+    return <EmptyState theme={theme} icon="✅" title="Select a server" description="Select a server from the navbar to manage verification." />;
   }
 
   const panelHealthy = Boolean((activePanel || panel)?.channelId && (activePanel || panel)?.messageId);
@@ -304,6 +305,12 @@ export default function Verification({ theme, selectedGuild, selectedGuildData }
       </section>
 
       {(error || notice) ? <section style={{ ...cardStyle, padding: 16, color: error ? '#fca5a5' : '#86efac', fontWeight: 850 }}>{error || notice}</section> : null}
+
+      {panels.length === 0 ? (
+        <section style={{ ...cardStyle, padding: 22 }}>
+          <EmptyState theme={theme} icon="✅" title="No verification panel deployed yet" description="Choose a verification channel, set your verified role, then deploy your first panel so members can verify from Discord." />
+        </section>
+      ) : null}
 
       <section style={{ ...cardStyle, padding: 22, display: 'grid', gap: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -360,10 +367,12 @@ export default function Verification({ theme, selectedGuild, selectedGuildData }
       <section style={{ ...cardStyle, padding: 22, display: 'grid', gap: 16 }}>
         <h2 style={{ margin: 0 }}>Role Picker</h2>
         <p style={{ margin: 0, color: theme.mutedText }}>Only real Discord roles are shown. @everyone is ignored because it cannot be added or removed.</p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))', gap: 14 }}>
-          <RoleSelect theme={theme} resources={usableRoles} value={settings.verifiedRoleId || ''} onChange={(value) => saveSettings({ verifiedRoleId: value || null })} label="Verified Role" placeholder="No verified role" disabled={usableRoles.length === 0} />
-          <RoleSelect theme={theme} resources={usableRoles} value={settings.unverifiedRoleId || ''} onChange={(value) => saveSettings({ unverifiedRoleId: value || null })} label="Unverified Role" placeholder="No unverified role" disabled={usableRoles.length === 0} />
-        </div>
+        {usableRoles.length ? (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))', gap: 14 }}>
+            <RoleSelect theme={theme} resources={usableRoles} value={settings.verifiedRoleId || ''} onChange={(value) => saveSettings({ verifiedRoleId: value || null })} label="Verified Role" placeholder="No verified role" disabled={usableRoles.length === 0} />
+            <RoleSelect theme={theme} resources={usableRoles} value={settings.unverifiedRoleId || ''} onChange={(value) => saveSettings({ unverifiedRoleId: value || null })} label="Unverified Role" placeholder="No unverified role" disabled={usableRoles.length === 0} />
+          </div>
+        ) : <EmptyState theme={theme} icon="🛡️" title="No usable roles found" description="Refresh Discord resources or create roles in Discord before assigning verification roles." />}
         {saving === 'settings' ? <div style={{ color: theme.mutedText, fontSize: 13 }}>Saving role settings...</div> : null}
       </section>
 

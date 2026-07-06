@@ -2,13 +2,13 @@ import { lazy } from 'react';
 
 const Overview = lazy(() => import('../pages/core/Overview'));
 const Billing = lazy(() => import('../pages/core/Billing'));
+const Notifications = lazy(() => import('../pages/core/Notifications'));
 const AutoMod = lazy(() => import('../pages/administration/AutoMod'));
 const Admin = lazy(() => import('../pages/administration/AdminRoleWorkspace'));
 const Moderation = lazy(() => import('../pages/moderation/Moderation'));
 const Cases = lazy(() => import('../pages/moderation/Cases'));
 const GeneralSettings = lazy(() => import('../pages/administration/GeneralSettings'));
 const Warnings = lazy(() => import('../pages/moderation/Warnings'));
-const Messages = lazy(() => import('../pages/core/Messages'));
 const Forms = lazy(() => import('../pages/modules/forms/FormsWorkflowEnhanced'));
 const Modules = lazy(() => import('../pages/modules/Modules'));
 const Automation = lazy(() => import('../pages/modules/Automation'));
@@ -24,7 +24,6 @@ const TempVoice = lazy(() => import('../pages/modules/TempVoice'));
 const Timeline = lazy(() => import('../pages/modules/Timeline'));
 const Translation = lazy(() => import('../pages/modules/Translation'));
 const ReactionRoles = lazy(() => import('../pages/modules/ReactionRoles'));
-const WelcomeLeave = lazy(() => import('../pages/modules/WelcomeLeave'));
 const Leveling = lazy(() => import('../pages/modules/Leveling'));
 const Polls = lazy(() => import('../pages/modules/Polls'));
 const Stats = lazy(() => import('../pages/modules/Stats'));
@@ -88,12 +87,14 @@ export const NAV_BOTTOM = [
       { key: 'security', label: 'Security', icon: 'admin', path: '/security' },
     ],
   },
+  { key: 'notifications', label: 'Notifications', icon: 'logs', path: '/notifications' },
   { key: 'logs', label: 'Logs', icon: 'logs', path: '/logs' },
 ];
 
 export const ROUTES = [
   { key: 'overview', label: 'Overview', icon: 'overview', path: '/overview', component: Overview },
   { key: 'billing', label: 'Billing', icon: 'admin', path: '/billing', component: Billing, hidden: true },
+  { key: 'notifications', label: 'Notifications', icon: 'logs', path: '/notifications', component: Notifications },
   { key: 'ownerView', label: 'Owner View', icon: 'admin', path: '/owner', component: OwnerView, ownerOnly: true },
   { key: 'ownerServers', label: 'Global Servers', icon: 'modules', path: '/owner/servers', component: OwnerGlobalServers, ownerOnly: true },
   { key: 'ownerRuntime', label: 'Runtime Monitor', icon: 'admin', path: '/owner/runtime', component: OwnerRuntimeMonitor, ownerOnly: true },
@@ -111,7 +112,6 @@ export const ROUTES = [
   { key: 'verification', label: 'Verification', icon: 'modules', path: '/verification', component: Verification, hidden: true },
   { key: 'autoRoles', label: 'Auto Roles', icon: 'modules', path: '/autoroles', component: AutoRoles, hidden: true },
   { key: 'reactionRoles', label: 'Reaction Roles', icon: 'modules', path: '/reaction-roles', component: ReactionRoles, hidden: true },
-  { key: 'welcome', label: 'Welcome & Leave', icon: 'messages', path: '/welcome-leave', component: WelcomeLeave, hidden: true },
   { key: 'leveling', label: 'Leveling', icon: 'modules', path: '/leveling', component: Leveling, hidden: true },
   { key: 'forms', label: 'Forms', icon: 'modules', path: '/forms', component: Forms, hidden: true },
   { key: 'giveaways', label: 'Giveaways', icon: 'modules', path: '/giveaways', component: Giveaways, hidden: true },
@@ -130,7 +130,6 @@ export const ROUTES = [
   { key: 'moderation', label: 'Moderation', icon: 'admin', path: '/moderation', component: Moderation },
   { key: 'cases', label: 'Cases', icon: 'warnings', path: '/cases', component: Cases },
   { key: 'warnings', label: 'Warnings', icon: 'warnings', path: '/warnings', component: Warnings },
-  { key: 'messages', label: 'Welcome & Leave Legacy', icon: 'messages', path: '/messages', component: Messages },
   { key: 'security', label: 'Security', icon: 'admin', path: '/security', component: Security },
   { key: 'restore', label: 'Restore', icon: 'admin', path: '/restore', component: Restore },
   { key: 'logs', label: 'Logs', icon: 'logs', path: '/logs', component: Logs },
@@ -142,6 +141,7 @@ export const navBottomItems = NAV_BOTTOM;
 export const PAGE_LAYOUTS = {
   overview: { title: 'Overview', description: 'Server insights and activity', sections: [{ id: 'stats', type: 'stats' }, { id: 'activity', type: 'list' }] },
   billing: { title: 'Billing', description: 'Current plan, subscription status and feature entitlements.', emptyDescription: 'Select a server to view billing.', sections: [{ id: 'billingDashboard', type: 'dashboard' }] },
+  notifications: { title: 'Notifications', description: 'Global notification centre.', emptyDescription: 'Select a server to view notifications.', sections: [{ id: 'notificationsDashboard', type: 'dashboard' }] },
   ownerView: { title: 'Owner View', description: 'Owner-only platform dashboard.', sections: [] },
   ownerServers: { title: 'Global Servers', description: 'Owner-level server registry across all environments.', sections: [] },
   ownerRuntime: { title: 'Runtime Monitor', description: 'Owner-level runtime monitoring across DEV, BETA and PRODUCTION.', sections: [] },
@@ -159,7 +159,6 @@ export const PAGE_LAYOUTS = {
   verification: { title: 'Verification', description: 'Member verification, role settings, panels and analytics.', emptyDescription: 'Select a server to manage verification.', sections: [{ id: 'verificationDashboard', type: 'dashboard' }] },
   autoRoles: { title: 'Auto Roles', description: 'Join roles, bot roles and assignment analytics.', emptyDescription: 'Select a server to manage auto roles.', sections: [{ id: 'autoRolesDashboard', type: 'dashboard' }] },
   reactionRoles: { title: 'Reaction Roles', description: 'Manage role menus, emoji mappings and reaction role panels.', emptyDescription: 'Select a server to manage reaction roles.', sections: [{ id: 'reactionRolesDashboard', type: 'dashboard' }] },
-  welcome: { title: 'Welcome & Leave', description: 'Manage welcome, leave and DM welcome messages.', emptyDescription: 'Select a server to manage Welcome & Leave.', sections: [{ id: 'welcomeLeaveDashboard', type: 'dashboard' }] },
   leveling: { title: 'Leveling', description: 'Manage XP, levels, rewards and leaderboards.', emptyDescription: 'Select a server to manage leveling.', sections: [{ id: 'levelingDashboard', type: 'dashboard' }] },
   forms: { title: 'Forms', description: 'Manage universal forms and workflows.', emptyDescription: 'Select a server to manage forms.', sections: [{ id: 'formsManager', type: 'dashboard' }] },
   giveaways: { title: 'Giveaways', description: 'Create, monitor and review server giveaways.', emptyDescription: 'Select a server to manage giveaways.', sections: [{ id: 'giveawaysDashboard', type: 'dashboard' }] },
@@ -178,7 +177,6 @@ export const PAGE_LAYOUTS = {
   moderation: { title: 'Moderation', description: 'Central moderation tools for this server.', emptyDescription: 'Select a server to manage moderation.', sections: [{ id: 'moderationHub', type: 'future' }] },
   cases: { title: 'Cases', description: 'View moderation case history.', emptyDescription: 'Select a server to view cases.', sections: [{ id: 'caseTable', type: 'table' }] },
   warnings: { title: 'Warnings', description: 'View and manage warning records.', emptyDescription: 'Select a server to view warnings.', sections: [{ id: 'warningTable', type: 'table' }] },
-  messages: { title: 'Welcome & Leave Legacy', description: 'Manage join and leave messages.', emptyDescription: 'Select a server to manage messages.', sections: [{ id: 'welcome', type: 'config' }, { id: 'leave', type: 'config' }] },
   security: { title: 'Security Center', description: 'Live protection and recovery overview.', emptyDescription: 'Select a server to view security status.', sections: [{ id: 'securityOverview', type: 'dashboard' }] },
   restore: { title: 'Server Restore', description: 'Preview and restore server backups.', emptyDescription: 'Select a server to restore from backup.', sections: [{ id: 'restoreManager', type: 'config' }] },
   logs: { title: 'Logs', description: 'Manage log channels.', emptyDescription: 'Select a server to manage log channels.', sections: [{ id: 'logManager', type: 'config' }] },
@@ -189,12 +187,12 @@ export const SECTION_DEFS = {
   activity: { title: 'Recent Activity', description: 'Quick status indicators.' },
   billingDashboard: { title: 'Billing Dashboard', description: 'Current plan, limits and entitlements.' },
   modulesGrid: { title: 'Modules Grid', description: 'Browse optional Goliath features.' },
+  notificationsDashboard: { title: 'Notifications', description: 'Unified alert and activity inbox.' },
   automationDashboard: { title: 'Automation Dashboard', description: 'Rules, triggers and execution history.' },
   embedStudioDashboard: { title: 'Embed Studio', description: 'Build, preview and save Discord embeds.' },
   verificationDashboard: { title: 'Verification Dashboard', description: 'Configure verification roles, panels and analytics.' },
   autoRolesDashboard: { title: 'Auto Roles Dashboard', description: 'Configure join roles, bot roles and analytics.' },
   reactionRolesDashboard: { title: 'Reaction Roles Dashboard', description: 'Configure reaction role panels and emoji mappings.' },
-  welcomeLeaveDashboard: { title: 'Welcome & Leave Dashboard', description: 'Configure welcome, leave and DM welcome messages.' },
   levelingDashboard: { title: 'Leveling Dashboard', description: 'Configure XP, levels, rewards and leaderboards.' },
   formsManager: { title: 'Forms Manager', description: 'Create and manage forms.' },
   giveawaysDashboard: { title: 'Giveaways Dashboard', description: 'Create and review server giveaways.' },
@@ -213,8 +211,6 @@ export const SECTION_DEFS = {
   filters: { title: 'Filters', description: 'Manage filters and logs.' },
   caseTable: { title: 'Cases', description: 'Browse moderation case history.' },
   warningTable: { title: 'Warnings', description: 'Browse warning history.' },
-  welcome: { title: 'Welcome Message', description: 'Configure the welcome message.' },
-  leave: { title: 'Leave Message', description: 'Configure the leave message.' },
   generalConfig: { title: 'General Config', description: 'Core server configuration.' },
   securityOverview: { title: 'Security Overview', description: 'Live protection status.' },
   restoreManager: { title: 'Restore Manager', description: 'Preview and restore backups.' },
