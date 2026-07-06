@@ -28,7 +28,7 @@
     "dashboard:audit-files": "node scripts/dashboard-file-audit.js",
     "dashboard:audit-routes": "node scripts/dashboard-route-audit.js",
     "check": "node scripts/scripts.js check",
-    "dashboard:build": "npm run check && vite build src/dashboard --outDir ../../dist --emptyOutDir",
+    "dashboard:build": "npm run check && vite build src/dashboard --outDir ../../dist --emptyOutDir --logLevel warn",
     "build": "npm run dashboard:build",
     "dev": "concurrently -n BOT,DASHBOARD -c green,cyan \"npm run bot:dev\" \"npm run dashboard:dev\"",
     "dev:sync": "npm run sync:commands:dev && npm run dev",
