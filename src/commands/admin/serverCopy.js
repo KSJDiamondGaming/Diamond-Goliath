@@ -2,7 +2,6 @@
 
 const { PermissionFlagsBits, SlashCommandBuilder } = require('discord.js');
 const serverCopy = require('../../modules/serverCopy/serverCopy');
-const serverCopyAnalyse = require('../../modules/serverCopy/serverCopyAnalyse');
 
 module.exports = {
   hidden: true,
@@ -39,18 +38,61 @@ module.exports = {
             .setDescription('Destination server ID to analyse.')
             .setRequired(true)
         )
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName('export')
+        .setDescription('Export a server into this guild JSON as a reusable template.')
+        .addStringOption((option) =>
+          option
+            .setName('name')
+            .setDescription('Template display name.')
+            .setRequired(true)
+        )
+        .addStringOption((option) =>
+          option
+            .setName('source_server')
+            .setDescription('Source server ID. Defaults to current server.')
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName('template_id')
+            .setDescription('Optional stable template ID.')
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName('version')
+            .setDescription('Template version. Defaults to 1.0.0.')
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName('description')
+            .setDescription('Short template description.')
+            .setRequired(false)
+        )
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName('build')
+        .setDescription('Build/deploy a saved server template into a destination server.')
+        .addStringOption((option) =>
+          option
+            .setName('destination_server')
+            .setDescription('Optional destination server ID. Defaults to current server.')
+            .setRequired(false)
+        )
     ),
 
   async execute(interaction) {
     const subcommand = interaction.options?.getSubcommand?.(false);
 
-    if (subcommand === 'copy') {
-      return serverCopy.start(interaction);
-    }
-
-    if (subcommand === 'analyse') {
-      return serverCopyAnalyse.run(interaction);
-    }
+    if (subcommand === 'copy') return serverCopy.start(interaction);
+    if (subcommand === 'analyse') return serverCopy.analyse(interaction);
+    if (subcommand === 'export') return serverCopy.exportTemplate(interaction);
+    if (subcommand === 'build') return serverCopy.startBuild(interaction);
 
     return interaction.reply({
       content: '❌ Unknown internal server option.',
