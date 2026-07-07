@@ -1,6 +1,6 @@
 'use strict';
 
-const { SlashCommandBuilder } = require('discord.js');
+const { PermissionFlagsBits, SlashCommandBuilder } = require('discord.js');
 const serverCopy = require('../../modules/serverCopy/serverCopy');
 
 module.exports = {
@@ -16,6 +16,7 @@ module.exports = {
     .setName('server')
     .setDescription('Internal server developer tools.')
     .setDMPermission(false)
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addSubcommand((subcommand) =>
       subcommand
         .setName('copy')
