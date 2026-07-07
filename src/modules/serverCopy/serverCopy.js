@@ -47,8 +47,179 @@ const REQUIRED_BOT_PERMISSIONS = [
   ['ManageWebhooks', PermissionFlagsBits.ManageWebhooks],
 ];
 
+const DEFAULT_GENERIC_TEMPLATES = Object.freeze({
+  'basic-gaming': makeTemplate('basic-gaming', 'Basic Gaming', 'Starter gaming community layout.', [
+    ['Owner', 0xffc107],
+    ['Admin', 0xef4444],
+    ['Moderator', 0x3b82f6],
+    ['Member', 0x22c55e],
+  ], [
+    ['INFORMATION', [
+      ['welcome', ChannelType.GuildText],
+      ['rules', ChannelType.GuildText],
+      ['announcements', ChannelType.GuildAnnouncement],
+    ]],
+    ['COMMUNITY', [
+      ['general', ChannelType.GuildText],
+      ['clips-and-media', ChannelType.GuildText],
+      ['looking-for-group', ChannelType.GuildText],
+      ['General Voice', ChannelType.GuildVoice],
+    ]],
+    ['SUPPORT', [
+      ['open-a-ticket', ChannelType.GuildText],
+      ['staff-chat', ChannelType.GuildText],
+    ]],
+  ]),
+
+  'community-server': makeTemplate('community-server', 'Community Server', 'Clean public community layout.', [
+    ['Owner', 0xffc107],
+    ['Admin', 0xef4444],
+    ['Staff', 0x3b82f6],
+    ['Member', 0x22c55e],
+  ], [
+    ['START HERE', [
+      ['welcome', ChannelType.GuildText],
+      ['rules', ChannelType.GuildText],
+      ['server-info', ChannelType.GuildText],
+    ]],
+    ['COMMUNITY', [
+      ['general', ChannelType.GuildText],
+      ['introductions', ChannelType.GuildText],
+      ['media', ChannelType.GuildText],
+      ['Community Voice', ChannelType.GuildVoice],
+    ]],
+    ['STAFF', [
+      ['staff-chat', ChannelType.GuildText],
+      ['mod-logs', ChannelType.GuildText],
+    ]],
+  ]),
+
+  'business-support': makeTemplate('business-support', 'Business Support', 'Simple support and client workspace layout.', [
+    ['Owner', 0xffc107],
+    ['Manager', 0x6366f1],
+    ['Support Team', 0x3b82f6],
+    ['Client', 0x22c55e],
+  ], [
+    ['BUSINESS INFO', [
+      ['welcome', ChannelType.GuildText],
+      ['announcements', ChannelType.GuildAnnouncement],
+      ['faq', ChannelType.GuildText],
+    ]],
+    ['SUPPORT', [
+      ['support-desk', ChannelType.GuildText],
+      ['ticket-updates', ChannelType.GuildText],
+      ['Support Voice', ChannelType.GuildVoice],
+    ]],
+    ['INTERNAL', [
+      ['team-chat', ChannelType.GuildText],
+      ['admin-logs', ChannelType.GuildText],
+    ]],
+  ]),
+
+  'creator-streamer': makeTemplate('creator-streamer', 'Creator / Streamer', 'Creator community layout for streams, content and announcements.', [
+    ['Creator', 0xffc107],
+    ['Admin', 0xef4444],
+    ['Moderator', 0x3b82f6],
+    ['Subscriber', 0xa855f7],
+    ['Community', 0x22c55e],
+  ], [
+    ['START HERE', [
+      ['welcome', ChannelType.GuildText],
+      ['rules', ChannelType.GuildText],
+      ['stream-announcements', ChannelType.GuildAnnouncement],
+    ]],
+    ['CONTENT', [
+      ['clips', ChannelType.GuildText],
+      ['youtube', ChannelType.GuildText],
+      ['socials', ChannelType.GuildText],
+    ]],
+    ['COMMUNITY', [
+      ['general', ChannelType.GuildText],
+      ['suggestions', ChannelType.GuildText],
+      ['Stream Room', ChannelType.GuildVoice],
+    ]],
+  ]),
+});
+
 function now() {
   return new Date().toISOString();
+}
+
+function makeTemplate(id, name, description, roleDefs, categoryDefs) {
+  const sourceGuild = { id: `template:${id}`, name };
+  const roles = roleDefs.map(([roleName, color], index) => ({
+    id: `template:${id}:role:${slugify(roleName)}`,
+    name: roleName,
+    color,
+    hoist: index < 3,
+    mentionable: false,
+    permissions: '0',
+    position: index + 1,
+  }));
+
+  const channels = [];
+  let position = 0;
+  for (const [categoryName, children] of categoryDefs) {
+    const categoryId = `template:${id}:category:${slugify(categoryName)}`;
+    channels.push(templateChannel(categoryId, categoryName, ChannelType.GuildCategory, null, position++));
+    for (const [channelName, type] of children) {
+      channels.push(templateChannel(`template:${id}:channel:${slugify(channelName)}`, channelName, type, categoryId, position++));
+    }
+  }
+
+  return {
+    meta: {
+      id,
+      name,
+      description,
+      version: '1.0.0',
+      createdAt: 'system-default',
+      updatedAt: 'system-default',
+      createdBy: 'Goliath',
+      updatedBy: 'Goliath',
+      sourceGuildId: sourceGuild.id,
+      sourceGuildName: sourceGuild.name,
+      environment: 'DEFAULT',
+      schemaVersion: 1,
+      defaultTemplate: true,
+    },
+    snapshot: {
+      sourceGuild,
+      options: Object.keys(COPY_OPTIONS).filter((key) => key !== 'serverSettings' && key !== 'emojis'),
+      settings: null,
+      roles,
+      channels,
+      emojis: [],
+      stats: {
+        roles: roles.length,
+        categories: channels.filter((channel) => channel.type === ChannelType.GuildCategory).length,
+        channels: channels.filter((channel) => channel.type !== ChannelType.GuildCategory).length,
+        permissionOverwrites: 0,
+        emojis: 0,
+      },
+    },
+  };
+}
+
+function templateChannel(id, name, type, parentId, position) {
+  return {
+    id,
+    name,
+    type,
+    parentId,
+    position,
+    topic: null,
+    nsfw: false,
+    rateLimitPerUser: 0,
+    bitrate: null,
+    userLimit: 0,
+    rtcRegion: null,
+    videoQualityMode: null,
+    defaultAutoArchiveDuration: null,
+    defaultThreadRateLimitPerUser: 0,
+    availableTags: [],
+    permissionOverwrites: [],
+  };
 }
 
 function cleanId(value) {
@@ -271,12 +442,41 @@ function buildSnapshot(sourceGuild, selectedOptions = Object.keys(COPY_OPTIONS))
   };
 }
 
-function getTemplates(guildId) {
-  return guildManager.getGuildSection(guildId, 'templates', {});
+function readStoredTemplates(guildId) {
+  const moduleConfig = getModuleConfig(guildId);
+  return moduleConfig.templates && typeof moduleConfig.templates === 'object' && !Array.isArray(moduleConfig.templates)
+    ? moduleConfig.templates
+    : {};
 }
 
 function saveTemplates(guildId, templates, guildOrMeta = {}) {
-  return guildManager.saveGuildSection(guildId, 'templates', templates, guildOrMeta);
+  guildManager.updateGuildSection(
+    guildId,
+    'modules',
+    (modules) => ({
+      ...modules,
+      serverCopy: {
+        ...(modules.serverCopy || {}),
+        templates,
+      },
+    }),
+    {},
+    guildOrMeta
+  );
+  return templates;
+}
+
+function ensureDefaultTemplates(guildId, guildOrMeta = {}) {
+  const templates = readStoredTemplates(guildId);
+  const hasAny = Object.keys(templates).length > 0;
+  if (hasAny) return templates;
+
+  const seeded = JSON.parse(JSON.stringify(DEFAULT_GENERIC_TEMPLATES));
+  return saveTemplates(guildId, seeded, guildOrMeta);
+}
+
+function getTemplates(guildId) {
+  return ensureDefaultTemplates(guildId);
 }
 
 function listTemplates(guildId) {
@@ -341,7 +541,7 @@ function buildBuildPayload(interaction, session) {
       `**Destination:** ${session.destinationGuildId ? getGuildById(interaction.client, session.destinationGuildId)?.name || session.destinationGuildId : '`Not selected`'}`,
       `**Conflict mode:** \`${session.conflictMode}\``,
       `**Dry run:** \`${session.dryRun ? 'ON' : 'OFF'}\``,
-      template ? `\n**Snapshot:** roles \`${template.snapshot?.stats?.roles || 0}\`, channels \`${template.snapshot?.stats?.channels || 0}\`, emojis \`${template.snapshot?.stats?.emojis || 0}\`` : '\nUse `/server export` first to save templates.',
+      template ? `\n**Snapshot:** roles \`${template.snapshot?.stats?.roles || 0}\`, channels \`${template.snapshot?.stats?.channels || 0}\`, emojis \`${template.snapshot?.stats?.emojis || 0}\`` : '\nChoose one of the saved/default templates below.',
     ].join('\n'))],
     components: [
       new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(customId(BUILD_PREFIX, session.id, 'template')).setPlaceholder('Choose template').setDisabled(!listTemplates(session.controlGuildId).length).addOptions(templateOptions(session.controlGuildId, session.templateId))),
@@ -397,6 +597,7 @@ async function exportTemplate(interaction) {
       updatedBy: interaction.user.id,
       environment: String(process.env.BOT_MODE || 'DEV').toUpperCase(),
       schemaVersion: 1,
+      defaultTemplate: false,
     },
     snapshot,
   };
@@ -409,7 +610,7 @@ async function exportTemplate(interaction) {
     `**Source:** ${sourceGuild.name}`,
     '',
     '**Saved into this guild JSON:**',
-    `\`templates.${templateId}\``,
+    `\`modules.serverCopy.templates.${templateId}\``,
     '',
     `Roles \`${snapshot.stats.roles}\` • Categories \`${snapshot.stats.categories}\` • Channels \`${snapshot.stats.channels}\` • Emojis \`${snapshot.stats.emojis}\``,
   ].join('\n'), 0x22c55e)] });
@@ -418,6 +619,7 @@ async function exportTemplate(interaction) {
 async function startBuild(interaction) {
   const access = assertAccess(interaction);
   if (!access.allowed) return interaction.reply({ content: `❌ ${access.reason}`, flags: MessageFlags.Ephemeral });
+  ensureDefaultTemplates(interaction.guild.id, interaction.guild);
   const session = makeBuildSession(interaction);
   return interaction.reply(buildBuildPayload(interaction, session));
 }
@@ -772,6 +974,7 @@ async function handleInteraction(interaction) {
 module.exports = {
   COPY_OPTIONS,
   CONFLICT_MODES,
+  DEFAULT_GENERIC_TEMPLATES,
   assertAccess,
   start,
   analyse,
