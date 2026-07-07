@@ -956,10 +956,10 @@ function buildFieldsPanel(i, who) {
         .setCustomId("embed:field-layout")
         .setPlaceholder("Field Layout")
         .addOptions([
-          { label: "Auto", value: "auto", emoji: "?", default: (s.fieldLayout || "auto") === "auto" },
-          { label: "1 per row", value: "1", emoji: "1??", default: s.fieldLayout === "1" },
-          { label: "2 per row", value: "2", emoji: "2??", default: s.fieldLayout === "2" },
-          { label: "3 per row", value: "3", emoji: "3??", default: s.fieldLayout === "3" },
+          { label: "Auto", value: "auto", default: (s.fieldLayout || "auto") === "auto" },
+          { label: "1 per row", value: "1", default: s.fieldLayout === "1" },
+          { label: "2 per row", value: "2", default: s.fieldLayout === "2" },
+          { label: "3 per row", value: "3", default: s.fieldLayout === "3" },
         ]),
     ),
   );
