@@ -2,6 +2,7 @@ const { runAutomod } = require('../../modules/automod/functions/service');
 const { handleStickyMessage } = require('../../modules/sticky/stickyManager');
 const { handlePrefixCommand } = require('../../features/prefix/prefixRouter');
 const translationThreadManager = require('../../modules/translation/translationThreadManager');
+const statsManager = require('../../modules/stats/statsManager');
 
 module.exports = {
   name: 'messageCreate',
@@ -12,6 +13,7 @@ module.exports = {
       if (!message.content || message.author?.bot) return;
 
       await runAutomod(message, client);
+      await statsManager.handleMessageCreate(message);
 
       const handledPrefixCommand = await handlePrefixCommand(message, client);
       if (handledPrefixCommand) return;
