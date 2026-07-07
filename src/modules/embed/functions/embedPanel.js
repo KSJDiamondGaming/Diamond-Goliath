@@ -635,16 +635,17 @@ function buildEmbedFromPanel(p, i, showTimestamp, fieldLayout = "auto") {
   else if (media.imageUrl) e.setImage(media.imageUrl);
   if (thumb) e.setThumbnail(thumb);
   else if (media.thumbnailUrl) e.setThumbnail(media.thumbnailUrl);
-  const fields = normalizeInlineFields(p.fields || [])
-    .filter((f) => f?.name && f?.value)
-    .slice(0, 25)
-    .map((f) => ({
-      name: trim(replaceVars(f.name, i), 256),
-      value: trim(replaceVars(f.value, i), 1024),
-      inline: Boolean(f.inline),
+  const fields = applyFieldLayout(
+    (p.fields || [])
+      .filter((f) => f?.name && f?.value)
+      .slice(0, 25)
+      .map((f) => ({
+        name: trim(replaceVars(f.name, i), 256),
+        value: trim(replaceVars(f.value, i), 1024),
+        inline: Boolean(f.inline),
       })),
     fieldLayout,
-  
+  );
   if (fields.length) e.addFields(fields);
   if (showTimestamp !== false) e.setTimestamp();
   return e;
