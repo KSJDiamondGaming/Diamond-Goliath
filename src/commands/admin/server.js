@@ -1,7 +1,17 @@
 'use strict';
 
-const { PermissionFlagsBits, SlashCommandBuilder } = require('discord.js');
+const { MessageFlags, PermissionFlagsBits, SlashCommandBuilder } = require('discord.js');
 const duplicator = require('../../core/dev/duplicator');
+
+async function safeReply(interaction, content) {
+  const payload = { content, flags: MessageFlags.Ephemeral };
+
+  if (interaction.deferred || interaction.replied) {
+    return interaction.editReply(payload).catch(() => interaction.followUp(payload).catch(() => null));
+  }
+
+  return interaction.reply(payload).catch(() => null);
+}
 
 module.exports = {
   hidden: true,
@@ -67,6 +77,11 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    return duplicator.run(interaction);
+    try {
+      return await duplicator.run(interaction);
+    } catch (error) {
+      console.error('[ServerCommand] Failed:', error);
+      return safeReply(interaction, `❌ Server command failed: ${error.message}`);
+    }
   },
 };
