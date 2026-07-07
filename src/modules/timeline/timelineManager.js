@@ -1,1 +1,1 @@
-module.exports = require('../../core/timeline/timelineManager');
+module.exports = require('../../features/timeline/timelineManager');
