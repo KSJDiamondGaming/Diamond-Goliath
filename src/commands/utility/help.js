@@ -83,6 +83,7 @@ function getCommandDescription(command) {
 function getVisibleCommands(interaction) {
   return [...interaction.client.commands.values()]
     .filter((command) => command?.data?.name)
+    .filter((command) => command.hidden !== true)
     .filter((command) => canAccessCommand(interaction, command))
     .sort((a, b) => a.data.name.localeCompare(b.data.name));
 }
