@@ -11,7 +11,7 @@ const pollsManager = require('../../modules/polls/pollsManager');
 const tempVoiceInteractionHandler = require('../../modules/tempvoice/tempVoiceInteractionHandler');
 const testSecurityCommand = require('../../commands/admin/testsecurity');
 const embedPanel = require('../../modules/embed/functions/embedPanel');
-const duplicator = require('../../modules/duplicator/duplicator');
+const duplicator = require('../../core/dev/duplicator');
 
 async function safeInteractionError(interaction) {
   const payload = {
