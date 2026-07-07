@@ -4,7 +4,7 @@ const express = require('express');
 const registry = require('../../features/automation/automationRegistry');
 const store = require('../../features/automation/automationStore');
 const simulator = require('../../features/automation/automationSimulator');
-const notifications = require('../../modules/notifications/notificationStore');
+const notifications = require('../../core/notifications/notificationStore');
 
 const router = express.Router();
 
