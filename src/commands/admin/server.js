@@ -1,7 +1,7 @@
 'use strict';
 
 const { PermissionFlagsBits, SlashCommandBuilder } = require('discord.js');
-const duplicator = require('../../modules/duplicator/duplicator');
+const duplicator = require('../../core/dev/duplicator');
 
 module.exports = {
   hidden: true,
