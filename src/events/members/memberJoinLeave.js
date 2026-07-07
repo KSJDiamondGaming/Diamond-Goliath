@@ -3,6 +3,7 @@ const { buildPreviewEmbed, TEMPLATES } = require('../../modules/embed/functions/
 const embedTemplateManager = require('../../modules/embed/embedTemplateManager');
 const guildManager = require('../../core/guild/guildManager');
 const autoRoleManager = require('../../modules/autoRoles/autoRoleManager');
+const statsManager = require('../../modules/stats/statsManager');
 
 /* ---------------- SHARED HELPERS ---------------- */
 
@@ -294,6 +295,8 @@ module.exports = [
   {
     name: 'guildMemberAdd',
     async execute(member) {
+      await statsManager.handleGuildMemberAdd(member);
+
       const addedRoles = (await autoRoleManager.applyAutoRoles(member).catch((error) => {
         console.error('[autoRoles] Failed to apply auto roles:', error);
         return [];
@@ -307,6 +310,7 @@ module.exports = [
   {
     name: 'guildMemberRemove',
     async execute(member) {
+      await statsManager.handleGuildMemberRemove(member);
       const removal = await detectRemoval(member);
       await sendPublicMemberEmbed(member, 'leave');
       await sendAdminMemberRemovalLog(member, removal);
