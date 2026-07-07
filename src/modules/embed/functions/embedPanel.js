@@ -957,9 +957,9 @@ function buildFieldsPanel(i, who) {
         .setPlaceholder("Field Layout")
         .addOptions([
           { label: "Auto", value: "auto", default: (s.fieldLayout || "auto") === "auto" },
-          { label: "1 per row", value: "1", default: s.fieldLayout === "1" },
-          { label: "2 per row", value: "2", default: s.fieldLayout === "2" },
-          { label: "3 per row", value: "3", default: s.fieldLayout === "3" },
+          { label: "1 field per row", value: "1", default: s.fieldLayout === "1" },
+          { label: "2 fields per row", value: "2", default: s.fieldLayout === "2" },
+          { label: "3 fields per row", value: "3", default: s.fieldLayout === "3" },
         ]),
     ),
   );
