@@ -11,7 +11,7 @@ const {
   setGuildPrefix,
   resetGuildPrefix,
   normalizePrefix,
-} = require('../../core/prefix/prefixStore');
+} = require('../../features/prefix/prefixStore');
 
 const { enforceCommandAccess } = require('../../core/ui/commandAccess');
 
