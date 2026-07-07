@@ -2,6 +2,7 @@
 
 const { PermissionFlagsBits, SlashCommandBuilder } = require('discord.js');
 const serverCopy = require('../../modules/serverCopy/serverCopy');
+const serverCopyAnalyse = require('../../modules/serverCopy/serverCopyAnalyse');
 
 module.exports = {
   hidden: true,
@@ -21,6 +22,23 @@ module.exports = {
       subcommand
         .setName('copy')
         .setDescription('Copy as much of one server into another as Discord allows.')
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName('analyse')
+        .setDescription('Analyse source and destination before using server copy.')
+        .addStringOption((option) =>
+          option
+            .setName('source_server')
+            .setDescription('Source server ID to analyse.')
+            .setRequired(true)
+        )
+        .addStringOption((option) =>
+          option
+            .setName('destination_server')
+            .setDescription('Destination server ID to analyse.')
+            .setRequired(true)
+        )
     ),
 
   async execute(interaction) {
@@ -28,6 +46,10 @@ module.exports = {
 
     if (subcommand === 'copy') {
       return serverCopy.start(interaction);
+    }
+
+    if (subcommand === 'analyse') {
+      return serverCopyAnalyse.run(interaction);
     }
 
     return interaction.reply({
