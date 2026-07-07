@@ -538,6 +538,26 @@ function setDefault(guildId, template, preset) {
   return false;
 }
 
+function normalizeInlineFields(fields) {
+  let inlineCount = 0;
+
+  return fields.map((field) => {
+    if (!field.inline) {
+      inlineCount = 0;
+      return { ...field, inline: false };
+    }
+
+    inlineCount += 1;
+
+    if (inlineCount > 2) {
+      inlineCount = 1;
+      return { ...field, inline: false };
+    }
+
+    return { ...field, inline: true };
+  });
+}
+
 function buildEmbedFromPanel(p, i, showTimestamp) {
   const e = new EmbedBuilder().setColor(p.color || PANEL_COLOR);
   let authorName = trim(replaceVars(p.authorName, i), 256);
@@ -580,7 +600,7 @@ function buildEmbedFromPanel(p, i, showTimestamp) {
   else if (media.imageUrl) e.setImage(media.imageUrl);
   if (thumb) e.setThumbnail(thumb);
   else if (media.thumbnailUrl) e.setThumbnail(media.thumbnailUrl);
-  const fields = (p.fields || [])
+  const fields = normalizeInlineFields(p.fields || [])
     .filter((f) => f?.name && f?.value)
     .slice(0, 25)
     .map((f) => ({
