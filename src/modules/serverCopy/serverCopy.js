@@ -7,9 +7,14 @@ const {
   ChannelType,
   EmbedBuilder,
   MessageFlags,
+  ModalBuilder,
   PermissionsBitField,
   StringSelectMenuBuilder,
+  TextInputBuilder,
+  TextInputStyle,
 } = require('discord.js');
+
+const fetch = require('node-fetch');
 
 const security = require('../../core/security/securityCore');
 const guildManager = require('../../core/guild/guildManager');
@@ -51,8 +56,8 @@ const COPY_OPTIONS = Object.freeze({
     implemented: true,
   },
   serverSettings: {
-    label: 'Server Settings',
-    description: 'Copy basic editable server settings where Discord allows.',
+    label: 'Server Settings + Branding',
+    description: 'Copy name, icon, banner, splash and editable settings.',
     emoji: '⚙️',
     implemented: true,
   },
@@ -94,6 +99,24 @@ const COPY_OPTIONS = Object.freeze({
   },
 });
 
+const CONFLICT_MODES = Object.freeze({
+  skip: {
+    label: 'Skip Existing',
+    description: 'Do not create duplicate roles, channels or emojis.',
+    emoji: '⏭️',
+  },
+  rename: {
+    label: 'Rename Duplicates',
+    description: 'Keep existing items and create copied duplicates with safe names.',
+    emoji: '✏️',
+  },
+  replace: {
+    label: 'Replace Destination Structure',
+    description: 'Deletes destination channels and editable roles before copying.',
+    emoji: '⚠️',
+  },
+});
+
 const IMPLEMENTED_OPTIONS = Object.entries(COPY_OPTIONS)
   .filter(([key, option]) => key !== 'everything' && option.implemented)
   .map(([key]) => key);
@@ -132,19 +155,12 @@ function getAllowedOwnerIds() {
     ...splitIds(process.env.OWNER_IDS),
     ...splitIds(process.env.BOT_OWNER_ID),
     ...splitIds(process.env.BOT_OWNER_IDS),
-    ...security.getBotOwnerIds?.() || [],
+    ...(security.getBotOwnerIds?.() || []),
   ].filter(Boolean))];
 }
 
 function isOwnerAllowed(userId) {
   return getAllowedOwnerIds().includes(String(userId || ''));
-}
-
-function getAllowedGuildIdsFromEnv() {
-  return [...new Set([
-    ...splitIds(process.env.SERVER_COPY_GUILD_IDS),
-    ...splitIds(process.env.SERVER_COPY_ALLOWED_GUILD_IDS),
-  ])];
 }
 
 function getModuleConfig(guildId) {
@@ -173,11 +189,6 @@ function assertAccess(interaction) {
     return { allowed: false, reason: 'Server Copy is disabled for this guild.' };
   }
 
-  const allowedGuildIds = getAllowedGuildIdsFromEnv();
-  if (allowedGuildIds.length && !allowedGuildIds.includes(interaction.guild.id)) {
-    return { allowed: false, reason: 'Server Copy is not allowed in this server.' };
-  }
-
   return { allowed: true };
 }
 
@@ -192,6 +203,8 @@ function makeSession(interaction) {
     sourceGuildId: null,
     destinationGuildId: null,
     selectedOptions: ['everything', ...IMPLEMENTED_OPTIONS],
+    conflictMode: 'skip',
+    dryRun: false,
     lastSummary: null,
   };
 
@@ -252,20 +265,27 @@ function buildSetupPayload(interaction, session) {
     .map((key) => COPY_OPTIONS[key]?.label)
     .filter(Boolean);
 
+  const plannedLabels = getPlannedOptionKeys(session.selectedOptions)
+    .map((key) => COPY_OPTIONS[key]?.label)
+    .filter(Boolean);
+
   const embed = createEmbed(
     '🛠️ Hidden Server Copy Setup',
     [
       '**Owner-only internal tool.**',
-      'Choose the source server, destination server, and what Goliath should copy.',
+      'Choose the source server, destination server, conflict mode, and what Goliath should copy.',
       '',
       `**Source:** ${formatGuild(interaction.client, session.sourceGuildId)}`,
       `**Destination:** ${formatGuild(interaction.client, session.destinationGuildId)}`,
+      `**Conflict mode:** ${CONFLICT_MODES[session.conflictMode]?.label || 'Skip Existing'}`,
+      `**Dry run:** ${session.dryRun ? '`ON` — preview only, no changes' : '`OFF` — will modify destination after CONFIRM'}`,
       '',
       '**Selected copy options:**',
       selectedLabels.length ? selectedLabels.map((label) => `• ${label}`).join('\n') : 'None selected',
+      plannedLabels.length ? `\n**Selected but planned for later:**\n${plannedLabels.map((label) => `• ${label}`).join('\n')}` : '',
       '',
-      '⚠️ Destination server will be modified after confirmation.',
-    ].join('\n')
+      '⚠️ Destination server will be modified only after preview and final CONFIRM.',
+    ].filter(Boolean).join('\n')
   );
 
   const rows = [];
@@ -287,6 +307,7 @@ function buildSetupPayload(interaction, session) {
   ));
 
   rows.push(new ActionRowBuilder().addComponents(buildOptionsMenu(session)));
+  rows.push(new ActionRowBuilder().addComponents(buildConflictMenu(session)));
 
   rows.push(new ActionRowBuilder().addComponents(
     new ButtonBuilder()
@@ -295,9 +316,13 @@ function buildSetupPayload(interaction, session) {
       .setStyle(ButtonStyle.Primary)
       .setDisabled(!session.sourceGuildId || !session.destinationGuildId || session.sourceGuildId === session.destinationGuildId),
     new ButtonBuilder()
+      .setCustomId(customId(session.id, 'dryrun'))
+      .setLabel(session.dryRun ? 'Dry Run: ON' : 'Dry Run: OFF')
+      .setStyle(session.dryRun ? ButtonStyle.Success : ButtonStyle.Secondary),
+    new ButtonBuilder()
       .setCustomId(customId(session.id, 'cancel'))
       .setLabel('Cancel')
-      .setStyle(ButtonStyle.Secondary)
+      .setStyle(ButtonStyle.Danger)
   ));
 
   return { embeds: [embed], components: rows, flags: MessageFlags.Ephemeral };
@@ -316,6 +341,21 @@ function buildOptionsMenu(session) {
       value: key,
       emoji: option.emoji,
       default: selected.has(key),
+    })));
+}
+
+function buildConflictMenu(session) {
+  return new StringSelectMenuBuilder()
+    .setCustomId(customId(session.id, 'conflict'))
+    .setPlaceholder('Choose conflict handling')
+    .setMinValues(1)
+    .setMaxValues(1)
+    .addOptions(Object.entries(CONFLICT_MODES).map(([key, mode]) => ({
+      label: mode.label,
+      description: mode.description.slice(0, 100),
+      value: key,
+      emoji: mode.emoji,
+      default: session.conflictMode === key,
     })));
 }
 
@@ -382,6 +422,8 @@ function buildSnapshot(sourceGuild, selectedOptions = []) {
       id: sourceGuild.id,
       name: sourceGuild.name,
       iconURL: sourceGuild.iconURL({ extension: 'png', size: 1024 }) || null,
+      bannerURL: sourceGuild.bannerURL({ extension: 'png', size: 2048 }) || null,
+      splashURL: sourceGuild.splashURL({ extension: 'png', size: 2048 }) || null,
     },
     options,
     planned: getPlannedOptionKeys(selectedOptions),
@@ -395,6 +437,7 @@ function buildSnapshot(sourceGuild, selectedOptions = []) {
       channels: channels.filter((channel) => channel.type !== ChannelType.GuildCategory).length,
       permissionOverwrites: channels.reduce((total, channel) => total + channel.permissionOverwrites.length, 0),
       emojis: emojis.length,
+      brandingAssets: [sourceGuild.iconURL(), sourceGuild.bannerURL(), sourceGuild.splashURL()].filter(Boolean).length,
     },
   };
 }
@@ -402,10 +445,14 @@ function buildSnapshot(sourceGuild, selectedOptions = []) {
 function serializeGuildSettings(guild) {
   return {
     name: guild.name,
+    description: guild.description || null,
     verificationLevel: guild.verificationLevel,
     explicitContentFilter: guild.explicitContentFilter,
     defaultMessageNotifications: guild.defaultMessageNotifications,
     afkTimeout: guild.afkTimeout,
+    iconURL: guild.iconURL({ extension: 'png', size: 1024 }) || null,
+    bannerURL: guild.bannerURL({ extension: 'png', size: 2048 }) || null,
+    splashURL: guild.splashURL({ extension: 'png', size: 2048 }) || null,
   };
 }
 
@@ -452,17 +499,21 @@ async function buildPreview(interaction, session) {
   }
 
   await fetchGuildState(sourceGuild);
+  await fetchGuildState(destinationGuild);
   const snapshot = buildSnapshot(sourceGuild, session.selectedOptions);
   session.lastSummary = snapshot.stats;
 
   const implementedLabels = snapshot.options.map((key) => COPY_OPTIONS[key]?.label).filter(Boolean);
   const plannedLabels = snapshot.planned.map((key) => COPY_OPTIONS[key]?.label).filter(Boolean);
+  const conflict = CONFLICT_MODES[session.conflictMode] || CONFLICT_MODES.skip;
 
   const embed = createEmbed(
     '📋 Server Copy Preview',
     [
       `**Source:** ${sourceGuild.name} \`(${sourceGuild.id})\``,
       `**Destination:** ${destinationGuild.name} \`(${destinationGuild.id})\``,
+      `**Conflict mode:** ${conflict.emoji} ${conflict.label}`,
+      `**Dry run:** ${session.dryRun ? '`ON` — no changes will be made' : '`OFF` — final CONFIRM required'}`,
       '',
       '**Will copy now:**',
       implementedLabels.length ? implementedLabels.map((label) => `✅ ${label}`).join('\n') : 'None',
@@ -474,21 +525,24 @@ async function buildPreview(interaction, session) {
       `• Channels: \`${snapshot.stats.channels}\``,
       `• Permission overwrites: \`${snapshot.stats.permissionOverwrites}\``,
       `• Emojis: \`${snapshot.stats.emojis}\``,
+      `• Branding assets: \`${snapshot.stats.brandingAssets}\``,
       '',
       '**Cannot copy:**',
       CANNOT_COPY.map((item) => `❌ ${item}`).join('\n'),
       '',
-      '⚠️ A rollback backup of the destination will be created before changes start.',
+      session.dryRun
+        ? '🧪 Dry run is enabled. Start will only simulate the copy.'
+        : '⚠️ Press Start, then type CONFIRM before Goliath modifies the destination.',
     ].filter(Boolean).join('\n'),
-    0xf59e0b
+    session.dryRun ? 0x22c55e : 0xf59e0b
   );
 
   const rows = [
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId(customId(session.id, 'start'))
-        .setLabel('Start Copy')
-        .setStyle(ButtonStyle.Success),
+        .setLabel(session.dryRun ? 'Run Dry-Run' : 'Start Copy')
+        .setStyle(session.dryRun ? ButtonStyle.Primary : ButtonStyle.Success),
       new ButtonBuilder()
         .setCustomId(customId(session.id, 'back'))
         .setLabel('Back')
@@ -501,6 +555,46 @@ async function buildPreview(interaction, session) {
   ];
 
   return { embeds: [embed], components: rows, flags: MessageFlags.Ephemeral };
+}
+
+function buildConfirmModal(session) {
+  return new ModalBuilder()
+    .setCustomId(customId(session.id, 'confirm-modal'))
+    .setTitle('Confirm Server Copy')
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('confirmText')
+          .setLabel('Type CONFIRM to start')
+          .setStyle(TextInputStyle.Short)
+          .setPlaceholder('CONFIRM')
+          .setRequired(true)
+          .setMaxLength(20)
+      )
+    );
+}
+
+async function updateProgress(interaction, log, message, percent = null) {
+  const copied = log.copied || {};
+  const progressLine = percent === null ? '' : `\n\nProgress: \`${percent}%\``;
+
+  return interaction.editReply({
+    embeds: [createEmbed(
+      '🚧 Server Copy In Progress',
+      [
+        message,
+        progressLine,
+        '',
+        `Roles: \`${copied.roles || 0}\``,
+        `Categories: \`${copied.categories || 0}\``,
+        `Channels: \`${copied.channels || 0}\``,
+        `Permission overwrites: \`${copied.permissionOverwrites || 0}\``,
+        `Emojis: \`${copied.emojis || 0}\``,
+      ].filter(Boolean).join('\n'),
+      0x5865f2
+    )],
+    components: [],
+  }).catch(() => null);
 }
 
 async function executeCopy(interaction, session) {
@@ -519,62 +613,103 @@ async function executeCopy(interaction, session) {
   await fetchGuildState(destinationGuild);
 
   const snapshot = buildSnapshot(sourceGuild, session.selectedOptions);
-  const log = createRunLog(interaction, sourceGuild, destinationGuild, snapshot);
+  const log = createRunLog(interaction, sourceGuild, destinationGuild, snapshot, session);
 
-  await interaction.update({
-    embeds: [createEmbed('🚧 Server Copy In Progress', 'Creating rollback backup of the destination server...', 0x5865f2)],
+  await interaction.reply({
+    embeds: [createEmbed('🚧 Server Copy Starting', 'Preparing server copy...', 0x5865f2)],
     components: [],
+    flags: MessageFlags.Ephemeral,
   });
 
-  const rollback = await createServerBackup(destinationGuild, {
-    createdBy: `server-copy:${interaction.user.id}`,
-    requestedBy: interaction.user.id,
-    reason: `Rollback snapshot before copying ${sourceGuild.name} into ${destinationGuild.name}`,
-    type: 'rollback',
-  });
+  if (session.dryRun) {
+    log.status = 'dry-run';
+    log.finishedAt = now();
+    log.durationMs = new Date(log.finishedAt).getTime() - new Date(log.startedAt).getTime();
+    logServerCopy(log);
+    await sendDevLog(interaction.client, log);
+    sessions.delete(session.id);
 
-  log.rollbackBackupId = rollback.backupId;
-
-  const maps = {
-    roles: new Map([[sourceGuild.id, destinationGuild.id]]),
-    channels: new Map(),
-  };
-
-  if (snapshot.options.includes('serverSettings')) {
-    await copyServerSettings(destinationGuild, snapshot, log);
+    return interaction.editReply({
+      embeds: [buildCompleteEmbed(sourceGuild, destinationGuild, log)],
+      components: [],
+    });
   }
 
-  if (snapshot.options.includes('roles')) {
-    await copyRoles(destinationGuild, snapshot, maps, log);
+  try {
+    await updateProgress(interaction, log, 'Creating rollback backup of the destination server...', 5);
+
+    const rollback = await createServerBackup(destinationGuild, {
+      createdBy: `server-copy:${interaction.user.id}`,
+      requestedBy: interaction.user.id,
+      reason: `Rollback snapshot before copying ${sourceGuild.name} into ${destinationGuild.name}`,
+      type: 'rollback',
+    });
+
+    log.rollbackBackupId = rollback.backupId;
+
+    const maps = {
+      roles: new Map([[sourceGuild.id, destinationGuild.id]]),
+      channels: new Map(),
+    };
+
+    if (session.conflictMode === 'replace') {
+      await updateProgress(interaction, log, 'Replace mode selected. Clearing destination structure...', 10);
+      await clearDestinationStructure(destinationGuild, log);
+      await fetchGuildState(destinationGuild);
+    }
+
+    if (snapshot.options.includes('serverSettings')) {
+      await updateProgress(interaction, log, 'Copying server settings and branding...', 20);
+      await copyServerSettings(destinationGuild, snapshot, log);
+    }
+
+    if (snapshot.options.includes('roles')) {
+      await updateProgress(interaction, log, 'Creating roles...', 35);
+      await copyRoles(destinationGuild, snapshot, maps, log, session.conflictMode);
+    }
+
+    if (snapshot.options.includes('categories') || snapshot.options.includes('channels')) {
+      await updateProgress(interaction, log, 'Creating categories and channels...', 55);
+      await copyChannels(destinationGuild, snapshot, maps, log, session.conflictMode);
+    }
+
+    if (snapshot.options.includes('permissions')) {
+      await updateProgress(interaction, log, 'Applying channel permissions...', 75);
+      await copyPermissionOverwrites(destinationGuild, snapshot, maps, log);
+    }
+
+    if (snapshot.options.includes('emojis')) {
+      await updateProgress(interaction, log, 'Uploading emojis...', 88);
+      await copyEmojis(destinationGuild, snapshot, log, session.conflictMode);
+    }
+
+    await updateProgress(interaction, log, 'Finalising server copy...', 98);
+
+    log.finishedAt = now();
+    log.status = log.errors.length ? 'completed-with-warnings' : 'success';
+    log.durationMs = new Date(log.finishedAt).getTime() - new Date(log.startedAt).getTime();
+
+    logServerCopy(log);
+    await sendDevLog(interaction.client, log);
+
+    sessions.delete(session.id);
+
+    return interaction.editReply({
+      embeds: [buildCompleteEmbed(sourceGuild, destinationGuild, log)],
+      components: [],
+    });
+  } catch (error) {
+    log.status = 'failed';
+    log.finishedAt = now();
+    log.durationMs = new Date(log.finishedAt).getTime() - new Date(log.startedAt).getTime();
+    log.errors.push(error.message);
+    logServerCopy(log);
+    await sendDevLog(interaction.client, log);
+    throw error;
   }
-
-  if (snapshot.options.includes('categories') || snapshot.options.includes('channels')) {
-    await copyChannels(destinationGuild, snapshot, maps, log);
-  }
-
-  if (snapshot.options.includes('permissions')) {
-    await copyPermissionOverwrites(destinationGuild, snapshot, maps, log);
-  }
-
-  if (snapshot.options.includes('emojis')) {
-    await copyEmojis(destinationGuild, snapshot, log);
-  }
-
-  log.finishedAt = now();
-  log.status = 'success';
-  log.durationMs = new Date(log.finishedAt).getTime() - new Date(log.startedAt).getTime();
-
-  logServerCopy(log);
-
-  sessions.delete(session.id);
-
-  return interaction.editReply({
-    embeds: [buildCompleteEmbed(sourceGuild, destinationGuild, log)],
-    components: [],
-  });
 }
 
-function createRunLog(interaction, sourceGuild, destinationGuild, snapshot) {
+function createRunLog(interaction, sourceGuild, destinationGuild, snapshot, session) {
   return {
     feature: 'serverCopy',
     status: 'running',
@@ -587,19 +722,33 @@ function createRunLog(interaction, sourceGuild, destinationGuild, snapshot) {
     destinationGuild: { id: destinationGuild.id, name: destinationGuild.name },
     selectedOptions: snapshot.options,
     plannedOptions: snapshot.planned,
+    conflictMode: session.conflictMode,
+    dryRun: Boolean(session.dryRun),
     snapshotStats: snapshot.stats,
     rollbackBackupId: null,
     copied: {
       serverSettings: 0,
+      brandingAssets: 0,
       roles: 0,
       categories: 0,
       channels: 0,
       permissionOverwrites: 0,
       emojis: 0,
     },
+    deleted: {
+      roles: 0,
+      channels: 0,
+    },
     skipped: [],
     errors: [],
   };
+}
+
+async function fetchBuffer(url) {
+  if (!url) return null;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to fetch asset: ${response.status}`);
+  return response.buffer();
 }
 
 async function copyServerSettings(destinationGuild, snapshot, log) {
@@ -609,6 +758,7 @@ async function copyServerSettings(destinationGuild, snapshot, log) {
   const payload = {};
 
   if (settings.name && destinationGuild.name !== settings.name) payload.name = settings.name;
+  if (settings.description !== undefined) payload.description = settings.description || null;
   if (Number.isFinite(settings.verificationLevel)) payload.verificationLevel = settings.verificationLevel;
   if (Number.isFinite(settings.explicitContentFilter)) payload.explicitContentFilter = settings.explicitContentFilter;
   if (Number.isFinite(settings.defaultMessageNotifications)) {
@@ -616,23 +766,101 @@ async function copyServerSettings(destinationGuild, snapshot, log) {
   }
   if (Number.isFinite(settings.afkTimeout)) payload.afkTimeout = settings.afkTimeout;
 
+  try {
+    if (settings.iconURL) {
+      payload.icon = await fetchBuffer(settings.iconURL);
+      log.copied.brandingAssets += 1;
+    }
+    if (settings.bannerURL) {
+      payload.banner = await fetchBuffer(settings.bannerURL);
+      log.copied.brandingAssets += 1;
+    }
+    if (settings.splashURL) {
+      payload.splash = await fetchBuffer(settings.splashURL);
+      log.copied.brandingAssets += 1;
+    }
+  } catch (error) {
+    log.errors.push(`Branding asset: ${error.message}`);
+  }
+
   if (!Object.keys(payload).length) return;
 
   try {
-    await destinationGuild.edit(payload, 'Goliath hidden server copy: server settings');
+    await destinationGuild.edit(payload, 'Goliath hidden server copy: server settings and branding');
     log.copied.serverSettings = Object.keys(payload).length;
   } catch (error) {
-    log.errors.push(`Server settings: ${error.message}`);
+    log.errors.push(`Server settings/branding: ${error.message}`);
   }
 }
 
-async function copyRoles(destinationGuild, snapshot, maps, log) {
+async function clearDestinationStructure(destinationGuild, log) {
+  const channels = [...destinationGuild.channels.cache.values()].sort((a, b) => b.position - a.position);
+  for (const channel of channels) {
+    try {
+      await channel.delete('Goliath hidden server copy: replace destination structure');
+      log.deleted.channels += 1;
+    } catch (error) {
+      log.errors.push(`Delete channel ${channel.name}: ${error.message}`);
+    }
+  }
+
+  const botHighest = destinationGuild.members.me?.roles?.highest?.position ?? 0;
+  const roles = destinationGuild.roles.cache
+    .filter((role) => role.id !== destinationGuild.id && !role.managed && role.editable && role.position < botHighest)
+    .sort((a, b) => b.position - a.position);
+
+  for (const role of roles.values()) {
+    try {
+      await role.delete('Goliath hidden server copy: replace destination roles');
+      log.deleted.roles += 1;
+    } catch (error) {
+      log.errors.push(`Delete role ${role.name}: ${error.message}`);
+    }
+  }
+}
+
+function findExistingRole(guild, name) {
+  return guild.roles.cache.find((role) => role.name.toLowerCase() === String(name).toLowerCase() && role.id !== guild.id);
+}
+
+function findExistingChannel(guild, channel) {
+  return guild.channels.cache.find((existing) => existing.type === channel.type && existing.name.toLowerCase() === channel.name.toLowerCase());
+}
+
+function makeUniqueName(existingNames, baseName, maxLength = 100) {
+  const cleanBase = String(baseName || 'copy').slice(0, maxLength - 8);
+  let candidate = `${cleanBase}-copy`;
+  let index = 2;
+
+  while (existingNames.has(candidate.toLowerCase())) {
+    candidate = `${cleanBase}-copy-${index}`.slice(0, maxLength);
+    index += 1;
+  }
+
+  existingNames.add(candidate.toLowerCase());
+  return candidate;
+}
+
+async function copyRoles(destinationGuild, snapshot, maps, log, conflictMode) {
   const roles = [...snapshot.roles].sort((a, b) => a.position - b.position);
+  const existingNames = new Set(destinationGuild.roles.cache.map((role) => role.name.toLowerCase()));
 
   for (const role of roles) {
+    const existing = findExistingRole(destinationGuild, role.name);
+
+    if (existing && conflictMode === 'skip') {
+      maps.roles.set(role.id, existing.id);
+      log.skipped.push(`Role exists: ${role.name}`);
+      continue;
+    }
+
+    const roleName = existing && conflictMode === 'rename'
+      ? makeUniqueName(existingNames, role.name, 100)
+      : role.name;
+
     try {
       const created = await destinationGuild.roles.create({
-        name: role.name,
+        name: roleName,
         color: role.color,
         hoist: role.hoist,
         mentionable: role.mentionable,
@@ -641,6 +869,7 @@ async function copyRoles(destinationGuild, snapshot, maps, log) {
       });
 
       maps.roles.set(role.id, created.id);
+      existingNames.add(created.name.toLowerCase());
       log.copied.roles += 1;
     } catch (error) {
       log.errors.push(`Role ${role.name}: ${error.message}`);
@@ -648,9 +877,9 @@ async function copyRoles(destinationGuild, snapshot, maps, log) {
   }
 }
 
-function channelCreatePayload(channel, parentId = null) {
+function channelCreatePayload(channel, parentId = null, overrideName = null) {
   const base = {
-    name: channel.name,
+    name: overrideName || channel.name,
     type: channel.type,
     reason: 'Goliath hidden server copy: channel copy',
   };
@@ -679,7 +908,29 @@ function channelCreatePayload(channel, parentId = null) {
   return base;
 }
 
-async function copyChannels(destinationGuild, snapshot, maps, log) {
+async function createOneChannel(destinationGuild, channel, maps, log, conflictMode, isCategory = false) {
+  const existing = findExistingChannel(destinationGuild, channel);
+  const existingNames = new Set(destinationGuild.channels.cache.map((candidate) => candidate.name.toLowerCase()));
+
+  if (existing && conflictMode === 'skip') {
+    maps.channels.set(channel.id, existing.id);
+    log.skipped.push(`${isCategory ? 'Category' : 'Channel'} exists: ${channel.name}`);
+    return;
+  }
+
+  const parentId = channel.parentId ? maps.channels.get(channel.parentId) : null;
+  const channelName = existing && conflictMode === 'rename'
+    ? makeUniqueName(existingNames, channel.name, 100)
+    : channel.name;
+
+  const created = await destinationGuild.channels.create(channelCreatePayload(channel, parentId, channelName));
+  maps.channels.set(channel.id, created.id);
+
+  if (isCategory) log.copied.categories += 1;
+  else log.copied.channels += 1;
+}
+
+async function copyChannels(destinationGuild, snapshot, maps, log, conflictMode) {
   const categories = snapshot.channels
     .filter((channel) => channel.type === ChannelType.GuildCategory)
     .sort((a, b) => a.position - b.position);
@@ -690,9 +941,7 @@ async function copyChannels(destinationGuild, snapshot, maps, log) {
 
   for (const category of categories) {
     try {
-      const created = await destinationGuild.channels.create(channelCreatePayload(category));
-      maps.channels.set(category.id, created.id);
-      log.copied.categories += 1;
+      await createOneChannel(destinationGuild, category, maps, log, conflictMode, true);
     } catch (error) {
       log.errors.push(`Category ${category.name}: ${error.message}`);
     }
@@ -700,10 +949,7 @@ async function copyChannels(destinationGuild, snapshot, maps, log) {
 
   for (const channel of normalChannels) {
     try {
-      const parentId = channel.parentId ? maps.channels.get(channel.parentId) : null;
-      const created = await destinationGuild.channels.create(channelCreatePayload(channel, parentId));
-      maps.channels.set(channel.id, created.id);
-      log.copied.channels += 1;
+      await createOneChannel(destinationGuild, channel, maps, log, conflictMode, false);
     } catch (error) {
       log.errors.push(`Channel ${channel.name}: ${error.message}`);
     }
@@ -746,16 +992,28 @@ async function copyPermissionOverwrites(destinationGuild, snapshot, maps, log) {
   }
 }
 
-async function copyEmojis(destinationGuild, snapshot, log) {
+async function copyEmojis(destinationGuild, snapshot, log, conflictMode) {
+  const existingNames = new Set(destinationGuild.emojis.cache.map((emoji) => emoji.name.toLowerCase()));
+
   for (const emoji of snapshot.emojis) {
     if (!emoji.url || !emoji.name) continue;
+
+    if (existingNames.has(emoji.name.toLowerCase()) && conflictMode === 'skip') {
+      log.skipped.push(`Emoji exists: ${emoji.name}`);
+      continue;
+    }
+
+    const emojiName = existingNames.has(emoji.name.toLowerCase()) && conflictMode === 'rename'
+      ? makeUniqueName(existingNames, emoji.name, 32).replace(/[^A-Za-z0-9_]/g, '_').slice(0, 32)
+      : emoji.name;
 
     try {
       await destinationGuild.emojis.create({
         attachment: emoji.url,
-        name: emoji.name,
+        name: emojiName,
         reason: 'Goliath hidden server copy: emoji copy',
       });
+      existingNames.add(emojiName.toLowerCase());
       log.copied.emojis += 1;
     } catch (error) {
       log.errors.push(`Emoji ${emoji.name}: ${error.message}`);
@@ -765,22 +1023,28 @@ async function copyEmojis(destinationGuild, snapshot, log) {
 
 function buildCompleteEmbed(sourceGuild, destinationGuild, log) {
   const seconds = Math.round((log.durationMs || 0) / 1000);
+  const title = log.status === 'dry-run' ? '🧪 Server Copy Dry-Run Complete' : '✅ Server Copy Complete';
 
   return createEmbed(
-    '✅ Server Copy Complete',
+    title,
     [
       `**Source:** ${sourceGuild.name}`,
       `**Destination:** ${destinationGuild.name}`,
-      `**Rollback backup:** \`${log.rollbackBackupId || 'not created'}\``,
+      `**Status:** \`${log.status}\``,
+      `**Conflict mode:** \`${log.conflictMode}\``,
+      `**Rollback backup:** \`${log.rollbackBackupId || (log.dryRun ? 'dry-run' : 'not created')}\``,
       `**Duration:** \`${seconds}s\``,
       '',
       '**Copied:**',
       `• Server settings: \`${log.copied.serverSettings}\``,
+      `• Branding assets: \`${log.copied.brandingAssets}\``,
       `• Roles: \`${log.copied.roles}\``,
       `• Categories: \`${log.copied.categories}\``,
       `• Channels: \`${log.copied.channels}\``,
       `• Permission overwrites: \`${log.copied.permissionOverwrites}\``,
       `• Emojis: \`${log.copied.emojis}\``,
+      log.deleted.roles || log.deleted.channels ? `\n**Deleted in replace mode:**\n• Roles: \`${log.deleted.roles}\`\n• Channels: \`${log.deleted.channels}\`` : '',
+      log.skipped.length ? `\n**Skipped:**\n${log.skipped.slice(0, 8).map((item) => `• ${item}`).join('\n')}` : '',
       log.plannedOptions.length ? `\n**Selected but not implemented yet:**\n${log.plannedOptions.map((key) => `🟡 ${COPY_OPTIONS[key]?.label || key}`).join('\n')}` : '',
       log.errors.length ? `\n**Warnings/Errors:**\n${log.errors.slice(0, 8).map((error) => `⚠️ ${error}`).join('\n')}` : '',
     ].filter(Boolean).join('\n'),
@@ -794,6 +1058,34 @@ function logServerCopy(log) {
   } catch (error) {
     console.warn('[ServerCopy] Failed to write log:', error.message);
   }
+}
+
+async function sendDevLog(client, log) {
+  const config = getModuleConfig(log.controlGuildId);
+  const channelId = config.logChannelId || process.env.SERVER_COPY_LOG_CHANNEL_ID || null;
+  if (!channelId) return;
+
+  const channel = client.channels.cache.get(channelId) || await client.channels.fetch(channelId).catch(() => null);
+  if (!channel?.send) return;
+
+  const embed = createEmbed(
+    '🧾 Server Copy Log',
+    [
+      `**Status:** \`${log.status}\``,
+      `**Developer:** \`${log.developerId}\``,
+      `**Source:** ${log.sourceGuild.name} \`(${log.sourceGuild.id})\``,
+      `**Destination:** ${log.destinationGuild.name} \`(${log.destinationGuild.id})\``,
+      `**Conflict mode:** \`${log.conflictMode}\``,
+      `**Dry run:** \`${log.dryRun ? 'yes' : 'no'}\``,
+      `**Rollback:** \`${log.rollbackBackupId || 'none'}\``,
+      '',
+      `Roles: \`${log.copied.roles}\` | Categories: \`${log.copied.categories}\` | Channels: \`${log.copied.channels}\``,
+      `Permissions: \`${log.copied.permissionOverwrites}\` | Emojis: \`${log.copied.emojis}\` | Errors: \`${log.errors.length}\``,
+    ].join('\n'),
+    log.status === 'failed' ? 0xef4444 : log.errors.length ? 0xf59e0b : 0x22c55e
+  );
+
+  await channel.send({ embeds: [embed] }).catch(() => null);
 }
 
 async function start(interaction) {
@@ -843,6 +1135,17 @@ async function handleInteraction(interaction) {
       return interaction.update(buildSetupPayload(interaction, session));
     }
 
+    if (parsed.action === 'conflict' && interaction.isStringSelectMenu?.()) {
+      const nextMode = interaction.values?.[0] || 'skip';
+      session.conflictMode = CONFLICT_MODES[nextMode] ? nextMode : 'skip';
+      return interaction.update(buildSetupPayload(interaction, session));
+    }
+
+    if (parsed.action === 'dryrun') {
+      session.dryRun = !session.dryRun;
+      return interaction.update(buildSetupPayload(interaction, session));
+    }
+
     if (parsed.action === 'preview') {
       const previewPayload = await buildPreview(interaction, session);
       return interaction.update(previewPayload);
@@ -861,6 +1164,17 @@ async function handleInteraction(interaction) {
     }
 
     if (parsed.action === 'start') {
+      if (session.dryRun) {
+        return executeCopy(interaction, session);
+      }
+      return interaction.showModal(buildConfirmModal(session));
+    }
+
+    if (parsed.action === 'confirm-modal' && interaction.isModalSubmit?.()) {
+      const value = interaction.fields?.getTextInputValue?.('confirmText') || '';
+      if (value.trim().toUpperCase() !== 'CONFIRM') {
+        return interaction.reply({ content: '❌ Confirmation failed. Type CONFIRM exactly.', flags: MessageFlags.Ephemeral });
+      }
       return executeCopy(interaction, session);
     }
   } catch (error) {
@@ -885,6 +1199,7 @@ async function handleInteraction(interaction) {
 
 module.exports = {
   COPY_OPTIONS,
+  CONFLICT_MODES,
   CANNOT_COPY,
   assertAccess,
   start,
