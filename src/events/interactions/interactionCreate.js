@@ -11,6 +11,7 @@ const pollsManager = require('../../modules/polls/pollsManager');
 const tempVoiceInteractionHandler = require('../../modules/tempvoice/tempVoiceInteractionHandler');
 const testSecurityCommand = require('../../commands/admin/testsecurity');
 const embedPanel = require('../../modules/embed/functions/embedPanel');
+const serverCopy = require('../../modules/serverCopy/serverCopy');
 
 async function safeInteractionError(interaction) {
   const payload = {
@@ -45,6 +46,10 @@ module.exports = {
         if (!command) return;
 
         await command.execute(interaction, client);
+        return;
+      }
+
+      if (await serverCopy.handleInteraction(interaction)) {
         return;
       }
 
