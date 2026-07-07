@@ -323,6 +323,7 @@ function makeCopySession(interaction) {
     selectedOptions: Object.keys(COPY_OPTIONS),
     conflictMode: 'skip',
     dryRun: false,
+    pendingConfirm: false,
     expiresAt: Date.now() + SESSION_TTL_MS,
   };
   copySessions.set(id, session);
@@ -339,6 +340,7 @@ function makeBuildSession(interaction) {
     destinationGuildId: interaction.options?.getString?.('destination_server') || interaction.guild.id,
     conflictMode: 'skip',
     dryRun: false,
+    pendingConfirm: false,
     expiresAt: Date.now() + SESSION_TTL_MS,
   };
   buildSessions.set(id, session);
@@ -350,6 +352,20 @@ function getSession(map, interaction, sessionId) {
   const session = map.get(sessionId);
   if (!session || session.ownerId !== interaction.user?.id) return null;
   return session;
+}
+
+function resetConfirm(session) {
+  session.pendingConfirm = false;
+}
+
+function confirmWarning(session, actionName) {
+  if (session.dryRun) return '🧪 Dry run is ON. No changes will be made.';
+  if (session.pendingConfirm) {
+    return session.conflictMode === 'replace'
+      ? `⚠️ FINAL CONFIRMATION REQUIRED: Press **Confirm ${actionName}** to modify and replace destination structure.`
+      : `⚠️ FINAL CONFIRMATION REQUIRED: Press **Confirm ${actionName}** to modify the destination.`;
+  }
+  return '⚠️ First press will arm the final confirmation. No changes happen until the confirm button is pressed.';
 }
 
 function serializeChannel(channel) {
@@ -516,6 +532,8 @@ function buildCopyPayload(interaction, session) {
       '',
       '**Selected:**',
       session.selectedOptions.map((key) => `• ${COPY_OPTIONS[key] || key}`).join('\n'),
+      '',
+      confirmWarning(session, 'Copy'),
     ].join('\n'))],
     components: [
       new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(customId(COPY_PREFIX, session.id, 'source')).setPlaceholder('Source server').addOptions(guildOptions(interaction.client, session.sourceGuildId))),
@@ -523,7 +541,7 @@ function buildCopyPayload(interaction, session) {
       new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(customId(COPY_PREFIX, session.id, 'options')).setPlaceholder('What to copy').setMinValues(1).setMaxValues(Object.keys(COPY_OPTIONS).length).addOptions(optionOptions(session.selectedOptions))),
       new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(customId(COPY_PREFIX, session.id, 'conflict')).setPlaceholder('Conflict mode').addOptions(conflictOptions(session.conflictMode))),
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(customId(COPY_PREFIX, session.id, 'start')).setLabel(session.dryRun ? 'Run Dry-Run' : 'Start Copy').setStyle(ButtonStyle.Success).setDisabled(!session.sourceGuildId || !session.destinationGuildId || session.sourceGuildId === session.destinationGuildId),
+        new ButtonBuilder().setCustomId(customId(COPY_PREFIX, session.id, 'start')).setLabel(session.pendingConfirm && !session.dryRun ? 'Confirm Copy' : session.dryRun ? 'Run Dry-Run' : 'Start Copy').setStyle(session.pendingConfirm && !session.dryRun ? ButtonStyle.Danger : ButtonStyle.Success).setDisabled(!session.sourceGuildId || !session.destinationGuildId || session.sourceGuildId === session.destinationGuildId),
         new ButtonBuilder().setCustomId(customId(COPY_PREFIX, session.id, 'dryrun')).setLabel(session.dryRun ? 'Dry Run: ON' : 'Dry Run: OFF').setStyle(session.dryRun ? ButtonStyle.Primary : ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId(customId(COPY_PREFIX, session.id, 'cancel')).setLabel('Cancel').setStyle(ButtonStyle.Danger)
       ),
@@ -542,13 +560,15 @@ function buildBuildPayload(interaction, session) {
       `**Conflict mode:** \`${session.conflictMode}\``,
       `**Dry run:** \`${session.dryRun ? 'ON' : 'OFF'}\``,
       template ? `\n**Snapshot:** roles \`${template.snapshot?.stats?.roles || 0}\`, channels \`${template.snapshot?.stats?.channels || 0}\`, emojis \`${template.snapshot?.stats?.emojis || 0}\`` : '\nChoose one of the saved/default templates below.',
+      '',
+      confirmWarning(session, 'Build'),
     ].join('\n'))],
     components: [
       new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(customId(BUILD_PREFIX, session.id, 'template')).setPlaceholder('Choose template').setDisabled(!listTemplates(session.controlGuildId).length).addOptions(templateOptions(session.controlGuildId, session.templateId))),
       new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(customId(BUILD_PREFIX, session.id, 'destination')).setPlaceholder('Destination server').addOptions(guildOptions(interaction.client, session.destinationGuildId))),
       new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(customId(BUILD_PREFIX, session.id, 'conflict')).setPlaceholder('Conflict mode').addOptions(conflictOptions(session.conflictMode))),
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(customId(BUILD_PREFIX, session.id, 'start')).setLabel(session.dryRun ? 'Run Dry-Run' : 'Build Server').setStyle(ButtonStyle.Success).setDisabled(!session.templateId || !session.destinationGuildId),
+        new ButtonBuilder().setCustomId(customId(BUILD_PREFIX, session.id, 'start')).setLabel(session.pendingConfirm && !session.dryRun ? 'Confirm Build' : session.dryRun ? 'Run Dry-Run' : 'Build Server').setStyle(session.pendingConfirm && !session.dryRun ? ButtonStyle.Danger : ButtonStyle.Success).setDisabled(!session.templateId || !session.destinationGuildId),
         new ButtonBuilder().setCustomId(customId(BUILD_PREFIX, session.id, 'dryrun')).setLabel(session.dryRun ? 'Dry Run: ON' : 'Dry Run: OFF').setStyle(session.dryRun ? ButtonStyle.Primary : ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId(customId(BUILD_PREFIX, session.id, 'cancel')).setLabel('Cancel').setStyle(ButtonStyle.Danger)
       ),
@@ -909,15 +929,30 @@ async function handleCopyInteraction(interaction, parsed) {
   const access = assertAccess(interaction);
   if (!access.allowed) return interaction.reply({ content: `❌ ${access.reason}`, flags: MessageFlags.Ephemeral }).catch(() => null);
 
-  if (parsed.action === 'source') session.sourceGuildId = interaction.values?.[0] || null;
-  else if (parsed.action === 'destination') session.destinationGuildId = interaction.values?.[0] || null;
-  else if (parsed.action === 'options') session.selectedOptions = interaction.values || Object.keys(COPY_OPTIONS);
-  else if (parsed.action === 'conflict') session.conflictMode = interaction.values?.[0] || 'skip';
-  else if (parsed.action === 'dryrun') session.dryRun = !session.dryRun;
-  else if (parsed.action === 'cancel') {
+  if (parsed.action === 'source') {
+    session.sourceGuildId = interaction.values?.[0] || null;
+    resetConfirm(session);
+  } else if (parsed.action === 'destination') {
+    session.destinationGuildId = interaction.values?.[0] || null;
+    resetConfirm(session);
+  } else if (parsed.action === 'options') {
+    session.selectedOptions = interaction.values || Object.keys(COPY_OPTIONS);
+    resetConfirm(session);
+  } else if (parsed.action === 'conflict') {
+    session.conflictMode = interaction.values?.[0] || 'skip';
+    resetConfirm(session);
+  } else if (parsed.action === 'dryrun') {
+    session.dryRun = !session.dryRun;
+    resetConfirm(session);
+  } else if (parsed.action === 'cancel') {
     copySessions.delete(session.id);
     return interaction.update({ embeds: [createEmbed('❌ Server Copy Cancelled', 'No changes were made.', 0xef4444)], components: [] });
   } else if (parsed.action === 'start') {
+    if (!session.dryRun && !session.pendingConfirm) {
+      session.pendingConfirm = true;
+      return interaction.update(buildCopyPayload(interaction, session));
+    }
+
     const sourceGuild = getGuildById(interaction.client, session.sourceGuildId);
     if (!sourceGuild) return interaction.update({ content: '❌ Source server is unavailable.', embeds: [], components: [] });
     await fetchGuildState(sourceGuild);
@@ -937,14 +972,27 @@ async function handleBuildInteraction(interaction, parsed) {
   const access = assertAccess(interaction);
   if (!access.allowed) return interaction.reply({ content: `❌ ${access.reason}`, flags: MessageFlags.Ephemeral }).catch(() => null);
 
-  if (parsed.action === 'template') session.templateId = interaction.values?.[0] === 'none' ? null : interaction.values?.[0];
-  else if (parsed.action === 'destination') session.destinationGuildId = interaction.values?.[0] || null;
-  else if (parsed.action === 'conflict') session.conflictMode = interaction.values?.[0] || 'skip';
-  else if (parsed.action === 'dryrun') session.dryRun = !session.dryRun;
-  else if (parsed.action === 'cancel') {
+  if (parsed.action === 'template') {
+    session.templateId = interaction.values?.[0] === 'none' ? null : interaction.values?.[0];
+    resetConfirm(session);
+  } else if (parsed.action === 'destination') {
+    session.destinationGuildId = interaction.values?.[0] || null;
+    resetConfirm(session);
+  } else if (parsed.action === 'conflict') {
+    session.conflictMode = interaction.values?.[0] || 'skip';
+    resetConfirm(session);
+  } else if (parsed.action === 'dryrun') {
+    session.dryRun = !session.dryRun;
+    resetConfirm(session);
+  } else if (parsed.action === 'cancel') {
     buildSessions.delete(session.id);
     return interaction.update({ embeds: [createEmbed('❌ Server Build Cancelled', 'No changes were made.', 0xef4444)], components: [] });
   } else if (parsed.action === 'start') {
+    if (!session.dryRun && !session.pendingConfirm) {
+      session.pendingConfirm = true;
+      return interaction.update(buildBuildPayload(interaction, session));
+    }
+
     const template = getTemplates(session.controlGuildId)[session.templateId];
     if (!template?.snapshot) return interaction.update({ content: '❌ Template not found.', embeds: [], components: [] });
     await interaction.update({ embeds: [createEmbed('🏗️ Server Build Running', 'Working...', 0x5865f2)], components: [] });
