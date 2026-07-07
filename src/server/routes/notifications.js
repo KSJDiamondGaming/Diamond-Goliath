@@ -1,7 +1,7 @@
 'use strict';
 
 const express = require('express');
-const store = require('../../modules/notifications/notificationStore');
+const store = require('../../core/notifications/notificationStore');
 
 const router = express.Router();
 

@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 
-const { buildAdminPanel } = require('../../modules/admin/functions/adminPanel');
+const { buildAdminPanel } = require('../../core/admin/functions/adminPanel');
 const { errorEmbed } = require('../../core/ui/embeds');
 const { enforceCommandAccess } = require('../../core/ui/commandAccess');
 
