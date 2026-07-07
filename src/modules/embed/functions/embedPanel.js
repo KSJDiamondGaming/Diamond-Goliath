@@ -737,13 +737,13 @@ function buildEditorPanel(i, who = "Unknown User") {
           .setLabel("💾 Presets")
           .setStyle(ButtonStyle.Primary),
         new ButtonBuilder()
+          .setCustomId("embed:panels")
+          .setLabel(`🧩 Panels (${s.panels.length})`)
+          .setStyle(ButtonStyle.Primary),  
+        new ButtonBuilder()
           .setCustomId("embed:use")
           .setLabel("✅ Use Embed")
           .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-          .setCustomId("embed:panels")
-          .setLabel(`🧩 Panels (${s.panels.length})`)
-          .setStyle(ButtonStyle.Primary),
       ),
     ],
   };
