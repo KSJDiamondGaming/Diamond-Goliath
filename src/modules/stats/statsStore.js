@@ -25,7 +25,9 @@ const DEFAULT_STATS = {
 };
 
 function copy(value) {
-  return JSON.parse(JSON.stringify(value || {}));
+  if (value === null || value === undefined) return value;
+  if (typeof value !== 'object') return value;
+  return JSON.parse(JSON.stringify(value));
 }
 
 function isObject(value) {
@@ -85,7 +87,7 @@ function ignored(stats, member, channelId) {
   if (stats.ignoreBots !== false && member?.user?.bot) return true;
   if (Array.isArray(stats.ignoredChannels) && stats.ignoredChannels.includes(channelId)) return true;
   const ignoredRoles = new Set(Array.isArray(stats.ignoredRoles) ? stats.ignoredRoles : []);
-  return ignoredRoles.size && member?.roles?.cache?.some?.((role) => ignoredRoles.has(role.id));
+  return Boolean(ignoredRoles.size && member?.roles?.cache?.some?.((role) => ignoredRoles.has(role.id)));
 }
 
 function addMessage(message) {
