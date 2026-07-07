@@ -263,10 +263,27 @@ const DEFAULT_MODULES = Object.freeze({
   },
   stats: {
     enabled: false,
+    trackMessages: true,
+    trackVoice: true,
+    trackMembers: true,
+    ignoreBots: true,
+    ignoredChannels: [],
+    ignoredRoles: [],
+    counters: [],
     settings: {
       showLiveGuildStats: true,
       showModuleStats: true,
       showStoredWorkflowStats: true,
+      retentionDays: 30,
+    },
+    data: {
+      messages: {},
+      voice: {},
+      members: {
+        joins: 0,
+        leaves: 0,
+        snapshots: [],
+      },
     },
     snapshots: [],
     analytics: {
