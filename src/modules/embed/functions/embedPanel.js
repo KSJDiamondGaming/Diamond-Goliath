@@ -644,7 +644,7 @@ function buildEmbedFromPanel(p, i, showTimestamp, fieldLayout = "auto") {
       inline: Boolean(f.inline),
       })),
     fieldLayout,
-  );
+  
   if (fields.length) e.addFields(fields);
   if (showTimestamp !== false) e.setTimestamp();
   return e;
@@ -953,7 +953,7 @@ function buildFieldsPanel(i, who) {
     new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
         .setCustomId("embed:field-layout")
-        .setPlaceholder("?? Field Layout")
+        .setPlaceholder("Field Layout")
         .addOptions([
           { label: "Auto", value: "auto", emoji: "?", default: (s.fieldLayout || "auto") === "auto" },
           { label: "1 per row", value: "1", emoji: "1??", default: s.fieldLayout === "1" },
