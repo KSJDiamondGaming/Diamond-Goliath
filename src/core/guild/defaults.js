@@ -299,22 +299,26 @@ const DEFAULT_MODULES = Object.freeze({
       failedTranslations: 0,
     },
   },
-  serverCopy: {
+  duplicator: {
     enabled: true,
     hidden: true,
     ownerOnly: true,
     allowedUserIds: [],
     allowedGuildIds: [],
     logChannelId: null,
+    templates: {},
     settings: {
       createRollbackBackup: true,
-      requirePreview: true,
+      requireFinalConfirm: true,
       maxSessionMinutes: 20,
     },
     analytics: {
       runs: 0,
       successfulRuns: 0,
       failedRuns: 0,
+      exports: 0,
+      builds: 0,
+      copies: 0,
     },
   },
 });
