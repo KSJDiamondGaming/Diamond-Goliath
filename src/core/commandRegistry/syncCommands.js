@@ -168,9 +168,22 @@ if (COMMAND_MODE === 'guild') {
 
 const rest = new REST({
   version: '10',
+  timeout: Number(process.env.DISCORD_REST_TIMEOUT_MS || 20000),
 }).setToken(TOKEN);
 
 /* ---------------- HELPERS ---------------- */
+
+function withTimeout(promise, label, ms = Number(process.env.DISCORD_REST_TIMEOUT_MS || 20000)) {
+  let timer;
+
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms}ms`));
+    }, ms);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
 
 function parseGuildIds(value) {
   return String(value || '')
@@ -307,14 +320,19 @@ function printSyncBanner(mode, commandsPath) {
 
 async function clearGuildCommands(guildIds) {
   for (const guildId of guildIds) {
-    await rest.put(
-      Routes.applicationGuildCommands(
-        CLIENT_ID,
-        guildId
+    console.log(`🧹 Clearing guild commands: ${guildId}`);
+
+    await withTimeout(
+      rest.put(
+        Routes.applicationGuildCommands(
+          CLIENT_ID,
+          guildId
+        ),
+        {
+          body: [],
+        }
       ),
-      {
-        body: [],
-      }
+      `Clear guild commands ${guildId}`
     );
 
     console.log(
@@ -328,15 +346,28 @@ async function registerGuildCommands(
   commands
 ) {
   for (const guildId of guildIds) {
-    await rest.put(
-      Routes.applicationGuildCommands(
-        CLIENT_ID,
-        guildId
-      ),
-      {
-        body: commands,
-      }
+    console.log(
+      `⬆️ Registering ${commands.length} command(s) for guild: ${guildId}`
     );
+
+    try {
+      await withTimeout(
+        rest.put(
+          Routes.applicationGuildCommands(
+            CLIENT_ID,
+            guildId
+          ),
+          {
+            body: commands,
+          }
+        ),
+        `Register guild commands ${guildId}`
+      );
+    } catch (error) {
+      console.error(`❌ Failed registering commands for guild: ${guildId}`);
+      console.error(error);
+      throw error;
+    }
 
     console.log(
       `✅ Registered ${commands.length} command(s) for guild: ${guildId}`
@@ -345,22 +376,32 @@ async function registerGuildCommands(
 }
 
 async function clearGlobalCommands() {
-  await rest.put(
-    Routes.applicationCommands(CLIENT_ID),
-    {
-      body: [],
-    }
+  console.log('🧹 Clearing global commands');
+
+  await withTimeout(
+    rest.put(
+      Routes.applicationCommands(CLIENT_ID),
+      {
+        body: [],
+      }
+    ),
+    'Clear global commands'
   );
 
   console.log('🧹 Cleared global commands');
 }
 
 async function registerGlobalCommands(commands) {
-  await rest.put(
-    Routes.applicationCommands(CLIENT_ID),
-    {
-      body: commands,
-    }
+  console.log(`⬆️ Registering ${commands.length} global command(s)`);
+
+  await withTimeout(
+    rest.put(
+      Routes.applicationCommands(CLIENT_ID),
+      {
+        body: commands,
+      }
+    ),
+    'Register global commands'
   );
 
   console.log(
@@ -414,6 +455,10 @@ async function syncCommands(options = {}) {
   console.log(
     `📦 Commands loaded: ${commands.length}`
   );
+
+  if (commands.length === 0) {
+    throw new Error('No commands were loaded. Aborting sync to avoid clearing Discord commands.');
+  }
 
   if (mode === 'guild') {
     console.log(
