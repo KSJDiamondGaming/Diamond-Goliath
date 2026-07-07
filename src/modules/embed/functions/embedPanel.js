@@ -434,6 +434,7 @@ function defaultState() {
     template: "custom",
     selectedPreset: null,
     showTimestamp: true,
+    fieldLayout: "auto",
     selectedPanelIndex: 0,
     selectedFieldIndex: null,
     selectedButtonIndex: null,
@@ -475,6 +476,7 @@ function presetData(state) {
     channelId: s.channelId || null,
     allowUserPing: Boolean(s.allowUserPing),
     showTimestamp: s.showTimestamp !== false,
+    fieldLayout: s.fieldLayout || "auto",
     panels: clone(s.panels),
     buttons: clone(s.buttons || []),
     ...s.panels[s.selectedPanelIndex],
@@ -513,6 +515,7 @@ function applyPreset(i, name, preset) {
     channelId: preset.channelId || current.channelId,
     allowUserPing: Boolean(preset.allowUserPing),
     showTimestamp: preset.showTimestamp !== false,
+    fieldLayout: preset.fieldLayout || current.fieldLayout || "auto",
   });
 }
 function setDefault(guildId, template, preset) {
@@ -558,7 +561,39 @@ function normalizeInlineFields(fields) {
   });
 }
 
-function buildEmbedFromPanel(p, i, showTimestamp) {
+function applyFieldLayout(fields, layout = "auto") {
+  if (layout === "1") return fields.map((field) => ({ ...field, inline: false }));
+  if (layout === "3") return fields;
+
+  const inlineCount = fields.filter((field) => field.inline).length;
+  const useTwoPerRow = layout === "2" || (layout === "auto" && (inlineCount === 4 || inlineCount === 5));
+
+  if (!useTwoPerRow) return fields;
+
+  const output = [];
+  let rowCount = 0;
+
+  fields.forEach((field, index) => {
+    if (!field.inline) {
+      rowCount = 0;
+      output.push(field);
+      return;
+    }
+
+    output.push({ ...field, inline: true });
+    rowCount += 1;
+
+    const hasMoreInline = fields.slice(index + 1).some((next) => next.inline);
+    if (rowCount === 2 && hasMoreInline) {
+      output.push({ name: "\u200B", value: "\u200B", inline: true });
+      rowCount = 0;
+    }
+  });
+
+  return output.slice(0, 25);
+}
+
+function buildEmbedFromPanel(p, i, showTimestamp, fieldLayout = "auto") {
   const e = new EmbedBuilder().setColor(p.color || PANEL_COLOR);
   let authorName = trim(replaceVars(p.authorName, i), 256);
   let authorIcon = safeUrl(replaceVars(p.authorIcon, i));
@@ -607,7 +642,9 @@ function buildEmbedFromPanel(p, i, showTimestamp) {
       name: trim(replaceVars(f.name, i), 256),
       value: trim(replaceVars(f.value, i), 1024),
       inline: Boolean(f.inline),
-    }));
+      })),
+    fieldLayout,
+  );
   if (fields.length) e.addFields(fields);
   if (showTimestamp !== false) e.setTimestamp();
   return e;
@@ -616,7 +653,7 @@ function buildPreviewEmbeds(state, i) {
   const s = sync(state);
   return s.panels
     .slice(0, MAX_PANELS)
-    .map((p) => buildEmbedFromPanel(p, i, s.showTimestamp));
+    .map((p) => buildEmbedFromPanel(p, i, s.showTimestamp, s.fieldLayout || "auto"));
 }
 function buildPreviewEmbed(state, i) {
   return buildPreviewEmbeds(state, i)[0];
@@ -911,6 +948,20 @@ function buildPanelsPanel(i, who) {
 function buildFieldsPanel(i, who) {
   const s = getSession(i),
     rows = [];
+
+  rows.push(
+    new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId("embed:field-layout")
+        .setPlaceholder("?? Field Layout")
+        .addOptions([
+          { label: "Auto", value: "auto", emoji: "?", default: (s.fieldLayout || "auto") === "auto" },
+          { label: "1 per row", value: "1", emoji: "1??", default: s.fieldLayout === "1" },
+          { label: "2 per row", value: "2", emoji: "2??", default: s.fieldLayout === "2" },
+          { label: "3 per row", value: "3", emoji: "3??", default: s.fieldLayout === "3" },
+        ]),
+    ),
+  );
   if ((s.fields || []).length)
     rows.push(
       new ActionRowBuilder().addComponents(
@@ -1275,6 +1326,10 @@ async function handleInteraction(i) {
         selectedFieldIndex: null,
       });
       return replyOrUpdate(i, buildEditorPanel(i, who));
+    }
+    if (i.customId === "embed:field-layout") {
+      markUnsaved(i, { ...s, fieldLayout: i.values[0] });
+      return replyOrUpdate(i, buildFieldsPanel(i, who));
     }
     if (i.customId === "embed:field-select") {
       saveSession(i, { ...s, selectedFieldIndex: Number(i.values[0]) });
