@@ -299,6 +299,24 @@ const DEFAULT_MODULES = Object.freeze({
       failedTranslations: 0,
     },
   },
+  serverCopy: {
+    enabled: true,
+    hidden: true,
+    ownerOnly: true,
+    allowedUserIds: [],
+    allowedGuildIds: [],
+    logChannelId: null,
+    settings: {
+      createRollbackBackup: true,
+      requirePreview: true,
+      maxSessionMinutes: 20,
+    },
+    analytics: {
+      runs: 0,
+      successfulRuns: 0,
+      failedRuns: 0,
+    },
+  },
 });
 
 const DEFAULT_GUILD_DATA = Object.freeze({
