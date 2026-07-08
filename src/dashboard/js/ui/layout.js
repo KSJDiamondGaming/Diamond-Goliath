@@ -29,6 +29,7 @@ const Polls = lazy(() => import('../pages/modules/Polls'));
 const Stats = lazy(() => import('../pages/modules/Stats'));
 const Restore = lazy(() => import('../pages/security/Restore'));
 const Security = lazy(() => import('../pages/security/Security'));
+const MediaTools = lazy(() => import('../pages/core/MediaTools'));
 const Logs = lazy(() => import('../pages/core/Logs'));
 const OwnerView = lazy(() => import('../pages/owner/OwnerOverviewPhase2'));
 const OwnerGlobalServers = lazy(() => import('../pages/owner/GlobalServers'));
@@ -88,6 +89,7 @@ export const NAV_BOTTOM = [
     ],
   },
   { key: 'notifications', label: 'Notifications', icon: 'logs', path: '/notifications' },
+  { key: 'mediaTools', label: 'Media Tools', icon: 'modules', path: '/media-tools' },
   { key: 'logs', label: 'Logs', icon: 'logs', path: '/logs' },
 ];
 
@@ -132,6 +134,7 @@ export const ROUTES = [
   { key: 'warnings', label: 'Warnings', icon: 'warnings', path: '/warnings', component: Warnings },
   { key: 'security', label: 'Security', icon: 'admin', path: '/security', component: Security },
   { key: 'restore', label: 'Restore', icon: 'admin', path: '/restore', component: Restore },
+  { key: 'mediaTools', label: 'Media Tools', icon: 'modules', path: '/media-tools', component: MediaTools },
   { key: 'logs', label: 'Logs', icon: 'logs', path: '/logs', component: Logs },
 ];
 
@@ -179,6 +182,7 @@ export const PAGE_LAYOUTS = {
   warnings: { title: 'Warnings', description: 'View and manage warning records.', emptyDescription: 'Select a server to view warnings.', sections: [{ id: 'warningTable', type: 'table' }] },
   security: { title: 'Security Center', description: 'Live protection and recovery overview.', emptyDescription: 'Select a server to view security status.', sections: [{ id: 'securityOverview', type: 'dashboard' }] },
   restore: { title: 'Server Restore', description: 'Preview and restore server backups.', emptyDescription: 'Select a server to restore from backup.', sections: [{ id: 'restoreManager', type: 'config' }] },
+  mediaTools: { title: 'Media Tools', description: 'Create Discord-ready GIFs, emojis and role icons.', emptyDescription: 'Select a server to use media tools.', sections: [{ id: 'mediaToolsDashboard', type: 'dashboard' }] },
   logs: { title: 'Logs', description: 'Manage log channels.', emptyDescription: 'Select a server to manage log channels.', sections: [{ id: 'logManager', type: 'config' }] },
 };
 
@@ -214,5 +218,6 @@ export const SECTION_DEFS = {
   generalConfig: { title: 'General Config', description: 'Core server configuration.' },
   securityOverview: { title: 'Security Overview', description: 'Live protection status.' },
   restoreManager: { title: 'Restore Manager', description: 'Preview and restore backups.' },
+  mediaToolsDashboard: { title: 'Media Tools', description: 'Create Discord-ready GIFs, emojis and role icons.' },
   logManager: { title: 'Log Manager', description: 'Choose log channels.' },
 };
