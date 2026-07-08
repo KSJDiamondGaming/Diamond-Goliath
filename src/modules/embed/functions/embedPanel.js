@@ -370,17 +370,13 @@ function isIconUrl(url) {
 function isImageUrl(url) {
   try {
     const parsed = new URL(url);
-
-    // Only allow actual image files
     return /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i.test(parsed.pathname);
   } catch {
     return false;
   }
 }
-
 function extractMediaLines(description) {
   const lines = String(description || "").split("\n");
-
   const kept = [];
   let thumbnailUrl = null;
   let imageUrl = null;
@@ -389,7 +385,6 @@ function extractMediaLines(description) {
     const text = line.trim();
     const url = safeUrl(text);
 
-    // Ignore anything that isn't an actual image
     if (url && isImageUrl(url)) {
       if (isIconUrl(url) && !thumbnailUrl) {
         thumbnailUrl = url;
@@ -402,15 +397,10 @@ function extractMediaLines(description) {
       }
     }
 
-    // Keep normal text and normal hyperlinks
     kept.push(line);
   }
 
-  return {
-    description: kept.join("\n").trim(),
-    thumbnailUrl,
-    imageUrl,
-  };
+  return { description: kept.join("\n").trim(), thumbnailUrl, imageUrl };
 }
 
 function basePanel(data = {}) {
@@ -652,11 +642,13 @@ function buildEmbedFromPanel(p, i, showTimestamp, fieldLayout = "auto") {
       text: replaceVars("{guildName}", i) || "Embed",
       iconURL: footerIcon,
     });
-  const image = safeUrl(replaceVars(p.image, i)),
-    thumb = safeUrl(replaceVars(p.thumbnail, i));
-  if (image) e.setImage(image);
+  const image = safeUrl(replaceVars(p.image, i));
+  const thumb = safeUrl(replaceVars(p.thumbnail, i));
+
+  if (image && isImageUrl(image)) e.setImage(image);
   else if (media.imageUrl) e.setImage(media.imageUrl);
-  if (thumb) e.setThumbnail(thumb);
+
+  if (thumb && isImageUrl(thumb)) e.setThumbnail(thumb);
   else if (media.thumbnailUrl) e.setThumbnail(media.thumbnailUrl);
   const fields = applyFieldLayout(
     (p.fields || [])
