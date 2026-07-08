@@ -13,6 +13,7 @@ const LEGACY_SECTION_MAP = Object.freeze({
   discord: 'modules.discord',
   polls: 'modules.polls',
   stats: 'modules.stats',
+  templates: 'modules.serverCopy.templates',
 });
 
 const LEGACY_TOP_LEVEL_SECTIONS = Object.freeze(Object.keys(LEGACY_SECTION_MAP));

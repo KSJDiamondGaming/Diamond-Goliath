@@ -263,10 +263,27 @@ const DEFAULT_MODULES = Object.freeze({
   },
   stats: {
     enabled: false,
+    trackMessages: true,
+    trackVoice: true,
+    trackMembers: true,
+    ignoreBots: true,
+    ignoredChannels: [],
+    ignoredRoles: [],
+    counters: [],
     settings: {
       showLiveGuildStats: true,
       showModuleStats: true,
       showStoredWorkflowStats: true,
+      retentionDays: 30,
+    },
+    data: {
+      messages: {},
+      voice: {},
+      members: {
+        joins: 0,
+        leaves: 0,
+        snapshots: [],
+      },
     },
     snapshots: [],
     analytics: {
@@ -297,6 +314,28 @@ const DEFAULT_MODULES = Object.freeze({
       autoTranslations: 0,
       threadsCreated: 0,
       failedTranslations: 0,
+    },
+  },
+  duplicator: {
+    enabled: true,
+    hidden: true,
+    ownerOnly: true,
+    allowedUserIds: [],
+    allowedGuildIds: [],
+    logChannelId: null,
+    templates: {},
+    settings: {
+      createRollbackBackup: true,
+      requireFinalConfirm: true,
+      maxSessionMinutes: 20,
+    },
+    analytics: {
+      runs: 0,
+      successfulRuns: 0,
+      failedRuns: 0,
+      exports: 0,
+      builds: 0,
+      copies: 0,
     },
   },
 });

@@ -1,61 +1,71 @@
 param(
     [Parameter(Mandatory=$true)]
     [ValidateSet("dev", "beta", "production")]
-    [string]$env
+    [string]$TargetEnv,
+
+    [string]$Message = "",
+
+    [switch]$SkipPull,
+    [switch]$DryRun
 )
 
-Write-Host "========================================"
-Write-Host "🚀 Goliath Auto Push System"
-Write-Host "📦 Environment: $env"
-Write-Host "========================================"
+$ErrorActionPreference = "Stop"
 
-# Safety check
-if (-not $env) {
-    Write-Host "❌ No environment provided (dev | beta | production)"
-    exit 1
-}
+function Run-Step {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Label,
+        [Parameter(Mandatory=$true)]
+        [scriptblock]$Command
+    )
 
-# Step 1: Switch branch
-Write-Host "🔄 Switching to branch: $env"
-git checkout $env
+    Write-Host ""
+    Write-Host "▶ $Label"
+    & $Command
 
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "❌ Failed to switch branch"
-    exit 1
-}
-
-# Step 2: Sync latest changes
-Write-Host "⬇️ Pulling latest changes..."
-git pull origin $env
-
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "❌ Git pull failed"
-    exit 1
-}
-
-# Step 3: Stage changes
-Write-Host "📦 Staging changes..."
-git add -A
-
-# Step 4: Commit safely (only if changes exist)
-$hasChanges = (git status --porcelain | Measure-Object).Count -gt 0
-
-if ($hasChanges) {
-    Write-Host "💾 Committing changes..."
-    git commit -m "auto-push: sync $env environment"
-} else {
-    Write-Host "⚠️ No changes to commit"
-}
-
-# Step 5: Push
-Write-Host "🚀 Pushing to $env..."
-git push origin $env
-
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "❌ Push failed"
-    exit 1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "❌ Failed: $Label"
+        exit $LASTEXITCODE
+    }
 }
 
 Write-Host "========================================"
-Write-Host "✅ SUCCESS: $env deployed and synced"
+Write-Host "🚀 Goliath Git Helper"
+Write-Host "📦 Target: $TargetEnv"
+Write-Host "🧪 Dry run: $DryRun"
 Write-Host "========================================"
+
+Run-Step "Switch branch" { git checkout $TargetEnv }
+
+if (-not $SkipPull) {
+    Run-Step "Pull latest $TargetEnv" { git pull origin $TargetEnv }
+}
+
+$changesBeforeStage = git status --porcelain
+if (-not $changesBeforeStage) {
+    Write-Host "✅ No local changes to push."
+    exit 0
+}
+
+Write-Host ""
+Write-Host "Changed files:"
+$changesBeforeStage | ForEach-Object { Write-Host "  $_" }
+
+if ($DryRun) {
+    Write-Host ""
+    Write-Host "🧪 Dry run complete. No files staged, committed, or pushed."
+    exit 0
+}
+
+Run-Step "Stage changes" { git add -A }
+
+$commitMessage = $Message.Trim()
+if (-not $commitMessage) {
+    $commitMessage = "chore($TargetEnv): sync local changes"
+}
+
+Run-Step "Commit changes" { git commit -m $commitMessage }
+Run-Step "Push $TargetEnv" { git push origin $TargetEnv }
+
+Write-Host ""
+Write-Host "✅ SUCCESS: $TargetEnv updated"

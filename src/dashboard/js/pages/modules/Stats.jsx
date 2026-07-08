@@ -1,14 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
 import { api } from '../../services/apiClient';
-import PageShell, { EmptyState, LoadingPanel, Notice, PrimaryButton, StatGrid, SummaryStat } from '../../shared/PageShell';
+import ModuleShell, { MODULE_TABS } from '../../shared/ModuleShell.jsx';
+import { EmptyState, LoadingPanel, Notice, PrimaryButton, SectionCard, StatGrid, SummaryStat } from '../../shared/PageShell';
 
 function guildIdFrom(selectedGuild, selectedGuildData) {
   return String(selectedGuildData?.guildId || selectedGuildData?.id || selectedGuild || '').split(':').pop().trim();
-}
-
-function Card({ theme, title, children }) {
-  return <section style={{ border: `1px solid ${theme.cardBorder}`, background: theme.cardBg, color: theme.cardText, borderRadius: 22, boxShadow: theme.shadow, padding: 18 }}><h2 style={{ margin: '0 0 12px' }}>{title}</h2>{children}</section>;
 }
 
 function Row({ theme, label, value }) {
@@ -62,11 +59,11 @@ export default function Stats({ theme, selectedGuild, selectedGuildData }) {
   if (loading && !stats) return <LoadingPanel theme={theme} text="Loading analytics..." />;
 
   const { live, stored, modules } = analytics;
+  const guild = { id: guildId, name: selectedGuildData?.name || selectedGuildData?.guildName || live.guild?.name || 'Analytics' };
+  const moduleStatus = stored.logs?.enabled || modules.total ? 'Active' : 'Needs setup';
 
-  return (
-    <PageShell title="Analytics Centre" subtitle="Server, module, workflow and security analytics." theme={theme} guild={{ id: guildId, name: selectedGuildData?.name || selectedGuildData?.guildName || live.guild?.name || 'Analytics' }} actions={<PrimaryButton onClick={load} disabled={loading}>{loading ? 'Refreshing...' : 'Refresh'}</PrimaryButton>}>
-      {error ? <Notice theme={theme} tone="danger">{error}</Notice> : null}
-
+  const overviewContent = (
+    <div style={{ display: 'grid', gap: 16 }}>
       <StatGrid min="170px">
         <SummaryStat theme={theme} label="Members" value={live.members?.total ?? '—'} accent="#60a5fa" description="Live Discord count" />
         <SummaryStat theme={theme} label="Module Coverage" value={`${analytics.moduleCoverage}%`} accent="#22c55e" description={`${modules.enabled || 0}/${modules.total || 0} enabled`} />
@@ -75,7 +72,7 @@ export default function Stats({ theme, selectedGuild, selectedGuildData }) {
       </StatGrid>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))', gap: 16 }}>
-        <Card theme={theme} title="Live Discord">
+        <SectionCard theme={theme} title="Live Discord">
           <Row theme={theme} label="Server" value={live.guild?.name || 'Unavailable'} />
           <Row theme={theme} label="Members" value={live.members?.total ?? '—'} />
           <Row theme={theme} label="Text Channels" value={live.channels?.text ?? '—'} />
@@ -83,34 +80,74 @@ export default function Stats({ theme, selectedGuild, selectedGuildData }) {
           <Row theme={theme} label="Categories" value={live.channels?.categories ?? '—'} />
           <Row theme={theme} label="Roles" value={live.roles?.total ?? '—'} />
           <Row theme={theme} label="Emojis" value={live.emojis?.total ?? '—'} />
-        </Card>
+        </SectionCard>
 
-        <Card theme={theme} title="Module Adoption">
+        <SectionCard theme={theme} title="Module Adoption">
           <Bar theme={theme} label="Enabled Modules" value={modules.enabled || 0} total={modules.total || 0} accent="#22c55e" />
           <Bar theme={theme} label="Disabled Modules" value={modules.disabled || 0} total={modules.total || 0} accent="#f59e0b" />
           <div style={{ marginTop: 12, color: theme.mutedText, fontSize: 13, lineHeight: 1.55 }}>{(modules.enabledKeys || []).length ? `Enabled: ${(modules.enabledKeys || []).join(', ')}` : 'No enabled module keys found.'}</div>
-        </Card>
-
-        <Card theme={theme} title="Workflow Analytics">
-          <Row theme={theme} label="Tickets" value={stored.tickets?.total || 0} />
-          <Row theme={theme} label="Open Tickets" value={`${stored.tickets?.open || 0} (${analytics.ticketOpenRate}%)`} />
-          <Row theme={theme} label="Ticket Panels" value={stored.tickets?.panels || 0} />
-          <Row theme={theme} label="Forms" value={stored.forms?.forms || 0} />
-          <Row theme={theme} label="Submissions" value={stored.forms?.submissions || 0} />
-          <Row theme={theme} label="Polls" value={stored.polls?.total || 0} />
-          <Row theme={theme} label="Active Polls" value={stored.polls?.active || 0} />
-        </Card>
-
-        <Card theme={theme} title="Security & Logs">
-          <Row theme={theme} label="Security Enabled" value={stored.security?.enabled ? 'Yes' : 'No'} />
-          <Row theme={theme} label="Threat Level" value={stored.security?.threatLevel || 'low'} />
-          <Row theme={theme} label="Security Incidents" value={stored.security?.totalIncidents || 0} />
-          <Row theme={theme} label="Critical Incidents" value={stored.security?.criticalIncidents || 0} />
-          <Row theme={theme} label="Logging Enabled" value={stored.logs?.enabled ? 'Yes' : 'No'} />
-          <Row theme={theme} label="Log Channels" value={stored.logs?.channels || 0} />
-          <Row theme={theme} label="Log Events" value={stored.logs?.events || 0} />
-        </Card>
+        </SectionCard>
       </div>
-    </PageShell>
+    </div>
+  );
+
+  const analyticsContent = (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))', gap: 16 }}>
+      <SectionCard theme={theme} title="Workflow Analytics">
+        <Row theme={theme} label="Tickets" value={stored.tickets?.total || 0} />
+        <Row theme={theme} label="Open Tickets" value={`${stored.tickets?.open || 0} (${analytics.ticketOpenRate}%)`} />
+        <Row theme={theme} label="Ticket Panels" value={stored.tickets?.panels || 0} />
+        <Row theme={theme} label="Forms" value={stored.forms?.forms || 0} />
+        <Row theme={theme} label="Submissions" value={stored.forms?.submissions || 0} />
+        <Row theme={theme} label="Polls" value={stored.polls?.total || 0} />
+        <Row theme={theme} label="Active Polls" value={stored.polls?.active || 0} />
+      </SectionCard>
+
+      <SectionCard theme={theme} title="Security & Logs">
+        <Row theme={theme} label="Security Enabled" value={stored.security?.enabled ? 'Yes' : 'No'} />
+        <Row theme={theme} label="Threat Level" value={stored.security?.threatLevel || 'low'} />
+        <Row theme={theme} label="Security Incidents" value={stored.security?.totalIncidents || 0} />
+        <Row theme={theme} label="Critical Incidents" value={stored.security?.criticalIncidents || 0} />
+        <Row theme={theme} label="Logging Enabled" value={stored.logs?.enabled ? 'Yes' : 'No'} />
+        <Row theme={theme} label="Log Channels" value={stored.logs?.channels || 0} />
+        <Row theme={theme} label="Log Events" value={stored.logs?.events || 0} />
+      </SectionCard>
+    </div>
+  );
+
+  const activityContent = (
+    <SectionCard theme={theme} title="Activity" subtitle="Stats refresh and data availability status.">
+      <Row theme={theme} label="Last refresh" value={stats?.generatedAt || stats?.updatedAt || 'Current session'} />
+      <Row theme={theme} label="Live data" value={live.guild ? 'Available' : 'Unavailable'} />
+      <Row theme={theme} label="Stored data" value={stored ? 'Available' : 'Unavailable'} />
+      <Row theme={theme} label="Refresh state" value={loading ? 'Refreshing' : 'Idle'} />
+    </SectionCard>
+  );
+
+  return (
+    <ModuleShell
+      title="Analytics Centre"
+      subtitle="Server, module, workflow and security analytics."
+      theme={theme}
+      guild={guild}
+      actions={<PrimaryButton onClick={load} disabled={loading}>{loading ? 'Refreshing...' : 'Refresh'}</PrimaryButton>}
+      tabs={[
+        { key: MODULE_TABS.overview, label: 'Overview' },
+        { key: MODULE_TABS.analytics, label: 'Analytics' },
+        { key: MODULE_TABS.activity, label: 'Activity' },
+      ]}
+      status={moduleStatus}
+      updatedAt={stats?.generatedAt || stats?.updatedAt || 'Current session'}
+      templateCount={0}
+      deploymentCount={0}
+      notice={error}
+      noticeTone="danger"
+    >
+      {{
+        [MODULE_TABS.overview]: overviewContent,
+        [MODULE_TABS.analytics]: analyticsContent,
+        [MODULE_TABS.activity]: activityContent,
+      }}
+    </ModuleShell>
   );
 }

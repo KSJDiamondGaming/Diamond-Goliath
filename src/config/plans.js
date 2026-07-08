@@ -23,6 +23,7 @@ const FEATURE_KEYS = Object.freeze({
   ANALYTICS_BASIC: 'analytics.basic',
   ANALYTICS_ADVANCED: 'analytics.advanced',
   PREMIUM_MODULES: 'modules.premium',
+  MEDIA_TOOLS: 'media.tools',
 });
 
 const FREE_FEATURES = Object.freeze([
@@ -40,6 +41,7 @@ const PLUS_FEATURES = Object.freeze([
   FEATURE_KEYS.FORMS_ADVANCED,
   FEATURE_KEYS.EMBEDS_PRESETS,
   FEATURE_KEYS.ANALYTICS_BASIC,
+  FEATURE_KEYS.MEDIA_TOOLS,
 ]);
 
 const PRO_FEATURES = Object.freeze([

@@ -1,4 +1,4 @@
-const db = require('../../../modules/moderation/functions/moderationStore');
+const db = require('../../../features/moderation/functions/moderationStore');
 const {
   emitCaseCreated,
   emitCaseUpdated,
