@@ -135,6 +135,10 @@ module.exports = {
     ),
 
   async execute(interaction) {
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferReply({ flags: 64 }).catch(() => null);
+    }
+
     const denied = await enforceCommandAccess(interaction, module.exports);
     if (denied) return;
 
