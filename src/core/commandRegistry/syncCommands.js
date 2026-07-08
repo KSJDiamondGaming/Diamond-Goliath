@@ -248,12 +248,17 @@ async function upsertGuildCommands(guildId, commands, failures) {
       continue;
     }
 
-    if (!commandChanged(existing, command)) {
-      console.log(`Unchanged guild command: /${command.name}`);
-      continue;
-    }
+    if (!UPDATE_EXISTING) {
+  console.log(`Existing guild command skipped: /${command.name}`);
+  continue;
+}
 
-    console.log(`Updating guild command: /${command.name}`);
+if (!commandChanged(existing, command)) {
+  console.log(`Unchanged guild command: /${command.name}`);
+  continue;
+}
+
+console.log(`Updating guild command: /${command.name}`);
     await safeCommandAction(`/${command.name} update`, async () => {
       await rest.patch(Routes.applicationGuildCommand(CLIENT_ID, guildId, existing.id), { body: command });
       console.log(`Updated guild command: /${command.name}`);
