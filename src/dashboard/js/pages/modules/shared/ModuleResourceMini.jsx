@@ -8,6 +8,10 @@ function idFrom(selectedGuild, selectedGuildData) {
   return String(selectedGuildData?.guildId || selectedGuildData?.id || selectedGuild || '').split(':').pop().trim();
 }
 
+function openEmbedStudio() {
+  window.location.assign('/embed-studio');
+}
+
 export default function ModuleResourceMini({ theme, selectedGuild, selectedGuildData, title, description }) {
   const guildId = idFrom(selectedGuild, selectedGuildData);
   const [data, setData] = useState({});
@@ -66,7 +70,7 @@ export default function ModuleResourceMini({ theme, selectedGuild, selectedGuild
         Use Embed Studio for this module&apos;s Discord panels, embeds, buttons and templates.
       </p>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <PrimaryButton onClick={() => window.history.pushState({}, '', '/embed-studio')}>Open Embed Studio</PrimaryButton>
+        <PrimaryButton onClick={openEmbedStudio}>Open Embed Studio</PrimaryButton>
       </div>
     </SectionCard>
   );
