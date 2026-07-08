@@ -15,6 +15,12 @@ function envFlag(name, fallback = false) {
   return ['1', 'true', 'yes', 'y', 'on'].includes(String(value).toLowerCase());
 }
 
+function envNumber(name, fallback, minimum = 0) {
+  const value = Number(process.env[name]);
+  if (!Number.isFinite(value) || value < minimum) return fallback;
+  return value;
+}
+
 function firstEnv(names) {
   for (const name of names) {
     const value = process.env[name];
@@ -107,9 +113,59 @@ const BULK_OVERWRITE = envFlag('COMMAND_SYNC_BULK_OVERWRITE', false);
 const STOP_ON_ERROR = envFlag('COMMAND_SYNC_STOP_ON_ERROR', false);
 const UPDATE_EXISTING = envFlag('COMMAND_SYNC_UPDATE_EXISTING', false);
 const SINGLE_COMMAND = String(process.env.COMMAND_SYNC_SINGLE || '').trim().toLowerCase();
-const REST_TIMEOUT_MS = Number(process.env.DISCORD_REST_TIMEOUT_MS || 30000);
+const REST_TIMEOUT_MS = envNumber('DISCORD_REST_TIMEOUT_MS', 30000, 1000);
+const REST_RETRIES = envNumber('COMMAND_SYNC_RETRIES', 1, 0);
+const REST_RETRY_DELAY_MS = envNumber('COMMAND_SYNC_RETRY_DELAY_MS', 1500, 0);
 
 const rest = new REST({ version: '10', timeout: REST_TIMEOUT_MS }).setToken(TOKEN);
+
+function wait(ms) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    timer.unref?.();
+  });
+}
+
+async function withTimeout(label, fn, timeoutMs = REST_TIMEOUT_MS) {
+  let timer;
+  const startedAt = Date.now();
+  const operation = Promise.resolve().then(fn);
+  operation.catch(() => null);
+
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+    timer.unref?.();
+  });
+
+  try {
+    const result = await Promise.race([operation, timeout]);
+    console.log(`Discord REST OK: ${label} (${Date.now() - startedAt}ms)`);
+    return result;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function discordRequest(label, fn) {
+  let lastError;
+
+  for (let attempt = 1; attempt <= REST_RETRIES + 1; attempt += 1) {
+    try {
+      console.log(`Discord REST start: ${label}${attempt > 1 ? ` (retry ${attempt - 1}/${REST_RETRIES})` : ''}`);
+      return await withTimeout(label, fn);
+    } catch (error) {
+      lastError = error;
+      console.error(`Discord REST failed: ${label} — ${error.message}`);
+
+      if (attempt > REST_RETRIES) break;
+      if (REST_RETRY_DELAY_MS > 0) await wait(REST_RETRY_DELAY_MS * attempt);
+    }
+  }
+
+  throw lastError;
+}
 
 function validateOption(option, filePath, errors, parent = '') {
   const label = parent ? `${parent}.${option?.name || 'unknown'}` : option?.name || 'unknown';
@@ -237,7 +293,7 @@ function commandChanged(existing, next) {
 
 async function clearGuildCommands(guildId) {
   console.log(`Clearing guild commands: ${guildId}`);
-  await rest.put(Routes.applicationGuildCommands(CLIENT_ID, guildId), { body: [] });
+  await discordRequest(`clear guild commands ${guildId}`, () => rest.put(Routes.applicationGuildCommands(CLIENT_ID, guildId), { body: [] }));
   console.log(`Cleared guild commands: ${guildId}`);
 }
 
@@ -257,17 +313,23 @@ async function safeCommandAction(label, fn, failures) {
 
 async function bulkGuildOverwrite(guildId, commands) {
   console.log(`Bulk overwriting ${commands.length} guild command(s): ${guildId}`);
-  await rest.put(Routes.applicationGuildCommands(CLIENT_ID, guildId), { body: commands });
+  await discordRequest(`bulk overwrite guild commands ${guildId}`, () => rest.put(Routes.applicationGuildCommands(CLIENT_ID, guildId), { body: commands }));
   console.log(`Bulk overwrite complete: ${guildId}`);
 }
 
 async function upsertGuildCommands(guildId, commands, failures) {
-  if (CLEAR_BEFORE_SYNC) await clearGuildCommands(guildId);
   if (BULK_OVERWRITE) return bulkGuildOverwrite(guildId, commands);
 
-  console.log(`Reading existing guild commands: ${guildId}`);
+  let existingCommands = [];
 
-  const existingCommands = await rest.get(Routes.applicationGuildCommands(CLIENT_ID, guildId));
+  if (CLEAR_BEFORE_SYNC) {
+    await clearGuildCommands(guildId);
+    console.log(`Skipping existing command read after clear: ${guildId}`);
+  } else {
+    console.log(`Reading existing guild commands: ${guildId}`);
+    existingCommands = await discordRequest(`read guild commands ${guildId}`, () => rest.get(Routes.applicationGuildCommands(CLIENT_ID, guildId)));
+  }
+
   const existingByName = new Map(existingCommands.map((command) => [command.name, command]));
   const wantedNames = new Set(commands.map((command) => command.name));
 
@@ -277,7 +339,7 @@ async function upsertGuildCommands(guildId, commands, failures) {
     if (!existing) {
       console.log(`Creating guild command: /${command.name}`);
       await safeCommandAction(`/${command.name} create`, async () => {
-        await rest.post(Routes.applicationGuildCommands(CLIENT_ID, guildId), { body: command });
+        await discordRequest(`create guild command /${command.name} in ${guildId}`, () => rest.post(Routes.applicationGuildCommands(CLIENT_ID, guildId), { body: command }));
         console.log(`Created guild command: /${command.name}`);
       }, failures);
       continue;
@@ -295,18 +357,18 @@ async function upsertGuildCommands(guildId, commands, failures) {
 
     console.log(`Updating guild command: /${command.name}`);
     await safeCommandAction(`/${command.name} update`, async () => {
-      await rest.patch(Routes.applicationGuildCommand(CLIENT_ID, guildId, existing.id), { body: command });
+      await discordRequest(`update guild command /${command.name} in ${guildId}`, () => rest.patch(Routes.applicationGuildCommand(CLIENT_ID, guildId, existing.id), { body: command }));
       console.log(`Updated guild command: /${command.name}`);
     }, failures);
   }
 
-  if (DELETE_STALE && !SINGLE_COMMAND) {
+  if (DELETE_STALE && !SINGLE_COMMAND && !CLEAR_BEFORE_SYNC) {
     for (const existing of existingCommands) {
       if (wantedNames.has(existing.name)) continue;
 
       await safeCommandAction(`/${existing.name} delete stale`, async () => {
         console.log(`Deleting stale guild command: /${existing.name}`);
-        await rest.delete(Routes.applicationGuildCommand(CLIENT_ID, guildId, existing.id));
+        await discordRequest(`delete stale guild command /${existing.name} in ${guildId}`, () => rest.delete(Routes.applicationGuildCommand(CLIENT_ID, guildId, existing.id)));
         console.log(`Deleted stale guild command: /${existing.name}`);
       }, failures);
     }
@@ -315,7 +377,7 @@ async function upsertGuildCommands(guildId, commands, failures) {
 
 async function bulkGlobalOverwrite(commands) {
   console.log(`Bulk overwriting ${commands.length} global command(s)`);
-  await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
+  await discordRequest('bulk overwrite global commands', () => rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands }));
   console.log('Global bulk overwrite complete');
 }
 
@@ -324,7 +386,7 @@ async function upsertGlobalCommands(commands, failures) {
 
   console.log('Reading existing global commands');
 
-  const existingCommands = await rest.get(Routes.applicationCommands(CLIENT_ID));
+  const existingCommands = await discordRequest('read global commands', () => rest.get(Routes.applicationCommands(CLIENT_ID)));
   const existingByName = new Map(existingCommands.map((command) => [command.name, command]));
   const wantedNames = new Set(commands.map((command) => command.name));
 
@@ -334,7 +396,7 @@ async function upsertGlobalCommands(commands, failures) {
     if (!existing) {
       await safeCommandAction(`/${command.name} create`, async () => {
         console.log(`Creating global command: /${command.name}`);
-        await rest.post(Routes.applicationCommands(CLIENT_ID), { body: command });
+        await discordRequest(`create global command /${command.name}`, () => rest.post(Routes.applicationCommands(CLIENT_ID), { body: command }));
         console.log(`Created global command: /${command.name}`);
       }, failures);
       continue;
@@ -352,7 +414,7 @@ async function upsertGlobalCommands(commands, failures) {
 
     await safeCommandAction(`/${command.name} update`, async () => {
       console.log(`Updating global command: /${command.name}`);
-      await rest.patch(Routes.applicationCommand(CLIENT_ID, existing.id), { body: command });
+      await discordRequest(`update global command /${command.name}`, () => rest.patch(Routes.applicationCommand(CLIENT_ID, existing.id), { body: command }));
       console.log(`Updated global command: /${command.name}`);
     }, failures);
   }
@@ -362,7 +424,7 @@ async function upsertGlobalCommands(commands, failures) {
       if (wantedNames.has(existing.name)) continue;
 
       await safeCommandAction(`/${existing.name} delete stale`, async () => {
-        await rest.delete(Routes.applicationCommand(CLIENT_ID, existing.id));
+        await discordRequest(`delete stale global command /${existing.name}`, () => rest.delete(Routes.applicationCommand(CLIENT_ID, existing.id)));
       }, failures);
     }
   }
@@ -377,6 +439,8 @@ function printBanner(mode, commandsPath) {
   console.log(`Client ID: ${CLIENT_ID}`);
   console.log(`Commands Path: ${commandsPath}`);
   console.log(`REST Timeout: ${REST_TIMEOUT_MS}ms`);
+  console.log(`REST Retries: ${REST_RETRIES}`);
+  console.log(`Retry Delay: ${REST_RETRY_DELAY_MS}ms`);
   console.log(`Dry Run: ${DRY_RUN ? 'YES' : 'NO'}`);
   console.log(`Clear Before Sync: ${CLEAR_BEFORE_SYNC ? 'YES' : 'NO'}`);
   console.log(`Bulk Overwrite: ${BULK_OVERWRITE ? 'YES' : 'NO'}`);
