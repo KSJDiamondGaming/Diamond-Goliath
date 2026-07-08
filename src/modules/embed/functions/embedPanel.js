@@ -608,40 +608,39 @@ function applyFieldLayout(fields, layout = "auto") {
 
 function buildEmbedFromPanel(p, i, showTimestamp, fieldLayout = "auto") {
   const e = new EmbedBuilder().setColor(p.color || PANEL_COLOR);
-  let authorName = trim(replaceVars(p.authorName, i), 256);
-  let authorIcon = safeUrl(replaceVars(p.authorIcon, i));
+
+  const authorName = trim(replaceVars(p.authorName, i), 256);
+  const authorIcon = safeUrl(replaceVars(p.authorIcon, i));
   const authorUrl = safeUrl(replaceVars(p.authorUrl, i));
-  const authorNameUrl = safeUrl(authorName);
-  if (authorNameUrl && !authorIcon) {
-    authorIcon = authorNameUrl;
-    authorName = replaceVars("{guildName}", i);
-  }
-  if (authorName || authorIcon)
+
+  if (authorName || (authorIcon && isImageUrl(authorIcon))) {
     e.setAuthor({
       name: authorName || replaceVars("{guildName}", i) || "Embed",
-      ...(authorIcon ? { iconURL: authorIcon } : {}),
+      ...(authorIcon && isImageUrl(authorIcon) ? { iconURL: authorIcon } : {}),
       ...(authorUrl ? { url: authorUrl } : {}),
     });
+  }
+
   if (p.title) e.setTitle(trim(replaceVars(p.title, i), 256));
+
   const media = extractMediaLines(replaceVars(p.description, i));
   if (media.description) e.setDescription(trim(media.description, 4096));
-  let footer = trim(replaceVars(p.footer, i), 2048);
-  let footerIcon = safeUrl(replaceVars(p.footerIcon, i));
-  const footerUrl = safeUrl(footer);
-  if (footerUrl && !footerIcon) {
-    footerIcon = footerUrl;
-    footer = "";
-  }
-  if (footer)
+
+  const footer = trim(replaceVars(p.footer, i), 2048);
+  const footerIcon = safeUrl(replaceVars(p.footerIcon, i));
+
+  if (footer) {
     e.setFooter({
       text: footer,
-      ...(footerIcon ? { iconURL: footerIcon } : {}),
+      ...(footerIcon && isImageUrl(footerIcon) ? { iconURL: footerIcon } : {}),
     });
-  else if (footerIcon)
+  } else if (footerIcon && isImageUrl(footerIcon)) {
     e.setFooter({
       text: replaceVars("{guildName}", i) || "Embed",
       iconURL: footerIcon,
     });
+  }
+
   const image = safeUrl(replaceVars(p.image, i));
   const thumb = safeUrl(replaceVars(p.thumbnail, i));
 
@@ -650,6 +649,7 @@ function buildEmbedFromPanel(p, i, showTimestamp, fieldLayout = "auto") {
 
   if (thumb && isImageUrl(thumb)) e.setThumbnail(thumb);
   else if (media.thumbnailUrl) e.setThumbnail(media.thumbnailUrl);
+
   const fields = applyFieldLayout(
     (p.fields || [])
       .filter((f) => f?.name && f?.value)
@@ -661,8 +661,10 @@ function buildEmbedFromPanel(p, i, showTimestamp, fieldLayout = "auto") {
       })),
     fieldLayout,
   );
+
   if (fields.length) e.addFields(fields);
   if (showTimestamp !== false) e.setTimestamp();
+
   return e;
 }
 function buildPreviewEmbeds(state, i) {
