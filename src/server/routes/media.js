@@ -58,6 +58,16 @@ router.get('/:guildId/entitlements', (req, res) => {
   }
 });
 
+router.get('/:guildId/status', async (req, res) => {
+  try {
+    const guildId = requireMediaTools(req);
+    const status = await mediaTools.getMediaToolsStatus(guildId);
+    return success(res, { status });
+  } catch (error) {
+    return failure(res, error, error?.code === 'FEATURE_LOCKED' ? 403 : 400);
+  }
+});
+
 router.get('/:guildId/library', (req, res) => {
   try {
     return success(res, { assets: mediaTools.listMediaAssets(requireMediaTools(req)) });
