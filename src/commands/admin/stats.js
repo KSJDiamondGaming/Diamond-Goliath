@@ -16,6 +16,7 @@ function formatNumber(value) {
 
 function formatTop(items = [], mentionType = 'user') {
   if (!items.length) return 'No data yet.';
+
   return items
     .map((item, index) => {
       const target = mentionType === 'channel' ? `<#${item.id}>` : `<@${item.id}>`;
@@ -59,13 +60,22 @@ function buildStatsEmbed(interaction) {
         inline: false,
       }
     )
-    .setFooter({ text: `Requested by ${interaction.member?.displayName || interaction.user.username}` })
+    .setFooter({
+      text: `Requested by ${interaction.member?.displayName || interaction.user.username}`,
+    })
     .setTimestamp(new Date());
 }
 
 async function safeReply(interaction, payload) {
-  const safePayload = { ...payload, flags: 64 };
-  if (interaction.deferred || interaction.replied) return interaction.editReply(safePayload);
+  const safePayload = {
+    ...payload,
+    flags: 64,
+  };
+
+  if (interaction.deferred || interaction.replied) {
+    return interaction.editReply(safePayload);
+  }
+
   return interaction.reply(safePayload);
 }
 
@@ -74,7 +84,7 @@ module.exports = {
 
   help: {
     name: 'stats',
-    description: '📊 Setup, view, reset, or manage Goliath server stats.',
+    description: 'Setup, view, reset, or manage Goliath server stats.',
     usage: '/stats setup | /stats enable | /stats disable | /stats view | /stats reset | /stats counters | /stats export',
   },
 
@@ -86,6 +96,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('stats')
     .setDescription('Setup view reset or manage Goliath server stats')
+    .setDMPermission(false)
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addSubcommand((subcommand) =>
       subcommand
@@ -138,27 +149,41 @@ module.exports = {
 
     if (action === 'enable') {
       statsStore.setEnabled(interaction.guild.id, true, interaction.guild);
-      return safeReply(interaction, { content: '✅ Stats tracking enabled.' });
+      return safeReply(interaction, {
+        content: '✅ Stats tracking enabled.',
+      });
     }
 
     if (action === 'disable') {
       statsStore.setEnabled(interaction.guild.id, false, interaction.guild);
-      return safeReply(interaction, { content: '✅ Stats tracking disabled.' });
+      return safeReply(interaction, {
+        content: '✅ Stats tracking disabled.',
+      });
     }
 
     if (action === 'reset') {
       statsStore.resetStats(interaction.guild.id, interaction.guild);
-      return safeReply(interaction, { content: '✅ Stats data reset. The module is now back to default disabled state.' });
+      return safeReply(interaction, {
+        content: '✅ Stats data reset. The module is now back to default disabled state.',
+      });
     }
 
     if (action === 'counters') {
       const counters = statsCounters.listCounters(interaction.guild.id);
       const text = counters.length
-        ? counters.map((counter, index) => `**${index + 1}.** <#${counter.channelId}> — \`${counter.type}\` — \`${counter.template}\``).join('\n')
+        ? counters
+            .map((counter, index) => `**${index + 1}.** <#${counter.channelId}> — \`${counter.type}\` — \`${counter.template}\``)
+            .join('\n')
         : 'No stats counters configured yet.';
 
       return safeReply(interaction, {
-        embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('📊 Stats Counters').setDescription(text).setTimestamp()],
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0x5865f2)
+            .setTitle('📊 Stats Counters')
+            .setDescription(text)
+            .setTimestamp(),
+        ],
       });
     }
 
