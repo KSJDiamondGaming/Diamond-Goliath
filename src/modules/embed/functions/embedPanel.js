@@ -367,8 +367,20 @@ function replaceVars(text, i) {
 function isIconUrl(url) {
   return /\/icons\/|\/avatars\//i.test(String(url || ""));
 }
+function isImageUrl(url) {
+  try {
+    const parsed = new URL(url);
+
+    // Only allow actual image files
+    return /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i.test(parsed.pathname);
+  } catch {
+    return false;
+  }
+}
+
 function extractMediaLines(description) {
   const lines = String(description || "").split("\n");
+
   const kept = [];
   let thumbnailUrl = null;
   let imageUrl = null;
@@ -377,6 +389,7 @@ function extractMediaLines(description) {
     const text = line.trim();
     const url = safeUrl(text);
 
+    // Ignore anything that isn't an actual image
     if (url && isImageUrl(url)) {
       if (isIconUrl(url) && !thumbnailUrl) {
         thumbnailUrl = url;
@@ -389,10 +402,15 @@ function extractMediaLines(description) {
       }
     }
 
+    // Keep normal text and normal hyperlinks
     kept.push(line);
   }
 
-  return { description: kept.join("\n").trim(), thumbnailUrl, imageUrl };
+  return {
+    description: kept.join("\n").trim(),
+    thumbnailUrl,
+    imageUrl,
+  };
 }
 
 function basePanel(data = {}) {
