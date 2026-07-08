@@ -61,6 +61,32 @@ function resolveBotMode() {
   return 'dev';
 }
 
+function sanitizeCommandText(value, fallback = 'Command option') {
+  const text = String(value || '')
+    .normalize('NFKD')
+    .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
+    .replace(/[\u2013\u2014]/g, '-')
+    .replace(/[^\x20-\x7E]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return (text || fallback).slice(0, 100);
+}
+
+function sanitizeCommandPayload(payload) {
+  const clone = JSON.parse(JSON.stringify(payload));
+
+  function walk(item) {
+    if (!item || typeof item !== 'object') return;
+    if (typeof item.description === 'string') item.description = sanitizeCommandText(item.description);
+    if (Array.isArray(item.options)) item.options.forEach(walk);
+  }
+
+  walk(clone);
+  return clone;
+}
+
 const selectedMode = resolveBotMode();
 process.env.BOT_MODE = selectedMode;
 const loadedEnv = loadEnvironment(selectedMode);
@@ -101,6 +127,7 @@ function validateOption(option, filePath, errors, parent = '') {
   else if (!COMMAND_NAME_REGEX.test(option.name)) errors.push(`${filePath}: invalid option name ${label}`);
   if (!option.description || typeof option.description !== 'string') errors.push(`${filePath}: option ${label} missing description`);
   else if (option.description.length > 100) errors.push(`${filePath}: option ${label} description too long`);
+  else if (/[^\x20-\x7E]/.test(option.description)) errors.push(`${filePath}: option ${label} description contains unsupported characters`);
   if (Array.isArray(option.options)) for (const child of option.options) validateOption(child, filePath, errors, label);
 }
 
@@ -111,6 +138,7 @@ function validateCommandPayload(command, filePath) {
   else if (!COMMAND_NAME_REGEX.test(command.name)) errors.push(`${filePath}: invalid command name ${command.name}`);
   if (!command.description || typeof command.description !== 'string') errors.push(`${filePath}: missing command description`);
   else if (command.description.length > 100) errors.push(`${filePath}: command description too long`);
+  else if (/[^\x20-\x7E]/.test(command.description)) errors.push(`${filePath}: command description contains unsupported characters`);
   if (Array.isArray(command.options)) for (const option of command.options) validateOption(option, filePath, errors);
   return errors;
 }
@@ -142,7 +170,8 @@ function loadCommands(commandsPath, mode) {
         console.log(`Skipped dev-only command: /${commandName}`);
         continue;
       }
-      const payload = commandModule.data.toJSON();
+      const rawPayload = commandModule.data.toJSON();
+      const payload = sanitizeCommandPayload(rawPayload);
       errors.push(...validateCommandPayload(payload, filePath));
       seen.add(commandName);
       commands.push(payload);
@@ -212,7 +241,7 @@ async function upsertGuildCommands(guildId, commands, failures) {
     const existing = existingByName.get(command.name);
     if (!existing) {
       console.log(`Creating guild command: /${command.name}`);
-      await safeCommandAction(`/ ${command.name} create`.replace('/ ', '/'), async () => {
+      await safeCommandAction(`/${command.name} create`, async () => {
         await rest.post(Routes.applicationGuildCommands(CLIENT_ID, guildId), { body: command });
         console.log(`Created guild command: /${command.name}`);
       }, failures);
@@ -225,7 +254,7 @@ async function upsertGuildCommands(guildId, commands, failures) {
     }
 
     console.log(`Updating guild command: /${command.name}`);
-    await safeCommandAction(`/ ${command.name} update`.replace('/ ', '/'), async () => {
+    await safeCommandAction(`/${command.name} update`, async () => {
       await rest.patch(Routes.applicationGuildCommand(CLIENT_ID, guildId, existing.id), { body: command });
       console.log(`Updated guild command: /${command.name}`);
     }, failures);
@@ -234,7 +263,7 @@ async function upsertGuildCommands(guildId, commands, failures) {
   if (DELETE_STALE && !SINGLE_COMMAND) {
     for (const existing of existingCommands) {
       if (wantedNames.has(existing.name)) continue;
-      await safeCommandAction(`/ ${existing.name} delete stale`.replace('/ ', '/'), async () => {
+      await safeCommandAction(`/${existing.name} delete stale`, async () => {
         console.log(`Deleting stale guild command: /${existing.name}`);
         await rest.delete(Routes.applicationGuildCommand(CLIENT_ID, guildId, existing.id));
         console.log(`Deleted stale guild command: /${existing.name}`);
@@ -259,7 +288,7 @@ async function upsertGlobalCommands(commands, failures) {
   for (const command of commands) {
     const existing = existingByName.get(command.name);
     if (!existing) {
-      await safeCommandAction(`/ ${command.name} create`.replace('/ ', '/'), async () => {
+      await safeCommandAction(`/${command.name} create`, async () => {
         console.log(`Creating global command: /${command.name}`);
         await rest.post(Routes.applicationCommands(CLIENT_ID), { body: command });
         console.log(`Created global command: /${command.name}`);
@@ -270,7 +299,7 @@ async function upsertGlobalCommands(commands, failures) {
       console.log(`Unchanged global command: /${command.name}`);
       continue;
     }
-    await safeCommandAction(`/ ${command.name} update`.replace('/ ', '/'), async () => {
+    await safeCommandAction(`/${command.name} update`, async () => {
       console.log(`Updating global command: /${command.name}`);
       await rest.patch(Routes.applicationCommand(CLIENT_ID, existing.id), { body: command });
       console.log(`Updated global command: /${command.name}`);
@@ -280,7 +309,7 @@ async function upsertGlobalCommands(commands, failures) {
   if (DELETE_STALE && !SINGLE_COMMAND) {
     for (const existing of existingCommands) {
       if (wantedNames.has(existing.name)) continue;
-      await safeCommandAction(`/ ${existing.name} delete stale`.replace('/ ', '/'), async () => {
+      await safeCommandAction(`/${existing.name} delete stale`, async () => {
         await rest.delete(Routes.applicationCommand(CLIENT_ID, existing.id));
       }, failures);
     }
@@ -357,4 +386,5 @@ module.exports = {
   getAllJsFiles,
   loadCommands,
   validateCommandPayload,
+  sanitizeCommandPayload,
 };
