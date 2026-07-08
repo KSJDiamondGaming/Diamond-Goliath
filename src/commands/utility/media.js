@@ -31,10 +31,6 @@ function cleanEmojiName(value) {
   return name;
 }
 
-function isMediaUnlocked(guildId) {
-  return entitlementManager.canUseFeature(guildId, FEATURE_KEYS.MEDIA_TOOLS);
-}
-
 function requireMediaTools(guildId) {
   entitlementManager.requireFeature(guildId, FEATURE_KEYS.MEDIA_TOOLS);
 }
@@ -64,6 +60,13 @@ async function safeReply(interaction, payload, ephemeral = true) {
   return interaction.reply(safePayload);
 }
 
+function canManageRole(interaction, role) {
+  const botMember = interaction.guild?.members?.me;
+  if (!botMember || !role) return false;
+  if (role.managed || role.id === interaction.guild.id) return false;
+  return botMember.roles.highest.comparePositionTo(role) > 0;
+}
+
 function buildListContent(guildId, tool = 'all') {
   const assets = mediaTools
     .listMediaAssets(guildId)
@@ -78,8 +81,9 @@ function buildListContent(guildId, tool = 'all') {
     `**${asset.name}**`,
     `ID: \`${asset.id}\``,
     `Type: \`${asset.tool}\``,
+    asset.type ? `Preset: \`${asset.type}\`` : null,
     asset.discordReady ? '`Discord ready`' : '`Too large`',
-  ].join(' · '));
+  ].filter(Boolean).join(' · '));
 
   return ['`🧰` **Guild Media Library**', '', ...lines].join('\n');
 }
@@ -90,7 +94,7 @@ module.exports = {
   help: {
     name: 'media',
     description: '🧰 Use assets created in Goliath Media Tools.',
-    usage: '/media list | /media gif-send <asset> | /media emoji-install <asset> <name>',
+    usage: '/media list | /media gif-send <asset> | /media emoji-install <asset> <name> | /media role-icon-set <role> <asset>',
   },
 
   access: {
@@ -143,6 +147,23 @@ module.exports = {
             .setRequired(true)
             .setMinLength(2)
             .setMaxLength(32)
+        )
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName('role-icon-set')
+        .setDescription('Set a saved Media Tools asset as a role icon')
+        .addRoleOption((option) =>
+          option
+            .setName('role')
+            .setDescription('Role to update')
+            .setRequired(true)
+        )
+        .addStringOption((option) =>
+          option
+            .setName('asset')
+            .setDescription('Role-icon/emoji asset ID, exact name, or filename')
+            .setRequired(true)
         )
     ),
 
@@ -212,6 +233,41 @@ module.exports = {
 
       return safeReply(interaction, {
         content: `✅ Installed emoji ${emoji} as \`:${emoji.name}:\`.`,
+      });
+    }
+
+    if (action === 'role-icon-set') {
+      if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageRoles)) {
+        return safeReply(interaction, {
+          content: '`🔐` You need Manage Roles permission to set role icons.',
+        });
+      }
+
+      const role = interaction.options.getRole('role', true);
+      const query = interaction.options.getString('asset', true);
+      const asset = findAsset(guildId, query, ['emoji']);
+
+      if (!asset) {
+        return safeReply(interaction, { content: '`⚠️` I could not find that saved role icon asset.' });
+      }
+
+      if (asset.type !== 'roleIcon') {
+        return safeReply(interaction, {
+          content: '`⚠️` That asset was not created with the Role Icon preset. Create a role icon in Media Tools first.',
+        });
+      }
+
+      if (!canManageRole(interaction, role)) {
+        return safeReply(interaction, {
+          content: '`🔐` I cannot edit that role. Move my highest role above it and make sure the role is not managed by an integration.',
+        });
+      }
+
+      const download = mediaTools.resolveAssetDownload(guildId, asset.id);
+      await role.setIcon(download.path, `Role icon set from Goliath Media Tools by ${interaction.user.tag}`);
+
+      return safeReply(interaction, {
+        content: `✅ Set **${role.name}** role icon from **${asset.name}**.`,
       });
     }
 
