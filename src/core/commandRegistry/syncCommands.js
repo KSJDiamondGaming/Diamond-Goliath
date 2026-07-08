@@ -465,7 +465,6 @@ async function syncCommands(options = {}) {
       `🏠 Target guilds: ${guildIds.join(', ')}`
     );
 
-    await clearGuildCommands(guildIds);
     await registerGuildCommands(
       guildIds,
       commands
