@@ -36,6 +36,17 @@ function normalizeNumber(value, fallback, min, max) {
   return Math.min(max, Math.max(min, number));
 }
 
+async function getGifProcessorStatus() {
+  const available = await hasFfmpeg();
+  return {
+    key: 'ffmpeg',
+    label: 'FFmpeg',
+    available,
+    requiredFor: ['GIF conversion', 'video trimming', 'FPS/resize processing'],
+    warning: available ? null : 'FFmpeg is not installed. GIF Maker will save the original upload as a fallback.',
+  };
+}
+
 async function createGif({ inputPath, outputPath, options = {} }) {
   const ffmpegAvailable = await hasFfmpeg();
   const fps = normalizeNumber(options.fps, TOOL_PRESETS.gif.defaultFps, 5, 30);
@@ -67,4 +78,5 @@ async function createGif({ inputPath, outputPath, options = {} }) {
 
 module.exports = {
   createGif,
+  getGifProcessorStatus,
 };
