@@ -12,8 +12,8 @@ const {
   removeAsset,
   findAsset,
 } = require('./mediaLibrary');
-const { createGif } = require('./gifMaker/gifProcessor');
-const { createEmoji } = require('./emojiMaker/emojiProcessor');
+const { createGif, getGifProcessorStatus } = require('./gifMaker/gifProcessor');
+const { createEmoji, getEmojiProcessorStatus } = require('./emojiMaker/emojiProcessor');
 
 const ALLOWED_TOOLS = new Set(['gif', 'emoji']);
 
@@ -102,6 +102,22 @@ function publicAsset(asset) {
   };
 }
 
+async function getMediaToolsStatus() {
+  const processors = [
+    await getGifProcessorStatus(),
+    getEmojiProcessorStatus(),
+  ];
+
+  return {
+    ok: processors.every((processor) => processor.available),
+    checkedAt: new Date().toISOString(),
+    processors,
+    warnings: processors.filter((processor) => processor.warning).map((processor) => processor.warning),
+    uploadLimits: UPLOAD_LIMITS,
+    discordLimits: DISCORD_LIMITS,
+  };
+}
+
 async function createMediaAsset(guildId, tool, payload = {}) {
   const cleanGuildId = assertGuildId(guildId);
   const cleanTool = String(tool || '').trim();
@@ -182,6 +198,7 @@ function resolveAssetDownload(guildId, assetId) {
 }
 
 module.exports = {
+  getMediaToolsStatus,
   createMediaAsset,
   listMediaAssets,
   deleteMediaAsset,
