@@ -17,6 +17,8 @@
     "commands:dev": "npm run sync:commands:dev",
     "commands:beta": "npm run sync:commands:beta",
     "commands:production": "npm run sync:commands:production",
+    "commands:audit": "node scripts/goliath.js commands",
+    "doctor": "npm run check",
     "sync:dev": "git add . && git commit -m \"dev sync\" && git push origin dev && ssh root@198.186.130.112 \"bash /home/goliath/deploy-dev.sh\"",
     "auto:dev": "powershell -ExecutionPolicy Bypass -File scripts/auto-push.ps1 dev",
     "auto:beta": "powershell -ExecutionPolicy Bypass -File scripts/auto-push.ps1 beta",
