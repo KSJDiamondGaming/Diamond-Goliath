@@ -37,10 +37,12 @@ function parseGuildIds(value) {
 
 function getAllJsFiles(dir) {
   if (!fs.existsSync(dir)) return [];
+
   const files = [];
 
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const fullPath = path.join(dir, entry.name);
+
     if (entry.isDirectory()) {
       files.push(...getAllJsFiles(fullPath));
       continue;
@@ -66,34 +68,6 @@ function resolveBotMode() {
   if (ALLOWED_MODES.includes(argMode)) return argMode;
   if (ALLOWED_MODES.includes(envMode)) return envMode;
   return 'dev';
-}
-
-function sanitizeCommandText(value, fallback = 'Command option') {
-  const text = String(value || '')
-    .normalize('NFKD')
-    .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
-    .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
-    .replace(/[\u2013\u2014]/g, '-')
-    .replace(/[^\x20-\x7E]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  return (text || fallback).slice(0, 100);
-}
-
-function sanitizeCommandPayload(payload) {
-  const clone = JSON.parse(JSON.stringify(payload));
-
-  function walk(item) {
-    if (!item || typeof item !== 'object') return;
-    if (typeof item.description === 'string') {
-      item.description = sanitizeCommandText(item.description);
-    }
-    if (Array.isArray(item.options)) item.options.forEach(walk);
-  }
-
-  walk(clone);
-  return clone;
 }
 
 const selectedMode = resolveBotMode();
@@ -155,8 +129,6 @@ function validateOption(option, filePath, errors, parent = '') {
     errors.push(`${filePath}: option ${label} missing description`);
   } else if (option.description.length > 100) {
     errors.push(`${filePath}: option ${label} description too long`);
-  } else if (/[^\x20-\x7E]/.test(option.description)) {
-    errors.push(`${filePath}: option ${label} description contains unsupported characters`);
   }
 
   if (Array.isArray(option.options)) {
@@ -179,8 +151,6 @@ function validateCommandPayload(command, filePath) {
     errors.push(`${filePath}: missing command description`);
   } else if (command.description.length > 100) {
     errors.push(`${filePath}: command description too long`);
-  } else if (/[^\x20-\x7E]/.test(command.description)) {
-    errors.push(`${filePath}: command description contains unsupported characters`);
   }
 
   if (Array.isArray(command.options)) {
@@ -224,9 +194,9 @@ function loadCommands(commandsPath, mode) {
         continue;
       }
 
-      const payload = sanitizeCommandPayload(commandModule.data.toJSON());
-
+      const payload = commandModule.data.toJSON();
       errors.push(...validateCommandPayload(payload, filePath));
+
       seen.add(commandName);
       commands.push(payload);
 
@@ -246,7 +216,7 @@ function loadCommands(commandsPath, mode) {
 function commandChanged(existing, next) {
   const existingComparable = {
     name: existing.name,
-    description: sanitizeCommandText(existing.description),
+    description: existing.description,
     options: existing.options || [],
     default_member_permissions: existing.default_member_permissions ?? null,
     dm_permission: existing.dm_permission ?? undefined,
@@ -255,7 +225,7 @@ function commandChanged(existing, next) {
 
   const nextComparable = {
     name: next.name,
-    description: sanitizeCommandText(next.description),
+    description: next.description,
     options: next.options || [],
     default_member_permissions: next.default_member_permissions ?? null,
     dm_permission: next.dm_permission ?? undefined,
@@ -500,5 +470,4 @@ module.exports = {
   getAllJsFiles,
   loadCommands,
   validateCommandPayload,
-  sanitizeCommandPayload,
 };

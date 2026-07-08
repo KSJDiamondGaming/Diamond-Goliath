@@ -20,6 +20,11 @@ async function safeInteractionError(interaction) {
   };
 
   try {
+    if (interaction?.isAutocomplete?.()) {
+      await interaction.respond([]).catch(() => null);
+      return;
+    }
+
     if (interaction?.deferred || interaction?.replied) {
       await interaction.followUp(payload).catch(() => null);
       return;
@@ -36,6 +41,16 @@ module.exports = {
 
   async execute(interaction, client) {
     try {
+      if (interaction?.isAutocomplete?.()) {
+        const command = client.commands?.get?.(interaction.commandName);
+        if (command?.autocomplete) {
+          await command.autocomplete(interaction, client);
+        } else {
+          await interaction.respond([]).catch(() => null);
+        }
+        return;
+      }
+
       if (!interaction?.customId && !interaction?.isChatInputCommand?.()) {
         return;
       }

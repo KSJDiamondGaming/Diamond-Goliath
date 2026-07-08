@@ -23,7 +23,8 @@ module.exports = {
 
   data: new SlashCommandBuilder()
     .setName('embed')
-    .setDescription('🎨 Open Goliath’s embed studio')
+    .setDescription("🎨 Open Goliath's embed studio")
+    .setDMPermission(false)
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
 
   async execute(interaction) {
