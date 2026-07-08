@@ -48,6 +48,10 @@ function lockedMessage(payload) {
   return payload?.upgradeHint || payload?.error || 'Upgrade to Goliath Plus or higher to unlock Media Tools.';
 }
 
+function processorBadge(processor) {
+  return processor?.available ? 'Available' : 'Missing';
+}
+
 export default function MediaTools(props) {
   const guildId = getGuildId(props);
   const [activeTool, setActiveTool] = useState('gif');
@@ -57,7 +61,9 @@ export default function MediaTools(props) {
   const [loading, setLoading] = useState(false);
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [entitlementsLoading, setEntitlementsLoading] = useState(false);
+  const [statusLoading, setStatusLoading] = useState(false);
   const [entitlements, setEntitlements] = useState(null);
+  const [mediaStatus, setMediaStatus] = useState(null);
   const [locked, setLocked] = useState(false);
   const [notice, setNotice] = useState('');
   const [options, setOptions] = useState({
@@ -73,6 +79,23 @@ export default function MediaTools(props) {
   const activeMeta = useMemo(() => TOOLS.find((tool) => tool.key === activeTool) || TOOLS[0], [activeTool]);
   const planName = entitlements?.entitlements?.plan?.name || entitlements?.entitlements?.subscription?.plan || 'Unknown';
 
+  async function loadStatus() {
+    if (!guildId) return;
+    setStatusLoading(true);
+    try {
+      const payload = await api.request(`/api/media/${guildId}/status`);
+      setMediaStatus(payload.status || null);
+    } catch (error) {
+      if (error.status === 403 || error.data?.code === 'FEATURE_LOCKED') {
+        setLocked(true);
+      } else {
+        setMediaStatus(null);
+      }
+    } finally {
+      setStatusLoading(false);
+    }
+  }
+
   async function loadEntitlements() {
     if (!guildId) return;
     setEntitlementsLoading(true);
@@ -80,6 +103,7 @@ export default function MediaTools(props) {
       const payload = await api.request(`/api/media/${guildId}/entitlements`);
       setEntitlements(payload);
       setLocked(!payload.unlocked);
+      if (payload.unlocked) loadStatus();
     } catch (error) {
       setEntitlements(null);
       setLocked(error.status === 403 || error.data?.code === 'FEATURE_LOCKED');
@@ -112,6 +136,7 @@ export default function MediaTools(props) {
   useEffect(() => {
     setNotice('');
     setLibrary([]);
+    setMediaStatus(null);
     setLocked(false);
     if (!guildId) return;
     loadEntitlements();
@@ -152,6 +177,7 @@ export default function MediaTools(props) {
       setFile(null);
       setAssetName('');
       setNotice(payload.asset?.warning || `${activeMeta.label} asset created.`);
+      loadStatus();
     } catch (error) {
       if (error.status === 403 || error.data?.code === 'FEATURE_LOCKED') {
         setLocked(true);
@@ -219,6 +245,33 @@ export default function MediaTools(props) {
           );
         })}
       </section>
+
+      {!locked && mediaStatus ? (
+        <section style={{ ...cardStyle, padding: 16, marginBottom: 18 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ color: mediaStatus.ok ? '#86efac' : '#fde68a', fontWeight: 950, letterSpacing: '0.1em', textTransform: 'uppercase', fontSize: 12 }}>
+                {mediaStatus.ok ? 'Processing Ready' : 'Processing Fallback Active'}
+              </div>
+              <div style={{ marginTop: 4, color: '#cbd5e1' }}>
+                {mediaStatus.ok ? 'FFmpeg and Sharp are available.' : 'Some processors are missing; fallback saving may be used.'}
+              </div>
+            </div>
+            <button type="button" onClick={loadStatus} disabled={statusLoading} style={{ border: '1px solid rgba(148,163,184,.3)', background: '#020617', color: '#e5e7eb', borderRadius: 12, padding: '9px 12px', cursor: statusLoading ? 'not-allowed' : 'pointer', fontWeight: 900 }}>
+              {statusLoading ? 'Checking…' : 'Recheck'}
+            </button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginTop: 14 }}>
+            {(mediaStatus.processors || []).map((processor) => (
+              <div key={processor.key} style={{ border: '1px solid rgba(148,163,184,.18)', borderRadius: 14, padding: 12, background: 'rgba(2,6,23,.4)' }}>
+                <div style={{ fontWeight: 950 }}>{processor.label}</div>
+                <div style={{ color: processor.available ? '#86efac' : '#fca5a5', marginTop: 4, fontWeight: 900 }}>{processorBadge(processor)}</div>
+                {processor.warning ? <div style={{ color: '#facc15', marginTop: 8, fontSize: 13, lineHeight: 1.45 }}>{processor.warning}</div> : null}
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {locked ? (
         <section style={{ ...cardStyle, padding: 18, marginBottom: 18, borderColor: 'rgba(250, 204, 21, 0.45)', background: 'linear-gradient(135deg, rgba(250, 204, 21, 0.14), rgba(15, 23, 42, 0.76))' }}>
