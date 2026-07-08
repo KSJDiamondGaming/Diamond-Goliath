@@ -9,7 +9,7 @@ module.exports = {
 
   help: {
     name: 'admin',
-    description: '🔏 Open admin controls and server tools.',
+    description: 'Open admin controls and server tools.',
     usage: '/admin',
   },
 
@@ -20,7 +20,8 @@ module.exports = {
 
   data: new SlashCommandBuilder()
     .setName('admin')
-    .setDescription('🔏 Open Goliath’s admin controls and server tools')
+    .setDescription('Open Goliath admin controls and server tools')
+    .setDMPermission(false)
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async execute(interaction) {
