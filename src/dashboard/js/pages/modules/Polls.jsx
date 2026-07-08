@@ -8,6 +8,10 @@ function guildIdFrom(selectedGuild, selectedGuildData) {
   return String(selectedGuildData?.guildId || selectedGuildData?.id || selectedGuild || '').split(':').pop().trim();
 }
 
+function openEmbedStudio() {
+  window.location.assign('/embed-studio');
+}
+
 function Input(props) {
   return <input {...props} style={{ width: '100%', border: '1px solid rgba(148,163,184,0.22)', background: 'rgba(15,23,42,0.76)', color: 'inherit', borderRadius: 12, padding: '12px 13px', outline: 'none', fontWeight: 800, ...(props.style || {}) }} />;
 }
@@ -178,7 +182,7 @@ export default function Polls({ theme, selectedGuild, selectedGuildData }) {
         Poll logic stays here. Poll panel, poll result and button-facing templates should be edited from Embed Studio under the Polls template slots.
       </p>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <PrimaryButton onClick={() => window.history.pushState({}, '', '/embed-studio')}>Open Embed Studio</PrimaryButton>
+        <PrimaryButton onClick={openEmbedStudio}>Open Embed Studio</PrimaryButton>
       </div>
     </SectionCard>
   );
