@@ -18,6 +18,17 @@ function normalizeSize(value, fallback) {
   return Math.min(512, Math.max(32, Math.round(size)));
 }
 
+function getEmojiProcessorStatus() {
+  const available = Boolean(optionalSharp());
+  return {
+    key: 'sharp',
+    label: 'Sharp',
+    available,
+    requiredFor: ['emoji resizing', 'role icon resizing', 'PNG/WebP export', 'edge sharpening'],
+    warning: available ? null : 'Sharp is not installed. Emoji Maker will save the original upload as a fallback.',
+  };
+}
+
 async function createEmoji({ inputPath, outputPath, options = {} }) {
   const sharp = optionalSharp();
   const preset = String(options.preset || 'emoji');
@@ -52,4 +63,5 @@ async function createEmoji({ inputPath, outputPath, options = {} }) {
 
 module.exports = {
   createEmoji,
+  getEmojiProcessorStatus,
 };
