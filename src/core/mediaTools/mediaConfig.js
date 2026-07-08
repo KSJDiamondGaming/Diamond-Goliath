@@ -41,6 +41,12 @@ const UPLOAD_LIMITS = {
   },
 };
 
+const RETENTION = {
+  uploadMaxAgeMs: Number(process.env.GOLIATH_MEDIA_UPLOAD_MAX_AGE_MS || 1000 * 60 * 60 * 24),
+  orphanOutputMaxAgeMs: Number(process.env.GOLIATH_MEDIA_ORPHAN_OUTPUT_MAX_AGE_MS || 1000 * 60 * 60 * 24 * 7),
+  cleanupIntervalMs: Number(process.env.GOLIATH_MEDIA_CLEANUP_INTERVAL_MS || 1000 * 60 * 60 * 6),
+};
+
 const TOOL_PRESETS = {
   gif: {
     fps: [8, 12, 15, 20, 24],
@@ -61,5 +67,6 @@ module.exports = {
   MEDIA_ROOT,
   DISCORD_LIMITS,
   UPLOAD_LIMITS,
+  RETENTION,
   TOOL_PRESETS,
 };
