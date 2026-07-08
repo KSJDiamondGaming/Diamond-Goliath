@@ -28,6 +28,19 @@ const DISCORD_LIMITS = {
   },
 };
 
+const UPLOAD_LIMITS = {
+  gif: {
+    maxBytes: 50 * 1024 * 1024,
+    mimeTypes: ['video/mp4', 'video/webm', 'video/quicktime', 'image/gif', 'image/webp', 'image/png', 'image/jpeg'],
+    extensions: ['mp4', 'webm', 'mov', 'gif', 'webp', 'png', 'jpg', 'jpeg'],
+  },
+  emoji: {
+    maxBytes: 10 * 1024 * 1024,
+    mimeTypes: ['image/png', 'image/jpeg', 'image/gif', 'image/webp'],
+    extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'],
+  },
+};
+
 const TOOL_PRESETS = {
   gif: {
     fps: [8, 12, 15, 20, 24],
@@ -47,5 +60,6 @@ module.exports = {
   ROOT_DIR,
   MEDIA_ROOT,
   DISCORD_LIMITS,
+  UPLOAD_LIMITS,
   TOOL_PRESETS,
 };
