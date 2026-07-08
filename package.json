@@ -37,6 +37,7 @@
     "audit": "node scripts/goliath.js audit",
     "guilds:verify": "node scripts/goliath.js guilds",
     "runtime:check": "node scripts/goliath.js runtime",
+    "media:deps": "node scripts/check-media-deps.js",
     "dashboard:build": "npm run check && vite build src/dashboard --outDir ../../dist --emptyOutDir --logLevel warn",
     "build": "npm run dashboard:build",
     "dev": "concurrently -n BOT,DASHBOARD -c green,cyan \"npm run bot:dev\" \"npm run dashboard:dev\"",
@@ -63,6 +64,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^7.14.2",
+    "sharp": "^0.34.5",
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3"
   },
