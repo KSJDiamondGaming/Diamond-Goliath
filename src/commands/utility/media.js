@@ -50,6 +50,35 @@ function findAsset(guildId, query, allowedTools = []) {
   }) || null;
 }
 
+function getAssetChoices(guildId, focusedValue = '', allowedTools = []) {
+  const query = cleanAssetQuery(focusedValue);
+  const allowed = new Set(allowedTools.filter(Boolean));
+
+  return mediaTools
+    .listMediaAssets(guildId)
+    .filter((asset) => !allowed.size || allowed.has(asset.tool))
+    .filter((asset) => {
+      if (!query) return true;
+      return String(asset.name || '').toLowerCase().includes(query)
+        || String(asset.id || '').toLowerCase().includes(query)
+        || String(asset.filename || '').toLowerCase().includes(query);
+    })
+    .slice(0, 25)
+    .map((asset) => {
+      const labelParts = [asset.name || asset.id, asset.tool, asset.type].filter(Boolean);
+      return {
+        name: labelParts.join(' · ').slice(0, 100),
+        value: String(asset.id).slice(0, 100),
+      };
+    });
+}
+
+function autocompleteToolsForSubcommand(subcommand) {
+  if (subcommand === 'gif-send') return ['gif'];
+  if (subcommand === 'emoji-install' || subcommand === 'role-icon-set') return ['emoji'];
+  return [];
+}
+
 async function safeReply(interaction, payload, ephemeral = true) {
   const safePayload = ephemeral ? { ...payload, flags: 64 } : payload;
 
@@ -128,6 +157,7 @@ module.exports = {
             .setName('asset')
             .setDescription('Asset ID, exact name, or filename from Media Tools')
             .setRequired(true)
+            .setAutocomplete(true)
         )
     )
     .addSubcommand((subcommand) =>
@@ -139,6 +169,7 @@ module.exports = {
             .setName('asset')
             .setDescription('Asset ID, exact name, or filename from Media Tools')
             .setRequired(true)
+            .setAutocomplete(true)
         )
         .addStringOption((option) =>
           option
@@ -164,8 +195,31 @@ module.exports = {
             .setName('asset')
             .setDescription('Role-icon/emoji asset ID, exact name, or filename')
             .setRequired(true)
+            .setAutocomplete(true)
         )
     ),
+
+  async autocomplete(interaction) {
+    if (!interaction.guild?.id) return interaction.respond([]);
+
+    try {
+      requireMediaTools(interaction.guild.id);
+    } catch {
+      return interaction.respond([]);
+    }
+
+    const focused = interaction.options.getFocused(true);
+    if (focused?.name !== 'asset') return interaction.respond([]);
+
+    const subcommand = interaction.options.getSubcommand(false);
+    const choices = getAssetChoices(
+      interaction.guild.id,
+      focused.value,
+      autocompleteToolsForSubcommand(subcommand),
+    );
+
+    return interaction.respond(choices);
+  },
 
   async execute(interaction) {
     const denied = await enforceCommandAccess(interaction, module.exports);
