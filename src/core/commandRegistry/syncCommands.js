@@ -87,6 +87,8 @@ if (COMMAND_MODE === 'guild') required('guild id', GUILD_IDS, envFile);
 
 const DRY_RUN = envFlag('COMMAND_SYNC_DRY_RUN', false);
 const CLEAR_BEFORE_SYNC = envFlag('CLEAR_COMMANDS_BEFORE_SYNC', false);
+const DELETE_STALE = envFlag('COMMAND_SYNC_DELETE_STALE', false);
+const BULK_OVERWRITE = envFlag('COMMAND_SYNC_BULK_OVERWRITE', false);
 const SINGLE_COMMAND = String(process.env.COMMAND_SYNC_SINGLE || '').trim().toLowerCase();
 const REST_TIMEOUT_MS = Number(process.env.DISCORD_REST_TIMEOUT_MS || 120000);
 const rest = new REST({ version: '10', timeout: REST_TIMEOUT_MS }).setToken(TOKEN);
@@ -175,31 +177,126 @@ function loadCommands(commandsPath, mode) {
   return commands;
 }
 
+function commandChanged(existing, next) {
+  const normalizedExisting = {
+    name: existing.name,
+    description: existing.description,
+    type: existing.type,
+    options: existing.options || [],
+    default_member_permissions: existing.default_member_permissions ?? null,
+    dm_permission: existing.dm_permission ?? undefined,
+    contexts: existing.contexts,
+    integration_types: existing.integration_types,
+    nsfw: existing.nsfw || false,
+  };
+
+  const normalizedNext = {
+    name: next.name,
+    description: next.description,
+    type: next.type,
+    options: next.options || [],
+    default_member_permissions: next.default_member_permissions ?? null,
+    dm_permission: next.dm_permission ?? undefined,
+    contexts: next.contexts,
+    integration_types: next.integration_types,
+    nsfw: next.nsfw || false,
+  };
+
+  return JSON.stringify(normalizedExisting) !== JSON.stringify(normalizedNext);
+}
+
 async function clearGuildCommands(guildId) {
   console.log(`Clearing guild commands: ${guildId}`);
   await rest.put(Routes.applicationGuildCommands(CLIENT_ID, guildId), { body: [] });
   console.log(`Cleared guild commands: ${guildId}`);
 }
 
-async function syncGuildCommands(guildIds, commands) {
-  for (const guildId of guildIds) {
-    if (CLEAR_BEFORE_SYNC) await clearGuildCommands(guildId);
-    console.log(`Registering ${commands.length} guild command(s): ${guildId}`);
-    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, guildId), { body: commands });
-    console.log(`Registered ${commands.length} guild command(s): ${guildId}`);
+async function bulkGuildOverwrite(guildId, commands) {
+  console.log(`Bulk overwriting ${commands.length} guild command(s): ${guildId}`);
+  await rest.put(Routes.applicationGuildCommands(CLIENT_ID, guildId), { body: commands });
+  console.log(`Bulk overwrite complete: ${guildId}`);
+}
+
+async function upsertGuildCommands(guildId, commands) {
+  if (CLEAR_BEFORE_SYNC) await clearGuildCommands(guildId);
+  if (BULK_OVERWRITE) return bulkGuildOverwrite(guildId, commands);
+
+  console.log(`Reading existing guild commands: ${guildId}`);
+  const existingCommands = await rest.get(Routes.applicationGuildCommands(CLIENT_ID, guildId));
+  const existingByName = new Map(existingCommands.map((command) => [command.name, command]));
+  const wantedNames = new Set(commands.map((command) => command.name));
+
+  for (const command of commands) {
+    const existing = existingByName.get(command.name);
+
+    if (!existing) {
+      console.log(`Creating guild command: /${command.name}`);
+      await rest.post(Routes.applicationGuildCommands(CLIENT_ID, guildId), { body: command });
+      console.log(`Created guild command: /${command.name}`);
+      continue;
+    }
+
+    if (!commandChanged(existing, command)) {
+      console.log(`Unchanged guild command: /${command.name}`);
+      continue;
+    }
+
+    console.log(`Updating guild command: /${command.name}`);
+    await rest.patch(Routes.applicationGuildCommand(CLIENT_ID, guildId, existing.id), { body: command });
+    console.log(`Updated guild command: /${command.name}`);
+  }
+
+  if (DELETE_STALE && !SINGLE_COMMAND) {
+    for (const existing of existingCommands) {
+      if (wantedNames.has(existing.name)) continue;
+      console.log(`Deleting stale guild command: /${existing.name}`);
+      await rest.delete(Routes.applicationGuildCommand(CLIENT_ID, guildId, existing.id));
+      console.log(`Deleted stale guild command: /${existing.name}`);
+    }
   }
 }
 
-async function syncGlobalCommands(commands) {
-  if (CLEAR_BEFORE_SYNC) {
-    console.log('Clearing global commands');
-    await rest.put(Routes.applicationCommands(CLIENT_ID), { body: [] });
-    console.log('Cleared global commands');
+async function upsertGlobalCommands(commands) {
+  if (CLEAR_BEFORE_SYNC || BULK_OVERWRITE) {
+    console.log(`Bulk overwriting ${commands.length} global command(s)`);
+    await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
+    console.log('Global bulk overwrite complete');
+    return;
   }
 
-  console.log(`Registering ${commands.length} global command(s)`);
-  await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
-  console.log(`Registered ${commands.length} global command(s)`);
+  console.log('Reading existing global commands');
+  const existingCommands = await rest.get(Routes.applicationCommands(CLIENT_ID));
+  const existingByName = new Map(existingCommands.map((command) => [command.name, command]));
+  const wantedNames = new Set(commands.map((command) => command.name));
+
+  for (const command of commands) {
+    const existing = existingByName.get(command.name);
+
+    if (!existing) {
+      console.log(`Creating global command: /${command.name}`);
+      await rest.post(Routes.applicationCommands(CLIENT_ID), { body: command });
+      console.log(`Created global command: /${command.name}`);
+      continue;
+    }
+
+    if (!commandChanged(existing, command)) {
+      console.log(`Unchanged global command: /${command.name}`);
+      continue;
+    }
+
+    console.log(`Updating global command: /${command.name}`);
+    await rest.patch(Routes.applicationCommand(CLIENT_ID, existing.id), { body: command });
+    console.log(`Updated global command: /${command.name}`);
+  }
+
+  if (DELETE_STALE && !SINGLE_COMMAND) {
+    for (const existing of existingCommands) {
+      if (wantedNames.has(existing.name)) continue;
+      console.log(`Deleting stale global command: /${existing.name}`);
+      await rest.delete(Routes.applicationCommand(CLIENT_ID, existing.id));
+      console.log(`Deleted stale global command: /${existing.name}`);
+    }
+  }
 }
 
 function printBanner(mode, commandsPath) {
@@ -212,6 +309,8 @@ function printBanner(mode, commandsPath) {
   console.log(`Commands Path: ${commandsPath}`);
   console.log(`Dry Run: ${DRY_RUN ? 'YES' : 'NO'}`);
   console.log(`Clear Before Sync: ${CLEAR_BEFORE_SYNC ? 'YES' : 'NO'}`);
+  console.log(`Bulk Overwrite: ${BULK_OVERWRITE ? 'YES' : 'NO'}`);
+  console.log(`Delete Stale: ${DELETE_STALE ? 'YES' : 'NO'}`);
   console.log(`Single Command: ${SINGLE_COMMAND || 'NO'}`);
   console.log('============================================================');
 }
@@ -236,8 +335,11 @@ async function syncCommands(options = {}) {
     return { botMode: BOT_MODE, commandMode: mode, commands: commands.length, guilds: mode === 'guild' ? guildIds.length : 0, dryRun: true, durationMs: Date.now() - startedAt };
   }
 
-  if (mode === 'guild') await syncGuildCommands(guildIds, commands);
-  else await syncGlobalCommands(commands);
+  if (mode === 'guild') {
+    for (const guildId of guildIds) await upsertGuildCommands(guildId, commands);
+  } else {
+    await upsertGlobalCommands(commands);
+  }
 
   const durationMs = Date.now() - startedAt;
   console.log('============================================================');
