@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const { DISCORD_LIMITS } = require('./mediaConfig');
+const { DISCORD_LIMITS, UPLOAD_LIMITS } = require('./mediaConfig');
 const {
   assertGuildId,
   getToolDir,
@@ -26,15 +26,67 @@ function decodeDataUrl(dataUrl) {
   const value = String(dataUrl || '');
   const match = value.match(/^data:([^;]+);base64,(.+)$/);
   if (!match) throw new Error('Upload must be a base64 data URL.');
+
+  let buffer;
+  try {
+    buffer = Buffer.from(match[2], 'base64');
+  } catch {
+    throw new Error('Upload data could not be decoded.');
+  }
+
+  if (!buffer.length) throw new Error('Uploaded file is empty.');
+
   return {
-    mimeType: match[1],
-    buffer: Buffer.from(match[2], 'base64'),
+    mimeType: String(match[1] || '').toLowerCase(),
+    buffer,
   };
 }
 
 function extensionFor(filename, fallback = 'bin') {
   const ext = path.extname(cleanFilename(filename)).replace('.', '').toLowerCase();
   return ext || fallback;
+}
+
+function validateUpload(tool, upload, filename) {
+  const limits = UPLOAD_LIMITS[tool];
+  if (!limits) throw new Error('Unsupported media tool.');
+
+  const ext = extensionFor(filename);
+  if (!limits.mimeTypes.includes(upload.mimeType)) {
+    throw new Error(`Unsupported ${tool} upload type: ${upload.mimeType || 'unknown'}.`);
+  }
+
+  if (!limits.extensions.includes(ext)) {
+    throw new Error(`Unsupported ${tool} file extension: .${ext}.`);
+  }
+
+  if (upload.buffer.length > limits.maxBytes) {
+    throw new Error(`${tool.toUpperCase()} upload is too large. Max upload size is ${Math.round(limits.maxBytes / 1024 / 1024)}MB.`);
+  }
+
+  return { ext, maxBytes: limits.maxBytes };
+}
+
+function validateOptions(tool, options = {}) {
+  if (!options || typeof options !== 'object' || Array.isArray(options)) return {};
+
+  if (tool === 'gif') {
+    return {
+      fps: Number(options.fps),
+      width: Number(options.width),
+      start: Number(options.start),
+      duration: Number(options.duration),
+    };
+  }
+
+  if (tool === 'emoji') {
+    const preset = String(options.preset || 'emoji') === 'roleIcon' ? 'roleIcon' : 'emoji';
+    const format = String(options.format || 'png').toLowerCase() === 'webp' ? 'webp' : 'png';
+    const size = Number(options.size);
+    return { preset, format, size };
+  }
+
+  return {};
 }
 
 function makeId(prefix) {
@@ -57,28 +109,36 @@ async function createMediaAsset(guildId, tool, payload = {}) {
 
   const upload = decodeDataUrl(payload.fileData);
   const originalName = cleanFilename(payload.filename || `${cleanTool}-upload`);
-  const inputExt = extensionFor(originalName);
+  const validated = validateUpload(cleanTool, upload, originalName);
+  const safeOptions = validateOptions(cleanTool, payload.options || {});
   const id = makeId(cleanTool);
 
   const uploadDir = getToolDir(cleanGuildId, cleanTool, 'uploads');
   const outputDir = getToolDir(cleanGuildId, cleanTool, 'outputs');
-  const inputPath = path.join(uploadDir, `${id}.${inputExt}`);
+  const inputPath = path.join(uploadDir, `${id}.${validated.ext}`);
   fs.writeFileSync(inputPath, upload.buffer);
 
   const outputExt = cleanTool === 'gif'
     ? 'gif'
-    : (String(payload.options?.format || 'png').toLowerCase() === 'webp' ? 'webp' : 'png');
+    : (safeOptions.format === 'webp' ? 'webp' : 'png');
   const outputPath = path.join(outputDir, `${id}.${outputExt}`);
 
-  const result = cleanTool === 'gif'
-    ? await createGif({ inputPath, outputPath, options: payload.options || {} })
-    : await createEmoji({ inputPath, outputPath, options: payload.options || {} });
+  let result;
+  try {
+    result = cleanTool === 'gif'
+      ? await createGif({ inputPath, outputPath, options: safeOptions })
+      : await createEmoji({ inputPath, outputPath, options: safeOptions });
+  } catch (error) {
+    if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+    if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+    throw error;
+  }
 
   const stats = fs.statSync(outputPath);
   const asset = {
     id,
     tool: cleanTool,
-    type: cleanTool === 'gif' ? 'gif' : String(payload.options?.preset || 'emoji'),
+    type: cleanTool === 'gif' ? 'gif' : String(safeOptions.preset || 'emoji'),
     name: String(payload.name || originalName).trim().slice(0, 80) || originalName,
     filename: path.basename(outputPath),
     originalName,
@@ -89,12 +149,13 @@ async function createMediaAsset(guildId, tool, payload = {}) {
     downloadUrl: `/api/media/${cleanGuildId}/assets/${id}/download`,
     discordReady: cleanTool === 'gif'
       ? stats.size <= DISCORD_LIMITS.gif.maxBytes
-      : stats.size <= DISCORD_LIMITS.emoji.maxBytes,
+      : stats.size <= (safeOptions.preset === 'roleIcon' ? DISCORD_LIMITS.roleIcon.maxBytes : DISCORD_LIMITS.emoji.maxBytes),
     fallback: Boolean(result.fallback),
     warning: result.warning || null,
     metadata: {
       uploadMimeType: upload.mimeType,
-      options: payload.options || {},
+      uploadBytes: upload.buffer.length,
+      options: safeOptions,
       outputExt,
     },
   };
