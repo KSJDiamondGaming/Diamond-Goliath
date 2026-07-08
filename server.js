@@ -90,6 +90,7 @@ const pollsRoutes = safeRequire('polls routes', './src/server/routes/polls', emp
 const statsRoutes = safeRequire('stats routes', './src/server/routes/stats', emptyRouter(), { optional: false });
 const tempVoiceRoutes = safeRequire('temp voice routes', './src/server/routes/tempVoice', emptyRouter(), { optional: false });
 const starboardRoutes = safeRequire('starboard routes', './src/server/routes/starboard', emptyRouter(), { optional: false });
+const mediaRoutes = safeRequire('media routes', './src/server/routes/media', emptyRouter(), { optional: false });
 const deploymentRoutes = safeRequire('deployment routes', './src/server/routes/deployments', emptyRouter());
 const ownerDeploymentRoutes = safeRequire('owner deployment routes', './src/server/routes/ownerDeployments', emptyRouter(), { optional: false });
 const ownerEmbedRoutes = safeRequire('owner embed routes', './src/server/routes/ownerEmbeds', emptyRouter());
@@ -179,6 +180,7 @@ app.use('/api/polls', pollsRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/temp-voice', tempVoiceRoutes);
 app.use('/api/starboard', starboardRoutes);
+app.use('/api/media', mediaRoutes);
 app.use('/api/deployments', deploymentRoutes);
 app.use('/api/owner/deployments', ownerDeploymentRoutes);
 app.use('/api/resources', discordResourceRoutes);
