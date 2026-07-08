@@ -85,7 +85,7 @@ module.exports = {
 
   data: new SlashCommandBuilder()
     .setName('stats')
-    .setDescription('📊 Setup, view, reset, or manage Goliath server stats')
+    .setDescription('Setup view reset or manage Goliath server stats')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addSubcommand((subcommand) =>
       subcommand
