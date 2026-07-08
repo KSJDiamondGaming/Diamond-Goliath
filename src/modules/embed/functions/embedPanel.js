@@ -372,21 +372,26 @@ function extractMediaLines(description) {
   const kept = [];
   let thumbnailUrl = null;
   let imageUrl = null;
+
   for (const line of lines) {
     const text = line.trim();
     const url = safeUrl(text);
-    if (url) {
+
+    if (url && isImageUrl(url)) {
       if (isIconUrl(url) && !thumbnailUrl) {
         thumbnailUrl = url;
         continue;
       }
+
       if (!isIconUrl(url) && !imageUrl) {
         imageUrl = url;
         continue;
       }
     }
+
     kept.push(line);
   }
+
   return { description: kept.join("\n").trim(), thumbnailUrl, imageUrl };
 }
 
