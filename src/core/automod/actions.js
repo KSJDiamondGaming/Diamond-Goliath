@@ -1,4 +1,4 @@
-const { shouldBlockOwnerDestructiveAction } = require('../../../core/security/testModeGuard');
+const { shouldBlockOwnerDestructiveAction } = require('../security/testModeGuard');
 
 const VALID_PUNISHMENTS = ['dm', 'delete', 'warn', 'timeout', 'kick', 'ban'];
 
