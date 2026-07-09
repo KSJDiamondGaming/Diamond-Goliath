@@ -6,7 +6,8 @@
 const { EmbedBuilder } = require('discord.js');
 const translationStore = require('./translationStore');
 const translationProviderManager = require('./translationProviderManager');
-const { isModuleEnabled } = require('../../core/guild/guildManager');
+const guildManager = require('../../core/guild/guildManager');
+const { isModuleEnabled } = guildManager;
 
 const LANGUAGE_LABELS = Object.freeze({
   auto: 'Auto Detect',
@@ -41,6 +42,16 @@ function normalizeLanguage(code = 'en') {
   return clean || 'en';
 }
 
+function cleanDiscordId(value) {
+  const id = String(value || '').replace(/[<@#!&>]/g, '').trim();
+  return /^\d{15,25}$/.test(id) ? id : null;
+}
+
+function cleanLanguageList(value, fallback = ['en']) {
+  const list = Array.isArray(value) ? value : fallback;
+  return [...new Set(list.map((code) => normalizeLanguage(code)).filter(Boolean))].slice(0, 10);
+}
+
 function providerLabel(provider = 'manual') {
   const clean = String(provider || 'manual').toLowerCase();
   if (clean === 'openai') return 'OpenAI';
@@ -49,12 +60,74 @@ function providerLabel(provider = 'manual') {
   return 'Manual / Not Connected';
 }
 
+function getAdminTranslationConfig(guildId) {
+  const modules = guildManager.getGuildSection(guildId, 'modules', {});
+  const config = modules?.translation;
+  return config && typeof config === 'object' ? config : {};
+}
+
+function mergeAdminTranslationConfig(guildId, section) {
+  const adminConfig = getAdminTranslationConfig(guildId);
+  const defaultChannelId = cleanDiscordId(adminConfig.defaultChannelId || adminConfig.channelId || adminConfig.logChannelId);
+  const logChannelId = cleanDiscordId(adminConfig.logChannelId || section.settings?.logChannelId);
+  const targetLanguages = cleanLanguageList(adminConfig.targetLanguages || section.settings?.targetLanguages || section.languages || ['en']);
+  const autoDetect = typeof adminConfig.autoDetect === 'boolean'
+    ? adminConfig.autoDetect
+    : section.settings?.autoDetect !== false;
+  const allowUserPreferences = typeof adminConfig.allowUserPreferences === 'boolean'
+    ? adminConfig.allowUserPreferences
+    : section.settings?.allowUserPreferences !== false;
+  const ephemeralReplies = typeof adminConfig.ephemeralReplies === 'boolean'
+    ? adminConfig.ephemeralReplies
+    : section.settings?.ephemeralReplies !== false;
+
+  const channels = { ...(section.channels || {}) };
+  const threadChannels = { ...(section.threadChannels || {}) };
+
+  if (defaultChannelId && !channels[defaultChannelId]) {
+    const channelConfig = translationStore.normalizeChannelConfig({
+      enabled: true,
+      mode: autoDetect ? 'auto' : 'manual',
+      threadMode: section.settings?.threadMode !== false,
+      autoDetect,
+      sourceLanguage: 'auto',
+      targetLanguages,
+      languages: targetLanguages,
+    });
+    channels[defaultChannelId] = channelConfig;
+    threadChannels[defaultChannelId] = channelConfig;
+  }
+
+  return translationStore.normalizeTranslationSection({
+    ...section,
+    enabled: typeof adminConfig.enabled === 'boolean' ? adminConfig.enabled : section.enabled,
+    settings: {
+      ...(section.settings || {}),
+      autoDetect,
+      allowUserPreferences,
+      ephemeralReplies,
+      logChannelId,
+      targetLanguages,
+      defaultTargetLanguage: targetLanguages[0] || section.settings?.defaultTargetLanguage || 'en',
+    },
+    languages: targetLanguages,
+    channels,
+    threadChannels,
+  });
+}
+
+function getEffectiveTranslationSection(guildId) {
+  return mergeAdminTranslationConfig(guildId, translationStore.getTranslationSection(guildId));
+}
+
 function isTranslationModuleEnabled(guildId) {
+  const adminConfig = getAdminTranslationConfig(guildId);
+  if (typeof adminConfig.enabled === 'boolean') return adminConfig.enabled;
   return isModuleEnabled(guildId, 'translation');
 }
 
 function buildOverviewEmbed(guildId) {
-  const section = translationStore.getTranslationSection(guildId);
+  const section = getEffectiveTranslationSection(guildId);
   const moduleEnabled = isTranslationModuleEnabled(guildId);
   const providerStatus = translationProviderManager.getProviderStatus(section);
   const channelCount = Object.keys(section.channels || {}).length;
@@ -73,9 +146,11 @@ function buildOverviewEmbed(guildId) {
       `**Targets:** ${targetLanguages.map(languageLabel).join(', ')}`,
       `**Thread Mode:** ${section.settings?.threadMode !== false ? 'Enabled' : 'Disabled'}`,
       `**Auto Detect:** ${section.settings?.autoDetect !== false ? 'Enabled' : 'Disabled'}`,
+      `**User Preferences:** ${section.settings?.allowUserPreferences !== false ? 'Enabled' : 'Disabled'}`,
+      `**Ephemeral Replies:** ${section.settings?.ephemeralReplies !== false ? 'Enabled' : 'Disabled'}`,
       '',
       `**Configured Channels:** ${channelCount}`,
-      `**User Preferences:** ${userCount}`,
+      `**User Preferences Stored:** ${userCount}`,
       '',
       '**Analytics**',
       `Manual: ${section.analytics?.manualTranslations || 0}`,
@@ -88,7 +163,7 @@ function buildOverviewEmbed(guildId) {
 }
 
 function buildChannelEmbed(guildId, channelId) {
-  const section = translationStore.getTranslationSection(guildId);
+  const section = getEffectiveTranslationSection(guildId);
   const moduleEnabled = isTranslationModuleEnabled(guildId);
   const config = section.channels?.[channelId];
 
@@ -137,7 +212,7 @@ function buildProviderNotConnectedEmbed({ text, targetLanguage, sourceLanguage =
 }
 
 async function translateText({ guildId, text, targetLanguage = 'en', sourceLanguage = 'auto', mode = 'manual', options = {} } = {}) {
-  const section = translationStore.getTranslationSection(guildId);
+  const section = getEffectiveTranslationSection(guildId);
   const provider = translationProviderManager.getConfiguredProvider(section);
   const maxCharacters = section.settings?.maxCharacters || 1500;
   const safeText = String(text || '').trim().slice(0, maxCharacters);
@@ -192,7 +267,7 @@ async function translateText({ guildId, text, targetLanguage = 'en', sourceLangu
 }
 
 function getProviderStatus(guildId) {
-  const section = translationStore.getTranslationSection(guildId);
+  const section = getEffectiveTranslationSection(guildId);
   return translationProviderManager.getProviderStatus(section);
 }
 
@@ -205,6 +280,7 @@ module.exports = {
   languageLabel,
   normalizeLanguage,
   providerLabel,
+  getEffectiveTranslationSection,
   buildOverviewEmbed,
   buildChannelEmbed,
   buildProviderNotConnectedEmbed,
