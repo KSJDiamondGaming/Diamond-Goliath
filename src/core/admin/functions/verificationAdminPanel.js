@@ -12,6 +12,7 @@ const {
   TextInputBuilder,
   TextInputStyle,
   StringSelectMenuBuilder,
+  AttachmentBuilder,
 } = require('discord.js');
 
 const guildManager = require('../../guild/guildManager');
@@ -72,6 +73,15 @@ function saveConfig(guild, updater) {
     },
   }, { action: 'verification_admin_config_sync' });
   return getConfig(guild.id);
+}
+
+function resetConfig(guild) {
+  guildManager.updateGuildSection(guild.id, 'modules', (modules = {}) => {
+    const nextModules = { ...(modules && typeof modules === 'object' ? modules : {}) };
+    delete nextModules.verification;
+    return nextModules;
+  }, {}, guild);
+  verificationStore.saveVerificationSection(guild.id, verificationStore.defaultVerificationSection(), { action: 'verification_admin_reset' });
 }
 
 function formatChannel(id) {
@@ -145,6 +155,10 @@ function buildSetupPage(guild, memberDisplayName) {
       row(new ChannelSelectMenuBuilder().setCustomId('admin:verification:logChannel').setPlaceholder('Log channel').setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(0).setMaxValues(1)),
       row(new RoleSelectMenuBuilder().setCustomId('admin:verification:verifiedRoles').setPlaceholder('Verified role(s)').setMinValues(0).setMaxValues(10)),
       row(new RoleSelectMenuBuilder().setCustomId('admin:verification:pendingRoles').setPlaceholder('Pending/unverified role(s)').setMinValues(0).setMaxValues(10)),
+      row(
+        button('admin:verification:export', '📤 Export', ButtonStyle.Secondary),
+        button('admin:verification:resetAll', '♻️ Reset Module', ButtonStyle.Danger)
+      ),
       ...navRows('setup', config),
     ],
   };
@@ -234,7 +248,8 @@ async function buildStatusPage(guild, memberDisplayName) {
       row(
         button('admin:verification:statusRefresh', '🔄 Refresh Status', ButtonStyle.Primary),
         button('admin:verification:redeploy', '🔁 Repair/Redeploy Latest', ButtonStyle.Success),
-        button('admin:verification:test', '🧪 Test Flow', ButtonStyle.Secondary)
+        button('admin:verification:test', '🧪 Test Flow', ButtonStyle.Secondary),
+        button('admin:verification:export', '📤 Export', ButtonStyle.Secondary)
       ),
       ...navRows('status', config),
     ],
@@ -300,6 +315,16 @@ async function deployLatestOrNew(interaction, redeploy = false) {
     panelId: existing?.panelId,
     createdBy: interaction.user.id,
   }, { actorId: interaction.user.id });
+}
+
+function exportAttachment(guildId) {
+  const data = {
+    exportedAt: new Date().toISOString(),
+    guildId,
+    adminConfig: getConfig(guildId),
+    moduleConfig: verificationStore.getVerificationSection(guildId),
+  };
+  return new AttachmentBuilder(Buffer.from(JSON.stringify(data, null, 2), 'utf8'), { name: `goliath-verification-${guildId}.json` });
 }
 
 async function handleVerificationAdminInteraction(interaction) {
@@ -372,6 +397,20 @@ async function handleVerificationAdminInteraction(interaction) {
     if (customId === 'admin:verification:resetTemplate') {
       verificationManager.updatePanelTemplate(interaction.guild.id, verificationStore.defaultPanelTemplate(), { actorId: interaction.user.id });
       return safeUpdate(interaction, buildVerificationAdminPanel(interaction.guild, memberDisplayName, 'panel'));
+    }
+
+    if (customId === 'admin:verification:resetAll') {
+      await interaction.deferUpdate().catch(() => null);
+      resetConfig(interaction.guild);
+      return safeUpdate(interaction, buildVerificationAdminPanel(interaction.guild, memberDisplayName, 'setup'));
+    }
+
+    if (customId === 'admin:verification:export') {
+      const attachment = exportAttachment(interaction.guild.id);
+      const payload = { content: '📤 Verification configuration export.', files: [attachment], flags: 64 };
+      if (interaction.deferred || interaction.replied) await interaction.followUp(payload).catch(() => null);
+      else await interaction.reply(payload).catch(() => null);
+      return true;
     }
 
     if (customId === 'admin:verification:preview') {
