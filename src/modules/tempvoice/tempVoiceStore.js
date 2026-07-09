@@ -94,7 +94,7 @@ function normalizeHub(hub = {}) {
     hubId,
     id: hubId,
     enabled: hub.enabled !== false,
-    joinChannelId: cleanDiscordId(hub.joinChannelId),
+    joinChannelId: cleanDiscordId(hub.joinChannelId || hub.lobbyChannelId),
     joinChannelName: cleanString(hub.joinChannelName || hub.name || '➕ Create Temp Voice', '➕ Create Temp Voice', 80),
     categoryId: cleanDiscordId(hub.categoryId),
     categoryName: cleanString(hub.categoryName || 'Temporary Voice Channels', 'Temporary Voice Channels', 80),
@@ -104,6 +104,7 @@ function normalizeHub(hub = {}) {
     lockedByDefault: hub.lockedByDefault === true,
     hiddenByDefault: hub.hiddenByDefault === true,
     ownerControlsEnabled: hub.ownerControlsEnabled !== false,
+    managerRoleIds: cleanDiscordIdArray(hub.managerRoleIds),
     createdBy: cleanDiscordId(hub.createdBy),
     createdAt: hub.createdAt || now(),
     updatedAt: hub.updatedAt || hub.createdAt || now(),
@@ -158,39 +159,63 @@ function normalizeAnalytics(analytics = {}) {
   return next;
 }
 
+function buildAdminConfiguredHub(source = {}) {
+  const joinChannelId = cleanDiscordId(source.lobbyChannelId || source.joinChannelId);
+  if (!joinChannelId) return null;
+
+  return normalizeHub({
+    hubId: 'admin_default',
+    enabled: source.enabled !== false,
+    joinChannelId,
+    categoryId: source.categoryId,
+    managerRoleIds: source.managerRoleIds,
+    nameTemplate: source.nameTemplate || '{username}\'s Channel',
+    ownerControlsEnabled: true,
+    createdAt: source.createdAt,
+    updatedAt: source.updatedAt,
+  });
+}
+
 function normalizeSection(section = {}) {
   const base = defaultTempVoiceSection();
   const source = section && typeof section === 'object' ? section : {};
   const hubs = source.hubs && typeof source.hubs === 'object' ? source.hubs : {};
   const channels = source.channels && typeof source.channels === 'object' ? source.channels : {};
+  const adminHub = buildAdminConfiguredHub(source);
+  const normalizedHubs = Object.fromEntries(
+    Object.entries(hubs)
+      .map(([id, hub]) => {
+        const normalized = normalizeHub({ ...hub, hubId: hub.hubId || id });
+        return [normalized.hubId, normalized];
+      })
+      .filter(([, hub]) => hub.joinChannelId)
+  );
+
+  if (adminHub?.joinChannelId) normalizedHubs[adminHub.hubId] = adminHub;
 
   return {
     ...base,
     ...source,
     enabled: source.enabled !== false,
+    lobbyChannelId: cleanDiscordId(source.lobbyChannelId || source.joinChannelId),
+    categoryId: cleanDiscordId(source.categoryId),
+    managerRoleIds: cleanDiscordIdArray(source.managerRoleIds),
     settings: {
       ...base.settings,
       ...(source.settings || {}),
-      defaultUserLimit: cleanNonNegativeInt(source.settings?.defaultUserLimit, 0),
-      deleteWhenEmpty: source.settings?.deleteWhenEmpty !== false,
+      defaultUserLimit: cleanNonNegativeInt(source.settings?.defaultUserLimit || source.defaultUserLimit, 0),
+      deleteWhenEmpty: source.settings?.deleteWhenEmpty !== false && source.autoDeleteEmpty !== false,
       ownerPanelEnabled: source.settings?.ownerPanelEnabled !== false,
-      allowOwnerRename: source.settings?.allowOwnerRename !== false,
+      allowOwnerRename: source.settings?.allowOwnerRename !== false && source.allowUserRename !== false,
       allowOwnerStatus: source.settings?.allowOwnerStatus !== false,
       allowOwnerLock: source.settings?.allowOwnerLock !== false,
       allowOwnerHide: source.settings?.allowOwnerHide !== false,
-      allowOwnerLimit: source.settings?.allowOwnerLimit !== false,
+      allowOwnerLimit: source.settings?.allowOwnerLimit !== false && source.allowUserLimit !== false,
       allowOwnerPermits: source.settings?.allowOwnerPermits !== false,
       allowOwnerTransfer: source.settings?.allowOwnerTransfer !== false,
       allowOwnerDelete: source.settings?.allowOwnerDelete !== false,
     },
-    hubs: Object.fromEntries(
-      Object.entries(hubs)
-        .map(([id, hub]) => {
-          const normalized = normalizeHub({ ...hub, hubId: hub.hubId || id });
-          return [normalized.hubId, normalized];
-        })
-        .filter(([, hub]) => hub.joinChannelId)
-    ),
+    hubs: normalizedHubs,
     channels: Object.fromEntries(
       Object.entries(channels)
         .map(([id, channel]) => {
