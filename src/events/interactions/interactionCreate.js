@@ -12,6 +12,8 @@ const tempVoiceInteractionHandler = require('../../modules/tempvoice/tempVoiceIn
 const testSecurityCommand = require('../../commands/admin/testsecurity');
 const embedPanel = require('../../modules/embed/functions/embedPanel');
 const duplicator = require('../../core/dev/duplicator');
+const adminPanel = require('../../core/admin/functions/adminPanel');
+const statsAdminPanel = require('../../core/admin/functions/statsAdminPanel');
 
 async function safeInteractionError(interaction) {
   const payload = {
@@ -61,6 +63,14 @@ module.exports = {
         if (!command) return;
 
         await command.execute(interaction, client);
+        return;
+      }
+
+      if (await statsAdminPanel.handleStatsAdminInteraction(interaction)) {
+        return;
+      }
+
+      if (await adminPanel.handleAdminNavigation(interaction)) {
         return;
       }
 
