@@ -11,6 +11,7 @@ const pollsManager = require('../../modules/polls/pollsManager');
 const tempVoiceInteractionHandler = require('../../modules/tempvoice/tempVoiceInteractionHandler');
 const suggestionsInteractionHandler = require('../../modules/suggestions/suggestionsInteractionHandler');
 const giveawaysInteractionHandler = require('../../modules/giveaways/giveawaysInteractionHandler');
+const formsInteractionHandler = require('../../modules/forms/formsInteractionHandler');
 const testSecurityCommand = require('../../commands/admin/testsecurity');
 const embedPanel = require('../../modules/embed/functions/embedPanel');
 const duplicator = require('../../core/dev/duplicator');
@@ -19,6 +20,7 @@ const statsAdminPanel = require('../../core/admin/functions/statsAdminPanel');
 const reactionRolesAdminPanel = require('../../core/admin/functions/reactionRolesAdminPanel');
 const suggestionsAdminPanel = require('../../core/admin/functions/suggestionsAdminPanel');
 const giveawaysAdminPanel = require('../../core/admin/functions/giveawaysAdminPanel');
+const formsAdminPanel = require('../../core/admin/functions/formsAdminPanel');
 const moduleAdminPanels = require('../../core/admin/functions/moduleAdminPanels');
 
 async function safeInteractionError(interaction) {
@@ -88,6 +90,10 @@ module.exports = {
         return;
       }
 
+      if (await formsAdminPanel.handleFormsAdminInteraction(interaction)) {
+        return;
+      }
+
       if (await moduleAdminPanels.handleModuleAdminInteraction(interaction)) {
         return;
       }
@@ -109,6 +115,10 @@ module.exports = {
       }
 
       if (interaction.isButton?.() && await tempVoiceInteractionHandler.handleTempVoiceInteraction(interaction, client)) {
+        return;
+      }
+
+      if (await formsInteractionHandler.handleFormsInteraction(interaction)) {
         return;
       }
 
