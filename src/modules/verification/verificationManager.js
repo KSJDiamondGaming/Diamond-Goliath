@@ -19,6 +19,13 @@ const CUSTOM_ID_PREFIX = 'verify';
 const REQUIREMENTS_MESSAGE =
   'You do not currently meet the requirements to complete verification. If you believe this is an error, please contact a staff member.';
 
+const BUTTON_STYLES = {
+  primary: ButtonStyle.Primary,
+  secondary: ButtonStyle.Secondary,
+  success: ButtonStyle.Success,
+  danger: ButtonStyle.Danger,
+};
+
 function canManageVerification(member) {
   return Boolean(
     member?.permissions?.has(PermissionFlagsBits.Administrator) ||
@@ -79,23 +86,28 @@ function parseVerifyCustomId(customId = '') {
 }
 
 function buildVerificationEmbed(panel = {}) {
-  return new EmbedBuilder()
-    .setColor('#57f287')
+  const embed = new EmbedBuilder()
+    .setColor(panel.color || '#57f287')
     .setTitle(panel.title || 'Member Verification')
     .setDescription(panel.description || 'Press the button below to complete server onboarding.')
-    .setFooter({ text: 'Goliath Verification' })
+    .setFooter({ text: panel.footer || 'Goliath Verification' })
     .setTimestamp(new Date());
+
+  if (panel.thumbnailUrl) embed.setThumbnail(panel.thumbnailUrl);
+  if (panel.imageUrl) embed.setImage(panel.imageUrl);
+
+  return embed;
 }
 
 function buildVerificationRows(panel = {}) {
-  return [
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(buildVerifyCustomId(panel.panelId || panel.id))
-        .setLabel(panel.buttonLabel || 'Verify')
-        .setStyle(ButtonStyle.Success)
-    ),
-  ];
+  const button = new ButtonBuilder()
+    .setCustomId(buildVerifyCustomId(panel.panelId || panel.id))
+    .setLabel(panel.buttonLabel || 'Verify')
+    .setStyle(BUTTON_STYLES[panel.buttonStyle] || ButtonStyle.Success);
+
+  if (panel.buttonEmoji) button.setEmoji(panel.buttonEmoji);
+
+  return [new ActionRowBuilder().addComponents(button)];
 }
 
 function cleanDiscordId(value) {
@@ -204,6 +216,13 @@ function updateVerificationSettings(guildId, settings = {}, meta = {}) {
       ...meta,
     }
   );
+}
+
+function updatePanelTemplate(guildId, template = {}, meta = {}) {
+  return verificationStore.updatePanelTemplate(guildId, template, {
+    action: 'verification_panel_template_update',
+    ...meta,
+  });
 }
 
 function resolveRoleActionStatus(guild, member, role, action) {
@@ -396,15 +415,18 @@ async function deployVerificationPanel(channel, input = {}, meta = {}) {
   const existingPanel = input.panelId
     ? verificationStore.getPanel(channel.guild.id, input.panelId)
     : null;
+  const template = verificationStore.normalizePanelTemplate({
+    ...(section.panelTemplate || {}),
+    ...(existingPanel || {}),
+    ...(input || {}),
+  });
 
   const panel = verificationStore.savePanel(
     channel.guild.id,
     {
       ...(existingPanel || {}),
+      ...template,
       panelId: input.panelId || existingPanel?.panelId,
-      title: input.title,
-      description: input.description,
-      buttonLabel: input.buttonLabel,
       channelId: channel.id,
       createdBy: input.createdBy || existingPanel?.createdBy,
     },
@@ -425,6 +447,7 @@ async function deployVerificationPanel(channel, input = {}, meta = {}) {
         ...panel,
         channelId: edited.channelId || channel.id,
         messageId: edited.id,
+        lastDeployedAt: new Date().toISOString(),
       },
       meta
     );
@@ -441,6 +464,7 @@ async function deployVerificationPanel(channel, input = {}, meta = {}) {
       ...panel,
       channelId: channel.id,
       messageId: message.id,
+      lastDeployedAt: new Date().toISOString(),
     },
     meta
   );
@@ -460,6 +484,51 @@ async function refreshVerificationPanel(guild, panelId, input = {}, meta = {}) {
     ...input,
     panelId: panel.panelId,
   }, meta);
+}
+
+async function deleteVerificationPanel(guild, panelId, meta = {}) {
+  const panel = verificationStore.getPanel(guild.id, panelId);
+  if (!panel) throw new Error('Verification panel not found.');
+  const message = await fetchPanelMessage(guild, panel);
+  if (message?.deletable) await message.delete().catch(() => null);
+  return verificationStore.deletePanel(guild.id, panelId, meta);
+}
+
+async function getPanelHealth(guild, panel) {
+  if (!panel) return { ok: false, status: 'Missing panel record' };
+  const channel = panel.channelId
+    ? guild.channels.cache.get(panel.channelId) || await guild.channels.fetch(panel.channelId).catch(() => null)
+    : null;
+  if (!channel) return { ok: false, status: 'Missing channel' };
+  const message = await fetchPanelMessage(guild, panel);
+  if (!message) return { ok: false, status: 'Missing message' };
+  return { ok: true, status: 'Healthy' };
+}
+
+async function buildHealthReport(guild) {
+  const section = getEffectiveVerificationSection(guild.id);
+  const verifiedRole = await fetchRole(guild, section.settings?.verifiedRoleId);
+  const unverifiedRole = await fetchRole(guild, section.settings?.unverifiedRoleId);
+  const panels = Object.values(section.panels || {});
+  const panelHealth = [];
+
+  for (const panel of panels) {
+    panelHealth.push({ panelId: panel.panelId, ...(await getPanelHealth(guild, panel)) });
+  }
+
+  return {
+    enabled: section.enabled === true,
+    hasVerifiedRole: Boolean(verifiedRole),
+    hasPendingRole: Boolean(unverifiedRole),
+    hasLogChannel: Boolean(section.settings?.logChannelId),
+    panels: panelHealth,
+    warnings: [
+      section.enabled !== true ? 'Verification is disabled.' : null,
+      !verifiedRole ? 'Verified role is missing.' : null,
+      panels.length === 0 ? 'No verification panel deployed.' : null,
+      ...panelHealth.filter((panel) => !panel.ok).map((panel) => `${panel.panelId}: ${panel.status}`),
+    ].filter(Boolean),
+  };
 }
 
 async function handleVerificationInteraction(interaction) {
@@ -498,10 +567,13 @@ module.exports = {
   toggleVerification,
   getVerificationStatus,
   updateVerificationSettings,
-  getEffectiveVerificationSection,
+  updatePanelTemplate,
 
   deployVerificationPanel,
   refreshVerificationPanel,
+  deleteVerificationPanel,
+  getPanelHealth,
+  buildHealthReport,
   verifyMember,
   handleVerificationInteraction,
 };
