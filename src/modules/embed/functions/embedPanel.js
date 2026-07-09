@@ -1318,9 +1318,21 @@ function presetModal(s) {
   ]);
 }
 async function replyOrUpdate(i, payload) {
-  return i.isModalSubmit()
-    ? i.reply({ ...payload, flags: 64 })
-    : i.update(payload);
+  const safePayload = { ...payload, flags: 64 };
+
+  if (i.isModalSubmit()) {
+    if (typeof i.update === "function") {
+      return i.update(payload);
+    }
+
+    if (i.deferred || i.replied) {
+      return i.editReply(safePayload);
+    }
+
+    return i.reply(safePayload);
+  }
+
+  return i.update(payload);
 }
 
 async function handleInteraction(i) {
