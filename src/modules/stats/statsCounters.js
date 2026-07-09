@@ -58,6 +58,7 @@ function cleanCounter(input = {}) {
     channelId,
     template: template || defaultTemplate(type),
     channelType: input.channelType || 'voice',
+    source: input.source || 'custom',
     updatedAt: new Date().toISOString(),
   };
 }
@@ -72,6 +73,17 @@ function addCounter(guildId, input = {}, guildOrMeta = {}) {
     ...stats,
     counters: [
       ...(Array.isArray(stats.counters) ? stats.counters.filter((item) => item.channelId !== counter.channelId) : []),
+      counter,
+    ],
+  }), guildOrMeta);
+}
+
+function upsertCounterByType(guildId, input = {}, guildOrMeta = {}) {
+  const counter = cleanCounter(input);
+  return statsStore.updateStats(guildId, (stats) => ({
+    ...stats,
+    counters: [
+      ...(Array.isArray(stats.counters) ? stats.counters.filter((item) => item.type !== counter.type) : []),
       counter,
     ],
   }), guildOrMeta);
@@ -132,8 +144,8 @@ async function refreshCounters(guild) {
     if (!channel?.setName) continue;
 
     const name = renderCounterName(guild, summary, counter);
-    await channel.setName(name).catch(() => null);
-    results.push({ channelId: counter.channelId, type: counter.type, name });
+    if (channel.name !== name) await channel.setName(name).catch(() => null);
+    results.push({ channelId: counter.channelId, type: counter.type, name, changed: channel.name !== name });
   }
 
   return results;
@@ -168,6 +180,16 @@ async function createCounterChannel(guild, counter, parentId = null) {
   });
 }
 
+function existingCounterForType(guildId, type) {
+  const cleanCounterType = cleanType(type);
+  return listCounters(guildId).find((counter) => counter.type === cleanCounterType) || null;
+}
+
+async function existingChannelForCounter(guild, counter) {
+  if (!counter?.channelId) return null;
+  return guild.channels.cache.get(counter.channelId) || await guild.channels.fetch(counter.channelId).catch(() => null);
+}
+
 async function createCounterSuite(guild, options = {}) {
   if (!guild?.id) throw new Error('A guild is required to create counter channels.');
 
@@ -177,21 +199,47 @@ async function createCounterSuite(guild, options = {}) {
 
   const category = await findOrCreateCategory(guild, options.categoryName || '📊 SERVER STATS');
   const created = [];
+  const reused = [];
+  const repaired = [];
 
   for (const preset of DEFAULT_COUNTER_SUITE) {
+    const existing = existingCounterForType(guild.id, preset.type);
+    const existingChannel = await existingChannelForCounter(guild, existing);
+
+    if (existing && existingChannel) {
+      const nextTemplate = existing.template || preset.template;
+      upsertCounterByType(guild.id, {
+        ...existing,
+        type: preset.type,
+        channelId: existingChannel.id,
+        template: nextTemplate,
+        channelType: 'voice',
+        source: existing.source || 'default-suite',
+      }, guild);
+      reused.push({ channelId: existingChannel.id, type: preset.type, name: existingChannel.name });
+      continue;
+    }
+
     const channel = await createCounterChannel(guild, preset, category.id);
-    addCounter(guild.id, {
+    upsertCounterByType(guild.id, {
       type: preset.type,
       channelId: channel.id,
       template: preset.template,
       channelType: 'voice',
+      source: 'default-suite',
     }, guild);
-    created.push({ channelId: channel.id, type: preset.type, name: channel.name });
+
+    if (existing && !existingChannel) repaired.push({ oldChannelId: existing.channelId, channelId: channel.id, type: preset.type, name: channel.name });
+    else created.push({ channelId: channel.id, type: preset.type, name: channel.name });
   }
+
+  await refreshCounters(guild);
 
   return {
     categoryId: category.id,
     created,
+    reused,
+    repaired,
   };
 }
 
@@ -201,6 +249,7 @@ module.exports = {
   cleanCounter,
   listCounters,
   addCounter,
+  upsertCounterByType,
   removeCounter,
   refreshCounters,
   createCounterSuite,
