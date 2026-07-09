@@ -23,6 +23,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('translate')
     .setDescription('🌐 Translate text')
+    .setDMPermission(false)
     .addStringOption((option) =>
       option
         .setName('text')

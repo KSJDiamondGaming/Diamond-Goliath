@@ -1,10 +1,10 @@
 'use strict';
 
 const express = require('express');
-const registry = require('../../modules/automation/automationRegistry');
-const store = require('../../modules/automation/automationStore');
-const simulator = require('../../modules/automation/automationSimulator');
-const notifications = require('../../modules/notifications/notificationStore');
+const registry = require('../../features/automation/automationRegistry');
+const store = require('../../features/automation/automationStore');
+const simulator = require('../../features/automation/automationSimulator');
+const notifications = require('../../core/notifications/notificationStore');
 
 const router = express.Router();
 

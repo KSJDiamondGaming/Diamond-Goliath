@@ -2,6 +2,7 @@
 
 const express = require('express');
 const guildManager = require('../../core/guild/guildManager');
+const statsStore = require('../../modules/stats/statsStore');
 
 const router = express.Router();
 
@@ -58,7 +59,7 @@ function buildModuleStats(data) {
   };
 }
 
-function buildStoredStats(data) {
+function buildStoredStats(data, guildId) {
   const modules = data.modules || {};
   const tickets = modules.tickets || data.tickets || {};
   const forms = modules.forms || {};
@@ -67,6 +68,7 @@ function buildStoredStats(data) {
   const security = modules.security || data.security || {};
 
   return {
+    activity: statsStore.getSummary(guildId),
     tickets: {
       total: countArray(tickets.tickets),
       panels: countArray(tickets.panels),
@@ -162,7 +164,7 @@ router.get('/:guildId/overview', async (req, res) => {
       updatedAt: new Date().toISOString(),
       live,
       modules: buildModuleStats(data),
-      stored: buildStoredStats(data),
+      stored: buildStoredStats(data, guildId),
     });
   } catch (error) {
     return failure(res, error, 400);

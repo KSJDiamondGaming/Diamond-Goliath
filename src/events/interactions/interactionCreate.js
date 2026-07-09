@@ -11,6 +11,7 @@ const pollsManager = require('../../modules/polls/pollsManager');
 const tempVoiceInteractionHandler = require('../../modules/tempvoice/tempVoiceInteractionHandler');
 const testSecurityCommand = require('../../commands/admin/testsecurity');
 const embedPanel = require('../../modules/embed/functions/embedPanel');
+const duplicator = require('../../core/dev/duplicator');
 
 async function safeInteractionError(interaction) {
   const payload = {
@@ -19,6 +20,11 @@ async function safeInteractionError(interaction) {
   };
 
   try {
+    if (interaction?.isAutocomplete?.()) {
+      await interaction.respond([]).catch(() => null);
+      return;
+    }
+
     if (interaction?.deferred || interaction?.replied) {
       await interaction.followUp(payload).catch(() => null);
       return;
@@ -35,6 +41,16 @@ module.exports = {
 
   async execute(interaction, client) {
     try {
+      if (interaction?.isAutocomplete?.()) {
+        const command = client.commands?.get?.(interaction.commandName);
+        if (command?.autocomplete) {
+          await command.autocomplete(interaction, client);
+        } else {
+          await interaction.respond([]).catch(() => null);
+        }
+        return;
+      }
+
       if (!interaction?.customId && !interaction?.isChatInputCommand?.()) {
         return;
       }
@@ -45,6 +61,10 @@ module.exports = {
         if (!command) return;
 
         await command.execute(interaction, client);
+        return;
+      }
+
+      if (await duplicator.handleInteraction(interaction)) {
         return;
       }
 

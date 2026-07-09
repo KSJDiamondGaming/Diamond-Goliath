@@ -367,26 +367,39 @@ function replaceVars(text, i) {
 function isIconUrl(url) {
   return /\/icons\/|\/avatars\//i.test(String(url || ""));
 }
+function isImageUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i.test(parsed.pathname);
+  } catch {
+    return false;
+  }
+}
 function extractMediaLines(description) {
   const lines = String(description || "").split("\n");
   const kept = [];
   let thumbnailUrl = null;
   let imageUrl = null;
+
   for (const line of lines) {
     const text = line.trim();
     const url = safeUrl(text);
-    if (url) {
+
+    if (url && isImageUrl(url)) {
       if (isIconUrl(url) && !thumbnailUrl) {
         thumbnailUrl = url;
         continue;
       }
+
       if (!isIconUrl(url) && !imageUrl) {
         imageUrl = url;
         continue;
       }
     }
+
     kept.push(line);
   }
+
   return { description: kept.join("\n").trim(), thumbnailUrl, imageUrl };
 }
 
@@ -595,46 +608,48 @@ function applyFieldLayout(fields, layout = "auto") {
 
 function buildEmbedFromPanel(p, i, showTimestamp, fieldLayout = "auto") {
   const e = new EmbedBuilder().setColor(p.color || PANEL_COLOR);
-  let authorName = trim(replaceVars(p.authorName, i), 256);
-  let authorIcon = safeUrl(replaceVars(p.authorIcon, i));
+
+  const authorName = trim(replaceVars(p.authorName, i), 256);
+  const authorIcon = safeUrl(replaceVars(p.authorIcon, i));
   const authorUrl = safeUrl(replaceVars(p.authorUrl, i));
-  const authorNameUrl = safeUrl(authorName);
-  if (authorNameUrl && !authorIcon) {
-    authorIcon = authorNameUrl;
-    authorName = replaceVars("{guildName}", i);
-  }
-  if (authorName || authorIcon)
+
+  if (authorName || (authorIcon && isImageUrl(authorIcon))) {
     e.setAuthor({
       name: authorName || replaceVars("{guildName}", i) || "Embed",
-      ...(authorIcon ? { iconURL: authorIcon } : {}),
+      ...(authorIcon && isImageUrl(authorIcon) ? { iconURL: authorIcon } : {}),
       ...(authorUrl ? { url: authorUrl } : {}),
     });
+  }
+
   if (p.title) e.setTitle(trim(replaceVars(p.title, i), 256));
+
   const media = extractMediaLines(replaceVars(p.description, i));
   if (media.description) e.setDescription(trim(media.description, 4096));
-  let footer = trim(replaceVars(p.footer, i), 2048);
-  let footerIcon = safeUrl(replaceVars(p.footerIcon, i));
-  const footerUrl = safeUrl(footer);
-  if (footerUrl && !footerIcon) {
-    footerIcon = footerUrl;
-    footer = "";
-  }
-  if (footer)
+
+  const footer = trim(replaceVars(p.footer, i), 2048);
+  const footerIcon = safeUrl(replaceVars(p.footerIcon, i));
+
+  if (footer) {
     e.setFooter({
       text: footer,
-      ...(footerIcon ? { iconURL: footerIcon } : {}),
+      ...(footerIcon && isImageUrl(footerIcon) ? { iconURL: footerIcon } : {}),
     });
-  else if (footerIcon)
+  } else if (footerIcon && isImageUrl(footerIcon)) {
     e.setFooter({
       text: replaceVars("{guildName}", i) || "Embed",
       iconURL: footerIcon,
     });
-  const image = safeUrl(replaceVars(p.image, i)),
-    thumb = safeUrl(replaceVars(p.thumbnail, i));
-  if (image) e.setImage(image);
+  }
+
+  const image = safeUrl(replaceVars(p.image, i));
+  const thumb = safeUrl(replaceVars(p.thumbnail, i));
+
+  if (image && isImageUrl(image)) e.setImage(image);
   else if (media.imageUrl) e.setImage(media.imageUrl);
-  if (thumb) e.setThumbnail(thumb);
+
+  if (thumb && isImageUrl(thumb)) e.setThumbnail(thumb);
   else if (media.thumbnailUrl) e.setThumbnail(media.thumbnailUrl);
+
   const fields = applyFieldLayout(
     (p.fields || [])
       .filter((f) => f?.name && f?.value)
@@ -646,8 +661,10 @@ function buildEmbedFromPanel(p, i, showTimestamp, fieldLayout = "auto") {
       })),
     fieldLayout,
   );
+
   if (fields.length) e.addFields(fields);
   if (showTimestamp !== false) e.setTimestamp();
+
   return e;
 }
 function buildPreviewEmbeds(state, i) {
