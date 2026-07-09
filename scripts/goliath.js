@@ -66,6 +66,7 @@ function printHelp() {
   console.log('  check             Run safe local checks');
   console.log('  audit             Run all audits');
   console.log('  commands          Audit slash command files');
+  console.log('  modules           Audit key module files/exports');
   console.log('  dashboard         Run dashboard file + route audits');
   console.log('  dashboard:files   Run dashboard file audit only');
   console.log('  dashboard:routes  Run dashboard route audit only');
@@ -225,6 +226,83 @@ function auditCommands() {
   return true;
 }
 
+function requireExport(modulePath, exportNames, errors) {
+  const absolute = path.join(root, modulePath);
+
+  if (!fs.existsSync(absolute)) {
+    errors.push(`${modulePath}: missing file`);
+    console.log(`❌ ${modulePath}`);
+    return;
+  }
+
+  try {
+    delete require.cache[require.resolve(absolute)];
+    const loaded = require(absolute);
+    const missing = exportNames.filter((name) => loaded?.[name] === undefined);
+
+    if (missing.length) {
+      errors.push(`${modulePath}: missing export(s) ${missing.join(', ')}`);
+      console.log(`❌ ${modulePath}`);
+      return;
+    }
+
+    console.log(`✅ ${modulePath}`);
+  } catch (error) {
+    errors.push(`${modulePath}: failed to load - ${error.message}`);
+    console.log(`❌ ${modulePath}`);
+  }
+}
+
+function auditModules() {
+  section('Module audit');
+
+  const errors = [];
+
+  requireExport('src/modules/verification/verificationStore.js', [
+    'defaultVerificationSection',
+    'defaultPanelTemplate',
+    'normalizeVerificationSection',
+    'getVerificationSection',
+    'saveVerificationSection',
+    'updateVerificationSection',
+    'savePanel',
+    'getPanel',
+    'getLatestPanel',
+    'deletePanel',
+    'updatePanelTemplate',
+    'incrementAnalytics',
+  ], errors);
+
+  requireExport('src/modules/verification/verificationManager.js', [
+    'buildVerificationEmbed',
+    'buildVerificationRows',
+    'configureVerification',
+    'setVerificationEnabled',
+    'getVerificationStatus',
+    'updatePanelTemplate',
+    'deployVerificationPanel',
+    'refreshVerificationPanel',
+    'deleteVerificationPanel',
+    'buildHealthReport',
+    'verifyMember',
+    'handleVerificationInteraction',
+  ], errors);
+
+  requireExport('src/core/admin/functions/verificationAdminPanel.js', [
+    'buildVerificationAdminPanel',
+    'handleVerificationAdminInteraction',
+  ], errors);
+
+  if (errors.length) {
+    console.log(`Module issues: ${errors.length}`);
+    for (const error of errors) console.log(` - ${error}`);
+    return false;
+  }
+
+  console.log('✅ Module audit passed.');
+  return true;
+}
+
 function inspectRuntime() {
   section('Runtime');
 
@@ -276,6 +354,7 @@ function runCheck() {
   const results = [];
   results.push(checkProjectShape());
   results.push(auditCommands());
+  results.push(auditModules());
   results.push(runDashboard('all'));
   results.push(inspectRuntime());
 
@@ -301,6 +380,7 @@ const commands = {
   check: runCheck,
   audit: runAudit,
   commands: auditCommands,
+  modules: auditModules,
   dashboard: () => runDashboard('all'),
   'dashboard:files': () => runDashboard('files'),
   'dashboard:routes': () => runDashboard('routes'),
