@@ -11,7 +11,8 @@ const {
 } = require('discord.js');
 
 const verificationStore = require('./verificationStore');
-const { isModuleEnabled } = require('../../core/guild/guildManager');
+const guildManager = require('../../core/guild/guildManager');
+const { isModuleEnabled } = guildManager;
 const testDevOverride = require('../../core/dev/testDevOverrideManager');
 
 const CUSTOM_ID_PREFIX = 'verify';
@@ -108,6 +109,59 @@ function cleanRoleId(value, guildId) {
   return roleId;
 }
 
+function firstCleanRoleId(values, guildId) {
+  if (Array.isArray(values)) {
+    for (const value of values) {
+      const clean = cleanRoleId(value, guildId);
+      if (clean) return clean;
+    }
+    return null;
+  }
+
+  return cleanRoleId(values, guildId);
+}
+
+function getAdminVerificationConfig(guildId) {
+  const modules = guildManager.getGuildSection(guildId, 'modules', {});
+  const config = modules?.verification;
+  return config && typeof config === 'object' ? config : {};
+}
+
+function getEffectiveVerificationSection(guildId) {
+  const section = verificationStore.getVerificationSection(guildId);
+  const adminConfig = getAdminVerificationConfig(guildId);
+  const verifiedRoleId = firstCleanRoleId(
+    adminConfig.verifiedRoleId || adminConfig.verifiedRoleIds || section.settings?.verifiedRoleId,
+    guildId
+  );
+  const unverifiedRoleId = firstCleanRoleId(
+    adminConfig.unverifiedRoleId || adminConfig.pendingRoleId || adminConfig.pendingRoleIds || section.settings?.unverifiedRoleId,
+    guildId
+  );
+  const logChannelId = cleanDiscordId(adminConfig.logChannelId || section.settings?.logChannelId);
+
+  return {
+    ...section,
+    enabled: typeof adminConfig.enabled === 'boolean' ? adminConfig.enabled : section.enabled,
+    settings: {
+      ...(section.settings || {}),
+      verifiedRoleId,
+      unverifiedRoleId,
+      logChannelId,
+      dmOnVerify: typeof adminConfig.dmOnVerify === 'boolean'
+        ? adminConfig.dmOnVerify
+        : section.settings?.dmOnVerify !== false,
+      requireButton: typeof adminConfig.requireButton === 'boolean'
+        ? adminConfig.requireButton
+        : section.settings?.requireButton !== false,
+      removePendingRole: typeof adminConfig.removePendingRole === 'boolean'
+        ? adminConfig.removePendingRole
+        : adminConfig.removePendingRole !== false,
+      verificationChannelId: cleanDiscordId(adminConfig.verificationChannelId || section.settings?.verificationChannelId),
+    },
+  };
+}
+
 async function fetchRole(guild, roleId) {
   if (!guild || !roleId) return null;
 
@@ -118,15 +172,11 @@ async function fetchRole(guild, roleId) {
 }
 
 function toggleVerification(guildId, meta = {}) {
-  const section = verificationStore.getVerificationSection(guildId);
+  const section = getEffectiveVerificationSection(guildId);
 
-  return verificationStore.updateVerificationSection(
+  return configureVerification(
     guildId,
-    (current) => ({
-      ...current,
-      enabled: section.enabled !== true,
-      updatedAt: new Date().toISOString(),
-    }),
+    { enabled: section.enabled !== true },
     {
       action: 'verification_toggle',
       ...meta,
@@ -135,7 +185,7 @@ function toggleVerification(guildId, meta = {}) {
 }
 
 function getVerificationStatus(guildId) {
-  return verificationStore.getVerificationSection(guildId);
+  return getEffectiveVerificationSection(guildId);
 }
 
 function updateVerificationSettings(guildId, settings = {}, meta = {}) {
@@ -177,6 +227,16 @@ function resolveRoleActionStatus(guild, member, role, action) {
   return { ok: true, skipped: false };
 }
 
+async function sendVerificationLog(guild, section, content) {
+  const channelId = section.settings?.logChannelId;
+  if (!channelId) return;
+
+  const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
+  if (!channel?.send) return;
+
+  await channel.send(content).catch(() => null);
+}
+
 async function verifyMember(interaction) {
   const guild = interaction?.guild;
   const guildId = interaction?.guildId || guild?.id;
@@ -185,7 +245,7 @@ async function verifyMember(interaction) {
     return { ok: false, message: 'Server unavailable.' };
   }
 
-  const section = verificationStore.getVerificationSection(guildId);
+  const section = getEffectiveVerificationSection(guildId);
 
   const member =
     interaction.member ||
@@ -212,6 +272,14 @@ async function verifyMember(interaction) {
     };
   }
 
+  if (!verifiedRole) {
+    verificationStore.incrementAnalytics(guildId, { failed: 1, unavailable: 1 });
+    return {
+      ok: false,
+      message: 'Verification is not fully configured yet. A verified role must be selected in Admin → Modules → Verification.',
+    };
+  }
+
   if (!canBotManageMember(member)) {
     verificationStore.incrementAnalytics(guildId, { failed: 1, roleManageFailed: 1 });
     return { ok: false, message: 'I cannot manage your member roles in this server.' };
@@ -231,7 +299,10 @@ async function verifyMember(interaction) {
     return { ok: false, message: verifiedRoleStatus.message };
   }
 
-  const unverifiedRoleStatus = resolveRoleActionStatus(guild, member, unverifiedRole, 'remove');
+  const shouldRemovePending = section.settings?.removePendingRole !== false;
+  const unverifiedRoleStatus = shouldRemovePending
+    ? resolveRoleActionStatus(guild, member, unverifiedRole, 'remove')
+    : { ok: true, skipped: true };
   if (!unverifiedRoleStatus.ok) {
     verificationStore.incrementAnalytics(guildId, { failed: 1, roleManageFailed: 1 });
     return { ok: false, message: unverifiedRoleStatus.message };
@@ -242,11 +313,12 @@ async function verifyMember(interaction) {
       await member.roles.add(verifiedRole, 'Goliath verification completed');
     }
 
-    if (unverifiedRole && !unverifiedRoleStatus.skipped) {
+    if (shouldRemovePending && unverifiedRole && !unverifiedRoleStatus.skipped) {
       await member.roles.remove(unverifiedRole, 'Goliath verification completed');
     }
 
     verificationStore.incrementAnalytics(guildId, { verified: 1 });
+    await sendVerificationLog(guild, section, `✅ <@${member.id}> completed verification.`);
 
     if (section.settings?.dmOnVerify !== false) {
       await interaction.user
@@ -283,6 +355,9 @@ function configureVerification(guildId, input = {}, meta = {}) {
       requireButton: typeof settingsInput.requireButton === 'boolean'
         ? settingsInput.requireButton
         : section.settings?.requireButton !== false,
+      removePendingRole: typeof settingsInput.removePendingRole === 'boolean'
+        ? settingsInput.removePendingRole
+        : section.settings?.removePendingRole !== false,
     },
     updatedAt: new Date().toISOString(),
   }), meta);
@@ -311,6 +386,11 @@ async function deployVerificationPanel(channel, input = {}, meta = {}) {
 
   if (!isModuleEnabled(channel.guild.id, 'verification')) {
     throw new Error('Verification module is disabled.');
+  }
+
+  const section = getEffectiveVerificationSection(channel.guild.id);
+  if (!section.settings?.verifiedRoleId) {
+    throw new Error('Choose a verified role before deploying verification.');
   }
 
   const existingPanel = input.panelId
@@ -418,6 +498,7 @@ module.exports = {
   toggleVerification,
   getVerificationStatus,
   updateVerificationSettings,
+  getEffectiveVerificationSection,
 
   deployVerificationPanel,
   refreshVerificationPanel,
