@@ -1,10 +1,6 @@
-<<<<<<< HEAD
-﻿const fs = require('node:fs');
-=======
 'use strict';
 
 const fs = require('node:fs');
->>>>>>> origin/dev
 const path = require('node:path');
 const { REST, Routes } = require('discord.js');
 const { loadEnvironment } = require('../../config/envLoader');
@@ -33,122 +29,11 @@ function firstEnv(names) {
   return '';
 }
 
-<<<<<<< HEAD
-function required(name, value) {
-  if (!value || !String(value).trim()) {
-    throw new Error(
-      `ÔØî Missing ${name} in ${envFile}`
-    );
-  }
-
-  return String(value).trim();
-}
-
-function requiredAny(names, label = names[0]) {
-  const value = firstEnv(names);
-
-  if (!value) {
-    throw new Error(
-      `ÔØî Missing ${label} in ${envFile}`
-    );
-  }
-
-  return value;
-}
-
-/* ---------------- ENV VALUES ---------------- */
-
-const TOKEN = requiredAny(
-  [
-    'DISCORD_TOKEN',
-    'DISCORD_BOT_TOKEN',
-    'TOKEN',
-  ],
-  'DISCORD_TOKEN'
-);
-
-const CLIENT_ID = requiredAny(
-  [
-    'DISCORD_CLIENT_ID',
-    'CLIENT_ID',
-    'APPLICATION_ID',
-  ],
-  'DISCORD_CLIENT_ID'
-);
-
-const COMMAND_MODE = (() => {
-  const envCommandMode =
-    process.env.COMMAND_MODE?.toLowerCase();
-
-  if (
-    ALLOWED_COMMAND_MODES.includes(envCommandMode)
-  ) {
-    return envCommandMode;
-  }
-
-  return BOT_MODE === 'PRODUCTION'
-    ? 'global'
-    : 'guild';
-})();
-
-const GUILD_IDS =
-  BOT_MODE === 'DEV'
-    ? firstEnv([
-        'DEV_GUILD_ID',
-        'MAIN_GUILD_ID',
-        'GUILD_ID',
-      ])
-    : BOT_MODE === 'BETA'
-      ? firstEnv([
-          'BETA_GUILD_IDS',
-          'BETA_GUILD_ID',
-          'MAIN_GUILD_ID',
-          'GUILD_ID',
-        ])
-      : firstEnv([
-          'PRODUCTION_GUILD_IDS',
-          'PRODUCTION_GUILD_ID',
-          'MAIN_GUILD_ID',
-          'GUILD_ID',
-        ]);
-
-/* ---------------- VALIDATION ---------------- */
-
-required('DISCORD_TOKEN', TOKEN);
-required('DISCORD_CLIENT_ID', CLIENT_ID);
-
-if (!ALLOWED_COMMAND_MODES.includes(COMMAND_MODE)) {
-  throw new Error(
-    `ÔØî Invalid COMMAND_MODE "${COMMAND_MODE}" in ${envFile}. Use "guild" or "global".`
-  );
-}
-
-if (COMMAND_MODE === 'guild') {
-  required(
-    BOT_MODE === 'DEV'
-      ? 'DEV_GUILD_ID or MAIN_GUILD_ID'
-      : BOT_MODE === 'BETA'
-        ? 'BETA_GUILD_IDS or MAIN_GUILD_ID'
-        : 'PRODUCTION_GUILD_IDS or MAIN_GUILD_ID',
-    GUILD_IDS
-  );
-}
-
-/* ---------------- REST ---------------- */
-
-const rest = new REST({
-  version: '10',
-}).setToken(TOKEN);
-
-/* ---------------- HELPERS ---------------- */
-
-=======
 function required(label, value, envFile) {
   if (!value || !String(value).trim()) throw new Error(`Missing ${label} in ${envFile}`);
   return String(value).trim();
 }
 
->>>>>>> origin/dev
 function parseGuildIds(value) {
   return String(value || '')
     .split(',')
@@ -340,92 +225,40 @@ function loadCommands(commandsPath, mode) {
     try {
       delete require.cache[require.resolve(filePath)];
 
-<<<<<<< HEAD
-      const command = require(filePath);
-      const name = command?.data?.name;
-
-      if (
-        !command?.data ||
-        typeof command.execute !== 'function'
-      ) {
-        console.warn(
-          `ÔÜá´©Å Skipped invalid command: ${filePath}`
-        );
-=======
       const commandModule = require(filePath);
       const commandName = commandModule?.data?.name;
->>>>>>> origin/dev
 
       if (!commandModule?.data || typeof commandModule.execute !== 'function') {
         console.warn(`Skipped invalid command module: ${filePath}`);
         continue;
       }
 
-<<<<<<< HEAD
-      if (
-        !name ||
-        typeof name !== 'string'
-      ) {
-        console.warn(
-          `ÔÜá´©Å Skipped unnamed command: ${filePath}`
-        );
-
-        continue;
-      }
-
-      if (seen.has(name)) {
-        console.warn(
-          `ÔÜá´©Å Skipped duplicate command: ${name} (${filePath})`
-        );
-=======
       if (!commandName || typeof commandName !== 'string') {
         errors.push(`${filePath}: missing command data name`);
         continue;
       }
 
       if (SINGLE_COMMAND && commandName !== SINGLE_COMMAND) continue;
->>>>>>> origin/dev
 
       if (seen.has(commandName)) {
         errors.push(`${filePath}: duplicate command name /${commandName}`);
         continue;
       }
 
-<<<<<<< HEAD
-      if (
-        mode === 'global' &&
-        command.devOnly === true
-      ) {
-        console.log(
-          `­ƒº¬ Skipped dev-only command: ${name}`
-        );
-
-=======
       if (mode === 'global' && commandModule.devOnly === true) {
         console.log(`Skipped dev-only command: /${commandName}`);
->>>>>>> origin/dev
         continue;
       }
 
       const payload = commandModule.data.toJSON();
       errors.push(...validateCommandPayload(payload, filePath));
 
-<<<<<<< HEAD
-      console.log(`Ô£à Loaded command: ${name}`);
-    } catch (error) {
-      console.error(
-        `ÔØî Failed to load command: ${filePath}`
-      );
-
-      console.error(error);
-=======
       seen.add(commandName);
       commands.push(payload);
 
       console.log(`Loaded command: /${commandName}`);
     } catch (error) {
       errors.push(`${filePath}: failed to load - ${error.message}`);
->>>>>>> origin/dev
     }
   }
 
@@ -436,17 +269,6 @@ function loadCommands(commandsPath, mode) {
   return commands;
 }
 
-<<<<<<< HEAD
-function printSyncBanner(mode, commandsPath) {
-  console.log('============================================================');
-  console.log('­ƒÜÇ Syncing Goliath Commands');
-  console.log(`­ƒºá Bot Mode: ${BOT_MODE}`);
-  console.log(`­ƒôä Env: ${envFile}`);
-  console.log(`­ƒøá´©Å Command Mode: ${mode.toUpperCase()}`);
-  console.log(`­ƒåö Client ID: ${CLIENT_ID}`);
-  console.log(`­ƒôé Commands Path: ${commandsPath}`);
-  console.log('============================================================');
-=======
 function commandChanged(existing, next) {
   const existingComparable = {
     name: existing.name,
@@ -467,7 +289,6 @@ function commandChanged(existing, next) {
   };
 
   return JSON.stringify(existingComparable) !== JSON.stringify(nextComparable);
->>>>>>> origin/dev
 }
 
 async function clearGuildCommands(guildId) {
@@ -485,14 +306,8 @@ async function safeCommandAction(label, fn, failures) {
     console.error(`Failed: ${label}`);
     console.error(error);
 
-<<<<<<< HEAD
-    console.log(
-      `­ƒº╣ Cleared guild commands: ${guildId}`
-    );
-=======
     if (STOP_ON_ERROR) throw error;
     return false;
->>>>>>> origin/dev
   }
 }
 
@@ -502,23 +317,6 @@ async function bulkGuildOverwrite(guildId, commands) {
   console.log(`Bulk overwrite complete: ${guildId}`);
 }
 
-<<<<<<< HEAD
-    console.log(
-      `Ô£à Registered ${commands.length} command(s) for guild: ${guildId}`
-    );
-  }
-}
-
-async function clearGlobalCommands() {
-  await rest.put(
-    Routes.applicationCommands(CLIENT_ID),
-    {
-      body: [],
-    }
-  );
-
-  console.log('­ƒº╣ Cleared global commands');
-=======
 async function upsertGuildCommands(guildId, commands, failures) {
   if (BULK_OVERWRITE) return bulkGuildOverwrite(guildId, commands);
 
@@ -581,17 +379,11 @@ async function bulkGlobalOverwrite(commands) {
   console.log(`Bulk overwriting ${commands.length} global command(s)`);
   await discordRequest('bulk overwrite global commands', () => rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands }));
   console.log('Global bulk overwrite complete');
->>>>>>> origin/dev
 }
 
 async function upsertGlobalCommands(commands, failures) {
   if (CLEAR_BEFORE_SYNC || BULK_OVERWRITE) return bulkGlobalOverwrite(commands);
 
-<<<<<<< HEAD
-  console.log(
-    `Ô£à Registered ${commands.length} global command(s)`
-  );
-=======
   console.log('Reading existing global commands');
 
   const existingCommands = await discordRequest('read global commands', () => rest.get(Routes.applicationCommands(CLIENT_ID)));
@@ -636,7 +428,6 @@ async function upsertGlobalCommands(commands, failures) {
       }, failures);
     }
   }
->>>>>>> origin/dev
 }
 
 function printBanner(mode, commandsPath) {
@@ -668,48 +459,17 @@ async function syncCommands(options = {}) {
   const failures = [];
 
   if (!ALLOWED_COMMAND_MODES.includes(mode)) {
-<<<<<<< HEAD
-    throw new Error(
-      `ÔØî Invalid command mode "${mode}". Use "guild" or "global".`
-    );
-  }
-
-  if (
-    mode === 'guild' &&
-    guildIds.length === 0
-  ) {
-    throw new Error(
-      `ÔØî No valid guild IDs found for ${BOT_MODE} mode.`
-    );
-=======
     throw new Error(`Invalid command mode ${mode}`);
   }
 
   if (mode === 'guild' && guildIds.length === 0) {
     throw new Error(`No valid guild IDs found for ${BOT_MODE} mode.`);
->>>>>>> origin/dev
   }
 
   printBanner(mode, commandsPath);
 
   const commands = loadCommands(commandsPath, mode);
 
-<<<<<<< HEAD
-  console.log(
-    `­ƒôª Commands loaded: ${commands.length}`
-  );
-
-  if (mode === 'guild') {
-    console.log(
-      `­ƒÅá Target guilds: ${guildIds.join(', ')}`
-    );
-
-    await clearGuildCommands(guildIds);
-    await registerGuildCommands(
-      guildIds,
-      commands
-    );
-=======
   console.log(`Commands loaded and validated: ${commands.length}`);
 
   if (commands.length === 0) {
@@ -735,17 +495,11 @@ async function syncCommands(options = {}) {
     }
   } else {
     await upsertGlobalCommands(commands, failures);
->>>>>>> origin/dev
   }
 
   const durationMs = Date.now() - startedAt;
 
   console.log('============================================================');
-<<<<<<< HEAD
-  console.log(
-    `­ƒÄë Command sync complete in ${durationMs}ms`
-  );
-=======
   console.log(`Command sync complete in ${durationMs}ms`);
 
   if (failures.length) {
@@ -753,7 +507,6 @@ async function syncCommands(options = {}) {
     for (const failure of failures) console.log(` - ${failure}`);
   }
 
->>>>>>> origin/dev
   console.log('============================================================');
 
   return {
@@ -769,11 +522,7 @@ async function syncCommands(options = {}) {
 
 if (require.main === module) {
   syncCommands().catch((error) => {
-<<<<<<< HEAD
-    console.error('ÔØî Command sync failed');
-=======
     console.error('Command sync failed');
->>>>>>> origin/dev
     console.error(error);
     process.exit(1);
   });
