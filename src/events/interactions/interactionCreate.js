@@ -26,6 +26,7 @@ const starboardAdminPanel = require('../../core/admin/functions/starboardAdminPa
 const stickyAdminPanel = require('../../core/admin/functions/stickyAdminPanel');
 const levelingAdminPanel = require('../../core/admin/functions/levelingAdminPanel');
 const socialAdminPanel = require('../../core/admin/functions/socialAdminPanel');
+const verificationAdminPanel = require('../../core/admin/functions/verificationAdminPanel');
 const moduleAdminPanels = require('../../core/admin/functions/moduleAdminPanels');
 
 async function safeInteractionError(interaction) {
@@ -85,6 +86,7 @@ module.exports = {
       if (await stickyAdminPanel.handleStickyAdminInteraction(interaction)) return;
       if (await levelingAdminPanel.handleLevelingAdminInteraction(interaction)) return;
       if (await socialAdminPanel.handleSocialAdminInteraction(interaction)) return;
+      if (await verificationAdminPanel.handleVerificationAdminInteraction(interaction)) return;
       if (await moduleAdminPanels.handleModuleAdminInteraction(interaction)) return;
       if (await adminPanel.handleAdminNavigation(interaction)) return;
       if (await duplicator.handleInteraction(interaction)) return;
