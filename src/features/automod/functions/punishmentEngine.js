@@ -1,1 +1,1 @@
-module.exports = require('../../../modules/automod/functions/punishmentEngine');
+module.exports = require('../../../core/automod/punishmentEngine');

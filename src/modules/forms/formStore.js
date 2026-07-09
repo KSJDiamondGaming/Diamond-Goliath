@@ -8,7 +8,7 @@ const {
   saveModuleSection,
   updateModuleSection,
 } = require('../../core/guild/moduleSectionManager');
-const notifications = require('../notifications/notificationStore');
+const notifications = require('../../core/notifications/notificationStore');
 
 const {
   emitFormUpdated,
