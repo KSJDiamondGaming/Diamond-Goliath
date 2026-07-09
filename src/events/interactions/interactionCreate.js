@@ -23,6 +23,7 @@ const giveawaysAdminPanel = require('../../core/admin/functions/giveawaysAdminPa
 const formsAdminPanel = require('../../core/admin/functions/formsAdminPanel');
 const pollsAdminPanel = require('../../core/admin/functions/pollsAdminPanel');
 const starboardAdminPanel = require('../../core/admin/functions/starboardAdminPanel');
+const stickyAdminPanel = require('../../core/admin/functions/stickyAdminPanel');
 const moduleAdminPanels = require('../../core/admin/functions/moduleAdminPanels');
 
 async function safeInteractionError(interaction) {
@@ -76,86 +77,33 @@ module.exports = {
         return;
       }
 
-      if (await statsAdminPanel.handleStatsAdminInteraction(interaction)) {
-        return;
-      }
+      if (await statsAdminPanel.handleStatsAdminInteraction(interaction)) return;
+      if (await reactionRolesAdminPanel.handleReactionRolesAdminInteraction(interaction)) return;
+      if (await suggestionsAdminPanel.handleSuggestionsAdminInteraction(interaction)) return;
+      if (await giveawaysAdminPanel.handleGiveawaysAdminInteraction(interaction)) return;
+      if (await formsAdminPanel.handleFormsAdminInteraction(interaction)) return;
+      if (await pollsAdminPanel.handlePollsAdminInteraction(interaction)) return;
+      if (await starboardAdminPanel.handleStarboardAdminInteraction(interaction)) return;
+      if (await stickyAdminPanel.handleStickyAdminInteraction(interaction)) return;
+      if (await moduleAdminPanels.handleModuleAdminInteraction(interaction)) return;
+      if (await adminPanel.handleAdminNavigation(interaction)) return;
+      if (await duplicator.handleInteraction(interaction)) return;
+      if (await embedPanel.handleInteraction(interaction)) return;
 
-      if (await reactionRolesAdminPanel.handleReactionRolesAdminInteraction(interaction)) {
-        return;
-      }
-
-      if (await suggestionsAdminPanel.handleSuggestionsAdminInteraction(interaction)) {
-        return;
-      }
-
-      if (await giveawaysAdminPanel.handleGiveawaysAdminInteraction(interaction)) {
-        return;
-      }
-
-      if (await formsAdminPanel.handleFormsAdminInteraction(interaction)) {
-        return;
-      }
-
-      if (await pollsAdminPanel.handlePollsAdminInteraction(interaction)) {
-        return;
-      }
-
-      if (await starboardAdminPanel.handleStarboardAdminInteraction(interaction)) {
-        return;
-      }
-
-      if (await moduleAdminPanels.handleModuleAdminInteraction(interaction)) {
-        return;
-      }
-
-      if (await adminPanel.handleAdminNavigation(interaction)) {
-        return;
-      }
-
-      if (await duplicator.handleInteraction(interaction)) {
-        return;
-      }
-
-      if (await embedPanel.handleInteraction(interaction)) {
-        return;
-      }
-
-      if (interaction.isButton?.() && await testSecurityCommand.handleButton(interaction)) {
-        return;
-      }
-
-      if (interaction.isButton?.() && await tempVoiceInteractionHandler.handleTempVoiceInteraction(interaction, client)) {
-        return;
-      }
-
-      if (await formsInteractionHandler.handleFormsInteraction(interaction)) {
-        return;
-      }
-
-      if (await suggestionsInteractionHandler.handleSuggestionsInteraction(interaction)) {
-        return;
-      }
-
-      if (await giveawaysInteractionHandler.handleGiveawayInteraction(interaction)) {
-        return;
-      }
+      if (interaction.isButton?.() && await testSecurityCommand.handleButton(interaction)) return;
+      if (interaction.isButton?.() && await tempVoiceInteractionHandler.handleTempVoiceInteraction(interaction, client)) return;
+      if (await formsInteractionHandler.handleFormsInteraction(interaction)) return;
+      if (await suggestionsInteractionHandler.handleSuggestionsInteraction(interaction)) return;
+      if (await giveawaysInteractionHandler.handleGiveawayInteraction(interaction)) return;
 
       if (interaction.isButton?.() && verificationManager.parseVerifyCustomId(interaction.customId)) {
         await verificationManager.handleVerificationInteraction(interaction);
         return;
       }
 
-      if (interaction.isButton?.() && await pollsManager.vote(interaction)) {
-        return;
-      }
-
-      if (await ticketInteractionHandler.handleTicketInteraction(interaction, client)) {
-        return;
-      }
-
-      if (await roleInteractionHandler.handleRoleInteraction(interaction)) {
-        return;
-      }
+      if (interaction.isButton?.() && await pollsManager.vote(interaction)) return;
+      if (await ticketInteractionHandler.handleTicketInteraction(interaction, client)) return;
+      if (await roleInteractionHandler.handleRoleInteraction(interaction)) return;
     } catch (error) {
       console.error('[InteractionCreate] Failed to handle interaction:', error);
       await safeInteractionError(interaction);
