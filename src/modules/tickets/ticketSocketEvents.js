@@ -1,6 +1,6 @@
 // src/modules/tickets/ticketSocketEvents.js
 
-const notifications = require('../notifications/notificationStore');
+const notifications = require('../../core/notifications/notificationStore');
 
 const EVENTS = Object.freeze({
   TICKET_CREATED: 'ticket_created',
