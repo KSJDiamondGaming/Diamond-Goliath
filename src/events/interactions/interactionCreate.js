@@ -24,6 +24,7 @@ const formsAdminPanel = require('../../core/admin/functions/formsAdminPanel');
 const pollsAdminPanel = require('../../core/admin/functions/pollsAdminPanel');
 const starboardAdminPanel = require('../../core/admin/functions/starboardAdminPanel');
 const stickyAdminPanel = require('../../core/admin/functions/stickyAdminPanel');
+const levelingAdminPanel = require('../../core/admin/functions/levelingAdminPanel');
 const moduleAdminPanels = require('../../core/admin/functions/moduleAdminPanels');
 
 async function safeInteractionError(interaction) {
@@ -64,15 +65,11 @@ module.exports = {
         return;
       }
 
-      if (!interaction?.customId && !interaction?.isChatInputCommand?.()) {
-        return;
-      }
+      if (!interaction?.customId && !interaction?.isChatInputCommand?.()) return;
 
       if (interaction.isChatInputCommand?.()) {
         const command = client.commands?.get?.(interaction.commandName);
-
         if (!command) return;
-
         await command.execute(interaction, client);
         return;
       }
@@ -85,6 +82,7 @@ module.exports = {
       if (await pollsAdminPanel.handlePollsAdminInteraction(interaction)) return;
       if (await starboardAdminPanel.handleStarboardAdminInteraction(interaction)) return;
       if (await stickyAdminPanel.handleStickyAdminInteraction(interaction)) return;
+      if (await levelingAdminPanel.handleLevelingAdminInteraction(interaction)) return;
       if (await moduleAdminPanels.handleModuleAdminInteraction(interaction)) return;
       if (await adminPanel.handleAdminNavigation(interaction)) return;
       if (await duplicator.handleInteraction(interaction)) return;
