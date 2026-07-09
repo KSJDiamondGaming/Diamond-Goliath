@@ -14,6 +14,7 @@ const embedPanel = require('../../modules/embed/functions/embedPanel');
 const duplicator = require('../../core/dev/duplicator');
 const adminPanel = require('../../core/admin/functions/adminPanel');
 const statsAdminPanel = require('../../core/admin/functions/statsAdminPanel');
+const moduleAdminPanels = require('../../core/admin/functions/moduleAdminPanels');
 
 async function safeInteractionError(interaction) {
   const payload = {
@@ -67,6 +68,10 @@ module.exports = {
       }
 
       if (await statsAdminPanel.handleStatsAdminInteraction(interaction)) {
+        return;
+      }
+
+      if (await moduleAdminPanels.handleModuleAdminInteraction(interaction)) {
         return;
       }
 
