@@ -10,8 +10,16 @@ const {
 
 const guildManager = require('../../core/guild/guildManager');
 
+const MODULE_KEY = 'polls';
+
 const DEFAULT_POLLS = {
   enabled: true,
+  defaultChannelId: null,
+  resultsChannelId: null,
+  managerRoleIds: [],
+  anonymousVoting: false,
+  allowMultipleChoice: true,
+  showResultsLive: true,
   settings: {
     defaultChannelId: null,
     allowMultipleVotes: false,
@@ -44,8 +52,13 @@ function cleanText(value, max = 4000) {
 }
 
 function cleanSnowflake(value) {
-  const idValue = String(value || '').replace(/[<#>]/g, '').trim();
+  const idValue = String(value || '').replace(/[<#@&!>]/g, '').trim();
   return /^\d{15,25}$/.test(idValue) ? idValue : null;
+}
+
+function cleanSnowflakeArray(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map(cleanSnowflake).filter(Boolean))];
 }
 
 function normalizeOptions(options = []) {
@@ -64,6 +77,9 @@ function normalizePolls(section = {}) {
   const settings = source.settings && typeof source.settings === 'object' ? source.settings : {};
   const polls = source.polls && typeof source.polls === 'object' ? source.polls : {};
   const analytics = source.analytics && typeof source.analytics === 'object' ? source.analytics : {};
+  const defaultChannelId = cleanSnowflake(source.defaultChannelId || settings.defaultChannelId);
+  const allowMultiple = source.allowMultipleChoice === true || settings.allowMultipleVotes === true;
+  const anonymous = source.anonymousVoting === true || settings.anonymousVotes === true;
 
   const normalizedPolls = {};
   for (const [pollId, poll] of Object.entries(polls)) {
@@ -91,12 +107,18 @@ function normalizePolls(section = {}) {
     ...DEFAULT_POLLS,
     ...source,
     enabled: source.enabled !== false,
+    defaultChannelId,
+    resultsChannelId: cleanSnowflake(source.resultsChannelId),
+    managerRoleIds: cleanSnowflakeArray(source.managerRoleIds),
+    anonymousVoting: anonymous,
+    allowMultipleChoice: allowMultiple,
+    showResultsLive: source.showResultsLive !== false,
     settings: {
       ...DEFAULT_POLLS.settings,
       ...settings,
-      defaultChannelId: cleanSnowflake(settings.defaultChannelId),
-      allowMultipleVotes: settings.allowMultipleVotes === true,
-      anonymousVotes: settings.anonymousVotes === true,
+      defaultChannelId,
+      allowMultipleVotes: allowMultiple,
+      anonymousVotes: anonymous,
       autoCloseHours: Number(settings.autoCloseHours || DEFAULT_POLLS.settings.autoCloseHours),
     },
     polls: normalizedPolls,
@@ -111,12 +133,29 @@ function normalizePolls(section = {}) {
   };
 }
 
+function getLegacySection(guildId) {
+  return guildManager.getGuildSection(guildId, 'polls', null);
+}
+
+function getModuleSection(guildId) {
+  const modules = guildManager.getGuildSection(guildId, 'modules', {});
+  return modules?.[MODULE_KEY] || null;
+}
+
 function getSection(guildId) {
-  return normalizePolls(guildManager.getGuildSection(guildId, 'polls', DEFAULT_POLLS));
+  const moduleSection = getModuleSection(guildId);
+  if (moduleSection) return normalizePolls(moduleSection);
+  const legacy = getLegacySection(guildId);
+  return normalizePolls(legacy || DEFAULT_POLLS);
 }
 
 function saveSection(guildId, section, meta = {}) {
-  return guildManager.saveGuildSection(guildId, 'polls', normalizePolls(section), meta);
+  const normalized = normalizePolls(section);
+  guildManager.updateGuildSection(guildId, 'modules', (modules = {}) => ({
+    ...(modules && typeof modules === 'object' ? modules : {}),
+    [MODULE_KEY]: normalized,
+  }), {}, meta);
+  return normalized;
 }
 
 function getPoll(guildId, pollId) {
@@ -126,6 +165,7 @@ function getPoll(guildId, pollId) {
 
 function createPoll(guildId, payload = {}, meta = {}) {
   const section = getSection(guildId);
+  if (section.enabled === false) throw new Error('Polls are disabled.');
   const question = cleanText(payload.question, 256);
   if (!question) throw new Error('Poll question is required.');
 
@@ -252,6 +292,7 @@ function buildPollComponents(poll) {
 async function deployPoll(guild, pollId, channelId, meta = {}) {
   const guildId = guild.id;
   const section = getSection(guildId);
+  if (section.enabled === false) throw new Error('Polls are disabled.');
   const poll = section.polls[String(pollId)];
   if (!poll) throw new Error('Poll not found.');
 
@@ -274,6 +315,16 @@ async function deployPoll(guild, pollId, channelId, meta = {}) {
   section.polls[poll.id] = poll;
   section.analytics.deployed += 1;
   return { section: saveSection(guildId, section, meta), poll, messageId: message.id };
+}
+
+async function deploySamplePoll(guild, actorId = null) {
+  const { poll } = createPoll(guild.id, {
+    question: 'Sample Poll',
+    description: 'This is a sample poll created from the Goliath Admin Panel.',
+    options: [{ label: 'Yes' }, { label: 'No' }],
+    createdBy: actorId,
+  }, { actorId });
+  return deployPoll(guild, poll.id, null, { actorId });
 }
 
 async function refreshPollMessage(guild, poll) {
@@ -349,6 +400,7 @@ module.exports = {
   setPollStatus,
   deletePoll,
   deployPoll,
+  deploySamplePoll,
   summarizePoll,
   buildPollEmbed,
   buildPollComponents,

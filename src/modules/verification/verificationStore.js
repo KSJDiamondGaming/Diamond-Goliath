@@ -29,6 +29,22 @@ function cleanString(value, fallback = '', maxLength = 1000) {
   return String(value ?? fallback).trim().slice(0, maxLength);
 }
 
+function cleanHexColor(value, fallback = '#57f287') {
+  const clean = String(value || '').trim();
+  return /^#[0-9a-f]{6}$/i.test(clean) ? clean : fallback;
+}
+
+function cleanButtonStyle(value, fallback = 'success') {
+  const clean = String(value || '').trim().toLowerCase();
+  return ['primary', 'secondary', 'success', 'danger'].includes(clean) ? clean : fallback;
+}
+
+function cleanUrl(value) {
+  const clean = String(value || '').trim().slice(0, 500);
+  if (!clean) return null;
+  return /^https?:\/\//i.test(clean) ? clean : null;
+}
+
 function cleanDate(value) {
   const date = value ? new Date(value) : null;
   return date && Number.isFinite(date.getTime()) ? date.toISOString() : null;
@@ -57,6 +73,20 @@ function defaultAnalytics() {
   };
 }
 
+function defaultPanelTemplate() {
+  return {
+    title: 'Server Verification',
+    description: 'Press the button below to verify and unlock the server.',
+    color: '#57f287',
+    footer: 'Goliath Verification',
+    thumbnailUrl: null,
+    imageUrl: null,
+    buttonLabel: 'Verify',
+    buttonEmoji: null,
+    buttonStyle: 'success',
+  };
+}
+
 function defaultVerificationSection() {
   return {
     enabled: false,
@@ -66,7 +96,9 @@ function defaultVerificationSection() {
       logChannelId: null,
       dmOnVerify: true,
       requireButton: true,
+      removePendingRole: true,
     },
+    panelTemplate: defaultPanelTemplate(),
     panels: {},
     analytics: defaultAnalytics(),
     createdAt: now(),
@@ -94,22 +126,42 @@ function normalizeAnalytics(analytics = {}) {
   };
 }
 
+function normalizePanelTemplate(template = {}) {
+  const source = template && typeof template === 'object' ? template : {};
+  const base = defaultPanelTemplate();
+
+  return {
+    ...base,
+    ...clone(source),
+    title: cleanString(source.title || base.title, base.title, 100),
+    description: cleanString(source.description || base.description, base.description, 1000),
+    color: cleanHexColor(source.color, base.color),
+    footer: cleanString(source.footer || base.footer, base.footer, 200),
+    thumbnailUrl: cleanUrl(source.thumbnailUrl),
+    imageUrl: cleanUrl(source.imageUrl),
+    buttonLabel: cleanString(source.buttonLabel || base.buttonLabel, base.buttonLabel, 80),
+    buttonEmoji: cleanString(source.buttonEmoji || '', '', 80) || null,
+    buttonStyle: cleanButtonStyle(source.buttonStyle, base.buttonStyle),
+  };
+}
+
 function normalizePanel(panel = {}) {
   const source = panel && typeof panel === 'object' ? panel : {};
   const panelId = cleanString(source.panelId || source.id || createId('verify_panel'), 'verify_panel', 80);
+  const template = normalizePanelTemplate(source);
 
   return {
     panelId,
     id: panelId,
     enabled: source.enabled !== false,
-    title: cleanString(source.title || 'Server Verification', 'Server Verification', 100),
-    description: cleanString(source.description || 'Press the button below to verify and unlock the server.', '', 1000),
-    buttonLabel: cleanString(source.buttonLabel || 'Verify', 'Verify', 80),
+    ...template,
     channelId: cleanDiscordId(source.channelId),
     messageId: cleanDiscordId(source.messageId),
     createdBy: cleanDiscordId(source.createdBy),
     createdAt: source.createdAt || now(),
     updatedAt: source.updatedAt || source.createdAt || now(),
+    lastDeployedAt: cleanDate(source.lastDeployedAt),
+    deletedAt: cleanDate(source.deletedAt),
   };
 }
 
@@ -130,7 +182,9 @@ function normalizeVerificationSection(section = {}) {
       logChannelId: cleanDiscordId(source.settings?.logChannelId),
       dmOnVerify: source.settings?.dmOnVerify !== false,
       requireButton: source.settings?.requireButton !== false,
+      removePendingRole: source.settings?.removePendingRole !== false,
     },
+    panelTemplate: normalizePanelTemplate(source.panelTemplate),
     panels: Object.fromEntries(
       Object.entries(panels).map(([id, panel]) => {
         const normalized = normalizePanel({ ...panel, panelId: panel.panelId || id });
@@ -186,6 +240,34 @@ function getPanel(guildId, panelId) {
   return getVerificationSection(guildId).panels?.[String(panelId || '')] || null;
 }
 
+function deletePanel(guildId, panelId, meta = {}) {
+  return updateVerificationSection(guildId, (section) => {
+    const panels = { ...(section.panels || {}) };
+    delete panels[String(panelId || '')];
+    return {
+      ...section,
+      panels,
+      updatedAt: now(),
+    };
+  }, meta);
+}
+
+function getLatestPanel(guildId) {
+  const panels = Object.values(getVerificationSection(guildId).panels || {});
+  return panels.sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0))[0] || null;
+}
+
+function updatePanelTemplate(guildId, template, meta = {}) {
+  return updateVerificationSection(guildId, (section) => ({
+    ...section,
+    panelTemplate: normalizePanelTemplate({
+      ...(section.panelTemplate || {}),
+      ...(template || {}),
+    }),
+    updatedAt: now(),
+  }), meta).panelTemplate;
+}
+
 function incrementAnalytics(guildId, increments = {}, meta = {}) {
   const timestamp = now();
 
@@ -218,13 +300,18 @@ module.exports = {
   MODULE,
   createId,
   defaultAnalytics,
+  defaultPanelTemplate,
   defaultVerificationSection,
   normalizeAnalytics,
+  normalizePanelTemplate,
   normalizeVerificationSection,
   getVerificationSection,
   saveVerificationSection,
   updateVerificationSection,
   savePanel,
   getPanel,
+  getLatestPanel,
+  deletePanel,
+  updatePanelTemplate,
   incrementAnalytics,
 };

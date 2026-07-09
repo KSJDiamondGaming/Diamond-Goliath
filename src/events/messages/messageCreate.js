@@ -3,6 +3,7 @@ const { handleStickyMessage } = require('../../modules/sticky/stickyManager');
 const { handlePrefixCommand } = require('../../features/prefix/prefixRouter');
 const translationThreadManager = require('../../modules/translation/translationThreadManager');
 const statsManager = require('../../modules/stats/statsManager');
+const levelingManager = require('../../modules/leveling/levelingManager');
 
 module.exports = {
   name: 'messageCreate',
@@ -14,6 +15,7 @@ module.exports = {
 
       await runAutomod(message, client);
       await statsManager.handleMessageCreate(message);
+      await levelingManager.handleMessageCreate(message);
 
       const handledPrefixCommand = await handlePrefixCommand(message, client);
       if (handledPrefixCommand) return;

@@ -11,7 +11,8 @@ const {
 } = require('discord.js');
 
 const roleStore = require('./roleStore');
-const { isModuleEnabled } = require('../../core/guild/guildManager');
+const guildManager = require('../../core/guild/guildManager');
+const { isModuleEnabled } = guildManager;
 
 const CUSTOM_ID_PREFIX = 'role_toggle';
 const MAX_BUTTONS_PER_ROW = 5;
@@ -25,12 +26,20 @@ const ROLE_MODES = {
   VERIFY: 'verify',
 };
 
+function getReactionRolesAdminConfig(guildId) {
+  const modules = guildManager.getGuildSection(guildId, 'modules', {});
+  const config = modules?.reactionRoles;
+  return config && typeof config === 'object' ? config : {};
+}
+
 function isRolesModuleEnabled(guildId) {
-  return isModuleEnabled(guildId, 'roles');
+  const adminConfig = getReactionRolesAdminConfig(guildId);
+  if (typeof adminConfig.enabled === 'boolean') return adminConfig.enabled;
+  return isModuleEnabled(guildId, 'roles') || isModuleEnabled(guildId, 'reactionRoles');
 }
 
 function isTimedRolesModuleEnabled(guildId) {
-  return isModuleEnabled(guildId, 'timedRoles');
+  return isModuleEnabled(guildId, 'timedRoles') || isModuleEnabled(guildId, 'leveling');
 }
 
 function nowMs() {

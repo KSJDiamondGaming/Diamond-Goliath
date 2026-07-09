@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { REST, Routes } = require('discord.js');
 const { loadEnvironment } = require('../../config/envLoader');
+const { BETA_GUILD_IDS: CONFIGURED_BETA_GUILD_IDS = [] } = require('../../config/betaGuilds');
 
 const ALLOWED_MODES = ['dev', 'beta', 'production'];
 const ALLOWED_COMMAND_MODES = ['guild', 'global'];
@@ -35,10 +36,25 @@ function required(label, value, envFile) {
 }
 
 function parseGuildIds(value) {
-  return String(value || '')
-    .split(',')
-    .map((id) => id.trim())
-    .filter((id) => /^\d{16,25}$/.test(id));
+  const values = Array.isArray(value) ? value : String(value || '').split(',');
+  return [...new Set(values
+    .map((id) => String(id || '').trim())
+    .filter((id) => /^\d{16,25}$/.test(id)))];
+}
+
+function combineGuildIds(...values) {
+  return parseGuildIds(values.flatMap((value) => Array.isArray(value) ? value : String(value || '').split(','))).join(',');
+}
+
+function getConfiguredGuildIdsForMode(mode) {
+  if (mode === 'DEV') return firstEnv(['DEV_GUILD_ID', 'MAIN_GUILD_ID', 'GUILD_ID']);
+  if (mode === 'BETA') {
+    return combineGuildIds(
+      firstEnv(['BETA_GUILD_IDS', 'BETA_GUILD_ID', 'MAIN_GUILD_ID', 'GUILD_ID']),
+      CONFIGURED_BETA_GUILD_IDS
+    );
+  }
+  return firstEnv(['PRODUCTION_GUILD_IDS', 'PRODUCTION_GUILD_ID', 'MAIN_GUILD_ID', 'GUILD_ID']);
 }
 
 function getAllJsFiles(dir) {
@@ -92,11 +108,7 @@ const COMMAND_MODE = (() => {
   return BOT_MODE === 'PRODUCTION' ? 'global' : 'guild';
 })();
 
-const GUILD_IDS = BOT_MODE === 'DEV'
-  ? firstEnv(['DEV_GUILD_ID', 'MAIN_GUILD_ID', 'GUILD_ID'])
-  : BOT_MODE === 'BETA'
-    ? firstEnv(['BETA_GUILD_IDS', 'BETA_GUILD_ID', 'MAIN_GUILD_ID', 'GUILD_ID'])
-    : firstEnv(['PRODUCTION_GUILD_IDS', 'PRODUCTION_GUILD_ID', 'MAIN_GUILD_ID', 'GUILD_ID']);
+const GUILD_IDS = getConfiguredGuildIdsForMode(BOT_MODE);
 
 if (!ALLOWED_COMMAND_MODES.includes(COMMAND_MODE)) {
   throw new Error(`Invalid COMMAND_MODE ${COMMAND_MODE}`);
@@ -522,7 +534,7 @@ async function syncCommands(options = {}) {
 
 if (require.main === module) {
   syncCommands().catch((error) => {
-    console.error('Command sync failed');
+    console.error('Command sync failed:');
     console.error(error);
     process.exit(1);
   });
@@ -530,8 +542,6 @@ if (require.main === module) {
 
 module.exports = {
   syncCommands,
-  parseGuildIds,
-  getAllJsFiles,
   loadCommands,
   validateCommandPayload,
 };

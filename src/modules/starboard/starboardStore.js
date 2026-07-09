@@ -38,15 +38,27 @@ function asArray(value) {
   return Array.isArray(value) ? [...new Set(value.filter(Boolean).map(String))] : [];
 }
 
+function cleanDiscordIdArray(value) {
+  return asArray(value).map(cleanDiscordId).filter(Boolean);
+}
+
 function defaultStarboardSection() {
   return {
     enabled: true,
     channelId: null,
+    starboardChannelId: null,
+    logChannelId: null,
+    managerRoleIds: [],
     threshold: 3,
     emoji: '⭐',
     allowBotMessages: false,
     allowSelfStar: false,
+    requireUniqueUsers: true,
     posts: {},
+    analytics: {
+      posted: 0,
+      updated: 0,
+    },
     createdAt: now(),
     updatedAt: now(),
   };
@@ -71,16 +83,21 @@ function normalizeSection(section = {}) {
   const base = defaultStarboardSection();
   const source = section && typeof section === 'object' ? section : {};
   const posts = source.posts && typeof source.posts === 'object' ? source.posts : {};
+  const channelId = cleanDiscordId(source.channelId || source.starboardChannelId);
 
   return {
     ...base,
     ...source,
     enabled: source.enabled !== false,
-    channelId: cleanDiscordId(source.channelId),
+    channelId,
+    starboardChannelId: channelId,
+    logChannelId: cleanDiscordId(source.logChannelId),
+    managerRoleIds: cleanDiscordIdArray(source.managerRoleIds),
     threshold: cleanPositiveInt(source.threshold, 3),
     emoji: cleanString(source.emoji || '⭐', '⭐', 40),
     allowBotMessages: source.allowBotMessages === true,
     allowSelfStar: source.allowSelfStar === true,
+    requireUniqueUsers: source.requireUniqueUsers !== false,
     posts: Object.fromEntries(
       Object.entries(posts)
         .map(([id, post]) => {
@@ -89,6 +106,10 @@ function normalizeSection(section = {}) {
         })
         .filter(([, post]) => post.messageId && post.channelId)
     ),
+    analytics: {
+      posted: Math.max(0, Number(source.analytics?.posted || 0)),
+      updated: Math.max(0, Number(source.analytics?.updated || 0)),
+    },
     updatedAt: source.updatedAt || now(),
   };
 }
@@ -140,6 +161,11 @@ function savePost(guildId, post, meta = {}) {
           ...normalized,
           updatedAt: now(),
         },
+      },
+      analytics: {
+        ...(section.analytics || {}),
+        posted: Math.max(0, Number(section.analytics?.posted || 0)) + (section.posts?.[normalized.messageId] ? 0 : 1),
+        updated: Math.max(0, Number(section.analytics?.updated || 0)) + (section.posts?.[normalized.messageId] ? 1 : 0),
       },
       updatedAt: now(),
     }),

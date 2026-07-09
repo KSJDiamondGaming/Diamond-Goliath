@@ -66,7 +66,7 @@ function buildStatsEmbed(interaction) {
     .setTimestamp(new Date());
 }
 
-function counterChoices(option) {
+function counterTypeOption(option) {
   return option
     .setName('type')
     .setDescription('Counter type')
@@ -83,6 +83,21 @@ function counterChoices(option) {
     );
 }
 
+function formatCounterLines(title, counters = []) {
+  if (!counters.length) return [];
+  return [
+    `**${title}**`,
+    ...counters.map((counter) => `• <#${counter.channelId}> — \`${counter.name}\``),
+    '',
+  ];
+}
+
+function getCommandParts(interaction) {
+  const group = interaction.options.getSubcommandGroup(false);
+  const subcommand = interaction.options.getSubcommand(false) || 'view';
+  return { group, subcommand };
+}
+
 async function safeReply(interaction, payload) {
   const safePayload = {
     ...payload,
@@ -96,13 +111,110 @@ async function safeReply(interaction, payload) {
   return interaction.reply(safePayload);
 }
 
+async function handleCounterSubcommand(interaction, subcommand) {
+  if (subcommand === 'setup') {
+    statsStore.setEnabled(interaction.guild.id, true, interaction.guild);
+    const result = await statsCounters.createCounterSuite(interaction.guild);
+    const lines = [
+      '✅ Stat counter setup complete.',
+      `Category: <#${result.categoryId}>`,
+      '',
+      ...formatCounterLines('Created', result.created),
+      ...formatCounterLines('Reused', result.reused),
+      ...formatCounterLines('Repaired', result.repaired),
+    ];
+
+    if (!result.created.length && !result.reused.length && !result.repaired.length) {
+      lines.push('No counter channels were needed. Everything is already configured.');
+    }
+
+    return safeReply(interaction, {
+      content: lines.join('\n').slice(0, 1900),
+    });
+  }
+
+  if (subcommand === 'list') {
+    const counters = statsCounters.listCounters(interaction.guild.id);
+    const text = counters.length
+      ? counters
+          .map((counter, index) => `**${index + 1}.** <#${counter.channelId}> — \`${counter.type}\` — \`${counter.template}\``)
+          .join('\n')
+      : 'No stats counters configured yet. Use `/stats counter setup`.';
+
+    return safeReply(interaction, {
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0x5865f2)
+          .setTitle('📊 Stats Counters')
+          .setDescription(text)
+          .setTimestamp(),
+      ],
+    });
+  }
+
+  if (subcommand === 'refresh') {
+    const refreshed = await statsCounters.refreshCounters(interaction.guild);
+    return safeReply(interaction, {
+      content: refreshed.length
+        ? ['✅ Refreshed stat counter channels.', '', ...refreshed.map((counter) => `• <#${counter.channelId}> — \`${counter.name}\``)].join('\n')
+        : 'No stat counter channels are configured yet. Use `/stats counter setup`.',
+    });
+  }
+
+  if (subcommand === 'add') {
+    const type = interaction.options.getString('type', true);
+    const channelId = interaction.options.getString('channel_id', true);
+    const template = interaction.options.getString('template', false) || statsCounters.defaultTemplate(type);
+    statsCounters.addCounter(interaction.guild.id, { type, channelId, template }, interaction.guild);
+    const refreshed = await statsCounters.refreshCounters(interaction.guild);
+    return safeReply(interaction, {
+      content: `✅ Counter registered for <#${channelId}> using \`${template}\`. Refreshed ${refreshed.length} counter(s).`,
+    });
+  }
+
+  if (subcommand === 'remove') {
+    const channelId = interaction.options.getString('channel_id', true);
+    statsCounters.removeCounter(interaction.guild.id, channelId, interaction.guild);
+    return safeReply(interaction, {
+      content: `✅ Removed counter tracking for <#${channelId}>.`,
+    });
+  }
+
+  return safeReply(interaction, { content: '❌ Unknown stats counter action.' });
+}
+
+async function handleTrackingSubcommand(interaction, subcommand) {
+  if (subcommand === 'enable') {
+    statsStore.setEnabled(interaction.guild.id, true, interaction.guild);
+    return safeReply(interaction, {
+      content: '✅ Stats tracking enabled.',
+    });
+  }
+
+  if (subcommand === 'disable') {
+    statsStore.setEnabled(interaction.guild.id, false, interaction.guild);
+    return safeReply(interaction, {
+      content: '✅ Stats tracking disabled.',
+    });
+  }
+
+  if (subcommand === 'reset') {
+    statsStore.resetStats(interaction.guild.id, interaction.guild);
+    return safeReply(interaction, {
+      content: '✅ Stats data reset. The module is now back to default disabled state.',
+    });
+  }
+
+  return safeReply(interaction, { content: '❌ Unknown stats tracking action.' });
+}
+
 module.exports = {
   category: 'Admin',
 
   help: {
     name: 'stats',
-    description: 'Setup, view, reset, or manage Goliath server stats.',
-    usage: '/stats setup | /stats setup-channels | /stats refresh-counters | /stats counters',
+    description: 'Setup, view, counters, and tracking for Goliath server stats.',
+    usage: '/stats setup | /stats view | /stats counter setup | /stats tracking enable',
   },
 
   access: {
@@ -112,28 +224,13 @@ module.exports = {
 
   data: new SlashCommandBuilder()
     .setName('stats')
-    .setDescription('Setup view reset or manage Goliath server stats')
+    .setDescription('Manage Goliath server stats')
     .setDMPermission(false)
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addSubcommand((subcommand) =>
       subcommand
         .setName('setup')
-        .setDescription('Enable stats tracking for this server')
-    )
-    .addSubcommand((subcommand) =>
-      subcommand
-        .setName('setup-channels')
-        .setDescription('Create Statbot-style server stat counter channels')
-    )
-    .addSubcommand((subcommand) =>
-      subcommand
-        .setName('enable')
-        .setDescription('Enable stats tracking')
-    )
-    .addSubcommand((subcommand) =>
-      subcommand
-        .setName('disable')
-        .setDescription('Disable stats tracking')
+        .setDescription('Enable stats and create default counter channels')
     )
     .addSubcommand((subcommand) =>
       subcommand
@@ -142,52 +239,77 @@ module.exports = {
     )
     .addSubcommand((subcommand) =>
       subcommand
-        .setName('reset')
-        .setDescription('Reset all tracked stats data')
-    )
-    .addSubcommand((subcommand) =>
-      subcommand
-        .setName('counters')
-        .setDescription('List configured stats counter channels')
-    )
-    .addSubcommand((subcommand) =>
-      subcommand
-        .setName('refresh-counters')
-        .setDescription('Refresh all configured stat counter channel names')
-    )
-    .addSubcommand((subcommand) =>
-      subcommand
-        .setName('add-counter')
-        .setDescription('Register an existing channel as a stat counter')
-        .addStringOption(counterChoices)
-        .addStringOption((option) =>
-          option
-            .setName('channel_id')
-            .setDescription('Channel ID to rename as a counter')
-            .setRequired(true)
-        )
-        .addStringOption((option) =>
-          option
-            .setName('template')
-            .setDescription('Name template. Use {count} or {date}')
-            .setRequired(false)
-        )
-    )
-    .addSubcommand((subcommand) =>
-      subcommand
-        .setName('remove-counter')
-        .setDescription('Remove a stat counter channel from tracking')
-        .addStringOption((option) =>
-          option
-            .setName('channel_id')
-            .setDescription('Counter channel ID to remove')
-            .setRequired(true)
-        )
-    )
-    .addSubcommand((subcommand) =>
-      subcommand
         .setName('export')
         .setDescription('Export a compact stats summary')
+    )
+    .addSubcommandGroup((group) =>
+      group
+        .setName('tracking')
+        .setDescription('Enable, disable, or reset stats tracking')
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName('enable')
+            .setDescription('Enable stats tracking')
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName('disable')
+            .setDescription('Disable stats tracking')
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName('reset')
+            .setDescription('Reset all tracked stats data')
+        )
+    )
+    .addSubcommandGroup((group) =>
+      group
+        .setName('counter')
+        .setDescription('Create and manage Statbot-style counter channels')
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName('setup')
+            .setDescription('Create or repair Statbot-style server stat counter channels')
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName('list')
+            .setDescription('List configured stats counter channels')
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName('refresh')
+            .setDescription('Refresh all configured stat counter channel names')
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName('add')
+            .setDescription('Register an existing channel as a stat counter')
+            .addStringOption(counterTypeOption)
+            .addStringOption((option) =>
+              option
+                .setName('channel_id')
+                .setDescription('Channel ID to rename as a counter')
+                .setRequired(true)
+            )
+            .addStringOption((option) =>
+              option
+                .setName('template')
+                .setDescription('Name template. Use {count} or {date}')
+                .setRequired(false)
+            )
+        )
+        .addSubcommand((subcommand) =>
+          subcommand
+            .setName('remove')
+            .setDescription('Remove a stat counter channel from tracking')
+            .addStringOption((option) =>
+              option
+                .setName('channel_id')
+                .setDescription('Counter channel ID to remove')
+                .setRequired(true)
+            )
+        )
     ),
 
   async execute(interaction) {
@@ -198,97 +320,27 @@ module.exports = {
     const denied = await enforceCommandAccess(interaction, module.exports);
     if (denied) return;
 
-    const action = interaction.options.getSubcommand(false) || 'view';
+    const { group, subcommand } = getCommandParts(interaction);
 
-    if (action === 'setup') {
-      statsStore.setEnabled(interaction.guild.id, true, interaction.guild);
-      return safeReply(interaction, {
-        content: '✅ Stats tracking enabled. Use `/stats setup-channels` to create Statbot-style counter channels.',
-      });
-    }
+    if (group === 'counter') return handleCounterSubcommand(interaction, subcommand);
+    if (group === 'tracking') return handleTrackingSubcommand(interaction, subcommand);
 
-    if (action === 'setup-channels') {
+    if (subcommand === 'setup') {
       statsStore.setEnabled(interaction.guild.id, true, interaction.guild);
       const result = await statsCounters.createCounterSuite(interaction.guild);
       return safeReply(interaction, {
         content: [
-          '✅ Stat counter channels created.',
+          '✅ Stats setup complete.',
           `Category: <#${result.categoryId}>`,
           '',
-          ...result.created.map((counter) => `• <#${counter.channelId}> — \`${counter.name}\``),
+          `Created: \`${result.created.length}\``,
+          `Reused: \`${result.reused.length}\``,
+          `Repaired: \`${result.repaired.length}\``,
         ].join('\n'),
       });
     }
 
-    if (action === 'enable') {
-      statsStore.setEnabled(interaction.guild.id, true, interaction.guild);
-      return safeReply(interaction, {
-        content: '✅ Stats tracking enabled.',
-      });
-    }
-
-    if (action === 'disable') {
-      statsStore.setEnabled(interaction.guild.id, false, interaction.guild);
-      return safeReply(interaction, {
-        content: '✅ Stats tracking disabled.',
-      });
-    }
-
-    if (action === 'reset') {
-      statsStore.resetStats(interaction.guild.id, interaction.guild);
-      return safeReply(interaction, {
-        content: '✅ Stats data reset. The module is now back to default disabled state.',
-      });
-    }
-
-    if (action === 'counters') {
-      const counters = statsCounters.listCounters(interaction.guild.id);
-      const text = counters.length
-        ? counters
-            .map((counter, index) => `**${index + 1}.** <#${counter.channelId}> — \`${counter.type}\` — \`${counter.template}\``)
-            .join('\n')
-        : 'No stats counters configured yet. Use `/stats setup-channels`.';
-
-      return safeReply(interaction, {
-        embeds: [
-          new EmbedBuilder()
-            .setColor(0x5865f2)
-            .setTitle('📊 Stats Counters')
-            .setDescription(text)
-            .setTimestamp(),
-        ],
-      });
-    }
-
-    if (action === 'refresh-counters') {
-      const refreshed = await statsCounters.refreshCounters(interaction.guild);
-      return safeReply(interaction, {
-        content: refreshed.length
-          ? ['✅ Refreshed stat counter channels.', '', ...refreshed.map((counter) => `• <#${counter.channelId}> — \`${counter.name}\``)].join('\n')
-          : 'No stat counter channels are configured yet. Use `/stats setup-channels`.',
-      });
-    }
-
-    if (action === 'add-counter') {
-      const type = interaction.options.getString('type', true);
-      const channelId = interaction.options.getString('channel_id', true);
-      const template = interaction.options.getString('template', false) || statsCounters.defaultTemplate(type);
-      statsCounters.addCounter(interaction.guild.id, { type, channelId, template }, interaction.guild);
-      const refreshed = await statsCounters.refreshCounters(interaction.guild);
-      return safeReply(interaction, {
-        content: `✅ Counter registered for <#${channelId}> using \`${template}\`. Refreshed ${refreshed.length} counter(s).`,
-      });
-    }
-
-    if (action === 'remove-counter') {
-      const channelId = interaction.options.getString('channel_id', true);
-      statsCounters.removeCounter(interaction.guild.id, channelId, interaction.guild);
-      return safeReply(interaction, {
-        content: `✅ Removed counter tracking for <#${channelId}>.`,
-      });
-    }
-
-    if (action === 'export') {
+    if (subcommand === 'export') {
       const summary = statsStore.getSummary(interaction.guild.id);
       return safeReply(interaction, {
         content: '```json\n' + JSON.stringify(summary, null, 2).slice(0, 1800) + '\n```',
