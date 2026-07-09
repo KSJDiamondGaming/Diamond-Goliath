@@ -1,17 +1,96 @@
 'use strict';
 
 const statsStore = require('./statsStore');
+const statsCounters = require('./statsCounters');
 
 const activeVoiceSessions = new Map();
+const refreshTimers = new Map();
+const refreshInFlight = new Set();
+
+const COUNTER_REFRESH_DELAY_MS = Number(process.env.STATS_COUNTER_REFRESH_DELAY_MS || 30000);
+const COUNTER_REFRESH_INTERVAL_MS = Number(process.env.STATS_COUNTER_REFRESH_INTERVAL_MS || 15 * 60 * 1000);
+let intervalStarted = false;
 
 function sessionKey(guildId, userId) {
   return `${guildId}:${userId}`;
+}
+
+function shouldRefreshCounters(guildId) {
+  if (!guildId) return false;
+  return statsCounters.listCounters(guildId).length > 0;
+}
+
+function queueCounterRefresh(guild, reason = 'activity') {
+  if (!guild?.id || !shouldRefreshCounters(guild.id)) return false;
+
+  const existing = refreshTimers.get(guild.id);
+  if (existing) clearTimeout(existing);
+
+  const delay = Math.max(5000, COUNTER_REFRESH_DELAY_MS);
+  const timer = setTimeout(async () => {
+    refreshTimers.delete(guild.id);
+    await refreshGuildCounters(guild, reason);
+  }, delay);
+
+  timer.unref?.();
+  refreshTimers.set(guild.id, timer);
+  return true;
+}
+
+async function refreshGuildCounters(guild, reason = 'manual') {
+  if (!guild?.id || !shouldRefreshCounters(guild.id)) return [];
+  if (refreshInFlight.has(guild.id)) return [];
+
+  refreshInFlight.add(guild.id);
+  try {
+    const refreshed = await statsCounters.refreshCounters(guild);
+    if (refreshed.length) {
+      console.log(`[statsManager] Refreshed ${refreshed.length} counter(s) for ${guild.name} (${reason}).`);
+    }
+    return refreshed;
+  } catch (error) {
+    console.error(`[statsManager] Failed to refresh counters for ${guild.name || guild.id}:`, error);
+    return [];
+  } finally {
+    refreshInFlight.delete(guild.id);
+  }
+}
+
+async function refreshAllGuildCounters(client, reason = 'scheduled') {
+  const results = [];
+  for (const guild of client.guilds.cache.values()) {
+    const refreshed = await refreshGuildCounters(guild, reason);
+    results.push({ guildId: guild.id, count: refreshed.length });
+  }
+  return results;
+}
+
+function startCounterRefreshScheduler(client) {
+  if (intervalStarted || !client?.guilds?.cache) return false;
+  intervalStarted = true;
+
+  setTimeout(() => {
+    refreshAllGuildCounters(client, 'startup').catch((error) => {
+      console.error('[statsManager] Startup counter refresh failed:', error);
+    });
+  }, 10000).unref?.();
+
+  const timer = setInterval(() => {
+    refreshAllGuildCounters(client, 'scheduled').catch((error) => {
+      console.error('[statsManager] Scheduled counter refresh failed:', error);
+    });
+  }, Math.max(60000, COUNTER_REFRESH_INTERVAL_MS));
+
+  timer.unref?.();
+  console.log('[statsManager] Counter refresh scheduler started.');
+  return true;
 }
 
 async function handleMessageCreate(message) {
   try {
     if (!message?.guild || !message.member) return;
     statsStore.addMessage(message);
+    queueCounterRefresh(message.guild, 'message');
   } catch (error) {
     console.error('[statsManager] Failed to track message:', error);
   }
@@ -44,6 +123,8 @@ async function handleVoiceStateUpdate(oldState, newState) {
         joinedAt: Date.now(),
       });
     }
+
+    if (oldChannelId !== newChannelId) queueCounterRefresh(guild, 'voice');
   } catch (error) {
     console.error('[statsManager] Failed to track voice state:', error);
   }
@@ -52,6 +133,7 @@ async function handleVoiceStateUpdate(oldState, newState) {
 async function handleGuildMemberAdd(member) {
   try {
     statsStore.addMemberEvent(member, 'join');
+    queueCounterRefresh(member.guild, 'member join');
   } catch (error) {
     console.error('[statsManager] Failed to track member join:', error);
   }
@@ -60,6 +142,7 @@ async function handleGuildMemberAdd(member) {
 async function handleGuildMemberRemove(member) {
   try {
     statsStore.addMemberEvent(member, 'leave');
+    queueCounterRefresh(member.guild, 'member leave');
   } catch (error) {
     console.error('[statsManager] Failed to track member leave:', error);
   }
@@ -70,4 +153,8 @@ module.exports = {
   handleVoiceStateUpdate,
   handleGuildMemberAdd,
   handleGuildMemberRemove,
+  queueCounterRefresh,
+  refreshGuildCounters,
+  refreshAllGuildCounters,
+  startCounterRefreshScheduler,
 };
