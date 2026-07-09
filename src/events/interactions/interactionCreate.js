@@ -21,6 +21,7 @@ const reactionRolesAdminPanel = require('../../core/admin/functions/reactionRole
 const suggestionsAdminPanel = require('../../core/admin/functions/suggestionsAdminPanel');
 const giveawaysAdminPanel = require('../../core/admin/functions/giveawaysAdminPanel');
 const formsAdminPanel = require('../../core/admin/functions/formsAdminPanel');
+const pollsAdminPanel = require('../../core/admin/functions/pollsAdminPanel');
 const moduleAdminPanels = require('../../core/admin/functions/moduleAdminPanels');
 
 async function safeInteractionError(interaction) {
@@ -91,6 +92,10 @@ module.exports = {
       }
 
       if (await formsAdminPanel.handleFormsAdminInteraction(interaction)) {
+        return;
+      }
+
+      if (await pollsAdminPanel.handlePollsAdminInteraction(interaction)) {
         return;
       }
 
