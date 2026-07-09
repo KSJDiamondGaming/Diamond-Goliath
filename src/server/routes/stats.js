@@ -3,6 +3,7 @@
 const express = require('express');
 const guildManager = require('../../core/guild/guildManager');
 const statsStore = require('../../modules/stats/statsStore');
+const verificationStore = require('../../modules/verification/verificationStore');
 
 const router = express.Router();
 
@@ -59,6 +60,22 @@ function buildModuleStats(data) {
   };
 }
 
+function buildVerificationStats(guildId, modules = {}) {
+  const verification = modules.verification || {};
+  const section = verificationStore.getVerificationSection(guildId);
+  const panels = Object.values(section.panels || {});
+  return {
+    enabled: verification.enabled !== false && section.enabled === true,
+    verificationChannelId: verification.verificationChannelId || section.settings?.verificationChannelId || null,
+    logChannelId: verification.logChannelId || section.settings?.logChannelId || null,
+    verifiedRoles: countArray(verification.verifiedRoleIds || (section.settings?.verifiedRoleId ? [section.settings.verifiedRoleId] : [])),
+    pendingRoles: countArray(verification.pendingRoleIds || (section.settings?.unverifiedRoleId ? [section.settings.unverifiedRoleId] : [])),
+    panels: panels.length,
+    deployedPanels: panels.filter((panel) => panel?.messageId && panel?.channelId).length,
+    analytics: section.analytics || {},
+  };
+}
+
 function buildStoredStats(data, guildId) {
   const modules = data.modules || {};
   const tickets = modules.tickets || data.tickets || {};
@@ -87,6 +104,7 @@ function buildStoredStats(data, guildId) {
       closed: Object.values(polls.polls || {}).filter((poll) => poll?.status === 'closed').length,
       analytics: polls.analytics || {},
     },
+    verification: buildVerificationStats(guildId, modules),
     logs: {
       enabled: logs.enabled !== false,
       channels: countObject(logs.channels),
