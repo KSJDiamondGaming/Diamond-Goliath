@@ -83,6 +83,15 @@ function counterChoices(option) {
     );
 }
 
+function formatCounterLines(title, counters = []) {
+  if (!counters.length) return [];
+  return [
+    `**${title}**`,
+    ...counters.map((counter) => `• <#${counter.channelId}> — \`${counter.name}\``),
+    '',
+  ];
+}
+
 async function safeReply(interaction, payload) {
   const safePayload = {
     ...payload,
@@ -123,7 +132,7 @@ module.exports = {
     .addSubcommand((subcommand) =>
       subcommand
         .setName('setup-channels')
-        .setDescription('Create Statbot-style server stat counter channels')
+        .setDescription('Create or repair Statbot-style server stat counter channels')
     )
     .addSubcommand((subcommand) =>
       subcommand
@@ -210,13 +219,21 @@ module.exports = {
     if (action === 'setup-channels') {
       statsStore.setEnabled(interaction.guild.id, true, interaction.guild);
       const result = await statsCounters.createCounterSuite(interaction.guild);
+      const lines = [
+        '✅ Stat counter setup complete.',
+        `Category: <#${result.categoryId}>`,
+        '',
+        ...formatCounterLines('Created', result.created),
+        ...formatCounterLines('Reused', result.reused),
+        ...formatCounterLines('Repaired', result.repaired),
+      ];
+
+      if (!result.created.length && !result.reused.length && !result.repaired.length) {
+        lines.push('No counter channels were needed. Everything is already configured.');
+      }
+
       return safeReply(interaction, {
-        content: [
-          '✅ Stat counter channels created.',
-          `Category: <#${result.categoryId}>`,
-          '',
-          ...result.created.map((counter) => `• <#${counter.channelId}> — \`${counter.name}\``),
-        ].join('\n'),
+        content: lines.join('\n').slice(0, 1900),
       });
     }
 
