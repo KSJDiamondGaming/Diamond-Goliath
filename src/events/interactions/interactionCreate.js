@@ -22,6 +22,7 @@ const suggestionsAdminPanel = require('../../core/admin/functions/suggestionsAdm
 const giveawaysAdminPanel = require('../../core/admin/functions/giveawaysAdminPanel');
 const formsAdminPanel = require('../../core/admin/functions/formsAdminPanel');
 const pollsAdminPanel = require('../../core/admin/functions/pollsAdminPanel');
+const starboardAdminPanel = require('../../core/admin/functions/starboardAdminPanel');
 const moduleAdminPanels = require('../../core/admin/functions/moduleAdminPanels');
 
 async function safeInteractionError(interaction) {
@@ -96,6 +97,10 @@ module.exports = {
       }
 
       if (await pollsAdminPanel.handlePollsAdminInteraction(interaction)) {
+        return;
+      }
+
+      if (await starboardAdminPanel.handleStarboardAdminInteraction(interaction)) {
         return;
       }
 
