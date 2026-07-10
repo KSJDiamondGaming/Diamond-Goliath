@@ -77,6 +77,7 @@ const translationRoutes = safeRequire('translation routes', './src/server/routes
 const permissionHealthRoutes = safeRequire('permission health routes', './src/server/routes/permissionHealth', emptyRouter(), { optional: false });
 const socialRoutes = safeRequire('social routes', './src/server/routes/social', emptyRouter(), { optional: false });
 const verificationRoutes = safeRequire('verification routes', './src/server/routes/verification', emptyRouter(), { optional: false });
+const autoRolesRoutes = safeRequire('auto roles routes', './src/server/routes/autoRoles', emptyRouter(), { optional: false });
 const modulesRoutes = safeRequire('modules routes', './src/server/routes/modules', emptyRouter(), { optional: false });
 const automationRoutes = safeRequire('automation routes', './src/server/routes/automation', emptyRouter(), { optional: false });
 const notificationRoutes = safeRequire('notification routes', './src/server/routes/notifications', emptyRouter(), { optional: false });
@@ -160,6 +161,7 @@ app.use('/api/translation', translationRoutes);
 app.use('/api/permissions', permissionHealthRoutes);
 app.use('/api/social', socialRoutes);
 app.use('/api/verification', verificationRoutes);
+app.use('/api/auto-roles', autoRolesRoutes);
 app.use('/api/modules', modulesRoutes);
 app.use('/api/automation', automationRoutes);
 app.use('/api/notifications', notificationRoutes);
