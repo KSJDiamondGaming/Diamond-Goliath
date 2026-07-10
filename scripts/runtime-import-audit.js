@@ -2,8 +2,10 @@
 
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 
 const root = path.resolve(__dirname, '..');
+const IMPORT_TIMEOUT_MS = Number(process.env.GOLIATH_IMPORT_AUDIT_TIMEOUT_MS || 5000);
 
 function rel(filePath) {
   return path.relative(root, filePath).replace(/\\/g, '/');
@@ -49,6 +51,47 @@ function collectTargets() {
   ])].sort((a, b) => a.localeCompare(b));
 }
 
+function auditFile(filePath) {
+  const auditCode = `
+    const file = process.argv[1];
+    try {
+      require(file);
+      process.exit(0);
+    } catch (error) {
+      console.error(error && (error.stack || error.message) || error);
+      process.exit(1);
+    }
+  `;
+
+  const result = spawnSync(process.execPath, ['-e', auditCode, filePath], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: IMPORT_TIMEOUT_MS,
+    windowsHide: true,
+    env: {
+      ...process.env,
+      GOLIATH_IMPORT_AUDIT: 'true',
+    },
+  });
+
+  if (result.error?.code === 'ETIMEDOUT' || result.signal === 'SIGTERM') {
+    return {
+      ok: false,
+      error: `import did not exit within ${IMPORT_TIMEOUT_MS}ms (likely started a timer, scheduler, server, database watcher, or other persistent handle)`,
+    };
+  }
+
+  if (result.status !== 0) {
+    const output = String(result.stderr || result.stdout || 'Unknown import failure').trim();
+    return {
+      ok: false,
+      error: output.split('\n').slice(0, 8).join('\n'),
+    };
+  }
+
+  return { ok: true };
+}
+
 function audit() {
   console.log('\nRuntime import audit');
   console.log('====================');
@@ -58,15 +101,18 @@ function audit() {
   let loaded = 0;
 
   for (const filePath of files) {
-    try {
-      delete require.cache[require.resolve(filePath)];
-      require(filePath);
-      console.log(`✅ ${rel(filePath)}`);
+    const relativePath = rel(filePath);
+    process.stdout.write(`Checking ${relativePath}... `);
+
+    const result = auditFile(filePath);
+    if (result.ok) {
+      console.log('✅');
       loaded += 1;
-    } catch (error) {
-      console.log(`❌ ${rel(filePath)}`);
-      errors.push(`${rel(filePath)}: ${error.message}`);
+      continue;
     }
+
+    console.log('❌');
+    errors.push(`${relativePath}: ${result.error}`);
   }
 
   console.log(`\nRuntime files scanned: ${files.length}`);
@@ -83,6 +129,9 @@ function audit() {
   return true;
 }
 
-if (require.main === module) audit();
+if (require.main === module) {
+  const ok = audit();
+  process.exit(ok ? 0 : 1);
+}
 
-module.exports = { audit };
+module.exports = { audit, auditFile };
