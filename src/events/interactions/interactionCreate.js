@@ -36,6 +36,7 @@ const levelingAdminPanel = optionalRequire('leveling admin', '../../core/admin/f
 const socialAdminPanel = optionalRequire('social admin', '../../core/admin/functions/socialAdminPanel');
 const verificationAdminPanel = optionalRequire('verification admin', '../../core/admin/functions/verificationAdminPanel');
 const autoRolesAdminPanel = optionalRequire('auto roles admin', '../../core/admin/functions/autoRolesAdminPanel');
+const welcomeAdminPanel = optionalRequire('welcome admin', '../../core/admin/functions/welcomeAdminPanel');
 const moduleAdminPanels = optionalRequire('generic module admin', '../../core/admin/functions/moduleAdminPanels');
 
 async function callHandler(target, method, ...args) {
@@ -87,6 +88,10 @@ function isVerificationAdminInteraction(interaction) {
 
 function isAutoRolesAdminInteraction(interaction) {
   return String(interaction?.customId || '').startsWith('admin:autoRoles');
+}
+
+function isWelcomeAdminInteraction(interaction) {
+  return String(interaction?.customId || '').startsWith('admin:welcome');
 }
 
 function isVerificationMemberInteraction(interaction) {
@@ -148,6 +153,11 @@ module.exports = {
 
       if (isAutoRolesAdminInteraction(interaction)) {
         await callHandler(autoRolesAdminPanel, 'handleAutoRolesAdminInteraction', interaction);
+        return;
+      }
+
+      if (isWelcomeAdminInteraction(interaction)) {
+        await callHandler(welcomeAdminPanel, 'handleWelcomeAdminInteraction', interaction);
         return;
       }
 
