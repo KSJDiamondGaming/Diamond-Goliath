@@ -20,6 +20,13 @@ const completeVerification = createCapabilityMap({
   documentation: true,
 });
 
+const autoRolesCapabilities = createCapabilityMap({
+  guildStorage: true,
+  runtime: true,
+  dashboard: true,
+  api: true,
+});
+
 const moduleManifest = Object.freeze({
   verification: {
     key: 'verification',
@@ -27,7 +34,7 @@ const moduleManifest = Object.freeze({
     maturity: MODULE_MATURITY.COMPLETE,
     capabilities: completeVerification,
   },
-  autoRoles: { key: 'autoRoles', name: 'Auto Roles', maturity: MODULE_MATURITY.NOT_STARTED, capabilities: createCapabilityMap() },
+  autoRoles: { key: 'autoRoles', name: 'Auto Roles', maturity: MODULE_MATURITY.IN_PROGRESS, capabilities: autoRolesCapabilities },
   forms: { key: 'forms', name: 'Forms', maturity: MODULE_MATURITY.NOT_STARTED, capabilities: createCapabilityMap() },
   giveaways: { key: 'giveaways', name: 'Giveaways', maturity: MODULE_MATURITY.NOT_STARTED, capabilities: createCapabilityMap() },
   leveling: { key: 'leveling', name: 'Leveling', maturity: MODULE_MATURITY.NOT_STARTED, capabilities: createCapabilityMap() },
