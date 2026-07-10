@@ -80,6 +80,16 @@ function wrapInteractionResponses(interaction) {
   }
 }
 
+function isVerificationAdminInteraction(interaction) {
+  return String(interaction?.customId || '').startsWith('admin:verification');
+}
+
+function isVerificationMemberInteraction(interaction) {
+  if (!interaction?.isButton?.()) return false;
+  return typeof verificationManager?.parseVerifyCustomId === 'function'
+    && Boolean(verificationManager.parseVerifyCustomId(interaction.customId));
+}
+
 async function safeInteractionError(interaction) {
   const payload = {
     content: '❌ Interaction failed. Check bot logs for details.',
@@ -126,6 +136,19 @@ module.exports = {
         return;
       }
 
+      // Modal responses must be the first acknowledgement and must happen quickly.
+      // Route Verification interactions before unrelated handlers so showModal()
+      // cannot expire while waiting through the full handler chain.
+      if (isVerificationAdminInteraction(interaction)) {
+        await callHandler(verificationAdminPanel, 'handleVerificationAdminInteraction', interaction);
+        return;
+      }
+
+      if (isVerificationMemberInteraction(interaction)) {
+        await callHandler(verificationManager, 'handleVerificationInteraction', interaction);
+        return;
+      }
+
       if (await callHandler(statsAdminPanel, 'handleStatsAdminInteraction', interaction)) return;
       if (await callHandler(reactionRolesAdminPanel, 'handleReactionRolesAdminInteraction', interaction)) return;
       if (await callHandler(suggestionsAdminPanel, 'handleSuggestionsAdminInteraction', interaction)) return;
@@ -136,7 +159,6 @@ module.exports = {
       if (await callHandler(stickyAdminPanel, 'handleStickyAdminInteraction', interaction)) return;
       if (await callHandler(levelingAdminPanel, 'handleLevelingAdminInteraction', interaction)) return;
       if (await callHandler(socialAdminPanel, 'handleSocialAdminInteraction', interaction)) return;
-      if (await callHandler(verificationAdminPanel, 'handleVerificationAdminInteraction', interaction)) return;
       if (await callHandler(moduleAdminPanels, 'handleModuleAdminInteraction', interaction)) return;
       if (await callHandler(adminPanel, 'handleAdminNavigation', interaction)) return;
       if (await callHandler(duplicator, 'handleInteraction', interaction)) return;
@@ -147,11 +169,6 @@ module.exports = {
       if (await callHandler(formsInteractionHandler, 'handleFormsInteraction', interaction)) return;
       if (await callHandler(suggestionsInteractionHandler, 'handleSuggestionsInteraction', interaction)) return;
       if (await callHandler(giveawaysInteractionHandler, 'handleGiveawayInteraction', interaction)) return;
-
-      if (interaction.isButton?.() && typeof verificationManager?.parseVerifyCustomId === 'function' && verificationManager.parseVerifyCustomId(interaction.customId)) {
-        await callHandler(verificationManager, 'handleVerificationInteraction', interaction);
-        return;
-      }
 
       if (interaction.isButton?.() && await callHandler(pollsManager, 'vote', interaction)) return;
       if (await callHandler(ticketInteractionHandler, 'handleTicketInteraction', interaction, client)) return;
