@@ -150,7 +150,7 @@ function defaultSettings() {
     logFailure: true,
 
     blockBots: true,
-    allowStaffBypass: true,
+    allowStaffBypass: false,
     allowReverification: false,
 
     minimumAccountAgeDays: 0,
@@ -220,6 +220,7 @@ function normalizeSettings(settings = {}) {
   const legacyPending = source.unverifiedRoleId ? [source.unverifiedRoleId] : [];
   const method = String(source.method || base.method).toLowerCase();
   const timing = String(source.pendingRoleTiming || base.pendingRoleTiming).toLowerCase();
+  const requirePendingRole = source.requirePendingRole === true;
 
   return {
     ...base,
@@ -235,7 +236,7 @@ function normalizeSettings(settings = {}) {
     usePendingRoles: source.usePendingRoles === true,
     assignPendingRoles: source.assignPendingRoles === true,
     pendingRoleTiming: PENDING_ROLE_TIMINGS.has(timing) ? timing : base.pendingRoleTiming,
-    requirePendingRole: source.requirePendingRole === true,
+    requirePendingRole,
     removePendingRoles: source.removePendingRoles !== false && source.removePendingRole !== false,
 
     verifiedRoleIds: cleanDiscordIds(source.verifiedRoleIds?.length ? source.verifiedRoleIds : legacyVerified),
@@ -247,7 +248,7 @@ function normalizeSettings(settings = {}) {
     logFailure: source.logFailure !== false,
 
     blockBots: source.blockBots !== false,
-    allowStaffBypass: source.allowStaffBypass !== false,
+    allowStaffBypass: !requirePendingRole && source.allowStaffBypass === true,
     allowReverification: source.allowReverification === true,
 
     minimumAccountAgeDays: cleanInteger(source.minimumAccountAgeDays, 0, 0, 3650),
