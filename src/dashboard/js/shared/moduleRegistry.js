@@ -185,6 +185,16 @@ export const moduleRegistry = [
     enabled: false,
     summary: 'Member verification and onboarding protection.',
   },
+  {
+    key: 'welcome',
+    name: 'Welcome',
+    icon: 'WC',
+    route: '/welcome',
+    category: MODULE_CATEGORIES.feature,
+    status: MODULE_STATUSES.backendReady,
+    enabled: false,
+    summary: 'Public welcome messages, member DMs, templates and onboarding analytics.',
+  },
 ].sort((a, b) => a.name.localeCompare(b.name));
 
 export const futureModules = [];
