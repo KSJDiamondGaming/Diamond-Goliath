@@ -12,9 +12,7 @@ loadEnvironment();
 process.on('warning', (warning) => {
   const message = String(warning?.message || '');
   const isDiscordReadyRenameWarning = warning?.name === 'DeprecationWarning' && message.includes('ready event has been renamed to clientReady');
-
   if (isDiscordReadyRenameWarning) return;
-
   console.warn(warning);
 });
 
@@ -30,14 +28,10 @@ function safeRequire(label, modulePath, fallback = null, options = {}) {
   } catch (error) {
     const optional = options.optional !== false;
     const missingOptionalModule = optional && isMissingOptionalModule(error, modulePath);
-
     if (missingOptionalModule) {
-      if (process.env.GOLIATH_VERBOSE_OPTIONAL_MODULES === 'true') {
-        console.info(`ℹ️ Optional startup module unavailable: ${label}`);
-      }
+      if (process.env.GOLIATH_VERBOSE_OPTIONAL_MODULES === 'true') console.info(`ℹ️ Optional startup module unavailable: ${label}`);
       return fallback;
     }
-
     console.warn(`⚠️ Startup module failed: ${label}`);
     console.warn(error?.stack || error?.message || error);
     return fallback;
@@ -127,20 +121,12 @@ client.commands = new Collection();
 const app = express();
 const server = http.createServer(app);
 const io = initSocketHub(server) || null;
-
 app.set('trust proxy', 1);
 app.set('goliath.client', client);
 app.set('goliath.io', io);
 
-const allowedOrigins = new Set([
-  'https://goliath.ksjdigital.co.uk',
-  'https://dev.goliath.ksjdigital.co.uk',
-  'https://twotonetaj.ksjdigital.co.uk',
-  'http://localhost:5173',
-  'http://localhost:5174',
-]);
+const allowedOrigins = new Set(['https://goliath.ksjdigital.co.uk', 'https://dev.goliath.ksjdigital.co.uk', 'https://twotonetaj.ksjdigital.co.uk', 'http://localhost:5173', 'http://localhost:5174']);
 [process.env.CLIENT_URL, process.env.DASHBOARD_CLIENT_URL, process.env.DASHBOARD_URL, process.env.VITE_CLIENT_URL, process.env.TWOTONETAJ_CLIENT_URL].filter(Boolean).forEach((origin) => allowedOrigins.add(String(origin).trim()));
-
 app.use(cors({ origin(origin, callback) { if (!origin || allowedOrigins.has(origin)) return callback(null, true); return callback(new Error(`CORS blocked origin: ${origin}`)); }, credentials: true }));
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ extended: true }));
@@ -231,8 +217,20 @@ function registerEvents() {
 
 registerEvents();
 
+async function runStartupTask(label, fn) {
+  try {
+    await fn();
+    console.log(`✅ ${label} startup complete`);
+  } catch (error) {
+    console.error(`❌ ${label} startup failed`);
+    console.error(error?.stack || error?.message || error);
+  }
+}
+
 client.once('clientReady', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
+  console.log(`ℹ Guilds cached: ${client.guilds.cache.size}`);
+
   for (const guild of client.guilds.cache.values()) {
     try {
       await enforceGuildAccess(guild, botMode, config);
@@ -243,16 +241,15 @@ client.once('clientReady', async () => {
       console.error(`Guild startup sync failed for ${guild?.id}:`, error?.message || error);
     }
   }
-});
 
-client.once('ready', () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
-  console.log(`ℹ Guilds cached: ${client.guilds.cache.size}`);
-  safeLoad('tickets startup', () => require('./src/modules/tickets/ticketStartup').recoverTickets(client));
-  safeLoad('roles startup', () => require('./src/modules/roles/rolesStartup').initializeRoles(client));
-  safeLoad('translation startup', () => require('./src/modules/translation/translationStartup').recoverTranslationPanels(client));
-  safeLoad('verification startup', () => require('./src/modules/verification/verificationStartup').startupVerification(client));
-  safeLoad('giveaways startup', () => require('./src/modules/giveaways/giveawayScheduler').start(client));
+  await Promise.all([
+    runStartupTask('Tickets', () => require('./src/modules/tickets/ticketStartup').startupTickets(client)),
+    runStartupTask('Roles', () => require('./src/modules/roles/rolesStartup').initializeRoles(client)),
+    runStartupTask('Translation', () => require('./src/modules/translation/translationStartup').startupTranslation(client)),
+    runStartupTask('Verification', () => require('./src/modules/verification/verificationStartup').startupVerification(client)),
+    runStartupTask('Giveaways', () => require('./src/modules/giveaways/giveawayScheduler').start(client)),
+  ]);
+
   backupScheduler.startBackupScheduler?.();
 });
 
