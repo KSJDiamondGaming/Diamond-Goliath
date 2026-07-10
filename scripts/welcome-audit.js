@@ -59,6 +59,7 @@ function audit() {
   checkFile('src/modules/welcome/welcomeStartup.js', ['startupWelcome']);
   checkFile('src/core/admin/functions/welcomeAdminPanel.js', ['buildWelcomeAdminPanel', 'handleWelcomeAdminInteraction']);
   checkFile('src/server/routes/welcome.js');
+  checkFile('src/dashboard/js/pages/modules/Welcome.jsx');
   checkFile('src/events/client/welcomeStartup.js');
   checkFile('test/welcome.test.js');
   checkFile('docs/modules/welcome.md');
