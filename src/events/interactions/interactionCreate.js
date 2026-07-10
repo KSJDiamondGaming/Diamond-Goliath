@@ -35,6 +35,7 @@ const stickyAdminPanel = optionalRequire('sticky admin', '../../core/admin/funct
 const levelingAdminPanel = optionalRequire('leveling admin', '../../core/admin/functions/levelingAdminPanel');
 const socialAdminPanel = optionalRequire('social admin', '../../core/admin/functions/socialAdminPanel');
 const verificationAdminPanel = optionalRequire('verification admin', '../../core/admin/functions/verificationAdminPanel');
+const autoRolesAdminPanel = optionalRequire('auto roles admin', '../../core/admin/functions/autoRolesAdminPanel');
 const moduleAdminPanels = optionalRequire('generic module admin', '../../core/admin/functions/moduleAdminPanels');
 
 async function callHandler(target, method, ...args) {
@@ -82,6 +83,10 @@ function wrapInteractionResponses(interaction) {
 
 function isVerificationAdminInteraction(interaction) {
   return String(interaction?.customId || '').startsWith('admin:verification');
+}
+
+function isAutoRolesAdminInteraction(interaction) {
+  return String(interaction?.customId || '').startsWith('admin:autoRoles');
 }
 
 function isVerificationMemberInteraction(interaction) {
@@ -136,11 +141,13 @@ module.exports = {
         return;
       }
 
-      // Modal responses must be the first acknowledgement and must happen quickly.
-      // Route Verification interactions before unrelated handlers so showModal()
-      // cannot expire while waiting through the full handler chain.
       if (isVerificationAdminInteraction(interaction)) {
         await callHandler(verificationAdminPanel, 'handleVerificationAdminInteraction', interaction);
+        return;
+      }
+
+      if (isAutoRolesAdminInteraction(interaction)) {
+        await callHandler(autoRolesAdminPanel, 'handleAutoRolesAdminInteraction', interaction);
         return;
       }
 
