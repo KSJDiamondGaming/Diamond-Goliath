@@ -20,12 +20,22 @@ const completeVerification = createCapabilityMap({
   documentation: true,
 });
 
+const loggingCapabilities = createCapabilityMap({
+  guildStorage: true,
+});
+
 const moduleManifest = Object.freeze({
   verification: {
     key: 'verification',
     name: 'Verification',
     maturity: MODULE_MATURITY.COMPLETE,
     capabilities: completeVerification,
+  },
+  logging: {
+    key: 'logging',
+    name: 'Logging',
+    maturity: MODULE_MATURITY.IN_PROGRESS,
+    capabilities: loggingCapabilities,
   },
   autoRoles: { key: 'autoRoles', name: 'Auto Roles', maturity: MODULE_MATURITY.NOT_STARTED, capabilities: createCapabilityMap() },
   forms: { key: 'forms', name: 'Forms', maturity: MODULE_MATURITY.NOT_STARTED, capabilities: createCapabilityMap() },
@@ -42,7 +52,6 @@ const moduleManifest = Object.freeze({
   translation: { key: 'translation', name: 'Translation', maturity: MODULE_MATURITY.NOT_STARTED, capabilities: createCapabilityMap() },
   welcome: { key: 'welcome', name: 'Welcome', maturity: MODULE_MATURITY.NOT_STARTED, capabilities: createCapabilityMap() },
   goodbye: { key: 'goodbye', name: 'Goodbye', maturity: MODULE_MATURITY.NOT_STARTED, capabilities: createCapabilityMap() },
-  logging: { key: 'logging', name: 'Logging', maturity: MODULE_MATURITY.NOT_STARTED, capabilities: createCapabilityMap() },
   moderation: { key: 'moderation', name: 'Moderation', maturity: MODULE_MATURITY.NOT_STARTED, capabilities: createCapabilityMap() },
   automod: { key: 'automod', name: 'AutoMod', maturity: MODULE_MATURITY.NOT_STARTED, capabilities: createCapabilityMap() },
 });
