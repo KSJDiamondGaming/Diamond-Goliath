@@ -42,6 +42,44 @@ async function callHandler(target, method, ...args) {
   return Boolean(await target[method](...args));
 }
 
+function sanitizeComponentPayload(payload) {
+  if (!payload || !Array.isArray(payload.components)) return payload;
+
+  const seen = new Set();
+  const rows = [];
+
+  for (const actionRow of payload.components) {
+    const rowData = typeof actionRow?.toJSON === 'function' ? actionRow.toJSON() : actionRow;
+    const components = Array.isArray(rowData?.components)
+      ? rowData.components.filter((component) => {
+        const customId = component?.custom_id || component?.customId || null;
+        if (!customId) return true;
+        if (seen.has(customId)) {
+          console.warn(`[InteractionCreate] Removed duplicate component custom_id: ${customId}`);
+          return false;
+        }
+        seen.add(customId);
+        return true;
+      })
+      : [];
+
+    if (components.length) rows.push({ ...rowData, components });
+  }
+
+  return { ...payload, components: rows };
+}
+
+function wrapInteractionResponses(interaction) {
+  if (!interaction || interaction.__goliathResponsesWrapped) return;
+  interaction.__goliathResponsesWrapped = true;
+
+  for (const methodName of ['reply', 'update', 'editReply', 'followUp']) {
+    if (typeof interaction[methodName] !== 'function') continue;
+    const original = interaction[methodName].bind(interaction);
+    interaction[methodName] = (payload, ...args) => original(sanitizeComponentPayload(payload), ...args);
+  }
+}
+
 async function safeInteractionError(interaction) {
   const payload = {
     content: '❌ Interaction failed. Check bot logs for details.',
@@ -70,6 +108,8 @@ module.exports = {
 
   async execute(interaction, client) {
     try {
+      wrapInteractionResponses(interaction);
+
       if (interaction?.isAutocomplete?.()) {
         const command = client.commands?.get?.(interaction.commandName);
         if (command?.autocomplete) await command.autocomplete(interaction, client);
