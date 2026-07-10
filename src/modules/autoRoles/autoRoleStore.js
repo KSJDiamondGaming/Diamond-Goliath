@@ -57,7 +57,8 @@ function defaultAutoRolesSection() {
 }
 
 function cleanCount(value) {
-  return Math.max(0, Number(value || 0));
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
 }
 
 function cleanDate(value) {
@@ -186,15 +187,15 @@ function incrementAnalytics(guildId, increments = {}, meta = {}) {
     const analytics = normalizeAnalytics(section.analytics);
     const next = {
       ...analytics,
-      assigned: cleanCount(analytics.assigned + Number(increments.assigned || 0)),
-      failed: cleanCount(analytics.failed + Number(increments.failed || 0)),
-      skipped: cleanCount(analytics.skipped + Number(increments.skipped || 0)),
-      membersProcessed: cleanCount(analytics.membersProcessed + Number(increments.membersProcessed || 0)),
-      botsProcessed: cleanCount(analytics.botsProcessed + Number(increments.botsProcessed || 0)),
+      assigned: cleanCount(analytics.assigned + cleanCount(increments.assigned)),
+      failed: cleanCount(analytics.failed + cleanCount(increments.failed)),
+      skipped: cleanCount(analytics.skipped + cleanCount(increments.skipped)),
+      membersProcessed: cleanCount(analytics.membersProcessed + cleanCount(increments.membersProcessed)),
+      botsProcessed: cleanCount(analytics.botsProcessed + cleanCount(increments.botsProcessed)),
       lastProcessedAt: timestamp,
     };
-    if (Number(increments.assigned || 0) > 0) next.lastAssignedAt = timestamp;
-    if (Number(increments.failed || 0) > 0) next.lastFailedAt = timestamp;
+    if (cleanCount(increments.assigned) > 0) next.lastAssignedAt = timestamp;
+    if (cleanCount(increments.failed) > 0) next.lastFailedAt = timestamp;
     return { ...section, analytics: next, updatedAt: timestamp };
   }, meta).analytics;
 }
