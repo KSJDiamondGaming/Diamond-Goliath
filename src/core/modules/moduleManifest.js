@@ -35,13 +35,19 @@ const completeAutoRoles = createCapabilityMap({
   documentation: true,
 });
 
-const welcomeCapabilities = createCapabilityMap({
+const completeWelcome = createCapabilityMap({
   guildStorage: true,
   runtime: true,
+  adminPanel: true,
+  dashboard: true,
+  api: true,
   health: true,
   startupRecovery: true,
   export: true,
   reset: true,
+  tests: true,
+  doctor: true,
+  documentation: true,
 });
 
 const moduleManifest = Object.freeze({
@@ -64,7 +70,7 @@ const moduleManifest = Object.freeze({
   tempVoice: { key: 'tempVoice', name: 'Temp Voice', maturity: MODULE_MATURITY.NOT_STARTED, capabilities: createCapabilityMap() },
   tickets: { key: 'tickets', name: 'Tickets', maturity: MODULE_MATURITY.NOT_STARTED, capabilities: createCapabilityMap() },
   translation: { key: 'translation', name: 'Translation', maturity: MODULE_MATURITY.NOT_STARTED, capabilities: createCapabilityMap() },
-  welcome: { key: 'welcome', name: 'Welcome', maturity: MODULE_MATURITY.IN_PROGRESS, capabilities: welcomeCapabilities },
+  welcome: { key: 'welcome', name: 'Welcome', maturity: MODULE_MATURITY.COMPLETE, capabilities: completeWelcome },
   goodbye: { key: 'goodbye', name: 'Goodbye', maturity: MODULE_MATURITY.NOT_STARTED, capabilities: createCapabilityMap() },
   automod: { key: 'automod', name: 'AutoMod', maturity: MODULE_MATURITY.NOT_STARTED, capabilities: createCapabilityMap() },
 });
