@@ -35,6 +35,7 @@ function collectTargets() {
   ];
 
   const explicitFiles = [
+    path.join(root, 'src', 'modules', 'autoRoles', 'autoRoleStartup.js'),
     path.join(root, 'src', 'modules', 'tickets', 'ticketStartup.js'),
     path.join(root, 'src', 'modules', 'translation', 'translationStartup.js'),
     path.join(root, 'src', 'modules', 'verification', 'verificationStartup.js'),
