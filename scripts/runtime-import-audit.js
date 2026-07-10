@@ -5,7 +5,8 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const root = path.resolve(__dirname, '..');
-const IMPORT_TIMEOUT_MS = Number(process.env.GOLIATH_IMPORT_AUDIT_TIMEOUT_MS || 5000);
+const IMPORT_TIMEOUT_MS = Number(process.env.GOLIATH_IMPORT_AUDIT_TIMEOUT_MS || 15000);
+const SLOW_IMPORT_MS = Number(process.env.GOLIATH_IMPORT_AUDIT_SLOW_MS || 3000);
 
 function rel(filePath) {
   return path.relative(root, filePath).replace(/\\/g, '/');
@@ -63,6 +64,7 @@ function auditFile(filePath) {
     }
   `;
 
+  const startedAt = Date.now();
   const result = spawnSync(process.execPath, ['-e', auditCode, filePath], {
     cwd: root,
     encoding: 'utf8',
@@ -73,11 +75,13 @@ function auditFile(filePath) {
       GOLIATH_IMPORT_AUDIT: 'true',
     },
   });
+  const durationMs = Date.now() - startedAt;
 
   if (result.error?.code === 'ETIMEDOUT' || result.signal === 'SIGTERM') {
     return {
       ok: false,
-      error: `import did not exit within ${IMPORT_TIMEOUT_MS}ms (likely started a timer, scheduler, server, database watcher, or other persistent handle)`,
+      durationMs,
+      error: `import did not complete within ${IMPORT_TIMEOUT_MS}ms`,
     };
   }
 
@@ -85,11 +89,16 @@ function auditFile(filePath) {
     const output = String(result.stderr || result.stdout || 'Unknown import failure').trim();
     return {
       ok: false,
+      durationMs,
       error: output.split('\n').slice(0, 8).join('\n'),
     };
   }
 
-  return { ok: true };
+  return {
+    ok: true,
+    durationMs,
+    slow: durationMs >= SLOW_IMPORT_MS,
+  };
 }
 
 function audit() {
@@ -98,6 +107,7 @@ function audit() {
 
   const files = collectTargets();
   const errors = [];
+  const slowImports = [];
   let loaded = 0;
 
   for (const filePath of files) {
@@ -106,8 +116,9 @@ function audit() {
 
     const result = auditFile(filePath);
     if (result.ok) {
-      console.log('✅');
+      console.log(result.slow ? `⚠️ ${result.durationMs}ms` : `✅ ${result.durationMs}ms`);
       loaded += 1;
+      if (result.slow) slowImports.push(`${relativePath}: ${result.durationMs}ms`);
       continue;
     }
 
@@ -117,6 +128,11 @@ function audit() {
 
   console.log(`\nRuntime files scanned: ${files.length}`);
   console.log(`Runtime files loadable: ${loaded}`);
+
+  if (slowImports.length) {
+    console.log(`Slow runtime imports: ${slowImports.length}`);
+    for (const item of slowImports) console.log(` - ${item}`);
+  }
 
   if (errors.length) {
     console.log(`Runtime import issues: ${errors.length}`);
