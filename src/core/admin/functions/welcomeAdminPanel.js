@@ -6,6 +6,7 @@ const {
   ButtonBuilder,
   ButtonStyle,
   ChannelSelectMenuBuilder,
+  StringSelectMenuBuilder,
   ChannelType,
   AttachmentBuilder,
 } = require('discord.js');
@@ -21,10 +22,35 @@ function button(customId, label, style = ButtonStyle.Secondary) {
   return new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style);
 }
 
+function templateMenu(guildId, activeTemplateId) {
+  const templates = welcomeManager.getWelcomeTemplates(guildId, 'welcome').slice(0, 25);
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId('admin:welcome:template')
+    .setPlaceholder(templates.length ? 'Choose the Embed Studio welcome template' : 'No welcome templates available')
+    .setMinValues(1)
+    .setMaxValues(1)
+    .setDisabled(templates.length === 0);
+
+  if (templates.length) {
+    menu.addOptions(templates.map((template) => ({
+      label: String(template.name || template.templateId).slice(0, 100),
+      description: String(template.embed?.title || template.templateId || 'Welcome template').slice(0, 100),
+      value: String(template.templateId),
+      default: String(template.templateId) === String(activeTemplateId),
+    })));
+  } else {
+    menu.addOptions({ label: 'No templates found', value: 'none' });
+  }
+  return menu;
+}
+
 async function buildWelcomeAdminPanel(guild, memberDisplayName = 'Unknown User') {
   const config = welcomeStore.getWelcomeSection(guild.id);
   const health = await welcomeManager.buildHealthReport(guild);
   const analytics = config.analytics || {};
+  const binding = welcomeManager.getWelcomeBinding(guild.id, 'welcome');
+  const activeTemplateId = binding?.templateId || config.templateId;
+  const activeTemplateName = binding?.name || health.templateName || activeTemplateId;
 
   const embed = new EmbedBuilder()
     .setColor(health.healthy ? 0x57f287 : 0xfaa61a)
@@ -35,8 +61,8 @@ async function buildWelcomeAdminPanel(guild, memberDisplayName = 'Unknown User')
       `**Welcome DM:** ${config.dmEnabled ? 'Enabled ✅' : 'Disabled ❌'}`,
       `**Ping New Member:** ${config.allowUserPing ? 'Yes ✅' : 'No ❌'}`,
       `**Ignore Bots:** ${config.ignoreBots ? 'Yes ✅' : 'No ❌'}`,
-      `**Public Template:** \`${config.templateId}\``,
-      `**DM Template:** \`${config.dmTemplateId}\``,
+      `**Active Template:** ${activeTemplateName ? `\`${activeTemplateName}\`` : '`Not set`'}`,
+      `**Embed Studio Binding:** ${binding ? 'Bound ✅' : 'Fallback only ⚠️'}`,
       '',
       `Public sent: \`${analytics.publicSent || 0}\` | DMs sent: \`${analytics.dmSent || 0}\` | Failed: \`${(analytics.publicFailed || 0) + (analytics.dmFailed || 0)}\``,
       '',
@@ -54,6 +80,7 @@ async function buildWelcomeAdminPanel(guild, memberDisplayName = 'Unknown User')
         .setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
         .setMinValues(0)
         .setMaxValues(1)),
+      row(templateMenu(guild.id, activeTemplateId)),
       row(
         button(config.enabled ? 'admin:welcome:disable' : 'admin:welcome:enable', config.enabled ? '⏸️ Disable' : '▶️ Enable', config.enabled ? ButtonStyle.Secondary : ButtonStyle.Success),
         button('admin:welcome:toggleDm', config.dmEnabled ? '📨 Disable DM' : '📨 Enable DM'),
@@ -90,6 +117,13 @@ async function handleWelcomeAdminInteraction(interaction) {
       return updatePanel(interaction);
     }
 
+    if (interaction.isStringSelectMenu?.() && customId === 'admin:welcome:template') {
+      const templateId = interaction.values?.[0];
+      if (!templateId || templateId === 'none') throw new Error('Choose a valid Embed Studio template.');
+      welcomeManager.bindWelcomeTemplate(interaction.guild.id, templateId, 'welcome', { actorId: interaction.user.id });
+      return updatePanel(interaction);
+    }
+
     const config = welcomeStore.getWelcomeSection(interaction.guild.id);
     if (customId === 'admin:welcome:enable') welcomeStore.updateConfig(interaction.guild.id, { enabled: true }, { actorId: interaction.user.id });
     if (customId === 'admin:welcome:disable') welcomeStore.updateConfig(interaction.guild.id, { enabled: false }, { actorId: interaction.user.id });
@@ -99,7 +133,9 @@ async function handleWelcomeAdminInteraction(interaction) {
 
     if (customId === 'admin:welcome:test') {
       await interaction.deferUpdate();
-      await welcomeManager.sendWelcome(interaction.member, { silent: false });
+      const current = welcomeStore.getWelcomeSection(interaction.guild.id);
+      if (!current.channelId && !current.dmEnabled) throw new Error('Select a welcome channel or enable welcome DMs before testing.');
+      await welcomeManager.sendWelcome(interaction.member, { silent: false, force: true, previewOnly: true });
       return updatePanel(interaction);
     }
 
