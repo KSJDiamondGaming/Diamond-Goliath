@@ -22,10 +22,10 @@ const DEFAULT_EMBED = Object.freeze({
 });
 
 const MODULE_VARIABLES = Object.freeze({
-  global: ['{guild}', '{guildId}', '{guildIcon}', '{guildBanner}', '{memberCount}', '{createdAt}', '{timestamp}'],
-  welcome: ['{user}', '{userMention}', '{username}', '{userId}', '{guild}', '{memberCount}', '{createdAt}'],
-  leave: ['{user}', '{username}', '{userId}', '{guild}', '{memberCount}', '{joinedAt}', '{leftAt}'],
-  dmWelcome: ['{user}', '{userMention}', '{username}', '{guild}', '{memberCount}'],
+  global: ['{guild}', '{guildName}', '{server}', '{serverName}', '{guildId}', '{guildIcon}', '{guildBanner}', '{memberCount}', '{createdAt}', '{timestamp}'],
+  welcome: ['{user}', '{userMention}', '{username}', '{userId}', '{userAvatar}', '{memberAvatar}', '{guild}', '{guildName}', '{server}', '{serverName}', '{memberCount}', '{createdAt}', '{joinedAt}'],
+  leave: ['{user}', '{username}', '{userId}', '{userAvatar}', '{memberAvatar}', '{guild}', '{guildName}', '{server}', '{serverName}', '{memberCount}', '{joinedAt}', '{leftAt}'],
+  dmWelcome: ['{user}', '{userMention}', '{username}', '{userId}', '{userAvatar}', '{memberAvatar}', '{guild}', '{guildName}', '{server}', '{serverName}', '{memberCount}', '{joinedAt}'],
   tickets: ['{ticketId}', '{ticketDisplayId}', '{ticketType}', '{ticketPriority}', '{ticketCreator}', '{ticketChannel}', '{ticketStatus}'],
   forms: ['{formId}', '{formName}', '{submissionId}', '{submitter}', '{submissionStatus}', '{reviewer}'],
   moderation: ['{caseId}', '{moderator}', '{target}', '{reason}', '{duration}', '{action}'],
