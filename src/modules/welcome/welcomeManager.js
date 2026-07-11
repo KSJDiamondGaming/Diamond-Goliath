@@ -1,7 +1,7 @@
 'use strict';
 
 const { PermissionFlagsBits } = require('discord.js');
-const { buildPreviewEmbed, TEMPLATES } = require('../embed/functions/embedPanel');
+const { buildPreviewEmbed, TEMPLATES } = require('../embed/embedPanel');
 const embedTemplateManager = require('../embed/embedTemplateManager');
 const guildManager = require('../../core/guild/guildManager');
 const welcomeStore = require('./welcomeStore');
