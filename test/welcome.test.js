@@ -5,8 +5,10 @@ const assert = require('node:assert/strict');
 
 const welcomeStore = require('../src/modules/welcome/welcomeStore');
 const welcomeManager = require('../src/modules/welcome/welcomeManager');
+const embedTemplateManager = require('../src/modules/embed/embedTemplateManager');
 
 const CHANNEL_ID = '123456789012345678';
+const GUILD_ID = '323456789012345678';
 
 test('welcome defaults are safe', () => {
   const section = welcomeStore.defaultWelcomeSection();
@@ -39,7 +41,7 @@ test('welcome normalization removes invalid IDs and analytics values', () => {
   assert.equal(section.analytics.dmFailed, 0);
 });
 
-test('welcome template variables contain member and guild values', () => {
+test('welcome template variables contain member and guild aliases', () => {
   const member = {
     joinedTimestamp: 1710000000000,
     displayAvatarURL: () => 'https://example.com/avatar.png',
@@ -50,7 +52,7 @@ test('welcome template variables contain member and guild values', () => {
       toString: () => '<@223456789012345678>',
     },
     guild: {
-      id: '323456789012345678',
+      id: GUILD_ID,
       name: 'Example Guild',
       memberCount: 42,
       iconURL: () => 'https://example.com/icon.png',
@@ -60,20 +62,55 @@ test('welcome template variables contain member and guild values', () => {
 
   const variables = welcomeManager.buildTemplateVariables(member);
   assert.equal(variables.guild, 'Example Guild');
+  assert.equal(variables.guildName, 'Example Guild');
+  assert.equal(variables.server, 'Example Guild');
+  assert.equal(variables.serverName, 'Example Guild');
   assert.equal(variables.memberCount, 42);
   assert.equal(variables.userMention, '<@223456789012345678>');
   assert.equal(variables.username, 'ExampleUser');
 });
 
-test('welcome export is portable', () => {
-  const original = welcomeStore.getWelcomeSection;
-  welcomeStore.getWelcomeSection = () => ({ enabled: true, channelId: CHANNEL_ID });
+test('binding an Embed Studio template synchronizes Welcome config', () => {
+  const originalBind = embedTemplateManager.bindTemplate;
+  const originalUpdate = welcomeStore.updateConfig;
+  const calls = [];
+
+  embedTemplateManager.bindTemplate = (guildId, moduleKey, slot, templateId) => {
+    calls.push({ source: 'binding', guildId, moduleKey, slot, templateId });
+    return { templateId, name: 'Slippery Welcome' };
+  };
+  welcomeStore.updateConfig = (guildId, patch) => {
+    calls.push({ source: 'config', guildId, patch });
+    return { ...patch };
+  };
+
   try {
-    const result = welcomeManager.exportConfiguration('323456789012345678');
+    const result = welcomeManager.bindWelcomeTemplate(GUILD_ID, 'slippery_welcome', 'welcome');
+    assert.equal(result.binding.templateId, 'slippery_welcome');
+    assert.equal(result.config.templateId, 'slippery_welcome');
+    assert.deepEqual(calls, [
+      { source: 'binding', guildId: GUILD_ID, moduleKey: 'welcome', slot: 'welcome', templateId: 'slippery_welcome' },
+      { source: 'config', guildId: GUILD_ID, patch: { templateId: 'slippery_welcome' } },
+    ]);
+  } finally {
+    embedTemplateManager.bindTemplate = originalBind;
+    welcomeStore.updateConfig = originalUpdate;
+  }
+});
+
+test('welcome export is portable and includes the active binding', () => {
+  const originalGetSection = welcomeStore.getWelcomeSection;
+  const originalGetBinding = embedTemplateManager.getBinding;
+  welcomeStore.getWelcomeSection = () => ({ enabled: true, channelId: CHANNEL_ID });
+  embedTemplateManager.getBinding = () => ({ templateId: 'slippery_welcome', name: 'Slippery Welcome' });
+  try {
+    const result = welcomeManager.exportConfiguration(GUILD_ID);
     assert.equal(result.module, 'welcome');
     assert.equal(result.config.channelId, CHANNEL_ID);
+    assert.equal(result.binding.templateId, 'slippery_welcome');
     assert.ok(result.exportedAt);
   } finally {
-    welcomeStore.getWelcomeSection = original;
+    welcomeStore.getWelcomeSection = originalGetSection;
+    embedTemplateManager.getBinding = originalGetBinding;
   }
 });
