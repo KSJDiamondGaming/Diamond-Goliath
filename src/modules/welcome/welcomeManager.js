@@ -18,6 +18,9 @@ function buildTemplateVariables(member) {
   const guild = member.guild;
   return {
     guild: guild.name,
+    guildName: guild.name,
+    server: guild.name,
+    serverName: guild.name,
     guildId: guild.id,
     guildIcon: guild.iconURL?.({ extension: 'png', size: 256 }) || '',
     guildBanner: guild.bannerURL?.({ extension: 'png', size: 1024 }) || '',
@@ -40,6 +43,25 @@ function getLegacySection(guildId, type) {
 
 function getRenderedTemplate(guildId, slot, variables, fallbackTemplateId) {
   return embedTemplateManager.renderBinding(guildId, 'welcome', slot, variables, fallbackTemplateId);
+}
+
+function getWelcomeTemplates(guildId, templateType = 'welcome') {
+  return Object.values(embedTemplateManager.listTemplates(guildId))
+    .filter((template) => template && (template.templateType === templateType || template.module === 'welcome'))
+    .sort((a, b) => String(a.name || a.templateId).localeCompare(String(b.name || b.templateId)));
+}
+
+function getWelcomeBinding(guildId, slot = 'welcome') {
+  return embedTemplateManager.getBinding(guildId, 'welcome', slot);
+}
+
+function bindWelcomeTemplate(guildId, templateId, slot = 'welcome', meta = {}) {
+  const binding = embedTemplateManager.bindTemplate(guildId, 'welcome', slot, templateId);
+  const patch = slot === 'dm_welcome'
+    ? { dmTemplateId: binding.templateId }
+    : { templateId: binding.templateId };
+  const config = welcomeStore.updateConfig(guildId, patch, { action: 'welcome_template_bind', ...meta });
+  return { binding, config };
 }
 
 function buildMessageData(member, type, config) {
@@ -86,9 +108,9 @@ async function sendWelcome(member, options = {}) {
   if (!member?.guild?.id || !member?.user?.id) return { publicSent: false, dmSent: false, skipped: true };
 
   const config = welcomeStore.getWelcomeSection(member.guild.id);
-  if (config.enabled === false || (config.ignoreBots && member.user.bot)) {
-    welcomeStore.incrementAnalytics(member.guild.id, { skipped: 1 });
-    return { publicSent: false, dmSent: false, skipped: true };
+  if ((!options.force && config.enabled === false) || (config.ignoreBots && member.user.bot)) {
+    if (!options.previewOnly) welcomeStore.incrementAnalytics(member.guild.id, { skipped: 1 });
+    return { publicSent: false, dmSent: false, skipped: true, reason: config.enabled === false ? 'disabled' : 'ignored_bot' };
   }
 
   let publicSent = false;
@@ -111,7 +133,7 @@ async function sendWelcome(member, options = {}) {
     }
   }
 
-  if (config.dmEnabled) {
+  if (config.dmEnabled && options.skipDm !== true) {
     try {
       await member.send(buildDiscordPayload(member, 'dmWelcome', config));
       dmSent = true;
@@ -121,13 +143,15 @@ async function sendWelcome(member, options = {}) {
     }
   }
 
-  welcomeStore.incrementAnalytics(member.guild.id, {
-    publicSent: publicSent ? 1 : 0,
-    publicFailed: publicFailed ? 1 : 0,
-    dmSent: dmSent ? 1 : 0,
-    dmFailed: dmFailed ? 1 : 0,
-    skipped: !publicSent && !dmSent && !publicFailed && !dmFailed ? 1 : 0,
-  });
+  if (!options.previewOnly) {
+    welcomeStore.incrementAnalytics(member.guild.id, {
+      publicSent: publicSent ? 1 : 0,
+      publicFailed: publicFailed ? 1 : 0,
+      dmSent: dmSent ? 1 : 0,
+      dmFailed: dmFailed ? 1 : 0,
+      skipped: !publicSent && !dmSent && !publicFailed && !dmFailed ? 1 : 0,
+    });
+  }
 
   return { publicSent, dmSent, publicFailed, dmFailed, skipped: false };
 }
@@ -141,6 +165,9 @@ async function buildHealthReport(guild) {
   const canView = Boolean(permissions?.has(PermissionFlagsBits.ViewChannel));
   const canSend = Boolean(permissions?.has(PermissionFlagsBits.SendMessages));
   const canEmbed = Boolean(permissions?.has(PermissionFlagsBits.EmbedLinks));
+  const boundTemplate = getWelcomeBinding(guild.id, 'welcome');
+  const configuredTemplate = embedTemplateManager.getTemplate(guild.id, config.templateId);
+  const activeTemplate = boundTemplate || configuredTemplate;
 
   const warnings = [
     config.enabled === false ? 'Welcome is disabled.' : null,
@@ -149,6 +176,8 @@ async function buildHealthReport(guild) {
     channel && !canView ? 'Goliath cannot view the welcome channel.' : null,
     channel && !canSend ? 'Goliath cannot send messages in the welcome channel.' : null,
     channel && !canEmbed ? 'Goliath cannot embed links in the welcome channel.' : null,
+    !activeTemplate ? `Welcome template ${config.templateId} could not be found.` : null,
+    !boundTemplate ? 'No Embed Studio template is explicitly bound to the Welcome slot; the configured fallback template will be used.' : null,
   ].filter(Boolean);
 
   return {
@@ -160,6 +189,9 @@ async function buildHealthReport(guild) {
     canView,
     canSend,
     canEmbed,
+    templateId: activeTemplate?.templateId || config.templateId,
+    templateName: activeTemplate?.name || null,
+    templateBound: Boolean(boundTemplate),
     warnings,
     healthy: warnings.length === 0,
   };
@@ -168,8 +200,10 @@ async function buildHealthReport(guild) {
 async function repairConfiguration(guild, meta = {}) {
   const config = welcomeStore.getWelcomeSection(guild.id);
   const channel = config.channelId ? await resolveWelcomeChannel(guild, config.channelId) : null;
+  const template = getWelcomeBinding(guild.id, 'welcome') || embedTemplateManager.getTemplate(guild.id, config.templateId);
   return welcomeStore.updateConfig(guild.id, {
     channelId: channel ? config.channelId : null,
+    templateId: template?.templateId || 'welcome_default',
     enabled: channel || config.dmEnabled ? config.enabled : false,
   }, { action: 'welcome_repair', ...meta });
 }
@@ -180,6 +214,7 @@ function exportConfiguration(guildId) {
     guildId,
     module: 'welcome',
     config: welcomeStore.getWelcomeSection(guildId),
+    binding: getWelcomeBinding(guildId, 'welcome'),
   };
 }
 
@@ -190,6 +225,9 @@ function resetWelcome(guildId, meta = {}) {
 module.exports = {
   formatTimestamp,
   buildTemplateVariables,
+  getWelcomeTemplates,
+  getWelcomeBinding,
+  bindWelcomeTemplate,
   buildMessageData,
   buildDiscordPayload,
   resolveWelcomeChannel,
