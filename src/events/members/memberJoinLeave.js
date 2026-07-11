@@ -1,7 +1,7 @@
 'use strict';
 
 const { EmbedBuilder, AuditLogEvent } = require('discord.js');
-const { buildPreviewEmbed, TEMPLATES } = require('../../modules/embed/functions/embedPanel');
+const { buildPreviewEmbed, TEMPLATES } = require('../../modules/embed/embedPanel');
 const embedTemplateManager = require('../../modules/embed/embedTemplateManager');
 const guildManager = require('../../core/guild/guildManager');
 const autoRoleManager = require('../../modules/autoRoles/autoRoleManager');
