@@ -15,6 +15,7 @@ const guildManager = require('../../guild/guildManager');
 
 const PANEL_COLOR = '#5865F2';
 const MODULES_PER_PAGE = 10;
+const MODULES_PER_ROW = 4;
 const CONTROLS_PER_PAGE = 3;
 
 const EXTERNAL_MODULE_ROUTES = new Set([
@@ -162,7 +163,7 @@ function buildModuleListPanel(page = 0, memberDisplayName = 'Unknown User') {
   const currentPage = Math.min(Math.max(Number(page) || 0, 0), totalPages - 1);
   const pageItems = SERVER_MODULES.slice(currentPage * MODULES_PER_PAGE, (currentPage + 1) * MODULES_PER_PAGE);
   const embed = new EmbedBuilder().setColor(PANEL_COLOR).setTitle('🧩 Goliath Modules').setDescription(`Select a module to configure.\n\nPage ${currentPage + 1}/${totalPages}`).setFooter({ text: `Requested by ${memberDisplayName}` }).setTimestamp();
-  const moduleRows = chunkArray(pageItems.map(([customId, label]) => button(customId, label, ButtonStyle.Primary)), 5).map((buttons) => row(...buttons));
+  const moduleRows = chunkArray(pageItems.map(([customId, label]) => button(customId, label, ButtonStyle.Primary)), MODULES_PER_ROW).map((buttons) => row(...buttons));
   const navButtons = [];
   if (currentPage > 0) navButtons.push(button(`admin:modules:page:${currentPage - 1}`, '⬅️ Back', ButtonStyle.Secondary));
   if (currentPage < totalPages - 1) navButtons.push(button(`admin:modules:page:${currentPage + 1}`, 'Next ➡️', ButtonStyle.Secondary));
