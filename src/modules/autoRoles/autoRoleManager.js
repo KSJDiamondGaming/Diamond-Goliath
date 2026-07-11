@@ -2,7 +2,7 @@
 
 const { PermissionFlagsBits } = require('discord.js');
 const autoRoleStore = require('./autoRoleStore');
-const { isModuleEnabled } = require('../../core/guild/guildManager');
+const guildManager = require('../../core/guild/guildManager');
 
 function canManageAutoRoles(member) {
   return Boolean(
@@ -43,13 +43,17 @@ async function validateManageableRole(guild, roleId) {
   return role;
 }
 
+function isAutoRolesEnabled(guildId) {
+  const section = autoRoleStore.getAutoRolesSection(guildId);
+  return guildManager.isModuleEnabled(guildId, 'autoRoles') && section.enabled !== false;
+}
+
 async function applyAutoRoles(member, options = {}) {
   const guild = member?.guild;
   if (!guild?.id || !member?.id) return [];
-  if (!isModuleEnabled(guild.id, 'autoRoles')) return [];
+  if (!isAutoRolesEnabled(guild.id)) return [];
 
   const section = autoRoleStore.getAutoRolesSection(guild.id);
-  if (section.enabled === false) return [];
   if (member.user?.bot && section.settings?.applyToBots !== true) return [];
   if (!canBotManageMember(member)) {
     autoRoleStore.incrementAnalytics(guild.id, { failed: 1, botsProcessed: member.user?.bot ? 1 : 0, membersProcessed: member.user?.bot ? 0 : 1 });
@@ -101,7 +105,10 @@ async function applyAutoRoles(member, options = {}) {
 }
 
 function configureAutoRoles(guildId, input = {}, meta = {}) {
-  if (!isModuleEnabled(guildId, 'autoRoles')) throw new Error('Auto Roles module is disabled for this server.');
+  if (typeof input.enabled === 'boolean') {
+    guildManager.setModuleEnabled(guildId, 'autoRoles', input.enabled, meta);
+  }
+
   return autoRoleStore.updateAutoRolesSection(guildId, (section) => ({
     ...section,
     enabled: typeof input.enabled === 'boolean' ? input.enabled : section.enabled,
@@ -113,7 +120,9 @@ function configureAutoRoles(guildId, input = {}, meta = {}) {
 }
 
 function setAutoRolesEnabled(guildId, enabled = true, meta = {}) {
-  return autoRoleStore.setEnabled(guildId, enabled, meta);
+  const nextEnabled = enabled !== false;
+  guildManager.setModuleEnabled(guildId, 'autoRoles', nextEnabled, meta);
+  return autoRoleStore.setEnabled(guildId, nextEnabled, meta);
 }
 
 async function addAutoRole(guild, roleId, options = {}, meta = {}) {
@@ -121,6 +130,14 @@ async function addAutoRole(guild, roleId, options = {}, meta = {}) {
   const role = await validateManageableRole(guild, roleId);
   const section = options.bot === true ? autoRoleStore.addBotRole(guild.id, role.id, meta) : autoRoleStore.addJoinRole(guild.id, role.id, meta);
   return { role, section };
+}
+
+function addJoinRole(guildId, roleId, meta = {}) {
+  return autoRoleStore.addJoinRole(guildId, roleId, meta);
+}
+
+function addBotRole(guildId, roleId, meta = {}) {
+  return autoRoleStore.addBotRole(guildId, roleId, meta);
 }
 
 function removeAutoRole(guildId, roleId, options = {}, meta = {}) {
@@ -138,6 +155,7 @@ function getAutoRoleAnalytics(guildId) {
 async function buildHealthReport(guild) {
   if (!guild?.id) throw new Error('Guild is required.');
   const section = autoRoleStore.getAutoRolesSection(guild.id);
+  const registryEnabled = guildManager.isModuleEnabled(guild.id, 'autoRoles');
   const botMember = getBotMember(guild);
   const roleIds = [...new Set([...(section.joinRoles || []), ...(section.botRoles || [])])];
   const roles = [];
@@ -153,7 +171,8 @@ async function buildHealthReport(guild) {
   }
 
   const warnings = [
-    section.enabled === false ? 'Auto Roles is disabled.' : null,
+    section.enabled === false ? 'Auto Roles is disabled in its module configuration.' : null,
+    registryEnabled === false ? 'Auto Roles is disabled in the central module registry.' : null,
     !botMember?.permissions?.has(PermissionFlagsBits.ManageRoles) ? 'Goliath is missing Manage Roles.' : null,
     section.joinRoles.length === 0 && (!section.settings.applyToBots || section.botRoles.length === 0) ? 'No automatic roles are configured.' : null,
     ...roles.filter((role) => !role.exists).map((role) => `Role ${role.roleId} no longer exists.`),
@@ -161,7 +180,9 @@ async function buildHealthReport(guild) {
   ].filter(Boolean);
 
   return {
-    enabled: section.enabled !== false,
+    enabled: registryEnabled && section.enabled !== false,
+    registryEnabled,
+    configEnabled: section.enabled !== false,
     hasManageRoles: Boolean(botMember?.permissions?.has(PermissionFlagsBits.ManageRoles)),
     joinRoles: section.joinRoles.length,
     botRoles: section.botRoles.length,
@@ -195,9 +216,9 @@ async function repairConfiguration(guild, meta = {}) {
 
 async function reapplyToGuild(guild, options = {}) {
   if (!guild?.members?.fetch) throw new Error('Guild members are unavailable.');
-  const section = autoRoleStore.getAutoRolesSection(guild.id);
-  if (section.enabled === false) return { processed: 0, assigned: 0, failed: 0 };
+  if (!isAutoRolesEnabled(guild.id)) return { processed: 0, assigned: 0, failed: 0 };
 
+  const section = autoRoleStore.getAutoRolesSection(guild.id);
   const members = await guild.members.fetch();
   let processed = 0;
   let assigned = 0;
@@ -223,11 +244,13 @@ function exportConfiguration(guildId) {
     exportedAt: new Date().toISOString(),
     guildId,
     module: 'autoRoles',
+    registryEnabled: guildManager.isModuleEnabled(guildId, 'autoRoles'),
     config: autoRoleStore.getAutoRolesSection(guildId),
   };
 }
 
 function resetAutoRoles(guildId, meta = {}) {
+  guildManager.setModuleEnabled(guildId, 'autoRoles', true, meta);
   return autoRoleStore.resetAutoRolesSection(guildId, meta);
 }
 
@@ -236,10 +259,13 @@ module.exports = {
   canBotManageRole,
   canBotManageMember,
   validateManageableRole,
+  isAutoRolesEnabled,
   applyAutoRoles,
   configureAutoRoles,
   setAutoRolesEnabled,
   addAutoRole,
+  addJoinRole,
+  addBotRole,
   removeAutoRole,
   setApplyToBots,
   getAutoRoleAnalytics,
