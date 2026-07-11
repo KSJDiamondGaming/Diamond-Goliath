@@ -54,9 +54,14 @@ function audit() {
   ]);
 
   checkFile('src/modules/autoRoles/autoRoleManager.js', [
+    'isAutoRolesEnabled',
     'applyAutoRoles',
     'configureAutoRoles',
     'setAutoRolesEnabled',
+    'addAutoRole',
+    'addJoinRole',
+    'addBotRole',
+    'removeAutoRole',
     'buildHealthReport',
     'repairConfiguration',
     'reapplyToGuild',
