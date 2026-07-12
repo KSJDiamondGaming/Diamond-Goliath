@@ -81,7 +81,7 @@ The panel provides:
 - DM welcome toggle
 - Member ping toggle
 - Bot filtering toggle
-- Test welcome, including while the module is disabled
+- Preview delivery, including while the module is disabled
 - Health repair
 - JSON export
 - Full reset
@@ -109,9 +109,9 @@ Endpoints:
 - `POST /reset`
 - `GET /export`
 
-## Testing
+## Preview delivery
 
-A test welcome uses the selected channel and active Embed Studio template even when Welcome is currently disabled. Test sends do not increase live delivery analytics.
+A preview welcome uses the selected channel and active Embed Studio template even when Welcome is currently disabled. Preview sends do not increase live delivery analytics.
 
 ## Startup recovery and health
 
@@ -127,10 +127,9 @@ Startup validates:
 
 Missing or unusable channels are reported through health warnings and can be cleared with the repair action.
 
-## Tests and Doctor
+## Doctor
 
 ```powershell
-npm run test:welcome
 npm run audit:welcome
 npm run doctor
 ```
