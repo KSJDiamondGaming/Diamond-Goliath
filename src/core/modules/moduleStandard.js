@@ -16,7 +16,6 @@ const REQUIRED_CAPABILITIES = Object.freeze([
   'startupRecovery',
   'export',
   'reset',
-  'tests',
   'doctor',
   'documentation',
 ]);
@@ -56,12 +55,6 @@ const MODULE_STANDARD = Object.freeze({
     'Doctor checks files and required exports.',
     'Runtime import audit loads module integration files.',
     'Module-specific health checks report missing dependencies and broken deployments.',
-  ],
-  tests: [
-    'Defaults and normalization are tested.',
-    'Core manager behaviour is tested.',
-    'Panel or payload builders are tested where relevant.',
-    'Doctor runs the module test suite.',
   ],
   completionRule: [
     'Only one module may be marked in_progress at a time.',
