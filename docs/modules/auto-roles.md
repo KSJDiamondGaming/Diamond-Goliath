@@ -107,21 +107,15 @@ Stored analytics include:
 
 The health report validates configured roles against the live Discord guild. The repair action removes missing or unmanageable role references while preserving valid configuration.
 
-## Tests and Doctor
+## Doctor
 
-Run Auto Roles tests directly:
-
-```powershell
-npm run test:auto-roles
-```
-
-Run the explicit module audit:
+Run the module audit directly:
 
 ```powershell
 npm run audit:auto-roles
 ```
 
-The full Doctor command runs both automatically:
+Run the complete project validation:
 
 ```powershell
 npm run doctor
