@@ -51,7 +51,7 @@ const { bootstrapRuntime, runBootValidation, safeLoad, printStartupFingerprint }
   printStartupFingerprint: () => null,
 }, { optional: false });
 const { initSocketHub } = safeRequire('socketHub', './src/server/sockets/socketHub', { initSocketHub: () => null }, { optional: false });
-safeRequire('backup notification wiring', './src/modules/notifications/wireBackupNotifications', { wireBackupNotifications: () => false }).wireBackupNotifications?.();
+safeRequire('backup notification wiring', './src/core/notifications/wireBackupNotifications', { wireBackupNotifications: () => false }).wireBackupNotifications?.();
 
 const authRoutes = safeRequire('auth routes', './src/server/routes/auth', emptyRouter(), { optional: false });
 const discordRoutes = safeRequire('discord routes', './src/server/routes/discord', emptyRouter(), { optional: false });
@@ -79,6 +79,7 @@ const socialRoutes = safeRequire('social routes', './src/server/routes/social', 
 const verificationRoutes = safeRequire('verification routes', './src/server/routes/verification', emptyRouter(), { optional: false });
 const autoRolesRoutes = safeRequire('auto roles routes', './src/server/routes/autoRoles', emptyRouter(), { optional: false });
 const welcomeRoutes = safeRequire('welcome routes', './src/server/routes/welcome', emptyRouter(), { optional: false });
+const goodbyeRoutes = safeRequire('goodbye routes', './src/server/routes/goodbye', emptyRouter(), { optional: false });
 const modulesRoutes = safeRequire('modules routes', './src/server/routes/modules', emptyRouter(), { optional: false });
 const automationRoutes = safeRequire('automation routes', './src/server/routes/automation', emptyRouter(), { optional: false });
 const notificationRoutes = safeRequire('notification routes', './src/server/routes/notifications', emptyRouter(), { optional: false });
@@ -164,6 +165,7 @@ app.use('/api/social', socialRoutes);
 app.use('/api/verification', verificationRoutes);
 app.use('/api/auto-roles', autoRolesRoutes);
 app.use('/api/welcome', welcomeRoutes);
+app.use('/api/goodbye', goodbyeRoutes);
 app.use('/api/modules', modulesRoutes);
 app.use('/api/automation', automationRoutes);
 app.use('/api/notifications', notificationRoutes);
@@ -251,6 +253,7 @@ client.once('clientReady', async () => {
     runStartupTask('Roles', () => require('./src/modules/roles/rolesStartup').initializeRoles(client)),
     runStartupTask('Translation', () => require('./src/modules/translation/translationStartup').startupTranslation(client)),
     runStartupTask('Verification', () => require('./src/modules/verification/verificationStartup').startupVerification(client)),
+    runStartupTask('Goodbye', () => require('./src/modules/goodbye/goodbyeStartup').startupGoodbye(client)),
     runStartupTask('Giveaways', () => require('./src/modules/giveaways/giveawayScheduler').start(client)),
   ]);
 
