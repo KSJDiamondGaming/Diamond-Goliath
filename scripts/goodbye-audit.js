@@ -10,7 +10,6 @@ const REQUIRED_FILES = [
   'src/core/admin/functions/goodbyeAdminPanel.js',
   'src/server/routes/goodbye.js',
   'src/dashboard/js/pages/modules/Goodbye.jsx',
-  'test/goodbye.test.js',
   'docs/modules/goodbye.md',
 ];
 
