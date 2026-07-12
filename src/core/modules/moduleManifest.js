@@ -50,6 +50,21 @@ const completeWelcome = createCapabilityMap({
   documentation: true,
 });
 
+const completeGoodbye = createCapabilityMap({
+  guildStorage: true,
+  runtime: true,
+  adminPanel: true,
+  dashboard: true,
+  api: true,
+  health: true,
+  startupRecovery: true,
+  export: true,
+  reset: true,
+  tests: true,
+  doctor: true,
+  documentation: true,
+});
+
 const moduleManifest = Object.freeze({
   verification: {
     key: 'verification',
@@ -71,7 +86,7 @@ const moduleManifest = Object.freeze({
   tickets: { key: 'tickets', name: 'Tickets', maturity: MODULE_MATURITY.NOT_STARTED, capabilities: createCapabilityMap() },
   translation: { key: 'translation', name: 'Translation', maturity: MODULE_MATURITY.NOT_STARTED, capabilities: createCapabilityMap() },
   welcome: { key: 'welcome', name: 'Welcome', maturity: MODULE_MATURITY.COMPLETE, capabilities: completeWelcome },
-  goodbye: { key: 'goodbye', name: 'Goodbye', maturity: MODULE_MATURITY.NOT_STARTED, capabilities: createCapabilityMap() },
+  goodbye: { key: 'goodbye', name: 'Goodbye', maturity: MODULE_MATURITY.COMPLETE, capabilities: completeGoodbye },
   automod: { key: 'automod', name: 'AutoMod', maturity: MODULE_MATURITY.NOT_STARTED, capabilities: createCapabilityMap() },
 });
 
