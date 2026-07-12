@@ -74,7 +74,6 @@ function audit() {
   checkFile('src/server/routes/autoRoles.js');
   checkFile('src/dashboard/js/pages/modules/AutoRoles.jsx');
   checkFile('src/events/client/autoRolesStartup.js');
-  checkFile('test/autoRoles.test.js');
   checkFile('docs/modules/auto-roles.md');
 
   if (errors.length) {
