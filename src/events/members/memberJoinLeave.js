@@ -1,13 +1,12 @@
 'use strict';
 
 const { EmbedBuilder, AuditLogEvent } = require('discord.js');
-const { buildPreviewEmbed, TEMPLATES } = require('../../modules/embed/embedPanel');
-const embedTemplateManager = require('../../modules/embed/embedTemplateManager');
 const guildManager = require('../../core/guild/guildManager');
 const autoRoleManager = require('../../modules/autoRoles/autoRoleManager');
 const statsManager = require('../../modules/stats/statsManager');
 const verificationManager = require('../../modules/verification/verificationManager');
 const welcomeManager = require('../../modules/welcome/welcomeManager');
+const goodbyeManager = require('../../modules/goodbye/goodbyeManager');
 
 function formatTimestamp(timestamp, style = 'R') {
   return timestamp ? `<t:${Math.floor(timestamp / 1000)}:${style}>` : 'Unknown';
@@ -38,78 +37,6 @@ function getRolesText(member, addedRoles = []) {
 function isLogEnabled(guildId, eventName) {
   if (typeof guildManager.isLogEventEnabled !== 'function') return true;
   return guildManager.isLogEventEnabled(guildId, eventName) !== false;
-}
-
-function buildLeaveVariables(member) {
-  const guild = member.guild;
-  const leftAt = formatTimestamp(Date.now(), 'F');
-  return {
-    guild: guild.name,
-    guildId: guild.id,
-    guildIcon: guild.iconURL?.({ extension: 'png', size: 256 }) || '',
-    guildBanner: guild.bannerURL?.({ extension: 'png', size: 1024 }) || '',
-    memberCount: guild.memberCount,
-    user: String(member.user),
-    userMention: `<@${member.user.id}>`,
-    username: member.user.username || member.user.tag || member.user.id,
-    userId: member.user.id,
-    userAvatar: getAvatar(member),
-    memberAvatar: getAvatar(member),
-    createdAt: formatTimestamp(member.user.createdTimestamp, 'F'),
-    joinedAt: member.joinedTimestamp ? formatTimestamp(member.joinedTimestamp, 'F') : 'Unknown',
-    leftAt,
-    timestamp: leftAt,
-  };
-}
-
-function getDefaultPresetData(guildId, type) {
-  let defaultPresetName = null;
-  if (typeof guildManager.getEmbedDefaultPreset === 'function') {
-    const value = guildManager.getEmbedDefaultPreset(guildId, type);
-    defaultPresetName = typeof value === 'string' ? value : value?.name || value?.presetName || null;
-    if (value && typeof value === 'object') return value;
-  }
-  if (!defaultPresetName && typeof guildManager.getEmbedDefaults === 'function') {
-    defaultPresetName = guildManager.getEmbedDefaults(guildId)?.[type] || null;
-  }
-  return defaultPresetName && typeof guildManager.getEmbedPreset === 'function'
-    ? guildManager.getEmbedPreset(guildId, defaultPresetName)
-    : null;
-}
-
-async function sendPublicLeaveEmbed(member) {
-  try {
-    const guild = member.guild;
-    const section = guildManager.getGuildSection(guild.id, 'leave', null)
-      || guildManager.getGuildSection(guild.id, 'leaveSettings', null)
-      || {};
-    const rendered = embedTemplateManager.renderBinding(
-      guild.id,
-      'welcome',
-      'leave',
-      buildLeaveVariables(member),
-      section.templateId || 'leave_default'
-    );
-    const messageData = {
-      ...(TEMPLATES.leave || {}),
-      ...section,
-      ...(getDefaultPresetData(guild.id, 'leave') || {}),
-      ...(rendered?.embed || {}),
-      content: rendered?.content || section.content || section.message || '',
-    };
-    const channelId = messageData.channelId || section.channelId || null;
-    if (!channelId) return;
-    const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
-    if (!channel?.isTextBased?.()) return;
-    const fakeInteraction = { guild, guildId: guild.id, user: member.user, member };
-    await channel.send({
-      content: messageData.content || '',
-      embeds: [buildPreviewEmbed(messageData, fakeInteraction)],
-      allowedMentions: { parse: [], repliedUser: false },
-    });
-  } catch (error) {
-    console.error('[joinLeave] Failed to send public leave embed:', error);
-  }
 }
 
 const REMOVAL_TYPES = {
@@ -257,7 +184,9 @@ module.exports = [
     async execute(member) {
       await statsManager.handleGuildMemberRemove(member);
       const removal = await detectRemoval(member);
-      await sendPublicLeaveEmbed(member);
+      await goodbyeManager.sendGoodbye(member).catch((error) => {
+        console.error('[Goodbye] Failed to process member leave:', error);
+      });
       await sendAdminMemberRemovalLog(member, removal);
     },
   },
