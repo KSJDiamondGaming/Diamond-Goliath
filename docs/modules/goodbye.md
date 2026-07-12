@@ -4,7 +4,7 @@ Goodbye sends a configurable public farewell message when a member leaves a Disc
 
 ## Architecture
 
-Embed Studio owns the Discord-facing message design. The Goodbye module owns automatic delivery, channel selection, enable state, testing, health, analytics, repair, export and reset.
+Embed Studio owns the Discord-facing message design. The Goodbye module owns automatic delivery, channel selection, enable state, preview delivery, health, analytics, repair, export and reset.
 
 Configuration is stored through GuildManager under:
 
@@ -54,7 +54,7 @@ The panel provides:
 - Goodbye channel selector
 - Embed Studio template selector
 - Bot filtering
-- Test Goodbye while disabled
+- Preview Goodbye while disabled
 - Health repair
 - JSON export
 - Full reset
@@ -96,10 +96,9 @@ Endpoints:
 
 Startup validates the configured channel, Goliath's permission to view and send messages, Embed Links permission and the active Embed Studio template binding.
 
-## Tests and Doctor
+## Doctor
 
 ```powershell
-npm run test:goodbye
 npm run audit:goodbye
 npm run doctor
 ```
