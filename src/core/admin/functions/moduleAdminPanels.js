@@ -21,6 +21,7 @@ const CONTROLS_PER_PAGE = 3;
 const EXTERNAL_MODULE_ROUTES = new Set([
   'admin:autoRoles',
   'admin:embed',
+  'admin:goodbye',
   'admin:stats',
 ]);
 
@@ -30,6 +31,7 @@ const SERVER_MODULES = [
   ['admin:forms', '📝 Forms', 'Forms', 'Forms, submissions, review and response storage.'],
   ['admin:fun', '🎮 Fun', 'Fun', 'Fun commands and optional community extras.'],
   ['admin:giveaways', '🎉 Giveaways', 'Giveaways', 'Giveaway creation, entries, winners and rerolls.'],
+  ['admin:goodbye', '👋 Goodbye', 'Goodbye', 'Public farewell messages and Embed Studio templates.'],
   ['admin:leveling', '🏆 Leveling', 'Leveling', 'XP, levels, leaderboards and level roles.'],
   ['admin:polls', '📊 Polls', 'Polls', 'Poll creation, voting and results.'],
   ['admin:reactionRoles', '😊 Reaction Roles', 'Reaction Roles', 'Reaction role panels, emoji mappings and deployments.'],
