@@ -1,5 +1,5 @@
-param(
-    [Parameter(Mandatory=$true)]
+﻿param(
+    [Parameter(Mandatory = $true)]
     [ValidateSet("dev", "beta", "production")]
     [string]$TargetEnv,
 
@@ -13,59 +13,123 @@ $ErrorActionPreference = "Stop"
 
 function Run-Step {
     param(
-        [Parameter(Mandatory=$true)]
+        [Parameter(Mandatory = $true)]
         [string]$Label,
-        [Parameter(Mandatory=$true)]
+
+        [Parameter(Mandatory = $true)]
         [scriptblock]$Command
     )
 
     Write-Host ""
-    Write-Host "▶ $Label"
+    Write-Host ">> $Label"
+
     & $Command
 
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "❌ Failed: $Label"
+        Write-Host "FAILED: $Label"
         exit $LASTEXITCODE
     }
 }
 
 Write-Host "========================================"
-Write-Host "🚀 Goliath Git Helper"
-Write-Host "📦 Target: $TargetEnv"
-Write-Host "🧪 Dry run: $DryRun"
+Write-Host "Goliath Git Helper"
+Write-Host "Target: $TargetEnv"
+Write-Host "Dry run: $DryRun"
 Write-Host "========================================"
 
-Run-Step "Switch branch" { git checkout $TargetEnv }
+Run-Step "Check for unfinished Git operations" {
+    git status
+}
+
+if (
+    (Test-Path ".git\rebase-merge") -or
+    (Test-Path ".git\rebase-apply") -or
+    (Test-Path ".git\MERGE_HEAD")
+) {
+    Write-Host ""
+    Write-Host "FAILED: A merge or rebase is already in progress."
+    Write-Host "Finish or abort it before running this helper."
+    exit 1
+}
+
+Run-Step "Fetch remote branches" {
+    git fetch origin
+}
+
+Run-Step "Switch to $TargetEnv" {
+    git switch $TargetEnv
+}
+
+$changes = @(git status --porcelain)
+
+if ($changes.Count -gt 0) {
+    Write-Host ""
+    Write-Host "Changed files:"
+
+    $changes | ForEach-Object {
+        Write-Host "  $_"
+    }
+
+    if ($DryRun) {
+        Write-Host ""
+        Write-Host "Dry run complete."
+        Write-Host "Local changes would be committed before pulling and pushing."
+        exit 0
+    }
+
+    Run-Step "Stage local changes" {
+        git add -A
+    }
+
+    $commitMessage = $Message.Trim()
+
+    if (-not $commitMessage) {
+        $commitMessage = "chore($TargetEnv): sync local changes"
+    }
+
+    Run-Step "Commit local changes" {
+        git commit -m $commitMessage
+    }
+}
+else {
+    Write-Host ""
+    Write-Host "No uncommitted local changes."
+}
 
 if (-not $SkipPull) {
-    Run-Step "Pull latest $TargetEnv" { git pull origin $TargetEnv }
+    Run-Step "Rebase onto origin/$TargetEnv" {
+        git pull --rebase origin $TargetEnv
+    }
 }
 
-$changesBeforeStage = git status --porcelain
-if (-not $changesBeforeStage) {
-    Write-Host "✅ No local changes to push."
-    exit 0
+$localSha = git rev-parse HEAD
+$remoteSha = git rev-parse "origin/$TargetEnv"
+
+if ($localSha -ne $remoteSha) {
+    Run-Step "Push $TargetEnv" {
+        git push origin $TargetEnv
+    }
 }
-
-Write-Host ""
-Write-Host "Changed files:"
-$changesBeforeStage | ForEach-Object { Write-Host "  $_" }
-
-if ($DryRun) {
+else {
     Write-Host ""
-    Write-Host "🧪 Dry run complete. No files staged, committed, or pushed."
-    exit 0
+    Write-Host "GitHub is already up to date."
 }
 
-Run-Step "Stage changes" { git add -A }
-
-$commitMessage = $Message.Trim()
-if (-not $commitMessage) {
-    $commitMessage = "chore($TargetEnv): sync local changes"
+Run-Step "Refresh remote state" {
+    git fetch origin
 }
 
-Run-Step "Commit changes" { git commit -m $commitMessage }
-Run-Step "Push $TargetEnv" { git push origin $TargetEnv }
+$finalLocalSha = git rev-parse HEAD
+$finalRemoteSha = git rev-parse "origin/$TargetEnv"
+
+if ($finalLocalSha -ne $finalRemoteSha) {
+    Write-Host ""
+    Write-Host "FAILED: Local and GitHub commits do not match."
+    Write-Host "Local:  $finalLocalSha"
+    Write-Host "Remote: $finalRemoteSha"
+    exit 1
+}
 
 Write-Host ""
-Write-Host "✅ SUCCESS: $TargetEnv updated"
+Write-Host "SUCCESS: Local $TargetEnv and GitHub $TargetEnv are synchronized."
+Write-Host "Commit: $finalLocalSha"
