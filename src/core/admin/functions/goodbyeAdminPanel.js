@@ -5,14 +5,13 @@ const {
   ChannelSelectMenuBuilder, StringSelectMenuBuilder, ChannelType, AttachmentBuilder,
 } = require('discord.js');
 
-const goodbyeStore = require('../../../modules/goodbye/goodbyeStore');
-const goodbyeManager = require('../../../modules/goodbye/goodbyeManager');
+const goodbye = require('../../../modules/goodbye');
 
 const row = (...components) => new ActionRowBuilder().addComponents(...components);
 const button = (customId, label, style = ButtonStyle.Secondary) => new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style);
 
 function templateMenu(guildId, activeTemplateId) {
-  const templates = goodbyeManager.getGoodbyeTemplates(guildId).slice(0, 25);
+  const templates = goodbye.getGoodbyeTemplates(guildId).slice(0, 25);
   const menu = new StringSelectMenuBuilder()
     .setCustomId('admin:goodbye:template')
     .setPlaceholder(templates.length ? 'Choose the Embed Studio goodbye template' : 'No goodbye templates available')
@@ -28,10 +27,10 @@ function templateMenu(guildId, activeTemplateId) {
 }
 
 async function buildGoodbyeAdminPanel(guild, memberDisplayName = 'Unknown User') {
-  const config = goodbyeStore.getGoodbyeSection(guild.id);
-  const health = await goodbyeManager.buildHealthReport(guild);
+  const config = goodbye.getGoodbyeSection(guild.id);
+  const health = await goodbye.buildHealthReport(guild);
   const analytics = config.analytics || {};
-  const binding = goodbyeManager.getGoodbyeBinding(guild.id);
+  const binding = goodbye.getGoodbyeBinding(guild.id);
   const activeTemplateId = binding?.templateId || config.templateId;
   const activeTemplateName = binding?.name || health.templateName || activeTemplateId;
   const embed = new EmbedBuilder()
@@ -78,37 +77,37 @@ async function handleGoodbyeAdminInteraction(interaction) {
   try {
     if (customId === 'admin:goodbye') return updatePanel(interaction);
     if (interaction.isChannelSelectMenu?.() && customId === 'admin:goodbye:channel') {
-      goodbyeStore.updateConfig(interaction.guild.id, { channelId: interaction.values?.[0] || null }, { actorId: interaction.user.id });
+      goodbye.updateConfig(interaction.guild.id, { channelId: interaction.values?.[0] || null }, { actorId: interaction.user.id });
       return updatePanel(interaction);
     }
     if (interaction.isStringSelectMenu?.() && customId === 'admin:goodbye:template') {
       const templateId = interaction.values?.[0];
       if (!templateId || templateId === 'none') throw new Error('Choose a valid Embed Studio template.');
-      goodbyeManager.bindGoodbyeTemplate(interaction.guild.id, templateId, { actorId: interaction.user.id });
+      goodbye.bindGoodbyeTemplate(interaction.guild.id, templateId, { actorId: interaction.user.id });
       return updatePanel(interaction);
     }
-    const config = goodbyeStore.getGoodbyeSection(interaction.guild.id);
-    if (customId === 'admin:goodbye:enable') goodbyeStore.updateConfig(interaction.guild.id, { enabled: true }, { actorId: interaction.user.id });
-    if (customId === 'admin:goodbye:disable') goodbyeStore.updateConfig(interaction.guild.id, { enabled: false }, { actorId: interaction.user.id });
-    if (customId === 'admin:goodbye:toggleBots') goodbyeStore.updateConfig(interaction.guild.id, { ignoreBots: !config.ignoreBots }, { actorId: interaction.user.id });
+    const config = goodbye.getGoodbyeSection(interaction.guild.id);
+    if (customId === 'admin:goodbye:enable') goodbye.updateConfig(interaction.guild.id, { enabled: true }, { actorId: interaction.user.id });
+    if (customId === 'admin:goodbye:disable') goodbye.updateConfig(interaction.guild.id, { enabled: false }, { actorId: interaction.user.id });
+    if (customId === 'admin:goodbye:toggleBots') goodbye.updateConfig(interaction.guild.id, { ignoreBots: !config.ignoreBots }, { actorId: interaction.user.id });
     if (customId === 'admin:goodbye:test') {
       await interaction.deferUpdate();
       if (!config.channelId) throw new Error('Select a goodbye channel before testing.');
-      await goodbyeManager.sendGoodbye(interaction.member, { silent: false, force: true, previewOnly: true });
+      await goodbye.sendGoodbye(interaction.member, { silent: false, force: true, previewOnly: true });
       return updatePanel(interaction);
     }
     if (customId === 'admin:goodbye:repair') {
       await interaction.deferUpdate();
-      await goodbyeManager.repairConfiguration(interaction.guild, { actorId: interaction.user.id });
+      await goodbye.repairConfiguration(interaction.guild, { actorId: interaction.user.id });
       return updatePanel(interaction);
     }
     if (customId === 'admin:goodbye:reset') {
       await interaction.deferUpdate();
-      goodbyeManager.resetGoodbye(interaction.guild.id, { actorId: interaction.user.id });
+      goodbye.resetGoodbye(interaction.guild.id, { actorId: interaction.user.id });
       return updatePanel(interaction);
     }
     if (customId === 'admin:goodbye:export') {
-      const attachment = new AttachmentBuilder(Buffer.from(JSON.stringify(goodbyeManager.exportConfiguration(interaction.guild.id), null, 2), 'utf8'), { name: `goliath-goodbye-${interaction.guild.id}.json` });
+      const attachment = new AttachmentBuilder(Buffer.from(JSON.stringify(goodbye.exportConfiguration(interaction.guild.id), null, 2), 'utf8'), { name: `goliath-goodbye-${interaction.guild.id}.json` });
       await interaction.reply({ content: '📤 Goodbye configuration export.', files: [attachment], ephemeral: true });
       return true;
     }
