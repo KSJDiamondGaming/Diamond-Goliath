@@ -9,8 +9,7 @@ const {
   AttachmentBuilder,
 } = require('discord.js');
 
-const autoRoleStore = require('../../../modules/autoRoles/autoRoleStore');
-const autoRoleManager = require('../../../modules/autoRoles/autoRoleManager');
+const autoRoles = require('../../../modules/autoroles');
 
 function row(...components) {
   return new ActionRowBuilder().addComponents(...components);
@@ -25,8 +24,8 @@ function formatRoles(ids = []) {
 }
 
 async function buildAutoRolesAdminPanel(guild, memberDisplayName = 'Unknown User') {
-  const config = autoRoleStore.getAutoRolesSection(guild.id);
-  const health = await autoRoleManager.buildHealthReport(guild);
+  const config = autoRoles.getAutoRolesSection(guild.id);
+  const health = await autoRoles.buildHealthReport(guild);
 
   const embed = new EmbedBuilder()
     .setColor(health.healthy ? 0x57f287 : 0xfaa61a)
@@ -81,40 +80,40 @@ async function handleAutoRolesAdminInteraction(interaction) {
     if (customId === 'admin:autoRoles') return updatePanel(interaction);
 
     if (interaction.isRoleSelectMenu?.()) {
-      const roleIds = autoRoleStore.cleanRoleIds(interaction.values || []);
-      if (customId === 'admin:autoRoles:joinRoles') autoRoleStore.setJoinRoles(interaction.guild.id, roleIds, { actorId: interaction.user.id });
-      if (customId === 'admin:autoRoles:botRoles') autoRoleStore.setBotRoles(interaction.guild.id, roleIds, { actorId: interaction.user.id });
+      const roleIds = autoRoles.cleanRoleIds(interaction.values || []);
+      if (customId === 'admin:autoRoles:joinRoles') autoRoles.setJoinRoles(interaction.guild.id, roleIds, { actorId: interaction.user.id });
+      if (customId === 'admin:autoRoles:botRoles') autoRoles.setBotRoles(interaction.guild.id, roleIds, { actorId: interaction.user.id });
       return updatePanel(interaction);
     }
 
-    if (customId === 'admin:autoRoles:enable') autoRoleManager.setAutoRolesEnabled(interaction.guild.id, true, { actorId: interaction.user.id });
-    if (customId === 'admin:autoRoles:disable') autoRoleManager.setAutoRolesEnabled(interaction.guild.id, false, { actorId: interaction.user.id });
+    if (customId === 'admin:autoRoles:enable') autoRoles.setAutoRolesEnabled(interaction.guild.id, true, { actorId: interaction.user.id });
+    if (customId === 'admin:autoRoles:disable') autoRoles.setAutoRolesEnabled(interaction.guild.id, false, { actorId: interaction.user.id });
     if (customId === 'admin:autoRoles:toggleBots') {
-      const config = autoRoleStore.getAutoRolesSection(interaction.guild.id);
-      autoRoleStore.updateSettings(interaction.guild.id, { applyToBots: !config.settings.applyToBots }, { actorId: interaction.user.id });
+      const config = autoRoles.getAutoRolesSection(interaction.guild.id);
+      autoRoles.updateSettings(interaction.guild.id, { applyToBots: !config.settings.applyToBots }, { actorId: interaction.user.id });
     }
     if (customId === 'admin:autoRoles:toggleReapply') {
-      const config = autoRoleStore.getAutoRolesSection(interaction.guild.id);
-      autoRoleStore.updateSettings(interaction.guild.id, { reapplyOnStartup: !config.settings.reapplyOnStartup }, { actorId: interaction.user.id });
+      const config = autoRoles.getAutoRolesSection(interaction.guild.id);
+      autoRoles.updateSettings(interaction.guild.id, { reapplyOnStartup: !config.settings.reapplyOnStartup }, { actorId: interaction.user.id });
     }
     if (customId === 'admin:autoRoles:repair') {
       await interaction.deferUpdate();
-      await autoRoleManager.repairConfiguration(interaction.guild, { actorId: interaction.user.id });
+      await autoRoles.repairConfiguration(interaction.guild, { actorId: interaction.user.id });
       return updatePanel(interaction);
     }
     if (customId === 'admin:autoRoles:reapply') {
       await interaction.deferUpdate();
-      await autoRoleManager.reapplyToGuild(interaction.guild, { reason: `Manual reapply by ${interaction.user.tag}` });
+      await autoRoles.reapplyToGuild(interaction.guild, { reason: `Manual reapply by ${interaction.user.tag}` });
       return updatePanel(interaction);
     }
     if (customId === 'admin:autoRoles:reset') {
       await interaction.deferUpdate();
-      autoRoleManager.resetAutoRoles(interaction.guild.id, { actorId: interaction.user.id });
+      autoRoles.resetAutoRoles(interaction.guild.id, { actorId: interaction.user.id });
       return updatePanel(interaction);
     }
     if (customId === 'admin:autoRoles:export') {
       const attachment = new AttachmentBuilder(
-        Buffer.from(JSON.stringify(autoRoleManager.exportConfiguration(interaction.guild.id), null, 2), 'utf8'),
+        Buffer.from(JSON.stringify(autoRoles.exportConfiguration(interaction.guild.id), null, 2), 'utf8'),
         { name: `goliath-auto-roles-${interaction.guild.id}.json` }
       );
       await interaction.reply({ content: '📤 Auto Roles configuration export.', files: [attachment], ephemeral: true });
