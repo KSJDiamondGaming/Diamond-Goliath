@@ -1,8 +1,7 @@
 'use strict';
 
 const express = require('express');
-const welcomeStore = require('../../modules/welcome/welcomeStore');
-const welcomeManager = require('../../modules/welcome/welcomeManager');
+const welcome = require('../../modules/welcome');
 
 const router = express.Router();
 
@@ -36,11 +35,11 @@ async function getGuild(req, guildId) {
 }
 
 async function buildOverview(req, guildId) {
-  const config = welcomeStore.getWelcomeSection(guildId);
+  const config = welcome.getWelcomeSection(guildId);
   const guild = await getGuild(req, guildId);
-  const health = guild ? await welcomeManager.buildHealthReport(guild) : null;
-  const templates = welcomeManager.getWelcomeTemplates(guildId, 'welcome');
-  const binding = welcomeManager.getWelcomeBinding(guildId, 'welcome');
+  const health = guild ? await welcome.buildHealthReport(guild) : null;
+  const templates = welcome.getWelcomeTemplates(guildId, 'welcome');
+  const binding = welcome.getWelcomeBinding(guildId, 'welcome');
   return {
     guildId,
     config,
@@ -73,11 +72,11 @@ router.put('/:guildId/config', async (req, res) => {
     const patch = req.body || {};
     let config;
     if (patch.templateId) {
-      config = welcomeManager.bindWelcomeTemplate(guildId, patch.templateId, 'welcome', { actorId: getActorId(req) }).config;
+      config = welcome.bindWelcomeTemplate(guildId, patch.templateId, 'welcome', { actorId: getActorId(req) }).config;
       const { templateId, ...rest } = patch;
-      if (Object.keys(rest).length) config = welcomeStore.updateConfig(guildId, rest, { actorId: getActorId(req) });
+      if (Object.keys(rest).length) config = welcome.updateConfig(guildId, rest, { actorId: getActorId(req) });
     } else {
-      config = welcomeStore.updateConfig(guildId, patch, { actorId: getActorId(req) });
+      config = welcome.updateConfig(guildId, patch, { actorId: getActorId(req) });
     }
     return success(res, { config, ...(await buildOverview(req, guildId)) });
   } catch (error) {
@@ -88,7 +87,7 @@ router.put('/:guildId/config', async (req, res) => {
 router.patch('/:guildId/enabled', async (req, res) => {
   try {
     const guildId = getGuildId(req);
-    welcomeStore.updateConfig(guildId, { enabled: req.body?.enabled === true }, { actorId: getActorId(req) });
+    welcome.updateConfig(guildId, { enabled: req.body?.enabled === true }, { actorId: getActorId(req) });
     return success(res, await buildOverview(req, guildId));
   } catch (error) {
     return failure(res, error, 400);
@@ -100,7 +99,7 @@ router.post('/:guildId/template', async (req, res) => {
     const guildId = getGuildId(req);
     const templateId = String(req.body?.templateId || '').trim();
     if (!templateId) throw new Error('A template ID is required.');
-    const result = welcomeManager.bindWelcomeTemplate(guildId, templateId, 'welcome', { actorId: getActorId(req) });
+    const result = welcome.bindWelcomeTemplate(guildId, templateId, 'welcome', { actorId: getActorId(req) });
     return success(res, { ...result, ...(await buildOverview(req, guildId)) });
   } catch (error) {
     return failure(res, error, 400);
@@ -112,7 +111,7 @@ router.post('/:guildId/repair', async (req, res) => {
     const guildId = getGuildId(req);
     const guild = await getGuild(req, guildId);
     if (!guild) throw new Error('Guild is unavailable.');
-    const config = await welcomeManager.repairConfiguration(guild, { actorId: getActorId(req) });
+    const config = await welcome.repairConfiguration(guild, { actorId: getActorId(req) });
     return success(res, { config, ...(await buildOverview(req, guildId)) });
   } catch (error) {
     return failure(res, error, 400);
@@ -125,12 +124,12 @@ router.post('/:guildId/test', async (req, res) => {
     const guild = await getGuild(req, guildId);
     if (!guild) throw new Error('Guild is unavailable.');
     const userId = String(req.body?.userId || getActorId(req) || '').trim();
-    if (!/^\d{15,25}$/.test(userId)) throw new Error('A valid test user ID is required.');
+    if (!/^\d{15,25}$/.test(userId)) throw new Error('A valid preview user ID is required.');
     const member = guild.members.cache.get(userId) || await guild.members.fetch(userId).catch(() => null);
-    if (!member) throw new Error('Test member could not be found in this server.');
-    const config = welcomeStore.getWelcomeSection(guildId);
-    if (!config.channelId && !config.dmEnabled) throw new Error('Select a welcome channel or enable welcome DMs before testing.');
-    const result = await welcomeManager.sendWelcome(member, { silent: false, force: true, previewOnly: true });
+    if (!member) throw new Error('Preview member could not be found in this server.');
+    const config = welcome.getWelcomeSection(guildId);
+    if (!config.channelId && !config.dmEnabled) throw new Error('Select a welcome channel or enable welcome DMs before previewing.');
+    const result = await welcome.sendWelcome(member, { silent: false, force: true, previewOnly: true });
     return success(res, { result, ...(await buildOverview(req, guildId)) });
   } catch (error) {
     return failure(res, error, 400);
@@ -140,7 +139,7 @@ router.post('/:guildId/test', async (req, res) => {
 router.post('/:guildId/reset', async (req, res) => {
   try {
     const guildId = getGuildId(req);
-    welcomeManager.resetWelcome(guildId, { actorId: getActorId(req) });
+    welcome.resetWelcome(guildId, { actorId: getActorId(req) });
     return success(res, await buildOverview(req, guildId));
   } catch (error) {
     return failure(res, error, 400);
@@ -152,7 +151,7 @@ router.get('/:guildId/export', (req, res) => {
     const guildId = getGuildId(req);
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="goliath-welcome-${guildId}.json"`);
-    return res.send(JSON.stringify(welcomeManager.exportConfiguration(guildId), null, 2));
+    return res.send(JSON.stringify(welcome.exportConfiguration(guildId), null, 2));
   } catch (error) {
     return failure(res, error, 400);
   }
