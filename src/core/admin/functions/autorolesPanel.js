@@ -131,6 +131,6 @@ async function handleAutorolesInteraction(interaction) {
 module.exports = {
   buildAutorolesPanel,
   handleAutorolesInteraction,
-  buildAutoRolesAdminPanel: buildAutorolesPanel,
-  handleAutoRolesAdminInteraction: handleAutorolesInteraction,
+  buildAutoRolesPanel: buildAutorolesPanel,
+  handleAutoRolesInteraction: handleAutorolesInteraction,
 };
