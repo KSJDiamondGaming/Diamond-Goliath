@@ -1,8 +1,7 @@
 'use strict';
 
 const express = require('express');
-const autoRoleStore = require('../../modules/autoRoles/autoRoleStore');
-const autoRoleManager = require('../../modules/autoRoles/autoRoleManager');
+const autoroles = require('../../modules/autoroles');
 const { validateRoleSelection, isGoliathPermissionError } = require('../../core/security/goliathPermissionGuard');
 
 const router = express.Router();
@@ -40,16 +39,16 @@ async function getGuild(req, guildId) {
 }
 
 async function validateRoles(guild, roleIds, scope) {
-  const ids = autoRoleStore.cleanRoleIds(roleIds || []);
+  const ids = autoroles.cleanRoleIds(roleIds || []);
   if (!ids.length) return;
   const result = await validateRoleSelection(guild, ids, { scope, requireManageable: true });
   if (!result.ok) throw result.toError();
 }
 
 async function buildOverview(req, guildId) {
-  const config = autoRoleStore.getAutoRolesSection(guildId);
+  const config = autoroles.getAutoRolesSection(guildId);
   const guild = await getGuild(req, guildId);
-  const health = guild ? await autoRoleManager.buildHealthReport(guild) : null;
+  const health = guild ? await autoroles.buildHealthReport(guild) : null;
   return {
     guildId,
     config,
@@ -79,7 +78,7 @@ router.put('/:guildId/config', async (req, res) => {
     const guild = await getGuild(req, guildId);
     if (!guild) throw new Error('Guild is unavailable.');
     await validateRoles(guild, [...(req.body?.joinRoles || []), ...(req.body?.botRoles || [])], 'auto_roles.config');
-    const config = autoRoleManager.configureAutoRoles(guildId, req.body || {}, { actorId: getActorId(req) });
+    const config = autoroles.configureAutoRoles(guildId, req.body || {}, { actorId: getActorId(req) });
     return success(res, { config, ...(await buildOverview(req, guildId)) });
   } catch (error) {
     return failure(res, error, 400);
@@ -89,7 +88,7 @@ router.put('/:guildId/config', async (req, res) => {
 router.patch('/:guildId/enabled', async (req, res) => {
   try {
     const guildId = getGuildId(req);
-    autoRoleManager.setAutoRolesEnabled(guildId, req.body?.enabled === true, { actorId: getActorId(req) });
+    autoroles.setAutoRolesEnabled(guildId, req.body?.enabled === true, { actorId: getActorId(req) });
     return success(res, await buildOverview(req, guildId));
   } catch (error) {
     return failure(res, error, 400);
@@ -99,7 +98,7 @@ router.patch('/:guildId/enabled', async (req, res) => {
 router.patch('/:guildId/settings', async (req, res) => {
   try {
     const guildId = getGuildId(req);
-    autoRoleStore.updateSettings(guildId, req.body?.settings || req.body || {}, { actorId: getActorId(req) });
+    autoroles.updateSettings(guildId, req.body?.settings || req.body || {}, { actorId: getActorId(req) });
     return success(res, await buildOverview(req, guildId));
   } catch (error) {
     return failure(res, error, 400);
@@ -112,7 +111,7 @@ router.put('/:guildId/roles/join', async (req, res) => {
     const guild = await getGuild(req, guildId);
     if (!guild) throw new Error('Guild is unavailable.');
     await validateRoles(guild, req.body?.roleIds || [], 'auto_roles.join_roles');
-    autoRoleStore.setJoinRoles(guildId, req.body?.roleIds || [], { actorId: getActorId(req) });
+    autoroles.setJoinRoles(guildId, req.body?.roleIds || [], { actorId: getActorId(req) });
     return success(res, await buildOverview(req, guildId));
   } catch (error) {
     return failure(res, error, 400);
@@ -125,7 +124,7 @@ router.put('/:guildId/roles/bots', async (req, res) => {
     const guild = await getGuild(req, guildId);
     if (!guild) throw new Error('Guild is unavailable.');
     await validateRoles(guild, req.body?.roleIds || [], 'auto_roles.bot_roles');
-    autoRoleStore.setBotRoles(guildId, req.body?.roleIds || [], { actorId: getActorId(req) });
+    autoroles.setBotRoles(guildId, req.body?.roleIds || [], { actorId: getActorId(req) });
     return success(res, await buildOverview(req, guildId));
   } catch (error) {
     return failure(res, error, 400);
@@ -137,7 +136,7 @@ router.post('/:guildId/repair', async (req, res) => {
     const guildId = getGuildId(req);
     const guild = await getGuild(req, guildId);
     if (!guild) throw new Error('Guild is unavailable.');
-    const config = await autoRoleManager.repairConfiguration(guild, { actorId: getActorId(req) });
+    const config = await autoroles.repairConfiguration(guild, { actorId: getActorId(req) });
     return success(res, { config, ...(await buildOverview(req, guildId)) });
   } catch (error) {
     return failure(res, error, 400);
@@ -149,7 +148,7 @@ router.post('/:guildId/reapply', async (req, res) => {
     const guildId = getGuildId(req);
     const guild = await getGuild(req, guildId);
     if (!guild) throw new Error('Guild is unavailable.');
-    const result = await autoRoleManager.reapplyToGuild(guild, { reason: `Dashboard reapply by ${getActorId(req) || 'unknown user'}` });
+    const result = await autoroles.reapplyToGuild(guild, { reason: `Dashboard reapply by ${getActorId(req) || 'unknown user'}` });
     return success(res, { result, ...(await buildOverview(req, guildId)) });
   } catch (error) {
     return failure(res, error, 400);
@@ -159,7 +158,7 @@ router.post('/:guildId/reapply', async (req, res) => {
 router.post('/:guildId/reset', async (req, res) => {
   try {
     const guildId = getGuildId(req);
-    autoRoleManager.resetAutoRoles(guildId, { actorId: getActorId(req) });
+    autoroles.resetAutoRoles(guildId, { actorId: getActorId(req) });
     return success(res, await buildOverview(req, guildId));
   } catch (error) {
     return failure(res, error, 400);
@@ -171,7 +170,7 @@ router.get('/:guildId/export', (req, res) => {
     const guildId = getGuildId(req);
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="goliath-auto-roles-${guildId}.json"`);
-    return res.send(JSON.stringify(autoRoleManager.exportConfiguration(guildId), null, 2));
+    return res.send(JSON.stringify(autoroles.exportConfiguration(guildId), null, 2));
   } catch (error) {
     return failure(res, error, 400);
   }
