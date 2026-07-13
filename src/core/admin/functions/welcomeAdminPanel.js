@@ -11,8 +11,18 @@ const {
   AttachmentBuilder,
 } = require('discord.js');
 
-const welcomeStore = require('../../../modules/welcome/welcomeStore');
-const welcomeManager = require('../../../modules/welcome/welcomeManager');
+const welcome = require('../../../modules/welcome');
+const moduleAdminPanels = require('./moduleAdminPanels');
+
+if (!moduleAdminPanels.SERVER_MODULES.some(([route]) => route === 'admin:welcome')) {
+  moduleAdminPanels.SERVER_MODULES.push([
+    'admin:welcome',
+    '👋 Welcome',
+    'Welcome',
+    'Public welcome messages, optional DMs and Embed Studio templates.',
+  ]);
+  moduleAdminPanels.SERVER_MODULES.sort((a, b) => a[2].localeCompare(b[2]));
+}
 
 function row(...components) {
   return new ActionRowBuilder().addComponents(...components);
@@ -23,7 +33,7 @@ function button(customId, label, style = ButtonStyle.Secondary) {
 }
 
 function templateMenu(guildId, activeTemplateId) {
-  const templates = welcomeManager.getWelcomeTemplates(guildId, 'welcome').slice(0, 25);
+  const templates = welcome.getWelcomeTemplates(guildId, 'welcome').slice(0, 25);
   const menu = new StringSelectMenuBuilder()
     .setCustomId('admin:welcome:template')
     .setPlaceholder(templates.length ? 'Choose the Embed Studio welcome template' : 'No welcome templates available')
@@ -45,10 +55,10 @@ function templateMenu(guildId, activeTemplateId) {
 }
 
 async function buildWelcomeAdminPanel(guild, memberDisplayName = 'Unknown User') {
-  const config = welcomeStore.getWelcomeSection(guild.id);
-  const health = await welcomeManager.buildHealthReport(guild);
+  const config = welcome.getWelcomeSection(guild.id);
+  const health = await welcome.buildHealthReport(guild);
   const analytics = config.analytics || {};
-  const binding = welcomeManager.getWelcomeBinding(guild.id, 'welcome');
+  const binding = welcome.getWelcomeBinding(guild.id, 'welcome');
   const activeTemplateId = binding?.templateId || config.templateId;
   const activeTemplateName = binding?.name || health.templateName || activeTemplateId;
 
@@ -113,47 +123,47 @@ async function handleWelcomeAdminInteraction(interaction) {
 
     if (interaction.isChannelSelectMenu?.() && customId === 'admin:welcome:channel') {
       const channelId = interaction.values?.[0] || null;
-      welcomeStore.updateConfig(interaction.guild.id, { channelId }, { actorId: interaction.user.id });
+      welcome.updateConfig(interaction.guild.id, { channelId }, { actorId: interaction.user.id });
       return updatePanel(interaction);
     }
 
     if (interaction.isStringSelectMenu?.() && customId === 'admin:welcome:template') {
       const templateId = interaction.values?.[0];
       if (!templateId || templateId === 'none') throw new Error('Choose a valid Embed Studio template.');
-      welcomeManager.bindWelcomeTemplate(interaction.guild.id, templateId, 'welcome', { actorId: interaction.user.id });
+      welcome.bindWelcomeTemplate(interaction.guild.id, templateId, 'welcome', { actorId: interaction.user.id });
       return updatePanel(interaction);
     }
 
-    const config = welcomeStore.getWelcomeSection(interaction.guild.id);
-    if (customId === 'admin:welcome:enable') welcomeStore.updateConfig(interaction.guild.id, { enabled: true }, { actorId: interaction.user.id });
-    if (customId === 'admin:welcome:disable') welcomeStore.updateConfig(interaction.guild.id, { enabled: false }, { actorId: interaction.user.id });
-    if (customId === 'admin:welcome:toggleDm') welcomeStore.updateConfig(interaction.guild.id, { dmEnabled: !config.dmEnabled }, { actorId: interaction.user.id });
-    if (customId === 'admin:welcome:togglePing') welcomeStore.updateConfig(interaction.guild.id, { allowUserPing: !config.allowUserPing }, { actorId: interaction.user.id });
-    if (customId === 'admin:welcome:toggleBots') welcomeStore.updateConfig(interaction.guild.id, { ignoreBots: !config.ignoreBots }, { actorId: interaction.user.id });
+    const config = welcome.getWelcomeSection(interaction.guild.id);
+    if (customId === 'admin:welcome:enable') welcome.updateConfig(interaction.guild.id, { enabled: true }, { actorId: interaction.user.id });
+    if (customId === 'admin:welcome:disable') welcome.updateConfig(interaction.guild.id, { enabled: false }, { actorId: interaction.user.id });
+    if (customId === 'admin:welcome:toggleDm') welcome.updateConfig(interaction.guild.id, { dmEnabled: !config.dmEnabled }, { actorId: interaction.user.id });
+    if (customId === 'admin:welcome:togglePing') welcome.updateConfig(interaction.guild.id, { allowUserPing: !config.allowUserPing }, { actorId: interaction.user.id });
+    if (customId === 'admin:welcome:toggleBots') welcome.updateConfig(interaction.guild.id, { ignoreBots: !config.ignoreBots }, { actorId: interaction.user.id });
 
     if (customId === 'admin:welcome:test') {
       await interaction.deferUpdate();
-      const current = welcomeStore.getWelcomeSection(interaction.guild.id);
+      const current = welcome.getWelcomeSection(interaction.guild.id);
       if (!current.channelId && !current.dmEnabled) throw new Error('Select a welcome channel or enable welcome DMs before testing.');
-      await welcomeManager.sendWelcome(interaction.member, { silent: false, force: true, previewOnly: true });
+      await welcome.sendWelcome(interaction.member, { silent: false, force: true, previewOnly: true });
       return updatePanel(interaction);
     }
 
     if (customId === 'admin:welcome:repair') {
       await interaction.deferUpdate();
-      await welcomeManager.repairConfiguration(interaction.guild, { actorId: interaction.user.id });
+      await welcome.repairConfiguration(interaction.guild, { actorId: interaction.user.id });
       return updatePanel(interaction);
     }
 
     if (customId === 'admin:welcome:reset') {
       await interaction.deferUpdate();
-      welcomeManager.resetWelcome(interaction.guild.id, { actorId: interaction.user.id });
+      welcome.resetWelcome(interaction.guild.id, { actorId: interaction.user.id });
       return updatePanel(interaction);
     }
 
     if (customId === 'admin:welcome:export') {
       const attachment = new AttachmentBuilder(
-        Buffer.from(JSON.stringify(welcomeManager.exportConfiguration(interaction.guild.id), null, 2), 'utf8'),
+        Buffer.from(JSON.stringify(welcome.exportConfiguration(interaction.guild.id), null, 2), 'utf8'),
         { name: `goliath-welcome-${interaction.guild.id}.json` }
       );
       await interaction.reply({ content: '📤 Welcome configuration export.', files: [attachment], ephemeral: true });
