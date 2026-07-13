@@ -12,7 +12,7 @@ function optionalRequire(label, modulePath, fallback = {}) {
   }
 }
 
-const verificationManager = optionalRequire('verification manager', '../../modules/verification/verificationManager');
+const verificationManager = optionalRequire('verification manager', '../../modules/verification');
 const ticketInteractionHandler = optionalRequire('tickets', '../../modules/tickets/ticketInteractionHandler');
 const roleInteractionHandler = optionalRequire('roles', '../../modules/roles/roleInteractionHandler');
 const pollsManager = optionalRequire('polls', '../../modules/polls/pollsManager');
@@ -34,8 +34,8 @@ const starboardAdminPanel = optionalRequire('starboard admin', '../../core/admin
 const stickyAdminPanel = optionalRequire('sticky admin', '../../core/admin/functions/stickyAdminPanel');
 const levelingAdminPanel = optionalRequire('leveling admin', '../../core/admin/functions/levelingAdminPanel');
 const socialAdminPanel = optionalRequire('social admin', '../../core/admin/functions/socialAdminPanel');
-const verificationAdminPanel = optionalRequire('verification admin', '../../core/admin/functions/verificationAdminPanel');
-const autorolesPanel = optionalRequire('auto roles', '../../core/admin/functions/autorolesPanel');
+const verificationAdminPanel = optionalRequire('verification admin', '../../modules/verificationPanel');
+const autorolesPanel = optionalRequire('auto roles', '../../modules/autorolesPanel');
 const welcomePanel = optionalRequire('welcome', '../../core/admin/functions/welcomePanel');
 const goodbyePanel = optionalRequire('goodbye', '../../core/admin/functions/goodbyePanel');
 const moduleAdminPanels = optionalRequire('generic module admin', '../../core/admin/functions/moduleAdminPanels');
