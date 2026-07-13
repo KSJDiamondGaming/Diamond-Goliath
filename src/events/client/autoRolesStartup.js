@@ -1,7 +1,7 @@
 'use strict';
 
 const { Events } = require('discord.js');
-const { startupAutoRoles } = require('../../modules/autoRoles/autoRoleStartup');
+const { startupAutoRoles } = require('../../modules/autoroles');
 
 module.exports = {
   name: Events.ClientReady,
