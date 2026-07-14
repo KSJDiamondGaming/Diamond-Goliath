@@ -178,16 +178,6 @@ async function show(interaction, payload) {
   return interaction.reply({ ...payload, ephemeral: true });
 }
 
-async function deleteOwnedDeploymentMessage(guild, panel) {
-  const channel = guild.channels.cache.get(panel.channelId) || await guild.channels.fetch(panel.channelId).catch(() => null);
-  if (!channel?.messages?.fetch) throw new Error('The deployment channel is inaccessible.');
-  const message = await channel.messages.fetch(panel.messageId).catch(() => null);
-  if (!message) throw new Error('The deployed message no longer exists.');
-  if (message.author?.id !== guild.members.me?.id) throw new Error('Goliath can only delete messages it created.');
-  await message.delete();
-  reactionRoles.removePanel(guild.id, panel.panelId, guild);
-}
-
 async function handleReactionRolesAdminInteraction(interaction) {
   const id = String(interaction.customId || '');
   if (!id.startsWith('admin:reactionRoles')) return false;
@@ -290,10 +280,7 @@ async function handleReactionRolesAdminInteraction(interaction) {
     }
     if (id.startsWith('admin:reactionRoles:remove:delete:')) {
       await interaction.deferUpdate();
-      const panel = reactionRoles.getPanel(guild.id, id.split(':').pop());
-      if (!panel) throw new Error('That panel no longer exists.');
-      if (panel.source !== reactionRoles.DRAFT_TYPES.TEMPLATE) throw new Error('Attached existing messages cannot be deleted through Reaction Roles.');
-      await deleteOwnedDeploymentMessage(guild, panel);
+      await reactionRoles.deleteDeploymentMessage(guild, id.split(':').pop(), guild);
       return interaction.editReply(await buildReactionRolesAdminPanel(guild, displayName(interaction)));
     }
 
