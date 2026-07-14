@@ -156,9 +156,14 @@ async function buildWelcomePanel(guild, memberDisplayName = 'Unknown User') {
   const binding = welcome.getWelcomeBinding(guild.id, 'welcome');
   const activeTemplateId = binding?.templateId || config.templateId;
   const activeTemplateName = binding?.name || health.templateName || activeTemplateId;
+  const assignmentStatus = binding ? 'Assigned ✅' : 'Using configured default ✅';
+  const templateSource = binding ? 'Assigned Embed Studio template' : 'Configured default template';
+  const actionableWarnings = health.warnings.filter(
+    (warning) => !warning.startsWith('No Embed Studio template is explicitly bound')
+  );
 
   const embed = new EmbedBuilder()
-    .setColor(health.healthy ? 0x57f287 : 0xfaa61a)
+    .setColor(actionableWarnings.length ? 0xfaa61a : 0x57f287)
     .setTitle('👋 Welcome · Setup')
     .setDescription([
       `**Status:** ${config.enabled ? 'Enabled ✅' : 'Disabled ❌'}`,
@@ -166,12 +171,18 @@ async function buildWelcomePanel(guild, memberDisplayName = 'Unknown User') {
       `**Welcome DM:** ${config.dmEnabled ? 'Enabled ✅' : 'Disabled ❌'}`,
       `**Ping New Member:** ${config.allowUserPing ? 'Yes ✅' : 'No ❌'}`,
       `**Ignore Bots:** ${config.ignoreBots ? 'Yes ✅' : 'No ❌'}`,
-      `**Active Template:** ${activeTemplateName ? `\`${activeTemplateName}\`` : '`Not set`'}`,
-      `**Embed Studio Binding:** ${binding ? 'Bound ✅' : 'Fallback only ⚠️'}`,
+      '',
+      '**📨 Current Welcome Message**',
+      `**Name:** ${activeTemplateName ? `\`${activeTemplateName}\`` : '`Not set`'}`,
+      `**Template ID:** ${activeTemplateId ? `\`${activeTemplateId}\`` : '`Not set`'}`,
+      `**Assignment:** ${assignmentStatus}`,
+      `**Source:** ${templateSource}`,
       '',
       `Public sent: \`${analytics.publicSent || 0}\` | DMs sent: \`${analytics.dmSent || 0}\` | Failed: \`${(analytics.publicFailed || 0) + (analytics.dmFailed || 0)}\``,
       '',
-      health.warnings.length ? `**Warnings**\n${health.warnings.map((warning) => `• ${warning}`).join('\n')}` : '**Health:** Healthy ✅',
+      actionableWarnings.length
+        ? `**Warnings**\n${actionableWarnings.map((warning) => `• ${warning}`).join('\n')}`
+        : '**Health:** Healthy ✅',
     ].join('\n').slice(0, 4096))
     .setFooter({ text: `Requested by ${memberDisplayName}` })
     .setTimestamp();
