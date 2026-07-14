@@ -1,6 +1,15 @@
-' strict';
+'use strict';
 
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder } = require('discord.js');
+const {
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  AttachmentBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+} = require('discord.js');
 const reactionRoles = require('./reactionRoles');
 
 const row = (...components) => new ActionRowBuilder().addComponents(...components);
@@ -23,7 +32,8 @@ async function buildReactionRolesAdminPanel(guild, memberDisplayName = 'Unknown 
       `**Health:** ${health.healthy ? 'Healthy ✅' : `${unhealthy} message(s) need attention ⚠️`}`,
       `**Assigned:** \`${config.analytics.assigned || 0}\` | **Removed:** \`${config.analytics.removed || 0}\` | **Failed:** \`${config.analytics.failed || 0}\``,
       '',
-      'Use the Goliath dashboard to attach Reaction Roles to any existing message or embed by pasting its Discord message link or entering its channel and message ID.',
+      '**Attach to any existing Discord message or embed**',
+      'Paste the message link, emoji and role ID. Goliath will leave the message content untouched and add only the configured reaction-role function.',
       '',
       panels.length
         ? panels.slice(0, 8).map((panel) => `• **${panel.name}** — <#${panel.channelId}> · \`${panel.messageId}\` · ${panel.mappings.length} mapping(s)`).join('\n')
@@ -36,14 +46,55 @@ async function buildReactionRolesAdminPanel(guild, memberDisplayName = 'Unknown 
     embeds: [embed],
     components: [
       row(
+        button('admin:reactionRoles:attach', '➕ Attach Existing', ButtonStyle.Success),
         button(config.enabled !== false ? 'admin:reactionRoles:disable' : 'admin:reactionRoles:enable', config.enabled !== false ? '⏸️ Disable' : '▶️ Enable', config.enabled !== false ? ButtonStyle.Secondary : ButtonStyle.Success),
         button('admin:reactionRoles:repair', '🩺 Repair', ButtonStyle.Primary),
-        button('admin:reactionRoles:export', '📤 Export'),
+        button('admin:reactionRoles:export', '📤 Export')
+      ),
+      row(
         button('admin:reactionRoles:reset', '♻️ Reset', ButtonStyle.Danger),
         button('admin:modules', '⬅️ Modules')
       ),
     ],
   };
+}
+
+function buildAttachModal() {
+  return new ModalBuilder()
+    .setCustomId('admin:reactionRoles:attach:submit')
+    .setTitle('Attach Reaction Role')
+    .addComponents(
+      row(new TextInputBuilder()
+        .setCustomId('messageReference')
+        .setLabel('Discord message link')
+        .setPlaceholder('https://discord.com/channels/server/channel/message')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)),
+      row(new TextInputBuilder()
+        .setCustomId('emoji')
+        .setLabel('Emoji')
+        .setPlaceholder('🔴 or <:name:emoji_id>')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)),
+      row(new TextInputBuilder()
+        .setCustomId('roleId')
+        .setLabel('Role ID')
+        .setPlaceholder('1524863391003578520')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)),
+      row(new TextInputBuilder()
+        .setCustomId('mode')
+        .setLabel('Mode: toggle, add, or remove')
+        .setValue('toggle')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)),
+      row(new TextInputBuilder()
+        .setCustomId('name')
+        .setLabel('Tracking name')
+        .setPlaceholder('Community role selector')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(false))
+    );
 }
 
 async function updatePanel(interaction) {
@@ -52,11 +103,47 @@ async function updatePanel(interaction) {
   return interaction.update(payload);
 }
 
+async function handleAttachSubmit(interaction) {
+  await interaction.deferReply({ ephemeral: true });
+  const messageReference = interaction.fields.getTextInputValue('messageReference');
+  const emoji = interaction.fields.getTextInputValue('emoji');
+  const roleId = interaction.fields.getTextInputValue('roleId');
+  const requestedMode = interaction.fields.getTextInputValue('mode').toLowerCase().trim();
+  const name = interaction.fields.getTextInputValue('name') || 'Reaction Roles';
+  const mode = Object.values(reactionRoles.MODES).includes(requestedMode) ? requestedMode : reactionRoles.MODES.TOGGLE;
+
+  const panel = await reactionRoles.attachExistingMessage({
+    guild: interaction.guild,
+    messageReference,
+    name,
+    mappings: [{
+      emoji,
+      roleId,
+      mode,
+      removeOnUnreact: mode === reactionRoles.MODES.TOGGLE,
+      enabled: true,
+    }],
+    createdBy: interaction.user.id,
+  });
+
+  await interaction.editReply({
+    content: `✅ Reaction Role attached to <#${panel.channelId}> message \`${panel.messageId}\`. The original message content was not changed.`,
+  });
+  return true;
+}
+
 async function handleReactionRolesAdminInteraction(interaction) {
   const customId = String(interaction.customId || '');
   if (!customId.startsWith('admin:reactionRoles')) return false;
   try {
+    if (interaction.isModalSubmit?.() && customId === 'admin:reactionRoles:attach:submit') {
+      return handleAttachSubmit(interaction);
+    }
     if (customId === 'admin:reactionRoles') return updatePanel(interaction);
+    if (customId === 'admin:reactionRoles:attach') {
+      await interaction.showModal(buildAttachModal());
+      return true;
+    }
     if (customId === 'admin:reactionRoles:enable') reactionRoles.setEnabled(interaction.guild.id, true, interaction.guild);
     if (customId === 'admin:reactionRoles:disable') reactionRoles.setEnabled(interaction.guild.id, false, interaction.guild);
     if (customId === 'admin:reactionRoles:repair') {
@@ -70,7 +157,10 @@ async function handleReactionRolesAdminInteraction(interaction) {
       return updatePanel(interaction);
     }
     if (customId === 'admin:reactionRoles:export') {
-      const attachment = new AttachmentBuilder(Buffer.from(JSON.stringify(reactionRoles.exportConfiguration(interaction.guild.id), null, 2), 'utf8'), { name: `goliath-reaction-roles-${interaction.guild.id}.json` });
+      const attachment = new AttachmentBuilder(
+        Buffer.from(JSON.stringify(reactionRoles.exportConfiguration(interaction.guild.id), null, 2), 'utf8'),
+        { name: `goliath-reaction-roles-${interaction.guild.id}.json` }
+      );
       await interaction.reply({ content: '📤 Reaction Roles configuration export.', files: [attachment], ephemeral: true });
       return true;
     }
@@ -83,4 +173,7 @@ async function handleReactionRolesAdminInteraction(interaction) {
   }
 }
 
-module.exports = { buildReactionRolesAdminPanel, handleReactionRolesAdminInteraction };
+module.exports = {
+  buildReactionRolesAdminPanel,
+  handleReactionRolesAdminInteraction,
+};
