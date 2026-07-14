@@ -36,8 +36,8 @@ const levelingAdminPanel = optionalRequire('leveling admin', '../../core/admin/f
 const socialAdminPanel = optionalRequire('social admin', '../../core/admin/functions/socialAdminPanel');
 const verificationAdminPanel = optionalRequire('verification admin', '../../modules/verification/verificationPanel');
 const autorolesPanel = optionalRequire('auto roles', '../../modules/autoroles/autorolesPanel');
-const welcomePanel = optionalRequire('welcome', '../../core/admin/functions/welcomePanel');
-const goodbyePanel = optionalRequire('goodbye', '../../core/admin/functions/goodbyePanel');
+const welcomePanel = optionalRequire('welcome', '../../modules/welcome/welcomePanel');
+const goodbyePanel = optionalRequire('goodbye', '../../modules/goodbye/goodbyePanel');
 const moduleAdminPanels = optionalRequire('generic module admin', '../../core/admin/functions/moduleAdminPanels');
 
 async function callHandler(target, method, ...args) {

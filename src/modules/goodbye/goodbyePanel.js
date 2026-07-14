@@ -10,8 +10,8 @@ const {
   ChannelType,
   AttachmentBuilder,
 } = require('discord.js');
-const goodbye = require('../../../modules/goodbye/goodbye');
-const embedTemplateManager = require('../../../modules/embed/embedTemplateManager');
+const goodbye = require('./goodbye');
+const embedTemplateManager = require('../embed/embedTemplateManager');
 
 const row = (...components) => new ActionRowBuilder().addComponents(...components);
 const button = (customId, label, style = ButtonStyle.Secondary) => new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style);

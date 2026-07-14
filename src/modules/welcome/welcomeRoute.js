@@ -1,7 +1,7 @@
 'use strict';
 
 const express = require('express');
-const welcome = require('../../modules/welcome/welcome');
+const welcome = require('./welcome');
 
 const router = express.Router();
 

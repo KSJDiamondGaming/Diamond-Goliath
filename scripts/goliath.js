@@ -111,8 +111,8 @@ const MODULE_REGISTRY = [
     name: 'Welcome',
     files: [
       ['src/modules/welcome/welcome.js', ['sendWelcome', 'buildHealthReport', 'startupWelcome']],
-      ['src/core/admin/functions/welcomePanel.js', ['buildWelcomePanel', 'handleWelcomeInteraction']],
-      ['src/server/routes/welcome.js'],
+      ['src/modules/welcome/welcomePanel.js', ['buildWelcomePanel', 'handleWelcomeInteraction']],
+      ['src/modules/welcome/welcomeRoute.js'],
       ['src/dashboard/js/pages/modules/Welcome.jsx'],
       ['docs/modules/welcome.md'],
     ],
@@ -121,8 +121,8 @@ const MODULE_REGISTRY = [
     name: 'Goodbye',
     files: [
       ['src/modules/goodbye/goodbye.js', ['sendGoodbye', 'buildHealthReport', 'startupGoodbye']],
-      ['src/core/admin/functions/goodbyePanel.js', ['buildGoodbyePanel', 'handleGoodbyeInteraction']],
-      ['src/server/routes/goodbye.js'],
+      ['src/modules/goodbye/goodbyePanel.js', ['buildGoodbyePanel', 'handleGoodbyeInteraction']],
+      ['src/modules/goodbye/goodbyeRoute.js'],
       ['src/dashboard/js/pages/modules/Goodbye.jsx'],
       ['docs/modules/goodbye.md'],
     ],
