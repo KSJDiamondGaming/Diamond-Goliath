@@ -20,20 +20,30 @@ const guildFrom = async (req, guildId) => {
   return guild;
 };
 const actorId = (req) => String(req.session?.user?.id || req.body?.actorId || '').trim() || null;
+const panelFrom = (guildId, panelId) => {
+  const panel = reactionRoles.getPanel(guildId, panelId);
+  if (!panel) {
+    const error = new Error('Reaction-role panel not found.');
+    error.status = 404;
+    throw error;
+  }
+  return panel;
+};
+const respondFailure = (res, error) => failure(res, error, error.status || 400);
 
 router.get('/:guildId/overview', async (req, res) => {
   try {
     const guildId = guildIdFrom(req);
     const guild = await guildFrom(req, guildId);
     return success(res, { config: reactionRoles.getSection(guildId), health: await reactionRoles.buildHealth(guild) });
-  } catch (error) { return failure(res, error); }
+  } catch (error) { return respondFailure(res, error); }
 });
 
 router.patch('/:guildId/enabled', (req, res) => {
   try {
     const guildId = guildIdFrom(req);
     return success(res, { config: reactionRoles.setEnabled(guildId, req.body?.enabled === true, { actorId: actorId(req) }) });
-  } catch (error) { return failure(res, error); }
+  } catch (error) { return respondFailure(res, error); }
 });
 
 router.post('/:guildId/attach', async (req, res) => {
@@ -45,31 +55,85 @@ router.post('/:guildId/attach', async (req, res) => {
       messageReference: req.body?.messageReference || req.body?.messageId,
       channelId: req.body?.channelId,
       name: req.body?.name,
+      templateId: req.body?.templateId || null,
+      applyTemplate: req.body?.applyTemplate === true,
       mappings: req.body?.mappings || [],
       createdBy: actorId(req),
     });
     return success(res, { panel, config: reactionRoles.getSection(guildId) });
-  } catch (error) { return failure(res, error); }
+  } catch (error) { return respondFailure(res, error); }
+});
+
+router.post('/:guildId/deploy', async (req, res) => {
+  try {
+    const guildId = guildIdFrom(req);
+    const guild = await guildFrom(req, guildId);
+    const panel = await reactionRoles.createFromTemplate({
+      guild,
+      channelId: req.body?.channelId,
+      templateId: req.body?.templateId,
+      name: req.body?.name,
+      mappings: req.body?.mappings || [],
+      createdBy: actorId(req),
+    });
+    return success(res, { panel, config: reactionRoles.getSection(guildId) });
+  } catch (error) { return respondFailure(res, error); }
 });
 
 router.put('/:guildId/panels/:panelId', async (req, res) => {
   try {
     const guildId = guildIdFrom(req);
     const guild = await guildFrom(req, guildId);
+    panelFrom(guildId, req.params.panelId);
     const panel = await reactionRoles.updatePanelMappings(guild, req.params.panelId, req.body?.mappings || [], actorId(req));
     return success(res, { panel, config: reactionRoles.getSection(guildId) });
-  } catch (error) { return failure(res, error); }
+  } catch (error) { return respondFailure(res, error); }
+});
+
+router.patch('/:guildId/panels/:panelId/enabled', (req, res) => {
+  try {
+    const guildId = guildIdFrom(req);
+    const current = panelFrom(guildId, req.params.panelId);
+    const panel = reactionRoles.savePanel(guildId, {
+      ...current,
+      enabled: req.body?.enabled === true,
+      status: req.body?.enabled === true ? 'pending' : 'disabled',
+      lastError: null,
+    }, { actorId: actorId(req) });
+    return success(res, { panel, config: reactionRoles.getSection(guildId) });
+  } catch (error) { return respondFailure(res, error); }
+});
+
+router.put('/:guildId/panels/:panelId/template', async (req, res) => {
+  try {
+    const guildId = guildIdFrom(req);
+    const guild = await guildFrom(req, guildId);
+    panelFrom(guildId, req.params.panelId);
+    const panel = await reactionRoles.applyTemplateToPanel(guild, req.params.panelId, req.body?.templateId);
+    return success(res, { panel, config: reactionRoles.getSection(guildId) });
+  } catch (error) { return respondFailure(res, error); }
+});
+
+router.post('/:guildId/panels/:panelId/redeploy', async (req, res) => {
+  try {
+    const guildId = guildIdFrom(req);
+    const guild = await guildFrom(req, guildId);
+    const current = panelFrom(guildId, req.params.panelId);
+    if (!current.templateId) throw new Error('This deployment is not linked to an Embed Studio template.');
+    await reactionRoles.applyTemplateToPanel(guild, current.panelId, current.templateId);
+    const result = await reactionRoles.syncPanelReactions(guild, reactionRoles.getPanel(guildId, current.panelId));
+    return success(res, { panel: result.panel, config: reactionRoles.getSection(guildId) });
+  } catch (error) { return respondFailure(res, error); }
 });
 
 router.post('/:guildId/panels/:panelId/repair', async (req, res) => {
   try {
     const guildId = guildIdFrom(req);
     const guild = await guildFrom(req, guildId);
-    const panel = reactionRoles.getPanel(guildId, req.params.panelId);
-    if (!panel) throw new Error('Reaction-role panel not found.');
+    const panel = panelFrom(guildId, req.params.panelId);
     const result = await reactionRoles.syncPanelReactions(guild, panel);
     return success(res, { panel: result.panel, config: reactionRoles.getSection(guildId) });
-  } catch (error) { return failure(res, error); }
+  } catch (error) { return respondFailure(res, error); }
 });
 
 router.post('/:guildId/repair', async (req, res) => {
@@ -77,23 +141,24 @@ router.post('/:guildId/repair', async (req, res) => {
     const guildId = guildIdFrom(req);
     const guild = await guildFrom(req, guildId);
     return success(res, { result: await reactionRoles.repairAll(guild), config: reactionRoles.getSection(guildId) });
-  } catch (error) { return failure(res, error); }
+  } catch (error) { return respondFailure(res, error); }
 });
 
 router.delete('/:guildId/panels/:panelId', async (req, res) => {
   try {
     const guildId = guildIdFrom(req);
     const guild = await guildFrom(req, guildId);
+    panelFrom(guildId, req.params.panelId);
     const result = await reactionRoles.detachPanel(guild, req.params.panelId, { clearReactions: req.query.clearReactions === 'true' || req.body?.clearReactions === true });
     return success(res, { result, config: reactionRoles.getSection(guildId) });
-  } catch (error) { return failure(res, error); }
+  } catch (error) { return respondFailure(res, error); }
 });
 
 router.post('/:guildId/reset', (req, res) => {
   try {
     const guildId = guildIdFrom(req);
     return success(res, { config: reactionRoles.reset(guildId, { actorId: actorId(req) }) });
-  } catch (error) { return failure(res, error); }
+  } catch (error) { return respondFailure(res, error); }
 });
 
 router.get('/:guildId/export', (req, res) => {
@@ -102,7 +167,7 @@ router.get('/:guildId/export', (req, res) => {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="goliath-reaction-roles-${guildId}.json"`);
     return res.send(JSON.stringify(reactionRoles.exportConfiguration(guildId), null, 2));
-  } catch (error) { return failure(res, error); }
+  } catch (error) { return respondFailure(res, error); }
 });
 
 module.exports = router;
