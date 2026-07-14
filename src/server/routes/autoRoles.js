@@ -1,3 +1,3 @@
 'use strict';
 
-module.exports = require('../../modules/autorolesRoute');
+module.exports = require('../../modules/autoroles/autorolesRoute');
