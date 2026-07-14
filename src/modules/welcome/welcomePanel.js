@@ -13,9 +13,7 @@ const {
 const welcome = require('./welcome');
 const { buildPreviewEmbeds } = require('../embed/embedPanel');
 const embedTemplateManager = require('../embed/embedTemplateManager');
-const guildManager = require('../../core/guild/guildManager');
 
-const PRESET_PREFIX = 'preset:';
 const selections = new Map();
 
 function row(...components) {
@@ -26,116 +24,85 @@ function button(customId, label, style = ButtonStyle.Secondary) {
   return new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style);
 }
 
-function selectionKey(interactionOrGuild) {
+function selectionKey(interactionOrGuild, userId = 'panel') {
   const guildId = interactionOrGuild?.guild?.id || interactionOrGuild?.id;
-  const userId = interactionOrGuild?.user?.id || 'panel';
-  return `${guildId}:${userId}`;
+  const resolvedUserId = interactionOrGuild?.user?.id || userId;
+  return `${guildId}:${resolvedUserId}`;
 }
 
-function presetTemplateId(name) {
-  return `embed_preset_${embedTemplateManager.cleanKey(name)}`;
+function templateTypeLabel(template = {}) {
+  const type = String(template.templateType || template.module || 'global');
+  return type === 'global' ? 'General' : type.replace(/([a-z])([A-Z])/g, '$1 $2');
 }
 
-function getPreset(guildId, name) {
-  return typeof guildManager.getEmbedPreset === 'function'
-    ? guildManager.getEmbedPreset(guildId, name)
-    : null;
-}
-
-function getWelcomeOptions(guildId) {
-  const presets = typeof guildManager.getEmbedPresets === 'function'
-    ? guildManager.getEmbedPresets(guildId) || {}
-    : {};
-
-  const options = Object.entries(presets)
-    .filter(([, preset]) => preset?.template === 'welcome')
-    .map(([name, preset]) => ({
-      label: String(preset.name || name).slice(0, 100),
-      description: String(preset.title || preset.panels?.[0]?.title || 'Saved welcome message').slice(0, 100),
-      value: `${PRESET_PREFIX}${name}`,
-      activeTemplateId: presetTemplateId(name),
+function getTemplateOptions(guildId) {
+  return Object.values(embedTemplateManager.listTemplates(guildId))
+    .filter(Boolean)
+    .sort((a, b) => {
+      const aWelcome = a.templateType === 'welcome' || a.module === 'welcome' ? 0 : 1;
+      const bWelcome = b.templateType === 'welcome' || b.module === 'welcome' ? 0 : 1;
+      return aWelcome - bWelcome || String(a.name || a.templateId).localeCompare(String(b.name || b.templateId));
+    })
+    .slice(0, 25)
+    .map((template) => ({
+      label: String(template.name || template.templateId).slice(0, 100),
+      description: `${templateTypeLabel(template)} · ${template.embed?.title || template.panels?.[0]?.title || 'Embed Studio template'}`.slice(0, 100),
+      value: String(template.templateId),
     }));
-
-  return options.sort((a, b) => a.label.localeCompare(b.label)).slice(0, 25);
 }
 
-function selectedValue(guild, activeTemplateId, userId = 'panel') {
-  const staged = selections.get(`${guild.id}:${userId}`);
-  if (staged) return staged;
-  const option = getWelcomeOptions(guild.id).find((item) => item.activeTemplateId === activeTemplateId);
-  return option?.value || null;
+function selectedTemplateId(guild, activeTemplateId, userId = 'panel') {
+  return selections.get(`${guild.id}:${userId}`) || activeTemplateId || null;
 }
 
 function templateMenu(guild, activeTemplateId, userId) {
-  const options = getWelcomeOptions(guild.id);
-  const selected = selectedValue(guild, activeTemplateId, userId);
+  const options = getTemplateOptions(guild.id);
+  const selected = selectedTemplateId(guild, activeTemplateId, userId);
   const menu = new StringSelectMenuBuilder()
     .setCustomId('admin:welcome:template')
-    .setPlaceholder(options.length ? 'Choose a welcome message' : 'No welcome messages available')
+    .setPlaceholder(options.length ? 'Choose an Embed Studio template' : 'No templates available')
     .setMinValues(1)
     .setMaxValues(1)
     .setDisabled(options.length === 0);
 
   if (options.length) {
     menu.addOptions(options.map((option) => ({
-      label: option.label,
-      description: option.description,
-      value: option.value,
+      ...option,
       default: option.value === selected,
     })));
   } else {
-    menu.addOptions({ label: 'No welcome messages found', value: 'none' });
+    menu.addOptions({ label: 'No templates found', value: 'none' });
   }
 
   return menu;
 }
 
-function presetToTemplate(name, preset = {}) {
-  const panel = Array.isArray(preset.panels) && preset.panels.length ? preset.panels[0] : preset;
+function templatePreviewState(template = {}) {
+  const panels = Array.isArray(template.panels) && template.panels.length
+    ? template.panels
+    : [{
+      title: template.embed?.title || '',
+      description: template.embed?.description || '',
+      color: template.embed?.color || '#5865F2',
+      authorName: template.embed?.author?.name || '',
+      authorIcon: template.embed?.author?.iconURL || '',
+      authorUrl: template.embed?.author?.url || '',
+      thumbnail: template.embed?.thumbnailURL || '',
+      image: template.embed?.imageURL || '',
+      footer: template.embed?.footer?.text || '',
+      footerIcon: template.embed?.footer?.iconURL || '',
+      fields: Array.isArray(template.embed?.fields) ? template.embed.fields : [],
+    }];
+
   return {
-    templateId: presetTemplateId(name),
-    name: String(preset.name || name).slice(0, 100),
-    module: 'welcome',
-    templateType: 'welcome',
-    content: String(preset.content || preset.message || '').slice(0, 2000),
-    embed: {
-      title: panel.title || '',
-      description: panel.description || '',
-      color: panel.color || '#5865F2',
-      author: {
-        name: panel.authorName || panel.author?.name || '',
-        iconURL: panel.authorIcon || panel.author?.iconURL || '',
-        url: panel.authorUrl || panel.author?.url || '',
-      },
-      thumbnailURL: panel.thumbnail || panel.thumbnailURL || '',
-      imageURL: panel.image || panel.imageURL || '',
-      footer: {
-        text: typeof panel.footer === 'string' ? panel.footer : panel.footer?.text || '',
-        iconURL: panel.footerIcon || panel.footer?.iconURL || '',
-      },
-      fields: Array.isArray(panel.fields) ? panel.fields : [],
-      buttons: Array.isArray(preset.buttons) ? preset.buttons : [],
-    },
-    sourcePresetName: name,
-    sourcePreset: preset,
-    tags: ['embed-preset', 'welcome'],
+    ...template,
+    panels,
+    selectedPanelIndex: 0,
+    buttons: Array.isArray(template.buttons) ? template.buttons : (template.embed?.buttons || []),
+    showTimestamp: template.showTimestamp !== false,
+    fieldLayout: template.fieldLayout || 'auto',
+    allowUserPing: false,
   };
-}
-
-function assignPreset(guildId, name, preset, actorId) {
-  const template = embedTemplateManager.saveTemplate(guildId, presetToTemplate(name, preset));
-  welcome.bindWelcomeTemplate(guildId, template.templateId, 'welcome', { actorId });
-  welcome.updateConfig(guildId, {
-    templateId: template.templateId,
-    presetName: name,
-  }, { action: 'welcome_preset_assign', actorId });
-  return template;
-}
-
-function activePreset(config, binding, guildId) {
-  const name = config.presetName || binding?.sourcePresetName;
-  const preset = name ? getPreset(guildId, name) : null;
-  return preset ? { name, preset } : null;
 }
 
 async function buildWelcomePanel(guild, memberDisplayName = 'Unknown User', userId = 'panel') {
@@ -143,11 +110,10 @@ async function buildWelcomePanel(guild, memberDisplayName = 'Unknown User', user
   const health = await welcome.buildHealthReport(guild);
   const analytics = config.analytics || {};
   const binding = welcome.getWelcomeBinding(guild.id, 'welcome');
-  const assignedPreset = activePreset(config, binding, guild.id);
-  const activeTemplateId = assignedPreset ? presetTemplateId(assignedPreset.name) : (binding?.templateId || config.templateId);
-  const activeName = assignedPreset?.preset?.name || assignedPreset?.name || binding?.name || health.templateName || activeTemplateId;
-  const staged = selections.get(`${guild.id}:${userId}`);
-  const stagedName = staged?.startsWith(PRESET_PREFIX) ? staged.slice(PRESET_PREFIX.length) : null;
+  const activeTemplateId = binding?.templateId || config.templateId;
+  const activeTemplate = binding || embedTemplateManager.getTemplate(guild.id, activeTemplateId);
+  const stagedTemplateId = selections.get(`${guild.id}:${userId}`);
+  const stagedTemplate = stagedTemplateId ? embedTemplateManager.getTemplate(guild.id, stagedTemplateId) : null;
   const warnings = health.warnings.filter((warning) => !warning.startsWith('No Embed Studio template is explicitly bound'));
 
   const embed = new EmbedBuilder()
@@ -161,10 +127,11 @@ async function buildWelcomePanel(guild, memberDisplayName = 'Unknown User', user
       `**Ignore Bots:** ${config.ignoreBots ? 'Yes ✅' : 'No ❌'}`,
       '',
       '**📨 Current Welcome Message**',
-      `**Name:** ${activeName ? `\`${activeName}\`` : '`Not set`'}`,
-      `**Assignment:** ${assignedPreset || binding ? 'Assigned ✅' : 'Using default'}`,
-      `**Source:** ${assignedPreset ? 'Embed panel preset' : binding ? 'Embed Studio' : 'Built-in default'}`,
-      stagedName ? `**Selected:** \`${getPreset(guild.id, stagedName)?.name || stagedName}\` · press **Assign**` : null,
+      `**Name:** ${activeTemplate ? `\`${activeTemplate.name || activeTemplate.templateId}\`` : '`Not set`'}`,
+      `**Template:** ${activeTemplate ? `\`${activeTemplate.templateId}\`` : '`Not set`'}`,
+      `**Assignment:** ${binding ? 'Assigned ✅' : 'Using configured default'}`,
+      '**Source:** Embed Studio',
+      stagedTemplate ? `**Selected:** \`${stagedTemplate.name || stagedTemplate.templateId}\` · press **Assign**` : null,
       '',
       `Public sent: \`${analytics.publicSent || 0}\` | DMs sent: \`${analytics.dmSent || 0}\` | Failed: \`${(analytics.publicFailed || 0) + (analytics.dmFailed || 0)}\``,
       '',
@@ -223,19 +190,19 @@ async function handleWelcomeInteraction(interaction) {
     }
 
     if (interaction.isStringSelectMenu?.() && customId === 'admin:welcome:template') {
-      const value = interaction.values?.[0];
-      if (!value || value === 'none' || !value.startsWith(PRESET_PREFIX)) throw new Error('Choose a valid welcome message.');
-      selections.set(selectionKey(interaction), value);
+      const templateId = interaction.values?.[0];
+      if (!templateId || templateId === 'none' || !embedTemplateManager.getTemplate(interaction.guild.id, templateId)) {
+        throw new Error('Choose a valid Embed Studio template.');
+      }
+      selections.set(selectionKey(interaction), templateId);
       return updatePanel(interaction);
     }
 
     if (customId === 'admin:welcome:assign') {
-      const value = selections.get(selectionKey(interaction));
-      if (!value?.startsWith(PRESET_PREFIX)) throw new Error('Choose a welcome message first.');
-      const name = value.slice(PRESET_PREFIX.length);
-      const preset = getPreset(interaction.guild.id, name);
-      if (!preset || preset.template !== 'welcome') throw new Error('That welcome message no longer exists.');
-      assignPreset(interaction.guild.id, name, preset, interaction.user.id);
+      const templateId = selections.get(selectionKey(interaction));
+      if (!templateId) throw new Error('Choose a template first.');
+      welcome.bindWelcomeTemplate(interaction.guild.id, templateId, 'welcome', { actorId: interaction.user.id });
+      welcome.updateConfig(interaction.guild.id, { templateId, presetName: null }, { action: 'welcome_template_assign', actorId: interaction.user.id });
       selections.delete(selectionKey(interaction));
       return updatePanel(interaction);
     }
@@ -248,13 +215,13 @@ async function handleWelcomeInteraction(interaction) {
     if (customId === 'admin:welcome:toggleBots') welcome.updateConfig(interaction.guild.id, { ignoreBots: !config.ignoreBots }, { actorId: interaction.user.id });
 
     if (customId === 'admin:welcome:test') {
-      const current = welcome.getWelcomeSection(interaction.guild.id);
-      const assigned = activePreset(current, welcome.getWelcomeBinding(interaction.guild.id, 'welcome'), interaction.guild.id);
-      if (!assigned) throw new Error('Assign a saved welcome message first.');
-      const previewState = { ...assigned.preset, allowUserPing: false };
+      const assigned = welcome.getWelcomeBinding(interaction.guild.id, 'welcome')
+        || embedTemplateManager.getTemplate(interaction.guild.id, welcome.getWelcomeSection(interaction.guild.id).templateId);
+      if (!assigned) throw new Error('Assign an Embed Studio template first.');
+      const state = templatePreviewState(assigned);
       return interaction.reply({
-        content: assigned.preset.content || assigned.preset.message || '',
-        embeds: buildPreviewEmbeds(previewState, interaction),
+        content: assigned.content || '',
+        embeds: buildPreviewEmbeds(state, interaction),
         allowedMentions: { parse: [], repliedUser: false },
         ephemeral: true,
       });
