@@ -1,5 +1,8 @@
+'use strict';
+
 const store = require('./invitesStore');
 const snapshots = new Map();
+let attached = false;
 
 async function snapshot(guild) {
   try {
@@ -13,19 +16,36 @@ async function snapshot(guild) {
 async function detect(member) {
   const config = store.get(member.guild.id);
   if (!config.enabled || !config.trackingEnabled) return null;
+
   const previous = snapshots.get(member.guild.id) || new Map();
+
   try {
     const invites = await member.guild.invites.fetch();
     const used = invites.find(invite => (invite.uses || 0) > (previous.get(invite.code) || 0));
     snapshots.set(member.guild.id, new Map(invites.map(invite => [invite.code, invite.uses || 0])));
-    return used ? { code: used.code, inviterId: used.inviter?.id || null, uses: used.uses || 0 } : null;
+
+    const result = used ? {
+      code: used.code,
+      inviterId: used.inviter?.id || null,
+      uses: used.uses || 0,
+    } : null;
+
+    store.recordJoin(member.guild.id, result, { actorId: member.id });
+    return result;
   } catch {
+    store.recordJoin(member.guild.id, null, { actorId: member.id });
     return null;
   }
 }
 
 function attach(client) {
-  client.once('ready', () => Promise.all(client.guilds.cache.map(snapshot)).catch(() => null));
+  if (attached) return;
+  attached = true;
+
+  const warm = () => Promise.all(client.guilds.cache.map(snapshot)).catch(() => null);
+  if (client.isReady?.()) warm();
+  else client.once('ready', warm);
+
   client.on('inviteCreate', invite => snapshot(invite.guild));
   client.on('inviteDelete', invite => snapshot(invite.guild));
   client.on('guildCreate', snapshot);
