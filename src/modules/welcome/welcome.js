@@ -6,7 +6,7 @@ const {
   saveModuleSection,
   updateModuleSection,
 } = require('../../core/guild/moduleSectionManager');
-const { buildPreviewEmbed, TEMPLATES } = require('../embed/embedPanel');
+const { buildPreviewEmbeds, TEMPLATES } = require('../embed/embedPanel');
 const embedTemplateManager = require('../embed/embedTemplateManager');
 const guildManager = require('../../core/guild/guildManager');
 
@@ -58,6 +58,7 @@ function defaultWelcomeSection() {
     enabled: false,
     channelId: null,
     templateId: 'welcome_default',
+    presetName: null,
     dmEnabled: false,
     dmTemplateId: 'dm_welcome_default',
     allowUserPing: true,
@@ -88,13 +89,13 @@ function normalizeWelcomeSection(section = {}) {
   const base = defaultWelcomeSection();
   const source = section && typeof section === 'object' ? section : {};
   const channelId = cleanDiscordId(source.channelId || source.welcomeChannelId);
-
   return {
     ...base,
     ...clone(source),
     enabled: source.enabled === true || (source.enabled !== false && Boolean(channelId)),
     channelId,
     templateId: cleanString(source.templateId || base.templateId, base.templateId, 120),
+    presetName: source.presetName ? cleanString(source.presetName, '', 100) : null,
     dmEnabled: source.dmEnabled === true || source.sendDm === true,
     dmTemplateId: cleanString(source.dmTemplateId || base.dmTemplateId, base.dmTemplateId, 120),
     allowUserPing: source.allowUserPing !== false,
@@ -133,6 +134,7 @@ function updateConfig(guildId, patch = {}, meta = {}) {
     ...patch,
     channelId: patch.channelId === undefined ? section.channelId : cleanDiscordId(patch.channelId),
     templateId: patch.templateId === undefined ? section.templateId : cleanString(patch.templateId, section.templateId, 120),
+    presetName: patch.presetName === undefined ? section.presetName : (patch.presetName ? cleanString(patch.presetName, '', 100) : null),
     dmTemplateId: patch.dmTemplateId === undefined ? section.dmTemplateId : cleanString(patch.dmTemplateId, section.dmTemplateId, 120),
     enabled: typeof patch.enabled === 'boolean' ? patch.enabled : section.enabled,
     dmEnabled: typeof patch.dmEnabled === 'boolean' ? patch.dmEnabled : section.dmEnabled,
@@ -194,16 +196,6 @@ function buildTemplateVariables(member) {
   };
 }
 
-function getLegacySection(guildId, type) {
-  return guildManager.getGuildSection(guildId, type, null)
-    || guildManager.getGuildSection(guildId, `${type}Settings`, null)
-    || {};
-}
-
-function getRenderedTemplate(guildId, slot, variables, fallbackTemplateId) {
-  return embedTemplateManager.renderBinding(guildId, MODULE, slot, variables, fallbackTemplateId);
-}
-
 function getWelcomeTemplates(guildId, templateType = 'welcome') {
   return Object.values(embedTemplateManager.listTemplates(guildId))
     .filter((template) => template && (template.templateType === templateType || template.module === MODULE))
@@ -223,19 +215,27 @@ function bindWelcomeTemplate(guildId, templateId, slot = 'welcome', meta = {}) {
   return { binding, config };
 }
 
+function getAssignedPreset(guildId, config) {
+  if (!config?.presetName || typeof guildManager.getEmbedPreset !== 'function') return null;
+  const preset = guildManager.getEmbedPreset(guildId, config.presetName);
+  return preset?.template === 'welcome' ? preset : null;
+}
+
 function buildMessageData(member, type, config) {
-  const guildId = member.guild.id;
   const isDm = type === 'dmWelcome';
-  const legacy = getLegacySection(guildId, type);
   const templateId = isDm ? config.dmTemplateId : config.templateId;
   const slot = isDm ? 'dm_welcome' : 'welcome';
-  const rendered = getRenderedTemplate(guildId, slot, buildTemplateVariables(member), templateId);
-
+  const rendered = embedTemplateManager.renderBinding(
+    member.guild.id,
+    MODULE,
+    slot,
+    buildTemplateVariables(member),
+    templateId
+  );
   return {
     ...(TEMPLATES[type] || {}),
-    ...legacy,
     ...(rendered?.embed || {}),
-    content: rendered?.content || legacy.content || legacy.message || '',
+    content: rendered?.content || '',
     embed: rendered?.embed || null,
     templateId: rendered?.templateId || templateId,
     templateName: rendered?.name || null,
@@ -244,13 +244,26 @@ function buildMessageData(member, type, config) {
 }
 
 function buildDiscordPayload(member, type, config) {
-  const messageData = buildMessageData(member, type, config);
+  const isDm = type === 'dmWelcome';
+  const preset = isDm ? null : getAssignedPreset(member.guild.id, config);
   const fakeInteraction = { guild: member.guild, guildId: member.guild.id, user: member.user, member };
-  const content = messageData.content || (messageData.allowUserPing ? `<@${member.user.id}>` : '');
 
+  if (preset) {
+    const content = preset.content || preset.message || (config.allowUserPing !== false ? `<@${member.user.id}>` : '');
+    return {
+      content,
+      embeds: buildPreviewEmbeds({ ...preset, allowUserPing: config.allowUserPing !== false }, fakeInteraction),
+      allowedMentions: config.allowUserPing !== false || content.includes(`<@${member.user.id}>`)
+        ? { users: [member.user.id], roles: [], repliedUser: false }
+        : { parse: [], repliedUser: false },
+    };
+  }
+
+  const messageData = buildMessageData(member, type, config);
+  const content = messageData.content || (messageData.allowUserPing ? `<@${member.user.id}>` : '');
   return {
     content,
-    embeds: [buildPreviewEmbed(messageData, fakeInteraction)],
+    embeds: buildPreviewEmbeds(messageData, fakeInteraction),
     allowedMentions: messageData.allowUserPing || content.includes(`<@${member.user.id}>`)
       ? { users: [member.user.id], roles: [], repliedUser: false }
       : { parse: [], repliedUser: false },
@@ -265,7 +278,6 @@ async function resolveWelcomeChannel(guild, channelId) {
 
 async function sendWelcome(member, options = {}) {
   if (!member?.guild?.id || !member?.user?.id) return { publicSent: false, dmSent: false, skipped: true };
-
   const config = getWelcomeSection(member.guild.id);
   if ((!options.force && config.enabled === false) || (config.ignoreBots && member.user.bot)) {
     if (!options.previewOnly) incrementAnalytics(member.guild.id, { skipped: 1 });
@@ -324,10 +336,10 @@ async function buildHealthReport(guild) {
   const canView = Boolean(permissions?.has(PermissionFlagsBits.ViewChannel));
   const canSend = Boolean(permissions?.has(PermissionFlagsBits.SendMessages));
   const canEmbed = Boolean(permissions?.has(PermissionFlagsBits.EmbedLinks));
+  const preset = getAssignedPreset(guild.id, config);
   const boundTemplate = getWelcomeBinding(guild.id, 'welcome');
   const configuredTemplate = embedTemplateManager.getTemplate(guild.id, config.templateId);
-  const activeTemplate = boundTemplate || configuredTemplate;
-
+  const activeTemplate = preset || boundTemplate || configuredTemplate;
   const warnings = [
     config.enabled === false ? 'Welcome is disabled.' : null,
     config.enabled && !config.channelId && !config.dmEnabled ? 'No public welcome channel or DM welcome is configured.' : null,
@@ -335,10 +347,8 @@ async function buildHealthReport(guild) {
     channel && !canView ? 'Goliath cannot view the welcome channel.' : null,
     channel && !canSend ? 'Goliath cannot send messages in the welcome channel.' : null,
     channel && !canEmbed ? 'Goliath cannot embed links in the welcome channel.' : null,
-    !activeTemplate ? `Welcome template ${config.templateId} could not be found.` : null,
-    !boundTemplate ? 'No Embed Studio template is explicitly bound to the Welcome slot; the configured fallback template will be used.' : null,
+    !activeTemplate ? `Welcome message ${config.presetName || config.templateId} could not be found.` : null,
   ].filter(Boolean);
-
   return {
     enabled: config.enabled !== false,
     channelId: config.channelId,
@@ -348,9 +358,9 @@ async function buildHealthReport(guild) {
     canView,
     canSend,
     canEmbed,
-    templateId: activeTemplate?.templateId || config.templateId,
-    templateName: activeTemplate?.name || null,
-    templateBound: Boolean(boundTemplate),
+    templateId: preset ? config.templateId : activeTemplate?.templateId || config.templateId,
+    templateName: preset?.name || config.presetName || activeTemplate?.name || null,
+    templateBound: Boolean(preset || boundTemplate),
     warnings,
     healthy: warnings.length === 0,
   };
@@ -359,10 +369,12 @@ async function buildHealthReport(guild) {
 async function repairConfiguration(guild, meta = {}) {
   const config = getWelcomeSection(guild.id);
   const channel = config.channelId ? await resolveWelcomeChannel(guild, config.channelId) : null;
+  const preset = getAssignedPreset(guild.id, config);
   const template = getWelcomeBinding(guild.id, 'welcome') || embedTemplateManager.getTemplate(guild.id, config.templateId);
   return updateConfig(guild.id, {
     channelId: channel ? config.channelId : null,
-    templateId: template?.templateId || 'welcome_default',
+    presetName: preset ? config.presetName : null,
+    templateId: preset ? config.templateId : template?.templateId || 'welcome_default',
     enabled: channel || config.dmEnabled ? config.enabled : false,
   }, { action: 'welcome_repair', ...meta });
 }
@@ -383,7 +395,6 @@ function resetWelcome(guildId, meta = {}) {
 
 async function startupWelcome(client) {
   if (!client?.guilds?.cache) return { ok: false, guildsChecked: 0, warnings: 1, results: [] };
-
   const results = [];
   for (const guild of client.guilds.cache.values()) {
     try {
@@ -394,7 +405,6 @@ async function startupWelcome(client) {
       results.push({ guildId: guild.id, guildName: guild.name, enabled: false, healthy: false, warnings: [error.message || 'Welcome startup check failed.'] });
     }
   }
-
   const summary = {
     ok: results.every((result) => result.healthy || result.enabled === false),
     guildsChecked: results.length,
@@ -402,11 +412,7 @@ async function startupWelcome(client) {
     warnings: results.reduce((total, result) => total + result.warnings.length, 0),
     results,
   };
-
   console.log(`[Welcome] Startup check complete: ${summary.guildsChecked} guild(s), ${summary.enabledGuilds} enabled, ${summary.warnings} warning(s).`);
-  for (const result of results) {
-    if (result.warnings.length) console.warn(`[Welcome] ${result.guildName || result.guildId}: ${result.warnings.join(' | ')}`);
-  }
   return summary;
 }
 
