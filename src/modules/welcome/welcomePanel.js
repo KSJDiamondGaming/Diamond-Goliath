@@ -12,6 +12,30 @@ const {
 } = require('discord.js');
 const welcome = require('./welcome');
 const embedTemplateManager = require('../embed/embedTemplateManager');
+const guildManager = require('../../core/guild/guildManager');
+
+const LEGACY_PRESET_PREFIX = 'legacy-preset:';
+const LEGACY_VARIABLES = Object.freeze({
+  guildMemberCount: 'memberCount',
+  guildmembercount: 'memberCount',
+  userDisplay: 'username',
+  userdisplay: 'username',
+  userDisplayName: 'username',
+  userdisplayname: 'username',
+  userName: 'username',
+  userNoPing: 'userMention',
+  usernoping: 'userMention',
+  serverIcon: 'guildIcon',
+  servericon: 'guildIcon',
+  userServerAvatar: 'userAvatar',
+  userserveravatar: 'userAvatar',
+  userCreatedAt: 'createdAt',
+  usercreatedat: 'createdAt',
+  userJoinedAt: 'joinedAt',
+  userjoinedat: 'joinedAt',
+  nowTimestamp: 'timestamp',
+  nowtimestamp: 'timestamp',
+});
 
 function row(...components) {
   return new ActionRowBuilder().addComponents(...components);
@@ -21,25 +45,103 @@ function button(customId, label, style = ButtonStyle.Secondary) {
   return new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style);
 }
 
-function templateMenu(guildId, activeTemplateId) {
+function translateLegacyVariables(value) {
+  if (typeof value === 'string') {
+    return value.replace(/\{([a-zA-Z0-9_.:-]+)\}/g, (match, key) => {
+      const replacement = LEGACY_VARIABLES[key];
+      return replacement ? `{${replacement}}` : match;
+    });
+  }
+  if (Array.isArray(value)) return value.map(translateLegacyVariables);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, translateLegacyVariables(item)]));
+  }
+  return value;
+}
+
+function legacyPresetTemplateId(name) {
+  return `embed_preset_${embedTemplateManager.cleanKey(name)}`;
+}
+
+function legacyPresetToTemplate(name, preset = {}) {
+  const panel = Array.isArray(preset.panels) && preset.panels.length ? preset.panels[0] : preset;
+  return translateLegacyVariables({
+    templateId: legacyPresetTemplateId(name),
+    name: String(preset.name || name).slice(0, 100),
+    module: 'welcome',
+    templateType: 'welcome',
+    content: String(preset.content || preset.message || '').slice(0, 2000),
+    embed: {
+      title: panel.title || '',
+      description: panel.description || '',
+      color: panel.color || '#5865F2',
+      author: {
+        name: panel.authorName || panel.author?.name || '',
+        iconURL: panel.authorIcon || panel.author?.iconURL || '',
+        url: panel.authorUrl || panel.author?.url || '',
+      },
+      thumbnailURL: panel.thumbnail || panel.thumbnailURL || '',
+      imageURL: panel.image || panel.imageURL || '',
+      footer: {
+        text: typeof panel.footer === 'string' ? panel.footer : panel.footer?.text || '',
+        iconURL: panel.footerIcon || panel.footer?.iconURL || '',
+      },
+      fields: Array.isArray(panel.fields) ? panel.fields : [],
+      buttons: Array.isArray(preset.buttons) ? preset.buttons : [],
+    },
+    tags: ['embed-preset', 'welcome'],
+    sourcePresetName: name,
+  });
+}
+
+function getWelcomeOptions(guildId) {
   const templates = Object.values(embedTemplateManager.listTemplates(guildId))
-    .filter(Boolean)
-    .sort((a, b) => String(a.name || a.templateId).localeCompare(String(b.name || b.templateId)))
+    .filter((template) => template?.templateType === 'welcome')
+    .map((template) => ({
+      label: String(template.name || template.templateId).slice(0, 100),
+      description: String(template.embed?.title || 'Welcome template').slice(0, 100),
+      value: String(template.templateId),
+      activeTemplateId: String(template.templateId),
+    }));
+
+  const existingIds = new Set(templates.map((template) => template.activeTemplateId));
+  const presets = typeof guildManager.getEmbedPresets === 'function'
+    ? guildManager.getEmbedPresets(guildId) || {}
+    : {};
+
+  for (const [name, preset] of Object.entries(presets)) {
+    if (!preset || preset.template !== 'welcome') continue;
+    const templateId = legacyPresetTemplateId(name);
+    if (existingIds.has(templateId)) continue;
+    templates.push({
+      label: String(preset.name || name).slice(0, 100),
+      description: 'Embed Studio welcome preset',
+      value: `${LEGACY_PRESET_PREFIX}${name}`.slice(0, 100),
+      activeTemplateId: templateId,
+    });
+  }
+
+  return templates
+    .sort((a, b) => a.label.localeCompare(b.label))
     .slice(0, 25);
+}
+
+function templateMenu(guildId, activeTemplateId) {
+  const templates = getWelcomeOptions(guildId);
 
   const menu = new StringSelectMenuBuilder()
     .setCustomId('admin:welcome:template')
-    .setPlaceholder(templates.length ? 'Choose any Embed Studio template' : 'No Embed Studio templates available')
+    .setPlaceholder(templates.length ? 'Choose a welcome template' : 'No welcome templates available')
     .setMinValues(1)
     .setMaxValues(1)
     .setDisabled(templates.length === 0);
 
   if (templates.length) {
     menu.addOptions(templates.map((template) => ({
-      label: String(template.name || template.templateId).slice(0, 100),
-      description: String(template.embed?.title || `${template.module || 'global'} template`).slice(0, 100),
-      value: String(template.templateId),
-      default: String(template.templateId) === String(activeTemplateId),
+      label: template.label,
+      description: template.description,
+      value: template.value,
+      default: template.activeTemplateId === String(activeTemplateId),
     })));
   } else {
     menu.addOptions({ label: 'No templates found', value: 'none' });
@@ -120,8 +222,19 @@ async function handleWelcomeInteraction(interaction) {
     }
 
     if (interaction.isStringSelectMenu?.() && customId === 'admin:welcome:template') {
-      const templateId = interaction.values?.[0];
-      if (!templateId || templateId === 'none') throw new Error('Choose a valid Embed Studio template.');
+      let templateId = interaction.values?.[0];
+      if (!templateId || templateId === 'none') throw new Error('Choose a valid welcome template.');
+
+      if (templateId.startsWith(LEGACY_PRESET_PREFIX)) {
+        const presetName = templateId.slice(LEGACY_PRESET_PREFIX.length);
+        const preset = guildManager.getEmbedPreset(interaction.guild.id, presetName);
+        if (!preset || preset.template !== 'welcome') throw new Error('That welcome preset no longer exists.');
+        templateId = embedTemplateManager.saveTemplate(
+          interaction.guild.id,
+          legacyPresetToTemplate(presetName, preset)
+        ).templateId;
+      }
+
       welcome.bindWelcomeTemplate(interaction.guild.id, templateId, 'welcome', { actorId: interaction.user.id });
       return updatePanel(interaction);
     }
