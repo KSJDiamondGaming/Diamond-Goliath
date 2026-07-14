@@ -12,6 +12,8 @@ const {
   startStatusRotation,
 } = require('../../features/status/statusRotation');
 
+let hasStarted = false;
+
 function getEnvList(name) {
   const value = process.env[name];
 
@@ -27,6 +29,9 @@ module.exports = {
   name: 'ready',
   once: true,
   async execute(client) {
+    if (hasStarted) return;
+    hasStarted = true;
+
     terminal.success(`Logged in as ${client.user?.tag || 'Unknown bot'}`);
 
     const devGuildIds = getEnvList('DEV_GUILD_IDS');
