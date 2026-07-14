@@ -1,7 +1,7 @@
 'use strict';
 
 const express = require('express');
-const guildManager = require('../core/guild/guildManager');
+const guildManager = require('../../core/guild/guildManager');
 const verification = require('./verification');
 
 const router = express.Router();

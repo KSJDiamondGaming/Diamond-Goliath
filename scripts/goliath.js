@@ -91,9 +91,9 @@ const MODULE_REGISTRY = [
   {
     name: 'Auto Roles',
     files: [
-      ['src/modules/autoroles.js', ['defaultAutoRolesSection', 'getAutoRolesSection', 'applyAutoRoles', 'buildHealthReport', 'startupAutoRoles']],
-      ['src/modules/autorolesPanel.js', ['buildAutoRolesPanel', 'handleAutoRolesInteraction']],
-      ['src/modules/autorolesRoute.js'],
+      ['src/modules/autoroles/autoroles.js', ['defaultAutoRolesSection', 'getAutoRolesSection', 'applyAutoRoles', 'buildHealthReport', 'startupAutoRoles']],
+      ['src/modules/autoroles/autorolesPanel.js', ['buildAutoRolesPanel', 'handleAutoRolesInteraction']],
+      ['src/modules/autoroles/autorolesRoute.js'],
       ['src/dashboard/js/pages/modules/AutoRoles.jsx'],
       ['docs/modules/auto-roles.md'],
     ],
@@ -101,16 +101,16 @@ const MODULE_REGISTRY = [
   {
     name: 'Verification',
     files: [
-      ['src/modules/verification.js', ['defaultVerificationSection', 'getVerificationSection', 'handleVerificationInteraction', 'startupVerification']],
-      ['src/modules/verificationPanel.js', ['buildVerificationAdminPanel', 'handleVerificationAdminInteraction']],
-      ['src/modules/verificationRoute.js'],
+      ['src/modules/verification/verification.js', ['defaultVerificationSection', 'getVerificationSection', 'handleVerificationInteraction', 'startupVerification']],
+      ['src/modules/verification/verificationPanel.js', ['buildVerificationAdminPanel', 'handleVerificationAdminInteraction']],
+      ['src/modules/verification/verificationRoute.js'],
       ['src/dashboard/js/pages/modules/VerificationEnhanced.jsx'],
     ],
   },
   {
     name: 'Welcome',
     files: [
-      ['src/modules/welcome.js', ['sendWelcome', 'buildHealthReport', 'startupWelcome']],
+      ['src/modules/welcome/welcome.js', ['sendWelcome', 'buildHealthReport', 'startupWelcome']],
       ['src/core/admin/functions/welcomePanel.js', ['buildWelcomePanel', 'handleWelcomeInteraction']],
       ['src/server/routes/welcome.js'],
       ['src/dashboard/js/pages/modules/Welcome.jsx'],
@@ -120,7 +120,7 @@ const MODULE_REGISTRY = [
   {
     name: 'Goodbye',
     files: [
-      ['src/modules/goodbye.js', ['sendGoodbye', 'buildHealthReport', 'startupGoodbye']],
+      ['src/modules/goodbye/goodbye.js', ['sendGoodbye', 'buildHealthReport', 'startupGoodbye']],
       ['src/core/admin/functions/goodbyePanel.js', ['buildGoodbyePanel', 'handleGoodbyeInteraction']],
       ['src/server/routes/goodbye.js'],
       ['src/dashboard/js/pages/modules/Goodbye.jsx'],
@@ -267,14 +267,14 @@ function collectRuntimeTargets() {
     absolute('src/server/routes'),
   ];
   const explicit = [
-    'src/modules/autoroles.js',
-    'src/modules/autorolesPanel.js',
-    'src/modules/autorolesRoute.js',
-    'src/modules/verification.js',
-    'src/modules/verificationPanel.js',
-    'src/modules/verificationRoute.js',
-    'src/modules/welcome.js',
-    'src/modules/goodbye.js',
+    'src/modules/autoroles/autoroles.js',
+    'src/modules/autoroles/autorolesPanel.js',
+    'src/modules/autoroles/autorolesRoute.js',
+    'src/modules/verification/verification.js',
+    'src/modules/verification/verificationPanel.js',
+    'src/modules/verification/verificationRoute.js',
+    'src/modules/welcome/welcome.js',
+    'src/modules/goodbye/goodbye.js',
     'src/modules/tickets/ticketStartup.js',
     'src/modules/translation/translationStartup.js',
     'src/modules/roles/rolesStartup.js',

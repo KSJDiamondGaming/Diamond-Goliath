@@ -1,7 +1,7 @@
 'use strict';
 
-const store = require('./verification/verificationStore');
-const manager = require('./verification/verificationManager');
+const store = require('./verificationStore');
+const manager = require('./verificationManager');
 
 async function startupVerification(client) {
   if (!client?.guilds?.cache) {

@@ -1,7 +1,7 @@
 'use strict';
 
 const express = require('express');
-const goodbye = require('../../modules/goodbye');
+const goodbye = require('../../modules/goodbye/goodbye');
 
 const router = express.Router();
 const success = (res, payload = {}) => res.json({ success: true, ...payload });

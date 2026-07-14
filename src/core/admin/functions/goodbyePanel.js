@@ -10,7 +10,7 @@ const {
   ChannelType,
   AttachmentBuilder,
 } = require('discord.js');
-const goodbye = require('../../../modules/goodbye');
+const goodbye = require('../../../modules/goodbye/goodbye');
 const embedTemplateManager = require('../../../modules/embed/embedTemplateManager');
 
 const row = (...components) => new ActionRowBuilder().addComponents(...components);

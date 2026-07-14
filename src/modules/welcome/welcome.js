@@ -5,10 +5,10 @@ const {
   getModuleSection,
   saveModuleSection,
   updateModuleSection,
-} = require('../core/guild/moduleSectionManager');
-const { buildPreviewEmbed, TEMPLATES } = require('./embed/embedPanel');
-const embedTemplateManager = require('./embed/embedTemplateManager');
-const guildManager = require('../core/guild/guildManager');
+} = require('../../core/guild/moduleSectionManager');
+const { buildPreviewEmbed, TEMPLATES } = require('../embed/embedPanel');
+const embedTemplateManager = require('../embed/embedTemplateManager');
+const guildManager = require('../../core/guild/guildManager');
 
 const MODULE = 'welcome';
 

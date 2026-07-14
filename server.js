@@ -76,7 +76,7 @@ const transcriptRoutes = safeRequire('transcript routes', './src/server/routes/t
 const translationRoutes = safeRequire('translation routes', './src/server/routes/translation', emptyRouter(), { optional: false });
 const permissionHealthRoutes = safeRequire('permission health routes', './src/server/routes/permissionHealth', emptyRouter(), { optional: false });
 const socialRoutes = safeRequire('social routes', './src/server/routes/social', emptyRouter(), { optional: false });
-const verificationRoutes = safeRequire('verification routes', './src/server/routes/verification', emptyRouter(), { optional: false });
+const verificationRoutes = safeRequire('verification routes', './src/modules/verification/verificationRoute', emptyRouter(), { optional: false });
 const autoRolesRoutes = safeRequire('auto roles routes', './src/modules/autoroles/autorolesRoute', emptyRouter(), { optional: false });
 const welcomeRoutes = safeRequire('welcome routes', './src/server/routes/welcome', emptyRouter(), { optional: false });
 const goodbyeRoutes = safeRequire('goodbye routes', './src/server/routes/goodbye', emptyRouter(), { optional: false });
@@ -252,8 +252,8 @@ client.once('clientReady', async () => {
     runStartupTask('Tickets', () => require('./src/modules/tickets/ticketStartup').startupTickets(client)),
     runStartupTask('Roles', () => require('./src/modules/roles/rolesStartup').initializeRoles(client)),
     runStartupTask('Translation', () => require('./src/modules/translation/translationStartup').startupTranslation(client)),
-    runStartupTask('Verification', () => require('./src/modules/verification').startupVerification(client)),
-    runStartupTask('Goodbye', () => require('./src/modules/goodbye').startupGoodbye(client)),
+    runStartupTask('Verification', () => require('./src/modules/verification/verification').startupVerification(client)),
+    runStartupTask('Goodbye', () => require('./src/modules/goodbye/goodbye').startupGoodbye(client)),
     runStartupTask('Giveaways', () => require('./src/modules/giveaways/giveawayScheduler').start(client)),
   ]);
 
