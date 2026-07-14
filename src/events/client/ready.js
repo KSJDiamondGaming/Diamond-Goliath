@@ -1,3 +1,4 @@
+const { Events } = require('discord.js');
 const terminal = require('../../core/logging/terminalLogger').createLogger('bot');
 
 const {
@@ -26,7 +27,7 @@ function getEnvList(name) {
 }
 
 module.exports = {
-  name: 'ready',
+  name: Events.ClientReady,
   once: true,
   async execute(client) {
     if (hasStarted) return;
