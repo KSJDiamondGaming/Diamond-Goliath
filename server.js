@@ -71,7 +71,7 @@ const billingRoutes = safeRequire('billing routes', './src/server/routes/billing
 const moderationRoutes = safeRequire('moderation routes', './src/server/routes/moderation', emptyRouter(), { optional: false });
 const serverRestoreRoutes = safeRequire('restore routes', './src/server/routes/serverRestoreRoutes', emptyRouter(), { optional: false });
 const securityRoutes = safeRequire('security routes', './src/server/routes/security', emptyRouter(), { optional: false });
-const ticketRoutes = safeRequire('ticket routes', './src/server/routes/tickets', emptyRouter(), { optional: false });
+const ticketRoutes = safeRequire('ticket routes', './src/modules/tickets/ticketsRoute', emptyRouter(), { optional: false });
 const formsRoutes = safeRequire('forms routes', './src/server/routes/forms', emptyRouter(), { optional: false });
 const transcriptRoutes = safeRequire('transcript routes', './src/server/routes/transcripts', emptyRouter(), { optional: false });
 const translationRoutes = safeRequire('translation routes', './src/server/routes/translation', emptyRouter(), { optional: false });
@@ -254,7 +254,7 @@ client.once('clientReady', async () => {
   }
 
   await Promise.all([
-    runStartupTask('Tickets', () => require('./src/modules/tickets/ticketStartup').startupTickets(client)),
+    runStartupTask('Tickets', () => require('./src/modules/tickets/tickets').startup.startupTickets(client)),
     runStartupTask('Roles', () => require('./src/modules/roles/rolesStartup').initializeRoles(client)),
     runStartupTask('Translation', () => require('./src/modules/translation/translationStartup').startupTranslation(client)),
     runStartupTask('Verification', () => require('./src/modules/verification/verification').startupVerification(client)),
