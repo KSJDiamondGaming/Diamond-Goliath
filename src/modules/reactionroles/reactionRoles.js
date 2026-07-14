@@ -10,7 +10,10 @@ const DRAFT_TYPES = Object.freeze({ EXISTING: 'existing', TEMPLATE: 'template' }
 
 const now = () => new Date().toISOString();
 const clone = (value) => value == null ? value : JSON.parse(JSON.stringify(value));
-const cleanId = (value) => { const id = String(value || '').replace(/[<@&#!>]/g, '').trim(); return /^\d{15,25}$/.test(id) ? id : null; };
+const cleanId = (value) => {
+  const id = String(value || '').replace(/[<@&#!>]/g, '').trim();
+  return /^\d{15,25}$/.test(id) ? id : null;
+};
 const cleanText = (value, max = 200) => String(value ?? '').trim().slice(0, max);
 const createId = (prefix) => `${prefix}_${crypto.randomUUID().slice(0, 8)}`;
 
@@ -38,7 +41,15 @@ function defaultSection() {
     settings: { removeOnUnreact: true, ignoreBots: true },
     panels: {},
     drafts: {},
-    analytics: { attached: 0, created: 0, assigned: 0, removed: 0, failed: 0, repaired: 0, lastActionAt: null },
+    analytics: {
+      attached: 0,
+      created: 0,
+      assigned: 0,
+      removed: 0,
+      failed: 0,
+      repaired: 0,
+      lastActionAt: null,
+    },
     createdAt: now(),
     updatedAt: now(),
   };
@@ -74,7 +85,9 @@ function parseMessageReference(value, channelId = null) {
   if (link) return { guildId: link[1], channelId: link[2], messageId: link[3] };
   const messageId = cleanId(raw);
   const parsedChannelId = cleanId(channelId);
-  if (!messageId || !parsedChannelId) throw new Error('Choose a channel and provide the message ID, or paste a full Discord message link.');
+  if (!messageId || !parsedChannelId) {
+    throw new Error('Choose a channel and provide the message ID, or paste a full Discord message link.');
+  }
   return { guildId: null, channelId: parsedChannelId, messageId };
 }
 
@@ -116,7 +129,9 @@ function normalizeDraft(draft = {}, userId = null) {
     applyTemplate: draft.applyTemplate === true,
     selectedRoleId: cleanId(draft.selectedRoleId),
     selectedMode: Object.values(MODES).includes(draft.selectedMode) ? draft.selectedMode : MODES.TOGGLE,
-    mappings: Array.isArray(draft.mappings) ? draft.mappings.map(normalizeMapping).filter((item) => item.roleId && item.emojiKey) : [],
+    mappings: Array.isArray(draft.mappings)
+      ? draft.mappings.map(normalizeMapping).filter((item) => item.roleId && item.emojiKey)
+      : [],
     step: cleanText(draft.step || base.step, 30),
     updatedAt: now(),
   };
@@ -144,20 +159,39 @@ function normalizeSection(section = {}) {
 function getSection(guildId) { return normalizeSection(getModuleSection(guildId, SECTION, defaultSection())); }
 function saveSection(guildId, section, meta = {}) { return normalizeSection(saveModuleSection(guildId, SECTION, normalizeSection(section), meta)); }
 function updateSection(guildId, updater, meta = {}) {
-  return normalizeSection(updateModuleSection(guildId, SECTION, (current) => normalizeSection(typeof updater === 'function' ? updater(clone(normalizeSection(current))) : updater), defaultSection(), meta));
+  return normalizeSection(updateModuleSection(
+    guildId,
+    SECTION,
+    (current) => normalizeSection(typeof updater === 'function' ? updater(clone(normalizeSection(current))) : updater),
+    defaultSection(),
+    meta
+  ));
 }
 function setEnabled(guildId, enabled, meta = {}) { return updateSection(guildId, (section) => ({ ...section, enabled: Boolean(enabled), updatedAt: now() }), meta); }
 function listPanels(guildId) { return Object.values(getSection(guildId).panels); }
 function getPanel(guildId, panelId) { return getSection(guildId).panels[cleanText(panelId, 80)] || null; }
-function findPanelByMessage(guildId, messageId) { return listPanels(guildId).find((panel) => panel.enabled !== false && panel.messageId === String(messageId)) || null; }
+function findPanelByMessage(guildId, messageId) {
+  return listPanels(guildId).find((panel) => panel.enabled !== false && panel.messageId === String(messageId)) || null;
+}
 
 function savePanel(guildId, panel, meta = {}) {
   const normalized = normalizePanel(panel);
-  return updateSection(guildId, (section) => ({ ...section, panels: { ...section.panels, [normalized.panelId]: { ...(section.panels[normalized.panelId] || {}), ...normalized, updatedAt: now() } }, updatedAt: now() }), meta).panels[normalized.panelId];
+  return updateSection(guildId, (section) => ({
+    ...section,
+    panels: {
+      ...section.panels,
+      [normalized.panelId]: { ...(section.panels[normalized.panelId] || {}), ...normalized, updatedAt: now() },
+    },
+    updatedAt: now(),
+  }), meta).panels[normalized.panelId];
 }
 
 function removePanel(guildId, panelId, meta = {}) {
-  return updateSection(guildId, (section) => { const panels = { ...section.panels }; delete panels[panelId]; return { ...section, panels, updatedAt: now() }; }, meta);
+  return updateSection(guildId, (section) => {
+    const panels = { ...section.panels };
+    delete panels[panelId];
+    return { ...section, panels, updatedAt: now() };
+  }, meta);
 }
 
 function getDraft(guildId, userId) {
@@ -170,14 +204,22 @@ function saveDraft(guildId, userId, patch = {}, meta = {}) {
   if (!id) throw new Error('A valid user is required for the setup draft.');
   return updateSection(guildId, (section) => {
     const current = normalizeDraft(section.drafts[id] || {}, id);
-    return { ...section, drafts: { ...section.drafts, [id]: normalizeDraft({ ...current, ...patch }, id) }, updatedAt: now() };
+    return {
+      ...section,
+      drafts: { ...section.drafts, [id]: normalizeDraft({ ...current, ...patch }, id) },
+      updatedAt: now(),
+    };
   }, meta).drafts[id];
 }
 
 function clearDraft(guildId, userId, meta = {}) {
   const id = cleanId(userId);
   if (!id) return getSection(guildId);
-  return updateSection(guildId, (section) => { const drafts = { ...section.drafts }; delete drafts[id]; return { ...section, drafts, updatedAt: now() }; }, meta);
+  return updateSection(guildId, (section) => {
+    const drafts = { ...section.drafts };
+    delete drafts[id];
+    return { ...section, drafts, updatedAt: now() };
+  }, meta);
 }
 
 function addDraftMapping(guildId, userId, mapping, meta = {}) {
@@ -199,15 +241,16 @@ function removeDraftMapping(guildId, userId, mappingId, meta = {}) {
 function addAnalytics(guildId, patch, meta = {}) {
   return updateSection(guildId, (section) => {
     const analytics = { ...section.analytics };
-    for (const [key, value] of Object.entries(patch || {})) analytics[key] = typeof value === 'number' ? Number(analytics[key] || 0) + value : value;
+    for (const [key, value] of Object.entries(patch || {})) {
+      analytics[key] = typeof value === 'number' ? Number(analytics[key] || 0) + value : value;
+    }
     analytics.lastActionAt = now();
     return { ...section, analytics, updatedAt: now() };
   }, meta).analytics;
 }
 
 function listReactionTemplates(guildId) {
-  const templates = Object.values(embedTemplateManager.listTemplates(guildId));
-  return templates
+  return Object.values(embedTemplateManager.listTemplates(guildId))
     .filter((template) => ['reactionroles', 'reaction_roles', 'global'].includes(String(template.module || template.templateType || '').toLowerCase()))
     .sort((a, b) => String(a.name).localeCompare(String(b.name)));
 }
@@ -222,17 +265,19 @@ function getReactionTemplate(guildId, templateId) {
 function templatePayload(template) {
   if (!template) return { content: '', embeds: [] };
   const embed = template.embed || {};
-  const apiEmbed = {
-    title: embed.title || undefined,
-    description: embed.description || undefined,
-    color: typeof embed.color === 'number' ? embed.color : parseInt(String(embed.color || '#5865F2').replace('#', ''), 16),
-    fields: Array.isArray(embed.fields) ? embed.fields : [],
-    author: embed.author?.name ? { name: embed.author.name, icon_url: embed.author.iconURL || undefined, url: embed.author.url || undefined } : undefined,
-    footer: embed.footer?.text ? { text: embed.footer.text, icon_url: embed.footer.iconURL || undefined } : undefined,
-    thumbnail: embed.thumbnailURL ? { url: embed.thumbnailURL } : undefined,
-    image: embed.imageURL ? { url: embed.imageURL } : undefined,
+  return {
+    content: template.content || '',
+    embeds: [{
+      title: embed.title || undefined,
+      description: embed.description || undefined,
+      color: typeof embed.color === 'number' ? embed.color : parseInt(String(embed.color || '#5865F2').replace('#', ''), 16),
+      fields: Array.isArray(embed.fields) ? embed.fields : [],
+      author: embed.author?.name ? { name: embed.author.name, icon_url: embed.author.iconURL || undefined, url: embed.author.url || undefined } : undefined,
+      footer: embed.footer?.text ? { text: embed.footer.text, icon_url: embed.footer.iconURL || undefined } : undefined,
+      thumbnail: embed.thumbnailURL ? { url: embed.thumbnailURL } : undefined,
+      image: embed.imageURL ? { url: embed.imageURL } : undefined,
+    }],
   };
-  return { content: template.content || '', embeds: [apiEmbed] };
 }
 
 async function resolveMessage(guild, reference, channelId = null) {
@@ -255,23 +300,71 @@ function validateRole(guild, roleId) {
   return role;
 }
 
+function findMessageReaction(message, mapping) {
+  const emoji = normalizeEmoji(mapping.emoji);
+  return message.reactions.cache.find(
+    (reaction) => reaction.emoji.id === emoji.id || (!emoji.id && reaction.emoji.name === emoji.name)
+  ) || null;
+}
+
+function mappingConflicts(mappings) {
+  const seen = new Map();
+  const conflicts = [];
+  for (const mapping of mappings.filter((item) => item.enabled !== false)) {
+    const existing = seen.get(mapping.emojiKey);
+    if (existing && existing.roleId !== mapping.roleId) conflicts.push(`Emoji ${mapping.emoji} is mapped to multiple roles.`);
+    else seen.set(mapping.emojiKey, mapping);
+  }
+  return [...new Set(conflicts)];
+}
+
+async function removeObsoleteBotReactions(guild, message, previousMappings, nextMappings) {
+  const nextKeys = new Set(nextMappings.filter((item) => item.enabled !== false).map((item) => item.emojiKey));
+  const removed = [];
+  for (const mapping of previousMappings.filter((item) => item.enabled !== false && !nextKeys.has(item.emojiKey))) {
+    const reaction = findMessageReaction(message, mapping);
+    if (!reaction?.me) continue;
+    await reaction.users.remove(guild.members.me.id);
+    removed.push(mapping.emojiKey);
+  }
+  return removed;
+}
+
 async function syncPanelReactions(guild, panel) {
+  if (!panel) throw new Error('Reaction-role panel not found.');
+  if (panel.enabled === false) {
+    return {
+      panel: savePanel(guild.id, { ...panel, status: 'disabled', lastHealthAt: now(), lastError: null }, guild),
+      message: null,
+    };
+  }
+  const conflicts = mappingConflicts(panel.mappings);
+  if (conflicts.length) throw new Error(conflicts.join(' '));
   const message = await resolveMessage(guild, panel.messageId, panel.channelId);
   for (const mapping of panel.mappings.filter((item) => item.enabled !== false)) {
     validateRole(guild, mapping.roleId);
-    const emoji = normalizeEmoji(mapping.emoji);
-    const exists = message.reactions.cache.some((reaction) => reaction.emoji.id === emoji.id || (!emoji.id && reaction.emoji.name === emoji.name));
-    if (!exists) await message.react(emoji.reaction);
+    if (!findMessageReaction(message, mapping)) await message.react(normalizeEmoji(mapping.emoji).reaction);
   }
-  const updated = savePanel(guild.id, { ...panel, status: 'healthy', lastHealthAt: now(), lastError: null }, guild);
-  return { panel: updated, message };
+  return {
+    panel: savePanel(guild.id, { ...panel, status: 'healthy', lastHealthAt: now(), lastError: null }, guild),
+    message,
+  };
 }
 
 async function attachExistingMessage({ guild, messageReference, channelId, name, templateId = null, applyTemplate = false, mappings = [], createdBy }) {
   if (!guild) throw new Error('Guild is required.');
   const message = await resolveMessage(guild, messageReference, channelId);
   if (applyTemplate && templateId) await message.edit(templatePayload(getReactionTemplate(guild.id, templateId)));
-  const panel = savePanel(guild.id, { name, source: DRAFT_TYPES.EXISTING, templateId, channelId: message.channel.id, messageId: message.id, mappings, createdBy, status: 'attached' }, guild);
+  const panel = savePanel(guild.id, {
+    name,
+    source: DRAFT_TYPES.EXISTING,
+    templateId,
+    channelId: message.channel.id,
+    messageId: message.id,
+    mappings,
+    createdBy,
+    status: 'attached',
+  }, guild);
   await syncPanelReactions(guild, panel);
   addAnalytics(guild.id, { attached: 1 }, guild);
   return getPanel(guild.id, panel.panelId);
@@ -282,7 +375,16 @@ async function createFromTemplate({ guild, channelId, templateId, name, mappings
   if (!channel?.send) throw new Error('Choose a text channel where Goliath can send messages.');
   const template = getReactionTemplate(guild.id, templateId);
   const message = await channel.send(templatePayload(template));
-  const panel = savePanel(guild.id, { name: name || template.name, source: DRAFT_TYPES.TEMPLATE, templateId, channelId: channel.id, messageId: message.id, mappings, createdBy, status: 'created' }, guild);
+  const panel = savePanel(guild.id, {
+    name: name || template.name,
+    source: DRAFT_TYPES.TEMPLATE,
+    templateId,
+    channelId: channel.id,
+    messageId: message.id,
+    mappings,
+    createdBy,
+    status: 'created',
+  }, guild);
   await syncPanelReactions(guild, panel);
   addAnalytics(guild.id, { created: 1 }, guild);
   return getPanel(guild.id, panel.panelId);
@@ -299,7 +401,16 @@ async function applyTemplateToPanel(guild, panelId, templateId) {
 async function updatePanelMappings(guild, panelId, mappings, actorId) {
   const current = getPanel(guild.id, panelId);
   if (!current) throw new Error('Reaction-role panel not found.');
-  const panel = savePanel(guild.id, { ...current, mappings, createdBy: current.createdBy || actorId }, guild);
+  const nextMappings = mappings.map(normalizeMapping).filter((item) => item.roleId && item.emojiKey);
+  const conflicts = mappingConflicts(nextMappings);
+  if (conflicts.length) throw new Error(conflicts.join(' '));
+  const message = await resolveMessage(guild, current.messageId, current.channelId);
+  await removeObsoleteBotReactions(guild, message, current.mappings, nextMappings);
+  const panel = savePanel(guild.id, {
+    ...current,
+    mappings: nextMappings,
+    createdBy: current.createdBy || actorId,
+  }, guild);
   await syncPanelReactions(guild, panel);
   return getPanel(guild.id, panelId);
 }
@@ -309,13 +420,7 @@ async function detachPanel(guild, panelId, { clearReactions = false } = {}) {
   if (!panel) throw new Error('Reaction-role panel not found.');
   if (clearReactions) {
     const message = await resolveMessage(guild, panel.messageId, panel.channelId).catch(() => null);
-    if (message) {
-      for (const mapping of panel.mappings) {
-        const emoji = normalizeEmoji(mapping.emoji);
-        const reaction = message.reactions.cache.find((item) => item.emoji.id === emoji.id || (!emoji.id && item.emoji.name === emoji.name));
-        if (reaction?.me) await reaction.users.remove(guild.members.me.id).catch(() => null);
-      }
-    }
+    if (message) await removeObsoleteBotReactions(guild, message, panel.mappings, []);
   }
   removePanel(guild.id, panelId, guild);
   return { detached: true, messageDeleted: false };
@@ -360,48 +465,127 @@ async function handleReaction(reaction, user, removing = false) {
   }
 }
 
-async function buildHealth(guild) {
-  const panels = listPanels(guild.id);
-  const results = [];
-  for (const panel of panels) {
-    const issues = [];
-    const message = await resolveMessage(guild, panel.messageId, panel.channelId).catch(() => null);
-    if (!message) issues.push('Message is missing or inaccessible.');
-    if (panel.templateId) {
-      try { getReactionTemplate(guild.id, panel.templateId); } catch (error) { issues.push(error.message); }
-    }
-    for (const mapping of panel.mappings) {
-      try { validateRole(guild, mapping.roleId); } catch (error) { issues.push(error.message); }
-    }
-    results.push({ panelId: panel.panelId, healthy: issues.length === 0, issues });
+async function inspectPanelHealth(guild, panel) {
+  const issues = [];
+  const warnings = [];
+  if (panel.enabled === false) {
+    warnings.push('Deployment is disabled.');
+    return { panelId: panel.panelId, enabled: false, healthy: true, status: 'disabled', issues, warnings, checkedAt: now() };
   }
-  return { healthy: results.every((item) => item.healthy), panels: results };
+  if (!panel.mappings.length) issues.push('No reaction-role mappings are configured.');
+  issues.push(...mappingConflicts(panel.mappings));
+  let message = null;
+  try { message = await resolveMessage(guild, panel.messageId, panel.channelId); }
+  catch (error) { issues.push(error.message); }
+  if (panel.templateId) {
+    try { getReactionTemplate(guild.id, panel.templateId); }
+    catch (error) { issues.push(error.message); }
+  }
+  for (const mapping of panel.mappings) {
+    if (mapping.enabled === false) {
+      warnings.push(`Mapping ${mapping.emoji} is disabled.`);
+      continue;
+    }
+    try { validateRole(guild, mapping.roleId); }
+    catch (error) { issues.push(error.message); }
+    if (message && !findMessageReaction(message, mapping)) issues.push(`Reaction ${mapping.emoji} is missing from the tracked message.`);
+  }
+  return {
+    panelId: panel.panelId,
+    enabled: true,
+    healthy: issues.length === 0,
+    status: issues.length ? 'error' : 'healthy',
+    issues: [...new Set(issues)],
+    warnings: [...new Set(warnings)],
+    checkedAt: now(),
+  };
+}
+
+async function buildHealth(guild) {
+  const results = [];
+  for (const panel of listPanels(guild.id)) {
+    const result = await inspectPanelHealth(guild, panel);
+    results.push(result);
+    savePanel(guild.id, {
+      ...panel,
+      status: result.status,
+      lastHealthAt: result.checkedAt,
+      lastError: result.issues.join(' ').slice(0, 500) || null,
+    }, guild);
+  }
+  const active = results.filter((item) => item.enabled);
+  return {
+    healthy: active.every((item) => item.healthy),
+    total: results.length,
+    active: active.length,
+    disabled: results.length - active.length,
+    unhealthy: active.filter((item) => !item.healthy).length,
+    panels: results,
+    checkedAt: now(),
+  };
 }
 
 async function repairAll(guild) {
   const repaired = [];
+  const skipped = [];
   const failed = [];
   for (const panel of listPanels(guild.id)) {
-    try { await syncPanelReactions(guild, panel); repaired.push(panel.panelId); }
-    catch (error) { savePanel(guild.id, { ...panel, status: 'error', lastHealthAt: now(), lastError: error.message }, guild); failed.push({ panelId: panel.panelId, error: error.message }); }
+    if (panel.enabled === false) {
+      skipped.push(panel.panelId);
+      continue;
+    }
+    try {
+      await syncPanelReactions(guild, panel);
+      repaired.push(panel.panelId);
+    } catch (error) {
+      savePanel(guild.id, { ...panel, status: 'error', lastHealthAt: now(), lastError: error.message }, guild);
+      failed.push({ panelId: panel.panelId, error: error.message });
+    }
   }
   addAnalytics(guild.id, { repaired: repaired.length }, guild);
-  return { repaired, failed };
+  return { repaired, skipped, failed };
 }
 
 async function startup(client) {
-  for (const guild of client.guilds.cache.values()) await repairAll(guild).catch((error) => console.warn(`[ReactionRoles] ${guild.id}: ${error.message}`));
+  for (const guild of client.guilds.cache.values()) {
+    await repairAll(guild).catch((error) => console.warn(`[ReactionRoles] ${guild.id}: ${error.message}`));
+  }
 }
 
 function exportConfiguration(guildId) { return getSection(guildId); }
 function reset(guildId, meta = {}) { return saveSection(guildId, defaultSection(), meta); }
 
 module.exports = {
-  SECTION, MODES, DRAFT_TYPES, getSection, setEnabled, listPanels, getPanel, findPanelByMessage, savePanel, removePanel,
-  getDraft, saveDraft, clearDraft, addDraftMapping, removeDraftMapping,
-  listReactionTemplates, getReactionTemplate, templatePayload,
-  parseMessageReference, attachExistingMessage, createFromTemplate, applyTemplateToPanel, updatePanelMappings, detachPanel, syncPanelReactions,
+  SECTION,
+  MODES,
+  DRAFT_TYPES,
+  getSection,
+  setEnabled,
+  listPanels,
+  getPanel,
+  findPanelByMessage,
+  savePanel,
+  removePanel,
+  getDraft,
+  saveDraft,
+  clearDraft,
+  addDraftMapping,
+  removeDraftMapping,
+  listReactionTemplates,
+  getReactionTemplate,
+  templatePayload,
+  parseMessageReference,
+  attachExistingMessage,
+  createFromTemplate,
+  applyTemplateToPanel,
+  updatePanelMappings,
+  detachPanel,
+  syncPanelReactions,
   handleReactionAdd: (reaction, user) => handleReaction(reaction, user, false),
   handleReactionRemove: (reaction, user) => handleReaction(reaction, user, true),
-  buildHealth, repairAll, startup, exportConfiguration, reset,
+  buildHealth,
+  repairAll,
+  startup,
+  exportConfiguration,
+  reset,
 };
