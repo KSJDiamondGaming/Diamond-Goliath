@@ -45,6 +45,10 @@ function button(customId, label, style = ButtonStyle.Secondary) {
   return new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style);
 }
 
+function asObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
 function translateLegacyVariables(value) {
   if (typeof value === 'string') {
     return value.replace(/\{([a-zA-Z0-9_.:-]+)\}/g, (match, key) => {
@@ -92,6 +96,41 @@ function legacyPresetToTemplate(name, preset = {}) {
     tags: ['embed-preset', 'welcome'],
     sourcePresetName: name,
   });
+}
+
+function saveAndBindLegacyPreset(guildId, name, preset, actorId) {
+  const template = embedTemplateManager.normalizeTemplate(legacyPresetToTemplate(name, preset));
+
+  guildManager.updateGuildSection(guildId, 'embedStudio', (current = {}) => {
+    const templates = asObject(current.templates || current.presets);
+    const bindings = asObject(current.bindings);
+    const welcomeBindings = asObject(bindings.welcome);
+
+    return {
+      ...current,
+      templates: {
+        ...templates,
+        [template.templateId]: template,
+      },
+      bindings: {
+        ...bindings,
+        welcome: {
+          ...welcomeBindings,
+          welcome: template.templateId,
+        },
+      },
+      updatedAt: new Date().toISOString(),
+    };
+  }, {});
+
+  welcome.updateConfig(
+    guildId,
+    { templateId: template.templateId },
+    { action: 'welcome_template_bind', actorId }
+  );
+
+  if (typeof guildManager.reloadGuild === 'function') guildManager.reloadGuild(guildId);
+  return template;
 }
 
 function getWelcomeOptions(guildId) {
@@ -235,15 +274,16 @@ async function handleWelcomeInteraction(interaction) {
         const presetName = templateId.slice(LEGACY_PRESET_PREFIX.length);
         const preset = guildManager.getEmbedPreset(interaction.guild.id, presetName);
         if (!preset || preset.template !== 'welcome') throw new Error('That welcome preset no longer exists.');
-        const savedTemplate = embedTemplateManager.saveTemplate(
+        templateId = saveAndBindLegacyPreset(
           interaction.guild.id,
-          legacyPresetToTemplate(presetName, preset)
-        );
-        templateId = savedTemplate.templateId;
-        if (typeof guildManager.reloadGuild === 'function') guildManager.reloadGuild(interaction.guild.id);
+          presetName,
+          preset,
+          interaction.user.id
+        ).templateId;
+      } else {
+        welcome.bindWelcomeTemplate(interaction.guild.id, templateId, 'welcome', { actorId: interaction.user.id });
       }
 
-      welcome.bindWelcomeTemplate(interaction.guild.id, templateId, 'welcome', { actorId: interaction.user.id });
       return updatePanel(interaction);
     }
 
@@ -255,11 +295,14 @@ async function handleWelcomeInteraction(interaction) {
     if (customId === 'admin:welcome:toggleBots') welcome.updateConfig(interaction.guild.id, { ignoreBots: !config.ignoreBots }, { actorId: interaction.user.id });
 
     if (customId === 'admin:welcome:test') {
-      await interaction.deferUpdate();
       const current = welcome.getWelcomeSection(interaction.guild.id);
-      if (!current.channelId && !current.dmEnabled) throw new Error('Select a welcome channel or enable welcome DMs before previewing.');
-      await welcome.sendWelcome(interaction.member, { silent: false, force: true, previewOnly: true });
-      return updatePanel(interaction);
+      const preview = welcome.buildDiscordPayload(interaction.member, 'welcome', current);
+      return interaction.reply({
+        content: preview.content || '👁️ Welcome Preview',
+        embeds: preview.embeds,
+        allowedMentions: { parse: [], repliedUser: false },
+        ephemeral: true,
+      });
     }
 
     if (customId === 'admin:welcome:repair') {
