@@ -129,7 +129,7 @@ async function buildWelcomePanel(guild, memberDisplayName = 'Unknown User', user
       '**📨 Current Welcome Message**',
       `**Name:** ${activeTemplate ? `\`${activeTemplate.name || activeTemplate.templateId}\`` : '`Not set`'}`,
       `**Template:** ${activeTemplate ? `\`${activeTemplate.templateId}\`` : '`Not set`'}`,
-      `**Assignment:** ${binding ? 'Assigned ✅' : 'Using configured default'}`,
+      `**Assignment:** ${binding ? 'Assigned ✅' : 'Ready to assign'}`,
       '**Source:** Embed Studio',
       stagedTemplate ? `**Selected:** \`${stagedTemplate.name || stagedTemplate.templateId}\` · press **Assign**` : null,
       '',
@@ -199,10 +199,18 @@ async function handleWelcomeInteraction(interaction) {
     }
 
     if (customId === 'admin:welcome:assign') {
-      const templateId = selections.get(selectionKey(interaction));
-      if (!templateId) throw new Error('Choose a template first.');
-      welcome.bindWelcomeTemplate(interaction.guild.id, templateId, 'welcome', { actorId: interaction.user.id });
-      welcome.updateConfig(interaction.guild.id, { templateId, presetName: null }, { action: 'welcome_template_assign', actorId: interaction.user.id });
+      const config = welcome.getWelcomeSection(interaction.guild.id);
+      const binding = welcome.getWelcomeBinding(interaction.guild.id, 'welcome');
+      const templateId = selections.get(selectionKey(interaction)) || binding?.templateId || config.templateId;
+      const template = templateId ? embedTemplateManager.getTemplate(interaction.guild.id, templateId) : null;
+      if (!template) throw new Error('The displayed Embed Studio template could not be found.');
+
+      welcome.bindWelcomeTemplate(interaction.guild.id, template.templateId, 'welcome', { actorId: interaction.user.id });
+      welcome.updateConfig(
+        interaction.guild.id,
+        { templateId: template.templateId, presetName: null },
+        { action: 'welcome_template_assign', actorId: interaction.user.id }
+      );
       selections.delete(selectionKey(interaction));
       return updatePanel(interaction);
     }

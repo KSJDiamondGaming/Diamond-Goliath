@@ -33,29 +33,11 @@ const respondFailure = (res, error) => failure(res, error, error.status || 400);
 const removalActionFrom = (req) => {
   const requested = String(req.body?.action || req.query?.action || '').trim().toLowerCase();
   if (requested) {
-    if (!['detach', 'clear', 'delete'].includes(requested)) {
-      throw new Error('Removal action must be detach, clear, or delete.');
-    }
+    if (!['detach', 'clear', 'delete'].includes(requested)) throw new Error('Removal action must be detach, clear, or delete.');
     return requested;
   }
   return req.query?.clearReactions === 'true' || req.body?.clearReactions === true ? 'clear' : 'detach';
 };
-
-async function deleteOwnedDeploymentMessage(guild, panel) {
-  if (panel.source !== reactionRoles.DRAFT_TYPES.TEMPLATE) {
-    throw new Error('Only messages created by Goliath can be deleted through Reaction Roles.');
-  }
-  const channel = guild.channels.cache.get(panel.channelId) || await guild.channels.fetch(panel.channelId).catch(() => null);
-  if (!channel?.messages?.fetch) throw new Error('The deployment channel is inaccessible.');
-  const message = await channel.messages.fetch(panel.messageId).catch(() => null);
-  if (!message) throw new Error('The deployed message no longer exists.');
-  if (message.author?.id !== guild.members.me?.id) {
-    throw new Error('Goliath can only delete messages it created.');
-  }
-  await message.delete();
-  reactionRoles.removePanel(guild.id, panel.panelId, { actorId: guild.members.me?.id });
-  return { detached: true, reactionsCleared: false, messageDeleted: true };
-}
 
 router.get('/:guildId/overview', async (req, res) => {
   try {
@@ -122,12 +104,7 @@ router.patch('/:guildId/panels/:panelId/enabled', async (req, res) => {
     const guild = await guildFrom(req, guildId);
     const current = panelFrom(guildId, req.params.panelId);
     const enabled = req.body?.enabled === true;
-    let panel = reactionRoles.savePanel(guildId, {
-      ...current,
-      enabled,
-      status: enabled ? 'pending' : 'disabled',
-      lastError: null,
-    }, { actorId: actorId(req) });
+    let panel = reactionRoles.savePanel(guildId, { ...current, enabled, status: enabled ? 'pending' : 'disabled', lastError: null }, { actorId: actorId(req) });
     if (enabled) panel = (await reactionRoles.syncPanelReactions(guild, panel)).panel;
     return success(res, { panel, config: reactionRoles.getSection(guildId) });
   } catch (error) { return respondFailure(res, error); }
@@ -180,7 +157,7 @@ router.delete('/:guildId/panels/:panelId', async (req, res) => {
     const panel = panelFrom(guildId, req.params.panelId);
     const action = removalActionFrom(req);
     const result = action === 'delete'
-      ? await deleteOwnedDeploymentMessage(guild, panel)
+      ? await reactionRoles.deleteDeploymentMessage(guild, panel.panelId, { actorId: actorId(req) })
       : await reactionRoles.detachPanel(guild, panel.panelId, { clearReactions: action === 'clear' });
     return success(res, { action, result, config: reactionRoles.getSection(guildId) });
   } catch (error) { return respondFailure(res, error); }
