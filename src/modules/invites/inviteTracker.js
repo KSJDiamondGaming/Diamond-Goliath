@@ -1,5 +1,6 @@
 'use strict';
 
+const { Events } = require('discord.js');
 const store = require('./invitesStore');
 const snapshots = new Map();
 let attached = false;
@@ -44,12 +45,12 @@ function attach(client) {
 
   const warm = () => Promise.all(client.guilds.cache.map(snapshot)).catch(() => null);
   if (client.isReady?.()) warm();
-  else client.once('ready', warm);
+  else client.once(Events.ClientReady, warm);
 
-  client.on('inviteCreate', invite => snapshot(invite.guild));
-  client.on('inviteDelete', invite => snapshot(invite.guild));
-  client.on('guildCreate', snapshot);
-  client.on('guildMemberAdd', async member => {
+  client.on(Events.InviteCreate, invite => snapshot(invite.guild));
+  client.on(Events.InviteDelete, invite => snapshot(invite.guild));
+  client.on(Events.GuildCreate, snapshot);
+  client.on(Events.GuildMemberAdd, async member => {
     const result = await detect(member);
     client.emit('goliathInviteUsed', member, result);
   });
