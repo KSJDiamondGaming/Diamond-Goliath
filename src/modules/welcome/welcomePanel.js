@@ -11,31 +11,12 @@ const {
   AttachmentBuilder,
 } = require('discord.js');
 const welcome = require('./welcome');
+const { buildPreviewEmbeds } = require('../embed/embedPanel');
 const embedTemplateManager = require('../embed/embedTemplateManager');
 const guildManager = require('../../core/guild/guildManager');
 
-const LEGACY_PRESET_PREFIX = 'legacy-preset:';
-const LEGACY_VARIABLES = Object.freeze({
-  guildMemberCount: 'memberCount',
-  guildmembercount: 'memberCount',
-  userDisplay: 'username',
-  userdisplay: 'username',
-  userDisplayName: 'username',
-  userdisplayname: 'username',
-  userName: 'username',
-  userNoPing: 'userMention',
-  usernoping: 'userMention',
-  serverIcon: 'guildIcon',
-  servericon: 'guildIcon',
-  userServerAvatar: 'userAvatar',
-  userserveravatar: 'userAvatar',
-  userCreatedAt: 'createdAt',
-  usercreatedat: 'createdAt',
-  userJoinedAt: 'joinedAt',
-  userjoinedat: 'joinedAt',
-  nowTimestamp: 'timestamp',
-  nowtimestamp: 'timestamp',
-});
+const PRESET_PREFIX = 'preset:';
+const selections = new Map();
 
 function row(...components) {
   return new ActionRowBuilder().addComponents(...components);
@@ -45,32 +26,74 @@ function button(customId, label, style = ButtonStyle.Secondary) {
   return new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style);
 }
 
-function asObject(value) {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+function selectionKey(interactionOrGuild) {
+  const guildId = interactionOrGuild?.guild?.id || interactionOrGuild?.id;
+  const userId = interactionOrGuild?.user?.id || 'panel';
+  return `${guildId}:${userId}`;
 }
 
-function translateLegacyVariables(value) {
-  if (typeof value === 'string') {
-    return value.replace(/\{([a-zA-Z0-9_.:-]+)\}/g, (match, key) => {
-      const replacement = LEGACY_VARIABLES[key];
-      return replacement ? `{${replacement}}` : match;
-    });
-  }
-  if (Array.isArray(value)) return value.map(translateLegacyVariables);
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, translateLegacyVariables(item)]));
-  }
-  return value;
-}
-
-function legacyPresetTemplateId(name) {
+function presetTemplateId(name) {
   return `embed_preset_${embedTemplateManager.cleanKey(name)}`;
 }
 
-function legacyPresetToTemplate(name, preset = {}) {
+function getPreset(guildId, name) {
+  return typeof guildManager.getEmbedPreset === 'function'
+    ? guildManager.getEmbedPreset(guildId, name)
+    : null;
+}
+
+function getWelcomeOptions(guildId) {
+  const presets = typeof guildManager.getEmbedPresets === 'function'
+    ? guildManager.getEmbedPresets(guildId) || {}
+    : {};
+
+  const options = Object.entries(presets)
+    .filter(([, preset]) => preset?.template === 'welcome')
+    .map(([name, preset]) => ({
+      label: String(preset.name || name).slice(0, 100),
+      description: String(preset.title || preset.panels?.[0]?.title || 'Saved welcome message').slice(0, 100),
+      value: `${PRESET_PREFIX}${name}`,
+      activeTemplateId: presetTemplateId(name),
+    }));
+
+  return options.sort((a, b) => a.label.localeCompare(b.label)).slice(0, 25);
+}
+
+function selectedValue(guild, activeTemplateId, userId = 'panel') {
+  const staged = selections.get(`${guild.id}:${userId}`);
+  if (staged) return staged;
+  const option = getWelcomeOptions(guild.id).find((item) => item.activeTemplateId === activeTemplateId);
+  return option?.value || null;
+}
+
+function templateMenu(guild, activeTemplateId, userId) {
+  const options = getWelcomeOptions(guild.id);
+  const selected = selectedValue(guild, activeTemplateId, userId);
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId('admin:welcome:template')
+    .setPlaceholder(options.length ? 'Choose a welcome message' : 'No welcome messages available')
+    .setMinValues(1)
+    .setMaxValues(1)
+    .setDisabled(options.length === 0);
+
+  if (options.length) {
+    menu.addOptions(options.map((option) => ({
+      label: option.label,
+      description: option.description,
+      value: option.value,
+      default: option.value === selected,
+    })));
+  } else {
+    menu.addOptions({ label: 'No welcome messages found', value: 'none' });
+  }
+
+  return menu;
+}
+
+function presetToTemplate(name, preset = {}) {
   const panel = Array.isArray(preset.panels) && preset.panels.length ? preset.panels[0] : preset;
-  return translateLegacyVariables({
-    templateId: legacyPresetTemplateId(name),
+  return {
+    templateId: presetTemplateId(name),
     name: String(preset.name || name).slice(0, 100),
     module: 'welcome',
     templateType: 'welcome',
@@ -93,111 +116,42 @@ function legacyPresetToTemplate(name, preset = {}) {
       fields: Array.isArray(panel.fields) ? panel.fields : [],
       buttons: Array.isArray(preset.buttons) ? preset.buttons : [],
     },
-    tags: ['embed-preset', 'welcome'],
     sourcePresetName: name,
-  });
+    sourcePreset: preset,
+    tags: ['embed-preset', 'welcome'],
+  };
 }
 
-function saveAndBindLegacyPreset(guildId, name, preset, actorId) {
-  const template = embedTemplateManager.normalizeTemplate(legacyPresetToTemplate(name, preset));
-
-  guildManager.updateGuildSection(guildId, 'embedStudio', (current = {}) => {
-    const templates = asObject(current.templates || current.presets);
-    const bindings = asObject(current.bindings);
-    const welcomeBindings = asObject(bindings.welcome);
-
-    return {
-      ...current,
-      templates: {
-        ...templates,
-        [template.templateId]: template,
-      },
-      bindings: {
-        ...bindings,
-        welcome: {
-          ...welcomeBindings,
-          welcome: template.templateId,
-        },
-      },
-      updatedAt: new Date().toISOString(),
-    };
-  }, {});
-
-  welcome.updateConfig(
-    guildId,
-    { templateId: template.templateId },
-    { action: 'welcome_template_bind', actorId }
-  );
-
-  if (typeof guildManager.reloadGuild === 'function') guildManager.reloadGuild(guildId);
+function assignPreset(guildId, name, preset, actorId) {
+  const template = embedTemplateManager.saveTemplate(guildId, presetToTemplate(name, preset));
+  welcome.bindWelcomeTemplate(guildId, template.templateId, 'welcome', { actorId });
+  welcome.updateConfig(guildId, {
+    templateId: template.templateId,
+    presetName: name,
+  }, { action: 'welcome_preset_assign', actorId });
   return template;
 }
 
-function getWelcomeOptions(guildId) {
-  const templates = Object.values(embedTemplateManager.listTemplates(guildId))
-    .filter((template) => template?.templateType === 'welcome')
-    .map((template) => ({
-      label: String(template.name || template.templateId).slice(0, 100),
-      description: String(template.embed?.title || 'Welcome template').slice(0, 100),
-      value: String(template.templateId),
-      activeTemplateId: String(template.templateId),
-    }));
-
-  const existingIds = new Set(templates.map((template) => template.activeTemplateId));
-  const presets = typeof guildManager.getEmbedPresets === 'function'
-    ? guildManager.getEmbedPresets(guildId) || {}
-    : {};
-
-  for (const [name, preset] of Object.entries(presets)) {
-    if (!preset || preset.template !== 'welcome') continue;
-    const templateId = legacyPresetTemplateId(name);
-    if (existingIds.has(templateId)) continue;
-    templates.push({
-      label: String(preset.name || name).slice(0, 100),
-      description: 'Saved welcome preset',
-      value: `${LEGACY_PRESET_PREFIX}${name}`,
-      activeTemplateId: templateId,
-    });
-  }
-
-  return templates.sort((a, b) => a.label.localeCompare(b.label)).slice(0, 25);
+function activePreset(config, binding, guildId) {
+  const name = config.presetName || binding?.sourcePresetName;
+  const preset = name ? getPreset(guildId, name) : null;
+  return preset ? { name, preset } : null;
 }
 
-function templateMenu(guildId, activeTemplateId) {
-  const templates = getWelcomeOptions(guildId);
-  const menu = new StringSelectMenuBuilder()
-    .setCustomId('admin:welcome:template')
-    .setPlaceholder(templates.length ? 'Choose a welcome message' : 'No welcome messages available')
-    .setMinValues(1)
-    .setMaxValues(1)
-    .setDisabled(templates.length === 0);
-
-  if (templates.length) {
-    menu.addOptions(templates.map((template) => ({
-      label: template.label,
-      description: template.description,
-      value: template.value,
-      default: template.activeTemplateId === String(activeTemplateId),
-    })));
-  } else {
-    menu.addOptions({ label: 'No templates found', value: 'none' });
-  }
-  return menu;
-}
-
-async function buildWelcomePanel(guild, memberDisplayName = 'Unknown User') {
+async function buildWelcomePanel(guild, memberDisplayName = 'Unknown User', userId = 'panel') {
   const config = welcome.getWelcomeSection(guild.id);
   const health = await welcome.buildHealthReport(guild);
   const analytics = config.analytics || {};
   const binding = welcome.getWelcomeBinding(guild.id, 'welcome');
-  const activeTemplateId = binding?.templateId || config.templateId;
-  const activeTemplateName = binding?.name || health.templateName || activeTemplateId;
-  const actionableWarnings = health.warnings.filter(
-    (warning) => !warning.startsWith('No Embed Studio template is explicitly bound')
-  );
+  const assignedPreset = activePreset(config, binding, guild.id);
+  const activeTemplateId = assignedPreset ? presetTemplateId(assignedPreset.name) : (binding?.templateId || config.templateId);
+  const activeName = assignedPreset?.preset?.name || assignedPreset?.name || binding?.name || health.templateName || activeTemplateId;
+  const staged = selections.get(`${guild.id}:${userId}`);
+  const stagedName = staged?.startsWith(PRESET_PREFIX) ? staged.slice(PRESET_PREFIX.length) : null;
+  const warnings = health.warnings.filter((warning) => !warning.startsWith('No Embed Studio template is explicitly bound'));
 
   const embed = new EmbedBuilder()
-    .setColor(actionableWarnings.length ? 0xfaa61a : 0x57f287)
+    .setColor(warnings.length ? 0xfaa61a : 0x57f287)
     .setTitle('👋 Welcome · Setup')
     .setDescription([
       `**Status:** ${config.enabled ? 'Enabled ✅' : 'Disabled ❌'}`,
@@ -207,17 +161,15 @@ async function buildWelcomePanel(guild, memberDisplayName = 'Unknown User') {
       `**Ignore Bots:** ${config.ignoreBots ? 'Yes ✅' : 'No ❌'}`,
       '',
       '**📨 Current Welcome Message**',
-      `**Name:** ${activeTemplateName ? `\`${activeTemplateName}\`` : '`Not set`'}`,
-      `**Template ID:** ${activeTemplateId ? `\`${activeTemplateId}\`` : '`Not set`'}`,
-      `**Assignment:** ${binding ? 'Assigned ✅' : 'Using configured default ✅'}`,
-      `**Source:** ${binding ? 'Selected welcome message' : 'Configured default template'}`,
+      `**Name:** ${activeName ? `\`${activeName}\`` : '`Not set`'}`,
+      `**Assignment:** ${assignedPreset || binding ? 'Assigned ✅' : 'Using default'}`,
+      `**Source:** ${assignedPreset ? 'Embed panel preset' : binding ? 'Embed Studio' : 'Built-in default'}`,
+      stagedName ? `**Selected:** \`${getPreset(guild.id, stagedName)?.name || stagedName}\` · press **Assign**` : null,
       '',
       `Public sent: \`${analytics.publicSent || 0}\` | DMs sent: \`${analytics.dmSent || 0}\` | Failed: \`${(analytics.publicFailed || 0) + (analytics.dmFailed || 0)}\``,
       '',
-      actionableWarnings.length
-        ? `**Warnings**\n${actionableWarnings.map((warning) => `• ${warning}`).join('\n')}`
-        : '**Health:** Healthy ✅',
-    ].join('\n').slice(0, 4096))
+      warnings.length ? `**Warnings**\n${warnings.map((warning) => `• ${warning}`).join('\n')}` : '**Health:** Healthy ✅',
+    ].filter(Boolean).join('\n').slice(0, 4096))
     .setFooter({ text: `Requested by ${memberDisplayName}` })
     .setTimestamp();
 
@@ -230,26 +182,30 @@ async function buildWelcomePanel(guild, memberDisplayName = 'Unknown User') {
         .setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
         .setMinValues(0)
         .setMaxValues(1)),
-      row(templateMenu(guild.id, activeTemplateId)),
+      row(templateMenu(guild, activeTemplateId, userId)),
       row(
-        button(config.enabled ? 'admin:welcome:disable' : 'admin:welcome:enable', config.enabled ? '⏸️ Disable' : '▶️ Enable', config.enabled ? ButtonStyle.Secondary : ButtonStyle.Success),
-        button('admin:welcome:toggleDm', config.dmEnabled ? '📨 Disable DM' : '📨 Enable DM'),
-        button('admin:welcome:togglePing', config.allowUserPing ? '🔕 Disable Ping' : '🔔 Enable Ping'),
-        button('admin:welcome:toggleBots', config.ignoreBots ? '🤖 Include Bots' : '🤖 Ignore Bots')
+        button(config.enabled ? 'admin:welcome:disable' : 'admin:welcome:enable', config.enabled ? '⏸ Disable' : '▶ Enable', config.enabled ? ButtonStyle.Secondary : ButtonStyle.Success),
+        button('admin:welcome:toggleDm', config.dmEnabled ? '📨 No DM' : '📨 DM'),
+        button('admin:welcome:togglePing', config.allowUserPing ? '🔕 No Ping' : '🔔 Ping'),
+        button('admin:welcome:toggleBots', config.ignoreBots ? '🤖 Bots' : '🤖 Ignore')
       ),
       row(
-        button('admin:welcome:test', '👁️ Preview', ButtonStyle.Success),
-        button('admin:welcome:repair', '🩺 Repair', ButtonStyle.Primary),
-        button('admin:welcome:export', '📤 Export'),
-        button('admin:welcome:reset', '♻️ Reset', ButtonStyle.Danger),
-        button('admin:modules', '⬅️ Modules')
+        button('admin:welcome:assign', '✅ Assign', ButtonStyle.Primary),
+        button('admin:welcome:test', '🧪 Test', ButtonStyle.Success),
+        button('admin:welcome:repair', '🩺 Repair'),
+        button('admin:welcome:reset', '♻ Reset', ButtonStyle.Danger),
+        button('admin:modules', '⬅ Modules')
       ),
     ],
   };
 }
 
 async function updatePanel(interaction) {
-  const payload = await buildWelcomePanel(interaction.guild, interaction.member?.displayName || interaction.user?.username);
+  const payload = await buildWelcomePanel(
+    interaction.guild,
+    interaction.member?.displayName || interaction.user?.username,
+    interaction.user.id
+  );
   if (interaction.deferred || interaction.replied) return interaction.editReply(payload);
   return interaction.update(payload);
 }
@@ -267,23 +223,20 @@ async function handleWelcomeInteraction(interaction) {
     }
 
     if (interaction.isStringSelectMenu?.() && customId === 'admin:welcome:template') {
-      let templateId = interaction.values?.[0];
-      if (!templateId || templateId === 'none') throw new Error('Choose a valid welcome message.');
+      const value = interaction.values?.[0];
+      if (!value || value === 'none' || !value.startsWith(PRESET_PREFIX)) throw new Error('Choose a valid welcome message.');
+      selections.set(selectionKey(interaction), value);
+      return updatePanel(interaction);
+    }
 
-      if (templateId.startsWith(LEGACY_PRESET_PREFIX)) {
-        const presetName = templateId.slice(LEGACY_PRESET_PREFIX.length);
-        const preset = guildManager.getEmbedPreset(interaction.guild.id, presetName);
-        if (!preset || preset.template !== 'welcome') throw new Error('That welcome preset no longer exists.');
-        templateId = saveAndBindLegacyPreset(
-          interaction.guild.id,
-          presetName,
-          preset,
-          interaction.user.id
-        ).templateId;
-      } else {
-        welcome.bindWelcomeTemplate(interaction.guild.id, templateId, 'welcome', { actorId: interaction.user.id });
-      }
-
+    if (customId === 'admin:welcome:assign') {
+      const value = selections.get(selectionKey(interaction));
+      if (!value?.startsWith(PRESET_PREFIX)) throw new Error('Choose a welcome message first.');
+      const name = value.slice(PRESET_PREFIX.length);
+      const preset = getPreset(interaction.guild.id, name);
+      if (!preset || preset.template !== 'welcome') throw new Error('That welcome message no longer exists.');
+      assignPreset(interaction.guild.id, name, preset, interaction.user.id);
+      selections.delete(selectionKey(interaction));
       return updatePanel(interaction);
     }
 
@@ -296,10 +249,12 @@ async function handleWelcomeInteraction(interaction) {
 
     if (customId === 'admin:welcome:test') {
       const current = welcome.getWelcomeSection(interaction.guild.id);
-      const preview = welcome.buildDiscordPayload(interaction.member, 'welcome', current);
+      const assigned = activePreset(current, welcome.getWelcomeBinding(interaction.guild.id, 'welcome'), interaction.guild.id);
+      if (!assigned) throw new Error('Assign a saved welcome message first.');
+      const previewState = { ...assigned.preset, allowUserPing: false };
       return interaction.reply({
-        content: preview.content || '👁️ Welcome Preview',
-        embeds: preview.embeds,
+        content: assigned.preset.content || assigned.preset.message || '',
+        embeds: buildPreviewEmbeds(previewState, interaction),
         allowedMentions: { parse: [], repliedUser: false },
         ephemeral: true,
       });
@@ -313,6 +268,7 @@ async function handleWelcomeInteraction(interaction) {
 
     if (customId === 'admin:welcome:reset') {
       await interaction.deferUpdate();
+      selections.delete(selectionKey(interaction));
       welcome.resetWelcome(interaction.guild.id, { actorId: interaction.user.id });
       return updatePanel(interaction);
     }
