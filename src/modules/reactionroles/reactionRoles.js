@@ -156,42 +156,22 @@ function normalizeSection(section = {}) {
   };
 }
 
-function getSection(guildId) {
-  return normalizeSection(getModuleSection(guildId, SECTION, defaultSection()));
-}
-
-function saveSection(guildId, section, meta = {}) {
-  return normalizeSection(saveModuleSection(guildId, SECTION, normalizeSection(section), meta));
-}
-
+function getSection(guildId) { return normalizeSection(getModuleSection(guildId, SECTION, defaultSection())); }
+function saveSection(guildId, section, meta = {}) { return normalizeSection(saveModuleSection(guildId, SECTION, normalizeSection(section), meta)); }
 function updateSection(guildId, updater, meta = {}) {
   return normalizeSection(updateModuleSection(
     guildId,
     SECTION,
-    (current) => normalizeSection(
-      typeof updater === 'function' ? updater(clone(normalizeSection(current))) : updater
-    ),
+    (current) => normalizeSection(typeof updater === 'function' ? updater(clone(normalizeSection(current))) : updater),
     defaultSection(),
     meta
   ));
 }
-
-function setEnabled(guildId, enabled, meta = {}) {
-  return updateSection(guildId, (section) => ({ ...section, enabled: Boolean(enabled), updatedAt: now() }), meta);
-}
-
-function listPanels(guildId) {
-  return Object.values(getSection(guildId).panels);
-}
-
-function getPanel(guildId, panelId) {
-  return getSection(guildId).panels[cleanText(panelId, 80)] || null;
-}
-
+function setEnabled(guildId, enabled, meta = {}) { return updateSection(guildId, (section) => ({ ...section, enabled: Boolean(enabled), updatedAt: now() }), meta); }
+function listPanels(guildId) { return Object.values(getSection(guildId).panels); }
+function getPanel(guildId, panelId) { return getSection(guildId).panels[cleanText(panelId, 80)] || null; }
 function findPanelByMessage(guildId, messageId) {
-  return listPanels(guildId).find(
-    (panel) => panel.enabled !== false && panel.messageId === String(messageId)
-  ) || null;
+  return listPanels(guildId).find((panel) => panel.enabled !== false && panel.messageId === String(messageId)) || null;
 }
 
 function savePanel(guildId, panel, meta = {}) {
@@ -200,11 +180,7 @@ function savePanel(guildId, panel, meta = {}) {
     ...section,
     panels: {
       ...section.panels,
-      [normalized.panelId]: {
-        ...(section.panels[normalized.panelId] || {}),
-        ...normalized,
-        updatedAt: now(),
-      },
+      [normalized.panelId]: { ...(section.panels[normalized.panelId] || {}), ...normalized, updatedAt: now() },
     },
     updatedAt: now(),
   }), meta).panels[normalized.panelId];
@@ -259,12 +235,7 @@ function addDraftMapping(guildId, userId, mapping, meta = {}) {
 
 function removeDraftMapping(guildId, userId, mappingId, meta = {}) {
   const draft = getDraft(guildId, userId) || defaultDraft(userId);
-  return saveDraft(
-    guildId,
-    userId,
-    { mappings: draft.mappings.filter((item) => item.mappingId !== mappingId) },
-    meta
-  );
+  return saveDraft(guildId, userId, { mappings: draft.mappings.filter((item) => item.mappingId !== mappingId) }, meta);
 }
 
 function addAnalytics(guildId, patch, meta = {}) {
@@ -280,9 +251,7 @@ function addAnalytics(guildId, patch, meta = {}) {
 
 function listReactionTemplates(guildId) {
   return Object.values(embedTemplateManager.listTemplates(guildId))
-    .filter((template) => ['reactionroles', 'reaction_roles', 'global'].includes(
-      String(template.module || template.templateType || '').toLowerCase()
-    ))
+    .filter((template) => ['reactionroles', 'reaction_roles', 'global'].includes(String(template.module || template.templateType || '').toLowerCase()))
     .sort((a, b) => String(a.name).localeCompare(String(b.name)));
 }
 
@@ -301,16 +270,10 @@ function templatePayload(template) {
     embeds: [{
       title: embed.title || undefined,
       description: embed.description || undefined,
-      color: typeof embed.color === 'number'
-        ? embed.color
-        : parseInt(String(embed.color || '#5865F2').replace('#', ''), 16),
+      color: typeof embed.color === 'number' ? embed.color : parseInt(String(embed.color || '#5865F2').replace('#', ''), 16),
       fields: Array.isArray(embed.fields) ? embed.fields : [],
-      author: embed.author?.name
-        ? { name: embed.author.name, icon_url: embed.author.iconURL || undefined, url: embed.author.url || undefined }
-        : undefined,
-      footer: embed.footer?.text
-        ? { text: embed.footer.text, icon_url: embed.footer.iconURL || undefined }
-        : undefined,
+      author: embed.author?.name ? { name: embed.author.name, icon_url: embed.author.iconURL || undefined, url: embed.author.url || undefined } : undefined,
+      footer: embed.footer?.text ? { text: embed.footer.text, icon_url: embed.footer.iconURL || undefined } : undefined,
       thumbnail: embed.thumbnailURL ? { url: embed.thumbnailURL } : undefined,
       image: embed.imageURL ? { url: embed.imageURL } : undefined,
     }],
@@ -319,14 +282,9 @@ function templatePayload(template) {
 
 async function resolveMessage(guild, reference, channelId = null) {
   const parsed = parseMessageReference(reference, channelId);
-  if (parsed.guildId && parsed.guildId !== guild.id) {
-    throw new Error('The message link belongs to a different server.');
-  }
-  const channel = guild.channels.cache.get(parsed.channelId)
-    || await guild.channels.fetch(parsed.channelId).catch(() => null);
-  if (!channel?.messages?.fetch) {
-    throw new Error('The selected channel does not support messages or is inaccessible.');
-  }
+  if (parsed.guildId && parsed.guildId !== guild.id) throw new Error('The message link belongs to a different server.');
+  const channel = guild.channels.cache.get(parsed.channelId) || await guild.channels.fetch(parsed.channelId).catch(() => null);
+  if (!channel?.messages?.fetch) throw new Error('The selected channel does not support messages or is inaccessible.');
   const message = await channel.messages.fetch(parsed.messageId).catch(() => null);
   if (!message) throw new Error('The message could not be found or Goliath cannot access it.');
   return message;
@@ -338,9 +296,7 @@ function validateRole(guild, roleId) {
   if (role.managed) throw new Error(`${role.name} is managed by an integration.`);
   const me = guild.members.me;
   if (!me?.permissions.has('ManageRoles')) throw new Error('Goliath requires Manage Roles.');
-  if (role.position >= me.roles.highest.position) {
-    throw new Error(`${role.name} is above Goliath's highest role.`);
-  }
+  if (role.position >= me.roles.highest.position) throw new Error(`${role.name} is above Goliath's highest role.`);
   return role;
 }
 
@@ -356,66 +312,49 @@ function mappingConflicts(mappings) {
   const conflicts = [];
   for (const mapping of mappings.filter((item) => item.enabled !== false)) {
     const existing = seen.get(mapping.emojiKey);
-    if (existing && existing.roleId !== mapping.roleId) {
-      conflicts.push(`Emoji ${mapping.emoji} is mapped to multiple roles.`);
-    } else {
-      seen.set(mapping.emojiKey, mapping);
-    }
+    if (existing && existing.roleId !== mapping.roleId) conflicts.push(`Emoji ${mapping.emoji} is mapped to multiple roles.`);
+    else seen.set(mapping.emojiKey, mapping);
   }
   return [...new Set(conflicts)];
+}
+
+async function removeObsoleteBotReactions(guild, message, previousMappings, nextMappings) {
+  const nextKeys = new Set(nextMappings.filter((item) => item.enabled !== false).map((item) => item.emojiKey));
+  const removed = [];
+  for (const mapping of previousMappings.filter((item) => item.enabled !== false && !nextKeys.has(item.emojiKey))) {
+    const reaction = findMessageReaction(message, mapping);
+    if (!reaction?.me) continue;
+    await reaction.users.remove(guild.members.me.id);
+    removed.push(mapping.emojiKey);
+  }
+  return removed;
 }
 
 async function syncPanelReactions(guild, panel) {
   if (!panel) throw new Error('Reaction-role panel not found.');
   if (panel.enabled === false) {
     return {
-      panel: savePanel(guild.id, {
-        ...panel,
-        status: 'disabled',
-        lastHealthAt: now(),
-        lastError: null,
-      }, guild),
+      panel: savePanel(guild.id, { ...panel, status: 'disabled', lastHealthAt: now(), lastError: null }, guild),
       message: null,
     };
   }
-
   const conflicts = mappingConflicts(panel.mappings);
   if (conflicts.length) throw new Error(conflicts.join(' '));
-
   const message = await resolveMessage(guild, panel.messageId, panel.channelId);
   for (const mapping of panel.mappings.filter((item) => item.enabled !== false)) {
     validateRole(guild, mapping.roleId);
-    if (!findMessageReaction(message, mapping)) {
-      await message.react(normalizeEmoji(mapping.emoji).reaction);
-    }
+    if (!findMessageReaction(message, mapping)) await message.react(normalizeEmoji(mapping.emoji).reaction);
   }
-
   return {
-    panel: savePanel(guild.id, {
-      ...panel,
-      status: 'healthy',
-      lastHealthAt: now(),
-      lastError: null,
-    }, guild),
+    panel: savePanel(guild.id, { ...panel, status: 'healthy', lastHealthAt: now(), lastError: null }, guild),
     message,
   };
 }
 
-async function attachExistingMessage({
-  guild,
-  messageReference,
-  channelId,
-  name,
-  templateId = null,
-  applyTemplate = false,
-  mappings = [],
-  createdBy,
-}) {
+async function attachExistingMessage({ guild, messageReference, channelId, name, templateId = null, applyTemplate = false, mappings = [], createdBy }) {
   if (!guild) throw new Error('Guild is required.');
   const message = await resolveMessage(guild, messageReference, channelId);
-  if (applyTemplate && templateId) {
-    await message.edit(templatePayload(getReactionTemplate(guild.id, templateId)));
-  }
+  if (applyTemplate && templateId) await message.edit(templatePayload(getReactionTemplate(guild.id, templateId)));
   const panel = savePanel(guild.id, {
     name,
     source: DRAFT_TYPES.EXISTING,
@@ -432,8 +371,7 @@ async function attachExistingMessage({
 }
 
 async function createFromTemplate({ guild, channelId, templateId, name, mappings = [], createdBy }) {
-  const channel = guild.channels.cache.get(channelId)
-    || await guild.channels.fetch(channelId).catch(() => null);
+  const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
   if (!channel?.send) throw new Error('Choose a text channel where Goliath can send messages.');
   const template = getReactionTemplate(guild.id, templateId);
   const message = await channel.send(templatePayload(template));
@@ -463,9 +401,14 @@ async function applyTemplateToPanel(guild, panelId, templateId) {
 async function updatePanelMappings(guild, panelId, mappings, actorId) {
   const current = getPanel(guild.id, panelId);
   if (!current) throw new Error('Reaction-role panel not found.');
+  const nextMappings = mappings.map(normalizeMapping).filter((item) => item.roleId && item.emojiKey);
+  const conflicts = mappingConflicts(nextMappings);
+  if (conflicts.length) throw new Error(conflicts.join(' '));
+  const message = await resolveMessage(guild, current.messageId, current.channelId);
+  await removeObsoleteBotReactions(guild, message, current.mappings, nextMappings);
   const panel = savePanel(guild.id, {
     ...current,
-    mappings,
+    mappings: nextMappings,
     createdBy: current.createdBy || actorId,
   }, guild);
   await syncPanelReactions(guild, panel);
@@ -477,12 +420,7 @@ async function detachPanel(guild, panelId, { clearReactions = false } = {}) {
   if (!panel) throw new Error('Reaction-role panel not found.');
   if (clearReactions) {
     const message = await resolveMessage(guild, panel.messageId, panel.channelId).catch(() => null);
-    if (message) {
-      for (const mapping of panel.mappings) {
-        const reaction = findMessageReaction(message, mapping);
-        if (reaction?.me) await reaction.users.remove(guild.members.me.id).catch(() => null);
-      }
-    }
+    if (message) await removeObsoleteBotReactions(guild, message, panel.mappings, []);
   }
   removePanel(guild.id, panelId, guild);
   return { detached: true, messageDeleted: false };
@@ -490,10 +428,7 @@ async function detachPanel(guild, panelId, { clearReactions = false } = {}) {
 
 function emojiMatches(mapping, emoji) {
   const normalized = normalizeEmoji(mapping.emoji);
-  return Boolean(
-    (emoji.id && normalized.id === emoji.id)
-    || (!emoji.id && normalized.name === emoji.name)
-  );
+  return Boolean((emoji.id && normalized.id === emoji.id) || (!emoji.id && normalized.name === emoji.name));
 }
 
 async function handleReaction(reaction, user, removing = false) {
@@ -502,41 +437,26 @@ async function handleReaction(reaction, user, removing = false) {
   if (reaction.message?.partial) await reaction.message.fetch().catch(() => null);
   const guild = reaction.message?.guild;
   if (!guild || getSection(guild.id).enabled === false) return null;
-
   const panel = findPanelByMessage(guild.id, reaction.message.id);
   if (!panel) return null;
-  const mapping = panel.mappings.find(
-    (item) => item.enabled !== false && emojiMatches(item, reaction.emoji)
-  );
+  const mapping = panel.mappings.find((item) => item.enabled !== false && emojiMatches(item, reaction.emoji));
   if (!mapping) return null;
-
   const member = await guild.members.fetch(user.id).catch(() => null);
   if (!member) return null;
-
   try {
     const role = validateRole(guild, mapping.roleId);
     if (removing) {
-      if (
-        mapping.mode !== MODES.TOGGLE
-        || mapping.removeOnUnreact === false
-        || !member.roles.cache.has(role.id)
-      ) return null;
+      if (mapping.mode !== MODES.TOGGLE || mapping.removeOnUnreact === false || !member.roles.cache.has(role.id)) return null;
       await member.roles.remove(role, 'Goliath reaction role removed');
       addAnalytics(guild.id, { removed: 1 }, guild);
       return { action: 'removed', roleId: role.id };
     }
-
     if (mapping.mode === MODES.REMOVE) {
-      if (member.roles.cache.has(role.id)) {
-        await member.roles.remove(role, 'Goliath reaction role removal mapping');
-      }
+      if (member.roles.cache.has(role.id)) await member.roles.remove(role, 'Goliath reaction role removal mapping');
       addAnalytics(guild.id, { removed: 1 }, guild);
       return { action: 'removed', roleId: role.id };
     }
-
-    if (!member.roles.cache.has(role.id)) {
-      await member.roles.add(role, 'Goliath reaction role assigned');
-    }
+    if (!member.roles.cache.has(role.id)) await member.roles.add(role, 'Goliath reaction role assigned');
     addAnalytics(guild.id, { assigned: 1 }, guild);
     return { action: 'assigned', roleId: role.id };
   } catch (error) {
@@ -548,53 +468,28 @@ async function handleReaction(reaction, user, removing = false) {
 async function inspectPanelHealth(guild, panel) {
   const issues = [];
   const warnings = [];
-
   if (panel.enabled === false) {
     warnings.push('Deployment is disabled.');
-    return {
-      panelId: panel.panelId,
-      enabled: false,
-      healthy: true,
-      status: 'disabled',
-      issues,
-      warnings,
-      checkedAt: now(),
-    };
+    return { panelId: panel.panelId, enabled: false, healthy: true, status: 'disabled', issues, warnings, checkedAt: now() };
   }
-
   if (!panel.mappings.length) issues.push('No reaction-role mappings are configured.');
   issues.push(...mappingConflicts(panel.mappings));
-
   let message = null;
-  try {
-    message = await resolveMessage(guild, panel.messageId, panel.channelId);
-  } catch (error) {
-    issues.push(error.message);
-  }
-
+  try { message = await resolveMessage(guild, panel.messageId, panel.channelId); }
+  catch (error) { issues.push(error.message); }
   if (panel.templateId) {
-    try {
-      getReactionTemplate(guild.id, panel.templateId);
-    } catch (error) {
-      issues.push(error.message);
-    }
+    try { getReactionTemplate(guild.id, panel.templateId); }
+    catch (error) { issues.push(error.message); }
   }
-
   for (const mapping of panel.mappings) {
     if (mapping.enabled === false) {
       warnings.push(`Mapping ${mapping.emoji} is disabled.`);
       continue;
     }
-    try {
-      validateRole(guild, mapping.roleId);
-    } catch (error) {
-      issues.push(error.message);
-    }
-    if (message && !findMessageReaction(message, mapping)) {
-      issues.push(`Reaction ${mapping.emoji} is missing from the tracked message.`);
-    }
+    try { validateRole(guild, mapping.roleId); }
+    catch (error) { issues.push(error.message); }
+    if (message && !findMessageReaction(message, mapping)) issues.push(`Reaction ${mapping.emoji} is missing from the tracked message.`);
   }
-
   return {
     panelId: panel.panelId,
     enabled: true,
@@ -618,7 +513,6 @@ async function buildHealth(guild) {
       lastError: result.issues.join(' ').slice(0, 500) || null,
     }, guild);
   }
-
   const active = results.filter((item) => item.enabled);
   return {
     healthy: active.every((item) => item.healthy),
@@ -644,12 +538,7 @@ async function repairAll(guild) {
       await syncPanelReactions(guild, panel);
       repaired.push(panel.panelId);
     } catch (error) {
-      savePanel(guild.id, {
-        ...panel,
-        status: 'error',
-        lastHealthAt: now(),
-        lastError: error.message,
-      }, guild);
+      savePanel(guild.id, { ...panel, status: 'error', lastHealthAt: now(), lastError: error.message }, guild);
       failed.push({ panelId: panel.panelId, error: error.message });
     }
   }
@@ -659,19 +548,12 @@ async function repairAll(guild) {
 
 async function startup(client) {
   for (const guild of client.guilds.cache.values()) {
-    await repairAll(guild).catch((error) => {
-      console.warn(`[ReactionRoles] ${guild.id}: ${error.message}`);
-    });
+    await repairAll(guild).catch((error) => console.warn(`[ReactionRoles] ${guild.id}: ${error.message}`));
   }
 }
 
-function exportConfiguration(guildId) {
-  return getSection(guildId);
-}
-
-function reset(guildId, meta = {}) {
-  return saveSection(guildId, defaultSection(), meta);
-}
+function exportConfiguration(guildId) { return getSection(guildId); }
+function reset(guildId, meta = {}) { return saveSection(guildId, defaultSection(), meta); }
 
 module.exports = {
   SECTION,
