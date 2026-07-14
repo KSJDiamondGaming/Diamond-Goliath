@@ -25,7 +25,7 @@ const embedPanel = optionalRequire('embed panel', '../../modules/embed/embedPane
 const duplicator = optionalRequire('duplicator', '../../core/dev/duplicator');
 const adminPanel = optionalRequire('admin panel', '../../core/admin/functions/adminPanel');
 const statsAdminPanel = optionalRequire('stats admin', '../../core/admin/functions/statsAdminPanel');
-const reactionRolesAdminPanel = optionalRequire('reaction roles admin', '../../core/admin/functions/reactionRolesAdminPanel');
+const reactionRolesAdminPanel = optionalRequire('reaction roles admin', '../../modules/reactionroles/reactionRolesPanel');
 const suggestionsAdminPanel = optionalRequire('suggestions admin', '../../core/admin/functions/suggestionsAdminPanel');
 const giveawaysAdminPanel = optionalRequire('giveaways admin', '../../core/admin/functions/giveawaysAdminPanel');
 const formsAdminPanel = optionalRequire('forms admin', '../../core/admin/functions/formsAdminPanel');
@@ -119,9 +119,9 @@ module.exports = {
       if (startsWith(interaction, 'admin:autoRoles')) { await callHandler(autorolesPanel, 'handleAutoRolesInteraction', interaction); return; }
       if (startsWith(interaction, 'admin:welcome')) { await callHandler(welcomePanel, 'handleWelcomeInteraction', interaction); return; }
       if (startsWith(interaction, 'admin:goodbye')) { await callHandler(goodbyePanel, 'handleGoodbyeInteraction', interaction); return; }
+      if (startsWith(interaction, 'admin:reactionRoles')) { await callHandler(reactionRolesAdminPanel, 'handleReactionRolesAdminInteraction', interaction); return; }
       if (isVerificationMemberInteraction(interaction)) { await callHandler(verificationManager, 'handleVerificationInteraction', interaction); return; }
       if (await callHandler(statsAdminPanel, 'handleStatsAdminInteraction', interaction)) return;
-      if (await callHandler(reactionRolesAdminPanel, 'handleReactionRolesAdminInteraction', interaction)) return;
       if (await callHandler(suggestionsAdminPanel, 'handleSuggestionsAdminInteraction', interaction)) return;
       if (await callHandler(giveawaysAdminPanel, 'handleGiveawaysAdminInteraction', interaction)) return;
       if (await callHandler(formsAdminPanel, 'handleFormsAdminInteraction', interaction)) return;
