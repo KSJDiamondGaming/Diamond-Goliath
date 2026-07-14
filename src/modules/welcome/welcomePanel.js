@@ -115,23 +115,20 @@ function getWelcomeOptions(guildId) {
     if (existingIds.has(templateId)) continue;
     templates.push({
       label: String(preset.name || name).slice(0, 100),
-      description: 'Embed Studio welcome preset',
-      value: `${LEGACY_PRESET_PREFIX}${name}`.slice(0, 100),
+      description: 'Saved welcome preset',
+      value: `${LEGACY_PRESET_PREFIX}${name}`,
       activeTemplateId: templateId,
     });
   }
 
-  return templates
-    .sort((a, b) => a.label.localeCompare(b.label))
-    .slice(0, 25);
+  return templates.sort((a, b) => a.label.localeCompare(b.label)).slice(0, 25);
 }
 
 function templateMenu(guildId, activeTemplateId) {
   const templates = getWelcomeOptions(guildId);
-
   const menu = new StringSelectMenuBuilder()
     .setCustomId('admin:welcome:template')
-    .setPlaceholder(templates.length ? 'Choose a welcome template' : 'No welcome templates available')
+    .setPlaceholder(templates.length ? 'Choose a welcome message' : 'No welcome messages available')
     .setMinValues(1)
     .setMaxValues(1)
     .setDisabled(templates.length === 0);
@@ -156,9 +153,12 @@ async function buildWelcomePanel(guild, memberDisplayName = 'Unknown User') {
   const binding = welcome.getWelcomeBinding(guild.id, 'welcome');
   const activeTemplateId = binding?.templateId || config.templateId;
   const activeTemplateName = binding?.name || health.templateName || activeTemplateId;
+  const actionableWarnings = health.warnings.filter(
+    (warning) => !warning.startsWith('No Embed Studio template is explicitly bound')
+  );
 
   const embed = new EmbedBuilder()
-    .setColor(health.healthy ? 0x57f287 : 0xfaa61a)
+    .setColor(actionableWarnings.length ? 0xfaa61a : 0x57f287)
     .setTitle('👋 Welcome · Setup')
     .setDescription([
       `**Status:** ${config.enabled ? 'Enabled ✅' : 'Disabled ❌'}`,
@@ -166,12 +166,18 @@ async function buildWelcomePanel(guild, memberDisplayName = 'Unknown User') {
       `**Welcome DM:** ${config.dmEnabled ? 'Enabled ✅' : 'Disabled ❌'}`,
       `**Ping New Member:** ${config.allowUserPing ? 'Yes ✅' : 'No ❌'}`,
       `**Ignore Bots:** ${config.ignoreBots ? 'Yes ✅' : 'No ❌'}`,
-      `**Active Template:** ${activeTemplateName ? `\`${activeTemplateName}\`` : '`Not set`'}`,
-      `**Embed Studio Binding:** ${binding ? 'Bound ✅' : 'Fallback only ⚠️'}`,
+      '',
+      '**📨 Current Welcome Message**',
+      `**Name:** ${activeTemplateName ? `\`${activeTemplateName}\`` : '`Not set`'}`,
+      `**Template ID:** ${activeTemplateId ? `\`${activeTemplateId}\`` : '`Not set`'}`,
+      `**Assignment:** ${binding ? 'Assigned ✅' : 'Using configured default ✅'}`,
+      `**Source:** ${binding ? 'Selected welcome message' : 'Configured default template'}`,
       '',
       `Public sent: \`${analytics.publicSent || 0}\` | DMs sent: \`${analytics.dmSent || 0}\` | Failed: \`${(analytics.publicFailed || 0) + (analytics.dmFailed || 0)}\``,
       '',
-      health.warnings.length ? `**Warnings**\n${health.warnings.map((warning) => `• ${warning}`).join('\n')}` : '**Health:** Healthy ✅',
+      actionableWarnings.length
+        ? `**Warnings**\n${actionableWarnings.map((warning) => `• ${warning}`).join('\n')}`
+        : '**Health:** Healthy ✅',
     ].join('\n').slice(0, 4096))
     .setFooter({ text: `Requested by ${memberDisplayName}` })
     .setTimestamp();
@@ -223,16 +229,18 @@ async function handleWelcomeInteraction(interaction) {
 
     if (interaction.isStringSelectMenu?.() && customId === 'admin:welcome:template') {
       let templateId = interaction.values?.[0];
-      if (!templateId || templateId === 'none') throw new Error('Choose a valid welcome template.');
+      if (!templateId || templateId === 'none') throw new Error('Choose a valid welcome message.');
 
       if (templateId.startsWith(LEGACY_PRESET_PREFIX)) {
         const presetName = templateId.slice(LEGACY_PRESET_PREFIX.length);
         const preset = guildManager.getEmbedPreset(interaction.guild.id, presetName);
         if (!preset || preset.template !== 'welcome') throw new Error('That welcome preset no longer exists.');
-        templateId = embedTemplateManager.saveTemplate(
+        const savedTemplate = embedTemplateManager.saveTemplate(
           interaction.guild.id,
           legacyPresetToTemplate(presetName, preset)
-        ).templateId;
+        );
+        templateId = savedTemplate.templateId;
+        if (typeof guildManager.reloadGuild === 'function') guildManager.reloadGuild(interaction.guild.id);
       }
 
       welcome.bindWelcomeTemplate(interaction.guild.id, templateId, 'welcome', { actorId: interaction.user.id });
