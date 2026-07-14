@@ -215,7 +215,9 @@ function registerEvents() {
       const handlers = Array.isArray(loaded) ? loaded : [loaded];
       for (const handler of handlers) {
         if (!handler?.name || typeof handler.execute !== 'function') continue;
-        client.on(handler.name, (...args) => handler.execute(...args, client));
+        const listener = (...args) => handler.execute(...args, client);
+        if (handler.once === true) client.once(handler.name, listener);
+        else client.on(handler.name, listener);
       }
     } catch (error) {
       console.warn(`⚠️ Event skipped: ${file}`);
