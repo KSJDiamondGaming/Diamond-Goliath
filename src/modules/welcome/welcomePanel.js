@@ -15,6 +15,27 @@ const embedTemplateManager = require('../embed/embedTemplateManager');
 const guildManager = require('../../core/guild/guildManager');
 
 const LEGACY_PRESET_PREFIX = 'legacy-preset:';
+const LEGACY_VARIABLES = Object.freeze({
+  guildMemberCount: 'memberCount',
+  guildmembercount: 'memberCount',
+  userDisplay: 'username',
+  userdisplay: 'username',
+  userDisplayName: 'username',
+  userdisplayname: 'username',
+  userName: 'username',
+  userNoPing: 'userMention',
+  usernoping: 'userMention',
+  serverIcon: 'guildIcon',
+  servericon: 'guildIcon',
+  userServerAvatar: 'userAvatar',
+  userserveravatar: 'userAvatar',
+  userCreatedAt: 'createdAt',
+  usercreatedat: 'createdAt',
+  userJoinedAt: 'joinedAt',
+  userjoinedat: 'joinedAt',
+  nowTimestamp: 'timestamp',
+  nowtimestamp: 'timestamp',
+});
 
 function row(...components) {
   return new ActionRowBuilder().addComponents(...components);
@@ -24,13 +45,27 @@ function button(customId, label, style = ButtonStyle.Secondary) {
   return new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style);
 }
 
+function translateLegacyVariables(value) {
+  if (typeof value === 'string') {
+    return value.replace(/\{([a-zA-Z0-9_.:-]+)\}/g, (match, key) => {
+      const replacement = LEGACY_VARIABLES[key];
+      return replacement ? `{${replacement}}` : match;
+    });
+  }
+  if (Array.isArray(value)) return value.map(translateLegacyVariables);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, translateLegacyVariables(item)]));
+  }
+  return value;
+}
+
 function legacyPresetTemplateId(name) {
   return `embed_preset_${embedTemplateManager.cleanKey(name)}`;
 }
 
 function legacyPresetToTemplate(name, preset = {}) {
   const panel = Array.isArray(preset.panels) && preset.panels.length ? preset.panels[0] : preset;
-  return {
+  return translateLegacyVariables({
     templateId: legacyPresetTemplateId(name),
     name: String(preset.name || name).slice(0, 100),
     module: 'welcome',
@@ -56,7 +91,7 @@ function legacyPresetToTemplate(name, preset = {}) {
     },
     tags: ['embed-preset', 'welcome'],
     sourcePresetName: name,
-  };
+  });
 }
 
 function getWelcomeOptions(guildId) {
