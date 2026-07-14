@@ -14,6 +14,7 @@ const actions = require('./ticketActions');
 const permissions = require('./ticketPermissions');
 const startup = require('./ticketStartup');
 const interactions = require('./ticketInteractionHandler');
+const health = require('./ticketsHealth');
 
 function getOverview(guildId) {
   const tickets = typeof manager.getGuildTickets === 'function'
@@ -55,6 +56,9 @@ function getOverview(guildId) {
 module.exports = {
   ...manager,
   getOverview,
+  buildHealthReport: health.buildHealthReport,
+  repairPanel: health.repairPanel,
+  repairAll: health.repairAll,
   handleTicketInteraction: interactions.handleTicketInteraction,
   manager,
   store,
@@ -66,4 +70,5 @@ module.exports = {
   permissions,
   startup,
   interactions,
+  health,
 };
