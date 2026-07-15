@@ -7,6 +7,7 @@ const embedTemplateManager = require('../embed/embedTemplateManager');
 const SECTION = 'reactionRoles';
 const MODES = Object.freeze({ TOGGLE: 'toggle', ADD: 'add', REMOVE: 'remove' });
 const DRAFT_TYPES = Object.freeze({ EXISTING: 'existing', TEMPLATE: 'template' });
+const reactionOperations = new Map();
 const now = () => new Date().toISOString();
 const clone = (value) => value == null ? value : JSON.parse(JSON.stringify(value));
 const cleanText = (value, max = 200) => String(value ?? '').trim().slice(0, max);
@@ -467,38 +468,66 @@ function emojiMatches(mapping, emoji) {
   const normalized = normalizeEmoji(mapping.emoji);
   return Boolean((emoji.id && normalized.id === emoji.id) || (!emoji.id && normalized.name === emoji.name));
 }
+function runReactionOperation(key, operation) {
+  const previous = reactionOperations.get(key) || Promise.resolve();
+  const current = previous.catch(() => null).then(operation);
+  reactionOperations.set(key, current);
+  return current.finally(() => {
+    if (reactionOperations.get(key) === current) reactionOperations.delete(key);
+  });
+}
+async function hydrateReaction(reaction) {
+  if (!reaction) return null;
+  if (reaction.partial) {
+    const fetched = await reaction.fetch().catch(() => null);
+    if (!fetched) return null;
+  }
+  if (reaction.message?.partial) {
+    const fetched = await reaction.message.fetch().catch(() => null);
+    if (!fetched) return null;
+  }
+  return reaction.message?.guild ? reaction : null;
+}
 async function handleReaction(reaction, user, removing = false) {
   if (!user || user.bot) return null;
-  if (reaction.partial) await reaction.fetch().catch(() => null);
-  if (reaction.message?.partial) await reaction.message.fetch().catch(() => null);
-  const guild = reaction.message?.guild;
-  if (!guild || getSection(guild.id).enabled === false) return null;
-  const panel = findPanelByMessage(guild.id, reaction.message.id);
-  if (!panel) return null;
-  const mapping = panel.mappings.find((item) => item.enabled !== false && emojiMatches(item, reaction.emoji));
-  if (!mapping) return null;
-  const member = await guild.members.fetch(user.id).catch(() => null);
-  if (!member) return null;
-  try {
-    const role = validateRole(guild, mapping.roleId);
-    if (removing) {
-      if (mapping.mode !== MODES.TOGGLE || mapping.removeOnUnreact === false || !member.roles.cache.has(role.id)) return null;
-      await member.roles.remove(role, 'Goliath reaction role removed');
-      addAnalytics(guild.id, { removed: 1 }, guild);
-      return { action: 'removed', roleId: role.id };
+  const hydrated = await hydrateReaction(reaction);
+  if (!hydrated) return null;
+  const guild = hydrated.message.guild;
+  if (getSection(guild.id).enabled === false) return null;
+  const initialPanel = findPanelByMessage(guild.id, hydrated.message.id);
+  if (!initialPanel) return null;
+  const initialMapping = initialPanel.mappings.find((item) => item.enabled !== false && emojiMatches(item, hydrated.emoji));
+  if (!initialMapping) return null;
+  const operationKey = `${guild.id}:${initialPanel.panelId}:${initialMapping.mappingId}:${user.id}`;
+  return runReactionOperation(operationKey, async () => {
+    const panel = getPanel(guild.id, initialPanel.panelId);
+    if (!panel || panel.enabled === false) return null;
+    const mapping = panel.mappings.find((item) => item.mappingId === initialMapping.mappingId && item.enabled !== false && emojiMatches(item, hydrated.emoji));
+    if (!mapping) return null;
+    const member = await guild.members.fetch(user.id).catch(() => null);
+    if (!member) return null;
+    try {
+      const role = validateRole(guild, mapping.roleId);
+      if (removing) {
+        if (mapping.mode !== MODES.TOGGLE || mapping.removeOnUnreact === false || !member.roles.cache.has(role.id)) return null;
+        await member.roles.remove(role, 'Goliath reaction role removed');
+        addAnalytics(guild.id, { removed: 1 }, guild);
+        return { action: 'removed', roleId: role.id };
+      }
+      if (mapping.mode === MODES.REMOVE) {
+        if (member.roles.cache.has(role.id)) await member.roles.remove(role, 'Goliath reaction role removal mapping');
+        addAnalytics(guild.id, { removed: 1 }, guild);
+        return { action: 'removed', roleId: role.id };
+      }
+      if (!member.roles.cache.has(role.id)) await member.roles.add(role, 'Goliath reaction role assigned');
+      addAnalytics(guild.id, { assigned: 1 }, guild);
+      return { action: 'assigned', roleId: role.id };
+    } catch (error) {
+      addAnalytics(guild.id, { failed: 1 }, guild);
+      savePanelFailure(guild, panel, error, guild);
+      return { action: 'failed', roleId: mapping.roleId, error: error.message };
     }
-    if (mapping.mode === MODES.REMOVE) {
-      if (member.roles.cache.has(role.id)) await member.roles.remove(role, 'Goliath reaction role removal mapping');
-      addAnalytics(guild.id, { removed: 1 }, guild);
-      return { action: 'removed', roleId: role.id };
-    }
-    if (!member.roles.cache.has(role.id)) await member.roles.add(role, 'Goliath reaction role assigned');
-    addAnalytics(guild.id, { assigned: 1 }, guild);
-    return { action: 'assigned', roleId: role.id };
-  } catch (error) {
-    addAnalytics(guild.id, { failed: 1 }, guild);
-    throw error;
-  }
+  });
 }
 
 async function inspectPanelHealth(guild, panel) {
