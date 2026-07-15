@@ -265,7 +265,7 @@ async function handleReactionRolesAdminInteraction(interaction) {
     if (id.startsWith('admin:reactionRoles:manage:repair:')) {
       const panelId = id.split(':').pop();
       await interaction.deferUpdate();
-      await reactionRoles.syncPanelReactions(guild, reactionRoles.getPanel(guild.id, panelId));
+      await reactionRoles.repairPanel(guild, panelId, guild);
       return interaction.editReply(await buildManagedPanel(guild, panelId));
     }
     if (id.startsWith('admin:reactionRoles:manage:remove:')) return show(interaction, buildRemovalChoices(guild, id.split(':').pop()));
