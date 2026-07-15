@@ -292,6 +292,32 @@ async function syncPanelReactions(guild, panel) {
   return { panel: savePanel(guild.id, { ...panel, status: 'healthy', lastHealthAt: now(), lastError: null }, guild), message };
 }
 
+async function setPanelEnabled(guild, panelId, enabled, meta = {}) {
+  const current = getPanel(guild.id, panelId);
+  if (!current) throw new Error('Reaction-role panel not found.');
+  const nextEnabled = enabled === true;
+  let panel = savePanel(guild.id, {
+    ...current,
+    enabled: nextEnabled,
+    status: nextEnabled ? 'pending' : 'disabled',
+    lastHealthAt: nextEnabled ? current.lastHealthAt : now(),
+    lastError: null,
+  }, meta);
+  if (!nextEnabled) return panel;
+  try {
+    panel = (await syncPanelReactions(guild, panel)).panel;
+    return panel;
+  } catch (error) {
+    savePanel(guild.id, {
+      ...panel,
+      status: 'error',
+      lastHealthAt: now(),
+      lastError: error.message,
+    }, meta);
+    throw error;
+  }
+}
+
 async function attachExistingMessage({ guild, messageReference, channelId, name, templateId = null, applyTemplate = false, mappings = [], createdBy }) {
   if (!guild) throw new Error('Guild is required.');
   const message = await resolveMessage(guild, messageReference, channelId);
@@ -482,7 +508,7 @@ module.exports = {
   getDraft, saveDraft, clearDraft, addDraftMapping, removeDraftMapping,
   listReactionTemplates, getReactionTemplate, templatePayload,
   parseMessageReference, attachExistingMessage, createFromTemplate, applyTemplateToPanel,
-  updatePanelMappings, detachPanel, deleteDeploymentMessage, syncPanelReactions,
+  updatePanelMappings, setPanelEnabled, detachPanel, deleteDeploymentMessage, syncPanelReactions,
   handleReactionAdd: (reaction, user) => handleReaction(reaction, user, false),
   handleReactionRemove: (reaction, user) => handleReaction(reaction, user, true),
   buildHealth, repairAll, startup, exportConfiguration, reset,
