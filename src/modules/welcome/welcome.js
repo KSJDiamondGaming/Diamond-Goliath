@@ -6,9 +6,8 @@ const {
   saveModuleSection,
   updateModuleSection,
 } = require('../../core/guild/moduleSectionManager');
-const { buildPreviewEmbeds, TEMPLATES } = require('../embed/embedPanel');
+const { buildPreviewEmbeds } = require('../embed/embedPanel');
 const embedTemplateManager = require('../embed/embedTemplateManager');
-const guildManager = require('../../core/guild/guildManager');
 
 const MODULE = 'welcome';
 
@@ -58,9 +57,8 @@ function defaultWelcomeSection() {
     enabled: false,
     channelId: null,
     templateId: 'welcome_default',
-    presetName: null,
     dmEnabled: false,
-    dmTemplateId: 'dm_welcome_default',
+    dmTemplateId: null,
     allowUserPing: true,
     ignoreBots: true,
     analytics: defaultAnalytics(),
@@ -95,9 +93,8 @@ function normalizeWelcomeSection(section = {}) {
     enabled: source.enabled === true || (source.enabled !== false && Boolean(channelId)),
     channelId,
     templateId: cleanString(source.templateId || base.templateId, base.templateId, 120),
-    presetName: source.presetName ? cleanString(source.presetName, '', 100) : null,
     dmEnabled: source.dmEnabled === true || source.sendDm === true,
-    dmTemplateId: cleanString(source.dmTemplateId || base.dmTemplateId, base.dmTemplateId, 120),
+    dmTemplateId: source.dmTemplateId ? cleanString(source.dmTemplateId, '', 120) : null,
     allowUserPing: source.allowUserPing !== false,
     ignoreBots: source.ignoreBots !== false,
     analytics: normalizeAnalytics(source.analytics),
@@ -134,8 +131,9 @@ function updateConfig(guildId, patch = {}, meta = {}) {
     ...patch,
     channelId: patch.channelId === undefined ? section.channelId : cleanDiscordId(patch.channelId),
     templateId: patch.templateId === undefined ? section.templateId : cleanString(patch.templateId, section.templateId, 120),
-    presetName: patch.presetName === undefined ? section.presetName : (patch.presetName ? cleanString(patch.presetName, '', 100) : null),
-    dmTemplateId: patch.dmTemplateId === undefined ? section.dmTemplateId : cleanString(patch.dmTemplateId, section.dmTemplateId, 120),
+    dmTemplateId: patch.dmTemplateId === undefined
+      ? section.dmTemplateId
+      : (patch.dmTemplateId ? cleanString(patch.dmTemplateId, '', 120) : null),
     enabled: typeof patch.enabled === 'boolean' ? patch.enabled : section.enabled,
     dmEnabled: typeof patch.dmEnabled === 'boolean' ? patch.dmEnabled : section.dmEnabled,
     allowUserPing: typeof patch.allowUserPing === 'boolean' ? patch.allowUserPing : section.allowUserPing,
@@ -173,8 +171,25 @@ function getAvatar(member) {
     || '';
 }
 
-function buildTemplateVariables(member) {
+function getMemberCount(guild, ignoreBots = true) {
+  if (!ignoreBots) return Math.max(0, Number(guild?.memberCount || 0));
+  const cache = guild?.members?.cache;
+  if (cache?.size) return cache.filter((member) => !member.user?.bot).size;
+  return Math.max(0, Number(guild?.memberCount || 0) - 1);
+}
+
+async function refreshMemberCache(guild, ignoreBots) {
+  if (!ignoreBots || !guild?.members?.fetch) return;
+  try {
+    await guild.members.fetch();
+  } catch (error) {
+    console.warn('[Welcome] Could not refresh member cache for human-only count:', error.message || error);
+  }
+}
+
+function buildTemplateVariables(member, config = getWelcomeSection(member.guild.id)) {
   const guild = member.guild;
+  const memberCount = getMemberCount(guild, config.ignoreBots);
   return {
     guild: guild.name,
     guildName: guild.name,
@@ -183,10 +198,13 @@ function buildTemplateVariables(member) {
     guildId: guild.id,
     guildIcon: guild.iconURL?.({ extension: 'png', size: 256 }) || '',
     guildBanner: guild.bannerURL?.({ extension: 'png', size: 1024 }) || '',
-    memberCount: guild.memberCount,
+    memberCount,
+    guildMemberCount: memberCount,
     user: String(member.user),
     userMention: `<@${member.user.id}>`,
+    userNoPing: `<@${member.user.id}>`,
     username: member.user.username || member.user.tag || member.user.id,
+    userDisplay: member.displayName || member.user.globalName || member.user.username || member.user.id,
     userId: member.user.id,
     userAvatar: getAvatar(member),
     memberAvatar: getAvatar(member),
@@ -196,9 +214,9 @@ function buildTemplateVariables(member) {
   };
 }
 
-function getWelcomeTemplates(guildId, templateType = 'welcome') {
+function getWelcomeTemplates(guildId) {
   return Object.values(embedTemplateManager.listTemplates(guildId))
-    .filter((template) => template && (template.templateType === templateType || template.module === MODULE))
+    .filter(Boolean)
     .sort((a, b) => String(a.name || a.templateId).localeCompare(String(b.name || b.templateId)));
 }
 
@@ -215,56 +233,77 @@ function bindWelcomeTemplate(guildId, templateId, slot = 'welcome', meta = {}) {
   return { binding, config };
 }
 
-function getAssignedPreset(guildId, config) {
-  if (!config?.presetName || typeof guildManager.getEmbedPreset !== 'function') return null;
-  const preset = guildManager.getEmbedPreset(guildId, config.presetName);
-  return preset?.template === 'welcome' ? preset : null;
+function getAssignedTemplate(guildId, type, config = getWelcomeSection(guildId)) {
+  const isDm = type === 'dmWelcome';
+  const slot = isDm ? 'dm_welcome' : 'welcome';
+  const configuredId = isDm ? config.dmTemplateId : config.templateId;
+  return getWelcomeBinding(guildId, slot)
+    || (configuredId ? embedTemplateManager.getTemplate(guildId, configuredId) : null)
+    || (isDm ? getWelcomeBinding(guildId, 'welcome') : null)
+    || (isDm ? embedTemplateManager.getTemplate(guildId, config.templateId) : null);
 }
 
-function buildMessageData(member, type, config) {
-  const isDm = type === 'dmWelcome';
-  const templateId = isDm ? config.dmTemplateId : config.templateId;
-  const slot = isDm ? 'dm_welcome' : 'welcome';
-  const rendered = embedTemplateManager.renderBinding(
-    member.guild.id,
-    MODULE,
-    slot,
-    buildTemplateVariables(member),
-    templateId
-  );
+function renderGuildForCount(guild, count) {
+  return new Proxy(guild, {
+    get(target, property, receiver) {
+      if (property === 'memberCount') return count;
+      return Reflect.get(target, property, receiver);
+    },
+  });
+}
+
+function templateToPreviewState(template = {}) {
+  const panels = Array.isArray(template.panels) && template.panels.length
+    ? clone(template.panels)
+    : [{
+      title: template.embed?.title || '',
+      description: template.embed?.description || '',
+      color: template.embed?.color || '#5865F2',
+      authorName: template.embed?.author?.name || '',
+      authorIcon: template.embed?.author?.iconURL || '',
+      authorUrl: template.embed?.author?.url || '',
+      thumbnail: template.embed?.thumbnailURL || '',
+      image: template.embed?.imageURL || '',
+      footer: template.embed?.footer?.text || '',
+      footerIcon: template.embed?.footer?.iconURL || '',
+      fields: Array.isArray(template.embed?.fields) ? clone(template.embed.fields) : [],
+    }];
   return {
-    ...(TEMPLATES[type] || {}),
-    ...(rendered?.embed || {}),
-    content: rendered?.content || '',
-    embed: rendered?.embed || null,
-    templateId: rendered?.templateId || templateId,
-    templateName: rendered?.name || null,
-    allowUserPing: isDm ? false : config.allowUserPing !== false,
+    ...clone(template),
+    panels,
+    selectedPanelIndex: 0,
+    buttons: Array.isArray(template.buttons) ? clone(template.buttons) : clone(template.embed?.buttons || []),
+    showTimestamp: template.showTimestamp !== false,
+    fieldLayout: template.fieldLayout || 'auto',
   };
 }
 
-function buildDiscordPayload(member, type, config) {
+function buildDiscordPayload(member, type, config = getWelcomeSection(member.guild.id), options = {}) {
   const isDm = type === 'dmWelcome';
-  const preset = isDm ? null : getAssignedPreset(member.guild.id, config);
-  const fakeInteraction = { guild: member.guild, guildId: member.guild.id, user: member.user, member };
+  const template = getAssignedTemplate(member.guild.id, type, config);
+  if (!template) throw new Error(`No ${isDm ? 'DM welcome' : 'welcome'} template is assigned.`);
 
-  if (preset) {
-    const content = preset.content || preset.message || (config.allowUserPing !== false ? `<@${member.user.id}>` : '');
-    return {
-      content,
-      embeds: buildPreviewEmbeds({ ...preset, allowUserPing: config.allowUserPing !== false }, fakeInteraction),
-      allowedMentions: config.allowUserPing !== false || content.includes(`<@${member.user.id}>`)
-        ? { users: [member.user.id], roles: [], repliedUser: false }
-        : { parse: [], repliedUser: false },
-    };
+  const count = getMemberCount(member.guild, config.ignoreBots);
+  const renderInteraction = {
+    guild: renderGuildForCount(member.guild, count),
+    guildId: member.guild.id,
+    user: member.user,
+    member,
+  };
+  const state = templateToPreviewState(template);
+  state.allowUserPing = !isDm && config.allowUserPing !== false;
+
+  let content = String(template.content || '').trim();
+  const mention = `<@${member.user.id}>`;
+  if (!isDm && config.allowUserPing !== false && !content.includes(mention)) {
+    content = content ? `${mention}\n${content}` : mention;
   }
 
-  const messageData = buildMessageData(member, type, config);
-  const content = messageData.content || (messageData.allowUserPing ? `<@${member.user.id}>` : '');
   return {
     content,
-    embeds: buildPreviewEmbeds(messageData, fakeInteraction),
-    allowedMentions: messageData.allowUserPing || content.includes(`<@${member.user.id}>`)
+    embeds: buildPreviewEmbeds(state, renderInteraction),
+    components: options.includeComponents === false ? [] : undefined,
+    allowedMentions: !isDm && config.allowUserPing !== false
       ? { users: [member.user.id], roles: [], repliedUser: false }
       : { parse: [], repliedUser: false },
   };
@@ -277,39 +316,52 @@ async function resolveWelcomeChannel(guild, channelId) {
 }
 
 async function sendWelcome(member, options = {}) {
-  if (!member?.guild?.id || !member?.user?.id) return { publicSent: false, dmSent: false, skipped: true };
-  const config = getWelcomeSection(member.guild.id);
-  if ((!options.force && config.enabled === false) || (config.ignoreBots && member.user.bot)) {
-    if (!options.previewOnly) incrementAnalytics(member.guild.id, { skipped: 1 });
-    return { publicSent: false, dmSent: false, skipped: true, reason: config.enabled === false ? 'disabled' : 'ignored_bot' };
+  if (!member?.guild?.id || !member?.user?.id) {
+    return { publicSent: false, dmSent: false, skipped: true, reason: 'invalid_member' };
   }
+
+  const config = getWelcomeSection(member.guild.id);
+  if (!options.force && config.enabled === false) {
+    if (!options.previewOnly) incrementAnalytics(member.guild.id, { skipped: 1 });
+    return { publicSent: false, dmSent: false, skipped: true, reason: 'disabled' };
+  }
+  if (config.ignoreBots && member.user.bot) {
+    if (!options.previewOnly) incrementAnalytics(member.guild.id, { skipped: 1 });
+    return { publicSent: false, dmSent: false, skipped: true, reason: 'ignored_bot' };
+  }
+
+  await refreshMemberCache(member.guild, config.ignoreBots);
 
   let publicSent = false;
   let dmSent = false;
   let publicFailed = false;
   let dmFailed = false;
+  const errors = [];
 
-  if (config.channelId) {
+  if (config.channelId && options.skipPublic !== true) {
     const channel = await resolveWelcomeChannel(member.guild, config.channelId);
-    if (channel) {
+    if (!channel) {
+      publicFailed = true;
+      errors.push('Welcome channel is unavailable.');
+    } else {
       try {
         await channel.send(buildDiscordPayload(member, 'welcome', config));
         publicSent = true;
       } catch (error) {
         publicFailed = true;
+        errors.push(`Public welcome failed: ${error.message || error}`);
         if (!options.silent) console.error('[Welcome] Failed to send public welcome:', error);
       }
-    } else {
-      publicFailed = true;
     }
   }
 
   if (config.dmEnabled && options.skipDm !== true) {
     try {
-      await member.send(buildDiscordPayload(member, 'dmWelcome', config));
+      await member.send(buildDiscordPayload(member, 'dmWelcome', config, { includeComponents: false }));
       dmSent = true;
     } catch (error) {
       dmFailed = true;
+      errors.push(`Welcome DM failed: ${error.message || error}`);
       if (!options.silent) console.warn('[Welcome] Failed to send welcome DM:', error.message || error);
     }
   }
@@ -324,7 +376,7 @@ async function sendWelcome(member, options = {}) {
     });
   }
 
-  return { publicSent, dmSent, publicFailed, dmFailed, skipped: false };
+  return { publicSent, dmSent, publicFailed, dmFailed, skipped: false, errors };
 }
 
 async function buildHealthReport(guild) {
@@ -336,18 +388,17 @@ async function buildHealthReport(guild) {
   const canView = Boolean(permissions?.has(PermissionFlagsBits.ViewChannel));
   const canSend = Boolean(permissions?.has(PermissionFlagsBits.SendMessages));
   const canEmbed = Boolean(permissions?.has(PermissionFlagsBits.EmbedLinks));
-  const preset = getAssignedPreset(guild.id, config);
-  const boundTemplate = getWelcomeBinding(guild.id, 'welcome');
-  const configuredTemplate = embedTemplateManager.getTemplate(guild.id, config.templateId);
-  const activeTemplate = preset || boundTemplate || configuredTemplate;
+  const publicTemplate = getAssignedTemplate(guild.id, 'welcome', config);
+  const dmTemplate = config.dmEnabled ? getAssignedTemplate(guild.id, 'dmWelcome', config) : null;
   const warnings = [
     config.enabled === false ? 'Welcome is disabled.' : null,
-    config.enabled && !config.channelId && !config.dmEnabled ? 'No public welcome channel or DM welcome is configured.' : null,
+    config.enabled && !config.channelId && !config.dmEnabled ? 'No public welcome channel or welcome DM is configured.' : null,
     config.channelId && !channel ? `Configured welcome channel ${config.channelId} no longer exists or is not text-based.` : null,
     channel && !canView ? 'Goliath cannot view the welcome channel.' : null,
     channel && !canSend ? 'Goliath cannot send messages in the welcome channel.' : null,
     channel && !canEmbed ? 'Goliath cannot embed links in the welcome channel.' : null,
-    !activeTemplate ? `Welcome message ${config.presetName || config.templateId} could not be found.` : null,
+    config.channelId && !publicTemplate ? `Welcome template ${config.templateId} could not be found.` : null,
+    config.dmEnabled && !dmTemplate ? 'Welcome DM is enabled, but no usable template is assigned.' : null,
   ].filter(Boolean);
   return {
     enabled: config.enabled !== false,
@@ -358,9 +409,11 @@ async function buildHealthReport(guild) {
     canView,
     canSend,
     canEmbed,
-    templateId: preset ? config.templateId : activeTemplate?.templateId || config.templateId,
-    templateName: preset?.name || config.presetName || activeTemplate?.name || null,
-    templateBound: Boolean(preset || boundTemplate),
+    templateId: publicTemplate?.templateId || config.templateId,
+    templateName: publicTemplate?.name || null,
+    templateBound: Boolean(getWelcomeBinding(guild.id, 'welcome')),
+    dmTemplateId: dmTemplate?.templateId || config.dmTemplateId || config.templateId,
+    countMode: config.ignoreBots ? 'humans_only' : 'all_members',
     warnings,
     healthy: warnings.length === 0,
   };
@@ -369,13 +422,14 @@ async function buildHealthReport(guild) {
 async function repairConfiguration(guild, meta = {}) {
   const config = getWelcomeSection(guild.id);
   const channel = config.channelId ? await resolveWelcomeChannel(guild, config.channelId) : null;
-  const preset = getAssignedPreset(guild.id, config);
-  const template = getWelcomeBinding(guild.id, 'welcome') || embedTemplateManager.getTemplate(guild.id, config.templateId);
+  const publicTemplate = getAssignedTemplate(guild.id, 'welcome', config);
   return updateConfig(guild.id, {
     channelId: channel ? config.channelId : null,
-    presetName: preset ? config.presetName : null,
-    templateId: preset ? config.templateId : template?.templateId || 'welcome_default',
-    enabled: channel || config.dmEnabled ? config.enabled : false,
+    templateId: publicTemplate?.templateId || config.templateId,
+    dmTemplateId: config.dmTemplateId && embedTemplateManager.getTemplate(guild.id, config.dmTemplateId)
+      ? config.dmTemplateId
+      : null,
+    enabled: Boolean(channel || config.dmEnabled) && config.enabled,
   }, { action: 'welcome_repair', ...meta });
 }
 
@@ -385,7 +439,8 @@ function exportConfiguration(guildId) {
     guildId,
     module: MODULE,
     config: getWelcomeSection(guildId),
-    binding: getWelcomeBinding(guildId, 'welcome'),
+    publicBinding: getWelcomeBinding(guildId, 'welcome'),
+    dmBinding: getWelcomeBinding(guildId, 'dm_welcome'),
   };
 }
 
@@ -430,11 +485,13 @@ module.exports = {
   incrementAnalytics,
   resetWelcomeSection,
   formatTimestamp,
+  getMemberCount,
   buildTemplateVariables,
   getWelcomeTemplates,
   getWelcomeBinding,
   bindWelcomeTemplate,
-  buildMessageData,
+  getAssignedTemplate,
+  templateToPreviewState,
   buildDiscordPayload,
   resolveWelcomeChannel,
   sendWelcome,

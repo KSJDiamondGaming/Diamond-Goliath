@@ -102,10 +102,13 @@ router.patch('/:guildId/panels/:panelId/enabled', async (req, res) => {
   try {
     const guildId = guildIdFrom(req);
     const guild = await guildFrom(req, guildId);
-    const current = panelFrom(guildId, req.params.panelId);
-    const enabled = req.body?.enabled === true;
-    let panel = reactionRoles.savePanel(guildId, { ...current, enabled, status: enabled ? 'pending' : 'disabled', lastError: null }, { actorId: actorId(req) });
-    if (enabled) panel = (await reactionRoles.syncPanelReactions(guild, panel)).panel;
+    panelFrom(guildId, req.params.panelId);
+    const panel = await reactionRoles.setPanelEnabled(
+      guild,
+      req.params.panelId,
+      req.body?.enabled === true,
+      { actorId: actorId(req) }
+    );
     return success(res, { panel, config: reactionRoles.getSection(guildId) });
   } catch (error) { return respondFailure(res, error); }
 });

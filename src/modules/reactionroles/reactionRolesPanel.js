@@ -258,12 +258,9 @@ async function handleReactionRolesAdminInteraction(interaction) {
     }
     if (id.startsWith('admin:reactionRoles:manage:enable:') || id.startsWith('admin:reactionRoles:manage:disable:')) {
       const panelId = id.split(':').pop();
-      const panel = reactionRoles.getPanel(guild.id, panelId);
-      if (!panel) throw new Error('That panel no longer exists.');
-      const enabling = id.includes(':enable:');
-      reactionRoles.savePanel(guild.id, { ...panel, enabled: enabling, status: enabling ? 'pending' : 'disabled', lastError: null }, guild);
-      if (enabling) await reactionRoles.syncPanelReactions(guild, reactionRoles.getPanel(guild.id, panelId));
-      return show(interaction, await buildManagedPanel(guild, panelId));
+      await interaction.deferUpdate();
+      await reactionRoles.setPanelEnabled(guild, panelId, id.includes(':enable:'), guild);
+      return interaction.editReply(await buildManagedPanel(guild, panelId));
     }
     if (id.startsWith('admin:reactionRoles:manage:repair:')) {
       const panelId = id.split(':').pop();
