@@ -222,6 +222,13 @@ function templatePayload(template) {
     }],
   };
 }
+function messagePayload(message) {
+  return {
+    content: message.content || '',
+    embeds: message.embeds.map((embed) => embed.toJSON()),
+    components: message.components.map((component) => component.toJSON()),
+  };
+}
 
 async function resolveMessage(guild, reference, channelId = null) {
   const parsed = parseMessageReference(reference, channelId);
@@ -315,16 +322,26 @@ async function repairPanel(guild, panelId, meta = {}) {
   }
 }
 
+async function restoreTemplateTransaction(guild, message, panel, originalPayload, error, meta = {}) {
+  await message.edit(originalPayload).catch(() => null);
+  const restored = savePanel(guild.id, panel, meta);
+  await syncPanelReactions(guild, restored).catch(() => null);
+  savePanelFailure(guild, getPanel(guild.id, panel.panelId) || restored, error, meta);
+}
+
 async function redeployPanel(guild, panelId, meta = {}) {
   const panel = getPanel(guild.id, panelId);
   if (!panel) throw new Error('Reaction-role panel not found.');
   if (!panel.templateId) throw new Error('This deployment is not linked to an Embed Studio template.');
+  if (panel.enabled === false) throw new Error('Enable this deployment before redeploying it.');
+  const template = getReactionTemplate(guild.id, panel.templateId);
+  const message = await resolveMessage(guild, panel.messageId, panel.channelId);
+  const originalPayload = messagePayload(message);
   try {
-    const message = await resolveMessage(guild, panel.messageId, panel.channelId);
-    await message.edit(templatePayload(getReactionTemplate(guild.id, panel.templateId)));
+    await message.edit(templatePayload(template));
     return await repairPanel(guild, panel.panelId, meta);
   } catch (error) {
-    savePanelFailure(guild, panel, error, meta);
+    await restoreTemplateTransaction(guild, message, panel, originalPayload, error, meta);
     throw error;
   }
 }
@@ -340,10 +357,7 @@ async function attachExistingMessage({ guild, messageReference, channelId, name,
   const preparedMappings = prepareMappings(guild, mappings);
   const template = applyTemplate && templateId ? getReactionTemplate(guild.id, templateId) : null;
   const message = await resolveMessage(guild, messageReference, channelId);
-  const originalPayload = template ? {
-    content: message.content || '',
-    embeds: message.embeds.map((embed) => embed.toJSON()),
-  } : null;
+  const originalPayload = template ? messagePayload(message) : null;
   let panel = null;
   try {
     if (template) await message.edit(templatePayload(template));
@@ -388,14 +402,15 @@ async function applyTemplateToPanel(guild, panelId, templateId, meta = {}) {
   const panel = getPanel(guild.id, panelId);
   if (!panel) throw new Error('Reaction-role panel not found.');
   if (panel.enabled === false) throw new Error('Enable this deployment before applying a template.');
+  const template = getReactionTemplate(guild.id, templateId);
+  const message = await resolveMessage(guild, panel.messageId, panel.channelId);
+  const originalPayload = messagePayload(message);
   try {
-    const template = getReactionTemplate(guild.id, templateId);
-    const message = await resolveMessage(guild, panel.messageId, panel.channelId);
     await message.edit(templatePayload(template));
     const updated = savePanel(guild.id, { ...panel, templateId, status: 'pending', lastError: null }, meta);
     return await repairPanel(guild, updated.panelId, meta);
   } catch (error) {
-    savePanelFailure(guild, panel, error, meta);
+    await restoreTemplateTransaction(guild, message, panel, originalPayload, error, meta);
     throw error;
   }
 }
