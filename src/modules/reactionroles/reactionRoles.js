@@ -405,10 +405,24 @@ async function updatePanelMappings(guild, panelId, mappings, actorId) {
   if (!current) throw new Error('Reaction-role panel not found.');
   const nextMappings = prepareMappings(guild, mappings);
   const message = await resolveMessage(guild, current.messageId, current.channelId);
-  await removeObsoleteBotReactions(guild, message, current.mappings, nextMappings);
-  const panel = savePanel(guild.id, { ...current, mappings: nextMappings, createdBy: current.createdBy || actorId }, guild);
-  await syncPanelReactions(guild, panel);
-  return getPanel(guild.id, panelId);
+  let updated = null;
+  try {
+    await removeObsoleteBotReactions(guild, message, current.mappings, nextMappings);
+    updated = savePanel(guild.id, {
+      ...current,
+      mappings: nextMappings,
+      status: current.enabled === false ? 'disabled' : 'pending',
+      lastError: null,
+      createdBy: current.createdBy || actorId,
+    }, guild);
+    return (await syncPanelReactions(guild, updated)).panel;
+  } catch (error) {
+    const restored = savePanel(guild.id, current, guild);
+    await removeObsoleteBotReactions(guild, message, nextMappings, current.mappings).catch(() => null);
+    await syncPanelReactions(guild, restored).catch(() => null);
+    savePanelFailure(guild, getPanel(guild.id, panelId) || restored, error, guild);
+    throw error;
+  }
 }
 
 async function detachPanel(guild, panelId, { clearReactions = false } = {}) {
