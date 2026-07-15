@@ -30,7 +30,7 @@ function defaultSection() {
     enabled: true,
     settings: { removeOnUnreact: true, ignoreBots: true },
     panels: {}, drafts: {},
-    analytics: { attached: 0, created: 0, assigned: 0, removed: 0, failed: 0, repaired: 0, lastActionAt: null },
+    analytics: { attached: 0, created: 0, assigned: 0, removed: 0, noop: 0, failed: 0, repaired: 0, lastActionAt: null },
     createdAt: now(), updatedAt: now(),
   };
 }
@@ -508,18 +508,31 @@ async function handleReaction(reaction, user, removing = false) {
     if (!member) return null;
     try {
       const role = validateRole(guild, mapping.roleId);
+      const hasRole = member.roles.cache.has(role.id);
       if (removing) {
-        if (mapping.mode !== MODES.TOGGLE || mapping.removeOnUnreact === false || !member.roles.cache.has(role.id)) return null;
+        if (mapping.mode !== MODES.TOGGLE || mapping.removeOnUnreact === false) return null;
+        if (!hasRole) {
+          addAnalytics(guild.id, { noop: 1 }, guild);
+          return { action: 'noop', roleId: role.id, reason: 'role_already_absent' };
+        }
         await member.roles.remove(role, 'Goliath reaction role removed');
         addAnalytics(guild.id, { removed: 1 }, guild);
         return { action: 'removed', roleId: role.id };
       }
       if (mapping.mode === MODES.REMOVE) {
-        if (member.roles.cache.has(role.id)) await member.roles.remove(role, 'Goliath reaction role removal mapping');
+        if (!hasRole) {
+          addAnalytics(guild.id, { noop: 1 }, guild);
+          return { action: 'noop', roleId: role.id, reason: 'role_already_absent' };
+        }
+        await member.roles.remove(role, 'Goliath reaction role removal mapping');
         addAnalytics(guild.id, { removed: 1 }, guild);
         return { action: 'removed', roleId: role.id };
       }
-      if (!member.roles.cache.has(role.id)) await member.roles.add(role, 'Goliath reaction role assigned');
+      if (hasRole) {
+        addAnalytics(guild.id, { noop: 1 }, guild);
+        return { action: 'noop', roleId: role.id, reason: 'role_already_present' };
+      }
+      await member.roles.add(role, 'Goliath reaction role assigned');
       addAnalytics(guild.id, { assigned: 1 }, guild);
       return { action: 'assigned', roleId: role.id };
     } catch (error) {
