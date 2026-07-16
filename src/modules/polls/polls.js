@@ -141,9 +141,10 @@ async function deletePoll(guild, pollId, meta = {}) {
 }
 
 async function respond(interaction, content) {
-  const payload = { content, flags: MessageFlags.Ephemeral };
-  if (interaction.deferred || interaction.replied) return interaction.editReply(payload).catch(() => null);
-  return interaction.reply(payload).catch(() => null);
+  if (interaction.deferred || interaction.replied) {
+    return interaction.editReply({ content }).catch(() => null);
+  }
+  return interaction.reply({ content, flags: MessageFlags.Ephemeral }).catch(() => null);
 }
 
 async function processVote(interaction, pollId, optionId) {
@@ -221,8 +222,12 @@ async function vote(interaction) {
   }
   if (interactionId) processedInteractions.set(interactionId, Date.now());
 
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => null);
+  }
+
   const [, pollId, optionId] = match;
-  const queueKey = `${interaction.guildId || 'unknown'}:${pollId}:${interaction.user?.id || 'unknown'}`;
+  const queueKey = `${interaction.guildId || 'unknown'}:${pollId}`;
   return queueVote(queueKey, () => processVote(interaction, pollId, optionId));
 }
 
