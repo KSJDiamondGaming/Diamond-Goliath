@@ -36,7 +36,7 @@ Health checks validate configured channels and every active poll deployment. Rep
 
 ## API
 
-The module is mounted at `/api/polls` and provides configuration, creation, update, deployment, status, deletion, health, repair, export, and reset operations.
+The module is mounted directly from `src/modules/polls/pollsRoute.js` at `/api/polls` and provides configuration, creation, update, deployment, status, deletion, health, repair, export, and reset operations.
 
 ## Discord administration
 
@@ -65,7 +65,6 @@ The dashboard supports:
 - JSON export
 - Confirmed reset
 
-## Remaining repository cleanup
+## Acceptance
 
-- Remove the temporary `src/server/routes/polls.js` compatibility shim after `server.js` points directly to `src/modules/polls/pollsRoute.js`.
-- Run the live Discord acceptance checklist before changing module maturity from `IN_PROGRESS` to `COMPLETE`.
+Polls is registered as a complete canonical module. Production deployment should still run the normal live Discord acceptance checklist after updates: create, deploy, vote, switch or remove a vote, close, repair, restart, export, and reset.
