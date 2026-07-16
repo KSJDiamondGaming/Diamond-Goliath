@@ -34,6 +34,8 @@ const stickyAdminPanel = optionalRequire('sticky admin', '../../core/admin/funct
 const levelingAdminPanel = optionalRequire('leveling admin', '../../core/admin/functions/levelingAdminPanel');
 const socialAdminPanel = optionalRequire('social admin', '../../modules/social/socialPanel');
 const socialCreatorPanel = optionalRequire('social creator hub', '../../modules/social/socialCreatorPanel');
+const schedulePanel = optionalRequire('schedule admin', '../../modules/schedule/schedulePanel');
+const scheduleDeployment = optionalRequire('schedule RSVP', '../../modules/schedule/scheduleDeployment');
 const verificationAdminPanel = optionalRequire('verification admin', '../../modules/verification/verificationPanel');
 const autorolesPanel = optionalRequire('auto roles', '../../modules/autoroles/autorolesPanel');
 const timedRolesPanel = optionalRequire('timed roles', '../../modules/timedroles/timedRolesPanel');
@@ -121,6 +123,8 @@ module.exports = {
       if (startsWith(interaction, 'admin:goodbye')) { await callHandler(goodbyePanel, 'handleGoodbyeInteraction', interaction); return; }
       if (startsWith(interaction, 'admin:reactionRoles')) { await callHandler(reactionRolesAdminPanel, 'handleReactionRolesAdminInteraction', interaction); return; }
       if (startsWith(interaction, 'admin:socialhub')) { await callHandler(socialCreatorPanel, 'handleSocialCreatorInteraction', interaction); return; }
+      if (startsWith(interaction, 'admin:schedule')) { await callHandler(schedulePanel, 'handleScheduleAdminInteraction', interaction); return; }
+      if (startsWith(interaction, 'schedule:rsvp:')) { await callHandler(scheduleDeployment, 'handleMemberInteraction', interaction); return; }
       if (isVerificationMemberInteraction(interaction)) { await callHandler(verificationManager, 'handleVerificationInteraction', interaction); return; }
       if (await callHandler(statsAdminPanel, 'handleStatsAdminInteraction', interaction)) return;
       if (await callHandler(suggestionsAdminPanel, 'handleSuggestionsAdminInteraction', interaction)) return;
