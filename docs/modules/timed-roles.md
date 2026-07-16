@@ -105,6 +105,18 @@ Timed Roles records:
 - Failed operations
 - Last scan time
 
+## Legacy role migration
+
+At startup, `src/core/guild/legacyRolesMigration.js` performs a one-time migration of the removed generic `roles` configuration section:
+
+- Legacy timed rules are converted into canonical Timed Roles rules.
+- Legacy join-role rules are merged into Auto Roles.
+- Previously deployed button panels are preserved under Reaction Roles compatibility storage.
+- The obsolete `modules.roles` section is deleted only after the conversion completes.
+- Completion and item counts are recorded at `modules._migrations.legacyRolesV1`.
+
+Invalid timed rules without a usable role ID are skipped and counted in the migration report.
+
 ## Startup
 
 The canonical startup operation is:
@@ -113,4 +125,4 @@ The canonical startup operation is:
 require('./src/modules/timedroles/timedRoles').startup(client)
 ```
 
-Only the canonical scheduler should run. Legacy timed-role schedulers under `src/modules/roles/` must not be reintroduced.
+Only the canonical Timed Roles scheduler should run. The deleted generic Roles module must not be reintroduced.
