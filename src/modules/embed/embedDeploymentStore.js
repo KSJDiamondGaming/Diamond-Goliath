@@ -7,7 +7,8 @@ const {
   emitEmbedDeleted,
 } = require('./embedSocketEvents');
 
-const EMBED_DEPLOYMENTS_SECTION = 'embedBuilder.deployments';
+const EMBED_DEPLOYMENTS_SECTION = 'embedDeployments';
+const LEGACY_EMBED_BUILDER_SECTION = 'embedBuilder';
 const DEPLOYMENT_STATUS = Object.freeze({
   ACTIVE: 'active',
   NOT_DEPLOYED: 'not_deployed',
@@ -54,17 +55,30 @@ function normalizeDeployment(key, deployment = {}) {
   };
 }
 
-function getEmbedBuilderSection(guildId) {
+function readLegacyDeployments(guildId) {
+  const legacy = guildManager.getGuildSection(guildId, LEGACY_EMBED_BUILDER_SECTION, {});
+  return isPlainObject(legacy.deployments) ? legacy.deployments : {};
+}
+
+function getDeploymentSection(guildId) {
   refreshGuild(guildId);
-  return guildManager.getGuildSection(guildId, 'embedBuilder', {
-    draft: {},
-    templates: {},
+  const section = guildManager.getGuildSection(guildId, EMBED_DEPLOYMENTS_SECTION, {
     deployments: {},
   });
+  const current = isPlainObject(section.deployments) ? section.deployments : {};
+  if (Object.keys(current).length) return section;
+
+  const legacy = readLegacyDeployments(guildId);
+  if (!Object.keys(legacy).length) return section;
+
+  const migrated = { deployments: clone(legacy), migratedAt: now(), updatedAt: now() };
+  guildManager.saveGuildSection(guildId, EMBED_DEPLOYMENTS_SECTION, migrated);
+  refreshGuild(guildId);
+  return migrated;
 }
 
 function getAllEmbedDeployments(guildId) {
-  const deployments = clone(getEmbedBuilderSection(guildId).deployments || {});
+  const deployments = clone(getDeploymentSection(guildId).deployments || {});
   return Object.fromEntries(
     Object.entries(deployments)
       .filter(([, deployment]) => isPlainObject(deployment))
@@ -101,9 +115,9 @@ function getEmbedDeployment(guildId, key) {
 
 function saveDeployments(guildId, deployments) {
   if (typeof guildManager.saveGuildSection !== 'function') return null;
-  const current = getEmbedBuilderSection(guildId);
+  const current = getDeploymentSection(guildId);
   const next = { ...current, deployments: clone(deployments), updatedAt: now() };
-  guildManager.saveGuildSection(guildId, 'embedBuilder', next);
+  guildManager.saveGuildSection(guildId, EMBED_DEPLOYMENTS_SECTION, next);
   refreshGuild(guildId);
   return next.deployments;
 }
