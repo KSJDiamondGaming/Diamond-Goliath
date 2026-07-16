@@ -82,6 +82,7 @@ const autoRolesRoutes = safeRequire('auto roles routes', './src/modules/autorole
 const welcomeRoutes = safeRequire('welcome routes', './src/modules/welcome/welcomeRoute', emptyRouter(), { optional: false });
 const goodbyeRoutes = safeRequire('goodbye routes', './src/modules/goodbye/goodbyeRoute', emptyRouter(), { optional: false });
 const reactionRolesRoutes = safeRequire('reaction roles routes', './src/modules/reactionroles/reactionRolesRoute', emptyRouter(), { optional: false });
+const timedRolesRoutes = safeRequire('timed roles routes', './src/modules/timedroles/timedRolesRoute', emptyRouter(), { optional: false });
 const modulesRoutes = safeRequire('modules routes', './src/server/routes/modules', emptyRouter(), { optional: false });
 const automationRoutes = safeRequire('automation routes', './src/server/routes/automation', emptyRouter(), { optional: false });
 const notificationRoutes = safeRequire('notification routes', './src/server/routes/notifications', emptyRouter(), { optional: false });
@@ -169,6 +170,7 @@ app.use('/api/auto-roles', autoRolesRoutes);
 app.use('/api/welcome', welcomeRoutes);
 app.use('/api/goodbye', goodbyeRoutes);
 app.use('/api/reaction-roles', reactionRolesRoutes);
+app.use('/api/timed-roles', timedRolesRoutes);
 app.use('/api/modules', modulesRoutes);
 app.use('/api/automation', automationRoutes);
 app.use('/api/notifications', notificationRoutes);
@@ -256,6 +258,7 @@ client.once('clientReady', async () => {
   await Promise.all([
     runStartupTask('Tickets', () => require('./src/modules/tickets/tickets').startup.startupTickets(client)),
     runStartupTask('Roles', () => require('./src/modules/roles/rolesStartup').initializeRoles(client)),
+    runStartupTask('Timed Roles', () => require('./src/modules/timedroles/timedRoles').startup(client)),
     runStartupTask('Translation', () => require('./src/modules/translation/translationStartup').startupTranslation(client)),
     runStartupTask('Verification', () => require('./src/modules/verification/verification').startupVerification(client)),
     runStartupTask('Goodbye', () => require('./src/modules/goodbye/goodbye').startupGoodbye(client)),
