@@ -55,21 +55,24 @@ The first discovered content item becomes the account baseline and is not announ
 
 Kick live polling is production-ready when Goliath's global `KICK_CLIENT_ID` and `KICK_CLIENT_SECRET` are configured.
 
-Server administrators only enter a public Kick username or profile URL. Goliath obtains and caches an app access token centrally, resolves the public channel by slug, and reads:
+Server administrators only enter a public Kick username or profile URL. Goliath obtains and caches an app access token centrally, resolves the public channel by slug, and reads live state, title, category, viewers, thumbnail, start time, and mature-content state.
 
-- Live state
-- Stream title
-- Category
-- Viewer count
-- Thumbnail
-- Start time
-- Mature-content state
+### X
 
-The first discovered live stream is baselined through the normal Social scheduler rules and is not falsely announced during initial setup.
+X public-post polling is production-ready when Goliath has either:
+
+- `X_BEARER_TOKEN`, or
+- `X_API_KEY` and `X_API_KEY_SECRET`
+
+The legacy `X_CLIENT_ID` and `X_CLIENT_SECRET` names are accepted as fallback aliases for existing deployments.
+
+Server administrators only enter a public X handle or profile URL. Goliath resolves the public account, reads its latest original public post, excludes replies and reposts, resolves attached media, and sends the post through the normal Social template, routing, quiet-hours, queue, history, and duplicate-suppression pipeline.
+
+Protected X accounts are detected but cannot be monitored through app-only public access. The first discovered public post is baselined and is not announced.
 
 ## Provider status
 
-TikTok, Instagram, and X remain visible but are reported honestly as `not_configured` or `not_implemented`. They are not presented as production-ready.
+TikTok and Instagram remain visible but are reported honestly as `not_configured` or `not_implemented`. Their official monitored-account APIs require creator or business account authorization, which conflicts with Social Studio's locked zero-credential setup for server administrators and creators.
 
 ## Creator Hub
 
@@ -124,8 +127,8 @@ Grades:
 
 `npm run doctor` runs the main repository Doctor and `scripts/social-doctor.js`.
 
-The Social Doctor verifies the runtime, routes, Discord panels, Creator Hub, simulator, diagnostics, delivery service, Twitch, YouTube, and Kick providers, queue, history, dashboard, command, and documentation.
+The Social Doctor verifies the runtime, routes, Discord panels, Creator Hub, simulator, diagnostics, delivery service, Twitch, YouTube, Kick, and X providers, queue, history, dashboard, command, and documentation.
 
 ## Completion state
 
-Social Studio remains `IN_PROGRESS` because TikTok, Instagram, and X do not yet have production polling implementations. Twitch, YouTube, and Kick are production providers, and the flagship Discord, dashboard, Creator Hub, simulator, routing, quiet-hours, queue, history, diagnostics, health, repair, export, reset, and Doctor foundations are present.
+Social Studio remains `IN_PROGRESS` because TikTok and Instagram do not have a production monitoring path that preserves the locked zero-credential model. Twitch, YouTube, Kick, and X are production providers, and the flagship Discord, dashboard, Creator Hub, simulator, routing, quiet-hours, queue, history, diagnostics, health, repair, export, reset, and Doctor foundations are present.
