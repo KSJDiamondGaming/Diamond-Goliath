@@ -15,17 +15,19 @@ Stats owns:
 - Dashboard reporting
 - Discord administration
 
-Timeline does not duplicate this responsibility. Timeline is internal audit-history infrastructure used by modules to record administrative and system events. It remains under `src/features/timeline/` and is not a standalone configurable reporting module.
+Timeline does not duplicate this responsibility. Timeline is internal audit-history infrastructure used by modules to record administrative and system events. It remains available to internal callers but is no longer presented as a standalone dashboard module.
 
 ## Canonical files
 
 - `src/modules/stats/stats.js` — canonical module entry
 - `src/modules/stats/statsPanel.js` — Discord administration
+- `src/modules/stats/statsRoute.js` — dashboard and API surface
+- `src/modules/stats/statsHealth.js` — health, repair, export and reset
 - `src/modules/stats/statsManager.js` — event tracking and counter refresh runtime
 - `src/modules/stats/statsStore.js` — guild configuration and activity data
 - `src/modules/stats/statsCounters.js` — Discord counter-channel lifecycle
 
-The API route remains temporarily under `src/server/routes/stats.js` until it is moved into `src/modules/stats/statsRoute.js` in the next consolidation pass.
+`src/server/routes/stats.js` is temporarily a one-line compatibility shim until `server.js` is pointed directly at the canonical route.
 
 ## Runtime
 
@@ -41,6 +43,23 @@ The Stats panel supports:
 - View activity totals
 - List configured counters
 
+## API
+
+The module is mounted at `/api/stats` and exposes:
+
+- Overview and live guild statistics
+- Configuration read and update
+- Counter-suite setup
+- Manual counter refresh
+- Health
+- Repair
+- Export
+- Confirmed reset
+
+## Health and repair
+
+Health validates configured counter channels and retention settings. Repair recreates missing standard counters when required and refreshes every tracked counter channel.
+
 ## Completion state
 
-Stats remains `IN_PROGRESS` until the route is module-owned and health, repair and export are added. Timeline remains internal infrastructure and should not be presented as a separate module in the completed module catalogue.
+Stats remains `IN_PROGRESS` until the compatibility route shim is removed and dashboard controls for health, repair, export and reset are verified. Timeline remains internal infrastructure and is not a standalone user-facing module.
