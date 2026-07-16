@@ -6,6 +6,7 @@ const { getModuleSection, saveModuleSection, updateModuleSection } = require('..
 
 const SECTION = 'timedRoles';
 const UNITS = Object.freeze(['minutes', 'hours', 'days', 'weeks', 'months', 'years']);
+const SCHEDULER_TICK_MS = 5 * 60 * 1000;
 const now = () => new Date().toISOString();
 const clone = (value) => value == null ? value : JSON.parse(JSON.stringify(value));
 const cleanId = (value) => {
@@ -149,6 +150,14 @@ function addAnalytics(guildId, patch, meta = {}) {
   }, meta).analytics;
 }
 
+function shouldScanGuild(guildId, timestamp = Date.now()) {
+  const section = getSection(guildId);
+  if (section.enabled === false) return false;
+  const lastScan = new Date(section.analytics.lastScanAt || 0).getTime();
+  if (!Number.isFinite(lastScan) || lastScan <= 0) return true;
+  return timestamp - lastScan >= section.settings.scanIntervalMinutes * 60 * 1000;
+}
+
 async function scanGuild(guild, meta = {}) {
   const section = getSection(guild.id);
   if (section.enabled === false) return { guildId: guild.id, disabled: true, rules: 0, membersChecked: 0, awarded: 0, removed: 0, skipped: 0, failed: 0 };
@@ -156,23 +165,31 @@ async function scanGuild(guild, meta = {}) {
   if (!rules.length) return { guildId: guild.id, rules: 0, membersChecked: 0, awarded: 0, removed: 0, skipped: 0, failed: 0 };
   const members = await guild.members.fetch();
   const result = { guildId: guild.id, rules: rules.length, membersChecked: 0, awarded: 0, removed: 0, skipped: 0, failed: 0 };
+  const ruleStats = new Map(rules.map((rule) => [rule.ruleId, { awarded: 0, error: null }]));
   for (const member of members.values()) {
     if (member.user?.bot && section.settings.includeBots !== true) continue;
     result.membersChecked += 1;
     for (const rule of rules) {
       try {
         const applied = await applyRuleToMember(member, rule);
-        if (applied.awarded) result.awarded += 1;
+        if (applied.awarded) {
+          result.awarded += 1;
+          ruleStats.get(rule.ruleId).awarded += 1;
+        }
         result.removed += applied.removed?.length || 0;
         if (['noop', 'not_due', 'skipped'].includes(applied.status)) result.skipped += 1;
       } catch (error) {
         result.failed += 1;
-        saveRule(guild.id, { ...rule, lastRunAt: now(), lastError: error.message }, meta);
+        ruleStats.get(rule.ruleId).error = error.message;
       }
     }
   }
-  for (const rule of rules) saveRule(guild.id, { ...rule, lastRunAt: now(), lastError: null }, meta);
-  addAnalytics(guild.id, { scans: 1, membersChecked: result.membersChecked, awarded: result.awarded, removed: result.removed, skipped: result.skipped, failed: result.failed, lastScanAt: now() }, meta);
+  const scannedAt = now();
+  for (const rule of rules) {
+    const stats = ruleStats.get(rule.ruleId);
+    saveRule(guild.id, { ...rule, lastRunAt: scannedAt, lastAwarded: stats.awarded, lastError: stats.error }, meta);
+  }
+  addAnalytics(guild.id, { scans: 1, membersChecked: result.membersChecked, awarded: result.awarded, removed: result.removed, skipped: result.skipped, failed: result.failed, lastScanAt: scannedAt }, meta);
   return result;
 }
 
@@ -186,6 +203,7 @@ async function buildHealth(guild) {
     if (!role) issues.push(`${rule.name}: target role no longer exists.`);
     else if (!canManageRole(guild, role)) issues.push(`${rule.name}: target role is above Goliath or managed.`);
     for (const roleId of rule.removeRoleIds) if (!guild.roles.cache.has(roleId)) warnings.push(`${rule.name}: cleanup role ${roleId} no longer exists.`);
+    if (rule.lastError) warnings.push(`${rule.name}: last scan failed — ${rule.lastError}`);
   }
   return { healthy: issues.length === 0, enabled: section.enabled, rules: listRules(guild.id).length, issues, warnings, checkedAt: now() };
 }
@@ -203,18 +221,22 @@ async function repair(guild, meta = {}) {
 async function startup(client) {
   if (client.__goliathTimedRolesStarted) return null;
   client.__goliathTimedRolesStarted = true;
-  const run = async () => {
-    for (const guild of client.guilds.cache.values()) await scanGuild(guild, client).catch((error) => console.warn(`[TimedRoles] ${guild.id}: ${error.message}`));
+  const run = async (force = false) => {
+    const timestamp = Date.now();
+    for (const guild of client.guilds.cache.values()) {
+      if (!force && !shouldScanGuild(guild.id, timestamp)) continue;
+      await scanGuild(guild, client).catch((error) => console.warn(`[TimedRoles] ${guild.id}: ${error.message}`));
+    }
   };
-  await run();
-  const timer = setInterval(run, 60 * 60 * 1000);
+  await run(true);
+  const timer = setInterval(() => run(false), SCHEDULER_TICK_MS);
   timer.unref?.();
   return timer;
 }
 
 module.exports = {
   SECTION, UNITS, getSection, listRules, getRule, setEnabled, updateSettings, saveRule, removeRule,
-  eligibleAt, applyRuleToMember, scanGuild, buildHealth, repair, startup,
+  eligibleAt, applyRuleToMember, shouldScanGuild, scanGuild, buildHealth, repair, startup,
   exportConfiguration: getSection,
   reset: (guildId, meta = {}) => saveSection(guildId, defaultSection(), meta),
 };
