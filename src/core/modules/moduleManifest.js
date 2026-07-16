@@ -50,7 +50,7 @@ const moduleManifest = Object.freeze({
   stats: {
     key: 'stats',
     name: 'Stats',
-    maturity: MODULE_MATURITY.IN_PROGRESS,
+    maturity: MODULE_MATURITY.PAUSED,
     capabilities: createCapabilityMap({
       guildStorage: true,
       runtime: true,
@@ -70,7 +70,7 @@ const moduleManifest = Object.freeze({
   tickets: {
     key: 'tickets',
     name: 'Tickets',
-    maturity: MODULE_MATURITY.IN_PROGRESS,
+    maturity: MODULE_MATURITY.PAUSED,
     capabilities: createCapabilityMap({
       guildStorage: true,
       runtime: true,
