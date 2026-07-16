@@ -10,7 +10,7 @@ const xProvider = require('./providers/xProvider');
 const PROVIDER_STATUSES = Object.freeze({ READY: 'ready', NOT_CONFIGURED: 'not_configured', NOT_IMPLEMENTED: 'not_implemented', ERROR: 'error' });
 const providerDefinitions = Object.freeze({
   instagram: { id: 'instagram', label: 'Instagram', supportedAlertTypes: ['post'], requiredEnv: ['INSTAGRAM_APP_ID', 'INSTAGRAM_APP_SECRET'], handler: instagramProvider },
-  kick: { id: 'kick', label: 'Kick', supportedAlertTypes: ['live'], requiredEnv: [], handler: kickProvider },
+  kick: { id: 'kick', label: 'Kick', supportedAlertTypes: ['live'], requiredEnv: ['KICK_CLIENT_ID', 'KICK_CLIENT_SECRET'], handler: kickProvider },
   tiktok: { id: 'tiktok', label: 'TikTok', supportedAlertTypes: ['post', 'live'], requiredEnv: ['TIKTOK_CLIENT_ID', 'TIKTOK_CLIENT_SECRET'], handler: tiktokProvider },
   twitch: { id: 'twitch', label: 'Twitch', supportedAlertTypes: ['live'], requiredEnv: ['TWITCH_CLIENT_ID', 'TWITCH_CLIENT_SECRET'], handler: twitchProvider },
   x: { id: 'x', label: 'X', supportedAlertTypes: ['post'], requiredEnv: ['X_CLIENT_ID', 'X_CLIENT_SECRET'], handler: xProvider },
