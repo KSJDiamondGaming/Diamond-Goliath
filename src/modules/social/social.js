@@ -7,6 +7,7 @@ const socialQueue = require('./socialQueue');
 const socialHistory = require('./socialHistory');
 const socialCreators = require('./socialCreators');
 const socialSimulator = require('./socialSimulator');
+const socialDiagnostics = require('./socialDiagnostics');
 const providerRegistry = require('./providerRegistry');
 
 const STARTUP_KEY = Symbol.for('goliath.social.startup');
@@ -34,6 +35,7 @@ module.exports = {
   queue: socialQueue,
   creators: socialCreators,
   simulator: socialSimulator,
+  diagnostics: socialDiagnostics,
   providers: providerRegistry,
   scheduler: socialScheduler,
   startup,
