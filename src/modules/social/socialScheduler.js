@@ -1,8 +1,7 @@
 'use strict';
 
-// src/modules/social/socialScheduler.js
-
 const socialManager = require('./socialManager');
+const socialStore = require('./socialStore');
 const providerRegistry = require('./providerRegistry');
 
 let intervalRef = null;
@@ -29,10 +28,7 @@ async function handleProviderResult(guildId, account, result, client) {
   const metadata = buildProviderMetadata(result);
   const updates = {
     externalId: result.externalId || account.externalId,
-    metadata: {
-      ...(account.metadata || {}),
-      provider: metadata,
-    },
+    metadata: { ...(account.metadata || {}), provider: metadata },
     lastSeen: {
       ...(account.lastSeen || {}),
       lastCheckedAt: metadata.lastCheckedAt,
@@ -44,46 +40,60 @@ async function handleProviderResult(guildId, account, result, client) {
 
   socialManager.updateAccount(guildId, account.accountId, updates, { action: 'social_provider_check' });
 
-  if (result.success && result.isLive && result.contentId) {
-    const refreshedAccount = {
-      ...account,
-      ...updates,
-    };
-
-    return socialManager.sendLiveAlert(guildId, refreshedAccount, result, client, { action: 'social_provider_live_alert' });
+  if (!result.success) {
+    socialStore.incrementAnalytics(guildId, { errors: 1 }, { action: 'social_provider_error' });
+    return { success: false, skipped: true, reason: result.error || 'provider_error' };
   }
 
-  return { success: false, skipped: true, reason: result.error || 'no_alert' };
+  if (result.isLive && result.contentId) {
+    return socialManager.sendLiveAlert(guildId, { ...account, ...updates }, result, client, { action: 'social_provider_live_alert' });
+  }
+
+  return { success: false, skipped: true, reason: 'no_alert' };
 }
 
 async function runSocialCheck(client, options = {}) {
-  if (running) {
-    return { skipped: true, reason: 'already_running' };
-  }
-
+  if (running) return { skipped: true, reason: 'already_running' };
   running = true;
 
   try {
     const guildIds = Array.isArray(options.guildIds) && options.guildIds.length
       ? options.guildIds
       : [...(client?.guilds?.cache?.keys?.() || [])];
-
     const results = [];
+    let checkedGuilds = 0;
 
     for (const guildId of guildIds) {
       const config = socialManager.getConfig(guildId);
       if (config.enabled === false) continue;
+      checkedGuilds += 1;
 
-      const accounts = (config.accounts || []).filter((account) => account.enabled !== false);
+      const accounts = (config.accounts || []).filter((account) => {
+        if (account.enabled === false) return false;
+        return config.providers?.[account.platform]?.enabled !== false;
+      });
 
       for (const account of accounts) {
-        const result = await providerRegistry.checkAccount(account);
-        const alertResult = await handleProviderResult(guildId, account, result, client);
-        results.push({ ...result, alertResult });
+        try {
+          const result = await providerRegistry.checkAccount(account);
+          const alertResult = await handleProviderResult(guildId, account, result, client);
+          results.push({ guildId, accountId: account.accountId, ...result, alertResult });
+        } catch (error) {
+          socialStore.incrementAnalytics(guildId, { errors: 1 }, { action: 'social_scheduler_exception' });
+          socialManager.updateAccount(guildId, account.accountId, {
+            lastSeen: {
+              ...(account.lastSeen || {}),
+              lastCheckedAt: new Date().toISOString(),
+              lastProviderStatus: 'error',
+              lastProviderError: error.message,
+            },
+          }, { action: 'social_scheduler_exception' });
+          results.push({ guildId, accountId: account.accountId, success: false, error: error.message });
+        }
       }
     }
 
-    return { skipped: false, guildCount: guildIds.length, accountCount: results.length, results };
+    return { skipped: false, guildCount: checkedGuilds, accountCount: results.length, results };
   } finally {
     running = false;
   }
@@ -91,17 +101,11 @@ async function runSocialCheck(client, options = {}) {
 
 function startSocialScheduler(client, options = {}) {
   if (intervalRef) return intervalRef;
-
   const intervalMs = getIntervalMs(options);
-
   intervalRef = setInterval(() => {
-    runSocialCheck(client, options).catch((error) => {
-      console.error('[SocialScheduler] Check failed:', error);
-    });
+    runSocialCheck(client, options).catch((error) => console.error('[SocialScheduler] Check failed:', error));
   }, intervalMs);
-
   if (typeof intervalRef.unref === 'function') intervalRef.unref();
-
   console.log(`[SocialScheduler] Social provider scheduler ready (${intervalMs}ms)`);
   return intervalRef;
 }
@@ -113,8 +117,4 @@ function stopSocialScheduler() {
   return true;
 }
 
-module.exports = {
-  runSocialCheck,
-  startSocialScheduler,
-  stopSocialScheduler,
-};
+module.exports = { runSocialCheck, startSocialScheduler, stopSocialScheduler };
