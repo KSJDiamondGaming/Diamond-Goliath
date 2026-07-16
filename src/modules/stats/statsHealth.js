@@ -54,7 +54,7 @@ async function repair(guild) {
     suite = await stats.counters.createCounterSuite(guild);
   }
 
-  const refreshed = await stats.runtime.refreshGuildCounters(guild, 'repair');
+  const refreshed = await stats.refreshGuildCounters(guild, 'repair');
   return { suite, refreshed, health: await buildHealth(guild) };
 }
 
