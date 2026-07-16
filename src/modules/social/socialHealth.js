@@ -7,11 +7,31 @@ async function resolveChannel(guild, channelId) {
   return guild.channels.cache.get(channelId) || guild.channels.fetch(channelId).catch(() => null);
 }
 
+function routedChannelIds(account = {}) {
+  const routing = account.metadata?.routing && typeof account.metadata.routing === 'object' ? account.metadata.routing : {};
+  const entries = [
+    ['default', account.alertChannelId],
+    ['live', routing.live || routing.liveChannelId],
+    ['upload', routing.upload || routing.uploadChannelId],
+    ['short', routing.short || routing.shortChannelId],
+    ['post', routing.post || routing.postChannelId],
+  ];
+  const seen = new Set();
+  return entries.filter(([, id]) => id && !seen.has(id) && seen.add(id));
+}
+
+function validClock(value) {
+  if (value === undefined || value === null || value === '') return true;
+  const match = /^(\d{1,2}):(\d{2})$/.exec(String(value));
+  return Boolean(match && Number(match[1]) <= 23 && Number(match[2]) <= 59);
+}
+
 async function buildHealth(guild) {
   if (!guild) throw new Error('Guild is required.');
   const config = social.getConfig(guild.id);
   const issues = [];
   const providers = social.providers.listProviders();
+  const queue = social.queue.list(guild.id);
 
   for (const account of config.accounts || []) {
     if (account.enabled === false) continue;
@@ -19,10 +39,28 @@ async function buildHealth(guild) {
     if (!provider) issues.push({ code: 'provider_unknown', severity: 'error', accountId: account.accountId, platform: account.platform });
     else if (provider.status !== 'ready') issues.push({ code: `provider_${provider.status}`, severity: 'warning', accountId: account.accountId, platform: account.platform });
 
-    const channel = await resolveChannel(guild, account.alertChannelId);
-    if (!channel?.send) issues.push({ code: 'alert_channel_missing', severity: 'error', accountId: account.accountId, channelId: account.alertChannelId || null });
+    const routes = routedChannelIds(account);
+    if (!routes.length) issues.push({ code: 'alert_channel_missing', severity: 'error', accountId: account.accountId, channelId: null });
+    for (const [alertType, channelId] of routes) {
+      const channel = await resolveChannel(guild, channelId);
+      if (!channel?.send) issues.push({ code: 'routed_channel_missing', severity: 'error', accountId: account.accountId, alertType, channelId });
+    }
+
     if (!account.username && !account.externalId) issues.push({ code: 'account_identifier_missing', severity: 'error', accountId: account.accountId });
     if (account.lastSeen?.lastProviderError) issues.push({ code: 'provider_last_error', severity: 'warning', accountId: account.accountId, error: account.lastSeen.lastProviderError });
+  }
+
+  const quiet = config.settings?.quietHours || {};
+  if (quiet.enabled === true) {
+    if (!validClock(quiet.start) || !validClock(quiet.end)) issues.push({ code: 'quiet_hours_invalid', severity: 'error', start: quiet.start, end: quiet.end });
+    if (quiet.timezone) {
+      try { new Intl.DateTimeFormat('en-GB', { timeZone: quiet.timezone }).format(new Date()); }
+      catch { issues.push({ code: 'quiet_timezone_invalid', severity: 'error', timezone: quiet.timezone }); }
+    }
+  }
+
+  for (const item of queue.filter((entry) => entry.status === 'failed')) {
+    issues.push({ code: 'delivery_retry_exhausted', severity: 'warning', queueId: item.id, accountId: item.accountId, error: item.lastError });
   }
 
   return {
@@ -34,6 +72,13 @@ async function buildHealth(guild) {
     accountCount: config.accounts.length,
     enabledAccountCount: config.accounts.filter((account) => account.enabled !== false).length,
     providers,
+    queue: social.queue.summary(guild.id),
+    quietHours: {
+      enabled: quiet.enabled === true,
+      start: quiet.start || '00:00',
+      end: quiet.end || '08:00',
+      timezone: quiet.timezone || 'UTC',
+    },
     issues,
   };
 }
@@ -74,7 +119,12 @@ async function repair(guild, meta = {}) {
     }
   }
 
-  return { repaired, failed, health: await buildHealth(guild) };
+  for (const item of social.queue.list(guild.id, { status: 'failed' })) {
+    social.queue.retryNow(guild.id, item.id, { action: 'social_repair_queue_retry', ...meta });
+  }
+  const queueResult = await social.queue.processGuild(guild.id, guild.client, { meta: { action: 'social_repair_queue_process', ...meta } });
+
+  return { repaired, failed, queue: queueResult, health: await buildHealth(guild) };
 }
 
 function exportConfig(guildId) {
@@ -83,10 +133,13 @@ function exportConfig(guildId) {
     guildId: String(guildId),
     exportedAt: new Date().toISOString(),
     config: social.store.getSocialSection(guildId),
+    queue: social.queue.list(guildId),
+    history: social.history.list(guildId, { limit: social.history.MAX_HISTORY }),
   };
 }
 
 function reset(guildId, meta = {}) {
+  social.queue.clear(guildId, { action: 'social_reset_queue', ...meta });
   return social.store.saveSocialSection(guildId, social.store.defaultSocialSection(), { action: 'social_reset', ...meta });
 }
 
