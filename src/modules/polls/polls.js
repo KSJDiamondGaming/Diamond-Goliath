@@ -2,6 +2,8 @@
 
 const pollsManager = require('./pollsManager');
 
+const clone = (value) => value == null ? value : JSON.parse(JSON.stringify(value));
+
 async function resolvePollMessage(guild, poll) {
   if (!guild || !poll?.channelId || !poll?.messageId) return null;
   const channel = guild.channels.cache.get(poll.channelId)
@@ -13,13 +15,16 @@ async function resolvePollMessage(guild, poll) {
 function pollPayload(poll) {
   return {
     embeds: [pollsManager.buildPollEmbed(poll)],
-    components: pollsManager.buildPollComponents(poll),
+    components: poll.status === 'active' ? pollsManager.buildPollComponents(poll) : [],
   };
 }
 
-async function renderPoll(guild, poll) {
+async function renderPoll(guild, poll, { required = false } = {}) {
   const message = await resolvePollMessage(guild, poll);
-  if (!message?.edit) return null;
+  if (!message?.edit) {
+    if (required) throw new Error('The deployed poll message is missing or inaccessible.');
+    return null;
+  }
   await message.edit(pollPayload(poll));
   return message;
 }
@@ -32,6 +37,7 @@ async function deployPoll(guild, pollId, channelId, meta = {}) {
   if (!poll) throw new Error('Poll not found.');
   if (poll.status === 'closed') throw new Error('Closed polls cannot be redeployed.');
 
+  const previous = clone(poll);
   const existing = await resolvePollMessage(guild, poll);
   poll.status = 'active';
   poll.closedAt = null;
@@ -40,12 +46,17 @@ async function deployPoll(guild, pollId, channelId, meta = {}) {
   if (existing?.edit) {
     await existing.edit(pollPayload(poll));
     section.polls[poll.id] = poll;
-    return {
-      section: pollsManager.saveSection(guild.id, section, meta),
-      poll,
-      messageId: existing.id,
-      redeployed: true,
-    };
+    try {
+      return {
+        section: pollsManager.saveSection(guild.id, section, meta),
+        poll,
+        messageId: existing.id,
+        redeployed: true,
+      };
+    } catch (error) {
+      await existing.edit(pollPayload(previous)).catch(() => null);
+      throw error;
+    }
   }
 
   const targetChannelId = String(channelId || poll.channelId || section.settings?.defaultChannelId || '').replace(/[<#>]/g, '').trim();
@@ -77,6 +88,7 @@ async function setPollStatus(guild, pollId, status, meta = {}) {
   if (!['draft', 'active', 'closed'].includes(status)) throw new Error('Invalid poll status.');
   if (status === 'active' && !poll.messageId) throw new Error('Deploy the poll before activating it.');
 
+  const previous = clone(poll);
   const wasClosed = poll.status === 'closed';
   poll.status = status;
   poll.updatedAt = new Date().toISOString();
@@ -87,18 +99,15 @@ async function setPollStatus(guild, pollId, status, meta = {}) {
     poll.closedAt = null;
   }
 
+  const message = poll.messageId ? await renderPoll(guild, poll, { required: true }) : null;
   section.polls[poll.id] = poll;
-  const saved = pollsManager.saveSection(guild.id, section, meta);
   try {
-    await renderPoll(guild, poll);
+    const saved = pollsManager.saveSection(guild.id, section, meta);
+    return { section: saved, poll };
   } catch (error) {
-    pollsManager.saveSection(guild.id, {
-      ...saved,
-      polls: { ...saved.polls, [poll.id]: { ...poll, status: wasClosed ? 'closed' : section.polls[poll.id].status } },
-    }, meta);
+    if (message?.edit) await message.edit(pollPayload(previous)).catch(() => null);
     throw error;
   }
-  return { section: pollsManager.getSection(guild.id), poll };
 }
 
 async function deletePoll(guild, pollId, meta = {}) {
