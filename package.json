@@ -35,7 +35,7 @@
     "sync:commands:beta": "cross-env BOT_MODE=beta node src/core/commandRegistry/syncCommands.js",
     "sync:commands:production": "cross-env BOT_MODE=production node src/core/commandRegistry/syncCommands.js",
 
-    "doctor": "node scripts/goliath.js check",
+    "doctor": "node scripts/goliath.js check && node scripts/social-doctor.js",
     "audit": "node scripts/goliath.js audit",
     "commands:audit": "node scripts/goliath.js commands",
     "modules:audit": "node scripts/goliath.js modules",
