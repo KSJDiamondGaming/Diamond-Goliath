@@ -1,23 +1,19 @@
 'use strict';
 
-const roleStore = require('./roleStore');
-
-async function initializeRoles(client) {
-  const guilds = [...(client.guilds?.cache?.values?.() || [])];
-  let enabledGuilds = 0;
-  let legacyPanels = 0;
-
-  for (const guild of guilds) {
-    const section = roleStore.getRolesSection(guild.id);
-    if (section.enabled === false) continue;
-    enabledGuilds += 1;
-    legacyPanels += Object.keys(section.reactionPanels || {}).length;
-  }
-
+/**
+ * Temporary startup compatibility for server.js.
+ *
+ * Runtime ownership has moved to:
+ * - src/modules/reactionroles/reactionRoles.js
+ * - src/modules/reactionroles/reactionRolesLegacyButtons.js
+ * - src/modules/timedroles/timedRoles.js
+ *
+ * Remove this shim when the obsolete Roles startup entry is removed from server.js.
+ */
+async function initializeRoles() {
   return {
-    enabledGuilds,
-    legacyPanels,
-    timedRolesMovedToCanonicalModule: true,
+    deprecated: true,
+    runtimeMovedToCanonicalModules: true,
   };
 }
 
