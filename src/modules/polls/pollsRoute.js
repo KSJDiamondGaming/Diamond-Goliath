@@ -35,13 +35,22 @@ function actor(req) {
   return { actorId: req.session?.user?.id || req.body?.actorId || null };
 }
 
+function normalizeSettingsPayload(body = {}) {
+  const source = body?.settings && typeof body.settings === 'object' ? body.settings : body;
+  const settings = { ...(source || {}) };
+  if (Object.prototype.hasOwnProperty.call(settings, 'autoCloseHours')) {
+    const hours = Number(settings.autoCloseHours);
+    if (!Number.isFinite(hours) || hours < 0 || hours > 8760) throw new Error('Auto-close hours must be between 0 and 8760.');
+    settings.autoCloseHours = hours === 0 ? '0' : hours;
+  }
+  return settings;
+}
+
 router.get('/:guildId', (req, res) => {
   try {
     const guildId = getGuildId(req);
     const config = polls.getSection(guildId);
-    const pollList = Object.values(config.polls || {})
-      .map(polls.summarizePoll)
-      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+    const pollList = Object.values(config.polls || {}).map(polls.summarizePoll).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
     return success(res, {
       guildId,
       config: { ...config, polls: pollList },
@@ -93,7 +102,12 @@ router.patch('/:guildId/settings', (req, res) => {
   try {
     const guildId = getGuildId(req);
     const config = polls.getSection(guildId);
-    config.settings = { ...(config.settings || {}), ...(req.body?.settings || req.body || {}) };
+    const incoming = normalizeSettingsPayload(req.body || {});
+    config.settings = { ...(config.settings || {}), ...incoming };
+    if (Object.prototype.hasOwnProperty.call(incoming, 'defaultChannelId')) config.defaultChannelId = incoming.defaultChannelId || null;
+    if (Object.prototype.hasOwnProperty.call(incoming, 'anonymousVotes')) config.anonymousVoting = incoming.anonymousVotes === true;
+    if (Object.prototype.hasOwnProperty.call(incoming, 'allowMultipleVotes')) config.allowMultipleChoice = incoming.allowMultipleVotes === true;
+    if (Object.prototype.hasOwnProperty.call(incoming, 'showResultsLive')) config.showResultsLive = incoming.showResultsLive !== false;
     return success(res, { guildId, config: polls.saveSection(guildId, config, actor(req)) });
   } catch (error) {
     return failure(res, error, 400);
@@ -148,13 +162,7 @@ router.post('/:guildId/polls/:pollId/deploy', async (req, res) => {
     const guild = await getGuild(req, guildId);
     if (!guild) throw new Error('Guild is unavailable.');
     const result = await polls.deployPoll(guild, req.params.pollId, req.body?.channelId, actor(req));
-    return success(res, {
-      guildId,
-      poll: polls.summarizePoll(result.poll),
-      messageId: result.messageId,
-      redeployed: result.redeployed,
-      config: result.section,
-    });
+    return success(res, { guildId, poll: polls.summarizePoll(result.poll), messageId: result.messageId, redeployed: result.redeployed, config: result.section });
   } catch (error) {
     return failure(res, error, 400);
   }
