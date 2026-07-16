@@ -1,6 +1,6 @@
-# Social Alerts
+# Social Studio
 
-Social Alerts monitors configured creator accounts and sends Discord notifications when supported providers report new live or published content.
+Social Studio monitors configured creator accounts and sends Discord notifications when supported providers report new live or published content.
 
 ## Zero-credential setup
 
@@ -68,7 +68,7 @@ Quiet hours can be configured globally and optionally overridden per account.
 
 Configuration supports:
 
-- Enabled or disabled
+- Enabled, disabled or inherited account state
 - Start time
 - End time
 - IANA timezone
@@ -92,7 +92,7 @@ It provides:
 - Full queue clearing
 - Queue health summary
 
-Delivery failures caused by an inaccessible channel or Discord send error enter the queue when retry delivery is enabled. Successful queued sends update the normal duplicate-suppression state so they cannot be resent by the provider scheduler.
+Delivery failures caused by an inaccessible channel or Discord send error enter the queue. Successful queued sends update the normal duplicate-suppression state so they cannot be resent by the provider scheduler.
 
 ## Alert history
 
@@ -115,23 +115,23 @@ History can be filtered by status, account, platform and alert type.
 
 ## Discord Social Studio
 
-The Discord panel follows the same session-based navigation style as Embed Studio and is divided into five screens:
+The Discord panel uses one session-based section selector so feature screens remain inside Discord's five-row component limit.
 
 ### Overview
 
 - Module status
 - Creator and provider summary
-- Alerts, errors and attention count
-- Quick setup guidance
+- Queue and history summary
 - Add creator
 - Check all
+- Enable or disable
 - Export
 
 ### Creators
 
 - Stored creator-account selector
 - Public identifier editor
-- Per-account alert channel
+- Default alert channel
 - Optional mention role
 - Alert-type configuration
 - Enable or disable
@@ -160,6 +160,19 @@ Supported variables include `{creator}`, `{platform}`, `{title}`, `{game}`, `{vi
 
 No credential input fields are exposed.
 
+### Operations Centre
+
+- Per-creator live, upload, short and post routing
+- Global quiet hours
+- Optional creator quiet-hour overrides
+- Alert-history summary and recent entries
+- Delivery-queue selector
+- Retry-now
+- Individual queue removal
+- Manual queue processing
+- Confirmed queue clearing
+- Confirmed history clearing
+
 ### Health
 
 - Account and provider diagnostics
@@ -174,12 +187,13 @@ No credential input fields are exposed.
 
 ## Dashboard Social Studio
 
-The dashboard mirrors the five Discord sections:
+The dashboard mirrors all six Discord sections:
 
-- Overview with module analytics and quick actions
-- Creator library with public-identifier setup, editing, checking, test alerts and removal
+- Overview with module, queue and history analytics
+- Creator library with public-identifier setup, per-type routing, editing, checking, test alerts and removal
 - Alert Studio with template editing, variables and live preview
 - Provider Centre with honest readiness and enable or disable controls
+- Operations Centre with quiet hours, delivery queue, retry controls and alert history
 - Health with diagnostics, repair, export and confirmed reset
 
 The dashboard setup remains zero-credential. It never asks administrators for API keys, tokens or private creator access.
@@ -204,4 +218,4 @@ Provider readiness is reported honestly by `providerRegistry.js`. Twitch polling
 
 ## Completion state
 
-Social Alerts remains `IN_PROGRESS` because provider coverage is not complete and the new routing, quiet-hour, delivery-queue and operational-history controls still require complete Discord and dashboard parity. The canonical runtime, route, storage, scheduler, health, repair, export and reset foundations are present.
+Social Studio remains `IN_PROGRESS` because production provider coverage is not complete. The flagship Discord and dashboard management surfaces, canonical runtime, route, storage, provider scheduler, restart-safe queue, history, routing, quiet hours, health, repair, export, reset and documentation are present.
