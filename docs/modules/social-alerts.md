@@ -24,35 +24,94 @@ Provider credentials are owned and managed centrally by Goliath. Provider readin
 - `src/modules/social/socialRoute.js` — dashboard/API surface
 - `src/modules/social/socialHealth.js` — health, repair, export and reset
 - `src/modules/social/socialScheduler.js` — recurring provider checks
-- `src/modules/social/socialManager.js` — alert delivery and account lifecycle
-- `src/modules/social/socialHistory.js` — durable delivery, failure and suppression history
+- `src/modules/social/socialQueue.js` — restart-safe delivery queue and retries
+- `src/modules/social/socialHistory.js` — delivery, suppression and provider history
+- `src/modules/social/socialManager.js` — alert delivery, routing and account lifecycle
 - `src/modules/social/socialStore.js` — guild configuration normalization
 - `src/modules/social/providerRegistry.js` — provider discovery and checks
 
 ## Storage
 
-Configuration is stored under `modules.social`. Each account stores its platform, public identifier, alert channel, mention configuration, provider metadata and last-seen content state.
+Configuration is stored under `modules.social`. Each account stores its platform, public identifier, destination, mention configuration, provider metadata and last-seen content state.
 
-The same section stores a bounded operational history of the most recent 500 Social events. History is preserved across restarts and records successful sends, tests, provider checks, duplicate suppression, skipped checks and delivery failures.
+The module also stores:
+
+- `history` — the latest delivery and provider events
+- `deliveryQueue` — pending and exhausted alert deliveries
+- `settings.quietHours` — global quiet-hour configuration
+- `account.metadata.routing` — optional per-content-type destination channels
+- `account.metadata.quietHours` — optional account-level quiet-hour overrides
 
 ## Runtime
 
-The module runs an initial provider check when Discord becomes ready and starts one idempotent scheduler. Disabled modules, disabled accounts and disabled providers are skipped. Provider failures are isolated per account and recorded in account metadata, analytics and operational history.
+The module runs an initial provider check when Discord becomes ready and starts two idempotent schedulers:
+
+1. Provider checks
+2. Delivery-queue processing
+
+Disabled modules, disabled accounts and disabled providers are skipped. Provider failures are isolated per account and recorded in account metadata, analytics and history.
+
+## Notification routing
+
+Every account has a normal fallback alert channel. Optional account routing can override that destination for:
+
+- Live streams
+- Uploads
+- Shorts
+- Social posts
+
+Routing is stored inside `account.metadata.routing`. A routed channel is used when available; otherwise the normal account alert channel is used.
+
+## Quiet hours
+
+Quiet hours can be configured globally and optionally overridden per account.
+
+Configuration supports:
+
+- Enabled or disabled
+- Start time
+- End time
+- IANA timezone
+
+Alerts detected during quiet hours are queued rather than discarded. Overnight windows such as `23:00` to `08:00` are supported.
+
+## Delivery queue
+
+The delivery queue is persistent and survives restarts.
+
+It provides:
+
+- Content-ID deduplication
+- Automatic processing every minute
+- Immediate startup processing
+- Exponential retry delays
+- Five delivery attempts before permanent failure
+- Manual retry-now
+- Manual processing
+- Individual removal
+- Full queue clearing
+- Queue health summary
+
+Delivery failures caused by an inaccessible channel or Discord send error enter the queue when retry delivery is enabled. Successful queued sends update the normal duplicate-suppression state so they cannot be resent by the provider scheduler.
 
 ## Alert history
 
-Every meaningful Social operation records:
+Social stores the latest 500 operational events, including:
 
-- Status: sent, failed, skipped, suppressed, queued, retried or test
-- Creator and account
-- Platform and alert type
-- Provider status
-- Content ID and title when available
-- Discord channel and message IDs for delivered alerts
-- Failure or suppression reason
-- Timestamp
+- Sent alerts
+- Test alerts
+- Provider failures
+- Discord delivery failures
+- Manual provider checks
+- Scheduler exceptions
+- No-new-content checks
+- Duplicate suppression
+- Quiet-hour queueing
+- Retry scheduling
+- Successful retries
+- Retry exhaustion
 
-History can be filtered by status, creator account, platform and alert type. It can also be cleared independently without resetting creator configuration.
+History can be filtered by status, account, platform and alert type.
 
 ## Discord Social Studio
 
@@ -75,7 +134,7 @@ The Discord panel follows the same session-based navigation style as Embed Studi
 - Per-account alert channel
 - Optional mention role
 - Alert-type configuration
-- Enable/disable
+- Enable or disable
 - Provider check
 - Test alert
 - Delete confirmation
@@ -96,7 +155,7 @@ Supported variables include `{creator}`, `{platform}`, `{title}`, `{game}`, `{vi
 - Read-only provider readiness
 - Supported alert types
 - Goliath-managed credential status
-- Provider enable/disable controls
+- Provider enable or disable controls
 - Manual provider checks
 
 No credential input fields are exposed.
@@ -104,7 +163,9 @@ No credential input fields are exposed.
 ### Health
 
 - Account and provider diagnostics
-- Missing-channel and identifier checks
+- Routed-channel checks
+- Quiet-hour validation
+- Failed delivery queue checks
 - Previous provider failures
 - Repair
 - Check all
@@ -118,7 +179,7 @@ The dashboard mirrors the five Discord sections:
 - Overview with module analytics and quick actions
 - Creator library with public-identifier setup, editing, checking, test alerts and removal
 - Alert Studio with template editing, variables and live preview
-- Provider Centre with honest readiness and enable/disable controls
+- Provider Centre with honest readiness and enable or disable controls
 - Health with diagnostics, repair, export and confirmed reset
 
 The dashboard setup remains zero-credential. It never asks administrators for API keys, tokens or private creator access.
@@ -127,12 +188,15 @@ The dashboard setup remains zero-credential. It never asks administrators for AP
 
 The module is mounted at `/api/social` and supports provider discovery, overview, configuration, account create/update/delete, provider checks, test alerts, manual guild scans, health, repair, export and reset.
 
-History endpoints:
+Operational endpoints include:
 
-- `GET /api/social/:guildId/history`
-- `DELETE /api/social/:guildId/history`
-
-The history query supports `limit`, `status`, `accountId`, `platform` and `alertType` filters.
+- `GET /:guildId/history`
+- `DELETE /:guildId/history`
+- `GET /:guildId/queue`
+- `POST /:guildId/queue/process`
+- `POST /:guildId/queue/:queueId/retry`
+- `DELETE /:guildId/queue/:queueId`
+- `DELETE /:guildId/queue`
 
 ## Provider status
 
@@ -140,4 +204,4 @@ Provider readiness is reported honestly by `providerRegistry.js`. Twitch polling
 
 ## Completion state
 
-Social Alerts remains `IN_PROGRESS` because provider coverage, notification routing, quiet hours, queue/retry behaviour and full alert-history controls in both management surfaces are not complete. Canonical routing, Discord administration, dashboard administration, storage, API, scheduler, health, repair, export, reset and durable operational history are present.
+Social Alerts remains `IN_PROGRESS` because provider coverage is not complete and the new routing, quiet-hour, delivery-queue and operational-history controls still require complete Discord and dashboard parity. The canonical runtime, route, storage, scheduler, health, repair, export and reset foundations are present.
