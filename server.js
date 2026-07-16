@@ -257,7 +257,6 @@ client.once('clientReady', async () => {
 
   await Promise.all([
     runStartupTask('Tickets', () => require('./src/modules/tickets/tickets').startup.startupTickets(client)),
-    runStartupTask('Roles', () => require('./src/modules/roles/rolesStartup').initializeRoles(client)),
     runStartupTask('Timed Roles', () => require('./src/modules/timedroles/timedRoles').startup(client)),
     runStartupTask('Translation', () => require('./src/modules/translation/translationStartup').startupTranslation(client)),
     runStartupTask('Verification', () => require('./src/modules/verification/verification').startupVerification(client)),
