@@ -34,7 +34,7 @@ function buildProviderMetadata(result = {}) {
 
 router.get('/:guildId/providers', (req, res) => {
   try {
-    return res.json({ success: true, guildId: req.params.guildId, ownerManaged: true, credentialOwner: 'Goliath', credentialEmail: 'goliath@ksjdigital.co.uk', providers: social.providers.listProviders() });
+    return res.json({ success: true, guildId: req.params.guildId, ownerManaged: true, credentialOwner: 'Goliath', providers: social.providers.listProviders() });
   } catch (error) {
     return res.status(500).json({ success: false, error: error.message || 'Failed to fetch social providers.' });
   }
@@ -48,6 +48,24 @@ router.get('/:guildId/overview', (req, res) => {
 router.get('/:guildId', (req, res) => {
   try { return res.json({ success: true, guildId: req.params.guildId, config: social.getConfig(req.params.guildId) }); }
   catch (error) { return res.status(500).json({ success: false, error: error.message || 'Failed to fetch social config.' }); }
+});
+
+router.patch('/:guildId/config', (req, res) => {
+  try {
+    const allowed = ['settings', 'providers', 'templates', 'alertsChannelId', 'logChannelId', 'managerRoleIds'];
+    const updates = Object.fromEntries(allowed.filter((key) => Object.prototype.hasOwnProperty.call(req.body || {}, key)).map((key) => [key, req.body[key]]));
+    const config = social.store.updateSocialSection(req.params.guildId, (section) => ({
+      ...section,
+      ...updates,
+      settings: updates.settings ? { ...(section.settings || {}), ...updates.settings } : section.settings,
+      providers: updates.providers ? { ...(section.providers || {}), ...updates.providers } : section.providers,
+      templates: updates.templates ? { ...(section.templates || {}), ...updates.templates } : section.templates,
+      updatedAt: new Date().toISOString(),
+    }), actor(req, 'social_config_update'));
+    return res.json({ success: true, config: social.getConfig(req.params.guildId) });
+  } catch (error) {
+    return res.status(400).json({ success: false, error: error.message || 'Failed to update Social Studio configuration.' });
+  }
 });
 
 router.get('/:guildId/health', async (req, res) => {
