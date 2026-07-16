@@ -7,7 +7,7 @@ const root = path.resolve(__dirname, '..');
 const checks = [
   ['src/modules/social/social.js', ['startup', 'diagnostics', 'creators', 'simulator', 'queue', 'history']],
   ['src/modules/social/socialPanel.js', ['buildSocialAdminPanel', 'handleSocialAdminInteraction']],
-  ['src/modules/social/socialCreatorPanel.js', ['buildCreatorHubPanel', 'handleCreatorHubInteraction']],
+  ['src/modules/social/socialCreatorPanel.js', ['buildCreatorHubPanel', 'handleSocialCreatorInteraction']],
   ['src/modules/social/socialRoute.js', []],
   ['src/modules/social/socialCreatorRoute.js', []],
   ['src/modules/social/socialHealth.js', ['buildHealth', 'repair', 'exportConfig', 'reset']],
