@@ -3,6 +3,13 @@
 const polls = require('./polls');
 const pollsManager = require('./pollsManager');
 
+function pollPayload(poll) {
+  return {
+    embeds: [pollsManager.buildPollEmbed(poll)],
+    components: poll.status === 'active' ? pollsManager.buildPollComponents(poll) : [],
+  };
+}
+
 async function buildHealth(guild) {
   if (!guild) throw new Error('Guild is required.');
   const section = pollsManager.getSection(guild.id);
@@ -48,7 +55,7 @@ async function repair(guild, meta = {}) {
     try {
       const existing = await polls.resolvePollMessage(guild, poll);
       if (existing?.edit) {
-        await existing.edit(polls.pollPayload(poll));
+        await existing.edit(pollPayload(poll));
         repaired.push({ pollId: poll.id, action: 'refreshed' });
         continue;
       }
