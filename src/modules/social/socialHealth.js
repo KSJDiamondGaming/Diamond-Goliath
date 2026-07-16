@@ -32,6 +32,7 @@ async function buildHealth(guild) {
   const issues = [];
   const providers = social.providers.listProviders();
   const queue = social.queue.list(guild.id);
+  const diagnostics = social.diagnostics.buildDiagnostics(guild.id);
 
   for (const account of config.accounts || []) {
     if (account.enabled === false) continue;
@@ -53,9 +54,10 @@ async function buildHealth(guild) {
   const quiet = config.settings?.quietHours || {};
   if (quiet.enabled === true) {
     if (!validClock(quiet.start) || !validClock(quiet.end)) issues.push({ code: 'quiet_hours_invalid', severity: 'error', start: quiet.start, end: quiet.end });
-    if (quiet.timezone) {
-      try { new Intl.DateTimeFormat('en-GB', { timeZone: quiet.timezone }).format(new Date()); }
-      catch { issues.push({ code: 'quiet_timezone_invalid', severity: 'error', timezone: quiet.timezone }); }
+    if (quiet.timezone || quiet.timeZone) {
+      const timezone = quiet.timezone || quiet.timeZone;
+      try { new Intl.DateTimeFormat('en-GB', { timeZone: timezone }).format(new Date()); }
+      catch { issues.push({ code: 'quiet_timezone_invalid', severity: 'error', timezone }); }
     }
   }
 
@@ -63,21 +65,30 @@ async function buildHealth(guild) {
     issues.push({ code: 'delivery_retry_exhausted', severity: 'warning', queueId: item.id, accountId: item.accountId, error: item.lastError });
   }
 
+  for (const profile of diagnostics.profiles.filter((item) => item.accountCount === 0)) {
+    issues.push({ code: 'creator_profile_empty', severity: 'warning', creatorId: profile.creatorId });
+  }
+
   return {
     module: 'social',
     guildId: guild.id,
     healthy: issues.every((issue) => issue.severity !== 'error'),
+    score: diagnostics.score,
+    grade: diagnostics.grade,
     checkedAt: new Date().toISOString(),
     enabled: config.enabled !== false,
     accountCount: config.accounts.length,
     enabledAccountCount: config.accounts.filter((account) => account.enabled !== false).length,
-    providers,
+    creatorProfileCount: diagnostics.profiles.length,
+    providers: diagnostics.providers,
+    accounts: diagnostics.accounts,
+    creatorProfiles: diagnostics.profiles,
     queue: social.queue.summary(guild.id),
     quietHours: {
       enabled: quiet.enabled === true,
       start: quiet.start || '00:00',
       end: quiet.end || '08:00',
-      timezone: quiet.timezone || 'UTC',
+      timezone: quiet.timezone || quiet.timeZone || 'UTC',
     },
     issues,
   };
@@ -92,6 +103,7 @@ async function repair(guild, meta = {}) {
   for (const account of config.accounts || []) {
     if (account.enabled === false) continue;
     try {
+      const startedAt = Date.now();
       const result = await social.providers.checkAccount(account);
       social.updateAccount(guild.id, account.accountId, {
         externalId: result.externalId || account.externalId,
@@ -102,6 +114,7 @@ async function repair(guild, meta = {}) {
             lastCheckedAt: result.checkedAt || new Date().toISOString(),
             lastError: result.success ? '' : result.error || '',
             isLive: result.isLive === true,
+            responseTimeMs: Date.now() - startedAt,
           },
         },
         lastSeen: {
@@ -133,6 +146,7 @@ function exportConfig(guildId) {
     guildId: String(guildId),
     exportedAt: new Date().toISOString(),
     config: social.store.getSocialSection(guildId),
+    diagnostics: social.diagnostics.buildDiagnostics(guildId),
     queue: social.queue.list(guildId),
     history: social.history.list(guildId, { limit: social.history.MAX_HISTORY }),
   };
