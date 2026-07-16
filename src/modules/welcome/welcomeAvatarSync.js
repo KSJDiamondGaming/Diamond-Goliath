@@ -49,6 +49,37 @@ function replaceAvatarUrls(embed, userId, previousAvatarUrl, nextAvatarUrl) {
   return { data, changed };
 }
 
+function replaceNoPingMentions(embed, member) {
+  const data = embed?.toJSON ? embed.toJSON() : JSON.parse(JSON.stringify(embed || {}));
+  const username = String(member?.user?.username || '').trim();
+  const userId = member?.user?.id;
+  if (!username || !userId) return { data, changed: false };
+
+  const plainMention = `@${username}`;
+  const clickableMention = `<@${userId}>`;
+  let changed = false;
+
+  const replaceText = (value) => {
+    if (typeof value !== 'string' || !value.includes(plainMention)) return value;
+    changed = true;
+    return value.split(plainMention).join(clickableMention);
+  };
+
+  data.title = replaceText(data.title);
+  data.description = replaceText(data.description);
+  if (data.author) data.author.name = replaceText(data.author.name);
+  if (data.footer) data.footer.text = replaceText(data.footer.text);
+  if (Array.isArray(data.fields)) {
+    data.fields = data.fields.map((field) => ({
+      ...field,
+      name: replaceText(field.name),
+      value: replaceText(field.value),
+    }));
+  }
+
+  return { data, changed };
+}
+
 function getRecords(welcomeManager, guildId) {
   const config = welcomeManager.getWelcomeSection(guildId);
   return cleanRecords(config.avatarSyncMessages);
@@ -92,6 +123,19 @@ async function trackLatestWelcomeMessage(member, welcomeManager, sentAfter = Dat
 
   const selected = candidates[0]?.message;
   if (!selected) return null;
+
+  let mentionChanged = false;
+  const mentionEmbeds = selected.embeds.map((embed) => {
+    const result = replaceNoPingMentions(embed, member);
+    mentionChanged ||= result.changed;
+    return result.data;
+  });
+
+  if (mentionChanged) {
+    await selected.edit({ embeds: mentionEmbeds }).catch((error) => {
+      console.warn('[Welcome] Failed to convert welcome username to clickable mention:', error.message || error);
+    });
+  }
 
   const nextRecords = records.filter((record) => record.userId !== member.user.id);
   nextRecords.push({
@@ -202,4 +246,5 @@ module.exports = {
   handleGuildMemberAvatarUpdate,
   syncTrackedWelcomeForGuild,
   replaceAvatarUrls,
+  replaceNoPingMentions,
 };
