@@ -3,7 +3,7 @@
 const { MessageFlags, PermissionFlagsBits } = require('discord.js');
 const { getModuleSection, updateModuleSection } = require('../../core/guild/moduleSectionManager');
 
-const LEGACY_SECTION = 'roles';
+const SECTION = 'reactionRoles';
 const CUSTOM_ID_PREFIX = 'role_toggle';
 const ROLE_MODES = Object.freeze({ TOGGLE: 'toggle', ADD: 'add', REMOVE: 'remove', VERIFY: 'verify' });
 
@@ -16,30 +16,26 @@ function cleanKey(value, fallback = 'default') {
     .replace(/^-|-$/g, '') || fallback).slice(0, 80);
 }
 
-function getLegacySection(guildId) {
-  const section = getModuleSection(guildId, LEGACY_SECTION, {
-    enabled: true,
-    reactionPanels: {},
-    analytics: { assigned: 0, removed: 0 },
-  });
+function getCompatibilitySection(guildId) {
+  const section = getModuleSection(guildId, SECTION, {});
   return {
     enabled: section?.enabled !== false,
-    reactionPanels: section?.reactionPanels && typeof section.reactionPanels === 'object' ? section.reactionPanels : {},
-    analytics: { assigned: 0, removed: 0, ...(section?.analytics || {}) },
+    panels: section?.legacyButtonPanels && typeof section.legacyButtonPanels === 'object' ? section.legacyButtonPanels : {},
+    analytics: { assigned: 0, removed: 0, ...(section?.legacyButtonAnalytics || {}) },
   };
 }
 
 function getLegacyPanel(guildId, panelId) {
-  const panels = getLegacySection(guildId).reactionPanels;
+  const panels = getCompatibilitySection(guildId).panels;
   return panels[cleanKey(panelId)] || Object.values(panels).find((panel) => cleanKey(panel?.panelId || panel?.id) === cleanKey(panelId)) || null;
 }
 
 function addLegacyAnalytics(guildId, patch) {
-  return updateModuleSection(guildId, LEGACY_SECTION, (section = {}) => {
-    const analytics = { assigned: 0, removed: 0, ...(section.analytics || {}) };
+  return updateModuleSection(guildId, SECTION, (section = {}) => {
+    const analytics = { assigned: 0, removed: 0, ...(section.legacyButtonAnalytics || {}) };
     for (const [key, value] of Object.entries(patch || {})) analytics[key] = Number(analytics[key] || 0) + Number(value || 0);
-    return { ...section, analytics, updatedAt: new Date().toISOString() };
-  }, { enabled: true, reactionPanels: {}, analytics: { assigned: 0, removed: 0 } });
+    return { ...section, legacyButtonAnalytics: analytics, updatedAt: new Date().toISOString() };
+  }, {});
 }
 
 function parseCustomId(customId = '') {
@@ -87,7 +83,7 @@ async function removeExclusiveRoles(member, panel, selectedRole) {
 }
 
 async function applyLegacyButton(interaction, panelId, roleKey) {
-  const section = getLegacySection(interaction.guildId);
+  const section = getCompatibilitySection(interaction.guildId);
   if (section.enabled === false) return { ok: false, message: 'This legacy role panel is disabled.' };
   const panel = getLegacyPanel(interaction.guildId, panelId);
   if (!panel || panel.enabled === false) return { ok: false, message: 'This role panel is no longer active.' };
