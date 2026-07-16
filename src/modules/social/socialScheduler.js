@@ -2,6 +2,7 @@
 
 const socialManager = require('./socialManager');
 const socialStore = require('./socialStore');
+const socialHistory = require('./socialHistory');
 const providerRegistry = require('./providerRegistry');
 
 let intervalRef = null;
@@ -24,6 +25,18 @@ function buildProviderMetadata(result = {}) {
   };
 }
 
+function historyBase(account, result = {}) {
+  return {
+    accountId: account.accountId,
+    creator: account.displayName || account.username || null,
+    platform: account.platform,
+    alertType: result.alertType || 'live',
+    contentId: result.contentId || null,
+    title: result.title || null,
+    providerStatus: result.providerStatus || result.status || 'unknown',
+  };
+}
+
 async function handleProviderResult(guildId, account, result, client) {
   const metadata = buildProviderMetadata(result);
   const updates = {
@@ -42,6 +55,12 @@ async function handleProviderResult(guildId, account, result, client) {
 
   if (!result.success) {
     socialStore.incrementAnalytics(guildId, { errors: 1 }, { action: 'social_provider_error' });
+    socialHistory.record(guildId, {
+      ...historyBase(account, result),
+      status: 'failed',
+      eventType: 'provider_check',
+      error: result.error || 'Provider check failed.',
+    });
     return { success: false, skipped: true, reason: result.error || 'provider_error' };
   }
 
@@ -49,6 +68,12 @@ async function handleProviderResult(guildId, account, result, client) {
     return socialManager.sendLiveAlert(guildId, { ...account, ...updates }, result, client, { action: 'social_provider_live_alert' });
   }
 
+  socialHistory.record(guildId, {
+    ...historyBase(account, result),
+    status: 'skipped',
+    eventType: 'provider_check',
+    reason: 'no_new_alert',
+  });
   return { success: false, skipped: true, reason: 'no_alert' };
 }
 
@@ -88,6 +113,12 @@ async function runSocialCheck(client, options = {}) {
               lastProviderError: error.message,
             },
           }, { action: 'social_scheduler_exception' });
+          socialHistory.record(guildId, {
+            ...historyBase(account, { status: 'error' }),
+            status: 'failed',
+            eventType: 'scheduler',
+            error: error.message,
+          });
           results.push({ guildId, accountId: account.accountId, success: false, error: error.message });
         }
       }
@@ -105,7 +136,7 @@ function startSocialScheduler(client, options = {}) {
   intervalRef = setInterval(() => {
     runSocialCheck(client, options).catch((error) => console.error('[SocialScheduler] Check failed:', error));
   }, intervalMs);
-  if (typeof intervalRef.unref === 'function') intervalRef.unref();
+  intervalRef.unref?.();
   console.log(`[SocialScheduler] Social provider scheduler ready (${intervalMs}ms)`);
   return intervalRef;
 }
