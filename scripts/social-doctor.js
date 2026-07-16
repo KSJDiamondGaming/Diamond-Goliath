@@ -30,28 +30,71 @@ const checks = [
 const errors = [];
 console.log('\nSocial Studio doctor');
 console.log('====================');
+
 for (const [relativePath, exports] of checks) {
   const fullPath = path.join(root, relativePath);
-  if (!fs.existsSync(fullPath)) { errors.push(`${relativePath}: missing file`); console.log(`❌ ${relativePath}`); continue; }
-  if (!relativePath.endsWith('.js') || !exports.length) { console.log(`✅ ${relativePath}`); continue; }
+  if (!fs.existsSync(fullPath)) {
+    errors.push(`${relativePath}: missing file`);
+    console.log(`❌ ${relativePath}`);
+    continue;
+  }
+  if (!relativePath.endsWith('.js') || !exports.length) {
+    console.log(`✅ ${relativePath}`);
+    continue;
+  }
   try {
     delete require.cache[require.resolve(fullPath)];
     const loaded = require(fullPath);
     const missing = exports.filter((name) => loaded?.[name] === undefined);
-    if (missing.length) { errors.push(`${relativePath}: missing export(s) ${missing.join(', ')}`); console.log(`❌ ${relativePath}`); }
-    else console.log(`✅ ${relativePath}`);
-  } catch (error) { errors.push(`${relativePath}: failed to load - ${error.message}`); console.log(`❌ ${relativePath}`); }
+    if (missing.length) {
+      errors.push(`${relativePath}: missing export(s) ${missing.join(', ')}`);
+      console.log(`❌ ${relativePath}`);
+    } else {
+      console.log(`✅ ${relativePath}`);
+    }
+  } catch (error) {
+    errors.push(`${relativePath}: failed to load - ${error.message}`);
+    console.log(`❌ ${relativePath}`);
+  }
 }
-const socialRoute = fs.readFileSync(path.join(root, 'src/modules/social/socialRoute.js'), 'utf8');
-for (const required of ['socialCreatorRoute', "router.use('/:guildId/creator-hub'"]) if (!socialRoute.includes(required)) errors.push(`src/modules/social/socialRoute.js: missing ${required}`);
-const interactionRouter = fs.readFileSync(path.join(root, 'src/events/interactions/interactionCreate.js'), 'utf8');
-for (const required of ['socialPanel', 'socialCreatorPanel']) if (!interactionRouter.includes(required)) errors.push(`interactionCreate.js: missing ${required} registration`);
-const providerRegistry = fs.readFileSync(path.join(root, 'src/modules/social/providerRegistry.js'), 'utf8');
-for (const required of ['KICK_CLIENT_ID', 'KICK_CLIENT_SECRET', 'kickProvider', 'xProvider']) if (!providerRegistry.includes(required)) errors.push(`providerRegistry.js: missing ${required}`);
-const xProvider = fs.readFileSync(path.join(root, 'src/modules/social/providers/xProvider.js'), 'utf8');
-for (const required of ['X_BEARER_TOKEN', 'X_API_KEY', 'X_API_KEY_SECRET', '/users/by/username/', '/tweets']) if (!xProvider.includes(required)) errors.push(`xProvider.js: missing ${required}`);
+
+function requireText(relativePath, requiredValues) {
+  const source = fs.readFileSync(path.join(root, relativePath), 'utf8');
+  for (const required of requiredValues) {
+    if (!source.includes(required)) errors.push(`${relativePath}: missing ${required}`);
+  }
+}
+
+requireText('src/modules/social/socialRoute.js', ['socialCreatorRoute', "router.use('/:guildId/creator-hub'"]);
+requireText('src/events/interactions/interactionCreate.js', ['socialPanel', 'socialCreatorPanel']);
+requireText('src/modules/social/providerRegistry.js', [
+  'AUTHORIZATION_REQUIRED',
+  'zeroCredentialSupported',
+  'twitchProvider',
+  'youtubeProvider',
+  'kickProvider',
+  'xProvider',
+]);
+requireText('src/core/modules/moduleManifest.js', [
+  "name: 'Social Studio'",
+  'maturity: MODULE_MATURITY.COMPLETE',
+]);
+requireText('src/dashboard/js/shared/moduleRegistry.js', [
+  "name: 'Social Studio'",
+  'status: MODULE_STATUSES.live',
+]);
+requireText('docs/modules/social-alerts.md', [
+  'Completion state',
+  'Social Studio v1 is complete',
+  'authorization_required',
+]);
+
 if (errors.length) {
   console.error(`\nSocial Studio doctor failed (${errors.length} issue${errors.length === 1 ? '' : 's'}):`);
   for (const error of errors) console.error(` - ${error}`);
   process.exitCode = 1;
-} else console.log('\n✅ Social Studio doctor passed.');
+} else {
+  console.log('\n✅ Social Studio doctor passed.');
+  console.log('✅ Supported production providers: Twitch, YouTube, Kick, X.');
+  console.log('✅ TikTok and Instagram are intentionally excluded from v1 zero-credential monitoring.');
+}
