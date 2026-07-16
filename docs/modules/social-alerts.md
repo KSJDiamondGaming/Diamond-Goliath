@@ -25,6 +25,7 @@ Provider credentials are owned and managed centrally by Goliath. Provider readin
 - `src/modules/social/socialHealth.js` — health, repair, export and reset
 - `src/modules/social/socialScheduler.js` — recurring provider checks
 - `src/modules/social/socialManager.js` — alert delivery and account lifecycle
+- `src/modules/social/socialHistory.js` — durable delivery, failure and suppression history
 - `src/modules/social/socialStore.js` — guild configuration normalization
 - `src/modules/social/providerRegistry.js` — provider discovery and checks
 
@@ -32,9 +33,26 @@ Provider credentials are owned and managed centrally by Goliath. Provider readin
 
 Configuration is stored under `modules.social`. Each account stores its platform, public identifier, alert channel, mention configuration, provider metadata and last-seen content state.
 
+The same section stores a bounded operational history of the most recent 500 Social events. History is preserved across restarts and records successful sends, tests, provider checks, duplicate suppression, skipped checks and delivery failures.
+
 ## Runtime
 
-The module runs an initial provider check when Discord becomes ready and starts one idempotent scheduler. Disabled modules, disabled accounts and disabled providers are skipped. Provider failures are isolated per account and recorded in account metadata and analytics.
+The module runs an initial provider check when Discord becomes ready and starts one idempotent scheduler. Disabled modules, disabled accounts and disabled providers are skipped. Provider failures are isolated per account and recorded in account metadata, analytics and operational history.
+
+## Alert history
+
+Every meaningful Social operation records:
+
+- Status: sent, failed, skipped, suppressed, queued, retried or test
+- Creator and account
+- Platform and alert type
+- Provider status
+- Content ID and title when available
+- Discord channel and message IDs for delivered alerts
+- Failure or suppression reason
+- Timestamp
+
+History can be filtered by status, creator account, platform and alert type. It can also be cleared independently without resetting creator configuration.
 
 ## Discord Social Studio
 
@@ -109,10 +127,17 @@ The dashboard setup remains zero-credential. It never asks administrators for AP
 
 The module is mounted at `/api/social` and supports provider discovery, overview, configuration, account create/update/delete, provider checks, test alerts, manual guild scans, health, repair, export and reset.
 
+History endpoints:
+
+- `GET /api/social/:guildId/history`
+- `DELETE /api/social/:guildId/history`
+
+The history query supports `limit`, `status`, `accountId`, `platform` and `alertType` filters.
+
 ## Provider status
 
 Provider readiness is reported honestly by `providerRegistry.js`. Twitch polling is currently implemented. Other providers may report `not_configured` or `not_implemented` until their production integrations are completed. Accounts for unavailable providers remain configurable, but health and Provider Centre expose the real provider state.
 
 ## Completion state
 
-Social Alerts remains `IN_PROGRESS` because provider coverage is not complete. Discord administration, dashboard administration, storage, API, scheduler, health, repair, export, reset and documentation are present. The server-route compatibility shim also remains until `server.js` is switched directly to `src/modules/social/socialRoute.js`.
+Social Alerts remains `IN_PROGRESS` because provider coverage, notification routing, quiet hours, queue/retry behaviour and full alert-history controls in both management surfaces are not complete. Canonical routing, Discord administration, dashboard administration, storage, API, scheduler, health, repair, export, reset and durable operational history are present.
