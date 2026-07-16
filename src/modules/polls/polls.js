@@ -1,8 +1,28 @@
 'use strict';
 
+const { MessageFlags } = require('discord.js');
 const pollsManager = require('./pollsManager');
 
 const clone = (value) => value == null ? value : JSON.parse(JSON.stringify(value));
+const voteQueues = new Map();
+const processedInteractions = new Map();
+const STARTUP_KEY = Symbol.for('goliath.polls.startup');
+
+function cleanupProcessedInteractions() {
+  const cutoff = Date.now() - 5 * 60 * 1000;
+  for (const [interactionId, timestamp] of processedInteractions.entries()) {
+    if (timestamp < cutoff) processedInteractions.delete(interactionId);
+  }
+}
+
+function queueVote(key, operation) {
+  const previous = voteQueues.get(key) || Promise.resolve();
+  const current = previous.catch(() => null).then(operation);
+  voteQueues.set(key, current);
+  return current.finally(() => {
+    if (voteQueues.get(key) === current) voteQueues.delete(key);
+  });
+}
 
 async function resolvePollMessage(guild, poll) {
   if (!guild || !poll?.channelId || !poll?.messageId) return null;
@@ -120,6 +140,141 @@ async function deletePoll(guild, pollId, meta = {}) {
   return section;
 }
 
+async function respond(interaction, content) {
+  const payload = { content, flags: MessageFlags.Ephemeral };
+  if (interaction.deferred || interaction.replied) return interaction.editReply(payload).catch(() => null);
+  return interaction.reply(payload).catch(() => null);
+}
+
+async function processVote(interaction, pollId, optionId) {
+  const guildId = interaction.guildId;
+  const userId = interaction.user?.id;
+  if (!guildId || !userId || !interaction.guild) return true;
+
+  const section = pollsManager.getSection(guildId);
+  if (section.enabled === false) {
+    await respond(interaction, 'Polls are currently disabled.');
+    return true;
+  }
+
+  const poll = section.polls[pollId];
+  if (!poll) {
+    await respond(interaction, 'This poll no longer exists.');
+    return true;
+  }
+  if (poll.status !== 'active') {
+    await respond(interaction, 'This poll is closed.');
+    return true;
+  }
+
+  const option = poll.options.find((item) => item.id === optionId);
+  if (!option) {
+    await respond(interaction, 'That poll option no longer exists.');
+    return true;
+  }
+
+  const alreadyVoted = option.votes.includes(userId);
+  let removedOtherVote = false;
+  if (!poll.allowMultipleVotes && !alreadyVoted) {
+    for (const candidate of poll.options) {
+      if (candidate.id === option.id) continue;
+      const before = candidate.votes.length;
+      candidate.votes = candidate.votes.filter((idValue) => idValue !== userId);
+      if (candidate.votes.length !== before) removedOtherVote = true;
+    }
+  }
+
+  if (alreadyVoted) {
+    option.votes = option.votes.filter((idValue) => idValue !== userId);
+    section.analytics.removed = Number(section.analytics.removed || 0) + 1;
+  } else {
+    option.votes.push(userId);
+    section.analytics.votes = Number(section.analytics.votes || 0) + 1;
+    if (removedOtherVote) section.analytics.switched = Number(section.analytics.switched || 0) + 1;
+  }
+
+  poll.updatedAt = new Date().toISOString();
+  section.polls[poll.id] = poll;
+  pollsManager.saveSection(guildId, section, { actorId: userId });
+
+  if (section.showResultsLive !== false) {
+    await renderPoll(interaction.guild, poll).catch(() => null);
+  }
+
+  await respond(interaction, alreadyVoted
+    ? `Removed your vote from **${option.label}**.`
+    : removedOtherVote
+      ? `Changed your vote to **${option.label}**.`
+      : `Vote counted for **${option.label}**.`);
+  return true;
+}
+
+async function vote(interaction) {
+  const match = String(interaction.customId || '').match(/^poll_vote:([^:]+):([^:]+)$/);
+  if (!match) return false;
+
+  cleanupProcessedInteractions();
+  const interactionId = String(interaction.id || '');
+  if (interactionId && processedInteractions.has(interactionId)) {
+    await respond(interaction, 'This vote interaction was already processed.');
+    return true;
+  }
+  if (interactionId) processedInteractions.set(interactionId, Date.now());
+
+  const [, pollId, optionId] = match;
+  const queueKey = `${interaction.guildId || 'unknown'}:${pollId}:${interaction.user?.id || 'unknown'}`;
+  return queueVote(queueKey, () => processVote(interaction, pollId, optionId));
+}
+
+async function closeExpiredPollsForGuild(guild) {
+  const section = pollsManager.getSection(guild.id);
+  if (section.enabled === false) return { checked: 0, closed: 0, failed: [] };
+  const autoCloseHours = Number(section.settings?.autoCloseHours || 0);
+  if (!Number.isFinite(autoCloseHours) || autoCloseHours <= 0) return { checked: 0, closed: 0, failed: [] };
+
+  let checked = 0;
+  let closed = 0;
+  const failed = [];
+  const maxAgeMs = autoCloseHours * 60 * 60 * 1000;
+
+  for (const poll of Object.values(section.polls || {})) {
+    if (poll.status !== 'active' || !poll.messageId) continue;
+    checked += 1;
+    try {
+      const message = await resolvePollMessage(guild, poll);
+      if (!message) throw new Error('The deployed poll message is missing or inaccessible.');
+      const deployedAt = Number(message.createdTimestamp || message.createdAt?.getTime?.() || 0);
+      if (!deployedAt || Date.now() - deployedAt < maxAgeMs) continue;
+      await setPollStatus(guild, poll.id, 'closed', { actorId: guild.members.me?.id || null, reason: 'auto_close' });
+      closed += 1;
+    } catch (error) {
+      failed.push({ pollId: poll.id, error: error.message });
+    }
+  }
+  return { checked, closed, failed };
+}
+
+async function runAutoClose(client) {
+  const results = [];
+  for (const guild of client.guilds.cache.values()) {
+    results.push({ guildId: guild.id, ...(await closeExpiredPollsForGuild(guild)) });
+  }
+  return results;
+}
+
+async function startup(client) {
+  if (!client?.guilds?.cache) throw new Error('Discord client is unavailable.');
+  if (client[STARTUP_KEY]) return client[STARTUP_KEY];
+
+  await runAutoClose(client);
+  const timer = setInterval(() => {
+    runAutoClose(client).catch((error) => console.warn(`[Polls] Auto-close scan failed: ${error.message}`));
+  }, 60 * 1000);
+  timer.unref?.();
+  client[STARTUP_KEY] = { timer, startedAt: new Date().toISOString() };
+  return client[STARTUP_KEY];
+}
+
 module.exports = {
   ...pollsManager,
   resolvePollMessage,
@@ -127,4 +282,8 @@ module.exports = {
   deployPoll,
   setPollStatus,
   deletePoll,
+  vote,
+  closeExpiredPollsForGuild,
+  runAutoClose,
+  startup,
 };
