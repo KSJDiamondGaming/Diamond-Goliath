@@ -24,6 +24,7 @@ function completeCapabilities() {
 const moduleManifest = Object.freeze({
   verification: { key: 'verification', name: 'Verification', maturity: MODULE_MATURITY.COMPLETE, capabilities: completeCapabilities() },
   autoRoles: { key: 'autoRoles', name: 'Auto Roles', maturity: MODULE_MATURITY.COMPLETE, capabilities: completeCapabilities() },
+  timedRoles: { key: 'timedRoles', name: 'Timed Roles', maturity: MODULE_MATURITY.COMPLETE, capabilities: completeCapabilities() },
   forms: { key: 'forms', name: 'Forms', maturity: MODULE_MATURITY.NOT_STARTED, capabilities: createCapabilityMap() },
   giveaways: { key: 'giveaways', name: 'Giveaways', maturity: MODULE_MATURITY.NOT_STARTED, capabilities: createCapabilityMap() },
   leveling: { key: 'leveling', name: 'Leveling', maturity: MODULE_MATURITY.NOT_STARTED, capabilities: createCapabilityMap() },
