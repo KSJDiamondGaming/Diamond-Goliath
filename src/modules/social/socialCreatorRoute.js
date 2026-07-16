@@ -12,6 +12,21 @@ function client(req) {
   return req.client || req.app?.get?.('goliath.client') || req.app?.locals?.client || global.client || global.discordClient || null;
 }
 
+router.get('/diagnostics', (req, res) => {
+  try { return res.json({ success: true, diagnostics: social.diagnostics.buildDiagnostics(req.params.guildId) }); }
+  catch (error) { return res.status(400).json({ success: false, error: error.message || 'Failed to build Social diagnostics.' }); }
+});
+
+router.get('/diagnostics/providers', (req, res) => {
+  try { return res.json({ success: true, providers: social.diagnostics.providerDiagnostics(req.params.guildId) }); }
+  catch (error) { return res.status(400).json({ success: false, error: error.message || 'Failed to build provider diagnostics.' }); }
+});
+
+router.get('/diagnostics/creators', (req, res) => {
+  try { return res.json({ success: true, ...social.diagnostics.creatorDiagnostics(req.params.guildId) }); }
+  catch (error) { return res.status(400).json({ success: false, error: error.message || 'Failed to build creator diagnostics.' }); }
+});
+
 router.get('/', (req, res) => {
   try {
     return res.json({ success: true, guildId: req.params.guildId, summary: social.creators.summary(req.params.guildId), creators: social.creators.list(req.params.guildId) });
