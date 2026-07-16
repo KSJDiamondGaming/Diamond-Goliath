@@ -49,7 +49,22 @@ const moduleManifest = Object.freeze({
     }),
   },
   starboard: { key: 'starboard', name: 'Starboard', maturity: MODULE_MATURITY.NOT_STARTED, capabilities: createCapabilityMap() },
-  stats: { key: 'stats', name: 'Stats', maturity: MODULE_MATURITY.NOT_STARTED, capabilities: createCapabilityMap() },
+  stats: {
+    key: 'stats',
+    name: 'Stats',
+    maturity: MODULE_MATURITY.IN_PROGRESS,
+    capabilities: createCapabilityMap({
+      guildStorage: true,
+      runtime: true,
+      adminPanel: true,
+      dashboard: true,
+      api: true,
+      startupRecovery: true,
+      reset: true,
+      doctor: true,
+      documentation: true,
+    }),
+  },
   sticky: { key: 'sticky', name: 'Sticky Messages', maturity: MODULE_MATURITY.NOT_STARTED, capabilities: createCapabilityMap() },
   tempVoice: { key: 'tempVoice', name: 'Temp Voice', maturity: MODULE_MATURITY.NOT_STARTED, capabilities: createCapabilityMap() },
   tickets: {
