@@ -33,16 +33,33 @@ function buildProviderMetadata(result = {}) {
 }
 
 router.get('/:guildId/providers', (req, res) => {
-  try {
-    return res.json({ success: true, guildId: req.params.guildId, ownerManaged: true, credentialOwner: 'Goliath', providers: social.providers.listProviders() });
-  } catch (error) {
-    return res.status(500).json({ success: false, error: error.message || 'Failed to fetch social providers.' });
-  }
+  try { return res.json({ success: true, guildId: req.params.guildId, ownerManaged: true, credentialOwner: 'Goliath', providers: social.providers.listProviders() }); }
+  catch (error) { return res.status(500).json({ success: false, error: error.message || 'Failed to fetch social providers.' }); }
 });
 
 router.get('/:guildId/overview', (req, res) => {
   try { return res.json({ success: true, guildId: req.params.guildId, overview: social.getOverview(req.params.guildId) }); }
   catch (error) { return res.status(500).json({ success: false, error: error.message || 'Failed to fetch social overview.' }); }
+});
+
+router.get('/:guildId/history', (req, res) => {
+  try {
+    const history = social.history.list(req.params.guildId, {
+      limit: req.query.limit,
+      status: req.query.status,
+      accountId: req.query.accountId,
+      platform: req.query.platform,
+      alertType: req.query.alertType,
+    });
+    return res.json({ success: true, guildId: req.params.guildId, summary: social.history.summary(req.params.guildId), history });
+  } catch (error) { return res.status(400).json({ success: false, error: error.message || 'Failed to fetch Social alert history.' }); }
+});
+
+router.delete('/:guildId/history', (req, res) => {
+  try {
+    social.history.clear(req.params.guildId, actor(req, 'social_history_clear'));
+    return res.json({ success: true, guildId: req.params.guildId, summary: social.history.summary(req.params.guildId) });
+  } catch (error) { return res.status(400).json({ success: false, error: error.message || 'Failed to clear Social alert history.' }); }
 });
 
 router.get('/:guildId', (req, res) => {
@@ -54,7 +71,7 @@ router.patch('/:guildId/config', (req, res) => {
   try {
     const allowed = ['settings', 'providers', 'templates', 'alertsChannelId', 'logChannelId', 'managerRoleIds'];
     const updates = Object.fromEntries(allowed.filter((key) => Object.prototype.hasOwnProperty.call(req.body || {}, key)).map((key) => [key, req.body[key]]));
-    const config = social.store.updateSocialSection(req.params.guildId, (section) => ({
+    social.store.updateSocialSection(req.params.guildId, (section) => ({
       ...section,
       ...updates,
       settings: updates.settings ? { ...(section.settings || {}), ...updates.settings } : section.settings,
@@ -63,9 +80,7 @@ router.patch('/:guildId/config', (req, res) => {
       updatedAt: new Date().toISOString(),
     }), actor(req, 'social_config_update'));
     return res.json({ success: true, config: social.getConfig(req.params.guildId) });
-  } catch (error) {
-    return res.status(400).json({ success: false, error: error.message || 'Failed to update Social Studio configuration.' });
-  }
+  } catch (error) { return res.status(400).json({ success: false, error: error.message || 'Failed to update Social Studio configuration.' }); }
 });
 
 router.get('/:guildId/health', async (req, res) => {
@@ -130,6 +145,18 @@ router.post('/:guildId/accounts/:accountId/check', async (req, res) => {
       lastSeen: { ...(account.lastSeen || {}), lastCheckedAt: metadata.lastCheckedAt, lastProviderStatus: metadata.providerStatus, lastProviderError: metadata.lastError, lastLiveState: metadata.isLive ? 'live' : 'offline' },
     }, actor(req, 'social_manual_provider_check'));
     if (!result.success) social.store.incrementAnalytics(guildId, { errors: 1 }, actor(req, 'social_manual_provider_error'));
+    social.history.record(guildId, {
+      status: result.success ? 'skipped' : 'failed',
+      eventType: 'manual_provider_check',
+      accountId: account.accountId,
+      creator: account.displayName || account.username,
+      platform: account.platform,
+      providerStatus: metadata.providerStatus,
+      reason: result.success ? (result.isLive ? 'live_detected_no_delivery' : 'check_complete') : null,
+      error: result.success ? null : result.error,
+      contentId: result.contentId,
+      title: result.title,
+    }, actor(req, 'social_manual_provider_history'));
     return res.json({ success: true, result, account: updated });
   } catch (error) { return res.status(500).json({ success: false, error: error.message || 'Failed to check social account.' }); }
 });
