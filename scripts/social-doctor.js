@@ -21,6 +21,7 @@ const checks = [
   ['src/modules/social/providers/twitchProvider.js', ['checkAccount']],
   ['src/modules/social/providers/youtubeProvider.js', ['checkAccount', 'resolveChannel']],
   ['src/modules/social/providers/kickProvider.js', ['checkAccount', 'normalizeSlug', 'isConfigured']],
+  ['src/modules/social/providers/xProvider.js', ['checkAccount', 'normalizeUsername', 'isConfigured']],
   ['src/commands/admin/socialhub.js', ['data', 'execute']],
   ['src/dashboard/js/pages/modules/Social.jsx', []],
   ['docs/modules/social-alerts.md', []],
@@ -46,7 +47,9 @@ for (const required of ['socialCreatorRoute', "router.use('/:guildId/creator-hub
 const interactionRouter = fs.readFileSync(path.join(root, 'src/events/interactions/interactionCreate.js'), 'utf8');
 for (const required of ['socialPanel', 'socialCreatorPanel']) if (!interactionRouter.includes(required)) errors.push(`interactionCreate.js: missing ${required} registration`);
 const providerRegistry = fs.readFileSync(path.join(root, 'src/modules/social/providerRegistry.js'), 'utf8');
-for (const required of ['KICK_CLIENT_ID', 'KICK_CLIENT_SECRET', 'kickProvider']) if (!providerRegistry.includes(required)) errors.push(`providerRegistry.js: missing ${required}`);
+for (const required of ['KICK_CLIENT_ID', 'KICK_CLIENT_SECRET', 'kickProvider', 'xProvider']) if (!providerRegistry.includes(required)) errors.push(`providerRegistry.js: missing ${required}`);
+const xProvider = fs.readFileSync(path.join(root, 'src/modules/social/providers/xProvider.js'), 'utf8');
+for (const required of ['X_BEARER_TOKEN', 'X_API_KEY', 'X_API_KEY_SECRET', '/users/by/username/', '/tweets']) if (!xProvider.includes(required)) errors.push(`xProvider.js: missing ${required}`);
 if (errors.length) {
   console.error(`\nSocial Studio doctor failed (${errors.length} issue${errors.length === 1 ? '' : 's'}):`);
   for (const error of errors) console.error(` - ${error}`);
