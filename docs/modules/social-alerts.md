@@ -11,8 +11,8 @@ Server administrators only enter public creator information: a username, handle,
 - `socialCreatorPanel.js` — Discord Creator Hub and simulator
 - `socialRoute.js` — primary API route
 - `socialCreatorRoute.js` — Creator Hub, diagnostics, and simulator API
-- `socialManager.js` — account lifecycle and Twitch live delivery
-- `socialDelivery.js` — generic upload, Short, and post delivery
+- `socialManager.js` — account lifecycle and live-alert compatibility
+- `socialDelivery.js` — canonical live, upload, Short, and post delivery
 - `socialScheduler.js` — provider polling and dispatch
 - `socialQueue.js` — restart-safe retries
 - `socialHistory.js` — operational ledger
@@ -20,7 +20,7 @@ Server administrators only enter public creator information: a username, handle,
 - `socialDiagnostics.js` — provider, account, and creator health scores
 - `socialCreators.js` — unified creator profiles
 - `socialSimulator.js` — provider-free notification simulation
-- `providerRegistry.js` — provider readiness and dispatch
+- `providerRegistry.js` — provider readiness, policy, and dispatch
 - `providers/` — provider implementations
 
 ## Zero-credential setup
@@ -37,7 +37,7 @@ Users configure:
 
 Users never configure API keys, OAuth tokens, client secrets, or developer credentials.
 
-## Production providers
+## Supported production providers
 
 ### Twitch
 
@@ -45,44 +45,53 @@ Twitch live polling is production-ready when Goliath's global Twitch credentials
 
 ### YouTube
 
-YouTube polling is production-ready when Goliath's global `YOUTUBE_API_KEY` is configured.
-
-The provider resolves public channel handles, legacy usernames, channel IDs, and public channel URLs. It monitors the channel uploads playlist and classifies the latest content as live, upload, or Short.
-
-The first discovered content item becomes the account baseline and is not announced. This prevents an existing live stream or old upload from producing a false alert immediately after setup or restart.
+YouTube polling is production-ready when Goliath's global `YOUTUBE_API_KEY` is configured. It resolves public handles, legacy usernames, channel IDs, and public channel URLs, then classifies the latest content as live, upload, or Short.
 
 ### Kick
 
-Kick live polling is production-ready when Goliath's global `KICK_CLIENT_ID` and `KICK_CLIENT_SECRET` are configured.
-
-Server administrators only enter a public Kick username or profile URL. Goliath obtains and caches an app access token centrally, resolves the public channel by slug, and reads live state, title, category, viewers, thumbnail, start time, and mature-content state.
+Kick live polling is production-ready when Goliath's global `KICK_CLIENT_ID` and `KICK_CLIENT_SECRET` are configured. Administrators only enter a public Kick username or profile URL.
 
 ### X
 
-X public-post polling is production-ready when Goliath has either:
+X public-post polling is production-ready when Goliath's global app-only credentials are configured. Administrators only enter a public X handle or profile URL. Protected accounts cannot be monitored through public app-only access.
 
-- `X_BEARER_TOKEN`, or
-- `X_API_KEY` and `X_API_KEY_SECRET`
+## Intentionally unavailable providers
 
-The legacy `X_CLIENT_ID` and `X_CLIENT_SECRET` names are accepted as fallback aliases for existing deployments.
+TikTok and Instagram are visible for product transparency but are not part of the Social Studio v1 production scope.
 
-Server administrators only enter a public X handle or profile URL. Goliath resolves the public account, reads its latest original public post, excludes replies and reposts, resolves attached media, and sends the post through the normal Social template, routing, quiet-hours, queue, history, and duplicate-suppression pipeline.
+Their official monitored-account APIs require authorization from the creator or professional account being monitored. That conflicts with Goliath's locked rule that server administrators must not need to request credentials, OAuth approval, or private access from every creator.
 
-Protected X accounts are detected but cannot be monitored through app-only public access. The first discovered public post is baselined and is not announced.
+These providers report:
 
-## Provider status
+```text
+authorization_required
+```
 
-TikTok and Instagram remain visible but are reported honestly as `not_configured` or `not_implemented`. Their official monitored-account APIs require creator or business account authorization, which conflicts with Social Studio's locked zero-credential setup for server administrators and creators.
+They are not reported as broken or unfinished. They may be added later only when a compliant public monitoring path exists.
+
+## Safe baseline behaviour
+
+The first content item discovered for a newly configured account becomes its baseline and is not announced. This prevents old uploads, existing live streams, or previous posts from creating false alerts during setup or restart recovery.
 
 ## Creator Hub
 
-Creator Hub groups multiple platform accounts under one creator profile. Profiles support display names, notes, tags, groups, shared defaults, enabled state, account linking, rebuilding, and provider-free simulation.
+Creator Hub groups multiple platform accounts under one creator profile. Profiles support:
+
+- Display names
+- Notes
+- Tags
+- Groups
+- Shared defaults
+- Enabled state
+- Account linking and unlinking
+- Safe profile rebuilding
+- Provider-free simulation
 
 Discord access is available through `/socialhub` for members with Manage Server permission.
 
 ## Alert delivery
 
-Every content type uses the same platform rules:
+Every supported content type follows one canonical path:
 
 1. Provider detects content.
 2. Initial content is baselined safely.
@@ -97,26 +106,28 @@ Every content type uses the same platform rules:
 
 Supported routes are live, upload, short, and post, with fallback to the account's default alert channel.
 
-## Operations
+## Flagship management surfaces
 
-Social Studio includes:
+Discord and dashboard management include:
 
+- Overview
+- Account library
+- Creator Hub
+- Alert Studio
+- Provider Centre
+- Operations Centre
+- Health and diagnostics
+- Routing
 - Global and per-account quiet hours
 - Restart-safe delivery queue
-- Exponential retries
-- Duplicate suppression
-- Alert and provider history
 - Retry-now, remove, process, and clear controls
-- Health and repair
-- Export and reset
-- Creator and provider diagnostics
+- Alert and provider history
 - Notification Simulator
+- Export and reset
 
 ## Health scores
 
 Accounts, creator profiles, and the module receive scores based on identifiers, destinations, provider readiness, check freshness, provider errors, and failed deliveries.
-
-Grades:
 
 - 90–100: Excellent
 - 75–89: Healthy
@@ -127,8 +138,32 @@ Grades:
 
 `npm run doctor` runs the main repository Doctor and `scripts/social-doctor.js`.
 
-The Social Doctor verifies the runtime, routes, Discord panels, Creator Hub, simulator, diagnostics, delivery service, Twitch, YouTube, Kick, and X providers, queue, history, dashboard, command, and documentation.
+The Social Doctor validates:
+
+- Canonical runtime and routes
+- Discord Social Studio and Creator Hub
+- Dashboard surface
+- Creator profiles and simulator
+- Delivery, queue, history, health, repair, and diagnostics
+- Twitch, YouTube, Kick, and X production handlers
+- Provider-scope policy
+- Module manifest maturity
+- Dashboard registry status
+- Documentation
 
 ## Completion state
 
-Social Studio remains `IN_PROGRESS` because TikTok and Instagram do not have a production monitoring path that preserves the locked zero-credential model. Twitch, YouTube, Kick, and X are production providers, and the flagship Discord, dashboard, Creator Hub, simulator, routing, quiet-hours, queue, history, diagnostics, health, repair, export, reset, and Doctor foundations are present.
+**Social Studio v1 is complete.**
+
+The supported zero-credential production scope is:
+
+```text
+Twitch   ✅
+YouTube  ✅
+Kick     ✅
+X        ✅
+```
+
+TikTok and Instagram are intentionally excluded because their official access model does not satisfy Goliath's zero-credential creator-monitoring rule. Their exclusion does not reduce Social Studio v1 maturity.
+
+Live provider acceptance still depends on Goliath's global credentials being configured correctly in each deployment. Missing owner credentials are reported through Provider Centre, health, diagnostics, and Doctor-facing operational checks rather than being requested from guild administrators.
