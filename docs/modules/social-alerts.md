@@ -1,11 +1,26 @@
 # Social Alerts
 
-Social Alerts monitors configured creator accounts and sends Discord notifications when supported providers report new live content.
+Social Alerts monitors configured creator accounts and sends Discord notifications when supported providers report new live or published content.
+
+## Zero-credential setup
+
+Server administrators and creators never provide API keys, client secrets, OAuth tokens or developer credentials.
+
+They only enter public information:
+
+- Platform
+- Public username, handle, channel name, channel ID or profile URL
+- Display name
+- Discord destination channel
+- Optional mention role
+- Alert types
+
+Provider credentials are owned and managed centrally by Goliath. Provider readiness is read-only inside the module.
 
 ## Canonical files
 
 - `src/modules/social/social.js` — canonical runtime entry
-- `src/modules/social/socialPanel.js` — Discord administration
+- `src/modules/social/socialPanel.js` — Discord Social Studio
 - `src/modules/social/socialRoute.js` — dashboard/API surface
 - `src/modules/social/socialHealth.js` — health, repair, export and reset
 - `src/modules/social/socialScheduler.js` — recurring provider checks
@@ -15,15 +30,68 @@ Social Alerts monitors configured creator accounts and sends Discord notificatio
 
 ## Storage
 
-Configuration is stored under `modules.social`. Each account stores its platform, identifier, alert channel, mention configuration, provider metadata and last-seen content state.
+Configuration is stored under `modules.social`. Each account stores its platform, public identifier, alert channel, mention configuration, provider metadata and last-seen content state.
 
 ## Runtime
 
 The module runs an initial provider check when Discord becomes ready and starts one idempotent scheduler. Disabled modules, disabled accounts and disabled providers are skipped. Provider failures are isolated per account and recorded in account metadata and analytics.
 
-## Discord administration
+## Discord Social Studio
 
-Discord administration supports native account creation, account selection, enable/disable, provider checks, test alerts, deletion, default alert-channel selection, manager-role selection, health, repair, export and confirmed reset.
+The Discord panel follows the same session-based navigation style as Embed Studio and is divided into five screens:
+
+### Overview
+
+- Module status
+- Creator and provider summary
+- Alerts, errors and attention count
+- Quick setup guidance
+- Add creator
+- Check all
+- Export
+
+### Creators
+
+- Stored creator-account selector
+- Public identifier editor
+- Per-account alert channel
+- Optional mention role
+- Alert-type configuration
+- Enable/disable
+- Provider check
+- Test alert
+- Delete confirmation
+
+### Alert Studio
+
+- Live, upload, short and post templates
+- Title, description and button-label editor
+- Bound-creator preview
+- Variable helper
+- Test preview delivery
+- Template reset
+
+Supported variables include `{creator}`, `{platform}`, `{title}`, `{game}`, `{viewers}`, `{thumbnail}`, `{streamUrl}`, `{videoUrl}`, `{uploadTime}`, `{duration}` and `{category}`.
+
+### Provider Centre
+
+- Read-only provider readiness
+- Supported alert types
+- Goliath-managed credential status
+- Provider enable/disable controls
+- Manual provider checks
+
+No credential input fields are exposed.
+
+### Health
+
+- Account and provider diagnostics
+- Missing-channel and identifier checks
+- Previous provider failures
+- Repair
+- Check all
+- Export
+- Confirmed reset
 
 ## API
 
@@ -31,12 +99,8 @@ The module is mounted at `/api/social` and supports provider discovery, overview
 
 ## Provider status
 
-Provider readiness is reported honestly by `providerRegistry.js`. At the time of this module pass, Twitch polling is implemented. Other providers may report `not_configured` or `not_implemented` until their production integrations are completed. Accounts for unavailable providers remain configurable but health reports surface the provider state.
-
-## Health and repair
-
-Health validates enabled account identifiers, alert channels, provider availability and previous provider failures. Repair rechecks enabled accounts and refreshes stored provider metadata without sending duplicate alerts.
+Provider readiness is reported honestly by `providerRegistry.js`. Twitch polling is currently implemented. Other providers may report `not_configured` or `not_implemented` until their production integrations are completed. Accounts for unavailable providers remain configurable, but health and Provider Centre expose the real provider state.
 
 ## Completion state
 
-Social Alerts remains `IN_PROGRESS` until dashboard parity is verified, the temporary server route shim is removed, and provider support decisions are finalised without pretending unavailable provider integrations are complete.
+Social Alerts remains `IN_PROGRESS` until dashboard parity is brought up to the Social Studio standard, the temporary server route shim is removed, and provider support is completed or deliberately scoped without presenting unavailable integrations as operational.
