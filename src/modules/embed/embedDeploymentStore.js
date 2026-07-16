@@ -80,13 +80,19 @@ function findMatchingDeployment(deployments, key) {
   const templateTarget = comparable(safeKey.replace(/^auto[-_:]?/i, ''));
   const matches = Object.values(deployments).filter(Boolean);
 
-  return matches.find((deployment) => {
+  const matched = matches.find((deployment) => {
     const values = [deployment.key, deployment.preset, deployment.template];
     return values.some((value) => {
       const normalized = comparable(value);
       return normalized === target || normalized === templateTarget || `auto${normalized}` === target;
     });
-  }) || null;
+  });
+  if (matched) return matched;
+
+  return matches
+    .filter((deployment) => deployment.channelId && deployment.messageId)
+    .sort((a, b) => Date.parse(b.lastUpdatedAt || b.createdAt || 0) - Date.parse(a.lastUpdatedAt || a.createdAt || 0))[0]
+    || null;
 }
 
 function getEmbedDeployment(guildId, key) {
