@@ -2,6 +2,7 @@
 
 const express = require('express');
 const polls = require('./polls');
+const pollsHealth = require('./pollsHealth');
 
 const router = express.Router();
 
@@ -57,6 +58,26 @@ router.get('/:guildId', (req, res) => {
   }
 });
 
+router.get('/:guildId/health', async (req, res) => {
+  try {
+    const guildId = getGuildId(req);
+    const guild = await getGuild(req, guildId);
+    if (!guild) throw new Error('Guild is unavailable.');
+    return success(res, { guildId, health: await pollsHealth.buildHealth(guild) });
+  } catch (error) {
+    return failure(res, error, 400);
+  }
+});
+
+router.get('/:guildId/export', (req, res) => {
+  try {
+    const guildId = getGuildId(req);
+    return success(res, { guildId, export: pollsHealth.exportConfig(guildId) });
+  } catch (error) {
+    return failure(res, error, 400);
+  }
+});
+
 router.patch('/:guildId/enabled', (req, res) => {
   try {
     const guildId = getGuildId(req);
@@ -74,6 +95,28 @@ router.patch('/:guildId/settings', (req, res) => {
     const config = polls.getSection(guildId);
     config.settings = { ...(config.settings || {}), ...(req.body?.settings || req.body || {}) };
     return success(res, { guildId, config: polls.saveSection(guildId, config, actor(req)) });
+  } catch (error) {
+    return failure(res, error, 400);
+  }
+});
+
+router.post('/:guildId/repair', async (req, res) => {
+  try {
+    const guildId = getGuildId(req);
+    const guild = await getGuild(req, guildId);
+    if (!guild) throw new Error('Guild is unavailable.');
+    return success(res, { guildId, result: await pollsHealth.repair(guild, actor(req)) });
+  } catch (error) {
+    return failure(res, error, 400);
+  }
+});
+
+router.post('/:guildId/reset', async (req, res) => {
+  try {
+    const guildId = getGuildId(req);
+    const guild = await getGuild(req, guildId);
+    if (!guild) throw new Error('Guild is unavailable.');
+    return success(res, { guildId, result: await pollsHealth.reset(guild, actor(req)) });
   } catch (error) {
     return failure(res, error, 400);
   }
