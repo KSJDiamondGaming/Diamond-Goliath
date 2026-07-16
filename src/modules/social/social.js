@@ -3,6 +3,7 @@
 const socialManager = require('./socialManager');
 const socialStore = require('./socialStore');
 const socialScheduler = require('./socialScheduler');
+const socialHistory = require('./socialHistory');
 const providerRegistry = require('./providerRegistry');
 
 const STARTUP_KEY = Symbol.for('goliath.social.startup');
@@ -24,6 +25,7 @@ async function startup(client, options = {}) {
 module.exports = {
   ...socialManager,
   store: socialStore,
+  history: socialHistory,
   providers: providerRegistry,
   scheduler: socialScheduler,
   startup,
