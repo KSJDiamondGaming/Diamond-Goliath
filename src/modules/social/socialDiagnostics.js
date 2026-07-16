@@ -1,6 +1,10 @@
 'use strict';
 
-const social = require('./social');
+const socialManager = require('./socialManager');
+const socialQueue = require('./socialQueue');
+const socialHistory = require('./socialHistory');
+const socialCreators = require('./socialCreators');
+const providerRegistry = require('./providerRegistry');
 
 const SCORE_WEIGHTS = Object.freeze({
   identifier: 20,
@@ -24,9 +28,9 @@ function grade(score) {
 }
 
 function providerDiagnostics(guildId) {
-  const config = social.getConfig(guildId);
+  const config = socialManager.getConfig(guildId);
   const accounts = config.accounts || [];
-  return social.providers.listProviders().map((provider) => {
+  return providerRegistry.listProviders().map((provider) => {
     const providerAccounts = accounts.filter((account) => account.platform === provider.id);
     const enabledAccounts = providerAccounts.filter((account) => account.enabled !== false);
     const checkedAccounts = enabledAccounts.filter((account) => account.lastSeen?.lastCheckedAt);
@@ -56,11 +60,11 @@ function providerDiagnostics(guildId) {
   });
 }
 
-function accountDiagnostics(guildId, account, providerMap, queueItems) {
+function accountDiagnostics(account, providerMap, queueItems) {
   let score = 100;
   const issues = [];
   const provider = providerMap.get(account.platform);
-  const routedChannel = social.routeChannelId(account, account.alertTypes?.[0] || 'live');
+  const routedChannel = socialManager.routeChannelId(account, account.alertTypes?.[0] || 'live');
   const accountQueue = queueItems.filter((item) => item.accountId === account.accountId);
 
   if (!account.username && !account.externalId && !account.url) {
@@ -107,12 +111,12 @@ function accountDiagnostics(guildId, account, providerMap, queueItems) {
 }
 
 function creatorDiagnostics(guildId) {
-  const config = social.getConfig(guildId);
+  const config = socialManager.getConfig(guildId);
   const providers = providerDiagnostics(guildId);
   const providerMap = new Map(providers.map((provider) => [provider.id, provider]));
-  const queueItems = social.queue.list(guildId);
-  const accounts = (config.accounts || []).map((account) => accountDiagnostics(guildId, account, providerMap, queueItems));
-  const profiles = social.creators.list(guildId).map((profile) => {
+  const queueItems = socialQueue.list(guildId);
+  const accounts = (config.accounts || []).map((account) => accountDiagnostics(account, providerMap, queueItems));
+  const profiles = socialCreators.list(guildId).map((profile) => {
     const linked = accounts.filter((account) => profile.accountIds.includes(account.accountId));
     const score = linked.length ? Math.round(linked.reduce((sum, account) => sum + account.score, 0) / linked.length) : 0;
     const issues = linked.flatMap((account) => account.issues.map((issue) => ({ ...issue, accountId: account.accountId, platform: account.platform })));
@@ -147,8 +151,8 @@ function buildDiagnostics(guildId) {
     providers,
     accounts: creators.accounts,
     profiles: creators.profiles,
-    queue: social.queue.summary(guildId),
-    history: social.history.summary(guildId),
+    queue: socialQueue.summary(guildId),
+    history: socialHistory.summary(guildId),
   };
 }
 
