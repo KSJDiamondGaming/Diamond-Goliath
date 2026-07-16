@@ -8,11 +8,11 @@ Polls provides stored, deployable Discord community polls with button voting, au
 - `src/modules/polls/pollsPanel.js` — Discord administration
 - `src/modules/polls/pollsRoute.js` — dashboard/API surface
 - `src/modules/polls/pollsHealth.js` — health, repair, export, and reset
-- `src/modules/polls/pollsManager.js` — existing storage and message builders pending final consolidation
+- `src/modules/polls/pollsManager.js` — storage normalization and Discord message builders
 
 ## Storage
 
-Polls are stored under `modules.polls`. Legacy top-level `polls` data remains readable while guild data is normalised into the canonical module section on the next save.
+Polls are stored under `modules.polls`. Legacy top-level `polls` data remains readable while guild data is normalized into the canonical module section on the next save.
 
 ## Lifecycle
 
@@ -24,7 +24,11 @@ Votes are serialized per guild and poll to prevent concurrent updates from overw
 
 ## Automatic closing
 
-`settings.autoCloseHours` controls automatic closing. The module scans when Discord becomes ready and once per minute afterwards. The deployed message creation timestamp is used as the start time, so the close schedule survives process restarts.
+`settings.autoCloseHours` controls automatic closing. A dashboard value of `0` disables automatic closing. The module scans when Discord becomes ready and once per minute afterwards. The deployed message creation timestamp is used as the start time, so the close schedule survives process restarts.
+
+## Startup recovery
+
+When Discord becomes ready, Polls closes expired deployments and then runs deployment repair for every enabled guild. Existing messages are refreshed and missing active messages are redeployed when a valid channel is available.
 
 ## Health and repair
 
@@ -36,11 +40,32 @@ The module is mounted at `/api/polls` and provides configuration, creation, upda
 
 ## Discord administration
 
-Discord administration supports channel selectors, manager-role selection, module settings, health, repair, export, and confirmed reset. Real poll creation and editing remain dashboard-first until the Discord-native creation workflow is completed.
+Discord administration supports:
 
-## Remaining completion work
+- Native modal-based poll creation
+- Stored-poll selection
+- Deployment and message refresh
+- Manual closing and deletion
+- Channel and manager-role selectors
+- Anonymous, multiple-choice and live-result settings
+- Health and repair
+- JSON export
+- Confirmed reset
 
-- Replace sample-only Discord creation with native modal/select workflows for real polls.
-- Consolidate `pollsManager.js` into the canonical runtime when doing so does not increase complexity.
-- Add dashboard controls for health, repair, export, reset, and auto-close configuration.
-- Remove the temporary `src/server/routes/polls.js` compatibility shim after `server.js` points directly to `pollsRoute.js`.
+## Dashboard
+
+The dashboard supports:
+
+- Poll creation and deployment
+- Message refresh, close and delete operations
+- Default channel configuration
+- Automatic-close configuration
+- Anonymous, multiple-choice and live-result settings
+- Health display and repair
+- JSON export
+- Confirmed reset
+
+## Remaining repository cleanup
+
+- Remove the temporary `src/server/routes/polls.js` compatibility shim after `server.js` points directly to `src/modules/polls/pollsRoute.js`.
+- Run the live Discord acceptance checklist before changing module maturity from `IN_PROGRESS` to `COMPLETE`.
