@@ -13,6 +13,10 @@ const PLATFORM_COLORS = {
   youtube: 0xff0000,
 };
 
+function getQueue() {
+  return require('./socialQueue');
+}
+
 function getOverview(guildId) {
   const section = socialStore.getSocialSection(guildId);
   const accounts = Object.values(section.accounts || {});
@@ -29,6 +33,7 @@ function getOverview(guildId) {
     platformCounts,
     analytics: section.analytics || {},
     history: socialHistory.summary(guildId),
+    queue: getQueue().summary(guildId),
     settings: section.settings || {},
   };
 }
@@ -115,13 +120,65 @@ function buildLiveEmbed(account = {}, providerResult = {}) {
   return embed;
 }
 
-async function fetchAlertChannel(account = {}, client) {
-  if (!account.alertChannelId) return { channel: null, error: 'Choose an alert channel before sending an alert.' };
+function cleanDiscordId(value) {
+  const id = String(value || '').replace(/[<@#!&>]/g, '').trim();
+  return /^\d{15,25}$/.test(id) ? id : null;
+}
+
+function routeChannelId(account = {}, alertType = 'live') {
+  const routing = account.metadata?.routing && typeof account.metadata.routing === 'object' ? account.metadata.routing : {};
+  return cleanDiscordId(routing[alertType] || routing[`${alertType}ChannelId`] || account.alertChannelId);
+}
+
+async function fetchAlertChannel(account = {}, client, alertType = 'live') {
+  const channelId = routeChannelId(account, alertType);
+  if (!channelId) return { channel: null, error: `Choose a ${alertType} alert channel before sending this alert.` };
   const discordClient = client || global.client || global.discordClient;
   if (!discordClient?.channels?.fetch) return { channel: null, error: 'Discord client is unavailable.' };
-  const channel = await discordClient.channels.fetch(account.alertChannelId).catch(() => null);
+  const channel = await discordClient.channels.fetch(channelId).catch(() => null);
   if (!channel?.send) return { channel: null, error: 'Could not find a sendable alert channel.' };
   return { channel, error: null };
+}
+
+function parseClock(value, fallback) {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(String(value || fallback));
+  if (!match) return parseClock(fallback, '00:00');
+  return Math.min(23, Number(match[1])) * 60 + Math.min(59, Number(match[2]));
+}
+
+function timeInZone(date, timezone) {
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: timezone || 'UTC', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    }).formatToParts(date);
+    const hour = Number(parts.find((part) => part.type === 'hour')?.value || 0);
+    const minute = Number(parts.find((part) => part.type === 'minute')?.value || 0);
+    return hour * 60 + minute;
+  } catch {
+    return date.getUTCHours() * 60 + date.getUTCMinutes();
+  }
+}
+
+function quietHoursConfig(guildId, account = {}) {
+  const globalConfig = getConfig(guildId).settings?.quietHours || {};
+  const accountConfig = account.metadata?.quietHours && typeof account.metadata.quietHours === 'object'
+    ? account.metadata.quietHours
+    : {};
+  return { ...globalConfig, ...accountConfig };
+}
+
+function isQuietHours(guildId, account = {}, date = new Date()) {
+  const quiet = quietHoursConfig(guildId, account);
+  if (quiet.enabled !== true) return false;
+  const start = parseClock(quiet.start, '00:00');
+  const end = parseClock(quiet.end, '08:00');
+  if (start === end) return true;
+  const current = timeInZone(date, quiet.timezone || 'UTC');
+  return start < end ? current >= start && current < end : current >= start || current < end;
+}
+
+function shouldQueueFailures(guildId) {
+  return getConfig(guildId).settings?.retryDeliveries !== false;
 }
 
 function historyBase(account = {}, extra = {}) {
@@ -136,6 +193,25 @@ function historyBase(account = {}, extra = {}) {
   };
 }
 
+function enqueueDelivery(guildId, account, providerResult, reason, error, meta = {}) {
+  const result = getQueue().enqueue(guildId, {
+    accountId: account.accountId,
+    platform: account.platform,
+    alertType: providerResult.alertType || 'live',
+    contentId: providerResult.contentId,
+    providerResult,
+    reason,
+    lastError: error || null,
+  }, meta);
+  if (result.duplicate) {
+    socialHistory.record(guildId, {
+      ...historyBase(account, { contentId: providerResult.contentId, title: providerResult.title }),
+      status: 'suppressed', eventType: 'queue', reason: 'already_queued', metadata: { queueId: result.item.id },
+    }, meta);
+  }
+  return result;
+}
+
 async function sendTestAlert(guildId, accountId, client, meta = {}) {
   const account = getConfig(guildId).accounts.find((item) => item.accountId === accountId || item.id === accountId);
   if (!account) return { success: false, status: 404, error: 'Social account not found.' };
@@ -144,7 +220,7 @@ async function sendTestAlert(guildId, accountId, client, meta = {}) {
     return { success: false, status: 400, error: 'Enable this social account before sending a test alert.' };
   }
 
-  const { channel, error } = await fetchAlertChannel(account, client);
+  const { channel, error } = await fetchAlertChannel(account, client, 'live');
   if (!channel) {
     socialHistory.record(guildId, { ...historyBase(account), status: 'failed', eventType: 'test', isTest: true, error }, meta);
     return { success: false, status: 400, error };
@@ -158,7 +234,6 @@ async function sendTestAlert(guildId, accountId, client, meta = {}) {
       embeds: [buildTestEmbed(account, alert)],
       allowedMentions: { parse: mention === '@everyone' || mention === '@here' ? ['everyone'] : [], roles: account.mentionRoleId ? [account.mentionRoleId] : [] },
     });
-
     updateAccount(guildId, account.accountId, { lastSeen: { ...(account.lastSeen || {}), lastAlertAt: new Date().toISOString(), lastTestMessageId: message.id, lastTestChannelId: channel.id } }, { action: 'social_test_alert_sent', ...meta });
     socialStore.incrementAnalytics(guildId, { alertsSent: 1 }, { action: 'social_test_alert_analytics', ...meta });
     socialHistory.record(guildId, { ...historyBase(account, { title: alert.title }), status: 'test', eventType: 'test', isTest: true, channelId: channel.id, messageId: message.id }, meta);
@@ -176,13 +251,22 @@ async function sendLiveAlert(guildId, account = {}, providerResult = {}, client,
     socialHistory.record(guildId, { ...base, status: 'skipped', eventType: 'provider', reason: 'not_live' }, meta);
     return { success: false, skipped: true, reason: 'not_live' };
   }
-  if (account.lastSeen?.lastContentId === providerResult.contentId) {
+  if (meta.bypassDuplicate !== true && account.lastSeen?.lastContentId === providerResult.contentId) {
     socialHistory.record(guildId, { ...base, status: 'suppressed', eventType: 'duplicate', reason: 'duplicate_content' }, meta);
     return { success: false, skipped: true, reason: 'duplicate_content' };
   }
 
-  const { channel, error } = await fetchAlertChannel(account, client);
+  if (meta.bypassQueue !== true && isQuietHours(guildId, account)) {
+    const queued = enqueueDelivery(guildId, account, providerResult, 'quiet_hours', null, meta);
+    return { success: false, queued: true, queueId: queued.item.id, reason: queued.duplicate ? 'already_queued' : 'quiet_hours' };
+  }
+
+  const { channel, error } = await fetchAlertChannel(account, client, 'live');
   if (!channel) {
+    if (meta.bypassQueue !== true && shouldQueueFailures(guildId)) {
+      const queued = enqueueDelivery(guildId, account, providerResult, 'channel_unavailable', error, meta);
+      return { success: false, queued: true, queueId: queued.item.id, error };
+    }
     socialHistory.record(guildId, { ...base, status: 'failed', eventType: 'delivery', error }, meta);
     return { success: false, skipped: false, error };
   }
@@ -194,7 +278,6 @@ async function sendLiveAlert(guildId, account = {}, providerResult = {}, client,
       embeds: [buildLiveEmbed(account, providerResult)],
       allowedMentions: { parse: mention === '@everyone' || mention === '@here' ? ['everyone'] : [], roles: account.mentionRoleId ? [account.mentionRoleId] : [] },
     });
-
     updateAccount(guildId, account.accountId, {
       externalId: providerResult.externalId || account.externalId,
       displayName: account.displayName || providerResult.displayName,
@@ -205,9 +288,22 @@ async function sendLiveAlert(guildId, account = {}, providerResult = {}, client,
     return { success: true, channelId: channel.id, messageId: message.id };
   } catch (sendError) {
     socialStore.incrementAnalytics(guildId, { errors: 1 }, { action: 'social_live_alert_error', ...meta });
+    if (meta.bypassQueue !== true && shouldQueueFailures(guildId)) {
+      const queued = enqueueDelivery(guildId, account, providerResult, 'discord_delivery_failed', sendError.message, meta);
+      return { success: false, queued: true, queueId: queued.item.id, error: sendError.message };
+    }
     socialHistory.record(guildId, { ...base, status: 'failed', eventType: 'delivery', channelId: channel.id, error: sendError.message }, meta);
     return { success: false, skipped: false, error: sendError.message };
   }
+}
+
+function deliverQueuedAlert(guildId, account, providerResult, client, meta = {}) {
+  return sendLiveAlert(guildId, account, providerResult, client, {
+    ...meta,
+    bypassQueue: true,
+    bypassDuplicate: true,
+    action: meta.action || 'social_queue_delivery',
+  });
 }
 
 module.exports = {
@@ -220,6 +316,9 @@ module.exports = {
   buildTestAlert,
   buildTestEmbed,
   buildLiveEmbed,
+  routeChannelId,
+  isQuietHours,
   sendTestAlert,
   sendLiveAlert,
+  deliverQueuedAlert,
 };
