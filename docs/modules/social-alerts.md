@@ -47,24 +47,29 @@ Twitch live polling is production-ready when Goliath's global Twitch credentials
 
 YouTube polling is production-ready when Goliath's global `YOUTUBE_API_KEY` is configured.
 
-The provider resolves:
-
-- Public channel handles
-- Legacy usernames
-- Channel IDs
-- Public channel URLs
-
-It monitors the channel uploads playlist and classifies the latest content as:
-
-- Live
-- Upload
-- Short
+The provider resolves public channel handles, legacy usernames, channel IDs, and public channel URLs. It monitors the channel uploads playlist and classifies the latest content as live, upload, or Short.
 
 The first discovered content item becomes the account baseline and is not announced. This prevents an existing live stream or old upload from producing a false alert immediately after setup or restart.
 
+### Kick
+
+Kick live polling is production-ready when Goliath's global `KICK_CLIENT_ID` and `KICK_CLIENT_SECRET` are configured.
+
+Server administrators only enter a public Kick username or profile URL. Goliath obtains and caches an app access token centrally, resolves the public channel by slug, and reads:
+
+- Live state
+- Stream title
+- Category
+- Viewer count
+- Thumbnail
+- Start time
+- Mature-content state
+
+The first discovered live stream is baselined through the normal Social scheduler rules and is not falsely announced during initial setup.
+
 ## Provider status
 
-Kick, TikTok, Instagram, and X remain visible but are reported honestly as `not_configured` or `not_implemented`. They are not presented as production-ready.
+TikTok, Instagram, and X remain visible but are reported honestly as `not_configured` or `not_implemented`. They are not presented as production-ready.
 
 ## Creator Hub
 
@@ -119,8 +124,8 @@ Grades:
 
 `npm run doctor` runs the main repository Doctor and `scripts/social-doctor.js`.
 
-The Social Doctor verifies the runtime, routes, Discord panels, Creator Hub, simulator, diagnostics, delivery service, Twitch and YouTube providers, queue, history, dashboard, command, and documentation.
+The Social Doctor verifies the runtime, routes, Discord panels, Creator Hub, simulator, diagnostics, delivery service, Twitch, YouTube, and Kick providers, queue, history, dashboard, command, and documentation.
 
 ## Completion state
 
-Social Studio remains `IN_PROGRESS` because Kick, TikTok, Instagram, and X do not yet have production polling implementations. Twitch and YouTube are production providers, and the flagship Discord, dashboard, Creator Hub, simulator, routing, quiet-hours, queue, history, diagnostics, health, repair, export, reset, and Doctor foundations are present.
+Social Studio remains `IN_PROGRESS` because TikTok, Instagram, and X do not yet have production polling implementations. Twitch, YouTube, and Kick are production providers, and the flagship Discord, dashboard, Creator Hub, simulator, routing, quiet-hours, queue, history, diagnostics, health, repair, export, reset, and Doctor foundations are present.
