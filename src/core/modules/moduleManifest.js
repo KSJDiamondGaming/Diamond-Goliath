@@ -38,6 +38,7 @@ const moduleManifest = Object.freeze({
     capabilities: createCapabilityMap({
       guildStorage: true,
       runtime: true,
+      adminPanel: true,
       api: true,
       health: true,
       startupRecovery: true,
