@@ -131,7 +131,7 @@ export const moduleRegistry = [
     category: MODULE_CATEGORIES.feature,
     status: MODULE_STATUSES.backendReady,
     enabled: false,
-    summary: 'Live server and workflow statistics.',
+    summary: 'Activity reporting, rankings and Statbot-style counter channels.',
   },
   {
     key: 'sticky',
@@ -172,16 +172,6 @@ export const moduleRegistry = [
     status: MODULE_STATUSES.backendReady,
     enabled: false,
     summary: 'Award progression roles when members reach configured server-tenure milestones.',
-  },
-  {
-    key: 'timeline',
-    name: 'Timeline',
-    icon: 'TL',
-    route: '/timeline',
-    category: MODULE_CATEGORIES.feature,
-    status: MODULE_STATUSES.backendReady,
-    enabled: false,
-    summary: 'Timeline storage and timeline-driven server updates.',
   },
   {
     key: 'translation',
