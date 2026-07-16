@@ -62,6 +62,49 @@ router.delete('/:guildId/history', (req, res) => {
   } catch (error) { return res.status(400).json({ success: false, error: error.message || 'Failed to clear Social alert history.' }); }
 });
 
+router.get('/:guildId/queue', (req, res) => {
+  try {
+    return res.json({
+      success: true,
+      guildId: req.params.guildId,
+      summary: social.queue.summary(req.params.guildId),
+      queue: social.queue.list(req.params.guildId, { status: req.query.status, accountId: req.query.accountId, limit: req.query.limit }),
+    });
+  } catch (error) { return res.status(400).json({ success: false, error: error.message || 'Failed to fetch Social delivery queue.' }); }
+});
+
+router.post('/:guildId/queue/process', async (req, res) => {
+  try {
+    const client = getDiscordClient(req);
+    if (!client) throw new Error('Discord client is unavailable.');
+    const result = await social.queue.processGuild(req.params.guildId, client, { meta: actor(req, 'social_queue_process') });
+    return res.json({ success: true, result, summary: social.queue.summary(req.params.guildId) });
+  } catch (error) { return res.status(400).json({ success: false, error: error.message || 'Failed to process Social delivery queue.' }); }
+});
+
+router.post('/:guildId/queue/:queueId/retry', (req, res) => {
+  try {
+    const item = social.queue.retryNow(req.params.guildId, req.params.queueId, actor(req, 'social_queue_retry_now'));
+    if (!item) return res.status(404).json({ success: false, error: 'Queued delivery not found.' });
+    return res.json({ success: true, item, summary: social.queue.summary(req.params.guildId) });
+  } catch (error) { return res.status(400).json({ success: false, error: error.message || 'Failed to retry queued Social delivery.' }); }
+});
+
+router.delete('/:guildId/queue/:queueId', (req, res) => {
+  try {
+    const removed = social.queue.remove(req.params.guildId, req.params.queueId, actor(req, 'social_queue_remove'));
+    if (!removed) return res.status(404).json({ success: false, error: 'Queued delivery not found.' });
+    return res.json({ success: true, summary: social.queue.summary(req.params.guildId) });
+  } catch (error) { return res.status(400).json({ success: false, error: error.message || 'Failed to remove queued Social delivery.' }); }
+});
+
+router.delete('/:guildId/queue', (req, res) => {
+  try {
+    social.queue.clear(req.params.guildId, actor(req, 'social_queue_clear'));
+    return res.json({ success: true, summary: social.queue.summary(req.params.guildId) });
+  } catch (error) { return res.status(400).json({ success: false, error: error.message || 'Failed to clear Social delivery queue.' }); }
+});
+
 router.get('/:guildId', (req, res) => {
   try { return res.json({ success: true, guildId: req.params.guildId, config: social.getConfig(req.params.guildId) }); }
   catch (error) { return res.status(500).json({ success: false, error: error.message || 'Failed to fetch social config.' }); }
