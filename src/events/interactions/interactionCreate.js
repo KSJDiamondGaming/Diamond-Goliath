@@ -3,9 +3,8 @@
 const { Events, MessageFlags } = require('discord.js');
 
 function optionalRequire(label, modulePath, fallback = {}) {
-  try {
-    return require(modulePath);
-  } catch (error) {
+  try { return require(modulePath); }
+  catch (error) {
     console.warn(`[InteractionCreate] Optional handler unavailable: ${label}`);
     console.warn(error?.stack || error?.message || error);
     return fallback;
@@ -34,6 +33,7 @@ const starboardAdminPanel = optionalRequire('starboard admin', '../../core/admin
 const stickyAdminPanel = optionalRequire('sticky admin', '../../core/admin/functions/stickyAdminPanel');
 const levelingAdminPanel = optionalRequire('leveling admin', '../../core/admin/functions/levelingAdminPanel');
 const socialAdminPanel = optionalRequire('social admin', '../../modules/social/socialPanel');
+const socialCreatorPanel = optionalRequire('social creator hub', '../../modules/social/socialCreatorPanel');
 const verificationAdminPanel = optionalRequire('verification admin', '../../modules/verification/verificationPanel');
 const autorolesPanel = optionalRequire('auto roles', '../../modules/autoroles/autorolesPanel');
 const timedRolesPanel = optionalRequire('timed roles', '../../modules/timedroles/timedRolesPanel');
@@ -93,9 +93,7 @@ async function safeInteractionError(interaction) {
     if (interaction?.isAutocomplete?.()) { await interaction.respond([]).catch(() => null); return; }
     if (interaction?.deferred || interaction?.replied) { await interaction.followUp(payload).catch(() => null); return; }
     await interaction?.reply?.(payload).catch(() => null);
-  } catch {
-    // Ignore final safety response errors.
-  }
+  } catch { /* Ignore final safety response errors. */ }
 }
 
 module.exports = {
@@ -122,6 +120,7 @@ module.exports = {
       if (startsWith(interaction, 'admin:welcome')) { await callHandler(welcomePanel, 'handleWelcomeInteraction', interaction); return; }
       if (startsWith(interaction, 'admin:goodbye')) { await callHandler(goodbyePanel, 'handleGoodbyeInteraction', interaction); return; }
       if (startsWith(interaction, 'admin:reactionRoles')) { await callHandler(reactionRolesAdminPanel, 'handleReactionRolesAdminInteraction', interaction); return; }
+      if (startsWith(interaction, 'admin:socialhub')) { await callHandler(socialCreatorPanel, 'handleSocialCreatorInteraction', interaction); return; }
       if (isVerificationMemberInteraction(interaction)) { await callHandler(verificationManager, 'handleVerificationInteraction', interaction); return; }
       if (await callHandler(statsAdminPanel, 'handleStatsAdminInteraction', interaction)) return;
       if (await callHandler(suggestionsAdminPanel, 'handleSuggestionsAdminInteraction', interaction)) return;
