@@ -1,9 +1,8 @@
 'use strict';
 
-// src/modules/social/socialManager.js
-
 const { EmbedBuilder } = require('discord.js');
 const socialStore = require('./socialStore');
+const socialHistory = require('./socialHistory');
 
 const PLATFORM_COLORS = {
   instagram: 0xe1306c,
@@ -29,33 +28,22 @@ function getOverview(guildId) {
     enabledAccountCount: enabledAccounts.length,
     platformCounts,
     analytics: section.analytics || {},
+    history: socialHistory.summary(guildId),
     settings: section.settings || {},
   };
 }
 
 function getConfig(guildId) {
   const section = socialStore.getSocialSection(guildId);
-  return {
-    ...section,
-    accounts: Object.values(section.accounts || {}),
-  };
+  return { ...section, accounts: Object.values(section.accounts || {}) };
 }
 
 function setEnabled(guildId, enabled, meta = {}) {
-  return socialStore.updateSocialSection(guildId, (section) => ({
-    ...section,
-    enabled: enabled === true,
-    updatedAt: new Date().toISOString(),
-  }), meta);
+  return socialStore.updateSocialSection(guildId, (section) => ({ ...section, enabled: enabled === true, updatedAt: new Date().toISOString() }), meta);
 }
 
-function addAccount(guildId, account, meta = {}) {
-  return socialStore.saveAccount(guildId, account, meta);
-}
-
-function removeAccount(guildId, accountId, meta = {}) {
-  return socialStore.removeAccount(guildId, accountId, meta);
-}
+function addAccount(guildId, account, meta = {}) { return socialStore.saveAccount(guildId, account, meta); }
+function removeAccount(guildId, accountId, meta = {}) { return socialStore.removeAccount(guildId, accountId, meta); }
 
 function updateAccount(guildId, accountId, updates = {}, meta = {}) {
   const existing = socialStore.getSocialSection(guildId).accounts[socialStore.cleanKey(accountId, 'account')];
@@ -64,31 +52,18 @@ function updateAccount(guildId, accountId, updates = {}, meta = {}) {
 }
 
 function formatPlatform(platform = 'social') {
-  const labels = {
-    instagram: 'Instagram',
-    kick: 'Kick',
-    tiktok: 'TikTok',
-    twitch: 'Twitch',
-    x: 'X',
-    youtube: 'YouTube',
-  };
-
-  return labels[platform] || String(platform).toUpperCase();
+  return ({ instagram: 'Instagram', kick: 'Kick', tiktok: 'TikTok', twitch: 'Twitch', x: 'X', youtube: 'YouTube' })[platform] || String(platform).toUpperCase();
 }
 
 function buildTestAlert(account = {}) {
   const platform = account.platform || 'social';
   const creator = account.displayName || account.username || 'Creator';
-  const livePlatforms = ['twitch', 'kick', 'tiktok'];
-  const isLive = livePlatforms.includes(platform);
-
+  const isLive = ['twitch', 'kick', 'tiktok'].includes(platform);
   return {
     platform,
     title: isLive ? `${creator} is now live` : `${creator} posted a new update`,
-    description: isLive
-      ? 'This is a test live notification from Goliath Social Alerts.'
-      : 'This is a test content notification from Goliath Social Alerts.',
-    url: account.metadata?.url || '',
+    description: isLive ? 'This is a test live notification from Goliath Social Alerts.' : 'This is a test content notification from Goliath Social Alerts.',
+    url: account.metadata?.url || account.url || '',
     accountId: account.accountId,
     createdAt: new Date().toISOString(),
   };
@@ -104,10 +79,7 @@ function buildMention(account = {}) {
 function buildTestEmbed(account = {}, alert = {}) {
   const platform = account.platform || alert.platform || 'social';
   const creator = account.displayName || account.username || 'Creator';
-  const alertTypes = Array.isArray(account.alertTypes) && account.alertTypes.length
-    ? account.alertTypes.join(', ')
-    : 'test';
-
+  const alertTypes = Array.isArray(account.alertTypes) && account.alertTypes.length ? account.alertTypes.join(', ') : 'test';
   return new EmbedBuilder()
     .setColor(PLATFORM_COLORS[platform] || 0x5865f2)
     .setTitle(`🧪 ${alert.title || `${creator} test alert`}`)
@@ -116,7 +88,7 @@ function buildTestEmbed(account = {}, alert = {}) {
       { name: 'Creator', value: creator, inline: true },
       { name: 'Platform', value: formatPlatform(platform), inline: true },
       { name: 'Alert Types', value: alertTypes, inline: true },
-      { name: 'Username / Channel ID', value: account.username || 'Not set', inline: false }
+      { name: 'Username / Channel ID', value: account.username || account.externalId || 'Not set', inline: false }
     )
     .setFooter({ text: 'Goliath Social Alerts • Test Notification' })
     .setTimestamp(new Date());
@@ -136,134 +108,106 @@ function buildLiveEmbed(account = {}, providerResult = {}) {
     .setFooter({ text: 'Goliath Social Alerts • Live Notification' })
     .setTimestamp(new Date());
 
-  if (providerResult.gameName) {
-    embed.addFields({ name: 'Category', value: providerResult.gameName, inline: true });
-  }
-
-  if (providerResult.viewerCount) {
-    embed.addFields({ name: 'Viewers', value: String(providerResult.viewerCount), inline: true });
-  }
-
-  if (providerResult.url) {
-    embed.setURL(providerResult.url);
-  }
-
-  if (providerResult.thumbnailUrl) {
-    embed.setImage(String(providerResult.thumbnailUrl).replace('{width}', '1280').replace('{height}', '720'));
-  }
-
+  if (providerResult.gameName) embed.addFields({ name: 'Category', value: providerResult.gameName, inline: true });
+  if (providerResult.viewerCount) embed.addFields({ name: 'Viewers', value: String(providerResult.viewerCount), inline: true });
+  if (providerResult.url) embed.setURL(providerResult.url);
+  if (providerResult.thumbnailUrl) embed.setImage(String(providerResult.thumbnailUrl).replace('{width}', '1280').replace('{height}', '720'));
   return embed;
 }
 
 async function fetchAlertChannel(account = {}, client) {
-  if (!account.alertChannelId) {
-    return { channel: null, error: 'Choose an alert channel before sending an alert.' };
-  }
-
+  if (!account.alertChannelId) return { channel: null, error: 'Choose an alert channel before sending an alert.' };
   const discordClient = client || global.client || global.discordClient;
-  if (!discordClient?.channels?.fetch) {
-    return { channel: null, error: 'Discord client is unavailable.' };
-  }
-
+  if (!discordClient?.channels?.fetch) return { channel: null, error: 'Discord client is unavailable.' };
   const channel = await discordClient.channels.fetch(account.alertChannelId).catch(() => null);
-  if (!channel?.send) {
-    return { channel: null, error: 'Could not find a sendable alert channel.' };
-  }
-
+  if (!channel?.send) return { channel: null, error: 'Could not find a sendable alert channel.' };
   return { channel, error: null };
 }
 
+function historyBase(account = {}, extra = {}) {
+  return {
+    accountId: account.accountId || null,
+    creator: account.displayName || account.username || null,
+    platform: account.platform || null,
+    alertType: extra.alertType || 'live',
+    contentId: extra.contentId || null,
+    title: extra.title || null,
+    providerStatus: extra.providerStatus || null,
+  };
+}
+
 async function sendTestAlert(guildId, accountId, client, meta = {}) {
-  const config = getConfig(guildId);
-  const account = config.accounts.find((item) => item.accountId === accountId || item.id === accountId);
-
-  if (!account) {
-    return { success: false, status: 404, error: 'Social account not found.' };
-  }
-
+  const account = getConfig(guildId).accounts.find((item) => item.accountId === accountId || item.id === accountId);
+  if (!account) return { success: false, status: 404, error: 'Social account not found.' };
   if (account.enabled === false) {
+    socialHistory.record(guildId, { ...historyBase(account), status: 'skipped', eventType: 'test', isTest: true, reason: 'account_disabled' }, meta);
     return { success: false, status: 400, error: 'Enable this social account before sending a test alert.' };
   }
 
   const { channel, error } = await fetchAlertChannel(account, client);
   if (!channel) {
+    socialHistory.record(guildId, { ...historyBase(account), status: 'failed', eventType: 'test', isTest: true, error }, meta);
     return { success: false, status: 400, error };
   }
 
   const alert = buildTestAlert(account);
   const mention = buildMention(account);
-  const message = await channel.send({
-    content: mention || undefined,
-    embeds: [buildTestEmbed(account, alert)],
-    allowedMentions: {
-      parse: mention === '@everyone' ? ['everyone'] : mention === '@here' ? ['everyone'] : [],
-      roles: account.mentionRoleId ? [account.mentionRoleId] : [],
-    },
-  });
+  try {
+    const message = await channel.send({
+      content: mention || undefined,
+      embeds: [buildTestEmbed(account, alert)],
+      allowedMentions: { parse: mention === '@everyone' || mention === '@here' ? ['everyone'] : [], roles: account.mentionRoleId ? [account.mentionRoleId] : [] },
+    });
 
-  updateAccount(guildId, account.accountId, {
-    lastSeen: {
-      ...(account.lastSeen || {}),
-      lastAlertAt: new Date().toISOString(),
-      lastTestMessageId: message.id,
-      lastTestChannelId: channel.id,
-    },
-  }, { action: 'social_test_alert_sent', ...meta });
-
-  socialStore.incrementAnalytics(guildId, { alertsSent: 1 }, { action: 'social_test_alert_analytics', ...meta });
-
-  return {
-    success: true,
-    alert,
-    channelId: channel.id,
-    messageId: message.id,
-  };
+    updateAccount(guildId, account.accountId, { lastSeen: { ...(account.lastSeen || {}), lastAlertAt: new Date().toISOString(), lastTestMessageId: message.id, lastTestChannelId: channel.id } }, { action: 'social_test_alert_sent', ...meta });
+    socialStore.incrementAnalytics(guildId, { alertsSent: 1 }, { action: 'social_test_alert_analytics', ...meta });
+    socialHistory.record(guildId, { ...historyBase(account, { title: alert.title }), status: 'test', eventType: 'test', isTest: true, channelId: channel.id, messageId: message.id }, meta);
+    return { success: true, alert, channelId: channel.id, messageId: message.id };
+  } catch (sendError) {
+    socialStore.incrementAnalytics(guildId, { errors: 1 }, { action: 'social_test_alert_error', ...meta });
+    socialHistory.record(guildId, { ...historyBase(account, { title: alert.title }), status: 'failed', eventType: 'test', isTest: true, channelId: channel.id, error: sendError.message }, meta);
+    return { success: false, status: 500, error: sendError.message };
+  }
 }
 
 async function sendLiveAlert(guildId, account = {}, providerResult = {}, client, meta = {}) {
+  const base = historyBase(account, { alertType: 'live', contentId: providerResult.contentId, title: providerResult.title, providerStatus: providerResult.providerStatus || providerResult.status });
   if (!providerResult?.isLive || !providerResult.contentId) {
+    socialHistory.record(guildId, { ...base, status: 'skipped', eventType: 'provider', reason: 'not_live' }, meta);
     return { success: false, skipped: true, reason: 'not_live' };
   }
-
   if (account.lastSeen?.lastContentId === providerResult.contentId) {
+    socialHistory.record(guildId, { ...base, status: 'suppressed', eventType: 'duplicate', reason: 'duplicate_content' }, meta);
     return { success: false, skipped: true, reason: 'duplicate_content' };
   }
 
   const { channel, error } = await fetchAlertChannel(account, client);
   if (!channel) {
+    socialHistory.record(guildId, { ...base, status: 'failed', eventType: 'delivery', error }, meta);
     return { success: false, skipped: false, error };
   }
 
   const mention = buildMention(account);
-  const message = await channel.send({
-    content: mention || undefined,
-    embeds: [buildLiveEmbed(account, providerResult)],
-    allowedMentions: {
-      parse: mention === '@everyone' ? ['everyone'] : mention === '@here' ? ['everyone'] : [],
-      roles: account.mentionRoleId ? [account.mentionRoleId] : [],
-    },
-  });
+  try {
+    const message = await channel.send({
+      content: mention || undefined,
+      embeds: [buildLiveEmbed(account, providerResult)],
+      allowedMentions: { parse: mention === '@everyone' || mention === '@here' ? ['everyone'] : [], roles: account.mentionRoleId ? [account.mentionRoleId] : [] },
+    });
 
-  updateAccount(guildId, account.accountId, {
-    externalId: providerResult.externalId || account.externalId,
-    displayName: account.displayName || providerResult.displayName,
-    lastSeen: {
-      ...(account.lastSeen || {}),
-      lastAlertAt: new Date().toISOString(),
-      lastContentId: providerResult.contentId,
-      lastMessageId: message.id,
-      lastChannelId: channel.id,
-      lastLiveTitle: providerResult.title || '',
-    },
-  }, { action: 'social_live_alert_sent', ...meta });
-
-  socialStore.incrementAnalytics(guildId, { alertsSent: 1, liveAlerts: 1 }, { action: 'social_live_alert_analytics', ...meta });
-
-  return {
-    success: true,
-    channelId: channel.id,
-    messageId: message.id,
-  };
+    updateAccount(guildId, account.accountId, {
+      externalId: providerResult.externalId || account.externalId,
+      displayName: account.displayName || providerResult.displayName,
+      lastSeen: { ...(account.lastSeen || {}), lastAlertAt: new Date().toISOString(), lastContentId: providerResult.contentId, lastMessageId: message.id, lastChannelId: channel.id, lastLiveTitle: providerResult.title || '' },
+    }, { action: 'social_live_alert_sent', ...meta });
+    socialStore.incrementAnalytics(guildId, { alertsSent: 1, liveAlerts: 1 }, { action: 'social_live_alert_analytics', ...meta });
+    socialHistory.record(guildId, { ...base, status: 'sent', eventType: 'delivery', channelId: channel.id, messageId: message.id }, meta);
+    return { success: true, channelId: channel.id, messageId: message.id };
+  } catch (sendError) {
+    socialStore.incrementAnalytics(guildId, { errors: 1 }, { action: 'social_live_alert_error', ...meta });
+    socialHistory.record(guildId, { ...base, status: 'failed', eventType: 'delivery', channelId: channel.id, error: sendError.message }, meta);
+    return { success: false, skipped: false, error: sendError.message };
+  }
 }
 
 module.exports = {
@@ -274,6 +218,8 @@ module.exports = {
   removeAccount,
   updateAccount,
   buildTestAlert,
+  buildTestEmbed,
+  buildLiveEmbed,
   sendTestAlert,
   sendLiveAlert,
 };
