@@ -176,6 +176,27 @@ function rsvpCounts(event) {
   for (const item of Object.values(event?.rsvps || {})) if (counts[item.status] != null) counts[item.status] += 1;
   return counts;
 }
+
+function promoteWaitlist(event) {
+  if (!event.capacity || !event.waitlistEnabled) return { event, promotedUserId: null };
+  const counts = rsvpCounts(event);
+  if (counts.going >= event.capacity) return { event, promotedUserId: null };
+  const next = Object.values(event.rsvps || {})
+    .filter((entry) => entry.status === 'waitlist')
+    .sort((a, b) => new Date(a.updatedAt || 0) - new Date(b.updatedAt || 0))[0];
+  if (!next) return { event, promotedUserId: null };
+  return {
+    event: {
+      ...event,
+      rsvps: {
+        ...event.rsvps,
+        [next.userId]: { ...next, status: 'going', promotedAt: now(), updatedAt: now() },
+      },
+    },
+    promotedUserId: next.userId,
+  };
+}
+
 function setRsvp(guildId, eventId, userId, status, meta = {}) {
   const event = getEvent(guildId, eventId);
   if (!event || event.status !== 'scheduled') throw new Error('Scheduled event not found.');
@@ -190,16 +211,31 @@ function setRsvp(guildId, eventId, userId, status, meta = {}) {
     if (!event.waitlistEnabled) throw new Error('This event is full.');
     nextStatus = 'waitlist';
   }
-  const updated = saveEvent(guildId, { ...event, rsvps: { ...event.rsvps, [safeUserId]: { userId: safeUserId, status: nextStatus, updatedAt: now() } } }, meta);
+  let updated = saveEvent(guildId, { ...event, rsvps: { ...event.rsvps, [safeUserId]: { userId: safeUserId, status: nextStatus, updatedAt: now() } } }, meta);
+  let promotedUserId = null;
+  if (previous === 'going' && nextStatus !== 'going') {
+    const promoted = promoteWaitlist(updated);
+    updated = saveEvent(guildId, promoted.event, meta);
+    promotedUserId = promoted.promotedUserId;
+  }
   incrementAnalytics(guildId, { rsvps: 1, ...(nextStatus === 'waitlist' ? { waitlisted: 1 } : {}) }, meta);
-  return { event: updated, status: nextStatus, counts: rsvpCounts(updated) };
+  return { event: updated, status: nextStatus, counts: rsvpCounts(updated), promotedUserId };
 }
 function removeRsvp(guildId, eventId, userId, meta = {}) {
   const event = getEvent(guildId, eventId);
   if (!event) return null;
+  const safeUserId = cleanId(userId);
+  const previous = event.rsvps[safeUserId]?.status;
   const rsvps = { ...event.rsvps };
-  delete rsvps[cleanId(userId)];
-  return saveEvent(guildId, { ...event, rsvps }, meta);
+  delete rsvps[safeUserId];
+  let updated = saveEvent(guildId, { ...event, rsvps }, meta);
+  let promotedUserId = null;
+  if (previous === 'going') {
+    const promoted = promoteWaitlist(updated);
+    updated = saveEvent(guildId, promoted.event, meta);
+    promotedUserId = promoted.promotedUserId;
+  }
+  return { event: updated, counts: rsvpCounts(updated), promotedUserId };
 }
 
 function nextOccurrence(event) {
@@ -295,7 +331,7 @@ async function startup(client) {
 
 module.exports = {
   SECTION, RSVP_STATES, RECURRENCE_TYPES, defaultSection, getSection, listEvents, getEvent, setEnabled, updateSettings,
-  saveEvent, removeEvent, cancelEvent, duplicateEvent, setRsvp, removeRsvp, rsvpCounts, nextOccurrence, dueReminders,
+  saveEvent, removeEvent, cancelEvent, duplicateEvent, setRsvp, removeRsvp, rsvpCounts, promoteWaitlist, nextOccurrence, dueReminders,
   processGuild, buildHealth, repair, startup,
   exportConfiguration: getSection,
   reset: (guildId, meta = {}) => saveSection(guildId, defaultSection(), meta),
