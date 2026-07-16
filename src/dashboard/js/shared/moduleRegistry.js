@@ -164,6 +164,16 @@ export const moduleRegistry = [
     summary: 'Ticket panels, claims, closing, transcripts, recovery and analytics.',
   },
   {
+    key: 'timedRoles',
+    name: 'Timed Roles',
+    icon: 'TM',
+    route: '/timed-roles',
+    category: MODULE_CATEGORIES.feature,
+    status: MODULE_STATUSES.backendReady,
+    enabled: false,
+    summary: 'Award progression roles when members reach configured server-tenure milestones.',
+  },
+  {
     key: 'timeline',
     name: 'Timeline',
     icon: 'TL',
