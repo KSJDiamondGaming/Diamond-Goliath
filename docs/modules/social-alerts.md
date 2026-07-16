@@ -93,6 +93,18 @@ No credential input fields are exposed.
 - Export
 - Confirmed reset
 
+## Dashboard Social Studio
+
+The dashboard mirrors the five Discord sections:
+
+- Overview with module analytics and quick actions
+- Creator library with public-identifier setup, editing, checking, test alerts and removal
+- Alert Studio with template editing, variables and live preview
+- Provider Centre with honest readiness and enable/disable controls
+- Health with diagnostics, repair, export and confirmed reset
+
+The dashboard setup remains zero-credential. It never asks administrators for API keys, tokens or private creator access.
+
 ## API
 
 The module is mounted at `/api/social` and supports provider discovery, overview, configuration, account create/update/delete, provider checks, test alerts, manual guild scans, health, repair, export and reset.
@@ -103,4 +115,4 @@ Provider readiness is reported honestly by `providerRegistry.js`. Twitch polling
 
 ## Completion state
 
-Social Alerts remains `IN_PROGRESS` until dashboard parity is brought up to the Social Studio standard, the temporary server route shim is removed, and provider support is completed or deliberately scoped without presenting unavailable integrations as operational.
+Social Alerts remains `IN_PROGRESS` because provider coverage is not complete. Discord administration, dashboard administration, storage, API, scheduler, health, repair, export, reset and documentation are present. The server-route compatibility shim also remains until `server.js` is switched directly to `src/modules/social/socialRoute.js`.
