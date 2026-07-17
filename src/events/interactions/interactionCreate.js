@@ -83,8 +83,9 @@ function isVerificationMemberInteraction(interaction) {
   return typeof verificationManager?.parseVerifyCustomId === 'function' && Boolean(verificationManager.parseVerifyCustomId(interaction.customId));
 }
 
-async function safeInteractionError(interaction) {
-  const payload = { content: '❌ Interaction failed. Check bot logs for details.', flags: MessageFlags.Ephemeral };
+async function safeInteractionError(interaction, error = null) {
+  const detail = error?.message ? `\n\`${String(error.message).slice(0, 300)}\`` : '';
+  const payload = { content: `❌ Interaction failed.${detail}`, flags: MessageFlags.Ephemeral };
   try {
     if (interaction?.isAutocomplete?.()) { await interaction.respond([]).catch(() => null); return; }
     if (interaction?.deferred || interaction?.replied) { await interaction.editReply(payload).catch(() => interaction.followUp(payload).catch(() => null)); return; }
@@ -101,47 +102,26 @@ async function fetchFreshMember(interaction) {
 }
 
 async function handleVerificationMemberInteraction(interaction) {
-  if (typeof verificationManager?.verifyMember !== 'function') {
-    throw new Error('Verification handler is unavailable.');
-  }
-
-  if (!interaction.deferred && !interaction.replied) {
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-  }
-
+  if (typeof verificationManager?.verifyMember !== 'function') throw new Error('Verification handler is unavailable.');
+  if (!interaction.deferred && !interaction.replied) await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   const lockKey = `${interaction.guildId}:${interaction.user.id}`;
   const previous = verificationLocks.get(lockKey);
   if (previous) await previous.catch(() => null);
-
   const operation = (async () => {
     const member = await fetchFreshMember(interaction);
     if (!member) return { ok: false, message: 'Member not found. Please try again.' };
-
-    const result = await verificationManager.verifyMember({
-      guild: interaction.guild,
-      guildId: interaction.guildId,
-      member,
-      user: interaction.user,
-    });
-
+    const result = await verificationManager.verifyMember({ guild: interaction.guild, guildId: interaction.guildId, member, user: interaction.user });
     const refreshed = await fetchFreshMember(interaction);
-    if (result.ok && refreshed) {
-      console.log(`[Verification] Completed for ${interaction.user.id} in ${interaction.guildId}; roles=${[...refreshed.roles.cache.keys()].join(',')}`);
-    }
-
+    if (result.ok && refreshed) console.log(`[Verification] Completed for ${interaction.user.id} in ${interaction.guildId}; roles=${[...refreshed.roles.cache.keys()].join(',')}`);
     return result;
   })();
-
   verificationLocks.set(lockKey, operation);
   try {
     const result = await operation;
-    await interaction.editReply({
-      content: result.ok ? `✅ ${result.message}` : `❌ ${result.message}`,
-    });
+    await interaction.editReply({ content: result.ok ? `✅ ${result.message}` : `❌ ${result.message}` });
   } finally {
     if (verificationLocks.get(lockKey) === operation) verificationLocks.delete(lockKey);
   }
-
   return true;
 }
 
@@ -160,10 +140,12 @@ module.exports = {
         const command = client.commands?.get?.(interaction.commandName); if (!command) return; await command.execute(interaction, client); return;
       }
       if (interaction.customId === 'admin:invites') {
-        await interaction.update(invitesAdminPanel.buildInviteStudioPayload(interaction));
+        if (typeof invitesAdminPanel?.buildInviteStudioPayload !== 'function') throw new Error('Invite Studio failed to load. Check the startup warning above for the underlying module error.');
+        await interaction.deferUpdate();
+        await interaction.editReply(invitesAdminPanel.buildInviteStudioPayload(interaction));
         return;
       }
-      if (startsWith(interaction, 'invites:')) { await callHandler(invitesAdminPanel, 'handleInviteStudioInteraction', interaction); return; }
+      if (startsWith(interaction, 'invites:')) { if (!await callHandler(invitesAdminPanel, 'handleInviteStudioInteraction', interaction)) throw new Error(`Invite Studio did not handle ${interaction.customId}.`); return; }
       if (startsWith(interaction, 'admin:verification')) { await callHandler(verificationAdminPanel, 'handleVerificationAdminInteraction', interaction); return; }
       if (startsWith(interaction, 'admin:autoRoles')) { await callHandler(autorolesPanel, 'handleAutoRolesInteraction', interaction); return; }
       if (startsWith(interaction, 'admin:timedRoles')) { await callHandler(timedRolesPanel, 'handleTimedRolesInteraction', interaction); return; }
@@ -197,7 +179,7 @@ module.exports = {
       if (await callHandler(legacyReactionRoleButtons, 'handleLegacyButtonInteraction', interaction)) return;
     } catch (error) {
       console.error('[InteractionCreate] Failed to handle interaction:', error);
-      await safeInteractionError(interaction);
+      await safeInteractionError(interaction, error);
     }
   },
 };
