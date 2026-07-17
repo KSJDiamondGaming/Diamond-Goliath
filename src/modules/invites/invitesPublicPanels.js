@@ -5,6 +5,7 @@ const {
   ButtonBuilder,
   ButtonStyle,
   EmbedBuilder,
+  MessageFlags,
   PermissionFlagsBits,
 } = require('discord.js');
 const invites = require('./invites');
@@ -15,7 +16,7 @@ const DEFAULT_PUBLIC = {
   messageId: null,
   inviteCode: null,
   title: '💎 Help Grow the Community',
-  description: 'Share our official invite link with your friends and help grow the community.\n\nWant to climb the leaderboard? Create your own Discord invite and every valid join will count towards your total.',
+  description: 'Share our official invite link with your friends and help grow the community.\n\nWant to climb the leaderboard? Get your own personal invite below and every valid join will count towards your score.',
   color: '#5865F2',
   footer: 'Invite friends • Grow the community • Climb the leaderboard',
   buttonLabel: 'Join Server',
@@ -60,7 +61,10 @@ function buildPublicPayload(guildId) {
     .setFooter({ text: cleanText(publicPanel.footer, 2048) || DEFAULT_PUBLIC.footer })
     .setTimestamp();
   const buttons = [new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(url).setLabel(cleanText(publicPanel.buttonLabel, 80) || 'Join Server')];
-  if (publicPanel.showMemberHelp !== false) buttons.push(new ButtonBuilder().setCustomId('invites:member-help').setStyle(ButtonStyle.Secondary).setLabel('Create My Invite'));
+  if (publicPanel.showMemberHelp !== false) {
+    buttons.push(new ButtonBuilder().setCustomId('invites:member-personal').setStyle(ButtonStyle.Primary).setLabel('Get My Invite'));
+    buttons.push(new ButtonBuilder().setCustomId('invites:member-personal-delete').setStyle(ButtonStyle.Danger).setLabel('Delete My Invite'));
+  }
   return { embeds: [embed], components: [row(...buttons)] };
 }
 
@@ -120,17 +124,59 @@ function queueLeaderboardRefresh(guild, delay = 3000) {
   }, delay));
 }
 
-async function handleMemberHelp(interaction) {
-  if (interaction.customId !== 'invites:member-help') return false;
-  const content = [
-    '🔗 **Create your personal invite**',
-    '',
-    'Open the server name → **Invite People** → create or copy your invite link.',
-    'Goliath will detect joins through your Discord invite and add valid joins to the leaderboard.',
-    '',
-    'For accurate tracking, keep one main invite active and do not delete it while sharing it.',
-  ].join('\n');
-  await interaction.reply({ content, flags: 64 });
+function personalInviteChannelId(guildId) {
+  const { publicPanel } = panelConfig(guildId);
+  const official = publicPanel.inviteCode ? invites.listInviteLinks(guildId).find((link) => link.code === publicPanel.inviteCode) : null;
+  return official?.channelId || null;
+}
+
+async function sendPersonalInviteDm(interaction, result) {
+  const score = invites.leaderboard(interaction.guildId, 100).find((entry) => entry.inviterId === interaction.user.id)?.score || 0;
+  const url = result.invite.url || officialUrl(result.record.code);
+  const embed = new EmbedBuilder()
+    .setColor(0x5865F2)
+    .setTitle(`🔗 Your personal invite for ${interaction.guild.name}`)
+    .setDescription(`Share this link to invite people to **${interaction.guild.name}** and increase your score on the invite leaderboard.\n\n${url}`)
+    .addFields({ name: 'Current leaderboard score', value: String(score), inline: true })
+    .setFooter({ text: 'This is your only active personal invite. Use the public panel to resend or delete it.' })
+    .setTimestamp();
+  return interaction.user.send({ embeds: [embed] });
+}
+
+async function handleMemberInteraction(interaction) {
+  if (!['invites:member-personal', 'invites:member-personal-delete'].includes(interaction.customId)) return false;
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  if (interaction.customId === 'invites:member-personal-delete') {
+    const deleted = await invites.deletePersonalInvite(interaction.guild, interaction.user.id, { actorId: interaction.user.id, action: 'member_personal_invite_delete' });
+    await interaction.editReply(deleted
+      ? '✅ Your personal invite has been deleted. You may now create a new one using **Get My Invite**.'
+      : 'ℹ️ You do not currently have a personal invite to delete.');
+    return true;
+  }
+
+  const channelId = personalInviteChannelId(interaction.guildId);
+  if (!channelId) {
+    await interaction.editReply('❌ Management must select a permanent official invite in the Public Invite Panel before personal invites can be created.');
+    return true;
+  }
+
+  try {
+    const result = await invites.createPersonalInvite(interaction.guild, interaction.user.id, channelId, { actorId: interaction.user.id, action: 'member_personal_invite_get' });
+    const url = result.invite.url || officialUrl(result.record.code);
+    let dmSent = true;
+    try { await sendPersonalInviteDm(interaction, result); } catch { dmSent = false; }
+    await interaction.editReply([
+      result.created ? '✅ Your personal invite has been created.' : '✅ Your existing personal invite has been resent.',
+      dmSent ? 'I have sent it to your DMs so you always have it available.' : 'I could not DM you, so your link is shown below.',
+      '',
+      url,
+      '',
+      'Share it to invite people and increase your leaderboard score.',
+    ].join('\n'));
+  } catch (error) {
+    await interaction.editReply(`❌ ${cleanText(error?.message || error, 1800)}`);
+  }
   return true;
 }
 
@@ -145,5 +191,5 @@ module.exports = {
   deployLeaderboardPanel,
   refreshLeaderboard,
   queueLeaderboardRefresh,
-  handleMemberHelp,
+  handleMemberInteraction,
 };
