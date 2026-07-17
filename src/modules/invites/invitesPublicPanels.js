@@ -146,6 +146,14 @@ async function sendPersonalInviteDm(interaction, result) {
 }
 
 async function handleMemberInteraction(interaction) {
+  if (!String(interaction.customId || '').startsWith('invites:member-')) return false;
+
+  const section = invites.getSection(interaction.guildId);
+  if (!section.enabled) {
+    await interaction.reply({ content: '❌ Invite Studio is currently disabled in this server.', flags: MessageFlags.Ephemeral });
+    return true;
+  }
+
   if (await memberProfiles.handleProfileInteraction(interaction)) return true;
   if (!['invites:member-personal', 'invites:member-personal-delete'].includes(interaction.customId)) return false;
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -169,14 +177,21 @@ async function handleMemberInteraction(interaction) {
     const url = result.invite.url || officialUrl(result.record.code);
     let dmSent = true;
     try { await sendPersonalInviteDm(interaction, result); } catch { dmSent = false; }
-    await interaction.editReply([
-      result.created ? '✅ Your personal invite has been created.' : '✅ Your existing personal invite has been resent.',
-      dmSent ? 'I have sent it to your DMs so you always have it available.' : 'I could not DM you, so your link is shown below.',
-      '',
-      url,
-      '',
-      'Share it to invite people and increase your leaderboard score.',
-    ].join('\n'));
+
+    if (dmSent) {
+      await interaction.editReply(result.created
+        ? '✅ Your personal invite has been created and sent to your DMs.'
+        : '✅ Your existing personal invite has been resent to your DMs.');
+    } else {
+      await interaction.editReply([
+        result.created ? '✅ Your personal invite has been created.' : '✅ Your existing personal invite has been found.',
+        'I could not DM you, so your link is shown below:',
+        '',
+        url,
+        '',
+        'Share it to invite people and increase your leaderboard score.',
+      ].join('\n'));
+    }
   } catch (error) {
     await interaction.editReply(`❌ ${cleanText(error?.message || error, 1800)}`);
   }
