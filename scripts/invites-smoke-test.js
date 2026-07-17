@@ -49,9 +49,11 @@ test('Runtime exports the complete lifecycle contract', () => {
   ]) assert.equal(typeof invites[name], 'function', `Missing export: ${name}`);
 });
 
-test('No standalone Invite Studio slash command exists', () => {
+test('Invite Studio remains self-contained', () => {
   assert.equal(exists('src/commands/admin/invites.js'), false);
   assert.equal(exists('src/modules/invites/invitesPanel.js'), false);
+  assert.equal(exists('src/core/admin/functions/invitesAdminPanel.js'), false);
+  assert.equal(exists('src/modules/invites/invitesAdminPanel.js'), true);
 });
 
 const route = read('src/modules/invites/invitesRoute.js');
@@ -76,7 +78,7 @@ test('API exposes the complete management surface', () => {
   ]) assert.ok(route.includes(token), `Missing route: ${token}`);
 });
 
-const panel = read('src/core/admin/functions/invitesAdminPanel.js');
+const panel = read('src/modules/invites/invitesAdminPanel.js');
 test('Admin Hub panel exposes invite creation controls', () => {
   for (const token of [
     'invites:draft-channel', 'invites:draft-expiry', 'invites:draft-uses',
@@ -101,12 +103,14 @@ test('Runtime events cover the full invite lifecycle', () => {
   }
 });
 
-test('Invite Studio is registered through the central Admin Hub', () => {
-  const handler = read('src/core/admin/functions/adminModuleHandler.js');
-  const router = read('src/core/modules/admin/moduleInteractionRouter.js');
-  assert.ok(handler.includes("admin:invites"));
-  assert.ok(handler.includes('handleInviteStudioInteraction'));
-  assert.ok(router.includes("'admin:invites': 'invites'"));
+test('Invite Studio is visible and reachable through the live Admin Hub', () => {
+  const modules = read('src/core/admin/functions/moduleAdminPanels.js');
+  const interactions = read('src/events/interactions/interactionCreate.js');
+  assert.ok(modules.includes("['admin:invites'"), 'Invite Studio button is absent from the paginated module list');
+  assert.ok(modules.includes("'admin:invites'"), 'Invite Studio is not marked as an external module route');
+  assert.ok(interactions.includes("../../modules/invites/invitesAdminPanel"), 'Live interaction router does not import Invite Studio');
+  assert.ok(interactions.includes("interaction.customId === 'admin:invites'"), 'Invite Studio entry button is not handled');
+  assert.ok(interactions.includes("startsWith(interaction, 'invites:')"), 'Invite Studio child controls are not handled');
 });
 
 console.log('\n✅ Invite Studio is structurally complete and ready for live Discord testing.');
