@@ -1,6 +1,24 @@
 # Invite Studio
 
-Invite Studio creates Discord-style invite links with optional roles, tracks which invite a member used, maintains inviter totals, applies leave corrections, grants reward roles and provides managed invite health.
+Invite Studio is managed entirely from the Goliath dashboard module. It creates Discord-style invite links with optional roles, tracks which invite a member used, maintains inviter totals, applies leave corrections, grants reward roles and provides managed invite health.
+
+## Management surface
+
+Invite Studio does not expose a slash command or a separate Discord administration panel.
+
+Open the dashboard, select a server, then open:
+
+```text
+Modules → Invite Studio
+```
+
+Dashboard route:
+
+```text
+/invites
+```
+
+All invite creation, configuration, analytics, health and repair actions live inside that module.
 
 ## Storage
 
@@ -18,32 +36,17 @@ guild.modules.invites.inviteLinks[inviteCode]
 
 No standalone Invite Studio JSON files are used.
 
-## Discord administration
+## Invite links
 
-Open Invite Studio with:
-
-```text
-/invites
-```
-
-Manage Server permission is required.
-
-The Discord workspace provides a Discord-style invite creator with:
+The module provides a Discord-style invite creation workflow with:
 
 - Invite channel
-- Expire after
+- Expiry
 - Maximum uses
 - Optional multi-role selection
-- Temporary membership toggle
-- Generate invite action
-- Active invite-link view
-- Invite deletion
+- Temporary membership
 
-It also provides module controls, synchronization, settings, managed invite creation, reward milestones, leaderboard, health and repair.
-
-## Invite roles
-
-Each Invite Studio link can store up to 25 role IDs. The Discord workspace role selector exposes up to 10 roles per creation action because of Discord component limits; the dashboard supports the full stored limit.
+Each generated invite stores its Discord invite code, creator, channel, expiry, maximum uses, temporary-membership setting and selected role IDs.
 
 When a member joins:
 
@@ -63,15 +66,7 @@ The temporary membership option is passed directly to Discord when the invite is
 
 Discord temporary membership removes a temporary member when they disconnect unless a role has been assigned. Because Invite Studio can assign roles immediately after joining, selecting both temporary membership and invite roles normally causes the member to become permanent once those roles are granted. This matches Discord's native behavior.
 
-## Dashboard
-
-Dashboard route:
-
-```text
-/invites
-```
-
-Dashboard features include:
+## Dashboard features
 
 - Discord-style invite-link creator
 - Optional multi-role selection
@@ -169,7 +164,7 @@ Create-link body:
 
 ## Runtime events
 
-Invite Studio handles client-ready synchronization, invite creation, invite deletion, member joins and member departures.
+Invite Studio handles client-ready synchronization, invite creation, invite deletion, member joins and member departures. These runtime events remain active even though the management surface is dashboard-only.
 
 ## Health
 
@@ -183,4 +178,4 @@ Run:
 node scripts/invites-doctor.js
 ```
 
-The acceptance Doctor validates the runtime, Discord workspace, role-link creation flow, command, interaction routing, lifecycle events, API mount, dashboard route, module registry, manifest and documentation.
+The acceptance Doctor validates the runtime, role-link creation flow, lifecycle events, API mount, dashboard route, module registry, manifest and documentation. It also fails if the removed `/invites` command, Discord Invite Studio panel or `admin:invites` interaction route returns.
