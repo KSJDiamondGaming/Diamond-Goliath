@@ -16,12 +16,13 @@ function replacePlainMention(embed, username, userId) {
   const data = embedData(embed);
   const plain = `@${username}`;
   const clickable = `<@${userId}>`;
+  const escaped = plain.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   let changed = false;
 
   const replace = (value) => {
     if (typeof value !== 'string' || !value.toLowerCase().includes(plain.toLowerCase())) return value;
     changed = true;
-    return value.replace(new RegExp(plain.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), clickable);
+    return value.replace(new RegExp(escaped, 'gi'), clickable);
   };
 
   data.title = replace(data.title);
