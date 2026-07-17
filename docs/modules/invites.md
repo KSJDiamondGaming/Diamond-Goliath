@@ -35,6 +35,42 @@ The central Modules panel exposes an **Invite Studio** button. Its workspace pro
 
 No `/invites` command or standalone Invite Studio panel is used.
 
+## Dashboard workspace
+
+The dashboard is organized into six sections:
+
+```text
+Invite Links
+Analytics
+Rewards
+Join History
+Health
+Settings
+```
+
+**Invite Links** is the default landing section. It contains the invite creator and active-link table.
+
+The active-link table shows:
+
+- Invite code
+- Channel
+- Current and maximum uses
+- Expiry
+- Assigned roles
+- Temporary-membership state
+- Copy action
+- Delete action
+
+Analytics provides overall joins, tracked and unknown attribution, departures, fake-account flags, failures and the inviter leaderboard.
+
+Rewards contains inviter milestone roles and manual bonus adjustments.
+
+Join History shows recent Invite Studio lifecycle records, including member, invite, inviter and granted-role context where available.
+
+Health exposes health state, issues, warnings, repair, refresh and export.
+
+Settings contains tracking behaviour, managed-invite configuration, log-channel configuration and the reset control.
+
 ## Invite roles
 
 Each Invite Studio link can store up to 25 role IDs. Discord role-select components expose up to 10 roles in one panel interaction.
@@ -68,10 +104,6 @@ Invite-specific configuration is stored under:
 ```text
 guild.modules.invites.inviteLinks[inviteCode]
 ```
-
-## Dashboard
-
-The dashboard provides the same invite-link creation and management capabilities plus tracking settings, reward milestones, analytics, history, export and reset.
 
 ## Attribution
 
@@ -118,21 +150,3 @@ Create-link body:
   "temporary": false
 }
 ```
-
-## Runtime events
-
-Invite Studio handles client-ready synchronization, invite creation, invite deletion, member joins and member departures.
-
-## Health
-
-Health verifies required guild permissions, invite creation permission, Manage Roles for role-bearing links, role existence and hierarchy, log-channel availability, managed-invite validity and cache synchronization.
-
-## Doctor
-
-Run:
-
-```bash
-node scripts/invites-doctor.js
-```
-
-Doctor validates the canonical runtime, central Admin Hub panel integration, role-link creation flow, lifecycle events, API mount, dashboard route, manifest and documentation. It also fails if the removed `/invites` command or old standalone panel returns.
