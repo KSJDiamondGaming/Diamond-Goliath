@@ -2,6 +2,12 @@
 
 Invite Studio creates Discord-style invite links with optional roles, tracks which invite a member used, maintains inviter totals, applies leave corrections and grants reward roles.
 
+## Status
+
+Invite Studio is a complete module and is ready for live development-guild testing.
+
+Campaigns, QR codes and reusable templates are optional future enhancements. They are not required for the core Invite Studio acceptance contract.
+
 ## Administration surface
 
 Invite Studio has no standalone slash command.
@@ -150,3 +156,36 @@ Create-link body:
   "temporary": false
 }
 ```
+
+## Automated acceptance
+
+Run the focused Invite Studio checks:
+
+```powershell
+npm run test:invites
+```
+
+The standard project Doctor also runs the Invite Studio smoke test:
+
+```powershell
+npm run doctor
+```
+
+The checks verify the runtime lifecycle, API, central Admin Hub integration, dashboard workspace, event coverage, health, export, reset, documentation and the permanent removal of the standalone `/invites` command.
+
+## Live Discord test procedure
+
+1. Start Goliath in development mode.
+2. Open `/admin`, select **Modules**, then **Invite Studio**.
+3. Enable Invite Studio and run **Health**. Resolve any permission or role-hierarchy issue.
+4. Create a single-use invite for a test channel and select a low test role below Goliath's highest role.
+5. Copy the generated invite and join from a separate Discord test account.
+6. Confirm the selected role is assigned to the joining account.
+7. Confirm the join appears in **Join History** with the correct invite code and inviter.
+8. Confirm Analytics and the inviter leaderboard increase.
+9. Leave with the test account and confirm active credit decreases when **Remove active credit on leave** is enabled.
+10. Test expiry, maximum uses, temporary membership and deletion separately.
+11. Run **Sync**, **Health**, **Repair** and **Export**.
+12. Run `npm run test:invites` again after the live test.
+
+Discord invite creation, member joins and role assignment require a real development guild and cannot be fully simulated by an offline unit test.
