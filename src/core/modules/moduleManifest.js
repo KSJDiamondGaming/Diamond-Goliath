@@ -12,7 +12,7 @@ const moduleManifest = Object.freeze({
   timedRoles: { key: 'timedRoles', name: 'Timed Roles', maturity: MODULE_MATURITY.COMPLETE, capabilities: completeCapabilities() },
   forms: { key: 'forms', name: 'Forms', maturity: MODULE_MATURITY.NOT_STARTED, capabilities: createCapabilityMap() },
   giveaways: { key: 'giveaways', name: 'Giveaways', maturity: MODULE_MATURITY.NOT_STARTED, capabilities: createCapabilityMap() },
-  invites: { key: 'invites', name: 'Invite Studio', maturity: MODULE_MATURITY.IN_PROGRESS, capabilities: createCapabilityMap({ guildStorage: true, runtime: true, adminPanel: true, dashboard: true, api: true, health: true, startupRecovery: true, export: true, reset: true, doctor: true, documentation: true }) },
+  invites: { key: 'invites', name: 'Invite Studio', maturity: MODULE_MATURITY.COMPLETE, capabilities: completeCapabilities() },
   leveling: { key: 'leveling', name: 'Leveling', maturity: MODULE_MATURITY.NOT_STARTED, capabilities: createCapabilityMap() },
   polls: { key: 'polls', name: 'Polls', maturity: MODULE_MATURITY.COMPLETE, capabilities: completeCapabilities() },
   reactionRoles: { key: 'reactionRoles', name: 'Reaction Roles', maturity: MODULE_MATURITY.COMPLETE, capabilities: completeCapabilities() },
