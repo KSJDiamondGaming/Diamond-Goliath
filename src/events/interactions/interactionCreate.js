@@ -32,6 +32,7 @@ const pollsAdminPanel = optionalRequire('polls admin', '../../modules/polls/poll
 const starboardAdminPanel = optionalRequire('starboard admin', '../../core/admin/functions/starboardAdminPanel');
 const stickyAdminPanel = optionalRequire('sticky admin', '../../core/admin/functions/stickyAdminPanel');
 const levelingAdminPanel = optionalRequire('leveling admin', '../../core/admin/functions/levelingAdminPanel');
+const invitesAdminPanel = optionalRequire('invites admin', '../../modules/invites/invitesAdminPanel');
 const socialAdminPanel = optionalRequire('social admin', '../../modules/social/socialPanel');
 const socialCreatorPanel = optionalRequire('social creator hub', '../../modules/social/socialCreatorPanel');
 const schedulePanel = optionalRequire('schedule admin', '../../modules/schedule/schedulePanel');
@@ -158,6 +159,11 @@ module.exports = {
       if (interaction.isChatInputCommand?.()) {
         const command = client.commands?.get?.(interaction.commandName); if (!command) return; await command.execute(interaction, client); return;
       }
+      if (interaction.customId === 'admin:invites') {
+        await interaction.update(invitesAdminPanel.buildInviteStudioPayload(interaction));
+        return;
+      }
+      if (startsWith(interaction, 'invites:')) { await callHandler(invitesAdminPanel, 'handleInviteStudioInteraction', interaction); return; }
       if (startsWith(interaction, 'admin:verification')) { await callHandler(verificationAdminPanel, 'handleVerificationAdminInteraction', interaction); return; }
       if (startsWith(interaction, 'admin:autoRoles')) { await callHandler(autorolesPanel, 'handleAutoRolesInteraction', interaction); return; }
       if (startsWith(interaction, 'admin:timedRoles')) { await callHandler(timedRolesPanel, 'handleTimedRolesInteraction', interaction); return; }
