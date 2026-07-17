@@ -43,6 +43,8 @@ const welcomePanel = optionalRequire('welcome', '../../modules/welcome/welcomePa
 const goodbyePanel = optionalRequire('goodbye', '../../modules/goodbye/goodbyePanel');
 const moduleAdminPanels = optionalRequire('generic module admin', '../../core/admin/functions/moduleAdminPanels');
 
+const verificationLocks = new Map();
+
 async function callHandler(target, method, ...args) {
   if (typeof target?.[method] !== 'function') return false;
   return Boolean(await target[method](...args));
@@ -50,22 +52,15 @@ async function callHandler(target, method, ...args) {
 
 function sanitizeComponentPayload(payload) {
   if (!payload || !Array.isArray(payload.components)) return payload;
-  const seen = new Set();
-  const rows = [];
+  const seen = new Set(); const rows = [];
   for (const actionRow of payload.components) {
     const rowData = typeof actionRow?.toJSON === 'function' ? actionRow.toJSON() : actionRow;
-    const components = Array.isArray(rowData?.components)
-      ? rowData.components.filter((component) => {
-        const customId = component?.custom_id || component?.customId || null;
-        if (!customId) return true;
-        if (seen.has(customId)) {
-          console.warn(`[InteractionCreate] Removed duplicate component custom_id: ${customId}`);
-          return false;
-        }
-        seen.add(customId);
-        return true;
-      })
-      : [];
+    const components = Array.isArray(rowData?.components) ? rowData.components.filter((component) => {
+      const customId = component?.custom_id || component?.customId || null;
+      if (!customId) return true;
+      if (seen.has(customId)) { console.warn(`[InteractionCreate] Removed duplicate component custom_id: ${customId}`); return false; }
+      seen.add(customId); return true;
+    }) : [];
     if (components.length) rows.push({ ...rowData, components });
   }
   return { ...payload, components: rows };
@@ -82,20 +77,71 @@ function wrapInteractionResponses(interaction) {
 }
 
 const startsWith = (interaction, prefix) => String(interaction?.customId || '').startsWith(prefix);
-
 function isVerificationMemberInteraction(interaction) {
   if (!interaction?.isButton?.()) return false;
-  return typeof verificationManager?.parseVerifyCustomId === 'function'
-    && Boolean(verificationManager.parseVerifyCustomId(interaction.customId));
+  return typeof verificationManager?.parseVerifyCustomId === 'function' && Boolean(verificationManager.parseVerifyCustomId(interaction.customId));
 }
 
 async function safeInteractionError(interaction) {
   const payload = { content: '❌ Interaction failed. Check bot logs for details.', flags: MessageFlags.Ephemeral };
   try {
     if (interaction?.isAutocomplete?.()) { await interaction.respond([]).catch(() => null); return; }
-    if (interaction?.deferred || interaction?.replied) { await interaction.followUp(payload).catch(() => null); return; }
+    if (interaction?.deferred || interaction?.replied) { await interaction.editReply(payload).catch(() => interaction.followUp(payload).catch(() => null)); return; }
     await interaction?.reply?.(payload).catch(() => null);
-  } catch { /* Ignore final safety response errors. */ }
+  } catch { }
+}
+
+async function fetchFreshMember(interaction) {
+  const guild = interaction?.guild;
+  const userId = interaction?.user?.id;
+  if (!guild || !userId) return null;
+  return guild.members.fetch({ user: userId, force: true })
+    .catch(() => guild.members.fetch(userId).catch(() => null));
+}
+
+async function handleVerificationMemberInteraction(interaction) {
+  if (typeof verificationManager?.verifyMember !== 'function') {
+    throw new Error('Verification handler is unavailable.');
+  }
+
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  }
+
+  const lockKey = `${interaction.guildId}:${interaction.user.id}`;
+  const previous = verificationLocks.get(lockKey);
+  if (previous) await previous.catch(() => null);
+
+  const operation = (async () => {
+    const member = await fetchFreshMember(interaction);
+    if (!member) return { ok: false, message: 'Member not found. Please try again.' };
+
+    const result = await verificationManager.verifyMember({
+      guild: interaction.guild,
+      guildId: interaction.guildId,
+      member,
+      user: interaction.user,
+    });
+
+    const refreshed = await fetchFreshMember(interaction);
+    if (result.ok && refreshed) {
+      console.log(`[Verification] Completed for ${interaction.user.id} in ${interaction.guildId}; roles=${[...refreshed.roles.cache.keys()].join(',')}`);
+    }
+
+    return result;
+  })();
+
+  verificationLocks.set(lockKey, operation);
+  try {
+    const result = await operation;
+    await interaction.editReply({
+      content: result.ok ? `✅ ${result.message}` : `❌ ${result.message}`,
+    });
+  } finally {
+    if (verificationLocks.get(lockKey) === operation) verificationLocks.delete(lockKey);
+  }
+
+  return true;
 }
 
 module.exports = {
@@ -105,16 +151,12 @@ module.exports = {
       wrapInteractionResponses(interaction);
       if (interaction?.isAutocomplete?.()) {
         const command = client.commands?.get?.(interaction.commandName);
-        if (command?.autocomplete) await command.autocomplete(interaction, client);
-        else await interaction.respond([]).catch(() => null);
+        if (command?.autocomplete) await command.autocomplete(interaction, client); else await interaction.respond([]).catch(() => null);
         return;
       }
       if (!interaction?.customId && !interaction?.isChatInputCommand?.()) return;
       if (interaction.isChatInputCommand?.()) {
-        const command = client.commands?.get?.(interaction.commandName);
-        if (!command) return;
-        await command.execute(interaction, client);
-        return;
+        const command = client.commands?.get?.(interaction.commandName); if (!command) return; await command.execute(interaction, client); return;
       }
       if (startsWith(interaction, 'admin:verification')) { await callHandler(verificationAdminPanel, 'handleVerificationAdminInteraction', interaction); return; }
       if (startsWith(interaction, 'admin:autoRoles')) { await callHandler(autorolesPanel, 'handleAutoRolesInteraction', interaction); return; }
@@ -125,7 +167,7 @@ module.exports = {
       if (startsWith(interaction, 'admin:socialhub')) { await callHandler(socialCreatorPanel, 'handleSocialCreatorInteraction', interaction); return; }
       if (startsWith(interaction, 'admin:schedule')) { await callHandler(schedulePanel, 'handleScheduleAdminInteraction', interaction); return; }
       if (startsWith(interaction, 'schedule:rsvp:')) { await callHandler(scheduleDeployment, 'handleMemberInteraction', interaction); return; }
-      if (isVerificationMemberInteraction(interaction)) { await callHandler(verificationManager, 'handleVerificationInteraction', interaction); return; }
+      if (isVerificationMemberInteraction(interaction)) { await handleVerificationMemberInteraction(interaction); return; }
       if (await callHandler(statsAdminPanel, 'handleStatsAdminInteraction', interaction)) return;
       if (await callHandler(suggestionsAdminPanel, 'handleSuggestionsAdminInteraction', interaction)) return;
       if (await callHandler(giveawaysAdminPanel, 'handleGiveawaysAdminInteraction', interaction)) return;
