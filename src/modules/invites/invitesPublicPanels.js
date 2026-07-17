@@ -13,10 +13,16 @@ const memberProfiles = require('./invitesMemberProfiles');
 
 const refreshTimers = new Map();
 const row = (...components) => new ActionRowBuilder().addComponents(...components);
-const button = (id, label, style = ButtonStyle.Secondary) => new ButtonBuilder().setCustomId(id).setLabel(label).setStyle(style);
+const button = (id, label, style = ButtonStyle.Secondary) => new ButtonBuilder()
+  .setCustomId(id)
+  .setLabel(label)
+  .setStyle(style);
 const officialUrl = (code) => code ? `https://discord.gg/${code}` : null;
 
-function panelConfig(guildId) { return invites.getSection(guildId).settings.publicPanel; }
+function panelConfig(guildId) {
+  return invites.getSection(guildId).settings.publicPanel;
+}
+
 function savePanelConfig(guildId, patch, meta = {}) {
   const section = invites.getSection(guildId);
   const next = { ...section.settings.publicPanel, ...patch };
@@ -41,27 +47,26 @@ function buildPublicPayload(guildId) {
   const url = officialUrl(officialCode);
   if (!url) throw new Error('Create the official Goliath invite before sending the public panel.');
 
+  const updated = panel.lastRefreshedAt
+    ? `<t:${Math.floor(new Date(panel.lastRefreshedAt).getTime() / 1000)}:R>`
+    : 'Waiting for first refresh';
+
   const embed = new EmbedBuilder()
     .setColor(panel.color)
     .setTitle(panel.title)
-    .setDescription(`${panel.description}\n\n**🏆 Invite Leaderboard**\n${leaderboardLines(guildId, panel.leaderboardLimit)}`)
+    .setDescription(panel.description)
     .addFields(
       { name: 'Official Server Invite', value: url, inline: false },
-      { name: 'Leaderboard Updated', value: panel.lastRefreshedAt ? `<t:${Math.floor(new Date(panel.lastRefreshedAt).getTime() / 1000)}:R>` : 'Waiting for first refresh', inline: true },
+      { name: 'Leaderboard Updated', value: updated, inline: true },
       { name: 'Automatic Refresh', value: 'Every 2 hours', inline: true },
+      { name: '🏆 Invite Leaderboard', value: leaderboardLines(guildId, panel.leaderboardLimit), inline: false },
     )
     .setFooter({ text: panel.footer })
     .setTimestamp();
 
-  const joinButton = new ButtonBuilder()
-    .setStyle(ButtonStyle.Link)
-    .setURL(url)
-    .setLabel(panel.buttonLabel || 'Join Server');
-
   return {
     embeds: [embed],
     components: [
-      row(joinButton),
       row(
         button('invites:member-personal', 'Create My Link', ButtonStyle.Primary),
         button('invites:member-profile', 'My Profile', ButtonStyle.Secondary),
@@ -72,7 +77,9 @@ function buildPublicPayload(guildId) {
 }
 
 async function resolveChannel(guild, channelId) {
-  const channel = channelId ? (guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null)) : null;
+  const channel = channelId
+    ? (guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null))
+    : null;
   if (!channel?.send) throw new Error('Select a text channel where Goliath can post the panel.');
   const me = guild.members.me || await guild.members.fetchMe().catch(() => null);
   const permissions = channel.permissionsFor(me);
@@ -99,8 +106,11 @@ async function deployPublicPanel(guild, meta = {}) {
 async function refreshPublicPanel(guild, meta = {}) {
   const panel = panelConfig(guild.id);
   if (!panel.channelId || !panel.messageId) return false;
-  const channel = guild.channels.cache.get(panel.channelId) || await guild.channels.fetch(panel.channelId).catch(() => null);
-  const message = channel?.messages ? await channel.messages.fetch(panel.messageId).catch(() => null) : null;
+  const channel = guild.channels.cache.get(panel.channelId)
+    || await guild.channels.fetch(panel.channelId).catch(() => null);
+  const message = channel?.messages
+    ? await channel.messages.fetch(panel.messageId).catch(() => null)
+    : null;
   if (!message) return false;
   savePanelConfig(guild.id, { lastRefreshedAt: new Date().toISOString() }, meta);
   await message.edit(buildPublicPayload(guild.id));
@@ -135,7 +145,7 @@ function renderTemplate(text, interaction, url) {
     .replaceAll('{invite}', url);
 }
 
-async function sendPersonalInviteDm(interaction, result) {
+function personalInvitePayload(interaction, result) {
   const template = invites.getSection(interaction.guildId).settings.memberInviteTemplate;
   const url = result.invite.url || officialUrl(result.record.code);
   const embed = new EmbedBuilder()
@@ -144,7 +154,11 @@ async function sendPersonalInviteDm(interaction, result) {
     .setDescription(renderTemplate(template.dmMessage, interaction, url))
     .setFooter({ text: 'This is your only personal Invite Studio link.' })
     .setTimestamp();
-  return interaction.user.send({ embeds: [embed] });
+  return { embeds: [embed] };
+}
+
+async function sendPersonalInviteDm(interaction, result) {
+  return interaction.user.send(personalInvitePayload(interaction, result));
 }
 
 async function handleMemberInteraction(interaction) {
@@ -157,7 +171,9 @@ async function handleMemberInteraction(interaction) {
     return true;
   }
 
-  if (customId === 'invites:member-profile') return memberProfiles.handleProfileInteraction(interaction);
+  if (customId === 'invites:member-profile') {
+    return memberProfiles.handleProfileInteraction(interaction);
+  }
 
   if (customId === 'invites:member-configure') {
     if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
@@ -189,16 +205,23 @@ async function handleMemberInteraction(interaction) {
       actorId: interaction.user.id,
       action: 'member_personal_invite_get',
     });
-    const url = result.invite.url || officialUrl(result.record.code);
+
     let dmSent = true;
-    try { await sendPersonalInviteDm(interaction, result); } catch { dmSent = false; }
-    if (dmSent) {
-      await interaction.editReply(result.created
-        ? '✅ Your personal link has been created and sent to your DMs.'
-        : '✅ Your existing personal link has been resent to your DMs.');
-    } else {
-      await interaction.editReply(`✅ Your personal link is ready. I could not DM you, so it is shown here:\n\n${url}`);
+    try {
+      await sendPersonalInviteDm(interaction, result);
+    } catch {
+      dmSent = false;
     }
+
+    const payload = personalInvitePayload(interaction, result);
+    await interaction.editReply({
+      ...payload,
+      content: dmSent
+        ? (result.created
+          ? '✅ Your personal link has been created and sent to your DMs. A private copy is also shown below.'
+          : '✅ Your existing personal link has been resent to your DMs. A private copy is also shown below.')
+        : '⚠️ I could not DM you. Your private personal-link message is shown below instead.',
+    });
   } catch (error) {
     await interaction.editReply(`❌ ${String(error?.message || error).slice(0, 1800)}`);
   }
