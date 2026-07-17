@@ -16,7 +16,7 @@ function statsFor(guildId, userId) {
   const stats = section.inviters?.[userId] || {};
   const score = Math.max(0, Number(stats.active || 0) + Number(stats.bonus || 0));
   const rankIndex = invites.leaderboard(guildId, 100).findIndex((entry) => entry.inviterId === userId);
-  const personal = invites.getPersonalInvite?.(guildId, userId) || null;
+  const personal = invites.findPersonalInvite(guildId, userId);
   const earned = ACHIEVEMENTS.filter((achievement) => score >= achievement.threshold);
   const next = ACHIEVEMENTS.find((achievement) => score < achievement.threshold) || null;
   return {
@@ -38,8 +38,9 @@ function profilePayload(guild, user) {
   const achievements = stats.earned.length
     ? stats.earned.map((item) => `${item.emoji} ${item.name}`).join('\n')
     : 'No achievements unlocked yet.';
+  const remaining = stats.next ? Math.max(0, stats.next.threshold - stats.score) : 0;
   const nextReward = stats.next
-    ? `${Math.max(0, stats.next.threshold - stats.score)} more invite${stats.next.threshold - stats.score === 1 ? '' : 's'} until ${stats.next.emoji} ${stats.next.name}`
+    ? `${remaining} more invite${remaining === 1 ? '' : 's'} until ${stats.next.emoji} ${stats.next.name}`
     : 'All achievements unlocked.';
 
   const embed = new EmbedBuilder()
@@ -78,13 +79,14 @@ async function notifyInviteUsed(guild, inviterId, joinedMember) {
   const inviter = await guild.members.fetch(inviterId).catch(() => null);
   if (!inviter?.user) return false;
   const stats = statsFor(guild.id, inviterId);
+  const remaining = stats.next ? Math.max(0, stats.next.threshold - stats.score) : 0;
   const nextReward = stats.next
-    ? `${Math.max(0, stats.next.threshold - stats.score)} more until ${stats.next.name}`
+    ? `${remaining} more invite${remaining === 1 ? '' : 's'} until ${stats.next.name}`
     : 'All achievements unlocked';
   const embed = new EmbedBuilder()
     .setColor(0x57F287)
     .setTitle('🎉 Someone joined using your invite!')
-    .setDescription(`**${joinedMember.user?.tag || joinedMember.id}** joined **${guild.name}** using your personal invite.`)
+    .setDescription(`**${joinedMember.user?.tag || joinedMember.id}** joined **${guild.name}** using an invite credited to you.`)
     .addFields(
       { name: 'Current score', value: String(stats.score), inline: true },
       { name: 'Current rank', value: stats.rank ? `#${stats.rank}` : 'Unranked', inline: true },
