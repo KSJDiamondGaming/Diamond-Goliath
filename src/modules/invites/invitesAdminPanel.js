@@ -131,18 +131,18 @@ function createView(interaction) {
 function linksView(interaction) {
   const links = invites.listInviteLinks(interaction.guildId);
   const description = links.length
-    ? links.slice(0, 20).map((link) => `**${link.code}** · ${link.uses || 0}${link.maxUses ? `/${link.maxUses}` : ''} uses · ${link.expiresAt ? `<t:${Math.floor(new Date(link.expiresAt).getTime() / 1000)}:R>` : 'Never'}\n${link.roleIds?.length ? link.roleIds.map((id) => `<@&${id}>`).join(', ') : 'No roles'}`).join('\n\n')
+    ? links.slice(0, 20).map((link) => `**${link.code}**${link.personal ? ' · Personal' : ''} · ${link.uses || 0}${link.maxUses ? `/${link.maxUses}` : ''} uses · ${link.expiresAt ? `<t:${Math.floor(new Date(link.expiresAt).getTime() / 1000)}:R>` : 'Never'}\n${link.personal ? `Owner: <@${link.inviterId}>` : (link.roleIds?.length ? link.roleIds.map((id) => `<@&${id}>`).join(', ') : 'No roles')}`).join('\n\n')
     : 'No Invite Studio links have been created.';
   return { embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🔗 Invite Links').setDescription(description)], components: [row(button('invites:create', 'Create Invite Link', ButtonStyle.Primary), button('invites:delete', 'Delete Link', ButtonStyle.Danger, !links.length), button('invites:home', 'Back'))] };
 }
 
 function publicView(interaction) {
   const config = safeConfig(interaction.guildId).publicPanel;
-  const links = invites.listInviteLinks(interaction.guildId).filter((link) => link.maxAge === 0 && link.maxUses === 0);
+  const links = invites.listInviteLinks(interaction.guildId).filter((link) => !link.personal && link.maxAge === 0 && link.maxUses === 0);
   const components = [row(new ChannelSelectMenuBuilder().setCustomId('invites:public-channel').setPlaceholder('Select public panel channel').addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement))];
   if (links.length) components.push(row(new StringSelectMenuBuilder().setCustomId('invites:public-link').setPlaceholder('Select permanent invite link').addOptions(links.slice(0, 25).map((link) => ({ label: link.code, value: link.code, description: `${link.uses || 0} uses` }))));
   components.push(row(button('invites:public-deploy', config.messageId ? 'Update Public Panel' : 'Deploy Public Panel', ButtonStyle.Success, !config.channelId || !config.inviteCode), button('invites:home', 'Back')));
-  return { embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('📣 Public Invite Panel').setDescription('Choose a permanent invite and a channel, then deploy one public message.').addFields({ name: 'Channel', value: config.channelId ? `<#${config.channelId}>` : 'Not selected', inline: true }, { name: 'Invite', value: config.inviteCode ? `https://discord.gg/${config.inviteCode}` : 'Not selected', inline: true }, { name: 'Status', value: config.messageId ? 'Deployed' : 'Not deployed', inline: true })], components };
+  return { embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('📣 Public Invite Panel').setDescription('Choose a permanent invite and a channel, then deploy one public message. Members can get, resend or delete their own personal invite from that message.').addFields({ name: 'Channel', value: config.channelId ? `<#${config.channelId}>` : 'Not selected', inline: true }, { name: 'Invite', value: config.inviteCode ? `https://discord.gg/${config.inviteCode}` : 'Not selected', inline: true }, { name: 'Status', value: config.messageId ? 'Deployed' : 'Not deployed', inline: true })], components };
 }
 
 function leaderboardView(interaction) {
@@ -167,7 +167,7 @@ async function updatePanel(interaction) {
 
 async function handleInviteStudioInteraction(interaction) {
   if (!String(interaction.customId || '').startsWith(PREFIX)) return false;
-  if (interaction.customId === 'invites:member-help') return publicPanels().handleMemberHelp(interaction);
+  if (String(interaction.customId).startsWith('invites:member-')) return publicPanels().handleMemberInteraction(interaction);
   if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) throw new Error('Manage Server permission is required.');
 
   const action = interaction.customId.slice(PREFIX.length);
