@@ -120,9 +120,14 @@ async function handleInviteStudioInteraction(interaction) {
   if (action === 'draft-temporary') { state.draft.temporary = !state.draft.temporary; await interaction.update(buildInviteStudioPayload(interaction)); return true; }
   if (action === 'generate') {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    const result = await invites.createInviteLink(interaction.guild, state.draft, meta);
-    state.page = 'links';
-    await interaction.editReply(`✅ Invite created: ${result.invite.url}${result.record.roleIds.length ? `\nRoles: ${result.record.roleIds.map((id) => `<@&${id}>`).join(', ')}` : ''}`);
+    try {
+      const result = await invites.createInviteLink(interaction.guild, state.draft, meta);
+      state.page = 'links';
+      await interaction.editReply(`✅ Invite created: ${result.invite.url}${result.record.roleIds.length ? `\nRoles: ${result.record.roleIds.map((id) => `<@&${id}>`).join(', ')}` : ''}`);
+    } catch (error) {
+      console.error('[InviteStudio] Failed to create invite:', error);
+      await interaction.editReply(`❌ ${String(error?.message || error).slice(0, 1800)}`);
+    }
     return true;
   }
   if (action === 'delete') {
