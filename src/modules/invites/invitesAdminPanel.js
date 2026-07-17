@@ -70,8 +70,8 @@ function safeConfig(guildId) {
   } catch (error) {
     console.error('[InviteStudio] Public panel config failed:', error);
     return {
-      publicPanel: { channelId: null, messageId: null, inviteCode: null, title: 'Help Grow the Community', description: 'Share our official invite link.', color: '#5865F2', footer: 'Powered by Goliath', buttonLabel: 'Join Server' },
-      leaderboardPanel: { channelId: null, messageId: null, title: 'Community Invite Leaderboard', description: 'Invite friends and climb the rankings.', color: '#5865F2', footer: 'Updated automatically by Goliath', limit: 10 },
+      publicPanel: { channelId: null, messageId: null, inviteCode: null },
+      leaderboardPanel: { channelId: null, messageId: null },
     };
   }
 }
@@ -84,7 +84,7 @@ function overview(interaction) {
     embeds: [new EmbedBuilder()
       .setColor(section.enabled ? 0x57F287 : 0xED4245)
       .setTitle('📨 Invite Studio')
-      .setDescription('Create private invite links, publish a permanent invite panel, and maintain a live leaderboard.')
+      .setDescription('Create invite links, publish a permanent invite panel, and maintain a live leaderboard.')
       .addFields(
         { name: 'Status', value: section.enabled ? 'Enabled' : 'Disabled', inline: true },
         { name: 'Invite links', value: String(links.length), inline: true },
@@ -108,12 +108,12 @@ function createView(interaction) {
     embeds: [new EmbedBuilder()
       .setColor(0x5865F2)
       .setTitle('🔗 Create Invite Link')
-      .setDescription('The generated link remains private to you. Permanent links can later be posted through the Public Invite Panel.')
+      .setDescription('The generated link remains private until you choose to publish it.')
       .addFields(
         { name: 'Channel', value: draft.channelId ? `<#${draft.channelId}>` : 'Not selected', inline: true },
         { name: 'Expire after', value: expiryLabel(draft.maxAge), inline: true },
         { name: 'Max uses', value: draft.maxUses ? String(draft.maxUses) : 'No limit', inline: true },
-        { name: 'Roles (optional)', value: draft.roleIds.length ? draft.roleIds.map((id) => `<@&${id}>`).join(', ') : 'None' },
+        { name: 'Roles', value: draft.roleIds.length ? draft.roleIds.map((id) => `<@&${id}>`).join(', ') : 'None' },
         { name: 'Temporary membership', value: draft.temporary ? 'Enabled' : 'Disabled', inline: true },
       )],
     components: [
@@ -131,23 +131,53 @@ function createView(interaction) {
 function linksView(interaction) {
   const links = invites.listInviteLinks(interaction.guildId);
   const description = links.length
-    ? links.slice(0, 20).map((link) => `**${link.code}**${link.personal ? ' · Personal' : ''} · ${link.uses || 0}${link.maxUses ? `/${link.maxUses}` : ''} uses · ${link.expiresAt ? `<t:${Math.floor(new Date(link.expiresAt).getTime() / 1000)}:R>` : 'Never'}\n${link.personal ? `Owner: <@${link.inviterId}>` : (link.roleIds?.length ? link.roleIds.map((id) => `<@&${id}>`).join(', ') : 'No roles')}`).join('\n\n')
+    ? links.slice(0, 20).map((link) => {
+      const expiry = link.expiresAt ? `<t:${Math.floor(new Date(link.expiresAt).getTime() / 1000)}:R>` : 'Never';
+      const ownerOrRoles = link.personal
+        ? `Owner: <@${link.inviterId}>`
+        : (link.roleIds?.length ? link.roleIds.map((id) => `<@&${id}>`).join(', ') : 'No roles');
+      return `**${link.code}**${link.personal ? ' · Personal' : ''} · ${link.uses || 0}${link.maxUses ? `/${link.maxUses}` : ''} uses · ${expiry}\n${ownerOrRoles}`;
+    }).join('\n\n')
     : 'No Invite Studio links have been created.';
-  return { embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🔗 Invite Links').setDescription(description)], components: [row(button('invites:create', 'Create Invite Link', ButtonStyle.Primary), button('invites:delete', 'Delete Link', ButtonStyle.Danger, !links.length), button('invites:home', 'Back'))] };
+  return {
+    embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🔗 Invite Links').setDescription(description)],
+    components: [row(button('invites:create', 'Create Invite Link', ButtonStyle.Primary), button('invites:delete', 'Delete Link', ButtonStyle.Danger, !links.length), button('invites:home', 'Back'))],
+  };
 }
 
 function publicView(interaction) {
   const config = safeConfig(interaction.guildId).publicPanel;
   const links = invites.listInviteLinks(interaction.guildId).filter((link) => !link.personal && link.maxAge === 0 && link.maxUses === 0);
   const components = [row(new ChannelSelectMenuBuilder().setCustomId('invites:public-channel').setPlaceholder('Select public panel channel').addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement))];
-  if (links.length) components.push(row(new StringSelectMenuBuilder().setCustomId('invites:public-link').setPlaceholder('Select permanent invite link').addOptions(links.slice(0, 25).map((link) => ({ label: link.code, value: link.code, description: `${link.uses || 0} uses` }))));
+  if (links.length) {
+    components.push(row(new StringSelectMenuBuilder()
+      .setCustomId('invites:public-link')
+      .setPlaceholder('Select permanent invite link')
+      .addOptions(links.slice(0, 25).map((link) => ({ label: link.code, value: link.code, description: `${link.uses || 0} uses` }))));
+  }
   components.push(row(button('invites:public-deploy', config.messageId ? 'Update Public Panel' : 'Deploy Public Panel', ButtonStyle.Success, !config.channelId || !config.inviteCode), button('invites:home', 'Back')));
-  return { embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('📣 Public Invite Panel').setDescription('Choose a permanent invite and a channel, then deploy one public message. Members can get, resend or delete their own personal invite from that message.').addFields({ name: 'Channel', value: config.channelId ? `<#${config.channelId}>` : 'Not selected', inline: true }, { name: 'Invite', value: config.inviteCode ? `https://discord.gg/${config.inviteCode}` : 'Not selected', inline: true }, { name: 'Status', value: config.messageId ? 'Deployed' : 'Not deployed', inline: true })], components };
+  return {
+    embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('📣 Public Invite Panel').setDescription('Choose a permanent invite and a channel, then deploy one public message.').addFields(
+      { name: 'Channel', value: config.channelId ? `<#${config.channelId}>` : 'Not selected', inline: true },
+      { name: 'Invite', value: config.inviteCode ? `https://discord.gg/${config.inviteCode}` : 'Not selected', inline: true },
+      { name: 'Status', value: config.messageId ? 'Deployed' : 'Not deployed', inline: true },
+    )],
+    components,
+  };
 }
 
 function leaderboardView(interaction) {
   const config = safeConfig(interaction.guildId).leaderboardPanel;
-  return { embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🏆 Leaderboard Panel').setDescription('Deploy one leaderboard message that refreshes when invite totals change.').addFields({ name: 'Channel', value: config.channelId ? `<#${config.channelId}>` : 'Not selected', inline: true }, { name: 'Status', value: config.messageId ? 'Deployed' : 'Not deployed', inline: true })], components: [row(new ChannelSelectMenuBuilder().setCustomId('invites:leaderboard-channel').setPlaceholder('Select leaderboard channel').addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)), row(button('invites:leaderboard-deploy', config.messageId ? 'Update Leaderboard' : 'Deploy Leaderboard', ButtonStyle.Success, !config.channelId), button('invites:leaderboard-refresh', 'Refresh Now', ButtonStyle.Secondary, !config.messageId), button('invites:home', 'Back'))] };
+  return {
+    embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🏆 Leaderboard Panel').setDescription('Deploy one leaderboard message that refreshes when invite totals change.').addFields(
+      { name: 'Channel', value: config.channelId ? `<#${config.channelId}>` : 'Not selected', inline: true },
+      { name: 'Status', value: config.messageId ? 'Deployed' : 'Not deployed', inline: true },
+    )],
+    components: [
+      row(new ChannelSelectMenuBuilder().setCustomId('invites:leaderboard-channel').setPlaceholder('Select leaderboard channel').addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)),
+      row(button('invites:leaderboard-deploy', config.messageId ? 'Update Leaderboard' : 'Deploy Leaderboard', ButtonStyle.Success, !config.channelId), button('invites:leaderboard-refresh', 'Refresh Now', ButtonStyle.Secondary, !config.messageId), button('invites:home', 'Back')),
+    ],
+  };
 }
 
 function buildInviteStudioPayload(interaction) {
@@ -231,7 +261,10 @@ async function handleInviteStudioInteraction(interaction) {
     return true;
   } else if (action === 'delete') {
     const links = invites.listInviteLinks(interaction.guildId);
-    const modal = new ModalBuilder().setCustomId('invites:delete-modal').setTitle('Delete invite link').addComponents(row(new TextInputBuilder().setCustomId('code').setLabel('Invite code').setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder(links[0]?.code || 'abc123')));
+    const modal = new ModalBuilder()
+      .setCustomId('invites:delete-modal')
+      .setTitle('Delete invite link')
+      .addComponents(row(new TextInputBuilder().setCustomId('code').setLabel('Invite code').setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder(links[0]?.code || 'abc123')));
     await interaction.showModal(modal);
     return true;
   } else if (action === 'delete-modal' && interaction.isModalSubmit()) {
