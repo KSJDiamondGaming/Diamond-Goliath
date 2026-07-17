@@ -9,6 +9,7 @@ const {
   PermissionFlagsBits,
 } = require('discord.js');
 const invites = require('./invites');
+const memberProfiles = require('./invitesMemberProfiles');
 
 const refreshTimers = new Map();
 const DEFAULT_PUBLIC = {
@@ -63,6 +64,7 @@ function buildPublicPayload(guildId) {
   const buttons = [new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(url).setLabel(cleanText(publicPanel.buttonLabel, 80) || 'Join Server')];
   if (publicPanel.showMemberHelp !== false) {
     buttons.push(new ButtonBuilder().setCustomId('invites:member-personal').setStyle(ButtonStyle.Primary).setLabel('Get My Invite'));
+    buttons.push(new ButtonBuilder().setCustomId('invites:member-profile').setStyle(ButtonStyle.Secondary).setLabel('My Invite Profile'));
     buttons.push(new ButtonBuilder().setCustomId('invites:member-personal-delete').setStyle(ButtonStyle.Danger).setLabel('Delete My Invite'));
   }
   return { embeds: [embed], components: [row(...buttons)] };
@@ -144,6 +146,7 @@ async function sendPersonalInviteDm(interaction, result) {
 }
 
 async function handleMemberInteraction(interaction) {
+  if (await memberProfiles.handleProfileInteraction(interaction)) return true;
   if (!['invites:member-personal', 'invites:member-personal-delete'].includes(interaction.customId)) return false;
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
