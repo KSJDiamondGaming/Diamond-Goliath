@@ -150,10 +150,18 @@ function publicView(interaction) {
   const links = invites.listInviteLinks(interaction.guildId).filter((link) => !link.personal && link.maxAge === 0 && link.maxUses === 0);
   const components = [row(new ChannelSelectMenuBuilder().setCustomId('invites:public-channel').setPlaceholder('Select public panel channel').addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement))];
   if (links.length) {
-    components.push(row(new StringSelectMenuBuilder()
+    const inviteOptions = links.slice(0, 25).map((link) => ({
+      label: link.code,
+      value: link.code,
+      description: `${link.uses || 0} uses`,
+    }));
+
+    const inviteSelect = new StringSelectMenuBuilder()
       .setCustomId('invites:public-link')
       .setPlaceholder('Select permanent invite link')
-      .addOptions(links.slice(0, 25).map((link) => ({ label: link.code, value: link.code, description: `${link.uses || 0} uses` }))));
+      .addOptions(inviteOptions);
+
+    components.push(row(inviteSelect));
   }
   components.push(row(button('invites:public-deploy', config.messageId ? 'Update Public Panel' : 'Deploy Public Panel', ButtonStyle.Success, !config.channelId || !config.inviteCode), button('invites:home', 'Back')));
   return {
