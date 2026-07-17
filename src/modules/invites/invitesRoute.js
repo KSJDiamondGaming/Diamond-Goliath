@@ -15,7 +15,7 @@ async function getGuild(req) {
 router.get('/:guildId', (req, res) => {
   try {
     const config = invites.getSection(req.params.guildId);
-    res.json({ success: true, config, leaderboard: invites.leaderboard(req.params.guildId, Number(req.query.limit || 25)) });
+    res.json({ success: true, config, inviteLinks: invites.listInviteLinks(req.params.guildId), leaderboard: invites.leaderboard(req.params.guildId, Number(req.query.limit || 25)) });
   } catch (error) { res.status(400).json({ success: false, error: error.message }); }
 });
 
@@ -30,12 +30,36 @@ router.patch('/:guildId/settings', (req, res) => {
 });
 
 router.post('/:guildId/sync', async (req, res) => {
-  try { const guild = await getGuild(req); if (!guild) throw new Error('Guild is unavailable.'); await invites.syncGuild(guild, actor(req, 'invites_sync')); res.json({ success: true, config: invites.getSection(guild.id) }); }
+  try { const guild = await getGuild(req); if (!guild) throw new Error('Guild is unavailable.'); await invites.syncGuild(guild, actor(req, 'invites_sync')); res.json({ success: true, config: invites.getSection(guild.id), inviteLinks: invites.listInviteLinks(guild.id) }); }
+  catch (error) { res.status(400).json({ success: false, error: error.message }); }
+});
+
+router.get('/:guildId/links', (req, res) => {
+  try { res.json({ success: true, inviteLinks: invites.listInviteLinks(req.params.guildId) }); }
+  catch (error) { res.status(400).json({ success: false, error: error.message }); }
+});
+
+router.post('/:guildId/links', async (req, res) => {
+  try {
+    const guild = await getGuild(req); if (!guild) throw new Error('Guild is unavailable.');
+    const result = await invites.createInviteLink(guild, {
+      channelId: req.body?.channelId,
+      roleIds: req.body?.roleIds,
+      maxAge: req.body?.maxAge,
+      maxUses: req.body?.maxUses,
+      temporary: req.body?.temporary === true,
+    }, actor(req, 'invites_link_create'));
+    res.status(201).json({ success: true, invite: { code: result.invite.code, url: result.invite.url }, record: result.record, inviteLinks: invites.listInviteLinks(guild.id) });
+  } catch (error) { res.status(400).json({ success: false, error: error.message }); }
+});
+
+router.delete('/:guildId/links/:code', async (req, res) => {
+  try { const guild = await getGuild(req); if (!guild) throw new Error('Guild is unavailable.'); await invites.deleteInviteLink(guild, req.params.code, actor(req, 'invites_link_delete')); res.json({ success: true, inviteLinks: invites.listInviteLinks(guild.id) }); }
   catch (error) { res.status(400).json({ success: false, error: error.message }); }
 });
 
 router.post('/:guildId/managed-invite', async (req, res) => {
-  try { const guild = await getGuild(req); if (!guild) throw new Error('Guild is unavailable.'); const invite = await invites.createManagedInvite(guild, req.body?.channelId, actor(req, 'invites_managed_create')); res.status(201).json({ success: true, invite: { code: invite.code, url: invite.url }, config: invites.getSection(guild.id) }); }
+  try { const guild = await getGuild(req); if (!guild) throw new Error('Guild is unavailable.'); const invite = await invites.createManagedInvite(guild, req.body.channelId, actor(req, 'invites_managed_create')); res.status(201).json({ success: true, invite: { code: invite.code, url: invite.url }, config: invites.getSection(guild.id) }); }
   catch (error) { res.status(400).json({ success: false, error: error.message }); }
 });
 
