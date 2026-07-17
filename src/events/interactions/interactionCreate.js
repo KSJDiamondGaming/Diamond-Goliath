@@ -32,7 +32,6 @@ const pollsAdminPanel = optionalRequire('polls admin', '../../modules/polls/poll
 const starboardAdminPanel = optionalRequire('starboard admin', '../../modules/starboard/starboardAdminPanel');
 const stickyAdminPanel = optionalRequire('sticky admin', '../../modules/sticky/stickyAdminPanel');
 const levelingAdminPanel = optionalRequire('leveling admin', '../../modules/leveling/levelingAdminPanel');
-const invitesAdminPanel = optionalRequire('invites admin', '../../modules/invites/invitesAdminPanel');
 const socialAdminPanel = optionalRequire('social admin', '../../modules/social/socialPanel');
 const socialCreatorPanel = optionalRequire('social creator hub', '../../modules/social/socialCreatorPanel');
 const schedulePanel = optionalRequire('schedule admin', '../../modules/schedule/schedulePanel');
@@ -43,6 +42,24 @@ const timedRolesPanel = optionalRequire('timed roles', '../../modules/timedroles
 const welcomePanel = optionalRequire('welcome', '../../modules/welcome/welcomePanel');
 const goodbyePanel = optionalRequire('goodbye', '../../modules/goodbye/goodbyePanel');
 const moduleAdminPanels = optionalRequire('generic module admin', '../../core/admin/functions/moduleAdminPanels');
+
+let invitesAdminPanel = null;
+let invitesAdminPanelError = null;
+function loadInvitesAdminPanel() {
+  if (invitesAdminPanel?.buildInviteStudioPayload && invitesAdminPanel?.handleInviteStudioInteraction) return invitesAdminPanel;
+  try {
+    const modulePath = require.resolve('../../modules/invites/invitesAdminPanel');
+    delete require.cache[modulePath];
+    invitesAdminPanel = require(modulePath);
+    invitesAdminPanelError = null;
+    return invitesAdminPanel;
+  } catch (error) {
+    invitesAdminPanel = null;
+    invitesAdminPanelError = error;
+    console.error('[InteractionCreate] Invite Studio load failed:', error?.stack || error?.message || error);
+    return null;
+  }
+}
 
 const verificationLocks = new Map();
 
@@ -140,12 +157,24 @@ module.exports = {
         const command = client.commands?.get?.(interaction.commandName); if (!command) return; await command.execute(interaction, client); return;
       }
       if (interaction.customId === 'admin:invites') {
-        if (typeof invitesAdminPanel?.buildInviteStudioPayload !== 'function') throw new Error('Invite Studio failed to load. Check the startup warning above for the underlying module error.');
+        const panel = loadInvitesAdminPanel();
+        if (typeof panel?.buildInviteStudioPayload !== 'function') {
+          const reason = String(invitesAdminPanelError?.message || 'Unknown module load error').slice(0, 500);
+          throw new Error(`Invite Studio failed to load: ${reason}`);
+        }
         await interaction.deferUpdate();
-        await interaction.editReply(invitesAdminPanel.buildInviteStudioPayload(interaction));
+        await interaction.editReply(panel.buildInviteStudioPayload(interaction));
         return;
       }
-      if (startsWith(interaction, 'invites:')) { if (!await callHandler(invitesAdminPanel, 'handleInviteStudioInteraction', interaction)) throw new Error(`Invite Studio did not handle ${interaction.customId}.`); return; }
+      if (startsWith(interaction, 'invites:')) {
+        const panel = loadInvitesAdminPanel();
+        if (!panel) {
+          const reason = String(invitesAdminPanelError?.message || 'Unknown module load error').slice(0, 500);
+          throw new Error(`Invite Studio failed to load: ${reason}`);
+        }
+        if (!await callHandler(panel, 'handleInviteStudioInteraction', interaction)) throw new Error(`Invite Studio did not handle ${interaction.customId}.`);
+        return;
+      }
       if (startsWith(interaction, 'admin:verification')) { await callHandler(verificationAdminPanel, 'handleVerificationAdminInteraction', interaction); return; }
       if (startsWith(interaction, 'admin:autoRoles')) { await callHandler(autorolesPanel, 'handleAutoRolesInteraction', interaction); return; }
       if (startsWith(interaction, 'admin:timedRoles')) { await callHandler(timedRolesPanel, 'handleTimedRolesInteraction', interaction); return; }
