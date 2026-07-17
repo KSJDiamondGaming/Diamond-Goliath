@@ -3,6 +3,8 @@
 const { Events } = require('discord.js');
 const loggingService = require('../../core/logging/service');
 const invites = require('../../modules/invites/invites');
+const invitePanels = require('../../modules/invites/invitesPublicPanels');
+const memberProfiles = require('../../modules/invites/invitesMemberProfiles');
 
 async function sendConfiguredLog(guild, payload) {
   const section = invites.getSection(guild.id);
@@ -16,9 +18,7 @@ async function sendConfiguredLog(guild, payload) {
 async function logInviteCreate(invite) {
   if (!invite?.guild) return;
   await invites.syncGuild(invite.guild, { action: 'invite_created' }).catch(() => null);
-  invites.addHistory(invite.guild.id, {
-    type: 'invite_created', code: invite.code, inviterId: invite.inviter?.id || null, channelId: invite.channelId || null,
-  }, { action: 'invite_created' });
+  invites.addHistory(invite.guild.id, { type: 'invite_created', code: invite.code, inviterId: invite.inviter?.id || null, channelId: invite.channelId || null }, { action: 'invite_created' });
   await loggingService.send(invite.guild, 'invite.create', {
     title: 'Invite Created', color: '#57F287', fields: [
       { name: 'Code', value: `\`${invite.code}\``, inline: true },
@@ -32,9 +32,7 @@ async function logInviteCreate(invite) {
 async function logInviteDelete(invite) {
   if (!invite?.guild) return;
   await invites.syncGuild(invite.guild, { action: 'invite_deleted' }).catch(() => null);
-  invites.addHistory(invite.guild.id, {
-    type: 'invite_deleted', code: invite.code, inviterId: invite.inviter?.id || null, channelId: invite.channelId || null,
-  }, { action: 'invite_deleted' });
+  invites.addHistory(invite.guild.id, { type: 'invite_deleted', code: invite.code, inviterId: invite.inviter?.id || null, channelId: invite.channelId || null }, { action: 'invite_deleted' });
   await loggingService.send(invite.guild, 'invite.delete', {
     title: 'Invite Deleted', color: '#ED4245', fields: [
       { name: 'Code', value: `\`${invite.code}\``, inline: true },
@@ -46,6 +44,8 @@ async function logInviteDelete(invite) {
 async function handleJoin(member) {
   const result = await invites.trackJoin(member, { actorId: member.id, action: 'invite_member_join' });
   if (!result) return;
+  invitePanels.queueLeaderboardRefresh(member.guild);
+  if (result.inviterId) await memberProfiles.notifyInviteUsed(member.guild, result.inviterId, member).catch(() => null);
   await loggingService.send(member.guild, 'invite.use', {
     title: 'Invite Used', color: '#5865F2', fields: [
       { name: 'Member', value: `${member} \`${member.user?.tag || member.id}\``, inline: true },
@@ -63,6 +63,7 @@ async function handleJoin(member) {
 async function handleLeave(member) {
   const result = await invites.trackLeave(member, { actorId: member.id, action: 'invite_member_leave' });
   if (!result) return;
+  invitePanels.queueLeaderboardRefresh(member.guild);
   await sendConfiguredLog(member.guild, {
     content: `📤 **${member.user?.tag || member.id}** left.${result.inviterId ? ` Invite credit was updated for <@${result.inviterId}>.` : ''}`,
     allowedMentions: { users: result.inviterId ? [result.inviterId] : [] },

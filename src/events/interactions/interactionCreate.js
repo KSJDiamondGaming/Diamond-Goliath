@@ -25,13 +25,13 @@ const duplicator = optionalRequire('duplicator', '../../core/dev/duplicator');
 const adminPanel = optionalRequire('admin panel', '../../core/admin/functions/adminPanel');
 const statsAdminPanel = optionalRequire('stats admin', '../../modules/stats/statsPanel');
 const reactionRolesAdminPanel = optionalRequire('reaction roles admin', '../../modules/reactionroles/reactionRolesPanel');
-const suggestionsAdminPanel = optionalRequire('suggestions admin', '../../core/admin/functions/suggestionsAdminPanel');
-const giveawaysAdminPanel = optionalRequire('giveaways admin', '../../core/admin/functions/giveawaysAdminPanel');
-const formsAdminPanel = optionalRequire('forms admin', '../../core/admin/functions/formsAdminPanel');
+const suggestionsAdminPanel = optionalRequire('suggestions admin', '../../modules/suggestions/suggestionsAdminPanel');
+const giveawaysAdminPanel = optionalRequire('giveaways admin', '../../modules/giveaways/giveawaysAdminPanel');
+const formsAdminPanel = optionalRequire('forms admin', '../../modules/forms/formsAdminPanel');
 const pollsAdminPanel = optionalRequire('polls admin', '../../modules/polls/pollsPanel');
-const starboardAdminPanel = optionalRequire('starboard admin', '../../core/admin/functions/starboardAdminPanel');
-const stickyAdminPanel = optionalRequire('sticky admin', '../../core/admin/functions/stickyAdminPanel');
-const levelingAdminPanel = optionalRequire('leveling admin', '../../core/admin/functions/levelingAdminPanel');
+const starboardAdminPanel = optionalRequire('starboard admin', '../../modules/starboard/starboardAdminPanel');
+const stickyAdminPanel = optionalRequire('sticky admin', '../../modules/sticky/stickyAdminPanel');
+const levelingAdminPanel = optionalRequire('leveling admin', '../../modules/leveling/levelingAdminPanel');
 const socialAdminPanel = optionalRequire('social admin', '../../modules/social/socialPanel');
 const socialCreatorPanel = optionalRequire('social creator hub', '../../modules/social/socialCreatorPanel');
 const schedulePanel = optionalRequire('schedule admin', '../../modules/schedule/schedulePanel');
@@ -42,6 +42,24 @@ const timedRolesPanel = optionalRequire('timed roles', '../../modules/timedroles
 const welcomePanel = optionalRequire('welcome', '../../modules/welcome/welcomePanel');
 const goodbyePanel = optionalRequire('goodbye', '../../modules/goodbye/goodbyePanel');
 const moduleAdminPanels = optionalRequire('generic module admin', '../../core/admin/functions/moduleAdminPanels');
+
+let invitesAdminPanel = null;
+let invitesAdminPanelError = null;
+function loadInvitesAdminPanel() {
+  if (invitesAdminPanel?.buildInviteStudioPayload && invitesAdminPanel?.handleInviteStudioInteraction) return invitesAdminPanel;
+  try {
+    const modulePath = require.resolve('../../modules/invites/invitesAdminPanel');
+    delete require.cache[modulePath];
+    invitesAdminPanel = require(modulePath);
+    invitesAdminPanelError = null;
+    return invitesAdminPanel;
+  } catch (error) {
+    invitesAdminPanel = null;
+    invitesAdminPanelError = error;
+    console.error('[InteractionCreate] Invite Studio load failed:', error?.stack || error?.message || error);
+    return null;
+  }
+}
 
 const verificationLocks = new Map();
 
@@ -82,8 +100,9 @@ function isVerificationMemberInteraction(interaction) {
   return typeof verificationManager?.parseVerifyCustomId === 'function' && Boolean(verificationManager.parseVerifyCustomId(interaction.customId));
 }
 
-async function safeInteractionError(interaction) {
-  const payload = { content: '❌ Interaction failed. Check bot logs for details.', flags: MessageFlags.Ephemeral };
+async function safeInteractionError(interaction, error = null) {
+  const detail = error?.message ? `\n\`${String(error.message).slice(0, 300)}\`` : '';
+  const payload = { content: `❌ Interaction failed.${detail}`, flags: MessageFlags.Ephemeral };
   try {
     if (interaction?.isAutocomplete?.()) { await interaction.respond([]).catch(() => null); return; }
     if (interaction?.deferred || interaction?.replied) { await interaction.editReply(payload).catch(() => interaction.followUp(payload).catch(() => null)); return; }
@@ -100,47 +119,26 @@ async function fetchFreshMember(interaction) {
 }
 
 async function handleVerificationMemberInteraction(interaction) {
-  if (typeof verificationManager?.verifyMember !== 'function') {
-    throw new Error('Verification handler is unavailable.');
-  }
-
-  if (!interaction.deferred && !interaction.replied) {
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-  }
-
+  if (typeof verificationManager?.verifyMember !== 'function') throw new Error('Verification handler is unavailable.');
+  if (!interaction.deferred && !interaction.replied) await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   const lockKey = `${interaction.guildId}:${interaction.user.id}`;
   const previous = verificationLocks.get(lockKey);
   if (previous) await previous.catch(() => null);
-
   const operation = (async () => {
     const member = await fetchFreshMember(interaction);
     if (!member) return { ok: false, message: 'Member not found. Please try again.' };
-
-    const result = await verificationManager.verifyMember({
-      guild: interaction.guild,
-      guildId: interaction.guildId,
-      member,
-      user: interaction.user,
-    });
-
+    const result = await verificationManager.verifyMember({ guild: interaction.guild, guildId: interaction.guildId, member, user: interaction.user });
     const refreshed = await fetchFreshMember(interaction);
-    if (result.ok && refreshed) {
-      console.log(`[Verification] Completed for ${interaction.user.id} in ${interaction.guildId}; roles=${[...refreshed.roles.cache.keys()].join(',')}`);
-    }
-
+    if (result.ok && refreshed) console.log(`[Verification] Completed for ${interaction.user.id} in ${interaction.guildId}; roles=${[...refreshed.roles.cache.keys()].join(',')}`);
     return result;
   })();
-
   verificationLocks.set(lockKey, operation);
   try {
     const result = await operation;
-    await interaction.editReply({
-      content: result.ok ? `✅ ${result.message}` : `❌ ${result.message}`,
-    });
+    await interaction.editReply({ content: result.ok ? `✅ ${result.message}` : `❌ ${result.message}` });
   } finally {
     if (verificationLocks.get(lockKey) === operation) verificationLocks.delete(lockKey);
   }
-
   return true;
 }
 
@@ -157,6 +155,25 @@ module.exports = {
       if (!interaction?.customId && !interaction?.isChatInputCommand?.()) return;
       if (interaction.isChatInputCommand?.()) {
         const command = client.commands?.get?.(interaction.commandName); if (!command) return; await command.execute(interaction, client); return;
+      }
+      if (interaction.customId === 'admin:invites') {
+        const panel = loadInvitesAdminPanel();
+        if (typeof panel?.buildInviteStudioPayload !== 'function') {
+          const reason = String(invitesAdminPanelError?.message || 'Unknown module load error').slice(0, 500);
+          throw new Error(`Invite Studio failed to load: ${reason}`);
+        }
+        await interaction.deferUpdate();
+        await interaction.editReply(panel.buildInviteStudioPayload(interaction));
+        return;
+      }
+      if (startsWith(interaction, 'invites:')) {
+        const panel = loadInvitesAdminPanel();
+        if (!panel) {
+          const reason = String(invitesAdminPanelError?.message || 'Unknown module load error').slice(0, 500);
+          throw new Error(`Invite Studio failed to load: ${reason}`);
+        }
+        if (!await callHandler(panel, 'handleInviteStudioInteraction', interaction)) throw new Error(`Invite Studio did not handle ${interaction.customId}.`);
+        return;
       }
       if (startsWith(interaction, 'admin:verification')) { await callHandler(verificationAdminPanel, 'handleVerificationAdminInteraction', interaction); return; }
       if (startsWith(interaction, 'admin:autoRoles')) { await callHandler(autorolesPanel, 'handleAutoRolesInteraction', interaction); return; }
@@ -191,7 +208,7 @@ module.exports = {
       if (await callHandler(legacyReactionRoleButtons, 'handleLegacyButtonInteraction', interaction)) return;
     } catch (error) {
       console.error('[InteractionCreate] Failed to handle interaction:', error);
-      await safeInteractionError(interaction);
+      await safeInteractionError(interaction, error);
     }
   },
 };
