@@ -49,6 +49,11 @@ check('Invite Studio registered in module router', moduleRouter.includes("'admin
 
 const dashboard = read('src/dashboard/js/pages/modules/Invites.jsx');
 for (const token of ['Create invite link', 'Roles (optional)', 'Grant temporary membership', '/links']) check(`Invite dashboard ${token}`, dashboard.includes(token));
+for (const section of ['Invite Links', 'Analytics', 'Rewards', 'Join History', 'Health', 'Settings']) check(`Invite workspace ${section}`, dashboard.includes(section));
+check('Invite links are default workspace tab', dashboard.includes("useState('links')"));
+check('Invite link copy action exists', dashboard.includes('navigator.clipboard.writeText'));
+check('Invite link table includes channel and temporary status', dashboard.includes('channelName(channels, link.channelId)') && dashboard.includes("link.temporary ? 'Yes' : 'No'"));
+
 const interactions = read('src/events/interactions/interactionCreate.js');
 check('No standalone Invite interaction registration', !interactions.includes('invitesPanel'));
 const eventSource = read('src/events/invites/inviteLogs.js');
