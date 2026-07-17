@@ -1,140 +1,47 @@
 'use strict';
-
-const {
-  EmbedBuilder,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  ChannelSelectMenuBuilder,
-  ChannelType,
-  RoleSelectMenuBuilder,
-} = require('discord.js');
-
-const starboardStore = require('../../../modules/starboard/starboardStore');
-
-function row(...components) {
-  return new ActionRowBuilder().addComponents(...components);
-}
-
-function button(customId, label, style = ButtonStyle.Primary) {
-  return new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style);
-}
-
-function getMemberDisplayName(interaction) {
-  return interaction.member?.displayName || interaction.user?.displayName || interaction.user?.username || 'Unknown User';
-}
-
-function formatChannel(id) {
-  return id ? `<#${id}>` : '`Not set`';
-}
-
-function formatRoles(ids = []) {
-  const list = Array.isArray(ids) ? ids.filter(Boolean) : [];
-  return list.length ? list.map((id) => `<@&${id}>`).join(', ') : '`None`';
-}
-
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelSelectMenuBuilder, ChannelType, RoleSelectMenuBuilder } = require('discord.js');
+const starboardStore = require('./starboardStore');
+const row = (...components) => new ActionRowBuilder().addComponents(...components);
+const button = (customId, label, style = ButtonStyle.Primary) => new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style);
+const displayName = (i) => i.member?.displayName || i.user?.displayName || i.user?.username || 'Unknown User';
+const formatChannel = (id) => id ? `<#${id}>` : '`Not set`';
+const formatRoles = (ids = []) => Array.isArray(ids) && ids.filter(Boolean).length ? ids.filter(Boolean).map((id) => `<@&${id}>`).join(', ') : '`None`';
 function buildStarboardAdminPanel(guild, memberDisplayName = 'Unknown User') {
-  const section = starboardStore.getStarboardSection(guild.id);
-  const posts = Object.values(section.posts || {});
-
-  const embed = new EmbedBuilder()
-    .setColor(section.enabled !== false ? 0x57f287 : 0x5865f2)
-    .setTitle('⭐ Starboard')
-    .setDescription([
-      'Configure highlighted messages powered by reactions.',
-      '',
-      `**Status:** ${section.enabled !== false ? 'Enabled ✅' : 'Disabled ❌'}`,
-      `**Starboard Channel:** ${formatChannel(section.channelId || section.starboardChannelId)}`,
-      `**Log Channel:** ${formatChannel(section.logChannelId)}`,
-      `**Manager Roles:** ${formatRoles(section.managerRoleIds)}`,
-      `**Emoji:** ${section.emoji || '⭐'}`,
-      `**Threshold:** \`${section.threshold || 3}\``,
-      `**Self Star:** ${section.allowSelfStar ? 'Allowed ✅' : 'Blocked ❌'}`,
-      `**Unique Users:** ${section.requireUniqueUsers !== false ? 'Required ✅' : 'Not Required ❌'}`,
-      '',
-      `Posts: \`${posts.length}\` | Posted: \`${section.analytics?.posted || 0}\` | Updated: \`${section.analytics?.updated || 0}\``,
-    ].join('\n'))
-    .setFooter({ text: `Requested by ${memberDisplayName}` })
-    .setTimestamp();
-
-  return {
-    embeds: [embed],
-    components: [
-      row(
-        new ChannelSelectMenuBuilder().setCustomId('admin:starboard:channel').setPlaceholder('Starboard channel').setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(0).setMaxValues(1)
-      ),
-      row(
-        new ChannelSelectMenuBuilder().setCustomId('admin:starboard:logChannel').setPlaceholder('Log channel').setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(0).setMaxValues(1)
-      ),
-      row(
-        new RoleSelectMenuBuilder().setCustomId('admin:starboard:managerRoles').setPlaceholder('Manager roles').setMinValues(0).setMaxValues(10)
-      ),
-      row(
-        button(section.enabled !== false ? 'admin:starboard:disable' : 'admin:starboard:enable', section.enabled !== false ? '⏸️ Disable' : '▶️ Enable', ButtonStyle.Secondary),
-        button('admin:starboard:thresholdDown', '➖ Threshold', ButtonStyle.Secondary),
-        button('admin:starboard:thresholdUp', '➕ Threshold', ButtonStyle.Secondary),
-        button('admin:starboard:toggleSelf', '⭐ Self Star', ButtonStyle.Secondary),
-        button('admin:starboard:toggleUnique', '👥 Unique', ButtonStyle.Secondary)
-      ),
-      row(button('admin:modules', '⬅️ Modules', ButtonStyle.Secondary)),
-    ],
-  };
+  const s = starboardStore.getStarboardSection(guild.id); const posts = Object.values(s.posts || {});
+  const embed = new EmbedBuilder().setColor(s.enabled !== false ? 0x57f287 : 0x5865f2).setTitle('⭐ Starboard').setDescription([
+    'Configure highlighted messages powered by reactions.', '',
+    `**Status:** ${s.enabled !== false ? 'Enabled ✅' : 'Disabled ❌'}`,
+    `**Starboard Channel:** ${formatChannel(s.channelId || s.starboardChannelId)}`,
+    `**Log Channel:** ${formatChannel(s.logChannelId)}`,
+    `**Manager Roles:** ${formatRoles(s.managerRoleIds)}`,
+    `**Emoji:** ${s.emoji || '⭐'}`, `**Threshold:** \`${s.threshold || 3}\``,
+    `**Self Star:** ${s.allowSelfStar ? 'Allowed ✅' : 'Blocked ❌'}`,
+    `**Unique Users:** ${s.requireUniqueUsers !== false ? 'Required ✅' : 'Not Required ❌'}`, '',
+    `Posts: \`${posts.length}\` | Posted: \`${s.analytics?.posted || 0}\` | Updated: \`${s.analytics?.updated || 0}\``,
+  ].join('\n')).setFooter({ text: `Requested by ${memberDisplayName}` }).setTimestamp();
+  return { embeds: [embed], components: [
+    row(new ChannelSelectMenuBuilder().setCustomId('admin:starboard:channel').setPlaceholder('Starboard channel').setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(0).setMaxValues(1)),
+    row(new ChannelSelectMenuBuilder().setCustomId('admin:starboard:logChannel').setPlaceholder('Log channel').setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(0).setMaxValues(1)),
+    row(new RoleSelectMenuBuilder().setCustomId('admin:starboard:managerRoles').setPlaceholder('Manager roles').setMinValues(0).setMaxValues(10)),
+    row(button(s.enabled !== false ? 'admin:starboard:disable' : 'admin:starboard:enable', s.enabled !== false ? '⏸️ Disable' : '▶️ Enable', ButtonStyle.Secondary), button('admin:starboard:thresholdDown', '➖ Threshold', ButtonStyle.Secondary), button('admin:starboard:thresholdUp', '➕ Threshold', ButtonStyle.Secondary), button('admin:starboard:toggleSelf', '⭐ Self Star', ButtonStyle.Secondary), button('admin:starboard:toggleUnique', '👥 Unique', ButtonStyle.Secondary)),
+    row(button('admin:modules', '⬅️ Modules', ButtonStyle.Secondary)),
+  ] };
 }
-
-function save(guild, updater) {
-  return starboardStore.updateStarboardSection(guild.id, updater, guild);
-}
-
-async function safeUpdate(interaction, payload) {
-  if (interaction.deferred || interaction.replied) {
-    await interaction.editReply(payload);
-    return true;
-  }
-  await interaction.update(payload);
-  return true;
-}
-
-async function handleStarboardAdminInteraction(interaction) {
-  const customId = String(interaction.customId || '');
-  if (!customId.startsWith('admin:starboard')) return false;
-
-  const memberDisplayName = getMemberDisplayName(interaction);
-
+const save = (g, u) => starboardStore.updateStarboardSection(g.id, u, g);
+async function safeUpdate(i, p) { if (i.deferred || i.replied) await i.editReply(p); else await i.update(p); return true; }
+async function handleStarboardAdminInteraction(i) {
+  const id = String(i.customId || ''); if (!id.startsWith('admin:starboard')) return false; const member = displayName(i);
   try {
-    if (customId === 'admin:starboard') {
-      return safeUpdate(interaction, buildStarboardAdminPanel(interaction.guild, memberDisplayName));
-    }
-
-    if (interaction.isChannelSelectMenu?.()) {
-      const value = interaction.values?.[0] || null;
-      const prop = customId.split(':')[2];
-      if (prop === 'channel') save(interaction.guild, (section) => ({ ...section, channelId: value, starboardChannelId: value }));
-      if (prop === 'logChannel') save(interaction.guild, (section) => ({ ...section, logChannelId: value }));
-      return safeUpdate(interaction, buildStarboardAdminPanel(interaction.guild, memberDisplayName));
-    }
-
-    if (interaction.isRoleSelectMenu?.() && customId === 'admin:starboard:managerRoles') {
-      save(interaction.guild, (section) => ({ ...section, managerRoleIds: [...new Set(interaction.values || [])] }));
-      return safeUpdate(interaction, buildStarboardAdminPanel(interaction.guild, memberDisplayName));
-    }
-
-    if (customId === 'admin:starboard:enable') save(interaction.guild, (section) => ({ ...section, enabled: true }));
-    if (customId === 'admin:starboard:disable') save(interaction.guild, (section) => ({ ...section, enabled: false }));
-    if (customId === 'admin:starboard:thresholdUp') save(interaction.guild, (section) => ({ ...section, threshold: Math.min(50, Number(section.threshold || 3) + 1) }));
-    if (customId === 'admin:starboard:thresholdDown') save(interaction.guild, (section) => ({ ...section, threshold: Math.max(1, Number(section.threshold || 3) - 1) }));
-    if (customId === 'admin:starboard:toggleSelf') save(interaction.guild, (section) => ({ ...section, allowSelfStar: !section.allowSelfStar }));
-    if (customId === 'admin:starboard:toggleUnique') save(interaction.guild, (section) => ({ ...section, requireUniqueUsers: !section.requireUniqueUsers }));
-
-    return safeUpdate(interaction, buildStarboardAdminPanel(interaction.guild, memberDisplayName));
-  } catch (error) {
-    const payload = { content: `❌ Starboard setup failed: ${error.message}`, flags: 64 };
-    if (interaction.deferred || interaction.replied) await interaction.followUp(payload).catch(() => null);
-    else await interaction.reply(payload).catch(() => null);
-    return true;
-  }
+    if (id === 'admin:starboard') return safeUpdate(i, buildStarboardAdminPanel(i.guild, member));
+    if (i.isChannelSelectMenu?.()) { const value = i.values?.[0] || null; const prop = id.split(':')[2]; if (prop === 'channel') save(i.guild, (s) => ({ ...s, channelId: value, starboardChannelId: value })); if (prop === 'logChannel') save(i.guild, (s) => ({ ...s, logChannelId: value })); }
+    else if (i.isRoleSelectMenu?.() && id === 'admin:starboard:managerRoles') save(i.guild, (s) => ({ ...s, managerRoleIds: [...new Set(i.values || [])] }));
+    else if (id === 'admin:starboard:enable') save(i.guild, (s) => ({ ...s, enabled: true }));
+    else if (id === 'admin:starboard:disable') save(i.guild, (s) => ({ ...s, enabled: false }));
+    else if (id === 'admin:starboard:thresholdUp') save(i.guild, (s) => ({ ...s, threshold: Math.min(50, Number(s.threshold || 3) + 1) }));
+    else if (id === 'admin:starboard:thresholdDown') save(i.guild, (s) => ({ ...s, threshold: Math.max(1, Number(s.threshold || 3) - 1) }));
+    else if (id === 'admin:starboard:toggleSelf') save(i.guild, (s) => ({ ...s, allowSelfStar: !s.allowSelfStar }));
+    else if (id === 'admin:starboard:toggleUnique') save(i.guild, (s) => ({ ...s, requireUniqueUsers: !s.requireUniqueUsers }));
+    return safeUpdate(i, buildStarboardAdminPanel(i.guild, member));
+  } catch (error) { const p = { content: `❌ Starboard setup failed: ${error.message}`, flags: 64 }; if (i.deferred || i.replied) await i.followUp(p).catch(() => null); else await i.reply(p).catch(() => null); return true; }
 }
-
-module.exports = {
-  buildStarboardAdminPanel,
-  handleStarboardAdminInteraction,
-};
+module.exports = { buildStarboardAdminPanel, handleStarboardAdminInteraction };
