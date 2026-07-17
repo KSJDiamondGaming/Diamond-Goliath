@@ -1,147 +1,50 @@
 'use strict';
-
-const {
-  EmbedBuilder,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  ChannelSelectMenuBuilder,
-  ChannelType,
-  RoleSelectMenuBuilder,
-} = require('discord.js');
-
-const suggestionsStore = require('../../../modules/suggestions/suggestionsStore');
-const suggestionsManager = require('../../../modules/suggestions/suggestionsManager');
-
-function row(...components) {
-  return new ActionRowBuilder().addComponents(...components);
-}
-
-function button(customId, label, style = ButtonStyle.Primary) {
-  return new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style);
-}
-
-function getMemberDisplayName(interaction) {
-  return interaction.member?.displayName || interaction.user?.displayName || interaction.user?.username || 'Unknown User';
-}
-
-function formatChannel(id) {
-  return id ? `<#${id}>` : '`Not set`';
-}
-
-function formatRoles(ids = []) {
-  const list = Array.isArray(ids) ? ids.filter(Boolean) : [];
-  return list.length ? list.map((id) => `<@&${id}>`).join(', ') : '`None`';
-}
-
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelSelectMenuBuilder, ChannelType, RoleSelectMenuBuilder } = require('discord.js');
+const suggestionsStore = require('./suggestionsStore');
+const suggestionsManager = require('./suggestionsManager');
+const row = (...components) => new ActionRowBuilder().addComponents(...components);
+const button = (customId, label, style = ButtonStyle.Primary) => new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style);
+const displayName = (i) => i.member?.displayName || i.user?.displayName || i.user?.username || 'Unknown User';
+const formatChannel = (id) => id ? `<#${id}>` : '`Not set`';
+const formatRoles = (ids = []) => Array.isArray(ids) && ids.filter(Boolean).length ? ids.filter(Boolean).map((id) => `<@&${id}>`).join(', ') : '`None`';
 function buildSuggestionsAdminPanel(guild, memberDisplayName = 'Unknown User') {
-  const section = suggestionsStore.getSection(guild.id);
-  const embed = new EmbedBuilder()
-    .setColor(section.enabled !== false ? 0x57f287 : 0x5865f2)
-    .setTitle('💡 Suggestions')
-    .setDescription([
-      'Configure suggestion intake, review and voting.',
-      '',
-      `**Status:** ${section.enabled !== false ? 'Enabled ✅' : 'Disabled ❌'}`,
-      `**Submit Channel:** ${formatChannel(section.submitChannelId)}`,
-      `**Review Channel:** ${formatChannel(section.reviewChannelId)}`,
-      `**Approved Channel:** ${formatChannel(section.approvedChannelId)}`,
-      `**Denied Channel:** ${formatChannel(section.deniedChannelId)}`,
-      `**Reviewer Roles:** ${formatRoles(section.reviewerRoleIds)}`,
-      `**Voting:** ${section.voting !== false ? 'Enabled ✅' : 'Disabled ❌'}`,
-      `**Require Review:** ${section.requireReview !== false ? 'Yes ✅' : 'No ❌'}`,
-      `**Anonymous:** ${section.anonymous === true ? 'Yes ✅' : 'No ❌'}`,
-      '',
-      `Submitted: \`${section.analytics.submitted}\` | Approved: \`${section.analytics.approved}\` | Denied: \`${section.analytics.denied}\``,
-    ].join('\n'))
-    .setFooter({ text: `Requested by ${memberDisplayName}` })
-    .setTimestamp();
-
-  return {
-    embeds: [embed],
-    components: [
-      row(
-        new ChannelSelectMenuBuilder().setCustomId('admin:suggestions:submitChannel').setPlaceholder('Submit channel').setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(0).setMaxValues(1)
-      ),
-      row(
-        new ChannelSelectMenuBuilder().setCustomId('admin:suggestions:reviewChannel').setPlaceholder('Review channel').setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(0).setMaxValues(1)
-      ),
-      row(
-        new RoleSelectMenuBuilder().setCustomId('admin:suggestions:reviewerRoles').setPlaceholder('Reviewer roles').setMinValues(0).setMaxValues(10)
-      ),
-      row(
-        button('admin:suggestions:deploy', '🚀 Deploy Submit Panel', ButtonStyle.Success),
-        button(section.enabled !== false ? 'admin:suggestions:disable' : 'admin:suggestions:enable', section.enabled !== false ? '⏸️ Disable' : '▶️ Enable', ButtonStyle.Secondary),
-        button('admin:suggestions:toggleVoting', '🗳️ Voting', ButtonStyle.Secondary),
-        button('admin:suggestions:toggleReview', '🔎 Review', ButtonStyle.Secondary),
-        button('admin:suggestions:toggleAnonymous', '👤 Anonymous', ButtonStyle.Secondary)
-      ),
-      row(button('admin:modules', '⬅️ Modules', ButtonStyle.Secondary)),
-    ],
-  };
+  const s = suggestionsStore.getSection(guild.id);
+  const embed = new EmbedBuilder().setColor(s.enabled !== false ? 0x57f287 : 0x5865f2).setTitle('💡 Suggestions').setDescription([
+    'Configure suggestion intake, review and voting.', '',
+    `**Status:** ${s.enabled !== false ? 'Enabled ✅' : 'Disabled ❌'}`,
+    `**Submit Channel:** ${formatChannel(s.submitChannelId)}`,
+    `**Review Channel:** ${formatChannel(s.reviewChannelId)}`,
+    `**Approved Channel:** ${formatChannel(s.approvedChannelId)}`,
+    `**Denied Channel:** ${formatChannel(s.deniedChannelId)}`,
+    `**Reviewer Roles:** ${formatRoles(s.reviewerRoleIds)}`,
+    `**Voting:** ${s.voting !== false ? 'Enabled ✅' : 'Disabled ❌'}`,
+    `**Require Review:** ${s.requireReview !== false ? 'Yes ✅' : 'No ❌'}`,
+    `**Anonymous:** ${s.anonymous === true ? 'Yes ✅' : 'No ❌'}`, '',
+    `Submitted: \`${s.analytics.submitted}\` | Approved: \`${s.analytics.approved}\` | Denied: \`${s.analytics.denied}\``,
+  ].join('\n')).setFooter({ text: `Requested by ${memberDisplayName}` }).setTimestamp();
+  return { embeds: [embed], components: [
+    row(new ChannelSelectMenuBuilder().setCustomId('admin:suggestions:submitChannel').setPlaceholder('Submit channel').setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(0).setMaxValues(1)),
+    row(new ChannelSelectMenuBuilder().setCustomId('admin:suggestions:reviewChannel').setPlaceholder('Review channel').setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(0).setMaxValues(1)),
+    row(new RoleSelectMenuBuilder().setCustomId('admin:suggestions:reviewerRoles').setPlaceholder('Reviewer roles').setMinValues(0).setMaxValues(10)),
+    row(button('admin:suggestions:deploy', '🚀 Deploy Submit Panel', ButtonStyle.Success), button(s.enabled !== false ? 'admin:suggestions:disable' : 'admin:suggestions:enable', s.enabled !== false ? '⏸️ Disable' : '▶️ Enable', ButtonStyle.Secondary), button('admin:suggestions:toggleVoting', '🗳️ Voting', ButtonStyle.Secondary), button('admin:suggestions:toggleReview', '🔎 Review', ButtonStyle.Secondary), button('admin:suggestions:toggleAnonymous', '👤 Anonymous', ButtonStyle.Secondary)),
+    row(button('admin:modules', '⬅️ Modules', ButtonStyle.Secondary)),
+  ] };
 }
-
-function save(guild, updater) {
-  return suggestionsStore.updateSection(guild.id, updater, guild);
-}
-
-async function safeUpdate(interaction, payload) {
-  if (interaction.deferred || interaction.replied) {
-    await interaction.editReply(payload);
-    return true;
-  }
-  await interaction.update(payload);
-  return true;
-}
-
-async function handleSuggestionsAdminInteraction(interaction) {
-  const customId = String(interaction.customId || '');
-  if (!customId.startsWith('admin:suggestions')) return false;
-
-  const memberDisplayName = getMemberDisplayName(interaction);
-
+const save = (g, u) => suggestionsStore.updateSection(g.id, u, g);
+async function safeUpdate(i, p) { if (i.deferred || i.replied) await i.editReply(p); else await i.update(p); return true; }
+async function handleSuggestionsAdminInteraction(i) {
+  const id = String(i.customId || ''); if (!id.startsWith('admin:suggestions')) return false; const member = displayName(i);
   try {
-    if (customId === 'admin:suggestions') {
-      return safeUpdate(interaction, buildSuggestionsAdminPanel(interaction.guild, memberDisplayName));
-    }
-
-    if (interaction.isChannelSelectMenu?.()) {
-      const value = interaction.values?.[0] || null;
-      const prop = customId.split(':')[2];
-      if (['submitChannel', 'reviewChannel', 'approvedChannel', 'deniedChannel'].includes(prop)) {
-        const key = `${prop}Id`;
-        save(interaction.guild, (section) => ({ ...section, [key]: value }));
-      }
-      return safeUpdate(interaction, buildSuggestionsAdminPanel(interaction.guild, memberDisplayName));
-    }
-
-    if (interaction.isRoleSelectMenu?.() && customId === 'admin:suggestions:reviewerRoles') {
-      save(interaction.guild, (section) => ({ ...section, reviewerRoleIds: [...new Set(interaction.values || [])] }));
-      return safeUpdate(interaction, buildSuggestionsAdminPanel(interaction.guild, memberDisplayName));
-    }
-
-    if (customId === 'admin:suggestions:enable') save(interaction.guild, (section) => ({ ...section, enabled: true }));
-    if (customId === 'admin:suggestions:disable') save(interaction.guild, (section) => ({ ...section, enabled: false }));
-    if (customId === 'admin:suggestions:toggleVoting') save(interaction.guild, (section) => ({ ...section, voting: !section.voting }));
-    if (customId === 'admin:suggestions:toggleReview') save(interaction.guild, (section) => ({ ...section, requireReview: !section.requireReview }));
-    if (customId === 'admin:suggestions:toggleAnonymous') save(interaction.guild, (section) => ({ ...section, anonymous: !section.anonymous }));
-
-    if (customId === 'admin:suggestions:deploy') {
-      await interaction.deferUpdate().catch(() => null);
-      await suggestionsManager.deploySubmitPanel(interaction.guild);
-      return safeUpdate(interaction, buildSuggestionsAdminPanel(interaction.guild, memberDisplayName));
-    }
-
-    return safeUpdate(interaction, buildSuggestionsAdminPanel(interaction.guild, memberDisplayName));
-  } catch (error) {
-    const payload = { content: `❌ Suggestions setup failed: ${error.message}`, flags: 64 };
-    if (interaction.deferred || interaction.replied) await interaction.followUp(payload).catch(() => null);
-    else await interaction.reply(payload).catch(() => null);
-    return true;
-  }
+    if (id === 'admin:suggestions') return safeUpdate(i, buildSuggestionsAdminPanel(i.guild, member));
+    if (i.isChannelSelectMenu?.()) { const value = i.values?.[0] || null; const prop = id.split(':')[2]; if (['submitChannel', 'reviewChannel', 'approvedChannel', 'deniedChannel'].includes(prop)) save(i.guild, (s) => ({ ...s, [`${prop}Id`]: value })); }
+    else if (i.isRoleSelectMenu?.() && id === 'admin:suggestions:reviewerRoles') save(i.guild, (s) => ({ ...s, reviewerRoleIds: [...new Set(i.values || [])] }));
+    else if (id === 'admin:suggestions:enable') save(i.guild, (s) => ({ ...s, enabled: true }));
+    else if (id === 'admin:suggestions:disable') save(i.guild, (s) => ({ ...s, enabled: false }));
+    else if (id === 'admin:suggestions:toggleVoting') save(i.guild, (s) => ({ ...s, voting: !s.voting }));
+    else if (id === 'admin:suggestions:toggleReview') save(i.guild, (s) => ({ ...s, requireReview: !s.requireReview }));
+    else if (id === 'admin:suggestions:toggleAnonymous') save(i.guild, (s) => ({ ...s, anonymous: !s.anonymous }));
+    else if (id === 'admin:suggestions:deploy') { await i.deferUpdate().catch(() => null); await suggestionsManager.deploySubmitPanel(i.guild); }
+    return safeUpdate(i, buildSuggestionsAdminPanel(i.guild, member));
+  } catch (error) { const p = { content: `❌ Suggestions setup failed: ${error.message}`, flags: 64 }; if (i.deferred || i.replied) await i.followUp(p).catch(() => null); else await i.reply(p).catch(() => null); return true; }
 }
-
-module.exports = {
-  buildSuggestionsAdminPanel,
-  handleSuggestionsAdminInteraction,
-};
+module.exports = { buildSuggestionsAdminPanel, handleSuggestionsAdminInteraction };
