@@ -24,7 +24,10 @@ const sessions = new Map();
 
 const row = (...components) => new ActionRowBuilder().addComponents(...components);
 const button = (id, label, style = ButtonStyle.Secondary, disabled = false) => new ButtonBuilder()
-  .setCustomId(id).setLabel(label).setStyle(style).setDisabled(Boolean(disabled));
+  .setCustomId(id)
+  .setLabel(label)
+  .setStyle(style)
+  .setDisabled(Boolean(disabled));
 
 function sessionFor(interaction) {
   const key = `${interaction.guildId}:${interaction.user.id}`;
@@ -34,13 +37,25 @@ function sessionFor(interaction) {
 
 function expiryLabel(seconds) {
   return ({
-    0: 'Never', 1800: '30 minutes', 3600: '1 hour', 21600: '6 hours',
-    43200: '12 hours', 86400: '1 day', 604800: '7 days', 2592000: '30 days',
+    0: 'Never',
+    1800: '30 minutes',
+    3600: '1 hour',
+    21600: '6 hours',
+    43200: '12 hours',
+    86400: '1 day',
+    604800: '7 days',
+    2592000: '30 days',
   })[Number(seconds)] || 'Never';
 }
 
-function usesLabel(value) { return Number(value) ? String(value) : 'Unlimited'; }
-function roleList(roleIds) { return roleIds?.length ? roleIds.map((id) => `<@&${id}>`).join(', ') : 'None'; }
+function usesLabel(value) {
+  return Number(value) ? String(value) : 'Unlimited';
+}
+
+function roleList(roleIds) {
+  return roleIds?.length ? roleIds.map((id) => `<@&${id}>`).join(', ') : 'None';
+}
+
 function settingsSummary(config) {
   return [
     `Channel: ${config.channelId ? `<#${config.channelId}>` : 'Not selected'}`,
@@ -50,25 +65,42 @@ function settingsSummary(config) {
     `Roles granted: ${roleList(config.roleIds)}`,
   ].join('\n');
 }
+
 function expirySelect(id, current) {
-  return new StringSelectMenuBuilder().setCustomId(id).setPlaceholder(`Expire after: ${expiryLabel(current)}`).addOptions(
-    { label: 'Never', value: '0' }, { label: '30 minutes', value: '1800' },
-    { label: '1 hour', value: '3600' }, { label: '6 hours', value: '21600' },
-    { label: '12 hours', value: '43200' }, { label: '1 day', value: '86400' },
-    { label: '7 days', value: '604800' }, { label: '30 days', value: '2592000' },
-  );
+  return new StringSelectMenuBuilder()
+    .setCustomId(id)
+    .setPlaceholder(`Expire after: ${expiryLabel(current)}`)
+    .addOptions(
+      { label: 'Never', value: '0' },
+      { label: '30 minutes', value: '1800' },
+      { label: '1 hour', value: '3600' },
+      { label: '6 hours', value: '21600' },
+      { label: '12 hours', value: '43200' },
+      { label: '1 day', value: '86400' },
+      { label: '7 days', value: '604800' },
+      { label: '30 days', value: '2592000' },
+    );
 }
+
 function usesSelect(id, current) {
-  return new StringSelectMenuBuilder().setCustomId(id).setPlaceholder(`Max uses: ${usesLabel(current)}`).addOptions(
-    { label: 'Unlimited', value: '0' }, { label: '1 use', value: '1' },
-    { label: '5 uses', value: '5' }, { label: '10 uses', value: '10' },
-    { label: '25 uses', value: '25' }, { label: '50 uses', value: '50' },
-    { label: '100 uses', value: '100' },
-  );
+  return new StringSelectMenuBuilder()
+    .setCustomId(id)
+    .setPlaceholder(`Max uses: ${usesLabel(current)}`)
+    .addOptions(
+      { label: 'Unlimited', value: '0' },
+      { label: '1 use', value: '1' },
+      { label: '5 uses', value: '5' },
+      { label: '10 uses', value: '10' },
+      { label: '25 uses', value: '25' },
+      { label: '50 uses', value: '50' },
+      { label: '100 uses', value: '100' },
+    );
 }
+
 function sameRoles(left = [], right = []) {
   return JSON.stringify([...left].sort()) === JSON.stringify([...right].sort());
 }
+
 function officialMatchesConfig(record, config) {
   return Boolean(record?.official)
     && record.channelId === config.channelId
@@ -77,6 +109,7 @@ function officialMatchesConfig(record, config) {
     && Boolean(record.temporary) === Boolean(config.temporary)
     && sameRoles(record.roleIds, config.roleIds);
 }
+
 function updateNestedSettings(guildId, key, patch, meta) {
   const section = invites.getSection(guildId);
   invites.updateSettings(guildId, { [key]: { ...section.settings[key], ...patch } }, meta);
@@ -88,6 +121,7 @@ function overview(interaction) {
   const member = section.settings.memberInviteTemplate;
   const panel = section.settings.publicPanel;
   const memberLinks = invites.listInviteLinks(interaction.guildId).filter((link) => link.personal).length;
+
   return {
     embeds: [new EmbedBuilder()
       .setColor(section.enabled ? 0x57F287 : 0xED4245)
@@ -98,8 +132,8 @@ function overview(interaction) {
         { name: 'Official Invite', value: official.code ? `https://discord.gg/${official.code}` : 'Not selected', inline: true },
         { name: 'Member Links', value: String(memberLinks), inline: true },
         { name: 'Member Template', value: member.channelId ? 'Configured' : 'Not configured', inline: true },
-        { name: 'Public Panel', value: panel.messageId ? 'Deployed' : 'Not deployed', inline: true },
-        { name: 'Refresh', value: 'Every 2 hours', inline: true },
+        { name: 'Public Panel', value: panel.messageId ? 'Sent' : 'Not sent', inline: true },
+        { name: 'Refresh', value: 'Automatic every 2 hours', inline: true },
       )
       .setFooter({ text: 'Official Goliath invites never appear on member leaderboards.' })],
     components: [
@@ -137,6 +171,7 @@ function officialView(interaction) {
   const config = section.settings.officialInvite;
   const officialLinks = invites.listInviteLinks(interaction.guildId).filter((link) => link.official);
   const exactDuplicate = officialLinks.some((link) => officialMatchesConfig(link, config));
+
   return {
     embeds: [new EmbedBuilder()
       .setColor(0x5865F2)
@@ -170,7 +205,7 @@ function memberTemplateView(interaction) {
     embeds: [new EmbedBuilder()
       .setColor(0x5865F2)
       .setTitle('👥 Member Link Settings')
-      .setDescription('Members press **Get My Link** once. Goliath creates one personal link using these settings and reuses it thereafter.')
+      .setDescription('Members press **Create My Link** once. Goliath creates one personal link using these settings and reuses it thereafter.')
       .addFields(
         { name: 'Member Links', value: config.enabled ? 'Enabled' : 'Disabled', inline: true },
         { name: 'Auto Replace Missing', value: config.autoReplaceMissing ? 'On' : 'Off', inline: true },
@@ -195,14 +230,15 @@ function publicSettingsView(interaction) {
   const section = invites.getSection(interaction.guildId);
   const config = section.settings.publicPanel;
   const member = section.settings.memberInviteTemplate;
+
   return {
     embeds: [new EmbedBuilder()
       .setColor(config.color)
       .setTitle('📣 Configure Public')
-      .setDescription('Configure the public invite panel, leaderboard and the personal links members receive from that panel.')
+      .setDescription('Choose the panel channel, leaderboard size and member-link settings, then send the public panel. The sent panel includes member buttons and refreshes automatically every 2 hours.')
       .addFields(
         { name: 'Panel Channel', value: config.channelId ? `<#${config.channelId}>` : 'Not selected', inline: true },
-        { name: 'Panel Status', value: config.messageId ? 'Deployed' : 'Not deployed', inline: true },
+        { name: 'Panel Status', value: config.messageId ? 'Sent' : 'Not sent', inline: true },
         { name: 'Leaderboard Size', value: `Top ${config.leaderboardLimit}`, inline: true },
         { name: 'Member Links', value: member.enabled ? 'Enabled' : 'Disabled', inline: true },
         { name: 'Member Template', value: member.channelId ? 'Configured' : 'Not configured', inline: true },
@@ -211,13 +247,15 @@ function publicSettingsView(interaction) {
     components: [
       row(new ChannelSelectMenuBuilder().setCustomId('invites:panel-channel').setPlaceholder('Select public panel channel').addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)),
       row(new StringSelectMenuBuilder().setCustomId('invites:panel-limit').setPlaceholder(`Leaderboard: Top ${config.leaderboardLimit}`).addOptions(
-        { label: 'Top 5', value: '5' }, { label: 'Top 10', value: '10' }, { label: 'Top 15', value: '15' },
-        { label: 'Top 20', value: '20' }, { label: 'Top 25', value: '25' },
+        { label: 'Top 5', value: '5' },
+        { label: 'Top 10', value: '10' },
+        { label: 'Top 15', value: '15' },
+        { label: 'Top 20', value: '20' },
+        { label: 'Top 25', value: '25' },
       )),
       row(button('invites:member-settings', 'Member Link Settings', ButtonStyle.Primary)),
       row(
-        button('invites:panel-deploy', config.messageId ? 'Update Panel' : 'Deploy Panel', ButtonStyle.Success, !config.channelId || !section.settings.officialInvite.code),
-        button('invites:panel-refresh', 'Refresh Now', ButtonStyle.Secondary, !config.messageId),
+        button('invites:panel-deploy', 'Send Panel', ButtonStyle.Success, !config.channelId || !section.settings.officialInvite.code),
         button('invites:home', 'Back'),
       ),
     ],
@@ -254,6 +292,7 @@ function buildInviteStudioPayload(interaction, forcedPage = null) {
   if (state.page === 'admin-config') return adminView(interaction);
   return overview(interaction);
 }
+
 async function updatePanel(interaction) {
   const payload = buildInviteStudioPayload(interaction);
   if (interaction.deferred || interaction.replied) await interaction.editReply(payload);
@@ -267,6 +306,7 @@ function dmModal(interaction) {
     row(new TextInputBuilder().setCustomId('message').setLabel('DM message').setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(3500).setValue(config.dmMessage)),
   );
 }
+
 function embedModal(interaction) {
   const config = invites.getSection(interaction.guildId).settings.publicPanel;
   return new ModalBuilder().setCustomId('invites:panel-embed-submit').setTitle('Edit Invite Panel').addComponents(
@@ -287,8 +327,9 @@ async function verifyOfficialInvite(guild) {
   const record = section.inviteLinks[config.code];
   if (!record?.official) return { valid: false, reason: 'The selected link is not registered as a Goliath official link.' };
   if (!officialMatchesConfig(record, config)) return { valid: false, reason: 'The selected link does not match the settings currently shown.' };
-  return { valid: true, invite: live, config, record };
+  return { valid: true, invite: live, config };
 }
+
 async function createOfficialInvite(guild, meta) {
   const section = invites.getSection(guild.id);
   const config = section.settings.officialInvite;
@@ -302,12 +343,17 @@ async function createOfficialInvite(guild, meta) {
     }
   }
   const result = await invites.createInviteLink(guild, {
-    channelId: config.channelId, maxAge: config.maxAge, maxUses: config.maxUses,
-    temporary: config.temporary, roleIds: config.roleIds, official: true,
+    channelId: config.channelId,
+    maxAge: config.maxAge,
+    maxUses: config.maxUses,
+    temporary: config.temporary,
+    roleIds: config.roleIds,
+    official: true,
   }, meta);
   updateNestedSettings(guild.id, 'officialInvite', { code: result.invite.code }, meta);
   return { invite: result.invite, created: true, duplicate: false };
 }
+
 async function deleteSelectedOfficialInvite(guild, meta) {
   const config = invites.getSection(guild.id).settings.officialInvite;
   if (!config.code) return false;
@@ -321,11 +367,18 @@ async function handleInviteStudioInteraction(interaction) {
   const customId = String(interaction.customId);
   const isManagement = interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild);
   const managementMemberIds = new Set([
-    'invites:member-settings', 'invites:member-channel', 'invites:member-roles',
-    'invites:member-expiry', 'invites:member-uses', 'invites:member-temporary',
-    'invites:member-enabled', 'invites:member-autoreplace',
-    'invites:member-dm-modal', 'invites:member-dm-submit',
+    'invites:member-settings',
+    'invites:member-channel',
+    'invites:member-roles',
+    'invites:member-expiry',
+    'invites:member-uses',
+    'invites:member-temporary',
+    'invites:member-enabled',
+    'invites:member-autoreplace',
+    'invites:member-dm-modal',
+    'invites:member-dm-submit',
   ]);
+
   if (customId.startsWith('invites:member-') && !managementMemberIds.has(customId) && !isManagement) {
     return publicPanels.handleMemberInteraction(interaction);
   }
@@ -378,7 +431,8 @@ async function handleInviteStudioInteraction(interaction) {
     const current = invites.getSection(interaction.guildId).settings.memberInviteTemplate;
     updateNestedSettings(interaction.guildId, 'memberInviteTemplate', { autoReplaceMissing: !current.autoReplaceMissing }, meta);
   } else if (action === 'member-dm-modal') {
-    await interaction.showModal(dmModal(interaction)); return true;
+    await interaction.showModal(dmModal(interaction));
+    return true;
   } else if (action === 'member-dm-submit' && interaction.isModalSubmit()) {
     updateNestedSettings(interaction.guildId, 'memberInviteTemplate', {
       dmTitle: interaction.fields.getTextInputValue('title'),
@@ -389,7 +443,8 @@ async function handleInviteStudioInteraction(interaction) {
   } else if (action === 'panel-channel' && interaction.isChannelSelectMenu()) updateNestedSettings(interaction.guildId, 'publicPanel', { channelId: interaction.values[0] }, meta);
   else if (action === 'panel-limit' && interaction.isStringSelectMenu()) updateNestedSettings(interaction.guildId, 'publicPanel', { leaderboardLimit: Number(interaction.values[0]) }, meta);
   else if (action === 'panel-embed-modal') {
-    await interaction.showModal(embedModal(interaction)); return true;
+    await interaction.showModal(embedModal(interaction));
+    return true;
   } else if (action === 'panel-embed-submit' && interaction.isModalSubmit()) {
     const color = interaction.fields.getTextInputValue('color').trim();
     if (!/^#[0-9a-f]{6}$/i.test(color)) throw new Error('Embed colour must be a hex value such as #5865F2.');
@@ -406,17 +461,14 @@ async function handleInviteStudioInteraction(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const message = await publicPanels.deployPublicPanel(interaction.guild, meta);
     publicPanels.startAutoRefresh(interaction.guild);
-    await interaction.editReply(`✅ Invite panel deployed in <#${message.channelId}>.`);
-    return true;
-  } else if (action === 'panel-refresh') {
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    const ok = await publicPanels.refreshPublicPanel(interaction.guild, meta);
-    await interaction.editReply(ok ? '✅ Invite panel refreshed.' : '❌ Deployed panel not found.');
+    await interaction.editReply(`✅ Public invite and leaderboard panel sent in <#${message.channelId}>.`);
     return true;
   } else if (action === 'health') {
     const health = await invites.buildHealth(interaction.guild);
     await interaction.reply({
-      content: health.healthy ? `✅ Invite Studio is healthy. ${health.warnings.length} warning(s).` : `⚠️ ${health.issues.length} issue(s), ${health.warnings.length} warning(s).`,
+      content: health.healthy
+        ? `✅ Invite Studio is healthy. ${health.warnings.length} warning(s).`
+        : `⚠️ ${health.issues.length} issue(s), ${health.warnings.length} warning(s).`,
       flags: MessageFlags.Ephemeral,
     });
     return true;
