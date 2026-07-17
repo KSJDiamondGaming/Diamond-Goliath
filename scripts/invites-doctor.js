@@ -8,24 +8,19 @@ const checks = [];
 
 function read(file) { return fs.readFileSync(path.join(root, file), 'utf8'); }
 function exists(file) { return fs.existsSync(path.join(root, file)); }
-function check(label, condition, detail = '') {
-  checks.push({ label, ok: Boolean(condition), detail });
-  if (!condition) failures.push(`${label}${detail ? `: ${detail}` : ''}`);
-}
+function check(label, condition, detail = '') { checks.push({ label, ok: Boolean(condition), detail }); if (!condition) failures.push(`${label}${detail ? `: ${detail}` : ''}`); }
 function file(filePath, exports = []) {
   const full = path.join(root, filePath);
   check(filePath, fs.existsSync(full), 'missing');
   if (!fs.existsSync(full) || !exports.length || !filePath.endsWith('.js')) return;
-  try {
-    delete require.cache[require.resolve(full)];
-    const loaded = require(full);
-    check(`${filePath} exports`, exports.every((name) => loaded?.[name] !== undefined), exports.filter((name) => loaded?.[name] === undefined).join(', '));
-  } catch (error) { check(`${filePath} loads`, false, error.message); }
+  try { delete require.cache[require.resolve(full)]; const loaded = require(full); check(`${filePath} exports`, exports.every((name) => loaded?.[name] !== undefined), exports.filter((name) => loaded?.[name] === undefined).join(', ')); }
+  catch (error) { check(`${filePath} loads`, false, error.message); }
 }
 
 file('src/modules/invites/invites.js', ['defaults', 'getSection', 'trackJoin', 'trackLeave', 'syncGuild', 'leaderboard', 'createInviteLink', 'deleteInviteLink', 'listInviteLinks', 'applyInviteRoles', 'createManagedInvite', 'validateManagedInvite', 'buildHealth', 'repair', 'startup', 'exportConfiguration', 'reset']);
 file('src/modules/invites/invitesRoute.js');
 file('src/modules/invites/invitesAdminPanel.js', ['buildInviteStudioPayload', 'handleInviteStudioInteraction']);
+file('src/modules/invites/invitesPublicPanels.js', ['panelConfig', 'savePanelConfig', 'buildPublicPayload', 'buildLeaderboardPayload', 'deployPublicPanel', 'deployLeaderboardPanel', 'refreshLeaderboard', 'queueLeaderboardRefresh', 'handleMemberHelp']);
 file('src/events/invites/inviteLogs.js');
 file('src/dashboard/js/pages/modules/Invites.jsx');
 file('scripts/invites-smoke-test.js');
@@ -41,7 +36,10 @@ const route = read('src/modules/invites/invitesRoute.js');
 for (const token of ["router.get('/:guildId'", "router.patch('/:guildId/enabled'", "router.patch('/:guildId/settings'", "router.post('/:guildId/sync'", "router.get('/:guildId/links'", "router.post('/:guildId/links'", "router.delete('/:guildId/links/:code'", "router.get('/:guildId/history'", "router.get('/:guildId/health'", "router.post('/:guildId/repair'", "router.get('/:guildId/export'", "router.post('/:guildId/reset'"]) check(`Invite API ${token}`, route.includes(token));
 
 const panel = read('src/modules/invites/invitesAdminPanel.js');
-for (const token of ['invites:draft-channel', 'invites:draft-expiry', 'invites:draft-uses', 'invites:draft-roles', 'invites:draft-temporary', 'invites:generate', 'invites:links', 'invites:sync', 'invites:health', 'invites:repair']) check(`Invite panel ${token}`, panel.includes(token));
+for (const token of ['invites:draft-channel', 'invites:draft-expiry', 'invites:draft-uses', 'invites:draft-roles', 'invites:draft-temporary', 'invites:generate', 'invites:links', 'invites:sync', 'invites:health', 'invites:repair', 'invites:public', 'invites:public-deploy', 'invites:leaderboard', 'invites:leaderboard-deploy', 'invites:leaderboard-refresh']) check(`Invite panel ${token}`, panel.includes(token));
+
+const publicPanels = read('src/modules/invites/invitesPublicPanels.js');
+for (const token of ['publicPanel', 'leaderboardPanel', 'messageId', 'inviteCode', 'Create My Invite', 'queueLeaderboardRefresh', 'message.edit']) check(`Invite public panels ${token}`, publicPanels.includes(token));
 
 const modulePanels = read('src/core/admin/functions/moduleAdminPanels.js');
 check('Invite Studio listed in live paginated Modules panel', modulePanels.includes("['admin:invites'") && modulePanels.includes('Invite Studio'));
@@ -62,6 +60,7 @@ check('Invite link table includes channel and temporary status', dashboard.inclu
 
 const eventSource = read('src/events/invites/inviteLogs.js');
 for (const token of ['ClientReady', 'InviteCreate', 'InviteDelete', 'GuildMemberAdd', 'GuildMemberRemove']) check(`Invite event ${token}`, eventSource.includes(token));
+check('Leaderboard refresh is wired to invite lifecycle', eventSource.includes('queueLeaderboardRefresh'));
 const registry = read('src/dashboard/js/shared/moduleRegistry.js');
 check('Dashboard module registered', registry.includes("key: 'invites'") && registry.includes("route: '/invites'"));
 const layout = read('src/dashboard/js/ui/layout.js');
@@ -80,8 +79,5 @@ check('Invite smoke test runs in Doctor', packageJson.scripts?.doctor?.includes(
 console.log('\nInvite Studio Doctor');
 console.log('====================');
 for (const item of checks) console.log(`${item.ok ? '✅' : '❌'} ${item.label}${!item.ok && item.detail ? ` — ${item.detail}` : ''}`);
-if (failures.length) {
-  console.error(`\n❌ Invite Studio Doctor failed with ${failures.length} issue(s).`);
-  process.exit(1);
-}
+if (failures.length) { console.error(`\n❌ Invite Studio Doctor failed with ${failures.length} issue(s).`); process.exit(1); }
 console.log('\n✅ Invite Studio complete acceptance contract passed.');
