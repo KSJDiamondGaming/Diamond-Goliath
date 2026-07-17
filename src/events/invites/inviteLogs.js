@@ -4,6 +4,7 @@ const { Events } = require('discord.js');
 const loggingService = require('../../core/logging/service');
 const invites = require('../../modules/invites/invites');
 const invitePanels = require('../../modules/invites/invitesPublicPanels');
+const memberProfiles = require('../../modules/invites/invitesMemberProfiles');
 
 async function sendConfiguredLog(guild, payload) {
   const section = invites.getSection(guild.id);
@@ -44,6 +45,7 @@ async function handleJoin(member) {
   const result = await invites.trackJoin(member, { actorId: member.id, action: 'invite_member_join' });
   if (!result) return;
   invitePanels.queueLeaderboardRefresh(member.guild);
+  if (result.inviterId) await memberProfiles.notifyInviteUsed(member.guild, result.inviterId, member).catch(() => null);
   await loggingService.send(member.guild, 'invite.use', {
     title: 'Invite Used', color: '#5865F2', fields: [
       { name: 'Member', value: `${member} \`${member.user?.tag || member.id}\``, inline: true },
