@@ -18,6 +18,7 @@ const {
 
 const invites = require('./invites');
 const publicPanels = require('./invitesPublicPanels');
+const inviteManager = require('./invitesManager');
 
 const PREFIX = 'invites:';
 const sessions = new Map();
@@ -31,7 +32,7 @@ const button = (id, label, style = ButtonStyle.Secondary, disabled = false) => n
 
 function sessionFor(interaction) {
   const key = `${interaction.guildId}:${interaction.user.id}`;
-  if (!sessions.has(key)) sessions.set(key, { page: 'overview' });
+  if (!sessions.has(key)) sessions.set(key, { page: 'overview', resetConfirmUntil: 0 });
   return sessions.get(key);
 }
 
@@ -184,10 +185,17 @@ function officialView(interaction) {
         { name: 'Duplicate Settings', value: exactDuplicate ? 'An identical Goliath link already exists.' : 'No identical Goliath link found.', inline: false },
       )],
     components: [
-      row(new ChannelSelectMenuBuilder().setCustomId('invites:official-channel').setPlaceholder('Select official invite channel').addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)),
+      row(new ChannelSelectMenuBuilder()
+        .setCustomId('invites:official-channel')
+        .setPlaceholder('Select official invite channel')
+        .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)),
       row(expirySelect('invites:official-expiry', config.maxAge)),
       row(usesSelect('invites:official-uses', config.maxUses)),
-      row(new RoleSelectMenuBuilder().setCustomId('invites:official-roles').setPlaceholder('Roles for official invitees (optional)').setMinValues(0).setMaxValues(10)),
+      row(new RoleSelectMenuBuilder()
+        .setCustomId('invites:official-roles')
+        .setPlaceholder('Roles for official invitees (optional)')
+        .setMinValues(0)
+        .setMaxValues(10)),
       row(
         button('invites:official-temporary', config.temporary ? 'Temporary: On' : 'Temporary: Off'),
         button('invites:official-verify', 'Verify Selected', ButtonStyle.Secondary, !config.code),
@@ -212,10 +220,17 @@ function memberTemplateView(interaction) {
         { name: 'Template Settings', value: settingsSummary(config), inline: false },
       )],
     components: [
-      row(new ChannelSelectMenuBuilder().setCustomId('invites:member-channel').setPlaceholder('Select member invite channel').addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)),
+      row(new ChannelSelectMenuBuilder()
+        .setCustomId('invites:member-channel')
+        .setPlaceholder('Select member invite channel')
+        .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)),
       row(expirySelect('invites:member-expiry', config.maxAge)),
       row(usesSelect('invites:member-uses', config.maxUses)),
-      row(new RoleSelectMenuBuilder().setCustomId('invites:member-roles').setPlaceholder('Roles automatically granted to invitees').setMinValues(0).setMaxValues(10)),
+      row(new RoleSelectMenuBuilder()
+        .setCustomId('invites:member-roles')
+        .setPlaceholder('Roles automatically granted to invitees')
+        .setMinValues(0)
+        .setMaxValues(10)),
       row(
         button('invites:member-temporary', config.temporary ? 'Temporary: On' : 'Temporary: Off'),
         button('invites:member-enabled', config.enabled ? 'Links: On' : 'Links: Off'),
@@ -245,14 +260,20 @@ function publicSettingsView(interaction) {
         { name: 'Automatic Refresh', value: 'Every 2 hours', inline: true },
       )],
     components: [
-      row(new ChannelSelectMenuBuilder().setCustomId('invites:panel-channel').setPlaceholder('Select public panel channel').addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)),
-      row(new StringSelectMenuBuilder().setCustomId('invites:panel-limit').setPlaceholder(`Leaderboard: Top ${config.leaderboardLimit}`).addOptions(
-        { label: 'Top 5', value: '5' },
-        { label: 'Top 10', value: '10' },
-        { label: 'Top 15', value: '15' },
-        { label: 'Top 20', value: '20' },
-        { label: 'Top 25', value: '25' },
-      )),
+      row(new ChannelSelectMenuBuilder()
+        .setCustomId('invites:panel-channel')
+        .setPlaceholder('Select public panel channel')
+        .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)),
+      row(new StringSelectMenuBuilder()
+        .setCustomId('invites:panel-limit')
+        .setPlaceholder(`Leaderboard: Top ${config.leaderboardLimit}`)
+        .addOptions(
+          { label: 'Top 5', value: '5' },
+          { label: 'Top 10', value: '10' },
+          { label: 'Top 15', value: '15' },
+          { label: 'Top 20', value: '20' },
+          { label: 'Top 25', value: '25' },
+        )),
       row(button('invites:member-settings', 'Member Link Settings', ButtonStyle.Primary)),
       row(
         button('invites:panel-deploy', 'Send Panel', ButtonStyle.Success, !config.channelId || !section.settings.officialInvite.code),
@@ -264,19 +285,34 @@ function publicSettingsView(interaction) {
 
 function adminView(interaction) {
   const section = invites.getSection(interaction.guildId);
+  const state = sessionFor(interaction);
+  const resetArmed = Number(state.resetConfirmUntil || 0) > Date.now();
+  const embed = new EmbedBuilder()
+    .setColor(section.enabled ? 0x57F287 : 0xED4245)
+    .setTitle('🛠️ Invite Studio Admin')
+    .setDescription(resetArmed
+      ? '⚠️ **Leaderboard reset armed.** Press **Confirm Reset Leaderboard** within 30 seconds. Personal invite links and configuration will be kept.'
+      : 'Edit user-facing messages, manage member invites and run Invite Studio maintenance.')
+    .addFields(
+      { name: 'Module Status', value: section.enabled ? 'Enabled' : 'Disabled', inline: true },
+      { name: 'Panel Message', value: 'Editable', inline: true },
+      { name: 'Member DM', value: 'Editable', inline: true },
+    );
+
   return {
-    embeds: [new EmbedBuilder()
-      .setColor(section.enabled ? 0x57F287 : 0xED4245)
-      .setTitle('🛠️ Invite Studio Admin')
-      .setDescription('Edit user-facing messages and run Invite Studio maintenance.')
-      .addFields(
-        { name: 'Module Status', value: section.enabled ? 'Enabled' : 'Disabled', inline: true },
-        { name: 'Panel Message', value: 'Editable', inline: true },
-        { name: 'Member DM', value: 'Editable', inline: true },
-      )],
+    embeds: [embed],
     components: [
-      row(button('invites:panel-embed-modal', 'Edit Panel Embed', ButtonStyle.Primary), button('invites:member-dm-modal', 'Edit Member DM', ButtonStyle.Primary)),
-      row(button('invites:health', 'Health'), button('invites:repair', 'Repair'), button('invites:toggle', section.enabled ? 'Disable' : 'Enable', section.enabled ? ButtonStyle.Danger : ButtonStyle.Success)),
+      row(
+        button('invites:panel-embed-modal', 'Edit Panel Embed', ButtonStyle.Primary),
+        button('invites:member-dm-modal', 'Edit Member DM', ButtonStyle.Primary),
+        button('invites:invite-manager', 'Invite Manager', ButtonStyle.Primary),
+      ),
+      row(
+        button('invites:health', 'Health'),
+        button('invites:repair', 'Repair'),
+        button(resetArmed ? 'invites:leaderboard-reset-confirm' : 'invites:leaderboard-reset-arm', resetArmed ? 'Confirm Reset Leaderboard' : 'Reset Leaderboard', ButtonStyle.Danger),
+        button('invites:toggle', section.enabled ? 'Disable' : 'Enable', section.enabled ? ButtonStyle.Danger : ButtonStyle.Success),
+      ),
       row(button('invites:home', 'Back')),
     ],
   };
@@ -290,6 +326,7 @@ function buildInviteStudioPayload(interaction, forcedPage = null) {
   if (state.page === 'member-settings') return memberTemplateView(interaction);
   if (state.page === 'public-config') return publicSettingsView(interaction);
   if (state.page === 'admin-config') return adminView(interaction);
+  if (state.page === 'invite-manager') return inviteManager.buildInviteManagerPayload(interaction);
   return overview(interaction);
 }
 
@@ -301,21 +338,39 @@ async function updatePanel(interaction) {
 
 function dmModal(interaction) {
   const config = invites.getSection(interaction.guildId).settings.memberInviteTemplate;
-  return new ModalBuilder().setCustomId('invites:member-dm-submit').setTitle('Edit Member Invite DM').addComponents(
-    row(new TextInputBuilder().setCustomId('title').setLabel('DM title').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(256).setValue(config.dmTitle)),
-    row(new TextInputBuilder().setCustomId('message').setLabel('DM message').setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(3500).setValue(config.dmMessage)),
-  );
+  return new ModalBuilder()
+    .setCustomId('invites:member-dm-submit')
+    .setTitle('Edit Member Invite DM')
+    .addComponents(
+      row(new TextInputBuilder()
+        .setCustomId('title')
+        .setLabel('DM title')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setMaxLength(256)
+        .setValue(config.dmTitle)),
+      row(new TextInputBuilder()
+        .setCustomId('message')
+        .setLabel('DM message')
+        .setStyle(TextInputStyle.Paragraph)
+        .setRequired(true)
+        .setMaxLength(3500)
+        .setValue(config.dmMessage)),
+    );
 }
 
 function embedModal(interaction) {
   const config = invites.getSection(interaction.guildId).settings.publicPanel;
-  return new ModalBuilder().setCustomId('invites:panel-embed-submit').setTitle('Edit Invite Panel').addComponents(
-    row(new TextInputBuilder().setCustomId('title').setLabel('Embed title').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(256).setValue(config.title)),
-    row(new TextInputBuilder().setCustomId('description').setLabel('Embed description').setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(4000).setValue(config.description)),
-    row(new TextInputBuilder().setCustomId('footer').setLabel('Footer').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(2048).setValue(config.footer)),
-    row(new TextInputBuilder().setCustomId('button').setLabel('Official invite button label').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(80).setValue(config.buttonLabel)),
-    row(new TextInputBuilder().setCustomId('color').setLabel('Embed colour (hex)').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(7).setValue(config.color)),
-  );
+  return new ModalBuilder()
+    .setCustomId('invites:panel-embed-submit')
+    .setTitle('Edit Invite Panel')
+    .addComponents(
+      row(new TextInputBuilder().setCustomId('title').setLabel('Embed title').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(256).setValue(config.title)),
+      row(new TextInputBuilder().setCustomId('description').setLabel('Embed description').setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(4000).setValue(config.description)),
+      row(new TextInputBuilder().setCustomId('footer').setLabel('Footer').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(2048).setValue(config.footer)),
+      row(new TextInputBuilder().setCustomId('button').setLabel('Official invite button label').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(80).setValue(config.buttonLabel)),
+      row(new TextInputBuilder().setCustomId('color').setLabel('Embed colour (hex)').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(7).setValue(config.color)),
+    );
 }
 
 async function verifyOfficialInvite(guild) {
@@ -384,14 +439,35 @@ async function handleInviteStudioInteraction(interaction) {
   }
   if (!isManagement) throw new Error('Manage Server permission is required.');
 
+  if (customId.startsWith('invites:manager-')) {
+    return inviteManager.handleInviteManagerInteraction(interaction);
+  }
+
   const action = customId.slice(PREFIX.length);
   const state = sessionFor(interaction);
   const meta = { actorId: interaction.user.id, action: `invites_panel_${action}` };
 
   if (action === 'home') state.page = 'overview';
+  else if (action === 'invite-manager') state.page = 'invite-manager';
   else if (['goliath', 'official-settings', 'member-settings', 'public-config', 'admin-config'].includes(action)) state.page = action;
   else if (action === 'toggle') invites.setEnabled(interaction.guildId, !invites.getSection(interaction.guildId).enabled, meta);
-  else if (action === 'official-channel' && interaction.isChannelSelectMenu()) updateNestedSettings(interaction.guildId, 'officialInvite', { channelId: interaction.values[0] }, meta);
+  else if (action === 'leaderboard-reset-arm') {
+    state.resetConfirmUntil = Date.now() + 30000;
+  } else if (action === 'leaderboard-reset-confirm') {
+    if (Number(state.resetConfirmUntil || 0) <= Date.now()) {
+      state.resetConfirmUntil = 0;
+      await interaction.reply({ content: '❌ Reset confirmation expired. Press Reset Leaderboard again.', flags: MessageFlags.Ephemeral });
+      return true;
+    }
+    inviteManager.resetLeaderboard(interaction.guildId, {
+      actorId: interaction.user.id,
+      action: 'invite_admin_reset_leaderboard',
+    });
+    state.resetConfirmUntil = 0;
+    await publicPanels.refreshPublicPanel(interaction.guild, { actorId: interaction.user.id, action: 'invite_admin_reset_refresh' }).catch(() => null);
+    await interaction.reply({ content: '✅ Leaderboard reset. Personal invite links, panel settings and templates were kept.', flags: MessageFlags.Ephemeral });
+    return true;
+  } else if (action === 'official-channel' && interaction.isChannelSelectMenu()) updateNestedSettings(interaction.guildId, 'officialInvite', { channelId: interaction.values[0] }, meta);
   else if (action === 'official-roles' && interaction.isRoleSelectMenu()) updateNestedSettings(interaction.guildId, 'officialInvite', { roleIds: interaction.values }, meta);
   else if (action === 'official-expiry' && interaction.isStringSelectMenu()) updateNestedSettings(interaction.guildId, 'officialInvite', { maxAge: Number(interaction.values[0]) }, meta);
   else if (action === 'official-uses' && interaction.isStringSelectMenu()) updateNestedSettings(interaction.guildId, 'officialInvite', { maxUses: Number(interaction.values[0]) }, meta);
