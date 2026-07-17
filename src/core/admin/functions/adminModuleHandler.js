@@ -17,7 +17,7 @@ const {
   buildSuggestionsPayload,
   buildVerificationPayload,
 } = require('./adminRegisteredModulePayloads');
-const { buildInviteStudioPayload, handleInviteStudioInteraction } = require('./invitesAdminPanel');
+const { buildInviteStudioPayload, handleInviteStudioInteraction } = require('../../../modules/invites/invitesAdminPanel');
 const {
   cleanDiscordId,
   getChannel,
