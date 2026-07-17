@@ -8,8 +8,10 @@ const now = () => new Date().toISOString();
 const clone = (value) => value == null ? value : JSON.parse(JSON.stringify(value));
 const cleanId = (value) => { const id = String(value || '').replace(/[<@&#!>]/g, '').trim(); return /^\d{15,25}$/.test(id) ? id : null; };
 const clean = (value, max = 500) => String(value ?? '').trim().slice(0, max);
-
 const inviteCache = new Map();
+
+const MAX_AGE_OPTIONS = new Set([0, 1800, 3600, 21600, 43200, 86400, 604800, 2592000]);
+const MAX_USES_OPTIONS = new Set([0, 1, 5, 10, 25, 50, 100]);
 
 function defaults() {
   return {
@@ -25,6 +27,7 @@ function defaults() {
       ignoreBots: true,
       rewardRoles: [],
     },
+    inviteLinks: {},
     inviters: {},
     members: {},
     history: [],
@@ -36,6 +39,9 @@ function defaults() {
       vanity: 0,
       fake: 0,
       rewardsGranted: 0,
+      inviteRolesGranted: 0,
+      inviteRoleFailures: 0,
+      linksCreated: 0,
       failures: 0,
       lastJoinAt: null,
       lastLeaveAt: null,
@@ -53,9 +59,33 @@ function normalizeReward(item = {}) {
   };
 }
 
+function normalizeInviteLink(item = {}, code = null) {
+  const maxAge = Number(item.maxAge || 0);
+  const maxUses = Number(item.maxUses || 0);
+  return {
+    code: clean(item.code || code, 100) || null,
+    channelId: cleanId(item.channelId),
+    inviterId: cleanId(item.inviterId),
+    roleIds: [...new Set((Array.isArray(item.roleIds) ? item.roleIds : []).map(cleanId).filter(Boolean))].slice(0, 25),
+    maxAge: MAX_AGE_OPTIONS.has(maxAge) ? maxAge : 0,
+    maxUses: MAX_USES_OPTIONS.has(maxUses) ? maxUses : 0,
+    temporary: item.temporary === true,
+    enabled: item.enabled !== false,
+    uses: Math.max(0, Number(item.uses || 0)),
+    expiresAt: item.expiresAt || null,
+    createdAt: item.createdAt || now(),
+    updatedAt: item.updatedAt || now(),
+  };
+}
+
 function normalize(section = {}) {
   const base = defaults();
   const settings = section.settings || section;
+  const inviteLinks = {};
+  for (const [code, link] of Object.entries(section.inviteLinks || {})) {
+    const normalized = normalizeInviteLink(link, code);
+    if (normalized.code) inviteLinks[normalized.code] = normalized;
+  }
   return {
     ...base,
     ...clone(section),
@@ -73,6 +103,7 @@ function normalize(section = {}) {
       ignoreBots: settings.ignoreBots !== false,
       rewardRoles: (Array.isArray(settings.rewardRoles) ? settings.rewardRoles : []).map(normalizeReward).filter((item) => item.roleId).sort((a, b) => a.invites - b.invites),
     },
+    inviteLinks,
     inviters: section.inviters && typeof section.inviters === 'object' ? clone(section.inviters) : {},
     members: section.members && typeof section.members === 'object' ? clone(section.members) : {},
     history: (Array.isArray(section.history) ? section.history : []).slice(-1000),
@@ -90,14 +121,10 @@ function updateSection(guildId, updater, meta = {}) {
     return normalize(typeof updater === 'function' ? updater(clone(normalized)) : updater);
   }, defaults(), meta));
 }
-
 function setEnabled(guildId, enabled, meta = {}) { return updateSection(guildId, (section) => ({ ...section, enabled: enabled === true }), meta); }
 function updateSettings(guildId, patch = {}, meta = {}) { return updateSection(guildId, (section) => ({ ...section, settings: { ...section.settings, ...patch } }), meta); }
 function addHistory(guildId, entry, meta = {}) {
-  return updateSection(guildId, (section) => ({
-    ...section,
-    history: [...section.history, { id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, at: now(), ...entry }].slice(-1000),
-  }), meta);
+  return updateSection(guildId, (section) => ({ ...section, history: [...section.history, { id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, at: now(), ...entry }].slice(-1000) }), meta);
 }
 function addAnalytics(guildId, patch, meta = {}) {
   return updateSection(guildId, (section) => {
@@ -109,14 +136,15 @@ function addAnalytics(guildId, patch, meta = {}) {
 
 async function fetchInviteSnapshot(guild) {
   const map = new Map();
-  const invites = await guild.invites.fetch();
-  for (const invite of invites.values()) map.set(invite.code, {
+  const fetched = await guild.invites.fetch();
+  for (const invite of fetched.values()) map.set(invite.code, {
     code: invite.code,
     uses: Number(invite.uses || 0),
     inviterId: invite.inviter?.id || null,
     channelId: invite.channelId || null,
     maxUses: invite.maxUses || 0,
     expiresAt: invite.expiresAt?.toISOString?.() || null,
+    temporary: invite.temporary === true,
   });
   return map;
 }
@@ -124,7 +152,14 @@ async function fetchInviteSnapshot(guild) {
 async function syncGuild(guild, meta = {}) {
   const snapshot = await fetchInviteSnapshot(guild);
   inviteCache.set(guild.id, snapshot);
-  addAnalytics(guild.id, { lastSyncAt: now() }, meta);
+  updateSection(guild.id, (section) => {
+    const inviteLinks = { ...section.inviteLinks };
+    for (const [code, invite] of snapshot.entries()) {
+      if (!inviteLinks[code]) continue;
+      inviteLinks[code] = normalizeInviteLink({ ...inviteLinks[code], uses: invite.uses, expiresAt: invite.expiresAt, updatedAt: now() }, code);
+    }
+    return { ...section, inviteLinks, analytics: { ...section.analytics, lastSyncAt: now() } };
+  }, meta);
   return snapshot;
 }
 
@@ -177,36 +212,51 @@ async function applyRewards(guild, inviterId, meta = {}) {
   return granted;
 }
 
+async function applyInviteRoles(member, inviteCode, meta = {}) {
+  const section = getSection(member.guild.id);
+  const link = section.inviteLinks[inviteCode];
+  if (!link?.enabled || !link.roleIds.length) return { granted: [], failed: [] };
+  const granted = [];
+  const failed = [];
+  for (const roleId of link.roleIds) {
+    const role = member.guild.roles.cache.get(roleId) || await member.guild.roles.fetch(roleId).catch(() => null);
+    if (!role || role.managed || member.guild.members.me.roles.highest.position <= role.position) { failed.push(roleId); continue; }
+    try { await member.roles.add(role, `Goliath invite role via ${inviteCode}`); granted.push(roleId); }
+    catch { failed.push(roleId); }
+  }
+  if (granted.length || failed.length) {
+    addHistory(member.guild.id, { type: 'invite_roles', memberId: member.id, inviteCode, roleIds: link.roleIds, grantedRoleIds: granted, failedRoleIds: failed }, meta);
+    addAnalytics(member.guild.id, { inviteRolesGranted: granted.length, inviteRoleFailures: failed.length }, meta);
+  }
+  return { granted, failed };
+}
+
 async function trackJoin(member, meta = {}) {
   const guild = member.guild;
   const section = getSection(guild.id);
   if (!section.enabled || !section.settings.trackingEnabled || (member.user.bot && section.settings.ignoreBots)) return null;
   let used = null;
   try { used = await resolveUsedInvite(guild); }
-  catch (error) { addAnalytics(guild.id, { failures: 1 }, meta); }
+  catch { addAnalytics(guild.id, { failures: 1 }, meta); }
   const inviterId = cleanId(used?.inviterId);
-  const fake = member.user.createdTimestamp && Date.now() - member.user.createdTimestamp < 24 * 60 * 60 * 1000;
+  const fake = Boolean(member.user.createdTimestamp && Date.now() - member.user.createdTimestamp < 86400000);
   const attribution = inviterId ? 'invite' : 'unknown';
   updateSection(guild.id, (current) => {
     const inviters = { ...current.inviters };
     if (inviterId) {
       const stats = inviterStats(current, inviterId);
-      stats.total += 1;
-      stats.active += 1;
-      if (fake) stats.fake += 1;
-      stats.lastInviteAt = now();
-      inviters[inviterId] = stats;
+      stats.total += 1; stats.active += 1; if (fake) stats.fake += 1; stats.lastInviteAt = now(); inviters[inviterId] = stats;
     }
-    return {
-      ...current,
-      inviters,
-      members: { ...current.members, [member.id]: { memberId: member.id, inviterId, inviteCode: used?.code || null, attribution, fake, joinedAt: now(), leftAt: null } },
-    };
+    const inviteLinks = { ...current.inviteLinks };
+    if (used?.code && inviteLinks[used.code]) inviteLinks[used.code] = normalizeInviteLink({ ...inviteLinks[used.code], uses: used.uses, updatedAt: now() }, used.code);
+    return { ...current, inviters, inviteLinks, members: { ...current.members, [member.id]: { memberId: member.id, inviterId, inviteCode: used?.code || null, attribution, fake, joinedAt: now(), leftAt: null, grantedRoleIds: [] } } };
   }, meta);
-  addHistory(guild.id, { type: 'join', memberId: member.id, inviterId, inviteCode: used?.code || null, attribution, fake }, meta);
+  const roleResult = used?.code ? await applyInviteRoles(member, used.code, meta) : { granted: [], failed: [] };
+  updateSection(guild.id, (current) => ({ ...current, members: { ...current.members, [member.id]: { ...current.members[member.id], grantedRoleIds: roleResult.granted } } }), meta);
+  addHistory(guild.id, { type: 'join', memberId: member.id, inviterId, inviteCode: used?.code || null, attribution, fake, grantedRoleIds: roleResult.granted }, meta);
   addAnalytics(guild.id, { joins: 1, tracked: inviterId ? 1 : 0, unknown: inviterId ? 0 : 1, fake: fake ? 1 : 0, lastJoinAt: now() }, meta);
   const rewards = inviterId ? await applyRewards(guild, inviterId, meta) : [];
-  return { inviterId, inviteCode: used?.code || null, attribution, fake, rewards };
+  return { inviterId, inviteCode: used?.code || null, attribution, fake, rewards, inviteRoles: roleResult };
 }
 
 async function trackLeave(member, meta = {}) {
@@ -216,10 +266,7 @@ async function trackLeave(member, meta = {}) {
   updateSection(member.guild.id, (current) => {
     const inviters = { ...current.inviters };
     if (record.inviterId && current.settings.removeOnLeave) {
-      const stats = inviterStats(current, record.inviterId);
-      stats.active = Math.max(0, stats.active - 1);
-      stats.left += 1;
-      inviters[record.inviterId] = stats;
+      const stats = inviterStats(current, record.inviterId); stats.active = Math.max(0, stats.active - 1); stats.left += 1; inviters[record.inviterId] = stats;
     }
     return { ...current, inviters, members: { ...current.members, [member.id]: { ...record, leftAt: now() } } };
   }, meta);
@@ -232,31 +279,56 @@ function leaderboard(guildId, limit = 25) {
   const section = getSection(guildId);
   return Object.values(section.inviters).map((entry) => ({ ...entry, score: Number(entry.active || 0) + Number(entry.bonus || 0) })).sort((a, b) => b.score - a.score || b.total - a.total).slice(0, Math.max(1, Math.min(100, Number(limit || 25))));
 }
-
 function setBonus(guildId, inviterId, bonus, meta = {}) {
   const id = cleanId(inviterId); if (!id) throw new Error('A valid inviter is required.');
-  return updateSection(guildId, (section) => {
-    const stats = inviterStats(section, id); stats.bonus = Math.max(-100000, Math.min(100000, Number(bonus || 0)));
-    return { ...section, inviters: { ...section.inviters, [id]: stats } };
-  }, meta).inviters[id];
+  return updateSection(guildId, (section) => { const stats = inviterStats(section, id); stats.bonus = Math.max(-100000, Math.min(100000, Number(bonus || 0))); return { ...section, inviters: { ...section.inviters, [id]: stats } }; }, meta).inviters[id];
 }
+
+async function createInviteLink(guild, options = {}, meta = {}) {
+  const channelId = cleanId(options.channelId);
+  const channel = channelId ? (guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null)) : null;
+  if (!channel?.createInvite) throw new Error('Select a channel where Goliath can create invites.');
+  const roleIds = [...new Set((Array.isArray(options.roleIds) ? options.roleIds : []).map(cleanId).filter(Boolean))].slice(0, 25);
+  for (const roleId of roleIds) {
+    const role = guild.roles.cache.get(roleId) || await guild.roles.fetch(roleId).catch(() => null);
+    if (!role || role.managed || guild.members.me.roles.highest.position <= role.position) throw new Error(`Goliath cannot assign role ${roleId}. Move its role above that role and try again.`);
+  }
+  const maxAge = MAX_AGE_OPTIONS.has(Number(options.maxAge)) ? Number(options.maxAge) : 0;
+  const maxUses = MAX_USES_OPTIONS.has(Number(options.maxUses)) ? Number(options.maxUses) : 0;
+  const temporary = options.temporary === true;
+  const invite = await channel.createInvite({ maxAge, maxUses, temporary, unique: true, reason: `Goliath Invite Studio link created by ${meta.actorId || 'administrator'}` });
+  const record = normalizeInviteLink({ code: invite.code, channelId: channel.id, inviterId: invite.inviter?.id || meta.actorId, roleIds, maxAge, maxUses, temporary, uses: invite.uses || 0, expiresAt: invite.expiresAt?.toISOString?.() || null, enabled: true });
+  updateSection(guild.id, (section) => ({ ...section, inviteLinks: { ...section.inviteLinks, [invite.code]: record } }), meta);
+  addHistory(guild.id, { type: 'link_created', inviteCode: invite.code, channelId: channel.id, roleIds, maxAge, maxUses, temporary }, meta);
+  addAnalytics(guild.id, { linksCreated: 1 }, meta);
+  await syncGuild(guild, meta);
+  return { invite, record };
+}
+
+async function deleteInviteLink(guild, code, meta = {}) {
+  const safeCode = clean(code, 100);
+  const fetched = await guild.invites.fetch(safeCode).catch(() => null);
+  if (fetched) await fetched.delete('Deleted from Goliath Invite Studio');
+  updateSection(guild.id, (section) => { const inviteLinks = { ...section.inviteLinks }; delete inviteLinks[safeCode]; return { ...section, inviteLinks }; }, meta);
+  addHistory(guild.id, { type: 'link_deleted', inviteCode: safeCode }, meta);
+  await syncGuild(guild, meta).catch(() => null);
+  return true;
+}
+
+function listInviteLinks(guildId) { return Object.values(getSection(guildId).inviteLinks).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))); }
 
 async function createManagedInvite(guild, channelId, meta = {}) {
   const section = getSection(guild.id);
   const id = cleanId(channelId || section.settings.managedInviteChannelId);
-  const channel = id ? (guild.channels.cache.get(id) || await guild.channels.fetch(id).catch(() => null)) : null;
-  if (!channel?.createInvite) throw new Error('Select a channel where Goliath can create invites.');
-  const invite = await channel.createInvite({ maxAge: 0, maxUses: 0, temporary: false, unique: true, reason: 'Goliath managed invite' });
-  updateSettings(guild.id, { managedInviteEnabled: true, managedInviteChannelId: channel.id, managedInviteCode: invite.code }, meta);
-  await syncGuild(guild, meta);
-  return invite;
+  const result = await createInviteLink(guild, { channelId: id, maxAge: 0, maxUses: 0, temporary: false, roleIds: [] }, meta);
+  updateSettings(guild.id, { managedInviteEnabled: true, managedInviteChannelId: id, managedInviteCode: result.invite.code }, meta);
+  return result.invite;
 }
-
 async function validateManagedInvite(guild, meta = {}) {
   const section = getSection(guild.id);
   if (!section.settings.managedInviteEnabled) return { valid: false, reason: 'disabled' };
-  const invites = await guild.invites.fetch();
-  const existing = invites.get(section.settings.managedInviteCode);
+  const fetched = await guild.invites.fetch();
+  const existing = fetched.get(section.settings.managedInviteCode);
   if (existing) return { valid: true, invite: existing };
   if (!section.settings.autoRepair) return { valid: false, reason: 'missing' };
   const invite = await createManagedInvite(guild, section.settings.managedInviteChannelId, meta);
@@ -268,7 +340,15 @@ async function buildHealth(guild) {
   const issues = []; const warnings = [];
   const me = guild.members.me;
   if (!me?.permissions.has(PermissionFlagsBits.ManageGuild)) issues.push({ code: 'manage_guild_missing' });
-  if (section.settings.managedInviteEnabled && !me?.permissions.has(PermissionFlagsBits.CreateInstantInvite)) issues.push({ code: 'create_invite_missing' });
+  if (!me?.permissions.has(PermissionFlagsBits.CreateInstantInvite)) issues.push({ code: 'create_invite_missing' });
+  if (Object.values(section.inviteLinks).some((link) => link.roleIds.length) && !me?.permissions.has(PermissionFlagsBits.ManageRoles)) issues.push({ code: 'manage_roles_missing' });
+  for (const link of Object.values(section.inviteLinks)) {
+    for (const roleId of link.roleIds) {
+      const role = guild.roles.cache.get(roleId);
+      if (!role) warnings.push({ code: 'invite_role_missing', inviteCode: link.code, roleId });
+      else if (role.managed || me.roles.highest.position <= role.position) issues.push({ code: 'invite_role_unassignable', inviteCode: link.code, roleId });
+    }
+  }
   if (section.settings.logChannelId) {
     const channel = guild.channels.cache.get(section.settings.logChannelId) || await guild.channels.fetch(section.settings.logChannelId).catch(() => null);
     if (!channel?.send) issues.push({ code: 'log_channel_unavailable', channelId: section.settings.logChannelId });
@@ -277,25 +357,15 @@ async function buildHealth(guild) {
     const result = await validateManagedInvite(guild).catch((error) => ({ valid: false, reason: error.message }));
     if (!result.valid) warnings.push({ code: 'managed_invite_invalid', reason: result.reason });
   }
-  return { module: SECTION, healthy: issues.length === 0, enabled: section.enabled, inviters: Object.keys(section.inviters).length, members: Object.keys(section.members).length, issues, warnings, checkedAt: now() };
+  return { module: SECTION, healthy: issues.length === 0, enabled: section.enabled, inviters: Object.keys(section.inviters).length, members: Object.keys(section.members).length, inviteLinks: Object.keys(section.inviteLinks).length, issues, warnings, checkedAt: now() };
 }
-
-async function repair(guild, meta = {}) {
-  await syncGuild(guild, meta).catch(() => null);
-  const section = getSection(guild.id);
-  if (section.settings.managedInviteEnabled) await validateManagedInvite(guild, meta).catch(() => null);
-  return buildHealth(guild);
-}
-
-async function startup(client) {
-  if (client.__goliathInvitesStarted) return;
-  client.__goliathInvitesStarted = true;
-  for (const guild of client.guilds.cache.values()) await syncGuild(guild, { action: 'invites_startup_sync' }).catch(() => null);
-}
+async function repair(guild, meta = {}) { await syncGuild(guild, meta).catch(() => null); const section = getSection(guild.id); if (section.settings.managedInviteEnabled) await validateManagedInvite(guild, meta).catch(() => null); return buildHealth(guild); }
+async function startup(client) { if (client.__goliathInvitesStarted) return; client.__goliathInvitesStarted = true; for (const guild of client.guilds.cache.values()) await syncGuild(guild, { action: 'invites_startup_sync' }).catch(() => null); }
 
 module.exports = {
   SECTION, defaults, getSection, setEnabled, updateSettings, addHistory, syncGuild, trackJoin, trackLeave,
-  leaderboard, setBonus, createManagedInvite, validateManagedInvite, buildHealth, repair, startup,
+  leaderboard, setBonus, createInviteLink, deleteInviteLink, listInviteLinks, createManagedInvite,
+  validateManagedInvite, buildHealth, repair, startup, applyInviteRoles,
   exportConfiguration: getSection,
   reset: (guildId, meta = {}) => saveSection(guildId, defaults(), meta),
 };
