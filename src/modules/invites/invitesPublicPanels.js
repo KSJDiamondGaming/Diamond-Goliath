@@ -39,7 +39,7 @@ function buildPublicPayload(guildId) {
   const panel = section.settings.publicPanel;
   const officialCode = section.settings.officialInvite.code;
   const url = officialUrl(officialCode);
-  if (!url) throw new Error('Create the official Goliath invite before deploying the public panel.');
+  if (!url) throw new Error('Create the official Goliath invite before sending the public panel.');
 
   const embed = new EmbedBuilder()
     .setColor(panel.color)
@@ -53,16 +53,19 @@ function buildPublicPayload(guildId) {
     .setFooter({ text: panel.footer })
     .setTimestamp();
 
-  const joinButton = new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(url).setLabel(panel.buttonLabel || 'Join Server');
+  const joinButton = new ButtonBuilder()
+    .setStyle(ButtonStyle.Link)
+    .setURL(url)
+    .setLabel(panel.buttonLabel || 'Join Server');
+
   return {
     embeds: [embed],
     components: [
       row(joinButton),
       row(
-        button('invites:member-personal', 'Get My Link', ButtonStyle.Primary),
+        button('invites:member-personal', 'Create My Link', ButtonStyle.Primary),
         button('invites:member-profile', 'My Profile', ButtonStyle.Secondary),
-        button('invites:member-refresh', 'Refresh Leaderboard', ButtonStyle.Secondary),
-        button('invites:member-configure', 'Configure', ButtonStyle.Secondary),
+        button('invites:member-refresh', 'Update Leaderboard', ButtonStyle.Secondary),
       ),
     ],
   };
@@ -73,7 +76,11 @@ async function resolveChannel(guild, channelId) {
   if (!channel?.send) throw new Error('Select a text channel where Goliath can post the panel.');
   const me = guild.members.me || await guild.members.fetchMe().catch(() => null);
   const permissions = channel.permissionsFor(me);
-  if (!permissions?.has(PermissionFlagsBits.ViewChannel) || !permissions.has(PermissionFlagsBits.SendMessages) || !permissions.has(PermissionFlagsBits.EmbedLinks)) throw new Error(`Goliath needs View Channel, Send Messages and Embed Links in ${channel}.`);
+  if (!permissions?.has(PermissionFlagsBits.ViewChannel)
+    || !permissions.has(PermissionFlagsBits.SendMessages)
+    || !permissions.has(PermissionFlagsBits.EmbedLinks)) {
+    throw new Error(`Goliath needs View Channel, Send Messages and Embed Links in ${channel}.`);
+  }
   return channel;
 }
 
@@ -105,7 +112,8 @@ function queueLeaderboardRefresh(guild, delay = 3000) {
   clearTimeout(refreshTimers.get(key));
   refreshTimers.set(key, setTimeout(() => {
     refreshTimers.delete(key);
-    refreshPublicPanel(guild, { action: 'invite_panel_join_refresh' }).catch((error) => console.error('[InviteStudio] Panel refresh failed:', error));
+    refreshPublicPanel(guild, { action: 'invite_panel_join_refresh' })
+      .catch((error) => console.error('[InviteStudio] Panel refresh failed:', error));
   }, delay));
 }
 
@@ -113,14 +121,18 @@ function startAutoRefresh(guild, intervalMs = invites.TWO_HOURS_MS) {
   const key = `interval:${guild.id}`;
   if (refreshTimers.has(key)) return;
   const timer = setInterval(() => {
-    refreshPublicPanel(guild, { action: 'invite_panel_two_hour_refresh' }).catch((error) => console.error('[InviteStudio] Scheduled panel refresh failed:', error));
+    refreshPublicPanel(guild, { action: 'invite_panel_two_hour_refresh' })
+      .catch((error) => console.error('[InviteStudio] Scheduled panel refresh failed:', error));
   }, intervalMs);
   timer.unref?.();
   refreshTimers.set(key, timer);
 }
 
 function renderTemplate(text, interaction, url) {
-  return String(text || '').replaceAll('{server}', interaction.guild.name).replaceAll('{user}', interaction.user.username).replaceAll('{invite}', url);
+  return String(text || '')
+    .replaceAll('{server}', interaction.guild.name)
+    .replaceAll('{user}', interaction.user.username)
+    .replaceAll('{invite}', url);
 }
 
 async function sendPersonalInviteDm(interaction, result) {
@@ -139,11 +151,14 @@ async function handleMemberInteraction(interaction) {
   const customId = String(interaction.customId || '');
   if (!customId.startsWith('invites:member-')) return false;
   const section = invites.getSection(interaction.guildId);
+
   if (!section.enabled) {
     await interaction.reply({ content: '❌ Invite Studio is currently disabled.', flags: MessageFlags.Ephemeral });
     return true;
   }
+
   if (customId === 'invites:member-profile') return memberProfiles.handleProfileInteraction(interaction);
+
   if (customId === 'invites:member-configure') {
     if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
       await interaction.reply({ content: '❌ Manage Server permission is required.', flags: MessageFlags.Ephemeral });
@@ -153,25 +168,51 @@ async function handleMemberInteraction(interaction) {
     await interaction.reply({ ...panel.buildInviteStudioPayload(interaction, 'configure'), flags: MessageFlags.Ephemeral });
     return true;
   }
+
   if (customId === 'invites:member-refresh') {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    const ok = await refreshPublicPanel(interaction.guild, { actorId: interaction.user.id, action: 'member_manual_leaderboard_refresh' });
-    await interaction.editReply(ok ? '✅ The leaderboard has been refreshed.' : '❌ The deployed Invite Studio panel could not be found.');
+    const ok = await refreshPublicPanel(interaction.guild, {
+      actorId: interaction.user.id,
+      action: 'member_manual_leaderboard_refresh',
+    });
+    await interaction.editReply(ok
+      ? '✅ The leaderboard has been updated.'
+      : '❌ The deployed Invite Studio panel could not be found.');
     return true;
   }
+
   if (customId !== 'invites:member-personal') return false;
+
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   try {
-    const result = await invites.createPersonalInvite(interaction.guild, interaction.user.id, null, { actorId: interaction.user.id, action: 'member_personal_invite_get' });
+    const result = await invites.createPersonalInvite(interaction.guild, interaction.user.id, null, {
+      actorId: interaction.user.id,
+      action: 'member_personal_invite_get',
+    });
     const url = result.invite.url || officialUrl(result.record.code);
     let dmSent = true;
     try { await sendPersonalInviteDm(interaction, result); } catch { dmSent = false; }
-    if (dmSent) await interaction.editReply(result.created ? '✅ Your personal link has been created and sent to your DMs.' : '✅ Your existing personal link has been resent to your DMs.');
-    else await interaction.editReply(`✅ Your personal link is ready. I could not DM you, so it is shown here:\n\n${url}`);
+    if (dmSent) {
+      await interaction.editReply(result.created
+        ? '✅ Your personal link has been created and sent to your DMs.'
+        : '✅ Your existing personal link has been resent to your DMs.');
+    } else {
+      await interaction.editReply(`✅ Your personal link is ready. I could not DM you, so it is shown here:\n\n${url}`);
+    }
   } catch (error) {
     await interaction.editReply(`❌ ${String(error?.message || error).slice(0, 1800)}`);
   }
   return true;
 }
 
-module.exports = { panelConfig, savePanelConfig, buildPublicPayload, deployPublicPanel, refreshPublicPanel, refreshLeaderboard: refreshPublicPanel, queueLeaderboardRefresh, startAutoRefresh, handleMemberInteraction };
+module.exports = {
+  panelConfig,
+  savePanelConfig,
+  buildPublicPayload,
+  deployPublicPanel,
+  refreshPublicPanel,
+  refreshLeaderboard: refreshPublicPanel,
+  queueLeaderboardRefresh,
+  startAutoRefresh,
+  handleMemberInteraction,
+};
