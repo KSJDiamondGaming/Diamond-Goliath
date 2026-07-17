@@ -8,18 +8,10 @@ const root = path.resolve(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const exists = (file) => fs.existsSync(path.join(root, file));
 
-function pass(label) {
-  console.log(`✅ ${label}`);
-}
-
+function pass(label) { console.log(`✅ ${label}`); }
 function test(label, fn) {
-  try {
-    fn();
-    pass(label);
-  } catch (error) {
-    console.error(`❌ ${label}`);
-    throw error;
-  }
+  try { fn(); pass(label); }
+  catch (error) { console.error(`❌ ${label}`); throw error; }
 }
 
 console.log('\nInvite Studio Smoke Test');
@@ -54,64 +46,79 @@ test('Invite Studio remains self-contained', () => {
   assert.equal(exists('src/modules/invites/invitesPanel.js'), false);
   assert.equal(exists('src/core/admin/functions/invitesAdminPanel.js'), false);
   assert.equal(exists('src/modules/invites/invitesAdminPanel.js'), true);
+  assert.equal(exists('src/modules/invites/invitesPublicPanels.js'), true);
 });
 
 const route = read('src/modules/invites/invitesRoute.js');
 test('API exposes the complete management surface', () => {
   for (const token of [
-    "router.get('/:guildId'",
-    "router.patch('/:guildId/enabled'",
-    "router.patch('/:guildId/settings'",
-    "router.post('/:guildId/sync'",
-    "router.get('/:guildId/links'",
-    "router.post('/:guildId/links'",
-    "router.delete('/:guildId/links/:code'",
-    "router.post('/:guildId/managed-invite'",
-    "router.post('/:guildId/managed-invite/validate'",
-    "router.get('/:guildId/leaderboard'",
-    "router.patch('/:guildId/inviters/:userId/bonus'",
-    "router.get('/:guildId/history'",
-    "router.get('/:guildId/health'",
-    "router.post('/:guildId/repair'",
-    "router.get('/:guildId/export'",
+    "router.get('/:guildId'", "router.patch('/:guildId/enabled'", "router.patch('/:guildId/settings'",
+    "router.post('/:guildId/sync'", "router.get('/:guildId/links'", "router.post('/:guildId/links'",
+    "router.delete('/:guildId/links/:code'", "router.post('/:guildId/managed-invite'",
+    "router.post('/:guildId/managed-invite/validate'", "router.get('/:guildId/leaderboard'",
+    "router.patch('/:guildId/inviters/:userId/bonus'", "router.get('/:guildId/history'",
+    "router.get('/:guildId/health'", "router.post('/:guildId/repair'", "router.get('/:guildId/export'",
     "router.post('/:guildId/reset'",
   ]) assert.ok(route.includes(token), `Missing route: ${token}`);
 });
 
-const panel = read('src/modules/invites/invitesAdminPanel.js');
-test('Admin Hub panel exposes invite creation controls', () => {
+const panelSource = read('src/modules/invites/invitesAdminPanel.js');
+test('Admin Hub panel exposes invite creation and public panel controls', () => {
   for (const token of [
-    'invites:draft-channel', 'invites:draft-expiry', 'invites:draft-uses',
-    'invites:draft-roles', 'invites:draft-temporary', 'invites:generate',
-    'invites:links', 'invites:sync', 'invites:health', 'invites:repair',
-  ]) assert.ok(panel.includes(token), `Missing panel control: ${token}`);
+    'invites:draft-channel', 'invites:draft-expiry', 'invites:draft-uses', 'invites:draft-roles',
+    'invites:draft-temporary', 'invites:generate', 'invites:links', 'invites:sync', 'invites:health',
+    'invites:repair', 'invites:public', 'invites:public-deploy', 'invites:leaderboard',
+    'invites:leaderboard-deploy', 'invites:leaderboard-refresh',
+  ]) assert.ok(panelSource.includes(token), `Missing panel control: ${token}`);
+});
+
+test('Invite Studio overview payload serializes for Discord', () => {
+  const originalGetSection = invites.getSection;
+  const originalListInviteLinks = invites.listInviteLinks;
+  invites.getSection = () => ({ ...defaults, settings: { ...defaults.settings }, analytics: { ...defaults.analytics } });
+  invites.listInviteLinks = () => [];
+  try {
+    delete require.cache[require.resolve(path.join(root, 'src/modules/invites/invitesAdminPanel'))];
+    const panel = require(path.join(root, 'src/modules/invites/invitesAdminPanel'));
+    const payload = panel.buildInviteStudioPayload({ guildId: '123456789012345678', channelId: '123456789012345679', user: { id: '123456789012345680' } });
+    assert.equal(payload.embeds.length, 1);
+    assert.ok(payload.components.length >= 1 && payload.components.length <= 5);
+    for (const embed of payload.embeds) assert.doesNotThrow(() => embed.toJSON());
+    for (const componentRow of payload.components) {
+      const json = componentRow.toJSON();
+      assert.ok(Array.isArray(json.components));
+      assert.ok(json.components.length >= 1 && json.components.length <= 5);
+    }
+  } finally {
+    invites.getSection = originalGetSection;
+    invites.listInviteLinks = originalListInviteLinks;
+    delete require.cache[require.resolve(path.join(root, 'src/modules/invites/invitesAdminPanel'))];
+  }
 });
 
 const dashboard = read('src/dashboard/js/pages/modules/Invites.jsx');
 test('Dashboard exposes all testable Invite Studio workspaces', () => {
   for (const token of [
     'Invite Links', 'Analytics', 'Rewards', 'Join History', 'Health', 'Settings',
-    'Create invite link', 'Roles (optional)', 'Grant temporary membership',
-    'navigator.clipboard.writeText',
+    'Create invite link', 'Roles (optional)', 'Grant temporary membership', 'navigator.clipboard.writeText',
   ]) assert.ok(dashboard.includes(token), `Missing dashboard feature: ${token}`);
 });
 
 test('Runtime events cover the full invite lifecycle', () => {
   const events = read('src/events/invites/inviteLogs.js');
-  for (const token of ['ClientReady', 'InviteCreate', 'InviteDelete', 'GuildMemberAdd', 'GuildMemberRemove']) {
-    assert.ok(events.includes(token), `Missing lifecycle event: ${token}`);
-  }
+  for (const token of ['ClientReady', 'InviteCreate', 'InviteDelete', 'GuildMemberAdd', 'GuildMemberRemove']) assert.ok(events.includes(token), `Missing lifecycle event: ${token}`);
+  assert.ok(events.includes('queueLeaderboardRefresh'), 'Leaderboard refresh is not wired to joins and leaves');
 });
 
-test('Invite Studio is visible and reachable through the live Admin Hub', () => {
+test('Invite Studio is visible and safely reachable through the live Admin Hub', () => {
   const modules = read('src/core/admin/functions/moduleAdminPanels.js');
   const interactions = read('src/events/interactions/interactionCreate.js');
   assert.ok(modules.includes("['admin:invites'"), 'Invite Studio button is absent from the paginated module list');
-  assert.ok(modules.includes("'admin:invites'"), 'Invite Studio is not marked as an external module route');
-  assert.ok(interactions.includes("../../modules/invites/invitesAdminPanel"), 'Live interaction router does not import Invite Studio');
   assert.ok(interactions.includes("interaction.customId === 'admin:invites'"), 'Invite Studio entry button is not handled');
+  assert.ok(interactions.includes('await interaction.deferUpdate()'), 'Invite Studio entry is not acknowledged before building the panel');
+  assert.ok(interactions.includes('buildInviteStudioPayload'), 'Invite Studio entry does not build its dedicated panel');
   assert.ok(interactions.includes("startsWith(interaction, 'invites:')"), 'Invite Studio child controls are not handled');
 });
 
-console.log('\n✅ Invite Studio is structurally complete and ready for live Discord testing.');
-console.log('ℹ️ Live testing still requires a development guild because Discord invite creation, joins and role assignment cannot be simulated offline.');
+console.log('\n✅ Invite Studio payload, routing and lifecycle smoke tests passed.');
+console.log('ℹ️ Discord invite creation, joins and role assignment still require development-guild acceptance testing.');
