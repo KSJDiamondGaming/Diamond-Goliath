@@ -50,6 +50,12 @@ function getRenderedTemplate(guildId, slot, variables, fallbackTemplateId) {
   return embedTemplateManager.renderBinding(guildId, 'welcome', slot, variables, fallbackTemplateId);
 }
 
+function mediaUrl(value) {
+  if (typeof value === 'string') return value;
+  if (value && typeof value === 'object') return value.url || value.proxyURL || value.proxy_url || '';
+  return '';
+}
+
 function normalizeRenderedEmbed(embed = {}) {
   const author = embed?.author && typeof embed.author === 'object' ? embed.author : {};
   const footer = embed?.footer && typeof embed.footer === 'object' ? embed.footer : {};
@@ -61,8 +67,8 @@ function normalizeRenderedEmbed(embed = {}) {
     authorUrl: embed.authorUrl || author.url || '',
     footer: typeof embed.footer === 'string' ? embed.footer : footer.text || '',
     footerIcon: embed.footerIcon || footer.iconURL || footer.icon_url || '',
-    thumbnail: embed.thumbnail || embed.thumbnailURL || embed.thumbnail?.url || '',
-    image: embed.image || embed.imageURL || embed.image?.url || '',
+    thumbnail: mediaUrl(embed.thumbnailURL) || mediaUrl(embed.thumbnail) || '',
+    image: mediaUrl(embed.imageURL) || mediaUrl(embed.image) || '',
   };
 }
 
