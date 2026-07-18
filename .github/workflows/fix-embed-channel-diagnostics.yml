@@ -1,10 +1,9 @@
 name: Fix Embed Channel Diagnostics
 
 on:
-  push:
-    branches: [dev]
-    paths:
-      - '.github/workflows/fix-embed-channel-diagnostics.yml'
+  workflow_dispatch:
+  schedule:
+    - cron: '*/5 * * * *'
 
 permissions:
   contents: write
