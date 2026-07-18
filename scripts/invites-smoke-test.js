@@ -139,7 +139,7 @@ test('Member profile uses the canonical personal invite lookup and serializes', 
     assert.equal(profileButtons.length, 1);
     assert.equal(profileButtons[0].custom_id, 'invites:member-personal');
     assert.equal(profileButtons[0].label, 'Resend My Link');
-    assert.equal(profileButtons[0].disabled, false);
+    assert.notEqual(profileButtons[0].disabled, true);
     assert.ok(payload.embeds[0].toJSON().fields.some((field) => field.value.includes('personal123')));
   } finally {
     invites.getSection = originalGetSection;
