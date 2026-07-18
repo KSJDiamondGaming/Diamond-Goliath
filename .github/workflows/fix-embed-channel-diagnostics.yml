@@ -145,14 +145,11 @@ const {
       - name: Validate syntax
         run: node --check src/modules/embed/embedPanel.js
 
-      - name: Commit fix
+      - name: Commit fix and remove one-time workflow
         run: |
-          if git diff --quiet; then
-            echo "No changes required"
-            exit 0
-          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src/modules/embed/embedPanel.js
+          git rm .github/workflows/fix-embed-channel-diagnostics.yml
           git commit -m "fix: diagnose embed channel send failures accurately"
           git push origin dev
