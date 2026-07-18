@@ -1,16 +1,16 @@
 name: Apply personal invite migration upgrade
 
 on:
-  push:
+  pull_request:
     branches: [dev]
-    paths:
-      - .github/workflows/apply-invite-migration.yml
+    types: [closed]
 
 permissions:
   contents: write
 
 jobs:
   apply-upgrade:
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -152,7 +152,7 @@ jobs:
                   'Your previous link will continue working until somebody successfully joins through this new link.',
                   'After the new link is used, Goliath will automatically retire your previous link.',
                   '**Your existing Invite Studio leaderboard score has been preserved.**',
-                ].join('\\n');
+                ].join('\n');
                 const sent = await member.send(message).then(() => true).catch(() => false);
                 if (sent) result.dmSent += 1;
                 else result.dmFailed += 1;
@@ -240,7 +240,7 @@ jobs:
               });
               const failurePreview = result.failures.slice(0, 5)
                 .map((failure) => `<@${failure.inviterId}>: ${failure.error}`)
-                .join('\\n');
+                .join('\n');
               await interaction.editReply([
                 '✅ **Personal invite migration finished.**',
                 `Owners checked: **${result.owners}**`,
@@ -252,8 +252,8 @@ jobs:
                 `Migration failures: **${result.failures.length}**`,
                 '',
                 'Old links remain active and continue counting. Each old link is automatically deleted after its replacement records its first successful join.',
-                failurePreview ? `\\n**First failures**\\n${failurePreview}` : '',
-              ].filter(Boolean).join('\\n'));
+                failurePreview ? `\n**First failures**\n${failurePreview}` : '',
+              ].filter(Boolean).join('\n'));
               return true;
             } else if (action === 'health') {
           """, 'handle admin migration button')
