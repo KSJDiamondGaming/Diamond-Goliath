@@ -152,7 +152,9 @@ test('Member profile uses the canonical personal invite lookup and serializes', 
 const publicPanels = read('src/modules/invites/invitesPublicPanels.js');
 test('Member controls are private and DM fallback does not expose links publicly', () => {
   assert.ok(publicPanels.includes("if (!section.enabled)"), 'Disabled-module guard is missing');
-  assert.ok(publicPanels.includes('if (dmSent)'), 'DM success/fallback branch is missing');
+  assert.ok(publicPanels.includes('let dmSent = true'), 'DM delivery state is missing');
+  assert.ok(publicPanels.includes('dmSent = false'), 'DM failure state is missing');
+  assert.ok(publicPanels.includes('content: dmSent'), 'DM success/fallback branch is missing');
   assert.ok(publicPanels.includes('I could not DM you'), 'Ephemeral DM fallback is missing');
   assert.ok(publicPanels.includes('flags: MessageFlags.Ephemeral'), 'Member responses are not ephemeral');
 });
