@@ -135,7 +135,7 @@ test('Member profile uses the canonical personal invite lookup and serializes', 
     const user = { id: '123456789012345680', username: 'Tester', displayName: 'Tester', displayAvatarURL: () => null };
     const payload = profiles.profilePayload(guild, user);
     assert.doesNotThrow(() => payload.embeds[0].toJSON());
-    assert.equal(payload.components[0].toJSON().components[0].label, 'Resend My Invite');
+    assert.equal(payload.components[0].toJSON().components[0].label, 'Resend My Link');
     assert.equal(payload.components[0].toJSON().components[1].disabled, false);
     assert.ok(payload.embeds[0].toJSON().fields.some((field) => field.value.includes('personal123')));
   } finally {
