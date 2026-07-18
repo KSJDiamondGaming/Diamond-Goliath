@@ -1,0 +1,276 @@
+name: Apply personal invite migration upgrade
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - .github/workflows/apply-invite-migration.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-upgrade:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Apply Invite Studio migration changes
+        shell: python
+        run: |
+          from pathlib import Path
+
+          invites_path = Path('src/modules/invites/invites.js')
+          admin_path = Path('src/modules/invites/invitesAdminPanel.js')
+          invites = invites_path.read_text(encoding='utf-8')
+          admin = admin_path.read_text(encoding='utf-8')
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise RuntimeError(f'{label}: expected exactly one match, found {count}')
+              return text.replace(old, new, 1)
+
+          invites = replace_once(invites,
+          """    enabled: item.enabled !== false,
+              uses: Math.max(0, Number(item.uses || 0)),
+              expiresAt: item.expiresAt || null,
+              createdAt: item.createdAt || now(),
+              updatedAt: item.updatedAt || now(),
+          """,
+          """    enabled: item.enabled !== false,
+              uses: Math.max(0, Number(item.uses || 0)),
+              expiresAt: item.expiresAt || null,
+              migrationReplacementCode: clean(item.migrationReplacementCode, 100) || null,
+              migrationLegacyCodes: [...new Set((Array.isArray(item.migrationLegacyCodes) ? item.migrationLegacyCodes : []).map((value) => clean(value, 100)).filter(Boolean))],
+              migratedAt: item.migratedAt || null,
+              createdAt: item.createdAt || now(),
+              updatedAt: item.updatedAt || now(),
+          """, 'normalise migration metadata')
+
+          invites = replace_once(invites,
+          """function findPersonalInvite(guildId, userId) { const id = cleanId(userId); return id ? listInviteLinks(guildId).find((link) => link.personal && link.enabled && link.inviterId === id) || null : null; }
+          """,
+          """function findPersonalInvite(guildId, userId) {
+            const id = cleanId(userId);
+            if (!id) return null;
+            const links = listInviteLinks(guildId).filter((link) => link.personal && link.enabled && link.inviterId === id);
+            return links.find((link) => !link.migrationReplacementCode) || links[0] || null;
+          }
+          """, 'prefer current personal invite')
+
+          marker = """async function deletePersonalInvite(guild, userId, meta = {}) { const record = findPersonalInvite(guild.id, userId); if (!record) return false; await deleteInviteLink(guild, record.code, meta); return true; }
+
+          async function ensureOfficialInvite"""
+          insertion = """async function deletePersonalInvite(guild, userId, meta = {}) { const record = findPersonalInvite(guild.id, userId); if (!record) return false; await deleteInviteLink(guild, record.code, meta); return true; }
+
+          async function migratePersonalInvites(guild, meta = {}) {
+            const section = getSection(guild.id);
+            const template = section.settings.memberInviteTemplate;
+            if (!template.enabled) throw new Error('Member invite creation is disabled by management.');
+            if (!template.channelId) throw new Error('Configure the current member invite channel before starting migration.');
+
+            const owners = new Map();
+            for (const link of listInviteLinks(guild.id)) {
+              if (!link.personal || !link.enabled || !link.inviterId) continue;
+              if (!owners.has(link.inviterId)) owners.set(link.inviterId, []);
+              owners.get(link.inviterId).push(link);
+            }
+
+            const result = { owners: owners.size, migrated: 0, alreadyCurrent: 0, skipped: 0, dmSent: 0, dmFailed: 0, failures: [] };
+            for (const [inviterId, links] of owners.entries()) {
+              const current = links.find((link) => link.channelId === template.channelId && !link.migrationReplacementCode);
+              if (current) {
+                result.alreadyCurrent += 1;
+                continue;
+              }
+
+              const legacyLinks = links.filter((link) => !link.migrationReplacementCode);
+              if (!legacyLinks.length) {
+                result.skipped += 1;
+                continue;
+              }
+
+              try {
+                const created = await createInviteLink(guild, {
+                  channelId: template.channelId,
+                  maxAge: template.maxAge,
+                  maxUses: template.maxUses,
+                  temporary: template.temporary,
+                  roleIds: template.roleIds,
+                  inviterId,
+                  personal: true,
+                }, { ...meta, action: 'invite_personal_migration_create' });
+
+                const newCode = created.invite.code;
+                const legacyCodes = legacyLinks.map((link) => link.code).filter((code) => code !== newCode);
+                updateSection(guild.id, (currentSection) => {
+                  const inviteLinks = { ...currentSection.inviteLinks };
+                  if (inviteLinks[newCode]) {
+                    inviteLinks[newCode] = normalizeInviteLink({
+                      ...inviteLinks[newCode],
+                      migrationLegacyCodes: legacyCodes,
+                      migratedAt: now(),
+                    }, newCode);
+                  }
+                  for (const legacyCode of legacyCodes) {
+                    if (!inviteLinks[legacyCode]) continue;
+                    inviteLinks[legacyCode] = normalizeInviteLink({
+                      ...inviteLinks[legacyCode],
+                      migrationReplacementCode: newCode,
+                      migratedAt: now(),
+                    }, legacyCode);
+                  }
+                  return { ...currentSection, inviteLinks };
+                }, meta);
+
+                addHistory(guild.id, {
+                  type: 'personal_links_migrated',
+                  inviterId,
+                  inviteCode: newCode,
+                  legacyInviteCodes: legacyCodes,
+                }, meta);
+
+                result.migrated += 1;
+                const member = await guild.members.fetch(inviterId).catch(() => null);
+                if (!member) {
+                  result.dmFailed += 1;
+                  continue;
+                }
+                const message = [
+                  `🔗 Your personal invite for **${guild.name}** has been updated.`,
+                  '',
+                  created.invite.url,
+                  '',
+                  'Your previous link will continue working until somebody successfully joins through this new link.',
+                  'After the new link is used, Goliath will automatically retire your previous link.',
+                  '**Your existing Invite Studio leaderboard score has been preserved.**',
+                ].join('\\n');
+                const sent = await member.send(message).then(() => true).catch(() => false);
+                if (sent) result.dmSent += 1;
+                else result.dmFailed += 1;
+              } catch (error) {
+                result.failures.push({ inviterId, error: error.message });
+              }
+            }
+
+            await syncGuild(guild, { ...meta, action: 'invite_personal_migration_sync' }).catch(() => null);
+            return result;
+          }
+
+          async function retireMigratedLegacyInvites(guild, replacementRecord, meta = {}) {
+            const legacyCodes = Array.isArray(replacementRecord?.migrationLegacyCodes)
+              ? replacementRecord.migrationLegacyCodes.filter(Boolean)
+              : [];
+            if (!legacyCodes.length) return [];
+            const retired = [];
+            for (const legacyCode of legacyCodes) {
+              const live = await guild.invites.fetch(legacyCode).catch(() => null);
+              if (live) await live.delete(`Replacement personal invite ${replacementRecord.code} was used`).catch(() => null);
+              retired.push(legacyCode);
+            }
+            updateSection(guild.id, (section) => {
+              const inviteLinks = { ...section.inviteLinks };
+              for (const legacyCode of legacyCodes) delete inviteLinks[legacyCode];
+              if (inviteLinks[replacementRecord.code]) {
+                inviteLinks[replacementRecord.code] = normalizeInviteLink({
+                  ...inviteLinks[replacementRecord.code],
+                  migrationLegacyCodes: [],
+                  migratedAt: replacementRecord.migratedAt,
+                }, replacementRecord.code);
+              }
+              return { ...section, inviteLinks };
+            }, meta);
+            addHistory(guild.id, {
+              type: 'personal_legacy_links_retired',
+              inviterId: replacementRecord.inviterId,
+              inviteCode: replacementRecord.code,
+              legacyInviteCodes: retired,
+            }, meta);
+            await syncGuild(guild, meta).catch(() => null);
+            return retired;
+          }
+
+          async function ensureOfficialInvite"""
+          invites = replace_once(invites, marker, insertion, 'insert migration functions')
+
+          invites = replace_once(invites,
+          """  const rewards = inviterId ? await applyRewards(guild, inviterId, meta) : [];
+            return { inviterId, inviteCode: used?.code || null, attribution, fake, rewards, inviteRoles: roleResult };
+          """,
+          """  const rewards = inviterId ? await applyRewards(guild, inviterId, meta) : [];
+            const retiredLegacyInvites = managedRecord?.migrationLegacyCodes?.length
+              ? await retireMigratedLegacyInvites(guild, managedRecord, { ...meta, action: 'invite_migration_retire_legacy' })
+              : [];
+            return { inviterId, inviteCode: used?.code || null, attribution, fake, rewards, inviteRoles: roleResult, retiredLegacyInvites };
+          """, 'retire legacy links after replacement use')
+
+          invites = replace_once(invites,
+          """createPersonalInvite, deletePersonalInvite, ensureOfficialInvite""",
+          """createPersonalInvite, deletePersonalInvite, migratePersonalInvites, ensureOfficialInvite""", 'export migration function')
+
+          admin = replace_once(admin,
+          """      row(
+                button('invites:health', 'Health'),
+                button('invites:repair', 'Repair'),
+          """,
+          """      row(
+                button('invites:migrate-personal', 'Migrate Personal Links', ButtonStyle.Success, !section.settings.memberInviteTemplate.channelId),
+              ),
+              row(
+                button('invites:health', 'Health'),
+                button('invites:repair', 'Repair'),
+          """, 'add admin migration button')
+
+          admin = replace_once(admin,
+          """  } else if (action === 'health') {
+          """,
+          """  } else if (action === 'migrate-personal') {
+              await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+              const result = await invites.migratePersonalInvites(interaction.guild, {
+                actorId: interaction.user.id,
+                action: 'invite_admin_migrate_personal_links',
+              });
+              const failurePreview = result.failures.slice(0, 5)
+                .map((failure) => `<@${failure.inviterId}>: ${failure.error}`)
+                .join('\\n');
+              await interaction.editReply([
+                '✅ **Personal invite migration finished.**',
+                `Owners checked: **${result.owners}**`,
+                `New links created: **${result.migrated}**`,
+                `Already using the current channel: **${result.alreadyCurrent}**`,
+                `Skipped: **${result.skipped}**`,
+                `DMs sent: **${result.dmSent}**`,
+                `DMs failed: **${result.dmFailed}**`,
+                `Migration failures: **${result.failures.length}**`,
+                '',
+                'Old links remain active and continue counting. Each old link is automatically deleted after its replacement records its first successful join.',
+                failurePreview ? `\\n**First failures**\\n${failurePreview}` : '',
+              ].filter(Boolean).join('\\n'));
+              return true;
+            } else if (action === 'health') {
+          """, 'handle admin migration button')
+
+          invites_path.write_text(invites, encoding='utf-8')
+          admin_path.write_text(admin, encoding='utf-8')
+          Path('.github/workflows/apply-invite-migration.yml').unlink()
+
+      - name: Validate JavaScript
+        run: |
+          node --check src/modules/invites/invites.js
+          node --check src/modules/invites/invitesAdminPanel.js
+
+      - name: Commit upgrade directly to dev
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/modules/invites/invites.js src/modules/invites/invitesAdminPanel.js .github/workflows/apply-invite-migration.yml
+          git commit -m "feat(invites): migrate personal links without resetting scores"
+          git push origin dev
