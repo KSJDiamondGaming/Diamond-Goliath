@@ -56,3 +56,5 @@ jobs:
           git add src/modules/verification/verificationManager.js .github/workflows/apply-verification-owner-fix.yml
           git commit -m "fix: allow verification role updates for bot owner"
           git push origin dev
+
+# Triggered after workflow registration so GitHub Actions applies the source patch.
