@@ -15,20 +15,11 @@ const invites = require('./invites');
 const sessions = new Map();
 const row = (...components) => new ActionRowBuilder().addComponents(...components);
 const button = (id, label, style = ButtonStyle.Secondary, disabled = false) => new ButtonBuilder()
-  .setCustomId(id)
-  .setLabel(label)
-  .setStyle(style)
-  .setDisabled(Boolean(disabled));
+  .setCustomId(id).setLabel(label).setStyle(style).setDisabled(Boolean(disabled));
 
 function sessionFor(interaction) {
   const key = `${interaction.guildId}:${interaction.user.id}`;
-  if (!sessions.has(key)) {
-    sessions.set(key, {
-      selectedUserId: null,
-      displayLimit: 5,
-      resetAllConfirmUntil: 0,
-    });
-  }
+  if (!sessions.has(key)) sessions.set(key, { selectedUserId: null, displayLimit: 5 });
   return sessions.get(key);
 }
 
@@ -42,14 +33,13 @@ function personalLinks(guildId) {
 
 function statsFor(section, userId) {
   const stats = section.inviters?.[userId] || {};
-  const score = Math.max(0, Number(stats.active || 0) + Number(stats.bonus || 0));
   return {
     total: Math.max(0, Number(stats.total || 0)),
     active: Math.max(0, Number(stats.active || 0)),
     left: Math.max(0, Number(stats.left || 0)),
     fake: Math.max(0, Number(stats.fake || 0)),
     bonus: Number(stats.bonus || 0),
-    score,
+    score: Math.max(0, Number(stats.active || 0) + Number(stats.bonus || 0)),
   };
 }
 
@@ -98,23 +88,14 @@ function rankedRows(interaction, section, links) {
 function memberTableFields(rows, displayLimit) {
   const shown = displayLimit === 0 ? rows : rows.slice(0, displayLimit);
   if (!shown.length) return [{ name: 'Members', value: 'No personal invite links have been created yet.', inline: false }];
-
   const header = `${cleanCell('Member', 18)} ${cleanCell('Uses', 5)} ${cleanCell('Valid', 5)} ${cleanCell('Rank', 5)} ${cleanCell('Created', 8)}`;
-  const separator = '─'.repeat(46);
   const lines = shown.map((entry) => `${cleanCell(entry.name, 18)} ${cleanCell(entry.uses, 5)} ${cleanCell(entry.score, 5)} ${cleanCell(entry.rank ? `#${entry.rank}` : '—', 5)} ${cleanCell(entry.created, 8)}`);
   const fields = [];
-  const chunkSize = 14;
-
-  for (let index = 0; index < lines.length && fields.length < 5; index += chunkSize) {
-    const chunk = lines.slice(index, index + chunkSize);
-    const value = `\`\`\`text\n${index === 0 ? `${header}\n${separator}\n` : ''}${chunk.join('\n')}\n\`\`\``;
+  for (let index = 0; index < lines.length && fields.length < 5; index += 14) {
+    const chunk = lines.slice(index, index + 14);
+    const value = `\`\`\`text\n${index === 0 ? `${header}\n${'─'.repeat(46)}\n` : ''}${chunk.join('\n')}\n\`\`\``;
     fields.push({ name: index === 0 ? `Members Shown: ${shown.length} of ${rows.length}` : '\u200b', value, inline: false });
   }
-
-  if (shown.length > fields.length * chunkSize) {
-    fields.push({ name: 'Display Limit', value: `Discord embed limits allow the first ${fields.length * chunkSize} members to be shown at once.`, inline: false });
-  }
-
   return fields;
 }
 
@@ -127,14 +108,11 @@ function buildInviteManagerPayload(interaction) {
   const stats = selected ? statsFor(section, selected.inviterId) : null;
   const ranking = invites.leaderboard(interaction.guildId, 1000);
   const rankIndex = selected ? ranking.findIndex((entry) => entry.inviterId === selected.inviterId) : -1;
-  const resetAllArmed = Number(state.resetAllConfirmUntil || 0) > Date.now();
 
   const embed = new EmbedBuilder()
-    .setColor(resetAllArmed ? 0xED4245 : 0x5865F2)
+    .setColor(0x5865F2)
     .setTitle('🗂️ Invite Manager')
-    .setDescription(resetAllArmed
-      ? '⚠️ **Reset All is armed.** Press **Confirm Reset All** within 30 seconds. Personal links and configuration will be kept.'
-      : 'View every member-owned invite, choose how many members to display, then select any member to manage their link and score.')
+    .setDescription('View every member-owned invite, choose how many members to display, then select one member to manage their link and score.')
     .addFields(
       { name: 'Personal Links', value: String(links.length), inline: true },
       { name: 'Leaderboard Members', value: String(ranking.length), inline: true },
@@ -151,7 +129,6 @@ function buildInviteManagerPayload(interaction) {
     const recentInvitees = invitees.length
       ? invitees.map((record) => `• <@${record.memberId}> — ${record.leftAt ? 'Left' : 'Active'} — ${formatDate(record.joinedAt)}`).join('\n')
       : 'No tracked invitees yet.';
-
     embed.addFields(
       { name: 'Selected Member', value: member ? `${member} (${member.user.username})` : `<@${selected.inviterId}>`, inline: false },
       { name: 'Personal Link', value: `https://discord.gg/${selected.code}`, inline: false },
@@ -180,12 +157,10 @@ function buildInviteManagerPayload(interaction) {
       { label: 'Display 20', value: '20', default: state.displayLimit === 20 },
       { label: 'Display All', value: '0', default: state.displayLimit === 0 },
     );
-
   const memberMenu = new UserSelectMenuBuilder()
     .setCustomId('invites:manager-select-member')
     .setPlaceholder(selected ? 'Select a different member to manage' : 'Select a member to manage')
-    .setMinValues(1)
-    .setMaxValues(1);
+    .setMinValues(1).setMaxValues(1);
 
   return {
     embeds: [embed],
@@ -198,11 +173,7 @@ function buildInviteManagerPayload(interaction) {
         button('invites:manager-delete', 'Delete Link', ButtonStyle.Danger, !selected),
         button('invites:manager-reset-member', 'Reset Member Score', ButtonStyle.Danger, !selected),
       ),
-      row(
-        button(resetAllArmed ? 'invites:manager-reset-all-confirm' : 'invites:manager-reset-all-arm', resetAllArmed ? 'Confirm Reset All' : 'Reset All', ButtonStyle.Danger),
-        button('invites:manager-default-panel', 'Use Default Panel', ButtonStyle.Secondary),
-        button('invites:admin-config', 'Back'),
-      ),
+      row(button('invites:admin-config', 'Back')),
     ],
   };
 }
@@ -217,42 +188,22 @@ function resetMemberScore(guildId, userId, meta = {}) {
     delete inviters[userId];
     const members = {};
     for (const [memberId, record] of Object.entries(current.members || {})) {
-      members[memberId] = record?.inviterId === userId
-        ? { ...record, inviterId: null, attribution: 'reset' }
-        : record;
+      members[memberId] = record?.inviterId === userId ? { ...record, inviterId: null, attribution: 'reset' } : record;
     }
-    const history = [...(current.history || []), {
-      id: `${Date.now()}_member_reset`,
-      at: new Date().toISOString(),
-      type: 'member_leaderboard_reset',
-      inviterId: userId,
-      actorId: meta.actorId || null,
-    }].slice(-1000);
-    return { ...current, inviters, members, history };
+    return { ...current, inviters, members };
   }, meta);
 }
 
 function resetLeaderboard(guildId, meta = {}) {
-  return updateRawSection(guildId, (current = {}) => ({
-    ...current,
-    inviters: {},
-    members: {},
-    history: [...(current.history || []), {
-      id: `${Date.now()}_leaderboard_reset`,
-      at: new Date().toISOString(),
-      type: 'leaderboard_reset',
-      actorId: meta.actorId || null,
-    }].slice(-1000),
-  }), meta);
+  return updateRawSection(guildId, (current = {}) => ({ ...current, inviters: {}, members: {} }), meta);
 }
 
 function useDefaultPanel(guildId, meta = {}) {
   const defaults = invites.defaults().settings.publicPanel;
   const section = invites.getSection(guildId);
-  const current = section.settings.publicPanel;
   invites.updateSettings(guildId, {
     publicPanel: {
-      ...current,
+      ...section.settings.publicPanel,
       title: defaults.title,
       description: defaults.description,
       color: defaults.color,
@@ -263,10 +214,7 @@ function useDefaultPanel(guildId, meta = {}) {
 }
 
 function renderTemplate(text, guild, user, url) {
-  return String(text || '')
-    .replaceAll('{server}', guild.name)
-    .replaceAll('{user}', user.username)
-    .replaceAll('{invite}', url);
+  return String(text || '').replaceAll('{server}', guild.name).replaceAll('{user}', user.username).replaceAll('{invite}', url);
 }
 
 async function resendSelected(interaction, selected) {
@@ -276,12 +224,10 @@ async function resendSelected(interaction, selected) {
   if (!live) throw new Error('The selected personal link no longer exists in Discord.');
   const template = invites.getSection(interaction.guildId).settings.memberInviteTemplate;
   const url = live.url || `https://discord.gg/${selected.code}`;
-  const embed = new EmbedBuilder()
-    .setColor(0x5865F2)
+  const embed = new EmbedBuilder().setColor(0x5865F2)
     .setTitle(renderTemplate(template.dmTitle, interaction.guild, member.user, url))
     .setDescription(renderTemplate(template.dmMessage, interaction.guild, member.user, url))
-    .setFooter({ text: 'This is your only personal Invite Studio link.' })
-    .setTimestamp();
+    .setFooter({ text: 'This is your only personal Invite Studio link.' }).setTimestamp();
   await member.user.send({ embeds: [embed] });
   return url;
 }
@@ -301,7 +247,6 @@ async function handleInviteManagerInteraction(interaction) {
     await interaction.update(buildInviteManagerPayload(interaction));
     return true;
   }
-
   if (customId === 'invites:manager-select-member' && interaction.isUserSelectMenu()) {
     const userId = interaction.values[0];
     const selected = personalLinks(interaction.guildId).find((link) => link.inviterId === userId) || null;
@@ -314,57 +259,20 @@ async function handleInviteManagerInteraction(interaction) {
     return true;
   }
 
-  if (customId === 'invites:manager-reset-all-arm') {
-    state.resetAllConfirmUntil = Date.now() + 30000;
-    await interaction.update(buildInviteManagerPayload(interaction));
-    return true;
-  }
-
-  if (customId === 'invites:manager-reset-all-confirm') {
-    if (Number(state.resetAllConfirmUntil || 0) <= Date.now()) {
-      state.resetAllConfirmUntil = 0;
-      await interaction.reply({ content: '❌ Reset confirmation expired. Press Reset All again.', flags: MessageFlags.Ephemeral });
-      return true;
-    }
-    resetLeaderboard(interaction.guildId, {
-      actorId: interaction.user.id,
-      action: 'invite_manager_reset_all',
-    });
-    state.resetAllConfirmUntil = 0;
-    await publicRefresh(interaction.guild, 'invite_manager_reset_all_refresh');
-    await interaction.reply({ content: '✅ All leaderboard scores and tracked invite attribution were cleared. Personal links and configuration were kept.', flags: MessageFlags.Ephemeral });
-    return true;
-  }
-
-  if (customId === 'invites:manager-default-panel') {
-    useDefaultPanel(interaction.guildId, {
-      actorId: interaction.user.id,
-      action: 'invite_manager_use_default_panel',
-    });
-    await publicRefresh(interaction.guild, 'invite_manager_default_panel_refresh');
-    await interaction.reply({ content: '✅ Default panel text, colour, footer and button label restored. Channel, deployed message, leaderboard size and invite data were kept.', flags: MessageFlags.Ephemeral });
-    return true;
-  }
-
   const links = personalLinks(interaction.guildId);
   const selected = links.find((link) => link.inviterId === state.selectedUserId) || null;
   if (!selected) {
     await interaction.reply({ content: '❌ Select a member with a personal invite first.', flags: MessageFlags.Ephemeral });
     return true;
   }
-
   if (customId === 'invites:manager-verify') {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const live = await interaction.guild.invites.fetch(selected.code).catch(() => null);
-    if (!live) {
-      await interaction.editReply('❌ This personal link no longer exists in Discord.');
-      return true;
-    }
+    if (!live) return interaction.editReply('❌ This personal link no longer exists in Discord.');
     await invites.syncGuild(interaction.guild, { actorId: interaction.user.id, action: 'invite_manager_verify' }).catch(() => null);
     await interaction.editReply(`✅ Personal link verified.\n${live.url}\n\nDiscord uses: **${live.uses || 0}**\nOwner in Invite Studio: <@${selected.inviterId}>`);
     return true;
   }
-
   if (customId === 'invites:manager-resend') {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     try {
@@ -375,28 +283,19 @@ async function handleInviteManagerInteraction(interaction) {
     }
     return true;
   }
-
   if (customId === 'invites:manager-delete') {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    await invites.deletePersonalInvite(interaction.guild, selected.inviterId, {
-      actorId: interaction.user.id,
-      action: 'invite_manager_delete_personal',
-    });
+    await invites.deletePersonalInvite(interaction.guild, selected.inviterId, { actorId: interaction.user.id, action: 'invite_manager_delete_personal' });
     state.selectedUserId = null;
     await interaction.editReply('✅ Personal link deleted. The member can create a new link using the current admin template.');
     return true;
   }
-
   if (customId === 'invites:manager-reset-member') {
-    resetMemberScore(interaction.guildId, selected.inviterId, {
-      actorId: interaction.user.id,
-      action: 'invite_manager_reset_member_score',
-    });
+    resetMemberScore(interaction.guildId, selected.inviterId, { actorId: interaction.user.id, action: 'invite_manager_reset_member_score' });
     await publicRefresh(interaction.guild, 'invite_manager_member_reset_refresh');
     await interaction.reply({ content: `✅ Invite score reset for <@${selected.inviterId}>. Their personal link was kept.`, flags: MessageFlags.Ephemeral });
     return true;
   }
-
   return false;
 }
 
