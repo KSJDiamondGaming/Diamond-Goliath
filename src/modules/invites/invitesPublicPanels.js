@@ -12,6 +12,7 @@ const invites = require('./invites');
 const memberProfiles = require('./invitesMemberProfiles');
 
 const refreshTimers = new Map();
+const refreshOperations = new Map();
 const guildRefs = new Map();
 const row = (...components) => new ActionRowBuilder().addComponents(...components);
 const button = (id, label, style = ButtonStyle.Secondary) => new ButtonBuilder()
@@ -31,8 +32,25 @@ function savePanelConfig(guildId, patch, meta = {}) {
   return next;
 }
 
-function leaderboardLines(guildId, limit) {
-  const entries = invites.leaderboard(guildId, limit);
+function leaderboardEntries(section, limit) {
+  const personalOwners = new Set(
+    Object.values(section.inviteLinks || {})
+      .filter((link) => link?.personal && link?.enabled !== false && link?.inviterId)
+      .map((link) => link.inviterId),
+  );
+
+  return Object.values(section.inviters || {})
+    .filter((entry) => personalOwners.has(entry.inviterId))
+    .map((entry) => ({
+      ...entry,
+      score: Number(entry.active || 0) + Number(entry.bonus || 0),
+    }))
+    .sort((a, b) => b.score - a.score || Number(b.total || 0) - Number(a.total || 0))
+    .slice(0, Math.max(1, Math.min(100, Number(limit || 25))));
+}
+
+function leaderboardLines(section, limit) {
+  const entries = leaderboardEntries(section, limit);
   if (!entries.length) return 'No member invites have been recorded yet.';
   const medals = ['🥇', '🥈', '🥉'];
   return entries.map((entry, index) => {
@@ -41,8 +59,8 @@ function leaderboardLines(guildId, limit) {
   }).join('\n');
 }
 
-function buildPublicPayload(guildId) {
-  const section = invites.getSection(guildId);
+function buildPublicPayload(guildId, sourceSection = null) {
+  const section = sourceSection || invites.getSection(guildId);
   const panel = section.settings.publicPanel;
   const officialCode = section.settings.officialInvite.code;
   const url = officialUrl(officialCode);
@@ -60,7 +78,7 @@ function buildPublicPayload(guildId) {
       { name: 'Official Server Invite', value: url, inline: false },
       { name: 'Leaderboard Updated', value: updated, inline: true },
       { name: 'Automatic Refresh', value: 'Every 2 hours', inline: true },
-      { name: '🏆 Invite Leaderboard', value: leaderboardLines(guildId, panel.leaderboardLimit), inline: false },
+      { name: '🏆 Invite Leaderboard', value: leaderboardLines(section, panel.leaderboardLimit), inline: false },
     )
     .setFooter({ text: panel.footer })
     .setTimestamp();
@@ -97,27 +115,97 @@ async function deployPublicPanel(guild, meta = {}) {
   const panel = panelConfig(guild.id);
   const channel = await resolveChannel(guild, panel.channelId);
   let message = panel.messageId ? await channel.messages.fetch(panel.messageId).catch(() => null) : null;
-  savePanelConfig(guild.id, { lastRefreshedAt: new Date().toISOString() }, meta);
-  const payload = buildPublicPayload(guild.id);
+  const refreshedAt = new Date().toISOString();
+  const section = invites.getSection(guild.id);
+  const payload = buildPublicPayload(guild.id, {
+    ...section,
+    settings: {
+      ...section.settings,
+      publicPanel: { ...section.settings.publicPanel, lastRefreshedAt: refreshedAt },
+    },
+  });
   if (message) await message.edit(payload);
   else message = await channel.send(payload);
-  savePanelConfig(guild.id, { channelId: channel.id, messageId: message.id }, meta);
+  savePanelConfig(guild.id, {
+    channelId: channel.id,
+    messageId: message.id,
+    lastRefreshedAt: refreshedAt,
+  }, meta);
   return message;
 }
 
-async function refreshPublicPanel(guild, meta = {}) {
+function usableMessageHint(message, panel) {
+  if (!message?.edit) return null;
+  if (panel.messageId && message.id !== panel.messageId) return null;
+  if (panel.channelId && message.channelId !== panel.channelId) return null;
+  return message;
+}
+
+function logRefreshTiming(guild, meta, timings) {
+  if (timings.total < 1000) return;
+  const action = String(meta.action || 'invite_panel_refresh');
+  console.info(
+    `[InviteStudio] ${action} completed in ${timings.total}ms for guild ${guild.id} `
+    + `(read=${timings.read}ms resolve=${timings.resolve}ms edit=${timings.edit}ms save=${timings.save}ms).`,
+  );
+}
+
+async function performPublicPanelRefresh(guild, meta = {}, options = {}) {
+  const startedAt = Date.now();
   guildRefs.set(guild.id, guild);
-  const panel = panelConfig(guild.id);
+
+  const section = invites.getSection(guild.id);
+  const readFinishedAt = Date.now();
+  const panel = section.settings.publicPanel;
   if (!panel.channelId || !panel.messageId) return false;
-  const channel = guild.channels.cache.get(panel.channelId)
-    || await guild.channels.fetch(panel.channelId).catch(() => null);
-  const message = channel?.messages
-    ? await channel.messages.fetch(panel.messageId).catch(() => null)
-    : null;
+
+  let message = usableMessageHint(options.message, panel);
+  if (!message) {
+    const channel = guild.channels.cache.get(panel.channelId)
+      || await guild.channels.fetch(panel.channelId).catch(() => null);
+    message = channel?.messages
+      ? await channel.messages.fetch(panel.messageId).catch(() => null)
+      : null;
+  }
+  const resolveFinishedAt = Date.now();
   if (!message) return false;
-  savePanelConfig(guild.id, { lastRefreshedAt: new Date().toISOString() }, meta);
-  await message.edit(buildPublicPayload(guild.id));
+
+  const refreshedAt = new Date().toISOString();
+  const nextSection = {
+    ...section,
+    settings: {
+      ...section.settings,
+      publicPanel: { ...panel, lastRefreshedAt: refreshedAt },
+    },
+  };
+
+  await message.edit(buildPublicPayload(guild.id, nextSection));
+  const editFinishedAt = Date.now();
+  savePanelConfig(guild.id, { lastRefreshedAt: refreshedAt }, meta);
+  const saveFinishedAt = Date.now();
+
+  logRefreshTiming(guild, meta, {
+    total: saveFinishedAt - startedAt,
+    read: readFinishedAt - startedAt,
+    resolve: resolveFinishedAt - readFinishedAt,
+    edit: editFinishedAt - resolveFinishedAt,
+    save: saveFinishedAt - editFinishedAt,
+  });
   return true;
+}
+
+function refreshPublicPanel(guild, meta = {}, options = {}) {
+  const key = guild.id;
+  const active = refreshOperations.get(key);
+  if (active) return active;
+
+  const operation = performPublicPanelRefresh(guild, meta, options)
+    .finally(() => {
+      if (refreshOperations.get(key) === operation) refreshOperations.delete(key);
+    });
+
+  refreshOperations.set(key, operation);
+  return operation;
 }
 
 function presentationChanged(panelPatch) {
@@ -226,11 +314,11 @@ async function handleMemberInteraction(interaction) {
   }
 
   if (customId === 'invites:member-refresh') {
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    await interaction.reply({ content: '🔄 Updating leaderboard…', flags: MessageFlags.Ephemeral });
     const ok = await refreshPublicPanel(interaction.guild, {
       actorId: interaction.user.id,
       action: 'member_manual_leaderboard_refresh',
-    });
+    }, { message: interaction.message });
     await interaction.editReply(ok
       ? '✅ The leaderboard has been updated.'
       : '❌ The deployed Invite Studio panel could not be found.');
