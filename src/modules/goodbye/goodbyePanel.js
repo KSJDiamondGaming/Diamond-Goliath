@@ -12,6 +12,7 @@ const {
 } = require('discord.js');
 const goodbye = require('./goodbye');
 const departureDm = require('./goodbyeDepartureDm');
+const { buildGoodbyeDmPanel } = require('./goodbyeDmPanel');
 const embedTemplateManager = require('../embed/embedTemplateManager');
 
 const selections = new Map();
@@ -66,10 +67,6 @@ function assertPersistedConfig(guildId, expected = {}) {
   return saved;
 }
 
-function onOff(value) {
-  return value ? 'On ✅' : 'Off ❌';
-}
-
 async function buildGoodbyePanel(guild, memberDisplayName = 'Unknown User', userId = 'panel') {
   const config = goodbye.getGoodbyeSection(guild.id);
   const dm = departureDm.getConfig(guild.id);
@@ -99,10 +96,8 @@ async function buildGoodbyePanel(guild, memberDisplayName = 'Unknown User', user
       `Sent: \`${analytics.sent || 0}\` | Failed: \`${analytics.failed || 0}\` | Skipped: \`${analytics.skipped || 0}\``,
       '',
       '**💌 Member Departure DM**',
-      `**DM Status:** ${onOff(dm.enabled)}`,
-      `**Events:** Leave ${onOff(dm.sendOnLeave)} · Kick ${onOff(dm.sendOnKick)} · Ban ${onOff(dm.sendOnBan)} · Prune ${onOff(dm.sendOnPrune)}`,
-      `**Details:** Joined ${onOff(dm.includeJoinDate)} · Duration ${onOff(dm.includeMembershipDuration)} · Reason ${onOff(dm.includeReason)} · Moderator ${onOff(dm.includeModerator)}`,
-      `**Appeals:** Link ${onOff(dm.includeAppealLink)} · Reference ${onOff(dm.includeReferenceId)}`,
+      `**Status:** ${dm.enabled ? 'Enabled ✅' : 'Disabled ❌'}`,
+      `**Events:** Leave ${dm.sendOnLeave ? 'On' : 'Off'} · Kick ${dm.sendOnKick ? 'On' : 'Off'} · Ban ${dm.sendOnBan ? 'On' : 'Off'} · Prune ${dm.sendOnPrune ? 'On' : 'Off'}`,
       `DM Sent: \`${dmAnalytics.sent || 0}\` | Failed: \`${dmAnalytics.failed || 0}\` | Skipped: \`${dmAnalytics.skipped || 0}\``,
       '',
       warnings.length ? `**Warnings**\n${warnings.map((warning) => `• ${warning}`).join('\n')}` : '**Health:** Healthy ✅',
@@ -118,30 +113,15 @@ async function buildGoodbyePanel(guild, memberDisplayName = 'Unknown User', user
       row(
         button(config.enabled ? 'admin:goodbye:disable' : 'admin:goodbye:enable', config.enabled ? '⏸ Disable Module' : '▶ Enable Module', config.enabled ? ButtonStyle.Secondary : ButtonStyle.Success),
         button('admin:goodbye:toggleBots', config.ignoreBots ? '🤖 Bots Off' : '🤖 Bots On', config.ignoreBots ? ButtonStyle.Secondary : ButtonStyle.Success),
-        button(dm.enabled ? 'admin:goodbye:dm:disable' : 'admin:goodbye:dm:enable', dm.enabled ? '💌 Disable DM' : '💌 Enable DM', dm.enabled ? ButtonStyle.Secondary : ButtonStyle.Success),
+        button('admin:goodbye:dm', '💌 Departure DM', ButtonStyle.Primary),
       ),
       row(
         button('admin:goodbye:assign', '✅ Assign Log Template', ButtonStyle.Primary),
         button('admin:goodbye:test', '🧪 Preview Log', ButtonStyle.Success),
         button('admin:goodbye:send', '📨 Send Log Test', ButtonStyle.Success),
-        button('admin:goodbye:dm:preview', '👁 Preview DM', ButtonStyle.Primary),
-        button('admin:goodbye:dm:test', '💌 Send DM Test', ButtonStyle.Success),
-      ),
-      row(
-        button('admin:goodbye:dm:leave', `Leave ${dm.sendOnLeave ? 'On' : 'Off'}`),
-        button('admin:goodbye:dm:kick', `Kick ${dm.sendOnKick ? 'On' : 'Off'}`),
-        button('admin:goodbye:dm:ban', `Ban ${dm.sendOnBan ? 'On' : 'Off'}`),
-        button('admin:goodbye:dm:prune', `Prune ${dm.sendOnPrune ? 'On' : 'Off'}`),
-      ),
-      row(
-        button('admin:goodbye:dm:joined', `Join Date ${dm.includeJoinDate ? 'On' : 'Off'}`),
-        button('admin:goodbye:dm:duration', `Duration ${dm.includeMembershipDuration ? 'On' : 'Off'}`),
-        button('admin:goodbye:dm:reason', `Reason ${dm.includeReason ? 'On' : 'Off'}`),
-        button('admin:goodbye:dm:moderator', `Moderator ${dm.includeModerator ? 'On' : 'Off'}`),
-      ),
-      row(
         button('admin:goodbye:repair', '🩺 Repair'),
-        button('admin:goodbye:dm:reset', '♻ Reset DM', ButtonStyle.Danger),
+      ),
+      row(
         button('admin:goodbye:reset', '♻ Reset Module', ButtonStyle.Danger),
         button('admin:goodbye:export', '📤 Export'),
         button('admin:modules', '⬅ Modules'),
@@ -150,10 +130,10 @@ async function buildGoodbyePanel(guild, memberDisplayName = 'Unknown User', user
   };
 }
 
-async function updatePanel(interaction) {
-  const payload = await buildGoodbyePanel(interaction.guild, interaction.member?.displayName || interaction.user?.username, interaction.user.id);
-  if (interaction.deferred || interaction.replied) return interaction.editReply(payload);
-  return interaction.update(payload);
+async function updatePanel(interaction, payload = null) {
+  const nextPayload = payload || await buildGoodbyePanel(interaction.guild, interaction.member?.displayName || interaction.user?.username, interaction.user.id);
+  if (interaction.deferred || interaction.replied) return interaction.editReply(nextPayload);
+  return interaction.update(nextPayload);
 }
 
 function selectedTemplate(interaction) {
@@ -170,6 +150,9 @@ async function handleGoodbyeInteraction(interaction) {
 
   try {
     if (customId === 'admin:goodbye') return updatePanel(interaction);
+    if (customId === 'admin:goodbye:dm') {
+      return updatePanel(interaction, buildGoodbyeDmPanel(interaction.guild, interaction.member?.displayName || interaction.user?.username));
+    }
 
     if (interaction.isChannelSelectMenu?.() && customId === 'admin:goodbye:channel') {
       const channelId = interaction.values?.[0] || null;
@@ -221,10 +204,12 @@ async function handleGoodbyeInteraction(interaction) {
       'admin:goodbye:dm:duration': { includeMembershipDuration: !dm.includeMembershipDuration },
       'admin:goodbye:dm:reason': { includeReason: !dm.includeReason },
       'admin:goodbye:dm:moderator': { includeModerator: !dm.includeModerator },
+      'admin:goodbye:dm:appeal': { includeAppealLink: !dm.includeAppealLink },
+      'admin:goodbye:dm:reference': { includeReferenceId: !dm.includeReferenceId },
     }[customId];
     if (dmPatch) {
       departureDm.updateConfig(interaction.guild.id, dmPatch, actor);
-      return updatePanel(interaction);
+      return updatePanel(interaction, buildGoodbyeDmPanel(interaction.guild, interaction.member?.displayName || interaction.user?.username));
     }
 
     if (customId === 'admin:goodbye:test') {
@@ -258,7 +243,7 @@ async function handleGoodbyeInteraction(interaction) {
     if (customId === 'admin:goodbye:dm:reset') {
       await interaction.deferUpdate();
       departureDm.resetConfig(interaction.guild.id, actor);
-      return updatePanel(interaction);
+      return updatePanel(interaction, buildGoodbyeDmPanel(interaction.guild, interaction.member?.displayName || interaction.user?.username));
     }
 
     if (customId === 'admin:goodbye:reset') {
