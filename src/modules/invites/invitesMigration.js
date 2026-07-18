@@ -186,6 +186,19 @@ function addMigrationButton(payload, interaction) {
   return { ...payload, components };
 }
 
+async function callBaseWithAugmentedResponses(interaction) {
+  const originalUpdate = typeof interaction.update === 'function' ? interaction.update.bind(interaction) : null;
+  const originalEditReply = typeof interaction.editReply === 'function' ? interaction.editReply.bind(interaction) : null;
+  if (originalUpdate) interaction.update = (payload, ...args) => originalUpdate(addMigrationButton(payload, interaction), ...args);
+  if (originalEditReply) interaction.editReply = (payload, ...args) => originalEditReply(addMigrationButton(payload, interaction), ...args);
+  try {
+    return await baseAdminPanel.handleInviteStudioInteraction(interaction);
+  } finally {
+    if (originalUpdate) interaction.update = originalUpdate;
+    if (originalEditReply) interaction.editReply = originalEditReply;
+  }
+}
+
 const extendedAdminPanel = {
   ...baseAdminPanel,
   buildInviteStudioPayload(interaction, forcedPage = null) {
@@ -193,7 +206,7 @@ const extendedAdminPanel = {
   },
   async handleInviteStudioInteraction(interaction) {
     if (interaction.customId !== ADMIN_BUTTON_ID) {
-      return baseAdminPanel.handleInviteStudioInteraction(interaction);
+      return callBaseWithAugmentedResponses(interaction);
     }
     if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
       throw new Error('Manage Server permission is required.');
