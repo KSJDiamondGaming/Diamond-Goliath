@@ -7,8 +7,41 @@ const cleanId = (value) => {
 
 const cleanText = (value, max = 200) => String(value ?? '').trim().slice(0, max);
 
+function serializeEmbed(embed) {
+  if (!embed) return null;
+  const data = embed.toJSON?.() || embed.data || embed;
+  return {
+    title: cleanText(data.title, 256),
+    description: cleanText(data.description, 2000),
+    url: data.url || null,
+    color: Number.isFinite(data.color) ? data.color : null,
+    author: data.author ? {
+      name: cleanText(data.author.name, 256),
+      iconURL: data.author.icon_url || data.author.iconURL || null,
+    } : null,
+    footer: data.footer ? {
+      text: cleanText(data.footer.text, 512),
+      iconURL: data.footer.icon_url || data.footer.iconURL || null,
+    } : null,
+    thumbnailURL: data.thumbnail?.url || data.thumbnailURL || null,
+    imageURL: data.image?.url || data.imageURL || null,
+    fields: Array.isArray(data.fields)
+      ? data.fields.slice(0, 12).map((field) => ({
+        name: cleanText(field.name, 256),
+        value: cleanText(field.value, 1000),
+        inline: field.inline === true,
+      }))
+      : [],
+  };
+}
+
 function serializeMessage(message) {
-  const firstEmbed = message.embeds?.[0] || null;
+  const embeds = (message.embeds || []).slice(0, 3).map(serializeEmbed).filter(Boolean);
+  const reactions = [...(message.reactions?.cache?.values?.() || [])].slice(0, 20).map((reaction) => ({
+    emoji: reaction.emoji?.toString?.() || reaction.emoji?.name || reaction.emoji?.id || '❔',
+    count: Number(reaction.count || 0),
+    me: reaction.me === true,
+  }));
   return {
     id: message.id,
     channelId: message.channelId,
@@ -19,12 +52,15 @@ function serializeMessage(message) {
     bot: message.author?.bot === true,
     pinned: message.pinned === true,
     createdAt: message.createdAt?.toISOString?.() || null,
-    content: cleanText(message.content, 1000),
-    hasEmbeds: Boolean(message.embeds?.length),
+    editedAt: message.editedAt?.toISOString?.() || null,
+    content: cleanText(message.content, 2000),
+    hasEmbeds: embeds.length > 0,
     embedCount: message.embeds?.length || 0,
-    embedTitle: cleanText(firstEmbed?.title, 256),
-    embedDescription: cleanText(firstEmbed?.description, 1000),
-    reactionCount: message.reactions?.cache?.reduce?.((total, reaction) => total + Number(reaction.count || 0), 0) || 0,
+    embedTitle: embeds[0]?.title || '',
+    embedDescription: embeds[0]?.description || '',
+    embeds,
+    reactions,
+    reactionCount: reactions.reduce((total, reaction) => total + reaction.count, 0),
     jumpUrl: message.url,
   };
 }
