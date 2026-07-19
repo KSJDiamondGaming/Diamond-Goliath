@@ -31,6 +31,8 @@ contains('src/modules/reactionroles/reactionRolesRoute.js', [
   "require('./reactionRoleMessageFinder')",
   "router.get('/:guildId/messages/search'",
   'messageFinder.searchGuildMessages',
+  "router.put('/:guildId/panels/:panelId'",
+  "router.patch('/:guildId/panels/:panelId/enabled'",
 ]);
 contains('src/modules/reactionroles/reactionRoleMessageFinder.js', [
   'searchGuildMessages',
@@ -44,10 +46,17 @@ contains('src/dashboard/js/pages/modules/ReactionRoles.jsx', [
   'Search Messages',
   '+ Add Emoji → Role',
   'Attach to Selected Message',
+  'Edit mappings',
+  'Save & Sync',
+  'Duplicate',
+  'Detach + Clear',
+  'Open in Discord',
 ]);
 contains('src/modules/reactionroles/reactionRoles.js', [
   'attachExistingMessage',
   'createFromTemplate',
+  'updatePanelMappings',
+  'setPanelEnabled',
   'repairAll',
   'handleReactionAdd',
   'handleReactionRemove',
