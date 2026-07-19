@@ -1,6 +1,7 @@
 'use strict';
 
 require('../rolestudio/roleStudioNavigationPatch');
+require('../rolestudio/roleStudioChildNavigationPatch');
 
 const reactionPanel = require('./reactionRolesPanelV8');
 const roleStudio = require('../rolestudio/roleStudioPanel');
