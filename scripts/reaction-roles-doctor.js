@@ -36,6 +36,10 @@ contains('src/modules/reactionroles/reactionRolesRoute.js', [
 ]);
 contains('src/modules/reactionroles/reactionRoleMessageFinder.js', [
   'searchGuildMessages',
+  'serializeEmbed',
+  'authorAvatar',
+  'reactions',
+  'imageURL',
   'embedsOnly',
   'pinnedOnly',
   'botsOnly',
@@ -44,8 +48,12 @@ contains('src/modules/reactionroles/reactionRoleMessageFinder.js', [
 contains('src/dashboard/js/pages/modules/ReactionRoles.jsx', [
   'Find a Message',
   'Search Messages',
+  'DiscordMessagePreview',
+  'DiscordEmbedPreview',
+  'Select Message',
   '+ Add Emoji → Role',
   'Attach to Selected Message',
+  'Preview',
   'Edit mappings',
   'Save & Sync',
   'Duplicate',
