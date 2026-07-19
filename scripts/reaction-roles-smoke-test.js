@@ -17,9 +17,10 @@ console.log('\nRole Studio Smoke Test');
 console.log('======================');
 
 const reactionRoles = require(path.join(root, 'src/modules/reactionroles/reactionRoles'));
-
-const panelSource = read('src/modules/reactionroles/reactionRolesPanelV2.js');
+const panelSource = read('src/modules/reactionroles/reactionRolesPanelV3.js');
+const panelEntry = read('src/modules/reactionroles/reactionRolesPanel.js');
 const runtimeSource = read('src/modules/reactionroles/reactionRoles.js');
+const finderSource = read('src/modules/reactionroles/reactionRoleMessageFinder.js');
 const routeSource = read('src/modules/reactionroles/reactionRolesRoute.js');
 const interactionSource = read('src/events/interactions/interactionCreate.js');
 const manifestSource = read('src/core/modules/moduleManifest.js');
@@ -38,48 +39,50 @@ test('Role Studio remains backwards compatible with the reactionRoles storage ke
   assert.ok(manifestSource.includes("reactionRoles: { key: 'reactionRoles', name: 'Role Studio'"));
 });
 
-test('Dedicated Discord administration files exist', () => {
-  assert.equal(exists('src/modules/reactionroles/reactionRolesPanel.js'), true);
-  assert.equal(exists('src/modules/reactionroles/reactionRolesPanelV2.js'), true);
-  assert.equal(exists('src/modules/reactionroles/reactionRolesRoute.js'), true);
+test('Universal Discord administration entrypoint is active', () => {
+  assert.ok(panelEntry.includes("require('./reactionRolesPanelV3')"));
+  assert.equal(exists('src/modules/reactionroles/reactionRolesPanelV3.js'), true);
+  assert.equal(exists('src/modules/reactionroles/reactionRoleMessageFinder.js'), true);
 });
 
 test('Overview follows the compact Studio and Admin Centre layout', () => {
+  for (const token of ['🎭 Role Studio', 'Attach Existing Message', 'Create New Panel', 'Admin Centre', 'Back to Modules', 'Role Studio Admin Centre']) {
+    assert.ok(panelSource.includes(token), `Missing overview control: ${token}`);
+  }
+  assert.ok(panelSource.includes("id === 'admin:reactionRoles:admin'"));
+});
+
+test('Every supported existing-message source is exposed', () => {
   for (const token of [
-    '🎭 Role Studio', 'Attach Existing Message', 'Create New Panel',
-    'Admin Centre', 'Back to Modules', 'Role Studio Admin Centre',
-  ]) assert.ok(panelSource.includes(token), `Missing overview control: ${token}`);
-  assert.ok(panelSource.includes("id === 'admin:reactionRoles:admin'"), 'Admin Centre button is not routed');
+    'Choose channel or thread', 'Load Recent', 'Search Messages', 'Paste Link', 'Enter IDs',
+    'source:channel', 'source:message', 'source:browse', 'source:search', 'source:link', 'source:ids',
+    'ChannelType.PublicThread', 'ChannelType.PrivateThread', 'ChannelType.AnnouncementThread',
+  ]) assert.ok(panelSource.includes(token), `Missing universal source option: ${token}`);
 });
 
-test('Wizard cannot exceed Discord five-row component limit', () => {
-  const wizardStart = panelSource.indexOf('function buildWizard');
-  const wizardEnd = panelSource.indexOf('function buildMappingRemoval');
-  const wizard = panelSource.slice(wizardStart, wizardEnd);
-  assert.ok(wizard.includes('const components = ['));
-  assert.ok(wizard.includes('if (!existing) components.push'));
-  assert.ok(!wizard.includes('wizard:applyTemplate'), 'Legacy sixth-row template toggle remains in wizard');
-
-  // Existing-message wizard: channel + role + mode + actions = 4 rows.
-  // New-panel wizard: channel + template + role + mode + actions = 5 rows.
-  const unconditionalRows = (wizard.match(/row\(/g) || []).length;
-  assert.ok(unconditionalRows <= 5, `Wizard source contains too many action rows: ${unconditionalRows}`);
+test('Message selection is verified before deployment', () => {
+  for (const token of ['verifyAndSelect', 'searchGuildMessages', 'message could not be found', 'result.messages?.[0]']) {
+    assert.ok(panelSource.includes(token), `Missing message verification behaviour: ${token}`);
+  }
+  assert.ok(finderSource.includes('channel.messages.fetch(options.messageId)'));
 });
 
-test('Any existing accessible Discord message can be targeted safely', () => {
-  for (const token of [
-    'parseMessageReference', 'discord(?:app)?\\.com/channels',
-    'The message link belongs to a different server', 'messageReference',
-    'applyTemplate: false', 'Original content:** Preserved',
-    'Unrelated reactions:** Preserved',
-  ]) assert.ok(runtimeSource.includes(token) || panelSource.includes(token), `Missing existing-message behaviour: ${token}`);
+test('All Discord payload builders stay within five rows by design', () => {
+  for (const functionName of ['buildReactionRolesAdminPanel', 'buildAdminCentre', 'buildSourcePicker', 'buildWizard', 'buildMappingRemoval', 'buildManagedPanel', 'buildRemovalChoices']) {
+    const start = panelSource.indexOf(`function ${functionName}`);
+    assert.ok(start >= 0, `Missing payload builder: ${functionName}`);
+    const next = panelSource.indexOf('\nfunction ', start + 10);
+    const body = panelSource.slice(start, next < 0 ? panelSource.length : next);
+    const rowCount = (body.match(/row\(/g) || []).length;
+    assert.ok(rowCount <= 5, `${functionName} contains more than five row builders: ${rowCount}`);
+  }
 });
 
-test('Attachment preserves unrelated message data and adds only configured reactions', () => {
-  assert.ok(runtimeSource.includes('if (!findMessageReaction(message, mapping)) await message.react'));
+test('Existing messages are never rewritten during attachment', () => {
   assert.ok(runtimeSource.includes('attachExistingMessage'));
   assert.ok(runtimeSource.includes('originalPayload = template ? messagePayload(message) : null'));
   assert.ok(panelSource.includes('templateId: null, applyTemplate: false'));
+  assert.ok(panelSource.includes('Original content and unrelated reactions remain unchanged'));
 });
 
 test('Reaction add and remove events remain connected', () => {
@@ -96,5 +99,5 @@ test('API exposes deployment, maintenance, export and reset operations', () => {
   ]) assert.ok(routeSource.includes(token), `Missing API route: ${token}`);
 });
 
-console.log('\n✅ Role Studio routing, component-limit and existing-message smoke tests passed.');
+console.log('\n✅ Role Studio universal source, routing and component-limit smoke tests passed.');
 console.log('ℹ️ Discord permissions, historical message fetching and live role assignment still require development-guild acceptance testing.');
