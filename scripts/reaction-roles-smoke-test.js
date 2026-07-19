@@ -103,6 +103,15 @@ test('Every configured reaction is bot-owned, retried and verified', () => {
   assert.ok(reliability.includes("wrap('repairPanel')"));
 });
 
+test('Clear and detach removes and verifies every configured bot reaction before detaching', () => {
+  for (const token of [
+    'clearAllPanelReactions', 'reaction.users.remove(botId)',
+    'Not every configured reaction could be cleared', 'wrapDetachPanel',
+    'await clearAllPanelReactions(guild, panel)', 'clearReactions: false',
+    'reactionsCleared: true',
+  ]) assert.ok(reliability.includes(token), `Missing complete detach cleanup behaviour: ${token}`);
+});
+
 test('Existing messages are never rewritten during standard attachment', () => {
   assert.ok(runtimeSource.includes('attachExistingMessage'));
   assert.ok(runtimeSource.includes('originalPayload = template ? messagePayload(message) : null'));
