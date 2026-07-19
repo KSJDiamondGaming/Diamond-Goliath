@@ -85,6 +85,47 @@ async function ensureAllPanelReactions(guild, panel) {
   }, guild);
 }
 
+async function clearAllPanelReactions(guild, panel) {
+  const botId = guild.members.me?.id || guild.client.user?.id;
+  if (!botId) throw new Error('Goliath could not resolve its own member identity.');
+
+  const activeMappings = (panel.mappings || []).filter((mapping) => mapping.enabled !== false);
+  let message = await fetchMessage(guild, panel.channelId, panel.messageId);
+  const failures = [];
+
+  for (const mapping of activeMappings) {
+    const emoji = emojiDescriptor(mapping.emoji);
+    let cleared = false;
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= 3 && !cleared; attempt += 1) {
+      try {
+        const reaction = findReaction(message, emoji);
+        if (!reaction || !await botOwnsReaction(reaction, botId)) {
+          cleared = true;
+          break;
+        }
+
+        await reaction.users.remove(botId);
+        await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
+        message = await fetchMessage(guild, panel.channelId, panel.messageId);
+        const refreshed = findReaction(message, emoji);
+        cleared = !await botOwnsReaction(refreshed, botId);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    if (!cleared) failures.push(`${mapping.emoji}: ${lastError?.message || 'Goliath could not confirm removal.'}`);
+  }
+
+  if (failures.length) {
+    throw new Error(`Not every configured reaction could be cleared. ${failures.join(' | ')}`);
+  }
+
+  return true;
+}
+
 function wrap(name) {
   const original = reactionRoles[name];
   if (typeof original !== 'function') return;
@@ -97,6 +138,22 @@ function wrap(name) {
   };
 }
 
+function wrapDetachPanel() {
+  const original = reactionRoles.detachPanel;
+  if (typeof original !== 'function') return;
+
+  reactionRoles.detachPanel = async (guild, panelId, options = {}) => {
+    if (!options.clearReactions) return original(guild, panelId, options);
+
+    const panel = reactionRoles.getPanel(guild.id, panelId);
+    if (!panel) throw new Error('Reaction-role panel not found.');
+
+    await clearAllPanelReactions(guild, panel);
+    const result = await original(guild, panelId, { ...options, clearReactions: false });
+    return { ...result, reactionsCleared: true };
+  };
+}
+
 if (!reactionRoles[installed]) {
   Object.defineProperty(reactionRoles, installed, { value: true });
   wrap('attachExistingMessage');
@@ -104,6 +161,7 @@ if (!reactionRoles[installed]) {
   wrap('updatePanelMappings');
   wrap('setPanelEnabled');
   wrap('repairPanel');
+  wrapDetachPanel();
 }
 
-module.exports = { ensureAllPanelReactions };
+module.exports = { ensureAllPanelReactions, clearAllPanelReactions };
