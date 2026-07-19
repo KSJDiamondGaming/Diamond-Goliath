@@ -116,7 +116,25 @@ API base:
 /api/reaction-roles
 ```
 
-The dashboard supports guild message discovery, message previews, existing-message attachment, multiple mapping creation, deployment health, repair, detach, analytics and export.
+The dashboard supports:
+
+- Guild-wide or channel-specific message discovery
+- Existing message and embed previews
+- Native channel and role selectors
+- Multiple mappings in one attachment transaction
+- Editing mappings on an active deployment
+- Adding, disabling and removing individual mappings
+- Immediate reaction synchronisation after saving
+- Enabling and disabling deployments
+- Duplicating a deployment's mappings into the attachment builder
+- Opening the tracked message directly in Discord
+- Repairing one deployment or all deployments
+- Safe detach without changing the message
+- Detach with removal of Goliath-owned reactions
+- Deletion of Goliath-created deployment messages only
+- Health, analytics and JSON export
+
+Duplicating a deployment copies its mapping configuration only. The administrator must select a destination message before attaching the copy, preventing accidental reuse of the original message.
 
 ## Lifecycle operations
 
@@ -206,7 +224,7 @@ Startup repairs enabled deployments across cached guilds. There must not be a se
 npm run audit:reactionroles
 ```
 
-The doctor verifies the canonical runtime, API route, guild message finder, dashboard workflow and reaction event registrations.
+The doctor verifies the canonical runtime, API route, guild message finder, dashboard attachment and deployment-management workflows, and reaction event registrations.
 
 ## Legacy migration
 
