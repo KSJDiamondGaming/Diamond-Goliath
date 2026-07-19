@@ -18,7 +18,7 @@ const reactionRoles = require('./reactionRoles');
 
 const row = (...items) => new ActionRowBuilder().addComponents(...items.filter(Boolean));
 const btn = (id, label, style = ButtonStyle.Secondary, disabled = false) => new ButtonBuilder()
-  .setCustomId(id).setLabel(label).setStyle(style).setDisabled(disabled);
+  .setCustomId(id).setLabel(label).setStyle(style).setDisabled(Boolean(disabled));
 const displayName = (interaction) => interaction.member?.displayName || interaction.user?.username || 'Unknown User';
 
 function modeLabel(mode) {
@@ -31,7 +31,7 @@ function templateSelect(guildId, selectedId, customId = 'admin:reactionRoles:wiz
   const templates = reactionRoles.listReactionTemplates(guildId).slice(0, 25);
   const menu = new StringSelectMenuBuilder()
     .setCustomId(customId)
-    .setPlaceholder(templates.length ? 'Optional: choose an Embed Studio template' : 'No Reaction Role templates found')
+    .setPlaceholder(templates.length ? 'Choose an Embed Studio template' : 'No Role Studio templates found')
     .setMinValues(1).setMaxValues(1).setDisabled(!templates.length);
   menu.addOptions(templates.length ? templates.map((template) => ({
     label: String(template.name || template.templateId).slice(0, 100),
@@ -50,7 +50,7 @@ function panelSelect(guildId) {
     .setMinValues(1).setMaxValues(1).setDisabled(!panels.length);
   menu.addOptions(panels.length ? panels.map((panel) => ({
     label: String(panel.name || panel.panelId).slice(0, 100),
-    description: `${panel.enabled === false ? 'Disabled' : 'Enabled'} • ${panel.mappings.length} mapping(s) • ${panel.source === 'template' ? 'Embed Studio' : 'Existing message'}`.slice(0, 100),
+    description: `${panel.enabled === false ? 'Disabled' : 'Enabled'} • ${panel.mappings.length} mapping(s) • ${panel.source === 'template' ? 'Goliath panel' : 'Existing message'}`.slice(0, 100),
     value: panel.panelId,
   })) : [{ label: 'No deployments available', value: 'none' }]);
   return menu;
@@ -71,7 +71,7 @@ function mappingText(mappings, guild) {
   if (!mappings.length) return '> No emoji-to-role mappings added yet.';
   return mappings.slice(0, 20).map((mapping, index) => {
     const role = guild.roles.cache.get(mapping.roleId);
-    return `**${index + 1}. ${mapping.emoji}**  →  ${role ? `<@&${role.id}>` : `\`${mapping.roleId}\``}\n└ ${modeLabel(mapping.mode)}`;
+    return `**${index + 1}. ${mapping.emoji}** → ${role ? `<@&${role.id}>` : `\`${mapping.roleId}\``}\n└ ${modeLabel(mapping.mode)}`;
   }).join('\n\n');
 }
 
@@ -95,32 +95,56 @@ async function buildReactionRolesAdminPanel(guild, memberDisplayName = 'Unknown 
   const drafts = Object.keys(config.drafts || {}).length;
   const embed = new EmbedBuilder()
     .setColor(config.enabled !== false && health.healthy ? 0x57f287 : 0xfaa61a)
-    .setTitle('🎭 Reaction Roles Studio')
-    .setDescription([
-      `### ${config.enabled !== false ? '🟢 Online' : '⏸️ Disabled'}  •  ${health.healthy ? 'All systems healthy' : 'Attention required'}`,
-      '',
-      `**Deployments**  \`${panels.length}\`     **Mappings**  \`${mappings}\`     **Drafts**  \`${drafts}\``,
-      `**Assigned**  \`${config.analytics.assigned || 0}\`     **Removed**  \`${config.analytics.removed || 0}\`     **Failed**  \`${config.analytics.failed || 0}\``,
-      '',
-      '**Create a new role panel or upgrade any existing Discord message.**',
-      'Your original message content and unrelated reactions are preserved.',
-    ].join('\n'))
+    .setTitle('🎭 Role Studio')
+    .setDescription('Attach emoji roles to any accessible Discord message, or create a new role panel through Embed Studio.')
+    .addFields(
+      { name: 'Status', value: config.enabled !== false ? '🟢 Online' : '⏸️ Disabled', inline: true },
+      { name: 'Health', value: health.healthy ? 'All systems healthy' : `${health.unhealthy || 0} need attention`, inline: true },
+      { name: 'Deployments', value: String(panels.length), inline: true },
+      { name: 'Mappings', value: String(mappings), inline: true },
+      { name: 'Drafts', value: String(drafts), inline: true },
+      { name: 'Assignments', value: `${config.analytics.assigned || 0} added • ${config.analytics.removed || 0} removed`, inline: true },
+      { name: 'Existing Message Support', value: 'Paste a message link or choose its channel and ID. Original text, embeds and unrelated reactions remain unchanged.', inline: false },
+    )
     .setFooter({ text: `Requested by ${memberDisplayName}` })
     .setTimestamp();
 
   return { embeds: [embed], components: [
     row(
-      btn('admin:reactionRoles:new:existing', '🔗 Attach Existing Message', ButtonStyle.Primary),
-      btn('admin:reactionRoles:new:template', '🎨 Create New Panel', ButtonStyle.Success),
-      btn('admin:reactionRoles:continue', drafts ? '▶️ Resume Draft' : '▶️ Start Setup', ButtonStyle.Secondary)
+      btn('admin:reactionRoles:new:existing', 'Attach Existing Message', ButtonStyle.Primary),
+      btn('admin:reactionRoles:new:template', 'Create New Panel', ButtonStyle.Success),
+      btn('admin:reactionRoles:continue', drafts ? 'Resume Draft' : 'Start Setup', ButtonStyle.Secondary)
     ),
     row(panelSelect(guild.id)),
     row(
-      btn(config.enabled !== false ? 'admin:reactionRoles:disable' : 'admin:reactionRoles:enable', config.enabled !== false ? '⏸️ Disable Module' : '▶️ Enable Module'),
-      btn('admin:reactionRoles:repair', '🩺 Health & Repair', ButtonStyle.Primary),
-      btn('admin:reactionRoles:export', '📤 Export'),
-      btn('admin:modules', '⬅️ Modules')
+      btn('admin:reactionRoles:admin', 'Admin Centre', ButtonStyle.Primary),
+      btn('admin:modules', 'Back to Modules')
     ),
+  ] };
+}
+
+async function buildAdminCentre(guild) {
+  const config = reactionRoles.getSection(guild.id);
+  const health = await reactionRoles.buildHealth(guild);
+  const embed = new EmbedBuilder()
+    .setColor(config.enabled !== false && health.healthy ? 0x57f287 : 0xfaa61a)
+    .setTitle('🛡️ Role Studio Admin Centre')
+    .setDescription('Module controls, diagnostics and configuration tools.')
+    .addFields(
+      { name: 'Module', value: config.enabled !== false ? 'Enabled' : 'Disabled', inline: true },
+      { name: 'Health', value: health.healthy ? 'Healthy' : 'Attention required', inline: true },
+      { name: 'Active Deployments', value: String(health.active || 0), inline: true },
+      { name: 'Disabled Deployments', value: String(health.disabled || 0), inline: true },
+      { name: 'Unhealthy', value: String(health.unhealthy || 0), inline: true },
+      { name: 'Failed Assignments', value: String(config.analytics.failed || 0), inline: true },
+    );
+  return { embeds: [embed], components: [
+    row(
+      btn(config.enabled !== false ? 'admin:reactionRoles:disable' : 'admin:reactionRoles:enable', config.enabled !== false ? 'Disable Module' : 'Enable Module', config.enabled !== false ? ButtonStyle.Danger : ButtonStyle.Success),
+      btn('admin:reactionRoles:repair', 'Health & Repair', ButtonStyle.Primary),
+      btn('admin:reactionRoles:export', 'Export')
+    ),
+    row(btn('admin:reactionRoles', 'Back to Role Studio', ButtonStyle.Primary)),
   ] };
 }
 
@@ -131,70 +155,53 @@ function buildWizard(guild, userId) {
   const role = draft.selectedRoleId ? guild.roles.cache.get(draft.selectedRoleId) : null;
   const hasTarget = Boolean(draft.channelId && (existing ? draft.messageId : draft.templateId));
   const ready = Boolean(hasTarget && draft.mappings.length);
-  const addInstruction = role
-    ? `Ready for the emoji that maps to ${role}. Press **Add Emoji Mapping**.`
-    : draft.mappings.length
-      ? 'To add another mapping, choose the next role below, choose its behaviour, then press **Add Emoji Mapping**.'
-      : 'Choose the first role below, choose its behaviour, then press **Add Emoji Mapping**.';
-
-  const targetLines = existing
-    ? [
-        `**Channel:** ${draft.channelId ? `<#${draft.channelId}>` : '❌ Not selected'}`,
-        `**Message:** ${draft.messageId ? `\`${draft.messageId}\`` : '❌ Not entered'}`,
-        `**Content:** ${draft.applyTemplate ? 'Replace with selected template ⚠️' : 'Preserve original message ✅'}`,
-      ]
-    : [
-        `**Channel:** ${draft.channelId ? `<#${draft.channelId}>` : '❌ Not selected'}`,
-        `**Template:** ${template ? `\`${template.name}\`` : '❌ Not selected'}`,
-      ];
+  const targetLines = existing ? [
+    `**Channel:** ${draft.channelId ? `<#${draft.channelId}>` : '❌ Not selected'}`,
+    `**Message:** ${draft.messageId ? `\`${draft.messageId}\`` : '❌ Not entered'}`,
+    '**Original content:** Preserved ✅',
+    '**Unrelated reactions:** Preserved ✅',
+  ] : [
+    `**Channel:** ${draft.channelId ? `<#${draft.channelId}>` : '❌ Not selected'}`,
+    `**Template:** ${template ? `\`${template.name}\`` : '❌ Not selected'}`,
+  ];
 
   const embed = new EmbedBuilder()
     .setColor(ready ? 0x57f287 : 0x5865f2)
-    .setTitle(existing ? '🔗 Attach Roles to an Existing Message' : '🎨 Create a Reaction Role Panel')
+    .setTitle(existing ? '🔗 Attach Roles to Any Existing Message' : '🎨 Create a New Role Panel')
     .setDescription([
-      'Your progress is saved automatically.',
-      '',
-      '### 1️⃣ Choose the message',
-      ...targetLines,
-      '',
-      '### 2️⃣ Build emoji-to-role mappings',
-      mappingText(draft.mappings, guild),
-      '',
+      existing ? 'Paste the full Discord message link, or select a channel and enter the message ID.' : 'Choose an Embed Studio template and target channel.',
+      'Your progress is saved automatically.', '',
+      '### 1. Target', ...targetLines, '',
+      '### 2. Emoji mappings', mappingText(draft.mappings, guild), '',
       `**Next role:** ${role ? `<@&${role.id}>` : 'Not selected'}`,
-      `**Next behaviour:** ${modeLabel(draft.selectedMode)}`,
-      `> ${addInstruction}`,
-      '',
-      '### 3️⃣ Deploy',
-      ready ? `✅ Ready with **${draft.mappings.length} mapping${draft.mappings.length === 1 ? '' : 's'}**.` : 'Complete the missing message and mapping selections above.',
+      `**Behaviour:** ${modeLabel(draft.selectedMode)}`, '',
+      '### 3. Review',
+      ready ? `✅ Ready to deploy **${draft.mappings.length} mapping${draft.mappings.length === 1 ? '' : 's'}**.` : 'Complete the missing target and add at least one mapping.',
     ].join('\n').slice(0, 4096));
 
-  const addButtonLabel = role ? '➕ Add Emoji Mapping' : draft.mappings.length ? '1️⃣ Select Next Role Above' : '1️⃣ Select a Role Above';
-
-  return { embeds: [embed], components: [
+  const components = [
     row(new ChannelSelectMenuBuilder()
       .setCustomId('admin:reactionRoles:wizard:channel')
-      .setPlaceholder(draft.channelId ? 'Change target channel' : '1. Choose target channel')
+      .setPlaceholder(draft.channelId ? 'Change target channel' : 'Choose target channel')
       .setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
       .setMinValues(1).setMaxValues(1)),
-    row(existing
-      ? templateSelect(guild.id, draft.templateId)
-      : templateSelect(guild.id, draft.templateId)),
+  ];
+  if (!existing) components.push(row(templateSelect(guild.id, draft.templateId)));
+  components.push(
     row(new RoleSelectMenuBuilder()
       .setCustomId('admin:reactionRoles:wizard:role')
-      .setPlaceholder(role ? `Next role: ${role.name}` : draft.mappings.length ? '2. Choose another role' : '2. Choose the first role')
+      .setPlaceholder(role ? `Next role: ${role.name}` : 'Choose a role')
       .setMinValues(1).setMaxValues(1)),
     row(modeSelect(draft.selectedMode)),
     row(
-      existing ? btn('admin:reactionRoles:wizard:message', draft.messageId ? '✏️ Change Message' : '📝 Enter Message ID', ButtonStyle.Primary) : null,
-      btn('admin:reactionRoles:wizard:emoji', addButtonLabel, ButtonStyle.Success, !draft.selectedRoleId),
-      draft.mappings.length ? btn('admin:reactionRoles:wizard:remove', `➖ Remove Mapping (${draft.mappings.length})`) : null
-    ),
-    row(
-      existing ? btn('admin:reactionRoles:wizard:applyTemplate', draft.applyTemplate ? '⚠️ Replacing Content' : '🛡️ Preserving Content', draft.applyTemplate ? ButtonStyle.Danger : ButtonStyle.Secondary) : null,
-      btn('admin:reactionRoles:wizard:deploy', draft.panelId ? '💾 Save & Sync' : existing ? `🔗 Attach ${draft.mappings.length || ''} Mapping${draft.mappings.length === 1 ? '' : 's'}` : `🚀 Create Panel`, ButtonStyle.Success, !ready),
-      btn('admin:reactionRoles:wizard:cancel', '✖ Cancel', ButtonStyle.Danger)
-    ),
-  ] };
+      existing ? btn('admin:reactionRoles:wizard:message', draft.messageId ? 'Change Message' : 'Enter Message', ButtonStyle.Primary) : null,
+      btn('admin:reactionRoles:wizard:emoji', 'Add Emoji', ButtonStyle.Success, !draft.selectedRoleId),
+      draft.mappings.length ? btn('admin:reactionRoles:wizard:remove', `Remove (${draft.mappings.length})`) : null,
+      btn('admin:reactionRoles:wizard:deploy', draft.panelId ? 'Save & Sync' : existing ? 'Attach Roles' : 'Create Panel', ButtonStyle.Success, !ready),
+      btn('admin:reactionRoles:wizard:cancel', 'Cancel', ButtonStyle.Danger)
+    )
+  );
+  return { embeds: [embed], components };
 }
 
 function buildMappingRemoval(guild, userId) {
@@ -204,7 +211,7 @@ function buildMappingRemoval(guild, userId) {
     .setDescription(['Choose one mapping to remove.', '', mappingText(draft.mappings, guild), '', 'Your remaining setup stays saved.'].join('\n').slice(0, 4096));
   return { embeds: [embed], components: [
     row(mappingRemovalSelect(draft, guild)),
-    row(btn('admin:reactionRoles:wizard:remove:back', '⬅️ Back to Builder', ButtonStyle.Primary), btn('admin:reactionRoles:wizard:cancel', '✖ Cancel Setup', ButtonStyle.Danger)),
+    row(btn('admin:reactionRoles:wizard:remove:back', 'Back to Builder', ButtonStyle.Primary), btn('admin:reactionRoles:wizard:cancel', 'Cancel Setup', ButtonStyle.Danger)),
   ] };
 }
 
@@ -224,22 +231,19 @@ async function buildManagedPanel(guild, panelId) {
       `**Channel:** <#${panel.channelId}>`,
       `**Message:** [Open in Discord](${messageUrl})`,
       `**Template:** ${template ? `\`${template.name}\`` : '`None`'}`,
-      panelHealth?.issues?.length ? `\n**Issues**\n${panelHealth.issues.map((issue) => `• ${issue}`).join('\n')}` : '',
-      '',
-      `### Mappings (${panel.mappings.length})`,
-      mappingText(panel.mappings, guild),
+      panelHealth?.issues?.length ? `\n**Issues**\n${panelHealth.issues.map((issue) => `• ${issue}`).join('\n')}` : '', '',
+      `### Mappings (${panel.mappings.length})`, mappingText(panel.mappings, guild),
     ].filter(Boolean).join('\n').slice(0, 4096));
-
   return { embeds: [embed], components: [
     row(templateSelect(guild.id, panel.templateId, `admin:reactionRoles:manage:template:${panelId}`)),
     row(
-      btn(`admin:reactionRoles:manage:edit:${panelId}`, '✏️ Edit Mappings', ButtonStyle.Primary),
-      btn(`admin:reactionRoles:manage:${panel.enabled === false ? 'enable' : 'disable'}:${panelId}`, panel.enabled === false ? '▶️ Enable' : '⏸️ Disable', panel.enabled === false ? ButtonStyle.Success : ButtonStyle.Secondary),
-      btn(`admin:reactionRoles:manage:repair:${panelId}`, '🩺 Repair'),
-      btn(`admin:reactionRoles:manage:redeploy:${panelId}`, '🔄 Redeploy Template', ButtonStyle.Primary, !panel.templateId || panel.enabled === false),
-      btn(`admin:reactionRoles:manage:remove:${panelId}`, '🗑️ Remove', ButtonStyle.Danger)
+      btn(`admin:reactionRoles:manage:edit:${panelId}`, 'Edit Mappings', ButtonStyle.Primary),
+      btn(`admin:reactionRoles:manage:${panel.enabled === false ? 'enable' : 'disable'}:${panelId}`, panel.enabled === false ? 'Enable' : 'Disable', panel.enabled === false ? ButtonStyle.Success : ButtonStyle.Secondary),
+      btn(`admin:reactionRoles:manage:repair:${panelId}`, 'Repair'),
+      btn(`admin:reactionRoles:manage:redeploy:${panelId}`, 'Redeploy', ButtonStyle.Primary, !panel.templateId || panel.enabled === false),
+      btn(`admin:reactionRoles:manage:remove:${panelId}`, 'Remove', ButtonStyle.Danger)
     ),
-    row(btn('admin:reactionRoles', '⬅️ Back to Studio')),
+    row(btn('admin:reactionRoles', 'Back to Role Studio')),
   ] };
 }
 
@@ -256,11 +260,11 @@ function buildRemovalChoices(guild, panelId) {
   ].join('\n'));
   return { embeds: [embed], components: [
     row(
-      btn(`admin:reactionRoles:remove:detach:${panelId}`, '🔗 Detach Only'),
-      btn(`admin:reactionRoles:remove:clear:${panelId}`, '🧹 Clear + Detach', ButtonStyle.Danger),
-      btn(`admin:reactionRoles:remove:delete:${panelId}`, '🗑️ Delete Message', ButtonStyle.Danger, !canDelete)
+      btn(`admin:reactionRoles:remove:detach:${panelId}`, 'Detach Only'),
+      btn(`admin:reactionRoles:remove:clear:${panelId}`, 'Clear + Detach', ButtonStyle.Danger),
+      btn(`admin:reactionRoles:remove:delete:${panelId}`, 'Delete Message', ButtonStyle.Danger, !canDelete)
     ),
-    row(btn(`admin:reactionRoles:remove:cancel:${panelId}`, '⬅️ Cancel', ButtonStyle.Primary)),
+    row(btn(`admin:reactionRoles:remove:cancel:${panelId}`, 'Cancel', ButtonStyle.Primary)),
   ] };
 }
 
@@ -297,9 +301,10 @@ async function handleReactionRolesAdminInteraction(interaction) {
       return interaction.reply({ ...buildWizard(guild, userId), ephemeral: true });
     }
     if (id === 'admin:reactionRoles') return show(interaction, await buildReactionRolesAdminPanel(guild, displayName(interaction)));
+    if (id === 'admin:reactionRoles:admin') return show(interaction, await buildAdminCentre(guild));
     if (id === 'admin:reactionRoles:new:existing' || id === 'admin:reactionRoles:new:template') {
       const type = id.endsWith('template') ? reactionRoles.DRAFT_TYPES.TEMPLATE : reactionRoles.DRAFT_TYPES.EXISTING;
-      reactionRoles.saveDraft(guild.id, userId, { type, panelId: null, messageId: null, mappings: [], selectedRoleId: null, applyTemplate: type === reactionRoles.DRAFT_TYPES.TEMPLATE }, guild);
+      reactionRoles.saveDraft(guild.id, userId, { type, panelId: null, messageId: null, templateId: null, mappings: [], selectedRoleId: null, applyTemplate: false }, guild);
       return show(interaction, buildWizard(guild, userId));
     }
     if (id === 'admin:reactionRoles:continue') return show(interaction, buildWizard(guild, userId));
@@ -321,22 +326,17 @@ async function handleReactionRolesAdminInteraction(interaction) {
 
     if (id === 'admin:reactionRoles:wizard:message') {
       const draft = reactionRoles.getDraft(guild.id, userId);
-      await interaction.showModal(oneFieldModal('admin:reactionRoles:wizard:message:submit', 'Message to Attach', 'messageReference', 'Message ID or Discord link', 'Paste a message link or message ID', draft.messageId || ''));
+      await interaction.showModal(oneFieldModal('admin:reactionRoles:wizard:message:submit', 'Message to Attach', 'messageReference', 'Message ID or Discord link', 'Paste any Discord message link or its ID', draft.messageId || ''));
       return true;
     }
     if (id === 'admin:reactionRoles:wizard:emoji') {
       const draft = reactionRoles.getDraft(guild.id, userId);
-      if (!draft.selectedRoleId) return interaction.reply({ content: 'Choose a role first, then press **Add Emoji Mapping**.', ephemeral: true });
+      if (!draft.selectedRoleId) return interaction.reply({ content: 'Choose a role first, then press **Add Emoji**.', ephemeral: true });
       await interaction.showModal(oneFieldModal('admin:reactionRoles:wizard:emoji:submit', 'Add Emoji Mapping', 'emoji', 'Unicode or custom emoji', '⭐ or <:name:emoji_id>'));
       return true;
     }
     if (id === 'admin:reactionRoles:wizard:remove') return show(interaction, buildMappingRemoval(guild, userId));
     if (id === 'admin:reactionRoles:wizard:remove:back') return show(interaction, buildWizard(guild, userId));
-    if (id === 'admin:reactionRoles:wizard:applyTemplate') {
-      const draft = reactionRoles.getDraft(guild.id, userId);
-      reactionRoles.saveDraft(guild.id, userId, { applyTemplate: !draft.applyTemplate }, guild);
-      return show(interaction, buildWizard(guild, userId));
-    }
     if (id === 'admin:reactionRoles:wizard:cancel') {
       reactionRoles.clearDraft(guild.id, userId, guild);
       return show(interaction, await buildReactionRolesAdminPanel(guild, displayName(interaction)));
@@ -345,14 +345,9 @@ async function handleReactionRolesAdminInteraction(interaction) {
       await interaction.deferUpdate();
       const draft = reactionRoles.getDraft(guild.id, userId);
       let panel;
-      if (draft.panelId) {
-        panel = await reactionRoles.updatePanelMappings(guild, draft.panelId, draft.mappings, userId);
-        if (draft.applyTemplate && draft.templateId) panel = await reactionRoles.applyTemplateToPanel(guild, draft.panelId, draft.templateId);
-      } else if (draft.type === reactionRoles.DRAFT_TYPES.TEMPLATE) {
-        panel = await reactionRoles.createFromTemplate({ guild, channelId: draft.channelId, templateId: draft.templateId, name: draft.name, mappings: draft.mappings, createdBy: userId });
-      } else {
-        panel = await reactionRoles.attachExistingMessage({ guild, messageReference: draft.messageId, channelId: draft.channelId, name: draft.name, templateId: draft.templateId, applyTemplate: draft.applyTemplate, mappings: draft.mappings, createdBy: userId });
-      }
+      if (draft.panelId) panel = await reactionRoles.updatePanelMappings(guild, draft.panelId, draft.mappings, userId);
+      else if (draft.type === reactionRoles.DRAFT_TYPES.TEMPLATE) panel = await reactionRoles.createFromTemplate({ guild, channelId: draft.channelId, templateId: draft.templateId, name: draft.name, mappings: draft.mappings, createdBy: userId });
+      else panel = await reactionRoles.attachExistingMessage({ guild, messageReference: draft.messageId, channelId: draft.channelId, name: draft.name, templateId: null, applyTemplate: false, mappings: draft.mappings, createdBy: userId });
       reactionRoles.clearDraft(guild.id, userId, guild);
       return interaction.editReply(await buildManagedPanel(guild, panel.panelId));
     }
@@ -399,16 +394,17 @@ async function handleReactionRolesAdminInteraction(interaction) {
     if (id === 'admin:reactionRoles:repair') {
       await interaction.deferUpdate();
       await reactionRoles.repairAll(guild);
-      return interaction.editReply(await buildReactionRolesAdminPanel(guild, displayName(interaction)));
+      return interaction.editReply(await buildAdminCentre(guild));
     }
     if (id === 'admin:reactionRoles:export') {
-      const file = new AttachmentBuilder(Buffer.from(JSON.stringify(reactionRoles.exportConfiguration(guild.id), null, 2), 'utf8'), { name: `goliath-reaction-roles-${guild.id}.json` });
-      await interaction.reply({ content: '📤 Reaction Roles configuration export.', files: [file], ephemeral: true });
+      const file = new AttachmentBuilder(Buffer.from(JSON.stringify(reactionRoles.exportConfiguration(guild.id), null, 2), 'utf8'), { name: `goliath-role-studio-${guild.id}.json` });
+      await interaction.reply({ content: '📤 Role Studio configuration export.', files: [file], ephemeral: true });
       return true;
     }
+    if (id === 'admin:reactionRoles:enable' || id === 'admin:reactionRoles:disable') return show(interaction, await buildAdminCentre(guild));
     return show(interaction, await buildReactionRolesAdminPanel(guild, displayName(interaction)));
   } catch (error) {
-    const payload = { content: `❌ Reaction Roles setup failed: ${error.message}`, ephemeral: true };
+    const payload = { content: `❌ Role Studio setup failed: ${error.message}`, ephemeral: true };
     if (interaction.deferred || interaction.replied) await interaction.followUp(payload).catch(() => null);
     else await interaction.reply(payload).catch(() => null);
     return true;
