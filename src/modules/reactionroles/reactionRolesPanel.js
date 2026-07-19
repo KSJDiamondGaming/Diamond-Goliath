@@ -1,3 +1,3 @@
 'use strict';
 
-module.exports = require('./reactionRolesPanelV3');
+module.exports = require('./reactionRolesPanelV4');
