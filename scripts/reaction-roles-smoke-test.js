@@ -21,6 +21,7 @@ const panelEntry = read('src/modules/reactionroles/reactionRolesPanel.js');
 const panelV3 = read('src/modules/reactionroles/reactionRolesPanelV3.js');
 const panelV5 = read('src/modules/reactionroles/reactionRolesPanelV5.js');
 const panelV6 = read('src/modules/reactionroles/reactionRolesPanelV6.js');
+const panelV7 = read('src/modules/reactionroles/reactionRolesPanelV7.js');
 const reliability = read('src/modules/reactionroles/reactionRolesReliabilityPatch.js');
 const runtimeSource = read('src/modules/reactionroles/reactionRoles.js');
 const finderSource = read('src/modules/reactionroles/reactionRoleMessageFinder.js');
@@ -28,7 +29,7 @@ const routeSource = read('src/modules/reactionroles/reactionRolesRoute.js');
 const interactionSource = read('src/events/interactions/interactionCreate.js');
 const manifestSource = read('src/core/modules/moduleManifest.js');
 
- test('Canonical Role Studio runtime exports are present', () => {
+test('Canonical Role Studio runtime exports are present', () => {
   for (const name of [
     'getSection', 'setEnabled', 'listPanels', 'getPanel', 'attachExistingMessage',
     'createFromTemplate', 'updatePanelMappings', 'detachPanel', 'deleteDeploymentMessage',
@@ -42,20 +43,41 @@ test('Role Studio remains backwards compatible with the reactionRoles storage ke
   assert.ok(manifestSource.includes("reactionRoles: { key: 'reactionRoles', name: 'Role Studio'"));
 });
 
-test('Latest continuous-builder entrypoint is active', () => {
-  assert.ok(panelEntry.includes("require('./reactionRolesPanelV6')"));
-  assert.equal(exists('src/modules/reactionroles/reactionRolesPanelV6.js'), true);
+test('Persistent smart-builder entrypoint is active', () => {
+  assert.ok(panelEntry.includes("require('./reactionRolesPanelV7')"));
+  assert.equal(exists('src/modules/reactionroles/reactionRolesPanelV7.js'), true);
+  assert.ok(panelV7.includes("require('./reactionRolesPanelV6')"));
   assert.ok(panelV6.includes("require('./reactionRolesReliabilityPatch')"));
 });
 
-test('Modal submissions update the active builder instead of spawning another ephemeral panel', () => {
-  assert.ok(panelV6.includes('interaction.isModalSubmit'));
-  assert.ok(panelV6.includes('interaction.isFromMessage'));
-  assert.ok(panelV6.includes('interaction.update(stripEphemeral(payload))'));
-  assert.ok(panelV6.includes('delete next.ephemeral'));
+test('Overview hides draft language and reopens saved setup as a builder', () => {
+  assert.ok(panelV7.includes("hasSetup ? 'Open Builder' : 'Builder'"));
+  assert.ok(panelV7.includes('Your active setup is saved automatically'));
+  assert.equal(panelV7.includes('Resume Draft'), false);
+  assert.equal(panelV7.includes('Drafts'), false);
 });
 
-test('Selected-message preview and final review are mandatory', () => {
+test('Smart builder exposes direct add, manage, review and target controls', () => {
+  for (const token of [
+    'Role Studio Builder', 'Add Emoji', 'Manage Mappings', 'Review & Deploy',
+    'Change Message', 'Exit Studio', 'smart:add-role', 'smart:add-mode',
+  ]) assert.ok(panelV7.includes(token), `Missing smart-builder control: ${token}`);
+});
+
+test('Mapping manager supports edit, duplicate, ordering and deletion', () => {
+  for (const token of [
+    'Mapping Manager', 'Select a mapping to edit', 'edit-role', 'edit-mode',
+    'Edit Emoji', 'Duplicate', 'Move Up', 'Move Down', 'Delete',
+  ]) assert.ok(panelV7.includes(token), `Missing mapping-manager control: ${token}`);
+});
+
+test('Modal submissions update the active builder instead of spawning another panel', () => {
+  assert.ok(panelV7.includes("id === 'admin:reactionRoles:wizard:emoji:submit'"));
+  assert.ok(panelV7.includes('return interaction.update(clean)'));
+  assert.ok(panelV6.includes('interaction.update(stripEphemeral(payload))'));
+});
+
+test('Selected-message preview and final review remain mandatory', () => {
   for (const token of [
     'Confirm Selected Message', 'Correct Message — Configure Roles',
     'Final Review — Attach Roles', 'Attach Roles Now', 'Nothing is changed until you confirm below',
@@ -101,5 +123,5 @@ test('API exposes deployment, maintenance, export and reset operations', () => {
   ]) assert.ok(routeSource.includes(token), `Missing API route: ${token}`);
 });
 
-console.log('\n✅ Role Studio continuity and complete-reaction deployment tests passed.');
-console.log('ℹ️ A development-guild restart and live multi-reaction acceptance test are still required.');
+console.log('\n✅ Role Studio smart-builder, continuity and deployment-reliability tests passed.');
+console.log('ℹ️ A development-guild restart and live smart-builder acceptance test are still required.');
