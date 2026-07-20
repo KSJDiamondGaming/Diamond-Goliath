@@ -15,6 +15,7 @@ const entry = read('src/modules/roleStudio/reactionRoles/reactionRolesPanel.js')
 const hubSource = read('src/modules/roleStudio/roleStudioPanel.js');
 const hub = load('src/modules/roleStudio/roleStudioPanel.js');
 const navigation = read('src/modules/roleStudio/roleStudioNavigationPatch.js');
+const modulePanels = load('src/modules/roleStudio/roleStudioNavigationPatch.js');
 const autoRolesSource = read('src/modules/roleStudio/autoRoles/autoRoles.js');
 const autoRoles = load('src/modules/roleStudio/autoRoles/autoRoles.js');
 const autoRolesStartup = read('src/events/client/autoRolesStartup.js');
@@ -41,8 +42,27 @@ for (const route of [
   assert.ok(hubSource.includes(route), `Role Studio is missing route ${route}`);
 }
 
+const moduleRoutes = modulePanels.SERVER_MODULES.map((item) => item[0]);
+const roleStudioEntry = modulePanels.SERVER_MODULES.find(
+  (item) => item[0] === 'admin:reactionRoles'
+);
+
+assert.ok(roleStudioEntry, 'Role Studio must appear in the top-level module menu');
+assert.equal(roleStudioEntry[1], '🛡️ Role Studio');
+assert.equal(roleStudioEntry[2], 'Role Studio');
+assert.equal(moduleRoutes.includes('admin:autoRoles'), false);
+assert.equal(moduleRoutes.includes('admin:timedRoles'), false);
+assert.equal(moduleRoutes.includes('admin:forms'), false);
+assert.equal(moduleRoutes.includes('admin:giveaways'), false);
+assert.equal(moduleRoutes.includes('admin:leveling'), false);
+assert.equal(moduleRoutes.includes('admin:starboard'), false);
+assert.equal(moduleRoutes.includes('admin:sticky'), false);
+assert.equal(moduleRoutes.includes('admin:tempVoice'), false);
+assert.equal(moduleRoutes.includes('admin:translation'), false);
+assert.equal(moduleRoutes.length, 8);
+
 assert.ok(entry.includes('handleReactionRolesAdminInteraction'));
-assert.ok(navigation.includes("route === 'admin:autoRoles'"));
+assert.ok(navigation.includes("'admin:autoRoles'"));
 assert.ok(navigation.includes("moduleEntry[1] = '🛡️ Role Studio'"));
 
 assert.equal(typeof autoRoles.applyAutoRoles, 'function');
@@ -96,6 +116,8 @@ assert.ok(timedStartup.includes('timedRoles.startup(client)'));
 assert.ok(timedMemberJoin.includes('applyProgressionToMember'));
 
 console.log('✅ Role Studio exports and routes are wired.');
+console.log('✅ Role systems are grouped under Role Studio in the Admin module menu.');
+console.log('✅ Unavailable placeholder modules are hidden from the Admin module menu.');
 console.log('✅ Auto Roles runtime, health and startup module gate are present.');
 console.log('✅ Auto Roles settings are restricted to the supported schema.');
 console.log('✅ Auto, reaction, timed and temporary role modules are connected.');
