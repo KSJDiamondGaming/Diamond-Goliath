@@ -1,8 +1,8 @@
 'use strict';
 
 const express = require('express');
-const autoroles = require('./autoroles');
-const { validateRoleSelection, isGoliathPermissionError } = require('../../core/security/goliathPermissionGuard');
+const autoroles = require('./autoRoles');
+const { validateRoleSelection, isGoliathPermissionError } = require('../../../core/security/goliathPermissionGuard');
 
 const router = express.Router();
 

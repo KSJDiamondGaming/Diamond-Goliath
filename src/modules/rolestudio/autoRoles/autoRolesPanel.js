@@ -8,7 +8,7 @@ const {
   RoleSelectMenuBuilder,
   AttachmentBuilder,
 } = require('discord.js');
-const autoroles = require('./autoroles');
+const autoroles = require('./autoRoles');
 
 function row(...components) {
   return new ActionRowBuilder().addComponents(...components);

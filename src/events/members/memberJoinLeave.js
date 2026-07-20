@@ -2,9 +2,9 @@
 
 const { EmbedBuilder, AuditLogEvent } = require('discord.js');
 const guildManager = require('../../core/guild/guildManager');
-const autoRoleManager = require('../../modules/autoroles/autoroles');
+const autoRoleManager = require('../../modules/roleStudio/autoRoles/autoRoles');
 const statsManager = require('../../modules/stats/statsManager');
-const verificationManager = require('../../modules/verification/verification');
+const verificationManager = require('../../modules/roleStudio/verification/verification');
 const welcomeManager = require('../../modules/welcome/welcome');
 const welcomeAvatarSync = require('../../modules/welcome/welcomeAvatarSync');
 const goodbyeManager = require('../../modules/goodbye/goodbye');

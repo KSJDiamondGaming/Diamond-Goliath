@@ -1,11 +1,11 @@
 'use strict';
 
-require('../rolestudio/roleStudioNavigationPatch');
-require('../rolestudio/roleStudioChildNavigationPatch');
+require('../roleStudioNavigationPatch');
+require('../roleStudioChildNavigationPatch');
 
 const reactionPanel = require('./reactionRolesPanelV8');
-const roleStudio = require('../rolestudio/roleStudioPanel');
-const temporaryRolesPanel = require('../rolestudio/temporaryRolesPanel');
+const roleStudio = require('../roleStudioPanel');
+const temporaryRolesPanel = require('../temporaryRoles/temporaryRolesPanel');
 
 function displayName(interaction) {
   return interaction.member?.displayName || interaction.user?.username || 'Unknown User';

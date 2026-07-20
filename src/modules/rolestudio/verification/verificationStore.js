@@ -1,13 +1,13 @@
 'use strict';
 
-// src/modules/verification/verificationStore.js
+// src/modules/roleStudio/verification/verificationStore.js
 
 const crypto = require('crypto');
 const {
   getModuleSection,
   saveModuleSection,
   updateModuleSection,
-} = require('../../core/guild/moduleSectionManager');
+} = require('../../../core/guild/moduleSectionManager');
 
 const MODULE = 'verification';
 const PENDING_ROLE_TIMINGS = new Set(['on_join', 'after_screening', 'manual']);

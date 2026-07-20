@@ -65,12 +65,12 @@ const permissionHealthRoutes = route('permission health routes', './src/server/r
 const socialRoutes = route('social routes', './src/modules/social/socialRoute');
 const scheduleRoutes = route('schedule routes', './src/modules/schedule/scheduleRoute');
 const invitesRoutes = route('invite routes', './src/modules/invites/invitesRoute');
-const verificationRoutes = route('verification routes', './src/modules/verification/verificationRoute');
-const autoRolesRoutes = route('auto roles routes', './src/modules/autoroles/autorolesRoute');
+const verificationRoutes = route('verification routes', './src/modules/roleStudio/verification/verificationRoute');
+const autoRolesRoutes = route('auto roles routes', './src/modules/roleStudio/autoRoles/autoRolesRoute');
 const welcomeRoutes = route('welcome routes', './src/modules/welcome/welcomeRoute');
 const goodbyeRoutes = route('goodbye routes', './src/modules/goodbye/goodbyeRoute');
-const reactionRolesRoutes = route('reaction roles routes', './src/modules/reactionroles/reactionRolesRoute');
-const timedRolesRoutes = route('timed roles routes', './src/modules/timedroles/timedRolesRoute');
+const reactionRolesRoutes = route('reaction roles routes', './src/modules/roleStudio/reactionRoles/reactionRolesRoute');
+const timedRolesRoutes = route('timed roles routes', './src/modules/roleStudio/timedRoles/timedRolesRoute');
 const modulesRoutes = route('modules routes', './src/server/routes/modules');
 const automationRoutes = route('automation routes', './src/server/routes/automation');
 const notificationRoutes = route('notification routes', './src/server/routes/notifications');
@@ -168,11 +168,11 @@ client.once('clientReady', async () => {
   }
   await Promise.all([
     runStartupTask('Tickets', () => require('./src/modules/tickets/tickets').startup.startupTickets(client)),
-    runStartupTask('Timed Roles', () => require('./src/modules/timedroles/timedRoles').startup(client)),
+    runStartupTask('Timed Roles', () => require('./src/modules/roleStudio/timedRoles/timedRoles').startup(client)),
     runStartupTask('Translation', () => require('./src/modules/translation/translationStartup').startupTranslation(client)),
-    runStartupTask('Verification', () => require('./src/modules/verification/verification').startupVerification(client)),
+    runStartupTask('Verification', () => require('./src/modules/roleStudio/verification/verification').startupVerification(client)),
     runStartupTask('Goodbye', () => require('./src/modules/goodbye/goodbye').startupGoodbye(client)),
-    runStartupTask('Reaction Roles', () => require('./src/modules/reactionroles/reactionRoles').startup(client)),
+    runStartupTask('Reaction Roles', () => require('./src/modules/roleStudio/reactionRoles/reactionRoles').startup(client)),
     runStartupTask('Giveaways', () => require('./src/modules/giveaways/giveawayScheduler').start(client)),
   ]);
   backupScheduler.startBackupScheduler?.();

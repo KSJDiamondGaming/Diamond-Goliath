@@ -1,7 +1,7 @@
 'use strict';
 
 const crypto = require('crypto');
-const { getGuildSection, updateGuildSection } = require('../../core/guild/guildManager');
+const { getGuildSection, updateGuildSection } = require('../guild/guildManager');
 const activity = require('../activity/activityStore');
 
 function now() { return new Date().toISOString(); }

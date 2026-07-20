@@ -1,6 +1,6 @@
 'use strict';
 
-const timedRoles = require('../../modules/timedroles/timedRoles');
+const timedRoles = require('../../modules/roleStudio/timedRoles/timedRoles');
 
 module.exports = {
   name: 'guildMemberAdd',

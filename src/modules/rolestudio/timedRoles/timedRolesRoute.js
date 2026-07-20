@@ -2,7 +2,7 @@
 
 const express = require('express');
 const timedRoles = require('./timedRoles');
-const { validateRoleSelection, isGoliathPermissionError } = require('../../core/security/goliathPermissionGuard');
+const { validateRoleSelection, isGoliathPermissionError } = require('../../../core/security/goliathPermissionGuard');
 
 const router = express.Router();
 const ok = (res, payload = {}) => res.json({ success: true, ...payload });

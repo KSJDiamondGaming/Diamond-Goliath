@@ -16,16 +16,16 @@ function test(label, fn) {
 console.log('\nRole Studio Smoke Test');
 console.log('======================');
 
-const reactionRoles = require(path.join(root, 'src/modules/reactionroles/reactionRoles'));
-const panelEntry = read('src/modules/reactionroles/reactionRolesPanel.js');
-const panelV3 = read('src/modules/reactionroles/reactionRolesPanelV3.js');
-const panelV5 = read('src/modules/reactionroles/reactionRolesPanelV5.js');
-const panelV6 = read('src/modules/reactionroles/reactionRolesPanelV6.js');
-const panelV7 = read('src/modules/reactionroles/reactionRolesPanelV7.js');
-const reliability = read('src/modules/reactionroles/reactionRolesReliabilityPatch.js');
-const runtimeSource = read('src/modules/reactionroles/reactionRoles.js');
-const finderSource = read('src/modules/reactionroles/reactionRoleMessageFinder.js');
-const routeSource = read('src/modules/reactionroles/reactionRolesRoute.js');
+const reactionRoles = require(path.join(root, 'src/modules/roleStudio/reactionRoles/reactionRoles'));
+const panelEntry = read('src/modules/roleStudio/reactionRoles/reactionRolesPanel.js');
+const panelV3 = read('src/modules/roleStudio/reactionRoles/reactionRolesPanelV3.js');
+const panelV5 = read('src/modules/roleStudio/reactionRoles/reactionRolesPanelV5.js');
+const panelV6 = read('src/modules/roleStudio/reactionRoles/reactionRolesPanelV6.js');
+const panelV7 = read('src/modules/roleStudio/reactionRoles/reactionRolesPanelV7.js');
+const reliability = read('src/modules/roleStudio/reactionRoles/reactionRolesReliabilityPatch.js');
+const runtimeSource = read('src/modules/roleStudio/reactionRoles/reactionRoles.js');
+const finderSource = read('src/modules/roleStudio/reactionRoles/reactionRoleMessageFinder.js');
+const routeSource = read('src/modules/roleStudio/reactionRoles/reactionRolesRoute.js');
 const interactionSource = read('src/events/interactions/interactionCreate.js');
 const manifestSource = read('src/core/modules/moduleManifest.js');
 
@@ -45,7 +45,7 @@ test('Role Studio remains backwards compatible with the reactionRoles storage ke
 
 test('Persistent smart-builder entrypoint is active', () => {
   assert.ok(panelEntry.includes("require('./reactionRolesPanelV7')"));
-  assert.equal(exists('src/modules/reactionroles/reactionRolesPanelV7.js'), true);
+  assert.equal(exists('src/modules/roleStudio/reactionRoles/reactionRolesPanelV7.js'), true);
   assert.ok(panelV7.includes("require('./reactionRolesPanelV6')"));
   assert.ok(panelV6.includes("require('./reactionRolesReliabilityPatch')"));
 });

@@ -2,8 +2,8 @@
 
 const guildManager = require('./guildManager');
 const { getModuleSection, updateModuleSection } = require('./moduleSectionManager');
-const autoRoles = require('../../modules/autoroles/autoroles');
-const timedRoles = require('../../modules/timedroles/timedRoles');
+const autoRoles = require('../../modules/roleStudio/autoRoles/autoRoles');
+const timedRoles = require('../../modules/roleStudio/timedRoles/timedRoles');
 
 const MIGRATION_KEY = 'legacyRolesV1';
 const now = () => new Date().toISOString();

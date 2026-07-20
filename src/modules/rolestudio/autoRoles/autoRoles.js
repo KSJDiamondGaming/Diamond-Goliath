@@ -5,8 +5,8 @@ const {
   getModuleSection,
   saveModuleSection,
   updateModuleSection,
-} = require('../../core/guild/moduleSectionManager');
-const guildManager = require('../../core/guild/guildManager');
+} = require('../../../core/guild/moduleSectionManager');
+const guildManager = require('../../../core/guild/guildManager');
 
 const MODULE = 'autoRoles';
 

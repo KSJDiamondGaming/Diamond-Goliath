@@ -10,14 +10,14 @@ const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 console.log('\nRole Studio Smoke Test');
 console.log('======================');
 
-const entry = read('src/modules/reactionroles/reactionRolesPanel.js');
-const hub = read('src/modules/rolestudio/roleStudioPanel.js');
-const navigation = read('src/modules/rolestudio/roleStudioNavigationPatch.js');
-const temporary = require(path.join(root, 'src/modules/rolestudio/temporaryRoles'));
-const temporaryPanel = read('src/modules/rolestudio/temporaryRolesPanel.js');
+const entry = read('src/modules/roleStudio/reactionRoles/reactionRolesPanel.js');
+const hub = read('src/modules/roleStudio/roleStudioPanel.js');
+const navigation = read('src/modules/roleStudio/roleStudioNavigationPatch.js');
+const temporary = require(path.join(root, 'src/modules/roleStudio/temporaryRoles/temporaryRoles'));
+const temporaryPanel = read('src/modules/roleStudio/temporaryRoles/temporaryRolesPanel.js');
 const temporaryStartup = read('src/events/client/temporaryRolesStartup.js');
-const timedRoles = require(path.join(root, 'src/modules/timedroles/timedRoles'));
-const timedPanel = read('src/modules/timedroles/timedRolesPanel.js');
+const timedRoles = require(path.join(root, 'src/modules/roleStudio/timedRoles/timedRoles'));
+const timedPanel = read('src/modules/roleStudio/timedRoles/timedRolesPanel.js');
 const timedStartup = read('src/events/client/timedRolesStartup.js');
 const timedMemberJoin = read('src/events/timedroles/timedRolesMemberJoin.js');
 

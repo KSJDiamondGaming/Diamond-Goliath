@@ -1,7 +1,7 @@
 'use strict';
 
 const { Events } = require('discord.js');
-const temporaryRoles = require('../../modules/rolestudio/temporaryRoles');
+const temporaryRoles = require('../../modules/roleStudio/temporaryRoles/temporaryRoles');
 
 const SCAN_INTERVAL_MS = 60 * 60 * 1000;
 const installed = Symbol.for('goliath.roleStudio.temporaryRolesScanner');

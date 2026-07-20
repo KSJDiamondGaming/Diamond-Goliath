@@ -2,7 +2,7 @@
 
 const crypto = require('crypto');
 const { PermissionFlagsBits } = require('discord.js');
-const { getModuleSection, saveModuleSection, updateModuleSection } = require('../../core/guild/moduleSectionManager');
+const { getModuleSection, saveModuleSection, updateModuleSection } = require('../../../core/guild/moduleSectionManager');
 
 const SECTION = 'timedRoles';
 const UNITS = Object.freeze(['minutes', 'hours', 'days', 'weeks', 'months', 'years']);

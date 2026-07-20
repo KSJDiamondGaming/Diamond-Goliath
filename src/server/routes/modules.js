@@ -11,10 +11,10 @@ const {
   setModuleEnabled,
 } = require('../../core/guild/guildManager');
 
-const autoRoleStore = require('../../modules/autoroles/autoroles');
+const autoRoleStore = require('../../modules/roleStudio/autoRoles/autoRoles');
 const autoRoleManager = autoRoleStore;
-const verificationStore = require('../../modules/verification/verificationStore');
-const verificationManager = require('../../modules/verification/verificationManager');
+const verificationStore = require('../../modules/roleStudio/verification/verificationStore');
+const verificationManager = require('../../modules/roleStudio/verification/verificationManager');
 const embedTemplateManager = require('../../modules/embed/embedTemplateManager');
 const {
   getAllEmbedDeployments,

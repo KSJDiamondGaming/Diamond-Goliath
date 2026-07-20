@@ -4,8 +4,8 @@ const {
   getModuleSection,
   saveModuleSection,
   updateModuleSection,
-} = require('../../core/guild/moduleSectionManager');
-const guildManager = require('../../core/guild/guildManager');
+} = require('../guild/moduleSectionManager');
+const guildManager = require('../guild/guildManager');
 
 const MODULE = 'logging';
 

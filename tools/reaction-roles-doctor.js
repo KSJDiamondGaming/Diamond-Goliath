@@ -5,11 +5,11 @@ const path = require('path');
 
 const root = path.resolve(__dirname, '..');
 const required = [
-  'src/modules/reactionroles/reactionRoles.js',
-  'src/modules/reactionroles/reactionRolesRoute.js',
-  'src/modules/reactionroles/reactionRoleMessageFinder.js',
-  'src/modules/reactionroles/reactionRolesPanel.js',
-  'src/modules/reactionroles/reactionRolesPanelV2.js',
+  'src/modules/roleStudio/reactionRoles/reactionRoles.js',
+  'src/modules/roleStudio/reactionRoles/reactionRolesRoute.js',
+  'src/modules/roleStudio/reactionRoles/reactionRoleMessageFinder.js',
+  'src/modules/roleStudio/reactionRoles/reactionRolesPanel.js',
+  'src/modules/roleStudio/reactionRoles/reactionRolesPanelV2.js',
   'src/dashboard/js/pages/modules/ReactionRoles.jsx',
   'src/events/messages/messageReactionAdd.js',
   'src/events/messages/messageReactionRemove.js',
@@ -28,14 +28,14 @@ function contains(relative, snippets) {
   }
 }
 
-contains('src/modules/reactionroles/reactionRolesRoute.js', [
+contains('src/modules/roleStudio/reactionRoles/reactionRolesRoute.js', [
   "require('./reactionRoleMessageFinder')",
   "router.get('/:guildId/messages/search'",
   'messageFinder.searchGuildMessages',
   "router.put('/:guildId/panels/:panelId'",
   "router.patch('/:guildId/panels/:panelId/enabled'",
 ]);
-contains('src/modules/reactionroles/reactionRoleMessageFinder.js', [
+contains('src/modules/roleStudio/reactionRoles/reactionRoleMessageFinder.js', [
   'searchGuildMessages',
   'serializeEmbed',
   'authorAvatar',
@@ -46,10 +46,10 @@ contains('src/modules/reactionroles/reactionRoleMessageFinder.js', [
   'botsOnly',
   'messageId',
 ]);
-contains('src/modules/reactionroles/reactionRolesPanel.js', [
+contains('src/modules/roleStudio/reactionRoles/reactionRolesPanel.js', [
   "require('./reactionRolesPanelV2')",
 ]);
-contains('src/modules/reactionroles/reactionRolesPanelV2.js', [
+contains('src/modules/roleStudio/reactionRoles/reactionRolesPanelV2.js', [
   'Reaction Roles Studio',
   'Attach Roles to an Existing Message',
   'Build emoji-to-role mappings',
@@ -74,7 +74,7 @@ contains('src/dashboard/js/pages/modules/ReactionRoles.jsx', [
   'Detach + Clear',
   'Open in Discord',
 ]);
-contains('src/modules/reactionroles/reactionRoles.js', [
+contains('src/modules/roleStudio/reactionRoles/reactionRoles.js', [
   'attachExistingMessage',
   'createFromTemplate',
   'updatePanelMappings',
