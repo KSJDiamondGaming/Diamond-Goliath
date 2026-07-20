@@ -1,4 +1,4 @@
-const guildStore = require('../../../core/guild/guildManager')
+const guildStore = require('../guild/guildManager')
 const defaultConfig = require('./config');
 const { normalizePunishments } = require('./actions');
 
@@ -248,7 +248,6 @@ function updateGuildAutoModConfig(guildId, updater) {
     typeof updater === 'function'
       ? updater(plainCurrent)
       : { ...plainCurrent, ...updater };
-
   return saveGuildAutoModConfig(guildId, next);
 }
 
