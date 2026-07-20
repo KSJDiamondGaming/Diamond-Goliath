@@ -31,7 +31,7 @@ async function buildRoleStudioPanel(guild, memberDisplayName = 'Unknown User') {
 
   const embed = new EmbedBuilder()
     .setColor(0x5865F2)
-    .setTitle('🛡️ Role Studio')
+    .setTitle('🎭 Role Studio')
     .setDescription([
       'Manage every automated role system in one place.',
       '',
