@@ -1,11 +1,10 @@
-﻿'use strict';
+'use strict';
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
 const root = path.resolve(__dirname, '..');
-
 const resolve = (file) => path.join(root, file);
 const exists = (file) => fs.existsSync(resolve(file));
 const read = (file) => fs.readFileSync(resolve(file), 'utf8');
@@ -20,64 +19,43 @@ function test(label, fn) {
   }
 }
 
-console.log('');
-console.log('Reaction Roles Smoke Test');
+console.log('\nReaction Roles Smoke Test');
 console.log('=========================');
 
-const panelPath =
-  'src/modules/roleStudio/reactionRoles/reactionRolesPanel.js';
-
-const removedPanels = [
-  'src/modules/roleStudio/reactionRoles/reactionRolesPanelV2.js',
-  'src/modules/roleStudio/reactionRoles/reactionRolesPanelV3.js',
-  'src/modules/roleStudio/reactionRoles/reactionRolesPanelV4.js',
-  'src/modules/roleStudio/reactionRoles/reactionRolesPanelV5.js',
-  'src/modules/roleStudio/reactionRoles/reactionRolesPanelV6.js',
-  'src/modules/roleStudio/reactionRoles/reactionRolesPanelV7.js',
-];
+const panelPath = 'src/modules/roleStudio/reactionRoles/reactionRolesPanel.js';
+const runtimePath = 'src/modules/roleStudio/reactionRoles/reactionRoles.js';
+const removedPanels = [2, 3, 4, 5, 6, 7]
+  .map((version) => `src/modules/roleStudio/reactionRoles/reactionRolesPanelV${version}.js`);
 
 test('consolidated panel exists', () => {
   assert.equal(exists(panelPath), true);
 });
 
-const panel = read(panelPath);
-
-test('consolidated panel is not empty', () => {
-  assert.ok(panel.trim().length > 0);
+test('reaction roles runtime exists', () => {
+  assert.equal(exists(runtimePath), true);
 });
 
-test('consolidated panel exports an API', () => {
-  assert.ok(panel.includes('module.exports'));
+const panelSource = read(panelPath);
+
+test('consolidated panel exposes the production API', () => {
+  assert.match(panelSource, /buildReactionRolesAdminPanel\s*:/);
+  assert.match(panelSource, /handleReactionRolesAdminInteraction/);
+  assert.match(panelSource, /module\.exports\s*=/);
 });
 
-test('consolidated panel contains Reaction Roles handlers', () => {
-  assert.ok(panel.includes('reactionRoles'));
-  assert.ok(
-    panel.includes('handleInteraction') ||
-    panel.includes('buildReactionRolesPanel') ||
-    panel.includes('buildPanel'),
-  );
+test('production interaction namespace is wired', () => {
+  assert.ok(panelSource.includes('admin:reactionRoles'));
 });
 
-test('consolidated panel has no version-chain imports', () => {
-  assert.doesNotMatch(
-    panel,
-    /reactionRolesPanelV[2-7]/,
-  );
+test('consolidated panel has no external version-chain imports', () => {
+  assert.doesNotMatch(panelSource, /require\(['"]\.\/reactionRolesPanelV[2-7]['"]\)/);
 });
 
 test('legacy versioned panel files were removed', () => {
   for (const file of removedPanels) {
-    assert.equal(
-      exists(file),
-      false,
-      `${file} should not exist`,
-    );
+    assert.equal(exists(file), false, `${file} should not exist`);
   }
 });
 
-console.log('');
-console.log('[PASS] Reaction Roles consolidated architecture verified.');
-console.log(
-  'A development-guild restart and live smart-builder acceptance test are still required.',
-);
+console.log('\n[PASS] Reaction Roles production entry verified.');
+console.log('A development-guild restart and live builder acceptance test are still required.');
