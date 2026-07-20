@@ -54,6 +54,25 @@ assert.ok(autoRolesSource.includes('const enabled = isAutoRolesEnabled(guild.id)
 assert.ok(autoRolesSource.includes('const reapply = enabled && section.settings?.reapplyOnStartup === true'));
 assert.ok(autoRolesStartup.includes('startupAutoRoles(client)'));
 
+const normalizedAutoRoles = autoRoles.normalizeAutoRolesSection({
+  settings: {
+    applyToBots: true,
+    auditLog: false,
+    reapplyOnStartup: true,
+    ignoreExistingRoles: false,
+    unsupportedSetting: true,
+  },
+});
+assert.deepEqual(Object.keys(normalizedAutoRoles.settings).sort(), [
+  'applyToBots',
+  'auditLog',
+  'ignoreExistingRoles',
+  'reapplyOnStartup',
+]);
+assert.equal(normalizedAutoRoles.settings.unsupportedSetting, undefined);
+assert.equal(autoRolesSource.includes('...input,'), false);
+assert.equal(autoRolesSource.includes('...clone(source.settings)'), false);
+
 assert.equal(typeof temporary.assignTemporaryRole, 'function');
 assert.equal(typeof temporary.removeAssignment, 'function');
 assert.equal(typeof temporary.scanExpired, 'function');
@@ -78,6 +97,7 @@ assert.ok(timedMemberJoin.includes('applyProgressionToMember'));
 
 console.log('✅ Role Studio exports and routes are wired.');
 console.log('✅ Auto Roles runtime, health and startup module gate are present.');
+console.log('✅ Auto Roles settings are restricted to the supported schema.');
 console.log('✅ Auto, reaction, timed and temporary role modules are connected.');
 console.log('✅ Timed-role progression, simulation and startup processing are present.');
 console.log('✅ Temporary-role assignment, removal and expiry scanning are present.');
