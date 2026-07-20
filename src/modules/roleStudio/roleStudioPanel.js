@@ -14,7 +14,9 @@ const temporaryRoles = require('./temporaryRoles/temporaryRoles');
 
 const row = (...components) => new ActionRowBuilder().addComponents(...components.filter(Boolean));
 const button = (customId, label, style = ButtonStyle.Primary) => new ButtonBuilder()
-  .setCustomId(customId).setLabel(label).setStyle(style);
+  .setCustomId(customId)
+  .setLabel(label)
+  .setStyle(style);
 
 async function buildRoleStudioPanel(guild, memberDisplayName = 'Unknown User') {
   const auto = autoroles.getAutoRolesSection(guild.id);
@@ -29,20 +31,20 @@ async function buildRoleStudioPanel(guild, memberDisplayName = 'Unknown User') {
 
   const embed = new EmbedBuilder()
     .setColor(0x5865F2)
-    .setTitle('≠É¯Ì¥©≈ Role Studio')
+    .setTitle('üõ°Ô∏è Role Studio')
     .setDescription([
       'Manage every automated role system in one place.',
       '',
-      `### ≠ÉÊ— Auto Roles ${auto.enabled !== false ? '≠ÉÉÛ' : '‘≈©¥©≈'}`,
+      `### üë• Auto Roles ${auto.enabled !== false ? 'üü¢' : '‚è∏Ô∏è'}`,
       `Assign roles automatically when members or bots join. **${autoRoleCount} configured role${autoRoleCount === 1 ? '' : 's'}.**`,
       '',
-      `### ≠ÉˇË Reaction Roles ${reaction.enabled !== false ? '≠ÉÉÛ' : '‘≈©¥©≈'}`,
+      `### üòä Reaction Roles ${reaction.enabled !== false ? 'üü¢' : '‚è∏Ô∏è'}`,
       `Attach emoji role mappings to messages. **${reactionDeployments.length} deployment${reactionDeployments.length === 1 ? '' : 's'}.**`,
       '',
-      `### ‘≈¶ Timed Roles ${timed.enabled !== false ? '≠ÉÉÛ' : '‘≈©¥©≈'}`,
+      `### ‚è≥ Timed Roles ${timed.enabled !== false ? 'üü¢' : '‚è∏Ô∏è'}`,
       `Reward members for server tenure. **${timedRules.length} milestone${timedRules.length === 1 ? '' : 's'}.**`,
       '',
-      `### ‘‹Ì Temporary Roles ${temporary.enabled !== false ? '≠ÉÉÛ' : '‘≈©¥©≈'}`,
+      `### ‚ö° Temporary Roles ${temporary.enabled !== false ? 'üü¢' : '‚è∏Ô∏è'}`,
       `Assign roles that expire automatically. **${tempAssignments.length} active assignment${tempAssignments.length === 1 ? '' : 's'}.**`,
       '',
       '> Role hierarchy and Manage Roles permissions are checked before assignments are made.',
@@ -54,18 +56,18 @@ async function buildRoleStudioPanel(guild, memberDisplayName = 'Unknown User') {
     embeds: [embed],
     components: [
       row(
-        button('admin:autoRoles', '≠ÉÊ— Auto Roles'),
-        button('admin:reactionRoles:open', '≠ÉˇË Reaction Roles'),
+        button('admin:autoRoles', 'üë• Auto Roles'),
+        button('admin:reactionRoles:open', 'üòä Reaction Roles'),
       ),
       row(
-        button('admin:timedRoles', '‘≈¶ Timed Roles'),
-        button('admin:reactionRoles:temporary', '‘‹Ì Temporary Roles'),
+        button('admin:timedRoles', '‚è≥ Timed Roles'),
+        button('admin:reactionRoles:temporary', '‚ö° Temporary Roles'),
       ),
       row(
-        button('admin:reactionRoles:analytics', '≠ÉÙË Role Analytics', ButtonStyle.Secondary),
-        button('admin:reactionRoles:health', '≠ÉÆ¶ Role Health', ButtonStyle.Secondary),
+        button('admin:reactionRoles:analytics', 'üìä Role Analytics', ButtonStyle.Secondary),
+        button('admin:reactionRoles:health', 'ü©∫ Role Health', ButtonStyle.Secondary),
       ),
-      row(button('admin:modules', '‘º‡¥©≈ Back to Modules', ButtonStyle.Secondary)),
+      row(button('admin:modules', '‚¨ÖÔ∏è Back to Modules', ButtonStyle.Secondary)),
     ],
   };
 }
@@ -75,10 +77,11 @@ async function buildRoleAnalyticsPanel(guild, memberDisplayName = 'Unknown User'
   const reaction = reactionRoles.getSection(guild.id);
   const timed = timedRoles.getSection(guild.id);
   const temporary = temporaryRoles.getSection(guild.id);
+
   return {
     embeds: [new EmbedBuilder()
       .setColor(0x5865F2)
-      .setTitle('≠ÉÙË Role Studio Analytics')
+      .setTitle('üìä Role Studio Analytics')
       .setDescription([
         `**Auto Roles assigned:** \`${auto.analytics?.assigned || 0}\``,
         `**Reaction roles added:** \`${reaction.analytics?.assigned || 0}\``,
@@ -90,7 +93,7 @@ async function buildRoleAnalyticsPanel(guild, memberDisplayName = 'Unknown User'
       ].join('\n'))
       .setFooter({ text: `Requested by ${memberDisplayName}` })
       .setTimestamp()],
-    components: [row(button('admin:reactionRoles', '‘º‡¥©≈ Role Studio', ButtonStyle.Secondary))],
+    components: [row(button('admin:reactionRoles', '‚¨ÖÔ∏è Role Studio', ButtonStyle.Secondary))],
   };
 }
 
@@ -107,21 +110,21 @@ async function buildRoleHealthPanel(guild, memberDisplayName = 'Unknown User') {
   return {
     embeds: [new EmbedBuilder()
       .setColor(healthy ? 0x57F287 : 0xFAA61A)
-      .setTitle('≠ÉÆ¶ Role Studio Health')
+      .setTitle('ü©∫ Role Studio Health')
       .setDescription([
-        `**Overall:** ${healthy ? 'Healthy ‘£‡' : 'Needs attention ‘‹·¥©≈'}`,
+        `**Overall:** ${healthy ? 'Healthy ‚úÖ' : 'Needs attention ‚ö†Ô∏è'}`,
         '',
-        `**Auto Roles:** ${autoHealth.healthy ? 'Healthy ‘£‡' : 'Needs attention ‘‹·¥©≈'}`,
-        `**Reaction Roles:** ${reactionHealth.healthy ? 'Healthy ‘£‡' : `${reactionHealth.unhealthy || 0} deployment(s) need attention`}`,
-        `**Timed Roles:** ${timedHealth.healthy ? 'Healthy ‘£‡' : `${timedHealth.issues?.length || 0} issue(s)`}`,
-        `**Temporary Roles:** ${missingTemporaryRoles ? `${missingTemporaryRoles} missing role reference(s) ‘‹·¥©≈` : 'Healthy ‘£‡'}`,
+        `**Auto Roles:** ${autoHealth.healthy ? 'Healthy ‚úÖ' : 'Needs attention ‚ö†Ô∏è'}`,
+        `**Reaction Roles:** ${reactionHealth.healthy ? 'Healthy ‚úÖ' : `${reactionHealth.unhealthy || 0} deployment(s) need attention`}`,
+        `**Timed Roles:** ${timedHealth.healthy ? 'Healthy ‚úÖ' : `${timedHealth.issues?.length || 0} issue(s)`}`,
+        `**Temporary Roles:** ${missingTemporaryRoles ? `${missingTemporaryRoles} missing role reference(s) ‚ö†Ô∏è` : 'Healthy ‚úÖ'}`,
         '',
         `**Goliath highest role:** ${guild.members.me?.roles.highest ? `<@&${guild.members.me.roles.highest.id}>` : 'Unavailable'}`,
-        `**Manage Roles:** ${guild.members.me?.permissions.has('ManageRoles') ? 'Granted ‘£‡' : 'Missing ‘ÿÓ'}`,
+        `**Manage Roles:** ${guild.members.me?.permissions.has('ManageRoles') ? 'Granted ‚úÖ' : 'Missing ‚ùå'}`,
       ].join('\n'))
       .setFooter({ text: `Requested by ${memberDisplayName}` })
       .setTimestamp()],
-    components: [row(button('admin:reactionRoles', '‘º‡¥©≈ Role Studio', ButtonStyle.Secondary))],
+    components: [row(button('admin:reactionRoles', '‚¨ÖÔ∏è Role Studio', ButtonStyle.Secondary))],
   };
 }
 
@@ -130,4 +133,3 @@ module.exports = {
   buildRoleAnalyticsPanel,
   buildRoleHealthPanel,
 };
-
