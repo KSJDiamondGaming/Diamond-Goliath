@@ -5,7 +5,6 @@ const { spawnSync } = require('child_process');
 
 const root = path.resolve(__dirname, '..');
 const tools = path.join(root, 'tools');
-const consoleNormalizer = path.join(__dirname, 'console-normalizer.js');
 
 const TOOL_FILES = Object.freeze({
   core: 'goliath-core.js',
@@ -20,16 +19,12 @@ const TOOL_FILES = Object.freeze({
 });
 
 function runTool(file, args = []) {
-  const result = spawnSync(
-    process.execPath,
-    ['--require', consoleNormalizer, path.join(tools, file), ...args],
-    {
-      cwd: root,
-      env: process.env,
-      stdio: 'inherit',
-      windowsHide: true,
-    }
-  );
+  const result = spawnSync(process.execPath, [path.join(tools, file), ...args], {
+    cwd: root,
+    env: process.env,
+    stdio: 'inherit',
+    windowsHide: true,
+  });
 
   if (result.error) {
     console.error(`Failed to run ${file}: ${result.error.message}`);
