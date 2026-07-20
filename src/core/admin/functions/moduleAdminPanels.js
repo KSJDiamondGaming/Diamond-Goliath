@@ -23,30 +23,22 @@ const EXTERNAL_MODULE_ROUTES = new Set([
   'admin:embed',
   'admin:goodbye',
   'admin:invites',
+  'admin:reactionRoles',
   'admin:welcome',
   'admin:stats',
   'admin:verification',
 ]);
 
+// Canonical Admin Hub module menu. Child role systems are intentionally
+// exposed only through Role Studio and unfinished placeholder modules stay
+// out of the public navigation until they are ready.
 const SERVER_MODULES = [
-  ['admin:autoRoles', '👥 Auto Roles', 'Auto Roles', 'Assign roles automatically when members join.'],
   ['admin:embed', '✨ Embed Studio', 'Embed Studio', 'Build and manage Discord embeds.'],
-  ['admin:forms', '📝 Forms', 'Forms', 'Forms, submissions, review and response storage.'],
-  ['admin:fun', '🎮 Fun', 'Fun', 'Fun commands and optional community extras.'],
-  ['admin:giveaways', '🎉 Giveaways', 'Giveaways', 'Giveaway creation, entries, winners and rerolls.'],
   ['admin:goodbye', '👋 Goodbye', 'Goodbye', 'Public farewell messages and Embed Studio templates.'],
   ['admin:invites', '📨 Invite Studio', 'Invite Studio', 'Create invite links, attach roles and track member joins.'],
-  ['admin:leveling', '🏆 Leveling', 'Leveling', 'XP, levels, leaderboards and level roles.'],
   ['admin:polls', '📊 Polls', 'Polls', 'Poll creation, voting and results.'],
-  ['admin:reactionRoles', '😊 Reaction Roles', 'Reaction Roles', 'Reaction role panels, emoji mappings and deployments.'],
-  ['admin:stats', '📊 Server Stats', 'Server Stats', 'Statbot-style server counters and activity tracking.'],
+  ['admin:reactionRoles', '🎭 Role Studio', 'Role Studio', 'Manage Auto Roles, Reaction Roles, Timed Roles and Temporary Roles in one place.'],
   ['admin:social', '📣 Social Alerts', 'Social Alerts', 'Creator alerts for Twitch, YouTube, TikTok, Kick and more.'],
-  ['admin:starboard', '⭐ Starboard', 'Starboard', 'Highlight popular server messages.'],
-  ['admin:sticky', '💬 Sticky Messages', 'Sticky Messages', 'Keep important messages at the bottom of chat.'],
-  ['admin:suggestions', '💡 Suggestions', 'Suggestions', 'Suggestion intake, voting and review workflow.'],
-  ['admin:tempVoice', '🔊 Temp Voice', 'Temp Voice', 'Temporary voice channels and room automation.'],
-  ['admin:tickets', '🎟️ Tickets', 'Tickets', 'Ticket panels, claims, transcripts and recovery.'],
-  ['admin:translation', '🌐 Translation', 'Translation', 'Language preferences and translation controls.'],
   ['admin:verification', '✅ Verification', 'Verification', 'Member verification and onboarding protection.'],
   ['admin:welcome', '👋 Welcome', 'Welcome', 'Welcome messages, member DMs and Embed Studio templates.'],
 ].sort((a, b) => a[2].localeCompare(b[2]));
@@ -68,7 +60,7 @@ const MODULE_PANEL_REGISTRY = {
   giveaways: genericModule({ route: 'admin:giveaways', key: 'giveaways', title: '🎉 Giveaways', summary: 'Giveaway creation, entries, winners and rerolls.', defaults: { enabled: true, announcementChannelId: null, logChannelId: null, managerRoleIds: [], allowMultipleEntries: false, requireRole: false, pingWinners: true }, fields: ['announcementChannel', 'logChannel', 'managerRoles', ['allowMultipleEntries', 'Multiple Entries'], ['requireRole', 'Require Role'], ['pingWinners', 'Ping Winners']], selectMenus: ['announcementChannel', 'logChannel', 'managerRoles'], toggles: [['allowMultipleEntries', '🎟️ Multiple Entries'], ['requireRole', '🔒 Require Role'], ['pingWinners', '📣 Ping Winners']] }),
   leveling: genericModule({ route: 'admin:leveling', key: 'leveling', title: '🏆 Leveling', summary: 'XP, levels, leaderboards and level roles.', defaults: { enabled: true, announceChannelId: null, managerRoleIds: [], levelRoleIds: [], trackMessages: true, trackVoice: true, announceLevelUps: true }, fields: ['announceChannel', 'managerRoles', 'levelRoles', ['trackMessages', 'Message XP'], ['trackVoice', 'Voice XP'], ['announceLevelUps', 'Announce Level Ups']], selectMenus: ['announceChannel', 'managerRoles', 'levelRoles'], toggles: [['trackMessages', '💬 Message XP'], ['trackVoice', '🔊 Voice XP'], ['announceLevelUps', '📣 Level Ups']] }),
   polls: genericModule({ route: 'admin:polls', key: 'polls', title: '📊 Polls', summary: 'Poll creation, voting and results.', defaults: { enabled: true, defaultChannelId: null, resultsChannelId: null, managerRoleIds: [], anonymousVoting: false, allowMultipleChoice: true, showResultsLive: true }, fields: ['defaultChannel', 'resultsChannel', 'managerRoles', ['anonymousVoting', 'Anonymous Voting'], ['allowMultipleChoice', 'Multiple Choice'], ['showResultsLive', 'Live Results']], selectMenus: ['defaultChannel', 'resultsChannel', 'managerRoles'], toggles: [['anonymousVoting', '👤 Anonymous Voting'], ['allowMultipleChoice', '☑️ Multiple Choice'], ['showResultsLive', '📈 Live Results']] }),
-  reactionRoles: genericModule({ route: 'admin:reactionRoles', key: 'reactionRoles', title: '😊 Reaction Roles', summary: 'Reaction role panels, emoji mappings and deployments.', defaults: { enabled: true, panelChannelId: null, logChannelId: null, managerRoleIds: [], allowMultipleRoles: true, removeOnUnreact: true }, fields: ['panelChannel', 'logChannel', 'managerRoles', ['allowMultipleRoles', 'Multiple Roles'], ['removeOnUnreact', 'Remove On Unreact']], selectMenus: ['panelChannel', 'logChannel', 'managerRoles'], toggles: [['allowMultipleRoles', '😊 Multiple Roles'], ['removeOnUnreact', '↩️ Remove On Unreact']] }),
+  reactionRoles: genericModule({ route: 'admin:reactionRoles', key: 'reactionRoles', title: '🎭 Role Studio', summary: 'Manage Auto Roles, Reaction Roles, Timed Roles and Temporary Roles in one place.', defaults: { enabled: true, panelChannelId: null, logChannelId: null, managerRoleIds: [], allowMultipleRoles: true, removeOnUnreact: true }, fields: ['panelChannel', 'logChannel', 'managerRoles', ['allowMultipleRoles', 'Multiple Roles'], ['removeOnUnreact', 'Remove On Unreact']], selectMenus: ['panelChannel', 'logChannel', 'managerRoles'], toggles: [['allowMultipleRoles', '😊 Multiple Roles'], ['removeOnUnreact', '↩️ Remove On Unreact']] }),
   social: genericModule({ route: 'admin:social', key: 'social', title: '📣 Social Alerts', summary: 'Creator alerts for Twitch, YouTube, TikTok, Kick and more.', defaults: { enabled: true, alertsChannelId: null, logChannelId: null, managerRoleIds: [], twitch: true, youtube: true, tiktok: true, kick: true }, fields: ['alertsChannel', 'logChannel', 'managerRoles', ['twitch', 'Twitch'], ['youtube', 'YouTube'], ['tiktok', 'TikTok'], ['kick', 'Kick']], selectMenus: ['alertsChannel', 'logChannel', 'managerRoles'], toggles: [['twitch', '🟣 Twitch'], ['youtube', '▶️ YouTube'], ['tiktok', '🎵 TikTok'], ['kick', '🟢 Kick']] }),
   starboard: genericModule({ route: 'admin:starboard', key: 'starboard', title: '⭐ Starboard', summary: 'Highlight popular server messages.', defaults: { enabled: true, starboardChannelId: null, logChannelId: null, managerRoleIds: [], allowSelfStar: false, requireUniqueUsers: true }, fields: ['starboardChannel', 'logChannel', 'managerRoles', ['allowSelfStar', 'Self Star'], ['requireUniqueUsers', 'Unique Users']], selectMenus: ['starboardChannel', 'logChannel', 'managerRoles'], toggles: [['allowSelfStar', '⭐ Self Star'], ['requireUniqueUsers', '👥 Unique Users']] }),
   sticky: genericModule({ route: 'admin:sticky', key: 'sticky', title: '💬 Sticky Messages', summary: 'Keep important messages at the bottom of chat.', defaults: { enabled: true, channels: [], managerRoleIds: [], mode: 'per-channel', cleanupPrevious: true, allowEmbeds: true }, fields: ['channels', 'managerRoles', ['mode', 'Mode'], ['cleanupPrevious', 'Cleanup Previous'], ['allowEmbeds', 'Allow Embeds']], selectMenus: ['channels', 'managerRoles'], optionMenus: [{ id: 'mode', placeholder: 'Sticky mode', options: [['per-channel', 'Per Channel', 'One sticky note per selected channel'], ['manual', 'Manual', 'Only staff-triggered sticky notes']] }], toggles: [['cleanupPrevious', '🧹 Cleanup Previous'], ['allowEmbeds', '🎨 Allow Embeds']] }),
