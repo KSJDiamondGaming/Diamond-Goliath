@@ -10,7 +10,7 @@ const SOURCE_EXTENSIONS = ['.js', '.jsx', '.mjs', '.cjs'];
 const TEXT_EXTENSIONS = [...SOURCE_EXTENSIONS, '.json', '.md', '.txt', '.yml', '.yaml'];
 const IMPORT_TIMEOUT_MS = Number(process.env.GOLIATH_IMPORT_AUDIT_TIMEOUT_MS || 15000);
 const SLOW_IMPORT_MS = Number(process.env.GOLIATH_IMPORT_AUDIT_SLOW_MS || 3000);
-const MOJIBAKE_MARKERS = ['â', 'ðŸ', 'ï¸', 'Ã', '\uFFFD'];
+const MOJIBAKE_MARKERS = [0x00e2, 0x00f0, 0x00ef, 0x00c3, 0xfffd].map((code) => String.fromCharCode(code));
 
 function absolute(file) {
   return path.join(root, file);
@@ -18,10 +18,6 @@ function absolute(file) {
 
 function rel(file) {
   return path.relative(root, file).replace(/\\/g, '/');
-}
-
-function exists(file) {
-  return fs.existsSync(absolute(file));
 }
 
 function read(file) {
@@ -43,146 +39,6 @@ function walk(dir, extensions = ['.js']) {
     else if (entry.isFile() && extensions.includes(path.extname(entry.name))) files.push(fullPath);
   }
   return files.sort((a, b) => a.localeCompare(b));
-}
-
-function checkProjectShape() {
-  section('Project shape');
-  const expected = [
-    'server.js',
-    'package.json',
-    'src/commands',
-    'src/core',
-    'src/dashboard',
-    'src/events',
-    'src/modules',
-    'src/runtime',
-    'src/server',
-  ];
-  const missing = expected.filter((item) => !exists(item));
-  for (const item of expected) console.log(`${missing.includes(item) ? '❌' : '✅'} ${item}`);
-  return missing.length === 0;
-}
-
-function auditCommands() {
-  section('Command audit');
-  const files = walk(absolute('src/commands'));
-  const errors = [];
-  const names = new Set();
-  let loadable = 0;
-
-  for (const file of files) {
-    try {
-      delete require.cache[require.resolve(file)];
-      const command = require(file);
-      const payload = command?.data?.toJSON?.();
-      const name = payload?.name;
-      if (!name) throw new Error('missing command data/name');
-      if (names.has(name)) throw new Error(`duplicate command name /${name}`);
-      if (typeof command.execute !== 'function') throw new Error('missing execute function');
-      names.add(name);
-      loadable += 1;
-      console.log(`✅ /${name}`);
-    } catch (error) {
-      errors.push(`${rel(file)}: ${error.message}`);
-      console.log(`❌ ${rel(file)}`);
-    }
-  }
-
-  console.log(`\nCommand files scanned: ${files.length}`);
-  console.log(`Commands loadable: ${loadable}`);
-  if (errors.length) {
-    console.log(`Command issues: ${errors.length}`);
-    for (const error of errors) console.log(` - ${error}`);
-    return false;
-  }
-  console.log('✅ Command audit passed.');
-  return true;
-}
-
-const MODULE_REGISTRY = [
-  {
-    name: 'Auto Roles',
-    files: [
-      ['src/modules/roleStudio/autoRoles/autoRoles.js', ['defaultAutoRolesSection', 'getAutoRolesSection', 'applyAutoRoles', 'buildHealthReport', 'startupAutoRoles']],
-      ['src/modules/roleStudio/autoRoles/autoRolesPanel.js', ['buildAutoRolesPanel', 'handleAutoRolesInteraction']],
-      ['src/modules/roleStudio/autoRoles/autoRolesRoute.js'],
-      ['src/dashboard/js/pages/modules/AutoRoles.jsx'],
-      ['docs/modules/auto-roles.md'],
-    ],
-  },
-  {
-    name: 'Verification',
-    files: [
-      ['src/modules/verification/verification.js', ['defaultVerificationSection', 'getVerificationSection', 'handleVerificationInteraction', 'startupVerification']],
-      ['src/modules/verification/verificationPanel.js', ['buildVerificationAdminPanel', 'handleVerificationAdminInteraction']],
-      ['src/modules/verification/verificationRoute.js'],
-      ['src/dashboard/js/pages/modules/VerificationEnhanced.jsx'],
-    ],
-  },
-  {
-    name: 'Welcome',
-    files: [
-      ['src/modules/welcome/welcome.js', ['sendWelcome', 'buildHealthReport', 'startupWelcome']],
-      ['src/modules/welcome/welcomePanel.js', ['buildWelcomePanel', 'handleWelcomeInteraction']],
-      ['src/modules/welcome/welcomeRoute.js'],
-      ['src/dashboard/js/pages/modules/Welcome.jsx'],
-      ['docs/modules/welcome.md'],
-    ],
-  },
-  {
-    name: 'Goodbye',
-    files: [
-      ['src/modules/goodbye/goodbye.js', ['sendGoodbye', 'buildHealthReport', 'startupGoodbye']],
-      ['src/modules/goodbye/goodbyePanel.js', ['buildGoodbyePanel', 'handleGoodbyeInteraction']],
-      ['src/modules/goodbye/goodbyeRoute.js'],
-      ['src/dashboard/js/pages/modules/Goodbye.jsx'],
-      ['docs/modules/goodbye.md'],
-    ],
-  },
-];
-
-function checkFile(file, exportNames, errors) {
-  const fullPath = absolute(file);
-  if (!fs.existsSync(fullPath)) {
-    console.log(`❌ ${file}`);
-    errors.push(`${file}: missing file`);
-    return;
-  }
-
-  if (!exportNames?.length || !file.endsWith('.js')) {
-    console.log(`✅ ${file}`);
-    return;
-  }
-
-  try {
-    delete require.cache[require.resolve(fullPath)];
-    const loaded = require(fullPath);
-    const missing = exportNames.filter((name) => loaded?.[name] === undefined);
-    console.log(`${missing.length ? '❌' : '✅'} ${file}`);
-    if (missing.length) errors.push(`${file}: missing export(s) ${missing.join(', ')}`);
-  } catch (error) {
-    console.log(`❌ ${file}`);
-    errors.push(`${file}: failed to load - ${error.message}`);
-  }
-}
-
-function auditModules() {
-  section('Module audit');
-  const errors = [];
-
-  for (const module of MODULE_REGISTRY) {
-    console.log(`\n${module.name}`);
-    for (const [file, exports = []] of module.files) checkFile(file, exports, errors);
-  }
-
-  if (errors.length) {
-    console.log(`\nModule issues: ${errors.length}`);
-    for (const error of errors) console.log(` - ${error}`);
-    return false;
-  }
-
-  console.log('\n✅ Module audit passed.');
-  return true;
 }
 
 function normalise(value) {
@@ -215,12 +71,65 @@ function resolveImport(fromFile, request) {
   return candidates.map(normalise).find((candidate) => fs.existsSync(candidate)) || null;
 }
 
+function checkProjectShape() {
+  section('Project shape');
+  const expected = [
+    'server.js',
+    'package.json',
+    'src/commands',
+    'src/core',
+    'src/dashboard',
+    'src/events',
+    'src/modules',
+    'src/runtime',
+    'src/server',
+  ];
+  const missing = [];
+  for (const item of expected) {
+    const present = fs.existsSync(absolute(item));
+    console.log(`${present ? '✅' : '❌'} ${item}`);
+    if (!present) missing.push(item);
+  }
+  return missing.length === 0;
+}
+
+function auditCommands() {
+  section('Command audit');
+  const files = walk(absolute('src/commands'));
+  const errors = [];
+  const names = new Set();
+  let loadable = 0;
+
+  for (const file of files) {
+    try {
+      delete require.cache[require.resolve(file)];
+      const command = require(file);
+      const name = command?.data?.toJSON?.()?.name;
+      if (!name) throw new Error('missing command data/name');
+      if (names.has(name)) throw new Error(`duplicate command name /${name}`);
+      if (typeof command.execute !== 'function') throw new Error('missing execute function');
+      names.add(name);
+      loadable += 1;
+      console.log(`✅ /${name}`);
+    } catch (error) {
+      errors.push(`${rel(file)}: ${error.message}`);
+      console.log(`❌ ${rel(file)}`);
+    }
+  }
+
+  console.log(`\nCommand files scanned: ${files.length}`);
+  console.log(`Commands loadable: ${loadable}`);
+  for (const error of errors) console.log(` - ${error}`);
+  if (!errors.length) console.log('✅ Command audit passed.');
+  return errors.length === 0;
+}
+
 function auditDashboardFiles() {
   section('Dashboard file audit');
   const dashboardRoot = absolute('src/dashboard/js');
   const files = walk(dashboardRoot, SOURCE_EXTENSIONS).map(normalise);
   const fileSet = new Set(files);
-  const inbound = new Map(files.map((file) => [file, new Set()]));
+  const inbound = new Map(files.map((file) => [file, 0]));
   const entries = new Set([
     normalise(path.join(dashboardRoot, 'main.jsx')),
     normalise(path.join(dashboardRoot, 'App.jsx')),
@@ -231,25 +140,21 @@ function auditDashboardFiles() {
   for (const file of files) {
     for (const request of extractRelativeImports(read(file))) {
       const resolved = resolveImport(file, request);
-      if (!resolved) broken.push({ from: file, request });
-      else if (fileSet.has(resolved)) inbound.get(resolved)?.add(file);
+      if (!resolved) broken.push(`${rel(file)} -> ${request}`);
+      else if (fileSet.has(resolved)) inbound.set(resolved, (inbound.get(resolved) || 0) + 1);
     }
   }
 
   const orphans = files
-    .filter((file) => !entries.has(file))
-    .filter((file) => (inbound.get(file)?.size || 0) === 0)
+    .filter((file) => !entries.has(file) && (inbound.get(file) || 0) === 0)
     .map(rel)
     .sort();
 
   console.log(`Scanned files: ${files.length}`);
   console.log(`Broken relative imports: ${broken.length}`);
   console.log(`Orphan candidates: ${orphans.length}`);
-  for (const item of broken) console.log(`- ${rel(item.from)} -> ${item.request}`);
-  if (orphans.length) {
-    console.log('\nOrphan candidates, verify before deleting:');
-    for (const file of orphans) console.log(`- ${file}`);
-  }
+  for (const item of broken) console.log(`- ${item}`);
+  for (const file of orphans) console.log(`- ${file}`);
   return broken.length === 0 && orphans.length === 0;
 }
 
@@ -261,10 +166,12 @@ function auditDashboardRoutes() {
     console.log('❌ Missing dashboard layout or module registry.');
     return false;
   }
+
   const routes = new Set([...read(layoutPath).matchAll(/path:\s*['"]([^'"]+)['"]/g)].map((match) => match[1]));
   const modules = [...read(registryPath).matchAll(/\{[\s\S]*?key:\s*['"]([^'"]+)['"][\s\S]*?name:\s*['"]([^'"]+)['"][\s\S]*?route:\s*['"]([^'"]+)['"][\s\S]*?\}/g)]
     .map((match) => ({ key: match[1], name: match[2], route: match[3] }));
   const broken = modules.filter((module) => !routes.has(module.route));
+
   console.log(`Routes found: ${routes.size}`);
   console.log(`Module registry entries: ${modules.length}`);
   console.log(`Broken module routes: ${broken.length}`);
@@ -278,18 +185,19 @@ function auditSourceText() {
   const encodingIssues = [];
   const legacyImports = [];
   const windowsPaths = [];
+  const rootCore = `${normalise(absolute('core'))}/`;
 
   for (const file of files) {
     const source = read(file);
     const relative = rel(file);
     if (MOJIBAKE_MARKERS.some((marker) => source.includes(marker))) encodingIssues.push(relative);
-    if (SOURCE_EXTENSIONS.includes(path.extname(file))) {
-      for (const request of extractRelativeImports(source)) {
-        const resolved = normalise(path.resolve(path.dirname(file), request));
-        if (resolved.startsWith(`${normalise(absolute('core'))}/`)) legacyImports.push(`${relative} -> ${request}`);
-      }
-      if (/[A-Za-z]:\\[^\s'"`]+/.test(source)) windowsPaths.push(relative);
+    if (!SOURCE_EXTENSIONS.includes(path.extname(file))) continue;
+
+    for (const request of extractRelativeImports(source)) {
+      const resolved = normalise(path.resolve(path.dirname(file), request));
+      if (resolved.startsWith(rootCore)) legacyImports.push(`${relative} -> ${request}`);
     }
+    if (/[A-Za-z]:\\[^\s'"`]+/.test(source)) windowsPaths.push(relative);
   }
 
   console.log(`Text files scanned: ${files.length}`);
@@ -360,17 +268,10 @@ function auditRuntimeImports() {
 
   console.log(`\nRuntime files scanned: ${files.length}`);
   console.log(`Runtime files loadable: ${loaded}`);
-  if (slow.length) {
-    console.log(`Slow runtime imports: ${slow.length}`);
-    for (const item of slow) console.log(` - ${item}`);
-  }
-  if (errors.length) {
-    console.log(`Runtime import issues: ${errors.length}`);
-    for (const error of errors) console.log(` - ${error}`);
-    return false;
-  }
-  console.log('✅ Runtime import audit passed.');
-  return true;
+  for (const item of slow) console.log(` - Slow: ${item}`);
+  for (const error of errors) console.log(` - ${error}`);
+  if (!errors.length) console.log('✅ Runtime import audit passed.');
+  return errors.length === 0;
 }
 
 function auditModuleStandard() {
@@ -397,13 +298,9 @@ function auditModuleStandard() {
   console.log(`Complete: ${modules.filter(isModuleComplete).length}`);
   console.log(`In progress: ${active.length}`);
   console.log(`Not started: ${modules.filter((item) => item.maturity === MODULE_MATURITY.NOT_STARTED).length}`);
-  if (errors.length) {
-    console.log(`Module standard issues: ${errors.length}`);
-    for (const error of errors) console.log(` - ${error}`);
-    return false;
-  }
-  console.log('✅ Module standard audit passed.');
-  return true;
+  for (const error of errors) console.log(` - ${error}`);
+  if (!errors.length) console.log('✅ Module standard audit passed.');
+  return errors.length === 0;
 }
 
 function inspectRuntime() {
@@ -459,7 +356,6 @@ function runCheck() {
   const ok = [
     checkProjectShape(),
     auditCommands(),
-    auditModules(),
     runDashboard(),
     auditSourceText(),
     auditRuntimeImports(),
@@ -485,7 +381,7 @@ function printHelp() {
   console.log('  check             Run the complete Doctor check');
   console.log('  audit             Run Doctor plus guild inspection');
   console.log('  commands          Check slash command files');
-  console.log('  modules           Check completed module files and exports');
+  console.log('  modules           Check module completion standards');
   console.log('  dashboard         Check dashboard imports and routes');
   console.log('  runtime           Inspect runtime folders');
   console.log('  imports           Check runtime imports');
@@ -501,7 +397,7 @@ const commands = {
   check: runCheck,
   audit: runAudit,
   commands: auditCommands,
-  modules: auditModules,
+  modules: auditModuleStandard,
   dashboard: runDashboard,
   runtime: inspectRuntime,
   imports: auditRuntimeImports,
