@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 const fs = require('fs');
 const path = require('path');
@@ -24,7 +24,7 @@ function safeRequire(label, modulePath, fallback = null, options = {}) {
   try { return require(modulePath); }
   catch (error) {
     if (options.optional !== false && isMissingOptionalModule(error, modulePath)) return fallback;
-    console.warn(`⚠️ Startup module failed: ${label}`);
+    console.warn(`âš ï¸ Startup module failed: ${label}`);
     console.warn(error?.stack || error?.message || error);
     return fallback;
   }
@@ -65,7 +65,7 @@ const permissionHealthRoutes = route('permission health routes', './src/server/r
 const socialRoutes = route('social routes', './src/modules/social/socialRoute');
 const scheduleRoutes = route('schedule routes', './src/modules/schedule/scheduleRoute');
 const invitesRoutes = route('invite routes', './src/modules/invites/invitesRoute');
-const verificationRoutes = route('verification routes', './src/modules/roleStudio/verification/verificationRoute');
+const verificationRoutes = route('verification routes', './src/modules/verification/verificationRoute');
 const autoRolesRoutes = route('auto roles routes', './src/modules/roleStudio/autoRoles/autoRolesRoute');
 const welcomeRoutes = route('welcome routes', './src/modules/welcome/welcomeRoute');
 const goodbyeRoutes = route('goodbye routes', './src/modules/goodbye/goodbyeRoute');
@@ -151,17 +151,17 @@ function registerEvents() {
         const listener = (...args) => handler.execute(...args, client);
         if (handler.once === true) client.once(handler.name, listener); else client.on(handler.name, listener);
       }
-    } catch (error) { console.warn(`⚠️ Event skipped: ${file}`); console.warn(error?.message || error); }
+    } catch (error) { console.warn(`âš ï¸ Event skipped: ${file}`); console.warn(error?.message || error); }
   }
 }
 registerEvents();
 async function runStartupTask(label, fn) {
-  try { await fn(); console.log(`✅ ${label} startup complete`); }
-  catch (error) { console.error(`❌ ${label} startup failed`); console.error(error?.stack || error?.message || error); }
+  try { await fn(); console.log(`âœ… ${label} startup complete`); }
+  catch (error) { console.error(`âŒ ${label} startup failed`); console.error(error?.stack || error?.message || error); }
 }
 client.once('clientReady', async () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
-  console.log(`ℹ Guilds cached: ${client.guilds.cache.size}`);
+  console.log(`âœ… Logged in as ${client.user.tag}`);
+  console.log(`â„¹ Guilds cached: ${client.guilds.cache.size}`);
   for (const guild of client.guilds.cache.values()) {
     try { await enforceGuildAccess(guild, botMode, config); defaultModules.initializeDefaultModules?.(guild.id); guildManager.syncGuildMeta?.(guild); await resourceManager.syncDiscordResources?.(guild); }
     catch (error) { console.error(`Guild startup sync failed for ${guild?.id}:`, error?.message || error); }
@@ -170,14 +170,15 @@ client.once('clientReady', async () => {
     runStartupTask('Tickets', () => require('./src/modules/tickets/tickets').startup.startupTickets(client)),
     runStartupTask('Timed Roles', () => require('./src/modules/roleStudio/timedRoles/timedRoles').startup(client)),
     runStartupTask('Translation', () => require('./src/modules/translation/translationStartup').startupTranslation(client)),
-    runStartupTask('Verification', () => require('./src/modules/roleStudio/verification/verification').startupVerification(client)),
+    runStartupTask('Verification', () => require('./src/modules/verification/verification').startupVerification(client)),
     runStartupTask('Goodbye', () => require('./src/modules/goodbye/goodbye').startupGoodbye(client)),
     runStartupTask('Reaction Roles', () => require('./src/modules/roleStudio/reactionRoles/reactionRoles').startup(client)),
     runStartupTask('Giveaways', () => require('./src/modules/giveaways/giveawayScheduler').start(client)),
   ]);
   backupScheduler.startBackupScheduler?.();
 });
-server.listen(PORT, () => console.log(`🌐 Dashboard server running on port ${PORT}`));
+server.listen(PORT, () => console.log(`ðŸŒ Dashboard server running on port ${PORT}`));
 const token = resolveToken(config);
-if (!token) { console.error('❌ Missing Discord token for current BOT_MODE.'); process.exit(1); }
+if (!token) { console.error('âŒ Missing Discord token for current BOT_MODE.'); process.exit(1); }
 client.login(token);
+

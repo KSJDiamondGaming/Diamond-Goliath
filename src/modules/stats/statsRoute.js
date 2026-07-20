@@ -1,8 +1,8 @@
-'use strict';
+﻿'use strict';
 
 const express = require('express');
 const guildManager = require('../../core/guild/guildManager');
-const verification = require('../roleStudio/verification/verification');
+const verification = require('../verification/verification');
 const stats = require('./stats');
 const statsHealth = require('./statsHealth');
 
@@ -133,3 +133,4 @@ router.post('/:guildId/reset', (req, res) => {
 });
 
 module.exports = router;
+

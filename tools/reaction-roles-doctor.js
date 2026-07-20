@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 const fs = require('fs');
 const path = require('path');
@@ -9,7 +9,6 @@ const required = [
   'src/modules/roleStudio/reactionRoles/reactionRolesRoute.js',
   'src/modules/roleStudio/reactionRoles/reactionRoleMessageFinder.js',
   'src/modules/roleStudio/reactionRoles/reactionRolesPanel.js',
-  'src/modules/roleStudio/reactionRoles/reactionRolesPanelV2.js',
   'src/dashboard/js/pages/modules/ReactionRoles.jsx',
   'src/events/messages/messageReactionAdd.js',
   'src/events/messages/messageReactionRemove.js',
@@ -45,34 +44,6 @@ contains('src/modules/roleStudio/reactionRoles/reactionRoleMessageFinder.js', [
   'pinnedOnly',
   'botsOnly',
   'messageId',
-]);
-contains('src/modules/roleStudio/reactionRoles/reactionRolesPanel.js', [
-  "require('./reactionRolesPanelV2')",
-]);
-contains('src/modules/roleStudio/reactionRoles/reactionRolesPanelV2.js', [
-  'Reaction Roles Studio',
-  'Attach Roles to an Existing Message',
-  'Build emoji-to-role mappings',
-  'Add Emoji Mapping',
-  'Select Next Role Above',
-  'Save & Sync',
-  'Open in Discord',
-  'selectedRoleId: null',
-]);
-contains('src/dashboard/js/pages/modules/ReactionRoles.jsx', [
-  'Find a Message',
-  'Search Messages',
-  'DiscordMessagePreview',
-  'DiscordEmbedPreview',
-  'Select Message',
-  '+ Add Emoji → Role',
-  'Attach to Selected Message',
-  'Preview',
-  'Edit mappings',
-  'Save & Sync',
-  'Duplicate',
-  'Detach + Clear',
-  'Open in Discord',
 ]);
 contains('src/modules/roleStudio/reactionRoles/reactionRoles.js', [
   'attachExistingMessage',

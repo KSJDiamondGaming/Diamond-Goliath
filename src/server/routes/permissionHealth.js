@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 // src/server/routes/permissionHealth.js
 
@@ -6,7 +6,7 @@ const express = require('express');
 const { PermissionFlagsBits } = require('discord.js');
 
 const autoRoleStore = require('../../modules/roleStudio/autoRoles/autoRoles');
-const verificationStore = require('../../modules/roleStudio/verification/verificationStore');
+const verificationStore = require('../../modules/verification/verificationStore');
 const formStore = require('../../modules/forms/formStore');
 const ticketStore = require('../../modules/tickets/ticketStore');
 const translationStore = require('../../modules/translation/translationStore');
@@ -323,3 +323,4 @@ router.get('/:guildId', async (req, res) => {
 });
 
 module.exports = router;
+

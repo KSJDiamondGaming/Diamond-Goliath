@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 const fs = require('fs');
 const path = require('path');
@@ -47,7 +47,7 @@ function checkProjectShape() {
   section('Project shape');
   const expected = ['server.js', 'package.json', 'src/commands', 'src/core', 'src/dashboard', 'src/events', 'src/modules', 'src/runtime', 'src/server'];
   const missing = expected.filter((item) => !exists(item));
-  for (const item of expected) console.log(`${missing.includes(item) ? '❌' : '✅'} ${item}`);
+  for (const item of expected) console.log(`${missing.includes(item) ? 'âŒ' : 'âœ…'} ${item}`);
   return missing.length === 0;
 }
 
@@ -69,10 +69,10 @@ function auditCommands() {
       if (typeof command.execute !== 'function') throw new Error('missing execute function');
       names.add(name);
       loadable += 1;
-      console.log(`✅ /${name}`);
+      console.log(`âœ… /${name}`);
     } catch (error) {
       errors.push(`${rel(file)}: ${error.message}`);
-      console.log(`❌ ${rel(file)}`);
+      console.log(`âŒ ${rel(file)}`);
     }
   }
 
@@ -83,7 +83,7 @@ function auditCommands() {
     for (const error of errors) console.log(` - ${error}`);
     return false;
   }
-  console.log('✅ Command audit passed.');
+  console.log('âœ… Command audit passed.');
   return true;
 }
 
@@ -101,9 +101,9 @@ const MODULE_REGISTRY = [
   {
     name: 'Verification',
     files: [
-      ['src/modules/roleStudio/verification/verification.js', ['defaultVerificationSection', 'getVerificationSection', 'handleVerificationInteraction', 'startupVerification']],
-      ['src/modules/roleStudio/verification/verificationPanel.js', ['buildVerificationAdminPanel', 'handleVerificationAdminInteraction']],
-      ['src/modules/roleStudio/verification/verificationRoute.js'],
+      ['src/modules/verification/verification.js', ['defaultVerificationSection', 'getVerificationSection', 'handleVerificationInteraction', 'startupVerification']],
+      ['src/modules/verification/verificationPanel.js', ['buildVerificationAdminPanel', 'handleVerificationAdminInteraction']],
+      ['src/modules/verification/verificationRoute.js'],
       ['src/dashboard/js/pages/modules/VerificationEnhanced.jsx'],
     ],
   },
@@ -132,13 +132,13 @@ const MODULE_REGISTRY = [
 function checkFile(file, exportNames, errors) {
   const fullPath = absolute(file);
   if (!fs.existsSync(fullPath)) {
-    console.log(`❌ ${file}`);
+    console.log(`âŒ ${file}`);
     errors.push(`${file}: missing file`);
     return;
   }
 
   if (!exportNames?.length || !file.endsWith('.js')) {
-    console.log(`✅ ${file}`);
+    console.log(`âœ… ${file}`);
     return;
   }
 
@@ -146,10 +146,10 @@ function checkFile(file, exportNames, errors) {
     delete require.cache[require.resolve(fullPath)];
     const loaded = require(fullPath);
     const missing = exportNames.filter((name) => loaded?.[name] === undefined);
-    console.log(`${missing.length ? '❌' : '✅'} ${file}`);
+    console.log(`${missing.length ? 'âŒ' : 'âœ…'} ${file}`);
     if (missing.length) errors.push(`${file}: missing export(s) ${missing.join(', ')}`);
   } catch (error) {
-    console.log(`❌ ${file}`);
+    console.log(`âŒ ${file}`);
     errors.push(`${file}: failed to load - ${error.message}`);
   }
 }
@@ -169,7 +169,7 @@ function auditModules() {
     return false;
   }
 
-  console.log('\n✅ Module audit passed.');
+  console.log('\nâœ… Module audit passed.');
   return true;
 }
 
@@ -246,7 +246,7 @@ function auditDashboardRoutes() {
   const layoutPath = absolute('src/dashboard/js/ui/layout.js');
   const registryPath = absolute('src/dashboard/js/shared/moduleRegistry.js');
   if (!fs.existsSync(layoutPath) || !fs.existsSync(registryPath)) {
-    console.log('❌ Missing dashboard layout or module registry.');
+    console.log('âŒ Missing dashboard layout or module registry.');
     return false;
   }
   const routes = new Set([...read(layoutPath).matchAll(/path:\s*['"]([^'"]+)['"]/g)].map((match) => match[1]));
@@ -270,9 +270,9 @@ function collectRuntimeTargets() {
     'src/modules/roleStudio/autoRoles/autoRoles.js',
     'src/modules/roleStudio/autoRoles/autoRolesPanel.js',
     'src/modules/roleStudio/autoRoles/autoRolesRoute.js',
-    'src/modules/roleStudio/verification/verification.js',
-    'src/modules/roleStudio/verification/verificationPanel.js',
-    'src/modules/roleStudio/verification/verificationRoute.js',
+    'src/modules/verification/verification.js',
+    'src/modules/verification/verificationPanel.js',
+    'src/modules/verification/verificationRoute.js',
     'src/modules/welcome/welcome.js',
     'src/modules/goodbye/goodbye.js',
     'src/modules/tickets/ticketStartup.js',
@@ -304,13 +304,13 @@ function auditRuntimeImports() {
     const duration = Date.now() - startedAt;
 
     if (result.error?.code === 'ETIMEDOUT' || result.signal === 'SIGTERM') {
-      console.log('❌');
+      console.log('âŒ');
       errors.push(`${rel(file)}: import exceeded ${IMPORT_TIMEOUT_MS}ms`);
     } else if (result.status !== 0) {
-      console.log('❌');
+      console.log('âŒ');
       errors.push(`${rel(file)}: ${String(result.stderr || result.stdout || 'Unknown import failure').trim().split('\n').slice(0, 8).join('\n')}`);
     } else {
-      console.log(duration >= SLOW_IMPORT_MS ? `⚠️ ${duration}ms` : `✅ ${duration}ms`);
+      console.log(duration >= SLOW_IMPORT_MS ? `âš ï¸ ${duration}ms` : `âœ… ${duration}ms`);
       loaded += 1;
       if (duration >= SLOW_IMPORT_MS) slow.push(`${rel(file)}: ${duration}ms`);
     }
@@ -327,7 +327,7 @@ function auditRuntimeImports() {
     for (const error of errors) console.log(` - ${error}`);
     return false;
   }
-  console.log('✅ Runtime import audit passed.');
+  console.log('âœ… Runtime import audit passed.');
   return true;
 }
 
@@ -347,8 +347,8 @@ function auditModuleStandard() {
     for (const capability of REQUIRED_CAPABILITIES) {
       if (typeof definition.capabilities?.[capability] !== 'boolean') errors.push(`${definition.name}.${capability} must be boolean.`);
     }
-    const marker = complete ? '🟢' : definition.maturity === MODULE_MATURITY.IN_PROGRESS ? '🟡' : '⚪';
-    console.log(`${marker} ${definition.name} — ${definition.maturity}${missing.length ? ` (${missing.length} capability gaps)` : ''}`);
+    const marker = complete ? 'ðŸŸ¢' : definition.maturity === MODULE_MATURITY.IN_PROGRESS ? 'ðŸŸ¡' : 'âšª';
+    console.log(`${marker} ${definition.name} â€” ${definition.maturity}${missing.length ? ` (${missing.length} capability gaps)` : ''}`);
   }
 
   console.log(`\nModules tracked: ${modules.length}`);
@@ -360,7 +360,7 @@ function auditModuleStandard() {
     for (const error of errors) console.log(` - ${error}`);
     return false;
   }
-  console.log('✅ Module standard audit passed.');
+  console.log('âœ… Module standard audit passed.');
   return true;
 }
 
@@ -371,13 +371,13 @@ function inspectRuntime() {
   console.log(`BOT_MODE: ${mode}`);
   console.log(`Runtime path: ${rel(modeRoot)}`);
   if (!fs.existsSync(modeRoot)) {
-    console.log('❌ Runtime mode folder missing.');
+    console.log('âŒ Runtime mode folder missing.');
     return false;
   }
   for (const folder of folders) {
     const fullPath = path.join(modeRoot, folder);
     const count = fs.existsSync(fullPath) ? fs.readdirSync(fullPath).length : 0;
-    console.log(`${fs.existsSync(fullPath) ? '✅' : '⚠️'} ${rel(fullPath)} (${count})`);
+    console.log(`${fs.existsSync(fullPath) ? 'âœ…' : 'âš ï¸'} ${rel(fullPath)} (${count})`);
   }
   return true;
 }
@@ -386,7 +386,7 @@ function inspectGuilds() {
   section('Guild configs');
   const guildsDir = absolute(`src/runtime/${mode}/guilds`);
   if (!fs.existsSync(guildsDir)) {
-    console.log(`❌ Missing ${rel(guildsDir)}`);
+    console.log(`âŒ Missing ${rel(guildsDir)}`);
     return false;
   }
   const files = fs.readdirSync(guildsDir).filter((file) => file.endsWith('.json')).sort();
@@ -400,8 +400,8 @@ function checkMediaDependencies() {
   const ffmpeg = spawnSync('ffmpeg', ['-version'], { encoding: 'utf8' });
   let sharp = true;
   try { require.resolve('sharp'); } catch { sharp = false; }
-  console.log(`FFmpeg: ${ffmpeg.status === 0 ? '✅ available' : '❌ missing'}`);
-  console.log(`Sharp:   ${sharp ? '✅ available' : '❌ missing'}`);
+  console.log(`FFmpeg: ${ffmpeg.status === 0 ? 'âœ… available' : 'âŒ missing'}`);
+  console.log(`Sharp:   ${sharp ? 'âœ… available' : 'âŒ missing'}`);
   return ffmpeg.status === 0 && sharp;
 }
 
@@ -470,3 +470,4 @@ if (!commands[command]) {
 
 const result = commands[command]();
 if (result === false) process.exit(1);
+

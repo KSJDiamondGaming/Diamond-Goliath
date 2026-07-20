@@ -1,6 +1,6 @@
-'use strict';
+﻿'use strict';
 
-// src/modules/roleStudio/verification/verificationStore.js
+// src/modules/verification/verificationStore.js
 
 const crypto = require('crypto');
 const {
@@ -105,9 +105,9 @@ function defaultMessages() {
     failed: 'Verification failed. Please contact a management member if this continues.',
     dmSuccess: 'You are now verified in {server}.',
     pendingAssigned: 'Your pending verification role has been assigned in {server}.',
-    screeningCompletedLog: '📜 {user} completed Discord Membership Screening.',
-    successLog: '✅ {user} completed verification.',
-    failureLog: '❌ {user} failed verification: {reason}',
+    screeningCompletedLog: 'ðŸ“œ {user} completed Discord Membership Screening.',
+    successLog: 'âœ… {user} completed verification.',
+    failureLog: 'âŒ {user} failed verification: {reason}',
   };
 }
 
@@ -459,3 +459,4 @@ module.exports = {
   clearAttempts,
   incrementAnalytics,
 };
+

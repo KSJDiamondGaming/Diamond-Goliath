@@ -1,6 +1,6 @@
-'use strict';
+﻿'use strict';
 
-// src/modules/roleStudio/verification/verificationManager.js
+// src/modules/verification/verificationManager.js
 
 const {
   ActionRowBuilder,
@@ -653,7 +653,7 @@ async function handleVerificationInteraction(interaction) {
   if (!parsed || !interaction?.guildId) return false;
   const result = await verifyMember(interaction);
   await interaction.reply({
-    content: result.ok ? `✅ ${result.message}` : `❌ ${result.message}`,
+    content: result.ok ? `âœ… ${result.message}` : `âŒ ${result.message}`,
     flags: 64,
   }).catch(() => null);
   return true;
@@ -689,3 +689,4 @@ module.exports = {
   handleVerificationInteraction,
   renderMessage,
 };
+

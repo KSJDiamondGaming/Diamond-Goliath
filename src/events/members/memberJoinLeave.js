@@ -1,10 +1,10 @@
-'use strict';
+﻿'use strict';
 
 const { EmbedBuilder, AuditLogEvent } = require('discord.js');
 const guildManager = require('../../core/guild/guildManager');
 const autoRoleManager = require('../../modules/roleStudio/autoRoles/autoRoles');
 const statsManager = require('../../modules/stats/statsManager');
-const verificationManager = require('../../modules/roleStudio/verification/verification');
+const verificationManager = require('../../modules/verification/verification');
 const welcomeManager = require('../../modules/welcome/welcome');
 const welcomeAvatarSync = require('../../modules/welcome/welcomeAvatarSync');
 const goodbyeManager = require('../../modules/goodbye/goodbye');
@@ -47,10 +47,10 @@ function delay(ms) {
 }
 
 const REMOVAL_TYPES = {
-  left: { key: 'left', title: '👋 Member Left', color: '#ED4245', eventName: 'memberLeave', reasonLabel: 'No reason — the member left voluntarily.' },
-  kicked: { key: 'kicked', title: '👢 Member Kicked', color: '#FAA61A', eventName: 'memberKick', auditType: AuditLogEvent.MemberKick, reasonLabel: 'No reason provided.' },
-  banned: { key: 'banned', title: '🔨 Member Banned', color: '#ED4245', eventName: 'memberBan', auditType: AuditLogEvent.MemberBanAdd, reasonLabel: 'No reason provided.' },
-  pruned: { key: 'pruned', title: '🧹 Member Pruned / Removed', color: '#FEE75C', eventName: 'memberPrune', auditType: AuditLogEvent.MemberPrune, reasonLabel: 'Member removed during a server prune.' },
+  left: { key: 'left', title: 'ðŸ‘‹ Member Left', color: '#ED4245', eventName: 'memberLeave', reasonLabel: 'No reason â€” the member left voluntarily.' },
+  kicked: { key: 'kicked', title: 'ðŸ‘¢ Member Kicked', color: '#FAA61A', eventName: 'memberKick', auditType: AuditLogEvent.MemberKick, reasonLabel: 'No reason provided.' },
+  banned: { key: 'banned', title: 'ðŸ”¨ Member Banned', color: '#ED4245', eventName: 'memberBan', auditType: AuditLogEvent.MemberBanAdd, reasonLabel: 'No reason provided.' },
+  pruned: { key: 'pruned', title: 'ðŸ§¹ Member Pruned / Removed', color: '#FEE75C', eventName: 'memberPrune', auditType: AuditLogEvent.MemberPrune, reasonLabel: 'Member removed during a server prune.' },
 };
 
 async function findRecentAuditLog(guild, userId, auditType, maxAgeMs = 15000, allowTargetless = false) {
@@ -99,12 +99,12 @@ function buildAdminJoinLog(member, addedRoles = []) {
   const guild = member.guild;
   return new EmbedBuilder()
     .setColor('#57F287')
-    .setTitle('👥 Member Joined')
+    .setTitle('ðŸ‘¥ Member Joined')
     .setThumbnail(getAvatar(member))
     .addFields(
       { name: 'User', value: formatUser(member.user), inline: true },
       { name: 'User ID', value: `\`${member.user.id}\``, inline: true },
-      { name: 'Type', value: member.user.bot ? '🤖 Bot' : '👤 User', inline: true },
+      { name: 'Type', value: member.user.bot ? 'ðŸ¤– Bot' : 'ðŸ‘¤ User', inline: true },
       { name: 'Account Created', value: `${formatTimestamp(member.user.createdTimestamp, 'R')}\n${formatTimestamp(member.user.createdTimestamp, 'F')}`, inline: true },
       { name: 'Joined Server', value: `${formatTimestamp(member.joinedTimestamp, 'R')}\n${formatTimestamp(member.joinedTimestamp, 'F')}`, inline: true },
       { name: 'Member Count', value: `\`${guild.memberCount}\``, inline: true },
@@ -121,12 +121,12 @@ function buildAdminRemovalLog(member, removal) {
   const moderator = auditLog?.executor || null;
   const embed = new EmbedBuilder()
     .setColor(removal.color || '#ED4245')
-    .setTitle(removal.title || '🚪 Member Removed')
+    .setTitle(removal.title || 'ðŸšª Member Removed')
     .setThumbnail(getAvatar(member))
     .addFields(
       { name: 'User', value: formatUser(member.user), inline: true },
       { name: 'User ID', value: `\`${member.user.id}\``, inline: true },
-      { name: 'Type', value: member.user.bot ? '🤖 Bot' : '👤 User', inline: true },
+      { name: 'Type', value: member.user.bot ? 'ðŸ¤– Bot' : 'ðŸ‘¤ User', inline: true },
       { name: 'Removal Type', value: `\`${removal.key || 'unknown'}\``, inline: true },
       { name: 'Account Created', value: `${formatTimestamp(member.user.createdTimestamp, 'R')}\n${formatTimestamp(member.user.createdTimestamp, 'F')}`, inline: true },
       { name: 'Joined Server', value: member.joinedTimestamp ? `${formatTimestamp(member.joinedTimestamp, 'R')}\n${formatTimestamp(member.joinedTimestamp, 'F')}` : 'Unknown', inline: true },
@@ -230,3 +230,4 @@ module.exports = [
     },
   },
 ];
+

@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 const fs = require('fs');
 const path = require('path');
@@ -18,7 +18,7 @@ const exactMoves = new Map([
 const prefixMoves = [
   ['src/modules/roleStudio/reactionRoles/', 'src/modules/roleStudio/reactionRoles/'],
   ['src/modules/roleStudio/timedRoles/', 'src/modules/roleStudio/timedRoles/'],
-  ['src/modules/roleStudio/verification/', 'src/modules/roleStudio/verification/'],
+  ['src/modules/verification/', 'src/modules/verification/'],
   ['src/modules/roleStudio/', 'src/modules/roleStudio/'],
   ['src/modules/autoroles/', 'src/modules/roleStudio/autoRoles/'],
 ];
@@ -102,7 +102,7 @@ function rewriteKnownPaths(content) {
     ['src/modules/roleStudio/autoRoles/autoRoles', 'src/modules/roleStudio/autoRoles/autoRoles'],
     ['src/modules/roleStudio/reactionRoles/', 'src/modules/roleStudio/reactionRoles/'],
     ['src/modules/roleStudio/timedRoles/', 'src/modules/roleStudio/timedRoles/'],
-    ['src/modules/roleStudio/verification/', 'src/modules/roleStudio/verification/'],
+    ['src/modules/verification/', 'src/modules/verification/'],
     ['src/modules/roleStudio/', 'src/modules/roleStudio/'],
     ['src\\modules\\autoroles\\', 'src\\modules\\roleStudio\\autoRoles\\'],
     ['src\\modules\\reactionroles\\', 'src\\modules\\roleStudio\\reactionRoles\\'],
@@ -125,7 +125,7 @@ function assertExpectedSources(trackedSet) {
     'src/modules/roleStudio/timedRoles/timedRoles.js',
     'src/modules/roleStudio/roleStudioPanel.js',
     'src/modules/roleStudio/temporaryRoles/temporaryRoles.js',
-    'src/modules/roleStudio/verification/verification.js',
+    'src/modules/verification/verification.js',
   ];
 
   const missing = required.filter((file) => !trackedSet.has(file));
@@ -179,3 +179,4 @@ try {
   console.error(error.stack || error.message || error);
   process.exitCode = 1;
 }
+

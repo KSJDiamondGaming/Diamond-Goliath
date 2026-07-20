@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 const express = require('express');
 
@@ -13,8 +13,8 @@ const {
 
 const autoRoleStore = require('../../modules/roleStudio/autoRoles/autoRoles');
 const autoRoleManager = autoRoleStore;
-const verificationStore = require('../../modules/roleStudio/verification/verificationStore');
-const verificationManager = require('../../modules/roleStudio/verification/verificationManager');
+const verificationStore = require('../../modules/verification/verificationStore');
+const verificationManager = require('../../modules/verification/verificationManager');
 const embedTemplateManager = require('../../modules/embed/embedTemplateManager');
 const {
   getAllEmbedDeployments,
@@ -32,7 +32,7 @@ const MODULE_CATALOG = Object.freeze({
   verification: {
     key: 'verification',
     name: 'Verification',
-    icon: '✅',
+    icon: 'âœ…',
     category: 'Security',
     summary: 'Verify members, assign roles and deploy a custom verification panel.',
     apiBase: '/api/verification',
@@ -43,7 +43,7 @@ const MODULE_CATALOG = Object.freeze({
   autoRoles: {
     key: 'autoRoles',
     name: 'Auto Roles',
-    icon: '🤖',
+    icon: 'ðŸ¤–',
     category: 'Automation',
     summary: 'Automatically assign roles to members and bots when they join.',
     apiBase: '/api/modules/:guildId/auto-roles',
@@ -54,7 +54,7 @@ const MODULE_CATALOG = Object.freeze({
   embedStudio: {
     key: 'embedStudio',
     name: 'Embed Studio',
-    icon: '🖼️',
+    icon: 'ðŸ–¼ï¸',
     category: 'Utilities',
     summary: 'Create, save and deploy reusable embed templates.',
     apiBase: '/api/modules/:guildId/embed-studio',
@@ -451,3 +451,4 @@ router.post('/:guildId/auto-roles/join', async (req, res) => {
 });
 
 module.exports = router;
+
