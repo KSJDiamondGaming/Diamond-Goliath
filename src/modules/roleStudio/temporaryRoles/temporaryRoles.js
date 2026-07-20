@@ -1,7 +1,7 @@
 'use strict';
 
 const crypto = require('crypto');
-const { getModuleSection, saveModuleSection, updateModuleSection } = require('../../../src/core/guild/moduleSectionManager');
+const { getModuleSection, saveModuleSection, updateModuleSection } = require('../../../core/guild/moduleSectionManager');
 
 const SECTION = 'temporaryRoles';
 const now = () => new Date().toISOString();
