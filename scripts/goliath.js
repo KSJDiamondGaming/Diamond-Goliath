@@ -18,13 +18,35 @@ const TOOL_FILES = Object.freeze({
   roleStudioTest: 'role-studio-smoke-test.js',
 });
 
+const MOJIBAKE_REPLACEMENTS = Object.freeze([
+  ['âœ…', '✅'],
+  ['âŒ', '❌'],
+  ['âš ï¸', '⚠️'],
+  ['âšª', '⚪'],
+  ['ðŸŸ¢', '🟢'],
+  ['ðŸŸ¡', '🟡'],
+  ['â€”', '—'],
+]);
+
+function normalizeConsoleText(value) {
+  let output = String(value || '');
+  for (const [broken, correct] of MOJIBAKE_REPLACEMENTS) {
+    output = output.split(broken).join(correct);
+  }
+  return output;
+}
+
 function runTool(file, args = []) {
   const result = spawnSync(process.execPath, [path.join(tools, file), ...args], {
     cwd: root,
     env: process.env,
-    stdio: 'inherit',
+    encoding: 'utf8',
+    stdio: ['inherit', 'pipe', 'pipe'],
     windowsHide: true,
   });
+
+  if (result.stdout) process.stdout.write(normalizeConsoleText(result.stdout));
+  if (result.stderr) process.stderr.write(normalizeConsoleText(result.stderr));
 
   if (result.error) {
     console.error(`Failed to run ${file}: ${result.error.message}`);
