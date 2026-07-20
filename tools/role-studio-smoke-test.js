@@ -62,7 +62,7 @@ assert.equal(moduleRoutes.includes('admin:translation'), false);
 assert.equal(moduleRoutes.length, 8);
 
 assert.ok(entry.includes('handleReactionRolesAdminInteraction'));
-assert.ok(navigation.includes("'admin:autoRoles'"));
+assert.ok(navigation.includes('TOP_LEVEL_MODULE_ROUTES'));
 assert.ok(navigation.includes("moduleEntry[1] = '🛡️ Role Studio'"));
 
 assert.equal(typeof autoRoles.applyAutoRoles, 'function');
