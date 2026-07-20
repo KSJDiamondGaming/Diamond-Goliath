@@ -15,6 +15,9 @@ const entry = read('src/modules/roleStudio/reactionRoles/reactionRolesPanel.js')
 const hubSource = read('src/modules/roleStudio/roleStudioPanel.js');
 const hub = load('src/modules/roleStudio/roleStudioPanel.js');
 const navigation = read('src/modules/roleStudio/roleStudioNavigationPatch.js');
+const autoRolesSource = read('src/modules/roleStudio/autoRoles/autoRoles.js');
+const autoRoles = load('src/modules/roleStudio/autoRoles/autoRoles.js');
+const autoRolesStartup = read('src/events/client/autoRolesStartup.js');
 const temporary = load('src/modules/roleStudio/temporaryRoles/temporaryRoles.js');
 const temporaryPanel = read('src/modules/roleStudio/temporaryRoles/temporaryRolesPanel.js');
 const temporaryStartup = read('src/events/client/temporaryRolesStartup.js');
@@ -42,6 +45,13 @@ assert.ok(entry.includes('handleReactionRolesAdminInteraction'));
 assert.ok(navigation.includes("route === 'admin:autoRoles'"));
 assert.ok(navigation.includes("moduleEntry[1] = '🛡️ Role Studio'"));
 
+assert.equal(typeof autoRoles.applyAutoRoles, 'function');
+assert.equal(typeof autoRoles.startupAutoRoles, 'function');
+assert.equal(typeof autoRoles.buildHealthReport, 'function');
+assert.ok(autoRolesSource.includes('const enabled = isAutoRolesEnabled(guild.id);'));
+assert.ok(autoRolesSource.includes('const reapply = enabled && section.settings?.reapplyOnStartup === true'));
+assert.ok(autoRolesStartup.includes('startupAutoRoles(client)'));
+
 assert.equal(typeof temporary.assignTemporaryRole, 'function');
 assert.equal(typeof temporary.removeAssignment, 'function');
 assert.equal(typeof temporary.scanExpired, 'function');
@@ -65,6 +75,7 @@ assert.ok(timedStartup.includes('timedRoles.startup(client)'));
 assert.ok(timedMemberJoin.includes('applyProgressionToMember'));
 
 console.log('✅ Role Studio exports and routes are wired.');
+console.log('✅ Auto Roles runtime, health and startup module gate are present.');
 console.log('✅ Auto, reaction, timed and temporary role modules are connected.');
 console.log('✅ Timed-role progression, simulation and startup processing are present.');
 console.log('✅ Temporary-role assignment, removal and expiry scanning are present.');
