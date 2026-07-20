@@ -1,13 +1,11 @@
-﻿'use strict';
-
-// src/modules/verification/verificationStore.js
+'use strict';
 
 const crypto = require('crypto');
 const {
   getModuleSection,
   saveModuleSection,
   updateModuleSection,
-} = require('../../../core/guild/moduleSectionManager');
+} = require('../../core/guild/moduleSectionManager');
 
 const MODULE = 'verification';
 const PENDING_ROLE_TIMINGS = new Set(['on_join', 'after_screening', 'manual']);
@@ -105,9 +103,9 @@ function defaultMessages() {
     failed: 'Verification failed. Please contact a management member if this continues.',
     dmSuccess: 'You are now verified in {server}.',
     pendingAssigned: 'Your pending verification role has been assigned in {server}.',
-    screeningCompletedLog: 'ðŸ“œ {user} completed Discord Membership Screening.',
-    successLog: 'âœ… {user} completed verification.',
-    failureLog: 'âŒ {user} failed verification: {reason}',
+    screeningCompletedLog: '📜 {user} completed Discord Membership Screening.',
+    successLog: '✅ {user} completed verification.',
+    failureLog: '❌ {user} failed verification: {reason}',
   };
 }
 
@@ -130,32 +128,26 @@ function defaultSettings() {
     method: 'button',
     verificationChannelId: null,
     logChannelId: null,
-
     waitForDiscordScreening: false,
     skipScreeningIfUnavailable: true,
     logScreeningCompletion: true,
-
     usePendingRoles: false,
     assignPendingRoles: false,
     pendingRoleTiming: 'after_screening',
     requirePendingRole: false,
     removePendingRoles: true,
     removePendingRole: true,
-
     verifiedRoleIds: [],
     pendingRoleIds: [],
     verifiedRoleId: null,
     unverifiedRoleId: null,
-
     dmOnVerify: true,
     dmOnPendingRole: false,
     logSuccess: true,
     logFailure: true,
-
     blockBots: true,
     allowStaffBypass: false,
     allowReverification: false,
-
     minimumAccountAgeDays: 0,
     minimumMembershipAgeMinutes: 0,
     attemptCooldownSeconds: 10,
@@ -181,12 +173,10 @@ function normalizeAnalytics(analytics = {}) {
   const source = analytics && typeof analytics === 'object' ? analytics : {};
   const base = defaultAnalytics();
   const output = { ...base, ...clone(source) };
-
   for (const key of Object.keys(base)) {
     if (key.startsWith('last')) output[key] = cleanDate(source[key]);
     else output[key] = cleanCount(source[key]);
   }
-
   return output;
 }
 
@@ -227,39 +217,32 @@ function normalizeSettings(settings = {}) {
   const verifiedRoleIds = cleanDiscordIds(source.verifiedRoleIds?.length ? source.verifiedRoleIds : legacyVerified);
   const pendingRoleIds = cleanDiscordIds(source.pendingRoleIds?.length ? source.pendingRoleIds : legacyPending);
   const removePendingRoles = source.removePendingRoles !== false && source.removePendingRole !== false;
-
   return {
     ...base,
     ...clone(source),
     method: VERIFICATION_METHODS.has(method) ? method : base.method,
     verificationChannelId: cleanDiscordId(source.verificationChannelId),
     logChannelId: cleanDiscordId(source.logChannelId),
-
     waitForDiscordScreening: source.waitForDiscordScreening === true,
     skipScreeningIfUnavailable: source.skipScreeningIfUnavailable !== false,
     logScreeningCompletion: source.logScreeningCompletion !== false,
-
     usePendingRoles: source.usePendingRoles === true,
     assignPendingRoles: source.assignPendingRoles === true,
     pendingRoleTiming: PENDING_ROLE_TIMINGS.has(timing) ? timing : base.pendingRoleTiming,
     requirePendingRole,
     removePendingRoles,
     removePendingRole: removePendingRoles,
-
     verifiedRoleIds,
     pendingRoleIds,
     verifiedRoleId: verifiedRoleIds[0] || null,
     unverifiedRoleId: pendingRoleIds[0] || null,
-
     dmOnVerify: source.dmOnVerify !== false,
     dmOnPendingRole: source.dmOnPendingRole === true,
     logSuccess: source.logSuccess !== false,
     logFailure: source.logFailure !== false,
-
     blockBots: source.blockBots !== false,
     allowStaffBypass: !requirePendingRole && source.allowStaffBypass === true,
     allowReverification: source.allowReverification === true,
-
     minimumAccountAgeDays: cleanInteger(source.minimumAccountAgeDays, 0, 0, 3650),
     minimumMembershipAgeMinutes: cleanInteger(source.minimumMembershipAgeMinutes, 0, 0, 525600),
     attemptCooldownSeconds: cleanInteger(source.attemptCooldownSeconds, 10, 0, 86400),
@@ -459,4 +442,3 @@ module.exports = {
   clearAttempts,
   incrementAnalytics,
 };
-
