@@ -95,8 +95,6 @@ function normalizeAutoRolesSection(section = {}) {
     joinRoles: cleanRoleIds(source.joinRoles || source.roleIds || source.roles),
     botRoles: cleanRoleIds(source.botRoles),
     settings: {
-      ...base.settings,
-      ...(source.settings && typeof source.settings === 'object' ? clone(source.settings) : {}),
       applyToBots: source.settings?.applyToBots === true,
       auditLog: source.settings?.auditLog !== false,
       reapplyOnStartup: source.settings?.reapplyOnStartup === true,
@@ -171,8 +169,6 @@ function updateSettings(guildId, settings = {}, meta = {}) {
   return updateAutoRolesSection(guildId, (section) => ({
     ...section,
     settings: {
-      ...(section.settings || {}),
-      ...input,
       applyToBots: typeof input.applyToBots === 'boolean' ? input.applyToBots : section.settings?.applyToBots === true,
       auditLog: typeof input.auditLog === 'boolean' ? input.auditLog : section.settings?.auditLog !== false,
       reapplyOnStartup: typeof input.reapplyOnStartup === 'boolean' ? input.reapplyOnStartup : section.settings?.reapplyOnStartup === true,
@@ -293,12 +289,18 @@ async function applyAutoRoles(member, options = {}) {
 
 function configureAutoRoles(guildId, input = {}, meta = {}) {
   if (typeof input.enabled === 'boolean') guildManager.setModuleEnabled(guildId, MODULE, input.enabled, meta);
+  const settings = input.settings && typeof input.settings === 'object' ? input.settings : {};
   return updateAutoRolesSection(guildId, (section) => ({
     ...section,
     enabled: typeof input.enabled === 'boolean' ? input.enabled : section.enabled,
     joinRoles: Array.isArray(input.joinRoles) ? cleanRoleIds(input.joinRoles) : section.joinRoles,
     botRoles: Array.isArray(input.botRoles) ? cleanRoleIds(input.botRoles) : section.botRoles,
-    settings: { ...section.settings, ...(input.settings && typeof input.settings === 'object' ? input.settings : {}) },
+    settings: {
+      applyToBots: typeof settings.applyToBots === 'boolean' ? settings.applyToBots : section.settings?.applyToBots === true,
+      auditLog: typeof settings.auditLog === 'boolean' ? settings.auditLog : section.settings?.auditLog !== false,
+      reapplyOnStartup: typeof settings.reapplyOnStartup === 'boolean' ? settings.reapplyOnStartup : section.settings?.reapplyOnStartup === true,
+      ignoreExistingRoles: typeof settings.ignoreExistingRoles === 'boolean' ? settings.ignoreExistingRoles : section.settings?.ignoreExistingRoles !== false,
+    },
     updatedAt: now(),
   }), meta);
 }
