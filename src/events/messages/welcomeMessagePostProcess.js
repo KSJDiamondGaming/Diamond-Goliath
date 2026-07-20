@@ -40,6 +40,18 @@ function replacePlainMention(embed, username, userId) {
   return { data, changed };
 }
 
+function ensureMemberAvatar(embed, member) {
+  const data = embedData(embed);
+  const avatarUrl = member?.displayAvatarURL?.({ extension: 'png', size: 256 })
+    || member?.user?.displayAvatarURL?.({ extension: 'png', size: 256 })
+    || '';
+
+  if (!avatarUrl || data.thumbnail?.url) return { data, changed: false };
+
+  data.thumbnail = { url: avatarUrl };
+  return { data, changed: true };
+}
+
 function findMember(message) {
   const searchable = searchableMessage(message);
   const mentionId = searchable.match(/<@(\d{15,25})>/)?.[1];
@@ -96,14 +108,15 @@ module.exports = {
 
     let changed = false;
     const embeds = message.embeds.map((embed) => {
-      const result = replacePlainMention(embed, member.user.username, member.id);
-      changed ||= result.changed;
-      return result.data;
+      const mentionResult = replacePlainMention(embed, member.user.username, member.id);
+      const avatarResult = ensureMemberAvatar(mentionResult.data, member);
+      changed ||= mentionResult.changed || avatarResult.changed;
+      return avatarResult.data;
     });
 
     if (changed) {
       await message.edit({ embeds }).catch((error) => {
-        console.warn('[Welcome] Failed to make embedded username clickable:', error.message || error);
+        console.warn('[Welcome] Failed to correct welcome embed:', error.message || error);
       });
     }
 
