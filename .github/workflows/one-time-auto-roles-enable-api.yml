@@ -1,0 +1,57 @@
+name: One-time Auto Roles enable API hardening
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/one-time-auto-roles-enable-api.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Restrict Auto Roles enable writes to synchronized API
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/modules/roleStudio/autoRoles/autoRoles.js')
+          text = path.read_text()
+          text = text.replace('function setEnabled(guildId, enabled = true, meta = {}) {', 'function setConfigEnabled(guildId, enabled = true, meta = {}) {')
+          text = text.replace('  return setEnabled(guildId, nextEnabled, meta);', '  return setConfigEnabled(guildId, nextEnabled, meta);')
+          text = text.replace('  setEnabled,\n', '')
+          path.write_text(text)
+          PY
+      - name: Add regression assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('tools/role-studio-smoke-test.js')
+          text = path.read_text()
+          needle = "assert.equal(typeof autoRoles.buildHealthReport, 'function');\n"
+          replacement = needle + "assert.equal(typeof autoRoles.setAutoRolesEnabled, 'function');\nassert.equal(autoRoles.setEnabled, undefined);\n"
+          if replacement not in text:
+              text = text.replace(needle, replacement)
+          path.write_text(text)
+          PY
+      - name: Validate syntax
+        run: |
+          node --check src/modules/roleStudio/autoRoles/autoRoles.js
+          node --check tools/role-studio-smoke-test.js
+      - name: Commit changes and remove workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/modules/roleStudio/autoRoles/autoRoles.js tools/role-studio-smoke-test.js
+          git commit -m "Harden Auto Roles enable write API"
+          git rm .github/workflows/one-time-auto-roles-enable-api.yml
+          git commit -m "Remove one-time Auto Roles enable workflow"
+          git push origin dev
