@@ -1,0 +1,121 @@
+name: Canonical Admin shell cleanup
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - .github/workflows/admin-shell-cleanup.yml
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Remove legacy Admin module implementations
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'src/core/admin/functions/adminPanel.js';
+          let source = fs.readFileSync(path, 'utf8');
+
+          const replaceRequired = (pattern, replacement, label) => {
+            const next = source.replace(pattern, replacement);
+            if (next === source) throw new Error(`Migration target not found: ${label}`);
+            source = next;
+          };
+
+          replaceRequired(
+            /\nconst MODULES = \[[\s\S]*?\n\];\n\nconst COMING_SOON = \{[\s\S]*?\n\};\n/,
+            '\n',
+            'legacy MODULES and COMING_SOON registries'
+          );
+
+          replaceRequired(
+            /\nfunction getAutoRolesConfig\(guildId\) \{[\s\S]*?\n\}\n/,
+            '\n',
+            'legacy Auto Roles config helper'
+          );
+
+          replaceRequired(
+            /\nfunction buildModulesPanel\([\s\S]*?\n\}\n\nfunction buildLogsPanel/,
+            '\nfunction buildLogsPanel',
+            'legacy Modules panel builder'
+          );
+
+          replaceRequired(
+            /\nfunction buildAutoRolesPanel\([\s\S]*?\n\}\n\nfunction buildChannelPanel/,
+            '\nfunction buildChannelPanel',
+            'legacy Auto Roles panel builder'
+          );
+
+          source = source
+            .replace("    'admin:autoRoles': 'Join Roles',\n", '')
+            .replace("  if (route === 'admin:modules') return buildModulesPanel(guild, memberDisplayName, navState);\n", '')
+            .replace("  if (route === 'admin:autoRoles') return buildAutoRolesPanel(guild, memberDisplayName, navState);\n", '')
+            .replace(/\n  if \(COMING_SOON\[route\]\) \{[\s\S]*?\n  \}\n/, '\n')
+            .replace(/\n    'admin:autoRoles:select': \{[\s\S]*?\n    \},/, '')
+            .replace(
+              /\n  if \(selected\.mergeExisting\) \{[\s\S]*?\n  \} else \{\n    replaceGuildSection\(interaction\.guild\.id, selected\.section, \{\n      roleIds: safeValues\(interaction\),\n    \}\);\n  \}/,
+              "\n  replaceGuildSection(interaction.guild.id, selected.section, {\n    roleIds: safeValues(interaction),\n  });"
+            );
+
+          replaceRequired(
+            /\n  if \(customId === 'admin:autoRoles:toggle'\) \{[\s\S]*?\n  \}\n\n  if \(\n    customId === 'admin:adminpanel'/,
+            "\n  if (customId === 'admin:tickets') {\n    const { sendSetupPanel } = require('../../modules/tickets/ticketSetupPanel');\n    return sendSetupPanel(interaction);\n  }\n\n  if (\n    customId === 'admin:adminpanel'",
+            'legacy Auto Roles interaction handler'
+          );
+
+          source = source
+            .replace("    customId === 'admin:modules' ||\n", '')
+            .replace("    customId === 'admin:autoRoles' ||\n", '')
+            .replace("    customId === 'admin:adminsettings' ||\n    COMING_SOON[customId]\n", "    customId === 'admin:adminsettings'\n")
+            .replace('  buildModulesPanel,\n', '')
+            .replace('  buildAutoRolesPanel,\n', '');
+
+          const forbidden = [
+            'const MODULES =',
+            'const COMING_SOON =',
+            'function buildModulesPanel',
+            'function buildAutoRolesPanel',
+            'function getAutoRolesConfig',
+            "admin:autoRoles:toggle",
+            "admin:autoRoles:select",
+            'COMING_SOON[',
+          ];
+
+          for (const token of forbidden) {
+            if (source.includes(token)) throw new Error(`Legacy Admin token remains: ${token}`);
+          }
+
+          if (source.includes("route === 'admin:modules'")) {
+            throw new Error('adminPanel.js still handles the canonical Modules route.');
+          }
+
+          fs.writeFileSync(path, source);
+          NODE
+
+      - name: Verify syntax and canonical routing
+        run: |
+          node --check src/core/admin/functions/adminPanel.js
+          node --check src/core/admin/functions/moduleAdminPanels.js
+          node scripts/goliath.js test role-studio
+
+      - name: Remove migration trigger and commit
+        run: |
+          rm .github/workflows/admin-shell-cleanup.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/core/admin/functions/adminPanel.js .github/workflows/admin-shell-cleanup.yml
+          git commit -m "Make Admin panel a navigation shell"
+          git push origin HEAD:dev
