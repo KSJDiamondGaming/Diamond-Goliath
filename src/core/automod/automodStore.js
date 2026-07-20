@@ -183,19 +183,22 @@ function normalizePunishments(value, fallback = ['delete']) {
 }
 
 function normalizeRule(rule = {}, defaults = {}) {
+  const safeRule =
+    rule && typeof rule === 'object' && !Array.isArray(rule)
+      ? rule
+      : {};
+
   const punishments = normalizePunishments(
-    rule?.punishments ?? rule?.punishment,
+    safeRule.punishments ?? safeRule.punishment,
     defaults.punishments ?? [defaults.punishment || 'delete']
   );
 
   return {
-    ...defaults,
-    ...rule,
-    enabled: toBoolean(rule?.enabled, defaults.enabled ?? false),
+    enabled: toBoolean(safeRule.enabled, defaults.enabled ?? false),
     punishments,
     punishment: punishments[0],
     timeoutMinutes: toSafeNumber(
-      rule?.timeoutMinutes,
+      safeRule.timeoutMinutes,
       defaults.timeoutMinutes ?? DEFAULT_TIMEOUT_MINUTES
     ),
   };
