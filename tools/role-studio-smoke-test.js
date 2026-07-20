@@ -12,6 +12,7 @@ console.log('\nRole Studio Smoke Test');
 console.log('======================');
 
 const entry = read('src/modules/roleStudio/reactionRoles/reactionRolesPanel.js');
+const legacyEntry = read('src/modules/reactionroles/reactionRolesPanel.js');
 const hubSource = read('src/modules/roleStudio/roleStudioPanel.js');
 const hub = load('src/modules/roleStudio/roleStudioPanel.js');
 const navigation = read('src/modules/roleStudio/roleStudioNavigationPatch.js');
@@ -48,7 +49,7 @@ const roleStudioEntry = modulePanels.SERVER_MODULES.find(
 );
 
 assert.ok(roleStudioEntry, 'Role Studio must appear in the top-level module menu');
-assert.equal(roleStudioEntry[1], '🛡️ Role Studio');
+assert.equal(roleStudioEntry[1], '🎭 Role Studio');
 assert.equal(roleStudioEntry[2], 'Role Studio');
 assert.equal(moduleRoutes.includes('admin:autoRoles'), false);
 assert.equal(moduleRoutes.includes('admin:timedRoles'), false);
@@ -62,8 +63,10 @@ assert.equal(moduleRoutes.includes('admin:translation'), false);
 assert.equal(moduleRoutes.length, 8);
 
 assert.ok(entry.includes('handleReactionRolesAdminInteraction'));
+assert.ok(legacyEntry.includes("require('../roleStudio/roleStudioNavigationPatch')"));
+assert.ok(legacyEntry.includes("require('../roleStudio/reactionRoles/reactionRolesPanel')"));
 assert.ok(navigation.includes('TOP_LEVEL_MODULE_ROUTES'));
-assert.ok(navigation.includes("moduleEntry[1] = '🛡️ Role Studio'"));
+assert.ok(navigation.includes("moduleEntry[1] = '🎭 Role Studio'"));
 
 assert.equal(typeof autoRoles.applyAutoRoles, 'function');
 assert.equal(typeof autoRoles.startupAutoRoles, 'function');
@@ -116,6 +119,7 @@ assert.ok(timedStartup.includes('timedRoles.startup(client)'));
 assert.ok(timedMemberJoin.includes('applyProgressionToMember'));
 
 console.log('✅ Role Studio exports and routes are wired.');
+console.log('✅ Legacy interaction routing loads the canonical Role Studio bridge.');
 console.log('✅ Role systems are grouped under Role Studio in the Admin module menu.');
 console.log('✅ Unavailable placeholder modules are hidden from the Admin module menu.');
 console.log('✅ Auto Roles runtime, health and startup module gate are present.');
