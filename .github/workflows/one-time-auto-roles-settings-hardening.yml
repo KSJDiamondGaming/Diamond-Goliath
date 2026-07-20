@@ -35,7 +35,7 @@ jobs:
 
           smoke = Path('tools/role-studio-smoke-test.js')
           s = smoke.read_text()
-          anchor = "assert.strictEqual(typeof autoRoles.setAutoRolesEnabled, 'function', 'Auto Roles synchronized enable API is missing.');"
+          anchor = "assert.equal(typeof autoRoles.setAutoRolesEnabled, 'function');"
           assertion = "\nassert.deepStrictEqual(\n  Object.keys(autoRoles.normalizeAutoRolesSection({ settings: { applyToBots: true, unsupported: true } }).settings).sort(),\n  ['applyToBots', 'auditLog', 'ignoreExistingRoles', 'reapplyOnStartup'].sort(),\n  'Auto Roles settings schema must discard unsupported keys.'\n);"
           if assertion.strip() not in s:
               if anchor not in s:
