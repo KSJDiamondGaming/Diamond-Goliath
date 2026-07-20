@@ -48,6 +48,8 @@ assert.ok(navigation.includes("moduleEntry[1] = '🛡️ Role Studio'"));
 assert.equal(typeof autoRoles.applyAutoRoles, 'function');
 assert.equal(typeof autoRoles.startupAutoRoles, 'function');
 assert.equal(typeof autoRoles.buildHealthReport, 'function');
+assert.equal(typeof autoRoles.setAutoRolesEnabled, 'function');
+assert.equal(autoRoles.setEnabled, undefined);
 assert.ok(autoRolesSource.includes('const enabled = isAutoRolesEnabled(guild.id);'));
 assert.ok(autoRolesSource.includes('const reapply = enabled && section.settings?.reapplyOnStartup === true'));
 assert.ok(autoRolesStartup.includes('startupAutoRoles(client)'));

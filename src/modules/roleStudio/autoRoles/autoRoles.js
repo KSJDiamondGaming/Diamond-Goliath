@@ -130,7 +130,7 @@ function updateAutoRolesSection(guildId, updater, meta = {}) {
   ));
 }
 
-function setEnabled(guildId, enabled = true, meta = {}) {
+function setConfigEnabled(guildId, enabled = true, meta = {}) {
   return updateAutoRolesSection(guildId, (section) => ({ ...section, enabled: enabled !== false, updatedAt: now() }), meta);
 }
 
@@ -306,7 +306,7 @@ function configureAutoRoles(guildId, input = {}, meta = {}) {
 function setAutoRolesEnabled(guildId, enabled = true, meta = {}) {
   const nextEnabled = enabled !== false;
   guildManager.setModuleEnabled(guildId, MODULE, nextEnabled, meta);
-  return setEnabled(guildId, nextEnabled, meta);
+  return setConfigEnabled(guildId, nextEnabled, meta);
 }
 
 async function addAutoRole(guild, roleId, options = {}, meta = {}) {
@@ -478,7 +478,6 @@ module.exports = {
   getAutoRolesSection,
   saveAutoRolesSection,
   updateAutoRolesSection,
-  setEnabled,
   setJoinRoles,
   addJoinRole,
   removeJoinRole,
