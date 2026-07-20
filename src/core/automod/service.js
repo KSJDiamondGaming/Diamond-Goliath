@@ -1,5 +1,5 @@
 const { PermissionsBitField } = require('discord.js');
-const guildStore = require('../../../core/guild/guildManager');
+const guildStore = require('../guild/guildManager');
 
 const {
   getGuildAutoModConfig,
