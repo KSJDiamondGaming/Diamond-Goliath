@@ -27,7 +27,7 @@ const moduleEntry = modulePanels.SERVER_MODULES.find(
 );
 
 if (moduleEntry) {
-  moduleEntry[1] = '🛡️ Role Studio';
+  moduleEntry[1] = '🎭 Role Studio';
   moduleEntry[2] = 'Role Studio';
   moduleEntry[3] =
     'Manage Auto Roles, Reaction Roles, Timed Roles and Temporary Roles in one place.';
@@ -36,7 +36,7 @@ if (moduleEntry) {
 modulePanels.SERVER_MODULES.sort((a, b) => a[2].localeCompare(b[2]));
 
 if (modulePanels.MODULE_PANEL_REGISTRY?.reactionRoles) {
-  modulePanels.MODULE_PANEL_REGISTRY.reactionRoles.title = '🛡️ Role Studio';
+  modulePanels.MODULE_PANEL_REGISTRY.reactionRoles.title = '🎭 Role Studio';
   modulePanels.MODULE_PANEL_REGISTRY.reactionRoles.summary =
     'Manage Auto Roles, Reaction Roles, Timed Roles and Temporary Roles in one place.';
 }
