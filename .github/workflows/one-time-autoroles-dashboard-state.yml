@@ -1,0 +1,39 @@
+name: One-time Auto Roles dashboard state hardening
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/one-time-autoroles-dashboard-state.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Align dashboard state with canonical overview
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/dashboard/js/pages/modules/AutoRoles.jsx')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace("  const health = overview.health || null;\n", "  const health = overview.health || null;\n  const moduleEnabled = typeof overview.enabled === 'boolean' ? overview.enabled : config?.enabled === true;\n")
+          text = text.replace("    const nextEnabled = !(overview.enabled === true || config?.enabled === true);", "    const nextEnabled = !moduleEnabled;")
+          text = text.replace("value={overview.enabled || config?.enabled ? 'Enabled' : 'Disabled'}", "value={moduleEnabled ? 'Enabled' : 'Disabled'}")
+          text = text.replace("{saving === 'enabled' ? 'Saving...' : overview.enabled || config?.enabled ? 'Disable' : 'Enable'}", "{saving === 'enabled' ? 'Saving...' : moduleEnabled ? 'Disable' : 'Enable'}")
+          path.write_text(text, encoding='utf-8')
+          PY
+      - name: Commit changes and remove workflow
+        run: |
+          rm .github/workflows/one-time-autoroles-dashboard-state.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add src/dashboard/js/pages/modules/AutoRoles.jsx .github/workflows/one-time-autoroles-dashboard-state.yml
+          git commit -m "Harden Auto Roles dashboard enabled state"
+          git push origin dev
