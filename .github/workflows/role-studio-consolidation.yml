@@ -1,0 +1,167 @@
+name: Role Studio consolidation
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/role-studio-consolidation.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  consolidate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Consolidate Role Studio modules
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const { execFileSync } = require('child_process');
+
+          const root = process.cwd();
+          const posix = p => p.split(path.sep).join('/');
+          const exact = new Map([
+            ['src/modules/autoRoles/autoroles.js', 'src/modules/roleStudio/autoRoles/autoRoles.js'],
+            ['src/modules/autoRoles/autorolesPanel.js', 'src/modules/roleStudio/autoRoles/autoRolesPanel.js'],
+            ['src/modules/autoRoles/autorolesRoute.js', 'src/modules/roleStudio/autoRoles/autoRolesRoute.js'],
+            ['src/modules/rolestudio/temporaryRoles.js', 'src/modules/roleStudio/temporaryRoles/temporaryRoles.js'],
+            ['src/modules/rolestudio/temporaryRolesPanel.js', 'src/modules/roleStudio/temporaryRoles/temporaryRolesPanel.js'],
+          ]);
+
+          const prefixes = [
+            ['src/modules/reactionroles/', 'src/modules/roleStudio/reactionRoles/'],
+            ['src/modules/timedroles/', 'src/modules/roleStudio/timedRoles/'],
+            ['src/modules/verification/', 'src/modules/roleStudio/verification/'],
+            ['src/modules/rolestudio/', 'src/modules/roleStudio/'],
+            ['src/modules/autoRoles/', 'src/modules/roleStudio/autoRoles/'],
+          ];
+
+          function mapPath(file) {
+            file = posix(file);
+            if (exact.has(file)) return exact.get(file);
+            for (const [from, to] of prefixes) {
+              if (file.startsWith(from)) return to + file.slice(from.length);
+            }
+            return file;
+          }
+
+          const tracked = execFileSync('git', ['ls-files'], { encoding: 'utf8' })
+            .split(/\r?\n/).filter(Boolean);
+          const trackedSet = new Set(tracked);
+
+          function resolveOld(importer, spec) {
+            if (!spec.startsWith('.')) return null;
+            const base = posix(path.posix.normalize(path.posix.join(path.posix.dirname(importer), spec)));
+            const candidates = [base, `${base}.js`, `${base}.cjs`, `${base}.mjs`, `${base}.json`, `${base}/index.js`];
+            return candidates.find(candidate => trackedSet.has(candidate)) || null;
+          }
+
+          function relativeSpec(fromFile, targetFile, originalSpec) {
+            let rel = path.posix.relative(path.posix.dirname(fromFile), targetFile);
+            if (!rel.startsWith('.')) rel = './' + rel;
+            const hadExtension = /\.(?:js|cjs|mjs|json)$/.test(originalSpec);
+            if (!hadExtension) rel = rel.replace(/\.(?:js|cjs|mjs|json)$/, '').replace(/\/index$/, '');
+            return rel;
+          }
+
+          function rewriteSpecifiers(content, oldFile, newFile) {
+            const patterns = [
+              /(require\(\s*)(['"])([^'"]+)(\2\s*\))/g,
+              /(from\s+)(['"])([^'"]+)(\2)/g,
+              /(import\(\s*)(['"])([^'"]+)(\2\s*\))/g,
+            ];
+            for (const pattern of patterns) {
+              content = content.replace(pattern, (full, lead, quote, spec, tail) => {
+                const oldTarget = resolveOld(oldFile, spec);
+                if (!oldTarget) return full;
+                const newTarget = mapPath(oldTarget);
+                const nextSpec = relativeSpec(newFile, newTarget, spec);
+                return `${lead}${quote}${nextSpec}${tail}`;
+              });
+            }
+            return content;
+          }
+
+          function rewriteKnownPaths(content) {
+            const replacements = [
+              ['src/modules/rolestudio/temporaryRolesPanel', 'src/modules/roleStudio/temporaryRoles/temporaryRolesPanel'],
+              ['src/modules/rolestudio/temporaryRoles', 'src/modules/roleStudio/temporaryRoles/temporaryRoles'],
+              ['src/modules/autoRoles/autorolesPanel', 'src/modules/roleStudio/autoRoles/autoRolesPanel'],
+              ['src/modules/autoRoles/autorolesRoute', 'src/modules/roleStudio/autoRoles/autoRolesRoute'],
+              ['src/modules/autoRoles/autoroles', 'src/modules/roleStudio/autoRoles/autoRoles'],
+              ['src/modules/reactionroles/', 'src/modules/roleStudio/reactionRoles/'],
+              ['src/modules/timedroles/', 'src/modules/roleStudio/timedRoles/'],
+              ['src/modules/verification/', 'src/modules/roleStudio/verification/'],
+              ['src/modules/rolestudio/', 'src/modules/roleStudio/'],
+              ['src\\modules\\reactionroles\\', 'src\\modules\\roleStudio\\reactionRoles\\'],
+              ['src\\modules\\timedroles\\', 'src\\modules\\roleStudio\\timedRoles\\'],
+              ['src\\modules\\verification\\', 'src\\modules\\roleStudio\\verification\\'],
+              ['src\\modules\\rolestudio\\', 'src\\modules\\roleStudio\\'],
+            ];
+            for (const [from, to] of replacements) content = content.split(from).join(to);
+            return content;
+          }
+
+          const snapshots = new Map();
+          for (const file of tracked) {
+            const abs = path.join(root, file);
+            const buf = fs.readFileSync(abs);
+            if (buf.includes(0)) continue;
+            snapshots.set(file, buf.toString('utf8'));
+          }
+
+          for (const [oldFile, original] of snapshots) {
+            const newFile = mapPath(oldFile);
+            let content = rewriteSpecifiers(original, oldFile, newFile);
+            content = rewriteKnownPaths(content);
+            if (newFile !== oldFile || content !== original) {
+              const destination = path.join(root, newFile);
+              fs.mkdirSync(path.dirname(destination), { recursive: true });
+              fs.writeFileSync(destination, content);
+            }
+          }
+
+          for (const oldFile of tracked) {
+            const newFile = mapPath(oldFile);
+            if (newFile !== oldFile && fs.existsSync(path.join(root, oldFile))) {
+              fs.unlinkSync(path.join(root, oldFile));
+            }
+          }
+
+          console.log('Role Studio consolidation prepared.');
+          NODE
+
+      - name: Validate JavaScript syntax
+        shell: bash
+        run: |
+          git diff --name-only --diff-filter=ACMR | grep -E '\.(js|cjs|mjs)$' | while read -r file; do
+            node --check "$file"
+          done
+
+      - name: Run Goliath doctor
+        run: npm run doctor
+
+      - name: Commit consolidation to dev
+        shell: bash
+        run: |
+          rm -f .github/workflows/role-studio-consolidation.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'refactor: consolidate role modules under Role Studio'
+          git push origin dev
