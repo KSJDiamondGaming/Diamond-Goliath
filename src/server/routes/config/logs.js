@@ -1,10 +1,9 @@
 const express = require('express');
 
-const guildManager = require('../../../src/core/guild/guildManager');
+const guildManager = require('../../../core/guild/guildManager');
 const { emitGuildUpdate } = require('../../sockets/socketHub');
 
 const router = express.Router();
-
 const DEFAULT_LOG_SETTINGS = Object.freeze({
   useWebhooks: true,
   ignoreEmbeds: false,
