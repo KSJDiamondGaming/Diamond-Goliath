@@ -5,12 +5,12 @@
 const crypto = require('crypto');
 
 const {
-  getGuildSection,
-  updateGuildSection,
-} = require('../../core/guild/guildManager');
+  getModuleSection,
+  saveModuleSection,
+  updateModuleSection,
+} = require('../../core/guild/moduleSectionManager');
 
 const SECTION = 'tempVoice';
-const MODULES_SECTION = 'modules';
 
 function now() {
   return new Date().toISOString();
@@ -230,36 +230,31 @@ function normalizeSection(section = {}) {
   };
 }
 
-function getModules(guildId) {
-  const modules = getGuildSection(guildId, MODULES_SECTION, {});
-  return modules && typeof modules === 'object' ? modules : {};
-}
-
 function getTempVoiceSection(guildId) {
-  return normalizeSection(getModules(guildId)[SECTION] || defaultTempVoiceSection());
+  return normalizeSection(getModuleSection(guildId, SECTION, defaultTempVoiceSection()));
 }
 
 function saveTempVoiceSection(guildId, section, meta = {}) {
-  const normalized = normalizeSection(section);
-
-  updateGuildSection(
+  return normalizeSection(saveModuleSection(
     guildId,
-    MODULES_SECTION,
-    (modules = {}) => ({
-      ...(modules && typeof modules === 'object' ? modules : {}),
-      [SECTION]: normalized,
-    }),
-    {},
+    SECTION,
+    normalizeSection(section),
     meta
-  );
-
-  return normalized;
+  ));
 }
 
 function updateTempVoiceSection(guildId, updater, meta = {}) {
-  const current = getTempVoiceSection(guildId);
-  const next = typeof updater === 'function' ? updater(current) : updater;
-  return saveTempVoiceSection(guildId, normalizeSection(next), meta);
+  return normalizeSection(updateModuleSection(
+    guildId,
+    SECTION,
+    (current) => {
+      const normalized = normalizeSection(current);
+      const next = typeof updater === 'function' ? updater(normalized) : updater;
+      return normalizeSection(next);
+    },
+    defaultTempVoiceSection(),
+    meta
+  ));
 }
 
 function getHubs(guildId) {
