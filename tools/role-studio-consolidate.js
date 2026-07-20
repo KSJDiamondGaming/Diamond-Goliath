@@ -8,9 +8,9 @@ const root = path.resolve(__dirname, '..');
 const posix = (value) => value.split(path.sep).join('/');
 
 const exactMoves = new Map([
-  ['src/modules/autoRoles/autoroles.js', 'src/modules/roleStudio/autoRoles/autoRoles.js'],
-  ['src/modules/autoRoles/autorolesPanel.js', 'src/modules/roleStudio/autoRoles/autoRolesPanel.js'],
-  ['src/modules/autoRoles/autorolesRoute.js', 'src/modules/roleStudio/autoRoles/autoRolesRoute.js'],
+  ['src/modules/autoroles/autoroles.js', 'src/modules/roleStudio/autoRoles/autoRoles.js'],
+  ['src/modules/autoroles/autorolesPanel.js', 'src/modules/roleStudio/autoRoles/autoRolesPanel.js'],
+  ['src/modules/autoroles/autorolesRoute.js', 'src/modules/roleStudio/autoRoles/autoRolesRoute.js'],
   ['src/modules/rolestudio/temporaryRoles.js', 'src/modules/roleStudio/temporaryRoles/temporaryRoles.js'],
   ['src/modules/rolestudio/temporaryRolesPanel.js', 'src/modules/roleStudio/temporaryRoles/temporaryRolesPanel.js'],
 ]);
@@ -20,7 +20,7 @@ const prefixMoves = [
   ['src/modules/timedroles/', 'src/modules/roleStudio/timedRoles/'],
   ['src/modules/verification/', 'src/modules/roleStudio/verification/'],
   ['src/modules/rolestudio/', 'src/modules/roleStudio/'],
-  ['src/modules/autoRoles/', 'src/modules/roleStudio/autoRoles/'],
+  ['src/modules/autoroles/', 'src/modules/roleStudio/autoRoles/'],
 ];
 
 function mapPath(file) {
@@ -97,13 +97,14 @@ function rewriteKnownPaths(content) {
   const replacements = [
     ['src/modules/rolestudio/temporaryRolesPanel', 'src/modules/roleStudio/temporaryRoles/temporaryRolesPanel'],
     ['src/modules/rolestudio/temporaryRoles', 'src/modules/roleStudio/temporaryRoles/temporaryRoles'],
-    ['src/modules/autoRoles/autorolesPanel', 'src/modules/roleStudio/autoRoles/autoRolesPanel'],
-    ['src/modules/autoRoles/autorolesRoute', 'src/modules/roleStudio/autoRoles/autoRolesRoute'],
-    ['src/modules/autoRoles/autoroles', 'src/modules/roleStudio/autoRoles/autoRoles'],
+    ['src/modules/autoroles/autorolesPanel', 'src/modules/roleStudio/autoRoles/autoRolesPanel'],
+    ['src/modules/autoroles/autorolesRoute', 'src/modules/roleStudio/autoRoles/autoRolesRoute'],
+    ['src/modules/autoroles/autoroles', 'src/modules/roleStudio/autoRoles/autoRoles'],
     ['src/modules/reactionroles/', 'src/modules/roleStudio/reactionRoles/'],
     ['src/modules/timedroles/', 'src/modules/roleStudio/timedRoles/'],
     ['src/modules/verification/', 'src/modules/roleStudio/verification/'],
     ['src/modules/rolestudio/', 'src/modules/roleStudio/'],
+    ['src\\modules\\autoroles\\', 'src\\modules\\roleStudio\\autoRoles\\'],
     ['src\\modules\\reactionroles\\', 'src\\modules\\roleStudio\\reactionRoles\\'],
     ['src\\modules\\timedroles\\', 'src\\modules\\roleStudio\\timedRoles\\'],
     ['src\\modules\\verification\\', 'src\\modules\\roleStudio\\verification\\'],
@@ -119,7 +120,7 @@ function rewriteKnownPaths(content) {
 
 function assertExpectedSources(trackedSet) {
   const required = [
-    'src/modules/autoRoles/autoroles.js',
+    'src/modules/autoroles/autoroles.js',
     'src/modules/reactionroles/reactionRoles.js',
     'src/modules/timedroles/timedRoles.js',
     'src/modules/rolestudio/roleStudioPanel.js',
