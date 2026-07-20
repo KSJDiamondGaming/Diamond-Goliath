@@ -24,13 +24,14 @@ function formatRoles(ids = []) {
 
 async function buildAutorolesPanel(guild, memberDisplayName = 'Unknown User') {
   const config = autoroles.getAutoRolesSection(guild.id);
+  const moduleEnabled = autoroles.isAutoRolesEnabled(guild.id);
   const health = await autoroles.buildHealthReport(guild);
 
   const embed = new EmbedBuilder()
     .setColor(health.healthy ? 0x57f287 : 0xfaa61a)
     .setTitle('👥 Auto Roles · Setup')
     .setDescription([
-      `**Status:** ${config.enabled !== false ? 'Enabled ✅' : 'Disabled ❌'}`,
+      `**Status:** ${moduleEnabled ? 'Enabled ✅' : 'Disabled ❌'}`,
       `**Join Roles:** ${formatRoles(config.joinRoles)}`,
       `**Bot Roles:** ${formatRoles(config.botRoles)}`,
       `**Apply To Bots:** ${config.settings.applyToBots ? 'Yes ✅' : 'No ❌'}`,
@@ -50,7 +51,7 @@ async function buildAutorolesPanel(guild, memberDisplayName = 'Unknown User') {
       row(new RoleSelectMenuBuilder().setCustomId('admin:autoRoles:joinRoles').setPlaceholder('Select join roles').setMinValues(0).setMaxValues(10)),
       row(new RoleSelectMenuBuilder().setCustomId('admin:autoRoles:botRoles').setPlaceholder('Select bot roles').setMinValues(0).setMaxValues(10)),
       row(
-        button(config.enabled !== false ? 'admin:autoRoles:disable' : 'admin:autoRoles:enable', config.enabled !== false ? '⏸️ Disable' : '▶️ Enable', config.enabled !== false ? ButtonStyle.Secondary : ButtonStyle.Success),
+        button(moduleEnabled ? 'admin:autoRoles:disable' : 'admin:autoRoles:enable', moduleEnabled ? '⏸️ Disable' : '▶️ Enable', moduleEnabled ? ButtonStyle.Secondary : ButtonStyle.Success),
         button('admin:autoRoles:toggleBots', '🤖 Apply To Bots'),
         button('admin:autoRoles:toggleReapply', '🔁 Reapply On Startup'),
         button('admin:autoRoles:repair', '🩺 Repair', ButtonStyle.Primary),
