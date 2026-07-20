@@ -44,6 +44,7 @@
     "test:rolestudio": "node scripts/goliath.js test role-studio",
     "audit:goodbye": "node scripts/goliath.js doctor goodbye",
     "audit:reactionroles": "node scripts/goliath.js doctor reaction",
+    "migrate:rolestudio": "node tools/role-studio-consolidate.js",
     "api": "node -r ./src/runtime/warningFilter.js server.js",
     "api:dev": "cross-env BOT_MODE=dev node -r ./src/runtime/warningFilter.js server.js",
     "api:beta": "cross-env BOT_MODE=beta node -r ./src/runtime/warningFilter.js server.js",
