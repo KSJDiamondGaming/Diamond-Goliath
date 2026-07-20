@@ -431,14 +431,15 @@ async function startupAutoRoles(client) {
   for (const guild of client.guilds.cache.values()) {
     try {
       const section = getAutoRolesSection(guild.id);
+      const enabled = isAutoRolesEnabled(guild.id);
       const health = await buildHealthReport(guild);
-      const reapply = section.enabled !== false && section.settings?.reapplyOnStartup === true
+      const reapply = enabled && section.settings?.reapplyOnStartup === true
         ? await reapplyToGuild(guild, { reason: 'Goliath Auto Roles startup recovery' })
         : null;
       results.push({
         guildId: guild.id,
         guildName: guild.name,
-        enabled: section.enabled !== false,
+        enabled,
         healthy: health.healthy,
         warnings: health.warnings,
         joinRoles: health.joinRoles,
