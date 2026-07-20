@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 const fs = require('fs');
 const path = require('path');
@@ -7,8 +7,10 @@ const { spawnSync } = require('child_process');
 const root = path.resolve(__dirname, '..');
 const mode = process.env.BOT_MODE || 'dev';
 const SOURCE_EXTENSIONS = ['.js', '.jsx', '.mjs', '.cjs'];
+const TEXT_EXTENSIONS = [...SOURCE_EXTENSIONS, '.json', '.md', '.txt', '.yml', '.yaml'];
 const IMPORT_TIMEOUT_MS = Number(process.env.GOLIATH_IMPORT_AUDIT_TIMEOUT_MS || 15000);
 const SLOW_IMPORT_MS = Number(process.env.GOLIATH_IMPORT_AUDIT_SLOW_MS || 3000);
+const MOJIBAKE_MARKERS = ['â', 'ðŸ', 'ï¸', 'Ã', '\uFFFD'];
 
 function absolute(file) {
   return path.join(root, file);
@@ -45,9 +47,19 @@ function walk(dir, extensions = ['.js']) {
 
 function checkProjectShape() {
   section('Project shape');
-  const expected = ['server.js', 'package.json', 'src/commands', 'src/core', 'src/dashboard', 'src/events', 'src/modules', 'src/runtime', 'src/server'];
+  const expected = [
+    'server.js',
+    'package.json',
+    'src/commands',
+    'src/core',
+    'src/dashboard',
+    'src/events',
+    'src/modules',
+    'src/runtime',
+    'src/server',
+  ];
   const missing = expected.filter((item) => !exists(item));
-  for (const item of expected) console.log(`${missing.includes(item) ? 'âŒ' : 'âœ…'} ${item}`);
+  for (const item of expected) console.log(`${missing.includes(item) ? '❌' : '✅'} ${item}`);
   return missing.length === 0;
 }
 
@@ -69,10 +81,10 @@ function auditCommands() {
       if (typeof command.execute !== 'function') throw new Error('missing execute function');
       names.add(name);
       loadable += 1;
-      console.log(`âœ… /${name}`);
+      console.log(`✅ /${name}`);
     } catch (error) {
       errors.push(`${rel(file)}: ${error.message}`);
-      console.log(`âŒ ${rel(file)}`);
+      console.log(`❌ ${rel(file)}`);
     }
   }
 
@@ -83,7 +95,7 @@ function auditCommands() {
     for (const error of errors) console.log(` - ${error}`);
     return false;
   }
-  console.log('âœ… Command audit passed.');
+  console.log('✅ Command audit passed.');
   return true;
 }
 
@@ -132,13 +144,13 @@ const MODULE_REGISTRY = [
 function checkFile(file, exportNames, errors) {
   const fullPath = absolute(file);
   if (!fs.existsSync(fullPath)) {
-    console.log(`âŒ ${file}`);
+    console.log(`❌ ${file}`);
     errors.push(`${file}: missing file`);
     return;
   }
 
   if (!exportNames?.length || !file.endsWith('.js')) {
-    console.log(`âœ… ${file}`);
+    console.log(`✅ ${file}`);
     return;
   }
 
@@ -146,10 +158,10 @@ function checkFile(file, exportNames, errors) {
     delete require.cache[require.resolve(fullPath)];
     const loaded = require(fullPath);
     const missing = exportNames.filter((name) => loaded?.[name] === undefined);
-    console.log(`${missing.length ? 'âŒ' : 'âœ…'} ${file}`);
+    console.log(`${missing.length ? '❌' : '✅'} ${file}`);
     if (missing.length) errors.push(`${file}: missing export(s) ${missing.join(', ')}`);
   } catch (error) {
-    console.log(`âŒ ${file}`);
+    console.log(`❌ ${file}`);
     errors.push(`${file}: failed to load - ${error.message}`);
   }
 }
@@ -169,7 +181,7 @@ function auditModules() {
     return false;
   }
 
-  console.log('\nâœ… Module audit passed.');
+  console.log('\n✅ Module audit passed.');
   return true;
 }
 
@@ -233,12 +245,12 @@ function auditDashboardFiles() {
   console.log(`Scanned files: ${files.length}`);
   console.log(`Broken relative imports: ${broken.length}`);
   console.log(`Orphan candidates: ${orphans.length}`);
-  if (broken.length) for (const item of broken) console.log(`- ${rel(item.from)} -> ${item.request}`);
+  for (const item of broken) console.log(`- ${rel(item.from)} -> ${item.request}`);
   if (orphans.length) {
     console.log('\nOrphan candidates, verify before deleting:');
     for (const file of orphans) console.log(`- ${file}`);
   }
-  return broken.length === 0;
+  return broken.length === 0 && orphans.length === 0;
 }
 
 function auditDashboardRoutes() {
@@ -246,7 +258,7 @@ function auditDashboardRoutes() {
   const layoutPath = absolute('src/dashboard/js/ui/layout.js');
   const registryPath = absolute('src/dashboard/js/shared/moduleRegistry.js');
   if (!fs.existsSync(layoutPath) || !fs.existsSync(registryPath)) {
-    console.log('âŒ Missing dashboard layout or module registry.');
+    console.log('❌ Missing dashboard layout or module registry.');
     return false;
   }
   const routes = new Set([...read(layoutPath).matchAll(/path:\s*['"]([^'"]+)['"]/g)].map((match) => match[1]));
@@ -258,6 +270,36 @@ function auditDashboardRoutes() {
   console.log(`Broken module routes: ${broken.length}`);
   for (const module of broken) console.log(`- ${module.name} (${module.key}) -> ${module.route}`);
   return broken.length === 0;
+}
+
+function auditSourceText() {
+  section('UTF-8 and legacy path audit');
+  const files = walk(root, TEXT_EXTENSIONS);
+  const encodingIssues = [];
+  const legacyImports = [];
+  const windowsPaths = [];
+
+  for (const file of files) {
+    const source = read(file);
+    const relative = rel(file);
+    if (MOJIBAKE_MARKERS.some((marker) => source.includes(marker))) encodingIssues.push(relative);
+    if (SOURCE_EXTENSIONS.includes(path.extname(file))) {
+      for (const request of extractRelativeImports(source)) {
+        const resolved = normalise(path.resolve(path.dirname(file), request));
+        if (resolved.startsWith(`${normalise(absolute('core'))}/`)) legacyImports.push(`${relative} -> ${request}`);
+      }
+      if (/[A-Za-z]:\\[^\s'"`]+/.test(source)) windowsPaths.push(relative);
+    }
+  }
+
+  console.log(`Text files scanned: ${files.length}`);
+  console.log(`UTF-8 corruption candidates: ${encodingIssues.length}`);
+  console.log(`Root core imports: ${legacyImports.length}`);
+  console.log(`Absolute Windows paths: ${windowsPaths.length}`);
+  for (const file of encodingIssues) console.log(`- UTF-8: ${file}`);
+  for (const item of legacyImports) console.log(`- Legacy core: ${item}`);
+  for (const file of windowsPaths) console.log(`- Windows path: ${file}`);
+  return encodingIssues.length === 0 && legacyImports.length === 0 && windowsPaths.length === 0;
 }
 
 function collectRuntimeTargets() {
@@ -304,13 +346,13 @@ function auditRuntimeImports() {
     const duration = Date.now() - startedAt;
 
     if (result.error?.code === 'ETIMEDOUT' || result.signal === 'SIGTERM') {
-      console.log('âŒ');
+      console.log('❌');
       errors.push(`${rel(file)}: import exceeded ${IMPORT_TIMEOUT_MS}ms`);
     } else if (result.status !== 0) {
-      console.log('âŒ');
+      console.log('❌');
       errors.push(`${rel(file)}: ${String(result.stderr || result.stdout || 'Unknown import failure').trim().split('\n').slice(0, 8).join('\n')}`);
     } else {
-      console.log(duration >= SLOW_IMPORT_MS ? `âš ï¸ ${duration}ms` : `âœ… ${duration}ms`);
+      console.log(duration >= SLOW_IMPORT_MS ? `⚠️ ${duration}ms` : `✅ ${duration}ms`);
       loaded += 1;
       if (duration >= SLOW_IMPORT_MS) slow.push(`${rel(file)}: ${duration}ms`);
     }
@@ -327,7 +369,7 @@ function auditRuntimeImports() {
     for (const error of errors) console.log(` - ${error}`);
     return false;
   }
-  console.log('âœ… Runtime import audit passed.');
+  console.log('✅ Runtime import audit passed.');
   return true;
 }
 
@@ -347,8 +389,8 @@ function auditModuleStandard() {
     for (const capability of REQUIRED_CAPABILITIES) {
       if (typeof definition.capabilities?.[capability] !== 'boolean') errors.push(`${definition.name}.${capability} must be boolean.`);
     }
-    const marker = complete ? 'ðŸŸ¢' : definition.maturity === MODULE_MATURITY.IN_PROGRESS ? 'ðŸŸ¡' : 'âšª';
-    console.log(`${marker} ${definition.name} â€” ${definition.maturity}${missing.length ? ` (${missing.length} capability gaps)` : ''}`);
+    const marker = complete ? '🟢' : definition.maturity === MODULE_MATURITY.IN_PROGRESS ? '🟡' : '⚪';
+    console.log(`${marker} ${definition.name} — ${definition.maturity}${missing.length ? ` (${missing.length} capability gaps)` : ''}`);
   }
 
   console.log(`\nModules tracked: ${modules.length}`);
@@ -360,7 +402,7 @@ function auditModuleStandard() {
     for (const error of errors) console.log(` - ${error}`);
     return false;
   }
-  console.log('âœ… Module standard audit passed.');
+  console.log('✅ Module standard audit passed.');
   return true;
 }
 
@@ -371,13 +413,13 @@ function inspectRuntime() {
   console.log(`BOT_MODE: ${mode}`);
   console.log(`Runtime path: ${rel(modeRoot)}`);
   if (!fs.existsSync(modeRoot)) {
-    console.log('âŒ Runtime mode folder missing.');
+    console.log('❌ Runtime mode folder missing.');
     return false;
   }
   for (const folder of folders) {
     const fullPath = path.join(modeRoot, folder);
     const count = fs.existsSync(fullPath) ? fs.readdirSync(fullPath).length : 0;
-    console.log(`${fs.existsSync(fullPath) ? 'âœ…' : 'âš ï¸'} ${rel(fullPath)} (${count})`);
+    console.log(`${fs.existsSync(fullPath) ? '✅' : '⚠️'} ${rel(fullPath)} (${count})`);
   }
   return true;
 }
@@ -386,7 +428,7 @@ function inspectGuilds() {
   section('Guild configs');
   const guildsDir = absolute(`src/runtime/${mode}/guilds`);
   if (!fs.existsSync(guildsDir)) {
-    console.log(`âŒ Missing ${rel(guildsDir)}`);
+    console.log(`❌ Missing ${rel(guildsDir)}`);
     return false;
   }
   const files = fs.readdirSync(guildsDir).filter((file) => file.endsWith('.json')).sort();
@@ -399,9 +441,13 @@ function checkMediaDependencies() {
   section('Media dependencies');
   const ffmpeg = spawnSync('ffmpeg', ['-version'], { encoding: 'utf8' });
   let sharp = true;
-  try { require.resolve('sharp'); } catch { sharp = false; }
-  console.log(`FFmpeg: ${ffmpeg.status === 0 ? 'âœ… available' : 'âŒ missing'}`);
-  console.log(`Sharp:   ${sharp ? 'âœ… available' : 'âŒ missing'}`);
+  try {
+    require.resolve('sharp');
+  } catch {
+    sharp = false;
+  }
+  console.log(`FFmpeg: ${ffmpeg.status === 0 ? '✅ available' : '❌ missing'}`);
+  console.log(`Sharp:   ${sharp ? '✅ available' : '❌ missing'}`);
   return ffmpeg.status === 0 && sharp;
 }
 
@@ -415,6 +461,7 @@ function runCheck() {
     auditCommands(),
     auditModules(),
     runDashboard(),
+    auditSourceText(),
     auditRuntimeImports(),
     auditModuleStandard(),
     inspectRuntime(),
@@ -445,6 +492,7 @@ function printHelp() {
   console.log('  standards         Check module completion standards');
   console.log('  guilds            List runtime guild configuration files');
   console.log('  media             Check FFmpeg and Sharp');
+  console.log('  source            Check UTF-8, legacy core imports and Windows paths');
 }
 
 const command = process.argv[2] || 'help';
@@ -460,6 +508,7 @@ const commands = {
   standards: auditModuleStandard,
   guilds: inspectGuilds,
   media: checkMediaDependencies,
+  source: auditSourceText,
 };
 
 if (!commands[command]) {
@@ -470,4 +519,3 @@ if (!commands[command]) {
 
 const result = commands[command]();
 if (result === false) process.exit(1);
-
