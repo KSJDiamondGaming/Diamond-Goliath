@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 // src/modules/verification/verificationManager.js
 
@@ -11,8 +11,8 @@ const {
 } = require('discord.js');
 
 const verificationStore = require('./verificationStore');
-const guildManager = require('../../../core/guild/guildManager');
-const testDevOverride = require('../../../core/dev/testDevOverrideManager');
+const guildManager = require('../../core/guild/guildManager');
+const testDevOverride = require('../../core/dev/testDevOverrideManager');
 
 const CUSTOM_ID_PREFIX = 'verify';
 const SCREENING_FEATURE = 'MEMBER_VERIFICATION_GATE_ENABLED';
@@ -57,7 +57,7 @@ function canBotManageMember(member) {
   const botMember = getBotMember(member?.guild);
   if (!botMember || !member || member.id === botMember.id) return false;
   if (isDevOwnerTestMember(member)) return true;
-  const { isBotOwner } = require('../../../core/security/securityCore');
+  const { isBotOwner } = require('../../core/security/securityCore');
   return !isBotOwner(member.id);
 }
 
