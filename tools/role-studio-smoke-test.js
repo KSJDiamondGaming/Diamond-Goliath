@@ -6,28 +6,39 @@ const path = require('node:path');
 
 const root = path.resolve(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
+const load = (file) => require(path.join(root, file));
 
 console.log('\nRole Studio Smoke Test');
 console.log('======================');
 
 const entry = read('src/modules/roleStudio/reactionRoles/reactionRolesPanel.js');
-const hub = read('src/modules/roleStudio/roleStudioPanel.js');
+const hubSource = read('src/modules/roleStudio/roleStudioPanel.js');
+const hub = load('src/modules/roleStudio/roleStudioPanel.js');
 const navigation = read('src/modules/roleStudio/roleStudioNavigationPatch.js');
-const temporary = require(path.join(root, 'src/modules/roleStudio/temporaryRoles/temporaryRoles'));
+const temporary = load('src/modules/roleStudio/temporaryRoles/temporaryRoles.js');
 const temporaryPanel = read('src/modules/roleStudio/temporaryRoles/temporaryRolesPanel.js');
 const temporaryStartup = read('src/events/client/temporaryRolesStartup.js');
-const timedRoles = require(path.join(root, 'src/modules/roleStudio/timedRoles/timedRoles'));
+const timedRoles = load('src/modules/roleStudio/timedRoles/timedRoles.js');
 const timedPanel = read('src/modules/roleStudio/timedRoles/timedRolesPanel.js');
 const timedStartup = read('src/events/client/timedRolesStartup.js');
 const timedMemberJoin = read('src/events/timedroles/timedRolesMemberJoin.js');
 
-assert.ok(entry.includes('roleStudio.buildRoleStudioPanel'));
-assert.ok(entry.includes('admin:reactionRoles:open'));
-assert.ok(entry.includes('handleTemporaryRolesInteraction'));
-assert.ok(hub.includes('👥 Auto Roles'));
-assert.ok(hub.includes('😊 Reaction Roles'));
-assert.ok(hub.includes('⏳ Timed Roles'));
-assert.ok(hub.includes('⚡ Temporary Roles'));
+assert.equal(typeof hub.buildRoleStudioPanel, 'function');
+assert.equal(typeof hub.buildRoleAnalyticsPanel, 'function');
+assert.equal(typeof hub.buildRoleHealthPanel, 'function');
+
+for (const route of [
+  'admin:autoRoles',
+  'admin:reactionRoles:open',
+  'admin:timedRoles',
+  'admin:reactionRoles:temporary',
+  'admin:reactionRoles:analytics',
+  'admin:reactionRoles:health',
+]) {
+  assert.ok(hubSource.includes(route), `Role Studio is missing route ${route}`);
+}
+
+assert.ok(entry.includes('handleReactionRolesAdminInteraction'));
 assert.ok(navigation.includes("route === 'admin:autoRoles'"));
 assert.ok(navigation.includes("moduleEntry[1] = '🛡️ Role Studio'"));
 
@@ -53,11 +64,8 @@ assert.ok(timedPanel.includes('Simulate'));
 assert.ok(timedStartup.includes('timedRoles.startup(client)'));
 assert.ok(timedMemberJoin.includes('applyProgressionToMember'));
 
-console.log('✅ Role Studio is the parent role hub.');
-console.log('✅ Auto Roles and Reaction Roles remain connected.');
-console.log('✅ Timed Roles supports any role, any duration and unlimited milestones.');
-console.log('✅ Tenure progression supports keep-all and highest-only modes.');
-console.log('✅ Member preview, simulation and promotion announcements are wired.');
-console.log('✅ Scheduled and member-join tenure processing are connected.');
-console.log('✅ Temporary Roles assignment, removal and expiry scanning are present.');
+console.log('✅ Role Studio exports and routes are wired.');
+console.log('✅ Auto, reaction, timed and temporary role modules are connected.');
+console.log('✅ Timed-role progression, simulation and startup processing are present.');
+console.log('✅ Temporary-role assignment, removal and expiry scanning are present.');
 console.log('ℹ️ Run the full doctor and a live development-guild acceptance test after pulling.');
