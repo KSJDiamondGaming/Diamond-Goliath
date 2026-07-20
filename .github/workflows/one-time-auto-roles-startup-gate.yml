@@ -1,0 +1,49 @@
+name: One-time Auto Roles startup gate hardening
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - .github/workflows/one-time-auto-roles-startup-gate.yml
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+
+      - name: Gate Auto Roles startup through central registry
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/modules/roleStudio/autoRoles/autoRoles.js')
+          text = path.read_text(encoding='utf-8-sig')
+
+          old = """      const section = getAutoRolesSection(guild.id);\n      const health = await buildHealthReport(guild);\n      const reapply = section.enabled !== false && section.settings?.reapplyOnStartup === true\n        ? await reapplyToGuild(guild, { reason: 'Goliath Auto Roles startup recovery' })\n        : null;\n      results.push({\n        guildId: guild.id,\n        guildName: guild.name,\n        enabled: section.enabled !== false,\n"""
+
+          new = """      const section = getAutoRolesSection(guild.id);\n      const enabled = isAutoRolesEnabled(guild.id);\n      const health = await buildHealthReport(guild);\n      const reapply = enabled && section.settings?.reapplyOnStartup === true\n        ? await reapplyToGuild(guild, { reason: 'Goliath Auto Roles startup recovery' })\n        : null;\n      results.push({\n        guildId: guild.id,\n        guildName: guild.name,\n        enabled,\n"""
+
+          if old not in text:
+              raise SystemExit('Expected Auto Roles startup block not found; no changes made.')
+
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          Path('.github/workflows/one-time-auto-roles-startup-gate.yml').unlink()
+          PY
+
+      - name: Commit hardened startup gate
+        shell: bash
+        run: |
+          git config user.name "Goliath Cleanup"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "Harden Auto Roles startup module gate"
+          git push origin HEAD:dev
