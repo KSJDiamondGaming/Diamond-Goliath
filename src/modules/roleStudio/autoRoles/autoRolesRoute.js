@@ -53,7 +53,7 @@ async function buildOverview(req, guildId) {
     guildId,
     config,
     overview: {
-      enabled: config.enabled !== false,
+      enabled: autoroles.isAutoRolesEnabled(guildId),
       joinRoleCount: config.joinRoles.length,
       botRoleCount: config.botRoles.length,
       applyToBots: config.settings.applyToBots === true,
