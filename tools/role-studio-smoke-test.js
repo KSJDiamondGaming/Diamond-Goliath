@@ -13,6 +13,7 @@ console.log('======================');
 
 const entry = read('src/modules/roleStudio/reactionRoles/reactionRolesPanel.js');
 const legacyEntry = read('src/modules/reactionroles/reactionRolesPanel.js');
+const compatibilityShim = read('src/modules/roleStudio/roleStudioNavigationPatch.js');
 const hubSource = read('src/modules/roleStudio/roleStudioPanel.js');
 const hub = load('src/modules/roleStudio/roleStudioPanel.js');
 const modulePanelSource = read('src/core/admin/functions/moduleAdminPanels.js');
@@ -104,12 +105,16 @@ assert.ok(runtimePatchSource.includes("button('admin:home', '🏠 Admin Home')")
 assert.ok(runtimePatchSource.includes('installNavigationPatches'));
 
 assert.ok(entry.includes('handleReactionRolesAdminInteraction'));
+assert.ok(entry.includes("require('../roleStudioNavigationPatch')"));
 assert.ok(legacyEntry.includes('buildFallbackHub'));
 assert.ok(legacyEntry.includes('loadReactionRolesPanel'));
 assert.equal(legacyEntry.includes('roleStudioNavigationPatch'), false);
 assert.ok(modulePanelSource.includes('// Canonical Admin Hub module menu.'));
 assert.ok(modulePanelSource.includes("['admin:reactionRoles', '🎭 Role Studio'"));
-assert.equal(fs.existsSync(path.join(root, 'src/modules/roleStudio/roleStudioNavigationPatch.js')), false);
+assert.ok(compatibilityShim.includes('intentionally'));
+assert.equal(compatibilityShim.includes('SERVER_MODULES'), false);
+assert.equal(compatibilityShim.includes('splice('), false);
+assert.deepEqual(load('src/modules/roleStudio/roleStudioNavigationPatch.js'), {});
 
 assert.equal(typeof autoRoles.applyAutoRoles, 'function');
 assert.equal(typeof autoRoles.startupAutoRoles, 'function');
@@ -166,5 +171,6 @@ console.log('✅ All 19 top-level Admin modules are present alphabetically.');
 console.log('✅ Role systems are grouped only under Role Studio.');
 console.log('✅ Two-page module navigation includes Back, paging and Admin Home.');
 console.log('✅ Shared Admin module navigation patch is installed.');
+console.log('✅ Legacy Role Studio navigation import resolves to a no-op shim.');
 console.log('✅ Auto, reaction, timed and temporary role modules are connected.');
 console.log('ℹ️ Run the full doctor and a live development-guild acceptance test after pulling.');
