@@ -144,7 +144,7 @@ function buildModuleListPanel(page = 0, who = 'Unknown User') {
 function standardizeModuleChrome(payload, interaction, explicitModuleKey = null) {
   if (!payload || !Array.isArray(payload.components)) return payload;
   const customId = String(interaction?.customId || '');
-  if (customId === 'admin:home' || customId === 'admin:modules' || customId.startsWith('admin:modules:page:')) return payload;
+  if (customId.startsWith('admin:config:') || customId === 'admin:home' || customId === 'admin:modules' || customId.startsWith('admin:modules:page:')) return payload;
   const moduleKey = explicitModuleKey || moduleKeyFromCustomId(customId);
   if (!moduleKey) return payload;
 
