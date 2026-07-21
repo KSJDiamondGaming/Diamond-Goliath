@@ -11,12 +11,11 @@ const SOURCE_EXTENSIONS = ['.js', '.jsx', '.mjs', '.cjs'];
 const TEXT_EXTENSIONS = [...SOURCE_EXTENSIONS, '.json', '.md', '.txt', '.yml', '.yaml'];
 const IMPORT_TIMEOUT_MS = Number(process.env.GOLIATH_IMPORT_AUDIT_TIMEOUT_MS || 15000);
 const SLOW_IMPORT_MS = Number(process.env.GOLIATH_IMPORT_AUDIT_SLOW_MS || 3000);
-const MOJIBAKE_MARKERS = [0x00e2, 0x00f0, 0x00ef, 0x00c3, 0xfffd].map((code) => String.fromCharCode(code));
+const MOJIBAKE_MARKERS = [0x00e2, 0x00f0, 0x00ef, 0x00c3, 0xfffd].map(String.fromCharCode);
 
 const TOOL_FILES = Object.freeze({
   invitesDoctor: 'invites-doctor.js',
   invitesTest: 'invites-smoke-test.js',
-  goodbye: 'goodbye-doctor.js',
   reactionDoctor: 'reaction-roles-doctor.js',
   reactionTest: 'reaction-roles-smoke-test.js',
   roleStudioTest: 'role-studio-smoke-test.js',
@@ -25,9 +24,9 @@ const TOOL_FILES = Object.freeze({
 function absolute(file) { return path.join(root, file); }
 function rel(file) { return path.relative(root, file).replace(/\\/g, '/'); }
 function read(file) { return fs.readFileSync(file, 'utf8'); }
+function exists(file) { return fs.existsSync(absolute(file)); }
 function normalise(value) { return path.normalize(value).replace(/\\/g, '/'); }
 function section(title) { console.log(`\n${title}`); console.log('='.repeat(title.length)); }
-function exists(relativePath) { return fs.existsSync(absolute(relativePath)); }
 
 function walk(dir, extensions = ['.js']) {
   if (!fs.existsSync(dir)) return [];
@@ -58,13 +57,10 @@ function extractRelativeImports(source) {
 
 function resolveImport(fromFile, request) {
   const base = path.resolve(path.dirname(fromFile), request);
-  const candidates = [];
-  if (SOURCE_EXTENSIONS.includes(path.extname(base))) candidates.push(base);
-  else {
-    for (const extension of SOURCE_EXTENSIONS) candidates.push(base + extension);
-    for (const extension of SOURCE_EXTENSIONS) candidates.push(path.join(base, `index${extension}`));
-  }
-  return candidates.map(normalise).find((candidate) => fs.existsSync(candidate)) || null;
+  const candidates = SOURCE_EXTENSIONS.includes(path.extname(base))
+    ? [base]
+    : SOURCE_EXTENSIONS.flatMap((extension) => [base + extension, path.join(base, `index${extension}`)]);
+  return candidates.map(normalise).find(fs.existsSync) || null;
 }
 
 function checkProjectShape() {
@@ -190,10 +186,9 @@ function collectRuntimeTargets() {
 
 function auditRuntimeImports() {
   section('Runtime import audit');
-  const files = collectRuntimeTargets();
   const errors = [];
   const code = "const file=process.argv[1];try{require(file);process.exit(0)}catch(error){console.error(error?.stack||error?.message||error);process.exit(1)}";
-  for (const file of files) {
+  for (const file of collectRuntimeTargets()) {
     process.stdout.write(`Checking ${rel(file)}... `);
     const startedAt = Date.now();
     const result = spawnSync(process.execPath, ['-e', code, file], {
@@ -238,10 +233,10 @@ function auditCanonicalModuleManifest() {
   const { moduleManifest } = require('../src/core/modules/moduleManifest');
   const validMaturities = new Set(Object.values(MODULE_MATURITY));
   const errors = [];
-  const canonicalFiles = Object.freeze({
+  const canonicalFiles = {
     schedule: ['src/modules/schedule/schedule.js', 'src/modules/schedule/scheduleRoute.js', 'src/events/schedule/scheduleReady.js', 'docs/modules/schedule.md'],
     social: ['src/modules/social/social.js', 'src/modules/social/socialPanel.js', 'src/modules/social/socialCreatorPanel.js', 'src/modules/social/socialRoute.js', 'src/modules/social/socialHealth.js', 'src/modules/social/socialDiagnostics.js', 'src/dashboard/js/pages/modules/Social.jsx', 'docs/modules/social-alerts.md'],
-  });
+  };
   const definitions = Object.values(moduleManifest).sort((a, b) => a.name.localeCompare(b.name));
   const active = definitions.filter((definition) => definition.maturity === MODULE_MATURITY.IN_PROGRESS);
   if (active.length !== 1) errors.push(`Exactly one module must be in progress; found ${active.length}: ${active.map((item) => item.name).join(', ') || 'none'}.`);
@@ -270,36 +265,8 @@ function auditCanonicalModuleManifest() {
   return errors.length === 0;
 }
 
-function auditSocialStudio() {
-  section('Social Studio doctor');
-  const checks = [
-    ['src/modules/social/social.js', ['startup', 'diagnostics', 'delivery', 'creators', 'simulator', 'queue', 'history']],
-    ['src/modules/social/socialPanel.js', ['buildSocialAdminPanel', 'handleSocialAdminInteraction']],
-    ['src/modules/social/socialCreatorPanel.js', ['buildCreatorHubPanel', 'handleSocialCreatorInteraction']],
-    ['src/modules/social/socialRoute.js', []], ['src/modules/social/socialCreatorRoute.js', []],
-    ['src/modules/social/socialHealth.js', ['buildHealth', 'repair', 'exportConfig', 'reset']],
-    ['src/modules/social/socialDiagnostics.js', ['buildDiagnostics', 'providerDiagnostics', 'creatorDiagnostics']],
-    ['src/modules/social/socialDelivery.js', ['buildEmbed', 'deliver']],
-    ['src/modules/social/socialCreators.js', ['list', 'save', 'linkAccount', 'unlinkAccount', 'rebuild']],
-    ['src/modules/social/socialSimulator.js', ['build', 'simulate']],
-    ['src/modules/social/socialScheduler.js', ['runSocialCheck', 'startSocialScheduler', 'handleProviderResult']],
-    ['src/modules/social/socialQueue.js', ['list', 'processGuild', 'start']],
-    ['src/modules/social/socialHistory.js', ['list', 'record', 'summary']],
-    ['src/modules/social/providers/twitchProvider.js', ['checkAccount']],
-    ['src/modules/social/providers/youtubeProvider.js', ['checkAccount', 'resolveChannel']],
-    ['src/modules/social/providers/kickProvider.js', ['checkAccount', 'normalizeSlug', 'isConfigured']],
-    ['src/modules/social/providers/xProvider.js', ['checkAccount', 'normalizeUsername', 'isConfigured']],
-    ['src/commands/admin/socialhub.js', ['data', 'execute']],
-    ['src/dashboard/js/pages/modules/Social.jsx', []], ['docs/modules/social-alerts.md', []],
-  ];
-  const textChecks = [
-    ['src/modules/social/socialRoute.js', ['socialCreatorRoute', "router.use('/:guildId/creator-hub'"]],
-    ['src/events/interactions/interactionCreate.js', ['socialPanel', 'socialCreatorPanel']],
-    ['src/modules/social/providerRegistry.js', ['AUTHORIZATION_REQUIRED', 'zeroCredentialSupported', 'twitchProvider', 'youtubeProvider', 'kickProvider', 'xProvider']],
-    ['src/core/modules/moduleManifest.js', ["name: 'Social Studio'", 'maturity: MODULE_MATURITY.COMPLETE']],
-    ['src/dashboard/js/shared/moduleRegistry.js', ["name: 'Social Studio'", 'status: MODULE_STATUSES.live']],
-    ['docs/modules/social-alerts.md', ['Completion state', 'Social Studio v1 is complete', 'authorization_required']],
-  ];
+function auditExportContract(title, checks, textChecks = []) {
+  section(title);
   const errors = [];
   for (const [relativePath, exports] of checks) {
     const fullPath = absolute(relativePath);
@@ -331,14 +298,66 @@ function auditSocialStudio() {
     const source = read(absolute(relativePath));
     for (const required of requiredValues) if (!source.includes(required)) errors.push(`${relativePath}: missing ${required}`);
   }
-  if (errors.length) {
-    console.error(`\nSocial Studio doctor failed (${errors.length} issue${errors.length === 1 ? '' : 's'}):`);
-    for (const error of errors) console.error(` - ${error}`);
-  } else {
+  for (const error of errors) console.error(` - ${error}`);
+  return errors;
+}
+
+function auditSocialStudio() {
+  const errors = auditExportContract('Social Studio doctor', [
+    ['src/modules/social/social.js', ['startup', 'diagnostics', 'delivery', 'creators', 'simulator', 'queue', 'history']],
+    ['src/modules/social/socialPanel.js', ['buildSocialAdminPanel', 'handleSocialAdminInteraction']],
+    ['src/modules/social/socialCreatorPanel.js', ['buildCreatorHubPanel', 'handleSocialCreatorInteraction']],
+    ['src/modules/social/socialRoute.js', []], ['src/modules/social/socialCreatorRoute.js', []],
+    ['src/modules/social/socialHealth.js', ['buildHealth', 'repair', 'exportConfig', 'reset']],
+    ['src/modules/social/socialDiagnostics.js', ['buildDiagnostics', 'providerDiagnostics', 'creatorDiagnostics']],
+    ['src/modules/social/socialDelivery.js', ['buildEmbed', 'deliver']],
+    ['src/modules/social/socialCreators.js', ['list', 'save', 'linkAccount', 'unlinkAccount', 'rebuild']],
+    ['src/modules/social/socialSimulator.js', ['build', 'simulate']],
+    ['src/modules/social/socialScheduler.js', ['runSocialCheck', 'startSocialScheduler', 'handleProviderResult']],
+    ['src/modules/social/socialQueue.js', ['list', 'processGuild', 'start']],
+    ['src/modules/social/socialHistory.js', ['list', 'record', 'summary']],
+    ['src/modules/social/providers/twitchProvider.js', ['checkAccount']],
+    ['src/modules/social/providers/youtubeProvider.js', ['checkAccount', 'resolveChannel']],
+    ['src/modules/social/providers/kickProvider.js', ['checkAccount', 'normalizeSlug', 'isConfigured']],
+    ['src/modules/social/providers/xProvider.js', ['checkAccount', 'normalizeUsername', 'isConfigured']],
+    ['src/commands/admin/socialhub.js', ['data', 'execute']],
+    ['src/dashboard/js/pages/modules/Social.jsx', []], ['docs/modules/social-alerts.md', []],
+  ], [
+    ['src/modules/social/socialRoute.js', ['socialCreatorRoute', "router.use('/:guildId/creator-hub'"]],
+    ['src/events/interactions/interactionCreate.js', ['socialPanel', 'socialCreatorPanel']],
+    ['src/modules/social/providerRegistry.js', ['AUTHORIZATION_REQUIRED', 'zeroCredentialSupported', 'twitchProvider', 'youtubeProvider', 'kickProvider', 'xProvider']],
+    ['src/core/modules/moduleManifest.js', ["name: 'Social Studio'", 'maturity: MODULE_MATURITY.COMPLETE']],
+    ['src/dashboard/js/shared/moduleRegistry.js', ["name: 'Social Studio'", 'status: MODULE_STATUSES.live']],
+    ['docs/modules/social-alerts.md', ['Completion state', 'Social Studio v1 is complete', 'authorization_required']],
+  ]);
+  if (!errors.length) {
     console.log('\n✅ Social Studio doctor passed.');
     console.log('✅ Supported production providers: Twitch, YouTube, Kick, X.');
     console.log('✅ TikTok and Instagram are intentionally excluded from v1 zero-credential monitoring.');
-  }
+  } else console.error(`\nSocial Studio doctor failed (${errors.length} issue${errors.length === 1 ? '' : 's'}).`);
+  return errors.length === 0;
+}
+
+function auditGoodbye() {
+  const errors = auditExportContract('Goodbye doctor', [
+    ['src/modules/goodbye/goodbye.js', []],
+    ['src/modules/goodbye/departureTemplateSender.js', []],
+    ['src/modules/goodbye/goodbyeDepartureDm.js', ['getConfig', 'updateConfig', 'resetConfig', 'buildDmEmbed', 'sendDepartureDm']],
+    ['src/modules/goodbye/goodbyeDmPanel.js', []],
+    ['src/modules/goodbye/goodbyePanel.js', []],
+    ['src/modules/goodbye/goodbyeRoute.js', []],
+    ['src/events/members/memberJoinLeave.js', []],
+    ['src/dashboard/js/pages/modules/Goodbye.jsx', []],
+    ['docs/modules/goodbye.md', []],
+  ], [
+    ['src/events/members/memberJoinLeave.js', ['goodbyeDepartureDm.sendDepartureDm(member, removal)', 'departureTemplateSender.sendDeparture(member, removal)']],
+    ['src/modules/goodbye/goodbyeDepartureDm.js', ['left:', 'kicked:', 'banned:', 'pruned:', 'YOUR ACCOUNT', 'YOUR TIME HERE', 'DEPARTURE']],
+    ['src/modules/goodbye/goodbyePanel.js', ['admin:goodbye:dm']],
+    ['src/modules/goodbye/goodbyeDmPanel.js', ['Send Test DM']],
+    ['src/modules/goodbye/goodbyeRoute.js', ['/dm-config', '/dm-test', '/dm-reset']],
+  ]);
+  if (!errors.length) console.log('\n✅ Goodbye staff-log and departure-DM audit passed.');
+  else console.error(`\nGoodbye doctor failed (${errors.length} issue${errors.length === 1 ? '' : 's'}).`);
   return errors.length === 0;
 }
 
@@ -386,22 +405,24 @@ function runDashboard() { return [auditDashboardFiles(), auditDashboardRoutes()]
 function runModules() { return [auditModuleStandard(), auditCanonicalModuleManifest()].every(Boolean); }
 function runCoreCheck() { return [checkProjectShape(), auditCommands(), runDashboard(), auditSourceText(), auditRuntimeImports(), runModules(), inspectRuntime()].every(Boolean); }
 
-const doctorSuites = Object.freeze({
+const externalSuites = Object.freeze({
   invites: [TOOL_FILES.invitesDoctor, TOOL_FILES.invitesTest],
-  goodbye: [TOOL_FILES.goodbye],
   reaction: [TOOL_FILES.reactionDoctor, TOOL_FILES.reactionTest],
   reactionroles: [TOOL_FILES.reactionDoctor, TOOL_FILES.reactionTest],
   'reaction-roles': [TOOL_FILES.reactionDoctor, TOOL_FILES.reactionTest],
-  'role-studio': [TOOL_FILES.roleStudioTest], rolestudio: [TOOL_FILES.roleStudioTest],
+  'role-studio': [TOOL_FILES.roleStudioTest],
+  rolestudio: [TOOL_FILES.roleStudioTest],
 });
-const allModuleTools = [...new Set(Object.values(doctorSuites).flat())];
+const allExternalTools = [...new Set(Object.values(externalSuites).flat())];
 
 function runDoctor(target) {
   if (target === 'modules') return runModules();
   if (target === 'social') return auditSocialStudio();
-  if (target) return doctorSuites[target] ? runTools(doctorSuites[target]) : false;
-  return runCoreCheck() && auditSocialStudio() && runTools(allModuleTools);
+  if (target === 'goodbye') return auditGoodbye();
+  if (target) return externalSuites[target] ? runTools(externalSuites[target]) : false;
+  return runCoreCheck() && auditSocialStudio() && auditGoodbye() && runTools(allExternalTools);
 }
+
 function runAudit() { return runDoctor() && inspectGuilds(); }
 
 function printHelp() {
@@ -413,6 +434,7 @@ function printHelp() {
   console.log('  commands          Check slash command files');
   console.log('  modules           Check module standards and manifest');
   console.log('  social            Check Social Studio');
+  console.log('  goodbye           Check Goodbye');
   console.log('  dashboard         Check dashboard imports and routes');
   console.log('  runtime           Inspect runtime folders');
   console.log('  imports           Check runtime imports');
@@ -424,11 +446,23 @@ function printHelp() {
 const command = String(process.argv[2] || 'help').toLowerCase();
 const target = String(process.argv[3] || '').toLowerCase();
 const commands = {
-  help: printHelp, doctor: () => runDoctor(target), check: () => runDoctor(target), audit: runAudit,
-  commands: auditCommands, modules: runModules, standards: runModules, social: auditSocialStudio,
-  dashboard: runDashboard, runtime: inspectRuntime, imports: auditRuntimeImports, guilds: inspectGuilds,
-  media: checkMediaDependencies, source: auditSourceText,
+  help: printHelp,
+  doctor: () => runDoctor(target),
+  check: () => runDoctor(target),
+  audit: runAudit,
+  commands: auditCommands,
+  modules: runModules,
+  standards: runModules,
+  social: auditSocialStudio,
+  goodbye: auditGoodbye,
+  dashboard: runDashboard,
+  runtime: inspectRuntime,
+  imports: auditRuntimeImports,
+  guilds: inspectGuilds,
+  media: checkMediaDependencies,
+  source: auditSourceText,
 };
+
 if (!commands[command]) {
   console.error(`Unknown command: ${command}`);
   printHelp();
