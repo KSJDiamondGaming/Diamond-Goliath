@@ -64,35 +64,31 @@ const MODULE_META = {
 function button(customId, label, style = ButtonStyle.Secondary) {
   return new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style);
 }
-
 function row(...components) {
   return new ActionRowBuilder().addComponents(...components.filter(Boolean));
 }
-
 function chunk(items, size) {
   const result = [];
   for (let index = 0; index < items.length; index += size) result.push(items.slice(index, index + size));
   return result;
 }
-
 function componentData(component) {
   return typeof component?.toJSON === 'function' ? component.toJSON() : component;
 }
-
 function componentId(component) {
   const data = componentData(component);
   return data?.custom_id || data?.customId || null;
 }
-
+function componentLabel(component) {
+  return String(componentData(component)?.label || '');
+}
 function componentType(component) {
   return componentData(component)?.type;
 }
-
 function getComponents(actionRow) {
   const data = componentData(actionRow);
   return Array.isArray(data?.components) ? data.components : [];
 }
-
 function memberDisplayName(interaction) {
   return interaction?.member?.displayName || interaction?.user?.displayName || interaction?.user?.username || 'Unknown User';
 }
@@ -114,12 +110,127 @@ function moduleKeyFromCustomId(customId = '') {
   return null;
 }
 
-function isStandardChromeId(id) {
-  return id === 'admin:modules' || id === 'admin:modules:back' || id === 'admin:home' || /^admin:config:/.test(id);
+function isGlobalNavigationId(id) {
+  return id === 'admin:modules' || id === 'admin:modules:back' || id === 'admin:home' || /^admin:config:/.test(String(id || ''));
+}
+function isMaintenanceId(id) {
+  return /(?:^|:)(settings|health|repair|export|restore|reset)$/.test(String(id || ''));
+}
+function isBackComponent(component) {
+  const id = componentId(component);
+  const label = componentLabel(component);
+  return !isGlobalNavigationId(id) && (/back/i.test(label) || /(?:^|:)(back|cancel)$/.test(String(id || '')));
 }
 
-function isLegacyMaintenanceId(id) {
-  return /(?:^|:)(settings|health|repair|export|restore|reset)$/.test(String(id || ''));
+function isRootResponse(customId, moduleKey) {
+  const id = String(customId || '');
+  const meta = MODULE_META[moduleKey];
+  if (meta && id === meta.route) return true;
+
+  if (/^admin:module:[a-zA-Z0-9_-]+:(?:enable|disable|toggle:|channel:|role:|option:|configpage:)/.test(id)) return true;
+
+  if (moduleKey === 'embed') {
+    return [
+      'admin:embed',
+      'embed:editor',
+      'embed:back',
+      'embed:template',
+      'embed:channel',
+      'embed:color',
+      'embed:panel-select',
+      'embed:preset-select',
+      'embed:use',
+    ].includes(id);
+  }
+
+  return false;
+}
+
+function parentRouteFor(customId, moduleKey) {
+  const id = String(customId || '');
+  const root = MODULE_META[moduleKey]?.route || `admin:${moduleKey}`;
+
+  if (moduleKey === 'embed') {
+    if (id === 'embed:builder' || id === 'embed:presets' || id === 'embed:panels') return 'admin:embed';
+    if (id === 'embed:helpers' || id === 'embed:fields' || id === 'embed:buttons') return 'embed:builder';
+    if (/^embed:(?:field-|button-)/.test(id)) return id.startsWith('embed:field-') ? 'embed:fields' : 'embed:buttons';
+    return 'embed:builder';
+  }
+
+  if (moduleKey === 'reactionRoles' && id !== 'admin:reactionRoles') return 'admin:reactionRoles';
+  if (moduleKey === 'temporaryRoles') return 'admin:reactionRoles';
+  return root;
+}
+
+function rebuildButton(component, label = null) {
+  const rebuilt = ButtonBuilder.from(component);
+  if (label) rebuilt.setLabel(label);
+  return rebuilt;
+}
+
+function appendNavigation(rows, navigationRow) {
+  if (rows.length < 5) return [...rows, navigationRow];
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    const components = getComponents(rows[index]);
+    if (!components.length || !components.every((component) => componentType(component) === 2)) continue;
+    const navComponents = getComponents(navigationRow);
+    if (components.length + navComponents.length <= 5) {
+      const merged = row(
+        ...components.map((component) => rebuildButton(component)),
+        ...navComponents.map((component) => rebuildButton(component)),
+      );
+      const output = [...rows];
+      output[index] = merged;
+      return output;
+    }
+  }
+  return [...rows.slice(0, 4), navigationRow];
+}
+
+function standardizeModuleChrome(payload, interaction, explicitModuleKey = null) {
+  if (!payload || !Array.isArray(payload.components)) return payload;
+  const customId = String(interaction?.customId || '');
+  if (customId.startsWith('admin:config:') || customId === 'admin:home' || customId === 'admin:modules' || customId.startsWith('admin:modules:page:')) return payload;
+
+  const moduleKey = explicitModuleKey || moduleKeyFromCustomId(customId);
+  if (!moduleKey) return payload;
+  const rootResponse = isRootResponse(customId, moduleKey);
+  const cleanedRows = [];
+  let contextualBack = null;
+
+  for (const actionRow of payload.components) {
+    const components = getComponents(actionRow);
+    if (!components.length) continue;
+    const isButtonRow = components.every((component) => componentType(component) === 2);
+    if (!isButtonRow) {
+      cleanedRows.push(actionRow);
+      continue;
+    }
+
+    const kept = [];
+    for (const component of components) {
+      const id = componentId(component);
+      if (isGlobalNavigationId(id) || isMaintenanceId(id)) continue;
+      if (isBackComponent(component)) {
+        if (!rootResponse && !contextualBack) contextualBack = rebuildButton(component, '⬅️ Back');
+        continue;
+      }
+      kept.push(rebuildButton(component));
+    }
+    if (kept.length) cleanedRows.push(row(...kept));
+  }
+
+  if (rootResponse) {
+    const chrome = row(
+      button('admin:modules', '⬅️ Modules'),
+      button('admin:home', '🏠 Admin Home'),
+      button(`admin:config:${moduleKey}`, '⚙️ Config', ButtonStyle.Primary),
+    );
+    return { ...payload, components: appendNavigation(cleanedRows, chrome).slice(0, 5) };
+  }
+
+  const back = contextualBack || button(parentRouteFor(customId, moduleKey), '⬅️ Back');
+  return { ...payload, components: appendNavigation(cleanedRows, row(back)).slice(0, 5) };
 }
 
 function buildModuleListPanel(page = 0, who = 'Unknown User') {
@@ -141,72 +252,22 @@ function buildModuleListPanel(page = 0, who = 'Unknown User') {
   return { embeds: [embed], components: [...moduleRows, row(...navigation)] };
 }
 
-function standardizeModuleChrome(payload, interaction, explicitModuleKey = null) {
-  if (!payload || !Array.isArray(payload.components)) return payload;
-  const customId = String(interaction?.customId || '');
-  if (customId.startsWith('admin:config:') || customId === 'admin:home' || customId === 'admin:modules' || customId.startsWith('admin:modules:page:')) return payload;
-  const moduleKey = explicitModuleKey || moduleKeyFromCustomId(customId);
-  if (!moduleKey) return payload;
-
-  const cleanedRows = [];
-  for (const actionRow of payload.components) {
-    const components = getComponents(actionRow);
-    if (!components.length) continue;
-    const isButtonRow = components.every((component) => componentType(component) === 2);
-    if (!isButtonRow) {
-      cleanedRows.push(actionRow);
-      continue;
-    }
-    const kept = components.filter((component) => {
-      const id = componentId(component);
-      return !isStandardChromeId(id) && !isLegacyMaintenanceId(id);
-    });
-    if (kept.length) cleanedRows.push(row(...kept.map((component) => ButtonBuilder.from(component))));
-  }
-
-  const chrome = row(
-    button('admin:modules', '⬅️ Modules'),
-    button('admin:home', '🏠 Admin Home'),
-    button(`admin:config:${moduleKey}`, '⚙️ Config', ButtonStyle.Primary),
-  );
-
-  if (cleanedRows.length < 5) cleanedRows.push(chrome);
-  else {
-    const last = cleanedRows[cleanedRows.length - 1];
-    const existing = getComponents(last);
-    if (existing.every((component) => componentType(component) === 2) && existing.length <= 2) {
-      cleanedRows[cleanedRows.length - 1] = row(
-        ...existing.map((component) => ButtonBuilder.from(component)),
-        ...getComponents(chrome).map((component) => ButtonBuilder.from(component)),
-      );
-    } else {
-      cleanedRows[cleanedRows.length - 1] = chrome;
-    }
-  }
-
-  return { ...payload, components: cleanedRows.slice(0, 5) };
-}
-
 function getRawModuleConfig(guildId, moduleKey) {
   const modules = guildManager.getGuildSection(guildId, 'modules', {});
   return modules?.[moduleKey];
 }
-
 function saveRawModuleConfig(guild, moduleKey, value) {
   guildManager.updateGuildSection(guild.id, 'modules', (modules = {}) => ({ ...modules, [moduleKey]: value }), {}, guild);
 }
-
 function defaultsFor(moduleAdminPanels, moduleKey) {
   return moduleAdminPanels?.MODULE_PANEL_REGISTRY?.[moduleKey]?.defaults || null;
 }
-
 function normalizedConfig(raw, defaults = null) {
   const base = defaults && typeof defaults === 'object' ? { ...defaults } : {};
   if (raw === false) return { ...base, enabled: false };
   if (!raw || raw === true || typeof raw !== 'object' || Array.isArray(raw)) return { ...base, enabled: true };
   return { ...base, ...raw, enabled: raw.enabled !== false };
 }
-
 function configHealth(raw) {
   const issues = [];
   if (raw === undefined) issues.push('No saved configuration exists yet.');
@@ -223,18 +284,17 @@ function buildConfigPanel(interaction, moduleKey, notice = null) {
   const raw = getRawModuleConfig(interaction.guildId, moduleKey);
   const issues = configHealth(raw);
   const status = issues.length ? `⚠️ ${issues.length} issue${issues.length === 1 ? '' : 's'} detected` : '✅ Healthy';
-  const description = [
-    `Maintenance and configuration tools for **${meta.title}**.`,
-    '',
-    `**Status:** ${status}`,
-    `**Saved Config:** ${raw === undefined ? 'Not created' : 'Available'}`,
-    notice ? `\n${notice}` : '',
-  ].filter(Boolean).join('\n');
   return {
     embeds: [new EmbedBuilder()
       .setColor(issues.length ? 0xfee75c : 0x57f287)
       .setTitle(`⚙️ ${meta.title} Config`)
-      .setDescription(description)
+      .setDescription([
+        `Maintenance and configuration tools for **${meta.title}**.`,
+        '',
+        `**Status:** ${status}`,
+        `**Saved Config:** ${raw === undefined ? 'Not created' : 'Available'}`,
+        notice ? `\n${notice}` : '',
+      ].filter(Boolean).join('\n'))
       .setFooter({ text: `Requested by ${memberDisplayName(interaction)}` })
       .setTimestamp()],
     components: [
@@ -245,10 +305,7 @@ function buildConfigPanel(interaction, moduleKey, notice = null) {
         button(`admin:config:${moduleKey}:export`, '📤 Export'),
         button(`admin:config:${moduleKey}:reset`, '♻️ Reset', ButtonStyle.Danger),
       ),
-      row(
-        button('admin:modules', '⬅️ Modules'),
-        button('admin:home', '🏠 Admin Home'),
-      ),
+      row(button(meta.route, '⬅️ Back')),
     ],
   };
 }
@@ -264,11 +321,7 @@ function buildHealthPanel(interaction, moduleKey) {
       .setDescription(issues.length ? issues.map((issue) => `• ${issue}`).join('\n') : '✅ Configuration structure is healthy and exportable.')
       .setFooter({ text: `Requested by ${memberDisplayName(interaction)}` })
       .setTimestamp()],
-    components: [row(
-      button(`admin:config:${moduleKey}`, '⬅️ Config'),
-      button('admin:modules', '🧩 Modules'),
-      button('admin:home', '🏠 Admin Home'),
-    )],
+    components: [row(button(`admin:config:${moduleKey}`, '⬅️ Back'))],
   };
 }
 
@@ -280,13 +333,10 @@ function buildResetConfirmation(interaction, moduleKey) {
       .setTitle(`♻️ Reset ${meta.title}?`)
       .setDescription('This replaces the saved module configuration with its defaults. This cannot be undone unless you export the configuration first.')
       .setFooter({ text: `Requested by ${memberDisplayName(interaction)}` })],
-    components: [
-      row(
-        button(`admin:config:${moduleKey}:reset:confirm`, 'Confirm Reset', ButtonStyle.Danger),
-        button(`admin:config:${moduleKey}`, 'Cancel'),
-      ),
-      row(button('admin:modules', '⬅️ Modules'), button('admin:home', '🏠 Admin Home')),
-    ],
+    components: [row(
+      button(`admin:config:${moduleKey}:reset:confirm`, 'Confirm Reset', ButtonStyle.Danger),
+      button(`admin:config:${moduleKey}`, '⬅️ Back'),
+    )],
   };
 }
 
@@ -416,6 +466,17 @@ function installNavigationPatches() {
     [safeRequire('../../../modules/goodbye/goodbyePanel'), 'handleGoodbyeInteraction', 'goodbye'],
   ];
   for (const [target, method, moduleKey] of targets) wrapHandler(target, method, moduleKey);
+
+  const embed = safeRequire('../../../modules/embed/embedPanel');
+  if (embed && typeof embed.buildEmbedPanel === 'function' && !embed.buildEmbedPanel.__goliathAdminNavigationWrapped) {
+    const original = embed.buildEmbedPanel;
+    const wrapped = function buildEmbedPanelWithNavigation(interactionOrGuild, ...args) {
+      const interaction = interactionOrGuild?.guild ? interactionOrGuild : { customId: 'admin:embed' };
+      return standardizeModuleChrome(original.call(this, interactionOrGuild, ...args), interaction, 'embed');
+    };
+    wrapped.__goliathAdminNavigationWrapped = true;
+    embed.buildEmbedPanel = wrapped;
+  }
 
   const invites = safeRequire('../../../modules/invites/invitesAdminPanel');
   if (invites && typeof invites.buildInviteStudioPayload === 'function' && !invites.buildInviteStudioPayload.__goliathAdminNavigationWrapped) {
