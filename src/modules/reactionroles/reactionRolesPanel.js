@@ -10,6 +10,15 @@ const {
   EmbedBuilder,
 } = require('discord.js');
 
+// interactionCreate.js loads this compatibility router before the generic
+// Admin module handler. Install the canonical module registry and shared
+// navigation wrappers at startup from this guaranteed load point.
+try {
+  require('../../core/admin/functions/adminModuleRuntimePatch').install();
+} catch (error) {
+  console.error('[AdminModules] Runtime patch failed to install:', error?.stack || error?.message || error);
+}
+
 function displayName(interaction) {
   return interaction.member?.displayName
     || interaction.user?.displayName
