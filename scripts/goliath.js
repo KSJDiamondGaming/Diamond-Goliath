@@ -13,11 +13,9 @@ const IMPORT_TIMEOUT_MS = Number(process.env.GOLIATH_IMPORT_AUDIT_TIMEOUT_MS || 
 const SLOW_IMPORT_MS = Number(process.env.GOLIATH_IMPORT_AUDIT_SLOW_MS || 3000);
 const MOJIBAKE_MARKERS = [0x00e2, 0x00f0, 0x00ef, 0x00c3, 0xfffd].map(String.fromCharCode);
 
-const TOOL_FILES = Object.freeze({
+const EXTERNAL_TOOLS = Object.freeze({
   invitesDoctor: 'invites-doctor.js',
   invitesTest: 'invites-smoke-test.js',
-  reactionDoctor: 'reaction-roles-doctor.js',
-  reactionTest: 'reaction-roles-smoke-test.js',
   roleStudioTest: 'role-studio-smoke-test.js',
 });
 
@@ -330,11 +328,8 @@ function auditSocialStudio() {
     ['src/dashboard/js/shared/moduleRegistry.js', ["name: 'Social Studio'", 'status: MODULE_STATUSES.live']],
     ['docs/modules/social-alerts.md', ['Completion state', 'Social Studio v1 is complete', 'authorization_required']],
   ]);
-  if (!errors.length) {
-    console.log('\n✅ Social Studio doctor passed.');
-    console.log('✅ Supported production providers: Twitch, YouTube, Kick, X.');
-    console.log('✅ TikTok and Instagram are intentionally excluded from v1 zero-credential monitoring.');
-  } else console.error(`\nSocial Studio doctor failed (${errors.length} issue${errors.length === 1 ? '' : 's'}).`);
+  if (!errors.length) console.log('\n✅ Social Studio doctor passed.');
+  else console.error(`\nSocial Studio doctor failed (${errors.length} issue${errors.length === 1 ? '' : 's'}).`);
   return errors.length === 0;
 }
 
@@ -358,6 +353,43 @@ function auditGoodbye() {
   ]);
   if (!errors.length) console.log('\n✅ Goodbye staff-log and departure-DM audit passed.');
   else console.error(`\nGoodbye doctor failed (${errors.length} issue${errors.length === 1 ? '' : 's'}).`);
+  return errors.length === 0;
+}
+
+function auditReactionRoles() {
+  const panelPath = 'src/modules/roleStudio/reactionRoles/reactionRolesPanel.js';
+  const errors = auditExportContract('Reaction Roles doctor', [
+    ['src/modules/roleStudio/reactionRoles/reactionRoles.js', []],
+    ['src/modules/roleStudio/reactionRoles/reactionRolesRoute.js', []],
+    ['src/modules/roleStudio/reactionRoles/reactionRoleMessageFinder.js', []],
+    [panelPath, []],
+    ['src/dashboard/js/pages/modules/ReactionRoles.jsx', []],
+    ['src/events/messages/messageReactionAdd.js', []],
+    ['src/events/messages/messageReactionRemove.js', []],
+  ], [
+    ['src/modules/roleStudio/reactionRoles/reactionRolesRoute.js', ["require('./reactionRoleMessageFinder')", "router.get('/:guildId/messages/search'", 'messageFinder.searchGuildMessages', "router.put('/:guildId/panels/:panelId'", "router.patch('/:guildId/panels/:panelId/enabled'"]],
+    ['src/modules/roleStudio/reactionRoles/reactionRoleMessageFinder.js', ['searchGuildMessages', 'serializeEmbed', 'authorAvatar', 'reactions', 'imageURL', 'embedsOnly', 'pinnedOnly', 'botsOnly', 'messageId']],
+    ['src/modules/roleStudio/reactionRoles/reactionRoles.js', ['attachExistingMessage', 'createFromTemplate', 'updatePanelMappings', 'setPanelEnabled', 'repairAll', 'handleReactionAdd', 'handleReactionRemove']],
+    [panelPath, ['buildReactionRolesAdminPanel:', 'handleReactionRolesAdminInteraction', 'module.exports =', 'admin:reactionRoles']],
+  ]);
+
+  if (exists(panelPath)) {
+    const panelSource = read(absolute(panelPath));
+    if (/require\(['"]\.\/reactionRolesPanelV[2-7]['"]\)/.test(panelSource)) errors.push(`${panelPath}: contains external version-chain import`);
+  }
+  for (let version = 2; version <= 7; version += 1) {
+    const legacy = `src/modules/roleStudio/reactionRoles/reactionRolesPanelV${version}.js`;
+    if (exists(legacy)) errors.push(`${legacy}: legacy versioned panel should not exist`);
+  }
+
+  for (const error of errors.slice(-7)) {
+    if (!error.startsWith('src/modules/roleStudio/reactionRoles/reactionRolesPanelV')) continue;
+    console.error(` - ${error}`);
+  }
+  if (!errors.length) {
+    console.log('\n✅ Reaction Roles production entry verified.');
+    console.log('ℹ️ Development-guild restart and live builder acceptance remain runtime checks.');
+  } else console.error(`\nReaction Roles doctor failed (${errors.length} issue${errors.length === 1 ? '' : 's'}).`);
   return errors.length === 0;
 }
 
@@ -406,12 +438,9 @@ function runModules() { return [auditModuleStandard(), auditCanonicalModuleManif
 function runCoreCheck() { return [checkProjectShape(), auditCommands(), runDashboard(), auditSourceText(), auditRuntimeImports(), runModules(), inspectRuntime()].every(Boolean); }
 
 const externalSuites = Object.freeze({
-  invites: [TOOL_FILES.invitesDoctor, TOOL_FILES.invitesTest],
-  reaction: [TOOL_FILES.reactionDoctor, TOOL_FILES.reactionTest],
-  reactionroles: [TOOL_FILES.reactionDoctor, TOOL_FILES.reactionTest],
-  'reaction-roles': [TOOL_FILES.reactionDoctor, TOOL_FILES.reactionTest],
-  'role-studio': [TOOL_FILES.roleStudioTest],
-  rolestudio: [TOOL_FILES.roleStudioTest],
+  invites: [EXTERNAL_TOOLS.invitesDoctor, EXTERNAL_TOOLS.invitesTest],
+  'role-studio': [EXTERNAL_TOOLS.roleStudioTest],
+  rolestudio: [EXTERNAL_TOOLS.roleStudioTest],
 });
 const allExternalTools = [...new Set(Object.values(externalSuites).flat())];
 
@@ -419,8 +448,9 @@ function runDoctor(target) {
   if (target === 'modules') return runModules();
   if (target === 'social') return auditSocialStudio();
   if (target === 'goodbye') return auditGoodbye();
+  if (['reaction', 'reactionroles', 'reaction-roles'].includes(target)) return auditReactionRoles();
   if (target) return externalSuites[target] ? runTools(externalSuites[target]) : false;
-  return runCoreCheck() && auditSocialStudio() && auditGoodbye() && runTools(allExternalTools);
+  return runCoreCheck() && auditSocialStudio() && auditGoodbye() && auditReactionRoles() && runTools(allExternalTools);
 }
 
 function runAudit() { return runDoctor() && inspectGuilds(); }
@@ -435,6 +465,7 @@ function printHelp() {
   console.log('  modules           Check module standards and manifest');
   console.log('  social            Check Social Studio');
   console.log('  goodbye           Check Goodbye');
+  console.log('  reaction          Check Reaction Roles');
   console.log('  dashboard         Check dashboard imports and routes');
   console.log('  runtime           Inspect runtime folders');
   console.log('  imports           Check runtime imports');
@@ -455,6 +486,9 @@ const commands = {
   standards: runModules,
   social: auditSocialStudio,
   goodbye: auditGoodbye,
+  reaction: auditReactionRoles,
+  reactionroles: auditReactionRoles,
+  'reaction-roles': auditReactionRoles,
   dashboard: runDashboard,
   runtime: inspectRuntime,
   imports: auditRuntimeImports,
