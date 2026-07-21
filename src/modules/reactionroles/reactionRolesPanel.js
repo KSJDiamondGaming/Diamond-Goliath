@@ -1,15 +1,67 @@
 'use strict';
 
 // Compatibility router used by the central interaction handler.
-// Keep the Role Studio hub independent from child-panel load failures: child
-// modules are required only when their own routes are opened.
-const roleStudioPanel = require('../roleStudio/roleStudioPanel');
+// The root hub must remain available even when an individual child module has
+// a load error, so all Role Studio implementations are loaded lazily.
+const {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  EmbedBuilder,
+} = require('discord.js');
 
 function displayName(interaction) {
   return interaction.member?.displayName
     || interaction.user?.displayName
     || interaction.user?.username
     || 'Unknown User';
+}
+
+function row(...components) {
+  return new ActionRowBuilder().addComponents(...components.filter(Boolean));
+}
+
+function button(customId, label, style = ButtonStyle.Primary) {
+  return new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style);
+}
+
+function buildFallbackHub(memberDisplayName = 'Unknown User', loadError = null) {
+  const description = [
+    'Manage every automated role system in one place.',
+    '',
+    'Choose a role system below.',
+  ];
+
+  if (loadError) {
+    description.push('', '⚠️ Live role statistics are temporarily unavailable, but each role system can still be opened independently.');
+  }
+
+  return {
+    embeds: [new EmbedBuilder()
+      .setColor(0x5865F2)
+      .setTitle('🎭 Role Studio')
+      .setDescription(description.join('\n'))
+      .setFooter({ text: `Requested by ${memberDisplayName}` })
+      .setTimestamp()],
+    components: [
+      row(
+        button('admin:autoRoles', '👥 Auto Roles'),
+        button('admin:reactionRoles:open', '😊 Reaction Roles'),
+      ),
+      row(
+        button('admin:timedRoles', '⏳ Timed Roles'),
+        button('admin:reactionRoles:temporary', '⚡ Temporary Roles'),
+      ),
+      row(
+        button('admin:reactionRoles:analytics', '📊 Role Analytics', ButtonStyle.Secondary),
+        button('admin:reactionRoles:health', '🩺 Role Health', ButtonStyle.Secondary),
+      ),
+      row(
+        button('admin:modules', '⬅️ Back to Modules', ButtonStyle.Secondary),
+        button('admin:home', '🏠 Admin Home', ButtonStyle.Secondary),
+      ),
+    ],
+  };
 }
 
 async function updateInteraction(interaction, payload) {
@@ -20,6 +72,15 @@ async function updateInteraction(interaction, payload) {
 
   await interaction.update(payload);
   return true;
+}
+
+function loadRoleStudioPanel() {
+  try {
+    return require('../roleStudio/roleStudioPanel');
+  } catch (error) {
+    console.error('[RoleStudio] Hub panel failed to load:', error?.stack || error?.message || error);
+    return null;
+  }
 }
 
 function loadReactionRolesPanel() {
@@ -44,14 +105,31 @@ async function handleReactionRolesAdminInteraction(interaction) {
   const customId = String(interaction.customId || '');
 
   if (customId === 'admin:reactionRoles') {
-    const payload = await roleStudioPanel.buildRoleStudioPanel(
-      interaction.guild,
-      displayName(interaction)
-    );
+    const roleStudioPanel = loadRoleStudioPanel();
+    let payload;
+
+    if (typeof roleStudioPanel?.buildRoleStudioPanel === 'function') {
+      try {
+        payload = await roleStudioPanel.buildRoleStudioPanel(
+          interaction.guild,
+          displayName(interaction)
+        );
+      } catch (error) {
+        console.error('[RoleStudio] Hub build failed:', error?.stack || error?.message || error);
+        payload = buildFallbackHub(displayName(interaction), error);
+      }
+    } else {
+      payload = buildFallbackHub(displayName(interaction), new Error('Hub panel unavailable'));
+    }
+
     return updateInteraction(interaction, payload);
   }
 
   if (customId === 'admin:reactionRoles:analytics') {
+    const roleStudioPanel = loadRoleStudioPanel();
+    if (typeof roleStudioPanel?.buildRoleAnalyticsPanel !== 'function') {
+      throw new Error('Role Studio analytics is unavailable.');
+    }
     const payload = await roleStudioPanel.buildRoleAnalyticsPanel(
       interaction.guild,
       displayName(interaction)
@@ -60,6 +138,10 @@ async function handleReactionRolesAdminInteraction(interaction) {
   }
 
   if (customId === 'admin:reactionRoles:health') {
+    const roleStudioPanel = loadRoleStudioPanel();
+    if (typeof roleStudioPanel?.buildRoleHealthPanel !== 'function') {
+      throw new Error('Role Studio health is unavailable.');
+    }
     const payload = await roleStudioPanel.buildRoleHealthPanel(
       interaction.guild,
       displayName(interaction)
@@ -94,5 +176,6 @@ async function handleReactionRolesAdminInteraction(interaction) {
 }
 
 module.exports = {
+  buildFallbackHub,
   handleReactionRolesAdminInteraction,
 };
