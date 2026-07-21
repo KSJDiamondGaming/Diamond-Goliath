@@ -73,13 +73,25 @@ function buildFallbackHub(memberDisplayName = 'Unknown User', loadError = null) 
   };
 }
 
+function applySharedShell(interaction, payload) {
+  try {
+    const runtimePatch = require('../../core/admin/functions/adminModuleRuntimePatch');
+    return runtimePatch.standardizeModuleChrome(payload, interaction, 'reactionRoles');
+  } catch (error) {
+    console.error('[RoleStudio] Shared module shell failed:', error?.stack || error?.message || error);
+    return payload;
+  }
+}
+
 async function updateInteraction(interaction, payload) {
+  const standardizedPayload = applySharedShell(interaction, payload);
+
   if (interaction.deferred || interaction.replied) {
-    await interaction.editReply(payload);
+    await interaction.editReply(standardizedPayload);
     return true;
   }
 
-  await interaction.update(payload);
+  await interaction.update(standardizedPayload);
   return true;
 }
 
