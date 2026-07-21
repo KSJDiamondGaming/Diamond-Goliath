@@ -17,6 +17,8 @@ const hubSource = read('src/modules/roleStudio/roleStudioPanel.js');
 const hub = load('src/modules/roleStudio/roleStudioPanel.js');
 const modulePanelSource = read('src/core/admin/functions/moduleAdminPanels.js');
 const modulePanels = load('src/core/admin/functions/moduleAdminPanels.js');
+const runtimePatchSource = read('src/core/admin/functions/adminModuleRuntimePatch.js');
+const runtimePatch = load('src/core/admin/functions/adminModuleRuntimePatch.js');
 const autoRolesSource = read('src/modules/roleStudio/autoRoles/autoRoles.js');
 const autoRoles = load('src/modules/roleStudio/autoRoles/autoRoles.js');
 const autoRolesStartup = read('src/events/client/autoRolesStartup.js');
@@ -43,27 +45,67 @@ for (const route of [
   assert.ok(hubSource.includes(route), `Role Studio is missing route ${route}`);
 }
 
-const moduleRoutes = modulePanels.SERVER_MODULES.map((item) => item[0]);
-const roleStudioEntry = modulePanels.SERVER_MODULES.find(
-  (item) => item[0] === 'admin:reactionRoles'
+runtimePatch.install(modulePanels);
+const expectedModules = [
+  ['admin:embed', 'Embed Studio'],
+  ['admin:forms', 'Forms'],
+  ['admin:fun', 'Fun'],
+  ['admin:giveaways', 'Giveaways'],
+  ['admin:goodbye', 'Goodbye'],
+  ['admin:invites', 'Invite Studio'],
+  ['admin:leveling', 'Leveling'],
+  ['admin:polls', 'Polls'],
+  ['admin:reactionRoles', 'Role Studio'],
+  ['admin:stats', 'Server Stats'],
+  ['admin:social', 'Social Alerts'],
+  ['admin:starboard', 'Starboard'],
+  ['admin:sticky', 'Sticky Messages'],
+  ['admin:suggestions', 'Suggestions'],
+  ['admin:tempVoice', 'Temp Voice'],
+  ['admin:tickets', 'Tickets'],
+  ['admin:translation', 'Translation'],
+  ['admin:verification', 'Verification'],
+  ['admin:welcome', 'Welcome'],
+];
+
+assert.equal(modulePanels.SERVER_MODULES.length, expectedModules.length);
+assert.deepEqual(
+  modulePanels.SERVER_MODULES.map(([route, , name]) => [route, name]),
+  expectedModules
 );
 
+const names = modulePanels.SERVER_MODULES.map((item) => item[2]);
+assert.deepEqual(names, [...names].sort((a, b) => a.localeCompare(b)));
+
+const moduleRoutes = modulePanels.SERVER_MODULES.map((item) => item[0]);
+assert.equal(moduleRoutes.includes('admin:autoRoles'), false);
+assert.equal(moduleRoutes.includes('admin:timedRoles'), false);
+assert.equal(moduleRoutes.includes('admin:reactionRoles:open'), false);
+assert.equal(moduleRoutes.includes('admin:reactionRoles:temporary'), false);
+
+const roleStudioEntry = modulePanels.SERVER_MODULES.find((item) => item[0] === 'admin:reactionRoles');
 assert.ok(roleStudioEntry, 'Role Studio must appear in the top-level module menu');
 assert.equal(roleStudioEntry[1], '🎭 Role Studio');
 assert.equal(roleStudioEntry[2], 'Role Studio');
-assert.equal(moduleRoutes.includes('admin:autoRoles'), false);
-assert.equal(moduleRoutes.includes('admin:timedRoles'), false);
-assert.equal(moduleRoutes.includes('admin:forms'), false);
-assert.equal(moduleRoutes.includes('admin:giveaways'), false);
-assert.equal(moduleRoutes.includes('admin:leveling'), false);
-assert.equal(moduleRoutes.includes('admin:starboard'), false);
-assert.equal(moduleRoutes.includes('admin:sticky'), false);
-assert.equal(moduleRoutes.includes('admin:tempVoice'), false);
-assert.equal(moduleRoutes.includes('admin:translation'), false);
-assert.equal(moduleRoutes.length, 8);
+
+const firstPage = modulePanels.buildModuleListPanel(0, 'Smoke Test');
+const secondPage = modulePanels.buildModuleListPanel(1, 'Smoke Test');
+const serialize = (payload) => JSON.stringify(payload);
+assert.ok(serialize(firstPage).includes('Page 1/2'));
+assert.ok(serialize(secondPage).includes('Page 2/2'));
+assert.ok(serialize(firstPage).includes('admin:modules:back'));
+assert.ok(serialize(firstPage).includes('admin:home'));
+assert.ok(serialize(firstPage).includes('admin:modules:page:1'));
+assert.ok(serialize(secondPage).includes('admin:modules:page:0'));
+assert.ok(serialize(secondPage).includes('admin:home'));
+
+assert.ok(runtimePatchSource.includes("button('admin:modules', '⬅️ Back')"));
+assert.ok(runtimePatchSource.includes("button('admin:home', '🏠 Admin Home')"));
+assert.ok(runtimePatchSource.includes('installNavigationPatches'));
 
 assert.ok(entry.includes('handleReactionRolesAdminInteraction'));
-assert.ok(legacyEntry.includes("require('../roleStudio/reactionRoles/reactionRolesPanel')"));
+assert.ok(legacyEntry.includes('buildFallbackHub'));
+assert.ok(legacyEntry.includes('loadReactionRolesPanel'));
 assert.equal(legacyEntry.includes('roleStudioNavigationPatch'), false);
 assert.ok(modulePanelSource.includes('// Canonical Admin Hub module menu.'));
 assert.ok(modulePanelSource.includes("['admin:reactionRoles', '🎭 Role Studio'"));
@@ -120,13 +162,9 @@ assert.ok(timedStartup.includes('timedRoles.startup(client)'));
 assert.ok(timedMemberJoin.includes('applyProgressionToMember'));
 
 console.log('✅ Role Studio exports and routes are wired.');
-console.log('✅ Admin module navigation has one canonical registry.');
-console.log('✅ Legacy interaction routing is a thin canonical Role Studio export only.');
-console.log('✅ Role systems are grouped under Role Studio in the Admin module menu.');
-console.log('✅ Unavailable placeholder modules are hidden from the Admin module menu.');
-console.log('✅ Auto Roles runtime, health and startup module gate are present.');
-console.log('✅ Auto Roles settings are restricted to the supported schema.');
+console.log('✅ All 19 top-level Admin modules are present alphabetically.');
+console.log('✅ Role systems are grouped only under Role Studio.');
+console.log('✅ Two-page module navigation includes Back, paging and Admin Home.');
+console.log('✅ Shared Admin module navigation patch is installed.');
 console.log('✅ Auto, reaction, timed and temporary role modules are connected.');
-console.log('✅ Timed-role progression, simulation and startup processing are present.');
-console.log('✅ Temporary-role assignment, removal and expiry scanning are present.');
 console.log('ℹ️ Run the full doctor and a live development-guild acceptance test after pulling.');
