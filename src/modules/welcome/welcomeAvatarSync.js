@@ -27,7 +27,7 @@ function isTrackedAvatarUrl(url, userId, previousAvatarUrl) {
   if (previousAvatarUrl && normalized === normalizeUrl(previousAvatarUrl)) return true;
   return normalized.includes(`/avatars/${userId}/`)
     || normalized.includes(`/users/${userId}/avatars/`)
-    || normalized.includes(`/guilds/`) && normalized.includes(`/users/${userId}/avatars/`);
+    || normalized.includes('/guilds/') && normalized.includes(`/users/${userId}/avatars/`);
 }
 
 function replaceAvatarUrls(embed, userId, previousAvatarUrl, nextAvatarUrl) {
@@ -61,7 +61,6 @@ function ensureWelcomeAvatar(embed, member) {
     changed = true;
   }
 
-  // Older Embed Studio data could pass an object into the footer text field.
   if (data.footer?.text === '[object Object]') {
     delete data.footer;
     changed = true;
@@ -204,9 +203,7 @@ async function syncTrackedWelcomeForGuild(guild, userId, nextAvatarUrl, welcomeM
     return result.data;
   });
 
-  if (!changed) {
-    return { updated: 0, removed: 0 };
-  }
+  if (!changed) return { updated: 0, removed: 0 };
 
   const edited = await message.edit({ embeds }).then(() => true).catch((error) => {
     console.warn('[Welcome] Failed to sync updated avatar:', error.message || error);
@@ -221,6 +218,62 @@ async function syncTrackedWelcomeForGuild(guild, userId, nextAvatarUrl, welcomeM
   saveRecords(welcomeManager, guild.id, nextRecords, 'welcome_avatar_sync_update');
 
   return { updated: 1, removed: 0 };
+}
+
+async function recoverUntrackedWelcomeForGuild(member, previousAvatarUrl, nextAvatarUrl, welcomeManager) {
+  const guild = member?.guild;
+  const userId = member?.user?.id;
+  if (!guild?.id || !userId || !nextAvatarUrl) return { updated: 0, removed: 0 };
+
+  const config = welcomeManager.getWelcomeSection(guild.id);
+  const channel = config.channelId
+    ? await welcomeManager.resolveWelcomeChannel(guild, config.channelId)
+    : null;
+  if (!channel?.messages?.fetch) return { updated: 0, removed: 0 };
+
+  const messages = await channel.messages.fetch({ limit: 50 }).catch(() => null);
+  if (!messages?.size) return { updated: 0, removed: 0 };
+
+  const botId = member.client?.user?.id;
+  const username = String(member.user.username || '').toLowerCase();
+  const candidates = [...messages.values()]
+    .filter((message) => message.author?.id === botId)
+    .filter((message) => {
+      const haystack = `${message.content || ''} ${JSON.stringify(message.embeds?.map((embed) => embed.toJSON?.() || embed) || [])}`.toLowerCase();
+      return haystack.includes(userId) || (username && haystack.includes(`@${username}`));
+    })
+    .sort((a, b) => b.createdTimestamp - a.createdTimestamp);
+
+  for (const message of candidates) {
+    let changed = false;
+    const embeds = message.embeds.map((embed) => {
+      const result = replaceAvatarUrls(embed, userId, previousAvatarUrl, nextAvatarUrl);
+      changed ||= result.changed;
+      return result.data;
+    });
+    if (!changed) continue;
+
+    const edited = await message.edit({ embeds }).then(() => true).catch((error) => {
+      console.warn('[Welcome] Avatar recovery edit failed:', error.message || error);
+      return false;
+    });
+    if (!edited) continue;
+
+    const records = getRecords(welcomeManager, guild.id).filter((record) => record.userId !== userId);
+    records.push({
+      userId,
+      channelId: channel.id,
+      messageId: message.id,
+      avatarUrl: nextAvatarUrl,
+      createdAt: new Date(message.createdTimestamp || Date.now()).toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    saveRecords(welcomeManager, guild.id, records, 'welcome_avatar_sync_recover');
+    console.info(`[Welcome] Recovered avatar sync for ${userId} in ${guild.id} on message ${message.id}.`);
+    return { updated: 1, removed: 0 };
+  }
+
+  return { updated: 0, removed: 0 };
 }
 
 async function handleUserAvatarUpdate(oldUser, newUser, welcomeManager) {
@@ -254,12 +307,15 @@ async function handleGuildMemberAvatarUpdate(oldMember, newMember, welcomeManage
     return { updated: 0, removed: 0 };
   }
 
-  return syncTrackedWelcomeForGuild(
+  const direct = await syncTrackedWelcomeForGuild(
     newMember.guild,
     newMember.user.id,
     nextAvatarUrl,
     welcomeManager
   );
+  if (direct.updated || direct.removed) return direct;
+
+  return recoverUntrackedWelcomeForGuild(newMember, oldAvatarUrl, nextAvatarUrl, welcomeManager);
 }
 
 module.exports = {
@@ -267,6 +323,7 @@ module.exports = {
   handleUserAvatarUpdate,
   handleGuildMemberAvatarUpdate,
   syncTrackedWelcomeForGuild,
+  recoverUntrackedWelcomeForGuild,
   replaceAvatarUrls,
   replaceNoPingMentions,
   ensureWelcomeAvatar,
