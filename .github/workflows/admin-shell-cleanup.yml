@@ -1,4 +1,4 @@
-name: Restore full canonical Admin module menu
+name: Clean legacy Role Studio compatibility
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 jobs:
-  restore:
+  cleanup:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,92 +22,56 @@ jobs:
         with:
           node-version: 20
 
-      - name: Restore all top-level modules and standard navigation
+      - name: Remove stale import and compatibility shim
         run: |
           node <<'NODE'
           const fs = require('node:fs');
-          const path = 'src/core/admin/functions/moduleAdminPanels.js';
-          let source = fs.readFileSync(path, 'utf8');
 
-          const canonicalModules = `const SERVER_MODULES = [
-            ['admin:embed', '✨ Embed Studio', 'Embed Studio', 'Build and manage Discord embeds.'],
-            ['admin:forms', '📝 Forms', 'Forms', 'Forms, submissions, review and response storage.'],
-            ['admin:fun', '🎮 Fun', 'Fun', 'Fun commands and optional community extras.'],
-            ['admin:giveaways', '🎉 Giveaways', 'Giveaways', 'Giveaway creation, entries, winners and rerolls.'],
-            ['admin:goodbye', '👋 Goodbye', 'Goodbye', 'Public farewell messages and Embed Studio templates.'],
-            ['admin:invites', '📨 Invite Studio', 'Invite Studio', 'Create invite links, attach roles and track member joins.'],
-            ['admin:leveling', '🏆 Leveling', 'Leveling', 'XP, levels, leaderboards and level roles.'],
-            ['admin:polls', '📊 Polls', 'Polls', 'Poll creation, voting and results.'],
-            ['admin:reactionRoles', '🎭 Role Studio', 'Role Studio', 'Manage Auto Roles, Reaction Roles, Timed Roles and Temporary Roles in one place.'],
-            ['admin:stats', '📊 Server Stats', 'Server Stats', 'Statbot-style server counters and activity tracking.'],
-            ['admin:social', '📣 Social Alerts', 'Social Alerts', 'Creator alerts for Twitch, YouTube, TikTok, Kick and more.'],
-            ['admin:starboard', '⭐ Starboard', 'Starboard', 'Highlight popular server messages.'],
-            ['admin:sticky', '💬 Sticky Messages', 'Sticky Messages', 'Keep important messages at the bottom of chat.'],
-            ['admin:suggestions', '💡 Suggestions', 'Suggestions', 'Suggestion intake, voting and review workflow.'],
-            ['admin:tempVoice', '🔊 Temp Voice', 'Temp Voice', 'Temporary voice channels and room automation.'],
-            ['admin:tickets', '🎟️ Tickets', 'Tickets', 'Ticket panels, claims, transcripts and recovery.'],
-            ['admin:translation', '🌐 Translation', 'Translation', 'Language preferences and translation controls.'],
-            ['admin:verification', '✅ Verification', 'Verification', 'Member verification and onboarding protection.'],
-            ['admin:welcome', '👋 Welcome', 'Welcome', 'Welcome messages, member DMs and Embed Studio templates.'],
-          ].sort((a, b) => a[2].localeCompare(b[2]));`;
-
-          const modulesPattern = /const SERVER_MODULES = \[[\s\S]*?\]\.sort\(\(a, b\) => a\[2\]\.localeCompare\(b\[2\]\)\);/;
-          if (!modulesPattern.test(source)) throw new Error('SERVER_MODULES registry not found');
-          source = source.replace(modulesPattern, canonicalModules);
-
-          source = source.replace(
-            "  const navButtons = [];\n  if (currentPage > 0) navButtons.push(button(`admin:modules:page:${currentPage - 1}`, '⬅️ Back', ButtonStyle.Secondary));\n  if (currentPage < totalPages - 1) navButtons.push(button(`admin:modules:page:${currentPage + 1}`, 'Next ➡️', ButtonStyle.Secondary));\n  navButtons.push(button('admin:home', '🏠 Admin Home', ButtonStyle.Secondary));",
-            "  const navButtons = [button('admin:home', '⬅️ Back', ButtonStyle.Secondary)];\n  if (currentPage > 0) navButtons.push(button(`admin:modules:page:${currentPage - 1}`, '◀ Previous', ButtonStyle.Secondary));\n  if (currentPage < totalPages - 1) navButtons.push(button(`admin:modules:page:${currentPage + 1}`, 'Next ▶', ButtonStyle.Secondary));\n  navButtons.push(button('admin:home', '🏠 Admin Home', ButtonStyle.Secondary));"
-          );
-
-          source = source.replace(
-            "  const navButtons = [button('admin:modules', '⬅️ Modules', ButtonStyle.Secondary)];",
-            "  const navButtons = [button('admin:modules', '⬅️ Back', ButtonStyle.Secondary), button('admin:home', '🏠 Admin Home', ButtonStyle.Secondary)];"
-          );
-
-          fs.writeFileSync(path, source);
-          NODE
-
-      - name: Update Role Studio smoke expectations
-        run: |
-          node <<'NODE'
-          const fs = require('node:fs');
-          const path = 'tools/roleStudioSmokeTest.js';
-          if (!fs.existsSync(path)) process.exit(0);
-          let source = fs.readFileSync(path, 'utf8');
-          source = source
-            .replace("assert.equal(moduleRoutes.includes('admin:forms'), false);", "assert.equal(moduleRoutes.includes('admin:forms'), true);")
-            .replace("assert.equal(moduleRoutes.includes('admin:giveaways'), false);", "assert.equal(moduleRoutes.includes('admin:giveaways'), true);")
-            .replace("assert.equal(moduleRoutes.includes('admin:leveling'), false);", "assert.equal(moduleRoutes.includes('admin:leveling'), true);")
-            .replace("assert.equal(moduleRoutes.includes('admin:starboard'), false);", "assert.equal(moduleRoutes.includes('admin:starboard'), true);")
-            .replace("assert.equal(moduleRoutes.includes('admin:sticky'), false);", "assert.equal(moduleRoutes.includes('admin:sticky'), true);")
-            .replace("assert.equal(moduleRoutes.includes('admin:tempVoice'), false);", "assert.equal(moduleRoutes.includes('admin:tempVoice'), true);")
-            .replace("assert.equal(moduleRoutes.includes('admin:translation'), false);", "assert.equal(moduleRoutes.includes('admin:translation'), true);")
-            .replace('assert.equal(moduleRoutes.length, 8);', 'assert.equal(moduleRoutes.length, 19);');
-          fs.writeFileSync(path, source);
-          NODE
-
-      - name: Verify syntax and canonical menu
-        run: |
-          node --check src/core/admin/functions/moduleAdminPanels.js
-          node - <<'NODE'
-          const panels = require('./src/core/admin/functions/moduleAdminPanels');
-          const routes = panels.SERVER_MODULES.map((entry) => entry[0]);
-          if (routes.length !== 19) throw new Error(`Expected 19 top-level modules, received ${routes.length}`);
-          for (const hidden of ['admin:autoRoles', 'admin:timedRoles']) {
-            if (routes.includes(hidden)) throw new Error(`${hidden} must remain inside Role Studio`);
+          const panelPath = 'src/modules/roleStudio/reactionRoles/reactionRolesPanel.js';
+          let panel = fs.readFileSync(panelPath, 'utf8');
+          const staleImport = /^\s*require\(['"]\.\.\/roleStudioNavigationPatch['"]\);\s*\r?\n/m;
+          if (!staleImport.test(panel)) {
+            throw new Error('Stale roleStudioNavigationPatch import was not found.');
           }
-          const labels = panels.SERVER_MODULES.map((entry) => entry[2]);
-          const sorted = [...labels].sort((a, b) => a.localeCompare(b));
-          if (JSON.stringify(labels) !== JSON.stringify(sorted)) throw new Error('Modules are not alphabetical');
+          panel = panel.replace(staleImport, '');
+          if (panel.includes('roleStudioNavigationPatch')) {
+            throw new Error('A roleStudioNavigationPatch reference remains in Reaction Roles.');
+          }
+          fs.writeFileSync(panelPath, panel);
+
+          const testPath = 'tools/role-studio-smoke-test.js';
+          let test = fs.readFileSync(testPath, 'utf8');
+          test = test.replace(
+            "const compatibilityShim = read('src/modules/roleStudio/roleStudioNavigationPatch.js');\n",
+            ''
+          );
+          test = test.replace(
+            "assert.ok(entry.includes(\"require('../roleStudioNavigationPatch')\"));",
+            "assert.equal(entry.includes('roleStudioNavigationPatch'), false);"
+          );
+          test = test.replace(/assert\.ok\(compatibilityShim\.includes\('intentionally'\)\);\r?\n/, '');
+          test = test.replace(/assert\.equal\(compatibilityShim\.includes\('SERVER_MODULES'\), false\);\r?\n/, '');
+          test = test.replace(/assert\.equal\(compatibilityShim\.includes\('splice\('\), false\);\r?\n/, '');
+          test = test.replace(
+            "assert.deepEqual(load('src/modules/roleStudio/roleStudioNavigationPatch.js'), {});",
+            "assert.equal(fs.existsSync(path.join(root, 'src/modules/roleStudio/roleStudioNavigationPatch.js')), false);"
+          );
+          fs.writeFileSync(testPath, test);
           NODE
+
+          rm -f src/modules/roleStudio/roleStudioNavigationPatch.js
+
+      - name: Verify cleanup
+        run: |
+          ! grep -R "roleStudioNavigationPatch" src --exclude-dir=node_modules
+          node --check src/modules/roleStudio/reactionRoles/reactionRolesPanel.js
           node scripts/goliath.js test role-studio
 
-      - name: Remove migration trigger and commit
+      - name: Commit cleanup and remove workflow
         run: |
           rm .github/workflows/admin-shell-cleanup.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/core/admin/functions/moduleAdminPanels.js tools/roleStudioSmokeTest.js .github/workflows/admin-shell-cleanup.yml
-          git commit -m "Restore all top-level Admin modules"
+          git add src/modules/roleStudio/reactionRoles/reactionRolesPanel.js tools/role-studio-smoke-test.js src/modules/roleStudio/roleStudioNavigationPatch.js .github/workflows/admin-shell-cleanup.yml
+          git commit -m "Remove legacy Role Studio compatibility shim"
           git push origin HEAD:dev
