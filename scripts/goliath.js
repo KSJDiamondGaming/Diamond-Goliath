@@ -14,7 +14,6 @@ const SLOW_IMPORT_MS = Number(process.env.GOLIATH_IMPORT_AUDIT_SLOW_MS || 3000);
 const MOJIBAKE_MARKERS = [0x00e2, 0x00f0, 0x00ef, 0x00c3, 0xfffd].map((code) => String.fromCharCode(code));
 
 const TOOL_FILES = Object.freeze({
-  social: 'social-doctor.js',
   invitesDoctor: 'invites-doctor.js',
   invitesTest: 'invites-smoke-test.js',
   goodbye: 'goodbye-doctor.js',
@@ -28,6 +27,7 @@ function rel(file) { return path.relative(root, file).replace(/\\/g, '/'); }
 function read(file) { return fs.readFileSync(file, 'utf8'); }
 function normalise(value) { return path.normalize(value).replace(/\\/g, '/'); }
 function section(title) { console.log(`\n${title}`); console.log('='.repeat(title.length)); }
+function exists(relativePath) { return fs.existsSync(absolute(relativePath)); }
 
 function walk(dir, extensions = ['.js']) {
   if (!fs.existsSync(dir)) return [];
@@ -70,12 +70,11 @@ function resolveImport(fromFile, request) {
 function checkProjectShape() {
   section('Project shape');
   const expected = ['server.js', 'package.json', 'src/commands', 'src/core', 'src/dashboard', 'src/events', 'src/modules', 'src/runtime', 'src/server'];
-  const missing = [];
-  for (const item of expected) {
-    const present = fs.existsSync(absolute(item));
+  const missing = expected.filter((item) => {
+    const present = exists(item);
     console.log(`${present ? '✅' : '❌'} ${item}`);
-    if (!present) missing.push(item);
-  }
+    return !present;
+  });
   return missing.length === 0;
 }
 
@@ -206,9 +205,7 @@ function auditRuntimeImports() {
       console.log('❌'); errors.push(`${rel(file)}: import exceeded ${IMPORT_TIMEOUT_MS}ms`);
     } else if (result.status !== 0) {
       console.log('❌'); errors.push(`${rel(file)}: ${String(result.stderr || result.stdout || 'Unknown import failure').trim().split('\n').slice(0, 8).join('\n')}`);
-    } else {
-      console.log(duration >= SLOW_IMPORT_MS ? `⚠️ ${duration}ms` : `✅ ${duration}ms`);
-    }
+    } else console.log(duration >= SLOW_IMPORT_MS ? `⚠️ ${duration}ms` : `✅ ${duration}ms`);
   }
   for (const error of errors) console.log(` - ${error}`);
   if (!errors.length) console.log('✅ Runtime import audit passed.');
@@ -227,9 +224,7 @@ function auditModuleStandard() {
     const missing = getMissingCapabilities(definition);
     const complete = isModuleComplete(definition);
     if (definition.maturity === MODULE_MATURITY.COMPLETE && !complete) errors.push(`${definition.name} is marked complete but is missing: ${missing.join(', ')}.`);
-    for (const capability of REQUIRED_CAPABILITIES) {
-      if (typeof definition.capabilities?.[capability] !== 'boolean') errors.push(`${definition.name}.${capability} must be boolean.`);
-    }
+    for (const capability of REQUIRED_CAPABILITIES) if (typeof definition.capabilities?.[capability] !== 'boolean') errors.push(`${definition.name}.${capability} must be boolean.`);
     console.log(`${complete ? '🟢' : definition.maturity === MODULE_MATURITY.IN_PROGRESS ? '🟡' : '⚪'} ${definition.name} — ${definition.maturity}${missing.length ? ` (${missing.length} capability gaps)` : ''}`);
   }
   for (const error of errors) console.log(` - ${error}`);
@@ -244,51 +239,27 @@ function auditCanonicalModuleManifest() {
   const validMaturities = new Set(Object.values(MODULE_MATURITY));
   const errors = [];
   const canonicalFiles = Object.freeze({
-    schedule: [
-      'src/modules/schedule/schedule.js',
-      'src/modules/schedule/scheduleRoute.js',
-      'src/events/schedule/scheduleReady.js',
-      'docs/modules/schedule.md',
-    ],
-    social: [
-      'src/modules/social/social.js',
-      'src/modules/social/socialPanel.js',
-      'src/modules/social/socialCreatorPanel.js',
-      'src/modules/social/socialRoute.js',
-      'src/modules/social/socialHealth.js',
-      'src/modules/social/socialDiagnostics.js',
-      'src/dashboard/js/pages/modules/Social.jsx',
-      'docs/modules/social-alerts.md',
-    ],
+    schedule: ['src/modules/schedule/schedule.js', 'src/modules/schedule/scheduleRoute.js', 'src/events/schedule/scheduleReady.js', 'docs/modules/schedule.md'],
+    social: ['src/modules/social/social.js', 'src/modules/social/socialPanel.js', 'src/modules/social/socialCreatorPanel.js', 'src/modules/social/socialRoute.js', 'src/modules/social/socialHealth.js', 'src/modules/social/socialDiagnostics.js', 'src/dashboard/js/pages/modules/Social.jsx', 'docs/modules/social-alerts.md'],
   });
   const definitions = Object.values(moduleManifest).sort((a, b) => a.name.localeCompare(b.name));
   const active = definitions.filter((definition) => definition.maturity === MODULE_MATURITY.IN_PROGRESS);
-
   if (active.length !== 1) errors.push(`Exactly one module must be in progress; found ${active.length}: ${active.map((item) => item.name).join(', ') || 'none'}.`);
-
   for (const definition of definitions) {
     if (!definition.key || !definition.name) errors.push('Every module requires a key and name.');
     if (!validMaturities.has(definition.maturity)) errors.push(`${definition.name || definition.key}: invalid maturity ${definition.maturity}.`);
-    for (const capability of REQUIRED_CAPABILITIES) {
-      if (typeof definition.capabilities?.[capability] !== 'boolean') errors.push(`${definition.name}.${capability} must be boolean.`);
-    }
+    for (const capability of REQUIRED_CAPABILITIES) if (typeof definition.capabilities?.[capability] !== 'boolean') errors.push(`${definition.name}.${capability} must be boolean.`);
     const missing = getMissingCapabilities(definition);
     if (definition.maturity === MODULE_MATURITY.COMPLETE && !isModuleComplete(definition)) errors.push(`${definition.name} is complete but missing: ${missing.join(', ')}.`);
     if (definition.maturity === MODULE_MATURITY.NOT_STARTED && missing.length !== REQUIRED_CAPABILITIES.length) errors.push(`${definition.name} has implemented capabilities but is marked not_started; use paused.`);
-    const marker = definition.maturity === MODULE_MATURITY.COMPLETE ? '🟢'
-      : definition.maturity === MODULE_MATURITY.IN_PROGRESS ? '🟡'
-        : definition.maturity === MODULE_MATURITY.PAUSED ? '🔵' : '⚪';
+    const marker = definition.maturity === MODULE_MATURITY.COMPLETE ? '🟢' : definition.maturity === MODULE_MATURITY.IN_PROGRESS ? '🟡' : definition.maturity === MODULE_MATURITY.PAUSED ? '🔵' : '⚪';
     console.log(`${marker} ${definition.name} — ${definition.maturity}${missing.length ? ` (${missing.length} gaps)` : ''}`);
-    for (const relativePath of canonicalFiles[definition.key] || []) {
-      if (!fs.existsSync(absolute(relativePath))) errors.push(`${definition.name}: missing ${relativePath}.`);
-    }
+    for (const relativePath of canonicalFiles[definition.key] || []) if (!exists(relativePath)) errors.push(`${definition.name}: missing ${relativePath}.`);
   }
-
   if (moduleManifest.social?.name !== 'Social Studio') errors.push('The canonical social module name must be Social Studio.');
   if (moduleManifest.schedule?.maturity !== MODULE_MATURITY.IN_PROGRESS) errors.push('Schedule must be the active module.');
   if (moduleManifest.stats?.maturity !== MODULE_MATURITY.PAUSED) errors.push('Stats must remain paused while Schedule is active.');
   if (moduleManifest.tickets?.maturity !== MODULE_MATURITY.PAUSED) errors.push('Tickets must remain paused while Schedule is active.');
-
   console.log(`\nModules tracked: ${definitions.length}`);
   console.log(`Complete: ${definitions.filter(isModuleComplete).length}`);
   console.log(`Active: ${active.length}`);
@@ -296,6 +267,78 @@ function auditCanonicalModuleManifest() {
   console.log(`Not started: ${definitions.filter((item) => item.maturity === MODULE_MATURITY.NOT_STARTED).length}`);
   for (const error of errors) console.error(` - ${error}`);
   if (!errors.length) console.log('✅ Canonical module manifest passed.');
+  return errors.length === 0;
+}
+
+function auditSocialStudio() {
+  section('Social Studio doctor');
+  const checks = [
+    ['src/modules/social/social.js', ['startup', 'diagnostics', 'delivery', 'creators', 'simulator', 'queue', 'history']],
+    ['src/modules/social/socialPanel.js', ['buildSocialAdminPanel', 'handleSocialAdminInteraction']],
+    ['src/modules/social/socialCreatorPanel.js', ['buildCreatorHubPanel', 'handleSocialCreatorInteraction']],
+    ['src/modules/social/socialRoute.js', []], ['src/modules/social/socialCreatorRoute.js', []],
+    ['src/modules/social/socialHealth.js', ['buildHealth', 'repair', 'exportConfig', 'reset']],
+    ['src/modules/social/socialDiagnostics.js', ['buildDiagnostics', 'providerDiagnostics', 'creatorDiagnostics']],
+    ['src/modules/social/socialDelivery.js', ['buildEmbed', 'deliver']],
+    ['src/modules/social/socialCreators.js', ['list', 'save', 'linkAccount', 'unlinkAccount', 'rebuild']],
+    ['src/modules/social/socialSimulator.js', ['build', 'simulate']],
+    ['src/modules/social/socialScheduler.js', ['runSocialCheck', 'startSocialScheduler', 'handleProviderResult']],
+    ['src/modules/social/socialQueue.js', ['list', 'processGuild', 'start']],
+    ['src/modules/social/socialHistory.js', ['list', 'record', 'summary']],
+    ['src/modules/social/providers/twitchProvider.js', ['checkAccount']],
+    ['src/modules/social/providers/youtubeProvider.js', ['checkAccount', 'resolveChannel']],
+    ['src/modules/social/providers/kickProvider.js', ['checkAccount', 'normalizeSlug', 'isConfigured']],
+    ['src/modules/social/providers/xProvider.js', ['checkAccount', 'normalizeUsername', 'isConfigured']],
+    ['src/commands/admin/socialhub.js', ['data', 'execute']],
+    ['src/dashboard/js/pages/modules/Social.jsx', []], ['docs/modules/social-alerts.md', []],
+  ];
+  const textChecks = [
+    ['src/modules/social/socialRoute.js', ['socialCreatorRoute', "router.use('/:guildId/creator-hub'"]],
+    ['src/events/interactions/interactionCreate.js', ['socialPanel', 'socialCreatorPanel']],
+    ['src/modules/social/providerRegistry.js', ['AUTHORIZATION_REQUIRED', 'zeroCredentialSupported', 'twitchProvider', 'youtubeProvider', 'kickProvider', 'xProvider']],
+    ['src/core/modules/moduleManifest.js', ["name: 'Social Studio'", 'maturity: MODULE_MATURITY.COMPLETE']],
+    ['src/dashboard/js/shared/moduleRegistry.js', ["name: 'Social Studio'", 'status: MODULE_STATUSES.live']],
+    ['docs/modules/social-alerts.md', ['Completion state', 'Social Studio v1 is complete', 'authorization_required']],
+  ];
+  const errors = [];
+  for (const [relativePath, exports] of checks) {
+    const fullPath = absolute(relativePath);
+    if (!fs.existsSync(fullPath)) {
+      errors.push(`${relativePath}: missing file`);
+      console.log(`❌ ${relativePath}`);
+      continue;
+    }
+    if (!relativePath.endsWith('.js') || !exports.length) {
+      console.log(`✅ ${relativePath}`);
+      continue;
+    }
+    try {
+      delete require.cache[require.resolve(fullPath)];
+      const loaded = require(fullPath);
+      const missing = exports.filter((name) => loaded?.[name] === undefined);
+      if (missing.length) errors.push(`${relativePath}: missing export(s) ${missing.join(', ')}`);
+      console.log(`${missing.length ? '❌' : '✅'} ${relativePath}`);
+    } catch (error) {
+      errors.push(`${relativePath}: failed to load - ${error.message}`);
+      console.log(`❌ ${relativePath}`);
+    }
+  }
+  for (const [relativePath, requiredValues] of textChecks) {
+    if (!exists(relativePath)) {
+      errors.push(`${relativePath}: missing file`);
+      continue;
+    }
+    const source = read(absolute(relativePath));
+    for (const required of requiredValues) if (!source.includes(required)) errors.push(`${relativePath}: missing ${required}`);
+  }
+  if (errors.length) {
+    console.error(`\nSocial Studio doctor failed (${errors.length} issue${errors.length === 1 ? '' : 's'}):`);
+    for (const error of errors) console.error(` - ${error}`);
+  } else {
+    console.log('\n✅ Social Studio doctor passed.');
+    console.log('✅ Supported production providers: Twitch, YouTube, Kick, X.');
+    console.log('✅ TikTok and Instagram are intentionally excluded from v1 zero-credential monitoring.');
+  }
   return errors.length === 0;
 }
 
@@ -338,28 +381,26 @@ function runTool(file) {
   if (result.error) console.error(`Failed to run ${file}: ${result.error.message}`);
   return !result.error && result.status === 0;
 }
-
 function runTools(files) { return files.every(runTool); }
 function runDashboard() { return [auditDashboardFiles(), auditDashboardRoutes()].every(Boolean); }
 function runModules() { return [auditModuleStandard(), auditCanonicalModuleManifest()].every(Boolean); }
 function runCoreCheck() { return [checkProjectShape(), auditCommands(), runDashboard(), auditSourceText(), auditRuntimeImports(), runModules(), inspectRuntime()].every(Boolean); }
 
 const doctorSuites = Object.freeze({
-  social: [TOOL_FILES.social],
   invites: [TOOL_FILES.invitesDoctor, TOOL_FILES.invitesTest],
   goodbye: [TOOL_FILES.goodbye],
   reaction: [TOOL_FILES.reactionDoctor, TOOL_FILES.reactionTest],
   reactionroles: [TOOL_FILES.reactionDoctor, TOOL_FILES.reactionTest],
   'reaction-roles': [TOOL_FILES.reactionDoctor, TOOL_FILES.reactionTest],
-  'role-studio': [TOOL_FILES.roleStudioTest],
-  rolestudio: [TOOL_FILES.roleStudioTest],
+  'role-studio': [TOOL_FILES.roleStudioTest], rolestudio: [TOOL_FILES.roleStudioTest],
 });
 const allModuleTools = [...new Set(Object.values(doctorSuites).flat())];
 
 function runDoctor(target) {
   if (target === 'modules') return runModules();
+  if (target === 'social') return auditSocialStudio();
   if (target) return doctorSuites[target] ? runTools(doctorSuites[target]) : false;
-  return runCoreCheck() && runTools(allModuleTools);
+  return runCoreCheck() && auditSocialStudio() && runTools(allModuleTools);
 }
 function runAudit() { return runDoctor() && inspectGuilds(); }
 
@@ -371,6 +412,7 @@ function printHelp() {
   console.log('  audit             Run doctor plus guild inspection');
   console.log('  commands          Check slash command files');
   console.log('  modules           Check module standards and manifest');
+  console.log('  social            Check Social Studio');
   console.log('  dashboard         Check dashboard imports and routes');
   console.log('  runtime           Inspect runtime folders');
   console.log('  imports           Check runtime imports');
@@ -382,21 +424,11 @@ function printHelp() {
 const command = String(process.argv[2] || 'help').toLowerCase();
 const target = String(process.argv[3] || '').toLowerCase();
 const commands = {
-  help: printHelp,
-  doctor: () => runDoctor(target),
-  check: () => runDoctor(target),
-  audit: runAudit,
-  commands: auditCommands,
-  modules: runModules,
-  standards: runModules,
-  dashboard: runDashboard,
-  runtime: inspectRuntime,
-  imports: auditRuntimeImports,
-  guilds: inspectGuilds,
-  media: checkMediaDependencies,
-  source: auditSourceText,
+  help: printHelp, doctor: () => runDoctor(target), check: () => runDoctor(target), audit: runAudit,
+  commands: auditCommands, modules: runModules, standards: runModules, social: auditSocialStudio,
+  dashboard: runDashboard, runtime: inspectRuntime, imports: auditRuntimeImports, guilds: inspectGuilds,
+  media: checkMediaDependencies, source: auditSourceText,
 };
-
 if (!commands[command]) {
   console.error(`Unknown command: ${command}`);
   printHelp();
