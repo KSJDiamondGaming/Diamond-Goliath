@@ -1,4 +1,4 @@
-name: Canonical Admin navigation cleanup
+name: Restore full canonical Admin module menu
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 jobs:
-  cleanup:
+  restore:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,99 +22,85 @@ jobs:
         with:
           node-version: 20
 
-      - name: Remove legacy Admin shell modules and standardize navigation
+      - name: Restore all top-level modules and standard navigation
         run: |
           node <<'NODE'
           const fs = require('node:fs');
+          const path = 'src/core/admin/functions/moduleAdminPanels.js';
+          let source = fs.readFileSync(path, 'utf8');
 
-          const adminPath = 'src/core/admin/functions/adminPanel.js';
-          let admin = fs.readFileSync(adminPath, 'utf8');
+          const canonicalModules = `const SERVER_MODULES = [
+            ['admin:embed', '✨ Embed Studio', 'Embed Studio', 'Build and manage Discord embeds.'],
+            ['admin:forms', '📝 Forms', 'Forms', 'Forms, submissions, review and response storage.'],
+            ['admin:fun', '🎮 Fun', 'Fun', 'Fun commands and optional community extras.'],
+            ['admin:giveaways', '🎉 Giveaways', 'Giveaways', 'Giveaway creation, entries, winners and rerolls.'],
+            ['admin:goodbye', '👋 Goodbye', 'Goodbye', 'Public farewell messages and Embed Studio templates.'],
+            ['admin:invites', '📨 Invite Studio', 'Invite Studio', 'Create invite links, attach roles and track member joins.'],
+            ['admin:leveling', '🏆 Leveling', 'Leveling', 'XP, levels, leaderboards and level roles.'],
+            ['admin:polls', '📊 Polls', 'Polls', 'Poll creation, voting and results.'],
+            ['admin:reactionRoles', '🎭 Role Studio', 'Role Studio', 'Manage Auto Roles, Reaction Roles, Timed Roles and Temporary Roles in one place.'],
+            ['admin:stats', '📊 Server Stats', 'Server Stats', 'Statbot-style server counters and activity tracking.'],
+            ['admin:social', '📣 Social Alerts', 'Social Alerts', 'Creator alerts for Twitch, YouTube, TikTok, Kick and more.'],
+            ['admin:starboard', '⭐ Starboard', 'Starboard', 'Highlight popular server messages.'],
+            ['admin:sticky', '💬 Sticky Messages', 'Sticky Messages', 'Keep important messages at the bottom of chat.'],
+            ['admin:suggestions', '💡 Suggestions', 'Suggestions', 'Suggestion intake, voting and review workflow.'],
+            ['admin:tempVoice', '🔊 Temp Voice', 'Temp Voice', 'Temporary voice channels and room automation.'],
+            ['admin:tickets', '🎟️ Tickets', 'Tickets', 'Ticket panels, claims, transcripts and recovery.'],
+            ['admin:translation', '🌐 Translation', 'Translation', 'Language preferences and translation controls.'],
+            ['admin:verification', '✅ Verification', 'Verification', 'Member verification and onboarding protection.'],
+            ['admin:welcome', '👋 Welcome', 'Welcome', 'Welcome messages, member DMs and Embed Studio templates.'],
+          ].sort((a, b) => a[2].localeCompare(b[2]));`;
 
-          // Finish the legacy shell cleanup when the old blocks are still present.
-          admin = admin
-            .replace(/\nconst MODULES = \[[\s\S]*?\n\];\n\nconst COMING_SOON = \{[\s\S]*?\n\};\n/, '\n')
-            .replace(/\nfunction getAutoRolesConfig\(guildId\) \{[\s\S]*?\n\}\n/, '\n')
-            .replace(/\nfunction buildModulesPanel\([\s\S]*?\n\}\n\nfunction buildLogsPanel/, '\nfunction buildLogsPanel')
-            .replace(/\nfunction buildAutoRolesPanel\([\s\S]*?\n\}\n\nfunction buildChannelPanel/, '\nfunction buildChannelPanel')
-            .replace("    'admin:autoRoles': 'Join Roles',\n", '')
-            .replace("  if (route === 'admin:modules') return buildModulesPanel(guild, memberDisplayName, navState);\n", '')
-            .replace("  if (route === 'admin:autoRoles') return buildAutoRolesPanel(guild, memberDisplayName, navState);\n", '')
-            .replace(/\n  if \(COMING_SOON\[route\]\) \{[\s\S]*?\n  \}\n/, '\n')
-            .replace(/\n    'admin:autoRoles:select': \{[\s\S]*?\n    \},/, '')
-            .replace(/\n  if \(selected\.mergeExisting\) \{[\s\S]*?\n  \} else \{\n    replaceGuildSection\(interaction\.guild\.id, selected\.section, \{\n      roleIds: safeValues\(interaction\),\n    \}\);\n  \}/, "\n  replaceGuildSection(interaction.guild.id, selected.section, {\n    roleIds: safeValues(interaction),\n  });")
-            .replace(/\n  if \(customId === 'admin:autoRoles:toggle'\) \{[\s\S]*?\n  \}\n\n  if \(\n    customId === 'admin:adminpanel'/, "\n  if (customId === 'admin:tickets') {\n    const { sendSetupPanel } = require('../../modules/tickets/ticketSetupPanel');\n    return sendSetupPanel(interaction);\n  }\n\n  if (\n    customId === 'admin:adminpanel'")
-            .replace("    customId === 'admin:modules' ||\n", '')
-            .replace("    customId === 'admin:autoRoles' ||\n", '')
-            .replace("    customId === 'admin:adminsettings' ||\n    COMING_SOON[customId]\n", "    customId === 'admin:adminsettings'\n")
-            .replace('  buildModulesPanel,\n', '')
-            .replace('  buildAutoRolesPanel,\n', '');
+          const modulesPattern = /const SERVER_MODULES = \[[\s\S]*?\]\.sort\(\(a, b\) => a\[2\]\.localeCompare\(b\[2\]\)\);/;
+          if (!modulesPattern.test(source)) throw new Error('SERVER_MODULES registry not found');
+          source = source.replace(modulesPattern, canonicalModules);
 
-          fs.writeFileSync(adminPath, admin);
+          source = source.replace(
+            "  const navButtons = [];\n  if (currentPage > 0) navButtons.push(button(`admin:modules:page:${currentPage - 1}`, '⬅️ Back', ButtonStyle.Secondary));\n  if (currentPage < totalPages - 1) navButtons.push(button(`admin:modules:page:${currentPage + 1}`, 'Next ➡️', ButtonStyle.Secondary));\n  navButtons.push(button('admin:home', '🏠 Admin Home', ButtonStyle.Secondary));",
+            "  const navButtons = [button('admin:home', '⬅️ Back', ButtonStyle.Secondary)];\n  if (currentPage > 0) navButtons.push(button(`admin:modules:page:${currentPage - 1}`, '◀ Previous', ButtonStyle.Secondary));\n  if (currentPage < totalPages - 1) navButtons.push(button(`admin:modules:page:${currentPage + 1}`, 'Next ▶', ButtonStyle.Secondary));\n  navButtons.push(button('admin:home', '🏠 Admin Home', ButtonStyle.Secondary));"
+          );
 
-          // Every module-level return button uses the same user-facing label.
-          const navigationFiles = [
-            'src/core/admin/functions/moduleAdminPanels.js',
-            'src/modules/polls/pollsPanel.js',
-            'src/modules/roleStudio/roleStudioPanel.js',
-            'src/modules/welcome/welcomePanel.js',
-            'src/modules/goodbye/goodbyePanel.js',
-            'src/modules/verification/verificationPanel.js',
-            'src/modules/social/socialPanel.js',
-            'src/modules/invites/invitesAdminPanel.js',
-            'src/modules/roleStudio/autoRoles/autoRolesPanel.js',
-            'src/modules/roleStudio/reactionRoles/reactionRolesPanel.js',
-          ];
+          source = source.replace(
+            "  const navButtons = [button('admin:modules', '⬅️ Modules', ButtonStyle.Secondary)];",
+            "  const navButtons = [button('admin:modules', '⬅️ Back', ButtonStyle.Secondary), button('admin:home', '🏠 Admin Home', ButtonStyle.Secondary)];"
+          );
 
-          for (const file of navigationFiles) {
-            if (!fs.existsSync(file)) throw new Error(`Navigation file missing: ${file}`);
-            let source = fs.readFileSync(file, 'utf8');
-            source = source
-              .replaceAll("'⬅️ Modules'", "'⬅️ Back'")
-              .replaceAll("'🏠 Admin Home'", "'⬅️ Back'");
-            fs.writeFileSync(file, source);
-          }
-
-          const modulesPath = 'src/core/admin/functions/moduleAdminPanels.js';
-          const modules = fs.readFileSync(modulesPath, 'utf8');
-          if (!modules.includes("button('admin:home', '⬅️ Back', ButtonStyle.Secondary)")) {
-            throw new Error('The Modules page does not expose the standard Back button.');
-          }
-
-          for (const file of navigationFiles.slice(1)) {
-            const source = fs.readFileSync(file, 'utf8');
-            if (!source.includes('admin:modules')) {
-              throw new Error(`Module does not return to the canonical module list: ${file}`);
-            }
-          }
-
-          const forbidden = [
-            'const MODULES =',
-            'const COMING_SOON =',
-            'function buildModulesPanel',
-            'function buildAutoRolesPanel',
-            'function getAutoRolesConfig',
-            "admin:autoRoles:toggle",
-            "admin:autoRoles:select",
-            'COMING_SOON[',
-          ];
-
-          const finalAdmin = fs.readFileSync(adminPath, 'utf8');
-          for (const token of forbidden) {
-            if (finalAdmin.includes(token)) throw new Error(`Legacy Admin token remains: ${token}`);
-          }
+          fs.writeFileSync(path, source);
           NODE
 
-      - name: Verify syntax and canonical routing
+      - name: Update Role Studio smoke expectations
         run: |
-          node --check src/core/admin/functions/adminPanel.js
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'tools/roleStudioSmokeTest.js';
+          if (!fs.existsSync(path)) process.exit(0);
+          let source = fs.readFileSync(path, 'utf8');
+          source = source
+            .replace("assert.equal(moduleRoutes.includes('admin:forms'), false);", "assert.equal(moduleRoutes.includes('admin:forms'), true);")
+            .replace("assert.equal(moduleRoutes.includes('admin:giveaways'), false);", "assert.equal(moduleRoutes.includes('admin:giveaways'), true);")
+            .replace("assert.equal(moduleRoutes.includes('admin:leveling'), false);", "assert.equal(moduleRoutes.includes('admin:leveling'), true);")
+            .replace("assert.equal(moduleRoutes.includes('admin:starboard'), false);", "assert.equal(moduleRoutes.includes('admin:starboard'), true);")
+            .replace("assert.equal(moduleRoutes.includes('admin:sticky'), false);", "assert.equal(moduleRoutes.includes('admin:sticky'), true);")
+            .replace("assert.equal(moduleRoutes.includes('admin:tempVoice'), false);", "assert.equal(moduleRoutes.includes('admin:tempVoice'), true);")
+            .replace("assert.equal(moduleRoutes.includes('admin:translation'), false);", "assert.equal(moduleRoutes.includes('admin:translation'), true);")
+            .replace('assert.equal(moduleRoutes.length, 8);', 'assert.equal(moduleRoutes.length, 19);');
+          fs.writeFileSync(path, source);
+          NODE
+
+      - name: Verify syntax and canonical menu
+        run: |
           node --check src/core/admin/functions/moduleAdminPanels.js
-          node --check src/modules/polls/pollsPanel.js
-          node --check src/modules/roleStudio/roleStudioPanel.js
-          node --check src/modules/welcome/welcomePanel.js
-          node --check src/modules/goodbye/goodbyePanel.js
-          node --check src/modules/verification/verificationPanel.js
-          node --check src/modules/social/socialPanel.js
-          node --check src/modules/invites/invitesAdminPanel.js
+          node - <<'NODE'
+          const panels = require('./src/core/admin/functions/moduleAdminPanels');
+          const routes = panels.SERVER_MODULES.map((entry) => entry[0]);
+          if (routes.length !== 19) throw new Error(`Expected 19 top-level modules, received ${routes.length}`);
+          for (const hidden of ['admin:autoRoles', 'admin:timedRoles']) {
+            if (routes.includes(hidden)) throw new Error(`${hidden} must remain inside Role Studio`);
+          }
+          const labels = panels.SERVER_MODULES.map((entry) => entry[2]);
+          const sorted = [...labels].sort((a, b) => a.localeCompare(b));
+          if (JSON.stringify(labels) !== JSON.stringify(sorted)) throw new Error('Modules are not alphabetical');
+          NODE
           node scripts/goliath.js test role-studio
 
       - name: Remove migration trigger and commit
@@ -122,6 +108,6 @@ jobs:
           rm .github/workflows/admin-shell-cleanup.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src .github/workflows/admin-shell-cleanup.yml
-          git commit -m "Standardize Admin module back navigation"
+          git add src/core/admin/functions/moduleAdminPanels.js tools/roleStudioSmokeTest.js .github/workflows/admin-shell-cleanup.yml
+          git commit -m "Restore all top-level Admin modules"
           git push origin HEAD:dev
