@@ -1,11 +1,9 @@
 'use strict';
 
-// Legacy path retained as the compatibility router used by interactionCreate.js.
-// The Role Studio hub owns the root route; child systems are delegated to their
-// canonical panels without reintroducing a second Admin module registry.
-const reactionRolesPanel = require('../roleStudio/reactionRoles/reactionRolesPanel');
+// Compatibility router used by the central interaction handler.
+// Keep the Role Studio hub independent from child-panel load failures: child
+// modules are required only when their own routes are opened.
 const roleStudioPanel = require('../roleStudio/roleStudioPanel');
-const temporaryRolesPanel = require('../roleStudio/temporaryRoles/temporaryRolesPanel');
 
 function displayName(interaction) {
   return interaction.member?.displayName
@@ -22,6 +20,24 @@ async function updateInteraction(interaction, payload) {
 
   await interaction.update(payload);
   return true;
+}
+
+function loadReactionRolesPanel() {
+  try {
+    return require('../roleStudio/reactionRoles/reactionRolesPanel');
+  } catch (error) {
+    console.error('[RoleStudio] Reaction Roles panel failed to load:', error?.stack || error?.message || error);
+    throw new Error(`Reaction Roles is unavailable: ${String(error?.message || error).slice(0, 250)}`);
+  }
+}
+
+function loadTemporaryRolesPanel() {
+  try {
+    return require('../roleStudio/temporaryRoles/temporaryRolesPanel');
+  } catch (error) {
+    console.error('[RoleStudio] Temporary Roles panel failed to load:', error?.stack || error?.message || error);
+    throw new Error(`Temporary Roles is unavailable: ${String(error?.message || error).slice(0, 250)}`);
+  }
 }
 
 async function handleReactionRolesAdminInteraction(interaction) {
@@ -51,9 +67,12 @@ async function handleReactionRolesAdminInteraction(interaction) {
     return updateInteraction(interaction, payload);
   }
 
-  if (customId.startsWith(temporaryRolesPanel.PREFIX)) {
+  if (customId.startsWith('admin:reactionRoles:temporary')) {
+    const temporaryRolesPanel = loadTemporaryRolesPanel();
     return temporaryRolesPanel.handleTemporaryRolesInteraction(interaction);
   }
+
+  const reactionRolesPanel = loadReactionRolesPanel();
 
   if (customId === 'admin:reactionRoles:open') {
     if (typeof reactionRolesPanel.buildReactionRolesAdminPanel !== 'function') {
@@ -75,6 +94,5 @@ async function handleReactionRolesAdminInteraction(interaction) {
 }
 
 module.exports = {
-  ...reactionRolesPanel,
   handleReactionRolesAdminInteraction,
 };
