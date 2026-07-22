@@ -9,6 +9,7 @@ const session = require('express-session');
 const { Client, Collection, GatewayIntentBits, Partials } = require('discord.js');
 const { loadEnvironment } = require('./src/config/envLoader');
 const { resolveToken } = require('./src/config/tokenResolver');
+const { prepareInteraction } = require('./src/runtime/interactionResponseGuard');
 loadEnvironment();
 
 process.on('warning', (warning) => {
@@ -109,6 +110,7 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildMessageReactions, GatewayIntentBits.GuildInvites, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.MessageContent],
   partials: [Partials.Message, Partials.Channel, Partials.Reaction],
 });
+client.setMaxListeners(25);
 client.commands = new Collection();
 const app = express();
 const server = http.createServer(app);
@@ -148,7 +150,10 @@ function registerEvents() {
       const loaded = require(file);
       for (const handler of (Array.isArray(loaded) ? loaded : [loaded])) {
         if (!handler?.name || typeof handler.execute !== 'function') continue;
-        const listener = (...args) => handler.execute(...args, client);
+        const listener = async (...args) => {
+          if (handler.name === 'interactionCreate') await prepareInteraction(args[0]);
+          return handler.execute(...args, client);
+        };
         if (handler.once === true) client.once(handler.name, listener); else client.on(handler.name, listener);
       }
     } catch (error) { console.warn(`⚠️ Event skipped: ${file}`); console.warn(error?.message || error); }
