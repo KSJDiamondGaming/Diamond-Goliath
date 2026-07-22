@@ -60,7 +60,7 @@ async function buildAutorolesPanel(guild, memberDisplayName = 'Unknown User') {
       row(
         button('admin:autoRoles:export', '📤 Export'),
         button('admin:autoRoles:reset', '♻️ Reset', ButtonStyle.Danger),
-        button('admin:modules', '⬅️ Modules')
+        button('admin:reactionRoles', '⬅️ Role Studio')
       ),
     ],
   };
