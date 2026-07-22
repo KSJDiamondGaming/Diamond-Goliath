@@ -1,7 +1,7 @@
 'use strict';
 
 const { MessageFlags, PermissionFlagsBits } = require('discord.js');
-const { getModuleSection, updateModuleSection } = require('../../../src/core/guild/moduleSectionManager');
+const { getModuleSection, updateModuleSection } = require('../../../core/guild/moduleSectionManager');
 
 const SECTION = 'reactionRoles';
 const CUSTOM_ID_PREFIX = 'role_toggle';
