@@ -190,11 +190,10 @@ client.once('clientReady', async () => {
   await Promise.all([
     runStartupTask('Tickets', () => require('./src/modules/tickets/tickets').startup.startupTickets(client)),
     runStartupTask('Timed Roles', () => require('./src/modules/roleStudio/timedRoles/timedRoles').startup(client)),
-    runStartupTask('Translation', () => require('./src/modules/translation/translationStartup').startup(client)),
-    runStartupTask('Goodbye', () => require('./src/modules/goodbye/goodbyeStartup').startup(client)),
-    runStartupTask('Giveaways', () => require('./src/modules/giveaways/giveaways').startup(client)),
+    runStartupTask('Translation', () => require('./src/modules/translation/translationStartup').startupTranslation(client)),
+    runStartupTask('Goodbye', () => require('./src/modules/goodbye/goodbye').startupGoodbye(client)),
     runStartupTask('Reaction Roles', () => require('./src/modules/roleStudio/reactionRoles/reactionRoles').startup(client)),
-    runStartupTask('Verification', () => require('./src/modules/verification/verificationStartup').startup(client)),
+    runStartupTask('Verification', () => require('./src/modules/verification/verification').startupVerification(client)),
   ]);
   backupScheduler.startBackupScheduler?.(client);
 });
