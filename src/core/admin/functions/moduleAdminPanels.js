@@ -56,7 +56,7 @@ function genericModule(config) {
     selectMenus: [],
     toggles: [],
     fields: [],
-    status: 'Configure this module using the controls below.',
+    status: 'Open Configure to manage this module.',
     ...config,
   };
 }
@@ -141,13 +141,13 @@ function buildModuleListPanel(page = 0, memberDisplayName = 'Unknown User') {
   const totalPages = Math.max(1, Math.ceil(SERVER_MODULES.length / MODULES_PER_PAGE));
   const currentPage = Math.min(Math.max(Number(page) || 0, 0), totalPages - 1);
   const pageItems = SERVER_MODULES.slice(currentPage * MODULES_PER_PAGE, (currentPage + 1) * MODULES_PER_PAGE);
-  const embed = new EmbedBuilder().setColor(PANEL_COLOR).setTitle('🧩 Goliath Modules').setDescription(`Select a module to configure.\n\nPage ${currentPage + 1}/${totalPages}`).setFooter({ text: `Requested by ${memberDisplayName}` }).setTimestamp();
+  const embed = new EmbedBuilder().setColor(PANEL_COLOR).setTitle('🧩 Goliath Modules').setDescription(`Select a module.\n\nPage ${currentPage + 1}/${totalPages}`).setFooter({ text: `Requested by ${memberDisplayName}` }).setTimestamp();
   const moduleRows = chunkArray(pageItems.map(([customId, label]) => button(customId, label, ButtonStyle.Primary)), MODULES_PER_ROW).map((buttons) => row(...buttons));
-  const navButtons = [button('admin:home', '⬅️ Back', ButtonStyle.Secondary)];
+  const navButtons = [];
   if (currentPage > 0) navButtons.push(button(`admin:modules:page:${currentPage - 1}`, '◀ Previous', ButtonStyle.Secondary));
   if (currentPage < totalPages - 1) navButtons.push(button(`admin:modules:page:${currentPage + 1}`, 'Next ▶', ButtonStyle.Secondary));
-  navButtons.push(button('admin:home', '🏠 Admin Home', ButtonStyle.Secondary));
-  return { embeds: [embed], components: [...moduleRows, row(...navButtons)].slice(0, 5) };
+  if (currentPage === 0) navButtons.push(button('admin:home', '🏠 Back to Admin Home', ButtonStyle.Secondary));
+  return { embeds: [embed], components: [...moduleRows, ...(navButtons.length ? [row(...navButtons)] : [])].slice(0, 5) };
 }
 
 function buildControlRows(moduleKey) {
@@ -162,7 +162,27 @@ function buildControlRows(moduleKey) {
   return rows;
 }
 
-function buildModulePanel(guild, moduleKey, memberDisplayName = 'Unknown User', controlPage = 0) {
+function buildModuleLandingPanel(guild, moduleKey, memberDisplayName = 'Unknown User') {
+  const module = MODULE_PANEL_REGISTRY[moduleKey];
+  if (!module) return null;
+  const config = getModuleConfig(guild.id, module.key);
+  const enabled = config.enabled !== false;
+  const embed = new EmbedBuilder()
+    .setColor(enabled ? 0x57f287 : PANEL_COLOR)
+    .setTitle(module.title)
+    .setDescription([module.summary, '', `**Status:** ${enabled ? 'Enabled ✅' : 'Disabled ❌'}`, '', 'Use **Configure** to open this module’s settings and tools.'].join('\n'))
+    .setFooter({ text: `Requested by ${memberDisplayName}` })
+    .setTimestamp();
+  return {
+    embeds: [embed],
+    components: [
+      row(button(`admin:module:${module.key}:configure:0`, '⚙️ Configure', ButtonStyle.Primary)),
+      row(button('admin:modules', '⬅️ Back', ButtonStyle.Secondary)),
+    ],
+  };
+}
+
+function buildModuleConfigurePanel(guild, moduleKey, memberDisplayName = 'Unknown User', controlPage = 0) {
   const module = MODULE_PANEL_REGISTRY[moduleKey];
   if (!module) return null;
   const config = getModuleConfig(guild.id, module.key);
@@ -171,12 +191,17 @@ function buildModulePanel(guild, moduleKey, memberDisplayName = 'Unknown User', 
   const totalPages = Math.max(1, Math.ceil(controlRows.length / CONTROLS_PER_PAGE));
   const currentPage = Math.min(Math.max(Number(controlPage) || 0, 0), totalPages - 1);
   const controls = controlRows.slice(currentPage * CONTROLS_PER_PAGE, (currentPage + 1) * CONTROLS_PER_PAGE);
-  const embed = new EmbedBuilder().setColor(enabled ? 0x57f287 : PANEL_COLOR).setTitle(module.title).setDescription([module.summary, '', `**Status:** ${enabled ? 'Enabled ✅' : 'Disabled ❌'}`, `**Module Key:** \`${module.key}\``, `**Setup Page:** ${currentPage + 1}/${totalPages}`, '', module.status].join('\n')).addFields({ name: 'Current Setup', value: buildFieldList(module, config), inline: false }).setFooter({ text: `Requested by ${memberDisplayName}` }).setTimestamp();
-  const navButtons = [button('admin:modules', '⬅️ Back', ButtonStyle.Secondary)];
-  if (currentPage > 0) navButtons.push(button(`admin:module:${module.key}:configpage:${currentPage - 1}`, '◀ Previous', ButtonStyle.Secondary));
-  if (currentPage < totalPages - 1) navButtons.push(button(`admin:module:${module.key}:configpage:${currentPage + 1}`, 'Next ▶', ButtonStyle.Secondary));
-  navButtons.push(button('admin:home', '🏠 Admin Home', ButtonStyle.Secondary));
-  return { embeds: [embed], components: [row(button(`admin:module:${module.key}:enable`, '▶️ Enable', ButtonStyle.Success), button(`admin:module:${module.key}:disable`, '⏸️ Disable', ButtonStyle.Secondary), button(`admin:module:${module.key}:reset`, '♻️ Reset', ButtonStyle.Danger)), ...controls, row(...navButtons)].slice(0, 5) };
+  const embed = new EmbedBuilder().setColor(enabled ? 0x57f287 : PANEL_COLOR).setTitle(`${module.title} · Configure`).setDescription([module.summary, '', `**Status:** ${enabled ? 'Enabled ✅' : 'Disabled ❌'}`, `**Module Key:** \`${module.key}\``, `**Setup Page:** ${currentPage + 1}/${totalPages}`, '', 'All module controls belong on this Configure page.'].join('\n')).addFields({ name: 'Current Setup', value: buildFieldList(module, config), inline: false }).setFooter({ text: `Requested by ${memberDisplayName}` }).setTimestamp();
+  const actionButtons = [
+    button(`admin:module:${module.key}:${enabled ? 'disable' : 'enable'}`, enabled ? '⏸️ Disable' : '▶️ Enable', enabled ? ButtonStyle.Secondary : ButtonStyle.Success),
+    button(`admin:module:${module.key}:health`, '🩺 Health', ButtonStyle.Secondary),
+    button(`admin:module:${module.key}:repair`, '🛠️ Repair', ButtonStyle.Secondary),
+    button(`admin:module:${module.key}:reset`, '♻️ Reset', ButtonStyle.Danger),
+  ];
+  const navButtons = [button(`admin:module:${module.key}:landing`, '⬅️ Back', ButtonStyle.Secondary)];
+  if (currentPage > 0) navButtons.push(button(`admin:module:${module.key}:configure:${currentPage - 1}`, '◀ Previous', ButtonStyle.Secondary));
+  if (currentPage < totalPages - 1) navButtons.push(button(`admin:module:${module.key}:configure:${currentPage + 1}`, 'Next ▶', ButtonStyle.Secondary));
+  return { embeds: [embed], components: [row(...actionButtons), ...controls, row(...navButtons)].slice(0, 5) };
 }
 
 async function safeUpdate(interaction, payload) { if (interaction.deferred || interaction.replied) { await interaction.editReply(payload); return true; } await interaction.update(payload); return true; }
@@ -192,20 +217,29 @@ async function handleModuleAdminInteraction(interaction) {
   if (customId === 'admin:tickets') return openTicketsPanel(interaction);
   if (EXTERNAL_MODULE_ROUTES.has(customId)) return false;
   const routeKey = ROUTE_TO_KEY[customId];
-  if (routeKey) return safeUpdate(interaction, buildModulePanel(interaction.guild, routeKey, getMemberDisplayName(interaction), 0));
-  const configPageMatch = customId.match(/^admin:module:([a-zA-Z0-9_-]+):configpage:(\d+)$/);
-  if (configPageMatch && interaction.isButton?.()) return safeUpdate(interaction, buildModulePanel(interaction.guild, configPageMatch[1], getMemberDisplayName(interaction), Number(configPageMatch[2])));
-  const buttonMatch = customId.match(/^admin:module:([a-zA-Z0-9_-]+):(enable|disable|reset)$/);
-  if (buttonMatch && interaction.isButton?.()) { const [, moduleKey, action] = buttonMatch; if (!MODULE_PANEL_REGISTRY[moduleKey]) return false; if (action === 'enable') setModuleEnabled(interaction.guild, moduleKey, true); if (action === 'disable') setModuleEnabled(interaction.guild, moduleKey, false); if (action === 'reset') saveModuleConfig(interaction.guild, moduleKey, MODULE_PANEL_REGISTRY[moduleKey].defaults); return safeUpdate(interaction, buildModulePanel(interaction.guild, moduleKey, getMemberDisplayName(interaction), 0)); }
+  if (routeKey) return safeUpdate(interaction, buildModuleLandingPanel(interaction.guild, routeKey, getMemberDisplayName(interaction)));
+  const landingMatch = customId.match(/^admin:module:([a-zA-Z0-9_-]+):landing$/);
+  if (landingMatch && interaction.isButton?.()) return safeUpdate(interaction, buildModuleLandingPanel(interaction.guild, landingMatch[1], getMemberDisplayName(interaction)));
+  const configureMatch = customId.match(/^admin:module:([a-zA-Z0-9_-]+):configure:(\d+)$/);
+  if (configureMatch && interaction.isButton?.()) return safeUpdate(interaction, buildModuleConfigurePanel(interaction.guild, configureMatch[1], getMemberDisplayName(interaction), Number(configureMatch[2])));
+  const buttonMatch = customId.match(/^admin:module:([a-zA-Z0-9_-]+):(enable|disable|reset|health|repair)$/);
+  if (buttonMatch && interaction.isButton?.()) {
+    const [, moduleKey, action] = buttonMatch;
+    if (!MODULE_PANEL_REGISTRY[moduleKey]) return false;
+    if (action === 'enable') setModuleEnabled(interaction.guild, moduleKey, true);
+    if (action === 'disable') setModuleEnabled(interaction.guild, moduleKey, false);
+    if (action === 'reset') saveModuleConfig(interaction.guild, moduleKey, MODULE_PANEL_REGISTRY[moduleKey].defaults);
+    return safeUpdate(interaction, buildModuleConfigurePanel(interaction.guild, moduleKey, getMemberDisplayName(interaction), 0));
+  }
   const toggleMatch = customId.match(/^admin:module:([a-zA-Z0-9_-]+):toggle:([a-zA-Z0-9_-]+)$/);
-  if (toggleMatch && interaction.isButton?.()) { const [, moduleKey, prop] = toggleMatch; if (!MODULE_PANEL_REGISTRY[moduleKey]) return false; saveModuleConfig(interaction.guild, moduleKey, (config) => ({ ...config, [prop]: !Boolean(config[prop]) })); return safeUpdate(interaction, buildModulePanel(interaction.guild, moduleKey, getMemberDisplayName(interaction), 0)); }
+  if (toggleMatch && interaction.isButton?.()) { const [, moduleKey, prop] = toggleMatch; if (!MODULE_PANEL_REGISTRY[moduleKey]) return false; saveModuleConfig(interaction.guild, moduleKey, (config) => ({ ...config, [prop]: !Boolean(config[prop]) })); return safeUpdate(interaction, buildModuleConfigurePanel(interaction.guild, moduleKey, getMemberDisplayName(interaction), 0)); }
   const channelMatch = customId.match(/^admin:module:([a-zA-Z0-9_-]+):channel:([a-zA-Z0-9_-]+)$/);
-  if (channelMatch && interaction.isChannelSelectMenu?.()) { updateChannelSelection(interaction.guild, channelMatch[1], channelMatch[2], interaction.values || []); return safeUpdate(interaction, buildModulePanel(interaction.guild, channelMatch[1], getMemberDisplayName(interaction), 0)); }
+  if (channelMatch && interaction.isChannelSelectMenu?.()) { updateChannelSelection(interaction.guild, channelMatch[1], channelMatch[2], interaction.values || []); return safeUpdate(interaction, buildModuleConfigurePanel(interaction.guild, channelMatch[1], getMemberDisplayName(interaction), 0)); }
   const roleMatch = customId.match(/^admin:module:([a-zA-Z0-9_-]+):role:([a-zA-Z0-9_-]+)$/);
-  if (roleMatch && interaction.isRoleSelectMenu?.()) { updateRoleSelection(interaction.guild, roleMatch[1], roleMatch[2], interaction.values || []); return safeUpdate(interaction, buildModulePanel(interaction.guild, roleMatch[1], getMemberDisplayName(interaction), 0)); }
+  if (roleMatch && interaction.isRoleSelectMenu?.()) { updateRoleSelection(interaction.guild, roleMatch[1], roleMatch[2], interaction.values || []); return safeUpdate(interaction, buildModuleConfigurePanel(interaction.guild, roleMatch[1], getMemberDisplayName(interaction), 0)); }
   const optionMatch = customId.match(/^admin:module:([a-zA-Z0-9_-]+):option:([a-zA-Z0-9_-]+)$/);
-  if (optionMatch && interaction.isStringSelectMenu?.()) { saveModuleConfig(interaction.guild, optionMatch[1], (config) => ({ ...config, [optionMatch[2]]: interaction.values?.[0] })); return safeUpdate(interaction, buildModulePanel(interaction.guild, optionMatch[1], getMemberDisplayName(interaction), 0)); }
+  if (optionMatch && interaction.isStringSelectMenu?.()) { saveModuleConfig(interaction.guild, optionMatch[1], (config) => ({ ...config, [optionMatch[2]]: interaction.values?.[0] })); return safeUpdate(interaction, buildModuleConfigurePanel(interaction.guild, optionMatch[1], getMemberDisplayName(interaction), 0)); }
   return false;
 }
 
-module.exports = { MODULE_PANEL_REGISTRY, SERVER_MODULES, buildModuleListPanel, buildModulePanel, handleModuleAdminInteraction };
+module.exports = { MODULE_PANEL_REGISTRY, SERVER_MODULES, buildModuleListPanel, buildModuleLandingPanel, buildModuleConfigurePanel, buildModulePanel: buildModuleLandingPanel, handleModuleAdminInteraction };
