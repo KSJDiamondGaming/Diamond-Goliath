@@ -1,6 +1,7 @@
 'use strict';
 
-const social = require('./social');
+const social = require('./socialRuntime');
+const socialStore = require('./socialStore');
 
 async function resolveChannel(guild, channelId) {
   if (!channelId) return null;
@@ -127,7 +128,7 @@ async function repair(guild, meta = {}) {
       }, { action: 'social_repair_check', ...meta });
       repaired.push({ accountId: account.accountId, providerStatus: result.providerStatus || result.status || 'unknown' });
     } catch (error) {
-      social.store.incrementAnalytics(guild.id, { errors: 1 }, { action: 'social_repair_error', ...meta });
+      socialStore.incrementAnalytics(guild.id, { errors: 1 }, { action: 'social_repair_error', ...meta });
       failed.push({ accountId: account.accountId, error: error.message });
     }
   }
@@ -145,7 +146,7 @@ function exportConfig(guildId) {
     module: 'social',
     guildId: String(guildId),
     exportedAt: new Date().toISOString(),
-    config: social.store.getSocialSection(guildId),
+    config: socialStore.getSocialSection(guildId),
     diagnostics: social.diagnostics.buildDiagnostics(guildId),
     queue: social.queue.list(guildId),
     history: social.history.list(guildId, { limit: social.history.MAX_HISTORY }),
@@ -154,7 +155,7 @@ function exportConfig(guildId) {
 
 function reset(guildId, meta = {}) {
   social.queue.clear(guildId, { action: 'social_reset_queue', ...meta });
-  return social.store.saveSocialSection(guildId, social.store.defaultSocialSection(), { action: 'social_reset', ...meta });
+  return socialStore.saveSocialSection(guildId, socialStore.defaultSocialSection(), { action: 'social_reset', ...meta });
 }
 
 module.exports = { buildHealth, repair, exportConfig, reset };
