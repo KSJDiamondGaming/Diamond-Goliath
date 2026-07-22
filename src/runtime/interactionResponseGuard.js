@@ -1,8 +1,7 @@
 'use strict';
 
 const ADMIN_DEFER_PREFIXES = [
-  'admin:modules',
-  'admin:config:',
+  'admin:',
 ];
 
 function shouldPreDefer(interaction) {
