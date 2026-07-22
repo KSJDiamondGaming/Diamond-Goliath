@@ -6,22 +6,15 @@ Server administrators only enter public creator information: a username, handle,
 
 ## Canonical structure
 
-- `social.js` — canonical runtime entry
-- `socialPanel.js` — Discord Social Studio
-- `socialCreatorPanel.js` — Discord Creator Hub and simulator
-- `socialRoute.js` — primary API route
-- `socialCreatorRoute.js` — Creator Hub, diagnostics, and simulator API
-- `socialManager.js` — account lifecycle and live-alert compatibility
-- `socialDelivery.js` — canonical live, upload, Short, and post delivery
-- `socialScheduler.js` — provider polling and dispatch
-- `socialQueue.js` — restart-safe retries
-- `socialHistory.js` — operational ledger
-- `socialHealth.js` — health, repair, export, and reset
-- `socialDiagnostics.js` — provider, account, and creator health scores
-- `socialCreators.js` — unified creator profiles
-- `socialSimulator.js` — provider-free notification simulation
-- `providerRegistry.js` — provider readiness, policy, and dispatch
-- `providers/` — provider implementations
+Social Studio is being consolidated into one five-file module under `src/modules/socialStudio/`:
+
+- `social.js` — canonical module entry
+- `socialStore.js` — storage, defaults, migrations, analytics, queue state, and history state
+- `socialRuntime.js` — providers, polling, creators, simulation, delivery, queue, history, diagnostics, health, repair, export, and reset
+- `socialPanel.js` — the single Discord Social Studio administration surface
+- `socialRoute.js` — the single Social Studio API route
+
+The storage key remains `social`. Runtime helper files, duplicate Creator Hub panels/routes, compatibility wrappers, and the legacy `providers/` folder are absorbed into the five canonical files rather than retained as parallel implementations.
 
 ## Zero-credential setup
 
@@ -73,9 +66,9 @@ They are not reported as broken or unfinished. They may be added later only when
 
 The first content item discovered for a newly configured account becomes its baseline and is not announced. This prevents old uploads, existing live streams, or previous posts from creating false alerts during setup or restart recovery.
 
-## Creator Hub
+## Creator profiles
 
-Creator Hub groups multiple platform accounts under one creator profile. Profiles support:
+Creator profiles group multiple platform accounts under one creator. Profiles support:
 
 - Display names
 - Notes
@@ -87,7 +80,7 @@ Creator Hub groups multiple platform accounts under one creator profile. Profile
 - Safe profile rebuilding
 - Provider-free simulation
 
-Discord access is available through `/socialhub` for members with Manage Server permission.
+Discord access is available through `/socialhub`, which opens the canonical Social Studio panel for members with Manage Server permission.
 
 ## Alert delivery
 
@@ -112,7 +105,7 @@ Discord and dashboard management include:
 
 - Overview
 - Account library
-- Creator Hub
+- Creator profiles
 - Alert Studio
 - Provider Centre
 - Operations Centre
@@ -136,24 +129,21 @@ Accounts, creator profiles, and the module receive scores based on identifiers, 
 
 ## Doctor
 
-`npm run doctor` runs the main repository Doctor and `scripts/social-doctor.js`.
+`npm run doctor` runs the main repository Doctor and the Social Studio checks.
 
-The Social Doctor validates:
+The final Social Studio Doctor contract validates:
 
-- Canonical runtime and routes
-- Discord Social Studio and Creator Hub
-- Dashboard surface
-- Creator profiles and simulator
-- Delivery, queue, history, health, repair, and diagnostics
-- Twitch, YouTube, Kick, and X production handlers
-- Provider-scope policy
-- Module manifest maturity
-- Dashboard registry status
-- Documentation
+- The module lives at `src/modules/socialStudio/`
+- Exactly five canonical module files exist
+- No legacy `src/modules/social/` implementation remains
+- No duplicate Creator Hub panel or route remains
+- No helper wrapper or nested provider implementation remains
+- The canonical panel, route, runtime, and store import successfully
+- The dashboard surface and module registry remain connected
+- The storage key remains `social`
+- Documentation matches the deployed architecture
 
 ## Completion state
-
-**Social Studio v1 is complete.**
 
 The supported zero-credential production scope is:
 
