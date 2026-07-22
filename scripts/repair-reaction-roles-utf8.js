@@ -25,31 +25,38 @@ function markerScore(value) {
   return (String(value).match(MOJIBAKE_MARKERS) || []).length;
 }
 
-function encodeWindows1252(value) {
-  const bytes = [];
-
-  for (const character of value) {
-    const codePoint = character.codePointAt(0);
-    if (codePoint <= 0xFF) {
-      bytes.push(codePoint);
-      continue;
-    }
-
-    const mapped = CP1252_REVERSE.get(codePoint);
-    if (mapped === undefined) return null;
-    bytes.push(mapped);
-  }
-
-  return Buffer.from(bytes);
+function cp1252Byte(character) {
+  const codePoint = character.codePointAt(0);
+  if (codePoint <= 0xFF) return codePoint;
+  return CP1252_REVERSE.get(codePoint);
 }
 
-function decodeOnePass(value) {
-  const encoded = encodeWindows1252(value);
-  if (!encoded) return null;
+function decodeCompatibleSegments(value) {
+  let output = '';
+  let segment = [];
 
-  const decoded = encoded.toString('utf8');
-  if (decoded.includes('\uFFFD')) return null;
-  return decoded;
+  function flush() {
+    if (!segment.length) return;
+    const original = segment.map((entry) => entry.character).join('');
+    const decoded = Buffer.from(segment.map((entry) => entry.byte)).toString('utf8');
+    output += !decoded.includes('\uFFFD') && markerScore(decoded) < markerScore(original)
+      ? decoded
+      : original;
+    segment = [];
+  }
+
+  for (const character of value) {
+    const byte = cp1252Byte(character);
+    if (byte === undefined) {
+      flush();
+      output += character;
+    } else {
+      segment.push({ character, byte });
+    }
+  }
+
+  flush();
+  return output;
 }
 
 function repairMojibake(source) {
@@ -60,9 +67,7 @@ function repairMojibake(source) {
     const before = markerScore(current);
     if (before === 0) break;
 
-    const decoded = decodeOnePass(current);
-    if (!decoded) break;
-
+    const decoded = decodeCompatibleSegments(current);
     const after = markerScore(decoded);
     if (after >= before) break;
 
@@ -70,19 +75,11 @@ function repairMojibake(source) {
     current = decoded;
   }
 
-  return {
-    content: current,
-    passes,
-    remainingMarkers: markerScore(current),
-  };
+  return { content: current, passes, remainingMarkers: markerScore(current) };
 }
 
 function runNodeCheck(filePath) {
-  const result = spawnSync(process.execPath, ['--check', filePath], {
-    cwd: ROOT,
-    encoding: 'utf8',
-  });
-
+  const result = spawnSync(process.execPath, ['--check', filePath], { cwd: ROOT, encoding: 'utf8' });
   if (result.status !== 0) {
     const detail = String(result.stderr || result.stdout || 'Unknown syntax error').trim();
     throw new Error(`Syntax verification failed:\n${detail}`);
@@ -90,9 +87,7 @@ function runNodeCheck(filePath) {
 }
 
 function main() {
-  if (!fs.existsSync(TARGET)) {
-    throw new Error(`Reaction Roles panel not found: ${path.relative(ROOT, TARGET)}`);
-  }
+  if (!fs.existsSync(TARGET)) throw new Error(`Reaction Roles panel not found: ${path.relative(ROOT, TARGET)}`);
 
   const original = fs.readFileSync(TARGET, 'utf8');
   const originalScore = markerScore(original);
@@ -101,24 +96,12 @@ function main() {
   console.log('Reaction Roles UTF-8 repair');
   console.log(`Target: ${path.relative(ROOT, TARGET)}`);
   console.log(`Original marker score: ${originalScore}`);
-  for (const pass of repaired.passes) {
-    console.log(`Pass ${pass.pass}: ${pass.before} -> ${pass.after}`);
-  }
+  for (const pass of repaired.passes) console.log(`Pass ${pass.pass}: ${pass.before} -> ${pass.after}`);
   console.log(`Remaining marker score: ${repaired.remainingMarkers}`);
 
-  if (originalScore === 0) {
-    console.log('No repair required.');
-    return;
-  }
-
-  if (!repaired.passes.length || repaired.remainingMarkers !== 0) {
-    throw new Error('Repair was incomplete. No file was changed.');
-  }
-
-  if (!WRITE) {
-    console.log('Dry run complete. Re-run with --write to apply the verified repair.');
-    return;
-  }
+  if (originalScore === 0) return console.log('No repair required.');
+  if (!repaired.passes.length || repaired.remainingMarkers !== 0) throw new Error('Repair was incomplete. No file was changed.');
+  if (!WRITE) return console.log('Dry run complete. Re-run with --write to apply the verified repair.');
 
   const backup = `${TARGET}.utf8-backup`;
   fs.writeFileSync(backup, original, 'utf8');
@@ -136,9 +119,5 @@ function main() {
   console.log('Repair applied and syntax verification passed.');
 }
 
-try {
-  main();
-} catch (error) {
-  console.error(`ERROR: ${error.message}`);
-  process.exitCode = 1;
-}
+try { main(); }
+catch (error) { console.error(`ERROR: ${error.message}`); process.exitCode = 1; }
