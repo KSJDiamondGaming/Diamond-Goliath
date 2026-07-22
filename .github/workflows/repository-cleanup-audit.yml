@@ -24,36 +24,63 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Run cleanup diagnostics
-        shell: bash
+      - name: Remove verified wrappers and orphan
         run: |
-          set +e
-          {
-            echo "# Repository cleanup audit"
-            echo
-            echo "## Goliath source"
-            node scripts/goliath.js source
-            echo
-            echo "## Goliath dashboard"
-            node scripts/goliath.js dashboard
-            echo
-            echo "## Goliath imports"
-            node scripts/goliath.js imports
-            echo
-            echo "## Goliath doctor"
-            node scripts/goliath.js doctor
-            echo
-            echo "## Candidate filenames"
-            find . -path './node_modules' -prune -o -path './.git' -prune -o -type f \( -iname '*legacy*' -o -iname '*bridge*' -o -iname '*shim*' -o -iname '*wrapper*' -o -iname '*patch*' -o -iname '*old*' -o -iname '*backup*' -o -iname '*copy*' \) -print | sort
-            echo
-            echo "## Empty source directories"
-            find src -type d -empty -print | sort
-            echo
-            echo "## Duplicate file hashes"
-            find src scripts tools -type f -not -path '*/node_modules/*' -print0 | xargs -0 sha256sum | sort | awk 'BEGIN{last=""; count=0} {hash=$1; file=$2; if(hash==last){if(count==1) print previous; print file; count++} else {last=hash; previous=file; count=1}}'
-          } > .github/repository-cleanup-audit-report.txt 2>&1
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const root = process.cwd();
+          const canonical = path.join(root, 'src/core/dev/testDevOverrideManager.js');
+          const wrappers = new Set([
+            path.join(root, 'src/core/security/devOwnerHierarchy.js'),
+            path.join(root, 'src/core/security/testModeGuard.js'),
+          ].map((file) => path.normalize(file)));
+
+          function walk(dir) {
+            const out = [];
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+              if (['node_modules', '.git'].includes(entry.name)) continue;
+              const full = path.join(dir, entry.name);
+              if (entry.isDirectory()) out.push(...walk(full));
+              else if (entry.isFile() && entry.name.endsWith('.js')) out.push(full);
+            }
+            return out;
+          }
+
+          for (const file of walk(path.join(root, 'src'))) {
+            if (wrappers.has(path.normalize(file))) continue;
+            const source = fs.readFileSync(file, 'utf8');
+            const next = source.replace(/require\((['"])(\.\.?\/[^'"]+)\1\)/g, (full, quote, request) => {
+              const base = path.resolve(path.dirname(file), request);
+              const candidates = [base, `${base}.js`, path.join(base, 'index.js')].map((item) => path.normalize(item));
+              if (!candidates.some((candidate) => wrappers.has(candidate))) return full;
+              let relative = path.relative(path.dirname(file), canonical).replace(/\\/g, '/').replace(/\.js$/, '');
+              if (!relative.startsWith('.')) relative = `./${relative}`;
+              return `require(${quote}${relative}${quote})`;
+            });
+            if (next !== source) fs.writeFileSync(file, next, 'utf8');
+          }
+
+          for (const wrapper of wrappers) fs.rmSync(wrapper, { force: true });
+          fs.rmSync(path.join(root, 'src/dashboard/js/pages/modules/SocialProviderStatusPanel.jsx'), { force: true });
+          NODE
+      - name: Verify cleanup
+        run: |
+          node scripts/goliath.js source
+          node scripts/goliath.js dashboard
+          node scripts/goliath.js imports
+          node scripts/goliath.js doctor
+          test ! -e src/core/security/devOwnerHierarchy.js
+          test ! -e src/core/security/testModeGuard.js
+          test ! -e src/dashboard/js/pages/modules/SocialProviderStatusPanel.jsx
+          ! grep -R "devOwnerHierarchy\|testModeGuard\|SocialProviderStatusPanel" src --include='*.js' --include='*.jsx'
+      - name: Commit cleanup
+        run: |
+          rm -f .github/repository-cleanup-audit.trigger
+          rm -f .github/repository-cleanup-audit-report.txt
+          rm -f .github/workflows/repository-cleanup-audit.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .github/repository-cleanup-audit-report.txt
-          git commit -m "Capture repository cleanup audit"
+          git add -A
+          git commit -m "Remove orphan dashboard component and duplicate security wrappers"
           git push origin HEAD:${{ github.event.pull_request.head.ref }}
