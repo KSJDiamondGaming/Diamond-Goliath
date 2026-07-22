@@ -1,1 +1,1 @@
-apply cleanup final
+capture post cleanup report
