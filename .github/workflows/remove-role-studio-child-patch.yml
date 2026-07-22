@@ -1,0 +1,56 @@
+name: Remove Role Studio Child Patch
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - .github/remove-role-studio-child-patch.trigger
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Remove obsolete child navigation patch
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const panelPath = 'src/modules/roleStudio/reactionRoles/reactionRolesPanel.js';
+          const patchPath = 'src/modules/roleStudio/roleStudioChildNavigationPatch.js';
+          const source = fs.readFileSync(panelPath, 'utf8');
+          const target = "require('../roleStudioChildNavigationPatch');\n";
+          if (!source.includes(target)) throw new Error('Child navigation patch loader not found.');
+          fs.writeFileSync(panelPath, source.replace(target, ''), 'utf8');
+          fs.rmSync(patchPath, { force: true });
+          NODE
+      - name: Verify cleanup
+        run: |
+          node --check src/modules/roleStudio/reactionRoles/reactionRolesPanel.js
+          node --check src/modules/roleStudio/autoRoles/autoRolesPanel.js
+          node --check src/modules/roleStudio/timedRoles/timedRolesPanel.js
+          node scripts/goliath.js source
+          node scripts/goliath.js dashboard
+          node scripts/goliath.js imports
+          test ! -e src/modules/roleStudio/roleStudioChildNavigationPatch.js
+          ! grep -R "roleStudioChildNavigationPatch" src --include='*.js'
+      - name: Commit cleanup
+        run: |
+          rm -f .github/remove-role-studio-child-patch.trigger
+          rm -f .github/workflows/remove-role-studio-child-patch.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Remove obsolete Role Studio child navigation patch"
+          git push origin dev
