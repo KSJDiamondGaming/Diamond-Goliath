@@ -151,7 +151,8 @@ function auditSourceText() {
       const resolved = normalise(path.resolve(path.dirname(file), request));
       if (resolved.startsWith(rootCore)) legacyImports.push(`${relative} -> ${request}`);
     }
-    if (/[A-Za-z]:\\[^\s'"`]+/.test(source)) windowsPaths.push(relative);
+    const windowsPath = /\b[A-Za-z]:\\[^\\\r\n'"`]+(?:\\[^\\\r\n'"`]+)+|\b[A-Za-z]:\\[^\\\r\n'"`]*\.[A-Za-z0-9]{1,8}\b/;
+    if (windowsPath.test(source)) windowsPaths.push(relative);
   }
   console.log(`Text files scanned: ${files.length}`);
   console.log(`UTF-8 corruption candidates: ${encodingIssues.length}`);
