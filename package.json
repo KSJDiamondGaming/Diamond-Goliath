@@ -6,10 +6,9 @@
   "type": "commonjs",
   "private": true,
   "scripts": {
-    "dev": "npm run dev:local",
-    "dev:local": "concurrently -n BOT,DASHBOARD -c green,cyan \"npm run bot:dev\" \"npm run dashboard:dev\"",
+    "dev": "concurrently -n BOT,DASHBOARD -c green,cyan \"npm run bot:dev\" \"npm run dashboard:dev\"",
     "beta": "concurrently -n BOT,DASHBOARD -c yellow,cyan \"npm run bot:beta\" \"npm run dashboard:beta\"",
-    "production": "npm run bot:production",
+    "production": "cross-env BOT_MODE=production node -r ./src/runtime/warningFilter.js server.js",
     "bot": "node -r ./src/runtime/warningFilter.js server.js",
     "bot:dev": "cross-env BOT_MODE=dev node -r ./src/runtime/warningFilter.js server.js",
     "bot:beta": "cross-env BOT_MODE=beta node -r ./src/runtime/warningFilter.js server.js",
