@@ -32,7 +32,7 @@ function initSocketHub(server, options = {}) {
     cors: {
       origin:
         options?.clientUrl ||
-        'http://localhost:5173',
+        'http://localhost:5175',
 
       credentials: true,
     },
