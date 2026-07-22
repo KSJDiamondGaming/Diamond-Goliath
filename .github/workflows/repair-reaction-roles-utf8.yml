@@ -22,26 +22,46 @@ jobs:
         with:
           node-version: 20
 
-      - name: Repair mojibake without changing code structure
+      - name: Repair Windows-1252 mojibake without changing code structure
         run: |
           node <<'NODE'
           const fs = require('node:fs');
           const file = 'src/modules/roleStudio/reactionRoles/reactionRolesPanel.js';
           let text = fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '');
+
+          const cp1252 = new Map([
+            [0x20AC, 0x80], [0x201A, 0x82], [0x0192, 0x83], [0x201E, 0x84],
+            [0x2026, 0x85], [0x2020, 0x86], [0x2021, 0x87], [0x02C6, 0x88],
+            [0x2030, 0x89], [0x0160, 0x8A], [0x2039, 0x8B], [0x0152, 0x8C],
+            [0x017D, 0x8E], [0x2018, 0x91], [0x2019, 0x92], [0x201C, 0x93],
+            [0x201D, 0x94], [0x2022, 0x95], [0x2013, 0x96], [0x2014, 0x97],
+            [0x02DC, 0x98], [0x2122, 0x99], [0x0161, 0x9A], [0x203A, 0x9B],
+            [0x0153, 0x9C], [0x017E, 0x9E], [0x0178, 0x9F],
+          ]);
+
+          function encodeWindows1252(value) {
+            const bytes = [];
+            for (const character of value) {
+              const code = character.codePointAt(0);
+              if (code <= 0xFF) bytes.push(code);
+              else if (cp1252.has(code)) bytes.push(cp1252.get(code));
+              else return null;
+            }
+            return Buffer.from(bytes);
+          }
+
           const markers = /[ÃÂâðï�]/g;
           const score = (value) => (value.match(markers) || []).length;
+          const before = score(text);
+          const encoded = encodeWindows1252(text);
+          if (!encoded) throw new Error('Source contains characters outside Windows-1252 before repair.');
+          const repaired = encoded.toString('utf8');
 
-          for (let pass = 0; pass < 4; pass += 1) {
-            const repaired = Buffer.from(text, 'latin1').toString('utf8');
-            if (repaired.includes('\uFFFD') || score(repaired) >= score(text)) break;
-            text = repaired;
-          }
+          if (repaired.includes('\uFFFD')) throw new Error('Repair produced replacement characters.');
+          if (score(repaired) >= before) throw new Error(`Repair did not improve marker score (${before} -> ${score(repaired)}).`);
+          if (score(repaired) !== 0) throw new Error(`Repair incomplete; remaining marker score=${score(repaired)}.`);
 
-          if (score(text) !== 0 || text.includes('\uFFFD')) {
-            throw new Error(`UTF-8 repair incomplete; remaining marker score=${score(text)}`);
-          }
-
-          fs.writeFileSync(file, text, 'utf8');
+          fs.writeFileSync(file, repaired, 'utf8');
           NODE
 
       - name: Verify repaired panel
