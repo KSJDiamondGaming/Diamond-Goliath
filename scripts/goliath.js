@@ -16,7 +16,6 @@ const MOJIBAKE_MARKERS = [0x00e2, 0x00f0, 0x00ef, 0x00c3, 0xfffd].map(String.fro
 const EXTERNAL_TOOLS = Object.freeze({
   invitesDoctor: 'invites-doctor.js',
   invitesTest: 'invites-smoke-test.js',
-  roleStudioTest: 'role-studio-smoke-test.js',
 });
 
 function absolute(file) { return path.join(root, file); }
@@ -328,22 +327,21 @@ function auditSocialStudio() {
     ['src/dashboard/js/shared/moduleRegistry.js', ["name: 'Social Studio'", 'status: MODULE_STATUSES.live']],
     ['docs/modules/social-alerts.md', ['Completion state', 'Social Studio v1 is complete', 'authorization_required']],
   ]);
-  if (!errors.length) console.log('\n✅ Social Studio doctor passed.');
-  else console.error(`\nSocial Studio doctor failed (${errors.length} issue${errors.length === 1 ? '' : 's'}).`);
+  if (!errors.length) {
+    console.log('\n✅ Social Studio doctor passed.');
+    console.log('✅ Supported production providers: Twitch, YouTube, Kick, X.');
+    console.log('✅ TikTok and Instagram are intentionally excluded from v1 zero-credential monitoring.');
+  } else console.error(`\nSocial Studio doctor failed (${errors.length} issue${errors.length === 1 ? '' : 's'}).`);
   return errors.length === 0;
 }
 
 function auditGoodbye() {
   const errors = auditExportContract('Goodbye doctor', [
-    ['src/modules/goodbye/goodbye.js', []],
-    ['src/modules/goodbye/departureTemplateSender.js', []],
+    ['src/modules/goodbye/goodbye.js', []], ['src/modules/goodbye/departureTemplateSender.js', []],
     ['src/modules/goodbye/goodbyeDepartureDm.js', ['getConfig', 'updateConfig', 'resetConfig', 'buildDmEmbed', 'sendDepartureDm']],
-    ['src/modules/goodbye/goodbyeDmPanel.js', []],
-    ['src/modules/goodbye/goodbyePanel.js', []],
-    ['src/modules/goodbye/goodbyeRoute.js', []],
-    ['src/events/members/memberJoinLeave.js', []],
-    ['src/dashboard/js/pages/modules/Goodbye.jsx', []],
-    ['docs/modules/goodbye.md', []],
+    ['src/modules/goodbye/goodbyeDmPanel.js', []], ['src/modules/goodbye/goodbyePanel.js', []],
+    ['src/modules/goodbye/goodbyeRoute.js', []], ['src/events/members/memberJoinLeave.js', []],
+    ['src/dashboard/js/pages/modules/Goodbye.jsx', []], ['docs/modules/goodbye.md', []],
   ], [
     ['src/events/members/memberJoinLeave.js', ['goodbyeDepartureDm.sendDepartureDm(member, removal)', 'departureTemplateSender.sendDeparture(member, removal)']],
     ['src/modules/goodbye/goodbyeDepartureDm.js', ['left:', 'kicked:', 'banned:', 'pruned:', 'YOUR ACCOUNT', 'YOUR TIME HERE', 'DEPARTURE']],
@@ -357,39 +355,137 @@ function auditGoodbye() {
 }
 
 function auditReactionRoles() {
-  const panelPath = 'src/modules/roleStudio/reactionRoles/reactionRolesPanel.js';
   const errors = auditExportContract('Reaction Roles doctor', [
     ['src/modules/roleStudio/reactionRoles/reactionRoles.js', []],
     ['src/modules/roleStudio/reactionRoles/reactionRolesRoute.js', []],
     ['src/modules/roleStudio/reactionRoles/reactionRoleMessageFinder.js', []],
-    [panelPath, []],
+    ['src/modules/roleStudio/reactionRoles/reactionRolesPanel.js', []],
     ['src/dashboard/js/pages/modules/ReactionRoles.jsx', []],
-    ['src/events/messages/messageReactionAdd.js', []],
-    ['src/events/messages/messageReactionRemove.js', []],
+    ['src/events/messages/messageReactionAdd.js', []], ['src/events/messages/messageReactionRemove.js', []],
   ], [
     ['src/modules/roleStudio/reactionRoles/reactionRolesRoute.js', ["require('./reactionRoleMessageFinder')", "router.get('/:guildId/messages/search'", 'messageFinder.searchGuildMessages', "router.put('/:guildId/panels/:panelId'", "router.patch('/:guildId/panels/:panelId/enabled'"]],
     ['src/modules/roleStudio/reactionRoles/reactionRoleMessageFinder.js', ['searchGuildMessages', 'serializeEmbed', 'authorAvatar', 'reactions', 'imageURL', 'embedsOnly', 'pinnedOnly', 'botsOnly', 'messageId']],
     ['src/modules/roleStudio/reactionRoles/reactionRoles.js', ['attachExistingMessage', 'createFromTemplate', 'updatePanelMappings', 'setPanelEnabled', 'repairAll', 'handleReactionAdd', 'handleReactionRemove']],
-    [panelPath, ['buildReactionRolesAdminPanel:', 'handleReactionRolesAdminInteraction', 'module.exports =', 'admin:reactionRoles']],
   ]);
-
+  const panelPath = 'src/modules/roleStudio/reactionRoles/reactionRolesPanel.js';
   if (exists(panelPath)) {
     const panelSource = read(absolute(panelPath));
-    if (/require\(['"]\.\/reactionRolesPanelV[2-7]['"]\)/.test(panelSource)) errors.push(`${panelPath}: contains external version-chain import`);
+    for (const required of ['buildReactionRolesAdminPanel', 'handleReactionRolesAdminInteraction', 'module.exports', 'admin:reactionRoles']) if (!panelSource.includes(required)) errors.push(`${panelPath}: missing ${required}`);
+    if (/require\(['"]\.\/reactionRolesPanelV[2-7]['"]\)/.test(panelSource)) errors.push(`${panelPath}: external version-chain import remains`);
   }
   for (let version = 2; version <= 7; version += 1) {
     const legacy = `src/modules/roleStudio/reactionRoles/reactionRolesPanelV${version}.js`;
-    if (exists(legacy)) errors.push(`${legacy}: legacy versioned panel should not exist`);
-  }
-
-  for (const error of errors.slice(-7)) {
-    if (!error.startsWith('src/modules/roleStudio/reactionRoles/reactionRolesPanelV')) continue;
-    console.error(` - ${error}`);
+    if (exists(legacy)) errors.push(`${legacy}: legacy versioned panel should be removed`);
   }
   if (!errors.length) {
     console.log('\n✅ Reaction Roles production entry verified.');
-    console.log('ℹ️ Development-guild restart and live builder acceptance remain runtime checks.');
+    console.log('ℹ️ A development-guild restart and live builder acceptance test are still required.');
   } else console.error(`\nReaction Roles doctor failed (${errors.length} issue${errors.length === 1 ? '' : 's'}).`);
+  return errors.length === 0;
+}
+
+function auditRoleStudio() {
+  section('Role Studio smoke test');
+  const errors = [];
+  const fail = (message) => errors.push(message);
+  const requireFile = (file) => {
+    if (!exists(file)) { fail(`${file}: missing file`); return null; }
+    try { delete require.cache[require.resolve(absolute(file))]; return require(absolute(file)); }
+    catch (error) { fail(`${file}: failed to load - ${error.message}`); return null; }
+  };
+  const source = (file) => exists(file) ? read(absolute(file)) : (fail(`${file}: missing file`), '');
+
+  const reactionPanelSource = source('src/modules/roleStudio/reactionRoles/reactionRolesPanel.js');
+  const legacyEntry = source('src/modules/reactionroles/reactionRolesPanel.js');
+  const compatibilityShimSource = source('src/modules/roleStudio/roleStudioNavigationPatch.js');
+  const hubSource = source('src/modules/roleStudio/roleStudioPanel.js');
+  const modulePanelSource = source('src/core/admin/functions/moduleAdminPanels.js');
+  const runtimePatchSource = source('src/core/admin/functions/adminModuleRuntimePatch.js');
+  const autoRolesSource = source('src/modules/roleStudio/autoRoles/autoRoles.js');
+  const autoRolesStartup = source('src/events/client/autoRolesStartup.js');
+  const temporaryPanel = source('src/modules/roleStudio/temporaryRoles/temporaryRolesPanel.js');
+  const temporaryStartup = source('src/events/client/temporaryRolesStartup.js');
+  const timedPanel = source('src/modules/roleStudio/timedRoles/timedRolesPanel.js');
+  const timedStartup = source('src/events/client/timedRolesStartup.js');
+  const timedMemberJoin = source('src/events/timedroles/timedRolesMemberJoin.js');
+
+  const hub = requireFile('src/modules/roleStudio/roleStudioPanel.js');
+  const modulePanels = requireFile('src/core/admin/functions/moduleAdminPanels.js');
+  const runtimePatch = requireFile('src/core/admin/functions/adminModuleRuntimePatch.js');
+  const autoRoles = requireFile('src/modules/roleStudio/autoRoles/autoRoles.js');
+  const temporary = requireFile('src/modules/roleStudio/temporaryRoles/temporaryRoles.js');
+  const timedRoles = requireFile('src/modules/roleStudio/timedRoles/timedRoles.js');
+  const compatibilityShim = requireFile('src/modules/roleStudio/roleStudioNavigationPatch.js');
+
+  for (const name of ['buildRoleStudioPanel', 'buildRoleAnalyticsPanel', 'buildRoleHealthPanel']) if (typeof hub?.[name] !== 'function') fail(`roleStudioPanel.${name} is not exported`);
+  for (const route of ['admin:autoRoles', 'admin:reactionRoles:open', 'admin:timedRoles', 'admin:reactionRoles:temporary', 'admin:reactionRoles:analytics', 'admin:reactionRoles:health']) if (!hubSource.includes(route)) fail(`Role Studio is missing route ${route}`);
+
+  const expectedModules = [
+    ['admin:embed', 'Embed Studio'], ['admin:forms', 'Forms'], ['admin:fun', 'Fun'], ['admin:giveaways', 'Giveaways'],
+    ['admin:goodbye', 'Goodbye'], ['admin:invites', 'Invite Studio'], ['admin:leveling', 'Leveling'], ['admin:polls', 'Polls'],
+    ['admin:reactionRoles', 'Role Studio'], ['admin:stats', 'Server Stats'], ['admin:social', 'Social Alerts'], ['admin:starboard', 'Starboard'],
+    ['admin:sticky', 'Sticky Messages'], ['admin:suggestions', 'Suggestions'], ['admin:tempVoice', 'Temp Voice'], ['admin:tickets', 'Tickets'],
+    ['admin:translation', 'Translation'], ['admin:verification', 'Verification'], ['admin:welcome', 'Welcome'],
+  ];
+
+  try {
+    runtimePatch?.install?.(modulePanels);
+    const actualModules = modulePanels?.SERVER_MODULES?.map(([route, , name]) => [route, name]);
+    if (JSON.stringify(actualModules) !== JSON.stringify(expectedModules)) fail('Top-level Admin module menu does not match the canonical 19-module list');
+    const names = modulePanels?.SERVER_MODULES?.map((item) => item[2]) || [];
+    if (JSON.stringify(names) !== JSON.stringify([...names].sort((a, b) => a.localeCompare(b)))) fail('Top-level Admin modules are not alphabetical');
+    const routes = modulePanels?.SERVER_MODULES?.map((item) => item[0]) || [];
+    for (const nested of ['admin:autoRoles', 'admin:timedRoles', 'admin:reactionRoles:open', 'admin:reactionRoles:temporary']) if (routes.includes(nested)) fail(`${nested} must remain nested under Role Studio`);
+    const entry = modulePanels?.SERVER_MODULES?.find((item) => item[0] === 'admin:reactionRoles');
+    if (!entry || entry[1] !== '🎭 Role Studio' || entry[2] !== 'Role Studio') fail('Role Studio top-level menu entry is incorrect');
+    const firstPage = JSON.stringify(modulePanels?.buildModuleListPanel?.(0, 'Smoke Test'));
+    const secondPage = JSON.stringify(modulePanels?.buildModuleListPanel?.(1, 'Smoke Test'));
+    for (const required of ['Page 1/2', 'admin:modules:back', 'admin:home', 'admin:modules:page:1']) if (!firstPage.includes(required)) fail(`Module page 1 is missing ${required}`);
+    for (const required of ['Page 2/2', 'admin:modules:page:0', 'admin:home']) if (!secondPage.includes(required)) fail(`Module page 2 is missing ${required}`);
+  } catch (error) { fail(`Admin module navigation verification failed - ${error.message}`); }
+
+  for (const required of ["button('admin:modules', '⬅️ Back')", "button('admin:home', '🏠 Admin Home')", 'installNavigationPatches']) if (!runtimePatchSource.includes(required)) fail(`adminModuleRuntimePatch is missing ${required}`);
+  for (const required of ['handleReactionRolesAdminInteraction', "require('../roleStudioNavigationPatch')"]) if (!reactionPanelSource.includes(required)) fail(`reactionRolesPanel is missing ${required}`);
+  for (const required of ['buildFallbackHub', 'loadReactionRolesPanel']) if (!legacyEntry.includes(required)) fail(`legacy reactionRolesPanel is missing ${required}`);
+  if (legacyEntry.includes('roleStudioNavigationPatch')) fail('Legacy reactionRolesPanel must not import roleStudioNavigationPatch');
+  for (const required of ['// Canonical Admin Hub module menu.', "['admin:reactionRoles', '🎭 Role Studio'"]) if (!modulePanelSource.includes(required)) fail(`moduleAdminPanels is missing ${required}`);
+  if (!compatibilityShimSource.includes('intentionally')) fail('Role Studio navigation shim lacks its no-op explanation');
+  if (compatibilityShimSource.includes('SERVER_MODULES') || compatibilityShimSource.includes('splice(')) fail('Role Studio navigation shim still mutates the module menu');
+  if (compatibilityShim && Object.keys(compatibilityShim).length !== 0) fail('Role Studio navigation shim must export an empty object');
+
+  for (const name of ['applyAutoRoles', 'startupAutoRoles', 'buildHealthReport', 'setAutoRolesEnabled']) if (typeof autoRoles?.[name] !== 'function') fail(`autoRoles.${name} is not exported`);
+  if (autoRoles?.setEnabled !== undefined) fail('autoRoles.setEnabled legacy alias must be absent');
+  for (const required of ['const enabled = isAutoRolesEnabled(guild.id);', 'const reapply = enabled && section.settings?.reapplyOnStartup === true']) if (!autoRolesSource.includes(required)) fail(`autoRoles runtime is missing ${required}`);
+  if (!autoRolesStartup.includes('startupAutoRoles(client)')) fail('Auto Roles startup is not wired');
+  try {
+    const normalized = autoRoles?.normalizeAutoRolesSection?.({ settings: { applyToBots: true, auditLog: false, reapplyOnStartup: true, ignoreExistingRoles: false, unsupportedSetting: true } });
+    const keys = Object.keys(normalized?.settings || {}).sort();
+    const expected = ['applyToBots', 'auditLog', 'ignoreExistingRoles', 'reapplyOnStartup'];
+    if (JSON.stringify(keys) !== JSON.stringify(expected) || normalized?.settings?.unsupportedSetting !== undefined) fail('Auto Roles settings normalization contract failed');
+  } catch (error) { fail(`Auto Roles normalization failed - ${error.message}`); }
+  if (autoRolesSource.includes('...input,') || autoRolesSource.includes('...clone(source.settings)')) fail('Auto Roles still copies unsupported settings');
+
+  for (const name of ['assignTemporaryRole', 'removeAssignment', 'scanExpired']) if (typeof temporary?.[name] !== 'function') fail(`temporaryRoles.${name} is not exported`);
+  for (const required of ['UserSelectMenuBuilder', 'Assign Temporary Role']) if (!temporaryPanel.includes(required)) fail(`Temporary Roles panel is missing ${required}`);
+  for (const required of ['SCAN_INTERVAL_MS', 'scanExpired']) if (!temporaryStartup.includes(required)) fail(`Temporary Roles startup is missing ${required}`);
+
+  for (const name of ['getMemberProgression', 'applyProgressionToMember', 'simulateGuild', 'scanGuild']) if (typeof timedRoles?.[name] !== 'function') fail(`timedRoles.${name} is not exported`);
+  if (JSON.stringify(timedRoles?.MODES) !== JSON.stringify(['keep_all', 'highest_only'])) fail('Timed Roles modes are incorrect');
+  for (const required of ['Choose any role to create a milestone', 'Preview any member', 'toggleMode', 'announcementChannel', 'Promotion Announcement', 'Simulate']) if (!timedPanel.includes(required)) fail(`Timed Roles panel is missing ${required}`);
+  if (!timedStartup.includes('timedRoles.startup(client)')) fail('Timed Roles startup is not wired');
+  if (!timedMemberJoin.includes('applyProgressionToMember')) fail('Timed Roles member-join progression is not wired');
+
+  for (const error of errors) console.error(` - ${error}`);
+  if (!errors.length) {
+    console.log('✅ Role Studio exports and routes are wired.');
+    console.log('✅ All 19 top-level Admin modules are present alphabetically.');
+    console.log('✅ Role systems are grouped only under Role Studio.');
+    console.log('✅ Two-page module navigation includes Back, paging and Admin Home.');
+    console.log('✅ Shared Admin module navigation patch is installed.');
+    console.log('✅ Legacy Role Studio navigation import resolves to a no-op shim.');
+    console.log('✅ Auto, reaction, timed and temporary role modules are connected.');
+    console.log('ℹ️ Run the full doctor and a live development-guild acceptance test after pulling.');
+  } else console.error(`\nRole Studio smoke test failed (${errors.length} issue${errors.length === 1 ? '' : 's'}).`);
   return errors.length === 0;
 }
 
@@ -427,30 +523,26 @@ function checkMediaDependencies() {
   return ffmpeg.status === 0 && sharp;
 }
 
-function runTool(file) {
+function runExternalTool(file) {
   const result = spawnSync(process.execPath, [path.join(tools, file)], { cwd: root, env: process.env, stdio: 'inherit', windowsHide: true });
   if (result.error) console.error(`Failed to run ${file}: ${result.error.message}`);
   return !result.error && result.status === 0;
 }
-function runTools(files) { return files.every(runTool); }
+function runExternalTools(files) { return files.every(runExternalTool); }
 function runDashboard() { return [auditDashboardFiles(), auditDashboardRoutes()].every(Boolean); }
 function runModules() { return [auditModuleStandard(), auditCanonicalModuleManifest()].every(Boolean); }
 function runCoreCheck() { return [checkProjectShape(), auditCommands(), runDashboard(), auditSourceText(), auditRuntimeImports(), runModules(), inspectRuntime()].every(Boolean); }
-
-const externalSuites = Object.freeze({
-  invites: [EXTERNAL_TOOLS.invitesDoctor, EXTERNAL_TOOLS.invitesTest],
-  'role-studio': [EXTERNAL_TOOLS.roleStudioTest],
-  rolestudio: [EXTERNAL_TOOLS.roleStudioTest],
-});
-const allExternalTools = [...new Set(Object.values(externalSuites).flat())];
+function runInvites() { return runExternalTools([EXTERNAL_TOOLS.invitesDoctor, EXTERNAL_TOOLS.invitesTest]); }
 
 function runDoctor(target) {
   if (target === 'modules') return runModules();
   if (target === 'social') return auditSocialStudio();
   if (target === 'goodbye') return auditGoodbye();
   if (['reaction', 'reactionroles', 'reaction-roles'].includes(target)) return auditReactionRoles();
-  if (target) return externalSuites[target] ? runTools(externalSuites[target]) : false;
-  return runCoreCheck() && auditSocialStudio() && auditGoodbye() && auditReactionRoles() && runTools(allExternalTools);
+  if (['role-studio', 'rolestudio'].includes(target)) return auditRoleStudio();
+  if (target === 'invites') return runInvites();
+  if (target) return false;
+  return runCoreCheck() && auditSocialStudio() && auditGoodbye() && auditReactionRoles() && auditRoleStudio() && runInvites();
 }
 
 function runAudit() { return runDoctor() && inspectGuilds(); }
@@ -466,6 +558,8 @@ function printHelp() {
   console.log('  social            Check Social Studio');
   console.log('  goodbye           Check Goodbye');
   console.log('  reaction          Check Reaction Roles');
+  console.log('  role-studio       Check Role Studio');
+  console.log('  invites           Check Invite Studio');
   console.log('  dashboard         Check dashboard imports and routes');
   console.log('  runtime           Inspect runtime folders');
   console.log('  imports           Check runtime imports');
@@ -489,6 +583,9 @@ const commands = {
   reaction: auditReactionRoles,
   reactionroles: auditReactionRoles,
   'reaction-roles': auditReactionRoles,
+  'role-studio': auditRoleStudio,
+  rolestudio: auditRoleStudio,
+  invites: runInvites,
   dashboard: runDashboard,
   runtime: inspectRuntime,
   imports: auditRuntimeImports,
