@@ -17,9 +17,6 @@
     "promote:beta": "node scripts/goliath.js promote beta",
     "promote:production": "node scripts/goliath.js promote production",
     "sync:commands": "node scripts/goliath.js sync-commands",
-    "sync:commands:dev": "node scripts/goliath.js sync-commands dev",
-    "sync:commands:beta": "node scripts/goliath.js sync-commands beta",
-    "sync:commands:production": "node scripts/goliath.js sync-commands production",
     "doctor": "node scripts/goliath.js doctor",
     "doctor:social": "node scripts/goliath.js doctor social",
     "audit": "node scripts/goliath.js audit"
