@@ -17,6 +17,9 @@ const canonicalFiles = Object.freeze([
 const retiredFiles = Object.freeze([
   'socialCreatorPanel.js',
   'socialCreatorRoute.js',
+  'socialCreators.js',
+  'socialDiagnostics.js',
+  'socialSimulator.js',
 ]);
 
 function relative(file) {
