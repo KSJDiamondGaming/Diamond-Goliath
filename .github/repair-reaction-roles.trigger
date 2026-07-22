@@ -1,1 +1,1 @@
-repair retry
+repair diagnostic
