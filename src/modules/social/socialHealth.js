@@ -1,6 +1,6 @@
 'use strict';
 
-const social = require('./socialRuntime');
+const social = require('./social');
 const socialStore = require('./socialStore');
 
 async function resolveChannel(guild, channelId) {
