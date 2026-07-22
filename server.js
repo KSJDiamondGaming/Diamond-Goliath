@@ -110,7 +110,6 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildMessageReactions, GatewayIntentBits.GuildInvites, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.MessageContent],
   partials: [Partials.Message, Partials.Channel, Partials.Reaction],
 });
-client.setMaxListeners(25);
 client.commands = new Collection();
 const app = express();
 const server = http.createServer(app);
@@ -143,20 +142,39 @@ function registerEvents() {
   const eventsPath = path.join(process.cwd(), 'src', 'events');
   if (!fs.existsSync(eventsPath)) return;
   const files = [];
+  const grouped = new Map();
   const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).forEach((entry) => { const full = path.join(dir, entry.name); if (entry.isDirectory()) walk(full); else if (entry.isFile() && entry.name.endsWith('.js')) files.push(full); });
   walk(eventsPath);
+  files.sort((a, b) => a.localeCompare(b));
+
   for (const file of files) {
     try {
       const loaded = require(file);
       for (const handler of (Array.isArray(loaded) ? loaded : [loaded])) {
         if (!handler?.name || typeof handler.execute !== 'function') continue;
-        const listener = async (...args) => {
-          if (handler.name === 'interactionCreate') await prepareInteraction(args[0]);
-          return handler.execute(...args, client);
-        };
-        if (handler.once === true) client.once(handler.name, listener); else client.on(handler.name, listener);
+        const eventName = String(handler.name);
+        const groupKey = `${eventName}:${handler.once === true ? 'once' : 'on'}`;
+        if (!grouped.has(groupKey)) grouped.set(groupKey, { eventName, once: handler.once === true, handlers: [] });
+        grouped.get(groupKey).handlers.push({ file, execute: handler.execute });
       }
-    } catch (error) { console.warn(`⚠️ Event skipped: ${file}`); console.warn(error?.message || error); }
+    } catch (error) {
+      console.warn(`⚠️ Event skipped: ${file}`);
+      console.warn(error?.message || error);
+    }
+  }
+
+  for (const { eventName, once, handlers } of grouped.values()) {
+    const listener = async (...args) => {
+      if (eventName === 'interactionCreate') await prepareInteraction(args[0]);
+      for (const handler of handlers) {
+        try { await handler.execute(...args, client); }
+        catch (error) {
+          console.error(`[Events] ${eventName} handler failed: ${handler.file}`);
+          console.error(error?.stack || error?.message || error);
+        }
+      }
+    };
+    if (once) client.once(eventName, listener); else client.on(eventName, listener);
   }
 }
 registerEvents();
