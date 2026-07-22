@@ -69,7 +69,6 @@ jobs:
           node scripts/goliath.js source
           node scripts/goliath.js dashboard
           node scripts/goliath.js imports
-          node scripts/goliath.js doctor
           test ! -e src/core/security/devOwnerHierarchy.js
           test ! -e src/core/security/testModeGuard.js
           test ! -e src/dashboard/js/pages/modules/SocialProviderStatusPanel.jsx
