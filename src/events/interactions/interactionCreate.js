@@ -41,8 +41,6 @@ const timedRolesPanel = optionalRequire('timed roles', '../../modules/timedroles
 const welcomePanel = optionalRequire('welcome', '../../modules/welcome/welcomePanel');
 const goodbyePanel = optionalRequire('goodbye', '../../modules/goodbye/goodbyePanel');
 const moduleAdminPanels = optionalRequire('generic module admin', '../../core/admin/functions/moduleAdminPanels');
-const adminModuleRuntimePatch = optionalRequire('admin module runtime patch', '../../core/admin/functions/adminModuleRuntimePatch');
-adminModuleRuntimePatch.install?.(moduleAdminPanels);
 
 let invitesAdminPanel = null;
 let invitesAdminPanelError = null;
@@ -81,50 +79,31 @@ function isValidHttpUrl(value) {
 function sanitizeEmbedData(embed) {
   const data = typeof embed?.toJSON === 'function' ? embed.toJSON() : { ...embed };
   if (!data || typeof data !== 'object') return data;
-
   const sanitized = { ...data };
-
   if (sanitized.footer?.icon_url && !isValidHttpUrl(sanitized.footer.icon_url)) {
-    console.warn('[InteractionCreate] Removed invalid embed footer icon URL.');
     sanitized.footer = { ...sanitized.footer };
     delete sanitized.footer.icon_url;
   }
-
   if (sanitized.author?.icon_url && !isValidHttpUrl(sanitized.author.icon_url)) {
-    console.warn('[InteractionCreate] Removed invalid embed author icon URL.');
     sanitized.author = { ...sanitized.author };
     delete sanitized.author.icon_url;
   }
-
   if (sanitized.author?.url && !isValidHttpUrl(sanitized.author.url)) {
-    console.warn('[InteractionCreate] Removed invalid embed author URL.');
     sanitized.author = { ...sanitized.author };
     delete sanitized.author.url;
   }
-
-  if (sanitized.thumbnail?.url && !isValidHttpUrl(sanitized.thumbnail.url)) {
-    console.warn('[InteractionCreate] Removed invalid embed thumbnail URL.');
-    delete sanitized.thumbnail;
-  }
-
-  if (sanitized.image?.url && !isValidHttpUrl(sanitized.image.url)) {
-    console.warn('[InteractionCreate] Removed invalid embed image URL.');
-    delete sanitized.image;
-  }
-
+  if (sanitized.thumbnail?.url && !isValidHttpUrl(sanitized.thumbnail.url)) delete sanitized.thumbnail;
+  if (sanitized.image?.url && !isValidHttpUrl(sanitized.image.url)) delete sanitized.image;
   return sanitized;
 }
 
 function sanitizeComponentPayload(payload) {
   if (!payload || typeof payload !== 'object') return payload;
-
   const sanitizedPayload = {
     ...payload,
     ...(Array.isArray(payload.embeds) ? { embeds: payload.embeds.map(sanitizeEmbedData) } : {}),
   };
-
   if (!Array.isArray(payload.components)) return sanitizedPayload;
-
   const seen = new Set();
   const rows = [];
   for (const actionRow of payload.components) {
@@ -132,10 +111,7 @@ function sanitizeComponentPayload(payload) {
     const components = Array.isArray(rowData?.components) ? rowData.components.filter((component) => {
       const customId = component?.custom_id || component?.customId || null;
       if (!customId) return true;
-      if (seen.has(customId)) {
-        console.warn(`[InteractionCreate] Removed duplicate component custom_id: ${customId}`);
-        return false;
-      }
+      if (seen.has(customId)) return false;
       seen.add(customId);
       return true;
     }) : [];
@@ -191,8 +167,6 @@ async function handleVerificationMemberInteraction(interaction) {
     const member = await fetchFreshMember(interaction);
     if (!member) return { ok: false, message: 'Member not found. Please try again.' };
     const result = await verificationManager.verifyMember({ guild: interaction.guild, guildId: interaction.guildId, member, user: interaction.user });
-    const refreshed = await fetchFreshMember(interaction);
-    if (result.ok && refreshed) console.log(`[Verification] Completed for ${interaction.user.id} in ${interaction.guildId}; roles=${[...refreshed.roles.cache.keys()].join(',')}`);
     return result;
   })();
   verificationLocks.set(lockKey, operation);
@@ -235,10 +209,7 @@ module.exports = {
       }
       if (startsWith(interaction, 'invites:')) {
         const panel = loadInvitesAdminPanel();
-        if (!panel) {
-          const reason = String(invitesAdminPanelError?.message || 'Unknown module load error').slice(0, 500);
-          throw new Error(`Invite Studio failed to load: ${reason}`);
-        }
+        if (!panel) throw new Error('Invite Studio failed to load.');
         if (!await callHandler(panel, 'handleInviteStudioInteraction', interaction)) throw new Error(`Invite Studio did not handle ${interaction.customId}.`);
         return;
       }
