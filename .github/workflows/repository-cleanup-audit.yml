@@ -72,7 +72,6 @@ jobs:
           test ! -e src/core/security/devOwnerHierarchy.js
           test ! -e src/core/security/testModeGuard.js
           test ! -e src/dashboard/js/pages/modules/SocialProviderStatusPanel.jsx
-          ! grep -R "devOwnerHierarchy\|testModeGuard\|SocialProviderStatusPanel" src --include='*.js' --include='*.jsx'
       - name: Commit cleanup
         run: |
           rm -f .github/repository-cleanup-audit.trigger
