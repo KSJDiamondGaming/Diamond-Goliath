@@ -1,12 +1,12 @@
 'use strict';
 
 const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
-const { buildCreatorHubPanel } = require('../../modules/social/socialCreatorPanel');
+const { buildSocialAdminPanel } = require('../../modules/social/socialPanel');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('socialhub')
-    .setDescription('Open the Social Studio Creator Hub workspace.')
+    .setDescription('Open the Social Studio workspace.')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .setDMPermission(false),
 
@@ -16,7 +16,10 @@ module.exports = {
       return;
     }
 
-    const payload = buildCreatorHubPanel(interaction);
+    const payload = buildSocialAdminPanel(
+      interaction.guild,
+      interaction.member?.displayName || interaction.user?.globalName || interaction.user?.username || 'Administrator',
+    );
     await interaction.reply({ ...payload, flags: MessageFlags.Ephemeral });
   },
 };
