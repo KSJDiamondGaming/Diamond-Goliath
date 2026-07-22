@@ -39,6 +39,7 @@ const REQUIRED_RUNTIME_EXPORTS = Object.freeze([
   'simulator',
   'queue',
   'history',
+  'health',
   'providers',
   'scheduler',
 ]);
