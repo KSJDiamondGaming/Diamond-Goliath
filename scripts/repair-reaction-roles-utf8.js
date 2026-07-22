@@ -25,31 +25,38 @@ function markerScore(value) {
   return (String(value).match(MOJIBAKE_MARKERS) || []).length;
 }
 
-function encodeWindows1252(value) {
-  const bytes = [];
-
-  for (const character of value) {
-    const codePoint = character.codePointAt(0);
-    if (codePoint <= 0xFF) {
-      bytes.push(codePoint);
-      continue;
-    }
-
-    const mapped = CP1252_REVERSE.get(codePoint);
-    if (mapped === undefined) return null;
-    bytes.push(mapped);
-  }
-
-  return Buffer.from(bytes);
+function cp1252Byte(character) {
+  const codePoint = character.codePointAt(0);
+  if (codePoint <= 0xFF) return codePoint;
+  return CP1252_REVERSE.get(codePoint);
 }
 
-function decodeOnePass(value) {
-  const encoded = encodeWindows1252(value);
-  if (!encoded) return null;
+function decodeCompatibleSegments(value) {
+  let output = '';
+  let segment = [];
 
-  const decoded = encoded.toString('utf8');
-  if (decoded.includes('\uFFFD')) return null;
-  return decoded;
+  function flush() {
+    if (!segment.length) return;
+    const original = segment.map((entry) => entry.character).join('');
+    const decoded = Buffer.from(segment.map((entry) => entry.byte)).toString('utf8');
+    output += !decoded.includes('\uFFFD') && markerScore(decoded) < markerScore(original)
+      ? decoded
+      : original;
+    segment = [];
+  }
+
+  for (const character of value) {
+    const byte = cp1252Byte(character);
+    if (byte === undefined) {
+      flush();
+      output += character;
+    } else {
+      segment.push({ character, byte });
+    }
+  }
+
+  flush();
+  return output;
 }
 
 function repairMojibake(source) {
@@ -60,9 +67,7 @@ function repairMojibake(source) {
     const before = markerScore(current);
     if (before === 0) break;
 
-    const decoded = decodeOnePass(current);
-    if (!decoded) break;
-
+    const decoded = decodeCompatibleSegments(current);
     const after = markerScore(decoded);
     if (after >= before) break;
 
