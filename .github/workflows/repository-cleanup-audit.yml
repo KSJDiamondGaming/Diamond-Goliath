@@ -23,55 +23,24 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - name: Apply candidates and capture verification
-        shell: bash
+      - name: Remove second-order orphan and verify
         run: |
-          node <<'NODE'
-          const fs = require('node:fs');
-          const path = require('node:path');
-          const root = process.cwd();
-          const canonical = path.join(root, 'src/core/dev/testDevOverrideManager.js');
-          const wrappers = new Set([
-            path.join(root, 'src/core/security/devOwnerHierarchy.js'),
-            path.join(root, 'src/core/security/testModeGuard.js'),
-          ].map((file) => path.normalize(file)));
-          function walk(dir) {
-            const out = [];
-            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-              if (['node_modules', '.git'].includes(entry.name)) continue;
-              const full = path.join(dir, entry.name);
-              if (entry.isDirectory()) out.push(...walk(full));
-              else if (entry.isFile() && entry.name.endsWith('.js')) out.push(full);
-            }
-            return out;
-          }
-          for (const file of walk(path.join(root, 'src'))) {
-            if (wrappers.has(path.normalize(file))) continue;
-            const source = fs.readFileSync(file, 'utf8');
-            const next = source.replace(/require\((['"])(\.\.?\/[^'"]+)\1\)/g, (full, quote, request) => {
-              const base = path.resolve(path.dirname(file), request);
-              const candidates = [base, `${base}.js`, path.join(base, 'index.js')].map((item) => path.normalize(item));
-              if (!candidates.some((candidate) => wrappers.has(candidate))) return full;
-              let relative = path.relative(path.dirname(file), canonical).replace(/\\/g, '/').replace(/\.js$/, '');
-              if (!relative.startsWith('.')) relative = `./${relative}`;
-              return `require(${quote}${relative}${quote})`;
-            });
-            if (next !== source) fs.writeFileSync(file, next, 'utf8');
-          }
-          for (const wrapper of wrappers) fs.rmSync(wrapper, { force: true });
-          fs.rmSync(path.join(root, 'src/dashboard/js/pages/modules/SocialProviderStatusPanel.jsx'), { force: true });
-          NODE
-          set +e
-          {
-            echo '# Post-cleanup verification'
-            echo '## Source'; node scripts/goliath.js source; echo "status=$?"
-            echo '## Dashboard'; node scripts/goliath.js dashboard; echo "status=$?"
-            echo '## Imports'; node scripts/goliath.js imports; echo "status=$?"
-            echo '## Deleted files'
-            for file in src/core/security/devOwnerHierarchy.js src/core/security/testModeGuard.js src/dashboard/js/pages/modules/SocialProviderStatusPanel.jsx; do test -e "$file" && echo "PRESENT $file" || echo "REMOVED $file"; done
-          } > .github/repository-cleanup-post-report.txt 2>&1
+          rm -f src/dashboard/js/pages/modules/socialProviderStatus.js
+          node scripts/goliath.js source
+          node scripts/goliath.js dashboard
+          node scripts/goliath.js imports
+          test ! -e src/core/security/devOwnerHierarchy.js
+          test ! -e src/core/security/testModeGuard.js
+          test ! -e src/dashboard/js/pages/modules/SocialProviderStatusPanel.jsx
+          test ! -e src/dashboard/js/pages/modules/socialProviderStatus.js
+      - name: Commit final cleanup
+        run: |
+          rm -f .github/repository-cleanup-audit.trigger
+          rm -f .github/repository-cleanup-audit-report.txt
+          rm -f .github/repository-cleanup-post-report.txt
+          rm -f .github/workflows/repository-cleanup-audit.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "Apply cleanup candidates and capture verification"
+          git commit -m "Finalize repository orphan and wrapper cleanup"
           git push origin HEAD:${{ github.event.pull_request.head.ref }}
