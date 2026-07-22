@@ -18,37 +18,35 @@ const MODULES_PER_PAGE = 10;
 const MODULES_PER_ROW = 4;
 const CONTROLS_PER_PAGE = 3;
 
-const EXTERNAL_MODULE_ROUTES = new Set([
-  'admin:embed',
-  'admin:goodbye',
-  'admin:invites',
-  'admin:reactionRoles',
-  'admin:stats',
-  'admin:verification',
-  'admin:welcome',
-]);
+const MODULE_CATALOG = [
+  { key: 'embed', route: 'admin:embed', label: '✨ Embed Studio', title: '✨ Embed Studio', summary: 'Build and manage Discord embeds.' },
+  { key: 'forms', route: 'admin:forms', label: '📝 Forms', title: '📝 Forms', summary: 'Forms, submissions, review and response storage.' },
+  { key: 'fun', route: 'admin:fun', label: '🎮 Fun', title: '🎮 Fun', summary: 'Fun commands and optional community extras.' },
+  { key: 'giveaways', route: 'admin:giveaways', label: '🎉 Giveaways', title: '🎉 Giveaways', summary: 'Giveaway creation, entries, winners and rerolls.' },
+  { key: 'goodbye', route: 'admin:goodbye', label: '👋 Goodbye', title: '👋 Goodbye', summary: 'Public farewell messages and Embed Studio templates.' },
+  { key: 'invites', route: 'admin:invites', label: '📨 Invite Studio', title: '📨 Invite Studio', summary: 'Create invite links, attach roles and track member joins.' },
+  { key: 'leveling', route: 'admin:leveling', label: '🏆 Leveling', title: '🏆 Leveling', summary: 'XP, levels, leaderboards and level roles.' },
+  { key: 'polls', route: 'admin:polls', label: '📊 Polls', title: '📊 Polls', summary: 'Poll creation, voting and results.' },
+  { key: 'reactionRoles', route: 'admin:reactionRoles', label: '🎭 Role Studio', title: '🎭 Role Studio', summary: 'Manage Auto Roles, Reaction Roles, Timed Roles and Temporary Roles.' },
+  { key: 'stats', route: 'admin:stats', label: '📊 Server Stats', title: '📊 Server Stats', summary: 'Server activity, growth and member statistics.' },
+  { key: 'social', route: 'admin:social', label: '📣 Social Alerts', title: '📣 Social Alerts', summary: 'Creator alerts for Twitch, YouTube, TikTok, Kick and more.' },
+  { key: 'starboard', route: 'admin:starboard', label: '⭐ Starboard', title: '⭐ Starboard', summary: 'Highlight popular server messages.' },
+  { key: 'sticky', route: 'admin:sticky', label: '💬 Sticky Messages', title: '💬 Sticky Messages', summary: 'Keep important messages at the bottom of chat.' },
+  { key: 'suggestions', route: 'admin:suggestions', label: '💡 Suggestions', title: '💡 Suggestions', summary: 'Suggestion intake, voting and review workflow.' },
+  { key: 'tempVoice', route: 'admin:tempVoice', label: '🔊 Temp Voice', title: '🔊 Temp Voice', summary: 'Temporary voice channels and room automation.' },
+  { key: 'tickets', route: 'admin:tickets', label: '🎟️ Tickets', title: '🎟️ Tickets', summary: 'Support tickets and private help channels.' },
+  { key: 'translation', route: 'admin:translation', label: '🌐 Translation', title: '🌐 Translation', summary: 'Language preferences and translation controls.' },
+  { key: 'verification', route: 'admin:verification', label: '✅ Verification', title: '✅ Verification', summary: 'Member verification and onboarding protection.' },
+  { key: 'welcome', route: 'admin:welcome', label: '👋 Welcome', title: '👋 Welcome', summary: 'Welcome messages, member DMs and Embed Studio templates.' },
+].sort((a, b) => a.title.localeCompare(b.title));
 
-const SERVER_MODULES = [
-  ['admin:embed', '✨ Embed Studio', 'Embed Studio', 'Build and manage Discord embeds.'],
-  ['admin:forms', '📝 Forms', 'Forms', 'Forms, submissions, review and response storage.'],
-  ['admin:fun', '🎮 Fun', 'Fun', 'Fun commands and optional community extras.'],
-  ['admin:giveaways', '🎉 Giveaways', 'Giveaways', 'Giveaway creation, entries, winners and rerolls.'],
-  ['admin:goodbye', '👋 Goodbye', 'Goodbye', 'Public farewell messages and Embed Studio templates.'],
-  ['admin:invites', '📨 Invite Studio', 'Invite Studio', 'Create invite links, attach roles and track member joins.'],
-  ['admin:leveling', '🏆 Leveling', 'Leveling', 'XP, levels, leaderboards and level roles.'],
-  ['admin:polls', '📊 Polls', 'Polls', 'Poll creation, voting and results.'],
-  ['admin:reactionRoles', '🎭 Role Studio', 'Role Studio', 'Manage Auto Roles, Reaction Roles, Timed Roles and Temporary Roles in one place.'],
-  ['admin:stats', '📊 Server Stats', 'Server Stats', 'Server activity, growth and member statistics.'],
-  ['admin:social', '📣 Social Alerts', 'Social Alerts', 'Creator alerts for Twitch, YouTube, TikTok, Kick and more.'],
-  ['admin:starboard', '⭐ Starboard', 'Starboard', 'Highlight popular server messages.'],
-  ['admin:sticky', '💬 Sticky Messages', 'Sticky Messages', 'Keep important messages at the bottom of chat.'],
-  ['admin:suggestions', '💡 Suggestions', 'Suggestions', 'Suggestion intake, voting and review workflow.'],
-  ['admin:tempVoice', '🔊 Temp Voice', 'Temp Voice', 'Temporary voice channels and room automation.'],
-  ['admin:tickets', '🎟️ Tickets', 'Tickets', 'Support tickets and private help channels.'],
-  ['admin:translation', '🌐 Translation', 'Translation', 'Language preferences and translation controls.'],
-  ['admin:verification', '✅ Verification', 'Verification', 'Member verification and onboarding protection.'],
-  ['admin:welcome', '👋 Welcome', 'Welcome', 'Welcome messages, member DMs and Embed Studio templates.'],
-].sort((a, b) => a[2].localeCompare(b[2]));
+const MODULE_BY_KEY = Object.fromEntries(MODULE_CATALOG.map((module) => [module.key, module]));
+const SERVER_MODULES = MODULE_CATALOG.map((module) => [
+  `admin:module:${module.key}:landing`,
+  module.label,
+  module.title.replace(/^\S+\s*/, ''),
+  module.summary,
+]);
 
 function genericModule(config) {
   return {
@@ -163,20 +161,22 @@ function buildControlRows(moduleKey) {
 }
 
 function buildModuleLandingPanel(guild, moduleKey, memberDisplayName = 'Unknown User') {
-  const module = MODULE_PANEL_REGISTRY[moduleKey];
-  if (!module) return null;
-  const config = getModuleConfig(guild.id, module.key);
-  const enabled = config.enabled !== false;
+  const catalogModule = MODULE_BY_KEY[moduleKey];
+  if (!catalogModule) return null;
+  const managedModule = MODULE_PANEL_REGISTRY[moduleKey];
+  const config = managedModule ? getModuleConfig(guild.id, moduleKey) : null;
+  const enabled = config ? config.enabled !== false : true;
   const embed = new EmbedBuilder()
     .setColor(enabled ? 0x57f287 : PANEL_COLOR)
-    .setTitle(module.title)
-    .setDescription([module.summary, '', `**Status:** ${enabled ? 'Enabled ✅' : 'Disabled ❌'}`, '', 'Use **Configure** to open this module’s settings and tools.'].join('\n'))
+    .setTitle(catalogModule.title)
+    .setDescription([catalogModule.summary, '', config ? `**Status:** ${enabled ? 'Enabled ✅' : 'Disabled ❌'}` : '**Status:** Open Configure to view module status.', '', 'Use **Configure** to open this module’s settings and tools.'].join('\n'))
     .setFooter({ text: `Requested by ${memberDisplayName}` })
     .setTimestamp();
+  const configureId = managedModule ? `admin:module:${moduleKey}:configure:0` : catalogModule.route;
   return {
     embeds: [embed],
     components: [
-      row(button(`admin:module:${module.key}:configure:0`, '⚙️ Configure', ButtonStyle.Primary)),
+      row(button(configureId, '⚙️ Configure', ButtonStyle.Primary)),
       row(button('admin:modules', '⬅️ Back', ButtonStyle.Secondary)),
     ],
   };
@@ -214,12 +214,11 @@ async function handleModuleAdminInteraction(interaction) {
   if (customId === 'admin:modules') return safeUpdate(interaction, buildModuleListPanel(0, getMemberDisplayName(interaction)));
   const pageMatch = customId.match(/^admin:modules:page:(\d+)$/);
   if (pageMatch) return safeUpdate(interaction, buildModuleListPanel(Number(pageMatch[1]), getMemberDisplayName(interaction)));
-  if (customId === 'admin:tickets') return openTicketsPanel(interaction);
-  if (EXTERNAL_MODULE_ROUTES.has(customId)) return false;
-  const routeKey = ROUTE_TO_KEY[customId];
-  if (routeKey) return safeUpdate(interaction, buildModuleLandingPanel(interaction.guild, routeKey, getMemberDisplayName(interaction)));
   const landingMatch = customId.match(/^admin:module:([a-zA-Z0-9_-]+):landing$/);
   if (landingMatch && interaction.isButton?.()) return safeUpdate(interaction, buildModuleLandingPanel(interaction.guild, landingMatch[1], getMemberDisplayName(interaction)));
+  if (customId === 'admin:tickets') return openTicketsPanel(interaction);
+  const routeKey = ROUTE_TO_KEY[customId];
+  if (routeKey) return safeUpdate(interaction, buildModuleLandingPanel(interaction.guild, routeKey, getMemberDisplayName(interaction)));
   const configureMatch = customId.match(/^admin:module:([a-zA-Z0-9_-]+):configure:(\d+)$/);
   if (configureMatch && interaction.isButton?.()) return safeUpdate(interaction, buildModuleConfigurePanel(interaction.guild, configureMatch[1], getMemberDisplayName(interaction), Number(configureMatch[2])));
   const buttonMatch = customId.match(/^admin:module:([a-zA-Z0-9_-]+):(enable|disable|reset|health|repair)$/);
@@ -242,4 +241,13 @@ async function handleModuleAdminInteraction(interaction) {
   return false;
 }
 
-module.exports = { MODULE_PANEL_REGISTRY, SERVER_MODULES, buildModuleListPanel, buildModuleLandingPanel, buildModuleConfigurePanel, buildModulePanel: buildModuleLandingPanel, handleModuleAdminInteraction };
+module.exports = {
+  MODULE_CATALOG,
+  MODULE_PANEL_REGISTRY,
+  SERVER_MODULES,
+  buildModuleListPanel,
+  buildModuleLandingPanel,
+  buildModuleConfigurePanel,
+  buildModulePanel: buildModuleLandingPanel,
+  handleModuleAdminInteraction,
+};
