@@ -28,11 +28,7 @@
     "sync:commands:production": "node scripts/goliath.js sync-commands production",
     "doctor": "node scripts/goliath.js doctor",
     "doctor:social": "node scripts/goliath.js doctor social",
-    "audit": "node scripts/goliath.js audit",
-    "api": "node -r ./src/runtime/warningFilter.js server.js",
-    "api:dev": "cross-env BOT_MODE=dev node -r ./src/runtime/warningFilter.js server.js",
-    "api:beta": "cross-env BOT_MODE=beta node -r ./src/runtime/warningFilter.js server.js",
-    "api:production": "cross-env BOT_MODE=production node -r ./src/runtime/warningFilter.js server.js"
+    "audit": "node scripts/goliath.js audit"
   },
   "dependencies": {
     "better-sqlite3": "^12.8.0",
