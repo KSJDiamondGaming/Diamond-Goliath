@@ -2,7 +2,6 @@
 
 const express = require('express');
 const social = require('./social');
-const socialHealth = require('./socialHealth');
 
 const router = express.Router();
 
@@ -192,12 +191,12 @@ router.get('/:guildId/health', async (req, res) => {
   try {
     const guild = await getGuild(req);
     if (!guild) throw new Error('Guild is unavailable.');
-    return res.json({ success: true, guildId: req.params.guildId, health: await socialHealth.buildHealth(guild) });
+    return res.json({ success: true, guildId: req.params.guildId, health: await social.health.buildHealth(guild) });
   } catch (error) { return res.status(400).json({ success: false, error: error.message }); }
 });
 
 router.get('/:guildId/export', (req, res) => {
-  try { return res.json({ success: true, export: socialHealth.exportConfig(req.params.guildId) }); }
+  try { return res.json({ success: true, export: social.health.exportConfig(req.params.guildId) }); }
   catch (error) { return res.status(400).json({ success: false, error: error.message }); }
 });
 
@@ -205,12 +204,12 @@ router.post('/:guildId/repair', async (req, res) => {
   try {
     const guild = await getGuild(req);
     if (!guild) throw new Error('Guild is unavailable.');
-    return res.json({ success: true, result: await socialHealth.repair(guild, actor(req, 'social_repair')) });
+    return res.json({ success: true, result: await social.health.repair(guild, actor(req, 'social_repair')) });
   } catch (error) { return res.status(400).json({ success: false, error: error.message }); }
 });
 
 router.post('/:guildId/reset', (req, res) => {
-  try { return res.json({ success: true, config: socialHealth.reset(req.params.guildId, actor(req, 'social_reset')) }); }
+  try { return res.json({ success: true, config: social.health.reset(req.params.guildId, actor(req, 'social_reset')) }); }
   catch (error) { return res.status(400).json({ success: false, error: error.message }); }
 });
 
