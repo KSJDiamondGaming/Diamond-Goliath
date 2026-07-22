@@ -13,7 +13,7 @@ function optionalRequire(label, modulePath, fallback = {}) {
 
 const verificationManager = optionalRequire('verification manager', '../../modules/verification/verification');
 const ticketInteractionHandler = optionalRequire('tickets', '../../modules/tickets/tickets');
-const legacyReactionRoleButtons = optionalRequire('legacy reaction role buttons', '../../modules/reactionroles/reactionRolesLegacyButtons');
+const legacyReactionRoleButtons = optionalRequire('legacy reaction role buttons', '../../modules/roleStudio/reactionRoles/reactionRolesLegacyButtons');
 const polls = optionalRequire('polls', '../../modules/polls/polls');
 const tempVoiceInteractionHandler = optionalRequire('temp voice', '../../modules/tempvoice/tempVoiceInteractionHandler');
 const suggestionsInteractionHandler = optionalRequire('suggestions', '../../modules/suggestions/suggestionsInteractionHandler');
@@ -24,7 +24,7 @@ const embedPanel = optionalRequire('embed panel', '../../modules/embed/embedPane
 const duplicator = optionalRequire('duplicator', '../../core/dev/duplicator');
 const adminPanel = optionalRequire('admin panel', '../../core/admin/functions/adminPanel');
 const statsAdminPanel = optionalRequire('stats admin', '../../modules/stats/statsPanel');
-const reactionRolesAdminPanel = optionalRequire('reaction roles admin', '../../modules/reactionroles/reactionRolesPanel');
+const reactionRolesAdminPanel = optionalRequire('reaction roles admin', '../../modules/roleStudio/reactionRoles/reactionRolesPanel');
 const suggestionsAdminPanel = optionalRequire('suggestions admin', '../../modules/suggestions/suggestionsAdminPanel');
 const giveawaysAdminPanel = optionalRequire('giveaways admin', '../../modules/giveaways/giveawaysAdminPanel');
 const formsAdminPanel = optionalRequire('forms admin', '../../modules/forms/formsAdminPanel');
@@ -42,6 +42,8 @@ const timedRolesPanel = optionalRequire('timed roles', '../../modules/timedroles
 const welcomePanel = optionalRequire('welcome', '../../modules/welcome/welcomePanel');
 const goodbyePanel = optionalRequire('goodbye', '../../modules/goodbye/goodbyePanel');
 const moduleAdminPanels = optionalRequire('generic module admin', '../../core/admin/functions/moduleAdminPanels');
+const adminModuleRuntimePatch = optionalRequire('admin module runtime patch', '../../core/admin/functions/adminModuleRuntimePatch');
+adminModuleRuntimePatch.install?.(moduleAdminPanels);
 
 let invitesAdminPanel = null;
 let invitesAdminPanelError = null;
