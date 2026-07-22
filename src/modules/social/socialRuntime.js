@@ -1,12 +1,12 @@
 'use strict';
 
+const crypto = require('crypto');
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const socialStore = require('./socialStore');
 const socialManager = require('./socialManager');
 const socialScheduler = require('./socialScheduler');
 const socialQueue = require('./socialQueue');
 const socialHistory = require('./socialHistory');
-const socialCreators = require('./socialCreators');
 const socialDelivery = require('./socialDelivery');
 const providerRegistry = require('./providerRegistry');
 
@@ -17,6 +17,162 @@ socialManager.deliverQueuedAlert = (guildId, account, providerResult, client, me
   action: meta.action || 'social_queue_delivery',
 });
 
+function runtimeNow() { return new Date().toISOString(); }
+function runtimeClone(value) { return value == null ? value : JSON.parse(JSON.stringify(value)); }
+function creatorClean(value, fallback = '', max = 500) { return String(value ?? fallback).trim().slice(0, max); }
+function creatorCleanId(value, fallback = 'creator') {
+  return (String(value || fallback).toLowerCase().trim().replace(/[^a-z0-9-_]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || fallback).slice(0, 80);
+}
+function creatorUniqueStrings(value, maxItems = 20, maxLength = 50) {
+  return [...new Set((Array.isArray(value) ? value : String(value || '').split(',')).map((item) => creatorClean(item, '', maxLength)).filter(Boolean))].slice(0, maxItems);
+}
+function normalizeCreatorProfile(profile = {}) {
+  const creatorId = creatorCleanId(profile.creatorId || profile.id || `creator-${crypto.randomUUID().slice(0, 8)}`);
+  return {
+    creatorId,
+    id: creatorId,
+    displayName: creatorClean(profile.displayName || profile.name || 'Creator', 'Creator', 120),
+    notes: creatorClean(profile.notes, '', 2000),
+    tags: creatorUniqueStrings(profile.tags),
+    group: creatorClean(profile.group, '', 80) || null,
+    enabled: profile.enabled !== false,
+    accountIds: creatorUniqueStrings(profile.accountIds, 25, 100),
+    defaults: profile.defaults && typeof profile.defaults === 'object' && !Array.isArray(profile.defaults) ? runtimeClone(profile.defaults) : {},
+    createdAt: profile.createdAt || runtimeNow(),
+    updatedAt: profile.updatedAt || profile.createdAt || runtimeNow(),
+  };
+}
+function creatorProfileMap(guildId) {
+  const section = socialStore.getSocialSection(guildId);
+  const source = section.creatorProfiles && typeof section.creatorProfiles === 'object' && !Array.isArray(section.creatorProfiles) ? section.creatorProfiles : {};
+  return Object.fromEntries(Object.entries(source).map(([id, profile]) => {
+    const normalized = normalizeCreatorProfile({ ...profile, creatorId: profile.creatorId || id });
+    return [normalized.creatorId, normalized];
+  }));
+}
+function listCreatorProfiles(guildId) {
+  return Object.values(creatorProfileMap(guildId)).sort((a, b) => a.displayName.localeCompare(b.displayName));
+}
+function getCreatorProfile(guildId, creatorId) {
+  return creatorProfileMap(guildId)[creatorCleanId(creatorId)] || null;
+}
+function saveCreatorProfile(guildId, profile, meta = {}) {
+  const normalized = normalizeCreatorProfile(profile);
+  return socialStore.updateSocialSection(guildId, (section) => ({
+    ...section,
+    creatorProfiles: {
+      ...(section.creatorProfiles || {}),
+      [normalized.creatorId]: {
+        ...(section.creatorProfiles?.[normalized.creatorId] || {}),
+        ...normalized,
+        updatedAt: runtimeNow(),
+      },
+    },
+    updatedAt: runtimeNow(),
+  }), { action: 'social_creator_profile_save', ...meta }).creatorProfiles[normalized.creatorId];
+}
+function removeCreatorProfile(guildId, creatorId, meta = {}) {
+  const safeId = creatorCleanId(creatorId);
+  let removed = false;
+  socialStore.updateSocialSection(guildId, (section) => {
+    const creatorProfiles = { ...(section.creatorProfiles || {}) };
+    removed = Boolean(creatorProfiles[safeId]);
+    delete creatorProfiles[safeId];
+    const accounts = Object.fromEntries(Object.entries(section.accounts || {}).map(([accountId, account]) => [accountId, {
+      ...account,
+      metadata: account.metadata?.creatorId === safeId ? { ...(account.metadata || {}), creatorId: null } : account.metadata,
+    }]));
+    return { ...section, creatorProfiles, accounts, updatedAt: runtimeNow() };
+  }, { action: 'social_creator_profile_remove', ...meta });
+  return removed;
+}
+function linkCreatorAccount(guildId, creatorId, accountId, meta = {}) {
+  const safeCreatorId = creatorCleanId(creatorId);
+  const safeAccountId = creatorCleanId(accountId, 'account');
+  const section = socialStore.getSocialSection(guildId);
+  const account = section.accounts?.[safeAccountId];
+  if (!account) throw new Error('Social account not found.');
+  let profile = getCreatorProfile(guildId, safeCreatorId);
+  if (!profile) profile = saveCreatorProfile(guildId, { creatorId: safeCreatorId, displayName: account.displayName || account.username || 'Creator' }, meta);
+  socialStore.updateSocialSection(guildId, (current) => ({
+    ...current,
+    creatorProfiles: {
+      ...(current.creatorProfiles || {}),
+      [safeCreatorId]: normalizeCreatorProfile({
+        ...(current.creatorProfiles?.[safeCreatorId] || profile),
+        accountIds: [...new Set([...(current.creatorProfiles?.[safeCreatorId]?.accountIds || profile.accountIds || []), safeAccountId])],
+        updatedAt: runtimeNow(),
+      }),
+    },
+    accounts: {
+      ...(current.accounts || {}),
+      [safeAccountId]: {
+        ...current.accounts[safeAccountId],
+        metadata: { ...(current.accounts[safeAccountId].metadata || {}), creatorId: safeCreatorId },
+        updatedAt: runtimeNow(),
+      },
+    },
+    updatedAt: runtimeNow(),
+  }), { action: 'social_creator_account_link', ...meta });
+  return getCreatorProfile(guildId, safeCreatorId);
+}
+function unlinkCreatorAccount(guildId, creatorId, accountId, meta = {}) {
+  const safeCreatorId = creatorCleanId(creatorId);
+  const safeAccountId = creatorCleanId(accountId, 'account');
+  socialStore.updateSocialSection(guildId, (section) => ({
+    ...section,
+    creatorProfiles: section.creatorProfiles?.[safeCreatorId] ? {
+      ...(section.creatorProfiles || {}),
+      [safeCreatorId]: normalizeCreatorProfile({
+        ...section.creatorProfiles[safeCreatorId],
+        accountIds: (section.creatorProfiles[safeCreatorId].accountIds || []).filter((id) => id !== safeAccountId),
+        updatedAt: runtimeNow(),
+      }),
+    } : section.creatorProfiles,
+    accounts: section.accounts?.[safeAccountId] ? {
+      ...(section.accounts || {}),
+      [safeAccountId]: {
+        ...section.accounts[safeAccountId],
+        metadata: { ...(section.accounts[safeAccountId].metadata || {}), creatorId: null },
+        updatedAt: runtimeNow(),
+      },
+    } : section.accounts,
+    updatedAt: runtimeNow(),
+  }), { action: 'social_creator_account_unlink', ...meta });
+  return getCreatorProfile(guildId, safeCreatorId);
+}
+function rebuildCreatorProfiles(guildId, meta = {}) {
+  const section = socialStore.getSocialSection(guildId);
+  const profiles = { ...creatorProfileMap(guildId) };
+  for (const account of Object.values(section.accounts || {})) {
+    const linkedId = creatorCleanId(account.metadata?.creatorId || account.displayName || account.username || account.accountId);
+    const current = profiles[linkedId] || normalizeCreatorProfile({ creatorId: linkedId, displayName: account.displayName || account.username || 'Creator' });
+    profiles[linkedId] = normalizeCreatorProfile({ ...current, accountIds: [...new Set([...(current.accountIds || []), account.accountId])] });
+  }
+  socialStore.updateSocialSection(guildId, (current) => ({ ...current, creatorProfiles: profiles, updatedAt: runtimeNow() }), { action: 'social_creator_profiles_rebuild', ...meta });
+  return listCreatorProfiles(guildId);
+}
+function creatorProfilesSummary(guildId) {
+  const profiles = listCreatorProfiles(guildId);
+  return {
+    total: profiles.length,
+    enabled: profiles.filter((profile) => profile.enabled !== false).length,
+    linkedAccounts: profiles.reduce((sum, profile) => sum + profile.accountIds.length, 0),
+    groups: [...new Set(profiles.map((profile) => profile.group).filter(Boolean))],
+  };
+}
+const socialCreators = Object.freeze({
+  normalizeProfile: normalizeCreatorProfile,
+  list: listCreatorProfiles,
+  get: getCreatorProfile,
+  save: saveCreatorProfile,
+  remove: removeCreatorProfile,
+  linkAccount: linkCreatorAccount,
+  unlinkAccount: unlinkCreatorAccount,
+  rebuild: rebuildCreatorProfiles,
+  summary: creatorProfilesSummary,
+});
+
 const SIMULATOR_ALERT_TYPES = new Set(['live', 'upload', 'short', 'post']);
 const SIMULATOR_SAMPLE = Object.freeze({
   live: { title: 'Example live stream', description: 'A simulated live alert from Social Studio.', url: 'https://example.com/live', gameName: 'Gaming', viewerCount: 1234 },
@@ -24,22 +180,16 @@ const SIMULATOR_SAMPLE = Object.freeze({
   short: { title: 'Example short-form video', description: 'A simulated short alert from Social Studio.', url: 'https://example.com/short', duration: '0:42' },
   post: { title: 'Example social update', description: 'A simulated post alert from Social Studio.', url: 'https://example.com/post' },
 });
-
-function simulatorClean(value, fallback = '', max = 1000) {
-  return String(value ?? fallback).trim().slice(0, max);
-}
-
+function simulatorClean(value, fallback = '', max = 1000) { return String(value ?? fallback).trim().slice(0, max); }
 function simulatorAlertType(value) {
   const type = simulatorClean(value, 'live', 20).toLowerCase();
   return SIMULATOR_ALERT_TYPES.has(type) ? type : 'live';
 }
-
 function replaceSimulatorVariables(value, variables) {
   return simulatorClean(value, '', 4096).replace(/\{([a-zA-Z]+)\}/g, (match, key) => (
     Object.prototype.hasOwnProperty.call(variables, key) ? String(variables[key] ?? '') : match
   ));
 }
-
 function simulatorVariablesFor(account, type, sample) {
   return {
     creator: account.displayName || account.username || 'Creator',
@@ -56,7 +206,6 @@ function simulatorVariablesFor(account, type, sample) {
     alertType: type,
   };
 }
-
 function buildSimulation(guildId, account, requestedType = 'live', overrides = {}) {
   const type = simulatorAlertType(requestedType);
   const config = socialStore.getSocialSection(guildId);
@@ -79,9 +228,7 @@ function buildSimulation(guildId, account, requestedType = 'live', overrides = {
   if (template.thumbnail || sample.thumbnailUrl) embed.setThumbnail(replaceSimulatorVariables(template.thumbnail || sample.thumbnailUrl, variables));
   if (template.image) embed.setImage(replaceSimulatorVariables(template.image, variables));
   const buttonLabel = simulatorClean(template.buttonLabel || 'View', 'View', 80);
-  const components = sample.url
-    ? [new ActionRowBuilder().addComponents(new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel(buttonLabel).setURL(sample.url))]
-    : [];
+  const components = sample.url ? [new ActionRowBuilder().addComponents(new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel(buttonLabel).setURL(sample.url))] : [];
   return {
     type,
     sample,
@@ -92,19 +239,15 @@ function buildSimulation(guildId, account, requestedType = 'live', overrides = {
     quietHours: socialManager.isQuietHours(guildId, account),
   };
 }
-
 function simulatorMention(account = {}) {
   if (account.mentionMode === 'everyone') return '@everyone';
   if (account.mentionMode === 'here') return '@here';
   if (account.mentionRoleId) return `<@&${account.mentionRoleId}>`;
   return '';
 }
-
 async function simulateSocialAlert(guildId, accountId, requestedType, client, options = {}, meta = {}) {
-  const account = Object.values(socialStore.getSocialSection(guildId).accounts || {})
-    .find((item) => item.accountId === accountId || item.id === accountId);
+  const account = Object.values(socialStore.getSocialSection(guildId).accounts || {}).find((item) => item.accountId === accountId || item.id === accountId);
   if (!account) return { success: false, status: 404, error: 'Social account not found.' };
-
   const preview = buildSimulation(guildId, account, requestedType, options.overrides || {});
   const response = {
     success: true,
@@ -120,11 +263,9 @@ async function simulateSocialAlert(guildId, accountId, requestedType, client, op
   if (options.send !== true) return response;
   if (preview.quietHours && options.force !== true) return { ...response, success: false, status: 409, blocked: true, error: 'Quiet hours are active. Use force to send this simulation now.' };
   if (!preview.channelId) return { ...response, success: false, status: 400, error: `No ${preview.type} destination is configured for this creator.` };
-
   const discordClient = client || global.client || global.discordClient;
   const channel = await discordClient?.channels?.fetch?.(preview.channelId).catch(() => null);
   if (!channel?.send) return { ...response, success: false, status: 400, error: 'The routed Discord channel is unavailable.' };
-
   const content = simulatorMention(account);
   try {
     const message = await channel.send({
@@ -137,64 +278,33 @@ async function simulateSocialAlert(guildId, accountId, requestedType, client, op
       },
     });
     socialHistory.record(guildId, {
-      status: 'test',
-      eventType: 'simulation',
-      alertType: preview.type,
-      accountId: account.accountId,
-      creator: account.displayName || account.username,
-      platform: account.platform,
-      channelId: channel.id,
-      messageId: message.id,
-      title: preview.embed.data.title,
-      isTest: true,
-      metadata: { forced: options.force === true },
+      status: 'test', eventType: 'simulation', alertType: preview.type, accountId: account.accountId,
+      creator: account.displayName || account.username, platform: account.platform, channelId: channel.id,
+      messageId: message.id, title: preview.embed.data.title, isTest: true, metadata: { forced: options.force === true },
     }, meta);
     return { ...response, sent: true, channelId: channel.id, messageId: message.id };
   } catch (error) {
     socialHistory.record(guildId, {
-      status: 'failed',
-      eventType: 'simulation',
-      alertType: preview.type,
-      accountId: account.accountId,
-      creator: account.displayName || account.username,
-      platform: account.platform,
-      channelId: channel.id,
-      title: preview.embed.data.title,
-      error: error.message,
-      isTest: true,
+      status: 'failed', eventType: 'simulation', alertType: preview.type, accountId: account.accountId,
+      creator: account.displayName || account.username, platform: account.platform, channelId: channel.id,
+      title: preview.embed.data.title, error: error.message, isTest: true,
     }, meta);
     return { ...response, success: false, status: 500, error: error.message };
   }
 }
+const socialSimulator = Object.freeze({ ALERT_TYPES: SIMULATOR_ALERT_TYPES, SAMPLE: SIMULATOR_SAMPLE, build: buildSimulation, simulate: simulateSocialAlert });
 
-const socialSimulator = Object.freeze({
-  ALERT_TYPES: SIMULATOR_ALERT_TYPES,
-  SAMPLE: SIMULATOR_SAMPLE,
-  build: buildSimulation,
-  simulate: simulateSocialAlert,
-});
-
-const DIAGNOSTIC_SCORE_WEIGHTS = Object.freeze({
-  identifier: 20,
-  destination: 20,
-  provider: 20,
-  providerCheck: 15,
-  providerError: 15,
-  queue: 10,
-});
-
+const DIAGNOSTIC_SCORE_WEIGHTS = Object.freeze({ identifier: 20, destination: 20, provider: 20, providerCheck: 15, providerError: 15, queue: 10 });
 function diagnosticAgeMs(value) {
   const timestamp = new Date(value || 0).getTime();
   return Number.isFinite(timestamp) ? Math.max(0, Date.now() - timestamp) : Infinity;
 }
-
 function diagnosticGrade(score) {
   if (score >= 90) return 'excellent';
   if (score >= 75) return 'healthy';
   if (score >= 50) return 'warning';
   return 'critical';
 }
-
 function providerDiagnostics(guildId) {
   const config = socialManager.getConfig(guildId);
   const accounts = config.accounts || [];
@@ -204,10 +314,7 @@ function providerDiagnostics(guildId) {
     const checkedAccounts = enabledAccounts.filter((account) => account.lastSeen?.lastCheckedAt);
     const failedAccounts = enabledAccounts.filter((account) => account.lastSeen?.lastProviderError);
     const latestCheck = checkedAccounts.map((account) => account.lastSeen.lastCheckedAt).sort().at(-1) || null;
-    const responseTimes = enabledAccounts
-      .map((account) => Number(account.metadata?.provider?.responseTimeMs || 0))
-      .filter((value) => Number.isFinite(value) && value > 0);
-
+    const responseTimes = enabledAccounts.map((account) => Number(account.metadata?.provider?.responseTimeMs || 0)).filter((value) => Number.isFinite(value) && value > 0);
     return {
       id: provider.id,
       label: provider.label,
@@ -227,39 +334,18 @@ function providerDiagnostics(guildId) {
     };
   });
 }
-
 function accountDiagnostics(account, providerMap, queueItems) {
   let score = 100;
   const issues = [];
   const provider = providerMap.get(account.platform);
   const routedChannel = socialManager.routeChannelId(account, account.alertTypes?.[0] || 'live');
   const accountQueue = queueItems.filter((item) => item.accountId === account.accountId);
-
-  if (!account.username && !account.externalId && !account.url) {
-    score -= DIAGNOSTIC_SCORE_WEIGHTS.identifier;
-    issues.push({ code: 'identifier_missing', severity: 'error' });
-  }
-  if (!routedChannel) {
-    score -= DIAGNOSTIC_SCORE_WEIGHTS.destination;
-    issues.push({ code: 'destination_missing', severity: 'error' });
-  }
-  if (!provider || provider.status !== 'ready') {
-    score -= DIAGNOSTIC_SCORE_WEIGHTS.provider;
-    issues.push({ code: `provider_${provider?.status || 'unknown'}`, severity: provider?.status === 'disabled' ? 'warning' : 'error' });
-  }
-  if (!account.lastSeen?.lastCheckedAt || diagnosticAgeMs(account.lastSeen.lastCheckedAt) > 24 * 60 * 60 * 1000) {
-    score -= DIAGNOSTIC_SCORE_WEIGHTS.providerCheck;
-    issues.push({ code: 'provider_check_stale', severity: 'warning' });
-  }
-  if (account.lastSeen?.lastProviderError) {
-    score -= DIAGNOSTIC_SCORE_WEIGHTS.providerError;
-    issues.push({ code: 'provider_last_error', severity: 'warning', error: account.lastSeen.lastProviderError });
-  }
-  if (accountQueue.some((item) => item.status === 'failed')) {
-    score -= DIAGNOSTIC_SCORE_WEIGHTS.queue;
-    issues.push({ code: 'delivery_failed', severity: 'warning' });
-  }
-
+  if (!account.username && !account.externalId && !account.url) { score -= DIAGNOSTIC_SCORE_WEIGHTS.identifier; issues.push({ code: 'identifier_missing', severity: 'error' }); }
+  if (!routedChannel) { score -= DIAGNOSTIC_SCORE_WEIGHTS.destination; issues.push({ code: 'destination_missing', severity: 'error' }); }
+  if (!provider || provider.status !== 'ready') { score -= DIAGNOSTIC_SCORE_WEIGHTS.provider; issues.push({ code: `provider_${provider?.status || 'unknown'}`, severity: provider?.status === 'disabled' ? 'warning' : 'error' }); }
+  if (!account.lastSeen?.lastCheckedAt || diagnosticAgeMs(account.lastSeen.lastCheckedAt) > 24 * 60 * 60 * 1000) { score -= DIAGNOSTIC_SCORE_WEIGHTS.providerCheck; issues.push({ code: 'provider_check_stale', severity: 'warning' }); }
+  if (account.lastSeen?.lastProviderError) { score -= DIAGNOSTIC_SCORE_WEIGHTS.providerError; issues.push({ code: 'provider_last_error', severity: 'warning', error: account.lastSeen.lastProviderError }); }
+  if (accountQueue.some((item) => item.status === 'failed')) { score -= DIAGNOSTIC_SCORE_WEIGHTS.queue; issues.push({ code: 'delivery_failed', severity: 'warning' }); }
   score = Math.max(0, Math.min(100, score));
   return {
     accountId: account.accountId,
@@ -277,7 +363,6 @@ function accountDiagnostics(account, providerMap, queueItems) {
     issues,
   };
 }
-
 function creatorDiagnostics(guildId) {
   const config = socialManager.getConfig(guildId);
   const providers = providerDiagnostics(guildId);
@@ -301,10 +386,8 @@ function creatorDiagnostics(guildId) {
       issues,
     };
   });
-
   return { accounts, profiles };
 }
-
 function buildDiagnostics(guildId) {
   const providers = providerDiagnostics(guildId);
   const creators = creatorDiagnostics(guildId);
@@ -323,7 +406,6 @@ function buildDiagnostics(guildId) {
     history: socialHistory.summary(guildId),
   };
 }
-
 const socialDiagnostics = Object.freeze({
   SCORE_WEIGHTS: DIAGNOSTIC_SCORE_WEIGHTS,
   grade: diagnosticGrade,
@@ -333,7 +415,6 @@ const socialDiagnostics = Object.freeze({
 });
 
 const STARTUP_KEY = Symbol.for('goliath.social.startup');
-
 async function startup(client, options = {}) {
   if (!client?.guilds?.cache) throw new Error('Discord client is unavailable.');
   if (client[STARTUP_KEY]) return client[STARTUP_KEY];
