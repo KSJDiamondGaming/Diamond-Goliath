@@ -1,0 +1,59 @@
+name: Repository Cleanup Audit
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - .github/repository-cleanup-audit.trigger
+
+permissions:
+  contents: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Run cleanup diagnostics
+        shell: bash
+        run: |
+          set +e
+          {
+            echo "# Repository cleanup audit"
+            echo
+            echo "## Goliath source"
+            node scripts/goliath.js source
+            echo
+            echo "## Goliath dashboard"
+            node scripts/goliath.js dashboard
+            echo
+            echo "## Goliath imports"
+            node scripts/goliath.js imports
+            echo
+            echo "## Goliath doctor"
+            node scripts/goliath.js doctor
+            echo
+            echo "## Candidate filenames"
+            find . -path './node_modules' -prune -o -path './.git' -prune -o -type f \( -iname '*legacy*' -o -iname '*bridge*' -o -iname '*shim*' -o -iname '*wrapper*' -o -iname '*patch*' -o -iname '*old*' -o -iname '*backup*' -o -iname '*copy*' \) -print | sort
+            echo
+            echo "## Empty source directories"
+            find src -type d -empty -print | sort
+            echo
+            echo "## Duplicate file hashes"
+            find src scripts tools -type f -not -path '*/node_modules/*' -print0 | xargs -0 sha256sum | sort | awk 'BEGIN{last=""; count=0} {hash=$1; file=$2; if(hash==last){if(count==1) print previous; print file; count++} else {last=hash; previous=file; count=1}}'
+          } > .github/repository-cleanup-audit-report.txt 2>&1
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/repository-cleanup-audit-report.txt
+          git commit -m "Capture repository cleanup audit"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
