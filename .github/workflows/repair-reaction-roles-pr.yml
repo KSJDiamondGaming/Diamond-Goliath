@@ -21,17 +21,20 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Repair and verify
+      - name: Repair and capture report
+        shell: bash
         run: |
-          node scripts/repair-reaction-roles-utf8.js --write
-          node --check src/modules/roleStudio/reactionRoles/reactionRolesPanel.js
-          node scripts/goliath.js source
-          node scripts/goliath.js role-studio
-      - name: Commit repair
-        run: |
-          rm -f .github/repair-reaction-roles.trigger
+          set +e
+          node scripts/repair-reaction-roles-utf8.js --write > .github/repair-reaction-roles-report.txt 2>&1
+          repair_status=$?
+          if [ $repair_status -eq 0 ]; then
+            node --check src/modules/roleStudio/reactionRoles/reactionRolesPanel.js >> .github/repair-reaction-roles-report.txt 2>&1
+            node scripts/goliath.js source >> .github/repair-reaction-roles-report.txt 2>&1
+            node scripts/goliath.js role-studio >> .github/repair-reaction-roles-report.txt 2>&1
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/modules/roleStudio/reactionRoles/reactionRolesPanel.js .github/repair-reaction-roles.trigger
-          git commit -m "Repair Reaction Roles UTF-8 text"
+          git add src/modules/roleStudio/reactionRoles/reactionRolesPanel.js .github/repair-reaction-roles-report.txt
+          git commit -m "Capture Reaction Roles UTF-8 repair result"
           git push origin HEAD:${{ github.event.pull_request.head.ref }}
+          exit $repair_status
