@@ -37,6 +37,7 @@ const { bootstrapRuntime, runBootValidation, safeLoad, printStartupFingerprint }
   bootstrapRuntime: () => ({}), runBootValidation: () => true, safeLoad: (_label, fn) => ({ ok: true, result: fn() }), printStartupFingerprint: () => null,
 }, { optional: false });
 const { initSocketHub } = safeRequire('socketHub', './src/server/sockets/socketHub', { initSocketHub: () => null }, { optional: false });
+const { prepareInteraction } = safeRequire('interaction response guard', './src/runtime/interactionResponseGuard', { prepareInteraction: async () => null }, { optional: false });
 safeRequire('backup notification wiring', './src/core/notifications/wireBackupNotifications', { wireBackupNotifications: () => false }).wireBackupNotifications?.();
 
 const route = (label, modulePath, optional = false) => safeRequire(label, modulePath, emptyRouter(), { optional });
@@ -164,6 +165,7 @@ function registerEvents() {
 
   for (const { eventName, once, handlers } of grouped.values()) {
     const listener = async (...args) => {
+      if (eventName === 'interactionCreate') await prepareInteraction(args[0]);
       for (const handler of handlers) {
         try { await handler.execute(...args, client); }
         catch (error) {
