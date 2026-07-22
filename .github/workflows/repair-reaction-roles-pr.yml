@@ -1,0 +1,37 @@
+name: Repair Reaction Roles UTF-8 PR
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - .github/repair-reaction-roles.trigger
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Repair and verify
+        run: |
+          node scripts/repair-reaction-roles-utf8.js --write
+          node --check src/modules/roleStudio/reactionRoles/reactionRolesPanel.js
+          node scripts/goliath.js source
+          node scripts/goliath.js role-studio
+      - name: Commit repair
+        run: |
+          rm -f .github/repair-reaction-roles.trigger
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/modules/roleStudio/reactionRoles/reactionRolesPanel.js .github/repair-reaction-roles.trigger
+          git commit -m "Repair Reaction Roles UTF-8 text"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
