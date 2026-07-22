@@ -1,0 +1,62 @@
+Reaction Roles UTF-8 repair
+Target: src/modules/roleStudio/reactionRoles/reactionRolesPanel.js
+Original marker score: 84
+Pass 1: 84 -> 0
+Remaining marker score: 0
+Repair applied and syntax verification passed.
+
+UTF-8 and legacy path audit
+===========================
+Text files scanned: 519
+UTF-8 corruption candidates: 0
+Root core imports: 0
+Absolute Windows paths: 9
+- Windows path: scripts/goliath.js
+- Windows path: scripts/repair-reaction-roles-utf8.js
+- Windows path: src/core/admin/functions/adminModuleRuntimePatch.js
+- Windows path: src/core/commandRegistry/syncCommands.js
+- Windows path: src/core/dev/duplicator.js
+- Windows path: src/core/security/restoreRequestManager.js
+- Windows path: src/core/security/serverRestore.js
+- Windows path: src/modules/verification/verificationPanel.js
+- Windows path: tools/role-studio-consolidate.js
+
+Role Studio smoke test
+======================
+ - src/modules/roleStudio/roleStudioPanel.js: failed to load - Cannot find module 'discord.js'
+Require stack:
+- /home/runner/work/Goliath/Goliath/src/modules/roleStudio/roleStudioPanel.js
+- /home/runner/work/Goliath/Goliath/scripts/goliath.js
+ - src/core/admin/functions/moduleAdminPanels.js: failed to load - Cannot find module 'discord.js'
+Require stack:
+- /home/runner/work/Goliath/Goliath/src/core/admin/functions/moduleAdminPanels.js
+- /home/runner/work/Goliath/Goliath/scripts/goliath.js
+ - src/core/admin/functions/adminModuleRuntimePatch.js: failed to load - Cannot find module 'discord.js'
+Require stack:
+- /home/runner/work/Goliath/Goliath/src/core/admin/functions/adminModuleRuntimePatch.js
+- /home/runner/work/Goliath/Goliath/scripts/goliath.js
+ - src/modules/roleStudio/autoRoles/autoRoles.js: failed to load - Cannot find module 'discord.js'
+Require stack:
+- /home/runner/work/Goliath/Goliath/src/modules/roleStudio/autoRoles/autoRoles.js
+- /home/runner/work/Goliath/Goliath/scripts/goliath.js
+ - src/modules/roleStudio/timedRoles/timedRoles.js: failed to load - Cannot find module 'discord.js'
+Require stack:
+- /home/runner/work/Goliath/Goliath/src/modules/roleStudio/timedRoles/timedRoles.js
+- /home/runner/work/Goliath/Goliath/scripts/goliath.js
+ - roleStudioPanel.buildRoleStudioPanel is not exported
+ - roleStudioPanel.buildRoleAnalyticsPanel is not exported
+ - roleStudioPanel.buildRoleHealthPanel is not exported
+ - Expected 19 top-level Admin modules, found 0
+ - Role Studio must appear in the top-level module menu
+ - adminModuleRuntimePatch is missing button('admin:modules', '⬅️ Back')
+ - autoRoles.applyAutoRoles is not exported
+ - autoRoles.startupAutoRoles is not exported
+ - autoRoles.buildHealthReport is not exported
+ - autoRoles.setAutoRolesEnabled is not exported
+ - timedRoles.getMemberProgression is not exported
+ - timedRoles.applyProgressionToMember is not exported
+ - timedRoles.simulateGuild is not exported
+ - timedRoles.scanGuild is not exported
+ - Timed Roles modes are incorrect
+
+Role Studio smoke test failed (20 issues).
