@@ -1,0 +1,73 @@
+name: Absorb Reaction Roles Reliability
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - .github/absorb-reaction-reliability.trigger
+
+permissions:
+  contents: write
+
+jobs:
+  absorb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Absorb reliability safeguards
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const file = 'src/modules/roleStudio/reactionRoles/reactionRoles.js';
+          let source = fs.readFileSync(file, 'utf8');
+
+          const findAnchor = `function findMessageReaction(message, mapping) {\n  const emoji = normalizeEmoji(mapping.emoji);\n  return message.reactions.cache.find((reaction) => reaction.emoji.id === emoji.id || (!emoji.id && reaction.emoji.name === emoji.name)) || null;\n}\n`;
+          const replacement = `${findAnchor}\nasync function botOwnsReaction(reaction, botId) {\n  if (!reaction) return false;\n  if (reaction.me === true) return true;\n  const users = await reaction.users.fetch({ limit: 100 }).catch(() => null);\n  return Boolean(users?.has(botId));\n}\n\nasync function refreshPanelMessage(guild, panel) {\n  const channel = guild.channels.cache.get(panel.channelId)\n    || await guild.channels.fetch(panel.channelId).catch(() => null);\n  if (!channel?.messages?.fetch) throw new Error('The selected channel is inaccessible or does not support messages.');\n  const message = await channel.messages.fetch({ message: panel.messageId, force: true }).catch(async () => (\n    channel.messages.fetch(panel.messageId).catch(() => null)\n  ));\n  if (!message) throw new Error('The selected message is no longer accessible.');\n  return message;\n}\n`;
+          if (!source.includes(findAnchor)) throw new Error('findMessageReaction anchor not found');
+          source = source.replace(findAnchor, replacement);
+
+          const oldSync = `async function syncPanelReactions(guild, panel) {\n  if (!panel) throw new Error('Reaction-role panel not found.');\n  if (panel.enabled === false) return { panel: savePanel(guild.id, { ...panel, status: 'disabled', lastHealthAt: now(), lastError: null }, guild), message: null };\n  const conflicts = mappingConflicts(panel.mappings);\n  if (conflicts.length) throw new Error(conflicts.join(' '));\n  const message = await resolveMessage(guild, panel.messageId, panel.channelId);\n  for (const mapping of panel.mappings.filter((item) => item.enabled !== false)) {\n    validateRole(guild, mapping.roleId);\n    if (!findMessageReaction(message, mapping)) await message.react(normalizeEmoji(mapping.emoji).reaction);\n  }\n  return { panel: savePanel(guild.id, { ...panel, status: 'healthy', lastHealthAt: now(), lastError: null }, guild), message };\n}\n`;
+          const newSync = `async function syncPanelReactions(guild, panel) {\n  if (!panel) throw new Error('Reaction-role panel not found.');\n  if (panel.enabled === false) return { panel: savePanel(guild.id, { ...panel, status: 'disabled', lastHealthAt: now(), lastError: null }, guild), message: null };\n  const conflicts = mappingConflicts(panel.mappings);\n  if (conflicts.length) throw new Error(conflicts.join(' '));\n  const botId = guild.members.me?.id || guild.client.user?.id;\n  if (!botId) throw new Error('Goliath could not resolve its own member identity.');\n  let message = await refreshPanelMessage(guild, panel);\n  const failures = [];\n  for (const mapping of panel.mappings.filter((item) => item.enabled !== false)) {\n    validateRole(guild, mapping.roleId);\n    let reaction = findMessageReaction(message, mapping);\n    if (await botOwnsReaction(reaction, botId)) continue;\n    let added = false;\n    let lastError = null;\n    for (let attempt = 1; attempt <= 3 && !added; attempt += 1) {\n      try {\n        await message.react(normalizeEmoji(mapping.emoji).reaction);\n        await new Promise((resolve) => setTimeout(resolve, 250 * attempt));\n        message = await refreshPanelMessage(guild, panel);\n        reaction = findMessageReaction(message, mapping);\n        added = await botOwnsReaction(reaction, botId);\n      } catch (error) {\n        lastError = error;\n      }\n    }\n    if (!added) failures.push(\`${mapping.emoji}: ${lastError?.message || 'Goliath could not confirm its reaction.'}\`);\n  }\n  if (failures.length) throw new Error(\`Not every reaction could be applied. ${failures.join(' | ')}\`);\n  return { panel: savePanel(guild.id, { ...panel, status: 'healthy', lastHealthAt: now(), lastError: null }, guild), message };\n}\n`;
+          if (!source.includes(oldSync)) throw new Error('syncPanelReactions anchor not found');
+          source = source.replace(oldSync, newSync);
+
+          const oldDetach = `  if (clearReactions) {\n    const message = await resolveMessage(guild, panel.messageId, panel.channelId).catch(() => null);\n    if (message) { await removeObsoleteBotReactions(guild, message, panel.mappings, []); reactionsCleared = true; }\n  }`;
+          const newDetach = `  if (clearReactions) {\n    const botId = guild.members.me?.id || guild.client.user?.id;\n    if (!botId) throw new Error('Goliath could not resolve its own member identity.');\n    let message = await refreshPanelMessage(guild, panel);\n    const failures = [];\n    for (const mapping of panel.mappings.filter((item) => item.enabled !== false)) {\n      let cleared = false;\n      let lastError = null;\n      for (let attempt = 1; attempt <= 3 && !cleared; attempt += 1) {\n        try {\n          const reaction = findMessageReaction(message, mapping);\n          if (!reaction || !await botOwnsReaction(reaction, botId)) { cleared = true; break; }\n          await reaction.users.remove(botId);\n          await new Promise((resolve) => setTimeout(resolve, 250 * attempt));\n          message = await refreshPanelMessage(guild, panel);\n          cleared = !await botOwnsReaction(findMessageReaction(message, mapping), botId);\n        } catch (error) {\n          lastError = error;\n        }\n      }\n      if (!cleared) failures.push(\`${mapping.emoji}: ${lastError?.message || 'Goliath could not confirm removal.'}\`);\n    }\n    if (failures.length) throw new Error(\`Not every configured reaction could be cleared. ${failures.join(' | ')}\`);\n    reactionsCleared = true;\n  }`;
+          if (!source.includes(oldDetach)) throw new Error('detachPanel anchor not found');
+          source = source.replace(oldDetach, newDetach);
+          fs.writeFileSync(file, source, 'utf8');
+
+          const panelFile = 'src/modules/roleStudio/reactionRoles/reactionRolesPanel.js';
+          let panelSource = fs.readFileSync(panelFile, 'utf8');
+          panelSource = panelSource.replace("  require('./reactionRolesReliabilityPatch');\n", '');
+          if (panelSource.includes('reactionRolesReliabilityPatch')) throw new Error('Reliability patch loader remains');
+          fs.writeFileSync(panelFile, panelSource, 'utf8');
+          fs.rmSync('src/modules/roleStudio/reactionRoles/reactionRolesReliabilityPatch.js', { force: true });
+          NODE
+      - name: Verify
+        run: |
+          node --check src/modules/roleStudio/reactionRoles/reactionRoles.js
+          node --check src/modules/roleStudio/reactionRoles/reactionRolesPanel.js
+          test ! -e src/modules/roleStudio/reactionRoles/reactionRolesReliabilityPatch.js
+          ! grep -R "reactionRolesReliabilityPatch" src --include='*.js'
+          node scripts/goliath.js source
+          node scripts/goliath.js imports
+          node scripts/goliath.js test role-studio
+      - name: Commit cleanup
+        run: |
+          rm -f .github/absorb-reaction-reliability.trigger
+          rm -f .github/workflows/absorb-reaction-reliability.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Absorb Reaction Roles reliability into canonical runtime"
+          git push origin dev
