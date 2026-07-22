@@ -1,0 +1,60 @@
+name: Repair Reaction Roles UTF-8
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - .github/workflows/repair-reaction-roles-utf8.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Repair mojibake without changing code structure
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const file = 'src/modules/roleStudio/reactionRoles/reactionRolesPanel.js';
+          let text = fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '');
+          const markers = /[ÃÂâðï�]/g;
+          const score = (value) => (value.match(markers) || []).length;
+
+          for (let pass = 0; pass < 4; pass += 1) {
+            const repaired = Buffer.from(text, 'latin1').toString('utf8');
+            if (repaired.includes('\uFFFD') || score(repaired) >= score(text)) break;
+            text = repaired;
+          }
+
+          if (score(text) !== 0 || text.includes('\uFFFD')) {
+            throw new Error(`UTF-8 repair incomplete; remaining marker score=${score(text)}`);
+          }
+
+          fs.writeFileSync(file, text, 'utf8');
+          NODE
+
+      - name: Verify repaired panel
+        run: |
+          node --check src/modules/roleStudio/reactionRoles/reactionRolesPanel.js
+          node scripts/goliath.js source
+          node scripts/goliath.js role-studio
+
+      - name: Commit repair and remove workflow
+        run: |
+          rm .github/workflows/repair-reaction-roles-utf8.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/modules/roleStudio/reactionRoles/reactionRolesPanel.js .github/workflows/repair-reaction-roles-utf8.yml
+          git commit -m "Repair Reaction Roles UTF-8 text"
+          git push origin HEAD:dev
