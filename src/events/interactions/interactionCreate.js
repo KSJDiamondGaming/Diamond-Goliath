@@ -33,7 +33,6 @@ const starboardAdminPanel = optionalRequire('starboard admin', '../../modules/st
 const stickyAdminPanel = optionalRequire('sticky admin', '../../modules/sticky/stickyAdminPanel');
 const levelingAdminPanel = optionalRequire('leveling admin', '../../modules/leveling/levelingAdminPanel');
 const socialAdminPanel = optionalRequire('social admin', '../../modules/social/socialPanel');
-const socialCreatorPanel = optionalRequire('social creator hub', '../../modules/social/socialCreatorPanel');
 const schedulePanel = optionalRequire('schedule admin', '../../modules/schedule/schedulePanel');
 const scheduleDeployment = optionalRequire('schedule RSVP', '../../modules/schedule/scheduleDeployment');
 const verificationAdminPanel = optionalRequire('verification admin', '../../modules/verification/verificationPanel');
@@ -121,21 +120,24 @@ function sanitizeComponentPayload(payload) {
 
   const sanitizedPayload = {
     ...payload,
-    ...(Array.isArray(payload.embeds)
-      ? { embeds: payload.embeds.map(sanitizeEmbedData) }
-      : {}),
+    ...(Array.isArray(payload.embeds) ? { embeds: payload.embeds.map(sanitizeEmbedData) } : {}),
   };
 
   if (!Array.isArray(payload.components)) return sanitizedPayload;
 
-  const seen = new Set(); const rows = [];
+  const seen = new Set();
+  const rows = [];
   for (const actionRow of payload.components) {
     const rowData = typeof actionRow?.toJSON === 'function' ? actionRow.toJSON() : actionRow;
     const components = Array.isArray(rowData?.components) ? rowData.components.filter((component) => {
       const customId = component?.custom_id || component?.customId || null;
       if (!customId) return true;
-      if (seen.has(customId)) { console.warn(`[InteractionCreate] Removed duplicate component custom_id: ${customId}`); return false; }
-      seen.add(customId); return true;
+      if (seen.has(customId)) {
+        console.warn(`[InteractionCreate] Removed duplicate component custom_id: ${customId}`);
+        return false;
+      }
+      seen.add(customId);
+      return true;
     }) : [];
     if (components.length) rows.push({ ...rowData, components });
   }
@@ -163,7 +165,10 @@ async function safeInteractionError(interaction, error = null) {
   const payload = { content: `❌ Interaction failed.${detail}`, flags: MessageFlags.Ephemeral };
   try {
     if (interaction?.isAutocomplete?.()) { await interaction.respond([]).catch(() => null); return; }
-    if (interaction?.deferred || interaction?.replied) { await interaction.editReply(payload).catch(() => interaction.followUp(payload).catch(() => null)); return; }
+    if (interaction?.deferred || interaction?.replied) {
+      await interaction.editReply(payload).catch(() => interaction.followUp(payload).catch(() => null));
+      return;
+    }
     await interaction?.reply?.(payload).catch(() => null);
   } catch { }
 }
@@ -207,12 +212,16 @@ module.exports = {
       wrapInteractionResponses(interaction);
       if (interaction?.isAutocomplete?.()) {
         const command = client.commands?.get?.(interaction.commandName);
-        if (command?.autocomplete) await command.autocomplete(interaction, client); else await interaction.respond([]).catch(() => null);
+        if (command?.autocomplete) await command.autocomplete(interaction, client);
+        else await interaction.respond([]).catch(() => null);
         return;
       }
       if (!interaction?.customId && !interaction?.isChatInputCommand?.()) return;
       if (interaction.isChatInputCommand?.()) {
-        const command = client.commands?.get?.(interaction.commandName); if (!command) return; await command.execute(interaction, client); return;
+        const command = client.commands?.get?.(interaction.commandName);
+        if (!command) return;
+        await command.execute(interaction, client);
+        return;
       }
       if (interaction.customId === 'admin:invites') {
         const panel = loadInvitesAdminPanel();
@@ -239,7 +248,6 @@ module.exports = {
       if (startsWith(interaction, 'admin:welcome')) { await callHandler(welcomePanel, 'handleWelcomeInteraction', interaction); return; }
       if (startsWith(interaction, 'admin:goodbye')) { await callHandler(goodbyePanel, 'handleGoodbyeInteraction', interaction); return; }
       if (startsWith(interaction, 'admin:reactionRoles')) { await callHandler(reactionRolesAdminPanel, 'handleReactionRolesAdminInteraction', interaction); return; }
-      if (startsWith(interaction, 'admin:socialhub')) { await callHandler(socialCreatorPanel, 'handleSocialCreatorInteraction', interaction); return; }
       if (startsWith(interaction, 'admin:schedule')) { await callHandler(schedulePanel, 'handleScheduleAdminInteraction', interaction); return; }
       if (startsWith(interaction, 'schedule:rsvp:')) { await callHandler(scheduleDeployment, 'handleMemberInteraction', interaction); return; }
       if (isVerificationMemberInteraction(interaction)) { await handleVerificationMemberInteraction(interaction); return; }
