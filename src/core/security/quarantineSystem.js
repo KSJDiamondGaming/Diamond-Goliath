@@ -1,5 +1,5 @@
 const guildManager = require('../guild/guildManager');
-const { shouldUseDryRunForOwner } = require('./testModeGuard');
+const { shouldUseDryRunForOwner } = require('../dev/testDevOverrideManager');
 
 const {
   emitQuarantineUpdate,
