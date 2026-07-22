@@ -197,6 +197,20 @@ module.exports = {
         await command.execute(interaction, client);
         return;
       }
+
+      const interactionAgeMs = Math.max(0, Date.now() - Number(interaction.createdTimestamp || Date.now()));
+      const customId = String(interaction.customId || '');
+      if (interactionAgeMs > 1500) {
+        console.warn(`[InteractionCreate] Slow dispatch before routing: customId=${customId} age=${interactionAgeMs}ms pid=${process.pid}`);
+      }
+
+      if (customId === 'admin:modules' || customId.startsWith('admin:modules:page:') || customId.startsWith('admin:module:')) {
+        if (!await callHandler(moduleAdminPanels, 'handleModuleAdminInteraction', interaction)) {
+          throw new Error(`Module admin did not handle ${customId}.`);
+        }
+        return;
+      }
+
       if (interaction.customId === 'admin:invites') {
         const panel = loadInvitesAdminPanel();
         if (typeof panel?.buildInviteStudioPayload !== 'function') {
@@ -231,7 +245,6 @@ module.exports = {
       if (await callHandler(stickyAdminPanel, 'handleStickyAdminInteraction', interaction)) return;
       if (await callHandler(levelingAdminPanel, 'handleLevelingAdminInteraction', interaction)) return;
       if (await callHandler(socialAdminPanel, 'handleSocialAdminInteraction', interaction)) return;
-      if (await callHandler(moduleAdminPanels, 'handleModuleAdminInteraction', interaction)) return;
       if (await callHandler(adminPanel, 'handleAdminNavigation', interaction)) return;
       if (await callHandler(duplicator, 'handleInteraction', interaction)) return;
       if (await callHandler(embedPanel, 'handleInteraction', interaction)) return;
