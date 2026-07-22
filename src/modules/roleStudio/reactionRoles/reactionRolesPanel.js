@@ -700,7 +700,6 @@ function loadV6() {
 const panelV6 = loadV6();
 
 // Production entry and former V7 smart-builder layer.
-require('../roleStudioNavigationPatch');
 
 const reactionPanel = (() => {
   const {
