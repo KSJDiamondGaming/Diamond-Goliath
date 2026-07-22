@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 /**
  * Consolidated Reaction Roles administration panel.
@@ -47,7 +47,7 @@ function loadV3() {
     const menu = new StringSelectMenuBuilder().setCustomId('admin:reactionRoles:manage:panel').setPlaceholder(panels.length ? 'Open a deployment' : 'No deployments yet').setMinValues(1).setMaxValues(1).setDisabled(!panels.length);
     menu.addOptions(panels.length ? panels.map((panel) => ({
       label: String(panel.name || panel.panelId).slice(0, 100),
-      description: `${panel.enabled === false ? 'Disabled' : 'Enabled'} â€¢ ${panel.mappings.length} mapping(s) â€¢ ${panel.source === 'template' ? 'Goliath panel' : 'Existing message'}`.slice(0, 100),
+      description: `${panel.enabled === false ? 'Disabled' : 'Enabled'} • ${panel.mappings.length} mapping(s) • ${panel.source === 'template' ? 'Goliath panel' : 'Existing message'}`.slice(0, 100),
       value: panel.panelId,
     })) : [{ label: 'No deployments available', value: 'none' }]);
     return menu;
@@ -77,13 +77,13 @@ function loadV3() {
     if (!mappings.length) return '> No emoji-to-role mappings added yet.';
     return mappings.slice(0, 20).map((mapping, index) => {
       const role = guild.roles.cache.get(mapping.roleId);
-      return `**${index + 1}. ${mapping.emoji}** â†’ ${role ? `<@&${role.id}>` : `\`${mapping.roleId}\``}\nâ”” ${modeLabel(mapping.mode)}`;
+      return `**${index + 1}. ${mapping.emoji}** → ${role ? `<@&${role.id}>` : `\`${mapping.roleId}\``}\n└ ${modeLabel(mapping.mode)}`;
     }).join('\n\n');
   }
   
   function mappingRemovalSelect(draft, guild) {
     return new StringSelectMenuBuilder().setCustomId('admin:reactionRoles:wizard:remove:select').setPlaceholder('Choose a mapping to remove').setMinValues(1).setMaxValues(1).addOptions(draft.mappings.slice(0, 25).map((mapping, index) => ({
-      label: `${mapping.emoji} â†’ ${guild.roles.cache.get(mapping.roleId)?.name || mapping.roleId}`.slice(0, 100),
+      label: `${mapping.emoji} → ${guild.roles.cache.get(mapping.roleId)?.name || mapping.roleId}`.slice(0, 100),
       description: `${index + 1}. ${modeLabel(mapping.mode)}`.slice(0, 100),
       value: mapping.mappingId,
     })));
@@ -95,7 +95,7 @@ function loadV3() {
   
   function messageDescription(message) {
     const date = message.createdAt ? new Date(message.createdAt).toLocaleString() : 'Unknown date';
-    return `${message.authorName || 'Unknown'} â€¢ ${date} â€¢ ${message.embedCount || 0} embed(s)`.slice(0, 100);
+    return `${message.authorName || 'Unknown'} • ${date} • ${message.embedCount || 0} embed(s)`.slice(0, 100);
   }
   
   function messageSelect(messages) {
@@ -111,13 +111,13 @@ function loadV3() {
     const mappings = panels.reduce((count, panel) => count + panel.mappings.length, 0);
     const drafts = Object.keys(config.drafts || {}).length;
     return {
-      embeds: [new EmbedBuilder().setColor(config.enabled !== false && health.healthy ? 0x57f287 : 0xfaa61a).setTitle('ðŸŽ­ Role Studio').setDescription('Attach roles to any accessible Discord message or create a new panel through Embed Studio.').addFields(
-        { name: 'Status', value: config.enabled !== false ? 'ðŸŸ¢ Online' : 'â¸ï¸ Disabled', inline: true },
+      embeds: [new EmbedBuilder().setColor(config.enabled !== false && health.healthy ? 0x57f287 : 0xfaa61a).setTitle('🎭 Role Studio').setDescription('Attach roles to any accessible Discord message or create a new panel through Embed Studio.').addFields(
+        { name: 'Status', value: config.enabled !== false ? '🟢 Online' : '⏸️ Disabled', inline: true },
         { name: 'Health', value: health.healthy ? 'All systems healthy' : `${health.unhealthy || 0} need attention`, inline: true },
         { name: 'Deployments', value: String(panels.length), inline: true },
         { name: 'Mappings', value: String(mappings), inline: true },
         { name: 'Drafts', value: String(drafts), inline: true },
-        { name: 'Assignments', value: `${config.analytics.assigned || 0} added â€¢ ${config.analytics.removed || 0} removed`, inline: true },
+        { name: 'Assignments', value: `${config.analytics.assigned || 0} added • ${config.analytics.removed || 0} removed`, inline: true },
         { name: 'Universal Message Support', value: 'Browse by channel, search messages, paste a full Discord link, or enter channel and message IDs manually.', inline: false },
       ).setFooter({ text: `Requested by ${memberDisplayName}` }).setTimestamp()],
       components: [
@@ -131,7 +131,7 @@ function loadV3() {
   async function buildAdminCentre(guild) {
     const config = reactionRoles.getSection(guild.id);
     const health = await reactionRoles.buildHealth(guild);
-    return { embeds: [new EmbedBuilder().setColor(config.enabled !== false && health.healthy ? 0x57f287 : 0xfaa61a).setTitle('ðŸ›¡ï¸ Role Studio Admin Centre').setDescription('Module controls, diagnostics and configuration tools.').addFields(
+    return { embeds: [new EmbedBuilder().setColor(config.enabled !== false && health.healthy ? 0x57f287 : 0xfaa61a).setTitle('🛡️ Role Studio Admin Centre').setDescription('Module controls, diagnostics and configuration tools.').addFields(
       { name: 'Module', value: config.enabled !== false ? 'Enabled' : 'Disabled', inline: true },
       { name: 'Health', value: health.healthy ? 'Healthy' : 'Attention required', inline: true },
       { name: 'Active Deployments', value: String(health.active || 0), inline: true },
@@ -145,7 +145,7 @@ function loadV3() {
     const draft = reactionRoles.getDraft(guild.id, userId);
     const session = getSession(guild.id, userId);
     const selected = draft?.messageId ? `Selected: <#${draft.channelId}> / \`${draft.messageId}\`` : 'No message selected yet.';
-    const embed = new EmbedBuilder().setColor(draft?.messageId ? 0x57f287 : 0x5865f2).setTitle('ðŸ”Ž Find Any Existing Message').setDescription([
+    const embed = new EmbedBuilder().setColor(draft?.messageId ? 0x57f287 : 0x5865f2).setTitle('🔎 Find Any Existing Message').setDescription([
       'Use whichever method is easiest. Goliath verifies access before allowing deployment.', '',
       '**1. Browse:** choose a channel or thread, then load recent messages.',
       '**2. Search:** choose a channel or thread, then search message text/embed content.',
@@ -180,12 +180,12 @@ function loadV3() {
     const role = draft.selectedRoleId ? guild.roles.cache.get(draft.selectedRoleId) : null;
     const hasTarget = Boolean(draft.channelId && (existing ? draft.messageId : draft.templateId));
     const ready = Boolean(hasTarget && draft.mappings.length);
-    const embed = new EmbedBuilder().setColor(ready ? 0x57f287 : 0x5865f2).setTitle(existing ? 'ðŸ”— Configure Roles for Existing Message' : 'ðŸŽ¨ Create a New Role Panel').setDescription([
+    const embed = new EmbedBuilder().setColor(ready ? 0x57f287 : 0x5865f2).setTitle(existing ? '🔗 Configure Roles for Existing Message' : '🎨 Create a New Role Panel').setDescription([
       existing ? `**Target:** <#${draft.channelId}> / \`${draft.messageId}\`\n**Original content and unrelated reactions remain unchanged.**` : `**Channel:** ${draft.channelId ? `<#${draft.channelId}>` : 'Not selected'}\n**Template:** ${template ? `\`${template.name}\`` : 'Not selected'}`,
       '', '### Emoji mappings', mappingText(draft.mappings, guild), '',
       `**Next role:** ${role ? `<@&${role.id}>` : 'Not selected'}`,
       `**Behaviour:** ${modeLabel(draft.selectedMode)}`, '',
-      ready ? `âœ… Ready to deploy ${draft.mappings.length} mapping(s).` : 'Add at least one emoji-to-role mapping.',
+      ready ? `✅ Ready to deploy ${draft.mappings.length} mapping(s).` : 'Add at least one emoji-to-role mapping.',
     ].join('\n').slice(0, 4096));
     const components = [];
     if (!existing) components.push(row(new ChannelSelectMenuBuilder().setCustomId('admin:reactionRoles:wizard:channel').setPlaceholder(draft.channelId ? 'Change target channel' : 'Choose target channel').setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(1).setMaxValues(1)), row(templateSelect(guild.id, draft.templateId)));
@@ -201,7 +201,7 @@ function loadV3() {
   function buildMappingRemoval(guild, userId) {
     const draft = reactionRoles.getDraft(guild.id, userId);
     if (!draft?.mappings?.length) return buildWizard(guild, userId);
-    return { embeds: [new EmbedBuilder().setColor(0xfaa61a).setTitle('âž– Remove a Mapping').setDescription(['Choose one mapping to remove.', '', mappingText(draft.mappings, guild)].join('\n').slice(0, 4096))], components: [row(mappingRemovalSelect(draft, guild)), row(btn('admin:reactionRoles:wizard:remove:back', 'Back to Builder', ButtonStyle.Primary), btn('admin:reactionRoles:wizard:cancel', 'Cancel Setup', ButtonStyle.Danger))] };
+    return { embeds: [new EmbedBuilder().setColor(0xfaa61a).setTitle('➖ Remove a Mapping').setDescription(['Choose one mapping to remove.', '', mappingText(draft.mappings, guild)].join('\n').slice(0, 4096))], components: [row(mappingRemovalSelect(draft, guild)), row(btn('admin:reactionRoles:wizard:remove:back', 'Back to Builder', ButtonStyle.Primary), btn('admin:reactionRoles:wizard:cancel', 'Cancel Setup', ButtonStyle.Danger))] };
   }
   
   async function buildManagedPanel(guild, panelId) {
@@ -210,7 +210,7 @@ function loadV3() {
     const health = await reactionRoles.buildHealth(guild);
     const panelHealth = health.panels.find((item) => item.panelId === panelId);
     const messageUrl = `https://discord.com/channels/${guild.id}/${panel.channelId}/${panel.messageId}`;
-    return { embeds: [new EmbedBuilder().setColor(panel.enabled === false ? 0x747f8d : panelHealth?.healthy === false ? 0xed4245 : 0x57f287).setTitle(`ðŸŽ­ ${panel.name}`).setDescription([
+    return { embeds: [new EmbedBuilder().setColor(panel.enabled === false ? 0x747f8d : panelHealth?.healthy === false ? 0xed4245 : 0x57f287).setTitle(`🎭 ${panel.name}`).setDescription([
       `**Status:** ${panel.enabled === false ? 'Disabled' : panelHealth?.healthy === false ? 'Needs attention' : 'Healthy'}`,
       `**Source:** ${panel.source === 'template' ? 'Goliath-created panel' : 'Existing Discord message'}`,
       `**Channel:** <#${panel.channelId}>`, `**Message:** [Open in Discord](${messageUrl})`, '', `### Mappings (${panel.mappings.length})`, mappingText(panel.mappings, guild),
@@ -221,7 +221,7 @@ function loadV3() {
     const panel = reactionRoles.getPanel(guild.id, panelId);
     if (!panel) throw new Error('That deployment no longer exists.');
     const canDelete = panel.source === reactionRoles.DRAFT_TYPES.TEMPLATE;
-    return { embeds: [new EmbedBuilder().setColor(0xed4245).setTitle(`ðŸ—‘ï¸ Remove ${panel.name}`).setDescription('Detach only, clear Goliath reactions and detach, or delete a Goliath-created message.')], components: [row(btn(`admin:reactionRoles:remove:detach:${panelId}`, 'Detach Only'), btn(`admin:reactionRoles:remove:clear:${panelId}`, 'Clear + Detach', ButtonStyle.Danger), btn(`admin:reactionRoles:remove:delete:${panelId}`, 'Delete Message', ButtonStyle.Danger, !canDelete)), row(btn(`admin:reactionRoles:remove:cancel:${panelId}`, 'Cancel', ButtonStyle.Primary))] };
+    return { embeds: [new EmbedBuilder().setColor(0xed4245).setTitle(`🗑️ Remove ${panel.name}`).setDescription('Detach only, clear Goliath reactions and detach, or delete a Goliath-created message.')], components: [row(btn(`admin:reactionRoles:remove:detach:${panelId}`, 'Detach Only'), btn(`admin:reactionRoles:remove:clear:${panelId}`, 'Clear + Detach', ButtonStyle.Danger), btn(`admin:reactionRoles:remove:delete:${panelId}`, 'Delete Message', ButtonStyle.Danger, !canDelete)), row(btn(`admin:reactionRoles:remove:cancel:${panelId}`, 'Cancel', ButtonStyle.Primary))] };
   }
   
   function oneFieldModal(customId, title, fieldId, label, placeholder, value = '') {
@@ -262,11 +262,11 @@ function loadV3() {
       if (interaction.isModalSubmit?.() && id === 'admin:reactionRoles:source:link:submit') {
         const parsed = reactionRoles.parseMessageReference(interaction.fields.getTextInputValue('messageLink'));
         await verifyAndSelect(guild, userId, parsed.channelId, parsed.messageId);
-        return interaction.reply({ ...buildSourcePicker(guild, userId, 'âœ… Message link verified.'), ephemeral: true });
+        return interaction.reply({ ...buildSourcePicker(guild, userId, '✅ Message link verified.'), ephemeral: true });
       }
       if (interaction.isModalSubmit?.() && id === 'admin:reactionRoles:source:ids:submit') {
         await verifyAndSelect(guild, userId, interaction.fields.getTextInputValue('channelId'), interaction.fields.getTextInputValue('messageId'));
-        return interaction.reply({ ...buildSourcePicker(guild, userId, 'âœ… Channel and message IDs verified.'), ephemeral: true });
+        return interaction.reply({ ...buildSourcePicker(guild, userId, '✅ Channel and message IDs verified.'), ephemeral: true });
       }
       if (interaction.isModalSubmit?.() && id === 'admin:reactionRoles:source:search:submit') {
         const draft = reactionRoles.getDraft(guild.id, userId);
@@ -301,7 +301,7 @@ function loadV3() {
       if (interaction.isStringSelectMenu?.() && id === 'admin:reactionRoles:source:message') {
         const [channelId, messageId] = String(interaction.values[0]).split(':');
         await verifyAndSelect(guild, userId, channelId, messageId);
-        return show(interaction, buildSourcePicker(guild, userId, 'âœ… Message selected and verified.'));
+        return show(interaction, buildSourcePicker(guild, userId, '✅ Message selected and verified.'));
       }
       if (interaction.isChannelSelectMenu?.() && id === 'admin:reactionRoles:wizard:channel') reactionRoles.saveDraft(guild.id, userId, { channelId: interaction.values[0] }, guild);
       else if (interaction.isRoleSelectMenu?.() && id === 'admin:reactionRoles:wizard:role') reactionRoles.saveDraft(guild.id, userId, { selectedRoleId: interaction.values[0] }, guild);
@@ -323,7 +323,7 @@ function loadV3() {
       if (id === 'admin:reactionRoles:source:link') { await interaction.showModal(oneFieldModal('admin:reactionRoles:source:link:submit', 'Paste Message Link', 'messageLink', 'Full Discord message link', 'https://discord.com/channels/server/channel/message')); return true; }
       if (id === 'admin:reactionRoles:source:ids') { await interaction.showModal(idsModal(reactionRoles.getDraft(guild.id, userId))); return true; }
       if (id === 'admin:reactionRoles:source:continue') return show(interaction, buildWizard(guild, userId));
-      if (id === 'admin:reactionRoles:wizard:emoji') { const draft = reactionRoles.getDraft(guild.id, userId); if (!draft.selectedRoleId) return interaction.reply({ content: 'Choose a role first.', ephemeral: true }); await interaction.showModal(oneFieldModal('admin:reactionRoles:wizard:emoji:submit', 'Add Emoji Mapping', 'emoji', 'Unicode or custom emoji', 'â­ or <:name:emoji_id>')); return true; }
+      if (id === 'admin:reactionRoles:wizard:emoji') { const draft = reactionRoles.getDraft(guild.id, userId); if (!draft.selectedRoleId) return interaction.reply({ content: 'Choose a role first.', ephemeral: true }); await interaction.showModal(oneFieldModal('admin:reactionRoles:wizard:emoji:submit', 'Add Emoji Mapping', 'emoji', 'Unicode or custom emoji', '⭐ or <:name:emoji_id>')); return true; }
       if (id === 'admin:reactionRoles:wizard:remove') return show(interaction, buildMappingRemoval(guild, userId));
       if (id === 'admin:reactionRoles:wizard:remove:back') return show(interaction, buildWizard(guild, userId));
       if (id === 'admin:reactionRoles:wizard:cancel') { reactionRoles.clearDraft(guild.id, userId, guild); clearSession(guild.id, userId); return show(interaction, await buildReactionRolesAdminPanel(guild, displayName(interaction))); }
@@ -349,11 +349,11 @@ function loadV3() {
       if (id === 'admin:reactionRoles:enable') reactionRoles.setEnabled(guild.id, true, guild);
       if (id === 'admin:reactionRoles:disable') reactionRoles.setEnabled(guild.id, false, guild);
       if (id === 'admin:reactionRoles:repair') { await interaction.deferUpdate(); await reactionRoles.repairAll(guild); return interaction.editReply(await buildAdminCentre(guild)); }
-      if (id === 'admin:reactionRoles:export') { const file = new AttachmentBuilder(Buffer.from(JSON.stringify(reactionRoles.exportConfiguration(guild.id), null, 2), 'utf8'), { name: `goliath-role-studio-${guild.id}.json` }); await interaction.reply({ content: 'ðŸ“¤ Role Studio configuration export.', files: [file], ephemeral: true }); return true; }
+      if (id === 'admin:reactionRoles:export') { const file = new AttachmentBuilder(Buffer.from(JSON.stringify(reactionRoles.exportConfiguration(guild.id), null, 2), 'utf8'), { name: `goliath-role-studio-${guild.id}.json` }); await interaction.reply({ content: '📤 Role Studio configuration export.', files: [file], ephemeral: true }); return true; }
       if (id === 'admin:reactionRoles:enable' || id === 'admin:reactionRoles:disable') return show(interaction, await buildAdminCentre(guild));
       return show(interaction, await buildReactionRolesAdminPanel(guild, displayName(interaction)));
     } catch (error) {
-      const payload = { content: `âŒ Role Studio setup failed: ${error.message}`, ephemeral: true };
+      const payload = { content: `❌ Role Studio setup failed: ${error.message}`, ephemeral: true };
       if (interaction.deferred || interaction.replied) await interaction.followUp(payload).catch(() => null); else await interaction.reply(payload).catch(() => null);
       return true;
     }
@@ -383,11 +383,11 @@ function loadV4() {
     const panels = reactionRoles.listPanels(guildId).slice(0, 25);
     const menu = new StringSelectMenuBuilder()
       .setCustomId('admin:reactionRoles:manage:panel')
-      .setPlaceholder(panels.length ? 'ðŸ“‚ Manage a deployment' : 'No deployments yet')
+      .setPlaceholder(panels.length ? '📂 Manage a deployment' : 'No deployments yet')
       .setMinValues(1).setMaxValues(1).setDisabled(!panels.length);
     menu.addOptions(panels.length ? panels.map((panel) => ({
       label: String(panel.name || panel.panelId).slice(0, 100),
-      description: `${panel.enabled === false ? 'Disabled' : 'Enabled'} â€¢ ${panel.mappings.length} role mapping(s) â€¢ ${panel.source === 'template' ? 'Goliath panel' : 'Existing message'}`.slice(0, 100),
+      description: `${panel.enabled === false ? 'Disabled' : 'Enabled'} • ${panel.mappings.length} role mapping(s) • ${panel.source === 'template' ? 'Goliath panel' : 'Existing message'}`.slice(0, 100),
       value: panel.panelId,
     })) : [{ label: 'Create or attach a panel to begin', value: 'none' }]);
     return menu;
@@ -401,7 +401,7 @@ function loadV4() {
     const drafts = Object.keys(config.drafts || {}).length;
     const analytics = config.analytics || {};
   
-    const status = config.enabled !== false ? 'ðŸŸ¢ Online' : 'â¸ï¸ Disabled';
+    const status = config.enabled !== false ? '🟢 Online' : '⏸️ Disabled';
     const healthText = health.healthy ? 'Healthy' : `${health.unhealthy || 0} need attention`;
     const stats = [
       `**Deployments** \`${panels.length}\``,
@@ -410,21 +410,21 @@ function loadV4() {
       `**Assigned** \`${analytics.assigned || 0}\``,
       `**Removed** \`${analytics.removed || 0}\``,
       `**Failed** \`${analytics.failed || 0}\``,
-    ].join('  â€¢  ');
+    ].join('  •  ');
   
     const embed = new EmbedBuilder()
       .setColor(config.enabled !== false && health.healthy ? 0x57f287 : 0xfaa61a)
-      .setTitle('ðŸŽ­ Role Studio')
+      .setTitle('🎭 Role Studio')
       .setDescription([
-        `### ${status}  â€¢  ${healthText}`,
+        `### ${status}  •  ${healthText}`,
         stats,
         '',
         '**Create, attach and manage role panels from one workspace.**',
         'Supports existing messages, embeds, bot and webhook posts, announcement channels and accessible threads.',
         '',
         '**Find any message using:**',
-        '`Channel Browser`  â€¢  `Recent Messages`  â€¢  `Message Search`',
-        '`Discord Link`  â€¢  `Channel + Message IDs`',
+        '`Channel Browser`  •  `Recent Messages`  •  `Message Search`',
+        '`Discord Link`  •  `Channel + Message IDs`',
         '',
         '> Original text, embeds, components and unrelated reactions are preserved.',
       ].join('\n'))
@@ -516,15 +516,15 @@ function loadV5() {
   async function buildMessagePreview(guild, userId) {
     const draft = reactionRoles.getDraft(guild.id, userId);
     const message = await selectedMessage(guild, draft);
-    if (!message) throw new Error('The selected message is no longer accessible. Choose it again or check Goliathâ€™s channel permissions.');
+    if (!message) throw new Error('The selected message is no longer accessible. Choose it again or check Goliath’s channel permissions.');
   
     const messageUrl = message.jumpUrl || `https://discord.com/channels/${guild.id}/${message.channelId}/${message.id}`;
     const created = message.createdAt ? new Date(message.createdAt).toLocaleString() : 'Unknown';
     const embed = new EmbedBuilder()
       .setColor(0x5865f2)
-      .setTitle('ðŸ‘ï¸ Confirm Selected Message')
+      .setTitle('👁️ Confirm Selected Message')
       .setDescription([
-        `**Author:** ${message.authorName || 'Unknown'}${message.bot ? ' â€¢ Bot/Webhook' : ''}`,
+        `**Author:** ${message.authorName || 'Unknown'}${message.bot ? ' • Bot/Webhook' : ''}`,
         `**Channel:** <#${message.channelId}>`,
         `**Created:** ${created}`,
         `**Message:** [Open in Discord](${messageUrl})`,
@@ -532,13 +532,13 @@ function loadV5() {
         '### Preview',
         messageSummary(message),
         '',
-        `**Embeds:** \`${message.embedCount || 0}\`  â€¢  **Existing reactions:** \`${message.reactionCount || 0}\``,
+        `**Embeds:** \`${message.embedCount || 0}\`  •  **Existing reactions:** \`${message.reactionCount || 0}\``,
         '',
         '### Preservation guarantees',
-        'âœ… Original text and embeds preserved',
-        'âœ… Existing buttons/components preserved',
-        'âœ… Unrelated reactions preserved',
-        'âœ… Only configured role reactions are added',
+        '✅ Original text and embeds preserved',
+        '✅ Existing buttons/components preserved',
+        '✅ Unrelated reactions preserved',
+        '✅ Only configured role reactions are added',
       ].join('\n').slice(0, 4096));
   
     if (message.authorAvatar) embed.setThumbnail(message.authorAvatar);
@@ -548,7 +548,7 @@ function loadV5() {
       components: [
         row(
           button('admin:reactionRoles:source', 'Change Message'),
-          button('admin:reactionRoles:continue', 'Correct Message â€” Configure Roles', ButtonStyle.Success),
+          button('admin:reactionRoles:continue', 'Correct Message — Configure Roles', ButtonStyle.Success),
           button('admin:reactionRoles:wizard:cancel', 'Cancel', ButtonStyle.Danger),
         ),
       ],
@@ -564,7 +564,7 @@ function loadV5() {
   
     const mappingLines = draft.mappings.slice(0, 20).map((mapping, index) => {
       const role = guild.roles.cache.get(mapping.roleId);
-      return `**${index + 1}. ${mapping.emoji}** â†’ ${role ? `<@&${role.id}>` : `\`${mapping.roleId}\``} â€¢ ${modeLabel(mapping.mode)}`;
+      return `**${index + 1}. ${mapping.emoji}** → ${role ? `<@&${role.id}>` : `\`${mapping.roleId}\``} • ${modeLabel(mapping.mode)}`;
     });
     const emojis = draft.mappings.map((mapping) => mapping.emoji).join(' ');
   
@@ -579,7 +579,7 @@ function loadV5() {
   
     const embed = new EmbedBuilder()
       .setColor(0x57f287)
-      .setTitle(existing ? 'âœ… Final Review â€” Attach Roles' : 'âœ… Final Review â€” Create Panel')
+      .setTitle(existing ? '✅ Final Review — Attach Roles' : '✅ Final Review — Create Panel')
       .setDescription([
         ...targetLines,
         '',
@@ -589,10 +589,10 @@ function loadV5() {
         `**Reactions to add:** ${emojis}`,
         '',
         '### Safety checks',
-        existing ? 'âœ… Existing message content preserved' : 'âœ… Embed Studio controls presentation',
-        existing ? 'âœ… Existing embeds and components preserved' : 'âœ… New panel will be created in the selected channel',
-        existing ? 'âœ… Unrelated reactions preserved' : 'âœ… Only configured role mappings will be deployed',
-        'âœ… Roles are validated against Goliathâ€™s hierarchy before assignment',
+        existing ? '✅ Existing message content preserved' : '✅ Embed Studio controls presentation',
+        existing ? '✅ Existing embeds and components preserved' : '✅ New panel will be created in the selected channel',
+        existing ? '✅ Unrelated reactions preserved' : '✅ Only configured role mappings will be deployed',
+        '✅ Roles are validated against Goliath’s hierarchy before assignment',
         '',
         '> Nothing is changed until you confirm below.',
       ].join('\n').slice(0, 4096));
@@ -750,7 +750,7 @@ const reactionPanel = (() => {
     if (!draft.mappings.length) return '> No mappings yet. Choose a role, choose the behaviour, then press **Add Emoji**.';
     return draft.mappings.map((mapping, index) => {
       const role = guild.roles.cache.get(mapping.roleId);
-      return `**${index + 1}. ${mapping.emoji}** â†’ ${role ? `<@&${role.id}>` : `\`${mapping.roleId}\``}\nâ”” ${modeLabel(mapping.mode)}`;
+      return `**${index + 1}. ${mapping.emoji}** → ${role ? `<@&${role.id}>` : `\`${mapping.roleId}\``}\n└ ${modeLabel(mapping.mode)}`;
     }).join('\n\n');
   }
 
@@ -761,7 +761,7 @@ const reactionPanel = (() => {
       .setMinValues(1).setMaxValues(1).setDisabled(!draft.mappings.length);
     menu.addOptions(draft.mappings.length ? draft.mappings.slice(0, 25).map((mapping, index) => ({
       label: `${index + 1}. ${mapping.emoji}`.slice(0, 100),
-      description: `${modeLabel(mapping.mode)} â€¢ ${mapping.roleId}`.slice(0, 100),
+      description: `${modeLabel(mapping.mode)} • ${mapping.roleId}`.slice(0, 100),
       value: mapping.mappingId,
       default: mapping.mappingId === selectedId,
     })) : [{ label: 'Add a mapping first', value: 'none' }]);
@@ -809,11 +809,11 @@ const reactionPanel = (() => {
     const panels = reactionRoles.listPanels(guildId).slice(0, 25);
     const menu = new StringSelectMenuBuilder()
       .setCustomId('admin:reactionRoles:manage:panel')
-      .setPlaceholder(panels.length ? 'ðŸ“‚ Manage a deployment' : 'No deployments yet')
+      .setPlaceholder(panels.length ? '📂 Manage a deployment' : 'No deployments yet')
       .setMinValues(1).setMaxValues(1).setDisabled(!panels.length);
     menu.addOptions(panels.length ? panels.map((panel) => ({
       label: String(panel.name || panel.panelId).slice(0, 100),
-      description: `${panel.enabled === false ? 'Disabled' : 'Enabled'} â€¢ ${panel.mappings.length} mapping(s)`.slice(0, 100),
+      description: `${panel.enabled === false ? 'Disabled' : 'Enabled'} • ${panel.mappings.length} mapping(s)`.slice(0, 100),
       value: panel.panelId,
     })) : [{ label: 'Create or attach a panel to begin', value: 'none' }]);
     return menu;
@@ -828,10 +828,10 @@ const reactionPanel = (() => {
     const analytics = config.analytics || {};
     const embed = new EmbedBuilder()
       .setColor(config.enabled !== false && health.healthy ? 0x57f287 : 0xfaa61a)
-      .setTitle('ðŸŽ­ Role Studio')
+      .setTitle('🎭 Role Studio')
       .setDescription([
-        `### ${config.enabled !== false ? 'ðŸŸ¢ Online' : 'â¸ï¸ Disabled'} â€¢ ${health.healthy ? 'Healthy' : `${health.unhealthy || 0} need attention`}`,
-        `**Deployments** \`${panels.length}\` â€¢ **Mappings** \`${mappings}\` â€¢ **Assigned** \`${analytics.assigned || 0}\` â€¢ **Removed** \`${analytics.removed || 0}\` â€¢ **Failed** \`${analytics.failed || 0}\``,
+        `### ${config.enabled !== false ? '🟢 Online' : '⏸️ Disabled'} • ${health.healthy ? 'Healthy' : `${health.unhealthy || 0} need attention`}`,
+        `**Deployments** \`${panels.length}\` • **Mappings** \`${mappings}\` • **Assigned** \`${analytics.assigned || 0}\` • **Removed** \`${analytics.removed || 0}\` • **Failed** \`${analytics.failed || 0}\``,
         '',
         '**Attach roles to any accessible message or build a new panel through Embed Studio.**',
         'Your active setup is saved automatically and reopens exactly where you left it.',
@@ -864,12 +864,12 @@ const reactionPanel = (() => {
     if (existing && (!draft.channelId || !draft.messageId)) return null;
     const selectedRole = draft.selectedRoleId ? guild.roles.cache.get(draft.selectedRoleId) : null;
     const target = existing
-      ? `<#${draft.channelId}> â€¢ \`${draft.messageId}\``
-      : `${draft.channelId ? `<#${draft.channelId}>` : 'Channel not selected'} â€¢ ${draft.templateId ? `\`${draft.templateId}\`` : 'Template not selected'}`;
+      ? `<#${draft.channelId}> • \`${draft.messageId}\``
+      : `${draft.channelId ? `<#${draft.channelId}>` : 'Channel not selected'} • ${draft.templateId ? `\`${draft.templateId}\`` : 'Template not selected'}`;
     const ready = Boolean(draft.channelId && (existing ? draft.messageId : draft.templateId) && draft.mappings.length);
     const embed = new EmbedBuilder()
       .setColor(ready ? 0x57f287 : 0x5865f2)
-      .setTitle('ðŸŽ­ Role Studio Builder')
+      .setTitle('🎭 Role Studio Builder')
       .setDescription([
         `**Target:** ${target}`,
         existing ? '**Source message remains unchanged.**' : '**Embed Studio controls the new panel presentation.**',
@@ -880,7 +880,7 @@ const reactionPanel = (() => {
         `**Next role:** ${selectedRole ? `<@&${selectedRole.id}>` : 'Choose a role below'}`,
         `**Behaviour:** ${modeLabel(draft.selectedMode)}`,
         '',
-        ready ? 'âœ… Ready for final review.' : 'Add at least one mapping and complete the target settings.',
+        ready ? '✅ Ready for final review.' : 'Add at least one mapping and complete the target settings.',
       ].join('\n').slice(0, 4096));
 
     const components = [];
@@ -915,7 +915,7 @@ const reactionPanel = (() => {
     const index = draft.mappings.findIndex((mapping) => mapping.mappingId === selected.mappingId);
     const embed = new EmbedBuilder()
       .setColor(0x5865f2)
-      .setTitle('ðŸ§© Mapping Manager')
+      .setTitle('🧩 Mapping Manager')
       .setDescription([
         `### Selected mapping ${index + 1} of ${draft.mappings.length}`,
         `**Emoji:** ${selected.emoji}`,
@@ -953,7 +953,7 @@ const reactionPanel = (() => {
     const input = new TextInputBuilder()
       .setCustomId('emoji')
       .setLabel('Emoji')
-      .setPlaceholder('â­ or <:name:emoji_id>')
+      .setPlaceholder('⭐ or <:name:emoji_id>')
       .setStyle(TextInputStyle.Short)
       .setRequired(true)
       .setValue(String(mapping.emoji || ''));
