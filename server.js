@@ -9,7 +9,6 @@ const session = require('express-session');
 const { Client, Collection, GatewayIntentBits, Partials } = require('discord.js');
 const { loadEnvironment } = require('./src/config/envLoader');
 const { resolveToken } = require('./src/config/tokenResolver');
-const { prepareInteraction } = require('./src/runtime/interactionResponseGuard');
 loadEnvironment();
 
 process.on('warning', (warning) => {
@@ -165,7 +164,6 @@ function registerEvents() {
 
   for (const { eventName, once, handlers } of grouped.values()) {
     const listener = async (...args) => {
-      if (eventName === 'interactionCreate') await prepareInteraction(args[0]);
       for (const handler of handlers) {
         try { await handler.execute(...args, client); }
         catch (error) {
@@ -192,15 +190,14 @@ client.once('clientReady', async () => {
   await Promise.all([
     runStartupTask('Tickets', () => require('./src/modules/tickets/tickets').startup.startupTickets(client)),
     runStartupTask('Timed Roles', () => require('./src/modules/roleStudio/timedRoles/timedRoles').startup(client)),
-    runStartupTask('Translation', () => require('./src/modules/translation/translationStartup').startupTranslation(client)),
-    runStartupTask('Verification', () => require('./src/modules/verification/verification').startupVerification(client)),
-    runStartupTask('Goodbye', () => require('./src/modules/goodbye/goodbye').startupGoodbye(client)),
+    runStartupTask('Translation', () => require('./src/modules/translation/translationStartup').startup(client)),
+    runStartupTask('Goodbye', () => require('./src/modules/goodbye/goodbyeStartup').startup(client)),
+    runStartupTask('Giveaways', () => require('./src/modules/giveaways/giveaways').startup(client)),
     runStartupTask('Reaction Roles', () => require('./src/modules/roleStudio/reactionRoles/reactionRoles').startup(client)),
-    runStartupTask('Giveaways', () => require('./src/modules/giveaways/giveawayScheduler').start(client)),
+    runStartupTask('Verification', () => require('./src/modules/verification/verificationStartup').startup(client)),
   ]);
-  backupScheduler.startBackupScheduler?.();
+  backupScheduler.startBackupScheduler?.(client);
 });
+
 server.listen(PORT, () => console.log(`🌐 Dashboard server running on port ${PORT}`));
-const token = resolveToken(config);
-if (!token) { console.error('❌ Missing Discord token for current BOT_MODE.'); process.exit(1); }
-client.login(token);
+client.login(resolveToken(config));
