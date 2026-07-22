@@ -5,8 +5,9 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const root = path.resolve(__dirname, '..');
-const legacyRoot = path.join(root, 'src', 'modules', 'social');
-const canonicalRoot = path.join(root, 'src', 'modules', 'socialStudio');
+const sourceRoot = path.join(root, 'src');
+const legacyRoot = path.join(sourceRoot, 'modules', 'social');
+const canonicalRoot = path.join(sourceRoot, 'modules', 'socialStudio');
 const canonicalFiles = Object.freeze([
   'social.js',
   'socialStore.js',
@@ -46,6 +47,34 @@ function listEntries(directory) {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+function walkJavaScript(directory) {
+  if (!fs.existsSync(directory)) return [];
+  const files = [];
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const fullPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) files.push(...walkJavaScript(fullPath));
+    else if (entry.isFile() && /\.(?:cjs|js|mjs)$/.test(entry.name)) files.push(fullPath);
+  }
+  return files;
+}
+
+function auditRetiredImports(errors) {
+  const retiredModules = retiredFiles.map((file) => file.replace(/\.js$/, ''));
+  const violations = [];
+  for (const file of walkJavaScript(sourceRoot)) {
+    const source = fs.readFileSync(file, 'utf8');
+    for (const moduleName of retiredModules) {
+      const importPattern = new RegExp(`(?:require\\s*\\(|from\\s+|import\\s*\\()\\s*['\"][^'\"]*${moduleName}(?:\\.js)?['\"]`);
+      if (importPattern.test(source)) violations.push(`${relative(file)} -> ${moduleName}`);
+    }
+  }
+  if (violations.length) {
+    for (const violation of violations) fail(errors, `Retired Social helper import: ${violation}`);
+  } else {
+    pass('No source imports retired Social helpers');
+  }
+}
+
 function importFile(file, errors) {
   const code = "const file=process.argv[1];try{require(file);process.exit(0)}catch(error){console.error(error?.stack||error?.message||error);process.exit(1)}";
   const result = spawnSync(process.execPath, ['-e', code, file], {
@@ -75,8 +104,7 @@ function auditMigrationState(errors) {
     else pass(`Retired duplicate removed: ${file}`);
   }
 
-  const requiredDuringMigration = ['social.js', 'socialStore.js', 'socialRuntime.js', 'socialPanel.js', 'socialRoute.js'];
-  for (const file of requiredDuringMigration) {
+  for (const file of canonicalFiles) {
     const candidate = path.join(legacyRoot, file);
     if (fs.existsSync(candidate)) pass(`Migration canonical file present: ${file}`);
     else fail(errors, `Migration canonical file missing: ${relative(candidate)}`);
@@ -119,6 +147,7 @@ function main() {
   console.log('==========================');
   const errors = [];
 
+  auditRetiredImports(errors);
   if (fs.existsSync(canonicalRoot)) auditCanonicalState(errors);
   else auditMigrationState(errors);
 
