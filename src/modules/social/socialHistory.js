@@ -4,6 +4,8 @@ const crypto = require('crypto');
 const socialStore = require('./socialStore');
 
 const MAX_HISTORY = 500;
+const MAX_INCIDENT_HISTORY = 100;
+const INCIDENT_EVENT_TYPE = 'provider_incident';
 const VALID_STATUSES = new Set(['sent', 'failed', 'skipped', 'suppressed', 'queued', 'retried', 'test']);
 
 function now() {
@@ -43,11 +45,28 @@ function normalizeEntry(entry = {}) {
   };
 }
 
+function trimEntries(entries = []) {
+  let incidentCount = 0;
+  const retained = [];
+
+  for (const entry of entries.map(normalizeEntry)) {
+    if (entry.eventType === INCIDENT_EVENT_TYPE) {
+      if (incidentCount >= MAX_INCIDENT_HISTORY) continue;
+      incidentCount += 1;
+    }
+    retained.push(entry);
+    if (retained.length >= MAX_HISTORY) break;
+  }
+
+  return retained;
+}
+
 function list(guildId, options = {}) {
   const section = socialStore.getSocialSection(guildId);
-  let entries = Array.isArray(section.history) ? section.history.map(normalizeEntry) : [];
+  let entries = trimEntries(Array.isArray(section.history) ? section.history : []);
 
   if (options.status) entries = entries.filter((entry) => entry.status === cleanStatus(options.status));
+  if (options.eventType) entries = entries.filter((entry) => entry.eventType === cleanText(options.eventType, '', 40));
   if (options.accountId) entries = entries.filter((entry) => entry.accountId === String(options.accountId));
   if (options.platform) entries = entries.filter((entry) => entry.platform === String(options.platform).toLowerCase());
   if (options.alertType) entries = entries.filter((entry) => entry.alertType === String(options.alertType).toLowerCase());
@@ -60,9 +79,7 @@ function record(guildId, entry = {}, meta = {}) {
   const normalized = normalizeEntry(entry);
   socialStore.updateSocialSection(guildId, (section) => ({
     ...section,
-    history: [normalized, ...(Array.isArray(section.history) ? section.history : [])]
-      .map(normalizeEntry)
-      .slice(0, MAX_HISTORY),
+    history: trimEntries([normalized, ...(Array.isArray(section.history) ? section.history : [])]),
     updatedAt: now(),
   }), { action: 'social_history_record', ...meta });
   return normalized;
@@ -79,7 +96,11 @@ function clear(guildId, meta = {}) {
 function summary(guildId) {
   const entries = list(guildId, { limit: MAX_HISTORY });
   const counts = {};
-  for (const entry of entries) counts[entry.status] = Number(counts[entry.status] || 0) + 1;
+  const eventTypes = {};
+  for (const entry of entries) {
+    counts[entry.status] = Number(counts[entry.status] || 0) + 1;
+    eventTypes[entry.eventType] = Number(eventTypes[entry.eventType] || 0) + 1;
+  }
   return {
     total: entries.length,
     sent: Number(counts.sent || 0),
@@ -89,13 +110,17 @@ function summary(guildId) {
     queued: Number(counts.queued || 0),
     retried: Number(counts.retried || 0),
     tests: Number(counts.test || 0),
+    providerIncidents: Number(eventTypes[INCIDENT_EVENT_TYPE] || 0),
     latestAt: entries[0]?.createdAt || null,
   };
 }
 
 module.exports = {
   MAX_HISTORY,
+  MAX_INCIDENT_HISTORY,
+  INCIDENT_EVENT_TYPE,
   normalizeEntry,
+  trimEntries,
   list,
   record,
   clear,
