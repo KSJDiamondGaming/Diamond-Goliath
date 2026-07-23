@@ -24,7 +24,16 @@ test('history route forwards eventType and existing filters to the history servi
     capturedOptions = options;
     return [{ id: 'incident-1', eventType: 'provider_incident' }];
   };
-  social.history.summary = () => ({ total: 1, providerIncidents: 1 });
+  social.history.summary = () => ({
+    total: 1,
+    providerIncidents: 1,
+    incidentCapacity: {
+      used: 1,
+      limit: 100,
+      remaining: 99,
+      saturated: false,
+    },
+  });
 
   try {
     historyHandler()({
@@ -63,7 +72,16 @@ test('history route forwards eventType and existing filters to the history servi
   assert.deepEqual(payload, {
     success: true,
     guildId: 'guild-123',
-    summary: { total: 1, providerIncidents: 1 },
+    summary: {
+      total: 1,
+      providerIncidents: 1,
+      incidentCapacity: {
+        used: 1,
+        limit: 100,
+        remaining: 99,
+        saturated: false,
+      },
+    },
     history: [{ id: 'incident-1', eventType: 'provider_incident' }],
   });
 });
