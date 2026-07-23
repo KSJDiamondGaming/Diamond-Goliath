@@ -19,13 +19,24 @@ async function fetchActiveMessage(account = {}, client) {
   return message ? { channel, message } : null;
 }
 
-function liveSnapshot(result = {}) {
+function displayResult(result = {}, settings = {}, account = {}) {
+  const next = { ...result };
+  if (settings.includeViewerCount === false) next.viewerCount = 0;
+  if (settings.thumbnailPreference === 'none') next.thumbnailUrl = '';
+  if (settings.thumbnailPreference === 'creator') {
+    next.thumbnailUrl = result.creatorAvatarUrl || result.avatarUrl || account.metadata?.avatarUrl || '';
+  }
+  return next;
+}
+
+function liveSnapshot(result = {}, settings = {}, account = {}) {
+  const visible = displayResult(result, settings, account);
   return JSON.stringify({
-    title: String(result.title || ''),
-    gameName: String(result.gameName || ''),
-    thumbnailUrl: String(result.thumbnailUrl || ''),
-    viewerCount: Number(result.viewerCount || 0),
-    url: String(result.url || ''),
+    title: String(visible.title || ''),
+    gameName: String(visible.gameName || ''),
+    thumbnailUrl: String(visible.thumbnailUrl || ''),
+    viewerCount: Number(visible.viewerCount || 0),
+    url: String(visible.url || ''),
   });
 }
 
@@ -36,7 +47,8 @@ async function syncLiveMessage(guildId, account = {}, result = {}, client, meta 
     return { success: false, skipped: true, reason: 'not_active_session' };
   }
 
-  const snapshot = liveSnapshot(result);
+  const visibleResult = displayResult(result, settings, account);
+  const snapshot = liveSnapshot(result, settings, account);
   if (account.lastSeen?.lastLiveMessageSnapshot === snapshot) {
     return { success: false, skipped: true, reason: 'message_unchanged' };
   }
@@ -45,7 +57,7 @@ async function syncLiveMessage(guildId, account = {}, result = {}, client, meta 
   if (!active) return { success: false, skipped: true, reason: 'active_message_unavailable' };
   const socialManager = require('./socialManager');
   try {
-    await active.message.edit({ embeds: [socialManager.buildLiveEmbed(account, result)] });
+    await active.message.edit({ embeds: [socialManager.buildLiveEmbed(account, visibleResult)] });
     socialManager.updateAccount(guildId, account.accountId, {
       lastSeen: {
         ...(account.lastSeen || {}),
@@ -58,6 +70,10 @@ async function syncLiveMessage(guildId, account = {}, result = {}, client, meta 
       creator: account.displayName, platform: account.platform, alertType: 'live',
       contentId: result.contentId, title: result.title || null,
       channelId: active.channel.id, messageId: active.message.id,
+      metadata: {
+        includeViewerCount: settings.includeViewerCount !== false,
+        thumbnailPreference: settings.thumbnailPreference || 'stream',
+      },
     }, meta);
     return { success: true, edited: true, channelId: active.channel.id, messageId: active.message.id };
   } catch (error) {
@@ -70,16 +86,17 @@ async function syncLiveMessage(guildId, account = {}, result = {}, client, meta 
   }
 }
 
-function endedEmbed(account = {}, endedAt = new Date()) {
+function endedEmbed(account = {}, endedAt = new Date(), settings = {}) {
   const creator = account.displayName || account.username || 'Creator';
   const startedAt = Date.parse(account.lastSeen?.lastLiveAt || '');
   const durationMs = Number.isFinite(startedAt) ? Math.max(0, endedAt.getTime() - startedAt) : 0;
   const durationMinutes = Math.floor(durationMs / 60000);
+  const includeDuration = settings.includeLiveDuration !== false;
   const embed = new EmbedBuilder()
     .setColor(0x6b7280)
     .setTitle(`⚫ ${creator} is no longer live`)
     .setDescription(account.lastSeen?.lastLiveTitle || 'The live stream has ended.')
-    .setFooter({ text: durationMinutes > 0 ? `Stream ended • Live for ${durationMinutes} minutes` : 'Stream ended' })
+    .setFooter({ text: includeDuration && durationMinutes > 0 ? `Stream ended • Live for ${durationMinutes} minutes` : 'Stream ended' })
     .setTimestamp(endedAt);
   if (account.url) embed.setURL(account.url);
   return embed;
@@ -95,13 +112,14 @@ async function finalizeLiveMessage(guildId, account = {}, client, meta = {}) {
     if (settings.deleteEndedNotifications === true) {
       await active.message.delete();
     } else {
-      await active.message.edit({ content: undefined, embeds: [endedEmbed(account, endedAt)], components: [] });
+      await active.message.edit({ content: undefined, embeds: [endedEmbed(account, endedAt, settings)], components: [] });
     }
     socialManager.updateAccount(guildId, account.accountId, {
       lastSeen: {
         ...(account.lastSeen || {}),
         lastMessageFinalizedAt: endedAt.toISOString(),
         lastMessageId: settings.deleteEndedNotifications === true ? null : account.lastSeen?.lastMessageId,
+        lastLiveMessageSnapshot: null,
       },
     }, { action: settings.deleteEndedNotifications === true ? 'social_live_alert_deleted' : 'social_live_alert_ended_edit', ...meta });
     socialHistory.record(guildId, {
@@ -110,6 +128,7 @@ async function finalizeLiveMessage(guildId, account = {}, client, meta = {}) {
       creator: account.displayName, platform: account.platform, alertType: 'live',
       contentId: account.lastSeen?.lastContentId || null,
       channelId: active.channel.id, messageId: active.message.id,
+      metadata: { includeLiveDuration: settings.includeLiveDuration !== false },
     }, meta);
     return { success: true, deleted: settings.deleteEndedNotifications === true, edited: settings.deleteEndedNotifications !== true };
   } catch (error) {
@@ -121,4 +140,4 @@ async function finalizeLiveMessage(guildId, account = {}, client, meta = {}) {
   }
 }
 
-module.exports = { liveSnapshot, syncLiveMessage, finalizeLiveMessage };
+module.exports = { displayResult, liveSnapshot, syncLiveMessage, finalizeLiveMessage };
