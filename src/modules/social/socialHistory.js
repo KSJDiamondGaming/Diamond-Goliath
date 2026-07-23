@@ -101,6 +101,7 @@ function summary(guildId) {
     counts[entry.status] = Number(counts[entry.status] || 0) + 1;
     eventTypes[entry.eventType] = Number(eventTypes[entry.eventType] || 0) + 1;
   }
+  const providerIncidents = Number(eventTypes[INCIDENT_EVENT_TYPE] || 0);
   return {
     total: entries.length,
     sent: Number(counts.sent || 0),
@@ -110,7 +111,13 @@ function summary(guildId) {
     queued: Number(counts.queued || 0),
     retried: Number(counts.retried || 0),
     tests: Number(counts.test || 0),
-    providerIncidents: Number(eventTypes[INCIDENT_EVENT_TYPE] || 0),
+    providerIncidents,
+    incidentCapacity: {
+      used: providerIncidents,
+      limit: MAX_INCIDENT_HISTORY,
+      remaining: Math.max(0, MAX_INCIDENT_HISTORY - providerIncidents),
+      saturated: providerIncidents >= MAX_INCIDENT_HISTORY,
+    },
     latestAt: entries[0]?.createdAt || null,
   };
 }
