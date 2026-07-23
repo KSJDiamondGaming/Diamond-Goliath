@@ -15,7 +15,33 @@ const PROVIDER_STATUSES = Object.freeze({
   ERROR: 'error',
 });
 
+const DEFAULT_CAPABILITIES = Object.freeze({
+  live: false,
+  uploads: false,
+  posts: false,
+  title: false,
+  category: false,
+  thumbnail: false,
+  viewerCount: false,
+  creatorAvatar: false,
+  creatorBanner: false,
+});
+
+function capabilities(values = {}) {
+  return Object.freeze({ ...DEFAULT_CAPABILITIES, ...values });
+}
+
 const providerDefinitions = Object.freeze({
+  facebook: {
+    id: 'facebook',
+    label: 'Facebook Gaming',
+    supportedAlertTypes: ['live'],
+    requiredEnv: [],
+    handler: null,
+    zeroCredentialSupported: false,
+    unavailableReason: 'Facebook Gaming live monitoring requires Meta app access and authorization for the monitored Page. Enablement depends on the permissions available to the Goliath application.',
+    capabilities: capabilities({ live: true, title: true, thumbnail: true, viewerCount: true, creatorAvatar: true, creatorBanner: true }),
+  },
   instagram: {
     id: 'instagram',
     label: 'Instagram',
@@ -24,6 +50,7 @@ const providerDefinitions = Object.freeze({
     handler: instagramProvider,
     zeroCredentialSupported: false,
     unavailableReason: 'Instagram monitoring requires authorization from the monitored professional account and is outside Social Studio zero-credential scope.',
+    capabilities: capabilities({ posts: true, thumbnail: true, creatorAvatar: true }),
   },
   kick: {
     id: 'kick',
@@ -32,6 +59,7 @@ const providerDefinitions = Object.freeze({
     requiredEnv: ['KICK_CLIENT_ID', 'KICK_CLIENT_SECRET'],
     handler: kickProvider,
     zeroCredentialSupported: true,
+    capabilities: capabilities({ live: true, title: true, category: true, thumbnail: true, viewerCount: true, creatorAvatar: true, creatorBanner: true }),
   },
   tiktok: {
     id: 'tiktok',
@@ -40,7 +68,8 @@ const providerDefinitions = Object.freeze({
     requiredEnv: [],
     handler: tiktokProvider,
     zeroCredentialSupported: false,
-    unavailableReason: 'TikTok monitored-account access requires creator authorization and is outside Social Studio zero-credential scope.',
+    unavailableReason: 'TikTok monitored-account access requires creator authorization and depends on the API products approved for the Goliath application.',
+    capabilities: capabilities({ live: true, posts: true, title: true, thumbnail: true, viewerCount: true, creatorAvatar: true }),
   },
   twitch: {
     id: 'twitch',
@@ -49,6 +78,7 @@ const providerDefinitions = Object.freeze({
     requiredEnv: ['TWITCH_CLIENT_ID', 'TWITCH_CLIENT_SECRET'],
     handler: twitchProvider,
     zeroCredentialSupported: true,
+    capabilities: capabilities({ live: true, title: true, category: true, thumbnail: true, viewerCount: true, creatorAvatar: true }),
   },
   x: {
     id: 'x',
@@ -57,6 +87,7 @@ const providerDefinitions = Object.freeze({
     requiredEnv: [],
     handler: xProvider,
     zeroCredentialSupported: true,
+    capabilities: capabilities({ posts: true, thumbnail: true, creatorAvatar: true }),
   },
   youtube: {
     id: 'youtube',
@@ -65,6 +96,7 @@ const providerDefinitions = Object.freeze({
     requiredEnv: ['YOUTUBE_API_KEY'],
     handler: youtubeProvider,
     zeroCredentialSupported: true,
+    capabilities: capabilities({ live: true, uploads: true, title: true, category: true, thumbnail: true, viewerCount: true, creatorAvatar: true, creatorBanner: true }),
   },
 });
 
@@ -91,10 +123,12 @@ function getProvider(platform) {
 
   return {
     ...provider,
+    capabilities: { ...DEFAULT_CAPABILITIES, ...(provider.capabilities || {}) },
     status,
     productionSupported: status === PROVIDER_STATUSES.READY,
+    technicallyPossible: status !== PROVIDER_STATUSES.NOT_IMPLEMENTED,
     ownerManaged: true,
-    userCredentialsRequired: false,
+    userCredentialsRequired: provider.zeroCredentialSupported === false,
   };
 }
 
@@ -130,6 +164,7 @@ async function checkAccount(account = {}) {
       accountId: account.accountId,
       username: account.username,
       supportedAlertTypes: provider.supportedAlertTypes,
+      capabilities: provider.capabilities,
       checkedAt: new Date().toISOString(),
       error,
     };
@@ -146,6 +181,7 @@ async function checkAccount(account = {}) {
 
 module.exports = {
   PROVIDER_STATUSES,
+  DEFAULT_CAPABILITIES,
   getProvider,
   listProviders,
   checkAccount,
