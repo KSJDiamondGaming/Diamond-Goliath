@@ -18,6 +18,7 @@ module.exports = {
   providerHealth: require('./socialProviderHealth'),
   providerIncidents: require('./socialProviderIncidents'),
   incidentReporter: require('./socialIncidentReporter'),
+  incidentNotifier: require('./socialIncidentNotifier'),
   incidentMonitor,
   incidentDiagnostics: require('./socialIncidentDiagnostics'),
   pollingPolicy: require('./socialPollingPolicy'),
