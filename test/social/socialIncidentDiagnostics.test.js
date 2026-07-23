@@ -59,6 +59,27 @@ test('unrelated social history is ignored', () => {
   assert.equal(result.unresolvedCount, 0);
 });
 
+test('notification delivery totals are preserved from the latest monitor run', () => {
+  const monitor = {
+    started: true,
+    lastRun: {
+      recordedCount: 4,
+      notificationCount: 2,
+      notificationSkippedCount: 1,
+      notificationFailureCount: 1,
+      completedAt: '2026-07-23T22:30:00.000Z',
+    },
+  };
+  const result = diagnostics.summary([], monitor);
+  assert.deepEqual(result.notifications, {
+    attemptedCount: 4,
+    sentCount: 2,
+    skippedCount: 1,
+    failureCount: 1,
+    completedAt: '2026-07-23T22:30:00.000Z',
+  });
+});
+
 test('critical unresolved incidents create an error issue', () => {
   const result = diagnostics.summary([
     incident('youtube', 'escalation', 'critical', Date.now() - 1000),
@@ -73,4 +94,23 @@ test('stopped monitor creates an operational warning', () => {
   const issues = diagnostics.issues(diagnostics.summary([], { started: false }));
   assert.equal(issues[0].code, 'provider_incident_monitor_not_started');
   assert.equal(issues[0].severity, 'warning');
+});
+
+test('failed and skipped management notifications create warnings', () => {
+  const result = diagnostics.summary([], {
+    started: true,
+    lastRun: {
+      recordedCount: 2,
+      notificationCount: 0,
+      notificationSkippedCount: 1,
+      notificationFailureCount: 1,
+      completedAt: '2026-07-23T22:30:00.000Z',
+    },
+  });
+  const issues = diagnostics.issues(result);
+  assert.deepEqual(issues.map((issue) => issue.code), [
+    'provider_incident_notifications_failed',
+    'provider_incident_notifications_skipped',
+  ]);
+  assert.ok(issues.every((issue) => issue.severity === 'warning'));
 });
