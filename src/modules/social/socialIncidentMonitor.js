@@ -4,6 +4,7 @@ const socialManager = require('./socialManager');
 const providerHealth = require('./socialProviderHealth');
 const providerIncidents = require('./socialProviderIncidents');
 const incidentReporter = require('./socialIncidentReporter');
+const incidentNotifier = require('./socialIncidentNotifier');
 
 const DEFAULT_INTERVAL_MS = 60000;
 let timer = null;
@@ -34,20 +35,30 @@ function currentIncidents(now = Date.now()) {
   return [...incidents.values()];
 }
 
-function scan(client, options = {}) {
+async function scan(client, options = {}) {
   const startedAt = Date.now();
   const guildIds = options.guildIds || [...(client?.guilds?.cache?.keys?.() || [])];
   const incidents = currentIncidents(startedAt);
   let recordedCount = 0;
   let duplicateCount = 0;
+  let notificationCount = 0;
+  let notificationSkippedCount = 0;
+  let notificationFailureCount = 0;
 
   for (const guildId of guildIds) {
     const enabled = guildProviders(guildId);
     for (const incident of incidents) {
       if (!enabled.has(incident.provider)) continue;
       const result = incidentReporter.record(guildId, incident, { action: 'social_provider_incident_monitor' });
-      if (result.recorded) recordedCount += 1;
-      else if (result.duplicate) duplicateCount += 1;
+      if (result.recorded) {
+        recordedCount += 1;
+        const notification = await incidentNotifier.notify(guildId, incident, client);
+        if (notification.sent) notificationCount += 1;
+        else if (notification.skipped) notificationSkippedCount += 1;
+        else notificationFailureCount += 1;
+      } else if (result.duplicate) {
+        duplicateCount += 1;
+      }
     }
   }
 
@@ -58,13 +69,31 @@ function scan(client, options = {}) {
     incidentCount: incidents.length,
     recordedCount,
     duplicateCount,
+    notificationCount,
+    notificationSkippedCount,
+    notificationFailureCount,
   };
   return lastRun;
 }
 
 function start(client, options = {}) {
   if (timer) return timer;
-  timer = setInterval(() => scan(client, options), intervalMs(options.intervalMs));
+  timer = setInterval(() => {
+    scan(client, options).catch((error) => {
+      lastRun = {
+        startedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+        guildCount: 0,
+        incidentCount: 0,
+        recordedCount: 0,
+        duplicateCount: 0,
+        notificationCount: 0,
+        notificationSkippedCount: 0,
+        notificationFailureCount: 1,
+        error: error?.message || String(error),
+      };
+    });
+  }, intervalMs(options.intervalMs));
   timer.unref?.();
   return timer;
 }
