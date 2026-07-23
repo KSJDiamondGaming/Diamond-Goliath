@@ -5,8 +5,8 @@ const socialHistory = require('./socialHistory');
 
 const deliveryLocks = new Map();
 
-function lockKey(guildId, account = {}, result = {}) {
-  return [String(guildId), account.accountId || account.id || 'account', result.alertType || 'live', result.contentId || 'content'].join(':');
+function lockKey(guildId, account = {}) {
+  return [String(guildId), account.accountId || account.id || 'account'].join(':');
 }
 
 async function withDeliveryLock(guildId, account, result, operation) {
