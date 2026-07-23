@@ -12,8 +12,8 @@ const MODULE_REGISTRY = {
   autoRoles: {
     key: 'autoRoles',
     label: 'Auto Roles',
-    managerPath: path.join('..', '..', 'modules', 'autoroles'),
-    storePath: path.join('..', '..', 'modules', 'autoroles'),
+    managerPath: path.join('..', '..', 'modules', 'roleStudio', 'autoRoles', 'autoRoles'),
+    storePath: path.join('..', '..', 'modules', 'roleStudio', 'autoRoles', 'autoRoles'),
   },
   forms: {
     key: 'forms',
