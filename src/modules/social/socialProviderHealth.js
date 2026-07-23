@@ -281,9 +281,7 @@ function reset(provider, options = {}) {
   }
 }
 
-process.once('beforeExit', flush);
-process.once('SIGINT', flush);
-process.once('SIGTERM', flush);
+process.once('exit', flush);
 
 module.exports = {
   DEFAULT_FAILURE_THRESHOLD,
