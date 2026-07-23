@@ -265,7 +265,7 @@ async function runSocialCheck(client, options = {}) {
       const dueAccounts = [];
       for (const account of enabledAccounts) {
         const poll = accountPollingDecision(config, account, options, now);
-        if (poll.due || options.respectSchedule !== true) dueAccounts.push(account);
+        if (poll.due || options.force === true || options.respectSchedule === false) dueAccounts.push(account);
         else deferred.push({ guildId, accountId: account.accountId, platform: account.platform, ...poll });
       }
       if (!dueAccounts.length) continue;
