@@ -1,6 +1,6 @@
 'use strict';
 
-// src/modules/social/providers/twitchProvider.js
+const socialHttp = require('../socialHttp');
 
 const TWITCH_AUTH_URL = 'https://id.twitch.tv/oauth2/token';
 const TWITCH_API_URL = 'https://api.twitch.tv/helix';
@@ -29,53 +29,33 @@ function normalizeUsername(value) {
     .toLowerCase();
 }
 
-async function fetchJson(url, options = {}) {
-  const response = await fetch(url, options);
-  const body = await response.text();
-  const data = body ? JSON.parse(body) : null;
-
-  if (!response.ok) {
-    const message = data?.message || data?.error || response.statusText || 'Twitch request failed';
-    throw new Error(`${message} (${response.status})`);
-  }
-
-  return data;
-}
-
 async function getAccessToken() {
   const config = getConfig();
-
-  if (!config.clientId || !config.clientSecret) {
-    return null;
-  }
-
-  if (cachedToken && Date.now() < cachedTokenExpiresAt) {
-    return cachedToken;
-  }
+  if (!config.clientId || !config.clientSecret) return null;
+  if (cachedToken && Date.now() < cachedTokenExpiresAt) return cachedToken;
 
   const params = new URLSearchParams({
     client_id: config.clientId,
     client_secret: config.clientSecret,
     grant_type: 'client_credentials',
   });
-
-  const data = await fetchJson(`${TWITCH_AUTH_URL}?${params.toString()}`, { method: 'POST' });
-  cachedToken = data.access_token;
-  cachedTokenExpiresAt = Date.now() + Math.max(60, Number(data.expires_in || 3600) - 120) * 1000;
-
+  const result = await socialHttp.requestJson(`${TWITCH_AUTH_URL}?${params.toString()}`, {
+    provider: 'twitch',
+    method: 'POST',
+  });
+  cachedToken = result.data?.access_token || null;
+  cachedTokenExpiresAt = Date.now() + Math.max(60, Number(result.data?.expires_in || 3600) - 120) * 1000;
   return cachedToken;
 }
 
 async function twitchApi(path, params = {}) {
   const config = getConfig();
   const token = await getAccessToken();
-
-  if (!token) {
-    return { success: false, status: 'not_configured', error: 'Twitch provider is missing credentials.' };
-  }
+  if (!token) throw new Error('Twitch provider is missing global Goliath credentials.');
 
   const query = new URLSearchParams(params);
-  return fetchJson(`${TWITCH_API_URL}${path}?${query.toString()}`, {
+  return socialHttp.requestJson(`${TWITCH_API_URL}${path}?${query.toString()}`, {
+    provider: 'twitch',
     headers: {
       'Client-ID': config.clientId,
       Authorization: `Bearer ${token}`,
@@ -91,6 +71,7 @@ async function checkAccount(account = {}) {
     return {
       success: false,
       status: 'not_configured',
+      providerStatus: 'not_configured',
       platform: 'twitch',
       accountId: account.accountId,
       username,
@@ -103,6 +84,7 @@ async function checkAccount(account = {}) {
     return {
       success: false,
       status: 'error',
+      providerStatus: 'error',
       platform: 'twitch',
       accountId: account.accountId,
       checkedAt,
@@ -111,36 +93,38 @@ async function checkAccount(account = {}) {
   }
 
   try {
-    const userPayload = await twitchApi('/users', { login: username });
-    const user = userPayload?.data?.[0];
-
+    const userResult = await twitchApi('/users', { login: username });
+    const user = userResult.data?.data?.[0];
     if (!user) {
       return {
         success: false,
         status: 'error',
+        providerStatus: 'error',
         platform: 'twitch',
         accountId: account.accountId,
         username,
         checkedAt,
+        responseTimeMs: userResult.responseTimeMs,
         error: `Twitch user not found: ${username}`,
       };
     }
 
-    const streamPayload = await twitchApi('/streams', { user_id: user.id });
-    const stream = streamPayload?.data?.[0] || null;
+    const streamResult = await twitchApi('/streams', { user_id: user.id });
+    const stream = streamResult.data?.data?.[0] || null;
     const isLive = Boolean(stream);
-    const streamId = stream?.id || null;
 
     return {
       success: true,
       status: 'ready',
+      providerStatus: 'ready',
       platform: 'twitch',
       accountId: account.accountId,
       username,
       checkedAt,
-      providerStatus: 'ready',
+      responseTimeMs: userResult.responseTimeMs + streamResult.responseTimeMs,
       isLive,
-      contentId: streamId,
+      alertType: 'live',
+      contentId: stream?.id || null,
       externalId: user.id,
       displayName: user.display_name || account.displayName || username,
       title: stream?.title || '',
@@ -154,13 +138,19 @@ async function checkAccount(account = {}) {
       },
     };
   } catch (error) {
+    if (error.status === 401) {
+      cachedToken = null;
+      cachedTokenExpiresAt = 0;
+    }
     return {
       success: false,
       status: 'error',
+      providerStatus: 'error',
       platform: 'twitch',
       accountId: account.accountId,
       username,
       checkedAt,
+      errorType: error.type || 'provider_error',
       error: error.message || 'Twitch provider check failed.',
     };
   }
@@ -169,6 +159,8 @@ async function checkAccount(account = {}) {
 module.exports = {
   id: 'twitch',
   label: 'Twitch',
+  implemented: true,
   isConfigured,
+  normalizeUsername,
   checkAccount,
 };
