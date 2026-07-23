@@ -8,6 +8,7 @@ module.exports = {
   store: socialStore,
   http: require('./socialHttp'),
   providerHealth: require('./socialProviderHealth'),
+  pollingPolicy: require('./socialPollingPolicy'),
 };
 
 Object.defineProperty(module.exports, 'health', {
