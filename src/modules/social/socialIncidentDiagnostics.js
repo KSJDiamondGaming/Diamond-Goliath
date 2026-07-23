@@ -51,6 +51,17 @@ function unresolved(entries = []) {
   return [...latest.values()].filter((entry) => incidentKind(entry) !== 'recovery');
 }
 
+function notificationSummary(monitor = {}) {
+  const lastRun = monitor.lastRun || {};
+  return {
+    attemptedCount: Number(lastRun.recordedCount || 0),
+    sentCount: Number(lastRun.notificationCount || 0),
+    skippedCount: Number(lastRun.notificationSkippedCount || 0),
+    failureCount: Number(lastRun.notificationFailureCount || 0),
+    completedAt: lastRun.completedAt || null,
+  };
+}
+
 function summary(entries = [], monitor = {}, now = Date.now()) {
   const incidents = entries.filter(isIncident);
   const recent = incidents.filter((entry) => isRecent(entry, now));
@@ -67,6 +78,7 @@ function summary(entries = [], monitor = {}, now = Date.now()) {
 
   return {
     monitor,
+    notifications: notificationSummary(monitor),
     recentWindowMs: recentWindowMs(),
     totalRecorded: incidents.length,
     recentCount: recent.length,
@@ -95,6 +107,22 @@ function issues(diagnostics = {}) {
   const output = [];
   if (diagnostics.monitor?.started === false) {
     output.push({ code: 'provider_incident_monitor_not_started', severity: 'warning' });
+  }
+  if (diagnostics.notifications?.failureCount > 0) {
+    output.push({
+      code: 'provider_incident_notifications_failed',
+      severity: 'warning',
+      count: diagnostics.notifications.failureCount,
+      completedAt: diagnostics.notifications.completedAt,
+    });
+  }
+  if (diagnostics.notifications?.skippedCount > 0) {
+    output.push({
+      code: 'provider_incident_notifications_skipped',
+      severity: 'warning',
+      count: diagnostics.notifications.skippedCount,
+      completedAt: diagnostics.notifications.completedAt,
+    });
   }
   if (diagnostics.unresolvedCriticalCount > 0) {
     output.push({
@@ -129,6 +157,7 @@ module.exports = {
   isRecent,
   latestByProvider,
   unresolved,
+  notificationSummary,
   summary,
   issues,
 };
