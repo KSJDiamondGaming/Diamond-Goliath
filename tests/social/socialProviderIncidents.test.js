@@ -6,19 +6,25 @@ const assert = require('node:assert/strict');
 const incidents = require('../../src/modules/social/socialProviderIncidents');
 
 const originalEscalationMs = process.env.SOCIAL_PROVIDER_INCIDENT_ESCALATION_MS;
+const originalMaxAgeMs = process.env.SOCIAL_PROVIDER_INCIDENT_MAX_AGE_MS;
 
 test.beforeEach(() => {
   process.env.SOCIAL_PROVIDER_INCIDENT_ESCALATION_MS = '60000';
+  process.env.SOCIAL_PROVIDER_INCIDENT_MAX_AGE_MS = '60000';
 });
 
 test.after(() => {
   if (originalEscalationMs === undefined) delete process.env.SOCIAL_PROVIDER_INCIDENT_ESCALATION_MS;
   else process.env.SOCIAL_PROVIDER_INCIDENT_ESCALATION_MS = originalEscalationMs;
+  if (originalMaxAgeMs === undefined) delete process.env.SOCIAL_PROVIDER_INCIDENT_MAX_AGE_MS;
+  else process.env.SOCIAL_PROVIDER_INCIDENT_MAX_AGE_MS = originalMaxAgeMs;
 });
 
-test('incident escalation configuration is bounded', () => {
+test('incident configuration is bounded', () => {
   assert.equal(incidents.escalationMs(1), incidents.MIN_ESCALATION_MS);
   assert.equal(incidents.escalationMs(999999999), incidents.MAX_ESCALATION_MS);
+  assert.equal(incidents.transitionMaxAgeMs(1), incidents.MIN_TRANSITION_MAX_AGE_MS);
+  assert.equal(incidents.transitionMaxAgeMs(999999999), incidents.MAX_TRANSITION_MAX_AGE_MS);
 });
 
 test('a circuit-open transition creates one outage incident', () => {
@@ -44,6 +50,15 @@ test('the same provider transition is deduplicated', () => {
   const previous = { provider: 'youtube', state: 'open', events: [event] };
   const current = { provider: 'youtube', state: 'open', events: [event] };
   assert.equal(incidents.transition(previous, current, 2000), null);
+});
+
+test('stale provider transitions are not replayed after history retention expires', () => {
+  const current = {
+    provider: 'twitch',
+    state: 'closed',
+    events: [{ at: new Date(1000).toISOString(), type: 'provider_recovered', from: 'half_open', to: 'closed', durationMs: 5000 }],
+  };
+  assert.equal(incidents.transition({}, current, 61001), null);
 });
 
 test('a failed recovery probe creates an error incident', () => {
