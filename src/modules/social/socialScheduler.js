@@ -6,11 +6,14 @@ const socialLifecycle = require('./socialLifecycle');
 const socialStore = require('./socialStore');
 const socialHistory = require('./socialHistory');
 const providerRegistry = require('./providerRegistry');
+const providerHealth = require('./socialProviderHealth');
+const pollingPolicy = require('./socialPollingPolicy');
 
 const MIN_INTERVAL_MS = 60000;
 const DEFAULT_INTERVAL_MS = 300000;
 const DEFAULT_CONCURRENCY = 4;
 const MAX_CONCURRENCY = 20;
+const schedulerStartedAt = Date.now();
 let intervalRef = null;
 let running = false;
 let schedulerClient = null;
@@ -30,28 +33,25 @@ function normalizeConcurrency(value = process.env.SOCIAL_PROVIDER_CONCURRENCY) {
 function getGuildIntervalMs(config = {}, options = {}) {
   return normalizeIntervalMs(
     config.settings?.checkIntervalMs,
-    normalizeIntervalMs(options.intervalMs || process.env.SOCIAL_CHECK_INTERVAL_MS)
+    normalizeIntervalMs(options.intervalMs || process.env.SOCIAL_CHECK_INTERVAL_MS),
   );
 }
 
 function getSchedulerTickMs(options = {}) {
   return Math.min(
     normalizeIntervalMs(options.tickIntervalMs || process.env.SOCIAL_SCHEDULER_TICK_MS),
-    DEFAULT_INTERVAL_MS
+    DEFAULT_INTERVAL_MS,
   );
 }
 
-function latestAccountCheckAt(accounts = []) {
-  return accounts.reduce((latest, account) => {
-    const checkedAt = Date.parse(account.lastSeen?.lastCheckedAt || '');
-    return Number.isFinite(checkedAt) ? Math.max(latest, checkedAt) : latest;
-  }, 0);
-}
-
-function isGuildDue(config = {}, accounts = [], options = {}) {
-  if (options.force === true || options.respectSchedule !== true) return true;
-  const lastCheckedAt = latestAccountCheckAt(accounts);
-  return !lastCheckedAt || Date.now() - lastCheckedAt >= getGuildIntervalMs(config, options);
+function accountPollingDecision(config, account, options = {}, now = Date.now()) {
+  const health = providerHealth.snapshot(account.platform, now);
+  return pollingPolicy.decision(account, getGuildIntervalMs(config, options), health, {
+    now,
+    force: options.force === true,
+    startupAt: Number(options.startupAt || schedulerStartedAt),
+    startupWarmupMs: options.startupWarmupMs,
+  });
 }
 
 function buildProviderMetadata(result = {}) {
@@ -69,6 +69,9 @@ function buildProviderMetadata(result = {}) {
     publishedAt: result.publishedAt || null,
     timedOut: result.timedOut === true,
     timeoutMs: Number(result.timeoutMs || 0),
+    errorType: result.errorType || null,
+    circuitOpen: result.circuitOpen === true,
+    retryAt: result.retryAt || null,
   };
 }
 
@@ -100,11 +103,13 @@ async function handleProviderResult(guildId, account, result, client) {
     lastProviderError: metadata.lastError,
     lastProviderResponseTimeMs: metadata.responseTimeMs,
     lastProviderTimedOut: metadata.timedOut,
+    lastProviderErrorType: metadata.errorType,
+    lastProviderRetryAt: metadata.retryAt,
     lastLiveState: metadata.isLive ? 'live' : 'offline',
   };
 
   if (metadata.isLive) {
-    lastSeen.lastLiveAt = account.lastSeen?.lastLiveState === 'live'
+    lastSeen.lastLiveAt = previousLiveState === 'live'
       ? account.lastSeen?.lastLiveAt || metadata.lastCheckedAt
       : metadata.lastCheckedAt;
     lastSeen.lastLiveTitle = metadata.lastTitle;
@@ -135,6 +140,9 @@ async function handleProviderResult(guildId, account, result, client) {
         responseTimeMs: metadata.responseTimeMs,
         timedOut: metadata.timedOut,
         timeoutMs: metadata.timeoutMs || null,
+        errorType: metadata.errorType,
+        circuitOpen: metadata.circuitOpen,
+        retryAt: metadata.retryAt,
       },
     });
     return { success: false, skipped: true, reason: result.error || 'provider_error' };
@@ -236,55 +244,63 @@ async function runSocialCheck(client, options = {}) {
   if (running) return { skipped: true, reason: 'already_running', lastRun };
   running = true;
   const startedAt = new Date();
+  const now = startedAt.getTime();
   const concurrency = normalizeConcurrency(options.concurrency);
   try {
     const guildIds = Array.isArray(options.guildIds) && options.guildIds.length
       ? options.guildIds
       : [...(client?.guilds?.cache?.keys?.() || [])];
     const results = [];
+    const deferred = [];
     let checkedGuilds = 0;
-    let deferredGuilds = 0;
 
     for (const guildId of guildIds) {
       const config = socialManager.getConfig(guildId);
       if (config.enabled === false) continue;
-      const accounts = (config.accounts || []).filter(
-        (account) => account.enabled !== false && config.providers?.[account.platform]?.enabled !== false
+      const enabledAccounts = (config.accounts || []).filter(
+        (account) => account.enabled !== false && config.providers?.[account.platform]?.enabled !== false,
       );
-      if (!accounts.length) continue;
-      if (!isGuildDue(config, accounts, options)) {
-        deferredGuilds += 1;
-        continue;
+      if (!enabledAccounts.length) continue;
+
+      const dueAccounts = [];
+      for (const account of enabledAccounts) {
+        const poll = accountPollingDecision(config, account, options, now);
+        if (poll.due || options.respectSchedule !== true) dueAccounts.push(account);
+        else deferred.push({ guildId, accountId: account.accountId, platform: account.platform, ...poll });
       }
+      if (!dueAccounts.length) continue;
 
       checkedGuilds += 1;
       const guildResults = await mapWithConcurrency(
-        accounts,
+        dueAccounts,
         concurrency,
-        (account) => checkOneAccount(guildId, account, client, options)
+        (account) => checkOneAccount(guildId, account, client, options),
       );
       results.push(...guildResults);
     }
 
     const completedAt = new Date();
+    const reasons = deferred.reduce((counts, item) => {
+      counts[item.reason] = (counts[item.reason] || 0) + 1;
+      return counts;
+    }, {});
     lastRun = {
       startedAt: startedAt.toISOString(),
       completedAt: completedAt.toISOString(),
       durationMs: completedAt.getTime() - startedAt.getTime(),
       guildCount: checkedGuilds,
-      deferredGuildCount: deferredGuilds,
       accountCount: results.length,
+      deferredAccountCount: deferred.length,
+      deferredReasons: reasons,
+      nextDueAt: deferred.length ? new Date(Math.min(...deferred.map((item) => item.nextDueAt))).toISOString() : null,
       successCount: results.filter((result) => result.success === true).length,
       failureCount: results.filter((result) => result.success === false).length,
       timeoutCount: results.filter((result) => result.timedOut === true).length,
+      circuitOpenCount: results.filter((result) => result.circuitOpen === true).length,
       concurrency,
     };
 
-    return {
-      skipped: false,
-      ...lastRun,
-      results,
-    };
+    return { skipped: false, ...lastRun, results, deferred };
   } finally {
     running = false;
   }
@@ -294,7 +310,7 @@ function startSocialScheduler(client, options = {}) {
   schedulerClient = client || schedulerClient;
   if (intervalRef) return intervalRef;
   const tickIntervalMs = getSchedulerTickMs(options);
-  const scheduledOptions = { ...options, respectSchedule: true };
+  const scheduledOptions = { ...options, respectSchedule: true, startupAt: Number(options.startupAt || schedulerStartedAt) };
   intervalRef = setInterval(() => {
     runSocialCheck(schedulerClient, scheduledOptions).catch((error) => {
       console.error('[SocialScheduler] Check failed:', error);
@@ -318,8 +334,12 @@ function getSchedulerStatus() {
   return {
     running,
     started: Boolean(intervalRef),
+    startedAt: new Date(schedulerStartedAt).toISOString(),
     concurrency: normalizeConcurrency(),
     providerTimeoutMs: providerRegistry.normalizeTimeoutMs(),
+    startupWarmupMs: pollingPolicy.startupWarmupMs(),
+    backoffMultiplier: pollingPolicy.backoffMultiplier(),
+    maxBackoffMultiplier: pollingPolicy.maxBackoffMultiplier(),
     lastRun,
   };
 }
@@ -328,6 +348,7 @@ module.exports = {
   DEFAULT_CONCURRENCY,
   MAX_CONCURRENCY,
   normalizeConcurrency,
+  accountPollingDecision,
   runSocialCheck,
   startSocialScheduler,
   stopSocialScheduler,
