@@ -1,25 +1,40 @@
 'use strict';
 
+const os = require('os');
+const path = require('path');
+const fs = require('fs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const providerHealth = require('../../src/modules/social/socialProviderHealth');
-
 const originalThreshold = process.env.SOCIAL_PROVIDER_FAILURE_THRESHOLD;
 const originalOpenMs = process.env.SOCIAL_PROVIDER_CIRCUIT_OPEN_MS;
+const originalHealthPath = process.env.SOCIAL_PROVIDER_HEALTH_PATH;
+const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'goliath-social-health-'));
+process.env.SOCIAL_PROVIDER_HEALTH_PATH = path.join(testDir, 'provider-health.json');
+
+const providerHealth = require('../../src/modules/social/socialProviderHealth');
+
+function cleanState() {
+  providerHealth.reset(undefined, { persist: false });
+  providerHealth.restore({ version: providerHealth.PERSIST_VERSION, providers: {} });
+  try { fs.rmSync(process.env.SOCIAL_PROVIDER_HEALTH_PATH, { force: true }); } catch {}
+}
 
 test.beforeEach(() => {
-  providerHealth.reset();
+  cleanState();
   process.env.SOCIAL_PROVIDER_FAILURE_THRESHOLD = '2';
   process.env.SOCIAL_PROVIDER_CIRCUIT_OPEN_MS = '10000';
 });
 
 test.after(() => {
+  cleanState();
+  try { fs.rmSync(testDir, { recursive: true, force: true }); } catch {}
   if (originalThreshold === undefined) delete process.env.SOCIAL_PROVIDER_FAILURE_THRESHOLD;
   else process.env.SOCIAL_PROVIDER_FAILURE_THRESHOLD = originalThreshold;
   if (originalOpenMs === undefined) delete process.env.SOCIAL_PROVIDER_CIRCUIT_OPEN_MS;
   else process.env.SOCIAL_PROVIDER_CIRCUIT_OPEN_MS = originalOpenMs;
-  providerHealth.reset();
+  if (originalHealthPath === undefined) delete process.env.SOCIAL_PROVIDER_HEALTH_PATH;
+  else process.env.SOCIAL_PROVIDER_HEALTH_PATH = originalHealthPath;
 });
 
 test('provider health configuration is bounded', () => {
@@ -100,4 +115,44 @@ test('summary reports provider circuit counts', () => {
   assert.equal(summary.halfOpenCount, 0);
   assert.equal(summary.providers.twitch.state, 'open');
   assert.equal(summary.providers.youtube.state, 'closed');
+  assert.equal(summary.persistencePath, path.resolve(process.env.SOCIAL_PROVIDER_HEALTH_PATH));
+});
+
+test('provider circuit state survives persistence and restore', () => {
+  providerHealth.record('twitch', { success: false, errorType: 'network', error: 'offline' }, 1000);
+  providerHealth.record('twitch', { success: false, errorType: 'provider_unavailable', error: '503' }, 2000);
+  assert.equal(providerHealth.flush(), true);
+  assert.equal(fs.existsSync(process.env.SOCIAL_PROVIDER_HEALTH_PATH), true);
+
+  const persisted = JSON.parse(fs.readFileSync(process.env.SOCIAL_PROVIDER_HEALTH_PATH, 'utf8'));
+  assert.equal(persisted.version, providerHealth.PERSIST_VERSION);
+  assert.equal(persisted.providers.twitch.state, 'open');
+  assert.equal(persisted.providers.twitch.consecutiveFailures, 2);
+
+  providerHealth.restore({ version: providerHealth.PERSIST_VERSION, providers: {} });
+  assert.equal(providerHealth.summary(3000).openCount, 0);
+
+  providerHealth.restore(persisted);
+  const restored = providerHealth.snapshot('twitch', 3000);
+  assert.equal(restored.state, 'open');
+  assert.equal(restored.consecutiveFailures, 2);
+  assert.equal(restored.lastFailureType, 'provider_unavailable');
+});
+
+test('restored half-open probe locks are cleared after restart', () => {
+  providerHealth.restore({
+    version: providerHealth.PERSIST_VERSION,
+    providers: {
+      kick: {
+        provider: 'kick',
+        state: 'half_open',
+        consecutiveFailures: 2,
+        halfOpenProbeActive: true,
+      },
+    },
+  });
+
+  const gate = providerHealth.acquire('kick', 12000);
+  assert.equal(gate.allowed, true);
+  assert.equal(gate.probe, true);
 });
