@@ -1,6 +1,6 @@
 'use strict';
 
-const fetch = require('node-fetch');
+const socialHttp = require('../socialHttp');
 
 const API_ROOT = 'https://www.googleapis.com/youtube/v3';
 
@@ -20,29 +20,30 @@ function identifier(account = {}) {
   const handleMatch = raw.match(/(?:youtube\.com\/@|^@?)([\w.-]{3,})/i);
   return { type: 'handle', value: handleMatch?.[1] || raw.replace(/^@/, '') };
 }
+
 async function request(resource, params) {
   const key = apiKey();
   if (!key) throw new Error('YouTube provider is missing the global YOUTUBE_API_KEY.');
   const query = new URLSearchParams({ ...params, key });
-  const started = Date.now();
-  const response = await fetch(`${API_ROOT}/${resource}?${query.toString()}`, { headers: { Accept: 'application/json' }, timeout: 15000 });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data?.error?.message || `YouTube API returned ${response.status}.`);
-  return { data, responseTimeMs: Date.now() - started };
+  return socialHttp.requestJson(`${API_ROOT}/${resource}?${query.toString()}`, {
+    provider: 'youtube',
+  });
 }
+
 async function resolveChannel(account) {
   const ref = identifier(account);
   if (ref.type === 'none') throw new Error('Enter a YouTube handle, channel ID, or public channel URL.');
   const params = { part: 'id,snippet,contentDetails', maxResults: '1' };
   params[ref.type === 'id' ? 'id' : 'forHandle'] = ref.value;
   let result = await request('channels', params);
-  if (!result.data.items?.length && ref.type === 'handle') {
+  if (!result.data?.items?.length && ref.type === 'handle') {
     result = await request('channels', { part: 'id,snippet,contentDetails', forUsername: ref.value, maxResults: '1' });
   }
-  const channel = result.data.items?.[0];
+  const channel = result.data?.items?.[0];
   if (!channel) throw new Error(`YouTube channel '${ref.value}' could not be resolved.`);
   return { channel, responseTimeMs: result.responseTimeMs };
 }
+
 async function checkAccount(account = {}) {
   const checkedAt = now();
   try {
@@ -50,13 +51,13 @@ async function checkAccount(account = {}) {
     const uploadsPlaylistId = resolved.channel.contentDetails?.relatedPlaylists?.uploads;
     if (!uploadsPlaylistId) throw new Error('YouTube uploads playlist is unavailable for this channel.');
     const playlistResult = await request('playlistItems', { part: 'snippet,contentDetails', playlistId: uploadsPlaylistId, maxResults: '1' });
-    const item = playlistResult.data.items?.[0];
+    const item = playlistResult.data?.items?.[0];
     if (!item?.contentDetails?.videoId) {
       return { success: true, status: 'ready', providerStatus: 'ready', platform: 'youtube', externalId: resolved.channel.id, displayName: resolved.channel.snippet?.title || account.displayName, checkedAt, responseTimeMs: resolved.responseTimeMs + playlistResult.responseTimeMs, hasAlert: false };
     }
     const videoId = item.contentDetails.videoId;
     const videoResult = await request('videos', { part: 'snippet,contentDetails,liveStreamingDetails,status', id: videoId, maxResults: '1' });
-    const video = videoResult.data.items?.[0] || {};
+    const video = videoResult.data?.items?.[0] || {};
     const durationSeconds = isoDurationSeconds(video.contentDetails?.duration);
     const isLive = video.snippet?.liveBroadcastContent === 'live' || Boolean(video.liveStreamingDetails?.actualStartTime && !video.liveStreamingDetails?.actualEndTime);
     const isShort = !isLive && durationSeconds > 0 && durationSeconds <= 180;
@@ -85,7 +86,18 @@ async function checkAccount(account = {}) {
       liveStreamingDetails: video.liveStreamingDetails || null,
     };
   } catch (error) {
-    return { success: false, status: apiKey() ? 'error' : 'not_configured', providerStatus: apiKey() ? 'error' : 'not_configured', platform: 'youtube', accountId: account.accountId, username: account.username, checkedAt, error: error.message };
+    const configured = Boolean(apiKey());
+    return {
+      success: false,
+      status: configured ? 'error' : 'not_configured',
+      providerStatus: configured ? 'error' : 'not_configured',
+      platform: 'youtube',
+      accountId: account.accountId,
+      username: account.username,
+      checkedAt,
+      errorType: error.type || 'provider_error',
+      error: error.message,
+    };
   }
 }
 
