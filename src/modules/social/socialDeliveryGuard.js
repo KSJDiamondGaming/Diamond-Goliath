@@ -13,19 +13,16 @@ async function withDeliveryLock(guildId, account, result, operation) {
   const key = lockKey(guildId, account, result);
   const previous = deliveryLocks.get(key) || Promise.resolve();
   let release;
-  const current = new Promise((resolve) => { release = resolve; });
-  deliveryLocks.set(key, previous.then(() => current));
+  const gate = new Promise((resolve) => { release = resolve; });
+  const tail = previous.then(() => gate);
+  deliveryLocks.set(key, tail);
 
   await previous;
   try {
     return await operation();
   } finally {
     release();
-    if (deliveryLocks.get(key) === current) deliveryLocks.delete(key);
-    else setImmediate(() => {
-      const pending = deliveryLocks.get(key);
-      if (pending === current) deliveryLocks.delete(key);
-    });
+    if (deliveryLocks.get(key) === tail) deliveryLocks.delete(key);
   }
 }
 
