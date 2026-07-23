@@ -3,10 +3,7 @@ import { io } from 'socket.io-client';
 let socket = null;
 
 function resolveSocketUrl() {
-  if (
-    typeof window !== 'undefined' &&
-    window.location
-  ) {
+  if (typeof window !== 'undefined' && window.location) {
     return window.location.origin;
   }
 
@@ -90,24 +87,15 @@ export function getSocket() {
     });
 
     socket.on('connect', () => {
-      console.log(
-        '[Realtime] Connected:',
-        socket.id
-      );
+      console.log('[Realtime] Connected:', socket.id);
     });
 
     socket.on('disconnect', (reason) => {
-      console.log(
-        '[Realtime] Disconnected:',
-        reason
-      );
+      console.log('[Realtime] Disconnected:', reason);
     });
 
     socket.on('connect_error', (error) => {
-      console.error(
-        '[Realtime] Connection Error:',
-        error
-      );
+      console.error('[Realtime] Connection Error:', error);
     });
   }
 
@@ -128,32 +116,7 @@ export function joinGuildRoom(guildId) {
   }
 
   const activeSocket = getSocket();
-
-  activeSocket.emit(
-    'joinGuild',
-    id
-  );
-
-  activeSocket.emit(
-    'tickets:joinGuild',
-    id
-  );
-
-  activeSocket.emit(
-    'forms:joinGuild',
-    id
-  );
-
-  activeSocket.emit(
-    'embeds:joinGuild',
-    id
-  );
-
-  activeSocket.emit(
-    'cases:joinGuild',
-    id
-  );
-
+  activeSocket.emit('joinGuild', id);
   return activeSocket;
 }
 
@@ -163,37 +126,20 @@ export function joinGuildRoom(guildId) {
 |--------------------------------------------------------------------------
 */
 
-export function onSocketEvent(
-  eventName,
-  callback
-) {
-  if (
-    !eventName ||
-    typeof callback !== 'function'
-  ) {
+export function onSocketEvent(eventName, callback) {
+  if (!eventName || typeof callback !== 'function') {
     return () => {};
   }
 
-  const activeSocket =
-    getSocket();
-
-  activeSocket.on(
-    eventName,
-    callback
-  );
+  const activeSocket = getSocket();
+  activeSocket.on(eventName, callback);
 
   return () => {
-    activeSocket.off(
-      eventName,
-      callback
-    );
+    activeSocket.off(eventName, callback);
   };
 }
 
-export function onSocketEvents(
-  eventNames,
-  callback
-) {
+export function onSocketEvents(eventNames, callback) {
   const names = Array.isArray(eventNames)
     ? eventNames.filter(Boolean)
     : [eventNames].filter(Boolean);
@@ -225,13 +171,10 @@ export function listenForGuildUpdate(...args) {
     return () => {};
   }
 
-  return onSocketEvent(
-    'guild:update',
-    (event) => {
-      if (!eventMatchesModule(event, moduleName)) return;
-      callback(resolveGuildUpdateData(event), event);
-    }
-  );
+  return onSocketEvent('guild:update', (event) => {
+    if (!eventMatchesModule(event, moduleName)) return;
+    callback(resolveGuildUpdateData(event), event);
+  });
 }
 
 /*
@@ -240,67 +183,32 @@ export function listenForGuildUpdate(...args) {
 |--------------------------------------------------------------------------
 */
 
-export function listenForTicketCreated(
-  callback
-) {
-  return onSocketEvents(
-    ['ticket.created', 'ticket_created'],
-    callback
-  );
+export function listenForTicketCreated(callback) {
+  return onSocketEvents(['ticket.created', 'ticket_created'], callback);
 }
 
-export function listenForTicketUpdated(
-  callback
-) {
-  return onSocketEvents(
-    ['ticket.updated', 'ticket_updated'],
-    callback
-  );
+export function listenForTicketUpdated(callback) {
+  return onSocketEvents(['ticket.updated', 'ticket_updated'], callback);
 }
 
-export function listenForTicketClosed(
-  callback
-) {
-  return onSocketEvents(
-    ['ticket.closed', 'ticket_closed'],
-    callback
-  );
+export function listenForTicketClosed(callback) {
+  return onSocketEvents(['ticket.closed', 'ticket_closed'], callback);
 }
 
-export function listenForTicketClaimed(
-  callback
-) {
-  return onSocketEvents(
-    ['ticket.claimed', 'ticket_claimed'],
-    callback
-  );
+export function listenForTicketClaimed(callback) {
+  return onSocketEvents(['ticket.claimed', 'ticket_claimed'], callback);
 }
 
-export function listenForTicketReopened(
-  callback
-) {
-  return onSocketEvents(
-    ['ticket.reopened', 'ticket_reopened'],
-    callback
-  );
+export function listenForTicketReopened(callback) {
+  return onSocketEvents(['ticket.reopened', 'ticket_reopened'], callback);
 }
 
-export function listenForTicketArchived(
-  callback
-) {
-  return onSocketEvents(
-    ['ticket.archived', 'ticket_archived'],
-    callback
-  );
+export function listenForTicketArchived(callback) {
+  return onSocketEvents(['ticket.archived', 'ticket_archived'], callback);
 }
 
-export function listenForTicketDeleted(
-  callback
-) {
-  return onSocketEvents(
-    ['ticket.deleted', 'ticket_deleted'],
-    callback
-  );
+export function listenForTicketDeleted(callback) {
+  return onSocketEvents(['ticket.deleted', 'ticket_deleted'], callback);
 }
 
 /*
@@ -309,9 +217,7 @@ export function listenForTicketDeleted(
 |--------------------------------------------------------------------------
 */
 
-export function listenForTimelineEntry(
-  callback
-) {
+export function listenForTimelineEntry(callback) {
   return onSocketEvents(
     ['ticket.timeline.entry', 'ticket_timeline_entry'],
     callback
@@ -324,40 +230,20 @@ export function listenForTimelineEntry(
 |--------------------------------------------------------------------------
 */
 
-export function listenForPanelCreated(
-  callback
-) {
-  return onSocketEvents(
-    ['panel.created', 'panel_created'],
-    callback
-  );
+export function listenForPanelCreated(callback) {
+  return onSocketEvents(['panel.created', 'panel_created'], callback);
 }
 
-export function listenForPanelUpdated(
-  callback
-) {
-  return onSocketEvents(
-    ['panel.updated', 'panel_updated'],
-    callback
-  );
+export function listenForPanelUpdated(callback) {
+  return onSocketEvents(['panel.updated', 'panel_updated'], callback);
 }
 
-export function listenForPanelDeleted(
-  callback
-) {
-  return onSocketEvents(
-    ['panel.deleted', 'panel_deleted'],
-    callback
-  );
+export function listenForPanelDeleted(callback) {
+  return onSocketEvents(['panel.deleted', 'panel_deleted'], callback);
 }
 
-export function listenForPanelDeployed(
-  callback
-) {
-  return onSocketEvents(
-    ['panel.deployed', 'panel_deployed'],
-    callback
-  );
+export function listenForPanelDeployed(callback) {
+  return onSocketEvents(['panel.deployed', 'panel_deployed'], callback);
 }
 
 /*
@@ -366,9 +252,7 @@ export function listenForPanelDeployed(
 |--------------------------------------------------------------------------
 */
 
-export function listenForAnalyticsUpdated(
-  callback
-) {
+export function listenForAnalyticsUpdated(callback) {
   return onSocketEvents(
     ['ticket.analytics.updated', 'ticket_analytics_updated'],
     callback
@@ -381,45 +265,29 @@ export function listenForAnalyticsUpdated(
 |--------------------------------------------------------------------------
 */
 
-export function listenForFormUpdated(
-  callback
-) {
-  return onSocketEvents(
-    ['form.updated', 'form_updated'],
-    callback
-  );
+export function listenForFormUpdated(callback) {
+  return onSocketEvents(['form.updated', 'form_updated'], callback);
 }
 
-export function listenForFormSubmitted(
-  callback
-) {
-  return onSocketEvents(
-    ['form.submitted', 'form_submitted'],
-    callback
-  );
+export function listenForFormSubmitted(callback) {
+  return onSocketEvents(['form.submitted', 'form_submitted'], callback);
 }
 
-export function listenForFormSubmissionUpdated(
-  callback
-) {
+export function listenForFormSubmissionUpdated(callback) {
   return onSocketEvents(
     ['form.submission.updated', 'form_submission_updated'],
     callback
   );
 }
 
-export function listenForFormPanelUpdated(
-  callback
-) {
+export function listenForFormPanelUpdated(callback) {
   return onSocketEvents(
     ['form.panel.updated', 'form_panel_updated'],
     callback
   );
 }
 
-export function listenForFormAnalyticsUpdated(
-  callback
-) {
+export function listenForFormAnalyticsUpdated(callback) {
   return onSocketEvents(
     ['form.analytics.updated', 'form_analytics_updated'],
     callback
@@ -432,31 +300,19 @@ export function listenForFormAnalyticsUpdated(
 |--------------------------------------------------------------------------
 */
 
-export function listenForEmbedUpdated(
-  callback
-) {
-  return onSocketEvents(
-    ['embed.updated', 'embed_updated'],
-    callback
-  );
+export function listenForEmbedUpdated(callback) {
+  return onSocketEvents(['embed.updated', 'embed_updated'], callback);
 }
 
-export function listenForEmbedStatusUpdated(
-  callback
-) {
+export function listenForEmbedStatusUpdated(callback) {
   return onSocketEvents(
     ['embed.status.updated', 'embed_status_updated'],
     callback
   );
 }
 
-export function listenForEmbedDeleted(
-  callback
-) {
-  return onSocketEvents(
-    ['embed.deleted', 'embed_deleted'],
-    callback
-  );
+export function listenForEmbedDeleted(callback) {
+  return onSocketEvents(['embed.deleted', 'embed_deleted'], callback);
 }
 
 /*
@@ -465,36 +321,22 @@ export function listenForEmbedDeleted(
 |--------------------------------------------------------------------------
 */
 
-export function listenForCaseCreated(
-  callback
-) {
-  return onSocketEvents(
-    ['case.created', 'case_created'],
-    callback
-  );
+export function listenForCaseCreated(callback) {
+  return onSocketEvents(['case.created', 'case_created'], callback);
 }
 
-export function listenForCaseUpdated(
-  callback
-) {
-  return onSocketEvents(
-    ['case.updated', 'case_updated'],
-    callback
-  );
+export function listenForCaseUpdated(callback) {
+  return onSocketEvents(['case.updated', 'case_updated'], callback);
 }
 
-export function listenForCaseStatusUpdated(
-  callback
-) {
+export function listenForCaseStatusUpdated(callback) {
   return onSocketEvents(
     ['case.status.updated', 'case_status_updated'],
     callback
   );
 }
 
-export function listenForCaseNoteUpdated(
-  callback
-) {
+export function listenForCaseNoteUpdated(callback) {
   return onSocketEvents(
     ['case.note.updated', 'case_note_updated'],
     callback
@@ -507,13 +349,8 @@ export function listenForCaseNoteUpdated(
 |--------------------------------------------------------------------------
 */
 
-export function listenForRealtimeFeed(
-  callback
-) {
-  return onSocketEvent(
-    'goliath_realtime_event',
-    callback
-  );
+export function listenForRealtimeFeed(callback) {
+  return onSocketEvent('goliath_realtime_event', callback);
 }
 
 /*
@@ -533,17 +370,12 @@ export { socket };
 
 export default {
   socket,
-
   getSocket,
   disconnectSocket,
-
   joinGuildRoom,
-
   onSocketEvent,
   onSocketEvents,
-
   listenForGuildUpdate,
-
   listenForTicketCreated,
   listenForTicketUpdated,
   listenForTicketClosed,
@@ -551,30 +383,23 @@ export default {
   listenForTicketReopened,
   listenForTicketArchived,
   listenForTicketDeleted,
-
   listenForTimelineEntry,
-
   listenForPanelCreated,
   listenForPanelUpdated,
   listenForPanelDeleted,
   listenForPanelDeployed,
-
   listenForAnalyticsUpdated,
-
   listenForFormUpdated,
   listenForFormSubmitted,
   listenForFormSubmissionUpdated,
   listenForFormPanelUpdated,
   listenForFormAnalyticsUpdated,
-
   listenForEmbedUpdated,
   listenForEmbedStatusUpdated,
   listenForEmbedDeleted,
-
   listenForCaseCreated,
   listenForCaseUpdated,
   listenForCaseStatusUpdated,
   listenForCaseNoteUpdated,
-
   listenForRealtimeFeed,
 };
