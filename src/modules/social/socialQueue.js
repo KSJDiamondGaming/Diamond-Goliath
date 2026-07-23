@@ -6,7 +6,7 @@ const socialHistory = require('./socialHistory');
 
 const MAX_QUEUE_ITEMS = 200;
 const MAX_ATTEMPTS = 5;
-const RETRY_DELAYS_MS = [60_000, 5 * 60_000, 15 * 60_000, 60 * 60_000, 6 * 60 * 60_000];
+const RETRY_MULTIPLIERS = [1, 5, 15, 60, 360];
 let intervalRef = null;
 let processing = false;
 
@@ -107,16 +107,20 @@ function clear(guildId, meta = {}) {
   return [];
 }
 
-function nextDelay(attempts) {
-  return RETRY_DELAYS_MS[Math.min(Math.max(Number(attempts || 1) - 1, 0), RETRY_DELAYS_MS.length - 1)];
+function nextDelay(baseIntervalMs, attempts) {
+  const index = Math.min(Math.max(Number(attempts || 1) - 1, 0), RETRY_MULTIPLIERS.length - 1);
+  return Math.min(24 * 60 * 60 * 1000, Math.max(10_000, Number(baseIntervalMs || 60_000)) * RETRY_MULTIPLIERS[index]);
 }
 
 async function processGuild(guildId, client, options = {}) {
   const socialManager = require('./socialManager');
+  const config = socialManager.getConfig(guildId);
   const current = list(guildId);
   if (!current.length) return { guildId, processed: 0, sent: 0, failed: 0, deferred: 0 };
 
-  const accounts = new Map(socialManager.getConfig(guildId).accounts.map((account) => [account.accountId, account]));
+  const maxAttempts = Math.min(25, Math.max(1, Number(config.settings?.maxDeliveryAttempts || MAX_ATTEMPTS)));
+  const retryIntervalMs = Math.min(86_400_000, Math.max(10_000, Number(config.settings?.retryIntervalMs || 60_000)));
+  const accounts = new Map(config.accounts.map((account) => [account.accountId, account]));
   const remaining = [];
   const results = { guildId, processed: 0, sent: 0, failed: 0, deferred: 0 };
   const timestamp = Date.now();
@@ -161,14 +165,14 @@ async function processGuild(guildId, client, options = {}) {
     }
 
     const attempts = item.attempts + 1;
-    const permanentlyFailed = attempts >= MAX_ATTEMPTS;
+    const permanentlyFailed = attempts >= maxAttempts;
     const updated = normalizeItem({
       ...item,
       status: permanentlyFailed ? 'failed' : 'queued',
       attempts,
       lastError: delivery.error || delivery.reason || 'Delivery failed.',
       updatedAt: now(),
-      nextAttemptAt: new Date(Date.now() + nextDelay(attempts)).toISOString(),
+      nextAttemptAt: new Date(Date.now() + nextDelay(retryIntervalMs, attempts)).toISOString(),
     });
     remaining.push(updated);
     results.failed += 1;
@@ -178,7 +182,7 @@ async function processGuild(guildId, client, options = {}) {
       creator: account.displayName, platform: item.platform, alertType: item.alertType, contentId: item.contentId,
       title: item.providerResult?.title || null, error: updated.lastError,
       reason: permanentlyFailed ? 'retry_limit_reached' : 'retry_scheduled',
-      metadata: { queueId: item.id, attempts, nextAttemptAt: updated.nextAttemptAt },
+      metadata: { queueId: item.id, attempts, maxAttempts, retryIntervalMs, nextAttemptAt: updated.nextAttemptAt },
     }, options.meta || {});
   }
 
@@ -203,7 +207,7 @@ async function processAll(client, options = {}) {
 
 function start(client, options = {}) {
   if (intervalRef) return intervalRef;
-  const intervalMs = Math.max(60_000, Number(options.intervalMs || 60_000));
+  const intervalMs = Math.max(10_000, Number(options.intervalMs || 60_000));
   processAll(client, options).catch((error) => console.error('[SocialQueue] Startup processing failed:', error));
   intervalRef = setInterval(() => {
     processAll(client, options).catch((error) => console.error('[SocialQueue] Processing failed:', error));
