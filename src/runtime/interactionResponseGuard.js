@@ -4,10 +4,23 @@ const ADMIN_DEFER_PREFIXES = [
   'admin:',
 ];
 
+const ACKNOWLEDGEMENT_ERROR_CODES = new Set([10062, 40060]);
+
 function shouldPreDefer(interaction) {
   if (!interaction?.isMessageComponent?.()) return false;
   const customId = String(interaction.customId || '');
   return ADMIN_DEFER_PREFIXES.some((prefix) => customId === prefix || customId.startsWith(prefix));
+}
+
+function isAcknowledgementError(error) {
+  return ACKNOWLEDGEMENT_ERROR_CODES.has(Number(error?.code));
+}
+
+function logIgnoredAcknowledgementError(interaction, method, error) {
+  console.warn(
+    `[InteractionGuard] Ignored ${error?.code || 'unknown'} from ${method} ` +
+    `for ${interaction?.customId || interaction?.commandName || interaction?.id || 'unknown interaction'}.`
+  );
 }
 
 function wrapResponses(interaction) {
@@ -30,7 +43,10 @@ function wrapResponses(interaction) {
       try {
         return await originalDeferUpdate(...args);
       } catch (error) {
-        if (error?.code === 40060) return interaction;
+        if (isAcknowledgementError(error)) {
+          logIgnoredAcknowledgementError(interaction, 'deferUpdate', error);
+          return interaction;
+        }
         throw error;
       }
     };
@@ -38,15 +54,37 @@ function wrapResponses(interaction) {
 
   if (originalUpdate) {
     interaction.update = async (payload) => {
-      if (interaction.deferred || interaction.replied) return interaction.editReply(payload);
-      return originalUpdate(payload);
+      if (interaction.deferred || interaction.replied) {
+        return interaction.editReply(payload);
+      }
+
+      try {
+        return await originalUpdate(payload);
+      } catch (error) {
+        if (isAcknowledgementError(error)) {
+          logIgnoredAcknowledgementError(interaction, 'update', error);
+          return interaction;
+        }
+        throw error;
+      }
     };
   }
 
   if (originalReply) {
     interaction.reply = async (payload) => {
-      if (interaction.deferred || interaction.replied) return interaction.editReply(payload);
-      return originalReply(payload);
+      if (interaction.deferred || interaction.replied) {
+        return interaction.editReply(payload);
+      }
+
+      try {
+        return await originalReply(payload);
+      } catch (error) {
+        if (isAcknowledgementError(error)) {
+          logIgnoredAcknowledgementError(interaction, 'reply', error);
+          return interaction;
+        }
+        throw error;
+      }
     };
   }
 }
@@ -63,7 +101,15 @@ async function prepareInteraction(interaction) {
     })();
   }
 
-  await interaction.__goliathPreparePromise;
+  try {
+    await interaction.__goliathPreparePromise;
+  } catch (error) {
+    if (isAcknowledgementError(error)) {
+      logIgnoredAcknowledgementError(interaction, 'prepareInteraction', error);
+      return;
+    }
+    throw error;
+  }
 }
 
 module.exports = {
