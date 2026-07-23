@@ -114,15 +114,16 @@ function nextDelay(baseIntervalMs, attempts) {
 
 async function processGuild(guildId, client, options = {}) {
   const socialManager = require('./socialManager');
+  const socialDelivery = require('./socialDelivery');
   const config = socialManager.getConfig(guildId);
   const current = list(guildId);
-  if (!current.length) return { guildId, processed: 0, sent: 0, failed: 0, deferred: 0 };
+  if (!current.length) return { guildId, processed: 0, sent: 0, failed: 0, deferred: 0, resolved: 0 };
 
   const maxAttempts = Math.min(25, Math.max(1, Number(config.settings?.maxDeliveryAttempts || MAX_ATTEMPTS)));
   const retryIntervalMs = Math.min(86_400_000, Math.max(10_000, Number(config.settings?.retryIntervalMs || 60_000)));
   const accounts = new Map(config.accounts.map((account) => [account.accountId, account]));
   const remaining = [];
-  const results = { guildId, processed: 0, sent: 0, failed: 0, deferred: 0 };
+  const results = { guildId, processed: 0, sent: 0, failed: 0, deferred: 0, resolved: 0 };
   const timestamp = Date.now();
 
   for (const item of current) {
@@ -149,8 +150,8 @@ async function processGuild(guildId, client, options = {}) {
     }
 
     results.processed += 1;
-    const delivery = await socialManager.deliverQueuedAlert(guildId, account, item.providerResult, client, {
-      ...(options.meta || {}), queueId: item.id,
+    const delivery = await socialDelivery.deliver(guildId, account, item.providerResult, client, {
+      ...(options.meta || {}), queueId: item.id, bypassQueue: true,
     });
 
     if (delivery.success) {
@@ -161,6 +162,26 @@ async function processGuild(guildId, client, options = {}) {
         channelId: delivery.channelId, messageId: delivery.messageId,
         title: item.providerResult?.title || null, metadata: { queueId: item.id, attempts: item.attempts + 1 },
       }, options.meta || {});
+      continue;
+    }
+
+    if (delivery.reason === 'duplicate_content') {
+      results.resolved += 1;
+      socialHistory.record(guildId, {
+        status: 'suppressed', eventType: 'queue', accountId: item.accountId, creator: account.displayName,
+        platform: item.platform, alertType: item.alertType, contentId: item.contentId,
+        reason: 'already_delivered', metadata: { queueId: item.id, attempts: item.attempts },
+      }, options.meta || {});
+      continue;
+    }
+
+    if (delivery.reason === 'cooldown_active') {
+      remaining.push(normalizeItem({
+        ...item,
+        updatedAt: now(),
+        nextAttemptAt: new Date(Date.now() + Math.max(1000, Number(delivery.remainingMs || retryIntervalMs))).toISOString(),
+      }));
+      results.deferred += 1;
       continue;
     }
 
