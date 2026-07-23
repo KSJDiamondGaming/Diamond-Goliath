@@ -61,6 +61,16 @@ function trimEntries(entries = []) {
   return retained;
 }
 
+function incidentCapacity(count = 0) {
+  const used = Math.min(MAX_INCIDENT_HISTORY, Math.max(0, Number(count) || 0));
+  return {
+    used,
+    limit: MAX_INCIDENT_HISTORY,
+    remaining: MAX_INCIDENT_HISTORY - used,
+    saturated: used >= MAX_INCIDENT_HISTORY,
+  };
+}
+
 function list(guildId, options = {}) {
   const section = socialStore.getSocialSection(guildId);
   let entries = trimEntries(Array.isArray(section.history) ? section.history : []);
@@ -112,12 +122,7 @@ function summary(guildId) {
     retried: Number(counts.retried || 0),
     tests: Number(counts.test || 0),
     providerIncidents,
-    incidentCapacity: {
-      used: providerIncidents,
-      limit: MAX_INCIDENT_HISTORY,
-      remaining: Math.max(0, MAX_INCIDENT_HISTORY - providerIncidents),
-      saturated: providerIncidents >= MAX_INCIDENT_HISTORY,
-    },
+    incidentCapacity: incidentCapacity(providerIncidents),
     latestAt: entries[0]?.createdAt || null,
   };
 }
@@ -128,6 +133,7 @@ module.exports = {
   INCIDENT_EVENT_TYPE,
   normalizeEntry,
   trimEntries,
+  incidentCapacity,
   list,
   record,
   clear,
