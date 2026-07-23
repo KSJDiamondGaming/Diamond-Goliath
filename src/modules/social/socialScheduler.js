@@ -2,6 +2,7 @@
 
 const socialManager = require('./socialManager');
 const socialDelivery = require('./socialDelivery');
+const socialLifecycle = require('./socialLifecycle');
 const socialStore = require('./socialStore');
 const socialHistory = require('./socialHistory');
 const providerRegistry = require('./providerRegistry');
@@ -77,6 +78,10 @@ async function handleProviderResult(guildId, account, result, client) {
   const previousLiveState = account.lastSeen?.lastLiveState || 'unknown';
   const firstContent = Boolean(result.success && result.contentId && !account.lastSeen?.lastContentId);
   const streamEnded = Boolean(result.success && previousLiveState === 'live' && result.isLive !== true);
+  const sameLiveSession = Boolean(
+    result.success && result.isLive === true && result.contentId
+    && account.lastSeen?.lastContentId === result.contentId
+  );
   const lastSeen = {
     ...(account.lastSeen || {}),
     lastCheckedAt: metadata.lastCheckedAt,
@@ -86,7 +91,9 @@ async function handleProviderResult(guildId, account, result, client) {
   };
 
   if (metadata.isLive) {
-    lastSeen.lastLiveAt = metadata.lastCheckedAt;
+    lastSeen.lastLiveAt = account.lastSeen?.lastLiveState === 'live'
+      ? account.lastSeen?.lastLiveAt || metadata.lastCheckedAt
+      : metadata.lastCheckedAt;
     lastSeen.lastLiveTitle = metadata.lastTitle;
     lastSeen.lastLiveGameName = metadata.lastGameName;
     lastSeen.lastLiveThumbnailUrl = metadata.lastThumbnailUrl;
@@ -104,6 +111,7 @@ async function handleProviderResult(guildId, account, result, client) {
     lastSeen,
   };
   socialManager.updateAccount(guildId, account.accountId, updates, { action: 'social_provider_check' });
+  const currentAccount = { ...account, ...updates };
 
   if (!result.success) {
     socialStore.incrementAnalytics(guildId, { errors: 1 }, { action: 'social_provider_error' });
@@ -119,6 +127,15 @@ async function handleProviderResult(guildId, account, result, client) {
       ...historyBase(account, result), status: 'ended', eventType: 'stream_ended',
       metadata: { lastLiveAt: account.lastSeen?.lastLiveAt || null, endedAt: metadata.lastCheckedAt },
     });
+    const lifecycleResult = await socialLifecycle.finalizeLiveMessage(guildId, currentAccount, client, {
+      action: 'social_stream_ended_lifecycle',
+    });
+    return {
+      success: lifecycleResult.success === true,
+      skipped: lifecycleResult.skipped === true,
+      reason: lifecycleResult.reason || 'stream_ended',
+      lifecycleResult,
+    };
   }
 
   if (firstContent) {
@@ -127,6 +144,18 @@ async function handleProviderResult(guildId, account, result, client) {
       reason: 'initial_content_baseline',
     });
     return { success: false, skipped: true, reason: 'initial_content_baseline' };
+  }
+
+  if (sameLiveSession) {
+    const lifecycleResult = await socialLifecycle.syncLiveMessage(guildId, currentAccount, result, client, {
+      action: 'social_live_metadata_sync',
+    });
+    return {
+      success: lifecycleResult.success === true,
+      skipped: lifecycleResult.skipped === true,
+      reason: lifecycleResult.reason || (lifecycleResult.success ? 'live_message_edited' : 'current_live_session'),
+      lifecycleResult,
+    };
   }
 
   if (result.contentId && result.hasAlert !== false && (result.isLive || result.alertType)) {
@@ -138,18 +167,16 @@ async function handleProviderResult(guildId, account, result, client) {
       });
       return { success: false, skipped: true, reason: 'alert_type_disabled' };
     }
-    return socialDelivery.deliver(guildId, { ...account, ...updates }, result, client, {
+    return socialDelivery.deliver(guildId, currentAccount, result, client, {
       action: 'social_provider_content_alert',
     });
   }
 
-  if (!streamEnded) {
-    socialHistory.record(guildId, {
-      ...historyBase(account, result), status: 'skipped', eventType: 'provider_check',
-      reason: 'no_new_alert',
-    });
-  }
-  return { success: false, skipped: true, reason: streamEnded ? 'stream_ended' : 'no_alert' };
+  socialHistory.record(guildId, {
+    ...historyBase(account, result), status: 'skipped', eventType: 'provider_check',
+    reason: 'no_new_alert',
+  });
+  return { success: false, skipped: true, reason: 'no_alert' };
 }
 
 async function runSocialCheck(client, options = {}) {
