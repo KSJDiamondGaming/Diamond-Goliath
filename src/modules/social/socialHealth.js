@@ -59,12 +59,17 @@ async function buildHealth(guild) {
   const providers = social.providers.listProviders();
   const queue = social.queue.list(guild.id);
   const diagnostics = social.diagnostics.buildDiagnostics(guild.id);
+  const scheduler = social.scheduler.getSchedulerStatus();
 
   if (Number(settings.checkIntervalMs) < 60000) issues.push({ code: 'poll_interval_too_low', severity: 'error', value: settings.checkIntervalMs });
   if (settings.retryDeliveries !== false && Number(settings.retryIntervalMs) < 10000) issues.push({ code: 'retry_interval_too_low', severity: 'error', value: settings.retryIntervalMs });
   if (settings.retryDeliveries !== false && Number(settings.maxDeliveryAttempts) < 1) issues.push({ code: 'retry_attempts_invalid', severity: 'error', value: settings.maxDeliveryAttempts });
   if (settings.deleteEndedNotifications === true && settings.editLiveNotifications !== true) {
     issues.push({ code: 'ended_delete_without_live_editing', severity: 'warning' });
+  }
+  if (!scheduler.started) issues.push({ code: 'scheduler_not_started', severity: 'warning' });
+  if (scheduler.lastRun?.timeoutCount > 0) {
+    issues.push({ code: 'provider_timeouts_detected', severity: 'warning', count: scheduler.lastRun.timeoutCount, completedAt: scheduler.lastRun.completedAt });
   }
 
   const configuredPriority = Array.isArray(settings.platformPriority) ? settings.platformPriority : [];
@@ -86,6 +91,15 @@ async function buildHealth(guild) {
 
     if (!account.username && !account.externalId) issues.push({ code: 'account_identifier_missing', severity: 'error', accountId: account.accountId });
     if (account.lastSeen?.lastProviderError) issues.push({ code: 'provider_last_error', severity: 'warning', accountId: account.accountId, error: account.lastSeen.lastProviderError });
+    if (account.lastSeen?.lastProviderTimedOut === true) {
+      issues.push({
+        code: 'provider_last_check_timed_out',
+        severity: 'warning',
+        accountId: account.accountId,
+        platform: account.platform,
+        responseTimeMs: Number(account.lastSeen?.lastProviderResponseTimeMs || 0),
+      });
+    }
 
     const hasStoredMessage = Boolean(account.lastSeen?.lastChannelId || account.lastSeen?.lastMessageId);
     const hasCompleteStoredMessage = Boolean(account.lastSeen?.lastChannelId && account.lastSeen?.lastMessageId);
@@ -139,6 +153,7 @@ async function buildHealth(guild) {
     accounts: diagnostics.accounts,
     creatorProfiles: diagnostics.profiles,
     queue: social.queue.summary(guild.id),
+    scheduler,
     settings: settingsSummary(settings),
     quietHours: {
       enabled: quiet.enabled === true,
@@ -159,13 +174,14 @@ async function repair(guild, meta = {}) {
   for (const account of config.accounts || []) {
     if (account.enabled === false) continue;
     try {
-      const startedAt = Date.now();
       const result = await social.providers.checkAccount(account);
       const lastSeen = {
         ...(account.lastSeen || {}),
         lastCheckedAt: result.checkedAt || new Date().toISOString(),
         lastProviderStatus: result.providerStatus || result.status || 'unknown',
         lastProviderError: result.success ? '' : result.error || '',
+        lastProviderResponseTimeMs: Number(result.responseTimeMs || 0),
+        lastProviderTimedOut: result.timedOut === true,
         lastLiveState: result.isLive ? 'live' : 'offline',
       };
 
@@ -191,12 +207,14 @@ async function repair(guild, meta = {}) {
             lastCheckedAt: result.checkedAt || new Date().toISOString(),
             lastError: result.success ? '' : result.error || '',
             isLive: result.isLive === true,
-            responseTimeMs: Date.now() - startedAt,
+            responseTimeMs: Number(result.responseTimeMs || 0),
+            timedOut: result.timedOut === true,
+            timeoutMs: Number(result.timeoutMs || 0),
           },
         },
         lastSeen,
       }, { action: 'social_repair_check', ...meta });
-      repaired.push({ accountId: account.accountId, providerStatus: result.providerStatus || result.status || 'unknown' });
+      repaired.push({ accountId: account.accountId, providerStatus: result.providerStatus || result.status || 'unknown', timedOut: result.timedOut === true });
     } catch (error) {
       socialStore.incrementAnalytics(guild.id, { errors: 1 }, { action: 'social_repair_error', ...meta });
       failed.push({ accountId: account.accountId, error: error.message });
@@ -218,6 +236,7 @@ function exportConfig(guildId) {
     exportedAt: new Date().toISOString(),
     config: socialStore.getSocialSection(guildId),
     diagnostics: social.diagnostics.buildDiagnostics(guildId),
+    scheduler: social.scheduler.getSchedulerStatus(),
     queue: social.queue.list(guildId),
     history: social.history.list(guildId, { limit: social.history.MAX_HISTORY }),
   };
