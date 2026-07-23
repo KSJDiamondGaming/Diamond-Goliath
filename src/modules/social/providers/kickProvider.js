@@ -1,5 +1,7 @@
 'use strict';
 
+const socialHttp = require('../socialHttp');
+
 const KICK_AUTH_URL = 'https://id.kick.com/oauth/token';
 const KICK_API_URL = 'https://api.kick.com/public/v1';
 
@@ -30,24 +32,6 @@ function normalizeSlug(value) {
     .slice(0, 25);
 }
 
-async function fetchJson(url, options = {}) {
-  const startedAt = Date.now();
-  const response = await fetch(url, options);
-  const body = await response.text();
-  let data = null;
-  try { data = body ? JSON.parse(body) : null; }
-  catch { data = body || null; }
-
-  if (!response.ok) {
-    const message = data?.message || data?.error_description || data?.error || response.statusText || 'Kick request failed';
-    const error = new Error(`${message} (${response.status})`);
-    error.status = response.status;
-    throw error;
-  }
-
-  return { data, responseTimeMs: Date.now() - startedAt };
-}
-
 async function getAccessToken() {
   const config = getConfig();
   if (!config.clientId || !config.clientSecret) return null;
@@ -59,34 +43,37 @@ async function getAccessToken() {
     grant_type: 'client_credentials',
     scope: 'channel:read',
   });
-  const result = await fetchJson(KICK_AUTH_URL, {
+  const result = await socialHttp.requestJson(KICK_AUTH_URL, {
+    provider: 'kick',
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body,
   });
   cachedToken = result.data?.access_token || null;
-  const expiresIn = Math.max(60, Number(result.data?.expires_in || 3600) - 120);
-  cachedTokenExpiresAt = Date.now() + expiresIn * 1000;
+  cachedTokenExpiresAt = Date.now() + Math.max(60, Number(result.data?.expires_in || 3600) - 120) * 1000;
   return cachedToken;
 }
 
 async function kickApi(path, params = {}) {
   const token = await getAccessToken();
   if (!token) throw new Error('Kick provider is missing global Goliath credentials.');
+
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
     if (Array.isArray(value)) value.forEach((item) => query.append(key, String(item)));
     else if (value !== undefined && value !== null && value !== '') query.append(key, String(value));
   }
   const suffix = query.toString() ? `?${query.toString()}` : '';
-  return fetchJson(`${KICK_API_URL}${path}${suffix}`, {
-    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+  return socialHttp.requestJson(`${KICK_API_URL}${path}${suffix}`, {
+    provider: 'kick',
+    headers: { Authorization: `Bearer ${token}` },
   });
 }
 
 async function checkAccount(account = {}) {
   const slug = normalizeSlug(account.username || account.url || account.externalId);
   const checkedAt = new Date().toISOString();
+
   if (!isConfigured()) {
     return { success: false, status: 'not_configured', providerStatus: 'not_configured', platform: 'kick', accountId: account.accountId, username: slug, checkedAt, error: 'Kick provider is missing KICK_CLIENT_ID or KICK_CLIENT_SECRET.' };
   }
@@ -140,7 +127,7 @@ async function checkAccount(account = {}) {
       cachedToken = null;
       cachedTokenExpiresAt = 0;
     }
-    return { success: false, status: 'error', providerStatus: 'error', platform: 'kick', accountId: account.accountId, username: slug, checkedAt, error: error.message || 'Kick provider check failed.' };
+    return { success: false, status: 'error', providerStatus: 'error', platform: 'kick', accountId: account.accountId, username: slug, checkedAt, errorType: error.type || 'provider_error', error: error.message || 'Kick provider check failed.' };
   }
 }
 
