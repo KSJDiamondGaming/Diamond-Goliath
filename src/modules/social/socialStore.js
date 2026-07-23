@@ -16,6 +16,7 @@ const PLATFORMS = Object.freeze({
   YOUTUBE: 'youtube',
   TIKTOK: 'tiktok',
   KICK: 'kick',
+  FACEBOOK: 'facebook',
   INSTAGRAM: 'instagram',
   X: 'x',
 });
@@ -63,9 +64,24 @@ function createId(prefix = 'social') {
   return `${prefix}_${crypto.randomUUID().slice(0, 8)}`;
 }
 
+function clampNumber(value, fallback, minimum, maximum) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(maximum, Math.max(minimum, Math.round(number)));
+}
+
 function normalizePlatform(value) {
   const platform = cleanKey(value, PLATFORMS.TWITCH);
   return Object.values(PLATFORMS).includes(platform) ? platform : PLATFORMS.TWITCH;
+}
+
+function normalizePlatformPriority(value) {
+  const requested = Array.isArray(value) ? value : [];
+  const normalized = requested.map(normalizePlatform).filter((platform, index, list) => list.indexOf(platform) === index);
+  for (const platform of Object.values(PLATFORMS)) {
+    if (!normalized.includes(platform)) normalized.push(platform);
+  }
+  return normalized;
 }
 
 function normalizeAlertTypes(value) {
@@ -137,25 +153,71 @@ function defaultTemplates() {
 
 function defaultProviders() {
   return {
-    instagram: { enabled: true, status: 'not_configured' },
-    kick: { enabled: true, status: 'not_implemented' },
-    tiktok: { enabled: true, status: 'not_configured' },
+    facebook: { enabled: true, status: 'authorization_required' },
+    instagram: { enabled: true, status: 'authorization_required' },
+    kick: { enabled: true, status: 'not_configured' },
+    tiktok: { enabled: true, status: 'authorization_required' },
     twitch: { enabled: true, status: 'not_configured' },
     x: { enabled: true, status: 'not_configured' },
     youtube: { enabled: true, status: 'not_configured' },
   };
 }
 
+function defaultSettings() {
+  return {
+    checkIntervalMs: 300000,
+    retryIntervalMs: 60000,
+    retryDeliveries: true,
+    maxDeliveryAttempts: 5,
+    cooldownMs: 300000,
+    suppressDuplicates: true,
+    editLiveNotifications: false,
+    deleteEndedNotifications: false,
+    includeViewerCount: true,
+    includeLiveDuration: true,
+    thumbnailPreference: 'stream',
+    defaultMentionMode: 'role',
+    platformPriority: normalizePlatformPriority([]),
+    credentialOwner: 'Goliath',
+    credentialEmail: 'goliath@ksjdigital.co.uk',
+  };
+}
+
+function normalizeSettings(settings = {}) {
+  const base = defaultSettings();
+  const source = isPlainObject(settings) ? settings : {};
+  const thumbnailPreference = ['stream', 'creator', 'none'].includes(source.thumbnailPreference)
+    ? source.thumbnailPreference
+    : base.thumbnailPreference;
+  const defaultMentionMode = ['none', 'role', 'everyone', 'here'].includes(source.defaultMentionMode)
+    ? source.defaultMentionMode
+    : base.defaultMentionMode;
+
+  return {
+    ...base,
+    ...clone(source),
+    checkIntervalMs: clampNumber(source.checkIntervalMs, base.checkIntervalMs, 60000, 86400000),
+    retryIntervalMs: clampNumber(source.retryIntervalMs, base.retryIntervalMs, 10000, 86400000),
+    maxDeliveryAttempts: clampNumber(source.maxDeliveryAttempts, base.maxDeliveryAttempts, 1, 25),
+    cooldownMs: clampNumber(source.cooldownMs, base.cooldownMs, 0, 86400000),
+    retryDeliveries: source.retryDeliveries !== false,
+    suppressDuplicates: source.suppressDuplicates !== false,
+    editLiveNotifications: source.editLiveNotifications === true,
+    deleteEndedNotifications: source.deleteEndedNotifications === true,
+    includeViewerCount: source.includeViewerCount !== false,
+    includeLiveDuration: source.includeLiveDuration !== false,
+    thumbnailPreference,
+    defaultMentionMode,
+    platformPriority: normalizePlatformPriority(source.platformPriority),
+    credentialOwner: cleanString(source.credentialOwner, base.credentialOwner, 120),
+    credentialEmail: cleanString(source.credentialEmail, base.credentialEmail, 254),
+  };
+}
+
 function defaultSocialSection() {
   return {
     enabled: true,
-    settings: {
-      checkIntervalMs: 300000,
-      suppressDuplicates: true,
-      defaultMentionMode: 'role',
-      credentialOwner: 'Goliath',
-      credentialEmail: 'goliath@ksjdigital.co.uk',
-    },
+    settings: defaultSettings(),
     providers: defaultProviders(),
     accounts: {},
     templates: defaultTemplates(),
@@ -211,6 +273,7 @@ function normalizeProviders(providers = {}) {
       {
         ...defaults,
         ...(isPlainObject(source[id]) ? clone(source[id]) : {}),
+        enabled: source[id]?.enabled !== false,
       },
     ])
   );
@@ -231,10 +294,7 @@ function normalizeSocialSection(section = {}) {
     ...base,
     ...clone(source),
     enabled: source.enabled !== false,
-    settings: {
-      ...base.settings,
-      ...(isPlainObject(source.settings) ? clone(source.settings) : {}),
-    },
+    settings: normalizeSettings(source.settings),
     providers: normalizeProviders(source.providers),
     accounts,
     templates: {
@@ -324,8 +384,10 @@ module.exports = {
   cleanKey,
   cleanAccountIdentifier,
   defaultProviders,
+  defaultSettings,
   defaultSocialSection,
   normalizeAccount,
+  normalizeSettings,
   normalizeSocialSection,
   getSocialSection,
   saveSocialSection,
