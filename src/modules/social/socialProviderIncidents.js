@@ -3,6 +3,9 @@
 const DEFAULT_ESCALATION_MS = 900000;
 const MIN_ESCALATION_MS = 60000;
 const MAX_ESCALATION_MS = 86400000;
+const DEFAULT_TRANSITION_MAX_AGE_MS = 86400000;
+const MIN_TRANSITION_MAX_AGE_MS = 60000;
+const MAX_TRANSITION_MAX_AGE_MS = 604800000;
 
 const INCIDENT_EVENT_TYPES = new Set([
   'circuit_opened',
@@ -18,6 +21,10 @@ function boundedNumber(value, fallback, min, max) {
 
 function escalationMs(value = process.env.SOCIAL_PROVIDER_INCIDENT_ESCALATION_MS) {
   return boundedNumber(value, DEFAULT_ESCALATION_MS, MIN_ESCALATION_MS, MAX_ESCALATION_MS);
+}
+
+function transitionMaxAgeMs(value = process.env.SOCIAL_PROVIDER_INCIDENT_MAX_AGE_MS) {
+  return boundedNumber(value, DEFAULT_TRANSITION_MAX_AGE_MS, MIN_TRANSITION_MAX_AGE_MS, MAX_TRANSITION_MAX_AGE_MS);
 }
 
 function eventsFrom(snapshot = {}) {
@@ -53,6 +60,9 @@ function severityFor(type, durationMs = 0) {
 function transition(previous = {}, current = {}, now = Date.now()) {
   const event = latestIncidentEvent(current);
   if (!event) return null;
+  const occurredAt = Date.parse(event.at || '');
+  if (!Number.isFinite(occurredAt) || now - occurredAt > transitionMaxAgeMs()) return null;
+
   const provider = current.provider || previous.provider || 'unknown';
   const currentKey = eventKey(provider, event);
   const previousEvent = latestIncidentEvent(previous);
@@ -115,8 +125,12 @@ module.exports = {
   DEFAULT_ESCALATION_MS,
   MIN_ESCALATION_MS,
   MAX_ESCALATION_MS,
+  DEFAULT_TRANSITION_MAX_AGE_MS,
+  MIN_TRANSITION_MAX_AGE_MS,
+  MAX_TRANSITION_MAX_AGE_MS,
   INCIDENT_EVENT_TYPES,
   escalationMs,
+  transitionMaxAgeMs,
   eventKey,
   latestIncidentEvent,
   severityFor,
