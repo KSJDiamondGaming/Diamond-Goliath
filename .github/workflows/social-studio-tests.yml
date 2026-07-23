@@ -1,0 +1,42 @@
+name: Social Studio Tests
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - 'src/modules/social/**'
+      - 'test/social/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/social-studio-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: social-studio-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-social:
+    name: Node 22 Social Suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Social Studio tests
+        run: npm run test:social
