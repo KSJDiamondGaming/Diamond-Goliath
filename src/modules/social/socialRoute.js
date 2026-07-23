@@ -43,7 +43,14 @@ router.get('/:guildId/overview', (req, res) => {
 
 router.get('/:guildId/history', (req, res) => {
   try {
-    const history = social.history.list(req.params.guildId, { limit: req.query.limit, status: req.query.status, accountId: req.query.accountId, platform: req.query.platform, alertType: req.query.alertType });
+    const history = social.history.list(req.params.guildId, {
+      limit: req.query.limit,
+      status: req.query.status,
+      eventType: req.query.eventType,
+      accountId: req.query.accountId,
+      platform: req.query.platform,
+      alertType: req.query.alertType,
+    });
     return res.json({ success: true, guildId: req.params.guildId, summary: social.history.summary(req.params.guildId), history });
   } catch (error) { return res.status(400).json({ success: false, error: error.message || 'Failed to fetch Social alert history.' }); }
 });
