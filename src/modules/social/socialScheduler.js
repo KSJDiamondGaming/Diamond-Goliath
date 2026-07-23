@@ -9,13 +9,22 @@ const providerRegistry = require('./providerRegistry');
 
 const MIN_INTERVAL_MS = 60000;
 const DEFAULT_INTERVAL_MS = 300000;
+const DEFAULT_CONCURRENCY = 4;
+const MAX_CONCURRENCY = 20;
 let intervalRef = null;
 let running = false;
 let schedulerClient = null;
+let lastRun = null;
 
 function normalizeIntervalMs(value, fallback = DEFAULT_INTERVAL_MS) {
   const intervalMs = Number(value);
   return Number.isFinite(intervalMs) && intervalMs >= MIN_INTERVAL_MS ? intervalMs : fallback;
+}
+
+function normalizeConcurrency(value = process.env.SOCIAL_PROVIDER_CONCURRENCY) {
+  const concurrency = Number(value);
+  if (!Number.isFinite(concurrency)) return DEFAULT_CONCURRENCY;
+  return Math.min(MAX_CONCURRENCY, Math.max(1, Math.round(concurrency)));
 }
 
 function getGuildIntervalMs(config = {}, options = {}) {
@@ -58,6 +67,8 @@ function buildProviderMetadata(result = {}) {
     responseTimeMs: Number(result.responseTimeMs || 0),
     alertType: result.alertType || null,
     publishedAt: result.publishedAt || null,
+    timedOut: result.timedOut === true,
+    timeoutMs: Number(result.timeoutMs || 0),
   };
 }
 
@@ -87,6 +98,8 @@ async function handleProviderResult(guildId, account, result, client) {
     lastCheckedAt: metadata.lastCheckedAt,
     lastProviderStatus: metadata.providerStatus,
     lastProviderError: metadata.lastError,
+    lastProviderResponseTimeMs: metadata.responseTimeMs,
+    lastProviderTimedOut: metadata.timedOut,
     lastLiveState: metadata.isLive ? 'live' : 'offline',
   };
 
@@ -118,6 +131,11 @@ async function handleProviderResult(guildId, account, result, client) {
     socialHistory.record(guildId, {
       ...historyBase(account, result), status: 'failed', eventType: 'provider_check',
       error: result.error || 'Provider check failed.',
+      metadata: {
+        responseTimeMs: metadata.responseTimeMs,
+        timedOut: metadata.timedOut,
+        timeoutMs: metadata.timeoutMs || null,
+      },
     });
     return { success: false, skipped: true, reason: result.error || 'provider_error' };
   }
@@ -179,9 +197,46 @@ async function handleProviderResult(guildId, account, result, client) {
   return { success: false, skipped: true, reason: 'no_alert' };
 }
 
+async function checkOneAccount(guildId, account, client, options = {}) {
+  try {
+    const result = await providerRegistry.checkAccount(account, { timeoutMs: options.providerTimeoutMs });
+    const alertResult = await handleProviderResult(guildId, account, result, client);
+    return { guildId, accountId: account.accountId, ...result, alertResult };
+  } catch (error) {
+    socialStore.incrementAnalytics(guildId, { errors: 1 }, { action: 'social_scheduler_exception' });
+    socialManager.updateAccount(guildId, account.accountId, {
+      lastSeen: {
+        ...(account.lastSeen || {}), lastCheckedAt: new Date().toISOString(),
+        lastProviderStatus: 'error', lastProviderError: error.message,
+      },
+    }, { action: 'social_scheduler_exception' });
+    socialHistory.record(guildId, {
+      ...historyBase(account, { status: 'error' }), status: 'failed',
+      eventType: 'scheduler', error: error.message,
+    });
+    return { guildId, accountId: account.accountId, success: false, error: error.message };
+  }
+}
+
+async function mapWithConcurrency(items, concurrency, worker) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await worker(items[index], index);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 async function runSocialCheck(client, options = {}) {
-  if (running) return { skipped: true, reason: 'already_running' };
+  if (running) return { skipped: true, reason: 'already_running', lastRun };
   running = true;
+  const startedAt = new Date();
+  const concurrency = normalizeConcurrency(options.concurrency);
   try {
     const guildIds = Array.isArray(options.guildIds) && options.guildIds.length
       ? options.guildIds
@@ -203,31 +258,32 @@ async function runSocialCheck(client, options = {}) {
       }
 
       checkedGuilds += 1;
-      for (const account of accounts) {
-        try {
-          const result = await providerRegistry.checkAccount(account);
-          const alertResult = await handleProviderResult(guildId, account, result, client);
-          results.push({ guildId, accountId: account.accountId, ...result, alertResult });
-        } catch (error) {
-          socialStore.incrementAnalytics(guildId, { errors: 1 }, { action: 'social_scheduler_exception' });
-          socialManager.updateAccount(guildId, account.accountId, {
-            lastSeen: {
-              ...(account.lastSeen || {}), lastCheckedAt: new Date().toISOString(),
-              lastProviderStatus: 'error', lastProviderError: error.message,
-            },
-          }, { action: 'social_scheduler_exception' });
-          socialHistory.record(guildId, {
-            ...historyBase(account, { status: 'error' }), status: 'failed',
-            eventType: 'scheduler', error: error.message,
-          });
-          results.push({ guildId, accountId: account.accountId, success: false, error: error.message });
-        }
-      }
+      const guildResults = await mapWithConcurrency(
+        accounts,
+        concurrency,
+        (account) => checkOneAccount(guildId, account, client, options)
+      );
+      results.push(...guildResults);
     }
 
+    const completedAt = new Date();
+    lastRun = {
+      startedAt: startedAt.toISOString(),
+      completedAt: completedAt.toISOString(),
+      durationMs: completedAt.getTime() - startedAt.getTime(),
+      guildCount: checkedGuilds,
+      deferredGuildCount: deferredGuilds,
+      accountCount: results.length,
+      successCount: results.filter((result) => result.success === true).length,
+      failureCount: results.filter((result) => result.success === false).length,
+      timeoutCount: results.filter((result) => result.timedOut === true).length,
+      concurrency,
+    };
+
     return {
-      skipped: false, guildCount: checkedGuilds, deferredGuildCount: deferredGuilds,
-      accountCount: results.length, results,
+      skipped: false,
+      ...lastRun,
+      results,
     };
   } finally {
     running = false;
@@ -245,7 +301,7 @@ function startSocialScheduler(client, options = {}) {
     });
   }, tickIntervalMs);
   intervalRef.unref?.();
-  console.log(`[SocialScheduler] Social provider scheduler ready (${tickIntervalMs}ms tick)`);
+  console.log(`[SocialScheduler] Social provider scheduler ready (${tickIntervalMs}ms tick, concurrency ${normalizeConcurrency(options.concurrency)})`);
   return intervalRef;
 }
 
@@ -258,4 +314,23 @@ function stopSocialScheduler() {
   return true;
 }
 
-module.exports = { runSocialCheck, startSocialScheduler, stopSocialScheduler, handleProviderResult };
+function getSchedulerStatus() {
+  return {
+    running,
+    started: Boolean(intervalRef),
+    concurrency: normalizeConcurrency(),
+    providerTimeoutMs: providerRegistry.normalizeTimeoutMs(),
+    lastRun,
+  };
+}
+
+module.exports = {
+  DEFAULT_CONCURRENCY,
+  MAX_CONCURRENCY,
+  normalizeConcurrency,
+  runSocialCheck,
+  startSocialScheduler,
+  stopSocialScheduler,
+  getSchedulerStatus,
+  handleProviderResult,
+};
