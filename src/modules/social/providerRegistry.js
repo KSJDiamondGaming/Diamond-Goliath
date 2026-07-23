@@ -7,6 +7,7 @@ const tiktokProvider = require('./providers/tiktokProvider');
 const instagramProvider = require('./providers/instagramProvider');
 const xProvider = require('./providers/xProvider');
 const providerHealth = require('./socialProviderHealth');
+const providerIncidents = require('./socialProviderIncidents');
 
 const DEFAULT_PROVIDER_TIMEOUT_MS = 30000;
 const MIN_PROVIDER_TIMEOUT_MS = 5000;
@@ -172,6 +173,7 @@ function circuitOpenResult(provider, account, gate) {
     retryAt: gate.retryAt,
     retryAfterMs: gate.remainingMs,
     providerHealth: gate.state,
+    providerIncident: providerIncidents.escalation(gate.state),
     error: `${provider.label} provider circuit is open until ${gate.retryAt}.`,
   };
 }
@@ -241,12 +243,14 @@ async function checkAccount(account = {}, options = {}) {
     return unavailableResult({ ...provider, status: PROVIDER_STATUSES.ERROR }, account, `${provider.label} provider handler is unavailable.`);
   }
 
+  const before = providerHealth.snapshot(provider.id);
   const gate = providerHealth.acquire(provider.id);
   if (!gate.allowed) return circuitOpenResult(provider, account, gate);
 
   const result = await executeWithTimeout(provider, account, normalizeTimeoutMs(options.timeoutMs));
   const health = providerHealth.record(provider.id, result);
-  return { ...result, providerHealth: health };
+  const incident = providerIncidents.transition(before, health);
+  return { ...result, providerHealth: health, providerIncident: incident };
 }
 
 module.exports = {
