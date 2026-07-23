@@ -1,10 +1,6 @@
 let io = null;
 const botListeners = new Set();
 
-const {
-  setSocketProvider: setCaseSocketProvider,
-} = require('../../core/logging/cases/caseSocketEvents');
-
 function normaliseGuildId(guildId) {
   const id = String(guildId || '').trim();
   return /^\d{16,20}$/.test(id) ? id : '';
@@ -30,8 +26,6 @@ function initSocketHub(server, options = {}) {
       credentials: true,
     },
   });
-
-  setCaseSocketProvider(() => io);
 
   io.on('connection', (socket) => {
     console.log(`🟢 Dashboard connected: ${socket.id}`);
