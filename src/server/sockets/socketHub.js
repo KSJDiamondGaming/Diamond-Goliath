@@ -95,9 +95,14 @@ function emitGuildUpdate(guildId, payload = {}) {
 
   if (!id) return null;
 
+  const data =
+    payload && typeof payload === 'object' && !Array.isArray(payload)
+      ? payload
+      : {};
+
   const update = {
+    ...data,
     guildId: id,
-    ...(payload && typeof payload === 'object' ? payload : {}),
     updatedAt: new Date().toISOString(),
   };
 
