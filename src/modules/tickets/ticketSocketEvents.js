@@ -12,35 +12,19 @@ const {
 const TICKET_ROOM = 'goliath:tickets';
 
 const EVENTS = Object.freeze({
-  TICKET_CREATED: 'ticket_created',
-  TICKET_UPDATED: 'ticket_updated',
-  TICKET_CLOSED: 'ticket_closed',
-  TICKET_REOPENED: 'ticket_reopened',
-  TICKET_ARCHIVED: 'ticket_archived',
-  TICKET_DELETED: 'ticket_deleted',
-  TICKET_CLAIMED: 'ticket_claimed',
-  PANEL_CREATED: 'panel_created',
-  PANEL_UPDATED: 'panel_updated',
-  PANEL_DELETED: 'panel_deleted',
-  PANEL_DEPLOYED: 'panel_deployed',
-  TIMELINE_ENTRY: 'ticket_timeline_entry',
-  ANALYTICS_UPDATED: 'ticket_analytics_updated',
-});
-
-const STANDARD_EVENTS = Object.freeze({
-  ticket_created: 'ticket.created',
-  ticket_updated: 'ticket.updated',
-  ticket_closed: 'ticket.closed',
-  ticket_reopened: 'ticket.reopened',
-  ticket_archived: 'ticket.archived',
-  ticket_deleted: 'ticket.deleted',
-  ticket_claimed: 'ticket.claimed',
-  panel_created: 'panel.created',
-  panel_updated: 'panel.updated',
-  panel_deleted: 'panel.deleted',
-  panel_deployed: 'panel.deployed',
-  ticket_timeline_entry: 'ticket.timeline.entry',
-  ticket_analytics_updated: 'ticket.analytics.updated',
+  TICKET_CREATED: 'ticket.created',
+  TICKET_UPDATED: 'ticket.updated',
+  TICKET_CLOSED: 'ticket.closed',
+  TICKET_REOPENED: 'ticket.reopened',
+  TICKET_ARCHIVED: 'ticket.archived',
+  TICKET_DELETED: 'ticket.deleted',
+  TICKET_CLAIMED: 'ticket.claimed',
+  PANEL_CREATED: 'panel.created',
+  PANEL_UPDATED: 'panel.updated',
+  PANEL_DELETED: 'panel.deleted',
+  PANEL_DEPLOYED: 'panel.deployed',
+  TIMELINE_ENTRY: 'ticket.timeline.entry',
+  ANALYTICS_UPDATED: 'ticket.analytics.updated',
 });
 
 function now() {
@@ -60,16 +44,12 @@ function notify(guildId, payload = {}) {
   }
 }
 
-function getStandardEvent(event) {
-  return STANDARD_EVENTS[event] || event;
-}
-
-function createPayload(type, guildId, data = {}) {
+function createPayload(event, guildId, data = {}) {
   const timestamp = now();
 
   return {
-    type,
-    event: getStandardEvent(type),
+    module: 'tickets',
+    event,
     guildId: String(guildId),
     timestamp,
     updatedAt: timestamp,
@@ -82,7 +62,6 @@ function emitPayload(guildId, payload) {
   if (!update) return payload;
 
   const eventNames = [
-    payload.type,
     payload.event,
     'goliath_realtime_event',
   ].filter((eventName, index, list) =>
@@ -262,7 +241,6 @@ function emitAnalyticsUpdated(guildId, analytics) {
 
 module.exports = {
   EVENTS,
-  STANDARD_EVENTS,
   emit,
   emitForTicket,
   emitTicketCreated,
