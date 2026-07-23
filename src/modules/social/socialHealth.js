@@ -60,6 +60,7 @@ async function buildHealth(guild) {
   const queue = social.queue.list(guild.id);
   const diagnostics = social.diagnostics.buildDiagnostics(guild.id);
   const scheduler = social.scheduler.getSchedulerStatus();
+  const providerHealth = social.providerHealth.summary();
 
   if (Number(settings.checkIntervalMs) < 60000) issues.push({ code: 'poll_interval_too_low', severity: 'error', value: settings.checkIntervalMs });
   if (settings.retryDeliveries !== false && Number(settings.retryIntervalMs) < 10000) issues.push({ code: 'retry_interval_too_low', severity: 'error', value: settings.retryIntervalMs });
@@ -70,6 +71,26 @@ async function buildHealth(guild) {
   if (!scheduler.started) issues.push({ code: 'scheduler_not_started', severity: 'warning' });
   if (scheduler.lastRun?.timeoutCount > 0) {
     issues.push({ code: 'provider_timeouts_detected', severity: 'warning', count: scheduler.lastRun.timeoutCount, completedAt: scheduler.lastRun.completedAt });
+  }
+  for (const health of Object.values(providerHealth.providers)) {
+    if (health.state === 'open') {
+      issues.push({
+        code: 'provider_circuit_open',
+        severity: 'warning',
+        platform: health.provider,
+        retryAt: health.openUntil,
+        remainingMs: health.remainingOpenMs,
+        failureType: health.lastFailureType,
+        error: health.lastError,
+      });
+    } else if (health.state === 'half_open') {
+      issues.push({
+        code: 'provider_recovery_probe_pending',
+        severity: 'warning',
+        platform: health.provider,
+        failureType: health.lastFailureType,
+      });
+    }
   }
 
   const configuredPriority = Array.isArray(settings.platformPriority) ? settings.platformPriority : [];
@@ -150,6 +171,7 @@ async function buildHealth(guild) {
     enabledAccountCount: config.accounts.filter((account) => account.enabled !== false).length,
     creatorProfileCount: diagnostics.profiles.length,
     providers: diagnostics.providers,
+    providerHealth,
     accounts: diagnostics.accounts,
     creatorProfiles: diagnostics.profiles,
     queue: social.queue.summary(guild.id),
@@ -237,6 +259,8 @@ function exportConfig(guildId) {
     config: socialStore.getSocialSection(guildId),
     diagnostics: social.diagnostics.buildDiagnostics(guildId),
     scheduler: social.scheduler.getSchedulerStatus(),
+    providerHealth: social.providerHealth.summary(),
+    http: social.http.summary(),
     queue: social.queue.list(guildId),
     history: social.history.list(guildId, { limit: social.history.MAX_HISTORY }),
   };
