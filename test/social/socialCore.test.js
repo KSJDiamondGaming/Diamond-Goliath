@@ -4,10 +4,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const providerRegistry = require('../../src/modules/social/providerRegistry');
+const socialHttp = require('../../src/modules/social/socialHttp');
 const socialStore = require('../../src/modules/social/socialStore');
 const socialHistory = require('../../src/modules/social/socialHistory');
 const deliveryGuard = require('../../src/modules/social/socialDeliveryGuard');
 
+const originalFetch = global.fetch;
 const originalGetSocialSection = socialStore.getSocialSection;
 const originalCleanKey = socialStore.cleanKey;
 const originalHistoryRecord = socialHistory.record;
@@ -21,7 +23,18 @@ function installStore(section, history = []) {
   };
 }
 
+function response(status, body, headers = {}) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    statusText: '',
+    headers: { get: (name) => headers[String(name).toLowerCase()] || null },
+    text: async () => body === undefined ? '' : JSON.stringify(body),
+  };
+}
+
 test.afterEach(() => {
+  global.fetch = originalFetch;
   socialStore.getSocialSection = originalGetSocialSection;
   socialStore.cleanKey = originalCleanKey;
   socialHistory.record = originalHistoryRecord;
@@ -34,6 +47,73 @@ test('provider timeout values are normalized and clamped', () => {
   assert.equal(providerRegistry.normalizeTimeoutMs(1), providerRegistry.MIN_PROVIDER_TIMEOUT_MS);
   assert.equal(providerRegistry.normalizeTimeoutMs(7000.4), 7000);
   assert.equal(providerRegistry.normalizeTimeoutMs(999999), providerRegistry.MAX_PROVIDER_TIMEOUT_MS);
+});
+
+test('social HTTP values are normalized and clamped', () => {
+  assert.equal(socialHttp.normalizeTimeoutMs(undefined), socialHttp.DEFAULT_TIMEOUT_MS);
+  assert.equal(socialHttp.normalizeTimeoutMs(1), socialHttp.MIN_TIMEOUT_MS);
+  assert.equal(socialHttp.normalizeTimeoutMs(999999), socialHttp.MAX_TIMEOUT_MS);
+  assert.equal(socialHttp.normalizeRetries(-1), 0);
+  assert.equal(socialHttp.normalizeRetries(999), socialHttp.MAX_RETRIES);
+});
+
+test('social HTTP client parses JSON and records request metadata', async () => {
+  global.fetch = async (url, options) => {
+    assert.equal(url, 'https://provider.test/resource');
+    assert.equal(options.headers.Accept, 'application/json');
+    assert.match(options.headers['User-Agent'], /^Goliath-Social-Studio\//);
+    return response(200, { ok: true });
+  };
+
+  const result = await socialHttp.requestJson('https://provider.test/resource', {
+    provider: 'test-provider',
+    retries: 0,
+  });
+
+  assert.deepEqual(result.data, { ok: true });
+  assert.equal(result.status, 200);
+  assert.equal(result.attempts, 1);
+  assert.ok(result.responseTimeMs >= 0);
+  const metrics = socialHttp.summary().byProvider['test-provider'];
+  assert.ok(metrics.requests >= 1);
+  assert.ok(metrics.successes >= 1);
+});
+
+test('social HTTP client retries provider failures and preserves classification', async () => {
+  let calls = 0;
+  global.fetch = async () => {
+    calls += 1;
+    return calls === 1
+      ? response(503, { message: 'Unavailable' })
+      : response(200, { recovered: true });
+  };
+
+  const result = await socialHttp.requestJson('https://provider.test/retry', {
+    provider: 'retry-provider',
+    retries: 1,
+  });
+
+  assert.equal(calls, 2);
+  assert.deepEqual(result.data, { recovered: true });
+  assert.equal(result.attempts, 2);
+  assert.ok(socialHttp.summary().byProvider['retry-provider'].retries >= 1);
+});
+
+test('social HTTP client classifies authentication failures without retrying', async () => {
+  let calls = 0;
+  global.fetch = async () => {
+    calls += 1;
+    return response(401, { message: 'Unauthorized' });
+  };
+
+  await assert.rejects(
+    socialHttp.requestJson('https://provider.test/auth', {
+      provider: 'auth-provider',
+      retries: 2,
+    }),
+    (error) => error.status === 401 && error.type === 'authentication',
+  );
+  assert.equal(calls, 1);
 });
 
 test('delivery locks serialize operations for the same account', async () => {
