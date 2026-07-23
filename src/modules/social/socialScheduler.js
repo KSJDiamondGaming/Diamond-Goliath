@@ -8,7 +8,6 @@ const providerRegistry = require('./providerRegistry');
 
 const MIN_INTERVAL_MS = 60000;
 const DEFAULT_INTERVAL_MS = 300000;
-
 let intervalRef = null;
 let running = false;
 let schedulerClient = null;
@@ -33,19 +32,16 @@ function getSchedulerTickMs(options = {}) {
 }
 
 function latestAccountCheckAt(accounts = []) {
-  let latest = 0;
-  for (const account of accounts) {
+  return accounts.reduce((latest, account) => {
     const checkedAt = Date.parse(account.lastSeen?.lastCheckedAt || '');
-    if (Number.isFinite(checkedAt)) latest = Math.max(latest, checkedAt);
-  }
-  return latest;
+    return Number.isFinite(checkedAt) ? Math.max(latest, checkedAt) : latest;
+  }, 0);
 }
 
 function isGuildDue(config = {}, accounts = [], options = {}) {
   if (options.force === true || options.respectSchedule !== true) return true;
   const lastCheckedAt = latestAccountCheckAt(accounts);
-  if (!lastCheckedAt) return true;
-  return Date.now() - lastCheckedAt >= getGuildIntervalMs(config, options);
+  return !lastCheckedAt || Date.now() - lastCheckedAt >= getGuildIntervalMs(config, options);
 }
 
 function buildProviderMetadata(result = {}) {
@@ -112,9 +108,7 @@ async function handleProviderResult(guildId, account, result, client) {
   if (!result.success) {
     socialStore.incrementAnalytics(guildId, { errors: 1 }, { action: 'social_provider_error' });
     socialHistory.record(guildId, {
-      ...historyBase(account, result),
-      status: 'failed',
-      eventType: 'provider_check',
+      ...historyBase(account, result), status: 'failed', eventType: 'provider_check',
       error: result.error || 'Provider check failed.',
     });
     return { success: false, skipped: true, reason: result.error || 'provider_error' };
@@ -122,21 +116,14 @@ async function handleProviderResult(guildId, account, result, client) {
 
   if (streamEnded) {
     socialHistory.record(guildId, {
-      ...historyBase(account, result),
-      status: 'ended',
-      eventType: 'stream_ended',
-      metadata: {
-        lastLiveAt: account.lastSeen?.lastLiveAt || null,
-        endedAt: metadata.lastCheckedAt,
-      },
+      ...historyBase(account, result), status: 'ended', eventType: 'stream_ended',
+      metadata: { lastLiveAt: account.lastSeen?.lastLiveAt || null, endedAt: metadata.lastCheckedAt },
     });
   }
 
   if (firstContent) {
     socialHistory.record(guildId, {
-      ...historyBase(account, result),
-      status: 'suppressed',
-      eventType: 'provider_baseline',
+      ...historyBase(account, result), status: 'suppressed', eventType: 'provider_baseline',
       reason: 'initial_content_baseline',
     });
     return { success: false, skipped: true, reason: 'initial_content_baseline' };
@@ -146,9 +133,7 @@ async function handleProviderResult(guildId, account, result, client) {
     const enabledTypes = Array.isArray(account.alertTypes) ? account.alertTypes : ['live'];
     if (!enabledTypes.includes(result.alertType || 'live')) {
       socialHistory.record(guildId, {
-        ...historyBase(account, result),
-        status: 'skipped',
-        eventType: 'provider_check',
+        ...historyBase(account, result), status: 'skipped', eventType: 'provider_check',
         reason: 'alert_type_disabled',
       });
       return { success: false, skipped: true, reason: 'alert_type_disabled' };
@@ -160,9 +145,7 @@ async function handleProviderResult(guildId, account, result, client) {
 
   if (!streamEnded) {
     socialHistory.record(guildId, {
-      ...historyBase(account, result),
-      status: 'skipped',
-      eventType: 'provider_check',
+      ...historyBase(account, result), status: 'skipped', eventType: 'provider_check',
       reason: 'no_new_alert',
     });
   }
@@ -202,17 +185,13 @@ async function runSocialCheck(client, options = {}) {
           socialStore.incrementAnalytics(guildId, { errors: 1 }, { action: 'social_scheduler_exception' });
           socialManager.updateAccount(guildId, account.accountId, {
             lastSeen: {
-              ...(account.lastSeen || {}),
-              lastCheckedAt: new Date().toISOString(),
-              lastProviderStatus: 'error',
-              lastProviderError: error.message,
+              ...(account.lastSeen || {}), lastCheckedAt: new Date().toISOString(),
+              lastProviderStatus: 'error', lastProviderError: error.message,
             },
           }, { action: 'social_scheduler_exception' });
           socialHistory.record(guildId, {
-            ...historyBase(account, { status: 'error' }),
-            status: 'failed',
-            eventType: 'scheduler',
-            error: error.message,
+            ...historyBase(account, { status: 'error' }), status: 'failed',
+            eventType: 'scheduler', error: error.message,
           });
           results.push({ guildId, accountId: account.accountId, success: false, error: error.message });
         }
@@ -220,11 +199,8 @@ async function runSocialCheck(client, options = {}) {
     }
 
     return {
-      skipped: false,
-      guildCount: checkedGuilds,
-      deferredGuildCount: deferredGuilds,
-      accountCount: results.length,
-      results,
+      skipped: false, guildCount: checkedGuilds, deferredGuildCount: deferredGuilds,
+      accountCount: results.length, results,
     };
   } finally {
     running = false;
@@ -236,9 +212,6 @@ function startSocialScheduler(client, options = {}) {
   if (intervalRef) return intervalRef;
   const tickIntervalMs = getSchedulerTickMs(options);
   const scheduledOptions = { ...options, respectSchedule: true };
-  runSocialCheck(schedulerClient, { ...scheduledOptions, force: true }).catch((error) => {
-    console.error('[SocialScheduler] Initial recovery check failed:', error);
-  });
   intervalRef = setInterval(() => {
     runSocialCheck(schedulerClient, scheduledOptions).catch((error) => {
       console.error('[SocialScheduler] Check failed:', error);
@@ -258,9 +231,4 @@ function stopSocialScheduler() {
   return true;
 }
 
-module.exports = {
-  runSocialCheck,
-  startSocialScheduler,
-  stopSocialScheduler,
-  handleProviderResult,
-};
+module.exports = { runSocialCheck, startSocialScheduler, stopSocialScheduler, handleProviderResult };
