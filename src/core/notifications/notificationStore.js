@@ -2,7 +2,7 @@
 
 const crypto = require('crypto');
 const { getGuildSection, updateGuildSection } = require('../guild/guildManager');
-const activity = require('../activity/activityStore');
+const activity = require('../../features/activity/activityStore');
 
 function now() { return new Date().toISOString(); }
 function obj(value) { return value && typeof value === 'object' && !Array.isArray(value) ? value : {}; }
