@@ -2,10 +2,6 @@ let io = null;
 const botListeners = new Set();
 
 const {
-  setSocketProvider: setTicketSocketProvider,
-} = require('../../modules/tickets/ticketSocketEvents');
-
-const {
   setSocketProvider: setEmbedSocketProvider,
 } = require('../../modules/embed/embedSocketEvents');
 
@@ -43,7 +39,6 @@ function initSocketHub(server, options = {}) {
     },
   });
 
-  setTicketSocketProvider(() => io);
   setEmbedSocketProvider(() => io);
   setCaseSocketProvider(() => io);
 
@@ -120,13 +115,20 @@ function normaliseSyncEvent(event) {
   return String(event || '').trim();
 }
 
+function emitRoomEvent(room, event, update) {
+  const roomName = String(room || '').trim();
+  const eventName = normaliseSyncEvent(event);
+  if (!roomName || !eventName || !io) return false;
+
+  io.to(roomName).emit(eventName, update);
+  return true;
+}
+
 function emitDirectSyncEvent(guildId, event, update) {
   const id = String(guildId || '').trim();
-  const eventName = normaliseSyncEvent(event);
-  if (!id || !eventName || !io) return false;
+  if (!id) return false;
 
-  io.to(getRoomName(id)).emit(eventName, update);
-  return true;
+  return emitRoomEvent(getRoomName(id), event, update);
 }
 
 module.exports = {
@@ -135,4 +137,5 @@ module.exports = {
   onGuildUpdate,
   emitGuildUpdate,
   emitDirectSyncEvent,
+  emitRoomEvent,
 };
