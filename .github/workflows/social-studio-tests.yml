@@ -1,4 +1,4 @@
-name: Social Studio Tests
+name: Social Studio Verification
 
 on:
   push:
@@ -6,6 +6,7 @@ on:
       - dev
     paths:
       - 'src/modules/social/**'
+      - 'src/dashboard/js/pages/modules/Social.jsx'
       - 'test/social/**'
       - 'package.json'
       - 'package-lock.json'
@@ -16,14 +17,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: social-studio-tests-${{ github.ref }}
+  group: social-studio-verification-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  test-social:
-    name: Node 22 Social Suite
+  verify-social:
+    name: Node 22 Social Verification
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Check out repository
@@ -38,5 +39,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify Social Studio module syntax
+        run: |
+          find src/modules/social -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+
       - name: Run Social Studio tests
         run: npm run test:social
+
+      - name: Build dashboard
+        run: npx vite build src/dashboard --outDir ../../dist --emptyOutDir --logLevel warn
