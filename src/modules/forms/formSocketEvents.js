@@ -8,43 +8,26 @@ const {
 } = require('../../server/sockets/socketHub');
 
 const EVENTS = Object.freeze({
-  FORM_CREATED: 'form_created',
-  FORM_UPDATED: 'form_updated',
-  FORM_SUBMITTED: 'form_submitted',
-  FORM_SUBMISSION_UPDATED: 'form_submission_updated',
+  FORM_CREATED: 'form.created',
+  FORM_UPDATED: 'form.updated',
+  FORM_SUBMITTED: 'form.submitted',
+  FORM_SUBMISSION_UPDATED: 'form.submission.updated',
 
-  PANEL_CREATED: 'form_panel_created',
-  PANEL_UPDATED: 'form_panel_updated',
+  PANEL_CREATED: 'form.panel.created',
+  PANEL_UPDATED: 'form.panel.updated',
 
-  ANALYTICS_UPDATED: 'form_analytics_updated',
-});
-
-const STANDARD_EVENTS = Object.freeze({
-  form_created: 'form.created',
-  form_updated: 'form.updated',
-  form_submitted: 'form.submitted',
-  form_submission_updated: 'form.submission.updated',
-
-  form_panel_created: 'form.panel.created',
-  form_panel_updated: 'form.panel.updated',
-
-  form_analytics_updated: 'form.analytics.updated',
+  ANALYTICS_UPDATED: 'form.analytics.updated',
 });
 
 function now() {
   return new Date().toISOString();
 }
 
-function getStandardEvent(event) {
-  return STANDARD_EVENTS[event] || event;
-}
-
-function createPayload(type, guildId, data = {}) {
-  const event = getStandardEvent(type);
+function createPayload(event, guildId, data = {}) {
   const timestamp = now();
 
   return {
-    type,
+    module: 'forms',
     event,
     guildId: String(guildId),
     timestamp,
@@ -59,12 +42,7 @@ function emit(event, guildId, data = {}) {
 
   if (!update) return payload;
 
-  const eventNames = [event, payload.event, 'goliath_realtime_event'].filter(
-    (eventName, index, list) =>
-      eventName && list.indexOf(eventName) === index
-  );
-
-  for (const eventName of eventNames) {
+  for (const eventName of [event, 'goliath_realtime_event']) {
     emitDirectSyncEvent(guildId, eventName, update);
   }
 
@@ -121,7 +99,6 @@ function emitFormAnalyticsUpdated(guildId, analytics) {
 
 module.exports = {
   EVENTS,
-  STANDARD_EVENTS,
   emit,
   emitFormUpdated,
   emitFormSubmitted,
