@@ -58,9 +58,14 @@ async function buildHealth(guild) {
   const issues = [];
   const providers = social.providers.listProviders();
   const queue = social.queue.list(guild.id);
+  const history = social.history.list(guild.id, { limit: social.history.MAX_HISTORY });
   const diagnostics = social.diagnostics.buildDiagnostics(guild.id);
   const scheduler = social.scheduler.getSchedulerStatus();
   const providerHealth = social.providerHealth.summary();
+  const incidentMonitor = social.incidentMonitor.status();
+  const incidentDiagnostics = social.incidentDiagnostics.summary(history, incidentMonitor);
+
+  issues.push(...social.incidentDiagnostics.issues(incidentDiagnostics));
 
   if (Number(settings.checkIntervalMs) < 60000) issues.push({ code: 'poll_interval_too_low', severity: 'error', value: settings.checkIntervalMs });
   if (settings.retryDeliveries !== false && Number(settings.retryIntervalMs) < 10000) issues.push({ code: 'retry_interval_too_low', severity: 'error', value: settings.retryIntervalMs });
@@ -172,6 +177,7 @@ async function buildHealth(guild) {
     creatorProfileCount: diagnostics.profiles.length,
     providers: diagnostics.providers,
     providerHealth,
+    incidents: incidentDiagnostics,
     accounts: diagnostics.accounts,
     creatorProfiles: diagnostics.profiles,
     queue: social.queue.summary(guild.id),
@@ -252,6 +258,8 @@ async function repair(guild, meta = {}) {
 }
 
 function exportConfig(guildId) {
+  const history = social.history.list(guildId, { limit: social.history.MAX_HISTORY });
+  const incidentMonitor = social.incidentMonitor.status();
   return {
     module: 'social',
     guildId: String(guildId),
@@ -260,9 +268,10 @@ function exportConfig(guildId) {
     diagnostics: social.diagnostics.buildDiagnostics(guildId),
     scheduler: social.scheduler.getSchedulerStatus(),
     providerHealth: social.providerHealth.summary(),
+    incidents: social.incidentDiagnostics.summary(history, incidentMonitor),
     http: social.http.summary(),
     queue: social.queue.list(guildId),
-    history: social.history.list(guildId, { limit: social.history.MAX_HISTORY }),
+    history,
   };
 }
 
