@@ -17,6 +17,15 @@ const {
   setSocketProvider: setCaseSocketProvider,
 } = require('../../core/logging/cases/caseSocketEvents');
 
+const GUILD_JOIN_EVENTS = Object.freeze([
+  'joinGuild',
+  'automod:join',
+  'tickets:joinGuild',
+  'forms:joinGuild',
+  'embeds:joinGuild',
+  'cases:joinGuild',
+]);
+
 function getRoomName(guildId) {
   return `guild:${guildId}`;
 }
@@ -57,12 +66,9 @@ function initSocketHub(server, options = {}) {
       console.log(`${socket.id} joined ${room}`);
     }
 
-    socket.on('joinGuild', joinGuildRoom);
-    socket.on('automod:join', joinGuildRoom);
-    socket.on('tickets:joinGuild', joinGuildRoom);
-    socket.on('forms:joinGuild', joinGuildRoom);
-    socket.on('embeds:joinGuild', joinGuildRoom);
-    socket.on('cases:joinGuild', joinGuildRoom);
+    for (const eventName of GUILD_JOIN_EVENTS) {
+      socket.on(eventName, joinGuildRoom);
+    }
 
     socket.on('disconnect', () => {
       console.log(`🔴 Dashboard disconnected: ${socket.id}`);
