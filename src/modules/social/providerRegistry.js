@@ -6,6 +6,7 @@ const kickProvider = require('./providers/kickProvider');
 const tiktokProvider = require('./providers/tiktokProvider');
 const instagramProvider = require('./providers/instagramProvider');
 const xProvider = require('./providers/xProvider');
+const providerHealth = require('./socialProviderHealth');
 
 const DEFAULT_PROVIDER_TIMEOUT_MS = 30000;
 const MIN_PROVIDER_TIMEOUT_MS = 5000;
@@ -16,6 +17,7 @@ const PROVIDER_STATUSES = Object.freeze({
   NOT_CONFIGURED: 'not_configured',
   NOT_IMPLEMENTED: 'not_implemented',
   AUTHORIZATION_REQUIRED: 'authorization_required',
+  CIRCUIT_OPEN: 'circuit_open',
   TIMEOUT: 'timeout',
   ERROR: 'error',
 });
@@ -38,68 +40,40 @@ function capabilities(values = {}) {
 
 const providerDefinitions = Object.freeze({
   facebook: {
-    id: 'facebook',
-    label: 'Facebook Gaming',
-    supportedAlertTypes: ['live'],
-    requiredEnv: [],
-    handler: null,
+    id: 'facebook', label: 'Facebook Gaming', supportedAlertTypes: ['live'], requiredEnv: [], handler: null,
     zeroCredentialSupported: false,
     unavailableReason: 'Facebook Gaming live monitoring requires Meta app access and authorization for the monitored Page. Enablement depends on the permissions available to the Goliath application.',
     capabilities: capabilities({ live: true, title: true, thumbnail: true, viewerCount: true, creatorAvatar: true, creatorBanner: true }),
   },
   instagram: {
-    id: 'instagram',
-    label: 'Instagram',
-    supportedAlertTypes: ['post'],
-    requiredEnv: [],
-    handler: instagramProvider,
+    id: 'instagram', label: 'Instagram', supportedAlertTypes: ['post'], requiredEnv: [], handler: instagramProvider,
     zeroCredentialSupported: false,
     unavailableReason: 'Instagram monitoring requires authorization from the monitored professional account and is outside Social Studio zero-credential scope.',
     capabilities: capabilities({ posts: true, thumbnail: true, creatorAvatar: true }),
   },
   kick: {
-    id: 'kick',
-    label: 'Kick',
-    supportedAlertTypes: ['live'],
-    requiredEnv: ['KICK_CLIENT_ID', 'KICK_CLIENT_SECRET'],
-    handler: kickProvider,
+    id: 'kick', label: 'Kick', supportedAlertTypes: ['live'], requiredEnv: ['KICK_CLIENT_ID', 'KICK_CLIENT_SECRET'], handler: kickProvider,
     zeroCredentialSupported: true,
     capabilities: capabilities({ live: true, title: true, category: true, thumbnail: true, viewerCount: true, creatorAvatar: true, creatorBanner: true }),
   },
   tiktok: {
-    id: 'tiktok',
-    label: 'TikTok',
-    supportedAlertTypes: ['post', 'live'],
-    requiredEnv: [],
-    handler: tiktokProvider,
+    id: 'tiktok', label: 'TikTok', supportedAlertTypes: ['post', 'live'], requiredEnv: [], handler: tiktokProvider,
     zeroCredentialSupported: false,
     unavailableReason: 'TikTok monitored-account access requires creator authorization and depends on the API products approved for the Goliath application.',
     capabilities: capabilities({ live: true, posts: true, title: true, thumbnail: true, viewerCount: true, creatorAvatar: true }),
   },
   twitch: {
-    id: 'twitch',
-    label: 'Twitch',
-    supportedAlertTypes: ['live'],
-    requiredEnv: ['TWITCH_CLIENT_ID', 'TWITCH_CLIENT_SECRET'],
-    handler: twitchProvider,
+    id: 'twitch', label: 'Twitch', supportedAlertTypes: ['live'], requiredEnv: ['TWITCH_CLIENT_ID', 'TWITCH_CLIENT_SECRET'], handler: twitchProvider,
     zeroCredentialSupported: true,
     capabilities: capabilities({ live: true, title: true, category: true, thumbnail: true, viewerCount: true, creatorAvatar: true }),
   },
   x: {
-    id: 'x',
-    label: 'X',
-    supportedAlertTypes: ['post'],
-    requiredEnv: [],
-    handler: xProvider,
+    id: 'x', label: 'X', supportedAlertTypes: ['post'], requiredEnv: [], handler: xProvider,
     zeroCredentialSupported: true,
     capabilities: capabilities({ posts: true, thumbnail: true, creatorAvatar: true }),
   },
   youtube: {
-    id: 'youtube',
-    label: 'YouTube',
-    supportedAlertTypes: ['upload', 'short', 'live'],
-    requiredEnv: ['YOUTUBE_API_KEY'],
-    handler: youtubeProvider,
+    id: 'youtube', label: 'YouTube', supportedAlertTypes: ['upload', 'short', 'live'], requiredEnv: ['YOUTUBE_API_KEY'], handler: youtubeProvider,
     zeroCredentialSupported: true,
     capabilities: capabilities({ live: true, uploads: true, title: true, category: true, thumbnail: true, viewerCount: true, creatorAvatar: true, creatorBanner: true }),
   },
@@ -120,17 +94,11 @@ function getProvider(platform) {
   if (!provider) return null;
 
   let status;
-  if (provider.zeroCredentialSupported === false) {
-    status = PROVIDER_STATUSES.AUTHORIZATION_REQUIRED;
-  } else if (typeof provider.handler?.isConfigured === 'function' && !provider.handler.isConfigured()) {
-    status = PROVIDER_STATUSES.NOT_CONFIGURED;
-  } else if (provider.requiredEnv.length && !hasRequiredEnv(provider.requiredEnv)) {
-    status = PROVIDER_STATUSES.NOT_CONFIGURED;
-  } else if (provider.handler?.implemented === true || ['twitch', 'youtube'].includes(provider.handler?.id)) {
-    status = PROVIDER_STATUSES.READY;
-  } else {
-    status = PROVIDER_STATUSES.NOT_IMPLEMENTED;
-  }
+  if (provider.zeroCredentialSupported === false) status = PROVIDER_STATUSES.AUTHORIZATION_REQUIRED;
+  else if (typeof provider.handler?.isConfigured === 'function' && !provider.handler.isConfigured()) status = PROVIDER_STATUSES.NOT_CONFIGURED;
+  else if (provider.requiredEnv.length && !hasRequiredEnv(provider.requiredEnv)) status = PROVIDER_STATUSES.NOT_CONFIGURED;
+  else if (provider.handler?.implemented === true || ['twitch', 'youtube'].includes(provider.handler?.id)) status = PROVIDER_STATUSES.READY;
+  else status = PROVIDER_STATUSES.NOT_IMPLEMENTED;
 
   return {
     ...provider,
@@ -140,6 +108,7 @@ function getProvider(platform) {
     technicallyPossible: status !== PROVIDER_STATUSES.NOT_IMPLEMENTED,
     ownerManaged: true,
     userCredentialsRequired: provider.zeroCredentialSupported === false,
+    health: providerHealth.snapshot(provider.id),
   };
 }
 
@@ -181,7 +150,29 @@ function timeoutResult(provider, account, timeoutMs, startedAt) {
     responseTimeMs: Date.now() - startedAt,
     timedOut: true,
     timeoutMs,
+    errorType: 'timeout',
     error: `${provider.label} provider check timed out after ${timeoutMs}ms.`,
+  };
+}
+
+function circuitOpenResult(provider, account, gate) {
+  return {
+    success: false,
+    skipped: true,
+    status: PROVIDER_STATUSES.CIRCUIT_OPEN,
+    providerStatus: PROVIDER_STATUSES.CIRCUIT_OPEN,
+    platform: provider.id,
+    provider: provider.label,
+    accountId: account.accountId,
+    username: account.username,
+    checkedAt: new Date().toISOString(),
+    responseTimeMs: 0,
+    errorType: 'provider_unavailable',
+    circuitOpen: true,
+    retryAt: gate.retryAt,
+    retryAfterMs: gate.remainingMs,
+    providerHealth: gate.state,
+    error: `${provider.label} provider circuit is open until ${gate.retryAt}.`,
   };
 }
 
@@ -214,6 +205,7 @@ async function executeWithTimeout(provider, account, timeoutMs) {
         username: account.username,
         checkedAt: new Date().toISOString(),
         responseTimeMs: Date.now() - startedAt,
+        errorType: error?.type || 'network',
         error: error?.message || String(error),
       }));
 
@@ -246,14 +238,15 @@ async function checkAccount(account = {}, options = {}) {
   }
 
   if (typeof provider.handler?.checkAccount !== 'function') {
-    return unavailableResult(
-      { ...provider, status: PROVIDER_STATUSES.ERROR },
-      account,
-      `${provider.label} provider handler is unavailable.`
-    );
+    return unavailableResult({ ...provider, status: PROVIDER_STATUSES.ERROR }, account, `${provider.label} provider handler is unavailable.`);
   }
 
-  return executeWithTimeout(provider, account, normalizeTimeoutMs(options.timeoutMs));
+  const gate = providerHealth.acquire(provider.id);
+  if (!gate.allowed) return circuitOpenResult(provider, account, gate);
+
+  const result = await executeWithTimeout(provider, account, normalizeTimeoutMs(options.timeoutMs));
+  const health = providerHealth.record(provider.id, result);
+  return { ...result, providerHealth: health };
 }
 
 module.exports = {
