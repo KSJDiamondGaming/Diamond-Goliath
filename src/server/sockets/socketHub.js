@@ -9,6 +9,11 @@ const {
   setSocketProvider: setCaseSocketProvider,
 } = require('../../core/logging/cases/caseSocketEvents');
 
+function normaliseGuildId(guildId) {
+  const id = String(guildId || '').trim();
+  return /^\d{16,20}$/.test(id) ? id : '';
+}
+
 function getRoomName(guildId) {
   return `guild:${guildId}`;
 }
@@ -38,7 +43,7 @@ function initSocketHub(server, options = {}) {
     socket.join('goliath:tickets');
 
     function joinGuildRoom(guildId) {
-      const id = String(guildId || '').trim();
+      const id = normaliseGuildId(guildId);
       if (!id) return;
 
       const room = getRoomName(id);
@@ -70,7 +75,7 @@ function onGuildUpdate(listener) {
 }
 
 function emitGuildUpdate(guildId, payload = {}) {
-  const id = String(guildId || '').trim();
+  const id = normaliseGuildId(guildId);
 
   if (!id) return null;
 
@@ -114,7 +119,7 @@ function emitRoomEvent(room, event, update) {
 }
 
 function emitDirectSyncEvent(guildId, event, update) {
-  const id = String(guildId || '').trim();
+  const id = normaliseGuildId(guildId);
   if (!id) return false;
 
   return emitRoomEvent(getRoomName(id), event, update);
