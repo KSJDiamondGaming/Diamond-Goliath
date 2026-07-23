@@ -7,11 +7,16 @@ const tiktokProvider = require('./providers/tiktokProvider');
 const instagramProvider = require('./providers/instagramProvider');
 const xProvider = require('./providers/xProvider');
 
+const DEFAULT_PROVIDER_TIMEOUT_MS = 30000;
+const MIN_PROVIDER_TIMEOUT_MS = 5000;
+const MAX_PROVIDER_TIMEOUT_MS = 120000;
+
 const PROVIDER_STATUSES = Object.freeze({
   READY: 'ready',
   NOT_CONFIGURED: 'not_configured',
   NOT_IMPLEMENTED: 'not_implemented',
   AUTHORIZATION_REQUIRED: 'authorization_required',
+  TIMEOUT: 'timeout',
   ERROR: 'error',
 });
 
@@ -104,6 +109,12 @@ function hasRequiredEnv(requiredEnv = []) {
   return requiredEnv.every((name) => Boolean(String(process.env[name] || '').trim()));
 }
 
+function normalizeTimeoutMs(value = process.env.SOCIAL_PROVIDER_TIMEOUT_MS) {
+  const timeoutMs = Number(value);
+  if (!Number.isFinite(timeoutMs)) return DEFAULT_PROVIDER_TIMEOUT_MS;
+  return Math.min(MAX_PROVIDER_TIMEOUT_MS, Math.max(MIN_PROVIDER_TIMEOUT_MS, Math.round(timeoutMs)));
+}
+
 function getProvider(platform) {
   const provider = providerDefinitions[String(platform || '').toLowerCase()] || null;
   if (!provider) return null;
@@ -138,13 +149,89 @@ function listProviders() {
     .map(getProvider);
 }
 
-async function checkAccount(account = {}) {
+function unavailableResult(provider, account, error) {
+  return {
+    success: false,
+    status: provider.status,
+    providerStatus: provider.status,
+    platform: provider.id,
+    provider: provider.label,
+    accountId: account.accountId,
+    username: account.username,
+    supportedAlertTypes: provider.supportedAlertTypes,
+    capabilities: provider.capabilities,
+    checkedAt: new Date().toISOString(),
+    responseTimeMs: 0,
+    error,
+  };
+}
+
+function timeoutResult(provider, account, timeoutMs, startedAt) {
+  return {
+    success: false,
+    status: PROVIDER_STATUSES.TIMEOUT,
+    providerStatus: PROVIDER_STATUSES.TIMEOUT,
+    platform: provider.id,
+    provider: provider.label,
+    accountId: account.accountId,
+    username: account.username,
+    supportedAlertTypes: provider.supportedAlertTypes,
+    capabilities: provider.capabilities,
+    checkedAt: new Date().toISOString(),
+    responseTimeMs: Date.now() - startedAt,
+    timedOut: true,
+    timeoutMs,
+    error: `${provider.label} provider check timed out after ${timeoutMs}ms.`,
+  };
+}
+
+async function executeWithTimeout(provider, account, timeoutMs) {
+  const startedAt = Date.now();
+  let timeoutRef;
+  const timeout = new Promise((resolve) => {
+    timeoutRef = setTimeout(() => resolve(timeoutResult(provider, account, timeoutMs, startedAt)), timeoutMs);
+    timeoutRef.unref?.();
+  });
+
+  try {
+    const providerCheck = Promise.resolve()
+      .then(() => provider.handler.checkAccount(account))
+      .then((result) => ({
+        ...(result || {}),
+        platform: result?.platform || provider.id,
+        provider: result?.provider || provider.label,
+        providerStatus: result?.providerStatus || result?.status || (result?.success ? PROVIDER_STATUSES.READY : PROVIDER_STATUSES.ERROR),
+        checkedAt: result?.checkedAt || new Date().toISOString(),
+        responseTimeMs: Number(result?.responseTimeMs || Date.now() - startedAt),
+      }))
+      .catch((error) => ({
+        success: false,
+        status: PROVIDER_STATUSES.ERROR,
+        providerStatus: PROVIDER_STATUSES.ERROR,
+        platform: provider.id,
+        provider: provider.label,
+        accountId: account.accountId,
+        username: account.username,
+        checkedAt: new Date().toISOString(),
+        responseTimeMs: Date.now() - startedAt,
+        error: error?.message || String(error),
+      }));
+
+    return await Promise.race([providerCheck, timeout]);
+  } finally {
+    clearTimeout(timeoutRef);
+  }
+}
+
+async function checkAccount(account = {}, options = {}) {
   const provider = getProvider(account.platform);
   if (!provider) {
     return {
       success: false,
       status: PROVIDER_STATUSES.ERROR,
       providerStatus: PROVIDER_STATUSES.ERROR,
+      checkedAt: new Date().toISOString(),
+      responseTimeMs: 0,
       error: `Unsupported social platform: ${account.platform || 'unknown'}`,
     };
   }
@@ -155,33 +242,27 @@ async function checkAccount(account = {}) {
       : provider.status === PROVIDER_STATUSES.NOT_CONFIGURED
         ? `${provider.label} provider is missing global Goliath credentials.`
         : `${provider.label} provider polling is not implemented yet.`;
-    return {
-      success: false,
-      status: provider.status,
-      providerStatus: provider.status,
-      platform: provider.id,
-      provider: provider.label,
-      accountId: account.accountId,
-      username: account.username,
-      supportedAlertTypes: provider.supportedAlertTypes,
-      capabilities: provider.capabilities,
-      checkedAt: new Date().toISOString(),
-      error,
-    };
+    return unavailableResult(provider, account, error);
   }
 
-  if (typeof provider.handler?.checkAccount === 'function') return provider.handler.checkAccount(account);
-  return {
-    success: false,
-    status: PROVIDER_STATUSES.ERROR,
-    providerStatus: PROVIDER_STATUSES.ERROR,
-    error: `${provider.label} provider handler is unavailable.`,
-  };
+  if (typeof provider.handler?.checkAccount !== 'function') {
+    return unavailableResult(
+      { ...provider, status: PROVIDER_STATUSES.ERROR },
+      account,
+      `${provider.label} provider handler is unavailable.`
+    );
+  }
+
+  return executeWithTimeout(provider, account, normalizeTimeoutMs(options.timeoutMs));
 }
 
 module.exports = {
+  DEFAULT_PROVIDER_TIMEOUT_MS,
+  MIN_PROVIDER_TIMEOUT_MS,
+  MAX_PROVIDER_TIMEOUT_MS,
   PROVIDER_STATUSES,
   DEFAULT_CAPABILITIES,
+  normalizeTimeoutMs,
   getProvider,
   listProviders,
   checkAccount,
