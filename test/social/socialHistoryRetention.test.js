@@ -48,6 +48,27 @@ test('history retention still enforces the global maximum', () => {
   assert.equal(retained.at(-1).id, `alert-${history.MAX_HISTORY - 1}`);
 });
 
+test('incident capacity reports empty, partial and saturated usage', () => {
+  assert.deepEqual(history.incidentCapacity(), {
+    used: 0,
+    limit: history.MAX_INCIDENT_HISTORY,
+    remaining: history.MAX_INCIDENT_HISTORY,
+    saturated: false,
+  });
+  assert.deepEqual(history.incidentCapacity(37), {
+    used: 37,
+    limit: history.MAX_INCIDENT_HISTORY,
+    remaining: 63,
+    saturated: false,
+  });
+  assert.deepEqual(history.incidentCapacity(250), {
+    used: history.MAX_INCIDENT_HISTORY,
+    limit: history.MAX_INCIDENT_HISTORY,
+    remaining: 0,
+    saturated: true,
+  });
+});
+
 test('normalization and event type constants are stable', () => {
   const normalized = history.normalizeEntry({ eventType: history.INCIDENT_EVENT_TYPE, status: 'failed' });
   assert.equal(normalized.eventType, 'provider_incident');
