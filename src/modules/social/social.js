@@ -6,6 +6,7 @@ const socialRuntime = require('./socialRuntime');
 module.exports = {
   ...socialRuntime,
   store: socialStore,
+  http: require('./socialHttp'),
 };
 
 Object.defineProperty(module.exports, 'health', {
