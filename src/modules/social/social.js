@@ -19,6 +19,7 @@ module.exports = {
   providerIncidents: require('./socialProviderIncidents'),
   incidentReporter: require('./socialIncidentReporter'),
   incidentMonitor,
+  incidentDiagnostics: require('./socialIncidentDiagnostics'),
   pollingPolicy: require('./socialPollingPolicy'),
 };
 
