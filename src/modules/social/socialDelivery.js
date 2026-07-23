@@ -4,6 +4,7 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('
 const socialStore = require('./socialStore');
 const socialHistory = require('./socialHistory');
 const socialManager = require('./socialManager');
+const deliveryGuard = require('./socialDeliveryGuard');
 
 function clean(value, fallback = '', max = 4096) { return String(value ?? fallback).trim().slice(0, max); }
 function replaceVariables(value, variables) {
@@ -49,14 +50,13 @@ function mention(account) {
 function enqueue(guildId, account, result, reason, error, meta) {
   return require('./socialQueue').enqueue(guildId, { accountId: account.accountId, platform: account.platform, alertType: result.alertType || 'post', contentId: result.contentId, providerResult: result, reason, lastError: error || null }, meta);
 }
-async function deliver(guildId, account, result, client, meta = {}) {
-  if ((result.alertType || 'live') === 'live') return socialManager.sendLiveAlert(guildId, account, result, client, meta);
+
+async function deliverUnlocked(guildId, account, result, client, meta = {}) {
+  if ((result.alertType || 'live') === 'live') {
+    return socialManager.sendLiveAlert(guildId, account, result, client, { ...meta, bypassDuplicate: true });
+  }
   const type = result.alertType || 'post';
   if (!result.contentId) return { success: false, skipped: true, reason: 'content_missing' };
-  if (meta.bypassDuplicate !== true && account.lastSeen?.lastContentId === result.contentId) {
-    socialHistory.record(guildId, { status: 'suppressed', eventType: 'duplicate', accountId: account.accountId, creator: account.displayName, platform: account.platform, alertType: type, contentId: result.contentId, title: result.title, reason: 'duplicate_content' }, meta);
-    return { success: false, skipped: true, reason: 'duplicate_content' };
-  }
   if (meta.bypassQueue !== true && socialManager.isQuietHours(guildId, account)) {
     const queued = enqueue(guildId, account, result, 'quiet_hours', null, meta);
     return { success: false, queued: true, queueId: queued.item.id, reason: queued.duplicate ? 'already_queued' : 'quiet_hours' };
@@ -87,6 +87,11 @@ async function deliver(guildId, account, result, client, meta = {}) {
     }
     return { success: false, error: error.message };
   }
+}
+
+async function deliver(guildId, account, result, client, meta = {}) {
+  if (!result?.contentId) return { success: false, skipped: true, reason: 'content_missing' };
+  return deliveryGuard.run(guildId, account, result, meta, (freshAccount) => deliverUnlocked(guildId, freshAccount, result, client, meta));
 }
 
 module.exports = { buildEmbed, deliver };
