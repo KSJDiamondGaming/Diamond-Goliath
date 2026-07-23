@@ -6,10 +6,6 @@ const {
 } = require('../../modules/tickets/ticketSocketEvents');
 
 const {
-  setSocketProvider: setFormSocketProvider,
-} = require('../../modules/forms/formSocketEvents');
-
-const {
   setSocketProvider: setEmbedSocketProvider,
 } = require('../../modules/embed/embedSocketEvents');
 
@@ -48,7 +44,6 @@ function initSocketHub(server, options = {}) {
   });
 
   setTicketSocketProvider(() => io);
-  setFormSocketProvider(() => io);
   setEmbedSocketProvider(() => io);
   setCaseSocketProvider(() => io);
 
