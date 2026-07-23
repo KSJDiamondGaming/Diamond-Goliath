@@ -2,10 +2,6 @@ let io = null;
 const botListeners = new Set();
 
 const {
-  setSocketProvider: setEmbedSocketProvider,
-} = require('../../modules/embed/embedSocketEvents');
-
-const {
   setSocketProvider: setCaseSocketProvider,
 } = require('../../core/logging/cases/caseSocketEvents');
 
@@ -35,7 +31,6 @@ function initSocketHub(server, options = {}) {
     },
   });
 
-  setEmbedSocketProvider(() => io);
   setCaseSocketProvider(() => io);
 
   io.on('connection', (socket) => {
