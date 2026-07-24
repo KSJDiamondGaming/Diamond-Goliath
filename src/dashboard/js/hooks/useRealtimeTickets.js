@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react';
 import {
   joinGuildRoom,
   onSocketEvent,
-  listenForRealtimeFeed,
 } from '../services/socketClient';
 
 const MAX_EVENTS = 100;
@@ -58,7 +57,7 @@ export function useRealtimeTickets(guildId) {
         setEvents((prev) => addEvent(prev, event));
       }),
 
-      listenForRealtimeFeed((event) => {
+      onSocketEvent('goliath_realtime_event', (event) => {
         setEvents((prev) => addEvent(prev, event));
       }),
     ];
