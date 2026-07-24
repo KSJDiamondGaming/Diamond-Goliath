@@ -6,6 +6,7 @@ const assert = require('node:assert/strict');
 const social = require('../../src/modules/social/social');
 
 const client = { guilds: { cache: new Map() } };
+const guildId = '999999999999999992';
 
 test.afterEach(() => {
   social.shutdown(client);
@@ -49,7 +50,7 @@ test('runtime health reports stopped services as explicit errors', () => {
 });
 
 test('runtime health can include a guild queue summary', () => {
-  const snapshot = social.runtimeHealth.status({ guildId: 'guild-runtime-health' });
+  const snapshot = social.runtimeHealth.status({ guildId });
 
   assert.deepEqual(snapshot.queue.summary, {
     total: 0,
