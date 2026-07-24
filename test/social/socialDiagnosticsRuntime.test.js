@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const social = require('../../src/modules/social/social');
 
 const client = { guilds: { cache: new Map() } };
-const guildId = 'guild-diagnostics-runtime';
+const guildId = '999999999999999991';
 
 test.afterEach(() => {
   social.shutdown(client);
