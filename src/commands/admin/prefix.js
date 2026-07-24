@@ -59,8 +59,8 @@ module.exports = {
   },
 
   access: {
+    level: 'admin',
     ownerOnly: false,
-    permissions: [PermissionFlagsBits.ManageGuild],
   },
 
   data: new SlashCommandBuilder()
