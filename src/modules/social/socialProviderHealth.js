@@ -366,7 +366,7 @@ function analytics(state, now) {
 }
 
 function snapshot(provider, now = Date.now()) {
-  const state = refresh(stateFor(provider), now);
+  const state = stateFor(provider);
   return {
     ...state,
     failureThreshold: failureThreshold(),
