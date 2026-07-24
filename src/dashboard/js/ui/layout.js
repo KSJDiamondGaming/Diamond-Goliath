@@ -19,7 +19,7 @@ const TimedRoles = lazy(() => import('../pages/modules/TimedRoles'));
 const Welcome = lazy(() => import('../pages/modules/Welcome'));
 const Goodbye = lazy(() => import('../pages/modules/Goodbye'));
 const Tickets = lazy(() => import('../pages/modules/tickets/TicketsWorkflowEnhanced'));
-const Social = lazy(() => import('../pages/modules/Social'));
+const Social = lazy(() => import('../pages/modules/SocialWithRuntime'));
 const Schedule = lazy(() => import('../pages/modules/Schedule'));
 const Invites = lazy(() => import('../pages/modules/Invites'));
 const Giveaways = lazy(() => import('../pages/modules/Giveaways'));
@@ -110,7 +110,7 @@ export const ROUTES = [
   { key: 'tempVoice', label: 'Temp Voice', icon: 'modules', path: '/tempvoice', component: TempVoice, hidden: true },
   { key: 'tickets', label: 'Tickets', icon: 'modules', path: '/tickets', component: Tickets, hidden: true },
   { key: 'timeline', label: 'Timeline', icon: 'modules', path: '/timeline', component: Timeline, hidden: true },
-  { key: 'translation', label: 'Translation', icon: 'modules', path: '/translation', component: Translation, hidden: true },
+  { key: 'translation', label: 'Translation Hub', icon: 'modules', path: '/translation', component: Translation, hidden: true },
   { key: 'generalSettings', label: 'General Settings', icon: 'generalSettings', path: '/generalSettings', component: GeneralSettings },
   { key: 'automod', label: 'AutoMod', icon: 'automod', path: '/automod', component: AutoMod },
   { key: 'admin', label: 'Admin', icon: 'admin', path: '/admin', component: Admin },
