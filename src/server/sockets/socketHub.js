@@ -1,5 +1,4 @@
 let io = null;
-const botListeners = new Set();
 
 function normaliseGuildId(guildId) {
   const id = String(guildId || '').trim();
@@ -51,18 +50,6 @@ function initSocketHub(server, options = {}) {
   return io;
 }
 
-function onGuildUpdate(listener) {
-  if (typeof listener !== 'function') {
-    return () => {};
-  }
-
-  botListeners.add(listener);
-
-  return () => {
-    botListeners.delete(listener);
-  };
-}
-
 function emitGuildUpdate(guildId, payload = {}) {
   const id = normaliseGuildId(guildId);
 
@@ -81,14 +68,6 @@ function emitGuildUpdate(guildId, payload = {}) {
 
   if (io) {
     io.to(getRoomName(id)).emit('guild:update', update);
-  }
-
-  for (const listener of botListeners) {
-    try {
-      listener(update);
-    } catch (error) {
-      console.error('Guild update listener failed:', error);
-    }
   }
 
   return update;
@@ -112,7 +91,6 @@ function emitDirectSyncEvent(guildId, event, update) {
 
 module.exports = {
   initSocketHub,
-  onGuildUpdate,
   emitGuildUpdate,
   emitDirectSyncEvent,
   emitRoomEvent,
