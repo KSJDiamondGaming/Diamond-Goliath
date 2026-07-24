@@ -25,12 +25,8 @@ const {
 } = require('./defaults');
 
 const {
-  LEGACY_SECTION_MAP,
-  LEGACY_TOP_LEVEL_SECTIONS,
   getRoutedSection,
   setRoutedSection,
-  removeLegacyTopLevelSections,
-  hasLegacyTopLevelSections,
 } = require('./sectionRouting');
 
 const runtimePaths = getRuntimePaths(process.env.BOT_MODE || 'DEV');
@@ -331,7 +327,7 @@ function buildModules(source = {}) {
 
 function mergeDefaults(data = {}) {
   const source = isPlainObject(data) ? data : {};
-  const base = removeLegacyTopLevelSections(mergeDeep(DEFAULT_GUILD_DATA, source));
+  const base = mergeDeep(DEFAULT_GUILD_DATA, source);
 
   return {
     guildId: source.guildId || base.guildId || null,
@@ -374,8 +370,7 @@ function getGuildData(guildId, options = {}) {
     !exists ||
     !isPlainObject(rawData.modules) ||
     !isPlainObject(rawData.subscription) ||
-    hasMissingDefaultModules(rawData) ||
-    hasLegacyTopLevelSections(rawData);
+    hasMissingDefaultModules(rawData);
 
   if (needsRewrite) {
     data.updatedAt = now();
@@ -713,9 +708,6 @@ module.exports = {
   DEFAULT_GENERAL_SETTINGS,
   DEFAULT_TICKETS,
   DEFAULT_MODULES,
-
-  LEGACY_SECTION_MAP,
-  LEGACY_TOP_LEVEL_SECTIONS,
 
   getGuildFilePath,
 
