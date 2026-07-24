@@ -260,24 +260,6 @@ export function listenForFormAnalyticsUpdated(callback) {
 
 /*
 |--------------------------------------------------------------------------
-| Embed Events
-|--------------------------------------------------------------------------
-*/
-
-export function listenForEmbedUpdated(callback) {
-  return onSocketEvent('embed.updated', callback);
-}
-
-export function listenForEmbedStatusUpdated(callback) {
-  return onSocketEvent('embed.status.updated', callback);
-}
-
-export function listenForEmbedDeleted(callback) {
-  return onSocketEvent('embed.deleted', callback);
-}
-
-/*
-|--------------------------------------------------------------------------
 | Global Feed
 |--------------------------------------------------------------------------
 */
