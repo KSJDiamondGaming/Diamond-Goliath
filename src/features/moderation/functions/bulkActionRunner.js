@@ -19,7 +19,7 @@ const {
   safeEditReply,
 } = require('../../../core/ui/interactionResponse');
 
-const { applyPunishmentEngine } = require('../../automod/functions/punishmentEngine');
+const { applyPunishmentEngine } = require('../../../core/automod/punishmentEngine');
 
 // If this path is different in your project, only change this line.
 const { sendModLog } = require('../../../core/logging/modlogs/moderationActionLog');
