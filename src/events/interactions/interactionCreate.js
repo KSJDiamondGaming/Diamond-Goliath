@@ -11,7 +11,7 @@ function optionalRequire(label, modulePath, fallback = {}) {
   }
 }
 
-const verificationManager = optionalRequire('verification manager', '../../modules/verification/verification');
+const verificationManager = optionalRequire('verification manager', '../../modules/verification/verificationManager');
 const ticketInteractionHandler = optionalRequire('tickets', '../../modules/tickets/tickets');
 const polls = optionalRequire('polls', '../../modules/polls/polls');
 const tempVoiceInteractionHandler = optionalRequire('temp voice', '../../modules/tempvoice/tempVoiceInteractionHandler');
