@@ -6,15 +6,14 @@ Server administrators only enter public creator information: a username, handle,
 
 ## Canonical structure
 
-Social Studio is being consolidated into one five-file module under `src/modules/socialStudio/`:
+Social Studio's canonical backend implementation lives under `src/modules/social/`.
 
-- `social.js` — canonical module entry
-- `socialStore.js` — storage, defaults, migrations, analytics, queue state, and history state
-- `socialRuntime.js` — providers, polling, creators, simulation, delivery, queue, history, diagnostics, health, repair, export, and reset
-- `socialPanel.js` — the single Discord Social Studio administration surface
-- `socialRoute.js` — the single Social Studio API route
+- `social.js` — canonical module entry and public runtime contract
+- `socialRoute.js` — canonical Social Studio API route
+- colocated Social runtime files — storage, providers, polling, creators, simulation, delivery, queue, history, diagnostics, health, repair, export, and reset
+- `src/dashboard/js/pages/modules/Social.jsx` — dashboard management surface
 
-The storage key remains `social`. Runtime helper files, duplicate Creator Hub panels/routes, compatibility wrappers, and the legacy `providers/` folder are absorbed into the five canonical files rather than retained as parallel implementations.
+The storage key remains `social`. Runtime helpers may remain separated where they own a distinct responsibility, but duplicate module roots, compatibility wrappers, duplicate Creator Hub routes, and parallel provider implementations are not permitted.
 
 ## Zero-credential setup
 
@@ -170,14 +169,13 @@ Accounts, creator profiles, and the module receive scores based on identifiers, 
 
 `npm run doctor` runs the main repository Doctor and the Social Studio checks.
 
-The final Social Studio Doctor contract validates:
+The Social Studio Doctor contract validates:
 
-- The module lives at `src/modules/socialStudio/`
-- Exactly five canonical module files exist
-- No legacy `src/modules/social/` implementation remains
+- The canonical backend module lives at `src/modules/social/`
+- No duplicate Social Studio module root exists
 - No duplicate Creator Hub panel or route remains
-- No helper wrapper or nested provider implementation remains
-- The canonical panel, route, runtime, and store import successfully
+- No compatibility wrapper or nested duplicate provider implementation remains
+- The canonical module entry and route import successfully
 - The dashboard surface and module registry remain connected
 - The storage key remains `social`
 - Documentation matches the deployed architecture
