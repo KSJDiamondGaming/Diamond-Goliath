@@ -5,7 +5,6 @@ const {
   saveModuleSection,
   updateModuleSection,
 } = require('../guild/moduleSectionManager');
-const guildManager = require('../guild/guildManager');
 
 const MODULE = 'logging';
 
@@ -176,22 +175,10 @@ function normalizeLoggingSection(value = {}) {
   };
 }
 
-function getLegacyConfig(guildId) {
-  const legacy = guildManager.getGuildSection(guildId, 'logs', null);
-  return legacy && typeof legacy === 'object' ? legacy : null;
-}
-
 function getLoggingSection(guildId) {
   const stored = getModuleSection(guildId, MODULE, null);
   if (stored && typeof stored === 'object' && Object.keys(stored).length) {
     return normalizeLoggingSection(stored);
-  }
-
-  const legacy = getLegacyConfig(guildId);
-  if (legacy) {
-    const migrated = normalizeLoggingSection({ ...legacy, enabled: legacy.enabled !== false });
-    saveModuleSection(guildId, MODULE, migrated, { action: 'logging_legacy_migration' });
-    return migrated;
   }
 
   return defaultLoggingSection();
