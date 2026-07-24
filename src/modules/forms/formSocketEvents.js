@@ -4,7 +4,6 @@
 
 const {
   emitGuildUpdate,
-  emitDirectSyncEvent,
 } = require('../../server/sockets/socketHub');
 
 const EVENTS = Object.freeze({
@@ -41,10 +40,6 @@ function emit(event, guildId, data = {}) {
   const update = emitGuildUpdate(guildId, payload);
 
   if (!update) return payload;
-
-  for (const eventName of [event, 'goliath_realtime_event']) {
-    emitDirectSyncEvent(guildId, eventName, update);
-  }
 
   return update;
 }
