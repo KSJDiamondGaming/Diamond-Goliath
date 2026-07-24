@@ -5,7 +5,6 @@
 const notifications = require('../../core/notifications/notificationStore');
 const {
   emitGuildUpdate,
-  emitDirectSyncEvent,
   emitRoomEvent,
 } = require('../../server/sockets/socketHub');
 
@@ -62,7 +61,6 @@ function emit(event, guildId, data = {}) {
   );
 
   for (const eventName of eventNames) {
-    emitDirectSyncEvent(guildId, eventName, update);
     emitRoomEvent(TICKET_ROOM, eventName, update);
   }
 
