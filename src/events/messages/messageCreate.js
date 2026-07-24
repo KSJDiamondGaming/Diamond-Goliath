@@ -7,15 +7,6 @@ const translationThreadManager = require('../../modules/translation/translationT
 const statsManager = require('../../modules/stats/statsManager');
 const levelingManager = require('../../modules/leveling/levelingManager');
 
-let runAutomod = async () => false;
-try {
-  const automodService = require('../../modules/automod/functions/service');
-  if (typeof automodService?.runAutomod === 'function') runAutomod = automodService.runAutomod;
-} catch (error) {
-  if (error?.code !== 'MODULE_NOT_FOUND') throw error;
-  console.warn('[messageCreate] AutoMod service unavailable; continuing without AutoMod hook.');
-}
-
 module.exports = {
   name: Events.MessageCreate,
 
@@ -24,7 +15,6 @@ module.exports = {
       if (!message.guild || !message.member) return;
       if (!message.content || message.author?.bot) return;
 
-      await runAutomod(message, client);
       await statsManager.handleMessageCreate(message);
       await levelingManager.handleMessageCreate(message);
 
