@@ -2,14 +2,6 @@ import { io } from 'socket.io-client';
 
 let socket = null;
 
-function resolveSocketUrl() {
-  if (typeof window !== 'undefined' && window.location) {
-    return window.location.origin;
-  }
-
-  return undefined;
-}
-
 function resolveGuildId(guild) {
   if (!guild) return '';
 
@@ -80,7 +72,12 @@ function resolveGuildUpdateData(event) {
 
 function getSocket() {
   if (!socket) {
-    socket = io(resolveSocketUrl(), {
+    const socketUrl =
+      typeof window !== 'undefined' && window.location
+        ? window.location.origin
+        : undefined;
+
+    socket = io(socketUrl, {
       transports: ['websocket'],
       withCredentials: true,
       autoConnect: true,
