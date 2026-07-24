@@ -15,9 +15,9 @@
     "promote:beta": "node scripts/goliath.js promote beta",
     "promote:production": "node scripts/goliath.js promote production",
     "sync:commands": "node scripts/goliath.js sync-commands",
-    "doctor": "node scripts/goliath.js doctor",
-    "doctor:social": "node scripts/goliath.js doctor social",
-    "audit": "node scripts/goliath.js audit"
+    "doctor": "node scripts/goliath.js doctor && node scripts/social-runtime-doctor.js",
+    "doctor:social": "node scripts/goliath.js doctor social && node scripts/social-runtime-doctor.js",
+    "audit": "node scripts/goliath.js audit && node scripts/social-runtime-doctor.js"
   },
   "dependencies": {
     "better-sqlite3": "^12.8.0",
