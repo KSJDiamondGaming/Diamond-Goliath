@@ -9,7 +9,7 @@ const {
   showModalSafe,
   updateOrReply,
 } = require('../../core/admin/functions/handlers/adminHandlerUtils');
-const { buildStarboardPayload } = require('../../core/admin/functions/adminRegisteredModulePayloads');
+const { buildStarboardAdminPanel } = require('./starboardAdminPanel');
 
 function buildStarboardConfigModal() {
   return new ModalBuilder()
@@ -39,7 +39,11 @@ async function handleStarboardConfigModal(interaction) {
     threshold: numberOr(getModalValue(interaction, 'threshold'), 3, 1, 50),
     emoji: getModalValue(interaction, 'emoji', '⭐'),
   });
-  await updateOrReply(interaction, buildStarboardPayload(interaction));
+  const memberDisplayName = interaction.member?.displayName
+    || interaction.user?.displayName
+    || interaction.user?.username
+    || 'Unknown User';
+  await updateOrReply(interaction, buildStarboardAdminPanel(interaction.guild, memberDisplayName));
   return true;
 }
 
