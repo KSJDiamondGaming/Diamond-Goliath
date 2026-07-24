@@ -324,10 +324,7 @@ export function disconnectSocket() {
   }
 }
 
-export { socket };
-
 export default {
-  socket,
   getSocket,
   disconnectSocket,
   joinGuildRoom,
