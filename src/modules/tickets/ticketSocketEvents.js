@@ -40,12 +40,22 @@ function notify(guildId, payload = {}) {
   }
 }
 
-function emitPayload(guildId, payload) {
+function emit(event, guildId, data = {}) {
+  const timestamp = new Date().toISOString();
+  const payload = {
+    module: 'tickets',
+    event,
+    guildId: String(guildId),
+    timestamp,
+    updatedAt: timestamp,
+    data,
+  };
+
   const update = emitGuildUpdate(guildId, payload);
   if (!update) return payload;
 
   const eventNames = [
-    payload.event,
+    event,
     'goliath_realtime_event',
   ].filter((eventName, index, list) =>
     eventName && list.indexOf(eventName) === index
@@ -57,19 +67,6 @@ function emitPayload(guildId, payload) {
   }
 
   return update;
-}
-
-function emit(event, guildId, data = {}) {
-  const timestamp = new Date().toISOString();
-
-  return emitPayload(guildId, {
-    module: 'tickets',
-    event,
-    guildId: String(guildId),
-    timestamp,
-    updatedAt: timestamp,
-    data,
-  });
 }
 
 function emitForTicket(_io, ticket, event, data = {}) {
