@@ -2,6 +2,7 @@
 
 const express = require('express');
 const polls = require('./polls');
+const pollsManager = require('./pollsManager');
 const pollsHealth = require('./pollsHealth');
 
 const router = express.Router();
@@ -59,8 +60,8 @@ function normalizeSettingsPayload(body = {}) {
 router.get('/:guildId', (req, res) => {
   try {
     const guildId = getGuildId(req);
-    const config = polls.getSection(guildId);
-    const pollList = Object.values(config.polls || {}).map(polls.summarizePoll).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+    const config = pollsManager.getSection(guildId);
+    const pollList = Object.values(config.polls || {}).map(pollsManager.summarizePoll).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
     return success(res, {
       guildId,
       config: { ...publicConfig(config), polls: pollList },
@@ -100,9 +101,9 @@ router.get('/:guildId/export', (req, res) => {
 router.patch('/:guildId/enabled', (req, res) => {
   try {
     const guildId = getGuildId(req);
-    const config = polls.getSection(guildId);
+    const config = pollsManager.getSection(guildId);
     config.enabled = req.body?.enabled === true;
-    return success(res, { guildId, config: publicConfig(polls.saveSection(guildId, config, actor(req))) });
+    return success(res, { guildId, config: publicConfig(pollsManager.saveSection(guildId, config, actor(req))) });
   } catch (error) {
     return failure(res, error, 400);
   }
@@ -111,14 +112,14 @@ router.patch('/:guildId/enabled', (req, res) => {
 router.patch('/:guildId/settings', (req, res) => {
   try {
     const guildId = getGuildId(req);
-    const config = polls.getSection(guildId);
+    const config = pollsManager.getSection(guildId);
     const incoming = normalizeSettingsPayload(req.body || {});
     config.settings = { ...(config.settings || {}), ...incoming };
     if (Object.prototype.hasOwnProperty.call(incoming, 'defaultChannelId')) config.defaultChannelId = incoming.defaultChannelId || null;
     if (Object.prototype.hasOwnProperty.call(incoming, 'anonymousVotes')) config.anonymousVoting = incoming.anonymousVotes === true;
     if (Object.prototype.hasOwnProperty.call(incoming, 'allowMultipleVotes')) config.allowMultipleChoice = incoming.allowMultipleVotes === true;
     if (Object.prototype.hasOwnProperty.call(incoming, 'showResultsLive')) config.showResultsLive = incoming.showResultsLive !== false;
-    return success(res, { guildId, config: publicConfig(polls.saveSection(guildId, config, actor(req))) });
+    return success(res, { guildId, config: publicConfig(pollsManager.saveSection(guildId, config, actor(req))) });
   } catch (error) {
     return failure(res, error, 400);
   }
@@ -149,8 +150,8 @@ router.post('/:guildId/reset', async (req, res) => {
 router.post('/:guildId/polls', (req, res) => {
   try {
     const guildId = getGuildId(req);
-    const result = polls.createPoll(guildId, req.body || {}, actor(req));
-    return success(res, { guildId, poll: polls.summarizePoll(result.poll), config: publicConfig(result.section) });
+    const result = pollsManager.createPoll(guildId, req.body || {}, actor(req));
+    return success(res, { guildId, poll: pollsManager.summarizePoll(result.poll), config: publicConfig(result.section) });
   } catch (error) {
     return failure(res, error, 400);
   }
@@ -159,8 +160,8 @@ router.post('/:guildId/polls', (req, res) => {
 router.put('/:guildId/polls/:pollId', (req, res) => {
   try {
     const guildId = getGuildId(req);
-    const result = polls.updatePoll(guildId, req.params.pollId, req.body || {}, actor(req));
-    return success(res, { guildId, poll: polls.summarizePoll(result.poll), config: publicConfig(result.section) });
+    const result = pollsManager.updatePoll(guildId, req.params.pollId, req.body || {}, actor(req));
+    return success(res, { guildId, poll: pollsManager.summarizePoll(result.poll), config: publicConfig(result.section) });
   } catch (error) {
     return failure(res, error, 400);
   }
@@ -172,7 +173,7 @@ router.post('/:guildId/polls/:pollId/deploy', async (req, res) => {
     const guild = await getGuild(req, guildId);
     if (!guild) throw new Error('Guild is unavailable.');
     const result = await polls.deployPoll(guild, req.params.pollId, req.body?.channelId, actor(req));
-    return success(res, { guildId, poll: polls.summarizePoll(result.poll), messageId: result.messageId, redeployed: result.redeployed, config: publicConfig(result.section) });
+    return success(res, { guildId, poll: pollsManager.summarizePoll(result.poll), messageId: result.messageId, redeployed: result.redeployed, config: publicConfig(result.section) });
   } catch (error) {
     return failure(res, error, 400);
   }
@@ -184,7 +185,7 @@ router.patch('/:guildId/polls/:pollId/status', async (req, res) => {
     const guild = await getGuild(req, guildId);
     if (!guild) throw new Error('Guild is unavailable.');
     const result = await polls.setPollStatus(guild, req.params.pollId, req.body?.status, actor(req));
-    return success(res, { guildId, poll: polls.summarizePoll(result.poll), config: publicConfig(result.section) });
+    return success(res, { guildId, poll: pollsManager.summarizePoll(result.poll), config: publicConfig(result.section) });
   } catch (error) {
     return failure(res, error, 400);
   }
