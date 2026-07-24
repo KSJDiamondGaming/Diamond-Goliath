@@ -17,6 +17,7 @@ const {
 } = require('discord.js');
 
 const polls = require('./polls');
+const pollsManager = require('./pollsManager');
 const pollsHealth = require('./pollsHealth');
 
 function row(...components) {
@@ -41,13 +42,13 @@ function formatRoles(ids = []) {
 }
 
 function updateSection(guild, updater, actorId = null) {
-  const current = polls.getSection(guild.id);
+  const current = pollsManager.getSection(guild.id);
   const next = typeof updater === 'function' ? updater(current) : { ...current, ...(updater || {}) };
-  return polls.saveSection(guild.id, next, { actorId });
+  return pollsManager.saveSection(guild.id, next, { actorId });
 }
 
 function mainPanel(guild, memberDisplayName = 'Unknown User') {
-  const section = polls.getSection(guild.id);
+  const section = pollsManager.getSection(guild.id);
   const pollList = Object.values(section.polls || {});
   const active = pollList.filter((poll) => poll.status === 'active').length;
 
@@ -92,7 +93,7 @@ function mainPanel(guild, memberDisplayName = 'Unknown User') {
 }
 
 function settingsPanel(guild, memberDisplayName) {
-  const section = polls.getSection(guild.id);
+  const section = pollsManager.getSection(guild.id);
   const embed = new EmbedBuilder()
     .setColor(0x5865f2)
     .setTitle('📊 Poll Settings')
@@ -122,7 +123,7 @@ function settingsPanel(guild, memberDisplayName) {
 }
 
 function managePanel(guild) {
-  const pollList = Object.values(polls.getSection(guild.id).polls || {})
+  const pollList = Object.values(pollsManager.getSection(guild.id).polls || {})
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
     .slice(0, 25);
 
@@ -151,10 +152,10 @@ function managePanel(guild) {
 }
 
 function pollDetailPanel(guild, pollId) {
-  const poll = polls.getPoll(guild.id, pollId);
+  const poll = pollsManager.getPoll(guild.id, pollId);
   if (!poll) throw new Error('Poll not found.');
-  const summary = polls.summarizePoll(poll);
-  const embed = polls.buildPollEmbed(poll);
+  const summary = pollsManager.summarizePoll(poll);
+  const embed = pollsManager.buildPollEmbed(poll);
   embed.addFields(
     { name: 'Status', value: poll.status, inline: true },
     { name: 'Responses', value: String(summary.totalVotes || 0), inline: true },
@@ -209,7 +210,7 @@ async function handlePollsAdminInteraction(interaction) {
       const options = interaction.fields.getTextInputValue('options').split(/\r?\n/).map((label) => label.trim()).filter(Boolean);
       if (options.length < 2) throw new Error('Enter at least two options on separate lines.');
       if (options.length > 10) throw new Error('A poll supports no more than ten options.');
-      const result = polls.createPoll(interaction.guild.id, { question, description, options: options.map((label) => ({ label })) }, { actorId });
+      const result = pollsManager.createPoll(interaction.guild.id, { question, description, options: options.map((label) => ({ label })) }, { actorId });
       await interaction.reply({ content: `Poll created: **${result.poll.question}**`, flags: MessageFlags.Ephemeral, ...pollDetailPanel(interaction.guild, result.poll.id) });
       return true;
     }
