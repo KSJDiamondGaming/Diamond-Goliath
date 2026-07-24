@@ -4,15 +4,37 @@ const socialStore = require('./socialStore');
 const socialRuntime = require('./socialRuntime');
 const incidentMonitor = require('./socialIncidentMonitor');
 
+const STARTUP_KEY = Symbol.for('goliath.social.startup');
+
 async function startup(client, options = {}) {
   const runtime = await socialRuntime.startup(client, options);
   const incidentTimer = incidentMonitor.start(client, options.incidents || {});
   return { ...runtime, incidentTimer };
 }
 
+function shutdown(client) {
+  const schedulerStopped = socialRuntime.scheduler.stopSocialScheduler();
+  const queueStopped = socialRuntime.queue.stop();
+  const incidentMonitorStopped = incidentMonitor.stop();
+  const hadStartupState = Boolean(client?.[STARTUP_KEY]);
+
+  if (client && Object.prototype.hasOwnProperty.call(client, STARTUP_KEY)) {
+    delete client[STARTUP_KEY];
+  }
+
+  return {
+    stopped: schedulerStopped || queueStopped || incidentMonitorStopped || hadStartupState,
+    schedulerStopped,
+    queueStopped,
+    incidentMonitorStopped,
+    startupStateCleared: hadStartupState,
+  };
+}
+
 module.exports = {
   ...socialRuntime,
   startup,
+  shutdown,
   store: socialStore,
   http: require('./socialHttp'),
   providerHealth: require('./socialProviderHealth'),
