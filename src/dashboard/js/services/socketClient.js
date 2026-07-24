@@ -78,7 +78,7 @@ function resolveGuildUpdateData(event) {
   return event.data || event.config || event.payload || event.state || event;
 }
 
-export function getSocket() {
+function getSocket() {
   if (!socket) {
     socket = io(resolveSocketUrl(), {
       transports: ['websocket'],
