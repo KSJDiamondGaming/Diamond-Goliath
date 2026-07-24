@@ -323,37 +323,3 @@ export function disconnectSocket() {
     socket = null;
   }
 }
-
-export default {
-  getSocket,
-  disconnectSocket,
-  joinGuildRoom,
-  onSocketEvent,
-  listenForGuildUpdate,
-  listenForTicketCreated,
-  listenForTicketUpdated,
-  listenForTicketClosed,
-  listenForTicketClaimed,
-  listenForTicketReopened,
-  listenForTicketArchived,
-  listenForTicketDeleted,
-  listenForTimelineEntry,
-  listenForPanelCreated,
-  listenForPanelUpdated,
-  listenForPanelDeleted,
-  listenForPanelDeployed,
-  listenForAnalyticsUpdated,
-  listenForFormUpdated,
-  listenForFormSubmitted,
-  listenForFormSubmissionUpdated,
-  listenForFormPanelUpdated,
-  listenForFormAnalyticsUpdated,
-  listenForEmbedUpdated,
-  listenForEmbedStatusUpdated,
-  listenForEmbedDeleted,
-  listenForCaseCreated,
-  listenForCaseUpdated,
-  listenForCaseStatusUpdated,
-  listenForCaseNoteUpdated,
-  listenForRealtimeFeed,
-};
