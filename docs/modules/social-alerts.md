@@ -99,6 +99,45 @@ Every supported content type follows one canonical path:
 
 Supported routes are live, upload, short, and post, with fallback to the account's default alert channel.
 
+## History API
+
+Operational and provider-incident history is available through:
+
+```text
+GET /api/social/:guildId/history
+```
+
+Supported query filters are:
+
+- `limit` — maximum records returned, clamped between 1 and 500
+- `status` — sent, failed, skipped, suppressed, queued, retried, or test
+- `eventType` — exact event type, including `provider_incident`
+- `accountId` — exact Social account ID
+- `platform` — platform identifier such as `twitch`
+- `alertType` — live, upload, short, or post
+
+Example provider-incident request:
+
+```text
+GET /api/social/123456789/history?eventType=provider_incident&status=failed&limit=25
+```
+
+The response includes the filtered `history` records and an unfiltered guild-level `summary`. The summary reports normal delivery totals together with provider-incident retention usage:
+
+```json
+{
+  "providerIncidents": 37,
+  "incidentCapacity": {
+    "used": 37,
+    "limit": 100,
+    "remaining": 63,
+    "saturated": false
+  }
+}
+```
+
+History retains at most 500 total records. Provider incidents are independently capped at 100 records so repeated provider failures cannot crowd operational delivery history out of storage. Records remain newest-first.
+
 ## Flagship management surfaces
 
 Discord and dashboard management include:
