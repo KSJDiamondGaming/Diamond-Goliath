@@ -7,6 +7,16 @@ const runtimeHealth = require('./socialRuntimeHealth');
 
 const STARTUP_KEY = Symbol.for('goliath.social.startup');
 
+const diagnostics = Object.freeze({
+  ...socialRuntime.diagnostics,
+  buildDiagnostics(guildId) {
+    return {
+      ...socialRuntime.diagnostics.buildDiagnostics(guildId),
+      runtime: runtimeHealth.status({ guildId }),
+    };
+  },
+});
+
 async function startup(client, options = {}) {
   const runtime = await socialRuntime.startup(client, options);
   const incidentTimer = incidentMonitor.start(client, options.incidents || {});
@@ -36,6 +46,7 @@ module.exports = {
   ...socialRuntime,
   startup,
   shutdown,
+  diagnostics,
   runtimeHealth,
   store: socialStore,
   http: require('./socialHttp'),
