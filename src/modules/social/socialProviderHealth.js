@@ -158,7 +158,7 @@ function restore(document = {}) {
 }
 
 function load() {
-  if (persistenceLoaded) return summary();
+  if (persistenceLoaded) return true;
   const document = fileStore.read(persistencePath(), { version: PERSIST_VERSION, providers: {} });
   return restore(document);
 }
