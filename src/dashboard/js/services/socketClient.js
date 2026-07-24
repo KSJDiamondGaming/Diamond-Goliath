@@ -144,7 +144,7 @@ export function onSocketEvent(eventName, callback) {
 
 export function listenForGuildUpdate(...args) {
   const callback = args.find((arg) => typeof arg === 'function');
-  const moduleName = args.length >= 3 ? args[1] : null;
+  const moduleName = args.length >= 3 ? args[1] : args[0];
 
   if (typeof callback !== 'function') {
     return () => {};
