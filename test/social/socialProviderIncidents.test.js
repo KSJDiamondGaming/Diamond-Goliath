@@ -61,7 +61,7 @@ test('stale provider transitions are not replayed after history retention expire
   assert.equal(incidents.transition({}, current, 61001), null);
 });
 
-test('a failed recovery probe creates an error incident', () => {
+test('a failed recovery probe creates a critical incident', () => {
   const current = {
     provider: 'kick',
     state: 'open',
@@ -70,7 +70,7 @@ test('a failed recovery probe creates an error incident', () => {
   };
   const incident = incidents.transition({}, current, 62000);
   assert.equal(incident.kind, 'recovery_failed');
-  assert.equal(incident.severity, 'error');
+  assert.equal(incident.severity, 'critical');
 });
 
 test('provider recovery includes the measured incident duration', () => {
