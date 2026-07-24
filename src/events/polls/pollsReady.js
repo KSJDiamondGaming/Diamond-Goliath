@@ -2,6 +2,7 @@
 
 const { Events } = require('discord.js');
 const polls = require('../../modules/polls/polls');
+const pollsManager = require('../../modules/polls/pollsManager');
 const pollsHealth = require('../../modules/polls/pollsHealth');
 
 module.exports = {
@@ -11,7 +12,7 @@ module.exports = {
     await polls.startup(client);
 
     for (const guild of client.guilds.cache.values()) {
-      const section = polls.getSection(guild.id);
+      const section = pollsManager.getSection(guild.id);
       if (section.enabled === false) continue;
       const result = await pollsHealth.repair(guild, {
         actorId: client.user?.id || null,
