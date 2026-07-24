@@ -2,7 +2,7 @@ const guildManager = require('../guild/guildManager');
 const { shouldUseDryRunForOwner } = require('../dev/testDevOverrideManager');
 
 const {
-  emitQuarantineUpdate,
+  emitGuildUpdate,
 } = require('../../server/sockets/socketHub');
 
 function emptyQuarantineState() {
@@ -38,10 +38,14 @@ function emitCurrentQuarantineState(
   extra = {}
 ) {
   try {
-    emitQuarantineUpdate(guild.id, {
-      action,
-      quarantine: getQuarantineState(guild.id),
-      ...extra,
+    emitGuildUpdate(guild.id, {
+      module: 'security',
+      event: 'security.quarantine.updated',
+      data: {
+        action,
+        quarantine: getQuarantineState(guild.id),
+        ...extra,
+      },
     });
   } catch (error) {
     console.warn(
