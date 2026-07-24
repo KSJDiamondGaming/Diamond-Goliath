@@ -20,12 +20,28 @@ const originals = {
 };
 
 test.after(() => {
+  monitor.stop();
   socialManager.getConfig = originals.getConfig;
   providerHealth.summary = originals.summary;
   providerIncidents.transition = originals.transition;
   providerIncidents.escalation = originals.escalation;
   incidentReporter.record = originals.record;
   incidentNotifier.notify = originals.notify;
+});
+
+test('monitor reports the normalized interval it actually started with', () => {
+  monitor.stop();
+  const client = { guilds: { cache: new Map() } };
+
+  monitor.start(client, { intervalMs: 12345 });
+
+  assert.deepEqual(monitor.status(), {
+    started: true,
+    intervalMs: 12345,
+    lastRun: null,
+  });
+  assert.equal(monitor.stop(), true);
+  assert.equal(monitor.status().started, false);
 });
 
 test('monitor notifies only newly recorded incidents', async () => {
