@@ -1,10 +1,4 @@
-const { PermissionFlagsBits } = require('discord.js');
 const security = require('../security/securityCore');
-
-function hasRequiredPermissions(member, permissions = []) {
-  if (!permissions.length) return true;
-  return permissions.every((perm) => member.permissions.has(perm));
-}
 
 function canAccessCommand(interaction, command) {
   if (!command) return false;
@@ -19,17 +13,12 @@ function canAccessCommand(interaction, command) {
     return security.isBotOwner(interaction.user.id);
   }
 
-  // Level-based access (NEW SYSTEM)
+  // Level-based access
   if (access.level) {
     return security.hasPermission(interaction, access.level);
   }
 
-  // Fallback: raw Discord permissions (legacy support)
-  const permissions = Array.isArray(access.permissions)
-    ? access.permissions
-    : [];
-
-  return hasRequiredPermissions(interaction.member, permissions);
+  return true;
 }
 
 async function enforceCommandAccess(interaction, command) {
@@ -46,7 +35,7 @@ async function enforceCommandAccess(interaction, command) {
     }
   }
 
-  // LEVEL SYSTEM (NEW)
+  // LEVEL SYSTEM
   if (access.level) {
     const check = await security.enforceInteractionSecurity(interaction, {
       level: access.level,
@@ -56,16 +45,6 @@ async function enforceCommandAccess(interaction, command) {
     });
 
     if (!check.allowed) return true;
-  }
-
-  // LEGACY PERMISSIONS SUPPORT
-  const permissions = Array.isArray(access.permissions)
-    ? access.permissions
-    : [];
-
-  if (permissions.length && !hasRequiredPermissions(interaction.member, permissions)) {
-    await reply(interaction, '❌ You do not have permission to use this command.');
-    return true;
   }
 
   return false;
@@ -89,7 +68,6 @@ async function reply(interaction, content) {
 }
 
 module.exports = {
-  PermissionFlagsBits,
   canAccessCommand,
   enforceCommandAccess,
 };
