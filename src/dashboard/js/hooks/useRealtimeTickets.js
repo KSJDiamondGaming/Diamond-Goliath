@@ -2,19 +2,7 @@ import { useEffect, useState } from 'react';
 
 import {
   joinGuildRoom,
-  listenForTicketCreated,
-  listenForTicketUpdated,
-  listenForTicketClosed,
-  listenForTicketClaimed,
-  listenForTicketReopened,
-  listenForTicketArchived,
-  listenForTicketDeleted,
-  listenForTimelineEntry,
-  listenForPanelCreated,
-  listenForPanelUpdated,
-  listenForPanelDeleted,
-  listenForPanelDeployed,
-  listenForAnalyticsUpdated,
+  onSocketEvent,
   listenForRealtimeFeed,
 } from '../services/socketClient';
 
@@ -36,68 +24,36 @@ export function useRealtimeTickets(guildId) {
 
     joinGuildRoom(guildId);
 
+    const handleTicketEvent = (event) => {
+      setLastTicketEvent(event);
+      setEvents((prev) => addEvent(prev, event));
+    };
+
+    const handlePanelEvent = (event) => {
+      setLastPanelEvent(event);
+      setEvents((prev) => addEvent(prev, event));
+    };
+
     const unsubscribers = [
-      listenForTicketCreated((event) => {
-        setLastTicketEvent(event);
-        setEvents((prev) => addEvent(prev, event));
-      }),
+      onSocketEvent('ticket.created', handleTicketEvent),
+      onSocketEvent('ticket.updated', handleTicketEvent),
+      onSocketEvent('ticket.closed', handleTicketEvent),
+      onSocketEvent('ticket.claimed', handleTicketEvent),
+      onSocketEvent('ticket.reopened', handleTicketEvent),
+      onSocketEvent('ticket.archived', handleTicketEvent),
+      onSocketEvent('ticket.deleted', handleTicketEvent),
 
-      listenForTicketUpdated((event) => {
-        setLastTicketEvent(event);
-        setEvents((prev) => addEvent(prev, event));
-      }),
-
-      listenForTicketClosed((event) => {
-        setLastTicketEvent(event);
-        setEvents((prev) => addEvent(prev, event));
-      }),
-
-      listenForTicketClaimed((event) => {
-        setLastTicketEvent(event);
-        setEvents((prev) => addEvent(prev, event));
-      }),
-
-      listenForTicketReopened((event) => {
-        setLastTicketEvent(event);
-        setEvents((prev) => addEvent(prev, event));
-      }),
-
-      listenForTicketArchived((event) => {
-        setLastTicketEvent(event);
-        setEvents((prev) => addEvent(prev, event));
-      }),
-
-      listenForTicketDeleted((event) => {
-        setLastTicketEvent(event);
-        setEvents((prev) => addEvent(prev, event));
-      }),
-
-      listenForTimelineEntry((event) => {
+      onSocketEvent('ticket.timeline.entry', (event) => {
         setLastTimelineEntry(event);
         setEvents((prev) => addEvent(prev, event));
       }),
 
-      listenForPanelCreated((event) => {
-        setLastPanelEvent(event);
-        setEvents((prev) => addEvent(prev, event));
-      }),
+      onSocketEvent('panel.created', handlePanelEvent),
+      onSocketEvent('panel.updated', handlePanelEvent),
+      onSocketEvent('panel.deleted', handlePanelEvent),
+      onSocketEvent('panel.deployed', handlePanelEvent),
 
-      listenForPanelUpdated((event) => {
-        setLastPanelEvent(event);
-        setEvents((prev) => addEvent(prev, event));
-      }),
-
-      listenForPanelDeleted((event) => {
-        setLastPanelEvent(event);
-        setEvents((prev) => addEvent(prev, event));
-      }),
-
-      listenForPanelDeployed((event) => {
-        setLastPanelEvent(event);
-        setEvents((prev) => addEvent(prev, event));
-      }),
-
-      listenForAnalyticsUpdated((event) => {
+      onSocketEvent('ticket.analytics.updated', (event) => {
         setAnalytics(event?.data || event);
         setEvents((prev) => addEvent(prev, event));
       }),
