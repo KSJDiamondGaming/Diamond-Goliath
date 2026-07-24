@@ -1,6 +1,6 @@
 'use strict';
 
-const LEGACY_SECTION_MAP = Object.freeze({
+const SECTION_PATHS = Object.freeze({
   tickets: 'modules.tickets',
   security: 'modules.security',
   logs: 'modules.logs',
@@ -18,7 +18,7 @@ const LEGACY_SECTION_MAP = Object.freeze({
   templates: 'modules.serverCopy.templates',
 });
 
-const LEGACY_TOP_LEVEL_SECTIONS = Object.freeze(Object.keys(LEGACY_SECTION_MAP));
+const LEGACY_TOP_LEVEL_SECTIONS = Object.freeze(Object.keys(SECTION_PATHS));
 
 function isPlainObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -30,7 +30,7 @@ function clone(value) {
 
 function getPathParts(sectionName) {
   const rawSection = String(sectionName || '').trim();
-  const routedSection = LEGACY_SECTION_MAP[rawSection] || rawSection;
+  const routedSection = SECTION_PATHS[rawSection] || rawSection;
   return routedSection.split('.').map((part) => part.trim()).filter(Boolean);
 }
 
@@ -88,7 +88,7 @@ function hasLegacyTopLevelSections(source = {}) {
 }
 
 module.exports = {
-  LEGACY_SECTION_MAP,
+  SECTION_PATHS,
   LEGACY_TOP_LEVEL_SECTIONS,
   resolveSectionPath,
   getRoutedSection,
