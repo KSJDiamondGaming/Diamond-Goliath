@@ -8,6 +8,7 @@ const incidentNotifier = require('./socialIncidentNotifier');
 
 const DEFAULT_INTERVAL_MS = 60000;
 let timer = null;
+let activeIntervalMs = null;
 let lastRun = null;
 
 function intervalMs(value = process.env.SOCIAL_PROVIDER_INCIDENT_CHECK_MS) {
@@ -78,6 +79,7 @@ async function scan(client, options = {}) {
 
 function start(client, options = {}) {
   if (timer) return timer;
+  activeIntervalMs = intervalMs(options.intervalMs);
   timer = setInterval(() => {
     scan(client, options).catch((error) => {
       lastRun = {
@@ -93,7 +95,7 @@ function start(client, options = {}) {
         error: error?.message || String(error),
       };
     });
-  }, intervalMs(options.intervalMs));
+  }, activeIntervalMs);
   timer.unref?.();
   return timer;
 }
@@ -102,11 +104,16 @@ function stop() {
   if (!timer) return false;
   clearInterval(timer);
   timer = null;
+  activeIntervalMs = null;
   return true;
 }
 
 function status() {
-  return { started: Boolean(timer), intervalMs: intervalMs(), lastRun };
+  return {
+    started: Boolean(timer),
+    intervalMs: activeIntervalMs ?? intervalMs(),
+    lastRun,
+  };
 }
 
 module.exports = {
