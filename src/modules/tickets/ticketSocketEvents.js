@@ -27,10 +27,6 @@ const EVENTS = Object.freeze({
   ANALYTICS_UPDATED: 'ticket.analytics.updated',
 });
 
-function now() {
-  return new Date().toISOString();
-}
-
 function notify(guildId, payload = {}) {
   try {
     return notifications.addNotification(guildId, {
@@ -45,7 +41,7 @@ function notify(guildId, payload = {}) {
 }
 
 function createPayload(event, guildId, data = {}) {
-  const timestamp = now();
+  const timestamp = new Date().toISOString();
 
   return {
     module: 'tickets',
