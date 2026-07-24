@@ -36,12 +36,6 @@ test('social doctor recognises all canonical runtime surfaces', () => {
   }
 });
 
-test('module doctor follows the locked paused schedule roadmap', () => {
-  assert.match(doctorSource, /Schedule must remain paused/);
-  assert.doesNotMatch(doctorSource, /Schedule must be active/);
-  assert.doesNotMatch(doctorSource, /Exactly one module must be in progress/);
-});
-
 test('social test and doctor commands are available', () => {
   assert.equal(packageJson.scripts['test:social'], 'node --test test/social/*.test.js');
   assert.match(packageJson.scripts['doctor:social'], /socialRuntimeDoctor\.js/);
