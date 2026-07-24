@@ -13,10 +13,11 @@ const MIN_INTERVAL_MS = 60000;
 const DEFAULT_INTERVAL_MS = 300000;
 const DEFAULT_CONCURRENCY = 4;
 const MAX_CONCURRENCY = 20;
-const schedulerStartedAt = Date.now();
+const moduleStartedAt = Date.now();
 let intervalRef = null;
 let running = false;
 let schedulerClient = null;
+let activeRuntime = null;
 let lastRun = null;
 
 function normalizeIntervalMs(value, fallback = DEFAULT_INTERVAL_MS) {
@@ -49,7 +50,7 @@ function accountPollingDecision(config, account, options = {}, now = Date.now())
   return pollingPolicy.decision(account, getGuildIntervalMs(config, options), health, {
     now,
     force: options.force === true,
-    startupAt: Number(options.startupAt || schedulerStartedAt),
+    startupAt: Number(options.startupAt || activeRuntime?.startupAt || moduleStartedAt),
     startupWarmupMs: options.startupWarmupMs,
   });
 }
@@ -310,14 +311,25 @@ function startSocialScheduler(client, options = {}) {
   schedulerClient = client || schedulerClient;
   if (intervalRef) return intervalRef;
   const tickIntervalMs = getSchedulerTickMs(options);
-  const scheduledOptions = { ...options, respectSchedule: true, startupAt: Number(options.startupAt || schedulerStartedAt) };
+  const startupAt = Number(options.startupAt || Date.now());
+  const scheduledOptions = { ...options, respectSchedule: true, startupAt };
+  activeRuntime = {
+    startedAt: new Date().toISOString(),
+    startupAt,
+    tickIntervalMs,
+    concurrency: normalizeConcurrency(options.concurrency),
+    providerTimeoutMs: providerRegistry.normalizeTimeoutMs(options.providerTimeoutMs),
+    startupWarmupMs: pollingPolicy.startupWarmupMs(options.startupWarmupMs),
+    backoffMultiplier: pollingPolicy.backoffMultiplier(),
+    maxBackoffMultiplier: pollingPolicy.maxBackoffMultiplier(),
+  };
   intervalRef = setInterval(() => {
     runSocialCheck(schedulerClient, scheduledOptions).catch((error) => {
       console.error('[SocialScheduler] Check failed:', error);
     });
   }, tickIntervalMs);
   intervalRef.unref?.();
-  console.log(`[SocialScheduler] Social provider scheduler ready (${tickIntervalMs}ms tick, concurrency ${normalizeConcurrency(options.concurrency)})`);
+  console.log(`[SocialScheduler] Social provider scheduler ready (${tickIntervalMs}ms tick, concurrency ${activeRuntime.concurrency})`);
   return intervalRef;
 }
 
@@ -326,6 +338,7 @@ function stopSocialScheduler() {
   clearInterval(intervalRef);
   intervalRef = null;
   schedulerClient = null;
+  activeRuntime = null;
   console.log('[SocialScheduler] Social provider scheduler stopped');
   return true;
 }
@@ -334,12 +347,13 @@ function getSchedulerStatus() {
   return {
     running,
     started: Boolean(intervalRef),
-    startedAt: new Date(schedulerStartedAt).toISOString(),
-    concurrency: normalizeConcurrency(),
-    providerTimeoutMs: providerRegistry.normalizeTimeoutMs(),
-    startupWarmupMs: pollingPolicy.startupWarmupMs(),
-    backoffMultiplier: pollingPolicy.backoffMultiplier(),
-    maxBackoffMultiplier: pollingPolicy.maxBackoffMultiplier(),
+    startedAt: activeRuntime?.startedAt || null,
+    tickIntervalMs: activeRuntime?.tickIntervalMs || getSchedulerTickMs(),
+    concurrency: activeRuntime?.concurrency || normalizeConcurrency(),
+    providerTimeoutMs: activeRuntime?.providerTimeoutMs || providerRegistry.normalizeTimeoutMs(),
+    startupWarmupMs: activeRuntime?.startupWarmupMs ?? pollingPolicy.startupWarmupMs(),
+    backoffMultiplier: activeRuntime?.backoffMultiplier || pollingPolicy.backoffMultiplier(),
+    maxBackoffMultiplier: activeRuntime?.maxBackoffMultiplier || pollingPolicy.maxBackoffMultiplier(),
     lastRun,
   };
 }
