@@ -100,15 +100,12 @@ function defaultLoggingSection() {
 
 function normalizeChannels(value = {}) {
   const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
-  const legacyMessage = cleanDiscordId(source.message);
   const output = defaultChannels();
 
   for (const key of EVENT_KEYS) {
     output[key] = cleanDiscordId(source[key]);
   }
 
-  if (!output.messageDelete) output.messageDelete = legacyMessage;
-  if (!output.messageEdit) output.messageEdit = legacyMessage;
   return output;
 }
 
