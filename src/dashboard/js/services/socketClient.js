@@ -234,32 +234,6 @@ export function listenForAnalyticsUpdated(callback) {
 
 /*
 |--------------------------------------------------------------------------
-| Form Events
-|--------------------------------------------------------------------------
-*/
-
-export function listenForFormUpdated(callback) {
-  return onSocketEvent('form.updated', callback);
-}
-
-export function listenForFormSubmitted(callback) {
-  return onSocketEvent('form.submitted', callback);
-}
-
-export function listenForFormSubmissionUpdated(callback) {
-  return onSocketEvent('form.submission.updated', callback);
-}
-
-export function listenForFormPanelUpdated(callback) {
-  return onSocketEvent('form.panel.updated', callback);
-}
-
-export function listenForFormAnalyticsUpdated(callback) {
-  return onSocketEvent('form.analytics.updated', callback);
-}
-
-/*
-|--------------------------------------------------------------------------
 | Global Feed
 |--------------------------------------------------------------------------
 */
