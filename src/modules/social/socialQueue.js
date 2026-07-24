@@ -6,9 +6,13 @@ const socialHistory = require('./socialHistory');
 
 const MAX_QUEUE_ITEMS = 200;
 const MAX_ATTEMPTS = 5;
+const MIN_PROCESS_INTERVAL_MS = 10_000;
+const DEFAULT_PROCESS_INTERVAL_MS = 60_000;
+const MAX_PROCESS_INTERVAL_MS = 3_600_000;
 const RETRY_MULTIPLIERS = [1, 5, 15, 60, 360];
 let intervalRef = null;
 let processing = false;
+let activeRuntime = null;
 
 function now() {
   return new Date().toISOString();
@@ -16,6 +20,12 @@ function now() {
 
 function cleanText(value, fallback = '', maxLength = 1000) {
   return String(value ?? fallback).trim().slice(0, maxLength);
+}
+
+function normalizeProcessIntervalMs(value = DEFAULT_PROCESS_INTERVAL_MS) {
+  const intervalMs = Number(value);
+  if (!Number.isFinite(intervalMs)) return DEFAULT_PROCESS_INTERVAL_MS;
+  return Math.min(MAX_PROCESS_INTERVAL_MS, Math.max(MIN_PROCESS_INTERVAL_MS, Math.round(intervalMs)));
 }
 
 function normalizeItem(item = {}) {
@@ -228,7 +238,8 @@ async function processAll(client, options = {}) {
 
 function start(client, options = {}) {
   if (intervalRef) return intervalRef;
-  const intervalMs = Math.max(10_000, Number(options.intervalMs || 60_000));
+  const intervalMs = normalizeProcessIntervalMs(options.intervalMs);
+  activeRuntime = { startedAt: now(), intervalMs };
   processAll(client, options).catch((error) => console.error('[SocialQueue] Startup processing failed:', error));
   intervalRef = setInterval(() => {
     processAll(client, options).catch((error) => console.error('[SocialQueue] Processing failed:', error));
@@ -242,7 +253,17 @@ function stop() {
   if (!intervalRef) return false;
   clearInterval(intervalRef);
   intervalRef = null;
+  activeRuntime = null;
   return true;
+}
+
+function status() {
+  return {
+    started: Boolean(intervalRef),
+    processing,
+    startedAt: activeRuntime?.startedAt || null,
+    intervalMs: activeRuntime?.intervalMs || normalizeProcessIntervalMs(),
+  };
 }
 
 function summary(guildId) {
@@ -258,6 +279,10 @@ function summary(guildId) {
 module.exports = {
   MAX_QUEUE_ITEMS,
   MAX_ATTEMPTS,
+  MIN_PROCESS_INTERVAL_MS,
+  DEFAULT_PROCESS_INTERVAL_MS,
+  MAX_PROCESS_INTERVAL_MS,
+  normalizeProcessIntervalMs,
   list,
   enqueue,
   remove,
@@ -267,5 +292,6 @@ module.exports = {
   processAll,
   start,
   stop,
+  status,
   summary,
 };
