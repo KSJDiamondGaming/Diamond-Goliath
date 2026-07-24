@@ -40,19 +40,6 @@ function notify(guildId, payload = {}) {
   }
 }
 
-function createPayload(event, guildId, data = {}) {
-  const timestamp = new Date().toISOString();
-
-  return {
-    module: 'tickets',
-    event,
-    guildId: String(guildId),
-    timestamp,
-    updatedAt: timestamp,
-    data,
-  };
-}
-
 function emitPayload(guildId, payload) {
   const update = emitGuildUpdate(guildId, payload);
   if (!update) return payload;
@@ -73,7 +60,16 @@ function emitPayload(guildId, payload) {
 }
 
 function emit(event, guildId, data = {}) {
-  return emitPayload(guildId, createPayload(event, guildId, data));
+  const timestamp = new Date().toISOString();
+
+  return emitPayload(guildId, {
+    module: 'tickets',
+    event,
+    guildId: String(guildId),
+    timestamp,
+    updatedAt: timestamp,
+    data,
+  });
 }
 
 function emitForTicket(_io, ticket, event, data = {}) {
