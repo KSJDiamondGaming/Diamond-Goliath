@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const doctor = require('../../scripts/social-runtime-doctor');
+const doctor = require('../../src/modules/social/socialRuntimeDoctor');
 
 function snapshot(overrides = {}) {
   return {
@@ -76,10 +76,10 @@ test('doctor rejects missing canonical runtime health', () => {
   assert.throws(() => doctor.buildReport({ module: 'other' }), /runtime health is unavailable/i);
 });
 
-test('package doctor commands include social runtime diagnostics', () => {
+test('package doctor commands include module-owned social runtime diagnostics', () => {
   const packageJson = require('../../package.json');
 
-  assert.match(packageJson.scripts.doctor, /social-runtime-doctor\.js/);
-  assert.match(packageJson.scripts['doctor:social'], /social-runtime-doctor\.js/);
-  assert.match(packageJson.scripts.audit, /social-runtime-doctor\.js/);
+  assert.match(packageJson.scripts.doctor, /src\/modules\/social\/socialRuntimeDoctor\.js/);
+  assert.match(packageJson.scripts['doctor:social'], /src\/modules\/social\/socialRuntimeDoctor\.js/);
+  assert.match(packageJson.scripts.audit, /src\/modules\/social\/socialRuntimeDoctor\.js/);
 });
