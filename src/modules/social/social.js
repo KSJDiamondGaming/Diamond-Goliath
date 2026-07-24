@@ -3,6 +3,7 @@
 const socialStore = require('./socialStore');
 const socialRuntime = require('./socialRuntime');
 const incidentMonitor = require('./socialIncidentMonitor');
+const runtimeHealth = require('./socialRuntimeHealth');
 
 const STARTUP_KEY = Symbol.for('goliath.social.startup');
 
@@ -35,6 +36,7 @@ module.exports = {
   ...socialRuntime,
   startup,
   shutdown,
+  runtimeHealth,
   store: socialStore,
   http: require('./socialHttp'),
   providerHealth: require('./socialProviderHealth'),
