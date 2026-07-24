@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import {
   joinGuildRoom,
@@ -113,14 +113,11 @@ export function useRealtimeTickets(guildId) {
   }, [guildId]);
 
   const latestEvent = events[0] || null;
-
-  const stats = useMemo(() => {
-    return {
-      totalEvents: events.length,
-      hasEvents: events.length > 0,
-      latestEvent,
-    };
-  }, [events, latestEvent]);
+  const stats = {
+    totalEvents: events.length,
+    hasEvents: events.length > 0,
+    latestEvent,
+  };
 
   return {
     events,
