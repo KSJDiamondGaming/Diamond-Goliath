@@ -13,7 +13,6 @@ function optionalRequire(label, modulePath, fallback = {}) {
 
 const verificationManager = optionalRequire('verification manager', '../../modules/verification/verification');
 const ticketInteractionHandler = optionalRequire('tickets', '../../modules/tickets/tickets');
-const legacyReactionRoleButtons = optionalRequire('legacy reaction role buttons', '../../modules/roleStudio/reactionRoles/reactionRolesLegacyButtons');
 const polls = optionalRequire('polls', '../../modules/polls/polls');
 const tempVoiceInteractionHandler = optionalRequire('temp voice', '../../modules/tempvoice/tempVoiceInteractionHandler');
 const suggestionsInteractionHandler = optionalRequire('suggestions', '../../modules/suggestions/suggestionsInteractionHandler');
@@ -255,7 +254,6 @@ module.exports = {
       if (await callHandler(giveawaysInteractionHandler, 'handleGiveawayInteraction', interaction)) return;
       if (interaction.isButton?.() && await callHandler(polls, 'vote', interaction)) return;
       if (await callHandler(ticketInteractionHandler, 'handleTicketInteraction', interaction, client)) return;
-      if (await callHandler(legacyReactionRoleButtons, 'handleLegacyButtonInteraction', interaction)) return;
     } catch (error) {
       console.error('[InteractionCreate] Failed to handle interaction:', error);
       await safeInteractionError(interaction, error);
