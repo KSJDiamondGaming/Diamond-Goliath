@@ -112,7 +112,6 @@ function emitDirectSyncEvent(guildId, event, update) {
 
 module.exports = {
   initSocketHub,
-  getRoomName,
   onGuildUpdate,
   emitGuildUpdate,
   emitDirectSyncEvent,
