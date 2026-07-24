@@ -82,16 +82,8 @@ function emitRoomEvent(room, event, update) {
   return true;
 }
 
-function emitDirectSyncEvent(guildId, event, update) {
-  const id = normaliseGuildId(guildId);
-  if (!id) return false;
-
-  return emitRoomEvent(getRoomName(id), event, update);
-}
-
 module.exports = {
   initSocketHub,
   emitGuildUpdate,
-  emitDirectSyncEvent,
   emitRoomEvent,
 };
