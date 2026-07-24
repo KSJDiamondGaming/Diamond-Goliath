@@ -278,28 +278,6 @@ export function listenForEmbedDeleted(callback) {
 
 /*
 |--------------------------------------------------------------------------
-| Case Events
-|--------------------------------------------------------------------------
-*/
-
-export function listenForCaseCreated(callback) {
-  return onSocketEvent('case.created', callback);
-}
-
-export function listenForCaseUpdated(callback) {
-  return onSocketEvent('case.updated', callback);
-}
-
-export function listenForCaseStatusUpdated(callback) {
-  return onSocketEvent('case.status.updated', callback);
-}
-
-export function listenForCaseNoteUpdated(callback) {
-  return onSocketEvent('case.note.updated', callback);
-}
-
-/*
-|--------------------------------------------------------------------------
 | Global Feed
 |--------------------------------------------------------------------------
 */
