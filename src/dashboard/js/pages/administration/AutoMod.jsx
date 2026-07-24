@@ -1,9 +1,7 @@
-import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  joinGuildRoom,
-  listenForGuildUpdate,
-} from "../../services/socketClient"
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+
 import { api } from '../../services/apiClient';
+import { joinGuildRoom, listenForGuildUpdate } from '../../services/socketClient';
 import PageShell, {
   LoadingPanel,
   Notice,
@@ -12,100 +10,34 @@ import PageShell, {
   StatGrid,
   SummaryStat,
 } from '../../shared/PageShell';
-import { PAGE_LAYOUTS } from "../../ui/layout";
-import { createAutoModPageStyles } from "../../ui/components";
+import { PAGE_LAYOUTS } from '../../ui/layout';
+import { createAutoModPageStyles } from '../../ui/components';
 
 const PAGE_KEY = 'automod';
+const RULE_KEYS = ['antiSpam', 'antiLink', 'antiInvite', 'capsAbuse', 'badWords', 'repeatedMessages'];
+const PUNISHMENT_OPTIONS = [
+  ['delete', 'Delete message'],
+  ['warn', 'Warn user'],
+  ['dm', 'Warn user by DM'],
+  ['timeout', 'Timeout user'],
+  ['kick', 'Kick user'],
+  ['ban', 'Ban user'],
+];
 
 const DEFAULT_FORM = {
-  antiSpam: {
-    enabled: false,
-    maxMessages: 6,
-    intervalSeconds: 8,
-    punishment: ['delete'],
-  },
-  antiLink: {
-    enabled: false,
-    punishment: ['delete'],
-    allowedDomains: '',
-    blockedDomains: '',
-  },
-  antiInvite: {
-    enabled: false,
-    punishment: ['delete'],
-  },
-  capsAbuse: {
-    enabled: false,
-    minLength: 10,
-    percentage: 70,
-    punishment: ['delete'],
-  },
-  badWords: {
-    enabled: false,
-    words: '',
-    punishment: ['delete'],
-  },
-  repeatedMessages: {
-    enabled: false,
-    maxRepeats: 3,
-    intervalSeconds: 10,
-    punishment: ['delete'],
-  },
-  logs: {
-    enabled: true,
-    channelId: '',
-  },
-};
-
-const RULE_KEYS = [
-  'antiSpam',
-  'antiLink',
-  'antiInvite',
-  'capsAbuse',
-  'badWords',
-  'repeatedMessages',
-];
-
-const PUNISHMENT_OPTIONS = [
-  { value: 'delete', label: 'Delete message' },
-  { value: 'warn', label: 'Warn user' },
-  { value: 'dm', label: 'Warn user by DM' },
-  { value: 'timeout', label: 'Timeout user' },
-  { value: 'kick', label: 'Kick user' },
-  { value: 'ban', label: 'Ban user' },
-];
-
-const PUNISHMENT_PAST_LABELS = {
-  delete: 'Message deleted',
-  warn: 'User warned',
-  dm: 'User warned by DM',
-  timeout: 'User timed out',
-  kick: 'User kicked',
-  ban: 'User banned',
+  antiSpam: { enabled: false, maxMessages: 6, intervalSeconds: 8, punishment: ['delete'] },
+  antiLink: { enabled: false, punishment: ['delete'], allowedDomains: '', blockedDomains: '' },
+  antiInvite: { enabled: false, punishment: ['delete'] },
+  capsAbuse: { enabled: false, minLength: 10, percentage: 70, punishment: ['delete'] },
+  badWords: { enabled: false, words: '', punishment: ['delete'] },
+  repeatedMessages: { enabled: false, maxRepeats: 3, intervalSeconds: 10, punishment: ['delete'] },
+  logs: { enabled: true, channelId: '' },
 };
 
 function normalizePunishments(value) {
-  if (Array.isArray(value)) {
-    const cleaned = value
-      .map((item) => (item === 'warn-dm' ? 'dm' : item))
-      .filter(Boolean);
-
-    return cleaned.length ? [...new Set(cleaned)] : ['delete'];
-  }
-
-  if (value === 'warn-dm') return ['dm'];
-
-  return value ? [value] : ['delete'];
-}
-
-function getRulePunishments(rule = {}) {
-  return normalizePunishments(rule?.punishments || rule?.punishment);
-}
-
-function formatPunishments(value) {
-  return normalizePunishments(value)
-    .map((item) => PUNISHMENT_PAST_LABELS[item] || item)
-    .join(' • ');
+  const values = Array.isArray(value) ? value : value ? [value] : ['delete'];
+  const cleaned = values.map((item) => (item === 'warn-dm' ? 'dm' : item)).filter(Boolean);
+  return cleaned.length ? [...new Set(cleaned)] : ['delete'];
 }
 
 function normalizeAutoModForm(data = {}) {
@@ -114,89 +46,103 @@ function normalizeAutoModForm(data = {}) {
       enabled: Boolean(data?.antiSpam?.enabled),
       maxMessages: Number(data?.antiSpam?.maxMessages ?? 6),
       intervalSeconds: Number(data?.antiSpam?.intervalSeconds ?? 8),
-      punishment: getRulePunishments(data?.antiSpam),
+      punishment: normalizePunishments(data?.antiSpam?.punishments || data?.antiSpam?.punishment),
     },
     antiLink: {
       enabled: Boolean(data?.antiLink?.enabled),
-      punishment: getRulePunishments(data?.antiLink),
-      allowedDomains: Array.isArray(data?.antiLink?.allowedDomains)
-        ? data.antiLink.allowedDomains.join(', ')
-        : data?.antiLink?.allowedDomains || '',
-      blockedDomains: Array.isArray(data?.antiLink?.blockedDomains)
-        ? data.antiLink.blockedDomains.join(', ')
-        : data?.antiLink?.blockedDomains || '',
+      punishment: normalizePunishments(data?.antiLink?.punishments || data?.antiLink?.punishment),
+      allowedDomains: Array.isArray(data?.antiLink?.allowedDomains) ? data.antiLink.allowedDomains.join(', ') : data?.antiLink?.allowedDomains || '',
+      blockedDomains: Array.isArray(data?.antiLink?.blockedDomains) ? data.antiLink.blockedDomains.join(', ') : data?.antiLink?.blockedDomains || '',
     },
     antiInvite: {
       enabled: Boolean(data?.antiInvite?.enabled),
-      punishment: getRulePunishments(data?.antiInvite),
+      punishment: normalizePunishments(data?.antiInvite?.punishments || data?.antiInvite?.punishment),
     },
     capsAbuse: {
       enabled: Boolean(data?.capsAbuse?.enabled),
       minLength: Number(data?.capsAbuse?.minLength ?? 10),
       percentage: Number(data?.capsAbuse?.percentage ?? 70),
-      punishment: getRulePunishments(data?.capsAbuse),
+      punishment: normalizePunishments(data?.capsAbuse?.punishments || data?.capsAbuse?.punishment),
     },
     badWords: {
       enabled: Boolean(data?.badWords?.enabled),
-      words: Array.isArray(data?.badWords?.words)
-        ? data.badWords.words.join(', ')
-        : data?.badWords?.words || '',
-      punishment: getRulePunishments(data?.badWords),
+      words: Array.isArray(data?.badWords?.words) ? data.badWords.words.join(', ') : data?.badWords?.words || '',
+      punishment: normalizePunishments(data?.badWords?.punishments || data?.badWords?.punishment),
     },
     repeatedMessages: {
       enabled: Boolean(data?.repeatedMessages?.enabled),
       maxRepeats: Number(data?.repeatedMessages?.maxRepeats ?? 3),
       intervalSeconds: Number(data?.repeatedMessages?.intervalSeconds ?? 10),
-      punishment: getRulePunishments(data?.repeatedMessages),
+      punishment: normalizePunishments(data?.repeatedMessages?.punishments || data?.repeatedMessages?.punishment),
     },
-    logs: {
-      enabled: data?.logs?.enabled !== false,
-      channelId: data?.logs?.channelId || '',
-    },
+    logs: { enabled: data?.logs?.enabled !== false, channelId: data?.logs?.channelId || '' },
   };
 }
 
-function buildRulePayload(rule) {
-  const punishments = normalizePunishments(rule.punishment);
-
-  return {
-    ...rule,
-    punishment: punishments[0],
-    punishments,
-  };
-}
-
-function parseDomainList(value) {
+function parseList(value, domainMode = false) {
   return String(value || '')
     .split(/[\n,]/)
-    .map((domain) =>
-      domain
-        .trim()
-        .toLowerCase()
-        .replace(/^https?:\/\//, '')
-        .replace(/^www\./, '')
-        .replace(/\/.*$/, ''),
-    )
-    .filter(Boolean)
-    .filter((domain, index, list) => list.indexOf(domain) === index);
-}
-
-function parseCsvList(value) {
-  return String(value || '')
-    .split(/[\n,]/)
-    .map((item) => item.trim())
+    .map((item) => item.trim().toLowerCase())
+    .map((item) => domainMode ? item.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '') : item)
     .filter(Boolean)
     .filter((item, index, list) => list.indexOf(item) === index);
 }
 
+function buildRulePayload(rule) {
+  const punishments = normalizePunishments(rule.punishment);
+  return { ...rule, punishment: punishments[0], punishments };
+}
+
+function Toggle({ checked, onChange, disabled = false }) {
+  return (
+    <button type="button" disabled={disabled} onClick={() => onChange(!checked)} style={{
+      border: checked ? '1px solid rgba(34,197,94,.45)' : '1px solid rgba(239,68,68,.45)',
+      background: checked ? 'rgba(34,197,94,.14)' : 'rgba(239,68,68,.14)',
+      color: checked ? '#86efac' : '#fca5a5', borderRadius: 999, padding: '8px 12px',
+      fontWeight: 900, cursor: disabled ? 'not-allowed' : 'pointer',
+    }}>{checked ? 'Enabled' : 'Disabled'}</button>
+  );
+}
+
+function Field({ label, value, onChange, type = 'text', min, max, styles }) {
+  return <label style={{ display: 'grid', gap: 7 }}><span style={styles.label}>{label}</span><input type={type} min={min} max={max} value={value} onChange={(event) => onChange(event.target.value)} style={styles.input} /></label>;
+}
+
+function TextArea({ label, value, onChange, placeholder, styles }) {
+  return <label style={{ display: 'grid', gap: 7 }}><span style={styles.label}>{label}</span><textarea rows={3} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} style={styles.textarea} /></label>;
+}
+
+function Punishments({ value, onChange, styles }) {
+  const selected = normalizePunishments(value);
+  return (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      {PUNISHMENT_OPTIONS.map(([optionValue, label]) => {
+        const active = selected.includes(optionValue);
+        return <button key={optionValue} type="button" onClick={() => {
+          const next = active ? selected.filter((item) => item !== optionValue) : [...selected, optionValue];
+          onChange(next.length ? next : ['delete']);
+        }} style={{ ...styles.input, width: 'auto', cursor: 'pointer', background: active ? 'rgba(59,130,246,.16)' : styles.input.background }}>{label}</button>;
+      })}
+    </div>
+  );
+}
+
+function RuleCard({ title, description, enabled, onEnabledChange, punishment, onPunishmentChange, children, theme, styles }) {
+  return (
+    <div style={{ border: `1px solid ${theme.cardBorder}`, borderRadius: 16, padding: 16, display: 'grid', gap: 14, background: theme.softBg }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <div><h3 style={{ margin: 0, color: theme.cardText, fontSize: 16 }}>{title}</h3><p style={{ margin: '5px 0 0', color: theme.mutedText, fontSize: 13 }}>{description}</p></div>
+        <Toggle checked={enabled} onChange={onEnabledChange} />
+      </div>
+      {punishment ? <div style={{ display: 'grid', gap: 8 }}><span style={styles.label}>Actions</span><Punishments value={punishment} onChange={onPunishmentChange} styles={styles} /></div> : null}
+      {children}
+    </div>
+  );
+}
+
 export default function AutoMod({ selectedGuild, theme }) {
   const styles = useMemo(() => createAutoModPageStyles(theme), [theme]);
-
-  const page = PAGE_LAYOUTS[PAGE_KEY] || {
-    title: 'AutoMod',
-    description: 'Configure automated moderation rules and logging.',
-  };
-
+  const page = PAGE_LAYOUTS[PAGE_KEY] || { title: 'AutoMod', description: 'Configure automated moderation rules and logging.' };
   const [loading, setLoading] = useState(false);
   const [channelsLoading, setChannelsLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -205,663 +151,118 @@ export default function AutoMod({ selectedGuild, theme }) {
   const [form, setForm] = useState(DEFAULT_FORM);
   const [logChannels, setLogChannels] = useState([]);
 
-  const [openSections, setOpenSections] = useState({
-    antiSpam: true,
-    antiLink: false,
-    antiInvite: false,
-    capsAbuse: false,
-    badWords: false,
-    repeatedMessages: false,
-    logs: false,
-  });
-
   useEffect(() => {
     let mounted = true;
-
-    async function loadConfig() {
+    async function load() {
       if (!selectedGuild) {
-        if (mounted) {
-          setForm(DEFAULT_FORM);
-          setError('');
-          setSaveMessage('');
-          setLoading(false);
-          setSaving(false);
-        }
-
+        if (mounted) { setForm(DEFAULT_FORM); setError(''); setSaveMessage(''); setLoading(false); }
         return;
       }
-
       try {
-        setLoading(true);
-        setError('');
-        setSaveMessage('');
-
+        setLoading(true); setError(''); setSaveMessage('');
         const data = await api.getAutoModConfig(selectedGuild);
-
-        if (!mounted) return;
-
-        setForm(normalizeAutoModForm(data));
+        if (mounted) setForm(normalizeAutoModForm(data));
       } catch (err) {
         console.error(err);
-
-        if (!mounted) return;
-
-        setForm(DEFAULT_FORM);
-        setError('Could not load AutoMod config.');
-      } finally {
-        if (mounted) setLoading(false);
-      }
+        if (mounted) { setForm(DEFAULT_FORM); setError('Could not load AutoMod config.'); }
+      } finally { if (mounted) setLoading(false); }
     }
-
-    loadConfig();
-
-    return () => {
-      mounted = false;
-    };
+    load();
+    return () => { mounted = false; };
   }, [selectedGuild]);
 
   useEffect(() => {
     let mounted = true;
-
     async function loadChannels() {
-      if (!selectedGuild) {
-        if (mounted) {
-          setLogChannels([]);
-          setChannelsLoading(false);
-        }
-
-        return;
-      }
-
+      if (!selectedGuild) { if (mounted) setLogChannels([]); return; }
       try {
         setChannelsLoading(true);
-
         const channels = await api.getGuildChannels(selectedGuild);
-
-        if (!mounted) return;
-
-        setLogChannels(Array.isArray(channels) ? channels : []);
+        if (mounted) setLogChannels(Array.isArray(channels) ? channels : []);
       } catch (err) {
         console.error(err);
-
-        if (!mounted) return;
-
-        setLogChannels([]);
-      } finally {
-        if (mounted) setChannelsLoading(false);
-      }
+        if (mounted) setLogChannels([]);
+      } finally { if (mounted) setChannelsLoading(false); }
     }
-
     loadChannels();
-
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, [selectedGuild]);
 
-    useEffect(() => {
-  if (!selectedGuild) return undefined;
+  useEffect(() => {
+    if (!selectedGuild) return undefined;
+    joinGuildRoom(selectedGuild);
+    return listenForGuildUpdate('automod', (data, payload = {}) => {
+      setForm(normalizeAutoModForm(data));
+      setSaveMessage(payload.source === 'dashboard' ? '✅ AutoMod synced live.' : '🔄 AutoMod updated live.');
+    });
+  }, [selectedGuild]);
 
-  joinGuildRoom(selectedGuild);
-
-  return listenForGuildUpdate(selectedGuild, 'automod', (data, payload) => {
-    setForm(normalizeAutoModForm(data));
-
-    setSaveMessage(
-      payload.source === 'dashboard'
-        ? '✅ AutoMod synced live.'
-        : '🔄 AutoMod updated live.',
-    );
-  });
-}, [selectedGuild]);
-
-  const handleToggle = useCallback((section, field = 'enabled') => {
-    setForm((prev) => ({
-      ...prev,
-      [section]: {
-        ...prev[section],
-        [field]: !prev[section][field],
-      },
-    }));
+  const updateSection = useCallback((section, field, value) => {
+    setForm((current) => ({ ...current, [section]: { ...current[section], [field]: value } }));
   }, []);
 
-  const handleChange = useCallback((section, field, value) => {
-    setForm((prev) => ({
-      ...prev,
-      [section]: {
-        ...prev[section],
-        [field]: value,
-      },
-    }));
-  }, []);
-
-  const toggleSectionOpen = useCallback((section) => {
-    setOpenSections((prev) => ({
-      ...prev,
-      [section]: !prev[section],
-    }));
-  }, []);
-
-  const enabledCount = useMemo(
-    () => RULE_KEYS.filter((key) => form[key]?.enabled).length,
-    [form],
-  );
+  const enabledCount = RULE_KEYS.filter((key) => form[key]?.enabled).length;
 
   const handleSave = useCallback(async () => {
-    if (!selectedGuild) {
-      setSaveMessage('❌ Select a guild first.');
-      return;
-    }
-
+    if (!selectedGuild) { setSaveMessage('❌ Select a guild first.'); return; }
     try {
-      setSaving(true);
-      setSaveMessage('');
-      setError('');
-
+      setSaving(true); setSaveMessage(''); setError('');
       const payload = {
-        antiSpam: buildRulePayload({
-          enabled: form.antiSpam.enabled,
-          maxMessages: Number(form.antiSpam.maxMessages),
-          intervalSeconds: Number(form.antiSpam.intervalSeconds),
-          punishment: form.antiSpam.punishment,
-        }),
-        antiLink: buildRulePayload({
-          enabled: form.antiLink.enabled,
-          punishment: form.antiLink.punishment,
-          allowedDomains: parseDomainList(form.antiLink.allowedDomains),
-          blockedDomains: parseDomainList(form.antiLink.blockedDomains),
-        }),
-        antiInvite: buildRulePayload({
-          enabled: form.antiInvite.enabled,
-          punishment: form.antiInvite.punishment,
-        }),
-        capsAbuse: buildRulePayload({
-          enabled: form.capsAbuse.enabled,
-          minLength: Number(form.capsAbuse.minLength),
-          percentage: Number(form.capsAbuse.percentage),
-          punishment: form.capsAbuse.punishment,
-        }),
-        badWords: buildRulePayload({
-          enabled: form.badWords.enabled,
-          words: parseCsvList(form.badWords.words),
-          punishment: form.badWords.punishment,
-        }),
-        repeatedMessages: buildRulePayload({
-          enabled: form.repeatedMessages.enabled,
-          maxRepeats: Number(form.repeatedMessages.maxRepeats),
-          intervalSeconds: Number(form.repeatedMessages.intervalSeconds),
-          punishment: form.repeatedMessages.punishment,
-        }),
-        logs: {
-          enabled: form.logs.enabled,
-          channelId: form.logs.channelId || '',
-        },
+        antiSpam: buildRulePayload({ ...form.antiSpam, maxMessages: Number(form.antiSpam.maxMessages), intervalSeconds: Number(form.antiSpam.intervalSeconds) }),
+        antiLink: buildRulePayload({ ...form.antiLink, allowedDomains: parseList(form.antiLink.allowedDomains, true), blockedDomains: parseList(form.antiLink.blockedDomains, true) }),
+        antiInvite: buildRulePayload(form.antiInvite),
+        capsAbuse: buildRulePayload({ ...form.capsAbuse, minLength: Number(form.capsAbuse.minLength), percentage: Number(form.capsAbuse.percentage) }),
+        badWords: buildRulePayload({ ...form.badWords, words: parseList(form.badWords.words) }),
+        repeatedMessages: buildRulePayload({ ...form.repeatedMessages, maxRepeats: Number(form.repeatedMessages.maxRepeats), intervalSeconds: Number(form.repeatedMessages.intervalSeconds) }),
+        logs: { enabled: form.logs.enabled, channelId: form.logs.channelId || '' },
       };
-
       const saved = await api.saveAutoModConfig(selectedGuild, payload);
-
-      if (saved?.config) {
-        setForm(normalizeAutoModForm(saved.config));
-      }
-
+      if (saved?.config) setForm(normalizeAutoModForm(saved.config));
       setSaveMessage('✅ AutoMod config saved successfully.');
     } catch (err) {
-      console.error(err);
-      setSaveMessage('❌ Failed to save AutoMod config.');
-    } finally {
-      setSaving(false);
-    }
-  }, [selectedGuild, form]);
+      console.error(err); setSaveMessage('❌ Failed to save AutoMod config.');
+    } finally { setSaving(false); }
+  }, [form, selectedGuild]);
 
   return (
-    <PageShell
-      title={page.title || 'AutoMod'}
-      subtitle={page.description || 'Configure automated moderation rules and logging.'}
-      theme={theme}
-    >
-      {!selectedGuild ? (
-        <Notice theme={theme} tone="info">
-          Select a guild to edit AutoMod settings.
-        </Notice>
-      ) : null}
-
-      {error ? (
-        <Notice theme={theme} tone="danger">
-          {error}
-        </Notice>
-      ) : null}
-
-      {saveMessage ? (
-        <Notice theme={theme} tone={saveMessage.startsWith('❌') ? 'danger' : 'success'}>
-          {saveMessage}
-        </Notice>
-      ) : null}
+    <PageShell title={page.title || 'AutoMod'} subtitle={page.description || 'Configure automated moderation rules and logging.'} theme={theme}>
+      {!selectedGuild ? <Notice theme={theme} tone="info">Select a guild to edit AutoMod settings.</Notice> : null}
+      {error ? <Notice theme={theme} tone="danger">{error}</Notice> : null}
+      {saveMessage ? <Notice theme={theme} tone={saveMessage.startsWith('❌') ? 'danger' : 'success'}>{saveMessage}</Notice> : null}
 
       <StatGrid>
         <SummaryStat theme={theme} label="Enabled Rules" value={`${enabledCount}/6`} />
-
-        <SummaryStat
-          theme={theme}
-          label="Default Action"
-          value={formatPunishments(form.antiSpam.punishment)}
-        />
-
-        <SummaryStat
-          theme={theme}
-          label="Logging"
-          value={form.logs.enabled ? 'Enabled' : 'Disabled'}
-          accent={form.logs.enabled ? theme.success : theme.danger}
-        />
+        <SummaryStat theme={theme} label="Logging" value={form.logs.enabled ? 'Enabled' : 'Disabled'} accent={form.logs.enabled ? theme.success : theme.danger} />
+        <SummaryStat theme={theme} label="Log Channel" value={form.logs.channelId ? 'Configured' : 'Not set'} />
       </StatGrid>
 
-      <SectionCard
-        theme={theme}
-        title="Rules"
-        subtitle="Manage core AutoMod rules."
-        padding="20px"
-      >
-        {loading ? (
-          <LoadingPanel theme={theme} text="Loading AutoMod config..." />
-        ) : (
-          <div style={styles.ruleList}>
-            <RuleCard
-              styles={styles}
-              title="Anti Spam"
-              description="Stops users sending too many messages too quickly."
-              checked={form.antiSpam.enabled}
-              open={openSections.antiSpam}
-              onToggle={() => handleToggle('antiSpam')}
-              onOpenToggle={() => toggleSectionOpen('antiSpam')}
-              punishment={form.antiSpam.punishment}
-              onPunishmentChange={(value) => handleChange('antiSpam', 'punishment', value)}
-            >
-              <div style={styles.ruleMiniGrid}>
-                <Field
-                  styles={styles}
-                  label="Max Messages"
-                  type="number"
-                  min="1"
-                  value={form.antiSpam.maxMessages}
-                  onChange={(value) => handleChange('antiSpam', 'maxMessages', value)}
-                />
-
-                <Field
-                  styles={styles}
-                  label="Interval Seconds"
-                  type="number"
-                  min="1"
-                  value={form.antiSpam.intervalSeconds}
-                  onChange={(value) => handleChange('antiSpam', 'intervalSeconds', value)}
-                />
-              </div>
+      <SectionCard theme={theme} title="Rules" subtitle="Manage core AutoMod rules." padding="20px">
+        {loading ? <LoadingPanel theme={theme} text="Loading AutoMod config..." /> : (
+          <div style={{ display: 'grid', gap: 14 }}>
+            <RuleCard title="Anti Spam" description="Stops users sending too many messages too quickly." enabled={form.antiSpam.enabled} onEnabledChange={(value) => updateSection('antiSpam', 'enabled', value)} punishment={form.antiSpam.punishment} onPunishmentChange={(value) => updateSection('antiSpam', 'punishment', value)} theme={theme} styles={styles}>
+              <div style={styles.ruleMiniGrid}><Field styles={styles} label="Max Messages" type="number" min="1" value={form.antiSpam.maxMessages} onChange={(value) => updateSection('antiSpam', 'maxMessages', value)} /><Field styles={styles} label="Interval Seconds" type="number" min="1" value={form.antiSpam.intervalSeconds} onChange={(value) => updateSection('antiSpam', 'intervalSeconds', value)} /></div>
             </RuleCard>
-
-            <RuleCard
-              styles={styles}
-              title="Anti Link"
-              description="Controls posted links with whitelist and blacklist checks."
-              checked={form.antiLink.enabled}
-              open={openSections.antiLink}
-              onToggle={() => handleToggle('antiLink')}
-              onOpenToggle={() => toggleSectionOpen('antiLink')}
-              punishment={form.antiLink.punishment}
-              onPunishmentChange={(value) => handleChange('antiLink', 'punishment', value)}
-            >
-              <div style={styles.sectionList}>
-                <TextAreaField
-                  styles={styles}
-                  label="Allowed Domains / Whitelist"
-                  value={form.antiLink.allowedDomains}
-                  onChange={(value) => handleChange('antiLink', 'allowedDomains', value)}
-                  placeholder="youtube.com, youtu.be, discord.gg"
-                  help="Links matching these domains will be allowed. Separate domains with commas or new lines."
-                />
-
-                <TextAreaField
-                  styles={styles}
-                  label="Blocked Domains / Blacklist"
-                  value={form.antiLink.blockedDomains}
-                  onChange={(value) => handleChange('antiLink', 'blockedDomains', value)}
-                  placeholder="scam-site.ru, badlink.xyz"
-                  help="These domains are force-blocked before whitelist checks."
-                />
-              </div>
+            <RuleCard title="Anti Link" description="Controls posted links with whitelist and blacklist checks." enabled={form.antiLink.enabled} onEnabledChange={(value) => updateSection('antiLink', 'enabled', value)} punishment={form.antiLink.punishment} onPunishmentChange={(value) => updateSection('antiLink', 'punishment', value)} theme={theme} styles={styles}>
+              <TextArea styles={styles} label="Allowed Domains / Whitelist" value={form.antiLink.allowedDomains} onChange={(value) => updateSection('antiLink', 'allowedDomains', value)} placeholder="youtube.com, youtu.be" />
+              <TextArea styles={styles} label="Blocked Domains / Blacklist" value={form.antiLink.blockedDomains} onChange={(value) => updateSection('antiLink', 'blockedDomains', value)} placeholder="scam-site.example" />
             </RuleCard>
-
-            <RuleCard
-              styles={styles}
-              title="Anti Invite"
-              description="Blocks Discord invite links from being posted."
-              checked={form.antiInvite.enabled}
-              open={openSections.antiInvite}
-              onToggle={() => handleToggle('antiInvite')}
-              onOpenToggle={() => toggleSectionOpen('antiInvite')}
-              punishment={form.antiInvite.punishment}
-              onPunishmentChange={(value) => handleChange('antiInvite', 'punishment', value)}
-            />
-
-            <RuleCard
-              styles={styles}
-              title="Caps Abuse"
-              description="Detects messages with excessive capital letters."
-              checked={form.capsAbuse.enabled}
-              open={openSections.capsAbuse}
-              onToggle={() => handleToggle('capsAbuse')}
-              onOpenToggle={() => toggleSectionOpen('capsAbuse')}
-              punishment={form.capsAbuse.punishment}
-              onPunishmentChange={(value) => handleChange('capsAbuse', 'punishment', value)}
-            >
-              <div style={styles.ruleMiniGrid}>
-                <Field
-                  styles={styles}
-                  label="Minimum Length"
-                  type="number"
-                  min="1"
-                  value={form.capsAbuse.minLength}
-                  onChange={(value) => handleChange('capsAbuse', 'minLength', value)}
-                />
-
-                <Field
-                  styles={styles}
-                  label="Caps Percentage"
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={form.capsAbuse.percentage}
-                  onChange={(value) => handleChange('capsAbuse', 'percentage', value)}
-                />
-              </div>
+            <RuleCard title="Anti Invite" description="Blocks Discord invite links from being posted." enabled={form.antiInvite.enabled} onEnabledChange={(value) => updateSection('antiInvite', 'enabled', value)} punishment={form.antiInvite.punishment} onPunishmentChange={(value) => updateSection('antiInvite', 'punishment', value)} theme={theme} styles={styles} />
+            <RuleCard title="Caps Abuse" description="Detects messages with excessive capital letters." enabled={form.capsAbuse.enabled} onEnabledChange={(value) => updateSection('capsAbuse', 'enabled', value)} punishment={form.capsAbuse.punishment} onPunishmentChange={(value) => updateSection('capsAbuse', 'punishment', value)} theme={theme} styles={styles}>
+              <div style={styles.ruleMiniGrid}><Field styles={styles} label="Minimum Length" type="number" min="1" value={form.capsAbuse.minLength} onChange={(value) => updateSection('capsAbuse', 'minLength', value)} /><Field styles={styles} label="Caps Percentage" type="number" min="1" max="100" value={form.capsAbuse.percentage} onChange={(value) => updateSection('capsAbuse', 'percentage', value)} /></div>
             </RuleCard>
-
-            <RuleCard
-              styles={styles}
-              title="Bad Words"
-              description="Blocks configured banned words and phrases."
-              checked={form.badWords.enabled}
-              open={openSections.badWords}
-              onToggle={() => handleToggle('badWords')}
-              onOpenToggle={() => toggleSectionOpen('badWords')}
-              punishment={form.badWords.punishment}
-              onPunishmentChange={(value) => handleChange('badWords', 'punishment', value)}
-            >
-              <TextAreaField
-                styles={styles}
-                label="Blocked Words"
-                value={form.badWords.words}
-                onChange={(value) => handleChange('badWords', 'words', value)}
-                placeholder="word1, word2, phrase here"
-                help="Separate words or phrases with commas or new lines."
-              />
+            <RuleCard title="Bad Words" description="Blocks configured banned words and phrases." enabled={form.badWords.enabled} onEnabledChange={(value) => updateSection('badWords', 'enabled', value)} punishment={form.badWords.punishment} onPunishmentChange={(value) => updateSection('badWords', 'punishment', value)} theme={theme} styles={styles}>
+              <TextArea styles={styles} label="Blocked Words" value={form.badWords.words} onChange={(value) => updateSection('badWords', 'words', value)} placeholder="word1, word2, phrase" />
             </RuleCard>
-
-            <RuleCard
-              styles={styles}
-              title="Repeated Messages"
-              description="Stops users repeating the same message too many times."
-              checked={form.repeatedMessages.enabled}
-              open={openSections.repeatedMessages}
-              onToggle={() => handleToggle('repeatedMessages')}
-              onOpenToggle={() => toggleSectionOpen('repeatedMessages')}
-              punishment={form.repeatedMessages.punishment}
-              onPunishmentChange={(value) =>
-                handleChange('repeatedMessages', 'punishment', value)
-              }
-            >
-              <div style={styles.ruleMiniGrid}>
-                <Field
-                  styles={styles}
-                  label="Max Repeats"
-                  type="number"
-                  min="1"
-                  value={form.repeatedMessages.maxRepeats}
-                  onChange={(value) =>
-                    handleChange('repeatedMessages', 'maxRepeats', value)
-                  }
-                />
-
-                <Field
-                  styles={styles}
-                  label="Interval Seconds"
-                  type="number"
-                  min="1"
-                  value={form.repeatedMessages.intervalSeconds}
-                  onChange={(value) =>
-                    handleChange('repeatedMessages', 'intervalSeconds', value)
-                  }
-                />
-              </div>
+            <RuleCard title="Repeated Messages" description="Stops users repeating the same message too many times." enabled={form.repeatedMessages.enabled} onEnabledChange={(value) => updateSection('repeatedMessages', 'enabled', value)} punishment={form.repeatedMessages.punishment} onPunishmentChange={(value) => updateSection('repeatedMessages', 'punishment', value)} theme={theme} styles={styles}>
+              <div style={styles.ruleMiniGrid}><Field styles={styles} label="Max Repeats" type="number" min="1" value={form.repeatedMessages.maxRepeats} onChange={(value) => updateSection('repeatedMessages', 'maxRepeats', value)} /><Field styles={styles} label="Interval Seconds" type="number" min="1" value={form.repeatedMessages.intervalSeconds} onChange={(value) => updateSection('repeatedMessages', 'intervalSeconds', value)} /></div>
             </RuleCard>
-
-            <RuleCard
-              styles={styles}
-              title="AutoMod Logs"
-              description="Send AutoMod action logs to a Discord channel."
-              checked={form.logs.enabled}
-              open={openSections.logs}
-              onToggle={() => handleToggle('logs')}
-              onOpenToggle={() => toggleSectionOpen('logs')}
-              hidePunishment
-            >
-              <div>
-                <p style={styles.label}>Log Channel</p>
-
-                <select
-                  value={form.logs.channelId}
-                  onChange={(event) => handleChange('logs', 'channelId', event.target.value)}
-                  style={styles.input}
-                  disabled={channelsLoading || logChannels.length === 0}
-                >
-                  <option value="">
-                    {channelsLoading
-                      ? 'Loading channels...'
-                      : logChannels.length === 0
-                        ? 'No text channels found'
-                        : 'Select a log channel'}
-                  </option>
-
-                  {logChannels.map((channel) => (
-                    <option key={channel.id} value={channel.id}>
-                      #{channel.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            <RuleCard title="AutoMod Logs" description="Send AutoMod action logs to a Discord channel." enabled={form.logs.enabled} onEnabledChange={(value) => updateSection('logs', 'enabled', value)} theme={theme} styles={styles}>
+              <label style={{ display: 'grid', gap: 7 }}><span style={styles.label}>Log Channel</span><select value={form.logs.channelId} onChange={(event) => updateSection('logs', 'channelId', event.target.value)} style={styles.input} disabled={channelsLoading || !logChannels.length}><option value="">{channelsLoading ? 'Loading channels...' : logChannels.length ? 'Select a log channel' : 'No text channels found'}</option>{logChannels.map((channel) => <option key={channel.id} value={channel.id}>#{channel.name}</option>)}</select></label>
             </RuleCard>
-
-            <div style={styles.saveRow}>
-              <PrimaryButton onClick={handleSave} disabled={!selectedGuild || saving}>
-                {saving ? 'Saving...' : 'Save AutoMod Settings'}
-              </PrimaryButton>
-            </div>
+            <div style={styles.saveRow}><PrimaryButton onClick={handleSave} disabled={!selectedGuild || saving}>{saving ? 'Saving...' : 'Save AutoMod Settings'}</PrimaryButton></div>
           </div>
         )}
       </SectionCard>
     </PageShell>
   );
 }
-
-const RuleCard = memo(function RuleCard({
-  title,
-  description,
-  checked,
-  open,
-  onToggle,
-  onOpenToggle,
-  punishment,
-  onPunishmentChange,
-  hidePunishment = false,
-  children,
-  styles,
-}) {
-  return (
-    <div style={styles.ruleCard(open, checked)}>
-      <div style={styles.ruleHeader}>
-        <button type="button" onClick={onOpenToggle} style={styles.ruleTitleButton}>
-          <div style={styles.ruleTitleRow}>
-            <span style={styles.ruleTitle}>{title}</span>
-
-            <span style={styles.statusPill(checked)}>
-              {checked ? 'Enabled' : 'Disabled'}
-            </span>
-          </div>
-
-          {description ? <p style={styles.ruleDescription}>{description}</p> : null}
-        </button>
-
-        <div style={styles.ruleActions}>
-          <ToggleButton checked={checked} onClick={onToggle} styles={styles} />
-
-          <button
-            type="button"
-            onClick={onOpenToggle}
-            aria-label={open ? `Collapse ${title}` : `Expand ${title}`}
-            style={styles.chevron(open)}
-          >
-            <span style={styles.chevronIcon(open)}>⌄</span>
-          </button>
-        </div>
-      </div>
-
-      {open ? (
-        <>
-          {!hidePunishment ? (
-            <div>
-              <p style={styles.label}>Action</p>
-
-              <MultiPunishmentSelect
-                styles={styles}
-                value={punishment}
-                onChange={onPunishmentChange}
-              />
-
-              <p style={styles.actionSummary}>
-                Current actions: {formatPunishments(punishment)}
-              </p>
-            </div>
-          ) : null}
-
-          {children ? <div style={styles.expandedPanel}>{children}</div> : null}
-        </>
-      ) : null}
-    </div>
-  );
-});
-
-const ToggleButton = memo(function ToggleButton({ checked, onClick, styles }) {
-  return (
-    <button type="button" onClick={onClick} style={styles.toggleButton(checked)}>
-      {checked ? <span>On</span> : null}
-      <span style={styles.toggleDot(checked)} />
-      {!checked ? <span style={styles.toggleOffLabel}>Off</span> : null}
-    </button>
-  );
-});
-
-const Field = memo(function Field({
-  label,
-  value,
-  onChange,
-  styles,
-  type = 'text',
-  min,
-  max,
-}) {
-  return (
-    <div style={styles.miniField}>
-      <p style={styles.label}>{label}</p>
-
-      <input
-        type={type}
-        min={min}
-        max={max}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        style={styles.input}
-      />
-    </div>
-  );
-});
-
-const TextAreaField = memo(function TextAreaField({
-  label,
-  value,
-  onChange,
-  styles,
-  placeholder,
-  help,
-}) {
-  return (
-    <div>
-      <p style={styles.label}>{label}</p>
-
-      <textarea
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-        rows={3}
-        style={styles.textarea}
-      />
-
-      {help ? <p style={styles.helpText}>{help}</p> : null}
-    </div>
-  );
-});
-
-const MultiPunishmentSelect = memo(function MultiPunishmentSelect({
-  value,
-  onChange,
-  styles,
-}) {
-  const selected = normalizePunishments(value);
-  const [open, setOpen] = useState(false);
-
-  const toggleValue = useCallback(
-    (optionValue) => {
-      const next = selected.includes(optionValue)
-        ? selected.filter((item) => item !== optionValue)
-        : [...selected, optionValue];
-
-      onChange(next.length > 0 ? next : ['delete']);
-    },
-    [onChange, selected],
-  );
-
-  return (
-    <div style={styles.punishmentSelectWrap}>
-      <button
-        type="button"
-        onClick={() => setOpen((current) => !current)}
-        style={styles.punishmentTrigger}
-      >
-        <span style={styles.punishmentTriggerText}>
-          {formatPunishments(selected)}
-        </span>
-
-        <span style={styles.chevronIcon(open)}>⌄</span>
-      </button>
-
-      {open ? (
-        <div style={styles.punishmentMenu}>
-          <div style={styles.punishmentGrid}>
-            {PUNISHMENT_OPTIONS.map((option) => {
-              const checked = selected.includes(option.value);
-
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => toggleValue(option.value)}
-                  style={styles.punishmentOption(checked)}
-                >
-                  <span>{option.label}</span>
-                  <span>{checked ? '✓' : ''}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-});
-
