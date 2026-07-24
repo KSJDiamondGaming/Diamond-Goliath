@@ -94,13 +94,9 @@ function emitGuildUpdate(guildId, payload = {}) {
   return update;
 }
 
-function normaliseSyncEvent(event) {
-  return String(event || '').trim();
-}
-
 function emitRoomEvent(room, event, update) {
   const roomName = String(room || '').trim();
-  const eventName = normaliseSyncEvent(event);
+  const eventName = String(event || '').trim();
   if (!roomName || !eventName || !io) return false;
 
   io.to(roomName).emit(eventName, update);
