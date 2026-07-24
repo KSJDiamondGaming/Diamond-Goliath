@@ -18,8 +18,6 @@ const SECTION_PATHS = Object.freeze({
   templates: 'modules.serverCopy.templates',
 });
 
-const LEGACY_TOP_LEVEL_SECTIONS = Object.freeze(Object.keys(SECTION_PATHS));
-
 function isPlainObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
@@ -73,26 +71,9 @@ function setRoutedSection(source, sectionName, sectionData = {}) {
   return setValueAtPath(source, resolveSectionPath(sectionName), isPlainObject(sectionData) ? sectionData : {});
 }
 
-function removeLegacyTopLevelSections(source = {}) {
-  if (!isPlainObject(source)) return {};
-  const clean = clone(source);
-  for (const sectionName of LEGACY_TOP_LEVEL_SECTIONS) {
-    delete clean[sectionName];
-  }
-  return clean;
-}
-
-function hasLegacyTopLevelSections(source = {}) {
-  if (!isPlainObject(source)) return false;
-  return LEGACY_TOP_LEVEL_SECTIONS.some((sectionName) => Object.prototype.hasOwnProperty.call(source, sectionName));
-}
-
 module.exports = {
   SECTION_PATHS,
-  LEGACY_TOP_LEVEL_SECTIONS,
   resolveSectionPath,
   getRoutedSection,
   setRoutedSection,
-  removeLegacyTopLevelSections,
-  hasLegacyTopLevelSections,
 };
