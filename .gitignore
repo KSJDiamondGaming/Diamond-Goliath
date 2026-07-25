@@ -58,7 +58,6 @@ src/guild/data/
 server/data/guilds/
 dashboard/server/data/guilds/
 
-
 # ======================
 # SQLite / Database Files
 # ======================
