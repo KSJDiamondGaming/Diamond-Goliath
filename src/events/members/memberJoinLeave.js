@@ -5,11 +5,11 @@ const guildManager = require('../../core/guild/guildManager');
 const autoRoleManager = require('../../modules/roleStudio/autoRoles/autoRoles');
 const statsManager = require('../../modules/stats/statsManager');
 const verificationManager = require('../../modules/verification/verificationManager');
-const welcomeManager = require('../../modules/welcome/welcome');
-const welcomeAvatarSync = require('../../modules/welcome/welcomeAvatarSync');
-const goodbyeManager = require('../../modules/goodbye/goodbye');
-const departureTemplateSender = require('../../modules/goodbye/departureTemplateSender');
-const goodbyeDepartureDm = require('../../modules/goodbye/goodbyeDepartureDm');
+const welcomeManager = require('../../modules/messageStudio/welcome/welcome');
+const welcomeAvatarSync = require('../../modules/messageStudio/welcome/welcomeAvatarSync');
+const goodbyeManager = require('../../modules/messageStudio/goodbye/goodbye');
+const departureTemplateSender = require('../../modules/messageStudio/goodbye/departureTemplateSender');
+const goodbyeDepartureDm = require('../../modules/messageStudio/goodbye/goodbyeDepartureDm');
 
 function formatTimestamp(timestamp, style = 'R') {
   return timestamp ? `<t:${Math.floor(timestamp / 1000)}:${style}>` : 'Unknown';

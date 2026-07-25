@@ -1,7 +1,7 @@
 'use strict';
 
-const welcomeManager = require('../../modules/welcome/welcome');
-const welcomeAvatarSync = require('../../modules/welcome/welcomeAvatarSync');
+const welcomeManager = require('../../modules/messageStudio/welcome/welcome');
+const welcomeAvatarSync = require('../../modules/messageStudio/welcome/welcomeAvatarSync');
 
 module.exports = {
   name: 'guildMemberUpdate',

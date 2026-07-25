@@ -2,8 +2,8 @@
 
 const { EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const stickyStore = require('./stickyGuildStore');
-const { TYPES, createTimelineEvent } = require('../../features/timeline/timelineManager');
-const { isModuleEnabled } = require('../../core/guild/guildManager');
+const { TYPES, createTimelineEvent } = require('../../../features/timeline/timelineManager');
+const { isModuleEnabled } = require('../../../core/guild/guildManager');
 
 const channelLocks = new Map();
 

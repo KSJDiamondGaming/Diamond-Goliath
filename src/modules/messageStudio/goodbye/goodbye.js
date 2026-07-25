@@ -5,7 +5,7 @@ const {
   getModuleSection,
   saveModuleSection,
   updateModuleSection,
-} = require('../../core/guild/moduleSectionManager');
+} = require('../../../core/guild/moduleSectionManager');
 const { buildPreviewEmbeds } = require('../embed/embedPanel');
 const embedTemplateManager = require('../embed/embedTemplateManager');
 

@@ -1,7 +1,7 @@
 'use strict';
 
 const { Events } = require('discord.js');
-const { handleStickyMessage } = require('../../modules/sticky/stickyManager');
+const { handleStickyMessage } = require('../../modules/messageStudio/sticky/stickyManager');
 const { handlePrefixCommand } = require('../../features/prefix/prefixRouter');
 const translationThreadManager = require('../../modules/translation/translationThreadManager');
 const statsManager = require('../../modules/stats/statsManager');

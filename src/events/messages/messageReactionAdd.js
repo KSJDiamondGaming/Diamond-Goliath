@@ -2,7 +2,7 @@
 
 const { handleReactionAdd } = require('../../modules/roleStudio/reactionRoles/reactionRoles');
 const { enterGiveaway } = require('../../modules/giveaways/giveawayManager');
-const { handleStarReactionAdd } = require('../../modules/starboard/starboardManager');
+const { handleStarReactionAdd } = require('../../modules/messageStudio/starboard/starboardManager');
 const { isModuleEnabled } = require('../../core/guild/guildManager');
 
 async function getReactionGuildId(reaction) {

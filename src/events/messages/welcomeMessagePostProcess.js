@@ -1,6 +1,6 @@
 'use strict';
 
-const welcomeManager = require('../../modules/welcome/welcome');
+const welcomeManager = require('../../modules/messageStudio/welcome/welcome');
 
 const MAX_TRACKED_MESSAGES = 1000;
 

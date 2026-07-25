@@ -1,10 +1,10 @@
 'use strict';
 
-// src/modules/embed/embedSocketEvents.js
+// src/modules/messageStudio/embed/embedSocketEvents.js
 
 const {
   emitGuildUpdate,
-} = require('../../server/sockets/socketHub');
+} = require('../../../server/sockets/socketHub');
 
 const EVENTS = Object.freeze({
   EMBED_CREATED: 'embed.created',

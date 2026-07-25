@@ -2,8 +2,8 @@
 
 const express = require('express');
 
-const starboardStore = require('../../modules/starboard/starboardStore');
-const starboardManager = require('../../modules/starboard/starboardManager');
+const starboardStore = require('../../modules/messageStudio/starboard/starboardStore');
+const starboardManager = require('../../modules/messageStudio/starboard/starboardManager');
 const { setModuleEnabled } = require('../../core/guild/guildManager');
 
 const router = express.Router();

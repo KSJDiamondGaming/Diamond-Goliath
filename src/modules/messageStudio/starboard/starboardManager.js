@@ -1,10 +1,10 @@
 'use strict';
 
-// src/modules/starboard/starboardManager.js
+// src/modules/messageStudio/starboard/starboardManager.js
 
 const { EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const starboardStore = require('./starboardStore');
-const { isModuleEnabled, setModuleEnabled } = require('../../core/guild/guildManager');
+const { isModuleEnabled, setModuleEnabled } = require('../../../core/guild/guildManager');
 
 const IMAGE_EXTENSION_PATTERN = /\.(png|jpe?g|gif|webp)(\?.*)?$/i;
 const messageLocks = new Map();

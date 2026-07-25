@@ -18,10 +18,10 @@ const {
   getDeploymentKeyFromState,
 } = require("./embedDeploymentStore");
 
-const guildManager = require("../../core/guild/guildManager");
+const guildManager = require("../../../core/guild/guildManager");
 const {
   validateChannelAccess,
-} = require("../../core/security/goliathPermissionGuard");
+} = require("../../../core/security/goliathPermissionGuard");
 
 const PANEL_COLOR = "#5865F2";
 const CUSTOM_HEX_VALUE = "__custom_hex__";

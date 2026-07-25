@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const {
   getGuildSection,
   updateGuildSection,
-} = require('../../core/guild/guildManager');
+} = require('../../../core/guild/guildManager');
 
 const MAX_EMBED_TOTAL = 6000;
 const MAX_HISTORY = 50;

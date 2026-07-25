@@ -1,13 +1,13 @@
 'use strict';
 
-// src/modules/starboard/starboardStore.js
+// src/modules/messageStudio/starboard/starboardStore.js
 
 const crypto = require('crypto');
 
 const {
   getGuildSection,
   updateGuildSection,
-} = require('../../core/guild/guildManager');
+} = require('../../../core/guild/guildManager');
 
 const SECTION = 'starboard';
 const MODULES_SECTION = 'modules';

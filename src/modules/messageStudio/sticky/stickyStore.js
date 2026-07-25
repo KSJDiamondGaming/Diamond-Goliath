@@ -1,6 +1,6 @@
 'use strict';
 
-const guildManager = require('../../core/guild/guildManager');
+const guildManager = require('../../../core/guild/guildManager');
 
 const MODULE_KEY = 'sticky';
 
