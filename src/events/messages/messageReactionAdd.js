@@ -1,7 +1,7 @@
 'use strict';
 
 const { handleReactionAdd } = require('../../modules/roleStudio/reactionRoles/reactionRoles');
-const { enterGiveaway } = require('../../modules/communityStudio/giveaways/giveawayManager');
+const { enterGiveawayReaction } = require('../../modules/communityStudio/giveaways/giveawaysManager');
 const { handleStarReactionAdd } = require('../../modules/messageStudio/starboard/starboardManager');
 const { isModuleEnabled } = require('../../core/guild/guildManager');
 
@@ -17,7 +17,7 @@ module.exports = {
     try {
       const guildId = await getReactionGuildId(reaction);
       await handleReactionAdd(reaction, user, client);
-      if (isModuleEnabled(guildId, 'giveaways')) await enterGiveaway(reaction, user, client);
+      if (isModuleEnabled(guildId, 'giveaways')) await enterGiveawayReaction(reaction, user);
       if (isModuleEnabled(guildId, 'starboard')) await handleStarReactionAdd(reaction, user, client);
     } catch (error) {
       console.error('[EVENT: messageReactionAdd]', error);
