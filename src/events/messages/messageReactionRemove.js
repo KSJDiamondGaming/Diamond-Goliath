@@ -1,7 +1,7 @@
 'use strict';
 
 const { handleReactionRemove } = require('../../modules/roleStudio/reactionRoles/reactionRoles');
-const { leaveGiveaway } = require('../../modules/communityStudio/giveaways/giveawayManager');
+const { leaveGiveawayReaction } = require('../../modules/communityStudio/giveaways/giveawaysManager');
 const { handleStarReactionRemove } = require('../../modules/messageStudio/starboard/starboardManager');
 const { isModuleEnabled } = require('../../core/guild/guildManager');
 
@@ -17,7 +17,7 @@ module.exports = {
     try {
       const guildId = await getReactionGuildId(reaction);
       await handleReactionRemove(reaction, user, client);
-      if (isModuleEnabled(guildId, 'giveaways')) await leaveGiveaway(reaction, user, client);
+      if (isModuleEnabled(guildId, 'giveaways')) await leaveGiveawayReaction(reaction, user);
       if (isModuleEnabled(guildId, 'starboard')) await handleStarReactionRemove(reaction, user, client);
     } catch (error) {
       console.error('[EVENT: messageReactionRemove]', error);
