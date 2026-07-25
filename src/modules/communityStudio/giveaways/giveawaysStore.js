@@ -39,9 +39,12 @@ function defaultGiveawaysSection() {
     logChannelId: null,
     managerRoleIds: [],
     allowMultipleEntries: false,
+    allowBotEntries: false,
     requireRole: false,
     requiredRoleIds: [],
+    blockedRoleIds: [],
     pingWinners: true,
+    defaultWinnerCount: 1,
     giveaways: {},
     analytics: {
       created: 0,
@@ -56,19 +59,28 @@ function defaultGiveawaysSection() {
 
 function normalizeGiveaway(input = {}) {
   const giveawayId = cleanString(input.giveawayId || input.id || createId('gw'), 'gw', 80);
+  const createdBy = cleanDiscordId(input.createdBy || input.hostId);
+  const status = ['draft', 'active', 'ended', 'cancelled'].includes(input.status)
+    ? input.status
+    : 'active';
+
   return {
     giveawayId,
     id: giveawayId,
-    status: ['draft', 'active', 'ended', 'cancelled'].includes(input.status) ? input.status : 'active',
+    enabled: input.enabled !== false,
+    status,
     prize: cleanString(input.prize || 'Mystery Prize', 'Mystery Prize', 200),
     description: cleanString(input.description || '', '', 1000),
     winnerCount: Math.max(1, Math.min(20, Math.floor(cleanNumber(input.winnerCount, 1)))),
     endsAt: input.endsAt || null,
     channelId: cleanDiscordId(input.channelId),
     messageId: cleanDiscordId(input.messageId),
-    createdBy: cleanDiscordId(input.createdBy),
+    createdBy,
+    hostId: createdBy,
     entries: cleanIdArray(input.entries),
     winners: cleanIdArray(input.winners),
+    requiredRoleIds: cleanIdArray(input.requiredRoleIds),
+    blockedRoleIds: cleanIdArray(input.blockedRoleIds),
     createdAt: input.createdAt || now(),
     updatedAt: input.updatedAt || input.createdAt || now(),
     endedAt: input.endedAt || null,
@@ -78,7 +90,9 @@ function normalizeGiveaway(input = {}) {
 function normalizeSection(section = {}) {
   const base = defaultGiveawaysSection();
   const source = section && typeof section === 'object' ? section : {};
-  const giveaways = source.giveaways && typeof source.giveaways === 'object' ? source.giveaways : {};
+  const giveaways = source.giveaways && typeof source.giveaways === 'object'
+    ? source.giveaways
+    : {};
 
   return {
     ...base,
@@ -88,9 +102,12 @@ function normalizeSection(section = {}) {
     logChannelId: cleanDiscordId(source.logChannelId),
     managerRoleIds: cleanIdArray(source.managerRoleIds),
     allowMultipleEntries: source.allowMultipleEntries === true,
+    allowBotEntries: source.allowBotEntries === true,
     requireRole: source.requireRole === true,
     requiredRoleIds: cleanIdArray(source.requiredRoleIds),
+    blockedRoleIds: cleanIdArray(source.blockedRoleIds),
     pingWinners: source.pingWinners !== false,
+    defaultWinnerCount: Math.max(1, Math.min(20, Math.floor(cleanNumber(source.defaultWinnerCount, 1)))),
     giveaways: Object.fromEntries(
       Object.entries(giveaways).map(([id, giveaway]) => {
         const normalized = normalizeGiveaway({ ...giveaway, giveawayId: giveaway.giveawayId || id });
@@ -103,6 +120,7 @@ function normalizeSection(section = {}) {
       entries: Math.max(0, Number(source.analytics?.entries || 0)),
       rerolls: Math.max(0, Number(source.analytics?.rerolls || 0)),
     },
+    createdAt: source.createdAt || base.createdAt,
     updatedAt: source.updatedAt || now(),
   };
 }
@@ -128,16 +146,15 @@ function updateSection(guildId, updater, guildOrMeta = {}) {
 }
 
 function saveGiveaway(guildId, giveaway, guildOrMeta = {}) {
-  const normalized = normalizeGiveaway(giveaway);
+  const inputId = cleanString(giveaway?.giveawayId || giveaway?.id || '', '', 80);
+  const existing = inputId ? getSection(guildId).giveaways?.[inputId] : null;
+  const normalized = normalizeGiveaway({ ...(existing || {}), ...(giveaway || {}) });
+
   return updateSection(guildId, (section) => ({
     ...section,
     giveaways: {
       ...(section.giveaways || {}),
-      [normalized.giveawayId]: {
-        ...(section.giveaways?.[normalized.giveawayId] || {}),
-        ...normalized,
-        updatedAt: now(),
-      },
+      [normalized.giveawayId]: normalized,
     },
     updatedAt: now(),
   }), guildOrMeta).giveaways[normalized.giveawayId];
@@ -145,6 +162,14 @@ function saveGiveaway(guildId, giveaway, guildOrMeta = {}) {
 
 function getGiveaway(guildId, giveawayId) {
   return getSection(guildId).giveaways?.[cleanString(giveawayId, '', 80)] || null;
+}
+
+function getGiveaways(guildId) {
+  return Object.values(getSection(guildId).giveaways || {});
+}
+
+function getActiveGiveaways(guildId) {
+  return getGiveaways(guildId).filter((giveaway) => giveaway.enabled !== false && giveaway.status === 'active');
 }
 
 function updateGiveaway(guildId, giveawayId, updater, guildOrMeta = {}) {
@@ -156,7 +181,7 @@ function updateGiveaway(guildId, giveawayId, updater, guildOrMeta = {}) {
       ...section,
       giveaways: {
         ...(section.giveaways || {}),
-        [giveawayId]: normalizeGiveaway({ ...current, ...next, giveawayId, updatedAt: now() }),
+        [giveawayId]: normalizeGiveaway({ ...current, ...(next || {}), giveawayId, updatedAt: now() }),
       },
       updatedAt: now(),
     };
@@ -189,6 +214,8 @@ module.exports = {
   updateSection,
   saveGiveaway,
   getGiveaway,
+  getGiveaways,
+  getActiveGiveaways,
   updateGiveaway,
   incrementAnalytics,
 };
