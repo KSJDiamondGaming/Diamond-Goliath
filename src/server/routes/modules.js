@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 const express = require('express');
 
@@ -32,7 +32,7 @@ const MODULE_CATALOG = Object.freeze({
   verification: {
     key: 'verification',
     name: 'Verification',
-    icon: 'âœ…',
+    icon: '\u2705',
     category: 'Security',
     summary: 'Verify members, assign roles and deploy a custom verification panel.',
     apiBase: '/api/verification',
@@ -43,7 +43,7 @@ const MODULE_CATALOG = Object.freeze({
   autoRoles: {
     key: 'autoRoles',
     name: 'Auto Roles',
-    icon: 'ðŸ¤–',
+    icon: '\uD83E\uDD16',
     category: 'Automation',
     summary: 'Automatically assign roles to members and bots when they join.',
     apiBase: '/api/modules/:guildId/auto-roles',
@@ -54,7 +54,7 @@ const MODULE_CATALOG = Object.freeze({
   embedStudio: {
     key: 'embedStudio',
     name: 'Embed Studio',
-    icon: 'ðŸ–¼ï¸',
+    icon: '\uD83D\uDDBC\uFE0F',
     category: 'Utilities',
     summary: 'Create, save and deploy reusable embed templates.',
     apiBase: '/api/modules/:guildId/embed-studio',

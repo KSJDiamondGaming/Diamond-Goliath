@@ -117,8 +117,8 @@ function getEffectiveVerificationSection(guildId) {
     ...(section.settings || {}),
     ...adminConfig,
     ...(adminConfig.settings || {}),
-    verificationChannelId: adminConfig.verificationChannelId ? section.settings?.verificationChannelId,
-    logChannelId: adminConfig.logChannelId ? section.settings?.logChannelId,
+    verificationChannelId: adminConfig.verificationChannelId ?? section.settings?.verificationChannelId,
+    logChannelId: adminConfig.logChannelId ?? section.settings?.logChannelId,
     verifiedRoleIds: adminConfig.verifiedRoleIds?.length
       ? adminConfig.verifiedRoleIds
       : section.settings?.verifiedRoleIds,
@@ -179,14 +179,13 @@ function renderMessage(template, member, values = {}) {
     memberCount: String(guild?.memberCount || 0),
     verifiedRoles: values.verifiedRoles || '',
     pendingRoles: values.pendingRoles || '',
-    minimumAccountAgeDays: values.minimumAccountAgeDays ? '',
-    minimumMembershipAgeMinutes: values.minimumMembershipAgeMinutes ? '',
-    cooldownSeconds: values.cooldownSeconds ? '',
-    attempts: values.attempts ? '',
+    minimumAccountAgeDays: values.minimumAccountAgeDays ?? '',
+    minimumMembershipAgeMinutes: values.minimumMembershipAgeMinutes ?? '',
+    cooldownSeconds: values.cooldownSeconds ?? '',
+    attempts: values.attempts ?? '',
     reason: values.reason || '',
   };
-
-  return String(template || '').replace(/\{([a-zA-Z0-9_]+)\}/g, (_, key) => String(replacements[key] ? `{${key}}`));
+  return String(template || '').replace(/\{([a-zA-Z0-9_]+)\}/g, (_, key) => String(replacements[key] ?? `{${key}}`));
 }
 
 async function fetchRole(guild, roleId) {
@@ -653,7 +652,7 @@ async function handleVerificationInteraction(interaction) {
   if (!parsed || !interaction?.guildId) return false;
   const result = await verifyMember(interaction);
   await interaction.reply({
-    content: result.ok ? `âœ… ${result.message}` : `âŒ ${result.message}`,
+    content: result.ok ? `\u2705 ${result.message}` : `\u274C ${result.message}`,
     flags: 64,
   }).catch(() => null);
   return true;
