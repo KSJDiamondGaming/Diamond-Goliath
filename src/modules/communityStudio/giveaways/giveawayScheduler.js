@@ -1,17 +1,14 @@
 'use strict';
 
-const giveawayManager = require('./giveawayManager');
+const giveawaysManager = require('./giveawaysManager');
 
 function start(client) {
-  const timer = giveawayManager.startGiveawayScheduler(client);
+  const timer = giveawaysManager.startGiveawayScheduler(client);
   return {
     ok: Boolean(client),
     guildsChecked: client?.guilds?.cache?.size || 0,
     started: Boolean(timer),
-    delegated: true,
   };
 }
 
-module.exports = {
-  start,
-};
+module.exports = { start };
