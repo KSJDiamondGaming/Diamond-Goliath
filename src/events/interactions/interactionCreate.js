@@ -41,6 +41,16 @@ const welcomePanel = optionalRequire('welcome', '../../modules/messageStudio/wel
 const goodbyePanel = optionalRequire('goodbye', '../../modules/messageStudio/goodbye/goodbyePanel');
 const moduleAdminPanels = optionalRequire('generic module admin', '../../core/admin/functions/moduleAdminPanels');
 
+const MODULE_STUDIO_PREFIXES = [
+  ['communityStudio', ['admin:invites', 'invites:', 'admin:giveaways', 'giveaways:', 'admin:leveling', 'leveling:', 'admin:polls', 'polls:']],
+  ['feedbackStudio', ['admin:forms', 'forms:', 'admin:suggestions', 'suggestions:', 'admin:tickets', 'tickets:']],
+  ['messageStudio', ['admin:embed', 'embed:', 'admin:goodbye', 'goodbye:', 'admin:starboard', 'starboard:', 'admin:sticky', 'sticky:', 'admin:welcome', 'welcome:']],
+  ['roleStudio', ['admin:autoRoles', 'autoroles:', 'admin:reactionRoles', 'reactionRoles:', 'admin:temporaryRoles', 'temporaryRoles:', 'admin:timedRoles', 'timedRoles:']],
+  ['securityStudio', ['admin:verification', 'verification:']],
+  ['socialStudio', ['admin:social', 'social:']],
+  ['utilityStudio', ['admin:schedule', 'schedule:', 'admin:stats', 'stats:', 'admin:translation', 'translation:', 'admin:tempVoice', 'tempVoice:']],
+];
+
 let invitesAdminPanel = null;
 let invitesAdminPanelError = null;
 function loadInvitesAdminPanel() {
@@ -60,7 +70,6 @@ function loadInvitesAdminPanel() {
 }
 
 const verificationLocks = new Map();
-
 async function callHandler(target, method, ...args) {
   if (typeof target?.[method] !== 'function') return false;
   return Boolean(await target[method](...args));
@@ -70,9 +79,7 @@ function isValidHttpUrl(value) {
   try {
     const parsed = new URL(String(value || '').trim());
     return parsed.protocol === 'http:' || parsed.protocol === 'https:';
-  } catch {
-    return false;
-  }
+  } catch { return false; }
 }
 
 function sanitizeEmbedData(embed) {
@@ -96,7 +103,23 @@ function sanitizeEmbedData(embed) {
   return sanitized;
 }
 
-function sanitizeComponentPayload(payload) {
+function resolveParentStudio(customId) {
+  const id = String(customId || '');
+  for (const [studioKey, prefixes] of MODULE_STUDIO_PREFIXES) {
+    if (prefixes.some((prefix) => id === prefix || id.startsWith(prefix))) return studioKey;
+  }
+  return null;
+}
+
+function normalizeBackComponent(component, interaction) {
+  const data = typeof component?.toJSON === 'function' ? component.toJSON() : { ...component };
+  const customId = data?.custom_id || data?.customId || null;
+  const parentStudio = resolveParentStudio(interaction?.customId);
+  if (!parentStudio || customId !== 'admin:modules') return data;
+  return { ...data, custom_id: `admin:studio:${parentStudio}`, label: '⬅️ Back' };
+}
+
+function sanitizeComponentPayload(payload, interaction) {
   if (!payload || typeof payload !== 'object') return payload;
   const sanitizedPayload = {
     ...payload,
@@ -107,13 +130,15 @@ function sanitizeComponentPayload(payload) {
   const rows = [];
   for (const actionRow of payload.components) {
     const rowData = typeof actionRow?.toJSON === 'function' ? actionRow.toJSON() : actionRow;
-    const components = Array.isArray(rowData?.components) ? rowData.components.filter((component) => {
-      const customId = component?.custom_id || component?.customId || null;
-      if (!customId) return true;
-      if (seen.has(customId)) return false;
-      seen.add(customId);
-      return true;
-    }) : [];
+    const components = Array.isArray(rowData?.components)
+      ? rowData.components.map((component) => normalizeBackComponent(component, interaction)).filter((component) => {
+        const customId = component?.custom_id || component?.customId || null;
+        if (!customId) return true;
+        if (seen.has(customId)) return false;
+        seen.add(customId);
+        return true;
+      })
+      : [];
     if (components.length) rows.push({ ...rowData, components });
   }
   return { ...sanitizedPayload, components: rows };
@@ -125,7 +150,7 @@ function wrapInteractionResponses(interaction) {
   for (const methodName of ['reply', 'update', 'editReply', 'followUp']) {
     if (typeof interaction[methodName] !== 'function') continue;
     const original = interaction[methodName].bind(interaction);
-    interaction[methodName] = (payload, ...args) => original(sanitizeComponentPayload(payload), ...args);
+    interaction[methodName] = (payload, ...args) => original(sanitizeComponentPayload(payload, interaction), ...args);
   }
 }
 
@@ -152,8 +177,7 @@ async function fetchFreshMember(interaction) {
   const guild = interaction?.guild;
   const userId = interaction?.user?.id;
   if (!guild || !userId) return null;
-  return guild.members.fetch({ user: userId, force: true })
-    .catch(() => guild.members.fetch(userId).catch(() => null));
+  return guild.members.fetch({ user: userId, force: true }).catch(() => guild.members.fetch(userId).catch(() => null));
 }
 
 async function handleVerificationMemberInteraction(interaction) {
@@ -165,8 +189,7 @@ async function handleVerificationMemberInteraction(interaction) {
   const operation = (async () => {
     const member = await fetchFreshMember(interaction);
     if (!member) return { ok: false, message: 'Member not found. Please try again.' };
-    const result = await verificationManager.verifyMember({ guild: interaction.guild, guildId: interaction.guildId, member, user: interaction.user });
-    return result;
+    return verificationManager.verifyMember({ guild: interaction.guild, guildId: interaction.guildId, member, user: interaction.user });
   })();
   verificationLocks.set(lockKey, operation);
   try {
@@ -199,18 +222,14 @@ module.exports = {
 
       const interactionAgeMs = Math.max(0, Date.now() - Number(interaction.createdTimestamp || Date.now()));
       const customId = String(interaction.customId || '');
-      if (interactionAgeMs > 1500) {
-        console.warn(`[InteractionCreate] Slow dispatch before routing: customId=${customId} age=${interactionAgeMs}ms pid=${process.pid}`);
-      }
+      if (interactionAgeMs > 1500) console.warn(`[InteractionCreate] Slow dispatch before routing: customId=${customId} age=${interactionAgeMs}ms pid=${process.pid}`);
 
       if (customId === 'admin:modules' || customId.startsWith('admin:modules:page:') || customId.startsWith('admin:module:') || customId.startsWith('admin:studio:')) {
-        if (!await callHandler(moduleAdminPanels, 'handleModuleAdminInteraction', interaction)) {
-          throw new Error(`Module admin did not handle ${customId}.`);
-        }
+        if (!await callHandler(moduleAdminPanels, 'handleModuleAdminInteraction', interaction)) throw new Error(`Module admin did not handle ${customId}.`);
         return;
       }
 
-      if (interaction.customId === 'admin:invites') {
+      if (customId === 'admin:invites') {
         const panel = loadInvitesAdminPanel();
         if (typeof panel?.buildInviteStudioPayload !== 'function') {
           const reason = String(invitesAdminPanelError?.message || 'Unknown module load error').slice(0, 500);
@@ -223,7 +242,7 @@ module.exports = {
       if (startsWith(interaction, 'invites:')) {
         const panel = loadInvitesAdminPanel();
         if (!panel) throw new Error('Invite Studio failed to load.');
-        if (!await callHandler(panel, 'handleInviteStudioInteraction', interaction)) throw new Error(`Invite Studio did not handle ${interaction.customId}.`);
+        if (!await callHandler(panel, 'handleInviteStudioInteraction', interaction)) throw new Error(`Invite Studio did not handle ${customId}.`);
         return;
       }
       if (startsWith(interaction, 'admin:verification')) { await callHandler(verificationAdminPanel, 'handleVerificationAdminInteraction', interaction); return; }
