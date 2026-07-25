@@ -1,8 +1,5 @@
 'use strict';
 
-// src/modules/utilityStudio/translation/providers/providerManager.js
-// Dashboard/API compatibility wrapper around the live translation provider router.
-
 const translationStore = require('../translationStore');
 const translationProviderManager = require('../translationProviderManager');
 
@@ -23,17 +20,12 @@ function isPlainObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function normalizeProvider(provider = 'manual') {
-  return translationProviderManager.normalizeProvider(provider);
-}
-
 function cleanLanguageCode(value, fallback = 'en') {
   const clean = String(value || fallback)
     .trim()
     .toLowerCase()
     .replace(/[^a-z-]/g, '')
     .slice(0, 12);
-
   return clean || fallback;
 }
 
@@ -57,17 +49,16 @@ function getProviderStatus(guildId) {
   const selectedInfo = liveStatus.providers?.[selectedProvider] || {};
 
   const supportedProviders = translationProviderManager.listProviders().map((providerMeta) => {
-    const id = normalizeProvider(providerMeta.id);
+    const id = translationProviderManager.normalizeProvider(providerMeta.id);
     const providerInfo = liveStatus.providers?.[id] || {};
-
     return {
       ...providerMeta,
       id,
       label: PROVIDER_LABELS[id] || providerMeta.label || id,
       enabled: id === 'manual' ? false : providerInfo.enabled !== false,
       selected: id === selectedProvider,
-      healthy: id === 'manual' ? false : providerInfo.healthy === true,
-      ready: id === 'manual' ? false : providerInfo.healthy === true,
+      healthy: id !== 'manual' && providerInfo.healthy === true,
+      ready: id !== 'manual' && providerInfo.healthy === true,
       status: providerStatusCode(id, providerInfo),
       apiKeyConfigured: id === 'manual'
         ? false
@@ -105,8 +96,7 @@ function sanitizeProviderSettings(input = {}) {
     : isPlainObject(source.settings?.providerSettings)
       ? source.settings.providerSettings
       : {};
-
-  const provider = normalizeProvider(source.provider || source.settings?.provider);
+  const provider = translationProviderManager.normalizeProvider(source.provider || source.settings?.provider);
   const defaultTargetLanguage = cleanLanguageCode(
     source.defaultLanguage || source.defaultTargetLanguage || source.settings?.defaultTargetLanguage,
     'en'
@@ -134,23 +124,17 @@ function sanitizeProviderSettings(input = {}) {
     },
     fallbackOrder: Array.isArray(rawProviderSettings.fallbackOrder)
       ? rawProviderSettings.fallbackOrder
-        .map(normalizeProvider)
+        .map(translationProviderManager.normalizeProvider)
         .filter((fallbackProvider) => fallbackProvider !== 'manual' && fallbackProvider !== provider)
         .filter((fallbackProvider, index, providers) => providers.indexOf(fallbackProvider) === index)
       : [],
   };
 
-  return {
-    provider,
-    defaultTargetLanguage,
-    defaultSourceLanguage,
-    providerSettings,
-  };
+  return { provider, defaultTargetLanguage, defaultSourceLanguage, providerSettings };
 }
 
 function saveProviderConfig(guildId, input = {}) {
   const settings = sanitizeProviderSettings(input);
-
   return translationStore.updateTranslationSection(guildId, (section) => ({
     ...section,
     provider: settings.provider,
@@ -176,34 +160,9 @@ function saveProviderConfig(guildId, input = {}) {
   }));
 }
 
-async function translate({ guildId, text, fromLanguage = 'auto', toLanguage = 'en', options = {} } = {}) {
-  const section = translationStore.getTranslationSection(guildId);
-  const result = await translationProviderManager.translateText({
-    section,
-    guildId,
-    text,
-    sourceLanguage: fromLanguage,
-    targetLanguage: toLanguage,
-    options,
-  });
-
-  if (!result.success) {
-    const error = new Error(result.errorMessage || result.error || 'Translation provider is not configured.');
-    error.code = result.errorCode || 'TRANSLATION_PROVIDER_NOT_READY';
-    error.provider = result.provider;
-    error.status = result.errorCode || 'error';
-    error.retryable = result.retryable === true;
-    throw error;
-  }
-
-  return result;
-}
-
 module.exports = {
   PROVIDER_LABELS,
-  normalizeProvider,
   getProviderStatus,
   sanitizeProviderSettings,
   saveProviderConfig,
-  translate,
 };
