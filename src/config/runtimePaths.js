@@ -10,7 +10,6 @@ function resolveBotMode(botMode = process.env.BOT_MODE || 'DEV') {
 function getRuntimeRoot(botMode = process.env.BOT_MODE || 'DEV') {
   return path.join(
     process.cwd(),
-    'src',
     'runtime',
     resolveBotMode(botMode)
   );
