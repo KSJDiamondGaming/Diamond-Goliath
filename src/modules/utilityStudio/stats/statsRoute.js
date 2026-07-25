@@ -2,7 +2,7 @@
 
 const express = require('express');
 const guildManager = require('../../../core/guild/guildManager');
-const verification = require('../../securityStudio/verification/verification');
+const verification = require('../../securityStudio/verification');
 const stats = require('./stats');
 const statsHealth = require('./statsHealth');
 

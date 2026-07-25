@@ -13,8 +13,8 @@ const {
 
 const autoRoleStore = require('../../modules/roleStudio/autoRoles/autoRoles');
 const autoRoleManager = autoRoleStore;
-const verificationStore = require('../../modules/securityStudio/verification/verificationStore');
-const verificationManager = require('../../modules/securityStudio/verification/verificationManager');
+const verificationStore = require('../../modules/securityStudio/verificationStore');
+const verificationManager = require('../../modules/securityStudio/verificationManager');
 const embedTemplateManager = require('../../modules/messageStudio/embed/embedTemplateManager');
 const {
   getAllEmbedDeployments,

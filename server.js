@@ -66,7 +66,7 @@ const permissionHealthRoutes = route('permission health routes', './src/server/r
 const socialRoutes = route('social routes', './src/modules/social/socialRoute');
 const scheduleRoutes = route('schedule routes', './src/modules/utilityStudio/schedule/scheduleRoute');
 const invitesRoutes = route('invite routes', './src/modules/communityStudio/invites/invitesRoute');
-const verificationRoutes = route('verification routes', './src/modules/securityStudio/verification/verificationRoute');
+const verificationRoutes = route('verification routes', './src/modules/securityStudio/verificationRoute');
 const autoRolesRoutes = route('auto roles routes', './src/modules/roleStudio/autoRoles/autoRolesRoute');
 const welcomeRoutes = route('welcome routes', './src/modules/messageStudio/welcome/welcomeRoute');
 const goodbyeRoutes = route('goodbye routes', './src/modules/messageStudio/goodbye/goodbyeRoute');
@@ -195,7 +195,7 @@ client.once('clientReady', async () => {
     runStartupTask('Translation', () => require('./src/modules/utilityStudio/translation/translationStartup').startupTranslation(client)),
     runStartupTask('Goodbye', () => require('./src/modules/messageStudio/goodbye/goodbye').startupGoodbye(client)),
     runStartupTask('Reaction Roles', () => require('./src/modules/roleStudio/reactionRoles/reactionRoles').startup(client)),
-    runStartupTask('Verification', () => require('./src/modules/securityStudio/verification/verification').startupVerification(client)),
+    runStartupTask('Verification', () => require('./src/modules/securityStudio/verification').startupVerification(client)),
   ]);
   backupScheduler.startBackupScheduler?.(client);
 });

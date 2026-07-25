@@ -15,7 +15,7 @@ const {
   AttachmentBuilder,
 } = require('discord.js');
 
-const guildManager = require('../../../core/guild/guildManager');
+const guildManager = require('../../core/guild/guildManager');
 const verificationManager = require('./verificationManager');
 const verificationStore = require('./verificationStore');
 

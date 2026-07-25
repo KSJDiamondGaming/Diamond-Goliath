@@ -11,7 +11,7 @@ function optionalRequire(label, modulePath, fallback = {}) {
   }
 }
 
-const verificationManager = optionalRequire('verification manager', '../../modules/securityStudio/verification/verificationManager');
+const verificationManager = optionalRequire('verification manager', '../../modules/securityStudio/verificationManager');
 const ticketInteractionHandler = optionalRequire('tickets', '../../modules/feedbackStudio/tickets/tickets');
 const polls = optionalRequire('polls', '../../modules/communityStudio/polls/polls');
 const tempVoiceInteractionHandler = optionalRequire('temp voice', '../../modules/utilityStudio/tempVoice/tempVoiceInteractionHandler');
@@ -34,7 +34,7 @@ const levelingAdminPanel = optionalRequire('leveling admin', '../../modules/comm
 const socialAdminPanel = optionalRequire('social admin', '../../modules/social/socialPanel');
 const schedulePanel = optionalRequire('schedule admin', '../../modules/utilityStudio/schedule/schedulePanel');
 const scheduleDeployment = optionalRequire('schedule RSVP', '../../modules/utilityStudio/schedule/scheduleDeployment');
-const verificationAdminPanel = optionalRequire('verification admin', '../../modules/securityStudio/verification/verificationPanel');
+const verificationAdminPanel = optionalRequire('verification admin', '../../modules/securityStudio/verificationPanel');
 const autorolesPanel = optionalRequire('auto roles', '../../modules/roleStudio/autoRoles/autoRolesPanel');
 const timedRolesPanel = optionalRequire('timed roles', '../../modules/roleStudio/timedRoles/timedRolesPanel');
 const welcomePanel = optionalRequire('welcome', '../../modules/messageStudio/welcome/welcomePanel');
