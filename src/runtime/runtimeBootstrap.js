@@ -69,7 +69,7 @@ function getModeKey(mode) {
 
 function bootstrapRuntime(mode = 'DEV') {
   const modeKey = getModeKey(mode);
-  const modeRoot = path.join(process.cwd(), 'src', 'runtime', modeKey);
+  const modeRoot = path.join(process.cwd(), 'runtime', modeKey);
 
   const paths = {
     root: modeRoot,
