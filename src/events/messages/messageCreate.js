@@ -3,9 +3,9 @@
 const { Events } = require('discord.js');
 const { handleStickyMessage } = require('../../modules/messageStudio/sticky/stickyManager');
 const { handlePrefixCommand } = require('../../features/prefix/prefixRouter');
-const translationThreadManager = require('../../modules/translation/translationThreadManager');
-const statsManager = require('../../modules/stats/statsManager');
-const levelingManager = require('../../modules/leveling/levelingManager');
+const translationThreadManager = require('../../modules/utilityStudio/translation/translationThreadManager');
+const statsManager = require('../../modules/utilityStudio/stats/statsManager');
+const levelingManager = require('../../modules/communityStudio/leveling/levelingManager');
 
 module.exports = {
   name: Events.MessageCreate,

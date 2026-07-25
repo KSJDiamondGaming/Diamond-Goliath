@@ -4,9 +4,9 @@ Tickets is a flagship Goliath module. It keeps the standard module entry points 
 
 ## Canonical entry points
 
-- `src/modules/tickets/tickets.js` — public runtime and business API
-- `src/modules/tickets/ticketsPanel.js` — Discord `/admin` and `/ticket setup` UI
-- `src/modules/tickets/ticketsRoute.js` — dashboard/API router
+- `src/modules/feedbackStudio/tickets/tickets.js` — public runtime and business API
+- `src/modules/feedbackStudio/tickets/ticketsPanel.js` — Discord `/admin` and `/ticket setup` UI
+- `src/modules/feedbackStudio/tickets/ticketsRoute.js` — dashboard/API router
 
 External code should import one of these three files instead of reaching directly into ticket internals.
 
@@ -39,7 +39,7 @@ External code should import one of these three files instead of reaching directl
 ## Target internal structure
 
 ```text
-src/modules/tickets/
+src/modules/feedbackStudio/tickets/
 ├── tickets.js
 ├── ticketsPanel.js
 ├── ticketsRoute.js

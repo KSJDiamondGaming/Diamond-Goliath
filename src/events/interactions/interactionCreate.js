@@ -11,30 +11,30 @@ function optionalRequire(label, modulePath, fallback = {}) {
   }
 }
 
-const verificationManager = optionalRequire('verification manager', '../../modules/verification/verificationManager');
-const ticketInteractionHandler = optionalRequire('tickets', '../../modules/tickets/tickets');
-const polls = optionalRequire('polls', '../../modules/polls/polls');
-const tempVoiceInteractionHandler = optionalRequire('temp voice', '../../modules/tempvoice/tempVoiceInteractionHandler');
-const suggestionsInteractionHandler = optionalRequire('suggestions', '../../modules/suggestions/suggestionsInteractionHandler');
-const giveawaysInteractionHandler = optionalRequire('giveaways', '../../modules/giveaways/giveawaysInteractionHandler');
-const formsInteractionHandler = optionalRequire('forms', '../../modules/forms/formsInteractionHandler');
+const verificationManager = optionalRequire('verification manager', '../../modules/securityStudio/verification/verificationManager');
+const ticketInteractionHandler = optionalRequire('tickets', '../../modules/feedbackStudio/tickets/tickets');
+const polls = optionalRequire('polls', '../../modules/communityStudio/polls/polls');
+const tempVoiceInteractionHandler = optionalRequire('temp voice', '../../modules/utilityStudio/tempVoice/tempVoiceInteractionHandler');
+const suggestionsInteractionHandler = optionalRequire('suggestions', '../../modules/feedbackStudio/suggestions/suggestionsInteractionHandler');
+const giveawaysInteractionHandler = optionalRequire('giveaways', '../../modules/communityStudio/giveaways/giveawaysInteractionHandler');
+const formsInteractionHandler = optionalRequire('forms', '../../modules/feedbackStudio/forms/formsInteractionHandler');
 const testSecurityCommand = optionalRequire('test security', '../../commands/admin/testsecurity');
 const embedPanel = optionalRequire('embed panel', '../../modules/messageStudio/embed/embedPanel');
 const duplicator = optionalRequire('duplicator', '../../core/dev/duplicator');
 const adminPanel = optionalRequire('admin panel', '../../core/admin/functions/adminPanel');
-const statsAdminPanel = optionalRequire('stats admin', '../../modules/stats/statsPanel');
+const statsAdminPanel = optionalRequire('stats admin', '../../modules/utilityStudio/stats/statsPanel');
 const reactionRolesAdminPanel = optionalRequire('reaction roles admin', '../../modules/roleStudio/reactionRoles/reactionRolesPanel');
-const suggestionsAdminPanel = optionalRequire('suggestions admin', '../../modules/suggestions/suggestionsAdminPanel');
-const giveawaysAdminPanel = optionalRequire('giveaways admin', '../../modules/giveaways/giveawaysAdminPanel');
-const formsAdminPanel = optionalRequire('forms admin', '../../modules/forms/formsAdminPanel');
-const pollsAdminPanel = optionalRequire('polls admin', '../../modules/polls/pollsPanel');
+const suggestionsAdminPanel = optionalRequire('suggestions admin', '../../modules/feedbackStudio/suggestions/suggestionsAdminPanel');
+const giveawaysAdminPanel = optionalRequire('giveaways admin', '../../modules/communityStudio/giveaways/giveawaysAdminPanel');
+const formsAdminPanel = optionalRequire('forms admin', '../../modules/feedbackStudio/forms/formsAdminPanel');
+const pollsAdminPanel = optionalRequire('polls admin', '../../modules/communityStudio/polls/pollsPanel');
 const starboardAdminPanel = optionalRequire('starboard admin', '../../modules/messageStudio/starboard/starboardAdminPanel');
 const stickyAdminPanel = optionalRequire('sticky admin', '../../modules/messageStudio/sticky/stickyAdminPanel');
-const levelingAdminPanel = optionalRequire('leveling admin', '../../modules/leveling/levelingAdminPanel');
+const levelingAdminPanel = optionalRequire('leveling admin', '../../modules/communityStudio/leveling/levelingAdminPanel');
 const socialAdminPanel = optionalRequire('social admin', '../../modules/social/socialPanel');
-const schedulePanel = optionalRequire('schedule admin', '../../modules/schedule/schedulePanel');
-const scheduleDeployment = optionalRequire('schedule RSVP', '../../modules/schedule/scheduleDeployment');
-const verificationAdminPanel = optionalRequire('verification admin', '../../modules/verification/verificationPanel');
+const schedulePanel = optionalRequire('schedule admin', '../../modules/utilityStudio/schedule/schedulePanel');
+const scheduleDeployment = optionalRequire('schedule RSVP', '../../modules/utilityStudio/schedule/scheduleDeployment');
+const verificationAdminPanel = optionalRequire('verification admin', '../../modules/securityStudio/verification/verificationPanel');
 const autorolesPanel = optionalRequire('auto roles', '../../modules/roleStudio/autoRoles/autoRolesPanel');
 const timedRolesPanel = optionalRequire('timed roles', '../../modules/roleStudio/timedRoles/timedRolesPanel');
 const welcomePanel = optionalRequire('welcome', '../../modules/messageStudio/welcome/welcomePanel');
@@ -46,7 +46,7 @@ let invitesAdminPanelError = null;
 function loadInvitesAdminPanel() {
   if (invitesAdminPanel?.buildInviteStudioPayload && invitesAdminPanel?.handleInviteStudioInteraction) return invitesAdminPanel;
   try {
-    const modulePath = require.resolve('../../modules/invites/invitesAdminPanel');
+    const modulePath = require.resolve('../../modules/communityStudio/invites/invitesAdminPanel');
     delete require.cache[modulePath];
     invitesAdminPanel = require(modulePath);
     invitesAdminPanelError = null;

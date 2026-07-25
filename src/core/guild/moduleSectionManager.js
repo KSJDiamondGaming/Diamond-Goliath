@@ -6,7 +6,7 @@ const {
   getGuildSection,
   updateGuildSection,
 } = require('./guildManager');
-const { prepareInviteSection } = require('../../modules/invites/inviteTemplates');
+const { prepareInviteSection } = require('../../modules/communityStudio/invites/inviteTemplates');
 
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));

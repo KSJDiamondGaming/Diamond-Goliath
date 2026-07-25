@@ -4,7 +4,7 @@ Schedule is Goliath's timezone-aware event planning and attendance module.
 
 ## Current foundation
 
-The canonical implementation lives in `src/modules/schedule/`.
+The canonical implementation lives in `src/modules/utilityStudio/schedule/`.
 
 - `schedule.js` — storage, events, recurrence, RSVPs, waitlists, reminders, health, repair and startup processing
 - `scheduleRoute.js` — module API

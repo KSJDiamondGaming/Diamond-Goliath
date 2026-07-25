@@ -1,7 +1,7 @@
 'use strict';
 
 const express = require('express');
-const translationStore = require('../../modules/translation/translationStore');
+const translationStore = require('../../modules/utilityStudio/translation/translationStore');
 
 const router = express.Router();
 

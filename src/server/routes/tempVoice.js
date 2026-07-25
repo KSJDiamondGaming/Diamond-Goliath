@@ -2,8 +2,8 @@
 
 const express = require('express');
 
-const tempVoiceStore = require('../../modules/tempvoice/tempVoiceStore');
-const tempVoiceManager = require('../../modules/tempvoice/tempVoiceManager');
+const tempVoiceStore = require('../../modules/utilityStudio/tempVoice/tempVoiceStore');
+const tempVoiceManager = require('../../modules/utilityStudio/tempVoice/tempVoiceManager');
 const { setModuleEnabled } = require('../../core/guild/guildManager');
 
 const router = express.Router();

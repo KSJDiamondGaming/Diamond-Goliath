@@ -1268,7 +1268,7 @@ async function handleAdminNavigation(interaction, navState = panelNav.createStat
   if (customId === 'admin:tickets') {
   const {
     sendSetupPanel,
-  } = require('../../modules/tickets/ticketSetupPanel');
+  } = require('../../modules/feedbackStudio/tickets/ticketSetupPanel');
 
   return sendSetupPanel(interaction);
 }

@@ -4,14 +4,14 @@
 
 const express = require('express');
 
-const formStore = require('../../modules/forms/formStore');
-const formManager = require('../../modules/forms/formManager');
-const ticketStore = require('../../modules/tickets/ticketStore');
+const formStore = require('../../modules/feedbackStudio/forms/formStore');
+const formManager = require('../../modules/feedbackStudio/forms/formManager');
+const ticketStore = require('../../modules/feedbackStudio/tickets/ticketStore');
 const planLimitManager = require('../billing/planLimitManager');
 const {
   buildFormsWorkflowOverview,
   buildSubmissionWorkflowSummary,
-} = require('../../modules/forms/formWorkflowSummary');
+} = require('../../modules/feedbackStudio/forms/formWorkflowSummary');
 const {
   isGoliathPermissionError,
   validateRoleSelection,

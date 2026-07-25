@@ -2,9 +2,9 @@
 
 const { Events } = require('discord.js');
 const loggingService = require('../../core/logging/service');
-const invites = require('../../modules/invites/invites');
-const invitePanels = require('../../modules/invites/invitesPublicPanels');
-const memberProfiles = require('../../modules/invites/invitesMemberProfiles');
+const invites = require('../../modules/communityStudio/invites/invites');
+const invitePanels = require('../../modules/communityStudio/invites/invitesPublicPanels');
+const memberProfiles = require('../../modules/communityStudio/invites/invitesMemberProfiles');
 
 async function sendConfiguredLog(guild, payload) {
   const section = invites.getSection(guild.id);

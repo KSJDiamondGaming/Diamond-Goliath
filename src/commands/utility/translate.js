@@ -2,8 +2,8 @@
 
 const { SlashCommandBuilder } = require('discord.js');
 
-const translationStore = require('../../modules/translation/translationStore');
-const translationManager = require('../../modules/translation/translationManager');
+const translationStore = require('../../modules/utilityStudio/translation/translationStore');
+const translationManager = require('../../modules/utilityStudio/translation/translationManager');
 
 async function reply(interaction, payload) {
   const data = { ...payload, flags: 64 };

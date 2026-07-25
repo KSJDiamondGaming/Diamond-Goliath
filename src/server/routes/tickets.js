@@ -14,18 +14,18 @@ const {
   addTicketNote,
   archiveTicket,
   removeTicket,
-} = require("../../modules/tickets/ticketManager");
+} = require("../../modules/feedbackStudio/tickets/ticketManager");
 
-const ticketRecovery = require("../../modules/tickets/ticketRecovery");
-const ticketPanelManager = require("../../modules/tickets/ticketPanelManager");
-const ticketTranscriptManager = require("../../modules/tickets/ticketTranscriptManager");
+const ticketRecovery = require("../../modules/feedbackStudio/tickets/ticketRecovery");
+const ticketPanelManager = require("../../modules/feedbackStudio/tickets/ticketPanelManager");
+const ticketTranscriptManager = require("../../modules/feedbackStudio/tickets/ticketTranscriptManager");
 
 const {
   getPanels,
   getPanel,
   getTicketSettings,
   saveTicketSettings,
-} = require("../../modules/tickets/ticketStore");
+} = require("../../modules/feedbackStudio/tickets/ticketStore");
 
 const {
   MANAGE_CHANNEL_PERMISSIONS,

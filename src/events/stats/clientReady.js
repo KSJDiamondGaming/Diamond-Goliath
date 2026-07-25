@@ -1,7 +1,7 @@
 'use strict';
 
 const { Events } = require('discord.js');
-const statsManager = require('../../modules/stats/statsManager');
+const statsManager = require('../../modules/utilityStudio/stats/statsManager');
 
 module.exports = {
   name: Events.ClientReady,

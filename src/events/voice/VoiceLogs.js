@@ -1,6 +1,6 @@
 const voiceLog = require('../../core/logging/voice/voiceLog');
-const tempVoiceManager = require('../../modules/tempvoice/tempVoiceManager');
-const statsManager = require('../../modules/stats/statsManager');
+const tempVoiceManager = require('../../modules/utilityStudio/tempVoice/tempVoiceManager');
+const statsManager = require('../../modules/utilityStudio/stats/statsManager');
 
 module.exports = {
   name: 'voiceStateUpdate',

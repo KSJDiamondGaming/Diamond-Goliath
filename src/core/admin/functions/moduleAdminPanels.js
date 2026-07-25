@@ -205,7 +205,7 @@ function buildModuleConfigurePanel(guild, moduleKey, memberDisplayName = 'Unknow
 }
 
 async function safeUpdate(interaction, payload) { if (interaction.deferred || interaction.replied) { await interaction.editReply(payload); return true; } await interaction.update(payload); return true; }
-async function openTicketsPanel(interaction) { const { sendSetupPanel } = require('../../../modules/tickets/ticketSetupPanel'); await sendSetupPanel(interaction); return true; }
+async function openTicketsPanel(interaction) { const { sendSetupPanel } = require('../../../modules/feedbackStudio/tickets/ticketSetupPanel'); await sendSetupPanel(interaction); return true; }
 function updateChannelSelection(guild, moduleKey, fieldKey, values = []) { const field = CHANNEL_FIELDS[fieldKey]; if (!field) return; const cleanValues = [...new Set(values.filter(Boolean))]; saveModuleConfig(guild, moduleKey, (config) => ({ ...config, [field.prop]: field.max === 1 ? cleanValues[0] || null : cleanValues })); }
 function updateRoleSelection(guild, moduleKey, fieldKey, values = []) { const field = ROLE_FIELDS[fieldKey]; if (!field) return; saveModuleConfig(guild, moduleKey, (config) => ({ ...config, [field.prop]: [...new Set(values.filter(Boolean))] })); }
 

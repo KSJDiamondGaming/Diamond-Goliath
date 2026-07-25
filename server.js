@@ -58,15 +58,15 @@ const billingRoutes = route('billing routes', './src/server/routes/billing');
 const moderationRoutes = route('moderation routes', './src/server/routes/moderation');
 const serverRestoreRoutes = route('restore routes', './src/server/routes/serverRestoreRoutes');
 const securityRoutes = route('security routes', './src/server/routes/security');
-const ticketRoutes = route('ticket routes', './src/modules/tickets/ticketsRoute');
+const ticketRoutes = route('ticket routes', './src/modules/feedbackStudio/tickets/ticketsRoute');
 const formsRoutes = route('forms routes', './src/server/routes/forms');
 const transcriptRoutes = route('transcript routes', './src/server/routes/transcripts');
 const translationRoutes = route('translation routes', './src/server/routes/translation');
 const permissionHealthRoutes = route('permission health routes', './src/server/routes/permissionHealth');
 const socialRoutes = route('social routes', './src/modules/social/socialRoute');
-const scheduleRoutes = route('schedule routes', './src/modules/schedule/scheduleRoute');
-const invitesRoutes = route('invite routes', './src/modules/invites/invitesRoute');
-const verificationRoutes = route('verification routes', './src/modules/verification/verificationRoute');
+const scheduleRoutes = route('schedule routes', './src/modules/utilityStudio/schedule/scheduleRoute');
+const invitesRoutes = route('invite routes', './src/modules/communityStudio/invites/invitesRoute');
+const verificationRoutes = route('verification routes', './src/modules/securityStudio/verification/verificationRoute');
 const autoRolesRoutes = route('auto roles routes', './src/modules/roleStudio/autoRoles/autoRolesRoute');
 const welcomeRoutes = route('welcome routes', './src/modules/messageStudio/welcome/welcomeRoute');
 const goodbyeRoutes = route('goodbye routes', './src/modules/messageStudio/goodbye/goodbyeRoute');
@@ -76,8 +76,8 @@ const modulesRoutes = route('modules routes', './src/server/routes/modules');
 const automationRoutes = route('automation routes', './src/server/routes/automation');
 const notificationRoutes = route('notification routes', './src/server/routes/notifications');
 const activityRoutes = route('activity routes', './src/server/routes/activity');
-const pollsRoutes = route('polls routes', './src/modules/polls/pollsRoute');
-const statsRoutes = route('stats routes', './src/modules/stats/statsRoute');
+const pollsRoutes = route('polls routes', './src/modules/communityStudio/polls/pollsRoute');
+const statsRoutes = route('stats routes', './src/modules/utilityStudio/stats/statsRoute');
 const tempVoiceRoutes = route('temp voice routes', './src/server/routes/tempVoice');
 const starboardRoutes = route('starboard routes', './src/server/routes/starboard');
 const mediaRoutes = route('media routes', './src/server/routes/media');
@@ -190,12 +190,12 @@ client.once('clientReady', async () => {
     catch (error) { console.error(`Guild startup sync failed for ${guild?.id}:`, error?.message || error); }
   }
   await Promise.all([
-    runStartupTask('Tickets', () => require('./src/modules/tickets/tickets').startup.startupTickets(client)),
+    runStartupTask('Tickets', () => require('./src/modules/feedbackStudio/tickets/tickets').startup.startupTickets(client)),
     runStartupTask('Timed Roles', () => require('./src/modules/roleStudio/timedRoles/timedRoles').startup(client)),
-    runStartupTask('Translation', () => require('./src/modules/translation/translationStartup').startupTranslation(client)),
+    runStartupTask('Translation', () => require('./src/modules/utilityStudio/translation/translationStartup').startupTranslation(client)),
     runStartupTask('Goodbye', () => require('./src/modules/messageStudio/goodbye/goodbye').startupGoodbye(client)),
     runStartupTask('Reaction Roles', () => require('./src/modules/roleStudio/reactionRoles/reactionRoles').startup(client)),
-    runStartupTask('Verification', () => require('./src/modules/verification/verification').startupVerification(client)),
+    runStartupTask('Verification', () => require('./src/modules/securityStudio/verification/verification').startupVerification(client)),
   ]);
   backupScheduler.startBackupScheduler?.(client);
 });

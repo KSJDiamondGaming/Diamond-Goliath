@@ -1,7 +1,7 @@
 'use strict';
 
 const { handleReactionAdd } = require('../../modules/roleStudio/reactionRoles/reactionRoles');
-const { enterGiveaway } = require('../../modules/giveaways/giveawayManager');
+const { enterGiveaway } = require('../../modules/communityStudio/giveaways/giveawayManager');
 const { handleStarReactionAdd } = require('../../modules/messageStudio/starboard/starboardManager');
 const { isModuleEnabled } = require('../../core/guild/guildManager');
 

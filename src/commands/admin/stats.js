@@ -6,8 +6,8 @@ const {
   EmbedBuilder,
 } = require('discord.js');
 
-const statsStore = require('../../modules/stats/statsStore');
-const statsCounters = require('../../modules/stats/statsCounters');
+const statsStore = require('../../modules/utilityStudio/stats/statsStore');
+const statsCounters = require('../../modules/utilityStudio/stats/statsCounters');
 const { enforceCommandAccess } = require('../../core/ui/commandAccess');
 
 function formatNumber(value) {

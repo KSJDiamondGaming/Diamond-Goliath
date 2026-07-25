@@ -4,7 +4,7 @@
 
 const express = require('express');
 
-const ticketTranscriptManager = require('../../modules/tickets/ticketTranscriptManager');
+const ticketTranscriptManager = require('../../modules/feedbackStudio/tickets/ticketTranscriptManager');
 
 const router = express.Router();
 

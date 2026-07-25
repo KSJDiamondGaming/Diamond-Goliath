@@ -2,9 +2,9 @@
 
 const { SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
 
-const translationStore = require('../../modules/translation/translationStore');
-const translationManager = require('../../modules/translation/translationManager');
-const translationThreadManager = require('../../modules/translation/translationThreadManager');
+const translationStore = require('../../modules/utilityStudio/translation/translationStore');
+const translationManager = require('../../modules/utilityStudio/translation/translationManager');
+const translationThreadManager = require('../../modules/utilityStudio/translation/translationThreadManager');
 const { enforceCommandAccess } = require('../../core/ui/commandAccess');
 
 async function reply(interaction, payload) {

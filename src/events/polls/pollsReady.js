@@ -1,9 +1,9 @@
 'use strict';
 
 const { Events } = require('discord.js');
-const polls = require('../../modules/polls/polls');
-const pollsManager = require('../../modules/polls/pollsManager');
-const pollsHealth = require('../../modules/polls/pollsHealth');
+const polls = require('../../modules/communityStudio/polls/polls');
+const pollsManager = require('../../modules/communityStudio/polls/pollsManager');
+const pollsHealth = require('../../modules/communityStudio/polls/pollsHealth');
 
 module.exports = {
   name: Events.ClientReady,

@@ -13,8 +13,8 @@ const {
 
 const autoRoleStore = require('../../modules/roleStudio/autoRoles/autoRoles');
 const autoRoleManager = autoRoleStore;
-const verificationStore = require('../../modules/verification/verificationStore');
-const verificationManager = require('../../modules/verification/verificationManager');
+const verificationStore = require('../../modules/securityStudio/verification/verificationStore');
+const verificationManager = require('../../modules/securityStudio/verification/verificationManager');
 const embedTemplateManager = require('../../modules/messageStudio/embed/embedTemplateManager');
 const {
   getAllEmbedDeployments,
@@ -36,7 +36,7 @@ const MODULE_CATALOG = Object.freeze({
     category: 'Security',
     summary: 'Verify members, assign roles and deploy a custom verification panel.',
     apiBase: '/api/verification',
-    dashboardPath: '/modules/verification',
+    dashboardPath: '/modules/securityStudio/verification',
     maturity: 'in_progress',
     configurable: true,
   },

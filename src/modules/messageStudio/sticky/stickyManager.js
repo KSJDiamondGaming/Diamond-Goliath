@@ -2,7 +2,6 @@
 
 const { EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const stickyStore = require('./stickyGuildStore');
-const { TYPES, createTimelineEvent } = require('../../../features/timeline/timelineManager');
 const { isModuleEnabled } = require('../../../core/guild/guildManager');
 
 const channelLocks = new Map();
@@ -63,29 +62,6 @@ function canBotManageChannel(channel, guildMember) {
   );
 }
 
-function logStickyTimeline(channel, title, input = {}, client) {
-  if (!channel?.guild) return null;
-
-  try {
-    return createTimelineEvent(
-      channel.guild.id,
-      {
-        type: TYPES.STICKY,
-        title,
-        description: input.description || null,
-        actor: input.actor || null,
-        actorId: input.actorId || null,
-        actorTag: input.actorTag || null,
-        channelId: channel.id,
-        meta: input.meta || {},
-      },
-      client
-    );
-  } catch (error) {
-    console.error(`[Sticky] Timeline logging failed for ${channel.guild.id}:${channel.id}:`, error?.message || error);
-    return null;
-  }
-}
 
 function normaliseStickyInput(input = {}) {
   return {
@@ -205,22 +181,6 @@ async function repostStickyUnlocked(channel, sticky, client, options = {}) {
     client
   );
 
-  logStickyTimeline(
-    channel,
-    options.manual ? 'Sticky reposted manually' : 'Sticky reposted',
-    {
-      actor: options.actor || null,
-      actorId: options.actorId || null,
-      actorTag: options.actorTag || null,
-      meta: {
-        messageId: sent.id,
-        type: freshSticky.type || 'text',
-        manual: Boolean(options.manual),
-      },
-    },
-    client
-  );
-
   return sent;
 }
 
@@ -286,23 +246,6 @@ async function createSticky(channel, input, client) {
       );
     }
 
-    logStickyTimeline(
-      channel,
-      edited ? 'Sticky updated' : 'Sticky created',
-      {
-        actor: stickyInput.actor,
-        actorId: stickyInput.updatedBy,
-        meta: {
-          type: sticky.type,
-          repostEvery: sticky.repostEvery,
-          cooldownSeconds: sticky.cooldownSeconds,
-          messageId: sent.id,
-          edited: Boolean(edited),
-        },
-      },
-      client
-    );
-
     return sent;
   });
 }
@@ -311,7 +254,6 @@ async function pauseSticky(channel, client, actor = null) {
   assertStickyModuleEnabled(channel?.guild?.id);
   return withChannelLock(channel, async () => {
     const sticky = stickyStore.updateChannelSticky(channel.guild.id, channel.id, { enabled: false }, client);
-    if (sticky) logStickyTimeline(channel, 'Sticky paused', { actor }, client);
     return sticky;
   });
 }
@@ -325,7 +267,6 @@ async function resumeSticky(channel, client, actor = null) {
 
     const sent = await repostStickyUnlocked(channel, sticky, client, { actor, manual: true });
     if (!sent) throw new Error('Sticky could not be resumed because it could not be posted.');
-    logStickyTimeline(channel, 'Sticky resumed', { actor }, client);
     return sticky;
   });
 }
@@ -342,20 +283,6 @@ async function removeSticky(channel, client, actor = null) {
     }
 
     const removed = stickyStore.deleteChannelSticky(channel.guild.id, channel.id, client);
-    if (removed) {
-      logStickyTimeline(
-        channel,
-        'Sticky deleted',
-        {
-          actor,
-          meta: {
-            lastMessageId: removed.lastMessageId || null,
-            type: removed.type || 'text',
-          },
-        },
-        client
-      );
-    }
 
     return removed;
   });
