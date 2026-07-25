@@ -16,6 +16,7 @@ const guildManager = require('../../guild/guildManager');
 const PANEL_COLOR = '#5865F2';
 const ITEMS_PER_ROW = 4;
 const CONTROLS_PER_PAGE = 3;
+const ADMIN_FIELD_KEYS = new Set(['logChannel', 'managerRoles', 'reviewerRoles', 'levelRoles']);
 
 const CUSTOM_PANEL_KEYS = new Set([
   'autoRoles', 'embed', 'forms', 'giveaways', 'goodbye', 'invites', 'leveling',
@@ -105,6 +106,9 @@ function row(...components) { return new ActionRowBuilder().addComponents(...com
 function button(customId, label, style = ButtonStyle.Primary) { return new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style); }
 function chunkArray(items, size) { const chunks = []; for (let index = 0; index < items.length; index += size) chunks.push(items.slice(index, index + size)); return chunks; }
 function getMemberDisplayName(interaction) { return interaction.member?.displayName || interaction.user?.displayName || interaction.user?.username || 'Unknown User'; }
+function fieldKey(field) { return Array.isArray(field) ? field[0] : field; }
+function fieldsForScope(module, scope) { return (module.fields || []).filter((field) => (scope === 'configure') === ADMIN_FIELD_KEYS.has(fieldKey(field))); }
+function selectMenusForScope(module, scope) { return (module.selectMenus || []).filter((key) => (scope === 'configure') === ADMIN_FIELD_KEYS.has(key)); }
 
 function getModuleConfig(guildId, moduleKey) {
   const module = MODULE_PANEL_REGISTRY[moduleKey];
@@ -127,9 +131,9 @@ function formatValue(value) {
   return `\`${String(value)}\``;
 }
 
-function buildFieldList(module, config) {
-  return (module.fields || []).map((field) => {
-    const key = Array.isArray(field) ? field[0] : field;
+function buildFieldList(module, config, scope) {
+  return fieldsForScope(module, scope).map((field) => {
+    const key = fieldKey(field);
     const label = Array.isArray(field) ? field[1] : key.replace(/([A-Z])/g, ' $1').replace(/^./, (char) => char.toUpperCase());
     const channel = CHANNEL_FIELDS[key];
     const role = ROLE_FIELDS[key];
@@ -137,7 +141,7 @@ function buildFieldList(module, config) {
     if (channel && channel.max === 1 && value) return `**${label}:** <#${value}>`;
     if (channel && Array.isArray(value)) return `**${label}:** ${value.length ? value.map((id) => `<#${id}>`).join(', ') : '`None`'}`;
     return `**${label}:** ${formatValue(value)}`;
-  }).join('\n') || '`No settings yet.`';
+  }).join('\n') || '`No settings in this section.`';
 }
 
 function buildModuleListPanel(memberDisplayName = 'Unknown User') {
@@ -155,20 +159,22 @@ function buildStudioPanel(studioKey, memberDisplayName = 'Unknown User') {
   return { embeds: [embed], components: [...moduleRows, row(button('admin:modules', '⬅️ Back to Studios', ButtonStyle.Secondary))].slice(0, 5) };
 }
 
-function buildControlRows(moduleKey) {
+function buildControlRows(moduleKey, scope) {
   const module = MODULE_PANEL_REGISTRY[moduleKey];
   const rows = [];
-  for (const fieldKey of module.selectMenus || []) {
-    if (CHANNEL_FIELDS[fieldKey]) {
-      const field = CHANNEL_FIELDS[fieldKey];
-      rows.push(row(new ChannelSelectMenuBuilder().setCustomId(`admin:module:${moduleKey}:channel:${fieldKey}`).setPlaceholder(field.label).setChannelTypes(...field.types).setMinValues(0).setMaxValues(field.max)));
-    } else if (ROLE_FIELDS[fieldKey]) {
-      const field = ROLE_FIELDS[fieldKey];
-      rows.push(row(new RoleSelectMenuBuilder().setCustomId(`admin:module:${moduleKey}:role:${fieldKey}`).setPlaceholder(field.label).setMinValues(0).setMaxValues(field.max)));
+  for (const fieldKeyName of selectMenusForScope(module, scope)) {
+    if (CHANNEL_FIELDS[fieldKeyName]) {
+      const field = CHANNEL_FIELDS[fieldKeyName];
+      rows.push(row(new ChannelSelectMenuBuilder().setCustomId(`admin:module:${moduleKey}:channel:${fieldKeyName}:${scope}`).setPlaceholder(field.label).setChannelTypes(...field.types).setMinValues(0).setMaxValues(field.max)));
+    } else if (ROLE_FIELDS[fieldKeyName]) {
+      const field = ROLE_FIELDS[fieldKeyName];
+      rows.push(row(new RoleSelectMenuBuilder().setCustomId(`admin:module:${moduleKey}:role:${fieldKeyName}:${scope}`).setPlaceholder(field.label).setMinValues(0).setMaxValues(field.max)));
     }
   }
-  for (const menu of module.optionMenus || []) rows.push(row(new StringSelectMenuBuilder().setCustomId(`admin:module:${moduleKey}:option:${menu.id}`).setPlaceholder(menu.placeholder).setMinValues(1).setMaxValues(1).addOptions(menu.options.map(([value, label, description]) => ({ value, label, description })))));
-  for (const items of chunkArray((module.toggles || []).map(([prop, label]) => button(`admin:module:${moduleKey}:toggle:${prop}`, label, ButtonStyle.Secondary)), 3)) rows.push(row(...items));
+  if (scope === 'main') {
+    for (const menu of module.optionMenus || []) rows.push(row(new StringSelectMenuBuilder().setCustomId(`admin:module:${moduleKey}:option:${menu.id}`).setPlaceholder(menu.placeholder).setMinValues(1).setMaxValues(1).addOptions(menu.options.map(([value, label, description]) => ({ value, label, description })))));
+    for (const items of chunkArray((module.toggles || []).map(([prop, label]) => button(`admin:module:${moduleKey}:toggle:${prop}`, label, ButtonStyle.Secondary)), 3)) rows.push(row(...items));
+  }
   return rows;
 }
 
@@ -178,30 +184,43 @@ function buildModuleMainPanel(guild, moduleKey, memberDisplayName = 'Unknown Use
   if (!module || !catalogModule) return null;
   const config = getModuleConfig(guild.id, moduleKey);
   const enabled = config.enabled !== false;
-  const allControls = buildControlRows(moduleKey);
+  const allControls = buildControlRows(moduleKey, 'main');
   const totalPages = Math.max(1, Math.ceil(allControls.length / CONTROLS_PER_PAGE));
   const page = Math.min(Math.max(Number(controlPage) || 0, 0), totalPages - 1);
   const controls = allControls.slice(page * CONTROLS_PER_PAGE, (page + 1) * CONTROLS_PER_PAGE);
-  const embed = new EmbedBuilder().setColor(enabled ? 0x57f287 : PANEL_COLOR).setTitle(module.title).setDescription([module.summary, '', `**Status:** ${enabled ? 'Enabled ✅' : 'Disabled ❌'}`, `**Controls Page:** ${page + 1}/${totalPages}`].join('\n')).addFields({ name: 'Current Setup', value: buildFieldList(module, config), inline: false }).setFooter({ text: `Requested by ${memberDisplayName}` }).setTimestamp();
-  const nav = [button(`admin:module:${moduleKey}:configure`, '⚙️ Configure'), button(`admin:studio:${catalogModule.studio}`, '⬅️ Back', ButtonStyle.Secondary)];
+  const embed = new EmbedBuilder().setColor(enabled ? 0x57f287 : PANEL_COLOR).setTitle(module.title).setDescription([module.summary, '', `**Status:** ${enabled ? 'Enabled ✅' : 'Disabled ❌'}`, `**Controls Page:** ${page + 1}/${totalPages}`].join('\n')).addFields({ name: 'Module Controls', value: buildFieldList(module, config, 'main'), inline: false }).setFooter({ text: `Requested by ${memberDisplayName}` }).setTimestamp();
+  const nav = [button(`admin:module:${moduleKey}:configure:0`, '⚙️ Configure'), button(`admin:studio:${catalogModule.studio}`, '⬅️ Back', ButtonStyle.Secondary)];
   if (page > 0) nav.push(button(`admin:module:${moduleKey}:main:${page - 1}`, '◀ Previous', ButtonStyle.Secondary));
   if (page < totalPages - 1) nav.push(button(`admin:module:${moduleKey}:main:${page + 1}`, 'Next ▶', ButtonStyle.Secondary));
   return { embeds: [embed], components: [...controls, row(...nav)].slice(0, 5) };
 }
 
-function buildModuleConfigurePanel(guild, moduleKey, memberDisplayName = 'Unknown User') {
+function buildModuleConfigurePanel(guild, moduleKey, memberDisplayName = 'Unknown User', controlPage = 0) {
   const module = MODULE_PANEL_REGISTRY[moduleKey];
   if (!module) return null;
   const config = getModuleConfig(guild.id, moduleKey);
   const enabled = config.enabled !== false;
-  const embed = new EmbedBuilder().setColor(enabled ? 0x57f287 : PANEL_COLOR).setTitle(`${module.title} · Configure`).setDescription([module.summary, '', `**Status:** ${enabled ? 'Enabled ✅' : 'Disabled ❌'}`, `**Module Key:** \`${moduleKey}\``, '', 'Administrative controls for this module.'].join('\n')).addFields({ name: 'Current Setup', value: buildFieldList(module, config), inline: false }).setFooter({ text: `Requested by ${memberDisplayName}` }).setTimestamp();
-  return { embeds: [embed], components: [row(button(`admin:module:${moduleKey}:${enabled ? 'disable' : 'enable'}`, enabled ? '⏸️ Disable' : '▶️ Enable', enabled ? ButtonStyle.Secondary : ButtonStyle.Success), button(`admin:module:${moduleKey}:health`, '🩺 Health', ButtonStyle.Secondary), button(`admin:module:${moduleKey}:repair`, '🛠️ Repair', ButtonStyle.Secondary), button(`admin:module:${moduleKey}:reset`, '♻️ Reset', ButtonStyle.Danger)), row(button(`admin:module:${moduleKey}:main:0`, '⬅️ Back', ButtonStyle.Secondary))] };
+  const allControls = buildControlRows(moduleKey, 'configure');
+  const totalPages = Math.max(1, Math.ceil(allControls.length / CONTROLS_PER_PAGE));
+  const page = Math.min(Math.max(Number(controlPage) || 0, 0), totalPages - 1);
+  const controls = allControls.slice(page * CONTROLS_PER_PAGE, (page + 1) * CONTROLS_PER_PAGE);
+  const embed = new EmbedBuilder().setColor(enabled ? 0x57f287 : PANEL_COLOR).setTitle(`${module.title} · Configure`).setDescription([module.summary, '', `**Status:** ${enabled ? 'Enabled ✅' : 'Disabled ❌'}`, `**Module Key:** \`${moduleKey}\``, `**Configure Page:** ${page + 1}/${totalPages}`, '', 'Administrative settings and maintenance controls.'].join('\n')).addFields({ name: 'Administration', value: buildFieldList(module, config, 'configure'), inline: false }).setFooter({ text: `Requested by ${memberDisplayName}` }).setTimestamp();
+  const actions = row(
+    button(`admin:module:${moduleKey}:${enabled ? 'disable' : 'enable'}`, enabled ? '⏸️ Disable' : '▶️ Enable', enabled ? ButtonStyle.Secondary : ButtonStyle.Success),
+    button(`admin:module:${moduleKey}:health`, '🩺 Health', ButtonStyle.Secondary),
+    button(`admin:module:${moduleKey}:repair`, '🛠️ Repair', ButtonStyle.Secondary),
+    button(`admin:module:${moduleKey}:reset`, '♻️ Reset', ButtonStyle.Danger),
+  );
+  const nav = [button(`admin:module:${moduleKey}:main:0`, '⬅️ Back', ButtonStyle.Secondary)];
+  if (page > 0) nav.push(button(`admin:module:${moduleKey}:configure:${page - 1}`, '◀ Previous', ButtonStyle.Secondary));
+  if (page < totalPages - 1) nav.push(button(`admin:module:${moduleKey}:configure:${page + 1}`, 'Next ▶', ButtonStyle.Secondary));
+  return { embeds: [embed], components: [actions, ...controls, row(...nav)].slice(0, 5) };
 }
 
 function buildModuleLandingPanel(guild, moduleKey, memberDisplayName = 'Unknown User') { return buildModuleMainPanel(guild, moduleKey, memberDisplayName, 0); }
 async function safeUpdate(interaction, payload) { if (!payload) return false; if (interaction.deferred || interaction.replied) await interaction.editReply(payload); else await interaction.update(payload); return true; }
-function updateChannelSelection(guild, moduleKey, fieldKey, values = []) { const field = CHANNEL_FIELDS[fieldKey]; if (!field) return; const clean = [...new Set(values.filter(Boolean))]; saveModuleConfig(guild, moduleKey, (config) => ({ ...config, [field.prop]: field.max === 1 ? clean[0] || null : clean })); }
-function updateRoleSelection(guild, moduleKey, fieldKey, values = []) { const field = ROLE_FIELDS[fieldKey]; if (!field) return; saveModuleConfig(guild, moduleKey, (config) => ({ ...config, [field.prop]: [...new Set(values.filter(Boolean))] })); }
+function updateChannelSelection(guild, moduleKey, fieldKeyName, values = []) { const field = CHANNEL_FIELDS[fieldKeyName]; if (!field) return; const clean = [...new Set(values.filter(Boolean))]; saveModuleConfig(guild, moduleKey, (config) => ({ ...config, [field.prop]: field.max === 1 ? clean[0] || null : clean })); }
+function updateRoleSelection(guild, moduleKey, fieldKeyName, values = []) { const field = ROLE_FIELDS[fieldKeyName]; if (!field) return; saveModuleConfig(guild, moduleKey, (config) => ({ ...config, [field.prop]: [...new Set(values.filter(Boolean))] })); }
 
 async function handleModuleAdminInteraction(interaction) {
   const id = String(interaction.customId || '');
@@ -213,8 +232,8 @@ async function handleModuleAdminInteraction(interaction) {
   if (main && interaction.isButton?.()) return safeUpdate(interaction, buildModuleMainPanel(interaction.guild, main[1], name, Number(main[2])));
   const legacy = id.match(/^admin:module:([a-zA-Z0-9_-]+):landing$/);
   if (legacy && interaction.isButton?.()) return safeUpdate(interaction, buildModuleMainPanel(interaction.guild, legacy[1], name, 0));
-  const configure = id.match(/^admin:module:([a-zA-Z0-9_-]+):configure(?::\d+)?$/);
-  if (configure && interaction.isButton?.()) return safeUpdate(interaction, buildModuleConfigurePanel(interaction.guild, configure[1], name));
+  const configure = id.match(/^admin:module:([a-zA-Z0-9_-]+):configure(?::(\d+))?$/);
+  if (configure && interaction.isButton?.()) return safeUpdate(interaction, buildModuleConfigurePanel(interaction.guild, configure[1], name, Number(configure[2] || 0)));
   const action = id.match(/^admin:module:([a-zA-Z0-9_-]+):(enable|disable|reset|health|repair)$/);
   if (action && interaction.isButton?.()) {
     const [, key, type] = action;
@@ -222,14 +241,14 @@ async function handleModuleAdminInteraction(interaction) {
     if (!module) return false;
     if (type === 'enable' || type === 'disable') saveModuleConfig(interaction.guild, key, (config) => ({ ...config, enabled: type === 'enable' }));
     if (type === 'reset') saveModuleConfig(interaction.guild, key, module.defaults);
-    return safeUpdate(interaction, buildModuleConfigurePanel(interaction.guild, key, name));
+    return safeUpdate(interaction, buildModuleConfigurePanel(interaction.guild, key, name, 0));
   }
   const toggle = id.match(/^admin:module:([a-zA-Z0-9_-]+):toggle:([a-zA-Z0-9_-]+)$/);
   if (toggle && interaction.isButton?.()) { saveModuleConfig(interaction.guild, toggle[1], (config) => ({ ...config, [toggle[2]]: !Boolean(config[toggle[2]]) })); return safeUpdate(interaction, buildModuleMainPanel(interaction.guild, toggle[1], name, 0)); }
-  const channel = id.match(/^admin:module:([a-zA-Z0-9_-]+):channel:([a-zA-Z0-9_-]+)$/);
-  if (channel && interaction.isChannelSelectMenu?.()) { updateChannelSelection(interaction.guild, channel[1], channel[2], interaction.values || []); return safeUpdate(interaction, buildModuleMainPanel(interaction.guild, channel[1], name, 0)); }
-  const role = id.match(/^admin:module:([a-zA-Z0-9_-]+):role:([a-zA-Z0-9_-]+)$/);
-  if (role && interaction.isRoleSelectMenu?.()) { updateRoleSelection(interaction.guild, role[1], role[2], interaction.values || []); return safeUpdate(interaction, buildModuleMainPanel(interaction.guild, role[1], name, 0)); }
+  const channel = id.match(/^admin:module:([a-zA-Z0-9_-]+):channel:([a-zA-Z0-9_-]+):(main|configure)$/);
+  if (channel && interaction.isChannelSelectMenu?.()) { updateChannelSelection(interaction.guild, channel[1], channel[2], interaction.values || []); return safeUpdate(interaction, channel[3] === 'configure' ? buildModuleConfigurePanel(interaction.guild, channel[1], name, 0) : buildModuleMainPanel(interaction.guild, channel[1], name, 0)); }
+  const role = id.match(/^admin:module:([a-zA-Z0-9_-]+):role:([a-zA-Z0-9_-]+):(main|configure)$/);
+  if (role && interaction.isRoleSelectMenu?.()) { updateRoleSelection(interaction.guild, role[1], role[2], interaction.values || []); return safeUpdate(interaction, role[3] === 'configure' ? buildModuleConfigurePanel(interaction.guild, role[1], name, 0) : buildModuleMainPanel(interaction.guild, role[1], name, 0)); }
   const option = id.match(/^admin:module:([a-zA-Z0-9_-]+):option:([a-zA-Z0-9_-]+)$/);
   if (option && interaction.isStringSelectMenu?.()) { saveModuleConfig(interaction.guild, option[1], (config) => ({ ...config, [option[2]]: interaction.values?.[0] })); return safeUpdate(interaction, buildModuleMainPanel(interaction.guild, option[1], name, 0)); }
   return false;
