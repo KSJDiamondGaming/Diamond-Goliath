@@ -12,7 +12,7 @@ const Warnings = lazy(() => import('../pages/moderation/Warnings'));
 const Forms = lazy(() => import('../pages/modules/forms/FormsWorkflowEnhanced'));
 const Modules = lazy(() => import('../pages/modules/Modules'));
 const Automation = lazy(() => import('../pages/modules/Automation'));
-const EmbedStudio = lazy(() => import('../pages/modules/messageStudio/embed/EmbedStudioEnhanced'));
+const EmbedStudio = lazy(() => import('../pages/modules/embed/EmbedStudioEnhanced'));
 const Verification = lazy(() => import('../pages/modules/VerificationEnhanced'));
 const AutoRoles = lazy(() => import('../pages/modules/AutoRoles'));
 const TimedRoles = lazy(() => import('../pages/modules/TimedRoles'));
