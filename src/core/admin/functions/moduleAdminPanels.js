@@ -17,6 +17,12 @@ const PANEL_COLOR = '#5865F2';
 const ITEMS_PER_ROW = 4;
 const CONTROLS_PER_PAGE = 3;
 
+const CUSTOM_PANEL_KEYS = new Set([
+  'autoRoles', 'embed', 'forms', 'giveaways', 'goodbye', 'invites', 'leveling',
+  'polls', 'reactionRoles', 'schedule', 'social', 'starboard', 'stats', 'sticky',
+  'suggestions', 'tempVoice', 'tickets', 'timedRoles', 'verification', 'welcome',
+]);
+
 const MODULE_CATALOG = [
   { key: 'giveaways', studio: 'communityStudio', route: 'admin:giveaways', label: '🎉 Giveaways', title: '🎉 Giveaways', summary: 'Giveaway creation, entries, winners and rerolls.' },
   { key: 'invites', studio: 'communityStudio', route: 'admin:invites', label: '📨 Invite Studio', title: '📨 Invite Studio', summary: 'Create invite links, attach roles and track member joins.' },
@@ -35,10 +41,10 @@ const MODULE_CATALOG = [
   { key: 'temporaryRoles', studio: 'roleStudio', route: 'admin:temporaryRoles', label: '⏳ Temporary Roles', title: '⏳ Temporary Roles', summary: 'Assign roles that expire after a configured duration.' },
   { key: 'timedRoles', studio: 'roleStudio', route: 'admin:timedRoles', label: '🕒 Timed Roles', title: '🕒 Timed Roles', summary: 'Progress members through role milestones over time.' },
   { key: 'verification', studio: 'securityStudio', route: 'admin:verification', label: '✅ Verification', title: '✅ Verification', summary: 'Member verification and onboarding protection.' },
+  { key: 'social', studio: 'socialStudio', route: 'admin:social', label: '📣 Social Alerts', title: '📣 Social Alerts', summary: 'Creator alerts for Twitch, YouTube, TikTok, Kick and more.' },
   { key: 'schedule', studio: 'utilityStudio', route: 'admin:schedule', label: '📅 Schedule', title: '📅 Schedule', summary: 'Scheduled messages, recurring tasks and timezone-aware automation.' },
   { key: 'stats', studio: 'utilityStudio', route: 'admin:stats', label: '📊 Server Stats', title: '📊 Server Stats', summary: 'Server activity, growth and member statistics.' },
   { key: 'translation', studio: 'utilityStudio', route: 'admin:translation', label: '🌐 Translation', title: '🌐 Translation', summary: 'Language preferences and translation controls.' },
-  { key: 'social', studio: 'socialStudio', route: 'admin:social', label: '📣 Social Alerts', title: '📣 Social Alerts', summary: 'Creator alerts for Twitch, YouTube, TikTok, Kick and more.' },
   { key: 'tempVoice', studio: 'utilityStudio', route: 'admin:tempVoice', label: '🔊 Temp Voice', title: '🔊 Temp Voice', summary: 'Temporary voice channels and room automation.' },
 ];
 
@@ -56,49 +62,33 @@ const MODULE_BY_KEY = Object.fromEntries(MODULE_CATALOG.map((module) => [module.
 const STUDIO_BY_KEY = Object.fromEntries(STUDIO_CATALOG.map((studio) => [studio.key, studio]));
 
 function genericModule(config) {
-  return {
-    optionMenus: [],
-    selectMenus: [],
-    toggles: [],
-    fields: [],
-    ...config,
-  };
+  return { optionMenus: [], selectMenus: [], toggles: [], fields: [], ...config };
 }
 
 const MODULE_PANEL_REGISTRY = {
-  forms: genericModule({ route: 'admin:forms', key: 'forms', title: '📝 Forms', summary: 'Forms, submissions, review and response storage.', defaults: { enabled: true, submitChannelId: null, logChannelId: null, managerRoleIds: [], requireReview: true, anonymousSubmissions: false, storeResponses: true }, fields: ['submitChannel', 'logChannel', 'managerRoles', ['requireReview', 'Require Review'], ['anonymousSubmissions', 'Anonymous Submissions'], ['storeResponses', 'Store Responses']], selectMenus: ['submitChannel', 'logChannel', 'managerRoles'], toggles: [['requireReview', '🔎 Require Review'], ['anonymousSubmissions', '👤 Anonymous'], ['storeResponses', '💾 Store Responses']] }),
-  fun: genericModule({ route: 'admin:fun', key: 'fun', title: '🎮 Fun', summary: 'Fun commands and optional community extras.', defaults: { enabled: true, allowedChannelIds: [], blockedChannelIds: [], managerRoleIds: [], allowImages: true, allowGames: true, familyFriendly: true }, fields: ['allowedChannels', 'blockedChannels', 'managerRoles', ['allowImages', 'Images'], ['allowGames', 'Games'], ['familyFriendly', 'Family Friendly']], selectMenus: ['allowedChannels', 'blockedChannels', 'managerRoles'], toggles: [['allowImages', '🖼️ Images'], ['allowGames', '🎮 Games'], ['familyFriendly', '🛡️ Family Friendly']] }),
-  giveaways: genericModule({ route: 'admin:giveaways', key: 'giveaways', title: '🎉 Giveaways', summary: 'Giveaway creation, entries, winners and rerolls.', defaults: { enabled: true, announcementChannelId: null, logChannelId: null, managerRoleIds: [], allowMultipleEntries: false, requireRole: false, pingWinners: true }, fields: ['announcementChannel', 'logChannel', 'managerRoles', ['allowMultipleEntries', 'Multiple Entries'], ['requireRole', 'Require Role'], ['pingWinners', 'Ping Winners']], selectMenus: ['announcementChannel', 'logChannel', 'managerRoles'], toggles: [['allowMultipleEntries', '🎟️ Multiple Entries'], ['requireRole', '🔒 Require Role'], ['pingWinners', '📣 Ping Winners']] }),
-  leveling: genericModule({ route: 'admin:leveling', key: 'leveling', title: '🏆 Leveling', summary: 'XP, levels, leaderboards and level roles.', defaults: { enabled: true, announceChannelId: null, managerRoleIds: [], levelRoleIds: [], trackMessages: true, trackVoice: true, announceLevelUps: true }, fields: ['announceChannel', 'managerRoles', 'levelRoles', ['trackMessages', 'Message XP'], ['trackVoice', 'Voice XP'], ['announceLevelUps', 'Announce Level Ups']], selectMenus: ['announceChannel', 'managerRoles', 'levelRoles'], toggles: [['trackMessages', '💬 Message XP'], ['trackVoice', '🔊 Voice XP'], ['announceLevelUps', '📣 Level Ups']] }),
-  polls: genericModule({ route: 'admin:polls', key: 'polls', title: '📊 Polls', summary: 'Poll creation, voting and results.', defaults: { enabled: true, defaultChannelId: null, resultsChannelId: null, managerRoleIds: [], anonymousVoting: false, allowMultipleChoice: true, showResultsLive: true }, fields: ['defaultChannel', 'resultsChannel', 'managerRoles', ['anonymousVoting', 'Anonymous Voting'], ['allowMultipleChoice', 'Multiple Choice'], ['showResultsLive', 'Live Results']], selectMenus: ['defaultChannel', 'resultsChannel', 'managerRoles'], toggles: [['anonymousVoting', '👤 Anonymous Voting'], ['allowMultipleChoice', '☑️ Multiple Choice'], ['showResultsLive', '📈 Live Results']] }),
-  social: genericModule({ route: 'admin:social', key: 'social', title: '📣 Social Alerts', summary: 'Creator alerts for Twitch, YouTube, TikTok, Kick and more.', defaults: { enabled: true, alertsChannelId: null, logChannelId: null, managerRoleIds: [], twitch: true, youtube: true, tiktok: true, kick: true }, fields: ['alertsChannel', 'logChannel', 'managerRoles', ['twitch', 'Twitch'], ['youtube', 'YouTube'], ['tiktok', 'TikTok'], ['kick', 'Kick']], selectMenus: ['alertsChannel', 'logChannel', 'managerRoles'], toggles: [['twitch', '🟣 Twitch'], ['youtube', '▶️ YouTube'], ['tiktok', '🎵 TikTok'], ['kick', '🟢 Kick']] }),
-  starboard: genericModule({ route: 'admin:starboard', key: 'starboard', title: '⭐ Starboard', summary: 'Highlight popular server messages.', defaults: { enabled: true, starboardChannelId: null, logChannelId: null, managerRoleIds: [], allowSelfStar: false, requireUniqueUsers: true }, fields: ['starboardChannel', 'logChannel', 'managerRoles', ['allowSelfStar', 'Self Star'], ['requireUniqueUsers', 'Unique Users']], selectMenus: ['starboardChannel', 'logChannel', 'managerRoles'], toggles: [['allowSelfStar', '⭐ Self Star'], ['requireUniqueUsers', '👥 Unique Users']] }),
-  sticky: genericModule({ route: 'admin:sticky', key: 'sticky', title: '💬 Sticky Messages', summary: 'Keep important messages at the bottom of chat.', defaults: { enabled: true, channels: [], managerRoleIds: [], mode: 'per-channel', cleanupPrevious: true, allowEmbeds: true }, fields: ['channels', 'managerRoles', ['mode', 'Mode'], ['cleanupPrevious', 'Cleanup Previous'], ['allowEmbeds', 'Allow Embeds']], selectMenus: ['channels', 'managerRoles'], optionMenus: [{ id: 'mode', placeholder: 'Sticky mode', options: [['per-channel', 'Per Channel', 'One sticky note per selected channel'], ['manual', 'Manual', 'Only staff-triggered sticky notes']] }], toggles: [['cleanupPrevious', '🧹 Cleanup Previous'], ['allowEmbeds', '🎨 Allow Embeds']] }),
-  suggestions: genericModule({ route: 'admin:suggestions', key: 'suggestions', title: '💡 Suggestions', summary: 'Suggestion intake, voting and review workflow.', defaults: { enabled: true, submitChannelId: null, reviewChannelId: null, approvedChannelId: null, deniedChannelId: null, reviewerRoleIds: [], anonymous: false, voting: true, requireReview: true }, fields: ['submitChannel', 'reviewChannel', 'approvedChannel', 'deniedChannel', 'reviewerRoles', ['voting', 'Voting'], ['requireReview', 'Require Review'], ['anonymous', 'Anonymous']], selectMenus: ['submitChannel', 'reviewChannel', 'approvedChannel', 'deniedChannel', 'reviewerRoles'], toggles: [['voting', '🗳️ Voting'], ['requireReview', '🔎 Require Review'], ['anonymous', '👤 Anonymous']] }),
-  tempVoice: genericModule({ route: 'admin:tempVoice', key: 'tempVoice', title: '🔊 Temp Voice', summary: 'Temporary voice channels and room automation.', defaults: { enabled: true, lobbyChannelId: null, categoryId: null, managerRoleIds: [], autoDeleteEmpty: true, allowUserRename: true, allowUserLimit: true }, fields: ['lobbyVoiceChannel', 'category', 'managerRoles', ['autoDeleteEmpty', 'Auto Delete Empty'], ['allowUserRename', 'User Rename'], ['allowUserLimit', 'User Limit']], selectMenus: ['lobbyVoiceChannel', 'category', 'managerRoles'], toggles: [['autoDeleteEmpty', '🗑️ Auto Delete'], ['allowUserRename', '✏️ User Rename'], ['allowUserLimit', '👥 User Limit']] }),
-  translation: genericModule({ route: 'admin:translation', key: 'translation', title: '🌐 Translation', summary: 'Language preferences and translation controls.', defaults: { enabled: true, logChannelId: null, managerRoleIds: [], autoDetect: true, allowUserPreferences: true, ephemeralReplies: true }, fields: ['logChannel', 'managerRoles', ['autoDetect', 'Auto Detect'], ['allowUserPreferences', 'User Preferences'], ['ephemeralReplies', 'Ephemeral Replies']], selectMenus: ['logChannel', 'managerRoles'], toggles: [['autoDetect', '🔎 Auto Detect'], ['allowUserPreferences', '👤 User Preferences'], ['ephemeralReplies', '🙈 Ephemeral']] }),
+  forms: genericModule({ key: 'forms', title: '📝 Forms', summary: 'Forms, submissions, review and response storage.', defaults: { enabled: true, submitChannelId: null, logChannelId: null, managerRoleIds: [], requireReview: true, anonymousSubmissions: false, storeResponses: true }, fields: ['submitChannel', 'logChannel', 'managerRoles', ['requireReview', 'Require Review'], ['anonymousSubmissions', 'Anonymous Submissions'], ['storeResponses', 'Store Responses']], selectMenus: ['submitChannel', 'logChannel', 'managerRoles'], toggles: [['requireReview', '🔎 Require Review'], ['anonymousSubmissions', '👤 Anonymous'], ['storeResponses', '💾 Store Responses']] }),
+  giveaways: genericModule({ key: 'giveaways', title: '🎉 Giveaways', summary: 'Giveaway creation, entries, winners and rerolls.', defaults: { enabled: true, announcementChannelId: null, logChannelId: null, managerRoleIds: [], allowMultipleEntries: false, requireRole: false, pingWinners: true }, fields: ['announcementChannel', 'logChannel', 'managerRoles', ['allowMultipleEntries', 'Multiple Entries'], ['requireRole', 'Require Role'], ['pingWinners', 'Ping Winners']], selectMenus: ['announcementChannel', 'logChannel', 'managerRoles'], toggles: [['allowMultipleEntries', '🎟️ Multiple Entries'], ['requireRole', '🔒 Require Role'], ['pingWinners', '📣 Ping Winners']] }),
+  leveling: genericModule({ key: 'leveling', title: '🏆 Leveling', summary: 'XP, levels, leaderboards and level roles.', defaults: { enabled: true, announceChannelId: null, managerRoleIds: [], levelRoleIds: [], trackMessages: true, trackVoice: true, announceLevelUps: true }, fields: ['announceChannel', 'managerRoles', 'levelRoles', ['trackMessages', 'Message XP'], ['trackVoice', 'Voice XP'], ['announceLevelUps', 'Announce Level Ups']], selectMenus: ['announceChannel', 'managerRoles', 'levelRoles'], toggles: [['trackMessages', '💬 Message XP'], ['trackVoice', '🔊 Voice XP'], ['announceLevelUps', '📣 Level Ups']] }),
+  polls: genericModule({ key: 'polls', title: '📊 Polls', summary: 'Poll creation, voting and results.', defaults: { enabled: true, defaultChannelId: null, resultsChannelId: null, managerRoleIds: [], anonymousVoting: false, allowMultipleChoice: true, showResultsLive: true }, fields: ['defaultChannel', 'resultsChannel', 'managerRoles', ['anonymousVoting', 'Anonymous Voting'], ['allowMultipleChoice', 'Multiple Choice'], ['showResultsLive', 'Live Results']], selectMenus: ['defaultChannel', 'resultsChannel', 'managerRoles'], toggles: [['anonymousVoting', '👤 Anonymous Voting'], ['allowMultipleChoice', '☑️ Multiple Choice'], ['showResultsLive', '📈 Live Results']] }),
+  social: genericModule({ key: 'social', title: '📣 Social Alerts', summary: 'Creator alerts for Twitch, YouTube, TikTok, Kick and more.', defaults: { enabled: true, alertsChannelId: null, logChannelId: null, managerRoleIds: [], twitch: true, youtube: true, tiktok: true, kick: true }, fields: ['alertsChannel', 'logChannel', 'managerRoles', ['twitch', 'Twitch'], ['youtube', 'YouTube'], ['tiktok', 'TikTok'], ['kick', 'Kick']], selectMenus: ['alertsChannel', 'logChannel', 'managerRoles'], toggles: [['twitch', '🟣 Twitch'], ['youtube', '▶️ YouTube'], ['tiktok', '🎵 TikTok'], ['kick', '🟢 Kick']] }),
+  starboard: genericModule({ key: 'starboard', title: '⭐ Starboard', summary: 'Highlight popular server messages.', defaults: { enabled: true, starboardChannelId: null, logChannelId: null, managerRoleIds: [], allowSelfStar: false, requireUniqueUsers: true }, fields: ['starboardChannel', 'logChannel', 'managerRoles', ['allowSelfStar', 'Self Star'], ['requireUniqueUsers', 'Unique Users']], selectMenus: ['starboardChannel', 'logChannel', 'managerRoles'], toggles: [['allowSelfStar', '⭐ Self Star'], ['requireUniqueUsers', '👥 Unique Users']] }),
+  sticky: genericModule({ key: 'sticky', title: '💬 Sticky Messages', summary: 'Keep important messages at the bottom of chat.', defaults: { enabled: true, channels: [], managerRoleIds: [], mode: 'per-channel', cleanupPrevious: true, allowEmbeds: true }, fields: ['channels', 'managerRoles', ['mode', 'Mode'], ['cleanupPrevious', 'Cleanup Previous'], ['allowEmbeds', 'Allow Embeds']], selectMenus: ['channels', 'managerRoles'], optionMenus: [{ id: 'mode', placeholder: 'Sticky mode', options: [['per-channel', 'Per Channel', 'One sticky note per selected channel'], ['manual', 'Manual', 'Only management-triggered sticky notes']] }], toggles: [['cleanupPrevious', '🧹 Cleanup Previous'], ['allowEmbeds', '🎨 Allow Embeds']] }),
+  suggestions: genericModule({ key: 'suggestions', title: '💡 Suggestions', summary: 'Suggestion intake, voting and review workflow.', defaults: { enabled: true, submitChannelId: null, reviewChannelId: null, approvedChannelId: null, deniedChannelId: null, reviewerRoleIds: [], anonymous: false, voting: true, requireReview: true }, fields: ['submitChannel', 'reviewChannel', 'approvedChannel', 'deniedChannel', 'reviewerRoles', ['voting', 'Voting'], ['requireReview', 'Require Review'], ['anonymous', 'Anonymous']], selectMenus: ['submitChannel', 'reviewChannel', 'approvedChannel', 'deniedChannel', 'reviewerRoles'], toggles: [['voting', '🗳️ Voting'], ['requireReview', '🔎 Require Review'], ['anonymous', '👤 Anonymous']] }),
+  temporaryRoles: genericModule({ key: 'temporaryRoles', title: '⏳ Temporary Roles', summary: 'Assign roles that expire after a configured duration.', defaults: { enabled: true, managerRoleIds: [], logChannelId: null }, fields: ['logChannel', 'managerRoles'], selectMenus: ['logChannel', 'managerRoles'] }),
+  translation: genericModule({ key: 'translation', title: '🌐 Translation', summary: 'Language preferences and translation controls.', defaults: { enabled: true, logChannelId: null, managerRoleIds: [], autoDetect: true, allowUserPreferences: true, ephemeralReplies: true }, fields: ['logChannel', 'managerRoles', ['autoDetect', 'Auto Detect'], ['allowUserPreferences', 'User Preferences'], ['ephemeralReplies', 'Ephemeral Replies']], selectMenus: ['logChannel', 'managerRoles'], toggles: [['autoDetect', '🔎 Auto Detect'], ['allowUserPreferences', '👤 User Preferences'], ['ephemeralReplies', '🙈 Ephemeral']] }),
 };
 
-const SERVER_MODULES = MODULE_CATALOG.map((module) => [
-  MODULE_PANEL_REGISTRY[module.key] ? `admin:module:${module.key}:configure:0` : module.route,
-  module.label,
-  module.title.replace(/^\S+\s*/, ''),
-  module.summary,
-]);
+const SERVER_MODULES = MODULE_CATALOG.map((module) => [module.route, module.label, module.title.replace(/^\S+\s*/, ''), module.summary]);
 
 const CHANNEL_FIELDS = {
   alertsChannel: { prop: 'alertsChannelId', label: '📣 Alerts Channel', max: 1, types: [ChannelType.GuildText, ChannelType.GuildAnnouncement] },
-  allowedChannels: { prop: 'allowedChannelIds', label: '✅ Allowed Channels', max: 10, types: [ChannelType.GuildText, ChannelType.GuildAnnouncement] },
   announcementChannel: { prop: 'announcementChannelId', label: '🎉 Announcement Channel', max: 1, types: [ChannelType.GuildText, ChannelType.GuildAnnouncement] },
   approvedChannel: { prop: 'approvedChannelId', label: '✅ Approved Channel', max: 1, types: [ChannelType.GuildText, ChannelType.GuildAnnouncement] },
-  blockedChannels: { prop: 'blockedChannelIds', label: '🚫 Blocked Channels', max: 10, types: [ChannelType.GuildText, ChannelType.GuildAnnouncement] },
-  category: { prop: 'categoryId', label: '📁 Category', max: 1, types: [ChannelType.GuildCategory] },
   channels: { prop: 'channels', label: '💬 Sticky Channels', max: 10, types: [ChannelType.GuildText, ChannelType.GuildAnnouncement] },
   defaultChannel: { prop: 'defaultChannelId', label: '📊 Default Channel', max: 1, types: [ChannelType.GuildText, ChannelType.GuildAnnouncement] },
   deniedChannel: { prop: 'deniedChannelId', label: '❌ Denied Channel', max: 1, types: [ChannelType.GuildText, ChannelType.GuildAnnouncement] },
   logChannel: { prop: 'logChannelId', label: '📋 Log Channel', max: 1, types: [ChannelType.GuildText, ChannelType.GuildAnnouncement] },
   announceChannel: { prop: 'announceChannelId', label: '📣 Announce Channel', max: 1, types: [ChannelType.GuildText, ChannelType.GuildAnnouncement] },
-  lobbyVoiceChannel: { prop: 'lobbyChannelId', label: '🔊 Lobby Voice Channel', max: 1, types: [ChannelType.GuildVoice] },
   resultsChannel: { prop: 'resultsChannelId', label: '📈 Results Channel', max: 1, types: [ChannelType.GuildText, ChannelType.GuildAnnouncement] },
   reviewChannel: { prop: 'reviewChannelId', label: '🔎 Review Channel', max: 1, types: [ChannelType.GuildText, ChannelType.GuildAnnouncement] },
   starboardChannel: { prop: 'starboardChannelId', label: '⭐ Starboard Channel', max: 1, types: [ChannelType.GuildText, ChannelType.GuildAnnouncement] },
@@ -111,33 +101,16 @@ const ROLE_FIELDS = {
   reviewerRoles: { prop: 'reviewerRoleIds', label: '🔎 Reviewer Roles', max: 10 },
 };
 
-function row(...components) {
-  return new ActionRowBuilder().addComponents(...components);
-}
-
-function button(customId, label, style = ButtonStyle.Primary) {
-  return new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style);
-}
-
-function chunkArray(items, size) {
-  const chunks = [];
-  for (let index = 0; index < items.length; index += size) chunks.push(items.slice(index, index + size));
-  return chunks;
-}
-
-function getMemberDisplayName(interaction) {
-  return interaction.member?.displayName || interaction.user?.displayName || interaction.user?.username || 'Unknown User';
-}
+function row(...components) { return new ActionRowBuilder().addComponents(...components); }
+function button(customId, label, style = ButtonStyle.Primary) { return new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style); }
+function chunkArray(items, size) { const chunks = []; for (let index = 0; index < items.length; index += size) chunks.push(items.slice(index, index + size)); return chunks; }
+function getMemberDisplayName(interaction) { return interaction.member?.displayName || interaction.user?.displayName || interaction.user?.username || 'Unknown User'; }
 
 function getModuleConfig(guildId, moduleKey) {
   const module = MODULE_PANEL_REGISTRY[moduleKey];
   const modules = guildManager.getGuildSection(guildId, 'modules', {});
   const current = modules?.[moduleKey];
-  return {
-    ...(module?.defaults || {}),
-    ...(current && typeof current === 'object' ? current : {}),
-    enabled: current === false ? false : current?.enabled !== false,
-  };
+  return { ...(module?.defaults || {}), ...(current && typeof current === 'object' ? current : {}), enabled: current === false ? false : current?.enabled !== false };
 }
 
 function saveModuleConfig(guild, moduleKey, updater) {
@@ -145,10 +118,6 @@ function saveModuleConfig(guild, moduleKey, updater) {
   const next = typeof updater === 'function' ? updater(current) : { ...current, ...(updater || {}) };
   guildManager.updateGuildSection(guild.id, 'modules', (modules = {}) => ({ ...modules, [moduleKey]: next }), {}, guild);
   return next;
-}
-
-function setModuleEnabled(guild, moduleKey, enabled) {
-  return saveModuleConfig(guild, moduleKey, (config) => ({ ...config, enabled }));
 }
 
 function formatValue(value) {
@@ -172,46 +141,18 @@ function buildFieldList(module, config) {
 }
 
 function buildModuleListPanel(memberDisplayName = 'Unknown User') {
-  const embed = new EmbedBuilder()
-    .setColor(PANEL_COLOR)
-    .setTitle('🧩 Goliath Modules')
-    .setDescription('Select a Studio to view its modules.')
-    .setFooter({ text: `Requested by ${memberDisplayName}` })
-    .setTimestamp();
-  const studioRows = chunkArray(
-    STUDIO_CATALOG.map((studio) => button(`admin:studio:${studio.key}`, studio.label, ButtonStyle.Primary)),
-    ITEMS_PER_ROW,
-  ).map((buttons) => row(...buttons));
-  return {
-    embeds: [embed],
-    components: [...studioRows, row(button('admin:home', '🏠 Back to Admin Home', ButtonStyle.Secondary))].slice(0, 5),
-  };
-}
-
-function getModuleTarget(module) {
-  return MODULE_PANEL_REGISTRY[module.key]
-    ? `admin:module:${module.key}:configure:0`
-    : module.route;
+  const embed = new EmbedBuilder().setColor(PANEL_COLOR).setTitle('🧩 Goliath Modules').setDescription('Select a Studio to view its modules.').setFooter({ text: `Requested by ${memberDisplayName}` }).setTimestamp();
+  const studioRows = chunkArray(STUDIO_CATALOG.map((studio) => button(`admin:studio:${studio.key}`, studio.label)), ITEMS_PER_ROW).map((items) => row(...items));
+  return { embeds: [embed], components: [...studioRows, row(button('admin:home', '🏠 Back to Admin Home', ButtonStyle.Secondary))].slice(0, 5) };
 }
 
 function buildStudioPanel(studioKey, memberDisplayName = 'Unknown User') {
   const studio = STUDIO_BY_KEY[studioKey];
   if (!studio) return null;
   const modules = MODULE_CATALOG.filter((module) => module.studio === studioKey);
-  const embed = new EmbedBuilder()
-    .setColor(PANEL_COLOR)
-    .setTitle(studio.title)
-    .setDescription([studio.summary, '', 'Select a module.'].join('\n'))
-    .setFooter({ text: `Requested by ${memberDisplayName}` })
-    .setTimestamp();
-  const moduleRows = chunkArray(
-    modules.map((module) => button(getModuleTarget(module), module.label, ButtonStyle.Primary)),
-    ITEMS_PER_ROW,
-  ).map((buttons) => row(...buttons));
-  return {
-    embeds: [embed],
-    components: [...moduleRows, row(button('admin:modules', '⬅️ Back to Studios', ButtonStyle.Secondary))].slice(0, 5),
-  };
+  const embed = new EmbedBuilder().setColor(PANEL_COLOR).setTitle(studio.title).setDescription([studio.summary, '', 'Select a module.'].join('\n')).setFooter({ text: `Requested by ${memberDisplayName}` }).setTimestamp();
+  const moduleRows = chunkArray(modules.map((module) => button(CUSTOM_PANEL_KEYS.has(module.key) ? module.route : `admin:module:${module.key}:main:0`, module.label)), ITEMS_PER_ROW).map((items) => row(...items));
+  return { embeds: [embed], components: [...moduleRows, row(button('admin:modules', '⬅️ Back to Studios', ButtonStyle.Secondary))].slice(0, 5) };
 }
 
 function buildControlRows(moduleKey) {
@@ -220,166 +161,77 @@ function buildControlRows(moduleKey) {
   for (const fieldKey of module.selectMenus || []) {
     if (CHANNEL_FIELDS[fieldKey]) {
       const field = CHANNEL_FIELDS[fieldKey];
-      rows.push(row(new ChannelSelectMenuBuilder()
-        .setCustomId(`admin:module:${moduleKey}:channel:${fieldKey}`)
-        .setPlaceholder(field.label)
-        .setChannelTypes(...field.types)
-        .setMinValues(0)
-        .setMaxValues(field.max)));
-      continue;
-    }
-    if (ROLE_FIELDS[fieldKey]) {
+      rows.push(row(new ChannelSelectMenuBuilder().setCustomId(`admin:module:${moduleKey}:channel:${fieldKey}`).setPlaceholder(field.label).setChannelTypes(...field.types).setMinValues(0).setMaxValues(field.max)));
+    } else if (ROLE_FIELDS[fieldKey]) {
       const field = ROLE_FIELDS[fieldKey];
-      rows.push(row(new RoleSelectMenuBuilder()
-        .setCustomId(`admin:module:${moduleKey}:role:${fieldKey}`)
-        .setPlaceholder(field.label)
-        .setMinValues(0)
-        .setMaxValues(field.max)));
+      rows.push(row(new RoleSelectMenuBuilder().setCustomId(`admin:module:${moduleKey}:role:${fieldKey}`).setPlaceholder(field.label).setMinValues(0).setMaxValues(field.max)));
     }
   }
-  for (const optionMenu of module.optionMenus || []) {
-    rows.push(row(new StringSelectMenuBuilder()
-      .setCustomId(`admin:module:${moduleKey}:option:${optionMenu.id}`)
-      .setPlaceholder(optionMenu.placeholder)
-      .setMinValues(1)
-      .setMaxValues(1)
-      .addOptions(optionMenu.options.map(([value, label, description]) => ({ value, label, description })))));
-  }
-  for (const buttons of chunkArray(
-    (module.toggles || []).map(([prop, label]) => button(`admin:module:${moduleKey}:toggle:${prop}`, label, ButtonStyle.Secondary)),
-    3,
-  )) rows.push(row(...buttons));
+  for (const menu of module.optionMenus || []) rows.push(row(new StringSelectMenuBuilder().setCustomId(`admin:module:${moduleKey}:option:${menu.id}`).setPlaceholder(menu.placeholder).setMinValues(1).setMaxValues(1).addOptions(menu.options.map(([value, label, description]) => ({ value, label, description })))));
+  for (const items of chunkArray((module.toggles || []).map(([prop, label]) => button(`admin:module:${moduleKey}:toggle:${prop}`, label, ButtonStyle.Secondary)), 3)) rows.push(row(...items));
   return rows;
 }
 
-function buildModuleConfigurePanel(guild, moduleKey, memberDisplayName = 'Unknown User', controlPage = 0) {
+function buildModuleMainPanel(guild, moduleKey, memberDisplayName = 'Unknown User', controlPage = 0) {
   const module = MODULE_PANEL_REGISTRY[moduleKey];
   const catalogModule = MODULE_BY_KEY[moduleKey];
   if (!module || !catalogModule) return null;
-  const config = getModuleConfig(guild.id, module.key);
+  const config = getModuleConfig(guild.id, moduleKey);
   const enabled = config.enabled !== false;
-  const controlRows = buildControlRows(module.key);
-  const totalPages = Math.max(1, Math.ceil(controlRows.length / CONTROLS_PER_PAGE));
-  const currentPage = Math.min(Math.max(Number(controlPage) || 0, 0), totalPages - 1);
-  const controls = controlRows.slice(currentPage * CONTROLS_PER_PAGE, (currentPage + 1) * CONTROLS_PER_PAGE);
-  const embed = new EmbedBuilder()
-    .setColor(enabled ? 0x57f287 : PANEL_COLOR)
-    .setTitle(module.title)
-    .setDescription([
-      module.summary,
-      '',
-      `**Status:** ${enabled ? 'Enabled ✅' : 'Disabled ❌'}`,
-      `**Module Key:** \`${module.key}\``,
-      `**Setup Page:** ${currentPage + 1}/${totalPages}`,
-    ].join('\n'))
-    .addFields({ name: 'Current Setup', value: buildFieldList(module, config), inline: false })
-    .setFooter({ text: `Requested by ${memberDisplayName}` })
-    .setTimestamp();
-  const actionButtons = [
-    button(`admin:module:${module.key}:${enabled ? 'disable' : 'enable'}`, enabled ? '⏸️ Disable' : '▶️ Enable', enabled ? ButtonStyle.Secondary : ButtonStyle.Success),
-    button(`admin:module:${module.key}:health`, '🩺 Health', ButtonStyle.Secondary),
-    button(`admin:module:${module.key}:repair`, '🛠️ Repair', ButtonStyle.Secondary),
-    button(`admin:module:${module.key}:reset`, '♻️ Reset', ButtonStyle.Danger),
-  ];
-  const navButtons = [button(`admin:studio:${catalogModule.studio}`, '⬅️ Back', ButtonStyle.Secondary)];
-  if (currentPage > 0) navButtons.push(button(`admin:module:${module.key}:configure:${currentPage - 1}`, '◀ Previous', ButtonStyle.Secondary));
-  if (currentPage < totalPages - 1) navButtons.push(button(`admin:module:${module.key}:configure:${currentPage + 1}`, 'Next ▶', ButtonStyle.Secondary));
-  return {
-    embeds: [embed],
-    components: [row(...actionButtons), ...controls, row(...navButtons)].slice(0, 5),
-  };
+  const allControls = buildControlRows(moduleKey);
+  const totalPages = Math.max(1, Math.ceil(allControls.length / CONTROLS_PER_PAGE));
+  const page = Math.min(Math.max(Number(controlPage) || 0, 0), totalPages - 1);
+  const controls = allControls.slice(page * CONTROLS_PER_PAGE, (page + 1) * CONTROLS_PER_PAGE);
+  const embed = new EmbedBuilder().setColor(enabled ? 0x57f287 : PANEL_COLOR).setTitle(module.title).setDescription([module.summary, '', `**Status:** ${enabled ? 'Enabled ✅' : 'Disabled ❌'}`, `**Controls Page:** ${page + 1}/${totalPages}`].join('\n')).addFields({ name: 'Current Setup', value: buildFieldList(module, config), inline: false }).setFooter({ text: `Requested by ${memberDisplayName}` }).setTimestamp();
+  const nav = [button(`admin:module:${moduleKey}:configure`, '⚙️ Configure'), button(`admin:studio:${catalogModule.studio}`, '⬅️ Back', ButtonStyle.Secondary)];
+  if (page > 0) nav.push(button(`admin:module:${moduleKey}:main:${page - 1}`, '◀ Previous', ButtonStyle.Secondary));
+  if (page < totalPages - 1) nav.push(button(`admin:module:${moduleKey}:main:${page + 1}`, 'Next ▶', ButtonStyle.Secondary));
+  return { embeds: [embed], components: [...controls, row(...nav)].slice(0, 5) };
 }
 
-async function safeUpdate(interaction, payload) {
-  if (interaction.deferred || interaction.replied) {
-    await interaction.editReply(payload);
-    return true;
-  }
-  await interaction.update(payload);
-  return true;
+function buildModuleConfigurePanel(guild, moduleKey, memberDisplayName = 'Unknown User') {
+  const module = MODULE_PANEL_REGISTRY[moduleKey];
+  if (!module) return null;
+  const config = getModuleConfig(guild.id, moduleKey);
+  const enabled = config.enabled !== false;
+  const embed = new EmbedBuilder().setColor(enabled ? 0x57f287 : PANEL_COLOR).setTitle(`${module.title} · Configure`).setDescription([module.summary, '', `**Status:** ${enabled ? 'Enabled ✅' : 'Disabled ❌'}`, `**Module Key:** \`${moduleKey}\``, '', 'Administrative controls for this module.'].join('\n')).addFields({ name: 'Current Setup', value: buildFieldList(module, config), inline: false }).setFooter({ text: `Requested by ${memberDisplayName}` }).setTimestamp();
+  return { embeds: [embed], components: [row(button(`admin:module:${moduleKey}:${enabled ? 'disable' : 'enable'}`, enabled ? '⏸️ Disable' : '▶️ Enable', enabled ? ButtonStyle.Secondary : ButtonStyle.Success), button(`admin:module:${moduleKey}:health`, '🩺 Health', ButtonStyle.Secondary), button(`admin:module:${moduleKey}:repair`, '🛠️ Repair', ButtonStyle.Secondary), button(`admin:module:${moduleKey}:reset`, '♻️ Reset', ButtonStyle.Danger)), row(button(`admin:module:${moduleKey}:main:0`, '⬅️ Back', ButtonStyle.Secondary))] };
 }
 
-async function openTicketsPanel(interaction) {
-  const { sendSetupPanel } = require('../../../modules/feedbackStudio/tickets/ticketSetupPanel');
-  await sendSetupPanel(interaction);
-  return true;
-}
-
-function updateChannelSelection(guild, moduleKey, fieldKey, values = []) {
-  const field = CHANNEL_FIELDS[fieldKey];
-  if (!field) return;
-  const cleanValues = [...new Set(values.filter(Boolean))];
-  saveModuleConfig(guild, moduleKey, (config) => ({
-    ...config,
-    [field.prop]: field.max === 1 ? cleanValues[0] || null : cleanValues,
-  }));
-}
-
-function updateRoleSelection(guild, moduleKey, fieldKey, values = []) {
-  const field = ROLE_FIELDS[fieldKey];
-  if (!field) return;
-  saveModuleConfig(guild, moduleKey, (config) => ({
-    ...config,
-    [field.prop]: [...new Set(values.filter(Boolean))],
-  }));
-}
+function buildModuleLandingPanel(guild, moduleKey, memberDisplayName = 'Unknown User') { return buildModuleMainPanel(guild, moduleKey, memberDisplayName, 0); }
+async function safeUpdate(interaction, payload) { if (!payload) return false; if (interaction.deferred || interaction.replied) await interaction.editReply(payload); else await interaction.update(payload); return true; }
+function updateChannelSelection(guild, moduleKey, fieldKey, values = []) { const field = CHANNEL_FIELDS[fieldKey]; if (!field) return; const clean = [...new Set(values.filter(Boolean))]; saveModuleConfig(guild, moduleKey, (config) => ({ ...config, [field.prop]: field.max === 1 ? clean[0] || null : clean })); }
+function updateRoleSelection(guild, moduleKey, fieldKey, values = []) { const field = ROLE_FIELDS[fieldKey]; if (!field) return; saveModuleConfig(guild, moduleKey, (config) => ({ ...config, [field.prop]: [...new Set(values.filter(Boolean))] })); }
 
 async function handleModuleAdminInteraction(interaction) {
-  const customId = String(interaction.customId || '');
-  if (customId === 'admin:modules') return safeUpdate(interaction, buildModuleListPanel(getMemberDisplayName(interaction)));
-
-  const studioMatch = customId.match(/^admin:studio:([a-zA-Z0-9_-]+)$/);
-  if (studioMatch && interaction.isButton?.()) {
-    return safeUpdate(interaction, buildStudioPanel(studioMatch[1], getMemberDisplayName(interaction)));
+  const id = String(interaction.customId || '');
+  const name = getMemberDisplayName(interaction);
+  if (id === 'admin:modules') return safeUpdate(interaction, buildModuleListPanel(name));
+  const studio = id.match(/^admin:studio:([a-zA-Z0-9_-]+)$/);
+  if (studio && interaction.isButton?.()) return safeUpdate(interaction, buildStudioPanel(studio[1], name));
+  const main = id.match(/^admin:module:([a-zA-Z0-9_-]+):main:(\d+)$/);
+  if (main && interaction.isButton?.()) return safeUpdate(interaction, buildModuleMainPanel(interaction.guild, main[1], name, Number(main[2])));
+  const legacy = id.match(/^admin:module:([a-zA-Z0-9_-]+):landing$/);
+  if (legacy && interaction.isButton?.()) return safeUpdate(interaction, buildModuleMainPanel(interaction.guild, legacy[1], name, 0));
+  const configure = id.match(/^admin:module:([a-zA-Z0-9_-]+):configure(?::\d+)?$/);
+  if (configure && interaction.isButton?.()) return safeUpdate(interaction, buildModuleConfigurePanel(interaction.guild, configure[1], name));
+  const action = id.match(/^admin:module:([a-zA-Z0-9_-]+):(enable|disable|reset|health|repair)$/);
+  if (action && interaction.isButton?.()) {
+    const [, key, type] = action;
+    const module = MODULE_PANEL_REGISTRY[key];
+    if (!module) return false;
+    if (type === 'enable' || type === 'disable') saveModuleConfig(interaction.guild, key, (config) => ({ ...config, enabled: type === 'enable' }));
+    if (type === 'reset') saveModuleConfig(interaction.guild, key, module.defaults);
+    return safeUpdate(interaction, buildModuleConfigurePanel(interaction.guild, key, name));
   }
-
-  const configureMatch = customId.match(/^admin:module:([a-zA-Z0-9_-]+):configure:(\d+)$/);
-  if (configureMatch && interaction.isButton?.()) {
-    return safeUpdate(
-      interaction,
-      buildModuleConfigurePanel(interaction.guild, configureMatch[1], getMemberDisplayName(interaction), Number(configureMatch[2])),
-    );
-  }
-
-  const buttonMatch = customId.match(/^admin:module:([a-zA-Z0-9_-]+):(enable|disable|reset|health|repair)$/);
-  if (buttonMatch && interaction.isButton?.()) {
-    const [, moduleKey, action] = buttonMatch;
-    if (!MODULE_PANEL_REGISTRY[moduleKey]) return false;
-    if (action === 'enable') setModuleEnabled(interaction.guild, moduleKey, true);
-    if (action === 'disable') setModuleEnabled(interaction.guild, moduleKey, false);
-    if (action === 'reset') saveModuleConfig(interaction.guild, moduleKey, MODULE_PANEL_REGISTRY[moduleKey].defaults);
-    return safeUpdate(interaction, buildModuleConfigurePanel(interaction.guild, moduleKey, getMemberDisplayName(interaction), 0));
-  }
-
-  const toggleMatch = customId.match(/^admin:module:([a-zA-Z0-9_-]+):toggle:([a-zA-Z0-9_-]+)$/);
-  if (toggleMatch && interaction.isButton?.()) {
-    const [, moduleKey, prop] = toggleMatch;
-    if (!MODULE_PANEL_REGISTRY[moduleKey]) return false;
-    saveModuleConfig(interaction.guild, moduleKey, (config) => ({ ...config, [prop]: !Boolean(config[prop]) }));
-    return safeUpdate(interaction, buildModuleConfigurePanel(interaction.guild, moduleKey, getMemberDisplayName(interaction), 0));
-  }
-
-  const channelMatch = customId.match(/^admin:module:([a-zA-Z0-9_-]+):channel:([a-zA-Z0-9_-]+)$/);
-  if (channelMatch && interaction.isChannelSelectMenu?.()) {
-    updateChannelSelection(interaction.guild, channelMatch[1], channelMatch[2], interaction.values || []);
-    return safeUpdate(interaction, buildModuleConfigurePanel(interaction.guild, channelMatch[1], getMemberDisplayName(interaction), 0));
-  }
-
-  const roleMatch = customId.match(/^admin:module:([a-zA-Z0-9_-]+):role:([a-zA-Z0-9_-]+)$/);
-  if (roleMatch && interaction.isRoleSelectMenu?.()) {
-    updateRoleSelection(interaction.guild, roleMatch[1], roleMatch[2], interaction.values || []);
-    return safeUpdate(interaction, buildModuleConfigurePanel(interaction.guild, roleMatch[1], getMemberDisplayName(interaction), 0));
-  }
-
-  const optionMatch = customId.match(/^admin:module:([a-zA-Z0-9_-]+):option:([a-zA-Z0-9_-]+)$/);
-  if (optionMatch && interaction.isStringSelectMenu?.()) {
-    saveModuleConfig(interaction.guild, optionMatch[1], (config) => ({
-      ...config,
-      [optionMatch[2]]: interaction.values?.[0],
-    }));
-    return safeUpdate(interaction, buildModuleConfigurePanel(interaction.guild, optionMatch[1], getMemberDisplayName(interaction), 0));
-  }
-
+  const toggle = id.match(/^admin:module:([a-zA-Z0-9_-]+):toggle:([a-zA-Z0-9_-]+)$/);
+  if (toggle && interaction.isButton?.()) { saveModuleConfig(interaction.guild, toggle[1], (config) => ({ ...config, [toggle[2]]: !Boolean(config[toggle[2]]) })); return safeUpdate(interaction, buildModuleMainPanel(interaction.guild, toggle[1], name, 0)); }
+  const channel = id.match(/^admin:module:([a-zA-Z0-9_-]+):channel:([a-zA-Z0-9_-]+)$/);
+  if (channel && interaction.isChannelSelectMenu?.()) { updateChannelSelection(interaction.guild, channel[1], channel[2], interaction.values || []); return safeUpdate(interaction, buildModuleMainPanel(interaction.guild, channel[1], name, 0)); }
+  const role = id.match(/^admin:module:([a-zA-Z0-9_-]+):role:([a-zA-Z0-9_-]+)$/);
+  if (role && interaction.isRoleSelectMenu?.()) { updateRoleSelection(interaction.guild, role[1], role[2], interaction.values || []); return safeUpdate(interaction, buildModuleMainPanel(interaction.guild, role[1], name, 0)); }
+  const option = id.match(/^admin:module:([a-zA-Z0-9_-]+):option:([a-zA-Z0-9_-]+)$/);
+  if (option && interaction.isStringSelectMenu?.()) { saveModuleConfig(interaction.guild, option[1], (config) => ({ ...config, [option[2]]: interaction.values?.[0] })); return safeUpdate(interaction, buildModuleMainPanel(interaction.guild, option[1], name, 0)); }
   return false;
 }
 
@@ -390,7 +242,9 @@ module.exports = {
   SERVER_MODULES,
   buildModuleListPanel,
   buildStudioPanel,
+  buildModuleMainPanel,
+  buildModuleLandingPanel,
   buildModuleConfigurePanel,
-  buildModulePanel: buildModuleConfigurePanel,
+  buildModulePanel: buildModuleMainPanel,
   handleModuleAdminInteraction,
 };
