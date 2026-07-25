@@ -1,29 +1,418 @@
 'use strict';
-const fs=require('fs'),path=require('path'),{spawnSync}=require('child_process');
-const root=path.resolve(__dirname,'..'),mode=process.env.BOT_MODE||'dev',JS=['.js','.jsx','.mjs','.cjs'];
-const abs=f=>path.join(root,f),rel=f=>path.relative(root,f).replace(/\\/g,'/'),has=f=>fs.existsSync(abs(f)),read=f=>fs.readFileSync(f,'utf8');
-const section=t=>{console.log(`\n${t}`);console.log('='.repeat(t.length));};
-function walk(dir,ext=JS){if(!fs.existsSync(dir))return[];return fs.readdirSync(dir,{withFileTypes:true}).flatMap(e=>{if(['node_modules','dist','.git'].includes(e.name))return[];const f=path.join(dir,e.name);return e.isDirectory()?walk(f,ext):e.isFile()&&ext.includes(path.extname(e.name))?[f]:[];});}
-function legacyCoreImports(f,s){if(!JS.includes(path.extname(f)))return[];const legacyRoot=path.join(root,'core'),legacyPrefix=`${legacyRoot}${path.sep}`,matches=[],patterns=[/require\s*\(\s*['"]([^'"]+)['"]\s*\)/g,/import\s*\(\s*['"]([^'"]+)['"]\s*\)/g,/\b(?:import|export)\s+(?:[^'";]+?\s+from\s+)?['"]([^'"]+)['"]/g];for(const pattern of patterns)for(const match of s.matchAll(pattern)){const spec=match[1];if(!spec.startsWith('.'))continue;const resolved=path.resolve(path.dirname(f),spec);if(resolved===legacyRoot||resolved.startsWith(legacyPrefix))matches.push(spec);}return[...new Set(matches)];}
-function shape(){section('Project shape');const req=['server.js','package.json','scripts/goliath.js','src/commands','src/core','src/dashboard','src/events','src/modules','src/runtime','src/server'];const bad=req.filter(f=>{const ok=has(f);console.log(`${ok?'✅':'❌'} ${f}`);return!ok;});const retired=['core'],retiredFound=retired.filter(f=>has(f));retired.forEach(f=>console.log(`${has(f)?'❌':'✅'} retired /${f}`));const extras=fs.readdirSync(abs('scripts'),{withFileTypes:true}).filter(e=>e.isFile()&&e.name!=='goliath.js').map(e=>e.name);extras.forEach(f=>console.log(`❌ scripts/${f} must be absorbed`));return!bad.length&&!retiredFound.length&&!extras.length;}
-function exportsAudit(title,checks){section(title);const errors=[];for(const[f,names]of checks){if(!has(f)){errors.push(`${f}: missing`);console.log(`❌ ${f}`);continue;}if(!names.length||!f.endsWith('.js')){console.log(`✅ ${f}`);continue;}try{delete require.cache[require.resolve(abs(f))];const m=require(abs(f)),missing=names.filter(n=>m?.[n]===undefined);if(missing.length)errors.push(`${f}: missing ${missing.join(', ')}`);console.log(`${missing.length?'❌':'✅'} ${f}`);}catch(e){errors.push(`${f}: ${e.message}`);console.log(`❌ ${f}`);}}errors.forEach(e=>console.log(` - ${e}`));return!errors.length;}
-function commands(){section('Command audit');const seen=new Set(),errors=[];for(const f of walk(abs('src/commands'))){try{delete require.cache[require.resolve(f)];const c=require(f),n=c?.data?.toJSON?.()?.name;if(!n)throw Error('missing command name');if(seen.has(n))throw Error(`duplicate /${n}`);if(typeof c.execute!=='function')throw Error('missing execute');seen.add(n);console.log(`✅ /${n}`);}catch(e){errors.push(`${rel(f)}: ${e.message}`);console.log(`❌ ${rel(f)}`);}}errors.forEach(e=>console.log(` - ${e}`));return!errors.length;}
-function source(){section('Source audit');const errors=[],mojibake=/[\u00e2\u00f0\u00ef\u00c3\ufffd]/g,windows=/\b[A-Za-z]:\\[^\r\n'"`]+/g;for(const f of walk(root,[...JS,'.json','.md','.txt','.yml','.yaml'])){const s=read(f),r=rel(f),lines=s.split(/\r?\n/);lines.forEach((line,index)=>{for(const match of line.matchAll(mojibake)){const char=match[0],code=`U+${char.codePointAt(0).toString(16).toUpperCase().padStart(4,'0')}`;errors.push(`UTF-8: ${r}:${index+1} ${code} ${JSON.stringify(line.trim())}`);}for(const match of line.matchAll(windows))errors.push(`Windows path: ${r}:${index+1} ${JSON.stringify(match[0])}`);});for(const spec of legacyCoreImports(f,s))errors.push(`legacy core import: ${r} -> ${spec}`);}errors.forEach(e=>console.log(` - ${e}`));return!errors.length;}
-function imports(){section('Runtime imports');const files=[...walk(abs('src/events')),...walk(abs('src/core/admin/functions')),...walk(abs('src/server/routes')),...['src/modules/social/social.js','src/modules/social/socialPanel.js','src/modules/social/socialRoute.js'].map(abs).filter(fs.existsSync)],errors=[];const code="try{require(process.argv[1]);process.exit(0)}catch(e){console.error(e?.stack||e);process.exit(1)}";for(const f of new Set(files)){const r=spawnSync(process.execPath,['-e',code,f],{cwd:root,encoding:'utf8',timeout:15000,env:{...process.env,GOLIATH_IMPORT_AUDIT:'true'}});console.log(`${r.status===0?'✅':'❌'} ${rel(f)}`);if(r.status!==0)errors.push(`${rel(f)}: ${String(r.stderr||r.stdout).trim().split('\n').slice(0,3).join(' | ')}`);}errors.forEach(e=>console.log(` - ${e}`));return!errors.length;}
-function social(){section('Social Studio architecture');const required=['providerRegistry.js','social.js','socialDelivery.js','socialHealth.js','socialHistory.js','socialManager.js','socialPanel.js','socialQueue.js','socialRoute.js','socialRuntime.js','socialRuntimeDoctor.js','socialRuntimeHealth.js','socialProcessLifecycle.js','socialScheduler.js','socialStore.js'],retired=['socialCreatorPanel.js','socialCreatorRoute.js','socialCreators.js','socialDiagnostics.js','socialSimulator.js'],errors=[],base=abs('src/modules/social'),importPatterns=[/require\s*\(\s*['"]([^'"]+)['"]\s*\)/g,/import\s*\(\s*['"]([^'"]+)['"]\s*\)/g,/\b(?:import|export)\s+(?:[^'";]+?\s+from\s+)?['"]([^'"]+)['"]/g];for(const f of required){const ok=fs.existsSync(path.join(base,f));console.log(`${ok?'✅':'❌'} ${f}`);if(!ok)errors.push(`missing ${f}`);}for(const f of retired){const bad=fs.existsSync(path.join(base,f));console.log(`${bad?'❌':'✅'} retired ${f}`);if(bad)errors.push(`${f} remains`);}for(const f of walk(abs('src'))){const s=read(f);for(const pattern of importPatterns)for(const match of s.matchAll(pattern)){const spec=match[1];for(const n of retired.map(x=>x.replace('.js','')))if(spec.includes(n))errors.push(`${rel(f)} imports retired ${n}`);}}for(const f of walk(abs('src'))){const r=rel(f);if(['src/modules/social/social.js','src/modules/social/socialHealth.js','src/modules/social/socialPanel.js'].includes(r))continue;if(/(?:require\s*\(\s*['"][^'"]*socialHealth|from\s+['"][^'"]*socialHealth|import\s*\(\s*['"][^'"]*socialHealth)/.test(read(f)))errors.push(`${r} bypasses canonical social.health`);}try{delete require.cache[require.resolve(abs('src/modules/social/social.js'))];const m=require(abs('src/modules/social/social.js'));for(const n of['startup','shutdown','diagnostics','runtimeHealth','delivery','creators','simulator','queue','history','health','providers','scheduler'])if(m?.[n]===undefined)errors.push(`social.js missing ${n}`);}catch(e){errors.push(`social.js: ${e.message}`);}const surfaces=exportsAudit('Social Studio surfaces',[['src/modules/social/socialPanel.js',['buildSocialAdminPanel','handleSocialAdminInteraction']],['src/modules/social/socialHealth.js',['buildHealth','repair','exportConfig','reset']],['src/modules/social/socialRuntimeHealth.js',['status']],['src/modules/social/socialRuntimeDoctor.js',['buildReport','run']],['src/modules/social/socialScheduler.js',['runSocialCheck','startSocialScheduler','handleProviderResult']],['src/commands/admin/socialhub.js',['data','execute']],['src/dashboard/js/pages/modules/Social.jsx',[]],['src/dashboard/js/pages/modules/SocialWithRuntime.jsx',[]],['docs/modules/social-alerts.md',[]]]);if(!surfaces)errors.push('surface contract failed');errors.forEach(e=>console.log(` - ${e}`));return!errors.length;}
-const goodbye=()=>exportsAudit('Goodbye doctor',[['src/modules/messageStudio/goodbye/goodbye.js',[]],['src/modules/messageStudio/goodbye/goodbyeDepartureDm.js',['getConfig','updateConfig','resetConfig','buildDmEmbed','sendDepartureDm']],['src/modules/messageStudio/goodbye/goodbyePanel.js',[]],['src/modules/messageStudio/goodbye/goodbyeRoute.js',[]],['docs/modules/goodbye.md',[]]]);
-const reaction=()=>exportsAudit('Reaction Roles doctor',[['src/modules/roleStudio/reactionRoles/reactionRoles.js',[]],['src/modules/roleStudio/reactionRoles/reactionRolesRoute.js',[]],['src/modules/roleStudio/reactionRoles/reactionRolesPanel.js',[]],['src/dashboard/js/pages/modules/ReactionRoles.jsx',[]]]);
-const roles=()=>exportsAudit('Role Studio doctor',[['src/modules/roleStudio/roleStudioPanel.js',['buildRoleStudioPanel','buildRoleAnalyticsPanel','buildRoleHealthPanel']],['src/modules/roleStudio/autoRoles/autoRoles.js',['applyAutoRoles','startupAutoRoles','buildHealthReport','setAutoRolesEnabled']],['src/modules/roleStudio/temporaryRoles/temporaryRoles.js',['assignTemporaryRole','removeAssignment','scanExpired']],['src/modules/roleStudio/timedRoles/timedRoles.js',['getMemberProgression','applyProgressionToMember','simulateGuild','scanGuild']]]);
-const invites=()=>exportsAudit('Invite Studio doctor',[['src/modules/communityStudio/invites/invites.js',['defaults','getSection','setEnabled','updateSettings','buildHealth','repair','startup','exportConfiguration','reset']],['src/modules/communityStudio/invites/invitesRoute.js',[]],['src/modules/communityStudio/invites/invitesAdminPanel.js',['buildInviteStudioPayload','handleInviteStudioInteraction']],['src/dashboard/js/pages/modules/Invites.jsx',[]],['docs/modules/communityStudio/invites.md',[]]]);
-function dashboard(){return exportsAudit('Dashboard entry surfaces',[['src/dashboard/js/main.jsx',[]],['src/dashboard/js/App.jsx',[]],['src/dashboard/js/ui/layout.js',[]],['src/dashboard/js/shared/moduleRegistry.js',[]]]);}
-function runtime(){section('Runtime');const base=abs(`runtime/${mode}`);console.log(`BOT_MODE: ${mode}`);if(!fs.existsSync(base))return false;for(const f of['guilds','logs','database','data','backups'])console.log(`${fs.existsSync(path.join(base,f))?'✅':'⚠️'} ${f}`);return true;}
-function guilds(){section('Guild configs');const d=abs(`runtime/${mode}/guilds`);if(!fs.existsSync(d))return false;fs.readdirSync(d).filter(f=>f.endsWith('.json')).sort().forEach(f=>console.log(`- ${f}`));return true;}
-function media(){section('Media');const ff=spawnSync('ffmpeg',['-version']),sharp=(()=>{try{require.resolve('sharp');return true;}catch{return false;}})();console.log(`FFmpeg: ${ff.status===0?'✅':'❌'}`);console.log(`Sharp: ${sharp?'✅':'❌'}`);return ff.status===0&&sharp;}
-function syncCommands(target=mode){const environment=String(target||mode).toLowerCase();if(!['dev','beta','production'].includes(environment)){console.error(`Invalid command-sync environment: ${environment}`);return false;}section(`Sync Discord commands (${environment})`);const result=spawnSync(process.execPath,[abs('src/core/commandRegistry/syncCommands.js')],{cwd:root,stdio:'inherit',env:{...process.env,BOT_MODE:environment}});return result.status===0;}
-function run(command,args,options={}){const result=spawnSync(command,args,{cwd:root,stdio:'inherit',...options});if(result.error)console.error(result.error.message);return result.status===0;}
-function output(command,args){const result=spawnSync(command,args,{cwd:root,encoding:'utf8'});return result.status===0?String(result.stdout||'').trim():'';}
-function promote(target){const environment=String(target||'').toLowerCase(),plan={beta:{source:'dev',deploy:'/home/goliath/deploy-beta.sh'},production:{source:'beta',deploy:'/home/goliath/deploy-production.sh'}}[environment];if(!plan){console.error('Promotion target must be beta or production.');return false;}if(!fs.existsSync(abs('.git'))){console.error('Run promotion from the Goliath repository root.');return false;}if(output('git',['status','--porcelain'])){console.error('Promotion requires a clean working tree.');return false;}const original=output('git',['branch','--show-current']);if(!original){console.error('Could not determine the current branch.');return false;}section(`Promote ${plan.source} → ${environment}`);let success=false;try{if(!run('git',['fetch','origin']))return false;if(!run('git',['switch',environment]))return false;if(!run('git',['pull','--ff-only','origin',environment]))return false;if(!run('git',['merge','--no-edit',`origin/${plan.source}`]))return false;if(!doctor())return false;if(!run('git',['push','origin',environment]))return false;if(!run('ssh',['root@198.186.130.112','bash',plan.deploy]))return false;success=true;return true;}finally{if(original!==environment&&!run('git',['switch',original]))console.error(`Promotion ${success?'completed':'failed'}, but could not restore branch ${original}.`);}}
-function doctor(target=''){const suites={social,goodbye,reaction,reactionroles:reaction,'reaction-roles':reaction,'role-studio':roles,rolestudio:roles,invites};if(target)return suites[target]?.()??false;const results=[shape,commands,dashboard,source,imports,runtime,social,goodbye,reaction,roles,invites].map(f=>f());return results.every(Boolean);}
-function help(){console.log(`Goliath CLI\n===========\nMode: ${mode}\n  doctor [suite]\n  audit\n  commands\n  sync-commands [dev|beta|production]\n  promote [beta|production]\n  social\n  goodbye\n  reaction\n  role-studio\n  invites\n  dashboard\n  runtime\n  imports\n  guilds\n  media\n  source`);}
-const cmd=String(process.argv[2]||'help').toLowerCase(),target=String(process.argv[3]||'').toLowerCase(),map={help,doctor:()=>doctor(target),check:()=>doctor(target),audit:()=>{const doctorResult=doctor(),guildResult=guilds();return doctorResult&&guildResult;},commands,'sync-commands':()=>syncCommands(target),sync:()=>syncCommands(target),promote:()=>promote(target),social,goodbye,reaction,reactionroles:reaction,'reaction-roles':reaction,'role-studio':roles,rolestudio:roles,invites,dashboard,runtime,imports,guilds,media,source};
-if(!map[cmd]){console.error(`Unknown command: ${cmd}`);help();process.exit(1);}if(map[cmd]()===false)process.exit(1);
+
+const fs = require('fs');
+const path = require('path');
+const { spawnSync } = require('child_process');
+
+const root = path.resolve(__dirname, '..');
+const mode = process.env.BOT_MODE || 'dev';
+const JS_EXTENSIONS = ['.js', '.jsx', '.mjs', '.cjs'];
+
+const absolute = (filePath) => path.join(root, filePath);
+const relative = (filePath) => path.relative(root, filePath).replace(/\\/g, '/');
+const exists = (filePath) => fs.existsSync(absolute(filePath));
+const read = (filePath) => fs.readFileSync(filePath, 'utf8');
+
+function section(title) {
+  console.log(`\n${title}`);
+  console.log('='.repeat(title.length));
+}
+
+function walk(directory, extensions = JS_EXTENSIONS) {
+  if (!fs.existsSync(directory)) return [];
+
+  return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    if (['node_modules', 'dist', '.git'].includes(entry.name)) return [];
+    const filePath = path.join(directory, entry.name);
+    if (entry.isDirectory()) return walk(filePath, extensions);
+    return entry.isFile() && extensions.includes(path.extname(entry.name)) ? [filePath] : [];
+  });
+}
+
+function legacyCoreImports(filePath, source) {
+  if (!JS_EXTENSIONS.includes(path.extname(filePath))) return [];
+
+  const legacyRoot = path.join(root, 'core');
+  const legacyPrefix = `${legacyRoot}${path.sep}`;
+  const matches = [];
+  const patterns = [
+    /require\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
+    /import\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
+    /\b(?:import|export)\s+(?:[^'";]+?\s+from\s+)?['"]([^'"]+)['"]/g,
+  ];
+
+  for (const pattern of patterns) {
+    for (const match of source.matchAll(pattern)) {
+      const specification = match[1];
+      if (!specification.startsWith('.')) continue;
+      const resolved = path.resolve(path.dirname(filePath), specification);
+      if (resolved === legacyRoot || resolved.startsWith(legacyPrefix)) matches.push(specification);
+    }
+  }
+
+  return [...new Set(matches)];
+}
+
+function projectShape() {
+  section('Project shape');
+
+  const required = [
+    'server.js',
+    'package.json',
+    'scripts/goliath.js',
+    'src/commands',
+    'src/core',
+    'src/dashboard',
+    'src/events',
+    'src/modules',
+    'src/runtime',
+    'src/server',
+  ];
+
+  const missing = required.filter((filePath) => {
+    const present = exists(filePath);
+    console.log(`${present ? '✅' : '❌'} ${filePath}`);
+    return !present;
+  });
+
+  const retiredRoots = ['core'];
+  const retiredFound = retiredRoots.filter(exists);
+  for (const filePath of retiredRoots) console.log(`${exists(filePath) ? '❌' : '✅'} retired /${filePath}`);
+
+  const extraScripts = fs.readdirSync(absolute('scripts'), { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name !== 'goliath.js')
+    .map((entry) => entry.name);
+
+  for (const script of extraScripts) console.log(`❌ scripts/${script} must be absorbed`);
+  return missing.length === 0 && retiredFound.length === 0 && extraScripts.length === 0;
+}
+
+function exportsAudit(title, checks) {
+  section(title);
+  const errors = [];
+
+  for (const [filePath, names] of checks) {
+    if (!exists(filePath)) {
+      errors.push(`${filePath}: missing`);
+      console.log(`❌ ${filePath}`);
+      continue;
+    }
+
+    if (!names.length || !filePath.endsWith('.js')) {
+      console.log(`✅ ${filePath}`);
+      continue;
+    }
+
+    try {
+      delete require.cache[require.resolve(absolute(filePath))];
+      const moduleValue = require(absolute(filePath));
+      const missing = names.filter((name) => moduleValue?.[name] === undefined);
+      if (missing.length) errors.push(`${filePath}: missing ${missing.join(', ')}`);
+      console.log(`${missing.length ? '❌' : '✅'} ${filePath}`);
+    } catch (error) {
+      errors.push(`${filePath}: ${error.message}`);
+      console.log(`❌ ${filePath}`);
+    }
+  }
+
+  for (const error of errors) console.log(` - ${error}`);
+  return errors.length === 0;
+}
+
+function commandAudit() {
+  section('Command audit');
+  const seen = new Set();
+  const errors = [];
+
+  for (const filePath of walk(absolute('src/commands'))) {
+    try {
+      delete require.cache[require.resolve(filePath)];
+      const command = require(filePath);
+      const name = command?.data?.toJSON?.()?.name;
+      if (!name) throw new Error('missing command name');
+      if (seen.has(name)) throw new Error(`duplicate /${name}`);
+      if (typeof command.execute !== 'function') throw new Error('missing execute');
+      seen.add(name);
+      console.log(`✅ /${name}`);
+    } catch (error) {
+      errors.push(`${relative(filePath)}: ${error.message}`);
+      console.log(`❌ ${relative(filePath)}`);
+    }
+  }
+
+  for (const error of errors) console.log(` - ${error}`);
+  return errors.length === 0;
+}
+
+function sourceAudit() {
+  section('Source audit');
+  const errors = [];
+  const mojibake = /[\u00e2\u00f0\u00ef\u00c3\ufffd]/g;
+  const windowsPath = /\b[A-Za-z]:\\[^\r\n'"`]+/g;
+
+  for (const filePath of walk(root, [...JS_EXTENSIONS, '.json', '.md', '.txt', '.yml', '.yaml'])) {
+    const source = read(filePath);
+    const repoPath = relative(filePath);
+    const lines = source.split(/\r?\n/);
+
+    lines.forEach((line, index) => {
+      for (const match of line.matchAll(mojibake)) {
+        const character = match[0];
+        const codePoint = `U+${character.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}`;
+        errors.push(`UTF-8: ${repoPath}:${index + 1} ${codePoint} ${JSON.stringify(line.trim())}`);
+      }
+      for (const match of line.matchAll(windowsPath)) {
+        errors.push(`Windows path: ${repoPath}:${index + 1} ${JSON.stringify(match[0])}`);
+      }
+    });
+
+    for (const specification of legacyCoreImports(filePath, source)) {
+      errors.push(`legacy core import: ${repoPath} -> ${specification}`);
+    }
+  }
+
+  for (const error of errors) console.log(` - ${error}`);
+  return errors.length === 0;
+}
+
+function importAudit() {
+  section('Runtime imports');
+  const files = [
+    ...walk(absolute('src/events')),
+    ...walk(absolute('src/core/admin/functions')),
+    ...walk(absolute('src/server/routes')),
+  ];
+  const errors = [];
+  const probe = "try{require(process.argv[1]);process.exit(0)}catch(e){console.error(e?.stack||e);process.exit(1)}";
+
+  for (const filePath of new Set(files)) {
+    const result = spawnSync(process.execPath, ['-e', probe, filePath], {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: 15000,
+      env: { ...process.env, GOLIATH_IMPORT_AUDIT: 'true' },
+    });
+
+    console.log(`${result.status === 0 ? '✅' : '❌'} ${relative(filePath)}`);
+    if (result.status !== 0) {
+      errors.push(`${relative(filePath)}: ${String(result.stderr || result.stdout).trim().split('\n').slice(0, 3).join(' | ')}`);
+    }
+  }
+
+  for (const error of errors) console.log(` - ${error}`);
+  return errors.length === 0;
+}
+
+const goodbyeAudit = () => exportsAudit('Goodbye doctor', [
+  ['src/modules/messageStudio/goodbye/goodbye.js', []],
+  ['src/modules/messageStudio/goodbye/goodbyeDepartureDm.js', ['getConfig', 'updateConfig', 'resetConfig', 'buildDmEmbed', 'sendDepartureDm']],
+  ['src/modules/messageStudio/goodbye/goodbyePanel.js', []],
+  ['src/modules/messageStudio/goodbye/goodbyeRoute.js', []],
+  ['docs/modules/goodbye.md', []],
+]);
+
+const reactionRolesAudit = () => exportsAudit('Reaction Roles doctor', [
+  ['src/modules/roleStudio/reactionRoles/reactionRoles.js', []],
+  ['src/modules/roleStudio/reactionRoles/reactionRolesRoute.js', []],
+  ['src/modules/roleStudio/reactionRoles/reactionRolesPanel.js', []],
+  ['src/dashboard/js/pages/modules/ReactionRoles.jsx', []],
+]);
+
+const roleStudioAudit = () => exportsAudit('Role Studio doctor', [
+  ['src/modules/roleStudio/roleStudioPanel.js', ['buildRoleStudioPanel', 'buildRoleAnalyticsPanel', 'buildRoleHealthPanel']],
+  ['src/modules/roleStudio/autoRoles/autoRoles.js', ['applyAutoRoles', 'startupAutoRoles', 'buildHealthReport', 'setAutoRolesEnabled']],
+  ['src/modules/roleStudio/temporaryRoles/temporaryRoles.js', ['assignTemporaryRole', 'removeAssignment', 'scanExpired']],
+  ['src/modules/roleStudio/timedRoles/timedRoles.js', ['getMemberProgression', 'applyProgressionToMember', 'simulateGuild', 'scanGuild']],
+]);
+
+const inviteStudioAudit = () => exportsAudit('Invite Studio doctor', [
+  ['src/modules/communityStudio/invites/invites.js', ['defaults', 'getSection', 'setEnabled', 'updateSettings', 'buildHealth', 'repair', 'startup', 'exportConfiguration', 'reset']],
+  ['src/modules/communityStudio/invites/invitesRoute.js', []],
+  ['src/modules/communityStudio/invites/invitesAdminPanel.js', ['buildInviteStudioPayload', 'handleInviteStudioInteraction']],
+  ['src/dashboard/js/pages/modules/Invites.jsx', []],
+  ['docs/modules/communityStudio/invites.md', []],
+]);
+
+function dashboardAudit() {
+  return exportsAudit('Dashboard entry surfaces', [
+    ['src/dashboard/js/main.jsx', []],
+    ['src/dashboard/js/App.jsx', []],
+    ['src/dashboard/js/ui/layout.js', []],
+    ['src/dashboard/js/shared/moduleRegistry.js', []],
+  ]);
+}
+
+function runtimeAudit() {
+  section('Runtime');
+  const runtimeRoot = absolute(`runtime/${mode}`);
+  console.log(`BOT_MODE: ${mode}`);
+  if (!fs.existsSync(runtimeRoot)) return false;
+
+  for (const directory of ['guilds', 'logs', 'database', 'data', 'backups']) {
+    console.log(`${fs.existsSync(path.join(runtimeRoot, directory)) ? '✅' : '⚠️'} ${directory}`);
+  }
+  return true;
+}
+
+function guildAudit() {
+  section('Guild configs');
+  const directory = absolute(`runtime/${mode}/guilds`);
+  if (!fs.existsSync(directory)) return false;
+  fs.readdirSync(directory).filter((file) => file.endsWith('.json')).sort().forEach((file) => console.log(`- ${file}`));
+  return true;
+}
+
+function mediaAudit() {
+  section('Media');
+  const ffmpeg = spawnSync('ffmpeg', ['-version']);
+  const sharp = (() => {
+    try {
+      require.resolve('sharp');
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+
+  console.log(`FFmpeg: ${ffmpeg.status === 0 ? '✅' : '❌'}`);
+  console.log(`Sharp: ${sharp ? '✅' : '❌'}`);
+  return ffmpeg.status === 0 && sharp;
+}
+
+function run(command, argumentsList, options = {}) {
+  const result = spawnSync(command, argumentsList, { cwd: root, stdio: 'inherit', ...options });
+  if (result.error) console.error(result.error.message);
+  return result.status === 0;
+}
+
+function output(command, argumentsList) {
+  const result = spawnSync(command, argumentsList, { cwd: root, encoding: 'utf8' });
+  return result.status === 0 ? String(result.stdout || '').trim() : '';
+}
+
+function syncCommands(target = mode) {
+  const environment = String(target || mode).toLowerCase();
+  if (!['dev', 'beta', 'production'].includes(environment)) {
+    console.error(`Invalid command-sync environment: ${environment}`);
+    return false;
+  }
+
+  section(`Sync Discord commands (${environment})`);
+  const result = spawnSync(process.execPath, [absolute('src/core/commandRegistry/syncCommands.js')], {
+    cwd: root,
+    stdio: 'inherit',
+    env: { ...process.env, BOT_MODE: environment },
+  });
+  return result.status === 0;
+}
+
+function doctor(target = '') {
+  const suites = {
+    goodbye: goodbyeAudit,
+    reaction: reactionRolesAudit,
+    reactionroles: reactionRolesAudit,
+    'reaction-roles': reactionRolesAudit,
+    'role-studio': roleStudioAudit,
+    rolestudio: roleStudioAudit,
+    invites: inviteStudioAudit,
+  };
+
+  if (target) return suites[target]?.() ?? false;
+
+  return [
+    projectShape,
+    commandAudit,
+    dashboardAudit,
+    sourceAudit,
+    importAudit,
+    runtimeAudit,
+    goodbyeAudit,
+    reactionRolesAudit,
+    roleStudioAudit,
+    inviteStudioAudit,
+  ].map((suite) => suite()).every(Boolean);
+}
+
+function promote(target) {
+  const environment = String(target || '').toLowerCase();
+  const plan = {
+    beta: { source: 'dev', deploy: '/home/goliath/deploy-beta.sh' },
+    production: { source: 'beta', deploy: '/home/goliath/deploy-production.sh' },
+  }[environment];
+
+  if (!plan) {
+    console.error('Promotion target must be beta or production.');
+    return false;
+  }
+  if (!fs.existsSync(absolute('.git'))) {
+    console.error('Run promotion from the Goliath repository root.');
+    return false;
+  }
+  if (output('git', ['status', '--porcelain'])) {
+    console.error('Promotion requires a clean working tree.');
+    return false;
+  }
+
+  const originalBranch = output('git', ['branch', '--show-current']);
+  if (!originalBranch) {
+    console.error('Could not determine the current branch.');
+    return false;
+  }
+
+  section(`Promote ${plan.source} → ${environment}`);
+  let success = false;
+
+  try {
+    if (!run('git', ['fetch', 'origin'])) return false;
+    if (!run('git', ['switch', environment])) return false;
+    if (!run('git', ['pull', '--ff-only', 'origin', environment])) return false;
+    if (!run('git', ['merge', '--no-edit', `origin/${plan.source}`])) return false;
+    if (!doctor()) return false;
+    if (!run('git', ['push', 'origin', environment])) return false;
+    if (!run('ssh', ['root@198.186.130.112', 'bash', plan.deploy])) return false;
+    success = true;
+    return true;
+  } finally {
+    if (originalBranch !== environment && !run('git', ['switch', originalBranch])) {
+      console.error(`Promotion ${success ? 'completed' : 'failed'}, but could not restore branch ${originalBranch}.`);
+    }
+  }
+}
+
+function help() {
+  console.log(`Goliath CLI\n===========\nMode: ${mode}\n  doctor [suite]\n  audit\n  commands\n  sync-commands [dev|beta|production]\n  promote [beta|production]\n  goodbye\n  reaction\n  role-studio\n  invites\n  dashboard\n  runtime\n  imports\n  guilds\n  media\n  source`);
+}
+
+const command = String(process.argv[2] || 'help').toLowerCase();
+const target = String(process.argv[3] || '').toLowerCase();
+const commands = {
+  help,
+  doctor: () => doctor(target),
+  check: () => doctor(target),
+  audit: () => doctor() && guildAudit(),
+  commands: commandAudit,
+  'sync-commands': () => syncCommands(target),
+  sync: () => syncCommands(target),
+  promote: () => promote(target),
+  goodbye: goodbyeAudit,
+  reaction: reactionRolesAudit,
+  reactionroles: reactionRolesAudit,
+  'reaction-roles': reactionRolesAudit,
+  'role-studio': roleStudioAudit,
+  rolestudio: roleStudioAudit,
+  invites: inviteStudioAudit,
+  dashboard: dashboardAudit,
+  runtime: runtimeAudit,
+  imports: importAudit,
+  guilds: guildAudit,
+  media: mediaAudit,
+  source: sourceAudit,
+};
+
+if (!commands[command]) {
+  console.error(`Unknown command: ${command}`);
+  help();
+  process.exit(1);
+}
+
+if (commands[command]() === false) process.exit(1);
