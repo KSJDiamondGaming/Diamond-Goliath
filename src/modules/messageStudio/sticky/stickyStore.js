@@ -1,6 +1,9 @@
 'use strict';
 
-const guildManager = require('../../../core/guild/guildManager');
+const {
+  getModuleSection,
+  saveModuleSection,
+} = require('../../../core/guild/moduleSectionManager');
 
 const MODULE_KEY = 'sticky';
 
@@ -14,41 +17,55 @@ function cleanDiscordId(value) {
 }
 
 function cleanIdArray(value) {
-  if (!Array.isArray(value)) return [];
-  return [...new Set(value.map(cleanDiscordId).filter(Boolean))];
+  return Array.isArray(value) ? [...new Set(value.map(cleanDiscordId).filter(Boolean))] : [];
 }
 
-function cleanString(value, fallback = '', maxLength = 1800) {
-  return String(value ?? fallback).trim().slice(0, maxLength);
+function pickNumber(value, fallback, minimum = 0, maximum = Number.MAX_SAFE_INTEGER) {
+  if (value === null || value === undefined || value === '') return Number(fallback);
+  const parsed = Number(value);
+  const number = Number.isFinite(parsed) ? parsed : Number(fallback);
+  return Math.min(maximum, Math.max(minimum, Math.floor(number)));
 }
 
 function defaultStickySection() {
   return {
-    enabled: true,
-    channels: [],
+    channels: {},
     managerRoleIds: [],
-    mode: 'per-channel',
+    defaultContent: '📌 Sticky message configured by Goliath.',
+    repostEvery: 10,
+    cooldownSeconds: 60,
     cleanupPrevious: true,
     allowEmbeds: true,
-    message: '📌 Sticky message configured by Goliath.',
-    posts: {},
+    mode: 'per-channel',
     analytics: {
       deployed: 0,
       refreshed: 0,
       cleaned: 0,
+      removed: 0,
     },
     createdAt: now(),
     updatedAt: now(),
   };
 }
 
-function normalizePost(input = {}) {
-  const channelId = cleanDiscordId(input.channelId || input.id);
+function normalizeSticky(channelId, input = {}, defaults = {}) {
+  const id = cleanDiscordId(channelId || input.channelId);
+  if (!id) return null;
+
+  const type = input.type === 'embed' ? 'embed' : 'text';
   return {
-    channelId,
-    id: channelId,
-    messageId: cleanDiscordId(input.messageId),
-    content: cleanString(input.content || '', '', 1800),
+    enabled: input.enabled !== false,
+    channelId: id,
+    type,
+    content: String(input.content ?? defaults.defaultContent ?? '').trim().slice(0, 1800),
+    embed: input.embed && typeof input.embed === 'object' ? input.embed : null,
+    repostEvery: pickNumber(input.repostEvery, defaults.repostEvery ?? 10, 1, 100),
+    cooldownSeconds: pickNumber(input.cooldownSeconds, defaults.cooldownSeconds ?? 60, 0, 3600),
+    messageCount: pickNumber(input.messageCount, 0, 0),
+    lastMessageId: cleanDiscordId(input.lastMessageId),
+    lastPostedAt: input.lastPostedAt || null,
+    createdBy: cleanDiscordId(input.createdBy),
+    updatedBy: cleanDiscordId(input.updatedBy),
     createdAt: input.createdAt || now(),
     updatedAt: input.updatedAt || input.createdAt || now(),
   };
@@ -57,77 +74,104 @@ function normalizePost(input = {}) {
 function normalizeSection(section = {}) {
   const base = defaultStickySection();
   const source = section && typeof section === 'object' ? section : {};
-  const posts = source.posts && typeof source.posts === 'object' ? source.posts : {};
+  const defaults = {
+    defaultContent: String(source.defaultContent || source.message || base.defaultContent).trim().slice(0, 1800),
+    repostEvery: pickNumber(source.repostEvery, base.repostEvery, 1, 100),
+    cooldownSeconds: pickNumber(source.cooldownSeconds, base.cooldownSeconds, 0, 3600),
+  };
+  const rawChannels = source.channels && typeof source.channels === 'object' && !Array.isArray(source.channels)
+    ? source.channels
+    : {};
 
   return {
     ...base,
     ...source,
-    enabled: source.enabled !== false,
-    channels: cleanIdArray(source.channels),
+    channels: Object.fromEntries(Object.entries(rawChannels)
+      .map(([channelId, sticky]) => normalizeSticky(channelId, sticky, defaults))
+      .filter(Boolean)
+      .map((sticky) => [sticky.channelId, sticky])),
     managerRoleIds: cleanIdArray(source.managerRoleIds),
-    mode: ['per-channel', 'manual'].includes(source.mode) ? source.mode : 'per-channel',
+    defaultContent: defaults.defaultContent,
+    repostEvery: defaults.repostEvery,
+    cooldownSeconds: defaults.cooldownSeconds,
     cleanupPrevious: source.cleanupPrevious !== false,
     allowEmbeds: source.allowEmbeds !== false,
-    message: cleanString(source.message || base.message, base.message, 1800),
-    posts: Object.fromEntries(Object.entries(posts)
-      .map(([id, post]) => normalizePost({ ...post, channelId: post.channelId || id }))
-      .filter((post) => post.channelId)
-      .map((post) => [post.channelId, post])),
+    mode: source.mode === 'manual' ? 'manual' : 'per-channel',
     analytics: {
       deployed: Math.max(0, Number(source.analytics?.deployed || 0)),
       refreshed: Math.max(0, Number(source.analytics?.refreshed || 0)),
       cleaned: Math.max(0, Number(source.analytics?.cleaned || 0)),
+      removed: Math.max(0, Number(source.analytics?.removed || 0)),
     },
+    createdAt: source.createdAt || now(),
     updatedAt: source.updatedAt || now(),
   };
 }
 
-function getSection(guildId) {
-  const modules = guildManager.getGuildSection(guildId, 'modules', {});
-  return normalizeSection(modules?.[MODULE_KEY] || defaultStickySection());
+function loadStickyData(guildId) {
+  return normalizeSection(getModuleSection(guildId, MODULE_KEY, defaultStickySection()));
 }
 
-function saveSection(guildId, section, guildOrMeta = {}) {
-  const normalized = normalizeSection(section);
-  guildManager.updateGuildSection(guildId, 'modules', (modules = {}) => ({
-    ...(modules && typeof modules === 'object' ? modules : {}),
-    [MODULE_KEY]: normalized,
-  }), {}, guildOrMeta);
+function saveStickyData(guildId, data, meta = {}) {
+  return saveModuleSection(guildId, MODULE_KEY, normalizeSection(data), meta);
+}
+
+function getChannelSticky(guildId, channelId) {
+  const id = cleanDiscordId(channelId);
+  return id ? loadStickyData(guildId).channels[id] || null : null;
+}
+
+function setChannelSticky(guildId, channelId, sticky = {}, meta = {}) {
+  const data = loadStickyData(guildId);
+  const id = cleanDiscordId(channelId);
+  if (!id) throw new Error('A valid channel ID is required.');
+  const existing = data.channels[id] || {};
+  const normalized = normalizeSticky(id, {
+    ...existing,
+    ...sticky,
+    enabled: true,
+    createdAt: existing.createdAt,
+    createdBy: existing.createdBy || sticky.updatedBy,
+    updatedAt: now(),
+  }, data);
+  data.channels[id] = normalized;
+  data.updatedAt = now();
+  saveStickyData(guildId, data, meta);
   return normalized;
 }
 
-function updateSection(guildId, updater, guildOrMeta = {}) {
-  const current = getSection(guildId);
-  const next = typeof updater === 'function' ? updater(current) : updater;
-  return saveSection(guildId, normalizeSection(next), guildOrMeta);
+function updateChannelSticky(guildId, channelId, updates = {}, meta = {}) {
+  const data = loadStickyData(guildId);
+  const id = cleanDiscordId(channelId);
+  const existing = id ? data.channels[id] : null;
+  if (!existing) return null;
+  const normalized = normalizeSticky(id, { ...existing, ...updates, updatedAt: now() }, data);
+  data.channels[id] = normalized;
+  data.updatedAt = now();
+  saveStickyData(guildId, data, meta);
+  return normalized;
 }
 
-function savePost(guildId, post, guildOrMeta = {}) {
-  const normalized = normalizePost(post);
-  return updateSection(guildId, (section) => ({
-    ...section,
-    posts: {
-      ...(section.posts || {}),
-      [normalized.channelId]: { ...(section.posts?.[normalized.channelId] || {}), ...normalized, updatedAt: now() },
-    },
-    updatedAt: now(),
-  }), guildOrMeta).posts[normalized.channelId];
+function deleteChannelSticky(guildId, channelId, meta = {}) {
+  const data = loadStickyData(guildId);
+  const id = cleanDiscordId(channelId);
+  const existing = id ? data.channels[id] || null : null;
+  if (!existing) return null;
+  delete data.channels[id];
+  data.analytics.removed += 1;
+  data.updatedAt = now();
+  saveStickyData(guildId, data, meta);
+  return existing;
 }
 
-function getPost(guildId, channelId) {
-  return getSection(guildId).posts?.[cleanDiscordId(channelId)] || null;
-}
-
-function incrementAnalytics(guildId, changes = {}, guildOrMeta = {}) {
-  return updateSection(guildId, (section) => ({
-    ...section,
-    analytics: {
-      deployed: section.analytics.deployed + Math.max(0, Number(changes.deployed || 0)),
-      refreshed: section.analytics.refreshed + Math.max(0, Number(changes.refreshed || 0)),
-      cleaned: section.analytics.cleaned + Math.max(0, Number(changes.cleaned || 0)),
-    },
-    updatedAt: now(),
-  }), guildOrMeta).analytics;
+function incrementAnalytics(guildId, changes = {}, meta = {}) {
+  const data = loadStickyData(guildId);
+  for (const key of ['deployed', 'refreshed', 'cleaned', 'removed']) {
+    data.analytics[key] = Math.max(0, Number(data.analytics[key] || 0) + Math.max(0, Number(changes[key] || 0)));
+  }
+  data.updatedAt = now();
+  saveStickyData(guildId, data, meta);
+  return data.analytics;
 }
 
 module.exports = {
@@ -135,10 +179,11 @@ module.exports = {
   now,
   defaultStickySection,
   normalizeSection,
-  getSection,
-  saveSection,
-  updateSection,
-  savePost,
-  getPost,
+  loadStickyData,
+  saveStickyData,
+  getChannelSticky,
+  setChannelSticky,
+  updateChannelSticky,
+  deleteChannelSticky,
   incrementAnalytics,
 };
