@@ -15,7 +15,7 @@ const guildManager = require('../../guild/guildManager');
 
 const PANEL_COLOR = '#5865F2';
 const ITEMS_PER_ROW = 4;
-const CONTROLS_PER_PAGE = 3;
+const CONTROLS_PER_PAGE = 2;
 const ADMIN_FIELD_KEYS = new Set(['logChannel', 'managerRoles', 'reviewerRoles', 'levelRoles']);
 
 const CUSTOM_PANEL_KEYS = new Set([
@@ -50,13 +50,13 @@ const MODULE_CATALOG = [
 ];
 
 const STUDIO_CATALOG = [
-  { key: 'communityStudio', label: '🏘️ Community Studio', title: '🏘️ Community Studio', summary: 'Community engagement, growth and participation modules.' },
-  { key: 'feedbackStudio', label: '💬 Feedback Studio', title: '💬 Feedback Studio', summary: 'Forms, suggestions and support workflows.' },
-  { key: 'messageStudio', label: '✉️ Message Studio', title: '✉️ Message Studio', summary: 'Server messages, embeds, highlights and member greetings.' },
-  { key: 'roleStudio', label: '🎭 Role Studio', title: '🎭 Role Studio', summary: 'Automatic, reaction, temporary and timed role management.' },
-  { key: 'securityStudio', label: '🛡️ Security Studio', title: '🛡️ Security Studio', summary: 'Verification and member protection controls.' },
-  { key: 'socialStudio', label: '📣 Social Studio', title: '📣 Social Studio', summary: 'Creator and social-platform alerting.' },
-  { key: 'utilityStudio', label: '🧰 Utility Studio', title: '🧰 Utility Studio', summary: 'Scheduling, statistics, translation and temporary voice tools.' },
+  { key: 'communityStudio', label: '🏘️ Community', title: '🏘️ Community Studio', summary: 'Community engagement, growth and participation modules.' },
+  { key: 'feedbackStudio', label: '💬 Feedback', title: '💬 Feedback Studio', summary: 'Forms, suggestions and support workflows.' },
+  { key: 'messageStudio', label: '✉️ Messages', title: '✉️ Message Studio', summary: 'Server messages, embeds, highlights and member greetings.' },
+  { key: 'roleStudio', label: '🎭 Roles', title: '🎭 Role Studio', summary: 'Automatic, reaction, temporary and timed role management.' },
+  { key: 'securityStudio', label: '🛡️ Security', title: '🛡️ Security Studio', summary: 'Verification and member protection controls.' },
+  { key: 'socialStudio', label: '📣 Social', title: '📣 Social Studio', summary: 'Creator and social-platform alerting.' },
+  { key: 'utilityStudio', label: '🧰 Utility', title: '🧰 Utility Studio', summary: 'Scheduling, statistics, translation and temporary voice tools.' },
 ];
 
 const MODULE_BY_KEY = Object.fromEntries(MODULE_CATALOG.map((module) => [module.key, module]));
@@ -109,6 +109,7 @@ function getMemberDisplayName(interaction) { return interaction.member?.displayN
 function fieldKey(field) { return Array.isArray(field) ? field[0] : field; }
 function fieldsForScope(module, scope) { return (module.fields || []).filter((field) => (scope === 'configure') === ADMIN_FIELD_KEYS.has(fieldKey(field))); }
 function selectMenusForScope(module, scope) { return (module.selectMenus || []).filter((key) => (scope === 'configure') === ADMIN_FIELD_KEYS.has(key)); }
+function navigationRow(customId, label) { return row(button(customId, label, ButtonStyle.Secondary)); }
 
 function getModuleConfig(guildId, moduleKey) {
   const module = MODULE_PANEL_REGISTRY[moduleKey];
@@ -145,9 +146,9 @@ function buildFieldList(module, config, scope) {
 }
 
 function buildModuleListPanel(memberDisplayName = 'Unknown User') {
-  const embed = new EmbedBuilder().setColor(PANEL_COLOR).setTitle('🧩 Goliath Modules').setDescription('Select a Studio to view its modules.').setFooter({ text: `Requested by ${memberDisplayName}` }).setTimestamp();
+  const embed = new EmbedBuilder().setColor(PANEL_COLOR).setTitle('🧩 Goliath Modules').setDescription('Choose a studio to manage its modules.').setFooter({ text: `Requested by ${memberDisplayName}` }).setTimestamp();
   const studioRows = chunkArray(STUDIO_CATALOG.map((studio) => button(`admin:studio:${studio.key}`, studio.label)), ITEMS_PER_ROW).map((items) => row(...items));
-  return { embeds: [embed], components: [...studioRows, row(button('admin:home', '🏠 Back to Admin Home', ButtonStyle.Secondary))].slice(0, 5) };
+  return { embeds: [embed], components: [...studioRows, navigationRow('admin:home', '⬅️ Back to Admin Home')].slice(0, 5) };
 }
 
 function buildStudioPanel(studioKey, memberDisplayName = 'Unknown User') {
@@ -156,7 +157,7 @@ function buildStudioPanel(studioKey, memberDisplayName = 'Unknown User') {
   const modules = MODULE_CATALOG.filter((module) => module.studio === studioKey);
   const embed = new EmbedBuilder().setColor(PANEL_COLOR).setTitle(studio.title).setDescription([studio.summary, '', 'Select a module.'].join('\n')).setFooter({ text: `Requested by ${memberDisplayName}` }).setTimestamp();
   const moduleRows = chunkArray(modules.map((module) => button(CUSTOM_PANEL_KEYS.has(module.key) ? module.route : `admin:module:${module.key}:main:0`, module.label)), ITEMS_PER_ROW).map((items) => row(...items));
-  return { embeds: [embed], components: [...moduleRows, row(button('admin:modules', '⬅️ Back to Studios', ButtonStyle.Secondary))].slice(0, 5) };
+  return { embeds: [embed], components: [...moduleRows, navigationRow('admin:modules', '⬅️ Back to Modules')].slice(0, 5) };
 }
 
 function buildControlRows(moduleKey, scope) {
@@ -172,10 +173,17 @@ function buildControlRows(moduleKey, scope) {
     }
   }
   if (scope === 'main') {
-    for (const menu of module.optionMenus || []) rows.push(row(new StringSelectMenuBuilder().setCustomId(`admin:module:${moduleKey}:option:${menu.id}`).setPlaceholder(menu.placeholder).setMinValues(1).setMaxValues(1).addOptions(menu.options.map(([value, label, description]) => ({ value, label, description })))));
+    for (const menu of module.optionMenus || []) rows.push(row(new StringSelectMenuBuilder().setCustomId(`admin:module:${moduleKey}:option:${menu.id}`).setPlaceholder(menu.placeholder).setMinValues(1).setMaxValues(1).addOptions(menu.options.map(([value, label, description]) => ({ value, label, description })) )));
     for (const items of chunkArray((module.toggles || []).map(([prop, label]) => button(`admin:module:${moduleKey}:toggle:${prop}`, label, ButtonStyle.Secondary)), 3)) rows.push(row(...items));
   }
   return rows;
+}
+
+function buildPager(previousId, nextId, page, totalPages) {
+  const items = [];
+  if (page > 0) items.push(button(previousId, '◀ Previous', ButtonStyle.Secondary));
+  if (page < totalPages - 1) items.push(button(nextId, 'Next ▶', ButtonStyle.Secondary));
+  return items.length ? row(...items) : null;
 }
 
 function buildModuleMainPanel(guild, moduleKey, memberDisplayName = 'Unknown User', controlPage = 0) {
@@ -189,10 +197,14 @@ function buildModuleMainPanel(guild, moduleKey, memberDisplayName = 'Unknown Use
   const page = Math.min(Math.max(Number(controlPage) || 0, 0), totalPages - 1);
   const controls = allControls.slice(page * CONTROLS_PER_PAGE, (page + 1) * CONTROLS_PER_PAGE);
   const embed = new EmbedBuilder().setColor(enabled ? 0x57f287 : PANEL_COLOR).setTitle(module.title).setDescription([module.summary, '', `**Status:** ${enabled ? 'Enabled ✅' : 'Disabled ❌'}`, `**Controls Page:** ${page + 1}/${totalPages}`].join('\n')).addFields({ name: 'Module Controls', value: buildFieldList(module, config, 'main'), inline: false }).setFooter({ text: `Requested by ${memberDisplayName}` }).setTimestamp();
-  const nav = [button(`admin:module:${moduleKey}:configure:0`, '⚙️ Configure'), button(`admin:studio:${catalogModule.studio}`, '⬅️ Back', ButtonStyle.Secondary)];
-  if (page > 0) nav.push(button(`admin:module:${moduleKey}:main:${page - 1}`, '◀ Previous', ButtonStyle.Secondary));
-  if (page < totalPages - 1) nav.push(button(`admin:module:${moduleKey}:main:${page + 1}`, 'Next ▶', ButtonStyle.Secondary));
-  return { embeds: [embed], components: [...controls, row(...nav)].slice(0, 5) };
+  const pager = buildPager(`admin:module:${moduleKey}:main:${page - 1}`, `admin:module:${moduleKey}:main:${page + 1}`, page, totalPages);
+  const components = [
+    ...controls,
+    row(button(`admin:module:${moduleKey}:configure:0`, '⚙️ Configure')),
+    ...(pager ? [pager] : []),
+    navigationRow(`admin:studio:${catalogModule.studio}`, '⬅️ Back'),
+  ];
+  return { embeds: [embed], components: components.slice(0, 5) };
 }
 
 function buildModuleConfigurePanel(guild, moduleKey, memberDisplayName = 'Unknown User', controlPage = 0) {
@@ -211,10 +223,9 @@ function buildModuleConfigurePanel(guild, moduleKey, memberDisplayName = 'Unknow
     button(`admin:module:${moduleKey}:repair`, '🛠️ Repair', ButtonStyle.Secondary),
     button(`admin:module:${moduleKey}:reset`, '♻️ Reset', ButtonStyle.Danger),
   );
-  const nav = [button(`admin:module:${moduleKey}:main:0`, '⬅️ Back', ButtonStyle.Secondary)];
-  if (page > 0) nav.push(button(`admin:module:${moduleKey}:configure:${page - 1}`, '◀ Previous', ButtonStyle.Secondary));
-  if (page < totalPages - 1) nav.push(button(`admin:module:${moduleKey}:configure:${page + 1}`, 'Next ▶', ButtonStyle.Secondary));
-  return { embeds: [embed], components: [actions, ...controls, row(...nav)].slice(0, 5) };
+  const pager = buildPager(`admin:module:${moduleKey}:configure:${page - 1}`, `admin:module:${moduleKey}:configure:${page + 1}`, page, totalPages);
+  const components = [actions, ...controls, ...(pager ? [pager] : []), navigationRow(`admin:module:${moduleKey}:main:0`, '⬅️ Back')];
+  return { embeds: [embed], components: components.slice(0, 5) };
 }
 
 function buildModuleLandingPanel(guild, moduleKey, memberDisplayName = 'Unknown User') { return buildModuleMainPanel(guild, moduleKey, memberDisplayName, 0); }
