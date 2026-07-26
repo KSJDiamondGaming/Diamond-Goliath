@@ -26,7 +26,6 @@ const statsAdminPanel = optionalRequire('stats admin', '../../modules/utilityStu
 const reactionRolesAdminPanel = optionalRequire('reaction roles admin', '../../modules/roleStudio/reactionRoles/reactionRolesPanel');
 const suggestionsAdminPanel = optionalRequire('suggestions admin', '../../modules/feedbackStudio/suggestions/suggestionsAdminPanel');
 const giveawaysAdminPanel = optionalRequire('giveaways admin', '../../modules/communityStudio/giveaways/giveawaysAdminPanel');
-const formsInteractions = optionalRequire('forms admin', '../../modules/feedbackStudio/forms/formsInteractions');
 const starboardAdminPanel = optionalRequire('starboard admin', '../../modules/messageStudio/starboard/starboardAdminPanel');
 const stickyAdminPanel = optionalRequire('sticky admin', '../../modules/messageStudio/sticky/stickyAdminPanel');
 const levelingInteractions = optionalRequire('leveling', '../../modules/communityStudio/leveling/levelingInteractions');
