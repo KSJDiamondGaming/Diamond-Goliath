@@ -1,5 +1,5 @@
 const fs = require('fs');
-const path = require('path');
+const { getRuntimePaths } = require('../config/runtimePaths');
 
 /* ---------------- DIRECTORY HELPERS ---------------- */
 
@@ -69,15 +69,15 @@ function getModeKey(mode) {
 
 function bootstrapRuntime(mode = 'DEV') {
   const modeKey = getModeKey(mode);
-  const modeRoot = path.join(process.cwd(), 'runtime', modeKey);
+  const runtimePaths = getRuntimePaths(modeKey);
 
   const paths = {
-    root: modeRoot,
-    backups: path.join(modeRoot, 'backups'),
-    data: path.join(modeRoot, 'data'),
-    guilds: path.join(modeRoot, 'guilds'),
-    logs: path.join(modeRoot, 'logs'),
-    security: path.join(modeRoot, 'security'),
+    root: runtimePaths.root,
+    backups: runtimePaths.backups,
+    data: runtimePaths.data,
+    guilds: runtimePaths.guilds,
+    logs: runtimePaths.logs,
+    security: runtimePaths.security,
   };
 
   const requiredDirectories = [
@@ -93,7 +93,7 @@ function bootstrapRuntime(mode = 'DEV') {
     ensureDir(dir);
   }
 
-  console.log(`✅ Runtime folders ready: ${modeRoot}`);
+  console.log(`✅ Runtime folders ready: ${paths.root}`);
 
   return {
     mode: modeKey,
