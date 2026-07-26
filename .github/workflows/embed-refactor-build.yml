@@ -39,7 +39,9 @@ jobs:
         run: npm ci --no-audit --no-fund
 
       - name: Build canonical Embed architecture
-        run: python3 .goliath/embed_refactor.py
+        run: |
+          python3 .goliath/embed_refactor.py
+          python3 .goliath/embed_doctor_cleanup.py
 
       - name: Validate JavaScript syntax
         run: |
@@ -49,6 +51,8 @@ jobs:
           node --check src/commands/embeds/embed.js
           node --check src/server/routes/modules.js
           node --check src/server/routes/permissionHealth.js
+          node --check src/modules/feedbackStudio/forms/formsTracking.js
+          node --check src/modules/roleStudio/reactionRoles/reactionRoles.js
           node --check server.js
 
       - name: Verify canonical layout and imports
@@ -57,7 +61,7 @@ jobs:
           for file in embed.js embedPanel.js embedInteractions.js embedTemplates.js embedDeployments.js embedTracking.js embedValidation.js embedHealth.js; do
             test -f "src/modules/messageStudio/embed/$file"
           done
-          ! grep -R -nE 'messageStudio/embed/(embedTemplateManager|presetStore|embedPayloadNormalizer|embedDeploymentStore|embedSocketEvents)|server/routes/config/embeds' src server.js
+          ! grep -R -nE 'messageStudio/embed/(embedTemplateManager|presetStore|embedPayloadNormalizer|embedDeploymentStore|embedSocketEvents)|server/routes/config/embeds|tickets/(ticketManager|ticketChannelManager|ticketPanelManager|ticketStore)' src server.js
 
       - name: Runtime smoke test
         run: |
@@ -79,28 +83,7 @@ jobs:
           NODE
 
       - name: Run Doctor
-        id: doctor
-        continue-on-error: true
-        run: |
-          set -o pipefail
-          npm run doctor 2>&1 | tee /tmp/embed-doctor-error.txt
-
-      - name: Publish Doctor failure
-        if: steps.doctor.outcome == 'failure'
-        run: |
-          cp /tmp/embed-doctor-error.txt /tmp/embed-doctor-report.txt
-          git reset --hard HEAD
-          mkdir -p .goliath
-          cp /tmp/embed-doctor-report.txt .goliath/embed-doctor-error.txt
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .goliath/embed-doctor-error.txt
-          git commit -m "chore: record Embed Doctor failure"
-          for attempt in 1 2 3 4 5; do
-            git pull --rebase origin dev && git push && break
-            sleep 5
-          done
-          exit 1
+        run: npm run doctor
 
       - name: Run Audit
         run: npm run audit
