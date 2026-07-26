@@ -1,0 +1,22 @@
+name: Tickets Refactor Export
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/tickets-refactor-export.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: goliath-source
+          path: .
+          include-hidden-files: true
+          retention-days: 1
