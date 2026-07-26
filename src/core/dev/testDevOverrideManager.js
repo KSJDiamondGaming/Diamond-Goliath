@@ -3,9 +3,10 @@
 const fs = require('fs');
 const path = require('path');
 
+const { normalizeBotMode } = require('../../config/botModes');
 const { getRuntimePaths } = require('../../config/runtimePaths');
 
-const DEV_MODE = 'dev';
+const DEV_MODE = 'DEV';
 const FILE_NAME = 'testDevOverride.json';
 const PAYWALL_BYPASS_DEFAULT_ENABLED = true;
 const PAYWALL_BYPASS_PLAN = 'lifetime';
@@ -31,12 +32,8 @@ function splitIds(value) {
     .filter(Boolean);
 }
 
-function mode() {
-  return String(process.env.BOT_MODE || 'DEV').toLowerCase();
-}
-
 function isDevMode() {
-  return mode() === DEV_MODE;
+  return normalizeBotMode(process.env.BOT_MODE) === DEV_MODE;
 }
 
 function getOwnerIds() {
