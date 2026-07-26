@@ -3,10 +3,10 @@
 const { EmbedBuilder } = require('discord.js');
 
 const forms = require('./forms');
-const ticketManager = require('../tickets/ticketsLifecycle');
-const ticketChannelManager = require('../tickets/ticketsChannels');
-const { sendTicketControlMessage } = require('../tickets/ticketsPanel');
-const { updateTicket } = require('../tickets/tickets');
+const ticketManager = require('../tickets/ticketManager');
+const ticketChannelManager = require('../tickets/ticketChannelManager');
+const { sendTicketControlMessage } = require('../tickets/ticketPanelManager');
+const { updateTicket } = require('../tickets/ticketStore');
 const { isModuleEnabled } = require('../../../core/guild/guildManager');
 const {
   TICKET_CHANNEL_PERMISSIONS,
