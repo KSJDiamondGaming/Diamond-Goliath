@@ -1,7 +1,7 @@
 'use strict';
 
 const { EmbedBuilder, PermissionFlagsBits } = require('discord.js');
-const stickyStore = require('./stickyGuildStore');
+const stickyStore = require('./stickyStore');
 const { isModuleEnabled } = require('../../../core/guild/guildManager');
 
 const channelLocks = new Map();
@@ -15,11 +15,9 @@ async function withChannelLock(channel, operation) {
   if (!key) return operation();
 
   const previous = channelLocks.get(key) || Promise.resolve();
-  const current = previous
-    .catch(() => null)
-    .then(operation);
-
+  const current = previous.catch(() => null).then(operation);
   channelLocks.set(key, current);
+
   try {
     return await current;
   } finally {
@@ -38,9 +36,7 @@ function stickyModuleEnabled(guildId) {
 }
 
 function assertStickyModuleEnabled(guildId) {
-  if (!stickyModuleEnabled(guildId)) {
-    throw new Error('Sticky Messages module is disabled for this server.');
-  }
+  if (!stickyModuleEnabled(guildId)) throw new Error('Sticky Messages module is disabled for this server.');
 }
 
 function canManageSticky(member) {
@@ -53,7 +49,6 @@ function canManageSticky(member) {
 function canBotManageChannel(channel, guildMember) {
   if (!channel?.permissionsFor || !guildMember) return false;
   const permissions = channel.permissionsFor(guildMember);
-
   return Boolean(
     permissions?.has(PermissionFlagsBits.ViewChannel) &&
     permissions?.has(PermissionFlagsBits.SendMessages) &&
@@ -61,7 +56,6 @@ function canBotManageChannel(channel, guildMember) {
     permissions?.has(PermissionFlagsBits.ManageMessages)
   );
 }
-
 
 function normaliseStickyInput(input = {}) {
   return {
@@ -71,7 +65,6 @@ function normaliseStickyInput(input = {}) {
     repostEvery: Math.max(1, Number(input.repostEvery || 10)),
     cooldownSeconds: Math.max(0, Number(input.cooldownSeconds ?? 60)),
     updatedBy: input.updatedBy || null,
-    actor: input.actor || null,
   };
 }
 
@@ -83,20 +76,11 @@ function buildStickyPayload(sticky) {
       .setTitle(embedData.title || 'Sticky Message')
       .setDescription(embedData.description || sticky.content || 'No sticky content set.');
 
-    if (embedData.footer) {
-      embed.setFooter({ text: String(embedData.footer).slice(0, 2048) });
-    }
-
-    return {
-      content: sticky.content && embedData.description ? sticky.content : '',
-      embeds: [embed],
-    };
+    if (embedData.footer) embed.setFooter({ text: String(embedData.footer).slice(0, 2048) });
+    return { content: sticky.content && embedData.description ? sticky.content : '', embeds: [embed] };
   }
 
-  return {
-    content: sticky.content || 'No sticky content set.',
-    embeds: [],
-  };
+  return { content: sticky.content || 'No sticky content set.', embeds: [] };
 }
 
 async function fetchLastSticky(channel, sticky) {
@@ -104,9 +88,7 @@ async function fetchLastSticky(channel, sticky) {
   try {
     return await channel.messages.fetch(sticky.lastMessageId);
   } catch (error) {
-    if (error?.code !== 10008) {
-      console.warn(`[Sticky] Failed to fetch prior sticky ${sticky.lastMessageId} in ${channel?.id}:`, error?.message || error);
-    }
+    if (error?.code !== 10008) console.warn(`[Sticky] Failed to fetch prior sticky ${sticky.lastMessageId}:`, error?.message || error);
     return null;
   }
 }
@@ -115,13 +97,12 @@ async function deleteOldSticky(channel, sticky) {
   const message = await fetchLastSticky(channel, sticky);
   if (!message) return { ok: true, missing: true };
   if (!message.deletable) return { ok: false, reason: 'Prior sticky is not deletable.' };
-
   try {
     await message.delete();
+    stickyStore.incrementAnalytics(channel.guild.id, { cleaned: 1 });
     return { ok: true, deleted: true };
   } catch (error) {
     if (error?.code === 10008) return { ok: true, missing: true };
-    console.error(`[Sticky] Failed to delete prior sticky ${message.id} in ${channel.id}:`, error?.message || error);
     return { ok: false, reason: error?.message || 'Delete failed.' };
   }
 }
@@ -130,9 +111,11 @@ async function editOldSticky(channel, sticky) {
   const message = await fetchLastSticky(channel, sticky);
   if (!message?.editable) return null;
   try {
-    return await message.edit(buildStickyPayload(sticky));
+    const edited = await message.edit(buildStickyPayload(sticky));
+    stickyStore.incrementAnalytics(channel.guild.id, { refreshed: 1 });
+    return edited;
   } catch (error) {
-    console.error(`[Sticky] Failed to edit sticky ${message.id} in ${channel.id}:`, error?.message || error);
+    console.error(`[Sticky] Failed to edit sticky ${message.id}:`, error?.message || error);
     return null;
   }
 }
@@ -140,52 +123,37 @@ async function editOldSticky(channel, sticky) {
 function isCoolingDown(sticky) {
   const cooldownSeconds = Number(sticky.cooldownSeconds ?? 60);
   if (cooldownSeconds <= 0 || !sticky.lastPostedAt) return false;
-
   const lastPosted = new Date(sticky.lastPostedAt).getTime();
-  if (!Number.isFinite(lastPosted)) return false;
-  return Date.now() - lastPosted < cooldownSeconds * 1000;
+  return Number.isFinite(lastPosted) && Date.now() - lastPosted < cooldownSeconds * 1000;
 }
 
-async function repostStickyUnlocked(channel, sticky, client, options = {}) {
-  if (!channel?.guild || !sticky?.enabled) return null;
-  if (!stickyModuleEnabled(channel.guild.id)) return null;
+async function repostStickyUnlocked(channel, sticky, client) {
+  if (!channel?.guild || !sticky?.enabled || !stickyModuleEnabled(channel.guild.id)) return null;
+  if (!canBotManageChannel(channel, channel.guild.members.me)) return null;
 
-  const botMember = channel.guild.members.me;
-  if (!canBotManageChannel(channel, botMember)) {
-    console.warn(`[Sticky] Missing channel permissions in ${channel.guild.id}:${channel.id}.`);
-    return null;
-  }
-
-  const freshSticky = stickyStore.getChannelSticky(channel.guild.id, channel.id, client) || sticky;
+  const freshSticky = stickyStore.getChannelSticky(channel.guild.id, channel.id) || sticky;
   if (!freshSticky?.enabled || !stickyModuleEnabled(channel.guild.id)) return null;
 
   const deletion = await deleteOldSticky(channel, freshSticky);
   if (!deletion.ok) return null;
 
-  let sent;
-  try {
-    sent = await channel.send(buildStickyPayload(freshSticky));
-  } catch (error) {
+  const sent = await channel.send(buildStickyPayload(freshSticky)).catch((error) => {
     console.error(`[Sticky] Failed to send sticky in ${channel.guild.id}:${channel.id}:`, error?.message || error);
     return null;
-  }
+  });
+  if (!sent) return null;
 
-  stickyStore.updateChannelSticky(
-    channel.guild.id,
-    channel.id,
-    {
-      lastMessageId: sent.id,
-      lastPostedAt: new Date().toISOString(),
-      messageCount: 0,
-    },
-    client
-  );
-
+  stickyStore.updateChannelSticky(channel.guild.id, channel.id, {
+    lastMessageId: sent.id,
+    lastPostedAt: new Date().toISOString(),
+    messageCount: 0,
+  });
+  stickyStore.incrementAnalytics(channel.guild.id, { deployed: 1 });
   return sent;
 }
 
-async function repostSticky(channel, sticky, client, options = {}) {
-  return withChannelLock(channel, () => repostStickyUnlocked(channel, sticky, client, options));
+async function repostSticky(channel, sticky, client) {
+  return withChannelLock(channel, () => repostStickyUnlocked(channel, sticky, client));
 }
 
 async function handleStickyMessage(message, client) {
@@ -194,102 +162,61 @@ async function handleStickyMessage(message, client) {
 
   return withChannelLock(message.channel, async () => {
     if (!stickyModuleEnabled(message.guild.id)) return null;
-
-    const data = stickyStore.loadStickyData(message.guild.id, client);
-    if (!data?.enabled) return null;
-
-    const sticky = data.channels?.[message.channel.id];
+    const sticky = stickyStore.getChannelSticky(message.guild.id, message.channel.id);
     if (!sticky?.enabled || message.id === sticky.lastMessageId) return null;
 
     const nextCount = Number(sticky.messageCount || 0) + 1;
-    const updated = stickyStore.updateChannelSticky(
-      message.guild.id,
-      message.channel.id,
-      { messageCount: nextCount },
-      client
-    ) || { ...sticky, messageCount: nextCount };
-
-    if (nextCount < Number(updated.repostEvery || 10)) return null;
-    if (isCoolingDown(updated)) return null;
-
+    const updated = stickyStore.updateChannelSticky(message.guild.id, message.channel.id, { messageCount: nextCount });
+    if (!updated || nextCount < Number(updated.repostEvery || 10) || isCoolingDown(updated)) return null;
     return repostStickyUnlocked(message.channel, updated, client);
   });
 }
 
 async function createSticky(channel, input, client) {
   assertStickyModuleEnabled(channel?.guild?.id);
-
   return withChannelLock(channel, async () => {
-    assertStickyModuleEnabled(channel?.guild?.id);
     const stickyInput = normaliseStickyInput(input);
-    const sticky = stickyStore.setChannelSticky(channel.guild.id, channel.id, stickyInput, client);
-
+    const sticky = stickyStore.setChannelSticky(channel.guild.id, channel.id, stickyInput);
     const edited = await editOldSticky(channel, sticky);
-    const sent = edited || await repostStickyUnlocked(channel, sticky, client, {
-      actor: stickyInput.actor,
-      actorId: stickyInput.updatedBy,
-      manual: true,
-    });
-
+    const sent = edited || await repostStickyUnlocked(channel, sticky, client);
     if (!sent) throw new Error('Sticky message could not be created or updated. Check bot channel permissions.');
-
-    if (edited) {
-      stickyStore.updateChannelSticky(
-        channel.guild.id,
-        channel.id,
-        {
-          lastMessageId: edited.id,
-          lastPostedAt: new Date().toISOString(),
-          messageCount: 0,
-        },
-        client
-      );
-    }
-
+    if (edited) stickyStore.updateChannelSticky(channel.guild.id, channel.id, { lastMessageId: edited.id, lastPostedAt: new Date().toISOString(), messageCount: 0 });
     return sent;
   });
 }
 
-async function pauseSticky(channel, client, actor = null) {
+async function pauseSticky(channel) {
   assertStickyModuleEnabled(channel?.guild?.id);
-  return withChannelLock(channel, async () => {
-    const sticky = stickyStore.updateChannelSticky(channel.guild.id, channel.id, { enabled: false }, client);
-    return sticky;
-  });
+  return withChannelLock(channel, () => stickyStore.updateChannelSticky(channel.guild.id, channel.id, { enabled: false }));
 }
 
-async function resumeSticky(channel, client, actor = null) {
+async function resumeSticky(channel, client) {
   assertStickyModuleEnabled(channel?.guild?.id);
   return withChannelLock(channel, async () => {
-    assertStickyModuleEnabled(channel?.guild?.id);
-    const sticky = stickyStore.updateChannelSticky(channel.guild.id, channel.id, { enabled: true }, client);
+    const sticky = stickyStore.updateChannelSticky(channel.guild.id, channel.id, { enabled: true });
     if (!sticky) return null;
-
-    const sent = await repostStickyUnlocked(channel, sticky, client, { actor, manual: true });
+    const sent = await repostStickyUnlocked(channel, sticky, client);
     if (!sent) throw new Error('Sticky could not be resumed because it could not be posted.');
     return sticky;
   });
 }
 
-async function removeSticky(channel, client, actor = null) {
+async function removeSticky(channel) {
   assertStickyModuleEnabled(channel?.guild?.id);
   return withChannelLock(channel, async () => {
-    const sticky = stickyStore.getChannelSticky(channel.guild.id, channel.id, client);
+    const sticky = stickyStore.getChannelSticky(channel.guild.id, channel.id);
     if (!sticky) return null;
-
     if (sticky.lastMessageId) {
       const deletion = await deleteOldSticky(channel, sticky);
       if (!deletion.ok) throw new Error(deletion.reason || 'Sticky message could not be deleted.');
     }
-
-    const removed = stickyStore.deleteChannelSticky(channel.guild.id, channel.id, client);
-
-    return removed;
+    return stickyStore.deleteChannelSticky(channel.guild.id, channel.id);
   });
 }
 
 module.exports = {
   canManageSticky,
+  buildStickyPayload,
   handleStickyMessage,
   createSticky,
   repostSticky,
