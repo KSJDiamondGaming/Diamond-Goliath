@@ -14,6 +14,7 @@ const {
   TextInputStyle,
 } = require('discord.js');
 const temporaryRoles = require('./temporaryRoles');
+const temporaryRolesHealth = require('./temporaryRolesHealth');
 
 const PREFIX = 'admin:reactionRoles:temporary';
 const selections = new Map();
@@ -81,6 +82,7 @@ function buildTemporaryRolesPanel(guild, userId, memberDisplayName = 'Unknown Us
       row(
         button(`${PREFIX}:assign`, 'Assign Temporary Role', ButtonStyle.Success, !(selection.memberId && selection.roleId)),
         button(`${PREFIX}:scan`, 'Scan Expired Now', ButtonStyle.Primary),
+        button(`${PREFIX}:repair`, 'Repair', ButtonStyle.Secondary),
         button(section.enabled !== false ? `${PREFIX}:disable` : `${PREFIX}:enable`, section.enabled !== false ? 'Disable' : 'Enable'),
       ),
       row(manage),
@@ -169,6 +171,12 @@ async function handleTemporaryRolesInteraction(interaction) {
   if (id === `${PREFIX}:scan`) {
     await interaction.deferUpdate();
     await temporaryRoles.scanExpired(interaction.guild, { actorId: interaction.user.id });
+    return refresh(interaction);
+  }
+
+  if (id === `${PREFIX}:repair`) {
+    await interaction.deferUpdate();
+    await temporaryRolesHealth.repair(interaction.guild, { actorId: interaction.user.id });
     return refresh(interaction);
   }
 
