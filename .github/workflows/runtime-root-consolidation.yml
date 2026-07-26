@@ -1,0 +1,72 @@
+name: One-time runtime root consolidation
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - .github/workflows/runtime-root-consolidation.yml
+
+permissions:
+  contents: write
+
+jobs:
+  consolidate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+
+      - name: Apply exact consolidation
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const file = 'src/modules/feedbackStudio/tickets/ticketTranscriptManager.js';
+          const original = fs.readFileSync(file, 'utf8');
+
+          const importAnchor = "const path = require('path');\n";
+          const importLine = "const { getRuntimeRoot } = require('../../../config/runtimePaths');\n";
+          const helper = `function getRuntimeRoot() {\n  const mode = process.env.BOT_MODE || process.env.NODE_ENV || 'dev';\n  return path.join(process.cwd(), 'runtime', String(mode).toLowerCase());\n}\n\n`;
+          const call = "path.join(getRuntimeRoot(), 'guilds', String(guildId), 'transcripts')";
+          const replacementCall = "path.join(getRuntimeRoot(process.env.BOT_MODE || process.env.NODE_ENV || 'dev'), 'guilds', String(guildId), 'transcripts')";
+
+          if ((original.match(/const path = require\('path'\);/g) || []).length !== 1) {
+            throw new Error('Unexpected path import count.');
+          }
+          if ((original.match(/function getRuntimeRoot\(\)/g) || []).length !== 1) {
+            throw new Error('Unexpected local getRuntimeRoot count.');
+          }
+          if ((original.match(/path\.join\(getRuntimeRoot\(\), 'guilds'/g) || []).length !== 1) {
+            throw new Error('Unexpected transcript runtime call count.');
+          }
+
+          let updated = original.replace(importAnchor, `${importAnchor}${importLine}`);
+          updated = updated.replace(helper, '');
+          updated = updated.replace(call, replacementCall);
+
+          if (updated === original) throw new Error('No changes applied.');
+          if (/function getRuntimeRoot\(\)/.test(updated)) throw new Error('Local runtime helper remains.');
+          if (!updated.includes(importLine.trim())) throw new Error('Canonical runtime import missing.');
+
+          fs.writeFileSync(file, updated, 'utf8');
+          NODE
+
+      - name: Verify
+        shell: bash
+        run: |
+          node --check src/modules/feedbackStudio/tickets/ticketTranscriptManager.js
+          git diff --check
+          git diff --exit-code -- src/config/runtimePaths.js
+
+      - name: Remove workflow and commit
+        shell: bash
+        run: |
+          rm .github/workflows/runtime-root-consolidation.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/modules/feedbackStudio/tickets/ticketTranscriptManager.js .github/workflows/runtime-root-consolidation.yml
+          git diff --cached --check
+          git commit -m "use canonical runtime root for ticket transcripts"
+          git push origin dev
