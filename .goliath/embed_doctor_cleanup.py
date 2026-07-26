@@ -35,5 +35,6 @@ if invite_doc.exists():
 for temporary in [
     root / '.goliath/embed_doctor_cleanup.py',
     root / '.goliath/embed-doctor-error.txt',
+    root / '.goliath/embed-audit-error.txt',
 ]:
     temporary.unlink(missing_ok=True)
