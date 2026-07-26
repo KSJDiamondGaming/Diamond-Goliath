@@ -1,8 +1,8 @@
 'use strict';
 
 const express = require('express');
-const goodbye = require('./goodbye');
-const departureDm = require('./goodbyeDepartureDm');
+const goodbye = require('../../modules/messageStudio/goodbye/goodbye');
+const departureDm = require('../../modules/messageStudio/goodbye/goodbyeDeparture');
 
 const router = express.Router();
 const success = (res, payload = {}) => res.json({ success: true, ...payload });

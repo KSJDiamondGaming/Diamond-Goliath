@@ -205,9 +205,9 @@ function importAudit() {
 
 const goodbyeAudit = () => exportsAudit('Goodbye doctor', [
   ['src/modules/messageStudio/goodbye/goodbye.js', []],
-  ['src/modules/messageStudio/goodbye/goodbyeDepartureDm.js', ['getConfig', 'updateConfig', 'resetConfig', 'buildDmEmbed', 'sendDepartureDm']],
+  ['src/modules/messageStudio/goodbye/goodbyeDeparture.js', ['getConfig', 'updateConfig', 'resetConfig', 'buildDmEmbed', 'sendDepartureDm']],
   ['src/modules/messageStudio/goodbye/goodbyePanel.js', []],
-  ['src/modules/messageStudio/goodbye/goodbyeRoute.js', []],
+  ['src/server/routes/goodbye.js', []],
   ['docs/modules/goodbye.md', []],
 ]);
 

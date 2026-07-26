@@ -8,8 +8,7 @@ const verificationManager = require('../../modules/securityStudio/verificationMa
 const welcomeManager = require('../../modules/messageStudio/welcome/welcome');
 const welcomeAvatarSync = require('../../modules/messageStudio/welcome/welcomeAvatarSync');
 const goodbyeManager = require('../../modules/messageStudio/goodbye/goodbye');
-const departureTemplateSender = require('../../modules/messageStudio/goodbye/departureTemplateSender');
-const goodbyeDepartureDm = require('../../modules/messageStudio/goodbye/goodbyeDepartureDm');
+const goodbyeDeparture = require('../../modules/messageStudio/goodbye/goodbyeDeparture');
 
 function formatTimestamp(timestamp, style = 'R') {
   return timestamp ? `<t:${Math.floor(timestamp / 1000)}:${style}>` : 'Unknown';
@@ -219,11 +218,11 @@ module.exports = [
       const removal = await detectRemoval(member);
 
       // User communication is best-effort and must never block the staff audit log.
-      await goodbyeDepartureDm.sendDepartureDm(member, removal).catch((error) => {
+      await goodbyeDeparture.sendDepartureDm(member, removal).catch((error) => {
         console.warn('[Goodbye] Failed to process departure DM:', error.message || error);
       });
 
-      await departureTemplateSender.sendDeparture(member, removal).catch((error) => {
+      await goodbyeDeparture.sendDeparture(member, removal).catch((error) => {
         console.error('[Goodbye] Failed to process member departure:', error);
       });
       await sendAdminMemberRemovalLog(member, removal);
