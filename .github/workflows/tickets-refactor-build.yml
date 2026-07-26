@@ -57,27 +57,7 @@ jobs:
           ! grep -R -nE 'feedbackStudio/tickets/(ticketActions|ticketAnalytics|ticketChannelButtons|ticketChannelManager|ticketDefaults|ticketGuard|ticketInteractionHandler|ticketManager|ticketNaming|ticketPanelManager|ticketPermissions|ticketRecovery|ticketSetupPanel|ticketSocketEvents|ticketStartup|ticketStore|ticketTimeline|ticketTranscriptManager|ticketsRoute)' src server.js
 
       - name: Run Doctor
-        id: doctor
-        continue-on-error: true
-        run: |
-          set -o pipefail
-          npm run doctor 2>&1 | tee /tmp/tickets-doctor-error.txt
-
-      - name: Publish Doctor failure
-        if: steps.doctor.outcome == 'failure'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git reset --hard HEAD
-          mkdir -p .goliath
-          cp /tmp/tickets-doctor-error.txt .goliath/tickets-doctor-error.txt
-          git add .goliath/tickets-doctor-error.txt
-          git commit -m "chore: record Tickets Doctor failure"
-          for attempt in 1 2 3 4 5; do
-            git pull --rebase origin dev && git push && break
-            sleep 5
-          done
-          exit 1
+        run: npm run doctor
 
       - name: Run Audit
         run: npm run audit
