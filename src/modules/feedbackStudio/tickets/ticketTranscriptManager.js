@@ -42,7 +42,7 @@ function getCreatorId(ticket) {
 
 function getRuntimeRoot() {
   const mode = process.env.BOT_MODE || process.env.NODE_ENV || 'dev';
-  return path.join(process.cwd(), 'src', 'runtime', String(mode).toLowerCase());
+  return path.join(process.cwd(), 'runtime', String(mode).toLowerCase());
 }
 
 function getTranscriptDir(guildId) {
