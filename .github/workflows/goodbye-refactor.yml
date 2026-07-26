@@ -1,3 +1,4 @@
+# Retry canonical Goodbye build
 name: Build Canonical Goodbye Module
 
 on:
