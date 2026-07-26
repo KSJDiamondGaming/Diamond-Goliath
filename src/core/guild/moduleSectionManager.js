@@ -6,7 +6,6 @@ const {
   getGuildSection,
   updateGuildSection,
 } = require('./guildManager');
-const { prepareInviteSection } = require('../../modules/communityStudio/invites/inviteTemplates');
 
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
@@ -16,12 +15,8 @@ function isPlainObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function prepareSection(moduleName, sectionData = {}, guildOrMeta = {}) {
-  const nextSection = isPlainObject(sectionData) ? clone(sectionData) : {};
-  if (moduleName === 'invites') {
-    return prepareInviteSection(nextSection, guildOrMeta);
-  }
-  return nextSection;
+function prepareSection(_moduleName, sectionData = {}) {
+  return isPlainObject(sectionData) ? clone(sectionData) : {};
 }
 
 function getModules(guildId) {
@@ -44,7 +39,7 @@ function getModuleSection(guildId, moduleName, fallback = {}) {
 }
 
 function saveModuleSection(guildId, moduleName, sectionData = {}, guildOrMeta = {}) {
-  const nextSection = prepareSection(moduleName, sectionData, guildOrMeta);
+  const nextSection = prepareSection(moduleName, sectionData);
 
   updateGuildSection(
     guildId,
