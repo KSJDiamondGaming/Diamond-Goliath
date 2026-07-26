@@ -4,9 +4,6 @@ import re
 root = Path.cwd()
 base = root / 'src/modules/messageStudio/goodbye'
 
-# ---------------------------------------------------------------------------
-# goodbyeDeparture.js: one departure implementation for public logs and DMs.
-# ---------------------------------------------------------------------------
 sender = (base / 'departureTemplateSender.js').read_text(encoding='utf-8')
 dm = (base / 'goodbyeDepartureDm.js').read_text(encoding='utf-8')
 
@@ -43,9 +40,6 @@ module.exports = {
 """
 (base / 'goodbyeDeparture.js').write_text(departure, encoding='utf-8', newline='\n')
 
-# ---------------------------------------------------------------------------
-# goodbyePanel.js: all visible Discord UI and all Goodbye interactions.
-# ---------------------------------------------------------------------------
 panel_path = base / 'goodbyePanel.js'
 panel = panel_path.read_text(encoding='utf-8')
 dm_panel = (base / 'goodbyeDmPanel.js').read_text(encoding='utf-8')
@@ -63,9 +57,6 @@ wrapped_dm_panel = "const buildGoodbyeDmPanel = (() => {\n" + '\n'.join('  ' + l
 panel = panel[:insert_at] + wrapped_dm_panel + panel[insert_at:]
 panel_path.write_text(panel, encoding='utf-8', newline='\n')
 
-# ---------------------------------------------------------------------------
-# Move HTTP routing out of the module implementation directory.
-# ---------------------------------------------------------------------------
 old_route = base / 'goodbyeRoute.js'
 new_route = root / 'src/server/routes/goodbye.js'
 route = old_route.read_text(encoding='utf-8')
@@ -73,23 +64,21 @@ route = route.replace("require('./goodbye')", "require('../../modules/messageStu
 route = route.replace("require('./goodbyeDepartureDm')", "require('../../modules/messageStudio/goodbye/goodbyeDeparture')")
 new_route.write_text(route, encoding='utf-8', newline='\n')
 
-# ---------------------------------------------------------------------------
-# Repoint every external dependency to canonical files.
-# ---------------------------------------------------------------------------
 for path in list((root / 'src').rglob('*.js')) + [root / 'server.js', root / 'scripts/goliath.js']:
-    if not path.exists() or path in [base / 'goodbyeDeparture.js']:
+    if not path.exists() or path == base / 'goodbyeDeparture.js':
         continue
     text = path.read_text(encoding='utf-8')
     original = text
     text = text.replace('departureTemplateSender', 'goodbyeDeparture')
     text = text.replace('goodbyeDepartureDm', 'goodbyeDeparture')
     text = text.replace('goodbyeDmPanel', 'goodbyePanel')
+    duplicate_import = "const goodbyeDeparture = require('../../modules/messageStudio/goodbye/goodbyeDeparture');\nconst goodbyeDeparture = require('../../modules/messageStudio/goodbye/goodbyeDeparture');"
+    text = text.replace(duplicate_import, "const goodbyeDeparture = require('../../modules/messageStudio/goodbye/goodbyeDeparture');")
     text = text.replace("./src/modules/messageStudio/goodbye/goodbyeRoute", "./src/server/routes/goodbye")
     text = text.replace('src/modules/messageStudio/goodbye/goodbyeRoute.js', 'src/server/routes/goodbye.js')
     if text != original:
         path.write_text(text, encoding='utf-8', newline='\n')
 
-# Remove retired implementations. No wrappers or bridges remain.
 for legacy in [
     base / 'departureTemplateSender.js',
     base / 'goodbyeDepartureDm.js',
@@ -98,7 +87,6 @@ for legacy in [
 ]:
     legacy.unlink(missing_ok=True)
 
-# Canonical documentation.
 (root / 'docs/modules/goodbye.md').write_text("""# Goodbye
 
 Goodbye is consolidated into three canonical implementation files.
@@ -119,7 +107,6 @@ The HTTP router lives at `src/server/routes/goodbye.js` and is not a module impl
 No compatibility layers, wrappers, bridges or duplicate Goodbye implementations are retained.
 """, encoding='utf-8', newline='\n')
 
-# Temporary build files remove themselves before the final commit.
 for temporary in [
     root / '.goliath/goodbye_refactor.py',
     root / '.github/workflows/goodbye-refactor.yml',
