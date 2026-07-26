@@ -3,6 +3,7 @@
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const { resolveRuntimePath } = require('../../../config/runtimePaths');
 
 // ======================================================
 // BACKUP CORE
@@ -89,9 +90,7 @@ function getModeKey(environment) {
 }
 
 function getBackupRoot(environment) {
-  return path.join(
-    process.cwd(),
-    'runtime',
+  return resolveRuntimePath(
     getModeKey(environment),
     'backups'
   );
