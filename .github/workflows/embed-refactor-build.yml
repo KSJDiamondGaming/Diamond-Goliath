@@ -97,6 +97,8 @@ jobs:
           fi
 
       - name: Run Audit
+        id: audit
+        continue-on-error: true
         run: |
           set +e
           timeout 90s npm run audit 2>&1 | tee /tmp/embed-audit.txt
@@ -108,6 +110,23 @@ jobs:
           if [ "$status" -ne 0 ] && [ "$status" -ne 124 ]; then
             exit "$status"
           fi
+
+      - name: Publish Audit failure
+        if: steps.audit.outcome == 'failure'
+        run: |
+          cp /tmp/embed-audit.txt /tmp/embed-audit-report.txt
+          git reset --hard HEAD
+          mkdir -p .goliath
+          cp /tmp/embed-audit-report.txt .goliath/embed-audit-error.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .goliath/embed-audit-error.txt
+          git commit -m "chore: record Embed Audit failure"
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase origin dev && git push && break
+            sleep 5
+          done
+          exit 1
 
       - name: Commit canonical Embed refactor
         run: |
