@@ -1,9 +1,11 @@
+'use strict';
+
 const path = require('path');
 const dotenv = require('dotenv');
 
 const { normalizeBotMode, isValidBotMode } = require('./botModes');
 
-function loadEnvironment() {
+function loadEnvironment(mode) {
   const cwdParts = process.cwd().toLowerCase().split(path.sep);
   const fallbackMode = cwdParts.includes('production')
     ? 'PRODUCTION'
@@ -12,7 +14,7 @@ function loadEnvironment() {
       : 'DEV';
 
   const requestedMode = normalizeBotMode(
-    process.env.BOT_MODE || fallbackMode
+    mode || process.env.BOT_MODE || fallbackMode
   );
 
   if (!isValidBotMode(requestedMode)) {
