@@ -24,7 +24,7 @@ function now() {
 }
 
 function getBillingDir() {
-  const dir = path.join(getRuntimeRoot(process.env.BOT_MODE || 'DEV'), 'billing');
+  const dir = path.join(getRuntimeRoot(process.env.BOT_MODE), 'billing');
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
