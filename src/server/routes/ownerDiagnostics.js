@@ -106,7 +106,7 @@ function getPackageInfo() {
 }
 
 function getRuntimeFolders(environment = getRuntimeMode()) {
-  const root = path.join(process.cwd(), 'src', 'runtime', getEnvironmentKey(environment));
+  const root = path.join(process.cwd(), 'runtime', getEnvironmentKey(environment));
   const folders = ['guilds', 'logs', 'backups', 'data', 'cache', 'deployments'];
   return Object.fromEntries(folders.map((folder) => {
     const folderPath = path.join(root, folder);
@@ -116,9 +116,9 @@ function getRuntimeFolders(environment = getRuntimeMode()) {
 
 function readDeploymentHistory(environment = getRuntimeMode()) {
   const candidates = [
-    path.join(process.cwd(), 'src', 'runtime', getEnvironmentKey(environment), 'deployments', 'history.json'),
-    path.join(process.cwd(), 'src', 'runtime', getEnvironmentKey(environment), 'data', 'deployments.json'),
-    path.join(process.cwd(), 'src', 'runtime', getEnvironmentKey(environment), 'logs', 'deployments.json'),
+    path.join(process.cwd(), 'runtime', getEnvironmentKey(environment), 'deployments', 'history.json'),
+    path.join(process.cwd(), 'runtime', getEnvironmentKey(environment), 'data', 'deployments.json'),
+    path.join(process.cwd(), 'runtime', getEnvironmentKey(environment), 'logs', 'deployments.json'),
   ];
 
   for (const filePath of candidates) {
