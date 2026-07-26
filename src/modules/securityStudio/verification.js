@@ -1,6 +1,6 @@
 'use strict';
 
-const verificationManager = require('./verificationManager');
+const verificationHealth = require('./verificationHealth');
 
 async function startupVerification(client) {
   if (!client?.guilds?.cache) {
@@ -10,7 +10,7 @@ async function startupVerification(client) {
   const results = [];
   for (const guild of client.guilds.cache.values()) {
     try {
-      const report = await verificationManager.buildHealthReport(guild);
+      const report = await verificationHealth.buildHealthReport(guild);
       results.push({
         guildId: guild.id,
         guildName: guild.name,
