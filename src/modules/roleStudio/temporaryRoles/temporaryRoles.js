@@ -175,6 +175,7 @@ function reset(guildId, meta = {}) {
 module.exports = {
   SECTION,
   getSection,
+  saveSection,
   listAssignments,
   assignTemporaryRole,
   removeAssignment,
@@ -182,4 +183,5 @@ module.exports = {
   setEnabled,
   reset,
   durationToMs,
+  exportConfiguration: getSection,
 };
