@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const { normalizeBotMode } = require('../../config/botModes');
 const translationStore = require('../../modules/utilityStudio/translation/translationStore');
 
 const router = express.Router();
@@ -46,7 +47,7 @@ function requireOwnerOrInternal(req, res, next) {
 }
 
 function getRuntimeMode() {
-  return String(process.env.BOT_MODE || 'dev').trim().toUpperCase();
+  return normalizeBotMode(process.env.BOT_MODE);
 }
 
 function getDiscordClient(req) {
