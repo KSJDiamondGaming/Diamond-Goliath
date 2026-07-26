@@ -5,7 +5,7 @@ const {
   emitEmbedUpdated,
   emitEmbedStatusUpdated,
   emitEmbedDeleted,
-} = require('./embedSocketEvents');
+} = require('./embedTracking');
 
 const EMBED_DEPLOYMENTS_SECTION = 'embedDeployments';
 const LEGACY_EMBED_BUILDER_SECTION = 'embedBuilder';

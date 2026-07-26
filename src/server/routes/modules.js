@@ -15,11 +15,11 @@ const autoRoleStore = require('../../modules/roleStudio/autoRoles/autoRoles');
 const autoRoleManager = autoRoleStore;
 const verificationStore = require('../../modules/securityStudio/verificationStore');
 const verificationManager = require('../../modules/securityStudio/verificationManager');
-const embedTemplateManager = require('../../modules/messageStudio/embed/embedTemplateManager');
+const embedTemplateManager = require('../../modules/messageStudio/embed/embedTemplates');
 const {
   getAllEmbedDeployments,
   deleteEmbedDeployment,
-} = require('../../modules/messageStudio/embed/embedDeploymentStore');
+} = require('../../modules/messageStudio/embed/embedDeployments');
 const {
   isGoliathPermissionError,
   validateRoleSelection,

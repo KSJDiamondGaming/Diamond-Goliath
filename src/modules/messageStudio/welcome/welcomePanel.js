@@ -11,7 +11,7 @@ const {
   AttachmentBuilder,
 } = require('discord.js');
 const welcome = require('./welcome');
-const embedTemplateManager = require('../embed/embedTemplateManager');
+const embedTemplateManager = require('../embed/embedTemplates');
 
 const selections = new Map();
 

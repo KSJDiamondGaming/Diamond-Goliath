@@ -2,7 +2,7 @@
 
 const crypto = require('crypto');
 const { getModuleSection, saveModuleSection, updateModuleSection } = require('../../../core/guild/moduleSectionManager');
-const embedTemplateManager = require('../../embed/embedTemplateManager');
+const embedTemplateManager = require('../../messageStudio/embed/embedTemplates');
 
 const SECTION = 'reactionRoles';
 const MODES = Object.freeze({ TOGGLE: 'toggle', ADD: 'add', REMOVE: 'remove' });

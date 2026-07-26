@@ -2,7 +2,7 @@
 
 const { EmbedBuilder } = require('discord.js');
 const guildManager = require('../../../core/guild/guildManager');
-const embedTemplateManager = require('../embed/embedTemplateManager');
+const embedTemplateManager = require('../embed/embedTemplates');
 const goodbyeManager = require('./goodbye');
 
 const DEPARTURE_DETAILS = Object.freeze({

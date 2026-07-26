@@ -10,7 +10,7 @@ const verificationStore = require('../../modules/securityStudio/verificationStor
 const forms = require('../../modules/feedbackStudio/forms/forms');
 const ticketStore = require('../../modules/feedbackStudio/tickets/tickets');
 const translationStore = require('../../modules/utilityStudio/translation/translationStore');
-const { getAllEmbedDeployments } = require('../../modules/messageStudio/embed/embedDeploymentStore');
+const { getAllEmbedDeployments } = require('../../modules/messageStudio/embed/embedDeployments');
 
 const {
   DEFAULT_BOT_CHANNEL_PERMISSIONS,

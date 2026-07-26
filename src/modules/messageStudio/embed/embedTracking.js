@@ -1,6 +1,6 @@
 'use strict';
 
-// src/modules/messageStudio/embed/embedSocketEvents.js
+// Canonical Embed tracking and socket layer.
 
 const {
   emitGuildUpdate,

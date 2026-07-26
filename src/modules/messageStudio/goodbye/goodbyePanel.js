@@ -13,7 +13,7 @@ const {
 const goodbye = require('./goodbye');
 const departureDm = require('./goodbyeDepartureDm');
 const { buildGoodbyeDmPanel } = require('./goodbyeDmPanel');
-const embedTemplateManager = require('../embed/embedTemplateManager');
+const embedTemplateManager = require('../embed/embedTemplates');
 
 const selections = new Map();
 const row = (...components) => new ActionRowBuilder().addComponents(...components);

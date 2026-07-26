@@ -1,7 +1,7 @@
 const express = require('express');
 
-const guildManager = require('../../../core/guild/guildManager');
-const { emitGuildUpdate } = require('../../sockets/socketHub');
+const guildManager = require('../../core/guild/guildManager');
+const { emitGuildUpdate } = require('../sockets/socketHub');
 
 const router = express.Router();
 
