@@ -1,0 +1,58 @@
+name: Build Canonical Tickets Module
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/tickets-refactor-build.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  refactor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Build canonical Tickets architecture
+        run: python3 .goliath/tickets_refactor.py
+
+      - name: Validate JavaScript syntax
+        run: |
+          find src/modules/feedbackStudio/tickets -maxdepth 1 -name '*.js' -print0 | xargs -0 -n1 node --check
+          node --check src/server/routes/tickets.js
+          node --check src/events/interactions/interactionCreate.js
+          node --check src/modules/feedbackStudio/forms/formsTracking.js
+          node --check src/commands/tickets/ticket.js
+          node --check src/core/admin/functions/adminPanel.js
+          node --check server.js
+
+      - name: Verify canonical file count and imports
+        run: |
+          test "$(find src/modules/feedbackStudio/tickets -maxdepth 1 -name '*.js' | wc -l)" -eq 8
+          ! grep -R -nE 'feedbackStudio/tickets/(ticketActions|ticketAnalytics|ticketChannelButtons|ticketChannelManager|ticketDefaults|ticketGuard|ticketInteractionHandler|ticketManager|ticketNaming|ticketPanelManager|ticketPermissions|ticketRecovery|ticketSetupPanel|ticketSocketEvents|ticketStartup|ticketStore|ticketTimeline|ticketTranscriptManager|ticketsRoute)' src server.js
+
+      - name: Run Doctor
+        run: npm run doctor
+
+      - name: Run Audit
+        run: npm run audit
+
+      - name: Commit canonical Tickets refactor
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Refactor Tickets into eight canonical files"
+          git push
