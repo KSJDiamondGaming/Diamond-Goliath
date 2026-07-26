@@ -2,7 +2,7 @@
 
 const { handleReactionAdd } = require('../../modules/roleStudio/reactionRoles/reactionRoles');
 const { enterGiveawayReaction } = require('../../modules/communityStudio/giveaways/giveawaysManager');
-const { handleStarReactionAdd } = require('../../modules/messageStudio/starboard/starboardManager');
+const { handleStarReactionAdd } = require('../../modules/messageStudio/starboard/starboard');
 const { isModuleEnabled } = require('../../core/guild/guildManager');
 
 async function getReactionGuildId(reaction) {
@@ -18,7 +18,7 @@ module.exports = {
       const guildId = await getReactionGuildId(reaction);
       await handleReactionAdd(reaction, user, client);
       if (isModuleEnabled(guildId, 'giveaways')) await enterGiveawayReaction(reaction, user);
-      if (isModuleEnabled(guildId, 'starboard')) await handleStarReactionAdd(reaction, user, client);
+      if (isModuleEnabled(guildId, 'starboard')) await handleStarReactionAdd(reaction, user);
     } catch (error) {
       console.error('[EVENT: messageReactionAdd]', error);
     }
