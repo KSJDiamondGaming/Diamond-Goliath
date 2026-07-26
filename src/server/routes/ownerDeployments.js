@@ -4,6 +4,7 @@ const express = require('express');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { resolveRuntimePath } = require('../../config/runtimePaths');
 const notifications = require('../../core/notifications/notificationStore');
 
 const router = express.Router();
@@ -90,7 +91,7 @@ function getCurrentBranch(environment = getRuntimeMode()) {
 }
 
 function runtimePath(environment = getRuntimeMode(), ...parts) {
-  return path.join(process.cwd(), 'runtime', getEnvironmentKey(environment), ...parts);
+  return resolveRuntimePath(getEnvironmentKey(environment), ...parts);
 }
 
 function readDeploymentHistory(environment = getRuntimeMode()) {
