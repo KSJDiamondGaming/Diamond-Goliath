@@ -1,294 +1,253 @@
 'use strict';
 
-const { MessageFlags } = require('discord.js');
-const pollsManager = require('./pollsManager');
+const {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  EmbedBuilder,
+} = require('discord.js');
+const guildManager = require('../../../core/guild/guildManager');
 
-const clone = (value) => value == null ? value : JSON.parse(JSON.stringify(value));
-const voteQueues = new Map();
-const processedInteractions = new Map();
-const STARTUP_KEY = Symbol.for('goliath.polls.startup');
+const MODULE_KEY = 'polls';
+const DEFAULT_POLLS = {
+  enabled: true,
+  defaultChannelId: null,
+  resultsChannelId: null,
+  managerRoleIds: [],
+  anonymousVoting: false,
+  allowMultipleChoice: true,
+  showResultsLive: true,
+  settings: {
+    defaultChannelId: null,
+    allowMultipleVotes: false,
+    anonymousVotes: false,
+    autoCloseHours: 24,
+  },
+  polls: {},
+  analytics: {
+    created: 0,
+    deployed: 0,
+    closed: 0,
+    votes: 0,
+    removed: 0,
+    switched: 0,
+  },
+};
 
-function cleanupProcessedInteractions() {
-  const cutoff = Date.now() - 5 * 60 * 1000;
-  for (const [interactionId, timestamp] of processedInteractions.entries()) {
-    if (timestamp < cutoff) processedInteractions.delete(interactionId);
+const now = () => new Date().toISOString();
+const clone = (value) => JSON.parse(JSON.stringify(value ?? {}));
+const createId = (prefix = 'poll') => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+const cleanText = (value, max = 4000) => String(value || '').trim().slice(0, max);
+function cleanSnowflake(value) {
+  const cleaned = String(value || '').replace(/[<#@&!>]/g, '').trim();
+  return /^\d{15,25}$/.test(cleaned) ? cleaned : null;
+}
+function cleanSnowflakeArray(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map(cleanSnowflake).filter(Boolean))];
+}
+function normalizeOptions(options = []) {
+  return (Array.isArray(options) ? options : [])
+    .map((option) => ({
+      id: option.id || createId('option'),
+      label: cleanText(option.label || option.name || option.value, 80),
+      votes: Array.isArray(option.votes) ? [...new Set(option.votes.map(String))] : [],
+    }))
+    .filter((option) => option.label)
+    .slice(0, 10);
+}
+function normalizeSection(section = {}) {
+  const source = section && typeof section === 'object' ? section : {};
+  const settings = source.settings && typeof source.settings === 'object' ? source.settings : {};
+  const polls = source.polls && typeof source.polls === 'object' ? source.polls : {};
+  const analytics = source.analytics && typeof source.analytics === 'object' ? source.analytics : {};
+  const defaultChannelId = cleanSnowflake(source.defaultChannelId || settings.defaultChannelId);
+  const allowMultipleVotes = source.allowMultipleChoice === true || settings.allowMultipleVotes === true;
+  const anonymousVotes = source.anonymousVoting === true || settings.anonymousVotes === true;
+  const normalizedPolls = {};
+
+  for (const [pollId, poll] of Object.entries(polls)) {
+    if (!poll || typeof poll !== 'object') continue;
+    const question = cleanText(poll.question, 256);
+    if (!question) continue;
+    const id = String(poll.id || pollId);
+    normalizedPolls[id] = {
+      id,
+      question,
+      description: cleanText(poll.description, 1000),
+      status: ['draft', 'active', 'closed'].includes(poll.status) ? poll.status : 'draft',
+      channelId: cleanSnowflake(poll.channelId),
+      messageId: cleanSnowflake(poll.messageId),
+      allowMultipleVotes: poll.allowMultipleVotes === true,
+      anonymousVotes: poll.anonymousVotes === true,
+      createdBy: String(poll.createdBy || '').trim() || null,
+      createdAt: poll.createdAt || now(),
+      updatedAt: poll.updatedAt || poll.createdAt || now(),
+      closedAt: poll.closedAt || null,
+      options: normalizeOptions(poll.options),
+    };
   }
-}
 
-function queueVote(key, operation) {
-  const previous = voteQueues.get(key) || Promise.resolve();
-  const current = previous.catch(() => null).then(operation);
-  voteQueues.set(key, current);
-  return current.finally(() => {
-    if (voteQueues.get(key) === current) voteQueues.delete(key);
-  });
-}
-
-async function resolvePollMessage(guild, poll) {
-  if (!guild || !poll?.channelId || !poll?.messageId) return null;
-  const channel = guild.channels.cache.get(poll.channelId)
-    || await guild.channels.fetch(poll.channelId).catch(() => null);
-  if (!channel?.messages?.fetch) return null;
-  return channel.messages.fetch(poll.messageId).catch(() => null);
-}
-
-function pollPayload(poll) {
   return {
-    embeds: [pollsManager.buildPollEmbed(poll)],
-    components: poll.status === 'active' ? pollsManager.buildPollComponents(poll) : [],
+    ...DEFAULT_POLLS,
+    ...source,
+    enabled: source.enabled !== false,
+    defaultChannelId,
+    resultsChannelId: cleanSnowflake(source.resultsChannelId),
+    managerRoleIds: cleanSnowflakeArray(source.managerRoleIds),
+    anonymousVoting: anonymousVotes,
+    allowMultipleChoice: allowMultipleVotes,
+    showResultsLive: source.showResultsLive !== false,
+    settings: {
+      ...DEFAULT_POLLS.settings,
+      ...settings,
+      defaultChannelId,
+      allowMultipleVotes,
+      anonymousVotes,
+      autoCloseHours: Number(settings.autoCloseHours ?? DEFAULT_POLLS.settings.autoCloseHours),
+    },
+    polls: normalizedPolls,
+    analytics: {
+      ...DEFAULT_POLLS.analytics,
+      ...analytics,
+      created: Math.max(0, Number(analytics.created || 0)),
+      deployed: Math.max(0, Number(analytics.deployed || 0)),
+      closed: Math.max(0, Number(analytics.closed || 0)),
+      votes: Math.max(0, Number(analytics.votes || 0)),
+      removed: Math.max(0, Number(analytics.removed || 0)),
+      switched: Math.max(0, Number(analytics.switched || 0)),
+    },
   };
 }
-
-async function renderPoll(guild, poll, { required = false } = {}) {
-  const message = await resolvePollMessage(guild, poll);
-  if (!message?.edit) {
-    if (required) throw new Error('The deployed poll message is missing or inaccessible.');
-    return null;
-  }
-  await message.edit(pollPayload(poll));
-  return message;
+function getSection(guildId) {
+  const modules = guildManager.getGuildSection(guildId, 'modules', {});
+  return normalizeSection(modules?.[MODULE_KEY] || DEFAULT_POLLS);
 }
-
-async function deployPoll(guild, pollId, channelId, meta = {}) {
-  if (!guild) throw new Error('Guild is required.');
-  const section = pollsManager.getSection(guild.id);
+function saveSection(guildId, section, meta = {}) {
+  const normalized = normalizeSection(section);
+  guildManager.updateGuildSection(guildId, 'modules', (modules = {}) => ({
+    ...(modules && typeof modules === 'object' ? modules : {}),
+    [MODULE_KEY]: normalized,
+  }), {}, meta);
+  return normalized;
+}
+function updateSection(guildId, updater, meta = {}) {
+  const current = getSection(guildId);
+  const next = typeof updater === 'function' ? updater(current) : { ...current, ...(updater || {}) };
+  return saveSection(guildId, next, meta);
+}
+function getPoll(guildId, pollId) {
+  return getSection(guildId).polls[String(pollId)] || null;
+}
+function createPoll(guildId, payload = {}, meta = {}) {
+  const section = getSection(guildId);
   if (section.enabled === false) throw new Error('Polls are disabled.');
+  const question = cleanText(payload.question, 256);
+  if (!question) throw new Error('Poll question is required.');
+  const options = normalizeOptions(payload.options);
+  if (options.length < 2) throw new Error('A poll needs at least 2 options.');
+  const pollId = createId('poll');
+  const poll = {
+    id: pollId,
+    question,
+    description: cleanText(payload.description, 1000),
+    status: 'draft',
+    channelId: cleanSnowflake(payload.channelId) || section.settings.defaultChannelId,
+    messageId: null,
+    allowMultipleVotes: payload.allowMultipleVotes === true || section.settings.allowMultipleVotes === true,
+    anonymousVotes: payload.anonymousVotes === true || section.settings.anonymousVotes === true,
+    createdBy: meta.actorId || payload.createdBy || null,
+    createdAt: now(),
+    updatedAt: now(),
+    closedAt: null,
+    options,
+  };
+  section.polls[pollId] = poll;
+  section.analytics.created += 1;
+  return { section: saveSection(guildId, section, meta), poll };
+}
+function updatePoll(guildId, pollId, payload = {}, meta = {}) {
+  const section = getSection(guildId);
   const poll = section.polls[String(pollId)];
   if (!poll) throw new Error('Poll not found.');
-  if (poll.status === 'closed') throw new Error('Closed polls cannot be redeployed.');
-
-  const previous = clone(poll);
-  const existing = await resolvePollMessage(guild, poll);
-  poll.status = 'active';
-  poll.closedAt = null;
-  poll.updatedAt = new Date().toISOString();
-
-  if (existing?.edit) {
-    await existing.edit(pollPayload(poll));
-    section.polls[poll.id] = poll;
-    try {
-      return {
-        section: pollsManager.saveSection(guild.id, section, meta),
-        poll,
-        messageId: existing.id,
-        redeployed: true,
-      };
-    } catch (error) {
-      await existing.edit(pollPayload(previous)).catch(() => null);
-      throw error;
-    }
+  if (poll.status === 'closed') throw new Error('Closed polls cannot be edited.');
+  if (payload.question !== undefined) {
+    const question = cleanText(payload.question, 256);
+    if (!question) throw new Error('Poll question is required.');
+    poll.question = question;
   }
-
-  const targetChannelId = String(channelId || poll.channelId || section.settings?.defaultChannelId || '').replace(/[<#>]/g, '').trim();
-  if (!/^\d{15,25}$/.test(targetChannelId)) throw new Error('Select a text channel before deploying the poll.');
-  const channel = guild.channels.cache.get(targetChannelId)
-    || await guild.channels.fetch(targetChannelId).catch(() => null);
-  if (!channel?.send) throw new Error('Selected channel is not sendable.');
-
-  const message = await channel.send(pollPayload(poll));
-  poll.channelId = channel.id;
-  poll.messageId = message.id;
+  if (payload.description !== undefined) poll.description = cleanText(payload.description, 1000);
+  if (payload.channelId !== undefined) poll.channelId = cleanSnowflake(payload.channelId);
+  if (payload.allowMultipleVotes !== undefined) poll.allowMultipleVotes = payload.allowMultipleVotes === true;
+  if (payload.anonymousVotes !== undefined) poll.anonymousVotes = payload.anonymousVotes === true;
+  if (payload.options !== undefined) {
+    const options = normalizeOptions(payload.options);
+    if (options.length < 2) throw new Error('A poll needs at least 2 options.');
+    poll.options = options.map((option) => ({ ...option, votes: [] }));
+  }
+  poll.updatedAt = now();
   section.polls[poll.id] = poll;
-  section.analytics.deployed = Number(section.analytics.deployed || 0) + 1;
-
-  try {
-    const saved = pollsManager.saveSection(guild.id, section, meta);
-    return { section: saved, poll, messageId: message.id, redeployed: false };
-  } catch (error) {
-    await message.delete().catch(() => null);
-    throw error;
-  }
+  return { section: saveSection(guildId, section, meta), poll };
 }
-
-async function setPollStatus(guild, pollId, status, meta = {}) {
-  if (!guild) throw new Error('Guild is required.');
-  const section = pollsManager.getSection(guild.id);
-  const poll = section.polls[String(pollId)];
-  if (!poll) throw new Error('Poll not found.');
-  if (!['draft', 'active', 'closed'].includes(status)) throw new Error('Invalid poll status.');
-  if (status === 'active' && !poll.messageId) throw new Error('Deploy the poll before activating it.');
-
-  const previous = clone(poll);
-  const wasClosed = poll.status === 'closed';
-  poll.status = status;
-  poll.updatedAt = new Date().toISOString();
-  if (status === 'closed') {
-    poll.closedAt = poll.closedAt || poll.updatedAt;
-    if (!wasClosed) section.analytics.closed = Number(section.analytics.closed || 0) + 1;
-  } else {
-    poll.closedAt = null;
-  }
-
-  const message = poll.messageId ? await renderPoll(guild, poll, { required: true }) : null;
-  section.polls[poll.id] = poll;
-  try {
-    const saved = pollsManager.saveSection(guild.id, section, meta);
-    return { section: saved, poll };
-  } catch (error) {
-    if (message?.edit) await message.edit(pollPayload(previous)).catch(() => null);
-    throw error;
-  }
+function deletePollRecord(guildId, pollId, meta = {}) {
+  const section = getSection(guildId);
+  if (!section.polls[String(pollId)]) throw new Error('Poll not found.');
+  delete section.polls[String(pollId)];
+  return saveSection(guildId, section, meta);
 }
-
-async function deletePoll(guild, pollId, meta = {}) {
-  if (!guild) throw new Error('Guild is required.');
-  const poll = pollsManager.getPoll(guild.id, pollId);
-  if (!poll) throw new Error('Poll not found.');
-  const message = await resolvePollMessage(guild, poll);
-  const section = pollsManager.deletePoll(guild.id, pollId, meta);
-  if (message?.delete) await message.delete().catch(() => null);
-  return section;
+function summarizePoll(poll) {
+  const totalVotes = poll.options.reduce((sum, option) => sum + option.votes.length, 0);
+  return {
+    ...clone(poll),
+    totalVotes,
+    options: poll.options.map((option) => ({
+      ...option,
+      count: option.votes.length,
+      percent: totalVotes ? Math.round((option.votes.length / totalVotes) * 100) : 0,
+      votes: poll.anonymousVotes ? [] : [...option.votes],
+    })),
+  };
 }
-
-async function respond(interaction, content) {
-  if (interaction.deferred || interaction.replied) {
-    return interaction.editReply({ content }).catch(() => null);
-  }
-  return interaction.reply({ content, flags: MessageFlags.Ephemeral }).catch(() => null);
+function buildPollEmbed(poll) {
+  const summary = summarizePoll(poll);
+  const lines = summary.options.map((option, index) => {
+    const bar = '█'.repeat(Math.max(0, Math.round(option.percent / 10))).padEnd(10, '░');
+    return `**${index + 1}. ${option.label}**\n${bar} ${option.count} vote${option.count === 1 ? '' : 's'} · ${option.percent}%`;
+  });
+  return new EmbedBuilder()
+    .setColor(poll.status === 'closed' ? '#64748B' : '#3B82F6')
+    .setTitle(`${poll.status === 'closed' ? 'Closed Poll' : 'Poll'} · ${poll.question}`.slice(0, 256))
+    .setDescription([poll.description, ...lines].filter(Boolean).join('\n\n').slice(0, 4096))
+    .setFooter({ text: `Poll ID: ${poll.id} · ${summary.totalVotes} total vote${summary.totalVotes === 1 ? '' : 's'}` })
+    .setTimestamp(new Date(poll.updatedAt || poll.createdAt || Date.now()));
 }
-
-async function processVote(interaction, pollId, optionId) {
-  const guildId = interaction.guildId;
-  const userId = interaction.user?.id;
-  if (!guildId || !userId || !interaction.guild) return true;
-
-  const section = pollsManager.getSection(guildId);
-  if (section.enabled === false) {
-    await respond(interaction, 'Polls are currently disabled.');
-    return true;
+function buildPollComponents(poll) {
+  if (poll.status !== 'active') return [];
+  const buttons = poll.options.slice(0, 10).map((option, index) => new ButtonBuilder()
+    .setCustomId(`poll_vote:${poll.id}:${option.id}`)
+    .setLabel(`${index + 1}. ${option.label}`.slice(0, 80))
+    .setStyle(ButtonStyle.Primary));
+  const rows = [];
+  for (let index = 0; index < buttons.length; index += 5) {
+    rows.push(new ActionRowBuilder().addComponents(buttons.slice(index, index + 5)));
   }
-
-  const poll = section.polls[pollId];
-  if (!poll) {
-    await respond(interaction, 'This poll no longer exists.');
-    return true;
-  }
-  if (poll.status !== 'active') {
-    await respond(interaction, 'This poll is closed.');
-    return true;
-  }
-
-  const option = poll.options.find((item) => item.id === optionId);
-  if (!option) {
-    await respond(interaction, 'That poll option no longer exists.');
-    return true;
-  }
-
-  const alreadyVoted = option.votes.includes(userId);
-  let removedOtherVote = false;
-  if (!poll.allowMultipleVotes && !alreadyVoted) {
-    for (const candidate of poll.options) {
-      if (candidate.id === option.id) continue;
-      const before = candidate.votes.length;
-      candidate.votes = candidate.votes.filter((idValue) => idValue !== userId);
-      if (candidate.votes.length !== before) removedOtherVote = true;
-    }
-  }
-
-  if (alreadyVoted) {
-    option.votes = option.votes.filter((idValue) => idValue !== userId);
-    section.analytics.removed = Number(section.analytics.removed || 0) + 1;
-  } else {
-    option.votes.push(userId);
-    section.analytics.votes = Number(section.analytics.votes || 0) + 1;
-    if (removedOtherVote) section.analytics.switched = Number(section.analytics.switched || 0) + 1;
-  }
-
-  poll.updatedAt = new Date().toISOString();
-  section.polls[poll.id] = poll;
-  pollsManager.saveSection(guildId, section, { actorId: userId });
-
-  if (section.showResultsLive !== false) {
-    await renderPoll(interaction.guild, poll).catch(() => null);
-  }
-
-  await respond(interaction, alreadyVoted
-    ? `Removed your vote from **${option.label}**.`
-    : removedOtherVote
-      ? `Changed your vote to **${option.label}**.`
-      : `Vote counted for **${option.label}**.`);
-  return true;
-}
-
-async function vote(interaction) {
-  const match = String(interaction.customId || '').match(/^poll_vote:([^:]+):([^:]+)$/);
-  if (!match) return false;
-
-  cleanupProcessedInteractions();
-  const interactionId = String(interaction.id || '');
-  if (interactionId && processedInteractions.has(interactionId)) {
-    await respond(interaction, 'This vote interaction was already processed.');
-    return true;
-  }
-  if (interactionId) processedInteractions.set(interactionId, Date.now());
-
-  if (!interaction.deferred && !interaction.replied) {
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => null);
-  }
-
-  const [, pollId, optionId] = match;
-  const queueKey = `${interaction.guildId || 'unknown'}:${pollId}`;
-  return queueVote(queueKey, () => processVote(interaction, pollId, optionId));
-}
-
-async function closeExpiredPollsForGuild(guild) {
-  const section = pollsManager.getSection(guild.id);
-  if (section.enabled === false) return { checked: 0, closed: 0, failed: [] };
-  const autoCloseHours = Number(section.settings?.autoCloseHours || 0);
-  if (!Number.isFinite(autoCloseHours) || autoCloseHours <= 0) return { checked: 0, closed: 0, failed: [] };
-
-  let checked = 0;
-  let closed = 0;
-  const failed = [];
-  const maxAgeMs = autoCloseHours * 60 * 60 * 1000;
-
-  for (const poll of Object.values(section.polls || {})) {
-    if (poll.status !== 'active' || !poll.messageId) continue;
-    checked += 1;
-    try {
-      const message = await resolvePollMessage(guild, poll);
-      if (!message) throw new Error('The deployed poll message is missing or inaccessible.');
-      const deployedAt = Number(message.createdTimestamp || message.createdAt?.getTime?.() || 0);
-      if (!deployedAt || Date.now() - deployedAt < maxAgeMs) continue;
-      await setPollStatus(guild, poll.id, 'closed', { actorId: guild.members.me?.id || null, reason: 'auto_close' });
-      closed += 1;
-    } catch (error) {
-      failed.push({ pollId: poll.id, error: error.message });
-    }
-  }
-  return { checked, closed, failed };
-}
-
-async function runAutoClose(client) {
-  const results = [];
-  for (const guild of client.guilds.cache.values()) {
-    results.push({ guildId: guild.id, ...(await closeExpiredPollsForGuild(guild)) });
-  }
-  return results;
-}
-
-async function startup(client) {
-  if (!client?.guilds?.cache) throw new Error('Discord client is unavailable.');
-  if (client[STARTUP_KEY]) return client[STARTUP_KEY];
-
-  await runAutoClose(client);
-  const timer = setInterval(() => {
-    runAutoClose(client).catch((error) => console.warn(`[Polls] Auto-close scan failed: ${error.message}`));
-  }, 60 * 1000);
-  timer.unref?.();
-  client[STARTUP_KEY] = { timer, startedAt: new Date().toISOString() };
-  return client[STARTUP_KEY];
+  return rows;
 }
 
 module.exports = {
-  ...pollsManager,
-  resolvePollMessage,
-  renderPoll,
-  deployPoll,
-  setPollStatus,
-  deletePoll,
-  vote,
-  closeExpiredPollsForGuild,
-  runAutoClose,
-  startup,
+  MODULE_KEY,
+  DEFAULT_POLLS,
+  now,
+  cleanSnowflake,
+  normalizeSection,
+  getSection,
+  saveSection,
+  updateSection,
+  getPoll,
+  createPoll,
+  updatePoll,
+  deletePollRecord,
+  summarizePoll,
+  buildPollEmbed,
+  buildPollComponents,
 };
