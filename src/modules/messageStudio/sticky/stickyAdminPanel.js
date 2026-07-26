@@ -1,6 +1,6 @@
 'use strict';
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelSelectMenuBuilder, ChannelType, RoleSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
-const stickyStore = require('./stickyGuildStore');
+const stickyStore = require('./stickyStore');
 const stickyManager = require('./stickyManager');
 const guildManager = require('../../../core/guild/guildManager');
 const row = (...components) => new ActionRowBuilder().addComponents(...components);
@@ -10,12 +10,12 @@ const formatChannels = (data) => Object.keys(data.channels || {}).length ? Objec
 const formatRoles = (ids = []) => Array.isArray(ids) && ids.filter(Boolean).length ? ids.filter(Boolean).map((id) => `<@&${id}>`).join(', ') : '`None`';
 function getConfig(guildId) {
   const data = stickyStore.loadStickyData(guildId);
-  return { enabled: data.enabled !== false, channels: data.channels || {}, managerRoleIds: Array.isArray(data.managerRoleIds) ? data.managerRoleIds : [], defaultContent: data.defaultContent || '📌 Sticky message configured by Goliath.', repostEvery: Number(data.repostEvery || 10), cooldownSeconds: Number(data.cooldownSeconds ?? 60), cleanupPrevious: data.cleanupPrevious !== false, allowEmbeds: data.allowEmbeds !== false, mode: data.mode || 'per-channel' };
+  return { enabled: guildManager.isModuleEnabled(guildId, 'sticky') === true, channels: data.channels || {}, managerRoleIds: Array.isArray(data.managerRoleIds) ? data.managerRoleIds : [], defaultContent: data.defaultContent || '📌 Sticky message configured by Goliath.', repostEvery: Number(data.repostEvery || 10), cooldownSeconds: Number(data.cooldownSeconds ?? 60), cleanupPrevious: data.cleanupPrevious !== false, allowEmbeds: data.allowEmbeds !== false, mode: data.mode || 'per-channel' };
 }
 function saveConfig(guild, updater) {
   const current = getConfig(guild.id); const next = typeof updater === 'function' ? updater(current) : { ...current, ...(updater || {}) }; const existing = stickyStore.loadStickyData(guild.id);
-  const saved = stickyStore.saveStickyData(guild.id, { ...existing, ...next, enabled: next.enabled !== false, updatedAt: new Date().toISOString() });
-  guildManager.setModuleEnabled(guild.id, 'sticky', next.enabled !== false, guild); return saved;
+  const saved = stickyStore.saveStickyData(guild.id, { ...existing, ...next, updatedAt: new Date().toISOString() });
+  guildManager.setModuleEnabled(guild.id, 'sticky', next.enabled === true, guild); return saved;
 }
 function buildStickyAdminPanel(guild, memberDisplayName = 'Unknown User') {
   const c = getConfig(guild.id); const active = Object.values(c.channels || {}).filter((s) => s?.enabled !== false).length;
@@ -52,7 +52,7 @@ async function handleStickyAdminInteraction(i) {
     else if (id === 'admin:sticky:repostDown') saveConfig(i.guild, (c) => ({ ...c, repostEvery: Math.max(1, Number(c.repostEvery || 10) - 1) }));
     else if (id === 'admin:sticky:cooldownUp') saveConfig(i.guild, (c) => ({ ...c, cooldownSeconds: Math.min(3600, Number(c.cooldownSeconds || 60) + 15) }));
     else if (id === 'admin:sticky:cooldownDown') saveConfig(i.guild, (c) => ({ ...c, cooldownSeconds: Math.max(0, Number(c.cooldownSeconds || 60) - 15) }));
-    else if (id === 'admin:sticky:refresh') { await i.deferUpdate().catch(() => null); const c = getConfig(i.guild.id); for (const channelId of Object.keys(c.channels || {})) { const channel = i.guild.channels.cache.get(channelId) || await i.guild.channels.fetch(channelId).catch(() => null); const sticky = stickyStore.getChannelSticky(i.guild.id, channelId); if (channel?.send && sticky) await stickyManager.repostSticky(channel, sticky, i.client, { manual: true, actorId: i.user.id }).catch(() => null); } }
+    else if (id === 'admin:sticky:refresh') { await i.deferUpdate().catch(() => null); const c = getConfig(i.guild.id); for (const channelId of Object.keys(c.channels || {})) { const channel = i.guild.channels.cache.get(channelId) || await i.guild.channels.fetch(channelId).catch(() => null); const sticky = stickyStore.getChannelSticky(i.guild.id, channelId); if (channel?.send && sticky) await stickyManager.repostSticky(channel, sticky, i.client).catch(() => null); } }
     return safeUpdate(i, buildStickyAdminPanel(i.guild, member));
   } catch (error) { const p = { content: `❌ Sticky setup failed: ${error.message}`, flags: 64 }; if (i.deferred || i.replied) await i.followUp(p).catch(() => null); else await i.reply(p).catch(() => null); return true; }
 }
