@@ -1,0 +1,82 @@
+name: Build Canonical Goodbye Module
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/goodbye-refactor.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  refactor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build canonical Goodbye architecture
+        run: python3 .goliath/goodbye_refactor.py
+
+      - name: Validate JavaScript syntax
+        run: |
+          find src/modules/messageStudio/goodbye -maxdepth 1 -name '*.js' -print0 | xargs -0 -n1 node --check
+          node --check src/server/routes/goodbye.js
+          node --check src/events/members/memberJoinLeave.js
+          node --check src/events/interactions/interactionCreate.js
+          node --check server.js
+
+      - name: Verify canonical layout and imports
+        run: |
+          test "$(find src/modules/messageStudio/goodbye -maxdepth 1 -name '*.js' | wc -l)" -eq 3
+          for file in goodbye.js goodbyePanel.js goodbyeDeparture.js; do
+            test -f "src/modules/messageStudio/goodbye/$file"
+          done
+          test -f src/server/routes/goodbye.js
+          ! grep -R -nE 'goodbye/(departureTemplateSender|goodbyeDepartureDm|goodbyeDmPanel|goodbyeRoute)|messageStudio/goodbye/goodbyeRoute' src server.js scripts
+
+      - name: Runtime smoke test
+        run: |
+          node - <<'NODE'
+          const goodbye = require('./src/modules/messageStudio/goodbye/goodbye');
+          const panel = require('./src/modules/messageStudio/goodbye/goodbyePanel');
+          const departure = require('./src/modules/messageStudio/goodbye/goodbyeDeparture');
+          const route = require('./src/server/routes/goodbye');
+          for (const [name, api] of Object.entries({ goodbye, panel, departure, route })) {
+            if (!api) throw new Error(`Invalid Goodbye API: ${name}`);
+          }
+          for (const fn of ['getGoodbyeSection', 'sendGoodbye', 'buildHealthReport']) {
+            if (typeof goodbye[fn] !== 'function') throw new Error(`Missing goodbye.${fn}`);
+          }
+          for (const fn of ['buildGoodbyePanel', 'handleGoodbyeInteraction']) {
+            if (typeof panel[fn] !== 'function') throw new Error(`Missing panel.${fn}`);
+          }
+          for (const fn of ['sendDeparture', 'sendDepartureDm', 'buildDmEmbed']) {
+            if (typeof departure[fn] !== 'function') throw new Error(`Missing departure.${fn}`);
+          }
+          NODE
+
+      - name: Run Doctor
+        run: timeout 120s npm run doctor
+
+      - name: Run Audit
+        run: timeout 120s npm run audit
+
+      - name: Commit canonical Goodbye refactor
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Refactor Goodbye into three canonical files"
+          git pull --rebase origin dev
+          git push origin dev
