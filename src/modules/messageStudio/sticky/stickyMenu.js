@@ -1,8 +1,8 @@
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
-const stickyStore = require('./stickyGuildStore');
+const stickyStore = require('./stickyStore');
 
-function buildStickyStatusEmbed(guildId, channelId, client) {
-  const sticky = stickyStore.getChannelSticky(guildId, channelId, client);
+function buildStickyStatusEmbed(guildId, channelId) {
+  const sticky = stickyStore.getChannelSticky(guildId, channelId);
 
   if (!sticky) {
     return new EmbedBuilder()
@@ -29,32 +29,14 @@ function buildStickyStatusEmbed(guildId, channelId, client) {
 function buildStickyMenuRows(channelId) {
   return [
     new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`sticky:setup:${channelId}`)
-        .setLabel('Set Sticky')
-        .setStyle(ButtonStyle.Primary),
-      new ButtonBuilder()
-        .setCustomId(`sticky:repost:${channelId}`)
-        .setLabel('Repost Now')
-        .setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId(`sticky:pause:${channelId}`)
-        .setLabel('Pause')
-        .setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId(`sticky:resume:${channelId}`)
-        .setLabel('Resume')
-        .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId(`sticky:delete:${channelId}`)
-        .setLabel('Delete')
-        .setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId(`sticky:setup:${channelId}`).setLabel('Set Sticky').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId(`sticky:repost:${channelId}`).setLabel('Repost Now').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`sticky:pause:${channelId}`).setLabel('Pause').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`sticky:resume:${channelId}`).setLabel('Resume').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(`sticky:delete:${channelId}`).setLabel('Delete').setStyle(ButtonStyle.Danger),
     ),
     new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('admin:back')
-        .setLabel('Back')
-        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('admin:back').setLabel('Back').setStyle(ButtonStyle.Secondary),
     ),
   ];
 }
