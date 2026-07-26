@@ -1,52 +1,25 @@
 'use strict';
 
-// src/modules/messageStudio/starboard/starboardStore.js
-
 const crypto = require('crypto');
-
-const {
-  getGuildSection,
-  updateGuildSection,
-} = require('../../../core/guild/guildManager');
+const { getGuildSection, updateGuildSection } = require('../../../core/guild/guildManager');
 
 const SECTION = 'starboard';
 const MODULES_SECTION = 'modules';
-
-function now() {
-  return new Date().toISOString();
-}
-
-function createId(prefix = 'star') {
-  return `${prefix}_${crypto.randomUUID().slice(0, 8)}`;
-}
+const now = () => new Date().toISOString();
+const createId = (prefix = 'star') => `${prefix}_${crypto.randomUUID().slice(0, 8)}`;
 
 function cleanDiscordId(value) {
   const id = String(value || '').replace(/[<@&#!>]/g, '').trim();
   return /^\d{15,25}$/.test(id) ? id : null;
 }
 
-function cleanString(value, fallback = '', maxLength = 1000) {
-  return String(value ?? fallback).trim().slice(0, maxLength);
-}
-
-function cleanPositiveInt(value, fallback = 3) {
-  const number = Number(value);
-  return Math.max(1, Math.floor(Number.isFinite(number) ? number : fallback));
-}
-
 function asArray(value) {
   return Array.isArray(value) ? [...new Set(value.filter(Boolean).map(String))] : [];
 }
 
-function cleanDiscordIdArray(value) {
-  return asArray(value).map(cleanDiscordId).filter(Boolean);
-}
-
 function defaultStarboardSection() {
   return {
-    enabled: true,
     channelId: null,
-    starboardChannelId: null,
     logChannelId: null,
     managerRoleIds: [],
     threshold: 3,
@@ -55,10 +28,7 @@ function defaultStarboardSection() {
     allowSelfStar: false,
     requireUniqueUsers: true,
     posts: {},
-    analytics: {
-      posted: 0,
-      updated: 0,
-    },
+    analytics: { posted: 0, updated: 0, removed: 0 },
     createdAt: now(),
     updatedAt: now(),
   };
@@ -66,7 +36,6 @@ function defaultStarboardSection() {
 
 function normalizePost(post = {}) {
   const messageId = cleanDiscordId(post.messageId || post.id);
-
   return {
     id: messageId || createId('star_post'),
     messageId,
@@ -80,129 +49,79 @@ function normalizePost(post = {}) {
 }
 
 function normalizeSection(section = {}) {
-  const base = defaultStarboardSection();
   const source = section && typeof section === 'object' ? section : {};
   const posts = source.posts && typeof source.posts === 'object' ? source.posts : {};
-  const channelId = cleanDiscordId(source.channelId || source.starboardChannelId);
-
   return {
-    ...base,
-    ...source,
-    enabled: source.enabled !== false,
-    channelId,
-    starboardChannelId: channelId,
+    ...defaultStarboardSection(),
+    channelId: cleanDiscordId(source.channelId),
     logChannelId: cleanDiscordId(source.logChannelId),
-    managerRoleIds: cleanDiscordIdArray(source.managerRoleIds),
-    threshold: cleanPositiveInt(source.threshold, 3),
-    emoji: cleanString(source.emoji || '⭐', '⭐', 40),
+    managerRoleIds: asArray(source.managerRoleIds).map(cleanDiscordId).filter(Boolean),
+    threshold: Math.max(1, Math.floor(Number(source.threshold) || 3)),
+    emoji: String(source.emoji || '⭐').trim().slice(0, 40) || '⭐',
     allowBotMessages: source.allowBotMessages === true,
     allowSelfStar: source.allowSelfStar === true,
     requireUniqueUsers: source.requireUniqueUsers !== false,
-    posts: Object.fromEntries(
-      Object.entries(posts)
-        .map(([id, post]) => {
-          const normalized = normalizePost({ ...post, messageId: post.messageId || id });
-          return [normalized.messageId || normalized.id, normalized];
-        })
-        .filter(([, post]) => post.messageId && post.channelId)
-    ),
+    posts: Object.fromEntries(Object.entries(posts).map(([id, post]) => {
+      const normalized = normalizePost({ ...post, messageId: post.messageId || id });
+      return [normalized.messageId || normalized.id, normalized];
+    }).filter(([, post]) => post.messageId && post.channelId)),
     analytics: {
       posted: Math.max(0, Number(source.analytics?.posted || 0)),
       updated: Math.max(0, Number(source.analytics?.updated || 0)),
+      removed: Math.max(0, Number(source.analytics?.removed || 0)),
     },
+    createdAt: source.createdAt || now(),
     updatedAt: source.updatedAt || now(),
   };
 }
 
-function getModules(guildId) {
-  const modules = getGuildSection(guildId, MODULES_SECTION, {});
-  return modules && typeof modules === 'object' ? modules : {};
-}
-
 function getStarboardSection(guildId) {
-  const modules = getModules(guildId);
-  return normalizeSection(modules[SECTION] || defaultStarboardSection());
+  const modules = getGuildSection(guildId, MODULES_SECTION, {});
+  return normalizeSection(modules?.[SECTION] || {});
 }
 
 function saveStarboardSection(guildId, section, meta = {}) {
   const normalized = normalizeSection(section);
-
-  updateGuildSection(
-    guildId,
-    MODULES_SECTION,
-    (modules = {}) => ({
-      ...(modules && typeof modules === 'object' ? modules : {}),
-      [SECTION]: normalized,
-    }),
-    {},
-    meta
-  );
-
+  updateGuildSection(guildId, MODULES_SECTION, (modules = {}) => ({ ...modules, [SECTION]: normalized }), {}, meta);
   return normalized;
 }
 
 function updateStarboardSection(guildId, updater, meta = {}) {
   const current = getStarboardSection(guildId);
-  const next = typeof updater === 'function' ? updater(current) : updater;
-  return saveStarboardSection(guildId, normalizeSection(next), meta);
+  return saveStarboardSection(guildId, typeof updater === 'function' ? updater(current) : updater, meta);
 }
 
 function savePost(guildId, post, meta = {}) {
   const normalized = normalizePost(post);
-
-  return updateStarboardSection(
-    guildId,
-    (section) => ({
+  return updateStarboardSection(guildId, (section) => {
+    const exists = Boolean(section.posts?.[normalized.messageId]);
+    return {
       ...section,
-      posts: {
-        ...(section.posts || {}),
-        [normalized.messageId]: {
-          ...(section.posts?.[normalized.messageId] || {}),
-          ...normalized,
-          updatedAt: now(),
-        },
-      },
+      posts: { ...section.posts, [normalized.messageId]: { ...section.posts?.[normalized.messageId], ...normalized, updatedAt: now() } },
       analytics: {
-        ...(section.analytics || {}),
-        posted: Math.max(0, Number(section.analytics?.posted || 0)) + (section.posts?.[normalized.messageId] ? 0 : 1),
-        updated: Math.max(0, Number(section.analytics?.updated || 0)) + (section.posts?.[normalized.messageId] ? 1 : 0),
+        ...section.analytics,
+        posted: section.analytics.posted + (exists ? 0 : 1),
+        updated: section.analytics.updated + (exists ? 1 : 0),
       },
       updatedAt: now(),
-    }),
-    meta
-  ).posts[normalized.messageId];
+    };
+  }, meta).posts[normalized.messageId];
 }
 
-function getPost(guildId, messageId) {
-  return getStarboardSection(guildId).posts?.[messageId] || null;
-}
+const getPost = (guildId, messageId) => getStarboardSection(guildId).posts?.[messageId] || null;
 
 function deletePost(guildId, messageId, meta = {}) {
-  return updateStarboardSection(
-    guildId,
-    (section) => {
-      const posts = { ...(section.posts || {}) };
-      delete posts[messageId];
-
-      return {
-        ...section,
-        posts,
-        updatedAt: now(),
-      };
-    },
-    meta
-  );
+  return updateStarboardSection(guildId, (section) => {
+    const posts = { ...section.posts };
+    const existed = Boolean(posts[messageId]);
+    delete posts[messageId];
+    return {
+      ...section,
+      posts,
+      analytics: { ...section.analytics, removed: section.analytics.removed + (existed ? 1 : 0) },
+      updatedAt: now(),
+    };
+  }, meta);
 }
 
-module.exports = {
-  SECTION,
-  now,
-  defaultStarboardSection,
-  normalizeSection,
-  getStarboardSection,
-  saveStarboardSection,
-  updateStarboardSection,
-  savePost,
-  getPost,
-  deletePost,
-};
+module.exports = { SECTION, now, defaultStarboardSection, normalizeSection, getStarboardSection, saveStarboardSection, updateStarboardSection, savePost, getPost, deletePost };
