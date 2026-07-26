@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 const fs = require('fs');
 const path = require('path');
@@ -22,7 +22,7 @@ function walk(directory, extensions = JS_EXTENSIONS) {
   if (!fs.existsSync(directory)) return [];
 
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-    if (['node_modules', 'dist', '.git'].includes(entry.name)) return [];
+    if (['node_modules', 'dist', '.git', 'runtime'].includes(entry.name)) return [];
     const filePath = path.join(directory, entry.name);
     if (entry.isDirectory()) return walk(filePath, extensions);
     return entry.isFile() && extensions.includes(path.extname(entry.name)) ? [filePath] : [];
