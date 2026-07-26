@@ -72,7 +72,6 @@ async function detectRemoval(member) {
   const guild = member.guild;
   const userId = member.user.id;
 
-  // Discord can emit guildMemberRemove just before the corresponding audit entry is visible.
   await delay(1000);
 
   const banLog = await findRecentAuditLog(guild, userId, AuditLogEvent.MemberBanAdd, 25000);
@@ -204,20 +203,11 @@ module.exports = [
     },
   },
   {
-    name: 'userUpdate',
-    async execute(oldUser, newUser) {
-      await welcomeAvatarSync.handleUserAvatarUpdate(oldUser, newUser, welcomeManager).catch((error) => {
-        console.warn('[Welcome] Failed to process avatar update:', error.message || error);
-      });
-    },
-  },
-  {
     name: 'guildMemberRemove',
     async execute(member) {
       await statsManager.handleGuildMemberRemove(member);
       const removal = await detectRemoval(member);
 
-      // User communication is best-effort and must never block the staff audit log.
       await goodbyeDeparture.sendDepartureDm(member, removal).catch((error) => {
         console.warn('[Goodbye] Failed to process departure DM:', error.message || error);
       });
