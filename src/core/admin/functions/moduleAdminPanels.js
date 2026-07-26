@@ -146,7 +146,12 @@ function buildFieldList(module, config, scope) {
 }
 
 function buildModuleListPanel(memberDisplayName = 'Unknown User') {
-  const embed = new EmbedBuilder().setColor(PANEL_COLOR).setTitle('🧩 Goliath Modules').setDescription('Choose a studio to manage its modules.').setFooter({ text: `Requested by ${memberDisplayName}` }).setTimestamp();
+  const embed = new EmbedBuilder()
+    .setColor(PANEL_COLOR)
+    .setTitle('🧩 Goliath Modules')
+    .setDescription('\n🧩 Select a category to manage its modules.')
+    .setFooter({ text: `Requested by ${memberDisplayName}` })
+    .setTimestamp();
   const studioRows = chunkArray(STUDIO_CATALOG.map((studio) => button(`admin:studio:${studio.key}`, studio.label)), ITEMS_PER_ROW).map((items) => row(...items));
   return { embeds: [embed], components: [...studioRows, navigationRow('admin:home', '⬅️ Back to Admin Home')].slice(0, 5) };
 }
