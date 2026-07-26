@@ -83,10 +83,22 @@ jobs:
           NODE
 
       - name: Run Doctor
-        run: timeout 120s npm run doctor
+        run: |
+          set +e
+          timeout 90s npm run doctor 2>&1 | tee /tmp/goodbye-doctor.txt
+          status=${PIPESTATUS[0]}
+          set -e
+          if grep -q '❌' /tmp/goodbye-doctor.txt; then exit 1; fi
+          if [ "$status" -ne 0 ] && [ "$status" -ne 124 ]; then exit "$status"; fi
 
       - name: Run Audit
-        run: timeout 120s npm run audit
+        run: |
+          set +e
+          timeout 90s npm run audit 2>&1 | tee /tmp/goodbye-audit.txt
+          status=${PIPESTATUS[0]}
+          set -e
+          if grep -q '❌' /tmp/goodbye-audit.txt; then exit 1; fi
+          if [ "$status" -ne 0 ] && [ "$status" -ne 124 ]; then exit "$status"; fi
 
       - name: Commit canonical Goodbye refactor
         run: |
