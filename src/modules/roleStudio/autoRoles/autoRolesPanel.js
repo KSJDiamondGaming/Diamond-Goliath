@@ -8,7 +8,7 @@ const {
   RoleSelectMenuBuilder,
   AttachmentBuilder,
 } = require('discord.js');
-const autoroles = require('./autoRoles');
+const autoRoles = require('./autoRoles');
 
 function row(...components) {
   return new ActionRowBuilder().addComponents(...components);
@@ -22,10 +22,10 @@ function formatRoles(ids = []) {
   return ids.length ? ids.map((id) => `<@&${id}>`).join(', ') : '`None`';
 }
 
-async function buildAutorolesPanel(guild, memberDisplayName = 'Unknown User') {
-  const config = autoroles.getAutoRolesSection(guild.id);
-  const moduleEnabled = autoroles.isAutoRolesEnabled(guild.id);
-  const health = await autoroles.buildHealthReport(guild);
+async function buildAutoRolesPanel(guild, memberDisplayName = 'Unknown User') {
+  const config = autoRoles.getAutoRolesSection(guild.id);
+  const moduleEnabled = autoRoles.isAutoRolesEnabled(guild.id);
+  const health = await autoRoles.buildHealthReport(guild);
 
   const embed = new EmbedBuilder()
     .setColor(health.healthy ? 0x57f287 : 0xfaa61a)
@@ -67,12 +67,12 @@ async function buildAutorolesPanel(guild, memberDisplayName = 'Unknown User') {
 }
 
 async function updatePanel(interaction) {
-  const payload = await buildAutorolesPanel(interaction.guild, interaction.member?.displayName || interaction.user?.username);
+  const payload = await buildAutoRolesPanel(interaction.guild, interaction.member?.displayName || interaction.user?.username);
   if (interaction.deferred || interaction.replied) return interaction.editReply(payload);
   return interaction.update(payload);
 }
 
-async function handleAutorolesInteraction(interaction) {
+async function handleAutoRolesInteraction(interaction) {
   const customId = String(interaction.customId || '');
   if (!customId.startsWith('admin:autoRoles')) return false;
 
@@ -80,40 +80,40 @@ async function handleAutorolesInteraction(interaction) {
     if (customId === 'admin:autoRoles') return updatePanel(interaction);
 
     if (interaction.isRoleSelectMenu?.()) {
-      const roleIds = autoroles.cleanRoleIds(interaction.values || []);
-      if (customId === 'admin:autoRoles:joinRoles') autoroles.setJoinRoles(interaction.guild.id, roleIds, { actorId: interaction.user.id });
-      if (customId === 'admin:autoRoles:botRoles') autoroles.setBotRoles(interaction.guild.id, roleIds, { actorId: interaction.user.id });
+      const roleIds = autoRoles.cleanRoleIds(interaction.values || []);
+      if (customId === 'admin:autoRoles:joinRoles') autoRoles.setJoinRoles(interaction.guild.id, roleIds, { actorId: interaction.user.id });
+      if (customId === 'admin:autoRoles:botRoles') autoRoles.setBotRoles(interaction.guild.id, roleIds, { actorId: interaction.user.id });
       return updatePanel(interaction);
     }
 
-    if (customId === 'admin:autoRoles:enable') autoroles.setAutoRolesEnabled(interaction.guild.id, true, { actorId: interaction.user.id });
-    if (customId === 'admin:autoRoles:disable') autoroles.setAutoRolesEnabled(interaction.guild.id, false, { actorId: interaction.user.id });
+    if (customId === 'admin:autoRoles:enable') autoRoles.setAutoRolesEnabled(interaction.guild.id, true, { actorId: interaction.user.id });
+    if (customId === 'admin:autoRoles:disable') autoRoles.setAutoRolesEnabled(interaction.guild.id, false, { actorId: interaction.user.id });
     if (customId === 'admin:autoRoles:toggleBots') {
-      const config = autoroles.getAutoRolesSection(interaction.guild.id);
-      autoroles.updateSettings(interaction.guild.id, { applyToBots: !config.settings.applyToBots }, { actorId: interaction.user.id });
+      const config = autoRoles.getAutoRolesSection(interaction.guild.id);
+      autoRoles.updateSettings(interaction.guild.id, { applyToBots: !config.settings.applyToBots }, { actorId: interaction.user.id });
     }
     if (customId === 'admin:autoRoles:toggleReapply') {
-      const config = autoroles.getAutoRolesSection(interaction.guild.id);
-      autoroles.updateSettings(interaction.guild.id, { reapplyOnStartup: !config.settings.reapplyOnStartup }, { actorId: interaction.user.id });
+      const config = autoRoles.getAutoRolesSection(interaction.guild.id);
+      autoRoles.updateSettings(interaction.guild.id, { reapplyOnStartup: !config.settings.reapplyOnStartup }, { actorId: interaction.user.id });
     }
     if (customId === 'admin:autoRoles:repair') {
       await interaction.deferUpdate();
-      await autoroles.repairConfiguration(interaction.guild, { actorId: interaction.user.id });
+      await autoRoles.repairConfiguration(interaction.guild, { actorId: interaction.user.id });
       return updatePanel(interaction);
     }
     if (customId === 'admin:autoRoles:reapply') {
       await interaction.deferUpdate();
-      await autoroles.reapplyToGuild(interaction.guild, { reason: `Manual reapply by ${interaction.user.tag}` });
+      await autoRoles.reapplyToGuild(interaction.guild, { reason: `Manual reapply by ${interaction.user.tag}` });
       return updatePanel(interaction);
     }
     if (customId === 'admin:autoRoles:reset') {
       await interaction.deferUpdate();
-      autoroles.resetAutoRoles(interaction.guild.id, { actorId: interaction.user.id });
+      autoRoles.resetAutoRoles(interaction.guild.id, { actorId: interaction.user.id });
       return updatePanel(interaction);
     }
     if (customId === 'admin:autoRoles:export') {
       const attachment = new AttachmentBuilder(
-        Buffer.from(JSON.stringify(autoroles.exportConfiguration(interaction.guild.id), null, 2), 'utf8'),
+        Buffer.from(JSON.stringify(autoRoles.exportConfiguration(interaction.guild.id), null, 2), 'utf8'),
         { name: `goliath-auto-roles-${interaction.guild.id}.json` }
       );
       await interaction.reply({ content: '📤 Auto Roles configuration export.', files: [attachment], ephemeral: true });
@@ -130,8 +130,6 @@ async function handleAutorolesInteraction(interaction) {
 }
 
 module.exports = {
-  buildAutorolesPanel,
-  handleAutorolesInteraction,
-  buildAutoRolesPanel: buildAutorolesPanel,
-  handleAutoRolesInteraction: handleAutorolesInteraction,
+  buildAutoRolesPanel,
+  handleAutoRolesInteraction,
 };
