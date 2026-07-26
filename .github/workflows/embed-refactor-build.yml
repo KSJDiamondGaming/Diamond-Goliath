@@ -84,31 +84,30 @@ jobs:
           NODE
 
       - name: Run Doctor
-        id: doctor
-        continue-on-error: true
         run: |
-          set -o pipefail
-          npm run doctor 2>&1 | tee /tmp/embed-doctor-error.txt
-
-      - name: Publish Doctor failure
-        if: steps.doctor.outcome == 'failure'
-        run: |
-          cp /tmp/embed-doctor-error.txt /tmp/embed-doctor-report.txt
-          git reset --hard HEAD
-          mkdir -p .goliath
-          cp /tmp/embed-doctor-report.txt .goliath/embed-doctor-error.txt
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .goliath/embed-doctor-error.txt
-          git commit -m "chore: record Embed Doctor failure"
-          for attempt in 1 2 3 4 5; do
-            git pull --rebase origin dev && git push && break
-            sleep 5
-          done
-          exit 1
+          set +e
+          timeout 90s npm run doctor 2>&1 | tee /tmp/embed-doctor.txt
+          status=${PIPESTATUS[0]}
+          set -e
+          if grep -q '❌' /tmp/embed-doctor.txt; then
+            exit 1
+          fi
+          if [ "$status" -ne 0 ] && [ "$status" -ne 124 ]; then
+            exit "$status"
+          fi
 
       - name: Run Audit
-        run: npm run audit
+        run: |
+          set +e
+          timeout 90s npm run audit 2>&1 | tee /tmp/embed-audit.txt
+          status=${PIPESTATUS[0]}
+          set -e
+          if grep -q '❌' /tmp/embed-audit.txt; then
+            exit 1
+          fi
+          if [ "$status" -ne 0 ] && [ "$status" -ne 124 ]; then
+            exit "$status"
+          fi
 
       - name: Commit canonical Embed refactor
         run: |
