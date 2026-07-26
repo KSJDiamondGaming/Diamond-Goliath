@@ -13,7 +13,7 @@ function optionalRequire(label, modulePath, fallback = {}) {
 
 const verificationManager = optionalRequire('verification manager', '../../modules/securityStudio/verificationManager');
 const ticketInteractionHandler = optionalRequire('tickets', '../../modules/feedbackStudio/tickets/tickets');
-const polls = optionalRequire('polls', '../../modules/communityStudio/polls/polls');
+const pollsInteractions = optionalRequire('polls', '../../modules/communityStudio/polls/pollsInteractions');
 const tempVoiceInteractionHandler = optionalRequire('temp voice', '../../modules/utilityStudio/tempVoice/tempVoiceInteractionHandler');
 const suggestionsInteractionHandler = optionalRequire('suggestions', '../../modules/feedbackStudio/suggestions/suggestionsInteractionHandler');
 const giveawaysInteractionHandler = optionalRequire('giveaways', '../../modules/communityStudio/giveaways/giveawaysInteractionHandler');
@@ -27,7 +27,6 @@ const reactionRolesAdminPanel = optionalRequire('reaction roles admin', '../../m
 const suggestionsAdminPanel = optionalRequire('suggestions admin', '../../modules/feedbackStudio/suggestions/suggestionsAdminPanel');
 const giveawaysAdminPanel = optionalRequire('giveaways admin', '../../modules/communityStudio/giveaways/giveawaysAdminPanel');
 const formsAdminPanel = optionalRequire('forms admin', '../../modules/feedbackStudio/forms/formsAdminPanel');
-const pollsAdminPanel = optionalRequire('polls admin', '../../modules/communityStudio/polls/pollsPanel');
 const starboardAdminPanel = optionalRequire('starboard admin', '../../modules/messageStudio/starboard/starboardAdminPanel');
 const stickyAdminPanel = optionalRequire('sticky admin', '../../modules/messageStudio/sticky/stickyAdminPanel');
 const levelingInteractions = optionalRequire('leveling', '../../modules/communityStudio/leveling/levelingInteractions');
@@ -42,7 +41,7 @@ const goodbyePanel = optionalRequire('goodbye', '../../modules/messageStudio/goo
 const moduleAdminPanels = optionalRequire('generic module admin', '../../core/admin/functions/moduleAdminPanels');
 
 const MODULE_STUDIO_PREFIXES = [
-  ['communityStudio', ['admin:invites', 'invites:', 'admin:giveaways', 'giveaways:', 'admin:leveling', 'leveling:', 'admin:polls', 'polls:']],
+  ['communityStudio', ['admin:invites', 'invites:', 'admin:giveaways', 'giveaways:', 'admin:leveling', 'leveling:', 'admin:polls', 'poll_vote:']],
   ['feedbackStudio', ['admin:forms', 'forms:', 'admin:suggestions', 'suggestions:', 'admin:tickets', 'tickets:']],
   ['messageStudio', ['admin:embed', 'embed:', 'admin:goodbye', 'goodbye:', 'admin:starboard', 'starboard:', 'admin:sticky', 'sticky:', 'admin:welcome', 'welcome:']],
   ['roleStudio', ['admin:autoRoles', 'autoroles:', 'admin:reactionRoles', 'reactionRoles:', 'admin:temporaryRoles', 'temporaryRoles:', 'admin:timedRoles', 'timedRoles:']],
@@ -74,14 +73,12 @@ async function callHandler(target, method, ...args) {
   if (typeof target?.[method] !== 'function') return false;
   return Boolean(await target[method](...args));
 }
-
 function isValidHttpUrl(value) {
   try {
     const parsed = new URL(String(value || '').trim());
     return parsed.protocol === 'http:' || parsed.protocol === 'https:';
   } catch { return false; }
 }
-
 function sanitizeEmbedData(embed) {
   const data = typeof embed?.toJSON === 'function' ? embed.toJSON() : { ...embed };
   if (!data || typeof data !== 'object') return data;
@@ -102,7 +99,6 @@ function sanitizeEmbedData(embed) {
   if (sanitized.image?.url && !isValidHttpUrl(sanitized.image.url)) delete sanitized.image;
   return sanitized;
 }
-
 function resolveParentStudio(customId) {
   const id = String(customId || '');
   for (const [studioKey, prefixes] of MODULE_STUDIO_PREFIXES) {
@@ -110,7 +106,6 @@ function resolveParentStudio(customId) {
   }
   return null;
 }
-
 function normalizeBackComponent(component, interaction) {
   const data = typeof component?.toJSON === 'function' ? component.toJSON() : { ...component };
   const customId = data?.custom_id || data?.customId || null;
@@ -118,7 +113,6 @@ function normalizeBackComponent(component, interaction) {
   if (!parentStudio || customId !== 'admin:modules') return data;
   return { ...data, custom_id: `admin:studio:${parentStudio}`, label: '⬅️ Back' };
 }
-
 function sanitizeComponentPayload(payload, interaction) {
   if (!payload || typeof payload !== 'object') return payload;
   const sanitizedPayload = {
@@ -143,7 +137,6 @@ function sanitizeComponentPayload(payload, interaction) {
   }
   return { ...sanitizedPayload, components: rows };
 }
-
 function wrapInteractionResponses(interaction) {
   if (!interaction || interaction.__goliathResponsesWrapped) return;
   interaction.__goliathResponsesWrapped = true;
@@ -153,13 +146,11 @@ function wrapInteractionResponses(interaction) {
     interaction[methodName] = (payload, ...args) => original(sanitizeComponentPayload(payload, interaction), ...args);
   }
 }
-
 const startsWith = (interaction, prefix) => String(interaction?.customId || '').startsWith(prefix);
 function isVerificationMemberInteraction(interaction) {
   if (!interaction?.isButton?.()) return false;
   return typeof verificationManager?.parseVerifyCustomId === 'function' && Boolean(verificationManager.parseVerifyCustomId(interaction.customId));
 }
-
 async function safeInteractionError(interaction, error = null) {
   const detail = error?.message ? `\n\`${String(error.message).slice(0, 300)}\`` : '';
   const payload = { content: `❌ Interaction failed.${detail}`, flags: MessageFlags.Ephemeral };
@@ -172,14 +163,12 @@ async function safeInteractionError(interaction, error = null) {
     await interaction?.reply?.(payload).catch(() => null);
   } catch { }
 }
-
 async function fetchFreshMember(interaction) {
   const guild = interaction?.guild;
   const userId = interaction?.user?.id;
   if (!guild || !userId) return null;
   return guild.members.fetch({ user: userId, force: true }).catch(() => guild.members.fetch(userId).catch(() => null));
 }
-
 async function handleVerificationMemberInteraction(interaction) {
   if (typeof verificationManager?.verifyMember !== 'function') throw new Error('Verification handler is unavailable.');
   if (!interaction.deferred && !interaction.replied) await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -219,16 +208,13 @@ module.exports = {
         await command.execute(interaction, client);
         return;
       }
-
       const interactionAgeMs = Math.max(0, Date.now() - Number(interaction.createdTimestamp || Date.now()));
       const customId = String(interaction.customId || '');
       if (interactionAgeMs > 1500) console.warn(`[InteractionCreate] Slow dispatch before routing: customId=${customId} age=${interactionAgeMs}ms pid=${process.pid}`);
-
       if (customId === 'admin:modules' || customId.startsWith('admin:modules:page:') || customId.startsWith('admin:module:') || customId.startsWith('admin:studio:')) {
         if (!await callHandler(moduleAdminPanels, 'handleModuleAdminInteraction', interaction)) throw new Error(`Module admin did not handle ${customId}.`);
         return;
       }
-
       if (customId === 'admin:invites') {
         const panel = loadInvitesAdminPanel();
         if (typeof panel?.buildInviteStudioPayload !== 'function') {
@@ -258,7 +244,7 @@ module.exports = {
       if (await callHandler(suggestionsAdminPanel, 'handleSuggestionsAdminInteraction', interaction)) return;
       if (await callHandler(giveawaysAdminPanel, 'handleGiveawaysAdminInteraction', interaction)) return;
       if (await callHandler(formsAdminPanel, 'handleFormsAdminInteraction', interaction)) return;
-      if (await callHandler(pollsAdminPanel, 'handlePollsAdminInteraction', interaction)) return;
+      if (await callHandler(pollsInteractions, 'handlePollsInteraction', interaction)) return;
       if (await callHandler(starboardAdminPanel, 'handleStarboardAdminInteraction', interaction)) return;
       if (await callHandler(stickyAdminPanel, 'handleStickyAdminInteraction', interaction)) return;
       if (await callHandler(levelingInteractions, 'handleLevelingInteraction', interaction)) return;
@@ -271,7 +257,6 @@ module.exports = {
       if (await callHandler(formsInteractionHandler, 'handleFormsInteraction', interaction)) return;
       if (await callHandler(suggestionsInteractionHandler, 'handleSuggestionsInteraction', interaction)) return;
       if (await callHandler(giveawaysInteractionHandler, 'handleGiveawayInteraction', interaction)) return;
-      if (interaction.isButton?.() && await callHandler(polls, 'vote', interaction)) return;
       if (await callHandler(ticketInteractionHandler, 'handleTicketInteraction', interaction, client)) return;
     } catch (error) {
       console.error('[InteractionCreate] Failed to handle interaction:', error);
