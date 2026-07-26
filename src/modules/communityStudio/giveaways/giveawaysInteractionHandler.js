@@ -1,45 +1,58 @@
 'use strict';
 
+const { MessageFlags } = require('discord.js');
+const giveawaysStore = require('./giveawaysStore');
 const giveawaysManager = require('./giveawaysManager');
+const giveawaysPanel = require('./giveawaysPanel');
 
-function isGiveawayInteraction(interaction) {
-  return String(interaction?.customId || '').startsWith('giveaways:');
-}
+function getMemberDisplayName(interaction) { return interaction.member?.displayName || interaction.user?.displayName || interaction.user?.username || 'Unknown User'; }
+function save(guild, updater) { return giveawaysStore.updateSection(guild.id, updater, guild); }
+async function safeUpdate(interaction, payload) { if (interaction.deferred || interaction.replied) { await interaction.editReply(payload); return true; } await interaction.update(payload); return true; }
 
-async function safeReply(interaction, content) {
-  const payload = { content, flags: 64 };
-  if (interaction.deferred || interaction.replied) return interaction.followUp(payload).catch(() => null);
-  return interaction.reply(payload).catch(() => null);
-}
-
-async function handleGiveawayInteraction(interaction) {
-  if (!interaction?.guildId || !isGiveawayInteraction(interaction)) return false;
-
+async function handleGiveawaysAdminInteraction(interaction) {
+  const customId = String(interaction.customId || '');
+  if (!customId.startsWith('admin:giveaways')) return false;
+  const memberDisplayName = getMemberDisplayName(interaction);
   try {
-    const [, action, giveawayId] = String(interaction.customId || '').split(':');
-
-    if (interaction.isButton?.() && action === 'enter') {
-      await interaction.deferUpdate().catch(() => null);
-      await giveawaysManager.enterGiveaway(interaction, giveawayId);
-      await safeReply(interaction, '✅ You entered the giveaway.');
-      return true;
+    if (customId === 'admin:giveaways') return safeUpdate(interaction, giveawaysPanel.buildGiveawaysAdminPanel(interaction.guild, memberDisplayName));
+    if (interaction.isChannelSelectMenu?.()) {
+      const value = interaction.values?.[0] || null;
+      const prop = customId.split(':')[2];
+      if (prop === 'announcementChannel') save(interaction.guild, (section) => ({ ...section, announcementChannelId: value }));
+      if (prop === 'logChannel') save(interaction.guild, (section) => ({ ...section, logChannelId: value }));
+      return safeUpdate(interaction, giveawaysPanel.buildGiveawaysAdminPanel(interaction.guild, memberDisplayName));
     }
-
-    if (interaction.isButton?.() && action === 'end') {
-      await interaction.deferUpdate().catch(() => null);
-      await giveawaysManager.endGiveaway(interaction, giveawayId, interaction.user.id);
-      await safeReply(interaction, '✅ Giveaway ended.');
-      return true;
+    if (interaction.isRoleSelectMenu?.() && customId === 'admin:giveaways:managerRoles') {
+      save(interaction.guild, (section) => ({ ...section, managerRoleIds: [...new Set(interaction.values || [])] }));
+      return safeUpdate(interaction, giveawaysPanel.buildGiveawaysAdminPanel(interaction.guild, memberDisplayName));
     }
-
-    return false;
+    if (customId === 'admin:giveaways:enable') save(interaction.guild, (section) => ({ ...section, enabled: true }));
+    if (customId === 'admin:giveaways:disable') save(interaction.guild, (section) => ({ ...section, enabled: false }));
+    if (customId === 'admin:giveaways:toggleMultiple') save(interaction.guild, (section) => ({ ...section, allowMultipleEntries: !section.allowMultipleEntries }));
+    if (customId === 'admin:giveaways:toggleRequireRole') save(interaction.guild, (section) => ({ ...section, requireRole: !section.requireRole }));
+    if (customId === 'admin:giveaways:togglePing') save(interaction.guild, (section) => ({ ...section, pingWinners: !section.pingWinners }));
+    if (customId === 'admin:giveaways:deployTest') {
+      await interaction.deferUpdate().catch(() => null);
+      await giveawaysManager.deployTestGiveaway(interaction.guild, interaction.user.id);
+    }
+    return safeUpdate(interaction, giveawaysPanel.buildGiveawaysAdminPanel(interaction.guild, memberDisplayName));
   } catch (error) {
-    await safeReply(interaction, `❌ Giveaway action failed: ${error.message}`);
+    const payload = { content: `❌ Giveaways setup failed: ${error.message}`, flags: MessageFlags.Ephemeral };
+    if (interaction.deferred || interaction.replied) await interaction.followUp(payload).catch(() => null); else await interaction.reply(payload).catch(() => null);
     return true;
   }
 }
 
-module.exports = {
-  isGiveawayInteraction,
-  handleGiveawayInteraction,
-};
+function isGiveawayInteraction(interaction) { return String(interaction?.customId || '').startsWith('giveaways:'); }
+async function safeReply(interaction, content) { const payload = { content, flags: MessageFlags.Ephemeral }; if (interaction.deferred || interaction.replied) return interaction.followUp(payload).catch(() => null); return interaction.reply(payload).catch(() => null); }
+async function handleGiveawayInteraction(interaction) {
+  if (!interaction?.guildId || !isGiveawayInteraction(interaction)) return false;
+  try {
+    const [, action, giveawayId] = String(interaction.customId || '').split(':');
+    if (interaction.isButton?.() && action === 'enter') { await interaction.deferUpdate().catch(() => null); await giveawaysManager.enterGiveaway(interaction, giveawayId); await safeReply(interaction, '✅ You entered the giveaway.'); return true; }
+    if (interaction.isButton?.() && action === 'end') { await interaction.deferUpdate().catch(() => null); await giveawaysManager.endGiveaway(interaction, giveawayId); await safeReply(interaction, '✅ Giveaway ended.'); return true; }
+    return false;
+  } catch (error) { await safeReply(interaction, `❌ Giveaway action failed: ${error.message}`); return true; }
+}
+
+module.exports = { isGiveawayInteraction, handleGiveawayInteraction, handleGiveawaysAdminInteraction };
