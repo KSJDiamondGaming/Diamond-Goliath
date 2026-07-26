@@ -2,6 +2,7 @@
 
 const express = require('express');
 const timedRoles = require('./timedRoles');
+const timedRolesHealth = require('./timedRolesHealth');
 const { validateRoleSelection, isGoliathPermissionError } = require('../../../core/security/goliathPermissionGuard');
 
 const router = express.Router();
@@ -39,7 +40,7 @@ async function overview(req, id) {
       enabled: config.enabled !== false,
       ruleCount: timedRoles.listRules(id).length,
       analytics: config.analytics,
-      health: target ? await timedRoles.buildHealth(target) : null,
+      health: target ? await timedRolesHealth.buildTimedRolesHealth(target) : null,
     },
   };
 }
@@ -106,8 +107,8 @@ router.post('/:guildId/repair', async (req, res) => {
     const id = guildId(req);
     const target = await guild(req, id);
     if (!target) throw new Error('Guild is unavailable.');
-    await timedRoles.repair(target, { actorId: actor(req) });
-    return ok(res, await overview(req, id));
+    const repair = await timedRolesHealth.repairTimedRoles(target, { actorId: actor(req) });
+    return ok(res, { repair, ...(await overview(req, id)) });
   } catch (error) { return fail(res, error); }
 });
 router.get('/:guildId/export', (req, res) => {
