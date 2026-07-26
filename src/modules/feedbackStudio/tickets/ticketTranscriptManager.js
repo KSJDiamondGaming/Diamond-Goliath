@@ -4,6 +4,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { getRuntimeRoot } = require('../../../config/runtimePaths');
 
 const {
   AttachmentBuilder,
@@ -40,13 +41,8 @@ function getCreatorId(ticket) {
   return ticket?.creatorId || ticket?.createdBy || ticket?.userId || null;
 }
 
-function getRuntimeRoot() {
-  const mode = process.env.BOT_MODE || process.env.NODE_ENV || 'dev';
-  return path.join(process.cwd(), 'runtime', String(mode).toLowerCase());
-}
-
 function getTranscriptDir(guildId) {
-  return path.join(getRuntimeRoot(), 'guilds', String(guildId), 'transcripts');
+  return path.join(getRuntimeRoot(process.env.BOT_MODE || process.env.NODE_ENV || 'dev'), 'guilds', String(guildId), 'transcripts');
 }
 
 function ensureDir(dir) {
