@@ -2,7 +2,14 @@ const fs = require('fs');
 const path = require('path');
 
 function resolveBotMode(botMode = process.env.BOT_MODE || 'DEV') {
-  return String(botMode).toLowerCase();
+  const rawMode = botMode && typeof botMode === 'object'
+    ? botMode.botMode || botMode.mode || botMode.runtimeMode || 'DEV'
+    : botMode;
+  const mode = String(rawMode || 'DEV').trim().toUpperCase();
+
+  if (mode === 'PRODUCTION' || mode === 'PROD') return 'production';
+  if (mode === 'BETA') return 'beta';
+  return 'dev';
 }
 
 /* ---------------- ROOT ---------------- */
@@ -78,6 +85,7 @@ function resolveRuntimePath(
 }
 
 module.exports = {
+  resolveBotMode,
   getRuntimeRoot,
   getRuntimePaths,
   ensureRuntimePaths,
