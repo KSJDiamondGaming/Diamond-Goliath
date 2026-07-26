@@ -79,7 +79,28 @@ jobs:
           NODE
 
       - name: Run Doctor
-        run: npm run doctor
+        id: doctor
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          npm run doctor 2>&1 | tee /tmp/embed-doctor-error.txt
+
+      - name: Publish Doctor failure
+        if: steps.doctor.outcome == 'failure'
+        run: |
+          cp /tmp/embed-doctor-error.txt /tmp/embed-doctor-report.txt
+          git reset --hard HEAD
+          mkdir -p .goliath
+          cp /tmp/embed-doctor-report.txt .goliath/embed-doctor-error.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .goliath/embed-doctor-error.txt
+          git commit -m "chore: record Embed Doctor failure"
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase origin dev && git push && break
+            sleep 5
+          done
+          exit 1
 
       - name: Run Audit
         run: npm run audit
