@@ -17,6 +17,19 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Record workflow run id
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p .goliath
+          echo "${GITHUB_RUN_ID}" > .goliath/tickets-build-run-id.txt
+          git add .goliath/tickets-build-run-id.txt
+          git commit -m "chore: record Tickets build run"
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase origin dev && git push && break
+            sleep 5
+          done
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -55,4 +68,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           git commit -m "Refactor Tickets into eight canonical files"
-          git push
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase --autostash origin dev && git push && break
+            sleep 5
+          done
