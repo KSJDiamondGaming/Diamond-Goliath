@@ -2,7 +2,7 @@
 
 const { EmbedBuilder } = require('discord.js');
 
-const formStore = require('./formStore');
+const forms = require('./forms');
 const ticketManager = require('../tickets/ticketManager');
 const ticketChannelManager = require('../tickets/ticketChannelManager');
 const { sendTicketControlMessage } = require('../tickets/ticketPanelManager');
@@ -53,12 +53,12 @@ function buildUserMention(userId) {
 }
 
 function getWorkflowActions(form = {}) {
-  return formStore.normalizeWorkflowActions(form.actions || form.workflowActions || {}, form.action);
+  return forms.normalizeWorkflowActions(form.actions || form.workflowActions || {}, form.action);
 }
 
 function shouldCreateTicket(form = {}) {
   const actions = getWorkflowActions(form);
-  return form.action === formStore.FORM_ACTIONS.CREATE_TICKET || actions.createTicket === true;
+  return form.action === forms.FORM_ACTIONS.CREATE_TICKET || actions.createTicket === true;
 }
 
 function buildSubmissionTicketEmbed(form, submission, ticket) {
@@ -104,7 +104,7 @@ function buildFormTicketPanel(form = {}) {
 
 function addTimeline(guildId, submissionId, entry, guild) {
   try {
-    return formStore.addSubmissionTimeline(guildId, submissionId, entry, guild);
+    return forms.addSubmissionTimeline(guildId, submissionId, entry, guild);
   } catch (error) {
     console.error('[Forms] Failed to append submission timeline:', error);
     return null;
@@ -129,8 +129,8 @@ async function sendConfirmationDm(interaction, form, submission, bridgeResult) {
     if (bridgeResult?.channel?.id) lines.push(`Channel: <#${bridgeResult.channel.id}>`);
 
     await user.send({ content: lines.join('\n').slice(0, 1900) });
-    formStore.incrementAnalytics(interaction.guildId, { dmSent: 1 }, interaction.guild);
-    formStore.updateSubmission(interaction.guildId, submission.submissionId, {
+    forms.incrementAnalytics(interaction.guildId, { dmSent: 1 }, interaction.guild);
+    forms.updateSubmission(interaction.guildId, submission.submissionId, {
       workflow: { ...(submission.workflow || {}), confirmationDmSent: true, confirmationDmSentAt: now() },
     }, interaction.guild);
     addTimeline(interaction.guildId, submission.submissionId, {
@@ -176,7 +176,7 @@ async function createTicketForSubmission({ interaction, form, submission } = {})
   if (workflowLocks.has(lockKey)) return workflowLocks.get(lockKey);
 
   const task = (async () => {
-    const freshSubmission = formStore.getSubmission?.(interaction.guildId, submission.submissionId) || submission;
+    const freshSubmission = forms.getSubmission?.(interaction.guildId, submission.submissionId) || submission;
     if (freshSubmission.ticketId) {
       return {
         ok: true,
@@ -273,11 +273,11 @@ async function createTicketForSubmission({ interaction, form, submission } = {})
         }).catch((error) => console.error('[Forms] Failed to post submission embed in ticket channel:', error));
 
         if (actions.notifyStaff !== false && roleIds.length) {
-          formStore.incrementAnalytics(interaction.guildId, { staffNotified: 1 }, interaction.guild);
+          forms.incrementAnalytics(interaction.guildId, { staffNotified: 1 }, interaction.guild);
         }
       }
 
-      const updatedSubmission = formStore.updateSubmission(interaction.guildId, submission.submissionId, {
+      const updatedSubmission = forms.updateSubmission(interaction.guildId, submission.submissionId, {
         ticketId: savedTicket.ticketId,
         ticketChannelId: channel?.id || null,
         status: 'pending',
@@ -293,7 +293,7 @@ async function createTicketForSubmission({ interaction, form, submission } = {})
       }, interaction.guild);
 
       if (!updatedSubmission?.ticketId) throw new Error('Ticket was created but the form submission could not be linked.');
-      formStore.incrementAnalytics(interaction.guildId, { ticketsCreated: 1 }, interaction.guild);
+      forms.incrementAnalytics(interaction.guildId, { ticketsCreated: 1 }, interaction.guild);
 
       const result = { ok: true, ticket: savedTicket, channel, submission: updatedSubmission };
       await sendConfirmationDm(interaction, form, updatedSubmission, result);
@@ -323,9 +323,311 @@ async function createTicketForSubmission({ interaction, form, submission } = {})
   }
 }
 
+
+
+
+function helperNormaliseStatus(record = {}) {
+  return String(record.status || 'pending').trim().toLowerCase();
+}
+
+function getWorkflow(record = {}) {
+  return record.workflow && typeof record.workflow === 'object' ? record.workflow : {};
+}
+
+function getReviewerId(record = {}) {
+  const workflow = getWorkflow(record);
+  return workflow.reviewerId || workflow.assignedTo || record.reviewedBy || null;
+}
+
+function getNotes(record = {}) {
+  const notes = getWorkflow(record).internalNotes;
+  return Array.isArray(notes) ? notes : [];
+}
+
+function getWorkflowState(record = {}) {
+  const workflow = getWorkflow(record);
+  return String(workflow.reviewState || workflow.status || helperNormaliseStatus(record)).trim().toLowerCase();
+}
+
+function getNextAction(record = {}) {
+  const status = helperNormaliseStatus(record);
+  if (['approved', 'denied', 'closed'].includes(status)) return 'No action required';
+  if (status === 'request_info' || getWorkflowState(record) === 'request_info') return 'Waiting for more information';
+  if (!getReviewerId(record)) return 'Assign reviewer';
+  return 'Review submission';
+}
+
+function buildReviewSnapshot(record = {}) {
+  const reviewerId = getReviewerId(record);
+  const notes = getNotes(record);
+
+  return {
+    status: helperNormaliseStatus(record),
+    workflowState: getWorkflowState(record),
+    nextAction: getNextAction(record),
+    reviewerId,
+    assigned: Boolean(reviewerId),
+    noteCount: notes.length,
+    lastNoteAt: notes.at(-1)?.createdAt || null,
+  };
+}
+
+function isOpenReview(record = {}) {
+  return !['approved', 'denied', 'closed'].includes(helperNormaliseStatus(record));
+}
+
+function buildWorkflowTimeline(record = {}) {
+  return Array.isArray(record.timeline) ? record.timeline : [];
+}
+
+
+
+
+/**
+ * GOLIATH FORM WORKFLOW SUMMARY
+ *
+ * Small shared formatter for Forms -> Tickets dashboard/API surfaces.
+ * Keeps workflow metadata consistent without coupling dashboard routes to
+ * raw submission storage shape.
+ */
+
+const workflowHelpers = { normaliseStatus: helperNormaliseStatus, getWorkflow, getReviewerId, getNotes, getWorkflowState, getNextAction, buildReviewSnapshot, isOpenReview, buildWorkflowTimeline };
+
+function normaliseStatus(submission = {}) {
+  return String(submission.status || 'pending').toLowerCase();
+}
+
+function getTicketId(submission = {}) {
+  return submission.ticketId || submission.workflow?.ticketId || null;
+}
+
+function getTicketDisplayId(submission = {}) {
+  return submission.ticketDisplayId || submission.workflow?.ticketDisplayId || null;
+}
+
+function getTicketChannelId(submission = {}) {
+  return submission.ticketChannelId || submission.workflow?.ticketChannelId || null;
+}
+
+function getTicketControlMessageId(submission = {}) {
+  return (
+    submission.ticketControlMessageId ||
+    submission.workflow?.ticketControlMessageId ||
+    submission.discordMessageId ||
+    null
+  );
+}
+
+function isTicketLinked(submission = {}) {
+  return Boolean(getTicketId(submission));
+}
+
+function isTicketChannelLinked(submission = {}) {
+  return Boolean(getTicketChannelId(submission));
+}
+
+function isMissingTicketChannel(submission = {}) {
+  return isTicketLinked(submission) && !isTicketChannelLinked(submission);
+}
+
+function formCreatesTicket(form = {}) {
+  const actions = form.actions || form.workflowActions || {};
+  return form.action === 'create_ticket' || actions.createTicket === true;
+}
+
+function formReadiness(form = {}) {
+  const issues = [];
+  const fields = Array.isArray(form.fields) ? form.fields : [];
+
+  if (form.enabled === false) issues.push('Form is disabled.');
+  if (!fields.length) issues.push('Form has no questions configured.');
+
+  if (formCreatesTicket(form)) {
+    if (!form.ticketType) issues.push('Ticket type is missing.');
+    if (!form.outputCategoryId) issues.push('Output category is missing.');
+  }
+
+  fields.forEach((field, index) => {
+    if (!field.id) issues.push(`Question ${index + 1} is missing an ID.`);
+    if (!field.label) issues.push(`Question ${index + 1} is missing a label.`);
+    if ((field.type === 'select' || field.type === 'checkbox') && (!Array.isArray(field.options) || !field.options.length)) {
+      issues.push(`${field.label || `Question ${index + 1}`} needs options.`);
+    }
+  });
+
+  return {
+    ready: issues.length === 0,
+    issueCount: issues.length,
+    issues,
+  };
+}
+
+function buildSubmissionWorkflowSummary(form = null, submission = {}) {
+  const ticketId = getTicketId(submission);
+  const ticketChannelId = getTicketChannelId(submission);
+  const ticketControlMessageId = getTicketControlMessageId(submission);
+  const workflow = submission.workflow || {};
+  const review = workflowHelpers.buildReviewSnapshot(submission);
+
+  return {
+    form: form ? {
+      formId: form.formId,
+      name: form.name || form.formId,
+      action: form.action || 'create_ticket',
+      ticketType: form.ticketType || form.formId,
+      outputCategoryId: form.outputCategoryId || null,
+      logChannelId: form.logChannelId || null,
+      staffRoleIds: Array.isArray(form.staffRoleIds) ? form.staffRoleIds : [],
+      readiness: formReadiness(form),
+    } : null,
+
+    submission: {
+      submissionId: submission.submissionId || null,
+      formId: submission.formId || form?.formId || null,
+      status: normaliseStatus(submission),
+      workflowState: review.workflowState,
+      userId: submission.userId || null,
+      userTag: submission.userTag || null,
+      createdAt: submission.createdAt || null,
+      updatedAt: submission.updatedAt || null,
+      reviewedAt: submission.reviewedAt || null,
+      reviewedBy: submission.reviewedBy || null,
+    },
+
+    ticket: {
+      ticketId,
+      displayId: getTicketDisplayId(submission),
+      channelId: ticketChannelId,
+      controlMessageId: ticketControlMessageId,
+      created: Boolean(ticketId),
+      channelLinked: Boolean(ticketChannelId),
+      controlMessageLinked: Boolean(ticketControlMessageId),
+      missingChannel: Boolean(ticketId && !ticketChannelId),
+    },
+
+    review,
+
+    workflow: {
+      ...workflow,
+      ticketLinked: Boolean(ticketId),
+      ticketChannelLinked: Boolean(ticketChannelId),
+      ticketControlMessageLinked: Boolean(ticketControlMessageId),
+      missingTicketChannel: Boolean(ticketId && !ticketChannelId),
+      reviewState: review.workflowState,
+      nextAction: review.nextAction,
+    },
+
+    answers: submission.answers || {},
+    notes: workflowHelpers.getNotes(submission),
+    timeline: workflowHelpers.buildWorkflowTimeline(submission),
+  };
+}
+
+function buildFormsWorkflowOverview(forms = [], submissions = []) {
+  const statusCounts = submissions.reduce((counts, submission) => {
+    const status = normaliseStatus(submission);
+    counts[status] = (counts[status] || 0) + 1;
+    return counts;
+  }, {});
+
+  const ticketLinkedSubmissionCount = submissions.filter(isTicketLinked).length;
+  const ticketChannelLinkedSubmissionCount = submissions.filter(isTicketChannelLinked).length;
+  const missingTicketChannelCount = submissions.filter(isMissingTicketChannel).length;
+  const assignedSubmissionCount = submissions.filter((submission) => Boolean(workflowHelpers.getReviewerId(submission))).length;
+  const unassignedSubmissionCount = submissions.filter((submission) => workflowHelpers.isOpenReview(submission) && !workflowHelpers.getReviewerId(submission)).length;
+  const noteCount = submissions.reduce((total, submission) => total + workflowHelpers.getNotes(submission).length, 0);
+
+  const formBreakdown = forms.map((form) => {
+    const formSubmissions = submissions.filter((submission) => submission.formId === form.formId);
+    const formStatusCounts = formSubmissions.reduce((counts, submission) => {
+      const status = normaliseStatus(submission);
+      counts[status] = (counts[status] || 0) + 1;
+      return counts;
+    }, {});
+    const readiness = formReadiness(form);
+
+    return {
+      formId: form.formId,
+      name: form.name || form.formId,
+      enabled: form.enabled !== false,
+      ready: readiness.ready,
+      readiness,
+      action: form.action || 'create_ticket',
+      createsTicket: formCreatesTicket(form),
+      ticketType: form.ticketType || form.formId,
+      outputCategoryId: form.outputCategoryId || null,
+      fieldCount: Array.isArray(form.fields) ? form.fields.length : 0,
+      submissionCount: formSubmissions.length,
+      pendingCount: formStatusCounts.pending || 0,
+      requestInfoCount: formStatusCounts.request_info || 0,
+      approvedCount: formStatusCounts.approved || 0,
+      deniedCount: formStatusCounts.denied || 0,
+      assignedCount: formSubmissions.filter((submission) => Boolean(workflowHelpers.getReviewerId(submission))).length,
+      unassignedCount: formSubmissions.filter((submission) => workflowHelpers.isOpenReview(submission) && !workflowHelpers.getReviewerId(submission)).length,
+      ticketLinkedCount: formSubmissions.filter(isTicketLinked).length,
+      missingTicketChannelCount: formSubmissions.filter(isMissingTicketChannel).length,
+    };
+  });
+
+  const readyFormCount = formBreakdown.filter((form) => form.ready).length;
+  const ticketFormCount = formBreakdown.filter((form) => form.createsTicket).length;
+  const notReadyFormCount = formBreakdown.length - readyFormCount;
+
+  const recentSubmissions = [...submissions]
+    .sort((a, b) => (Date.parse(b.createdAt || b.updatedAt || 0) || 0) - (Date.parse(a.createdAt || a.updatedAt || 0) || 0))
+    .slice(0, 10)
+    .map((submission) => {
+      const review = workflowHelpers.buildReviewSnapshot(submission);
+      return {
+        submissionId: submission.submissionId || null,
+        formId: submission.formId || null,
+        status: normaliseStatus(submission),
+        workflowState: review.workflowState,
+        nextAction: review.nextAction,
+        reviewerId: review.reviewerId,
+        userId: submission.userId || null,
+        userTag: submission.userTag || null,
+        ticketId: getTicketId(submission),
+        ticketChannelId: getTicketChannelId(submission),
+        ticketControlMessageId: getTicketControlMessageId(submission),
+        missingTicketChannel: isMissingTicketChannel(submission),
+        noteCount: review.noteCount,
+        createdAt: submission.createdAt || null,
+        reviewedAt: submission.reviewedAt || null,
+      };
+    });
+
+  return {
+    statusCounts,
+    pendingSubmissionCount: statusCounts.pending || 0,
+    approvedSubmissionCount: statusCounts.approved || 0,
+    deniedSubmissionCount: statusCounts.denied || 0,
+    closedSubmissionCount: statusCounts.closed || 0,
+    requestInfoSubmissionCount: statusCounts.request_info || 0,
+    assignedSubmissionCount,
+    unassignedSubmissionCount,
+    noteCount,
+    ticketLinkedSubmissionCount,
+    ticketChannelLinkedSubmissionCount,
+    missingTicketChannelCount,
+    readyFormCount,
+    notReadyFormCount,
+    ticketFormCount,
+    formBreakdown,
+    recentSubmissions,
+  };
+}
+
+
 module.exports = {
   buildSubmissionTicketEmbed,
   createTicketForSubmission,
   getWorkflowActions,
   shouldCreateTicket,
+  buildReviewSnapshot,
+  isOpenReview,
+  buildWorkflowTimeline,
+  formReadiness,
+  buildSubmissionWorkflowSummary,
+  buildFormsWorkflowOverview,
 };

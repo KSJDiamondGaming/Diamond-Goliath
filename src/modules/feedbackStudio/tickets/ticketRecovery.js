@@ -14,7 +14,7 @@
 const ticketStore = require('./ticketStore');
 const ticketChannelManager = require('./ticketChannelManager');
 const { sendTicketControlMessage } = require('./ticketPanelManager');
-const formStore = require('../forms/formStore');
+const forms = require('../forms/forms');
 
 const ACTIVE_STATUSES = [
   'open',
@@ -136,14 +136,14 @@ function getFormSubmission(guildId, ticket = {}) {
   const submissionId = getFormSubmissionId(ticket);
   if (!guildId || !submissionId) return null;
 
-  const section = formStore.getFormsSection(guildId);
-  return section.submissions?.[formStore.cleanKey(submissionId)] || null;
+  const section = forms.getFormsSection(guildId);
+  return section.submissions?.[forms.cleanKey(submissionId)] || null;
 }
 
 function updateSubmissionRecoveryState(guildId, submission, updates = {}, guild = null) {
   if (!guildId || !submission?.submissionId) return null;
 
-  return formStore.updateSubmission(
+  return forms.updateSubmission(
     guildId,
     submission.submissionId,
     {
@@ -226,7 +226,7 @@ async function recoverFormTicketSubmission({
 
   const submission = getFormSubmission(guild.id, ticket);
   const form = getFormId(ticket)
-    ? formStore.getForm(guild.id, getFormId(ticket))
+    ? forms.getForm(guild.id, getFormId(ticket))
     : null;
 
   if (!submission) {
@@ -272,7 +272,7 @@ async function recoverFormTicketSubmission({
       guild
     );
 
-    formStore.addSubmissionTimeline(guild.id, submission.submissionId, {
+    forms.addSubmissionTimeline(guild.id, submission.submissionId, {
       type: 'ticket_channel_relinked',
       label: 'Ticket channel relinked during recovery',
       metadata: {
@@ -345,7 +345,7 @@ async function recoverFormTicketSubmission({
     guild
   );
 
-  formStore.addSubmissionTimeline(guild.id, submission.submissionId, {
+  forms.addSubmissionTimeline(guild.id, submission.submissionId, {
     type: 'ticket_channel_recreated',
     label: 'Missing ticket channel recreated during recovery',
     metadata: {

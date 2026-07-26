@@ -17,7 +17,7 @@ const pollsInteractions = optionalRequire('polls', '../../modules/communityStudi
 const tempVoiceInteractionHandler = optionalRequire('temp voice', '../../modules/utilityStudio/tempVoice/tempVoiceInteractionHandler');
 const suggestionsInteractionHandler = optionalRequire('suggestions', '../../modules/feedbackStudio/suggestions/suggestionsInteractionHandler');
 const giveawaysInteractionHandler = optionalRequire('giveaways', '../../modules/communityStudio/giveaways/giveawaysInteractionHandler');
-const formsInteractionHandler = optionalRequire('forms', '../../modules/feedbackStudio/forms/formsInteractionHandler');
+const formsInteractions = optionalRequire('forms', '../../modules/feedbackStudio/forms/formsInteractions');
 const testSecurityCommand = optionalRequire('test security', '../../commands/admin/testsecurity');
 const embedPanel = optionalRequire('embed panel', '../../modules/messageStudio/embed/embedPanel');
 const duplicator = optionalRequire('duplicator', '../../core/dev/duplicator');
@@ -26,7 +26,7 @@ const statsAdminPanel = optionalRequire('stats admin', '../../modules/utilityStu
 const reactionRolesAdminPanel = optionalRequire('reaction roles admin', '../../modules/roleStudio/reactionRoles/reactionRolesPanel');
 const suggestionsAdminPanel = optionalRequire('suggestions admin', '../../modules/feedbackStudio/suggestions/suggestionsAdminPanel');
 const giveawaysAdminPanel = optionalRequire('giveaways admin', '../../modules/communityStudio/giveaways/giveawaysAdminPanel');
-const formsAdminPanel = optionalRequire('forms admin', '../../modules/feedbackStudio/forms/formsAdminPanel');
+const formsInteractions = optionalRequire('forms admin', '../../modules/feedbackStudio/forms/formsInteractions');
 const starboardAdminPanel = optionalRequire('starboard admin', '../../modules/messageStudio/starboard/starboardAdminPanel');
 const stickyAdminPanel = optionalRequire('sticky admin', '../../modules/messageStudio/sticky/stickyAdminPanel');
 const levelingInteractions = optionalRequire('leveling', '../../modules/communityStudio/leveling/levelingInteractions');
@@ -243,7 +243,7 @@ module.exports = {
       if (await callHandler(statsAdminPanel, 'handleStatsAdminInteraction', interaction)) return;
       if (await callHandler(suggestionsAdminPanel, 'handleSuggestionsAdminInteraction', interaction)) return;
       if (await callHandler(giveawaysAdminPanel, 'handleGiveawaysAdminInteraction', interaction)) return;
-      if (await callHandler(formsAdminPanel, 'handleFormsAdminInteraction', interaction)) return;
+      if (await callHandler(formsInteractions, 'handleFormsAdminInteraction', interaction)) return;
       if (await callHandler(pollsInteractions, 'handlePollsInteraction', interaction)) return;
       if (await callHandler(starboardAdminPanel, 'handleStarboardAdminInteraction', interaction)) return;
       if (await callHandler(stickyAdminPanel, 'handleStickyAdminInteraction', interaction)) return;
@@ -254,7 +254,7 @@ module.exports = {
       if (await callHandler(embedPanel, 'handleInteraction', interaction)) return;
       if (interaction.isButton?.() && await callHandler(testSecurityCommand, 'handleButton', interaction)) return;
       if (interaction.isButton?.() && await callHandler(tempVoiceInteractionHandler, 'handleTempVoiceInteraction', interaction, client)) return;
-      if (await callHandler(formsInteractionHandler, 'handleFormsInteraction', interaction)) return;
+      if (await callHandler(formsInteractions, 'handleFormsInteraction', interaction)) return;
       if (await callHandler(suggestionsInteractionHandler, 'handleSuggestionsInteraction', interaction)) return;
       if (await callHandler(giveawaysInteractionHandler, 'handleGiveawayInteraction', interaction)) return;
       if (await callHandler(ticketInteractionHandler, 'handleTicketInteraction', interaction, client)) return;

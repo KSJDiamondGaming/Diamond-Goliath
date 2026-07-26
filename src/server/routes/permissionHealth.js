@@ -7,7 +7,7 @@ const { PermissionFlagsBits } = require('discord.js');
 
 const autoRoleStore = require('../../modules/roleStudio/autoRoles/autoRoles');
 const verificationStore = require('../../modules/securityStudio/verificationStore');
-const formStore = require('../../modules/feedbackStudio/forms/formStore');
+const forms = require('../../modules/feedbackStudio/forms/forms');
 const ticketStore = require('../../modules/feedbackStudio/tickets/ticketStore');
 const translationStore = require('../../modules/utilityStudio/translation/translationStore');
 const { getAllEmbedDeployments } = require('../../modules/messageStudio/embed/embedDeploymentStore');
@@ -239,7 +239,7 @@ function buildModuleDiagnostics(guildId, channelHealth, roleHealth) {
 
   const autoRoles = autoRoleStore.getAutoRolesSection(guildId);
   const verification = verificationStore.getVerificationSection(guildId);
-  const forms = formStore.getFormsSection(guildId);
+  const forms = forms.getFormsSection(guildId);
   const ticketSettings = ticketStore.getTicketSettings(guildId) || {};
   const ticketPanels = ticketStore.getPanels(guildId)?.panels || [];
   const ticketList = ticketStore.getAllTickets(guildId) || [];
