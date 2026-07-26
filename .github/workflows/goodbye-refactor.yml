@@ -1,4 +1,4 @@
-# Retry canonical Goodbye build
+# Retry canonical Goodbye build with diagnostics
 name: Build Canonical Goodbye Module
 
 on:
@@ -41,32 +41,12 @@ jobs:
         run: python3 .goliath/goodbye_refactor.py
 
       - name: Validate JavaScript syntax
-        id: syntax
-        continue-on-error: true
         run: |
-          set -o pipefail
-          {
-            find src/modules/messageStudio/goodbye -maxdepth 1 -name '*.js' -print0 | xargs -0 -n1 node --check
-            node --check src/server/routes/goodbye.js
-            node --check src/events/members/memberJoinLeave.js
-            node --check src/events/interactions/interactionCreate.js
-            node --check server.js
-          } 2>&1 | tee /tmp/goodbye-syntax.txt
-
-      - name: Publish syntax failure
-        if: steps.syntax.outcome == 'failure'
-        run: |
-          cp /tmp/goodbye-syntax.txt /tmp/report.txt
-          git reset --hard HEAD
-          mkdir -p .goliath
-          cp /tmp/report.txt .goliath/goodbye-syntax-error.txt
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .goliath/goodbye-syntax-error.txt
-          git commit -m "chore: record Goodbye syntax failure"
-          git pull --rebase origin dev
-          git push origin dev
-          exit 1
+          find src/modules/messageStudio/goodbye -maxdepth 1 -name '*.js' -print0 | xargs -0 -n1 node --check
+          node --check src/server/routes/goodbye.js
+          node --check src/events/members/memberJoinLeave.js
+          node --check src/events/interactions/interactionCreate.js
+          node --check server.js
 
       - name: Verify canonical layout and imports
         run: |
@@ -91,14 +71,33 @@ jobs:
           NODE
 
       - name: Run Doctor
-        run: timeout 120s npm run doctor
+        id: doctor
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          timeout 120s npm run doctor 2>&1 | tee /tmp/goodbye-doctor.txt
+
+      - name: Publish Doctor failure
+        if: steps.doctor.outcome == 'failure'
+        run: |
+          cp /tmp/goodbye-doctor.txt /tmp/report.txt
+          git reset --hard HEAD
+          mkdir -p .goliath
+          cp /tmp/report.txt .goliath/goodbye-doctor-error.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .goliath/goodbye-doctor-error.txt
+          git commit -m "chore: record Goodbye Doctor failure"
+          git pull --rebase origin dev
+          git push origin dev
+          exit 1
 
       - name: Run Audit
         run: timeout 120s npm run audit
 
       - name: Commit canonical Goodbye refactor
         run: |
-          rm -f .goliath/goodbye-build-run-id.txt .goliath/goodbye-syntax-error.txt
+          rm -f .goliath/goodbye-build-run-id.txt .goliath/goodbye-syntax-error.txt .goliath/goodbye-doctor-error.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
