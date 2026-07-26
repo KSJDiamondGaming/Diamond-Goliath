@@ -2,19 +2,17 @@
 
 const { Events } = require('discord.js');
 const polls = require('../../modules/communityStudio/polls/polls');
-const pollsManager = require('../../modules/communityStudio/polls/pollsManager');
-const pollsHealth = require('../../modules/communityStudio/polls/pollsHealth');
+const tracking = require('../../modules/communityStudio/polls/pollsTracking');
 
 module.exports = {
   name: Events.ClientReady,
   once: true,
   async execute(client) {
-    await polls.startup(client);
-
+    await tracking.startup(client);
     for (const guild of client.guilds.cache.values()) {
-      const section = pollsManager.getSection(guild.id);
+      const section = polls.getSection(guild.id);
       if (section.enabled === false) continue;
-      const result = await pollsHealth.repair(guild, {
+      const result = await tracking.repair(guild, {
         actorId: client.user?.id || null,
         reason: 'startup_recovery',
       });
