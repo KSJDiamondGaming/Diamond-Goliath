@@ -1,0 +1,88 @@
+name: Starboard Canonical Refactor
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/starboard-canonical.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  refactor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Repoint canonical Starboard imports
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          replacements = {
+              "src/events/interactions/interactionCreate.js": [
+                  ("../../modules/messageStudio/starboard/starboardAdminPanel", "../../modules/messageStudio/starboard/starboardPanel"),
+              ],
+              "src/server/routes/starboard.js": [
+                  ("const starboardManager = require('../../modules/messageStudio/starboard/starboardManager');", "const starboard = require('../../modules/messageStudio/starboard/starboard');"),
+                  ("starboardManager.configureStarboard", "starboard.configureStarboard"),
+              ],
+          }
+          for name, pairs in replacements.items():
+              path = Path(name)
+              text = path.read_text(encoding='utf-8')
+              for old, new in pairs:
+                  text = text.replace(old, new)
+              path.write_text(text, encoding='utf-8', newline='\n')
+          PY
+
+      - name: Remove retired Starboard files
+        run: git rm src/modules/messageStudio/starboard/starboardManager.js src/modules/messageStudio/starboard/starboardAdminPanel.js
+
+      - name: Syntax validation
+        run: |
+          node --check src/modules/messageStudio/starboard/starboard.js
+          node --check src/modules/messageStudio/starboard/starboardPanel.js
+          node --check src/modules/messageStudio/starboard/starboardStore.js
+          node --check src/server/routes/starboard.js
+          node --check src/events/messages/messageReactionAdd.js
+          node --check src/events/messages/messageReactionRemove.js
+          node --check src/events/interactions/interactionCreate.js
+
+      - name: Runtime smoke
+        run: |
+          node -e "require('./src/modules/messageStudio/starboard/starboard'); require('./src/modules/messageStudio/starboard/starboardPanel'); require('./src/modules/messageStudio/starboard/starboardStore'); require('./src/server/routes/starboard')"
+
+      - name: Doctor
+        run: npm run doctor
+
+      - name: Audit
+        shell: bash
+        run: |
+          set +e
+          timeout 180s npm run audit > .goliath/starboard-audit.txt 2>&1
+          code=$?
+          cat .goliath/starboard-audit.txt
+          if grep -q '❌' .goliath/starboard-audit.txt; then exit 1; fi
+          if [ "$code" -ne 0 ] && [ "$code" -ne 124 ]; then exit "$code"; fi
+
+      - name: Remove temporary workflow and report
+        run: |
+          rm -f .github/workflows/starboard-canonical.yml .goliath/starboard-audit.txt
+          git config user.name "Goliath Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "refactor(starboard): canonicalise module architecture"
+          git push origin dev
