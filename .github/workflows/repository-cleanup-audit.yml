@@ -1,0 +1,58 @@
+name: Repository cleanup audit
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - .github/workflows/repository-cleanup-audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Repository policy scan
+        shell: bash
+        run: |
+          test ! -d core
+          test "$(find scripts -maxdepth 1 -type f | wc -l)" -eq 1
+          ! grep -RInE "process\.cwd\(\).*['\"]src['\"].*['\"]runtime['\"]" src scripts server.js --include='*.js'
+          ! grep -RInE "(^|[^[:alnum:]_])(TODO|FIXME)([^[:alnum:]_]|$)" src scripts server.js --include='*.js'
+          ! grep -RIn $'\xEF\xBB\xBF' . --exclude-dir=.git --exclude-dir=node_modules
+
+      - name: JavaScript syntax scan
+        shell: bash
+        run: |
+          find src scripts -type f \( -name '*.js' -o -name '*.cjs' -o -name '*.mjs' \) -print0 \
+            | xargs -0 -n1 node --check
+          node --check server.js
+
+      - name: Doctor
+        env:
+          BOT_MODE: dev
+        run: npm run doctor
+
+      - name: Audit
+        env:
+          BOT_MODE: dev
+        run: npm run audit
+
+      - name: Schedule tests
+        env:
+          BOT_MODE: dev
+        run: npm test
