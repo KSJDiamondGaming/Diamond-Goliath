@@ -6,6 +6,7 @@ root = Path.cwd()
 reaction_roles = root / 'src/modules/roleStudio/reactionRoles/reactionRoles.js'
 text = reaction_roles.read_text(encoding='utf-8')
 text = text.replace("require('../../embed/embedTemplateManager')", "require('../../messageStudio/embed/embedTemplates')")
+text = text.replace("require('../../embed/embedTemplates')", "require('../../messageStudio/embed/embedTemplates')")
 reaction_roles.write_text(text, encoding='utf-8', newline='\n')
 
 forms_tracking = root / 'src/modules/feedbackStudio/forms/formsTracking.js'
