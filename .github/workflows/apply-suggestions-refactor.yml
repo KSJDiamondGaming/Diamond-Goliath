@@ -1,0 +1,50 @@
+name: Apply Suggestions canonical refactor
+on:
+  push:
+    branches: [dev]
+permissions:
+  contents: write
+jobs:
+  refactor:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Repoint Suggestions integration
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('src/events/interactions/interactionCreate.js')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace("const suggestionsInteractionHandler = optionalRequire('suggestions', '../../modules/feedbackStudio/suggestions/suggestionsInteractionHandler');", "const suggestionsInteractions = optionalRequire('suggestions', '../../modules/feedbackStudio/suggestions/suggestionsInteractions');")
+          text = text.replace("const suggestionsAdminPanel = optionalRequire('suggestions admin', '../../modules/feedbackStudio/suggestions/suggestionsAdminPanel');\n", "")
+          text = text.replace("callHandler(suggestionsAdminPanel, 'handleSuggestionsAdminInteraction'", "callHandler(suggestionsInteractions, 'handleSuggestionsAdminInteraction'")
+          text = text.replace("callHandler(suggestionsInteractionHandler, 'handleSuggestionsInteraction'", "callHandler(suggestionsInteractions, 'handleSuggestionsInteraction'")
+          path.write_text(text, encoding='utf-8')
+          PY
+          rm -f src/modules/feedbackStudio/suggestions/suggestionsStore.js
+          rm -f src/modules/feedbackStudio/suggestions/suggestionsManager.js
+          rm -f src/modules/feedbackStudio/suggestions/suggestionsAdminPanel.js
+          rm -f src/modules/feedbackStudio/suggestions/suggestionsInteractionHandler.js
+      - name: Validate Suggestions rewrite
+        run: |
+          node --check src/modules/feedbackStudio/suggestions/suggestions.js
+          node --check src/modules/feedbackStudio/suggestions/suggestionsPanel.js
+          node --check src/modules/feedbackStudio/suggestions/suggestionsInteractions.js
+          node --check src/modules/feedbackStudio/suggestions/suggestionsTracking.js
+          node --check src/events/interactions/interactionCreate.js
+      - name: Commit canonical Suggestions module
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/apply-suggestions-refactor.yml
+          git add src/modules/feedbackStudio/suggestions src/events/interactions/interactionCreate.js
+          git commit -m "Refactor Suggestions into canonical module architecture"
+          git push origin dev
