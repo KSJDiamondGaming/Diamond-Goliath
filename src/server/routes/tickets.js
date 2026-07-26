@@ -14,18 +14,18 @@ const {
   addTicketNote,
   archiveTicket,
   removeTicket,
-} = require("../../modules/feedbackStudio/tickets/ticketManager");
+} = require("../../modules/feedbackStudio/tickets/ticketsLifecycle");
 
-const ticketRecovery = require("../../modules/feedbackStudio/tickets/ticketRecovery");
-const ticketPanelManager = require("../../modules/feedbackStudio/tickets/ticketPanelManager");
-const ticketTranscriptManager = require("../../modules/feedbackStudio/tickets/ticketTranscriptManager");
+const ticketRecovery = require("../../modules/feedbackStudio/tickets/ticketsTracking");
+const ticketPanelManager = require("../../modules/feedbackStudio/tickets/ticketsPanel");
+const ticketTranscriptManager = require("../../modules/feedbackStudio/tickets/ticketsTranscripts");
 
 const {
   getPanels,
   getPanel,
   getTicketSettings,
   saveTicketSettings,
-} = require("../../modules/feedbackStudio/tickets/ticketStore");
+} = require("../../modules/feedbackStudio/tickets/tickets");
 
 const {
   MANAGE_CHANNEL_PERMISSIONS,
@@ -584,6 +584,40 @@ router.delete("/:guildId/:ticketId", async (req, res) => {
   } catch (error) {
     console.error("[TicketsRoute] DELETE:", error);
     return failure(res, error, "Failed to delete ticket.");
+  }
+});
+
+router.get("/:guildId/health", async (req, res) => {
+  try {
+    const guild = await fetchGuild(req, req.params.guildId);
+    if (!guild) return res.status(404).json({ success: false, error: "Guild is unavailable." });
+    const health = await require("../../modules/feedbackStudio/tickets/ticketsHealth").buildHealthReport(guild);
+    return res.json({ success: true, health });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error.message || "Unable to check Tickets health." });
+  }
+});
+
+router.post("/:guildId/health/repair", async (req, res) => {
+  try {
+    const guild = await fetchGuild(req, req.params.guildId);
+    if (!guild) return res.status(404).json({ success: false, error: "Guild is unavailable." });
+    const result = await require("../../modules/feedbackStudio/tickets/ticketsHealth").repairAll(guild, req.body?.actorId || null);
+    return res.json({ success: true, result });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error.message || "Unable to repair Tickets." });
+  }
+});
+
+router.post("/:guildId/panels/:panelId/repair", async (req, res) => {
+  try {
+    const guild = await fetchGuild(req, req.params.guildId);
+    if (!guild) return res.status(404).json({ success: false, error: "Guild is unavailable." });
+    const panel = await require("../../modules/feedbackStudio/tickets/ticketsHealth").repairPanel(guild, req.params.panelId, req.body?.actorId || null);
+    return res.json({ success: true, panel });
+  } catch (error) {
+    const status = /not found/i.test(String(error.message || "")) ? 404 : 500;
+    return res.status(status).json({ success: false, error: error.message || "Unable to repair ticket panel." });
   }
 });
 

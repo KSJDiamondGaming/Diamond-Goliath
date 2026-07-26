@@ -12,7 +12,7 @@ function optionalRequire(label, modulePath, fallback = {}) {
 }
 
 const verificationManager = optionalRequire('verification manager', '../../modules/securityStudio/verificationManager');
-const ticketInteractionHandler = optionalRequire('tickets', '../../modules/feedbackStudio/tickets/tickets');
+const ticketInteractionHandler = optionalRequire('tickets', '../../modules/feedbackStudio/tickets/ticketsInteractions');
 const pollsInteractions = optionalRequire('polls', '../../modules/communityStudio/polls/pollsInteractions');
 const tempVoiceInteractionHandler = optionalRequire('temp voice', '../../modules/utilityStudio/tempVoice/tempVoiceInteractionHandler');
 const suggestionsInteractions = optionalRequire('suggestions', '../../modules/feedbackStudio/suggestions/suggestionsInteractions');
