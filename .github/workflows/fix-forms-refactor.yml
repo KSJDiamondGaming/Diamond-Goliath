@@ -1,0 +1,46 @@
+name: Fix Forms refactor integration
+on:
+  pull_request:
+    branches: [dev]
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Repair Forms integration
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('src/events/interactions/interactionCreate.js')
+          text = path.read_text(encoding='utf-8')
+          duplicate = "const formsInteractions = optionalRequire('forms admin', '../../modules/feedbackStudio/forms/formsInteractions');\n"
+          text = text.replace(duplicate, '')
+          text = text.replace("callHandler(formsAdminPanel, 'handleFormsAdminInteraction'", "callHandler(formsInteractions, 'handleFormsAdminInteraction'")
+          text = text.replace("callHandler(formsInteractionHandler, 'handleFormsInteraction'", "callHandler(formsInteractions, 'handleFormsInteraction'")
+          path.write_text(text, encoding='utf-8')
+          PY
+          node --check src/events/interactions/interactionCreate.js
+          node --check src/modules/feedbackStudio/forms/forms.js
+          node --check src/modules/feedbackStudio/forms/formsPanel.js
+          node --check src/modules/feedbackStudio/forms/formsInteractions.js
+          node --check src/modules/feedbackStudio/forms/formsTracking.js
+          node --check src/commands/admin/forms.js
+          node --check src/server/routes/forms.js
+      - name: Commit repair
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f .github/workflows/fix-forms-refactor.yml
+          git add -A
+          git commit -m "Fix Forms interaction integration"
+          git push origin dev
