@@ -39,28 +39,7 @@ jobs:
         run: npm ci --no-audit --no-fund
 
       - name: Build canonical Tickets architecture
-        id: build
-        continue-on-error: true
-        run: |
-          set -o pipefail
-          python3 .goliath/tickets_refactor.py 2>&1 | tee .goliath/tickets-build-error.txt
-
-      - name: Publish build failure report
-        if: steps.build.outcome == 'failure'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git reset --hard HEAD
-          mkdir -p .goliath
-          cp "$GITHUB_WORKSPACE/.goliath/tickets-build-error.txt" /tmp/tickets-build-error.txt || true
-          cp /tmp/tickets-build-error.txt .goliath/tickets-build-error.txt || true
-          git add .goliath/tickets-build-error.txt
-          git commit -m "chore: record Tickets build failure"
-          for attempt in 1 2 3 4 5; do
-            git pull --rebase origin dev && git push && break
-            sleep 5
-          done
-          exit 1
+        run: python3 .goliath/tickets_refactor.py
 
       - name: Validate JavaScript syntax
         run: |
