@@ -4,7 +4,7 @@ const express = require('express');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { resolveRuntimePath } = require('../../config/runtimePaths');
+const { resolveBotMode, resolveRuntimePath } = require('../../config/runtimePaths');
 const notifications = require('../../core/notifications/notificationStore');
 
 const router = express.Router();
@@ -53,15 +53,8 @@ function getRuntimeMode() {
   return String(process.env.BOT_MODE || 'dev').trim().toUpperCase();
 }
 
-function getEnvironmentKey(environment = getRuntimeMode()) {
-  const value = String(environment || 'DEV').toUpperCase();
-  if (value === 'PRODUCTION' || value === 'PROD') return 'production';
-  if (value === 'BETA') return 'beta';
-  return 'dev';
-}
-
 function getEnvironmentConfig(environment = getRuntimeMode()) {
-  const key = getEnvironmentKey(environment);
+  const key = resolveBotMode(environment);
   return ENVIRONMENT_PORTS.find((item) => item.key === key) || ENVIRONMENT_PORTS[0];
 }
 
@@ -91,7 +84,7 @@ function getCurrentBranch(environment = getRuntimeMode()) {
 }
 
 function runtimePath(environment = getRuntimeMode(), ...parts) {
-  return resolveRuntimePath(getEnvironmentKey(environment), ...parts);
+  return resolveRuntimePath(resolveBotMode(environment), ...parts);
 }
 
 function readDeploymentHistory(environment = getRuntimeMode()) {
