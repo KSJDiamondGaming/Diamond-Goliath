@@ -90,7 +90,7 @@ function getCurrentBranch(environment = getRuntimeMode()) {
 }
 
 function runtimePath(environment = getRuntimeMode(), ...parts) {
-  return path.join(process.cwd(), 'src', 'runtime', getEnvironmentKey(environment), ...parts);
+  return path.join(process.cwd(), 'runtime', getEnvironmentKey(environment), ...parts);
 }
 
 function readDeploymentHistory(environment = getRuntimeMode()) {
