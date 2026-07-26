@@ -4,7 +4,7 @@ const express = require('express');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { getRuntimeRoot, resolveRuntimePath } = require('../../config/runtimePaths');
+const { resolveBotMode, getRuntimeRoot, resolveRuntimePath } = require('../../config/runtimePaths');
 
 const router = express.Router();
 
@@ -72,13 +72,6 @@ function getRuntimeMode() {
   return String(process.env.BOT_MODE || 'dev').trim().toUpperCase();
 }
 
-function getEnvironmentKey(environment = getRuntimeMode()) {
-  const value = String(environment || 'DEV').toUpperCase();
-  if (value === 'PRODUCTION' || value === 'PROD') return 'production';
-  if (value === 'BETA') return 'beta';
-  return 'dev';
-}
-
 function getSafeEnvSummary() {
   return {
     NODE_ENV: process.env.NODE_ENV || 'unset',
@@ -107,7 +100,7 @@ function getPackageInfo() {
 }
 
 function getRuntimeFolders(environment = getRuntimeMode()) {
-  const root = getRuntimeRoot(getEnvironmentKey(environment));
+  const root = getRuntimeRoot(resolveBotMode(environment));
   const folders = ['guilds', 'logs', 'backups', 'data', 'cache', 'deployments'];
   return Object.fromEntries(folders.map((folder) => {
     const folderPath = path.join(root, folder);
@@ -116,10 +109,11 @@ function getRuntimeFolders(environment = getRuntimeMode()) {
 }
 
 function readDeploymentHistory(environment = getRuntimeMode()) {
+  const modeKey = resolveBotMode(environment);
   const candidates = [
-    resolveRuntimePath(getEnvironmentKey(environment), 'deployments', 'history.json'),
-    resolveRuntimePath(getEnvironmentKey(environment), 'data', 'deployments.json'),
-    resolveRuntimePath(getEnvironmentKey(environment), 'logs', 'deployments.json'),
+    resolveRuntimePath(modeKey, 'deployments', 'history.json'),
+    resolveRuntimePath(modeKey, 'data', 'deployments.json'),
+    resolveRuntimePath(modeKey, 'logs', 'deployments.json'),
   ];
 
   for (const filePath of candidates) {
