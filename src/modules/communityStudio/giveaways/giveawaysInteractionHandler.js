@@ -3,7 +3,7 @@
 const { MessageFlags } = require('discord.js');
 const giveawaysStore = require('./giveawaysStore');
 const giveawaysManager = require('./giveawaysManager');
-const giveawaysPanel = require('./giveawaysPanel');
+const giveawaysPanel = require('./giveawaysAdminPanel');
 
 function getMemberDisplayName(interaction) { return interaction.member?.displayName || interaction.user?.displayName || interaction.user?.username || 'Unknown User'; }
 function save(guild, updater) { return giveawaysStore.updateSection(guild.id, updater, guild); }
