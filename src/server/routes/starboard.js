@@ -3,8 +3,8 @@
 const express = require('express');
 
 const starboardStore = require('../../modules/messageStudio/starboard/starboardStore');
-const starboardManager = require('../../modules/messageStudio/starboard/starboardManager');
-const { setModuleEnabled } = require('../../core/guild/guildManager');
+const starboard = require('../../modules/messageStudio/starboard/starboard');
+const { isModuleEnabled, setModuleEnabled } = require('../../core/guild/guildManager');
 
 const router = express.Router();
 
@@ -28,12 +28,15 @@ function cleanChannelId(value) {
   return /^\d{15,25}$/.test(channelId) ? channelId : null;
 }
 
-function summarize(config) {
+function summarize(guildId, config) {
   const posts = Object.values(config.posts || {});
-  const totalStars = posts.reduce((sum, post) => sum + (Array.isArray(post.starUserIds) ? post.starUserIds.length : 0), 0);
+  const totalStars = posts.reduce(
+    (sum, post) => sum + (Array.isArray(post.starUserIds) ? post.starUserIds.length : 0),
+    0
+  );
 
   return {
-    enabled: config.enabled !== false,
+    enabled: isModuleEnabled(guildId, 'starboard') === true,
     channelId: config.channelId || null,
     threshold: config.threshold || 3,
     emoji: config.emoji || '⭐',
@@ -41,6 +44,7 @@ function summarize(config) {
     totalStars,
     allowBotMessages: config.allowBotMessages === true,
     allowSelfStar: config.allowSelfStar === true,
+    requireUniqueUsers: config.requireUniqueUsers !== false,
     updatedAt: config.updatedAt || null,
   };
 }
@@ -52,9 +56,7 @@ function hasOwn(input, key) {
 function prepareSettings(input = {}) {
   const settings = {};
 
-  if (hasOwn(input, 'enabled')) {
-    settings.enabled = input.enabled === true;
-  }
+  if (hasOwn(input, 'enabled')) settings.enabled = input.enabled === true;
 
   if (hasOwn(input, 'channelId')) {
     settings.channelId = input.channelId === '' || input.channelId === null
@@ -70,13 +72,9 @@ function prepareSettings(input = {}) {
     settings.emoji = String(input.emoji || '⭐').trim().slice(0, 40) || '⭐';
   }
 
-  if (hasOwn(input, 'allowBotMessages')) {
-    settings.allowBotMessages = input.allowBotMessages === true;
-  }
-
-  if (hasOwn(input, 'allowSelfStar')) {
-    settings.allowSelfStar = input.allowSelfStar === true;
-  }
+  if (hasOwn(input, 'allowBotMessages')) settings.allowBotMessages = input.allowBotMessages === true;
+  if (hasOwn(input, 'allowSelfStar')) settings.allowSelfStar = input.allowSelfStar === true;
+  if (hasOwn(input, 'requireUniqueUsers')) settings.requireUniqueUsers = input.requireUniqueUsers !== false;
 
   return settings;
 }
@@ -85,7 +83,7 @@ router.get('/:guildId', (req, res) => {
   try {
     const guildId = getGuildId(req);
     const config = starboardStore.getStarboardSection(guildId);
-    return success(res, { guildId, config, overview: summarize(config) });
+    return success(res, { guildId, config, overview: summarize(guildId, config) });
   } catch (error) {
     return failure(res, error, 400);
   }
@@ -94,10 +92,9 @@ router.get('/:guildId', (req, res) => {
 router.patch('/:guildId/enabled', (req, res) => {
   try {
     const guildId = getGuildId(req);
-    const enabled = req.body?.enabled === true;
-    setModuleEnabled(guildId, 'starboard', enabled);
-    const config = starboardStore.updateStarboardSection(guildId, (section) => ({ ...section, enabled }), { actorId: req.body?.actorId });
-    return success(res, { guildId, config, overview: summarize(config) });
+    setModuleEnabled(guildId, 'starboard', req.body?.enabled === true);
+    const config = starboardStore.getStarboardSection(guildId);
+    return success(res, { guildId, config, overview: summarize(guildId, config) });
   } catch (error) {
     return failure(res, error, 400);
   }
@@ -106,19 +103,19 @@ router.patch('/:guildId/enabled', (req, res) => {
 router.patch('/:guildId/settings', (req, res) => {
   try {
     const guildId = getGuildId(req);
-    const current = starboardStore.getStarboardSection(guildId);
     const settings = prepareSettings(req.body?.settings || req.body || {});
+    if (hasOwn(settings, 'enabled')) {
+      setModuleEnabled(guildId, 'starboard', settings.enabled);
+      delete settings.enabled;
+    }
+
     const config = starboardStore.updateStarboardSection(guildId, (section) => ({
       ...section,
       ...settings,
       updatedAt: starboardStore.now(),
     }), { actorId: req.body?.actorId });
 
-    if (config.enabled !== current.enabled) {
-      setModuleEnabled(guildId, 'starboard', config.enabled !== false);
-    }
-
-    return success(res, { guildId, config, overview: summarize(config) });
+    return success(res, { guildId, config, overview: summarize(guildId, config) });
   } catch (error) {
     return failure(res, error, 400);
   }
@@ -127,8 +124,8 @@ router.patch('/:guildId/settings', (req, res) => {
 router.put('/:guildId', (req, res) => {
   try {
     const guildId = getGuildId(req);
-    const config = starboardManager.configureStarboard(guildId, prepareSettings(req.body || {}));
-    return success(res, { guildId, config, overview: summarize(config) });
+    const config = starboard.configureStarboard(guildId, prepareSettings(req.body || {}));
+    return success(res, { guildId, config, overview: summarize(guildId, config) });
   } catch (error) {
     return failure(res, error, 400);
   }
@@ -138,7 +135,7 @@ router.delete('/:guildId/posts/:messageId', (req, res) => {
   try {
     const guildId = getGuildId(req);
     const config = starboardStore.deletePost(guildId, req.params.messageId, { actorId: req.body?.actorId });
-    return success(res, { guildId, config, overview: summarize(config) });
+    return success(res, { guildId, config, overview: summarize(guildId, config) });
   } catch (error) {
     return failure(res, error, 400);
   }
