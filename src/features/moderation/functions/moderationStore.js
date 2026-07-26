@@ -8,7 +8,6 @@ const mode = String(
 
 const dataDir = path.join(
   process.cwd(),
-  'src',
   'runtime',
   mode,
   'database'
