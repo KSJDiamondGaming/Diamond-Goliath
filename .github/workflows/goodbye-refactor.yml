@@ -92,6 +92,8 @@ jobs:
           if [ "$status" -ne 0 ] && [ "$status" -ne 124 ]; then exit "$status"; fi
 
       - name: Run Audit
+        id: audit
+        continue-on-error: true
         run: |
           set +e
           timeout 90s npm run audit 2>&1 | tee /tmp/goodbye-audit.txt
@@ -100,9 +102,24 @@ jobs:
           if grep -q '❌' /tmp/goodbye-audit.txt; then exit 1; fi
           if [ "$status" -ne 0 ] && [ "$status" -ne 124 ]; then exit "$status"; fi
 
+      - name: Publish Audit failure
+        if: steps.audit.outcome == 'failure'
+        run: |
+          cp /tmp/goodbye-audit.txt /tmp/report.txt
+          git reset --hard HEAD
+          mkdir -p .goliath
+          cp /tmp/report.txt .goliath/goodbye-audit-error.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .goliath/goodbye-audit-error.txt
+          git commit -m "chore: record Goodbye Audit failure"
+          git pull --rebase origin dev
+          git push origin dev
+          exit 1
+
       - name: Commit canonical Goodbye refactor
         run: |
-          rm -f .goliath/goodbye-build-run-id.txt .goliath/goodbye-syntax-error.txt .goliath/goodbye-doctor-error.txt
+          rm -f .goliath/goodbye-build-run-id.txt .goliath/goodbye-syntax-error.txt .goliath/goodbye-doctor-error.txt .goliath/goodbye-audit-error.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
