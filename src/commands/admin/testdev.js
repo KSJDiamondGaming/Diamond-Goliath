@@ -1,9 +1,12 @@
+'use strict';
+
 const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 
+const { normalizeBotMode } = require('../../config/botModes');
 const testDevOverride = require('../../core/dev/testDevOverrideManager');
 
 function modeLabel() {
-  return String(process.env.BOT_MODE || 'DEV').toUpperCase();
+  return normalizeBotMode(process.env.BOT_MODE);
 }
 
 module.exports = {
