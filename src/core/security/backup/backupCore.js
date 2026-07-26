@@ -91,7 +91,6 @@ function getModeKey(environment) {
 function getBackupRoot(environment) {
   return path.join(
     process.cwd(),
-    'src',
     'runtime',
     getModeKey(environment),
     'backups'
