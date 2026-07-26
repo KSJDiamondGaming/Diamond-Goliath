@@ -1,5 +1,5 @@
 const fs = require('fs');
-const { getRuntimePaths } = require('../config/runtimePaths');
+const { resolveBotMode, getRuntimePaths } = require('../config/runtimePaths');
 
 /* ---------------- DIRECTORY HELPERS ---------------- */
 
@@ -59,16 +59,8 @@ function normalizeModeValue(mode) {
   return mode || 'DEV';
 }
 
-function getModeKey(mode) {
-  const value = String(normalizeModeValue(mode)).toUpperCase();
-
-  if (value === 'PRODUCTION') return 'production';
-  if (value === 'BETA') return 'beta';
-  return 'dev';
-}
-
 function bootstrapRuntime(mode = 'DEV') {
-  const modeKey = getModeKey(mode);
+  const modeKey = resolveBotMode(mode);
   const runtimePaths = getRuntimePaths(modeKey);
 
   const paths = {
