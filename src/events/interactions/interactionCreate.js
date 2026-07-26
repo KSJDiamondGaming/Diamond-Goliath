@@ -25,7 +25,7 @@ const adminPanel = optionalRequire('admin panel', '../../core/admin/functions/ad
 const statsAdminPanel = optionalRequire('stats admin', '../../modules/utilityStudio/stats/statsPanel');
 const reactionRolesAdminPanel = optionalRequire('reaction roles admin', '../../modules/roleStudio/reactionRoles/reactionRolesPanel');
 const giveawaysAdminPanel = optionalRequire('giveaways admin', '../../modules/communityStudio/giveaways/giveawaysAdminPanel');
-const starboardAdminPanel = optionalRequire('starboard admin', '../../modules/messageStudio/starboard/starboardAdminPanel');
+const starboardPanel = optionalRequire('starboard admin', '../../modules/messageStudio/starboard/starboardPanel');
 const stickyAdminPanel = optionalRequire('sticky admin', '../../modules/messageStudio/sticky/stickyAdminPanel');
 const levelingInteractions = optionalRequire('leveling', '../../modules/communityStudio/leveling/levelingInteractions');
 const socialAdminPanel = optionalRequire('social admin', '../../modules/social/socialPanel');
@@ -243,7 +243,7 @@ module.exports = {
       if (await callHandler(giveawaysAdminPanel, 'handleGiveawaysAdminInteraction', interaction)) return;
       if (await callHandler(formsInteractions, 'handleFormsAdminInteraction', interaction)) return;
       if (await callHandler(pollsInteractions, 'handlePollsInteraction', interaction)) return;
-      if (await callHandler(starboardAdminPanel, 'handleStarboardAdminInteraction', interaction)) return;
+      if (await callHandler(starboardPanel, 'handleStarboardAdminInteraction', interaction)) return;
       if (await callHandler(stickyAdminPanel, 'handleStickyAdminInteraction', interaction)) return;
       if (await callHandler(levelingInteractions, 'handleLevelingInteraction', interaction)) return;
       if (await callHandler(socialAdminPanel, 'handleSocialAdminInteraction', interaction)) return;
