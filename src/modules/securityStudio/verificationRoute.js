@@ -1,8 +1,9 @@
 'use strict';
 
 const express = require('express');
-const guildManager = require('../../core/guild/guildManager');
-const verification = require('./verification');
+const verificationManager = require('./verificationManager');
+const verificationStore = require('./verificationStore');
+const verificationHealth = require('./verificationHealth');
 
 const router = express.Router();
 
@@ -48,68 +49,55 @@ async function getSendableChannel(req, guildId, channelId) {
   return channel;
 }
 
-function getAdminConfig(guildId) {
-  const modules = guildManager.getGuildSection(guildId, 'modules', {});
-  const admin = modules?.verification && typeof modules.verification === 'object' ? modules.verification : {};
-  const section = verification.getVerificationSection(guildId);
+function getConfig(guildId) {
+  const section = verificationStore.getVerificationSection(guildId);
   return {
-    enabled: typeof admin.enabled === 'boolean' ? admin.enabled : section.enabled,
-    ...verification.normalizeSettings({ ...(section.settings || {}), ...admin, ...(admin.settings || {}) }),
+    enabled: section.enabled === true,
+    ...section.settings,
   };
 }
 
-function saveAdminConfig(guildId, input = {}, meta = {}) {
-  const current = getAdminConfig(guildId);
+function saveConfig(guildId, input = {}, meta = {}) {
+  const current = verificationStore.getVerificationSection(guildId);
   const enabled = input.enabled === undefined ? current.enabled === true : input.enabled === true;
-  const settings = verification.normalizeSettings({ ...current, ...(input.settings || input) });
-
-  guildManager.updateGuildSection(guildId, 'modules', (modules = {}) => ({
-    ...(modules && typeof modules === 'object' ? modules : {}),
-    verification: {
-      enabled,
-      ...settings,
-      updatedAt: new Date().toISOString(),
-    },
-  }), {}, meta);
-
-  verification.configureVerification(guildId, { enabled, settings }, meta);
-  return getAdminConfig(guildId);
+  const settingsInput = input.settings && typeof input.settings === 'object' ? input.settings : input;
+  const settings = verificationStore.normalizeSettings({ ...current.settings, ...settingsInput });
+  verificationManager.configureVerification(guildId, { enabled, settings }, meta);
+  return getConfig(guildId);
 }
 
 function buildExport(guildId) {
   return {
     exportedAt: new Date().toISOString(),
     guildId,
-    config: getAdminConfig(guildId),
-    module: verification.getVerificationSection(guildId),
+    config: getConfig(guildId),
+    module: verificationStore.getVerificationSection(guildId),
   };
 }
 
 function resetVerification(guildId, meta = {}) {
-  guildManager.updateGuildSection(guildId, 'modules', (modules = {}) => {
-    const next = { ...(modules && typeof modules === 'object' ? modules : {}) };
-    delete next.verification;
-    return next;
-  }, {}, meta);
-  return verification.saveVerificationSection(guildId, verification.defaultVerificationSection(), meta);
+  return verificationStore.saveVerificationSection(
+    guildId,
+    verificationStore.defaultVerificationSection(),
+    meta,
+  );
 }
 
 router.get('/:guildId/overview', async (req, res) => {
   try {
     const guildId = getGuildId(req);
     const guild = await getGuild(req, guildId);
-    const section = verification.getVerificationSection(guildId);
-    const status = verification.getVerificationStatus(guildId);
-    const health = guild ? await verification.buildHealthReport(guild) : null;
+    const section = verificationStore.getVerificationSection(guildId);
+    const health = guild ? await verificationHealth.buildHealthReport(guild) : null;
 
     return success(res, {
       guildId,
       updatedAt: new Date().toISOString(),
-      config: getAdminConfig(guildId),
+      config: getConfig(guildId),
       messages: section.messages,
       panelTemplate: section.panelTemplate,
-      panels: Object.values(status.panels || {}),
-      analytics: status.analytics || {},
+      panels: Object.values(section.panels || {}),
+      analytics: section.analytics || {},
       health,
     });
   } catch (error) {
@@ -131,7 +119,7 @@ router.get('/:guildId/export', (req, res) => {
 router.post('/:guildId/config', (req, res) => {
   try {
     const guildId = getGuildId(req);
-    const config = saveAdminConfig(guildId, req.body || {}, {
+    const config = saveConfig(guildId, req.body || {}, {
       action: 'verification_api_config',
       actorId: getActorId(req),
     });
@@ -144,7 +132,7 @@ router.post('/:guildId/config', (req, res) => {
 router.post('/:guildId/messages', (req, res) => {
   try {
     const guildId = getGuildId(req);
-    const messages = verification.updateVerificationMessages(guildId, req.body || {}, {
+    const messages = verificationManager.updateVerificationMessages(guildId, req.body || {}, {
       action: 'verification_api_messages',
       actorId: getActorId(req),
     });
@@ -157,7 +145,7 @@ router.post('/:guildId/messages', (req, res) => {
 router.post('/:guildId/template', (req, res) => {
   try {
     const guildId = getGuildId(req);
-    const template = verification.updatePanelTemplate(guildId, req.body || {}, {
+    const template = verificationManager.updatePanelTemplate(guildId, req.body || {}, {
       action: 'verification_api_template',
       actorId: getActorId(req),
     });
@@ -170,15 +158,15 @@ router.post('/:guildId/template', (req, res) => {
 router.post('/:guildId/deploy', async (req, res) => {
   try {
     const guildId = getGuildId(req);
-    const config = getAdminConfig(guildId);
+    const config = getConfig(guildId);
     const channelId = cleanDiscordId(req.body?.channelId || config.verificationChannelId);
     if (!channelId) throw new Error('Verification channel is required.');
     const channel = await getSendableChannel(req, guildId, channelId);
     const panelId = req.body?.redeploy === true
-      ? verification.getLatestPanel(guildId)?.panelId
+      ? verificationStore.getLatestPanel(guildId)?.panelId
       : String(req.body?.panelId || '').trim() || undefined;
-    const panel = await verification.deployVerificationPanel(channel, {
-      ...verification.getVerificationSection(guildId).panelTemplate,
+    const panel = await verificationManager.deployVerificationPanel(channel, {
+      ...verificationStore.getVerificationSection(guildId).panelTemplate,
       ...(req.body?.template || {}),
       panelId,
       createdBy: getActorId(req),
@@ -194,7 +182,7 @@ router.post('/:guildId/panels/:panelId/redeploy', async (req, res) => {
     const guildId = getGuildId(req);
     const guild = await getGuild(req, guildId);
     if (!guild) throw new Error('Guild is unavailable.');
-    const panel = await verification.refreshVerificationPanel(guild, req.params.panelId, req.body || {}, {
+    const panel = await verificationManager.refreshVerificationPanel(guild, req.params.panelId, req.body || {}, {
       action: 'verification_api_redeploy',
       actorId: getActorId(req),
     });
@@ -209,11 +197,25 @@ router.delete('/:guildId/panels/:panelId', async (req, res) => {
     const guildId = getGuildId(req);
     const guild = await getGuild(req, guildId);
     if (!guild) throw new Error('Guild is unavailable.');
-    const section = await verification.deleteVerificationPanel(guild, req.params.panelId, {
+    const section = await verificationManager.deleteVerificationPanel(guild, req.params.panelId, {
       action: 'verification_api_delete_panel',
       actorId: getActorId(req),
     });
     return success(res, { guildId, section });
+  } catch (error) {
+    return failure(res, error, 400);
+  }
+});
+
+router.post('/:guildId/repair', async (req, res) => {
+  try {
+    const guildId = getGuildId(req);
+    const guild = await getGuild(req, guildId);
+    if (!guild) throw new Error('Guild is unavailable.');
+    const health = await verificationHealth.repair(guild, {
+      actorId: getActorId(req),
+    });
+    return success(res, { guildId, health });
   } catch (error) {
     return failure(res, error, 400);
   }
