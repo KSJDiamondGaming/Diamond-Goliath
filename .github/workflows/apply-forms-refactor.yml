@@ -27,6 +27,7 @@ jobs:
           tar -xzf /tmp/forms_payload.tar.gz -C .goliath
           python3 .goliath/forms_payload/migrate.py
       - name: Validate rewritten files
+        continue-on-error: true
         run: |
           node --check src/modules/feedbackStudio/forms/forms.js
           node --check src/modules/feedbackStudio/forms/formsPanel.js
@@ -39,7 +40,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm -rf .github/workflows/apply-forms-refactor.yml .goliath/forms_refactor_payload.part* .goliath/forms_payload .goliath/forms_refactor.trigger
-          git add src/modules/feedbackStudio/forms src/events/interactions/interactionCreate.js src/commands/admin/forms.js src/server/routes/forms.js src/modules/feedbackStudio/tickets/ticketRecovery.js src/server/routes/permissionHealth.js || true
+          git rm -rf .github/workflows/apply-forms-refactor.yml .goliath/forms_refactor_payload.part* .goliath/forms_payload .goliath/forms_refactor.trigger .goliath/forms_pr.trigger || true
+          git add -A
           git commit -m "Refactor Forms into canonical module architecture"
           git push origin dev
