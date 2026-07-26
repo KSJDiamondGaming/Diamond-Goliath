@@ -15,7 +15,7 @@ const verificationManager = optionalRequire('verification manager', '../../modul
 const ticketInteractionHandler = optionalRequire('tickets', '../../modules/feedbackStudio/tickets/tickets');
 const pollsInteractions = optionalRequire('polls', '../../modules/communityStudio/polls/pollsInteractions');
 const tempVoiceInteractionHandler = optionalRequire('temp voice', '../../modules/utilityStudio/tempVoice/tempVoiceInteractionHandler');
-const suggestionsInteractionHandler = optionalRequire('suggestions', '../../modules/feedbackStudio/suggestions/suggestionsInteractionHandler');
+const suggestionsInteractions = optionalRequire('suggestions', '../../modules/feedbackStudio/suggestions/suggestionsInteractions');
 const giveawaysInteractionHandler = optionalRequire('giveaways', '../../modules/communityStudio/giveaways/giveawaysInteractionHandler');
 const formsInteractions = optionalRequire('forms', '../../modules/feedbackStudio/forms/formsInteractions');
 const testSecurityCommand = optionalRequire('test security', '../../commands/admin/testsecurity');
@@ -24,7 +24,6 @@ const duplicator = optionalRequire('duplicator', '../../core/dev/duplicator');
 const adminPanel = optionalRequire('admin panel', '../../core/admin/functions/adminPanel');
 const statsAdminPanel = optionalRequire('stats admin', '../../modules/utilityStudio/stats/statsPanel');
 const reactionRolesAdminPanel = optionalRequire('reaction roles admin', '../../modules/roleStudio/reactionRoles/reactionRolesPanel');
-const suggestionsAdminPanel = optionalRequire('suggestions admin', '../../modules/feedbackStudio/suggestions/suggestionsAdminPanel');
 const giveawaysAdminPanel = optionalRequire('giveaways admin', '../../modules/communityStudio/giveaways/giveawaysAdminPanel');
 const starboardAdminPanel = optionalRequire('starboard admin', '../../modules/messageStudio/starboard/starboardAdminPanel');
 const stickyAdminPanel = optionalRequire('sticky admin', '../../modules/messageStudio/sticky/stickyAdminPanel');
@@ -240,7 +239,7 @@ module.exports = {
       if (startsWith(interaction, 'schedule:rsvp:')) { await callHandler(scheduleDeployment, 'handleMemberInteraction', interaction); return; }
       if (isVerificationMemberInteraction(interaction)) { await handleVerificationMemberInteraction(interaction); return; }
       if (await callHandler(statsAdminPanel, 'handleStatsAdminInteraction', interaction)) return;
-      if (await callHandler(suggestionsAdminPanel, 'handleSuggestionsAdminInteraction', interaction)) return;
+      if (await callHandler(suggestionsInteractions, 'handleSuggestionsAdminInteraction', interaction)) return;
       if (await callHandler(giveawaysAdminPanel, 'handleGiveawaysAdminInteraction', interaction)) return;
       if (await callHandler(formsInteractions, 'handleFormsAdminInteraction', interaction)) return;
       if (await callHandler(pollsInteractions, 'handlePollsInteraction', interaction)) return;
@@ -254,7 +253,7 @@ module.exports = {
       if (interaction.isButton?.() && await callHandler(testSecurityCommand, 'handleButton', interaction)) return;
       if (interaction.isButton?.() && await callHandler(tempVoiceInteractionHandler, 'handleTempVoiceInteraction', interaction, client)) return;
       if (await callHandler(formsInteractions, 'handleFormsInteraction', interaction)) return;
-      if (await callHandler(suggestionsInteractionHandler, 'handleSuggestionsInteraction', interaction)) return;
+      if (await callHandler(suggestionsInteractions, 'handleSuggestionsInteraction', interaction)) return;
       if (await callHandler(giveawaysInteractionHandler, 'handleGiveawayInteraction', interaction)) return;
       if (await callHandler(ticketInteractionHandler, 'handleTicketInteraction', interaction, client)) return;
     } catch (error) {
