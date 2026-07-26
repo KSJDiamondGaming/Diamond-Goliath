@@ -31,7 +31,6 @@ const BOT_MODE = (
 
 const RUNTIME_ROOT = path.join(
   process.cwd(),
-  'src',
   'runtime',
   BOT_MODE
 );

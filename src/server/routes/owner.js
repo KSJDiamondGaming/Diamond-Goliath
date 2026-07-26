@@ -185,7 +185,7 @@ function getBuildTime() {
 }
 
 function getRuntimePathsStatus(environment = getRuntimeMode()) {
-  const base = path.join(process.cwd(), 'src', 'runtime', getEnvironmentKey(environment));
+  const base = path.join(process.cwd(), 'runtime', getEnvironmentKey(environment));
   const folders = ['guilds', 'logs', 'backups', 'data', 'cache'];
   return Object.fromEntries(folders.map((folder) => {
     const fullPath = path.join(base, folder);
@@ -299,7 +299,7 @@ function scanBackupFiles(backupsPath, environment = getRuntimeMode()) {
 }
 
 function readRestoreQueue(environment = getRuntimeMode()) {
-  const recoveryRoot = path.join(process.cwd(), 'src', 'runtime', getEnvironmentKey(environment), 'recovery', 'restoreRequests');
+  const recoveryRoot = path.join(process.cwd(), 'runtime', getEnvironmentKey(environment), 'recovery', 'restoreRequests');
   const pending = safeReadJson(path.join(recoveryRoot, 'pending.json'), { requests: [] });
   const history = safeReadJson(path.join(recoveryRoot, 'history.json'), { requests: [] });
   const audit = safeReadJson(path.join(recoveryRoot, 'audit.json'), { requests: [] });

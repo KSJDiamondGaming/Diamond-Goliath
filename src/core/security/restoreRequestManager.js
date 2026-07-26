@@ -14,7 +14,7 @@ const RESTORE_REQUEST_VERSION = '1E_RISK_APPROVAL_UI';
 
 const BOT_MODE = (process.env.BOT_MODE || 'DEV').toLowerCase();
 
-const RUNTIME_ROOT = path.join(process.cwd(), 'src', 'runtime', BOT_MODE);
+const RUNTIME_ROOT = path.join(process.cwd(), 'runtime', BOT_MODE);
 
 const RESTORE_DIR = path.join(RUNTIME_ROOT, 'recovery', 'restoreRequests');
 
