@@ -54,7 +54,6 @@ function defaultAnalytics() {
 
 function defaultAutoRolesSection() {
   return {
-    enabled: true,
     joinRoles: [],
     botRoles: [],
     settings: {
@@ -88,10 +87,9 @@ function normalizeAnalytics(value = {}) {
 function normalizeAutoRolesSection(section = {}) {
   const base = defaultAutoRolesSection();
   const source = section && typeof section === 'object' ? section : {};
-  return {
+  const normalized = {
     ...base,
     ...clone(source),
-    enabled: source.enabled !== false,
     joinRoles: cleanRoleIds(source.joinRoles || source.roleIds || source.roles),
     botRoles: cleanRoleIds(source.botRoles),
     settings: {
@@ -104,6 +102,10 @@ function normalizeAutoRolesSection(section = {}) {
     createdAt: source.createdAt || base.createdAt,
     updatedAt: source.updatedAt || now(),
   };
+  delete normalized.enabled;
+  delete normalized.roleIds;
+  delete normalized.roles;
+  return normalized;
 }
 
 function getAutoRolesSection(guildId) {
@@ -126,10 +128,6 @@ function updateAutoRolesSection(guildId, updater, meta = {}) {
     defaultAutoRolesSection(),
     meta
   ));
-}
-
-function setConfigEnabled(guildId, enabled = true, meta = {}) {
-  return updateAutoRolesSection(guildId, (section) => ({ ...section, enabled: enabled !== false, updatedAt: now() }), meta);
 }
 
 function setJoinRoles(guildId, roleIds = [], meta = {}) {
@@ -238,8 +236,7 @@ async function validateManageableRole(guild, roleId) {
 }
 
 function isAutoRolesEnabled(guildId) {
-  const section = getAutoRolesSection(guildId);
-  return guildManager.isModuleEnabled(guildId, MODULE) && section.enabled !== false;
+  return guildManager.isModuleEnabled(guildId, MODULE);
 }
 
 async function applyAutoRoles(member, options = {}) {
@@ -292,7 +289,6 @@ function configureAutoRoles(guildId, input = {}, meta = {}) {
   const settings = input.settings && typeof input.settings === 'object' ? input.settings : {};
   return updateAutoRolesSection(guildId, (section) => ({
     ...section,
-    enabled: typeof input.enabled === 'boolean' ? input.enabled : section.enabled,
     joinRoles: Array.isArray(input.joinRoles) ? cleanRoleIds(input.joinRoles) : section.joinRoles,
     botRoles: Array.isArray(input.botRoles) ? cleanRoleIds(input.botRoles) : section.botRoles,
     settings: {
@@ -308,7 +304,7 @@ function configureAutoRoles(guildId, input = {}, meta = {}) {
 function setAutoRolesEnabled(guildId, enabled = true, meta = {}) {
   const nextEnabled = enabled !== false;
   guildManager.setModuleEnabled(guildId, MODULE, nextEnabled, meta);
-  return setConfigEnabled(guildId, nextEnabled, meta);
+  return nextEnabled;
 }
 
 async function addAutoRole(guild, roleId, options = {}, meta = {}) {
@@ -333,7 +329,7 @@ function getAutoRoleAnalytics(guildId) {
 async function buildHealthReport(guild) {
   if (!guild?.id) throw new Error('Guild is required.');
   const section = getAutoRolesSection(guild.id);
-  const registryEnabled = guildManager.isModuleEnabled(guild.id, MODULE);
+  const enabled = guildManager.isModuleEnabled(guild.id, MODULE);
   const botMember = getBotMember(guild);
   const roleIds = [...new Set([...(section.joinRoles || []), ...(section.botRoles || [])])];
   const roles = [];
@@ -344,8 +340,7 @@ async function buildHealthReport(guild) {
   }
 
   const warnings = [
-    section.enabled === false ? 'Auto Roles is disabled in its module configuration.' : null,
-    registryEnabled === false ? 'Auto Roles is disabled in the central module registry.' : null,
+    enabled === false ? 'Auto Roles is disabled.' : null,
     !botMember?.permissions?.has(PermissionFlagsBits.ManageRoles) ? 'Goliath is missing Manage Roles.' : null,
     section.joinRoles.length === 0 && (!section.settings.applyToBots || section.botRoles.length === 0) ? 'No automatic roles are configured.' : null,
     ...roles.filter((role) => !role.exists).map((role) => `Role ${role.roleId} no longer exists.`),
@@ -353,9 +348,7 @@ async function buildHealthReport(guild) {
   ].filter(Boolean);
 
   return {
-    enabled: registryEnabled && section.enabled !== false,
-    registryEnabled,
-    configEnabled: section.enabled !== false,
+    enabled,
     hasManageRoles: Boolean(botMember?.permissions?.has(PermissionFlagsBits.ManageRoles)),
     joinRoles: section.joinRoles.length,
     botRoles: section.botRoles.length,
@@ -416,7 +409,7 @@ function exportConfiguration(guildId) {
     exportedAt: now(),
     guildId,
     module: MODULE,
-    registryEnabled: guildManager.isModuleEnabled(guildId, MODULE),
+    enabled: guildManager.isModuleEnabled(guildId, MODULE),
     config: getAutoRolesSection(guildId),
   };
 }
