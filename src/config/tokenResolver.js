@@ -2,6 +2,8 @@
 
 const crypto = require('crypto');
 
+const { normalizeBotMode } = require('./botModes');
+
 const MODE_TOKEN_ENV = Object.freeze({
   DEV: [
     'DISCORD_BOT_TOKEN_DEV',
@@ -31,12 +33,6 @@ const GENERIC_TOKEN_ENV = [
 
 let loggedResolution = false;
 
-function normalizeMode(config = {}) {
-  return String(config?.mode || config?.name || process.env.BOT_MODE || 'DEV')
-    .trim()
-    .toUpperCase();
-}
-
 function firstConfigured(names = []) {
   for (const name of names) {
     const value = String(process.env[name] || '').trim();
@@ -51,7 +47,7 @@ function tokenFingerprint(token) {
 }
 
 function resolveTokenDetails(config = {}) {
-  const mode = normalizeMode(config);
+  const mode = normalizeBotMode(config?.mode || config?.name || process.env.BOT_MODE);
 
   if (String(config?.token || '').trim()) {
     return {
