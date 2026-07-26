@@ -80,8 +80,6 @@ Runtime imports
 ✅ src/events/roles/roleLogs.js
 ✅ src/events/roles/roleSync.js
 ✅ src/events/schedule/scheduleReady.js
-❌ src/events/social/socialReady.js
-❌ src/events/social/socialShardResume.js
 ✅ src/events/stats/clientReady.js
 ✅ src/events/threads/threadLogs.js
 ✅ src/events/timedroles/timedRolesMemberJoin.js
@@ -103,7 +101,7 @@ Runtime imports
 ✅ src/server/routes/discordResources.js
 ✅ src/server/routes/discordRoleEditor.js
 ✅ src/server/routes/embeds.js
-❌ src/server/routes/forms.js
+✅ src/server/routes/forms.js
 ✅ src/server/routes/media.js
 ✅ src/server/routes/moderation.js
 ✅ src/server/routes/modules.js
@@ -124,9 +122,6 @@ Runtime imports
 ✅ src/server/routes/translation.js
  - src/events/messages/messageReactionAdd.js: Error: Cannot find module '../../embed/embedTemplates' | Require stack: | - /home/runner/work/Goliath/Goliath/src/modules/roleStudio/reactionRoles/reactionRoles.js
  - src/events/messages/messageReactionRemove.js: Error: Cannot find module '../../embed/embedTemplates' | Require stack: | - /home/runner/work/Goliath/Goliath/src/modules/roleStudio/reactionRoles/reactionRoles.js
- - src/events/social/socialReady.js: Error: Cannot find module '../../modules/social/social' | Require stack: | - /home/runner/work/Goliath/Goliath/src/events/social/socialReady.js
- - src/events/social/socialShardResume.js: Error: Cannot find module '../../modules/social/social' | Require stack: | - /home/runner/work/Goliath/Goliath/src/events/social/socialShardResume.js
- - src/server/routes/forms.js: Error: Cannot find module '../tickets/ticketManager' | Require stack: | - /home/runner/work/Goliath/Goliath/src/modules/feedbackStudio/forms/formsTracking.js
 
 Runtime
 =======
@@ -170,5 +165,4 @@ Invite Studio doctor
 ✅ src/modules/communityStudio/invites/invitesRoute.js
 ✅ src/modules/communityStudio/invites/invitesAdminPanel.js
 ✅ src/dashboard/js/pages/modules/Invites.jsx
-❌ docs/modules/communityStudio/invites.md
- - docs/modules/communityStudio/invites.md: missing
+✅ docs/modules/communityStudio/invites.md
