@@ -2,7 +2,7 @@
 
 const { handleReactionRemove } = require('../../modules/roleStudio/reactionRoles/reactionRoles');
 const { leaveGiveawayReaction } = require('../../modules/communityStudio/giveaways/giveawaysManager');
-const { handleStarReactionRemove } = require('../../modules/messageStudio/starboard/starboardManager');
+const { handleStarReactionRemove } = require('../../modules/messageStudio/starboard/starboard');
 const { isModuleEnabled } = require('../../core/guild/guildManager');
 
 async function getReactionGuildId(reaction) {
@@ -18,7 +18,7 @@ module.exports = {
       const guildId = await getReactionGuildId(reaction);
       await handleReactionRemove(reaction, user, client);
       if (isModuleEnabled(guildId, 'giveaways')) await leaveGiveawayReaction(reaction, user);
-      if (isModuleEnabled(guildId, 'starboard')) await handleStarReactionRemove(reaction, user, client);
+      if (isModuleEnabled(guildId, 'starboard')) await handleStarReactionRemove(reaction, user);
     } catch (error) {
       console.error('[EVENT: messageReactionRemove]', error);
     }
