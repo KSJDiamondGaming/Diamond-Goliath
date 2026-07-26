@@ -7,7 +7,7 @@ on:
       - .github/workflows/repository-cleanup-audit.yml
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   audit:
@@ -17,42 +17,54 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: dev
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Repository policy scan
+      - name: Run complete cleanup validation
+        id: validation
+        continue-on-error: true
         shell: bash
+        env:
+          BOT_MODE: dev
         run: |
-          test ! -d core
-          test "$(find scripts -maxdepth 1 -type f | wc -l)" -eq 1
-          ! grep -RInE "process\.cwd\(\).*['\"]src['\"].*['\"]runtime['\"]" src scripts server.js --include='*.js'
-          ! grep -RInE "(^|[^[:alnum:]_])(TODO|FIXME)([^[:alnum:]_]|$)" src scripts server.js --include='*.js'
-          ! grep -RIn $'\xEF\xBB\xBF' . --exclude-dir=.git --exclude-dir=node_modules
+          set -o pipefail
+          status=0
 
-      - name: JavaScript syntax scan
-        shell: bash
-        run: |
+          npm ci || status=1
+
+          test ! -d core || status=1
+          test "$(find scripts -maxdepth 1 -type f | wc -l)" -eq 1 || status=1
+          ! grep -RInE "process\.cwd\(\).*['\"]src['\"].*['\"]runtime['\"]" src scripts server.js --include='*.js' || status=1
+          ! grep -RInE "(^|[^[:alnum:]_])(TODO|FIXME)([^[:alnum:]_]|$)" src scripts server.js --include='*.js' || status=1
+          ! grep -RIn $'\xEF\xBB\xBF' . --exclude-dir=.git --exclude-dir=node_modules || status=1
+
           find src scripts -type f \( -name '*.js' -o -name '*.cjs' -o -name '*.mjs' \) -print0 \
-            | xargs -0 -n1 node --check
-          node --check server.js
+            | xargs -0 -n1 node --check || status=1
+          node --check server.js || status=1
 
-      - name: Doctor
-        env:
-          BOT_MODE: dev
-        run: npm run doctor
+          npm run doctor || status=1
+          npm run audit || status=1
+          npm test || status=1
 
-      - name: Audit
-        env:
-          BOT_MODE: dev
-        run: npm run audit
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit "$status"
 
-      - name: Schedule tests
+      - name: Remove audit workflow and report result
+        if: always()
+        shell: bash
         env:
-          BOT_MODE: dev
-        run: npm test
+          RESULT: ${{ steps.validation.outputs.status }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/repository-cleanup-audit.yml
+          git commit -m "audit: repository cleanup $([ "$RESULT" = "0" ] && echo passed || echo failed)"
+          git push origin dev
+
+      - name: Fail workflow when validation failed
+        if: steps.validation.outputs.status != '0'
+        run: exit 1
