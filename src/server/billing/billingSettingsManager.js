@@ -1,9 +1,8 @@
 'use strict';
 
 const fs = require('fs');
-const path = require('path');
 
-const { getRuntimeRoot } = require('../../config/runtimePaths');
+const { resolveBillingPath } = require('./billingPaths');
 
 const DEFAULT_PRICING = Object.freeze({
   free: Object.freeze({ price: '£0', cadence: 'Free', note: 'No payment required.' }),
@@ -23,14 +22,8 @@ function now() {
   return new Date().toISOString();
 }
 
-function getBillingDir() {
-  const dir = path.join(getRuntimeRoot(process.env.BOT_MODE), 'billing');
-  fs.mkdirSync(dir, { recursive: true });
-  return dir;
-}
-
 function getSettingsFile() {
-  return path.join(getBillingDir(), 'billingSettings.json');
+  return resolveBillingPath('billingSettings.json');
 }
 
 function cleanText(value, fallback, maxLength = 80) {
