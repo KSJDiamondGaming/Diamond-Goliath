@@ -3,7 +3,7 @@
 const { EmbedBuilder } = require('discord.js');
 
 const forms = require('./forms');
-const ticketManager = require('../tickets/ticketsLifecycle');
+const ticketManager = require('../tickets/tickets');
 const ticketChannelManager = require('../tickets/ticketsChannels');
 const { sendTicketControlMessage } = require('../tickets/ticketsPanel');
 const { updateTicket } = require('../tickets/tickets');
