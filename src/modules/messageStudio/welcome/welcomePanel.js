@@ -86,7 +86,7 @@ async function buildWelcomePanel(guild, memberDisplayName = 'Unknown User', user
   const warnings = health.warnings || [];
 
   const embed = new EmbedBuilder()
-    .setColor(warnings.length ? 0xfaa61a : 0x57f287)
+    .setColor(config.enabled === false ? 0xed4245 : warnings.length ? 0xfaa61a : 0x57f287)
     .setTitle('👋 Welcome · Setup')
     .setDescription([
       `**Status:** ${config.enabled ? 'Enabled ✅' : 'Disabled ❌'}`,
