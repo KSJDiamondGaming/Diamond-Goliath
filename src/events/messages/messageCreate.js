@@ -7,24 +7,29 @@ const translationThreadManager = require('../../modules/utilityStudio/translatio
 const statsManager = require('../../modules/utilityStudio/stats/statsManager');
 const levelingTracking = require('../../modules/communityStudio/leveling/levelingTracking');
 
+async function runHandler(label, handler, ...args) {
+  try {
+    return await handler(...args);
+  } catch (error) {
+    console.error(`[MessageCreate] ${label} handler failed:`, error?.stack || error?.message || error);
+    return null;
+  }
+}
+
 module.exports = {
   name: Events.MessageCreate,
 
   async execute(message, client) {
-    try {
-      if (!message.guild || !message.member) return;
-      if (!message.content || message.author?.bot) return;
+    if (!message.guild || !message.member) return;
+    if (!message.content || message.author?.bot) return;
 
-      await statsManager.handleMessageCreate(message);
-      await levelingTracking.handleMessageCreate(message);
+    await runHandler('Stats', statsManager.handleMessageCreate, message);
+    await runHandler('Leveling', levelingTracking.handleMessageCreate, message);
 
-      const handledPrefixCommand = await handlePrefixCommand(message, client);
-      if (handledPrefixCommand) return;
+    const handledPrefixCommand = await runHandler('Prefix Command', handlePrefixCommand, message, client);
+    if (handledPrefixCommand) return;
 
-      await translationThreadManager.handleMessageCreate(message, client);
-      await handleStickyMessage(message, client);
-    } catch (error) {
-      console.error('[EVENT: messageCreate]', error);
-    }
+    await runHandler('Translation', translationThreadManager.handleMessageCreate, message, client);
+    await runHandler('Sticky', handleStickyMessage, message, client);
   },
 };
