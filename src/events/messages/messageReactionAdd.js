@@ -11,17 +11,30 @@ async function getReactionGuildId(reaction) {
   return reaction?.message?.guild?.id || null;
 }
 
+async function runHandler(label, handler) {
+  try {
+    await handler();
+  } catch (error) {
+    console.error(`[EVENT: messageReactionAdd] ${label} failed:`, error);
+  }
+}
+
 module.exports = {
   name: 'messageReactionAdd',
   async execute(reaction, user, client) {
-    try {
-      const guildId = await getReactionGuildId(reaction);
-      await handleReactionAdd(reaction, user, client);
-      if (!guildId) return;
-      if (isModuleEnabled(guildId, 'giveaways')) await enterGiveawayReaction(reaction, user);
-      if (isModuleEnabled(guildId, 'starboard')) await handleStarReactionAdd(reaction, user);
-    } catch (error) {
-      console.error('[EVENT: messageReactionAdd]', error);
+    const guildId = await getReactionGuildId(reaction).catch((error) => {
+      console.error('[EVENT: messageReactionAdd] Failed to resolve guild:', error);
+      return null;
+    });
+
+    await runHandler('Reaction Roles', () => handleReactionAdd(reaction, user, client));
+    if (!guildId) return;
+
+    if (isModuleEnabled(guildId, 'giveaways')) {
+      await runHandler('Giveaways', () => enterGiveawayReaction(reaction, user));
+    }
+    if (isModuleEnabled(guildId, 'starboard')) {
+      await runHandler('Starboard', () => handleStarReactionAdd(reaction, user));
     }
   },
 };
