@@ -258,6 +258,8 @@ async function kickMemberFromTempChannel(guild, channelId, actorId, targetId, bl
 }
 
 async function deleteOwnedTempChannel(guild, channelId, actorId) {
+  if (!guild?.id) throw new Error('Guild is required.');
+  assertTempVoiceModuleEnabled(guild.id);
   const tempChannel = tempVoiceStore.getTempChannel(guild.id, channelId);
   if (!tempChannel) throw new Error('Temporary voice channel is not tracked.');
   await assertCanControl(guild, tempChannel, actorId);
