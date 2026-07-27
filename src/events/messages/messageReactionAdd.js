@@ -17,6 +17,7 @@ module.exports = {
     try {
       const guildId = await getReactionGuildId(reaction);
       await handleReactionAdd(reaction, user, client);
+      if (!guildId) return;
       if (isModuleEnabled(guildId, 'giveaways')) await enterGiveawayReaction(reaction, user);
       if (isModuleEnabled(guildId, 'starboard')) await handleStarReactionAdd(reaction, user);
     } catch (error) {
