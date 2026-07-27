@@ -146,7 +146,7 @@ let ticketSetupPanelApi;
       return button(
         CUSTOM_IDS.CLAIM,
         'Claimed',
-        '✅',
+        'âœ…',
         ButtonStyle.Success,
         true
       );
@@ -155,7 +155,7 @@ let ticketSetupPanelApi;
     return button(
       CUSTOM_IDS.CLAIM,
       'Claim',
-      '🎫',
+      'ðŸŽ«',
       ButtonStyle.Primary,
       isLocked
     );
@@ -165,7 +165,7 @@ let ticketSetupPanelApi;
     return button(
       CUSTOM_IDS.CLOSE,
       'Close',
-      '🔒',
+      'ðŸ”’',
       ButtonStyle.Danger,
       isLocked
     );
@@ -175,7 +175,7 @@ let ticketSetupPanelApi;
     return button(
       CUSTOM_IDS.ARCHIVE,
       'Archive',
-      '📁',
+      'ðŸ“',
       ButtonStyle.Secondary,
       isArchived
     );
@@ -185,7 +185,7 @@ let ticketSetupPanelApi;
     return button(
       CUSTOM_IDS.TRANSCRIPT,
       'Transcript',
-      '📄',
+      'ðŸ“„',
       ButtonStyle.Secondary,
       disabled
     );
@@ -195,7 +195,7 @@ let ticketSetupPanelApi;
     return button(
       CUSTOM_IDS.ADD_USER,
       'Add User',
-      '👤',
+      'ðŸ‘¤',
       ButtonStyle.Secondary,
       isLocked
     );
@@ -205,7 +205,7 @@ let ticketSetupPanelApi;
     return button(
       CUSTOM_IDS.PRIORITY,
       'Priority',
-      '⚠️',
+      'âš ï¸',
       ButtonStyle.Secondary,
       isLocked
     );
@@ -215,7 +215,7 @@ let ticketSetupPanelApi;
     return button(
       CUSTOM_IDS.REOPEN,
       'Reopen',
-      '🔓',
+      'ðŸ”“',
       ButtonStyle.Success,
       disabled
     );
@@ -225,7 +225,7 @@ let ticketSetupPanelApi;
     return button(
       CUSTOM_IDS.DELETE,
       'Delete',
-      '🗑️',
+      'ðŸ—‘ï¸',
       ButtonStyle.Danger,
       disabled
     );
@@ -235,7 +235,7 @@ let ticketSetupPanelApi;
     return button(
       CUSTOM_IDS.DELETE_CONFIRM,
       'Confirm Delete',
-      '⚠️',
+      'âš ï¸',
       ButtonStyle.Danger,
       disabled
     );
@@ -465,9 +465,9 @@ let ticketSetupPanelApi;
     updateTicket,
   } = require('./tickets');
 
-  const {
-    createNewTicket,
-  } = require('./ticketsLifecycle');
+  function createNewTicket(...args) {
+    return require('./ticketsLifecycle').createNewTicket(...args);
+  }
 
   const {
     createTicketChannel,
@@ -498,9 +498,9 @@ let ticketSetupPanelApi;
 
   function buildPanelStatusText(panel) {
     if (!panel) return 'Unknown';
-    if (panel.deployed) return '🟢 Deployed';
-    if (panel.enabled === false) return '🔴 Disabled';
-    return '🟡 Draft';
+    if (panel.deployed) return 'ðŸŸ¢ Deployed';
+    if (panel.enabled === false) return 'ðŸ”´ Disabled';
+    return 'ðŸŸ¡ Draft';
   }
 
   function formatLabel(value = '') {
@@ -821,7 +821,7 @@ let ticketSetupPanelApi;
       'Unknown';
 
     const embed = new EmbedBuilder()
-      .setTitle(`🎫 ${ticketTitle}`)
+      .setTitle(`ðŸŽ« ${ticketTitle}`)
       .setDescription(
         [
           `Ticket opened by <@${user?.id || ticket.creatorId}>.`,
@@ -925,8 +925,8 @@ let ticketSetupPanelApi;
 
       await interaction.reply({
         content: existingChannelId
-          ? `❌ ${guard.reason}\nExisting ticket: <#${existingChannelId}>`
-          : `❌ ${guard.reason}`,
+          ? `âŒ ${guard.reason}\nExisting ticket: <#${existingChannelId}>`
+          : `âŒ ${guard.reason}`,
         flags: MessageFlags.Ephemeral,
       });
 
@@ -1049,8 +1049,8 @@ let ticketSetupPanelApi;
 
     await interaction.editReply({
       content: channel
-        ? `✅ Ticket created: <#${channel.id}>`
-        : '⚠️ Ticket created, but I could not create the Discord channel.',
+        ? `âœ… Ticket created: <#${channel.id}>`
+        : 'âš ï¸ Ticket created, but I could not create the Discord channel.',
     });
 
     return true;
@@ -1166,40 +1166,40 @@ let ticketSetupPanelApi;
 
   const PANEL_TYPE_UI = {
     support: {
-      emoji: '🎟️',
+      emoji: 'ðŸŽŸï¸',
       name: 'General Support',
       label: 'Create Support',
       title: 'Need Support?',
       description: 'Press the button below to open a private support ticket.',
       buttonLabel: 'Open Support Ticket',
-      buttonEmoji: '🎟️',
+      buttonEmoji: 'ðŸŽŸï¸',
     },
     appeal: {
-      emoji: '⚖️',
+      emoji: 'âš–ï¸',
       name: 'Ban Appeal',
       label: 'Create Appeal',
       title: 'Submit an Appeal',
       description: 'Press the button below to open a private appeal ticket.',
       buttonLabel: 'Open Appeal Ticket',
-      buttonEmoji: '⚖️',
+      buttonEmoji: 'âš–ï¸',
     },
     report: {
-      emoji: '🚨',
+      emoji: 'ðŸš¨',
       name: 'Reports',
       label: 'Create Report',
       title: 'Submit a Report',
       description: 'Press the button below to report an issue privately.',
       buttonLabel: 'Open Report Ticket',
-      buttonEmoji: '🚨',
+      buttonEmoji: 'ðŸš¨',
     },
     application: {
-      emoji: '📝',
+      emoji: 'ðŸ“',
       name: 'Applications',
       label: 'Create Application',
       title: 'Submit an Application',
       description: 'Press the button below to open a private application ticket.',
       buttonLabel: 'Open Application Ticket',
-      buttonEmoji: '📝',
+      buttonEmoji: 'ðŸ“',
     },
   };
 
@@ -1234,13 +1234,13 @@ let ticketSetupPanelApi;
     },
     buttonEmoji: {
       label: 'Button Emoji',
-      placeholder: '🎫',
+      placeholder: 'ðŸŽ«',
       style: TextInputStyle.Short,
       maxLength: 50,
     },
     footerText: {
       label: 'Footer Text',
-      placeholder: 'Goliath • Ticket System',
+      placeholder: 'Goliath â€¢ Ticket System',
       style: TextInputStyle.Short,
       maxLength: 2048,
     },
@@ -1324,7 +1324,7 @@ let ticketSetupPanelApi;
             .reply(
               ephemeralPayload({
                 content:
-                  '❌ Ticket setup panel failed to update. Check VPS logs.',
+                  'âŒ Ticket setup panel failed to update. Check VPS logs.',
               })
             )
             .catch(() => null);
@@ -1373,9 +1373,9 @@ let ticketSetupPanelApi;
   }
 
   function getStatusText(panel) {
-    if (panel?.deployed) return '🟢 Deployed';
-    if (panel?.enabled === false) return '🔴 Disabled';
-    return '🟡 Draft';
+    if (panel?.deployed) return 'ðŸŸ¢ Deployed';
+    if (panel?.enabled === false) return 'ðŸ”´ Disabled';
+    return 'ðŸŸ¡ Draft';
   }
 
   function formatLabel(value) {
@@ -1459,7 +1459,7 @@ let ticketSetupPanelApi;
     const stats = getSetupStats(guildId);
 
     return new EmbedBuilder()
-      .setTitle('🎟️ Goliath Tickets')
+      .setTitle('ðŸŽŸï¸ Goliath Tickets')
       .setDescription(
         [
           '**Realtime Platform Expansion**',
@@ -1475,7 +1475,7 @@ let ticketSetupPanelApi;
         ].join('\n')
       )
       .setColor('#5865F2')
-      .setFooter({ text: 'Goliath • Ticket System' })
+      .setFooter({ text: 'Goliath â€¢ Ticket System' })
       .setTimestamp();
   }
 
@@ -1487,14 +1487,14 @@ let ticketSetupPanelApi;
     return new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
         .setCustomId('ticket_setup:select_panel')
-        .setPlaceholder('👥 Manage an existing ticket panel')
+        .setPlaceholder('ðŸ‘¥ Manage an existing ticket panel')
         .addOptions(
           panels.map((panel) => {
             const ui = getPanelTypeUi(panel.ticketType);
 
             return {
               label: String(panel.name || ui.name || 'Ticket Panel').slice(0, 100),
-              description: `${formatLabel(panel.ticketType || 'Support')} • ${formatLabel(
+              description: `${formatLabel(panel.ticketType || 'Support')} â€¢ ${formatLabel(
                 panel.deployed ? 'Deployed' : panel.status || 'Draft'
               )}`,
               value: panel.panelId,
@@ -1511,31 +1511,31 @@ let ticketSetupPanelApi;
         .setCustomId('ticket_setup:create_support')
         .setLabel('Create Support')
         .setStyle(ButtonStyle.Primary)
-        .setEmoji('🎟️'),
+        .setEmoji('ðŸŽŸï¸'),
 
       new ButtonBuilder()
         .setCustomId('ticket_setup:create_appeal')
         .setLabel('Create Appeal')
         .setStyle(ButtonStyle.Secondary)
-        .setEmoji('⚖️'),
+        .setEmoji('âš–ï¸'),
 
       new ButtonBuilder()
         .setCustomId('ticket_setup:create_report')
         .setLabel('Create Report')
         .setStyle(ButtonStyle.Secondary)
-        .setEmoji('🚨'),
+        .setEmoji('ðŸš¨'),
 
       new ButtonBuilder()
         .setCustomId('ticket_setup:create_application')
         .setLabel('Create Application')
         .setStyle(ButtonStyle.Secondary)
-        .setEmoji('📝'),
+        .setEmoji('ðŸ“'),
 
       new ButtonBuilder()
         .setCustomId('ticket_setup:refresh')
         .setLabel('Refresh')
         .setStyle(ButtonStyle.Secondary)
-        .setEmoji('🔄')
+        .setEmoji('ðŸ”„')
     );
   }
 
@@ -1543,7 +1543,7 @@ let ticketSetupPanelApi;
     const appearance = panel.appearance || {};
 
     return new EmbedBuilder()
-      .setTitle(`🎛️ ${panel.name}`)
+      .setTitle(`ðŸŽ›ï¸ ${panel.name}`)
       .setDescription(
         [
           `**Panel ID:** \`${panel.panelId}\``,
@@ -1553,22 +1553,22 @@ let ticketSetupPanelApi;
 
           '',
           '**Routing**',
-          `📁 Ticket Category: ${
+          `ðŸ“ Ticket Category: ${
             panel.outputCategoryId
               ? `<#${panel.outputCategoryId}>`
               : '`Not set`'
           }`,
-          `📢 Panel Channel: ${
+          `ðŸ“¢ Panel Channel: ${
             panel.deployChannelId
               ? `<#${panel.deployChannelId}>`
               : '`Not set`'
           }`,
-          `📜 Logs Channel: ${
+          `ðŸ“œ Logs Channel: ${
             panel.logsChannelId
               ? `<#${panel.logsChannelId}>`
               : '`Not set`'
           }`,
-          `📦 Archive Category: ${
+          `ðŸ“¦ Archive Category: ${
             panel.archiveCategoryId
               ? `<#${panel.archiveCategoryId}>`
               : '`Not set`'
@@ -1576,10 +1576,10 @@ let ticketSetupPanelApi;
 
           '',
           '**Management Summary**',
-          `⚙️ Manage Ticket: \`Appearance, limits, cooldowns and roles\``,
-          `🎟️ Ticket Limit: ${formatLimit(getPanelLimit(panel))}`,
-          `⏱️ Cooldown: ${formatCooldown(getPanelCooldownMs(panel))}`,
-          `🔒 One Active Per Type: \`${
+          `âš™ï¸ Manage Ticket: \`Appearance, limits, cooldowns and roles\``,
+          `ðŸŽŸï¸ Ticket Limit: ${formatLimit(getPanelLimit(panel))}`,
+          `â±ï¸ Cooldown: ${formatCooldown(getPanelCooldownMs(panel))}`,
+          `ðŸ”’ One Active Per Type: \`${
             panel.oneActivePerType === false
               ? 'Off'
               : 'On'
@@ -1587,21 +1587,21 @@ let ticketSetupPanelApi;
 
           '',
           '**Roles**',
-          `👥 Staff Roles: ${formatRoleCount(panel.staffRoleIds)}`,
-          `🛡️ Manager Roles: ${formatRoleCount(panel.managerRoleIds)}`,
-          `👁️ Viewer Roles: ${formatRoleCount(panel.viewerRoleIds)}`,
+          `ðŸ‘¥ Staff Roles: ${formatRoleCount(panel.staffRoleIds)}`,
+          `ðŸ›¡ï¸ Manager Roles: ${formatRoleCount(panel.managerRoleIds)}`,
+          `ðŸ‘ï¸ Viewer Roles: ${formatRoleCount(panel.viewerRoleIds)}`,
 
           '',
           '**Appearance**',
-          `🎨 Appearance: \`Embed, button, colors and layout\``,
-          `🎨 Embed Title: \`${appearance.title || 'Not set'}\``,
-          `🧾 Embed Description: \`${
+          `ðŸŽ¨ Appearance: \`Embed, button, colors and layout\``,
+          `ðŸŽ¨ Embed Title: \`${appearance.title || 'Not set'}\``,
+          `ðŸ§¾ Embed Description: \`${
             appearance.description
               ? 'Configured'
               : 'Not set'
           }\``,
-          `🎨 Embed Color: \`${appearance.color || '#5865F2'}\``,
-          `🔘 Button: \`${appearance.buttonEmoji || '🎫'} ${
+          `ðŸŽ¨ Embed Color: \`${appearance.color || '#5865F2'}\``,
+          `ðŸ”˜ Button: \`${appearance.buttonEmoji || 'ðŸŽ«'} ${
             appearance.buttonLabel || 'Open Ticket'
           }\``,
         ].join('\n')
@@ -1617,28 +1617,28 @@ let ticketSetupPanelApi;
     const appearance = panel.appearance || {};
 
     return new EmbedBuilder()
-      .setTitle(`⚙️ Manage Ticket • ${panel.name}`)
+      .setTitle(`âš™ï¸ Manage Ticket â€¢ ${panel.name}`)
       .setDescription(
         [
           `**Panel ID:** \`${panel.panelId}\``,
           '',
           '**Appearance**',
-          `🎨 Title: \`${appearance.title || 'Not set'}\``,
-          `🧾 Description: \`${appearance.description ? 'Configured' : 'Not set'}\``,
-          `🎨 Color: \`${appearance.color || '#5865F2'}\``,
-          `🔘 Button: \`${appearance.buttonEmoji || '🎫'} ${
+          `ðŸŽ¨ Title: \`${appearance.title || 'Not set'}\``,
+          `ðŸ§¾ Description: \`${appearance.description ? 'Configured' : 'Not set'}\``,
+          `ðŸŽ¨ Color: \`${appearance.color || '#5865F2'}\``,
+          `ðŸ”˜ Button: \`${appearance.buttonEmoji || 'ðŸŽ«'} ${
             appearance.buttonLabel || 'Open Ticket'
           }\``,
           '',
           '**Ticket Controls**',
-          `🎟️ Ticket Limit: ${formatLimit(getPanelLimit(panel))}`,
-          `⏱️ Cooldown: ${formatCooldown(getPanelCooldownMs(panel))}`,
-          `🔒 One Active Per Type: \`${panel.oneActivePerType === false ? 'Off' : 'On'}\``,
+          `ðŸŽŸï¸ Ticket Limit: ${formatLimit(getPanelLimit(panel))}`,
+          `â±ï¸ Cooldown: ${formatCooldown(getPanelCooldownMs(panel))}`,
+          `ðŸ”’ One Active Per Type: \`${panel.oneActivePerType === false ? 'Off' : 'On'}\``,
           '',
           '**Roles**',
-          `👥 Staff Roles: ${formatRoleCount(panel.staffRoleIds)}`,
-          `🛡️ Manager Roles: ${formatRoleCount(panel.managerRoleIds)}`,
-          `👁️ Viewer Roles: ${formatRoleCount(panel.viewerRoleIds)}`,
+          `ðŸ‘¥ Staff Roles: ${formatRoleCount(panel.staffRoleIds)}`,
+          `ðŸ›¡ï¸ Manager Roles: ${formatRoleCount(panel.managerRoleIds)}`,
+          `ðŸ‘ï¸ Viewer Roles: ${formatRoleCount(panel.viewerRoleIds)}`,
         ].join('\n')
       )
       .setColor(appearance.color || '#5865F2')
@@ -1648,24 +1648,24 @@ let ticketSetupPanelApi;
 
   function buildRoleEditorEmbed(panel) {
     return new EmbedBuilder()
-      .setTitle(`👥 Manage Roles • ${panel.name}`)
+      .setTitle(`ðŸ‘¥ Manage Roles â€¢ ${panel.name}`)
       .setDescription(
         [
           `**Panel ID:** \`${panel.panelId}\``,
           '',
           '**Current Roles**',
-          `👥 Staff Roles: ${formatRoleCount(panel.staffRoleIds)}`,
-          `🛡️ Manager Roles: ${formatRoleCount(panel.managerRoleIds)}`,
-          `👁️ Viewer Roles: ${formatRoleCount(panel.viewerRoleIds)}`,
+          `ðŸ‘¥ Staff Roles: ${formatRoleCount(panel.staffRoleIds)}`,
+          `ðŸ›¡ï¸ Manager Roles: ${formatRoleCount(panel.managerRoleIds)}`,
+          `ðŸ‘ï¸ Viewer Roles: ${formatRoleCount(panel.viewerRoleIds)}`,
           '',
           '**Role Access**',
-          '👥 Staff can claim, update, close, reopen and archive tickets.',
-          '🛡️ Managers can do staff actions plus delete/manage higher-level controls.',
-          '👁️ Viewers can read tickets but cannot send messages.',
+          'ðŸ‘¥ Staff can claim, update, close, reopen and archive tickets.',
+          'ðŸ›¡ï¸ Managers can do staff actions plus delete/manage higher-level controls.',
+          'ðŸ‘ï¸ Viewers can read tickets but cannot send messages.',
         ].join('\n')
       )
       .setColor('#5865F2')
-      .setFooter({ text: 'Goliath • Ticket Role Editor' })
+      .setFooter({ text: 'Goliath â€¢ Ticket Role Editor' })
       .setTimestamp();
   }
 
@@ -1673,26 +1673,26 @@ let ticketSetupPanelApi;
     const appearance = panel.appearance || {};
 
     return new EmbedBuilder()
-      .setTitle(`🎨 Appearance • ${panel.name}`)
+      .setTitle(`ðŸŽ¨ Appearance â€¢ ${panel.name}`)
       .setDescription(
         [
           `**Panel ID:** \`${panel.panelId}\``,
           '',
           '**Current Appearance**',
-          `🎨 Embed Title: \`${appearance.title || 'Not set'}\``,
-          `🧾 Description: \`${appearance.description ? 'Configured' : 'Not set'}\``,
-          `🎨 Embed Color: \`${appearance.color || '#5865F2'}\``,
-          `🖼️ Image: \`${appearance.imageUrl ? 'Configured' : 'Not set'}\``,
-          `🖼️ Thumbnail: \`${appearance.thumbnailUrl ? 'Configured' : 'Not set'}\``,
-          `🔘 Button Label: \`${appearance.buttonLabel || 'Open Ticket'}\``,
-          `😀 Button Emoji: \`${appearance.buttonEmoji || '🎫'}\``,
-          `📝 Footer Text: \`${appearance.footerText || 'Not set'}\``,
+          `ðŸŽ¨ Embed Title: \`${appearance.title || 'Not set'}\``,
+          `ðŸ§¾ Description: \`${appearance.description ? 'Configured' : 'Not set'}\``,
+          `ðŸŽ¨ Embed Color: \`${appearance.color || '#5865F2'}\``,
+          `ðŸ–¼ï¸ Image: \`${appearance.imageUrl ? 'Configured' : 'Not set'}\``,
+          `ðŸ–¼ï¸ Thumbnail: \`${appearance.thumbnailUrl ? 'Configured' : 'Not set'}\``,
+          `ðŸ”˜ Button Label: \`${appearance.buttonLabel || 'Open Ticket'}\``,
+          `ðŸ˜€ Button Emoji: \`${appearance.buttonEmoji || 'ðŸŽ«'}\``,
+          `ðŸ“ Footer Text: \`${appearance.footerText || 'Not set'}\``,
           '',
           'Choose what you want to edit from the dropdown below.',
         ].join('\n')
       )
       .setColor(appearance.color || '#5865F2')
-      .setFooter({ text: 'Goliath • Ticket Appearance Editor' })
+      .setFooter({ text: 'Goliath â€¢ Ticket Appearance Editor' })
       .setTimestamp();
   }
 
@@ -1702,19 +1702,19 @@ let ticketSetupPanelApi;
         .setCustomId(`ticket_setup:deploy:${panelId}`)
         .setLabel('Deploy')
         .setStyle(ButtonStyle.Success)
-        .setEmoji('🚀'),
+        .setEmoji('ðŸš€'),
 
       new ButtonBuilder()
         .setCustomId(`ticket_setup:redeploy:${panelId}`)
         .setLabel('Redeploy')
         .setStyle(ButtonStyle.Primary)
-        .setEmoji('🔄'),
+        .setEmoji('ðŸ”„'),
 
       new ButtonBuilder()
         .setCustomId(`ticket_setup:undeploy:${panelId}`)
         .setLabel('Undeploy')
         .setStyle(ButtonStyle.Secondary)
-        .setEmoji('📦')
+        .setEmoji('ðŸ“¦')
     );
   }
 
@@ -1724,13 +1724,13 @@ let ticketSetupPanelApi;
         .setCustomId(`ticket_setup:management:${panelId}`)
         .setLabel('Manage Ticket')
         .setStyle(ButtonStyle.Primary)
-        .setEmoji('⚙️'),
+        .setEmoji('âš™ï¸'),
 
       new ButtonBuilder()
         .setCustomId(`ticket_setup:refresh_deployed:${panelId}`)
         .setLabel('Refresh Panel')
         .setStyle(ButtonStyle.Secondary)
-        .setEmoji('♻️')
+        .setEmoji('â™»ï¸')
     );
   }
 
@@ -1740,13 +1740,13 @@ let ticketSetupPanelApi;
         .setCustomId(`ticket_setup:delete:${panelId}`)
         .setLabel('Delete')
         .setStyle(ButtonStyle.Danger)
-        .setEmoji('🗑️'),
+        .setEmoji('ðŸ—‘ï¸'),
 
       new ButtonBuilder()
         .setCustomId('ticket_setup:back')
         .setLabel('Back')
         .setStyle(ButtonStyle.Secondary)
-        .setEmoji('⬅️')
+        .setEmoji('â¬…ï¸')
     );
   }
 
@@ -1755,7 +1755,7 @@ let ticketSetupPanelApi;
       new ActionRowBuilder().addComponents(
         new ChannelSelectMenuBuilder()
           .setCustomId(`ticket_setup:set_output:${panelId}`)
-          .setPlaceholder('📁 Ticket Category')
+          .setPlaceholder('ðŸ“ Ticket Category')
           .setChannelTypes(ChannelType.GuildCategory)
           .setMinValues(1)
           .setMaxValues(1)
@@ -1764,7 +1764,7 @@ let ticketSetupPanelApi;
       new ActionRowBuilder().addComponents(
         new ChannelSelectMenuBuilder()
           .setCustomId(`ticket_setup:set_deploy:${panelId}`)
-          .setPlaceholder('📢 Panel Channel')
+          .setPlaceholder('ðŸ“¢ Panel Channel')
           .setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
           .setMinValues(1)
           .setMaxValues(1)
@@ -1787,19 +1787,19 @@ let ticketSetupPanelApi;
           .setCustomId(`ticket_setup:appearance:${panel.panelId}`)
           .setLabel('Appearance')
           .setStyle(ButtonStyle.Primary)
-          .setEmoji('🎨'),
+          .setEmoji('ðŸŽ¨'),
 
         new ButtonBuilder()
           .setCustomId(`ticket_setup:roles:${panel.panelId}`)
           .setLabel('Manage Roles')
           .setStyle(ButtonStyle.Primary)
-          .setEmoji('👥'),
+          .setEmoji('ðŸ‘¥'),
 
         new ButtonBuilder()
           .setCustomId(`ticket_setup:set_limit:${panel.panelId}`)
           .setLabel('Ticket Limit')
           .setStyle(ButtonStyle.Primary)
-          .setEmoji('🎟️')
+          .setEmoji('ðŸŽŸï¸')
       ),
 
       new ActionRowBuilder().addComponents(
@@ -1807,20 +1807,20 @@ let ticketSetupPanelApi;
           .setCustomId(`ticket_setup:toggle_one_active:${panel.panelId}`)
           .setLabel(panel.oneActivePerType === false ? 'One Active: Off' : 'One Active: On')
           .setStyle(panel.oneActivePerType === false ? ButtonStyle.Secondary : ButtonStyle.Success)
-          .setEmoji('🔒'),
+          .setEmoji('ðŸ”’'),
 
         new ButtonBuilder()
           .setCustomId(`ticket_setup:set_cooldown:${panel.panelId}`)
           .setLabel('Cooldown')
           .setStyle(ButtonStyle.Secondary)
-          .setEmoji('⏱️'),
+          .setEmoji('â±ï¸'),
 
         new ChannelSelectMenuBuilder()
           .setCustomId(`ticket_setup:set_logs:${panel.panelId}`)
           .setPlaceholder(
             panel.logsChannelId
-              ? '📜 Logs Channel • Set'
-              : '📜 Logs Channel'
+              ? 'ðŸ“œ Logs Channel â€¢ Set'
+              : 'ðŸ“œ Logs Channel'
           )
           .setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
           .setMinValues(1)
@@ -1830,7 +1830,7 @@ let ticketSetupPanelApi;
           .setCustomId(`ticket_setup:back_panel:${panel.panelId}`)
           .setLabel('Back')
           .setStyle(ButtonStyle.Secondary)
-          .setEmoji('⬅️')
+          .setEmoji('â¬…ï¸')
       ),
     ];
   }
@@ -1842,8 +1842,8 @@ let ticketSetupPanelApi;
           .setCustomId(`ticket_setup:set_staff:${panel.panelId}`)
           .setPlaceholder(
             Array.isArray(panel.staffRoleIds) && panel.staffRoleIds.length
-              ? `👥 Staff Roles • ${panel.staffRoleIds.length} selected`
-              : '👥 Staff Roles'
+              ? `ðŸ‘¥ Staff Roles â€¢ ${panel.staffRoleIds.length} selected`
+              : 'ðŸ‘¥ Staff Roles'
           )
           .setMinValues(0)
           .setMaxValues(10)
@@ -1854,8 +1854,8 @@ let ticketSetupPanelApi;
           .setCustomId(`ticket_setup:set_manager:${panel.panelId}`)
           .setPlaceholder(
             Array.isArray(panel.managerRoleIds) && panel.managerRoleIds.length
-              ? `🛡️ Manager Roles • ${panel.managerRoleIds.length} selected`
-              : '🛡️ Manager Roles'
+              ? `ðŸ›¡ï¸ Manager Roles â€¢ ${panel.managerRoleIds.length} selected`
+              : 'ðŸ›¡ï¸ Manager Roles'
           )
           .setMinValues(0)
           .setMaxValues(10)
@@ -1866,8 +1866,8 @@ let ticketSetupPanelApi;
           .setCustomId(`ticket_setup:set_viewer:${panel.panelId}`)
           .setPlaceholder(
             Array.isArray(panel.viewerRoleIds) && panel.viewerRoleIds.length
-              ? `👁️ Viewer Roles • ${panel.viewerRoleIds.length} selected`
-              : '👁️ Viewer Roles'
+              ? `ðŸ‘ï¸ Viewer Roles â€¢ ${panel.viewerRoleIds.length} selected`
+              : 'ðŸ‘ï¸ Viewer Roles'
           )
           .setMinValues(0)
           .setMaxValues(10)
@@ -1878,7 +1878,7 @@ let ticketSetupPanelApi;
           .setCustomId(`ticket_setup:management:${panel.panelId}`)
           .setLabel('Back To Manage Ticket')
           .setStyle(ButtonStyle.Secondary)
-          .setEmoji('⬅️')
+          .setEmoji('â¬…ï¸')
       ),
     ];
   }
@@ -1888,55 +1888,55 @@ let ticketSetupPanelApi;
       new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
           .setCustomId(`ticket_setup:appearance_select:${panel.panelId}`)
-          .setPlaceholder('🎨 Choose appearance setting to edit')
+          .setPlaceholder('ðŸŽ¨ Choose appearance setting to edit')
           .addOptions(
             {
               label: 'Embed Title',
               description: 'Change the panel embed title',
               value: 'title',
-              emoji: '🎨',
+              emoji: 'ðŸŽ¨',
             },
             {
               label: 'Embed Description',
               description: 'Change the panel embed description',
               value: 'description',
-              emoji: '🧾',
+              emoji: 'ðŸ§¾',
             },
             {
               label: 'Embed Color',
               description: 'Set the panel HEX color',
               value: 'color',
-              emoji: '🎨',
+              emoji: 'ðŸŽ¨',
             },
             {
               label: 'Image URL',
               description: 'Set a large image/banner',
               value: 'imageUrl',
-              emoji: '🖼️',
+              emoji: 'ðŸ–¼ï¸',
             },
             {
               label: 'Thumbnail URL',
               description: 'Set a small thumbnail/icon',
               value: 'thumbnailUrl',
-              emoji: '🖼️',
+              emoji: 'ðŸ–¼ï¸',
             },
             {
               label: 'Button Label',
               description: 'Change the open-ticket button text',
               value: 'buttonLabel',
-              emoji: '🔘',
+              emoji: 'ðŸ”˜',
             },
             {
               label: 'Button Emoji',
               description: 'Change the open-ticket button emoji',
               value: 'buttonEmoji',
-              emoji: '😀',
+              emoji: 'ðŸ˜€',
             },
             {
               label: 'Footer Text',
               description: 'Change the embed footer text',
               value: 'footerText',
-              emoji: '📝',
+              emoji: 'ðŸ“',
             }
           )
       ),
@@ -1946,7 +1946,7 @@ let ticketSetupPanelApi;
           .setCustomId(`ticket_setup:management:${panel.panelId}`)
           .setLabel('Back To Manage Ticket')
           .setStyle(ButtonStyle.Secondary)
-          .setEmoji('⬅️')
+          .setEmoji('â¬…ï¸')
       ),
     ];
   }
@@ -1987,7 +1987,7 @@ let ticketSetupPanelApi;
 
     if (!panel) {
       return safeUpdate(interaction, {
-        content: '❌ Ticket panel not found.',
+        content: 'âŒ Ticket panel not found.',
         embeds: [],
         components: [],
       });
@@ -2005,7 +2005,7 @@ let ticketSetupPanelApi;
 
     if (!panel) {
       return safeUpdate(interaction, {
-        content: '❌ Ticket panel not found.',
+        content: 'âŒ Ticket panel not found.',
         embeds: [],
         components: [],
       });
@@ -2023,7 +2023,7 @@ let ticketSetupPanelApi;
 
     if (!panel) {
       return safeUpdate(interaction, {
-        content: '❌ Ticket panel not found.',
+        content: 'âŒ Ticket panel not found.',
         embeds: [],
         components: [],
       });
@@ -2041,7 +2041,7 @@ let ticketSetupPanelApi;
 
     if (!panel) {
       return safeUpdate(interaction, {
-        content: '❌ Ticket panel not found.',
+        content: 'âŒ Ticket panel not found.',
         embeds: [],
         components: [],
       });
@@ -2069,7 +2069,7 @@ let ticketSetupPanelApi;
     let title = 'Need Support?';
     let description = 'Press the button below to open a private support ticket.';
     let buttonLabel = 'Open Support Ticket';
-    let buttonEmoji = '🎫';
+    let buttonEmoji = 'ðŸŽ«';
     let priority = TICKET_PRIORITY.LOW;
     let limit = 2;
 
@@ -2078,7 +2078,7 @@ let ticketSetupPanelApi;
       title = 'Submit an Appeal';
       description = 'Press the button below to open a private appeal ticket.';
       buttonLabel = 'Open Appeal Ticket';
-      buttonEmoji = '⚖️';
+      buttonEmoji = 'âš–ï¸';
       priority = TICKET_PRIORITY.HIGH;
       limit = 1;
     }
@@ -2088,7 +2088,7 @@ let ticketSetupPanelApi;
       title = 'Submit a Report';
       description = 'Press the button below to report an issue privately.';
       buttonLabel = 'Open Report Ticket';
-      buttonEmoji = '🚨';
+      buttonEmoji = 'ðŸš¨';
       priority = TICKET_PRIORITY.NORMAL;
       limit = 3;
     }
@@ -2098,7 +2098,7 @@ let ticketSetupPanelApi;
       title = 'Submit an Application';
       description = 'Press the button below to open a private application ticket.';
       buttonLabel = 'Open Application Ticket';
-      buttonEmoji = '📝';
+      buttonEmoji = 'ðŸ“';
       priority = TICKET_PRIORITY.NORMAL;
       limit = 1;
     }
@@ -2118,7 +2118,7 @@ let ticketSetupPanelApi;
         buttonEmoji,
         imageUrl: null,
         thumbnailUrl: null,
-        footerText: 'Goliath • Ticket System',
+        footerText: 'Goliath â€¢ Ticket System',
       },
     });
   }
@@ -2127,7 +2127,7 @@ let ticketSetupPanelApi;
     return safeReply(
       interaction,
       ephemeralPayload({
-        content: '❌ You need Manage Server permission.',
+        content: 'âŒ You need Manage Server permission.',
       })
     );
   }
@@ -2164,7 +2164,7 @@ let ticketSetupPanelApi;
       return safeReply(
         interaction,
         ephemeralPayload({
-          content: '❌ Ticket panel not found.',
+          content: 'âŒ Ticket panel not found.',
         })
       );
     }
@@ -2193,7 +2193,7 @@ let ticketSetupPanelApi;
       return safeReply(
         interaction,
         ephemeralPayload({
-          content: '❌ Ticket panel not found.',
+          content: 'âŒ Ticket panel not found.',
         })
       );
     }
@@ -2225,7 +2225,7 @@ let ticketSetupPanelApi;
       return safeReply(
         interaction,
         ephemeralPayload({
-          content: '❌ Appearance setting not found.',
+          content: 'âŒ Appearance setting not found.',
         })
       );
     }
@@ -2281,7 +2281,7 @@ let ticketSetupPanelApi;
       return safeReply(
         interaction,
         ephemeralPayload({
-          content: '❌ Invalid ticket limit. Enter 0 or a whole number above 0.',
+          content: 'âŒ Invalid ticket limit. Enter 0 or a whole number above 0.',
         })
       );
     }
@@ -2297,8 +2297,8 @@ let ticketSetupPanelApi;
       ephemeralPayload({
         content:
           value === 0
-            ? '✅ Ticket limit updated: Unlimited.'
-            : `✅ Ticket limit updated: ${value} open ticket${value === 1 ? '' : 's'} per user.`,
+            ? 'âœ… Ticket limit updated: Unlimited.'
+            : `âœ… Ticket limit updated: ${value} open ticket${value === 1 ? '' : 's'} per user.`,
       })
     );
   }
@@ -2311,7 +2311,7 @@ let ticketSetupPanelApi;
       return safeReply(
         interaction,
         ephemeralPayload({
-          content: '❌ Invalid cooldown. Enter 0 or a whole number of seconds.',
+          content: 'âŒ Invalid cooldown. Enter 0 or a whole number of seconds.',
         })
       );
     }
@@ -2327,8 +2327,8 @@ let ticketSetupPanelApi;
       ephemeralPayload({
         content:
           seconds === 0
-            ? '✅ Ticket cooldown disabled.'
-            : `✅ Ticket cooldown updated: ${seconds} second${seconds === 1 ? '' : 's'}.`,
+            ? 'âœ… Ticket cooldown disabled.'
+            : `âœ… Ticket cooldown updated: ${seconds} second${seconds === 1 ? '' : 's'}.`,
       })
     );
   }
@@ -2340,7 +2340,7 @@ let ticketSetupPanelApi;
       return safeReply(
         interaction,
         ephemeralPayload({
-          content: '❌ Appearance setting not found.',
+          content: 'âŒ Appearance setting not found.',
         })
       );
     }
@@ -2355,7 +2355,7 @@ let ticketSetupPanelApi;
         return safeReply(
           interaction,
           ephemeralPayload({
-            content: '❌ Invalid HEX color. Use something like `#5865F2`.',
+            content: 'âŒ Invalid HEX color. Use something like `#5865F2`.',
           })
         );
       }
@@ -2369,7 +2369,7 @@ let ticketSetupPanelApi;
       return safeReply(
         interaction,
         ephemeralPayload({
-          content: '❌ Ticket panel not found.',
+          content: 'âŒ Ticket panel not found.',
         })
       );
     }
@@ -2386,7 +2386,7 @@ let ticketSetupPanelApi;
     return safeReply(
       interaction,
       ephemeralPayload({
-        content: `✅ ${config.label} updated.`,
+        content: `âœ… ${config.label} updated.`,
       })
     );
   }
@@ -2524,7 +2524,7 @@ let ticketSetupPanelApi;
         await safeReply(
           interaction,
           ephemeralPayload({
-            content: '❌ Ticket panel not found.',
+            content: 'âŒ Ticket panel not found.',
           })
         );
         return true;
@@ -2539,7 +2539,7 @@ let ticketSetupPanelApi;
       await safeReply(
         interaction,
         ephemeralPayload({
-          content: `✅ One Active Per Type is now ${
+          content: `âœ… One Active Per Type is now ${
             updated?.oneActivePerType === false ? 'Off' : 'On'
           }.`,
         })
@@ -2597,7 +2597,7 @@ let ticketSetupPanelApi;
       const panel = getPanel(interaction.guild.id, panelId);
 
       if (!panel) {
-        await safeReply(interaction, ephemeralPayload({ content: '❌ Panel not found.' }));
+        await safeReply(interaction, ephemeralPayload({ content: 'âŒ Panel not found.' }));
         return true;
       }
 
@@ -2608,7 +2608,7 @@ let ticketSetupPanelApi;
           interaction,
           ephemeralPayload({
             content:
-              '❌ Please set a Panel Channel first. This is where the ticket panel message will be posted.',
+              'âŒ Please set a Panel Channel first. This is where the ticket panel message will be posted.',
           })
         );
         return true;
@@ -2625,7 +2625,7 @@ let ticketSetupPanelApi;
       });
 
       await safeEditOrReply(interaction, {
-        content: `✅ Ticket panel **${panel.name}** deployed in ${deployChannel}.`,
+        content: `âœ… Ticket panel **${panel.name}** deployed in ${deployChannel}.`,
       });
 
       return true;
@@ -2635,7 +2635,7 @@ let ticketSetupPanelApi;
       const panel = getPanel(interaction.guild.id, panelId);
 
       if (!panel) {
-        await safeReply(interaction, ephemeralPayload({ content: '❌ Panel not found.' }));
+        await safeReply(interaction, ephemeralPayload({ content: 'âŒ Panel not found.' }));
         return true;
       }
 
@@ -2645,7 +2645,7 @@ let ticketSetupPanelApi;
         await safeReply(
           interaction,
           ephemeralPayload({
-            content: '❌ Please set a Panel Channel first before redeploying.',
+            content: 'âŒ Please set a Panel Channel first before redeploying.',
           })
         );
         return true;
@@ -2662,7 +2662,7 @@ let ticketSetupPanelApi;
       });
 
       await safeEditOrReply(interaction, {
-        content: `🔄 Ticket panel **${panel.name}** redeployed in ${deployChannel}.`,
+        content: `ðŸ”„ Ticket panel **${panel.name}** redeployed in ${deployChannel}.`,
       });
 
       return true;
@@ -2672,7 +2672,7 @@ let ticketSetupPanelApi;
       const panel = getPanel(interaction.guild.id, panelId);
 
       if (!panel) {
-        await safeReply(interaction, ephemeralPayload({ content: '❌ Panel not found.' }));
+        await safeReply(interaction, ephemeralPayload({ content: 'âŒ Panel not found.' }));
         return true;
       }
 
@@ -2686,8 +2686,8 @@ let ticketSetupPanelApi;
 
       await safeEditOrReply(interaction, {
         content: success
-          ? `📦 Ticket panel **${panel.name}** undeployed.`
-          : '⚠️ This panel was not deployed or the message could not be found.',
+          ? `ðŸ“¦ Ticket panel **${panel.name}** undeployed.`
+          : 'âš ï¸ This panel was not deployed or the message could not be found.',
       });
 
       return true;
@@ -2697,7 +2697,7 @@ let ticketSetupPanelApi;
       const deleted = deletePanel(interaction.guild.id, panelId);
 
       await safeUpdate(interaction, {
-        content: deleted ? '🗑️ Ticket panel deleted.' : '❌ Ticket panel not found.',
+        content: deleted ? 'ðŸ—‘ï¸ Ticket panel deleted.' : 'âŒ Ticket panel not found.',
         embeds: [],
         components: [],
       });
