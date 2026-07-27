@@ -13,6 +13,7 @@ const SECTION_PATHS = Object.freeze({
   serverBackups: 'modules.serverBackups',
   moderation: 'modules.moderation',
   discord: 'modules.discord',
+  automod: 'modules.automod',
   polls: 'modules.polls',
   stats: 'modules.stats',
   templates: 'modules.serverCopy.templates',
