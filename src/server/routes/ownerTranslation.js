@@ -5,6 +5,7 @@ const { normalizeBotMode } = require('../../config/botModes');
 const translationStore = require('../../modules/utilityStudio/translation/translationStore');
 
 const router = express.Router();
+const RUNTIME_MODE = normalizeBotMode(process.env.BOT_MODE);
 
 const ENVIRONMENT_PORTS = [
   { environment: 'DEV', port: 3001 },
@@ -46,10 +47,6 @@ function requireOwnerOrInternal(req, res, next) {
   return requireOwner(req, res, next);
 }
 
-function getRuntimeMode() {
-  return normalizeBotMode(process.env.BOT_MODE);
-}
-
 function getDiscordClient(req) {
   return (
     req.app?.locals?.client ||
@@ -84,7 +81,7 @@ function providerHealth() {
   };
 }
 
-function buildGuildOverview(guild, environment = getRuntimeMode()) {
+function buildGuildOverview(guild, environment = RUNTIME_MODE) {
   const guildId = guild.guildId || guild.id;
   const section = translationStore.getTranslationSection(guildId) || {};
   const channels = Object.values(section.channels || {});
@@ -206,7 +203,7 @@ async function fetchEnvironmentTranslation(port, environment) {
 
 router.get('/', requireOwnerOrInternal, (req, res) => {
   const client = getDiscordClient(req);
-  const mode = getRuntimeMode();
+  const mode = RUNTIME_MODE;
 
   if (!client?.guilds?.cache) {
     return res.status(503).json({ success: false, error: 'Discord client unavailable.' });
