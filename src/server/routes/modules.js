@@ -9,6 +9,7 @@ const {
   deleteEmbedPreset,
   saveEmbedBuilderDraft,
   setModuleEnabled,
+  isModuleEnabled,
 } = require('../../core/guild/guildManager');
 
 const autoRoleStore = require('../../modules/roleStudio/autoRoles/autoRoles');
@@ -184,7 +185,12 @@ async function guardAutoRoleConfig(req, guildId, input = {}) {
 
 async function guardVerificationRoles(req, guildId, input = {}) {
   const settings = input.settings && typeof input.settings === 'object' ? input.settings : input;
-  const roleIds = [settings?.verifiedRoleId, settings?.unverifiedRoleId].filter(Boolean);
+  const roleIds = [
+    settings?.verifiedRoleId,
+    settings?.unverifiedRoleId,
+    ...(Array.isArray(settings?.verifiedRoleIds) ? settings.verifiedRoleIds : []),
+    ...(Array.isArray(settings?.pendingRoleIds) ? settings.pendingRoleIds : []),
+  ].filter(Boolean);
   if (!roleIds.length) return null;
 
   const guild = await fetchGuild(req, guildId);
@@ -400,7 +406,7 @@ router.get('/:guildId/auto-roles', (req, res) => {
   try {
     const guildId = getGuildId(req);
     const config = autoRoleStore.getAutoRolesSection(guildId);
-    return success(res, { guildId, config, overview: { enabled: config.enabled !== false, joinRoleCount: (config.joinRoles || []).length, botRoleCount: (config.botRoles || []).length, applyToBots: config.settings?.applyToBots === true, analytics: config.analytics || {} } });
+    return success(res, { guildId, config, overview: { enabled: isModuleEnabled(guildId, 'autoRoles'), joinRoleCount: (config.joinRoles || []).length, botRoleCount: (config.botRoles || []).length, applyToBots: config.settings?.applyToBots === true, analytics: config.analytics || {} } });
   } catch (error) {
     return failure(res, error, 400);
   }
@@ -451,4 +457,3 @@ router.post('/:guildId/auto-roles/join', async (req, res) => {
 });
 
 module.exports = router;
-
