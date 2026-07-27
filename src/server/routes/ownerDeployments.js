@@ -6,6 +6,7 @@ const os = require('os');
 const path = require('path');
 const { resolveBotMode, resolveRuntimePath } = require('../../config/runtimePaths');
 const notifications = require('../../core/notifications/notificationStore');
+const security = require('../../core/security/securityCore');
 
 const router = express.Router();
 const RUNTIME_MODE = resolveBotMode(process.env.BOT_MODE).toUpperCase();
@@ -16,23 +17,6 @@ const ENVIRONMENT_PORTS = [
   { key: 'production', environment: 'PRODUCTION', branch: 'production', port: 3021 },
 ];
 
-function splitIds(value) {
-  return String(value || '').split(',').map((id) => id.trim()).filter(Boolean);
-}
-
-function getOwnerIds() {
-  return [...new Set([
-    ...splitIds(process.env.OWNER_ID),
-    ...splitIds(process.env.OWNER_IDS),
-    ...splitIds(process.env.BOT_OWNER_ID),
-    ...splitIds(process.env.BOT_OWNER_IDS),
-  ])];
-}
-
-function isOwnerUser(userId) {
-  return Boolean(userId && getOwnerIds().includes(String(userId)));
-}
-
 function isInternalOwnerRequest(req) {
   const token = String(process.env.OWNER_INTERNAL_TOKEN || '').trim();
   if (!token) return false;
@@ -41,7 +25,7 @@ function isInternalOwnerRequest(req) {
 
 function requireOwner(req, res, next) {
   if (!req.session?.user) return res.status(401).json({ success: false, error: 'Not authenticated.' });
-  if (!isOwnerUser(req.session.user.id)) return res.status(403).json({ success: false, error: 'Forbidden' });
+  if (!security.isBotOwner(req.session.user.id)) return res.status(403).json({ success: false, error: 'Forbidden' });
   return next();
 }
 
