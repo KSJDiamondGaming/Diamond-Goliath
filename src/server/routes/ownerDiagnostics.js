@@ -100,7 +100,7 @@ function getPackageInfo() {
 }
 
 function getRuntimeFolders(environment = getRuntimeMode()) {
-  const root = getRuntimeRoot(resolveBotMode(environment));
+  const root = getRuntimeRoot(environment);
   const folders = ['guilds', 'logs', 'backups', 'data', 'cache', 'deployments'];
   return Object.fromEntries(folders.map((folder) => {
     const folderPath = path.join(root, folder);
@@ -109,11 +109,10 @@ function getRuntimeFolders(environment = getRuntimeMode()) {
 }
 
 function readDeploymentHistory(environment = getRuntimeMode()) {
-  const modeKey = resolveBotMode(environment);
   const candidates = [
-    resolveRuntimePath(modeKey, 'deployments', 'history.json'),
-    resolveRuntimePath(modeKey, 'data', 'deployments.json'),
-    resolveRuntimePath(modeKey, 'logs', 'deployments.json'),
+    resolveRuntimePath(environment, 'deployments', 'history.json'),
+    resolveRuntimePath(environment, 'data', 'deployments.json'),
+    resolveRuntimePath(environment, 'logs', 'deployments.json'),
   ];
 
   for (const filePath of candidates) {
