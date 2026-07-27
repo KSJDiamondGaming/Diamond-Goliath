@@ -69,7 +69,7 @@ function getDiscordClient(req) {
 }
 
 function getRuntimeMode() {
-  return String(process.env.BOT_MODE || 'dev').trim().toUpperCase();
+  return resolveBotMode(process.env.BOT_MODE);
 }
 
 function getSafeEnvSummary() {
