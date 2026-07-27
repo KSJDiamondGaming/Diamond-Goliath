@@ -17,6 +17,7 @@ const guildManager = require('../../core/guild/guildManager');
 
 const PLATFORMS = ['twitch', 'youtube', 'tiktok', 'kick', 'facebook', 'instagram', 'x'];
 const ALERT_TYPES = ['live', 'upload', 'short', 'post'];
+const NAV_SECTIONS = new Set(['creators', 'accounts', 'notifications', 'templates', 'feeds', 'channels', 'settings', 'permissions', 'roles', 'automation', 'testing', 'data']);
 
 function getConfig(guildId) {
   const section = guildManager.getGuildSection(guildId, 'social', {});
@@ -72,19 +73,15 @@ function buildSocialAdminPanel(guild, memberDisplayName = 'Unknown User') {
   const accounts = Object.values(config.accounts);
   const creators = Object.values(config.creators);
   const enabledAccounts = accounts.filter((account) => account.enabled !== false).length;
-  const embed = baseEmbed(
-    config,
-    '📣 Social Studio',
-    'Manage creator profiles, linked accounts, notifications, templates, feeds and Discord channels.',
-    memberDisplayName,
-  ).addFields(
-    { name: 'Module', value: config.enabled ? 'Enabled ✅' : 'Disabled ❌', inline: true },
-    { name: 'Creators', value: `\`${format(creators.length)}\``, inline: true },
-    { name: 'Accounts', value: `\`${format(enabledAccounts)}\` enabled / \`${format(accounts.length)}\` total`, inline: true },
-    { name: 'Default channel', value: config.alertsChannelId ? `<#${config.alertsChannelId}>` : 'Not configured', inline: true },
-    { name: 'Alerts sent', value: `\`${format(config.analytics.alertsSent)}\``, inline: true },
-    { name: 'Queue', value: `\`${format(config.queue.length)}\``, inline: true },
-  );
+  const embed = baseEmbed(config, '📣 Social Studio', 'Manage creator profiles, linked accounts, notifications, templates, feeds and Discord channels.', memberDisplayName)
+    .addFields(
+      { name: 'Module', value: config.enabled ? 'Enabled ✅' : 'Disabled ❌', inline: true },
+      { name: 'Creators', value: `\`${format(creators.length)}\``, inline: true },
+      { name: 'Accounts', value: `\`${format(enabledAccounts)}\` enabled / \`${format(accounts.length)}\` total`, inline: true },
+      { name: 'Default channel', value: config.alertsChannelId ? `<#${config.alertsChannelId}>` : 'Not configured', inline: true },
+      { name: 'Alerts sent', value: `\`${format(config.analytics.alertsSent)}\``, inline: true },
+      { name: 'Queue', value: `\`${format(config.queue.length)}\``, inline: true },
+    );
 
   return {
     embeds: [embed],
@@ -104,6 +101,27 @@ function buildSocialAdminPanel(guild, memberDisplayName = 'Unknown User') {
   };
 }
 
+function channelSelector(customId, selectedId, placeholder) {
+  const select = new ChannelSelectMenuBuilder()
+    .setCustomId(customId)
+    .setPlaceholder(placeholder)
+    .setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+    .setMinValues(1)
+    .setMaxValues(1);
+  if (selectedId) select.setDefaultChannels([selectedId]);
+  return row(select);
+}
+
+function roleSelector(customId, roleIds) {
+  const select = new RoleSelectMenuBuilder()
+    .setCustomId(customId)
+    .setPlaceholder('Select Social Studio manager roles')
+    .setMinValues(0)
+    .setMaxValues(10);
+  if (roleIds?.length) select.setDefaultRoles(roleIds.slice(0, 10));
+  return row(select);
+}
+
 function buildSectionPanel(interaction, section) {
   const config = getConfig(interaction.guildId);
   const accounts = Object.values(config.accounts);
@@ -114,10 +132,7 @@ function buildSectionPanel(interaction, section) {
     const list = creators.slice(0, 10).map((creator) => `• **${creator.displayName}** · ${(creator.accountIds || []).length} account(s)`).join('\n') || 'No creator profiles have been created.';
     return {
       embeds: [baseEmbed(config, '👥 Creator Profiles', 'Create and manage unified creator profiles.', who).addFields({ name: `Profiles (${creators.length})`, value: list })],
-      components: [
-        row(button('admin:social:creator:new', '➕ New Profile', ButtonStyle.Success), button('admin:social:creator:rebuild', '🔄 Rebuild Profiles')),
-        navigation('creators'),
-      ],
+      components: [row(button('admin:social:creator:new', '➕ New Profile', ButtonStyle.Success), button('admin:social:creator:rebuild', '🔄 Rebuild Profiles')), navigation('creators')],
     };
   }
 
@@ -125,10 +140,7 @@ function buildSectionPanel(interaction, section) {
     const list = accounts.slice(0, 10).map((account) => `• **${account.displayName || account.username}** · ${account.platform} · ${account.enabled === false ? 'disabled' : 'enabled'}`).join('\n') || 'No platform accounts have been added.';
     return {
       embeds: [baseEmbed(config, '🔗 Accounts', 'Connect social platform accounts to Social Studio.', who).addFields({ name: `Accounts (${accounts.length})`, value: list })],
-      components: [
-        row(button('admin:social:account:new', '➕ Add Account', ButtonStyle.Success), button('admin:social:account:check', '🔎 Check All', ButtonStyle.Primary, !accounts.length)),
-        navigation('accounts'),
-      ],
+      components: [row(button('admin:social:account:new', '➕ Add Account', ButtonStyle.Success), button('admin:social:account:check', '🔎 Check All', ButtonStyle.Primary, !accounts.length)), navigation('accounts')],
     };
   }
 
@@ -139,20 +151,14 @@ function buildSectionPanel(interaction, section) {
         { name: 'Default channel', value: config.alertsChannelId ? `<#${config.alertsChannelId}>` : 'Not configured', inline: true },
         { name: 'Supported alerts', value: ALERT_TYPES.map((type) => `\`${type}\``).join(' '), inline: false },
       )],
-      components: [
-        row(button('admin:social:toggle', config.enabled ? '⏸️ Disable Notifications' : '▶️ Enable Notifications', config.enabled ? ButtonStyle.Danger : ButtonStyle.Success)),
-        navigation('notifications'),
-      ],
+      components: [row(button('admin:social:toggle', config.enabled ? '⏸️ Disable Notifications' : '▶️ Enable Notifications', config.enabled ? ButtonStyle.Danger : ButtonStyle.Success)), navigation('notifications')],
     };
   }
 
   if (section === 'templates') {
     return {
       embeds: [baseEmbed(config, '🎨 Templates', 'Edit the message used for each notification type.', who)],
-      components: [
-        row(...ALERT_TYPES.map((type) => button(`admin:social:template:${type}`, type.charAt(0).toUpperCase() + type.slice(1), ButtonStyle.Primary))),
-        navigation('templates'),
-      ],
+      components: [row(...ALERT_TYPES.map((type) => button(`admin:social:template:${type}`, type.charAt(0).toUpperCase() + type.slice(1), ButtonStyle.Primary))), navigation('templates')],
     };
   }
 
@@ -174,11 +180,7 @@ function buildSectionPanel(interaction, section) {
     return {
       embeds: [baseEmbed(config, '⚙️ Social Studio Settings', 'Guild-level Social Studio configuration. Platform credentials remain developer-only.', who)],
       components: [
-        row(
-          button('admin:social:permissions', '🔐 Permissions', ButtonStyle.Primary),
-          button('admin:social:roles', '👥 Roles', ButtonStyle.Primary),
-          button('admin:social:automation', '⚡ Automation', ButtonStyle.Primary),
-        ),
+        row(button('admin:social:permissions', '🔐 Permissions', ButtonStyle.Primary), button('admin:social:roles', '👥 Roles', ButtonStyle.Primary), button('admin:social:automation', '⚡ Automation', ButtonStyle.Primary)),
         row(button('admin:social:testing', '🧪 Testing'), button('admin:social:data', '🗄️ Data')),
         navigation('settings'),
       ],
@@ -196,26 +198,10 @@ function buildSectionPanel(interaction, section) {
   if (section === 'permissions' || section === 'roles') components.push(roleSelector('admin:social:roles:select', config.managerRoleIds));
   if (section === 'automation') components.push(row(button('admin:social:toggle', config.enabled ? 'Disable Module' : 'Enable Module', config.enabled ? ButtonStyle.Danger : ButtonStyle.Success), button('admin:social:account:check', 'Run Check Now', ButtonStyle.Primary, !accounts.length)));
   if (section === 'testing') components.push(row(button('admin:social:test', 'Send Test Notification', ButtonStyle.Primary, !config.alertsChannelId)));
-  if (section === 'data') components.push(row(button('admin:social:refresh', '🔄 Refresh'), button('admin:social:creator:rebuild', 'Rebuild Profiles')));
+  if (section === 'data') components.push(row(button('admin:social:data:refresh', '🔄 Refresh'), button('admin:social:creator:rebuild', 'Rebuild Profiles')));
   components.push(navigation(section));
-  return { embeds: [baseEmbed(config, `${section === 'data' ? '🗄️' : section === 'testing' ? '🧪' : section === 'automation' ? '⚡' : section === 'roles' ? '👥' : '🔐'} ${section.charAt(0).toUpperCase() + section.slice(1)}`, descriptions[section] || 'Social Studio settings.', who)], components };
-}
-
-function channelSelector(customId, selectedId, placeholder) {
-  const select = new ChannelSelectMenuBuilder()
-    .setCustomId(customId)
-    .setPlaceholder(placeholder)
-    .setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
-    .setMinValues(1)
-    .setMaxValues(1);
-  if (selectedId) select.setDefaultChannels(selectedId);
-  return row(select);
-}
-
-function roleSelector(customId, roleIds) {
-  const select = new RoleSelectMenuBuilder().setCustomId(customId).setPlaceholder('Select Social Studio manager roles').setMinValues(0).setMaxValues(10);
-  if (roleIds?.length) select.setDefaultRoles(roleIds.slice(0, 10));
-  return row(select);
+  const icon = section === 'data' ? '🗄️' : section === 'testing' ? '🧪' : section === 'automation' ? '⚡' : section === 'roles' ? '👥' : '🔐';
+  return { embeds: [baseEmbed(config, `${icon} ${section.charAt(0).toUpperCase() + section.slice(1)}`, descriptions[section] || 'Social Studio settings.', who)], components };
 }
 
 function creatorModal() {
@@ -245,8 +231,15 @@ function templateModal(type, config) {
 }
 
 async function respond(interaction, payload) {
-  if (interaction.deferred || interaction.replied) return interaction.editReply(payload);
-  return interaction.update(payload);
+  if (interaction.deferred || interaction.replied) await interaction.editReply(payload);
+  else await interaction.update(payload);
+  return true;
+}
+
+async function replyEphemeral(interaction, content) {
+  if (interaction.deferred || interaction.replied) await interaction.followUp({ content, flags: 64 });
+  else await interaction.reply({ content, flags: 64 });
+  return true;
 }
 
 async function handleSocialAdminInteraction(interaction) {
@@ -258,18 +251,25 @@ async function handleSocialAdminInteraction(interaction) {
   const actorId = interaction.user?.id || null;
 
   if (customId === 'admin:social:main' || customId === 'admin:social:refresh') return respond(interaction, buildSocialAdminPanel(interaction.guild, name(interaction)));
-  if (['creators', 'accounts', 'notifications', 'templates', 'feeds', 'channels', 'settings', 'permissions', 'roles', 'automation', 'testing', 'data'].includes(customId.split(':')[2])) return respond(interaction, buildSectionPanel(interaction, customId.split(':')[2]));
   if (customId === 'admin:social:next') return true;
+  if (customId === 'admin:social:data:refresh') return respond(interaction, buildSectionPanel(interaction, 'data'));
 
   if (customId === 'admin:social:creator:new') { await interaction.showModal(creatorModal()); return true; }
   if (customId === 'admin:social:account:new') { await interaction.showModal(accountModal()); return true; }
-  if (customId.startsWith('admin:social:template:') && !customId.includes(':save:')) { await interaction.showModal(templateModal(customId.split(':')[3], config)); return true; }
+  if (customId.startsWith('admin:social:template:') && !customId.startsWith('admin:social:template:save:')) {
+    const type = customId.split(':')[3];
+    if (!ALERT_TYPES.includes(type)) throw new Error('Unknown notification template.');
+    await interaction.showModal(templateModal(type, config));
+    return true;
+  }
 
   if (customId === 'admin:social:creator:create') {
+    const displayName = interaction.fields.getTextInputValue('displayName').trim();
+    if (!displayName) throw new Error('Creator display name is required.');
     const creatorId = makeId('creator');
     config.creators[creatorId] = {
       creatorId,
-      displayName: interaction.fields.getTextInputValue('displayName').trim(),
+      displayName,
       group: interaction.fields.getTextInputValue('group').trim(),
       tags: interaction.fields.getTextInputValue('tags').split(',').map((value) => value.trim()).filter(Boolean),
       notes: interaction.fields.getTextInputValue('notes').trim(),
@@ -279,15 +279,15 @@ async function handleSocialAdminInteraction(interaction) {
       updatedAt: new Date().toISOString(),
     };
     saveConfig(interaction.guildId, config, interaction.guild, actorId);
-    await interaction.reply({ content: '✅ Creator profile created.', flags: 64 });
-    return true;
+    return replyEphemeral(interaction, '✅ Creator profile created.');
   }
 
   if (customId === 'admin:social:account:create') {
     const platform = interaction.fields.getTextInputValue('platform').trim().toLowerCase();
     if (!PLATFORMS.includes(platform)) throw new Error(`Platform must be one of: ${PLATFORMS.join(', ')}.`);
-    const accountId = makeId('account');
     const username = interaction.fields.getTextInputValue('username').trim();
+    if (!username) throw new Error('Username, channel ID or URL is required.');
+    const accountId = makeId('account');
     config.accounts[accountId] = {
       accountId,
       platform,
@@ -300,20 +300,19 @@ async function handleSocialAdminInteraction(interaction) {
       updatedAt: new Date().toISOString(),
     };
     saveConfig(interaction.guildId, config, interaction.guild, actorId);
-    await interaction.reply({ content: '✅ Social account added.', flags: 64 });
-    return true;
+    return replyEphemeral(interaction, '✅ Social account added.');
   }
 
   if (customId.startsWith('admin:social:template:save:')) {
     const type = customId.split(':')[4];
+    if (!ALERT_TYPES.includes(type)) throw new Error('Unknown notification template.');
     config.templates[type] = {
       title: interaction.fields.getTextInputValue('title'),
       description: interaction.fields.getTextInputValue('description'),
       buttonLabel: interaction.fields.getTextInputValue('buttonLabel'),
     };
     saveConfig(interaction.guildId, config, interaction.guild, actorId);
-    await interaction.reply({ content: `✅ ${type} template saved.`, flags: 64 });
-    return true;
+    return replyEphemeral(interaction, `✅ ${type} template saved.`);
   }
 
   if (customId === 'admin:social:feed:channel' || customId === 'admin:social:channel:alerts') {
@@ -341,7 +340,8 @@ async function handleSocialAdminInteraction(interaction) {
     config.history.push({ id: makeId('history'), createdAt: new Date().toISOString(), status: 'checked', creator: 'All creators', checked: count, actorId });
     config.history = config.history.slice(-1000);
     saveConfig(interaction.guildId, config, interaction.guild, actorId);
-    return interaction.editReply(buildSectionPanel(interaction, 'accounts'));
+    await interaction.editReply(buildSectionPanel(interaction, 'accounts'));
+    return true;
   }
 
   if (customId === 'admin:social:creator:rebuild') {
@@ -360,16 +360,19 @@ async function handleSocialAdminInteraction(interaction) {
     const channel = interaction.guild.channels.cache.get(config.alertsChannelId) || await interaction.guild.channels.fetch(config.alertsChannelId).catch(() => null);
     if (!channel?.isTextBased?.() || typeof channel.send !== 'function') throw new Error('The configured alert channel is unavailable.');
     await channel.send({ embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('📣 Social Studio Test').setDescription('Your Social Studio notification channel is working.').setTimestamp()] });
-    await interaction.reply({ content: `✅ Test notification sent to <#${config.alertsChannelId}>.`, flags: 64 });
-    return true;
+    return replyEphemeral(interaction, `✅ Test notification sent to <#${config.alertsChannelId}>.`);
   }
 
-  return respond(interaction, buildSocialAdminPanel(interaction.guild, name(interaction)));
+  const section = customId.split(':')[2];
+  if (NAV_SECTIONS.has(section) && customId === `admin:social:${section}`) return respond(interaction, buildSectionPanel(interaction, section));
+
+  throw new Error(`Unknown Social Studio interaction: ${customId}`);
 }
 
 module.exports = {
   buildPanel: buildSocialAdminPanel,
   handleInteraction: handleSocialAdminInteraction,
   buildSocialAdminPanel,
+  buildSectionPanel,
   handleSocialAdminInteraction,
 };
