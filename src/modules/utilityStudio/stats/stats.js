@@ -3,11 +3,7 @@
 const statsStore = require('./statsStore');
 const statsCounters = require('./statsCounters');
 const statsManager = require('./statsManager');
-
-async function startup(client) {
-  if (!client?.guilds?.cache) throw new Error('Discord client is unavailable.');
-  return statsManager.startCounterRefreshScheduler(client);
-}
+const statsStartup = require('./statsStartup');
 
 module.exports = {
   ...statsManager,
@@ -17,5 +13,6 @@ module.exports = {
   getSummary: statsStore.getSummary,
   setEnabled: statsStore.setEnabled,
   reset: statsStore.resetStats,
-  startup,
+  startup: statsStartup.startup,
+  shutdown: statsStartup.shutdown,
 };
