@@ -65,6 +65,8 @@ async function resolveChannel(guild, event, overrideChannelId = null) {
 }
 
 async function deploy(guild, eventId, channelId = null, meta = {}) {
+  if (!guild?.id) throw new Error('Guild is required.');
+  if (schedule.getSection(guild.id).enabled === false) throw new Error('Schedule is disabled for this server.');
   const event = schedule.getEvent(guild.id, eventId);
   if (!event) throw new Error('Schedule event not found.');
   const channel = await resolveChannel(guild, event, channelId);
@@ -101,6 +103,10 @@ async function removeDeployment(guild, eventId, meta = {}) {
 
 async function handleMemberInteraction(interaction) {
   if (!interaction.isButton?.() || !String(interaction.customId).startsWith('schedule:rsvp:')) return false;
+  if (!interaction.guildId || schedule.getSection(interaction.guildId).enabled === false) {
+    await interaction.reply({ content: '❌ Schedule is currently disabled for this server.', flags: 64 }).catch(() => null);
+    return true;
+  }
   const [, , eventId, status] = interaction.customId.split(':');
   const result = status === 'remove'
     ? schedule.removeRsvp(interaction.guildId, eventId, interaction.user.id, { actorId: interaction.user.id, action: 'schedule_rsvp_remove' })
