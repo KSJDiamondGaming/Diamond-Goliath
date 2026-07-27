@@ -1,7 +1,7 @@
 'use strict';
 
 const crypto = require('crypto');
-const { getGuildSection, updateGuildSection } = require('../../core/guild/guildManager');
+const { getGuildSection, updateGuildSection, isModuleEnabled } = require('../../core/guild/guildManager');
 
 function now() { return new Date().toISOString(); }
 function obj(value) { return value && typeof value === 'object' && !Array.isArray(value) ? value : {}; }
@@ -30,7 +30,7 @@ function section(guildId) {
 }
 
 function logActivity(guildId, entry = {}) {
-  if (!guildId) return null;
+  if (!guildId || !isModuleEnabled(guildId, 'timeline')) return null;
   const activity = normalise(entry);
   updateGuildSection(guildId, 'activityTimeline', (current = base()) => {
     const next = { ...base(), ...obj(current) };
