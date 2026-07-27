@@ -8,12 +8,12 @@ const {
 const guildManager = require('../../guild/guildManager');
 const panelNav = require('../../ui/panelNavigation');
 const restoreRequestManager = require('../../security/restoreRequestManager');
+const security = require('../../security/securityCore');
 const { createServerBackup, listServerBackups, readServerBackup, validateServerBackup } = require('../../security/serverBackup');
 
 const PANEL_COLOR = '#5865F2';
 const ENABLED_COLOR = '#57F287';
 const DISABLED_COLOR = '#ED4245';
-const OWNER_IDS = (process.env.OWNER_IDS || '').split(',').map(v => v.trim()).filter(Boolean);
 
 const LOG_TYPES = {
   automodlog: { key:'automod', customId:'admin:setautomodlog', selectId:'admin:selectautomodlog', title:'🤖 Set AutoMod Log Channel', label:'🤖 AutoMod Log' },
@@ -62,7 +62,7 @@ const getGuildSection = (gid,s,d) => guildManager.getGuildSection(gid,s,d);
 const replaceGuildSection = (gid,s,d) => guildManager.replaceGuildSection(gid,s,d);
 const getRoleConfig = (gid,s) => getGuildSection(gid,s,{roleIds:[]});
 const getAutoRolesConfig = gid => getGuildSection(gid,'autoRoles',{enabled:false,roleIds:[]});
-const isBotOwner = i => OWNER_IDS.includes(String(i.user.id));
+const isBotOwner = i => security.isBotOwner(i.user.id);
 const isGuildOwner = i => i.guild?.ownerId === i.user.id;
 const canUseAdminPanel = i => isBotOwner(i) || isGuildOwner(i) || i.member?.permissions?.has(PermissionFlagsBits.Administrator);
 const status = v => v ? 'Enabled ✅' : 'Disabled ❌';
