@@ -3,10 +3,7 @@
 const { EmbedBuilder } = require('discord.js');
 
 const forms = require('./forms');
-const ticketManager = require('../tickets/ticketManager');
-const ticketChannelManager = require('../tickets/ticketChannelManager');
-const { sendTicketControlMessage } = require('../tickets/ticketPanelManager');
-const { updateTicket } = require('../tickets/ticketStore');
+const tickets = require('../tickets/tickets');
 const { isModuleEnabled } = require('../../../core/guild/guildManager');
 const {
   TICKET_CHANNEL_PERMISSIONS,
@@ -207,7 +204,7 @@ async function createTicketForSubmission({ interaction, form, submission } = {})
       await validateFormTicketTarget(interaction, form);
 
       const answerSummary = buildAnswerLines(form, freshSubmission).join('\n\n').slice(0, 3500);
-      const ticket = await ticketManager.createNewTicket({
+      const ticket = await tickets.createNewTicket({
         guildId: interaction.guildId,
         creatorId: cleanDiscordId(freshSubmission.userId || interaction.user.id),
         type: cleanText(form.ticketType || form.formId || 'form', 100),
@@ -242,7 +239,7 @@ async function createTicketForSubmission({ interaction, form, submission } = {})
       let channel = null;
       let savedTicket = ticket;
       try {
-        channel = await ticketChannelManager.createTicketChannel({ client: interaction.client, guild: interaction.guild, ticket, panel });
+        channel = await tickets.channels.createTicketChannel({ client: interaction.client, guild: interaction.guild, ticket, panel });
       } catch (channelError) {
         console.error('[Forms] Failed to create ticket channel for submission:', channelError);
         addTimeline(interaction.guildId, submission.submissionId, {
@@ -254,12 +251,12 @@ async function createTicketForSubmission({ interaction, form, submission } = {})
       }
 
       if (channel?.send) {
-        const controlMessage = await sendTicketControlMessage({ channel, ticket: savedTicket, panel, user: interaction.user }).catch((error) => {
+        const controlMessage = await tickets.panel.sendTicketControlMessage({ channel, ticket: savedTicket, panel, user: interaction.user }).catch((error) => {
           console.error('[Forms] Failed to post ticket control message:', error);
           return null;
         });
         if (controlMessage?.id) {
-          savedTicket = updateTicket(interaction.guildId, ticket.ticketId, {
+          savedTicket = tickets.updateTicket(interaction.guildId, ticket.ticketId, {
             discordMessageId: controlMessage.id,
             messageId: controlMessage.id,
           }) || savedTicket;
