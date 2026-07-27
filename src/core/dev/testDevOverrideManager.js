@@ -5,6 +5,7 @@ const path = require('path');
 
 const { normalizeBotMode } = require('../../config/botModes');
 const { getRuntimePaths } = require('../../config/runtimePaths');
+const security = require('../security/securityCore');
 
 const DEV_MODE = 'DEV';
 const FILE_NAME = 'testDevOverride.json';
@@ -25,32 +26,8 @@ function text(value) {
   return String(value || '').trim();
 }
 
-function splitIds(value) {
-  return String(value || '')
-    .split(',')
-    .map((entry) => text(entry))
-    .filter(Boolean);
-}
-
 function isDevMode() {
   return normalizeBotMode(process.env.BOT_MODE) === DEV_MODE;
-}
-
-function configuredOwnerIds() {
-  return new Set([
-    ...splitIds(process.env.OWNER_ID),
-    ...splitIds(process.env.OWNER_IDS),
-    ...splitIds(process.env.BOT_OWNER_ID),
-    ...splitIds(process.env.BOT_OWNER_IDS),
-  ]);
-}
-
-function getOwnerIds() {
-  return [...configuredOwnerIds()];
-}
-
-function isOwnerId(userId) {
-  return configuredOwnerIds().has(String(userId || ''));
 }
 
 function guildId(guildOrId) {
@@ -148,7 +125,7 @@ function toggle(userId) {
     };
   }
 
-  if (!isOwnerId(userId)) {
+  if (!security.isBotOwner(userId)) {
     return {
       ...readState(),
       blocked: true,
@@ -196,7 +173,7 @@ function isOwnerSubject({ guild = null, member = null, user = null, userId = '' 
   const id = text(userId || subjectId(member) || subjectId(user));
   if (!id) return false;
   if (text(guild?.ownerId) === id) return true;
-  return configuredOwnerIds().has(id);
+  return security.isBotOwner(id);
 }
 
 function isDevOwnerHierarchyOverride({ guild = null, guildId: targetGuildId = '', member = null, user = null, userId = '' } = {}) {
@@ -239,9 +216,6 @@ module.exports = {
   DEVELOPMENT_TEST_GUILD_ID,
   OWNER_PROTECTED_ACTIONS,
   isDevMode,
-  isOwnerId,
-  getOwnerIds,
-  configuredOwnerIds,
   readState,
   isEnabled,
   toggle,
