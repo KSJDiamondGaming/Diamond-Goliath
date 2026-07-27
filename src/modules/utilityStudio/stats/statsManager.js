@@ -17,7 +17,7 @@ function sessionKey(guildId, userId) {
 }
 
 function shouldRefreshCounters(guildId) {
-  if (!guildId) return false;
+  if (!guildId || !statsStore.isEnabled(guildId)) return false;
   return statsCounters.listCounters(guildId).length > 0;
 }
 
@@ -108,7 +108,7 @@ function stopCounterRefreshScheduler() {
 
 async function handleMessageCreate(message) {
   try {
-    if (!message?.guild || !message.member) return;
+    if (!message?.guild || !message.member || !statsStore.isEnabled(message.guild.id)) return;
     statsStore.addMessage(message);
     queueCounterRefresh(message.guild, 'message');
   } catch (error) {
@@ -123,6 +123,11 @@ async function handleVoiceStateUpdate(oldState, newState) {
     if (!guild?.id || !member?.id) return;
 
     const key = sessionKey(guild.id, member.id);
+    if (!statsStore.isEnabled(guild.id)) {
+      activeVoiceSessions.delete(key);
+      return;
+    }
+
     const oldChannelId = oldState?.channelId || null;
     const newChannelId = newState?.channelId || null;
 
@@ -152,6 +157,7 @@ async function handleVoiceStateUpdate(oldState, newState) {
 
 async function handleGuildMemberAdd(member) {
   try {
+    if (!member?.guild?.id || !statsStore.isEnabled(member.guild.id)) return;
     statsStore.addMemberEvent(member, 'join');
     queueCounterRefresh(member.guild, 'member join');
   } catch (error) {
@@ -161,6 +167,7 @@ async function handleGuildMemberAdd(member) {
 
 async function handleGuildMemberRemove(member) {
   try {
+    if (!member?.guild?.id || !statsStore.isEnabled(member.guild.id)) return;
     statsStore.addMemberEvent(member, 'leave');
     queueCounterRefresh(member.guild, 'member leave');
   } catch (error) {
