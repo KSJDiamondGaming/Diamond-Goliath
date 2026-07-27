@@ -25,7 +25,9 @@ pnpm-debug.log*
 # ======================
 tmp/
 temp/
-/runtime/
+/src/runtime/dev/
+/src/runtime/beta/
+/src/runtime/production/
 backups/
 *.tmp
 *.temp
