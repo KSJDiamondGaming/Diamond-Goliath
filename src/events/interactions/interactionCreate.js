@@ -67,6 +67,8 @@ function loadInvitesAdminPanel() {
 }
 
 const verificationLocks = new Map();
+const handledInteractions = new WeakSet();
+
 async function callHandler(target, method, ...args) {
   if (typeof target?.[method] !== 'function') return false;
   return Boolean(await target[method](...args));
@@ -191,6 +193,9 @@ async function handleVerificationMemberInteraction(interaction) {
 module.exports = {
   name: Events.InteractionCreate,
   async execute(interaction, client) {
+    if (interaction && handledInteractions.has(interaction)) return;
+    if (interaction) handledInteractions.add(interaction);
+
     try {
       wrapInteractionResponses(interaction);
       if (interaction?.isAutocomplete?.()) {
