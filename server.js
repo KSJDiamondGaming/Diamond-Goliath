@@ -194,7 +194,10 @@ client.once('clientReady', async () => {
     runStartupTask('Timed Roles', () => require('./src/modules/roleStudio/timedRoles/timedRoles').startup(client)),
     runStartupTask('Translation', () => require('./src/modules/utilityStudio/translation/translationStartup').startupTranslation(client)),
     runStartupTask('Goodbye', () => require('./src/modules/messageStudio/goodbye/goodbye').startupGoodbye(client)),
-    runStartupTask('Reaction Roles', () => require('./src/modules/roleStudio/reactionRoles/reactionRoles').startup(client)),
+    runStartupTask('Reaction Roles', () => {
+      const enabledGuilds = client.guilds.cache.filter((guild) => guildManager.isModuleEnabled(guild.id, 'reactionRoles'));
+      return require('./src/modules/roleStudio/reactionRoles/reactionRoles').startup({ guilds: { cache: enabledGuilds } });
+    }),
     runStartupTask('Verification', () => require('./src/modules/securityStudio/verification').startupVerification(client)),
   ]);
   backupScheduler.startBackupScheduler?.(client);
