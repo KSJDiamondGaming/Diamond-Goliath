@@ -1,12 +1,10 @@
 'use strict';
 
-// src/modules/utilityStudio/translation/translationThreadManager.js
-
 const { ChannelType, PermissionFlagsBits } = require('discord.js');
 
 const translationStore = require('./translationStore');
 const translationProviderManager = require('./translationProviderManager');
-const translationManager = require('./translationManager');
+const translation = require('./translation');
 const {
   DEFAULT_BOT_CHANNEL_PERMISSIONS,
   guardChannelAccess,
@@ -38,7 +36,7 @@ function isThreadChannel(channel) {
 }
 
 function buildThreadName(languageCode) {
-  return `🌐 ${translationManager.languageLabel(languageCode)}`.slice(0, 100);
+  return `🌐 ${translation.languageLabel(languageCode)}`.slice(0, 100);
 }
 
 function formatThreadMessage({ message, result, targetLanguage }) {
@@ -46,7 +44,7 @@ function formatThreadMessage({ message, result, targetLanguage }) {
   const sourceUrl = message.url ? `\n[Jump to original](${message.url})` : '';
 
   return [
-    `🌐 **${translationManager.languageLabel(result.sourceLanguage || 'auto')} → ${translationManager.languageLabel(targetLanguage)}**`,
+    `🌐 **${translation.languageLabel(result.sourceLanguage || 'auto')} → ${translation.languageLabel(targetLanguage)}**`,
     `👤 **Original Author:** ${authorLabel}`,
     sourceUrl,
     '',
@@ -121,7 +119,7 @@ function getTargetLanguages(section, config) {
 
   return [...new Set(
     (Array.isArray(languages) ? languages : ['en'])
-      .map((code) => translationManager.normalizeLanguage(code))
+      .map((code) => translation.normalizeLanguage(code))
       .filter(Boolean)
   )].slice(0, 10);
 }
