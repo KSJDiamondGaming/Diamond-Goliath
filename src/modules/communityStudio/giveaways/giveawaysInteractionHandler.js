@@ -4,6 +4,7 @@ const { MessageFlags } = require('discord.js');
 const giveawaysStore = require('./giveawaysStore');
 const giveawaysManager = require('./giveawaysManager');
 const giveawaysPanel = require('./giveawaysAdminPanel');
+const { isModuleEnabled, setModuleEnabled } = require('../../../core/guild/guildManager');
 
 function getMemberDisplayName(interaction) { return interaction.member?.displayName || interaction.user?.displayName || interaction.user?.username || 'Unknown User'; }
 function save(guild, updater) { return giveawaysStore.updateSection(guild.id, updater, guild); }
@@ -26,8 +27,14 @@ async function handleGiveawaysAdminInteraction(interaction) {
       save(interaction.guild, (section) => ({ ...section, managerRoleIds: [...new Set(interaction.values || [])] }));
       return safeUpdate(interaction, giveawaysPanel.buildGiveawaysAdminPanel(interaction.guild, memberDisplayName));
     }
-    if (customId === 'admin:giveaways:enable') save(interaction.guild, (section) => ({ ...section, enabled: true }));
-    if (customId === 'admin:giveaways:disable') save(interaction.guild, (section) => ({ ...section, enabled: false }));
+    if (customId === 'admin:giveaways:enable') {
+      setModuleEnabled(interaction.guild.id, 'giveaways', true, interaction.guild);
+      save(interaction.guild, (section) => ({ ...section, enabled: true }));
+    }
+    if (customId === 'admin:giveaways:disable') {
+      setModuleEnabled(interaction.guild.id, 'giveaways', false, interaction.guild);
+      save(interaction.guild, (section) => ({ ...section, enabled: false }));
+    }
     if (customId === 'admin:giveaways:toggleMultiple') save(interaction.guild, (section) => ({ ...section, allowMultipleEntries: !section.allowMultipleEntries }));
     if (customId === 'admin:giveaways:toggleRequireRole') save(interaction.guild, (section) => ({ ...section, requireRole: !section.requireRole }));
     if (customId === 'admin:giveaways:togglePing') save(interaction.guild, (section) => ({ ...section, pingWinners: !section.pingWinners }));
@@ -48,6 +55,10 @@ async function safeReply(interaction, content) { const payload = { content, flag
 async function handleGiveawayInteraction(interaction) {
   if (!interaction?.guildId || !isGiveawayInteraction(interaction)) return false;
   try {
+    if (!isModuleEnabled(interaction.guildId, 'giveaways')) {
+      await safeReply(interaction, '❌ Giveaways are disabled in this server.');
+      return true;
+    }
     const [, action, giveawayId] = String(interaction.customId || '').split(':');
     if (interaction.isButton?.() && action === 'enter') { await interaction.deferUpdate().catch(() => null); await giveawaysManager.enterGiveaway(interaction, giveawayId); await safeReply(interaction, '✅ You entered the giveaway.'); return true; }
     if (interaction.isButton?.() && action === 'end') { await interaction.deferUpdate().catch(() => null); await giveawaysManager.endGiveaway(interaction, giveawayId); await safeReply(interaction, '✅ Giveaway ended.'); return true; }
