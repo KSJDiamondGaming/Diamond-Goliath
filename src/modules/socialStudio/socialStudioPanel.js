@@ -19,8 +19,15 @@ const PLATFORMS = ['twitch', 'youtube', 'tiktok', 'kick', 'facebook', 'instagram
 const ALERT_TYPES = ['live', 'upload', 'short', 'post'];
 const NAV_SECTIONS = new Set(['creators', 'accounts', 'notifications', 'templates', 'feeds', 'channels', 'settings', 'permissions', 'roles', 'automation', 'testing', 'data']);
 
+function makeId(prefix) { return `${prefix}_${crypto.randomBytes(8).toString('hex')}`; }
+function name(interaction) { return interaction.member?.displayName || interaction.user?.displayName || interaction.user?.username || 'Unknown User'; }
+function row(...components) { return new ActionRowBuilder().addComponents(...components); }
+function button(customId, label, style = ButtonStyle.Secondary, disabled = false) {
+  return new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style).setDisabled(disabled);
+}
+
 function getConfig(guildId) {
-  const section = guildManager.getGuildSection(guildId, 'social', {});
+  const section = guildManager.getGuildSection(guildId, 'social', {}) || {};
   return {
     ...section,
     enabled: section.enabled === true,
@@ -43,20 +50,12 @@ function saveConfig(guildId, config, guild, actorId = null) {
   return next;
 }
 
-function button(customId, label, style = ButtonStyle.Secondary, disabled = false) {
-  return new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style).setDisabled(disabled);
-}
-function row(...components) { return new ActionRowBuilder().addComponents(...components); }
-function name(interaction) { return interaction.member?.displayName || interaction.user?.displayName || interaction.user?.username || 'Unknown User'; }
-function format(value) { return Number(value || 0).toLocaleString('en-GB'); }
-function makeId(prefix) { return `${prefix}_${crypto.randomBytes(8).toString('hex')}`; }
-
-function baseEmbed(config, title, description, memberDisplayName) {
+function baseEmbed(config, title, description, who) {
   return new EmbedBuilder()
     .setColor(config.enabled ? 0x5865F2 : 0x747F8D)
     .setTitle(title)
     .setDescription(description)
-    .setFooter({ text: `Requested by ${memberDisplayName}` })
+    .setFooter({ text: `Requested by ${who}` })
     .setTimestamp();
 }
 
@@ -68,23 +67,10 @@ function navigation(active = 'main') {
   );
 }
 
-function buildSocialAdminPanel(guild, memberDisplayName = 'Unknown User') {
+function buildSocialAdminPanel(guild, who = 'Unknown User') {
   const config = getConfig(guild.id);
-  const accounts = Object.values(config.accounts);
-  const creators = Object.values(config.creators);
-  const enabledAccounts = accounts.filter((account) => account.enabled !== false).length;
-  const embed = baseEmbed(config, '📣 Social Studio', 'Manage creator profiles, linked accounts, notifications, templates, feeds and Discord channels.', memberDisplayName)
-    .addFields(
-      { name: 'Module', value: config.enabled ? 'Enabled ✅' : 'Disabled ❌', inline: true },
-      { name: 'Creators', value: `\`${format(creators.length)}\``, inline: true },
-      { name: 'Accounts', value: `\`${format(enabledAccounts)}\` enabled / \`${format(accounts.length)}\` total`, inline: true },
-      { name: 'Default channel', value: config.alertsChannelId ? `<#${config.alertsChannelId}>` : 'Not configured', inline: true },
-      { name: 'Alerts sent', value: `\`${format(config.analytics.alertsSent)}\``, inline: true },
-      { name: 'Queue', value: `\`${format(config.queue.length)}\``, inline: true },
-    );
-
   return {
-    embeds: [embed],
+    embeds: [baseEmbed(config, '📣 Social Studio', 'Manage creator profiles, linked accounts, notifications, templates, feeds and Discord channels.', who)],
     components: [
       row(
         button('admin:social:creators', '👥 Creator Profiles', ButtonStyle.Primary),
@@ -178,7 +164,7 @@ function buildSectionPanel(interaction, section) {
 
   if (section === 'settings') {
     return {
-      embeds: [baseEmbed(config, '⚙️ Social Studio Settings', 'Guild-level Social Studio configuration. Platform credentials remain developer-only.', who)],
+      embeds: [baseEmbed(config, '⚙️ Social Studio Settings', 'Guild-level Social Studio configuration.', who)],
       components: [
         row(button('admin:social:permissions', '🔐 Permissions', ButtonStyle.Primary), button('admin:social:roles', '👥 Roles', ButtonStyle.Primary), button('admin:social:automation', '⚡ Automation', ButtonStyle.Primary)),
         row(button('admin:social:testing', '🧪 Testing'), button('admin:social:data', '🗄️ Data')),
@@ -190,8 +176,8 @@ function buildSectionPanel(interaction, section) {
   const descriptions = {
     permissions: 'Control which server roles may manage Social Studio.',
     roles: 'Assign the Discord roles used by Social Studio managers and notifications.',
-    automation: 'Configure automatic monitoring, duplicate suppression and notification behaviour.',
-    testing: 'Preview and send safe test notifications.',
+    automation: 'Configure automatic monitoring and notification behaviour.',
+    testing: 'Send a safe test notification.',
     data: 'Refresh or rebuild Social Studio guild data.',
   };
   const components = [];
@@ -250,7 +236,7 @@ async function handleSocialAdminInteraction(interaction) {
   const config = getConfig(interaction.guildId);
   const actorId = interaction.user?.id || null;
 
-  if (customId === 'admin:social:main' || customId === 'admin:social:refresh') return respond(interaction, buildSocialAdminPanel(interaction.guild, name(interaction)));
+  if (customId === 'admin:social' || customId === 'admin:social:main' || customId === 'admin:social:refresh') return respond(interaction, buildSocialAdminPanel(interaction.guild, name(interaction)));
   if (customId === 'admin:social:next') return true;
   if (customId === 'admin:social:data:refresh') return respond(interaction, buildSectionPanel(interaction, 'data'));
 
