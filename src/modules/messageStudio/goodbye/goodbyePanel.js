@@ -156,15 +156,15 @@ async function buildGoodbyePanel(guild, memberDisplayName = 'Unknown User', user
   const warnings = health.warnings || [];
 
   const embed = new EmbedBuilder()
-    .setColor(warnings.length ? 0xfaa61a : 0x57f287)
+    .setColor(config.enabled === false ? 0xed4245 : warnings.length ? 0xfaa61a : 0x57f287)
     .setTitle('👋 Goodbye · Setup')
     .setDescription([
       `**Module:** ${config.enabled ? 'Enabled ✅' : 'Disabled ❌'}`,
-      `**Log Channel:** ${config.channelId ? `<#${config.channelId}>` : '`Not set`'}`,
+      `**Log Channel:** ${config.channelId ? `<#${config.channelId}>` : '\`Not set\`'}`,
       `**Bots:** ${config.ignoreBots ? 'Excluded' : 'Included'}`,
       '',
       '**📋 Staff Departure Log**',
-      `**Template:** ${activeTemplate ? `\`${activeTemplate.name || activeTemplate.templateId}\`` : '`Not set`'}`,
+      `**Template:** ${activeTemplate ? `\`${activeTemplate.name || activeTemplate.templateId}\`` : '\`Not set\`'}`,
       `**Assignment:** ${binding ? 'Assigned ✅' : 'Using configured template'}`,
       '**Source:** Embed Studio',
       stagedTemplate ? `**Selected:** \`${stagedTemplate.name || stagedTemplate.templateId}\`` : null,
