@@ -1,6 +1,6 @@
 'use strict';
 
-const { Events } = require('discord.js');
+const { Events, PermissionFlagsBits } = require('discord.js');
 const { handleStickyMessage } = require('../../modules/messageStudio/sticky/stickyManager');
 const { handlePrefixCommand } = require('../../features/prefix/prefixRouter');
 const translationThreadManager = require('../../modules/utilityStudio/translation/translationThreadManager');
@@ -10,7 +10,10 @@ const guildManager = require('../../core/guild/guildManager');
 const { applyPunishmentEngine, normalizePunishments } = require('../../core/automod/punishmentEngine');
 
 const spamWindows = new Map();
-const DEFAULT_SPAM_DM = '⚠️ **{server} AutoMod**\nSpam Protection triggered: {reason}';
+const DEFAULT_DM_MESSAGES = {
+  antiSpam: '⚠️ **{server} AutoMod**\nSpam Protection triggered: {reason}',
+  antiLinks: '⚠️ **{server} AutoMod**\nLink Protection triggered: {reason}',
+};
 
 async function runHandler(label, handler, ...args) {
   try {
@@ -31,15 +34,31 @@ function readAutomodSection(guildId) {
   }
 }
 
+function normalizeDomain(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .replace(/\/.*$/, '')
+    .replace(/:\d+$/, '');
+}
+
+function normalizeDomainList(value) {
+  return [...new Set((Array.isArray(value) ? value : []).map(normalizeDomain).filter(Boolean))];
+}
+
 function getAutoModConfig(guildId) {
   const config = readAutomodSection(guildId);
   const antiSpam = config.antiSpam || {};
+  const antiLinks = config.antiLinks || {};
 
   return {
     enabled: config.enabled === true,
     dmUser: config.dmUser !== false,
     dmMessages: {
-      antiSpam: String(config.dmMessages?.antiSpam || DEFAULT_SPAM_DM),
+      antiSpam: String(config.dmMessages?.antiSpam || DEFAULT_DM_MESSAGES.antiSpam),
+      antiLinks: String(config.dmMessages?.antiLinks || DEFAULT_DM_MESSAGES.antiLinks),
     },
     ignoredRoles: Array.isArray(config.ignoredRoles) ? config.ignoredRoles.map(String) : [],
     ignoredChannels: Array.isArray(config.ignoredChannels) ? config.ignoredChannels.map(String) : [],
@@ -48,6 +67,13 @@ function getAutoModConfig(guildId) {
       maxMessages: Math.min(100, Math.max(2, Number.parseInt(antiSpam.maxMessages, 10) || 5)),
       intervalSeconds: Math.min(3600, Math.max(1, Number.parseInt(antiSpam.intervalSeconds, 10) || 10)),
       actions: normalizePunishments(antiSpam.actions || antiSpam.action || ['delete']),
+    },
+    antiLinks: {
+      enabled: antiLinks.enabled === true,
+      allowStaff: antiLinks.allowStaff !== false,
+      allowedDomains: normalizeDomainList(antiLinks.allowedDomains),
+      deniedDomains: normalizeDomainList(antiLinks.deniedDomains),
+      actions: normalizePunishments(antiLinks.actions || antiLinks.action || ['delete']),
     },
   };
 }
@@ -58,8 +84,16 @@ function isIgnored(message, config) {
   return roleIds.some((roleId) => config.ignoredRoles.includes(roleId));
 }
 
+function isStaff(message) {
+  return Boolean(
+    message.member?.permissions?.has(PermissionFlagsBits.Administrator)
+    || message.member?.permissions?.has(PermissionFlagsBits.ManageMessages)
+    || message.guild?.ownerId === message.author.id
+  );
+}
+
 function renderDmMessage(template, message, reason) {
-  return String(template || DEFAULT_SPAM_DM)
+  return String(template || '')
     .replaceAll('{server}', message.guild.name)
     .replaceAll('{reason}', reason)
     .replaceAll('{user}', message.author.username)
@@ -67,30 +101,82 @@ function renderDmMessage(template, message, reason) {
     .replaceAll('{channel}', message.channel?.name || 'unknown-channel');
 }
 
-async function fallbackNotify(message, config, result, reason) {
-  const actions = config.antiSpam.actions;
+function extractDomains(content) {
+  const matches = String(content || '').match(/(?:https?:\/\/|www\.)[^\s<>()]+/gi) || [];
+  const domains = [];
+  for (const raw of matches) {
+    try {
+      const url = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+      const host = normalizeDomain(url.hostname);
+      if (host) domains.push(host);
+    } catch { }
+  }
+  return [...new Set(domains)];
+}
+
+function domainMatches(domain, configured) {
+  return domain === configured || domain.endsWith(`.${configured}`);
+}
+
+function evaluateLinkRule(domains, rule) {
+  if (!domains.length) return null;
+
+  const denied = domains.find((domain) => rule.deniedDomains.some((entry) => domainMatches(domain, entry)));
+  if (denied) return { blocked: denied, reason: `Denied domain detected: ${denied}` };
+
+  if (rule.allowedDomains.length) {
+    const unapproved = domains.find((domain) => !rule.allowedDomains.some((entry) => domainMatches(domain, entry)));
+    if (unapproved) return { blocked: unapproved, reason: `Domain is not on the allowed list: ${unapproved}` };
+    return null;
+  }
+
+  if (!rule.deniedDomains.length) {
+    return { blocked: domains[0], reason: `Links are not permitted: ${domains[0]}` };
+  }
+
+  return null;
+}
+
+async function applyRule(message, config, ruleKey, ruleName, reason, actions) {
+  let result = null;
+  const dmMessage = renderDmMessage(config.dmMessages[ruleKey], message, reason);
+
+  try {
+    result = await applyPunishmentEngine(
+      { message, member: message.member, user: message.author, guild: message.guild, channel: message.channel },
+      {
+        punishments: actions,
+        rule: ruleName,
+        reason,
+        source: 'automod',
+        messageContent: message.content,
+        dmMessage,
+      }
+    );
+  } catch (error) {
+    console.error(`[AutoMod] ${ruleName} punishment engine failed:`, error?.stack || error?.message || error);
+  }
 
   if (actions.includes('warn') && !result?.applied?.includes('warn')) {
     const warning = await message.channel.send({
-      content: `⚠️ ${message.author}, your message was blocked by **Spam Protection**: ${reason}`,
+      content: `⚠️ ${message.author}, your message was blocked by **${ruleName}**: ${reason}`,
     }).catch(() => null);
     if (warning) setTimeout(() => warning.delete().catch(() => null), 10000);
   }
 
   if (actions.includes('dm') && config.dmUser && !result?.applied?.includes('dm')) {
-    await message.author.send({
-      content: renderDmMessage(config.dmMessages.antiSpam, message, reason),
-    }).catch(() => null);
+    await message.author.send({ content: dmMessage }).catch(() => null);
   }
 
   if (actions.includes('delete') && !result?.applied?.includes('delete') && message.deletable) {
     await message.delete().catch(() => null);
   }
+
+  return true;
 }
 
-async function handleAutoMod(message) {
-  const config = getAutoModConfig(message.guild.id);
-  if (!config.enabled || !config.antiSpam.enabled || isIgnored(message, config)) return false;
+async function handleSpam(message, config) {
+  if (!config.antiSpam.enabled) return false;
 
   const now = Date.now();
   const windowMs = config.antiSpam.intervalSeconds * 1000;
@@ -103,28 +189,29 @@ async function handleAutoMod(message) {
 
   spamWindows.delete(key);
   const reason = `${timestamps.length} messages sent within ${config.antiSpam.intervalSeconds} seconds`;
-
   console.log(`[AutoMod] Spam triggered guild=${message.guild.id} user=${message.author.id} count=${timestamps.length}/${config.antiSpam.maxMessages} actions=${config.antiSpam.actions.join(',')}`);
+  return applyRule(message, config, 'antiSpam', 'Spam Protection', reason, config.antiSpam.actions);
+}
 
-  let result = null;
-  try {
-    result = await applyPunishmentEngine(
-      { message, member: message.member, user: message.author, guild: message.guild, channel: message.channel },
-      {
-        punishments: config.antiSpam.actions,
-        rule: 'Spam Protection',
-        reason,
-        source: 'automod',
-        messageContent: message.content,
-        dmMessage: renderDmMessage(config.dmMessages.antiSpam, message, reason),
-      }
-    );
-  } catch (error) {
-    console.error('[AutoMod] Spam punishment engine failed:', error?.stack || error?.message || error);
-  }
+async function handleLinks(message, config) {
+  if (!config.antiLinks.enabled) return false;
+  if (config.antiLinks.allowStaff && isStaff(message)) return false;
 
-  await fallbackNotify(message, config, result, reason);
-  return true;
+  const domains = extractDomains(message.content);
+  const violation = evaluateLinkRule(domains, config.antiLinks);
+  if (!violation) return false;
+
+  console.log(`[AutoMod] Link triggered guild=${message.guild.id} user=${message.author.id} domain=${violation.blocked} actions=${config.antiLinks.actions.join(',')}`);
+  return applyRule(message, config, 'antiLinks', 'Link Protection', violation.reason, config.antiLinks.actions);
+}
+
+async function handleAutoMod(message) {
+  const config = getAutoModConfig(message.guild.id);
+  if (!config.enabled || isIgnored(message, config)) return false;
+
+  if (await handleLinks(message, config)) return true;
+  if (await handleSpam(message, config)) return true;
+  return false;
 }
 
 module.exports = {
