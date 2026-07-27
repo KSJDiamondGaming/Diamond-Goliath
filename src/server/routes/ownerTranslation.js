@@ -2,6 +2,7 @@
 
 const express = require('express');
 const { normalizeBotMode } = require('../../config/botModes');
+const security = require('../../core/security/securityCore');
 const translationStore = require('../../modules/utilityStudio/translation/translationStore');
 
 const router = express.Router();
@@ -12,17 +13,6 @@ const ENVIRONMENT_PORTS = [
   { environment: 'BETA', port: 3011 },
   { environment: 'PRODUCTION', port: 3021 },
 ];
-
-function getOwnerIds() {
-  return String(process.env.OWNER_IDS || '')
-    .split(',')
-    .map((id) => id.trim())
-    .filter(Boolean);
-}
-
-function isOwnerUser(userId) {
-  return Boolean(userId && getOwnerIds().includes(String(userId)));
-}
 
 function isInternalOwnerRequest(req) {
   const token = String(process.env.OWNER_INTERNAL_TOKEN || '').trim();
@@ -35,7 +25,7 @@ function requireOwner(req, res, next) {
     return res.status(401).json({ success: false, error: 'Not authenticated.' });
   }
 
-  if (!isOwnerUser(req.session.user.id)) {
+  if (!security.isBotOwner(req.session.user.id)) {
     return res.status(403).json({ success: false, error: 'Forbidden' });
   }
 
