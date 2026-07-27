@@ -24,6 +24,7 @@ async function handlePollsInteraction(interaction) {
   const actorId = interaction.user?.id || null;
   try {
     if (customId === 'admin:polls:create') {
+      if (polls.getSection(interaction.guild.id).enabled === false) throw new Error('Polls are disabled.');
       await interaction.showModal(panel.buildCreateModal());
       return true;
     }
@@ -91,8 +92,10 @@ async function handlePollsInteraction(interaction) {
     }
     if (customId === 'admin:polls:reset') return safeUpdate(interaction, panel.buildResetConfirmation());
     if (customId === 'admin:polls:resetConfirm') {
+      const wasEnabled = polls.getSection(interaction.guild.id).enabled !== false;
       await interaction.deferUpdate();
       await tracking.reset(interaction.guild, { actorId });
+      if (!wasEnabled) updateSection(interaction.guild, (section) => ({ ...section, enabled: false }), actorId);
       return safeUpdate(interaction, panel.buildPollsAdminPanel(interaction.guild, memberDisplayName));
     }
     return safeUpdate(interaction, panel.buildPollsAdminPanel(interaction.guild, memberDisplayName));
