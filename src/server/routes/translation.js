@@ -6,7 +6,7 @@ const express = require('express');
 
 const translationStore = require('../../modules/utilityStudio/translation/translationStore');
 const translationThreadManager = require('../../modules/utilityStudio/translation/translationThreadManager');
-const providerManager = require('../../modules/utilityStudio/translation/providers/providerManager');
+const providerManager = require('../../modules/utilityStudio/translation/translationProviderConfig');
 const { requireEntitlement } = require('../middleware/requireEntitlement');
 const {
   DEFAULT_BOT_CHANNEL_PERMISSIONS,
