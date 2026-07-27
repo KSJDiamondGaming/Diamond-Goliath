@@ -59,7 +59,12 @@ async function handleTempVoiceInteraction(interaction) {
   }
 
   if (action === 'limit') {
-    const userLimit = Math.max(0, Math.min(99, Number(value || 0)));
+    const parsedLimit = Number(value);
+    if (!Number.isInteger(parsedLimit) || parsedLimit < 0 || parsedLimit > 99) {
+      await replyEphemeral(interaction, '❌ Invalid Temp Voice user limit.');
+      return true;
+    }
+    const userLimit = parsedLimit;
     tempChannel = await tempVoiceRuntime.updateTempChannelControls(guild, channelId, actorId, { userLimit });
     await refreshControlMessage(interaction, tempChannel);
     await replyEphemeral(interaction, userLimit ? `✅ User limit set to ${userLimit}.` : '✅ User limit removed.');
