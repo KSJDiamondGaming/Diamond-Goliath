@@ -36,13 +36,6 @@ function isDevMode() {
   return normalizeBotMode(process.env.BOT_MODE) === DEV_MODE;
 }
 
-function getOwnerIds() {
-  return String(process.env.OWNER_IDS || '')
-    .split(',')
-    .map((id) => id.trim())
-    .filter(Boolean);
-}
-
 function configuredOwnerIds() {
   return new Set([
     ...splitIds(process.env.OWNER_ID),
@@ -52,8 +45,12 @@ function configuredOwnerIds() {
   ]);
 }
 
+function getOwnerIds() {
+  return [...configuredOwnerIds()];
+}
+
 function isOwnerId(userId) {
-  return getOwnerIds().includes(String(userId || ''));
+  return configuredOwnerIds().has(String(userId || ''));
 }
 
 function guildId(guildOrId) {
