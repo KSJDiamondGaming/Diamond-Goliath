@@ -3,6 +3,7 @@
 const express = require('express');
 const schedule = require('./schedule');
 const deployment = require('./scheduleDeployment');
+const scheduleHealth = require('./scheduleHealth');
 
 const router = express.Router();
 
@@ -90,11 +91,11 @@ router.post('/:guildId/process', async (req, res) => {
   catch (error) { return fail(res, error); }
 });
 router.get('/:guildId/health', async (req, res) => {
-  try { const guild = await getGuild(req); if (!guild) throw new Error('Guild is unavailable.'); return res.json({ success: true, health: await schedule.buildHealth(guild) }); }
+  try { const guild = await getGuild(req); if (!guild) throw new Error('Guild is unavailable.'); return res.json({ success: true, health: await scheduleHealth.buildHealthReport(guild) }); }
   catch (error) { return fail(res, error); }
 });
 router.post('/:guildId/repair', async (req, res) => {
-  try { const guild = await getGuild(req); if (!guild) throw new Error('Guild is unavailable.'); return res.json({ success: true, health: await schedule.repair(guild, actor(req, 'schedule_repair')) }); }
+  try { const guild = await getGuild(req); if (!guild) throw new Error('Guild is unavailable.'); return res.json({ success: true, health: await scheduleHealth.repair(guild, actor(req, 'schedule_repair')) }); }
   catch (error) { return fail(res, error); }
 });
 router.get('/:guildId/export', (req, res) => {
