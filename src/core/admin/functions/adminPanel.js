@@ -89,12 +89,15 @@ function normalizeBackupId(backup) { return typeof backup === 'string' ? backup 
 function isBotOwner(interaction) { return OWNER_IDS.includes(String(interaction.user.id)); }
 function isGuildOwner(interaction) { return interaction.guild?.ownerId === interaction.user.id; }
 function canUseAdminPanel(interaction) { return isBotOwner(interaction) || isGuildOwner(interaction) || interaction.member?.permissions?.has(PermissionFlagsBits.Administrator); }
+function status(value) { return value ? 'Enabled ✅' : 'Disabled ❌'; }
 function normalizeActions(value, fallback = ['delete']) {
   const source = Array.isArray(value) ? value : value ? [value] : fallback;
   const clean = [...new Set(source.map((item) => String(item).toLowerCase()).filter((item) => AUTOMOD_ACTIONS.includes(item)))];
   if (clean.includes('ban')) return clean.filter((item) => item !== 'kick');
   return clean.length ? clean : [...fallback];
 }
+function formatActions(actions) { return normalizeActions(actions).map((item) => ACTION_LABELS[item]).join(', '); }
+
 function getDefaultAutomodConfig() {
   return {
     enabled: false,
@@ -114,11 +117,7 @@ function getAutomodConfig(guildId) {
   const output = { ...defaults, ...current };
   for (const key of AUTOMOD_RULE_KEYS) {
     const existing = current[key] || {};
-    output[key] = {
-      ...defaults[key],
-      ...existing,
-      actions: normalizeActions(existing.actions || existing.action, defaults[key].actions),
-    };
+    output[key] = { ...defaults[key], ...existing, actions: normalizeActions(existing.actions || existing.action, defaults[key].actions) };
     delete output[key].action;
   }
   output.ignoredRoles = Array.isArray(current.ignoredRoles) ? current.ignoredRoles : [];
@@ -129,8 +128,18 @@ function saveAutomodConfig(guildId, config) { return replaceGuildSection(guildId
 function getLogChannelId(guildId, type) { if (typeof guildManager.getLogChannelId === 'function') return guildManager.getLogChannelId(guildId, type); return getGuildSection(guildId, 'logs', { channels: {} })?.channels?.[type] || null; }
 function setLogChannelId(guildId, type = 'general', channelId = null) { if (typeof guildManager.setLogChannelId === 'function') return guildManager.setLogChannelId(guildId, type, channelId); const logs = getGuildSection(guildId, 'logs', { enabled: true, channels: {}, events: {} }); return replaceGuildSection(guildId, 'logs', { ...logs, channels: { ...(logs.channels || {}), [type]: channelId } }); }
 function formatLogsSummary(guildId) { return `${['automod', 'admin', 'moderation', 'general', 'member'].filter((key) => getLogChannelId(guildId, key)).length}/5 configured`; }
-function status(value) { return value ? 'Enabled ✅' : 'Disabled ❌'; }
-function formatActions(actions) { return normalizeActions(actions).map((item) => ACTION_LABELS[item]).join(', '); }
+
+function canonicalState(route = 'admin:home') {
+  const history = ['admin:home'];
+  if (route === 'admin:home') return { history };
+  if (route === 'admin:automod') return { history: [...history, 'admin:automod'] };
+  if (route === 'admin:automod:configure') return { history: [...history, 'admin:automod', route] };
+  if (route.startsWith('admin:automod:rule:')) return { history: [...history, 'admin:automod', route] };
+  if (route === 'admin:setautomodlog' || route === 'admin:channel:automodlog') return { history: [...history, 'admin:automod', 'admin:automod:configure', route] };
+  if (route === 'admin:staffroles' || route === 'admin:modroles' || route === 'admin:adminsettings') return { history: [...history, 'admin:adminpanel', route] };
+  if (route === 'admin:autoRoles' || MODULES.some(([id]) => id === route)) return { history: [...history, 'admin:modules', route] };
+  return { history: [...history, route] };
+}
 function getRouteLabel(route) {
   const labels = { 'admin:home': 'Admin Hub', 'admin:automod': 'AutoMod', 'admin:automod:configure': 'Configure', 'admin:embed': 'Embed Studio', 'admin:modules': 'Modules', 'admin:logs': 'Logs', 'admin:backups': 'Backups', 'admin:adminpanel': 'Admin Panel', 'admin:modpanel': 'Mod Panel', 'admin:staffroles': 'Staff Roles', 'admin:modroles': 'Mod Roles', 'admin:autoRoles': 'Join Roles' };
   if (route?.startsWith('admin:automod:rule:')) return AUTOMOD_RULES[route.split(':').pop()]?.title || 'AutoMod Rule';
@@ -138,10 +147,9 @@ function getRouteLabel(route) {
 }
 function getBreadcrumbFromState(navState) { return (Array.isArray(navState?.history) ? navState.history : ['admin:home']).filter(Boolean).slice(-4).map(getRouteLabel).join(' › '); }
 function applyNavigationUI(interaction, panel, navState = panelNav.createState('admin:home')) { if (!interaction || !panel?.embeds?.[0]) return panel; const embed = EmbedBuilder.from(panel.embeds[0]).setFooter({ text: `Navigation: ${getBreadcrumbFromState(navState)}` }); return { ...panel, embeds: [embed] }; }
-async function openExternalAdminPanel(interaction, panel, navState = panelNav.createState('admin:home')) { await interaction.update(applyNavigationUI(interaction, panel, navState)); return true; }
-function backButton(navState = panelNav.createState('admin:home')) { return button(panelNav.buildCustomId(navState, 'back'), '⬅️ Back', ButtonStyle.Secondary); }
+function backButton(route) { return button(panelNav.buildCustomId(canonicalState(route), 'back'), '⬅️ Back', ButtonStyle.Secondary); }
 function nextButton(customId) { return button(customId, 'Next ➡️', ButtonStyle.Secondary); }
-function navRow(navState, nextId) { return row(backButton(navState), nextButton(nextId)); }
+function navRow(route, nextId) { return row(backButton(route), nextButton(nextId)); }
 
 function buildAdminPanel(guild, memberDisplayName = 'Unknown User') {
   return { embeds: [createEmbed('🛠️ Admin Hub', 'Control your server systems from one place.', memberDisplayName).addFields(
@@ -152,7 +160,7 @@ function buildAdminPanel(guild, memberDisplayName = 'Unknown User') {
     ['admin:modules', '🧩 Modules', ButtonStyle.Primary], ['admin:logs', '📋 Logs', ButtonStyle.Primary], ['admin:backups', '🧱 Backups', ButtonStyle.Secondary], ['admin:purge', '🧹 Purge', ButtonStyle.Danger],
   ]) };
 }
-function buildAutomodPanel(guild, memberDisplayName = 'Unknown User', navState = panelNav.createState('admin:home')) {
+function buildAutomodPanel(guild, memberDisplayName = 'Unknown User') {
   const config = getAutomodConfig(guild.id);
   const enabledCount = AUTOMOD_RULE_KEYS.filter((key) => config[key]?.enabled).length;
   const description = [`**System:** ${status(config.enabled)}`, `**Protection rules:** ${enabledCount}/${AUTOMOD_RULE_KEYS.length} enabled`, '', ...AUTOMOD_RULE_KEYS.map((key) => `**${AUTOMOD_RULES[key].label}:** ${status(config[key]?.enabled)}`), '', 'Select a protection rule, or open system configuration.'].join('\n');
@@ -160,16 +168,16 @@ function buildAutomodPanel(guild, memberDisplayName = 'Unknown User', navState =
   return { embeds: [createEmbed('🤖 AutoMod Protection', description, memberDisplayName, config.enabled ? ENABLED_COLOR : DISABLED_COLOR)], components: [
     row(...ruleButtons.slice(0, 3).map(([id, label, style]) => button(id, label, style))),
     row(...ruleButtons.slice(3).map(([id, label, style]) => button(id, label, style)), button('admin:automod:configure', '⚙️ Configure', ButtonStyle.Primary)),
-    navRow(navState, 'admin:automod:configure'),
+    navRow('admin:automod', 'admin:automod:configure'),
   ] };
 }
-function buildAutomodConfigurePanel(guild, memberDisplayName, navState) {
+function buildAutomodConfigurePanel(guild, memberDisplayName) {
   const config = getAutomodConfig(guild.id); const logChannelId = getLogChannelId(guild.id, 'automod');
   const healthy = AUTOMOD_RULE_KEYS.every((key) => config[key] && typeof config[key].enabled === 'boolean' && Array.isArray(config[key].actions));
   return { embeds: [createEmbed('⚙️ AutoMod Configuration', [`**AutoMod:** ${status(config.enabled)}`, `**DM users:** ${status(config.dmUser !== false)}`, `**Log channel:** ${logChannelId ? `<#${logChannelId}>` : 'Not set'}`, `**Health:** ${healthy ? 'Healthy ✅' : 'Needs repair ⚠️'}`, '', 'Manage global AutoMod controls and maintenance tools.'].join('\n'), memberDisplayName, config.enabled ? ENABLED_COLOR : DISABLED_COLOR)], components: [
     row(button('admin:automod:toggle', config.enabled ? 'Disable AutoMod' : 'Enable AutoMod', config.enabled ? ButtonStyle.Danger : ButtonStyle.Success), button('admin:automod:dm', config.dmUser !== false ? 'Disable DMs' : 'Enable DMs', config.dmUser !== false ? ButtonStyle.Danger : ButtonStyle.Success), button('admin:setautomodlog', 'Set Log Channel', ButtonStyle.Primary)),
     row(button('admin:automod:health', '🩺 Health', ButtonStyle.Secondary), button('admin:automod:repair', '🛠️ Repair', ButtonStyle.Primary), button('admin:automod:reset', '♻️ Reset', ButtonStyle.Danger)),
-    navRow(navState, 'admin:automod:rule:antiSpam'),
+    navRow('admin:automod:configure', 'admin:automod:rule:antiSpam'),
   ] };
 }
 function ruleSummary(key, rule) {
@@ -180,20 +188,13 @@ function ruleSummary(key, rule) {
   return `**Maximum mentions:** ${rule.maxMentions}\n**Actions:** ${formatActions(rule.actions)}`;
 }
 function nextRuleId(key) { const index = AUTOMOD_RULE_KEYS.indexOf(key); return index === AUTOMOD_RULE_KEYS.length - 1 ? 'admin:automod' : `admin:automod:rule:${AUTOMOD_RULE_KEYS[index + 1]}`; }
-function buildActionSelect(key, rule) {
-  return new StringSelectMenuBuilder()
-    .setCustomId(`admin:automod:rule:${key}:actions`)
-    .setPlaceholder('Select one or more actions')
-    .setMinValues(1)
-    .setMaxValues(AUTOMOD_ACTIONS.length)
-    .addOptions(AUTOMOD_ACTIONS.map((value) => ({ label: ACTION_LABELS[value], value, default: normalizeActions(rule.actions).includes(value) })));
-}
-function buildAutomodRulePanel(guild, key, memberDisplayName, navState) {
-  const config = getAutomodConfig(guild.id); const meta = AUTOMOD_RULES[key]; const rule = config[key];
+function buildActionSelect(key, rule) { return new StringSelectMenuBuilder().setCustomId(`admin:automod:rule:${key}:actions`).setPlaceholder('Select one or more actions').setMinValues(1).setMaxValues(AUTOMOD_ACTIONS.length).addOptions(AUTOMOD_ACTIONS.map((value) => ({ label: ACTION_LABELS[value], value, default: normalizeActions(rule.actions).includes(value) }))); }
+function buildAutomodRulePanel(guild, key, memberDisplayName) {
+  const config = getAutomodConfig(guild.id); const meta = AUTOMOD_RULES[key]; const rule = config[key]; const route = `admin:automod:rule:${key}`;
   return { embeds: [createEmbed(meta.title, [`**Status:** ${status(rule.enabled)}`, '', ruleSummary(key, rule), '', 'Choose the exact settings and select every action that should run when this rule triggers.'].join('\n'), memberDisplayName, rule.enabled ? ENABLED_COLOR : DISABLED_COLOR)], components: [
-    row(button(`admin:automod:rule:${key}:toggle`, rule.enabled ? 'Disable' : 'Enable', rule.enabled ? ButtonStyle.Danger : ButtonStyle.Success), button(`admin:automod:rule:${key}:edit`, meta.editLabel, ButtonStyle.Primary)),
+    row(button(`${route}:toggle`, rule.enabled ? 'Disable' : 'Enable', rule.enabled ? ButtonStyle.Danger : ButtonStyle.Success), button(`${route}:edit`, meta.editLabel, ButtonStyle.Primary)),
     row(buildActionSelect(key, rule)),
-    navRow(navState, nextRuleId(key)),
+    navRow(route, nextRuleId(key)),
   ] };
 }
 function buildRuleModal(key, rule) {
@@ -209,38 +210,37 @@ function buildRuleModal(key, rule) {
 function parsePositive(value, fallback, min = 1, max = 1000) { const parsed = Number.parseInt(String(value), 10); return Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : fallback; }
 function parseList(value) { return [...new Set(String(value || '').split(',').map((item) => item.trim()).filter(Boolean))].slice(0, 100); }
 
-function buildAdminToolsPanel(guild, memberDisplayName = 'Unknown User', navState = panelNav.createState('admin:home')) { const staff = getRoleConfig(guild.id, 'staffRoles'); const mods = getRoleConfig(guild.id, 'modRoles'); return { embeds: [createEmbed('👑 Admin Panel', `**Staff Roles**\n${formatRoleList(staff.roleIds)}\n\n**Mod Roles**\n${formatRoleList(mods.roleIds)}`, memberDisplayName)], components: [...buttonRows([['admin:setadminlog', '🔏 Set Admin Log', ButtonStyle.Primary], ['admin:staffroles', '👥 Staff Roles', ButtonStyle.Primary], ['admin:modroles', '🔐 Mod Roles', ButtonStyle.Primary], ['admin:adminsettings', '⚙️ Settings', ButtonStyle.Primary]]), row(backButton(navState))] }; }
-function buildModulesPanel(guild, memberDisplayName = 'Unknown User', navState = panelNav.createState('admin:home')) { return { embeds: [createEmbed('🧩 Modules', MODULES.map(([, , title, description]) => `**${title}**\n${description}`).join('\n\n'), memberDisplayName)], components: [...buttonRows(MODULES.map(([id, label]) => [id, label, ButtonStyle.Primary])), row(backButton(navState))] }; }
-function buildLogsPanel(guild, memberDisplayName = 'Unknown User', navState = panelNav.createState('admin:home')) { return { embeds: [createEmbed('📋 Log Channels', Object.values(LOG_TYPES).map((item) => `**${item.label}:** ${getLogChannelId(guild.id, item.key) ? `<#${getLogChannelId(guild.id, item.key)}>` : 'Not set'}`).join('\n'), memberDisplayName)], components: [...buttonRows(Object.values(LOG_TYPES).map((item) => [item.customId, item.label, ButtonStyle.Primary])), row(backButton(navState))] }; }
-function buildBackupsPanel(guild, memberDisplayName = 'Unknown User', navState = panelNav.createState('admin:home')) { const backups = listServerBackups(guild.id); const latest = normalizeBackupId(backups[0]); return { embeds: [createEmbed('🧱 Server Backups', `**Backups found:** ${backups.length}\n**Latest:** \`${latest || 'None'}\``, memberDisplayName)], components: [...buttonRows([['admin:backup:create', '⚡ Create Backup', ButtonStyle.Success], ['admin:backup:list', '📦 View Backups', ButtonStyle.Primary], ['admin:backup:preview', '🔍 Preview Latest', ButtonStyle.Secondary], ['admin:backup:download', '💾 Download Backup', ButtonStyle.Secondary], ['admin:backup:requestrestore', '🚨 Request Restore', ButtonStyle.Danger]], 2), row(backButton(navState))] }; }
-function buildRolePanel(guild, section, title, selectId, clearId, memberDisplayName, navState) { const config = getRoleConfig(guild.id, section); return { embeds: [createEmbed(title, `**Selected roles:**\n${formatRoleList(config.roleIds)}`, memberDisplayName)], components: [row(new RoleSelectMenuBuilder().setCustomId(selectId).setPlaceholder('Select roles').setMinValues(0).setMaxValues(10)), row(button(clearId, 'Clear Roles', ButtonStyle.Danger), backButton(navState))] }; }
-function buildStaffRolesPanel(guild, memberDisplayName = 'Unknown User', navState = panelNav.createState('admin:home')) { return buildRolePanel(guild, 'staffRoles', '👥 Staff Roles', 'admin:staffroles:select', 'admin:staffroles:clear', memberDisplayName, navState); }
-function buildModRolesPanel(guild, memberDisplayName = 'Unknown User', navState = panelNav.createState('admin:home')) { return buildRolePanel(guild, 'modRoles', '🔐 Mod Roles', 'admin:modroles:select', 'admin:modroles:clear', memberDisplayName, navState); }
-function buildAutoRolesPanel(guild, memberDisplayName = 'Unknown User', navState = panelNav.createState('admin:home')) { const config = getAutoRolesConfig(guild.id); return { embeds: [createEmbed('🎭 Join Roles', `**Status:** ${status(config.enabled)}\n**Roles:** ${formatRoleList(config.roleIds)}\n\n⚠️ The bot role must be above selected roles.`, memberDisplayName)], components: [row(new RoleSelectMenuBuilder().setCustomId('admin:autoRoles:select').setPlaceholder('Select join roles').setMinValues(0).setMaxValues(10)), row(button('admin:autoRoles:toggle', config.enabled ? 'Disable' : 'Enable', config.enabled ? ButtonStyle.Danger : ButtonStyle.Success), backButton(navState))] }; }
-function buildChannelPanel(type = 'logs', navState = panelNav.createState('admin:home')) { const selected = LOG_TYPES[type] || LOG_TYPES.logs; return { embeds: [createEmbed(selected.title, 'Select the text channel where these logs should be sent.')], components: [row(new ChannelSelectMenuBuilder().setCustomId(selected.selectId).setPlaceholder('Choose a text channel').addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)), row(backButton(navState))] }; }
-function buildComingSoonPanel(title, description, navState = panelNav.createState('admin:home')) { return { embeds: [createEmbed(title, description)], components: [row(backButton(navState))] }; }
+function buildAdminToolsPanel(guild, memberDisplayName = 'Unknown User') { const staff = getRoleConfig(guild.id, 'staffRoles'); const mods = getRoleConfig(guild.id, 'modRoles'); return { embeds: [createEmbed('👑 Admin Panel', `**Staff Roles**\n${formatRoleList(staff.roleIds)}\n\n**Mod Roles**\n${formatRoleList(mods.roleIds)}`, memberDisplayName)], components: [...buttonRows([['admin:setadminlog', '🔏 Set Admin Log', ButtonStyle.Primary], ['admin:staffroles', '👥 Staff Roles', ButtonStyle.Primary], ['admin:modroles', '🔐 Mod Roles', ButtonStyle.Primary], ['admin:adminsettings', '⚙️ Settings', ButtonStyle.Primary]]), row(backButton('admin:adminpanel'))] }; }
+function buildModulesPanel(guild, memberDisplayName = 'Unknown User') { return { embeds: [createEmbed('🧩 Modules', MODULES.map(([, , title, description]) => `**${title}**\n${description}`).join('\n\n'), memberDisplayName)], components: [...buttonRows(MODULES.map(([id, label]) => [id, label, ButtonStyle.Primary])), row(backButton('admin:modules'))] }; }
+function buildLogsPanel(guild, memberDisplayName = 'Unknown User') { return { embeds: [createEmbed('📋 Log Channels', Object.values(LOG_TYPES).map((item) => `**${item.label}:** ${getLogChannelId(guild.id, item.key) ? `<#${getLogChannelId(guild.id, item.key)}>` : 'Not set'}`).join('\n'), memberDisplayName)], components: [...buttonRows(Object.values(LOG_TYPES).map((item) => [item.customId, item.label, ButtonStyle.Primary])), row(backButton('admin:logs'))] }; }
+function buildBackupsPanel(guild, memberDisplayName = 'Unknown User') { const backups = listServerBackups(guild.id); const latest = normalizeBackupId(backups[0]); return { embeds: [createEmbed('🧱 Server Backups', `**Backups found:** ${backups.length}\n**Latest:** \`${latest || 'None'}\``, memberDisplayName)], components: [...buttonRows([['admin:backup:create', '⚡ Create Backup', ButtonStyle.Success], ['admin:backup:list', '📦 View Backups', ButtonStyle.Primary], ['admin:backup:preview', '🔍 Preview Latest', ButtonStyle.Secondary], ['admin:backup:download', '💾 Download Backup', ButtonStyle.Secondary], ['admin:backup:requestrestore', '🚨 Request Restore', ButtonStyle.Danger]], 2), row(backButton('admin:backups'))] }; }
+function buildRolePanel(guild, section, title, selectId, clearId, memberDisplayName, route) { const config = getRoleConfig(guild.id, section); return { embeds: [createEmbed(title, `**Selected roles:**\n${formatRoleList(config.roleIds)}`, memberDisplayName)], components: [row(new RoleSelectMenuBuilder().setCustomId(selectId).setPlaceholder('Select roles').setMinValues(0).setMaxValues(10)), row(button(clearId, 'Clear Roles', ButtonStyle.Danger), backButton(route))] }; }
+function buildStaffRolesPanel(guild, memberDisplayName = 'Unknown User') { return buildRolePanel(guild, 'staffRoles', '👥 Staff Roles', 'admin:staffroles:select', 'admin:staffroles:clear', memberDisplayName, 'admin:staffroles'); }
+function buildModRolesPanel(guild, memberDisplayName = 'Unknown User') { return buildRolePanel(guild, 'modRoles', '🔐 Mod Roles', 'admin:modroles:select', 'admin:modroles:clear', memberDisplayName, 'admin:modroles'); }
+function buildAutoRolesPanel(guild, memberDisplayName = 'Unknown User') { const config = getAutoRolesConfig(guild.id); return { embeds: [createEmbed('🎭 Join Roles', `**Status:** ${status(config.enabled)}\n**Roles:** ${formatRoleList(config.roleIds)}\n\n⚠️ The bot role must be above selected roles.`, memberDisplayName)], components: [row(new RoleSelectMenuBuilder().setCustomId('admin:autoRoles:select').setPlaceholder('Select join roles').setMinValues(0).setMaxValues(10)), row(button('admin:autoRoles:toggle', config.enabled ? 'Disable' : 'Enable', config.enabled ? ButtonStyle.Danger : ButtonStyle.Success), backButton('admin:autoRoles'))] }; }
+function buildChannelPanel(type = 'logs') { const selected = LOG_TYPES[type] || LOG_TYPES.logs; const route = type === 'automodlog' ? 'admin:channel:automodlog' : `admin:channel:${type}`; return { embeds: [createEmbed(selected.title, 'Select the text channel where these logs should be sent.')], components: [row(new ChannelSelectMenuBuilder().setCustomId(selected.selectId).setPlaceholder('Choose a text channel').addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)), row(backButton(route))] }; }
+function buildComingSoonPanel(title, description, route) { return { embeds: [createEmbed(title, description)], components: [row(backButton(route))] }; }
 function buildPurgeModal() { return new ModalBuilder().setCustomId('admin:purgeModal').setTitle('Purge Messages').addComponents(row(new TextInputBuilder().setCustomId('amount').setLabel('Amount (1-100)').setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder('25').setMaxLength(3))); }
 
-async function updatePanel(interaction, panel, navState = panelNav.createState('admin:home')) { const finalPanel = applyNavigationUI(interaction, panel, navState); if (interaction.deferred || interaction.replied) await interaction.editReply(finalPanel); else await interaction.update(finalPanel); return true; }
-function nextState(navState, route) { return panelNav.push(navState || panelNav.createState('admin:home'), route); }
-function panelForRoute(route, interaction, memberDisplayName, state) {
+async function updatePanel(interaction, panel, route = 'admin:home') { const state = canonicalState(route); const finalPanel = applyNavigationUI(interaction, panel, state); if (interaction.deferred || interaction.replied) await interaction.editReply(finalPanel); else await interaction.update(finalPanel); return true; }
+function panelForRoute(route, interaction, memberDisplayName) {
   if (route === 'admin:home') return buildAdminPanel(interaction.guild, memberDisplayName);
-  if (route === 'admin:automod') return buildAutomodPanel(interaction.guild, memberDisplayName, state);
-  if (route === 'admin:automod:configure') return buildAutomodConfigurePanel(interaction.guild, memberDisplayName, state);
-  if (route?.startsWith('admin:automod:rule:')) return buildAutomodRulePanel(interaction.guild, route.split(':').pop(), memberDisplayName, state);
-  if (route === 'admin:adminpanel') return buildAdminToolsPanel(interaction.guild, memberDisplayName, state);
-  if (route === 'admin:modules') return buildModulesPanel(interaction.guild, memberDisplayName, state);
-  if (route === 'admin:logs') return buildLogsPanel(interaction.guild, memberDisplayName, state);
-  if (route === 'admin:backups') return buildBackupsPanel(interaction.guild, memberDisplayName, state);
-  if (route === 'admin:staffroles') return buildStaffRolesPanel(interaction.guild, memberDisplayName, state);
-  if (route === 'admin:modroles') return buildModRolesPanel(interaction.guild, memberDisplayName, state);
-  if (route === 'admin:autoRoles') return buildAutoRolesPanel(interaction.guild, memberDisplayName, state);
-  if (route === 'admin:modpanel') return buildComingSoonPanel('🔐 Mod Panel', 'Moderation tools will live here.', state);
-  if (route === 'admin:adminsettings') return buildComingSoonPanel('⚙️ Admin Settings', 'Admin settings will live here.', state);
-  if (COMING_SOON[route]) return buildComingSoonPanel(...COMING_SOON[route], state);
+  if (route === 'admin:automod') return buildAutomodPanel(interaction.guild, memberDisplayName);
+  if (route === 'admin:automod:configure') return buildAutomodConfigurePanel(interaction.guild, memberDisplayName);
+  if (route?.startsWith('admin:automod:rule:')) return buildAutomodRulePanel(interaction.guild, route.split(':').pop(), memberDisplayName);
+  if (route === 'admin:adminpanel') return buildAdminToolsPanel(interaction.guild, memberDisplayName);
+  if (route === 'admin:modules') return buildModulesPanel(interaction.guild, memberDisplayName);
+  if (route === 'admin:logs') return buildLogsPanel(interaction.guild, memberDisplayName);
+  if (route === 'admin:backups') return buildBackupsPanel(interaction.guild, memberDisplayName);
+  if (route === 'admin:staffroles') return buildStaffRolesPanel(interaction.guild, memberDisplayName);
+  if (route === 'admin:modroles') return buildModRolesPanel(interaction.guild, memberDisplayName);
+  if (route === 'admin:autoRoles') return buildAutoRolesPanel(interaction.guild, memberDisplayName);
+  if (route === 'admin:modpanel') return buildComingSoonPanel('🔐 Mod Panel', 'Moderation tools will live here.', route);
+  if (route === 'admin:adminsettings') return buildComingSoonPanel('⚙️ Admin Settings', 'Admin settings will live here.', route);
+  if (COMING_SOON[route]) return buildComingSoonPanel(...COMING_SOON[route], route);
   return buildAdminPanel(interaction.guild, memberDisplayName);
 }
-async function openRoute(interaction, route, memberDisplayName, navState) { const state = route === 'admin:home' ? panelNav.createState('admin:home') : nextState(navState, route); return updatePanel(interaction, panelForRoute(route, interaction, memberDisplayName, state), state); }
+async function openRoute(interaction, route, memberDisplayName) { return updatePanel(interaction, panelForRoute(route, interaction, memberDisplayName), route); }
 async function replyNoAccess(interaction, content) { if (interaction.deferred || interaction.replied) await interaction.editReply({ content }); else await interaction.reply({ content, flags: 64 }); return true; }
 async function handleAutomodModal(interaction) {
   const match = interaction.customId.match(/^admin:automod:rule:([^:]+):modal$/); if (!match) return false;
@@ -255,48 +255,48 @@ async function handleAutomodModal(interaction) {
   await interaction.reply({ content: `✅ ${AUTOMOD_RULES[key].title} settings saved.`, flags: 64 });
   return true;
 }
-async function handleAdminNavigation(interaction, navState = panelNav.createState('admin:home')) {
+
+async function handleAdminNavigation(interaction) {
   if (!interaction.guild) return false;
   const parsedNav = panelNav.parseCustomId(interaction.customId);
   if (!String(interaction.customId || '').startsWith('admin:') && !parsedNav) return false;
   if (!canUseAdminPanel(interaction)) return replyNoAccess(interaction, '❌ Only the Goliath Owner, Guild Owner, or Administrators can use the Admin Panel.');
   const memberDisplayName = getMemberDisplayName(interaction);
   if (interaction.isModalSubmit()) return handleAutomodModal(interaction);
-  if (parsedNav?.action === 'back') { const state = panelNav.back(parsedNav.state); const route = panelNav.current(state); return updatePanel(interaction, panelForRoute(route, interaction, memberDisplayName, state), state); }
+  if (parsedNav?.action === 'back') { const state = panelNav.back(parsedNav.state); const route = panelNav.current(state); return updatePanel(interaction, panelForRoute(route, interaction, memberDisplayName), route); }
   if (interaction.isRoleSelectMenu()) {
     const map = { 'admin:staffroles:select': 'staffRoles', 'admin:modroles:select': 'modRoles', 'admin:autoRoles:select': 'autoRoles' }; const section = map[interaction.customId]; if (!section) return false;
     const current = section === 'autoRoles' ? getAutoRolesConfig(interaction.guild.id) : getRoleConfig(interaction.guild.id, section); replaceGuildSection(interaction.guild.id, section, { ...current, roleIds: [...new Set(interaction.values || [])] });
-    const panel = section === 'staffRoles' ? buildStaffRolesPanel(interaction.guild, memberDisplayName, navState) : section === 'modRoles' ? buildModRolesPanel(interaction.guild, memberDisplayName, navState) : buildAutoRolesPanel(interaction.guild, memberDisplayName, navState); return updatePanel(interaction, panel, navState);
+    const route = section === 'staffRoles' ? 'admin:staffroles' : section === 'modRoles' ? 'admin:modroles' : 'admin:autoRoles'; return openRoute(interaction, route, memberDisplayName);
   }
   if (interaction.isStringSelectMenu()) {
     const match = interaction.customId.match(/^admin:automod:rule:([^:]+):actions$/); if (!match || !AUTOMOD_RULES[match[1]]) return false;
     const key = match[1]; const config = getAutomodConfig(interaction.guild.id); const rule = { ...config[key], actions: normalizeActions(interaction.values, config[key].actions) };
-    saveAutomodConfig(interaction.guild.id, { ...config, [key]: rule });
-    return updatePanel(interaction, buildAutomodRulePanel(interaction.guild, key, memberDisplayName, navState), navState);
+    saveAutomodConfig(interaction.guild.id, { ...config, [key]: rule }); return openRoute(interaction, `admin:automod:rule:${key}`, memberDisplayName);
   }
-  if (interaction.isChannelSelectMenu()) { const type = LOG_SELECT_TO_TYPE[interaction.customId]; if (!type) return false; setLogChannelId(interaction.guild.id, LOG_TYPES[type].key, interaction.values?.[0] || null); const panel = type === 'automodlog' ? buildAutomodConfigurePanel(interaction.guild, memberDisplayName, navState) : buildLogsPanel(interaction.guild, memberDisplayName, navState); return updatePanel(interaction, panel, navState); }
+  if (interaction.isChannelSelectMenu()) { const type = LOG_SELECT_TO_TYPE[interaction.customId]; if (!type) return false; setLogChannelId(interaction.guild.id, LOG_TYPES[type].key, interaction.values?.[0] || null); return openRoute(interaction, type === 'automodlog' ? 'admin:automod:configure' : 'admin:logs', memberDisplayName); }
   if (!interaction.isButton()) return false;
   const { customId } = interaction;
   if (customId === 'admin:purge') { await interaction.showModal(buildPurgeModal()); return true; }
-  if (customId === 'admin:automod:toggle' || customId === 'admin:automod:dm') { const config = getAutomodConfig(interaction.guild.id); saveAutomodConfig(interaction.guild.id, { ...config, ...(customId.endsWith(':toggle') ? { enabled: !config.enabled } : { dmUser: config.dmUser === false }) }); return updatePanel(interaction, buildAutomodConfigurePanel(interaction.guild, memberDisplayName, navState), navState); }
+  if (customId === 'admin:automod:toggle' || customId === 'admin:automod:dm') { const config = getAutomodConfig(interaction.guild.id); saveAutomodConfig(interaction.guild.id, { ...config, ...(customId.endsWith(':toggle') ? { enabled: !config.enabled } : { dmUser: config.dmUser === false }) }); return openRoute(interaction, 'admin:automod:configure', memberDisplayName); }
   if (customId === 'admin:automod:health') { const config = getAutomodConfig(interaction.guild.id); const missing = AUTOMOD_RULE_KEYS.filter((key) => !config[key] || typeof config[key].enabled !== 'boolean' || !Array.isArray(config[key].actions)); await interaction.reply({ content: missing.length ? `⚠️ Missing or invalid rules: ${missing.join(', ')}` : '✅ AutoMod configuration is healthy.', flags: 64 }); return true; }
-  if (customId === 'admin:automod:repair') { const config = getAutomodConfig(interaction.guild.id); saveAutomodConfig(interaction.guild.id, config); return updatePanel(interaction, buildAutomodConfigurePanel(interaction.guild, memberDisplayName, navState), navState); }
-  if (customId === 'admin:automod:reset') { saveAutomodConfig(interaction.guild.id, getDefaultAutomodConfig()); return updatePanel(interaction, buildAutomodConfigurePanel(interaction.guild, memberDisplayName, navState), navState); }
+  if (customId === 'admin:automod:repair') { saveAutomodConfig(interaction.guild.id, getAutomodConfig(interaction.guild.id)); return openRoute(interaction, 'admin:automod:configure', memberDisplayName); }
+  if (customId === 'admin:automod:reset') { saveAutomodConfig(interaction.guild.id, getDefaultAutomodConfig()); return openRoute(interaction, 'admin:automod:configure', memberDisplayName); }
   const ruleMatch = customId.match(/^admin:automod:rule:([^:]+)(?::(toggle|edit))?$/);
-  if (ruleMatch && AUTOMOD_RULES[ruleMatch[1]]) { const key = ruleMatch[1]; const action = ruleMatch[2]; if (!action) return openRoute(interaction, `admin:automod:rule:${key}`, memberDisplayName, navState); const config = getAutomodConfig(interaction.guild.id); const rule = { ...config[key] }; if (action === 'edit') { await interaction.showModal(buildRuleModal(key, rule)); return true; } rule.enabled = !rule.enabled; saveAutomodConfig(interaction.guild.id, { ...config, [key]: rule }); return updatePanel(interaction, buildAutomodRulePanel(interaction.guild, key, memberDisplayName, navState), navState); }
-  if (LOG_BUTTON_TO_TYPE[customId]) { const state = nextState(navState, `admin:channel:${LOG_BUTTON_TO_TYPE[customId]}`); return updatePanel(interaction, buildChannelPanel(LOG_BUTTON_TO_TYPE[customId], state), state); }
-  if (customId === 'admin:embed') { const { buildEmbedPanel } = require('../../../modules/messageStudio/embed/embedPanel'); return updatePanel(interaction, buildEmbedPanel(interaction, memberDisplayName), nextState(navState, 'admin:embed')); }
+  if (ruleMatch && AUTOMOD_RULES[ruleMatch[1]]) { const key = ruleMatch[1]; const action = ruleMatch[2]; if (!action) return openRoute(interaction, `admin:automod:rule:${key}`, memberDisplayName); const config = getAutomodConfig(interaction.guild.id); const rule = { ...config[key] }; if (action === 'edit') { await interaction.showModal(buildRuleModal(key, rule)); return true; } rule.enabled = !rule.enabled; saveAutomodConfig(interaction.guild.id, { ...config, [key]: rule }); return openRoute(interaction, `admin:automod:rule:${key}`, memberDisplayName); }
+  if (LOG_BUTTON_TO_TYPE[customId]) return updatePanel(interaction, buildChannelPanel(LOG_BUTTON_TO_TYPE[customId]), LOG_BUTTON_TO_TYPE[customId] === 'automodlog' ? 'admin:channel:automodlog' : `admin:channel:${LOG_BUTTON_TO_TYPE[customId]}`);
+  if (customId === 'admin:embed') { const { buildEmbedPanel } = require('../../../modules/messageStudio/embed/embedPanel'); return updatePanel(interaction, buildEmbedPanel(interaction, memberDisplayName), 'admin:embed'); }
   if (customId === 'admin:tickets') { const { sendSetupPanel } = require('../../../modules/feedbackStudio/tickets/ticketsPanel'); return sendSetupPanel(interaction); }
-  if (customId === 'admin:autoRoles:toggle') { const current = getAutoRolesConfig(interaction.guild.id); replaceGuildSection(interaction.guild.id, 'autoRoles', { ...current, enabled: !current.enabled, roleIds: current.roleIds || [] }); return updatePanel(interaction, buildAutoRolesPanel(interaction.guild, memberDisplayName, navState), navState); }
-  if (customId === 'admin:staffroles:clear' || customId === 'admin:modroles:clear') { const section = customId.includes('staffroles') ? 'staffRoles' : 'modRoles'; replaceGuildSection(interaction.guild.id, section, { roleIds: [] }); return updatePanel(interaction, section === 'staffRoles' ? buildStaffRolesPanel(interaction.guild, memberDisplayName, navState) : buildModRolesPanel(interaction.guild, memberDisplayName, navState), navState); }
-  if (customId === 'admin:backup:create') { if (!isBotOwner(interaction) && !isGuildOwner(interaction)) return replyNoAccess(interaction, '❌ Only the Goliath Owner or Guild Owner can create backups.'); await interaction.deferUpdate(); await createServerBackup(interaction.guild, { createdBy: interaction.user.id, reason: 'Manual backup from admin panel' }); await interaction.editReply(applyNavigationUI(interaction, buildBackupsPanel(interaction.guild, memberDisplayName, navState), navState)); return true; }
+  if (customId === 'admin:autoRoles:toggle') { const current = getAutoRolesConfig(interaction.guild.id); replaceGuildSection(interaction.guild.id, 'autoRoles', { ...current, enabled: !current.enabled, roleIds: current.roleIds || [] }); return openRoute(interaction, 'admin:autoRoles', memberDisplayName); }
+  if (customId === 'admin:staffroles:clear' || customId === 'admin:modroles:clear') { const route = customId.includes('staffroles') ? 'admin:staffroles' : 'admin:modroles'; replaceGuildSection(interaction.guild.id, route === 'admin:staffroles' ? 'staffRoles' : 'modRoles', { roleIds: [] }); return openRoute(interaction, route, memberDisplayName); }
+  if (customId === 'admin:backup:create') { if (!isBotOwner(interaction) && !isGuildOwner(interaction)) return replyNoAccess(interaction, '❌ Only the Goliath Owner or Guild Owner can create backups.'); await interaction.deferUpdate(); await createServerBackup(interaction.guild, { createdBy: interaction.user.id, reason: 'Manual backup from admin panel' }); return interaction.editReply(applyNavigationUI(interaction, buildBackupsPanel(interaction.guild, memberDisplayName), canonicalState('admin:backups'))); }
   if (customId === 'admin:backup:list') { const backups = listServerBackups(interaction.guild.id).map(normalizeBackupId).filter(Boolean); await interaction.reply({ content: backups.length ? `📦 **Backups:**\n${backups.slice(0, 10).map((id) => `\`${id}\``).join('\n')}` : '📦 No backups found.', flags: 64 }); return true; }
   if (customId === 'admin:backup:preview') { const latest = normalizeBackupId(listServerBackups(interaction.guild.id)[0]); const backup = latest ? readServerBackup(interaction.guild.id, latest) : null; const validation = backup ? validateServerBackup(backup, { guildId: interaction.guild.id }) : null; await interaction.reply({ content: backup ? `🔍 **Latest Backup**\nID: \`${latest}\`\nValid: ${validation?.valid ? 'YES ✅' : 'NO ❌'}` : '🔍 No backups found.', flags: 64 }); return true; }
   if (customId === 'admin:backup:download') { const latest = normalizeBackupId(listServerBackups(interaction.guild.id)[0]); const backup = latest ? readServerBackup(interaction.guild.id, latest) : null; if (!backup) return replyNoAccess(interaction, '❌ No backups found.'); await interaction.reply({ content: `💾 Backup: ${latest}`, files: [{ attachment: Buffer.from(JSON.stringify(backup, null, 2)), name: `${latest}.json` }], flags: 64 }); return true; }
   if (customId === 'admin:backup:requestrestore') return restoreRequestManager.createRestoreRequest(interaction, { cooldownMs: 1000 * 60 * 30 });
   if (customId === 'admin:backup:restore' || customId === 'admin:backup:restore:real') return replyNoAccess(interaction, '❌ Direct restores are disabled. Use the centralized restore approval system.');
   const routes = ['admin:home', 'admin:automod', 'admin:automod:configure', 'admin:adminpanel', 'admin:modules', 'admin:logs', 'admin:backups', 'admin:modpanel', 'admin:staffroles', 'admin:modroles', 'admin:autoRoles', 'admin:adminsettings'];
-  if (routes.includes(customId) || COMING_SOON[customId]) return openRoute(interaction, customId, memberDisplayName, navState);
+  if (routes.includes(customId) || COMING_SOON[customId]) return openRoute(interaction, customId, memberDisplayName);
   return false;
 }
 
@@ -326,7 +326,7 @@ module.exports = {
   setLogChannelId,
   handleAdminNavigation,
   updatePanel,
-  openExternalAdminPanel,
+  openExternalAdminPanel: async (interaction, panel) => { await interaction.update(applyNavigationUI(interaction, panel, canonicalState('admin:home'))); return true; },
   applyNavigationUI,
   getCurrentRoute,
   setCurrentRoute,
