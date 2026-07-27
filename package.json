@@ -14,7 +14,7 @@
     "test:schedule": "node --test test/schedule/*.test.js",
     "promote:beta": "node scripts/goliath.js promote beta",
     "promote:production": "node scripts/goliath.js promote production",
-    "sync:commands": "node scripts/goliath.js sync-commands",
+    "sync:commands": "cross-env COMMAND_SYNC_DELETE_STALE=true node scripts/goliath.js sync-commands",
     "doctor": "node scripts/goliath.js doctor",
     "audit": "node scripts/goliath.js audit"
   },
