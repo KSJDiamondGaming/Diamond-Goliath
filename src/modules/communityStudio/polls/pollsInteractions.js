@@ -29,6 +29,7 @@ async function handlePollsInteraction(interaction) {
       return true;
     }
     if (customId === 'admin:polls:createSubmit' && interaction.isModalSubmit?.()) {
+      if (polls.getSection(interaction.guild.id).enabled === false) throw new Error('Polls are disabled.');
       const question = interaction.fields.getTextInputValue('question');
       const description = interaction.fields.getTextInputValue('description');
       const options = interaction.fields.getTextInputValue('options').split(/\r?\n/).map((label) => label.trim()).filter(Boolean);
