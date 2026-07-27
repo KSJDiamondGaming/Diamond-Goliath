@@ -209,7 +209,6 @@ function configureStarboard(guildId, input = {}) {
   if (!guildId) throw new Error('A guild ID is required.');
   const hasEnabled = Object.prototype.hasOwnProperty.call(input, 'enabled');
   if (hasEnabled) setModuleEnabled(guildId, 'starboard', input.enabled === true);
-  if (!moduleEnabled(guildId)) throw new Error('Starboard module is disabled for this server.');
 
   return starboardStore.updateStarboardSection(guildId, (section) => ({
     ...section,
