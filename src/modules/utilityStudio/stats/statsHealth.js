@@ -1,6 +1,8 @@
 'use strict';
 
-const stats = require('./stats');
+const statsStore = require('./statsStore');
+const statsCounters = require('./statsCounters');
+const statsManager = require('./statsManager');
 
 async function resolveChannel(guild, channelId) {
   if (!channelId) return null;
@@ -9,9 +11,9 @@ async function resolveChannel(guild, channelId) {
 
 async function buildHealth(guild) {
   if (!guild?.id) throw new Error('Guild is required.');
-  const config = stats.getConfig(guild.id);
+  const config = statsStore.getStats(guild.id);
   const issues = [];
-  const counters = stats.counters.listCounters(guild.id);
+  const counters = statsCounters.listCounters(guild.id);
 
   for (const counter of counters) {
     const channel = await resolveChannel(guild, counter.channelId);
@@ -35,7 +37,10 @@ async function buildHealth(guild) {
     enabled: config.enabled === true,
     healthy: issues.every((issue) => issue.severity !== 'error'),
     checkedAt: new Date().toISOString(),
-    counters: { configured: counters.length, missing: issues.filter((issue) => issue.code === 'counter_channel_missing').length },
+    counters: {
+      configured: counters.length,
+      missing: issues.filter((issue) => issue.code === 'counter_channel_missing').length,
+    },
     tracking: {
       messages: config.trackMessages !== false,
       voice: config.trackVoice !== false,
@@ -51,10 +56,10 @@ async function repair(guild) {
   let suite = null;
 
   if (before.issues.some((issue) => issue.code === 'counter_channel_missing')) {
-    suite = await stats.counters.createCounterSuite(guild);
+    suite = await statsCounters.createCounterSuite(guild);
   }
 
-  const refreshed = await stats.refreshGuildCounters(guild, 'repair');
+  const refreshed = await statsManager.refreshGuildCounters(guild, 'repair');
   return { suite, refreshed, health: await buildHealth(guild) };
 }
 
@@ -63,13 +68,18 @@ function exportConfig(guildId) {
     module: 'stats',
     guildId: String(guildId),
     exportedAt: new Date().toISOString(),
-    config: stats.getConfig(guildId),
-    summary: stats.getSummary(guildId),
+    config: statsStore.getStats(guildId),
+    summary: statsStore.getSummary(guildId),
   };
 }
 
 function reset(guildId, meta = {}) {
-  return stats.reset(guildId, meta);
+  return statsStore.resetStats(guildId, meta);
 }
 
-module.exports = { buildHealth, repair, exportConfig, reset };
+module.exports = {
+  buildHealth,
+  repair,
+  exportConfig,
+  reset,
+};
