@@ -33,7 +33,18 @@ async function handleInviteStudioInteraction(interaction) {
   if (id === 'invites:member-enabled') { const config = invites.getSection(interaction.guildId).settings.memberInviteTemplate; nested(interaction, 'memberInviteTemplate', { enabled: !config.enabled }); await update(interaction); return true; }
   if (id === 'invites:member-dm-modal') { await interaction.showModal(panel.dmModal(interaction)); return true; }
   if (id === 'invites:member-dm-submit' && interaction.isModalSubmit()) { nested(interaction, 'memberInviteTemplate', { dmTitle: interaction.fields.getTextInputValue('title'), dmMessage: interaction.fields.getTextInputValue('message') }); await interaction.reply({ content: '✅ Member DM saved.', flags: MessageFlags.Ephemeral }); return true; }
-  if (id === 'invites:toggle') { const section = invites.getSection(interaction.guildId); invites.setEnabled(interaction.guildId, !section.enabled, meta(interaction, 'invite_toggle')); await update(interaction); return true; }
+  if (id === 'invites:toggle') {
+    const section = invites.getSection(interaction.guildId);
+    const enabling = !section.enabled;
+    invites.setEnabled(interaction.guildId, enabling, meta(interaction, 'invite_toggle'));
+    if (enabling) {
+      await invites.syncGuild(interaction.guild, meta(interaction, 'invite_enable_sync')).catch((error) => {
+        console.warn(`[Invites] Enable sync failed for guild ${interaction.guildId}: ${error.message || error}`);
+      });
+    }
+    await update(interaction);
+    return true;
+  }
   if (id === 'invites:health') { const health = await invites.buildHealth(interaction.guild); await interaction.reply({ content: health.healthy ? '✅ Invite Studio is healthy.' : `❌ ${health.issues.map((issue) => issue.code).join(', ')}`, flags: MessageFlags.Ephemeral }); return true; }
   if (id === 'invites:repair') { await interaction.deferReply({ flags: MessageFlags.Ephemeral }); const health = await invites.repair(interaction.guild, meta(interaction, 'invite_repair')); await interaction.editReply(health.healthy ? '✅ Repair completed.' : '⚠️ Repair completed with remaining issues.'); return true; }
   if (id === 'invites:default-panel') { const defaults = invites.defaults().settings; const current = invites.getSection(interaction.guildId).settings; invites.updateSettings(interaction.guildId, { publicPanel: { ...current.publicPanel, ...defaults.publicPanel }, memberInviteTemplate: { ...current.memberInviteTemplate, ...defaults.memberInviteTemplate } }, meta(interaction, 'invite_defaults')); await interaction.reply({ content: '✅ Defaults restored.', flags: MessageFlags.Ephemeral }); return true; }
