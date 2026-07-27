@@ -3,12 +3,8 @@ const path = require('path');
 const { resolveRuntimePath } = require('../../../config/runtimePaths');
 const Database = require('better-sqlite3');
 
-const mode = String(
-  process.env.BOT_MODE || 'DEV'
-).toLowerCase();
-
 const dataDir = resolveRuntimePath(
-  mode,
+  process.env.BOT_MODE,
   'database'
 );
 
