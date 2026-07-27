@@ -7,6 +7,7 @@ const path = require('path');
 const { resolveBotMode, getRuntimeRoot, resolveRuntimePath } = require('../../config/runtimePaths');
 
 const router = express.Router();
+const RUNTIME_MODE = resolveBotMode(process.env.BOT_MODE).toUpperCase();
 
 function splitIds(value) {
   return String(value || '').split(',').map((id) => id.trim()).filter(Boolean);
@@ -68,10 +69,6 @@ function getDiscordClient(req) {
   );
 }
 
-function getRuntimeMode() {
-  return resolveBotMode(process.env.BOT_MODE).toUpperCase();
-}
-
 function getSafeEnvSummary() {
   return {
     NODE_ENV: process.env.NODE_ENV || 'unset',
@@ -99,7 +96,7 @@ function getPackageInfo() {
   return safeReadJson(path.join(process.cwd(), 'package.json'), { name: 'goliath', version: 'unknown' }) || { name: 'goliath', version: 'unknown' };
 }
 
-function getRuntimeFolders(environment = getRuntimeMode()) {
+function getRuntimeFolders(environment = RUNTIME_MODE) {
   const root = getRuntimeRoot(environment);
   const folders = ['guilds', 'logs', 'backups', 'data', 'cache', 'deployments'];
   return Object.fromEntries(folders.map((folder) => {
@@ -108,7 +105,7 @@ function getRuntimeFolders(environment = getRuntimeMode()) {
   }));
 }
 
-function readDeploymentHistory(environment = getRuntimeMode()) {
+function readDeploymentHistory(environment = RUNTIME_MODE) {
   const candidates = [
     resolveRuntimePath(environment, 'deployments', 'history.json'),
     resolveRuntimePath(environment, 'data', 'deployments.json'),
@@ -127,7 +124,7 @@ function readDeploymentHistory(environment = getRuntimeMode()) {
 
 function buildDeploymentPayload(req) {
   const client = getDiscordClient(req);
-  const mode = getRuntimeMode();
+  const mode = RUNTIME_MODE;
   const branchMap = { DEV: 'dev', BETA: 'beta', PRODUCTION: 'production' };
   const packageInfo = getPackageInfo();
   const commitSha = String(process.env.GITHUB_SHA || process.env.COMMIT_SHA || process.env.GIT_COMMIT || '').trim() || null;
@@ -201,7 +198,7 @@ router.get('/', requireOwner, (req, res) => {
   return res.json({
     success: true,
     checkedAt: new Date().toISOString(),
-    mode: getRuntimeMode(),
+    mode: RUNTIME_MODE,
     auth: {
       authenticated: Boolean(req.session?.user),
       sessionUserId,
@@ -242,7 +239,7 @@ router.get('/deployments', requireOwner, (req, res) => {
     return res.json({
       success: true,
       owner: true,
-      mode: getRuntimeMode(),
+      mode: RUNTIME_MODE,
       ...payload,
       updatedAt: new Date().toISOString(),
     });
