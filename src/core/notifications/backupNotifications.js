@@ -7,8 +7,8 @@ function ownerGuildId(fallbackGuildId = null) {
   return process.env.OWNER_NOTIFICATION_GUILD_ID || process.env.PRIMARY_GUILD_ID || process.env.GUILD_ID || fallbackGuildId || null;
 }
 
-function runtimeMode(value) {
-  return normalizeBotMode(value || process.env.BOT_MODE);
+function runtimeMode(value = process.env.BOT_MODE) {
+  return normalizeBotMode(value);
 }
 
 function notify(guildId, payload = {}, options = {}) {
