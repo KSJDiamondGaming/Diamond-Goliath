@@ -11,17 +11,30 @@ async function getReactionGuildId(reaction) {
   return reaction?.message?.guild?.id || null;
 }
 
+async function runHandler(label, handler) {
+  try {
+    await handler();
+  } catch (error) {
+    console.error(`[EVENT: messageReactionRemove] ${label} failed:`, error);
+  }
+}
+
 module.exports = {
   name: 'messageReactionRemove',
   async execute(reaction, user, client) {
-    try {
-      const guildId = await getReactionGuildId(reaction);
-      await handleReactionRemove(reaction, user, client);
-      if (!guildId) return;
-      if (isModuleEnabled(guildId, 'giveaways')) await leaveGiveawayReaction(reaction, user);
-      if (isModuleEnabled(guildId, 'starboard')) await handleStarReactionRemove(reaction, user);
-    } catch (error) {
-      console.error('[EVENT: messageReactionRemove]', error);
+    const guildId = await getReactionGuildId(reaction).catch((error) => {
+      console.error('[EVENT: messageReactionRemove] Failed to resolve guild:', error);
+      return null;
+    });
+
+    await runHandler('Reaction Roles', () => handleReactionRemove(reaction, user, client));
+    if (!guildId) return;
+
+    if (isModuleEnabled(guildId, 'giveaways')) {
+      await runHandler('Giveaways', () => leaveGiveawayReaction(reaction, user));
+    }
+    if (isModuleEnabled(guildId, 'starboard')) {
+      await runHandler('Starboard', () => handleStarReactionRemove(reaction, user));
     }
   },
 };
