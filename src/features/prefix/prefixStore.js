@@ -1,11 +1,10 @@
 'use strict';
 
-// src/prefix/prefixStore.js
+// src/features/prefix/prefixStore.js
 
 const guildManager = require('../../core/guild/guildManager');
 
-const DEFAULT_PREFIX = '/';
-const LEGACY_UNSET_PREFIX = '/';
+const DEFAULT_PREFIX = guildManager.DEFAULT_GENERAL_SETTINGS.prefix;
 const MIN_PREFIX_LENGTH = 1;
 const MAX_PREFIX_LENGTH = 5;
 
@@ -29,20 +28,18 @@ function normalizePrefix(value, fallback = DEFAULT_PREFIX) {
 }
 
 function getGeneralSettings(guildId) {
-  const guildData = guildManager.getGuildData(guildId) || {};
-  return guildData.generalSettings || {};
+  return guildManager.getGuildSection(
+    guildId,
+    'generalSettings',
+    guildManager.DEFAULT_GENERAL_SETTINGS
+  );
 }
 
 function getGuildPrefix(guildId) {
-  const settings = getGeneralSettings(guildId);
-  const storedPrefix = String(settings.prefix || '').trim();
+  const storedPrefix = String(getGeneralSettings(guildId).prefix || '').trim();
 
   try {
-    if (!storedPrefix || storedPrefix === LEGACY_UNSET_PREFIX) {
-      return DEFAULT_PREFIX;
-    }
-
-    return normalizePrefix(storedPrefix);
+    return normalizePrefix(storedPrefix, DEFAULT_PREFIX);
   } catch {
     return DEFAULT_PREFIX;
   }
@@ -50,38 +47,17 @@ function getGuildPrefix(guildId) {
 
 function setGuildPrefix(guildId, prefix, guildOrMeta = {}) {
   const safePrefix = normalizePrefix(prefix);
-  const current = getGeneralSettings(guildId);
 
-  if (typeof guildManager.updateGuildSection === 'function') {
-    guildManager.updateGuildSection(
-      guildId,
-      'generalSettings',
-      (settings = {}) => ({
-        ...current,
-        ...settings,
-        prefix: safePrefix,
-        updatedAt: new Date().toISOString(),
-      }),
-      current,
-      guildOrMeta
-    );
-  } else {
-    guildManager.saveGuildData(
-      guildId,
-      {
-        generalSettings: {
-          ...current,
-          prefix: safePrefix,
-          updatedAt: new Date().toISOString(),
-        },
-      },
-      guildOrMeta
-    );
-  }
-
-  if (typeof guildManager.reloadGuild === 'function') {
-    guildManager.reloadGuild(guildId);
-  }
+  guildManager.updateGuildSection(
+    guildId,
+    'generalSettings',
+    (settings = {}) => ({
+      ...settings,
+      prefix: safePrefix,
+    }),
+    guildManager.DEFAULT_GENERAL_SETTINGS,
+    guildOrMeta
+  );
 
   return safePrefix;
 }
@@ -107,7 +83,6 @@ function getPrefixInfo(guildId) {
 
 module.exports = {
   DEFAULT_PREFIX,
-  LEGACY_UNSET_PREFIX,
   normalizePrefix,
   getGuildPrefix,
   setGuildPrefix,
