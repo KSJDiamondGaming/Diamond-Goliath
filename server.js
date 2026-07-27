@@ -63,7 +63,7 @@ const formsRoutes = route('forms routes', './src/server/routes/forms');
 const transcriptRoutes = route('transcript routes', './src/server/routes/transcripts');
 const translationRoutes = route('translation routes', './src/server/routes/translation');
 const permissionHealthRoutes = route('permission health routes', './src/server/routes/permissionHealth');
-const socialRoutes = route('social routes', './src/modules/social/socialRoute');
+const socialRoutes = route('social routes', './src/modules/socialStudio/socialStudioRoute');
 const scheduleRoutes = route('schedule routes', './src/modules/utilityStudio/schedule/scheduleRoute');
 const invitesRoutes = route('invite routes', './src/modules/communityStudio/invites/invitesRoute');
 const verificationRoutes = route('verification routes', './src/modules/securityStudio/verificationRoute');
@@ -191,14 +191,15 @@ client.once('clientReady', async () => {
   }
   await Promise.all([
     runStartupTask('Tickets', () => require('./src/modules/feedbackStudio/tickets/tickets').startup.startupTickets(client)),
-    runStartupTask('Timed Roles', () => require('./src/modules/roleStudio/timedRoles/timedRoles').startup(client)),
-    runStartupTask('Translation', () => require('./src/modules/utilityStudio/translation/translationStartup').startupTranslation(client)),
-    runStartupTask('Goodbye', () => require('./src/modules/messageStudio/goodbye/goodbye').startupGoodbye(client)),
-    runStartupTask('Reaction Roles', () => require('./src/modules/roleStudio/reactionRoles/reactionRoles').startup(client)),
-    runStartupTask('Verification', () => require('./src/modules/securityStudio/verification').startupVerification(client)),
+    runStartupTask('Timed Roles', () => require('./src/modules/roleStudio/timedRoles/timedRolesStartup').startTimedRoles(client)),
+    runStartupTask('Translation', () => require('./src/modules/utilityStudio/translation/translationStartup').startTranslation(client)),
+    runStartupTask('Goodbye', () => require('./src/modules/messageStudio/goodbye/goodbyeStartup').startGoodbye(client)),
+    runStartupTask('Reaction Roles', () => require('./src/modules/roleStudio/reactionRoles/reactionRolesStartup').startReactionRoles(client)),
+    runStartupTask('Verification', () => require('./src/modules/securityStudio/verificationStartup').startVerification(client)),
   ]);
   backupScheduler.startBackupScheduler?.(client);
 });
 
-server.listen(PORT, () => console.log(`🌐 Dashboard server running on port ${PORT}`));
-client.login(resolveToken(config));
+const token = resolveToken(botMode, config);
+client.login(token);
+server.listen(PORT, '0.0.0.0', () => console.log(`🌐 Dashboard server running on port ${PORT}`));
