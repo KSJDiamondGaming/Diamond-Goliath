@@ -27,7 +27,7 @@ function wireBackupNotifications() {
         guildId: guild?.id || options.guildId || null,
         guildName: guild?.name || null,
         backupType: options.backupType || options.type || 'runtime',
-        environment: process.env.BOT_MODE || 'DEV',
+        environment: process.env.BOT_MODE,
         error: error.message || 'Backup failed.',
       });
       throw error;
