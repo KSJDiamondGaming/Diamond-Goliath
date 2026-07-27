@@ -19,7 +19,7 @@ const TimedRoles = lazy(() => import('../pages/modules/TimedRoles'));
 const Welcome = lazy(() => import('../pages/modules/Welcome'));
 const Goodbye = lazy(() => import('../pages/modules/Goodbye'));
 const Tickets = lazy(() => import('../pages/modules/tickets/TicketsWorkflowEnhanced'));
-const Social = lazy(() => import('../pages/modules/SocialWithRuntime'));
+const Social = lazy(() => import('../pages/modules/Social'));
 const Schedule = lazy(() => import('../pages/modules/Schedule'));
 const Invites = lazy(() => import('../pages/modules/Invites'));
 const Giveaways = lazy(() => import('../pages/modules/Giveaways'));
