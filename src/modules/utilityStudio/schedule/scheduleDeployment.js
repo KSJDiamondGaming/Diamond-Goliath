@@ -80,6 +80,8 @@ async function deploy(guild, eventId, channelId = null, meta = {}) {
 }
 
 async function updateDeployment(guild, eventId) {
+  if (!guild?.id) throw new Error('Guild is required.');
+  if (schedule.getSection(guild.id).enabled === false) return { updated: false, reason: 'module_disabled' };
   const event = schedule.getEvent(guild.id, eventId);
   if (!event?.channelId || !event?.messageId) return { updated: false, reason: 'not_deployed' };
   const channel = await resolveChannel(guild, event);
