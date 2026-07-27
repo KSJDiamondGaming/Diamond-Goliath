@@ -10,6 +10,7 @@ const guildManager = require('../../core/guild/guildManager');
 const { applyPunishmentEngine, normalizePunishments } = require('../../core/automod/punishmentEngine');
 
 const spamWindows = new Map();
+const DEFAULT_SPAM_DM = '⚠️ **{server} AutoMod**\nSpam Protection triggered: {reason}';
 
 async function runHandler(label, handler, ...args) {
   try {
@@ -37,6 +38,9 @@ function getAutoModConfig(guildId) {
   return {
     enabled: config.enabled === true,
     dmUser: config.dmUser !== false,
+    dmMessages: {
+      antiSpam: String(config.dmMessages?.antiSpam || DEFAULT_SPAM_DM),
+    },
     ignoredRoles: Array.isArray(config.ignoredRoles) ? config.ignoredRoles.map(String) : [],
     ignoredChannels: Array.isArray(config.ignoredChannels) ? config.ignoredChannels.map(String) : [],
     antiSpam: {
@@ -54,6 +58,15 @@ function isIgnored(message, config) {
   return roleIds.some((roleId) => config.ignoredRoles.includes(roleId));
 }
 
+function renderDmMessage(template, message, reason) {
+  return String(template || DEFAULT_SPAM_DM)
+    .replaceAll('{server}', message.guild.name)
+    .replaceAll('{reason}', reason)
+    .replaceAll('{user}', message.author.username)
+    .replaceAll('{userMention}', `<@${message.author.id}>`)
+    .replaceAll('{channel}', message.channel?.name || 'unknown-channel');
+}
+
 async function fallbackNotify(message, config, result, reason) {
   const actions = config.antiSpam.actions;
 
@@ -66,7 +79,7 @@ async function fallbackNotify(message, config, result, reason) {
 
   if (actions.includes('dm') && config.dmUser && !result?.applied?.includes('dm')) {
     await message.author.send({
-      content: `⚠️ **${message.guild.name} AutoMod**\nSpam Protection triggered: ${reason}`,
+      content: renderDmMessage(config.dmMessages.antiSpam, message, reason),
     }).catch(() => null);
   }
 
@@ -103,6 +116,7 @@ async function handleAutoMod(message) {
         reason,
         source: 'automod',
         messageContent: message.content,
+        dmMessage: renderDmMessage(config.dmMessages.antiSpam, message, reason),
       }
     );
   } catch (error) {
