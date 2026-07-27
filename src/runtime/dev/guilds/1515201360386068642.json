@@ -98,7 +98,24 @@
           "viewable": true
         }
       ],
-      "emojis": [],
+      "emojis": [
+        {
+          "animated": false,
+          "available": true,
+          "id": "1530791005459316746",
+          "managed": false,
+          "name": "DiscordEpicEmoji",
+          "requiresColons": true
+        },
+        {
+          "animated": false,
+          "available": true,
+          "id": "1530791067409190942",
+          "managed": false,
+          "name": "DiscordFBEmoji",
+          "requiresColons": true
+        }
+      ],
       "guild": {
         "banner": null,
         "description": null,
@@ -110,7 +127,7 @@
         "preferredLocale": "en-US",
         "premiumTier": 0
       },
-      "lastSync": "2026-07-25T02:42:27.986Z",
+      "lastSync": "2026-07-27T03:58:31.798Z",
       "roles": [
         {
           "color": "#000000",
@@ -275,7 +292,7 @@
           "position": 17
         }
       ],
-      "updatedAt": "2026-07-25T02:42:27.987Z"
+      "updatedAt": "2026-07-27T03:58:31.799Z"
     },
     "duplicator": {
       "allowedGuildIds": [],
@@ -379,7 +396,7 @@
         "joins": 0,
         "lastJoinAt": null,
         "lastLeaveAt": null,
-        "lastSyncAt": "2026-07-25T02:42:27.321Z",
+        "lastSyncAt": "2026-07-27T03:58:31.153Z",
         "leaves": 0,
         "linksCreated": 0,
         "official": 0,
@@ -441,7 +458,7 @@
         },
         "trackingEnabled": true
       },
-      "updatedAt": "2026-07-25T02:42:27.321Z"
+      "updatedAt": "2026-07-27T03:58:31.154Z"
     },
     "logs": {
       "channels": {
@@ -494,7 +511,7 @@
         "completed": 0,
         "created": 0,
         "failures": 0,
-        "lastProcessedAt": "2026-07-25T02:43:27.341Z",
+        "lastProcessedAt": "2026-07-27T03:59:31.173Z",
         "remindersSent": 0,
         "rsvps": 0,
         "waitlisted": 0
@@ -512,7 +529,7 @@
         "defaultTimezone": "UTC"
       },
       "templates": {},
-      "updatedAt": "2026-07-25T02:43:27.343Z"
+      "updatedAt": "2026-07-27T03:59:31.174Z"
     },
     "security": {
       "criticalIncidents": 0,
@@ -591,7 +608,7 @@
         "assigned": 0,
         "expired": 0,
         "failed": 0,
-        "lastScanAt": "2026-07-25T02:42:27.064Z",
+        "lastScanAt": "2026-07-27T03:58:30.930Z",
         "removed": 0
       },
       "assignments": {},
@@ -601,7 +618,7 @@
         "auditLog": true,
         "removeExpiredOnStartup": true
       },
-      "updatedAt": "2026-07-25T02:42:27.064Z"
+      "updatedAt": "2026-07-27T03:58:30.930Z"
     },
     "tempVoice": {
       "channels": {},
@@ -700,7 +717,7 @@
       },
       "userPreferences": {}
     },
-    "updatedAt": "2026-07-25T02:43:27.343Z"
+    "updatedAt": "2026-07-27T03:59:31.174Z"
   },
   "subscription": {
     "expiresAt": null,
@@ -708,5 +725,5 @@
     "source": "system",
     "status": "active"
   },
-  "updatedAt": "2026-07-25T02:43:27.345Z"
+  "updatedAt": "2026-07-27T03:59:31.176Z"
 }
