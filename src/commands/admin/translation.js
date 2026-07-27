@@ -3,7 +3,7 @@
 const { SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
 
 const translationStore = require('../../modules/utilityStudio/translation/translationStore');
-const translationManager = require('../../modules/utilityStudio/translation/translationManager');
+const translation = require('../../modules/utilityStudio/translation/translation');
 const translationThreadManager = require('../../modules/utilityStudio/translation/translationThreadManager');
 const { enforceCommandAccess } = require('../../core/ui/commandAccess');
 
@@ -117,7 +117,7 @@ module.exports = {
 
     if (action === 'overview') {
       await reply(interaction, {
-        embeds: [translationManager.buildOverviewEmbed(guildId)],
+        embeds: [translation.buildOverviewEmbed(guildId)],
       });
       return;
     }
@@ -126,7 +126,7 @@ module.exports = {
       translationStore.setTranslationEnabled(guildId, true, interaction.guild);
       await reply(interaction, {
         content: '✅ Translation module enabled.',
-        embeds: [translationManager.buildOverviewEmbed(guildId)],
+        embeds: [translation.buildOverviewEmbed(guildId)],
       });
       return;
     }
@@ -135,7 +135,7 @@ module.exports = {
       translationStore.setTranslationEnabled(guildId, false, interaction.guild);
       await reply(interaction, {
         content: '✅ Translation module disabled.',
-        embeds: [translationManager.buildOverviewEmbed(guildId)],
+        embeds: [translation.buildOverviewEmbed(guildId)],
       });
       return;
     }
@@ -147,7 +147,7 @@ module.exports = {
       const threadMode = interaction.options.getBoolean('thread_mode');
       const targetLanguages = targetsRaw
         .split(',')
-        .map((code) => translationManager.normalizeLanguage(code))
+        .map((code) => translation.normalizeLanguage(code))
         .filter(Boolean)
         .slice(0, 10);
 
@@ -171,7 +171,7 @@ module.exports = {
           `✅ Translation configured for ${channel}.`,
           threadSummary?.created?.length ? `🧵 Created ${threadSummary.created.length} translation thread(s).` : null,
         ].filter(Boolean).join('\n'),
-        embeds: [translationManager.buildChannelEmbed(guildId, channel.id)],
+        embeds: [translation.buildChannelEmbed(guildId, channel.id)],
       });
       return;
     }
@@ -186,14 +186,14 @@ module.exports = {
 
       await reply(interaction, {
         content: `✅ Translation disabled for ${channel}. Existing threads were kept for audit/recovery.`,
-        embeds: [translationManager.buildChannelEmbed(guildId, channel.id)],
+        embeds: [translation.buildChannelEmbed(guildId, channel.id)],
       });
       return;
     }
 
     if (action === 'user-language') {
       const user = interaction.options.getUser('user', true);
-      const language = translationManager.normalizeLanguage(interaction.options.getString('language', true));
+      const language = translation.normalizeLanguage(interaction.options.getString('language', true));
 
       translationStore.saveUserPreference(guildId, user.id, {
         enabled: true,
@@ -201,7 +201,7 @@ module.exports = {
       }, interaction.guild);
 
       await reply(interaction, {
-        content: `✅ ${user}'s preferred translation language is now **${translationManager.languageLabel(language)}**.`,
+        content: `✅ ${user}'s preferred translation language is now **${translation.languageLabel(language)}**.`,
       });
       return;
     }
