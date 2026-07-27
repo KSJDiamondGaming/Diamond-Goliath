@@ -39,7 +39,13 @@ function getModuleSection(guildId, moduleName, fallback = {}) {
 }
 
 function saveModuleSection(guildId, moduleName, sectionData = {}, guildOrMeta = {}) {
+  const currentSection = getModuleSection(guildId, moduleName, {});
   const nextSection = prepareSection(moduleName, sectionData);
+  const hasExplicitEnabled = Object.prototype.hasOwnProperty.call(nextSection, 'enabled');
+
+  if (!hasExplicitEnabled && Object.prototype.hasOwnProperty.call(currentSection, 'enabled')) {
+    nextSection.enabled = currentSection.enabled !== false;
+  }
 
   updateGuildSection(
     guildId,
