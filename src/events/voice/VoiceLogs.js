@@ -1,5 +1,5 @@
 const voiceLog = require('../../core/logging/voice/voiceLog');
-const tempVoiceManager = require('../../modules/utilityStudio/tempVoice/tempVoiceManager');
+const tempVoice = require('../../modules/utilityStudio/tempVoice/tempVoice');
 const statsManager = require('../../modules/utilityStudio/stats/statsManager');
 
 module.exports = {
@@ -7,7 +7,7 @@ module.exports = {
 
   async execute(oldState, newState, client) {
     await voiceLog.handleVoiceStateUpdate(oldState, newState, client);
-    await tempVoiceManager.handleVoiceStateUpdate(oldState, newState, client);
+    await tempVoice.handleVoiceStateUpdate(oldState, newState, client);
     await statsManager.handleVoiceStateUpdate(oldState, newState, client);
   },
 };
