@@ -75,7 +75,7 @@ function projectShape() {
     return !present;
   });
 
-  const retiredRoots = ['core'];
+  const retiredRoots = ['core', 'runtime'];
   const retiredFound = retiredRoots.filter(exists);
   for (const filePath of retiredRoots) console.log(`${exists(filePath) ? '❌' : '✅'} retired /${filePath}`);
 
@@ -244,7 +244,7 @@ function dashboardAudit() {
 
 function runtimeAudit() {
   section('Runtime');
-  const runtimeRoot = absolute(`runtime/${mode}`);
+  const runtimeRoot = absolute(`src/runtime/${mode}`);
   console.log(`BOT_MODE: ${mode}`);
   if (!fs.existsSync(runtimeRoot)) return false;
 
@@ -256,7 +256,7 @@ function runtimeAudit() {
 
 function guildAudit() {
   section('Guild configs');
-  const directory = absolute(`runtime/${mode}/guilds`);
+  const directory = absolute(`src/runtime/${mode}/guilds`);
   if (!fs.existsSync(directory)) return false;
   fs.readdirSync(directory).filter((file) => file.endsWith('.json')).sort().forEach((file) => console.log(`- ${file}`));
   return true;
@@ -341,78 +341,39 @@ function promote(target) {
   }[environment];
 
   if (!plan) {
-    console.error('Promotion target must be beta or production.');
+    console.error(`Invalid promotion target: ${environment}`);
     return false;
   }
-  if (!fs.existsSync(absolute('.git'))) {
-    console.error('Run promotion from the Goliath repository root.');
-    return false;
-  }
+
+  section(`Promote ${plan.source} -> ${environment}`);
+  if (!run('git', ['fetch', 'origin'])) return false;
   if (output('git', ['status', '--porcelain'])) {
-    console.error('Promotion requires a clean working tree.');
+    console.error('Working tree is not clean.');
     return false;
   }
-
-  const originalBranch = output('git', ['branch', '--show-current']);
-  if (!originalBranch) {
-    console.error('Could not determine the current branch.');
-    return false;
-  }
-
-  section(`Promote ${plan.source} → ${environment}`);
-  let success = false;
-
-  try {
-    if (!run('git', ['fetch', 'origin'])) return false;
-    if (!run('git', ['switch', environment])) return false;
-    if (!run('git', ['pull', '--ff-only', 'origin', environment])) return false;
-    if (!run('git', ['merge', '--no-edit', `origin/${plan.source}`])) return false;
-    if (!doctor()) return false;
-    if (!run('git', ['push', 'origin', environment])) return false;
-    if (!run('ssh', ['root@198.186.130.112', 'bash', plan.deploy])) return false;
-    success = true;
-    return true;
-  } finally {
-    if (originalBranch !== environment && !run('git', ['switch', originalBranch])) {
-      console.error(`Promotion ${success ? 'completed' : 'failed'}, but could not restore branch ${originalBranch}.`);
-    }
-  }
+  if (!run('git', ['checkout', environment])) return false;
+  if (!run('git', ['pull', '--ff-only', 'origin', environment])) return false;
+  if (!run('git', ['merge', '--ff-only', `origin/${plan.source}`])) return false;
+  if (!run('npm', ['ci'])) return false;
+  if (!run('npm', ['run', 'doctor'])) return false;
+  if (!run('npm', ['run', 'build'])) return false;
+  if (!run('git', ['push', 'origin', environment])) return false;
+  return run(plan.deploy, []);
 }
 
-function help() {
-  console.log(`Goliath CLI\n===========\nMode: ${mode}\n  doctor [suite]\n  audit\n  commands\n  sync-commands [dev|beta|production]\n  promote [beta|production]\n  goodbye\n  reaction\n  role-studio\n  invites\n  dashboard\n  runtime\n  imports\n  guilds\n  media\n  source`);
+function audit() {
+  return [projectShape, sourceAudit, importAudit, runtimeAudit, guildAudit, mediaAudit].map((suite) => suite()).every(Boolean);
 }
 
-const command = String(process.argv[2] || 'help').toLowerCase();
-const target = String(process.argv[3] || '').toLowerCase();
-const commands = {
-  help,
-  doctor: () => doctor(target),
-  check: () => doctor(target),
-  audit: () => doctor() && guildAudit(),
-  commands: commandAudit,
-  'sync-commands': () => syncCommands(target),
-  sync: () => syncCommands(target),
-  promote: () => promote(target),
-  goodbye: goodbyeAudit,
-  reaction: reactionRolesAudit,
-  reactionroles: reactionRolesAudit,
-  'reaction-roles': reactionRolesAudit,
-  'role-studio': roleStudioAudit,
-  rolestudio: roleStudioAudit,
-  invites: inviteStudioAudit,
-  dashboard: dashboardAudit,
-  runtime: runtimeAudit,
-  imports: importAudit,
-  guilds: guildAudit,
-  media: mediaAudit,
-  source: sourceAudit,
-};
+const [command = 'doctor', target = ''] = process.argv.slice(2);
+const success = command === 'doctor'
+  ? doctor(String(target || '').toLowerCase())
+  : command === 'audit'
+    ? audit()
+    : command === 'sync-commands'
+      ? syncCommands(target)
+      : command === 'promote'
+        ? promote(target)
+        : false;
 
-if (!commands[command]) {
-  console.error(`Unknown command: ${command}`);
-  help();
-  process.exit(1);
-}
-
-if (commands[command]() === false) process.exit(1);
+if (!success) process.exitCode = 1;
