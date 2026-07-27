@@ -191,11 +191,11 @@ client.once('clientReady', async () => {
   }
   await Promise.all([
     runStartupTask('Tickets', () => require('./src/modules/feedbackStudio/tickets/tickets').startup.startupTickets(client)),
-    runStartupTask('Timed Roles', () => require('./src/modules/roleStudio/timedRoles/timedRolesStartup').startTimedRoles(client)),
-    runStartupTask('Translation', () => require('./src/modules/utilityStudio/translation/translationStartup').startTranslation(client)),
-    runStartupTask('Goodbye', () => require('./src/modules/messageStudio/goodbye/goodbyeStartup').startGoodbye(client)),
-    runStartupTask('Reaction Roles', () => require('./src/modules/roleStudio/reactionRoles/reactionRolesStartup').startReactionRoles(client)),
-    runStartupTask('Verification', () => require('./src/modules/securityStudio/verificationStartup').startVerification(client)),
+    runStartupTask('Timed Roles', () => require('./src/modules/roleStudio/timedRoles/timedRoles').startup(client)),
+    runStartupTask('Translation', () => require('./src/modules/utilityStudio/translation/translationStartup').startupTranslation(client)),
+    runStartupTask('Goodbye', () => require('./src/modules/messageStudio/goodbye/goodbye').startupGoodbye(client)),
+    runStartupTask('Reaction Roles', () => require('./src/modules/roleStudio/reactionRoles/reactionRoles').startup(client)),
+    runStartupTask('Verification', () => require('./src/modules/securityStudio/verification').startupVerification(client)),
   ]);
   backupScheduler.startBackupScheduler?.(client);
 });
