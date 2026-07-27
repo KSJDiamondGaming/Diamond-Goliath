@@ -6,6 +6,7 @@ const {
   PLAN_DEFINITIONS,
   getPlanDefinition,
 } = require('../../config/plans');
+const security = require('../../core/security/securityCore');
 const subscriptionManager = require('../billing/subscriptionManager');
 const entitlementManager = require('../billing/entitlementManager');
 const redemptionManager = require('../billing/redemptionManager');
@@ -35,16 +36,8 @@ function getGuildId(req) {
   return guildId;
 }
 
-function getOwnerIds() {
-  return String(process.env.OWNER_IDS || '')
-    .split(',')
-    .map((id) => id.trim())
-    .filter(Boolean);
-}
-
 function isOwnerRequest(req) {
-  const userId = req.session?.user?.id;
-  return Boolean(userId && getOwnerIds().includes(String(userId)));
+  return security.isBotOwner(req.session?.user?.id);
 }
 
 function requireOwner(req, res, next) {
@@ -53,7 +46,7 @@ function requireOwner(req, res, next) {
     return res.status(401).json({ success: false, error: 'Not authenticated.' });
   }
 
-  if (!getOwnerIds().includes(String(userId))) {
+  if (!security.isBotOwner(userId)) {
     return res.status(403).json({ success: false, error: 'Owner access required.' });
   }
 
