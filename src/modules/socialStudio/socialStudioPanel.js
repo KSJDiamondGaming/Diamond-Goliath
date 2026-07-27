@@ -6,6 +6,7 @@ const guildManager = require('../../core/guild/guildManager');
 function getConfig(guildId) {
   const section = guildManager.getGuildSection(guildId, 'social', {});
   return {
+    ...section,
     enabled: section.enabled === true,
     alertsChannelId: section.alertsChannelId || null,
     accounts: section.accounts && typeof section.accounts === 'object' ? section.accounts : {},
