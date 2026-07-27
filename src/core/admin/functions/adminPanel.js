@@ -6,6 +6,7 @@ const {
   ChannelSelectMenuBuilder,
   ChannelType,
   RoleSelectMenuBuilder,
+  StringSelectMenuBuilder,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
@@ -34,19 +35,19 @@ const LOG_TYPES = {
   logs: { key: 'general', customId: 'admin:setlogs', selectId: 'admin:selectlogs', title: '📋 Set General Logs Channel', label: '📋 General Logs' },
   memberlog: { key: 'member', customId: 'admin:setmemberlog', selectId: 'admin:selectmemberlog', title: '👥 Set Member Log Channel', label: '👥 Member Log' },
 };
-
 const LOG_SELECT_TO_TYPE = Object.fromEntries(Object.entries(LOG_TYPES).map(([type, value]) => [value.selectId, type]));
 const LOG_BUTTON_TO_TYPE = Object.fromEntries(Object.entries(LOG_TYPES).map(([type, value]) => [value.customId, type]));
 
 const AUTOMOD_RULES = {
-  antiSpam: { label: '🚫 Spam', title: '🚫 Spam Protection', defaults: { enabled: false, maxMessages: 5, intervalSeconds: 10, action: 'delete' } },
-  antiLinks: { label: '🔗 Links', title: '🔗 Link Protection', defaults: { enabled: false, allowStaff: true, allowedDomains: [], action: 'delete' } },
-  badWords: { label: '🤬 Bad Words', title: '🤬 Bad Word Filter', defaults: { enabled: false, words: [], action: 'delete' } },
-  caps: { label: '🔠 Caps', title: '🔠 Caps Protection', defaults: { enabled: false, percent: 70, minLength: 12, action: 'warn' } },
-  mentions: { label: '📣 Mentions', title: '📣 Mention Protection', defaults: { enabled: false, maxMentions: 5, action: 'warn' } },
+  antiSpam: { label: '🚫 Spam', title: '🚫 Spam Protection', editLabel: '⏱️ Limits', defaults: { enabled: false, maxMessages: 5, intervalSeconds: 10, actions: ['delete'] } },
+  antiLinks: { label: '🔗 Links', title: '🔗 Link Protection', editLabel: '🌐 Domains', defaults: { enabled: false, allowStaff: true, allowedDomains: [], actions: ['delete'] } },
+  badWords: { label: '🤬 Bad Words', title: '🤬 Bad Word Filter', editLabel: '📝 Word List', defaults: { enabled: false, words: [], actions: ['delete'] } },
+  caps: { label: '🔠 Caps', title: '🔠 Caps Protection', editLabel: '📏 Thresholds', defaults: { enabled: false, percent: 70, minLength: 12, actions: ['warn'] } },
+  mentions: { label: '📣 Mentions', title: '📣 Mention Protection', editLabel: '📣 Limit', defaults: { enabled: false, maxMentions: 5, actions: ['warn'] } },
 };
 const AUTOMOD_RULE_KEYS = Object.keys(AUTOMOD_RULES);
-const AUTOMOD_ACTIONS = ['delete', 'warn', 'timeout', 'kick', 'ban'];
+const AUTOMOD_ACTIONS = ['dm', 'delete', 'warn', 'timeout', 'kick', 'ban'];
+const ACTION_LABELS = { dm: 'DM User', delete: 'Delete Message', warn: 'Warn User', timeout: 'Timeout User', kick: 'Kick User', ban: 'Ban User' };
 
 const MODULES = [
   ['admin:embed', '🎨 Embed', '🎨 Embed Studio', 'Create and send custom embeds'],
@@ -88,7 +89,12 @@ function normalizeBackupId(backup) { return typeof backup === 'string' ? backup 
 function isBotOwner(interaction) { return OWNER_IDS.includes(String(interaction.user.id)); }
 function isGuildOwner(interaction) { return interaction.guild?.ownerId === interaction.user.id; }
 function canUseAdminPanel(interaction) { return isBotOwner(interaction) || isGuildOwner(interaction) || interaction.member?.permissions?.has(PermissionFlagsBits.Administrator); }
-
+function normalizeActions(value, fallback = ['delete']) {
+  const source = Array.isArray(value) ? value : value ? [value] : fallback;
+  const clean = [...new Set(source.map((item) => String(item).toLowerCase()).filter((item) => AUTOMOD_ACTIONS.includes(item)))];
+  if (clean.includes('ban')) return clean.filter((item) => item !== 'kick');
+  return clean.length ? clean : [...fallback];
+}
 function getDefaultAutomodConfig() {
   return {
     enabled: false,
@@ -105,150 +111,91 @@ function getDefaultAutomodConfig() {
 function getAutomodConfig(guildId) {
   const current = getGuildSection(guildId, 'automod', {});
   const defaults = getDefaultAutomodConfig();
-  return {
-    ...defaults,
-    ...current,
-    antiSpam: { ...defaults.antiSpam, ...(current.antiSpam || {}) },
-    antiLinks: { ...defaults.antiLinks, ...(current.antiLinks || {}) },
-    badWords: { ...defaults.badWords, ...(current.badWords || {}) },
-    caps: { ...defaults.caps, ...(current.caps || {}) },
-    mentions: { ...defaults.mentions, ...(current.mentions || {}) },
-    ignoredRoles: Array.isArray(current.ignoredRoles) ? current.ignoredRoles : [],
-    ignoredChannels: Array.isArray(current.ignoredChannels) ? current.ignoredChannels : [],
-  };
+  const output = { ...defaults, ...current };
+  for (const key of AUTOMOD_RULE_KEYS) {
+    const existing = current[key] || {};
+    output[key] = {
+      ...defaults[key],
+      ...existing,
+      actions: normalizeActions(existing.actions || existing.action, defaults[key].actions),
+    };
+    delete output[key].action;
+  }
+  output.ignoredRoles = Array.isArray(current.ignoredRoles) ? current.ignoredRoles : [];
+  output.ignoredChannels = Array.isArray(current.ignoredChannels) ? current.ignoredChannels : [];
+  return output;
 }
 function saveAutomodConfig(guildId, config) { return replaceGuildSection(guildId, 'automod', config); }
-function getLogChannelId(guildId, type) {
-  if (typeof guildManager.getLogChannelId === 'function') return guildManager.getLogChannelId(guildId, type);
-  return getGuildSection(guildId, 'logs', { channels: {} })?.channels?.[type] || null;
-}
-function setLogChannelId(guildId, type = 'general', channelId = null) {
-  if (typeof guildManager.setLogChannelId === 'function') return guildManager.setLogChannelId(guildId, type, channelId);
-  const logs = getGuildSection(guildId, 'logs', { enabled: true, channels: {}, events: {} });
-  return replaceGuildSection(guildId, 'logs', { ...logs, channels: { ...(logs.channels || {}), [type]: channelId } });
-}
+function getLogChannelId(guildId, type) { if (typeof guildManager.getLogChannelId === 'function') return guildManager.getLogChannelId(guildId, type); return getGuildSection(guildId, 'logs', { channels: {} })?.channels?.[type] || null; }
+function setLogChannelId(guildId, type = 'general', channelId = null) { if (typeof guildManager.setLogChannelId === 'function') return guildManager.setLogChannelId(guildId, type, channelId); const logs = getGuildSection(guildId, 'logs', { enabled: true, channels: {}, events: {} }); return replaceGuildSection(guildId, 'logs', { ...logs, channels: { ...(logs.channels || {}), [type]: channelId } }); }
 function formatLogsSummary(guildId) { return `${['automod', 'admin', 'moderation', 'general', 'member'].filter((key) => getLogChannelId(guildId, key)).length}/5 configured`; }
 function status(value) { return value ? 'Enabled ✅' : 'Disabled ❌'; }
-function actionLabel(value) { return String(value || 'delete').replace(/^./, (c) => c.toUpperCase()); }
-
+function formatActions(actions) { return normalizeActions(actions).map((item) => ACTION_LABELS[item]).join(', '); }
 function getRouteLabel(route) {
   const labels = { 'admin:home': 'Admin Hub', 'admin:automod': 'AutoMod', 'admin:automod:configure': 'Configure', 'admin:embed': 'Embed Studio', 'admin:modules': 'Modules', 'admin:logs': 'Logs', 'admin:backups': 'Backups', 'admin:adminpanel': 'Admin Panel', 'admin:modpanel': 'Mod Panel', 'admin:staffroles': 'Staff Roles', 'admin:modroles': 'Mod Roles', 'admin:autoRoles': 'Join Roles' };
   if (route?.startsWith('admin:automod:rule:')) return AUTOMOD_RULES[route.split(':').pop()]?.title || 'AutoMod Rule';
   return labels[route] || String(route || 'admin:home').replace('admin:', '').replaceAll(':', ' › ');
 }
 function getBreadcrumbFromState(navState) { return (Array.isArray(navState?.history) ? navState.history : ['admin:home']).filter(Boolean).slice(-4).map(getRouteLabel).join(' › '); }
-function applyNavigationUI(interaction, panel, navState = panelNav.createState('admin:home')) {
-  if (!interaction || !panel?.embeds?.[0]) return panel;
-  const embed = EmbedBuilder.from(panel.embeds[0]).setFooter({ text: `Navigation: ${getBreadcrumbFromState(navState)}` });
-  return { ...panel, embeds: [embed] };
-}
+function applyNavigationUI(interaction, panel, navState = panelNav.createState('admin:home')) { if (!interaction || !panel?.embeds?.[0]) return panel; const embed = EmbedBuilder.from(panel.embeds[0]).setFooter({ text: `Navigation: ${getBreadcrumbFromState(navState)}` }); return { ...panel, embeds: [embed] }; }
 async function openExternalAdminPanel(interaction, panel, navState = panelNav.createState('admin:home')) { await interaction.update(applyNavigationUI(interaction, panel, navState)); return true; }
 function backButton(navState = panelNav.createState('admin:home')) { return button(panelNav.buildCustomId(navState, 'back'), '⬅️ Back', ButtonStyle.Secondary); }
 function nextButton(customId) { return button(customId, 'Next ➡️', ButtonStyle.Secondary); }
 function navRow(navState, nextId) { return row(backButton(navState), nextButton(nextId)); }
 
 function buildAdminPanel(guild, memberDisplayName = 'Unknown User') {
-  return {
-    embeds: [createEmbed('🛠️ Admin Hub', 'Control your server systems from one place.', memberDisplayName).addFields(
-      { name: '🤖 AutoMod', value: 'Auto Protection', inline: true }, { name: '🔏 Admin', value: 'Admin tools', inline: true }, { name: '🔐 Mod Panel', value: 'Moderation tools', inline: true },
-      { name: '🧩 Modules', value: 'Embeds, tickets, fun, etc.', inline: true }, { name: '📋 Logs', value: formatLogsSummary(guild.id), inline: true }, { name: '🧱 Backups', value: 'Disaster recovery', inline: true }, { name: '🧹 Purge', value: 'Bulk delete messages', inline: true }
-    )],
-    components: buttonRows([
-      ['admin:automod', '⚙️ AutoMod', ButtonStyle.Primary], ['admin:adminpanel', '🔏 Admin', ButtonStyle.Primary], ['admin:modpanel', '🔐 Mod Panel', ButtonStyle.Primary],
-      ['admin:modules', '🧩 Modules', ButtonStyle.Primary], ['admin:logs', '📋 Logs', ButtonStyle.Primary], ['admin:backups', '🧱 Backups', ButtonStyle.Secondary], ['admin:purge', '🧹 Purge', ButtonStyle.Danger],
-    ]),
-  };
+  return { embeds: [createEmbed('🛠️ Admin Hub', 'Control your server systems from one place.', memberDisplayName).addFields(
+    { name: '🤖 AutoMod', value: 'Auto Protection', inline: true }, { name: '🔏 Admin', value: 'Admin tools', inline: true }, { name: '🔐 Mod Panel', value: 'Moderation tools', inline: true },
+    { name: '🧩 Modules', value: 'Embeds, tickets, fun, etc.', inline: true }, { name: '📋 Logs', value: formatLogsSummary(guild.id), inline: true }, { name: '🧱 Backups', value: 'Disaster recovery', inline: true }, { name: '🧹 Purge', value: 'Bulk delete messages', inline: true }
+  )], components: buttonRows([
+    ['admin:automod', '⚙️ AutoMod', ButtonStyle.Primary], ['admin:adminpanel', '🔏 Admin', ButtonStyle.Primary], ['admin:modpanel', '🔐 Mod Panel', ButtonStyle.Primary],
+    ['admin:modules', '🧩 Modules', ButtonStyle.Primary], ['admin:logs', '📋 Logs', ButtonStyle.Primary], ['admin:backups', '🧱 Backups', ButtonStyle.Secondary], ['admin:purge', '🧹 Purge', ButtonStyle.Danger],
+  ]) };
 }
-
 function buildAutomodPanel(guild, memberDisplayName = 'Unknown User', navState = panelNav.createState('admin:home')) {
   const config = getAutomodConfig(guild.id);
   const enabledCount = AUTOMOD_RULE_KEYS.filter((key) => config[key]?.enabled).length;
-  const description = [
-    `**System:** ${status(config.enabled)}`,
-    `**Protection rules:** ${enabledCount}/${AUTOMOD_RULE_KEYS.length} enabled`,
-    '',
-    ...AUTOMOD_RULE_KEYS.map((key) => `**${AUTOMOD_RULES[key].label}:** ${status(config[key]?.enabled)}`),
-    '',
-    'Select a protection rule to configure it, or open system configuration.',
-  ].join('\n');
-  const ruleButtons = AUTOMOD_RULE_KEYS.map((key) => [
-    `admin:automod:rule:${key}`,
-    AUTOMOD_RULES[key].label,
-    config[key]?.enabled ? ButtonStyle.Success : ButtonStyle.Secondary,
-  ]);
-  return {
-    embeds: [createEmbed('🤖 AutoMod Protection', description, memberDisplayName, config.enabled ? ENABLED_COLOR : DISABLED_COLOR)],
-    components: [
-      row(...ruleButtons.slice(0, 3).map(([id, label, style]) => button(id, label, style))),
-      row(...ruleButtons.slice(3).map(([id, label, style]) => button(id, label, style)), button('admin:automod:configure', '⚙️ Configure', ButtonStyle.Primary)),
-      navRow(navState, 'admin:automod:configure'),
-    ],
-  };
+  const description = [`**System:** ${status(config.enabled)}`, `**Protection rules:** ${enabledCount}/${AUTOMOD_RULE_KEYS.length} enabled`, '', ...AUTOMOD_RULE_KEYS.map((key) => `**${AUTOMOD_RULES[key].label}:** ${status(config[key]?.enabled)}`), '', 'Select a protection rule, or open system configuration.'].join('\n');
+  const ruleButtons = AUTOMOD_RULE_KEYS.map((key) => [`admin:automod:rule:${key}`, AUTOMOD_RULES[key].label, config[key]?.enabled ? ButtonStyle.Success : ButtonStyle.Secondary]);
+  return { embeds: [createEmbed('🤖 AutoMod Protection', description, memberDisplayName, config.enabled ? ENABLED_COLOR : DISABLED_COLOR)], components: [
+    row(...ruleButtons.slice(0, 3).map(([id, label, style]) => button(id, label, style))),
+    row(...ruleButtons.slice(3).map(([id, label, style]) => button(id, label, style)), button('admin:automod:configure', '⚙️ Configure', ButtonStyle.Primary)),
+    navRow(navState, 'admin:automod:configure'),
+  ] };
 }
-
 function buildAutomodConfigurePanel(guild, memberDisplayName, navState) {
-  const config = getAutomodConfig(guild.id);
-  const logChannelId = getLogChannelId(guild.id, 'automod');
-  const healthy = AUTOMOD_RULE_KEYS.every((key) => config[key] && typeof config[key].enabled === 'boolean');
-  return {
-    embeds: [createEmbed('⚙️ AutoMod Configuration', [
-      `**AutoMod:** ${status(config.enabled)}`,
-      `**DM users:** ${status(config.dmUser !== false)}`,
-      `**Log channel:** ${logChannelId ? `<#${logChannelId}>` : 'Not set'}`,
-      `**Health:** ${healthy ? 'Healthy ✅' : 'Needs repair ⚠️'}`,
-      '',
-      'Manage global AutoMod controls and maintenance tools.',
-    ].join('\n'), memberDisplayName, config.enabled ? ENABLED_COLOR : DISABLED_COLOR)],
-    components: [
-      row(
-        button('admin:automod:toggle', config.enabled ? 'Disable AutoMod' : 'Enable AutoMod', config.enabled ? ButtonStyle.Danger : ButtonStyle.Success),
-        button('admin:automod:dm', config.dmUser !== false ? 'Disable DMs' : 'Enable DMs', config.dmUser !== false ? ButtonStyle.Danger : ButtonStyle.Success),
-        button('admin:setautomodlog', 'Set Log Channel', ButtonStyle.Primary)
-      ),
-      row(
-        button('admin:automod:health', '🩺 Health', ButtonStyle.Secondary),
-        button('admin:automod:repair', '🛠️ Repair', ButtonStyle.Primary),
-        button('admin:automod:reset', '♻️ Reset', ButtonStyle.Danger)
-      ),
-      navRow(navState, 'admin:automod:rule:antiSpam'),
-    ],
-  };
+  const config = getAutomodConfig(guild.id); const logChannelId = getLogChannelId(guild.id, 'automod');
+  const healthy = AUTOMOD_RULE_KEYS.every((key) => config[key] && typeof config[key].enabled === 'boolean' && Array.isArray(config[key].actions));
+  return { embeds: [createEmbed('⚙️ AutoMod Configuration', [`**AutoMod:** ${status(config.enabled)}`, `**DM users:** ${status(config.dmUser !== false)}`, `**Log channel:** ${logChannelId ? `<#${logChannelId}>` : 'Not set'}`, `**Health:** ${healthy ? 'Healthy ✅' : 'Needs repair ⚠️'}`, '', 'Manage global AutoMod controls and maintenance tools.'].join('\n'), memberDisplayName, config.enabled ? ENABLED_COLOR : DISABLED_COLOR)], components: [
+    row(button('admin:automod:toggle', config.enabled ? 'Disable AutoMod' : 'Enable AutoMod', config.enabled ? ButtonStyle.Danger : ButtonStyle.Success), button('admin:automod:dm', config.dmUser !== false ? 'Disable DMs' : 'Enable DMs', config.dmUser !== false ? ButtonStyle.Danger : ButtonStyle.Success), button('admin:setautomodlog', 'Set Log Channel', ButtonStyle.Primary)),
+    row(button('admin:automod:health', '🩺 Health', ButtonStyle.Secondary), button('admin:automod:repair', '🛠️ Repair', ButtonStyle.Primary), button('admin:automod:reset', '♻️ Reset', ButtonStyle.Danger)),
+    navRow(navState, 'admin:automod:rule:antiSpam'),
+  ] };
 }
-
 function ruleSummary(key, rule) {
-  if (key === 'antiSpam') return `**Maximum messages:** ${rule.maxMessages}\n**Window:** ${rule.intervalSeconds} seconds\n**Action:** ${actionLabel(rule.action)}`;
-  if (key === 'antiLinks') return `**Staff bypass:** ${rule.allowStaff ? 'Yes' : 'No'}\n**Allowed domains:** ${rule.allowedDomains?.length || 0}\n**Action:** ${actionLabel(rule.action)}`;
-  if (key === 'badWords') return `**Blocked words:** ${rule.words?.length || 0}\n**Action:** ${actionLabel(rule.action)}`;
-  if (key === 'caps') return `**Caps threshold:** ${rule.percent}%\n**Minimum length:** ${rule.minLength}\n**Action:** ${actionLabel(rule.action)}`;
-  return `**Maximum mentions:** ${rule.maxMentions}\n**Action:** ${actionLabel(rule.action)}`;
+  if (key === 'antiSpam') return `**Maximum messages:** ${rule.maxMessages}\n**Window:** ${rule.intervalSeconds} seconds\n**Actions:** ${formatActions(rule.actions)}`;
+  if (key === 'antiLinks') return `**Staff bypass:** ${rule.allowStaff ? 'Yes' : 'No'}\n**Allowed domains:** ${rule.allowedDomains?.length || 0}\n**Actions:** ${formatActions(rule.actions)}`;
+  if (key === 'badWords') return `**Blocked words:** ${rule.words?.length || 0}\n**Actions:** ${formatActions(rule.actions)}`;
+  if (key === 'caps') return `**Caps threshold:** ${rule.percent}%\n**Minimum length:** ${rule.minLength}\n**Actions:** ${formatActions(rule.actions)}`;
+  return `**Maximum mentions:** ${rule.maxMentions}\n**Actions:** ${formatActions(rule.actions)}`;
 }
-function nextRuleId(key) {
-  const index = AUTOMOD_RULE_KEYS.indexOf(key);
-  return index === AUTOMOD_RULE_KEYS.length - 1 ? 'admin:automod' : `admin:automod:rule:${AUTOMOD_RULE_KEYS[index + 1]}`;
+function nextRuleId(key) { const index = AUTOMOD_RULE_KEYS.indexOf(key); return index === AUTOMOD_RULE_KEYS.length - 1 ? 'admin:automod' : `admin:automod:rule:${AUTOMOD_RULE_KEYS[index + 1]}`; }
+function buildActionSelect(key, rule) {
+  return new StringSelectMenuBuilder()
+    .setCustomId(`admin:automod:rule:${key}:actions`)
+    .setPlaceholder('Select one or more actions')
+    .setMinValues(1)
+    .setMaxValues(AUTOMOD_ACTIONS.length)
+    .addOptions(AUTOMOD_ACTIONS.map((value) => ({ label: ACTION_LABELS[value], value, default: normalizeActions(rule.actions).includes(value) })));
 }
 function buildAutomodRulePanel(guild, key, memberDisplayName, navState) {
-  const config = getAutomodConfig(guild.id);
-  const meta = AUTOMOD_RULES[key];
-  const rule = config[key];
-  return {
-    embeds: [createEmbed(meta.title, [
-      `**Status:** ${status(rule.enabled)}`,
-      '',
-      ruleSummary(key, rule),
-      '',
-      'Use Configure to edit thresholds and lists. Cycle Action changes the punishment.',
-    ].join('\n'), memberDisplayName, rule.enabled ? ENABLED_COLOR : DISABLED_COLOR)],
-    components: [
-      row(
-        button(`admin:automod:rule:${key}:toggle`, rule.enabled ? 'Disable' : 'Enable', rule.enabled ? ButtonStyle.Danger : ButtonStyle.Success),
-        button(`admin:automod:rule:${key}:edit`, '⚙️ Configure', ButtonStyle.Primary),
-        button(`admin:automod:rule:${key}:action`, `Action: ${actionLabel(rule.action)}`, ButtonStyle.Secondary)
-      ),
-      navRow(navState, nextRuleId(key)),
-    ],
-  };
+  const config = getAutomodConfig(guild.id); const meta = AUTOMOD_RULES[key]; const rule = config[key];
+  return { embeds: [createEmbed(meta.title, [`**Status:** ${status(rule.enabled)}`, '', ruleSummary(key, rule), '', 'Choose the exact settings and select every action that should run when this rule triggers.'].join('\n'), memberDisplayName, rule.enabled ? ENABLED_COLOR : DISABLED_COLOR)], components: [
+    row(button(`admin:automod:rule:${key}:toggle`, rule.enabled ? 'Disable' : 'Enable', rule.enabled ? ButtonStyle.Danger : ButtonStyle.Success), button(`admin:automod:rule:${key}:edit`, meta.editLabel, ButtonStyle.Primary)),
+    row(buildActionSelect(key, rule)),
+    navRow(navState, nextRuleId(key)),
+  ] };
 }
-
 function buildRuleModal(key, rule) {
   const modal = new ModalBuilder().setCustomId(`admin:automod:rule:${key}:modal`).setTitle(`${AUTOMOD_RULES[key].title} Settings`);
   const add = (id, label, value, placeholder = '') => modal.addComponents(row(new TextInputBuilder().setCustomId(id).setLabel(label).setStyle(TextInputStyle.Short).setRequired(true).setValue(String(value ?? '')).setPlaceholder(placeholder)));
@@ -262,20 +209,10 @@ function buildRuleModal(key, rule) {
 function parsePositive(value, fallback, min = 1, max = 1000) { const parsed = Number.parseInt(String(value), 10); return Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : fallback; }
 function parseList(value) { return [...new Set(String(value || '').split(',').map((item) => item.trim()).filter(Boolean))].slice(0, 100); }
 
-function buildAdminToolsPanel(guild, memberDisplayName = 'Unknown User', navState = panelNav.createState('admin:home')) {
-  const staff = getRoleConfig(guild.id, 'staffRoles'); const mods = getRoleConfig(guild.id, 'modRoles');
-  return { embeds: [createEmbed('👑 Admin Panel', `**Staff Roles**\n${formatRoleList(staff.roleIds)}\n\n**Mod Roles**\n${formatRoleList(mods.roleIds)}`, memberDisplayName)], components: [...buttonRows([
-    ['admin:setadminlog', '🔏 Set Admin Log', ButtonStyle.Primary], ['admin:staffroles', '👥 Staff Roles', ButtonStyle.Primary], ['admin:modroles', '🔐 Mod Roles', ButtonStyle.Primary], ['admin:adminsettings', '⚙️ Settings', ButtonStyle.Primary],
-  ]), row(backButton(navState))] };
-}
+function buildAdminToolsPanel(guild, memberDisplayName = 'Unknown User', navState = panelNav.createState('admin:home')) { const staff = getRoleConfig(guild.id, 'staffRoles'); const mods = getRoleConfig(guild.id, 'modRoles'); return { embeds: [createEmbed('👑 Admin Panel', `**Staff Roles**\n${formatRoleList(staff.roleIds)}\n\n**Mod Roles**\n${formatRoleList(mods.roleIds)}`, memberDisplayName)], components: [...buttonRows([['admin:setadminlog', '🔏 Set Admin Log', ButtonStyle.Primary], ['admin:staffroles', '👥 Staff Roles', ButtonStyle.Primary], ['admin:modroles', '🔐 Mod Roles', ButtonStyle.Primary], ['admin:adminsettings', '⚙️ Settings', ButtonStyle.Primary]]), row(backButton(navState))] }; }
 function buildModulesPanel(guild, memberDisplayName = 'Unknown User', navState = panelNav.createState('admin:home')) { return { embeds: [createEmbed('🧩 Modules', MODULES.map(([, , title, description]) => `**${title}**\n${description}`).join('\n\n'), memberDisplayName)], components: [...buttonRows(MODULES.map(([id, label]) => [id, label, ButtonStyle.Primary])), row(backButton(navState))] }; }
 function buildLogsPanel(guild, memberDisplayName = 'Unknown User', navState = panelNav.createState('admin:home')) { return { embeds: [createEmbed('📋 Log Channels', Object.values(LOG_TYPES).map((item) => `**${item.label}:** ${getLogChannelId(guild.id, item.key) ? `<#${getLogChannelId(guild.id, item.key)}>` : 'Not set'}`).join('\n'), memberDisplayName)], components: [...buttonRows(Object.values(LOG_TYPES).map((item) => [item.customId, item.label, ButtonStyle.Primary])), row(backButton(navState))] }; }
-function buildBackupsPanel(guild, memberDisplayName = 'Unknown User', navState = panelNav.createState('admin:home')) {
-  const backups = listServerBackups(guild.id); const latest = normalizeBackupId(backups[0]);
-  return { embeds: [createEmbed('🧱 Server Backups', `**Backups found:** ${backups.length}\n**Latest:** \`${latest || 'None'}\``, memberDisplayName)], components: [...buttonRows([
-    ['admin:backup:create', '⚡ Create Backup', ButtonStyle.Success], ['admin:backup:list', '📦 View Backups', ButtonStyle.Primary], ['admin:backup:preview', '🔍 Preview Latest', ButtonStyle.Secondary], ['admin:backup:download', '💾 Download Backup', ButtonStyle.Secondary], ['admin:backup:requestrestore', '🚨 Request Restore', ButtonStyle.Danger],
-  ], 2), row(backButton(navState))] };
-}
+function buildBackupsPanel(guild, memberDisplayName = 'Unknown User', navState = panelNav.createState('admin:home')) { const backups = listServerBackups(guild.id); const latest = normalizeBackupId(backups[0]); return { embeds: [createEmbed('🧱 Server Backups', `**Backups found:** ${backups.length}\n**Latest:** \`${latest || 'None'}\``, memberDisplayName)], components: [...buttonRows([['admin:backup:create', '⚡ Create Backup', ButtonStyle.Success], ['admin:backup:list', '📦 View Backups', ButtonStyle.Primary], ['admin:backup:preview', '🔍 Preview Latest', ButtonStyle.Secondary], ['admin:backup:download', '💾 Download Backup', ButtonStyle.Secondary], ['admin:backup:requestrestore', '🚨 Request Restore', ButtonStyle.Danger]], 2), row(backButton(navState))] }; }
 function buildRolePanel(guild, section, title, selectId, clearId, memberDisplayName, navState) { const config = getRoleConfig(guild.id, section); return { embeds: [createEmbed(title, `**Selected roles:**\n${formatRoleList(config.roleIds)}`, memberDisplayName)], components: [row(new RoleSelectMenuBuilder().setCustomId(selectId).setPlaceholder('Select roles').setMinValues(0).setMaxValues(10)), row(button(clearId, 'Clear Roles', ButtonStyle.Danger), backButton(navState))] }; }
 function buildStaffRolesPanel(guild, memberDisplayName = 'Unknown User', navState = panelNav.createState('admin:home')) { return buildRolePanel(guild, 'staffRoles', '👥 Staff Roles', 'admin:staffroles:select', 'admin:staffroles:clear', memberDisplayName, navState); }
 function buildModRolesPanel(guild, memberDisplayName = 'Unknown User', navState = panelNav.createState('admin:home')) { return buildRolePanel(guild, 'modRoles', '🔐 Mod Roles', 'admin:modroles:select', 'admin:modroles:clear', memberDisplayName, navState); }
@@ -304,11 +241,9 @@ function panelForRoute(route, interaction, memberDisplayName, state) {
   return buildAdminPanel(interaction.guild, memberDisplayName);
 }
 async function openRoute(interaction, route, memberDisplayName, navState) { const state = route === 'admin:home' ? panelNav.createState('admin:home') : nextState(navState, route); return updatePanel(interaction, panelForRoute(route, interaction, memberDisplayName, state), state); }
-async function replyNoAccess(interaction, content) { await interaction.reply({ content, flags: 64 }); return true; }
-
-async function handleAutomodModal(interaction, memberDisplayName, navState) {
-  const match = interaction.customId.match(/^admin:automod:rule:([^:]+):modal$/);
-  if (!match) return false;
+async function replyNoAccess(interaction, content) { if (interaction.deferred || interaction.replied) await interaction.editReply({ content }); else await interaction.reply({ content, flags: 64 }); return true; }
+async function handleAutomodModal(interaction) {
+  const match = interaction.customId.match(/^admin:automod:rule:([^:]+):modal$/); if (!match) return false;
   const key = match[1]; if (!AUTOMOD_RULES[key]) return false;
   const config = getAutomodConfig(interaction.guild.id); const rule = { ...config[key] };
   if (key === 'antiSpam') { rule.maxMessages = parsePositive(interaction.fields.getTextInputValue('maxMessages'), rule.maxMessages, 2, 100); rule.intervalSeconds = parsePositive(interaction.fields.getTextInputValue('intervalSeconds'), rule.intervalSeconds, 1, 3600); }
@@ -320,60 +255,35 @@ async function handleAutomodModal(interaction, memberDisplayName, navState) {
   await interaction.reply({ content: `✅ ${AUTOMOD_RULES[key].title} settings saved.`, flags: 64 });
   return true;
 }
-
 async function handleAdminNavigation(interaction, navState = panelNav.createState('admin:home')) {
   if (!interaction.guild) return false;
   const parsedNav = panelNav.parseCustomId(interaction.customId);
   if (!String(interaction.customId || '').startsWith('admin:') && !parsedNav) return false;
   if (!canUseAdminPanel(interaction)) return replyNoAccess(interaction, '❌ Only the Goliath Owner, Guild Owner, or Administrators can use the Admin Panel.');
   const memberDisplayName = getMemberDisplayName(interaction);
-
-  if (interaction.isModalSubmit()) return handleAutomodModal(interaction, memberDisplayName, navState);
+  if (interaction.isModalSubmit()) return handleAutomodModal(interaction);
   if (parsedNav?.action === 'back') { const state = panelNav.back(parsedNav.state); const route = panelNav.current(state); return updatePanel(interaction, panelForRoute(route, interaction, memberDisplayName, state), state); }
-
   if (interaction.isRoleSelectMenu()) {
-    const map = { 'admin:staffroles:select': 'staffRoles', 'admin:modroles:select': 'modRoles', 'admin:autoRoles:select': 'autoRoles' };
-    const section = map[interaction.customId]; if (!section) return false;
-    const current = section === 'autoRoles' ? getAutoRolesConfig(interaction.guild.id) : getRoleConfig(interaction.guild.id, section);
-    replaceGuildSection(interaction.guild.id, section, { ...current, roleIds: [...new Set(interaction.values || [])] });
-    const panel = section === 'staffRoles' ? buildStaffRolesPanel(interaction.guild, memberDisplayName, navState) : section === 'modRoles' ? buildModRolesPanel(interaction.guild, memberDisplayName, navState) : buildAutoRolesPanel(interaction.guild, memberDisplayName, navState);
-    return updatePanel(interaction, panel, navState);
+    const map = { 'admin:staffroles:select': 'staffRoles', 'admin:modroles:select': 'modRoles', 'admin:autoRoles:select': 'autoRoles' }; const section = map[interaction.customId]; if (!section) return false;
+    const current = section === 'autoRoles' ? getAutoRolesConfig(interaction.guild.id) : getRoleConfig(interaction.guild.id, section); replaceGuildSection(interaction.guild.id, section, { ...current, roleIds: [...new Set(interaction.values || [])] });
+    const panel = section === 'staffRoles' ? buildStaffRolesPanel(interaction.guild, memberDisplayName, navState) : section === 'modRoles' ? buildModRolesPanel(interaction.guild, memberDisplayName, navState) : buildAutoRolesPanel(interaction.guild, memberDisplayName, navState); return updatePanel(interaction, panel, navState);
   }
-  if (interaction.isChannelSelectMenu()) {
-    const type = LOG_SELECT_TO_TYPE[interaction.customId]; if (!type) return false;
-    setLogChannelId(interaction.guild.id, LOG_TYPES[type].key, interaction.values?.[0] || null);
-    const panel = type === 'automodlog' ? buildAutomodConfigurePanel(interaction.guild, memberDisplayName, navState) : buildLogsPanel(interaction.guild, memberDisplayName, navState);
-    return updatePanel(interaction, panel, navState);
-  }
-  if (!interaction.isButton()) return false;
-  const { customId } = interaction;
-
-  if (customId === 'admin:purge') { await interaction.showModal(buildPurgeModal()); return true; }
-  if (customId === 'admin:automod:toggle' || customId === 'admin:automod:dm') {
-    const config = getAutomodConfig(interaction.guild.id);
-    saveAutomodConfig(interaction.guild.id, { ...config, ...(customId.endsWith(':toggle') ? { enabled: !config.enabled } : { dmUser: config.dmUser === false }) });
-    return updatePanel(interaction, buildAutomodConfigurePanel(interaction.guild, memberDisplayName, navState), navState);
-  }
-  if (customId === 'admin:automod:health') {
-    const config = getAutomodConfig(interaction.guild.id);
-    const missing = AUTOMOD_RULE_KEYS.filter((key) => !config[key] || typeof config[key].enabled !== 'boolean');
-    await interaction.reply({ content: missing.length ? `⚠️ Missing or invalid rules: ${missing.join(', ')}` : '✅ AutoMod configuration is healthy.', flags: 64 }); return true;
-  }
-  if (customId === 'admin:automod:repair') { const config = getAutomodConfig(interaction.guild.id); saveAutomodConfig(interaction.guild.id, config); return updatePanel(interaction, buildAutomodConfigurePanel(interaction.guild, memberDisplayName, navState), navState); }
-  if (customId === 'admin:automod:reset') { saveAutomodConfig(interaction.guild.id, getDefaultAutomodConfig()); return updatePanel(interaction, buildAutomodConfigurePanel(interaction.guild, memberDisplayName, navState), navState); }
-
-  const ruleMatch = customId.match(/^admin:automod:rule:([^:]+)(?::(toggle|edit|action))?$/);
-  if (ruleMatch && AUTOMOD_RULES[ruleMatch[1]]) {
-    const key = ruleMatch[1]; const action = ruleMatch[2];
-    if (!action) return openRoute(interaction, `admin:automod:rule:${key}`, memberDisplayName, navState);
-    const config = getAutomodConfig(interaction.guild.id); const rule = { ...config[key] };
-    if (action === 'edit') { await interaction.showModal(buildRuleModal(key, rule)); return true; }
-    if (action === 'toggle') rule.enabled = !rule.enabled;
-    if (action === 'action') { const index = AUTOMOD_ACTIONS.indexOf(rule.action); rule.action = AUTOMOD_ACTIONS[(index + 1 + AUTOMOD_ACTIONS.length) % AUTOMOD_ACTIONS.length]; }
+  if (interaction.isStringSelectMenu()) {
+    const match = interaction.customId.match(/^admin:automod:rule:([^:]+):actions$/); if (!match || !AUTOMOD_RULES[match[1]]) return false;
+    const key = match[1]; const config = getAutomodConfig(interaction.guild.id); const rule = { ...config[key], actions: normalizeActions(interaction.values, config[key].actions) };
     saveAutomodConfig(interaction.guild.id, { ...config, [key]: rule });
     return updatePanel(interaction, buildAutomodRulePanel(interaction.guild, key, memberDisplayName, navState), navState);
   }
-
+  if (interaction.isChannelSelectMenu()) { const type = LOG_SELECT_TO_TYPE[interaction.customId]; if (!type) return false; setLogChannelId(interaction.guild.id, LOG_TYPES[type].key, interaction.values?.[0] || null); const panel = type === 'automodlog' ? buildAutomodConfigurePanel(interaction.guild, memberDisplayName, navState) : buildLogsPanel(interaction.guild, memberDisplayName, navState); return updatePanel(interaction, panel, navState); }
+  if (!interaction.isButton()) return false;
+  const { customId } = interaction;
+  if (customId === 'admin:purge') { await interaction.showModal(buildPurgeModal()); return true; }
+  if (customId === 'admin:automod:toggle' || customId === 'admin:automod:dm') { const config = getAutomodConfig(interaction.guild.id); saveAutomodConfig(interaction.guild.id, { ...config, ...(customId.endsWith(':toggle') ? { enabled: !config.enabled } : { dmUser: config.dmUser === false }) }); return updatePanel(interaction, buildAutomodConfigurePanel(interaction.guild, memberDisplayName, navState), navState); }
+  if (customId === 'admin:automod:health') { const config = getAutomodConfig(interaction.guild.id); const missing = AUTOMOD_RULE_KEYS.filter((key) => !config[key] || typeof config[key].enabled !== 'boolean' || !Array.isArray(config[key].actions)); await interaction.reply({ content: missing.length ? `⚠️ Missing or invalid rules: ${missing.join(', ')}` : '✅ AutoMod configuration is healthy.', flags: 64 }); return true; }
+  if (customId === 'admin:automod:repair') { const config = getAutomodConfig(interaction.guild.id); saveAutomodConfig(interaction.guild.id, config); return updatePanel(interaction, buildAutomodConfigurePanel(interaction.guild, memberDisplayName, navState), navState); }
+  if (customId === 'admin:automod:reset') { saveAutomodConfig(interaction.guild.id, getDefaultAutomodConfig()); return updatePanel(interaction, buildAutomodConfigurePanel(interaction.guild, memberDisplayName, navState), navState); }
+  const ruleMatch = customId.match(/^admin:automod:rule:([^:]+)(?::(toggle|edit))?$/);
+  if (ruleMatch && AUTOMOD_RULES[ruleMatch[1]]) { const key = ruleMatch[1]; const action = ruleMatch[2]; if (!action) return openRoute(interaction, `admin:automod:rule:${key}`, memberDisplayName, navState); const config = getAutomodConfig(interaction.guild.id); const rule = { ...config[key] }; if (action === 'edit') { await interaction.showModal(buildRuleModal(key, rule)); return true; } rule.enabled = !rule.enabled; saveAutomodConfig(interaction.guild.id, { ...config, [key]: rule }); return updatePanel(interaction, buildAutomodRulePanel(interaction.guild, key, memberDisplayName, navState), navState); }
   if (LOG_BUTTON_TO_TYPE[customId]) { const state = nextState(navState, `admin:channel:${LOG_BUTTON_TO_TYPE[customId]}`); return updatePanel(interaction, buildChannelPanel(LOG_BUTTON_TO_TYPE[customId], state), state); }
   if (customId === 'admin:embed') { const { buildEmbedPanel } = require('../../../modules/messageStudio/embed/embedPanel'); return updatePanel(interaction, buildEmbedPanel(interaction, memberDisplayName), nextState(navState, 'admin:embed')); }
   if (customId === 'admin:tickets') { const { sendSetupPanel } = require('../../../modules/feedbackStudio/tickets/ticketsPanel'); return sendSetupPanel(interaction); }
@@ -385,7 +295,6 @@ async function handleAdminNavigation(interaction, navState = panelNav.createStat
   if (customId === 'admin:backup:download') { const latest = normalizeBackupId(listServerBackups(interaction.guild.id)[0]); const backup = latest ? readServerBackup(interaction.guild.id, latest) : null; if (!backup) return replyNoAccess(interaction, '❌ No backups found.'); await interaction.reply({ content: `💾 Backup: ${latest}`, files: [{ attachment: Buffer.from(JSON.stringify(backup, null, 2)), name: `${latest}.json` }], flags: 64 }); return true; }
   if (customId === 'admin:backup:requestrestore') return restoreRequestManager.createRestoreRequest(interaction, { cooldownMs: 1000 * 60 * 30 });
   if (customId === 'admin:backup:restore' || customId === 'admin:backup:restore:real') return replyNoAccess(interaction, '❌ Direct restores are disabled. Use the centralized restore approval system.');
-
   const routes = ['admin:home', 'admin:automod', 'admin:automod:configure', 'admin:adminpanel', 'admin:modules', 'admin:logs', 'admin:backups', 'admin:modpanel', 'admin:staffroles', 'admin:modroles', 'admin:autoRoles', 'admin:adminsettings'];
   if (routes.includes(customId) || COMING_SOON[customId]) return openRoute(interaction, customId, memberDisplayName, navState);
   return false;
