@@ -264,13 +264,16 @@ module.exports = [
       await statsManager.handleGuildMemberRemove(member);
       const removal = await detectRemoval(member);
 
-      await goodbyeDeparture.sendDepartureDm(member, removal).catch((error) => {
-        console.warn('[Goodbye] Failed to process departure DM:', error.message || error);
-      });
+      if (guildManager.isModuleEnabled(member.guild.id, 'goodbye')) {
+        await goodbyeDeparture.sendDepartureDm(member, removal).catch((error) => {
+          console.warn('[Goodbye] Failed to process departure DM:', error.message || error);
+        });
 
-      await goodbyeDeparture.sendDeparture(member, removal).catch((error) => {
-        console.error('[Goodbye] Failed to process member departure:', error);
-      });
+        await goodbyeDeparture.sendDeparture(member, removal).catch((error) => {
+          console.error('[Goodbye] Failed to process member departure:', error);
+        });
+      }
+
       await sendAdminMemberRemovalLog(member, removal);
     },
   },
