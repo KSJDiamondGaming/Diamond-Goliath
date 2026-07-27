@@ -127,7 +127,7 @@
         "preferredLocale": "en-US",
         "premiumTier": 0
       },
-      "lastSync": "2026-07-27T03:58:31.798Z",
+      "lastSync": "2026-07-27T04:01:53.674Z",
       "roles": [
         {
           "color": "#000000",
@@ -292,7 +292,7 @@
           "position": 17
         }
       ],
-      "updatedAt": "2026-07-27T03:58:31.799Z"
+      "updatedAt": "2026-07-27T04:01:53.675Z"
     },
     "duplicator": {
       "allowedGuildIds": [],
@@ -396,7 +396,7 @@
         "joins": 0,
         "lastJoinAt": null,
         "lastLeaveAt": null,
-        "lastSyncAt": "2026-07-27T03:58:31.153Z",
+        "lastSyncAt": "2026-07-27T04:01:53.124Z",
         "leaves": 0,
         "linksCreated": 0,
         "official": 0,
@@ -458,7 +458,7 @@
         },
         "trackingEnabled": true
       },
-      "updatedAt": "2026-07-27T03:58:31.154Z"
+      "updatedAt": "2026-07-27T04:01:53.124Z"
     },
     "logs": {
       "channels": {
@@ -511,7 +511,7 @@
         "completed": 0,
         "created": 0,
         "failures": 0,
-        "lastProcessedAt": "2026-07-27T03:59:31.173Z",
+        "lastProcessedAt": "2026-07-27T04:01:53.134Z",
         "remindersSent": 0,
         "rsvps": 0,
         "waitlisted": 0
@@ -529,7 +529,7 @@
         "defaultTimezone": "UTC"
       },
       "templates": {},
-      "updatedAt": "2026-07-27T03:59:31.174Z"
+      "updatedAt": "2026-07-27T04:01:53.136Z"
     },
     "security": {
       "criticalIncidents": 0,
@@ -608,7 +608,7 @@
         "assigned": 0,
         "expired": 0,
         "failed": 0,
-        "lastScanAt": "2026-07-27T03:58:30.930Z",
+        "lastScanAt": "2026-07-27T04:01:52.855Z",
         "removed": 0
       },
       "assignments": {},
@@ -618,7 +618,7 @@
         "auditLog": true,
         "removeExpiredOnStartup": true
       },
-      "updatedAt": "2026-07-27T03:58:30.930Z"
+      "updatedAt": "2026-07-27T04:01:52.856Z"
     },
     "tempVoice": {
       "channels": {},
@@ -717,7 +717,7 @@
       },
       "userPreferences": {}
     },
-    "updatedAt": "2026-07-27T03:59:31.174Z"
+    "updatedAt": "2026-07-27T04:01:53.137Z"
   },
   "subscription": {
     "expiresAt": null,
@@ -725,5 +725,5 @@
     "source": "system",
     "status": "active"
   },
-  "updatedAt": "2026-07-27T03:59:31.176Z"
+  "updatedAt": "2026-07-27T04:01:53.676Z"
 }
