@@ -220,6 +220,10 @@ module.exports = {
         await interaction.reply({ content: '❌ Tickets is currently disabled for this server.', flags: MessageFlags.Ephemeral });
         return;
       }
+      if (customId.startsWith('admin:automod')) {
+        if (!await callHandler(adminPanel, 'handleAdminNavigation', interaction)) throw new Error(`AutoMod admin did not handle ${customId}.`);
+        return;
+      }
       if (customId === 'admin:modules' || customId.startsWith('admin:modules:page:') || customId.startsWith('admin:module:') || customId.startsWith('admin:studio:')) {
         if (!await callHandler(moduleAdminPanels, 'handleModuleAdminInteraction', interaction)) throw new Error(`Module admin did not handle ${customId}.`);
         return;
