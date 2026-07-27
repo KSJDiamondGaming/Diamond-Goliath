@@ -84,7 +84,7 @@ function getCurrentBranch(environment = getRuntimeMode()) {
 }
 
 function runtimePath(environment = getRuntimeMode(), ...parts) {
-  return resolveRuntimePath(resolveBotMode(environment), ...parts);
+  return resolveRuntimePath(environment, ...parts);
 }
 
 function readDeploymentHistory(environment = getRuntimeMode()) {
