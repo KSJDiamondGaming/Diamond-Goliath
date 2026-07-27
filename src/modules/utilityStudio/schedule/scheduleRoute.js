@@ -15,6 +15,9 @@ async function getGuild(req) {
   return client.guilds.cache.get(req.params.guildId) || client.guilds.fetch(req.params.guildId).catch(() => null);
 }
 function fail(res, error, status = 400) { return res.status(status).json({ success: false, error: error.message || String(error) }); }
+function assertScheduleEnabled(guildId) {
+  if (schedule.getSection(guildId).enabled === false) throw new Error('Schedule is disabled for this server.');
+}
 
 router.get('/:guildId', (req, res) => {
   try { const config = schedule.getSection(req.params.guildId); return res.json({ success: true, guildId: req.params.guildId, config, events: schedule.listEvents(req.params.guildId) }); }
@@ -29,11 +32,12 @@ router.patch('/:guildId/settings', (req, res) => {
   catch (error) { return fail(res, error); }
 });
 router.post('/:guildId/events', (req, res) => {
-  try { return res.status(201).json({ success: true, event: schedule.saveEvent(req.params.guildId, req.body || {}, actor(req, 'schedule_event_create')) }); }
+  try { assertScheduleEnabled(req.params.guildId); return res.status(201).json({ success: true, event: schedule.saveEvent(req.params.guildId, req.body || {}, actor(req, 'schedule_event_create')) }); }
   catch (error) { return fail(res, error); }
 });
 router.patch('/:guildId/events/:eventId', (req, res) => {
   try {
+    assertScheduleEnabled(req.params.guildId);
     const current = schedule.getEvent(req.params.guildId, req.params.eventId);
     if (!current) return res.status(404).json({ success: false, error: 'Schedule event not found.' });
     return res.json({ success: true, event: schedule.saveEvent(req.params.guildId, { ...current, ...(req.body || {}), eventId: current.eventId }, actor(req, 'schedule_event_update')) });
@@ -41,6 +45,7 @@ router.patch('/:guildId/events/:eventId', (req, res) => {
 });
 router.delete('/:guildId/events/:eventId', (req, res) => {
   try {
+    assertScheduleEnabled(req.params.guildId);
     const removed = schedule.removeEvent(req.params.guildId, req.params.eventId, actor(req, 'schedule_event_remove'));
     if (!removed) return res.status(404).json({ success: false, error: 'Schedule event not found.' });
     return res.json({ success: true });
@@ -48,23 +53,26 @@ router.delete('/:guildId/events/:eventId', (req, res) => {
 });
 router.post('/:guildId/events/:eventId/cancel', (req, res) => {
   try {
+    assertScheduleEnabled(req.params.guildId);
     const event = schedule.cancelEvent(req.params.guildId, req.params.eventId, actor(req, 'schedule_event_cancel'));
     if (!event) return res.status(404).json({ success: false, error: 'Schedule event not found.' });
     return res.json({ success: true, event });
   } catch (error) { return fail(res, error); }
 });
 router.post('/:guildId/events/:eventId/duplicate', (req, res) => {
-  try { return res.status(201).json({ success: true, event: schedule.duplicateEvent(req.params.guildId, req.params.eventId, req.body?.startAt, actor(req, 'schedule_event_duplicate')) }); }
+  try { assertScheduleEnabled(req.params.guildId); return res.status(201).json({ success: true, event: schedule.duplicateEvent(req.params.guildId, req.params.eventId, req.body?.startAt, actor(req, 'schedule_event_duplicate')) }); }
   catch (error) { return fail(res, error); }
 });
 router.post('/:guildId/events/:eventId/deploy', async (req, res) => {
   try {
+    assertScheduleEnabled(req.params.guildId);
     const guild = await getGuild(req); if (!guild) throw new Error('Guild is unavailable.');
     return res.json({ success: true, event: await deployment.deploy(guild, req.params.eventId, req.body?.channelId || null, actor(req, 'schedule_event_deploy')) });
   } catch (error) { return fail(res, error); }
 });
 router.post('/:guildId/events/:eventId/deployment/update', async (req, res) => {
   try {
+    assertScheduleEnabled(req.params.guildId);
     const guild = await getGuild(req); if (!guild) throw new Error('Guild is unavailable.');
     return res.json({ success: true, result: await deployment.updateDeployment(guild, req.params.eventId) });
   } catch (error) { return fail(res, error); }
@@ -76,11 +84,12 @@ router.delete('/:guildId/events/:eventId/deployment', async (req, res) => {
   } catch (error) { return fail(res, error); }
 });
 router.put('/:guildId/events/:eventId/rsvp/:userId', (req, res) => {
-  try { return res.json({ success: true, ...schedule.setRsvp(req.params.guildId, req.params.eventId, req.params.userId, req.body?.status, actor(req, 'schedule_rsvp_update')) }); }
+  try { assertScheduleEnabled(req.params.guildId); return res.json({ success: true, ...schedule.setRsvp(req.params.guildId, req.params.eventId, req.params.userId, req.body?.status, actor(req, 'schedule_rsvp_update')) }); }
   catch (error) { return fail(res, error); }
 });
 router.delete('/:guildId/events/:eventId/rsvp/:userId', (req, res) => {
   try {
+    assertScheduleEnabled(req.params.guildId);
     const result = schedule.removeRsvp(req.params.guildId, req.params.eventId, req.params.userId, actor(req, 'schedule_rsvp_remove'));
     if (!result) return res.status(404).json({ success: false, error: 'Schedule event not found.' });
     return res.json({ success: true, ...result });
@@ -103,8 +112,11 @@ router.get('/:guildId/export', (req, res) => {
   catch (error) { return fail(res, error); }
 });
 router.post('/:guildId/reset', (req, res) => {
-  try { return res.json({ success: true, config: schedule.reset(req.params.guildId, actor(req, 'schedule_reset')) }); }
-  catch (error) { return fail(res, error); }
+  try {
+    const enabled = schedule.getSection(req.params.guildId).enabled !== false;
+    const config = schedule.reset(req.params.guildId, actor(req, 'schedule_reset'));
+    return res.json({ success: true, config: enabled ? config : schedule.setEnabled(req.params.guildId, false, actor(req, 'schedule_reset_preserve_disabled')) });
+  } catch (error) { return fail(res, error); }
 });
 
 module.exports = router;
