@@ -1,6 +1,7 @@
 // functions/moderation/moderationChecks.js
 
 const { PermissionFlagsBits } = require('discord.js');
+const security = require('../../../core/security/securityCore');
 
 const STAFF_LEVELS = {
   NONE: 'none',
@@ -60,32 +61,10 @@ const ACTION_REQUIREMENTS = {
   bulk_ban: STAFF_LEVELS.OWNER,
 };
 
-const OWNER_IDS = (process.env.OWNER_IDS || '')
-  .split(',')
-  .map((id) => String(id).trim())
-  .filter(Boolean);
-
-function getBotOwnerIds() {
-  return [...new Set(OWNER_IDS)];
-}
-
-function getBotOwnerId() {
-  return OWNER_IDS[0] || null;
-}
-
 function getId(memberOrUserId) {
   return typeof memberOrUserId === 'string'
     ? memberOrUserId
     : memberOrUserId?.id;
-}
-
-function isBotOwner(memberOrUserId) {
-  const id = getId(memberOrUserId);
-
-  return Boolean(
-    id &&
-    OWNER_IDS.includes(String(id))
-  );
 }
 
 function isGuildOwner(memberOrUserId, guildOwnerId) {
@@ -99,7 +78,7 @@ function hasPermission(member, permission) {
 
 function hasModPermission(member) {
   return (
-    isBotOwner(member) ||
+    security.isBotOwner(getId(member)) ||
     hasPermission(member, PermissionFlagsBits.ModerateMembers) ||
     hasPermission(member, PermissionFlagsBits.KickMembers) ||
     hasPermission(member, PermissionFlagsBits.BanMembers) ||
@@ -110,7 +89,7 @@ function hasModPermission(member) {
 function getStaffLevel(member, guild) {
   if (!member || !guild) return STAFF_LEVELS.NONE;
 
-  if (isBotOwner(member)) return STAFF_LEVELS.OWNER;
+  if (security.isBotOwner(getId(member))) return STAFF_LEVELS.OWNER;
   if (isGuildOwner(member, guild.ownerId)) return STAFF_LEVELS.OWNER;
 
   if (hasPermission(member, PermissionFlagsBits.Administrator)) {
@@ -141,7 +120,7 @@ function getStaffDisplay(member, guild) {
     };
   }
 
-  if (isBotOwner(member)) {
+  if (security.isBotOwner(getId(member))) {
     return {
       level: STAFF_LEVELS.OWNER,
       label: 'Goliath Owner',
@@ -205,7 +184,7 @@ function canActOnTarget(actorMember, targetMember, guildOwnerId) {
   if (isGuildOwner(targetMember, guildOwnerId)) return false;
   if (actorMember.id === targetMember.id) return false;
 
-  if (isBotOwner(actorMember)) return true;
+  if (security.isBotOwner(getId(actorMember))) return true;
   if (isGuildOwner(actorMember, guildOwnerId)) return true;
 
   return getHighestRolePosition(actorMember) > getHighestRolePosition(targetMember);
@@ -304,8 +283,8 @@ function checkHierarchyForBulk(
 
   const actorIsOwner =
     isGuildOwner(actorUserId, guildOwnerId) ||
-    isBotOwner(actorUserId) ||
-    isBotOwner(actorMember);
+    security.isBotOwner(actorUserId) ||
+    security.isBotOwner(getId(actorMember));
 
   const actorHighestRole = getHighestRolePosition(actorMember);
   const targetHighestRole = getHighestRolePosition(targetMember);
@@ -330,9 +309,6 @@ module.exports = {
   ACTION_REQUIREMENTS,
 
   getId,
-  getBotOwnerIds,
-  getBotOwnerId,
-  isBotOwner,
   isGuildOwner,
 
   hasPermission,
