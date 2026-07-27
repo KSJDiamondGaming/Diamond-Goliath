@@ -1,44 +1,9 @@
 'use strict';
 
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
-
+const { MessageFlags } = require('discord.js');
 const tempVoiceStore = require('./tempVoiceStore');
-const tempVoiceManager = require('./tempVoiceManager');
-
-const PREFIX = 'tempvoice:';
-
-function isTempVoiceCustomId(customId = '') {
-  return String(customId || '').startsWith(PREFIX);
-}
-
-function buildControlRows(channelId, tempChannel = {}) {
-  const locked = tempChannel.locked === true;
-  const hidden = tempChannel.hidden === true;
-
-  return [
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`${PREFIX}claim:${channelId}`).setLabel('Claim').setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId(`${PREFIX}lock:${channelId}`).setLabel(locked ? 'Unlock' : 'Lock').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId(`${PREFIX}hide:${channelId}`).setLabel(hidden ? 'Show' : 'Hide').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId(`${PREFIX}limit:${channelId}:0`).setLabel('No Limit').setStyle(ButtonStyle.Primary)
-    ),
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`${PREFIX}limit:${channelId}:2`).setLabel('Limit 2').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId(`${PREFIX}limit:${channelId}:5`).setLabel('Limit 5').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId(`${PREFIX}limit:${channelId}:10`).setLabel('Limit 10').setStyle(ButtonStyle.Secondary)
-    ),
-  ];
-}
-
-function buildPanelContent(tempChannel = {}) {
-  return [
-    '🎙️ **Temp Voice Controls**',
-    `Owner: <@${tempChannel.ownerId}>`,
-    `State: ${tempChannel.locked ? 'Locked' : 'Unlocked'} · ${tempChannel.hidden ? 'Hidden' : 'Visible'} · Limit: ${tempChannel.userLimit || 'None'}`,
-    '',
-    'Use these buttons to manage this temporary voice channel.',
-  ].join('\n');
-}
+const tempVoiceRuntime = require('./tempVoiceManager');
+const { PREFIX, isTempVoiceCustomId, buildControlRows, buildPanelContent } = require('./tempVoicePanel');
 
 async function refreshControlMessage(interaction, tempChannel) {
   if (!interaction.message?.editable) return;
@@ -73,21 +38,21 @@ async function handleTempVoiceInteraction(interaction) {
   }
 
   if (action === 'claim') {
-    tempChannel = await tempVoiceManager.claimTempChannel(guild, channelId, actorId);
+    tempChannel = await tempVoiceRuntime.claimTempChannel(guild, channelId, actorId);
     await refreshControlMessage(interaction, tempChannel);
     await replyEphemeral(interaction, '✅ Channel ownership claimed.');
     return true;
   }
 
   if (action === 'lock') {
-    tempChannel = await tempVoiceManager.updateTempChannelControls(guild, channelId, actorId, { locked: !tempChannel.locked });
+    tempChannel = await tempVoiceRuntime.updateTempChannelControls(guild, channelId, actorId, { locked: !tempChannel.locked });
     await refreshControlMessage(interaction, tempChannel);
     await replyEphemeral(interaction, tempChannel.locked ? '✅ Channel locked.' : '✅ Channel unlocked.');
     return true;
   }
 
   if (action === 'hide') {
-    tempChannel = await tempVoiceManager.updateTempChannelControls(guild, channelId, actorId, { hidden: !tempChannel.hidden });
+    tempChannel = await tempVoiceRuntime.updateTempChannelControls(guild, channelId, actorId, { hidden: !tempChannel.hidden });
     await refreshControlMessage(interaction, tempChannel);
     await replyEphemeral(interaction, tempChannel.hidden ? '✅ Channel hidden.' : '✅ Channel visible.');
     return true;
@@ -95,7 +60,7 @@ async function handleTempVoiceInteraction(interaction) {
 
   if (action === 'limit') {
     const userLimit = Math.max(0, Math.min(99, Number(value || 0)));
-    tempChannel = await tempVoiceManager.updateTempChannelControls(guild, channelId, actorId, { userLimit });
+    tempChannel = await tempVoiceRuntime.updateTempChannelControls(guild, channelId, actorId, { userLimit });
     await refreshControlMessage(interaction, tempChannel);
     await replyEphemeral(interaction, userLimit ? `✅ User limit set to ${userLimit}.` : '✅ User limit removed.');
     return true;
@@ -108,7 +73,5 @@ async function handleTempVoiceInteraction(interaction) {
 module.exports = {
   PREFIX,
   isTempVoiceCustomId,
-  buildControlRows,
-  buildPanelContent,
   handleTempVoiceInteraction,
 };
