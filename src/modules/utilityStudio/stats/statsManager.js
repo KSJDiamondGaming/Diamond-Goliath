@@ -9,7 +9,8 @@ const refreshInFlight = new Set();
 
 const COUNTER_REFRESH_DELAY_MS = Number(process.env.STATS_COUNTER_REFRESH_DELAY_MS || 30000);
 const COUNTER_REFRESH_INTERVAL_MS = Number(process.env.STATS_COUNTER_REFRESH_INTERVAL_MS || 15 * 60 * 1000);
-let intervalStarted = false;
+let startupTimer = null;
+let intervalTimer = null;
 
 function sessionKey(guildId, userId) {
   return `${guildId}:${userId}`;
@@ -45,11 +46,11 @@ async function refreshGuildCounters(guild, reason = 'manual') {
   try {
     const refreshed = await statsCounters.refreshCounters(guild);
     if (refreshed.length) {
-      console.log(`[statsManager] Refreshed ${refreshed.length} counter(s) for ${guild.name} (${reason}).`);
+      console.log(`[Stats] Refreshed ${refreshed.length} counter(s) for ${guild.name} (${reason}).`);
     }
     return refreshed;
   } catch (error) {
-    console.error(`[statsManager] Failed to refresh counters for ${guild.name || guild.id}:`, error);
+    console.error(`[Stats] Failed to refresh counters for ${guild.name || guild.id}:`, error);
     return [];
   } finally {
     refreshInFlight.delete(guild.id);
@@ -57,6 +58,7 @@ async function refreshGuildCounters(guild, reason = 'manual') {
 }
 
 async function refreshAllGuildCounters(client, reason = 'scheduled') {
+  if (!client?.guilds?.cache) throw new Error('Discord client is unavailable.');
   const results = [];
   for (const guild of client.guilds.cache.values()) {
     const refreshed = await refreshGuildCounters(guild, reason);
@@ -66,23 +68,41 @@ async function refreshAllGuildCounters(client, reason = 'scheduled') {
 }
 
 function startCounterRefreshScheduler(client) {
-  if (intervalStarted || !client?.guilds?.cache) return false;
-  intervalStarted = true;
+  if (!client?.guilds?.cache) throw new Error('Discord client is unavailable.');
+  if (intervalTimer) return intervalTimer;
 
-  setTimeout(() => {
+  startupTimer = setTimeout(() => {
+    startupTimer = null;
     refreshAllGuildCounters(client, 'startup').catch((error) => {
-      console.error('[statsManager] Startup counter refresh failed:', error);
+      console.error('[Stats] Startup counter refresh failed:', error);
     });
-  }, 10000).unref?.();
+  }, 10000);
+  startupTimer.unref?.();
 
-  const timer = setInterval(() => {
+  intervalTimer = setInterval(() => {
     refreshAllGuildCounters(client, 'scheduled').catch((error) => {
-      console.error('[statsManager] Scheduled counter refresh failed:', error);
+      console.error('[Stats] Scheduled counter refresh failed:', error);
     });
   }, Math.max(60000, COUNTER_REFRESH_INTERVAL_MS));
 
-  timer.unref?.();
-  console.log('[statsManager] Counter refresh scheduler started.');
+  intervalTimer.unref?.();
+  console.log('[Stats] Counter refresh scheduler started.');
+  return intervalTimer;
+}
+
+function stopCounterRefreshScheduler() {
+  if (startupTimer) {
+    clearTimeout(startupTimer);
+    startupTimer = null;
+  }
+  if (intervalTimer) {
+    clearInterval(intervalTimer);
+    intervalTimer = null;
+  }
+  for (const timer of refreshTimers.values()) clearTimeout(timer);
+  refreshTimers.clear();
+  refreshInFlight.clear();
+  activeVoiceSessions.clear();
   return true;
 }
 
@@ -92,7 +112,7 @@ async function handleMessageCreate(message) {
     statsStore.addMessage(message);
     queueCounterRefresh(message.guild, 'message');
   } catch (error) {
-    console.error('[statsManager] Failed to track message:', error);
+    console.error('[Stats] Failed to track message:', error);
   }
 }
 
@@ -126,7 +146,7 @@ async function handleVoiceStateUpdate(oldState, newState) {
 
     if (oldChannelId !== newChannelId) queueCounterRefresh(guild, 'voice');
   } catch (error) {
-    console.error('[statsManager] Failed to track voice state:', error);
+    console.error('[Stats] Failed to track voice state:', error);
   }
 }
 
@@ -135,7 +155,7 @@ async function handleGuildMemberAdd(member) {
     statsStore.addMemberEvent(member, 'join');
     queueCounterRefresh(member.guild, 'member join');
   } catch (error) {
-    console.error('[statsManager] Failed to track member join:', error);
+    console.error('[Stats] Failed to track member join:', error);
   }
 }
 
@@ -144,7 +164,7 @@ async function handleGuildMemberRemove(member) {
     statsStore.addMemberEvent(member, 'leave');
     queueCounterRefresh(member.guild, 'member leave');
   } catch (error) {
-    console.error('[statsManager] Failed to track member leave:', error);
+    console.error('[Stats] Failed to track member leave:', error);
   }
 }
 
@@ -157,4 +177,5 @@ module.exports = {
   refreshGuildCounters,
   refreshAllGuildCounters,
   startCounterRefreshScheduler,
+  stopCounterRefreshScheduler,
 };
