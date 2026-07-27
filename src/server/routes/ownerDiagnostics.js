@@ -10,10 +10,6 @@ const security = require('../../core/security/securityCore');
 const router = express.Router();
 const RUNTIME_MODE = resolveBotMode(process.env.BOT_MODE).toUpperCase();
 
-function splitIds(value) {
-  return String(value || '').split(',').map((id) => id.trim()).filter(Boolean);
-}
-
 function requireOwner(req, res, next) {
   if (!req.session?.user) {
     return res.status(401).json({ success: false, error: 'Not authenticated.' });
@@ -37,10 +33,7 @@ function requireOwner(req, res, next) {
 
 function getConfiguredOwnerKeys() {
   return {
-    OWNER_ID: splitIds(process.env.OWNER_ID).length,
-    OWNER_IDS: splitIds(process.env.OWNER_IDS).length,
-    BOT_OWNER_ID: splitIds(process.env.BOT_OWNER_ID).length,
-    BOT_OWNER_IDS: splitIds(process.env.BOT_OWNER_IDS).length,
+    OWNER_IDS: security.getBotOwnerIds().length,
   };
 }
 
