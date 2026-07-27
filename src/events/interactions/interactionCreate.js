@@ -11,6 +11,7 @@ function optionalRequire(label, modulePath, fallback = {}) {
   }
 }
 
+const guildManager = optionalRequire('guild manager', '../../core/guild/guildManager');
 const verificationManager = optionalRequire('verification manager', '../../modules/securityStudio/verificationManager');
 const ticketInteractionHandler = optionalRequire('tickets', '../../modules/feedbackStudio/tickets/ticketsInteractions');
 const pollsInteractions = optionalRequire('polls', '../../modules/communityStudio/polls/pollsInteractions');
@@ -214,6 +215,10 @@ module.exports = {
       const interactionAgeMs = Math.max(0, Date.now() - Number(interaction.createdTimestamp || Date.now()));
       const customId = String(interaction.customId || '');
       if (interactionAgeMs > 1500) console.warn(`[InteractionCreate] Slow dispatch before routing: customId=${customId} age=${interactionAgeMs}ms pid=${process.pid}`);
+      if (customId.startsWith('ticket_') && interaction.guildId && guildManager.isModuleEnabled?.(interaction.guildId, 'tickets') === false) {
+        await interaction.reply({ content: '❌ Tickets is currently disabled for this server.', flags: MessageFlags.Ephemeral });
+        return;
+      }
       if (customId === 'admin:modules' || customId.startsWith('admin:modules:page:') || customId.startsWith('admin:module:') || customId.startsWith('admin:studio:')) {
         if (!await callHandler(moduleAdminPanels, 'handleModuleAdminInteraction', interaction)) throw new Error(`Module admin did not handle ${customId}.`);
         return;
