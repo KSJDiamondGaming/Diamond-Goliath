@@ -97,7 +97,6 @@ function mergeAdminTranslationConfig(guildId, section) {
 
   return translationStore.normalizeTranslationSection({
     ...section,
-    enabled: typeof adminConfig.enabled === 'boolean' ? adminConfig.enabled : section.enabled,
     settings: {
       ...(section.settings || {}),
       autoDetect,
@@ -118,8 +117,6 @@ function getEffectiveTranslationSection(guildId) {
 }
 
 function isTranslationModuleEnabled(guildId) {
-  const adminConfig = getAdminTranslationConfig(guildId);
-  if (typeof adminConfig.enabled === 'boolean') return adminConfig.enabled;
   return isModuleEnabled(guildId, 'translation');
 }
 
@@ -132,11 +129,10 @@ function buildOverviewEmbed(guildId) {
   const targetLanguages = section.settings?.targetLanguages || ['en'];
 
   return new EmbedBuilder()
-    .setColor(moduleEnabled && section.enabled ? 0x57f287 : 0xed4245)
+    .setColor(moduleEnabled ? 0x57f287 : 0xed4245)
     .setTitle('Goliath Translation')
     .setDescription([
       `**Module:** ${moduleEnabled ? 'Enabled' : 'Disabled'}`,
-      `**Status:** ${section.enabled ? 'Enabled' : 'Disabled'}`,
       `**Provider:** \`${providerLabel(providerStatus.selectedProvider)}\``,
       `**Provider Health:** ${providerStatus.providers?.[providerStatus.selectedProvider]?.healthy ? 'Healthy' : 'Needs Attention'}`,
       `**Default Target:** ${languageLabel(section.settings?.defaultTargetLanguage || 'en')}`,
@@ -218,14 +214,6 @@ async function translateText({ guildId, text, targetLanguage = 'en', sourceLangu
 
   if (!isTranslationModuleEnabled(guildId)) {
     return translationProviderManager.createFailure(provider, 'MODULE_DISABLED', 'Translation module is disabled for this server.', {
-      originalText: safeText,
-      sourceLanguage: safeSource,
-      targetLanguage: safeTarget,
-    });
-  }
-
-  if (section.enabled === false) {
-    return translationProviderManager.createFailure(provider, 'SECTION_DISABLED', 'Translation is disabled for this server.', {
       originalText: safeText,
       sourceLanguage: safeSource,
       targetLanguage: safeTarget,
