@@ -15,6 +15,7 @@ const {
 } = require('discord.js');
 const temporaryRoles = require('./temporaryRoles');
 const temporaryRolesHealth = require('./temporaryRolesHealth');
+const { isModuleEnabled, setModuleEnabled } = require('../../../core/guild/guildManager');
 
 const PREFIX = 'admin:reactionRoles:temporary';
 const selections = new Map();
@@ -40,6 +41,7 @@ function setSelection(interaction, patch) {
 
 function buildTemporaryRolesPanel(guild, userId, memberDisplayName = 'Unknown User') {
   const section = temporaryRoles.getSection(guild.id);
+  const enabled = isModuleEnabled(guild.id, 'temporaryRoles');
   const assignments = temporaryRoles.listAssignments(guild.id, { activeOnly: true });
   const selection = selections.get(keyFor(guild.id, userId)) || { memberId: null, roleId: null };
   const lines = assignments.length
@@ -47,12 +49,12 @@ function buildTemporaryRolesPanel(guild, userId, memberDisplayName = 'Unknown Us
     : ['No active temporary roles.'];
 
   const embed = new EmbedBuilder()
-    .setColor(section.enabled !== false ? 0x57F287 : 0x747F8D)
+    .setColor(enabled ? 0x57F287 : 0x747F8D)
     .setTitle('⚡ Temporary Roles')
     .setDescription([
       'Assign a role for a fixed amount of time. Goliath removes it automatically when it expires.',
       '',
-      `**Status:** ${section.enabled !== false ? 'Enabled ✅' : 'Disabled ⏸️'}`,
+      `**Status:** ${enabled ? 'Enabled ✅' : 'Disabled ⏸️'}`,
       `**Active assignments:** ${assignments.length}`,
       `**Selected member:** ${selection.memberId ? `<@${selection.memberId}>` : 'Choose below'}`,
       `**Selected role:** ${selection.roleId ? `<@&${selection.roleId}>` : 'Choose below'}`,
@@ -83,7 +85,7 @@ function buildTemporaryRolesPanel(guild, userId, memberDisplayName = 'Unknown Us
         button(`${PREFIX}:assign`, 'Assign Temporary Role', ButtonStyle.Success, !(selection.memberId && selection.roleId)),
         button(`${PREFIX}:scan`, 'Scan Expired Now', ButtonStyle.Primary),
         button(`${PREFIX}:repair`, 'Repair', ButtonStyle.Secondary),
-        button(section.enabled !== false ? `${PREFIX}:disable` : `${PREFIX}:enable`, section.enabled !== false ? 'Disable' : 'Enable'),
+        button(enabled ? `${PREFIX}:disable` : `${PREFIX}:enable`, enabled ? 'Disable' : 'Enable'),
       ),
       row(manage),
       row(button('admin:reactionRoles', 'Back to Role Studio')),
@@ -180,8 +182,8 @@ async function handleTemporaryRolesInteraction(interaction) {
     return refresh(interaction);
   }
 
-  if (id === `${PREFIX}:enable`) temporaryRoles.setEnabled(interaction.guild.id, true, { actorId: interaction.user.id });
-  if (id === `${PREFIX}:disable`) temporaryRoles.setEnabled(interaction.guild.id, false, { actorId: interaction.user.id });
+  if (id === `${PREFIX}:enable`) setModuleEnabled(interaction.guild.id, 'temporaryRoles', true, { actorId: interaction.user.id, action: id });
+  if (id === `${PREFIX}:disable`) setModuleEnabled(interaction.guild.id, 'temporaryRoles', false, { actorId: interaction.user.id, action: id });
 
   if (id.startsWith(`${PREFIX}:remove:`)) {
     await interaction.deferUpdate();
