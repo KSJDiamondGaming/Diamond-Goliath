@@ -1,6 +1,7 @@
 'use strict';
 
 const { PermissionFlagsBits } = require('discord.js');
+const guildManager = require('../../../core/guild/guildManager');
 const timedRoles = require('./timedRoles');
 
 const now = () => new Date().toISOString();
@@ -65,7 +66,7 @@ async function buildTimedRolesHealth(guild) {
 
   return {
     healthy: issues.length === 0,
-    enabled: section.enabled !== false,
+    enabled: guildManager.isModuleEnabled(guild.id, 'timedRoles'),
     rules: rules.length,
     activeRules: rules.filter((rule) => rule.enabled !== false).length,
     issues: [...new Set(issues)],
