@@ -63,8 +63,38 @@ function navigation(active = 'main') {
 
 function buildSocialAdminPanel(guild, requestedBy = 'Unknown User') {
   const config = getConfig(guild.id);
+  const creatorCount = Object.keys(config.creators).length;
+  const accountCount = Object.keys(config.accounts).length;
+  const ready = creatorCount > 0 && accountCount > 0 && Boolean(config.alertsChannelId);
+  const description = ready
+    ? [
+      '✅ **Social Studio is ready.**',
+      '',
+      'Use the buttons below to manage creators, linked accounts, notifications and how alerts are delivered.',
+      '',
+      '**Main sections**',
+      '• **Creator Profiles** — manage the people or brands being monitored.',
+      '• **Accounts** — add and link social-platform accounts.',
+      '• **Notifications** — enable or disable creator alerts.',
+      '• **Templates** — change how alerts look.',
+      '• **Feeds** — choose where notifications are routed.',
+      '• **Channels** — set the Discord alert channel.',
+    ].join('\n')
+    : [
+      '⚠️ **Setup required**',
+      '',
+      'Complete these steps in order to start sending creator notifications:',
+      '',
+      '1️⃣ **Creator Profiles** — create the streamer, creator or organisation you want to monitor.',
+      '2️⃣ **Accounts** — add their Twitch, YouTube, Kick, TikTok or other supported account.',
+      '3️⃣ **Channels** — choose the Discord channel where alerts should be posted.',
+      '4️⃣ **Notifications** — enable Social Studio alerts for this server.',
+      '',
+      '**Optional:** Use **Templates** to change how alerts look and **Feeds** to control routing.',
+    ].join('\n');
+
   return {
-    embeds: [embed(config, '📣 Social Studio', 'Manage creator profiles, linked accounts, notifications, templates, feeds and Discord channels.', requestedBy)],
+    embeds: [embed(config, '📣 Social Studio', description, requestedBy)],
     components: [
       row(button(`${P}creators`, '👥 Creator Profiles', ButtonStyle.Primary), button(`${P}accounts`, '🔗 Accounts', ButtonStyle.Primary), button(`${P}notifications`, '📢 Notifications', ButtonStyle.Primary)),
       row(button(`${P}templates`, '🎨 Templates'), button(`${P}feeds`, '📡 Feeds'), button(`${P}channels`, '📂 Channels')),
