@@ -7,12 +7,12 @@
       "categories": [
         {
           "id": "1515509866196635871",
-          "manageable": false,
+          "manageable": true,
           "name": "Testing",
           "parentId": null,
           "position": 0,
           "type": 4,
-          "viewable": false
+          "viewable": true
         },
         {
           "id": "1529555263273828382",
@@ -45,21 +45,21 @@
       "channels": [
         {
           "id": "1515509745220325490",
-          "manageable": false,
+          "manageable": true,
           "name": "test",
           "parentId": "1515509866196635871",
           "position": 0,
           "type": 0,
-          "viewable": false
+          "viewable": true
         },
         {
           "id": "1521624276371898409",
-          "manageable": false,
+          "manageable": true,
           "name": "setup",
           "parentId": "1515509866196635871",
           "position": 1,
           "type": 0,
-          "viewable": false
+          "viewable": true
         },
         {
           "id": "1529555185553248256",
@@ -121,13 +121,13 @@
         "description": null,
         "icon": "b8b55112e92a46c174e97933e5e14ff4",
         "id": "1515201360386068642",
-        "memberCount": 3,
+        "memberCount": 4,
         "name": "💎・KSJ Development・💎",
         "ownerId": "1168285714732036096",
         "preferredLocale": "en-US",
         "premiumTier": 0
       },
-      "lastSync": "2026-07-27T04:01:53.674Z",
+      "lastSync": "2026-07-28T00:47:22.888Z",
       "roles": [
         {
           "color": "#000000",
@@ -137,6 +137,15 @@
           "mentionable": false,
           "name": "@everyone",
           "position": 0
+        },
+        {
+          "color": "#000000",
+          "hoist": false,
+          "id": "1531423584768233566",
+          "managed": true,
+          "mentionable": false,
+          "name": "Maid",
+          "position": 1
         },
         {
           "color": "#000000",
@@ -292,7 +301,7 @@
           "position": 17
         }
       ],
-      "updatedAt": "2026-07-27T04:01:53.675Z"
+      "updatedAt": "2026-07-28T00:47:22.888Z"
     },
     "duplicator": {
       "allowedGuildIds": [],
@@ -511,7 +520,7 @@
         "completed": 0,
         "created": 0,
         "failures": 0,
-        "lastProcessedAt": "2026-07-27T04:01:53.134Z",
+        "lastProcessedAt": "2026-07-28T01:19:22.063Z",
         "remindersSent": 0,
         "rsvps": 0,
         "waitlisted": 0
@@ -529,7 +538,7 @@
         "defaultTimezone": "UTC"
       },
       "templates": {},
-      "updatedAt": "2026-07-27T04:01:53.136Z"
+      "updatedAt": "2026-07-28T01:19:22.064Z"
     },
     "security": {
       "criticalIncidents": 0,
@@ -608,7 +617,7 @@
         "assigned": 0,
         "expired": 0,
         "failed": 0,
-        "lastScanAt": "2026-07-27T04:01:52.855Z",
+        "lastScanAt": "2026-07-28T00:47:22.032Z",
         "removed": 0
       },
       "assignments": {},
@@ -618,7 +627,7 @@
         "auditLog": true,
         "removeExpiredOnStartup": true
       },
-      "updatedAt": "2026-07-27T04:01:52.856Z"
+      "updatedAt": "2026-07-28T00:47:22.034Z"
     },
     "tempVoice": {
       "channels": {},
@@ -717,7 +726,7 @@
       },
       "userPreferences": {}
     },
-    "updatedAt": "2026-07-27T04:01:53.137Z"
+    "updatedAt": "2026-07-28T01:19:22.064Z"
   },
   "subscription": {
     "expiresAt": null,
@@ -725,5 +734,5 @@
     "source": "system",
     "status": "active"
   },
-  "updatedAt": "2026-07-27T04:01:53.676Z"
+  "updatedAt": "2026-07-28T01:19:22.065Z"
 }
