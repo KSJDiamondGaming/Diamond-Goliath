@@ -12,6 +12,7 @@ const {
   TextInputBuilder,
   TextInputStyle,
 } = require('discord.js');
+const guildManager = require('../../../core/guild/guildManager');
 const schedule = require('./schedule');
 const deployment = require('./scheduleDeployment');
 
@@ -59,15 +60,16 @@ function channelSelect(state) {
 function buildPanel(interaction) {
   const state = getState(interaction);
   const section = schedule.getSection(interaction.guildId);
+  const enabled = guildManager.isModuleEnabled(interaction.guildId, 'schedule');
   const event = state.eventId ? schedule.getEvent(interaction.guildId, state.eventId) : null;
   const counts = event ? schedule.rsvpCounts(event) : null;
   const upcoming = schedule.listEvents(interaction.guildId, { status: 'scheduled' });
   const embed = new EmbedBuilder()
-    .setColor(section.enabled ? 0x5865F2 : 0x747F8D)
+    .setColor(enabled ? 0x5865F2 : 0x747F8D)
     .setTitle('Schedule Studio')
     .setDescription('Create, deploy and operate timezone-aware Discord events with RSVPs, reminders, recurrence and waitlists.')
     .addFields(
-      { name: 'Module', value: section.enabled ? 'Enabled' : 'Disabled', inline: true },
+      { name: 'Module', value: enabled ? 'Enabled' : 'Disabled', inline: true },
       { name: 'Upcoming', value: String(upcoming.length), inline: true },
       { name: 'Timezone', value: section.settings.defaultTimezone, inline: true },
       ...(event ? [
@@ -90,7 +92,7 @@ function buildPanel(interaction) {
         button('admin:schedule:cancel', 'Cancel Event', ButtonStyle.Danger, !event || event.status !== 'scheduled'),
       ),
       row(
-        button('admin:schedule:toggle', section.enabled ? 'Disable Module' : 'Enable Module', section.enabled ? ButtonStyle.Danger : ButtonStyle.Success),
+        button('admin:schedule:toggle', enabled ? 'Disable Module' : 'Enable Module', enabled ? ButtonStyle.Danger : ButtonStyle.Success),
         button('admin:schedule:process', 'Process Now', ButtonStyle.Primary),
         button('admin:schedule:health', 'Health'),
         button('admin:schedule:repair', 'Repair'),
@@ -184,8 +186,8 @@ async function handleScheduleAdminInteraction(interaction) {
       return respond(interaction, buildPanel(interaction));
     }
     if (id === 'admin:schedule:toggle') {
-      const section = schedule.getSection(interaction.guildId);
-      schedule.setEnabled(interaction.guildId, !section.enabled, { ...actor, action: 'schedule_discord_toggle' });
+      const enabled = guildManager.isModuleEnabled(interaction.guildId, 'schedule');
+      guildManager.setModuleEnabled(interaction.guildId, 'schedule', !enabled, { ...actor, action: 'schedule_discord_toggle' });
       return respond(interaction, buildPanel(interaction));
     }
     if (id === 'admin:schedule:process') { await schedule.processGuild(interaction.guild, { ...actor, action: 'schedule_discord_process' }); return respond(interaction, buildPanel(interaction)); }
