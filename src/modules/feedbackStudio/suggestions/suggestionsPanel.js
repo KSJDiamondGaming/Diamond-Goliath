@@ -3,6 +3,7 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, ChannelSelectMenuBuilder, ChannelType, RoleSelectMenuBuilder } = require('discord.js');
 const suggestions = require('./suggestions');
 const tracking = require('./suggestionsTracking');
+const { isModuleEnabled } = require('../../../core/guild/guildManager');
 
 const row = (...components) => new ActionRowBuilder().addComponents(...components);
 const button = (customId, label, style = ButtonStyle.Primary) => new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style);
@@ -54,9 +55,10 @@ function buildSubmitModal() {
 
 function buildSuggestionsAdminPanel(guild, memberDisplayName = 'Unknown User') {
   const section = suggestions.getSection(guild.id);
-  const embed = new EmbedBuilder().setColor(section.enabled !== false ? 0x57f287 : 0x5865f2).setTitle('💡 Suggestions').setDescription([
+  const enabled = isModuleEnabled(guild.id, 'suggestions');
+  const embed = new EmbedBuilder().setColor(enabled ? 0x57f287 : 0x5865f2).setTitle('💡 Suggestions').setDescription([
     'Configure suggestion intake, review and voting.', '',
-    `**Status:** ${section.enabled !== false ? 'Enabled ✅' : 'Disabled ❌'}`,
+    `**Status:** ${enabled ? 'Enabled ✅' : 'Disabled ❌'}`,
     `**Submit Channel:** ${formatChannel(section.submitChannelId)}`,
     `**Review Channel:** ${formatChannel(section.reviewChannelId)}`,
     `**Approved Channel:** ${formatChannel(section.approvedChannelId)}`,
@@ -71,7 +73,7 @@ function buildSuggestionsAdminPanel(guild, memberDisplayName = 'Unknown User') {
     row(new ChannelSelectMenuBuilder().setCustomId('admin:suggestions:submitChannel').setPlaceholder('Submit channel').setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(0).setMaxValues(1)),
     row(new ChannelSelectMenuBuilder().setCustomId('admin:suggestions:reviewChannel').setPlaceholder('Review channel').setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(0).setMaxValues(1)),
     row(new RoleSelectMenuBuilder().setCustomId('admin:suggestions:reviewerRoles').setPlaceholder('Reviewer roles').setMinValues(0).setMaxValues(10)),
-    row(button('admin:suggestions:deploy', '🚀 Deploy Submit Panel', ButtonStyle.Success), button(section.enabled !== false ? 'admin:suggestions:disable' : 'admin:suggestions:enable', section.enabled !== false ? '⏸️ Disable' : '▶️ Enable', ButtonStyle.Secondary), button('admin:suggestions:toggleVoting', '🗳️ Voting', ButtonStyle.Secondary), button('admin:suggestions:toggleReview', '🔎 Review', ButtonStyle.Secondary), button('admin:suggestions:toggleAnonymous', '👤 Anonymous', ButtonStyle.Secondary)),
+    row(button('admin:suggestions:deploy', '🚀 Deploy Submit Panel', ButtonStyle.Success), button(enabled ? 'admin:suggestions:disable' : 'admin:suggestions:enable', enabled ? '⏸️ Disable' : '▶️ Enable', ButtonStyle.Secondary), button('admin:suggestions:toggleVoting', '🗳️ Voting', ButtonStyle.Secondary), button('admin:suggestions:toggleReview', '🔎 Review', ButtonStyle.Secondary), button('admin:suggestions:toggleAnonymous', '👤 Anonymous', ButtonStyle.Secondary)),
     row(button('admin:modules', '⬅️ Modules', ButtonStyle.Secondary)),
   ] };
 }
