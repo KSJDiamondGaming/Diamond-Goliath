@@ -6,6 +6,7 @@ const {
   TextInputBuilder, TextInputStyle, UserSelectMenuBuilder,
 } = require('discord.js');
 const invites = require('./invites');
+const { isModuleEnabled } = require('../../../core/guild/guildManager');
 
 const sessions = new Map();
 const row = (...components) => new ActionRowBuilder().addComponents(...components);
@@ -21,13 +22,14 @@ const roleList = (ids = []) => ids.length ? ids.map((id) => `<@&${id}>`).join(',
 
 function overview(interaction) {
   const section = invites.getSection(interaction.guildId);
+  const enabled = isModuleEnabled(interaction.guildId, 'invites');
   const official = section.settings.officialInvite;
   const memberLinks = invites.listInviteLinks(interaction.guildId).filter((link) => link.personal).length;
   return {
-    embeds: [new EmbedBuilder().setColor(section.enabled ? 0x57F287 : 0xED4245).setTitle('📨 Invite Studio')
+    embeds: [new EmbedBuilder().setColor(enabled ? 0x57F287 : 0xED4245).setTitle('📨 Invite Studio')
       .setDescription('Configure official invites, member links, the public leaderboard and administration.')
       .addFields(
-        { name: 'Status', value: section.enabled ? 'Enabled' : 'Disabled', inline: true },
+        { name: 'Status', value: enabled ? 'Enabled' : 'Disabled', inline: true },
         { name: 'Official Invite', value: officialUrl(official.code) || 'Not configured', inline: true },
         { name: 'Member Links', value: String(memberLinks), inline: true },
         { name: 'Public Panel', value: section.settings.publicPanel.messageId ? 'Deployed' : 'Not deployed', inline: true },
@@ -96,14 +98,15 @@ function memberSettingsView(interaction) {
 
 function adminView(interaction) {
   const section = invites.getSection(interaction.guildId);
+  const enabled = isModuleEnabled(interaction.guildId, 'invites');
   const state = sessionFor(interaction);
   const armed = state.resetConfirmUntil > Date.now();
   return {
-    embeds: [new EmbedBuilder().setColor(section.enabled ? 0x57F287 : 0xED4245).setTitle('🛠️ Invite Studio Admin')
+    embeds: [new EmbedBuilder().setColor(enabled ? 0x57F287 : 0xED4245).setTitle('🛠️ Invite Studio Admin')
       .setDescription(armed ? '⚠️ Reset armed. Confirm within 30 seconds.' : 'Manage member links, health, repairs and leaderboard data.')],
     components: [
       row(button('invites:invite-manager', 'Invite Manager', ButtonStyle.Primary), button('invites:health', 'Health'), button('invites:repair', 'Repair')),
-      row(button(armed ? 'invites:leaderboard-reset-confirm' : 'invites:leaderboard-reset-arm', armed ? 'Confirm Reset' : 'Reset Leaderboard', ButtonStyle.Danger), button('invites:default-panel', 'Restore Defaults'), button('invites:toggle', section.enabled ? 'Disable' : 'Enable', section.enabled ? ButtonStyle.Danger : ButtonStyle.Success)),
+      row(button(armed ? 'invites:leaderboard-reset-confirm' : 'invites:leaderboard-reset-arm', armed ? 'Confirm Reset' : 'Reset Leaderboard', ButtonStyle.Danger), button('invites:default-panel', 'Restore Defaults'), button('invites:toggle', enabled ? 'Disable' : 'Enable', enabled ? ButtonStyle.Danger : ButtonStyle.Success)),
       row(button('invites:home', 'Back')),
     ],
   };
