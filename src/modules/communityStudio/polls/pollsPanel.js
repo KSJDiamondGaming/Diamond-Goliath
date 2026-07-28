@@ -14,6 +14,7 @@ const {
   TextInputStyle,
 } = require('discord.js');
 const polls = require('./polls');
+const { isModuleEnabled } = require('../../../core/guild/guildManager');
 
 const row = (...components) => new ActionRowBuilder().addComponents(...components);
 const button = (customId, label, style = ButtonStyle.Primary) => new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style);
@@ -22,14 +23,15 @@ const formatRoles = (ids = []) => Array.isArray(ids) && ids.length ? ids.map((id
 
 function buildPollsAdminPanel(guild, memberDisplayName = 'Unknown User') {
   const section = polls.getSection(guild.id);
+  const enabled = isModuleEnabled(guild.id, 'polls');
   const pollList = Object.values(section.polls || {});
   const active = pollList.filter((poll) => poll.status === 'active').length;
   const embed = new EmbedBuilder()
-    .setColor(section.enabled !== false ? 0x57f287 : 0x5865f2)
+    .setColor(enabled ? 0x57f287 : 0x5865f2)
     .setTitle('📊 Polls')
     .setDescription([
       'Create, deploy and manage community polls directly in Discord.', '',
-      `**Status:** ${section.enabled !== false ? 'Enabled ✅' : 'Disabled ❌'}`,
+      `**Status:** ${enabled ? 'Enabled ✅' : 'Disabled ❌'}`,
       `**Default Channel:** ${formatChannel(section.defaultChannelId || section.settings?.defaultChannelId)}`,
       `**Manager Roles:** ${formatRoles(section.managerRoleIds)}`,
       `**Anonymous Voting:** ${section.anonymousVoting ? 'Yes ✅' : 'No ❌'}`,
@@ -42,7 +44,7 @@ function buildPollsAdminPanel(guild, memberDisplayName = 'Unknown User') {
     .setFooter({ text: `Requested by ${memberDisplayName}` })
     .setTimestamp();
   return { embeds: [embed], components: [
-    row(button('admin:polls:create', '➕ Create Poll', ButtonStyle.Success), button('admin:polls:manage', '🗂️ Manage Polls'), button(section.enabled !== false ? 'admin:polls:disable' : 'admin:polls:enable', section.enabled !== false ? '⏸️ Disable' : '▶️ Enable', ButtonStyle.Secondary)),
+    row(button('admin:polls:create', '➕ Create Poll', ButtonStyle.Success), button('admin:polls:manage', '🗂️ Manage Polls'), button(enabled ? 'admin:polls:disable' : 'admin:polls:enable', enabled ? '⏸️ Disable' : '▶️ Enable', ButtonStyle.Secondary)),
     row(button('admin:polls:settings', '⚙️ Settings', ButtonStyle.Secondary), button('admin:polls:health', '🩺 Health', ButtonStyle.Secondary), button('admin:polls:repair', '🛠️ Repair'), button('admin:polls:export', '📤 Export', ButtonStyle.Secondary), button('admin:polls:reset', '🗑️ Reset', ButtonStyle.Danger)),
     row(button('admin:modules', '⬅️ Modules', ButtonStyle.Secondary)),
   ] };
