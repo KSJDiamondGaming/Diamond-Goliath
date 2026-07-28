@@ -4,6 +4,7 @@ const { MessageFlags } = require('discord.js');
 const suggestions = require('./suggestions');
 const panel = require('./suggestionsPanel');
 const tracking = require('./suggestionsTracking');
+const { setModuleEnabled } = require('../../../core/guild/guildManager');
 
 async function safeReply(interaction, content) {
   const payload = { content, flags: MessageFlags.Ephemeral };
@@ -35,8 +36,8 @@ async function handleSuggestionsAdminInteraction(interaction) {
       const property = id.split(':')[2];
       if (['submitChannel', 'reviewChannel', 'approvedChannel', 'deniedChannel'].includes(property)) save((section) => ({ ...section, [`${property}Id`]: value }));
     } else if (interaction.isRoleSelectMenu?.() && id === 'admin:suggestions:reviewerRoles') save((section) => ({ ...section, reviewerRoleIds: [...new Set(interaction.values || [])] }));
-    else if (id === 'admin:suggestions:enable') save((section) => ({ ...section, enabled: true }));
-    else if (id === 'admin:suggestions:disable') save((section) => ({ ...section, enabled: false }));
+    else if (id === 'admin:suggestions:enable') setModuleEnabled(interaction.guild.id, 'suggestions', true, interaction.guild);
+    else if (id === 'admin:suggestions:disable') setModuleEnabled(interaction.guild.id, 'suggestions', false, interaction.guild);
     else if (id === 'admin:suggestions:toggleVoting') save((section) => ({ ...section, voting: !section.voting }));
     else if (id === 'admin:suggestions:toggleReview') save((section) => ({ ...section, requireReview: !section.requireReview }));
     else if (id === 'admin:suggestions:toggleAnonymous') save((section) => ({ ...section, anonymous: !section.anonymous }));
