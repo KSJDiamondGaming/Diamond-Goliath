@@ -9,6 +9,7 @@ const {
   EmbedBuilder,
   ModalBuilder,
   RoleSelectMenuBuilder,
+  StringSelectMenuBuilder,
   TextInputBuilder,
   TextInputStyle,
 } = require('discord.js');
@@ -16,14 +17,25 @@ const crypto = require('crypto');
 const guildManager = require('../../core/guild/guildManager');
 
 const PLATFORMS = ['twitch', 'youtube', 'tiktok', 'kick', 'facebook', 'instagram', 'x'];
+const PLATFORM_LABELS = {
+  twitch: 'Twitch',
+  youtube: 'YouTube',
+  tiktok: 'TikTok',
+  kick: 'Kick',
+  facebook: 'Facebook',
+  instagram: 'Instagram',
+  x: 'X',
+};
 const ALERT_TYPES = ['live', 'upload', 'short', 'post'];
 const NAV_SECTIONS = new Set(['creators', 'accounts', 'notifications', 'templates', 'feeds', 'channels', 'settings', 'permissions', 'roles', 'automation', 'testing', 'data']);
 const P = 'social:';
+const accountSetupSessions = new Map();
 
 const row = (...components) => new ActionRowBuilder().addComponents(...components);
 const button = (id, label, style = ButtonStyle.Secondary, disabled = false) => new ButtonBuilder().setCustomId(id).setLabel(label).setStyle(style).setDisabled(disabled);
 const makeId = (prefix) => `${prefix}_${crypto.randomBytes(8).toString('hex')}`;
 const who = (interaction) => interaction.member?.displayName || interaction.user?.displayName || interaction.user?.username || 'Unknown User';
+const setupKey = (interaction) => `${interaction.guildId}:${interaction.user?.id || 'unknown'}`;
 
 function getConfig(guildId) {
   const section = guildManager.getGuildSection(guildId, 'social', {}) || {};
@@ -116,6 +128,61 @@ function roleSelector(roleIds) {
   return row(menu);
 }
 
+function getAccountSetup(interaction) {
+  return accountSetupSessions.get(setupKey(interaction)) || { creatorId: null, platforms: [] };
+}
+
+function setAccountSetup(interaction, patch) {
+  const current = getAccountSetup(interaction);
+  const next = { ...current, ...patch };
+  accountSetupSessions.set(setupKey(interaction), next);
+  return next;
+}
+
+function creatorSelect(creators, selectedCreatorId) {
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId(`${P}account:creator`)
+    .setPlaceholder('1. Select the creator profile')
+    .setMinValues(1)
+    .setMaxValues(1)
+    .addOptions(creators.slice(0, 25).map((creator) => ({
+      label: String(creator.displayName || 'Unnamed creator').slice(0, 100),
+      value: creator.creatorId,
+      description: `${(creator.accountIds || []).length} linked account(s)`.slice(0, 100),
+      default: creator.creatorId === selectedCreatorId,
+    })));
+  return row(menu);
+}
+
+function platformSelect(selectedPlatforms = []) {
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId(`${P}account:platforms`)
+    .setPlaceholder('2. Select one or more platforms')
+    .setMinValues(1)
+    .setMaxValues(5)
+    .addOptions(PLATFORMS.map((platform) => ({
+      label: PLATFORM_LABELS[platform],
+      value: platform,
+      default: selectedPlatforms.includes(platform),
+    })));
+  return row(menu);
+}
+
+function accountDetailsModal(platforms) {
+  const modal = new ModalBuilder().setCustomId(`${P}account:create-multi`).setTitle('Add Social Accounts');
+  for (const platform of platforms.slice(0, 5)) {
+    modal.addComponents(row(
+      new TextInputBuilder()
+        .setCustomId(`account_${platform}`)
+        .setLabel(`${PLATFORM_LABELS[platform]} username, channel ID or URL`)
+        .setStyle(TextInputStyle.Short)
+        .setMaxLength(500)
+        .setRequired(true),
+    ));
+  }
+  return modal;
+}
+
 function buildSectionPanel(interaction, section) {
   const config = getConfig(interaction.guildId);
   const accounts = Object.values(config.accounts);
@@ -126,10 +193,45 @@ function buildSectionPanel(interaction, section) {
     const list = creators.slice(0, 10).map((creator) => `• **${creator.displayName}** · ${(creator.accountIds || []).length} account(s)`).join('\n') || 'No creator profiles have been created.';
     return { embeds: [embed(config, '👥 Creator Profiles', 'Create and manage unified creator profiles.', requestedBy).addFields({ name: `Profiles (${creators.length})`, value: list })], components: [row(button(`${P}creator:new`, '➕ New Profile', ButtonStyle.Success), button(`${P}creator:rebuild`, '🔄 Rebuild Profiles')), navigation('creators')] };
   }
+
   if (section === 'accounts') {
-    const list = accounts.slice(0, 10).map((account) => `• **${account.displayName || account.username}** · ${account.platform} · ${account.enabled === false ? 'disabled' : 'enabled'}`).join('\n') || 'No platform accounts have been added.';
-    return { embeds: [embed(config, '🔗 Accounts', 'Connect social platform accounts to Social Studio.', requestedBy).addFields({ name: `Accounts (${accounts.length})`, value: list })], components: [row(button(`${P}account:new`, '➕ Add Account', ButtonStyle.Success), button(`${P}account:check`, '🔎 Check All', ButtonStyle.Primary, !accounts.length)), navigation('accounts')] };
+    const setup = getAccountSetup(interaction);
+    const creatorByAccount = new Map();
+    for (const creator of creators) for (const accountId of creator.accountIds || []) creatorByAccount.set(accountId, creator.displayName);
+    const list = accounts.slice(0, 10).map((account) => {
+      const owner = creatorByAccount.get(account.accountId);
+      return `• **${PLATFORM_LABELS[account.platform] || account.platform}** · ${account.username} · ${owner ? `linked to **${owner}**` : '⚠️ unlinked'}`;
+    }).join('\n') || 'No platform accounts have been added.';
+
+    const description = creators.length
+      ? [
+        'Link one or more social platforms directly to a creator profile.',
+        '',
+        '**Order:** select the creator → select up to 5 platforms → continue → enter each account handle/URL.',
+        'You can repeat the process to add the remaining platforms.',
+      ].join('\n')
+      : 'Create a **Creator Profile** first. Social accounts must belong to a creator.';
+
+    const components = [];
+    if (creators.length) {
+      components.push(creatorSelect(creators, setup.creatorId));
+      components.push(platformSelect(setup.platforms));
+      components.push(row(
+        button(`${P}account:continue`, 'Continue ➡️', ButtonStyle.Success, !setup.creatorId || !setup.platforms.length),
+        button(`${P}account:reset`, '↻ Reset', ButtonStyle.Secondary, !setup.creatorId && !setup.platforms.length),
+        button(`${P}account:check`, '🔎 Check All', ButtonStyle.Primary, !accounts.length),
+      ));
+    } else {
+      components.push(row(button(`${P}creators`, '👥 Create Creator Profile', ButtonStyle.Primary)));
+    }
+    components.push(navigation('accounts'));
+
+    return {
+      embeds: [embed(config, '🔗 Accounts', description, requestedBy).addFields({ name: `Accounts (${accounts.length})`, value: list })],
+      components,
+    };
   }
+
   if (section === 'notifications') {
     return { embeds: [embed(config, '📢 Notifications', 'Control whether Social Studio sends creator notifications for this server.', requestedBy).addFields({ name: 'Module status', value: config.enabled ? 'Enabled ✅' : 'Disabled ❌', inline: true }, { name: 'Default channel', value: config.alertsChannelId ? `<#${config.alertsChannelId}>` : 'Not configured', inline: true }, { name: 'Supported alerts', value: ALERT_TYPES.map((type) => `\`${type}\``).join(' ') })], components: [row(button(`${P}toggle`, config.enabled ? '⏸️ Disable Notifications' : '▶️ Enable Notifications', config.enabled ? ButtonStyle.Danger : ButtonStyle.Success)), navigation('notifications')] };
   }
@@ -154,14 +256,6 @@ function creatorModal() {
     row(new TextInputBuilder().setCustomId('group').setLabel('Group or team').setStyle(TextInputStyle.Short).setMaxLength(120).setRequired(false)),
     row(new TextInputBuilder().setCustomId('tags').setLabel('Tags (comma separated)').setStyle(TextInputStyle.Short).setMaxLength(300).setRequired(false)),
     row(new TextInputBuilder().setCustomId('notes').setLabel('Notes').setStyle(TextInputStyle.Paragraph).setMaxLength(1000).setRequired(false)),
-  );
-}
-
-function accountModal() {
-  return new ModalBuilder().setCustomId(`${P}account:create`).setTitle('Add Social Account').addComponents(
-    row(new TextInputBuilder().setCustomId('platform').setLabel('Platform').setPlaceholder(PLATFORMS.join(', ')).setStyle(TextInputStyle.Short).setMaxLength(20).setRequired(true)),
-    row(new TextInputBuilder().setCustomId('username').setLabel('Username, channel ID or URL').setStyle(TextInputStyle.Short).setMaxLength(500).setRequired(true)),
-    row(new TextInputBuilder().setCustomId('displayName').setLabel('Display name').setStyle(TextInputStyle.Short).setMaxLength(120).setRequired(false)),
   );
 }
 
@@ -195,8 +289,27 @@ async function handleSocialAdminInteraction(interaction) {
   if (id === `${P}next`) return true;
   if (id === `${P}data:refresh`) return respond(interaction, buildSectionPanel(interaction, 'data'));
   if (id === `${P}creator:new`) { await interaction.showModal(creatorModal()); return true; }
-  if (id === `${P}account:new`) { await interaction.showModal(accountModal()); return true; }
   if (id.startsWith(`${P}template:`) && !id.startsWith(`${P}template:save:`)) { const type = id.split(':')[2]; if (!ALERT_TYPES.includes(type)) throw new Error('Unknown notification template.'); await interaction.showModal(templateModal(type, config)); return true; }
+
+  if (id === `${P}account:creator`) {
+    setAccountSetup(interaction, { creatorId: interaction.values?.[0] || null });
+    return respond(interaction, buildSectionPanel(interaction, 'accounts'));
+  }
+  if (id === `${P}account:platforms`) {
+    setAccountSetup(interaction, { platforms: (interaction.values || []).filter((platform) => PLATFORMS.includes(platform)).slice(0, 5) });
+    return respond(interaction, buildSectionPanel(interaction, 'accounts'));
+  }
+  if (id === `${P}account:reset`) {
+    accountSetupSessions.delete(setupKey(interaction));
+    return respond(interaction, buildSectionPanel(interaction, 'accounts'));
+  }
+  if (id === `${P}account:continue`) {
+    const setup = getAccountSetup(interaction);
+    if (!setup.creatorId || !config.creators[setup.creatorId]) throw new Error('Select a creator profile first.');
+    if (!setup.platforms.length) throw new Error('Select at least one platform first.');
+    await interaction.showModal(accountDetailsModal(setup.platforms));
+    return true;
+  }
 
   if (id === `${P}creator:create`) {
     const displayName = interaction.fields.getTextInputValue('displayName').trim();
@@ -206,16 +319,41 @@ async function handleSocialAdminInteraction(interaction) {
     saveConfig(interaction.guildId, config, interaction.guild, actorId);
     return refreshAfterModal(interaction, 'creators', '✅ Creator profile created.');
   }
-  if (id === `${P}account:create`) {
-    const platform = interaction.fields.getTextInputValue('platform').trim().toLowerCase();
-    if (!PLATFORMS.includes(platform)) throw new Error(`Platform must be one of: ${PLATFORMS.join(', ')}.`);
-    const username = interaction.fields.getTextInputValue('username').trim();
-    if (!username) throw new Error('Username, channel ID or URL is required.');
-    const accountId = makeId('account');
-    config.accounts[accountId] = { accountId, platform, username, displayName: interaction.fields.getTextInputValue('displayName').trim() || username, enabled: true, alertTypes: ['live'], alertChannelId: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+
+  if (id === `${P}account:create-multi`) {
+    const setup = getAccountSetup(interaction);
+    const creator = config.creators[setup.creatorId];
+    if (!creator) throw new Error('The selected creator profile no longer exists.');
+    if (!setup.platforms.length) throw new Error('No platforms were selected.');
+
+    const createdIds = [];
+    for (const platform of setup.platforms.slice(0, 5)) {
+      const username = interaction.fields.getTextInputValue(`account_${platform}`).trim();
+      if (!username) continue;
+      const duplicate = Object.values(config.accounts).find((account) => account.platform === platform && String(account.username || '').toLowerCase() === username.toLowerCase());
+      const accountId = duplicate?.accountId || makeId('account');
+      if (!duplicate) {
+        config.accounts[accountId] = {
+          accountId,
+          platform,
+          username,
+          displayName: creator.displayName,
+          enabled: true,
+          alertTypes: ['live'],
+          alertChannelId: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      createdIds.push(accountId);
+    }
+    creator.accountIds = [...new Set([...(creator.accountIds || []), ...createdIds])];
+    creator.updatedAt = new Date().toISOString();
     saveConfig(interaction.guildId, config, interaction.guild, actorId);
-    return refreshAfterModal(interaction, 'accounts', '✅ Social account added.');
+    accountSetupSessions.delete(setupKey(interaction));
+    return refreshAfterModal(interaction, 'accounts', `✅ Added ${createdIds.length} social account(s) to ${creator.displayName}.`);
   }
+
   if (id.startsWith(`${P}template:save:`)) {
     const type = id.split(':')[3];
     if (!ALERT_TYPES.includes(type)) throw new Error('Unknown notification template.');
@@ -223,6 +361,7 @@ async function handleSocialAdminInteraction(interaction) {
     saveConfig(interaction.guildId, config, interaction.guild, actorId);
     return refreshAfterModal(interaction, 'templates', `✅ ${type} template saved.`);
   }
+
   if (id === `${P}feed:channel` || id === `${P}channel:alerts`) { config.alertsChannelId = interaction.values?.[0] || null; saveConfig(interaction.guildId, config, interaction.guild, actorId); return respond(interaction, buildSectionPanel(interaction, id.includes('feed') ? 'feeds' : 'channels')); }
   if (id === `${P}roles:select`) { config.managerRoleIds = interaction.values || []; saveConfig(interaction.guildId, config, interaction.guild, actorId); return respond(interaction, buildSectionPanel(interaction, 'roles')); }
   if (id === `${P}toggle`) { config.enabled = !config.enabled; saveConfig(interaction.guildId, config, interaction.guild, actorId); return respond(interaction, buildSectionPanel(interaction, 'notifications')); }
