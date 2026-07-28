@@ -1,7 +1,7 @@
 'use strict';
 
 const { Events } = require('discord.js');
-const polls = require('../../modules/communityStudio/polls/polls');
+const guildManager = require('../../core/guild/guildManager');
 const pollsTracking = require('../../modules/communityStudio/polls/pollsTracking');
 const invitesTracking = require('../../modules/communityStudio/invites/invitesTracking');
 
@@ -12,8 +12,7 @@ module.exports = [
     async execute(client) {
       await pollsTracking.startup(client);
       for (const guild of client.guilds.cache.values()) {
-        const section = polls.getSection(guild.id);
-        if (section.enabled === false) continue;
+        if (!guildManager.isModuleEnabled(guild.id, 'polls')) continue;
         const result = await pollsTracking.repair(guild, {
           actorId: client.user?.id || null,
           reason: 'startup_recovery',
@@ -28,6 +27,7 @@ module.exports = [
   {
     name: Events.GuildMemberAdd,
     async execute(member) {
+      if (!guildManager.isModuleEnabled(member.guild.id, 'invites')) return;
       await invitesTracking.trackJoin(member, {
         actorId: member.id,
         action: 'invites_member_join',
@@ -39,6 +39,7 @@ module.exports = [
   {
     name: Events.GuildMemberRemove,
     async execute(member) {
+      if (!guildManager.isModuleEnabled(member.guild.id, 'invites')) return;
       await invitesTracking.trackLeave(member, {
         actorId: member.id,
         action: 'invites_member_leave',
