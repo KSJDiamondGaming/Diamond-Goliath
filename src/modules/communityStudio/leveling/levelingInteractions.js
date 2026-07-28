@@ -2,6 +2,7 @@
 
 const leveling = require('./leveling');
 const panel = require('./levelingPanel');
+const { setModuleEnabled } = require('../../../core/guild/guildManager');
 
 const memberName = (interaction) => interaction.member?.displayName
   || interaction.user?.displayName
@@ -36,9 +37,9 @@ async function handleLevelingInteraction(interaction) {
     } else if (interaction.isRoleSelectMenu?.() && customId === 'admin:leveling:levelRoles') {
       save((section) => ({ ...section, levelRoleIds: [...new Set(interaction.values || [])] }));
     } else if (customId === 'admin:leveling:enable') {
-      save((section) => ({ ...section, enabled: true }));
+      setModuleEnabled(interaction.guildId, 'leveling', true, { actorId: interaction.user.id, action: customId });
     } else if (customId === 'admin:leveling:disable') {
-      save((section) => ({ ...section, enabled: false }));
+      setModuleEnabled(interaction.guildId, 'leveling', false, { actorId: interaction.user.id, action: customId });
     } else if (customId === 'admin:leveling:toggleMessages') {
       save((section) => ({ ...section, trackMessages: !section.trackMessages }));
     } else if (customId === 'admin:leveling:toggleVoice') {
