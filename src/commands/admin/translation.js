@@ -5,6 +5,7 @@ const { SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('disco
 const translationStore = require('../../modules/utilityStudio/translation/translationStore');
 const translation = require('../../modules/utilityStudio/translation/translation');
 const translationThreadManager = require('../../modules/utilityStudio/translation/translationThreadManager');
+const { setModuleEnabled } = require('../../core/guild/guildManager');
 const { enforceCommandAccess } = require('../../core/ui/commandAccess');
 
 async function reply(interaction, payload) {
@@ -123,7 +124,7 @@ module.exports = {
     }
 
     if (action === 'enable') {
-      translationStore.setTranslationEnabled(guildId, true, interaction.guild);
+      setModuleEnabled(guildId, 'translation', true, interaction.guild);
       await reply(interaction, {
         content: '✅ Translation module enabled.',
         embeds: [translation.buildOverviewEmbed(guildId)],
@@ -132,7 +133,7 @@ module.exports = {
     }
 
     if (action === 'disable') {
-      translationStore.setTranslationEnabled(guildId, false, interaction.guild);
+      setModuleEnabled(guildId, 'translation', false, interaction.guild);
       await reply(interaction, {
         content: '✅ Translation module disabled.',
         embeds: [translation.buildOverviewEmbed(guildId)],
