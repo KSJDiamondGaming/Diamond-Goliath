@@ -11,6 +11,7 @@ const {
 } = require('discord.js');
 
 const giveawaysStore = require('./giveawaysStore');
+const { isModuleEnabled } = require('../../../core/guild/guildManager');
 
 function row(...components) { return new ActionRowBuilder().addComponents(...components); }
 function button(customId, label, style = ButtonStyle.Primary) { return new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style); }
@@ -19,14 +20,15 @@ function formatRoles(ids = []) { const list = Array.isArray(ids) ? ids.filter(Bo
 
 function buildGiveawaysAdminPanel(guild, memberDisplayName = 'Unknown User') {
   const section = giveawaysStore.getSection(guild.id);
+  const enabled = isModuleEnabled(guild.id, 'giveaways');
   const giveawayList = Object.values(section.giveaways || {});
   const active = giveawayList.filter((giveaway) => giveaway.status === 'active').length;
   const embed = new EmbedBuilder()
-    .setColor(section.enabled !== false ? 0x57f287 : 0x5865f2)
+    .setColor(enabled ? 0x57f287 : 0x5865f2)
     .setTitle('🎉 Giveaways')
     .setDescription([
       'Configure giveaway channels, roles and entry rules.', '',
-      `**Status:** ${section.enabled !== false ? 'Enabled ✅' : 'Disabled ❌'}`,
+      `**Status:** ${enabled ? 'Enabled ✅' : 'Disabled ❌'}`,
       `**Announcement Channel:** ${formatChannel(section.announcementChannelId)}`,
       `**Log Channel:** ${formatChannel(section.logChannelId)}`,
       `**Manager Roles:** ${formatRoles(section.managerRoleIds)}`,
@@ -40,7 +42,7 @@ function buildGiveawaysAdminPanel(guild, memberDisplayName = 'Unknown User') {
     row(new ChannelSelectMenuBuilder().setCustomId('admin:giveaways:announcementChannel').setPlaceholder('Announcement channel').setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(0).setMaxValues(1)),
     row(new ChannelSelectMenuBuilder().setCustomId('admin:giveaways:logChannel').setPlaceholder('Log channel').setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(0).setMaxValues(1)),
     row(new RoleSelectMenuBuilder().setCustomId('admin:giveaways:managerRoles').setPlaceholder('Manager roles').setMinValues(0).setMaxValues(10)),
-    row(button('admin:giveaways:deployTest', '🚀 Deploy Test Giveaway', ButtonStyle.Success), button(section.enabled !== false ? 'admin:giveaways:disable' : 'admin:giveaways:enable', section.enabled !== false ? '⏸️ Disable' : '▶️ Enable', ButtonStyle.Secondary), button('admin:giveaways:toggleMultiple', '🎟️ Multiple', ButtonStyle.Secondary), button('admin:giveaways:toggleRequireRole', '🔒 Role Req', ButtonStyle.Secondary), button('admin:giveaways:togglePing', '📣 Ping', ButtonStyle.Secondary)),
+    row(button('admin:giveaways:deployTest', '🚀 Deploy Test Giveaway', ButtonStyle.Success), button(enabled ? 'admin:giveaways:disable' : 'admin:giveaways:enable', enabled ? '⏸️ Disable' : '▶️ Enable', ButtonStyle.Secondary), button('admin:giveaways:toggleMultiple', '🎟️ Multiple', ButtonStyle.Secondary), button('admin:giveaways:toggleRequireRole', '🔒 Role Req', ButtonStyle.Secondary), button('admin:giveaways:togglePing', '📣 Ping', ButtonStyle.Secondary)),
     row(button('admin:modules', '⬅️ Modules', ButtonStyle.Secondary)),
   ] };
 }
