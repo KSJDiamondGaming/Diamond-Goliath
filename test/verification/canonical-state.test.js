@@ -58,3 +58,9 @@ test('invite member events are guarded by canonical module state', () => {
   const source = read('src/events/polls/pollsReady.js');
   assert.match(source, /guildManager\.isModuleEnabled\(member\.guild\.id, 'invites'\)/);
 });
+
+test('timed roles member join is guarded by canonical module state', () => {
+  const source = read('src/events/timedroles/timedRolesMemberJoin.js');
+  assert.match(source, /guildManager\.isModuleEnabled\(member\.guild\.id, 'timedRoles'\)/);
+  assert.doesNotMatch(source, /section\.enabled/);
+});
