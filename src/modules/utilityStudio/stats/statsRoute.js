@@ -2,7 +2,7 @@
 
 const express = require('express');
 const guildManager = require('../../../core/guild/guildManager');
-const verification = require('../../securityStudio/verification');
+const verificationManager = require('../../securityStudio/verificationManager');
 const stats = require('./stats');
 const statsHealth = require('./statsHealth');
 
@@ -39,16 +39,16 @@ function buildModuleStats(data) {
   const enabledKeys = keys.filter((key) => moduleEnabled(modules, key)).sort();
   return { total: keys.length, enabled: enabledKeys.length, disabled: Math.max(0, keys.length - enabledKeys.length), enabledKeys };
 }
-function buildVerificationStats(guildId, modules = {}) {
-  const configured = modules.verification || {};
-  const section = verification.getVerificationSection(guildId);
+function buildVerificationStats(guildId) {
+  const section = verificationManager.getVerificationStatus(guildId);
+  const settings = section.settings || {};
   const panels = Object.values(section.panels || {});
   return {
-    enabled: configured.enabled !== false && section.enabled === true,
-    verificationChannelId: configured.verificationChannelId || section.settings?.verificationChannelId || null,
-    logChannelId: configured.logChannelId || section.settings?.logChannelId || null,
-    verifiedRoles: countArray(configured.verifiedRoleIds || (section.settings?.verifiedRoleId ? [section.settings.verifiedRoleId] : [])),
-    pendingRoles: countArray(configured.pendingRoleIds || (section.settings?.unverifiedRoleId ? [section.settings.unverifiedRoleId] : [])),
+    enabled: section.enabled === true,
+    verificationChannelId: settings.verificationChannelId || null,
+    logChannelId: settings.logChannelId || null,
+    verifiedRoles: countArray(settings.verifiedRoleIds),
+    pendingRoles: countArray(settings.pendingRoleIds),
     panels: panels.length,
     deployedPanels: panels.filter((panel) => panel?.messageId && panel?.channelId).length,
     analytics: section.analytics || {},
@@ -66,7 +66,7 @@ function buildStoredStats(data, guildId) {
     tickets: { total: countArray(tickets.tickets), panels: countArray(tickets.panels), open: countArray(tickets.tickets?.filter?.((ticket) => ticket.status === 'open') || []), analytics: tickets.analytics || {} },
     forms: { forms: countObject(forms.forms), submissions: countObject(forms.submissions), panels: countObject(forms.panels), analytics: forms.analytics || {} },
     polls: { total: countObject(polls.polls), active: Object.values(polls.polls || {}).filter((poll) => poll?.status === 'active').length, closed: Object.values(polls.polls || {}).filter((poll) => poll?.status === 'closed').length, analytics: polls.analytics || {} },
-    verification: buildVerificationStats(guildId, modules),
+    verification: buildVerificationStats(guildId),
     logs: { enabled: logs.enabled !== false, channels: countObject(logs.channels), events: countObject(logs.events) },
     security: { enabled: security.enabled !== false, threatLevel: security.threatLevel || 'low', totalIncidents: Number(security.totalIncidents || 0), criticalIncidents: Number(security.criticalIncidents || 0), incidents: countArray(security.incidents) },
   };
@@ -133,4 +133,3 @@ router.post('/:guildId/reset', (req, res) => {
 });
 
 module.exports = router;
-
