@@ -2,6 +2,7 @@
 
 const { MessageFlags } = require('discord.js');
 const polls = require('./polls');
+const { isModuleEnabled } = require('../../../core/guild/guildManager');
 
 const voteQueues = new Map();
 const processedInteractions = new Map();
@@ -45,8 +46,8 @@ async function renderPoll(guild, poll, { required = false } = {}) {
 }
 async function deployPoll(guild, pollId, channelId, meta = {}) {
   if (!guild) throw new Error('Guild is required.');
+  if (!isModuleEnabled(guild.id, 'polls')) throw new Error('Polls are disabled.');
   const section = polls.getSection(guild.id);
-  if (section.enabled === false) throw new Error('Polls are disabled.');
   const poll = section.polls[String(pollId)];
   if (!poll) throw new Error('Poll not found.');
   if (poll.status === 'closed') throw new Error('Closed polls cannot be redeployed.');
@@ -123,8 +124,8 @@ async function processVote(interaction, pollId, optionId) {
   const guildId = interaction.guildId;
   const userId = interaction.user?.id;
   if (!guildId || !userId || !interaction.guild) return true;
+  if (!isModuleEnabled(guildId, 'polls')) { await respond(interaction, 'Polls are currently disabled.'); return true; }
   const section = polls.getSection(guildId);
-  if (section.enabled === false) { await respond(interaction, 'Polls are currently disabled.'); return true; }
   const poll = section.polls[pollId];
   if (!poll) { await respond(interaction, 'This poll no longer exists.'); return true; }
   if (poll.status !== 'active') { await respond(interaction, 'This poll is closed.'); return true; }
@@ -198,7 +199,7 @@ async function buildHealth(guild) {
   }
   return {
     module: 'polls', guildId: guild.id, healthy: issues.length === 0,
-    checkedAt: polls.now(), enabled: section.enabled !== false,
+    checkedAt: polls.now(), enabled: isModuleEnabled(guild.id, 'polls'),
     totalPolls: Object.keys(section.polls || {}).length, activePolls: activePolls.length, issues,
   };
 }
@@ -238,8 +239,8 @@ async function reset(guild, meta = {}) {
   return { config: polls.saveSection(guild.id, polls.DEFAULT_POLLS, meta), removedMessages };
 }
 async function closeExpiredPollsForGuild(guild) {
+  if (!isModuleEnabled(guild.id, 'polls')) return { checked: 0, closed: 0, failed: [] };
   const section = polls.getSection(guild.id);
-  if (section.enabled === false) return { checked: 0, closed: 0, failed: [] };
   const autoCloseHours = Number(section.settings?.autoCloseHours || 0);
   if (!Number.isFinite(autoCloseHours) || autoCloseHours <= 0) return { checked: 0, closed: 0, failed: [] };
   let checked = 0;
