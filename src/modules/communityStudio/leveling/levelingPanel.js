@@ -10,6 +10,7 @@ const {
   RoleSelectMenuBuilder,
 } = require('discord.js');
 const leveling = require('./leveling');
+const { isModuleEnabled } = require('../../../core/guild/guildManager');
 
 const row = (...components) => new ActionRowBuilder().addComponents(...components);
 const button = (customId, label, style = ButtonStyle.Primary) => new ButtonBuilder()
@@ -37,14 +38,15 @@ function buildLevelUpEmbed(member, user) {
 
 function buildLevelingPanel(guild, memberDisplayName = 'Unknown User') {
   const section = leveling.getSection(guild.id);
+  const enabled = isModuleEnabled(guild.id, 'leveling');
   const users = Object.values(section.users || {});
   const embed = new EmbedBuilder()
-    .setColor(section.enabled !== false ? 0x57f287 : 0x5865f2)
+    .setColor(enabled ? 0x57f287 : 0x5865f2)
     .setTitle('🏆 Leveling')
     .setDescription([
       'Configure XP tracking, level-up announcements and reward roles.',
       '',
-      `**Status:** ${section.enabled !== false ? 'Enabled ✅' : 'Disabled ❌'}`,
+      `**Status:** ${enabled ? 'Enabled ✅' : 'Disabled ❌'}`,
       `**Announce Channel:** ${formatChannel(section.announceChannelId)}`,
       `**Manager Roles:** ${formatRoles(section.managerRoleIds)}`,
       `**Level Roles:** ${formatRoles(section.levelRoleIds)}`,
@@ -82,7 +84,7 @@ function buildLevelingPanel(guild, memberDisplayName = 'Unknown User') {
         .setMinValues(0)
         .setMaxValues(10)),
       row(
-        button(section.enabled !== false ? 'admin:leveling:disable' : 'admin:leveling:enable', section.enabled !== false ? '⏸️ Disable' : '▶️ Enable', ButtonStyle.Secondary),
+        button(enabled ? 'admin:leveling:disable' : 'admin:leveling:enable', enabled ? '⏸️ Disable' : '▶️ Enable', ButtonStyle.Secondary),
         button('admin:leveling:toggleMessages', '💬 Messages', ButtonStyle.Secondary),
         button('admin:leveling:toggleVoice', '🔊 Voice', ButtonStyle.Secondary),
         button('admin:leveling:toggleAnnounce', '📣 Announce', ButtonStyle.Secondary),
