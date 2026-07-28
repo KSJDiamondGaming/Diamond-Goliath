@@ -1,6 +1,7 @@
 'use strict';
 const { MessageFlags, PermissionFlagsBits } = require('discord.js');
 const { updateModuleSection } = require('../../../core/guild/moduleSectionManager');
+const { isModuleEnabled, setModuleEnabled } = require('../../../core/guild/guildManager');
 const invites = require('./invites');
 const panel = require('./invitesPanel');
 const tracking = require('./invitesTracking');
@@ -34,9 +35,8 @@ async function handleInviteStudioInteraction(interaction) {
   if (id === 'invites:member-dm-modal') { await interaction.showModal(panel.dmModal(interaction)); return true; }
   if (id === 'invites:member-dm-submit' && interaction.isModalSubmit()) { nested(interaction, 'memberInviteTemplate', { dmTitle: interaction.fields.getTextInputValue('title'), dmMessage: interaction.fields.getTextInputValue('message') }); await interaction.reply({ content: '✅ Member DM saved.', flags: MessageFlags.Ephemeral }); return true; }
   if (id === 'invites:toggle') {
-    const section = invites.getSection(interaction.guildId);
-    const enabling = !section.enabled;
-    invites.setEnabled(interaction.guildId, enabling, meta(interaction, 'invite_toggle'));
+    const enabling = !isModuleEnabled(interaction.guildId, 'invites');
+    setModuleEnabled(interaction.guildId, 'invites', enabling, interaction.guild);
     if (enabling) {
       await invites.syncGuild(interaction.guild, meta(interaction, 'invite_enable_sync')).catch((error) => {
         console.warn(`[Invites] Enable sync failed for guild ${interaction.guildId}: ${error.message || error}`);
@@ -63,8 +63,7 @@ async function handleInviteStudioInteraction(interaction) {
 async function handleMemberInteraction(interaction) {
   const id = String(interaction.customId || '');
   if (!id.startsWith('invites:member-')) return false;
-  const section = invites.getSection(interaction.guildId);
-  if (!section.enabled) { await interaction.reply({ content: '❌ Invite Studio is disabled.', flags: MessageFlags.Ephemeral }); return true; }
+  if (!isModuleEnabled(interaction.guildId, 'invites')) { await interaction.reply({ content: '❌ Invite Studio is disabled.', flags: MessageFlags.Ephemeral }); return true; }
   if (id === 'invites:member-profile') { await interaction.reply(panel.profilePayload(interaction.guild, interaction.user)); return true; }
   if (id === 'invites:member-configure') { if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) { await interaction.reply({ content: '❌ Manage Server permission is required.', flags: MessageFlags.Ephemeral }); return true; } await interaction.reply({ ...panel.buildInviteStudioPayload(interaction, 'configure'), flags: MessageFlags.Ephemeral }); return true; }
   if (id === 'invites:member-refresh') { await interaction.reply({ content: '🔄 Updating leaderboard…', flags: MessageFlags.Ephemeral }); const ok = await tracking.refreshPublicPanel(interaction.guild, { action: 'member_refresh' }); await interaction.editReply(ok ? '✅ Leaderboard updated.' : '❌ Panel not found.'); return true; }
