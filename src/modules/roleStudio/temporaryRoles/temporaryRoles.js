@@ -2,6 +2,7 @@
 
 const crypto = require('crypto');
 const { getModuleSection, saveModuleSection, updateModuleSection } = require('../../../core/guild/moduleSectionManager');
+const { isModuleEnabled, setModuleEnabled } = require('../../../core/guild/guildManager');
 
 const SECTION = 'temporaryRoles';
 const now = () => new Date().toISOString();
@@ -13,7 +14,6 @@ const cleanId = (value) => {
 
 function defaultSection() {
   return {
-    enabled: true,
     assignments: {},
     settings: { removeExpiredOnStartup: true, auditLog: true },
     analytics: { assigned: 0, expired: 0, removed: 0, failed: 0, lastScanAt: null },
@@ -41,18 +41,19 @@ function normalizeAssignment(item = {}) {
 function normalizeSection(section = {}) {
   const base = defaultSection();
   const assignments = section.assignments && typeof section.assignments === 'object' ? section.assignments : {};
-  return {
+  const normalized = {
     ...base,
     ...section,
-    enabled: section.enabled !== false,
     settings: { ...base.settings, ...(section.settings || {}) },
     assignments: Object.fromEntries(Object.entries(assignments).map(([id, item]) => {
-      const normalized = normalizeAssignment({ ...item, assignmentId: item.assignmentId || id });
-      return [normalized.assignmentId, normalized];
+      const normalizedAssignment = normalizeAssignment({ ...item, assignmentId: item.assignmentId || id });
+      return [normalizedAssignment.assignmentId, normalizedAssignment];
     })),
     analytics: { ...base.analytics, ...(section.analytics || {}) },
     updatedAt: section.updatedAt || now(),
   };
+  delete normalized.enabled;
+  return normalized;
 }
 
 function getSection(guildId) {
@@ -105,7 +106,7 @@ function validateRole(guild, roleId) {
 }
 
 async function assignTemporaryRole({ guild, memberId, roleId, value, unit, reason, assignedBy }) {
-  if (getSection(guild.id).enabled === false) throw new Error('Temporary Roles is disabled.');
+  if (!isModuleEnabled(guild.id, SECTION)) throw new Error('Temporary Roles is disabled.');
   const role = validateRole(guild, roleId);
   const member = guild.members.cache.get(memberId) || await guild.members.fetch(memberId).catch(() => null);
   if (!member) throw new Error('The selected member could not be found.');
@@ -142,8 +143,8 @@ async function removeAssignment(guild, assignmentId, { actorId = null, expired =
 }
 
 async function scanExpired(guild, meta = {}) {
+  if (!isModuleEnabled(guild.id, SECTION)) return { checked: 0, expired: 0, failed: 0 };
   const section = getSection(guild.id);
-  if (section.enabled === false) return { checked: 0, expired: 0, failed: 0 };
   const due = Object.values(section.assignments).filter((item) => item.status === 'active' && new Date(item.expiresAt).getTime() <= Date.now());
   let expired = 0;
   let failed = 0;
@@ -165,7 +166,8 @@ async function scanExpired(guild, meta = {}) {
 }
 
 function setEnabled(guildId, enabled, meta = {}) {
-  return updateSection(guildId, (section) => ({ ...section, enabled: Boolean(enabled), updatedAt: now() }), meta);
+  setModuleEnabled(guildId, SECTION, Boolean(enabled), meta);
+  return getSection(guildId);
 }
 
 function reset(guildId, meta = {}) {
