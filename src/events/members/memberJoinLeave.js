@@ -221,10 +221,12 @@ module.exports = [
     async execute(member) {
       await statsManager.handleGuildMemberAdd(member);
 
-      const verificationResult = await verificationManager.handleMemberJoin(member).catch((error) => {
-        console.error('[verification] Failed to process member join:', error);
-        return { assigned: [] };
-      });
+      const verificationResult = guildManager.isModuleEnabled(member.guild.id, 'verification')
+        ? await verificationManager.handleMemberJoin(member).catch((error) => {
+          console.error('[verification] Failed to process member join:', error);
+          return { assigned: [] };
+        })
+        : { assigned: [] };
 
       const addedRoles = await autoRoleManager.applyAutoRoles(member).catch((error) => {
         console.error('[autoRoles] Failed to apply auto roles:', error);
@@ -253,6 +255,7 @@ module.exports = [
   {
     name: 'guildMemberUpdate',
     async execute(oldMember, newMember) {
+      if (!guildManager.isModuleEnabled(newMember.guild.id, 'verification')) return;
       await verificationManager.handleMemberUpdate(oldMember, newMember).catch((error) => {
         console.error('[verification] Failed to process member update:', error);
       });
