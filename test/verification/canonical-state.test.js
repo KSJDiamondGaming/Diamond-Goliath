@@ -27,6 +27,16 @@ test('verification route does not persist enabled through manager config', () =>
   assert.doesNotMatch(source, /configureVerification\(guildId, \{ enabled,/);
 });
 
+test('verification store removes module-level enabled state', () => {
+  const source = read('src/modules/securityStudio/verificationStore.js');
+  const defaultSection = source.slice(
+    source.indexOf('function defaultVerificationSection()'),
+    source.indexOf('function normalizeAnalytics('),
+  );
+  assert.doesNotMatch(defaultSection, /enabled\s*:/);
+  assert.match(source, /delete normalized\.enabled;/);
+});
+
 test('verification member events are guarded by canonical module state', () => {
   const source = read('src/events/members/memberJoinLeave.js');
   assert.match(source, /guildManager\.isModuleEnabled\(member\.guild\.id, 'verification'\)/);
