@@ -157,7 +157,6 @@ function defaultSettings() {
 
 function defaultVerificationSection() {
   return {
-    enabled: false,
     settings: defaultSettings(),
     messages: defaultMessages(),
     panelTemplate: defaultPanelTemplate(),
@@ -281,22 +280,23 @@ function normalizeVerificationSection(section = {}) {
   const base = defaultVerificationSection();
   const source = section && typeof section === 'object' ? section : {};
   const panels = source.panels && typeof source.panels === 'object' ? source.panels : {};
-  return {
+  const normalized = {
     ...base,
     ...clone(source),
-    enabled: source.enabled === true,
     settings: normalizeSettings(source.settings),
     messages: normalizeMessages(source.messages),
     panelTemplate: normalizePanelTemplate(source.panelTemplate),
     panels: Object.fromEntries(Object.entries(panels).map(([id, panel]) => {
-      const normalized = normalizePanel({ ...panel, panelId: panel.panelId || id });
-      return [normalized.panelId, normalized];
+      const normalizedPanel = normalizePanel({ ...panel, panelId: panel.panelId || id });
+      return [normalizedPanel.panelId, normalizedPanel];
     })),
     attempts: normalizeAttempts(source.attempts),
     analytics: normalizeAnalytics(source.analytics),
     createdAt: source.createdAt || base.createdAt,
     updatedAt: source.updatedAt || now(),
   };
+  delete normalized.enabled;
+  return normalized;
 }
 
 function getVerificationSection(guildId) {
