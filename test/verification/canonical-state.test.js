@@ -42,3 +42,8 @@ test('verification member events are guarded by canonical module state', () => {
   assert.match(source, /guildManager\.isModuleEnabled\(member\.guild\.id, 'verification'\)/);
   assert.match(source, /guildManager\.isModuleEnabled\(newMember\.guild\.id, 'verification'\)/);
 });
+
+test('welcome member event is guarded by canonical module state', () => {
+  const source = read('src/events/members/memberJoinLeave.js');
+  assert.match(source, /guildManager\.isModuleEnabled\(member\.guild\.id, 'welcome'\)/);
+});
