@@ -1,6 +1,7 @@
 'use strict';
 
 const { PermissionFlagsBits } = require('discord.js');
+const guildManager = require('../../../core/guild/guildManager');
 const schedule = require('./schedule');
 
 function now() {
@@ -49,7 +50,7 @@ async function buildHealthReport(guild) {
     module: 'schedule',
     guildId: guild.id,
     healthy: issues.length === 0,
-    enabled: section.enabled,
+    enabled: guildManager.isModuleEnabled(guild.id, 'schedule'),
     eventCount: Object.keys(section.events).length,
     upcomingCount: schedule.listEvents(guild.id, { status: 'scheduled' }).length,
     issues,
