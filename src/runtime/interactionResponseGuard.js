@@ -1,15 +1,12 @@
 'use strict';
 
-const ADMIN_DEFER_PREFIXES = [
-  'admin:',
-];
-
 const ACKNOWLEDGEMENT_ERROR_CODES = new Set([10062, 40060]);
 
-function shouldPreDefer(interaction) {
-  if (!interaction?.isMessageComponent?.()) return false;
-  const customId = String(interaction.customId || '');
-  return ADMIN_DEFER_PREFIXES.some((prefix) => customId === prefix || customId.startsWith(prefix));
+function shouldPreDefer() {
+  // Global pre-deferral breaks any button that must open a Discord modal because
+  // showModal() has to be the interaction's first acknowledgement. Individual
+  // handlers already defer explicitly when they perform slower work.
+  return false;
 }
 
 function isAcknowledgementError(error) {
