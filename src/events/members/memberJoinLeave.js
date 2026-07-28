@@ -238,10 +238,12 @@ module.exports = [
       }
 
       const welcomeStartedAt = Date.now();
-      const welcomeResult = await welcomeManager.sendWelcome(member).catch((error) => {
-        console.error('[Welcome] Failed to process member join:', error);
-        return null;
-      });
+      const welcomeResult = guildManager.isModuleEnabled(member.guild.id, 'welcome')
+        ? await welcomeManager.sendWelcome(member).catch((error) => {
+          console.error('[Welcome] Failed to process member join:', error);
+          return null;
+        })
+        : null;
 
       if (welcomeResult?.publicSent) {
         await welcomeAvatarSync.trackLatestWelcomeMessage(member, welcomeManager, welcomeStartedAt).catch((error) => {
