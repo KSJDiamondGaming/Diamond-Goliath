@@ -16,6 +16,7 @@ const SECTION_PATHS = Object.freeze({
   automod: 'modules.automod',
   polls: 'modules.polls',
   stats: 'modules.stats',
+  social: 'modules.social',
   templates: 'modules.serverCopy.templates',
 });
 
