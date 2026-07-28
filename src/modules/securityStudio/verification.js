@@ -1,5 +1,6 @@
 'use strict';
 
+const guildManager = require('../../core/guild/guildManager');
 const verificationHealth = require('./verificationHealth');
 
 async function startupVerification(client) {
@@ -11,11 +12,12 @@ async function startupVerification(client) {
   for (const guild of client.guilds.cache.values()) {
     try {
       const report = await verificationHealth.buildHealthReport(guild);
+      const enabled = guildManager.isModuleEnabled(guild.id, 'verification') === true;
       results.push({
         guildId: guild.id,
         guildName: guild.name,
         ok: report.warnings.length === 0,
-        enabled: report.enabled,
+        enabled,
         warnings: report.warnings,
         panels: report.panels,
       });
@@ -24,7 +26,7 @@ async function startupVerification(client) {
         guildId: guild.id,
         guildName: guild.name,
         ok: false,
-        enabled: false,
+        enabled: guildManager.isModuleEnabled(guild.id, 'verification') === true,
         warnings: [error.message || 'Verification startup check failed.'],
         panels: [],
       });
