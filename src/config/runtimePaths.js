@@ -1,6 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 
+const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
+
 function resolveBotMode(botMode = process.env.BOT_MODE) {
   const rawMode = botMode && typeof botMode === 'object'
     ? botMode.botMode || botMode.mode || botMode.runtimeMode || 'DEV'
@@ -16,7 +18,7 @@ function resolveBotMode(botMode = process.env.BOT_MODE) {
 
 function getRuntimeRoot(botMode = process.env.BOT_MODE) {
   return path.join(
-    process.cwd(),
+    PROJECT_ROOT,
     'src',
     'runtime',
     resolveBotMode(botMode)
@@ -86,6 +88,7 @@ function resolveRuntimePath(
 }
 
 module.exports = {
+  PROJECT_ROOT,
   resolveBotMode,
   getRuntimeRoot,
   getRuntimePaths,
