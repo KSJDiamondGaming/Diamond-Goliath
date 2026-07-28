@@ -4,6 +4,7 @@ const { AttachmentBuilder, MessageFlags } = require('discord.js');
 const polls = require('./polls');
 const tracking = require('./pollsTracking');
 const panel = require('./pollsPanel');
+const { isModuleEnabled, setModuleEnabled } = require('../../../core/guild/guildManager');
 
 const getMemberDisplayName = (interaction) => interaction.member?.displayName || interaction.user?.displayName || interaction.user?.username || 'Unknown User';
 async function safeUpdate(interaction, payload) {
@@ -24,12 +25,12 @@ async function handlePollsInteraction(interaction) {
   const actorId = interaction.user?.id || null;
   try {
     if (customId === 'admin:polls:create') {
-      if (polls.getSection(interaction.guild.id).enabled === false) throw new Error('Polls are disabled.');
+      if (!isModuleEnabled(interaction.guild.id, 'polls')) throw new Error('Polls are disabled.');
       await interaction.showModal(panel.buildCreateModal());
       return true;
     }
     if (customId === 'admin:polls:createSubmit' && interaction.isModalSubmit?.()) {
-      if (polls.getSection(interaction.guild.id).enabled === false) throw new Error('Polls are disabled.');
+      if (!isModuleEnabled(interaction.guild.id, 'polls')) throw new Error('Polls are disabled.');
       const question = interaction.fields.getTextInputValue('question');
       const description = interaction.fields.getTextInputValue('description');
       const options = interaction.fields.getTextInputValue('options').split(/\r?\n/).map((label) => label.trim()).filter(Boolean);
@@ -40,8 +41,8 @@ async function handlePollsInteraction(interaction) {
       return true;
     }
     if (customId === 'admin:polls' || customId === 'admin:polls:enable' || customId === 'admin:polls:disable') {
-      if (customId.endsWith(':enable')) updateSection(interaction.guild, (section) => ({ ...section, enabled: true }), actorId);
-      if (customId.endsWith(':disable')) updateSection(interaction.guild, (section) => ({ ...section, enabled: false }), actorId);
+      if (customId.endsWith(':enable')) setModuleEnabled(interaction.guild.id, 'polls', true, { actorId, action: customId });
+      if (customId.endsWith(':disable')) setModuleEnabled(interaction.guild.id, 'polls', false, { actorId, action: customId });
       return safeUpdate(interaction, panel.buildPollsAdminPanel(interaction.guild, memberDisplayName));
     }
     if (customId === 'admin:polls:settings') return safeUpdate(interaction, panel.buildSettingsPanel(interaction.guild, memberDisplayName));
@@ -93,10 +94,10 @@ async function handlePollsInteraction(interaction) {
     }
     if (customId === 'admin:polls:reset') return safeUpdate(interaction, panel.buildResetConfirmation());
     if (customId === 'admin:polls:resetConfirm') {
-      const wasEnabled = polls.getSection(interaction.guild.id).enabled !== false;
+      const wasEnabled = isModuleEnabled(interaction.guild.id, 'polls');
       await interaction.deferUpdate();
       await tracking.reset(interaction.guild, { actorId });
-      if (!wasEnabled) updateSection(interaction.guild, (section) => ({ ...section, enabled: false }), actorId);
+      if (!wasEnabled) setModuleEnabled(interaction.guild.id, 'polls', false, { actorId, action: 'admin:polls:resetConfirm' });
       return safeUpdate(interaction, panel.buildPollsAdminPanel(interaction.guild, memberDisplayName));
     }
     return safeUpdate(interaction, panel.buildPollsAdminPanel(interaction.guild, memberDisplayName));
