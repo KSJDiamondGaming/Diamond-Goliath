@@ -126,12 +126,9 @@ async function handleVoiceStateUpdate(oldState, newState) {
   try {
     const guild = newState.guild || oldState.guild;
     if (!guild?.id) return null;
-    if (newState.channelId && newState.channelId !== oldState.channelId) {
-      const section = tempVoiceStore.getTempVoiceSection(guild.id);
-      if (section.enabled !== false && isModuleEnabled(guild.id, 'tempVoice')) {
-        const hub = tempVoiceStore.findHubByJoinChannel(guild.id, newState.channelId);
-        if (hub) await createTempChannel(newState, hub);
-      }
+    if (newState.channelId && newState.channelId !== oldState.channelId && isModuleEnabled(guild.id, 'tempVoice')) {
+      const hub = tempVoiceStore.findHubByJoinChannel(guild.id, newState.channelId);
+      if (hub) await createTempChannel(newState, hub);
     }
     if (oldState.channelId && oldState.channelId !== newState.channelId) await cleanupTempChannel(oldState);
     return true;
@@ -227,8 +224,7 @@ async function claimTempChannel(guild, channelId, actorId) {
   if (!guild?.id) throw new Error('Guild is required.');
   assertTempVoiceModuleEnabled(guild.id);
   const { tempChannel, channel } = await getTrackedVoiceChannel(guild, channelId);
-  const actor = await getMember(guild, actorId);
-  if (!actor) throw new Error('Claiming member was not found.');
+  const actor = await assertCanControl(guild, tempChannel, actorId);
   const currentOwner = tempChannel.ownerId ? await getMember(guild, tempChannel.ownerId) : null;
   const ownerStillInside = Boolean(currentOwner?.voice?.channelId === channelId);
   const actorIsManager = actor.permissions.has(PermissionFlagsBits.ManageChannels) || actor.permissions.has(PermissionFlagsBits.ManageGuild);
