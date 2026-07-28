@@ -53,18 +53,20 @@ async function getSendableChannel(req, guildId, channelId) {
 function getConfig(guildId) {
   const section = verificationManager.getVerificationStatus(guildId);
   return {
-    enabled: section.enabled === true,
+    enabled: guildManager.isModuleEnabled(guildId, 'verification') === true,
     ...section.settings,
   };
 }
 
 function saveConfig(guildId, input = {}, meta = {}) {
   const current = verificationManager.getVerificationStatus(guildId);
-  const enabled = input.enabled === undefined ? current.enabled === true : input.enabled === true;
+  const enabled = input.enabled === undefined
+    ? guildManager.isModuleEnabled(guildId, 'verification') === true
+    : input.enabled === true;
   const settingsInput = input.settings && typeof input.settings === 'object' ? input.settings : input;
   const settings = verificationStore.normalizeSettings({ ...current.settings, ...settingsInput });
 
-  verificationManager.configureVerification(guildId, { enabled, settings }, meta);
+  verificationManager.configureVerification(guildId, { settings }, meta);
   guildManager.setModuleEnabled(guildId, 'verification', enabled, meta);
 
   return getConfig(guildId);
