@@ -18,9 +18,7 @@ async function withSuggestionLock(guildId, suggestionId, operation) {
 
 function assertEnabled(guildId) {
   if (!guildId || !isModuleEnabled(guildId, 'suggestions')) throw new Error('Suggestions are disabled for this server.');
-  const section = suggestions.getSection(guildId);
-  if (section.enabled === false) throw new Error('Suggestions are disabled.');
-  return section;
+  return suggestions.getSection(guildId);
 }
 
 function isReviewer(member, section) {
