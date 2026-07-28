@@ -16,6 +16,7 @@ const testDevOverride = require('../../core/dev/testDevOverrideManager');
 
 const CUSTOM_ID_PREFIX = 'verify';
 const SCREENING_FEATURE = 'MEMBER_VERIFICATION_GATE_ENABLED';
+const MODULE = 'verification';
 const BUTTON_STYLES = {
   primary: ButtonStyle.Primary,
   secondary: ButtonStyle.Secondary,
@@ -129,14 +130,13 @@ function getEffectiveVerificationSection(guildId) {
 
   return {
     ...section,
-    enabled: typeof adminConfig.enabled === 'boolean' ? adminConfig.enabled : section.enabled,
+    enabled: guildManager.isModuleEnabled(guildId, MODULE),
     settings,
   };
 }
 
 function toggleVerification(guildId, meta = {}) {
-  const section = getEffectiveVerificationSection(guildId);
-  return configureVerification(guildId, { enabled: section.enabled !== true }, {
+  return setVerificationEnabled(guildId, !guildManager.isModuleEnabled(guildId, MODULE), {
     action: 'verification_toggle',
     ...meta,
   });
@@ -477,7 +477,6 @@ async function verifyMember(interaction) {
     const remainingPendingRoles = settings.usePendingRoles && settings.removePendingRoles
       ? pendingRoles.filter((role) => refreshedMember.roles.cache.has(role.id))
       : [];
-
     if (missingVerifiedRoles.length || remainingPendingRoles.length) {
       const problems = [];
       if (missingVerifiedRoles.length) {
@@ -521,19 +520,23 @@ async function verifyMember(interaction) {
 
 function configureVerification(guildId, input = {}, meta = {}) {
   const settingsInput = input.settings && typeof input.settings === 'object' ? input.settings : {};
-  return verificationStore.updateVerificationSection(guildId, (section) => ({
+  if (typeof input.enabled === 'boolean') {
+    guildManager.setModuleEnabled(guildId, MODULE, input.enabled, meta);
+  }
+  verificationStore.updateVerificationSection(guildId, (section) => ({
     ...section,
-    enabled: typeof input.enabled === 'boolean' ? input.enabled : section.enabled,
     settings: verificationStore.normalizeSettings({ ...(section.settings || {}), ...settingsInput }),
     messages: input.messages
       ? verificationStore.normalizeMessages({ ...(section.messages || {}), ...input.messages })
       : section.messages,
     updatedAt: new Date().toISOString(),
   }), meta);
+  return getEffectiveVerificationSection(guildId);
 }
 
 function setVerificationEnabled(guildId, enabled = true, meta = {}) {
-  return configureVerification(guildId, { enabled: enabled === true }, meta);
+  guildManager.setModuleEnabled(guildId, MODULE, enabled === true, meta);
+  return getEffectiveVerificationSection(guildId);
 }
 
 async function fetchPanelMessage(guild, panel) {
@@ -688,4 +691,3 @@ module.exports = {
   handleVerificationInteraction,
   renderMessage,
 };
-
