@@ -29,7 +29,7 @@ function getConfig(guildId) {
   const section = guildManager.getGuildSection(guildId, 'social', {}) || {};
   return {
     ...section,
-    enabled: section.enabled === true,
+    enabled: guildManager.isModuleEnabled(guildId, 'social'),
     alertsChannelId: section.alertsChannelId || null,
     managerRoleIds: Array.isArray(section.managerRoleIds) ? section.managerRoleIds : [],
     accounts: section.accounts && typeof section.accounts === 'object' ? section.accounts : {},
@@ -43,10 +43,11 @@ function getConfig(guildId) {
 }
 
 function saveConfig(guildId, config, guild, actorId = null) {
-  const next = { ...config, updatedAt: new Date().toISOString(), lastActorId: actorId };
-  guildManager.saveGuildSection(guildId, 'social', next, guild);
-  guildManager.setModuleEnabled(guildId, 'social', next.enabled === true, guild);
-  return next;
+  const { enabled, ...storedConfig } = config;
+  const nextStored = { ...storedConfig, updatedAt: new Date().toISOString(), lastActorId: actorId };
+  guildManager.saveGuildSection(guildId, 'social', nextStored, guild);
+  guildManager.setModuleEnabled(guildId, 'social', enabled === true, guild);
+  return { ...nextStored, enabled: enabled === true };
 }
 
 function embed(config, title, description, requestedBy) {
