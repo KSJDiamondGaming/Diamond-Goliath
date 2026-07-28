@@ -47,3 +47,14 @@ test('welcome member event is guarded by canonical module state', () => {
   const source = read('src/events/members/memberJoinLeave.js');
   assert.match(source, /guildManager\.isModuleEnabled\(member\.guild\.id, 'welcome'\)/);
 });
+
+test('polls startup recovery reads canonical module state', () => {
+  const source = read('src/events/polls/pollsReady.js');
+  assert.match(source, /guildManager\.isModuleEnabled\(guild\.id, 'polls'\)/);
+  assert.doesNotMatch(source, /section\.enabled/);
+});
+
+test('invite member events are guarded by canonical module state', () => {
+  const source = read('src/events/polls/pollsReady.js');
+  assert.match(source, /guildManager\.isModuleEnabled\(member\.guild\.id, 'invites'\)/);
+});
