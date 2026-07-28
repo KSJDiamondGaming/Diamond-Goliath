@@ -175,6 +175,13 @@ function templateModal(type, config) {
 
 async function respond(interaction, payload) { if (interaction.deferred || interaction.replied) await interaction.editReply(payload); else await interaction.update(payload); return true; }
 async function replyEphemeral(interaction, content) { if (interaction.deferred || interaction.replied) await interaction.followUp({ content, flags: 64 }); else await interaction.reply({ content, flags: 64 }); return true; }
+async function refreshAfterModal(interaction, section, fallbackMessage) {
+  if (interaction.isFromMessage?.() && !interaction.deferred && !interaction.replied) {
+    await interaction.update(buildSectionPanel(interaction, section));
+    return true;
+  }
+  return replyEphemeral(interaction, fallbackMessage);
+}
 
 async function handleSocialAdminInteraction(interaction) {
   const id = String(interaction?.customId || '');
@@ -196,7 +203,7 @@ async function handleSocialAdminInteraction(interaction) {
     const creatorId = makeId('creator');
     config.creators[creatorId] = { creatorId, displayName, group: interaction.fields.getTextInputValue('group').trim(), tags: interaction.fields.getTextInputValue('tags').split(',').map((v) => v.trim()).filter(Boolean), notes: interaction.fields.getTextInputValue('notes').trim(), enabled: true, accountIds: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
     saveConfig(interaction.guildId, config, interaction.guild, actorId);
-    return replyEphemeral(interaction, '✅ Creator profile created.');
+    return refreshAfterModal(interaction, 'creators', '✅ Creator profile created.');
   }
   if (id === `${P}account:create`) {
     const platform = interaction.fields.getTextInputValue('platform').trim().toLowerCase();
@@ -206,14 +213,14 @@ async function handleSocialAdminInteraction(interaction) {
     const accountId = makeId('account');
     config.accounts[accountId] = { accountId, platform, username, displayName: interaction.fields.getTextInputValue('displayName').trim() || username, enabled: true, alertTypes: ['live'], alertChannelId: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
     saveConfig(interaction.guildId, config, interaction.guild, actorId);
-    return replyEphemeral(interaction, '✅ Social account added.');
+    return refreshAfterModal(interaction, 'accounts', '✅ Social account added.');
   }
   if (id.startsWith(`${P}template:save:`)) {
     const type = id.split(':')[3];
     if (!ALERT_TYPES.includes(type)) throw new Error('Unknown notification template.');
     config.templates[type] = { title: interaction.fields.getTextInputValue('title'), description: interaction.fields.getTextInputValue('description'), buttonLabel: interaction.fields.getTextInputValue('buttonLabel') };
     saveConfig(interaction.guildId, config, interaction.guild, actorId);
-    return replyEphemeral(interaction, `✅ ${type} template saved.`);
+    return refreshAfterModal(interaction, 'templates', `✅ ${type} template saved.`);
   }
   if (id === `${P}feed:channel` || id === `${P}channel:alerts`) { config.alertsChannelId = interaction.values?.[0] || null; saveConfig(interaction.guildId, config, interaction.guild, actorId); return respond(interaction, buildSectionPanel(interaction, id.includes('feed') ? 'feeds' : 'channels')); }
   if (id === `${P}roles:select`) { config.managerRoleIds = interaction.values || []; saveConfig(interaction.guildId, config, interaction.guild, actorId); return respond(interaction, buildSectionPanel(interaction, 'roles')); }
