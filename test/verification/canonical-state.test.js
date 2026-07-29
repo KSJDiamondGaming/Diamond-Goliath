@@ -134,6 +134,18 @@ test('reaction roles API reports and writes canonical module state', () => {
   assert.doesNotMatch(source, /reactionRoles\.setEnabled/);
 });
 
+test('reaction roles runtime and store use canonical module state', () => {
+  const source = read('src/modules/roleStudio/reactionRoles/reactionRoles.js');
+  const defaults = source.slice(source.indexOf('function defaultSection()'), source.indexOf('function normalizeEmoji('));
+  assert.doesNotMatch(defaults, /enabled\s*:/);
+  assert.match(source, /delete normalized\.enabled;/);
+  assert.match(source, /guildManager\.setModuleEnabled\(guildId, SECTION, enabled === true, meta\)/);
+  assert.match(source, /guildManager\.isModuleEnabled\(guild\.id, SECTION\)/);
+  assert.doesNotMatch(source, /getSection\(guild\.id\)\.enabled === false/);
+  assert.match(source, /panel\.enabled === false/);
+  assert.match(source, /mapping\.enabled !== false/);
+});
+
 test('stats verification summary reads canonical module state', () => {
   const source = read('src/modules/utilityStudio/stats/statsRoute.js');
   assert.match(source, /enabled: guildManager\.isModuleEnabled\(guildId, 'verification'\)/);
