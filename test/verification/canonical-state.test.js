@@ -183,3 +183,13 @@ test('temp voice API reports and writes canonical module state', () => {
   assert.doesNotMatch(source, /enabled: section\.enabled !== false/);
   assert.match(source, /enabled: input\.enabled !== false/);
 });
+
+test('goodbye API reports and writes canonical module state', () => {
+  const source = read('src/server/routes/goodbye.js');
+  assert.match(source, /enabled: guildManager\.isModuleEnabled\(guildId, 'goodbye'\)/);
+  assert.match(source, /guildManager\.setModuleEnabled\(guildId, 'goodbye', req\.body\?\.enabled === true/);
+  assert.match(source, /const \{ enabled, templateId, \.\.\.configPatch \} = patch;/);
+  assert.doesNotMatch(source, /goodbye\.updateConfig\(guildId, \{ enabled:/);
+  assert.doesNotMatch(source, /enabled: config\.enabled !== false/);
+  assert.match(source, /dmEnabled: dmConfig\.enabled/);
+});
