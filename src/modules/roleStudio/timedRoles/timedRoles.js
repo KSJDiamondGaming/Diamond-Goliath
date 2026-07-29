@@ -2,6 +2,7 @@
 
 const crypto = require('crypto');
 const { PermissionFlagsBits } = require('discord.js');
+const guildManager = require('../../../core/guild/guildManager');
 const { getModuleSection, saveModuleSection, updateModuleSection } = require('../../../core/guild/moduleSectionManager');
 
 const SECTION = 'timedRoles';
@@ -19,7 +20,6 @@ const createId = () => `tr_${crypto.randomUUID().slice(0, 8)}`;
 
 function defaultSection() {
   return {
-    enabled: true,
     settings: {
       includeBots: false,
       scanIntervalMinutes: 60,
@@ -70,10 +70,9 @@ function normalizeSection(section = {}) {
   const base = defaultSection();
   const sourceRules = section.rules && typeof section.rules === 'object' ? section.rules : {};
   const settings = section.settings || {};
-  return {
+  const normalized = {
     ...base,
     ...clone(section),
-    enabled: section.enabled !== false,
     settings: {
       ...base.settings,
       ...settings,
@@ -85,12 +84,14 @@ function normalizeSection(section = {}) {
       announcementMessage: cleanText(settings.announcementMessage || base.settings.announcementMessage, 1000),
     },
     rules: Object.fromEntries(Object.entries(sourceRules).map(([id, rule]) => {
-      const normalized = normalizeRule({ ...rule, ruleId: rule.ruleId || id });
-      return [normalized.ruleId, normalized];
+      const normalizedRule = normalizeRule({ ...rule, ruleId: rule.ruleId || id });
+      return [normalizedRule.ruleId, normalizedRule];
     })),
     analytics: { ...base.analytics, ...(section.analytics || {}) },
     updatedAt: section.updatedAt || now(),
   };
+  delete normalized.enabled;
+  return normalized;
 }
 
 function getSection(guildId) { return normalizeSection(getModuleSection(guildId, SECTION, defaultSection())); }
@@ -103,7 +104,10 @@ function updateSection(guildId, updater, meta = {}) {
 }
 function listRules(guildId) { return Object.values(getSection(guildId).rules).sort((a, b) => durationRank(a) - durationRank(b)); }
 function getRule(guildId, ruleId) { return getSection(guildId).rules[cleanText(ruleId, 80)] || null; }
-function setEnabled(guildId, enabled, meta = {}) { return updateSection(guildId, (section) => ({ ...section, enabled: enabled === true, updatedAt: now() }), meta); }
+function setEnabled(guildId, enabled, meta = {}) {
+  guildManager.setModuleEnabled(guildId, SECTION, enabled === true, meta);
+  return { ...getSection(guildId), enabled: guildManager.isModuleEnabled(guildId, SECTION) };
+}
 function updateSettings(guildId, settings = {}, meta = {}) {
   return updateSection(guildId, (section) => ({ ...section, settings: { ...section.settings, ...settings }, updatedAt: now() }), meta);
 }
@@ -260,8 +264,8 @@ function addAnalytics(guildId, patch, meta = {}) {
   }, meta).analytics;
 }
 function shouldScanGuild(guildId, timestamp = Date.now()) {
+  if (!guildManager.isModuleEnabled(guildId, SECTION)) return false;
   const section = getSection(guildId);
-  if (section.enabled === false) return false;
   const lastScan = new Date(section.analytics.lastScanAt || 0).getTime();
   if (!Number.isFinite(lastScan) || lastScan <= 0) return true;
   return timestamp - lastScan >= section.settings.scanIntervalMinutes * 60 * 1000;
@@ -297,8 +301,8 @@ async function simulateGuild(guild) {
 }
 
 async function scanGuild(guild, meta = {}) {
+  if (!guildManager.isModuleEnabled(guild.id, SECTION)) return { guildId: guild.id, disabled: true, rules: 0, membersChecked: 0, awarded: 0, removed: 0, announced: 0, skipped: 0, failed: 0 };
   const section = getSection(guild.id);
-  if (section.enabled === false) return { guildId: guild.id, disabled: true, rules: 0, membersChecked: 0, awarded: 0, removed: 0, announced: 0, skipped: 0, failed: 0 };
   const rules = listRules(guild.id).filter((rule) => rule.enabled);
   if (!rules.length) return { guildId: guild.id, rules: 0, membersChecked: 0, awarded: 0, removed: 0, announced: 0, skipped: 0, failed: 0 };
   const members = await guild.members.fetch();
@@ -355,7 +359,7 @@ async function buildHealth(guild) {
     const channel = guild.channels.cache.get(section.settings.announcementChannelId);
     if (!channel?.isTextBased?.()) warnings.push('Promotion announcements are enabled but the configured channel is missing or invalid.');
   }
-  return { healthy: issues.length === 0, enabled: section.enabled, rules: listRules(guild.id).length, issues, warnings, checkedAt: now() };
+  return { healthy: issues.length === 0, enabled: guildManager.isModuleEnabled(guild.id, SECTION), rules: listRules(guild.id).length, issues, warnings, checkedAt: now() };
 }
 async function repair(guild, meta = {}) {
   const section = getSection(guild.id);
