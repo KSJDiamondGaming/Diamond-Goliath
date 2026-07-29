@@ -3,6 +3,7 @@
 const { PermissionFlagsBits } = require('discord.js');
 const leveling = require('./leveling');
 const panel = require('./levelingPanel');
+const { isModuleEnabled } = require('../../../core/guild/guildManager');
 
 async function assignLevelRole(member, section, newLevel) {
   if (!member?.roles?.add || !Array.isArray(section.levelRoleIds)) return false;
@@ -30,8 +31,9 @@ async function announceLevelUp(message, section, user) {
 
 async function handleMessageCreate(message) {
   if (!message?.guild?.id || !message.member || message.author?.bot) return false;
+  if (!isModuleEnabled(message.guild.id, 'leveling')) return false;
   const section = leveling.getSection(message.guild.id);
-  if (section.enabled === false || section.trackMessages === false) return false;
+  if (section.trackMessages === false) return false;
 
   const result = leveling.awardMessageXp(message.guild.id, message.author.id, {
     actorId: message.author.id,
