@@ -85,9 +85,12 @@ test('schedule tracking reads canonical module state', () => {
   assert.doesNotMatch(source, /section\.enabled/);
 });
 
-test('translation startup and message dispatch read canonical module state', () => {
+test('translation startup and message runtime read canonical module state', () => {
   const startup = read('src/modules/utilityStudio/translation/translationStartup.js');
   const messages = read('src/events/messages/messageCreate.js');
+  const threads = read('src/modules/utilityStudio/translation/translationThreadManager.js');
   assert.match(startup, /isModuleEnabled\(guild\.id, 'translation'\)/);
   assert.match(messages, /guildManager\.isModuleEnabled\(message\.guild\.id, 'translation'\)/);
+  assert.match(threads, /guildManager\.isModuleEnabled\(guildId, 'translation'\)/);
+  assert.doesNotMatch(threads.slice(threads.indexOf('async function handleMessageCreate')), /section\.enabled/);
 });
