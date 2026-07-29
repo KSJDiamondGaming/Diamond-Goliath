@@ -8,6 +8,7 @@ const {
   PermissionFlagsBits,
 } = require('discord.js');
 
+const guildManager = require('../../../core/guild/guildManager');
 const giveawaysStore = require('./giveawaysStore');
 
 const ENTER_EMOJI = '🎉';
@@ -107,7 +108,7 @@ async function createGiveaway(guildOrChannel, input = {}) {
   const guild = guildOrChannel?.guild || guildOrChannel;
   if (!guild?.id) throw new Error('A guild is required to create a giveaway.');
   const section = giveawaysStore.getSection(guild.id);
-  if (section.enabled === false) throw new Error('Giveaways are disabled.');
+  if (!guildManager.isModuleEnabled(guild.id, 'giveaways')) throw new Error('Giveaways are disabled.');
 
   const providedChannel = guildOrChannel?.guild ? guildOrChannel : null;
   const channelId = providedChannel?.id || input.channelId || section.announcementChannelId;
@@ -138,7 +139,7 @@ async function createGiveaway(guildOrChannel, input = {}) {
 
 async function addEntry(guild, giveawayId, userId, member = null) {
   const section = giveawaysStore.getSection(guild.id);
-  if (section.enabled === false) throw new Error('Giveaways are disabled.');
+  if (!guildManager.isModuleEnabled(guild.id, 'giveaways')) throw new Error('Giveaways are disabled.');
   const giveaway = giveawaysStore.getGiveaway(guild.id, giveawayId);
   if (!giveaway || giveaway.status !== 'active') throw new Error('This giveaway is not active.');
   if (!hasEntryRoles(member, giveaway, section)) throw new Error('You do not have the required role to enter this giveaway.');
@@ -194,7 +195,7 @@ async function leaveGiveawayReaction(reaction, user) {
 
 async function endGiveawayById(client, guildId, giveawayId, actorMember = null) {
   const section = giveawaysStore.getSection(guildId);
-  if (section.enabled === false) throw new Error('Giveaways are disabled.');
+  if (!guildManager.isModuleEnabled(guildId, 'giveaways')) throw new Error('Giveaways are disabled.');
   if (actorMember && !isManager(actorMember, section)) throw new Error('You do not have permission to end giveaways.');
   const giveaway = giveawaysStore.getGiveaway(guildId, giveawayId);
   if (!giveaway || giveaway.status !== 'active') return null;
@@ -241,8 +242,7 @@ async function rerollGiveaway(client, guildId, giveawayId) {
 async function checkExpiredGiveaways(client) {
   const ended = [];
   for (const guild of client?.guilds?.cache?.values?.() || []) {
-    const section = giveawaysStore.getSection(guild.id);
-    if (section.enabled === false) continue;
+    if (!guildManager.isModuleEnabled(guild.id, 'giveaways')) continue;
     for (const giveaway of giveawaysStore.getActiveGiveaways(guild.id)) {
       if (giveaway.endsAt && new Date(giveaway.endsAt).getTime() <= Date.now()) {
         const result = await endGiveawayById(client, guild.id, giveaway.giveawayId).catch(() => null);
