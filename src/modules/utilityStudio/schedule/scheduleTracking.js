@@ -2,6 +2,7 @@
 
 const { PermissionFlagsBits } = require('discord.js');
 const schedule = require('./schedule');
+const { isModuleEnabled } = require('../../../core/guild/guildManager');
 
 const REMINDER_TICK_MS = 60 * 1000;
 const now = () => new Date().toISOString();
@@ -21,8 +22,7 @@ async function sendReminder(guild, event, minutes) {
 }
 
 async function processGuild(guild, meta = {}) {
-  const section = schedule.getSection(guild.id);
-  if (section.enabled === false) return { disabled: true, reminders: 0, completed: 0, recurrences: 0, failures: 0 };
+  if (!isModuleEnabled(guild.id, 'schedule')) return { disabled: true, reminders: 0, completed: 0, recurrences: 0, failures: 0 };
   const result = { reminders: 0, completed: 0, recurrences: 0, failures: 0 };
   const timestamp = Date.now();
   for (const event of schedule.listEvents(guild.id)) {
@@ -59,7 +59,7 @@ async function buildHealth(guild) {
     if (event.lastError) warnings.push({ code: 'last_error', eventId: event.eventId, error: event.lastError });
   }
   if (!guild.members.me?.permissions.has(PermissionFlagsBits.SendMessages)) issues.push({ code: 'send_messages_missing' });
-  return { module: 'schedule', guildId: guild.id, healthy: issues.length === 0, enabled: section.enabled, eventCount: Object.keys(section.events).length, upcomingCount: schedule.listEvents(guild.id, { status: 'scheduled' }).length, issues, warnings, checkedAt: now() };
+  return { module: 'schedule', guildId: guild.id, healthy: issues.length === 0, enabled: isModuleEnabled(guild.id, 'schedule'), eventCount: Object.keys(section.events).length, upcomingCount: schedule.listEvents(guild.id, { status: 'scheduled' }).length, issues, warnings, checkedAt: now() };
 }
 
 async function repair(guild, meta = {}) {
