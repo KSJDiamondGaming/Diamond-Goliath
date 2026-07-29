@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const guildManager = require('../../../core/guild/guildManager');
 const timedRoles = require('./timedRoles');
 const timedRolesHealth = require('./timedRolesHealth');
 const { validateRoleSelection, isGoliathPermissionError } = require('../../../core/security/goliathPermissionGuard');
@@ -31,13 +32,14 @@ async function validateRuleRoles(target, input = {}) {
   if (!validation.ok) throw validation.toError();
 }
 async function overview(req, id) {
-  const config = timedRoles.getSection(id);
+  const enabled = guildManager.isModuleEnabled(id, 'timedRoles');
+  const config = { ...timedRoles.getSection(id), enabled };
   const target = await guild(req, id);
   return {
     guildId: id,
     config,
     overview: {
-      enabled: config.enabled !== false,
+      enabled,
       ruleCount: timedRoles.listRules(id).length,
       analytics: config.analytics,
       health: target ? await timedRolesHealth.buildTimedRolesHealth(target) : null,
@@ -52,7 +54,7 @@ router.get('/:guildId/overview', async (req, res) => {
 router.patch('/:guildId/enabled', async (req, res) => {
   try {
     const id = guildId(req);
-    timedRoles.setEnabled(id, req.body?.enabled === true, { actorId: actor(req) });
+    guildManager.setModuleEnabled(id, 'timedRoles', req.body?.enabled === true, { actorId: actor(req) });
     return ok(res, await overview(req, id));
   } catch (error) { return fail(res, error); }
 });
