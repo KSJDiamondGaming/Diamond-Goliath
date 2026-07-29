@@ -174,3 +174,12 @@ test('stats verification summary reads canonical module state', () => {
   assert.match(source, /enabled: guildManager\.isModuleEnabled\(guildId, 'verification'\)/);
   assert.doesNotMatch(source, /enabled: section\.enabled === true/);
 });
+
+test('temp voice API reports and writes canonical module state', () => {
+  const source = read('src/server/routes/tempVoice.js');
+  assert.match(source, /enabled: isModuleEnabled\(guildId, 'tempVoice'\)/);
+  assert.match(source, /setModuleEnabled\(guildId, 'tempVoice', enabled,/);
+  assert.doesNotMatch(source, /\.\.\.section, enabled, updatedAt/);
+  assert.doesNotMatch(source, /enabled: section\.enabled !== false/);
+  assert.match(source, /enabled: input\.enabled !== false/);
+});
