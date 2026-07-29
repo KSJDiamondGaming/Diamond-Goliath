@@ -8,6 +8,7 @@ const forms = require('../../modules/feedbackStudio/forms/forms');
 const formsPanel = require('../../modules/feedbackStudio/forms/formsPanel');
 const ticketStore = require('../../modules/feedbackStudio/tickets/tickets');
 const planLimitManager = require('../billing/planLimitManager');
+const guildManager = require('../../core/guild/guildManager');
 const {
   buildFormsWorkflowOverview,
   buildSubmissionWorkflowSummary,
@@ -71,6 +72,13 @@ function getGuildId(req) {
   const guildId = String(req.params.guildId || '').trim();
   if (!/^\d{16,25}$/.test(guildId)) throw new Error('Invalid guild ID.');
   return guildId;
+}
+
+function canonicalConfig(guildId, section = forms.getFormsSection(guildId)) {
+  return {
+    ...section,
+    enabled: guildManager.isModuleEnabled(guildId, 'forms'),
+  };
 }
 
 function getDiscordClient(req) {
@@ -249,18 +257,18 @@ router.get('/:guildId/overview', (req, res) => {
   try {
     const guildId = getGuildId(req);
     const section = forms.getFormsSection(guildId);
-    const forms = Object.values(section.forms || {});
+    const formItems = Object.values(section.forms || {});
     const panels = Object.values(section.panels || {});
     const submissions = Object.values(section.submissions || {});
-    const workflowOverview = buildFormsWorkflowOverview(forms, submissions);
+    const workflowOverview = buildFormsWorkflowOverview(formItems, submissions);
 
     return success(res, {
       guildId,
       overview: {
-        enabled: section.enabled !== false,
-        formCount: forms.length,
-        enabledFormCount: forms.filter((form) => form.enabled !== false).length,
-        disabledFormCount: forms.filter((form) => form.enabled === false).length,
+        enabled: guildManager.isModuleEnabled(guildId, 'forms'),
+        formCount: formItems.length,
+        enabledFormCount: formItems.filter((form) => form.enabled !== false).length,
+        disabledFormCount: formItems.filter((form) => form.enabled === false).length,
         panelCount: panels.length,
         deployedPanelCount: panels.filter((panel) => panel.channelId && panel.messageId).length,
         submissionCount: submissions.length,
@@ -277,7 +285,7 @@ router.get('/:guildId/overview', (req, res) => {
 router.get('/:guildId', (req, res) => {
   try {
     const guildId = getGuildId(req);
-    return success(res, { guildId, config: forms.getFormsSection(guildId) });
+    return success(res, { guildId, config: canonicalConfig(guildId) });
   } catch (error) {
     return failure(res, error, 400);
   }
@@ -392,8 +400,8 @@ router.post('/:guildId/panels/:panelId/refresh', async (req, res) => {
     const channel = await fetchGuildChannel(req, guildId, panel.channelId);
     const message = await channel.messages.fetch(panel.messageId).catch(() => null);
     if (!message) throw new Error('Existing panel message was not found. Deploy a new panel instead.');
-    const forms = getPanelForms(guildId, panel);
-    await message.edit({ embeds: [formsPanel.buildFormPanelEmbed(panel, forms)], components: formsPanel.buildFormPanelRows(panel, forms) });
+    const panelForms = getPanelForms(guildId, panel);
+    await message.edit({ embeds: [formsPanel.buildFormPanelEmbed(panel, panelForms)], components: formsPanel.buildFormPanelRows(panel, panelForms) });
     const saved = forms.savePanel(guildId, panel, channel.guild);
     return success(res, { guildId, panel: saved, message: 'Panel refreshed.' });
   } catch (error) {
@@ -587,12 +595,14 @@ router.patch('/:guildId/settings', async (req, res) => {
   try {
     const guildId = getGuildId(req);
     await guardFormStaffRoles(req, guildId, req.body || {}, 'forms.settings_staff_roles');
+    if (typeof req.body?.enabled === 'boolean') {
+      guildManager.setModuleEnabled(guildId, 'forms', req.body.enabled, { actorId: getActorId(req) });
+    }
     const section = forms.updateFormsSection(guildId, (current) => ({
       ...current,
-      enabled: req.body?.enabled !== false,
       settings: { ...(current.settings || {}), ...(req.body?.settings || {}) },
     }));
-    return success(res, { guildId, config: section });
+    return success(res, { guildId, config: canonicalConfig(guildId, section) });
   } catch (error) {
     return failure(res, error, 400);
   }
