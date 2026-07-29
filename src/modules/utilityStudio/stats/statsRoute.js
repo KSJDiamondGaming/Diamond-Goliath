@@ -95,16 +95,19 @@ router.get('/:guildId/overview', async (req, res) => {
   } catch (error) { return failure(res, error, 400); }
 });
 router.get('/:guildId/config', (req, res) => {
-  try { const guildId = getGuildId(req); return success(res, { guildId, config: stats.getConfig(guildId), summary: stats.getSummary(guildId) }); }
-  catch (error) { return failure(res, error, 400); }
+  try {
+    const guildId = getGuildId(req);
+    return success(res, { guildId, config: { ...stats.getConfig(guildId), enabled: guildManager.isModuleEnabled(guildId, 'stats') }, summary: stats.getSummary(guildId) });
+  } catch (error) { return failure(res, error, 400); }
 });
 router.patch('/:guildId/config', (req, res) => {
   try {
     const guildId = getGuildId(req);
-    const allowed = ['enabled', 'trackMessages', 'trackVoice', 'trackMembers', 'ignoreBots', 'ignoredChannels', 'ignoredRoles', 'settings'];
+    const allowed = ['trackMessages', 'trackVoice', 'trackMembers', 'ignoreBots', 'ignoredChannels', 'ignoredRoles', 'settings'];
+    if (typeof req.body?.enabled === 'boolean') guildManager.setModuleEnabled(guildId, 'stats', req.body.enabled, actor(req, 'stats_config_enabled'));
     const updates = Object.fromEntries(Object.entries(req.body || {}).filter(([key]) => allowed.includes(key)));
-    const config = stats.store.updateStats(guildId, (current) => ({ ...current, ...updates, settings: updates.settings ? { ...(current.settings || {}), ...updates.settings } : current.settings }), actor(req, 'stats_config_update'));
-    return success(res, { guildId, config });
+    const stored = stats.store.updateStats(guildId, (current) => ({ ...current, ...updates, settings: updates.settings ? { ...(current.settings || {}), ...updates.settings } : current.settings }), actor(req, 'stats_config_update'));
+    return success(res, { guildId, config: { ...stored, enabled: guildManager.isModuleEnabled(guildId, 'stats') } });
   } catch (error) { return failure(res, error, 400); }
 });
 router.get('/:guildId/health', async (req, res) => {
