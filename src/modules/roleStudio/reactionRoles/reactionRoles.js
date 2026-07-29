@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('crypto');
+const guildManager = require('../../../core/guild/guildManager');
 const { getModuleSection, saveModuleSection, updateModuleSection } = require('../../../core/guild/moduleSectionManager');
 const embedTemplateManager = require('../../messageStudio/embed/embedTemplates');
 
@@ -27,7 +28,6 @@ function defaultDraft(userId = null) {
 
 function defaultSection() {
   return {
-    enabled: true,
     settings: { removeOnUnreact: true, ignoreBots: true },
     panels: {}, drafts: {},
     analytics: { attached: 0, created: 0, assigned: 0, removed: 0, noop: 0, failed: 0, repaired: 0, lastActionAt: null },
@@ -107,18 +107,19 @@ function normalizeSection(section = {}) {
   const base = defaultSection();
   const panels = section.panels && typeof section.panels === 'object' ? section.panels : {};
   const drafts = section.drafts && typeof section.drafts === 'object' ? section.drafts : {};
-  return {
+  const normalized = {
     ...base, ...section,
-    enabled: section.enabled !== false,
     settings: { ...base.settings, ...(section.settings || {}) },
     panels: Object.fromEntries(Object.entries(panels).map(([id, panel]) => {
-      const normalized = normalizePanel({ ...panel, panelId: panel.panelId || id });
-      return [normalized.panelId, normalized];
+      const normalizedPanel = normalizePanel({ ...panel, panelId: panel.panelId || id });
+      return [normalizedPanel.panelId, normalizedPanel];
     })),
     drafts: Object.fromEntries(Object.entries(drafts).map(([id, draft]) => [id, normalizeDraft(draft, id)])),
     analytics: { ...base.analytics, ...(section.analytics || {}) },
     updatedAt: section.updatedAt || now(),
   };
+  delete normalized.enabled;
+  return normalized;
 }
 
 function getSection(guildId) { return normalizeSection(getModuleSection(guildId, SECTION, defaultSection())); }
@@ -130,7 +131,10 @@ function updateSection(guildId, updater, meta = {}) {
     defaultSection(), meta
   ));
 }
-function setEnabled(guildId, enabled, meta = {}) { return updateSection(guildId, (section) => ({ ...section, enabled: Boolean(enabled), updatedAt: now() }), meta); }
+function setEnabled(guildId, enabled, meta = {}) {
+  guildManager.setModuleEnabled(guildId, SECTION, enabled === true, meta);
+  return { ...getSection(guildId), enabled: guildManager.isModuleEnabled(guildId, SECTION) };
+}
 function listPanels(guildId) { return Object.values(getSection(guildId).panels); }
 function getPanel(guildId, panelId) { return getSection(guildId).panels[cleanText(panelId, 80)] || null; }
 function findPanelByMessage(guildId, messageId) { return listPanels(guildId).find((panel) => panel.enabled !== false && panel.messageId === String(messageId)) || null; }
@@ -493,7 +497,7 @@ async function handleReaction(reaction, user, removing = false) {
   const hydrated = await hydrateReaction(reaction);
   if (!hydrated) return null;
   const guild = hydrated.message.guild;
-  if (getSection(guild.id).enabled === false) return null;
+  if (!guildManager.isModuleEnabled(guild.id, SECTION)) return null;
   const initialPanel = findPanelByMessage(guild.id, hydrated.message.id);
   if (!initialPanel) return null;
   const initialMapping = initialPanel.mappings.find((item) => item.enabled !== false && emojiMatches(item, hydrated.emoji));
@@ -592,7 +596,10 @@ async function repairAll(guild) {
 }
 
 async function startup(client) {
-  for (const guild of client.guilds.cache.values()) await repairAll(guild).catch((error) => console.warn(`[ReactionRoles] ${guild.id}: ${error.message}`));
+  for (const guild of client.guilds.cache.values()) {
+    if (!guildManager.isModuleEnabled(guild.id, SECTION)) continue;
+    await repairAll(guild).catch((error) => console.warn(`[ReactionRoles] ${guild.id}: ${error.message}`));
+  }
 }
 function exportConfiguration(guildId) { return getSection(guildId); }
 function reset(guildId, meta = {}) { return saveSection(guildId, defaultSection(), meta); }
