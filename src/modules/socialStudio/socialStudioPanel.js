@@ -391,12 +391,18 @@ function buildSectionPanel(interaction, name) {
     const selectedAccount = creator && session.accountId ? config.accounts[session.accountId] || null : null;
     if (session.accountId && (!selectedAccount || !linked.some((account) => account.accountId === session.accountId))) setAccountSession(interaction, { accountId: null });
     const activeAccount = creator ? config.accounts[getAccountSession(interaction).accountId] || null : null;
-    const list = creator
-      ? (linked.map((account) => `• ${ICON[account.platform] || '🔗'} **${LABEL[account.platform] || account.platform}** — ${account.profileUrl ? `[${account.username}](${account.profileUrl})` : account.username}`).join('\n') || 'No platform accounts are linked to this creator.')
-      : 'Select a creator profile to view its linked accounts.';
+    const accountList = linked.map((account) => `• ${ICON[account.platform] || '🔗'} **${LABEL[account.platform] || account.platform}** — ${account.profileUrl ? `[${account.username}](${account.profileUrl})` : account.username}`).join('\n');
     const description = creator
-      ? `Viewing and managing accounts for **${creator.displayName}**.\n\nSelect an existing account to view or edit it, or select platforms to add another account.`
-      : 'Select a creator profile below to view its linked accounts or add new ones.';
+      ? [
+        `Viewing and managing accounts for **${creator.displayName}**.`,
+        '',
+        `**Profiles:** ${creators.length}`,
+        `**Creator:** ${creator.displayName}`,
+        `**Accounts:** ${linked.length}`,
+        `**Selected:** ${activeAccount ? `${LABEL[activeAccount.platform] || activeAccount.platform} — ${activeAccount.username}` : 'None'}`,
+        ...(accountList ? ['', '**Linked Accounts**', accountList] : ['', 'No platform accounts are linked to this creator.']),
+      ].join('\n')
+      : `Select a creator profile below to view and manage its linked accounts.\n\n**Profiles:** ${creators.length}\n**Selected:** None`;
     const components = [];
     if (creators.length) {
       components.push(creatorSelect(creators, session.creatorId));
@@ -412,10 +418,7 @@ function buildSectionPanel(interaction, name) {
     }
     components.push(navigation('accounts'));
     return {
-      embeds: [embed(config, '🔗 Accounts', description, who(interaction)).addFields({
-        name: creator ? `${creator.displayName} Accounts (${linked.length})` : 'Selected Accounts (0)',
-        value: list,
-      })],
+      embeds: [embed(config, '🔗 Accounts', description, who(interaction))],
       components,
     };
   }
