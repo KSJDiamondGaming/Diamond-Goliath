@@ -33,10 +33,15 @@ const who = (interaction) => interaction.member?.displayName || interaction.user
 const setupKey = (interaction) => `${interaction.guildId}:${interaction.user?.id || 'unknown'}`;
 
 function getConfig(guildId) {
-  const section = guildManager.getGuildSection(guildId, 'social', {}) || {};
+  // guild.json is the source of truth. Always discard any process-local cache
+  // before rendering or mutating Social Studio data.
+  const guildData = guildManager.reloadGuild(guildId);
+  const section = guildData?.modules?.social && typeof guildData.modules.social === 'object'
+    ? guildData.modules.social
+    : {};
   return {
     ...section,
-    enabled: guildManager.isModuleEnabled(guildId, 'social'),
+    enabled: section.enabled !== false,
     alertsChannelId: section.alertsChannelId || null,
     managerRoleIds: Array.isArray(section.managerRoleIds) ? section.managerRoleIds : [],
     accounts: section.accounts && typeof section.accounts === 'object' ? section.accounts : {},
@@ -50,11 +55,40 @@ function getConfig(guildId) {
 }
 
 function saveConfig(guildId, config, guild, actorId = null) {
-  const { enabled, ...storedConfig } = config;
-  const nextStored = { ...storedConfig, updatedAt: new Date().toISOString(), lastActorId: actorId };
+  const nextStored = {
+    ...config,
+    enabled: config.enabled !== false,
+    updatedAt: new Date().toISOString(),
+    lastActorId: actorId,
+  };
+
+  // One authoritative write only. A second module-enabled write previously
+  // created a window where another process could read or overwrite stale data.
   guildManager.saveGuildSection(guildId, 'social', nextStored, guild);
-  guildManager.setModuleEnabled(guildId, 'social', enabled === true, guild);
-  return { ...nextStored, enabled: enabled === true };
+
+  // Read the file back immediately and fail loudly rather than claiming success
+  // when the profile/account was not actually persisted.
+  const persistedGuild = guildManager.reloadGuild(guildId);
+  const persisted = persistedGuild?.modules?.social;
+  if (!persisted || typeof persisted !== 'object') {
+    throw new Error('Social Studio could not verify its saved guild data.');
+  }
+
+  for (const creatorId of Object.keys(nextStored.creators || {})) {
+    if (!persisted.creators?.[creatorId]) {
+      throw new Error(`Creator profile ${creatorId} was not persisted to guild.json.`);
+    }
+  }
+  for (const accountId of Object.keys(nextStored.accounts || {})) {
+    if (!persisted.accounts?.[accountId]) {
+      throw new Error(`Social account ${accountId} was not persisted to guild.json.`);
+    }
+  }
+
+  return {
+    ...persisted,
+    enabled: persisted.enabled !== false,
+  };
 }
 
 function embed(config, title, description, requestedBy) {
@@ -288,8 +322,8 @@ async function handleSocialAdminInteraction(interaction) {
   if (id === `${P}account:platforms`) { setAccountSetup(interaction, { platforms: (interaction.values || []).filter((platform) => PLATFORMS.includes(platform)).slice(0, 5) }); return respond(interaction, buildSectionPanel(interaction, 'accounts')); }
   if (id === `${P}account:reset`) { accountSetupSessions.delete(setupKey(interaction)); return respond(interaction, buildSectionPanel(interaction, 'accounts')); }
   if (id === `${P}account:continue`) { const setup = getAccountSetup(interaction); if (!setup.creatorId || !config.creators[setup.creatorId]) throw new Error('Select a creator profile first.'); if (!setup.platforms.length) throw new Error('Select at least one platform first.'); await interaction.showModal(accountDetailsModal(setup.platforms)); return true; }
-  if (id === `${P}creator:create`) { const displayName = interaction.fields.getTextInputValue('displayName').trim(); if (!displayName) throw new Error('Creator display name is required.'); const creatorId = makeId('creator'); config.creators[creatorId] = { creatorId, displayName, group: interaction.fields.getTextInputValue('group').trim(), tags: interaction.fields.getTextInputValue('tags').split(',').map((value) => value.trim()).filter(Boolean), notes: interaction.fields.getTextInputValue('notes').trim(), enabled: true, accountIds: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }; saveConfig(interaction.guildId, config, interaction.guild, actorId); setCreatorView(interaction, { creatorId, mode: 'view' }); return refreshAfterModal(interaction, 'creators', '✅ Creator profile created. Reopen Creator Profiles to view it.'); }
-  if (id === `${P}account:create-multi`) { const setup = getAccountSetup(interaction); const creator = config.creators[setup.creatorId]; if (!creator) throw new Error('The selected creator profile no longer exists.'); if (!setup.platforms.length) throw new Error('No platforms were selected.'); const createdIds = []; for (const platform of setup.platforms.slice(0, 5)) { const username = interaction.fields.getTextInputValue(`account_${platform}`).trim(); if (!username) continue; const duplicate = Object.values(config.accounts).find((account) => account.platform === platform && String(account.username || '').toLowerCase() === username.toLowerCase()); const accountId = duplicate?.accountId || makeId('account'); if (!duplicate) config.accounts[accountId] = { accountId, platform, username, displayName: creator.displayName, enabled: true, alertTypes: ['live'], alertChannelId: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }; createdIds.push(accountId); } creator.accountIds = [...new Set([...(creator.accountIds || []), ...createdIds])]; creator.updatedAt = new Date().toISOString(); saveConfig(interaction.guildId, config, interaction.guild, actorId); accountSetupSessions.delete(setupKey(interaction)); return refreshAfterModal(interaction, 'accounts', `✅ Added ${createdIds.length} social account(s) to ${creator.displayName}.`); }
+  if (id === `${P}creator:create`) { const displayName = interaction.fields.getTextInputValue('displayName').trim(); if (!displayName) throw new Error('Creator display name is required.'); const creatorId = makeId('creator'); config.creators[creatorId] = { creatorId, displayName, group: interaction.fields.getTextInputValue('group').trim(), tags: interaction.fields.getTextInputValue('tags').split(',').map((value) => value.trim()).filter(Boolean), notes: interaction.fields.getTextInputValue('notes').trim(), enabled: true, accountIds: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }; saveConfig(interaction.guildId, config, interaction.guild, actorId); setCreatorView(interaction, { creatorId, mode: 'view' }); return refreshAfterModal(interaction, 'creators', '✅ Creator profile created and verified in guild.json. Reopen Creator Profiles to view it.'); }
+  if (id === `${P}account:create-multi`) { const setup = getAccountSetup(interaction); const creator = config.creators[setup.creatorId]; if (!creator) throw new Error('The selected creator profile no longer exists.'); if (!setup.platforms.length) throw new Error('No platforms were selected.'); const createdIds = []; for (const platform of setup.platforms.slice(0, 5)) { const username = interaction.fields.getTextInputValue(`account_${platform}`).trim(); if (!username) continue; const duplicate = Object.values(config.accounts).find((account) => account.platform === platform && String(account.username || '').toLowerCase() === username.toLowerCase()); const accountId = duplicate?.accountId || makeId('account'); if (!duplicate) config.accounts[accountId] = { accountId, platform, username, displayName: creator.displayName, enabled: true, alertTypes: ['live'], alertChannelId: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }; createdIds.push(accountId); } creator.accountIds = [...new Set([...(creator.accountIds || []), ...createdIds])]; creator.updatedAt = new Date().toISOString(); saveConfig(interaction.guildId, config, interaction.guild, actorId); accountSetupSessions.delete(setupKey(interaction)); return refreshAfterModal(interaction, 'accounts', `✅ Added and verified ${createdIds.length} social account(s) for ${creator.displayName}.`); }
   if (id.startsWith(`${P}template:save:`)) { const type = id.split(':')[3]; if (!ALERT_TYPES.includes(type)) throw new Error('Unknown notification template.'); config.templates[type] = { title: interaction.fields.getTextInputValue('title'), description: interaction.fields.getTextInputValue('description'), buttonLabel: interaction.fields.getTextInputValue('buttonLabel') }; saveConfig(interaction.guildId, config, interaction.guild, actorId); return refreshAfterModal(interaction, 'templates', `✅ ${type} template saved.`); }
   if (id === `${P}feed:channel` || id === `${P}channel:alerts`) { config.alertsChannelId = interaction.values?.[0] || null; saveConfig(interaction.guildId, config, interaction.guild, actorId); return respond(interaction, buildSectionPanel(interaction, id.includes('feed') ? 'feeds' : 'channels')); }
   if (id === `${P}roles:select`) { config.managerRoleIds = interaction.values || []; saveConfig(interaction.guildId, config, interaction.guild, actorId); return respond(interaction, buildSectionPanel(interaction, 'roles')); }
