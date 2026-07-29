@@ -202,7 +202,7 @@ async function handleLinks(message, config) {
   if (!violation) return false;
 
   console.log(`[AutoMod] Link triggered guild=${message.guild.id} user=${message.author.id} domain=${violation.blocked} actions=${config.antiLinks.actions.join(',')}`);
-  return applyRule(message, config, 'antiLinks', 'Link Protection', violation.reason, config.antiLinks.actions);
+  return applyRule(message, config, 'antiLinks', 'Link Protection', reason, config.antiLinks.actions);
 }
 
 async function handleAutoMod(message) {
@@ -230,7 +230,9 @@ module.exports = {
     const handledPrefixCommand = await runHandler('Prefix Command', handlePrefixCommand, message, client);
     if (handledPrefixCommand) return;
 
-    await runHandler('Translation', translationThreadManager.handleMessageCreate, message, client);
+    if (guildManager.isModuleEnabled(message.guild.id, 'translation')) {
+      await runHandler('Translation', translationThreadManager.handleMessageCreate, message, client);
+    }
     await runHandler('Sticky', handleStickyMessage, message, client);
   },
 };
