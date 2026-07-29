@@ -115,3 +115,10 @@ test('reaction role add and remove dispatch read canonical module state', () => 
   assert.match(add, /isModuleEnabled\(guildId, 'reactionRoles'\)/);
   assert.match(remove, /isModuleEnabled\(guildId, 'reactionRoles'\)/);
 });
+
+test('reaction roles API reports and writes canonical module state', () => {
+  const source = read('src/modules/roleStudio/reactionRoles/reactionRolesRoute.js');
+  assert.match(source, /enabled: guildManager\.isModuleEnabled\(guildId, 'reactionRoles'\)/);
+  assert.match(source, /guildManager\.setModuleEnabled\(guildId, 'reactionRoles', req\.body\?\.enabled === true/);
+  assert.doesNotMatch(source, /reactionRoles\.setEnabled/);
+});
