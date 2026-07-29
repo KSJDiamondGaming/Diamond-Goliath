@@ -2,6 +2,7 @@
 
 const crypto = require('crypto');
 const { PermissionFlagsBits } = require('discord.js');
+const guildManager = require('../../../core/guild/guildManager');
 const { getModuleSection, saveModuleSection, updateModuleSection } = require('../../../core/guild/moduleSectionManager');
 
 const SECTION = 'schedule';
@@ -19,7 +20,6 @@ const createId = (prefix = 'evt') => `${prefix}_${crypto.randomUUID().slice(0, 1
 
 function defaultSection() {
   return {
-    enabled: true,
     settings: { defaultTimezone: 'UTC', defaultReminderMinutes: [1440, 60, 10], createDiscordEvents: false },
     events: {},
     templates: {},
@@ -92,10 +92,9 @@ function normalizeEvent(event = {}) {
 function normalizeSection(section = {}) {
   const base = defaultSection();
   const sourceEvents = section.events && typeof section.events === 'object' ? section.events : {};
-  return {
+  const normalized = {
     ...base,
     ...clone(section),
-    enabled: section.enabled !== false,
     settings: {
       ...base.settings,
       ...(section.settings || {}),
@@ -104,13 +103,15 @@ function normalizeSection(section = {}) {
       createDiscordEvents: section.settings?.createDiscordEvents === true,
     },
     events: Object.fromEntries(Object.entries(sourceEvents).map(([id, event]) => {
-      const normalized = normalizeEvent({ ...event, eventId: event.eventId || id });
-      return [normalized.eventId, normalized];
+      const normalizedEvent = normalizeEvent({ ...event, eventId: event.eventId || id });
+      return [normalizedEvent.eventId, normalizedEvent];
     })),
     templates: section.templates && typeof section.templates === 'object' ? clone(section.templates) : {},
     analytics: { ...base.analytics, ...(section.analytics || {}) },
     updatedAt: section.updatedAt || now(),
   };
+  delete normalized.enabled;
+  return normalized;
 }
 
 function getSection(guildId) { return normalizeSection(getModuleSection(guildId, SECTION, defaultSection())); }
@@ -126,7 +127,10 @@ function listEvents(guildId, options = {}) {
   return values.filter((event) => !options.status || event.status === options.status).sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
 }
 function getEvent(guildId, eventId) { return getSection(guildId).events[clean(eventId, 100)] || null; }
-function setEnabled(guildId, enabled, meta = {}) { return updateSection(guildId, (section) => ({ ...section, enabled: enabled === true, updatedAt: now() }), meta); }
+function setEnabled(guildId, enabled, meta = {}) {
+  guildManager.setModuleEnabled(guildId, SECTION, enabled === true, meta);
+  return { ...getSection(guildId), enabled: guildManager.isModuleEnabled(guildId, SECTION) };
+}
 function updateSettings(guildId, settings = {}, meta = {}) { return updateSection(guildId, (section) => ({ ...section, settings: { ...section.settings, ...settings }, updatedAt: now() }), meta); }
 
 function incrementAnalytics(guildId, patch, meta = {}) {
@@ -265,8 +269,7 @@ async function sendReminder(guild, event, minutes) {
 }
 
 async function processGuild(guild, meta = {}) {
-  const section = getSection(guild.id);
-  if (section.enabled === false) return { disabled: true, reminders: 0, completed: 0, recurrences: 0, failures: 0 };
+  if (!guildManager.isModuleEnabled(guild.id, SECTION)) return { disabled: true, reminders: 0, completed: 0, recurrences: 0, failures: 0 };
   const result = { reminders: 0, completed: 0, recurrences: 0, failures: 0 };
   const timestamp = Date.now();
   for (const event of listEvents(guild.id)) {
@@ -304,7 +307,7 @@ async function buildHealth(guild) {
     if (event.lastError) warnings.push({ code: 'last_error', eventId: event.eventId, error: event.lastError });
   }
   if (!guild.members.me?.permissions.has(PermissionFlagsBits.SendMessages)) issues.push({ code: 'send_messages_missing' });
-  return { module: 'schedule', guildId: guild.id, healthy: issues.length === 0, enabled: section.enabled, eventCount: Object.keys(section.events).length, upcomingCount: listEvents(guild.id, { status: 'scheduled' }).length, issues, warnings, checkedAt: now() };
+  return { module: 'schedule', guildId: guild.id, healthy: issues.length === 0, enabled: guildManager.isModuleEnabled(guild.id, SECTION), eventCount: Object.keys(section.events).length, upcomingCount: listEvents(guild.id, { status: 'scheduled' }).length, issues, warnings, checkedAt: now() };
 }
 async function repair(guild, meta = {}) {
   const section = getSection(guild.id);
