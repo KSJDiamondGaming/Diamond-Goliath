@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
+const DEFAULT_DATA_ROOT = path.resolve(PROJECT_ROOT, '..', 'GoliathData');
 
 function resolveBotMode(botMode = process.env.BOT_MODE) {
   const rawMode = botMode && typeof botMode === 'object'
@@ -14,15 +15,42 @@ function resolveBotMode(botMode = process.env.BOT_MODE) {
   return 'dev';
 }
 
+function getPersistentDataRoot() {
+  const configured = String(process.env.GOLIATH_DATA_ROOT || '').trim();
+  return configured ? path.resolve(configured) : DEFAULT_DATA_ROOT;
+}
+
+function getLegacyRuntimeRoot(botMode = process.env.BOT_MODE) {
+  return path.join(PROJECT_ROOT, 'src', 'runtime', resolveBotMode(botMode));
+}
+
+function copyDirectory(source, destination) {
+  fs.mkdirSync(destination, { recursive: true });
+  for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
+    const sourcePath = path.join(source, entry.name);
+    const destinationPath = path.join(destination, entry.name);
+    if (entry.isDirectory()) copyDirectory(sourcePath, destinationPath);
+    else if (entry.isFile()) fs.copyFileSync(sourcePath, destinationPath, fs.constants.COPYFILE_EXCL);
+  }
+}
+
+function migrateLegacyRuntime(botMode = process.env.BOT_MODE) {
+  const legacyRoot = getLegacyRuntimeRoot(botMode);
+  const persistentRoot = path.join(getPersistentDataRoot(), 'runtime', resolveBotMode(botMode));
+
+  if (fs.existsSync(persistentRoot)) return persistentRoot;
+  if (!fs.existsSync(legacyRoot)) return persistentRoot;
+
+  fs.mkdirSync(path.dirname(persistentRoot), { recursive: true });
+  copyDirectory(legacyRoot, persistentRoot);
+  console.log(`[RuntimePaths] Migrated ${resolveBotMode(botMode)} runtime data to persistent storage: ${persistentRoot}`);
+  return persistentRoot;
+}
+
 /* ---------------- ROOT ---------------- */
 
 function getRuntimeRoot(botMode = process.env.BOT_MODE) {
-  return path.join(
-    PROJECT_ROOT,
-    'src',
-    'runtime',
-    resolveBotMode(botMode)
-  );
+  return migrateLegacyRuntime(botMode);
 }
 
 /* ---------------- PATHS ---------------- */
@@ -89,6 +117,10 @@ function resolveRuntimePath(
 
 module.exports = {
   PROJECT_ROOT,
+  DEFAULT_DATA_ROOT,
+  getPersistentDataRoot,
+  getLegacyRuntimeRoot,
+  migrateLegacyRuntime,
   resolveBotMode,
   getRuntimeRoot,
   getRuntimePaths,

@@ -230,7 +230,9 @@ module.exports = {
     const handledPrefixCommand = await runHandler('Prefix Command', handlePrefixCommand, message, client);
     if (handledPrefixCommand) return;
 
-    await runHandler('Translation', translationThreadManager.handleMessageCreate, message, client);
+    if (guildManager.isModuleEnabled(message.guild.id, 'translation')) {
+      await runHandler('Translation', translationThreadManager.handleMessageCreate, message, client);
+    }
     await runHandler('Sticky', handleStickyMessage, message, client);
   },
 };

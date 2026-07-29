@@ -5,6 +5,7 @@ const { ChannelType, PermissionFlagsBits } = require('discord.js');
 const translationStore = require('./translationStore');
 const translationProviderManager = require('./translationProviderManager');
 const translation = require('./translation');
+const guildManager = require('../../../core/guild/guildManager');
 const {
   DEFAULT_BOT_CHANNEL_PERMISSIONS,
   guardChannelAccess,
@@ -258,7 +259,7 @@ async function handleMessageCreate(message) {
   const guildId = message.guild.id;
   const section = translationStore.getTranslationSection(guildId);
 
-  if (section.enabled !== true) return null;
+  if (!guildManager.isModuleEnabled(guildId, 'translation')) return null;
 
   const config = getChannelConfig(section, message.channelId);
   if (!config || config.enabled === false || config.mode === 'disabled') return null;
