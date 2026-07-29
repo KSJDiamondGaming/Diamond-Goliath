@@ -162,10 +162,38 @@ function creatorModal(creator = null) {
     .setCustomId(creator ? `${P}creator:update:${creator.creatorId}` : `${P}creator:create`)
     .setTitle(creator ? 'Edit Creator Profile' : 'Create Creator Profile')
     .addComponents(
-      row(new TextInputBuilder().setCustomId('displayName').setLabel('Creator display name').setStyle(TextInputStyle.Short).setMaxLength(120).setRequired(true).setValue(String(creator?.displayName || ''))),
-      row(new TextInputBuilder().setCustomId('group').setLabel('Group or team').setStyle(TextInputStyle.Short).setMaxLength(120).setRequired(false).setValue(String(creator?.group || ''))),
-      row(new TextInputBuilder().setCustomId('tags').setLabel('Tags (comma separated)').setStyle(TextInputStyle.Short).setMaxLength(300).setRequired(false).setValue(Array.isArray(creator?.tags) ? creator.tags.join(', ') : '')),
-      row(new TextInputBuilder().setCustomId('notes').setLabel('Notes').setStyle(TextInputStyle.Paragraph).setMaxLength(1000).setRequired(false).setValue(String(creator?.notes || ''))),
+      row(new TextInputBuilder()
+        .setCustomId('displayName')
+        .setLabel('Creator display name')
+        .setPlaceholder('e.g. Johnny, KSJ Diamond Gaming, Acme Esports')
+        .setStyle(TextInputStyle.Short)
+        .setMaxLength(120)
+        .setRequired(true)
+        .setValue(String(creator?.displayName || ''))),
+      row(new TextInputBuilder()
+        .setCustomId('group')
+        .setLabel('Group or team')
+        .setPlaceholder('Optional — team, organisation or brand they belong to')
+        .setStyle(TextInputStyle.Short)
+        .setMaxLength(120)
+        .setRequired(false)
+        .setValue(String(creator?.group || ''))),
+      row(new TextInputBuilder()
+        .setCustomId('tags')
+        .setLabel('Tags (comma separated)')
+        .setPlaceholder('Optional — e.g. streamer, FPS, UK')
+        .setStyle(TextInputStyle.Short)
+        .setMaxLength(300)
+        .setRequired(false)
+        .setValue(Array.isArray(creator?.tags) ? creator.tags.join(', ') : '')),
+      row(new TextInputBuilder()
+        .setCustomId('notes')
+        .setLabel('Notes')
+        .setPlaceholder('Optional — internal notes about this creator profile')
+        .setStyle(TextInputStyle.Paragraph)
+        .setMaxLength(1000)
+        .setRequired(false)
+        .setValue(String(creator?.notes || ''))),
     );
 }
 
@@ -175,6 +203,7 @@ function accountModal(platforms) {
     modal.addComponents(row(new TextInputBuilder()
       .setCustomId(`account_${platform}`)
       .setLabel(`${LABEL[platform]} username, channel ID or URL`)
+      .setPlaceholder('e.g. username, @handle or full profile URL')
       .setStyle(TextInputStyle.Short)
       .setMaxLength(500)
       .setRequired(true)));
@@ -189,6 +218,7 @@ function accountEditModal(account) {
     .addComponents(row(new TextInputBuilder()
       .setCustomId('accountValue')
       .setLabel('Username, channel ID or URL')
+      .setPlaceholder('e.g. username, @handle or full profile URL')
       .setStyle(TextInputStyle.Short)
       .setMaxLength(500)
       .setRequired(true)
