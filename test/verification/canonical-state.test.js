@@ -94,3 +94,10 @@ test('translation startup and message runtime read canonical module state', () =
   assert.match(threads, /guildManager\.isModuleEnabled\(guildId, 'translation'\)/);
   assert.doesNotMatch(threads.slice(threads.indexOf('async function handleMessageCreate')), /section\.enabled/);
 });
+
+test('reaction role add and remove dispatch read canonical module state', () => {
+  const add = read('src/events/messages/messageReactionAdd.js');
+  const remove = read('src/events/messages/messageReactionRemove.js');
+  assert.match(add, /isModuleEnabled\(guildId, 'reactionRoles'\)/);
+  assert.match(remove, /isModuleEnabled\(guildId, 'reactionRoles'\)/);
+});
