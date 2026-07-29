@@ -55,8 +55,10 @@ function addHistory(config, event) {
 }
 
 function enabledAlert(account, type) {
-  const alertTypes = Array.isArray(account.alertTypes) && account.alertTypes.length ? account.alertTypes : ['live'];
-  return alertTypes.includes(type);
+  const supported = providerInfo(account.platform).supportedAlertTypes || [];
+  const configured = Array.isArray(account.alertTypes) && account.alertTypes.length ? account.alertTypes : [];
+  const effective = configured.some((item) => supported.includes(item)) ? configured : supported;
+  return effective.includes(type);
 }
 
 function eventCandidates(account, previous, checked) {
