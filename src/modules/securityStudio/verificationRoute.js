@@ -4,6 +4,7 @@ const express = require('express');
 const verificationManager = require('./verificationManager');
 const verificationStore = require('./verificationStore');
 const verificationHealth = require('./verificationHealth');
+const guildManager = require('../../core/guild/guildManager');
 
 const router = express.Router();
 
@@ -52,20 +53,21 @@ async function getSendableChannel(req, guildId, channelId) {
 function getConfig(guildId) {
   const section = verificationManager.getVerificationStatus(guildId);
   return {
-    enabled: section.enabled === true,
+    enabled: guildManager.isModuleEnabled(guildId, 'verification') === true,
     ...section.settings,
   };
 }
 
 function saveConfig(guildId, input = {}, meta = {}) {
   const current = verificationManager.getVerificationStatus(guildId);
-  const enabled = input.enabled === undefined
-    ? current.enabled === true
-    : input.enabled === true;
   const settingsInput = input.settings && typeof input.settings === 'object' ? input.settings : input;
   const settings = verificationStore.normalizeSettings({ ...current.settings, ...settingsInput });
 
-  verificationManager.configureVerification(guildId, { enabled, settings }, meta);
+  if (input.enabled !== undefined) {
+    guildManager.setModuleEnabled(guildId, 'verification', input.enabled === true, meta);
+  }
+
+  verificationManager.configureVerification(guildId, { settings }, meta);
 
   return getConfig(guildId);
 }
@@ -85,7 +87,7 @@ function resetVerification(guildId, meta = {}) {
     verificationStore.defaultVerificationSection(),
     meta,
   );
-  verificationManager.setVerificationEnabled(guildId, false, meta);
+  guildManager.setModuleEnabled(guildId, 'verification', false, meta);
   return section;
 }
 
