@@ -7,7 +7,6 @@ const MAX_ITEMS = 10;
 const MAX_SNAPSHOTS = 120;
 
 const DEFAULT_STATS = {
-  enabled: false,
   trackMessages: true,
   trackVoice: true,
   trackMembers: true,
@@ -44,6 +43,12 @@ function merge(defaults = {}, source = {}) {
   return output;
 }
 
+function normalizeStats(value = {}) {
+  const normalized = merge(DEFAULT_STATS, value);
+  delete normalized.enabled;
+  return normalized;
+}
+
 function dayKey(date = new Date()) {
   return new Date(date).toISOString().slice(0, 10);
 }
@@ -55,18 +60,18 @@ function addToMap(map, key, amount = 1) {
 
 function getStats(guildId) {
   const modules = guildManager.getGuildSection(guildId, 'modules', {});
-  return merge(DEFAULT_STATS, modules[MODULE_KEY] || {});
+  return normalizeStats(modules[MODULE_KEY] || {});
 }
 
 function saveStats(guildId, stats, guildOrMeta = {}) {
   const updatedModules = guildManager.updateGuildSection(
     guildId,
     'modules',
-    (modules) => ({ ...modules, [MODULE_KEY]: merge(DEFAULT_STATS, stats) }),
+    (modules) => ({ ...modules, [MODULE_KEY]: normalizeStats(stats) }),
     {},
     guildOrMeta
   );
-  return updatedModules[MODULE_KEY];
+  return normalizeStats(updatedModules[MODULE_KEY]);
 }
 
 function updateStats(guildId, updater, guildOrMeta = {}) {
@@ -76,11 +81,12 @@ function updateStats(guildId, updater, guildOrMeta = {}) {
 }
 
 function setEnabled(guildId, enabled, guildOrMeta = {}) {
-  return updateStats(guildId, (stats) => ({ ...stats, enabled: Boolean(enabled) }), guildOrMeta);
+  guildManager.setModuleEnabled(guildId, MODULE_KEY, enabled === true, guildOrMeta);
+  return { ...getStats(guildId), enabled: guildManager.isModuleEnabled(guildId, MODULE_KEY) };
 }
 
 function isEnabled(guildId) {
-  return getStats(guildId).enabled === true;
+  return guildManager.isModuleEnabled(guildId, MODULE_KEY);
 }
 
 function ignored(stats, member, channelId) {
@@ -92,8 +98,9 @@ function ignored(stats, member, channelId) {
 
 function addMessage(message) {
   if (!message?.guild?.id) return null;
+  if (!isEnabled(message.guild.id)) return getStats(message.guild.id);
   return updateStats(message.guild.id, (stats) => {
-    if (stats.enabled !== true || stats.trackMessages === false || ignored(stats, message.member, message.channelId)) return stats;
+    if (stats.trackMessages === false || ignored(stats, message.member, message.channelId)) return stats;
     const today = dayKey();
     stats.data.messages[today] = stats.data.messages[today] || { total: 0, users: {}, channels: {} };
     const bucket = stats.data.messages[today];
@@ -109,8 +116,9 @@ function addVoiceMinutes(member, channelId, minutes) {
   if (!member?.guild?.id) return null;
   const safeMinutes = Math.max(0, Number(minutes || 0));
   if (!safeMinutes) return getStats(member.guild.id);
+  if (!isEnabled(member.guild.id)) return getStats(member.guild.id);
   return updateStats(member.guild.id, (stats) => {
-    if (stats.enabled !== true || stats.trackVoice === false || ignored(stats, member, channelId)) return stats;
+    if (stats.trackVoice === false || ignored(stats, member, channelId)) return stats;
     const today = dayKey();
     stats.data.voice[today] = stats.data.voice[today] || { totalMinutes: 0, users: {}, channels: {} };
     const bucket = stats.data.voice[today];
@@ -124,8 +132,9 @@ function addVoiceMinutes(member, channelId, minutes) {
 
 function addMemberEvent(member, type) {
   if (!member?.guild?.id) return null;
+  if (!isEnabled(member.guild.id)) return getStats(member.guild.id);
   return updateStats(member.guild.id, (stats) => {
-    if (stats.enabled !== true || stats.trackMembers === false) return stats;
+    if (stats.trackMembers === false) return stats;
     if (type === 'join') stats.data.members.joins = Number(stats.data.members.joins || 0) + 1;
     if (type === 'leave') stats.data.members.leaves = Number(stats.data.members.leaves || 0) + 1;
     stats.data.members.snapshots = Array.isArray(stats.data.members.snapshots) ? stats.data.members.snapshots : [];
@@ -153,7 +162,7 @@ function getSummary(guildId) {
   const messageDays = Object.values(stats.data.messages || {});
   const voiceDays = Object.values(stats.data.voice || {});
   return {
-    enabled: stats.enabled === true,
+    enabled: isEnabled(guildId),
     totals: {
       messages: messageDays.reduce((total, day) => total + Number(day.total || 0), 0),
       voiceMinutes: Math.round(voiceDays.reduce((total, day) => total + Number(day.totalMinutes || 0), 0)),
