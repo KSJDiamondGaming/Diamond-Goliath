@@ -156,7 +156,7 @@ function getSummary(guildId) {
     enabled: stats.enabled === true,
     totals: {
       messages: messageDays.reduce((total, day) => total + Number(day.total || 0), 0),
-      voiceMinutes: Math.round(voiceDays.reduce((total, day) => total + Number(day.totalMinutes || 0)),
+      voiceMinutes: Math.round(voiceDays.reduce((total, day) => total + Number(day.totalMinutes || 0), 0)),
       joins: Number(stats.data.members?.joins || 0),
       leaves: Number(stats.data.members?.leaves || 0),
     },
