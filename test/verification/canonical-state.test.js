@@ -95,6 +95,12 @@ test('translation startup and message runtime read canonical module state', () =
   assert.doesNotMatch(threads.slice(threads.indexOf('async function handleMessageCreate')), /section\.enabled/);
 });
 
+test('translation owner overview reads canonical module state', () => {
+  const source = read('src/server/routes/ownerTranslation.js');
+  assert.match(source, /enabled: guildManager\.isModuleEnabled\(guildId, 'translation'\)/);
+  assert.doesNotMatch(source, /enabled: section\.enabled === true/);
+});
+
 test('reaction role add and remove dispatch read canonical module state', () => {
   const add = read('src/events/messages/messageReactionAdd.js');
   const remove = read('src/events/messages/messageReactionRemove.js');
