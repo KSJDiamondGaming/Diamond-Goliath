@@ -120,6 +120,17 @@ test('translation owner overview reads canonical module state', () => {
   assert.doesNotMatch(source, /enabled: section\.enabled === true/);
 });
 
+test('translation store removes duplicate module state', () => {
+  const source = read('src/modules/utilityStudio/translation/translationStore.js');
+  const defaults = source.slice(source.indexOf('function defaultTranslationSection()'), source.indexOf('function normalizeChannelConfig('));
+  assert.doesNotMatch(defaults, /enabled\s*:/);
+  assert.match(source, /delete normalized\.enabled;/);
+  assert.match(source, /guildManager\.setModuleEnabled\(guildId, MODULE, enabled === true, guildOrMeta\)/);
+  assert.match(source, /guildManager\.isModuleEnabled\(guildId, MODULE\)/);
+  assert.match(source, /enabled: source\.openai\?\.enabled !== false/);
+  assert.match(source, /enabled: source\.enabled !== false/);
+});
+
 test('reaction role add and remove dispatch read canonical module state', () => {
   const add = read('src/events/messages/messageReactionAdd.js');
   const remove = read('src/events/messages/messageReactionRemove.js');
