@@ -218,3 +218,14 @@ test('goodbye runtime and store use canonical module state', () => {
   const repair = source.slice(source.indexOf('async function repairConfiguration'), source.indexOf('function exportConfiguration'));
   assert.doesNotMatch(repair, /enabled\s*:/);
 });
+
+test('forms API reports and writes canonical module state', () => {
+  const source = read('src/server/routes/forms.js');
+  assert.match(source, /enabled: guildManager\.isModuleEnabled\(guildId, 'forms'\)/);
+  assert.match(source, /guildManager\.setModuleEnabled\(guildId, 'forms', req\.body\.enabled/);
+  assert.match(source, /config: canonicalConfig\(guildId/);
+  assert.doesNotMatch(source, /enabled: section\.enabled !== false/);
+  const settingsRoute = source.slice(source.indexOf("router.patch('/:guildId/settings'"));
+  assert.doesNotMatch(settingsRoute, /enabled: req\.body\?\.enabled !== false/);
+  assert.match(source, /form\.enabled !== false/);
+});
