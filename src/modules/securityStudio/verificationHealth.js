@@ -2,6 +2,7 @@
 
 const verificationManager = require('./verificationManager');
 const verificationStore = require('./verificationStore');
+const guildManager = require('../../core/guild/guildManager');
 
 async function fetchRole(guild, roleId) {
   if (!guild || !roleId) return null;
@@ -10,7 +11,11 @@ async function fetchRole(guild, roleId) {
 
 async function buildHealthReport(guild) {
   if (!guild?.id) throw new Error('Guild is unavailable.');
-  return verificationManager.buildHealthReport(guild);
+  const report = await verificationManager.buildHealthReport(guild);
+  return {
+    ...report,
+    enabled: guildManager.isModuleEnabled(guild.id, 'verification'),
+  };
 }
 
 async function repair(guild, meta = {}) {
