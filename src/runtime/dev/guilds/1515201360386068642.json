@@ -3,6 +3,22 @@
   "guildId": "1515201360386068642",
   "guildName": "💎・KSJ Development・💎",
   "modules": {
+    "autoRoles": {
+      "analytics": {
+        "assigned": 0,
+        "removed": 0
+      },
+      "botRoles": [],
+      "createdAt": "2026-07-29T01:07:23.167Z",
+      "enabled": true,
+      "joinRoles": {},
+      "settings": {
+        "allowSelfRemove": true,
+        "auditLog": true,
+        "dailyTimedRoleCheck": true
+      },
+      "updatedAt": "2026-07-29T01:07:23.172Z"
+    },
     "discord": {
       "categories": [
         {
@@ -127,7 +143,7 @@
         "preferredLocale": "en-US",
         "premiumTier": 0
       },
-      "lastSync": "2026-07-28T00:47:22.888Z",
+      "lastSync": "2026-07-29T02:25:37.834Z",
       "roles": [
         {
           "color": "#000000",
@@ -301,7 +317,7 @@
           "position": 17
         }
       ],
-      "updatedAt": "2026-07-28T00:47:22.888Z"
+      "updatedAt": "2026-07-29T02:25:37.834Z"
     },
     "duplicator": {
       "allowedGuildIds": [],
@@ -395,6 +411,21 @@
         "allowBotEntries": false,
         "defaultWinnerCount": 1
       }
+    },
+    "goodbye": {
+      "analytics": {
+        "failed": 0,
+        "lastFailedAt": null,
+        "lastSentAt": null,
+        "sent": 0,
+        "skipped": 0
+      },
+      "channelId": null,
+      "createdAt": "2026-07-29T01:07:24.115Z",
+      "enabled": false,
+      "ignoreBots": true,
+      "templateId": "goodbye_default",
+      "updatedAt": "2026-07-29T01:07:24.115Z"
     },
     "invites": {
       "analytics": {
@@ -499,6 +530,22 @@
         "defaultChannelId": null
       }
     },
+    "reactionRoles": {
+      "analytics": {
+        "assigned": 0,
+        "removed": 0
+      },
+      "createdAt": "2026-07-29T01:07:24.127Z",
+      "drafts": {},
+      "enabled": true,
+      "panels": {},
+      "settings": {
+        "allowSelfRemove": true,
+        "auditLog": true,
+        "dailyTimedRoleCheck": true
+      },
+      "updatedAt": "2026-07-29T01:07:24.128Z"
+    },
     "roles": {
       "analytics": {
         "assigned": 0,
@@ -520,7 +567,7 @@
         "completed": 0,
         "created": 0,
         "failures": 0,
-        "lastProcessedAt": "2026-07-28T01:19:22.063Z",
+        "lastProcessedAt": "2026-07-29T02:26:36.946Z",
         "remindersSent": 0,
         "rsvps": 0,
         "waitlisted": 0
@@ -538,7 +585,7 @@
         "defaultTimezone": "UTC"
       },
       "templates": {},
-      "updatedAt": "2026-07-28T01:19:22.064Z"
+      "updatedAt": "2026-07-29T02:26:36.949Z"
     },
     "security": {
       "criticalIncidents": 0,
@@ -617,7 +664,7 @@
         "assigned": 0,
         "expired": 0,
         "failed": 0,
-        "lastScanAt": "2026-07-28T00:47:22.032Z",
+        "lastScanAt": "2026-07-29T02:25:36.914Z",
         "removed": 0
       },
       "assignments": {},
@@ -627,7 +674,7 @@
         "auditLog": true,
         "removeExpiredOnStartup": true
       },
-      "updatedAt": "2026-07-28T00:47:22.034Z"
+      "updatedAt": "2026-07-29T02:25:36.916Z"
     },
     "tempVoice": {
       "channels": {},
@@ -686,6 +733,21 @@
       },
       "tickets": []
     },
+    "timedRoles": {
+      "analytics": {
+        "assigned": 0,
+        "removed": 0
+      },
+      "createdAt": "2026-07-29T01:07:23.228Z",
+      "enabled": true,
+      "rules": {},
+      "settings": {
+        "allowSelfRemove": true,
+        "auditLog": true,
+        "dailyTimedRoleCheck": true
+      },
+      "updatedAt": "2026-07-29T01:07:23.228Z"
+    },
     "timeline": {
       "enabled": true,
       "events": [],
@@ -726,7 +788,110 @@
       },
       "userPreferences": {}
     },
-    "updatedAt": "2026-07-28T01:19:22.064Z"
+    "updatedAt": "2026-07-29T02:26:36.949Z",
+    "verification": {
+      "analytics": {
+        "accountAgeBlocked": 0,
+        "alreadyVerified": 0,
+        "botBlocked": 0,
+        "cooldownBlocked": 0,
+        "failed": 0,
+        "lastFailedAt": null,
+        "lastPendingRoleAssignedAt": null,
+        "lastScreeningCompletedAt": null,
+        "lastVerificationAt": null,
+        "membershipAgeBlocked": 0,
+        "pendingRolesAssigned": 0,
+        "requirementBlocked": 0,
+        "roleManageFailed": 0,
+        "screeningBlocked": 0,
+        "unavailable": 0,
+        "verified": 0
+      },
+      "attempts": {},
+      "createdAt": "2026-07-29T01:07:24.136Z",
+      "enabled": false,
+      "messages": {
+        "accountTooNew": "Your Discord account must be at least {minimumAccountAgeDays} day(s) old.",
+        "alreadyVerified": "You are already verified.",
+        "botBlocked": "Bot accounts cannot use this verification flow.",
+        "cooldown": "Please wait {cooldownSeconds} second(s) before trying again.",
+        "dmSuccess": "You are now verified in {server}.",
+        "failed": "Verification failed. Please contact a management member if this continues.",
+        "failureLog": "❌ {user} failed verification: {reason}",
+        "membershipTooNew": "You must remain in the server for at least {minimumMembershipAgeMinutes} minute(s) before verifying.",
+        "pendingAssigned": "Your pending verification role has been assigned in {server}.",
+        "pendingRoleRequired": "You do not currently have the required pending role.",
+        "screeningCompletedLog": "📜 {user} completed Discord Membership Screening.",
+        "screeningRequired": "Please complete Discord Membership Screening before continuing.",
+        "success": "Verification complete. Welcome to {server}.",
+        "successLog": "✅ {user} completed verification.",
+        "unavailable": "Verification is currently unavailable. Please contact a management member."
+      },
+      "panels": {},
+      "panelTemplate": {
+        "buttonEmoji": null,
+        "buttonLabel": "Verify",
+        "buttonStyle": "success",
+        "color": "#57f287",
+        "description": "Press the button below to verify and unlock the server.",
+        "footer": "Goliath Verification",
+        "imageUrl": null,
+        "thumbnailUrl": null,
+        "title": "Server Verification"
+      },
+      "settings": {
+        "allowReverification": false,
+        "allowStaffBypass": false,
+        "assignPendingRoles": false,
+        "attemptCooldownSeconds": 10,
+        "blockBots": true,
+        "dmOnPendingRole": false,
+        "dmOnVerify": true,
+        "logChannelId": null,
+        "logFailure": true,
+        "logScreeningCompletion": true,
+        "logSuccess": true,
+        "maximumFailedAttempts": 0,
+        "method": "button",
+        "minimumAccountAgeDays": 0,
+        "minimumMembershipAgeMinutes": 0,
+        "pendingRoleIds": [],
+        "pendingRoleTiming": "after_screening",
+        "removePendingRole": true,
+        "removePendingRoles": true,
+        "requirePendingRole": false,
+        "skipScreeningIfUnavailable": true,
+        "unverifiedRoleId": null,
+        "usePendingRoles": false,
+        "verificationChannelId": null,
+        "verifiedRoleId": null,
+        "verifiedRoleIds": [],
+        "waitForDiscordScreening": false
+      },
+      "updatedAt": "2026-07-29T01:07:24.137Z"
+    },
+    "welcome": {
+      "allowUserPing": true,
+      "analytics": {
+        "dmFailed": 0,
+        "dmSent": 0,
+        "lastDmSentAt": null,
+        "lastFailedAt": null,
+        "lastPublicSentAt": null,
+        "publicFailed": 0,
+        "publicSent": 0,
+        "skipped": 0
+      },
+      "channelId": null,
+      "createdAt": "2026-07-29T01:07:23.254Z",
+      "dmEnabled": false,
+      "dmTemplateId": null,
+      "enabled": false,
+      "ignoreBots": true,
+      "templateId": "welcome_default",
+      "updatedAt": "2026-07-29T01:07:23.255Z"
+    }
   },
   "subscription": {
     "expiresAt": null,
@@ -734,5 +899,5 @@
     "source": "system",
     "status": "active"
   },
-  "updatedAt": "2026-07-28T01:19:22.065Z"
+  "updatedAt": "2026-07-29T02:26:36.951Z"
 }
