@@ -1,6 +1,7 @@
 'use strict';
 
 const { PermissionFlagsBits } = require('discord.js');
+const guildManager = require('../../../core/guild/guildManager');
 const { getModuleSection, saveModuleSection, updateModuleSection } = require('../../../core/guild/moduleSectionManager');
 
 const SECTION = 'invites';
@@ -20,7 +21,6 @@ const normalizeRoleIds = (value) => [...new Set((Array.isArray(value) ? value : 
 
 function defaults() {
   return {
-    enabled: false,
     settings: {
       trackingEnabled: true,
       autoRepair: true,
@@ -98,10 +98,9 @@ function normalize(section = {}) {
     const normalized = normalizeInviteLink(link, code);
     if (normalized.code) inviteLinks[normalized.code] = normalized;
   }
-  return {
+  const normalized = {
     ...base,
     ...clone(section),
-    enabled: section.enabled === true,
     settings: {
       ...base.settings,
       ...settings,
@@ -153,12 +152,14 @@ function normalize(section = {}) {
     createdAt: section.createdAt || base.createdAt,
     updatedAt: now(),
   };
+  delete normalized.enabled;
+  return normalized;
 }
 
 function getSection(guildId) { return normalize(getModuleSection(guildId, SECTION, defaults())); }
 function saveSection(guildId, section, meta = {}) { return normalize(saveModuleSection(guildId, SECTION, normalize(section), meta)); }
 function updateSection(guildId, updater, meta = {}) { return normalize(updateModuleSection(guildId, SECTION, (current) => { const normalized = normalize(current); return normalize(typeof updater === 'function' ? updater(clone(normalized)) : updater); }, defaults(), meta)); }
-function setEnabled(guildId, enabled, meta = {}) { return updateSection(guildId, (section) => ({ ...section, enabled: enabled === true }), meta); }
+function setEnabled(guildId, enabled, meta = {}) { guildManager.setModuleEnabled(guildId, SECTION, enabled === true, meta); return { ...getSection(guildId), enabled: guildManager.isModuleEnabled(guildId, SECTION) }; }
 function updateSettings(guildId, patch = {}, meta = {}) { return updateSection(guildId, (section) => ({ ...section, settings: { ...section.settings, ...patch } }), meta); }
 function addHistory(guildId, entry, meta = {}) { return updateSection(guildId, (section) => ({ ...section, history: [...section.history, { id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, at: now(), ...entry }].slice(-1000) }), meta); }
 function addAnalytics(guildId, patch, meta = {}) { return updateSection(guildId, (section) => { const analytics = { ...section.analytics }; for (const [key, value] of Object.entries(patch)) analytics[key] = typeof value === 'number' ? Number(analytics[key] || 0) + value : value; return { ...section, analytics }; }, meta).analytics; }
@@ -248,8 +249,9 @@ async function applyRewards(guild, inviterId, meta = {}) { const section = getSe
 
 async function trackJoin(member, meta = {}) {
   const guild = member.guild;
+  if (!guildManager.isModuleEnabled(guild.id, SECTION)) return null;
   const section = getSection(guild.id);
-  if (!section.enabled || !section.settings.trackingEnabled || (member.user.bot && section.settings.ignoreBots)) return null;
+  if (!section.settings.trackingEnabled || (member.user.bot && section.settings.ignoreBots)) return null;
   let used = null;
   try { used = await resolveUsedInvite(guild); } catch { addAnalytics(guild.id, { failures: 1 }, meta); }
   const managedRecord = used?.code ? section.inviteLinks[used.code] : null;
@@ -267,8 +269,8 @@ async function trackJoin(member, meta = {}) {
 async function trackLeave(member, meta = {}) { const section = getSection(member.guild.id); const record = section.members[member.id]; if (!record || record.leftAt) return null; updateSection(member.guild.id, (current) => { const inviters = { ...current.inviters }; if (record.inviterId && current.settings.removeOnLeave) { const stats = inviterStats(current, record.inviterId); stats.active = Math.max(0, stats.active - 1); stats.left += 1; inviters[record.inviterId] = stats; } return { ...current, inviters, members: { ...current.members, [member.id]: { ...record, leftAt: now() } } }; }, meta); addAnalytics(member.guild.id, { leaves: 1, lastLeaveAt: now() }, meta); return record; }
 function leaderboard(guildId, limit = 25) { const section = getSection(guildId); const personalOwners = new Set(listInviteLinks(guildId).filter((link) => link.personal).map((link) => link.inviterId)); return Object.values(section.inviters).filter((entry) => personalOwners.has(entry.inviterId)).map((entry) => ({ ...entry, score: Number(entry.active || 0) + Number(entry.bonus || 0) })).sort((a, b) => b.score - a.score || b.total - a.total).slice(0, Math.max(1, Math.min(100, Number(limit || 25)))); }
 function setBonus(guildId, inviterId, bonus, meta = {}) { const id = cleanId(inviterId); if (!id) throw new Error('A valid inviter is required.'); return updateSection(guildId, (section) => { const stats = inviterStats(section, id); stats.bonus = Math.max(-100000, Math.min(100000, Number(bonus || 0))); return { ...section, inviters: { ...section.inviters, [id]: stats } }; }, meta).inviters[id]; }
-async function buildHealth(guild) { const section = getSection(guild.id); const issues = []; const warnings = []; const me = guild.members.me; if (!me?.permissions.has(PermissionFlagsBits.CreateInstantInvite)) issues.push({ code: 'create_invite_missing' }); if (section.settings.memberInviteTemplate.roleIds.length && !me?.permissions.has(PermissionFlagsBits.ManageRoles)) issues.push({ code: 'manage_roles_missing' }); if (!section.settings.officialInvite.channelId) warnings.push({ code: 'official_invite_channel_missing' }); if (!section.settings.memberInviteTemplate.channelId) warnings.push({ code: 'member_invite_channel_missing' }); return { module: SECTION, healthy: issues.length === 0, enabled: section.enabled, issues, warnings, checkedAt: now() }; }
+async function buildHealth(guild) { const section = getSection(guild.id); const issues = []; const warnings = []; const me = guild.members.me; if (!me?.permissions.has(PermissionFlagsBits.CreateInstantInvite)) issues.push({ code: 'create_invite_missing' }); if (section.settings.memberInviteTemplate.roleIds.length && !me?.permissions.has(PermissionFlagsBits.ManageRoles)) issues.push({ code: 'manage_roles_missing' }); if (!section.settings.officialInvite.channelId) warnings.push({ code: 'official_invite_channel_missing' }); if (!section.settings.memberInviteTemplate.channelId) warnings.push({ code: 'member_invite_channel_missing' }); return { module: SECTION, healthy: issues.length === 0, enabled: guildManager.isModuleEnabled(guild.id, SECTION), issues, warnings, checkedAt: now() }; }
 async function repair(guild, meta = {}) { await syncGuild(guild, meta).catch(() => null); if (getSection(guild.id).settings.officialInvite.channelId) await ensureOfficialInvite(guild, meta).catch(() => null); return buildHealth(guild); }
-async function startup(client) { if (client.__goliathInvitesStarted) return; client.__goliathInvitesStarted = true; const panels = require('./invitesPublicPanels'); for (const guild of client.guilds.cache.values()) { await syncGuild(guild, { action: 'invites_startup_sync' }).catch(() => null); panels.startAutoRefresh(guild, TWO_HOURS_MS); } }
+async function startup(client) { if (client.__goliathInvitesStarted) return; client.__goliathInvitesStarted = true; const panels = require('./invitesPublicPanels'); for (const guild of client.guilds.cache.values()) { if (!guildManager.isModuleEnabled(guild.id, SECTION)) continue; await syncGuild(guild, { action: 'invites_startup_sync' }).catch(() => null); panels.startAutoRefresh(guild, TWO_HOURS_MS); } }
 
 module.exports = { SECTION, TWO_HOURS_MS, defaults, getSection, setEnabled, updateSettings, addHistory, syncGuild, trackJoin, trackLeave, leaderboard, setBonus, createInviteLink, deleteInviteLink, listInviteLinks, listAdminInviteLinks, findPersonalInvite, createPersonalInvite, deletePersonalInvite, ensureOfficialInvite, buildHealth, repair, startup, applyInviteRoles, exportConfiguration: getSection, reset: (guildId, meta = {}) => saveSection(guildId, defaults(), meta) };
