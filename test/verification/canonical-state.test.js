@@ -73,6 +73,14 @@ test('timed roles member join is guarded by canonical module state', () => {
   assert.doesNotMatch(source, /section\.enabled/);
 });
 
+test('timed roles API reports and writes canonical module state', () => {
+  const source = read('src/modules/roleStudio/timedRoles/timedRolesRoute.js');
+  assert.match(source, /guildManager\.isModuleEnabled\(id, 'timedRoles'\)/);
+  assert.match(source, /guildManager\.setModuleEnabled\(id, 'timedRoles', req\.body\?\.enabled === true/);
+  assert.doesNotMatch(source, /timedRoles\.setEnabled/);
+  assert.doesNotMatch(source, /enabled: config\.enabled !== false/);
+});
+
 test('leveling message tracking reads canonical module state', () => {
   const source = read('src/modules/communityStudio/leveling/levelingTracking.js');
   assert.match(source, /isModuleEnabled\(message\.guild\.id, 'leveling'\)/);
