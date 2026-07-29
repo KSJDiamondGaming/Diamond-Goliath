@@ -3,6 +3,7 @@
 // src/modules/utilityStudio/translation/translationStore.js
 // Stores all translation config in modules.translation through guildManager/moduleSectionManager.
 
+const guildManager = require('../../../core/guild/guildManager');
 const {
   getModuleSection,
   saveModuleSection,
@@ -97,7 +98,6 @@ function defaultTranslationSection() {
   const providerSettings = normalizeProviderSettings();
 
   return {
-    enabled: false,
     provider: 'manual',
     providerSettings,
     settings: {
@@ -217,10 +217,9 @@ function normalizeTranslationSection(section = {}) {
     ...(isPlainObject(source.providerSettings) ? source.providerSettings : {}),
   });
 
-  return {
+  const normalized = {
     ...base,
     ...clone(source),
-    enabled: source.enabled === true,
     provider,
     providerSettings,
     settings: {
@@ -276,6 +275,8 @@ function normalizeTranslationSection(section = {}) {
     createdAt: source.createdAt || base.createdAt,
     updatedAt: source.updatedAt || now(),
   };
+  delete normalized.enabled;
+  return normalized;
 }
 
 function getTranslationSection(guildId) {
@@ -301,11 +302,8 @@ function updateTranslationSection(guildId, updater, guildOrMeta = {}) {
 }
 
 function setTranslationEnabled(guildId, enabled = true, guildOrMeta = {}) {
-  return updateTranslationSection(guildId, (section) => ({
-    ...section,
-    enabled: Boolean(enabled),
-    updatedAt: now(),
-  }), guildOrMeta);
+  guildManager.setModuleEnabled(guildId, MODULE, enabled === true, guildOrMeta);
+  return { ...getTranslationSection(guildId), enabled: guildManager.isModuleEnabled(guildId, MODULE) };
 }
 
 function saveChannelConfig(guildId, channelId, config = {}, guildOrMeta = {}) {
