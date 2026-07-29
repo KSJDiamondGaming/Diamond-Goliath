@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 const express = require('express');
 const guildManager = require('../../../core/guild/guildManager');
@@ -44,7 +44,7 @@ function buildVerificationStats(guildId) {
   const settings = section.settings || {};
   const panels = Object.values(section.panels || {});
   return {
-    enabled: section.enabled === true,
+    enabled: guildManager.isModuleEnabled(guildId, 'verification'),
     verificationChannelId: settings.verificationChannelId || null,
     logChannelId: settings.logChannelId || null,
     verifiedRoles: countArray(settings.verifiedRoleIds),
