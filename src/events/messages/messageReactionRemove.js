@@ -27,9 +27,11 @@ module.exports = {
       return null;
     });
 
-    await runHandler('Reaction Roles', () => handleReactionRemove(reaction, user, client));
     if (!guildId) return;
 
+    if (isModuleEnabled(guildId, 'reactionRoles')) {
+      await runHandler('Reaction Roles', () => handleReactionRemove(reaction, user, client));
+    }
     if (isModuleEnabled(guildId, 'giveaways')) {
       await runHandler('Giveaways', () => leaveGiveawayReaction(reaction, user));
     }
