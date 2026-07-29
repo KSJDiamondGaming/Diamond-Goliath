@@ -67,6 +67,18 @@ test('invite tracking dispatch reads canonical module state', () => {
   assert.doesNotMatch(source, /section\.enabled/);
 });
 
+test('invites core removes duplicate module state and uses canonical runtime gates', () => {
+  const source = read('src/modules/communityStudio/invites/invites.js');
+  const defaults = source.slice(source.indexOf('function defaults()'), source.indexOf('function normalizeReward('));
+  assert.doesNotMatch(defaults, /enabled\s*:/);
+  assert.match(source, /delete normalized\.enabled;/);
+  assert.match(source, /guildManager\.setModuleEnabled\(guildId, SECTION, enabled === true, meta\)/);
+  assert.match(source, /guildManager\.isModuleEnabled\(guild\.id, SECTION\)/);
+  assert.doesNotMatch(source, /section\.enabled/);
+  assert.match(source, /enabled: memberTemplate\.enabled !== false/);
+  assert.match(source, /enabled: item\.enabled !== false/);
+});
+
 test('timed roles member join is guarded by canonical module state', () => {
   const source = read('src/events/timedroles/timedRolesMemberJoin.js');
   assert.match(source, /guildManager\.isModuleEnabled\(member\.guild\.id, 'timedRoles'\)/);
