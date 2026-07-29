@@ -122,3 +122,9 @@ test('reaction roles API reports and writes canonical module state', () => {
   assert.match(source, /guildManager\.setModuleEnabled\(guildId, 'reactionRoles', req\.body\?\.enabled === true/);
   assert.doesNotMatch(source, /reactionRoles\.setEnabled/);
 });
+
+test('stats verification summary reads canonical module state', () => {
+  const source = read('src/modules/utilityStudio/stats/statsRoute.js');
+  assert.match(source, /enabled: guildManager\.isModuleEnabled\(guildId, 'verification'\)/);
+  assert.doesNotMatch(source, /enabled: section\.enabled === true/);
+});
