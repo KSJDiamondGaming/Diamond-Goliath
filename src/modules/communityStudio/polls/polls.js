@@ -141,7 +141,7 @@ function getPoll(guildId, pollId) {
 }
 function createPoll(guildId, payload = {}, meta = {}) {
   const section = getSection(guildId);
-  if (section.enabled === false) throw new Error('Polls are disabled.');
+  if (!guildManager.isModuleEnabled(guildId, MODULE_KEY)) throw new Error('Polls are disabled.');
   const question = cleanText(payload.question, 256);
   if (!question) throw new Error('Poll question is required.');
   const options = normalizeOptions(payload.options);
