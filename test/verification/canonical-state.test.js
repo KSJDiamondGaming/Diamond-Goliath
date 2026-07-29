@@ -187,6 +187,24 @@ test('stats verification summary reads canonical module state', () => {
   assert.doesNotMatch(source, /enabled: section\.enabled === true/);
 });
 
+test('stats runtime and store use canonical module state', () => {
+  const source = read('src/modules/utilityStudio/stats/statsStore.js');
+  const defaults = source.slice(source.indexOf('const DEFAULT_STATS = {'), source.indexOf('function copy('));
+  assert.doesNotMatch(defaults, /enabled\s*:/);
+  assert.match(source, /delete normalized\.enabled;/);
+  assert.match(source, /guildManager\.setModuleEnabled\(guildId, MODULE_KEY, enabled === true, guildOrMeta\)/);
+  assert.match(source, /guildManager\.isModuleEnabled\(guildId, MODULE_KEY\)/);
+  assert.doesNotMatch(source, /stats\.enabled !== true/);
+  assert.match(source, /enabled: isEnabled\(guildId\)/);
+});
+
+test('stats API reports and writes canonical module state', () => {
+  const source = read('src/modules/utilityStudio/stats/statsRoute.js');
+  assert.match(source, /enabled: guildManager\.isModuleEnabled\(guildId, 'stats'\)/);
+  assert.match(source, /guildManager\.setModuleEnabled\(guildId, 'stats', req\.body\.enabled/);
+  assert.doesNotMatch(source, /const allowed = \['enabled'/);
+});
+
 test('temp voice API reports and writes canonical module state', () => {
   const source = read('src/server/routes/tempVoice.js');
   assert.match(source, /enabled: isModuleEnabled\(guildId, 'tempVoice'\)/);
