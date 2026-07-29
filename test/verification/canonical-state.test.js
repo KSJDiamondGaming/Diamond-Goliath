@@ -116,6 +116,18 @@ test('schedule tracking reads canonical module state', () => {
   assert.doesNotMatch(source, /section\.enabled/);
 });
 
+test('schedule runtime and store use canonical module state', () => {
+  const source = read('src/modules/utilityStudio/schedule/schedule.js');
+  const defaults = source.slice(source.indexOf('function defaultSection()'), source.indexOf('function validTimezone('));
+  assert.doesNotMatch(defaults, /enabled\s*:/);
+  assert.match(source, /delete normalized\.enabled;/);
+  assert.match(source, /guildManager\.setModuleEnabled\(guildId, SECTION, enabled === true, meta\)/);
+  assert.match(source, /guildManager\.isModuleEnabled\(guild\.id, SECTION\)/);
+  assert.doesNotMatch(source, /section\.enabled/);
+  assert.match(source, /enabled: event\.enabled !== false/);
+  assert.match(source, /event\.enabled === false/);
+});
+
 test('translation startup and message runtime read canonical module state', () => {
   const startup = read('src/modules/utilityStudio/translation/translationStartup.js');
   const messages = read('src/events/messages/messageCreate.js');
