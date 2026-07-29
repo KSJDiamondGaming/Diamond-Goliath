@@ -229,3 +229,11 @@ test('forms API reports and writes canonical module state', () => {
   assert.doesNotMatch(settingsRoute, /enabled: req\.body\?\.enabled !== false/);
   assert.match(source, /form\.enabled !== false/);
 });
+
+test('giveaways runtime reads canonical module state', () => {
+  const source = read('src/modules/communityStudio/giveaways/giveawaysManager.js');
+  assert.match(source, /guildManager\.isModuleEnabled\(guild\.id, 'giveaways'\)/);
+  assert.match(source, /guildManager\.isModuleEnabled\(guildId, 'giveaways'\)/);
+  assert.doesNotMatch(source, /section\.enabled === false/);
+  assert.match(source, /giveaway\.status !== 'active'/);
+});
