@@ -1,6 +1,7 @@
 'use strict';
 
 const { PermissionFlagsBits } = require('discord.js');
+const guildManager = require('../../../core/guild/guildManager');
 const {
   getModuleSection,
   saveModuleSection,
@@ -51,7 +52,6 @@ function defaultAnalytics() {
 
 function defaultGoodbyeSection() {
   return {
-    enabled: false,
     channelId: null,
     templateId: 'goodbye_default',
     ignoreBots: true,
@@ -78,10 +78,9 @@ function normalizeGoodbyeSection(section = {}) {
   const base = defaultGoodbyeSection();
   const source = section && typeof section === 'object' ? section : {};
   const channelId = cleanDiscordId(source.channelId || source.leaveChannelId || source.goodbyeChannelId);
-  return {
+  const normalized = {
     ...base,
     ...clone(source),
-    enabled: source.enabled === true || (source.enabled !== false && Boolean(channelId)),
     channelId,
     templateId: cleanString(source.templateId || base.templateId, base.templateId, 120),
     ignoreBots: source.ignoreBots !== false,
@@ -89,6 +88,8 @@ function normalizeGoodbyeSection(section = {}) {
     createdAt: source.createdAt || base.createdAt,
     updatedAt: source.updatedAt || now(),
   };
+  delete normalized.enabled;
+  return normalized;
 }
 
 function getGoodbyeSection(guildId) {
@@ -114,13 +115,14 @@ function updateGoodbyeSection(guildId, updater, meta = {}) {
 }
 
 function updateConfig(guildId, patch = {}, meta = {}) {
+  const { enabled, ...configPatch } = patch || {};
+  if (typeof enabled === 'boolean') guildManager.setModuleEnabled(guildId, MODULE, enabled, meta);
   return updateGoodbyeSection(guildId, (section) => ({
     ...section,
-    ...patch,
-    channelId: patch.channelId === undefined ? section.channelId : cleanDiscordId(patch.channelId),
-    templateId: patch.templateId === undefined ? section.templateId : cleanString(patch.templateId, section.templateId, 120),
-    enabled: typeof patch.enabled === 'boolean' ? patch.enabled : section.enabled,
-    ignoreBots: typeof patch.ignoreBots === 'boolean' ? patch.ignoreBots : section.ignoreBots,
+    ...configPatch,
+    channelId: configPatch.channelId === undefined ? section.channelId : cleanDiscordId(configPatch.channelId),
+    templateId: configPatch.templateId === undefined ? section.templateId : cleanString(configPatch.templateId, section.templateId, 120),
+    ignoreBots: typeof configPatch.ignoreBots === 'boolean' ? configPatch.ignoreBots : section.ignoreBots,
     updatedAt: now(),
   }), meta);
 }
@@ -302,7 +304,7 @@ async function sendGoodbye(member, options = {}) {
   }
 
   const config = getGoodbyeSection(member.guild.id);
-  if (!options.force && config.enabled === false) {
+  if (!options.force && !guildManager.isModuleEnabled(member.guild.id, MODULE)) {
     if (!options.previewOnly) incrementAnalytics(member.guild.id, { skipped: 1 });
     return { sent: false, failed: false, skipped: true, reason: 'disabled', errors: [] };
   }
@@ -335,6 +337,7 @@ async function sendGoodbye(member, options = {}) {
 async function buildHealthReport(guild) {
   if (!guild?.id) throw new Error('Guild is required.');
   const config = getGoodbyeSection(guild.id);
+  const enabled = guildManager.isModuleEnabled(guild.id, MODULE);
   const channel = config.channelId ? await resolveGoodbyeChannel(guild, config.channelId) : null;
   const botMember = guild.members?.me || guild.members?.cache?.get(guild.client?.user?.id) || null;
   const permissions = channel && botMember ? channel.permissionsFor(botMember) : null;
@@ -344,8 +347,8 @@ async function buildHealthReport(guild) {
   const binding = getGoodbyeBinding(guild.id);
   const activeTemplate = getAssignedTemplate(guild.id, config);
   const warnings = [
-    config.enabled === false ? 'Goodbye is disabled.' : null,
-    config.enabled && !config.channelId ? 'No goodbye channel is configured.' : null,
+    !enabled ? 'Goodbye is disabled.' : null,
+    enabled && !config.channelId ? 'No goodbye channel is configured.' : null,
     config.channelId && !channel ? `Configured goodbye channel ${config.channelId} no longer exists or is not text-based.` : null,
     channel && !canView ? 'Goliath cannot view the goodbye channel.' : null,
     channel && !canSend ? 'Goliath cannot send messages in the goodbye channel.' : null,
@@ -354,7 +357,7 @@ async function buildHealthReport(guild) {
   ].filter(Boolean);
 
   return {
-    enabled: config.enabled !== false,
+    enabled,
     channelId: config.channelId,
     channelExists: Boolean(channel),
     channelName: channel?.name || null,
@@ -377,7 +380,6 @@ async function repairConfiguration(guild, meta = {}) {
   return updateConfig(guild.id, {
     channelId: channel ? config.channelId : null,
     templateId: template?.templateId || 'goodbye_default',
-    enabled: Boolean(channel) && config.enabled,
   }, { action: 'goodbye_repair', ...meta });
 }
 
@@ -400,9 +402,9 @@ async function startupGoodbye(client) {
   const results = [];
   for (const guild of client.guilds.cache.values()) {
     try {
-      const config = getGoodbyeSection(guild.id);
+      const enabled = guildManager.isModuleEnabled(guild.id, MODULE);
       const health = await buildHealthReport(guild);
-      results.push({ guildId: guild.id, guildName: guild.name, enabled: config.enabled !== false, healthy: health.healthy, warnings: health.warnings });
+      results.push({ guildId: guild.id, guildName: guild.name, enabled, healthy: health.healthy, warnings: health.warnings });
     } catch (error) {
       results.push({ guildId: guild.id, guildName: guild.name, enabled: false, healthy: false, warnings: [error.message || 'Goodbye startup check failed.'] });
     }
