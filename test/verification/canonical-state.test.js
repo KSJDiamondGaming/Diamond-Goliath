@@ -193,3 +193,16 @@ test('goodbye API reports and writes canonical module state', () => {
   assert.doesNotMatch(source, /enabled: config\.enabled !== false/);
   assert.match(source, /dmEnabled: dmConfig\.enabled/);
 });
+
+test('goodbye runtime and store use canonical module state', () => {
+  const source = read('src/modules/messageStudio/goodbye/goodbye.js');
+  const defaults = source.slice(source.indexOf('function defaultGoodbyeSection()'), source.indexOf('function normalizeAnalytics('));
+  assert.doesNotMatch(defaults, /enabled\s*:/);
+  assert.match(source, /delete normalized\.enabled;/);
+  assert.match(source, /guildManager\.setModuleEnabled\(guildId, MODULE, enabled, meta\)/);
+  assert.match(source, /guildManager\.isModuleEnabled\(member\.guild\.id, MODULE\)/);
+  assert.match(source, /const enabled = guildManager\.isModuleEnabled\(guild\.id, MODULE\)/);
+  assert.doesNotMatch(source, /config\.enabled === false/);
+  const repair = source.slice(source.indexOf('async function repairConfiguration'), source.indexOf('function exportConfiguration'));
+  assert.doesNotMatch(repair, /enabled\s*:/);
+});
