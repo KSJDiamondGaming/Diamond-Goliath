@@ -1,12 +1,14 @@
 'use strict';
 
 const translationThreadManager = require('./translationThreadManager');
+const { isModuleEnabled } = require('../../../core/guild/guildManager');
 
 async function startupTranslation(client) {
   const guilds = [...(client.guilds?.cache?.values?.() || [])];
   const results = [];
 
   for (const guild of guilds) {
+    if (!isModuleEnabled(guild.id, 'translation')) continue;
     const guildResults = await translationThreadManager.recoverGuildThreads(guild);
     results.push({ guildId: guild.id, guildName: guild.name, results: guildResults });
   }
