@@ -3,6 +3,7 @@
 const express = require('express');
 const { normalizeBotMode } = require('../../config/botModes');
 const security = require('../../core/security/securityCore');
+const guildManager = require('../../core/guild/guildManager');
 const translationStore = require('../../modules/utilityStudio/translation/translationStore');
 
 const router = express.Router();
@@ -89,7 +90,7 @@ function buildGuildOverview(guild, environment = RUNTIME_MODE) {
     guildId,
     guildName,
     environment,
-    enabled: section.enabled === true,
+    enabled: guildManager.isModuleEnabled(guildId, 'translation'),
     provider: section.settings?.provider || 'manual',
     autoDetect: section.settings?.autoDetect !== false,
     threadMode: section.settings?.threadMode !== false,
