@@ -415,7 +415,6 @@ function exportConfiguration(guildId) {
 }
 
 function resetAutoRoles(guildId, meta = {}) {
-  guildManager.setModuleEnabled(guildId, MODULE, true, meta);
   return resetAutoRolesSection(guildId, meta);
 }
 
