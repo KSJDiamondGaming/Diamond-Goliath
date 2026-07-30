@@ -323,3 +323,15 @@ test('social studio panel reports and writes canonical module state', () => {
   assert.match(source, /creator\.enabled = creator\.enabled === false/);
   assert.match(source, /account\.enabled = account\.enabled === false/);
 });
+
+test('auto roles reset preserves canonical module state', () => {
+  const runtime = read('src/modules/roleStudio/autoRoles/autoRoles.js');
+  const route = read('src/modules/roleStudio/autoRoles/autoRolesRoute.js');
+  const reset = runtime.slice(runtime.indexOf('function resetAutoRoles('), runtime.indexOf('async function startupAutoRoles'));
+  assert.match(reset, /return resetAutoRolesSection\(guildId, meta\);/);
+  assert.doesNotMatch(reset, /setModuleEnabled/);
+  const routeReset = route.slice(route.indexOf("router.post('/:guildId/reset'"), route.indexOf("router.get('/:guildId/export'"));
+  assert.doesNotMatch(routeReset, /wasEnabled/);
+  assert.doesNotMatch(routeReset, /setAutoRolesEnabled/);
+  assert.match(routeReset, /autoroles\.resetAutoRoles\(guildId, \{ actorId: getActorId\(req\) \}\)/);
+});
