@@ -57,11 +57,10 @@ function saveMonitorState(guildId, config, monitorUpdates, analyticsDelta, histo
 
       const latestHistory = Array.isArray(latest.history) ? latest.history : [];
       const history = [...latestHistory, ...(historyEntries || [])].slice(-1000);
-
       return { ...latest, accounts, analytics, history, updatedAt: now() };
     },
     {},
-    guild || { guildId }
+    guild || { guildId },
   );
 
   return { ...updated, enabled: guildManager.isModuleEnabled(guildId, 'social') };
@@ -93,7 +92,7 @@ function addHistory(config, event) {
 
 function enabledAlert(account, type) {
   const supported = providerInfo(account.platform).supportedAlertTypes || [];
-  const configured = Array.isArray(account.alertTypes) && account.alertTypes.length ? account.alertTypes : supported;
+  const configured = Array.isArray(account.alertTypes) ? account.alertTypes : supported;
   return supported.includes(type) && configured.includes(type);
 }
 
@@ -171,15 +170,21 @@ async function checkGuildAccounts(client, guildId, options = {}) {
     const config = configFor(guildId);
     if (!config.enabled && !options.manual) return { guildId, skipped: true, reason: 'module_disabled', results: [] };
     const interval = Math.max(60000, Number(config.settings?.checkIntervalMs || 300000));
+    const accountFilter = new Set((options.accountIds || []).map(String));
+    const creatorFilter = new Set((options.creatorIds || []).map(String));
     const results = [];
     const monitorUpdates = new Map();
     const analyticsStart = { ...config.analytics };
     const historyStartLength = config.history.length;
 
     for (const account of Object.values(config.accounts)) {
-      if (!account || account.enabled === false) continue;
+      if (!account) continue;
+      if (accountFilter.size && !accountFilter.has(String(account.accountId))) continue;
       const creator = creatorFor(config, account.accountId);
-      if (creator?.enabled === false) continue;
+      if (creatorFilter.size && !creatorFilter.has(String(creator?.creatorId || ''))) continue;
+      if (account.enabled === false && !options.includeDisabled) continue;
+      if (creator?.enabled === false && !options.includeDisabled) continue;
+
       const previous = account.state && typeof account.state === 'object' ? { ...account.state } : {};
       const lastChecked = previous.lastCheckedAt ? new Date(previous.lastCheckedAt).getTime() : 0;
       if (!options.manual && !options.force && lastChecked && Date.now() - lastChecked < interval) continue;
@@ -239,6 +244,7 @@ async function checkGuildAccounts(client, guildId, options = {}) {
           state.lastAlertKey = key;
           state.lastAlertAt = now();
           state.lastAlertMessageId = message.id;
+          state.lastDeliveryError = null;
           config.analytics.alertsSent = Number(config.analytics.alertsSent || 0) + 1;
           addHistory(config, { status: 'alert_sent', accountId: account.accountId, creator: creator?.displayName || account.displayName, platform: account.platform, alertType: event.type, contentId: event.id || null, messageId: message.id });
           delivered.push({ type: event.type, id: event.id || null, messageId: message.id });
@@ -258,7 +264,24 @@ async function checkGuildAccounts(client, guildId, options = {}) {
         avatar: account.avatar || null,
         updatedAt: account.updatedAt,
       });
-      results.push({ accountId: account.accountId, platform: account.platform, username: account.username, externalId: account.externalId || null, status: checked.status, isLive: checked.isLive, reason: checked.reason || null, events: events.map((event) => ({ type: event.type, id: event.id })), delivered });
+      results.push({
+        accountId: account.accountId,
+        creatorId: creator?.creatorId || null,
+        creator: creator?.displayName || account.displayName || null,
+        platform: account.platform,
+        username: account.username,
+        externalId: account.externalId || null,
+        profileUrl: account.profileUrl || null,
+        status: checked.status,
+        isLive: checked.isLive,
+        reason: checked.reason || null,
+        providerSource: checked.providerSource || null,
+        confidence: checked.confidence || null,
+        live: checked.event || null,
+        contentItems,
+        events: events.map((event) => ({ type: event.type, id: event.id })),
+        delivered,
+      });
     }
 
     if (monitorUpdates.size) {
