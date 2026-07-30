@@ -64,7 +64,6 @@ function normalizeAutomodConfig(config = {}) {
   const safeConfig = config && typeof config === 'object' && !Array.isArray(config) ? config : {};
 
   return {
-    enabled: normalizeBoolean(safeConfig.enabled, false),
     dmUser: normalizeBoolean(safeConfig.dmUser, true),
     dmMessages: normalizeDmMessages(safeConfig.dmMessages),
 
@@ -120,13 +119,20 @@ function mergeAutomodConfig(current, patch) {
   };
 }
 
+function canonicalConfig(guildId, config) {
+  return {
+    ...config,
+    enabled: guildManager.isModuleEnabled(guildId, 'automod'),
+  };
+}
+
 router.get('/:guildId', (req, res) => {
   try {
     const { guildId } = req.params;
     if (!guildId) return res.status(400).json({ ok: false, error: 'Missing guild ID.' });
 
     const config = normalizeAutomodConfig(guildManager.getGuildSection(guildId, 'automod', {}));
-    return res.json({ ok: true, guildId, config });
+    return res.json({ ok: true, guildId, config: canonicalConfig(guildId, config) });
   } catch (error) {
     console.error('AutoMod load failed:', error);
     return res.status(500).json({ ok: false, error: 'Failed to load automod config.', message: error.message });
@@ -139,12 +145,17 @@ router.post('/:guildId', (req, res) => {
     const body = getBody(req);
     if (!guildId) return res.status(400).json({ ok: false, error: 'Missing guild ID.' });
 
+    if (Object.prototype.hasOwnProperty.call(body, 'enabled')) {
+      guildManager.setModuleEnabled(guildId, 'automod', body.enabled === true);
+    }
+    const { enabled: _enabled, ...configPatch } = body;
     const current = normalizeAutomodConfig(guildManager.getGuildSection(guildId, 'automod', {}));
-    const payload = normalizeAutomodConfig(mergeAutomodConfig(current, body));
+    const payload = normalizeAutomodConfig(mergeAutomodConfig(current, configPatch));
     const config = guildManager.replaceGuildSection(guildId, 'automod', payload);
+    const responseConfig = canonicalConfig(guildId, config);
 
-    emitGuildUpdate(guildId, { section: 'automod', data: config });
-    return res.json({ ok: true, guildId, config });
+    emitGuildUpdate(guildId, { section: 'automod', data: responseConfig });
+    return res.json({ ok: true, guildId, config: responseConfig });
   } catch (error) {
     console.error('AutoMod save failed:', error);
     return res.status(500).json({ ok: false, error: 'Failed to save automod config.', message: error.message });
@@ -157,8 +168,9 @@ router.post('/:guildId/reset', (req, res) => {
     if (!guildId) return res.status(400).json({ ok: false, error: 'Missing guild ID.' });
 
     const config = guildManager.replaceGuildSection(guildId, 'automod', normalizeAutomodConfig({}));
-    emitGuildUpdate(guildId, { section: 'automod', data: config });
-    return res.json({ ok: true, guildId, config });
+    const responseConfig = canonicalConfig(guildId, config);
+    emitGuildUpdate(guildId, { section: 'automod', data: responseConfig });
+    return res.json({ ok: true, guildId, config: responseConfig });
   } catch (error) {
     console.error('AutoMod reset failed:', error);
     return res.status(500).json({ ok: false, error: 'Failed to reset automod config.', message: error.message });
