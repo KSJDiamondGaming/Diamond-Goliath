@@ -24,12 +24,7 @@ async function repair(guild, meta = {}) {
     settings: verificationStore.normalizeSettings(current.settings || {}),
     messages: verificationStore.normalizeMessages(current.messages || {}),
     panelTemplate: verificationStore.normalizePanelTemplate(current.panelTemplate || {}),
-    panels: Object.fromEntries(
-      Object.entries(current.panels || {}).map(([panelId, panel]) => [
-        panelId,
-        verificationStore.normalizePanel({ ...panel, panelId }),
-      ])
-    ),
+    panels: { ...(current.panels || {}) },
     updatedAt: new Date().toISOString(),
   }), { action: 'verification_health_repair', ...meta });
 
