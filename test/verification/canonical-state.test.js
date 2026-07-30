@@ -241,6 +241,8 @@ test('temp voice store removes duplicate module state without removing hub state
   const defaults = source.slice(source.indexOf('function defaultTempVoiceSection()'), source.indexOf('function normalizeHub('));
   assert.doesNotMatch(defaults, /enabled\s*:/);
   assert.match(source, /delete normalized\.enabled;/);
+  assert.doesNotMatch(source, /enabled: source\.enabled !== false/);
+  assert.match(source, /enabled: hub\.enabled !== false/);
   assert.match(source, /hub\.enabled !== false && hub\.joinChannelId/);
 });
 
