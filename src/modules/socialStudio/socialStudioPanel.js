@@ -39,7 +39,7 @@ function getConfig(guildId) {
   const section = guild?.modules?.social && typeof guild.modules.social === 'object' ? guild.modules.social : {};
   return {
     ...section,
-    enabled: section.enabled !== false,
+    enabled: guildManager.isModuleEnabled(guildId, 'social'),
     alertsChannelId: section.alertsChannelId || null,
     managerRoleIds: Array.isArray(section.managerRoleIds) ? section.managerRoleIds : [],
     accounts: section.accounts && typeof section.accounts === 'object' ? section.accounts : {},
@@ -53,13 +53,14 @@ function getConfig(guildId) {
 }
 
 function saveConfig(guildId, config, guild, actorId = null) {
-  const next = { ...config, enabled: config.enabled !== false, updatedAt: now(), lastActorId: actorId };
+  const { enabled: _enabled, ...storedConfig } = config;
+  const next = { ...storedConfig, updatedAt: now(), lastActorId: actorId };
   guildManager.replaceGuildSection(guildId, 'social', next, guild);
   const saved = guildManager.reloadGuild(guildId)?.modules?.social;
   if (!saved || typeof saved !== 'object') throw new Error('Social Studio could not verify its saved guild data.');
   for (const id of Object.keys(next.creators || {})) if (!saved.creators?.[id]) throw new Error(`Creator profile ${id} was not persisted.`);
   for (const id of Object.keys(next.accounts || {})) if (!saved.accounts?.[id]) throw new Error(`Social account ${id} was not persisted.`);
-  return saved;
+  return { ...saved, enabled: guildManager.isModuleEnabled(guildId, 'social') };
 }
 
 function getAccountSession(interaction) {
@@ -507,7 +508,7 @@ async function handleInteraction(interaction) {
   if (id.startsWith(`${P}template:save:`)) { const type = id.split(':')[3]; config.templates[type] = { title: interaction.fields.getTextInputValue('title'), description: interaction.fields.getTextInputValue('description'), buttonLabel: interaction.fields.getTextInputValue('buttonLabel') }; saveConfig(interaction.guildId, config, interaction.guild, actorId); return afterModal(interaction, 'templates', `✅ ${type} template saved.`); }
   if (id === `${P}feed:channel` || id === `${P}channel:alerts`) { config.alertsChannelId = interaction.values?.[0] || null; saveConfig(interaction.guildId, config, interaction.guild, actorId); return respond(interaction, buildSectionPanel(interaction, id.includes('feed') ? 'feeds' : 'channels')); }
   if (id === `${P}roles:select`) { config.managerRoleIds = interaction.values || []; saveConfig(interaction.guildId, config, interaction.guild, actorId); return respond(interaction, buildSectionPanel(interaction, 'roles')); }
-  if (id === `${P}toggle`) { config.enabled = !config.enabled; saveConfig(interaction.guildId, config, interaction.guild, actorId); return respond(interaction, buildSectionPanel(interaction, 'notifications')); }
+  if (id === `${P}toggle`) { guildManager.setModuleEnabled(interaction.guildId, 'social', !config.enabled, { actorId }); return respond(interaction, buildSectionPanel(interaction, 'notifications')); }
   if (id === `${P}account:check`) { const count = Object.values(config.accounts).filter((account) => account.enabled !== false).length; config.analytics.checks = Number(config.analytics.checks || 0) + count; saveConfig(interaction.guildId, config, interaction.guild, actorId); return respond(interaction, buildSectionPanel(interaction, 'accounts')); }
   if (id === `${P}creator:rebuild`) { const linked = new Set(Object.values(config.creators).flatMap((creator) => creator.accountIds || [])); for (const account of Object.values(config.accounts)) { if (linked.has(account.accountId)) continue; const creatorId = makeId('creator'); config.creators[creatorId] = { creatorId, displayName: account.displayName || account.username, group: '', tags: [account.platform], notes: '', enabled: true, accountIds: [account.accountId], createdAt: now(), updatedAt: now() }; } saveConfig(interaction.guildId, config, interaction.guild, actorId); return respond(interaction, buildSectionPanel(interaction, 'creators')); }
   if (id === `${P}test`) { if (!config.alertsChannelId) throw new Error('Choose an alert channel first.'); const channel = interaction.guild.channels.cache.get(config.alertsChannelId) || await interaction.guild.channels.fetch(config.alertsChannelId).catch(() => null); if (!channel?.isTextBased?.() || typeof channel.send !== 'function') throw new Error('The configured alert channel is unavailable.'); await channel.send({ embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('📣 Social Studio Test').setDescription('Your Social Studio notification channel is working.').setTimestamp()] }); return true; }
