@@ -7,8 +7,19 @@ const { checkAccount, providerInfo } = require('./socialStudioProviders');
 const runningGuilds = new Set();
 let timer = null;
 
+const PLATFORM = {
+  twitch: { label: 'Twitch', icon: '🟣', color: 0x9146FF },
+  youtube: { label: 'YouTube', icon: '🔴', color: 0xFF0000 },
+  tiktok: { label: 'TikTok', icon: '⚫', color: 0x111111 },
+  kick: { label: 'Kick', icon: '🟢', color: 0x53FC18 },
+  facebook: { label: 'Facebook', icon: '🔵', color: 0x1877F2 },
+  instagram: { label: 'Instagram', icon: '🟠', color: 0xE1306C },
+  x: { label: 'X', icon: '⚪', color: 0x000000 },
+};
+
 const now = () => new Date().toISOString();
-const clean = (value, max = 2000) => String(value || '').trim().slice(0, max);
+const clean = (value, max = 2000) => String(value ?? '').trim().slice(0, max);
+const intText = (value) => Number.isFinite(Number(value)) ? Number(value).toLocaleString('en-GB') : '';
 
 function configFor(guildId) {
   const guild = guildManager.reloadGuild(guildId);
@@ -17,6 +28,7 @@ function configFor(guildId) {
     ...social,
     enabled: guildManager.isModuleEnabled(guildId, 'social'),
     alertsChannelId: social.alertsChannelId || null,
+    alertChannels: social.alertChannels && typeof social.alertChannels === 'object' ? social.alertChannels : {},
     accounts: social.accounts && typeof social.accounts === 'object' ? social.accounts : {},
     creators: social.creators && typeof social.creators === 'object' ? social.creators : {},
     templates: social.templates && typeof social.templates === 'object' ? social.templates : {},
@@ -64,6 +76,7 @@ function saveMonitorState(guildId, config, monitorUpdates, analyticsDelta, histo
           ...survivor,
           ...(alertTypes.length ? { alertTypes } : {}),
           alertChannelId: survivor.alertChannelId || duplicate.alertChannelId || null,
+          alertChannels: { ...(duplicate.alertChannels || {}), ...(survivor.alertChannels || {}) },
           mentionMode: survivor.mentionMode && survivor.mentionMode !== 'none' ? survivor.mentionMode : duplicate.mentionMode || survivor.mentionMode || 'none',
           mentionRoleId: survivor.mentionRoleId || duplicate.mentionRoleId || null,
           createdAt: survivor.createdAt || duplicate.createdAt,
@@ -99,10 +112,7 @@ function creatorFor(config, accountId) {
 }
 
 function identityToken(value) {
-  return String(value || '')
-    .normalize('NFKD')
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, '');
+  return String(value || '').normalize('NFKD').toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
 function validTikTokHandle(value) {
@@ -147,18 +157,19 @@ function resolvedDuplicateIds(config, account, checked, creator) {
 
 function templateFor(config, type) {
   const defaults = {
-    live: { title: '{creator} is now live', description: '{title}', buttonLabel: 'Watch live' },
-    vod: { title: 'New VOD from {creator}', description: '{title}', buttonLabel: 'Watch VOD' },
-    clip: { title: 'New clip from {creator}', description: '{title}', buttonLabel: 'Watch clip' },
-    upload: { title: '{creator} uploaded a new video', description: '{title}', buttonLabel: 'Watch now' },
-    short: { title: '{creator} posted a new short', description: '{title}', buttonLabel: 'Watch now' },
-    post: { title: '{creator} shared a new post', description: '{title}', buttonLabel: 'View post' },
+    live: { title: '🔴 {creator} is LIVE', description: '**{title}**', buttonLabel: 'Watch Live' },
+    ended: { title: '⚫ {creator} has ended their stream', description: '**{title}**', buttonLabel: 'View Channel' },
+    vod: { title: '🎞️ New VOD from {creator}', description: '**{title}**', buttonLabel: 'Watch VOD' },
+    clip: { title: '🎬 New clip from {creator}', description: '**{title}**', buttonLabel: 'Watch Clip' },
+    upload: { title: '📺 New upload from {creator}', description: '**{title}**', buttonLabel: 'Watch Now' },
+    short: { title: '📱 New short from {creator}', description: '**{title}**', buttonLabel: 'Watch Now' },
+    post: { title: '📰 New post from {creator}', description: '**{title}**', buttonLabel: 'View Post' },
   };
   return { ...(defaults[type] || defaults.upload), ...(config.templates?.[type] || {}) };
 }
 
 function render(value, vars) {
-  return String(value || '').replace(/\{(creator|title|platform|url|category|viewers|duration)\}/g, (_match, key) => vars[key] || '');
+  return String(value || '').replace(/\{([A-Za-z][A-Za-z0-9]*)\}/g, (_match, key) => vars[key] ?? '');
 }
 
 function addHistory(config, event) {
@@ -171,9 +182,32 @@ function enabledAlert(account, type) {
   return supported.includes(type) && configured.includes(type);
 }
 
+function secondsBetween(start, end) {
+  const a = new Date(start).getTime();
+  const b = new Date(end).getTime();
+  return Number.isFinite(a) && Number.isFinite(b) && b >= a ? Math.floor((b - a) / 1000) : null;
+}
+
 function eventCandidates(account, previous, checked) {
   const events = [];
   if (checked.isLive === true && previous.isLive !== true && checked.event) events.push(checked.event);
+
+  if (checked.isLive === false && previous.isLive === true && enabledAlert(account, 'ended')) {
+    const prior = previous.lastLiveEvent && typeof previous.lastLiveEvent === 'object' ? previous.lastLiveEvent : {};
+    const endedAt = checked.checkedAt || now();
+    events.push({
+      type: 'ended',
+      id: `ended:${previous.liveEventId || prior.id || account.accountId}:${endedAt}`,
+      title: prior.title || `${account.username || account.displayName || 'Creator'} stream ended`,
+      url: prior.url || account.profileUrl || account.url || '',
+      thumbnail: prior.thumbnail || null,
+      category: prior.category || null,
+      startedAt: previous.liveStartedAt || prior.startedAt || null,
+      endedAt,
+      durationSeconds: secondsBetween(previous.liveStartedAt || prior.startedAt, endedAt),
+      peakViewers: previous.peakViewers || prior.viewerCount || null,
+    });
+  }
 
   const contentItems = Array.isArray(checked.contentItems) && checked.contentItems.length
     ? checked.contentItems
@@ -191,50 +225,227 @@ function eventCandidates(account, previous, checked) {
 
 function discordTimestamp(value, style = 'R') {
   const ms = new Date(value).getTime();
-  return Number.isFinite(ms) ? `<t:${Math.floor(ms / 1000)}:${style}>` : null;
+  return Number.isFinite(ms) ? `<t:${Math.floor(ms / 1000)}:${style}>` : '';
+}
+
+function humanDuration(seconds) {
+  const value = Number(seconds);
+  if (!Number.isFinite(value) || value < 0) return '';
+  const h = Math.floor(value / 3600);
+  const m = Math.floor((value % 3600) / 60);
+  const s = Math.floor(value % 60);
+  return [h ? `${h}h` : '', m ? `${m}m` : '', !h && s ? `${s}s` : ''].filter(Boolean).join(' ');
+}
+
+function colorHex(color) {
+  return `#${Number(color || 0).toString(16).padStart(6, '0').toUpperCase()}`;
+}
+
+function parseTemplateColor(value, fallback) {
+  const raw = clean(value, 16).replace(/^#/, '');
+  return /^[0-9a-f]{6}$/i.test(raw) ? Number.parseInt(raw, 16) : fallback;
+}
+
+function accountAge(createdAt) {
+  const created = new Date(createdAt).getTime();
+  if (!Number.isFinite(created)) return '';
+  return humanDuration(Math.floor((Date.now() - created) / 1000));
+}
+
+async function resolveLinkedMember(discordGuild, account, creator) {
+  const id = clean(account.discordUserId || creator?.discordUserId || creator?.userId);
+  if (!/^\d{15,22}$/.test(id)) return null;
+  return discordGuild.members.cache.get(id) || await discordGuild.members.fetch(id).catch(() => null);
+}
+
+function variableMap(discordGuild, member, account, creator, event) {
+  const platform = PLATFORM[account.platform] || { label: account.platform || 'Unknown', icon: '🌐', color: 0x5865F2 };
+  const creatorName = creator?.displayName || account.displayName || account.username || 'Creator';
+  const profile = account.profileUrl || account.url || '';
+  const url = event.url || profile;
+  const duration = clean(event.duration) || humanDuration(event.durationSeconds);
+  const viewers = intText(event.viewerCount);
+  const views = intText(event.viewCount);
+  const peak = intText(event.peakViewers);
+  const started = discordTimestamp(event.startedAt);
+  const published = discordTimestamp(event.publishedAt);
+  const user = member?.user || null;
+  const userCreated = user?.createdAt || null;
+  const joined = member?.joinedAt || null;
+  const timestampValue = event.publishedAt || event.startedAt || event.endedAt || now();
+  const thumb = event.thumbnail || '';
+  const description = clean(event.description || event.summary || '');
+
+  return {
+    creator: creatorName,
+    creatorName,
+    creatorDisplayName: creatorName,
+    creatorAvatar: account.avatar || creator?.avatar || '',
+    creatorBanner: creator?.banner || '',
+    creatorDescription: creator?.description || creator?.notes || '',
+    platform: platform.label,
+    platformIcon: platform.icon,
+    platformColor: colorHex(platform.color),
+    username: account.username || '',
+    displayName: account.displayName || creatorName,
+    channelId: account.externalId || '',
+    profileUrl: profile,
+    title: event.title || '',
+    description,
+    game: event.category || event.game || '',
+    category: event.category || event.game || '',
+    viewers,
+    views,
+    peakViewers: peak,
+    started,
+    duration,
+    liveThumbnail: event.type === 'live' ? thumb : '',
+    thumbnail: thumb,
+    liveUrl: event.type === 'live' ? url : profile,
+    videoTitle: ['vod', 'upload'].includes(event.type) ? event.title || '' : '',
+    videoDescription: ['vod', 'upload'].includes(event.type) ? description : '',
+    videoDuration: ['vod', 'upload'].includes(event.type) ? duration : '',
+    videoViews: ['vod', 'upload'].includes(event.type) ? views : '',
+    videoThumbnail: ['vod', 'upload'].includes(event.type) ? thumb : '',
+    videoUrl: ['vod', 'upload'].includes(event.type) ? url : '',
+    clipTitle: event.type === 'clip' ? event.title || '' : '',
+    clipCreator: event.type === 'clip' ? event.creatorName || event.creator || creatorName : '',
+    clipViews: event.type === 'clip' ? views : '',
+    clipUrl: event.type === 'clip' ? url : '',
+    uploadTitle: event.type === 'upload' ? event.title || '' : '',
+    uploadDescription: event.type === 'upload' ? description : '',
+    uploadThumbnail: event.type === 'upload' ? thumb : '',
+    uploadUrl: event.type === 'upload' ? url : '',
+    shortTitle: event.type === 'short' ? event.title || '' : '',
+    shortThumbnail: event.type === 'short' ? thumb : '',
+    shortUrl: event.type === 'short' ? url : '',
+    url,
+    published,
+    userId: user?.id || '',
+    userTag: user?.tag || user?.username || '',
+    userName: user?.username || '',
+    userGlobalName: user?.globalName || '',
+    userMention: user?.id ? `<@${user.id}>` : '',
+    userNoPing: user?.id ? `<@${user.id}>`.replace('@', '@\u200b') : '',
+    userAvatar: user?.displayAvatarURL?.({ size: 1024 }) || '',
+    userServerAvatar: member?.displayAvatarURL?.({ size: 1024 }) || '',
+    userNickname: member?.nickname || '',
+    userDisplay: member?.displayName || user?.globalName || user?.username || '',
+    userCreatedAt: userCreated ? userCreated.toISOString() : '',
+    userCreatedTimestamp: userCreated ? `<t:${Math.floor(userCreated.getTime() / 1000)}:F>` : '',
+    userJoinedAt: joined ? joined.toISOString() : '',
+    userJoinedTimestamp: joined ? `<t:${Math.floor(joined.getTime() / 1000)}:F>` : '',
+    createdAt: event.publishedAt || event.startedAt || event.endedAt || '',
+    joinedAt: joined ? joined.toISOString() : '',
+    leftAt: event.leftAt || '',
+    timestamp: discordTimestamp(timestampValue, 'F'),
+    accountAge: accountAge(userCreated),
+    membershipDuration: accountAge(joined),
+    departureIcon: event.departureIcon || '',
+    departureType: event.departureType || '',
+    departureLabel: event.departureLabel || '',
+    departureReason: event.departureReason || '',
+    departureModerator: event.departureModerator || '',
+    departureModeratorId: event.departureModeratorId || '',
+    nowTimestamp: `<t:${Math.floor(Date.now() / 1000)}:F>`,
+    successEmoji: '✅',
+    warningEmoji: '⚠️',
+    errorEmoji: '❌',
+    proofVerifiedEmoji: '✅',
+    successColor: '#57F287',
+    warningColor: '#FEE75C',
+    errorColor: '#ED4245',
+    proofVerifiedColor: '#57F287',
+    guildId: discordGuild.id,
+    guildName: discordGuild.name,
+    server: discordGuild.name,
+    guildIcon: discordGuild.iconURL?.({ size: 1024 }) || '',
+    serverIcon: discordGuild.iconURL?.({ size: 1024 }) || '',
+    guildBanner: discordGuild.bannerURL?.({ size: 2048 }) || '',
+    guildMemberCount: String(discordGuild.memberCount || ''),
+    memberCount: String(discordGuild.memberCount || ''),
+    guildVanityCode: discordGuild.vanityURLCode || '',
+  };
+}
+
+async function resolveAlertChannel(discordGuild, config, account, eventType) {
+  const candidates = [
+    account.alertChannels?.[eventType],
+    account.alertChannelId,
+    config.alertChannels?.[eventType],
+    config.alertsChannelId,
+  ].filter(Boolean);
+
+  for (const channelId of [...new Set(candidates)]) {
+    const channel = discordGuild.channels.cache.get(channelId) || await discordGuild.channels.fetch(channelId).catch(() => null);
+    if (channel?.isTextBased?.() && typeof channel.send === 'function') return channel;
+  }
+  if (!candidates.length) throw new Error(`No Social Studio notification channel is configured for ${eventType}.`);
+  throw new Error(`No configured Social Studio channel for ${eventType} is currently available.`);
 }
 
 async function sendEvent(client, guildId, config, account, creator, event) {
   const discordGuild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
   if (!discordGuild) throw new Error('Discord guild is unavailable.');
-  const channelId = account.alertChannelId || config.alertsChannelId;
-  if (!channelId) throw new Error('No Social Studio notification channel is configured.');
-  const channel = discordGuild.channels.cache.get(channelId) || await discordGuild.channels.fetch(channelId).catch(() => null);
-  if (!channel?.isTextBased?.() || typeof channel.send !== 'function') throw new Error('Configured Social Studio notification channel is unavailable.');
-
-  const creatorName = creator?.displayName || account.displayName || account.username;
-  const url = event.url || account.profileUrl || account.url || '';
-  const viewerText = Number.isFinite(Number(event.viewerCount)) ? Number(event.viewerCount).toLocaleString('en-GB') : '';
-  const durationText = clean(event.duration || (Number.isFinite(Number(event.durationSeconds)) ? `${Math.floor(Number(event.durationSeconds) / 60)}m ${Number(event.durationSeconds) % 60}s` : ''));
-  const vars = { creator: creatorName, title: event.title || '', platform: account.platform, url, category: event.category || '', viewers: viewerText, duration: durationText };
+  const channel = await resolveAlertChannel(discordGuild, config, account, event.type);
+  const member = await resolveLinkedMember(discordGuild, account, creator);
+  const vars = variableMap(discordGuild, member, account, creator, event);
   const template = templateFor(config, event.type);
+  const platform = PLATFORM[account.platform] || { label: account.platform || 'Unknown', icon: '🌐', color: 0x5865F2 };
+  const creatorName = vars.creator;
+  const url = vars.url;
+  const profileUrl = account.profileUrl || account.url || '';
+  const durationText = vars.duration;
+  const embedColor = parseTemplateColor(render(template.color || '', vars), platform.color);
+
   const embed = new EmbedBuilder()
-    .setColor(event.type === 'live' ? 0xED4245 : 0x5865F2)
+    .setColor(embedColor)
     .setTitle(clean(render(template.title, vars), 256) || `${creatorName} update`)
     .setDescription(clean(render(template.description, vars), 4096) || clean(event.title, 4096) || `${creatorName} has a new ${event.type}.`)
-    .setFooter({ text: `${account.platform.toUpperCase()} • Social Studio` })
+    .setFooter({ text: clean(render(template.footer || `${platform.label} • Social Studio`, vars), 2048) || `${platform.label} • Social Studio` })
     .setTimestamp();
 
-  if (event.thumbnail && /^https?:\/\//i.test(event.thumbnail)) embed.setImage(event.thumbnail);
-  if (account.avatar && /^https?:\/\//i.test(account.avatar)) embed.setThumbnail(account.avatar);
+  const authorIcon = account.avatar || creator?.avatar || null;
+  const author = { name: `${platform.icon} ${creatorName}` };
+  if (/^https?:\/\//i.test(authorIcon || '')) author.iconURL = authorIcon;
+  if (/^https?:\/\//i.test(profileUrl)) author.url = profileUrl;
+  embed.setAuthor(author);
+
+  if (/^https?:\/\//i.test(event.thumbnail || '')) embed.setImage(event.thumbnail);
+  if (/^https?:\/\//i.test(account.avatar || '')) embed.setThumbnail(account.avatar);
 
   const fields = [];
-  if (event.category) fields.push({ name: 'Category', value: clean(event.category, 1024), inline: true });
-  if (viewerText) fields.push({ name: 'Viewers', value: viewerText, inline: true });
-  if (Number.isFinite(Number(event.viewCount))) fields.push({ name: 'Views', value: Number(event.viewCount).toLocaleString('en-GB'), inline: true });
-  if (durationText) fields.push({ name: 'Duration', value: durationText, inline: true });
+  if (event.category || event.game) fields.push({ name: '🎮 Category', value: clean(event.category || event.game, 1024), inline: true });
+  if (vars.viewers) fields.push({ name: '👥 Viewers', value: vars.viewers, inline: true });
+  if (vars.peakViewers) fields.push({ name: '📈 Peak', value: vars.peakViewers, inline: true });
+  if (Number.isFinite(Number(event.viewCount))) fields.push({ name: '👁️ Views', value: intText(event.viewCount), inline: true });
+  if (durationText) fields.push({ name: '⏱️ Duration', value: durationText, inline: true });
   const started = discordTimestamp(event.startedAt);
-  if (started) fields.push({ name: 'Started', value: started, inline: true });
+  if (started) fields.push({ name: '🟢 Started', value: started, inline: true });
+  const ended = discordTimestamp(event.endedAt);
+  if (ended) fields.push({ name: '⚫ Ended', value: ended, inline: true });
   const published = discordTimestamp(event.publishedAt);
-  if (published) fields.push({ name: 'Published', value: published, inline: true });
+  if (published) fields.push({ name: '📅 Published', value: published, inline: true });
   if (fields.length) embed.addFields(fields.slice(0, 25));
 
-  const components = /^https?:\/\//i.test(url)
-    ? [new ActionRowBuilder().addComponents(new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(url).setLabel(clean(template.buttonLabel || 'Open', 80)))]
-    : [];
+  const buttons = [];
+  if (/^https?:\/\//i.test(url)) buttons.push(new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(url).setLabel(clean(render(template.buttonLabel || 'Open', vars), 80) || 'Open'));
+  if (/^https?:\/\//i.test(profileUrl) && profileUrl !== url) buttons.push(new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(profileUrl).setLabel('Creator Profile'));
+  const components = buttons.length ? [new ActionRowBuilder().addComponents(buttons.slice(0, 5))] : [];
+
   const mentionMode = account.mentionMode || 'none';
   const content = mentionMode === 'everyone' ? '@everyone' : mentionMode === 'here' ? '@here' : mentionMode === 'role' && account.mentionRoleId ? `<@&${account.mentionRoleId}>` : undefined;
-  return channel.send({ content, embeds: [embed], components, allowedMentions: { parse: mentionMode === 'everyone' || mentionMode === 'here' ? ['everyone'] : [], roles: account.mentionRoleId ? [account.mentionRoleId] : [] } });
+  const message = await channel.send({
+    content,
+    embeds: [embed],
+    components,
+    allowedMentions: {
+      parse: mentionMode === 'everyone' || mentionMode === 'here' ? ['everyone'] : [],
+      roles: account.mentionRoleId ? [account.mentionRoleId] : [],
+    },
+  });
+  message.socialStudioChannelId = channel.id;
+  return message;
 }
 
 async function checkGuildAccounts(client, guildId, options = {}) {
@@ -282,7 +493,15 @@ async function checkGuildAccounts(client, guildId, options = {}) {
       if (typeof checked.isLive === 'boolean') {
         state.isLive = checked.isLive;
         state.liveEventId = checked.isLive ? checked.event?.id || previous.liveEventId || null : null;
-        if (checked.isLive && previous.isLive !== true) state.liveStartedAt = checked.event?.startedAt || checked.checkedAt || now();
+        if (checked.isLive) {
+          state.lastLiveEvent = checked.event ? { ...checked.event } : previous.lastLiveEvent || null;
+          const viewers = Number(checked.event?.viewerCount);
+          if (Number.isFinite(viewers)) state.peakViewers = previous.isLive === true ? Math.max(Number(previous.peakViewers || 0), viewers) : viewers;
+        }
+        if (checked.isLive && previous.isLive !== true) {
+          state.liveStartedAt = checked.event?.startedAt || checked.checkedAt || now();
+          state.peakViewers = Number.isFinite(Number(checked.event?.viewerCount)) ? Number(checked.event.viewerCount) : 0;
+        }
         if (!checked.isLive && previous.isLive === true) state.lastLiveEndedAt = checked.checkedAt || now();
       }
 
@@ -328,10 +547,11 @@ async function checkGuildAccounts(client, guildId, options = {}) {
           state.lastAlertKey = key;
           state.lastAlertAt = now();
           state.lastAlertMessageId = message.id;
+          state.lastAlertChannelId = message.socialStudioChannelId || message.channelId || null;
           state.lastDeliveryError = null;
           config.analytics.alertsSent = Number(config.analytics.alertsSent || 0) + 1;
-          addHistory(config, { status: 'alert_sent', accountId: account.accountId, creator: creator?.displayName || account.displayName, platform: account.platform, alertType: event.type, contentId: event.id || null, messageId: message.id });
-          delivered.push({ type: event.type, id: event.id || null, messageId: message.id });
+          addHistory(config, { status: 'alert_sent', accountId: account.accountId, creator: creator?.displayName || account.displayName, platform: account.platform, alertType: event.type, contentId: event.id || null, messageId: message.id, channelId: state.lastAlertChannelId });
+          delivered.push({ type: event.type, id: event.id || null, messageId: message.id, channelId: state.lastAlertChannelId });
         } catch (error) {
           state.lastDeliveryError = error.message;
           config.analytics.failures = Number(config.analytics.failures || 0) + 1;
