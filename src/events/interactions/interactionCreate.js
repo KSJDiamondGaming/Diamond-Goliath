@@ -185,6 +185,8 @@ async function handleVerificationMemberInteraction(interaction) {
       member,
       user: interaction.user,
       customId: interaction.customId,
+      channelId: interaction.channelId || interaction.channel?.id,
+      messageId: interaction.message?.id || interaction.messageId,
     });
   })();
   verificationLocks.set(lockKey, operation);
