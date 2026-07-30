@@ -37,6 +37,17 @@ test('verification store removes module-level enabled state', () => {
   assert.match(source, /delete normalized\.enabled;/);
 });
 
+test('verification admin panel reports and writes canonical module state', () => {
+  const source = read('src/modules/securityStudio/verificationPanel.js');
+  assert.match(source, /enabled: guildManager\.isModuleEnabled\(guildId, 'verification'\)/);
+  assert.match(source, /guildManager\.setModuleEnabled\(interaction\.guild\.id, 'verification', customId\.endsWith\(':enable'\)/);
+  assert.doesNotMatch(source, /typeof admin\.enabled === 'boolean'/);
+  assert.doesNotMatch(source, /guildManager\.updateGuildSection\(guild\.id, 'modules'/);
+  assert.doesNotMatch(source, /configureVerification\(guild\.id, \{\s*enabled/);
+  const reset = source.slice(source.indexOf('function resetConfig('), source.indexOf('function yesNo('));
+  assert.doesNotMatch(reset, /setModuleEnabled/);
+});
+
 test('verification member events are guarded by canonical module state', () => {
   const source = read('src/events/members/memberJoinLeave.js');
   assert.match(source, /guildManager\.isModuleEnabled\(member\.guild\.id, 'verification'\)/);
