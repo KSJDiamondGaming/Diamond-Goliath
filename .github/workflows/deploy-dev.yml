@@ -22,4 +22,37 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
           port: 22
-          script: bash /home/goliath/deploy-dev.sh
+          script: |
+            set -euo pipefail
+
+            RUNTIME_DIR="/home/goliath/dev/src/runtime/dev"
+            RUNTIME_BACKUP="/home/goliath/.goliath-dev-runtime-deploy-backup"
+
+            rm -rf "$RUNTIME_BACKUP"
+            mkdir -p "$RUNTIME_BACKUP"
+
+            if [ -d "$RUNTIME_DIR" ]; then
+              cp -a "$RUNTIME_DIR/." "$RUNTIME_BACKUP/"
+            fi
+
+            restore_runtime() {
+              mkdir -p "$RUNTIME_DIR"
+              if [ -d "$RUNTIME_BACKUP" ]; then
+                cp -a "$RUNTIME_BACKUP/." "$RUNTIME_DIR/"
+              fi
+            }
+
+            cleanup() {
+              status=$?
+              restore_runtime
+              rm -rf "$RUNTIME_BACKUP"
+              exit "$status"
+            }
+
+            trap cleanup EXIT
+
+            bash /home/goliath/deploy-dev.sh
+
+            restore_runtime
+            trap - EXIT
+            rm -rf "$RUNTIME_BACKUP"
