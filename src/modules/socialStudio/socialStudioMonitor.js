@@ -15,7 +15,7 @@ function configFor(guildId) {
   const social = guild?.modules?.social && typeof guild.modules.social === 'object' ? guild.modules.social : {};
   return {
     ...social,
-    enabled: social.enabled !== false,
+    enabled: guildManager.isModuleEnabled(guildId, 'social'),
     alertsChannelId: social.alertsChannelId || null,
     accounts: social.accounts && typeof social.accounts === 'object' ? social.accounts : {},
     creators: social.creators && typeof social.creators === 'object' ? social.creators : {},
@@ -27,9 +27,10 @@ function configFor(guildId) {
 }
 
 function saveConfig(guildId, config, guild = null) {
-  const next = { ...config, updatedAt: now() };
+  const { enabled: _enabled, ...storedConfig } = config || {};
+  const next = { ...storedConfig, updatedAt: now() };
   guildManager.replaceGuildSection(guildId, 'social', next, guild || { guildId });
-  return guildManager.reloadGuild(guildId)?.modules?.social || next;
+  return { ...(guildManager.reloadGuild(guildId)?.modules?.social || next), enabled: guildManager.isModuleEnabled(guildId, 'social') };
 }
 
 function creatorFor(config, accountId) {
@@ -107,7 +108,7 @@ async function checkGuildAccounts(client, guildId, options = {}) {
   runningGuilds.add(guildId);
   try {
     const config = configFor(guildId);
-    if (config.enabled === false && !options.manual) return { guildId, skipped: true, reason: 'module_disabled', results: [] };
+    if (!config.enabled && !options.manual) return { guildId, skipped: true, reason: 'module_disabled', results: [] };
     const interval = Math.max(60000, Number(config.settings?.checkIntervalMs || 300000));
     const results = [];
     let dirty = false;
