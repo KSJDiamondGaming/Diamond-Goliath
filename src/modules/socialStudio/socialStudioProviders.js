@@ -1,8 +1,8 @@
 'use strict';
 
 const PROVIDERS = {
-  twitch: { label: 'Twitch', alertTypes: ['live'], env: ['TWITCH_CLIENT_ID', 'TWITCH_CLIENT_SECRET'] },
-  youtube: { label: 'YouTube', alertTypes: ['live', 'upload', 'short'], env: ['YOUTUBE_API_KEY'] },
+  twitch: { label: 'Twitch', alertTypes: ['live', 'vod', 'clip'], env: ['TWITCH_CLIENT_ID', 'TWITCH_CLIENT_SECRET'] },
+  youtube: { label: 'YouTube', alertTypes: ['live', 'vod', 'upload', 'short'], env: ['YOUTUBE_API_KEY'] },
   tiktok: { label: 'TikTok', alertTypes: ['live'], env: [] },
   kick: { label: 'Kick', alertTypes: ['live'], env: ['KICK_CLIENT_ID', 'KICK_CLIENT_SECRET'] },
   facebook: { label: 'Facebook', alertTypes: ['live', 'post'], envAny: [['FACEBOOK_ACCESS_TOKEN'], ['FACEBOOK_APP_ID', 'FACEBOOK_APP_SECRET']] },
@@ -60,7 +60,10 @@ function unavailable(platform, reason, status = 'unavailable') {
   return { platform, status, isLive: null, checkedAt: new Date().toISOString(), reason, providerSource: 'official_api' };
 }
 function result(platform, values = {}) {
-  return { platform, status: values.isLive === true ? 'live' : values.status || 'offline', isLive: values.isLive === true, checkedAt: new Date().toISOString(), providerSource: values.providerSource || 'official_api', ...values };
+  return { platform, status: values.isLive === true ? 'live' : values.status || 'offline', isLive: values.isLive === true, checkedAt: new Date().toISOString(), providerSource: values.providerSource || 'official_api', contentItems: Array.isArray(values.contentItems) ? values.contentItems : [], ...values };
+}
+function youtubeThumbnail(snippet = {}) {
+  return snippet.thumbnails?.maxres?.url || snippet.thumbnails?.standard?.url || snippet.thumbnails?.high?.url || snippet.thumbnails?.medium?.url || snippet.thumbnails?.default?.url || null;
 }
 
 async function checkTwitch(account) {
@@ -70,20 +73,42 @@ async function checkTwitch(account) {
   if (!identifier) return unavailable('twitch', 'Twitch username, channel ID or URL could not be resolved.');
   const byId = /^\d{4,20}$/.test(identifier);
   const headers = { Authorization: `Bearer ${token}`, 'Client-Id': process.env.TWITCH_CLIENT_ID };
-  const query = byId ? `user_id=${encodeURIComponent(identifier)}` : `user_login=${encodeURIComponent(identifier)}`;
-  const { json } = await request(`https://api.twitch.tv/helix/streams?${query}`, { headers });
-  const stream = json?.data?.[0];
-  let login = byId ? '' : identifier;
-  if (!login) {
-    try {
-      const { json: userJson } = await request(`https://api.twitch.tv/helix/users?id=${encodeURIComponent(identifier)}`, { headers });
-      login = clean(userJson?.data?.[0]?.login);
-    } catch { }
-  }
-  const url = login ? `https://www.twitch.tv/${encodeURIComponent(login)}` : profileUrl(account);
-  if (!stream) return result('twitch', { isLive: false, externalId: byId ? identifier : undefined, url });
-  login = clean(stream.user_login || login || identifier);
-  return result('twitch', { isLive: true, externalId: clean(stream.user_id || (byId ? identifier : '')) || undefined, event: { type: 'live', id: stream.id, title: stream.title || `${login} is live`, url: `https://www.twitch.tv/${encodeURIComponent(login)}`, thumbnail: clean(stream.thumbnail_url).replace('{width}', '1280').replace('{height}', '720'), viewerCount: stream.viewer_count, startedAt: stream.started_at, category: stream.game_name } });
+  const userQuery = byId ? `id=${encodeURIComponent(identifier)}` : `login=${encodeURIComponent(identifier)}`;
+  const { json: userJson } = await request(`https://api.twitch.tv/helix/users?${userQuery}`, { headers });
+  const user = userJson?.data?.[0];
+  if (!user?.id) return unavailable('twitch', 'Twitch channel could not be resolved.');
+
+  const [streamRes, videoRes, clipRes] = await Promise.all([
+    request(`https://api.twitch.tv/helix/streams?user_id=${encodeURIComponent(user.id)}`, { headers }),
+    request(`https://api.twitch.tv/helix/videos?user_id=${encodeURIComponent(user.id)}&first=1&type=archive`, { headers }).catch(() => ({ json: null })),
+    request(`https://api.twitch.tv/helix/clips?broadcaster_id=${encodeURIComponent(user.id)}&first=1`, { headers }).catch(() => ({ json: null })),
+  ]);
+
+  const stream = streamRes.json?.data?.[0] || null;
+  const video = videoRes.json?.data?.[0] || null;
+  const clip = clipRes.json?.data?.[0] || null;
+  const channelUrl = `https://www.twitch.tv/${encodeURIComponent(user.login)}`;
+  const contentItems = [];
+
+  if (video?.id) contentItems.push({
+    type: 'vod', id: String(video.id), title: video.title || `${user.display_name || user.login} VOD`, url: video.url || `${channelUrl}/videos`,
+    thumbnail: clean(video.thumbnail_url).replace('%{width}', '1280').replace('%{height}', '720'), duration: video.duration || null,
+    viewCount: video.view_count, publishedAt: video.published_at || video.created_at || null,
+  });
+  if (clip?.id) contentItems.push({
+    type: 'clip', id: String(clip.id), title: clip.title || `${user.display_name || user.login} clip`, url: clip.url,
+    thumbnail: clip.thumbnail_url || null, viewCount: clip.view_count, publishedAt: clip.created_at || null, duration: clip.duration || null,
+  });
+
+  return result('twitch', {
+    isLive: Boolean(stream), externalId: String(user.id), resolvedUsername: user.login, url: channelUrl, avatar: user.profile_image_url || null,
+    contentItems, latestContent: contentItems[0] || null,
+    event: stream ? {
+      type: 'live', id: String(stream.id), title: stream.title || `${user.display_name || user.login} is live`, url: channelUrl,
+      thumbnail: clean(stream.thumbnail_url).replace('{width}', '1280').replace('{height}', '720'), viewerCount: stream.viewer_count,
+      startedAt: stream.started_at, category: stream.game_name, language: stream.language,
+    } : null,
+  });
 }
 
 async function youtubeChannel(account, key) {
@@ -102,25 +127,50 @@ async function checkYouTube(account) {
   if (!key) return unavailable('youtube', 'Set YOUTUBE_API_KEY.', 'configuration_required');
   const channel = await youtubeChannel(account, key);
   if (!channel?.id) return unavailable('youtube', 'YouTube username, channel ID or URL could not be resolved.');
+
   const liveReq = request(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&eventType=live&channelId=${encodeURIComponent(channel.id)}&maxResults=1&key=${encodeURIComponent(key)}`);
   const uploadsId = channel.contentDetails?.relatedPlaylists?.uploads;
-  const uploadReq = uploadsId ? request(`https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&playlistId=${encodeURIComponent(uploadsId)}&maxResults=1&key=${encodeURIComponent(key)}`) : Promise.resolve({ json: null });
+  const uploadReq = uploadsId ? request(`https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&playlistId=${encodeURIComponent(uploadsId)}&maxResults=5&key=${encodeURIComponent(key)}`) : Promise.resolve({ json: null });
   const [{ json: liveJson }, { json: uploadJson }] = await Promise.all([liveReq, uploadReq]);
-  const live = liveJson?.items?.[0];
-  const latest = uploadJson?.items?.[0];
-  let latestContent = null;
-  if (latest?.contentDetails?.videoId) {
-    const videoId = latest.contentDetails.videoId;
-    let type = 'upload';
+  const live = liveJson?.items?.[0] || null;
+  const uploadItems = Array.isArray(uploadJson?.items) ? uploadJson.items : [];
+  const videoIds = uploadItems.map((item) => item.contentDetails?.videoId).filter(Boolean).slice(0, 5);
+  let detailsById = new Map();
+
+  if (videoIds.length) {
     try {
-      const { json: videoJson } = await request(`https://www.googleapis.com/youtube/v3/videos?part=contentDetails,snippet&id=${encodeURIComponent(videoId)}&key=${encodeURIComponent(key)}`);
-      const seconds = isoSeconds(videoJson?.items?.[0]?.contentDetails?.duration);
-      if (seconds !== null && seconds <= 60) type = 'short';
+      const { json: detailsJson } = await request(`https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,liveStreamingDetails,statistics&id=${encodeURIComponent(videoIds.join(','))}&key=${encodeURIComponent(key)}`);
+      detailsById = new Map((detailsJson?.items || []).map((video) => [video.id, video]));
     } catch { }
-    latestContent = { type, id: videoId, title: latest.snippet?.title || 'New YouTube video', url: `https://www.youtube.com/watch?v=${videoId}`, thumbnail: latest.snippet?.thumbnails?.high?.url || latest.snippet?.thumbnails?.medium?.url, publishedAt: latest.contentDetails?.videoPublishedAt || latest.snippet?.publishedAt };
   }
-  if (live?.id?.videoId) return result('youtube', { isLive: true, externalId: channel.id, event: { type: 'live', id: live.id.videoId, title: live.snippet?.title || 'YouTube LIVE', url: `https://www.youtube.com/watch?v=${live.id.videoId}`, thumbnail: live.snippet?.thumbnails?.high?.url || live.snippet?.thumbnails?.medium?.url, startedAt: live.snippet?.publishedAt }, latestContent });
-  return result('youtube', { isLive: false, externalId: channel.id, latestContent, url: `https://www.youtube.com/channel/${channel.id}` });
+
+  const contentItems = [];
+  for (const item of uploadItems) {
+    const id = item.contentDetails?.videoId;
+    if (!id || id === live?.id?.videoId) continue;
+    const details = detailsById.get(id) || {};
+    const snippet = details.snippet || item.snippet || {};
+    const seconds = isoSeconds(details.contentDetails?.duration);
+    let type = 'upload';
+    if (seconds !== null && seconds <= 60) type = 'short';
+    else if (details.liveStreamingDetails?.actualStartTime || details.liveStreamingDetails?.actualEndTime) type = 'vod';
+    contentItems.push({
+      type, id, title: snippet.title || 'New YouTube video', url: `https://www.youtube.com/watch?v=${id}`,
+      thumbnail: youtubeThumbnail(snippet), publishedAt: item.contentDetails?.videoPublishedAt || snippet.publishedAt || null,
+      durationSeconds: seconds, viewCount: details.statistics?.viewCount ? Number(details.statistics.viewCount) : null,
+      startedAt: details.liveStreamingDetails?.actualStartTime || null, endedAt: details.liveStreamingDetails?.actualEndTime || null,
+    });
+  }
+
+  const channelUrl = `https://www.youtube.com/channel/${channel.id}`;
+  return result('youtube', {
+    isLive: Boolean(live?.id?.videoId), externalId: channel.id, resolvedUsername: channel.snippet?.customUrl?.replace(/^@/, '') || handle(account),
+    url: channelUrl, avatar: youtubeThumbnail({ thumbnails: channel.snippet?.thumbnails || {} }), contentItems, latestContent: contentItems[0] || null,
+    event: live?.id?.videoId ? {
+      type: 'live', id: live.id.videoId, title: live.snippet?.title || 'YouTube LIVE', url: `https://www.youtube.com/watch?v=${live.id.videoId}`,
+      thumbnail: youtubeThumbnail(live.snippet), startedAt: live.snippet?.publishedAt || null, category: null,
+    } : null,
+  });
 }
 
 async function checkTikTok(account) {
@@ -141,13 +191,26 @@ async function checkTikTok(account) {
     const rawStatus = liveRoom.status ?? user.status;
     const roomId = clean(liveRoom.roomId || liveRoom.room_id || user.roomId || user.room_id);
     const resolvedUsername = clean(user.uniqueId || user.unique_id || liveRoom.owner?.uniqueId || liveRoom.owner?.unique_id || username);
-    const resolvedUserId = clean(user.id || user.userId || user.user_id || (byId ? identifier : ''));
+    const resolvedUserId = clean(user.id || user.userId || user.user_id || liveRoom.owner?.id || liveRoom.owner?.userId || (byId ? identifier : ''));
     const hasRoomId = /^[1-9]\d*$/.test(roomId);
     if (rawStatus !== undefined && rawStatus !== null) {
       const isLive = Number(rawStatus) === 2 && hasRoomId;
       const resolvedProfile = resolvedUsername ? `https://www.tiktok.com/@${encodeURIComponent(resolvedUsername)}` : profile;
       const resolvedLiveUrl = resolvedUsername ? `${resolvedProfile}/live` : liveUrl;
-      return result('tiktok', { isLive, providerSource: 'tiktok_api_live', confidence: 'high', externalId: resolvedUserId || undefined, url: resolvedProfile, resolvedUsername: resolvedUsername || undefined, event: isLive ? { type: 'live', id: roomId || `tiktok-live:${resolvedUsername || identifier}`, title: `${resolvedUsername || identifier} is LIVE on TikTok`, url: resolvedLiveUrl, thumbnail: null } : null });
+      const cover = liveRoom.cover?.url_list?.[0] || liveRoom.cover?.urlList?.[0] || liveRoom.coverUrl || liveRoom.cover_url || null;
+      const avatar = user.avatarLarger || user.avatarMedium || user.avatarThumb || liveRoom.owner?.avatarLarger || null;
+      const viewerCount = Number(liveRoom.user_count || liveRoom.userCount || liveRoom.viewer_count || liveRoom.viewerCount);
+      const startedAtRaw = liveRoom.start_time || liveRoom.startTime;
+      const startedAt = startedAtRaw ? new Date(Number(startedAtRaw) < 1000000000000 ? Number(startedAtRaw) * 1000 : Number(startedAtRaw)).toISOString() : null;
+      return result('tiktok', {
+        isLive, providerSource: 'tiktok_api_live', confidence: 'high', externalId: resolvedUserId || undefined,
+        resolvedUsername: resolvedUsername || undefined, url: resolvedProfile, avatar,
+        event: isLive ? {
+          type: 'live', id: roomId || `tiktok-live:${resolvedUsername || identifier}`,
+          title: clean(liveRoom.title) || `${resolvedUsername || identifier} is LIVE on TikTok`, url: resolvedLiveUrl,
+          thumbnail: cover, viewerCount: Number.isFinite(viewerCount) ? viewerCount : null, startedAt,
+        } : null,
+      });
     }
   } catch (error) { apiError = error; }
 
@@ -165,9 +228,9 @@ async function checkTikTok(account) {
     const title = body.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '';
     const titleSaysLive = title.toLowerCase().includes(`@${username.toLowerCase()}`) && /\bis\s+LIVE\s*-\s*TikTok\s+LIVE\b/i.test(title);
     const isLive = !ended && onOwnLiveUrl && (titleSaysLive || (hasRoom && directLiveStatus && creatorMarker));
-    if (isLive) return result('tiktok', { isLive: true, providerSource: 'public_page', confidence: 'high', url: profile, event: { type: 'live', id: `tiktok-live:${username}`, title: `${username} is LIVE on TikTok`, url: liveUrl, thumbnail: null } });
+    if (isLive) return result('tiktok', { isLive: true, providerSource: 'public_page', confidence: 'high', url: profile, resolvedUsername: username, event: { type: 'live', id: `tiktok-live:${username}`, title: `${username} is LIVE on TikTok`, url: liveUrl, thumbnail: null } });
     const redirectedAwayFromLive = !onOwnLiveUrl && finalUrl.toLowerCase().includes(`@${username.toLowerCase()}`);
-    if (ended || redirectedAwayFromLive) return result('tiktok', { isLive: false, providerSource: 'public_page', confidence: 'high', url: profile, event: null });
+    if (ended || redirectedAwayFromLive) return result('tiktok', { isLive: false, providerSource: 'public_page', confidence: 'high', url: profile, resolvedUsername: username, event: null });
     return unavailable('tiktok', `TikTok LIVE status was inconclusive${apiError ? ` after API check failed: ${apiError.message}` : ''}.`);
   } catch (pageError) {
     const details = [apiError?.message, pageError?.message].filter(Boolean).join('; ');
@@ -215,7 +278,7 @@ async function checkFacebook(account) {
     const live = liveRes.json?.data?.[0];
     const post = feedRes.json?.data?.[0];
     const latestContent = post ? { type: 'post', id: post.id, title: clean(post.message || 'New Facebook post').slice(0, 180), url: post.permalink_url || `https://www.facebook.com/${pageJson.id}`, thumbnail: post.full_picture, publishedAt: post.created_time } : null;
-    return result('facebook', { isLive: Boolean(live), externalId: pageJson.id, latestContent, event: live ? { type: 'live', id: live.id, title: live.title || `${pageJson.name || lookup} is live`, url: live.permalink_url || `https://www.facebook.com/${pageJson.id}`, startedAt: live.creation_time } : null, url: `https://www.facebook.com/${pageJson.id}` });
+    return result('facebook', { isLive: Boolean(live), externalId: pageJson.id, latestContent, contentItems: latestContent ? [latestContent] : [], event: live ? { type: 'live', id: live.id, title: live.title || `${pageJson.name || lookup} is live`, url: live.permalink_url || `https://www.facebook.com/${pageJson.id}`, startedAt: live.creation_time } : null, url: `https://www.facebook.com/${pageJson.id}` });
   } catch (error) { return unavailable('facebook', `Facebook Graph API unavailable: ${error.message}`); }
 }
 
@@ -232,7 +295,7 @@ async function checkInstagram(account) {
     if (!discovery?.id) return unavailable('instagram', 'Instagram account could not be resolved through Business Discovery.');
     const media = discovery.media?.data?.[0];
     const latestContent = media ? { type: media.media_type === 'REELS' ? 'short' : 'post', id: media.id, title: clean(media.caption || `New Instagram ${media.media_type || 'post'}`).slice(0, 180), url: media.permalink || `https://www.instagram.com/${username}/`, thumbnail: media.thumbnail_url || media.media_url, publishedAt: media.timestamp } : null;
-    return result('instagram', { isLive: false, status: 'ok', externalId: discovery.id, latestContent, url: `https://www.instagram.com/${username}/`, avatar: discovery.profile_picture_url });
+    return result('instagram', { isLive: false, status: 'ok', externalId: discovery.id, latestContent, contentItems: latestContent ? [latestContent] : [], url: `https://www.instagram.com/${username}/`, avatar: discovery.profile_picture_url });
   } catch (error) { return unavailable('instagram', `Instagram Graph API unavailable: ${error.message}`); }
 }
 
@@ -248,7 +311,7 @@ async function checkX(account) {
     const { json: postsJson } = await request(`https://api.x.com/2/users/${encodeURIComponent(user.id)}/tweets?max_results=5&exclude=retweets,replies&tweet.fields=created_at,attachments,text`, { headers });
     const post = postsJson?.data?.[0];
     const latestContent = post ? { type: 'post', id: post.id, title: clean(post.text || 'New post on X').slice(0, 180), url: `https://x.com/${encodeURIComponent(username)}/status/${post.id}`, publishedAt: post.created_at } : null;
-    return result('x', { isLive: false, status: 'ok', externalId: user.id, latestContent, url: `https://x.com/${encodeURIComponent(username)}`, avatar: user.profile_image_url });
+    return result('x', { isLive: false, status: 'ok', externalId: user.id, latestContent, contentItems: latestContent ? [latestContent] : [], url: `https://x.com/${encodeURIComponent(username)}`, avatar: user.profile_image_url });
   } catch (error) { return unavailable('x', `X API unavailable: ${error.message}`); }
 }
 
