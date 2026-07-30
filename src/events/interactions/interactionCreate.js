@@ -179,7 +179,13 @@ async function handleVerificationMemberInteraction(interaction) {
   const operation = (async () => {
     const member = await fetchFreshMember(interaction);
     if (!member) return { ok: false, message: 'Member not found. Please try again.' };
-    return verificationManager.verifyMember({ guild: interaction.guild, guildId: interaction.guildId, member, user: interaction.user });
+    return verificationManager.verifyMember({
+      guild: interaction.guild,
+      guildId: interaction.guildId,
+      member,
+      user: interaction.user,
+      customId: interaction.customId,
+    });
   })();
   verificationLocks.set(lockKey, operation);
   try {
