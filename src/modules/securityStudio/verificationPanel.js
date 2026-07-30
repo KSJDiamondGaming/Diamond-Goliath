@@ -533,11 +533,6 @@ async function handleVerificationAdminInteraction(interaction) {
       return safeUpdate(interaction, buildVerificationAdminPanel(interaction.guild, displayName, 'workflow'));
     }
 
-    if (interaction.isStringSelectMenu?.() && customId === 'admin:verification:method') {
-      saveConfig(interaction.guild, { method: interaction.values?.[0] || 'button' });
-      return safeUpdate(interaction, buildVerificationAdminPanel(interaction.guild, displayName, 'overview'));
-    }
-
     if (interaction.isStringSelectMenu?.() && customId === 'admin:verification:buttonStyle') {
       verificationManager.updatePanelTemplate(interaction.guild.id, { buttonStyle: interaction.values?.[0] || 'success' }, { actorId: interaction.user.id });
       return safeUpdate(interaction, buildVerificationAdminPanel(interaction.guild, displayName, 'panel'));
