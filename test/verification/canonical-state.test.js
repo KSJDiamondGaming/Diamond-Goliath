@@ -335,3 +335,14 @@ test('auto roles reset preserves canonical module state', () => {
   assert.doesNotMatch(routeReset, /setAutoRolesEnabled/);
   assert.match(routeReset, /autoroles\.resetAutoRoles\(guildId, \{ actorId: getActorId\(req\) \}\)/);
 });
+
+test('welcome admin panel reports, writes and exports canonical module state', () => {
+  const source = read('src/modules/messageStudio/welcome/welcomePanel.js');
+  assert.match(source, /const moduleEnabled = guildManager\.isModuleEnabled\(guild\.id, 'welcome'\)/);
+  assert.match(source, /guildManager\.setModuleEnabled\(interaction\.guild\.id, 'welcome', true/);
+  assert.match(source, /guildManager\.setModuleEnabled\(interaction\.guild\.id, 'welcome', false/);
+  assert.match(source, /enabled: guildManager\.isModuleEnabled\(interaction\.guild\.id, 'welcome'\)/);
+  assert.doesNotMatch(source, /config\.enabled === false/);
+  assert.doesNotMatch(source, /welcome\.updateConfig\(interaction\.guild\.id, \{ enabled:/);
+  assert.match(source, /config\.dmEnabled/);
+});
