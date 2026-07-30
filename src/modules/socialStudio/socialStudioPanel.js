@@ -1,18 +1,5 @@
 'use strict';
-
-const {
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  ChannelSelectMenuBuilder,
-  ChannelType,
-  EmbedBuilder,
-  ModalBuilder,
-  RoleSelectMenuBuilder,
-  StringSelectMenuBuilder,
-  TextInputBuilder,
-  TextInputStyle,
-} = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelSelectMenuBuilder, ChannelType, EmbedBuilder, ModalBuilder, RoleSelectMenuBuilder, StringSelectMenuBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const crypto = require('crypto');
 const guildManager = require('../../core/guild/guildManager');
 const { normalizeAccountInput, migrateAccount } = require('./accountNormalizer');
@@ -28,34 +15,19 @@ const ICON = { twitch: '🟣', youtube: '🔴', tiktok: '⚫', kick: '🟢', fac
 const NAV = new Set(['creators', 'accounts', 'notifications', 'templates', 'feeds', 'channels', 'settings', 'permissions', 'roles', 'automation', 'testing', 'data']);
 const accountSessions = new Map();
 const creatorSessions = new Map();
-
 const row = (...components) => new ActionRowBuilder().addComponents(...components);
 const btn = (id, label, style = ButtonStyle.Secondary, disabled = false) => new ButtonBuilder().setCustomId(id).setLabel(label).setStyle(style).setDisabled(disabled);
-const sessionKey = (interaction) => `${interaction.guildId}:${interaction.user?.id || 'unknown'}`;
-const who = (interaction) => interaction.member?.displayName || interaction.user?.displayName || interaction.user?.username || 'Unknown User';
+const linkBtn = (url, label) => new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(url).setLabel(label);
+const sessionKey = (i) => `${i.guildId}:${i.user?.id || 'unknown'}`;
+const who = (i) => i.member?.displayName || i.user?.displayName || i.user?.username || 'Unknown User';
 const makeId = (prefix) => `${prefix}_${crypto.randomBytes(8).toString('hex')}`;
 const now = () => new Date().toISOString();
-
-function supportedAlerts(platform) {
-  return (providerInfo(platform).supportedAlertTypes || []).filter((type) => ALERT_TYPES.includes(type));
-}
+const supportedAlerts = (platform) => (providerInfo(platform).supportedAlertTypes || []).filter((type) => ALERT_TYPES.includes(type));
 
 function getConfig(guildId) {
   const guild = guildManager.reloadGuild(guildId);
-  const section = guild?.modules?.social && typeof guild.modules.social === 'object' ? guild.modules.social : {};
-  return {
-    ...section,
-    enabled: guildManager.isModuleEnabled(guildId, 'social'),
-    alertsChannelId: section.alertsChannelId || null,
-    managerRoleIds: Array.isArray(section.managerRoleIds) ? section.managerRoleIds : [],
-    accounts: section.accounts && typeof section.accounts === 'object' ? section.accounts : {},
-    creators: section.creators && typeof section.creators === 'object' ? section.creators : {},
-    templates: section.templates && typeof section.templates === 'object' ? section.templates : {},
-    settings: section.settings && typeof section.settings === 'object' ? section.settings : {},
-    history: Array.isArray(section.history) ? section.history : [],
-    queue: Array.isArray(section.queue) ? section.queue : [],
-    analytics: section.analytics && typeof section.analytics === 'object' ? section.analytics : {},
-  };
+  const s = guild?.modules?.social && typeof guild.modules.social === 'object' ? guild.modules.social : {};
+  return { ...s, enabled: guildManager.isModuleEnabled(guildId, 'social'), alertsChannelId: s.alertsChannelId || null, managerRoleIds: Array.isArray(s.managerRoleIds) ? s.managerRoleIds : [], accounts: s.accounts && typeof s.accounts === 'object' ? s.accounts : {}, creators: s.creators && typeof s.creators === 'object' ? s.creators : {}, templates: s.templates && typeof s.templates === 'object' ? s.templates : {}, settings: s.settings && typeof s.settings === 'object' ? s.settings : {}, history: Array.isArray(s.history) ? s.history : [], queue: Array.isArray(s.queue) ? s.queue : [], analytics: s.analytics && typeof s.analytics === 'object' ? s.analytics : {} };
 }
 
 function saveConfig(guildId, config, guild, actorId = null) {
@@ -69,499 +41,138 @@ function saveConfig(guildId, config, guild, actorId = null) {
   return { ...saved, enabled: guildManager.isModuleEnabled(guildId, 'social') };
 }
 
-function getAccountSession(interaction) {
-  return accountSessions.get(sessionKey(interaction)) || { creatorId: null, platforms: [], accountId: null };
-}
-
-function setAccountSession(interaction, patch) {
-  const next = { ...getAccountSession(interaction), ...patch };
-  accountSessions.set(sessionKey(interaction), next);
-  return next;
-}
-
-function getCreatorSession(interaction) {
-  return creatorSessions.get(sessionKey(interaction)) || { creatorId: null, page: 0 };
-}
-
-function setCreatorSession(interaction, patch) {
-  const next = { ...getCreatorSession(interaction), ...patch };
-  creatorSessions.set(sessionKey(interaction), next);
-  return next;
-}
-
-function embed(config, title, description, requestedBy) {
-  return new EmbedBuilder()
-    .setColor(config.enabled ? 0x5865F2 : 0x747F8D)
-    .setTitle(title)
-    .setDescription(description)
-    .setFooter({ text: `Requested by ${requestedBy}` })
-    .setTimestamp();
-}
-
-function navigation(active = 'main') {
-  return row(
-    btn(active === 'main' ? 'admin:studio:socialStudio' : `${P}main`, '⬅️ Back'),
-    btn(`${P}settings`, '⚙️ Settings', ButtonStyle.Secondary, active === 'settings'),
-    btn(`${P}next`, 'Next ➡️', ButtonStyle.Secondary, true),
-  );
-}
+function getAccountSession(i) { return accountSessions.get(sessionKey(i)) || { creatorId: null, platforms: [], accountId: null }; }
+function setAccountSession(i, patch) { const next = { ...getAccountSession(i), ...patch }; accountSessions.set(sessionKey(i), next); return next; }
+function getCreatorSession(i) { return creatorSessions.get(sessionKey(i)) || { creatorId: null, page: 0 }; }
+function setCreatorSession(i, patch) { const next = { ...getCreatorSession(i), ...patch }; creatorSessions.set(sessionKey(i), next); return next; }
+function embed(config, title, description, requestedBy) { return new EmbedBuilder().setColor(config.enabled ? 0x5865F2 : 0x747F8D).setTitle(title).setDescription(description).setFooter({ text: `Requested by ${requestedBy}` }).setTimestamp(); }
+function navigation(active = 'main') { return row(btn(active === 'main' ? 'admin:studio:socialStudio' : `${P}main`, '⬅️ Back'), btn(`${P}settings`, '⚙️ Settings', ButtonStyle.Secondary, active === 'settings')); }
 
 function creatorSelect(creators, selected, id = `${P}account:creator`, placeholder = '1. Select the creator profile') {
-  return row(new StringSelectMenuBuilder()
-    .setCustomId(id)
-    .setPlaceholder(placeholder)
-    .setMinValues(1)
-    .setMaxValues(1)
-    .addOptions(creators.slice(0, 25).map((creator) => ({
-      label: String(creator.displayName || 'Unnamed creator').slice(0, 100),
-      value: creator.creatorId,
-      description: `${(creator.accountIds || []).length} linked account(s)`.slice(0, 100),
-      default: creator.creatorId === selected,
-    }))));
+  return row(new StringSelectMenuBuilder().setCustomId(id).setPlaceholder(placeholder).setMinValues(1).setMaxValues(1).addOptions(creators.slice(0, 25).map((c) => ({ label: String(c.displayName || 'Unnamed creator').slice(0, 100), value: c.creatorId, description: `${(c.accountIds || []).length} linked account(s)`.slice(0, 100), default: c.creatorId === selected }))));
 }
-
 function accountSelect(accounts, selected) {
-  return row(new StringSelectMenuBuilder()
-    .setCustomId(`${P}account:select`)
-    .setPlaceholder('2. Select an account to view or edit')
-    .setMinValues(1)
-    .setMaxValues(1)
-    .addOptions(accounts.slice(0, 25).map((account) => ({
-      label: `${LABEL[account.platform] || account.platform} · ${account.username}`.slice(0, 100),
-      value: account.accountId,
-      description: String(account.profileUrl || account.externalId || account.username || '').slice(0, 100),
-      default: account.accountId === selected,
-    }))));
+  return row(new StringSelectMenuBuilder().setCustomId(`${P}account:select`).setPlaceholder('2. Select an account to manage').setMinValues(1).setMaxValues(1).addOptions(accounts.slice(0, 25).map((a) => ({ label: `${LABEL[a.platform] || a.platform} · ${a.username || a.externalId || 'Resolving'}`.slice(0, 100), value: a.accountId, description: String(a.profileUrl || a.externalId || '').slice(0, 100), default: a.accountId === selected }))));
 }
-
-function platformSelect(selected = []) {
-  return row(new StringSelectMenuBuilder()
-    .setCustomId(`${P}account:platforms`)
-    .setPlaceholder('3. Select one or more platforms to add')
-    .setMinValues(1)
-    .setMaxValues(5)
-    .addOptions(PLATFORMS.map((platform) => ({ label: LABEL[platform], value: platform, default: selected.includes(platform) }))));
-}
-
+function platformSelect(selected = []) { return row(new StringSelectMenuBuilder().setCustomId(`${P}account:platforms`).setPlaceholder('3. Select one or more platforms to add').setMinValues(1).setMaxValues(5).addOptions(PLATFORMS.map((p) => ({ label: LABEL[p], value: p, default: selected.includes(p) })))); }
 function alertTypeSelect(account) {
-  const supported = supportedAlerts(account.platform);
-  if (!supported.length) return null;
-  const configured = Array.isArray(account.alertTypes) && account.alertTypes.length ? account.alertTypes : supported;
-  return row(new StringSelectMenuBuilder()
-    .setCustomId(`${P}account:alerts`)
-    .setPlaceholder('Choose notifications for this account')
-    .setMinValues(1)
-    .setMaxValues(supported.length)
-    .addOptions(supported.map((type) => ({
-      label: ALERT_LABEL[type] || type,
-      value: type,
-      description: `Post ${ALERT_LABEL[type] || type} updates to Discord`.slice(0, 100),
-      default: configured.includes(type),
-    }))));
+  const supported = supportedAlerts(account.platform); if (!supported.length) return null;
+  const configured = Array.isArray(account.alertTypes) ? account.alertTypes : supported;
+  return row(new StringSelectMenuBuilder().setCustomId(`${P}account:alerts`).setPlaceholder('Choose notifications for this account').setMinValues(0).setMaxValues(supported.length).addOptions(supported.map((type) => ({ label: ALERT_LABEL[type] || type, value: type, description: `Post ${ALERT_LABEL[type] || type} updates to Discord`, default: configured.includes(type) }))));
 }
+function channelSelect(id, selected, placeholder) { const m = new ChannelSelectMenuBuilder().setCustomId(id).setPlaceholder(placeholder).setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(1).setMaxValues(1); if (selected) m.setDefaultChannels([selected]); return row(m); }
+function roleSelect(ids) { const m = new RoleSelectMenuBuilder().setCustomId(`${P}roles:select`).setPlaceholder('Select Social Studio manager roles').setMinValues(0).setMaxValues(10); if (ids?.length) m.setDefaultRoles(ids.slice(0, 10)); return row(m); }
 
-function channelSelect(id, selected, placeholder) {
-  const menu = new ChannelSelectMenuBuilder()
-    .setCustomId(id)
-    .setPlaceholder(placeholder)
-    .setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
-    .setMinValues(1)
-    .setMaxValues(1);
-  if (selected) menu.setDefaultChannels([selected]);
-  return row(menu);
+function creatorModal(c = null) {
+  return new ModalBuilder().setCustomId(c ? `${P}creator:update:${c.creatorId}` : `${P}creator:create`).setTitle(c ? 'Edit Creator Profile' : 'Create Creator Profile').addComponents(
+    row(new TextInputBuilder().setCustomId('displayName').setLabel('Creator display name').setStyle(TextInputStyle.Short).setMaxLength(120).setRequired(true).setValue(String(c?.displayName || ''))),
+    row(new TextInputBuilder().setCustomId('group').setLabel('Group or team').setStyle(TextInputStyle.Short).setMaxLength(120).setRequired(false).setValue(String(c?.group || ''))),
+    row(new TextInputBuilder().setCustomId('tags').setLabel('Tags (comma separated)').setStyle(TextInputStyle.Short).setMaxLength(300).setRequired(false).setValue(Array.isArray(c?.tags) ? c.tags.join(', ') : '')),
+    row(new TextInputBuilder().setCustomId('notes').setLabel('Notes').setStyle(TextInputStyle.Paragraph).setMaxLength(1000).setRequired(false).setValue(String(c?.notes || ''))),
+  );
 }
+function accountModal(platforms) { const m = new ModalBuilder().setCustomId(`${P}account:create-multi`).setTitle('Add Social Accounts'); for (const p of platforms.slice(0, 5)) m.addComponents(row(new TextInputBuilder().setCustomId(`account_${p}`).setLabel(`${LABEL[p]} username, channel ID or URL`).setStyle(TextInputStyle.Short).setMaxLength(500).setRequired(true))); return m; }
+function accountEditModal(a) { return new ModalBuilder().setCustomId(`${P}account:update:${a.accountId}`).setTitle(`Edit ${LABEL[a.platform] || a.platform} Account`).addComponents(row(new TextInputBuilder().setCustomId('accountValue').setLabel('Username, channel ID or URL').setStyle(TextInputStyle.Short).setMaxLength(500).setRequired(true).setValue(String(a.sourceInput || a.profileUrl || a.externalId || a.username || '')))); }
+function templateModal(type, config) { const c = config.templates?.[type] || {}; return new ModalBuilder().setCustomId(`${P}template:save:${type}`).setTitle(`${ALERT_LABEL[type] || type} Template`).addComponents(row(new TextInputBuilder().setCustomId('title').setLabel('Embed title').setStyle(TextInputStyle.Short).setMaxLength(256).setValue(String(c.title || '{creator} alert')).setRequired(true)), row(new TextInputBuilder().setCustomId('description').setLabel('Embed description').setStyle(TextInputStyle.Paragraph).setMaxLength(2000).setValue(String(c.description || '{title}')).setRequired(true)), row(new TextInputBuilder().setCustomId('buttonLabel').setLabel('Link button label').setStyle(TextInputStyle.Short).setMaxLength(80).setValue(String(c.buttonLabel || 'Watch now')).setRequired(true))); }
 
-function roleSelect(ids) {
-  const menu = new RoleSelectMenuBuilder()
-    .setCustomId(`${P}roles:select`)
-    .setPlaceholder('Select Social Studio manager roles')
-    .setMinValues(0)
-    .setMaxValues(10);
-  if (ids?.length) menu.setDefaultRoles(ids.slice(0, 10));
-  return row(menu);
-}
-
-function creatorModal(creator = null) {
-  return new ModalBuilder()
-    .setCustomId(creator ? `${P}creator:update:${creator.creatorId}` : `${P}creator:create`)
-    .setTitle(creator ? 'Edit Creator Profile' : 'Create Creator Profile')
-    .addComponents(
-      row(new TextInputBuilder()
-        .setCustomId('displayName')
-        .setLabel('Creator display name')
-        .setPlaceholder('e.g. Johnny, KSJ Diamond Gaming, Acme Esports')
-        .setStyle(TextInputStyle.Short)
-        .setMaxLength(120)
-        .setRequired(true)
-        .setValue(String(creator?.displayName || ''))),
-      row(new TextInputBuilder()
-        .setCustomId('group')
-        .setLabel('Group or team')
-        .setPlaceholder('Optional — team, organisation or brand they belong to')
-        .setStyle(TextInputStyle.Short)
-        .setMaxLength(120)
-        .setRequired(false)
-        .setValue(String(creator?.group || ''))),
-      row(new TextInputBuilder()
-        .setCustomId('tags')
-        .setLabel('Tags (comma separated)')
-        .setPlaceholder('Optional — e.g. streamer, FPS, UK')
-        .setStyle(TextInputStyle.Short)
-        .setMaxLength(300)
-        .setRequired(false)
-        .setValue(Array.isArray(creator?.tags) ? creator.tags.join(', ') : '')),
-      row(new TextInputBuilder()
-        .setCustomId('notes')
-        .setLabel('Notes')
-        .setPlaceholder('Optional — internal notes about this creator profile')
-        .setStyle(TextInputStyle.Paragraph)
-        .setMaxLength(1000)
-        .setRequired(false)
-        .setValue(String(creator?.notes || '')),
-    );
-}
-
-function accountModal(platforms) {
-  const modal = new ModalBuilder().setCustomId(`${P}account:create-multi`).setTitle('Add Social Accounts');
-  for (const platform of platforms.slice(0, 5)) {
-    modal.addComponents(row(new TextInputBuilder()
-      .setCustomId(`account_${platform}`)
-      .setLabel(`${LABEL[platform]} username, channel ID or URL`)
-      .setPlaceholder('e.g. username, @handle, channel ID or full profile URL')
-      .setStyle(TextInputStyle.Short)
-      .setMaxLength(500)
-      .setRequired(true)));
-  }
-  return modal;
-}
-
-function accountEditModal(account) {
-  return new ModalBuilder()
-    .setCustomId(`${P}account:update:${account.accountId}`)
-    .setTitle(`Edit ${LABEL[account.platform] || account.platform} Account`)
-    .addComponents(row(new TextInputBuilder()
-      .setCustomId('accountValue')
-      .setLabel('Username, channel ID or URL')
-      .setPlaceholder('e.g. username, @handle, channel ID or full profile URL')
-      .setStyle(TextInputStyle.Short)
-      .setMaxLength(500)
-      .setRequired(true)
-      .setValue(String(account.sourceInput || account.profileUrl || account.externalId || account.username || ''))));
-}
-
-function templateModal(type, config) {
-  const current = config.templates?.[type] || {};
-  return new ModalBuilder()
-    .setCustomId(`${P}template:save:${type}`)
-    .setTitle(`${ALERT_LABEL[type] || (type[0].toUpperCase() + type.slice(1))} Template`)
-    .addComponents(
-      row(new TextInputBuilder().setCustomId('title').setLabel('Embed title').setStyle(TextInputStyle.Short).setMaxLength(256).setValue(String(current.title || '{creator} alert')).setRequired(true)),
-      row(new TextInputBuilder().setCustomId('description').setLabel('Embed description').setStyle(TextInputStyle.Paragraph).setMaxLength(2000).setValue(String(current.description || '{title}')).setRequired(true)),
-      row(new TextInputBuilder().setCustomId('buttonLabel').setLabel('Link button label').setStyle(TextInputStyle.Short).setMaxLength(80).setValue(String(current.buttonLabel || 'Watch now')).setRequired(true)),
-    );
-}
-
-function removeAccountReferences(config, accountIds) {
-  const ids = new Set(accountIds);
-  for (const creator of Object.values(config.creators)) {
-    creator.accountIds = (creator.accountIds || []).filter((id) => !ids.has(id));
-  }
-}
-
-function canonicalIdentity(account) {
-  return String(account.canonicalIdentity || account.externalId || account.normalizedUsername || account.username || '').toLowerCase();
-}
-
-function canonicalKey(account) {
-  return `${String(account.platform || '').toLowerCase()}:${canonicalIdentity(account)}`;
-}
-
+function removeAccountReferences(config, ids) { const set = new Set(ids); for (const c of Object.values(config.creators)) c.accountIds = (c.accountIds || []).filter((id) => !set.has(id)); }
+function canonicalIdentity(a) { return String(a.canonicalIdentity || a.externalId || a.normalizedUsername || a.username || '').toLowerCase(); }
+function canonicalKey(a) { return `${String(a.platform || '').toLowerCase()}:${canonicalIdentity(a)}`; }
 function upsertAccount(config, creator, platform, rawValue) {
-  const normalized = normalizeAccountInput(platform, rawValue);
-  const targetKey = `${platform}:${String(normalized.canonicalIdentity || normalized.externalId || normalized.normalizedUsername || normalized.username || '').toLowerCase()}`;
-  const matches = Object.values(config.accounts).filter((account) => {
-    try {
-      const migrated = migrateAccount(account);
-      return canonicalKey(migrated) === targetKey;
-    } catch {
-      return false;
-    }
-  });
-
-  const primary = matches[0] || null;
-  const accountId = primary?.accountId || makeId('account');
-  const duplicateIds = matches.slice(1).map((account) => account.accountId);
-  if (duplicateIds.length) {
-    removeAccountReferences(config, duplicateIds);
-    for (const id of duplicateIds) delete config.accounts[id];
-  }
-
-  const defaults = supportedAlerts(platform);
-  config.accounts[accountId] = {
-    ...(primary || {}),
-    accountId,
-    platform,
-    username: normalized.username,
-    normalizedUsername: normalized.normalizedUsername,
-    externalId: primary?.externalId || normalized.externalId || null,
-    inputType: normalized.inputType,
-    canonicalIdentity: normalized.canonicalIdentity,
-    profileUrl: normalized.profileUrl,
-    sourceInput: normalized.sourceInput,
-    displayName: creator.displayName,
-    enabled: primary?.enabled !== false,
-    alertTypes: Array.isArray(primary?.alertTypes) && primary.alertTypes.length ? primary.alertTypes : defaults,
-    alertChannelId: primary?.alertChannelId || null,
-    createdAt: primary?.createdAt || now(),
-    updatedAt: now(),
-  };
-
-  creator.accountIds = [...new Set([...(creator.accountIds || []), accountId])];
-  creator.updatedAt = now();
-  return { accountId, created: !primary, removedDuplicates: duplicateIds.length };
+  const n = normalizeAccountInput(platform, rawValue); const key = `${platform}:${String(n.canonicalIdentity || n.externalId || n.normalizedUsername || n.username || '').toLowerCase()}`;
+  const matches = Object.values(config.accounts).filter((a) => { try { return canonicalKey(migrateAccount(a)) === key; } catch { return false; } });
+  const primary = matches[0] || null; const accountId = primary?.accountId || makeId('account'); const duplicates = matches.slice(1).map((a) => a.accountId);
+  if (duplicates.length) { removeAccountReferences(config, duplicates); for (const id of duplicates) delete config.accounts[id]; }
+  config.accounts[accountId] = { ...(primary || {}), accountId, platform, username: n.username, normalizedUsername: n.normalizedUsername, externalId: primary?.externalId || n.externalId || null, inputType: n.inputType, canonicalIdentity: n.canonicalIdentity, profileUrl: n.profileUrl, sourceInput: n.sourceInput, displayName: creator.displayName, enabled: primary?.enabled !== false, alertTypes: Array.isArray(primary?.alertTypes) ? primary.alertTypes : supportedAlerts(platform), alertChannelId: primary?.alertChannelId || null, createdAt: primary?.createdAt || now(), updatedAt: now() };
+  creator.accountIds = [...new Set([...(creator.accountIds || []), accountId])]; creator.updatedAt = now(); return { accountId, created: !primary, removedDuplicates: duplicates.length };
 }
+function accountState(a) { const s = a.state || {}; return s.isLive === true ? '🔴 LIVE' : s.isLive === false ? '⚫ Offline' : s.lastError ? '🟡 Unavailable' : a.enabled === false ? '⏸️ Paused' : '🟢 Monitoring'; }
 
 function buildMainPanel(guild, requestedBy = 'Unknown User') {
-  const config = getConfig(guild.id);
-  const ready = Object.keys(config.creators).length > 0 && Object.keys(config.accounts).length > 0 && Boolean(config.alertsChannelId);
-  const description = ready
-    ? '✅ **Social Studio is ready.**\n\nUse the buttons below to manage creators, linked accounts, notifications and delivery.'
-    : '⚠️ **Setup required**\n\n1️⃣ **Creator Profiles**\n2️⃣ **Accounts**\n3️⃣ **Channels**\n4️⃣ **Notifications**\n\n**Optional:** Templates and Feeds.';
-  return {
-    embeds: [embed(config, '📣 Social Studio', description, requestedBy)],
-    components: [
-      row(btn(`${P}creators`, '👥 Creator Profiles', ButtonStyle.Primary), btn(`${P}accounts`, '🔗 Accounts', ButtonStyle.Primary), btn(`${P}notifications`, '📢 Notifications', ButtonStyle.Primary)),
-      row(btn(`${P}templates`, '🎨 Templates'), btn(`${P}feeds`, '📡 Feeds'), btn(`${P}channels`, '📂 Channels')),
-      navigation('main'),
-    ],
-  };
+  const c = getConfig(guild.id), creators = Object.keys(c.creators).length, accounts = Object.keys(c.accounts).length, ready = creators && accounts && c.alertsChannelId;
+  const d = [`${ready ? '✅' : '⚠️'} **${ready ? 'Social Studio is ready.' : 'Setup required'}**`, '', `**Creators:** ${creators}`, `**Accounts:** ${accounts}`, `**Alert Channel:** ${c.alertsChannelId ? `<#${c.alertsChannelId}>` : 'Not configured'}`, `**Notifications:** ${c.enabled ? '🟢 Enabled' : '🔴 Disabled'}`].join('\n');
+  return { embeds: [embed(c, '📣 Social Studio', d, requestedBy)], components: [row(btn(`${P}creators`, '👥 Creator Profiles', ButtonStyle.Primary), btn(`${P}accounts`, '🔗 Accounts', ButtonStyle.Primary), btn(`${P}notifications`, '📢 Notifications', ButtonStyle.Primary)), row(btn(`${P}templates`, '🎨 Templates'), btn(`${P}feeds`, '📡 Feeds'), btn(`${P}channels`, '📂 Channels')), navigation('main')] };
 }
 
-function buildCreatorPanel(interaction, config, creators) {
-  const view = getCreatorSession(interaction);
-  const pages = Math.max(1, Math.ceil(creators.length / PAGE_SIZE));
-  if (view.page >= pages) setCreatorSession(interaction, { page: pages - 1 });
-  const current = getCreatorSession(interaction);
-  const active = config.creators[current.creatorId] || null;
-  if (current.creatorId && !active) setCreatorSession(interaction, { creatorId: null });
-  const selected = config.creators[getCreatorSession(interaction).creatorId] || null;
+function buildCreatorPanel(i, config, creators) {
+  const view = getCreatorSession(i), pages = Math.max(1, Math.ceil(creators.length / PAGE_SIZE)); if (view.page >= pages) setCreatorSession(i, { page: pages - 1 });
+  let current = getCreatorSession(i), selected = config.creators[current.creatorId] || null; if (current.creatorId && !selected) { setCreatorSession(i, { creatorId: null }); selected = null; }
   const linked = selected ? (selected.accountIds || []).map((id) => config.accounts[id]).filter(Boolean) : [];
-  const description = selected
-    ? [
-      `👤 **${selected.displayName}**`,
-      '',
-      '**Platforms**',
-      ...(linked.length ? linked.map((account) => `${ICON[account.platform] || '🔗'} **${LABEL[account.platform] || account.platform}** — ${account.profileUrl ? `[${account.username}](${account.profileUrl})` : account.username}`) : ['No linked social accounts.']),
-      '',
-      `**Status:** ${selected.enabled === false ? '🔴 Disabled' : linked.length ? '🟢 Monitoring' : '🟡 Waiting for accounts'}`,
-      `**Accounts:** ${linked.length}`,
-    ].join('\n')
-    : `Select a creator profile below to view and manage it.\n\n**Profiles:** ${creators.length}\n**Selected:** None`;
-
-  const components = [];
-  const page = getCreatorSession(interaction).page;
-  const items = creators.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-  if (items.length) components.push(creatorSelect(items, getCreatorSession(interaction).creatorId, `${P}creator:select`, `Select a creator profile · Page ${page + 1}/${pages}`));
-  components.push(row(btn(`${P}creator:new`, '➕ New Profile', ButtonStyle.Success), btn(`${P}creator:edit`, '✏️ Edit Profile', ButtonStyle.Primary, !selected), btn(`${P}creator:rebuild`, '🔄 Rebuild Profiles')));
-  if (pages > 1) components.push(row(btn(`${P}creator:page:prev`, '◀ Previous', ButtonStyle.Secondary, page <= 0), btn(`${P}creator:page:next`, 'Next ▶', ButtonStyle.Secondary, page >= pages - 1)));
-  components.push(navigation('creators'));
-  return { embeds: [embed(config, '👥 Creator Profiles', description, who(interaction))], components };
+  const d = selected ? [`👤 **${selected.displayName}**`, '', ...(linked.length ? linked.map((a) => `${ICON[a.platform]} **${LABEL[a.platform]}** — ${a.profileUrl ? `[${a.username || a.externalId}](${a.profileUrl})` : a.username || a.externalId} — ${accountState(a)}`) : ['No linked social accounts.']), '', `**Status:** ${selected.enabled === false ? '⏸️ Paused' : '🟢 Monitoring'}`, `**Accounts:** ${linked.length}`].join('\n') : `Select a creator profile below.\n\n**Profiles:** ${creators.length}`;
+  const components = [], page = getCreatorSession(i).page, items = creators.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE); if (items.length) components.push(creatorSelect(items, getCreatorSession(i).creatorId, `${P}creator:select`, `Select a creator · Page ${page + 1}/${pages}`)); components.push(row(btn(`${P}creator:new`, '➕ New Profile', ButtonStyle.Success), btn(`${P}creator:edit`, '✏️ Manage Profile', ButtonStyle.Primary, !selected), btn(`${P}creator:rebuild`, '🧩 Rebuild'))); if (pages > 1) components.push(row(btn(`${P}creator:page:prev`, '◀ Previous', ButtonStyle.Secondary, page <= 0), btn(`${P}creator:page:next`, 'Next ▶', ButtonStyle.Secondary, page >= pages - 1))); components.push(navigation('creators')); return { embeds: [embed(config, '👥 Creator Profiles', d, who(i))], components };
 }
 
-function buildCreatorEditPanel(interaction, config, creator) {
-  return {
-    embeds: [embed(config, '✏️ Edit Creator Profile', [
-      `👤 **${creator.displayName}**`,
-      '',
-      `**Group / Team:** ${creator.group || 'Not set'}`,
-      `**Tags:** ${creator.tags?.length ? creator.tags.join(', ') : 'None'}`,
-      `**Notes:** ${creator.notes || 'None'}`,
-      `**Status:** ${creator.enabled === false ? '🔴 Disabled' : '🟢 Enabled'}`,
-    ].join('\n'), who(interaction))],
-    components: [
-      row(btn(`${P}creator:change`, '📝 Change Details', ButtonStyle.Primary), btn(`${P}creator:toggle`, creator.enabled === false ? '▶️ Enable' : '⏸️ Disable', creator.enabled === false ? ButtonStyle.Success : ButtonStyle.Secondary), btn(`${P}accounts`, '🔗 Manage Accounts')),
-      row(btn(`${P}creator:delete`, '🗑️ Delete Profile', ButtonStyle.Danger), btn(`${P}creators`, '⬅️ Back to Profile')),
-      navigation('creators'),
-    ],
-  };
+function buildCreatorEditPanel(i, config, creator) {
+  const linked = (creator.accountIds || []).map((id) => config.accounts[id]).filter(Boolean);
+  return { embeds: [embed(config, '✏️ Manage Creator', [`👤 **${creator.displayName}**`, `**Group / Team:** ${creator.group || 'Not set'}`, `**Tags:** ${creator.tags?.length ? creator.tags.join(', ') : 'None'}`, `**Accounts:** ${linked.length}`, `**Status:** ${creator.enabled === false ? '⏸️ Paused' : '🟢 Enabled'}`, `**Notes:** ${creator.notes || 'None'}`].join('\n'), who(i))], components: [row(btn(`${P}creator:check:${creator.creatorId}`, '🔄 Check Creator', ButtonStyle.Primary, !linked.length), btn(`${P}accounts`, '🔗 Accounts'), btn(`${P}creator:toggle`, creator.enabled === false ? '▶️ Resume' : '⏸️ Pause', creator.enabled === false ? ButtonStyle.Success : ButtonStyle.Secondary)), row(btn(`${P}creator:change`, '📝 Edit Details'), btn(`${P}creator:delete`, '🗑️ Delete', ButtonStyle.Danger), btn(`${P}creators`, '⬅️ Back')), navigation('creators')] };
 }
 
-function buildAccountEditPanel(interaction, config, creator, account) {
-  const supported = supportedAlerts(account.platform);
-  const enabledTypes = Array.isArray(account.alertTypes) && account.alertTypes.length ? account.alertTypes : supported;
-  const alertMenu = alertTypeSelect(account);
-  const components = [];
-  if (alertMenu) components.push(alertMenu);
-  components.push(row(btn(`${P}account:change`, '📝 Change Details', ButtonStyle.Primary), btn(`${P}account:toggle`, account.enabled === false ? '▶️ Enable' : '⏸️ Disable', account.enabled === false ? ButtonStyle.Success : ButtonStyle.Secondary)));
-  components.push(row(btn(`${P}account:delete`, '🗑️ Delete Account', ButtonStyle.Danger), btn(`${P}accounts`, '⬅️ Back to Accounts')));
-  components.push(navigation('accounts'));
-  return {
-    embeds: [embed(config, '✏️ Edit Social Account', [
-      `${ICON[account.platform] || '🔗'} **${LABEL[account.platform] || account.platform}**`,
-      '',
-      `**Creator:** ${creator.displayName}`,
-      `**Username:** ${account.username || 'Resolving…'}`,
-      `**Channel / User ID:** ${account.externalId || 'Resolving…'}`,
-      `**Profile URL:** ${account.profileUrl || 'Not set'}`,
-      `**Alerts:** ${enabledTypes.length ? enabledTypes.map((type) => ALERT_LABEL[type] || type).join(', ') : 'None'}`,
-      `**Status:** ${account.enabled === false ? '🔴 Disabled' : '🟢 Enabled'}`,
-      '',
-      'Use the notification selector to choose LIVE, VOD, clip, upload and other supported feed alerts for this account.',
-    ].join('\n'), who(interaction))],
-    components,
-  };
+function buildAccountEditPanel(i, config, creator, account) {
+  const supported = supportedAlerts(account.platform), alerts = Array.isArray(account.alertTypes) ? account.alertTypes : supported, s = account.state || {}, components = [], alertMenu = alertTypeSelect(account); if (alertMenu) components.push(alertMenu);
+  const actions = [btn(`${P}account:check:${account.accountId}`, '🔄 Check Now', ButtonStyle.Primary), btn(`${P}account:change`, '📝 Edit Details'), btn(`${P}account:toggle`, account.enabled === false ? '▶️ Resume' : '⏸️ Pause', account.enabled === false ? ButtonStyle.Success : ButtonStyle.Secondary)]; if (account.profileUrl && /^https?:\/\//i.test(account.profileUrl)) actions.push(linkBtn(account.profileUrl, '🔗 Open Profile')); components.push(row(...actions)); components.push(row(btn(`${P}account:delete`, '🗑️ Delete Account', ButtonStyle.Danger), btn(`${P}accounts`, '⬅️ Back'))); components.push(navigation('accounts'));
+  const checked = s.lastCheckedAt ? `<t:${Math.floor(new Date(s.lastCheckedAt).getTime() / 1000)}:R>` : 'Never';
+  const d = [`${ICON[account.platform]} **${LABEL[account.platform]}**`, '', `**Creator:** ${creator.displayName}`, `**Username:** ${account.username || 'Resolving…'}`, `**Channel / User ID:** ${account.externalId || 'Resolving…'}`, `**Profile URL:** ${account.profileUrl || 'Not set'}`, `**Feed State:** ${accountState(account)}`, `**Last Checked:** ${checked}`, `**Alerts:** ${alerts.length ? alerts.map((t) => ALERT_LABEL[t] || t).join(', ') : 'None'}`, `**Monitoring:** ${account.enabled === false ? '⏸️ Paused' : '🟢 Enabled'}`, ...(s.lastError ? ['', `⚠️ ${String(s.lastError).slice(0, 500)}`] : [])].join('\n'); return { embeds: [embed(config, '🔗 Manage Social Account', d, who(i))], components };
 }
 
-function buildSectionPanel(interaction, name) {
-  const config = getConfig(interaction.guildId);
-  const accounts = Object.values(config.accounts);
-  const creators = Object.values(config.creators).sort((a, b) => String(a.displayName || '').localeCompare(String(b.displayName || '')));
-  if (name === 'creators') return buildCreatorPanel(interaction, config, creators);
-
+function buildSectionPanel(i, name) {
+  const config = getConfig(i.guildId), accounts = Object.values(config.accounts), creators = Object.values(config.creators).sort((a, b) => String(a.displayName || '').localeCompare(String(b.displayName || ''))); if (name === 'creators') return buildCreatorPanel(i, config, creators);
   if (name === 'accounts') {
-    const session = getAccountSession(interaction);
-    const creator = session.creatorId ? config.creators[session.creatorId] || null : null;
-    if (session.creatorId && !creator) {
-      accountSessions.delete(sessionKey(interaction));
-      return buildSectionPanel(interaction, 'accounts');
-    }
-    const linked = creator ? (creator.accountIds || []).map((id) => config.accounts[id]).filter(Boolean) : [];
-    const selectedAccount = creator && session.accountId ? config.accounts[session.accountId] || null : null;
-    if (session.accountId && (!selectedAccount || !linked.some((account) => account.accountId === session.accountId))) setAccountSession(interaction, { accountId: null });
-    const activeAccount = creator ? config.accounts[getAccountSession(interaction).accountId] || null : null;
-    const accountList = linked.map((account) => `• ${ICON[account.platform] || '🔗'} **${LABEL[account.platform] || account.platform}** — ${account.profileUrl ? `[${account.username}](${account.profileUrl})` : account.username}`).join('\n');
-    const description = creator
-      ? [
-        `Viewing and managing accounts for **${creator.displayName}**.`,
-        '',
-        `**Profiles:** ${creators.length}`,
-        `**Creator:** ${creator.displayName}`,
-        `**Accounts:** ${linked.length}`,
-        `**Selected:** ${activeAccount ? `${LABEL[activeAccount.platform] || activeAccount.platform} — ${activeAccount.username}` : 'None'}`,
-        ...(accountList ? ['', '**Linked Accounts**', accountList] : ['', 'No platform accounts are linked to this creator.']),
-      ].join('\n')
-      : `Select a creator profile below to view and manage its linked accounts.\n\n**Profiles:** ${creators.length}\n**Selected:** None`;
-    const components = [];
-    if (creators.length) {
-      components.push(creatorSelect(creators, session.creatorId));
-      if (linked.length) components.push(accountSelect(linked, getAccountSession(interaction).accountId));
-      components.push(platformSelect(getAccountSession(interaction).platforms));
-      components.push(row(
-        btn(`${P}account:continue`, '➕ Add Account', ButtonStyle.Success, !session.creatorId || !getAccountSession(interaction).platforms.length),
-        btn(`${P}account:edit`, '✏️ Edit Account', ButtonStyle.Primary, !activeAccount),
-        btn(`${P}account:reset`, '↻ Reset', ButtonStyle.Secondary, !session.creatorId && !session.platforms.length && !session.accountId),
-      ));
-    } else {
-      components.push(row(btn(`${P}creators`, '👥 Create Creator Profile', ButtonStyle.Primary)));
-    }
-    components.push(navigation('accounts'));
-    return { embeds: [embed(config, '🔗 Accounts', description, who(interaction))], components };
+    const session = getAccountSession(i), creator = session.creatorId ? config.creators[session.creatorId] || null : null; if (session.creatorId && !creator) { accountSessions.delete(sessionKey(i)); return buildSectionPanel(i, 'accounts'); }
+    const linked = creator ? (creator.accountIds || []).map((id) => config.accounts[id]).filter(Boolean) : []; if (session.accountId && !linked.some((a) => a.accountId === session.accountId)) setAccountSession(i, { accountId: null }); const active = creator ? config.accounts[getAccountSession(i).accountId] || null : null;
+    const list = linked.map((a) => `• ${ICON[a.platform]} **${LABEL[a.platform]}** — ${a.profileUrl ? `[${a.username || a.externalId}](${a.profileUrl})` : a.username || a.externalId} — ${accountState(a)}`).join('\n');
+    const d = creator ? [`Managing accounts for **${creator.displayName}**.`, '', `**Accounts:** ${linked.length}`, `**Selected:** ${active ? `${LABEL[active.platform]} — ${active.username || active.externalId}` : 'None'}`, ...(list ? ['', list] : ['', 'No linked accounts.'])].join('\n') : `Select a creator profile.\n\n**Profiles:** ${creators.length}`;
+    const components = []; if (creators.length) { components.push(creatorSelect(creators, session.creatorId)); if (linked.length) components.push(accountSelect(linked, getAccountSession(i).accountId)); components.push(platformSelect(getAccountSession(i).platforms)); components.push(row(btn(`${P}account:continue`, '➕ Add Account', ButtonStyle.Success, !session.creatorId || !getAccountSession(i).platforms.length), btn(`${P}account:edit`, '⚙️ Manage Selected', ButtonStyle.Primary, !active), btn(`${P}account:check`, '🔄 Check All', ButtonStyle.Secondary, !accounts.length), btn(`${P}account:reset`, '↻ Reset'))); } else components.push(row(btn(`${P}creators`, '👥 Create Creator Profile', ButtonStyle.Primary))); components.push(navigation('accounts')); return { embeds: [embed(config, '🔗 Accounts', d, who(i))], components };
   }
-
-  if (name === 'notifications') return { embeds: [embed(config, '📢 Notifications', 'Control Social Studio delivery. Each account can independently enable supported LIVE, VOD, clip, upload, short and post alerts.', who(interaction))], components: [row(btn(`${P}toggle`, config.enabled ? '⏸️ Disable Notifications' : '▶️ Enable Notifications', config.enabled ? ButtonStyle.Danger : ButtonStyle.Success)), navigation('notifications')] };
-  if (name === 'templates') {
-    const templateComponents = [row(...ALERT_TYPES.slice(0, 5).map((type) => btn(`${P}template:${type}`, ALERT_LABEL[type] || type, ButtonStyle.Primary)))];
-    if (ALERT_TYPES.length > 5) templateComponents.push(row(...ALERT_TYPES.slice(5).map((type) => btn(`${P}template:${type}`, ALERT_LABEL[type] || type, ButtonStyle.Primary))));
-    templateComponents.push(navigation('templates'));
-    return { embeds: [embed(config, '🎨 Templates', 'Edit the rich Discord message used for each notification type. Available variables include {creator}, {title}, {platform}, {url}, {category}, {viewers} and {duration}.', who(interaction))], components: templateComponents };
-  }
-  if (name === 'feeds') return { embeds: [embed(config, '📡 Feeds', 'Choose the default destination used by creator notifications.', who(interaction))], components: [channelSelect(`${P}feed:channel`, config.alertsChannelId, 'Select the default notification feed'), navigation('feeds')] };
-  if (name === 'channels') return { embeds: [embed(config, '📂 Channels', 'Configure the Discord channel used by Social Studio.', who(interaction))], components: [channelSelect(`${P}channel:alerts`, config.alertsChannelId, 'Select the Social Studio alert channel'), navigation('channels')] };
-  if (name === 'settings') return { embeds: [embed(config, '⚙️ Social Studio Settings', 'Guild-level Social Studio configuration.', who(interaction))], components: [row(btn(`${P}permissions`, '🔐 Permissions', ButtonStyle.Primary), btn(`${P}roles`, '👥 Roles', ButtonStyle.Primary), btn(`${P}automation`, '⚡ Automation', ButtonStyle.Primary)), row(btn(`${P}testing`, '🧪 Testing'), btn(`${P}data`, '🗄️ Data')), navigation('settings')] };
-
-  const components = [];
-  if (name === 'permissions' || name === 'roles') components.push(roleSelect(config.managerRoleIds));
-  if (name === 'automation') components.push(row(btn(`${P}toggle`, config.enabled ? 'Disable Module' : 'Enable Module', config.enabled ? ButtonStyle.Danger : ButtonStyle.Success), btn(`${P}account:check`, 'Run Check Now', ButtonStyle.Primary, !accounts.length)));
-  if (name === 'testing') components.push(row(btn(`${P}test`, 'Send Test Notification', ButtonStyle.Primary, !config.alertsChannelId)));
-  if (name === 'data') components.push(row(btn(`${P}data:refresh`, '🔄 Refresh'), btn(`${P}creator:rebuild`, 'Rebuild Profiles')));
-  components.push(navigation(name));
-  return { embeds: [embed(config, name[0].toUpperCase() + name.slice(1), 'Social Studio settings.', who(interaction))], components };
+  if (name === 'notifications') { const active = accounts.filter((a) => a.enabled !== false).length; return { embeds: [embed(config, '📢 Notifications', `**Module:** ${config.enabled ? '🟢 Enabled' : '🔴 Disabled'}\n**Monitored Accounts:** ${active}/${accounts.length}\n**Default Channel:** ${config.alertsChannelId ? `<#${config.alertsChannelId}>` : 'Not configured'}\n\nChoose alert types from each account’s Manage screen.`, who(i))], components: [row(btn(`${P}toggle`, config.enabled ? '⏸️ Disable Notifications' : '▶️ Enable Notifications', config.enabled ? ButtonStyle.Danger : ButtonStyle.Success), btn(`${P}account:check`, '🔄 Check Providers', ButtonStyle.Primary, !accounts.length)), navigation('notifications')] }; }
+  if (name === 'templates') { const c = [row(...ALERT_TYPES.slice(0, 5).map((t) => btn(`${P}template:${t}`, ALERT_LABEL[t], ButtonStyle.Primary)))]; if (ALERT_TYPES.length > 5) c.push(row(...ALERT_TYPES.slice(5).map((t) => btn(`${P}template:${t}`, ALERT_LABEL[t], ButtonStyle.Primary)))); c.push(navigation('templates')); return { embeds: [embed(config, '🎨 Templates', 'Edit rich Discord notification templates. Variables: {creator}, {title}, {platform}, {url}, {category}, {viewers}, {duration}.', who(i))], components: c }; }
+  if (name === 'feeds') return { embeds: [embed(config, '📡 Feeds', `**Current:** ${config.alertsChannelId ? `<#${config.alertsChannelId}>` : 'Not configured'}`, who(i))], components: [channelSelect(`${P}feed:channel`, config.alertsChannelId, 'Select default notification feed'), navigation('feeds')] };
+  if (name === 'channels') return { embeds: [embed(config, '📂 Channels', `**Current:** ${config.alertsChannelId ? `<#${config.alertsChannelId}>` : 'Not configured'}`, who(i))], components: [channelSelect(`${P}channel:alerts`, config.alertsChannelId, 'Select Social Studio alert channel'), navigation('channels')] };
+  if (name === 'settings') return { embeds: [embed(config, '⚙️ Social Studio Settings', 'Manage permissions, roles, automation, testing and data.', who(i))], components: [row(btn(`${P}permissions`, '🔐 Permissions', ButtonStyle.Primary), btn(`${P}roles`, '👥 Roles', ButtonStyle.Primary), btn(`${P}automation`, '⚡ Automation', ButtonStyle.Primary)), row(btn(`${P}testing`, '🧪 Testing'), btn(`${P}data`, '🗄️ Data')), navigation('settings')] };
+  const c = []; if (name === 'permissions' || name === 'roles') c.push(roleSelect(config.managerRoleIds)); if (name === 'automation') c.push(row(btn(`${P}toggle`, config.enabled ? '⏸️ Disable Module' : '▶️ Enable Module', config.enabled ? ButtonStyle.Danger : ButtonStyle.Success), btn(`${P}account:check`, '🔄 Run Check Now', ButtonStyle.Primary, !accounts.length))); if (name === 'testing') c.push(row(btn(`${P}test`, '📨 Send Test', ButtonStyle.Primary, !config.alertsChannelId), btn(`${P}account:check`, '🔄 Check Providers', ButtonStyle.Secondary, !accounts.length))); if (name === 'data') c.push(row(btn(`${P}data:refresh`, '🔄 Refresh'), btn(`${P}creator:rebuild`, '🧩 Rebuild Profiles'))); c.push(navigation(name)); return { embeds: [embed(config, name[0].toUpperCase() + name.slice(1), 'Social Studio settings.', who(i))], components: c };
 }
 
-async function respond(interaction, payload) {
-  if (interaction.deferred || interaction.replied) await interaction.editReply(payload);
-  else await interaction.update(payload);
-  return true;
+async function respond(i, payload) { if (i.deferred || i.replied) await i.editReply(payload); else await i.update(payload); return true; }
+async function afterModal(i, section, message) { const payload = buildSectionPanel(i, section); if (i.isFromMessage?.() && !i.deferred && !i.replied) { await i.update(payload); await i.followUp({ content: message, flags: 64 }).catch(() => null); } else if (!i.deferred && !i.replied) await i.reply({ content: message, flags: 64 }); else await i.followUp({ content: message, flags: 64 }); return true; }
+function opensModal(id) { return id === `${P}creator:new` || id === `${P}creator:change` || id === `${P}account:continue` || id === `${P}account:change` || (id.startsWith(`${P}template:`) && !id.startsWith(`${P}template:save:`)); }
+
+async function handleInteraction(i) {
+  const id = String(i?.customId || ''); if (id !== 'admin:social' && !id.startsWith(P)) return false; if (!i.guild?.id) throw new Error('Social Studio requires a guild interaction.'); if (i.isMessageComponent?.() && !opensModal(id) && !i.deferred && !i.replied) await i.deferUpdate();
+  const config = getConfig(i.guildId), actorId = i.user?.id || null;
+  if (id === 'admin:social' || id === `${P}main`) return respond(i, buildMainPanel(i.guild, who(i)));
+  if (id === `${P}creator:new`) { await i.showModal(creatorModal()); return true; }
+  if (id === `${P}creator:select`) { setCreatorSession(i, { creatorId: i.values?.[0] || null }); return respond(i, buildSectionPanel(i, 'creators')); }
+  if (id === `${P}creator:page:prev` || id === `${P}creator:page:next`) { const v = getCreatorSession(i); setCreatorSession(i, { page: Math.max(0, v.page + (id.endsWith('next') ? 1 : -1)), creatorId: null }); return respond(i, buildSectionPanel(i, 'creators')); }
+  if (id === `${P}creator:edit`) { const c = config.creators[getCreatorSession(i).creatorId]; if (!c) throw new Error('Select a creator profile first.'); return respond(i, buildCreatorEditPanel(i, config, c)); }
+  if (id === `${P}creator:change`) { const c = config.creators[getCreatorSession(i).creatorId]; if (!c) throw new Error('The selected creator profile no longer exists.'); await i.showModal(creatorModal(c)); return true; }
+  if (id.startsWith(`${P}creator:check:`) || id === `${P}account:check` || id.startsWith(`${P}account:check:`)) return true;
+  if (id === `${P}creator:toggle`) { const c = config.creators[getCreatorSession(i).creatorId]; if (!c) throw new Error('The selected creator profile no longer exists.'); c.enabled = c.enabled === false; c.updatedAt = now(); saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildCreatorEditPanel(i, getConfig(i.guildId), c)); }
+  if (id === `${P}creator:delete`) { const c = config.creators[getCreatorSession(i).creatorId]; if (!c) throw new Error('The selected creator profile no longer exists.'); return respond(i, { embeds: [embed(config, '⚠️ Delete Creator Profile', `Delete **${c.displayName}**? Linked accounts remain stored but unassigned.`, who(i))], components: [row(btn(`${P}creator:delete:cancel`, 'Cancel'), btn(`${P}creator:delete:confirm`, 'Delete Profile', ButtonStyle.Danger))] }); }
+  if (id === `${P}creator:delete:cancel`) return respond(i, buildSectionPanel(i, 'creators'));
+  if (id === `${P}creator:delete:confirm`) { const cid = getCreatorSession(i).creatorId; if (!config.creators[cid]) throw new Error('The selected creator profile no longer exists.'); delete config.creators[cid]; saveConfig(i.guildId, config, i.guild, actorId); setCreatorSession(i, { creatorId: null }); return respond(i, buildSectionPanel(i, 'creators')); }
+  if (id.startsWith(`${P}creator:update:`)) { const cid = id.slice(`${P}creator:update:`.length), c = config.creators[cid]; if (!c) throw new Error('The creator profile no longer exists.'); c.displayName = i.fields.getTextInputValue('displayName').trim(); c.group = i.fields.getTextInputValue('group').trim(); c.tags = i.fields.getTextInputValue('tags').split(',').map((v) => v.trim()).filter(Boolean); c.notes = i.fields.getTextInputValue('notes').trim(); c.updatedAt = now(); saveConfig(i.guildId, config, i.guild, actorId); setCreatorSession(i, { creatorId: cid }); return afterModal(i, 'creators', '✅ Creator profile updated.'); }
+  if (id === `${P}account:creator`) { setAccountSession(i, { creatorId: i.values?.[0] || null, accountId: null, platforms: [] }); return respond(i, buildSectionPanel(i, 'accounts')); }
+  if (id === `${P}account:select`) { setAccountSession(i, { accountId: i.values?.[0] || null }); return respond(i, buildSectionPanel(i, 'accounts')); }
+  if (id === `${P}account:platforms`) { setAccountSession(i, { platforms: (i.values || []).filter((p) => PLATFORMS.includes(p)).slice(0, 5) }); return respond(i, buildSectionPanel(i, 'accounts')); }
+  if (id === `${P}account:reset`) { accountSessions.delete(sessionKey(i)); return respond(i, buildSectionPanel(i, 'accounts')); }
+  if (id === `${P}account:continue`) { const s = getAccountSession(i); if (!s.creatorId || !config.creators[s.creatorId]) throw new Error('Select a creator profile first.'); if (!s.platforms.length) throw new Error('Select at least one platform first.'); await i.showModal(accountModal(s.platforms)); return true; }
+  if (id === `${P}account:edit`) { const s = getAccountSession(i), c = config.creators[s.creatorId], a = config.accounts[s.accountId]; if (!c || !a) throw new Error('Select an account first.'); return respond(i, buildAccountEditPanel(i, config, c, a)); }
+  if (id === `${P}account:change`) { const a = config.accounts[getAccountSession(i).accountId]; if (!a) throw new Error('The selected account no longer exists.'); await i.showModal(accountEditModal(a)); return true; }
+  if (id === `${P}account:alerts`) { const s = getAccountSession(i), c = config.creators[s.creatorId], a = config.accounts[s.accountId]; if (!c || !a) throw new Error('Select an account first.'); a.alertTypes = (i.values || []).filter((t) => supportedAlerts(a.platform).includes(t)); a.updatedAt = now(); saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildAccountEditPanel(i, getConfig(i.guildId), c, getConfig(i.guildId).accounts[a.accountId])); }
+  if (id === `${P}account:toggle`) { const s = getAccountSession(i), c = config.creators[s.creatorId], a = config.accounts[s.accountId]; if (!c || !a) throw new Error('The selected account no longer exists.'); a.enabled = a.enabled === false; a.updatedAt = now(); saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildAccountEditPanel(i, getConfig(i.guildId), c, getConfig(i.guildId).accounts[a.accountId])); }
+  if (id === `${P}account:delete`) { const a = config.accounts[getAccountSession(i).accountId]; if (!a) throw new Error('The selected account no longer exists.'); return respond(i, { embeds: [embed(config, '⚠️ Delete Social Account', `Delete **${LABEL[a.platform]} · ${a.username || a.externalId}**?`, who(i))], components: [row(btn(`${P}account:delete:cancel`, 'Cancel'), btn(`${P}account:delete:confirm`, 'Delete Account', ButtonStyle.Danger))] }); }
+  if (id === `${P}account:delete:cancel`) { const s = getAccountSession(i), c = config.creators[s.creatorId], a = config.accounts[s.accountId]; return c && a ? respond(i, buildAccountEditPanel(i, config, c, a)) : respond(i, buildSectionPanel(i, 'accounts')); }
+  if (id === `${P}account:delete:confirm`) { const s = getAccountSession(i), a = config.accounts[s.accountId]; if (!a) throw new Error('The selected account no longer exists.'); removeAccountReferences(config, [a.accountId]); delete config.accounts[a.accountId]; saveConfig(i.guildId, config, i.guild, actorId); setAccountSession(i, { accountId: null }); return respond(i, buildSectionPanel(i, 'accounts')); }
+  if (id.startsWith(`${P}account:update:`)) { const aid = id.slice(`${P}account:update:`.length), old = config.accounts[aid], s = getAccountSession(i), c = config.creators[s.creatorId]; if (!old || !c) throw new Error('The selected account no longer exists.'); const raw = i.fields.getTextInputValue('accountValue').trim(); removeAccountReferences(config, [old.accountId]); delete config.accounts[old.accountId]; const r = upsertAccount(config, c, old.platform, raw), a = config.accounts[r.accountId]; a.enabled = old.enabled !== false; a.alertTypes = Array.isArray(old.alertTypes) ? old.alertTypes : supportedAlerts(old.platform); a.alertChannelId = old.alertChannelId || null; a.mentionMode = old.mentionMode || 'none'; a.mentionRoleId = old.mentionRoleId || null; saveConfig(i.guildId, config, i.guild, actorId); setAccountSession(i, { accountId: r.accountId, platforms: [] }); return afterModal(i, 'accounts', `✅ ${LABEL[old.platform]} account updated.`); }
+  if (id === `${P}creator:create`) { const name = i.fields.getTextInputValue('displayName').trim(); if (!name) throw new Error('Creator display name is required.'); const cid = makeId('creator'); config.creators[cid] = { creatorId: cid, displayName: name, group: i.fields.getTextInputValue('group').trim(), tags: i.fields.getTextInputValue('tags').split(',').map((v) => v.trim()).filter(Boolean), notes: i.fields.getTextInputValue('notes').trim(), enabled: true, accountIds: [], createdAt: now(), updatedAt: now() }; saveConfig(i.guildId, config, i.guild, actorId); setCreatorSession(i, { creatorId: cid }); return afterModal(i, 'creators', '✅ Creator profile created.'); }
+  if (id === `${P}account:create-multi`) { const s = getAccountSession(i), c = config.creators[s.creatorId]; if (!c) throw new Error('The selected creator profile no longer exists.'); let created = 0, updated = 0, dupes = 0, selected = null; for (const p of s.platforms.slice(0, 5)) { const raw = i.fields.getTextInputValue(`account_${p}`).trim(); if (!raw) continue; const r = upsertAccount(config, c, p, raw); selected = r.accountId; r.created ? created++ : updated++; dupes += r.removedDuplicates; } saveConfig(i.guildId, config, i.guild, actorId); setAccountSession(i, { creatorId: c.creatorId, platforms: [], accountId: selected }); return afterModal(i, 'accounts', `✅ ${created} added, ${updated} updated${dupes ? `, ${dupes} duplicates merged` : ''}.`); }
+  if (id.startsWith(`${P}template:`) && !id.startsWith(`${P}template:save:`)) { const type = id.split(':')[2]; if (!ALERT_TYPES.includes(type)) throw new Error('Unknown notification template.'); await i.showModal(templateModal(type, config)); return true; }
+  if (id.startsWith(`${P}template:save:`)) { const type = id.split(':')[3]; config.templates[type] = { title: i.fields.getTextInputValue('title'), description: i.fields.getTextInputValue('description'), buttonLabel: i.fields.getTextInputValue('buttonLabel') }; saveConfig(i.guildId, config, i.guild, actorId); return afterModal(i, 'templates', `✅ ${type} template saved.`); }
+  if (id === `${P}feed:channel` || id === `${P}channel:alerts`) { config.alertsChannelId = i.values?.[0] || null; saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, id.includes('feed') ? 'feeds' : 'channels')); }
+  if (id === `${P}roles:select`) { config.managerRoleIds = i.values || []; saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'roles')); }
+  if (id === `${P}toggle`) { guildManager.setModuleEnabled(i.guildId, 'social', !config.enabled, { actorId }); return respond(i, buildSectionPanel(i, 'notifications')); }
+  if (id === `${P}creator:rebuild`) { const linked = new Set(Object.values(config.creators).flatMap((c) => c.accountIds || [])); for (const a of Object.values(config.accounts)) if (!linked.has(a.accountId)) { const cid = makeId('creator'); config.creators[cid] = { creatorId: cid, displayName: a.displayName || a.username || a.externalId, group: '', tags: [a.platform], notes: '', enabled: true, accountIds: [a.accountId], createdAt: now(), updatedAt: now() }; } saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'creators')); }
+  if (id === `${P}test`) { if (!config.alertsChannelId) throw new Error('Choose an alert channel first.'); const ch = i.guild.channels.cache.get(config.alertsChannelId) || await i.guild.channels.fetch(config.alertsChannelId).catch(() => null); if (!ch?.isTextBased?.() || typeof ch.send !== 'function') throw new Error('The configured alert channel is unavailable.'); await ch.send({ embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('📣 Social Studio Test').setDescription('Your Social Studio notification channel is working.').setTimestamp()] }); return true; }
+  const section = id.slice(P.length); if (NAV.has(section)) return respond(i, buildSectionPanel(i, section)); throw new Error(`Unknown Social Studio interaction: ${id}`);
 }
 
-async function afterModal(interaction, section, message) {
-  const payload = buildSectionPanel(interaction, section);
-  if (interaction.isFromMessage?.() && !interaction.deferred && !interaction.replied) {
-    await interaction.update(payload);
-    await interaction.followUp({ content: message, flags: 64 }).catch(() => null);
-  } else if (!interaction.deferred && !interaction.replied) {
-    await interaction.reply({ content: message, flags: 64 });
-  } else {
-    await interaction.followUp({ content: message, flags: 64 });
-  }
-  return true;
-}
-
-function opensModal(id) {
-  return id === `${P}creator:new`
-    || id === `${P}creator:change`
-    || id === `${P}account:continue`
-    || id === `${P}account:change`
-    || (id.startsWith(`${P}template:`) && !id.startsWith(`${P}template:save:`));
-}
-
-async function handleInteraction(interaction) {
-  const id = String(interaction?.customId || '');
-  if (id !== 'admin:social' && !id.startsWith(P)) return false;
-  if (!interaction.guild?.id) throw new Error('Social Studio requires a guild interaction.');
-  if (interaction.isMessageComponent?.() && !opensModal(id) && !interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-
-  const config = getConfig(interaction.guildId);
-  const actorId = interaction.user?.id || null;
-
-  if (id === 'admin:social' || id === `${P}main`) return respond(interaction, buildMainPanel(interaction.guild, who(interaction)));
-  if (id === `${P}next`) return true;
-  if (id === `${P}creator:new`) { await interaction.showModal(creatorModal()); return true; }
-  if (id === `${P}creator:select`) { setCreatorSession(interaction, { creatorId: interaction.values?.[0] || null }); return respond(interaction, buildSectionPanel(interaction, 'creators')); }
-  if (id === `${P}creator:page:prev` || id === `${P}creator:page:next`) { const view = getCreatorSession(interaction); setCreatorSession(interaction, { page: Math.max(0, view.page + (id.endsWith('next') ? 1 : -1)), creatorId: null }); return respond(interaction, buildSectionPanel(interaction, 'creators')); }
-  if (id === `${P}creator:edit`) { const creator = config.creators[getCreatorSession(interaction).creatorId]; if (!creator) throw new Error('Select a creator profile first.'); return respond(interaction, buildCreatorEditPanel(interaction, config, creator)); }
-  if (id === `${P}creator:change`) { const creator = config.creators[getCreatorSession(interaction).creatorId]; if (!creator) throw new Error('The selected creator profile no longer exists.'); await interaction.showModal(creatorModal(creator)); return true; }
-  if (id === `${P}creator:toggle`) { const creator = config.creators[getCreatorSession(interaction).creatorId]; if (!creator) throw new Error('The selected creator profile no longer exists.'); creator.enabled = creator.enabled === false; creator.updatedAt = now(); saveConfig(interaction.guildId, config, interaction.guild, actorId); return respond(interaction, buildCreatorEditPanel(interaction, getConfig(interaction.guildId), creator)); }
-  if (id === `${P}creator:delete`) { const creator = config.creators[getCreatorSession(interaction).creatorId]; if (!creator) throw new Error('The selected creator profile no longer exists.'); return respond(interaction, { embeds: [embed(config, '⚠️ Delete Creator Profile', `Delete **${creator.displayName}**? Linked accounts will remain stored but become unassigned.`, who(interaction))], components: [row(btn(`${P}creator:delete:cancel`, 'Cancel'), btn(`${P}creator:delete:confirm`, 'Delete Profile', ButtonStyle.Danger))] }); }
-  if (id === `${P}creator:delete:cancel`) return respond(interaction, buildSectionPanel(interaction, 'creators'));
-  if (id === `${P}creator:delete:confirm`) { const creatorId = getCreatorSession(interaction).creatorId; if (!config.creators[creatorId]) throw new Error('The selected creator profile no longer exists.'); delete config.creators[creatorId]; saveConfig(interaction.guildId, config, interaction.guild, actorId); setCreatorSession(interaction, { creatorId: null }); return respond(interaction, buildSectionPanel(interaction, 'creators')); }
-  if (id.startsWith(`${P}creator:update:`)) { const creatorId = id.slice(`${P}creator:update:`.length); const creator = config.creators[creatorId]; if (!creator) throw new Error('The creator profile no longer exists.'); creator.displayName = interaction.fields.getTextInputValue('displayName').trim(); creator.group = interaction.fields.getTextInputValue('group').trim(); creator.tags = interaction.fields.getTextInputValue('tags').split(',').map((value) => value.trim()).filter(Boolean); creator.notes = interaction.fields.getTextInputValue('notes').trim(); creator.updatedAt = now(); saveConfig(interaction.guildId, config, interaction.guild, actorId); setCreatorSession(interaction, { creatorId }); return afterModal(interaction, 'creators', '✅ Creator profile updated and verified.'); }
-
-  if (id === `${P}account:creator`) { setAccountSession(interaction, { creatorId: interaction.values?.[0] || null, accountId: null, platforms: [] }); return respond(interaction, buildSectionPanel(interaction, 'accounts')); }
-  if (id === `${P}account:select`) { setAccountSession(interaction, { accountId: interaction.values?.[0] || null }); return respond(interaction, buildSectionPanel(interaction, 'accounts')); }
-  if (id === `${P}account:platforms`) { setAccountSession(interaction, { platforms: (interaction.values || []).filter((platform) => PLATFORMS.includes(platform)).slice(0, 5) }); return respond(interaction, buildSectionPanel(interaction, 'accounts')); }
-  if (id === `${P}account:reset`) { accountSessions.delete(sessionKey(interaction)); return respond(interaction, buildSectionPanel(interaction, 'accounts')); }
-  if (id === `${P}account:continue`) { const session = getAccountSession(interaction); if (!session.creatorId || !config.creators[session.creatorId]) throw new Error('Select a creator profile first.'); if (!session.platforms.length) throw new Error('Select at least one platform first.'); await interaction.showModal(accountModal(session.platforms)); return true; }
-  if (id === `${P}account:edit`) { const session = getAccountSession(interaction); const creator = config.creators[session.creatorId]; const account = config.accounts[session.accountId]; if (!creator) throw new Error('Select a creator profile first.'); if (!account || !(creator.accountIds || []).includes(account.accountId)) throw new Error('Select an account first.'); return respond(interaction, buildAccountEditPanel(interaction, config, creator, account)); }
-  if (id === `${P}account:change`) { const session = getAccountSession(interaction); const account = config.accounts[session.accountId]; if (!account) throw new Error('The selected account no longer exists.'); await interaction.showModal(accountEditModal(account)); return true; }
-  if (id === `${P}account:alerts`) { const session = getAccountSession(interaction); const creator = config.creators[session.creatorId]; const account = config.accounts[session.accountId]; if (!creator || !account) throw new Error('Select an account first.'); const supported = supportedAlerts(account.platform); account.alertTypes = (interaction.values || []).filter((type) => supported.includes(type)); account.updatedAt = now(); saveConfig(interaction.guildId, config, interaction.guild, actorId); return respond(interaction, buildAccountEditPanel(interaction, getConfig(interaction.guildId), creator, getConfig(interaction.guildId).accounts[account.accountId])); }
-  if (id === `${P}account:toggle`) { const session = getAccountSession(interaction); const creator = config.creators[session.creatorId]; const account = config.accounts[session.accountId]; if (!creator || !account) throw new Error('The selected account no longer exists.'); account.enabled = account.enabled === false; account.updatedAt = now(); saveConfig(interaction.guildId, config, interaction.guild, actorId); return respond(interaction, buildAccountEditPanel(interaction, getConfig(interaction.guildId), creator, getConfig(interaction.guildId).accounts[account.accountId])); }
-  if (id === `${P}account:delete`) { const session = getAccountSession(interaction); const account = config.accounts[session.accountId]; if (!account) throw new Error('The selected account no longer exists.'); return respond(interaction, { embeds: [embed(config, '⚠️ Delete Social Account', `Delete **${LABEL[account.platform] || account.platform} · ${account.username}**?\n\nThis removes the account from Social Studio and unlinks it from every creator.`, who(interaction))], components: [row(btn(`${P}account:delete:cancel`, 'Cancel'), btn(`${P}account:delete:confirm`, 'Delete Account', ButtonStyle.Danger))] }); }
-  if (id === `${P}account:delete:cancel`) { const session = getAccountSession(interaction); const creator = config.creators[session.creatorId]; const account = config.accounts[session.accountId]; if (!creator || !account) return respond(interaction, buildSectionPanel(interaction, 'accounts')); return respond(interaction, buildAccountEditPanel(interaction, config, creator, account)); }
-  if (id === `${P}account:delete:confirm`) { const session = getAccountSession(interaction); const account = config.accounts[session.accountId]; if (!account) throw new Error('The selected account no longer exists.'); removeAccountReferences(config, [account.accountId]); delete config.accounts[account.accountId]; saveConfig(interaction.guildId, config, interaction.guild, actorId); setAccountSession(interaction, { accountId: null }); return respond(interaction, buildSectionPanel(interaction, 'accounts')); }
-  if (id.startsWith(`${P}account:update:`)) { const accountId = id.slice(`${P}account:update:`.length); const account = config.accounts[accountId]; const session = getAccountSession(interaction); const creator = config.creators[session.creatorId]; if (!account || !creator) throw new Error('The selected account no longer exists.'); const rawValue = interaction.fields.getTextInputValue('accountValue').trim(); const originalId = account.accountId; removeAccountReferences(config, [originalId]); delete config.accounts[originalId]; const result = upsertAccount(config, creator, account.platform, rawValue); const updated = config.accounts[result.accountId]; updated.enabled = account.enabled !== false; updated.alertTypes = Array.isArray(account.alertTypes) && account.alertTypes.length ? account.alertTypes : supportedAlerts(account.platform); updated.alertChannelId = account.alertChannelId || null; updated.mentionMode = account.mentionMode || 'none'; updated.mentionRoleId = account.mentionRoleId || null; saveConfig(interaction.guildId, config, interaction.guild, actorId); setAccountSession(interaction, { accountId: result.accountId, platforms: [] }); return afterModal(interaction, 'accounts', `✅ ${LABEL[account.platform] || account.platform} account updated and verified.`); }
-
-  if (id === `${P}creator:create`) { const displayName = interaction.fields.getTextInputValue('displayName').trim(); if (!displayName) throw new Error('Creator display name is required.'); const creatorId = makeId('creator'); config.creators[creatorId] = { creatorId, displayName, group: interaction.fields.getTextInputValue('group').trim(), tags: interaction.fields.getTextInputValue('tags').split(',').map((value) => value.trim()).filter(Boolean), notes: interaction.fields.getTextInputValue('notes').trim(), enabled: true, accountIds: [], createdAt: now(), updatedAt: now() }; saveConfig(interaction.guildId, config, interaction.guild, actorId); setCreatorSession(interaction, { creatorId }); return afterModal(interaction, 'creators', '✅ Creator profile created and verified.'); }
-  if (id === `${P}account:create-multi`) { const session = getAccountSession(interaction); const creator = config.creators[session.creatorId]; if (!creator) throw new Error('The selected creator profile no longer exists.'); if (!session.platforms.length) throw new Error('No platforms were selected.'); let created = 0; let updated = 0; let removedDuplicates = 0; let selectedAccountId = null; for (const platform of session.platforms.slice(0, 5)) { const rawValue = interaction.fields.getTextInputValue(`account_${platform}`).trim(); if (!rawValue) continue; const result = upsertAccount(config, creator, platform, rawValue); selectedAccountId = result.accountId; if (result.created) created += 1; else updated += 1; removedDuplicates += result.removedDuplicates; } saveConfig(interaction.guildId, config, interaction.guild, actorId); setAccountSession(interaction, { creatorId: creator.creatorId, platforms: [], accountId: selectedAccountId }); const parts = []; if (created) parts.push(`${created} added`); if (updated) parts.push(`${updated} updated`); if (removedDuplicates) parts.push(`${removedDuplicates} duplicate${removedDuplicates === 1 ? '' : 's'} merged`); return afterModal(interaction, 'accounts', `✅ ${parts.join(', ') || 'Account saved'} and verified for ${creator.displayName}.`); }
-
-  if (id.startsWith(`${P}template:`) && !id.startsWith(`${P}template:save:`)) { const type = id.split(':')[2]; if (!ALERT_TYPES.includes(type)) throw new Error('Unknown notification template.'); await interaction.showModal(templateModal(type, config)); return true; }
-  if (id.startsWith(`${P}template:save:`)) { const type = id.split(':')[3]; config.templates[type] = { title: interaction.fields.getTextInputValue('title'), description: interaction.fields.getTextInputValue('description'), buttonLabel: interaction.fields.getTextInputValue('buttonLabel') }; saveConfig(interaction.guildId, config, interaction.guild, actorId); return afterModal(interaction, 'templates', `✅ ${type} template saved.`); }
-  if (id === `${P}feed:channel` || id === `${P}channel:alerts`) { config.alertsChannelId = interaction.values?.[0] || null; saveConfig(interaction.guildId, config, interaction.guild, actorId); return respond(interaction, buildSectionPanel(interaction, id.includes('feed') ? 'feeds' : 'channels')); }
-  if (id === `${P}roles:select`) { config.managerRoleIds = interaction.values || []; saveConfig(interaction.guildId, config, interaction.guild, actorId); return respond(interaction, buildSectionPanel(interaction, 'roles')); }
-  if (id === `${P}toggle`) { guildManager.setModuleEnabled(interaction.guildId, 'social', !config.enabled, { actorId }); return respond(interaction, buildSectionPanel(interaction, 'notifications')); }
-  if (id === `${P}account:check`) { const count = Object.values(config.accounts).filter((account) => account.enabled !== false).length; config.analytics.checks = Number(config.analytics.checks || 0) + count; saveConfig(interaction.guildId, config, interaction.guild, actorId); return respond(interaction, buildSectionPanel(interaction, 'accounts')); }
-  if (id === `${P}creator:rebuild`) { const linked = new Set(Object.values(config.creators).flatMap((creator) => creator.accountIds || [])); for (const account of Object.values(config.accounts)) { if (linked.has(account.accountId)) continue; const creatorId = makeId('creator'); config.creators[creatorId] = { creatorId, displayName: account.displayName || account.username, group: '', tags: [account.platform], notes: '', enabled: true, accountIds: [account.accountId], createdAt: now(), updatedAt: now() }; } saveConfig(interaction.guildId, config, interaction.guild, actorId); return respond(interaction, buildSectionPanel(interaction, 'creators')); }
-  if (id === `${P}test`) { if (!config.alertsChannelId) throw new Error('Choose an alert channel first.'); const channel = interaction.guild.channels.cache.get(config.alertsChannelId) || await interaction.guild.channels.fetch(config.alertsChannelId).catch(() => null); if (!channel?.isTextBased?.() || typeof channel.send !== 'function') throw new Error('The configured alert channel is unavailable.'); await channel.send({ embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('📣 Social Studio Test').setDescription('Your Social Studio notification channel is working.').setTimestamp()] }); return true; }
-
-  const sectionName = id.slice(P.length);
-  if (NAV.has(sectionName)) return respond(interaction, buildSectionPanel(interaction, sectionName));
-  throw new Error(`Unknown Social Studio interaction: ${id}`);
-}
-
-module.exports = {
-  buildPanel: buildMainPanel,
-  handleInteraction,
-  buildSocialAdminPanel: buildMainPanel,
-  buildSectionPanel,
-  handleSocialAdminInteraction: handleInteraction,
-};
+module.exports = { buildPanel: buildMainPanel, handleInteraction, buildSocialAdminPanel: buildMainPanel, buildSectionPanel, handleSocialAdminInteraction: handleInteraction };
