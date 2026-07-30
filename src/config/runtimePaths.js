@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
-const DEFAULT_DATA_ROOT = path.resolve(PROJECT_ROOT, '..', 'GoliathData');
+const DEFAULT_DATA_ROOT = path.join(PROJECT_ROOT, 'src', 'runtime');
 
 function resolveBotMode(botMode = process.env.BOT_MODE) {
   const rawMode = botMode && typeof botMode === 'object'
@@ -15,42 +15,38 @@ function resolveBotMode(botMode = process.env.BOT_MODE) {
   return 'dev';
 }
 
+/*
+ * Runtime data is intentionally deployment-local.
+ *
+ * VPS layout:
+ *   /home/goliath/dev/src/runtime/dev
+ *   /home/goliath/beta/src/runtime/beta
+ *   /home/goliath/production/src/runtime/production
+ *
+ * Local installs follow the same PROJECT_ROOT/src/runtime/<mode> layout.
+ * Do not move guild/runtime data to a shared parent GoliathData directory.
+ */
 function getPersistentDataRoot() {
-  const configured = String(process.env.GOLIATH_DATA_ROOT || '').trim();
-  return configured ? path.resolve(configured) : DEFAULT_DATA_ROOT;
+  return DEFAULT_DATA_ROOT;
 }
 
 function getLegacyRuntimeRoot(botMode = process.env.BOT_MODE) {
-  return path.join(PROJECT_ROOT, 'src', 'runtime', resolveBotMode(botMode));
+  return path.join(DEFAULT_DATA_ROOT, resolveBotMode(botMode));
 }
 
-function copyDirectory(source, destination) {
-  fs.mkdirSync(destination, { recursive: true });
-  for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
-    const sourcePath = path.join(source, entry.name);
-    const destinationPath = path.join(destination, entry.name);
-    if (entry.isDirectory()) copyDirectory(sourcePath, destinationPath);
-    else if (entry.isFile()) fs.copyFileSync(sourcePath, destinationPath, fs.constants.COPYFILE_EXCL);
-  }
-}
-
+/*
+ * Compatibility shim for callers that still use the old migration helper.
+ * There is no migration anymore; the canonical runtime root is already the
+ * deployment-local src/runtime/<mode> directory.
+ */
 function migrateLegacyRuntime(botMode = process.env.BOT_MODE) {
-  const legacyRoot = getLegacyRuntimeRoot(botMode);
-  const persistentRoot = path.join(getPersistentDataRoot(), 'runtime', resolveBotMode(botMode));
-
-  if (fs.existsSync(persistentRoot)) return persistentRoot;
-  if (!fs.existsSync(legacyRoot)) return persistentRoot;
-
-  fs.mkdirSync(path.dirname(persistentRoot), { recursive: true });
-  copyDirectory(legacyRoot, persistentRoot);
-  console.log(`[RuntimePaths] Migrated ${resolveBotMode(botMode)} runtime data to persistent storage: ${persistentRoot}`);
-  return persistentRoot;
+  return getLegacyRuntimeRoot(botMode);
 }
 
 /* ---------------- ROOT ---------------- */
 
 function getRuntimeRoot(botMode = process.env.BOT_MODE) {
-  return migrateLegacyRuntime(botMode);
+  return getLegacyRuntimeRoot(botMode);
 }
 
 /* ---------------- PATHS ---------------- */
