@@ -26,11 +26,48 @@ function configFor(guildId) {
   };
 }
 
-function saveConfig(guildId, config, guild = null) {
-  const { enabled: _enabled, ...storedConfig } = config || {};
-  const next = { ...storedConfig, updatedAt: now() };
-  guildManager.replaceGuildSection(guildId, 'social', next, guild || { guildId });
-  return { ...(guildManager.reloadGuild(guildId)?.modules?.social || next), enabled: guildManager.isModuleEnabled(guildId, 'social') };
+function saveMonitorState(guildId, config, monitorUpdates, analyticsDelta, historyEntries, guild = null) {
+  const updated = guildManager.updateGuildSection(
+    guildId,
+    'social',
+    (latest = {}) => {
+      const latestAccounts = latest.accounts && typeof latest.accounts === 'object' ? latest.accounts : {};
+      const accounts = { ...latestAccounts };
+
+      for (const [accountId, update] of monitorUpdates.entries()) {
+        const current = accounts[accountId];
+        if (!current || typeof current !== 'object') continue;
+        accounts[accountId] = {
+          ...current,
+          state: update.state,
+          ...(update.externalId && !current.externalId ? { externalId: update.externalId } : {}),
+          updatedAt: update.updatedAt,
+        };
+      }
+
+      const latestAnalytics = latest.analytics && typeof latest.analytics === 'object' ? latest.analytics : {};
+      const analytics = { ...latestAnalytics };
+      for (const [key, amount] of Object.entries(analyticsDelta || {})) {
+        if (!Number.isFinite(Number(amount)) || Number(amount) === 0) continue;
+        analytics[key] = Number(analytics[key] || 0) + Number(amount);
+      }
+
+      const latestHistory = Array.isArray(latest.history) ? latest.history : [];
+      const history = [...latestHistory, ...(historyEntries || [])].slice(-1000);
+
+      return {
+        ...latest,
+        accounts,
+        analytics,
+        history,
+        updatedAt: now(),
+      };
+    },
+    {},
+    guild || { guildId }
+  );
+
+  return { ...updated, enabled: guildManager.isModuleEnabled(guildId, 'social') };
 }
 
 function creatorFor(config, accountId) {
@@ -111,7 +148,9 @@ async function checkGuildAccounts(client, guildId, options = {}) {
     if (!config.enabled && !options.manual) return { guildId, skipped: true, reason: 'module_disabled', results: [] };
     const interval = Math.max(60000, Number(config.settings?.checkIntervalMs || 300000));
     const results = [];
-    let dirty = false;
+    const monitorUpdates = new Map();
+    const analyticsStart = { ...config.analytics };
+    const historyStartLength = config.history.length;
 
     for (const account of Object.values(config.accounts)) {
       if (!account || account.enabled === false) continue;
@@ -148,7 +187,6 @@ async function checkGuildAccounts(client, guildId, options = {}) {
       if (checked.externalId && !account.externalId) account.externalId = String(checked.externalId);
       account.updatedAt = now();
       config.analytics.checks = Number(config.analytics.checks || 0) + 1;
-      dirty = true;
 
       const delivered = [];
       for (const event of events) {
@@ -169,10 +207,23 @@ async function checkGuildAccounts(client, guildId, options = {}) {
         }
       }
       addHistory(config, { status: 'checked', accountId: account.accountId, platform: account.platform, providerStatus: checked.status, isLive: checked.isLive, detectedEvents: events.map((event) => event.type), delivered: delivered.length });
+      monitorUpdates.set(account.accountId, {
+        state: { ...state },
+        externalId: account.externalId ? String(account.externalId) : null,
+        updatedAt: account.updatedAt,
+      });
       results.push({ accountId: account.accountId, platform: account.platform, username: account.username, status: checked.status, isLive: checked.isLive, reason: checked.reason || null, events: events.map((event) => ({ type: event.type, id: event.id })), delivered });
     }
 
-    if (dirty) saveConfig(guildId, config, client.guilds.cache.get(guildId) || null);
+    if (monitorUpdates.size) {
+      const analyticsDelta = {};
+      for (const key of new Set([...Object.keys(analyticsStart), ...Object.keys(config.analytics)])) {
+        const delta = Number(config.analytics[key] || 0) - Number(analyticsStart[key] || 0);
+        if (delta) analyticsDelta[key] = delta;
+      }
+      const historyEntries = config.history.slice(historyStartLength);
+      saveMonitorState(guildId, config, monitorUpdates, analyticsDelta, historyEntries, client.guilds.cache.get(guildId) || null);
+    }
     return { guildId, checked: results.length, results };
   } finally {
     runningGuilds.delete(guildId);
