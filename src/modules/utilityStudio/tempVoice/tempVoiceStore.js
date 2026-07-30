@@ -64,7 +64,6 @@ function defaultAnalytics() {
 
 function defaultTempVoiceSection() {
   return {
-    enabled: true,
     hubs: {},
     channels: {},
     settings: {
@@ -165,7 +164,7 @@ function buildAdminConfiguredHub(source = {}) {
 
   return normalizeHub({
     hubId: 'admin_default',
-    enabled: source.enabled !== false,
+    enabled: true,
     joinChannelId,
     categoryId: source.categoryId,
     managerRoleIds: source.managerRoleIds,
@@ -193,10 +192,9 @@ function normalizeSection(section = {}) {
 
   if (adminHub?.joinChannelId) normalizedHubs[adminHub.hubId] = adminHub;
 
-  return {
+  const normalized = {
     ...base,
     ...source,
-    enabled: source.enabled !== false,
     lobbyChannelId: cleanDiscordId(source.lobbyChannelId || source.joinChannelId),
     categoryId: cleanDiscordId(source.categoryId),
     managerRoleIds: cleanDiscordIdArray(source.managerRoleIds),
@@ -228,6 +226,8 @@ function normalizeSection(section = {}) {
     activity: Array.isArray(source.activity) ? source.activity.map(normalizeActivityEntry).slice(-150) : [],
     updatedAt: source.updatedAt || now(),
   };
+  delete normalized.enabled;
+  return normalized;
 }
 
 function getTempVoiceSection(guildId) {
