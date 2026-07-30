@@ -119,10 +119,13 @@ async function checkTikTok(account) {
     const { response, text } = await request(url, { headers: { Accept: 'text/html,application/xhtml+xml' } }, 12000);
     const finalUrl = response.url || url;
     const body = text.slice(0, 2000000);
+    const ended = /LIVE\s+has\s+ended|live\s+(?:has\s+)?ended|room\s+(?:has\s+)?ended|stream\s+(?:has\s+)?ended/i.test(body);
     const hasRoom = /"roomId"\s*:\s*"?[1-9]\d*/i.test(body) || /"room_id"\s*:\s*"?[1-9]\d*/i.test(body);
-    const liveStatus = /"status"\s*:\s*2\b/.test(body) || /"isLive"\s*:\s*true/i.test(body) || /LiveRoom/i.test(body);
-    const isLive = hasRoom && liveStatus && /\/live(?:[?#]|$)/i.test(finalUrl);
-    return result('tiktok', { isLive, providerSource: 'public_page', confidence: isLive ? 'medium' : 'low', url: `https://www.tiktok.com/@${encodeURIComponent(username)}`, event: isLive ? { type: 'live', id: `tiktok-live:${username}`, title: `${username} is LIVE on TikTok`, url, thumbnail: null } : null });
+    const directLiveStatus = /"status"\s*:\s*2\b/.test(body) || /"isLive"\s*:\s*true/i.test(body);
+    const creatorMarker = new RegExp(`(?:uniqueId|unique_id|author|nickname)[^\\n]{0,200}${username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i').test(body);
+    const onOwnLiveUrl = /\/live(?:[?#]|$)/i.test(finalUrl) && finalUrl.toLowerCase().includes(`@${username.toLowerCase()}`);
+    const isLive = !ended && hasRoom && directLiveStatus && creatorMarker && onOwnLiveUrl;
+    return result('tiktok', { isLive, providerSource: 'public_page', confidence: isLive ? 'high' : 'medium', url: `https://www.tiktok.com/@${encodeURIComponent(username)}`, event: isLive ? { type: 'live', id: `tiktok-live:${username}`, title: `${username} is LIVE on TikTok`, url, thumbnail: null } : null });
   } catch (error) {
     return unavailable('tiktok', `TikTok public LIVE check unavailable: ${error.message}`);
   }
