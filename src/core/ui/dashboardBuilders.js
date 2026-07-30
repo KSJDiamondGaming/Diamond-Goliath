@@ -7,7 +7,7 @@ const {
 
 const { COLORS, EMOJIS } = require('./uiConfig');
 const { createEmbed } = require('./embeds');
-const { getStatusLabel } = require('../../features/moderation/functions/caseHelpers');
+const { getStatusLabel } = require('../panels/moderation/caseHelpers');
 
 function buildDashboardNav(targetId, activeView = 'overview') {
   const items = [
