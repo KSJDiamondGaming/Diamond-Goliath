@@ -40,7 +40,10 @@ function saveMonitorState(guildId, config, monitorUpdates, analyticsDelta, histo
         accounts[accountId] = {
           ...current,
           state: update.state,
-          ...(update.externalId && !current.externalId ? { externalId: update.externalId } : {}),
+          ...(update.externalId ? { externalId: update.externalId } : {}),
+          ...(update.resolvedUsername ? { username: update.resolvedUsername, normalizedUsername: update.resolvedUsername.toLowerCase() } : {}),
+          ...(update.profileUrl ? { profileUrl: update.profileUrl } : {}),
+          ...(update.avatar ? { avatar: update.avatar } : {}),
           updatedAt: update.updatedAt,
         };
       }
@@ -55,13 +58,7 @@ function saveMonitorState(guildId, config, monitorUpdates, analyticsDelta, histo
       const latestHistory = Array.isArray(latest.history) ? latest.history : [];
       const history = [...latestHistory, ...(historyEntries || [])].slice(-1000);
 
-      return {
-        ...latest,
-        accounts,
-        analytics,
-        history,
-        updatedAt: now(),
-      };
+      return { ...latest, accounts, analytics, history, updatedAt: now() };
     },
     {},
     guild || { guildId }
@@ -76,16 +73,18 @@ function creatorFor(config, accountId) {
 
 function templateFor(config, type) {
   const defaults = {
-    live: { title: '{creator} is now live', description: '{title}', buttonLabel: 'Watch now' },
+    live: { title: '{creator} is now live', description: '{title}', buttonLabel: 'Watch live' },
+    vod: { title: 'New VOD from {creator}', description: '{title}', buttonLabel: 'Watch VOD' },
+    clip: { title: 'New clip from {creator}', description: '{title}', buttonLabel: 'Watch clip' },
     upload: { title: '{creator} uploaded a new video', description: '{title}', buttonLabel: 'Watch now' },
     short: { title: '{creator} posted a new short', description: '{title}', buttonLabel: 'Watch now' },
     post: { title: '{creator} shared a new post', description: '{title}', buttonLabel: 'View post' },
   };
-  return { ...defaults[type], ...(config.templates?.[type] || {}) };
+  return { ...(defaults[type] || defaults.upload), ...(config.templates?.[type] || {}) };
 }
 
 function render(value, vars) {
-  return String(value || '').replace(/\{(creator|title|platform|url)\}/g, (_match, key) => vars[key] || '');
+  return String(value || '').replace(/\{(creator|title|platform|url|category|viewers|duration)\}/g, (_match, key) => vars[key] || '');
 }
 
 function addHistory(config, event) {
@@ -94,17 +93,31 @@ function addHistory(config, event) {
 
 function enabledAlert(account, type) {
   const supported = providerInfo(account.platform).supportedAlertTypes || [];
-  const configured = Array.isArray(account.alertTypes) && account.alertTypes.length ? account.alertTypes : [];
-  const effective = configured.some((item) => supported.includes(item)) ? configured : supported;
-  return effective.includes(type);
+  const configured = Array.isArray(account.alertTypes) && account.alertTypes.length ? account.alertTypes : supported;
+  return supported.includes(type) && configured.includes(type);
 }
 
 function eventCandidates(account, previous, checked) {
   const events = [];
   if (checked.isLive === true && previous.isLive !== true && checked.event) events.push(checked.event);
-  const latest = checked.latestContent;
-  if (latest?.id && previous.latestContentId && String(previous.latestContentId) !== String(latest.id)) events.push(latest);
+
+  const contentItems = Array.isArray(checked.contentItems) && checked.contentItems.length
+    ? checked.contentItems
+    : checked.latestContent ? [checked.latestContent] : [];
+  const previousIds = previous.contentIds && typeof previous.contentIds === 'object' ? previous.contentIds : {};
+
+  for (const item of contentItems) {
+    if (!item?.type || !item?.id) continue;
+    const oldId = previousIds[item.type] || (previous.latestContentType === item.type ? previous.latestContentId : null);
+    if (oldId && String(oldId) !== String(item.id)) events.push(item);
+  }
+
   return events.filter((event) => enabledAlert(account, event.type));
+}
+
+function discordTimestamp(value, style = 'R') {
+  const ms = new Date(value).getTime();
+  return Number.isFinite(ms) ? `<t:${Math.floor(ms / 1000)}:${style}>` : null;
 }
 
 async function sendEvent(client, guildId, config, account, creator, event) {
@@ -117,7 +130,9 @@ async function sendEvent(client, guildId, config, account, creator, event) {
 
   const creatorName = creator?.displayName || account.displayName || account.username;
   const url = event.url || account.profileUrl || account.url || '';
-  const vars = { creator: creatorName, title: event.title || '', platform: account.platform, url };
+  const viewerText = Number.isFinite(Number(event.viewerCount)) ? Number(event.viewerCount).toLocaleString('en-GB') : '';
+  const durationText = clean(event.duration || (Number.isFinite(Number(event.durationSeconds)) ? `${Math.floor(Number(event.durationSeconds) / 60)}m ${Number(event.durationSeconds) % 60}s` : ''));
+  const vars = { creator: creatorName, title: event.title || '', platform: account.platform, url, category: event.category || '', viewers: viewerText, duration: durationText };
   const template = templateFor(config, event.type);
   const embed = new EmbedBuilder()
     .setColor(event.type === 'live' ? 0xED4245 : 0x5865F2)
@@ -127,13 +142,22 @@ async function sendEvent(client, guildId, config, account, creator, event) {
     .setTimestamp();
 
   if (event.thumbnail && /^https?:\/\//i.test(event.thumbnail)) embed.setImage(event.thumbnail);
+  if (account.avatar && /^https?:\/\//i.test(account.avatar)) embed.setThumbnail(account.avatar);
+
   const fields = [];
   if (event.category) fields.push({ name: 'Category', value: clean(event.category, 1024), inline: true });
-  if (Number.isFinite(Number(event.viewerCount))) fields.push({ name: 'Viewers', value: Number(event.viewerCount).toLocaleString('en-GB'), inline: true });
-  if (event.startedAt) fields.push({ name: 'Started', value: `<t:${Math.floor(new Date(event.startedAt).getTime() / 1000)}:R>`, inline: true });
-  if (fields.length) embed.addFields(fields);
+  if (viewerText) fields.push({ name: 'Viewers', value: viewerText, inline: true });
+  if (Number.isFinite(Number(event.viewCount))) fields.push({ name: 'Views', value: Number(event.viewCount).toLocaleString('en-GB'), inline: true });
+  if (durationText) fields.push({ name: 'Duration', value: durationText, inline: true });
+  const started = discordTimestamp(event.startedAt);
+  if (started) fields.push({ name: 'Started', value: started, inline: true });
+  const published = discordTimestamp(event.publishedAt);
+  if (published) fields.push({ name: 'Published', value: published, inline: true });
+  if (fields.length) embed.addFields(fields.slice(0, 25));
 
-  const components = /^https?:\/\//i.test(url) ? [new ActionRowBuilder().addComponents(new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(url).setLabel(clean(template.buttonLabel || 'Open', 80)))] : [];
+  const components = /^https?:\/\//i.test(url)
+    ? [new ActionRowBuilder().addComponents(new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(url).setLabel(clean(template.buttonLabel || 'Open', 80)))]
+    : [];
   const mentionMode = account.mentionMode || 'none';
   const content = mentionMode === 'everyone' ? '@everyone' : mentionMode === 'here' ? '@here' : mentionMode === 'role' && account.mentionRoleId ? `<@&${account.mentionRoleId}>` : undefined;
   return channel.send({ content, embeds: [embed], components, allowedMentions: { parse: mentionMode === 'everyone' || mentionMode === 'here' ? ['everyone'] : [], roles: account.mentionRoleId ? [account.mentionRoleId] : [] } });
@@ -172,19 +196,37 @@ async function checkGuildAccounts(client, guildId, options = {}) {
         confidence: checked.confidence || null,
         lastError: checked.reason || null,
       };
+
       if (typeof checked.isLive === 'boolean') {
         state.isLive = checked.isLive;
         state.liveEventId = checked.isLive ? checked.event?.id || previous.liveEventId || null : null;
         if (checked.isLive && previous.isLive !== true) state.liveStartedAt = checked.event?.startedAt || checked.checkedAt || now();
         if (!checked.isLive && previous.isLive === true) state.lastLiveEndedAt = checked.checkedAt || now();
       }
+
+      const contentItems = Array.isArray(checked.contentItems) && checked.contentItems.length
+        ? checked.contentItems
+        : checked.latestContent ? [checked.latestContent] : [];
+      const contentIds = { ...(previous.contentIds && typeof previous.contentIds === 'object' ? previous.contentIds : {}) };
+      for (const item of contentItems) {
+        if (!item?.type || !item?.id) continue;
+        contentIds[item.type] = String(item.id);
+      }
+      state.contentIds = contentIds;
       if (checked.latestContent?.id) {
         state.latestContentId = checked.latestContent.id;
         state.latestContentType = checked.latestContent.type;
         state.latestContentAt = checked.latestContent.publishedAt || null;
       }
+
       account.state = state;
-      if (checked.externalId && !account.externalId) account.externalId = String(checked.externalId);
+      if (checked.externalId) account.externalId = String(checked.externalId);
+      if (checked.resolvedUsername) {
+        account.username = String(checked.resolvedUsername);
+        account.normalizedUsername = String(checked.resolvedUsername).toLowerCase();
+      }
+      if (checked.url) account.profileUrl = String(checked.url);
+      if (checked.avatar) account.avatar = String(checked.avatar);
       account.updatedAt = now();
       config.analytics.checks = Number(config.analytics.checks || 0) + 1;
 
@@ -198,21 +240,25 @@ async function checkGuildAccounts(client, guildId, options = {}) {
           state.lastAlertAt = now();
           state.lastAlertMessageId = message.id;
           config.analytics.alertsSent = Number(config.analytics.alertsSent || 0) + 1;
-          addHistory(config, { status: 'alert_sent', accountId: account.accountId, creator: creator?.displayName || account.displayName, platform: account.platform, alertType: event.type, messageId: message.id });
-          delivered.push({ type: event.type, messageId: message.id });
+          addHistory(config, { status: 'alert_sent', accountId: account.accountId, creator: creator?.displayName || account.displayName, platform: account.platform, alertType: event.type, contentId: event.id || null, messageId: message.id });
+          delivered.push({ type: event.type, id: event.id || null, messageId: message.id });
         } catch (error) {
           state.lastDeliveryError = error.message;
           config.analytics.failures = Number(config.analytics.failures || 0) + 1;
-          addHistory(config, { status: 'delivery_failed', accountId: account.accountId, platform: account.platform, alertType: event.type, error: error.message });
+          addHistory(config, { status: 'delivery_failed', accountId: account.accountId, platform: account.platform, alertType: event.type, contentId: event.id || null, error: error.message });
         }
       }
+
       addHistory(config, { status: 'checked', accountId: account.accountId, platform: account.platform, providerStatus: checked.status, isLive: checked.isLive, detectedEvents: events.map((event) => event.type), delivered: delivered.length });
       monitorUpdates.set(account.accountId, {
         state: { ...state },
         externalId: account.externalId ? String(account.externalId) : null,
+        resolvedUsername: account.username || null,
+        profileUrl: account.profileUrl || null,
+        avatar: account.avatar || null,
         updatedAt: account.updatedAt,
       });
-      results.push({ accountId: account.accountId, platform: account.platform, username: account.username, status: checked.status, isLive: checked.isLive, reason: checked.reason || null, events: events.map((event) => ({ type: event.type, id: event.id })), delivered });
+      results.push({ accountId: account.accountId, platform: account.platform, username: account.username, externalId: account.externalId || null, status: checked.status, isLive: checked.isLive, reason: checked.reason || null, events: events.map((event) => ({ type: event.type, id: event.id })), delivered });
     }
 
     if (monitorUpdates.size) {
