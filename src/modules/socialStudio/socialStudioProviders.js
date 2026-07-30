@@ -114,10 +114,50 @@ async function checkYouTube(account) {
 async function checkTikTok(account) {
   const username = handle(account);
   if (!username) return unavailable('tiktok', 'TikTok username could not be resolved.');
-  const url = `https://www.tiktok.com/@${encodeURIComponent(username)}/live`;
+
+  const liveUrl = `https://www.tiktok.com/@${encodeURIComponent(username)}/live`;
+  const profile = `https://www.tiktok.com/@${encodeURIComponent(username)}`;
+  const apiUrl = `https://www.tiktok.com/api-live/user/room/?aid=1988&sourceType=54&uniqueId=${encodeURIComponent(username)}`;
+  let apiError = null;
+
   try {
-    const { response, text } = await request(url, { headers: { Accept: 'text/html,application/xhtml+xml' } }, 12000);
-    const finalUrl = response.url || url;
+    const { json } = await request(apiUrl, {
+      headers: {
+        Accept: 'application/json,text/plain,*/*',
+        Referer: liveUrl,
+      },
+    }, 10000);
+
+    const user = json?.data?.user && typeof json.data.user === 'object' ? json.data.user : {};
+    const liveRoom = json?.data?.liveRoom && typeof json.data.liveRoom === 'object' ? json.data.liveRoom : {};
+    const rawStatus = liveRoom.status ?? user.status;
+    const roomId = clean(liveRoom.roomId || liveRoom.room_id || user.roomId || user.room_id);
+    const hasRoomId = /^[1-9]\d*$/.test(roomId);
+
+    if (rawStatus !== undefined && rawStatus !== null) {
+      const isLive = Number(rawStatus) === 2 && hasRoomId;
+      return result('tiktok', {
+        isLive,
+        providerSource: 'tiktok_api_live',
+        confidence: 'high',
+        externalId: roomId || undefined,
+        url: profile,
+        event: isLive ? {
+          type: 'live',
+          id: roomId || `tiktok-live:${username}`,
+          title: `${username} is LIVE on TikTok`,
+          url: liveUrl,
+          thumbnail: null,
+        } : null,
+      });
+    }
+  } catch (error) {
+    apiError = error;
+  }
+
+  try {
+    const { response, text } = await request(liveUrl, { headers: { Accept: 'text/html,application/xhtml+xml' } }, 12000);
+    const finalUrl = response.url || liveUrl;
     const body = text.slice(0, 2000000);
     const ended = /LIVE\s+has\s+ended|live\s+(?:has\s+)?ended|room\s+(?:has\s+)?ended|stream\s+(?:has\s+)?ended/i.test(body);
     const hasRoom = /"roomId"\s*:\s*"?[1-9]\d*/i.test(body) || /"room_id"\s*:\s*"?[1-9]\d*/i.test(body);
@@ -127,9 +167,26 @@ async function checkTikTok(account) {
     const title = body.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '';
     const titleSaysLive = title.toLowerCase().includes(`@${username.toLowerCase()}`) && /\bis\s+LIVE\s*-\s*TikTok\s+LIVE\b/i.test(title);
     const isLive = !ended && onOwnLiveUrl && (titleSaysLive || (hasRoom && directLiveStatus && creatorMarker));
-    return result('tiktok', { isLive, providerSource: 'public_page', confidence: isLive ? 'high' : 'medium', url: `https://www.tiktok.com/@${encodeURIComponent(username)}`, event: isLive ? { type: 'live', id: `tiktok-live:${username}`, title: `${username} is LIVE on TikTok`, url, thumbnail: null } : null });
-  } catch (error) {
-    return unavailable('tiktok', `TikTok public LIVE check unavailable: ${error.message}`);
+
+    if (isLive) {
+      return result('tiktok', {
+        isLive: true,
+        providerSource: 'public_page',
+        confidence: 'high',
+        url: profile,
+        event: { type: 'live', id: `tiktok-live:${username}`, title: `${username} is LIVE on TikTok`, url: liveUrl, thumbnail: null },
+      });
+    }
+
+    const redirectedAwayFromLive = !onOwnLiveUrl && finalUrl.toLowerCase().includes(`@${username.toLowerCase()}`);
+    if (ended || redirectedAwayFromLive) {
+      return result('tiktok', { isLive: false, providerSource: 'public_page', confidence: 'high', url: profile, event: null });
+    }
+
+    return unavailable('tiktok', `TikTok LIVE status was inconclusive${apiError ? ` after API check failed: ${apiError.message}` : ''}.`);
+  } catch (pageError) {
+    const details = [apiError?.message, pageError?.message].filter(Boolean).join('; ');
+    return unavailable('tiktok', `TikTok LIVE check unavailable: ${details || 'unknown error'}`);
   }
 }
 
