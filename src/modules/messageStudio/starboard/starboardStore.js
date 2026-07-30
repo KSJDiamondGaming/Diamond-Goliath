@@ -1,10 +1,9 @@
 'use strict';
 
 const crypto = require('crypto');
-const { getGuildSection, updateGuildSection } = require('../../../core/guild/guildManager');
+const { getModuleSection, saveModuleSection, updateModuleSection } = require('../../../core/guild/moduleSectionManager');
 
 const SECTION = 'starboard';
-const MODULES_SECTION = 'modules';
 const now = () => new Date().toISOString();
 const createId = (prefix = 'star') => `${prefix}_${crypto.randomUUID().slice(0, 8)}`;
 
@@ -51,8 +50,9 @@ function normalizePost(post = {}) {
 function normalizeSection(section = {}) {
   const source = section && typeof section === 'object' ? section : {};
   const posts = source.posts && typeof source.posts === 'object' ? source.posts : {};
-  return {
+  const normalized = {
     ...defaultStarboardSection(),
+    ...source,
     channelId: cleanDiscordId(source.channelId),
     logChannelId: cleanDiscordId(source.logChannelId),
     managerRoleIds: asArray(source.managerRoleIds).map(cleanDiscordId).filter(Boolean),
@@ -62,8 +62,8 @@ function normalizeSection(section = {}) {
     allowSelfStar: source.allowSelfStar === true,
     requireUniqueUsers: source.requireUniqueUsers !== false,
     posts: Object.fromEntries(Object.entries(posts).map(([id, post]) => {
-      const normalized = normalizePost({ ...post, messageId: post.messageId || id });
-      return [normalized.messageId || normalized.id, normalized];
+      const normalizedPost = normalizePost({ ...post, messageId: post.messageId || id });
+      return [normalizedPost.messageId || normalizedPost.id, normalizedPost];
     }).filter(([, post]) => post.messageId && post.channelId)),
     analytics: {
       posted: Math.max(0, Number(source.analytics?.posted || 0)),
@@ -73,22 +73,30 @@ function normalizeSection(section = {}) {
     createdAt: source.createdAt || now(),
     updatedAt: source.updatedAt || now(),
   };
-}
-
-function getStarboardSection(guildId) {
-  const modules = getGuildSection(guildId, MODULES_SECTION, {});
-  return normalizeSection(modules?.[SECTION] || {});
-}
-
-function saveStarboardSection(guildId, section, meta = {}) {
-  const normalized = normalizeSection(section);
-  updateGuildSection(guildId, MODULES_SECTION, (modules = {}) => ({ ...modules, [SECTION]: normalized }), {}, meta);
+  delete normalized.enabled;
   return normalized;
 }
 
+function getStarboardSection(guildId) {
+  return normalizeSection(getModuleSection(guildId, SECTION, defaultStarboardSection()));
+}
+
+function saveStarboardSection(guildId, section, meta = {}) {
+  return normalizeSection(saveModuleSection(guildId, SECTION, normalizeSection(section), meta));
+}
+
 function updateStarboardSection(guildId, updater, meta = {}) {
-  const current = getStarboardSection(guildId);
-  return saveStarboardSection(guildId, typeof updater === 'function' ? updater(current) : updater, meta);
+  return normalizeSection(updateModuleSection(
+    guildId,
+    SECTION,
+    (current) => {
+      const normalized = normalizeSection(current);
+      const next = typeof updater === 'function' ? updater(normalized) : updater;
+      return normalizeSection(next);
+    },
+    defaultStarboardSection(),
+    meta,
+  ));
 }
 
 function savePost(guildId, post, meta = {}) {
