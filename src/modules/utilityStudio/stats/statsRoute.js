@@ -127,8 +127,13 @@ router.post('/:guildId/refresh', async (req, res) => {
   catch (error) { return failure(res, error, 400); }
 });
 router.post('/:guildId/counters/setup', async (req, res) => {
-  try { const guildId = getGuildId(req); const guild = await getGuild(req, guildId); if (!guild) throw new Error('Guild is unavailable.'); stats.setEnabled(guildId, true, actor(req, 'stats_counter_setup')); return success(res, { guildId, result: await stats.counters.createCounterSuite(guild, req.body || {}) }); }
-  catch (error) { return failure(res, error, 400); }
+  try {
+    const guildId = getGuildId(req);
+    const guild = await getGuild(req, guildId);
+    if (!guild) throw new Error('Guild is unavailable.');
+    guildManager.setModuleEnabled(guildId, 'stats', true, actor(req, 'stats_counter_setup'));
+    return success(res, { guildId, result: await stats.counters.createCounterSuite(guild, req.body || {}) });
+  } catch (error) { return failure(res, error, 400); }
 });
 router.post('/:guildId/reset', (req, res) => {
   try { const guildId = getGuildId(req); if (req.body?.confirm !== true) return failure(res, new Error('Reset confirmation is required.'), 400); return success(res, { guildId, config: statsHealth.reset(guildId, actor(req, 'stats_reset')) }); }
