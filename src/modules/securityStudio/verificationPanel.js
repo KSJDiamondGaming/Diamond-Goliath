@@ -38,36 +38,21 @@ function cleanArray(value) {
 }
 
 function getConfig(guildId) {
-  const modules = guildManager.getGuildSection(guildId, 'modules', {});
-  const admin = modules?.verification && typeof modules.verification === 'object' ? modules.verification : {};
-  const section = verificationStore.getVerificationSection(guildId);
-  const settings = verificationStore.normalizeSettings({ ...(section.settings || {}), ...admin, ...(admin.settings || {}) });
+  const section = verificationManager.getVerificationStatus(guildId);
   return {
-    enabled: typeof admin.enabled === 'boolean' ? admin.enabled : section.enabled,
-    ...settings,
+    enabled: guildManager.isModuleEnabled(guildId, 'verification'),
+    ...section.settings,
   };
 }
 
 function saveConfig(guild, updater) {
-  const current = getConfig(guild.id);
-  const next = verificationStore.normalizeSettings(
-    typeof updater === 'function' ? updater({ ...current }) : { ...current, ...(updater || {}) }
-  );
-  const enabled = typeof updater === 'object' && typeof updater.enabled === 'boolean'
-    ? updater.enabled
-    : typeof current.enabled === 'boolean' ? current.enabled : true;
-
-  guildManager.updateGuildSection(guild.id, 'modules', (modules = {}) => ({
-    ...(modules && typeof modules === 'object' ? modules : {}),
-    verification: {
-      enabled,
-      ...next,
-      updatedAt: new Date().toISOString(),
-    },
-  }), {}, guild);
+  const current = verificationManager.getVerificationStatus(guild.id);
+  const settingsInput = typeof updater === 'function'
+    ? updater({ ...(current.settings || {}) })
+    : { ...(updater || {}) };
+  const next = verificationStore.normalizeSettings({ ...(current.settings || {}), ...settingsInput });
 
   verificationManager.configureVerification(guild.id, {
-    enabled,
     settings: next,
   }, { action: 'verification_admin_config_sync' });
 
@@ -75,11 +60,6 @@ function saveConfig(guild, updater) {
 }
 
 function resetConfig(guild) {
-  guildManager.updateGuildSection(guild.id, 'modules', (modules = {}) => {
-    const nextModules = { ...(modules && typeof modules === 'object' ? modules : {}) };
-    delete nextModules.verification;
-    return nextModules;
-  }, {}, guild);
   verificationStore.saveVerificationSection(guild.id, verificationStore.defaultVerificationSection(), {
     action: 'verification_admin_reset',
   });
@@ -553,6 +533,11 @@ async function handleVerificationAdminInteraction(interaction) {
       return safeUpdate(interaction, buildVerificationAdminPanel(interaction.guild, displayName, 'workflow'));
     }
 
+    if (interaction.isStringSelectMenu?.() && customId === 'admin:verification:method') {
+      saveConfig(interaction.guild, { method: interaction.values?.[0] || 'button' });
+      return safeUpdate(interaction, buildVerificationAdminPanel(interaction.guild, displayName, 'overview'));
+    }
+
     if (interaction.isStringSelectMenu?.() && customId === 'admin:verification:buttonStyle') {
       verificationManager.updatePanelTemplate(interaction.guild.id, { buttonStyle: interaction.values?.[0] || 'success' }, { actorId: interaction.user.id });
       return safeUpdate(interaction, buildVerificationAdminPanel(interaction.guild, displayName, 'panel'));
@@ -584,7 +569,10 @@ async function handleVerificationAdminInteraction(interaction) {
     }
 
     if (customId === 'admin:verification:enable' || customId === 'admin:verification:disable') {
-      saveConfig(interaction.guild, { enabled: customId.endsWith(':enable') });
+      guildManager.setModuleEnabled(interaction.guild.id, 'verification', customId.endsWith(':enable'), {
+        actorId: interaction.user.id,
+        action: 'verification_admin_toggle',
+      });
       return safeUpdate(interaction, buildVerificationAdminPanel(interaction.guild, displayName, 'overview'));
     }
 
