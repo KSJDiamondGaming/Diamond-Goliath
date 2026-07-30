@@ -1,6 +1,7 @@
 'use strict';
 
 const { startupSocialStudio, checkGuildAccounts } = require('../../modules/socialStudio/socialStudioMonitor');
+const { buildSectionPanel } = require('../../modules/socialStudio/socialStudioPanel');
 
 const PLATFORM_LABELS = {
   twitch: 'Twitch',
@@ -44,6 +45,17 @@ function checkOptions(customId) {
   return null;
 }
 
+function currentPanelSection(interaction, customId) {
+  const title = String(interaction.message?.embeds?.[0]?.title || '').toLowerCase();
+  if (title.includes('automation')) return 'automation';
+  if (title.includes('notification')) return 'notifications';
+  if (title.includes('testing')) return 'testing';
+  if (title.includes('creator')) return 'creators';
+  if (title.includes('account')) return 'accounts';
+  if (customId.startsWith('social:creator:check:')) return 'creators';
+  return 'accounts';
+}
+
 module.exports = [
   {
     name: 'clientReady',
@@ -69,6 +81,16 @@ module.exports = [
       } else {
         const lines = (outcome.results || []).map(formatProviderResult);
         summary = lines.length ? lines.join('\n').slice(0, 1900) : 'No matching enabled Social Studio accounts were available to check.';
+
+        // The monitor persists the canonical account state before returning. Rebuild the
+        // panel immediately so the button that triggered the check never leaves stale
+        // LIVE/OFFLINE/Monitoring data on screen while the status response shows newer data.
+        try {
+          const section = currentPanelSection(interaction, customId);
+          await interaction.editReply(buildSectionPanel(interaction, section));
+        } catch (error) {
+          console.warn('[Social Studio] panel refresh after manual check failed:', error?.message || error);
+        }
       }
 
       await interaction.followUp({ content: `🔎 **Social Studio Status Check**\n\n${summary}`, flags: 64 }).catch(() => null);
