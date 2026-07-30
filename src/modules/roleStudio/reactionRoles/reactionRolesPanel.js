@@ -14,6 +14,7 @@ const {
   RoleSelectMenuBuilder,
   ChannelType,
 } = require('discord.js');
+const guildManager = require('../../../core/guild/guildManager');
 const reactionRoles = require('./reactionRoles');
 const reactionRolesHealth = require('./reactionRolesHealth');
 const messageFinder = require('./reactionRoleMessageFinder');
@@ -81,17 +82,18 @@ function modeSelect(mode) {
 
 async function buildReactionRolesAdminPanel(guild, memberDisplayName = 'Unknown User') {
   const config = reactionRoles.getSection(guild.id);
+  const enabled = guildManager.isModuleEnabled(guild.id, 'reactionRoles');
   const health = await reactionRoles.buildHealth(guild);
   const panels = reactionRoles.listPanels(guild.id);
   const mappings = panels.reduce((total, panel) => total + (panel.mappings?.length || 0), 0);
   const drafts = Object.keys(config.drafts || {}).length;
   return {
     embeds: [new EmbedBuilder()
-      .setColor(config.enabled !== false && health.healthy ? 0x57f287 : 0xfaa61a)
+      .setColor(enabled && health.healthy ? 0x57f287 : 0xfaa61a)
       .setTitle('🎭 Reaction Roles')
       .setDescription('Create and manage self-service role panels from one workspace.')
       .addFields(
-        { name: 'Status', value: config.enabled !== false ? '🟢 Enabled' : '⏸️ Disabled', inline: true },
+        { name: 'Status', value: enabled ? '🟢 Enabled' : '⏸️ Disabled', inline: true },
         { name: 'Health', value: health.healthy ? 'Healthy' : `${health.unhealthy || 0} need attention`, inline: true },
         { name: 'Deployments', value: String(panels.length), inline: true },
         { name: 'Mappings', value: String(mappings), inline: true },
@@ -114,10 +116,11 @@ async function buildReactionRolesAdminPanel(guild, memberDisplayName = 'Unknown 
 
 async function buildAdminCentre(guild) {
   const config = reactionRoles.getSection(guild.id);
+  const enabled = guildManager.isModuleEnabled(guild.id, 'reactionRoles');
   const health = await reactionRoles.buildHealth(guild);
   return {
     embeds: [new EmbedBuilder().setColor(health.healthy ? 0x57f287 : 0xfaa61a).setTitle('🛡️ Reaction Roles Admin Centre').addFields(
-      { name: 'Module', value: config.enabled !== false ? 'Enabled' : 'Disabled', inline: true },
+      { name: 'Module', value: enabled ? 'Enabled' : 'Disabled', inline: true },
       { name: 'Active', value: String(health.active || 0), inline: true },
       { name: 'Unhealthy', value: String(health.unhealthy || 0), inline: true },
       { name: 'Assigned', value: String(config.analytics.assigned || 0), inline: true },
@@ -126,7 +129,7 @@ async function buildAdminCentre(guild) {
     )],
     components: [
       row(
-        button(config.enabled !== false ? 'admin:reactionRoles:disable' : 'admin:reactionRoles:enable', config.enabled !== false ? 'Disable Module' : 'Enable Module', config.enabled !== false ? ButtonStyle.Danger : ButtonStyle.Success),
+        button(enabled ? 'admin:reactionRoles:disable' : 'admin:reactionRoles:enable', enabled ? 'Disable Module' : 'Enable Module', enabled ? ButtonStyle.Danger : ButtonStyle.Success),
         button('admin:reactionRoles:repair', 'Repair All', ButtonStyle.Primary),
         button('admin:reactionRoles:export', 'Export')
       ),
@@ -353,11 +356,15 @@ async function handleReactionRolesAdminInteraction(interaction) {
       return interaction.editReply(await buildReactionRolesAdminPanel(guild, displayName(interaction)));
     }
 
-    if (id === 'admin:reactionRoles:enable') reactionRoles.setEnabled(guild.id, true, guild);
-    if (id === 'admin:reactionRoles:disable') reactionRoles.setEnabled(guild.id, false, guild);
+    if (id === 'admin:reactionRoles:enable') guildManager.setModuleEnabled(guild.id, 'reactionRoles', true, { actorId: userId });
+    if (id === 'admin:reactionRoles:disable') guildManager.setModuleEnabled(guild.id, 'reactionRoles', false, { actorId: userId });
     if (id === 'admin:reactionRoles:repair') { await interaction.deferUpdate(); await reactionRoles.repairAll(guild); return interaction.editReply(await buildAdminCentre(guild)); }
     if (id === 'admin:reactionRoles:export') {
-      const file = new AttachmentBuilder(Buffer.from(JSON.stringify(reactionRoles.exportConfiguration(guild.id), null, 2), 'utf8'), { name: `goliath-reaction-roles-${guild.id}.json` });
+      const config = {
+        ...reactionRoles.exportConfiguration(guild.id),
+        enabled: guildManager.isModuleEnabled(guild.id, 'reactionRoles'),
+      };
+      const file = new AttachmentBuilder(Buffer.from(JSON.stringify(config, null, 2), 'utf8'), { name: `goliath-reaction-roles-${guild.id}.json` });
       await interaction.reply({ content: '📤 Reaction Roles configuration export.', files: [file], ephemeral: true });
       return true;
     }
