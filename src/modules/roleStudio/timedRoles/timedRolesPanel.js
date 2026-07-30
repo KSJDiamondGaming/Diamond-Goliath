@@ -16,6 +16,7 @@ const {
   TextInputStyle,
   UserSelectMenuBuilder,
 } = require('discord.js');
+const guildManager = require('../../../core/guild/guildManager');
 const timedRoles = require('./timedRoles');
 
 const PREFIX = 'admin:timedRoles';
@@ -32,6 +33,7 @@ function displayName(interaction) { return interaction.member?.displayName || in
 
 async function buildTimedRolesPanel(guild, memberDisplayName = 'Unknown User') {
   const section = timedRoles.getSection(guild.id);
+  const enabled = guildManager.isModuleEnabled(guild.id, 'timedRoles');
   const rules = timedRoles.listRules(guild.id);
   const health = await timedRoles.buildHealth(guild);
   const mode = section.settings.progressionMode === 'keep_all' ? 'Keep every earned milestone role' : 'Keep highest milestone role only';
@@ -50,7 +52,7 @@ async function buildTimedRolesPanel(guild, memberDisplayName = 'Unknown User') {
     .setDescription([
       'Reward members automatically for how long they have stayed in the server.',
       '',
-      `**Status:** ${section.enabled !== false ? 'Enabled ✅' : 'Disabled ❌'}`,
+      `**Status:** ${enabled ? 'Enabled ✅' : 'Disabled ❌'}`,
       `**Progression:** ${mode}`,
       `**Promotion announcements:** ${section.settings.announcePromotions ? `Enabled in ${section.settings.announcementChannelId ? `<#${section.settings.announcementChannelId}>` : 'no channel selected'} ✅` : 'Disabled'}`,
       `**Scan interval:** ${section.settings.scanIntervalMinutes} minutes`,
@@ -88,7 +90,7 @@ async function buildTimedRolesPanel(guild, memberDisplayName = 'Unknown User') {
         button(`${PREFIX}:repair`, '🩺 Repair'),
       ),
       row(
-        button(section.enabled !== false ? `${PREFIX}:disable` : `${PREFIX}:enable`, section.enabled !== false ? '⏸️ Disable' : '▶️ Enable', section.enabled !== false ? ButtonStyle.Secondary : ButtonStyle.Success),
+        button(enabled ? `${PREFIX}:disable` : `${PREFIX}:enable`, enabled ? '⏸️ Disable' : '▶️ Enable', enabled ? ButtonStyle.Secondary : ButtonStyle.Success),
         button(`${PREFIX}:export`, '📤 Export'),
         button('admin:reactionRoles', '⬅️ Role Studio'),
       ),
@@ -308,8 +310,8 @@ async function handleTimedRolesInteraction(interaction) {
     }
 
     if (customId === `${PREFIX}:settings`) return refresh(interaction, buildSettingsPanel(interaction.guild.id));
-    if (customId === `${PREFIX}:enable`) timedRoles.setEnabled(interaction.guild.id, true, { actorId: interaction.user.id });
-    if (customId === `${PREFIX}:disable`) timedRoles.setEnabled(interaction.guild.id, false, { actorId: interaction.user.id });
+    if (customId === `${PREFIX}:enable`) guildManager.setModuleEnabled(interaction.guild.id, 'timedRoles', true, { actorId: interaction.user.id });
+    if (customId === `${PREFIX}:disable`) guildManager.setModuleEnabled(interaction.guild.id, 'timedRoles', false, { actorId: interaction.user.id });
     if (customId === `${PREFIX}:toggleBots`) {
       const section = timedRoles.getSection(interaction.guild.id);
       timedRoles.updateSettings(interaction.guild.id, { includeBots: !section.settings.includeBots }, { actorId: interaction.user.id });
@@ -355,7 +357,11 @@ async function handleTimedRolesInteraction(interaction) {
       return refresh(interaction);
     }
     if (customId === `${PREFIX}:export`) {
-      const attachment = new AttachmentBuilder(Buffer.from(JSON.stringify(timedRoles.exportConfiguration(interaction.guild.id), null, 2), 'utf8'), { name: `goliath-timed-roles-${interaction.guild.id}.json` });
+      const exported = {
+        ...timedRoles.exportConfiguration(interaction.guild.id),
+        enabled: guildManager.isModuleEnabled(interaction.guild.id, 'timedRoles'),
+      };
+      const attachment = new AttachmentBuilder(Buffer.from(JSON.stringify(exported, null, 2), 'utf8'), { name: `goliath-timed-roles-${interaction.guild.id}.json` });
       await interaction.reply({ content: '📤 Timed Roles configuration export.', files: [attachment], ephemeral: true });
       return true;
     }
