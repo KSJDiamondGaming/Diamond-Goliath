@@ -238,23 +238,46 @@ function membershipAgeMinutes(member) {
 }
 
 async function assignPendingRoles(member, reason = 'Goliath pending verification role assignment') {
-  if (!member?.guild?.id || member.user?.bot) return { assigned: [], skipped: true };
+  if (!member?.guild?.id || member.user?.bot) return { assigned: [], failed: [], skipped: true };
   const section = getEffectiveVerificationSection(member.guild.id);
   const settings = section.settings;
   if (section.enabled !== true || !settings.usePendingRoles || !settings.assignPendingRoles) {
-    return { assigned: [], skipped: true };
+    return { assigned: [], failed: [], skipped: true };
   }
-  if (settings.pendingRoleTiming === 'manual') return { assigned: [], skipped: true };
+  if (settings.pendingRoleTiming === 'manual') return { assigned: [], failed: [], skipped: true };
   if (settings.pendingRoleTiming === 'after_screening' && member.pending === true) {
-    return { assigned: [], skipped: true, waitingForScreening: true };
+    return { assigned: [], failed: [], skipped: true, waitingForScreening: true };
   }
   const roles = await fetchRoles(member.guild, settings.pendingRoleIds);
   const assigned = [];
+  const failed = [];
   for (const role of roles) {
     const status = resolveRoleActionStatus(member.guild, member, role, 'add');
-    if (!status.ok || status.skipped) continue;
-    await member.roles.add(role, reason).catch(() => null);
-    if (member.roles.cache.has(role.id)) assigned.push(role);
+    if (!status.ok) {
+      failed.push({ roleId: role.id, reason: status.message });
+      console.warn('[Verification] Pending role assignment blocked', {
+        guildId: member.guild.id,
+        userId: member.id,
+        roleId: role.id,
+        reason: status.message,
+      });
+      continue;
+    }
+    if (status.skipped) continue;
+    try {
+      await member.roles.add(role, reason);
+      if (member.roles.cache.has(role.id)) assigned.push(role);
+      else failed.push({ roleId: role.id, reason: 'role was not present after assignment' });
+    } catch (error) {
+      const failureReason = error?.message || 'Discord rejected the pending role assignment';
+      failed.push({ roleId: role.id, reason: failureReason });
+      console.warn('[Verification] Pending role assignment failed', {
+        guildId: member.guild.id,
+        userId: member.id,
+        roleId: role.id,
+        error: failureReason,
+      });
+    }
   }
   if (assigned.length) {
     verificationStore.incrementAnalytics(member.guild.id, { pendingRolesAssigned: assigned.length });
@@ -265,7 +288,7 @@ async function assignPendingRoles(member, reason = 'Goliath pending verification
       await member.send(message).catch(() => null);
     }
   }
-  return { assigned, skipped: false };
+  return { assigned, failed, skipped: false };
 }
 
 async function handleMemberJoin(member) {
@@ -292,15 +315,23 @@ async function handleMemberUpdate(oldMember, newMember) {
   }
   const result = section.settings.pendingRoleTiming === 'after_screening'
     ? await assignPendingRoles(newMember, 'Goliath pending role assigned after Discord screening')
-    : { assigned: [], skipped: true };
+    : { assigned: [], failed: [], skipped: true };
   return { handled: true, screeningCompleted: true, ...result };
 }
 
-async function failVerification(guildId, section, member, messageKey, values = {}, analytics = {}) {
+async function failVerification(guildId, section, member, messageKey, values = {}, analytics = {}, options = {}) {
   const reason = renderMessage(section.messages[messageKey] || section.messages.failed, member, values);
-  verificationStore.recordAttempt(guildId, member.id, { failed: true });
-  verificationStore.incrementAnalytics(guildId, { failed: 1, ...analytics });
-  if (section.settings.logFailure) {
+  const countFailure = options.countFailure !== false;
+  const logFailure = options.logFailure !== false;
+
+  if (countFailure) {
+    verificationStore.recordAttempt(guildId, member.id, { failed: true });
+    verificationStore.incrementAnalytics(guildId, { failed: 1, ...analytics });
+  } else if (Object.keys(analytics || {}).length) {
+    verificationStore.incrementAnalytics(guildId, analytics);
+  }
+
+  if (section.settings.logFailure && logFailure) {
     await sendVerificationLog(member.guild, section, renderMessage(section.messages.failureLog, member, {
       ...values,
       reason: values.reason || reason,
@@ -314,10 +345,15 @@ function getRequestedPanelId(interaction) {
   return parseVerifyCustomId(interaction?.customId)?.panelId || null;
 }
 
-function getActivePanel(guildId, panelId) {
+function getActivePanel(guildId, panelId, context = {}) {
   if (!panelId) return null;
   const panel = verificationStore.getPanel(guildId, panelId);
   if (!panel || panel.enabled === false || panel.deletedAt) return null;
+
+  const messageId = cleanDiscordId(context.messageId || context.message?.id);
+  const channelId = cleanDiscordId(context.channelId || context.channel?.id);
+  if (panel.messageId && messageId && panel.messageId !== messageId) return null;
+  if (panel.channelId && channelId && panel.channelId !== channelId) return null;
   return panel;
 }
 
@@ -368,7 +404,7 @@ async function verifyMember(interaction) {
   if (!guildId || !guild) return { ok: false, message: 'Server unavailable.' };
 
   const panelId = getRequestedPanelId(interaction);
-  const panel = getActivePanel(guildId, panelId);
+  const panel = getActivePanel(guildId, panelId, interaction);
   if (!panel) {
     return { ok: false, message: 'This verification panel is no longer active. Please use the current verification panel.' };
   }
@@ -388,7 +424,10 @@ async function verifyMember(interaction) {
   const alreadyVerified = verifiedRoles.length > 0 && verifiedRoles.some((role) => member.roles.cache.has(role.id));
 
   if (section.enabled !== true) {
-    return failVerification(guildId, section, member, 'unavailable', {}, { unavailable: 1 });
+    return failVerification(guildId, section, member, 'unavailable', {}, { unavailable: 1 }, {
+      countFailure: false,
+      logFailure: false,
+    });
   }
 
   if (settings.blockBots && member.user?.bot && !bypass) {
@@ -409,10 +448,19 @@ async function verifyMember(interaction) {
     return { ok: true, message: renderMessage(messages.alreadyVerified, reconciled.member) };
   }
 
-  if (!verifiedRoles.length) {
+  if (!settings.verifiedRoleIds.length || settings.verifiedRoleIds.length !== verifiedRoles.length) {
     return failVerification(guildId, section, member, 'unavailable', {
-      reason: 'no verified roles configured',
-    }, { unavailable: 1 });
+      reason: 'one or more configured verified roles are unavailable',
+    }, { unavailable: 1 }, { countFailure: false, logFailure: false });
+  }
+
+  const pendingRolesRequiredByFlow = settings.usePendingRoles && (
+    settings.requirePendingRole || settings.assignPendingRoles || settings.removePendingRoles
+  );
+  if (pendingRolesRequiredByFlow && settings.pendingRoleIds.length !== pendingRoles.length) {
+    return failVerification(guildId, section, member, 'unavailable', {
+      reason: 'one or more configured pending roles are unavailable',
+    }, { unavailable: 1 }, { countFailure: false, logFailure: false });
   }
 
   if (!bypass) {
@@ -425,18 +473,25 @@ async function verifyMember(interaction) {
       };
     }
     if (attemptBlock?.key === 'failed') {
-      return failVerification(guildId, section, member, 'failed', { reason: attemptBlock.reason }, { requirementBlocked: 1 });
+      verificationStore.incrementAnalytics(guildId, { requirementBlocked: 1 });
+      return {
+        ok: false,
+        message: renderMessage(messages.failed, member, { reason: attemptBlock.reason }),
+      };
     }
 
     const screeningAvailable = hasDiscordScreening(guild);
     if (settings.waitForDiscordScreening) {
       if (screeningAvailable && member.pending === true) {
-        return failVerification(guildId, section, member, 'screeningRequired', {}, { screeningBlocked: 1 });
+        return failVerification(guildId, section, member, 'screeningRequired', {}, { screeningBlocked: 1 }, {
+          countFailure: false,
+          logFailure: false,
+        });
       }
       if (!screeningAvailable && !settings.skipScreeningIfUnavailable) {
         return failVerification(guildId, section, member, 'screeningRequired', {
           reason: 'Discord Membership Screening is not configured',
-        }, { screeningBlocked: 1 });
+        }, { screeningBlocked: 1 }, { countFailure: false, logFailure: false });
       }
     }
 
@@ -445,33 +500,35 @@ async function verifyMember(interaction) {
       if (!hasRequiredPendingRole) {
         return failVerification(guildId, section, member, 'pendingRoleRequired', {
           pendingRoles: roleMentions(pendingRoles),
-        }, { requirementBlocked: 1 });
+        }, { requirementBlocked: 1 }, { countFailure: false, logFailure: false });
       }
     }
 
     if (settings.minimumAccountAgeDays > 0 && accountAgeDays(member) < settings.minimumAccountAgeDays) {
       return failVerification(guildId, section, member, 'accountTooNew', {
         minimumAccountAgeDays: settings.minimumAccountAgeDays,
-      }, { accountAgeBlocked: 1, requirementBlocked: 1 });
+      }, { accountAgeBlocked: 1, requirementBlocked: 1 }, { countFailure: false, logFailure: false });
     }
 
     if (settings.minimumMembershipAgeMinutes > 0 && membershipAgeMinutes(member) < settings.minimumMembershipAgeMinutes) {
       return failVerification(guildId, section, member, 'membershipTooNew', {
         minimumMembershipAgeMinutes: settings.minimumMembershipAgeMinutes,
-      }, { membershipAgeBlocked: 1, requirementBlocked: 1 });
+      }, { membershipAgeBlocked: 1, requirementBlocked: 1 }, { countFailure: false, logFailure: false });
     }
   }
 
   if (!canBotManageMember(member)) {
     return failVerification(guildId, section, member, 'failed', {
       reason: 'Goliath cannot manage this member',
-    }, { roleManageFailed: 1 });
+    }, { roleManageFailed: 1 }, { countFailure: false });
   }
 
   for (const role of verifiedRoles) {
     const status = resolveRoleActionStatus(guild, member, role, 'add');
     if (!status.ok) {
-      return failVerification(guildId, section, member, 'failed', { reason: status.message }, { roleManageFailed: 1 });
+      return failVerification(guildId, section, member, 'failed', { reason: status.message }, { roleManageFailed: 1 }, {
+        countFailure: false,
+      });
     }
   }
 
@@ -479,7 +536,9 @@ async function verifyMember(interaction) {
     for (const role of pendingRoles) {
       const status = resolveRoleActionStatus(guild, member, role, 'remove');
       if (!status.ok) {
-        return failVerification(guildId, section, member, 'failed', { reason: status.message }, { roleManageFailed: 1 });
+        return failVerification(guildId, section, member, 'failed', { reason: status.message }, { roleManageFailed: 1 }, {
+          countFailure: false,
+        });
       }
     }
   }
@@ -526,7 +585,9 @@ async function verifyMember(interaction) {
   } catch (error) {
     const reason = error?.rawError?.message || error?.message || 'Discord rejected the role update';
     console.error('[Verification] Role update failed', { guildId, userId: member.id, error });
-    return failVerification(guildId, section, member, 'failed', { reason }, { roleManageFailed: 1 });
+    return failVerification(guildId, section, member, 'failed', { reason }, { roleManageFailed: 1 }, {
+      countFailure: false,
+    });
   }
 }
 
