@@ -29,11 +29,9 @@ async function handleGiveawaysAdminInteraction(interaction) {
     }
     if (customId === 'admin:giveaways:enable') {
       setModuleEnabled(interaction.guild.id, 'giveaways', true, interaction.guild);
-      save(interaction.guild, (section) => ({ ...section, enabled: true }));
     }
     if (customId === 'admin:giveaways:disable') {
       setModuleEnabled(interaction.guild.id, 'giveaways', false, interaction.guild);
-      save(interaction.guild, (section) => ({ ...section, enabled: false }));
     }
     if (customId === 'admin:giveaways:toggleMultiple') save(interaction.guild, (section) => ({ ...section, allowMultipleEntries: !section.allowMultipleEntries }));
     if (customId === 'admin:giveaways:toggleRequireRole') save(interaction.guild, (section) => ({ ...section, requireRole: !section.requireRole }));
