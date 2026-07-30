@@ -177,7 +177,8 @@ function addHistory(config, event) {
 }
 
 function enabledAlert(account, type) {
-  const supported = providerInfo(account.platform).supportedAlertTypes || [];
+  const rawSupported = providerInfo(account.platform).supportedAlertTypes || [];
+  const supported = rawSupported.includes('live') ? [...new Set([...rawSupported, 'ended'])] : rawSupported;
   const configured = Array.isArray(account.alertTypes) ? account.alertTypes : supported;
   return supported.includes(type) && configured.includes(type);
 }
