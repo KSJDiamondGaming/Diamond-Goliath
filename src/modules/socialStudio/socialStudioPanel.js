@@ -13,6 +13,7 @@ const ALERT_LABEL = { live: 'LIVE', ended: 'Stream Ended', vod: 'VOD', clip: 'Cl
 const LABEL = { twitch: 'Twitch', youtube: 'YouTube', tiktok: 'TikTok', kick: 'Kick', facebook: 'Facebook', instagram: 'Instagram', x: 'X' };
 const ICON = { twitch: '🟣', youtube: '🔴', tiktok: '⚫', kick: '🟢', facebook: '🔵', instagram: '🟠', x: '⚪' };
 const NAV = new Set(['creators', 'accounts', 'notifications', 'templates', 'variables', 'feeds', 'channels', 'settings', 'permissions', 'roles', 'automation', 'testing', 'data']);
+const SETTINGS_CHILDREN = new Set(['permissions', 'roles', 'automation', 'testing', 'data']);
 const accountSessions = new Map();
 const creatorSessions = new Map();
 const feedSessions = new Map();
@@ -71,7 +72,20 @@ function setCreatorSession(i, patch) { const next = { ...getCreatorSession(i), .
 function getFeedSession(i) { return feedSessions.get(sessionKey(i)) || { routeType: 'default' }; }
 function setFeedSession(i, patch) { const next = { ...getFeedSession(i), ...patch }; feedSessions.set(sessionKey(i), next); return next; }
 function embed(config, title, description, requestedBy) { return new EmbedBuilder().setColor(config.enabled ? 0x5865F2 : 0x747F8D).setTitle(title).setDescription(description).setFooter({ text: `Requested by ${requestedBy}` }).setTimestamp(); }
-function navigation(active = 'main') { return row(btn(active === 'main' ? 'admin:studio:socialStudio' : `${P}main`, '⬅️ Back'), btn(`${P}settings`, '⚙️ Settings', ButtonStyle.Secondary, active === 'settings')); }
+function navigation(active = 'main') {
+  let backId = 'admin:studio:socialStudio';
+  let secondaryId = `${P}settings`;
+  let secondaryLabel = '⚙️ Settings';
+  let secondaryDisabled = active === 'settings';
+  if (active === 'settings') backId = `${P}main`;
+  else if (SETTINGS_CHILDREN.has(active)) {
+    backId = `${P}settings`;
+    secondaryId = `${P}main`;
+    secondaryLabel = '🏠 Social Studio';
+    secondaryDisabled = false;
+  } else if (active !== 'main') backId = `${P}main`;
+  return row(btn(backId, '⬅️ Back'), btn(secondaryId, secondaryLabel, ButtonStyle.Secondary, secondaryDisabled));
+}
 
 function creatorSelect(creators, selected, id = `${P}account:creator`, placeholder = '1. Select the creator profile') {
   return row(new StringSelectMenuBuilder().setCustomId(id).setPlaceholder(placeholder).setMinValues(1).setMaxValues(1).addOptions(creators.slice(0, 25).map((c) => ({ label: String(c.displayName || 'Unnamed creator').slice(0, 100), value: c.creatorId, description: `${(c.accountIds || []).length} linked account(s)`.slice(0, 100), default: c.creatorId === selected }))));
@@ -224,7 +238,17 @@ function buildSectionPanel(i, name) {
     return { embeds: [embed(config, '📡 Notification Feeds', d, who(i))], components: [routeTypeSelect(`${P}feed:type`, routeType), channelSelect(`${P}feed:route`, selected, routeType === 'default' ? 'Select default notification feed' : `Select ${ALERT_LABEL[routeType]} feed`), navigation('feeds')] };
   }
   if (name === 'channels') return { embeds: [embed(config, '📂 Channels', `**Default Notification Channel:** ${config.alertsChannelId ? `<#${config.alertsChannelId}>` : 'Not configured'}\n\nFor alert-type routing, use **📡 Feeds**.`, who(i))], components: [channelSelect(`${P}channel:alerts`, config.alertsChannelId, 'Select Social Studio default alert channel'), row(btn(`${P}feeds`, '📡 Alert Routes', ButtonStyle.Primary)), navigation('channels')] };
-  if (name === 'settings') return { embeds: [embed(config, '⚙️ Social Studio Settings', 'Manage permissions, roles, automation, testing and data.', who(i))], components: [row(btn(`${P}permissions`, '🔐 Permissions', ButtonStyle.Primary), btn(`${P}roles`, '👥 Roles', ButtonStyle.Primary), btn(`${P}automation`, '⚡ Automation', ButtonStyle.Primary)), row(btn(`${P}testing`, '🧪 Testing'), btn(`${P}data`, '🗄️ Data')), navigation('settings')] };
+  if (name === 'settings') return { embeds: [embed(config, '⚙️ Social Studio Settings', 'Manage access, automation, testing and operational data.', who(i))], components: [row(btn(`${P}permissions`, '🔐 Permissions', ButtonStyle.Primary), btn(`${P}roles`, '👥 Roles', ButtonStyle.Primary), btn(`${P}automation`, '⚡ Automation', ButtonStyle.Primary)), row(btn(`${P}testing`, '🧪 Testing'), btn(`${P}data`, '🗄️ Data')), navigation('settings')] };
+  if (name === 'permissions') {
+    const configuredRoles = config.managerRoleIds.length ? config.managerRoleIds.map((id) => `<@&${id}>`).join(', ') : 'No manager roles configured';
+    const d = ['Control who is allowed to manage Social Studio.', '', '**Access model**', '• Server administrators retain access through the admin panel.', '• Additional Social Studio managers are granted through the configured manager roles.', '• Alert recipients and mention roles are configured per account and are separate from management access.', '', `**Manager roles:** ${configuredRoles}`, '', 'Use **👥 Manage Roles** to add or remove Social Studio manager roles.'].join('\n');
+    return { embeds: [embed(config, '🔐 Permissions', d, who(i))], components: [row(btn(`${P}roles`, '👥 Manage Roles', ButtonStyle.Primary)), navigation('permissions')] };
+  }
+  if (name === 'roles') {
+    const configuredRoles = config.managerRoleIds.length ? config.managerRoleIds.map((id) => `<@&${id}>`).join(', ') : 'None';
+    const d = [`Choose the Discord roles that can manage Social Studio in addition to server administrators.`, '', `**Configured manager roles:** ${configuredRoles}`, '', 'Select zero roles to remove all additional Social Studio managers.'].join('\n');
+    return { embeds: [embed(config, '👥 Manager Roles', d, who(i))], components: [roleSelect(config.managerRoleIds), navigation('roles')] };
+  }
   if (name === 'automation') {
     const interval = Math.max(60000, Number(config.settings?.checkIntervalMs || 300000)), mins = Math.round(interval / 60000), dupes = config.settings?.suppressDuplicates !== false;
     return { embeds: [embed(config, '⚡ Automation', `**Module:** ${config.enabled ? '🟢 Enabled' : '🔴 Disabled'}\n**Provider Check Interval:** ${mins} minute${mins === 1 ? '' : 's'}\n**Duplicate Suppression:** ${dupes ? '🟢 On' : '🔴 Off'}\n\nProvider checks only create alerts when a new event is detected.`, who(i))], components: [row(btn(`${P}toggle`, config.enabled ? '⏸️ Disable Module' : '▶️ Enable Module', config.enabled ? ButtonStyle.Danger : ButtonStyle.Success), btn(`${P}account:check`, '🔄 Run Check Now', ButtonStyle.Primary, !accounts.length)), row(btn(`${P}automation:interval`, '⏱️ Change Interval'), btn(`${P}automation:dupes`, dupes ? '🔁 Duplicates: Blocked' : '🔁 Duplicates: Allowed')), navigation('automation')] };
@@ -233,7 +257,8 @@ function buildSectionPanel(i, name) {
     const recent = config.history.slice(-5).reverse().map((entry) => `• ${entry.status || 'event'}${entry.platform ? ` — ${entry.platform}` : ''}${entry.alertType ? ` — ${entry.alertType}` : ''}`).join('\n') || 'No history yet.';
     return { embeds: [embed(config, '🗄️ Social Studio Data', `**Checks:** ${Number(config.analytics?.checks || 0).toLocaleString('en-GB')}\n**Alerts Sent:** ${Number(config.analytics?.alertsSent || 0).toLocaleString('en-GB')}\n**Failures:** ${Number(config.analytics?.failures || 0).toLocaleString('en-GB')}\n**History Entries:** ${config.history.length}\n\n**Recent Activity**\n${recent}`, who(i))], components: [row(btn(`${P}data:refresh`, '🔄 Refresh'), btn(`${P}creator:rebuild`, '🧩 Rebuild Profiles')), navigation('data')] };
   }
-  const c = []; if (name === 'permissions' || name === 'roles') c.push(roleSelect(config.managerRoleIds)); if (name === 'testing') c.push(row(btn(`${P}test`, '📨 Send Test', ButtonStyle.Primary, !config.alertsChannelId), btn(`${P}account:check`, '🔄 Check Providers', ButtonStyle.Secondary, !accounts.length))); c.push(navigation(name)); return { embeds: [embed(config, name[0].toUpperCase() + name.slice(1), 'Social Studio settings.', who(i))], components: c };
+  if (name === 'testing') return { embeds: [embed(config, '🧪 Testing', `Use these controls to validate Social Studio without changing provider configuration.\n\n**Default notification channel:** ${config.alertsChannelId ? `<#${config.alertsChannelId}>` : 'Not configured'}\n**Monitored accounts:** ${accounts.filter((a) => a.enabled !== false).length}/${accounts.length}`, who(i))], components: [row(btn(`${P}test`, '📨 Send Test', ButtonStyle.Primary, !config.alertsChannelId), btn(`${P}account:check`, '🔄 Check Providers', ButtonStyle.Secondary, !accounts.length)), navigation('testing')] };
+  return { embeds: [embed(config, name[0].toUpperCase() + name.slice(1), 'Social Studio settings.', who(i))], components: [navigation(name)] };
 }
 
 async function respond(i, payload) { if (i.deferred || i.replied) await i.editReply(payload); else await i.update(payload); return true; }
