@@ -2,10 +2,12 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const path = require('node:path');
 
 const managerPath = path.resolve(__dirname, '../../src/core/guild/moduleSectionManager.js');
 const guildManagerPath = path.resolve(__dirname, '../../src/core/guild/guildManager.js');
+const moduleAdminPanelsPath = path.resolve(__dirname, '../../src/core/admin/functions/moduleAdminPanels.js');
 
 function loadManager(initialModules = {}) {
   let modules = JSON.parse(JSON.stringify(initialModules));
@@ -127,4 +129,17 @@ test('saving a module preserves enabled and createdAt metadata', () => {
   } finally {
     fixture.cleanup();
   }
+});
+
+test('generic module admin panels use canonical module state without persisting enabled', () => {
+  const source = fs.readFileSync(moduleAdminPanelsPath, 'utf8');
+  const registry = source.slice(source.indexOf('const MODULE_PANEL_REGISTRY = {'), source.indexOf('const SERVER_MODULES ='));
+  const saveConfig = source.slice(source.indexOf('function saveModuleConfig('), source.indexOf('function formatValue('));
+  const actions = source.slice(source.indexOf('const action = id.match('), source.indexOf('const toggle = id.match('));
+
+  assert.doesNotMatch(registry, /defaults:\s*\{\s*enabled\s*:/);
+  assert.match(source, /enabled: guildManager\.isModuleEnabled\(guildId, moduleKey\)/);
+  assert.match(saveConfig, /const \{ enabled: _enabled, \.\.\.config \} = next \|\| \{\};/);
+  assert.match(actions, /guildManager\.setModuleEnabled\(interaction\.guild\.id, key, type === 'enable'/);
+  assert.doesNotMatch(actions, /saveModuleConfig\([^\n]+enabled:/);
 });
