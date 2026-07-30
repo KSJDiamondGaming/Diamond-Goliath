@@ -305,6 +305,7 @@ function buildPanelPage(guild, memberDisplayName) {
         button('admin:verification:redeploy', '🔄 Redeploy', ButtonStyle.Success)
       ),
       row(
+        button('admin:verification:updatePanel', '🛡️ Update Panel', ButtonStyle.Primary),
         button('admin:verification:deleteLatest', '🗑️ Delete Latest', ButtonStyle.Danger),
         button('admin:verification:resetTemplate', '♻️ Reset Design', ButtonStyle.Danger)
       ),
@@ -441,6 +442,54 @@ async function deployLatestOrNew(interaction, redeploy = false) {
     panelId: existing?.panelId,
     createdBy: interaction.user.id,
   }, { actorId: interaction.user.id });
+}
+
+async function updateLatestPanelInPlace(interaction) {
+  const guild = interaction.guild;
+  if (!guild?.id) throw new Error('Guild is unavailable.');
+
+  const existing = latestPanel(guild.id);
+  if (!existing) throw new Error('No deployed verification panel exists to update.');
+  if (!existing.channelId || !existing.messageId) {
+    throw new Error('The latest verification panel is missing its channel or message reference. Update aborted; no new message was sent.');
+  }
+
+  const channel = guild.channels.cache.get(existing.channelId) || await guild.channels.fetch(existing.channelId).catch(() => null);
+  if (!channel?.messages?.fetch) {
+    throw new Error('The deployed verification channel is unavailable. Update aborted; no new message was sent.');
+  }
+
+  const message = await channel.messages.fetch(existing.messageId).catch(() => null);
+  if (!message) {
+    throw new Error('The deployed verification message could not be found. Update aborted; no new message was sent.');
+  }
+  if (!message.editable) {
+    throw new Error('The deployed verification message is not editable. Update aborted; no new message was sent.');
+  }
+
+  const template = verificationStore.normalizePanelTemplate({
+    ...existing,
+    ...panelTemplate(guild.id),
+  });
+  const updatedPanel = {
+    ...existing,
+    ...template,
+    panelId: existing.panelId,
+    id: existing.panelId,
+    channelId: existing.channelId,
+    messageId: existing.messageId,
+    createdBy: existing.createdBy,
+  };
+
+  await message.edit({
+    embeds: [verificationManager.buildVerificationEmbed(updatedPanel, guild)],
+    components: verificationManager.buildVerificationRows(updatedPanel, guild),
+  });
+
+  return verificationStore.savePanel(guild.id, updatedPanel, {
+    actorId: interaction.user.id,
+    action: 'verification_admin_panel_update_in_place',
+  });
 }
 
 function exportAttachment(guildId) {
@@ -601,6 +650,12 @@ async function handleVerificationAdminInteraction(interaction) {
         flags: 64,
       });
       return true;
+    }
+
+    if (customId === 'admin:verification:updatePanel') {
+      await interaction.deferUpdate();
+      await updateLatestPanelInPlace(interaction);
+      return safeUpdate(interaction, buildVerificationAdminPanel(interaction.guild, displayName, 'panel'));
     }
 
     if (customId === 'admin:verification:deploy' || customId === 'admin:verification:redeploy') {
