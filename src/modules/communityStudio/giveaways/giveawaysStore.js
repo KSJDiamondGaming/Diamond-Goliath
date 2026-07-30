@@ -1,7 +1,11 @@
 'use strict';
 
 const crypto = require('crypto');
-const guildManager = require('../../../core/guild/guildManager');
+const {
+  getModuleSection,
+  saveModuleSection,
+  updateModuleSection,
+} = require('../../../core/guild/moduleSectionManager');
 
 const MODULE_KEY = 'giveaways';
 
@@ -34,7 +38,6 @@ function cleanNumber(value, fallback = 0) {
 
 function defaultGiveawaysSection() {
   return {
-    enabled: true,
     announcementChannelId: null,
     logChannelId: null,
     managerRoleIds: [],
@@ -94,10 +97,9 @@ function normalizeSection(section = {}) {
     ? source.giveaways
     : {};
 
-  return {
+  const normalized = {
     ...base,
     ...source,
-    enabled: source.enabled !== false,
     announcementChannelId: cleanDiscordId(source.announcementChannelId),
     logChannelId: cleanDiscordId(source.logChannelId),
     managerRoleIds: cleanIdArray(source.managerRoleIds),
@@ -110,8 +112,8 @@ function normalizeSection(section = {}) {
     defaultWinnerCount: Math.max(1, Math.min(20, Math.floor(cleanNumber(source.defaultWinnerCount, 1)))),
     giveaways: Object.fromEntries(
       Object.entries(giveaways).map(([id, giveaway]) => {
-        const normalized = normalizeGiveaway({ ...giveaway, giveawayId: giveaway.giveawayId || id });
-        return [normalized.giveawayId, normalized];
+        const normalizedGiveaway = normalizeGiveaway({ ...giveaway, giveawayId: giveaway.giveawayId || id });
+        return [normalizedGiveaway.giveawayId, normalizedGiveaway];
       })
     ),
     analytics: {
@@ -123,26 +125,35 @@ function normalizeSection(section = {}) {
     createdAt: source.createdAt || base.createdAt,
     updatedAt: source.updatedAt || now(),
   };
-}
-
-function getSection(guildId) {
-  const modules = guildManager.getGuildSection(guildId, 'modules', {});
-  return normalizeSection(modules?.[MODULE_KEY] || defaultGiveawaysSection());
-}
-
-function saveSection(guildId, section, guildOrMeta = {}) {
-  const normalized = normalizeSection(section);
-  guildManager.updateGuildSection(guildId, 'modules', (modules = {}) => ({
-    ...(modules && typeof modules === 'object' ? modules : {}),
-    [MODULE_KEY]: normalized,
-  }), {}, guildOrMeta);
+  delete normalized.enabled;
   return normalized;
 }
 
+function getSection(guildId) {
+  return normalizeSection(getModuleSection(guildId, MODULE_KEY, defaultGiveawaysSection()));
+}
+
+function saveSection(guildId, section, guildOrMeta = {}) {
+  return normalizeSection(saveModuleSection(
+    guildId,
+    MODULE_KEY,
+    normalizeSection(section),
+    guildOrMeta
+  ));
+}
+
 function updateSection(guildId, updater, guildOrMeta = {}) {
-  const current = getSection(guildId);
-  const next = typeof updater === 'function' ? updater(current) : updater;
-  return saveSection(guildId, normalizeSection(next), guildOrMeta);
+  return normalizeSection(updateModuleSection(
+    guildId,
+    MODULE_KEY,
+    (current) => {
+      const normalized = normalizeSection(current);
+      const next = typeof updater === 'function' ? updater(normalized) : updater;
+      return normalizeSection(next);
+    },
+    defaultGiveawaysSection(),
+    guildOrMeta
+  ));
 }
 
 function saveGiveaway(guildId, giveaway, guildOrMeta = {}) {
