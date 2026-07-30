@@ -167,7 +167,7 @@ async function scanExpired(guild, meta = {}) {
 
 function setEnabled(guildId, enabled, meta = {}) {
   setModuleEnabled(guildId, SECTION, Boolean(enabled), meta);
-  return getSection(guildId);
+  return { ...getSection(guildId), enabled: isModuleEnabled(guildId, SECTION) };
 }
 
 function reset(guildId, meta = {}) {
