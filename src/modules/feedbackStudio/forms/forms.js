@@ -228,7 +228,6 @@ function normalizeTimelineEvent(event = {}, index = 0) {
 
 function defaultFormsSection() {
   return {
-    enabled: true,
     settings: {
       defaultAction: FORM_ACTIONS.CREATE_TICKET,
       dmSubmitter: true,
@@ -340,10 +339,9 @@ function normalizePanel(panel = {}) {
 function normalizeFormsSection(section = {}) {
   const base = defaultFormsSection();
   const source = isPlainObject(section) ? section : {};
-  return {
+  const normalized = {
     ...base,
     ...clone(source),
-    enabled: source.enabled !== false,
     settings: { ...base.settings, ...(isPlainObject(source.settings) ? clone(source.settings) : {}) },
     forms: Object.fromEntries(Object.entries(isPlainObject(source.forms) ? source.forms : {}).map(([id, form]) => {
       const normalized = normalizeForm({ ...form, formId: form.formId || id });
@@ -368,6 +366,8 @@ function normalizeFormsSection(section = {}) {
     createdAt: source.createdAt || base.createdAt,
     updatedAt: source.updatedAt || now(),
   };
+  delete normalized.enabled;
+  return normalized;
 }
 
 function getFormsSection(guildId) {
