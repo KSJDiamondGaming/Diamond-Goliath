@@ -1,6 +1,7 @@
 'use strict';
 
 const { PermissionFlagsBits } = require('discord.js');
+const guildManager = require('../../../core/guild/guildManager');
 const {
   getModuleSection,
   saveModuleSection,
@@ -54,7 +55,6 @@ function defaultAnalytics() {
 
 function defaultWelcomeSection() {
   return {
-    enabled: false,
     channelId: null,
     templateId: 'welcome_default',
     dmEnabled: false,
@@ -88,10 +88,9 @@ function normalizeWelcomeSection(section = {}) {
   const source = section && typeof section === 'object' ? section : {};
   const channelId = cleanDiscordId(source.channelId || source.welcomeChannelId);
   const legacyDmTemplate = String(source.dmTemplateId || '').trim();
-  return {
+  const normalized = {
     ...base,
     ...clone(source),
-    enabled: source.enabled === true || (source.enabled !== false && Boolean(channelId)),
     channelId,
     templateId: cleanString(source.templateId || base.templateId, base.templateId, 120),
     dmEnabled: source.dmEnabled === true || source.sendDm === true,
@@ -104,6 +103,8 @@ function normalizeWelcomeSection(section = {}) {
     createdAt: source.createdAt || base.createdAt,
     updatedAt: source.updatedAt || now(),
   };
+  delete normalized.enabled;
+  return normalized;
 }
 
 function getWelcomeSection(guildId) {
@@ -129,18 +130,19 @@ function updateWelcomeSection(guildId, updater, meta = {}) {
 }
 
 function updateConfig(guildId, patch = {}, meta = {}) {
+  const { enabled, ...configPatch } = patch || {};
+  if (typeof enabled === 'boolean') guildManager.setModuleEnabled(guildId, MODULE, enabled, meta);
   return updateWelcomeSection(guildId, (section) => ({
     ...section,
-    ...patch,
-    channelId: patch.channelId === undefined ? section.channelId : cleanDiscordId(patch.channelId),
-    templateId: patch.templateId === undefined ? section.templateId : cleanString(patch.templateId, section.templateId, 120),
-    dmTemplateId: patch.dmTemplateId === undefined
+    ...configPatch,
+    channelId: configPatch.channelId === undefined ? section.channelId : cleanDiscordId(configPatch.channelId),
+    templateId: configPatch.templateId === undefined ? section.templateId : cleanString(configPatch.templateId, section.templateId, 120),
+    dmTemplateId: configPatch.dmTemplateId === undefined
       ? section.dmTemplateId
-      : (patch.dmTemplateId ? cleanString(patch.dmTemplateId, '', 120) : null),
-    enabled: typeof patch.enabled === 'boolean' ? patch.enabled : section.enabled,
-    dmEnabled: typeof patch.dmEnabled === 'boolean' ? patch.dmEnabled : section.dmEnabled,
-    allowUserPing: typeof patch.allowUserPing === 'boolean' ? patch.allowUserPing : section.allowUserPing,
-    ignoreBots: typeof patch.ignoreBots === 'boolean' ? patch.ignoreBots : section.ignoreBots,
+      : (configPatch.dmTemplateId ? cleanString(configPatch.dmTemplateId, '', 120) : null),
+    dmEnabled: typeof configPatch.dmEnabled === 'boolean' ? configPatch.dmEnabled : section.dmEnabled,
+    allowUserPing: typeof configPatch.allowUserPing === 'boolean' ? configPatch.allowUserPing : section.allowUserPing,
+    ignoreBots: typeof configPatch.ignoreBots === 'boolean' ? configPatch.ignoreBots : section.ignoreBots,
     updatedAt: now(),
   }), meta);
 }
@@ -440,7 +442,7 @@ async function sendWelcome(member, options = {}) {
   }
 
   const config = getWelcomeSection(member.guild.id);
-  if (!options.force && config.enabled === false) {
+  if (!options.force && !guildManager.isModuleEnabled(member.guild.id, MODULE)) {
     if (!options.previewOnly) incrementAnalytics(member.guild.id, { skipped: 1 });
     return { publicSent: false, dmSent: false, skipped: true, reason: 'disabled', errors: [] };
   }
@@ -504,6 +506,7 @@ async function sendWelcome(member, options = {}) {
 async function buildHealthReport(guild) {
   if (!guild?.id) throw new Error('Guild is required.');
   const config = getWelcomeSection(guild.id);
+  const moduleEnabled = guildManager.isModuleEnabled(guild.id, MODULE);
   const channel = config.channelId ? await resolveWelcomeChannel(guild, config.channelId) : null;
   const botMember = guild.members?.me || guild.members?.cache?.get(guild.client?.user?.id) || null;
   const permissions = channel && botMember ? channel.permissionsFor(botMember) : null;
@@ -513,8 +516,8 @@ async function buildHealthReport(guild) {
   const publicTemplate = getAssignedTemplate(guild.id, 'welcome', config);
   const dmTemplate = config.dmEnabled ? getAssignedTemplate(guild.id, 'dmWelcome', config) : null;
   const warnings = [
-    config.enabled === false ? 'Welcome is disabled.' : null,
-    config.enabled && !config.channelId && !config.dmEnabled ? 'No welcome channel or welcome DM is configured.' : null,
+    !moduleEnabled ? 'Welcome is disabled.' : null,
+    moduleEnabled && !config.channelId && !config.dmEnabled ? 'No welcome channel or welcome DM is configured.' : null,
     config.channelId && !channel ? `Configured welcome channel ${config.channelId} no longer exists or is not text-based.` : null,
     channel && !canView ? 'Goliath cannot view the welcome channel.' : null,
     channel && !canSend ? 'Goliath cannot send messages in the welcome channel.' : null,
@@ -523,7 +526,7 @@ async function buildHealthReport(guild) {
     config.dmEnabled && !dmTemplate ? 'Welcome DM is enabled, but no usable template is assigned.' : null,
   ].filter(Boolean);
   return {
-    enabled: config.enabled !== false,
+    enabled: moduleEnabled,
     channelId: config.channelId,
     channelExists: Boolean(channel),
     channelName: channel?.name || null,
@@ -552,7 +555,6 @@ async function repairConfiguration(guild, meta = {}) {
     channelId: channel ? config.channelId : null,
     templateId: publicTemplate?.templateId || config.templateId,
     dmTemplateId: dmTemplate?.templateId || null,
-    enabled: Boolean(channel || config.dmEnabled) && config.enabled,
   }, { action: 'welcome_repair', ...meta });
 }
 
@@ -561,7 +563,10 @@ function exportConfiguration(guildId) {
     exportedAt: now(),
     guildId,
     module: MODULE,
-    config: getWelcomeSection(guildId),
+    config: {
+      ...getWelcomeSection(guildId),
+      enabled: guildManager.isModuleEnabled(guildId, MODULE),
+    },
     publicBinding: getWelcomeBinding(guildId, 'welcome'),
     dmBinding: getWelcomeBinding(guildId, 'dm_welcome'),
   };
@@ -576,9 +581,9 @@ async function startupWelcome(client) {
   const results = [];
   for (const guild of client.guilds.cache.values()) {
     try {
-      const config = getWelcomeSection(guild.id);
+      const enabled = guildManager.isModuleEnabled(guild.id, MODULE);
       const health = await buildHealthReport(guild);
-      results.push({ guildId: guild.id, guildName: guild.name, enabled: config.enabled !== false, healthy: health.healthy, warnings: health.warnings });
+      results.push({ guildId: guild.id, guildName: guild.name, enabled, healthy: health.healthy, warnings: health.warnings });
     } catch (error) {
       results.push({ guildId: guild.id, guildName: guild.name, enabled: false, healthy: false, warnings: [error.message || 'Welcome startup check failed.'] });
     }
