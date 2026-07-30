@@ -276,3 +276,16 @@ test('giveaways runtime reads canonical module state', () => {
   assert.doesNotMatch(source, /section\.enabled === false/);
   assert.match(source, /giveaway\.status !== 'active'/);
 });
+
+test('giveaways store preserves canonical module state and item-level enabled flags', () => {
+  const source = read('src/modules/communityStudio/giveaways/giveawaysStore.js');
+  const defaults = source.slice(source.indexOf('function defaultGiveawaysSection()'), source.indexOf('function normalizeGiveaway('));
+  assert.doesNotMatch(defaults, /enabled\s*:/);
+  assert.match(source, /delete normalized\.enabled;/);
+  assert.match(source, /getModuleSection\(guildId, MODULE_KEY, defaultGiveawaysSection\(\)\)/);
+  assert.match(source, /saveModuleSection\(/);
+  assert.match(source, /updateModuleSection\(/);
+  assert.doesNotMatch(source, /guildManager\.updateGuildSection/);
+  assert.match(source, /enabled: input\.enabled !== false/);
+  assert.match(source, /giveaway\.enabled !== false && giveaway\.status === 'active'/);
+});
