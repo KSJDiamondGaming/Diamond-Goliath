@@ -16,11 +16,13 @@ const {
 const crypto = require('crypto');
 const guildManager = require('../../core/guild/guildManager');
 const { normalizeAccountInput, migrateAccount } = require('./accountNormalizer');
+const { providerInfo } = require('./socialStudioProviders');
 
 const P = 'social:';
 const PAGE_SIZE = 25;
 const PLATFORMS = ['twitch', 'youtube', 'tiktok', 'kick', 'facebook', 'instagram', 'x'];
-const ALERT_TYPES = ['live', 'upload', 'short', 'post'];
+const ALERT_TYPES = ['live', 'vod', 'clip', 'upload', 'short', 'post'];
+const ALERT_LABEL = { live: 'LIVE', vod: 'VOD', clip: 'Clip', upload: 'Upload', short: 'Short', post: 'Post' };
 const LABEL = { twitch: 'Twitch', youtube: 'YouTube', tiktok: 'TikTok', kick: 'Kick', facebook: 'Facebook', instagram: 'Instagram', x: 'X' };
 const ICON = { twitch: '🟣', youtube: '🔴', tiktok: '⚫', kick: '🟢', facebook: '🔵', instagram: '🟠', x: '⚪' };
 const NAV = new Set(['creators', 'accounts', 'notifications', 'templates', 'feeds', 'channels', 'settings', 'permissions', 'roles', 'automation', 'testing', 'data']);
@@ -33,6 +35,10 @@ const sessionKey = (interaction) => `${interaction.guildId}:${interaction.user?.
 const who = (interaction) => interaction.member?.displayName || interaction.user?.displayName || interaction.user?.username || 'Unknown User';
 const makeId = (prefix) => `${prefix}_${crypto.randomBytes(8).toString('hex')}`;
 const now = () => new Date().toISOString();
+
+function supportedAlerts(platform) {
+  return (providerInfo(platform).supportedAlertTypes || []).filter((type) => ALERT_TYPES.includes(type));
+}
 
 function getConfig(guildId) {
   const guild = guildManager.reloadGuild(guildId);
@@ -123,7 +129,7 @@ function accountSelect(accounts, selected) {
     .addOptions(accounts.slice(0, 25).map((account) => ({
       label: `${LABEL[account.platform] || account.platform} · ${account.username}`.slice(0, 100),
       value: account.accountId,
-      description: String(account.profileUrl || account.username || '').slice(0, 100),
+      description: String(account.profileUrl || account.externalId || account.username || '').slice(0, 100),
       default: account.accountId === selected,
     }))));
 }
@@ -135,6 +141,23 @@ function platformSelect(selected = []) {
     .setMinValues(1)
     .setMaxValues(5)
     .addOptions(PLATFORMS.map((platform) => ({ label: LABEL[platform], value: platform, default: selected.includes(platform) }))));
+}
+
+function alertTypeSelect(account) {
+  const supported = supportedAlerts(account.platform);
+  if (!supported.length) return null;
+  const configured = Array.isArray(account.alertTypes) && account.alertTypes.length ? account.alertTypes : supported;
+  return row(new StringSelectMenuBuilder()
+    .setCustomId(`${P}account:alerts`)
+    .setPlaceholder('Choose notifications for this account')
+    .setMinValues(1)
+    .setMaxValues(supported.length)
+    .addOptions(supported.map((type) => ({
+      label: ALERT_LABEL[type] || type,
+      value: type,
+      description: `Post ${ALERT_LABEL[type] || type} updates to Discord`.slice(0, 100),
+      default: configured.includes(type),
+    }))));
 }
 
 function channelSelect(id, selected, placeholder) {
@@ -194,7 +217,7 @@ function creatorModal(creator = null) {
         .setStyle(TextInputStyle.Paragraph)
         .setMaxLength(1000)
         .setRequired(false)
-        .setValue(String(creator?.notes || ''))),
+        .setValue(String(creator?.notes || '')),
     );
 }
 
@@ -204,7 +227,7 @@ function accountModal(platforms) {
     modal.addComponents(row(new TextInputBuilder()
       .setCustomId(`account_${platform}`)
       .setLabel(`${LABEL[platform]} username, channel ID or URL`)
-      .setPlaceholder('e.g. username, @handle or full profile URL')
+      .setPlaceholder('e.g. username, @handle, channel ID or full profile URL')
       .setStyle(TextInputStyle.Short)
       .setMaxLength(500)
       .setRequired(true)));
@@ -219,18 +242,18 @@ function accountEditModal(account) {
     .addComponents(row(new TextInputBuilder()
       .setCustomId('accountValue')
       .setLabel('Username, channel ID or URL')
-      .setPlaceholder('e.g. username, @handle or full profile URL')
+      .setPlaceholder('e.g. username, @handle, channel ID or full profile URL')
       .setStyle(TextInputStyle.Short)
       .setMaxLength(500)
       .setRequired(true)
-      .setValue(String(account.profileUrl || account.username || ''))));
+      .setValue(String(account.sourceInput || account.profileUrl || account.externalId || account.username || ''))));
 }
 
 function templateModal(type, config) {
   const current = config.templates?.[type] || {};
   return new ModalBuilder()
     .setCustomId(`${P}template:save:${type}`)
-    .setTitle(`${type[0].toUpperCase() + type.slice(1)} Template`)
+    .setTitle(`${ALERT_LABEL[type] || (type[0].toUpperCase() + type.slice(1))} Template`)
     .addComponents(
       row(new TextInputBuilder().setCustomId('title').setLabel('Embed title').setStyle(TextInputStyle.Short).setMaxLength(256).setValue(String(current.title || '{creator} alert')).setRequired(true)),
       row(new TextInputBuilder().setCustomId('description').setLabel('Embed description').setStyle(TextInputStyle.Paragraph).setMaxLength(2000).setValue(String(current.description || '{title}')).setRequired(true)),
@@ -245,13 +268,17 @@ function removeAccountReferences(config, accountIds) {
   }
 }
 
+function canonicalIdentity(account) {
+  return String(account.canonicalIdentity || account.externalId || account.normalizedUsername || account.username || '').toLowerCase();
+}
+
 function canonicalKey(account) {
-  return `${String(account.platform || '').toLowerCase()}:${String(account.normalizedUsername || account.username || '').toLowerCase()}`;
+  return `${String(account.platform || '').toLowerCase()}:${canonicalIdentity(account)}`;
 }
 
 function upsertAccount(config, creator, platform, rawValue) {
   const normalized = normalizeAccountInput(platform, rawValue);
-  const targetKey = `${platform}:${normalized.normalizedUsername}`;
+  const targetKey = `${platform}:${String(normalized.canonicalIdentity || normalized.externalId || normalized.normalizedUsername || normalized.username || '').toLowerCase()}`;
   const matches = Object.values(config.accounts).filter((account) => {
     try {
       const migrated = migrateAccount(account);
@@ -269,17 +296,21 @@ function upsertAccount(config, creator, platform, rawValue) {
     for (const id of duplicateIds) delete config.accounts[id];
   }
 
+  const defaults = supportedAlerts(platform);
   config.accounts[accountId] = {
     ...(primary || {}),
     accountId,
     platform,
     username: normalized.username,
     normalizedUsername: normalized.normalizedUsername,
+    externalId: primary?.externalId || normalized.externalId || null,
+    inputType: normalized.inputType,
+    canonicalIdentity: normalized.canonicalIdentity,
     profileUrl: normalized.profileUrl,
     sourceInput: normalized.sourceInput,
     displayName: creator.displayName,
     enabled: primary?.enabled !== false,
-    alertTypes: Array.isArray(primary?.alertTypes) ? primary.alertTypes : ['live'],
+    alertTypes: Array.isArray(primary?.alertTypes) && primary.alertTypes.length ? primary.alertTypes : defaults,
     alertChannelId: primary?.alertChannelId || null,
     createdAt: primary?.createdAt || now(),
     updatedAt: now(),
@@ -356,22 +387,28 @@ function buildCreatorEditPanel(interaction, config, creator) {
 }
 
 function buildAccountEditPanel(interaction, config, creator, account) {
+  const supported = supportedAlerts(account.platform);
+  const enabledTypes = Array.isArray(account.alertTypes) && account.alertTypes.length ? account.alertTypes : supported;
+  const alertMenu = alertTypeSelect(account);
+  const components = [];
+  if (alertMenu) components.push(alertMenu);
+  components.push(row(btn(`${P}account:change`, '📝 Change Details', ButtonStyle.Primary), btn(`${P}account:toggle`, account.enabled === false ? '▶️ Enable' : '⏸️ Disable', account.enabled === false ? ButtonStyle.Success : ButtonStyle.Secondary)));
+  components.push(row(btn(`${P}account:delete`, '🗑️ Delete Account', ButtonStyle.Danger), btn(`${P}accounts`, '⬅️ Back to Accounts')));
+  components.push(navigation('accounts'));
   return {
     embeds: [embed(config, '✏️ Edit Social Account', [
       `${ICON[account.platform] || '🔗'} **${LABEL[account.platform] || account.platform}**`,
       '',
       `**Creator:** ${creator.displayName}`,
-      `**Username:** ${account.username}`,
+      `**Username:** ${account.username || 'Resolving…'}`,
+      `**Channel / User ID:** ${account.externalId || 'Resolving…'}`,
       `**Profile URL:** ${account.profileUrl || 'Not set'}`,
+      `**Alerts:** ${enabledTypes.length ? enabledTypes.map((type) => ALERT_LABEL[type] || type).join(', ') : 'None'}`,
       `**Status:** ${account.enabled === false ? '🔴 Disabled' : '🟢 Enabled'}`,
       '',
-      'Use **Change Details** to update the username, channel ID or URL. Delete is kept inside this edit screen.',
+      'Use the notification selector to choose LIVE, VOD, clip, upload and other supported feed alerts for this account.',
     ].join('\n'), who(interaction))],
-    components: [
-      row(btn(`${P}account:change`, '📝 Change Details', ButtonStyle.Primary), btn(`${P}account:toggle`, account.enabled === false ? '▶️ Enable' : '⏸️ Disable', account.enabled === false ? ButtonStyle.Success : ButtonStyle.Secondary)),
-      row(btn(`${P}account:delete`, '🗑️ Delete Account', ButtonStyle.Danger), btn(`${P}accounts`, '⬅️ Back to Accounts')),
-      navigation('accounts'),
-    ],
+    components,
   };
 }
 
@@ -418,14 +455,16 @@ function buildSectionPanel(interaction, name) {
       components.push(row(btn(`${P}creators`, '👥 Create Creator Profile', ButtonStyle.Primary)));
     }
     components.push(navigation('accounts'));
-    return {
-      embeds: [embed(config, '🔗 Accounts', description, who(interaction))],
-      components,
-    };
+    return { embeds: [embed(config, '🔗 Accounts', description, who(interaction))], components };
   }
 
-  if (name === 'notifications') return { embeds: [embed(config, '📢 Notifications', 'Control whether Social Studio sends creator notifications for this server.', who(interaction))], components: [row(btn(`${P}toggle`, config.enabled ? '⏸️ Disable Notifications' : '▶️ Enable Notifications', config.enabled ? ButtonStyle.Danger : ButtonStyle.Success)), navigation('notifications')] };
-  if (name === 'templates') return { embeds: [embed(config, '🎨 Templates', 'Edit the message used for each notification type.', who(interaction))], components: [row(...ALERT_TYPES.map((type) => btn(`${P}template:${type}`, type[0].toUpperCase() + type.slice(1), ButtonStyle.Primary))), navigation('templates')] };
+  if (name === 'notifications') return { embeds: [embed(config, '📢 Notifications', 'Control Social Studio delivery. Each account can independently enable supported LIVE, VOD, clip, upload, short and post alerts.', who(interaction))], components: [row(btn(`${P}toggle`, config.enabled ? '⏸️ Disable Notifications' : '▶️ Enable Notifications', config.enabled ? ButtonStyle.Danger : ButtonStyle.Success)), navigation('notifications')] };
+  if (name === 'templates') {
+    const templateComponents = [row(...ALERT_TYPES.slice(0, 5).map((type) => btn(`${P}template:${type}`, ALERT_LABEL[type] || type, ButtonStyle.Primary)))];
+    if (ALERT_TYPES.length > 5) templateComponents.push(row(...ALERT_TYPES.slice(5).map((type) => btn(`${P}template:${type}`, ALERT_LABEL[type] || type, ButtonStyle.Primary))));
+    templateComponents.push(navigation('templates'));
+    return { embeds: [embed(config, '🎨 Templates', 'Edit the rich Discord message used for each notification type. Available variables include {creator}, {title}, {platform}, {url}, {category}, {viewers} and {duration}.', who(interaction))], components: templateComponents };
+  }
   if (name === 'feeds') return { embeds: [embed(config, '📡 Feeds', 'Choose the default destination used by creator notifications.', who(interaction))], components: [channelSelect(`${P}feed:channel`, config.alertsChannelId, 'Select the default notification feed'), navigation('feeds')] };
   if (name === 'channels') return { embeds: [embed(config, '📂 Channels', 'Configure the Discord channel used by Social Studio.', who(interaction))], components: [channelSelect(`${P}channel:alerts`, config.alertsChannelId, 'Select the Social Studio alert channel'), navigation('channels')] };
   if (name === 'settings') return { embeds: [embed(config, '⚙️ Social Studio Settings', 'Guild-level Social Studio configuration.', who(interaction))], components: [row(btn(`${P}permissions`, '🔐 Permissions', ButtonStyle.Primary), btn(`${P}roles`, '👥 Roles', ButtonStyle.Primary), btn(`${P}automation`, '⚡ Automation', ButtonStyle.Primary)), row(btn(`${P}testing`, '🧪 Testing'), btn(`${P}data`, '🗄️ Data')), navigation('settings')] };
@@ -495,11 +534,12 @@ async function handleInteraction(interaction) {
   if (id === `${P}account:continue`) { const session = getAccountSession(interaction); if (!session.creatorId || !config.creators[session.creatorId]) throw new Error('Select a creator profile first.'); if (!session.platforms.length) throw new Error('Select at least one platform first.'); await interaction.showModal(accountModal(session.platforms)); return true; }
   if (id === `${P}account:edit`) { const session = getAccountSession(interaction); const creator = config.creators[session.creatorId]; const account = config.accounts[session.accountId]; if (!creator) throw new Error('Select a creator profile first.'); if (!account || !(creator.accountIds || []).includes(account.accountId)) throw new Error('Select an account first.'); return respond(interaction, buildAccountEditPanel(interaction, config, creator, account)); }
   if (id === `${P}account:change`) { const session = getAccountSession(interaction); const account = config.accounts[session.accountId]; if (!account) throw new Error('The selected account no longer exists.'); await interaction.showModal(accountEditModal(account)); return true; }
+  if (id === `${P}account:alerts`) { const session = getAccountSession(interaction); const creator = config.creators[session.creatorId]; const account = config.accounts[session.accountId]; if (!creator || !account) throw new Error('Select an account first.'); const supported = supportedAlerts(account.platform); account.alertTypes = (interaction.values || []).filter((type) => supported.includes(type)); account.updatedAt = now(); saveConfig(interaction.guildId, config, interaction.guild, actorId); return respond(interaction, buildAccountEditPanel(interaction, getConfig(interaction.guildId), creator, getConfig(interaction.guildId).accounts[account.accountId])); }
   if (id === `${P}account:toggle`) { const session = getAccountSession(interaction); const creator = config.creators[session.creatorId]; const account = config.accounts[session.accountId]; if (!creator || !account) throw new Error('The selected account no longer exists.'); account.enabled = account.enabled === false; account.updatedAt = now(); saveConfig(interaction.guildId, config, interaction.guild, actorId); return respond(interaction, buildAccountEditPanel(interaction, getConfig(interaction.guildId), creator, getConfig(interaction.guildId).accounts[account.accountId])); }
   if (id === `${P}account:delete`) { const session = getAccountSession(interaction); const account = config.accounts[session.accountId]; if (!account) throw new Error('The selected account no longer exists.'); return respond(interaction, { embeds: [embed(config, '⚠️ Delete Social Account', `Delete **${LABEL[account.platform] || account.platform} · ${account.username}**?\n\nThis removes the account from Social Studio and unlinks it from every creator.`, who(interaction))], components: [row(btn(`${P}account:delete:cancel`, 'Cancel'), btn(`${P}account:delete:confirm`, 'Delete Account', ButtonStyle.Danger))] }); }
   if (id === `${P}account:delete:cancel`) { const session = getAccountSession(interaction); const creator = config.creators[session.creatorId]; const account = config.accounts[session.accountId]; if (!creator || !account) return respond(interaction, buildSectionPanel(interaction, 'accounts')); return respond(interaction, buildAccountEditPanel(interaction, config, creator, account)); }
   if (id === `${P}account:delete:confirm`) { const session = getAccountSession(interaction); const account = config.accounts[session.accountId]; if (!account) throw new Error('The selected account no longer exists.'); removeAccountReferences(config, [account.accountId]); delete config.accounts[account.accountId]; saveConfig(interaction.guildId, config, interaction.guild, actorId); setAccountSession(interaction, { accountId: null }); return respond(interaction, buildSectionPanel(interaction, 'accounts')); }
-  if (id.startsWith(`${P}account:update:`)) { const accountId = id.slice(`${P}account:update:`.length); const account = config.accounts[accountId]; const session = getAccountSession(interaction); const creator = config.creators[session.creatorId]; if (!account || !creator) throw new Error('The selected account no longer exists.'); const rawValue = interaction.fields.getTextInputValue('accountValue').trim(); const originalId = account.accountId; removeAccountReferences(config, [originalId]); delete config.accounts[originalId]; const result = upsertAccount(config, creator, account.platform, rawValue); const updated = config.accounts[result.accountId]; updated.enabled = account.enabled !== false; updated.alertTypes = Array.isArray(account.alertTypes) ? account.alertTypes : ['live']; updated.alertChannelId = account.alertChannelId || null; saveConfig(interaction.guildId, config, interaction.guild, actorId); setAccountSession(interaction, { accountId: result.accountId, platforms: [] }); return afterModal(interaction, 'accounts', `✅ ${LABEL[account.platform] || account.platform} account updated and verified.`); }
+  if (id.startsWith(`${P}account:update:`)) { const accountId = id.slice(`${P}account:update:`.length); const account = config.accounts[accountId]; const session = getAccountSession(interaction); const creator = config.creators[session.creatorId]; if (!account || !creator) throw new Error('The selected account no longer exists.'); const rawValue = interaction.fields.getTextInputValue('accountValue').trim(); const originalId = account.accountId; removeAccountReferences(config, [originalId]); delete config.accounts[originalId]; const result = upsertAccount(config, creator, account.platform, rawValue); const updated = config.accounts[result.accountId]; updated.enabled = account.enabled !== false; updated.alertTypes = Array.isArray(account.alertTypes) && account.alertTypes.length ? account.alertTypes : supportedAlerts(account.platform); updated.alertChannelId = account.alertChannelId || null; updated.mentionMode = account.mentionMode || 'none'; updated.mentionRoleId = account.mentionRoleId || null; saveConfig(interaction.guildId, config, interaction.guild, actorId); setAccountSession(interaction, { accountId: result.accountId, platforms: [] }); return afterModal(interaction, 'accounts', `✅ ${LABEL[account.platform] || account.platform} account updated and verified.`); }
 
   if (id === `${P}creator:create`) { const displayName = interaction.fields.getTextInputValue('displayName').trim(); if (!displayName) throw new Error('Creator display name is required.'); const creatorId = makeId('creator'); config.creators[creatorId] = { creatorId, displayName, group: interaction.fields.getTextInputValue('group').trim(), tags: interaction.fields.getTextInputValue('tags').split(',').map((value) => value.trim()).filter(Boolean), notes: interaction.fields.getTextInputValue('notes').trim(), enabled: true, accountIds: [], createdAt: now(), updatedAt: now() }; saveConfig(interaction.guildId, config, interaction.guild, actorId); setCreatorSession(interaction, { creatorId }); return afterModal(interaction, 'creators', '✅ Creator profile created and verified.'); }
   if (id === `${P}account:create-multi`) { const session = getAccountSession(interaction); const creator = config.creators[session.creatorId]; if (!creator) throw new Error('The selected creator profile no longer exists.'); if (!session.platforms.length) throw new Error('No platforms were selected.'); let created = 0; let updated = 0; let removedDuplicates = 0; let selectedAccountId = null; for (const platform of session.platforms.slice(0, 5)) { const rawValue = interaction.fields.getTextInputValue(`account_${platform}`).trim(); if (!rawValue) continue; const result = upsertAccount(config, creator, platform, rawValue); selectedAccountId = result.accountId; if (result.created) created += 1; else updated += 1; removedDuplicates += result.removedDuplicates; } saveConfig(interaction.guildId, config, interaction.guild, actorId); setAccountSession(interaction, { creatorId: creator.creatorId, platforms: [], accountId: selectedAccountId }); const parts = []; if (created) parts.push(`${created} added`); if (updated) parts.push(`${updated} updated`); if (removedDuplicates) parts.push(`${removedDuplicates} duplicate${removedDuplicates === 1 ? '' : 's'} merged`); return afterModal(interaction, 'accounts', `✅ ${parts.join(', ') || 'Account saved'} and verified for ${creator.displayName}.`); }
