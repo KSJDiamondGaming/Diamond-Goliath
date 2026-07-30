@@ -104,6 +104,17 @@ test('timed roles runtime and store use canonical module state', () => {
   assert.doesNotMatch(source, /section\.enabled === false/);
 });
 
+test('timed roles panel reports, writes and exports canonical module state', () => {
+  const source = read('src/modules/roleStudio/timedRoles/timedRolesPanel.js');
+  assert.match(source, /const enabled = guildManager\.isModuleEnabled\(guild\.id, 'timedRoles'\)/);
+  assert.match(source, /guildManager\.setModuleEnabled\(interaction\.guild\.id, 'timedRoles', true/);
+  assert.match(source, /guildManager\.setModuleEnabled\(interaction\.guild\.id, 'timedRoles', false/);
+  assert.match(source, /enabled: guildManager\.isModuleEnabled\(interaction\.guild\.id, 'timedRoles'\)/);
+  assert.doesNotMatch(source, /section\.enabled !== false/);
+  assert.doesNotMatch(source, /timedRoles\.setEnabled/);
+  assert.match(source, /enabled: !rule\.enabled/);
+});
+
 test('leveling message tracking reads canonical module state', () => {
   const source = read('src/modules/communityStudio/leveling/levelingTracking.js');
   assert.match(source, /isModuleEnabled\(message\.guild\.id, 'leveling'\)/);
