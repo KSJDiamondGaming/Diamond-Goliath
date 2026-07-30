@@ -28,6 +28,13 @@ function cleanChannelId(value) {
   return /^\d{15,25}$/.test(channelId) ? channelId : null;
 }
 
+function canonicalConfig(guildId, config = starboardStore.getStarboardSection(guildId)) {
+  return {
+    ...config,
+    enabled: isModuleEnabled(guildId, 'starboard') === true,
+  };
+}
+
 function summarize(guildId, config) {
   const posts = Object.values(config.posts || {});
   const totalStars = posts.reduce(
@@ -82,7 +89,7 @@ function prepareSettings(input = {}) {
 router.get('/:guildId', (req, res) => {
   try {
     const guildId = getGuildId(req);
-    const config = starboardStore.getStarboardSection(guildId);
+    const config = canonicalConfig(guildId);
     return success(res, { guildId, config, overview: summarize(guildId, config) });
   } catch (error) {
     return failure(res, error, 400);
@@ -93,7 +100,7 @@ router.patch('/:guildId/enabled', (req, res) => {
   try {
     const guildId = getGuildId(req);
     setModuleEnabled(guildId, 'starboard', req.body?.enabled === true);
-    const config = starboardStore.getStarboardSection(guildId);
+    const config = canonicalConfig(guildId);
     return success(res, { guildId, config, overview: summarize(guildId, config) });
   } catch (error) {
     return failure(res, error, 400);
@@ -109,11 +116,12 @@ router.patch('/:guildId/settings', (req, res) => {
       delete settings.enabled;
     }
 
-    const config = starboardStore.updateStarboardSection(guildId, (section) => ({
+    const savedConfig = starboardStore.updateStarboardSection(guildId, (section) => ({
       ...section,
       ...settings,
       updatedAt: starboardStore.now(),
     }), { actorId: req.body?.actorId });
+    const config = canonicalConfig(guildId, savedConfig);
 
     return success(res, { guildId, config, overview: summarize(guildId, config) });
   } catch (error) {
@@ -124,7 +132,8 @@ router.patch('/:guildId/settings', (req, res) => {
 router.put('/:guildId', (req, res) => {
   try {
     const guildId = getGuildId(req);
-    const config = starboard.configureStarboard(guildId, prepareSettings(req.body || {}));
+    const savedConfig = starboard.configureStarboard(guildId, prepareSettings(req.body || {}));
+    const config = canonicalConfig(guildId, savedConfig);
     return success(res, { guildId, config, overview: summarize(guildId, config) });
   } catch (error) {
     return failure(res, error, 400);
@@ -134,7 +143,8 @@ router.put('/:guildId', (req, res) => {
 router.delete('/:guildId/posts/:messageId', (req, res) => {
   try {
     const guildId = getGuildId(req);
-    const config = starboardStore.deletePost(guildId, req.params.messageId, { actorId: req.body?.actorId });
+    starboardStore.deletePost(guildId, req.params.messageId, { actorId: req.body?.actorId });
+    const config = canonicalConfig(guildId);
     return success(res, { guildId, config, overview: summarize(guildId, config) });
   } catch (error) {
     return failure(res, error, 400);
