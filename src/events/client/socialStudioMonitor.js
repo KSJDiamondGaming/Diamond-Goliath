@@ -23,7 +23,25 @@ function formatProviderResult(item) {
   else if (item.status === 'ok') state = '🟢 OK';
   else if (item.status) state = `🟡 ${String(item.status).replace(/_/g, ' ').toUpperCase()}`;
 
-  return `**${platform}** — **${state}** — ${item.username}${item.reason ? `\n↳ ${item.reason}` : ''}`;
+  const identity = item.username || item.externalId || 'Unknown account';
+  const extra = [];
+  if (item.externalId) extra.push(`ID: ${item.externalId}`);
+  if (item.events?.length) extra.push(`Detected: ${item.events.map((event) => event.type).join(', ')}`);
+  if (item.delivered?.length) extra.push(`Posted: ${item.delivered.map((event) => event.type).join(', ')}`);
+  if (item.reason) extra.push(item.reason);
+
+  return `**${platform}** — **${state}** — ${identity}${extra.length ? `\n↳ ${extra.join(' • ')}` : ''}`;
+}
+
+function checkOptions(customId) {
+  if (customId === 'social:account:check') return { manual: true, force: true };
+  if (customId.startsWith('social:account:check:')) {
+    return { manual: true, force: true, accountIds: [customId.slice('social:account:check:'.length)] };
+  }
+  if (customId.startsWith('social:creator:check:')) {
+    return { manual: true, force: true, creatorIds: [customId.slice('social:creator:check:'.length)] };
+  }
+  return null;
 }
 
 module.exports = [
@@ -38,13 +56,22 @@ module.exports = [
     name: 'interactionCreate',
     once: false,
     async execute(interaction, client) {
-      if (String(interaction?.customId || '') !== 'social:account:check') return;
-      if (!interaction.guildId) return;
+      const customId = String(interaction?.customId || '');
+      const options = checkOptions(customId);
+      if (!options || !interaction.guildId) return;
+
       if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-      const outcome = await checkGuildAccounts(client || interaction.client, interaction.guildId, { manual: true, force: true });
-      const lines = (outcome.results || []).map(formatProviderResult);
-      const summary = lines.length ? lines.join('\n').slice(0, 1900) : 'No enabled Social Studio accounts were available to check.';
-      await interaction.followUp({ content: `🔎 **Social Studio Account Status Check**\n\n${summary}`, flags: 64 }).catch(() => null);
+      const outcome = await checkGuildAccounts(client || interaction.client, interaction.guildId, options);
+      let summary;
+
+      if (outcome.skipped && outcome.reason === 'check_already_running') {
+        summary = '⏳ A Social Studio check is already running for this server.';
+      } else {
+        const lines = (outcome.results || []).map(formatProviderResult);
+        summary = lines.length ? lines.join('\n').slice(0, 1900) : 'No matching enabled Social Studio accounts were available to check.';
+      }
+
+      await interaction.followUp({ content: `🔎 **Social Studio Status Check**\n\n${summary}`, flags: 64 }).catch(() => null);
     },
   },
 ];
