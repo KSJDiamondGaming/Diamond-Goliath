@@ -10,6 +10,7 @@ const {
   ChannelType,
   AttachmentBuilder,
 } = require('discord.js');
+const guildManager = require('../../../core/guild/guildManager');
 const goodbye = require('./goodbye');
 const departureDm = require('./goodbyeDeparture');
 const embedTemplateManager = require('../embed/embedTemplates');
@@ -93,6 +94,10 @@ const buildGoodbyeDmPanel = (() => {
 const selections = new Map();
 const row = (...components) => new ActionRowBuilder().addComponents(...components);
 const button = (customId, label, style = ButtonStyle.Secondary) => new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style);
+const canonicalConfig = (guildId) => ({
+  ...goodbye.getGoodbyeSection(guildId),
+  enabled: guildManager.isModuleEnabled(guildId, 'goodbye'),
+});
 
 function selectionKey(interactionOrGuild, userId = 'panel') {
   const guildId = interactionOrGuild?.guild?.id || interactionOrGuild?.id;
@@ -143,7 +148,7 @@ function assertPersistedConfig(guildId, expected = {}) {
 }
 
 async function buildGoodbyePanel(guild, memberDisplayName = 'Unknown User', userId = 'panel') {
-  const config = goodbye.getGoodbyeSection(guild.id);
+  const config = canonicalConfig(guild.id);
   const dm = departureDm.getConfig(guild.id);
   const health = await goodbye.buildHealthReport(guild);
   const analytics = config.analytics || {};
@@ -258,13 +263,17 @@ async function handleGoodbyeInteraction(interaction) {
     const config = goodbye.getGoodbyeSection(interaction.guild.id);
     const dm = departureDm.getConfig(interaction.guild.id);
     const actor = { actorId: interaction.user.id };
-    const simpleModulePatch = {
-      'admin:goodbye:enable': { enabled: true },
-      'admin:goodbye:disable': { enabled: false },
-      'admin:goodbye:toggleBots': { ignoreBots: !config.ignoreBots },
-    }[customId];
-    if (simpleModulePatch) {
-      goodbye.updateConfig(interaction.guild.id, simpleModulePatch, actor);
+
+    if (customId === 'admin:goodbye:enable' || customId === 'admin:goodbye:disable') {
+      guildManager.setModuleEnabled(interaction.guild.id, 'goodbye', customId.endsWith(':enable'), {
+        ...actor,
+        action: 'goodbye_admin_toggle',
+      });
+      return updatePanel(interaction);
+    }
+
+    if (customId === 'admin:goodbye:toggleBots') {
+      goodbye.updateConfig(interaction.guild.id, { ignoreBots: !config.ignoreBots }, actor);
       return updatePanel(interaction);
     }
 
