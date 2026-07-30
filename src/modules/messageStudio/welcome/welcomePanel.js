@@ -10,6 +10,7 @@ const {
   ChannelType,
   AttachmentBuilder,
 } = require('discord.js');
+const guildManager = require('../../../core/guild/guildManager');
 const welcome = require('./welcome');
 const embedTemplateManager = require('../embed/embedTemplates');
 
@@ -74,6 +75,7 @@ function interactionMember(interaction) {
 
 async function buildWelcomePanel(guild, memberDisplayName = 'Unknown User', userId = 'panel') {
   const config = welcome.getWelcomeSection(guild.id);
+  const moduleEnabled = guildManager.isModuleEnabled(guild.id, 'welcome');
   const health = await welcome.buildHealthReport(guild);
   const analytics = config.analytics || {};
   const publicBinding = welcome.getWelcomeBinding(guild.id, 'welcome');
@@ -86,10 +88,10 @@ async function buildWelcomePanel(guild, memberDisplayName = 'Unknown User', user
   const warnings = health.warnings || [];
 
   const embed = new EmbedBuilder()
-    .setColor(config.enabled === false ? 0xed4245 : warnings.length ? 0xfaa61a : 0x57f287)
+    .setColor(!moduleEnabled ? 0xed4245 : warnings.length ? 0xfaa61a : 0x57f287)
     .setTitle('👋 Welcome · Setup')
     .setDescription([
-      `**Status:** ${config.enabled ? 'Enabled ✅' : 'Disabled ❌'}`,
+      `**Status:** ${moduleEnabled ? 'Enabled ✅' : 'Disabled ❌'}`,
       `**Channel:** ${config.channelId ? `<#${config.channelId}>` : '`Not set`'}`,
       `**DM:** ${config.dmEnabled ? 'Enabled ✅' : 'Disabled ❌'}`,
       `**Notify:** ${config.allowUserPing ? 'Real ping above embed ✅' : 'No notification'}`,
@@ -122,7 +124,7 @@ async function buildWelcomePanel(guild, memberDisplayName = 'Unknown User', user
         .setMaxValues(1)),
       row(templateMenu(guild, activeTemplateId, userId)),
       row(
-        button(config.enabled ? 'admin:welcome:disable' : 'admin:welcome:enable', config.enabled ? '⏸ Disable' : '▶ Enable', config.enabled ? ButtonStyle.Secondary : ButtonStyle.Success),
+        button(moduleEnabled ? 'admin:welcome:disable' : 'admin:welcome:enable', moduleEnabled ? '⏸ Disable' : '▶ Enable', moduleEnabled ? ButtonStyle.Secondary : ButtonStyle.Success),
         button('admin:welcome:toggleDm', config.dmEnabled ? '📨 DM On' : '📨 DM Off', config.dmEnabled ? ButtonStyle.Success : ButtonStyle.Secondary),
         button('admin:welcome:togglePing', config.allowUserPing ? '🔔 Ping On' : '🔕 Ping Off', config.allowUserPing ? ButtonStyle.Success : ButtonStyle.Secondary),
         button('admin:welcome:toggleBots', config.ignoreBots ? '🤖 Bots Off' : '🤖 Bots On', config.ignoreBots ? ButtonStyle.Secondary : ButtonStyle.Success)
@@ -197,8 +199,8 @@ async function handleWelcomeInteraction(interaction) {
     }
 
     const config = welcome.getWelcomeSection(interaction.guild.id);
-    if (customId === 'admin:welcome:enable') welcome.updateConfig(interaction.guild.id, { enabled: true }, { actorId: interaction.user.id });
-    if (customId === 'admin:welcome:disable') welcome.updateConfig(interaction.guild.id, { enabled: false }, { actorId: interaction.user.id });
+    if (customId === 'admin:welcome:enable') guildManager.setModuleEnabled(interaction.guild.id, 'welcome', true, { actorId: interaction.user.id });
+    if (customId === 'admin:welcome:disable') guildManager.setModuleEnabled(interaction.guild.id, 'welcome', false, { actorId: interaction.user.id });
     if (customId === 'admin:welcome:toggleDm') welcome.updateConfig(interaction.guild.id, { dmEnabled: !config.dmEnabled }, { actorId: interaction.user.id });
     if (customId === 'admin:welcome:togglePing') welcome.updateConfig(interaction.guild.id, { allowUserPing: !config.allowUserPing }, { actorId: interaction.user.id });
     if (customId === 'admin:welcome:toggleBots') welcome.updateConfig(interaction.guild.id, { ignoreBots: !config.ignoreBots }, { actorId: interaction.user.id });
@@ -250,8 +252,12 @@ async function handleWelcomeInteraction(interaction) {
     }
 
     if (customId === 'admin:welcome:export') {
+      const exported = {
+        ...welcome.exportConfiguration(interaction.guild.id),
+        enabled: guildManager.isModuleEnabled(interaction.guild.id, 'welcome'),
+      };
       const attachment = new AttachmentBuilder(
-        Buffer.from(JSON.stringify(welcome.exportConfiguration(interaction.guild.id), null, 2), 'utf8'),
+        Buffer.from(JSON.stringify(exported, null, 2), 'utf8'),
         { name: `goliath-welcome-${interaction.guild.id}.json` }
       );
       await interaction.reply({ content: '📤 Welcome configuration export.', files: [attachment], ephemeral: true });
