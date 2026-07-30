@@ -124,7 +124,9 @@ async function checkTikTok(account) {
     const directLiveStatus = /"status"\s*:\s*2\b/.test(body) || /"isLive"\s*:\s*true/i.test(body);
     const creatorMarker = new RegExp(`(?:uniqueId|unique_id|author|nickname)[^\\n]{0,200}${username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i').test(body);
     const onOwnLiveUrl = /\/live(?:[?#]|$)/i.test(finalUrl) && finalUrl.toLowerCase().includes(`@${username.toLowerCase()}`);
-    const isLive = !ended && hasRoom && directLiveStatus && creatorMarker && onOwnLiveUrl;
+    const title = body.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '';
+    const titleSaysLive = title.toLowerCase().includes(`@${username.toLowerCase()}`) && /\bis\s+LIVE\s*-\s*TikTok\s+LIVE\b/i.test(title);
+    const isLive = !ended && onOwnLiveUrl && (titleSaysLive || (hasRoom && directLiveStatus && creatorMarker));
     return result('tiktok', { isLive, providerSource: 'public_page', confidence: isLive ? 'high' : 'medium', url: `https://www.tiktok.com/@${encodeURIComponent(username)}`, event: isLive ? { type: 'live', id: `tiktok-live:${username}`, title: `${username} is LIVE on TikTok`, url, thumbnail: null } : null });
   } catch (error) {
     return unavailable('tiktok', `TikTok public LIVE check unavailable: ${error.message}`);
