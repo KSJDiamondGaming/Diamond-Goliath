@@ -38,6 +38,13 @@ async function getGuild(req, guildId) {
   return client.guilds.cache.get(guildId) || client.guilds.fetch(guildId).catch(() => null);
 }
 
+function canonicalConfig(guildId, config = autoroles.getAutoRolesSection(guildId)) {
+  return {
+    ...config,
+    enabled: autoroles.isAutoRolesEnabled(guildId),
+  };
+}
+
 async function validateRoles(guild, roleIds, scope) {
   const ids = autoroles.cleanRoleIds(roleIds || []);
   if (!ids.length) return;
@@ -46,14 +53,14 @@ async function validateRoles(guild, roleIds, scope) {
 }
 
 async function buildOverview(req, guildId) {
-  const config = autoroles.getAutoRolesSection(guildId);
+  const config = canonicalConfig(guildId);
   const guild = await getGuild(req, guildId);
   const health = guild ? await autoroles.buildHealthReport(guild) : null;
   return {
     guildId,
     config,
     overview: {
-      enabled: autoroles.isAutoRolesEnabled(guildId),
+      enabled: config.enabled,
       joinRoleCount: config.joinRoles.length,
       botRoleCount: config.botRoles.length,
       applyToBots: config.settings.applyToBots === true,
@@ -78,8 +85,8 @@ router.put('/:guildId/config', async (req, res) => {
     const guild = await getGuild(req, guildId);
     if (!guild) throw new Error('Guild is unavailable.');
     await validateRoles(guild, [...(req.body?.joinRoles || []), ...(req.body?.botRoles || [])], 'auto_roles.config');
-    const config = autoroles.configureAutoRoles(guildId, req.body || {}, { actorId: getActorId(req) });
-    return success(res, { config, ...(await buildOverview(req, guildId)) });
+    autoroles.configureAutoRoles(guildId, req.body || {}, { actorId: getActorId(req) });
+    return success(res, await buildOverview(req, guildId));
   } catch (error) {
     return failure(res, error, 400);
   }
@@ -136,8 +143,8 @@ router.post('/:guildId/repair', async (req, res) => {
     const guildId = getGuildId(req);
     const guild = await getGuild(req, guildId);
     if (!guild) throw new Error('Guild is unavailable.');
-    const config = await autoroles.repairConfiguration(guild, { actorId: getActorId(req) });
-    return success(res, { config, ...(await buildOverview(req, guildId)) });
+    await autoroles.repairConfiguration(guild, { actorId: getActorId(req) });
+    return success(res, await buildOverview(req, guildId));
   } catch (error) {
     return failure(res, error, 400);
   }
@@ -173,7 +180,7 @@ router.get('/:guildId/export', (req, res) => {
     const guildId = getGuildId(req);
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="goliath-auto-roles-${guildId}.json"`);
-    return res.send(JSON.stringify(autoroles.exportConfiguration(guildId), null, 2));
+    return res.send(JSON.stringify(canonicalConfig(guildId, autoroles.exportConfiguration(guildId)), null, 2));
   } catch (error) {
     return failure(res, error, 400);
   }
