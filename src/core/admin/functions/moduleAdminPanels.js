@@ -67,16 +67,16 @@ function genericModule(config) {
 }
 
 const MODULE_PANEL_REGISTRY = {
-  forms: genericModule({ key: 'forms', title: '📝 Forms', summary: 'Forms, submissions, review and response storage.', defaults: { enabled: true, submitChannelId: null, logChannelId: null, managerRoleIds: [], requireReview: true, anonymousSubmissions: false, storeResponses: true }, fields: ['submitChannel', 'logChannel', 'managerRoles', ['requireReview', 'Require Review'], ['anonymousSubmissions', 'Anonymous Submissions'], ['storeResponses', 'Store Responses']], selectMenus: ['submitChannel', 'logChannel', 'managerRoles'], toggles: [['requireReview', '🔎 Require Review'], ['anonymousSubmissions', '👤 Anonymous'], ['storeResponses', '💾 Store Responses']] }),
-  giveaways: genericModule({ key: 'giveaways', title: '🎉 Giveaways', summary: 'Giveaway creation, entries, winners and rerolls.', defaults: { enabled: true, announcementChannelId: null, logChannelId: null, managerRoleIds: [], allowMultipleEntries: false, requireRole: false, pingWinners: true }, fields: ['announcementChannel', 'logChannel', 'managerRoles', ['allowMultipleEntries', 'Multiple Entries'], ['requireRole', 'Require Role'], ['pingWinners', 'Ping Winners']], selectMenus: ['announcementChannel', 'logChannel', 'managerRoles'], toggles: [['allowMultipleEntries', '🎟️ Multiple Entries'], ['requireRole', '🔒 Require Role'], ['pingWinners', '📣 Ping Winners']] }),
-  leveling: genericModule({ key: 'leveling', title: '🏆 Leveling', summary: 'XP, levels, leaderboards and level roles.', defaults: { enabled: true, announceChannelId: null, managerRoleIds: [], levelRoleIds: [], trackMessages: true, trackVoice: true, announceLevelUps: true }, fields: ['announceChannel', 'managerRoles', 'levelRoles', ['trackMessages', 'Message XP'], ['trackVoice', 'Voice XP'], ['announceLevelUps', 'Announce Level Ups']], selectMenus: ['announceChannel', 'managerRoles', 'levelRoles'], toggles: [['trackMessages', '💬 Message XP'], ['trackVoice', '🔊 Voice XP'], ['announceLevelUps', '📣 Level Ups']] }),
-  polls: genericModule({ key: 'polls', title: '📊 Polls', summary: 'Poll creation, voting and results.', defaults: { enabled: true, defaultChannelId: null, resultsChannelId: null, managerRoleIds: [], anonymousVoting: false, allowMultipleChoice: true, showResultsLive: true }, fields: ['defaultChannel', 'resultsChannel', 'managerRoles', ['anonymousVoting', 'Anonymous Voting'], ['allowMultipleChoice', 'Multiple Choice'], ['showResultsLive', 'Live Results']], selectMenus: ['defaultChannel', 'resultsChannel', 'managerRoles'], toggles: [['anonymousVoting', '👤 Anonymous Voting'], ['allowMultipleChoice', '☑️ Multiple Choice'], ['showResultsLive', '📈 Live Results']] }),
-  social: genericModule({ key: 'social', title: '📣 Social Alerts', summary: 'Creator alerts for Twitch, YouTube, TikTok, Kick and more.', defaults: { enabled: true, alertsChannelId: null, logChannelId: null, managerRoleIds: [], twitch: true, youtube: true, tiktok: true, kick: true }, fields: ['alertsChannel', 'logChannel', 'managerRoles', ['twitch', 'Twitch'], ['youtube', 'YouTube'], ['tiktok', 'TikTok'], ['kick', 'Kick']], selectMenus: ['alertsChannel', 'logChannel', 'managerRoles'], toggles: [['twitch', '🟣 Twitch'], ['youtube', '▶️ YouTube'], ['tiktok', '🎵 TikTok'], ['kick', '🟢 Kick']] }),
-  starboard: genericModule({ key: 'starboard', title: '⭐ Starboard', summary: 'Highlight popular server messages.', defaults: { enabled: true, starboardChannelId: null, logChannelId: null, managerRoleIds: [], allowSelfStar: false, requireUniqueUsers: true }, fields: ['starboardChannel', 'logChannel', 'managerRoles', ['allowSelfStar', 'Self Star'], ['requireUniqueUsers', 'Unique Users']], selectMenus: ['starboardChannel', 'logChannel', 'managerRoles'], toggles: [['allowSelfStar', '⭐ Self Star'], ['requireUniqueUsers', '👥 Unique Users']] }),
-  sticky: genericModule({ key: 'sticky', title: '💬 Sticky Messages', summary: 'Keep important messages at the bottom of chat.', defaults: { enabled: true, channels: [], managerRoleIds: [], mode: 'per-channel', cleanupPrevious: true, allowEmbeds: true }, fields: ['channels', 'managerRoles', ['mode', 'Mode'], ['cleanupPrevious', 'Cleanup Previous'], ['allowEmbeds', 'Allow Embeds']], selectMenus: ['channels', 'managerRoles'], optionMenus: [{ id: 'mode', placeholder: 'Sticky mode', options: [['per-channel', 'Per Channel', 'One sticky note per selected channel'], ['manual', 'Manual', 'Only management-triggered sticky notes']] }], toggles: [['cleanupPrevious', '🧹 Cleanup Previous'], ['allowEmbeds', '🎨 Allow Embeds']] }),
-  suggestions: genericModule({ key: 'suggestions', title: '💡 Suggestions', summary: 'Suggestion intake, voting and review workflow.', defaults: { enabled: true, submitChannelId: null, reviewChannelId: null, approvedChannelId: null, deniedChannelId: null, reviewerRoleIds: [], anonymous: false, voting: true, requireReview: true }, fields: ['submitChannel', 'reviewChannel', 'approvedChannel', 'deniedChannel', 'reviewerRoles', ['voting', 'Voting'], ['requireReview', 'Require Review'], ['anonymous', 'Anonymous']], selectMenus: ['submitChannel', 'reviewChannel', 'approvedChannel', 'deniedChannel', 'reviewerRoles'], toggles: [['voting', '🗳️ Voting'], ['requireReview', '🔎 Require Review'], ['anonymous', '👤 Anonymous']] }),
-  temporaryRoles: genericModule({ key: 'temporaryRoles', title: '⏳ Temporary Roles', summary: 'Assign roles that expire after a configured duration.', defaults: { enabled: true, managerRoleIds: [], logChannelId: null }, fields: ['logChannel', 'managerRoles'], selectMenus: ['logChannel', 'managerRoles'] }),
-  translation: genericModule({ key: 'translation', title: '🌐 Translation', summary: 'Language preferences and translation controls.', defaults: { enabled: true, logChannelId: null, managerRoleIds: [], autoDetect: true, allowUserPreferences: true, ephemeralReplies: true }, fields: ['logChannel', 'managerRoles', ['autoDetect', 'Auto Detect'], ['allowUserPreferences', 'User Preferences'], ['ephemeralReplies', 'Ephemeral Replies']], selectMenus: ['logChannel', 'managerRoles'], toggles: [['autoDetect', '🔎 Auto Detect'], ['allowUserPreferences', '👤 User Preferences'], ['ephemeralReplies', '🙈 Ephemeral']] }),
+  forms: genericModule({ key: 'forms', title: '📝 Forms', summary: 'Forms, submissions, review and response storage.', defaults: { submitChannelId: null, logChannelId: null, managerRoleIds: [], requireReview: true, anonymousSubmissions: false, storeResponses: true }, fields: ['submitChannel', 'logChannel', 'managerRoles', ['requireReview', 'Require Review'], ['anonymousSubmissions', 'Anonymous Submissions'], ['storeResponses', 'Store Responses']], selectMenus: ['submitChannel', 'logChannel', 'managerRoles'], toggles: [['requireReview', '🔎 Require Review'], ['anonymousSubmissions', '👤 Anonymous'], ['storeResponses', '💾 Store Responses']] }),
+  giveaways: genericModule({ key: 'giveaways', title: '🎉 Giveaways', summary: 'Giveaway creation, entries, winners and rerolls.', defaults: { announcementChannelId: null, logChannelId: null, managerRoleIds: [], allowMultipleEntries: false, requireRole: false, pingWinners: true }, fields: ['announcementChannel', 'logChannel', 'managerRoles', ['allowMultipleEntries', 'Multiple Entries'], ['requireRole', 'Require Role'], ['pingWinners', 'Ping Winners']], selectMenus: ['announcementChannel', 'logChannel', 'managerRoles'], toggles: [['allowMultipleEntries', '🎟️ Multiple Entries'], ['requireRole', '🔒 Require Role'], ['pingWinners', '📣 Ping Winners']] }),
+  leveling: genericModule({ key: 'leveling', title: '🏆 Leveling', summary: 'XP, levels, leaderboards and level roles.', defaults: { announceChannelId: null, managerRoleIds: [], levelRoleIds: [], trackMessages: true, trackVoice: true, announceLevelUps: true }, fields: ['announceChannel', 'managerRoles', 'levelRoles', ['trackMessages', 'Message XP'], ['trackVoice', 'Voice XP'], ['announceLevelUps', 'Announce Level Ups']], selectMenus: ['announceChannel', 'managerRoles', 'levelRoles'], toggles: [['trackMessages', '💬 Message XP'], ['trackVoice', '🔊 Voice XP'], ['announceLevelUps', '📣 Level Ups']] }),
+  polls: genericModule({ key: 'polls', title: '📊 Polls', summary: 'Poll creation, voting and results.', defaults: { defaultChannelId: null, resultsChannelId: null, managerRoleIds: [], anonymousVoting: false, allowMultipleChoice: true, showResultsLive: true }, fields: ['defaultChannel', 'resultsChannel', 'managerRoles', ['anonymousVoting', 'Anonymous Voting'], ['allowMultipleChoice', 'Multiple Choice'], ['showResultsLive', 'Live Results']], selectMenus: ['defaultChannel', 'resultsChannel', 'managerRoles'], toggles: [['anonymousVoting', '👤 Anonymous Voting'], ['allowMultipleChoice', '☑️ Multiple Choice'], ['showResultsLive', '📈 Live Results']] }),
+  social: genericModule({ key: 'social', title: '📣 Social Alerts', summary: 'Creator alerts for Twitch, YouTube, TikTok, Kick and more.', defaults: { alertsChannelId: null, logChannelId: null, managerRoleIds: [], twitch: true, youtube: true, tiktok: true, kick: true }, fields: ['alertsChannel', 'logChannel', 'managerRoles', ['twitch', 'Twitch'], ['youtube', 'YouTube'], ['tiktok', 'TikTok'], ['kick', 'Kick']], selectMenus: ['alertsChannel', 'logChannel', 'managerRoles'], toggles: [['twitch', '🟣 Twitch'], ['youtube', '▶️ YouTube'], ['tiktok', '🎵 TikTok'], ['kick', '🟢 Kick']] }),
+  starboard: genericModule({ key: 'starboard', title: '⭐ Starboard', summary: 'Highlight popular server messages.', defaults: { starboardChannelId: null, logChannelId: null, managerRoleIds: [], allowSelfStar: false, requireUniqueUsers: true }, fields: ['starboardChannel', 'logChannel', 'managerRoles', ['allowSelfStar', 'Self Star'], ['requireUniqueUsers', 'Unique Users']], selectMenus: ['starboardChannel', 'logChannel', 'managerRoles'], toggles: [['allowSelfStar', '⭐ Self Star'], ['requireUniqueUsers', '👥 Unique Users']] }),
+  sticky: genericModule({ key: 'sticky', title: '💬 Sticky Messages', summary: 'Keep important messages at the bottom of chat.', defaults: { channels: [], managerRoleIds: [], mode: 'per-channel', cleanupPrevious: true, allowEmbeds: true }, fields: ['channels', 'managerRoles', ['mode', 'Mode'], ['cleanupPrevious', 'Cleanup Previous'], ['allowEmbeds', 'Allow Embeds']], selectMenus: ['channels', 'managerRoles'], optionMenus: [{ id: 'mode', placeholder: 'Sticky mode', options: [['per-channel', 'Per Channel', 'One sticky note per selected channel'], ['manual', 'Manual', 'Only management-triggered sticky notes']] }], toggles: [['cleanupPrevious', '🧹 Cleanup Previous'], ['allowEmbeds', '🎨 Allow Embeds']] }),
+  suggestions: genericModule({ key: 'suggestions', title: '💡 Suggestions', summary: 'Suggestion intake, voting and review workflow.', defaults: { submitChannelId: null, reviewChannelId: null, approvedChannelId: null, deniedChannelId: null, reviewerRoleIds: [], anonymous: false, voting: true, requireReview: true }, fields: ['submitChannel', 'reviewChannel', 'approvedChannel', 'deniedChannel', 'reviewerRoles', ['voting', 'Voting'], ['requireReview', 'Require Review'], ['anonymous', 'Anonymous']], selectMenus: ['submitChannel', 'reviewChannel', 'approvedChannel', 'deniedChannel', 'reviewerRoles'], toggles: [['voting', '🗳️ Voting'], ['requireReview', '🔎 Require Review'], ['anonymous', '👤 Anonymous']] }),
+  temporaryRoles: genericModule({ key: 'temporaryRoles', title: '⏳ Temporary Roles', summary: 'Assign roles that expire after a configured duration.', defaults: { managerRoleIds: [], logChannelId: null }, fields: ['logChannel', 'managerRoles'], selectMenus: ['logChannel', 'managerRoles'] }),
+  translation: genericModule({ key: 'translation', title: '🌐 Translation', summary: 'Language preferences and translation controls.', defaults: { logChannelId: null, managerRoleIds: [], autoDetect: true, allowUserPreferences: true, ephemeralReplies: true }, fields: ['logChannel', 'managerRoles', ['autoDetect', 'Auto Detect'], ['allowUserPreferences', 'User Preferences'], ['ephemeralReplies', 'Ephemeral Replies']], selectMenus: ['logChannel', 'managerRoles'], toggles: [['autoDetect', '🔎 Auto Detect'], ['allowUserPreferences', '👤 User Preferences'], ['ephemeralReplies', '🙈 Ephemeral']] }),
 };
 
 const SERVER_MODULES = MODULE_CATALOG.map((module) => [module.route, module.label, module.title.replace(/^\S+\s*/, ''), module.summary]);
@@ -115,14 +115,28 @@ function getModuleConfig(guildId, moduleKey) {
   const module = MODULE_PANEL_REGISTRY[moduleKey];
   const modules = guildManager.getGuildSection(guildId, 'modules', {});
   const current = modules?.[moduleKey];
-  return { ...(module?.defaults || {}), ...(current && typeof current === 'object' ? current : {}), enabled: current === false ? false : current?.enabled !== false };
+  return {
+    ...(module?.defaults || {}),
+    ...(current && typeof current === 'object' ? current : {}),
+    enabled: guildManager.isModuleEnabled(guildId, moduleKey),
+  };
 }
 
 function saveModuleConfig(guild, moduleKey, updater) {
   const current = getModuleConfig(guild.id, moduleKey);
   const next = typeof updater === 'function' ? updater(current) : { ...current, ...(updater || {}) };
-  guildManager.updateGuildSection(guild.id, 'modules', (modules = {}) => ({ ...modules, [moduleKey]: next }), {}, guild);
-  return next;
+  const { enabled: _enabled, ...config } = next || {};
+  const updatedModules = guildManager.updateGuildSection(
+    guild.id,
+    'modules',
+    (modules = {}) => ({ ...modules, [moduleKey]: config }),
+    {},
+    guild,
+  );
+  return {
+    ...(updatedModules?.[moduleKey] || config),
+    enabled: guildManager.isModuleEnabled(guild.id, moduleKey),
+  };
 }
 
 function formatValue(value) {
@@ -255,7 +269,12 @@ async function handleModuleAdminInteraction(interaction) {
     const [, key, type] = action;
     const module = MODULE_PANEL_REGISTRY[key];
     if (!module) return false;
-    if (type === 'enable' || type === 'disable') saveModuleConfig(interaction.guild, key, (config) => ({ ...config, enabled: type === 'enable' }));
+    if (type === 'enable' || type === 'disable') {
+      guildManager.setModuleEnabled(interaction.guild.id, key, type === 'enable', {
+        actorId: interaction.user?.id || null,
+        action: 'module_admin_toggle',
+      });
+    }
     if (type === 'reset') saveModuleConfig(interaction.guild, key, module.defaults);
     return safeUpdate(interaction, buildModuleConfigurePanel(interaction.guild, key, name, 0));
   }
