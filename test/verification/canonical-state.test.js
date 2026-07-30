@@ -280,6 +280,17 @@ test('forms API reports and writes canonical module state', () => {
   assert.match(source, /form\.enabled !== false/);
 });
 
+test('forms panel reports and writes canonical module state', () => {
+  const source = read('src/modules/feedbackStudio/forms/formsPanel.js');
+  assert.match(source, /const moduleEnabled = isModuleEnabled\(guildId, 'forms'\)/);
+  assert.match(source, /const moduleEnabled = isModuleEnabled\(guild\.id, 'forms'\)/);
+  assert.match(source, /setModuleEnabled\(interaction\.guild\.id, 'forms', customId\.endsWith\(':enable'\)/);
+  assert.match(source, /if \(!isModuleEnabled\(guild\.id, 'forms'\)\) throw new Error\('Forms are disabled\.'\)/);
+  assert.doesNotMatch(source, /section\.enabled === false/);
+  assert.doesNotMatch(source, /section\.enabled !== false/);
+  assert.match(source, /form\.enabled !== false/);
+});
+
 test('giveaways runtime reads canonical module state', () => {
   const source = read('src/modules/communityStudio/giveaways/giveawaysManager.js');
   assert.match(source, /guildManager\.isModuleEnabled\(guild\.id, 'giveaways'\)/);
