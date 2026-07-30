@@ -105,28 +105,9 @@ function buildVerificationRows(panel = {}) {
   return [new ActionRowBuilder().addComponents(button)];
 }
 
-function getAdminVerificationConfig(guildId) {
-  const modules = guildManager.getGuildSection(guildId, 'modules', {});
-  const config = modules?.verification;
-  return config && typeof config === 'object' ? config : {};
-}
-
 function getEffectiveVerificationSection(guildId) {
   const section = verificationStore.getVerificationSection(guildId);
-  const adminConfig = getAdminVerificationConfig(guildId);
-  const settings = verificationStore.normalizeSettings({
-    ...(section.settings || {}),
-    ...adminConfig,
-    ...(adminConfig.settings || {}),
-    verificationChannelId: adminConfig.verificationChannelId ?? section.settings?.verificationChannelId,
-    logChannelId: adminConfig.logChannelId ?? section.settings?.logChannelId,
-    verifiedRoleIds: adminConfig.verifiedRoleIds?.length
-      ? adminConfig.verifiedRoleIds
-      : section.settings?.verifiedRoleIds,
-    pendingRoleIds: adminConfig.pendingRoleIds?.length
-      ? adminConfig.pendingRoleIds
-      : section.settings?.pendingRoleIds,
-  });
+  const settings = verificationStore.normalizeSettings(section.settings || {});
 
   return {
     ...section,
