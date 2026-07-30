@@ -41,11 +41,15 @@ function firstUsefulSegment(pathname, ignored = []) {
     .find((value) => value && !ignoredSet.has(value.toLowerCase())) || '';
 }
 
+function isKnownPlatformUrl(parsed) {
+  return Boolean(parsed) && Object.values(PLATFORM_HOSTS).flat().includes(parsed.hostname.toLowerCase());
+}
+
 function extractUsername(platform, rawValue) {
   const raw = cleanRaw(rawValue);
   const parsed = parseUrl(raw);
 
-  if (!parsed || !Object.values(PLATFORM_HOSTS).flat().includes(parsed.hostname.toLowerCase())) {
+  if (!parsed || !isKnownPlatformUrl(parsed)) {
     return cleanHandle(raw.replace(/^https?:\/\//i, ''));
   }
 
@@ -75,41 +79,81 @@ function extractUsername(platform, rawValue) {
   }
 }
 
-function buildProfileUrl(platform, username) {
-  const encoded = encodeURIComponent(username);
+function classifyInput(platform, rawValue) {
+  const raw = cleanRaw(rawValue);
+  const parsed = parseUrl(raw);
+  const fromUrl = isKnownPlatformUrl(parsed);
+  const extracted = extractUsername(platform, raw);
+
+  if (platform === 'youtube' && /^UC[\w-]{20,}$/.test(extracted)) {
+    return { inputType: 'channel_id', username: extracted, externalId: extracted, sourceUrl: fromUrl ? parsed.toString() : null };
+  }
+
+  if (platform === 'twitch' && /^\d{4,20}$/.test(extracted)) {
+    return { inputType: 'channel_id', username: '', externalId: extracted, sourceUrl: fromUrl ? parsed.toString() : null };
+  }
+
+  if (platform === 'tiktok' && /^\d{6,30}$/.test(extracted)) {
+    return { inputType: 'channel_id', username: '', externalId: extracted, sourceUrl: fromUrl ? parsed.toString() : null };
+  }
+
+  return {
+    inputType: fromUrl ? 'url' : 'username',
+    username: extracted,
+    externalId: null,
+    sourceUrl: fromUrl ? parsed.toString() : null,
+  };
+}
+
+function buildProfileUrl(platform, username, externalId = null) {
+  const value = cleanRaw(username);
+  const encoded = encodeURIComponent(value);
   switch (platform) {
-    case 'twitch': return `https://www.twitch.tv/${encoded}`;
-    case 'youtube': return username.startsWith('UC')
-      ? `https://www.youtube.com/channel/${encoded}`
-      : `https://www.youtube.com/@${encoded.replace(/^%40/i, '')}`;
-    case 'tiktok': return `https://www.tiktok.com/@${encoded.replace(/^%40/i, '')}`;
-    case 'kick': return `https://kick.com/${encoded}`;
-    case 'facebook': return `https://www.facebook.com/${encoded}`;
-    case 'instagram': return `https://www.instagram.com/${encoded}`;
-    case 'x': return `https://x.com/${encoded}`;
+    case 'twitch': return value ? `https://www.twitch.tv/${encoded}` : '';
+    case 'youtube': {
+      const channelId = cleanRaw(externalId || (value.startsWith('UC') ? value : ''));
+      return channelId
+        ? `https://www.youtube.com/channel/${encodeURIComponent(channelId)}`
+        : value ? `https://www.youtube.com/@${encoded.replace(/^%40/i, '')}` : '';
+    }
+    case 'tiktok': return value ? `https://www.tiktok.com/@${encoded.replace(/^%40/i, '')}` : '';
+    case 'kick': return value ? `https://kick.com/${encoded}` : '';
+    case 'facebook': return value ? `https://www.facebook.com/${encoded}` : '';
+    case 'instagram': return value ? `https://www.instagram.com/${encoded}` : '';
+    case 'x': return value ? `https://x.com/${encoded}` : '';
     default: return '';
   }
 }
 
 function normalizeAccountInput(platform, value) {
-  const username = extractUsername(platform, value);
-  if (!username) throw new Error(`${platform} account username or URL is required.`);
+  const classified = classifyInput(platform, value);
+  if (!classified.username && !classified.externalId) {
+    throw new Error(`${platform} account username, channel ID or URL is required.`);
+  }
 
+  const identity = classified.externalId || classified.username;
   return {
-    username,
-    normalizedUsername: username.toLowerCase(),
-    profileUrl: buildProfileUrl(platform, username),
+    username: classified.username || identity,
+    normalizedUsername: classified.username ? classified.username.toLowerCase() : '',
+    externalId: classified.externalId || null,
+    inputType: classified.inputType,
+    profileUrl: classified.sourceUrl || buildProfileUrl(platform, classified.username, classified.externalId),
     sourceInput: cleanRaw(value),
+    canonicalIdentity: String(identity || '').toLowerCase(),
   };
 }
 
 function migrateAccount(account = {}) {
-  const normalized = normalizeAccountInput(account.platform, account.profileUrl || account.username || '');
+  const source = account.sourceInput || account.profileUrl || account.externalId || account.username || '';
+  const normalized = normalizeAccountInput(account.platform, source);
   return {
     ...account,
     username: normalized.username,
     normalizedUsername: normalized.normalizedUsername,
-    profileUrl: normalized.profileUrl,
+    externalId: account.externalId || normalized.externalId || null,
+    inputType: account.inputType || normalized.inputType,
+    profileUrl: account.profileUrl || normalized.profileUrl,
+    canonicalIdentity: normalized.canonicalIdentity,
   };
 }
 
@@ -118,4 +162,5 @@ module.exports = {
   normalizeAccountInput,
   migrateAccount,
   buildProfileUrl,
+  classifyInput,
 };
