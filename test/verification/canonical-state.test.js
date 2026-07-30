@@ -311,3 +311,15 @@ test('giveaways store preserves canonical module state and item-level enabled fl
   assert.match(source, /enabled: input\.enabled !== false/);
   assert.match(source, /giveaway\.enabled !== false && giveaway\.status === 'active'/);
 });
+
+test('social studio panel reports and writes canonical module state', () => {
+  const source = read('src/modules/socialStudio/socialStudioPanel.js');
+  assert.match(source, /enabled: guildManager\.isModuleEnabled\(guildId, 'social'\)/);
+  assert.match(source, /const \{ enabled: _enabled, \.\.\.storedConfig \} = config;/);
+  assert.match(source, /guildManager\.setModuleEnabled\(interaction\.guildId, 'social', !config\.enabled, \{ actorId \}\)/);
+  assert.doesNotMatch(source, /enabled: section\.enabled !== false/);
+  assert.doesNotMatch(source, /config\.enabled = !config\.enabled/);
+  assert.match(source, /enabled: primary\?\.enabled !== false/);
+  assert.match(source, /creator\.enabled = creator\.enabled === false/);
+  assert.match(source, /account\.enabled = account\.enabled === false/);
+});
