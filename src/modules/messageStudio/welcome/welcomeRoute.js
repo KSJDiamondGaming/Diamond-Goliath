@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const guildManager = require('../../../core/guild/guildManager');
 const welcome = require('./welcome');
 
 const router = express.Router();
@@ -34,8 +35,12 @@ async function getGuild(req, guildId) {
   return client.guilds.cache.get(guildId) || client.guilds.fetch(guildId).catch(() => null);
 }
 
+function canonicalConfig(guildId, config = welcome.getWelcomeSection(guildId)) {
+  return { ...config, enabled: guildManager.isModuleEnabled(guildId, 'welcome') };
+}
+
 async function buildOverview(req, guildId) {
-  const config = welcome.getWelcomeSection(guildId);
+  const config = canonicalConfig(guildId);
   const guild = await getGuild(req, guildId);
   const health = guild ? await welcome.buildHealthReport(guild) : null;
   const templates = welcome.getWelcomeTemplates(guildId, 'welcome');
@@ -46,7 +51,7 @@ async function buildOverview(req, guildId) {
     templates,
     binding,
     overview: {
-      enabled: config.enabled !== false,
+      enabled: config.enabled,
       channelId: config.channelId,
       dmEnabled: config.dmEnabled === true,
       analytics: config.analytics,
@@ -70,14 +75,13 @@ router.put('/:guildId/config', async (req, res) => {
   try {
     const guildId = getGuildId(req);
     const patch = req.body || {};
-    let config;
-    if (patch.templateId) {
-      config = welcome.bindWelcomeTemplate(guildId, patch.templateId, 'welcome', { actorId: getActorId(req) }).config;
-      const { templateId, ...rest } = patch;
-      if (Object.keys(rest).length) config = welcome.updateConfig(guildId, rest, { actorId: getActorId(req) });
-    } else {
-      config = welcome.updateConfig(guildId, patch, { actorId: getActorId(req) });
+    const { enabled, templateId, ...settingsPatch } = patch;
+    if (typeof enabled === 'boolean') {
+      guildManager.setModuleEnabled(guildId, 'welcome', enabled, { actorId: getActorId(req) });
     }
+    if (templateId) welcome.bindWelcomeTemplate(guildId, templateId, 'welcome', { actorId: getActorId(req) });
+    if (Object.keys(settingsPatch).length) welcome.updateConfig(guildId, settingsPatch, { actorId: getActorId(req) });
+    const config = canonicalConfig(guildId);
     return success(res, { config, ...(await buildOverview(req, guildId)) });
   } catch (error) {
     return failure(res, error, 400);
@@ -87,7 +91,7 @@ router.put('/:guildId/config', async (req, res) => {
 router.patch('/:guildId/enabled', async (req, res) => {
   try {
     const guildId = getGuildId(req);
-    welcome.updateConfig(guildId, { enabled: req.body?.enabled === true }, { actorId: getActorId(req) });
+    guildManager.setModuleEnabled(guildId, 'welcome', req.body?.enabled === true, { actorId: getActorId(req) });
     return success(res, await buildOverview(req, guildId));
   } catch (error) {
     return failure(res, error, 400);
@@ -100,7 +104,7 @@ router.post('/:guildId/template', async (req, res) => {
     const templateId = String(req.body?.templateId || '').trim();
     if (!templateId) throw new Error('A template ID is required.');
     const result = welcome.bindWelcomeTemplate(guildId, templateId, 'welcome', { actorId: getActorId(req) });
-    return success(res, { ...result, ...(await buildOverview(req, guildId)) });
+    return success(res, { ...result, config: canonicalConfig(guildId, result.config), ...(await buildOverview(req, guildId)) });
   } catch (error) {
     return failure(res, error, 400);
   }
@@ -111,7 +115,7 @@ router.post('/:guildId/repair', async (req, res) => {
     const guildId = getGuildId(req);
     const guild = await getGuild(req, guildId);
     if (!guild) throw new Error('Guild is unavailable.');
-    const config = await welcome.repairConfiguration(guild, { actorId: getActorId(req) });
+    const config = canonicalConfig(guildId, await welcome.repairConfiguration(guild, { actorId: getActorId(req) }));
     return success(res, { config, ...(await buildOverview(req, guildId)) });
   } catch (error) {
     return failure(res, error, 400);
@@ -151,7 +155,7 @@ router.get('/:guildId/export', (req, res) => {
     const guildId = getGuildId(req);
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="goliath-welcome-${guildId}.json"`);
-    return res.send(JSON.stringify(welcome.exportConfiguration(guildId), null, 2));
+    return res.send(JSON.stringify(canonicalConfig(guildId, welcome.exportConfiguration(guildId)), null, 2));
   } catch (error) {
     return failure(res, error, 400);
   }
