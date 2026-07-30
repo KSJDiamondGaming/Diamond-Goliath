@@ -26,13 +26,15 @@ function configFor(guildId) {
   };
 }
 
-function saveMonitorState(guildId, config, monitorUpdates, analyticsDelta, historyEntries, guild = null) {
+function saveMonitorState(guildId, config, monitorUpdates, analyticsDelta, historyEntries, guild = null, duplicateMerges = new Map()) {
   const updated = guildManager.updateGuildSection(
     guildId,
     'social',
     (latest = {}) => {
       const latestAccounts = latest.accounts && typeof latest.accounts === 'object' ? latest.accounts : {};
       const accounts = { ...latestAccounts };
+      const latestCreators = latest.creators && typeof latest.creators === 'object' ? latest.creators : {};
+      const creators = Object.fromEntries(Object.entries(latestCreators).map(([id, creator]) => [id, { ...creator, accountIds: Array.isArray(creator?.accountIds) ? [...creator.accountIds] : [] }]));
 
       for (const [accountId, update] of monitorUpdates.entries()) {
         const current = accounts[accountId];
@@ -48,6 +50,32 @@ function saveMonitorState(guildId, config, monitorUpdates, analyticsDelta, histo
         };
       }
 
+      for (const [duplicateId, survivorId] of duplicateMerges.entries()) {
+        if (duplicateId === survivorId) continue;
+        const duplicate = accounts[duplicateId];
+        const survivor = accounts[survivorId];
+        if (!duplicate || !survivor) continue;
+
+        const alertTypes = [...new Set([
+          ...(Array.isArray(survivor.alertTypes) ? survivor.alertTypes : []),
+          ...(Array.isArray(duplicate.alertTypes) ? duplicate.alertTypes : []),
+        ])];
+        accounts[survivorId] = {
+          ...survivor,
+          ...(alertTypes.length ? { alertTypes } : {}),
+          alertChannelId: survivor.alertChannelId || duplicate.alertChannelId || null,
+          mentionMode: survivor.mentionMode && survivor.mentionMode !== 'none' ? survivor.mentionMode : duplicate.mentionMode || survivor.mentionMode || 'none',
+          mentionRoleId: survivor.mentionRoleId || duplicate.mentionRoleId || null,
+          createdAt: survivor.createdAt || duplicate.createdAt,
+          updatedAt: now(),
+        };
+        delete accounts[duplicateId];
+
+        for (const creator of Object.values(creators)) {
+          creator.accountIds = [...new Set((creator.accountIds || []).map((id) => id === duplicateId ? survivorId : id))];
+        }
+      }
+
       const latestAnalytics = latest.analytics && typeof latest.analytics === 'object' ? latest.analytics : {};
       const analytics = { ...latestAnalytics };
       for (const [key, amount] of Object.entries(analyticsDelta || {})) {
@@ -57,7 +85,7 @@ function saveMonitorState(guildId, config, monitorUpdates, analyticsDelta, histo
 
       const latestHistory = Array.isArray(latest.history) ? latest.history : [];
       const history = [...latestHistory, ...(historyEntries || [])].slice(-1000);
-      return { ...latest, accounts, analytics, history, updatedAt: now() };
+      return { ...latest, accounts, creators, analytics, history, updatedAt: now() };
     },
     {},
     guild || { guildId },
@@ -68,6 +96,53 @@ function saveMonitorState(guildId, config, monitorUpdates, analyticsDelta, histo
 
 function creatorFor(config, accountId) {
   return Object.values(config.creators).find((creator) => Array.isArray(creator.accountIds) && creator.accountIds.includes(accountId)) || null;
+}
+
+function identityToken(value) {
+  return String(value || '')
+    .normalize('NFKD')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+function validTikTokHandle(value) {
+  return /^[a-z0-9._]{2,24}$/i.test(String(value || '').replace(/^@+/, ''));
+}
+
+function resolvedDuplicateIds(config, account, checked, creator) {
+  if (!creator || !account?.accountId) return [];
+  const platform = String(account.platform || '').toLowerCase();
+  const externalId = clean(checked.externalId || account.externalId);
+  const username = clean(checked.resolvedUsername || account.username).replace(/^@+/, '').toLowerCase();
+  if (!externalId && !username) return [];
+
+  const resolvedToken = identityToken(username);
+  const duplicateIds = [];
+  for (const otherId of creator.accountIds || []) {
+    if (otherId === account.accountId) continue;
+    const other = config.accounts[otherId];
+    if (!other || String(other.platform || '').toLowerCase() !== platform) continue;
+
+    const otherExternalId = clean(other.externalId);
+    const otherUsername = clean(other.normalizedUsername || other.username).replace(/^@+/, '').toLowerCase();
+    if (externalId && otherExternalId && externalId === otherExternalId) {
+      duplicateIds.push(otherId);
+      continue;
+    }
+    if (username && otherUsername && username === otherUsername) {
+      duplicateIds.push(otherId);
+      continue;
+    }
+
+    if (platform === 'tiktok' && externalId && !otherExternalId && !validTikTokHandle(otherUsername)) {
+      const aliasToken = identityToken(otherUsername || other.sourceInput);
+      if (aliasToken && resolvedToken.startsWith(aliasToken)) {
+        const suffix = resolvedToken.slice(aliasToken.length);
+        if (/^\d{2,6}$/.test(suffix)) duplicateIds.push(otherId);
+      }
+    }
+  }
+  return [...new Set(duplicateIds)];
 }
 
 function templateFor(config, type) {
@@ -174,11 +249,13 @@ async function checkGuildAccounts(client, guildId, options = {}) {
     const creatorFilter = new Set((options.creatorIds || []).map(String));
     const results = [];
     const monitorUpdates = new Map();
+    const duplicateMerges = new Map();
     const analyticsStart = { ...config.analytics };
     const historyStartLength = config.history.length;
 
     for (const account of Object.values(config.accounts)) {
       if (!account) continue;
+      if (duplicateMerges.has(account.accountId)) continue;
       if (accountFilter.size && !accountFilter.has(String(account.accountId))) continue;
       const creator = creatorFor(config, account.accountId);
       if (creatorFilter.size && !creatorFilter.has(String(creator?.creatorId || ''))) continue;
@@ -235,6 +312,13 @@ async function checkGuildAccounts(client, guildId, options = {}) {
       account.updatedAt = now();
       config.analytics.checks = Number(config.analytics.checks || 0) + 1;
 
+      const resolvedDuplicates = resolvedDuplicateIds(config, account, checked, creator);
+      for (const duplicateId of resolvedDuplicates) {
+        duplicateMerges.set(duplicateId, account.accountId);
+        monitorUpdates.delete(duplicateId);
+        addHistory(config, { status: 'account_merged', platform: account.platform, duplicateAccountId: duplicateId, accountId: account.accountId, externalId: account.externalId || null, username: account.username || null });
+      }
+
       const delivered = [];
       for (const event of events) {
         try {
@@ -284,16 +368,17 @@ async function checkGuildAccounts(client, guildId, options = {}) {
       });
     }
 
-    if (monitorUpdates.size) {
+    if (monitorUpdates.size || duplicateMerges.size) {
       const analyticsDelta = {};
       for (const key of new Set([...Object.keys(analyticsStart), ...Object.keys(config.analytics)])) {
         const delta = Number(config.analytics[key] || 0) - Number(analyticsStart[key] || 0);
         if (delta) analyticsDelta[key] = delta;
       }
       const historyEntries = config.history.slice(historyStartLength);
-      saveMonitorState(guildId, config, monitorUpdates, analyticsDelta, historyEntries, client.guilds.cache.get(guildId) || null);
+      saveMonitorState(guildId, config, monitorUpdates, analyticsDelta, historyEntries, client.guilds.cache.get(guildId) || null, duplicateMerges);
     }
-    return { guildId, checked: results.length, results };
+    const finalResults = results.filter((item) => !duplicateMerges.has(item.accountId));
+    return { guildId, checked: finalResults.length, results: finalResults, merged: duplicateMerges.size };
   } finally {
     runningGuilds.delete(guildId);
   }
