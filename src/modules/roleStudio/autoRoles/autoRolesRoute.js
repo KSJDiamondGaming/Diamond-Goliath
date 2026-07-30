@@ -165,10 +165,7 @@ router.post('/:guildId/reapply', async (req, res) => {
 router.post('/:guildId/reset', async (req, res) => {
   try {
     const guildId = getGuildId(req);
-    const actorId = getActorId(req);
-    const wasEnabled = autoroles.isAutoRolesEnabled(guildId);
-    autoroles.resetAutoRoles(guildId, { actorId });
-    autoroles.setAutoRolesEnabled(guildId, wasEnabled, { actorId, action: 'auto_roles_reset_restore_state' });
+    autoroles.resetAutoRoles(guildId, { actorId: getActorId(req) });
     return success(res, await buildOverview(req, guildId));
   } catch (error) {
     return failure(res, error, 400);
