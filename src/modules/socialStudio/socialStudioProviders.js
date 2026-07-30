@@ -222,7 +222,7 @@ function tiktokApiResult(json, fallbackUsername, fallbackId, source) {
       type: 'live',
       id: roomId || `tiktok-live:${resolvedUsername || resolvedUserId || fallbackUsername || fallbackId}`,
       title: clean(liveRoom.title) || `${resolvedUsername || fallbackUsername || 'Creator'} is LIVE on TikTok`,
-      url: resolvedLiveUrl || profileUrl({ ...account, username: resolvedUsername || fallbackUsername }),
+      url: resolvedLiveUrl || 'https://www.tiktok.com/live',
       thumbnail: cover,
       viewerCount: Number.isFinite(viewerCount) ? viewerCount : null,
       startedAt,
@@ -246,9 +246,6 @@ async function checkTikTok(account) {
 
   const errors = [];
 
-  // Username is authoritative for TikTok LIVE checks. The saved numeric user ID is metadata,
-  // not a replacement for the username: the api-live endpoint does not reliably resolve
-  // offline accounts by userId.
   if (username) {
     try {
       const json = await tiktokApiLookup({ username });
@@ -257,7 +254,6 @@ async function checkTikTok(account) {
     } catch (error) { errors.push(`username API: ${error.message}`); }
   }
 
-  // Keep ID lookup as a secondary path for ID-only records and recovery of legacy data.
   if (userId) {
     try {
       const json = await tiktokApiLookup({ userId });
@@ -307,8 +303,6 @@ async function checkTikTok(account) {
       event: null,
     });
 
-    // If the profile identity is known and TikTok gives us a valid page but no LIVE markers,
-    // that is an offline account, not a provider failure. This prevents stale LIVE states.
     if (response.ok && finalUrl.toLowerCase().includes(`@${username.toLowerCase()}`)) return result('tiktok', {
       isLive: false,
       providerSource: 'public_page',
