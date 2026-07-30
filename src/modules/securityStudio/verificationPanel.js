@@ -254,6 +254,7 @@ function buildMessagesPage(guild, memberDisplayName) {
     `**Log Failure:** ${yesNo(config.logFailure)}`,
     '',
     `**Success:** ${messages.success}`,
+    `**Verified:** ${messages.alreadyVerified}`,
     `**Screening Required:** ${messages.screeningRequired}`,
     `**Pending Role Required:** ${messages.pendingRoleRequired}`,
     `**Success DM:** ${messages.dmSuccess}`,
