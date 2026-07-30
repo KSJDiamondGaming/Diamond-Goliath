@@ -1,10 +1,12 @@
 'use strict';
 
 const express = require('express');
+const { PermissionFlagsBits } = require('discord.js');
 const verificationManager = require('./verificationManager');
 const verificationStore = require('./verificationStore');
 const verificationHealth = require('./verificationHealth');
 const guildManager = require('../../core/guild/guildManager');
+const security = require('../../core/security/securityCore');
 
 const router = express.Router();
 
@@ -29,7 +31,7 @@ function getGuildId(req) {
 }
 
 function getActorId(req) {
-  return cleanDiscordId(req.session?.user?.id || req.body?.actorId || req.query?.actorId);
+  return cleanDiscordId(req.verificationActorId || req.session?.user?.id);
 }
 
 function getClient(req) {
@@ -50,6 +52,42 @@ async function getSendableChannel(req, guildId, channelId) {
   return channel;
 }
 
+async function requireVerificationGuildAccess(req, res, next) {
+  try {
+    const userId = cleanDiscordId(req.session?.user?.id);
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required.' });
+    }
+
+    const guildId = getGuildId(req);
+    req.verificationActorId = userId;
+
+    if (security.isBotOwner(userId)) return next();
+
+    const guild = await getGuild(req, guildId);
+    if (!guild) {
+      return res.status(403).json({ success: false, error: 'Guild is unavailable or not accessible.' });
+    }
+
+    const member = guild.members.cache.get(userId) || await guild.members.fetch(userId).catch(() => null);
+    if (!member) {
+      return res.status(403).json({ success: false, error: 'You do not have access to manage this server.' });
+    }
+
+    const allowed = member.permissions.has(PermissionFlagsBits.Administrator) ||
+      member.permissions.has(PermissionFlagsBits.ManageGuild);
+    if (!allowed) {
+      return res.status(403).json({ success: false, error: 'Manage Server permission is required.' });
+    }
+
+    return next();
+  } catch (error) {
+    return failure(res, error, 403);
+  }
+}
+
+router.use('/:guildId', requireVerificationGuildAccess);
+
 function getConfig(guildId) {
   const section = verificationManager.getVerificationStatus(guildId);
   return {
@@ -68,7 +106,6 @@ function saveConfig(guildId, input = {}, meta = {}) {
   }
 
   verificationManager.configureVerification(guildId, { settings }, meta);
-
   return getConfig(guildId);
 }
 
@@ -224,6 +261,21 @@ router.post('/:guildId/repair', async (req, res) => {
       actorId: getActorId(req),
     });
     return success(res, { guildId, health });
+  } catch (error) {
+    return failure(res, error, 400);
+  }
+});
+
+router.post('/:guildId/attempts/:userId/reset', (req, res) => {
+  try {
+    const guildId = getGuildId(req);
+    const userId = cleanDiscordId(req.params.userId);
+    if (!userId) throw new Error('Invalid user ID.');
+    verificationStore.clearAttempts(guildId, userId, {
+      action: 'verification_api_reset_attempts',
+      actorId: getActorId(req),
+    });
+    return success(res, { guildId, userId, reset: true });
   } catch (error) {
     return failure(res, error, 400);
   }
