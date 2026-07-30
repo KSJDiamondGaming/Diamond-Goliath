@@ -160,6 +160,7 @@ function defaultVerificationSection() {
     settings: defaultSettings(),
     messages: defaultMessages(),
     panelTemplate: defaultPanelTemplate(),
+    activePanelId: null,
     panels: {},
     attempts: {},
     analytics: defaultAnalytics(),
@@ -263,6 +264,7 @@ function normalizePanel(panel = {}) {
     createdAt: source.createdAt || now(),
     updatedAt: source.updatedAt || source.createdAt || now(),
     lastDeployedAt: cleanDate(source.lastDeployedAt),
+    retiredAt: cleanDate(source.retiredAt),
     deletedAt: cleanDate(source.deletedAt),
   };
 }
@@ -280,16 +282,38 @@ function normalizeVerificationSection(section = {}) {
   const base = defaultVerificationSection();
   const source = section && typeof section === 'object' ? section : {};
   const panels = source.panels && typeof source.panels === 'object' ? source.panels : {};
+  const normalizedPanels = Object.fromEntries(Object.entries(panels).map(([id, panel]) => {
+    const normalizedPanel = normalizePanel({ ...panel, panelId: panel.panelId || id });
+    return [normalizedPanel.panelId, normalizedPanel];
+  }));
+
+  const requestedActivePanelId = cleanString(source.activePanelId || '', '', 80) || null;
+  const livePanels = Object.values(normalizedPanels)
+    .filter((panel) => panel.enabled !== false && !panel.deletedAt && panel.channelId && panel.messageId)
+    .sort((a, b) => new Date(b.lastDeployedAt || b.updatedAt || 0) - new Date(a.lastDeployedAt || a.updatedAt || 0));
+  const activePanelId = requestedActivePanelId && livePanels.some((panel) => panel.panelId === requestedActivePanelId)
+    ? requestedActivePanelId
+    : livePanels[0]?.panelId || null;
+
+  if (activePanelId) {
+    for (const [panelId, panel] of Object.entries(normalizedPanels)) {
+      if (panelId === activePanelId) {
+        panel.enabled = true;
+        panel.retiredAt = null;
+      } else if (panel.channelId && panel.messageId && !panel.deletedAt) {
+        panel.enabled = false;
+      }
+    }
+  }
+
   const normalized = {
     ...base,
     ...clone(source),
     settings: normalizeSettings(source.settings),
     messages: normalizeMessages(source.messages),
     panelTemplate: normalizePanelTemplate(source.panelTemplate),
-    panels: Object.fromEntries(Object.entries(panels).map(([id, panel]) => {
-      const normalizedPanel = normalizePanel({ ...panel, panelId: panel.panelId || id });
-      return [normalizedPanel.panelId, normalizedPanel];
-    })),
+    activePanelId,
+    panels: normalizedPanels,
     attempts: normalizeAttempts(source.attempts),
     analytics: normalizeAnalytics(source.analytics),
     createdAt: source.createdAt || base.createdAt,
@@ -323,18 +347,44 @@ function updateVerificationSection(guildId, updater, meta = {}) {
 
 function savePanel(guildId, panel, meta = {}) {
   const normalized = normalizePanel(panel);
-  return updateVerificationSection(guildId, (section) => ({
-    ...section,
-    panels: {
-      ...section.panels,
-      [normalized.panelId]: {
-        ...(section.panels?.[normalized.panelId] || {}),
-        ...normalized,
-        updatedAt: now(),
-      },
-    },
-    updatedAt: now(),
-  }), meta).panels[normalized.panelId];
+  const timestamp = now();
+  return updateVerificationSection(guildId, (section) => {
+    const current = section.panels?.[normalized.panelId] || null;
+    const merged = {
+      ...(current || {}),
+      ...normalized,
+      updatedAt: timestamp,
+    };
+    const isLive = Boolean(merged.channelId && merged.messageId && !merged.deletedAt);
+    const nextPanels = { ...(section.panels || {}) };
+
+    if (isLive) {
+      for (const [panelId, existingPanel] of Object.entries(nextPanels)) {
+        if (panelId === normalized.panelId || existingPanel.deletedAt) continue;
+        if (existingPanel.enabled !== false) {
+          nextPanels[panelId] = {
+            ...existingPanel,
+            enabled: false,
+            retiredAt: existingPanel.retiredAt || timestamp,
+          };
+        }
+      }
+      merged.enabled = true;
+      merged.retiredAt = null;
+    } else if (!current) {
+      // New panels are staged inactive until Discord returns a real message ID.
+      // This guarantees an existing verification route remains authoritative if deployment fails.
+      merged.enabled = false;
+    }
+
+    nextPanels[normalized.panelId] = merged;
+    return {
+      ...section,
+      activePanelId: isLive ? normalized.panelId : section.activePanelId,
+      panels: nextPanels,
+      updatedAt: timestamp,
+    };
+  }, meta).panels[normalized.panelId];
 }
 
 function getPanel(guildId, panelId) {
@@ -342,15 +392,24 @@ function getPanel(guildId, panelId) {
 }
 
 function deletePanel(guildId, panelId, meta = {}) {
+  const safePanelId = String(panelId || '');
   return updateVerificationSection(guildId, (section) => {
     const panels = { ...(section.panels || {}) };
-    delete panels[String(panelId || '')];
-    return { ...section, panels, updatedAt: now() };
+    delete panels[safePanelId];
+    return {
+      ...section,
+      activePanelId: section.activePanelId === safePanelId ? null : section.activePanelId,
+      panels,
+      updatedAt: now(),
+    };
   }, meta);
 }
 
 function getLatestPanel(guildId) {
-  return Object.values(getVerificationSection(guildId).panels || {})
+  const section = getVerificationSection(guildId);
+  const active = section.activePanelId ? section.panels?.[section.activePanelId] : null;
+  if (active && active.enabled !== false && !active.deletedAt && active.channelId && active.messageId) return active;
+  return Object.values(section.panels || {})
     .sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0))[0] || null;
 }
 
