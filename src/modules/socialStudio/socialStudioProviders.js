@@ -173,49 +173,105 @@ async function checkYouTube(account) {
   });
 }
 
+function tiktokUsername(account) {
+  const direct = handle(account);
+  if (direct && !/^\d{6,30}$/.test(direct)) return direct;
+  const candidates = [account.sourceInput, account.profileUrl, account.url]
+    .map(clean)
+    .filter(Boolean);
+  for (const value of candidates) {
+    const match = value.match(/tiktok\.com\/@([^/?#]+)/i);
+    if (match?.[1]) return decodeURIComponent(match[1]).replace(/^@+/, '');
+    if (!/^https?:\/\//i.test(value) && !/^\d{6,30}$/.test(value)) return value.replace(/^@+/, '').split(/[/?#]/)[0];
+  }
+  return '';
+}
+
+function tiktokApiResult(json, fallbackUsername, fallbackId, source) {
+  const user = json?.data?.user && typeof json.data.user === 'object' ? json.data.user : {};
+  const liveRoom = json?.data?.liveRoom && typeof json.data.liveRoom === 'object' ? json.data.liveRoom : {};
+  const rawStatus = liveRoom.status ?? user.status;
+  if (rawStatus === undefined || rawStatus === null) return null;
+
+  const roomId = clean(liveRoom.roomId || liveRoom.room_id || user.roomId || user.room_id);
+  const resolvedUsername = clean(user.uniqueId || user.unique_id || liveRoom.owner?.uniqueId || liveRoom.owner?.unique_id || fallbackUsername);
+  const resolvedUserId = clean(user.id || user.userId || user.user_id || liveRoom.owner?.id || liveRoom.owner?.userId || fallbackId);
+  const hasRoomId = /^[1-9]\d*$/.test(roomId);
+  const isLive = Number(rawStatus) === 2 && hasRoomId;
+  const resolvedProfile = resolvedUsername ? `https://www.tiktok.com/@${encodeURIComponent(resolvedUsername)}` : '';
+  const resolvedLiveUrl = resolvedProfile ? `${resolvedProfile}/live` : '';
+  const cover = liveRoom.cover?.url_list?.[0] || liveRoom.cover?.urlList?.[0] || liveRoom.coverUrl || liveRoom.cover_url || null;
+  const avatar = user.avatarLarger || user.avatarMedium || user.avatarThumb || liveRoom.owner?.avatarLarger || null;
+  const viewerCount = Number(liveRoom.user_count || liveRoom.userCount || liveRoom.viewer_count || liveRoom.viewerCount);
+  const startedAtRaw = liveRoom.start_time || liveRoom.startTime;
+  let startedAt = null;
+  if (startedAtRaw) {
+    const ms = Number(startedAtRaw) < 1000000000000 ? Number(startedAtRaw) * 1000 : Number(startedAtRaw);
+    if (Number.isFinite(ms)) startedAt = new Date(ms).toISOString();
+  }
+
+  return result('tiktok', {
+    isLive,
+    providerSource: source,
+    confidence: 'high',
+    externalId: resolvedUserId || undefined,
+    resolvedUsername: resolvedUsername || undefined,
+    url: resolvedProfile || undefined,
+    avatar,
+    event: isLive ? {
+      type: 'live',
+      id: roomId || `tiktok-live:${resolvedUsername || resolvedUserId || fallbackUsername || fallbackId}`,
+      title: clean(liveRoom.title) || `${resolvedUsername || fallbackUsername || 'Creator'} is LIVE on TikTok`,
+      url: resolvedLiveUrl || profileUrl({ ...account, username: resolvedUsername || fallbackUsername }),
+      thumbnail: cover,
+      viewerCount: Number.isFinite(viewerCount) ? viewerCount : null,
+      startedAt,
+    } : null,
+  });
+}
+
+async function tiktokApiLookup({ username = '', userId = '' }) {
+  const lookup = username ? `uniqueId=${encodeURIComponent(username)}` : `userId=${encodeURIComponent(userId)}`;
+  const referer = username ? `https://www.tiktok.com/@${encodeURIComponent(username)}/live` : '';
+  const { json } = await request(`https://www.tiktok.com/api-live/user/room/?aid=1988&sourceType=54&${lookup}`, {
+    headers: { Accept: 'application/json,text/plain,*/*', ...(referer ? { Referer: referer } : {}) },
+  }, 10000);
+  return json;
+}
+
 async function checkTikTok(account) {
-  const identifier = clean(account.externalId || handle(account));
-  if (!identifier) return unavailable('tiktok', 'TikTok username, channel ID or URL could not be resolved.');
-  const byId = /^\d{6,30}$/.test(identifier);
-  const username = byId ? '' : identifier;
-  const liveUrl = username ? `https://www.tiktok.com/@${encodeURIComponent(username)}/live` : profileUrl(account);
-  const profile = username ? `https://www.tiktok.com/@${encodeURIComponent(username)}` : profileUrl(account);
-  const lookupParam = byId ? `userId=${encodeURIComponent(identifier)}` : `uniqueId=${encodeURIComponent(username)}`;
-  const apiUrl = `https://www.tiktok.com/api-live/user/room/?aid=1988&sourceType=54&${lookupParam}`;
-  let apiError = null;
+  const username = tiktokUsername(account);
+  const userId = /^\d{6,30}$/.test(clean(account.externalId)) ? clean(account.externalId) : '';
+  if (!username && !userId) return unavailable('tiktok', 'TikTok username, channel ID or URL could not be resolved.');
 
-  try {
-    const { json } = await request(apiUrl, { headers: { Accept: 'application/json,text/plain,*/*', ...(liveUrl ? { Referer: liveUrl } : {}) } }, 10000);
-    const user = json?.data?.user && typeof json.data.user === 'object' ? json.data.user : {};
-    const liveRoom = json?.data?.liveRoom && typeof json.data.liveRoom === 'object' ? json.data.liveRoom : {};
-    const rawStatus = liveRoom.status ?? user.status;
-    const roomId = clean(liveRoom.roomId || liveRoom.room_id || user.roomId || user.room_id);
-    const resolvedUsername = clean(user.uniqueId || user.unique_id || liveRoom.owner?.uniqueId || liveRoom.owner?.unique_id || username);
-    const resolvedUserId = clean(user.id || user.userId || user.user_id || liveRoom.owner?.id || liveRoom.owner?.userId || (byId ? identifier : ''));
-    const hasRoomId = /^[1-9]\d*$/.test(roomId);
-    if (rawStatus !== undefined && rawStatus !== null) {
-      const isLive = Number(rawStatus) === 2 && hasRoomId;
-      const resolvedProfile = resolvedUsername ? `https://www.tiktok.com/@${encodeURIComponent(resolvedUsername)}` : profile;
-      const resolvedLiveUrl = resolvedUsername ? `${resolvedProfile}/live` : liveUrl;
-      const cover = liveRoom.cover?.url_list?.[0] || liveRoom.cover?.urlList?.[0] || liveRoom.coverUrl || liveRoom.cover_url || null;
-      const avatar = user.avatarLarger || user.avatarMedium || user.avatarThumb || liveRoom.owner?.avatarLarger || null;
-      const viewerCount = Number(liveRoom.user_count || liveRoom.userCount || liveRoom.viewer_count || liveRoom.viewerCount);
-      const startedAtRaw = liveRoom.start_time || liveRoom.startTime;
-      const startedAt = startedAtRaw ? new Date(Number(startedAtRaw) < 1000000000000 ? Number(startedAtRaw) * 1000 : Number(startedAtRaw)).toISOString() : null;
-      return result('tiktok', {
-        isLive, providerSource: 'tiktok_api_live', confidence: 'high', externalId: resolvedUserId || undefined,
-        resolvedUsername: resolvedUsername || undefined, url: resolvedProfile, avatar,
-        event: isLive ? {
-          type: 'live', id: roomId || `tiktok-live:${resolvedUsername || identifier}`,
-          title: clean(liveRoom.title) || `${resolvedUsername || identifier} is LIVE on TikTok`, url: resolvedLiveUrl,
-          thumbnail: cover, viewerCount: Number.isFinite(viewerCount) ? viewerCount : null, startedAt,
-        } : null,
-      });
-    }
-  } catch (error) { apiError = error; }
+  const errors = [];
 
-  if (!username) return unavailable('tiktok', `TikTok channel ID could not be resolved to a current LIVE state${apiError ? `: ${apiError.message}` : '.'}`);
+  // Username is authoritative for TikTok LIVE checks. The saved numeric user ID is metadata,
+  // not a replacement for the username: the api-live endpoint does not reliably resolve
+  // offline accounts by userId.
+  if (username) {
+    try {
+      const json = await tiktokApiLookup({ username });
+      const resolved = tiktokApiResult(json, username, userId, 'tiktok_api_live_username');
+      if (resolved) return resolved;
+    } catch (error) { errors.push(`username API: ${error.message}`); }
+  }
 
+  // Keep ID lookup as a secondary path for ID-only records and recovery of legacy data.
+  if (userId) {
+    try {
+      const json = await tiktokApiLookup({ userId });
+      const resolved = tiktokApiResult(json, username, userId, 'tiktok_api_live_id');
+      if (resolved) return resolved;
+    } catch (error) { errors.push(`ID API: ${error.message}`); }
+  }
+
+  if (!username) {
+    return unavailable('tiktok', `TikTok account has only a numeric ID and could not be resolved${errors.length ? `: ${errors.join('; ')}` : '.'}`);
+  }
+
+  const profile = `https://www.tiktok.com/@${encodeURIComponent(username)}`;
+  const liveUrl = `${profile}/live`;
   try {
     const { response, text } = await request(liveUrl, { headers: { Accept: 'text/html,application/xhtml+xml' } }, 12000);
     const finalUrl = response.url || liveUrl;
@@ -223,18 +279,50 @@ async function checkTikTok(account) {
     const ended = /LIVE\s+has\s+ended|live\s+(?:has\s+)?ended|room\s+(?:has\s+)?ended|stream\s+(?:has\s+)?ended/i.test(body);
     const hasRoom = /"roomId"\s*:\s*"?[1-9]\d*/i.test(body) || /"room_id"\s*:\s*"?[1-9]\d*/i.test(body);
     const directLiveStatus = /"status"\s*:\s*2\b/.test(body) || /"isLive"\s*:\s*true/i.test(body);
-    const creatorMarker = new RegExp(`(?:uniqueId|unique_id|author|nickname)[^\\n]{0,200}${username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i').test(body);
+    const escapedUsername = username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const creatorMarker = new RegExp(`(?:uniqueId|unique_id|author|nickname)[^\\n]{0,200}${escapedUsername}`, 'i').test(body);
     const onOwnLiveUrl = /\/live(?:[?#]|$)/i.test(finalUrl) && finalUrl.toLowerCase().includes(`@${username.toLowerCase()}`);
     const title = body.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '';
     const titleSaysLive = title.toLowerCase().includes(`@${username.toLowerCase()}`) && /\bis\s+LIVE\s*-\s*TikTok\s+LIVE\b/i.test(title);
     const isLive = !ended && onOwnLiveUrl && (titleSaysLive || (hasRoom && directLiveStatus && creatorMarker));
-    if (isLive) return result('tiktok', { isLive: true, providerSource: 'public_page', confidence: 'high', url: profile, resolvedUsername: username, event: { type: 'live', id: `tiktok-live:${username}`, title: `${username} is LIVE on TikTok`, url: liveUrl, thumbnail: null } });
+
+    if (isLive) return result('tiktok', {
+      isLive: true,
+      providerSource: 'public_page',
+      confidence: 'high',
+      externalId: userId || undefined,
+      url: profile,
+      resolvedUsername: username,
+      event: { type: 'live', id: `tiktok-live:${username}`, title: `${username} is LIVE on TikTok`, url: liveUrl, thumbnail: null },
+    });
+
     const redirectedAwayFromLive = !onOwnLiveUrl && finalUrl.toLowerCase().includes(`@${username.toLowerCase()}`);
-    if (ended || redirectedAwayFromLive) return result('tiktok', { isLive: false, providerSource: 'public_page', confidence: 'high', url: profile, resolvedUsername: username, event: null });
-    return unavailable('tiktok', `TikTok LIVE status was inconclusive${apiError ? ` after API check failed: ${apiError.message}` : ''}.`);
+    if (ended || redirectedAwayFromLive) return result('tiktok', {
+      isLive: false,
+      providerSource: 'public_page',
+      confidence: 'high',
+      externalId: userId || undefined,
+      url: profile,
+      resolvedUsername: username,
+      event: null,
+    });
+
+    // If the profile identity is known and TikTok gives us a valid page but no LIVE markers,
+    // that is an offline account, not a provider failure. This prevents stale LIVE states.
+    if (response.ok && finalUrl.toLowerCase().includes(`@${username.toLowerCase()}`)) return result('tiktok', {
+      isLive: false,
+      providerSource: 'public_page',
+      confidence: 'medium',
+      externalId: userId || undefined,
+      url: profile,
+      resolvedUsername: username,
+      event: null,
+    });
+
+    return unavailable('tiktok', `TikTok LIVE status was inconclusive${errors.length ? ` after ${errors.join('; ')}` : ''}.`);
   } catch (pageError) {
-    const details = [apiError?.message, pageError?.message].filter(Boolean).join('; ');
-    return unavailable('tiktok', `TikTok LIVE check unavailable: ${details || 'unknown error'}`);
+    errors.push(`page: ${pageError.message}`);
+    return unavailable('tiktok', `TikTok LIVE check unavailable: ${errors.join('; ')}`);
   }
 }
 
