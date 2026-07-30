@@ -92,7 +92,7 @@ function defaultAnalytics() {
 function defaultMessages() {
   return {
     success: 'Verification complete. Welcome to {server}.',
-    alreadyVerified: 'You are already verified.',
+    alreadyVerified: 'You are already Verified.',
     unavailable: 'Verification is currently unavailable. Please contact a management member.',
     screeningRequired: 'Please complete Discord Membership Screening before continuing.',
     pendingRoleRequired: 'You do not currently have the required pending role.',
