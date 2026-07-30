@@ -259,7 +259,7 @@ function buildMessagesPage(guild, memberDisplayName) {
     `**Pending Role Required:** ${messages.pendingRoleRequired}`,
     `**Success DM:** ${messages.dmSuccess}`,
     '',
-    'Variables: `{user}` `{username}` `{server}` `{verifiedRoles}` `{pendingRoles}` `{reason}` and requirement values.',
+    'Variables: All default Goliath helpers are supported, including user, guild/server, timestamps, emojis/colours, role/requirement values and verification context.',
   ].join('\n').slice(0, 4096), memberDisplayName);
 
   return {
@@ -295,7 +295,7 @@ function buildPanelPage(guild, memberDisplayName) {
   ].join('\n'), memberDisplayName, current.color || 0x57f287);
 
   return {
-    embeds: [embed, verificationManager.buildVerificationEmbed(preview)],
+    embeds: [embed, verificationManager.buildVerificationEmbed(preview, guild)],
     components: [
       row(
         button('admin:verification:editEmbed', '✏️ Edit Embed'),
@@ -595,7 +595,11 @@ async function handleVerificationAdminInteraction(interaction) {
 
     if (customId === 'admin:verification:preview') {
       const preview = { panelId: 'preview', ...panelTemplate(interaction.guild.id) };
-      await interaction.reply({ embeds: [verificationManager.buildVerificationEmbed(preview)], components: verificationManager.buildVerificationRows(preview), flags: 64 });
+      await interaction.reply({
+        embeds: [verificationManager.buildVerificationEmbed(preview, interaction.guild)],
+        components: verificationManager.buildVerificationRows(preview, interaction.guild),
+        flags: 64,
+      });
       return true;
     }
 
