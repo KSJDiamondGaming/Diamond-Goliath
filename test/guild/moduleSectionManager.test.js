@@ -8,6 +8,7 @@ const path = require('node:path');
 const managerPath = path.resolve(__dirname, '../../src/core/guild/moduleSectionManager.js');
 const guildManagerPath = path.resolve(__dirname, '../../src/core/guild/guildManager.js');
 const moduleAdminPanelsPath = path.resolve(__dirname, '../../src/core/admin/functions/moduleAdminPanels.js');
+const reactionRolesPanelPath = path.resolve(__dirname, '../../src/modules/roleStudio/reactionRoles/reactionRolesPanel.js');
 
 function loadManager(initialModules = {}) {
   let modules = JSON.parse(JSON.stringify(initialModules));
@@ -142,4 +143,15 @@ test('generic module admin panels use canonical module state without persisting 
   assert.match(saveConfig, /const \{ enabled: _enabled, \.\.\.config \} = next \|\| \{\};/);
   assert.match(actions, /guildManager\.setModuleEnabled\(interaction\.guild\.id, key, type === 'enable'/);
   assert.doesNotMatch(actions, /saveModuleConfig\([^\n]+enabled:/);
+});
+
+test('reaction roles admin panel reports, writes and exports canonical module state', () => {
+  const source = fs.readFileSync(reactionRolesPanelPath, 'utf8');
+  assert.match(source, /const enabled = guildManager\.isModuleEnabled\(guild\.id, 'reactionRoles'\)/);
+  assert.match(source, /guildManager\.setModuleEnabled\(guild\.id, 'reactionRoles', true, \{ actorId: userId \}\)/);
+  assert.match(source, /guildManager\.setModuleEnabled\(guild\.id, 'reactionRoles', false, \{ actorId: userId \}\)/);
+  assert.match(source, /enabled: guildManager\.isModuleEnabled\(guild\.id, 'reactionRoles'\)/);
+  assert.doesNotMatch(source, /config\.enabled !== false/);
+  assert.doesNotMatch(source, /reactionRoles\.setEnabled/);
+  assert.match(source, /panel\.enabled === false/);
 });
