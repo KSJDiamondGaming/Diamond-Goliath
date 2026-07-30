@@ -4,11 +4,6 @@ const verificationManager = require('./verificationManager');
 const verificationStore = require('./verificationStore');
 const guildManager = require('../../core/guild/guildManager');
 
-async function fetchRole(guild, roleId) {
-  if (!guild || !roleId) return null;
-  return guild.roles.cache.get(roleId) || guild.roles.fetch(roleId).catch(() => null);
-}
-
 async function buildHealthReport(guild) {
   if (!guild?.id) throw new Error('Guild is unavailable.');
   const report = await verificationManager.buildHealthReport(guild);
@@ -21,34 +16,20 @@ async function buildHealthReport(guild) {
 async function repair(guild, meta = {}) {
   if (!guild?.id) throw new Error('Guild is unavailable.');
 
-  const section = verificationManager.getVerificationStatus(guild.id);
-  const verifiedRoleIds = [];
-  const pendingRoleIds = [];
-  const panels = {};
-
-  for (const roleId of section.settings?.verifiedRoleIds || []) {
-    const role = await fetchRole(guild, roleId);
-    if (role) verifiedRoleIds.push(role.id);
-  }
-
-  for (const roleId of section.settings?.pendingRoleIds || []) {
-    const role = await fetchRole(guild, roleId);
-    if (role) pendingRoleIds.push(role.id);
-  }
-
-  for (const panel of Object.values(section.panels || {})) {
-    const health = await verificationManager.getPanelHealth(guild, panel);
-    if (health.ok) panels[panel.panelId] = panel;
-  }
-
+  // Repair only data shape/normalisation here. Do not delete configured roles or
+  // panel records merely because Discord could not resolve them during a health
+  // check; a transient API/cache/permission failure must never destroy config.
   verificationStore.updateVerificationSection(guild.id, (current) => ({
     ...current,
-    settings: verificationStore.normalizeSettings({
-      ...(current.settings || {}),
-      verifiedRoleIds,
-      pendingRoleIds,
-    }),
-    panels,
+    settings: verificationStore.normalizeSettings(current.settings || {}),
+    messages: verificationStore.normalizeMessages(current.messages || {}),
+    panelTemplate: verificationStore.normalizePanelTemplate(current.panelTemplate || {}),
+    panels: Object.fromEntries(
+      Object.entries(current.panels || {}).map(([panelId, panel]) => [
+        panelId,
+        verificationStore.normalizePanel({ ...panel, panelId }),
+      ])
+    ),
     updatedAt: new Date().toISOString(),
   }), { action: 'verification_health_repair', ...meta });
 
