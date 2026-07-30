@@ -1,5 +1,6 @@
 'use strict';
 
+const guildManager = require('../guild/guildManager');
 const {
   getModuleSection,
   saveModuleSection,
@@ -88,7 +89,6 @@ function defaultAnalytics() {
 
 function defaultLoggingSection() {
   return {
-    enabled: false,
     channels: defaultChannels(),
     events: defaultEvents(),
     settings: defaultSettings(),
@@ -159,10 +159,9 @@ function normalizeAnalytics(value = {}) {
 function normalizeLoggingSection(value = {}) {
   const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
   const defaults = defaultLoggingSection();
-  return {
+  const normalized = {
     ...defaults,
     ...clone(source),
-    enabled: source.enabled === true,
     channels: normalizeChannels(source.channels),
     events: normalizeEvents(source.events),
     settings: normalizeSettings(source.settings),
@@ -170,23 +169,33 @@ function normalizeLoggingSection(value = {}) {
     createdAt: source.createdAt || defaults.createdAt,
     updatedAt: source.updatedAt || now(),
   };
+  delete normalized.enabled;
+  return normalized;
+}
+
+function withCanonicalState(guildId, section) {
+  return {
+    ...normalizeLoggingSection(section),
+    enabled: guildManager.isModuleEnabled(guildId, MODULE),
+  };
 }
 
 function getLoggingSection(guildId) {
   const stored = getModuleSection(guildId, MODULE, null);
   if (stored && typeof stored === 'object' && Object.keys(stored).length) {
-    return normalizeLoggingSection(stored);
+    return withCanonicalState(guildId, stored);
   }
 
-  return defaultLoggingSection();
+  return withCanonicalState(guildId, defaultLoggingSection());
 }
 
 function saveLoggingSection(guildId, section, meta = {}) {
-  return normalizeLoggingSection(saveModuleSection(guildId, MODULE, normalizeLoggingSection(section), meta));
+  const saved = saveModuleSection(guildId, MODULE, normalizeLoggingSection(section), meta);
+  return withCanonicalState(guildId, saved);
 }
 
 function updateLoggingSection(guildId, updater, meta = {}) {
-  return normalizeLoggingSection(updateModuleSection(
+  const updated = updateModuleSection(
     guildId,
     MODULE,
     (current) => {
@@ -196,7 +205,8 @@ function updateLoggingSection(guildId, updater, meta = {}) {
     },
     defaultLoggingSection(),
     meta
-  ));
+  );
+  return withCanonicalState(guildId, updated);
 }
 
 function incrementAnalytics(guildId, eventKey, result = 'sent', meta = {}) {
