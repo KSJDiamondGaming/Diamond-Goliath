@@ -54,7 +54,7 @@ function getAutoModConfig(guildId) {
   const antiLinks = config.antiLinks || {};
 
   return {
-    enabled: config.enabled === true,
+    enabled: guildManager.isModuleEnabled(guildId, 'automod'),
     dmUser: config.dmUser !== false,
     dmMessages: {
       antiSpam: String(config.dmMessages?.antiSpam || DEFAULT_DM_MESSAGES.antiSpam),
