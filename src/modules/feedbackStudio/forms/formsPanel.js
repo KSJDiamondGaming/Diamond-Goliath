@@ -13,7 +13,7 @@ const {
 } = require('discord.js');
 
 const forms = require('./forms');
-const { isModuleEnabled } = require('../../../core/guild/guildManager');
+const { isModuleEnabled, setModuleEnabled } = require('../../../core/guild/guildManager');
 const {
   DEFAULT_BOT_CHANNEL_PERMISSIONS,
   guardChannelAccess,
@@ -42,16 +42,17 @@ function parseFormCustomId(customId = '') {
 
 function buildFormsOverviewEmbed(guildId) {
   const section = forms.getFormsSection(guildId);
+  const moduleEnabled = isModuleEnabled(guildId, 'forms');
   const forms = Object.values(section.forms || {});
   const enabledForms = forms.filter((form) => form.enabled !== false);
 
   return new EmbedBuilder()
-    .setColor(section.enabled === false ? 0xed4245 : 0x5865f2)
+    .setColor(moduleEnabled ? 0x5865f2 : 0xed4245)
     .setTitle('Universal Forms')
     .setDescription([
       '**One clean form engine for applications, appeals, reports and support.**',
       '',
-      `> **Status:** ${section.enabled === false ? 'Disabled' : 'Enabled'}`,
+      `> **Status:** ${moduleEnabled ? 'Enabled' : 'Disabled'}`,
       `> **Forms:** ${enabledForms.length}/${forms.length} active`,
       `> **Submissions:** ${section.analytics?.submitted || 0}`,
       `> **Tickets Created:** ${section.analytics?.ticketsCreated || 0}`,
@@ -322,17 +323,18 @@ function formatRoles(ids = []) {
 
 function buildFormsAdminPanel(guild, memberDisplayName = 'Unknown User') {
   const section = forms.getSection(guild.id);
+  const moduleEnabled = isModuleEnabled(guild.id, 'forms');
   const forms = Object.values(section.forms || {});
   const submissions = Object.values(section.submissions || {});
   const pending = submissions.filter((submission) => submission.status === 'pending').length;
 
   const embed = new EmbedBuilder()
-    .setColor(section.enabled !== false ? 0x57f287 : 0x5865f2)
+    .setColor(moduleEnabled ? 0x57f287 : 0x5865f2)
     .setTitle('📝 Forms')
     .setDescription([
       'Configure form deployment, logging and review behaviour.',
       '',
-      `**Status:** ${section.enabled !== false ? 'Enabled ✅' : 'Disabled ❌'}`,
+      `**Status:** ${moduleEnabled ? 'Enabled ✅' : 'Disabled ❌'}`,
       `**Submit Channel:** ${formatChannel(section.submitChannelId)}`,
       `**Log Channel:** ${formatChannel(section.logChannelId)}`,
       `**Manager Roles:** ${formatRoles(section.managerRoleIds)}`,
@@ -360,7 +362,7 @@ function buildFormsAdminPanel(guild, memberDisplayName = 'Unknown User') {
       ),
       row(
         button('admin:forms:deployDefault', '🚀 Deploy Form', ButtonStyle.Success),
-        button(section.enabled !== false ? 'admin:forms:disable' : 'admin:forms:enable', section.enabled !== false ? '⏸️ Disable' : '▶️ Enable', ButtonStyle.Secondary),
+        button(moduleEnabled ? 'admin:forms:disable' : 'admin:forms:enable', moduleEnabled ? '⏸️ Disable' : '▶️ Enable', ButtonStyle.Secondary),
         button('admin:forms:toggleReview', '🔎 Review', ButtonStyle.Secondary),
         button('admin:forms:toggleAnonymous', '👤 Anonymous', ButtonStyle.Secondary),
         button('admin:forms:toggleStore', '💾 Store', ButtonStyle.Secondary)
@@ -407,8 +409,12 @@ async function handleFormsAdminInteraction(interaction) {
       return safeUpdate(interaction, buildFormsAdminPanel(interaction.guild, memberDisplayName));
     }
 
-    if (customId === 'admin:forms:enable') save(interaction.guild, (section) => ({ ...section, enabled: true }));
-    if (customId === 'admin:forms:disable') save(interaction.guild, (section) => ({ ...section, enabled: false }));
+    if (customId === 'admin:forms:enable' || customId === 'admin:forms:disable') {
+      setModuleEnabled(interaction.guild.id, 'forms', customId.endsWith(':enable'), {
+        actorId: interaction.user.id,
+        action: 'forms_admin_toggle',
+      });
+    }
     if (customId === 'admin:forms:toggleReview') save(interaction.guild, (section) => ({ ...section, requireReview: !section.requireReview }));
     if (customId === 'admin:forms:toggleAnonymous') save(interaction.guild, (section) => ({ ...section, anonymousSubmissions: !section.anonymousSubmissions }));
     if (customId === 'admin:forms:toggleStore') save(interaction.guild, (section) => ({ ...section, storeResponses: !section.storeResponses }));
@@ -430,8 +436,8 @@ async function handleFormsAdminInteraction(interaction) {
 
 
 async function deployDefaultForm(guild, actorId = null) {
+  if (!isModuleEnabled(guild.id, 'forms')) throw new Error('Forms are disabled.');
   const section = forms.getFormsSection(guild.id);
-  if (section.enabled === false) throw new Error('Forms are disabled.');
   const channelId = section.submitChannelId || section.settings?.submitChannelId || null;
   if (!channelId) throw new Error('Choose a submit channel first.');
   const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
