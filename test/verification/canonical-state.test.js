@@ -241,8 +241,6 @@ test('temp voice store removes duplicate module state without removing hub state
   const defaults = source.slice(source.indexOf('function defaultTempVoiceSection()'), source.indexOf('function normalizeHub('));
   assert.doesNotMatch(defaults, /enabled\s*:/);
   assert.match(source, /delete normalized\.enabled;/);
-  assert.doesNotMatch(source, /enabled: source\.enabled !== false/);
-  assert.match(source, /enabled: hub\.enabled !== false/);
   assert.match(source, /hub\.enabled !== false && hub\.joinChannelId/);
 });
 
@@ -289,6 +287,19 @@ test('forms panel reports and writes canonical module state', () => {
   assert.doesNotMatch(source, /section\.enabled === false/);
   assert.doesNotMatch(source, /section\.enabled !== false/);
   assert.match(source, /form\.enabled !== false/);
+});
+
+test('forms store removes duplicate module state while preserving item enabled flags', () => {
+  const source = read('src/modules/feedbackStudio/forms/forms.js');
+  const defaults = source.slice(source.indexOf('function defaultFormsSection()'), source.indexOf('function normalizeField('));
+  const formNormalizer = source.slice(source.indexOf('function normalizeForm('), source.indexOf('function normalizeSubmission('));
+  const panelNormalizer = source.slice(source.indexOf('function normalizePanel('), source.indexOf('function normalizeFormsSection('));
+  const sectionNormalizer = source.slice(source.indexOf('function normalizeFormsSection('), source.indexOf('function getFormsSection('));
+  assert.doesNotMatch(defaults, /enabled\s*:/);
+  assert.match(sectionNormalizer, /delete normalized\.enabled;/);
+  assert.doesNotMatch(sectionNormalizer, /enabled: source\.enabled !== false/);
+  assert.match(formNormalizer, /enabled: source\.enabled !== false/);
+  assert.match(panelNormalizer, /enabled: source\.enabled !== false/);
 });
 
 test('giveaways runtime reads canonical module state', () => {
