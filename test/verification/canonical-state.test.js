@@ -227,6 +227,13 @@ test('stats API reports and writes canonical module state', () => {
   assert.doesNotMatch(source, /const allowed = \['enabled'/);
 });
 
+test('stats health and export report canonical module state', () => {
+  const source = read('src/modules/utilityStudio/stats/statsHealth.js');
+  assert.match(source, /enabled: guildManager\.isModuleEnabled\(guild\.id, 'stats'\)/);
+  assert.match(source, /enabled: guildManager\.isModuleEnabled\(guildId, 'stats'\)/);
+  assert.doesNotMatch(source, /enabled: config\.enabled === true/);
+});
+
 test('temp voice API reports and writes canonical module state', () => {
   const source = read('src/server/routes/tempVoice.js');
   assert.match(source, /enabled: isModuleEnabled\(guildId, 'tempVoice'\)/);
