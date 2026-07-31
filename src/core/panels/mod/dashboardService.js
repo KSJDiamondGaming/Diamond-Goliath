@@ -35,7 +35,7 @@ const { normalizeDashboardContext } = require('./pendingActionHelpers');
 const {
   canUseModAction,
   getStaffDisplay,
-} = require('./moderationChecks');
+} = require('./permissions');
 
 const {
   COLORS,
