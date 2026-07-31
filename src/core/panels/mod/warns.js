@@ -21,7 +21,12 @@ const {
 } = require('../../../core/logging/cases/caseStore');
 const { sendModLog } = require('../../../core/logging/modlogs/moderationActionLog');
 const { safeReply, ephemeralError } = require('../../../core/ui/interactionResponse');
-const { canUseModAction, getModActionDeniedMessage } = require('./permissions');
+const {
+  canUseModAction,
+  getModActionDeniedMessage,
+  ensureActionAccess,
+  requireModeratableTarget,
+} = require('./permissions');
 const {
   handleEscalation,
   getRepeatReasonInfo,
@@ -132,6 +137,27 @@ function buildRemoveWarningModal(targetId) {
     );
 }
 
+async function showWarningModal(interaction, targetId) {
+  const target = await requireModeratableTarget(interaction, targetId, 'warn');
+  if (!target) return true;
+  await interaction.showModal(buildWarnModal(target.id));
+  return true;
+}
+
+async function showRemoveWarningModal(interaction, targetId) {
+  const allowed = await ensureActionAccess(
+    interaction,
+    'remove_warning',
+    '❌ No permission to remove warnings.'
+  );
+  if (!allowed) return true;
+  if (!targetId || targetId === 'none') {
+    return safeReply(interaction, ephemeralError('No user selected.'));
+  }
+  await interaction.showModal(buildRemoveWarningModal(targetId));
+  return true;
+}
+
 async function submitWarning(interaction, target) {
   if (!interaction?.guild || !interaction?.user || !target) {
     return safeReply(interaction, ephemeralError('Could not resolve the warning target.'));
@@ -206,6 +232,16 @@ async function submitWarning(interaction, target) {
   }
 }
 
+async function submitWarningModal(interaction, targetId, refreshDashboard = null) {
+  const target = await requireModeratableTarget(interaction, targetId, 'warn');
+  if (!target) return true;
+  const result = await submitWarning(interaction, target);
+  if (result?.ok && typeof refreshDashboard === 'function') {
+    await refreshDashboard(interaction, target);
+  }
+  return true;
+}
+
 async function submitRemoveWarningRequest(interaction, targetId, createConfirmation) {
   const raw = interaction.fields.getTextInputValue('case_id').trim();
   const caseId = /^\d+$/.test(raw) ? Number(raw) : null;
@@ -243,7 +279,10 @@ module.exports = {
   runWarningEscalation,
   buildWarnModal,
   buildRemoveWarningModal,
+  showWarningModal,
+  showRemoveWarningModal,
   submitWarning,
+  submitWarningModal,
   submitRemoveWarningRequest,
   getWarningById,
   getWarningsForUser,
