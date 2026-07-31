@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const guildManager = require('../../../core/guild/guildManager');
 const schedule = require('./schedule');
 const deployment = require('./scheduleDeployment');
 const scheduleHealth = require('./scheduleHealth');
@@ -15,20 +16,27 @@ async function getGuild(req) {
   return client.guilds.cache.get(req.params.guildId) || client.guilds.fetch(req.params.guildId).catch(() => null);
 }
 function fail(res, error, status = 400) { return res.status(status).json({ success: false, error: error.message || String(error) }); }
+function canonicalConfig(guildId, config = schedule.getSection(guildId)) { return { ...config, enabled: guildManager.isModuleEnabled(guildId, 'schedule') }; }
 function assertScheduleEnabled(guildId) {
-  if (schedule.getSection(guildId).enabled === false) throw new Error('Schedule is disabled for this server.');
+  if (!guildManager.isModuleEnabled(guildId, 'schedule')) throw new Error('Schedule is disabled for this server.');
 }
 
 router.get('/:guildId', (req, res) => {
-  try { const config = schedule.getSection(req.params.guildId); return res.json({ success: true, guildId: req.params.guildId, config, events: schedule.listEvents(req.params.guildId) }); }
+  try { const config = canonicalConfig(req.params.guildId); return res.json({ success: true, guildId: req.params.guildId, config, events: schedule.listEvents(req.params.guildId) }); }
   catch (error) { return fail(res, error); }
 });
 router.patch('/:guildId/enabled', (req, res) => {
-  try { return res.json({ success: true, config: schedule.setEnabled(req.params.guildId, req.body?.enabled === true, actor(req, 'schedule_enabled_update')) }); }
+  try {
+    guildManager.setModuleEnabled(req.params.guildId, 'schedule', req.body?.enabled === true, actor(req, 'schedule_enabled_update'));
+    return res.json({ success: true, config: canonicalConfig(req.params.guildId) });
+  }
   catch (error) { return fail(res, error); }
 });
 router.patch('/:guildId/settings', (req, res) => {
-  try { return res.json({ success: true, config: schedule.updateSettings(req.params.guildId, req.body || {}, actor(req, 'schedule_settings_update')) }); }
+  try {
+    const config = schedule.updateSettings(req.params.guildId, req.body || {}, actor(req, 'schedule_settings_update'));
+    return res.json({ success: true, config: canonicalConfig(req.params.guildId, config) });
+  }
   catch (error) { return fail(res, error); }
 });
 router.post('/:guildId/events', (req, res) => {
@@ -108,14 +116,13 @@ router.post('/:guildId/repair', async (req, res) => {
   catch (error) { return fail(res, error); }
 });
 router.get('/:guildId/export', (req, res) => {
-  try { return res.json({ success: true, export: schedule.exportConfiguration(req.params.guildId) }); }
+  try { return res.json({ success: true, export: canonicalConfig(req.params.guildId, schedule.exportConfiguration(req.params.guildId)) }); }
   catch (error) { return fail(res, error); }
 });
 router.post('/:guildId/reset', (req, res) => {
   try {
-    const enabled = schedule.getSection(req.params.guildId).enabled !== false;
     const config = schedule.reset(req.params.guildId, actor(req, 'schedule_reset'));
-    return res.json({ success: true, config: enabled ? config : schedule.setEnabled(req.params.guildId, false, actor(req, 'schedule_reset_preserve_disabled')) });
+    return res.json({ success: true, config: canonicalConfig(req.params.guildId, config) });
   } catch (error) { return fail(res, error); }
 });
 
