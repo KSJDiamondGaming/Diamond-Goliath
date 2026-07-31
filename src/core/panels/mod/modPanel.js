@@ -421,14 +421,8 @@ async function openModPanel(interaction, options = {}) {
     : interaction.reply(finalPayload);
 }
 
-async function handleInteraction(interaction) {
-  const { handleModInteraction } = require('./modInteractions');
-  return handleModInteraction(interaction);
-}
-
 module.exports = {
   openModPanel,
-  handleInteraction,
   refreshDashboard,
   refreshCasesDashboard,
   handleDashboardNavigation,
