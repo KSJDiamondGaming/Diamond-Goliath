@@ -16,6 +16,7 @@ const starboardStorePath = path.resolve(__dirname, '../../src/modules/messageStu
 const starboardPanelPath = path.resolve(__dirname, '../../src/modules/messageStudio/starboard/starboardPanel.js');
 const starboardRoutePath = path.resolve(__dirname, '../../src/server/routes/starboard.js');
 const temporaryRolesPath = path.resolve(__dirname, '../../src/modules/roleStudio/temporaryRoles/temporaryRoles.js');
+const serverBackupSchedulerPath = path.resolve(__dirname, '../../src/core/security/serverBackupScheduler.js');
 
 function loadManager(initialModules = {}) {
   let modules = JSON.parse(JSON.stringify(initialModules));
@@ -218,4 +219,14 @@ test('temporary roles runtime and store use canonical module state', () => {
   assert.match(source, /isModuleEnabled\(guild\.id, SECTION\)/);
   assert.match(source, /setModuleEnabled\(guildId, SECTION, Boolean\(enabled\), meta\)/);
   assert.doesNotMatch(source, /section\.enabled/);
+});
+
+test('server backup scheduler uses canonical per-guild module state', () => {
+  const source = fs.readFileSync(serverBackupSchedulerPath, 'utf8');
+  const direct = source.slice(source.indexOf('async function backupGuild('), source.indexOf('async function runServerBackupCycle('));
+  const cycle = source.slice(source.indexOf('async function runServerBackupCycle('), source.indexOf('function startServerBackupScheduler('));
+
+  assert.match(direct, /guildManager\.isModuleEnabled\(guild\.id, 'serverBackups'\)/);
+  assert.match(cycle, /guildManager\.isModuleEnabled\(guild\.id, 'serverBackups'\)/);
+  assert.match(source, /SERVER_BACKUP_ENABLED/);
 });
