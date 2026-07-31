@@ -86,6 +86,7 @@ function checkOptions(customId) {
 
 function currentPanelSection(interaction, customId) {
   const title = String(interaction.message?.embeds?.[0]?.title || '').toLowerCase();
+  if (title.includes('operations')) return 'operations';
   if (title.includes('automation')) return 'automation';
   if (title.includes('notification')) return 'notifications';
   if (title.includes('testing')) return 'testing';
