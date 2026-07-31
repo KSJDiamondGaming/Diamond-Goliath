@@ -52,6 +52,14 @@ async function getSendableChannel(req, guildId, channelId) {
   return channel;
 }
 
+async function hasEditablePanelMessage(guild, panel) {
+  if (!guild || !panel?.channelId || !panel?.messageId) return false;
+  const channel = guild.channels.cache.get(panel.channelId) || await guild.channels.fetch(panel.channelId).catch(() => null);
+  if (!channel?.messages?.fetch) return false;
+  const message = await channel.messages.fetch(panel.messageId).catch(() => null);
+  return Boolean(message?.editable);
+}
+
 async function requireVerificationGuildAccess(req, res, next) {
   try {
     const userId = cleanDiscordId(req.session?.user?.id);
@@ -203,13 +211,19 @@ router.post('/:guildId/template', (req, res) => {
 router.post('/:guildId/deploy', async (req, res) => {
   try {
     const guildId = getGuildId(req);
+    const guild = await getGuild(req, guildId);
+    if (!guild) throw new Error('Guild is unavailable.');
     const config = getConfig(guildId);
     const channelId = cleanDiscordId(req.body?.channelId || config.verificationChannelId);
     if (!channelId) throw new Error('Verification channel is required.');
     const channel = await getSendableChannel(req, guildId, channelId);
-    const panelId = req.body?.redeploy === true
-      ? verificationStore.getLatestPanel(guildId)?.panelId
-      : String(req.body?.panelId || '').trim() || undefined;
+
+    let panelId = String(req.body?.panelId || '').trim() || undefined;
+    if (req.body?.redeploy === true) {
+      const latest = verificationStore.getLatestPanel(guildId);
+      panelId = latest && await hasEditablePanelMessage(guild, latest) ? latest.panelId : undefined;
+    }
+
     const panel = await verificationManager.deployVerificationPanel(channel, {
       ...verificationStore.getVerificationSection(guildId).panelTemplate,
       ...(req.body?.template || {}),
@@ -227,10 +241,37 @@ router.post('/:guildId/panels/:panelId/redeploy', async (req, res) => {
     const guildId = getGuildId(req);
     const guild = await getGuild(req, guildId);
     if (!guild) throw new Error('Guild is unavailable.');
-    const panel = await verificationManager.refreshVerificationPanel(guild, req.params.panelId, req.body || {}, {
-      action: 'verification_api_redeploy',
-      actorId: getActorId(req),
-    });
+
+    const existing = verificationStore.getPanel(guildId, req.params.panelId);
+    if (!existing) throw new Error('Verification panel not found.');
+
+    const actorId = getActorId(req);
+    const meta = { action: 'verification_api_redeploy', actorId };
+    let panel;
+
+    if (await hasEditablePanelMessage(guild, existing)) {
+      panel = await verificationManager.refreshVerificationPanel(guild, existing.panelId, req.body || {}, meta);
+    } else {
+      const config = getConfig(guildId);
+      const requestedChannelId = cleanDiscordId(req.body?.channelId || existing.channelId || config.verificationChannelId);
+      if (!requestedChannelId) throw new Error('Verification channel is required.');
+      const channel = await getSendableChannel(req, guildId, requestedChannelId);
+      const {
+        panelId: _panelId,
+        id: _id,
+        messageId: _messageId,
+        createdAt: _createdAt,
+        createdBy: _createdBy,
+        ...redeployInput
+      } = req.body || {};
+
+      panel = await verificationManager.deployVerificationPanel(channel, {
+        ...verificationStore.getVerificationSection(guildId).panelTemplate,
+        ...redeployInput,
+        createdBy: actorId,
+      }, meta);
+    }
+
     return success(res, { guildId, panel });
   } catch (error) {
     return failure(res, error, 400);
