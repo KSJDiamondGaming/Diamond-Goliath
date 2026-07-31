@@ -17,6 +17,7 @@ const starboardPanelPath = path.resolve(__dirname, '../../src/modules/messageStu
 const starboardRoutePath = path.resolve(__dirname, '../../src/server/routes/starboard.js');
 const temporaryRolesPath = path.resolve(__dirname, '../../src/modules/roleStudio/temporaryRoles/temporaryRoles.js');
 const serverBackupSchedulerPath = path.resolve(__dirname, '../../src/core/security/serverBackupScheduler.js');
+const statsRoutePath = path.resolve(__dirname, '../../src/modules/utilityStudio/stats/statsRoute.js');
 
 function loadManager(initialModules = {}) {
   let modules = JSON.parse(JSON.stringify(initialModules));
@@ -229,4 +230,10 @@ test('server backup scheduler uses canonical per-guild module state', () => {
   assert.match(direct, /guildManager\.isModuleEnabled\(guild\.id, 'serverBackups'\)/);
   assert.match(cycle, /guildManager\.isModuleEnabled\(guild\.id, 'serverBackups'\)/);
   assert.match(source, /SERVER_BACKUP_ENABLED/);
+});
+
+test('stats summary uses the canonical logging module key', () => {
+  const source = fs.readFileSync(statsRoutePath, 'utf8');
+  assert.match(source, /guildManager\.isModuleEnabled\(guildId, 'logging'\)/);
+  assert.doesNotMatch(source, /guildManager\.isModuleEnabled\(guildId, 'logs'\)/);
 });
