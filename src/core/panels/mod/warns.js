@@ -20,10 +20,8 @@ const {
   updateCaseStatus,
 } = require('../../../core/logging/cases/caseStore');
 const { sendModLog } = require('../../../core/logging/modlogs/moderationActionLog');
-const {
-  safeReply,
-  ephemeralError,
-} = require('../../../core/ui/interactionResponse');
+const { safeReply, ephemeralError } = require('../../../core/ui/interactionResponse');
+const { canUseModAction, getModActionDeniedMessage } = require('./permissions');
 const {
   handleEscalation,
   getRepeatReasonInfo,
@@ -53,58 +51,33 @@ function parseWarningExpiry(value) {
 
 async function syncExpiredWarningsToCases(guildId) {
   const expiredWarnings = purgeExpiredWarnings(guildId) || [];
-
   for (const warning of expiredWarnings) {
-    if (warning?.caseId) {
-      updateCaseStatus(guildId, warning.caseId, 'expired');
-    }
+    if (warning?.caseId) updateCaseStatus(guildId, warning.caseId, 'expired');
   }
-
   return expiredWarnings;
 }
 
-function createWarning({
-  guildId,
-  userId,
-  moderatorId,
-  reason = 'No reason provided',
-  caseId,
-  expiresAt = null,
-}) {
-  return addWarning({
-    guildId,
-    userId,
-    moderatorId,
-    reason,
-    caseId,
-    expiresAt,
-  });
+function createWarning({ guildId, userId, moderatorId, reason = 'No reason provided', caseId, expiresAt = null }) {
+  return addWarning({ guildId, userId, moderatorId, reason, caseId, expiresAt });
 }
 
 function removeWarningByCaseId(guildId, caseId) {
   const warning = getWarningByCaseId(guildId, caseId);
   if (!warning) return null;
-
   const removed = deleteWarningByCaseId(guildId, caseId);
   if (!removed) return null;
-
   updateCaseStatus(guildId, caseId, 'reversed');
   return warning;
 }
 
 async function getWarningContext({ guildId, userId, reason }) {
   let repeatInfo = { isRepeatPattern: false, repeatCount: 0 };
-
   try {
     repeatInfo = getRepeatReasonInfo({ guildId, userId, reason }) || repeatInfo;
   } catch (error) {
     console.error('❌ Warning repeat-reason check failed:', error);
   }
-
-  return {
-    count: getWarningCountForUser(guildId, userId),
-    repeatInfo,
-  };
+  return { count: getWarningCountForUser(guildId, userId), repeatInfo };
 }
 
 async function runWarningEscalation({ guild, member, moderator, reason }) {
@@ -142,6 +115,23 @@ function buildWarnModal(targetId) {
     );
 }
 
+function buildRemoveWarningModal(targetId) {
+  return new ModalBuilder()
+    .setCustomId(`mod_submit_remove_warning:${targetId}`)
+    .setTitle('Remove Warning')
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('case_id')
+          .setLabel('Warning Case ID')
+          .setStyle(TextInputStyle.Short)
+          .setPlaceholder('1')
+          .setRequired(true)
+          .setMaxLength(10)
+      )
+    );
+}
+
 async function submitWarning(interaction, target) {
   if (!interaction?.guild || !interaction?.user || !target) {
     return safeReply(interaction, ephemeralError('Could not resolve the warning target.'));
@@ -150,12 +140,8 @@ async function submitWarning(interaction, target) {
   const reason = interaction.fields.getTextInputValue('reason').trim();
   const expiryRaw = interaction.fields.getTextInputValue('warn_expiry') || 'never';
   const expiresAt = parseWarningExpiry(expiryRaw);
-
   if (expiryRaw.trim().toLowerCase() !== 'never' && !expiresAt) {
-    return safeReply(
-      interaction,
-      ephemeralError('Invalid warning expiry. Use `7d`, `2w`, `1m`, or `never`.')
-    );
+    return safeReply(interaction, ephemeralError('Invalid warning expiry. Use `7d`, `2w`, `1m`, or `never`.'));
   }
 
   try {
@@ -167,7 +153,6 @@ async function submitWarning(interaction, target) {
       reason,
       metadata: { expiresAt },
     });
-
     createWarning({
       guildId: interaction.guild.id,
       userId: target.id,
@@ -177,11 +162,7 @@ async function submitWarning(interaction, target) {
       expiresAt,
     });
 
-    const warningContext = await getWarningContext({
-      guildId: interaction.guild.id,
-      userId: target.id,
-      reason,
-    });
+    const warningContext = await getWarningContext({ guildId: interaction.guild.id, userId: target.id, reason });
     const escalatedCase = await runWarningEscalation({
       guild: interaction.guild,
       member: target,
@@ -207,36 +188,50 @@ async function submitWarning(interaction, target) {
 
     const extra = [];
     if (warningContext.repeatInfo.isRepeatPattern) {
-      extra.push(
-        `🔁 Repeat reason detected (${warningContext.repeatInfo.repeatCount} matching warnings)`
-      );
+      extra.push(`🔁 Repeat reason detected (${warningContext.repeatInfo.repeatCount} matching warnings)`);
     }
     if (escalatedCase) {
-      extra.push(
-        `⚡ Auto escalation triggered: **${escalatedCase.action}** (Case #${escalatedCase.caseId})`
-      );
+      extra.push(`⚡ Auto escalation triggered: **${escalatedCase.action}** (Case #${escalatedCase.caseId})`);
     }
 
     await safeReply(interaction, {
-      content: [
-        `⚠️ Warned **${target.user.tag}** • Case #${modCase.caseId}`,
-        ...extra,
-      ].join('\n'),
+      content: [`⚠️ Warned **${target.user.tag}** • Case #${modCase.caseId}`, ...extra].join('\n'),
       flags: 64,
     });
-
-    return {
-      ok: true,
-      target,
-      modCase,
-      warningContext,
-      escalatedCase,
-    };
+    return { ok: true, target, modCase, warningContext, escalatedCase };
   } catch (error) {
     console.error('❌ Warn error:', error);
     await safeReply(interaction, ephemeralError('Failed to warn user.'));
     return { ok: false, target, error };
   }
+}
+
+async function submitRemoveWarningRequest(interaction, targetId, createConfirmation) {
+  const raw = interaction.fields.getTextInputValue('case_id').trim();
+  const caseId = /^\d+$/.test(raw) ? Number(raw) : null;
+  if (!caseId) return safeReply(interaction, ephemeralError('Warning case ID must be a number.'));
+
+  if (!canUseModAction(interaction.member, interaction.guild, 'remove_warning')) {
+    return safeReply(interaction, {
+      content: getModActionDeniedMessage('remove_warning'),
+      flags: 64,
+    });
+  }
+
+  const warning = getWarningByCaseId(interaction.guild.id, caseId);
+  if (!warning) return safeReply(interaction, ephemeralError('Warning not found for that case ID.'));
+  if (targetId !== 'none' && warning.userId !== targetId) {
+    return safeReply(interaction, ephemeralError('User not found for that case.'));
+  }
+  if (typeof createConfirmation !== 'function') return false;
+
+  return createConfirmation(
+    interaction,
+    warning.userId,
+    'remove-warning',
+    { caseId },
+    `Remove warning linked to **Case #${caseId}**?`
+  );
 }
 
 module.exports = {
@@ -247,7 +242,9 @@ module.exports = {
   getWarningContext,
   runWarningEscalation,
   buildWarnModal,
+  buildRemoveWarningModal,
   submitWarning,
+  submitRemoveWarningRequest,
   getWarningById,
   getWarningsForUser,
   getWarningCountForUser,
