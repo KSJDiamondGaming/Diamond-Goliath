@@ -1,5 +1,6 @@
 const { PermissionFlagsBits } = require('discord.js');
 const security = require('../../../core/security/securityCore');
+const { safeReply, ephemeralError } = require('../../../core/ui/interactionResponse');
 
 const STAFF_LEVELS = {
   NONE: 'none',
@@ -297,6 +298,93 @@ function checkHierarchyForBulk(
   return null;
 }
 
+async function fetchTarget(guild, userId) {
+  const id = String(userId || '').trim();
+  if (!guild || !/^\d{16,20}$/.test(id)) return null;
+  return guild.members.fetch(id).catch(() => guild.members.cache.get(id) || null);
+}
+
+async function findMemberByQuery(guild, query) {
+  const raw = String(query || '').trim();
+  if (!guild || !raw) return null;
+
+  const mentionId = raw.match(/^<@!?(\d{16,20})>$/)?.[1];
+  const directId = mentionId || (/^\d{16,20}$/.test(raw) ? raw : null);
+  if (directId) {
+    const direct = await fetchTarget(guild, directId);
+    if (direct) return direct;
+  }
+
+  const needle = raw.toLowerCase();
+  const valuesFor = (member) => [
+    member.user?.username,
+    member.user?.tag,
+    member.displayName,
+    member.nickname,
+  ].map((value) => String(value || '').trim().toLowerCase());
+
+  const exact = guild.members.cache.find((member) => valuesFor(member).includes(needle));
+  if (exact) return exact;
+
+  const partial = guild.members.cache.find((member) =>
+    valuesFor(member).some((value) => value && value.includes(needle))
+  );
+  if (partial) return partial;
+
+  try {
+    const results = await guild.members.search({ query: raw, limit: 10 });
+    return results.find((member) => valuesFor(member).includes(needle)) || results.first() || null;
+  } catch {
+    return null;
+  }
+}
+
+function ensurePanelAccess(interaction) {
+  if (hasModPermission(interaction?.member)) return null;
+  return safeReply(interaction, ephemeralError('No permission to use moderation panel.'));
+}
+
+async function ensureActionAccess(interaction, action, deniedMessage = null) {
+  if (canUseModAction(interaction?.member, interaction?.guild, action)) return true;
+  await safeReply(interaction, {
+    content: deniedMessage || getModActionDeniedMessage(action),
+    flags: 64,
+  });
+  return false;
+}
+
+async function requireSelectedTarget(interaction, targetId) {
+  if (!targetId || targetId === 'none') {
+    await safeReply(interaction, ephemeralError('No user selected.'));
+    return null;
+  }
+
+  const target = await fetchTarget(interaction?.guild, targetId);
+  if (!target) {
+    await safeReply(interaction, ephemeralError('Could not find that user.'));
+    return null;
+  }
+
+  return target;
+}
+
+async function requireModeratableTarget(interaction, targetId, action) {
+  const target = await requireSelectedTarget(interaction, targetId);
+  if (!target) return null;
+
+  const hierarchyError = checkHierarchy(interaction, target);
+  if (hierarchyError) {
+    await safeReply(
+      interaction,
+      ephemeralError(String(hierarchyError).replace(/^❌\s*/, ''))
+    );
+    return null;
+  }
+
+  const allowed = await ensureActionAccess(interaction, action);
+  return allowed ? target : null;
+}
+
 module.exports = {
   STAFF_LEVELS,
   STAFF_LEVEL_RANKS,
@@ -321,4 +409,10 @@ module.exports = {
   canActOnTarget,
   canBotActOnTarget,
   getHierarchySummary,
+  fetchTarget,
+  findMemberByQuery,
+  ensurePanelAccess,
+  ensureActionAccess,
+  requireSelectedTarget,
+  requireModeratableTarget,
 };
