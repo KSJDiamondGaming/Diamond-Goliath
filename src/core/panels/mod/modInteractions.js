@@ -1,12 +1,10 @@
 'use strict';
 
 const Discord = require('discord.js');
-const { ActionRowBuilder, UserSelectMenuBuilder } = Discord;
 
 const { safeReply, ephemeralError } = require('../../../core/ui/interactionResponse');
 const {
   fetchTarget,
-  findMemberByQuery,
   ensurePanelAccess,
   ensureActionAccess,
   requireModeratableTarget,
@@ -31,13 +29,13 @@ const {
   handleCaseAction,
   submitCaseModal,
 } = require('./cases');
-
-const DEFAULT_DASHBOARD_CONTEXT = Object.freeze({
-  view: 'cases',
-  actionFilter: 'all',
-  statusFilter: 'all',
-  page: 0,
-});
+const {
+  refreshCasesDashboard,
+  handleDashboardNavigation,
+  handleUserSelectMenu,
+  handleSelectUserButton,
+  handleSelectUserModal,
+} = require('./modPanel');
 
 const ACTION_MODALS = Object.freeze({
   warn: { permission: 'warn', build: buildWarnModal },
@@ -83,49 +81,17 @@ function getTargetIdFromCustomId(customId) {
   return String(customId || '').split(':')[1] || 'none';
 }
 
-function normalizeDashboardContext(context = {}) {
-  return {
-    view: context.view || 'overview',
-    actionFilter: context.actionFilter || 'all',
-    statusFilter: context.statusFilter || 'all',
-    page: Number(context.page) || 0,
-  };
-}
-
 function parseConfirmActionContext(customId) {
   const parts = String(customId || '').split(':');
   return {
     token: parts[1] || null,
-    context: normalizeDashboardContext({
+    context: {
       view: parts[2] || 'overview',
       actionFilter: parts[3] || 'all',
       statusFilter: parts[4] || 'all',
-      page: parts[5],
-    }),
+      page: Number(parts[5]) || 0,
+    },
   };
-}
-
-async function renderDashboard(interaction, targetId, view = 'overview', context = {}) {
-  const target = targetId && targetId !== 'none'
-    ? await fetchTarget(interaction.guild, targetId)
-    : null;
-
-  if (targetId && targetId !== 'none' && !target) {
-    return safeReply(interaction, ephemeralError('Could not find the selected user.'));
-  }
-
-  const { buildDashboardPayload } = require('./modPanel');
-  await interaction.update(
-    await buildDashboardPayload(Discord, interaction, target, view, context)
-  );
-  return true;
-}
-
-async function refreshCasesDashboard(interaction, target) {
-  if (!target) return false;
-  const { refreshDashboard } = require('./modPanel');
-  await refreshDashboard(Discord, interaction, target, DEFAULT_DASHBOARD_CONTEXT);
-  return true;
 }
 
 async function showActionModal(interaction, action, targetId) {
@@ -160,14 +126,6 @@ async function requestRemoveTimeout(interaction, targetId) {
   );
 }
 
-async function handleUserSelectMenu(interaction) {
-  if (interaction.customId !== 'mod_user_select') return false;
-
-  const target = await fetchTarget(interaction.guild, interaction.values[0]);
-  if (!target) return safeReply(interaction, ephemeralError('Could not find that user.'));
-  return renderDashboard(interaction, target.id, 'overview');
-}
-
 async function handleActionSelectMenu(interaction) {
   if (!interaction.customId.startsWith('mod_action_select:')) return false;
 
@@ -181,27 +139,6 @@ async function handleActionSelectMenu(interaction) {
   return showActionModal(interaction, selected, targetId);
 }
 
-async function handleDashboardNavigation(interaction) {
-  const id = String(interaction.customId || '');
-  if (id === 'mod:overview') return renderDashboard(interaction, 'none', 'overview');
-
-  if (id.startsWith('mod_dashboard:') || id.startsWith('mod_refresh:')) {
-    const [, targetId = 'none', view = 'overview'] = id.split(':');
-    return renderDashboard(interaction, targetId, view);
-  }
-
-  if (id.startsWith('mod_filter_cases:') || id.startsWith('mod_case_page:')) {
-    const [, targetId = 'none', actionFilter = 'all', statusFilter = 'all', page = '0'] = id.split(':');
-    return renderDashboard(interaction, targetId, 'cases', {
-      actionFilter,
-      statusFilter,
-      page,
-    });
-  }
-
-  return false;
-}
-
 async function handleCancelButton(interaction) {
   if (interaction.customId !== 'mod_cancel_action') return false;
 
@@ -211,24 +148,6 @@ async function handleCancelButton(interaction) {
   }
 
   return safeReply(interaction, { content: '❌ Cancelled.', flags: 64 });
-}
-
-async function handleSelectUserButton(interaction) {
-  if (interaction.customId !== 'mod_select_user') return false;
-
-  const row = new ActionRowBuilder().addComponents(
-    new UserSelectMenuBuilder()
-      .setCustomId('mod_user_select')
-      .setPlaceholder('Select a user to moderate')
-      .setMinValues(1)
-      .setMaxValues(1)
-  );
-
-  return safeReply(interaction, {
-    content: '👤 Select a user:',
-    components: [row],
-    flags: 64,
-  });
 }
 
 async function handleBulkButton(interaction) {
@@ -289,27 +208,6 @@ async function handleConfirmButton(interaction) {
   if (!interaction.customId.startsWith('mod_confirm_action:')) return false;
   const { token, context } = parseConfirmActionContext(interaction.customId);
   return executePendingAction(Discord, interaction, token, context);
-}
-
-async function handleSelectUserModal(interaction) {
-  if (interaction.customId !== 'mod_select_user_modal') return false;
-
-  const target = await findMemberByQuery(
-    interaction.guild,
-    interaction.fields.getTextInputValue('target_user_query')
-  );
-  if (!target) {
-    return safeReply(
-      interaction,
-      ephemeralError('User not found by that ID, username, tag, or display name.')
-    );
-  }
-
-  const { buildDashboardPayload } = require('./modPanel');
-  return safeReply(interaction, {
-    ...(await buildDashboardPayload(Discord, interaction, target, 'overview')),
-    flags: 64,
-  });
 }
 
 async function handleBulkModal(interaction) {
