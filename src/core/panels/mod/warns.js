@@ -8,8 +8,6 @@ const {
 } = require('discord.js');
 const {
   addWarning,
-  getWarningById,
-  getWarningsForUser,
   getWarningCountForUser,
   getWarningByCaseId,
   deleteWarningByCaseId,
@@ -271,22 +269,14 @@ async function submitRemoveWarningRequest(interaction, targetId, createConfirmat
 }
 
 module.exports = {
-  parseWarningExpiry,
   syncExpiredWarningsToCases,
   createWarning,
   removeWarningByCaseId,
   getWarningContext,
   runWarningEscalation,
-  buildWarnModal,
-  buildRemoveWarningModal,
   showWarningModal,
   showRemoveWarningModal,
-  submitWarning,
   submitWarningModal,
   submitRemoveWarningRequest,
-  getWarningById,
-  getWarningsForUser,
   getWarningCountForUser,
-  getWarningByCaseId,
-  purgeExpiredWarnings,
 };
