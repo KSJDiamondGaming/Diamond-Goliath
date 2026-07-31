@@ -4,6 +4,7 @@ const { SlashCommandBuilder } = require('discord.js');
 
 const translationStore = require('../../modules/utilityStudio/translation/translationStore');
 const translation = require('../../modules/utilityStudio/translation/translation');
+const { isModuleEnabled } = require('../../core/guild/guildManager');
 
 async function reply(interaction, payload) {
   const data = { ...payload, flags: 64 };
@@ -47,7 +48,7 @@ module.exports = {
     const guildId = interaction.guildId;
     const config = translationStore.getTranslationSection(guildId);
 
-    if (config.enabled !== true) {
+    if (!isModuleEnabled(guildId, 'translation')) {
       await reply(interaction, {
         content: '⚠️ Translation is not enabled in this server yet. Ask an admin to run `/translation enable`.',
       });
