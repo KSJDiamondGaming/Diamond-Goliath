@@ -5,13 +5,13 @@ const { ActionRowBuilder, UserSelectMenuBuilder } = Discord;
 
 const { safeReply, ephemeralError } = require('../../../core/ui/interactionResponse');
 const {
-  hasModPermission,
-  canUseModAction,
-  getModActionDeniedMessage,
-  checkHierarchy,
+  fetchTarget,
+  findMemberByQuery,
+  ensurePanelAccess,
+  ensureActionAccess,
+  requireModeratableTarget,
 } = require('./permissions');
 const {
-  fetchTarget,
   buildPunishmentModal,
   buildBulkModal,
   submitPunishmentRequest,
@@ -79,11 +79,6 @@ function isModCustomId(customId) {
   return id.startsWith('mod_') || id.startsWith('mod:');
 }
 
-function ensurePanelAccess(interaction) {
-  if (hasModPermission(interaction.member)) return null;
-  return safeReply(interaction, ephemeralError('No permission to use moderation panel.'));
-}
-
 function getTargetIdFromCustomId(customId) {
   return String(customId || '').split(':')[1] || 'none';
 }
@@ -110,45 +105,6 @@ function parseConfirmActionContext(customId) {
   };
 }
 
-async function requireSelectedTarget(interaction, targetId) {
-  if (!targetId || targetId === 'none') {
-    await safeReply(interaction, ephemeralError('No user selected.'));
-    return null;
-  }
-
-  const target = await fetchTarget(interaction.guild, targetId);
-  if (!target) {
-    await safeReply(interaction, ephemeralError('Could not find that user.'));
-    return null;
-  }
-
-  return target;
-}
-
-async function requireModeratableTarget(interaction, targetId, permission) {
-  const target = await requireSelectedTarget(interaction, targetId);
-  if (!target) return null;
-
-  const hierarchyError = checkHierarchy(interaction, target);
-  if (hierarchyError) {
-    await safeReply(
-      interaction,
-      ephemeralError(String(hierarchyError).replace(/^❌\s*/, ''))
-    );
-    return null;
-  }
-
-  if (!canUseModAction(interaction.member, interaction.guild, permission)) {
-    await safeReply(interaction, {
-      content: getModActionDeniedMessage(permission),
-      flags: 64,
-    });
-    return null;
-  }
-
-  return target;
-}
-
 async function renderDashboard(interaction, targetId, view = 'overview', context = {}) {
   const target = targetId && targetId !== 'none'
     ? await fetchTarget(interaction.guild, targetId)
@@ -170,41 +126,6 @@ async function refreshCasesDashboard(interaction, target) {
   const { refreshDashboard } = require('./modPanel');
   await refreshDashboard(Discord, interaction, target, DEFAULT_DASHBOARD_CONTEXT);
   return true;
-}
-
-async function findMemberByQuery(guild, query) {
-  const raw = String(query || '').trim();
-  if (!guild || !raw) return null;
-
-  const mentionId = raw.match(/^<@!?(\d{16,20})>$/)?.[1];
-  const directId = mentionId || (/^\d{16,20}$/.test(raw) ? raw : null);
-  if (directId) {
-    const direct = await fetchTarget(guild, directId);
-    if (direct) return direct;
-  }
-
-  const needle = raw.toLowerCase();
-  const valuesFor = (member) => [
-    member.user?.username,
-    member.user?.tag,
-    member.displayName,
-    member.nickname,
-  ].map((value) => String(value || '').trim().toLowerCase());
-
-  const exact = guild.members.cache.find((member) => valuesFor(member).includes(needle));
-  if (exact) return exact;
-
-  const partial = guild.members.cache.find((member) =>
-    valuesFor(member).some((value) => value && value.includes(needle))
-  );
-  if (partial) return partial;
-
-  try {
-    const results = await guild.members.search({ query: raw, limit: 10 });
-    return results.find((member) => valuesFor(member).includes(needle)) || results.first() || null;
-  } catch {
-    return null;
-  }
 }
 
 async function showActionModal(interaction, action, targetId) {
@@ -314,12 +235,12 @@ async function handleBulkButton(interaction) {
   const action = BULK_ACTIONS[interaction.customId];
   if (!action) return false;
 
-  if (!canUseModAction(interaction.member, interaction.guild, `bulk_${action}`)) {
-    return safeReply(
-      interaction,
-      ephemeralError(`No permission to use bulk ${action}.`)
-    );
-  }
+  const allowed = await ensureActionAccess(
+    interaction,
+    `bulk_${action}`,
+    `❌ No permission to use bulk ${action}.`
+  );
+  if (!allowed) return true;
 
   await interaction.showModal(buildBulkModal(action));
   return true;
@@ -343,9 +264,12 @@ async function handleCaseToolButton(interaction) {
   const targetId = getTargetIdFromCustomId(id);
 
   if (id.startsWith('mod_remove_warning:')) {
-    if (!canUseModAction(interaction.member, interaction.guild, 'remove_warning')) {
-      return safeReply(interaction, ephemeralError('No permission to remove warnings.'));
-    }
+    const allowed = await ensureActionAccess(
+      interaction,
+      'remove_warning',
+      '❌ No permission to remove warnings.'
+    );
+    if (!allowed) return true;
     if (targetId === 'none') {
       return safeReply(interaction, ephemeralError('No user selected.'));
     }
@@ -392,12 +316,12 @@ async function handleBulkModal(interaction) {
   const actionType = BULK_SUBMITS[interaction.customId];
   if (!actionType) return false;
 
-  if (!canUseModAction(interaction.member, interaction.guild, `bulk_${actionType}`)) {
-    return safeReply(
-      interaction,
-      ephemeralError(`No permission to use bulk ${actionType}.`)
-    );
-  }
+  const allowed = await ensureActionAccess(
+    interaction,
+    `bulk_${actionType}`,
+    `❌ No permission to use bulk ${actionType}.`
+  );
+  if (!allowed) return true;
 
   return submitBulkModal(interaction, actionType);
 }
