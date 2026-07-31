@@ -1,3 +1,11 @@
+'use strict';
+
+const {
+  ActionRowBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+} = require('discord.js');
 const {
   addWarning,
   getWarningById,
@@ -7,7 +15,11 @@ const {
   deleteWarningByCaseId,
   purgeExpiredWarnings,
 } = require('../../../core/logging/warnings/warningStore');
-const { updateCaseStatus } = require('../../../core/logging/cases/caseStore');
+const {
+  createCase,
+  updateCaseStatus,
+} = require('../../../core/logging/cases/caseStore');
+const { sendModLog } = require('../../../core/logging/modlogs/moderationActionLog');
 const {
   handleEscalation,
   getRepeatReasonInfo,
@@ -35,13 +47,42 @@ function parseWarningExpiry(value) {
   return new Date(now.getTime() + (amount * multiplier)).toISOString();
 }
 
+function isValidWarningExpiry(value) {
+  const raw = String(value || 'never').trim().toLowerCase();
+  return raw === 'never' || raw === 'none' || Boolean(parseWarningExpiry(raw));
+}
+
+function buildWarnModal(targetId) {
+  return new ModalBuilder()
+    .setCustomId(`mod_submit_warn:${targetId}`)
+    .setTitle('Warn User')
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('warn_expiry')
+          .setLabel('Warn expiry (7d, 2w, 1m, or never)')
+          .setStyle(TextInputStyle.Short)
+          .setPlaceholder('never')
+          .setRequired(false)
+          .setMaxLength(10)
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('reason')
+          .setLabel('Reason')
+          .setStyle(TextInputStyle.Paragraph)
+          .setPlaceholder('Enter the moderation reason')
+          .setRequired(true)
+          .setMaxLength(500)
+      )
+    );
+}
+
 async function syncExpiredWarningsToCases(guildId) {
   const expiredWarnings = purgeExpiredWarnings(guildId) || [];
 
   for (const warning of expiredWarnings) {
-    if (warning?.caseId) {
-      updateCaseStatus(guildId, warning.caseId, 'expired');
-    }
+    if (warning?.caseId) updateCaseStatus(guildId, warning.caseId, 'expired');
   }
 
   return expiredWarnings;
@@ -55,14 +96,7 @@ function createWarning({
   caseId,
   expiresAt = null,
 }) {
-  return addWarning({
-    guildId,
-    userId,
-    moderatorId,
-    reason,
-    caseId,
-    expiresAt,
-  });
+  return addWarning({ guildId, userId, moderatorId, reason, caseId, expiresAt });
 }
 
 function removeWarningByCaseId(guildId, caseId) {
@@ -100,13 +134,94 @@ async function runWarningEscalation({ guild, member, moderator, reason }) {
   }
 }
 
+async function applyWarning(interaction, target, { reason, expiryRaw = 'never' } = {}) {
+  const cleanReason = String(reason || '').trim();
+  const rawExpiry = String(expiryRaw || 'never').trim().toLowerCase();
+
+  if (!cleanReason) return { ok: false, error: 'A warning reason is required.' };
+  if (!isValidWarningExpiry(rawExpiry)) {
+    return { ok: false, error: 'Invalid warning expiry. Use `7d`, `2w`, `1m`, or `never`.' };
+  }
+
+  const expiresAt = parseWarningExpiry(rawExpiry);
+  const modCase = createCase({
+    guildId: interaction.guild.id,
+    userId: target.id,
+    moderatorId: interaction.user.id,
+    action: 'warn',
+    reason: cleanReason,
+    metadata: { expiresAt },
+  });
+
+  createWarning({
+    guildId: interaction.guild.id,
+    userId: target.id,
+    moderatorId: interaction.user.id,
+    reason: cleanReason,
+    caseId: modCase.caseId,
+    expiresAt,
+  });
+
+  const warningContext = await getWarningContext({
+    guildId: interaction.guild.id,
+    userId: target.id,
+    reason: cleanReason,
+  });
+
+  const escalatedCase = await runWarningEscalation({
+    guild: interaction.guild,
+    member: target,
+    moderator: interaction.user,
+    reason: cleanReason,
+  });
+
+  await sendModLog({
+    guild: interaction.guild,
+    target,
+    moderator: interaction.user,
+    action: 'Warn',
+    reason: cleanReason,
+    caseId: modCase.caseId,
+    metadata: {
+      expiresAt,
+      repeatPattern: Boolean(warningContext.repeatInfo.isRepeatPattern),
+      repeatCount: warningContext.repeatInfo.repeatCount || 0,
+      escalatedAction: escalatedCase?.action || null,
+      escalatedCaseId: escalatedCase?.caseId || null,
+    },
+  });
+
+  const extraLines = [];
+  if (warningContext.repeatInfo.isRepeatPattern) {
+    extraLines.push(`🔁 Repeat reason detected (${warningContext.repeatInfo.repeatCount} matching warnings)`);
+  }
+  if (escalatedCase) {
+    extraLines.push(`⚡ Auto escalation triggered: **${escalatedCase.action}** (Case #${escalatedCase.caseId})`);
+  }
+
+  return {
+    ok: true,
+    modCase,
+    warningContext,
+    escalatedCase,
+    expiresAt,
+    content: [
+      `⚠️ Warned **${target.user.tag}** • Case #${modCase.caseId}`,
+      ...extraLines,
+    ].join('\n'),
+  };
+}
+
 module.exports = {
   parseWarningExpiry,
+  isValidWarningExpiry,
+  buildWarnModal,
   syncExpiredWarningsToCases,
   createWarning,
   removeWarningByCaseId,
   getWarningContext,
   runWarningEscalation,
+  applyWarning,
   getWarningById,
   getWarningsForUser,
   getWarningCountForUser,
