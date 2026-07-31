@@ -324,6 +324,14 @@ function captureConfig(section, status = 'previous') {
   });
 }
 
+function configFingerprint(section = {}) {
+  return JSON.stringify({
+    settings: normalizeSettings(section.settings),
+    messages: normalizeMessages(section.messages),
+    panelTemplate: normalizePanelTemplate(section.panelTemplate),
+  });
+}
+
 function normalizeVerificationSection(section = {}) {
   const base = defaultVerificationSection();
   const source = section && typeof section === 'object' ? section : {};
@@ -389,7 +397,20 @@ function updateVerificationSection(guildId, updater, meta = {}) {
     MODULE,
     (current) => {
       const normalized = normalizeVerificationSection(current);
-      const next = typeof updater === 'function' ? updater(clone(normalized)) : updater;
+      const proposed = typeof updater === 'function' ? updater(clone(normalized)) : updater;
+      const next = normalizeVerificationSection(proposed && typeof proposed === 'object' ? proposed : normalized);
+      const configChanged = configFingerprint(normalized) !== configFingerprint(next);
+
+      if (configChanged && meta.skipConfigRevision !== true) {
+        const previous = captureConfig(normalized, 'last_known_good');
+        const history = [previous, ...(normalized.configHistory || [])]
+          .filter((entry, index, all) => all.findIndex((candidate) => candidate.revision === entry.revision) === index)
+          .slice(0, CONFIG_HISTORY_LIMIT);
+        next.configRevision = normalized.configRevision + 1;
+        next.lastKnownGoodRevision = normalized.lastKnownGoodRevision || normalized.configRevision;
+        next.configHistory = history;
+      }
+
       return normalizeVerificationSection(next);
     },
     defaultVerificationSection(),
@@ -398,24 +419,7 @@ function updateVerificationSection(guildId, updater, meta = {}) {
 }
 
 function updateConfiguration(guildId, updater, meta = {}) {
-  return updateVerificationSection(guildId, (section) => {
-    const before = captureConfig(section, 'last_known_good');
-    const proposed = typeof updater === 'function' ? updater(clone(section)) : updater;
-    const next = normalizeVerificationSection(proposed && typeof proposed === 'object' ? proposed : section);
-    const nextRevision = cleanInteger(section.configRevision, 1, 1) + 1;
-    const history = [before, ...(section.configHistory || [])]
-      .filter((entry, index, all) => all.findIndex((candidate) => candidate.revision === entry.revision) === index)
-      .slice(0, CONFIG_HISTORY_LIMIT);
-
-    return {
-      ...next,
-      schemaVersion: SCHEMA_VERSION,
-      configRevision: nextRevision,
-      lastKnownGoodRevision: section.lastKnownGoodRevision || section.configRevision || 1,
-      configHistory: history,
-      updatedAt: now(),
-    };
-  }, { action: 'verification_config_update', ...meta });
+  return updateVerificationSection(guildId, updater, { action: 'verification_config_update', ...meta });
 }
 
 function markConfigKnownGood(guildId, meta = {}) {
@@ -427,7 +431,7 @@ function markConfigKnownGood(guildId, meta = {}) {
       status: entry.revision === section.configRevision ? 'last_known_good' : entry.status,
     })),
     updatedAt: now(),
-  }), { action: 'verification_config_known_good', ...meta });
+  }), { action: 'verification_config_known_good', skipConfigRevision: true, ...meta });
 }
 
 function rollbackToLastKnownGood(guildId, meta = {}) {
@@ -450,7 +454,7 @@ function rollbackToLastKnownGood(guildId, meta = {}) {
       configHistory: [currentSnapshot, ...(section.configHistory || [])].slice(0, CONFIG_HISTORY_LIMIT),
       updatedAt: now(),
     };
-  }, { action: 'verification_config_rollback', ...meta });
+  }, { action: 'verification_config_rollback', skipConfigRevision: true, ...meta });
 }
 
 function updateSettings(guildId, settings, meta = {}) {
@@ -497,7 +501,7 @@ function savePanel(guildId, panel, meta = {}) {
       panels: nextPanels,
       updatedAt: timestamp,
     };
-  }, meta).panels[normalized.panelId];
+  }, { skipConfigRevision: true, ...meta }).panels[normalized.panelId];
 }
 
 function getPanel(guildId, panelId) {
@@ -515,7 +519,7 @@ function deletePanel(guildId, panelId, meta = {}) {
       panels,
       updatedAt: now(),
     };
-  }, meta);
+  }, { skipConfigRevision: true, ...meta });
 }
 
 function getLatestPanel(guildId) {
@@ -557,7 +561,7 @@ function recordAttempt(guildId, userId, { failed = false } = {}, meta = {}) {
       },
       updatedAt: timestamp,
     };
-  }, meta).attempts[userId];
+  }, { skipConfigRevision: true, ...meta }).attempts[userId];
 }
 
 function clearAttempts(guildId, userId, meta = {}) {
@@ -565,7 +569,7 @@ function clearAttempts(guildId, userId, meta = {}) {
     const attempts = { ...(section.attempts || {}) };
     delete attempts[userId];
     return { ...section, attempts, updatedAt: now() };
-  }, meta);
+  }, { skipConfigRevision: true, ...meta });
 }
 
 function incrementAnalytics(guildId, increments = {}, meta = {}) {
@@ -581,8 +585,13 @@ function incrementAnalytics(guildId, increments = {}, meta = {}) {
     if (Number(increments.failed || 0) > 0) next.lastFailedAt = timestamp;
     if (Number(increments.screeningCompleted || 0) > 0) next.lastScreeningCompletedAt = timestamp;
     if (Number(increments.pendingRolesAssigned || 0) > 0) next.lastPendingRoleAssignedAt = timestamp;
-    return { ...section, analytics: next, updatedAt: timestamp };
-  }, meta).analytics;
+    return {
+      ...section,
+      analytics: next,
+      lastKnownGoodRevision: Number(increments.verified || 0) > 0 ? section.configRevision : section.lastKnownGoodRevision,
+      updatedAt: timestamp,
+    };
+  }, { skipConfigRevision: true, ...meta }).analytics;
 }
 
 module.exports = {
