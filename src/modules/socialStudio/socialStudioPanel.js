@@ -224,7 +224,7 @@ function buildSectionPanel(i, name) {
   }
   if (name === 'liveMessages') {
     const settings = config.settings || {};
-    const d = ['**Live Message Behaviour**', `Edit LIVE messages: ${settings.editLiveNotifications === true ? 'On' : 'Off'}`, `Delete ended messages: ${settings.deleteEndedNotifications === true ? 'On' : 'Off'}`, `Viewer count: ${settings.includeViewerCount === false ? 'Hidden' : 'Shown'}`, `Stream duration: ${settings.includeLiveDuration === false ? 'Hidden' : 'Shown'}`].join('\n');
+    const d = ['**Live Message Behaviour**', `✏️ **Edit:** ${settings.editLiveNotifications === true ? 'On' : 'Off'} - update the same LIVE post.`, `🗑️ **Cleanup:** ${settings.deleteEndedNotifications === true ? 'On' : 'Off'} - remove ended LIVE posts.`, `👥 **Viewers:** ${settings.includeViewerCount === false ? 'Off' : 'On'} - show viewer count.`, `⏱️ **Duration:** ${settings.includeLiveDuration === false ? 'Off' : 'On'} - show time live.`].join('\n');
     return { embeds: [embed(config, '🔴 Live Messages', d, who(i))], components: [row(btn(`${P}automation:editlive`, settings.editLiveNotifications === true ? '✏️ Edit: On' : '✏️ Edit: Off'), btn(`${P}automation:deleteended`, settings.deleteEndedNotifications === true ? '🗑️ Cleanup: On' : '🗑️ Cleanup: Off'), btn(`${P}automation:viewers`, settings.includeViewerCount === false ? '👥 Viewers: Off' : '👥 Viewers: On'), btn(`${P}automation:duration`, settings.includeLiveDuration === false ? '⏱️ Duration: Off' : '⏱️ Duration: On')), row(btn(`${P}settings`, '⬅️ Back'), btn(`${P}main`, '🏠 Social Studio'))] };
   }
   if (name === 'diagnostics') {
