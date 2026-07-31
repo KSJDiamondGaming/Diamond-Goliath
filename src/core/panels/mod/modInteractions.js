@@ -37,6 +37,8 @@ const {
   handleSelectUserModal,
 } = require('./modPanel');
 
+const PUNISHMENT_ACTIONS = new Set(['timeout', 'kick', 'ban']);
+
 const OPEN_ACTIONS = Object.freeze({
   mod_open_warn: 'warn',
   mod_open_timeout: 'timeout',
@@ -58,12 +60,6 @@ const BULK_SUBMITS = Object.freeze({
   mod_submit_bulk_ban: 'ban',
 });
 
-const PUNISHMENT_SUBMITS = Object.freeze({
-  mod_submit_ban: 'ban',
-  mod_submit_kick: 'kick',
-  mod_submit_timeout: 'timeout',
-});
-
 function isModCustomId(customId) {
   const id = String(customId || '');
   return id.startsWith('mod_') || id.startsWith('mod:');
@@ -71,6 +67,13 @@ function isModCustomId(customId) {
 
 function getTargetIdFromCustomId(customId) {
   return String(customId || '').split(':')[1] || 'none';
+}
+
+function getPunishmentSubmitAction(customId) {
+  const id = String(customId || '').split(':')[0];
+  if (!id.startsWith('mod_submit_')) return null;
+  const action = id.replace('mod_submit_', '');
+  return PUNISHMENT_ACTIONS.has(action) ? action : null;
 }
 
 function parseConfirmActionContext(customId) {
@@ -87,18 +90,17 @@ function parseConfirmActionContext(customId) {
 }
 
 async function showPunishmentModal(interaction, action, targetId) {
+  if (!PUNISHMENT_ACTIONS.has(action)) return false;
+
   const target = await requireModeratableTarget(interaction, targetId, action);
   if (!target) return true;
+
   await interaction.showModal(buildPunishmentModal(action, target.id));
   return true;
 }
 
 async function requestRemoveTimeout(interaction, targetId) {
-  const target = await requireModeratableTarget(
-    interaction,
-    targetId,
-    'remove_timeout'
-  );
+  const target = await requireModeratableTarget(interaction, targetId, 'remove_timeout');
   if (!target) return true;
 
   return createConfirmation(
@@ -110,20 +112,21 @@ async function requestRemoveTimeout(interaction, targetId) {
   );
 }
 
+async function routeActionRequest(interaction, action, targetId) {
+  if (action === 'warn') return showWarningModal(interaction, targetId);
+  if (action === 'remove-warning') return showRemoveWarningModal(interaction, targetId);
+  if (action === 'remove-timeout') return requestRemoveTimeout(interaction, targetId);
+  if (PUNISHMENT_ACTIONS.has(action)) return showPunishmentModal(interaction, action, targetId);
+  return false;
+}
+
 async function handleActionSelectMenu(interaction) {
   if (!interaction.customId.startsWith('mod_action_select:')) return false;
-
-  const targetId = getTargetIdFromCustomId(interaction.customId);
-  const selected = interaction.values[0];
-
-  if (selected === 'warn') return showWarningModal(interaction, targetId);
-  if (selected === 'remove-warning') return showRemoveWarningModal(interaction, targetId);
-  if (selected === 'remove-timeout') return requestRemoveTimeout(interaction, targetId);
-  if (PUNISHMENT_SUBMITS[`mod_submit_${selected}`]) {
-    return showPunishmentModal(interaction, selected, targetId);
-  }
-
-  return false;
+  return routeActionRequest(
+    interaction,
+    interaction.values[0],
+    getTargetIdFromCustomId(interaction.customId)
+  );
 }
 
 async function handleCancelButton(interaction) {
@@ -158,8 +161,8 @@ async function handleOpenActionButton(interaction) {
   const [prefix, targetId] = interaction.customId.split(':');
   const action = OPEN_ACTIONS[prefix];
   if (!action) return false;
-  if (action === 'warn') return showWarningModal(interaction, targetId);
-  return showPunishmentModal(interaction, action, targetId);
+
+  return routeActionRequest(interaction, action, targetId);
 }
 
 async function handleCaseToolButton(interaction) {
@@ -211,9 +214,7 @@ async function handleRemoveWarningModal(interaction) {
 }
 
 async function handlePunishmentModal(interaction) {
-  const action = PUNISHMENT_SUBMITS[
-    String(interaction.customId || '').split(':')[0]
-  ];
+  const action = getPunishmentSubmitAction(interaction.customId);
   if (!action) return false;
 
   const target = await requireModeratableTarget(
