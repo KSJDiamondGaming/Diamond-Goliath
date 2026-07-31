@@ -5,7 +5,6 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  EmbedBuilder,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
@@ -38,16 +37,17 @@ const {
   runWarningEscalation,
 } = require('./warns');
 const {
-  getStatusLabel,
   buildCaseDetailButtons,
-} = require('./cases');
-const {
-  createCase,
+  buildCaseIdModal,
+  buildEditCaseModal,
+  buildCaseNoteModal,
+  buildCaseDetailEmbed,
+  getCaseIdFromModal,
   getCaseById,
-  updateCaseReason,
-  updateCaseNote,
-  clearCaseNote,
-} = require('../../../core/logging/cases/caseStore');
+  editCaseReason,
+  setCaseNote,
+} = require('./cases');
+const { createCase } = require('../../../core/logging/cases/caseStore');
 const { sendModLog } = require('../../../core/logging/modlogs/moderationActionLog');
 
 const DEFAULT_DASHBOARD_CONTEXT = Object.freeze({
@@ -118,21 +118,6 @@ function buildConfirmRow(confirmId, cancelId = 'mod_cancel_action') {
         .setStyle(ButtonStyle.Secondary)
     ),
   ];
-}
-
-function buildCaseIdModal(customId, title, label = 'Case ID') {
-  return new ModalBuilder()
-    .setCustomId(customId)
-    .setTitle(title)
-    .addComponents(new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId('case_id')
-        .setLabel(label)
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('1')
-        .setRequired(true)
-        .setMaxLength(10)
-    ));
 }
 
 function buildReasonModal(customId, title, includeDays = false, includeDuration = false, includeWarnExpiry = false) {
@@ -236,48 +221,6 @@ function buildBulkModal(type) {
   ));
 
   return modal.addComponents(...rows);
-}
-
-function buildEditCaseModal(customId) {
-  return new ModalBuilder()
-    .setCustomId(customId)
-    .setTitle('Edit Case')
-    .addComponents(
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId('case_id')
-          .setLabel('Case ID')
-          .setStyle(TextInputStyle.Short)
-          .setPlaceholder('1')
-          .setRequired(true)
-          .setMaxLength(10)
-      ),
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId('reason')
-          .setLabel('New Reason')
-          .setStyle(TextInputStyle.Paragraph)
-          .setPlaceholder('Enter the updated moderation reason')
-          .setRequired(true)
-          .setMaxLength(500)
-      )
-    );
-}
-
-function buildCaseNoteModal(customId, existingNote = '') {
-  return new ModalBuilder()
-    .setCustomId(customId)
-    .setTitle(existingNote ? 'Edit Case Note' : 'Add Case Note')
-    .addComponents(new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId('note')
-        .setLabel('Staff Note')
-        .setStyle(TextInputStyle.Paragraph)
-        .setPlaceholder('Add internal staff-only context for this case')
-        .setRequired(false)
-        .setMaxLength(1000)
-        .setValue(String(existingNote || '').slice(0, 1000))
-    ));
 }
 
 async function findMemberByQuery(guild, query) {
@@ -544,37 +487,11 @@ async function handleConfirmButtons(interaction) {
   return executePendingAction(Discord, interaction, token, context);
 }
 
-function getCaseIdFromModal(interaction, field = 'case_id') {
-  const raw = interaction.fields.getTextInputValue(field).trim();
-  return /^\d+$/.test(raw) ? Number(raw) : null;
-}
-
 async function refreshCasesDashboard(interaction, target) {
   if (!target) return false;
   const { refreshDashboard } = require('./modPanel');
   await refreshDashboard(Discord, interaction, target, DEFAULT_DASHBOARD_CONTEXT);
   return true;
-}
-
-function buildCaseDetailEmbed(modCase) {
-  const embed = new EmbedBuilder()
-    .setColor('#5865F2')
-    .setTitle(`🧾 Case #${modCase.caseId}`)
-    .addFields(
-      { name: 'Action', value: modCase.action, inline: true },
-      { name: 'Status', value: getStatusLabel(modCase), inline: true },
-      { name: 'User ID', value: modCase.userId, inline: true },
-      { name: 'Moderator ID', value: modCase.moderatorId, inline: true },
-      { name: 'Reason', value: modCase.reason || 'No reason provided', inline: false },
-      { name: 'Created', value: `<t:${Math.floor(new Date(modCase.createdAt).getTime() / 1000)}:F>`, inline: true },
-      { name: 'Updated', value: modCase.updatedAt ? `<t:${Math.floor(new Date(modCase.updatedAt).getTime() / 1000)}:F>` : 'Never', inline: true }
-    )
-    .setTimestamp();
-
-  if (modCase.relatedCaseId) embed.addFields({ name: 'Related Case', value: `#${modCase.relatedCaseId}`, inline: true });
-  if (modCase.note && String(modCase.note).trim()) embed.addFields({ name: 'Staff Note', value: String(modCase.note).slice(0, 1024), inline: false });
-  if (modCase.metadata && Object.keys(modCase.metadata).length) embed.addFields({ name: 'Metadata', value: `\`\`\`json\n${JSON.stringify(modCase.metadata, null, 2).slice(0, 900)}\n\`\`\``, inline: false });
-  return embed;
 }
 
 async function handleSelectUserModal(interaction) {
@@ -639,7 +556,7 @@ async function handleEditCaseModal(interaction) {
   const existing = getCaseById(interaction.guild.id, caseId);
   if (!existing) return safeReply(interaction, ephemeralError('Case not found.'));
   if (targetId !== 'none' && existing.userId !== targetId) return safeReply(interaction, ephemeralError('That case does not belong to the currently selected user.'));
-  const updated = updateCaseReason(interaction.guild.id, caseId, reason);
+  const updated = editCaseReason(interaction.guild.id, caseId, reason);
   if (!updated) return safeReply(interaction, ephemeralError('Failed to update case.'));
   const target = await fetchTarget(interaction.guild, updated.userId);
   await safeReply(interaction, { content: `✏️ Updated reason for **Case #${updated.caseId}**.`, flags: 64 });
@@ -658,7 +575,7 @@ async function handleCaseNoteModal(interaction) {
   const existing = getCaseById(interaction.guild.id, caseId);
   if (!existing) return safeReply(interaction, ephemeralError('Case not found.'));
   const note = interaction.fields.getTextInputValue('note').trim();
-  const updated = note ? updateCaseNote(interaction.guild.id, caseId, note) : clearCaseNote(interaction.guild.id, caseId);
+  const updated = setCaseNote(interaction.guild.id, caseId, note);
   if (!updated) return safeReply(interaction, ephemeralError('Failed to update case note.'));
   const target = await fetchTarget(interaction.guild, updated.userId);
   await safeReply(interaction, { content: note ? `📝 Updated note for **Case #${updated.caseId}**.` : `🗑️ Cleared note for **Case #${updated.caseId}**.`, flags: 64 });
