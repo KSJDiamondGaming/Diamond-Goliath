@@ -4,7 +4,7 @@ const { AttachmentBuilder, MessageFlags } = require('discord.js');
 const forms = require('./forms');
 const panel = require('./formsPanel');
 const tracking = require('./formsTracking');
-const { isModuleEnabled } = require('../../../core/guild/guildManager');
+const { isModuleEnabled, setModuleEnabled } = require('../../../core/guild/guildManager');
 
 async function safeReply(interaction, content) {
   const payload = { content, flags: MessageFlags.Ephemeral };
@@ -61,8 +61,8 @@ async function handleAdminInteraction(interaction) {
       save((s) => ({ ...s, managerRoleIds: [...new Set(interaction.values || [])] }));
       return safeUpdate(interaction, panel.buildFormsAdminPanel(interaction.guild, displayName));
     }
-    if (customId.endsWith(':enable')) save((s) => ({ ...s, enabled: true }));
-    if (customId.endsWith(':disable')) save((s) => ({ ...s, enabled: false }));
+    if (customId.endsWith(':enable')) setModuleEnabled(interaction.guild.id, 'forms', true, { actorId: interaction.user.id, action: 'forms_admin_enable' });
+    if (customId.endsWith(':disable')) setModuleEnabled(interaction.guild.id, 'forms', false, { actorId: interaction.user.id, action: 'forms_admin_disable' });
     if (customId.endsWith(':toggleReview')) save((s) => ({ ...s, requireReview: !s.requireReview }));
     if (customId.endsWith(':toggleAnonymous')) save((s) => ({ ...s, anonymousSubmissions: !s.anonymousSubmissions }));
     if (customId.endsWith(':toggleStore')) save((s) => ({ ...s, storeResponses: !s.storeResponses }));
