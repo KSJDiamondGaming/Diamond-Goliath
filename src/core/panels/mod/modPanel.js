@@ -9,7 +9,6 @@ const {
   UserSelectMenuBuilder,
 } = Discord;
 
-const panelNav = require('../../../core/ui/panelNavigation');
 const { safeReply, ephemeralError } = require('../../../core/ui/interactionResponse');
 const {
   COLORS,
@@ -61,20 +60,6 @@ function canOpenModPanel(interaction) {
 
 function noAccessPayload() {
   return { content: '❌ You do not have permission to use the moderation panel.', flags: 64 };
-}
-
-function createModState(view = DEFAULT_VIEW) {
-  return panelNav.createState(`mod:${view}`);
-}
-
-function pushModView(navState, view = DEFAULT_VIEW) {
-  return panelNav.push(navState || panelNav.createState('mod:overview'), `mod:${view}`);
-}
-
-function getViewFromState(navState) {
-  const current = panelNav.current(navState || panelNav.createState('mod:overview'));
-  if (!current || !current.startsWith('mod:')) return DEFAULT_VIEW;
-  return current.replace('mod:', '') || DEFAULT_VIEW;
 }
 
 function normalizeDashboardContext(context = {}) {
@@ -436,62 +421,18 @@ async function openModPanel(interaction, options = {}) {
     : interaction.reply(finalPayload);
 }
 
-async function handleInteraction(interaction, navState = null) {
+async function handleInteraction(interaction) {
   const { handleModInteraction } = require('./modInteractions');
-  return handleModInteraction(interaction, navState);
+  return handleModInteraction(interaction);
 }
-
-function buildModPanel(guild, memberDisplayName = 'Unknown User', navState = null) {
-  return {
-    embeds: [new Discord.EmbedBuilder()
-      .setColor('#5865F2')
-      .setTitle('🔐 Mod Panel')
-      .setDescription('Use `/mod` to open the full moderation dashboard.')
-      .setFooter({ text: `Requested by ${memberDisplayName}` })
-      .setTimestamp()],
-    components: [new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('mod:overview')
-        .setLabel('🔐 Open Mod Dashboard')
-        .setStyle(ButtonStyle.Primary),
-      new ButtonBuilder()
-        .setCustomId(panelNav.buildCustomId(navState || panelNav.createState('admin:home'), 'back'))
-        .setLabel('⬅️ Back')
-        .setStyle(ButtonStyle.Secondary)
-    )],
-  };
-}
-
-const handleModPanelInteraction = handleInteraction;
-const handleModPanelModal = handleInteraction;
-const handleModButton = handleInteraction;
-const handleModModal = handleInteraction;
 
 module.exports = {
-  ALLOWED_VIEWS,
-  DEFAULT_VIEW,
-  CASES_PER_PAGE,
   openModPanel,
-  buildDashboardPayload,
-  renderDashboard,
+  handleInteraction,
   refreshDashboard,
   refreshCasesDashboard,
   handleDashboardNavigation,
   handleUserSelectMenu,
   handleSelectUserButton,
   handleSelectUserModal,
-  buildUserSelectRow,
-  buildActionsRows,
-  buildToolsRows,
-  getCasesPageData,
-  normalizeDashboardContext,
-  handleInteraction,
-  buildModPanel,
-  handleModPanelInteraction,
-  handleModPanelModal,
-  handleModButton,
-  handleModModal,
-  createModState,
-  pushModView,
-  getViewFromState,
 };
