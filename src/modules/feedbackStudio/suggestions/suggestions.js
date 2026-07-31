@@ -1,7 +1,11 @@
 'use strict';
 
 const crypto = require('crypto');
-const guildManager = require('../../../core/guild/guildManager');
+const {
+  getModuleSection,
+  saveModuleSection,
+  updateModuleSection,
+} = require('../../../core/guild/moduleSectionManager');
 
 const MODULE_KEY = 'suggestions';
 
@@ -16,7 +20,6 @@ function cleanIdArray(value) { return Array.isArray(value) ? [...new Set(value.m
 
 function defaultSuggestionsSection() {
   return {
-    enabled: true,
     submitChannelId: null,
     reviewChannelId: null,
     approvedChannelId: null,
@@ -57,10 +60,9 @@ function normalizeSection(section = {}) {
   const base = defaultSuggestionsSection();
   const source = section && typeof section === 'object' ? section : {};
   const stored = source.suggestions && typeof source.suggestions === 'object' ? source.suggestions : {};
-  return {
+  const normalized = {
     ...base,
     ...source,
-    enabled: source.enabled !== false,
     submitChannelId: cleanDiscordId(source.submitChannelId),
     reviewChannelId: cleanDiscordId(source.reviewChannelId),
     approvedChannelId: cleanDiscordId(source.approvedChannelId),
@@ -70,8 +72,8 @@ function normalizeSection(section = {}) {
     voting: source.voting !== false,
     requireReview: source.requireReview !== false,
     suggestions: Object.fromEntries(Object.entries(stored).map(([id, suggestion]) => {
-      const normalized = normalizeSuggestion({ ...suggestion, suggestionId: suggestion.suggestionId || id });
-      return [normalized.suggestionId, normalized];
+      const normalizedSuggestion = normalizeSuggestion({ ...suggestion, suggestionId: suggestion.suggestionId || id });
+      return [normalizedSuggestion.suggestionId, normalizedSuggestion];
     })),
     analytics: {
       submitted: Math.max(0, Number(source.analytics?.submitted || 0)),
@@ -80,25 +82,36 @@ function normalizeSection(section = {}) {
       votesUp: Math.max(0, Number(source.analytics?.votesUp || 0)),
       votesDown: Math.max(0, Number(source.analytics?.votesDown || 0)),
     },
+    createdAt: source.createdAt || base.createdAt,
     updatedAt: source.updatedAt || now(),
   };
+  delete normalized.enabled;
+  return normalized;
 }
 
 function getSection(guildId) {
-  const modules = guildManager.getGuildSection(guildId, 'modules', {});
-  return normalizeSection(modules?.[MODULE_KEY] || defaultSuggestionsSection());
+  return normalizeSection(getModuleSection(guildId, MODULE_KEY, defaultSuggestionsSection()));
 }
 function saveSection(guildId, section, guildOrMeta = {}) {
-  const normalized = normalizeSection(section);
-  guildManager.updateGuildSection(guildId, 'modules', (modules = {}) => ({
-    ...(modules && typeof modules === 'object' ? modules : {}),
-    [MODULE_KEY]: normalized,
-  }), {}, guildOrMeta);
-  return normalized;
+  return normalizeSection(saveModuleSection(
+    guildId,
+    MODULE_KEY,
+    normalizeSection(section),
+    guildOrMeta,
+  ));
 }
 function updateSection(guildId, updater, guildOrMeta = {}) {
-  const current = getSection(guildId);
-  return saveSection(guildId, normalizeSection(typeof updater === 'function' ? updater(current) : updater), guildOrMeta);
+  return normalizeSection(updateModuleSection(
+    guildId,
+    MODULE_KEY,
+    (current) => {
+      const normalized = normalizeSection(current);
+      const next = typeof updater === 'function' ? updater(normalized) : updater;
+      return normalizeSection(next);
+    },
+    defaultSuggestionsSection(),
+    guildOrMeta,
+  ));
 }
 function saveSuggestion(guildId, suggestion, guildOrMeta = {}) {
   const normalized = normalizeSuggestion(suggestion);
