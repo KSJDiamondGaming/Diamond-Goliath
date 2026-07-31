@@ -67,7 +67,7 @@ function buildStoredStats(data, guildId) {
     forms: { forms: countObject(forms.forms), submissions: countObject(forms.submissions), panels: countObject(forms.panels), analytics: forms.analytics || {} },
     polls: { total: countObject(polls.polls), active: Object.values(polls.polls || {}).filter((poll) => poll?.status === 'active').length, closed: Object.values(polls.polls || {}).filter((poll) => poll?.status === 'closed').length, analytics: polls.analytics || {} },
     verification: buildVerificationStats(guildId),
-    logs: { enabled: guildManager.isModuleEnabled(guildId, 'logs'), channels: countObject(logs.channels), events: countObject(logs.events) },
+    logs: { enabled: guildManager.isModuleEnabled(guildId, 'logging'), channels: countObject(logs.channels), events: countObject(logs.events) },
     security: { enabled: guildManager.isModuleEnabled(guildId, 'security'), threatLevel: security.threatLevel || 'low', totalIncidents: Number(security.totalIncidents || 0), criticalIncidents: Number(security.criticalIncidents || 0), incidents: countArray(security.incidents) },
   };
 }
