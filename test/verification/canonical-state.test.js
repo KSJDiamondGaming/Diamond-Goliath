@@ -377,3 +377,32 @@ test('tickets API reports and writes canonical module state while preserving pan
   assert.doesNotMatch(source, /enabled: settings\.enabled !== false/);
   assert.match(source, /enabled: payload\.enabled !== false/);
 });
+
+test('starboard store, runtime, API and panel use canonical module state', () => {
+  const store = read('src/modules/messageStudio/starboard/starboardStore.js');
+  const runtime = read('src/modules/messageStudio/starboard/starboard.js');
+  const route = read('src/server/routes/starboard.js');
+  const panel = read('src/modules/messageStudio/starboard/starboardPanel.js');
+  const defaults = store.slice(store.indexOf('function defaultStarboardSection()'), store.indexOf('function normalizePost('));
+  assert.doesNotMatch(defaults, /enabled\s*:/);
+  assert.match(store, /delete normalized\.enabled;/);
+  assert.match(runtime, /isModuleEnabled\(guildId, 'starboard'\) === true/);
+  assert.match(runtime, /setModuleEnabled\(guildId, 'starboard', input\.enabled === true\)/);
+  assert.doesNotMatch(runtime, /section\.enabled/);
+  assert.match(route, /enabled: isModuleEnabled\(guildId, 'starboard'\) === true/);
+  assert.match(route, /setModuleEnabled\(guildId, 'starboard', req\.body\?\.enabled === true\)/);
+  assert.match(panel, /const enabled = isModuleEnabled\(guild\.id, 'starboard'\) === true/);
+  assert.match(panel, /setModuleEnabled\(interaction\.guild\.id, 'starboard', true\)/);
+  assert.match(panel, /setModuleEnabled\(interaction\.guild\.id, 'starboard', false\)/);
+});
+
+test('welcome runtime and store use canonical module state while preserving DM settings', () => {
+  const source = read('src/modules/messageStudio/welcome/welcome.js');
+  const defaults = source.slice(source.indexOf('function defaultWelcomeSection()'), source.indexOf('function normalizeAnalytics('));
+  assert.doesNotMatch(defaults, /enabled\s*:/);
+  assert.match(source, /delete normalized\.enabled;/);
+  assert.match(source, /guildManager\.setModuleEnabled\(guildId, MODULE, enabled, meta\)/);
+  assert.match(source, /guildManager\.isModuleEnabled\(member\.guild\.id, MODULE\)/);
+  assert.doesNotMatch(source, /config\.enabled === false/);
+  assert.match(source, /dmEnabled: source\.dmEnabled === true \|\| source\.sendDm === true/);
+});
