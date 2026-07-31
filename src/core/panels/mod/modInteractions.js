@@ -38,27 +38,8 @@ const {
 } = require('./modPanel');
 
 const PUNISHMENT_ACTIONS = new Set(['timeout', 'kick', 'ban']);
-
-const OPEN_ACTIONS = Object.freeze({
-  mod_open_warn: 'warn',
-  mod_open_timeout: 'timeout',
-  mod_open_kick: 'kick',
-  mod_open_ban: 'ban',
-});
-
-const BULK_ACTIONS = Object.freeze({
-  mod_bulk_warn: 'warn',
-  mod_bulk_timeout: 'timeout',
-  mod_bulk_kick: 'kick',
-  mod_bulk_ban: 'ban',
-});
-
-const BULK_SUBMITS = Object.freeze({
-  mod_submit_bulk_warn: 'warn',
-  mod_submit_bulk_timeout: 'timeout',
-  mod_submit_bulk_kick: 'kick',
-  mod_submit_bulk_ban: 'ban',
-});
+const BULK_ACTIONS = new Set(['warn', 'timeout', 'kick', 'ban']);
+const OPEN_ACTIONS = new Set(['warn', ...PUNISHMENT_ACTIONS]);
 
 function isModCustomId(customId) {
   const id = String(customId || '');
@@ -69,11 +50,22 @@ function getTargetIdFromCustomId(customId) {
   return String(customId || '').split(':')[1] || 'none';
 }
 
-function getPunishmentSubmitAction(customId) {
+function getPrefixedAction(customId, prefix, allowedActions) {
   const id = String(customId || '').split(':')[0];
-  if (!id.startsWith('mod_submit_')) return null;
-  const action = id.replace('mod_submit_', '');
-  return PUNISHMENT_ACTIONS.has(action) ? action : null;
+  if (!id.startsWith(prefix)) return null;
+  const action = id.slice(prefix.length);
+  return allowedActions.has(action) ? action : null;
+}
+
+function getPunishmentSubmitAction(customId) {
+  return getPrefixedAction(customId, 'mod_submit_', PUNISHMENT_ACTIONS);
+}
+
+function getBulkAction(customId) {
+  return (
+    getPrefixedAction(customId, 'mod_submit_bulk_', BULK_ACTIONS) ||
+    getPrefixedAction(customId, 'mod_bulk_', BULK_ACTIONS)
+  );
 }
 
 function parseConfirmActionContext(customId) {
@@ -129,19 +121,30 @@ async function handleActionSelectMenu(interaction) {
   );
 }
 
-async function handleCancelButton(interaction) {
-  if (interaction.customId !== 'mod_cancel_action') return false;
+async function handleOpenActionButton(interaction) {
+  const action = getPrefixedAction(interaction.customId, 'mod_open_', OPEN_ACTIONS);
+  if (!action) return false;
+  return routeActionRequest(interaction, action, getTargetIdFromCustomId(interaction.customId));
+}
 
-  if (interaction.message && typeof interaction.update === 'function') {
-    await interaction.update({ content: '❌ Cancelled.', embeds: [], components: [] });
-    return true;
+async function handleCaseToolButton(interaction) {
+  const caseResult = await openCaseTool(interaction);
+  if (caseResult) return caseResult;
+
+  const id = String(interaction.customId || '');
+  const targetId = getTargetIdFromCustomId(id);
+  if (id.startsWith('mod_remove_warning:')) {
+    return routeActionRequest(interaction, 'remove-warning', targetId);
   }
-
-  return safeReply(interaction, { content: '❌ Cancelled.', flags: 64 });
+  if (id.startsWith('mod_remove_timeout:')) {
+    return routeActionRequest(interaction, 'remove-timeout', targetId);
+  }
+  return false;
 }
 
 async function handleBulkButton(interaction) {
-  const action = BULK_ACTIONS[interaction.customId];
+  if (!String(interaction.customId || '').startsWith('mod_bulk_')) return false;
+  const action = getBulkAction(interaction.customId);
   if (!action) return false;
 
   const allowed = await ensureActionAccess(
@@ -155,73 +158,54 @@ async function handleBulkButton(interaction) {
   return true;
 }
 
-async function handleOpenActionButton(interaction) {
-  if (!interaction.customId.startsWith('mod_open_')) return false;
-
-  const [prefix, targetId] = interaction.customId.split(':');
-  const action = OPEN_ACTIONS[prefix];
-  if (!action) return false;
-
-  return routeActionRequest(interaction, action, targetId);
-}
-
-async function handleCaseToolButton(interaction) {
-  const caseResult = await openCaseTool(interaction);
-  if (caseResult) return caseResult;
-
-  const id = String(interaction.customId || '');
-  const targetId = getTargetIdFromCustomId(id);
-
-  if (id.startsWith('mod_remove_warning:')) {
-    return showRemoveWarningModal(interaction, targetId);
-  }
-
-  if (id.startsWith('mod_remove_timeout:')) {
-    return requestRemoveTimeout(interaction, targetId);
-  }
-
-  return false;
-}
-
 async function handleConfirmButton(interaction) {
   if (!interaction.customId.startsWith('mod_confirm_action:')) return false;
   const { token, context } = parseConfirmActionContext(interaction.customId);
   return executePendingAction(Discord, interaction, token, context);
 }
 
+async function handleCancelButton(interaction) {
+  if (interaction.customId !== 'mod_cancel_action') return false;
+
+  if (interaction.message && typeof interaction.update === 'function') {
+    await interaction.update({ content: '❌ Cancelled.', embeds: [], components: [] });
+    return true;
+  }
+
+  return safeReply(interaction, { content: '❌ Cancelled.', flags: 64 });
+}
+
 async function handleBulkModal(interaction) {
-  const actionType = BULK_SUBMITS[interaction.customId];
-  if (!actionType) return false;
+  if (!String(interaction.customId || '').startsWith('mod_submit_bulk_')) return false;
+  const action = getBulkAction(interaction.customId);
+  if (!action) return false;
 
   const allowed = await ensureActionAccess(
     interaction,
-    `bulk_${actionType}`,
-    `❌ No permission to use bulk ${actionType}.`
+    `bulk_${action}`,
+    `❌ No permission to use bulk ${action}.`
   );
   if (!allowed) return true;
 
-  return submitBulkModal(interaction, actionType);
+  return submitBulkModal(interaction, action);
 }
 
-async function handleRemoveWarningModal(interaction) {
-  if (!interaction.customId.startsWith('mod_submit_remove_warning:')) return false;
+async function handleActionModal(interaction) {
+  const id = String(interaction.customId || '');
+  const targetId = getTargetIdFromCustomId(id);
 
-  return submitRemoveWarningRequest(
-    interaction,
-    getTargetIdFromCustomId(interaction.customId),
-    createConfirmation
-  );
-}
+  if (id.startsWith('mod_submit_warn:')) {
+    return submitWarningModal(interaction, targetId, refreshCasesDashboard);
+  }
 
-async function handlePunishmentModal(interaction) {
-  const action = getPunishmentSubmitAction(interaction.customId);
+  if (id.startsWith('mod_submit_remove_warning:')) {
+    return submitRemoveWarningRequest(interaction, targetId, createConfirmation);
+  }
+
+  const action = getPunishmentSubmitAction(id);
   if (!action) return false;
 
-  const target = await requireModeratableTarget(
-    interaction,
-    getTargetIdFromCustomId(interaction.customId),
-    action
-  );
+  const target = await requireModeratableTarget(interaction, targetId, action);
   if (!target) return true;
 
   const result = await submitPunishmentRequest(interaction, target, action);
@@ -229,15 +213,6 @@ async function handlePunishmentModal(interaction) {
     await refreshCasesDashboard(interaction, target);
   }
   return true;
-}
-
-async function handleWarnModal(interaction) {
-  if (!interaction.customId.startsWith('mod_submit_warn:')) return false;
-  return submitWarningModal(
-    interaction,
-    getTargetIdFromCustomId(interaction.customId),
-    refreshCasesDashboard
-  );
 }
 
 async function routeHandlers(interaction, handlers) {
@@ -280,9 +255,7 @@ async function routeModModal(interaction) {
     handleSelectUserModal,
     (value) => submitCaseModal(value, { fetchTarget, refreshCasesDashboard }),
     handleBulkModal,
-    handleRemoveWarningModal,
-    handlePunishmentModal,
-    handleWarnModal,
+    handleActionModal,
   ]);
 }
 
