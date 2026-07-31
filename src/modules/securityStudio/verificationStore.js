@@ -6,6 +6,7 @@ const {
   saveModuleSection,
   updateModuleSection,
 } = require('../../core/guild/moduleSectionManager');
+const guildManager = require('../../core/guild/guildManager');
 
 const MODULE = 'verification';
 const SCHEMA_VERSION = 2;
@@ -510,10 +511,9 @@ function getPanel(guildId, panelId) {
 
 function deletePanel(guildId, panelId, meta = {}) {
   const safePanelId = String(panelId || '');
-  const rawSection = getModuleSection(guildId, MODULE, defaultVerificationSection());
-  const currentSection = normalizeVerificationSection(rawSection);
+  const currentSection = getVerificationSection(guildId);
 
-  if (rawSection?.enabled === true && currentSection.activePanelId === safePanelId) {
+  if (guildManager.isModuleEnabled(guildId, MODULE) && currentSection.activePanelId === safePanelId) {
     throw new Error(
       'This panel is currently the active verification panel. Deploy another panel first or disable Verification before deleting this one.'
     );
