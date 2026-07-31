@@ -2,7 +2,10 @@
 
 const Discord = require('discord.js');
 
-const { buildDashboardPayload } = require('./dashboardService');
+const {
+  buildDashboardPayload,
+  refreshDashboard,
+} = require('./dashboardService');
 const { handleModInteraction } = require('./modInteractions');
 const { hasModPermission } = require('./permissions');
 
@@ -134,6 +137,7 @@ const handleModModal = handleInteraction;
 
 module.exports = {
   openModPanel,
+  refreshDashboard,
   handleInteraction,
   buildModPanel,
   handleModPanelInteraction,
