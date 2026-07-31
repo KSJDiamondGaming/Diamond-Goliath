@@ -9,6 +9,7 @@ const managerPath = path.resolve(__dirname, '../../src/core/guild/moduleSectionM
 const guildManagerPath = path.resolve(__dirname, '../../src/core/guild/guildManager.js');
 const moduleAdminPanelsPath = path.resolve(__dirname, '../../src/core/admin/functions/moduleAdminPanels.js');
 const reactionRolesPanelPath = path.resolve(__dirname, '../../src/modules/roleStudio/reactionRoles/reactionRolesPanel.js');
+const levelingPath = path.resolve(__dirname, '../../src/modules/communityStudio/leveling/leveling.js');
 
 function loadManager(initialModules = {}) {
   let modules = JSON.parse(JSON.stringify(initialModules));
@@ -154,4 +155,18 @@ test('reaction roles admin panel reports, writes and exports canonical module st
   assert.doesNotMatch(source, /config\.enabled !== false/);
   assert.doesNotMatch(source, /reactionRoles\.setEnabled/);
   assert.match(source, /panel\.enabled === false/);
+});
+
+test('leveling core stores settings and XP without duplicating module enabled state', () => {
+  const source = fs.readFileSync(levelingPath, 'utf8');
+  const defaults = source.slice(source.indexOf('function defaults()'), source.indexOf('function xpForLevel('));
+  const normalizer = source.slice(source.indexOf('function normalize(section'), source.indexOf('function getSection('));
+
+  assert.doesNotMatch(defaults, /enabled\s*:/);
+  assert.match(normalizer, /delete normalized\.enabled;/);
+  assert.match(source, /getModuleSection\(guildId, MODULE_KEY, defaults\(\)\)/);
+  assert.match(source, /saveModuleSection\(guildId, MODULE_KEY, normalize\(section\), guildOrMeta\)/);
+  assert.match(source, /updateModuleSection\(/);
+  assert.doesNotMatch(source, /guildManager\.updateGuildSection/);
+  assert.doesNotMatch(source, /enabled: source\.enabled !== false/);
 });
