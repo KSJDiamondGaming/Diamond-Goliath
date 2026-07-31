@@ -2,7 +2,7 @@
 
 const Discord = require('discord.js');
 
-const { safeReply, ephemeralError } = require('../../../core/ui/interactionResponse');
+const { safeReply } = require('../../../core/ui/interactionResponse');
 const {
   fetchTarget,
   ensurePanelAccess,
@@ -19,9 +19,9 @@ const {
 } = require('./punishments');
 const {
   syncExpiredWarningsToCases,
-  buildWarnModal,
-  buildRemoveWarningModal,
-  submitWarning,
+  showWarningModal,
+  showRemoveWarningModal,
+  submitWarningModal,
   submitRemoveWarningRequest,
 } = require('./warns');
 const {
@@ -36,14 +36,6 @@ const {
   handleSelectUserButton,
   handleSelectUserModal,
 } = require('./modPanel');
-
-const ACTION_MODALS = Object.freeze({
-  warn: { permission: 'warn', build: buildWarnModal },
-  timeout: { permission: 'timeout', build: (id) => buildPunishmentModal('timeout', id) },
-  kick: { permission: 'kick', build: (id) => buildPunishmentModal('kick', id) },
-  ban: { permission: 'ban', build: (id) => buildPunishmentModal('ban', id) },
-  'remove-warning': { permission: 'remove_warning', build: buildRemoveWarningModal },
-});
 
 const OPEN_ACTIONS = Object.freeze({
   mod_open_warn: 'warn',
@@ -94,18 +86,10 @@ function parseConfirmActionContext(customId) {
   };
 }
 
-async function showActionModal(interaction, action, targetId) {
-  const config = ACTION_MODALS[action];
-  if (!config) return false;
-
-  const target = await requireModeratableTarget(
-    interaction,
-    targetId,
-    config.permission
-  );
+async function showPunishmentModal(interaction, action, targetId) {
+  const target = await requireModeratableTarget(interaction, targetId, action);
   if (!target) return true;
-
-  await interaction.showModal(config.build(target.id));
+  await interaction.showModal(buildPunishmentModal(action, target.id));
   return true;
 }
 
@@ -132,11 +116,14 @@ async function handleActionSelectMenu(interaction) {
   const targetId = getTargetIdFromCustomId(interaction.customId);
   const selected = interaction.values[0];
 
-  if (selected === 'remove-timeout') {
-    return requestRemoveTimeout(interaction, targetId);
+  if (selected === 'warn') return showWarningModal(interaction, targetId);
+  if (selected === 'remove-warning') return showRemoveWarningModal(interaction, targetId);
+  if (selected === 'remove-timeout') return requestRemoveTimeout(interaction, targetId);
+  if (PUNISHMENT_SUBMITS[`mod_submit_${selected}`]) {
+    return showPunishmentModal(interaction, selected, targetId);
   }
 
-  return showActionModal(interaction, selected, targetId);
+  return false;
 }
 
 async function handleCancelButton(interaction) {
@@ -171,8 +158,8 @@ async function handleOpenActionButton(interaction) {
   const [prefix, targetId] = interaction.customId.split(':');
   const action = OPEN_ACTIONS[prefix];
   if (!action) return false;
-
-  return showActionModal(interaction, action, targetId);
+  if (action === 'warn') return showWarningModal(interaction, targetId);
+  return showPunishmentModal(interaction, action, targetId);
 }
 
 async function handleCaseToolButton(interaction) {
@@ -183,18 +170,7 @@ async function handleCaseToolButton(interaction) {
   const targetId = getTargetIdFromCustomId(id);
 
   if (id.startsWith('mod_remove_warning:')) {
-    const allowed = await ensureActionAccess(
-      interaction,
-      'remove_warning',
-      '❌ No permission to remove warnings.'
-    );
-    if (!allowed) return true;
-    if (targetId === 'none') {
-      return safeReply(interaction, ephemeralError('No user selected.'));
-    }
-
-    await interaction.showModal(buildRemoveWarningModal(targetId));
-    return true;
+    return showRemoveWarningModal(interaction, targetId);
   }
 
   if (id.startsWith('mod_remove_timeout:')) {
@@ -256,17 +232,11 @@ async function handlePunishmentModal(interaction) {
 
 async function handleWarnModal(interaction) {
   if (!interaction.customId.startsWith('mod_submit_warn:')) return false;
-
-  const target = await requireModeratableTarget(
+  return submitWarningModal(
     interaction,
     getTargetIdFromCustomId(interaction.customId),
-    'warn'
+    refreshCasesDashboard
   );
-  if (!target) return true;
-
-  const result = await submitWarning(interaction, target);
-  if (result?.ok) await refreshCasesDashboard(interaction, target);
-  return true;
 }
 
 async function routeHandlers(interaction, handlers) {
