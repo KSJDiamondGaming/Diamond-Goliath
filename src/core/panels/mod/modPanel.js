@@ -41,7 +41,6 @@ const {
   getStaffDisplay,
   hasModPermission,
   fetchTarget,
-  findMemberByQuery,
 } = require('./permissions');
 
 const DEFAULT_VIEW = 'overview';
@@ -384,26 +383,6 @@ async function handleSelectUserButton(interaction) {
   });
 }
 
-async function handleSelectUserModal(interaction) {
-  if (interaction.customId !== 'mod_select_user_modal') return false;
-
-  const target = await findMemberByQuery(
-    interaction.guild,
-    interaction.fields.getTextInputValue('target_user_query')
-  );
-  if (!target) {
-    return safeReply(
-      interaction,
-      ephemeralError('User not found by that ID, username, tag, or display name.')
-    );
-  }
-
-  return safeReply(interaction, {
-    ...(await buildDashboardPayload(Discord, interaction, target, 'overview')),
-    flags: 64,
-  });
-}
-
 async function openModPanel(interaction, options = {}) {
   if (!canOpenModPanel(interaction)) {
     return interaction.deferred || interaction.replied
@@ -428,5 +407,4 @@ module.exports = {
   handleDashboardNavigation,
   handleUserSelectMenu,
   handleSelectUserButton,
-  handleSelectUserModal,
 };
