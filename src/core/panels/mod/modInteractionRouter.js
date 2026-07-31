@@ -1,21 +1,14 @@
-// functions/moderation/modInteractionRouter.js
+'use strict';
 
 const Discord = require('discord.js');
-
-const {
-  MessageFlags,
-  ActionRowBuilder,
-  UserSelectMenuBuilder,
-} = require('discord.js');
+const { ActionRowBuilder, UserSelectMenuBuilder } = require('discord.js');
 
 const {
   hasModPermission,
   canUseModAction,
   checkHierarchy,
 } = require('./moderationChecks');
-
 const { fetchTarget } = require('./targetHelpers');
-
 const {
   buildReasonModal,
   buildBulkModal,
@@ -23,103 +16,112 @@ const {
   buildEditCaseModal,
   buildCaseNoteModal,
 } = require('./modalBuilders');
-
 const {
   buildConfirmRow,
   buildConfirmCustomId,
   parseConfirmActionContext,
 } = require('./pendingActionHelpers');
-
 const {
   safeReply,
   ephemeralError,
 } = require('../../../core/ui/interactionResponse');
-
 const { buildDashboardPayload } = require('./dashboardService');
 const { executePendingAction } = require('./modActionExecutor');
-
 const { getCaseById } = require('../../../core/logging/cases/caseStore');
 const { createPendingAction } = require('./pendingActionStore');
 
-const DEFAULT_DASHBOARD_CONTEXT = {
+const DEFAULT_DASHBOARD_CONTEXT = Object.freeze({
   view: 'cases',
   actionFilter: 'all',
   statusFilter: 'all',
   page: 0,
-};
+});
 
-const OPEN_ACTIONS = {
+const OPEN_ACTIONS = Object.freeze({
   mod_open_warn: {
     permission: 'warn',
-    modal: (targetId) =>
-      buildReasonModal(`mod_submit_warn:${targetId}`, 'Warn User', false, false, true),
+    modal: (targetId) => buildReasonModal(
+      `mod_submit_warn:${targetId}`,
+      'Warn User',
+      false,
+      false,
+      true
+    ),
   },
-
   mod_open_timeout: {
     permission: 'timeout',
-    modal: (targetId) =>
-      buildReasonModal(`mod_submit_timeout:${targetId}`, 'Timeout User', false, true),
+    modal: (targetId) => buildReasonModal(
+      `mod_submit_timeout:${targetId}`,
+      'Timeout User',
+      false,
+      true
+    ),
   },
-
   mod_open_kick: {
     permission: 'kick',
-    modal: (targetId) =>
-      buildReasonModal(`mod_submit_kick:${targetId}`, 'Kick User'),
+    modal: (targetId) => buildReasonModal(`mod_submit_kick:${targetId}`, 'Kick User'),
   },
-
   mod_open_ban: {
     permission: 'ban',
-    modal: (targetId) =>
-      buildReasonModal(`mod_submit_ban:${targetId}`, 'Ban User', true, false),
-  },
-};
-
-const ACTION_SELECT_MODALS = {
-  warn: (targetId) =>
-    buildReasonModal(`mod_submit_warn:${targetId}`, 'Warn User', false, false, true),
-
-  timeout: (targetId) =>
-    buildReasonModal(`mod_submit_timeout:${targetId}`, 'Timeout User', false, true),
-
-  kick: (targetId) =>
-    buildReasonModal(`mod_submit_kick:${targetId}`, 'Kick User'),
-
-  ban: (targetId) =>
-    buildReasonModal(`mod_submit_ban:${targetId}`, 'Ban User', true, false),
-
-  'remove-warning': (targetId) =>
-    buildCaseIdModal(
-      `mod_submit_remove_warning:${targetId}`,
-      'Remove Warning',
-      'Warning Case ID'
+    modal: (targetId) => buildReasonModal(
+      `mod_submit_ban:${targetId}`,
+      'Ban User',
+      true,
+      false
     ),
-};
+  },
+});
 
-const BULK_ACTIONS = {
+const ACTION_SELECT_MODALS = Object.freeze({
+  warn: (targetId) => buildReasonModal(
+    `mod_submit_warn:${targetId}`,
+    'Warn User',
+    false,
+    false,
+    true
+  ),
+  timeout: (targetId) => buildReasonModal(
+    `mod_submit_timeout:${targetId}`,
+    'Timeout User',
+    false,
+    true
+  ),
+  kick: (targetId) => buildReasonModal(`mod_submit_kick:${targetId}`, 'Kick User'),
+  ban: (targetId) => buildReasonModal(
+    `mod_submit_ban:${targetId}`,
+    'Ban User',
+    true,
+    false
+  ),
+  'remove-warning': (targetId) => buildCaseIdModal(
+    `mod_submit_remove_warning:${targetId}`,
+    'Remove Warning',
+    'Warning Case ID'
+  ),
+});
+
+const BULK_ACTIONS = Object.freeze({
   mod_bulk_warn: {
     permission: 'bulk_warn',
     modal: () => buildBulkModal('warn'),
     label: 'bulk warn',
   },
-
   mod_bulk_timeout: {
     permission: 'bulk_timeout',
     modal: () => buildBulkModal('timeout'),
     label: 'bulk timeout',
   },
-
   mod_bulk_kick: {
     permission: 'bulk_kick',
     modal: () => buildBulkModal('kick'),
     label: 'bulk kick',
   },
-
   mod_bulk_ban: {
     permission: 'bulk_ban',
     modal: () => buildBulkModal('ban'),
     label: 'bulk ban',
   },
-};
+});
 
 function cleanError(error) {
   return String(error || '').replace(/^❌\s*/, '');
@@ -132,7 +134,6 @@ function ensurePanelAccess(interaction) {
       ephemeralError('No permission to use moderation panel.')
     );
   }
-
   return null;
 }
 
@@ -148,13 +149,40 @@ async function requireSelectedTarget(interaction, targetId) {
   }
 
   const target = await fetchTarget(interaction.guild, targetId);
-
   if (!target) {
     await safeReply(interaction, ephemeralError('Could not find that user.'));
     return null;
   }
 
   return target;
+}
+
+async function resolveOptionalTarget(interaction, targetId) {
+  if (!targetId || targetId === 'none') return null;
+  return fetchTarget(interaction.guild, targetId);
+}
+
+async function renderDashboard(interaction, targetId, view = 'overview', context = {}) {
+  const target = await resolveOptionalTarget(interaction, targetId);
+
+  if (targetId && targetId !== 'none' && !target) {
+    return safeReply(interaction, ephemeralError('Could not find the selected user.'));
+  }
+
+  const payload = await buildDashboardPayload(
+    Discord,
+    interaction,
+    target,
+    view,
+    {
+      actionFilter: context.actionFilter || 'all',
+      statusFilter: context.statusFilter || 'all',
+      page: Number(context.page) || 0,
+    }
+  );
+
+  await interaction.update(payload);
+  return true;
 }
 
 async function createConfirmation(interaction, targetId, type, payload, message) {
@@ -180,9 +208,7 @@ async function handleUserSelectMenu(interaction) {
   const denied = ensurePanelAccess(interaction);
   if (denied) return denied;
 
-  const userId = interaction.values[0];
-  const target = await fetchTarget(interaction.guild, userId);
-
+  const target = await fetchTarget(interaction.guild, interaction.values[0]);
   if (!target) {
     return safeReply(interaction, {
       content: '❌ Could not find that user.',
@@ -190,15 +216,7 @@ async function handleUserSelectMenu(interaction) {
     });
   }
 
-  const payload = await buildDashboardPayload(
-    Discord,
-    interaction,
-    target,
-    'overview'
-  );
-
-  await interaction.update(payload);
-  return true;
+  return renderDashboard(interaction, target.id, 'overview');
 }
 
 async function handleActionSelectMenu(interaction) {
@@ -209,10 +227,12 @@ async function handleActionSelectMenu(interaction) {
 
   const targetId = getTargetIdFromCustomId(interaction.customId);
   const selected = interaction.values[0];
-
   const modalBuilder = ACTION_SELECT_MODALS[selected];
 
   if (modalBuilder) {
+    if (!targetId || targetId === 'none') {
+      return safeReply(interaction, ephemeralError('No user selected.'));
+    }
     await interaction.showModal(modalBuilder(targetId));
     return true;
   }
@@ -222,10 +242,7 @@ async function handleActionSelectMenu(interaction) {
     if (!target) return true;
 
     const error = checkHierarchy(interaction, target);
-
-    if (error) {
-      return safeReply(interaction, ephemeralError(cleanError(error)));
-    }
+    if (error) return safeReply(interaction, ephemeralError(cleanError(error)));
 
     return createConfirmation(
       interaction,
@@ -239,13 +256,65 @@ async function handleActionSelectMenu(interaction) {
   return false;
 }
 
+async function handleDashboardNavigation(interaction) {
+  const customId = String(interaction.customId || '');
+
+  if (customId.startsWith('mod_dashboard:')) {
+    const [, targetId = 'none', view = 'overview'] = customId.split(':');
+    return renderDashboard(interaction, targetId, view);
+  }
+
+  if (customId.startsWith('mod_refresh:')) {
+    const [, targetId = 'none', view = 'overview'] = customId.split(':');
+    return renderDashboard(interaction, targetId, view);
+  }
+
+  if (customId.startsWith('mod_filter_cases:')) {
+    const [,
+      targetId = 'none',
+      actionFilter = 'all',
+      statusFilter = 'all',
+      page = '0',
+    ] = customId.split(':');
+
+    return renderDashboard(interaction, targetId, 'cases', {
+      actionFilter,
+      statusFilter,
+      page,
+    });
+  }
+
+  if (customId.startsWith('mod_case_page:')) {
+    const [,
+      targetId = 'none',
+      actionFilter = 'all',
+      statusFilter = 'all',
+      page = '0',
+    ] = customId.split(':');
+
+    return renderDashboard(interaction, targetId, 'cases', {
+      actionFilter,
+      statusFilter,
+      page,
+    });
+  }
+
+  return false;
+}
+
 async function handleCancelButton(interaction) {
   if (interaction.customId !== 'mod_cancel_action') return false;
 
-  return safeReply(interaction, {
-    content: '❌ Cancelled.',
-    flags: 64,
-  });
+  if (interaction.message && typeof interaction.update === 'function') {
+    await interaction.update({
+      content: '❌ Cancelled.',
+      embeds: [],
+      components: [],
+    });
+    return true;
+  }
+
+  return safeReply(interaction, { content: '❌ Cancelled.', flags: 64 });
 }
 
 async function handleSelectUserButton(interaction) {
@@ -286,17 +355,13 @@ async function handleOpenActionButtons(interaction) {
 
   const [prefix, targetId] = interaction.customId.split(':');
   const config = OPEN_ACTIONS[prefix];
-
   if (!config) return false;
 
   const target = await requireSelectedTarget(interaction, targetId);
   if (!target) return true;
 
   const error = checkHierarchy(interaction, target);
-
-  if (error) {
-    return safeReply(interaction, ephemeralError(cleanError(error)));
-  }
+  if (error) return safeReply(interaction, ephemeralError(cleanError(error)));
 
   if (!canUseModAction(interaction.member, interaction.guild, config.permission)) {
     return safeReply(
@@ -312,14 +377,10 @@ async function handleOpenActionButtons(interaction) {
 async function handleCaseToolButtons(interaction) {
   if (interaction.customId.startsWith('mod_case_detail:')) {
     if (!canUseModAction(interaction.member, interaction.guild, 'view_case_detail')) {
-      return safeReply(
-        interaction,
-        ephemeralError('No permission to view case details.')
-      );
+      return safeReply(interaction, ephemeralError('No permission to view case details.'));
     }
 
     const targetId = getTargetIdFromCustomId(interaction.customId);
-
     if (!targetId || targetId === 'none') {
       return safeReply(interaction, ephemeralError('No user selected.'));
     }
@@ -336,7 +397,6 @@ async function handleCaseToolButtons(interaction) {
     }
 
     const targetId = getTargetIdFromCustomId(interaction.customId);
-
     if (!targetId || targetId === 'none') {
       return safeReply(interaction, ephemeralError('No user selected.'));
     }
@@ -349,14 +409,10 @@ async function handleCaseToolButtons(interaction) {
 
   if (interaction.customId.startsWith('mod_remove_warning:')) {
     if (!canUseModAction(interaction.member, interaction.guild, 'remove_warning')) {
-      return safeReply(
-        interaction,
-        ephemeralError('No permission to remove warnings.')
-      );
+      return safeReply(interaction, ephemeralError('No permission to remove warnings.'));
     }
 
     const targetId = getTargetIdFromCustomId(interaction.customId);
-
     if (!targetId || targetId === 'none') {
       return safeReply(interaction, ephemeralError('No user selected.'));
     }
@@ -373,10 +429,7 @@ async function handleCaseToolButtons(interaction) {
 
   if (interaction.customId.startsWith('mod_remove_timeout:')) {
     if (!canUseModAction(interaction.member, interaction.guild, 'remove_timeout')) {
-      return safeReply(
-        interaction,
-        ephemeralError('No permission to remove timeouts.')
-      );
+      return safeReply(interaction, ephemeralError('No permission to remove timeouts.'));
     }
 
     const targetId = getTargetIdFromCustomId(interaction.customId);
@@ -384,10 +437,7 @@ async function handleCaseToolButtons(interaction) {
     if (!target) return true;
 
     const error = checkHierarchy(interaction, target);
-
-    if (error) {
-      return safeReply(interaction, ephemeralError(cleanError(error)));
-    }
+    if (error) return safeReply(interaction, ephemeralError(cleanError(error)));
 
     return createConfirmation(
       interaction,
@@ -406,6 +456,7 @@ async function handleUtilityButtons(interaction) {
   if (denied) return denied;
 
   const handlers = [
+    handleDashboardNavigation,
     handleCancelButton,
     handleSelectUserButton,
     handleBulkButtons,
@@ -429,13 +480,11 @@ async function handleCaseNoteButton(interaction) {
   }
 
   const [, caseIdRaw] = interaction.customId.split(':');
-
   if (!/^\d+$/.test(caseIdRaw)) {
     return safeReply(interaction, ephemeralError('Case ID must be a number.'));
   }
 
   const existingCase = getCaseById(interaction.guild.id, Number(caseIdRaw));
-
   if (!existingCase) {
     return safeReply(interaction, ephemeralError('Case not found.'));
   }
@@ -446,13 +495,14 @@ async function handleCaseNoteButton(interaction) {
       existingCase.note || ''
     )
   );
-
   return true;
 }
 
 async function handleReverseWarningButton(interaction) {
-  if (!interaction.customId.startsWith('mod_case_reverse_warning:')) {
-    return false;
+  if (!interaction.customId.startsWith('mod_case_reverse_warning:')) return false;
+
+  if (!canUseModAction(interaction.member, interaction.guild, 'remove_warning')) {
+    return safeReply(interaction, ephemeralError('No permission to reverse warnings.'));
   }
 
   const [, caseIdRaw] = interaction.customId.split(':');
@@ -463,7 +513,6 @@ async function handleReverseWarningButton(interaction) {
   }
 
   const target = await fetchTarget(interaction.guild, modCase.userId);
-
   if (!target) {
     return safeReply(interaction, ephemeralError('User not found for that case.'));
   }
@@ -478,22 +527,20 @@ async function handleReverseWarningButton(interaction) {
 }
 
 async function handleReverseTimeoutButton(interaction) {
-  if (!interaction.customId.startsWith('mod_case_reverse_timeout:')) {
-    return false;
+  if (!interaction.customId.startsWith('mod_case_reverse_timeout:')) return false;
+
+  if (!canUseModAction(interaction.member, interaction.guild, 'remove_timeout')) {
+    return safeReply(interaction, ephemeralError('No permission to reverse timeouts.'));
   }
 
   const [, caseIdRaw] = interaction.customId.split(':');
   const modCase = getCaseById(interaction.guild.id, Number(caseIdRaw));
 
   if (!modCase || modCase.action !== 'timeout') {
-    return safeReply(
-      interaction,
-      ephemeralError('That timeout case could not be found.')
-    );
+    return safeReply(interaction, ephemeralError('That timeout case could not be found.'));
   }
 
   const target = await fetchTarget(interaction.guild, modCase.userId);
-
   if (!target) {
     return safeReply(interaction, ephemeralError('User not found for that case.'));
   }
@@ -536,17 +583,17 @@ async function handleConfirmButtons(interaction) {
 }
 
 async function routeModInteraction(interaction) {
-  if (interaction.isUserSelectMenu()) {
+  if (!interaction?.customId?.startsWith('mod_')) return false;
+
+  if (interaction.isUserSelectMenu?.()) {
     return handleUserSelectMenu(interaction);
   }
 
-  if (interaction.isStringSelectMenu()) {
+  if (interaction.isStringSelectMenu?.()) {
     return handleActionSelectMenu(interaction);
   }
 
-  if (!interaction.isButton()) {
-    return false;
-  }
+  if (!interaction.isButton?.()) return false;
 
   const handlers = [
     handleConfirmButtons,
@@ -564,13 +611,11 @@ async function routeModInteraction(interaction) {
 
 module.exports = {
   ensurePanelAccess,
-
   handleUserSelectMenu,
   handleActionSelectMenu,
-
+  handleDashboardNavigation,
   handleUtilityButtons,
   handleCaseActionButtons,
   handleConfirmButtons,
-
   routeModInteraction,
 };
