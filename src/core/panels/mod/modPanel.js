@@ -5,7 +5,7 @@ const Discord = require('discord.js');
 const { buildDashboardPayload } = require('./dashboardService');
 const { routeModInteraction } = require('./modInteractionRouter');
 const { routeModModal } = require('./modModalRouter');
-const { hasModPermission } = require('./moderationChecks');
+const { hasModPermission } = require('./permissions');
 
 const panelNav = require('../../../core/ui/panelNavigation');
 
