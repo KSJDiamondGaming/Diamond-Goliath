@@ -44,36 +44,85 @@ function read(filePath, fallback = {}) {
   }
 }
 
-function write(filePath, data = {}) {
+function validateJsonFile(filePath) {
+  const raw = fs.readFileSync(filePath, 'utf8');
+  if (!raw || !raw.trim()) throw new Error('JSON file is empty after write.');
+  const parsed = JSON.parse(raw);
+  if (!parsed || typeof parsed !== 'object') throw new Error('JSON root is not an object.');
+  return true;
+}
+
+function syncFile(filePath) {
+  const fd = fs.openSync(filePath, 'r');
   try {
-    if (!filePath || typeof filePath !== 'string') return false;
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
 
-    ensureDir(path.dirname(filePath));
+function write(filePath, data = {}) {
+  if (!filePath || typeof filePath !== 'string') return false;
 
-    const tempPath = `${filePath}.tmp`;
-    const json = JSON.stringify(sortKeys(data ?? {}), null, 2);
+  ensureDir(path.dirname(filePath));
 
+  const tempPath = `${filePath}.tmp`;
+  const backupPath = `${filePath}.bak`;
+  const json = JSON.stringify(sortKeys(data ?? {}), null, 2);
+  const hadExisting = fs.existsSync(filePath);
+
+  try {
     fs.writeFileSync(tempPath, json, 'utf8');
+    validateJsonFile(tempPath);
+    syncFile(tempPath);
+
+    // Keep one last-known-good on-disk copy before replacing the active guild JSON.
+    // This is intentionally automatic and applies to every guild write.
+    if (hadExisting) {
+      fs.copyFileSync(filePath, backupPath);
+      validateJsonFile(backupPath);
+      syncFile(backupPath);
+    }
 
     try {
       fs.renameSync(tempPath, filePath);
     } catch (error) {
-      if (error.code === 'EPERM' || error.code === 'EBUSY') {
-        fs.writeFileSync(filePath, json, 'utf8');
+      if (error.code !== 'EPERM' && error.code !== 'EBUSY') throw error;
 
-        try {
-          if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-        } catch {}
+      // Windows can occasionally block atomic rename. Preserve the backup and
+      // still validate the replacement before accepting it as successful.
+      fs.writeFileSync(filePath, json, 'utf8');
+      validateJsonFile(filePath);
+      syncFile(filePath);
 
-        return true;
-      }
-
-      throw error;
+      try {
+        if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+      } catch {}
     }
 
+    validateJsonFile(filePath);
     return true;
   } catch (error) {
     console.error(`[fileStore] Failed to write file: ${filePath}`, error);
+
+    try {
+      if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+    } catch {}
+
+    // If the active file became invalid during a fallback write, restore the
+    // last-known-good copy automatically rather than leaving client data broken.
+    try {
+      if (fs.existsSync(backupPath)) {
+        let activeValid = false;
+        try {
+          activeValid = validateJsonFile(filePath);
+        } catch {}
+        if (!activeValid) fs.copyFileSync(backupPath, filePath);
+      }
+    } catch (restoreError) {
+      console.error(`[fileStore] Failed to restore backup: ${filePath}`, restoreError);
+    }
+
     return false;
   }
 }
