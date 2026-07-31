@@ -29,12 +29,10 @@ const {
   runBulkAction,
 } = require('./punishments');
 const {
-  parseWarningExpiry,
   syncExpiredWarningsToCases,
-  createWarning,
+  buildWarnModal,
+  submitWarning,
   getWarningByCaseId,
-  getWarningContext,
-  runWarningEscalation,
 } = require('./warns');
 const {
   buildCaseDetailButtons,
@@ -120,7 +118,7 @@ function buildConfirmRow(confirmId, cancelId = 'mod_cancel_action') {
   ];
 }
 
-function buildReasonModal(customId, title, includeDays = false, includeDuration = false, includeWarnExpiry = false) {
+function buildReasonModal(customId, title, includeDays = false, includeDuration = false) {
   const modal = new ModalBuilder().setCustomId(customId).setTitle(title);
   const rows = [];
 
@@ -148,18 +146,6 @@ function buildReasonModal(customId, title, includeDays = false, includeDuration 
     ));
   }
 
-  if (includeWarnExpiry) {
-    rows.push(new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId('warn_expiry')
-        .setLabel('Warn expiry (7d, 2w, 1m, or never)')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('never')
-        .setRequired(false)
-        .setMaxLength(10)
-    ));
-  }
-
   rows.push(new ActionRowBuilder().addComponents(
     new TextInputBuilder()
       .setCustomId('reason')
@@ -174,7 +160,12 @@ function buildReasonModal(customId, title, includeDays = false, includeDuration 
 }
 
 function buildBulkModal(type) {
-  const titleMap = { warn: 'Bulk Warn', timeout: 'Bulk Timeout', kick: 'Bulk Kick', ban: 'Bulk Ban' };
+  const titleMap = {
+    warn: 'Bulk Warn',
+    timeout: 'Bulk Timeout',
+    kick: 'Bulk Kick',
+    ban: 'Bulk Ban',
+  };
   const modal = new ModalBuilder()
     .setCustomId(`mod_submit_bulk_${type}`)
     .setTitle(titleMap[type] || 'Bulk Moderation');
@@ -226,6 +217,7 @@ function buildBulkModal(type) {
 async function findMemberByQuery(guild, query) {
   const raw = String(query || '').trim();
   if (!guild || !raw) return null;
+
   const mentionId = raw.match(/^<@!?(\d{16,20})>$/)?.[1];
   const directId = mentionId || (/^\d{16,20}$/.test(raw) ? raw : null);
   if (directId) {
@@ -234,11 +226,19 @@ async function findMemberByQuery(guild, query) {
   }
 
   const needle = raw.toLowerCase();
-  const valuesFor = (member) => [member.user?.username, member.user?.tag, member.displayName, member.nickname]
-    .map((value) => String(value || '').trim().toLowerCase());
+  const valuesFor = (member) => [
+    member.user?.username,
+    member.user?.tag,
+    member.displayName,
+    member.nickname,
+  ].map((value) => String(value || '').trim().toLowerCase());
+
   const exact = guild.members.cache.find((member) => valuesFor(member).includes(needle));
   if (exact) return exact;
-  const partial = guild.members.cache.find((member) => valuesFor(member).some((value) => value && value.includes(needle)));
+
+  const partial = guild.members.cache.find((member) =>
+    valuesFor(member).some((value) => value && value.includes(needle))
+  );
   if (partial) return partial;
 
   try {
@@ -254,6 +254,7 @@ async function requireSelectedTarget(interaction, targetId) {
     await safeReply(interaction, ephemeralError('No user selected.'));
     return null;
   }
+
   const target = await fetchTarget(interaction.guild, targetId);
   if (!target) {
     await safeReply(interaction, ephemeralError('Could not find that user.'));
@@ -263,7 +264,10 @@ async function requireSelectedTarget(interaction, targetId) {
 }
 
 async function renderDashboard(interaction, targetId, view = 'overview', context = {}) {
-  const target = targetId && targetId !== 'none' ? await fetchTarget(interaction.guild, targetId) : null;
+  const target = targetId && targetId !== 'none'
+    ? await fetchTarget(interaction.guild, targetId)
+    : null;
+
   if (targetId && targetId !== 'none' && !target) {
     return safeReply(interaction, ephemeralError('Could not find the selected user.'));
   }
@@ -274,13 +278,28 @@ async function renderDashboard(interaction, targetId, view = 'overview', context
   return true;
 }
 
-async function createConfirmation(interaction, targetId, type, payload, message, context = DEFAULT_DASHBOARD_CONTEXT) {
+async function refreshCasesDashboard(interaction, target) {
+  if (!target) return false;
+  const { refreshDashboard } = require('./modPanel');
+  await refreshDashboard(Discord, interaction, target, DEFAULT_DASHBOARD_CONTEXT);
+  return true;
+}
+
+async function createConfirmation(
+  interaction,
+  targetId,
+  type,
+  payload,
+  message,
+  context = DEFAULT_DASHBOARD_CONTEXT
+) {
   const token = createPendingAction(interaction.guild.id, {
     moderatorId: interaction.user.id,
     targetId,
     type,
     payload,
   });
+
   return safeReply(interaction, {
     content: message,
     components: buildConfirmRow(buildConfirmCustomId(token, context)),
@@ -289,31 +308,64 @@ async function createConfirmation(interaction, targetId, type, payload, message,
 }
 
 const OPEN_ACTIONS = Object.freeze({
-  mod_open_warn: { permission: 'warn', modal: (id) => buildReasonModal(`mod_submit_warn:${id}`, 'Warn User', false, false, true) },
-  mod_open_timeout: { permission: 'timeout', modal: (id) => buildReasonModal(`mod_submit_timeout:${id}`, 'Timeout User', false, true) },
-  mod_open_kick: { permission: 'kick', modal: (id) => buildReasonModal(`mod_submit_kick:${id}`, 'Kick User') },
-  mod_open_ban: { permission: 'ban', modal: (id) => buildReasonModal(`mod_submit_ban:${id}`, 'Ban User', true) },
+  mod_open_warn: {
+    permission: 'warn',
+    modal: (id) => buildWarnModal(id),
+  },
+  mod_open_timeout: {
+    permission: 'timeout',
+    modal: (id) => buildReasonModal(`mod_submit_timeout:${id}`, 'Timeout User', false, true),
+  },
+  mod_open_kick: {
+    permission: 'kick',
+    modal: (id) => buildReasonModal(`mod_submit_kick:${id}`, 'Kick User'),
+  },
+  mod_open_ban: {
+    permission: 'ban',
+    modal: (id) => buildReasonModal(`mod_submit_ban:${id}`, 'Ban User', true),
+  },
 });
 
 const ACTION_SELECT_MODALS = Object.freeze({
-  warn: (id) => buildReasonModal(`mod_submit_warn:${id}`, 'Warn User', false, false, true),
+  warn: (id) => buildWarnModal(id),
   timeout: (id) => buildReasonModal(`mod_submit_timeout:${id}`, 'Timeout User', false, true),
   kick: (id) => buildReasonModal(`mod_submit_kick:${id}`, 'Kick User'),
   ban: (id) => buildReasonModal(`mod_submit_ban:${id}`, 'Ban User', true),
-  'remove-warning': (id) => buildCaseIdModal(`mod_submit_remove_warning:${id}`, 'Remove Warning', 'Warning Case ID'),
+  'remove-warning': (id) => buildCaseIdModal(
+    `mod_submit_remove_warning:${id}`,
+    'Remove Warning',
+    'Warning Case ID'
+  ),
 });
 
 const BULK_ACTIONS = Object.freeze({
-  mod_bulk_warn: { permission: 'bulk_warn', modal: () => buildBulkModal('warn'), label: 'bulk warn' },
-  mod_bulk_timeout: { permission: 'bulk_timeout', modal: () => buildBulkModal('timeout'), label: 'bulk timeout' },
-  mod_bulk_kick: { permission: 'bulk_kick', modal: () => buildBulkModal('kick'), label: 'bulk kick' },
-  mod_bulk_ban: { permission: 'bulk_ban', modal: () => buildBulkModal('ban'), label: 'bulk ban' },
+  mod_bulk_warn: {
+    permission: 'bulk_warn',
+    modal: () => buildBulkModal('warn'),
+    label: 'bulk warn',
+  },
+  mod_bulk_timeout: {
+    permission: 'bulk_timeout',
+    modal: () => buildBulkModal('timeout'),
+    label: 'bulk timeout',
+  },
+  mod_bulk_kick: {
+    permission: 'bulk_kick',
+    modal: () => buildBulkModal('kick'),
+    label: 'bulk kick',
+  },
+  mod_bulk_ban: {
+    permission: 'bulk_ban',
+    modal: () => buildBulkModal('ban'),
+    label: 'bulk ban',
+  },
 });
 
 async function handleUserSelectMenu(interaction) {
   if (interaction.customId !== 'mod_user_select') return false;
   const denied = ensurePanelAccess(interaction);
   if (denied) return denied;
+
   const target = await fetchTarget(interaction.guild, interaction.values[0]);
   if (!target) return safeReply(interaction, ephemeralError('Could not find that user.'));
   return renderDashboard(interaction, target.id, 'overview');
@@ -327,8 +379,11 @@ async function handleActionSelectMenu(interaction) {
   const targetId = getTargetIdFromCustomId(interaction.customId);
   const selected = interaction.values[0];
   const modalBuilder = ACTION_SELECT_MODALS[selected];
+
   if (modalBuilder) {
-    if (targetId === 'none') return safeReply(interaction, ephemeralError('No user selected.'));
+    if (targetId === 'none') {
+      return safeReply(interaction, ephemeralError('No user selected.'));
+    }
     await interaction.showModal(modalBuilder(targetId));
     return true;
   }
@@ -338,22 +393,36 @@ async function handleActionSelectMenu(interaction) {
     if (!target) return true;
     const error = checkHierarchy(interaction, target);
     if (error) return safeReply(interaction, ephemeralError(cleanError(error)));
-    return createConfirmation(interaction, targetId, 'remove-timeout', {}, `✅ Remove timeout from **${target.user.tag}**?`);
+    return createConfirmation(
+      interaction,
+      targetId,
+      'remove-timeout',
+      {},
+      `✅ Remove timeout from **${target.user.tag}**?`
+    );
   }
+
   return false;
 }
 
 async function handleDashboardNavigation(interaction) {
   const id = String(interaction.customId || '');
   if (id === 'mod:overview') return renderDashboard(interaction, 'none', 'overview');
+
   if (id.startsWith('mod_dashboard:') || id.startsWith('mod_refresh:')) {
     const [, targetId = 'none', view = 'overview'] = id.split(':');
     return renderDashboard(interaction, targetId, view);
   }
+
   if (id.startsWith('mod_filter_cases:') || id.startsWith('mod_case_page:')) {
     const [, targetId = 'none', actionFilter = 'all', statusFilter = 'all', page = '0'] = id.split(':');
-    return renderDashboard(interaction, targetId, 'cases', { actionFilter, statusFilter, page });
+    return renderDashboard(interaction, targetId, 'cases', {
+      actionFilter,
+      statusFilter,
+      page,
+    });
   }
+
   return false;
 }
 
@@ -368,6 +437,7 @@ async function handleCancelButton(interaction) {
 
 async function handleSelectUserButton(interaction) {
   if (interaction.customId !== 'mod_select_user') return false;
+
   const row = new ActionRowBuilder().addComponents(
     new UserSelectMenuBuilder()
       .setCustomId('mod_user_select')
@@ -375,31 +445,46 @@ async function handleSelectUserButton(interaction) {
       .setMinValues(1)
       .setMaxValues(1)
   );
-  return safeReply(interaction, { content: '👤 Select a user:', components: [row], flags: 64 });
+
+  return safeReply(interaction, {
+    content: '👤 Select a user:',
+    components: [row],
+    flags: 64,
+  });
 }
 
 async function handleBulkButtons(interaction) {
   const config = BULK_ACTIONS[interaction.customId];
   if (!config) return false;
+
   if (!canUseModAction(interaction.member, interaction.guild, config.permission)) {
     return safeReply(interaction, ephemeralError(`No permission to use ${config.label}.`));
   }
+
   await interaction.showModal(config.modal());
   return true;
 }
 
 async function handleOpenActionButtons(interaction) {
   if (!interaction.customId.startsWith('mod_open_')) return false;
+
   const [prefix, targetId] = interaction.customId.split(':');
   const config = OPEN_ACTIONS[prefix];
   if (!config) return false;
+
   const target = await requireSelectedTarget(interaction, targetId);
   if (!target) return true;
+
   const error = checkHierarchy(interaction, target);
   if (error) return safeReply(interaction, ephemeralError(cleanError(error)));
+
   if (!canUseModAction(interaction.member, interaction.guild, config.permission)) {
-    return safeReply(interaction, ephemeralError(`No permission to ${config.permission} users.`));
+    return safeReply(
+      interaction,
+      ephemeralError(`No permission to ${config.permission} users.`)
+    );
   }
+
   await interaction.showModal(config.modal(targetId));
   return true;
 }
@@ -409,33 +494,57 @@ async function handleCaseToolButtons(interaction) {
   const targetId = getTargetIdFromCustomId(id);
 
   if (id.startsWith('mod_case_detail:')) {
-    if (!canUseModAction(interaction.member, interaction.guild, 'view_case_detail')) return safeReply(interaction, ephemeralError('No permission to view case details.'));
+    if (!canUseModAction(interaction.member, interaction.guild, 'view_case_detail')) {
+      return safeReply(interaction, ephemeralError('No permission to view case details.'));
+    }
     if (targetId === 'none') return safeReply(interaction, ephemeralError('No user selected.'));
-    await interaction.showModal(buildCaseIdModal(`mod_submit_case_detail:${targetId}`, 'View Case Detail'));
+    await interaction.showModal(
+      buildCaseIdModal(`mod_submit_case_detail:${targetId}`, 'View Case Detail')
+    );
     return true;
   }
 
   if (id.startsWith('mod_edit_case:')) {
-    if (!canUseModAction(interaction.member, interaction.guild, 'edit_case')) return safeReply(interaction, ephemeralError('No permission to edit cases.'));
+    if (!canUseModAction(interaction.member, interaction.guild, 'edit_case')) {
+      return safeReply(interaction, ephemeralError('No permission to edit cases.'));
+    }
     if (targetId === 'none') return safeReply(interaction, ephemeralError('No user selected.'));
     await interaction.showModal(buildEditCaseModal(`mod_submit_edit_case:${targetId}`));
     return true;
   }
 
   if (id.startsWith('mod_remove_warning:')) {
-    if (!canUseModAction(interaction.member, interaction.guild, 'remove_warning')) return safeReply(interaction, ephemeralError('No permission to remove warnings.'));
+    if (!canUseModAction(interaction.member, interaction.guild, 'remove_warning')) {
+      return safeReply(interaction, ephemeralError('No permission to remove warnings.'));
+    }
     if (targetId === 'none') return safeReply(interaction, ephemeralError('No user selected.'));
-    await interaction.showModal(buildCaseIdModal(`mod_submit_remove_warning:${targetId}`, 'Remove Warning', 'Warning Case ID'));
+    await interaction.showModal(
+      buildCaseIdModal(
+        `mod_submit_remove_warning:${targetId}`,
+        'Remove Warning',
+        'Warning Case ID'
+      )
+    );
     return true;
   }
 
   if (id.startsWith('mod_remove_timeout:')) {
-    if (!canUseModAction(interaction.member, interaction.guild, 'remove_timeout')) return safeReply(interaction, ephemeralError('No permission to remove timeouts.'));
+    if (!canUseModAction(interaction.member, interaction.guild, 'remove_timeout')) {
+      return safeReply(interaction, ephemeralError('No permission to remove timeouts.'));
+    }
+
     const target = await requireSelectedTarget(interaction, targetId);
     if (!target) return true;
     const error = checkHierarchy(interaction, target);
     if (error) return safeReply(interaction, ephemeralError(cleanError(error)));
-    return createConfirmation(interaction, targetId, 'remove-timeout', {}, `✅ Remove timeout from **${target.user.tag}**?`);
+
+    return createConfirmation(
+      interaction,
+      targetId,
+      'remove-timeout',
+      {},
+      `✅ Remove timeout from **${target.user.tag}**?`
+    );
   }
 
   return false;
@@ -444,36 +553,75 @@ async function handleCaseToolButtons(interaction) {
 async function handleCaseActionButtons(interaction) {
   const denied = ensurePanelAccess(interaction);
   if (denied) return denied;
+
   const id = String(interaction.customId || '');
 
   if (id.startsWith('mod_case_note:')) {
-    if (!canUseModAction(interaction.member, interaction.guild, 'add_case_note')) return safeReply(interaction, ephemeralError('No permission to add case notes.'));
+    if (!canUseModAction(interaction.member, interaction.guild, 'add_case_note')) {
+      return safeReply(interaction, ephemeralError('No permission to add case notes.'));
+    }
+
     const [, caseIdRaw] = id.split(':');
-    if (!/^\d+$/.test(caseIdRaw)) return safeReply(interaction, ephemeralError('Case ID must be a number.'));
+    if (!/^\d+$/.test(caseIdRaw)) {
+      return safeReply(interaction, ephemeralError('Case ID must be a number.'));
+    }
+
     const modCase = getCaseById(interaction.guild.id, Number(caseIdRaw));
     if (!modCase) return safeReply(interaction, ephemeralError('Case not found.'));
-    await interaction.showModal(buildCaseNoteModal(`mod_submit_case_note:${modCase.caseId}`, modCase.note || ''));
+
+    await interaction.showModal(
+      buildCaseNoteModal(
+        `mod_submit_case_note:${modCase.caseId}`,
+        modCase.note || ''
+      )
+    );
     return true;
   }
 
   if (id.startsWith('mod_case_reverse_warning:')) {
-    if (!canUseModAction(interaction.member, interaction.guild, 'remove_warning')) return safeReply(interaction, ephemeralError('No permission to reverse warnings.'));
+    if (!canUseModAction(interaction.member, interaction.guild, 'remove_warning')) {
+      return safeReply(interaction, ephemeralError('No permission to reverse warnings.'));
+    }
+
     const [, caseIdRaw] = id.split(':');
     const modCase = getCaseById(interaction.guild.id, Number(caseIdRaw));
-    if (!modCase || modCase.action !== 'warn') return safeReply(interaction, ephemeralError('Warning case could not be found.'));
+    if (!modCase || modCase.action !== 'warn') {
+      return safeReply(interaction, ephemeralError('Warning case could not be found.'));
+    }
+
     const target = await fetchTarget(interaction.guild, modCase.userId);
     if (!target) return safeReply(interaction, ephemeralError('User not found for that case.'));
-    return createConfirmation(interaction, target.id, 'remove-warning', { caseId: modCase.caseId }, `⚠️ Reverse warning from **Case #${modCase.caseId}**?`);
+
+    return createConfirmation(
+      interaction,
+      target.id,
+      'remove-warning',
+      { caseId: modCase.caseId },
+      `⚠️ Reverse warning from **Case #${modCase.caseId}**?`
+    );
   }
 
   if (id.startsWith('mod_case_reverse_timeout:')) {
-    if (!canUseModAction(interaction.member, interaction.guild, 'remove_timeout')) return safeReply(interaction, ephemeralError('No permission to reverse timeouts.'));
+    if (!canUseModAction(interaction.member, interaction.guild, 'remove_timeout')) {
+      return safeReply(interaction, ephemeralError('No permission to reverse timeouts.'));
+    }
+
     const [, caseIdRaw] = id.split(':');
     const modCase = getCaseById(interaction.guild.id, Number(caseIdRaw));
-    if (!modCase || modCase.action !== 'timeout') return safeReply(interaction, ephemeralError('That timeout case could not be found.'));
+    if (!modCase || modCase.action !== 'timeout') {
+      return safeReply(interaction, ephemeralError('That timeout case could not be found.'));
+    }
+
     const target = await fetchTarget(interaction.guild, modCase.userId);
     if (!target) return safeReply(interaction, ephemeralError('User not found for that case.'));
-    return createConfirmation(interaction, target.id, 'remove-timeout', { sourceCaseId: modCase.caseId }, `⏳ Reverse timeout from **Case #${modCase.caseId}**?`);
+
+    return createConfirmation(
+      interaction,
+      target.id,
+      'remove-timeout',
+      { sourceCaseId: modCase.caseId },
+      `⏳ Reverse timeout from **Case #${modCase.caseId}**?`
+    );
   }
 
   return false;
@@ -483,25 +631,32 @@ async function handleConfirmButtons(interaction) {
   if (!interaction.customId.startsWith('mod_confirm_action:')) return false;
   const denied = ensurePanelAccess(interaction);
   if (denied) return denied;
+
   const { token, context } = parseConfirmActionContext(interaction.customId);
   return executePendingAction(Discord, interaction, token, context);
-}
-
-async function refreshCasesDashboard(interaction, target) {
-  if (!target) return false;
-  const { refreshDashboard } = require('./modPanel');
-  await refreshDashboard(Discord, interaction, target, DEFAULT_DASHBOARD_CONTEXT);
-  return true;
 }
 
 async function handleSelectUserModal(interaction) {
   if (interaction.customId !== 'mod_select_user_modal') return false;
   const denied = ensurePanelAccess(interaction);
   if (denied) return denied;
-  const target = await findMemberByQuery(interaction.guild, interaction.fields.getTextInputValue('target_user_query'));
-  if (!target) return safeReply(interaction, ephemeralError('User not found by that ID, username, tag, or display name.'));
+
+  const target = await findMemberByQuery(
+    interaction.guild,
+    interaction.fields.getTextInputValue('target_user_query')
+  );
+  if (!target) {
+    return safeReply(
+      interaction,
+      ephemeralError('User not found by that ID, username, tag, or display name.')
+    );
+  }
+
   const { buildDashboardPayload } = require('./modPanel');
-  return safeReply(interaction, { ...(await buildDashboardPayload(Discord, interaction, target, 'overview')), flags: 64 });
+  return safeReply(interaction, {
+    ...(await buildDashboardPayload(Discord, interaction, target, 'overview')),
+    flags: 64,
+  });
 }
 
 async function handleBulkModals(interaction) {
@@ -513,20 +668,37 @@ async function handleBulkModals(interaction) {
   };
   const actionType = map[interaction.customId];
   if (!actionType) return false;
+
   const denied = ensurePanelAccess(interaction);
   if (denied) return denied;
-  if (!canUseModAction(interaction.member, interaction.guild, `bulk_${actionType}`)) return safeReply(interaction, ephemeralError(`No permission to use bulk ${actionType}.`));
+
+  if (!canUseModAction(interaction.member, interaction.guild, `bulk_${actionType}`)) {
+    return safeReply(
+      interaction,
+      ephemeralError(`No permission to use bulk ${actionType}.`)
+    );
+  }
 
   const payload = {
     actionType,
     ids: interaction.fields.getTextInputValue('users').split(','),
     reason: interaction.fields.getTextInputValue('reason'),
   };
-  if (actionType === 'timeout') payload.durationRaw = interaction.fields.getTextInputValue('duration');
+
+  if (actionType === 'timeout') {
+    payload.durationRaw = interaction.fields.getTextInputValue('duration');
+  }
+
   if (actionType === 'ban') {
     payload.deleteDays = parseDeleteDays(interaction.fields.getTextInputValue('days'));
-    if (payload.deleteDays === null) return safeReply(interaction, ephemeralError('Delete message days must be 0-7.'));
+    if (payload.deleteDays === null) {
+      return safeReply(
+        interaction,
+        ephemeralError('Delete message days must be 0-7.')
+      );
+    }
   }
+
   return runBulkAction(interaction, payload);
 }
 
@@ -534,32 +706,62 @@ async function handleCaseDetailModal(interaction) {
   if (!interaction.customId.startsWith('mod_submit_case_detail:')) return false;
   const denied = ensurePanelAccess(interaction);
   if (denied) return denied;
+
   const targetId = getTargetIdFromCustomId(interaction.customId);
   const caseId = getCaseIdFromModal(interaction);
   if (!caseId) return safeReply(interaction, ephemeralError('Case ID must be a number.'));
-  if (!canUseModAction(interaction.member, interaction.guild, 'view_case_detail')) return safeReply(interaction, ephemeralError('No permission to view case details.'));
+
+  if (!canUseModAction(interaction.member, interaction.guild, 'view_case_detail')) {
+    return safeReply(interaction, ephemeralError('No permission to view case details.'));
+  }
+
   const modCase = getCaseById(interaction.guild.id, caseId);
   if (!modCase) return safeReply(interaction, ephemeralError('Case not found.'));
-  if (targetId !== 'none' && modCase.userId !== targetId) return safeReply(interaction, ephemeralError('That case does not belong to the currently selected user.'));
-  return safeReply(interaction, { embeds: [buildCaseDetailEmbed(modCase)], components: buildCaseDetailButtons(modCase), flags: 64 });
+  if (targetId !== 'none' && modCase.userId !== targetId) {
+    return safeReply(
+      interaction,
+      ephemeralError('That case does not belong to the currently selected user.')
+    );
+  }
+
+  return safeReply(interaction, {
+    embeds: [buildCaseDetailEmbed(modCase)],
+    components: buildCaseDetailButtons(modCase),
+    flags: 64,
+  });
 }
 
 async function handleEditCaseModal(interaction) {
   if (!interaction.customId.startsWith('mod_submit_edit_case:')) return false;
   const denied = ensurePanelAccess(interaction);
   if (denied) return denied;
+
   const targetId = getTargetIdFromCustomId(interaction.customId);
   const caseId = getCaseIdFromModal(interaction);
   const reason = interaction.fields.getTextInputValue('reason').trim();
   if (!caseId) return safeReply(interaction, ephemeralError('Case ID must be a number.'));
-  if (!canUseModAction(interaction.member, interaction.guild, 'edit_case')) return safeReply(interaction, ephemeralError('No permission to edit cases.'));
+
+  if (!canUseModAction(interaction.member, interaction.guild, 'edit_case')) {
+    return safeReply(interaction, ephemeralError('No permission to edit cases.'));
+  }
+
   const existing = getCaseById(interaction.guild.id, caseId);
   if (!existing) return safeReply(interaction, ephemeralError('Case not found.'));
-  if (targetId !== 'none' && existing.userId !== targetId) return safeReply(interaction, ephemeralError('That case does not belong to the currently selected user.'));
+  if (targetId !== 'none' && existing.userId !== targetId) {
+    return safeReply(
+      interaction,
+      ephemeralError('That case does not belong to the currently selected user.')
+    );
+  }
+
   const updated = editCaseReason(interaction.guild.id, caseId, reason);
   if (!updated) return safeReply(interaction, ephemeralError('Failed to update case.'));
+
   const target = await fetchTarget(interaction.guild, updated.userId);
-  await safeReply(interaction, { content: `✏️ Updated reason for **Case #${updated.caseId}**.`, flags: 64 });
+  await safeReply(interaction, {
+    content: `✏️ Updated reason for **Case #${updated.caseId}**.`,
+    flags: 64,
+  });
   await refreshCasesDashboard(interaction, target);
   return true;
 }
@@ -568,17 +770,31 @@ async function handleCaseNoteModal(interaction) {
   if (!interaction.customId.startsWith('mod_submit_case_note:')) return false;
   const denied = ensurePanelAccess(interaction);
   if (denied) return denied;
+
   const [, caseIdRaw] = interaction.customId.split(':');
-  if (!/^\d+$/.test(caseIdRaw)) return safeReply(interaction, ephemeralError('Case ID must be a number.'));
-  if (!canUseModAction(interaction.member, interaction.guild, 'add_case_note')) return safeReply(interaction, ephemeralError('No permission to add case notes.'));
+  if (!/^\d+$/.test(caseIdRaw)) {
+    return safeReply(interaction, ephemeralError('Case ID must be a number.'));
+  }
+
+  if (!canUseModAction(interaction.member, interaction.guild, 'add_case_note')) {
+    return safeReply(interaction, ephemeralError('No permission to add case notes.'));
+  }
+
   const caseId = Number(caseIdRaw);
   const existing = getCaseById(interaction.guild.id, caseId);
   if (!existing) return safeReply(interaction, ephemeralError('Case not found.'));
+
   const note = interaction.fields.getTextInputValue('note').trim();
   const updated = setCaseNote(interaction.guild.id, caseId, note);
   if (!updated) return safeReply(interaction, ephemeralError('Failed to update case note.'));
+
   const target = await fetchTarget(interaction.guild, updated.userId);
-  await safeReply(interaction, { content: note ? `📝 Updated note for **Case #${updated.caseId}**.` : `🗑️ Cleared note for **Case #${updated.caseId}**.`, flags: 64 });
+  await safeReply(interaction, {
+    content: note
+      ? `📝 Updated note for **Case #${updated.caseId}**.`
+      : `🗑️ Cleared note for **Case #${updated.caseId}**.`,
+    flags: 64,
+  });
   await refreshCasesDashboard(interaction, target);
   return true;
 }
@@ -587,110 +803,163 @@ async function handleRemoveWarningModal(interaction) {
   if (!interaction.customId.startsWith('mod_submit_remove_warning:')) return false;
   const denied = ensurePanelAccess(interaction);
   if (denied) return denied;
+
   const targetId = getTargetIdFromCustomId(interaction.customId);
   const caseId = getCaseIdFromModal(interaction);
-  if (!caseId) return safeReply(interaction, ephemeralError('Warning case ID must be a number.'));
-  if (!canUseModAction(interaction.member, interaction.guild, 'remove_warning')) return safeReply(interaction, { content: getModActionDeniedMessage('remove_warning'), flags: 64 });
+  if (!caseId) {
+    return safeReply(
+      interaction,
+      ephemeralError('Warning case ID must be a number.')
+    );
+  }
+
+  if (!canUseModAction(interaction.member, interaction.guild, 'remove_warning')) {
+    return safeReply(interaction, {
+      content: getModActionDeniedMessage('remove_warning'),
+      flags: 64,
+    });
+  }
+
   const warning = getWarningByCaseId(interaction.guild.id, caseId);
-  if (!warning) return safeReply(interaction, ephemeralError('Warning not found for that case ID.'));
-  if (targetId !== 'none' && warning.userId !== targetId) return safeReply(interaction, ephemeralError('User not found for that case.'));
-  return createConfirmation(interaction, warning.userId, 'remove-warning', { caseId }, `Remove warning linked to **Case #${caseId}**?`);
+  if (!warning) {
+    return safeReply(
+      interaction,
+      ephemeralError('Warning not found for that case ID.')
+    );
+  }
+
+  if (targetId !== 'none' && warning.userId !== targetId) {
+    return safeReply(interaction, ephemeralError('User not found for that case.'));
+  }
+
+  return createConfirmation(
+    interaction,
+    warning.userId,
+    'remove-warning',
+    { caseId },
+    `Remove warning linked to **Case #${caseId}**?`
+  );
 }
 
 async function handleBanModal(interaction) {
   if (!interaction.customId.startsWith('mod_submit_ban:')) return false;
   const denied = ensurePanelAccess(interaction);
   if (denied) return denied;
-  const target = await fetchTarget(interaction.guild, getTargetIdFromCustomId(interaction.customId));
+
+  const target = await fetchTarget(
+    interaction.guild,
+    getTargetIdFromCustomId(interaction.customId)
+  );
   const error = checkHierarchy(interaction, target);
   if (error) return safeReply(interaction, ephemeralError(cleanError(error)));
-  if (!canUseModAction(interaction.member, interaction.guild, 'ban')) return safeReply(interaction, ephemeralError('No permission to ban users.'));
+
+  if (!canUseModAction(interaction.member, interaction.guild, 'ban')) {
+    return safeReply(interaction, ephemeralError('No permission to ban users.'));
+  }
+
   const reason = interaction.fields.getTextInputValue('reason').trim();
   const deleteDays = parseDeleteDays(interaction.fields.getTextInputValue('days'));
-  if (deleteDays === null) return safeReply(interaction, ephemeralError('Delete message days must be 0-7.'));
-  return createConfirmation(interaction, target.id, 'ban', { reason, deleteDays }, `Confirm ban for **${target.user.tag}**?\nReason: ${reason}\nDelete days: ${deleteDays}`);
+  if (deleteDays === null) {
+    return safeReply(
+      interaction,
+      ephemeralError('Delete message days must be 0-7.')
+    );
+  }
+
+  return createConfirmation(
+    interaction,
+    target.id,
+    'ban',
+    { reason, deleteDays },
+    `Confirm ban for **${target.user.tag}**?\nReason: ${reason}\nDelete days: ${deleteDays}`
+  );
 }
 
 async function handleKickModal(interaction) {
   if (!interaction.customId.startsWith('mod_submit_kick:')) return false;
   const denied = ensurePanelAccess(interaction);
   if (denied) return denied;
-  const target = await fetchTarget(interaction.guild, getTargetIdFromCustomId(interaction.customId));
+
+  const target = await fetchTarget(
+    interaction.guild,
+    getTargetIdFromCustomId(interaction.customId)
+  );
   const error = checkHierarchy(interaction, target);
   if (error) return safeReply(interaction, ephemeralError(cleanError(error)));
-  if (!canUseModAction(interaction.member, interaction.guild, 'kick')) return safeReply(interaction, { content: getModActionDeniedMessage('kick'), flags: 64 });
+
+  if (!canUseModAction(interaction.member, interaction.guild, 'kick')) {
+    return safeReply(interaction, {
+      content: getModActionDeniedMessage('kick'),
+      flags: 64,
+    });
+  }
+
   const reason = interaction.fields.getTextInputValue('reason').trim();
-  return createConfirmation(interaction, target.id, 'kick', { reason }, `Confirm kick for **${target.user.tag}**?\nReason: ${reason}`);
+  return createConfirmation(
+    interaction,
+    target.id,
+    'kick',
+    { reason },
+    `Confirm kick for **${target.user.tag}**?\nReason: ${reason}`
+  );
 }
 
 async function handleWarnModal(interaction) {
   if (!interaction.customId.startsWith('mod_submit_warn:')) return false;
   const denied = ensurePanelAccess(interaction);
   if (denied) return denied;
-  const target = await fetchTarget(interaction.guild, getTargetIdFromCustomId(interaction.customId));
+
+  const target = await fetchTarget(
+    interaction.guild,
+    getTargetIdFromCustomId(interaction.customId)
+  );
   const error = checkHierarchy(interaction, target);
   if (error) return safeReply(interaction, ephemeralError(cleanError(error)));
-  if (!canUseModAction(interaction.member, interaction.guild, 'warn')) return safeReply(interaction, { content: getModActionDeniedMessage('warn'), flags: 64 });
 
-  const reason = interaction.fields.getTextInputValue('reason').trim();
-  const expiryRaw = interaction.fields.getTextInputValue('warn_expiry') || 'never';
-  const expiresAt = parseWarningExpiry(expiryRaw);
-  if (expiryRaw.trim().toLowerCase() !== 'never' && !expiresAt) return safeReply(interaction, ephemeralError('Invalid warning expiry. Use `7d`, `2w`, `1m`, or `never`.'));
-
-  try {
-    const modCase = createCase({
-      guildId: interaction.guild.id,
-      userId: target.id,
-      moderatorId: interaction.user.id,
-      action: 'warn',
-      reason,
-      metadata: { expiresAt },
+  if (!canUseModAction(interaction.member, interaction.guild, 'warn')) {
+    return safeReply(interaction, {
+      content: getModActionDeniedMessage('warn'),
+      flags: 64,
     });
-    createWarning({ guildId: interaction.guild.id, userId: target.id, moderatorId: interaction.user.id, reason, caseId: modCase.caseId, expiresAt });
-    const warningContext = await getWarningContext({ guildId: interaction.guild.id, userId: target.id, reason });
-    const escalatedCase = await runWarningEscalation({ guild: interaction.guild, member: target, moderator: interaction.user, reason });
-    await sendModLog({
-      guild: interaction.guild,
-      target,
-      moderator: interaction.user,
-      action: 'Warn',
-      reason,
-      caseId: modCase.caseId,
-      metadata: {
-        expiresAt,
-        repeatPattern: Boolean(warningContext.repeatInfo.isRepeatPattern),
-        repeatCount: warningContext.repeatInfo.repeatCount || 0,
-        escalatedAction: escalatedCase?.action || null,
-        escalatedCaseId: escalatedCase?.caseId || null,
-      },
-    });
-
-    const extra = [];
-    if (warningContext.repeatInfo.isRepeatPattern) extra.push(`🔁 Repeat reason detected (${warningContext.repeatInfo.repeatCount} matching warnings)`);
-    if (escalatedCase) extra.push(`⚡ Auto escalation triggered: **${escalatedCase.action}** (Case #${escalatedCase.caseId})`);
-    await safeReply(interaction, { content: [`⚠️ Warned **${target.user.tag}** • Case #${modCase.caseId}`, ...extra].join('\n'), flags: 64 });
-    await refreshCasesDashboard(interaction, target);
-    return true;
-  } catch (error) {
-    console.error('❌ Warn error:', error);
-    return safeReply(interaction, ephemeralError('Failed to warn user.'));
   }
+
+  const result = await submitWarning(interaction, target);
+  if (result?.ok) await refreshCasesDashboard(interaction, target);
+  return true;
 }
 
 async function handleTimeoutModal(interaction) {
   if (!interaction.customId.startsWith('mod_submit_timeout:')) return false;
   const denied = ensurePanelAccess(interaction);
   if (denied) return denied;
-  const target = await fetchTarget(interaction.guild, getTargetIdFromCustomId(interaction.customId));
+
+  const target = await fetchTarget(
+    interaction.guild,
+    getTargetIdFromCustomId(interaction.customId)
+  );
   const error = checkHierarchy(interaction, target);
   if (error) return safeReply(interaction, ephemeralError(cleanError(error)));
-  if (!canUseModAction(interaction.member, interaction.guild, 'timeout')) return safeReply(interaction, { content: getModActionDeniedMessage('timeout'), flags: 64 });
+
+  if (!canUseModAction(interaction.member, interaction.guild, 'timeout')) {
+    return safeReply(interaction, {
+      content: getModActionDeniedMessage('timeout'),
+      flags: 64,
+    });
+  }
 
   const durationRaw = interaction.fields.getTextInputValue('duration').trim();
   const reason = interaction.fields.getTextInputValue('reason').trim();
   const durationMs = parseDuration(durationRaw);
-  if (!durationMs) return safeReply(interaction, ephemeralError('Invalid duration. Use `10m`, `1h`, or `1d`.'));
-  if (!isValidTimeoutDuration(durationMs)) return safeReply(interaction, ephemeralError('Timeout cannot exceed 28 days.'));
+
+  if (!durationMs) {
+    return safeReply(
+      interaction,
+      ephemeralError('Invalid duration. Use `10m`, `1h`, or `1d`.')
+    );
+  }
+  if (!isValidTimeoutDuration(durationMs)) {
+    return safeReply(interaction, ephemeralError('Timeout cannot exceed 28 days.'));
+  }
 
   try {
     await target.timeout(durationMs, `${reason} | By ${interaction.user.tag}`);
@@ -702,6 +971,7 @@ async function handleTimeoutModal(interaction) {
       reason,
       metadata: { duration: durationRaw },
     });
+
     await sendModLog({
       guild: interaction.guild,
       target,
@@ -711,7 +981,11 @@ async function handleTimeoutModal(interaction) {
       caseId: modCase.caseId,
       metadata: { duration: durationRaw },
     });
-    await safeReply(interaction, { content: `⏳ Timed out **${target.user.tag}** for **${durationRaw}** • Case #${modCase.caseId}`, flags: 64 });
+
+    await safeReply(interaction, {
+      content: `⏳ Timed out **${target.user.tag}** for **${durationRaw}** • Case #${modCase.caseId}`,
+      flags: 64,
+    });
     await refreshCasesDashboard(interaction, target);
     return true;
   } catch (error) {
@@ -727,6 +1001,7 @@ async function routeButtonsAndSelects(interaction) {
 
   const denied = ensurePanelAccess(interaction);
   if (denied) return denied;
+
   const handlers = [
     handleConfirmButtons,
     handleCaseActionButtons,
@@ -737,6 +1012,7 @@ async function routeButtonsAndSelects(interaction) {
     handleOpenActionButtons,
     handleCaseToolButtons,
   ];
+
   for (const handler of handlers) {
     const result = await handler(interaction);
     if (result) return result;
@@ -747,6 +1023,7 @@ async function routeButtonsAndSelects(interaction) {
 async function routeModModal(interaction) {
   if (!interaction?.customId?.startsWith('mod_')) return false;
   await syncExpiredWarningsToCases(interaction.guild.id);
+
   const handlers = [
     handleSelectUserModal,
     handleCaseNoteModal,
@@ -759,6 +1036,7 @@ async function routeModModal(interaction) {
     handleWarnModal,
     handleTimeoutModal,
   ];
+
   for (const handler of handlers) {
     const result = await handler(interaction);
     if (result) return result;
