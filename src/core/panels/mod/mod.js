@@ -5,6 +5,7 @@ const {
 
 const { enforceCommandAccess } = require('../../ui/commandAccess');
 const { errorEmbed } = require('../../ui/embeds');
+const { safeEditReply } = require('../../ui/interactionResponse');
 const modPanel = require('./modPanel');
 
 module.exports = {
@@ -32,7 +33,7 @@ module.exports = {
 
     try {
       if (!interaction.guild) {
-        return await safeReply(interaction, {
+        return await safeEditReply(interaction, {
           embeds: [
             errorEmbed('This command can only be used inside a server.'),
           ],
@@ -57,7 +58,7 @@ module.exports = {
 
       console.error('❌ Mod command failed:', error);
 
-      return await safeReply(interaction, {
+      return await safeEditReply(interaction, {
         embeds: [
           errorEmbed('Failed to open the moderation hub. Please try again.'),
         ],
@@ -66,16 +67,3 @@ module.exports = {
     }
   },
 };
-
-async function safeReply(interaction, payload) {
-  const safePayload = {
-    ...payload,
-    flags: 64,
-  };
-
-  if (interaction.deferred || interaction.replied) {
-    return interaction.editReply(safePayload);
-  }
-
-  return interaction.reply(safePayload);
-}
