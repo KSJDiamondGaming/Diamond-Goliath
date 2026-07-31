@@ -432,14 +432,26 @@ async function replyEphemeral(interaction, content) {
 }
 
 async function deployLatestOrNew(interaction, redeploy = false) {
-  const config = getConfig(interaction.guild.id);
+  const guild = interaction.guild;
+  const config = getConfig(guild.id);
   if (!config.verificationChannelId) throw new Error('Choose a verification channel first.');
-  const channel = interaction.guild.channels.cache.get(config.verificationChannelId) || await interaction.guild.channels.fetch(config.verificationChannelId).catch(() => null);
+  const channel = guild.channels.cache.get(config.verificationChannelId) || await guild.channels.fetch(config.verificationChannelId).catch(() => null);
   if (!channel?.send) throw new Error('Verification channel is not sendable.');
-  const existing = redeploy ? latestPanel(interaction.guild.id) : null;
+
+  const existing = redeploy ? latestPanel(guild.id) : null;
+  let reusablePanelId;
+
+  if (existing?.channelId && existing?.messageId) {
+    const existingChannel = guild.channels.cache.get(existing.channelId) || await guild.channels.fetch(existing.channelId).catch(() => null);
+    const existingMessage = existingChannel?.messages?.fetch
+      ? await existingChannel.messages.fetch(existing.messageId).catch(() => null)
+      : null;
+    if (existingMessage?.editable) reusablePanelId = existing.panelId;
+  }
+
   return verificationManager.deployVerificationPanel(channel, {
-    ...panelTemplate(interaction.guild.id),
-    panelId: existing?.panelId,
+    ...panelTemplate(guild.id),
+    panelId: reusablePanelId,
     createdBy: interaction.user.id,
   }, { actorId: interaction.user.id });
 }
