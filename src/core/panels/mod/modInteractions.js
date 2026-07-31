@@ -29,11 +29,11 @@ const {
 const {
   syncExpiredWarningsToCases,
   buildWarnModal,
+  buildRemoveWarningModal,
   submitWarning,
-  getWarningByCaseId,
+  submitRemoveWarningRequest,
 } = require('./warns');
 const {
-  buildCaseIdModal,
   openCaseTool,
   handleCaseAction,
   submitCaseModal,
@@ -221,11 +221,7 @@ const ACTION_SELECT_MODALS = Object.freeze({
   timeout: (id) => buildPunishmentModal('timeout', id),
   kick: (id) => buildPunishmentModal('kick', id),
   ban: (id) => buildPunishmentModal('ban', id),
-  'remove-warning': (id) => buildCaseIdModal(
-    `mod_submit_remove_warning:${id}`,
-    'Remove Warning',
-    'Warning Case ID'
-  ),
+  'remove-warning': (id) => buildRemoveWarningModal(id),
 });
 
 const BULK_ACTIONS = Object.freeze({
@@ -356,7 +352,7 @@ async function handleCaseToolButtons(interaction) {
       return safeReply(interaction, ephemeralError('No permission to remove warnings.'));
     }
     if (targetId === 'none') return safeReply(interaction, ephemeralError('No user selected.'));
-    await interaction.showModal(buildCaseIdModal(`mod_submit_remove_warning:${targetId}`, 'Remove Warning', 'Warning Case ID'));
+    await interaction.showModal(buildRemoveWarningModal(targetId));
     return true;
   }
 
@@ -447,27 +443,10 @@ async function handleRemoveWarningModal(interaction) {
   if (!interaction.customId.startsWith('mod_submit_remove_warning:')) return false;
   const denied = ensurePanelAccess(interaction);
   if (denied) return denied;
-
-  const targetId = getTargetIdFromCustomId(interaction.customId);
-  const raw = interaction.fields.getTextInputValue('case_id').trim();
-  const caseId = /^\d+$/.test(raw) ? Number(raw) : null;
-  if (!caseId) return safeReply(interaction, ephemeralError('Warning case ID must be a number.'));
-  if (!canUseModAction(interaction.member, interaction.guild, 'remove_warning')) {
-    return safeReply(interaction, { content: getModActionDeniedMessage('remove_warning'), flags: 64 });
-  }
-
-  const warning = getWarningByCaseId(interaction.guild.id, caseId);
-  if (!warning) return safeReply(interaction, ephemeralError('Warning not found for that case ID.'));
-  if (targetId !== 'none' && warning.userId !== targetId) {
-    return safeReply(interaction, ephemeralError('User not found for that case.'));
-  }
-
-  return createConfirmation(
+  return submitRemoveWarningRequest(
     interaction,
-    warning.userId,
-    'remove-warning',
-    { caseId },
-    `Remove warning linked to **Case #${caseId}**?`
+    getTargetIdFromCustomId(interaction.customId),
+    createConfirmation
   );
 }
 
