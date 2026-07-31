@@ -44,15 +44,11 @@ module.exports = {
         await interaction.deferReply({ flags: 64 });
       }
 
-      if (typeof modPanel.openModPanel === 'function') {
-        return await modPanel.openModPanel(interaction);
+      if (typeof modPanel.openModPanel !== 'function') {
+        throw new Error('Moderation panel opener was not found.');
       }
 
-      if (typeof modPanel === 'function') {
-        return await modPanel(interaction);
-      }
-
-      throw new Error('Moderation panel opener was not found.');
+      return await modPanel.openModPanel(interaction);
     } catch (error) {
       if (error?.code === 10062 || error?.code === 40060) return;
 
