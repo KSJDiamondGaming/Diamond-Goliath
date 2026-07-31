@@ -361,3 +361,12 @@ test('welcome admin panel reports, writes and exports canonical module state', (
   assert.doesNotMatch(source, /welcome\.updateConfig\(interaction\.guild\.id, \{ enabled:/);
   assert.match(source, /config\.dmEnabled/);
 });
+
+test('tickets API reports and writes canonical module state while preserving panel state', () => {
+  const source = read('src/server/routes/tickets.js');
+  assert.match(source, /enabled: guildManager\.isModuleEnabled\(guildId, "tickets"\)/);
+  assert.match(source, /const \{ enabled, \.\.\.settings \} = input;/);
+  assert.match(source, /guildManager\.setModuleEnabled\(guildId, "tickets", enabled/);
+  assert.doesNotMatch(source, /enabled: settings\.enabled !== false/);
+  assert.match(source, /enabled: payload\.enabled !== false/);
+});
