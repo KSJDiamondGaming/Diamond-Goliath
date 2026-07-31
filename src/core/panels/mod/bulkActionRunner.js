@@ -7,12 +7,12 @@ const {
   parseDuration,
   isValidTimeoutDuration,
   isValidDeleteDays,
-} = require('../../../core/ui/targetHelpers');
+} = require('./targetHelpers');
 
 const {
   getBulkActionProgressEmbed,
   getBulkActionSummaryEmbed,
-} = require('../../../core/ui/caseComponentBuilders');
+} = require('./caseComponentBuilders');
 
 const {
   safeReply,
@@ -21,7 +21,6 @@ const {
 
 const { applyPunishmentEngine } = require('../../../core/automod/punishmentEngine');
 
-// If this path is different in your project, only change this line.
 const { sendModLog } = require('../../../core/logging/modlogs/moderationActionLog');
 
 const ACTION_LABELS = {
