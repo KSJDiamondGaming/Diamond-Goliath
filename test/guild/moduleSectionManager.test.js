@@ -11,6 +11,11 @@ const moduleAdminPanelsPath = path.resolve(__dirname, '../../src/core/admin/func
 const reactionRolesPanelPath = path.resolve(__dirname, '../../src/modules/roleStudio/reactionRoles/reactionRolesPanel.js');
 const levelingPath = path.resolve(__dirname, '../../src/modules/communityStudio/leveling/leveling.js');
 const stickyStorePath = path.resolve(__dirname, '../../src/modules/messageStudio/sticky/stickyStore.js');
+const starboardRuntimePath = path.resolve(__dirname, '../../src/modules/messageStudio/starboard/starboard.js');
+const starboardStorePath = path.resolve(__dirname, '../../src/modules/messageStudio/starboard/starboardStore.js');
+const starboardPanelPath = path.resolve(__dirname, '../../src/modules/messageStudio/starboard/starboardPanel.js');
+const starboardRoutePath = path.resolve(__dirname, '../../src/server/routes/starboard.js');
+const temporaryRolesPath = path.resolve(__dirname, '../../src/modules/roleStudio/temporaryRoles/temporaryRoles.js');
 
 function loadManager(initialModules = {}) {
   let modules = JSON.parse(JSON.stringify(initialModules));
@@ -183,4 +188,34 @@ test('sticky store strips module enabled state while preserving channel enabled 
   assert.match(sectionNormalizer, /delete normalized\.enabled;/);
   assert.match(source, /return normalizeSection\(saveModuleSection\(guildId, MODULE_KEY, normalizeSection\(data\), meta\)\);/);
   assert.doesNotMatch(sectionNormalizer, /enabled: source\.enabled !== false/);
+});
+
+test('starboard uses canonical module state across runtime, store, route and panel', () => {
+  const runtime = fs.readFileSync(starboardRuntimePath, 'utf8');
+  const store = fs.readFileSync(starboardStorePath, 'utf8');
+  const panel = fs.readFileSync(starboardPanelPath, 'utf8');
+  const route = fs.readFileSync(starboardRoutePath, 'utf8');
+  const defaults = store.slice(store.indexOf('function defaultStarboardSection()'), store.indexOf('function normalizePost('));
+
+  assert.doesNotMatch(defaults, /enabled\s*:/);
+  assert.match(store, /delete normalized\.enabled;/);
+  assert.match(runtime, /isModuleEnabled\(guildId, 'starboard'\) === true/);
+  assert.match(runtime, /setModuleEnabled\(guildId, 'starboard', input\.enabled === true\)/);
+  assert.match(panel, /const enabled = isModuleEnabled\(guild\.id, 'starboard'\) === true;/);
+  assert.match(panel, /setModuleEnabled\(interaction\.guild\.id, 'starboard', true\)/);
+  assert.match(panel, /setModuleEnabled\(interaction\.guild\.id, 'starboard', false\)/);
+  assert.match(route, /enabled: isModuleEnabled\(guildId, 'starboard'\) === true/);
+  assert.match(route, /setModuleEnabled\(guildId, 'starboard', req\.body\?\.enabled === true\)/);
+  assert.doesNotMatch(store, /enabled: source\.enabled !== false/);
+});
+
+test('temporary roles runtime and store use canonical module state', () => {
+  const source = fs.readFileSync(temporaryRolesPath, 'utf8');
+  const defaults = source.slice(source.indexOf('function defaultSection()'), source.indexOf('function normalizeAssignment('));
+
+  assert.doesNotMatch(defaults, /enabled\s*:/);
+  assert.match(source, /delete normalized\.enabled;/);
+  assert.match(source, /isModuleEnabled\(guild\.id, SECTION\)/);
+  assert.match(source, /setModuleEnabled\(guildId, SECTION, Boolean\(enabled\), meta\)/);
+  assert.doesNotMatch(source, /section\.enabled/);
 });
