@@ -1,7 +1,11 @@
+const { PermissionFlagsBits } = require('discord.js');
+const guildManager = require('../../guild/guildManager');
+const security = require('../../security/securityCore');
 const {
   buildCategoryPanel,
   buildMainPanel,
   buildModulePanel,
+  buildSocialAccessDeniedPanel,
 } = require('./userPanel');
 
 function getMemberDisplayName(interaction) {
@@ -9,6 +13,22 @@ function getMemberDisplayName(interaction) {
     interaction.user?.displayName ||
     interaction.user?.username ||
     'Unknown User';
+}
+
+function getSocialUserRoleIds(guildId) {
+  const social = guildManager.getGuildSection(guildId, 'social', {});
+  return Array.isArray(social.userRoleIds) ? social.userRoleIds.filter(Boolean) : [];
+}
+
+function canUseUserSocialStudio(interaction) {
+  const roleIds = getSocialUserRoleIds(interaction.guildId);
+  if (!roleIds.length) return true;
+  return Boolean(
+    security.isBotOwner?.(interaction.user?.id) ||
+    interaction.guild?.ownerId === interaction.user?.id ||
+    interaction.member?.permissions?.has?.(PermissionFlagsBits.Administrator) ||
+    roleIds.some((id) => interaction.member?.roles?.cache?.has?.(id)),
+  );
 }
 
 async function updatePanel(interaction, payload) {
@@ -37,6 +57,9 @@ async function handleUserPanelInteraction(interaction) {
 
   if (interaction.isStringSelectMenu?.() && customId === 'user:search') {
     const [moduleKey] = interaction.values || [];
+    if (moduleKey === 'social' && !canUseUserSocialStudio(interaction)) {
+      return updatePanel(interaction, buildSocialAccessDeniedPanel(memberDisplayName));
+    }
     return updatePanel(interaction, buildModulePanel(moduleKey, memberDisplayName));
   }
 
@@ -47,6 +70,9 @@ async function handleUserPanelInteraction(interaction) {
 
   const moduleMatch = customId.match(/^user:module:([a-zA-Z0-9_-]+)$/);
   if (moduleMatch && interaction.isButton?.()) {
+    if (moduleMatch[1] === 'social' && !canUseUserSocialStudio(interaction)) {
+      return updatePanel(interaction, buildSocialAccessDeniedPanel(memberDisplayName));
+    }
     return updatePanel(interaction, buildModulePanel(moduleMatch[1], memberDisplayName));
   }
 
@@ -55,4 +81,5 @@ async function handleUserPanelInteraction(interaction) {
 
 module.exports = {
   handleUserPanelInteraction,
+  canUseUserSocialStudio,
 };

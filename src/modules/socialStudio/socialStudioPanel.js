@@ -1,7 +1,8 @@
 'use strict';
-const { ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle, ChannelSelectMenuBuilder, ChannelType, EmbedBuilder, ModalBuilder, RoleSelectMenuBuilder, StringSelectMenuBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+const { ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle, ChannelSelectMenuBuilder, ChannelType, EmbedBuilder, ModalBuilder, PermissionFlagsBits, RoleSelectMenuBuilder, StringSelectMenuBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const crypto = require('crypto');
 const guildManager = require('../../core/guild/guildManager');
+const security = require('../../core/security/securityCore');
 const { normalizeAccountInput, migrateAccount } = require('./accountNormalizer');
 const { providerInfo } = require('./socialStudioProviders');
 
@@ -34,6 +35,21 @@ const supportedAlerts = (platform) => {
   if (supported.includes('live') && !supported.includes('ended')) supported.splice(1, 0, 'ended');
   return supported;
 };
+const hasAnyRole = (member, roleIds = []) => Array.isArray(roleIds) && roleIds.some((id) => member?.roles?.cache?.has?.(id));
+function canManageSocialStudio(i, config = getConfig(i.guildId)) {
+  return Boolean(
+    security.isBotOwner?.(i.user?.id) ||
+    i.guild?.ownerId === i.user?.id ||
+    i.member?.permissions?.has?.(PermissionFlagsBits.Administrator) ||
+    hasAnyRole(i.member, config.managerRoleIds),
+  );
+}
+async function denySocialAccess(i) {
+  const payload = { content: 'You do not have permission to manage Social Studio.', flags: 64 };
+  if (i.deferred || i.replied) await i.followUp(payload).catch(() => null);
+  else await i.reply(payload);
+  return true;
+}
 
 function getConfig(guildId) {
   const guild = guildManager.reloadGuild(guildId);
@@ -283,4 +299,4 @@ async function handleInteraction(i) {
   if (id === `${P}test`) { if (!config.alertsChannelId) throw new Error('Choose an alert channel first.'); const ch = i.guild.channels.cache.get(config.alertsChannelId) || await i.guild.channels.fetch(config.alertsChannelId).catch(() => null); if (!ch?.isTextBased?.() || typeof ch.send !== 'function') throw new Error('The configured alert channel is unavailable.'); await ch.send({ embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🧪 Social Studio Test').setDescription('✅ Notification routing is working.\n\nThumbnails, platform metadata and template variables will be applied to real provider events.').setFooter({ text: 'Social Studio • Test' }).setTimestamp()] }); return respond(i, buildSectionPanel(i, 'diagnostics')); }
   const section = id.slice(P.length); if (NAV.has(section)) return respond(i, buildSectionPanel(i, section)); throw new Error(`Unknown Social Studio interaction: ${id}`);
 }
-module.exports = { buildPanel: buildMainPanel, handleInteraction, buildSocialAdminPanel: buildMainPanel, buildSectionPanel, handleSocialAdminInteraction: handleInteraction };
+module.exports = { buildPanel: buildMainPanel, handleInteraction, buildSocialAdminPanel: buildMainPanel, buildSectionPanel, handleSocialAdminInteraction: handleInteraction, canManageSocialStudio };

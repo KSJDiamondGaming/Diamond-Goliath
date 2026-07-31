@@ -180,6 +180,24 @@ function buildGiveawaysMemoPanel(interactionOrName = 'Unknown User') {
   };
 }
 
+function buildSocialAccessDeniedPanel(interactionOrName = 'Unknown User') {
+  const memberDisplayName = getMemberDisplayName(interactionOrName);
+  return {
+    embeds: [createEmbed(
+      'Social Studio',
+      ['This server only allows selected roles to use Social Studio from `/user`.', '', 'Ask a server admin if you should have access.'].join('\n'),
+      memberDisplayName,
+      DEV_COLOR,
+    )],
+    components: [
+      row(
+        button('user:category:social', 'Back to Social', ButtonStyle.Secondary, false, '⬅️'),
+        button('user:home', 'User Panel', ButtonStyle.Secondary, false, '👤'),
+      ),
+    ],
+  };
+}
+
 function buildPlannedModulePanel(moduleKey, interactionOrName = 'Unknown User') {
   const memberDisplayName = getMemberDisplayName(interactionOrName);
   const module = MODULE_BY_KEY[moduleKey];
@@ -217,4 +235,5 @@ module.exports = {
   buildMainPanel,
   buildCategoryPanel,
   buildModulePanel,
+  buildSocialAccessDeniedPanel,
 };
