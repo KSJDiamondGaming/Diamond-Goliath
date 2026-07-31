@@ -8,6 +8,8 @@ const {
 } = require('../../core/guild/moduleSectionManager');
 
 const MODULE = 'verification';
+const SCHEMA_VERSION = 2;
+const CONFIG_HISTORY_LIMIT = 5;
 const PENDING_ROLE_TIMINGS = new Set(['on_join', 'after_screening', 'manual']);
 const VERIFICATION_METHODS = new Set(['button', 'rules_acceptance', 'math_challenge', 'manual_approval']);
 
@@ -157,6 +159,10 @@ function defaultSettings() {
 
 function defaultVerificationSection() {
   return {
+    schemaVersion: SCHEMA_VERSION,
+    configRevision: 1,
+    lastKnownGoodRevision: 1,
+    configHistory: [],
     settings: defaultSettings(),
     messages: defaultMessages(),
     panelTemplate: defaultPanelTemplate(),
@@ -181,11 +187,13 @@ function normalizeAnalytics(analytics = {}) {
 }
 
 function normalizeMessages(messages = {}) {
-  const source = messages && typeof messages === 'object' ? messages : {};
+  const source = messages && typeof messages === 'object' && !Array.isArray(messages) ? messages : {};
   const base = defaultMessages();
-  return Object.fromEntries(
-    Object.entries(base).map(([key, fallback]) => [key, cleanString(source[key] || fallback, fallback, 1500)])
-  );
+  const output = { ...base, ...clone(source) };
+  for (const [key, fallback] of Object.entries(base)) {
+    output[key] = cleanString(source[key] ?? fallback, fallback, 1500);
+  }
+  return output;
 }
 
 function normalizePanelTemplate(template = {}) {
@@ -254,6 +262,7 @@ function normalizePanel(panel = {}) {
   const source = panel && typeof panel === 'object' ? panel : {};
   const panelId = cleanString(source.panelId || source.id || createId('verify_panel'), 'verify_panel', 80);
   return {
+    ...clone(source),
     panelId,
     id: panelId,
     enabled: source.enabled !== false,
@@ -272,10 +281,47 @@ function normalizePanel(panel = {}) {
 function normalizeAttempts(attempts = {}) {
   if (!attempts || typeof attempts !== 'object' || Array.isArray(attempts)) return {};
   return Object.fromEntries(Object.entries(attempts).map(([userId, attempt]) => [userId, {
+    ...(attempt && typeof attempt === 'object' ? clone(attempt) : {}),
     failed: cleanInteger(attempt?.failed, 0, 0, 100000),
     lastAttemptAt: cleanDate(attempt?.lastAttemptAt),
     lastFailureAt: cleanDate(attempt?.lastFailureAt),
   }]));
+}
+
+function normalizeConfigSnapshot(snapshot = {}) {
+  const source = snapshot && typeof snapshot === 'object' ? snapshot : {};
+  return {
+    revision: cleanInteger(source.revision, 1, 1),
+    status: cleanString(source.status || 'previous', 'previous', 40),
+    savedAt: cleanDate(source.savedAt) || now(),
+    settings: normalizeSettings(source.settings),
+    messages: normalizeMessages(source.messages),
+    panelTemplate: normalizePanelTemplate(source.panelTemplate),
+    activePanelId: cleanString(source.activePanelId || '', '', 80) || null,
+    panels: source.panels && typeof source.panels === 'object' ? clone(source.panels) : {},
+  };
+}
+
+function normalizeConfigHistory(history = []) {
+  if (!Array.isArray(history)) return [];
+  return history
+    .filter((entry) => entry && typeof entry === 'object')
+    .map(normalizeConfigSnapshot)
+    .sort((a, b) => b.revision - a.revision)
+    .slice(0, CONFIG_HISTORY_LIMIT);
+}
+
+function captureConfig(section, status = 'previous') {
+  return normalizeConfigSnapshot({
+    revision: section.configRevision || 1,
+    status,
+    savedAt: now(),
+    settings: section.settings,
+    messages: section.messages,
+    panelTemplate: section.panelTemplate,
+    activePanelId: section.activePanelId,
+    panels: section.panels,
+  });
 }
 
 function normalizeVerificationSection(section = {}) {
@@ -306,9 +352,15 @@ function normalizeVerificationSection(section = {}) {
     }
   }
 
+  const configRevision = cleanInteger(source.configRevision, 1, 1);
+  const lastKnownGoodRevision = cleanInteger(source.lastKnownGoodRevision, configRevision, 1, configRevision);
   const normalized = {
     ...base,
     ...clone(source),
+    schemaVersion: SCHEMA_VERSION,
+    configRevision,
+    lastKnownGoodRevision,
+    configHistory: normalizeConfigHistory(source.configHistory),
     settings: normalizeSettings(source.settings),
     messages: normalizeMessages(source.messages),
     panelTemplate: normalizePanelTemplate(source.panelTemplate),
@@ -345,6 +397,69 @@ function updateVerificationSection(guildId, updater, meta = {}) {
   ));
 }
 
+function updateConfiguration(guildId, updater, meta = {}) {
+  return updateVerificationSection(guildId, (section) => {
+    const before = captureConfig(section, 'last_known_good');
+    const proposed = typeof updater === 'function' ? updater(clone(section)) : updater;
+    const next = normalizeVerificationSection(proposed && typeof proposed === 'object' ? proposed : section);
+    const nextRevision = cleanInteger(section.configRevision, 1, 1) + 1;
+    const history = [before, ...(section.configHistory || [])]
+      .filter((entry, index, all) => all.findIndex((candidate) => candidate.revision === entry.revision) === index)
+      .slice(0, CONFIG_HISTORY_LIMIT);
+
+    return {
+      ...next,
+      schemaVersion: SCHEMA_VERSION,
+      configRevision: nextRevision,
+      lastKnownGoodRevision: section.lastKnownGoodRevision || section.configRevision || 1,
+      configHistory: history,
+      updatedAt: now(),
+    };
+  }, { action: 'verification_config_update', ...meta });
+}
+
+function markConfigKnownGood(guildId, meta = {}) {
+  return updateVerificationSection(guildId, (section) => ({
+    ...section,
+    lastKnownGoodRevision: section.configRevision,
+    configHistory: (section.configHistory || []).map((entry) => ({
+      ...entry,
+      status: entry.revision === section.configRevision ? 'last_known_good' : entry.status,
+    })),
+    updatedAt: now(),
+  }), { action: 'verification_config_known_good', ...meta });
+}
+
+function rollbackToLastKnownGood(guildId, meta = {}) {
+  return updateVerificationSection(guildId, (section) => {
+    const targetRevision = section.lastKnownGoodRevision;
+    if (targetRevision === section.configRevision) return section;
+    const target = (section.configHistory || []).find((entry) => entry.revision === targetRevision);
+    if (!target) throw new Error(`No verification config backup exists for revision ${targetRevision}.`);
+
+    const currentSnapshot = captureConfig(section, 'rolled_back');
+    return {
+      ...section,
+      settings: normalizeSettings(target.settings),
+      messages: normalizeMessages(target.messages),
+      panelTemplate: normalizePanelTemplate(target.panelTemplate),
+      activePanelId: target.activePanelId,
+      panels: target.panels && typeof target.panels === 'object' ? clone(target.panels) : {},
+      configRevision: section.configRevision + 1,
+      lastKnownGoodRevision: section.configRevision + 1,
+      configHistory: [currentSnapshot, ...(section.configHistory || [])].slice(0, CONFIG_HISTORY_LIMIT),
+      updatedAt: now(),
+    };
+  }, { action: 'verification_config_rollback', ...meta });
+}
+
+function updateSettings(guildId, settings, meta = {}) {
+  return updateConfiguration(guildId, (section) => ({
+    ...section,
+    settings: normalizeSettings({ ...(section.settings || {}), ...(settings || {}) }),
+  }), { action: 'verification_settings_update', ...meta }).settings;
+}
+
 function savePanel(guildId, panel, meta = {}) {
   const normalized = normalizePanel(panel);
   const timestamp = now();
@@ -372,8 +487,6 @@ function savePanel(guildId, panel, meta = {}) {
       merged.enabled = true;
       merged.retiredAt = null;
     } else if (!current) {
-      // New panels are staged inactive until Discord returns a real message ID.
-      // This guarantees an existing verification route remains authoritative if deployment fails.
       merged.enabled = false;
     }
 
@@ -414,19 +527,17 @@ function getLatestPanel(guildId) {
 }
 
 function updatePanelTemplate(guildId, template, meta = {}) {
-  return updateVerificationSection(guildId, (section) => ({
+  return updateConfiguration(guildId, (section) => ({
     ...section,
     panelTemplate: normalizePanelTemplate({ ...(section.panelTemplate || {}), ...(template || {}) }),
-    updatedAt: now(),
-  }), meta).panelTemplate;
+  }), { action: 'verification_panel_template_update', ...meta }).panelTemplate;
 }
 
 function updateMessages(guildId, messages, meta = {}) {
-  return updateVerificationSection(guildId, (section) => ({
+  return updateConfiguration(guildId, (section) => ({
     ...section,
     messages: normalizeMessages({ ...(section.messages || {}), ...(messages || {}) }),
-    updatedAt: now(),
-  }), meta).messages;
+  }), { action: 'verification_messages_update', ...meta }).messages;
 }
 
 function recordAttempt(guildId, userId, { failed = false } = {}, meta = {}) {
@@ -438,6 +549,7 @@ function recordAttempt(guildId, userId, { failed = false } = {}, meta = {}) {
       attempts: {
         ...(section.attempts || {}),
         [userId]: {
+          ...current,
           failed: cleanCount(current.failed + (failed ? 1 : 0)),
           lastAttemptAt: timestamp,
           lastFailureAt: failed ? timestamp : current.lastFailureAt,
@@ -475,6 +587,8 @@ function incrementAnalytics(guildId, increments = {}, meta = {}) {
 
 module.exports = {
   MODULE,
+  SCHEMA_VERSION,
+  CONFIG_HISTORY_LIMIT,
   PENDING_ROLE_TIMINGS,
   VERIFICATION_METHODS,
   createId,
@@ -491,6 +605,10 @@ module.exports = {
   getVerificationSection,
   saveVerificationSection,
   updateVerificationSection,
+  updateConfiguration,
+  updateSettings,
+  markConfigKnownGood,
+  rollbackToLastKnownGood,
   savePanel,
   getPanel,
   getLatestPanel,
