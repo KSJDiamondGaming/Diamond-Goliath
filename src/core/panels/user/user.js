@@ -2,7 +2,7 @@ const { SlashCommandBuilder } = require('discord.js');
 
 const { errorEmbed } = require('../../ui/embeds');
 const { enforceCommandAccess } = require('../../ui/commandAccess');
-const { buildMainPanel } = require('../../core/panels/user/userPanel');
+const { buildMainPanel } = require('./userPanel');
 
 module.exports = {
   category: 'Utility',
@@ -59,4 +59,3 @@ async function safeReply(interaction, payload) {
 
   return interaction.reply(safePayload);
 }
-
