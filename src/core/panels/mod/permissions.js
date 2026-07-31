@@ -56,6 +56,16 @@ const ACTION_REQUIREMENTS = {
   bulk_ban: STAFF_LEVELS.OWNER,
 };
 
+const ACTION_DISCORD_PERMISSIONS = {
+  timeout: PermissionFlagsBits.ModerateMembers,
+  remove_timeout: PermissionFlagsBits.ModerateMembers,
+  kick: PermissionFlagsBits.KickMembers,
+  ban: PermissionFlagsBits.BanMembers,
+  bulk_timeout: PermissionFlagsBits.ModerateMembers,
+  bulk_kick: PermissionFlagsBits.KickMembers,
+  bulk_ban: PermissionFlagsBits.BanMembers,
+};
+
 function getId(memberOrUserId) {
   return typeof memberOrUserId === 'string'
     ? memberOrUserId
@@ -133,10 +143,20 @@ function getStaffDisplay(member, guild) {
   };
 }
 
+function hasNativeActionPermission(member, guild, action) {
+  if (!member || !guild) return false;
+  if (security.isBotOwner(getId(member)) || isGuildOwner(member, guild.ownerId)) return true;
+  const requiredPermission = ACTION_DISCORD_PERMISSIONS[action];
+  return !requiredPermission || hasPermission(member, requiredPermission);
+}
+
 function canUseModAction(member, guild, action) {
   const staffLevel = getStaffLevel(member, guild);
   const requiredLevel = getRequiredStaffLevel(action);
-  return getStaffLevelRank(staffLevel) >= getStaffLevelRank(requiredLevel);
+  return (
+    getStaffLevelRank(staffLevel) >= getStaffLevelRank(requiredLevel) &&
+    hasNativeActionPermission(member, guild, action)
+  );
 }
 
 function getModActionDeniedMessage(action) {
