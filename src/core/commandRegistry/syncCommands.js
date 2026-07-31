@@ -233,7 +233,13 @@ function loadCommands(commandsPath, mode) {
   const seen = new Set();
   const errors = [];
 
-  for (const filePath of getAllJsFiles(commandsPath)) {
+  const userPanelCommand = path.join(process.cwd(), 'src', 'core', 'panels', 'user', 'user.js');
+  const commandFiles = [
+    ...getAllJsFiles(commandsPath),
+    ...(fs.existsSync(userPanelCommand) ? [userPanelCommand] : []),
+  ];
+
+  for (const filePath of commandFiles) {
     try {
       delete require.cache[require.resolve(filePath)];
 
@@ -545,3 +551,4 @@ module.exports = {
   loadCommands,
   validateCommandPayload,
 };
+
