@@ -25,6 +25,13 @@ const canonicalConfig = (guildId, config = goodbye.getGoodbyeSection(guildId)) =
   ...config,
   enabled: guildManager.isModuleEnabled(guildId, 'goodbye'),
 });
+const canonicalExport = (guildId) => {
+  const exported = goodbye.exportConfiguration(guildId);
+  return {
+    ...exported,
+    config: canonicalConfig(guildId, exported.config),
+  };
+};
 
 async function getGuild(req, guildId) {
   const client = getClient(req);
@@ -192,7 +199,7 @@ router.get('/:guildId/export', (req, res) => {
     const guildId = getGuildId(req);
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="goliath-goodbye-${guildId}.json"`);
-    return res.send(JSON.stringify(canonicalConfig(guildId, goodbye.exportConfiguration(guildId)), null, 2));
+    return res.send(JSON.stringify(canonicalExport(guildId), null, 2));
   } catch (error) {
     return failure(res, error, 400);
   }
