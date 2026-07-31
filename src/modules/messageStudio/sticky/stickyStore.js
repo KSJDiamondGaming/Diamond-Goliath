@@ -83,7 +83,7 @@ function normalizeSection(section = {}) {
     ? source.channels
     : {};
 
-  return {
+  const normalized = {
     ...base,
     ...source,
     channels: Object.fromEntries(Object.entries(rawChannels)
@@ -106,6 +106,8 @@ function normalizeSection(section = {}) {
     createdAt: source.createdAt || now(),
     updatedAt: source.updatedAt || now(),
   };
+  delete normalized.enabled;
+  return normalized;
 }
 
 function loadStickyData(guildId) {
@@ -113,7 +115,7 @@ function loadStickyData(guildId) {
 }
 
 function saveStickyData(guildId, data, meta = {}) {
-  return saveModuleSection(guildId, MODULE_KEY, normalizeSection(data), meta);
+  return normalizeSection(saveModuleSection(guildId, MODULE_KEY, normalizeSection(data), meta));
 }
 
 function getChannelSticky(guildId, channelId) {
