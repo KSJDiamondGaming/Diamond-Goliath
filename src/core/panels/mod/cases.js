@@ -20,6 +20,8 @@ const {
 } = require('../../../core/logging/cases/caseStore');
 const { COLORS, EMOJIS } = require('../../ui/uiConfig');
 const { createEmbed } = require('../../ui/embeds');
+const { safeReply, ephemeralError } = require('../../../core/ui/interactionResponse');
+const { canUseModAction } = require('./permissions');
 
 const STATUS_LABELS = Object.freeze({
   active: '🟢 Active',
@@ -319,6 +321,147 @@ function setCaseNote(guildId, caseId, note) {
     : clearCaseNote(guildId, caseId);
 }
 
+function getTargetIdFromCustomId(customId) {
+  const [, targetId] = String(customId || '').split(':');
+  return targetId || 'none';
+}
+
+async function openCaseTool(interaction) {
+  const id = String(interaction.customId || '');
+  const targetId = getTargetIdFromCustomId(id);
+
+  if (id.startsWith('mod_case_detail:')) {
+    if (!canUseModAction(interaction.member, interaction.guild, 'view_case_detail')) {
+      return safeReply(interaction, ephemeralError('No permission to view case details.'));
+    }
+    if (targetId === 'none') return safeReply(interaction, ephemeralError('No user selected.'));
+    await interaction.showModal(buildCaseIdModal(`mod_submit_case_detail:${targetId}`, 'View Case Detail'));
+    return true;
+  }
+
+  if (id.startsWith('mod_edit_case:')) {
+    if (!canUseModAction(interaction.member, interaction.guild, 'edit_case')) {
+      return safeReply(interaction, ephemeralError('No permission to edit cases.'));
+    }
+    if (targetId === 'none') return safeReply(interaction, ephemeralError('No user selected.'));
+    await interaction.showModal(buildEditCaseModal(`mod_submit_edit_case:${targetId}`));
+    return true;
+  }
+
+  return false;
+}
+
+async function handleCaseAction(interaction, { fetchTarget, createConfirmation } = {}) {
+  const id = String(interaction.customId || '');
+
+  if (id.startsWith('mod_case_note:')) {
+    if (!canUseModAction(interaction.member, interaction.guild, 'add_case_note')) {
+      return safeReply(interaction, ephemeralError('No permission to add case notes.'));
+    }
+    const [, caseIdRaw] = id.split(':');
+    if (!/^\d+$/.test(caseIdRaw)) return safeReply(interaction, ephemeralError('Case ID must be a number.'));
+    const modCase = getCaseById(interaction.guild.id, Number(caseIdRaw));
+    if (!modCase) return safeReply(interaction, ephemeralError('Case not found.'));
+    await interaction.showModal(buildCaseNoteModal(`mod_submit_case_note:${modCase.caseId}`, modCase.note || ''));
+    return true;
+  }
+
+  if (id.startsWith('mod_case_reverse_warning:') || id.startsWith('mod_case_reverse_timeout:')) {
+    const isWarning = id.startsWith('mod_case_reverse_warning:');
+    const permission = isWarning ? 'remove_warning' : 'remove_timeout';
+    if (!canUseModAction(interaction.member, interaction.guild, permission)) {
+      return safeReply(interaction, ephemeralError(isWarning ? 'No permission to reverse warnings.' : 'No permission to reverse timeouts.'));
+    }
+    const [, caseIdRaw] = id.split(':');
+    const modCase = getCaseById(interaction.guild.id, Number(caseIdRaw));
+    const expectedAction = isWarning ? 'warn' : 'timeout';
+    if (!modCase || modCase.action !== expectedAction) {
+      return safeReply(interaction, ephemeralError(isWarning ? 'Warning case could not be found.' : 'That timeout case could not be found.'));
+    }
+    if (typeof fetchTarget !== 'function' || typeof createConfirmation !== 'function') return false;
+    const target = await fetchTarget(interaction.guild, modCase.userId);
+    if (!target) return safeReply(interaction, ephemeralError('User not found for that case.'));
+    return createConfirmation(
+      interaction,
+      target.id,
+      isWarning ? 'remove-warning' : 'remove-timeout',
+      isWarning ? { caseId: modCase.caseId } : { sourceCaseId: modCase.caseId },
+      isWarning
+        ? `⚠️ Reverse warning from **Case #${modCase.caseId}**?`
+        : `⏳ Reverse timeout from **Case #${modCase.caseId}**?`
+    );
+  }
+
+  return false;
+}
+
+async function submitCaseModal(interaction, { fetchTarget, refreshCasesDashboard } = {}) {
+  const id = String(interaction.customId || '');
+
+  if (id.startsWith('mod_submit_case_detail:')) {
+    const targetId = getTargetIdFromCustomId(id);
+    const caseId = getCaseIdFromModal(interaction);
+    if (!caseId) return safeReply(interaction, ephemeralError('Case ID must be a number.'));
+    if (!canUseModAction(interaction.member, interaction.guild, 'view_case_detail')) {
+      return safeReply(interaction, ephemeralError('No permission to view case details.'));
+    }
+    const modCase = getCaseById(interaction.guild.id, caseId);
+    if (!modCase) return safeReply(interaction, ephemeralError('Case not found.'));
+    if (targetId !== 'none' && modCase.userId !== targetId) {
+      return safeReply(interaction, ephemeralError('That case does not belong to the currently selected user.'));
+    }
+    return safeReply(interaction, {
+      embeds: [buildCaseDetailEmbed(modCase)],
+      components: buildCaseDetailButtons(modCase),
+      flags: 64,
+    });
+  }
+
+  if (id.startsWith('mod_submit_edit_case:')) {
+    const targetId = getTargetIdFromCustomId(id);
+    const caseId = getCaseIdFromModal(interaction);
+    const reason = interaction.fields.getTextInputValue('reason').trim();
+    if (!caseId) return safeReply(interaction, ephemeralError('Case ID must be a number.'));
+    if (!canUseModAction(interaction.member, interaction.guild, 'edit_case')) {
+      return safeReply(interaction, ephemeralError('No permission to edit cases.'));
+    }
+    const existing = getCaseById(interaction.guild.id, caseId);
+    if (!existing) return safeReply(interaction, ephemeralError('Case not found.'));
+    if (targetId !== 'none' && existing.userId !== targetId) {
+      return safeReply(interaction, ephemeralError('That case does not belong to the currently selected user.'));
+    }
+    const updated = editCaseReason(interaction.guild.id, caseId, reason);
+    if (!updated) return safeReply(interaction, ephemeralError('Failed to update case.'));
+    const target = typeof fetchTarget === 'function' ? await fetchTarget(interaction.guild, updated.userId) : null;
+    await safeReply(interaction, { content: `✏️ Updated reason for **Case #${updated.caseId}**.`, flags: 64 });
+    if (target && typeof refreshCasesDashboard === 'function') await refreshCasesDashboard(interaction, target);
+    return true;
+  }
+
+  if (id.startsWith('mod_submit_case_note:')) {
+    const [, caseIdRaw] = id.split(':');
+    if (!/^\d+$/.test(caseIdRaw)) return safeReply(interaction, ephemeralError('Case ID must be a number.'));
+    if (!canUseModAction(interaction.member, interaction.guild, 'add_case_note')) {
+      return safeReply(interaction, ephemeralError('No permission to add case notes.'));
+    }
+    const caseId = Number(caseIdRaw);
+    const existing = getCaseById(interaction.guild.id, caseId);
+    if (!existing) return safeReply(interaction, ephemeralError('Case not found.'));
+    const note = interaction.fields.getTextInputValue('note').trim();
+    const updated = setCaseNote(interaction.guild.id, caseId, note);
+    if (!updated) return safeReply(interaction, ephemeralError('Failed to update case note.'));
+    const target = typeof fetchTarget === 'function' ? await fetchTarget(interaction.guild, updated.userId) : null;
+    await safeReply(interaction, {
+      content: note ? `📝 Updated note for **Case #${updated.caseId}**.` : `🗑️ Cleared note for **Case #${updated.caseId}**.`,
+      flags: 64,
+    });
+    if (target && typeof refreshCasesDashboard === 'function') await refreshCasesDashboard(interaction, target);
+    return true;
+  }
+
+  return false;
+}
+
 function getBulkActionProgressEmbed({ actionLabel, total, processed, successCount, failCount }) {
   return createEmbed({
     title: `${EMOJIS.SETTINGS} ${EMOJIS.BULK} ${actionLabel} Progress`,
@@ -342,14 +485,8 @@ function getBulkActionSummaryEmbed({ actionLabel, total, success, failed }) {
       { name: '🎯 Total Targets', value: String(total), inline: true },
       { name: `${EMOJIS.SUCCESS} Successful`, value: String(success.length), inline: true },
       { name: `${EMOJIS.ERROR} Failed`, value: String(failed.length), inline: true },
-      {
-        name: `${EMOJIS.SUCCESS} Successes`,
-        value: success.length ? success.join('\n').slice(0, 1024) : 'None',
-      },
-      {
-        name: `${EMOJIS.ERROR} Failures`,
-        value: failed.length ? failed.join('\n').slice(0, 1024) : 'None',
-      },
+      { name: `${EMOJIS.SUCCESS} Successes`, value: success.length ? success.join('\n').slice(0, 1024) : 'None' },
+      { name: `${EMOJIS.ERROR} Failures`, value: failed.length ? failed.join('\n').slice(0, 1024) : 'None' },
     ],
   });
 }
@@ -380,6 +517,9 @@ module.exports = {
   editCaseReason,
   setCaseNote,
   updateCaseStatus,
+  openCaseTool,
+  handleCaseAction,
+  submitCaseModal,
   getBulkActionProgressEmbed,
   getBulkActionSummaryEmbed,
 };
