@@ -208,19 +208,15 @@ function checkHierarchy(interaction, target) {
 function checkHierarchyForBulk(actorMember, botMember, guildOwnerId, targetMember, actorUserId) {
   if (!targetMember) return 'User not found.';
   if (targetMember.id === actorUserId) return 'Cannot target yourself.';
-  if (isGuildOwner(targetMember, guildOwnerId)) return 'Cannot target the server owner.';
 
-  const actorIsOwner =
-    isGuildOwner(actorUserId, guildOwnerId) ||
-    security.isBotOwner(actorUserId) ||
-    security.isBotOwner(getId(actorMember));
-  const actorHighestRole = getHighestRolePosition(actorMember);
-  const targetHighestRole = getHighestRolePosition(targetMember);
-  const botHighestRole = getHighestRolePosition(botMember);
-
-  if (!actorIsOwner && actorHighestRole <= targetHighestRole) return 'Target has an equal or higher role.';
-  if (!botMember || botHighestRole <= targetHighestRole) return 'Bot role is too low.';
-  return null;
+  const summary = getHierarchySummary(
+    actorMember,
+    botMember,
+    targetMember,
+    guildOwnerId
+  );
+  if (summary.ok) return null;
+  return String(summary.reason || 'Hierarchy check failed.').replace(/^❌\s*/, '');
 }
 
 async function fetchTarget(guild, userId) {
