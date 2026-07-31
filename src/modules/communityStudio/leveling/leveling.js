@@ -1,6 +1,10 @@
 'use strict';
 
-const guildManager = require('../../../core/guild/guildManager');
+const {
+  getModuleSection,
+  saveModuleSection,
+  updateModuleSection,
+} = require('../../../core/guild/moduleSectionManager');
 
 const MODULE_KEY = 'leveling';
 
@@ -18,7 +22,6 @@ function cleanIdArray(value) {
 
 function defaults() {
   return {
-    enabled: true,
     announceChannelId: null,
     managerRoleIds: [],
     levelRoleIds: [],
@@ -68,10 +71,9 @@ function normalize(section = {}) {
   const base = defaults();
   const source = section && typeof section === 'object' ? section : {};
   const users = source.users && typeof source.users === 'object' ? source.users : {};
-  return {
+  const normalized = {
     ...base,
     ...source,
-    enabled: source.enabled !== false,
     announceChannelId: cleanDiscordId(source.announceChannelId),
     managerRoleIds: cleanIdArray(source.managerRoleIds),
     levelRoleIds: cleanIdArray(source.levelRoleIds),
@@ -92,26 +94,30 @@ function normalize(section = {}) {
     createdAt: source.createdAt || base.createdAt,
     updatedAt: source.updatedAt || now(),
   };
-}
-
-function getSection(guildId) {
-  const modules = guildManager.getGuildSection(guildId, 'modules', {});
-  return normalize(modules?.[MODULE_KEY] || defaults());
-}
-
-function saveSection(guildId, section, guildOrMeta = {}) {
-  const normalized = normalize(section);
-  guildManager.updateGuildSection(guildId, 'modules', (modules = {}) => ({
-    ...(modules && typeof modules === 'object' ? modules : {}),
-    [MODULE_KEY]: normalized,
-  }), {}, guildOrMeta);
+  delete normalized.enabled;
   return normalized;
 }
 
+function getSection(guildId) {
+  return normalize(getModuleSection(guildId, MODULE_KEY, defaults()));
+}
+
+function saveSection(guildId, section, guildOrMeta = {}) {
+  return normalize(saveModuleSection(guildId, MODULE_KEY, normalize(section), guildOrMeta));
+}
+
 function updateSection(guildId, updater, guildOrMeta = {}) {
-  const current = getSection(guildId);
-  const next = typeof updater === 'function' ? updater(current) : updater;
-  return saveSection(guildId, normalize(next), guildOrMeta);
+  return normalize(updateModuleSection(
+    guildId,
+    MODULE_KEY,
+    (current) => {
+      const normalized = normalize(current);
+      const next = typeof updater === 'function' ? updater(normalized) : updater;
+      return normalize(next);
+    },
+    defaults(),
+    guildOrMeta,
+  ));
 }
 
 function getUser(guildId, userId) {
