@@ -10,6 +10,7 @@ const guildManagerPath = path.resolve(__dirname, '../../src/core/guild/guildMana
 const moduleAdminPanelsPath = path.resolve(__dirname, '../../src/core/admin/functions/moduleAdminPanels.js');
 const reactionRolesPanelPath = path.resolve(__dirname, '../../src/modules/roleStudio/reactionRoles/reactionRolesPanel.js');
 const levelingPath = path.resolve(__dirname, '../../src/modules/communityStudio/leveling/leveling.js');
+const stickyStorePath = path.resolve(__dirname, '../../src/modules/messageStudio/sticky/stickyStore.js');
 
 function loadManager(initialModules = {}) {
   let modules = JSON.parse(JSON.stringify(initialModules));
@@ -169,4 +170,17 @@ test('leveling core stores settings and XP without duplicating module enabled st
   assert.match(source, /updateModuleSection\(/);
   assert.doesNotMatch(source, /guildManager\.updateGuildSection/);
   assert.doesNotMatch(source, /enabled: source\.enabled !== false/);
+});
+
+test('sticky store strips module enabled state while preserving channel enabled state', () => {
+  const source = fs.readFileSync(stickyStorePath, 'utf8');
+  const defaults = source.slice(source.indexOf('function defaultStickySection()'), source.indexOf('function normalizeSticky('));
+  const channelNormalizer = source.slice(source.indexOf('function normalizeSticky('), source.indexOf('function normalizeSection('));
+  const sectionNormalizer = source.slice(source.indexOf('function normalizeSection('), source.indexOf('function loadStickyData('));
+
+  assert.doesNotMatch(defaults, /enabled\s*:/);
+  assert.match(channelNormalizer, /enabled: input\.enabled !== false/);
+  assert.match(sectionNormalizer, /delete normalized\.enabled;/);
+  assert.match(source, /return normalizeSection\(saveModuleSection\(guildId, MODULE_KEY, normalizeSection\(data\), meta\)\);/);
+  assert.doesNotMatch(sectionNormalizer, /enabled: source\.enabled !== false/);
 });
