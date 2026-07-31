@@ -254,14 +254,7 @@ function normalizeDashboardContext(context = {}) {
   };
 }
 
-function createModerationCase(
-  interaction,
-  targetId,
-  action,
-  reason,
-  metadata = {},
-  extras = {}
-) {
+function createModerationCase(interaction, targetId, action, reason, metadata = {}, extras = {}) {
   return createCase({
     guildId: interaction.guild.id,
     userId: targetId,
@@ -342,6 +335,70 @@ async function submitTimeout(interaction, target) {
     await safeReply(interaction, ephemeralError('Failed to timeout user.'));
     return { ok: false, target, error };
   }
+}
+
+async function submitPunishmentRequest(interaction, target, action, createConfirmation) {
+  if (!target || !['timeout', 'kick', 'ban'].includes(action)) return false;
+
+  if (action === 'timeout') {
+    return submitTimeout(interaction, target);
+  }
+
+  const reason = interaction.fields.getTextInputValue('reason').trim();
+  if (action === 'ban') {
+    const deleteDays = parseDeleteDays(interaction.fields.getTextInputValue('days'));
+    if (deleteDays === null) {
+      await safeReply(interaction, ephemeralError('Delete message days must be 0-7.'));
+      return { ok: false, target };
+    }
+
+    await createConfirmation(
+      interaction,
+      target.id,
+      'ban',
+      { reason, deleteDays },
+      `Confirm ban for **${target.user.tag}**?\nReason: ${reason}\nDelete days: ${deleteDays}`
+    );
+    return { ok: true, pending: true, target };
+  }
+
+  await createConfirmation(
+    interaction,
+    target.id,
+    'kick',
+    { reason },
+    `Confirm kick for **${target.user.tag}**?\nReason: ${reason}`
+  );
+  return { ok: true, pending: true, target };
+}
+
+function parseBulkModalPayload(interaction, actionType) {
+  const payload = {
+    actionType,
+    ids: interaction.fields.getTextInputValue('users').split(','),
+    reason: interaction.fields.getTextInputValue('reason'),
+  };
+
+  if (actionType === 'timeout') {
+    payload.durationRaw = interaction.fields.getTextInputValue('duration');
+  }
+
+  if (actionType === 'ban') {
+    payload.deleteDays = parseDeleteDays(interaction.fields.getTextInputValue('days'));
+    if (payload.deleteDays === null) {
+      return { error: 'Delete message days must be 0-7.' };
+    }
+  }
+
+  return { payload };
+}
+
+async function submitBulkModal(interaction, actionType) {
+  const parsed = parseBulkModalPayload(interaction, actionType);
+  if (parsed.error) {
+    return safeReply(interaction, ephemeralError(parsed.error));
+  }
+  return runBulkAction(interaction, parsed.payload);
 }
 
 async function executeBan(interaction, pending, target) {
@@ -818,6 +875,9 @@ module.exports = {
   buildPunishmentModal,
   buildBulkModal,
   submitTimeout,
+  submitPunishmentRequest,
+  parseBulkModalPayload,
+  submitBulkModal,
   createPendingAction,
   getPendingAction,
   deletePendingAction,
