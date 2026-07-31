@@ -26,6 +26,7 @@ const {
   checkHierarchy,
   checkHierarchyForBulk,
   fetchTarget,
+  ensureActionAccess,
 } = require('./permissions');
 const {
   createWarning,
@@ -80,6 +81,12 @@ const ENGINE_ACTIONS = Object.freeze({
     caseAction: 'ban',
     appliedKey: 'ban',
   },
+});
+const PENDING_ACTION_PERMISSIONS = Object.freeze({
+  ban: 'ban',
+  kick: 'kick',
+  'remove-warning': 'remove_warning',
+  'remove-timeout': 'remove_timeout',
 });
 const VALID_BULK_ACTIONS = Object.keys(ACTION_LABELS);
 const PROGRESS_UPDATE_EVERY = 2;
@@ -575,6 +582,17 @@ async function executePendingAction(discord, interaction, token, returnContext =
   }
   if (pending.moderatorId !== interaction.user.id) {
     return safeReply(interaction, ephemeralError('Only the moderator who created this action can confirm it.'));
+  }
+
+  const permissionAction = PENDING_ACTION_PERMISSIONS[pending.type];
+  if (!permissionAction) {
+    deletePendingAction(interaction.guild.id, token);
+    return safeReply(interaction, ephemeralError('Unknown pending action type.'));
+  }
+  const allowed = await ensureActionAccess(interaction, permissionAction);
+  if (!allowed) {
+    deletePendingAction(interaction.guild.id, token);
+    return true;
   }
 
   const target = await fetchTarget(interaction.guild, pending.targetId);
