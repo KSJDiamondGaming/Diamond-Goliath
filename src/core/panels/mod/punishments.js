@@ -25,6 +25,7 @@ const {
 const {
   checkHierarchy,
   checkHierarchyForBulk,
+  fetchTarget,
 } = require('./permissions');
 const {
   createWarning,
@@ -90,12 +91,6 @@ function parseDeleteDays(value) {
   if (!/^\d+$/.test(raw)) return null;
   const days = Number(raw);
   return isValidDeleteDays(days) ? days : null;
-}
-
-async function fetchTarget(guild, userId) {
-  const id = String(userId || '').trim();
-  if (!guild || !/^\d{16,20}$/.test(id)) return null;
-  return guild.members.fetch(id).catch(() => guild.members.cache.get(id) || null);
 }
 
 function buildPunishmentModal(type, targetId) {
@@ -920,29 +915,10 @@ async function runBulkAction(interaction, options) {
 }
 
 module.exports = {
-  MAX_TIMEOUT_MS,
-  ACTION_LABELS,
-  ACTION_EMOJIS,
-  VALID_BULK_ACTIONS,
-  parseDuration,
-  isValidTimeoutDuration,
-  parseDeleteDays,
-  isValidDeleteDays,
-  fetchTarget,
   buildPunishmentModal,
   buildBulkModal,
-  buildConfirmCustomId,
-  buildConfirmRow,
   createConfirmation,
-  submitTimeout,
   submitPunishmentRequest,
-  parseBulkModalPayload,
   submitBulkModal,
-  createPendingAction,
-  getPendingAction,
-  deletePendingAction,
   executePendingAction,
-  normalizeBulkIds,
-  validateBulkOptions,
-  runBulkAction,
 };
