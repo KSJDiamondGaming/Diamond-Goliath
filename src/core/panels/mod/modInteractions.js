@@ -34,7 +34,6 @@ const {
   handleDashboardNavigation,
   handleUserSelectMenu,
   handleSelectUserButton,
-  handleSelectUserModal,
 } = require('./modPanel');
 
 const PUNISHMENT_ACTIONS = new Set(['timeout', 'kick', 'ban']);
@@ -252,7 +251,6 @@ async function routeModModal(interaction) {
   await syncExpiredWarningsToCases(interaction.guild.id);
 
   return routeHandlers(interaction, [
-    handleSelectUserModal,
     (value) => submitCaseModal(value, { fetchTarget, refreshCasesDashboard }),
     handleBulkModal,
     handleActionModal,
