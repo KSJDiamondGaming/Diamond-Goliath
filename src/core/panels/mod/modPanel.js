@@ -10,6 +10,7 @@ const {
 } = Discord;
 
 const panelNav = require('../../../core/ui/panelNavigation');
+const { safeReply, ephemeralError } = require('../../../core/ui/interactionResponse');
 const {
   COLORS,
   EMOJIS,
@@ -40,11 +41,19 @@ const {
   canUseModAction,
   getStaffDisplay,
   hasModPermission,
+  fetchTarget,
+  findMemberByQuery,
 } = require('./permissions');
 
 const DEFAULT_VIEW = 'overview';
 const CASES_PER_PAGE = 5;
 const ALLOWED_VIEWS = new Set(['overview', 'actions', 'cases', 'tools', 'analytics']);
+const DEFAULT_CASES_CONTEXT = Object.freeze({
+  view: 'cases',
+  actionFilter: 'all',
+  statusFilter: 'all',
+  page: 0,
+});
 
 function canOpenModPanel(interaction) {
   return Boolean(interaction?.guild && interaction?.member && hasModPermission(interaction.member));
@@ -310,6 +319,21 @@ async function buildDashboardPayload(discord, interaction, target, view = DEFAUL
   return { embeds, components: components.slice(0, 5) };
 }
 
+async function renderDashboard(interaction, targetId, view = DEFAULT_VIEW, context = {}) {
+  const target = targetId && targetId !== 'none'
+    ? await fetchTarget(interaction.guild, targetId)
+    : null;
+
+  if (targetId && targetId !== 'none' && !target) {
+    return safeReply(interaction, ephemeralError('Could not find the selected user.'));
+  }
+
+  await interaction.update(
+    await buildDashboardPayload(Discord, interaction, target, view, context)
+  );
+  return true;
+}
+
 async function refreshDashboard(discord, interaction, target, context = {}) {
   const safeContext = normalizeDashboardContext(context);
   const payload = await buildDashboardPayload(discord, interaction, target, safeContext.view, safeContext);
@@ -329,6 +353,70 @@ async function refreshDashboard(discord, interaction, target, context = {}) {
     console.error('❌ Failed to refresh moderation dashboard message:', error);
     return false;
   }
+}
+
+async function refreshCasesDashboard(interaction, target) {
+  if (!target) return false;
+  return refreshDashboard(Discord, interaction, target, DEFAULT_CASES_CONTEXT);
+}
+
+async function handleDashboardNavigation(interaction) {
+  const id = String(interaction.customId || '');
+  if (id === 'mod:overview') return renderDashboard(interaction, 'none', 'overview');
+
+  if (id.startsWith('mod_dashboard:') || id.startsWith('mod_refresh:')) {
+    const [, targetId = 'none', view = DEFAULT_VIEW] = id.split(':');
+    return renderDashboard(interaction, targetId, view);
+  }
+
+  if (id.startsWith('mod_filter_cases:') || id.startsWith('mod_case_page:')) {
+    const [, targetId = 'none', actionFilter = 'all', statusFilter = 'all', page = '0'] = id.split(':');
+    return renderDashboard(interaction, targetId, 'cases', {
+      actionFilter,
+      statusFilter,
+      page,
+    });
+  }
+
+  return false;
+}
+
+async function handleUserSelectMenu(interaction) {
+  if (interaction.customId !== 'mod_user_select') return false;
+
+  const target = await fetchTarget(interaction.guild, interaction.values[0]);
+  if (!target) return safeReply(interaction, ephemeralError('Could not find that user.'));
+  return renderDashboard(interaction, target.id, 'overview');
+}
+
+async function handleSelectUserButton(interaction) {
+  if (interaction.customId !== 'mod_select_user') return false;
+
+  return safeReply(interaction, {
+    content: '👤 Select a user:',
+    components: [buildUserSelectRow()],
+    flags: 64,
+  });
+}
+
+async function handleSelectUserModal(interaction) {
+  if (interaction.customId !== 'mod_select_user_modal') return false;
+
+  const target = await findMemberByQuery(
+    interaction.guild,
+    interaction.fields.getTextInputValue('target_user_query')
+  );
+  if (!target) {
+    return safeReply(
+      interaction,
+      ephemeralError('User not found by that ID, username, tag, or display name.')
+    );
+  }
+
+  return safeReply(interaction, {
+    ...(await buildDashboardPayload(Discord, interaction, target, 'overview')),
+    flags: 64,
+  });
 }
 
 async function openModPanel(interaction, options = {}) {
@@ -385,7 +473,13 @@ module.exports = {
   CASES_PER_PAGE,
   openModPanel,
   buildDashboardPayload,
+  renderDashboard,
   refreshDashboard,
+  refreshCasesDashboard,
+  handleDashboardNavigation,
+  handleUserSelectMenu,
+  handleSelectUserButton,
+  handleSelectUserModal,
   buildUserSelectRow,
   buildActionsRows,
   buildToolsRows,
