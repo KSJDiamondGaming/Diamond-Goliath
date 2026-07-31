@@ -8,6 +8,11 @@ const { errorEmbed } = require('../../ui/embeds');
 const { safeEditReply } = require('../../ui/interactionResponse');
 const modPanel = require('./modPanel');
 
+const MOD_COMMAND_PERMISSIONS =
+  PermissionFlagsBits.ModerateMembers |
+  PermissionFlagsBits.KickMembers |
+  PermissionFlagsBits.BanMembers;
+
 module.exports = {
   category: 'Moderation',
 
@@ -25,7 +30,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('mod')
     .setDescription('🔐 Open Goliath’s moderation hub and staff tools')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
+    .setDefaultMemberPermissions(MOD_COMMAND_PERMISSIONS),
 
   async execute(interaction) {
     const denied = await enforceCommandAccess(interaction, module.exports);
