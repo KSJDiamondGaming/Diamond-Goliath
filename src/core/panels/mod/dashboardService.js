@@ -23,14 +23,14 @@ const {
   buildCasesEmbed,
   buildAnalyticsEmbed,
   buildActionSelect,
-} = require('../../../core/ui/dashboardBuilders');
+} = require('./dashboardBuilders');
 
 const {
   buildCaseFilterButtons,
   buildCasesPageButtons,
-} = require('../../../core/ui/caseComponentBuilders');
+} = require('./caseComponentBuilders');
 
-const { normalizeDashboardContext } = require('../../../core/ui/pendingActionHelpers');
+const { normalizeDashboardContext } = require('./pendingActionHelpers');
 
 const {
   canUseModAction,
