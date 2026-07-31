@@ -16,6 +16,7 @@ const starboardStorePath = path.resolve(__dirname, '../../src/modules/messageStu
 const starboardPanelPath = path.resolve(__dirname, '../../src/modules/messageStudio/starboard/starboardPanel.js');
 const starboardRoutePath = path.resolve(__dirname, '../../src/server/routes/starboard.js');
 const temporaryRolesPath = path.resolve(__dirname, '../../src/modules/roleStudio/temporaryRoles/temporaryRoles.js');
+const temporaryRolesPanelPath = path.resolve(__dirname, '../../src/modules/roleStudio/temporaryRoles/temporaryRolesPanel.js');
 const serverBackupSchedulerPath = path.resolve(__dirname, '../../src/core/security/serverBackupScheduler.js');
 const statsRoutePath = path.resolve(__dirname, '../../src/modules/utilityStudio/stats/statsRoute.js');
 
@@ -219,6 +220,15 @@ test('temporary roles runtime and store use canonical module state', () => {
   assert.match(source, /delete normalized\.enabled;/);
   assert.match(source, /isModuleEnabled\(guild\.id, SECTION\)/);
   assert.match(source, /setModuleEnabled\(guildId, SECTION, Boolean\(enabled\), meta\)/);
+  assert.doesNotMatch(source, /section\.enabled/);
+});
+
+test('temporary roles admin panel reports and writes canonical module state', () => {
+  const source = fs.readFileSync(temporaryRolesPanelPath, 'utf8');
+  assert.match(source, /const enabled = isModuleEnabled\(guild\.id, 'temporaryRoles'\)/);
+  assert.match(source, /setModuleEnabled\(interaction\.guild\.id, 'temporaryRoles', true/);
+  assert.match(source, /setModuleEnabled\(interaction\.guild\.id, 'temporaryRoles', false/);
+  assert.doesNotMatch(source, /temporaryRoles\.setEnabled/);
   assert.doesNotMatch(source, /section\.enabled/);
 });
 
