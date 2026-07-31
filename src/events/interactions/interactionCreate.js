@@ -39,6 +39,7 @@ const welcomePanel = optionalRequire('welcome', '../../modules/messageStudio/wel
 const goodbyePanel = optionalRequire('goodbye', '../../modules/messageStudio/goodbye/goodbyePanel');
 const moduleAdminPanels = optionalRequire('generic module admin', '../../core/admin/functions/moduleAdminPanels');
 const userPanelInteractions = optionalRequire('user panel', '../../core/panels/user/userInteractions');
+const modPanel = optionalRequire('mod panel', '../../core/panels/mod/modPanel');
 
 const MODULE_STUDIO_PREFIXES = [
   ['communityStudio', ['admin:invites', 'invites:', 'admin:giveaways', 'giveaways:', 'admin:leveling', 'leveling:', 'admin:polls', 'poll_vote:']],
@@ -226,6 +227,10 @@ module.exports = {
       if (interactionAgeMs > 1500) console.warn(`[InteractionCreate] Slow dispatch before routing: customId=${customId} age=${interactionAgeMs}ms pid=${process.pid}`);
       if (startsWith(interaction, 'user:')) {
         if (!await callHandler(userPanelInteractions, 'handleUserPanelInteraction', interaction)) throw new Error(`User panel did not handle ${customId}.`);
+        return;
+      }
+      if (customId.startsWith('mod_') || customId.startsWith('mod:')) {
+        if (!await callHandler(modPanel, 'handleInteraction', interaction)) throw new Error(`Mod panel did not handle ${customId}.`);
         return;
       }
       const isTicketRuntimeInteraction = customId.startsWith('ticket_') || customId.startsWith('goliath_ticket_');
