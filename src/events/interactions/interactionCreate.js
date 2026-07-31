@@ -39,7 +39,7 @@ const welcomePanel = optionalRequire('welcome', '../../modules/messageStudio/wel
 const goodbyePanel = optionalRequire('goodbye', '../../modules/messageStudio/goodbye/goodbyePanel');
 const moduleAdminPanels = optionalRequire('generic module admin', '../../core/admin/functions/moduleAdminPanels');
 const userPanelInteractions = optionalRequire('user panel', '../../core/panels/user/userInteractions');
-const modPanel = optionalRequire('mod panel', '../../core/panels/mod/modPanel');
+const modInteractions = optionalRequire('mod interactions', '../../core/panels/mod/modInteractions');
 
 const MODULE_STUDIO_PREFIXES = [
   ['communityStudio', ['admin:invites', 'invites:', 'admin:giveaways', 'giveaways:', 'admin:leveling', 'leveling:', 'admin:polls', 'poll_vote:']],
@@ -230,7 +230,7 @@ module.exports = {
         return;
       }
       if (customId.startsWith('mod_') || customId.startsWith('mod:')) {
-        if (!await callHandler(modPanel, 'handleInteraction', interaction)) throw new Error(`Mod panel did not handle ${customId}.`);
+        if (!await callHandler(modInteractions, 'handleModInteraction', interaction)) throw new Error(`Mod interactions did not handle ${customId}.`);
         return;
       }
       const isTicketRuntimeInteraction = customId.startsWith('ticket_') || customId.startsWith('goliath_ticket_');
