@@ -14,7 +14,7 @@ const {
   checkHierarchy,
 } = require('./moderationChecks');
 
-const { fetchTarget } = require('../../../core/ui/targetHelpers');
+const { fetchTarget } = require('./targetHelpers');
 
 const {
   buildReasonModal,
@@ -22,13 +22,13 @@ const {
   buildCaseIdModal,
   buildEditCaseModal,
   buildCaseNoteModal,
-} = require('../../../core/ui/modalBuilders');
+} = require('./modalBuilders');
 
 const {
   buildConfirmRow,
   buildConfirmCustomId,
   parseConfirmActionContext,
-} = require('../../../core/ui/pendingActionHelpers');
+} = require('./pendingActionHelpers');
 
 const {
   safeReply,
@@ -39,7 +39,7 @@ const { buildDashboardPayload } = require('./dashboardService');
 const { executePendingAction } = require('./modActionExecutor');
 
 const { getCaseById } = require('../../../core/logging/cases/caseStore');
-const { createPendingAction } = require('../../../core/logging/stores/pendingActionStore');
+const { createPendingAction } = require('./pendingActionStore');
 
 const DEFAULT_DASHBOARD_CONTEXT = {
   view: 'cases',
