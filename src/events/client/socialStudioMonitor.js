@@ -86,10 +86,13 @@ function checkOptions(customId) {
 
 function currentPanelSection(interaction, customId) {
   const title = String(interaction.message?.embeds?.[0]?.title || '').toLowerCase();
+  if (title.includes('monitoring')) return 'monitoring';
+  if (title.includes('live messages')) return 'liveMessages';
+  if (title.includes('diagnostics')) return 'diagnostics';
   if (title.includes('operations')) return 'operations';
-  if (title.includes('automation')) return 'automation';
-  if (title.includes('notification')) return 'notifications';
-  if (title.includes('testing')) return 'testing';
+  if (title.includes('automation')) return 'monitoring';
+  if (title.includes('notification')) return 'operations';
+  if (title.includes('testing')) return 'diagnostics';
   if (title.includes('creator')) return 'creators';
   if (title.includes('account')) return 'accounts';
   if (customId.startsWith('social:creator:check:')) return 'creators';
