@@ -1,34 +1,40 @@
+'use strict';
+
 const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  EmbedBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
 } = require('discord.js');
 
 const {
-  updateCaseStatus,
   getAllCases,
+  getCaseById,
+  updateCaseStatus,
+  updateCaseReason,
+  updateCaseNote,
+  clearCaseNote,
 } = require('../../../core/logging/cases/caseStore');
-const { purgeExpiredWarnings } = require('../../../core/logging/warnings/warningStore');
-const uiConfig = require('../../ui/uiConfig');
-const embedBuilder = require('../../ui/embeds');
+const { COLORS, EMOJIS } = require('../../ui/uiConfig');
+const { createEmbed } = require('../../ui/embeds');
 
-const { COLORS, EMOJIS } = uiConfig;
-const { createEmbed } = embedBuilder;
-
-const STATUS_LABELS = {
+const STATUS_LABELS = Object.freeze({
   active: '🟢 Active',
   reversed: '🔁 Reversed',
   expired: '⌛ Expired',
-};
+});
 
-const TRACKED_ACTIONS = [
+const TRACKED_ACTIONS = Object.freeze([
   'warn',
   'timeout',
   'kick',
   'ban',
   'unwarn',
   'remove-timeout',
-];
+]);
 
 function getStatus(modCase = {}) {
   return modCase.status || 'active';
@@ -52,18 +58,6 @@ function formatCaseSummary(modCase = {}) {
     getStatusLabel(modCase),
     `<t:${getCaseTimestamp(modCase.createdAt)}:R>`,
   ].join(' • ');
-}
-
-async function syncExpiredWarningsToCases(guildId) {
-  const expiredWarnings = purgeExpiredWarnings(guildId) || [];
-
-  for (const warning of expiredWarnings) {
-    if (warning?.caseId) {
-      updateCaseStatus(guildId, warning.caseId, 'expired');
-    }
-  }
-
-  return expiredWarnings.length;
 }
 
 function countCasesByAction(cases = [], action) {
@@ -212,6 +206,119 @@ function buildCaseDetailButtons(modCase) {
   ];
 }
 
+function buildCaseIdModal(customId, title, label = 'Case ID') {
+  return new ModalBuilder()
+    .setCustomId(customId)
+    .setTitle(title)
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('case_id')
+          .setLabel(label)
+          .setStyle(TextInputStyle.Short)
+          .setPlaceholder('1')
+          .setRequired(true)
+          .setMaxLength(10)
+      )
+    );
+}
+
+function buildEditCaseModal(customId) {
+  return new ModalBuilder()
+    .setCustomId(customId)
+    .setTitle('Edit Case')
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('case_id')
+          .setLabel('Case ID')
+          .setStyle(TextInputStyle.Short)
+          .setPlaceholder('1')
+          .setRequired(true)
+          .setMaxLength(10)
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('reason')
+          .setLabel('New Reason')
+          .setStyle(TextInputStyle.Paragraph)
+          .setPlaceholder('Enter the updated moderation reason')
+          .setRequired(true)
+          .setMaxLength(500)
+      )
+    );
+}
+
+function buildCaseNoteModal(customId, existingNote = '') {
+  return new ModalBuilder()
+    .setCustomId(customId)
+    .setTitle(existingNote ? 'Edit Case Note' : 'Add Case Note')
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('note')
+          .setLabel('Staff Note')
+          .setStyle(TextInputStyle.Paragraph)
+          .setPlaceholder('Add internal staff-only context for this case')
+          .setRequired(false)
+          .setMaxLength(1000)
+          .setValue(String(existingNote || '').slice(0, 1000))
+      )
+    );
+}
+
+function buildCaseDetailEmbed(modCase) {
+  const embed = new EmbedBuilder()
+    .setColor('#5865F2')
+    .setTitle(`🧾 Case #${modCase.caseId}`)
+    .addFields(
+      { name: 'Action', value: modCase.action, inline: true },
+      { name: 'Status', value: getStatusLabel(modCase), inline: true },
+      { name: 'User ID', value: modCase.userId, inline: true },
+      { name: 'Moderator ID', value: modCase.moderatorId, inline: true },
+      { name: 'Reason', value: modCase.reason || 'No reason provided', inline: false },
+      { name: 'Created', value: `<t:${getCaseTimestamp(modCase.createdAt)}:F>`, inline: true },
+      {
+        name: 'Updated',
+        value: modCase.updatedAt ? `<t:${getCaseTimestamp(modCase.updatedAt)}:F>` : 'Never',
+        inline: true,
+      }
+    )
+    .setTimestamp();
+
+  if (modCase.relatedCaseId) {
+    embed.addFields({ name: 'Related Case', value: `#${modCase.relatedCaseId}`, inline: true });
+  }
+  if (modCase.note && String(modCase.note).trim()) {
+    embed.addFields({ name: 'Staff Note', value: String(modCase.note).slice(0, 1024), inline: false });
+  }
+  if (modCase.metadata && Object.keys(modCase.metadata).length) {
+    embed.addFields({
+      name: 'Metadata',
+      value: `\`\`\`json\n${JSON.stringify(modCase.metadata, null, 2).slice(0, 900)}\n\`\`\``,
+      inline: false,
+    });
+  }
+
+  return embed;
+}
+
+function getCaseIdFromModal(interaction, field = 'case_id') {
+  const raw = interaction.fields.getTextInputValue(field).trim();
+  return /^\d+$/.test(raw) ? Number(raw) : null;
+}
+
+function editCaseReason(guildId, caseId, reason) {
+  return updateCaseReason(guildId, caseId, String(reason || '').trim());
+}
+
+function setCaseNote(guildId, caseId, note) {
+  const value = String(note || '').trim();
+  return value
+    ? updateCaseNote(guildId, caseId, value)
+    : clearCaseNote(guildId, caseId);
+}
+
 function getBulkActionProgressEmbed({ actionLabel, total, processed, successCount, failCount }) {
   return createEmbed({
     title: `${EMOJIS.SETTINGS} ${EMOJIS.BULK} ${actionLabel} Progress`,
@@ -254,7 +361,6 @@ module.exports = {
   getStatusLabel,
   getCaseTimestamp,
   formatCaseSummary,
-  syncExpiredWarningsToCases,
   countCasesByAction,
   countCasesByStatus,
   buildTopList,
@@ -265,6 +371,15 @@ module.exports = {
   buildCaseFilterButtons,
   buildCasesPageButtons,
   buildCaseDetailButtons,
+  buildCaseIdModal,
+  buildEditCaseModal,
+  buildCaseNoteModal,
+  buildCaseDetailEmbed,
+  getCaseIdFromModal,
+  getCaseById,
+  editCaseReason,
+  setCaseNote,
+  updateCaseStatus,
   getBulkActionProgressEmbed,
   getBulkActionSummaryEmbed,
 };
