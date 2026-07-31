@@ -267,8 +267,5 @@ async function handleModInteraction(interaction) {
 }
 
 module.exports = {
-  isModCustomId,
   handleModInteraction,
-  routeModInteraction: routeButtonsAndSelects,
-  routeModModal,
 };
