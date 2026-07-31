@@ -40,26 +40,39 @@ const DEFAULT_DASHBOARD_CONTEXT = Object.freeze({
   page: 0,
 });
 
-const OPEN_ACTIONS = Object.freeze({
-  mod_open_warn: { permission: 'warn', modal: (id) => buildWarnModal(id) },
-  mod_open_timeout: { permission: 'timeout', modal: (id) => buildPunishmentModal('timeout', id) },
-  mod_open_kick: { permission: 'kick', modal: (id) => buildPunishmentModal('kick', id) },
-  mod_open_ban: { permission: 'ban', modal: (id) => buildPunishmentModal('ban', id) },
+const ACTION_MODALS = Object.freeze({
+  warn: { permission: 'warn', build: buildWarnModal },
+  timeout: { permission: 'timeout', build: (id) => buildPunishmentModal('timeout', id) },
+  kick: { permission: 'kick', build: (id) => buildPunishmentModal('kick', id) },
+  ban: { permission: 'ban', build: (id) => buildPunishmentModal('ban', id) },
+  'remove-warning': { permission: 'remove_warning', build: buildRemoveWarningModal },
 });
 
-const ACTION_SELECT_MODALS = Object.freeze({
-  warn: (id) => buildWarnModal(id),
-  timeout: (id) => buildPunishmentModal('timeout', id),
-  kick: (id) => buildPunishmentModal('kick', id),
-  ban: (id) => buildPunishmentModal('ban', id),
-  'remove-warning': (id) => buildRemoveWarningModal(id),
+const OPEN_ACTIONS = Object.freeze({
+  mod_open_warn: 'warn',
+  mod_open_timeout: 'timeout',
+  mod_open_kick: 'kick',
+  mod_open_ban: 'ban',
 });
 
 const BULK_ACTIONS = Object.freeze({
-  mod_bulk_warn: { permission: 'bulk_warn', type: 'warn' },
-  mod_bulk_timeout: { permission: 'bulk_timeout', type: 'timeout' },
-  mod_bulk_kick: { permission: 'bulk_kick', type: 'kick' },
-  mod_bulk_ban: { permission: 'bulk_ban', type: 'ban' },
+  mod_bulk_warn: 'warn',
+  mod_bulk_timeout: 'timeout',
+  mod_bulk_kick: 'kick',
+  mod_bulk_ban: 'ban',
+});
+
+const BULK_SUBMITS = Object.freeze({
+  mod_submit_bulk_warn: 'warn',
+  mod_submit_bulk_timeout: 'timeout',
+  mod_submit_bulk_kick: 'kick',
+  mod_submit_bulk_ban: 'ban',
+});
+
+const PUNISHMENT_SUBMITS = Object.freeze({
+  mod_submit_ban: 'ban',
+  mod_submit_kick: 'kick',
+  mod_submit_timeout: 'timeout',
 });
 
 function isModCustomId(customId) {
@@ -68,15 +81,12 @@ function isModCustomId(customId) {
 }
 
 function ensurePanelAccess(interaction) {
-  if (!hasModPermission(interaction.member)) {
-    return safeReply(interaction, ephemeralError('No permission to use moderation panel.'));
-  }
-  return null;
+  if (hasModPermission(interaction.member)) return null;
+  return safeReply(interaction, ephemeralError('No permission to use moderation panel.'));
 }
 
 function getTargetIdFromCustomId(customId) {
-  const [, targetId] = String(customId || '').split(':');
-  return targetId || 'none';
+  return String(customId || '').split(':')[1] || 'none';
 }
 
 function normalizeDashboardContext(context = {}) {
@@ -96,7 +106,7 @@ function parseConfirmActionContext(customId) {
       view: parts[2] || 'overview',
       actionFilter: parts[3] || 'all',
       statusFilter: parts[4] || 'all',
-      page: Number(parts[5]) || 0,
+      page: parts[5],
     }),
   };
 }
@@ -165,7 +175,7 @@ async function requireSelectedTarget(interaction, targetId) {
   return target;
 }
 
-async function requireModeratableTarget(interaction, targetId, permission, deniedMessage = null) {
+async function requireModeratableTarget(interaction, targetId, permission) {
   const target = await requireSelectedTarget(interaction, targetId);
   if (!target) return null;
 
@@ -180,7 +190,7 @@ async function requireModeratableTarget(interaction, targetId, permission, denie
 
   if (!canUseModAction(interaction.member, interaction.guild, permission)) {
     await safeReply(interaction, {
-      content: deniedMessage || getModActionDeniedMessage(permission),
+      content: getModActionDeniedMessage(permission),
       flags: 64,
     });
     return null;
@@ -199,8 +209,9 @@ async function renderDashboard(interaction, targetId, view = 'overview', context
   }
 
   const { buildDashboardPayload } = require('./modPanel');
-  const payload = await buildDashboardPayload(Discord, interaction, target, view, context);
-  await interaction.update(payload);
+  await interaction.update(
+    await buildDashboardPayload(Discord, interaction, target, view, context)
+  );
   return true;
 }
 
@@ -246,10 +257,40 @@ async function findMemberByQuery(guild, query) {
   }
 }
 
+async function showActionModal(interaction, action, targetId) {
+  const config = ACTION_MODALS[action];
+  if (!config) return false;
+
+  const target = await requireModeratableTarget(
+    interaction,
+    targetId,
+    config.permission
+  );
+  if (!target) return true;
+
+  await interaction.showModal(config.build(target.id));
+  return true;
+}
+
+async function requestRemoveTimeout(interaction, targetId) {
+  const target = await requireModeratableTarget(
+    interaction,
+    targetId,
+    'remove_timeout'
+  );
+  if (!target) return true;
+
+  return createConfirmation(
+    interaction,
+    target.id,
+    'remove-timeout',
+    {},
+    `✅ Remove timeout from **${target.user.tag}**?`
+  );
+}
+
 async function handleUserSelectMenu(interaction) {
   if (interaction.customId !== 'mod_user_select') return false;
-  const denied = ensurePanelAccess(interaction);
-  if (denied) return denied;
 
   const target = await fetchTarget(interaction.guild, interaction.values[0]);
   if (!target) return safeReply(interaction, ephemeralError('Could not find that user.'));
@@ -258,37 +299,15 @@ async function handleUserSelectMenu(interaction) {
 
 async function handleActionSelectMenu(interaction) {
   if (!interaction.customId.startsWith('mod_action_select:')) return false;
-  const denied = ensurePanelAccess(interaction);
-  if (denied) return denied;
 
   const targetId = getTargetIdFromCustomId(interaction.customId);
   const selected = interaction.values[0];
-  const modalBuilder = ACTION_SELECT_MODALS[selected];
-
-  if (modalBuilder) {
-    if (targetId === 'none') return safeReply(interaction, ephemeralError('No user selected.'));
-    await interaction.showModal(modalBuilder(targetId));
-    return true;
-  }
 
   if (selected === 'remove-timeout') {
-    const target = await requireModeratableTarget(
-      interaction,
-      targetId,
-      'remove_timeout'
-    );
-    if (!target) return true;
-
-    return createConfirmation(
-      interaction,
-      target.id,
-      'remove-timeout',
-      {},
-      `✅ Remove timeout from **${target.user.tag}**?`
-    );
+    return requestRemoveTimeout(interaction, targetId);
   }
 
-  return false;
+  return showActionModal(interaction, selected, targetId);
 }
 
 async function handleDashboardNavigation(interaction) {
@@ -341,42 +360,34 @@ async function handleSelectUserButton(interaction) {
   });
 }
 
-async function handleBulkButtons(interaction) {
-  const config = BULK_ACTIONS[interaction.customId];
-  if (!config) return false;
+async function handleBulkButton(interaction) {
+  const action = BULK_ACTIONS[interaction.customId];
+  if (!action) return false;
 
-  if (!canUseModAction(interaction.member, interaction.guild, config.permission)) {
+  if (!canUseModAction(interaction.member, interaction.guild, `bulk_${action}`)) {
     return safeReply(
       interaction,
-      ephemeralError(`No permission to use bulk ${config.type}.`)
+      ephemeralError(`No permission to use bulk ${action}.`)
     );
   }
 
-  await interaction.showModal(buildBulkModal(config.type));
+  await interaction.showModal(buildBulkModal(action));
   return true;
 }
 
-async function handleOpenActionButtons(interaction) {
+async function handleOpenActionButton(interaction) {
   if (!interaction.customId.startsWith('mod_open_')) return false;
 
   const [prefix, targetId] = interaction.customId.split(':');
-  const config = OPEN_ACTIONS[prefix];
-  if (!config) return false;
+  const action = OPEN_ACTIONS[prefix];
+  if (!action) return false;
 
-  const target = await requireModeratableTarget(
-    interaction,
-    targetId,
-    config.permission
-  );
-  if (!target) return true;
-
-  await interaction.showModal(config.modal(target.id));
-  return true;
+  return showActionModal(interaction, action, targetId);
 }
 
-async function handleCaseToolButtons(interaction) {
-  const result = await openCaseTool(interaction);
-  if (result) return result;
+async function handleCaseToolButton(interaction) {
+  const caseResult = await openCaseTool(interaction);
+  if (caseResult) return caseResult;
 
   const id = String(interaction.customId || '');
   const targetId = getTargetIdFromCustomId(id);
@@ -385,48 +396,29 @@ async function handleCaseToolButtons(interaction) {
     if (!canUseModAction(interaction.member, interaction.guild, 'remove_warning')) {
       return safeReply(interaction, ephemeralError('No permission to remove warnings.'));
     }
-    if (targetId === 'none') return safeReply(interaction, ephemeralError('No user selected.'));
+    if (targetId === 'none') {
+      return safeReply(interaction, ephemeralError('No user selected.'));
+    }
+
     await interaction.showModal(buildRemoveWarningModal(targetId));
     return true;
   }
 
   if (id.startsWith('mod_remove_timeout:')) {
-    const target = await requireModeratableTarget(
-      interaction,
-      targetId,
-      'remove_timeout'
-    );
-    if (!target) return true;
-
-    return createConfirmation(
-      interaction,
-      target.id,
-      'remove-timeout',
-      {},
-      `✅ Remove timeout from **${target.user.tag}**?`
-    );
+    return requestRemoveTimeout(interaction, targetId);
   }
 
   return false;
 }
 
-async function handleCaseActionButtons(interaction) {
-  return handleCaseAction(interaction, { fetchTarget, createConfirmation });
-}
-
-async function handleConfirmButtons(interaction) {
+async function handleConfirmButton(interaction) {
   if (!interaction.customId.startsWith('mod_confirm_action:')) return false;
-  const denied = ensurePanelAccess(interaction);
-  if (denied) return denied;
-
   const { token, context } = parseConfirmActionContext(interaction.customId);
   return executePendingAction(Discord, interaction, token, context);
 }
 
 async function handleSelectUserModal(interaction) {
   if (interaction.customId !== 'mod_select_user_modal') return false;
-  const denied = ensurePanelAccess(interaction);
-  if (denied) return denied;
 
   const target = await findMemberByQuery(
     interaction.guild,
@@ -446,18 +438,9 @@ async function handleSelectUserModal(interaction) {
   });
 }
 
-async function handleBulkModals(interaction) {
-  const actionType = ({
-    mod_submit_bulk_warn: 'warn',
-    mod_submit_bulk_timeout: 'timeout',
-    mod_submit_bulk_kick: 'kick',
-    mod_submit_bulk_ban: 'ban',
-  })[interaction.customId];
-
+async function handleBulkModal(interaction) {
+  const actionType = BULK_SUBMITS[interaction.customId];
   if (!actionType) return false;
-
-  const denied = ensurePanelAccess(interaction);
-  if (denied) return denied;
 
   if (!canUseModAction(interaction.member, interaction.guild, `bulk_${actionType}`)) {
     return safeReply(
@@ -489,14 +472,8 @@ async function handleBulkModals(interaction) {
   return runBulkAction(interaction, payload);
 }
 
-async function handleCaseModal(interaction) {
-  return submitCaseModal(interaction, { fetchTarget, refreshCasesDashboard });
-}
-
 async function handleRemoveWarningModal(interaction) {
   if (!interaction.customId.startsWith('mod_submit_remove_warning:')) return false;
-  const denied = ensurePanelAccess(interaction);
-  if (denied) return denied;
 
   return submitRemoveWarningRequest(
     interaction,
@@ -506,16 +483,10 @@ async function handleRemoveWarningModal(interaction) {
 }
 
 async function handlePunishmentModal(interaction) {
-  const action = ({
-    mod_submit_ban: 'ban',
-    mod_submit_kick: 'kick',
-    mod_submit_timeout: 'timeout',
-  })[String(interaction.customId || '').split(':')[0]];
-
+  const action = PUNISHMENT_SUBMITS[
+    String(interaction.customId || '').split(':')[0]
+  ];
   if (!action) return false;
-
-  const denied = ensurePanelAccess(interaction);
-  if (denied) return denied;
 
   const target = await requireModeratableTarget(
     interaction,
@@ -531,7 +502,6 @@ async function handlePunishmentModal(interaction) {
   }
 
   const reason = interaction.fields.getTextInputValue('reason').trim();
-
   if (action === 'ban') {
     const deleteDays = parseDeleteDays(interaction.fields.getTextInputValue('days'));
     if (deleteDays === null) {
@@ -561,8 +531,6 @@ async function handlePunishmentModal(interaction) {
 
 async function handleWarnModal(interaction) {
   if (!interaction.customId.startsWith('mod_submit_warn:')) return false;
-  const denied = ensurePanelAccess(interaction);
-  if (denied) return denied;
 
   const target = await requireModeratableTarget(
     interaction,
@@ -576,52 +544,50 @@ async function handleWarnModal(interaction) {
   return true;
 }
 
+async function routeHandlers(interaction, handlers) {
+  for (const handler of handlers) {
+    const result = await handler(interaction);
+    if (result) return result;
+  }
+  return false;
+}
+
 async function routeButtonsAndSelects(interaction) {
+  const denied = ensurePanelAccess(interaction);
+  if (denied) return denied;
+
   if (interaction.isUserSelectMenu?.()) return handleUserSelectMenu(interaction);
   if (interaction.isStringSelectMenu?.()) return handleActionSelectMenu(interaction);
   if (!interaction.isButton?.()) return false;
 
-  const denied = ensurePanelAccess(interaction);
-  if (denied) return denied;
-
-  const handlers = [
-    handleConfirmButtons,
-    handleCaseActionButtons,
+  return routeHandlers(interaction, [
+    handleConfirmButton,
+    (value) => handleCaseAction(value, { fetchTarget, createConfirmation }),
     handleDashboardNavigation,
     handleCancelButton,
     handleSelectUserButton,
-    handleBulkButtons,
-    handleOpenActionButtons,
-    handleCaseToolButtons,
-  ];
-
-  for (const handler of handlers) {
-    const result = await handler(interaction);
-    if (result) return result;
-  }
-
-  return false;
+    handleBulkButton,
+    handleOpenActionButton,
+    handleCaseToolButton,
+  ]);
 }
 
 async function routeModModal(interaction) {
   if (!interaction?.customId?.startsWith('mod_')) return false;
+
+  const denied = ensurePanelAccess(interaction);
+  if (denied) return denied;
+
   await syncExpiredWarningsToCases(interaction.guild.id);
 
-  const handlers = [
+  return routeHandlers(interaction, [
     handleSelectUserModal,
-    handleCaseModal,
-    handleBulkModals,
+    (value) => submitCaseModal(value, { fetchTarget, refreshCasesDashboard }),
+    handleBulkModal,
     handleRemoveWarningModal,
     handlePunishmentModal,
     handleWarnModal,
-  ];
-
-  for (const handler of handlers) {
-    const result = await handler(interaction);
-    if (result) return result;
-  }
-
-  return false;
+  ]);
 }
 
 async function handleModInteraction(interaction) {
