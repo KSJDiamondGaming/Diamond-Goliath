@@ -6,6 +6,8 @@ const {
   TextInputBuilder,
   TextInputStyle,
   ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
 } = require('discord.js');
 const db = require('../../../features/moderation/functions/moderationStore');
 const {
@@ -57,6 +59,12 @@ const ACTION_EMOJIS = Object.freeze({
 });
 const VALID_BULK_ACTIONS = Object.keys(ACTION_LABELS);
 const PROGRESS_UPDATE_EVERY = 2;
+const DEFAULT_DASHBOARD_CONTEXT = Object.freeze({
+  view: 'cases',
+  actionFilter: 'all',
+  statusFilter: 'all',
+  page: 0,
+});
 
 function parseDuration(value) {
   const raw = String(value || '').trim().toLowerCase();
@@ -254,6 +262,55 @@ function normalizeDashboardContext(context = {}) {
   };
 }
 
+function buildConfirmCustomId(token, context = DEFAULT_DASHBOARD_CONTEXT) {
+  const value = normalizeDashboardContext(context);
+  return [
+    'mod_confirm_action',
+    token,
+    value.view,
+    value.actionFilter,
+    value.statusFilter,
+    value.page,
+  ].join(':');
+}
+
+function buildConfirmRow(confirmId) {
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(confirmId)
+        .setLabel('⚠️ Confirm')
+        .setStyle(ButtonStyle.Danger),
+      new ButtonBuilder()
+        .setCustomId('mod_cancel_action')
+        .setLabel('❌ Cancel')
+        .setStyle(ButtonStyle.Secondary)
+    ),
+  ];
+}
+
+async function createConfirmation(
+  interaction,
+  targetId,
+  type,
+  payload,
+  message,
+  context = DEFAULT_DASHBOARD_CONTEXT
+) {
+  const token = createPendingAction(interaction.guild.id, {
+    moderatorId: interaction.user.id,
+    targetId,
+    type,
+    payload,
+  });
+
+  return safeReply(interaction, {
+    content: message,
+    components: buildConfirmRow(buildConfirmCustomId(token, context)),
+    flags: 64,
+  });
+}
+
 function createModerationCase(interaction, targetId, action, reason, metadata = {}, extras = {}) {
   return createCase({
     guildId: interaction.guild.id,
@@ -337,7 +394,7 @@ async function submitTimeout(interaction, target) {
   }
 }
 
-async function submitPunishmentRequest(interaction, target, action, createConfirmation) {
+async function submitPunishmentRequest(interaction, target, action, confirm = createConfirmation) {
   if (!target || !['timeout', 'kick', 'ban'].includes(action)) return false;
 
   if (action === 'timeout') {
@@ -352,7 +409,7 @@ async function submitPunishmentRequest(interaction, target, action, createConfir
       return { ok: false, target };
     }
 
-    await createConfirmation(
+    await confirm(
       interaction,
       target.id,
       'ban',
@@ -362,7 +419,7 @@ async function submitPunishmentRequest(interaction, target, action, createConfir
     return { ok: true, pending: true, target };
   }
 
-  await createConfirmation(
+  await confirm(
     interaction,
     target.id,
     'kick',
@@ -874,6 +931,9 @@ module.exports = {
   fetchTarget,
   buildPunishmentModal,
   buildBulkModal,
+  buildConfirmCustomId,
+  buildConfirmRow,
+  createConfirmation,
   submitTimeout,
   submitPunishmentRequest,
   parseBulkModalPayload,
