@@ -6,6 +6,7 @@ const {
   ButtonStyle,
   EmbedBuilder,
 } = require('discord.js');
+const guildManager = require('../../../core/guild/guildManager');
 const schedule = require('./schedule');
 
 const STATUS_COLOURS = Object.freeze({ scheduled: 0x5865F2, completed: 0x57F287, cancelled: 0xED4245 });
@@ -66,7 +67,7 @@ async function resolveChannel(guild, event, overrideChannelId = null) {
 
 async function deploy(guild, eventId, channelId = null, meta = {}) {
   if (!guild?.id) throw new Error('Guild is required.');
-  if (schedule.getSection(guild.id).enabled === false) throw new Error('Schedule is disabled for this server.');
+  if (!guildManager.isModuleEnabled(guild.id, 'schedule')) throw new Error('Schedule is disabled for this server.');
   const event = schedule.getEvent(guild.id, eventId);
   if (!event) throw new Error('Schedule event not found.');
   const channel = await resolveChannel(guild, event, channelId);
@@ -81,7 +82,7 @@ async function deploy(guild, eventId, channelId = null, meta = {}) {
 
 async function updateDeployment(guild, eventId) {
   if (!guild?.id) throw new Error('Guild is required.');
-  if (schedule.getSection(guild.id).enabled === false) return { updated: false, reason: 'module_disabled' };
+  if (!guildManager.isModuleEnabled(guild.id, 'schedule')) return { updated: false, reason: 'module_disabled' };
   const event = schedule.getEvent(guild.id, eventId);
   if (!event?.channelId || !event?.messageId) return { updated: false, reason: 'not_deployed' };
   const channel = await resolveChannel(guild, event);
@@ -105,7 +106,7 @@ async function removeDeployment(guild, eventId, meta = {}) {
 
 async function handleMemberInteraction(interaction) {
   if (!interaction.isButton?.() || !String(interaction.customId).startsWith('schedule:rsvp:')) return false;
-  if (!interaction.guildId || schedule.getSection(interaction.guildId).enabled === false) {
+  if (!interaction.guildId || !guildManager.isModuleEnabled(interaction.guildId, 'schedule')) {
     await interaction.reply({ content: '❌ Schedule is currently disabled for this server.', flags: 64 }).catch(() => null);
     return true;
   }
