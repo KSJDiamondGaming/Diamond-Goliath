@@ -9,10 +9,10 @@ const { deleteWarningByCaseId } = require('../../../core/logging/warnings/warnin
 const {
   getPendingAction,
   deletePendingAction,
-} = require('../../../core/logging/stores/pendingActionStore');
+} = require('./pendingActionStore');
 
-const { fetchTarget } = require('../../../core/ui/targetHelpers');
-const { normalizeDashboardContext } = require('../../../core/ui/pendingActionHelpers');
+const { fetchTarget } = require('./targetHelpers');
+const { normalizeDashboardContext } = require('./pendingActionHelpers');
 
 const { checkHierarchy } = require('./moderationChecks');
 const { refreshDashboard } = require('./dashboardService');
@@ -23,8 +23,6 @@ const {
 } = require('../../../core/ui/interactionResponse');
 
 const { applyPunishmentEngine } = require('../../../core/automod/punishmentEngine');
-
-// If this path is different in your project, only change this line.
 const { sendModLog } = require('../../../core/logging/modlogs/moderationActionLog');
 
 function cleanError(error) {
