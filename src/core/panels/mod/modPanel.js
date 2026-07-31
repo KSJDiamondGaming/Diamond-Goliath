@@ -41,7 +41,6 @@ const {
   getStaffDisplay,
   hasModPermission,
 } = require('./permissions');
-const { handleModInteraction } = require('./modInteractions');
 
 const DEFAULT_VIEW = 'overview';
 const CASES_PER_PAGE = 5;
@@ -52,10 +51,7 @@ function canOpenModPanel(interaction) {
 }
 
 function noAccessPayload() {
-  return {
-    content: '❌ You do not have permission to use the moderation panel.',
-    flags: 64,
-  };
+  return { content: '❌ You do not have permission to use the moderation panel.', flags: 64 };
 }
 
 function createModState(view = DEFAULT_VIEW) {
@@ -353,6 +349,7 @@ async function openModPanel(interaction, options = {}) {
 }
 
 async function handleInteraction(interaction, navState = null) {
+  const { handleModInteraction } = require('./modInteractions');
   return handleModInteraction(interaction, navState);
 }
 
