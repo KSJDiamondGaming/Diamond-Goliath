@@ -17,7 +17,7 @@ const {
   isValidTimeoutDuration,
   getWarningExpiry,
   parseDeleteDays,
-} = require('../../../core/ui/targetHelpers');
+} = require('./targetHelpers');
 
 const {
   getStatusLabel,
@@ -32,12 +32,12 @@ const {
   ephemeralError,
 } = require('../../../core/ui/interactionResponse');
 
-const { buildCaseDetailButtons } = require('../../../core/ui/caseComponentBuilders');
+const { buildCaseDetailButtons } = require('./caseComponentBuilders');
 
 const {
   buildConfirmRow,
   buildConfirmCustomId,
-} = require('../../../core/ui/pendingActionHelpers');
+} = require('./pendingActionHelpers');
 
 const {
   createCase,
@@ -52,7 +52,7 @@ const {
   getWarningByCaseId,
 } = require('../../../core/logging/warnings/warningStore');
 
-const { createPendingAction } = require('../../../core/logging/stores/pendingActionStore');
+const { createPendingAction } = require('./pendingActionStore');
 const {
   handleEscalation,
   getRepeatReasonInfo,
