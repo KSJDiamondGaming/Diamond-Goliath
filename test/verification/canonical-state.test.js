@@ -251,6 +251,8 @@ test('goodbye API reports and writes canonical module state', () => {
   assert.match(source, /enabled: guildManager\.isModuleEnabled\(guildId, 'goodbye'\)/);
   assert.match(source, /guildManager\.setModuleEnabled\(guildId, 'goodbye', req\.body\?\.enabled === true/);
   assert.match(source, /const \{ enabled, templateId, \.\.\.configPatch \} = patch;/);
+  assert.match(source, /config: canonicalConfig\(guildId, exported\.config\)/);
+  assert.match(source, /JSON\.stringify\(canonicalExport\(guildId\)/);
   assert.doesNotMatch(source, /goodbye\.updateConfig\(guildId, \{ enabled:/);
   assert.doesNotMatch(source, /enabled: config\.enabled !== false/);
   assert.match(source, /dmEnabled: dmConfig\.enabled/);
