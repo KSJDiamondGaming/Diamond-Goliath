@@ -58,6 +58,29 @@ const ACTION_EMOJIS = Object.freeze({
   kick: '👢',
   ban: '🔨',
 });
+const ENGINE_ACTIONS = Object.freeze({
+  timeout: {
+    punishments: ['dm', 'timeout'],
+    rule: 'Timeout',
+    logAction: 'Timeout',
+    caseAction: 'timeout',
+    appliedKey: 'timeout',
+  },
+  kick: {
+    punishments: ['dm', 'kick'],
+    rule: 'Kick',
+    logAction: 'Kick',
+    caseAction: 'kick',
+    appliedKey: 'kick',
+  },
+  ban: {
+    punishments: ['dm', 'ban'],
+    rule: 'Ban',
+    logAction: 'Ban',
+    caseAction: 'ban',
+    appliedKey: 'ban',
+  },
+});
 const VALID_BULK_ACTIONS = Object.keys(ACTION_LABELS);
 const PROGRESS_UPDATE_EVERY = 2;
 const DEFAULT_DASHBOARD_CONTEXT = Object.freeze({
@@ -71,7 +94,6 @@ function parseDuration(value) {
   const raw = String(value || '').trim().toLowerCase();
   const match = raw.match(/^(\d+(?:\.\d+)?)\s*([smhdw])$/);
   if (!match) return null;
-
   const durationMs = Math.floor(Number(match[1]) * DURATION_UNITS[match[2]]);
   return Number.isFinite(durationMs) && durationMs > 0 ? durationMs : null;
 }
@@ -331,6 +353,63 @@ async function logAction(interaction, target, action, reason, caseId, metadata =
   });
 }
 
+function buildEngineOptions(interaction, action, reason, metadata = {}) {
+  const config = ENGINE_ACTIONS[action];
+  return {
+    punishments: config.punishments,
+    rule: config.rule,
+    reason,
+    moderator: interaction.user,
+    source: 'moderation',
+    ...(action === 'timeout' ? { durationMs: metadata.durationMs } : {}),
+    ...(action === 'ban' ? { deleteDays: metadata.deleteDays } : {}),
+  };
+}
+
+async function executeEnginePunishment(interaction, target, action, reason, metadata = {}, options = {}) {
+  const config = ENGINE_ACTIONS[action];
+  if (!config) throw new Error(`Unknown punishment action: ${action}`);
+
+  const report = await applyPunishmentEngine(
+    { member: target, user: target.user, guild: interaction.guild },
+    buildEngineOptions(interaction, action, reason, metadata)
+  );
+
+  if (!report.applied.includes(config.appliedKey)) {
+    throw new Error(`Failed to ${action} user. Failed: ${report.failedText}`);
+  }
+
+  const caseMetadata = {
+    ...(action === 'timeout' ? { duration: metadata.durationRaw } : {}),
+    ...(action === 'ban' ? { deleteDays: metadata.deleteDays } : {}),
+    punishmentReport: report,
+  };
+  const modCase = createModerationCase(
+    interaction,
+    target.id,
+    config.caseAction,
+    reason,
+    caseMetadata
+  );
+
+  const logMetadata = {
+    ...(action === 'timeout' ? { duration: metadata.durationRaw } : {}),
+    ...(action === 'ban' ? { deleteDays: metadata.deleteDays } : {}),
+    dmSent: report.dmSent,
+    punishmentReport: report,
+  };
+  await logAction(
+    interaction,
+    target,
+    options.logAction || config.logAction,
+    reason,
+    modCase.caseId,
+    logMetadata
+  );
+
+  return { target, modCase, report };
+}
+
 async function submitTimeout(interaction, target) {
   const durationRaw = interaction.fields.getTextInputValue('duration').trim();
   const reason = interaction.fields.getTextInputValue('reason').trim();
@@ -346,42 +425,20 @@ async function submitTimeout(interaction, target) {
   }
 
   try {
-    const report = await applyPunishmentEngine(
-      { member: target, user: target.user, guild: interaction.guild },
-      {
-        punishments: ['dm', 'timeout'],
-        rule: 'Timeout',
-        reason,
-        durationMs,
-        moderator: interaction.user,
-        source: 'moderation',
-      }
-    );
-
-    if (!report.applied.includes('timeout')) {
-      throw new Error(`Failed to timeout user. Failed: ${report.failedText}`);
-    }
-
-    const modCase = createModerationCase(
+    const result = await executeEnginePunishment(
       interaction,
-      target.id,
+      target,
       'timeout',
       reason,
-      { duration: durationRaw, punishmentReport: report }
+      { durationRaw, durationMs }
     );
 
-    await logAction(interaction, target, 'Timeout', reason, modCase.caseId, {
-      duration: durationRaw,
-      dmSent: report.dmSent,
-      punishmentReport: report,
-    });
-
     await safeReply(interaction, {
-      content: `⏳ Timed out **${target.user.tag}** for **${durationRaw}** • Case #${modCase.caseId}`,
+      content: `⏳ Timed out **${target.user.tag}** for **${durationRaw}** • Case #${result.modCase.caseId}`,
       flags: 64,
     });
 
-    return { ok: true, target, modCase, report };
+    return { ok: true, ...result };
   } catch (error) {
     console.error('❌ Timeout error:', error);
     await safeReply(interaction, ephemeralError('Failed to timeout user.'));
@@ -390,11 +447,8 @@ async function submitTimeout(interaction, target) {
 }
 
 async function submitPunishmentRequest(interaction, target, action, confirm = createConfirmation) {
-  if (!target || !['timeout', 'kick', 'ban'].includes(action)) return false;
-
-  if (action === 'timeout') {
-    return submitTimeout(interaction, target);
-  }
+  if (!target || !ENGINE_ACTIONS[action]) return false;
+  if (action === 'timeout') return submitTimeout(interaction, target);
 
   const reason = interaction.fields.getTextInputValue('reason').trim();
   if (action === 'ban') {
@@ -437,9 +491,7 @@ function parseBulkModalPayload(interaction, actionType) {
 
   if (actionType === 'ban') {
     payload.deleteDays = parseDeleteDays(interaction.fields.getTextInputValue('days'));
-    if (payload.deleteDays === null) {
-      return { error: 'Delete message days must be 0-7.' };
-    }
+    if (payload.deleteDays === null) return { error: 'Delete message days must be 0-7.' };
   }
 
   return { payload };
@@ -447,86 +499,24 @@ function parseBulkModalPayload(interaction, actionType) {
 
 async function submitBulkModal(interaction, actionType) {
   const parsed = parseBulkModalPayload(interaction, actionType);
-  if (parsed.error) {
-    return safeReply(interaction, ephemeralError(parsed.error));
-  }
+  if (parsed.error) return safeReply(interaction, ephemeralError(parsed.error));
   return runBulkAction(interaction, parsed.payload);
 }
 
-async function executeBan(interaction, pending, target) {
-  const deleteDays = Number(pending.payload.deleteDays || 0);
-  const reason = pending.payload.reason || 'No reason provided';
-  const report = await applyPunishmentEngine(
-    { member: target, user: target.user, guild: interaction.guild },
-    {
-      punishments: ['dm', 'ban'],
-      rule: 'Ban',
-      reason,
-      deleteDays,
-      moderator: interaction.user,
-      source: 'moderation',
-    }
-  );
-
-  if (!report.applied.includes('ban')) {
-    return {
-      error: `Failed to ban user. ${report.failedText !== 'none' ? `Failed: ${report.failedText}` : ''}`.trim(),
-    };
-  }
-
-  const modCase = createModerationCase(
-    interaction,
-    target.id,
-    'ban',
-    reason,
-    { deleteDays, punishmentReport: report }
-  );
-  await logAction(interaction, target, 'Ban', reason, modCase.caseId, {
-    deleteDays,
-    dmSent: report.dmSent,
-    punishmentReport: report,
-  });
-
-  return {
-    target,
-    content: `✅ Banned **${target.user.tag}** • Case #${modCase.caseId}${report.dmSent ? ' • DM sent ✅' : ' • DM failed ❌'}`,
-  };
+function buildPendingSuccessContent(action, target, modCase, report) {
+  const verb = action === 'ban' ? 'Banned' : 'Kicked';
+  return `✅ ${verb} **${target.user.tag}** • Case #${modCase.caseId}${report.dmSent ? ' • DM sent ✅' : ' • DM failed ❌'}`;
 }
 
-async function executeKick(interaction, pending, target) {
+async function executePendingEngineAction(interaction, pending, target, action) {
   const reason = pending.payload.reason || 'No reason provided';
-  const report = await applyPunishmentEngine(
-    { member: target, user: target.user, guild: interaction.guild },
-    {
-      punishments: ['dm', 'kick'],
-      rule: 'Kick',
-      reason,
-      moderator: interaction.user,
-      source: 'moderation',
-    }
-  );
-
-  if (!report.applied.includes('kick')) {
-    return {
-      error: `Failed to kick user. ${report.failedText !== 'none' ? `Failed: ${report.failedText}` : ''}`.trim(),
-    };
-  }
-
-  const modCase = createModerationCase(
-    interaction,
-    target.id,
-    'kick',
-    reason,
-    { punishmentReport: report }
-  );
-  await logAction(interaction, target, 'Kick', reason, modCase.caseId, {
-    dmSent: report.dmSent,
-    punishmentReport: report,
-  });
-
+  const metadata = action === 'ban'
+    ? { deleteDays: Number(pending.payload.deleteDays || 0) }
+    : {};
+  const result = await executeEnginePunishment(interaction, target, action, reason, metadata);
   return {
     target,
-    content: `✅ Kicked **${target.user.tag}** • Case #${modCase.caseId}${report.dmSent ? ' • DM sent ✅' : ' • DM failed ❌'}`,
+    content: buildPendingSuccessContent(action, target, result.modCase, result.report),
   };
 }
 
@@ -557,9 +547,7 @@ async function executeRemoveWarning(interaction, pending, fallbackTarget) {
 async function executeRemoveTimeout(interaction, pending, target) {
   await target.timeout(null, `Timeout removed by ${interaction.user.tag}`);
   const reversedSourceCaseId = pending.payload.sourceCaseId || null;
-  if (reversedSourceCaseId) {
-    updateCaseStatus(interaction.guild.id, reversedSourceCaseId, 'reversed');
-  }
+  if (reversedSourceCaseId) updateCaseStatus(interaction.guild.id, reversedSourceCaseId, 'reversed');
 
   const reason = reversedSourceCaseId
     ? `Removed timeout from case #${reversedSourceCaseId}`
@@ -583,16 +571,10 @@ async function executeRemoveTimeout(interaction, pending, target) {
 async function executePendingAction(discord, interaction, token, returnContext = {}) {
   const pending = getPendingAction(interaction.guild.id, token);
   if (!pending) {
-    return safeReply(
-      interaction,
-      ephemeralError('That pending action has expired or could not be found.')
-    );
+    return safeReply(interaction, ephemeralError('That pending action has expired or could not be found.'));
   }
   if (pending.moderatorId !== interaction.user.id) {
-    return safeReply(
-      interaction,
-      ephemeralError('Only the moderator who created this action can confirm it.')
-    );
+    return safeReply(interaction, ephemeralError('Only the moderator who created this action can confirm it.'));
   }
 
   const target = await fetchTarget(interaction.guild, pending.targetId);
@@ -603,8 +585,8 @@ async function executePendingAction(discord, interaction, token, returnContext =
   }
 
   const handlers = {
-    ban: executeBan,
-    kick: executeKick,
+    ban: (valueInteraction, valuePending, valueTarget) => executePendingEngineAction(valueInteraction, valuePending, valueTarget, 'ban'),
+    kick: (valueInteraction, valuePending, valueTarget) => executePendingEngineAction(valueInteraction, valuePending, valueTarget, 'kick'),
     'remove-warning': executeRemoveWarning,
     'remove-timeout': executeRemoveTimeout,
   };
@@ -650,22 +632,14 @@ function normalizeBulkIds(ids = []) {
 
 function validateBulkOptions(actionType, options = {}) {
   const errors = [];
-  if (!VALID_BULK_ACTIONS.includes(actionType)) {
-    errors.push('❌ Unknown bulk action type.');
-  }
-  if (!Array.isArray(options.ids) || !options.ids.length) {
-    errors.push('❌ No valid user IDs provided.');
-  }
-  if (!String(options.reason || '').trim()) {
-    errors.push('❌ A reason is required.');
-  }
+  if (!VALID_BULK_ACTIONS.includes(actionType)) errors.push('❌ Unknown bulk action type.');
+  if (!Array.isArray(options.ids) || !options.ids.length) errors.push('❌ No valid user IDs provided.');
+  if (!String(options.reason || '').trim()) errors.push('❌ A reason is required.');
 
   if (actionType === 'timeout') {
     const durationMs = parseDuration(options.durationRaw);
     if (!durationMs) errors.push('❌ Invalid duration. Use `10m`, `1h`, or `1d`.');
-    else if (!isValidTimeoutDuration(durationMs)) {
-      errors.push('❌ Timeout cannot exceed 28 days.');
-    }
+    else if (!isValidTimeoutDuration(durationMs)) errors.push('❌ Timeout cannot exceed 28 days.');
   }
 
   if (actionType === 'ban' && !isValidDeleteDays(options.deleteDays)) {
@@ -724,126 +698,28 @@ async function runBulkWarn(interaction, member, reason) {
   return modCase;
 }
 
-async function runBulkTimeout(interaction, member, reason, durationRaw, durationMs) {
-  const report = await applyPunishmentEngine(
-    { member, user: member.user, guild: interaction.guild },
-    {
-      punishments: ['dm', 'timeout'],
-      rule: 'Timeout',
-      reason,
-      durationMs,
-      moderator: interaction.user,
-      source: 'moderation',
-    }
-  );
-  if (!report.applied.includes('timeout')) {
-    throw new Error(`Failed to timeout user. Failed: ${report.failedText}`);
-  }
-
-  const modCase = createModerationCase(
-    interaction,
-    member.id,
-    'timeout',
-    reason,
-    { duration: durationRaw, punishmentReport: report }
-  );
-  await logAction(interaction, member, 'Bulk Timeout', reason, modCase.caseId, {
-    duration: durationRaw,
-    dmSent: report.dmSent,
-    punishmentReport: report,
-  });
-  return modCase;
-}
-
-async function runBulkKick(interaction, member, reason) {
-  const report = await applyPunishmentEngine(
-    { member, user: member.user, guild: interaction.guild },
-    {
-      punishments: ['dm', 'kick'],
-      rule: 'Kick',
-      reason,
-      moderator: interaction.user,
-      source: 'moderation',
-    }
-  );
-  if (!report.applied.includes('kick')) {
-    throw new Error(`Failed to kick user. Failed: ${report.failedText}`);
-  }
-
-  const modCase = createModerationCase(
-    interaction,
-    member.id,
-    'kick',
-    reason,
-    { punishmentReport: report }
-  );
-  await logAction(interaction, member, 'Bulk Kick', reason, modCase.caseId, {
-    dmSent: report.dmSent,
-    punishmentReport: report,
-  });
-  return modCase;
-}
-
-async function runBulkBan(interaction, member, reason, deleteDays) {
-  const report = await applyPunishmentEngine(
-    { member, user: member.user, guild: interaction.guild },
-    {
-      punishments: ['dm', 'ban'],
-      rule: 'Ban',
-      reason,
-      deleteDays,
-      moderator: interaction.user,
-      source: 'moderation',
-    }
-  );
-  if (!report.applied.includes('ban')) {
-    throw new Error(`Failed to ban user. Failed: ${report.failedText}`);
-  }
-
-  const modCase = createModerationCase(
-    interaction,
-    member.id,
-    'ban',
-    reason,
-    { deleteDays, punishmentReport: report }
-  );
-  await logAction(interaction, member, 'Bulk Ban', reason, modCase.caseId, {
-    deleteDays,
-    dmSent: report.dmSent,
-    punishmentReport: report,
-  });
-  return modCase;
-}
-
 async function runSingleBulkAction(interaction, member, options) {
-  if (options.actionType === 'warn') {
-    return runBulkWarn(interaction, member, options.reason);
-  }
-  if (options.actionType === 'timeout') {
-    return runBulkTimeout(
-      interaction,
-      member,
-      options.reason,
-      options.durationRaw,
-      options.durationMs
-    );
-  }
-  if (options.actionType === 'kick') {
-    return runBulkKick(interaction, member, options.reason);
-  }
-  if (options.actionType === 'ban') {
-    return runBulkBan(interaction, member, options.reason, options.deleteDays);
-  }
-  throw new Error('Unknown action.');
+  if (options.actionType === 'warn') return runBulkWarn(interaction, member, options.reason);
+  if (!ENGINE_ACTIONS[options.actionType]) throw new Error('Unknown action.');
+
+  return executeEnginePunishment(
+    interaction,
+    member,
+    options.actionType,
+    options.reason,
+    {
+      durationRaw: options.durationRaw,
+      durationMs: options.durationMs,
+      deleteDays: options.deleteDays,
+    },
+    { logAction: ACTION_LABELS[options.actionType] }
+  );
 }
 
 async function runBulkAction(interaction, options) {
   const uniqueIds = normalizeBulkIds(options.ids);
   const actionLabel = ACTION_LABELS[options.actionType] || 'Bulk Moderation';
-  const validationErrors = validateBulkOptions(
-    options.actionType,
-    { ...options, ids: uniqueIds }
-  );
+  const validationErrors = validateBulkOptions(options.actionType, { ...options, ids: uniqueIds });
   if (validationErrors.length) {
     return safeReply(interaction, {
       content: validationErrors.join('\n'),
@@ -851,9 +727,7 @@ async function runBulkAction(interaction, options) {
     });
   }
 
-  const durationMs = options.actionType === 'timeout'
-    ? parseDuration(options.durationRaw)
-    : null;
+  const durationMs = options.actionType === 'timeout' ? parseDuration(options.durationRaw) : null;
   const total = uniqueIds.length;
   const success = [];
   const failed = [];
@@ -884,11 +758,7 @@ async function runBulkAction(interaction, options) {
       if (hierarchyError) {
         failed.push(`❌ ${id} — ${hierarchyError}`);
       } else {
-        await runSingleBulkAction(
-          interaction,
-          member,
-          { ...options, durationMs }
-        );
+        await runSingleBulkAction(interaction, member, { ...options, durationMs });
         success.push(`${ACTION_EMOJIS[options.actionType] || '✅'} ${member.user.tag}`);
       }
     } catch (error) {
