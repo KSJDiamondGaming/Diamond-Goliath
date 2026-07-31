@@ -467,26 +467,11 @@ async function updateLatestPanelInPlace(interaction) {
     throw new Error('The deployed verification message is not editable. Update aborted; no new message was sent.');
   }
 
-  const template = verificationStore.normalizePanelTemplate({
-    ...existing,
+  return verificationManager.refreshVerificationPanel(guild, existing.panelId, {
     ...panelTemplate(guild.id),
-  });
-  const updatedPanel = {
-    ...existing,
-    ...template,
-    panelId: existing.panelId,
-    id: existing.panelId,
     channelId: existing.channelId,
-    messageId: existing.messageId,
     createdBy: existing.createdBy,
-  };
-
-  await message.edit({
-    embeds: [verificationManager.buildVerificationEmbed(updatedPanel, guild)],
-    components: verificationManager.buildVerificationRows(updatedPanel, guild),
-  });
-
-  return verificationStore.savePanel(guild.id, updatedPanel, {
+  }, {
     actorId: interaction.user.id,
     action: 'verification_admin_panel_update_in_place',
   });
