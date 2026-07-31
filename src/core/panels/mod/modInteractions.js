@@ -16,7 +16,7 @@ const {
   buildBulkModal,
   submitPunishmentRequest,
   submitBulkModal,
-  createPendingAction,
+  createConfirmation,
   executePendingAction,
 } = require('./punishments');
 const {
@@ -108,55 +108,6 @@ function parseConfirmActionContext(customId) {
       page: parts[5],
     }),
   };
-}
-
-function buildConfirmCustomId(token, context = {}) {
-  const value = normalizeDashboardContext(context);
-  return [
-    'mod_confirm_action',
-    token,
-    value.view,
-    value.actionFilter,
-    value.statusFilter,
-    value.page,
-  ].join(':');
-}
-
-function buildConfirmRow(confirmId) {
-  return [
-    new Discord.ActionRowBuilder().addComponents(
-      new Discord.ButtonBuilder()
-        .setCustomId(confirmId)
-        .setLabel('⚠️ Confirm')
-        .setStyle(Discord.ButtonStyle.Danger),
-      new Discord.ButtonBuilder()
-        .setCustomId('mod_cancel_action')
-        .setLabel('❌ Cancel')
-        .setStyle(Discord.ButtonStyle.Secondary)
-    ),
-  ];
-}
-
-async function createConfirmation(
-  interaction,
-  targetId,
-  type,
-  payload,
-  message,
-  context = DEFAULT_DASHBOARD_CONTEXT
-) {
-  const token = createPendingAction(interaction.guild.id, {
-    moderatorId: interaction.user.id,
-    targetId,
-    type,
-    payload,
-  });
-
-  return safeReply(interaction, {
-    content: message,
-    components: buildConfirmRow(buildConfirmCustomId(token, context)),
-    flags: 64,
-  });
 }
 
 async function requireSelectedTarget(interaction, targetId) {
@@ -474,12 +425,7 @@ async function handlePunishmentModal(interaction) {
   );
   if (!target) return true;
 
-  const result = await submitPunishmentRequest(
-    interaction,
-    target,
-    action,
-    createConfirmation
-  );
+  const result = await submitPunishmentRequest(interaction, target, action);
   if (action === 'timeout' && result?.ok) {
     await refreshCasesDashboard(interaction, target);
   }
