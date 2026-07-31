@@ -3,17 +3,12 @@
 const Discord = require('discord.js');
 
 const { buildDashboardPayload } = require('./dashboardService');
-const { routeModInteraction } = require('./modInteractionRouter');
-const { routeModModal } = require('./modModalRouter');
+const { handleModInteraction } = require('./modInteractions');
 const { hasModPermission } = require('./permissions');
 
 const panelNav = require('../../../core/ui/panelNavigation');
 
 const DEFAULT_VIEW = 'overview';
-
-// =========================
-// 🔐 Access Guard
-// =========================
 
 function canOpenModPanel(interaction) {
   return Boolean(
@@ -29,10 +24,6 @@ function noAccessPayload() {
     flags: 64,
   };
 }
-
-// =========================
-// 🧭 Navigation Helpers
-// =========================
 
 function createModState(view = DEFAULT_VIEW) {
   return panelNav.createState(`mod:${view}`);
@@ -64,10 +55,6 @@ function applyModNavigation(payload) {
   };
 }
 
-// =========================
-// 🧭 /mod Entry Point
-// =========================
-
 async function openModPanel(interaction, options = {}) {
   if (!canOpenModPanel(interaction)) {
     if (interaction.deferred || interaction.replied) {
@@ -79,7 +66,6 @@ async function openModPanel(interaction, options = {}) {
 
   const view = options.view || DEFAULT_VIEW;
   const target = options.target || null;
-
   const navState = options.navState || createModState(view);
 
   const payload = await buildDashboardPayload(
@@ -106,54 +92,8 @@ async function openModPanel(interaction, options = {}) {
   return interaction.reply(finalPayload);
 }
 
-// =========================
-// 🔘 Button / Select Router
-// =========================
-
-async function handleModPanelInteraction(interaction, navState = null) {
-  if (!interaction?.customId) return false;
-
-  if (interaction.customId.startsWith('nav|')) {
-    return false;
-  }
-
-  const isModInteraction =
-    interaction.customId.startsWith('mod_') ||
-    interaction.customId.startsWith('mod:');
-
-  if (!isModInteraction) return false;
-
-  return routeModInteraction(interaction, navState);
-}
-
-// =========================
-// 📝 Modal Router
-// =========================
-
-async function handleModPanelModal(interaction, navState = null) {
-  if (!interaction?.customId) return false;
-
-  const isModModal =
-    interaction.customId.startsWith('mod_submit_') ||
-    interaction.customId.startsWith('mod_select_user_modal');
-
-  if (!isModModal) return false;
-
-  return routeModModal(interaction, navState);
-}
-
-// =========================
-// 🧩 Admin Router Compatibility
-// =========================
-
 async function handleInteraction(interaction, navState = null) {
-  if (!interaction?.customId) return false;
-
-  if (interaction.isModalSubmit?.()) {
-    return handleModPanelModal(interaction, navState);
-  }
-
-  return handleModPanelInteraction(interaction, navState);
+  return handleModInteraction(interaction, navState);
 }
 
 function buildModPanel(guild, memberDisplayName = 'Unknown User', navState = null) {
@@ -187,25 +127,19 @@ function buildModPanel(guild, memberDisplayName = 'Unknown User', navState = nul
   };
 }
 
-// =========================
-// ♻️ Backwards-Compatible Aliases
-// =========================
-
-const handleModButton = handleModPanelInteraction;
-const handleModModal = handleModPanelModal;
+const handleModPanelInteraction = handleInteraction;
+const handleModPanelModal = handleInteraction;
+const handleModButton = handleInteraction;
+const handleModModal = handleInteraction;
 
 module.exports = {
   openModPanel,
-
   handleInteraction,
   buildModPanel,
-
   handleModPanelInteraction,
   handleModPanelModal,
-
   handleModButton,
   handleModModal,
-
   createModState,
   pushModView,
   getViewFromState,
