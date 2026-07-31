@@ -5,9 +5,6 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  ModalBuilder,
-  TextInputBuilder,
-  TextInputStyle,
   UserSelectMenuBuilder,
 } = Discord;
 
@@ -20,10 +17,11 @@ const {
   checkHierarchy,
 } = require('./permissions');
 const {
-  parseDuration,
-  isValidTimeoutDuration,
   parseDeleteDays,
   fetchTarget,
+  buildPunishmentModal,
+  buildBulkModal,
+  submitTimeout,
   createPendingAction,
   executePendingAction,
   runBulkAction,
@@ -45,8 +43,6 @@ const {
   editCaseReason,
   setCaseNote,
 } = require('./cases');
-const { createCase } = require('../../../core/logging/cases/caseStore');
-const { sendModLog } = require('../../../core/logging/modlogs/moderationActionLog');
 
 const DEFAULT_DASHBOARD_CONTEXT = Object.freeze({
   view: 'cases',
@@ -100,7 +96,14 @@ function parseConfirmActionContext(customId) {
 
 function buildConfirmCustomId(token, context = {}) {
   const value = normalizeDashboardContext(context);
-  return ['mod_confirm_action', token, value.view, value.actionFilter, value.statusFilter, value.page].join(':');
+  return [
+    'mod_confirm_action',
+    token,
+    value.view,
+    value.actionFilter,
+    value.statusFilter,
+    value.page,
+  ].join(':');
 }
 
 function buildConfirmRow(confirmId, cancelId = 'mod_cancel_action') {
@@ -116,102 +119,6 @@ function buildConfirmRow(confirmId, cancelId = 'mod_cancel_action') {
         .setStyle(ButtonStyle.Secondary)
     ),
   ];
-}
-
-function buildReasonModal(customId, title, includeDays = false, includeDuration = false) {
-  const modal = new ModalBuilder().setCustomId(customId).setTitle(title);
-  const rows = [];
-
-  if (includeDays) {
-    rows.push(new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId('days')
-        .setLabel('Delete message days (0-7)')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('0')
-        .setRequired(true)
-        .setMaxLength(1)
-    ));
-  }
-
-  if (includeDuration) {
-    rows.push(new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId('duration')
-        .setLabel('Duration (10m, 1h, 1d)')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('1h')
-        .setRequired(true)
-        .setMaxLength(10)
-    ));
-  }
-
-  rows.push(new ActionRowBuilder().addComponents(
-    new TextInputBuilder()
-      .setCustomId('reason')
-      .setLabel('Reason')
-      .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder('Enter the moderation reason')
-      .setRequired(true)
-      .setMaxLength(500)
-  ));
-
-  return modal.addComponents(...rows);
-}
-
-function buildBulkModal(type) {
-  const titleMap = {
-    warn: 'Bulk Warn',
-    timeout: 'Bulk Timeout',
-    kick: 'Bulk Kick',
-    ban: 'Bulk Ban',
-  };
-  const modal = new ModalBuilder()
-    .setCustomId(`mod_submit_bulk_${type}`)
-    .setTitle(titleMap[type] || 'Bulk Moderation');
-  const rows = [new ActionRowBuilder().addComponents(
-    new TextInputBuilder()
-      .setCustomId('users')
-      .setLabel('User IDs (comma separated)')
-      .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder('123456789012345678, 987654321098765432')
-      .setRequired(true)
-  )];
-
-  if (type === 'timeout') {
-    rows.push(new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId('duration')
-        .setLabel('Duration (10m, 1h, 1d)')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('1h')
-        .setRequired(true)
-    ));
-  }
-
-  if (type === 'ban') {
-    rows.push(new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId('days')
-        .setLabel('Delete message days (0-7)')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('0')
-        .setRequired(true)
-        .setMaxLength(1)
-    ));
-  }
-
-  rows.push(new ActionRowBuilder().addComponents(
-    new TextInputBuilder()
-      .setCustomId('reason')
-      .setLabel('Reason')
-      .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder('Enter the moderation reason')
-      .setRequired(true)
-      .setMaxLength(500)
-  ));
-
-  return modal.addComponents(...rows);
 }
 
 async function findMemberByQuery(guild, query) {
@@ -314,23 +221,23 @@ const OPEN_ACTIONS = Object.freeze({
   },
   mod_open_timeout: {
     permission: 'timeout',
-    modal: (id) => buildReasonModal(`mod_submit_timeout:${id}`, 'Timeout User', false, true),
+    modal: (id) => buildPunishmentModal('timeout', id),
   },
   mod_open_kick: {
     permission: 'kick',
-    modal: (id) => buildReasonModal(`mod_submit_kick:${id}`, 'Kick User'),
+    modal: (id) => buildPunishmentModal('kick', id),
   },
   mod_open_ban: {
     permission: 'ban',
-    modal: (id) => buildReasonModal(`mod_submit_ban:${id}`, 'Ban User', true),
+    modal: (id) => buildPunishmentModal('ban', id),
   },
 });
 
 const ACTION_SELECT_MODALS = Object.freeze({
   warn: (id) => buildWarnModal(id),
-  timeout: (id) => buildReasonModal(`mod_submit_timeout:${id}`, 'Timeout User', false, true),
-  kick: (id) => buildReasonModal(`mod_submit_kick:${id}`, 'Kick User'),
-  ban: (id) => buildReasonModal(`mod_submit_ban:${id}`, 'Ban User', true),
+  timeout: (id) => buildPunishmentModal('timeout', id),
+  kick: (id) => buildPunishmentModal('kick', id),
+  ban: (id) => buildPunishmentModal('ban', id),
   'remove-warning': (id) => buildCaseIdModal(
     `mod_submit_remove_warning:${id}`,
     'Remove Warning',
@@ -947,51 +854,9 @@ async function handleTimeoutModal(interaction) {
     });
   }
 
-  const durationRaw = interaction.fields.getTextInputValue('duration').trim();
-  const reason = interaction.fields.getTextInputValue('reason').trim();
-  const durationMs = parseDuration(durationRaw);
-
-  if (!durationMs) {
-    return safeReply(
-      interaction,
-      ephemeralError('Invalid duration. Use `10m`, `1h`, or `1d`.')
-    );
-  }
-  if (!isValidTimeoutDuration(durationMs)) {
-    return safeReply(interaction, ephemeralError('Timeout cannot exceed 28 days.'));
-  }
-
-  try {
-    await target.timeout(durationMs, `${reason} | By ${interaction.user.tag}`);
-    const modCase = createCase({
-      guildId: interaction.guild.id,
-      userId: target.id,
-      moderatorId: interaction.user.id,
-      action: 'timeout',
-      reason,
-      metadata: { duration: durationRaw },
-    });
-
-    await sendModLog({
-      guild: interaction.guild,
-      target,
-      moderator: interaction.user,
-      action: 'Timeout',
-      reason,
-      caseId: modCase.caseId,
-      metadata: { duration: durationRaw },
-    });
-
-    await safeReply(interaction, {
-      content: `⏳ Timed out **${target.user.tag}** for **${durationRaw}** • Case #${modCase.caseId}`,
-      flags: 64,
-    });
-    await refreshCasesDashboard(interaction, target);
-    return true;
-  } catch (error) {
-    console.error('❌ Timeout error:', error);
-    return safeReply(interaction, ephemeralError('Failed to timeout user.'));
-  }
+  const result = await submitTimeout(interaction, target);
+  if (result?.ok) await refreshCasesDashboard(interaction, target);
+  return true;
 }
 
 async function routeButtonsAndSelects(interaction) {
