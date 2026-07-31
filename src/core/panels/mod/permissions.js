@@ -245,40 +245,6 @@ async function fetchTarget(guild, userId) {
   return guild.members.fetch(id).catch(() => guild.members.cache.get(id) || null);
 }
 
-async function findMemberByQuery(guild, query) {
-  const raw = String(query || '').trim();
-  if (!guild || !raw) return null;
-
-  const mentionId = raw.match(/^<@!?(\d{16,20})>$/)?.[1];
-  const directId = mentionId || (/^\d{16,20}$/.test(raw) ? raw : null);
-  if (directId) {
-    const direct = await fetchTarget(guild, directId);
-    if (direct) return direct;
-  }
-
-  const needle = raw.toLowerCase();
-  const valuesFor = (member) => [
-    member.user?.username,
-    member.user?.tag,
-    member.displayName,
-    member.nickname,
-  ].map((value) => String(value || '').trim().toLowerCase());
-
-  const exact = guild.members.cache.find((member) => valuesFor(member).includes(needle));
-  if (exact) return exact;
-  const partial = guild.members.cache.find((member) =>
-    valuesFor(member).some((value) => value && value.includes(needle))
-  );
-  if (partial) return partial;
-
-  try {
-    const results = await guild.members.search({ query: raw, limit: 10 });
-    return results.find((member) => valuesFor(member).includes(needle)) || results.first() || null;
-  } catch {
-    return null;
-  }
-}
-
 function ensurePanelAccess(interaction) {
   if (hasModPermission(interaction?.member)) return null;
   return safeReply(interaction, ephemeralError('No permission to use moderation panel.'));
@@ -333,7 +299,6 @@ module.exports = {
   checkHierarchy,
   checkHierarchyForBulk,
   fetchTarget,
-  findMemberByQuery,
   ensurePanelAccess,
   ensureActionAccess,
   requireModeratableTarget,
