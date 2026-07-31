@@ -19,6 +19,10 @@ const temporaryRolesPath = path.resolve(__dirname, '../../src/modules/roleStudio
 const temporaryRolesPanelPath = path.resolve(__dirname, '../../src/modules/roleStudio/temporaryRoles/temporaryRolesPanel.js');
 const serverBackupSchedulerPath = path.resolve(__dirname, '../../src/core/security/serverBackupScheduler.js');
 const statsRoutePath = path.resolve(__dirname, '../../src/modules/utilityStudio/stats/statsRoute.js');
+const giveawaysAdminPanelPath = path.resolve(__dirname, '../../src/modules/communityStudio/giveaways/giveawaysAdminPanel.js');
+const giveawaysInteractionHandlerPath = path.resolve(__dirname, '../../src/modules/communityStudio/giveaways/giveawaysInteractionHandler.js');
+const socialStudioMonitorPath = path.resolve(__dirname, '../../src/modules/socialStudio/socialStudioMonitor.js');
+const socialStudioRoutePath = path.resolve(__dirname, '../../src/modules/socialStudio/socialStudioRoute.js');
 
 function loadManager(initialModules = {}) {
   let modules = JSON.parse(JSON.stringify(initialModules));
@@ -246,4 +250,34 @@ test('stats summary uses the canonical logging module key', () => {
   const source = fs.readFileSync(statsRoutePath, 'utf8');
   assert.match(source, /guildManager\.isModuleEnabled\(guildId, 'logging'\)/);
   assert.doesNotMatch(source, /guildManager\.isModuleEnabled\(guildId, 'logs'\)/);
+});
+
+test('giveaways admin and interaction paths use canonical module state', () => {
+  const panel = fs.readFileSync(giveawaysAdminPanelPath, 'utf8');
+  const interactions = fs.readFileSync(giveawaysInteractionHandlerPath, 'utf8');
+
+  assert.match(panel, /const enabled = guildManager\.isModuleEnabled\(guild\.id, 'giveaways'\)/);
+  assert.doesNotMatch(panel, /section\.enabled/);
+  assert.match(interactions, /setModuleEnabled\(interaction\.guild\.id, 'giveaways', true/);
+  assert.match(interactions, /setModuleEnabled\(interaction\.guild\.id, 'giveaways', false/);
+  assert.match(interactions, /isModuleEnabled\(interaction\.guildId, 'giveaways'\)/);
+  assert.doesNotMatch(interactions, /section\.enabled/);
+});
+
+test('social studio monitor and API overlay canonical module state without persisting enabled', () => {
+  const monitor = fs.readFileSync(socialStudioMonitorPath, 'utf8');
+  const route = fs.readFileSync(socialStudioRoutePath, 'utf8');
+
+  assert.match(monitor, /enabled: guildManager\.isModuleEnabled\(guildId, 'social'\)/);
+  assert.match(monitor, /if \(!config\.enabled && !options\.manual\)/);
+  assert.match(monitor, /return \{ \.\.\.updated, enabled: guildManager\.isModuleEnabled\(guildId, 'social'\) \};/);
+  assert.match(monitor, /account\.enabled === false/);
+  assert.match(monitor, /creator\?\.enabled === false/);
+
+  assert.match(route, /delete normalized\.enabled;/);
+  assert.match(route, /enabled: guildManager\.isModuleEnabled\(id, 'social'\)/);
+  assert.match(route, /const \{ enabled: _enabled, \.\.\.storedConfig \} = isObject\(config\) \? config : \{\};/);
+  assert.match(route, /guildManager\.setModuleEnabled\(id, 'social', body\.enabled, actor\(req\)\)/);
+  assert.match(route, /enabled: value\.enabled !== false/);
+  assert.doesNotMatch(route, /enabled: source\.enabled !== false/);
 });
