@@ -519,8 +519,10 @@ function getRequestedPanelId(interaction) {
 
 function getActivePanel(guildId, panelId, context = {}) {
   if (!panelId) return null;
-  const panel = verificationStore.getPanel(guildId, panelId);
-  if (!panel || panel.enabled === false || panel.deletedAt) return null;
+  const section = verificationStore.getVerificationSection(guildId);
+  if (!section.activePanelId || section.activePanelId !== panelId) return null;
+  const panel = section.panels?.[panelId] || null;
+  if (!panel || panel.enabled === false || panel.deletedAt || panel.retiredAt) return null;
 
   const messageId = cleanDiscordId(context.messageId || context.message?.id);
   const channelId = cleanDiscordId(context.channelId || context.channel?.id);
@@ -791,39 +793,115 @@ async function fetchPanelMessage(guild, panel) {
   return channel.messages.fetch(panel.messageId).catch(() => null);
 }
 
+function snapshotMessagePayload(message) {
+  if (!message) return null;
+  return {
+    embeds: Array.isArray(message.embeds) ? message.embeds.map((embed) => embed.toJSON()) : [],
+    components: Array.isArray(message.components) ? message.components.map((component) => component.toJSON()) : [],
+  };
+}
+
 async function deployVerificationPanel(channel, input = {}, meta = {}) {
   if (!channel?.guild?.id || !channel?.send) throw new Error('A sendable channel is required.');
-  const section = getEffectiveVerificationSection(channel.guild.id);
+  const guild = channel.guild;
+  const guildId = guild.id;
+  const section = getEffectiveVerificationSection(guildId);
   if (section.enabled !== true) throw new Error('Verification module is disabled.');
   if (!section.settings?.verifiedRoleIds?.length) throw new Error('Choose at least one verified role before deploying verification.');
 
-  const existingPanel = input.panelId ? verificationStore.getPanel(channel.guild.id, input.panelId) : null;
+  const existingPanel = input.panelId ? verificationStore.getPanel(guildId, input.panelId) : null;
+  const panelId = existingPanel?.panelId || input.panelId || verificationStore.createId('verify_panel');
   const template = verificationStore.normalizePanelTemplate({
     ...(section.panelTemplate || {}),
     ...(existingPanel || {}),
     ...(input || {}),
   });
-  const panel = verificationStore.savePanel(channel.guild.id, {
+  const candidate = {
     ...(existingPanel || {}),
     ...template,
-    panelId: input.panelId || existingPanel?.panelId,
+    panelId,
+    id: panelId,
     channelId: channel.id,
+    messageId: existingPanel?.messageId || null,
     createdBy: input.createdBy || existingPanel?.createdBy,
-  }, meta);
-
-  const existingMessage = await fetchPanelMessage(channel.guild, panel);
-  const payload = {
-    embeds: [buildVerificationEmbed(panel, channel.guild)],
-    components: buildVerificationRows(panel, channel.guild),
+    createdAt: existingPanel?.createdAt || new Date().toISOString(),
   };
-  const message = existingMessage?.editable ? await existingMessage.edit(payload) : await channel.send(payload);
 
-  return verificationStore.savePanel(channel.guild.id, {
-    ...panel,
-    channelId: message.channelId || channel.id,
-    messageId: message.id,
-    lastDeployedAt: new Date().toISOString(),
-  }, meta);
+  const existingMessage = existingPanel ? await fetchPanelMessage(guild, existingPanel) : null;
+  const payload = {
+    embeds: [buildVerificationEmbed(candidate, guild)],
+    components: buildVerificationRows(candidate, guild),
+  };
+
+  if (existingMessage?.editable) {
+    const rollbackPayload = snapshotMessagePayload(existingMessage);
+    const message = await existingMessage.edit(payload);
+    try {
+      return verificationStore.savePanel(guildId, {
+        ...candidate,
+        channelId: message.channelId || channel.id,
+        messageId: message.id,
+        lastDeployedAt: new Date().toISOString(),
+      }, meta);
+    } catch (error) {
+      if (rollbackPayload) {
+        await message.edit(rollbackPayload).catch((rollbackError) => {
+          console.error('[Verification] Failed to roll back panel message after persistence failure', {
+            guildId,
+            panelId,
+            messageId: message.id,
+            error: rollbackError,
+          });
+        });
+      }
+      throw error;
+    }
+  }
+
+  let stagedPanel;
+  try {
+    stagedPanel = verificationStore.savePanel(guildId, {
+      ...candidate,
+      messageId: null,
+      enabled: false,
+    }, { action: 'verification_panel_stage', ...meta });
+  } catch (error) {
+    throw new Error(`Verification panel deployment aborted before Discord send: ${error.message}`);
+  }
+
+  let message = null;
+  try {
+    message = await channel.send(payload);
+    return verificationStore.savePanel(guildId, {
+      ...stagedPanel,
+      ...candidate,
+      channelId: message.channelId || channel.id,
+      messageId: message.id,
+      enabled: true,
+      lastDeployedAt: new Date().toISOString(),
+    }, { action: 'verification_panel_activate', ...meta });
+  } catch (error) {
+    if (message?.deletable) {
+      await message.delete().catch((cleanupError) => {
+        console.error('[Verification] Failed to remove uncommitted replacement panel message', {
+          guildId,
+          panelId,
+          messageId: message.id,
+          error: cleanupError,
+        });
+      });
+    }
+    try {
+      verificationStore.deletePanel(guildId, panelId, { action: 'verification_panel_stage_rollback', ...meta });
+    } catch (cleanupError) {
+      console.error('[Verification] Failed to remove staged panel record after deployment failure', {
+        guildId,
+        panelId,
+        error: cleanupError,
+      });
+    }
+    throw error;
+  }
 }
 
 async function refreshVerificationPanel(guild, panelId, input = {}, meta = {}) {
@@ -837,11 +915,21 @@ async function refreshVerificationPanel(guild, panelId, input = {}, meta = {}) {
 }
 
 async function deleteVerificationPanel(guild, panelId, meta = {}) {
-  const panel = verificationStore.getPanel(guild.id, panelId);
+  if (!guild?.id) throw new Error('Guild is unavailable.');
+  const section = getEffectiveVerificationSection(guild.id);
+  const panel = section.panels?.[String(panelId || '')] || verificationStore.getPanel(guild.id, panelId);
   if (!panel) throw new Error('Verification panel not found.');
+
+  if (section.enabled === true && section.activePanelId === panel.panelId) {
+    throw new Error('Cannot delete the active verification panel while Verification is enabled. Deploy a replacement first or disable Verification.');
+  }
+
   const message = await fetchPanelMessage(guild, panel);
-  if (message?.deletable) await message.delete().catch(() => null);
-  return verificationStore.deletePanel(guild.id, panelId, meta);
+  if (message && !message.deletable) {
+    throw new Error('Verification panel message cannot be deleted. The saved panel record was preserved.');
+  }
+  if (message) await message.delete();
+  return verificationStore.deletePanel(guild.id, panel.panelId, meta);
 }
 
 async function getPanelHealth(guild, panel) {
