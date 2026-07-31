@@ -287,6 +287,9 @@ async function requireSelectedTarget(interaction, targetId) {
 }
 
 async function requireModeratableTarget(interaction, targetId, action) {
+  const allowed = await ensureActionAccess(interaction, action);
+  if (!allowed) return null;
+
   const target = await requireSelectedTarget(interaction, targetId);
   if (!target) return null;
 
@@ -299,8 +302,7 @@ async function requireModeratableTarget(interaction, targetId, action) {
     return null;
   }
 
-  const allowed = await ensureActionAccess(interaction, action);
-  return allowed ? target : null;
+  return target;
 }
 
 module.exports = {
