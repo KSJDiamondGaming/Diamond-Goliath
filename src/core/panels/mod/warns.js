@@ -20,8 +20,6 @@ const {
 const { sendModLog } = require('../../../core/logging/modlogs/moderationActionLog');
 const { safeReply, ephemeralError } = require('../../../core/ui/interactionResponse');
 const {
-  canUseModAction,
-  getModActionDeniedMessage,
   ensureActionAccess,
   requireModeratableTarget,
 } = require('./permissions');
@@ -30,9 +28,11 @@ const {
   getRepeatReasonInfo,
 } = require('../../../features/moderation/functions/escalationSystem');
 
+const NO_EXPIRY_VALUES = new Set(['', 'never', 'none']);
+
 function parseWarningExpiry(value) {
   const raw = String(value || 'never').trim().toLowerCase();
-  if (!raw || raw === 'never' || raw === 'none') return null;
+  if (NO_EXPIRY_VALUES.has(raw)) return null;
 
   const match = raw.match(/^(\d+)\s*([dwm])$/);
   if (!match) return null;
@@ -163,8 +163,9 @@ async function submitWarning(interaction, target) {
 
   const reason = interaction.fields.getTextInputValue('reason').trim();
   const expiryRaw = interaction.fields.getTextInputValue('warn_expiry') || 'never';
+  const normalizedExpiry = expiryRaw.trim().toLowerCase();
   const expiresAt = parseWarningExpiry(expiryRaw);
-  if (expiryRaw.trim().toLowerCase() !== 'never' && !expiresAt) {
+  if (!NO_EXPIRY_VALUES.has(normalizedExpiry) && !expiresAt) {
     return safeReply(interaction, ephemeralError('Invalid warning expiry. Use `7d`, `2w`, `1m`, or `never`.'));
   }
 
@@ -186,7 +187,11 @@ async function submitWarning(interaction, target) {
       expiresAt,
     });
 
-    const warningContext = await getWarningContext({ guildId: interaction.guild.id, userId: target.id, reason });
+    const warningContext = await getWarningContext({
+      guildId: interaction.guild.id,
+      userId: target.id,
+      reason,
+    });
     const escalatedCase = await runWarningEscalation({
       guild: interaction.guild,
       member: target,
@@ -245,12 +250,8 @@ async function submitRemoveWarningRequest(interaction, targetId, createConfirmat
   const caseId = /^\d+$/.test(raw) ? Number(raw) : null;
   if (!caseId) return safeReply(interaction, ephemeralError('Warning case ID must be a number.'));
 
-  if (!canUseModAction(interaction.member, interaction.guild, 'remove_warning')) {
-    return safeReply(interaction, {
-      content: getModActionDeniedMessage('remove_warning'),
-      flags: 64,
-    });
-  }
+  const allowed = await ensureActionAccess(interaction, 'remove_warning');
+  if (!allowed) return true;
 
   const warning = getWarningByCaseId(interaction.guild.id, caseId);
   if (!warning) return safeReply(interaction, ephemeralError('Warning not found for that case ID.'));
