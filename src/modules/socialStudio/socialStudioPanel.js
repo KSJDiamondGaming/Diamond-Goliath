@@ -144,7 +144,7 @@ function dashboardStats(config) {
 function buildMainPanel(guild, requestedBy = 'Unknown User') {
   const c = getConfig(guild.id), creators = Object.keys(c.creators).length, accounts = Object.keys(c.accounts).length, ready = creators && accounts && c.alertsChannelId, stats = dashboardStats(c);
   const d = [`${ready ? '✅' : '⚠️'} **${ready ? 'Social Studio is ready.' : 'Setup required'}**`, '', `**Creators:** ${creators}  •  **Accounts:** ${accounts}`, `🔴 **LIVE:** ${stats.live}  •  ⚫ **Offline:** ${stats.offline}  •  🟡 **Issues:** ${stats.unavailable}`, `📡 **Monitoring:** ${stats.monitored}/${accounts}`, `📨 **Alerts Sent:** ${Number(c.analytics?.alertsSent || 0).toLocaleString('en-GB')}`, `📂 **Default Channel:** ${c.alertsChannelId ? `<#${c.alertsChannelId}>` : 'Not configured'}`, `🔔 **Notifications:** ${c.enabled ? '🟢 Enabled' : '🔴 Disabled'}`].join('\n');
-  return { embeds: [embed(c, 'Social Studio', d, requestedBy)], components: [row(btn(`${P}creators`, 'Creator Profiles', ButtonStyle.Primary), btn(`${P}templates`, 'Templates'), btn(`${P}channels`, 'Channels')), navigation('main')] };
+  return { embeds: [embed(c, '📣 Social Studio', d, requestedBy)], components: [row(btn(`${P}creators`, '👥 Creator Profiles', ButtonStyle.Primary), btn(`${P}channels`, '📂 Channels')), row(btn(`${P}templates`, '🎨 Templates')), navigation('main')] };
 }
 function buildCreatorPanel(i, config, creators) {
   const view = getCreatorSession(i), pages = Math.max(1, Math.ceil(creators.length / PAGE_SIZE)); if (view.page >= pages) setCreatorSession(i, { page: pages - 1 });
