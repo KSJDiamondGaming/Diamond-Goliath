@@ -1,5 +1,6 @@
 'use strict';
 
+const guildManager = require('../../../core/guild/guildManager');
 const statsStore = require('./statsStore');
 const statsCounters = require('./statsCounters');
 const statsManager = require('./statsManager');
@@ -34,7 +35,7 @@ async function buildHealth(guild) {
   return {
     module: 'stats',
     guildId: guild.id,
-    enabled: config.enabled === true,
+    enabled: guildManager.isModuleEnabled(guild.id, 'stats'),
     healthy: issues.every((issue) => issue.severity !== 'error'),
     checkedAt: new Date().toISOString(),
     counters: {
@@ -68,7 +69,10 @@ function exportConfig(guildId) {
     module: 'stats',
     guildId: String(guildId),
     exportedAt: new Date().toISOString(),
-    config: statsStore.getStats(guildId),
+    config: {
+      ...statsStore.getStats(guildId),
+      enabled: guildManager.isModuleEnabled(guildId, 'stats'),
+    },
     summary: statsStore.getSummary(guildId),
   };
 }
