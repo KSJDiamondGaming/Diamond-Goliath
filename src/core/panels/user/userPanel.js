@@ -92,11 +92,7 @@ function compactDate(timestamp) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
   return new Intl.DateTimeFormat('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
+    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
   }).format(date).replace(',', ' •');
 }
 
@@ -109,14 +105,15 @@ function progressDetails(levelingProfile = {}) {
   const neededThisLevel = Math.max(1, nextLevelXp - currentLevelXp);
   const percent = Math.min(100, Math.floor((earnedThisLevel / neededThisLevel) * 100));
   const filled = Math.min(10, Math.floor(percent / 10));
-  return {
-    level,
-    xp,
-    earnedThisLevel,
-    neededThisLevel,
-    percent,
-    bar: `${'█'.repeat(filled)}${'░'.repeat(10 - filled)}`,
-  };
+  return { level, xp, earnedThisLevel, neededThisLevel, percent, bar: `${'█'.repeat(filled)}${'░'.repeat(10 - filled)}` };
+}
+
+function navigationRow({ backId = null, backLabel = 'Back', home = true } = {}) {
+  const components = [];
+  if (backId) components.push(button(backId, backLabel, ButtonStyle.Secondary, false, '⬅️'));
+  components.push(button('user:close', 'Close', ButtonStyle.Danger, false, '✖️'));
+  if (home) components.push(button('user:home', 'User Panel', ButtonStyle.Secondary, false, '🏠'));
+  return row(...components);
 }
 
 function buildSearchRow(selectedModule = null) {
@@ -136,11 +133,7 @@ function buildSearchRow(selectedModule = null) {
 
 function buildCategoryButtons() {
   return chunk(CATEGORY_CATALOG.map((category) => button(
-    `user:category:${category.key}`,
-    category.label,
-    ButtonStyle.Primary,
-    false,
-    category.emoji,
+    `user:category:${category.key}`, category.label, ButtonStyle.Primary, false, category.emoji,
   )), ITEMS_PER_ROW).map((items) => row(...items));
 }
 
@@ -178,7 +171,7 @@ function buildCategoryPanel(categoryKey, interactionOrName = 'Unknown User') {
     components: [
       buildSearchRow(),
       ...chunk(moduleButtons, ITEMS_PER_ROW).map((items) => row(...items)),
-      row(button('user:home', 'Back to User Panel', ButtonStyle.Secondary, false, '⬅️')),
+      navigationRow({ backId: 'user:home', backLabel: 'Back to User Panel', home: false }),
     ].slice(0, 5),
   };
 }
@@ -191,12 +184,7 @@ function buildProfilePanel(interaction, profile = {}, options = {}) {
   const joined = compactDate(member?.joinedTimestamp);
   const joinedRelative = discordTimestamp(member?.joinedTimestamp, 'R');
 
-  const identity = [
-    `<@${user?.id || '0'}>`,
-    `${user?.username || 'unknown'}`,
-    `User ID: \`${user?.id || 'unknown'}\``,
-  ];
-
+  const identity = [`<@${user?.id || '0'}>`, `${user?.username || 'unknown'}`, `User ID: \`${user?.id || 'unknown'}\``];
   const membership = [
     created ? `Discord Account Created: **${created}**` : null,
     joined ? `Joined This Server: **${joined}**` : null,
@@ -230,13 +218,8 @@ function buildProfilePanel(interaction, profile = {}, options = {}) {
   if (options.rolesEnabled !== false) profileButtons.push(button('user:profile:roles', 'View Roles', ButtonStyle.Primary, false, '🎭'));
   profileButtons.push(button('user:profile:refresh', 'Refresh', ButtonStyle.Success, false, '🔄'));
 
-  const accountModules = MODULE_CATALOG.filter((module) => module.category === 'account');
-  const accountRows = chunk(accountModules.map((module) => button(
-    `user:module:${module.key}`,
-    module.label,
-    ButtonStyle.Secondary,
-    false,
-    module.emoji,
+  const accountRows = chunk(MODULE_CATALOG.filter((module) => module.category === 'account').map((module) => button(
+    `user:module:${module.key}`, module.label, ButtonStyle.Secondary, false, module.emoji,
   )), ITEMS_PER_ROW).map((items) => row(...items));
 
   return {
@@ -244,10 +227,7 @@ function buildProfilePanel(interaction, profile = {}, options = {}) {
     components: [
       row(...profileButtons),
       ...accountRows,
-      row(
-        button('user:home', 'User Panel', ButtonStyle.Secondary, false, '🏠'),
-        button('user:close', 'Close', ButtonStyle.Danger, false, '✖️'),
-      ),
+      navigationRow(),
     ].slice(0, 5),
   };
 }
@@ -267,12 +247,10 @@ function buildProgressPanel(interaction, levelingProfile = {}) {
   ].filter((line) => line !== null);
   return {
     embeds: [markLiveEmbed(createEmbed('🏆 Your Progress', lines.join('\n'), memberDisplayName))],
-    components: [row(
-      button('user:category:account', 'Back to Profile', ButtonStyle.Secondary, false, '⬅️'),
-      button('user:profile:progress', 'Refresh', ButtonStyle.Success, false, '🔄'),
-      button('user:home', 'User Panel', ButtonStyle.Secondary, false, '🏠'),
-      button('user:close', 'Close', ButtonStyle.Danger, false, '✖️'),
-    )],
+    components: [
+      row(button('user:profile:progress', 'Refresh', ButtonStyle.Success, false, '🔄')),
+      navigationRow({ backId: 'user:category:account', backLabel: 'Back to Profile' }),
+    ],
   };
 }
 
@@ -292,12 +270,10 @@ function buildRolesPanel(interaction, options = {}) {
   ].filter(Boolean).join('\n\n');
   return {
     embeds: [markLiveEmbed(createEmbed('🎭 Your Roles', description || 'Role visibility is disabled for this server.', memberDisplayName))],
-    components: [row(
-      button('user:category:account', 'Back to Profile', ButtonStyle.Secondary, false, '⬅️'),
-      button('user:profile:roles', 'Refresh', ButtonStyle.Success, false, '🔄'),
-      button('user:home', 'User Panel', ButtonStyle.Secondary, false, '🏠'),
-      button('user:close', 'Close', ButtonStyle.Danger, false, '✖️'),
-    )],
+    components: [
+      row(button('user:profile:roles', 'Refresh', ButtonStyle.Success, false, '🔄')),
+      navigationRow({ backId: 'user:category:account', backLabel: 'Back to Profile' }),
+    ],
   };
 }
 
@@ -311,21 +287,18 @@ function buildGiveawaysMemoPanel(interactionOrName = 'Unknown User') {
   ].join('\n');
   return {
     embeds: [createEmbed('🎉 Giveaways - User Panel Plan', description, memberDisplayName, DEV_COLOR)],
-    components: [row(
-      button('user:category:community', 'Back to Community', ButtonStyle.Secondary, false, '⬅️'),
-      button('user:home', 'User Panel', ButtonStyle.Secondary, false, '👤'),
-    )],
+    components: [navigationRow({ backId: 'user:category:community', backLabel: 'Back to Community' })],
   };
 }
 
 function buildSocialAccessDeniedPanel(interactionOrName = 'Unknown User') {
   const memberDisplayName = getMemberDisplayName(interactionOrName);
   return {
-    embeds: [createEmbed('Social Studio', ['This server only allows selected roles to use Social Studio from `/user`.', '', 'Ask a server admin if you should have access.'].join('\n'), memberDisplayName, DEV_COLOR)],
-    components: [row(
-      button('user:category:social', 'Back to Social', ButtonStyle.Secondary, false, '⬅️'),
-      button('user:home', 'User Panel', ButtonStyle.Secondary, false, '👤'),
-    )],
+    embeds: [createEmbed('Social Studio', [
+      'This server only allows selected roles to use Social Studio from `/user`.', '',
+      'Ask a server admin if you should have access.',
+    ].join('\n'), memberDisplayName, DEV_COLOR)],
+    components: [navigationRow({ backId: 'user:category:social', backLabel: 'Back to Social' })],
   };
 }
 
@@ -338,11 +311,13 @@ function buildPlannedModulePanel(moduleKey, interactionOrName = 'Unknown User') 
     ? `This tool is approved for the User Panel and currently remains available through \`/${module.key}\`.`
     : 'This module button is reserved for a future user-only view.';
   return {
-    embeds: [createEmbed(`${module.emoji} ${module.label}`, ['**DEV placeholder / memo panel**', '', utilityHint, '', 'No admin controls are exposed from this panel.'].join('\n'), memberDisplayName, DEV_COLOR)],
-    components: [row(
-      button(`user:category:${category.key}`, `Back to ${category.key === 'account' ? 'Profile' : category.label}`, ButtonStyle.Secondary, false, '⬅️'),
-      button('user:home', 'User Panel', ButtonStyle.Secondary, false, '👤'),
-    )],
+    embeds: [createEmbed(`${module.emoji} ${module.label}`, [
+      '**DEV placeholder / memo panel**', '', utilityHint, '', 'No admin controls are exposed from this panel.',
+    ].join('\n'), memberDisplayName, DEV_COLOR)],
+    components: [navigationRow({
+      backId: `user:category:${category.key}`,
+      backLabel: `Back to ${category.key === 'account' ? 'Profile' : category.label}`,
+    })],
   };
 }
 
