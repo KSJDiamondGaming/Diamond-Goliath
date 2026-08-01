@@ -488,10 +488,13 @@ async function sendEvent(client, guildId, config, account, creator, event) {
   const durationText = vars.duration;
   const embedColor = parseTemplateColor(render(template.color || '', vars), platform.color);
 
+  const baseDescription = clean(render(template.description, vars), 3900) || clean(event.title, 3900) || `${creatorName} has a new ${event.type}.`;
+  const liveCallToAction = event.type === 'live' && /^https?:\/\//i.test(url) ? `\n\n🚀 **[Watch Live](${url})**` : '';
+
   const embed = new EmbedBuilder()
     .setColor(embedColor)
     .setTitle(clean(render(template.title, vars), 256) || `${creatorName} update`)
-    .setDescription(clean(render(template.description, vars), 4096) || clean(event.title, 4096) || `${creatorName} has a new ${event.type}.`)
+    .setDescription(clean(baseDescription + liveCallToAction, 4096))
     .setFooter({ text: clean(render(template.footer || `Social Studio • ${platform.label}`, vars), 2048) || `Social Studio • ${platform.label}` })
     .setTimestamp();
 
@@ -517,7 +520,7 @@ async function sendEvent(client, guildId, config, account, creator, event) {
   const published = discordTimestamp(event.publishedAt);
   if (published) fields.push({ name: '📅 Published', value: published, inline: true });
 
-  const compactLinkTypes = new Set(['live', 'vod', 'clip', 'upload', 'short', 'post']);
+  const compactLinkTypes = new Set(['vod', 'clip', 'upload', 'short', 'post']);
   const moveLinksIntoEmbed = compactLinkTypes.has(event.type);
   if (moveLinksIntoEmbed) {
     const links = [];
