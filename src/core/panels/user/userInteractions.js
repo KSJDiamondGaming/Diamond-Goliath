@@ -2,6 +2,7 @@ const { PermissionFlagsBits } = require('discord.js');
 const guildManager = require('../../guild/guildManager');
 const security = require('../../security/securityCore');
 const leveling = require('../../../modules/communityStudio/leveling/leveling');
+const invites = require('../../../modules/communityStudio/invites/invites');
 const {
   buildCategoryPanel,
   buildMainPanel,
@@ -45,12 +46,39 @@ function canUseUserSocialStudio(interaction) {
   );
 }
 
+function countUserGiveawayActivity(guildId, userId) {
+  const section = guildManager.getGuildSection(guildId, 'giveaways', {});
+  const source = section.giveaways || section.items || section.records || {};
+  const records = Array.isArray(source) ? source : Object.values(source && typeof source === 'object' ? source : {});
+  let entries = 0;
+  let wins = 0;
+
+  for (const giveaway of records) {
+    const entrants = giveaway?.entrantIds || giveaway?.entries || giveaway?.participants || giveaway?.userIds || [];
+    const winners = giveaway?.winnerIds || giveaway?.winners || [];
+    const entrantIds = Array.isArray(entrants)
+      ? entrants.map((entry) => String(entry?.userId || entry?.id || entry))
+      : Object.keys(entrants && typeof entrants === 'object' ? entrants : {});
+    const winnerIds = Array.isArray(winners)
+      ? winners.map((entry) => String(entry?.userId || entry?.id || entry))
+      : Object.keys(winners && typeof winners === 'object' ? winners : {});
+    if (entrantIds.includes(String(userId))) entries += 1;
+    if (winnerIds.includes(String(userId))) wins += 1;
+  }
+
+  return { entries, wins };
+}
+
 function buildLiveProfile(interaction) {
   const section = leveling.getSection(interaction.guildId);
   const user = section.users?.[interaction.user.id] || null;
   const leaderboard = Object.values(section.users || {})
     .sort((a, b) => Number(b.xp || 0) - Number(a.xp || 0));
   const rankIndex = leaderboard.findIndex((entry) => entry.userId === interaction.user.id || entry.id === interaction.user.id);
+
+  const inviteSection = invites.getSection(interaction.guildId);
+  const inviteStats = inviteSection.inviters?.[interaction.user.id] || {};
+  const giveawayStats = countUserGiveawayActivity(interaction.guildId, interaction.user.id);
 
   return {
     leveling: user ? {
@@ -62,6 +90,9 @@ function buildLiveProfile(interaction) {
       currentLevelXp: leveling.xpForLevel(Math.max(0, Number(user.level || 0))),
       nextLevelXp: leveling.xpForLevel(Math.max(0, Number(user.level || 0)) + 1),
     } : null,
+    invites: Math.max(0, Number(inviteStats.total || 0)),
+    giveawayEntries: giveawayStats.entries,
+    giveawayWins: giveawayStats.wins,
   };
 }
 
