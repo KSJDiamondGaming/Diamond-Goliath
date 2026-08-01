@@ -10,7 +10,6 @@ const {
   RoleSelectMenuBuilder,
 } = require('discord.js');
 
-const guildManager = require('../../../core/guild/guildManager');
 const giveawaysStore = require('./giveawaysStore');
 
 function row(...components) { return new ActionRowBuilder().addComponents(...components); }
@@ -20,7 +19,7 @@ function formatRoles(ids = []) { const list = Array.isArray(ids) ? ids.filter(Bo
 
 function buildGiveawaysAdminPanel(guild, memberDisplayName = 'Unknown User') {
   const section = giveawaysStore.getSection(guild.id);
-  const enabled = guildManager.isModuleEnabled(guild.id, 'giveaways');
+  const enabled = giveawaysStore.isEnabled(guild.id);
   const giveawayList = Object.values(section.giveaways || {});
   const active = giveawayList.filter((giveaway) => giveaway.status === 'active').length;
   const embed = new EmbedBuilder()
