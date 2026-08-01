@@ -1,6 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 
+const EXPECTED_WINDOWS_SYNC_ERRORS = new Set(['EPERM', 'EBUSY']);
+const warnedSyncPaths = new Set();
+
 function clone(value) {
   try {
     return value == null ? value : JSON.parse(JSON.stringify(value));
@@ -54,8 +57,20 @@ function validateJsonFile(filePath) {
 
 function syncFile(filePath) {
   const fd = fs.openSync(filePath, 'r');
+
   try {
     fs.fsyncSync(fd);
+    return true;
+  } catch (error) {
+    const expectedWindowsLock = process.platform === 'win32' && EXPECTED_WINDOWS_SYNC_ERRORS.has(error?.code);
+    if (!expectedWindowsLock) throw error;
+
+    if (!warnedSyncPaths.has(filePath)) {
+      warnedSyncPaths.add(filePath);
+      console.warn(`[fileStore] Durability sync skipped for OneDrive-locked file: ${filePath} (${error.code})`);
+    }
+
+    return false;
   } finally {
     fs.closeSync(fd);
   }
