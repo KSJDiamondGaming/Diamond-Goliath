@@ -2,6 +2,7 @@
 
 const { handleReactionRemove } = require('../../modules/roleStudio/reactionRoles/reactionRoles');
 const { leaveGiveawayReaction } = require('../../modules/communityStudio/giveaways/giveawaysManager');
+const giveawaysStore = require('../../modules/communityStudio/giveaways/giveawaysStore');
 const { handleStarReactionRemove } = require('../../modules/messageStudio/starboard/starboard');
 const starboardStore = require('../../modules/messageStudio/starboard/starboardStore');
 const { isModuleEnabled } = require('../../core/guild/guildManager');
@@ -33,7 +34,7 @@ module.exports = {
     if (isModuleEnabled(guildId, 'reactionRoles')) {
       await runHandler('Reaction Roles', () => handleReactionRemove(reaction, user, client));
     }
-    if (isModuleEnabled(guildId, 'giveaways')) {
+    if (giveawaysStore.isEnabled(guildId)) {
       await runHandler('Giveaways', () => leaveGiveawayReaction(reaction, user));
     }
     if (starboardStore.isEnabled(guildId)) {
