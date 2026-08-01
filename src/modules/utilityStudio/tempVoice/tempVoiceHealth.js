@@ -1,7 +1,6 @@
 'use strict';
 
 const { PermissionFlagsBits } = require('discord.js');
-const guildManager = require('../../../core/guild/guildManager');
 const tempVoiceStore = require('./tempVoiceStore');
 
 async function resolveChannel(guild, channelId) {
@@ -40,7 +39,7 @@ async function buildHealth(guild) {
   return {
     module: 'tempVoice',
     guildId: guild.id,
-    enabled: guildManager.isModuleEnabled(guild.id, 'tempVoice') === true,
+    enabled: tempVoiceStore.isEnabled(guild.id),
     healthy: issues.length === 0,
     hubs: Object.keys(section.hubs || {}).length,
     trackedChannels: Object.keys(section.channels || {}).length,
