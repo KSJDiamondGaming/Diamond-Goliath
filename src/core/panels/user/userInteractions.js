@@ -8,6 +8,7 @@ const {
   buildModulePanel,
   buildProfilePanel,
   buildAccountRecordPanel,
+  buildInProgressPanel,
   buildHelpPanel,
   buildProgressPanel,
   buildRolesPanel,
@@ -145,6 +146,12 @@ async function handleUserPanelInteraction(interaction) {
   if (customId === 'user:help' && interaction.isButton?.()) {
     return updatePanel(interaction, buildHelpPanel(memberDisplayName));
   }
+
+  const inProgressMatch = customId.match(/^user:in-progress:(\d+)$/);
+  if (inProgressMatch && interaction.isButton?.()) {
+    return updatePanel(interaction, buildInProgressPanel(memberDisplayName, Number(inProgressMatch[1])));
+  }
+
   if (customId === 'user:profile:refresh' || customId === 'user:module:profile') return showProfile(interaction);
 
   if (customId === 'user:profile:roles' && interaction.isButton?.()) {
