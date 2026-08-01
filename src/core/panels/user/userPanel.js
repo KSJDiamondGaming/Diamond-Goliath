@@ -16,10 +16,10 @@ const CATEGORY_CATALOG = [
   { key: 'community', label: 'Community', emoji: '🏘️', summary: 'Giveaways, invites, leveling and polls.' },
   { key: 'feedback', label: 'Feedback', emoji: '💬', summary: 'Forms, suggestions and tickets.' },
   { key: 'messages', label: 'Messages', emoji: '✉️', summary: 'Member-visible message tools when approved.' },
-  { key: 'roles', label: 'Roles', emoji: '🎭', summary: 'Reserved for future member role tools.' },
-  { key: 'security', label: 'Security', emoji: '🛡️', summary: 'Reserved for future member security tools.' },
-  { key: 'social', label: 'Social', emoji: '📣', summary: 'Social Studio member tools when approved.' },
-  { key: 'utility', label: 'Utility', emoji: '🧰', summary: 'Help, ping, server info and translate.' },
+  { key: 'roles', label: 'Roles', emoji: '🎭', summary: 'Self-assignable roles, role history and requests.' },
+  { key: 'security', label: 'Security', emoji: '🛡️', summary: 'Verification status and member security tools.' },
+  { key: 'social', label: 'Social', emoji: '📣', summary: 'Open your own Social Studio Creator Profile.' },
+  { key: 'utility', label: 'Utility', emoji: '🧰', summary: 'Help, ping, server info, translate and future utility tools.' },
 ];
 
 const MODULE_CATALOG = [
@@ -29,19 +29,25 @@ const MODULE_CATALOG = [
   { key: 'infractions', category: 'account', label: 'Infractions', emoji: '📋', summary: 'Planned personal infraction history.', status: 'planned' },
   { key: 'appeals', category: 'account', label: 'Appeals', emoji: '📝', summary: 'Planned personal appeal access.', status: 'planned' },
   { key: 'notes', category: 'account', label: 'Notes', emoji: '📌', summary: 'Planned personal notes.', status: 'planned' },
+  { key: 'profile-settings', category: 'account', label: 'Profile Settings', emoji: '👤', summary: 'Planned profile visibility and personal display settings.', status: 'planned' },
   { key: 'giveaways', category: 'community', label: 'Giveaways', emoji: '🎉', summary: 'Member giveaway dashboard plan.', status: 'locked' },
   { key: 'invites', category: 'community', label: 'Invites', emoji: '📨', summary: 'Planned member invite view.', status: 'planned' },
-  { key: 'leveling', category: 'community', label: 'Leveling', emoji: '🏆', summary: 'Planned member rank/profile view.', status: 'planned' },
+  { key: 'leveling', category: 'community', label: 'Leveling', emoji: '🏆', summary: 'Planned member rank and XP view.', status: 'planned' },
   { key: 'polls', category: 'community', label: 'Polls', emoji: '📊', summary: 'Planned member poll view.', status: 'planned' },
   { key: 'forms', category: 'feedback', label: 'Forms', emoji: '📝', summary: 'Planned member form access.', status: 'planned' },
   { key: 'suggestions', category: 'feedback', label: 'Suggestions', emoji: '💡', summary: 'Planned member suggestion access.', status: 'planned' },
   { key: 'tickets', category: 'feedback', label: 'Tickets', emoji: '🎫', summary: 'Planned member ticket access.', status: 'planned' },
   { key: 'starboard', category: 'messages', label: 'Starboard', emoji: '⭐', summary: 'Planned member starboard view.', status: 'planned' },
-  { key: 'social', category: 'social', label: 'Social Studio', emoji: '📣', summary: 'Planned member social view.', status: 'planned' },
-  { key: 'help', category: 'utility', label: 'Help', emoji: '📚', summary: 'Existing /help command.', status: 'approved' },
+  { key: 'roles', category: 'roles', label: 'Roles', emoji: '🎭', summary: 'Planned self-assignable roles, history and requests.', status: 'planned' },
+  { key: 'security', category: 'security', label: 'Security', emoji: '🛡️', summary: 'Planned verification status and security notifications.', status: 'planned' },
+  { key: 'social', category: 'social', label: 'Social Studio', emoji: '📣', summary: 'Open or create your own Creator Profile.', status: 'live' },
+  { key: 'help', category: 'utility', label: 'Help', emoji: '📚', summary: 'User Panel help and navigation.', status: 'approved' },
   { key: 'ping', category: 'utility', label: 'Ping', emoji: '🏓', summary: 'Existing /ping command.', status: 'approved' },
   { key: 'serverinfo', category: 'utility', label: 'Server Info', emoji: '🏰', summary: 'Existing /serverinfo command.', status: 'approved' },
   { key: 'translate', category: 'utility', label: 'Translate', emoji: '🌐', summary: 'Existing /translate command.', status: 'approved' },
+  { key: 'schedule', category: 'utility', label: 'Schedule', emoji: '📅', summary: 'Future member schedule tools.', status: 'planned' },
+  { key: 'stats', category: 'utility', label: 'Stats', emoji: '📈', summary: 'Future member statistics view.', status: 'planned' },
+  { key: 'tempvoice', category: 'utility', label: 'Temporary Voice', emoji: '🔊', summary: 'Future temporary voice controls.', status: 'planned' },
 ];
 
 const IN_PROGRESS_PAGES = [
@@ -104,9 +110,9 @@ const IN_PROGRESS_PAGES = [
       '• Verification status',
       '• Member security notifications',
       '',
-      '**📣 Social Studio — Discussion**',
-      '• Approved member-facing Social Studio tools',
-      '• Role-controlled access',
+      '**📣 Social Studio — Phase 1**',
+      '• Permission-controlled Creator Profile access',
+      '• Open or create your own Creator Profile',
     ],
   },
   {
@@ -121,7 +127,7 @@ const IN_PROGRESS_PAGES = [
       '**📌 Notes — Discussion**',
       '• Create, edit, delete and pin personal notes',
       '',
-      '**👤 Profile settings — Planned**',
+      '**👤 Profile Settings — Planned**',
       '• Admin-controlled profile-section visibility',
       '• Per-user progress visibility and enable/disable controls',
       '',
@@ -220,9 +226,9 @@ function buildSearchRow(selectedModule = null) {
     }))));
 }
 
-function buildCategoryButtons() {
+function buildCategoryButtons(style = ButtonStyle.Secondary) {
   return chunk(CATEGORY_CATALOG.map((category) => button(
-    `user:category:${category.key}`, category.label, ButtonStyle.Primary, false, category.emoji,
+    `user:category:${category.key}`, category.label, style, false, category.emoji,
   )), ITEMS_PER_ROW).map((items) => row(...items));
 }
 
@@ -235,7 +241,7 @@ function buildMainPanel(interactionOrName = 'Unknown User') {
   ].join('\n');
   return {
     embeds: [createEmbed('👤 Goliath User Panel', description, memberDisplayName)],
-    components: [buildSearchRow(), ...buildCategoryButtons()].slice(0, 5),
+    components: [buildSearchRow(), ...buildCategoryButtons(ButtonStyle.Primary)].slice(0, 5),
   };
 }
 
@@ -251,7 +257,7 @@ function buildCategoryPanel(categoryKey, interactionOrName = 'Unknown User') {
   const moduleButtons = modules.map((module) => button(
     `user:module:${module.key}`,
     module.label,
-    module.key === 'giveaways' ? ButtonStyle.Success : ButtonStyle.Secondary,
+    module.key === 'social' || module.key === 'giveaways' ? ButtonStyle.Success : ButtonStyle.Secondary,
     false,
     module.emoji,
   ));
@@ -314,6 +320,7 @@ function buildProfilePanel(interaction, profile = {}, options = {}) {
     components: [
       buildSearchRow(),
       row(...actionButtons),
+      ...buildCategoryButtons(),
       row(
         button('user:close', 'Back', ButtonStyle.Secondary, false, '⬅️'),
         button('user:profile:refresh', 'Refresh', ButtonStyle.Success, false, '🔄'),
