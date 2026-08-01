@@ -149,8 +149,6 @@ function updateGuildSecurityState(guildId, incident, options = {}) {
 
     guildManager.saveGuildSection(guildId, 'security', {
       ...security,
-
-      enabled: security.enabled !== false,
       incidents,
 
       threatLevel: getThreatLevelFromSeverity(incident.severity),
