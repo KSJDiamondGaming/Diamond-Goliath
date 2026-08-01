@@ -65,6 +65,19 @@ function result(platform, values = {}) {
 function youtubeThumbnail(snippet = {}) {
   return snippet.thumbnails?.maxres?.url || snippet.thumbnails?.standard?.url || snippet.thumbnails?.high?.url || snippet.thumbnails?.medium?.url || snippet.thumbnails?.default?.url || null;
 }
+function validProviderDate(ms) {
+  const value = Number(ms);
+  const earliest = Date.UTC(2020, 0, 1);
+  const latest = Date.now() + 24 * 60 * 60 * 1000;
+  return Number.isFinite(value) && value >= earliest && value <= latest;
+}
+function isoFromProviderEpoch(value) {
+  if (value === undefined || value === null || value === '' || Number(value) <= 0) return null;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  const ms = numeric < 1000000000000 ? numeric * 1000 : numeric;
+  return validProviderDate(ms) ? new Date(ms).toISOString() : null;
+}
 
 async function checkTwitch(account) {
   if (!process.env.TWITCH_CLIENT_ID || !process.env.TWITCH_CLIENT_SECRET) return unavailable('twitch', 'Set TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET.', 'configuration_required');
@@ -203,12 +216,7 @@ function tiktokApiResult(json, fallbackUsername, fallbackId, source) {
   const cover = liveRoom.cover?.url_list?.[0] || liveRoom.cover?.urlList?.[0] || liveRoom.coverUrl || liveRoom.cover_url || null;
   const avatar = user.avatarLarger || user.avatarMedium || user.avatarThumb || liveRoom.owner?.avatarLarger || null;
   const viewerCount = Number(liveRoom.user_count || liveRoom.userCount || liveRoom.viewer_count || liveRoom.viewerCount);
-  const startedAtRaw = liveRoom.start_time || liveRoom.startTime;
-  let startedAt = null;
-  if (startedAtRaw) {
-    const ms = Number(startedAtRaw) < 1000000000000 ? Number(startedAtRaw) * 1000 : Number(startedAtRaw);
-    if (Number.isFinite(ms)) startedAt = new Date(ms).toISOString();
-  }
+  const startedAt = isoFromProviderEpoch(liveRoom.start_time || liveRoom.startTime);
 
   return result('tiktok', {
     isLive,
@@ -223,7 +231,7 @@ function tiktokApiResult(json, fallbackUsername, fallbackId, source) {
       id: roomId || `tiktok-live:${resolvedUsername || resolvedUserId || fallbackUsername || fallbackId}`,
       title: clean(liveRoom.title) || `${resolvedUsername || fallbackUsername || 'Creator'} is LIVE on TikTok`,
       url: resolvedLiveUrl || 'https://www.tiktok.com/live',
-      thumbnail: cover,
+      thumbnail: cover || avatar || null,
       viewerCount: Number.isFinite(viewerCount) ? viewerCount : null,
       startedAt,
     } : null,
@@ -279,6 +287,9 @@ async function checkTikTok(account) {
     const creatorMarker = new RegExp(`(?:uniqueId|unique_id|author|nickname)[^\\n]{0,200}${escapedUsername}`, 'i').test(body);
     const onOwnLiveUrl = /\/live(?:[?#]|$)/i.test(finalUrl) && finalUrl.toLowerCase().includes(`@${username.toLowerCase()}`);
     const title = body.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '';
+    const ogTitle = body.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1] || '';
+    const ogImage = body.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1] || '';
+    const pageTitle = clean(ogTitle || title).replace(/\s*-\s*TikTok\s+LIVE.*$/i, '');
     const titleSaysLive = title.toLowerCase().includes(`@${username.toLowerCase()}`) && /\bis\s+LIVE\s*-\s*TikTok\s+LIVE\b/i.test(title);
     const isLive = !ended && onOwnLiveUrl && (titleSaysLive || (hasRoom && directLiveStatus && creatorMarker));
 
@@ -289,7 +300,7 @@ async function checkTikTok(account) {
       externalId: userId || undefined,
       url: profile,
       resolvedUsername: username,
-      event: { type: 'live', id: `tiktok-live:${username}`, title: `${username} is LIVE on TikTok`, url: liveUrl, thumbnail: null },
+      event: { type: 'live', id: `tiktok-live:${username}`, title: pageTitle || `${username} is LIVE on TikTok`, url: liveUrl, thumbnail: ogImage || null },
     });
 
     const redirectedAwayFromLive = !onOwnLiveUrl && finalUrl.toLowerCase().includes(`@${username.toLowerCase()}`);

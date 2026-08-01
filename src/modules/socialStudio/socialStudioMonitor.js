@@ -226,7 +226,9 @@ function eventCandidates(account, previous, checked) {
 
 function discordTimestamp(value, style = 'R') {
   const ms = new Date(value).getTime();
-  return Number.isFinite(ms) ? `<t:${Math.floor(ms / 1000)}:${style}>` : '';
+  const earliest = Date.UTC(2020, 0, 1);
+  const latest = Date.now() + 24 * 60 * 60 * 1000;
+  return Number.isFinite(ms) && ms >= earliest && ms <= latest ? `<t:${Math.floor(ms / 1000)}:${style}>` : '';
 }
 
 function humanDuration(seconds) {
@@ -416,7 +418,7 @@ async function sendEvent(client, guildId, config, account, creator, event) {
   if (/^https?:\/\//i.test(account.avatar || '')) embed.setThumbnail(account.avatar);
 
   const fields = [];
-  if (event.category || event.game) fields.push({ name: '🎮 Category', value: clean(event.category || event.game, 1024), inline: true });
+  if (account.platform !== 'tiktok' && (event.category || event.game)) fields.push({ name: '🎮 Category', value: clean(event.category || event.game, 1024), inline: true });
   if (vars.viewers) fields.push({ name: '👥 Viewers', value: vars.viewers, inline: true });
   if (vars.peakViewers) fields.push({ name: '📈 Peak', value: vars.peakViewers, inline: true });
   if (Number.isFinite(Number(event.viewCount))) fields.push({ name: '👁️ Views', value: intText(event.viewCount), inline: true });
