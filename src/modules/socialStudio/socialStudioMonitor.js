@@ -1,6 +1,6 @@
 'use strict';
 
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { EmbedBuilder } = require('discord.js');
 const guildManager = require('../../core/guild/guildManager');
 const { checkAccount, providerInfo } = require('./socialStudioProviders');
 
@@ -517,7 +517,7 @@ async function sendEvent(client, guildId, config, account, creator, event) {
   const published = discordTimestamp(event.publishedAt);
   if (published) fields.push({ name: '📅 Published', value: published, inline: true });
 
-  const compactLinkTypes = new Set(['vod', 'clip', 'upload', 'short', 'post']);
+  const compactLinkTypes = new Set(['live', 'vod', 'clip', 'upload', 'short', 'post']);
   const moveLinksIntoEmbed = compactLinkTypes.has(event.type);
   if (moveLinksIntoEmbed) {
     const links = [];
@@ -527,10 +527,7 @@ async function sendEvent(client, guildId, config, account, creator, event) {
   }
   if (fields.length) embed.addFields(fields.slice(0, 25));
 
-  const buttons = [];
-  if (!moveLinksIntoEmbed && /^https?:\/\//i.test(url)) buttons.push(new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(url).setLabel(clean(render(template.buttonLabel || 'Open', vars), 80) || 'Open'));
-  if (!moveLinksIntoEmbed && /^https?:\/\//i.test(profileUrl) && profileUrl !== url) buttons.push(new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(profileUrl).setLabel('Creator Profile'));
-  const components = buttons.length ? [new ActionRowBuilder().addComponents(buttons.slice(0, 5))] : [];
+  const components = [];
 
   const mentionMode = account.mentionMode || 'none';
   const content = mentionMode === 'everyone' ? '@everyone' : mentionMode === 'here' ? '@here' : mentionMode === 'role' && account.mentionRoleId ? `<@&${account.mentionRoleId}>` : undefined;
