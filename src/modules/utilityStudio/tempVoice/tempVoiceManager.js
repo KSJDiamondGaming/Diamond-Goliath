@@ -3,10 +3,9 @@
 const { ChannelType, PermissionFlagsBits } = require('discord.js');
 const tempVoiceStore = require('./tempVoiceStore');
 const { buildControlRows, buildPanelContent } = require('./tempVoicePanel');
-const { isModuleEnabled, setModuleEnabled } = require('../../../core/guild/guildManager');
 
 function assertTempVoiceModuleEnabled(guildId) {
-  if (!isModuleEnabled(guildId, 'tempVoice')) throw new Error('Temp Voice module is disabled for this server.');
+  if (!tempVoiceStore.isEnabled(guildId)) throw new Error('Temp Voice module is disabled for this server.');
 }
 
 function safeChannelName(name) {
@@ -86,7 +85,7 @@ async function createTempChannel(newState, hub) {
   const guild = newState.guild;
   const member = newState.member;
   if (!guild || !member || !hub?.joinChannelId) return null;
-  if (!isModuleEnabled(guild.id, 'tempVoice') || !hasManageChannels(guild) || member.voice?.channelId !== hub.joinChannelId) return null;
+  if (!tempVoiceStore.isEnabled(guild.id) || !hasManageChannels(guild) || member.voice?.channelId !== hub.joinChannelId) return null;
   const section = tempVoiceStore.getTempVoiceSection(guild.id);
   const parent = hub.categoryId || newState.channel?.parentId || null;
   const name = buildChannelName(hub.nameTemplate, member);
@@ -126,7 +125,7 @@ async function handleVoiceStateUpdate(oldState, newState) {
   try {
     const guild = newState.guild || oldState.guild;
     if (!guild?.id) return null;
-    if (newState.channelId && newState.channelId !== oldState.channelId && isModuleEnabled(guild.id, 'tempVoice')) {
+    if (newState.channelId && newState.channelId !== oldState.channelId && tempVoiceStore.isEnabled(guild.id)) {
       const hub = tempVoiceStore.findHubByJoinChannel(guild.id, newState.channelId);
       if (hub) await createTempChannel(newState, hub);
     }
@@ -140,7 +139,7 @@ async function handleVoiceStateUpdate(oldState, newState) {
 
 async function deployHub(guild, input = {}) {
   if (!guild?.id) throw new Error('Guild is required to deploy Temp Voice.');
-  if (input.enabled === true) setModuleEnabled(guild.id, 'tempVoice', true);
+  if (input.enabled === true) tempVoiceStore.setEnabled(guild.id, true, { actorId: input.actorId, action: 'temp_voice_deploy_enable' });
   assertTempVoiceModuleEnabled(guild.id);
   if (!hasManageChannels(guild)) throw new Error('Goliath needs Manage Channels to deploy Temp Voice channels.');
   const warnings = [];
@@ -162,7 +161,7 @@ async function deployHub(guild, input = {}) {
 }
 
 function createHub(guildId, input = {}) {
-  if (input.enabled === true) setModuleEnabled(guildId, 'tempVoice', true);
+  if (input.enabled === true) tempVoiceStore.setEnabled(guildId, true, { actorId: input.actorId || input.createdBy, action: 'temp_voice_create_hub_enable' });
   assertTempVoiceModuleEnabled(guildId);
   return tempVoiceStore.saveHub(guildId, {
     joinChannelId: input.joinChannelId, joinChannelName: input.joinChannelName, categoryId: input.categoryId,
