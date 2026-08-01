@@ -160,12 +160,7 @@ function buildProfilePanel(interaction, profile = {}, options = {}) {
   const joined = discordTimestamp(member?.joinedTimestamp);
   const joinedRelative = discordTimestamp(member?.joinedTimestamp, 'R');
 
-  const identity = [
-    `**${memberDisplayName}**`,
-    `@${user?.username || 'unknown'}`,
-    `User ID: \`${user?.id || 'unknown'}\``,
-  ];
-
+  const identity = [`**${memberDisplayName}**`, `@${user?.username || 'unknown'}`, `User ID: \`${user?.id || 'unknown'}\``];
   const membership = [
     created ? `Discord Account Created: ${created}` : null,
     joined ? `Joined This Server: ${joined}` : null,
@@ -210,6 +205,40 @@ function buildProfilePanel(interaction, profile = {}, options = {}) {
   };
 }
 
+function buildProgressPanel(interaction, levelingProfile = {}) {
+  const memberDisplayName = getMemberDisplayName(interaction);
+  const level = Math.max(0, Number(levelingProfile.level || 0));
+  const xp = Math.max(0, Number(levelingProfile.xp || 0));
+  const currentLevelXp = Math.max(0, Number(levelingProfile.currentLevelXp || 0));
+  const nextLevelXp = Math.max(currentLevelXp, Number(levelingProfile.nextLevelXp || 0));
+  const earnedThisLevel = Math.max(0, xp - currentLevelXp);
+  const neededThisLevel = Math.max(1, nextLevelXp - currentLevelXp);
+  const percent = Math.min(100, Math.floor((earnedThisLevel / neededThisLevel) * 100));
+  const filled = Math.min(10, Math.floor(percent / 10));
+  const bar = `${'█'.repeat(filled)}${'░'.repeat(10 - filled)}`;
+
+  const lines = [
+    `Level: **${level}**`,
+    `Total XP: **${xp.toLocaleString()}**`,
+    levelingProfile.rank ? `Server Rank: **#${levelingProfile.rank}**` : null,
+    '',
+    `Next Level: **${earnedThisLevel.toLocaleString()} / ${neededThisLevel.toLocaleString()} XP**`,
+    `\`${bar}\` **${percent}%**`,
+    Number.isFinite(levelingProfile.messages) ? `Messages Tracked: **${levelingProfile.messages.toLocaleString()}**` : null,
+    Number.isFinite(levelingProfile.voiceMinutes) ? `Voice Activity: **${levelingProfile.voiceMinutes.toLocaleString()} minutes**` : null,
+  ].filter((line) => line !== null);
+
+  return {
+    embeds: [createEmbed('🏆 Your Progress', lines.join('\n'), memberDisplayName)],
+    components: [row(
+      button('user:module:profile', 'Back to Profile', ButtonStyle.Secondary, false, '⬅️'),
+      button('user:profile:progress', 'Refresh', ButtonStyle.Success, false, '🔄'),
+      button('user:home', 'User Panel', ButtonStyle.Secondary, false, '🏠'),
+      button('user:close', 'Close', ButtonStyle.Danger, false, '✖️'),
+    )],
+  };
+}
+
 function buildRolesPanel(interaction, options = {}) {
   const memberDisplayName = getMemberDisplayName(interaction);
   const roles = [...(interaction.member?.roles?.cache?.values?.() || [])]
@@ -228,14 +257,12 @@ function buildRolesPanel(interaction, options = {}) {
 
   return {
     embeds: [createEmbed('🎭 Your Roles', description || 'Role visibility is disabled for this server.', memberDisplayName)],
-    components: [
-      row(
-        button('user:module:profile', 'Back to Profile', ButtonStyle.Secondary, false, '⬅️'),
-        button('user:profile:roles', 'Refresh', ButtonStyle.Success, false, '🔄'),
-        button('user:home', 'User Panel', ButtonStyle.Secondary, false, '🏠'),
-        button('user:close', 'Close', ButtonStyle.Danger, false, '✖️'),
-      ),
-    ],
+    components: [row(
+      button('user:module:profile', 'Back to Profile', ButtonStyle.Secondary, false, '⬅️'),
+      button('user:profile:roles', 'Refresh', ButtonStyle.Success, false, '🔄'),
+      button('user:home', 'User Panel', ButtonStyle.Secondary, false, '🏠'),
+      button('user:close', 'Close', ButtonStyle.Danger, false, '✖️'),
+    )],
   };
 }
 
@@ -247,7 +274,6 @@ function buildGiveawaysMemoPanel(interactionOrName = 'Unknown User') {
     '• View my giveaway statistics', '• Jump to giveaway message', '• Notification preferences (future)', '',
     '**Admin giveaway creation and management remain separate and are not exposed here.**',
   ].join('\n');
-
   return {
     embeds: [createEmbed('🎉 Giveaways - User Panel Plan', description, memberDisplayName, DEV_COLOR)],
     components: [row(
@@ -298,6 +324,7 @@ module.exports = {
   buildCategoryPanel,
   buildModulePanel,
   buildProfilePanel,
+  buildProgressPanel,
   buildRolesPanel,
   buildSocialAccessDeniedPanel,
 };
