@@ -17,9 +17,16 @@ const PLATFORM = {
   x: { label: 'X', icon: '⚪', color: 0x000000 },
 };
 
+const EMBED_WIDTH_DIVIDER = '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━';
+
 const now = () => new Date().toISOString();
 const clean = (value, max = 2000) => String(value ?? '').trim().slice(0, max);
 const intText = (value) => Number.isFinite(Number(value)) ? Number(value).toLocaleString('en-GB') : '';
+
+function embedActionBlock(lines = []) {
+  const actions = lines.map((line) => clean(line, 300)).filter(Boolean);
+  return actions.length ? `\n\n${EMBED_WIDTH_DIVIDER}\n${actions.join('\n')}` : `\n\n${EMBED_WIDTH_DIVIDER}`;
+}
 
 function configFor(guildId) {
   const guild = guildManager.reloadGuild(guildId);
@@ -507,7 +514,7 @@ async function sendEvent(client, guildId, config, account, creator, event) {
   const actionLines = [];
   if (/^https?:\/\//i.test(url)) actionLines.push(`🚀 **[${actionLabel}](${url})**`);
   if (/^https?:\/\//i.test(profileUrl) && profileUrl !== url) actionLines.push(`👤 [Creator Profile](${profileUrl})`);
-  const embedCallToAction = actionLines.length ? `\n\n${actionLines.join('\n')}` : '';
+  const embedCallToAction = embedActionBlock(actionLines);
 
   const embed = new EmbedBuilder()
     .setColor(embedColor)
