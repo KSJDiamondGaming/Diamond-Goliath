@@ -267,9 +267,9 @@ function variableMap(discordGuild, member, account, creator, event) {
   const profile = account.profileUrl || account.url || '';
   const url = event.url || profile;
   const duration = clean(event.duration) || humanDuration(event.durationSeconds);
-  const viewers = intText(event.viewerCount);
-  const views = intText(event.viewCount);
-  const peak = intText(event.peakViewers);
+  const viewers = Number(event.viewerCount) > 0 ? intText(event.viewerCount) : '';
+  const views = Number(event.viewCount) > 0 ? intText(event.viewCount) : '';
+  const peak = Number(event.peakViewers) > 0 ? intText(event.peakViewers) : '';
   const started = discordTimestamp(event.startedAt);
   const published = discordTimestamp(event.publishedAt);
   const user = member?.user || null;
@@ -508,7 +508,7 @@ async function sendEvent(client, guildId, config, account, creator, event) {
   if (account.platform !== 'tiktok' && (event.category || event.game)) fields.push({ name: '🎮 Category', value: clean(event.category || event.game, 1024), inline: true });
   if (vars.viewers) fields.push({ name: '👥 Viewers', value: vars.viewers, inline: true });
   if (vars.peakViewers) fields.push({ name: '📈 Peak', value: vars.peakViewers, inline: true });
-  if (Number.isFinite(Number(event.viewCount))) fields.push({ name: '👁️ Views', value: intText(event.viewCount), inline: true });
+  if (Number(event.viewCount) > 0) fields.push({ name: '👁️ Views', value: intText(event.viewCount), inline: true });
   if (durationText) fields.push({ name: '⏱️ Duration', value: durationText, inline: true });
   const started = discordTimestamp(event.startedAt);
   if (started) fields.push({ name: '🟢 Started', value: started, inline: true });
@@ -586,11 +586,11 @@ async function checkGuildAccounts(client, guildId, options = {}) {
         if (checked.isLive) {
           state.lastLiveEvent = checked.event ? { ...checked.event } : previous.lastLiveEvent || null;
           const viewers = Number(checked.event?.viewerCount);
-          if (Number.isFinite(viewers)) state.peakViewers = previous.isLive === true ? Math.max(Number(previous.peakViewers || 0), viewers) : viewers;
+          if (Number.isFinite(viewers) && viewers > 0) state.peakViewers = previous.isLive === true ? Math.max(Number(previous.peakViewers || 0), viewers) : viewers;
         }
         if (checked.isLive && previous.isLive !== true) {
           state.liveStartedAt = checked.event?.startedAt || checked.checkedAt || now();
-          state.peakViewers = Number.isFinite(Number(checked.event?.viewerCount)) ? Number(checked.event.viewerCount) : 0;
+          state.peakViewers = Number(checked.event?.viewerCount) > 0 ? Number(checked.event.viewerCount) : null;
         }
         if (!checked.isLive && previous.isLive === true) state.lastLiveEndedAt = checked.checkedAt || now();
       }

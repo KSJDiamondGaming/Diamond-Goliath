@@ -215,7 +215,8 @@ function tiktokApiResult(json, fallbackUsername, fallbackId, source) {
   const resolvedLiveUrl = resolvedProfile ? `${resolvedProfile}/live` : '';
   const cover = liveRoom.cover?.url_list?.[0] || liveRoom.cover?.urlList?.[0] || liveRoom.coverUrl || liveRoom.cover_url || null;
   const avatar = user.avatarLarger || user.avatarMedium || user.avatarThumb || liveRoom.owner?.avatarLarger || null;
-  const viewerCount = Number(liveRoom.user_count || liveRoom.userCount || liveRoom.viewer_count || liveRoom.viewerCount);
+  const rawViewerCount = liveRoom.user_count ?? liveRoom.userCount ?? liveRoom.viewer_count ?? liveRoom.viewerCount;
+  const viewerCount = Number(rawViewerCount);
   const startedAt = isoFromProviderEpoch(liveRoom.start_time || liveRoom.startTime);
 
   return result('tiktok', {
@@ -232,7 +233,7 @@ function tiktokApiResult(json, fallbackUsername, fallbackId, source) {
       title: clean(liveRoom.title) || `${resolvedUsername || fallbackUsername || 'Creator'} is LIVE on TikTok`,
       url: resolvedLiveUrl || 'https://www.tiktok.com/live',
       thumbnail: cover || avatar || null,
-      viewerCount: Number.isFinite(viewerCount) ? viewerCount : null,
+      viewerCount: Number.isFinite(viewerCount) && viewerCount > 0 ? viewerCount : null,
       startedAt,
     } : null,
   });
