@@ -11,6 +11,7 @@ const DEV_COLOR = '#FEE75C';
 const ITEMS_PER_ROW = 4;
 
 const CATEGORY_CATALOG = [
+  { key: 'account', label: 'Account', emoji: '👤', summary: 'View your personal Goliath profile and account tools.' },
   { key: 'community', label: 'Community', emoji: '🏘️', summary: 'Giveaways, invites, leveling and polls.' },
   { key: 'feedback', label: 'Feedback', emoji: '💬', summary: 'Forms, suggestions and tickets.' },
   { key: 'messages', label: 'Messages', emoji: '✉️', summary: 'Member-visible message tools when approved.' },
@@ -21,6 +22,13 @@ const CATEGORY_CATALOG = [
 ];
 
 const MODULE_CATALOG = [
+  { key: 'profile', category: 'account', label: 'Profile', emoji: '👤', summary: 'View your live member profile.', status: 'approved' },
+  { key: 'reputation', category: 'account', label: 'Reputation', emoji: '⭐', summary: 'Planned personal reputation view.', status: 'planned' },
+  { key: 'warnings', category: 'account', label: 'Warnings', emoji: '⚠️', summary: 'Planned personal warning view.', status: 'planned' },
+  { key: 'cases', category: 'account', label: 'Cases', emoji: '📁', summary: 'Planned view of your own cases.', status: 'planned' },
+  { key: 'infractions', category: 'account', label: 'Infractions', emoji: '📋', summary: 'Planned personal infraction history.', status: 'planned' },
+  { key: 'appeals', category: 'account', label: 'Appeals', emoji: '📝', summary: 'Planned personal appeal access.', status: 'planned' },
+  { key: 'notes', category: 'account', label: 'Notes', emoji: '📌', summary: 'Planned personal notes.', status: 'planned' },
   { key: 'giveaways', category: 'community', label: 'Giveaways', emoji: '🎉', summary: 'Member giveaway dashboard plan.', status: 'locked' },
   { key: 'invites', category: 'community', label: 'Invites', emoji: '📨', summary: 'Planned member invite view.', status: 'planned' },
   { key: 'leveling', category: 'community', label: 'Leveling', emoji: '🏆', summary: 'Planned member rank/profile view.', status: 'planned' },
@@ -41,10 +49,7 @@ const MODULE_BY_KEY = Object.fromEntries(MODULE_CATALOG.map((module) => [module.
 
 function getMemberDisplayName(interactionOrName = 'Unknown User') {
   if (typeof interactionOrName === 'string') return interactionOrName || 'Unknown User';
-  return interactionOrName?.member?.displayName ||
-    interactionOrName?.user?.displayName ||
-    interactionOrName?.user?.username ||
-    'Unknown User';
+  return interactionOrName?.member?.displayName || interactionOrName?.user?.displayName || interactionOrName?.user?.username || 'Unknown User';
 }
 
 function row(...components) {
@@ -52,12 +57,7 @@ function row(...components) {
 }
 
 function button(customId, label, style = ButtonStyle.Primary, disabled = false, emoji = null) {
-  const component = new ButtonBuilder()
-    .setCustomId(customId)
-    .setLabel(label)
-    .setStyle(style)
-    .setDisabled(disabled);
-
+  const component = new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style).setDisabled(disabled);
   if (emoji) component.setEmoji(emoji);
   return component;
 }
@@ -75,6 +75,12 @@ function createEmbed(title, description, memberDisplayName, color = PANEL_COLOR)
     .setDescription(description)
     .setFooter({ text: `Requested by ${memberDisplayName}` })
     .setTimestamp();
+}
+
+function discordTimestamp(timestamp, style = 'F') {
+  const value = Number(timestamp || 0);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  return `<t:${Math.floor(value / 1000)}:${style}>`;
 }
 
 function buildSearchRow(selectedModule = null) {
@@ -114,29 +120,24 @@ function buildMainPanel(interactionOrName = 'Unknown User') {
 
   return {
     embeds: [createEmbed('👤 Goliath User Panel', description, memberDisplayName)],
-    components: [
-      buildSearchRow(),
-      ...buildCategoryButtons(),
-    ].slice(0, 5),
+    components: [buildSearchRow(), ...buildCategoryButtons()].slice(0, 5),
   };
 }
 
 function buildCategoryPanel(categoryKey, interactionOrName = 'Unknown User') {
   const memberDisplayName = getMemberDisplayName(interactionOrName);
-  const category = CATEGORY_BY_KEY[categoryKey] || CATEGORY_BY_KEY.community;
+  const category = CATEGORY_BY_KEY[categoryKey] || CATEGORY_BY_KEY.account;
   const modules = MODULE_CATALOG.filter((module) => module.category === category.key);
   const description = [
     category.summary,
     '',
-    modules.length
-      ? modules.map((module) => `${module.emoji} **${module.label}** - ${module.summary}`).join('\n')
-      : 'No user tools are approved in this category yet.',
+    modules.length ? modules.map((module) => `${module.emoji} **${module.label}** - ${module.summary}`).join('\n') : 'No user tools are approved in this category yet.',
   ].join('\n');
 
   const moduleButtons = modules.map((module) => button(
     `user:module:${module.key}`,
     module.label,
-    module.key === 'giveaways' ? ButtonStyle.Success : ButtonStyle.Secondary,
+    ['profile', 'giveaways'].includes(module.key) ? ButtonStyle.Success : ButtonStyle.Secondary,
     false,
     module.emoji,
   ));
@@ -151,50 +152,119 @@ function buildCategoryPanel(categoryKey, interactionOrName = 'Unknown User') {
   };
 }
 
+function buildProfilePanel(interaction, profile = {}, options = {}) {
+  const memberDisplayName = getMemberDisplayName(interaction);
+  const user = interaction.user;
+  const member = interaction.member;
+  const created = discordTimestamp(user?.createdTimestamp);
+  const joined = discordTimestamp(member?.joinedTimestamp);
+  const joinedRelative = discordTimestamp(member?.joinedTimestamp, 'R');
+
+  const identity = [
+    `**${memberDisplayName}**`,
+    `@${user?.username || 'unknown'}`,
+    `User ID: \`${user?.id || 'unknown'}\``,
+  ];
+
+  const membership = [
+    created ? `Discord Account Created: ${created}` : null,
+    joined ? `Joined This Server: ${joined}` : null,
+    joinedRelative ? `Member For: ${joinedRelative}` : null,
+  ].filter(Boolean);
+
+  const progress = [];
+  if (profile.leveling) {
+    progress.push(`Level: **${profile.leveling.level}**`);
+    progress.push(`XP: **${profile.leveling.xp.toLocaleString()}**`);
+    if (profile.leveling.rank) progress.push(`Server Rank: **#${profile.leveling.rank}**`);
+  }
+
+  const community = [];
+  if (Number.isFinite(profile.invites)) community.push(`Invites: **${profile.invites.toLocaleString()}**`);
+  if (Number.isFinite(profile.giveawayEntries)) community.push(`Giveaway Entries: **${profile.giveawayEntries.toLocaleString()}**`);
+  if (Number.isFinite(profile.giveawayWins)) community.push(`Giveaway Wins: **${profile.giveawayWins.toLocaleString()}**`);
+
+  const sections = [identity.join('\n')];
+  if (membership.length) sections.push(`📅 **Membership**\n${membership.join('\n')}`);
+  if (progress.length) sections.push(`🏆 **Progress**\n${progress.join('\n')}`);
+  if (community.length) sections.push(`📊 **Community**\n${community.join('\n')}`);
+
+  const embed = createEmbed('👤 Your Profile', sections.join('\n\n'), memberDisplayName)
+    .setThumbnail(user?.displayAvatarURL?.({ extension: 'png', size: 256 }) || null);
+
+  const topButtons = [];
+  if (profile.leveling) topButtons.push(button('user:profile:progress', 'View Progress', ButtonStyle.Primary, false, '🏆'));
+  if (options.rolesEnabled !== false) topButtons.push(button('user:profile:roles', 'View Roles', ButtonStyle.Primary, false, '🎭'));
+  topButtons.push(button('user:profile:refresh', 'Refresh', ButtonStyle.Success, false, '🔄'));
+
+  return {
+    embeds: [embed],
+    components: [
+      row(...topButtons),
+      row(
+        button('user:category:account', 'Account', ButtonStyle.Secondary, false, '⬅️'),
+        button('user:home', 'User Panel', ButtonStyle.Secondary, false, '🏠'),
+        button('user:close', 'Close', ButtonStyle.Danger, false, '✖️'),
+      ),
+    ],
+  };
+}
+
+function buildRolesPanel(interaction, options = {}) {
+  const memberDisplayName = getMemberDisplayName(interaction);
+  const roles = [...(interaction.member?.roles?.cache?.values?.() || [])]
+    .filter((role) => role.id !== interaction.guildId)
+    .sort((a, b) => b.position - a.position);
+  const highest = roles[0] || null;
+  const roleMentions = roles.map((role) => `<@&${role.id}>`);
+  const visible = roleMentions.slice(0, 30);
+  const remaining = Math.max(0, roleMentions.length - visible.length);
+
+  const description = [
+    options.showHighestRole === false ? null : `**Highest Role**\n${highest ? `<@&${highest.id}>` : 'None'}`,
+    options.showRoleCount === false ? null : `**Role Count**\n${roles.length}`,
+    options.showRoleList === false ? null : `**Current Roles**\n${visible.length ? visible.join('\n') : 'No roles assigned.'}${remaining ? `\n\n+${remaining} more` : ''}`,
+  ].filter(Boolean).join('\n\n');
+
+  return {
+    embeds: [createEmbed('🎭 Your Roles', description || 'Role visibility is disabled for this server.', memberDisplayName)],
+    components: [
+      row(
+        button('user:module:profile', 'Back to Profile', ButtonStyle.Secondary, false, '⬅️'),
+        button('user:profile:roles', 'Refresh', ButtonStyle.Success, false, '🔄'),
+        button('user:home', 'User Panel', ButtonStyle.Secondary, false, '🏠'),
+        button('user:close', 'Close', ButtonStyle.Danger, false, '✖️'),
+      ),
+    ],
+  };
+}
+
 function buildGiveawaysMemoPanel(interactionOrName = 'Unknown User') {
   const memberDisplayName = getMemberDisplayName(interactionOrName);
   const description = [
-    '**DEV placeholder / memo panel**',
-    '',
-    'Planned member features:',
-    '• View active giveaways',
-    '• View giveaway history',
-    '• View previous winners',
-    '• View my entries',
-    '• View my wins',
-    '• View my giveaway statistics',
-    '• Jump to giveaway message',
-    '• Notification preferences (future)',
-    '',
+    '**DEV placeholder / memo panel**', '', 'Planned member features:',
+    '• View active giveaways', '• View giveaway history', '• View previous winners', '• View my entries', '• View my wins',
+    '• View my giveaway statistics', '• Jump to giveaway message', '• Notification preferences (future)', '',
     '**Admin giveaway creation and management remain separate and are not exposed here.**',
   ].join('\n');
 
   return {
     embeds: [createEmbed('🎉 Giveaways - User Panel Plan', description, memberDisplayName, DEV_COLOR)],
-    components: [
-      row(
-        button('user:category:community', 'Back to Community', ButtonStyle.Secondary, false, '⬅️'),
-        button('user:home', 'User Panel', ButtonStyle.Secondary, false, '👤'),
-      ),
-    ],
+    components: [row(
+      button('user:category:community', 'Back to Community', ButtonStyle.Secondary, false, '⬅️'),
+      button('user:home', 'User Panel', ButtonStyle.Secondary, false, '👤'),
+    )],
   };
 }
 
 function buildSocialAccessDeniedPanel(interactionOrName = 'Unknown User') {
   const memberDisplayName = getMemberDisplayName(interactionOrName);
   return {
-    embeds: [createEmbed(
-      'Social Studio',
-      ['This server only allows selected roles to use Social Studio from `/user`.', '', 'Ask a server admin if you should have access.'].join('\n'),
-      memberDisplayName,
-      DEV_COLOR,
+    embeds: [createEmbed('Social Studio', ['This server only allows selected roles to use Social Studio from `/user`.', '', 'Ask a server admin if you should have access.'].join('\n'), memberDisplayName, DEV_COLOR)],
+    components: [row(
+      button('user:category:social', 'Back to Social', ButtonStyle.Secondary, false, '⬅️'),
+      button('user:home', 'User Panel', ButtonStyle.Secondary, false, '👤'),
     )],
-    components: [
-      row(
-        button('user:category:social', 'Back to Social', ButtonStyle.Secondary, false, '⬅️'),
-        button('user:home', 'User Panel', ButtonStyle.Secondary, false, '👤'),
-      ),
-    ],
   };
 }
 
@@ -202,25 +272,17 @@ function buildPlannedModulePanel(moduleKey, interactionOrName = 'Unknown User') 
   const memberDisplayName = getMemberDisplayName(interactionOrName);
   const module = MODULE_BY_KEY[moduleKey];
   if (!module) return buildMainPanel(memberDisplayName);
-
   const category = CATEGORY_BY_KEY[module.category];
   const utilityHint = module.category === 'utility'
     ? `This tool is approved for the User Panel and currently remains available through \`/${module.key}\`.`
     : 'This module button is reserved for a future user-only view.';
 
   return {
-    embeds: [createEmbed(
-      `${module.emoji} ${module.label}`,
-      ['**DEV placeholder / memo panel**', '', utilityHint, '', 'No admin controls are exposed from this panel.'].join('\n'),
-      memberDisplayName,
-      DEV_COLOR,
+    embeds: [createEmbed(`${module.emoji} ${module.label}`, ['**DEV placeholder / memo panel**', '', utilityHint, '', 'No admin controls are exposed from this panel.'].join('\n'), memberDisplayName, DEV_COLOR)],
+    components: [row(
+      button(`user:category:${category.key}`, `Back to ${category.label}`, ButtonStyle.Secondary, false, '⬅️'),
+      button('user:home', 'User Panel', ButtonStyle.Secondary, false, '👤'),
     )],
-    components: [
-      row(
-        button(`user:category:${category.key}`, `Back to ${category.label}`, ButtonStyle.Secondary, false, '⬅️'),
-        button('user:home', 'User Panel', ButtonStyle.Secondary, false, '👤'),
-      ),
-    ],
   };
 }
 
@@ -235,5 +297,7 @@ module.exports = {
   buildMainPanel,
   buildCategoryPanel,
   buildModulePanel,
+  buildProfilePanel,
+  buildRolesPanel,
   buildSocialAccessDeniedPanel,
 };
