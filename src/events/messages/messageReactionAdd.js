@@ -3,6 +3,7 @@
 const { handleReactionAdd } = require('../../modules/roleStudio/reactionRoles/reactionRoles');
 const { enterGiveawayReaction } = require('../../modules/communityStudio/giveaways/giveawaysManager');
 const { handleStarReactionAdd } = require('../../modules/messageStudio/starboard/starboard');
+const starboardStore = require('../../modules/messageStudio/starboard/starboardStore');
 const { isModuleEnabled } = require('../../core/guild/guildManager');
 
 async function getReactionGuildId(reaction) {
@@ -35,7 +36,7 @@ module.exports = {
     if (isModuleEnabled(guildId, 'giveaways')) {
       await runHandler('Giveaways', () => enterGiveawayReaction(reaction, user));
     }
-    if (isModuleEnabled(guildId, 'starboard')) {
+    if (starboardStore.isEnabled(guildId)) {
       await runHandler('Starboard', () => handleStarReactionAdd(reaction, user));
     }
   },
