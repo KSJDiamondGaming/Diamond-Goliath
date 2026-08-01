@@ -39,6 +39,11 @@ function canonicalConfig(guildId, config = welcome.getWelcomeSection(guildId)) {
   return { ...config, enabled: guildManager.isModuleEnabled(guildId, 'welcome') };
 }
 
+function canonicalExport(guildId) {
+  const exported = welcome.exportConfiguration(guildId);
+  return { ...exported, config: canonicalConfig(guildId, exported.config) };
+}
+
 async function buildOverview(req, guildId) {
   const config = canonicalConfig(guildId);
   const guild = await getGuild(req, guildId);
@@ -155,7 +160,7 @@ router.get('/:guildId/export', (req, res) => {
     const guildId = getGuildId(req);
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="goliath-welcome-${guildId}.json"`);
-    return res.send(JSON.stringify(welcome.exportConfiguration(guildId), null, 2));
+    return res.send(JSON.stringify(canonicalExport(guildId), null, 2));
   } catch (error) {
     return failure(res, error, 400);
   }
