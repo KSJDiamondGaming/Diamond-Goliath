@@ -457,50 +457,117 @@ async function forcePostCreatorLive(client, guildId, creatorId, options = {}) {
   const liveAccounts = liveAccountsForCreator(config, creator);
   if (!liveAccounts.length) throw new Error('No checked LIVE account is available for this creator yet.');
 
-  const account = liveAccounts[0];
-  const sourceEvent = account.state.lastLiveEvent;
-  const event = { ...sourceEvent, type: 'live', id: sourceEvent.id || account.state.liveEventId || 'manual-live:' + account.accountId };
-  const message = await sendEvent(client, guildId, config, account, creator, event);
-  const sentAt = now();
-  const channelId = message.socialStudioChannelId || message.channelId || null;
-  const alertKey = 'live:' + (event.id || event.url || event.title);
+  const sent = [];
+  const failed = [];
+  for (const account of liveAccounts) {
+    try {
+      const sourceEvent = account.state.lastLiveEvent;
+      const event = { ...sourceEvent, type: 'live', id: sourceEvent.id || account.state.liveEventId || 'manual-live:' + account.accountId, liveStatus: 'LIVE' };
+      const message = await sendEvent(client, guildId, config, account, creator, event);
+      const sentAt = now();
+      const channelId = message.socialStudioChannelId || message.channelId || null;
+      const alertKey = 'live:' + (event.id || event.url || event.title);
+      sent.push({ account, event, message, sentAt, channelId, alertKey });
+    } catch (error) {
+      failed.push({ account, error: error.message || String(error) });
+    }
+  }
+
+  if (!sent.length) {
+    const details = failed.map((item) => item.account?.username || item.account?.externalId || item.account?.platform || 'account').join(', ');
+    throw new Error(details ? 'No LIVE posts could be sent for: ' + details : 'No LIVE posts could be sent.');
+  }
 
   guildManager.updateGuildSection(guildId, 'social', (latest = {}) => {
     const accounts = latest.accounts && typeof latest.accounts === 'object' ? { ...latest.accounts } : {};
-    const current = accounts[account.accountId] && typeof accounts[account.accountId] === 'object' ? accounts[account.accountId] : account;
-    accounts[account.accountId] = {
-      ...current,
-      state: {
-        ...(current.state && typeof current.state === 'object' ? current.state : {}),
-        lastAlertKey: alertKey,
-        lastAlertAt: sentAt,
-        lastAlertMessageId: message.id,
-        lastAlertChannelId: channelId,
-        lastDeliveryError: null,
-      },
-      updatedAt: sentAt,
-    };
+    for (const item of sent) {
+      const account = item.account;
+      const current = accounts[account.accountId] && typeof accounts[account.accountId] === 'object' ? accounts[account.accountId] : account;
+      accounts[account.accountId] = {
+        ...current,
+        state: {
+          ...(current.state && typeof current.state === 'object' ? current.state : {}),
+          lastAlertKey: item.alertKey,
+          lastAlertAt: item.sentAt,
+          lastAlertMessageId: item.message.id,
+          lastAlertChannelId: item.channelId,
+          lastLiveMessageUpdatedAt: item.sentAt,
+          lastDeliveryError: null,
+        },
+        updatedAt: item.sentAt,
+      };
+    }
+    for (const item of failed) {
+      const account = item.account;
+      if (!account?.accountId) continue;
+      const current = accounts[account.accountId] && typeof accounts[account.accountId] === 'object' ? accounts[account.accountId] : account;
+      accounts[account.accountId] = {
+        ...current,
+        state: {
+          ...(current.state && typeof current.state === 'object' ? current.state : {}),
+          lastDeliveryError: item.error,
+        },
+        updatedAt: now(),
+      };
+    }
     const analytics = latest.analytics && typeof latest.analytics === 'object' ? { ...latest.analytics } : {};
-    analytics.alertsSent = Number(analytics.alertsSent || 0) + 1;
-    const history = [...(Array.isArray(latest.history) ? latest.history : []), {
-      id: 'history_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
-      createdAt: sentAt,
-      status: 'alert_sent',
-      manual: true,
-      actorId: options.actorId || null,
-      creatorId: creator.creatorId,
-      creator: creator.displayName || account.displayName,
-      accountId: account.accountId,
-      platform: account.platform,
-      alertType: 'live',
-      contentId: event.id || null,
-      messageId: message.id,
-      channelId,
-    }].slice(-1000);
-    return { ...latest, accounts, analytics, history, updatedAt: sentAt };
+    analytics.alertsSent = Number(analytics.alertsSent || 0) + sent.length;
+    if (failed.length) analytics.failures = Number(analytics.failures || 0) + failed.length;
+    const historyItems = [];
+    for (const item of sent) {
+      const account = item.account;
+      historyItems.push({
+        id: 'history_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+        createdAt: item.sentAt,
+        status: 'alert_sent',
+        manual: true,
+        actorId: options.actorId || null,
+        creatorId: creator.creatorId,
+        creator: creator.displayName || account.displayName,
+        accountId: account.accountId,
+        platform: account.platform,
+        alertType: 'live',
+        contentId: item.event.id || null,
+        messageId: item.message.id,
+        channelId: item.channelId,
+      });
+    }
+    for (const item of failed) {
+      const account = item.account || {};
+      historyItems.push({
+        id: 'history_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+        createdAt: now(),
+        status: 'delivery_failed',
+        manual: true,
+        actorId: options.actorId || null,
+        creatorId: creator.creatorId,
+        creator: creator.displayName || account.displayName,
+        accountId: account.accountId || null,
+        platform: account.platform || null,
+        alertType: 'live',
+        error: item.error,
+      });
+    }
+    const history = [...(Array.isArray(latest.history) ? latest.history : []), ...historyItems].slice(-1000);
+    return { ...latest, accounts, analytics, history, updatedAt: now() };
   }, {}, options.guild || { guildId });
 
-  return { accountId: account.accountId, platform: account.platform, username: account.username || account.externalId || null, messageId: message.id, channelId };
+  return {
+    creatorId,
+    sent: sent.map((item) => ({
+      accountId: item.account.accountId,
+      platform: item.account.platform,
+      username: item.account.username || item.account.externalId || null,
+      messageId: item.message.id,
+      channelId: item.channelId,
+    })),
+    failed: failed.map((item) => ({
+      accountId: item.account?.accountId || null,
+      platform: item.account?.platform || null,
+      username: item.account?.username || item.account?.externalId || null,
+      error: item.error,
+    })),
+  };
 }
 
 async function buildEventPayload(client, guildId, config, account, creator, event, options = {}) {
