@@ -173,10 +173,16 @@ function dashboardStats(config) {
 function creatorLivePostState(config, creator) {
   if (!creator) return { canPost: false, reason: 'Select a profile first.' };
   const linked = (creator.accountIds || []).map((id) => config.accounts[id]).filter(Boolean);
-  const liveAccounts = linked.filter((account) => account.enabled !== false && account.state?.isLive === true && account.state?.lastLiveEvent);
+  const liveAccounts = linked.filter((account) => account.enabled !== false && account.state?.isLive === true && account.state?.lastLiveEvent && account.state?.lastCheckedAt);
   if (!liveAccounts.length) return { canPost: false, reason: 'No checked LIVE account.' };
   const accountIds = new Set(linked.map((account) => String(account.accountId)));
   const cutoff = Date.now() - (2 * 60 * 60 * 1000);
+  const recentState = linked.find((account) => {
+    if (!String(account.state?.lastAlertKey || '').startsWith('live:')) return false;
+    const sent = new Date(account.state?.lastAlertAt || '').getTime();
+    return Number.isFinite(sent) && sent >= cutoff;
+  });
+  if (recentState) return { canPost: false, reason: 'LIVE post sent recently.' };
   const recent = [...(config.history || [])].reverse().find((entry) => {
     if (entry?.status !== 'alert_sent' || entry?.alertType !== 'live') return false;
     const created = new Date(entry.createdAt).getTime();
@@ -186,7 +192,6 @@ function creatorLivePostState(config, creator) {
   if (recent) return { canPost: false, reason: 'LIVE post sent recently.' };
   return { canPost: true, reason: `${liveAccounts.length} LIVE account${liveAccounts.length === 1 ? '' : 's'} ready.` };
 }
-
 function buildMainPanel(guild, requestedBy = 'Unknown User') {
   const c = getConfig(guild.id), creators = Object.keys(c.creators).length, accounts = Object.keys(c.accounts).length, ready = creators && accounts && c.alertsChannelId, stats = dashboardStats(c);
   const d = [`${ready ? '✅' : '⚠️'} **${ready ? 'Social Studio is ready.' : 'Setup required'}**`, '', `**Creators:** ${creators}  •  **Accounts:** ${accounts}`, `🔴 **LIVE:** ${stats.live}  •  ⚫ **Offline:** ${stats.offline}  •  🟡 **Issues:** ${stats.unavailable}`, `📡 **Monitoring:** ${stats.monitored}/${accounts}`, `📨 **Alerts Sent:** ${Number(c.analytics?.alertsSent || 0).toLocaleString('en-GB')}`, `📂 **Default Channel:** ${c.alertsChannelId ? `<#${c.alertsChannelId}>` : 'Not configured'}`, `🔔 **Notifications:** ${c.enabled ? '🟢 Enabled' : '🔴 Disabled'}`].join('\n');

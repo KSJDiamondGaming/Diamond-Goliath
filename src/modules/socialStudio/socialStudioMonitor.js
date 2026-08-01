@@ -392,6 +392,15 @@ const FORCE_LIVE_WINDOW_MS = 2 * 60 * 60 * 1000;
 function livePostInWindow(config, creator, windowMs = FORCE_LIVE_WINDOW_MS) {
   const accountIds = new Set((creator?.accountIds || []).map(String));
   const cutoff = Date.now() - windowMs;
+  const stateMatch = (creator?.accountIds || [])
+    .map((id) => config.accounts?.[id])
+    .filter(Boolean)
+    .find((account) => {
+      if (!String(account.state?.lastAlertKey || '').startsWith('live:')) return false;
+      const sent = new Date(account.state?.lastAlertAt || '').getTime();
+      return Number.isFinite(sent) && sent >= cutoff;
+    });
+  if (stateMatch) return { status: 'alert_sent', alertType: 'live', accountId: stateMatch.accountId, createdAt: stateMatch.state.lastAlertAt, source: 'account_state' };
   return [...(config.history || [])].reverse().find((entry) => {
     if (entry?.status !== 'alert_sent' || entry?.alertType !== 'live') return false;
     const created = new Date(entry.createdAt).getTime();
@@ -631,7 +640,7 @@ async function checkGuildAccounts(client, guildId, options = {}) {
           state.lastAlertChannelId = message.socialStudioChannelId || message.channelId || null;
           state.lastDeliveryError = null;
           config.analytics.alertsSent = Number(config.analytics.alertsSent || 0) + 1;
-          addHistory(config, { status: 'alert_sent', accountId: account.accountId, creator: creator?.displayName || account.displayName, platform: account.platform, alertType: event.type, contentId: event.id || null, messageId: message.id, channelId: state.lastAlertChannelId });
+          addHistory(config, { status: 'alert_sent', accountId: account.accountId, creatorId: creator?.creatorId || null, creator: creator?.displayName || account.displayName, platform: account.platform, alertType: event.type, contentId: event.id || null, messageId: message.id, channelId: state.lastAlertChannelId });
           delivered.push({ type: event.type, id: event.id || null, messageId: message.id, channelId: state.lastAlertChannelId });
         } catch (error) {
           state.lastDeliveryError = error.message;
