@@ -96,6 +96,11 @@ function buildLiveProfile(interaction) {
   };
 }
 
+function buildUserHomePanel(interaction) {
+  const settings = getUserPanelSettings(interaction.guildId);
+  return buildProfilePanel(interaction, buildLiveProfile(interaction), settings.profile);
+}
+
 async function updatePanel(interaction, payload) {
   if (interaction.deferred || interaction.replied) {
     await interaction.editReply(payload);
@@ -106,8 +111,7 @@ async function updatePanel(interaction, payload) {
 }
 
 async function showProfile(interaction) {
-  const settings = getUserPanelSettings(interaction.guildId);
-  return updatePanel(interaction, buildProfilePanel(interaction, buildLiveProfile(interaction), settings.profile));
+  return updatePanel(interaction, buildUserHomePanel(interaction));
 }
 
 async function showProgress(interaction) {
@@ -172,4 +176,5 @@ async function handleUserPanelInteraction(interaction) {
 module.exports = {
   handleUserPanelInteraction,
   canUseUserSocialStudio,
+  buildUserHomePanel,
 };
