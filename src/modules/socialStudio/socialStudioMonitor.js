@@ -542,6 +542,10 @@ async function buildEventPayload(client, guildId, config, account, creator, even
   if (/^https?:\/\//i.test(account.avatar || '')) embed.setThumbnail(account.avatar);
 
   const fields = [];
+  if (event.type === 'live') {
+    const liveStatus = String(event.liveStatus || 'LIVE').toUpperCase() === 'OFFLINE' ? 'OFFLINE' : 'LIVE';
+    fields.push({ name: 'Status', value: liveStatus, inline: true });
+  }
   if (account.platform !== 'tiktok' && (event.category || event.game)) fields.push({ name: '\u{1F3AE} Game', value: clean(event.category || event.game, 1024), inline: true });
   if (vars.viewers) fields.push({ name: '\u{1F465} Viewers', value: vars.viewers, inline: true });
   if (vars.peakViewers) fields.push({ name: '\u{1F4C8} Peak', value: vars.peakViewers, inline: true });
@@ -711,9 +715,30 @@ async function checkGuildAccounts(client, guildId, options = {}) {
         }
       }
 
-      if (liveMessageUpdateDue(previous, checked)) {
+      if (checked.isLive === false && previous.isLive === true && previous.lastAlertMessageId && previous.lastAlertChannelId) {
         try {
-          const updateEvent = { ...checked.event, type: 'live', id: checked.event.id || state.liveEventId || previous.liveEventId || account.accountId };
+          const prior = previous.lastLiveEvent && typeof previous.lastLiveEvent === 'object' ? previous.lastLiveEvent : {};
+          const offlineEvent = {
+            ...prior,
+            type: 'live',
+            id: previous.liveEventId || prior.id || account.accountId,
+            liveStatus: 'OFFLINE',
+            endedAt: checked.checkedAt || now(),
+          };
+          await updateLiveMessage(client, guildId, config, account, creator, offlineEvent, previous);
+          state.lastLiveMessageUpdatedAt = now();
+          state.lastDeliveryError = null;
+          liveMessageUpdated = true;
+          addHistory(config, { status: 'alert_updated', accountId: account.accountId, creatorId: creator?.creatorId || null, creator: creator?.displayName || account.displayName, platform: account.platform, alertType: 'live', contentId: offlineEvent.id || null, messageId: previous.lastAlertMessageId, channelId: previous.lastAlertChannelId, liveStatus: 'offline' });
+        } catch (error) {
+          state.lastLiveMessageUpdatedAt = now();
+          state.lastDeliveryError = error.message;
+          config.analytics.failures = Number(config.analytics.failures || 0) + 1;
+          addHistory(config, { status: 'delivery_failed', accountId: account.accountId, platform: account.platform, alertType: 'live_status_update', contentId: previous.liveEventId || null, error: error.message });
+        }
+      } else if (liveMessageUpdateDue(previous, checked)) {
+        try {
+          const updateEvent = { ...checked.event, type: 'live', id: checked.event.id || state.liveEventId || previous.liveEventId || account.accountId, liveStatus: 'LIVE' };
           await updateLiveMessage(client, guildId, config, account, creator, updateEvent, previous);
           state.lastLiveMessageUpdatedAt = now();
           state.lastDeliveryError = null;
