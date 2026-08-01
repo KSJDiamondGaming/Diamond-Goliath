@@ -93,12 +93,20 @@ async function checkTwitch(account) {
 
   const [streamRes, videoRes, clipRes] = await Promise.all([
     request(`https://api.twitch.tv/helix/streams?user_id=${encodeURIComponent(user.id)}`, { headers }),
-    request(`https://api.twitch.tv/helix/videos?user_id=${encodeURIComponent(user.id)}&first=1&type=archive`, { headers }).catch(() => ({ json: null })),
+    request(`https://api.twitch.tv/helix/videos?user_id=${encodeURIComponent(user.id)}&first=5&type=archive`, { headers }).catch(() => ({ json: null })),
     request(`https://api.twitch.tv/helix/clips?broadcaster_id=${encodeURIComponent(user.id)}&first=1`, { headers }).catch(() => ({ json: null })),
   ]);
 
   const stream = streamRes.json?.data?.[0] || null;
-  const video = videoRes.json?.data?.[0] || null;
+  const videos = Array.isArray(videoRes.json?.data) ? videoRes.json.data : [];
+  const streamStartedAt = stream?.started_at ? new Date(stream.started_at).getTime() : null;
+  const previousVideo = streamStartedAt
+    ? videos.find((item) => {
+      const created = new Date(item?.published_at || item?.created_at || 0).getTime();
+      return item?.id && Number.isFinite(created) && created < streamStartedAt;
+    })
+    : null;
+  const video = stream ? previousVideo || null : videos[0] || null;
   const clip = clipRes.json?.data?.[0] || null;
   const channelUrl = `https://www.twitch.tv/${encodeURIComponent(user.login)}`;
   const contentItems = [];
@@ -121,6 +129,15 @@ async function checkTwitch(account) {
       type: 'live', id: String(stream.id), title: stream.title || `${user.display_name || user.login} is live`, url: channelUrl,
       thumbnail: clean(stream.thumbnail_url).replace('{width}', '1280').replace('{height}', '720'), viewerCount: stream.viewer_count,
       startedAt: stream.started_at, category: stream.game_name, language: stream.language,
+      previousVod: video?.id ? {
+        id: String(video.id),
+        title: video.title || `${user.display_name || user.login} previous VOD`,
+        url: video.url || `${channelUrl}/videos`,
+        thumbnail: clean(video.thumbnail_url).replace('%{width}', '1280').replace('%{height}', '720'),
+        duration: video.duration || null,
+        viewCount: video.view_count,
+        publishedAt: video.published_at || video.created_at || null,
+      } : null,
     } : null,
   });
 }

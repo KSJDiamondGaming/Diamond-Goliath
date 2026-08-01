@@ -499,6 +499,7 @@ async function sendEvent(client, guildId, config, account, creator, event) {
   const url = vars.url;
   const profileUrl = account.profileUrl || account.url || '';
   const durationText = vars.duration;
+  const previousVod = event.previousVod && typeof event.previousVod === 'object' ? event.previousVod : null;
   const embedColor = parseTemplateColor(render(template.color || '', vars), platform.color);
 
   const baseDescription = clean(render(template.description, vars), 3800) || clean(event.title, 3800) || `${creatorName} has a new ${event.type}.`;
@@ -536,6 +537,12 @@ async function sendEvent(client, guildId, config, account, creator, event) {
   if (ended) fields.push({ name: '⚫ Ended', value: ended, inline: true });
   const published = discordTimestamp(event.publishedAt);
   if (published) fields.push({ name: '📅 Published', value: published, inline: true });
+  if (event.type === 'live' && /^https?:\/\//i.test(previousVod?.url || '')) {
+    const vodTitle = clean(previousVod.title || 'Previous stream replay', 120);
+    const vodDuration = clean(previousVod.duration || '', 40);
+    const vodText = `[${vodTitle}](${previousVod.url})${vodDuration ? ` • ${vodDuration}` : ''}`;
+    fields.push({ name: '🎞️ Latest VOD', value: clean(vodText, 1024), inline: false });
+  }
 
   if (fields.length) embed.addFields(fields.slice(0, 25));
 
