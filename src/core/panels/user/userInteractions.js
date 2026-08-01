@@ -1,8 +1,8 @@
-const { PermissionFlagsBits } = require('discord.js');
 const guildManager = require('../../guild/guildManager');
-const security = require('../../security/securityCore');
 const leveling = require('../../../modules/communityStudio/leveling/leveling');
 const invites = require('../../../modules/communityStudio/invites/invites');
+const socialStudio = require('../../../modules/socialStudio/socialStudioUserService');
+const socialPanels = require('./socialUserPanels');
 const {
   buildCategoryPanel,
   buildModulePanel,
@@ -12,16 +12,10 @@ const {
   buildHelpPanel,
   buildProgressPanel,
   buildRolesPanel,
-  buildSocialAccessDeniedPanel,
 } = require('./userPanel');
 
 function getMemberDisplayName(interaction) {
   return interaction.member?.displayName || interaction.user?.displayName || interaction.user?.username || 'Unknown User';
-}
-
-function getSocialUserRoleIds(guildId) {
-  const social = guildManager.getGuildSection(guildId, 'social', {});
-  return Array.isArray(social.userRoleIds) ? social.userRoleIds.filter(Boolean) : [];
 }
 
 function getUserPanelSettings(guildId) {
@@ -36,17 +30,6 @@ function getUserPanelSettings(guildId) {
       showProgressSummary: profile.showProgressSummary !== false,
     },
   };
-}
-
-function canUseUserSocialStudio(interaction) {
-  const roleIds = getSocialUserRoleIds(interaction.guildId);
-  if (!roleIds.length) return true;
-  return Boolean(
-    security.isBotOwner?.(interaction.user?.id) ||
-    interaction.guild?.ownerId === interaction.user?.id ||
-    interaction.member?.permissions?.has?.(PermissionFlagsBits.Administrator) ||
-    roleIds.some((id) => interaction.member?.roles?.cache?.has?.(id)),
-  );
 }
 
 function countUserGiveawayActivity(guildId, userId) {
@@ -75,10 +58,8 @@ function countUserGiveawayActivity(guildId, userId) {
 function buildLiveProfile(interaction) {
   const section = leveling.getSection(interaction.guildId);
   const user = section.users?.[interaction.user.id] || null;
-  const leaderboard = Object.values(section.users || {})
-    .sort((a, b) => Number(b.xp || 0) - Number(a.xp || 0));
+  const leaderboard = Object.values(section.users || {}).sort((a, b) => Number(b.xp || 0) - Number(a.xp || 0));
   const rankIndex = leaderboard.findIndex((entry) => entry.userId === interaction.user.id || entry.id === interaction.user.id);
-
   const inviteSection = invites.getSection(interaction.guildId);
   const inviteStats = inviteSection.inviters?.[interaction.user.id] || {};
   const giveawayStats = countUserGiveawayActivity(interaction.guildId, interaction.user.id);
@@ -123,6 +104,13 @@ async function showProgress(interaction) {
   return updatePanel(interaction, buildProgressPanel(interaction, profile.leveling));
 }
 
+async function showSocial(interaction) {
+  const access = socialStudio.getAccess(interaction);
+  if (!access.allowed) return updatePanel(interaction, socialPanels.buildDenied(interaction, access.roleIds));
+  const creator = socialStudio.findByOwnerDiscordId(interaction.guildId, interaction.user.id);
+  return updatePanel(interaction, creator ? socialPanels.buildProfile(interaction, creator) : socialPanels.buildCreate(interaction));
+}
+
 async function handleUserPanelInteraction(interaction) {
   const customId = String(interaction?.customId || '');
   if (!customId.startsWith('user:')) return false;
@@ -140,17 +128,11 @@ async function handleUserPanelInteraction(interaction) {
   }
 
   if (customId === 'user:home') return showProfile(interaction);
-  if (customId === 'user:account:record' && interaction.isButton?.()) {
-    return updatePanel(interaction, buildAccountRecordPanel(memberDisplayName));
-  }
-  if (customId === 'user:help' && interaction.isButton?.()) {
-    return updatePanel(interaction, buildHelpPanel(memberDisplayName));
-  }
+  if (customId === 'user:account:record' && interaction.isButton?.()) return updatePanel(interaction, buildAccountRecordPanel(memberDisplayName));
+  if (customId === 'user:help' && interaction.isButton?.()) return updatePanel(interaction, buildHelpPanel(memberDisplayName));
 
   const inProgressMatch = customId.match(/^user:in-progress:(\d+)$/);
-  if (inProgressMatch && interaction.isButton?.()) {
-    return updatePanel(interaction, buildInProgressPanel(memberDisplayName, Number(inProgressMatch[1])));
-  }
+  if (inProgressMatch && interaction.isButton?.()) return updatePanel(interaction, buildInProgressPanel(memberDisplayName, Number(inProgressMatch[1])));
 
   if (customId === 'user:profile:refresh' || customId === 'user:module:profile') return showProfile(interaction);
 
@@ -161,27 +143,32 @@ async function handleUserPanelInteraction(interaction) {
   }
 
   if (customId === 'user:profile:progress' && interaction.isButton?.()) return showProgress(interaction);
+  if (customId === 'user:social:open') return showSocial(interaction);
+
+  if (customId === 'user:social:create' && interaction.isButton?.()) {
+    const access = socialStudio.getAccess(interaction);
+    if (!access.allowed) return updatePanel(interaction, socialPanels.buildDenied(interaction, access.roleIds));
+    const result = socialStudio.createForMember(interaction.member);
+    return updatePanel(interaction, socialPanels.buildProfile(interaction, result.creator, result.created));
+  }
 
   if (interaction.isStringSelectMenu?.() && customId === 'user:search') {
     const [moduleKey] = interaction.values || [];
-    if (moduleKey === 'social' && !canUseUserSocialStudio(interaction)) {
-      return updatePanel(interaction, buildSocialAccessDeniedPanel(memberDisplayName));
-    }
+    if (moduleKey === 'social') return showSocial(interaction);
     return updatePanel(interaction, buildModulePanel(moduleKey, memberDisplayName));
   }
 
   const categoryMatch = customId.match(/^user:category:([a-zA-Z0-9_-]+)$/);
   if (categoryMatch && interaction.isButton?.()) {
     if (categoryMatch[1] === 'account') return showProfile(interaction);
+    if (categoryMatch[1] === 'social') return showSocial(interaction);
     return updatePanel(interaction, buildCategoryPanel(categoryMatch[1], memberDisplayName));
   }
 
   const moduleMatch = customId.match(/^user:module:([a-zA-Z0-9_-]+)$/);
   if (moduleMatch && interaction.isButton?.()) {
     if (moduleMatch[1] === 'profile') return showProfile(interaction);
-    if (moduleMatch[1] === 'social' && !canUseUserSocialStudio(interaction)) {
-      return updatePanel(interaction, buildSocialAccessDeniedPanel(memberDisplayName));
-    }
+    if (moduleMatch[1] === 'social') return showSocial(interaction);
     return updatePanel(interaction, buildModulePanel(moduleMatch[1], memberDisplayName));
   }
 
@@ -190,6 +177,6 @@ async function handleUserPanelInteraction(interaction) {
 
 module.exports = {
   handleUserPanelInteraction,
-  canUseUserSocialStudio,
+  canUseUserSocialStudio: (interaction) => socialStudio.getAccess(interaction).allowed,
   buildUserHomePanel,
 };
