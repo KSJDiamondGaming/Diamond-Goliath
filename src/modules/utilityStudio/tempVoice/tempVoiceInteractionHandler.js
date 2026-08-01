@@ -1,7 +1,6 @@
 'use strict';
 
 const { MessageFlags } = require('discord.js');
-const { isModuleEnabled } = require('../../../core/guild/guildManager');
 const tempVoiceStore = require('./tempVoiceStore');
 const tempVoiceRuntime = require('./tempVoiceManager');
 const { PREFIX, isTempVoiceCustomId, buildControlRows, buildPanelContent } = require('./tempVoicePanel');
@@ -32,7 +31,7 @@ async function handleTempVoiceInteraction(interaction) {
     return true;
   }
 
-  if (!isModuleEnabled(guild.id, 'tempVoice')) {
+  if (!tempVoiceStore.isEnabled(guild.id)) {
     await replyEphemeral(interaction, '❌ Temp Voice is currently disabled for this server.');
     return true;
   }
