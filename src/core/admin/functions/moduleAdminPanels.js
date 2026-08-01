@@ -12,6 +12,7 @@ const {
 } = require('discord.js');
 
 const guildManager = require('../../guild/guildManager');
+const { saveModuleSection } = require('../../guild/moduleSectionManager');
 
 const PANEL_COLOR = '#5865F2';
 const ITEMS_PER_ROW = 4;
@@ -126,15 +127,9 @@ function saveModuleConfig(guild, moduleKey, updater) {
   const current = getModuleConfig(guild.id, moduleKey);
   const next = typeof updater === 'function' ? updater(current) : { ...current, ...(updater || {}) };
   const { enabled: _enabled, ...config } = next || {};
-  const updatedModules = guildManager.updateGuildSection(
-    guild.id,
-    'modules',
-    (modules = {}) => ({ ...modules, [moduleKey]: config }),
-    {},
-    guild,
-  );
+  const updated = saveModuleSection(guild.id, moduleKey, config, guild);
   return {
-    ...(updatedModules?.[moduleKey] || config),
+    ...updated,
     enabled: guildManager.isModuleEnabled(guild.id, moduleKey),
   };
 }
