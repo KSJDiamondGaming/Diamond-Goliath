@@ -8,6 +8,7 @@ const {
   buildMainPanel,
   buildModulePanel,
   buildProfilePanel,
+  buildHelpPanel,
   buildProgressPanel,
   buildRolesPanel,
   buildSocialAccessDeniedPanel,
@@ -137,6 +138,9 @@ async function handleUserPanelInteraction(interaction) {
   }
 
   if (customId === 'user:home') return updatePanel(interaction, buildMainPanel(memberDisplayName));
+  if (customId === 'user:help' && interaction.isButton?.()) {
+    return updatePanel(interaction, buildHelpPanel(memberDisplayName));
+  }
   if (customId === 'user:profile:refresh' || customId === 'user:module:profile') return showProfile(interaction);
 
   if (customId === 'user:profile:roles' && interaction.isButton?.()) {
