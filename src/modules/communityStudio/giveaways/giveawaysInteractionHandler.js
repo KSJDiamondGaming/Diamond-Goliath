@@ -64,15 +64,4 @@ async function handleGiveawayInteraction(interaction) {
   } catch (error) { await safeReply(interaction, `❌ Giveaway action failed: ${error.message}`); return true; }
 }
 
-async function handleGiveawayReactionRemove(reaction, user) {
-  const guildId = reaction?.message?.guild?.id;
-  if (!guildId || !isModuleEnabled(guildId, 'giveaways')) return null;
-  return giveawaysManager.leaveGiveawayReaction(reaction, user);
-}
-
-module.exports = {
-  isGiveawayInteraction,
-  handleGiveawayInteraction,
-  handleGiveawaysAdminInteraction,
-  handleGiveawayReactionRemove,
-};
+module.exports = { isGiveawayInteraction, handleGiveawayInteraction, handleGiveawaysAdminInteraction };
