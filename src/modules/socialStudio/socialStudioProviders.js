@@ -107,6 +107,7 @@ async function checkTwitch(account) {
     type: 'vod', id: String(video.id), title: video.title || `${user.display_name || user.login} VOD`, url: video.url || `${channelUrl}/videos`,
     thumbnail: clean(video.thumbnail_url).replace('%{width}', '1280').replace('%{height}', '720'), duration: video.duration || null,
     viewCount: video.view_count, publishedAt: video.published_at || video.created_at || null,
+    category: stream?.game_name || account.state?.lastLiveEvent?.category || account.state?.lastLiveEvent?.game || null,
   });
   if (clip?.id) contentItems.push({
     type: 'clip', id: String(clip.id), title: clip.title || `${user.display_name || user.login} clip`, url: clip.url,

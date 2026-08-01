@@ -505,7 +505,7 @@ async function sendEvent(client, guildId, config, account, creator, event) {
   if (/^https?:\/\//i.test(account.avatar || '')) embed.setThumbnail(account.avatar);
 
   const fields = [];
-  if (account.platform !== 'tiktok' && (event.category || event.game)) fields.push({ name: '🎮 Category', value: clean(event.category || event.game, 1024), inline: true });
+  if (account.platform !== 'tiktok' && (event.category || event.game)) fields.push({ name: '🎮 Game', value: clean(event.category || event.game, 1024), inline: true });
   if (vars.viewers) fields.push({ name: '👥 Viewers', value: vars.viewers, inline: true });
   if (vars.peakViewers) fields.push({ name: '📈 Peak', value: vars.peakViewers, inline: true });
   if (Number(event.viewCount) > 0) fields.push({ name: '👁️ Views', value: intText(event.viewCount), inline: true });
@@ -516,11 +516,20 @@ async function sendEvent(client, guildId, config, account, creator, event) {
   if (ended) fields.push({ name: '⚫ Ended', value: ended, inline: true });
   const published = discordTimestamp(event.publishedAt);
   if (published) fields.push({ name: '📅 Published', value: published, inline: true });
+
+  const compactLinkTypes = new Set(['vod', 'clip', 'upload', 'short', 'post']);
+  const moveLinksIntoEmbed = compactLinkTypes.has(event.type);
+  if (moveLinksIntoEmbed) {
+    const links = [];
+    if (/^https?:\/\//i.test(url)) links.push(`[${clean(render(template.buttonLabel || 'Open', vars), 80) || 'Open'}](${url})`);
+    if (/^https?:\/\//i.test(profileUrl) && profileUrl !== url) links.push(`[Creator Profile](${profileUrl})`);
+    if (links.length) fields.push({ name: '🔗 Links', value: links.join(' • '), inline: false });
+  }
   if (fields.length) embed.addFields(fields.slice(0, 25));
 
   const buttons = [];
-  if (/^https?:\/\//i.test(url)) buttons.push(new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(url).setLabel(clean(render(template.buttonLabel || 'Open', vars), 80) || 'Open'));
-  if (/^https?:\/\//i.test(profileUrl) && profileUrl !== url) buttons.push(new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(profileUrl).setLabel('Creator Profile'));
+  if (!moveLinksIntoEmbed && /^https?:\/\//i.test(url)) buttons.push(new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(url).setLabel(clean(render(template.buttonLabel || 'Open', vars), 80) || 'Open'));
+  if (!moveLinksIntoEmbed && /^https?:\/\//i.test(profileUrl) && profileUrl !== url) buttons.push(new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(profileUrl).setLabel('Creator Profile'));
   const components = buttons.length ? [new ActionRowBuilder().addComponents(buttons.slice(0, 5))] : [];
 
   const mentionMode = account.mentionMode || 'none';
