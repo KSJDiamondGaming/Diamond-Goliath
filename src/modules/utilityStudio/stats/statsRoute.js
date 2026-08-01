@@ -27,16 +27,9 @@ async function getGuild(req, guildId) {
 function actor(req, action) { return { action, actorId: req.session?.user?.id || req.body?.actorId || null }; }
 function countObject(value) { return value && typeof value === 'object' && !Array.isArray(value) ? Object.keys(value).length : 0; }
 function countArray(value) { return Array.isArray(value) ? value.length : 0; }
-function moduleEnabled(modules, key) {
-  const value = modules?.[key];
-  if (typeof value === 'boolean') return value !== false;
-  if (value && typeof value === 'object') return value.enabled !== false;
-  return false;
-}
-function buildModuleStats(data) {
-  const modules = data.modules || {};
-  const keys = Object.keys(modules);
-  const enabledKeys = keys.filter((key) => moduleEnabled(modules, key)).sort();
+function buildModuleStats(data, guildId) {
+  const keys = Object.keys(data.modules || {});
+  const enabledKeys = keys.filter((key) => guildManager.isModuleEnabled(guildId, key)).sort();
   return { total: keys.length, enabled: enabledKeys.length, disabled: Math.max(0, keys.length - enabledKeys.length), enabledKeys };
 }
 function buildVerificationStats(guildId) {
@@ -91,7 +84,7 @@ router.get('/:guildId/overview', async (req, res) => {
   try {
     const guildId = getGuildId(req);
     const data = guildManager.getGuildData(guildId);
-    return success(res, { guildId, updatedAt: new Date().toISOString(), live: await buildLiveStats(req, guildId), modules: buildModuleStats(data), stored: buildStoredStats(data, guildId) });
+    return success(res, { guildId, updatedAt: new Date().toISOString(), live: await buildLiveStats(req, guildId), modules: buildModuleStats(data, guildId), stored: buildStoredStats(data, guildId) });
   } catch (error) { return failure(res, error, 400); }
 });
 router.get('/:guildId/config', (req, res) => {
