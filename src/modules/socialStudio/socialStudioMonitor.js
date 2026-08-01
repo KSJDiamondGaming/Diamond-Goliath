@@ -488,13 +488,17 @@ async function sendEvent(client, guildId, config, account, creator, event) {
   const durationText = vars.duration;
   const embedColor = parseTemplateColor(render(template.color || '', vars), platform.color);
 
-  const baseDescription = clean(render(template.description, vars), 3900) || clean(event.title, 3900) || `${creatorName} has a new ${event.type}.`;
-  const liveCallToAction = event.type === 'live' && /^https?:\/\//i.test(url) ? `\n\n🚀 **[Watch Live](${url})**` : '';
+  const baseDescription = clean(render(template.description, vars), 3800) || clean(event.title, 3800) || `${creatorName} has a new ${event.type}.`;
+  const actionLabel = clean(render(template.buttonLabel || (event.type === 'live' ? 'Watch Live' : 'Open'), vars), 80) || (event.type === 'live' ? 'Watch Live' : 'Open');
+  const actionLines = [];
+  if (/^https?:\/\//i.test(url)) actionLines.push(`🚀 **[${actionLabel}](${url})**`);
+  if (/^https?:\/\//i.test(profileUrl) && profileUrl !== url) actionLines.push(`👤 [Creator Profile](${profileUrl})`);
+  const embedCallToAction = actionLines.length ? `\n\n${actionLines.join('\n')}` : '';
 
   const embed = new EmbedBuilder()
     .setColor(embedColor)
     .setTitle(clean(render(template.title, vars), 256) || `${creatorName} update`)
-    .setDescription(clean(baseDescription + liveCallToAction, 4096))
+    .setDescription(clean(baseDescription + embedCallToAction, 4096))
     .setFooter({ text: clean(render(template.footer || `Social Studio • ${platform.label}`, vars), 2048) || `Social Studio • ${platform.label}` })
     .setTimestamp();
 
@@ -520,14 +524,6 @@ async function sendEvent(client, guildId, config, account, creator, event) {
   const published = discordTimestamp(event.publishedAt);
   if (published) fields.push({ name: '📅 Published', value: published, inline: true });
 
-  const compactLinkTypes = new Set(['vod', 'clip', 'upload', 'short', 'post']);
-  const moveLinksIntoEmbed = compactLinkTypes.has(event.type);
-  if (moveLinksIntoEmbed) {
-    const links = [];
-    if (/^https?:\/\//i.test(url)) links.push(`[${clean(render(template.buttonLabel || 'Open', vars), 80) || 'Open'}](${url})`);
-    if (/^https?:\/\//i.test(profileUrl) && profileUrl !== url) links.push(`[Creator Profile](${profileUrl})`);
-    if (links.length) fields.push({ name: '🔗 Links', value: links.join(' • '), inline: false });
-  }
   if (fields.length) embed.addFields(fields.slice(0, 25));
 
   const components = [];
