@@ -5,7 +5,6 @@ const leveling = require('../../../modules/communityStudio/leveling/leveling');
 const invites = require('../../../modules/communityStudio/invites/invites');
 const {
   buildCategoryPanel,
-  buildMainPanel,
   buildModulePanel,
   buildProfilePanel,
   buildHelpPanel,
@@ -137,7 +136,7 @@ async function handleUserPanelInteraction(interaction) {
     return true;
   }
 
-  if (customId === 'user:home') return updatePanel(interaction, buildMainPanel(memberDisplayName));
+  if (customId === 'user:home') return showProfile(interaction);
   if (customId === 'user:help' && interaction.isButton?.()) {
     return updatePanel(interaction, buildHelpPanel(memberDisplayName));
   }
