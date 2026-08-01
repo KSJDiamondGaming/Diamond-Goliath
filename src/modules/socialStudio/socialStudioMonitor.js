@@ -17,7 +17,7 @@ const PLATFORM = {
   x: { label: 'X', icon: '⚪', color: 0x000000 },
 };
 
-const EMBED_WIDTH_DIVIDER = '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━';
+const EMBED_WIDTH_DIVIDER = '\u2501'.repeat(42);
 const LIVE_MESSAGE_UPDATE_INTERVAL_MS = 60 * 60 * 1000;
 
 const now = () => new Date().toISOString();
@@ -552,6 +552,7 @@ async function buildEventPayload(client, guildId, config, account, creator, even
     if (started) fields.push({ name: '\u{1F7E2} Started', value: started, inline: true });
     if (vars.viewers) fields.push({ name: '\u{1F465} Viewers', value: vars.viewers, inline: true });
     if (account.platform !== 'tiktok' && (event.category || event.game)) fields.push({ name: '\u{1F3AE} Game', value: clean(event.category || event.game, 1024), inline: false });
+    if (account.platform === 'tiktok') fields.push({ name: '\u{1F4F1} Platform', value: 'TikTok LIVE', inline: false });
   } else {
     if (account.platform !== 'tiktok' && (event.category || event.game)) fields.push({ name: '\u{1F3AE} Game', value: clean(event.category || event.game, 1024), inline: true });
     if (vars.viewers) fields.push({ name: '\u{1F465} Viewers', value: vars.viewers, inline: true });
