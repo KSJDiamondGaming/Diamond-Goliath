@@ -533,7 +533,7 @@ async function buildEventPayload(client, guildId, config, account, creator, even
     .setTimestamp();
 
   const authorIcon = account.avatar || creator?.avatar || null;
-  const author = { name: `${platform.icon} ${creatorName}` };
+  const author = { name: creatorName };
   if (/^https?:\/\//i.test(authorIcon || '')) author.iconURL = authorIcon;
   if (/^https?:\/\//i.test(profileUrl)) author.url = profileUrl;
   embed.setAuthor(author);
