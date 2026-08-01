@@ -2,7 +2,6 @@
 
 const { EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const stickyStore = require('./stickyStore');
-const { isModuleEnabled } = require('../../../core/guild/guildManager');
 
 const channelLocks = new Map();
 
@@ -28,7 +27,7 @@ async function withChannelLock(channel, operation) {
 function stickyModuleEnabled(guildId) {
   if (!guildId) return false;
   try {
-    return isModuleEnabled(guildId, 'sticky') === true;
+    return stickyStore.isEnabled(guildId);
   } catch (error) {
     console.error(`[Sticky] Failed to read module state for guild ${guildId}:`, error?.message || error);
     return false;
