@@ -2,7 +2,7 @@ const { SlashCommandBuilder } = require('discord.js');
 
 const { errorEmbed } = require('../../ui/embeds');
 const { enforceCommandAccess } = require('../../ui/commandAccess');
-const { buildMainPanel } = require('./userPanel');
+const { buildUserHomePanel } = require('./userInteractions');
 
 module.exports = {
   category: 'Utility',
@@ -33,7 +33,7 @@ module.exports = {
         });
       }
 
-      return await safeReply(interaction, buildMainPanel(interaction));
+      return await safeReply(interaction, buildUserHomePanel(interaction));
     } catch (error) {
       if (error?.code === 10062 || error?.code === 40060) return;
 
