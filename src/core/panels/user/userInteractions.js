@@ -7,6 +7,7 @@ const {
   buildCategoryPanel,
   buildModulePanel,
   buildProfilePanel,
+  buildAccountRecordPanel,
   buildHelpPanel,
   buildProgressPanel,
   buildRolesPanel,
@@ -31,6 +32,7 @@ function getUserPanelSettings(guildId) {
       showHighestRole: profile.showHighestRole !== false,
       showRoleCount: profile.showRoleCount !== false,
       showRoleList: profile.showRoleList !== false,
+      showProgressSummary: profile.showProgressSummary !== false,
     },
   };
 }
@@ -137,6 +139,9 @@ async function handleUserPanelInteraction(interaction) {
   }
 
   if (customId === 'user:home') return showProfile(interaction);
+  if (customId === 'user:account:record' && interaction.isButton?.()) {
+    return updatePanel(interaction, buildAccountRecordPanel(memberDisplayName));
+  }
   if (customId === 'user:help' && interaction.isButton?.()) {
     return updatePanel(interaction, buildHelpPanel(memberDisplayName));
   }
