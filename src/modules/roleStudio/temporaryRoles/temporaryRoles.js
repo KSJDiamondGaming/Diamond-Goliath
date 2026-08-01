@@ -174,6 +174,10 @@ function reset(guildId, meta = {}) {
   return saveSection(guildId, defaultSection(), meta);
 }
 
+function exportConfiguration(guildId) {
+  return { ...getSection(guildId), enabled: isModuleEnabled(guildId, SECTION) };
+}
+
 module.exports = {
   SECTION,
   getSection,
@@ -185,5 +189,5 @@ module.exports = {
   setEnabled,
   reset,
   durationToMs,
-  exportConfiguration: getSection,
+  exportConfiguration,
 };
