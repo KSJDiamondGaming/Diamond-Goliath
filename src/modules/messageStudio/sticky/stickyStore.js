@@ -4,6 +4,7 @@ const {
   getModuleSection,
   saveModuleSection,
 } = require('../../../core/guild/moduleSectionManager');
+const guildManager = require('../../../core/guild/guildManager');
 
 const MODULE_KEY = 'sticky';
 
@@ -110,12 +111,27 @@ function normalizeSection(section = {}) {
   return normalized;
 }
 
+function isEnabled(guildId) {
+  return guildManager.isModuleEnabled(guildId, MODULE_KEY) === true;
+}
+
+function setEnabled(guildId, enabled, guildOrMeta = {}) {
+  return guildManager.setModuleEnabled(guildId, MODULE_KEY, enabled === true, guildOrMeta);
+}
+
 function loadStickyData(guildId) {
   return normalizeSection(getModuleSection(guildId, MODULE_KEY, defaultStickySection()));
 }
 
 function saveStickyData(guildId, data, meta = {}) {
   return normalizeSection(saveModuleSection(guildId, MODULE_KEY, normalizeSection(data), meta));
+}
+
+function exportConfiguration(guildId) {
+  return {
+    ...loadStickyData(guildId),
+    enabled: isEnabled(guildId),
+  };
 }
 
 function getChannelSticky(guildId, channelId) {
@@ -181,8 +197,11 @@ module.exports = {
   now,
   defaultStickySection,
   normalizeSection,
+  isEnabled,
+  setEnabled,
   loadStickyData,
   saveStickyData,
+  exportConfiguration,
   getChannelSticky,
   setChannelSticky,
   updateChannelSticky,
