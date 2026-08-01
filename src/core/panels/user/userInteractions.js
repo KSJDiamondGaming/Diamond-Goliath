@@ -145,7 +145,6 @@ async function handleUserPanelInteraction(interaction) {
 
   if (interaction.isStringSelectMenu?.() && customId === 'user:search') {
     const [moduleKey] = interaction.values || [];
-    if (moduleKey === 'profile') return showProfile(interaction);
     if (moduleKey === 'social' && !canUseUserSocialStudio(interaction)) {
       return updatePanel(interaction, buildSocialAccessDeniedPanel(memberDisplayName));
     }
@@ -154,6 +153,7 @@ async function handleUserPanelInteraction(interaction) {
 
   const categoryMatch = customId.match(/^user:category:([a-zA-Z0-9_-]+)$/);
   if (categoryMatch && interaction.isButton?.()) {
+    if (categoryMatch[1] === 'account') return showProfile(interaction);
     return updatePanel(interaction, buildCategoryPanel(categoryMatch[1], memberDisplayName));
   }
 
