@@ -18,6 +18,7 @@ const PLATFORM = {
 };
 
 const EMBED_WIDTH_DIVIDER = '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━';
+const LIVE_MESSAGE_UPDATE_INTERVAL_MS = 60 * 60 * 1000;
 
 const now = () => new Date().toISOString();
 const clean = (value, max = 2000) => String(value ?? '').trim().slice(0, max);
@@ -438,6 +439,14 @@ function liveAccountsForCreator(config, creator) {
     .sort((a, b) => new Date(b.state?.lastCheckedAt || 0) - new Date(a.state?.lastCheckedAt || 0));
 }
 
+function liveMessageUpdateDue(previous, checked) {
+  if (checked.isLive !== true || previous.isLive !== true || !checked.event) return false;
+  if (!previous.lastAlertMessageId || !previous.lastAlertChannelId) return false;
+  if (!String(previous.lastAlertKey || '').startsWith('live:')) return false;
+  const lastUpdated = new Date(previous.lastLiveMessageUpdatedAt || previous.lastAlertAt || 0).getTime();
+  if (!Number.isFinite(lastUpdated)) return true;
+  return Date.now() - lastUpdated >= LIVE_MESSAGE_UPDATE_INTERVAL_MS;
+}
 async function forcePostCreatorLive(client, guildId, creatorId, options = {}) {
   const config = configFor(guildId);
   const creator = config.creators?.[creatorId];
@@ -494,14 +503,14 @@ async function forcePostCreatorLive(client, guildId, creatorId, options = {}) {
   return { accountId: account.accountId, platform: account.platform, username: account.username || account.externalId || null, messageId: message.id, channelId };
 }
 
-async function sendEvent(client, guildId, config, account, creator, event) {
+async function buildEventPayload(client, guildId, config, account, creator, event, options = {}) {
   const discordGuild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
   if (!discordGuild) throw new Error('Discord guild is unavailable.');
-  const channel = await resolveAlertChannel(discordGuild, config, account, event.type);
+  const channel = options.channel || await resolveAlertChannel(discordGuild, config, account, event.type);
   const member = await resolveLinkedMember(discordGuild, account, creator);
   const vars = variableMap(discordGuild, member, account, creator, event);
   const template = templateFor(config, event.type);
-  const platform = PLATFORM[account.platform] || { label: account.platform || 'Unknown', icon: '🌐', color: 0x5865F2 };
+  const platform = PLATFORM[account.platform] || { label: account.platform || 'Unknown', icon: '\u{1F310}', color: 0x5865F2 };
   const creatorName = vars.creator;
   const url = vars.url;
   const profileUrl = account.profileUrl || account.url || '';
@@ -512,15 +521,15 @@ async function sendEvent(client, guildId, config, account, creator, event) {
   const baseDescription = clean(render(template.description, vars), 3800) || clean(event.title, 3800) || `${creatorName} has a new ${event.type}.`;
   const actionLabel = clean(render(template.buttonLabel || (event.type === 'live' ? 'Watch Live' : 'Open'), vars), 80) || (event.type === 'live' ? 'Watch Live' : 'Open');
   const actionLines = [];
-  if (/^https?:\/\//i.test(url)) actionLines.push(`🚀 **[${actionLabel}](${url})**`);
-  if (/^https?:\/\//i.test(profileUrl) && profileUrl !== url) actionLines.push(`👤 [Creator Profile](${profileUrl})`);
+  if (/^https?:\/\//i.test(url)) actionLines.push(`\u{1F680} **[${actionLabel}](${url})**`);
+  if (/^https?:\/\//i.test(profileUrl) && profileUrl !== url) actionLines.push(`\u{1F464} [Creator Profile](${profileUrl})`);
   const embedCallToAction = embedActionBlock(actionLines);
 
   const embed = new EmbedBuilder()
     .setColor(embedColor)
     .setTitle(clean(render(template.title, vars), 256) || `${creatorName} update`)
     .setDescription(clean(baseDescription + embedCallToAction, 4096))
-    .setFooter({ text: clean(render(template.footer || `Social Studio • ${platform.label}`, vars), 2048) || `Social Studio • ${platform.label}` })
+    .setFooter({ text: clean(render(template.footer || `Social Studio \u2022 ${platform.label}`, vars), 2048) || `Social Studio \u2022 ${platform.label}` })
     .setTimestamp();
 
   const authorIcon = account.avatar || creator?.avatar || null;
@@ -533,43 +542,63 @@ async function sendEvent(client, guildId, config, account, creator, event) {
   if (/^https?:\/\//i.test(account.avatar || '')) embed.setThumbnail(account.avatar);
 
   const fields = [];
-  if (account.platform !== 'tiktok' && (event.category || event.game)) fields.push({ name: '🎮 Game', value: clean(event.category || event.game, 1024), inline: true });
-  if (vars.viewers) fields.push({ name: '👥 Viewers', value: vars.viewers, inline: true });
-  if (vars.peakViewers) fields.push({ name: '📈 Peak', value: vars.peakViewers, inline: true });
-  if (Number(event.viewCount) > 0) fields.push({ name: '👁️ Views', value: intText(event.viewCount), inline: true });
-  if (durationText) fields.push({ name: '⏱️ Duration', value: durationText, inline: true });
+  if (account.platform !== 'tiktok' && (event.category || event.game)) fields.push({ name: '\u{1F3AE} Game', value: clean(event.category || event.game, 1024), inline: true });
+  if (vars.viewers) fields.push({ name: '\u{1F465} Viewers', value: vars.viewers, inline: true });
+  if (vars.peakViewers) fields.push({ name: '\u{1F4C8} Peak', value: vars.peakViewers, inline: true });
+  if (Number(event.viewCount) > 0) fields.push({ name: '\u{1F441}\uFE0F Views', value: intText(event.viewCount), inline: true });
+  if (durationText) fields.push({ name: '\u23F1\uFE0F Duration', value: durationText, inline: true });
   const started = discordTimestamp(event.startedAt);
-  if (started) fields.push({ name: '🟢 Started', value: started, inline: true });
+  if (started) fields.push({ name: '\u{1F7E2} Started', value: started, inline: true });
   const ended = discordTimestamp(event.endedAt);
-  if (ended) fields.push({ name: '⚫ Ended', value: ended, inline: true });
+  if (ended) fields.push({ name: '\u26AB Ended', value: ended, inline: true });
   const published = discordTimestamp(event.publishedAt);
-  if (published) fields.push({ name: '📅 Published', value: published, inline: true });
+  if (published) fields.push({ name: '\u{1F4C5} Published', value: published, inline: true });
   if (event.type === 'live' && /^https?:\/\//i.test(previousVod?.url || '')) {
     const vodTitle = clean(previousVod.title || 'Previous stream replay', 120);
     const vodDuration = clean(previousVod.duration || '', 40);
-    const vodText = `[${vodTitle}](${previousVod.url})${vodDuration ? ` • ${vodDuration}` : ''}`;
-    fields.push({ name: '🎞️ Latest VOD', value: clean(vodText, 1024), inline: false });
+    const vodText = `[${vodTitle}](${previousVod.url})${vodDuration ? ` \u2022 ${vodDuration}` : ''}`;
+    fields.push({ name: '\u{1F39E}\uFE0F Previous VOD', value: clean(vodText, 1024), inline: false });
   }
 
   if (fields.length) embed.addFields(fields.slice(0, 25));
 
-  const components = [];
-
   const mentionMode = account.mentionMode || 'none';
   const content = mentionMode === 'everyone' ? '@everyone' : mentionMode === 'here' ? '@here' : mentionMode === 'role' && account.mentionRoleId ? `<@&${account.mentionRoleId}>` : undefined;
-  const message = await channel.send({
-    content,
-    embeds: [embed],
-    components,
-    allowedMentions: {
-      parse: mentionMode === 'everyone' || mentionMode === 'here' ? ['everyone'] : [],
-      roles: account.mentionRoleId ? [account.mentionRoleId] : [],
+  return {
+    channel,
+    payload: {
+      content,
+      embeds: [embed],
+      components: [],
+      allowedMentions: {
+        parse: mentionMode === 'everyone' || mentionMode === 'here' ? ['everyone'] : [],
+        roles: account.mentionRoleId ? [account.mentionRoleId] : [],
+      },
     },
-  });
+  };
+}
+
+async function sendEvent(client, guildId, config, account, creator, event) {
+  const { channel, payload } = await buildEventPayload(client, guildId, config, account, creator, event);
+  const message = await channel.send(payload);
   message.socialStudioChannelId = channel.id;
   return message;
 }
 
+async function updateLiveMessage(client, guildId, config, account, creator, event, previous) {
+  const discordGuild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
+  if (!discordGuild) throw new Error('Discord guild is unavailable.');
+  const channelId = previous.lastAlertChannelId;
+  const messageId = previous.lastAlertMessageId;
+  const channel = discordGuild.channels.cache.get(channelId) || await discordGuild.channels.fetch(channelId).catch(() => null);
+  if (!channel?.isTextBased?.() || !channel.messages?.fetch) throw new Error('The saved LIVE post channel is unavailable.');
+  const message = await channel.messages.fetch(messageId).catch(() => null);
+  if (!message) throw new Error('The saved LIVE post could not be found.');
+  const { payload } = await buildEventPayload(client, guildId, config, account, creator, event, { channel });
+  await message.edit({ embeds: payload.embeds, components: payload.components });
+  message.socialStudioChannelId = channel.id;
+  return message;
+}
 async function checkGuildAccounts(client, guildId, options = {}) {
   if (!client || !guildId) throw new Error('Social Studio check requires a Discord client and guild ID.');
   if (runningGuilds.has(guildId)) return { guildId, skipped: true, reason: 'check_already_running', results: [] };
@@ -661,6 +690,7 @@ async function checkGuildAccounts(client, guildId, options = {}) {
       }
 
       const delivered = [];
+      let liveMessageUpdated = false;
       for (const event of events) {
         try {
           const key = `${event.type}:${event.id || event.url || event.title}`;
@@ -681,7 +711,23 @@ async function checkGuildAccounts(client, guildId, options = {}) {
         }
       }
 
-      addHistory(config, { status: 'checked', accountId: account.accountId, platform: account.platform, providerStatus: checked.status, isLive: checked.isLive, detectedEvents: events.map((event) => event.type), delivered: delivered.length });
+      if (liveMessageUpdateDue(previous, checked)) {
+        try {
+          const updateEvent = { ...checked.event, type: 'live', id: checked.event.id || state.liveEventId || previous.liveEventId || account.accountId };
+          await updateLiveMessage(client, guildId, config, account, creator, updateEvent, previous);
+          state.lastLiveMessageUpdatedAt = now();
+          state.lastDeliveryError = null;
+          liveMessageUpdated = true;
+          addHistory(config, { status: 'alert_updated', accountId: account.accountId, creatorId: creator?.creatorId || null, creator: creator?.displayName || account.displayName, platform: account.platform, alertType: 'live', contentId: updateEvent.id || null, messageId: previous.lastAlertMessageId, channelId: previous.lastAlertChannelId });
+        } catch (error) {
+          state.lastLiveMessageUpdatedAt = now();
+          state.lastDeliveryError = error.message;
+          config.analytics.failures = Number(config.analytics.failures || 0) + 1;
+          addHistory(config, { status: 'delivery_failed', accountId: account.accountId, platform: account.platform, alertType: 'live_update', contentId: checked.event?.id || null, error: error.message });
+        }
+      }
+
+      addHistory(config, { status: 'checked', accountId: account.accountId, platform: account.platform, providerStatus: checked.status, isLive: checked.isLive, detectedEvents: events.map((event) => event.type), delivered: delivered.length, updated: liveMessageUpdated });
       monitorUpdates.set(account.accountId, {
         state: { ...state },
         externalId: account.externalId ? String(account.externalId) : null,
