@@ -154,7 +154,10 @@ test('generic module admin panels use canonical module state without persisting 
 
   assert.doesNotMatch(registry, /defaults:\s*\{\s*enabled\s*:/);
   assert.match(source, /enabled: guildManager\.isModuleEnabled\(guildId, moduleKey\)/);
+  assert.match(source, /const \{ saveModuleSection \} = require\('\.\.\/\.\.\/guild\/moduleSectionManager'\);/);
   assert.match(saveConfig, /const \{ enabled: _enabled, \.\.\.config \} = next \|\| \{\};/);
+  assert.match(saveConfig, /const updated = saveModuleSection\(guild\.id, moduleKey, config, guild\);/);
+  assert.doesNotMatch(saveConfig, /guildManager\.updateGuildSection/);
   assert.match(actions, /guildManager\.setModuleEnabled\(interaction\.guild\.id, key, type === 'enable'/);
   assert.doesNotMatch(actions, /saveModuleConfig\([^\n]+enabled:/);
 });
