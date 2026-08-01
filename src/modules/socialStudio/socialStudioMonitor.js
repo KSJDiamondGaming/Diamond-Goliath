@@ -542,25 +542,32 @@ async function buildEventPayload(client, guildId, config, account, creator, even
   if (/^https?:\/\//i.test(account.avatar || '')) embed.setThumbnail(account.avatar);
 
   const fields = [];
+  const started = discordTimestamp(event.startedAt);
+  const ended = discordTimestamp(event.endedAt);
+  const published = discordTimestamp(event.publishedAt);
+
   if (event.type === 'live') {
     const liveStatus = String(event.liveStatus || 'LIVE').toUpperCase() === 'OFFLINE' ? 'OFFLINE' : 'LIVE';
     fields.push({ name: 'Status', value: liveStatus, inline: true });
+    if (started) fields.push({ name: '\u{1F7E2} Started', value: started, inline: true });
+    if (vars.viewers) fields.push({ name: '\u{1F465} Viewers', value: vars.viewers, inline: true });
+    if (account.platform !== 'tiktok' && (event.category || event.game)) fields.push({ name: '\u{1F3AE} Game', value: clean(event.category || event.game, 1024), inline: false });
+  } else {
+    if (account.platform !== 'tiktok' && (event.category || event.game)) fields.push({ name: '\u{1F3AE} Game', value: clean(event.category || event.game, 1024), inline: true });
+    if (vars.viewers) fields.push({ name: '\u{1F465} Viewers', value: vars.viewers, inline: true });
+    if (started) fields.push({ name: '\u{1F7E2} Started', value: started, inline: true });
   }
-  if (account.platform !== 'tiktok' && (event.category || event.game)) fields.push({ name: '\u{1F3AE} Game', value: clean(event.category || event.game, 1024), inline: true });
-  if (vars.viewers) fields.push({ name: '\u{1F465} Viewers', value: vars.viewers, inline: true });
+
   if (vars.peakViewers) fields.push({ name: '\u{1F4C8} Peak', value: vars.peakViewers, inline: true });
   if (Number(event.viewCount) > 0) fields.push({ name: '\u{1F441}\uFE0F Views', value: intText(event.viewCount), inline: true });
   if (durationText) fields.push({ name: '\u23F1\uFE0F Duration', value: durationText, inline: true });
-  const started = discordTimestamp(event.startedAt);
-  if (started) fields.push({ name: '\u{1F7E2} Started', value: started, inline: true });
-  const ended = discordTimestamp(event.endedAt);
   if (ended) fields.push({ name: '\u26AB Ended', value: ended, inline: true });
-  const published = discordTimestamp(event.publishedAt);
   if (published) fields.push({ name: '\u{1F4C5} Published', value: published, inline: true });
   if (event.type === 'live' && /^https?:\/\//i.test(previousVod?.url || '')) {
-    const vodTitle = clean(previousVod.title || 'Previous stream replay', 120);
+    const vodTitle = clean(previousVod.title || 'Previous stream replay', 160);
     const vodDuration = clean(previousVod.duration || '', 40);
-    const vodText = `[${vodTitle}](${previousVod.url})${vodDuration ? ` \u2022 ${vodDuration}` : ''}`;
+    const vodMeta = [vodTitle, vodDuration].filter(Boolean).join(' \u2022 ');
+    const vodText = `\u{1F3AC} [Watch Previous VOD](${previousVod.url})${vodMeta ? `\n${vodMeta}` : ''}`;
     fields.push({ name: '\u{1F39E}\uFE0F Previous VOD', value: clean(vodText, 1024), inline: false });
   }
 
