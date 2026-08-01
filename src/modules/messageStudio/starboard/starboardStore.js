@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('crypto');
+const guildManager = require('../../../core/guild/guildManager');
 const { getModuleSection, saveModuleSection, updateModuleSection } = require('../../../core/guild/moduleSectionManager');
 
 const SECTION = 'starboard';
@@ -99,6 +100,19 @@ function updateStarboardSection(guildId, updater, meta = {}) {
   ));
 }
 
+function isEnabled(guildId) {
+  return guildManager.isModuleEnabled(guildId, SECTION);
+}
+
+function setEnabled(guildId, enabled = true, meta = {}) {
+  guildManager.setModuleEnabled(guildId, SECTION, enabled === true, meta);
+  return { ...getStarboardSection(guildId), enabled: isEnabled(guildId) };
+}
+
+function exportConfiguration(guildId) {
+  return { ...getStarboardSection(guildId), enabled: isEnabled(guildId) };
+}
+
 function savePost(guildId, post, meta = {}) {
   const normalized = normalizePost(post);
   return updateStarboardSection(guildId, (section) => {
@@ -132,4 +146,18 @@ function deletePost(guildId, messageId, meta = {}) {
   }, meta);
 }
 
-module.exports = { SECTION, now, defaultStarboardSection, normalizeSection, getStarboardSection, saveStarboardSection, updateStarboardSection, savePost, getPost, deletePost };
+module.exports = {
+  SECTION,
+  now,
+  defaultStarboardSection,
+  normalizeSection,
+  getStarboardSection,
+  saveStarboardSection,
+  updateStarboardSection,
+  isEnabled,
+  setEnabled,
+  exportConfiguration,
+  savePost,
+  getPost,
+  deletePost,
+};
