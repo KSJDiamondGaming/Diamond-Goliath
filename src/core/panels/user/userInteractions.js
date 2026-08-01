@@ -7,6 +7,7 @@ const {
   buildMainPanel,
   buildModulePanel,
   buildProfilePanel,
+  buildProgressPanel,
   buildRolesPanel,
   buildSocialAccessDeniedPanel,
 } = require('./userPanel');
@@ -45,8 +46,10 @@ function canUseUserSocialStudio(interaction) {
 }
 
 function buildLiveProfile(interaction) {
-  const user = leveling.getUser(interaction.guildId, interaction.user.id);
-  const leaderboard = leveling.getLeaderboard(interaction.guildId, 100);
+  const section = leveling.getSection(interaction.guildId);
+  const user = section.users?.[interaction.user.id] || null;
+  const leaderboard = Object.values(section.users || {})
+    .sort((a, b) => Number(b.xp || 0) - Number(a.xp || 0));
   const rankIndex = leaderboard.findIndex((entry) => entry.userId === interaction.user.id || entry.id === interaction.user.id);
 
   return {
@@ -54,6 +57,10 @@ function buildLiveProfile(interaction) {
       level: Math.max(0, Number(user.level || 0)),
       xp: Math.max(0, Number(user.xp || 0)),
       rank: rankIndex >= 0 ? rankIndex + 1 : null,
+      messages: Math.max(0, Number(user.messages || 0)),
+      voiceMinutes: Math.max(0, Number(user.voiceMinutes || 0)),
+      currentLevelXp: leveling.xpForLevel(Math.max(0, Number(user.level || 0))),
+      nextLevelXp: leveling.xpForLevel(Math.max(0, Number(user.level || 0)) + 1),
     } : null,
   };
 }
@@ -70,6 +77,12 @@ async function updatePanel(interaction, payload) {
 async function showProfile(interaction) {
   const settings = getUserPanelSettings(interaction.guildId);
   return updatePanel(interaction, buildProfilePanel(interaction, buildLiveProfile(interaction), settings.profile));
+}
+
+async function showProgress(interaction) {
+  const profile = buildLiveProfile(interaction);
+  if (!profile.leveling) return showProfile(interaction);
+  return updatePanel(interaction, buildProgressPanel(interaction, profile.leveling));
 }
 
 async function handleUserPanelInteraction(interaction) {
@@ -89,10 +102,7 @@ async function handleUserPanelInteraction(interaction) {
   }
 
   if (customId === 'user:home') return updatePanel(interaction, buildMainPanel(memberDisplayName));
-
-  if (customId === 'user:profile:refresh' || customId === 'user:module:profile') {
-    return showProfile(interaction);
-  }
+  if (customId === 'user:profile:refresh' || customId === 'user:module:profile') return showProfile(interaction);
 
   if (customId === 'user:profile:roles' && interaction.isButton?.()) {
     const settings = getUserPanelSettings(interaction.guildId).profile;
@@ -100,9 +110,7 @@ async function handleUserPanelInteraction(interaction) {
     return updatePanel(interaction, buildRolesPanel(interaction, settings));
   }
 
-  if (customId === 'user:profile:progress' && interaction.isButton?.()) {
-    return updatePanel(interaction, buildModulePanel('leveling', memberDisplayName));
-  }
+  if (customId === 'user:profile:progress' && interaction.isButton?.()) return showProgress(interaction);
 
   if (interaction.isStringSelectMenu?.() && customId === 'user:search') {
     const [moduleKey] = interaction.values || [];
