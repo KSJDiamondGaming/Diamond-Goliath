@@ -4,7 +4,6 @@ const express = require('express');
 
 const starboardStore = require('../../modules/messageStudio/starboard/starboardStore');
 const starboard = require('../../modules/messageStudio/starboard/starboard');
-const { isModuleEnabled, setModuleEnabled } = require('../../core/guild/guildManager');
 
 const router = express.Router();
 
@@ -31,7 +30,7 @@ function cleanChannelId(value) {
 function canonicalConfig(guildId, config = starboardStore.getStarboardSection(guildId)) {
   return {
     ...config,
-    enabled: isModuleEnabled(guildId, 'starboard') === true,
+    enabled: starboardStore.isEnabled(guildId),
   };
 }
 
@@ -43,7 +42,7 @@ function summarize(guildId, config) {
   );
 
   return {
-    enabled: isModuleEnabled(guildId, 'starboard') === true,
+    enabled: starboardStore.isEnabled(guildId),
     channelId: config.channelId || null,
     threshold: config.threshold || 3,
     emoji: config.emoji || '⭐',
@@ -99,8 +98,10 @@ router.get('/:guildId', (req, res) => {
 router.patch('/:guildId/enabled', (req, res) => {
   try {
     const guildId = getGuildId(req);
-    setModuleEnabled(guildId, 'starboard', req.body?.enabled === true);
-    const config = canonicalConfig(guildId);
+    const config = starboardStore.setEnabled(guildId, req.body?.enabled === true, {
+      actorId: req.body?.actorId,
+      action: 'starboard_api_toggle',
+    });
     return success(res, { guildId, config, overview: summarize(guildId, config) });
   } catch (error) {
     return failure(res, error, 400);
@@ -112,7 +113,10 @@ router.patch('/:guildId/settings', (req, res) => {
     const guildId = getGuildId(req);
     const settings = prepareSettings(req.body?.settings || req.body || {});
     if (hasOwn(settings, 'enabled')) {
-      setModuleEnabled(guildId, 'starboard', settings.enabled);
+      starboardStore.setEnabled(guildId, settings.enabled, {
+        actorId: req.body?.actorId,
+        action: 'starboard_api_toggle',
+      });
       delete settings.enabled;
     }
 
