@@ -40,7 +40,7 @@ async function buildHealth(guild) {
   return {
     module: 'tempVoice',
     guildId: guild.id,
-    enabled: guildManager.isModuleEnabled(guild.id, 'tempVoice'),
+    enabled: guildManager.isModuleEnabled(guild.id, 'tempVoice') === true,
     healthy: issues.length === 0,
     hubs: Object.keys(section.hubs || {}).length,
     trackedChannels: Object.keys(section.channels || {}).length,
