@@ -214,24 +214,23 @@ function buildProfilePanel(interaction, profile = {}, options = {}) {
   const embed = markLiveEmbed(createEmbed('👤 Your Profile', sections.join('\n\n'), memberDisplayName))
     .setThumbnail(user?.displayAvatarURL?.({ extension: 'png', size: 256 }) || null);
 
-  const profileButtons = [];
-  if (options.rolesEnabled !== false) profileButtons.push(button('user:profile:roles', 'View Roles', ButtonStyle.Primary, false, '🎭'));
-  profileButtons.push(button('user:profile:refresh', 'Refresh', ButtonStyle.Success, false, '🔄'));
-
-  const accountButtons = MODULE_CATALOG
-    .filter((module) => module.category === 'account' && !ACCOUNT_RECORD_KEYS.has(module.key))
-    .map((module) => button(`user:module:${module.key}`, module.label, ButtonStyle.Secondary, false, module.emoji));
-  accountButtons.splice(1, 0, button('user:account:record', 'Account Record', ButtonStyle.Secondary, false, '🗂️'));
-  accountButtons.push(button('user:help', 'Help', ButtonStyle.Secondary, false, '❓'));
+  const actionButtons = [];
+  if (options.rolesEnabled !== false) actionButtons.push(button('user:profile:roles', 'View Roles', ButtonStyle.Primary, false, '🎭'));
+  actionButtons.push(button('user:module:reputation', 'Reputation', ButtonStyle.Secondary, false, '⭐'));
+  actionButtons.push(button('user:account:record', 'Account Record', ButtonStyle.Secondary, false, '🗂️'));
+  actionButtons.push(button('user:module:notes', 'Notes', ButtonStyle.Secondary, false, '📌'));
+  actionButtons.push(button('user:help', 'Help', ButtonStyle.Secondary, false, '❓'));
 
   return {
     embeds: [embed],
     components: [
       buildSearchRow(),
-      row(...profileButtons),
-      row(...accountButtons),
-      navigationRow(),
-    ].slice(0, 5),
+      row(...actionButtons),
+      row(
+        button('user:close', 'Back', ButtonStyle.Secondary, false, '⬅️'),
+        button('user:profile:refresh', 'Refresh', ButtonStyle.Success, false, '🔄'),
+      ),
+    ],
   };
 }
 
