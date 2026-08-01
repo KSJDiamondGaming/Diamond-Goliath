@@ -492,7 +492,7 @@ async function sendEvent(client, guildId, config, account, creator, event) {
     .setColor(embedColor)
     .setTitle(clean(render(template.title, vars), 256) || `${creatorName} update`)
     .setDescription(clean(render(template.description, vars), 4096) || clean(event.title, 4096) || `${creatorName} has a new ${event.type}.`)
-    .setFooter({ text: clean(render(template.footer || `${platform.label} • Social Studio`, vars), 2048) || `${platform.label} • Social Studio` })
+    .setFooter({ text: clean(render(template.footer || `Social Studio • ${platform.label}`, vars), 2048) || `Social Studio • ${platform.label}` })
     .setTimestamp();
 
   const authorIcon = account.avatar || creator?.avatar || null;
