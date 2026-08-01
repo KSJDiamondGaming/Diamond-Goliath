@@ -2,21 +2,35 @@ const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('
 const stickyStore = require('./stickyStore');
 
 function buildStickyStatusEmbed(guildId, channelId) {
+  const moduleEnabled = stickyStore.isEnabled(guildId);
   const sticky = stickyStore.getChannelSticky(guildId, channelId);
 
   if (!sticky) {
     return new EmbedBuilder()
-      .setColor('#f59e0b')
+      .setColor(moduleEnabled ? '#f59e0b' : '#ef4444')
       .setTitle('Sticky Messages')
-      .setDescription('No sticky message is configured for this channel. Use **Set Sticky** to create one.')
+      .setDescription(moduleEnabled
+        ? 'No sticky message is configured for this channel. Use **Set Sticky** to create one.'
+        : 'Sticky Messages is disabled for this server. Enable the module before creating or reposting sticky messages.')
+      .addFields({ name: 'Module', value: moduleEnabled ? 'Enabled' : 'Disabled', inline: true })
       .setFooter({ text: 'Sticky messages repost at the bottom of the channel after normal chat activity.' });
   }
 
+  const channelEnabled = sticky.enabled !== false;
+  const active = moduleEnabled && channelEnabled;
+  const state = !moduleEnabled
+    ? 'Module disabled'
+    : channelEnabled
+      ? 'Sticky message is active.'
+      : 'Sticky message is paused.';
+
   return new EmbedBuilder()
-    .setColor(sticky.enabled ? '#22c55e' : '#ef4444')
+    .setColor(active ? '#22c55e' : '#ef4444')
     .setTitle('Sticky Messages')
-    .setDescription(sticky.enabled ? 'Sticky message is active.' : 'Sticky message is paused.')
+    .setDescription(state)
     .addFields(
+      { name: 'Module', value: moduleEnabled ? 'Enabled' : 'Disabled', inline: true },
+      { name: 'Channel Sticky', value: channelEnabled ? 'Enabled' : 'Paused', inline: true },
       { name: 'Type', value: sticky.type || 'text', inline: true },
       { name: 'Repost Every', value: `${sticky.repostEvery ?? 10} messages`, inline: true },
       { name: 'Cooldown', value: `${sticky.cooldownSeconds ?? 60}s`, inline: true },
