@@ -423,7 +423,7 @@ async function forcePostCreatorLive(client, guildId, creatorId, options = {}) {
   const creator = config.creators?.[creatorId];
   if (!creator) throw new Error('Select a creator profile first.');
   if (creator.enabled === false) throw new Error('This creator profile is paused.');
-  const recent = livePostInWindow(config, creator);
+  const recent = options.bypassCooldown === true ? null : livePostInWindow(config, creator);
   if (recent) throw new Error('A LIVE post was already sent for this creator in the last 2 hours.');
   const liveAccounts = liveAccountsForCreator(config, creator);
   if (!liveAccounts.length) throw new Error('No checked LIVE account is available for this creator yet.');

@@ -170,26 +170,28 @@ function dashboardStats(config) {
   const accounts = Object.values(config.accounts);
   return { live: accounts.filter((a) => a.enabled !== false && a.state?.isLive === true).length, offline: accounts.filter((a) => a.enabled !== false && a.state?.isLive === false).length, unavailable: accounts.filter((a) => a.enabled !== false && a.state?.lastError).length, monitored: accounts.filter((a) => a.enabled !== false).length };
 }
-function creatorLivePostState(config, creator) {
+function creatorLivePostState(config, creator, options = {}) {
   if (!creator) return { canPost: false, reason: 'Select a profile first.' };
   const linked = (creator.accountIds || []).map((id) => config.accounts[id]).filter(Boolean);
   const liveAccounts = linked.filter((account) => account.enabled !== false && account.state?.isLive === true && account.state?.lastLiveEvent && account.state?.lastCheckedAt);
   if (!liveAccounts.length) return { canPost: false, reason: 'No checked LIVE account.' };
   const accountIds = new Set(linked.map((account) => String(account.accountId)));
   const cutoff = Date.now() - (2 * 60 * 60 * 1000);
-  const recentState = linked.find((account) => {
-    if (!String(account.state?.lastAlertKey || '').startsWith('live:')) return false;
-    const sent = new Date(account.state?.lastAlertAt || '').getTime();
-    return Number.isFinite(sent) && sent >= cutoff;
-  });
-  if (recentState) return { canPost: false, reason: 'LIVE post sent recently.' };
-  const recent = [...(config.history || [])].reverse().find((entry) => {
-    if (entry?.status !== 'alert_sent' || entry?.alertType !== 'live') return false;
-    const created = new Date(entry.createdAt).getTime();
-    if (!Number.isFinite(created) || created < cutoff) return false;
-    return String(entry.creatorId || '') === String(creator.creatorId) || accountIds.has(String(entry.accountId || ''));
-  });
-  if (recent) return { canPost: false, reason: 'LIVE post sent recently.' };
+  if (options.bypassCooldown !== true) {
+    const recentState = linked.find((account) => {
+      if (!String(account.state?.lastAlertKey || '').startsWith('live:')) return false;
+      const sent = new Date(account.state?.lastAlertAt || '').getTime();
+      return Number.isFinite(sent) && sent >= cutoff;
+    });
+    if (recentState) return { canPost: false, reason: 'LIVE post sent recently.' };
+    const recent = [...(config.history || [])].reverse().find((entry) => {
+      if (entry?.status !== 'alert_sent' || entry?.alertType !== 'live') return false;
+      const created = new Date(entry.createdAt).getTime();
+      if (!Number.isFinite(created) || created < cutoff) return false;
+      return String(entry.creatorId || '') === String(creator.creatorId) || accountIds.has(String(entry.accountId || ''));
+    });
+    if (recent) return { canPost: false, reason: 'LIVE post sent recently.' };
+  }
   return { canPost: true, reason: `${liveAccounts.length} LIVE account${liveAccounts.length === 1 ? '' : 's'} ready.` };
 }
 function buildMainPanel(guild, requestedBy = 'Unknown User') {
@@ -202,7 +204,7 @@ function buildCreatorPanel(i, config, creators) {
   let current = getCreatorSession(i), selected = config.creators[current.creatorId] || null; if (current.creatorId && !selected) { setCreatorSession(i, { creatorId: null }); selected = null; }
   const linked = selected ? (selected.accountIds || []).map((id) => config.accounts[id]).filter(Boolean).sort(accountSort) : [];
   const d = selected ? [`👤 **${selected.displayName}**`, '', ...(linked.length ? linked.map((a) => `${ICON[a.platform]} **${LABEL[a.platform]}** — ${a.profileUrl ? `[${a.username || a.externalId}](${a.profileUrl})` : a.username || a.externalId} — ${accountState(a)}`) : ['No linked social accounts.']), '', `**Status:** ${selected.enabled === false ? '⏸️ Paused' : '🟢 Monitoring'}`, `**Accounts:** ${linked.length}`].join('\n') : `Select a creator profile below.\n\n**Profiles:** ${creators.length}`;
-  const postState = creatorLivePostState(config, selected);
+  const postState = creatorLivePostState(config, selected, { bypassCooldown: true });
   const components = [], page = getCreatorSession(i).page, items = creators.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE); if (items.length) components.push(creatorSelect(items, getCreatorSession(i).creatorId, `${P}creator:select`, `Select a creator - Page ${page + 1}/${pages}`)); components.push(row(btn(`${P}creator:new`, '➕ New Profile', ButtonStyle.Success), btn(`${P}creator:accounts`, '🔗 Accounts', ButtonStyle.Primary, !selected), btn(`${P}creator:post`, '📣 Post LIVE', ButtonStyle.Primary, !postState.canPost))); components.push(row(btn(`${P}creator:edit`, '✏️ Manage Profile', ButtonStyle.Primary, !selected))); if (pages > 1) components.push(row(btn(`${P}creator:page:prev`, '⬅️ Previous', ButtonStyle.Secondary, page <= 0), btn(`${P}creator:page:next`, 'Next ➡️', ButtonStyle.Secondary, page >= pages - 1))); components.push(navigation('creators')); return { embeds: [embed(config, '👥 Creator Profiles', selected ? `${d}\n**Post LIVE:** ${postState.reason}` : d, who(i))], components };
 }
 function buildCreatorEditPanel(i, config, creator) {
@@ -293,7 +295,7 @@ async function handleInteraction(i) {
   if (id === `${P}creator:page:prev` || id === `${P}creator:page:next`) { const v = getCreatorSession(i); setCreatorSession(i, { page: Math.max(0, v.page + (id.endsWith('next') ? 1 : -1)), creatorId: null }); return respond(i, buildSectionPanel(i, 'creators')); }
   if (id === `${P}creator:edit`) { const c = config.creators[getCreatorSession(i).creatorId]; if (!c) throw new Error('Select a creator profile first.'); return respond(i, buildCreatorEditPanel(i, config, c)); }
   if (id === `${P}creator:accounts`) { const cid = getCreatorSession(i).creatorId; if (!cid || !config.creators[cid]) throw new Error('Select a creator profile first.'); setAccountSession(i, { creatorId: cid, accountId: null, platforms: [], routeType: 'default' }); return respond(i, buildSectionPanel(i, 'accounts')); }
-  if (id === `${P}creator:post`) { const cid = getCreatorSession(i).creatorId; if (!cid || !config.creators[cid]) throw new Error('Select a creator profile first.'); const result = await forcePostCreatorLive(i.client, i.guildId, cid, { actorId, guild: i.guild }); await i.followUp({ content: `📣 LIVE post sent for ${result.username || 'selected creator'}${result.channelId ? ` in <#${result.channelId}>` : ''}.`, flags: 64 }).catch(() => null); return respond(i, buildSectionPanel(i, 'creators')); }
+  if (id === `${P}creator:post`) { const cid = getCreatorSession(i).creatorId; if (!cid || !config.creators[cid]) throw new Error('Select a creator profile first.'); const result = await forcePostCreatorLive(i.client, i.guildId, cid, { actorId, guild: i.guild, bypassCooldown: true }); await i.followUp({ content: `📣 LIVE post sent for ${result.username || 'selected creator'}${result.channelId ? ` in <#${result.channelId}>` : ''}.`, flags: 64 }).catch(() => null); return respond(i, buildSectionPanel(i, 'creators')); }
   if (id === `${P}accounts`) { const cid = getCreatorSession(i).creatorId; if (cid && config.creators[cid]) setAccountSession(i, { creatorId: cid, accountId: null, platforms: [], routeType: 'default' }); return respond(i, buildSectionPanel(i, 'accounts')); }
   if (id === `${P}creator:change`) { const c = config.creators[getCreatorSession(i).creatorId]; if (!c) throw new Error('The selected creator profile no longer exists.'); await i.showModal(creatorModal(c)); return true; }
   if (id.startsWith(`${P}creator:check:`) || id === `${P}account:check` || id.startsWith(`${P}account:check:`)) return true;
