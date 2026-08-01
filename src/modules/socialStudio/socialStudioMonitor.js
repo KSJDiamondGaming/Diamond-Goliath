@@ -10,7 +10,7 @@ let timer = null;
 const PLATFORM = {
   twitch: { label: 'Twitch', icon: '🟣', color: 0x9146FF },
   youtube: { label: 'YouTube', icon: '🔴', color: 0xFF0000 },
-  tiktok: { label: 'TikTok', icon: '⚫', color: 0x111111 },
+  tiktok: { label: 'TikTok', icon: '⚫', color: 0x2F3136 },
   kick: { label: 'Kick', icon: '🟢', color: 0x53FC18 },
   facebook: { label: 'Facebook', icon: '🔵', color: 0x1877F2 },
   instagram: { label: 'Instagram', icon: '🟠', color: 0xE1306C },
