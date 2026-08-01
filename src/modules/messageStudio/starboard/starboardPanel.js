@@ -2,7 +2,6 @@
 
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelSelectMenuBuilder, ChannelType, RoleSelectMenuBuilder } = require('discord.js');
 const starboardStore = require('./starboardStore');
-const { isModuleEnabled, setModuleEnabled } = require('../../../core/guild/guildManager');
 
 const row = (...components) => new ActionRowBuilder().addComponents(...components);
 const button = (customId, label, style = ButtonStyle.Primary) => new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style);
@@ -12,7 +11,7 @@ const formatRoles = (ids = []) => Array.isArray(ids) && ids.filter(Boolean).leng
 
 function buildStarboardAdminPanel(guild, memberDisplayName = 'Unknown User') {
   const section = starboardStore.getStarboardSection(guild.id);
-  const enabled = isModuleEnabled(guild.id, 'starboard') === true;
+  const enabled = starboardStore.isEnabled(guild.id);
   const posts = Object.values(section.posts || {});
   const embed = new EmbedBuilder()
     .setColor(enabled ? 0x57f287 : 0x5865f2)
@@ -69,9 +68,9 @@ async function handleStarboardAdminInteraction(interaction) {
     } else if (interaction.isRoleSelectMenu?.() && id === 'admin:starboard:managerRoles') {
       save(interaction.guild, (section) => ({ ...section, managerRoleIds: [...new Set(interaction.values || [])] }));
     } else if (id === 'admin:starboard:enable') {
-      setModuleEnabled(interaction.guild.id, 'starboard', true);
+      starboardStore.setEnabled(interaction.guild.id, true, interaction.guild);
     } else if (id === 'admin:starboard:disable') {
-      setModuleEnabled(interaction.guild.id, 'starboard', false);
+      starboardStore.setEnabled(interaction.guild.id, false, interaction.guild);
     } else if (id === 'admin:starboard:thresholdUp') {
       save(interaction.guild, (section) => ({ ...section, threshold: Math.min(50, Number(section.threshold || 3) + 1) }));
     } else if (id === 'admin:starboard:thresholdDown') {
