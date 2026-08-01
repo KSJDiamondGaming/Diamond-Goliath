@@ -22,7 +22,6 @@ const CATEGORY_CATALOG = [
 ];
 
 const MODULE_CATALOG = [
-  { key: 'profile', category: 'account', label: 'Profile', emoji: '👤', summary: 'View your live member profile.', status: 'approved' },
   { key: 'reputation', category: 'account', label: 'Reputation', emoji: '⭐', summary: 'Planned personal reputation view.', status: 'planned' },
   { key: 'warnings', category: 'account', label: 'Warnings', emoji: '⚠️', summary: 'Planned personal warning view.', status: 'planned' },
   { key: 'cases', category: 'account', label: 'Cases', emoji: '📁', summary: 'Planned view of your own cases.', status: 'planned' },
@@ -121,20 +120,18 @@ function progressDetails(levelingProfile = {}) {
 }
 
 function buildSearchRow(selectedModule = null) {
-  return row(
-    new StringSelectMenuBuilder()
-      .setCustomId('user:search')
-      .setPlaceholder('🔎 Search or jump to a user tool')
-      .setMinValues(1)
-      .setMaxValues(1)
-      .addOptions(MODULE_CATALOG.slice(0, 25).map((module) => ({
-        label: module.label,
-        description: module.summary.slice(0, 100),
-        value: module.key,
-        emoji: module.emoji,
-        default: selectedModule === module.key,
-      }))),
-  );
+  return row(new StringSelectMenuBuilder()
+    .setCustomId('user:search')
+    .setPlaceholder('🔎 Search or jump to a user tool')
+    .setMinValues(1)
+    .setMaxValues(1)
+    .addOptions(MODULE_CATALOG.slice(0, 25).map((module) => ({
+      label: module.label,
+      description: module.summary.slice(0, 100),
+      value: module.key,
+      emoji: module.emoji,
+      default: selectedModule === module.key,
+    }))));
 }
 
 function buildCategoryButtons() {
@@ -154,7 +151,6 @@ function buildMainPanel(interactionOrName = 'Unknown User') {
     '',
     CATEGORY_CATALOG.map((category) => `${category.emoji} **${category.label}** - ${category.summary}`).join('\n'),
   ].join('\n');
-
   return {
     embeds: [createEmbed('👤 Goliath User Panel', description, memberDisplayName)],
     components: [buildSearchRow(), ...buildCategoryButtons()].slice(0, 5),
@@ -163,22 +159,20 @@ function buildMainPanel(interactionOrName = 'Unknown User') {
 
 function buildCategoryPanel(categoryKey, interactionOrName = 'Unknown User') {
   const memberDisplayName = getMemberDisplayName(interactionOrName);
-  const category = CATEGORY_BY_KEY[categoryKey] || CATEGORY_BY_KEY.account;
+  const category = CATEGORY_BY_KEY[categoryKey] || CATEGORY_BY_KEY.community;
   const modules = MODULE_CATALOG.filter((module) => module.category === category.key);
   const description = [
     category.summary,
     '',
     modules.length ? modules.map((module) => `${module.emoji} **${module.label}** - ${module.summary}`).join('\n') : 'No user tools are approved in this category yet.',
   ].join('\n');
-
   const moduleButtons = modules.map((module) => button(
     `user:module:${module.key}`,
     module.label,
-    ['profile', 'giveaways'].includes(module.key) ? ButtonStyle.Success : ButtonStyle.Secondary,
+    module.key === 'giveaways' ? ButtonStyle.Success : ButtonStyle.Secondary,
     false,
     module.emoji,
   ));
-
   return {
     embeds: [createEmbed(`${category.emoji} ${category.label}`, description, memberDisplayName)],
     components: [
@@ -231,21 +225,30 @@ function buildProfilePanel(interaction, profile = {}, options = {}) {
   const embed = markLiveEmbed(createEmbed('👤 Your Profile', sections.join('\n\n'), memberDisplayName))
     .setThumbnail(user?.displayAvatarURL?.({ extension: 'png', size: 256 }) || null);
 
-  const topButtons = [];
-  if (profile.leveling) topButtons.push(button('user:profile:progress', 'View Progress', ButtonStyle.Primary, false, '🏆'));
-  if (options.rolesEnabled !== false) topButtons.push(button('user:profile:roles', 'View Roles', ButtonStyle.Primary, false, '🎭'));
-  topButtons.push(button('user:profile:refresh', 'Refresh', ButtonStyle.Success, false, '🔄'));
+  const profileButtons = [];
+  if (profile.leveling) profileButtons.push(button('user:profile:progress', 'View Progress', ButtonStyle.Primary, false, '🏆'));
+  if (options.rolesEnabled !== false) profileButtons.push(button('user:profile:roles', 'View Roles', ButtonStyle.Primary, false, '🎭'));
+  profileButtons.push(button('user:profile:refresh', 'Refresh', ButtonStyle.Success, false, '🔄'));
+
+  const accountModules = MODULE_CATALOG.filter((module) => module.category === 'account');
+  const accountRows = chunk(accountModules.map((module) => button(
+    `user:module:${module.key}`,
+    module.label,
+    ButtonStyle.Secondary,
+    false,
+    module.emoji,
+  )), ITEMS_PER_ROW).map((items) => row(...items));
 
   return {
     embeds: [embed],
     components: [
-      row(...topButtons),
+      row(...profileButtons),
+      ...accountRows,
       row(
-        button('user:category:account', 'Account', ButtonStyle.Secondary, false, '⬅️'),
         button('user:home', 'User Panel', ButtonStyle.Secondary, false, '🏠'),
         button('user:close', 'Close', ButtonStyle.Danger, false, '✖️'),
       ),
-    ],
+    ].slice(0, 5),
   };
 }
 
@@ -262,11 +265,10 @@ function buildProgressPanel(interaction, levelingProfile = {}) {
     Number.isFinite(levelingProfile.messages) ? `Messages Tracked: **${levelingProfile.messages.toLocaleString()}**` : null,
     Number.isFinite(levelingProfile.voiceMinutes) ? `Voice Activity: **${levelingProfile.voiceMinutes.toLocaleString()} minutes**` : null,
   ].filter((line) => line !== null);
-
   return {
     embeds: [markLiveEmbed(createEmbed('🏆 Your Progress', lines.join('\n'), memberDisplayName))],
     components: [row(
-      button('user:module:profile', 'Back to Profile', ButtonStyle.Secondary, false, '⬅️'),
+      button('user:category:account', 'Back to Profile', ButtonStyle.Secondary, false, '⬅️'),
       button('user:profile:progress', 'Refresh', ButtonStyle.Success, false, '🔄'),
       button('user:home', 'User Panel', ButtonStyle.Secondary, false, '🏠'),
       button('user:close', 'Close', ButtonStyle.Danger, false, '✖️'),
@@ -283,17 +285,15 @@ function buildRolesPanel(interaction, options = {}) {
   const roleMentions = roles.map((role) => `<@&${role.id}>`);
   const visible = roleMentions.slice(0, 30);
   const remaining = Math.max(0, roleMentions.length - visible.length);
-
   const description = [
     options.showHighestRole === false ? null : `**Highest Role**\n${highest ? `<@&${highest.id}>` : 'None'}`,
     options.showRoleCount === false ? null : `**Role Count**\n${roles.length}`,
     options.showRoleList === false ? null : `**Current Roles**\n${visible.length ? visible.join('\n') : 'No roles assigned.'}${remaining ? `\n\n+${remaining} more` : ''}`,
   ].filter(Boolean).join('\n\n');
-
   return {
     embeds: [markLiveEmbed(createEmbed('🎭 Your Roles', description || 'Role visibility is disabled for this server.', memberDisplayName))],
     components: [row(
-      button('user:module:profile', 'Back to Profile', ButtonStyle.Secondary, false, '⬅️'),
+      button('user:category:account', 'Back to Profile', ButtonStyle.Secondary, false, '⬅️'),
       button('user:profile:roles', 'Refresh', ButtonStyle.Success, false, '🔄'),
       button('user:home', 'User Panel', ButtonStyle.Secondary, false, '🏠'),
       button('user:close', 'Close', ButtonStyle.Danger, false, '✖️'),
@@ -337,11 +337,10 @@ function buildPlannedModulePanel(moduleKey, interactionOrName = 'Unknown User') 
   const utilityHint = module.category === 'utility'
     ? `This tool is approved for the User Panel and currently remains available through \`/${module.key}\`.`
     : 'This module button is reserved for a future user-only view.';
-
   return {
     embeds: [createEmbed(`${module.emoji} ${module.label}`, ['**DEV placeholder / memo panel**', '', utilityHint, '', 'No admin controls are exposed from this panel.'].join('\n'), memberDisplayName, DEV_COLOR)],
     components: [row(
-      button(`user:category:${category.key}`, `Back to ${category.label}`, ButtonStyle.Secondary, false, '⬅️'),
+      button(`user:category:${category.key}`, `Back to ${category.key === 'account' ? 'Profile' : category.label}`, ButtonStyle.Secondary, false, '⬅️'),
       button('user:home', 'User Panel', ButtonStyle.Secondary, false, '👤'),
     )],
   };
