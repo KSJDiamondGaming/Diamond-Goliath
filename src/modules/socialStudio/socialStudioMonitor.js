@@ -387,6 +387,84 @@ async function resolveAlertChannel(discordGuild, config, account, eventType) {
   throw new Error(`No configured Social Studio channel for ${eventType} is currently available.`);
 }
 
+const FORCE_LIVE_WINDOW_MS = 2 * 60 * 60 * 1000;
+
+function livePostInWindow(config, creator, windowMs = FORCE_LIVE_WINDOW_MS) {
+  const accountIds = new Set((creator?.accountIds || []).map(String));
+  const cutoff = Date.now() - windowMs;
+  return [...(config.history || [])].reverse().find((entry) => {
+    if (entry?.status !== 'alert_sent' || entry?.alertType !== 'live') return false;
+    const created = new Date(entry.createdAt).getTime();
+    if (!Number.isFinite(created) || created < cutoff) return false;
+    if (entry.creatorId && String(entry.creatorId) === String(creator.creatorId)) return true;
+    if (entry.accountId && accountIds.has(String(entry.accountId))) return true;
+    return false;
+  }) || null;
+}
+
+function liveAccountsForCreator(config, creator) {
+  return (creator?.accountIds || [])
+    .map((id) => config.accounts?.[id])
+    .filter((account) => account && account.enabled !== false && account.state?.isLive === true && account.state?.lastLiveEvent)
+    .sort((a, b) => new Date(b.state?.lastCheckedAt || 0) - new Date(a.state?.lastCheckedAt || 0));
+}
+
+async function forcePostCreatorLive(client, guildId, creatorId, options = {}) {
+  const config = configFor(guildId);
+  const creator = config.creators?.[creatorId];
+  if (!creator) throw new Error('Select a creator profile first.');
+  if (creator.enabled === false) throw new Error('This creator profile is paused.');
+  const recent = livePostInWindow(config, creator);
+  if (recent) throw new Error('A LIVE post was already sent for this creator in the last 2 hours.');
+  const liveAccounts = liveAccountsForCreator(config, creator);
+  if (!liveAccounts.length) throw new Error('No checked LIVE account is available for this creator yet.');
+
+  const account = liveAccounts[0];
+  const sourceEvent = account.state.lastLiveEvent;
+  const event = { ...sourceEvent, type: 'live', id: sourceEvent.id || account.state.liveEventId || 'manual-live:' + account.accountId };
+  const message = await sendEvent(client, guildId, config, account, creator, event);
+  const sentAt = now();
+  const channelId = message.socialStudioChannelId || message.channelId || null;
+  const alertKey = 'live:' + (event.id || event.url || event.title);
+
+  guildManager.updateGuildSection(guildId, 'social', (latest = {}) => {
+    const accounts = latest.accounts && typeof latest.accounts === 'object' ? { ...latest.accounts } : {};
+    const current = accounts[account.accountId] && typeof accounts[account.accountId] === 'object' ? accounts[account.accountId] : account;
+    accounts[account.accountId] = {
+      ...current,
+      state: {
+        ...(current.state && typeof current.state === 'object' ? current.state : {}),
+        lastAlertKey: alertKey,
+        lastAlertAt: sentAt,
+        lastAlertMessageId: message.id,
+        lastAlertChannelId: channelId,
+        lastDeliveryError: null,
+      },
+      updatedAt: sentAt,
+    };
+    const analytics = latest.analytics && typeof latest.analytics === 'object' ? { ...latest.analytics } : {};
+    analytics.alertsSent = Number(analytics.alertsSent || 0) + 1;
+    const history = [...(Array.isArray(latest.history) ? latest.history : []), {
+      id: 'history_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+      createdAt: sentAt,
+      status: 'alert_sent',
+      manual: true,
+      actorId: options.actorId || null,
+      creatorId: creator.creatorId,
+      creator: creator.displayName || account.displayName,
+      accountId: account.accountId,
+      platform: account.platform,
+      alertType: 'live',
+      contentId: event.id || null,
+      messageId: message.id,
+      channelId,
+    }].slice(-1000);
+    return { ...latest, accounts, analytics, history, updatedAt: sentAt };
+  }, {}, options.guild || { guildId });
+
+  return { accountId: account.accountId, platform: account.platform, username: account.username || account.externalId || null, messageId: message.id, channelId };
+}
+
 async function sendEvent(client, guildId, config, account, creator, event) {
   const discordGuild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
   if (!discordGuild) throw new Error('Discord guild is unavailable.');
@@ -624,4 +702,4 @@ function startupSocialStudio(client) {
   return timer;
 }
 
-module.exports = { startupSocialStudio, checkGuildAccounts, providerInfo };
+module.exports = { startupSocialStudio, checkGuildAccounts, forcePostCreatorLive, providerInfo };
