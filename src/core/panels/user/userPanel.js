@@ -77,10 +77,47 @@ function createEmbed(title, description, memberDisplayName, color = PANEL_COLOR)
     .setTimestamp();
 }
 
-function discordTimestamp(timestamp, style = 'F') {
+function markLiveEmbed(embed) {
+  return embed.setFooter({ text: 'Last refreshed' }).setTimestamp();
+}
+
+function discordTimestamp(timestamp, style = 'R') {
   const value = Number(timestamp || 0);
   if (!Number.isFinite(value) || value <= 0) return null;
   return `<t:${Math.floor(value / 1000)}:${style}>`;
+}
+
+function compactDate(timestamp) {
+  const value = Number(timestamp || 0);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date).replace(',', ' •');
+}
+
+function progressDetails(levelingProfile = {}) {
+  const level = Math.max(0, Number(levelingProfile.level || 0));
+  const xp = Math.max(0, Number(levelingProfile.xp || 0));
+  const currentLevelXp = Math.max(0, Number(levelingProfile.currentLevelXp || 0));
+  const nextLevelXp = Math.max(currentLevelXp + 1, Number(levelingProfile.nextLevelXp || currentLevelXp + 1));
+  const earnedThisLevel = Math.max(0, xp - currentLevelXp);
+  const neededThisLevel = Math.max(1, nextLevelXp - currentLevelXp);
+  const percent = Math.min(100, Math.floor((earnedThisLevel / neededThisLevel) * 100));
+  const filled = Math.min(10, Math.floor(percent / 10));
+  return {
+    level,
+    xp,
+    earnedThisLevel,
+    neededThisLevel,
+    percent,
+    bar: `${'█'.repeat(filled)}${'░'.repeat(10 - filled)}`,
+  };
 }
 
 function buildSearchRow(selectedModule = null) {
@@ -156,21 +193,28 @@ function buildProfilePanel(interaction, profile = {}, options = {}) {
   const memberDisplayName = getMemberDisplayName(interaction);
   const user = interaction.user;
   const member = interaction.member;
-  const created = discordTimestamp(user?.createdTimestamp);
-  const joined = discordTimestamp(member?.joinedTimestamp);
+  const created = compactDate(user?.createdTimestamp);
+  const joined = compactDate(member?.joinedTimestamp);
   const joinedRelative = discordTimestamp(member?.joinedTimestamp, 'R');
 
-  const identity = [`**${memberDisplayName}**`, `@${user?.username || 'unknown'}`, `User ID: \`${user?.id || 'unknown'}\``];
+  const identity = [
+    `<@${user?.id || '0'}>`,
+    `${user?.username || 'unknown'}`,
+    `User ID: \`${user?.id || 'unknown'}\``,
+  ];
+
   const membership = [
-    created ? `Discord Account Created: ${created}` : null,
-    joined ? `Joined This Server: ${joined}` : null,
-    joinedRelative ? `Member For: ${joinedRelative}` : null,
+    created ? `Discord Account Created: **${created}**` : null,
+    joined ? `Joined This Server: **${joined}**` : null,
+    joinedRelative ? `Member For: **${joinedRelative}**` : null,
   ].filter(Boolean);
 
   const progress = [];
   if (profile.leveling) {
-    progress.push(`Level: **${profile.leveling.level}**`);
-    progress.push(`XP: **${profile.leveling.xp.toLocaleString()}**`);
+    const details = progressDetails(profile.leveling);
+    progress.push(`Level: **${details.level}**`);
+    progress.push(`XP: **${details.earnedThisLevel.toLocaleString()} / ${details.neededThisLevel.toLocaleString()}**`);
+    progress.push(`\`${details.bar}\` **${details.percent}%**`);
     if (profile.leveling.rank) progress.push(`Server Rank: **#${profile.leveling.rank}**`);
   }
 
@@ -184,7 +228,7 @@ function buildProfilePanel(interaction, profile = {}, options = {}) {
   if (progress.length) sections.push(`🏆 **Progress**\n${progress.join('\n')}`);
   if (community.length) sections.push(`📊 **Community**\n${community.join('\n')}`);
 
-  const embed = createEmbed('👤 Your Profile', sections.join('\n\n'), memberDisplayName)
+  const embed = markLiveEmbed(createEmbed('👤 Your Profile', sections.join('\n\n'), memberDisplayName))
     .setThumbnail(user?.displayAvatarURL?.({ extension: 'png', size: 256 }) || null);
 
   const topButtons = [];
@@ -207,29 +251,20 @@ function buildProfilePanel(interaction, profile = {}, options = {}) {
 
 function buildProgressPanel(interaction, levelingProfile = {}) {
   const memberDisplayName = getMemberDisplayName(interaction);
-  const level = Math.max(0, Number(levelingProfile.level || 0));
-  const xp = Math.max(0, Number(levelingProfile.xp || 0));
-  const currentLevelXp = Math.max(0, Number(levelingProfile.currentLevelXp || 0));
-  const nextLevelXp = Math.max(currentLevelXp, Number(levelingProfile.nextLevelXp || 0));
-  const earnedThisLevel = Math.max(0, xp - currentLevelXp);
-  const neededThisLevel = Math.max(1, nextLevelXp - currentLevelXp);
-  const percent = Math.min(100, Math.floor((earnedThisLevel / neededThisLevel) * 100));
-  const filled = Math.min(10, Math.floor(percent / 10));
-  const bar = `${'█'.repeat(filled)}${'░'.repeat(10 - filled)}`;
-
+  const details = progressDetails(levelingProfile);
   const lines = [
-    `Level: **${level}**`,
-    `Total XP: **${xp.toLocaleString()}**`,
+    `Level: **${details.level}**`,
+    `Total XP: **${details.xp.toLocaleString()}**`,
     levelingProfile.rank ? `Server Rank: **#${levelingProfile.rank}**` : null,
     '',
-    `Next Level: **${earnedThisLevel.toLocaleString()} / ${neededThisLevel.toLocaleString()} XP**`,
-    `\`${bar}\` **${percent}%**`,
+    `Next Level: **${details.earnedThisLevel.toLocaleString()} / ${details.neededThisLevel.toLocaleString()} XP**`,
+    `\`${details.bar}\` **${details.percent}%**`,
     Number.isFinite(levelingProfile.messages) ? `Messages Tracked: **${levelingProfile.messages.toLocaleString()}**` : null,
     Number.isFinite(levelingProfile.voiceMinutes) ? `Voice Activity: **${levelingProfile.voiceMinutes.toLocaleString()} minutes**` : null,
   ].filter((line) => line !== null);
 
   return {
-    embeds: [createEmbed('🏆 Your Progress', lines.join('\n'), memberDisplayName)],
+    embeds: [markLiveEmbed(createEmbed('🏆 Your Progress', lines.join('\n'), memberDisplayName))],
     components: [row(
       button('user:module:profile', 'Back to Profile', ButtonStyle.Secondary, false, '⬅️'),
       button('user:profile:progress', 'Refresh', ButtonStyle.Success, false, '🔄'),
@@ -256,7 +291,7 @@ function buildRolesPanel(interaction, options = {}) {
   ].filter(Boolean).join('\n\n');
 
   return {
-    embeds: [createEmbed('🎭 Your Roles', description || 'Role visibility is disabled for this server.', memberDisplayName)],
+    embeds: [markLiveEmbed(createEmbed('🎭 Your Roles', description || 'Role visibility is disabled for this server.', memberDisplayName))],
     components: [row(
       button('user:module:profile', 'Back to Profile', ButtonStyle.Secondary, false, '⬅️'),
       button('user:profile:roles', 'Refresh', ButtonStyle.Success, false, '🔄'),
