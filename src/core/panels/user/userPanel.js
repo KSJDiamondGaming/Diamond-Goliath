@@ -108,11 +108,11 @@ function progressDetails(levelingProfile = {}) {
   return { level, xp, earnedThisLevel, neededThisLevel, percent, bar: `${'█'.repeat(filled)}${'░'.repeat(10 - filled)}` };
 }
 
-function navigationRow({ backId = null, backLabel = 'Back', home = true } = {}) {
+function navigationRow({ backId = null, home = true, nextId = null } = {}) {
   const components = [];
-  if (backId) components.push(button(backId, backLabel, ButtonStyle.Secondary, false, '⬅️'));
-  components.push(button('user:close', 'Close', ButtonStyle.Danger, false, '✖️'));
+  if (backId) components.push(button(backId, 'Back', ButtonStyle.Secondary, false, '⬅️'));
   if (home) components.push(button('user:home', 'User Panel', ButtonStyle.Secondary, false, '🏠'));
+  if (nextId) components.push(button(nextId, 'Next', ButtonStyle.Primary, false, '➡️'));
   return row(...components);
 }
 
@@ -171,7 +171,7 @@ function buildCategoryPanel(categoryKey, interactionOrName = 'Unknown User') {
     components: [
       buildSearchRow(),
       ...chunk(moduleButtons, ITEMS_PER_ROW).map((items) => row(...items)),
-      navigationRow({ backId: 'user:home', backLabel: 'Back to User Panel', home: false }),
+      navigationRow({ backId: 'user:home', home: false }),
     ].slice(0, 5),
   };
 }
@@ -218,17 +218,48 @@ function buildProfilePanel(interaction, profile = {}, options = {}) {
   if (options.rolesEnabled !== false) profileButtons.push(button('user:profile:roles', 'View Roles', ButtonStyle.Primary, false, '🎭'));
   profileButtons.push(button('user:profile:refresh', 'Refresh', ButtonStyle.Success, false, '🔄'));
 
-  const accountRows = chunk(MODULE_CATALOG.filter((module) => module.category === 'account').map((module) => button(
-    `user:module:${module.key}`, module.label, ButtonStyle.Secondary, false, module.emoji,
-  )), ITEMS_PER_ROW).map((items) => row(...items));
+  const accountButtons = MODULE_CATALOG
+    .filter((module) => module.category === 'account')
+    .map((module) => button(`user:module:${module.key}`, module.label, ButtonStyle.Secondary, false, module.emoji));
+  accountButtons.push(button('user:help', 'Help', ButtonStyle.Secondary, false, '❓'));
+  const accountRows = chunk(accountButtons, ITEMS_PER_ROW).map((items) => row(...items));
 
   return {
     embeds: [embed],
     components: [
       row(...profileButtons),
       ...accountRows,
+      buildSearchRow(),
       navigationRow(),
     ].slice(0, 5),
+  };
+}
+
+function buildHelpPanel(interactionOrName = 'Unknown User') {
+  const memberDisplayName = getMemberDisplayName(interactionOrName);
+  const description = [
+    'Welcome to your personal Goliath User Panel.',
+    '',
+    '**🧭 Navigation**',
+    '⬅️ **Back** — Return to the previous page.',
+    '🏠 **User Panel** — Open the main category directory.',
+    '➡️ **Next** — Open the next page when one is available.',
+    '',
+    '**📂 Categories**',
+    ...CATEGORY_CATALOG.map((category) => `${category.emoji} **${category.label}** — ${category.summary}`),
+    '',
+    '**🔎 Search**',
+    'Use the search menu beneath your profile to jump directly to any available user tool.',
+    '',
+    '**💡 Tips**',
+    '• Your panel is private and only visible to you.',
+    '• Some tools may require a server role or permission.',
+    '• Use Refresh on live pages to load the latest information.',
+  ].join('\n');
+
+  return {
+    embeds: [createEmbed('❓ Goliath User Panel Help', description, memberDisplayName)],
+    components: [navigationRow({ backId: 'user:category:account' })],
   };
 }
 
@@ -249,7 +280,7 @@ function buildProgressPanel(interaction, levelingProfile = {}) {
     embeds: [markLiveEmbed(createEmbed('🏆 Your Progress', lines.join('\n'), memberDisplayName))],
     components: [
       row(button('user:profile:progress', 'Refresh', ButtonStyle.Success, false, '🔄')),
-      navigationRow({ backId: 'user:category:account', backLabel: 'Back to Profile' }),
+      navigationRow({ backId: 'user:category:account' }),
     ],
   };
 }
@@ -272,7 +303,7 @@ function buildRolesPanel(interaction, options = {}) {
     embeds: [markLiveEmbed(createEmbed('🎭 Your Roles', description || 'Role visibility is disabled for this server.', memberDisplayName))],
     components: [
       row(button('user:profile:roles', 'Refresh', ButtonStyle.Success, false, '🔄')),
-      navigationRow({ backId: 'user:category:account', backLabel: 'Back to Profile' }),
+      navigationRow({ backId: 'user:category:account' }),
     ],
   };
 }
@@ -287,7 +318,7 @@ function buildGiveawaysMemoPanel(interactionOrName = 'Unknown User') {
   ].join('\n');
   return {
     embeds: [createEmbed('🎉 Giveaways - User Panel Plan', description, memberDisplayName, DEV_COLOR)],
-    components: [navigationRow({ backId: 'user:category:community', backLabel: 'Back to Community' })],
+    components: [navigationRow({ backId: 'user:category:community' })],
   };
 }
 
@@ -298,7 +329,7 @@ function buildSocialAccessDeniedPanel(interactionOrName = 'Unknown User') {
       'This server only allows selected roles to use Social Studio from `/user`.', '',
       'Ask a server admin if you should have access.',
     ].join('\n'), memberDisplayName, DEV_COLOR)],
-    components: [navigationRow({ backId: 'user:category:social', backLabel: 'Back to Social' })],
+    components: [navigationRow({ backId: 'user:category:social' })],
   };
 }
 
@@ -314,10 +345,7 @@ function buildPlannedModulePanel(moduleKey, interactionOrName = 'Unknown User') 
     embeds: [createEmbed(`${module.emoji} ${module.label}`, [
       '**DEV placeholder / memo panel**', '', utilityHint, '', 'No admin controls are exposed from this panel.',
     ].join('\n'), memberDisplayName, DEV_COLOR)],
-    components: [navigationRow({
-      backId: `user:category:${category.key}`,
-      backLabel: `Back to ${category.key === 'account' ? 'Profile' : category.label}`,
-    })],
+    components: [navigationRow({ backId: `user:category:${category.key}` })],
   };
 }
 
@@ -333,6 +361,7 @@ module.exports = {
   buildCategoryPanel,
   buildModulePanel,
   buildProfilePanel,
+  buildHelpPanel,
   buildProgressPanel,
   buildRolesPanel,
   buildSocialAccessDeniedPanel,
