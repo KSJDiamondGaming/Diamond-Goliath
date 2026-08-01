@@ -2,7 +2,6 @@
 
 const { EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const starboardStore = require('./starboardStore');
-const { isModuleEnabled, setModuleEnabled } = require('../../../core/guild/guildManager');
 
 const IMAGE_EXTENSION_PATTERN = /\.(png|jpe?g|gif|webp)(\?.*)?$/i;
 const messageLocks = new Map();
@@ -59,7 +58,7 @@ function buildStarboardEmbed(message, starCount, section = {}) {
 function moduleEnabled(guildId) {
   if (!guildId) return false;
   try {
-    return isModuleEnabled(guildId, 'starboard') === true;
+    return starboardStore.isEnabled(guildId) === true;
   } catch (error) {
     console.error(`[Starboard] Failed to read module state for ${guildId}:`, error?.message || error);
     return false;
@@ -208,7 +207,7 @@ async function processStarReaction(reaction, user, removing) {
 function configureStarboard(guildId, input = {}) {
   if (!guildId) throw new Error('A guild ID is required.');
   const hasEnabled = Object.prototype.hasOwnProperty.call(input, 'enabled');
-  if (hasEnabled) setModuleEnabled(guildId, 'starboard', input.enabled === true);
+  if (hasEnabled) starboardStore.setEnabled(guildId, input.enabled === true);
 
   return starboardStore.updateStarboardSection(guildId, (section) => ({
     ...section,
