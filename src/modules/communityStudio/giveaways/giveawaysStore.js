@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('crypto');
+const guildManager = require('../../../core/guild/guildManager');
 const {
   getModuleSection,
   saveModuleSection,
@@ -156,6 +157,19 @@ function updateSection(guildId, updater, guildOrMeta = {}) {
   ));
 }
 
+function isEnabled(guildId) {
+  return guildManager.isModuleEnabled(guildId, MODULE_KEY);
+}
+
+function setEnabled(guildId, enabled = true, guildOrMeta = {}) {
+  guildManager.setModuleEnabled(guildId, MODULE_KEY, enabled === true, guildOrMeta);
+  return { ...getSection(guildId), enabled: isEnabled(guildId) };
+}
+
+function exportConfiguration(guildId) {
+  return { ...getSection(guildId), enabled: isEnabled(guildId) };
+}
+
 function saveGiveaway(guildId, giveaway, guildOrMeta = {}) {
   const inputId = cleanString(giveaway?.giveawayId || giveaway?.id || '', '', 80);
   const existing = inputId ? getSection(guildId).giveaways?.[inputId] : null;
@@ -223,6 +237,9 @@ module.exports = {
   getSection,
   saveSection,
   updateSection,
+  isEnabled,
+  setEnabled,
+  exportConfiguration,
   saveGiveaway,
   getGiveaway,
   getGiveaways,
