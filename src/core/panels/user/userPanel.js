@@ -9,6 +9,7 @@ const {
 const PANEL_COLOR = '#5865F2';
 const DEV_COLOR = '#FEE75C';
 const ITEMS_PER_ROW = 4;
+const ACCOUNT_RECORD_KEYS = new Set(['warnings', 'cases', 'infractions', 'appeals']);
 
 const CATEGORY_CATALOG = [
   { key: 'account', label: 'Account', emoji: '👤', summary: 'View your personal Goliath profile and account tools.' },
@@ -192,7 +193,7 @@ function buildProfilePanel(interaction, profile = {}, options = {}) {
   ].filter(Boolean);
 
   const progress = [];
-  if (profile.leveling) {
+  if (profile.leveling && options.showProgressSummary !== false) {
     const details = progressDetails(profile.leveling);
     progress.push(`Level: **${details.level}**`);
     progress.push(`XP: **${details.earnedThisLevel.toLocaleString()} / ${details.neededThisLevel.toLocaleString()}**`);
@@ -214,24 +215,47 @@ function buildProfilePanel(interaction, profile = {}, options = {}) {
     .setThumbnail(user?.displayAvatarURL?.({ extension: 'png', size: 256 }) || null);
 
   const profileButtons = [];
-  if (profile.leveling) profileButtons.push(button('user:profile:progress', 'View Progress', ButtonStyle.Primary, false, '🏆'));
   if (options.rolesEnabled !== false) profileButtons.push(button('user:profile:roles', 'View Roles', ButtonStyle.Primary, false, '🎭'));
   profileButtons.push(button('user:profile:refresh', 'Refresh', ButtonStyle.Success, false, '🔄'));
 
   const accountButtons = MODULE_CATALOG
-    .filter((module) => module.category === 'account')
+    .filter((module) => module.category === 'account' && !ACCOUNT_RECORD_KEYS.has(module.key))
     .map((module) => button(`user:module:${module.key}`, module.label, ButtonStyle.Secondary, false, module.emoji));
+  accountButtons.splice(1, 0, button('user:account:record', 'Account Record', ButtonStyle.Secondary, false, '🗂️'));
   accountButtons.push(button('user:help', 'Help', ButtonStyle.Secondary, false, '❓'));
-  const accountRows = chunk(accountButtons, ITEMS_PER_ROW).map((items) => row(...items));
 
   return {
     embeds: [embed],
     components: [
-      row(...profileButtons),
-      ...accountRows,
       buildSearchRow(),
+      row(...profileButtons),
+      row(...accountButtons),
       navigationRow(),
     ].slice(0, 5),
+  };
+}
+
+function buildAccountRecordPanel(interactionOrName = 'Unknown User') {
+  const memberDisplayName = getMemberDisplayName(interactionOrName);
+  const modules = MODULE_CATALOG.filter((module) => ACCOUNT_RECORD_KEYS.has(module.key));
+  const description = [
+    'Review your own moderation and appeal information.',
+    '',
+    ...modules.map((module) => `${module.emoji} **${module.label}** — ${module.summary}`),
+  ].join('\n');
+
+  return {
+    embeds: [createEmbed('🗂️ Your Account Record', description, memberDisplayName)],
+    components: [
+      row(...modules.map((module) => button(
+        `user:module:${module.key}`,
+        module.label,
+        ButtonStyle.Secondary,
+        false,
+        module.emoji,
+      ))),
+      navigationRow({ backId: 'user:category:account' }),
+    ],
   };
 }
 
@@ -242,14 +266,14 @@ function buildHelpPanel(interactionOrName = 'Unknown User') {
     '',
     '**🧭 Navigation**',
     '⬅️ **Back** — Return to the previous page.',
-    '🏠 **User Panel** — Open the main category directory.',
+    '🏠 **User Panel** — Return to your live profile home.',
     '➡️ **Next** — Open the next page when one is available.',
     '',
     '**📂 Categories**',
     ...CATEGORY_CATALOG.map((category) => `${category.emoji} **${category.label}** — ${category.summary}`),
     '',
     '**🔎 Search**',
-    'Use the search menu beneath your profile to jump directly to any available user tool.',
+    'Use the search menu at the top of your profile to jump directly to any available user tool.',
     '',
     '**💡 Tips**',
     '• Your panel is private and only visible to you.',
@@ -341,11 +365,14 @@ function buildPlannedModulePanel(moduleKey, interactionOrName = 'Unknown User') 
   const utilityHint = module.category === 'utility'
     ? `This tool is approved for the User Panel and currently remains available through \`/${module.key}\`.`
     : 'This module button is reserved for a future user-only view.';
+  const backId = ACCOUNT_RECORD_KEYS.has(module.key)
+    ? 'user:account:record'
+    : `user:category:${category.key}`;
   return {
     embeds: [createEmbed(`${module.emoji} ${module.label}`, [
       '**DEV placeholder / memo panel**', '', utilityHint, '', 'No admin controls are exposed from this panel.',
     ].join('\n'), memberDisplayName, DEV_COLOR)],
-    components: [navigationRow({ backId: `user:category:${category.key}` })],
+    components: [navigationRow({ backId })],
   };
 }
 
@@ -361,6 +388,7 @@ module.exports = {
   buildCategoryPanel,
   buildModulePanel,
   buildProfilePanel,
+  buildAccountRecordPanel,
   buildHelpPanel,
   buildProgressPanel,
   buildRolesPanel,
