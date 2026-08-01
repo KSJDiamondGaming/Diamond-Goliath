@@ -9,6 +9,7 @@ const {
   saveModuleSection,
   updateModuleSection,
 } = require('../../../core/guild/moduleSectionManager');
+const guildManager = require('../../../core/guild/guildManager');
 
 const SECTION = 'tempVoice';
 
@@ -230,8 +231,23 @@ function normalizeSection(section = {}) {
   return normalized;
 }
 
+function isEnabled(guildId) {
+  return guildManager.isModuleEnabled(guildId, SECTION) === true;
+}
+
+function setEnabled(guildId, enabled, meta = {}) {
+  return guildManager.setModuleEnabled(guildId, SECTION, enabled === true, meta);
+}
+
 function getTempVoiceSection(guildId) {
   return normalizeSection(getModuleSection(guildId, SECTION, defaultTempVoiceSection()));
+}
+
+function exportConfiguration(guildId) {
+  return {
+    ...getTempVoiceSection(guildId),
+    enabled: isEnabled(guildId),
+  };
 }
 
 function saveTempVoiceSection(guildId, section, meta = {}) {
@@ -399,7 +415,10 @@ module.exports = {
   createId,
   defaultTempVoiceSection,
   normalizeSection,
+  isEnabled,
+  setEnabled,
   getTempVoiceSection,
+  exportConfiguration,
   saveTempVoiceSection,
   updateTempVoiceSection,
   getHubs,
