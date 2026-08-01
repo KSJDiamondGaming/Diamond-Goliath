@@ -44,6 +44,94 @@ const MODULE_CATALOG = [
   { key: 'translate', category: 'utility', label: 'Translate', emoji: '🌐', summary: 'Existing /translate command.', status: 'approved' },
 ];
 
+const IN_PROGRESS_PAGES = [
+  {
+    title: '🏘️ Community',
+    lines: [
+      '**🎉 Giveaways — Locked**',
+      '• View active giveaways',
+      '• View giveaway history',
+      '• View previous winners',
+      '• View my entries',
+      '• View my wins',
+      '• View my giveaway statistics',
+      '• Jump to giveaway message',
+      '• Notification preferences (future)',
+      '',
+      '**📨 Invites — Discussion**',
+      '• My invite code',
+      '• Total and successful invites',
+      '• Left-server and fake-invite counts',
+      '• Invite leaderboard, rewards and history',
+      '',
+      '**🏆 Leveling — Discussion**',
+      '• Full XP profile and progress history',
+      '• Weekly, message and voice XP',
+      '• Rewards and leaderboard',
+      '',
+      '**📊 Polls — Discussion**',
+      '• Active polls, my votes, results and history',
+    ],
+  },
+  {
+    title: '💬 Feedback & Messages',
+    lines: [
+      '**📝 Forms — Discussion**',
+      '• View available forms',
+      '• Track my submissions and status',
+      '',
+      '**💡 Suggestions — Discussion**',
+      '• Submit and track suggestions',
+      '• View voting and decision status',
+      '',
+      '**🎫 Tickets — Discussion**',
+      '• Open tickets and view my ticket history',
+      '• Jump to active ticket channels',
+      '',
+      '**⭐ Starboard — Discussion**',
+      '• My starred messages',
+      '• Top starred posts and jump-to-message access',
+    ],
+  },
+  {
+    title: '🎭 Roles, Security & Social',
+    lines: [
+      '**🎭 Roles — Discussion**',
+      '• Self-assignable roles',
+      '• Role history and role requests',
+      '',
+      '**🛡️ Security — Discussion**',
+      '• Verification status',
+      '• Member security notifications',
+      '',
+      '**📣 Social Studio — Discussion**',
+      '• Approved member-facing Social Studio tools',
+      '• Role-controlled access',
+    ],
+  },
+  {
+    title: '👤 Account & Utility',
+    lines: [
+      '**⭐ Reputation — Discussion**',
+      '• Score, received/given history and common reasons',
+      '',
+      '**🗂️ Account Record — Planned**',
+      '• Warnings, cases, infractions and appeals (own only)',
+      '',
+      '**📌 Notes — Discussion**',
+      '• Create, edit, delete and pin personal notes',
+      '',
+      '**👤 Profile settings — Planned**',
+      '• Admin-controlled profile-section visibility',
+      '• Per-user progress visibility and enable/disable controls',
+      '',
+      '**🧰 Utility — Approved / Future**',
+      '• Help, ping, server info and translate',
+      '• Schedule, stats and temporary voice (future)',
+    ],
+  },
+];
+
 const CATEGORY_BY_KEY = Object.fromEntries(CATEGORY_CATALOG.map((category) => [category.key, category]));
 const MODULE_BY_KEY = Object.fromEntries(MODULE_CATALOG.map((module) => [module.key, module]));
 
@@ -229,6 +317,7 @@ function buildProfilePanel(interaction, profile = {}, options = {}) {
       row(
         button('user:close', 'Back', ButtonStyle.Secondary, false, '⬅️'),
         button('user:profile:refresh', 'Refresh', ButtonStyle.Success, false, '🔄'),
+        button('user:in-progress:0', 'In Progress', ButtonStyle.Secondary, false, '🚧'),
       ),
     ],
   };
@@ -255,6 +344,36 @@ function buildAccountRecordPanel(interactionOrName = 'Unknown User') {
       ))),
       navigationRow({ backId: 'user:category:account' }),
     ],
+  };
+}
+
+function buildInProgressPanel(interactionOrName = 'Unknown User', pageIndex = 0) {
+  const memberDisplayName = getMemberDisplayName(interactionOrName);
+  const safeIndex = Math.min(Math.max(Number(pageIndex) || 0, 0), IN_PROGRESS_PAGES.length - 1);
+  const page = IN_PROGRESS_PAGES[safeIndex];
+  const description = [
+    '**DEV planning notebook**',
+    'These are the currently agreed ideas for member access and controls. They remain development notes until replaced by live functionality.',
+    '',
+    ...page.lines,
+    '',
+    `Page **${safeIndex + 1} / ${IN_PROGRESS_PAGES.length}**`,
+  ].join('\n');
+
+  const controls = [
+    button('user:home', 'Back', ButtonStyle.Secondary, false, '⬅️'),
+    button(`user:in-progress:${safeIndex}`, 'Refresh', ButtonStyle.Success, false, '🔄'),
+  ];
+  if (safeIndex < IN_PROGRESS_PAGES.length - 1) {
+    controls.push(button(`user:in-progress:${safeIndex + 1}`, 'Next', ButtonStyle.Primary, false, '➡️'));
+  }
+  if (safeIndex > 0) {
+    controls.unshift(button(`user:in-progress:${safeIndex - 1}`, 'Previous', ButtonStyle.Secondary, false, '⬅️'));
+  }
+
+  return {
+    embeds: [createEmbed(`🚧 User Panel Development — ${page.title}`, description, memberDisplayName, DEV_COLOR)],
+    components: [row(...controls)],
   };
 }
 
@@ -388,6 +507,7 @@ module.exports = {
   buildModulePanel,
   buildProfilePanel,
   buildAccountRecordPanel,
+  buildInProgressPanel,
   buildHelpPanel,
   buildProgressPanel,
   buildRolesPanel,
