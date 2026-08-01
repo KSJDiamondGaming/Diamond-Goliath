@@ -216,7 +216,7 @@ function eventCandidates(account, previous, checked) {
   const previousIds = previous.contentIds && typeof previous.contentIds === 'object' ? previous.contentIds : {};
 
   for (const item of contentItems) {
-    if (!item?.type || !item?.id) continue;
+    if (!item?.type || !item?.id || !isPostableContentItem(item)) continue;
     const oldId = previousIds[item.type] || (previous.latestContentType === item.type ? previous.latestContentId : null);
     if (oldId && String(oldId) !== String(item.id)) events.push(item);
   }
@@ -238,6 +238,19 @@ function humanDuration(seconds) {
   const m = Math.floor((value % 3600) / 60);
   const s = Math.floor(value % 60);
   return [h ? `${h}h` : '', m ? `${m}m` : '', !h && s ? `${s}s` : ''].filter(Boolean).join(' ');
+}
+
+function durationToSeconds(value) {
+  if (Number.isFinite(Number(value))) return Number(value);
+  const match = String(value || '').trim().match(/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/i);
+  if (!match || !match[0]) return null;
+  return Number(match[1] || 0) * 3600 + Number(match[2] || 0) * 60 + Number(match[3] || 0);
+}
+
+function isPostableContentItem(item) {
+  if (item?.type !== 'vod') return true;
+  const seconds = durationToSeconds(item.durationSeconds ?? item.duration);
+  return seconds === null || seconds >= 60;
 }
 
 function colorHex(color) {
@@ -605,7 +618,7 @@ async function checkGuildAccounts(client, guildId, options = {}) {
         : checked.latestContent ? [checked.latestContent] : [];
       const contentIds = { ...(previous.contentIds && typeof previous.contentIds === 'object' ? previous.contentIds : {}) };
       for (const item of contentItems) {
-        if (!item?.type || !item?.id) continue;
+        if (!item?.type || !item?.id || !isPostableContentItem(item)) continue;
         contentIds[item.type] = String(item.id);
       }
       state.contentIds = contentIds;
