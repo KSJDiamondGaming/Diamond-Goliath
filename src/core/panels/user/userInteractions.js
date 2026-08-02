@@ -179,7 +179,6 @@ async function handleUserPanelInteraction(interaction) {
 
   const categoryMatch = customId.match(/^user:category:([a-zA-Z0-9_-]+)$/);
   if (categoryMatch && interaction.isButton?.()) {
-    if (categoryMatch[1] === 'social') return showSocial(interaction);
     return updatePanel(interaction, buildCategoryPanel(categoryMatch[1], memberDisplayName));
   }
 
