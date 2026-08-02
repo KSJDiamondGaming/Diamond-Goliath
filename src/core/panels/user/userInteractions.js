@@ -4,6 +4,7 @@ const invites = require('../../../modules/communityStudio/invites/invites');
 const socialStudio = require('../../../modules/socialStudio/socialStudioUserService');
 const socialPanels = require('./socialUserPanels');
 const profileDevelopmentPage = require('./profileDevelopmentPage');
+const notesDevelopmentPanel = require('./notesDevelopmentPanel');
 const {
   buildCategoryPanel,
   buildModulePanel,
@@ -161,6 +162,8 @@ async function handleUserPanelInteraction(interaction) {
 
   if (interaction.isStringSelectMenu?.() && customId === 'user:search') {
     const [moduleKey] = interaction.values || [];
+    if (moduleKey === 'reputation') return showProfile(interaction);
+    if (moduleKey === 'notes') return updatePanel(interaction, notesDevelopmentPanel.buildNotesDevelopmentPanel(interaction));
     if (moduleKey === 'social') return showSocial(interaction);
     return updatePanel(interaction, buildModulePanel(moduleKey, memberDisplayName));
   }
@@ -174,6 +177,8 @@ async function handleUserPanelInteraction(interaction) {
 
   const moduleMatch = customId.match(/^user:module:([a-zA-Z0-9_-]+)$/);
   if (moduleMatch && interaction.isButton?.()) {
+    if (moduleMatch[1] === 'reputation') return showProfile(interaction);
+    if (moduleMatch[1] === 'notes') return updatePanel(interaction, notesDevelopmentPanel.buildNotesDevelopmentPanel(interaction));
     if (moduleMatch[1] === 'profile') return showProfile(interaction);
     if (moduleMatch[1] === 'social') return showSocial(interaction);
     return updatePanel(interaction, buildModulePanel(moduleMatch[1], memberDisplayName));
