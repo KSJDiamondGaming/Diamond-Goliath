@@ -2,6 +2,9 @@ const guildManager = require('../../guild/guildManager');
 const leveling = require('../../../modules/communityStudio/leveling/leveling');
 const invites = require('../../../modules/communityStudio/invites/invites');
 const socialStudio = require('../../../modules/socialStudio/socialStudioUserService');
+const pingCommand = require('../../../commands/utility/ping');
+const helpCommand = require('../../../commands/utility/help');
+const serverInfoCommand = require('../../../commands/utility/serverinfo');
 const socialPanels = require('./socialUserPanels');
 const profileDevelopmentPage = require('./profileDevelopmentPage');
 const notesDevelopmentPanel = require('./notesDevelopmentPanel');
@@ -98,6 +101,11 @@ async function updatePanel(interaction, payload) {
   return true;
 }
 
+async function executeUtilityCommand(interaction, command) {
+  await command.execute(interaction);
+  return true;
+}
+
 async function showProfile(interaction) {
   return updatePanel(interaction, buildUserHomePanel(interaction));
 }
@@ -163,6 +171,9 @@ async function handleUserPanelInteraction(interaction) {
     const [moduleKey] = interaction.values || [];
     if (moduleKey === 'notes') return updatePanel(interaction, notesDevelopmentPanel.buildNotesDevelopmentPanel(interaction));
     if (moduleKey === 'social') return showSocial(interaction);
+    if (moduleKey === 'ping') return executeUtilityCommand(interaction, pingCommand);
+    if (moduleKey === 'help') return executeUtilityCommand(interaction, helpCommand);
+    if (moduleKey === 'serverinfo') return executeUtilityCommand(interaction, serverInfoCommand);
     return updatePanel(interaction, buildModulePanel(moduleKey, memberDisplayName));
   }
 
@@ -178,6 +189,9 @@ async function handleUserPanelInteraction(interaction) {
     if (moduleKey === 'notes') return updatePanel(interaction, notesDevelopmentPanel.buildNotesDevelopmentPanel(interaction));
     if (moduleKey === 'profile') return showProfile(interaction);
     if (moduleKey === 'social') return showSocial(interaction);
+    if (moduleKey === 'ping') return executeUtilityCommand(interaction, pingCommand);
+    if (moduleKey === 'help') return executeUtilityCommand(interaction, helpCommand);
+    if (moduleKey === 'serverinfo') return executeUtilityCommand(interaction, serverInfoCommand);
 
     const placeholders = {
       'role-history': ['📜 Role History — Development', 'Role history access will be designed and connected in a later stage.'],
