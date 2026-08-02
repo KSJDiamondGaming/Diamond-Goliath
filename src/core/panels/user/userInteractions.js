@@ -85,7 +85,6 @@ function buildLiveProfile(interaction) {
 function buildUserHomePanel(interaction) {
   const settings = getUserPanelSettings(interaction.guildId);
   const payload = buildProfilePanel(interaction, buildLiveProfile(interaction), settings.profile);
-  profileDevelopmentPage.addNextButtonToProfile(payload);
   return profileDevelopmentPage.sortNonNavigationButtons(payload);
 }
 
@@ -94,7 +93,6 @@ function buildUserProfilePageTwo(interaction) {
   const profilePayload = buildProfilePanel(interaction, buildLiveProfile(interaction), settings.profile);
   const pageTwoPayload = profileDevelopmentPage.buildProfileDevelopmentPage(interaction);
 
-  // Page two is still the same User Profile panel. Only the available buttons change.
   pageTwoPayload.embeds = profilePayload.embeds;
   return profileDevelopmentPage.sortNonNavigationButtons(pageTwoPayload);
 }
