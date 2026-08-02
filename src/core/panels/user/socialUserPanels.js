@@ -25,11 +25,25 @@ function base(title, description, interaction, color = '#5865F2') {
     .setTimestamp();
 }
 
-function nav() {
+function nav(backId = 'user:category:social') {
   return row(
-    button('user:category:social', 'Back', ButtonStyle.Secondary, false, '⬅️'),
+    button(backId, 'Back', ButtonStyle.Secondary, false, '⬅️'),
     button('user:home', 'User Panel', ButtonStyle.Secondary, false, '🏠'),
   );
+}
+
+function buildLanding(interaction) {
+  return {
+    embeds: [base('📣 Social Studio', [
+      'Create and manage your own Social Studio creator profile.',
+      '',
+      'Your profile connects your Discord account to your streaming accounts, live alerts and creator settings.',
+    ].join('\n'), interaction)],
+    components: [
+      row(button('user:module:social', 'My Creator Profile', ButtonStyle.Success, false, '👤')),
+      nav('user:home'),
+    ],
+  };
 }
 
 function buildDenied(interaction, roleIds = []) {
@@ -67,6 +81,7 @@ function buildProfile(interaction, creator, created = false) {
   const status = creator.status === 'left_server' ? 'Left Server' : creator.status === 'disabled' ? 'Disabled' : 'Active';
   const createdAt = creator.createdAt ? `<t:${Math.floor(new Date(creator.createdAt).getTime() / 1000)}:F>` : 'Unknown';
   const updatedAt = creator.updatedAt ? `<t:${Math.floor(new Date(creator.updatedAt).getTime() / 1000)}:R>` : 'Unknown';
+
   return {
     embeds: [base('📣 My Creator Profile', [
       created ? '✅ **Creator Profile created.**' : null,
@@ -76,13 +91,65 @@ function buildProfile(interaction, creator, created = false) {
       `**Created**\n${createdAt}`,
       `**Last Updated**\n${updatedAt}`,
       '',
-      'More Creator Profile sections will be added in later phases.',
+      'Use the buttons below to manage the creator features connected to your own profile.',
     ].filter(Boolean).join('\n\n'), interaction)],
     components: [
-      row(button('user:social:open', 'Refresh', ButtonStyle.Success, false, '🔄')),
+      row(
+        button('user:social:details', 'Creator Details', ButtonStyle.Primary, false, '👤'),
+        button('user:social:accounts', 'Linked Accounts', ButtonStyle.Secondary, false, '🌐'),
+        button('user:social:alerts', 'Live Alerts', ButtonStyle.Secondary, false, '🔴'),
+      ),
+      row(
+        button('user:social:templates', 'Alert Templates', ButtonStyle.Secondary, false, '🎨'),
+        button('user:social:notifications', 'Notifications', ButtonStyle.Secondary, false, '🔔'),
+        button('user:social:open', 'Refresh', ButtonStyle.Success, false, '🔄'),
+      ),
       nav(),
     ],
   };
 }
 
-module.exports = { buildDenied, buildCreate, buildProfile };
+function buildSection(interaction, creator, section) {
+  const sections = {
+    details: {
+      title: '👤 Creator Details',
+      description: [
+        `**Creator ID**\n\`${creator.creatorId}\``,
+        `**Discord Owner**\n<@${creator.ownerDiscordId}>`,
+        `**Status**\n${creator.status || 'active'}`,
+        '',
+        'Creator name, bio and branding controls will be connected here as we test the shared Creator Profile functions.',
+      ].join('\n\n'),
+    },
+    accounts: {
+      title: '🌐 Linked Accounts',
+      description: 'Connect and manage the streaming and social accounts owned by this Creator Profile. This section will reuse the existing Social Studio account storage and validation.',
+    },
+    alerts: {
+      title: '🔴 Live Alerts',
+      description: 'Manage the live-alert behaviour for accounts linked to this Creator Profile. Alert processing remains owned by the existing Social Studio monitoring and notification systems.',
+    },
+    templates: {
+      title: '🎨 Alert Templates',
+      description: 'Choose and manage the alert templates available to this Creator Profile. Global template administration remains in the Admin Panel.',
+    },
+    notifications: {
+      title: '🔔 Creator Notifications',
+      description: 'Manage notification preferences for this Creator Profile. Server-wide notification configuration remains in the Admin Panel.',
+    },
+  };
+
+  const selected = sections[section] || sections.details;
+  return {
+    embeds: [base(selected.title, selected.description, interaction, '#FEE75C')],
+    components: [nav('user:social:open')],
+  };
+}
+
+module.exports = {
+  buildLanding,
+  buildDenied,
+  buildCreate,
+  buildProfile,
+  buildSection,
+};
