@@ -84,15 +84,17 @@ function buildLiveProfile(interaction) {
 function buildUserHomePanel(interaction) {
   const settings = getUserPanelSettings(interaction.guildId);
   const payload = buildProfilePanel(interaction, buildLiveProfile(interaction), settings.profile);
-  return profileDevelopmentPage.addNextButtonToProfile(payload);
+  profileDevelopmentPage.addNextButtonToProfile(payload);
+  return profileDevelopmentPage.sortNonNavigationButtons(payload);
 }
 
 async function updatePanel(interaction, payload) {
+  const sortedPayload = profileDevelopmentPage.sortNonNavigationButtons(payload);
   if (interaction.deferred || interaction.replied) {
-    await interaction.editReply(payload);
+    await interaction.editReply(sortedPayload);
     return true;
   }
-  await interaction.update(payload);
+  await interaction.update(sortedPayload);
   return true;
 }
 
