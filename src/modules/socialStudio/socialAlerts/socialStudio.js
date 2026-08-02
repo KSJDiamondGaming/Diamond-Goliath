@@ -288,7 +288,7 @@ function creatorActionRows(creator = null) {
     row(
       button('user:social:create', 'New Profile', ButtonStyle.Success, completed, '➕'),
       button('user:social:accounts', 'Accounts', ButtonStyle.Primary, !hasCreator, '🔗'),
-      button('user:social:alerts', 'Post LIVE', ButtonStyle.Primary, !hasCreator, '📣'),
+      button('user:social:alerts', '📣 Post LIVE', ButtonStyle.Primary, !hasCreator),
     ),
     row(button('user:social:details', 'Manage Profile', ButtonStyle.Primary, !hasCreator, '✏️')),
   ];
