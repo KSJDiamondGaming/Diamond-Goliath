@@ -89,6 +89,16 @@ function buildUserHomePanel(interaction) {
   return profileDevelopmentPage.sortNonNavigationButtons(payload);
 }
 
+function buildUserProfilePageTwo(interaction) {
+  const settings = getUserPanelSettings(interaction.guildId);
+  const profilePayload = buildProfilePanel(interaction, buildLiveProfile(interaction), settings.profile);
+  const pageTwoPayload = profileDevelopmentPage.buildProfileDevelopmentPage(interaction);
+
+  // Page two is still the same User Profile panel. Only the available buttons change.
+  pageTwoPayload.embeds = profilePayload.embeds;
+  return profileDevelopmentPage.sortNonNavigationButtons(pageTwoPayload);
+}
+
 async function updatePanel(interaction, payload) {
   const sortedPayload = profileDevelopmentPage.sortNonNavigationButtons(payload);
   if (interaction.deferred || interaction.replied) {
@@ -134,7 +144,7 @@ async function handleUserPanelInteraction(interaction) {
 
   if (customId === 'user:home') return showProfile(interaction);
   if (customId === 'user:profile:page:2' && interaction.isButton?.()) {
-    return updatePanel(interaction, profileDevelopmentPage.buildProfileDevelopmentPage(interaction));
+    return updatePanel(interaction, buildUserProfilePageTwo(interaction));
   }
   if (customId === 'user:account:record' && interaction.isButton?.()) return updatePanel(interaction, buildAccountRecordPanel(memberDisplayName));
   if (customId === 'user:help' && interaction.isButton?.()) return updatePanel(interaction, buildHelpPanel(memberDisplayName));
