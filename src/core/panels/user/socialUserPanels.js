@@ -28,14 +28,14 @@ function base(title, description, interaction, color = '#5865F2') {
 function socialNavigation(backId = 'user:category:social') {
   return row(
     button(backId, 'Back', ButtonStyle.Secondary, false, '⬅️'),
-    button('user:social:settings', 'Settings', ButtonStyle.Secondary, false, '⚙️'),
+    button('user:preferences', 'Settings', ButtonStyle.Secondary, false, '⚙️'),
   );
 }
 
 function sectionNavigation(backId = 'user:social:open') {
   return row(
     button(backId, 'Back', ButtonStyle.Secondary, false, '⬅️'),
-    button('user:social:settings', 'Settings', ButtonStyle.Secondary, false, '⚙️'),
+    button('user:preferences', 'Settings', ButtonStyle.Secondary, false, '⚙️'),
   );
 }
 
