@@ -60,11 +60,29 @@
       ],
       "channels": [
         {
+          "id": "1532892611356922048",
+          "manageable": true,
+          "name": "todo",
+          "parentId": null,
+          "position": 0,
+          "type": 0,
+          "viewable": true
+        },
+        {
+          "id": "1532161957380227112",
+          "manageable": true,
+          "name": "goliath-system",
+          "parentId": null,
+          "position": 1,
+          "type": 0,
+          "viewable": true
+        },
+        {
           "id": "1515509745220325490",
           "manageable": true,
           "name": "test",
           "parentId": "1515509866196635871",
-          "position": 0,
+          "position": 2,
           "type": 0,
           "viewable": true
         },
@@ -73,34 +91,7 @@
           "manageable": true,
           "name": "setup",
           "parentId": "1515509866196635871",
-          "position": 1,
-          "type": 0,
-          "viewable": true
-        },
-        {
-          "id": "1529555185553248256",
-          "manageable": true,
-          "name": "test1",
-          "parentId": "1529555263273828382",
-          "position": 2,
-          "type": 0,
-          "viewable": true
-        },
-        {
-          "id": "1527828385353568416",
-          "manageable": true,
-          "name": "setup1",
-          "parentId": "1529555263273828382",
           "position": 3,
-          "type": 0,
-          "viewable": true
-        },
-        {
-          "id": "1515201361871114394",
-          "manageable": true,
-          "name": "general",
-          "parentId": "1515201361871114392",
-          "position": 4,
           "type": 0,
           "viewable": true
         },
@@ -111,6 +102,33 @@
           "parentId": "1515201361871114393",
           "position": 4,
           "type": 2,
+          "viewable": true
+        },
+        {
+          "id": "1529555185553248256",
+          "manageable": true,
+          "name": "test1",
+          "parentId": "1529555263273828382",
+          "position": 4,
+          "type": 0,
+          "viewable": true
+        },
+        {
+          "id": "1527828385353568416",
+          "manageable": true,
+          "name": "setup1",
+          "parentId": "1529555263273828382",
+          "position": 5,
+          "type": 0,
+          "viewable": true
+        },
+        {
+          "id": "1515201361871114394",
+          "manageable": true,
+          "name": "general",
+          "parentId": "1515201361871114392",
+          "position": 6,
+          "type": 0,
           "viewable": true
         }
       ],
@@ -137,13 +155,13 @@
         "description": null,
         "icon": "b8b55112e92a46c174e97933e5e14ff4",
         "id": "1515201360386068642",
-        "memberCount": 4,
+        "memberCount": 5,
         "name": "💎・KSJ Development・💎",
         "ownerId": "1168285714732036096",
         "preferredLocale": "en-US",
         "premiumTier": 0
       },
-      "lastSync": "2026-07-29T02:25:37.834Z",
+      "lastSync": "2026-08-02T03:02:13.746Z",
       "roles": [
         {
           "color": "#000000",
@@ -153,6 +171,15 @@
           "mentionable": false,
           "name": "@everyone",
           "position": 0
+        },
+        {
+          "color": "#000000",
+          "hoist": false,
+          "id": "1531885801162408140",
+          "managed": true,
+          "mentionable": false,
+          "name": "FAQ Bot Pro",
+          "position": 1
         },
         {
           "color": "#000000",
@@ -317,7 +344,7 @@
           "position": 17
         }
       ],
-      "updatedAt": "2026-07-29T02:25:37.834Z"
+      "updatedAt": "2026-08-02T03:02:13.746Z"
     },
     "duplicator": {
       "allowedGuildIds": [],
@@ -567,7 +594,7 @@
         "completed": 0,
         "created": 0,
         "failures": 0,
-        "lastProcessedAt": "2026-07-29T02:26:36.946Z",
+        "lastProcessedAt": "2026-08-02T03:19:12.847Z",
         "remindersSent": 0,
         "rsvps": 0,
         "waitlisted": 0
@@ -585,7 +612,7 @@
         "defaultTimezone": "UTC"
       },
       "templates": {},
-      "updatedAt": "2026-07-29T02:26:36.949Z"
+      "updatedAt": "2026-08-02T03:19:12.849Z"
     },
     "security": {
       "criticalIncidents": 0,
@@ -664,7 +691,7 @@
         "assigned": 0,
         "expired": 0,
         "failed": 0,
-        "lastScanAt": "2026-07-29T02:25:36.914Z",
+        "lastScanAt": "2026-08-02T03:02:12.792Z",
         "removed": 0
       },
       "assignments": {},
@@ -674,7 +701,7 @@
         "auditLog": true,
         "removeExpiredOnStartup": true
       },
-      "updatedAt": "2026-07-29T02:25:36.916Z"
+      "updatedAt": "2026-08-02T03:02:12.794Z"
     },
     "tempVoice": {
       "channels": {},
@@ -788,7 +815,7 @@
       },
       "userPreferences": {}
     },
-    "updatedAt": "2026-07-29T02:26:36.949Z",
+    "updatedAt": "2026-08-02T03:19:12.849Z",
     "verification": {
       "analytics": {
         "accountAgeBlocked": 0,
@@ -899,5 +926,5 @@
     "source": "system",
     "status": "active"
   },
-  "updatedAt": "2026-07-29T02:26:36.951Z"
+  "updatedAt": "2026-08-02T03:19:12.852Z"
 }
