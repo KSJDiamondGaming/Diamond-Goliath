@@ -1,6 +1,15 @@
 'use strict';
 
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
+const {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  EmbedBuilder,
+  ModalBuilder,
+  PermissionFlagsBits,
+  TextInputBuilder,
+  TextInputStyle,
+} = require('discord.js');
 const guildManager = require('../../../core/guild/guildManager');
 const security = require('../../../core/security/securityCore');
 const adminPanel = require('./socialStudioPanel');
@@ -97,12 +106,53 @@ function createForMember(member) {
     enabled: true,
     status: ACTIVE,
     accountIds: [],
+    profileCompleted: false,
     createdAt: timestamp,
     updatedAt: timestamp,
   };
   creators(section)[creatorId] = creator;
   saveSection(guildId, section);
   return { creator, created: true };
+}
+
+function completeCreatorProfile(member, values) {
+  const guildId = member.guild.id;
+  const ownerDiscordId = member.user.id;
+  const section = getSection(guildId);
+  let creator = Object.values(creators(section))
+    .find((entry) => entry?.ownerDiscordId === String(ownerDiscordId)) || null;
+  const timestamp = new Date().toISOString();
+  const wasCompleted = creator?.profileCompleted === true;
+
+  if (!creator) {
+    const creatorId = nextCreatorId(section);
+    creator = {
+      creatorId,
+      ownerDiscordId,
+      enabled: true,
+      status: ACTIVE,
+      accountIds: [],
+      createdAt: timestamp,
+    };
+    creators(section)[creatorId] = creator;
+  }
+
+  creator.ownerDiscordId = String(ownerDiscordId);
+  creator.displayName = clean(values.displayName, 120);
+  creator.group = clean(values.group, 120);
+  creator.tags = String(values.tags || '')
+    .split(',')
+    .map((value) => clean(value, 60))
+    .filter(Boolean);
+  creator.notes = clean(values.notes, 1000);
+  creator.enabled = creator.enabled !== false;
+  creator.status = ACTIVE;
+  creator.accountIds = Array.isArray(creator.accountIds) ? creator.accountIds : [];
+  creator.profileCompleted = true;
+  creator.updatedAt = timestamp;
+  saveSection(guildId, section);
+
+  return { creator, created: !wasCompleted };
 }
 
 function markMemberActive(guildId, ownerDiscordId) {
@@ -160,6 +210,47 @@ function row(...items) {
   return new ActionRowBuilder().addComponents(...items);
 }
 
+function userCreatorModal(creator = null, interaction = null) {
+  const suggestedName = creator?.displayName
+    || interaction?.member?.displayName
+    || interaction?.user?.globalName
+    || interaction?.user?.username
+    || '';
+  return new ModalBuilder()
+    .setCustomId('user:social:create:submit')
+    .setTitle('Create Creator Profile')
+    .addComponents(
+      row(new TextInputBuilder()
+        .setCustomId('displayName')
+        .setLabel('Creator display name')
+        .setStyle(TextInputStyle.Short)
+        .setMaxLength(120)
+        .setRequired(true)
+        .setValue(String(suggestedName).slice(0, 120))),
+      row(new TextInputBuilder()
+        .setCustomId('group')
+        .setLabel('Group or team')
+        .setStyle(TextInputStyle.Short)
+        .setMaxLength(120)
+        .setRequired(false)
+        .setValue(String(creator?.group || '').slice(0, 120))),
+      row(new TextInputBuilder()
+        .setCustomId('tags')
+        .setLabel('Tags (comma separated)')
+        .setStyle(TextInputStyle.Short)
+        .setMaxLength(300)
+        .setRequired(false)
+        .setValue(Array.isArray(creator?.tags) ? creator.tags.join(', ').slice(0, 300) : '')),
+      row(new TextInputBuilder()
+        .setCustomId('notes')
+        .setLabel('Notes')
+        .setStyle(TextInputStyle.Paragraph)
+        .setMaxLength(1000)
+        .setRequired(false)
+        .setValue(String(creator?.notes || '').slice(0, 1000))),
+    );
+}
+
 function nameOf(interaction) {
   return interaction.member?.displayName
     || interaction.user?.displayName
@@ -190,10 +281,12 @@ function sectionNavigation(backId = 'user:social:open') {
   );
 }
 
-function creatorActionRows(hasCreator) {
+function creatorActionRows(creator = null) {
+  const hasCreator = Boolean(creator);
+  const completed = creator?.profileCompleted === true;
   return [
     row(
-      button('user:social:create', 'New Profile', ButtonStyle.Success, hasCreator, '➕'),
+      button('user:social:create', 'New Profile', ButtonStyle.Success, completed, '➕'),
       button('user:social:accounts', 'Accounts', ButtonStyle.Primary, !hasCreator, '🔗'),
       button('user:social:alerts', 'Post LIVE', ButtonStyle.Primary, !hasCreator, '📣'),
     ),
@@ -254,13 +347,13 @@ function buildUserDenied(interaction, roleIds = []) {
 function buildUserCreate(interaction) {
   return {
     embeds: [base('👥 Creator Profiles', [
-      'You do not have a Creator Profile yet.',
+      'You do not have a completed Creator Profile yet.',
       '',
-      'Create one to connect your Discord account to Social Studio.',
+      'Select New Profile to complete the same Creator Profile form used by Social Studio Management.',
       '',
-      'Ownership is assigned automatically to your Discord account. You cannot select or change the owner.',
+      'Your unique Creator ID and ownership are permanently attached to your Discord user ID.',
     ].join('\n'), interaction)],
-    components: [...creatorActionRows(false), socialNavigation()],
+    components: [...creatorActionRows(null), socialNavigation()],
   };
 }
 
@@ -277,6 +370,7 @@ function buildUserProfile(interaction, creator, accounts = [], created = false) 
   return {
     embeds: [base('👥 My Creator Profile', [
       created ? '✅ **Creator Profile created.**' : null,
+      creator.profileCompleted !== true ? '⚠️ **Profile setup has not been submitted yet. Select New Profile to complete it.**' : null,
       `**Creator ID**\n\`${creator.creatorId}\``,
       creator.displayName ? `**Creator Name**\n${creator.displayName}` : null,
       `**Status**\n${status}`,
@@ -286,7 +380,7 @@ function buildUserProfile(interaction, creator, accounts = [], created = false) 
       '',
       'Use the buttons below to manage your Creator Profile and linked accounts.',
     ].filter(Boolean).join('\n\n'), interaction)],
-    components: [...creatorActionRows(true), socialNavigation()],
+    components: [...creatorActionRows(creator), socialNavigation()],
   };
 }
 
@@ -345,18 +439,51 @@ async function handleUserInteraction(interaction, updatePanel) {
     || customId === 'user:module:social'
     || customId === 'user:social:open'
     || customId === 'user:social:create'
+    || customId === 'user:social:create:submit'
     || /^user:social:(details|accounts|alerts|templates|notifications)$/.test(customId);
   if (!isSocial) return false;
+
   if (customId === 'user:category:social') {
     return updatePanel(interaction, buildUserLanding(interaction));
   }
-  if (customId === 'user:social:create') {
+
+  if (customId === 'user:social:create' && interaction.isButton?.()) {
     const access = getAccess(interaction);
     if (!access.allowed) return updatePanel(interaction, buildUserDenied(interaction, access.roleIds));
-    const result = createForMember(interaction.member);
-    const accounts = getAccountsForCreator(interaction.guildId, result.creator);
-    return updatePanel(interaction, buildUserProfile(interaction, result.creator, accounts, result.created));
+    const creator = findByOwnerDiscordId(interaction.guildId, interaction.user.id);
+    if (creator?.profileCompleted === true) {
+      return updatePanel(interaction, buildUserProfile(
+        interaction,
+        creator,
+        getAccountsForCreator(interaction.guildId, creator),
+      ));
+    }
+    await interaction.showModal(userCreatorModal(creator, interaction));
+    return true;
   }
+
+  if (customId === 'user:social:create:submit' && interaction.isModalSubmit?.()) {
+    const access = getAccess(interaction);
+    if (!access.allowed) {
+      await interaction.reply({ content: 'You no longer have access to Social Studio.', flags: 64 });
+      return true;
+    }
+    const displayName = interaction.fields.getTextInputValue('displayName').trim();
+    if (!displayName) {
+      await interaction.reply({ content: 'Creator display name is required.', flags: 64 });
+      return true;
+    }
+    const result = completeCreatorProfile(interaction.member, {
+      displayName,
+      group: interaction.fields.getTextInputValue('group'),
+      tags: interaction.fields.getTextInputValue('tags'),
+      notes: interaction.fields.getTextInputValue('notes'),
+    });
+    const accounts = getAccountsForCreator(interaction.guildId, result.creator);
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+    return updatePanel(interaction, buildUserProfile(interaction, result.creator, accounts, true));
+  }
+
   const context = getCreatorContext(interaction);
   if (context.payload) return updatePanel(interaction, context.payload);
   const match = customId.match(/^user:social:(details|accounts|alerts|templates|notifications)$/);
@@ -390,6 +517,7 @@ module.exports = {
   findByOwnerDiscordId,
   getAccountsForCreator,
   createForMember,
+  completeCreatorProfile,
   markMemberActive,
   markMemberLeft,
   deleteCreatorOwnedData,
