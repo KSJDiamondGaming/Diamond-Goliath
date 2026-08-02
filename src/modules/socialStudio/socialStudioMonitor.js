@@ -615,7 +615,7 @@ async function buildEventPayload(client, guildId, config, account, creator, even
 
   if (event.type === 'live') {
     const liveStatus = String(event.liveStatus || 'LIVE').toUpperCase() === 'OFFLINE' ? 'OFFLINE' : 'LIVE';
-    fields.push({ name: 'Status', value: liveStatus, inline: true });
+    fields.push({ name: 'Status', value: liveStatus === 'OFFLINE' ? '\u{1F534} OFFLINE' : '\u{1F7E2} LIVE', inline: true });
     if (started) fields.push({ name: '\u{1F7E2} Started', value: started, inline: true });
     if (vars.viewers) fields.push({ name: '\u{1F465} Viewers', value: vars.viewers, inline: true });
     if (account.platform !== 'tiktok' && (event.category || event.game)) fields.push({ name: '\u{1F3AE} Game', value: clean(event.category || event.game, 1024), inline: false });
