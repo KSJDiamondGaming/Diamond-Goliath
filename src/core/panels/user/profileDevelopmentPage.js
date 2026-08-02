@@ -58,27 +58,24 @@ function rebuildProfileHome(payload) {
   const inProgress = existingNavigationComponents.find((component) => componentLabel(component) === 'In Progress')
     || button('user:in-progress:0', 'In Progress', ButtonStyle.Secondary, '🚧');
 
-  const actionButtons = [
+  const homeButtons = [
     button('user:account:record', 'Account Record', ButtonStyle.Secondary, '🗂️'),
-    button('user:help', 'Help', ButtonStyle.Secondary, '❓'),
-    button('user:module:notes', 'Notes', ButtonStyle.Secondary, '📌'),
-  ];
-
-  const categories = [
     categoryButton('community', 'user:category:community'),
     categoryButton('feedback', 'user:category:feedback'),
+    button('user:help', 'Help', ButtonStyle.Secondary, '❓'),
     categoryButton('messages', 'user:category:messages'),
+    button('user:module:notes', 'Notes', ButtonStyle.Secondary, '📌'),
     categoryButton('roles', 'user:category:roles'),
     categoryButton('security', 'user:category:security'),
     categoryButton('social', 'user:category:social'),
     categoryButton('utility', 'user:category:utility'),
-  ];
+  ].sort((left, right) => componentLabel(left).localeCompare(componentLabel(right), 'en', { sensitivity: 'base' }));
 
   payload.components = [
     searchRow,
-    row(...categories.slice(0, 4)),
-    row(...categories.slice(4)),
-    row(...actionButtons),
+    row(...homeButtons.slice(0, 4)),
+    row(...homeButtons.slice(4, 8)),
+    row(...homeButtons.slice(8)),
     row(
       back,
       refresh,
@@ -92,8 +89,6 @@ function rebuildProfileHome(payload) {
 
 function rebuildCategoryPanel(payload) {
   const title = embedTitle(payload);
-  const searchRow = payload.components?.find((actionRow) =>
-    actionRow?.components?.some((component) => componentId(component) === 'user:search'));
   const navigationRow = payload.components?.[payload.components.length - 1];
 
   let moduleButtons = null;
@@ -111,7 +106,27 @@ function rebuildCategoryPanel(payload) {
     moduleButtons = [button('user:module:social', 'My Creator Profile', ButtonStyle.Success, '👤')];
   }
 
-  if (moduleButtons) payload.components = [searchRow, row(...moduleButtons), navigationRow].filter(Boolean);
+  if (moduleButtons) {
+    moduleButtons.sort((left, right) => componentLabel(left).localeCompare(componentLabel(right), 'en', { sensitivity: 'base' }));
+    payload.components = [row(...moduleButtons), navigationRow].filter(Boolean);
+    return payload;
+  }
+
+  const categoryTitles = new Set([
+    '🏘️ Community',
+    '💬 Feedback',
+    '✉️ Messages',
+    '🎭 Roles',
+    '🛡️ Security',
+    '📣 Social',
+    '🧰 Utility',
+  ]);
+
+  if (categoryTitles.has(title)) {
+    payload.components = (payload.components || []).filter((actionRow) =>
+      !actionRow?.components?.some((component) => componentId(component) === 'user:search'));
+  }
+
   return payload;
 }
 
@@ -215,9 +230,6 @@ function sortNonNavigationButtons(payload) {
   rebuildProfileHome(payload);
   rebuildCategoryPanel(payload);
 
-  // The Profile Home is deliberately grouped: alphabetical categories first,
-  // then alphabetical personal tools, then the fixed navigation row.
-  // Do not run the generic sorter afterwards because it mixes those groups.
   if (embedTitle(payload) === '👤 Your Profile') return payload;
 
   const finalRowIndex = payload.components.length - 1;
