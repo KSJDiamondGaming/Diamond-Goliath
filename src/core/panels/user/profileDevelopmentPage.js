@@ -47,13 +47,20 @@ function rebuildProfileHome(payload) {
 
   const searchRow = payload.components?.find((actionRow) =>
     actionRow?.components?.some((component) => componentId(component) === 'user:search'));
-  const navigationRow = payload.components?.[payload.components.length - 1];
+  const existingNavigation = payload.components?.[payload.components.length - 1];
+  const existingNavigationComponents = existingNavigation?.components || [];
+
+  const back = existingNavigationComponents.find((component) => componentLabel(component) === 'Back')
+    || button('user:close', 'Back', ButtonStyle.Secondary, '⬅️');
+  const refresh = existingNavigationComponents.find((component) => componentLabel(component) === 'Refresh')
+    || button('user:profile:refresh', 'Refresh', ButtonStyle.Success, '🔄');
+  const inProgress = existingNavigationComponents.find((component) => componentLabel(component) === 'In Progress')
+    || button('user:in-progress:0', 'In Progress', ButtonStyle.Secondary, '🚧');
 
   const actionButtons = [
     button('user:account:record', 'Account Record', ButtonStyle.Secondary, '🗂️'),
     button('user:help', 'Help', ButtonStyle.Secondary, '❓'),
     button('user:module:notes', 'Notes', ButtonStyle.Secondary, '📌'),
-    button('user:preferences', 'Preferences', ButtonStyle.Secondary, '⚙️'),
   ];
 
   const categories = [
@@ -71,7 +78,12 @@ function rebuildProfileHome(payload) {
     row(...actionButtons),
     row(...categories.slice(0, 4)),
     row(...categories.slice(4)),
-    navigationRow,
+    row(
+      back,
+      refresh,
+      button('user:preferences', 'Preferences', ButtonStyle.Secondary, '⚙️'),
+      inProgress,
+    ),
   ].filter(Boolean);
 
   return payload;
@@ -134,10 +146,74 @@ function refreshHelpPanel(payload) {
   return payload;
 }
 
+function refreshInProgressPanel(payload) {
+  const embed = payload?.embeds?.[0];
+  const title = embedTitle(payload);
+  if (!title.startsWith('🚧 User Panel Development —')) return payload;
+
+  const pages = {
+    '🚧 User Panel Development — 🏘️ Community': [
+      '**Pending buttons**',
+      '• Giveaways',
+      '• Invites',
+      '• Leveling',
+      '• Polls',
+    ],
+    '🚧 User Panel Development — 💬 Feedback & Messages': [
+      '**Pending buttons**',
+      '• Forms',
+      '• Starboard',
+      '• Suggestions',
+      '• Tickets',
+    ],
+    '🚧 User Panel Development — 🎭 Roles, Security & Social': [
+      '**Pending buttons**',
+      '• History',
+      '• My Creator Profile',
+      '• Notifications',
+      '• Verification',
+      '• View Roles',
+    ],
+    '🚧 User Panel Development — 👤 Account & Utility': [
+      '**Pending personal tools**',
+      '• Account Record',
+      '• Notes',
+      '• Preferences',
+      '',
+      '**Pending utility buttons**',
+      '• Help',
+      '• Ping',
+      '• Schedule',
+      '• Server Info',
+      '• Stats',
+      '• Temporary Voice',
+      '• Translate',
+    ],
+  };
+
+  const lines = pages[title];
+  if (!lines) return payload;
+
+  if (title.endsWith('👤 Account & Utility')) {
+    embed.setTitle('🚧 User Panel Development — Personal Tools & Utility');
+  }
+
+  embed.setDescription([
+    '**DEV planning notebook**',
+    'This panel lists every current User Panel button that still needs to be designed, connected or approved.',
+    'Remove each entry when that button has been fully addressed.',
+    '',
+    ...lines,
+  ].join('\n'));
+
+  return payload;
+}
+
 function sortNonNavigationButtons(payload) {
   if (!payload || !Array.isArray(payload.components)) return payload;
   cleanSearchOptions(payload);
   refreshHelpPanel(payload);
+  refreshInProgressPanel(payload);
   rebuildProfileHome(payload);
   rebuildCategoryPanel(payload);
 
