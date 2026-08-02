@@ -31,6 +31,51 @@ function componentLabel(component) {
   return String(component?.data?.label || component?.label || '');
 }
 
+function refreshHelpPanel(payload) {
+  const embed = payload?.embeds?.[0];
+  const title = embed?.data?.title || embed?.title || '';
+  if (title !== '❓ Goliath User Panel Help') return payload;
+
+  const description = [
+    'Welcome to your personal Goliath User Panel.',
+    '',
+    '**🧭 Navigation**',
+    '⬅️ **Back** — Return to the previous page.',
+    '🏠 **User Panel** — Appears on multi-page menus and returns to your live profile home.',
+    '➡️ **Next / Previous** — Move between pages when more than one page is available.',
+    '',
+    '**👤 Profile Home**',
+    'Your profile information is displayed directly on the landing panel, so there is no separate Account or Profile button.',
+    '',
+    '**📌 Personal Tools**',
+    '🗂️ **Account Record** — Warnings, cases, infractions and appeals for your own account.',
+    '❓ **Help** — User Panel navigation and guidance.',
+    '📌 **Notes** — Planned private personal notebook.',
+    '🎭 **View Roles** — View your current server roles when enabled.',
+    '',
+    '**📂 Categories**',
+    '🏘️ **Community** — Giveaways, invites, leveling and polls.',
+    '💬 **Feedback** — Forms, suggestions and tickets.',
+    '✉️ **Messages** — Member-visible message tools.',
+    '🎭 **Roles** — Self-assignable roles, role history and requests.',
+    '🛡️ **Security** — Verification status and member security tools.',
+    '📣 **Social** — Open or create your own Social Studio Creator Profile.',
+    '🧰 **Utility** — Help, ping, server info, translate and future utility tools.',
+    '',
+    '**🔎 Search**',
+    'Use the search menu at the top of your profile to jump directly to an available user tool.',
+    '',
+    '**💡 Tips**',
+    '• Your panel is private and only visible to you.',
+    '• Some tools may require a configured server role or permission.',
+    '• Use Refresh on live pages to load the latest information.',
+  ].join('\n');
+
+  if (typeof embed.setDescription === 'function') embed.setDescription(description);
+  else if (embed?.data) embed.data.description = description;
+  return payload;
+}
+
 function stripRemovedControls(payload) {
   if (!Array.isArray(payload?.components)) return payload;
 
@@ -98,6 +143,7 @@ function normaliseNavigation(payload) {
 }
 
 function sortNonNavigationButtons(payload) {
+  refreshHelpPanel(payload);
   stripRemovedControls(payload);
   normaliseNavigation(payload);
   if (!Array.isArray(payload?.components) || payload.components.length < 2) return payload;
@@ -192,6 +238,7 @@ module.exports = {
   addNextButtonToProfile,
   buildProfileDevelopmentPage,
   normaliseNavigation,
+  refreshHelpPanel,
   sortNonNavigationButtons,
   stripRemovedControls,
 };
