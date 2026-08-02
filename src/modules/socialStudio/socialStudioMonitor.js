@@ -17,7 +17,7 @@ const PLATFORM = {
   x: { label: 'X', icon: '⚪', color: 0x000000 },
 };
 
-const EMBED_WIDTH_DIVIDER = '\u2501'.repeat(38);
+const EMBED_WIDTH_DIVIDER = '\u2501'.repeat(48);
 const LIVE_MESSAGE_UPDATE_INTERVAL_MS = 60 * 60 * 1000;
 
 const now = () => new Date().toISOString();
@@ -602,17 +602,19 @@ async function buildEventPayload(client, guildId, config, account, creator, even
   const embedColor = parseTemplateColor(render(template.color || '', vars), platform.color);
 
   const renderedDescription = clean(render(template.description, vars), 3800);
-  const baseDescription = event.type === 'ended' && account.platform === 'tiktok'
-    ? `${creatorName} has ended their TikTok stream.`
-    : renderedDescription || clean(event.title, 3800) || `${creatorName} has a new ${event.type}.`;
-  const actionLabel = clean(render(template.buttonLabel || (event.type === 'live' ? 'Watch Live' : 'Open'), vars), 80) || (event.type === 'live' ? 'Watch Live' : 'Open');
-  const actionLines = [];
   const statusType = event.type === 'live' || event.type === 'ended' ? event.type : null;
   const liveStatus = statusType === 'ended'
     ? 'OFFLINE'
     : statusType === 'live'
       ? String(event.liveStatus || 'LIVE').toUpperCase() === 'OFFLINE' ? 'OFFLINE' : 'LIVE'
       : null;
+  const baseDescription = (event.type === 'ended' || (event.type === 'live' && liveStatus === 'OFFLINE')) && account.platform === 'tiktok'
+    ? `${creatorName} has ended their TikTok stream.`
+    : renderedDescription || clean(event.title, 3800) || `${creatorName} has a new ${event.type}.`;
+  const defaultActionLabel = event.type === 'live' && liveStatus === 'OFFLINE' ? 'View Channel' : event.type === 'live' ? 'Watch Live' : 'Open';
+  const actionLabelTemplate = event.type === 'live' && liveStatus === 'OFFLINE' ? defaultActionLabel : template.buttonLabel || defaultActionLabel;
+  const actionLabel = clean(render(actionLabelTemplate, vars), 80) || defaultActionLabel;
+  const actionLines = [];
   const liveStatusText = liveStatus === 'OFFLINE' ? '\u{1F534} OFFLINE' : liveStatus === 'LIVE' ? '\u{1F7E2} LIVE' : '';
   if (/^https?:\/\//i.test(url)) actionLines.push('\u{1F680} **[' + actionLabel + '](' + url + ')**' + (liveStatusText ? '  ' + liveStatusText : ''));
   if (/^https?:\/\//i.test(profileUrl) && profileUrl !== url) actionLines.push('\u{1F464} [Creator Profile](' + profileUrl + ')');
@@ -641,7 +643,7 @@ async function buildEventPayload(client, guildId, config, account, creator, even
 
   if (event.type === 'live') {
     if (account.platform !== 'tiktok' && (event.category || event.game)) fields.push({ name: '\u{1F3AE} Game', value: clean(event.category || event.game, 1024), inline: true });
-    if (account.platform === 'tiktok') fields.push({ name: '\u{1F4F1} Platform', value: 'TikTok LIVE', inline: true });
+    if (account.platform === 'tiktok') fields.push({ name: '\u{1F4F1} Platform', value: liveStatus === 'OFFLINE' ? 'TikTok' : 'TikTok LIVE', inline: true });
     if (vars.viewers) fields.push({ name: '\u{1F465} Viewers', value: vars.viewers, inline: true });
     if (started) fields.push({ name: '\u23F2\uFE0F Started', value: started, inline: true });
   } else if (event.type === 'ended') {
