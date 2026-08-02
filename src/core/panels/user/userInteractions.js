@@ -88,15 +88,6 @@ function buildUserHomePanel(interaction) {
   return profileDevelopmentPage.sortNonNavigationButtons(payload);
 }
 
-function buildUserProfilePageTwo(interaction) {
-  const settings = getUserPanelSettings(interaction.guildId);
-  const profilePayload = buildProfilePanel(interaction, buildLiveProfile(interaction), settings.profile);
-  const pageTwoPayload = profileDevelopmentPage.buildProfileDevelopmentPage(interaction);
-
-  pageTwoPayload.embeds = profilePayload.embeds;
-  return profileDevelopmentPage.sortNonNavigationButtons(pageTwoPayload);
-}
-
 async function updatePanel(interaction, payload) {
   const sortedPayload = profileDevelopmentPage.sortNonNavigationButtons(payload);
   if (interaction.deferred || interaction.replied) {
@@ -141,11 +132,11 @@ async function handleUserPanelInteraction(interaction) {
   }
 
   if (customId === 'user:home') return showProfile(interaction);
-  if (customId === 'user:profile:page:2' && interaction.isButton?.()) {
-    return updatePanel(interaction, buildUserProfilePageTwo(interaction));
-  }
   if (customId === 'user:account:record' && interaction.isButton?.()) return updatePanel(interaction, buildAccountRecordPanel(memberDisplayName));
   if (customId === 'user:help' && interaction.isButton?.()) return updatePanel(interaction, buildHelpPanel(memberDisplayName));
+  if (customId === 'user:preferences' && interaction.isButton?.()) {
+    return updatePanel(interaction, profileDevelopmentPage.buildPreferencesDevelopmentPanel(interaction));
+  }
 
   const inProgressMatch = customId.match(/^user:in-progress:(\d+)$/);
   if (inProgressMatch && interaction.isButton?.()) return updatePanel(interaction, buildInProgressPanel(memberDisplayName, Number(inProgressMatch[1])));
@@ -170,7 +161,6 @@ async function handleUserPanelInteraction(interaction) {
 
   if (interaction.isStringSelectMenu?.() && customId === 'user:search') {
     const [moduleKey] = interaction.values || [];
-    if (moduleKey === 'reputation') return showProfile(interaction);
     if (moduleKey === 'notes') return updatePanel(interaction, notesDevelopmentPanel.buildNotesDevelopmentPanel(interaction));
     if (moduleKey === 'social') return showSocial(interaction);
     return updatePanel(interaction, buildModulePanel(moduleKey, memberDisplayName));
@@ -178,18 +168,31 @@ async function handleUserPanelInteraction(interaction) {
 
   const categoryMatch = customId.match(/^user:category:([a-zA-Z0-9_-]+)$/);
   if (categoryMatch && interaction.isButton?.()) {
-    if (categoryMatch[1] === 'account') return showProfile(interaction);
     if (categoryMatch[1] === 'social') return showSocial(interaction);
     return updatePanel(interaction, buildCategoryPanel(categoryMatch[1], memberDisplayName));
   }
 
   const moduleMatch = customId.match(/^user:module:([a-zA-Z0-9_-]+)$/);
   if (moduleMatch && interaction.isButton?.()) {
-    if (moduleMatch[1] === 'reputation') return showProfile(interaction);
-    if (moduleMatch[1] === 'notes') return updatePanel(interaction, notesDevelopmentPanel.buildNotesDevelopmentPanel(interaction));
-    if (moduleMatch[1] === 'profile') return showProfile(interaction);
-    if (moduleMatch[1] === 'social') return showSocial(interaction);
-    return updatePanel(interaction, buildModulePanel(moduleMatch[1], memberDisplayName));
+    const moduleKey = moduleMatch[1];
+    if (moduleKey === 'notes') return updatePanel(interaction, notesDevelopmentPanel.buildNotesDevelopmentPanel(interaction));
+    if (moduleKey === 'profile') return showProfile(interaction);
+    if (moduleKey === 'social') return showSocial(interaction);
+
+    const placeholders = {
+      'role-history': ['📜 Role History — Development', 'Role history access will be designed and connected in a later stage.'],
+      'security-notifications': ['🔔 Security Notifications — Development', 'Member security notifications will be designed and connected in a later stage.'],
+      verification: ['✅ Verification — Development', 'Member verification status will be designed and connected in a later stage.'],
+    };
+    if (placeholders[moduleKey]) {
+      return updatePanel(interaction, profileDevelopmentPage.buildSimpleDevelopmentPanel(
+        interaction,
+        placeholders[moduleKey][0],
+        placeholders[moduleKey][1],
+      ));
+    }
+
+    return updatePanel(interaction, buildModulePanel(moduleKey, memberDisplayName));
   }
 
   return false;
