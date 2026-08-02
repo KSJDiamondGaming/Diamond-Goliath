@@ -32,6 +32,23 @@ function nav(backId = 'user:category:social') {
   );
 }
 
+function accountLabel(account) {
+  const platform = String(account?.platform || 'account').trim();
+  return platform ? `${platform.charAt(0).toUpperCase()}${platform.slice(1)}` : 'Account';
+}
+
+function accountSummary(accounts = []) {
+  if (!accounts.length) return '**Linked Accounts**\nNone connected';
+  return [
+    `**Linked Accounts (${accounts.length})**`,
+    ...accounts.map((account) => {
+      const name = account.displayName || account.username || account.externalId || account.accountId || 'Unnamed account';
+      const state = account.enabled === false ? 'Disabled' : 'Enabled';
+      return `• **${accountLabel(account)}** — ${name} · ${state}`;
+    }),
+  ].join('\n');
+}
+
 function buildLanding(interaction) {
   return {
     embeds: [base('📣 Social Studio', [
@@ -80,21 +97,22 @@ function buildCreate(interaction) {
   };
 }
 
-function buildProfile(interaction, creator, created = false) {
+function buildProfile(interaction, creator, accounts = [], created = false) {
   const status = creator.status === 'left_server' ? 'Left Server' : creator.status === 'disabled' ? 'Disabled' : 'Active';
   const createdAt = creator.createdAt ? `<t:${Math.floor(new Date(creator.createdAt).getTime() / 1000)}:F>` : 'Unknown';
   const updatedAt = creator.updatedAt ? `<t:${Math.floor(new Date(creator.updatedAt).getTime() / 1000)}:R>` : 'Unknown';
 
   return {
-    embeds: [base('👥 Creator Profiles', [
+    embeds: [base('👥 My Creator Profile', [
       created ? '✅ **Creator Profile created.**' : null,
       `**Creator ID**\n\`${creator.creatorId}\``,
-      `**Discord Owner**\n<@${creator.ownerDiscordId}>`,
+      creator.displayName ? `**Creator Name**\n${creator.displayName}` : null,
       `**Status**\n${status}`,
+      accountSummary(accounts),
       `**Created**\n${createdAt}`,
       `**Last Updated**\n${updatedAt}`,
       '',
-      'Use the buttons below to manage your own Creator Profile.',
+      'Use the buttons below to manage your Creator Profile and linked accounts.',
     ].filter(Boolean).join('\n\n'), interaction)],
     components: [
       row(
@@ -108,21 +126,26 @@ function buildProfile(interaction, creator, created = false) {
   };
 }
 
-function buildSection(interaction, creator, section) {
+function buildSection(interaction, creator, section, accounts = []) {
   const sections = {
     details: {
       title: '🖊️ Manage Profile',
       description: [
         `**Creator ID**\n\`${creator.creatorId}\``,
-        `**Discord Owner**\n<@${creator.ownerDiscordId}>`,
+        creator.displayName ? `**Creator Name**\n${creator.displayName}` : null,
         `**Status**\n${creator.status || 'active'}`,
         '',
         'Creator profile management will be connected here using the existing Social Studio profile functions.',
-      ].join('\n\n'),
+      ].filter(Boolean).join('\n\n'),
     },
     accounts: {
       title: '🔗 Accounts',
-      description: 'Connect and manage the streaming and social accounts owned by your Creator Profile. This section will reuse the existing Social Studio account storage and validation.',
+      description: [
+        `**Creator ID**\n\`${creator.creatorId}\``,
+        accountSummary(accounts),
+        '',
+        'Only accounts linked to your Creator Profile are shown here.',
+      ].join('\n\n'),
     },
     alerts: {
       title: '📣 Post LIVE',
