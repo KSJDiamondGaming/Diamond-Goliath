@@ -27,6 +27,10 @@ function componentCustomId(component) {
   return component?.data?.custom_id || component?.data?.customId || component?.customId || null;
 }
 
+function componentLabel(component) {
+  return String(component?.data?.label || component?.label || '');
+}
+
 function stripRemovedControls(payload) {
   if (!Array.isArray(payload?.components)) return payload;
 
@@ -36,7 +40,10 @@ function stripRemovedControls(payload) {
 
       actionRow.components = actionRow.components.filter((component) => {
         const customId = componentCustomId(component);
-        if (REMOVED_CUSTOM_IDS.has(customId)) return false;
+        const label = componentLabel(component);
+
+        // Preserve navigation buttons even when their old destination used the removed Account route.
+        if (REMOVED_CUSTOM_IDS.has(customId) && label !== 'Back') return false;
 
         if (customId === 'user:search' && Array.isArray(component.options)) {
           component.options = component.options.filter((option) => {
@@ -55,8 +62,44 @@ function stripRemovedControls(payload) {
   return payload;
 }
 
+function normaliseNavigation(payload) {
+  if (!Array.isArray(payload?.components) || !payload.components.length) return payload;
+
+  let finalRow = payload.components[payload.components.length - 1];
+  if (!isButtonRow(finalRow)) return payload;
+
+  const components = [...finalRow.components];
+  const hasPagedControl = components.some((component) => {
+    const customId = String(componentCustomId(component) || '');
+    const label = componentLabel(component);
+    return customId.includes(':page:') || ['Next', 'Previous'].includes(label);
+  });
+
+  let nextComponents = components;
+  const hasBack = nextComponents.some((component) => componentLabel(component) === 'Back');
+  const hasUserPanel = nextComponents.some((component) => componentLabel(component) === 'User Panel');
+
+  if (!hasBack) {
+    nextComponents.unshift(button('user:home', 'Back', ButtonStyle.Secondary, '⬅️'));
+  }
+
+  if (hasPagedControl) {
+    if (!hasUserPanel && nextComponents.length < 5) {
+      const insertIndex = Math.min(1, nextComponents.length);
+      nextComponents.splice(insertIndex, 0, button('user:home', 'User Panel', ButtonStyle.Secondary, '🏠'));
+    }
+  } else {
+    nextComponents = nextComponents.filter((component) => componentLabel(component) !== 'User Panel');
+  }
+
+  finalRow = row(...nextComponents.slice(0, 5));
+  payload.components[payload.components.length - 1] = finalRow;
+  return payload;
+}
+
 function sortNonNavigationButtons(payload) {
   stripRemovedControls(payload);
+  normaliseNavigation(payload);
   if (!Array.isArray(payload?.components) || payload.components.length < 2) return payload;
 
   const finalRowIndex = payload.components.length - 1;
@@ -72,8 +115,8 @@ function sortNonNavigationButtons(payload) {
     buttons.push(...actionRow.components);
   }
 
-  buttons.sort((left, right) => String(left?.data?.label || '').localeCompare(
-    String(right?.data?.label || ''),
+  buttons.sort((left, right) => componentLabel(left).localeCompare(
+    componentLabel(right),
     'en',
     { sensitivity: 'base' },
   ));
@@ -93,6 +136,7 @@ function addNextButtonToProfile(payload) {
   const finalRow = payload?.components?.[payload.components.length - 1];
   if (!finalRow?.components || finalRow.components.length >= 5) return payload;
   finalRow.addComponents(button('user:profile:page:2', 'Next', ButtonStyle.Primary, '➡️'));
+  normaliseNavigation(payload);
   return payload;
 }
 
@@ -147,6 +191,7 @@ function buildProfileDevelopmentPage(interaction) {
 module.exports = {
   addNextButtonToProfile,
   buildProfileDevelopmentPage,
+  normaliseNavigation,
   sortNonNavigationButtons,
   stripRemovedControls,
 };
