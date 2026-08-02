@@ -10,8 +10,6 @@ const {
   TextInputStyle,
 } = require('discord.js');
 
-const admin = require('../socialStudioPanel');
-
 const ACTIVE = 'active';
 const LEFT_SERVER = 'left_server';
 
@@ -243,7 +241,6 @@ function buildSection(interaction, creator, section, accounts = []) {
 }
 
 module.exports = {
-  admin,
   user: {
     buildLanding,
     buildDenied,
