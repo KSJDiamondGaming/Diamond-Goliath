@@ -2,6 +2,7 @@
 
 const { MessageFlags } = require('discord.js');
 const giveawaysStore = require('./giveawaysStore');
+const guildManager = require('../../../core/guild/guildManager');
 const giveawaysManager = require('./giveawaysManager');
 const giveawaysPanel = require('./giveawaysAdminPanel');
 
@@ -27,10 +28,10 @@ async function handleGiveawaysAdminInteraction(interaction) {
       return safeUpdate(interaction, giveawaysPanel.buildGiveawaysAdminPanel(interaction.guild, memberDisplayName));
     }
     if (customId === 'admin:giveaways:enable') {
-      giveawaysStore.setEnabled(interaction.guild.id, true, interaction.guild);
+      guildManager.setModuleEnabled(interaction.guild.id, 'giveaways', true);
     }
     if (customId === 'admin:giveaways:disable') {
-      giveawaysStore.setEnabled(interaction.guild.id, false, interaction.guild);
+      guildManager.setModuleEnabled(interaction.guild.id, 'giveaways', false);
     }
     if (customId === 'admin:giveaways:toggleMultiple') save(interaction.guild, (section) => ({ ...section, allowMultipleEntries: !section.allowMultipleEntries }));
     if (customId === 'admin:giveaways:toggleRequireRole') save(interaction.guild, (section) => ({ ...section, requireRole: !section.requireRole }));
@@ -52,7 +53,7 @@ async function safeReply(interaction, content) { const payload = { content, flag
 async function handleGiveawayInteraction(interaction) {
   if (!interaction?.guildId || !isGiveawayInteraction(interaction)) return false;
   try {
-    if (!giveawaysStore.isEnabled(interaction.guildId)) {
+    if (!guildManager.isModuleEnabled(interaction.guildId, 'giveaways')) {
       await safeReply(interaction, '❌ Giveaways are disabled in this server.');
       return true;
     }

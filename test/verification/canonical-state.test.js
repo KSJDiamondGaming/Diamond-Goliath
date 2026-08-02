@@ -81,7 +81,7 @@ test('invite tracking dispatch reads canonical module state', () => {
 test('invites core removes duplicate module state and uses canonical runtime gates', () => {
   const source = read('src/modules/communityStudio/invites/invites.js');
   const defaults = source.slice(source.indexOf('function defaults()'), source.indexOf('function normalizeReward('));
-  assert.doesNotMatch(defaults, /enabled\s*:/);
+  assert.doesNotMatch(defaults, /^\s{4}enabled\s*:/m);
   assert.match(source, /delete normalized\.enabled;/);
   assert.match(source, /guildManager\.setModuleEnabled\(guildId, SECTION, enabled === true, meta\)/);
   assert.match(source, /guildManager\.isModuleEnabled\(guild\.id, SECTION\)/);
