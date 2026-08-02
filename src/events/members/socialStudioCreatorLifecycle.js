@@ -1,6 +1,6 @@
 'use strict';
 
-const socialStudio = require('../../modules/socialStudio/socialAlerts/socialStudioUserService');
+const socialStudio = require('../../modules/socialStudio/socialAlerts/socialStudio');
 
 module.exports = [
   {
