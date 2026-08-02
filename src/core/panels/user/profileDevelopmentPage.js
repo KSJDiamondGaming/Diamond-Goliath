@@ -1,7 +1,6 @@
 'use strict';
 
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
-const { categoryButton } = require('../zshared/navigationButtons');
 
 function button(customId, label, style = ButtonStyle.Secondary, emoji = null) {
   const component = new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style);
@@ -64,22 +63,19 @@ function rebuildProfileHome(payload) {
   const inProgress = existingNavigationComponents.find((component) => componentLabel(component) === 'In Progress')
     || button('user:in-progress:0', 'In Progress', ButtonStyle.Secondary, '🚧');
 
+  // Locked rule: every non-navigation button is globally alphabetical by name.
   const homeButtons = [
     button('user:account:record', 'Account Record', ButtonStyle.Secondary, '🗂️'),
-    categoryButton('community', 'user:category:community'),
-    categoryButton('feedback', 'user:category:feedback'),
+    button('user:category:community', '🏘️ Community'),
+    button('user:category:feedback', '💬 Feedback'),
     button('user:help', 'Help', ButtonStyle.Secondary, '❓'),
-    categoryButton('messages', 'user:category:messages'),
+    button('user:category:messages', '✉️ Messages'),
     button('user:module:notes', 'Notes', ButtonStyle.Secondary, '📌'),
-    categoryButton('roles', 'user:category:roles'),
-    categoryButton('security', 'user:category:security'),
-    categoryButton('social', 'user:category:social'),
-    categoryButton('utility', 'user:category:utility'),
-  ].sort((left, right) => alphabeticLabel(left).localeCompare(
-    alphabeticLabel(right),
-    'en',
-    { sensitivity: 'base' },
-  ));
+    button('user:category:roles', '🎭 Roles'),
+    button('user:category:security', '🛡️ Security'),
+    button('user:category:social', '📣 Social'),
+    button('user:category:utility', '🧰 Utility'),
+  ];
 
   payload.components = [
     searchRow,
