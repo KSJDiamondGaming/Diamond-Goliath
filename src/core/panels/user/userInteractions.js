@@ -5,6 +5,7 @@ const socialStudio = require('../../../modules/socialStudio/socialStudioUserServ
 const pingCommand = require('../../../commands/utility/ping');
 const helpCommand = require('../../../commands/utility/help');
 const serverInfoCommand = require('../../../commands/utility/serverinfo');
+const translateCommand = require('../../../commands/utility/translate');
 const socialPanels = require('./socialUserPanels');
 const profileDevelopmentPage = require('./profileDevelopmentPage');
 const notesDevelopmentPanel = require('./notesDevelopmentPanel');
@@ -193,6 +194,7 @@ async function handleUserPanelInteraction(interaction) {
     if (moduleKey === 'ping') return executeUtilityCommand(interaction, pingCommand);
     if (moduleKey === 'help') return executeUtilityCommand(interaction, helpCommand);
     if (moduleKey === 'serverinfo') return executeUtilityCommand(interaction, serverInfoCommand);
+    if (moduleKey === 'translate') return executeUtilityCommand(interaction, translateCommand);
     return updatePanel(interaction, buildModulePanel(moduleKey, memberDisplayName));
   }
 
@@ -211,6 +213,7 @@ async function handleUserPanelInteraction(interaction) {
     if (moduleKey === 'ping') return executeUtilityCommand(interaction, pingCommand);
     if (moduleKey === 'help') return executeUtilityCommand(interaction, helpCommand);
     if (moduleKey === 'serverinfo') return executeUtilityCommand(interaction, serverInfoCommand);
+    if (moduleKey === 'translate') return executeUtilityCommand(interaction, translateCommand);
 
     const placeholders = {
       'role-history': ['📜 Role History — Development', 'Role history access will be designed and connected in a later stage.'],
