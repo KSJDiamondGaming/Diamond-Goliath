@@ -197,34 +197,50 @@ function secondsBetween(start, end) {
   return Number.isFinite(a) && Number.isFinite(b) && b >= a ? Math.floor((b - a) / 1000) : null;
 }
 
+function vodMatchesEndedStream(item, startedAt, endedAt) {
+  if (!item || item.type !== 'vod' || !item.url) return false;
+  const publishedMs = new Date(item.publishedAt || item.createdAt || 0).getTime();
+  const startedMs = new Date(startedAt || 0).getTime();
+  const endedMs = new Date(endedAt || 0).getTime();
+  if (!Number.isFinite(publishedMs) || !Number.isFinite(startedMs) || !Number.isFinite(endedMs)) return false;
+  const margin = 15 * 60 * 1000;
+  return publishedMs >= startedMs - margin && publishedMs <= endedMs + margin;
+}
+
 function eventCandidates(account, previous, checked) {
   const events = [];
+  const contentItems = Array.isArray(checked.contentItems) && checked.contentItems.length
+    ? checked.contentItems
+    : checked.latestContent ? [checked.latestContent] : [];
+  let endedVodId = null;
   if (checked.isLive === true && previous.isLive !== true && checked.event) events.push(checked.event);
 
   if (checked.isLive === false && previous.isLive === true && enabledAlert(account, 'ended')) {
     const prior = previous.lastLiveEvent && typeof previous.lastLiveEvent === 'object' ? previous.lastLiveEvent : {};
     const endedAt = checked.checkedAt || now();
+    const startedAt = previous.liveStartedAt || prior.startedAt || null;
+    const currentVod = contentItems.find((item) => vodMatchesEndedStream(item, startedAt, endedAt)) || null;
+    endedVodId = currentVod?.id ? String(currentVod.id) : null;
     events.push({
       type: 'ended',
       id: `ended:${previous.liveEventId || prior.id || account.accountId}:${endedAt}`,
       title: prior.title || `${account.username || account.displayName || 'Creator'} stream ended`,
       url: prior.url || account.profileUrl || account.url || '',
-      thumbnail: prior.thumbnail || null,
-      category: prior.category || null,
-      startedAt: previous.liveStartedAt || prior.startedAt || null,
+      thumbnail: currentVod?.thumbnail || prior.thumbnail || null,
+      category: prior.category || currentVod?.category || null,
+      startedAt,
       endedAt,
-      durationSeconds: secondsBetween(previous.liveStartedAt || prior.startedAt, endedAt),
+      durationSeconds: durationToSeconds(currentVod?.durationSeconds ?? currentVod?.duration) || secondsBetween(startedAt, endedAt),
       peakViewers: previous.peakViewers || prior.viewerCount || null,
+      currentVod,
     });
   }
 
-  const contentItems = Array.isArray(checked.contentItems) && checked.contentItems.length
-    ? checked.contentItems
-    : checked.latestContent ? [checked.latestContent] : [];
   const previousIds = previous.contentIds && typeof previous.contentIds === 'object' ? previous.contentIds : {};
 
   for (const item of contentItems) {
     if (!item?.type || !item?.id || !isPostableContentItem(item)) continue;
+    if (item.type === 'vod' && endedVodId && String(item.id) === endedVodId) continue;
     const oldId = previousIds[item.type] || (previous.latestContentType === item.type ? previous.latestContentId : null);
     if (oldId && String(oldId) !== String(item.id)) events.push(item);
   }
@@ -629,12 +645,13 @@ async function buildEventPayload(client, guildId, config, account, creator, even
     if (vars.viewers) fields.push({ name: '\u{1F465} Viewers', value: vars.viewers, inline: true });
     if (started) fields.push({ name: '\u23F2\uFE0F Started', value: started, inline: true });
   } else if (event.type === 'ended') {
+    const currentVod = event.currentVod && typeof event.currentVod === 'object' ? event.currentVod : null;
     if (account.platform !== 'tiktok' && (event.category || event.game)) fields.push({ name: '\u{1F3AE} Game', value: clean(event.category || event.game, 1024), inline: true });
     if (account.platform === 'tiktok') fields.push({ name: '\u{1F4F1} Platform', value: 'TikTok', inline: true });
     if (vars.peakViewers) fields.push({ name: '\u{1F4C8} Peak', value: vars.peakViewers, inline: true });
-    if (durationText) fields.push({ name: '\u23F1\uFE0F Duration', value: durationText, inline: true });
     if (started) fields.push({ name: '\u23F2\uFE0F Started', value: started, inline: true });
-    if (ended) fields.push({ name: '\u26AB Ended', value: ended, inline: true });
+    if (/^https?:\/\//i.test(currentVod?.url || '')) fields.push({ name: '\u{1F39E}\uFE0F VOD', value: `[**Click to view**](${currentVod.url})`, inline: true });
+    if (durationText) fields.push({ name: '\u23F1\uFE0F Duration', value: durationText, inline: true });
   } else {
     if (account.platform !== 'tiktok' && (event.category || event.game)) fields.push({ name: '\u{1F3AE} Game', value: clean(event.category || event.game, 1024), inline: true });
     if (vars.viewers) fields.push({ name: '\u{1F465} Viewers', value: vars.viewers, inline: true });
