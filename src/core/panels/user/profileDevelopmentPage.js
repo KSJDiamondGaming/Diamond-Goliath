@@ -3,10 +3,7 @@
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
 
 function button(customId, label, style = ButtonStyle.Secondary, emoji = null) {
-  const component = new ButtonBuilder()
-    .setCustomId(customId)
-    .setLabel(label)
-    .setStyle(style);
+  const component = new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style);
   if (emoji) component.setEmoji(emoji);
   return component;
 }
@@ -15,111 +12,193 @@ function row(...components) {
   return new ActionRowBuilder().addComponents(...components);
 }
 
+function componentId(component) {
+  return component?.data?.custom_id || component?.customId || null;
+}
+
+function componentLabel(component) {
+  return String(component?.data?.label || component?.label || '');
+}
+
+function isButtonRow(actionRow) {
+  return Array.isArray(actionRow?.components)
+    && actionRow.components.every((component) => component?.data?.type === 2);
+}
+
+function embedTitle(payload) {
+  const embed = payload?.embeds?.[0];
+  return embed?.data?.title || embed?.title || '';
+}
+
+function cleanSearchOptions(payload) {
+  for (const actionRow of payload?.components || []) {
+    for (const component of actionRow?.components || []) {
+      if (componentId(component) !== 'user:search' || !Array.isArray(component.options)) continue;
+      component.options = component.options.filter((option) => {
+        const value = option?.data?.value || option?.value;
+        return !['reputation', 'profile-settings'].includes(value);
+      });
+    }
+  }
+}
+
+function rebuildProfileHome(payload) {
+  if (embedTitle(payload) !== '👤 Your Profile') return payload;
+
+  const searchRow = payload.components?.find((actionRow) =>
+    actionRow?.components?.some((component) => componentId(component) === 'user:search'));
+  const navigationRow = payload.components?.[payload.components.length - 1];
+
+  const actionButtons = [
+    button('user:account:record', 'Account Record', ButtonStyle.Secondary, '🗂️'),
+    button('user:help', 'Help', ButtonStyle.Secondary, '❓'),
+    button('user:module:notes', 'Notes', ButtonStyle.Secondary, '📌'),
+    button('user:preferences', 'Preferences', ButtonStyle.Secondary, '⚙️'),
+  ];
+
+  const categories = [
+    button('user:category:community', 'Community', ButtonStyle.Secondary, '🏘️'),
+    button('user:category:feedback', 'Feedback', ButtonStyle.Secondary, '💬'),
+    button('user:category:messages', 'Messages', ButtonStyle.Secondary, '✉️'),
+    button('user:category:roles', 'Roles', ButtonStyle.Secondary, '🎭'),
+    button('user:category:security', 'Security', ButtonStyle.Secondary, '🛡️'),
+    button('user:category:social', 'Social', ButtonStyle.Secondary, '📣'),
+    button('user:category:utility', 'Utility', ButtonStyle.Secondary, '🧰'),
+  ];
+
+  payload.components = [
+    searchRow,
+    row(...actionButtons),
+    row(...categories.slice(0, 4)),
+    row(...categories.slice(4)),
+    navigationRow,
+  ].filter(Boolean);
+
+  return payload;
+}
+
+function rebuildCategoryPanel(payload) {
+  const title = embedTitle(payload);
+  const searchRow = payload.components?.find((actionRow) =>
+    actionRow?.components?.some((component) => componentId(component) === 'user:search'));
+  const navigationRow = payload.components?.[payload.components.length - 1];
+
+  let moduleButtons = null;
+  if (title === '🎭 Roles') {
+    moduleButtons = [
+      button('user:module:role-history', 'History', ButtonStyle.Secondary, '📜'),
+      button('user:profile:roles', 'View Roles', ButtonStyle.Primary, '🎭'),
+    ];
+  } else if (title === '🛡️ Security') {
+    moduleButtons = [
+      button('user:module:security-notifications', 'Notifications', ButtonStyle.Secondary, '🔔'),
+      button('user:module:verification', 'Verification', ButtonStyle.Secondary, '✅'),
+    ];
+  } else if (title === '📣 Social') {
+    moduleButtons = [button('user:module:social', 'My Creator Profile', ButtonStyle.Success, '👤')];
+  }
+
+  if (moduleButtons) {
+    payload.components = [searchRow, row(...moduleButtons), navigationRow].filter(Boolean);
+  }
+
+  return payload;
+}
+
 function refreshHelpPanel(payload) {
   const embed = payload?.embeds?.[0];
-  const title = embed?.data?.title || embed?.title || '';
-  if (title !== '❓ Goliath User Panel Help') return payload;
+  if (embedTitle(payload) !== '❓ Goliath User Panel Help') return payload;
 
-  const description = [
+  embed.setDescription([
     'Welcome to your personal Goliath User Panel.',
     '',
     '**👤 Profile Home**',
-    'Your profile information is displayed directly on the landing panel.',
+    'Your live Discord profile, membership, progress and community summary are displayed directly on the landing panel.',
     '',
     '**📌 Personal Tools**',
-    '🗂️ **Account Record** — Your own account history.',
-    '📌 **Notes** — Planned private personal notebook.',
-    '⚙️ **Preferences** — Future personal settings.',
+    '🗂️ **Account Record** — Your warnings, cases, infractions and appeals.',
     '❓ **Help** — User Panel guidance.',
+    '📌 **Notes** — Planned private personal notebook.',
+    '⚙️ **Preferences** — Planned personal User Panel preferences.',
     '',
     '**📂 Categories**',
     '🏘️ **Community** — Giveaways, invites, leveling and polls.',
     '💬 **Feedback** — Forms, suggestions and tickets.',
-    '✉️ **Messages** — Member message tools.',
+    '✉️ **Messages** — Starboard.',
     '🎭 **Roles** — View roles and role history.',
     '🛡️ **Security** — Verification and notifications.',
-    '📣 **Social** — Your Social Studio Creator Profile.',
-    '🧰 **Utility** — Utility tools and future features.',
-  ].join('\n');
+    '📣 **Social** — My Creator Profile.',
+    '🧰 **Utility** — Help, ping, server info, translate and future tools.',
+    '',
+    '**🧭 Navigation**',
+    '⬅️ **Back** returns to the previous page. Multi-page menus add User Panel and page controls only when needed.',
+  ].join('\n'));
 
-  if (typeof embed.setDescription === 'function') embed.setDescription(description);
-  return payload;
-}
-
-function removeDuplicateDevelopmentButtons(payload) {
-  if (!Array.isArray(payload?.components)) return payload;
-
-  const removed = new Set([
-    'user:module:reputation',
-    'user:module:profile-settings',
-    'user:module:roles',
-    'user:module:security',
-    'user:module:social',
-    'user:category:utility',
-  ]);
-
-  payload.components = payload.components
-    .map((r) => {
-      if (!Array.isArray(r.components)) return r;
-      r.components = r.components.filter((c) => !removed.has(c?.data?.custom_id));
-      return r;
-    })
-    .filter((r) => r.components.length);
-
-  return payload;
-}
-
-function normaliseNavigation(payload) {
   return payload;
 }
 
 function sortNonNavigationButtons(payload) {
+  if (!payload || !Array.isArray(payload.components)) return payload;
+  cleanSearchOptions(payload);
   refreshHelpPanel(payload);
-  removeDuplicateDevelopmentButtons(payload);
+  rebuildProfileHome(payload);
+  rebuildCategoryPanel(payload);
+
+  const finalRowIndex = payload.components.length - 1;
+  const sortableRows = [];
+  const sizes = [];
+  const buttons = [];
+
+  for (let index = 0; index < finalRowIndex; index += 1) {
+    const actionRow = payload.components[index];
+    if (!isButtonRow(actionRow)) continue;
+    sortableRows.push(index);
+    sizes.push(actionRow.components.length);
+    buttons.push(...actionRow.components);
+  }
+
+  buttons.sort((left, right) => componentLabel(left).localeCompare(componentLabel(right), 'en', { sensitivity: 'base' }));
+  let offset = 0;
+  sortableRows.forEach((rowIndex, index) => {
+    const size = sizes[index];
+    payload.components[rowIndex] = row(...buttons.slice(offset, offset + size));
+    offset += size;
+  });
+
   return payload;
+}
+
+function buildPreferencesDevelopmentPanel(interaction) {
+  const name = interaction.member?.displayName || interaction.user?.username || 'Unknown User';
+  return {
+    embeds: [new EmbedBuilder()
+      .setColor('#FEE75C')
+      .setTitle('⚙️ Preferences — Development')
+      .setDescription('Personal User Panel preferences will be designed and connected in a later stage.')
+      .setFooter({ text: `Requested by ${name}` })
+      .setTimestamp()],
+    components: [row(button('user:home', 'Back', ButtonStyle.Secondary, '⬅️'))],
+  };
 }
 
 function buildProfileDevelopmentPage(interaction) {
   const name = interaction.member?.displayName || interaction.user?.username || 'Unknown User';
-
   return {
     embeds: [new EmbedBuilder()
       .setColor('#FEE75C')
       .setTitle('🚧 User Panel Development Tools')
-      .setDescription([
-        'Development roadmap for future User Panel sections.',
-        '',
-        'Navigation only. Business logic remains owned by existing modules.',
-        '',
-        'Duplicate routes have been removed. Categories own their modules.',
-      ].join('\n'))
+      .setDescription('Development roadmap only. Modules remain owned by their existing APIs.')
       .setFooter({ text: `Requested by ${name}` })
       .setTimestamp()],
-    components: [
-      row(
-        button('user:module:forms', 'Forms', ButtonStyle.Secondary, '📝'),
-        button('user:module:giveaways', 'Giveaways', ButtonStyle.Secondary, '🎉'),
-        button('user:module:invites', 'Invites', ButtonStyle.Secondary, '📨'),
-        button('user:module:leveling', 'Leveling', ButtonStyle.Secondary, '🏆'),
-      ),
-      row(
-        button('user:module:polls', 'Polls', ButtonStyle.Secondary, '📊'),
-        button('user:module:starboard', 'Starboard', ButtonStyle.Secondary, '⭐'),
-        button('user:module:suggestions', 'Suggestions', ButtonStyle.Secondary, '💡'),
-        button('user:module:tickets', 'Tickets', ButtonStyle.Secondary, '🎫'),
-      ),
-      row(
-        button('user:home', 'Back', ButtonStyle.Secondary, '⬅️'),
-        button('user:in-progress:0', 'In Progress', ButtonStyle.Secondary, '🚧'),
-      ),
-    ],
+    components: [row(
+      button('user:home', 'Back', ButtonStyle.Secondary, '⬅️'),
+      button('user:in-progress:0', 'In Progress', ButtonStyle.Secondary, '🚧'),
+    )],
   };
 }
 
 module.exports = {
+  buildPreferencesDevelopmentPanel,
   buildProfileDevelopmentPage,
-  normaliseNavigation,
-  refreshHelpPanel,
   sortNonNavigationButtons,
-  removeDuplicateDevelopmentButtons,
 };
