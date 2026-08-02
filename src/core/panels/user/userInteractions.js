@@ -116,11 +116,23 @@ async function showProgress(interaction) {
   return updatePanel(interaction, buildProgressPanel(interaction, profile.leveling));
 }
 
+async function showSocialLanding(interaction) {
+  return updatePanel(interaction, socialPanels.buildLanding(interaction));
+}
+
 async function showSocial(interaction) {
   const access = socialStudio.getAccess(interaction);
   if (!access.allowed) return updatePanel(interaction, socialPanels.buildDenied(interaction, access.roleIds));
   const creator = socialStudio.findByOwnerDiscordId(interaction.guildId, interaction.user.id);
   return updatePanel(interaction, creator ? socialPanels.buildProfile(interaction, creator) : socialPanels.buildCreate(interaction));
+}
+
+async function showSocialSection(interaction, section) {
+  const access = socialStudio.getAccess(interaction);
+  if (!access.allowed) return updatePanel(interaction, socialPanels.buildDenied(interaction, access.roleIds));
+  const creator = socialStudio.findByOwnerDiscordId(interaction.guildId, interaction.user.id);
+  if (!creator) return updatePanel(interaction, socialPanels.buildCreate(interaction));
+  return updatePanel(interaction, socialPanels.buildSection(interaction, creator, section));
 }
 
 async function handleUserPanelInteraction(interaction) {
@@ -160,6 +172,9 @@ async function handleUserPanelInteraction(interaction) {
   if (customId === 'user:profile:progress' && interaction.isButton?.()) return showProgress(interaction);
   if (customId === 'user:social:open') return showSocial(interaction);
 
+  const socialSectionMatch = customId.match(/^user:social:(details|accounts|alerts|templates|notifications)$/);
+  if (socialSectionMatch && interaction.isButton?.()) return showSocialSection(interaction, socialSectionMatch[1]);
+
   if (customId === 'user:social:create' && interaction.isButton?.()) {
     const access = socialStudio.getAccess(interaction);
     if (!access.allowed) return updatePanel(interaction, socialPanels.buildDenied(interaction, access.roleIds));
@@ -179,6 +194,7 @@ async function handleUserPanelInteraction(interaction) {
 
   const categoryMatch = customId.match(/^user:category:([a-zA-Z0-9_-]+)$/);
   if (categoryMatch && interaction.isButton?.()) {
+    if (categoryMatch[1] === 'social') return showSocialLanding(interaction);
     return updatePanel(interaction, buildCategoryPanel(categoryMatch[1], memberDisplayName));
   }
 
