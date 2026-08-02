@@ -161,11 +161,31 @@ function notificationTargetSelect(i, config) {
     .setMinValues(1)
     .setMaxValues(1)
     .addOptions([
-      { label: 'No notification ping', value: 'none', description: 'Post alerts without pinging members.', default: selected === 'none' },
-      { label: '@everyone', value: 'everyone', description: 'Ping everyone when a creator goes LIVE.', default: selected === 'everyone' },
-      { label: '@here', value: 'here', description: 'Ping currently online members.', default: selected === 'here' },
-      ...roles.map((role) => ({ label: role.name.slice(0, 100), value: `role:${role.id}`, description: 'Ping this role when a creator goes LIVE.', default: selected === `role:${role.id}` })),
-    ]));
+  ...roles.map((role) => ({
+    label: role.name.slice(0, 100),
+    value: `role:${role.id}`,
+    description: 'Ping this role when a creator goes LIVE.',
+    default: selected === `role:${role.id}`,
+  })),
+  {
+    label: '@here',
+    value: 'here',
+    description: 'Ping currently online members.',
+    default: selected === 'here',
+  },
+  {
+    label: '@everyone',
+    value: 'everyone',
+    description: 'Ping everyone when a creator goes LIVE.',
+    default: selected === 'everyone',
+  },
+  {
+    label: 'No notification ping',
+    value: 'none',
+    description: 'Post alerts without pinging members.',
+    default: selected === 'none',
+  },
+]));
 }
 function channelSelect(id, selected, placeholder) { const m = new ChannelSelectMenuBuilder().setCustomId(id).setPlaceholder(placeholder).setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(1).setMaxValues(1); if (selected) m.setDefaultChannels([selected]); return row(m); }
 function roleSelect(ids, customId = `${P}roles:select`, placeholder = 'Select Social Studio manager roles') { const m = new RoleSelectMenuBuilder().setCustomId(customId).setPlaceholder(placeholder).setMinValues(0).setMaxValues(10); if (ids?.length) m.setDefaultRoles(ids.slice(0, 10)); return row(m); }
