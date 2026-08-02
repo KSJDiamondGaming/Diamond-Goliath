@@ -585,12 +585,18 @@ async function buildEventPayload(client, guildId, config, account, creator, even
   const previousVod = event.previousVod && typeof event.previousVod === 'object' ? event.previousVod : null;
   const embedColor = parseTemplateColor(render(template.color || '', vars), platform.color);
 
-  const baseDescription = clean(render(template.description, vars), 3800) || clean(event.title, 3800) || `${creatorName} has a new ${event.type}.`;
+  const renderedDescription = clean(render(template.description, vars), 3800);
+  const baseDescription = event.type === 'ended' && account.platform === 'tiktok'
+    ? `${creatorName} has ended their TikTok stream.`
+    : renderedDescription || clean(event.title, 3800) || `${creatorName} has a new ${event.type}.`;
   const actionLabel = clean(render(template.buttonLabel || (event.type === 'live' ? 'Watch Live' : 'Open'), vars), 80) || (event.type === 'live' ? 'Watch Live' : 'Open');
   const actionLines = [];
-  const liveStatus = event.type === 'live'
-    ? String(event.liveStatus || 'LIVE').toUpperCase() === 'OFFLINE' ? 'OFFLINE' : 'LIVE'
-    : null;
+  const statusType = event.type === 'live' || event.type === 'ended' ? event.type : null;
+  const liveStatus = statusType === 'ended'
+    ? 'OFFLINE'
+    : statusType === 'live'
+      ? String(event.liveStatus || 'LIVE').toUpperCase() === 'OFFLINE' ? 'OFFLINE' : 'LIVE'
+      : null;
   const liveStatusText = liveStatus === 'OFFLINE' ? '\u{1F534} OFFLINE' : liveStatus === 'LIVE' ? '\u{1F7E2} LIVE' : '';
   if (/^https?:\/\//i.test(url)) actionLines.push('\u{1F680} **[' + actionLabel + '](' + url + ')**' + (liveStatusText ? '  ' + liveStatusText : ''));
   if (/^https?:\/\//i.test(profileUrl) && profileUrl !== url) actionLines.push('\u{1F464} [Creator Profile](' + profileUrl + ')');
@@ -622,16 +628,23 @@ async function buildEventPayload(client, guildId, config, account, creator, even
     if (account.platform === 'tiktok') fields.push({ name: '\u{1F4F1} Platform', value: 'TikTok LIVE', inline: true });
     if (vars.viewers) fields.push({ name: '\u{1F465} Viewers', value: vars.viewers, inline: true });
     if (started) fields.push({ name: '\u23F2\uFE0F Started', value: started, inline: true });
+  } else if (event.type === 'ended') {
+    if (account.platform !== 'tiktok' && (event.category || event.game)) fields.push({ name: '\u{1F3AE} Game', value: clean(event.category || event.game, 1024), inline: true });
+    if (account.platform === 'tiktok') fields.push({ name: '\u{1F4F1} Platform', value: 'TikTok', inline: true });
+    if (vars.peakViewers) fields.push({ name: '\u{1F4C8} Peak', value: vars.peakViewers, inline: true });
+    if (durationText) fields.push({ name: '\u23F1\uFE0F Duration', value: durationText, inline: true });
+    if (started) fields.push({ name: '\u23F2\uFE0F Started', value: started, inline: true });
+    if (ended) fields.push({ name: '\u26AB Ended', value: ended, inline: true });
   } else {
     if (account.platform !== 'tiktok' && (event.category || event.game)) fields.push({ name: '\u{1F3AE} Game', value: clean(event.category || event.game, 1024), inline: true });
     if (vars.viewers) fields.push({ name: '\u{1F465} Viewers', value: vars.viewers, inline: true });
     if (started) fields.push({ name: '\u23F2\uFE0F Started', value: started, inline: true });
   }
 
-  if (vars.peakViewers) fields.push({ name: '\u{1F4C8} Peak', value: vars.peakViewers, inline: true });
+  if (event.type !== 'ended' && vars.peakViewers) fields.push({ name: '\u{1F4C8} Peak', value: vars.peakViewers, inline: true });
   if (Number(event.viewCount) > 0) fields.push({ name: '\u{1F441}\uFE0F Views', value: intText(event.viewCount), inline: true });
-  if (durationText) fields.push({ name: '\u23F1\uFE0F Duration', value: durationText, inline: true });
-  if (ended) fields.push({ name: '\u26AB Ended', value: ended, inline: true });
+  if (event.type !== 'ended' && durationText) fields.push({ name: '\u23F1\uFE0F Duration', value: durationText, inline: true });
+  if (event.type !== 'ended' && ended) fields.push({ name: '\u26AB Ended', value: ended, inline: true });
   if (published) fields.push({ name: '\u{1F4C5} Published', value: published, inline: true });
   if (event.type === 'live' && /^https?:\/\//i.test(previousVod?.url || '')) {
     const vodTitle = clean(previousVod.title || 'Previous stream replay', 160);
