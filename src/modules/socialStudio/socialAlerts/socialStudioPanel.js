@@ -147,7 +147,14 @@ function routeTypeSelect(id, selected, types = ALERT_TYPES) {
   options[0] = { ...options[0], value: 'default' };
   return row(new StringSelectMenuBuilder().setCustomId(id).setPlaceholder('Choose what you want to send').setMinValues(1).setMaxValues(1).addOptions(options.map((o) => ({ ...o, default: o.value === selected }))));
 }
-function notificationModeSelect(selected = 'none') {
+function notificationTargetSelect(i, config) {
+  const selected = config.notificationMentionMode === 'role' && config.notificationRoleId
+    ? `role:${config.notificationRoleId}`
+    : config.notificationMentionMode;
+  const roles = [...(i.guild?.roles?.cache?.values?.() || [])]
+    .filter((role) => role && role.id !== i.guildId && !role.managed)
+    .sort((a, b) => b.position - a.position)
+    .slice(0, 22);
   return row(new StringSelectMenuBuilder()
     .setCustomId(`${P}notification:mode`)
     .setPlaceholder('Choose @everyone, @here or a role')
@@ -157,7 +164,7 @@ function notificationModeSelect(selected = 'none') {
       { label: 'No notification ping', value: 'none', description: 'Post alerts without pinging members.', default: selected === 'none' },
       { label: '@everyone', value: 'everyone', description: 'Ping everyone when a creator goes LIVE.', default: selected === 'everyone' },
       { label: '@here', value: 'here', description: 'Ping currently online members.', default: selected === 'here' },
-      { label: 'Select role', value: 'role', description: 'Ping the role selected below.', default: selected === 'role' },
+      ...roles.map((role) => ({ label: role.name.slice(0, 100), value: `role:${role.id}`, description: 'Ping this role when a creator goes LIVE.', default: selected === `role:${role.id}` })),
     ]));
 }
 function channelSelect(id, selected, placeholder) { const m = new ChannelSelectMenuBuilder().setCustomId(id).setPlaceholder(placeholder).setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(1).setMaxValues(1); if (selected) m.setDefaultChannels([selected]); return row(m); }
@@ -312,10 +319,9 @@ function buildSectionPanel(i, name) {
     const components = [
       roleSelect(config.managerRoleIds, `${P}roles:select`, 'Select Social Studio manager roles'),
       roleSelect(config.userRoleIds, `${P}userroles:select`, 'Select roles allowed to use /user Social Studio'),
-      notificationModeSelect(config.notificationMentionMode),
+      notificationTargetSelect(i, config),
+      navigation('permissions'),
     ];
-    if (config.notificationMentionMode === 'role') components.push(notificationRoleSelect(config.notificationRoleId));
-    components.push(navigation('permissions'));
     return { embeds: [embed(config, '🔐 Permissions', d, who(i))], components };
   }
   if (name === 'roles') return buildSectionPanel(i, 'permissions');
@@ -390,7 +396,7 @@ async function handleInteraction(i) {
   if (id === `${P}feed:channel` || id === `${P}channel:alerts`) { config.alertsChannelId = i.values?.[0] || null; saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'channels')); }
   if (id === `${P}roles:select`) { config.managerRoleIds = i.values || []; saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'permissions')); }
   if (id === `${P}userroles:select`) { config.userRoleIds = i.values || []; saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'permissions')); }
-  if (id === `${P}notification:mode`) { const mode = i.values?.[0] || 'none'; config.notificationMentionMode = ['none', 'role', 'everyone', 'here'].includes(mode) ? mode : 'none'; if (config.notificationMentionMode !== 'role') config.notificationRoleId = null; applyNotificationDefaults(config); saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'permissions')); }
+  if (id === `${P}notification:mode`) { const value = i.values?.[0] || 'none'; const roleId = value.startsWith('role:') ? value.slice(5) : null; config.notificationMentionMode = roleId ? 'role' : ['none', 'everyone', 'here'].includes(value) ? value : 'none'; config.notificationRoleId = roleId || null; applyNotificationDefaults(config); saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'permissions')); }
   if (id === `${P}notification:role`) { config.notificationRoleId = i.values?.[0] || null; config.notificationMentionMode = config.notificationRoleId ? 'role' : 'none'; applyNotificationDefaults(config); saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'permissions')); }
   if (id === `${P}toggle`) { guildManager.setModuleEnabled(interaction.guildId, 'social', !config.enabled, { actorId }); return respond(i, buildSectionPanel(i, 'monitoring')); }
   if (id === `${P}automation:interval`) { const values = [60000, 120000, 300000, 600000, 900000], current = Math.max(60000, Number(config.settings?.checkIntervalMs || 300000)), index = values.findIndex((v) => v === current), next = values[(index < 0 ? 2 : index + 1) % values.length]; config.settings = { ...(config.settings || {}), checkIntervalMs: next }; saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'monitoring')); }
