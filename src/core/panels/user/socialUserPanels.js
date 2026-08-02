@@ -27,7 +27,7 @@ function base(title, description, interaction, color = '#5865F2') {
 
 function nav() {
   return row(
-    button('user:home', 'Back', ButtonStyle.Secondary, false, '⬅️'),
+    button('user:category:social', 'Back', ButtonStyle.Secondary, false, '⬅️'),
     button('user:home', 'User Panel', ButtonStyle.Secondary, false, '🏠'),
   );
 }
