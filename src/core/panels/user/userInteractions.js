@@ -124,7 +124,9 @@ async function showSocial(interaction) {
   const access = socialStudio.getAccess(interaction);
   if (!access.allowed) return updatePanel(interaction, socialPanels.buildDenied(interaction, access.roleIds));
   const creator = socialStudio.findByOwnerDiscordId(interaction.guildId, interaction.user.id);
-  return updatePanel(interaction, creator ? socialPanels.buildProfile(interaction, creator) : socialPanels.buildCreate(interaction));
+  if (!creator) return updatePanel(interaction, socialPanels.buildCreate(interaction));
+  const accounts = socialStudio.getAccountsForCreator(interaction.guildId, creator);
+  return updatePanel(interaction, socialPanels.buildProfile(interaction, creator, accounts));
 }
 
 async function showSocialSection(interaction, section) {
@@ -132,7 +134,8 @@ async function showSocialSection(interaction, section) {
   if (!access.allowed) return updatePanel(interaction, socialPanels.buildDenied(interaction, access.roleIds));
   const creator = socialStudio.findByOwnerDiscordId(interaction.guildId, interaction.user.id);
   if (!creator) return updatePanel(interaction, socialPanels.buildCreate(interaction));
-  return updatePanel(interaction, socialPanels.buildSection(interaction, creator, section));
+  const accounts = socialStudio.getAccountsForCreator(interaction.guildId, creator);
+  return updatePanel(interaction, socialPanels.buildSection(interaction, creator, section, accounts));
 }
 
 async function handleUserPanelInteraction(interaction) {
@@ -179,7 +182,8 @@ async function handleUserPanelInteraction(interaction) {
     const access = socialStudio.getAccess(interaction);
     if (!access.allowed) return updatePanel(interaction, socialPanels.buildDenied(interaction, access.roleIds));
     const result = socialStudio.createForMember(interaction.member);
-    return updatePanel(interaction, socialPanels.buildProfile(interaction, result.creator, result.created));
+    const accounts = socialStudio.getAccountsForCreator(interaction.guildId, result.creator);
+    return updatePanel(interaction, socialPanels.buildProfile(interaction, result.creator, accounts, result.created));
   }
 
   if (interaction.isStringSelectMenu?.() && customId === 'user:search') {
