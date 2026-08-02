@@ -17,7 +17,7 @@ const PLATFORM = {
   x: { label: 'X', icon: '⚪', color: 0x000000 },
 };
 
-const EMBED_WIDTH_DIVIDER = '\u2501'.repeat(48);
+const EMBED_WIDTH_DIVIDER = '\u2500'.repeat(48);
 const LIVE_MESSAGE_UPDATE_INTERVAL_MS = 60 * 60 * 1000;
 
 const now = () => new Date().toISOString();
@@ -615,8 +615,9 @@ async function buildEventPayload(client, guildId, config, account, creator, even
   const actionLabelTemplate = event.type === 'live' && liveStatus === 'OFFLINE' ? defaultActionLabel : template.buttonLabel || defaultActionLabel;
   const actionLabel = clean(render(actionLabelTemplate, vars), 80) || defaultActionLabel;
   const actionLines = [];
-  const liveStatusText = liveStatus === 'OFFLINE' ? '\u{1F534} OFFLINE' : liveStatus === 'LIVE' ? '\u{1F7E2} LIVE' : '';
-  if (/^https?:\/\//i.test(url)) actionLines.push('\u{1F680} **[' + actionLabel + '](' + url + ')**' + (liveStatusText ? '  ' + liveStatusText : ''));
+  const liveStatusText = liveStatus === 'OFFLINE' ? '\u{1F534} **OFFLINE**' : liveStatus === 'LIVE' ? '\u{1F7E2} **LIVE**' : '';
+  const statusSpacer = liveStatusText ? '\u2003'.repeat(8) : '';
+  if (/^https?:\/\//i.test(url)) actionLines.push('\u{1F680} **[' + actionLabel + '](' + url + ')**' + statusSpacer + liveStatusText);
   if (/^https?:\/\//i.test(profileUrl) && profileUrl !== url) actionLines.push('\u{1F464} [Creator Profile](' + profileUrl + ')');
   const embedCallToAction = embedActionBlock(actionLines);
 
