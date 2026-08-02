@@ -21,6 +21,12 @@ function componentLabel(component) {
   return String(component?.data?.label || component?.label || '');
 }
 
+function alphabeticLabel(component) {
+  return componentLabel(component)
+    .replace(/^[\p{Extended_Pictographic}\p{Emoji_Presentation}\uFE0F\u200D\s]+/u, '')
+    .trim();
+}
+
 function isButtonRow(actionRow) {
   return Array.isArray(actionRow?.components)
     && actionRow.components.every((component) => component?.data?.type === 2);
@@ -69,7 +75,11 @@ function rebuildProfileHome(payload) {
     categoryButton('security', 'user:category:security'),
     categoryButton('social', 'user:category:social'),
     categoryButton('utility', 'user:category:utility'),
-  ].sort((left, right) => componentLabel(left).localeCompare(componentLabel(right), 'en', { sensitivity: 'base' }));
+  ].sort((left, right) => alphabeticLabel(left).localeCompare(
+    alphabeticLabel(right),
+    'en',
+    { sensitivity: 'base' },
+  ));
 
   payload.components = [
     searchRow,
@@ -106,27 +116,7 @@ function rebuildCategoryPanel(payload) {
     moduleButtons = [button('user:module:social', 'My Creator Profile', ButtonStyle.Success, '👤')];
   }
 
-  if (moduleButtons) {
-    moduleButtons.sort((left, right) => componentLabel(left).localeCompare(componentLabel(right), 'en', { sensitivity: 'base' }));
-    payload.components = [row(...moduleButtons), navigationRow].filter(Boolean);
-    return payload;
-  }
-
-  const categoryTitles = new Set([
-    '🏘️ Community',
-    '💬 Feedback',
-    '✉️ Messages',
-    '🎭 Roles',
-    '🛡️ Security',
-    '📣 Social',
-    '🧰 Utility',
-  ]);
-
-  if (categoryTitles.has(title)) {
-    payload.components = (payload.components || []).filter((actionRow) =>
-      !actionRow?.components?.some((component) => componentId(component) === 'user:search'));
-  }
-
+  if (moduleButtons) payload.components = [row(...moduleButtons), navigationRow].filter(Boolean);
   return payload;
 }
 
@@ -245,7 +235,11 @@ function sortNonNavigationButtons(payload) {
     buttons.push(...actionRow.components);
   }
 
-  buttons.sort((left, right) => componentLabel(left).localeCompare(componentLabel(right), 'en', { sensitivity: 'base' }));
+  buttons.sort((left, right) => alphabeticLabel(left).localeCompare(
+    alphabeticLabel(right),
+    'en',
+    { sensitivity: 'base' },
+  ));
   let offset = 0;
   sortableRows.forEach((rowIndex, index) => {
     const size = sizes[index];
