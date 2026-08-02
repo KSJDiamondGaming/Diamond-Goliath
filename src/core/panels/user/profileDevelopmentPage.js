@@ -98,10 +98,7 @@ function rebuildCategoryPanel(payload) {
     moduleButtons = [button('user:module:social', 'My Creator Profile', ButtonStyle.Success, '👤')];
   }
 
-  if (moduleButtons) {
-    payload.components = [searchRow, row(...moduleButtons), navigationRow].filter(Boolean);
-  }
-
+  if (moduleButtons) payload.components = [searchRow, row(...moduleButtons), navigationRow].filter(Boolean);
   return payload;
 }
 
@@ -168,37 +165,38 @@ function sortNonNavigationButtons(payload) {
   return payload;
 }
 
-function buildPreferencesDevelopmentPanel(interaction) {
+function buildSimpleDevelopmentPanel(interaction, title, description) {
   const name = interaction.member?.displayName || interaction.user?.username || 'Unknown User';
   return {
     embeds: [new EmbedBuilder()
       .setColor('#FEE75C')
-      .setTitle('⚙️ Preferences — Development')
-      .setDescription('Personal User Panel preferences will be designed and connected in a later stage.')
+      .setTitle(title)
+      .setDescription(description)
       .setFooter({ text: `Requested by ${name}` })
       .setTimestamp()],
     components: [row(button('user:home', 'Back', ButtonStyle.Secondary, '⬅️'))],
   };
 }
 
+function buildPreferencesDevelopmentPanel(interaction) {
+  return buildSimpleDevelopmentPanel(
+    interaction,
+    '⚙️ Preferences — Development',
+    'Personal User Panel preferences will be designed and connected in a later stage.',
+  );
+}
+
 function buildProfileDevelopmentPage(interaction) {
-  const name = interaction.member?.displayName || interaction.user?.username || 'Unknown User';
-  return {
-    embeds: [new EmbedBuilder()
-      .setColor('#FEE75C')
-      .setTitle('🚧 User Panel Development Tools')
-      .setDescription('Development roadmap only. Modules remain owned by their existing APIs.')
-      .setFooter({ text: `Requested by ${name}` })
-      .setTimestamp()],
-    components: [row(
-      button('user:home', 'Back', ButtonStyle.Secondary, '⬅️'),
-      button('user:in-progress:0', 'In Progress', ButtonStyle.Secondary, '🚧'),
-    )],
-  };
+  return buildSimpleDevelopmentPanel(
+    interaction,
+    '🚧 User Panel Development Tools',
+    'Development roadmap only. Modules remain owned by their existing APIs.',
+  );
 }
 
 module.exports = {
   buildPreferencesDevelopmentPanel,
   buildProfileDevelopmentPage,
+  buildSimpleDevelopmentPanel,
   sortNonNavigationButtons,
 };
