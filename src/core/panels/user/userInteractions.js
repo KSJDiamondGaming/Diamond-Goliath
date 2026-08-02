@@ -3,6 +3,7 @@ const leveling = require('../../../modules/communityStudio/leveling/leveling');
 const invites = require('../../../modules/communityStudio/invites/invites');
 const socialStudio = require('../../../modules/socialStudio/socialStudioUserService');
 const socialPanels = require('./socialUserPanels');
+const profileDevelopmentPage = require('./profileDevelopmentPage');
 const {
   buildCategoryPanel,
   buildModulePanel,
@@ -82,7 +83,8 @@ function buildLiveProfile(interaction) {
 
 function buildUserHomePanel(interaction) {
   const settings = getUserPanelSettings(interaction.guildId);
-  return buildProfilePanel(interaction, buildLiveProfile(interaction), settings.profile);
+  const payload = buildProfilePanel(interaction, buildLiveProfile(interaction), settings.profile);
+  return profileDevelopmentPage.addNextButtonToProfile(payload);
 }
 
 async function updatePanel(interaction, payload) {
@@ -128,6 +130,9 @@ async function handleUserPanelInteraction(interaction) {
   }
 
   if (customId === 'user:home') return showProfile(interaction);
+  if (customId === 'user:profile:page:2' && interaction.isButton?.()) {
+    return updatePanel(interaction, profileDevelopmentPage.buildProfileDevelopmentPage(interaction));
+  }
   if (customId === 'user:account:record' && interaction.isButton?.()) return updatePanel(interaction, buildAccountRecordPanel(memberDisplayName));
   if (customId === 'user:help' && interaction.isButton?.()) return updatePanel(interaction, buildHelpPanel(memberDisplayName));
 
