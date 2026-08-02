@@ -25,11 +25,29 @@ function base(title, description, interaction, color = '#5865F2') {
     .setTimestamp();
 }
 
-function nav(backId = 'user:category:social') {
+function socialNavigation(backId = 'user:category:social') {
   return row(
     button(backId, 'Back', ButtonStyle.Secondary, false, '⬅️'),
-    button('user:home', 'User Panel', ButtonStyle.Secondary, false, '🏠'),
+    button('user:social:settings', 'Settings', ButtonStyle.Secondary, false, '⚙️'),
   );
+}
+
+function sectionNavigation(backId = 'user:social:open') {
+  return row(
+    button(backId, 'Back', ButtonStyle.Secondary, false, '⬅️'),
+    button('user:social:settings', 'Settings', ButtonStyle.Secondary, false, '⚙️'),
+  );
+}
+
+function creatorActionRows(hasCreator) {
+  return [
+    row(
+      button('user:social:create', 'New Profile', ButtonStyle.Success, hasCreator, '➕'),
+      button('user:social:accounts', 'Accounts', ButtonStyle.Primary, !hasCreator, '🔗'),
+      button('user:social:alerts', 'Post LIVE', ButtonStyle.Primary, !hasCreator, '📣'),
+    ),
+    row(button('user:social:details', 'Manage Profile', ButtonStyle.Primary, !hasCreator, '✏️')),
+  ];
 }
 
 function accountLabel(account) {
@@ -57,11 +75,8 @@ function buildLanding(interaction) {
       'Your profile connects your Discord account to your streaming accounts, live alerts and creator settings.',
     ].join('\n'), interaction)],
     components: [
-      row(
-        button('user:module:social', 'My Creator Profile', ButtonStyle.Primary, false, '👤'),
-        button('user:social:templates', 'Templates', ButtonStyle.Secondary, false, '🎨'),
-      ),
-      nav('user:home'),
+      row(button('user:module:social', 'My Creator Profile', ButtonStyle.Primary, false, '👤')),
+      socialNavigation('user:home'),
     ],
   };
 }
@@ -77,7 +92,10 @@ function buildDenied(interaction, roleIds = []) {
       '',
       'The Social Studio button is unavailable until you receive an eligible role.',
     ].join('\n'), interaction, '#FEE75C')],
-    components: [row(button('user:social:locked', 'Social Studio', ButtonStyle.Secondary, true, '🔒')), nav()],
+    components: [
+      row(button('user:social:locked', 'Social Studio', ButtonStyle.Secondary, true, '🔒')),
+      socialNavigation(),
+    ],
   };
 }
 
@@ -91,8 +109,8 @@ function buildCreate(interaction) {
       'Ownership is assigned automatically to your Discord account. You cannot select or change the owner.',
     ].join('\n'), interaction)],
     components: [
-      row(button('user:social:create', 'New Profile', ButtonStyle.Success, false, '➕')),
-      nav(),
+      ...creatorActionRows(false),
+      socialNavigation(),
     ],
   };
 }
@@ -115,13 +133,8 @@ function buildProfile(interaction, creator, accounts = [], created = false) {
       'Use the buttons below to manage your Creator Profile and linked accounts.',
     ].filter(Boolean).join('\n\n'), interaction)],
     components: [
-      row(
-        button('user:social:accounts', 'Accounts', ButtonStyle.Secondary, false, '🔗'),
-        button('user:social:details', 'Manage Profile', ButtonStyle.Primary, false, '🖊️'),
-        button('user:social:create', 'New Profile', ButtonStyle.Success, true, '➕'),
-        button('user:social:alerts', 'Post LIVE', ButtonStyle.Primary, false, '📣'),
-      ),
-      nav(),
+      ...creatorActionRows(true),
+      socialNavigation(),
     ],
   };
 }
@@ -129,7 +142,7 @@ function buildProfile(interaction, creator, accounts = [], created = false) {
 function buildSection(interaction, creator, section, accounts = []) {
   const sections = {
     details: {
-      title: '🖊️ Manage Profile',
+      title: '✏️ Manage Profile',
       description: [
         `**Creator ID**\n\`${creator.creatorId}\``,
         creator.displayName ? `**Creator Name**\n${creator.displayName}` : null,
@@ -155,13 +168,20 @@ function buildSection(interaction, creator, section, accounts = []) {
       title: '🎨 Templates',
       description: 'View and manage the templates available to your Creator Profile. Global template administration remains in the Admin Panel.',
     },
+    settings: {
+      title: '⚙️ Settings',
+      description: [
+        'Manage the settings available to your Creator Profile.',
+        '',
+        'Profile ownership remains locked to your Discord account. Global Social Studio settings remain in the Admin Panel.',
+      ].join('\n'),
+    },
   };
 
   const selected = sections[section] || sections.details;
-  const backId = section === 'templates' ? 'user:category:social' : 'user:social:open';
   return {
     embeds: [base(selected.title, selected.description, interaction, '#FEE75C')],
-    components: [nav(backId)],
+    components: [sectionNavigation()],
   };
 }
 
