@@ -1,14 +1,13 @@
 const guildManager = require('../../guild/guildManager');
 const leveling = require('../../../modules/communityStudio/leveling/leveling');
 const invites = require('../../../modules/communityStudio/invites/invites');
-const socialStudio = require('../../../modules/socialStudio/socialAlerts/socialStudioUserService');
+const socialUserPanel = require('../../../modules/socialStudio/socialAlerts/socialStudioUserPanel');
+const notesUserPanel = require('../../../modules/utilityStudio/notes/notesUserPanel');
 const pingCommand = require('../../../commands/utility/ping');
 const helpCommand = require('../../../commands/utility/help');
 const serverInfoCommand = require('../../../commands/utility/serverinfo');
 const translateCommand = require('../../../commands/utility/translate');
-const socialPanels = require('./socialUserPanels');
 const profileDevelopmentPage = require('./profileDevelopmentPage');
-const notesDevelopmentPanel = require('./notesDevelopmentPanel');
 const {
   buildCategoryPanel,
   buildModulePanel,
@@ -117,26 +116,10 @@ async function showProgress(interaction) {
   return updatePanel(interaction, buildProgressPanel(interaction, profile.leveling));
 }
 
-async function showSocialLanding(interaction) {
-  return updatePanel(interaction, socialPanels.buildLanding(interaction));
-}
-
-async function showSocial(interaction) {
-  const access = socialStudio.getAccess(interaction);
-  if (!access.allowed) return updatePanel(interaction, socialPanels.buildDenied(interaction, access.roleIds));
-  const creator = socialStudio.findByOwnerDiscordId(interaction.guildId, interaction.user.id);
-  if (!creator) return updatePanel(interaction, socialPanels.buildCreate(interaction));
-  const accounts = socialStudio.getAccountsForCreator(interaction.guildId, creator);
-  return updatePanel(interaction, socialPanels.buildProfile(interaction, creator, accounts));
-}
-
-async function showSocialSection(interaction, section) {
-  const access = socialStudio.getAccess(interaction);
-  if (!access.allowed) return updatePanel(interaction, socialPanels.buildDenied(interaction, access.roleIds));
-  const creator = socialStudio.findByOwnerDiscordId(interaction.guildId, interaction.user.id);
-  if (!creator) return updatePanel(interaction, socialPanels.buildCreate(interaction));
-  const accounts = socialStudio.getAccountsForCreator(interaction.guildId, creator);
-  return updatePanel(interaction, socialPanels.buildSection(interaction, creator, section, accounts));
+async function delegateModuleUserInteraction(interaction) {
+  if (await socialUserPanel.user.handleInteraction(interaction, updatePanel)) return true;
+  if (await notesUserPanel.user.handleInteraction(interaction, updatePanel)) return true;
+  return false;
 }
 
 async function handleUserPanelInteraction(interaction) {
@@ -146,6 +129,8 @@ async function handleUserPanelInteraction(interaction) {
     await interaction.reply({ content: 'This panel can only be used inside a server.', flags: 64 });
     return true;
   }
+
+  if (await delegateModuleUserInteraction(interaction)) return true;
 
   const memberDisplayName = getMemberDisplayName(interaction);
 
@@ -158,9 +143,7 @@ async function handleUserPanelInteraction(interaction) {
   if (customId === 'user:home') return showProfile(interaction);
   if (customId === 'user:account:record' && interaction.isButton?.()) return updatePanel(interaction, buildAccountRecordPanel(memberDisplayName));
   if (customId === 'user:help' && interaction.isButton?.()) return updatePanel(interaction, buildHelpPanel(memberDisplayName));
-  if (customId === 'user:preferences' && interaction.isButton?.()) {
-    return updatePanel(interaction, profileDevelopmentPage.buildPreferencesDevelopmentPanel(interaction));
-  }
+  if (customId === 'user:preferences' && interaction.isButton?.()) return updatePanel(interaction, profileDevelopmentPage.buildPreferencesDevelopmentPanel(interaction));
 
   const inProgressMatch = customId.match(/^user:in-progress:(\d+)$/);
   if (inProgressMatch && interaction.isButton?.()) return updatePanel(interaction, buildInProgressPanel(memberDisplayName, Number(inProgressMatch[1])));
@@ -174,23 +157,11 @@ async function handleUserPanelInteraction(interaction) {
   }
 
   if (customId === 'user:profile:progress' && interaction.isButton?.()) return showProgress(interaction);
-  if (customId === 'user:social:open') return showSocial(interaction);
-
-  const socialSectionMatch = customId.match(/^user:social:(details|accounts|alerts|templates|notifications)$/);
-  if (socialSectionMatch && interaction.isButton?.()) return showSocialSection(interaction, socialSectionMatch[1]);
-
-  if (customId === 'user:social:create' && interaction.isButton?.()) {
-    const access = socialStudio.getAccess(interaction);
-    if (!access.allowed) return updatePanel(interaction, socialPanels.buildDenied(interaction, access.roleIds));
-    const result = socialStudio.createForMember(interaction.member);
-    const accounts = socialStudio.getAccountsForCreator(interaction.guildId, result.creator);
-    return updatePanel(interaction, socialPanels.buildProfile(interaction, result.creator, accounts, result.created));
-  }
 
   if (interaction.isStringSelectMenu?.() && customId === 'user:search') {
     const [moduleKey] = interaction.values || [];
-    if (moduleKey === 'notes') return updatePanel(interaction, notesDevelopmentPanel.buildNotesDevelopmentPanel(interaction));
-    if (moduleKey === 'social') return showSocial(interaction);
+    if (moduleKey === 'notes') return updatePanel(interaction, notesUserPanel.user.buildPanel(interaction));
+    if (moduleKey === 'social') return updatePanel(interaction, socialUserPanel.user.buildLanding(interaction));
     if (moduleKey === 'ping') return executeUtilityCommand(interaction, pingCommand);
     if (moduleKey === 'help') return executeUtilityCommand(interaction, helpCommand);
     if (moduleKey === 'serverinfo') return executeUtilityCommand(interaction, serverInfoCommand);
@@ -199,17 +170,12 @@ async function handleUserPanelInteraction(interaction) {
   }
 
   const categoryMatch = customId.match(/^user:category:([a-zA-Z0-9_-]+)$/);
-  if (categoryMatch && interaction.isButton?.()) {
-    if (categoryMatch[1] === 'social') return showSocialLanding(interaction);
-    return updatePanel(interaction, buildCategoryPanel(categoryMatch[1], memberDisplayName));
-  }
+  if (categoryMatch && interaction.isButton?.()) return updatePanel(interaction, buildCategoryPanel(categoryMatch[1], memberDisplayName));
 
   const moduleMatch = customId.match(/^user:module:([a-zA-Z0-9_-]+)$/);
   if (moduleMatch && interaction.isButton?.()) {
     const moduleKey = moduleMatch[1];
-    if (moduleKey === 'notes') return updatePanel(interaction, notesDevelopmentPanel.buildNotesDevelopmentPanel(interaction));
     if (moduleKey === 'profile') return showProfile(interaction);
-    if (moduleKey === 'social') return showSocial(interaction);
     if (moduleKey === 'ping') return executeUtilityCommand(interaction, pingCommand);
     if (moduleKey === 'help') return executeUtilityCommand(interaction, helpCommand);
     if (moduleKey === 'serverinfo') return executeUtilityCommand(interaction, serverInfoCommand);
@@ -221,11 +187,7 @@ async function handleUserPanelInteraction(interaction) {
       verification: ['✅ Verification — Development', 'Member verification status will be designed and connected in a later stage.'],
     };
     if (placeholders[moduleKey]) {
-      return updatePanel(interaction, profileDevelopmentPage.buildSimpleDevelopmentPanel(
-        interaction,
-        placeholders[moduleKey][0],
-        placeholders[moduleKey][1],
-      ));
+      return updatePanel(interaction, profileDevelopmentPage.buildSimpleDevelopmentPanel(interaction, placeholders[moduleKey][0], placeholders[moduleKey][1]));
     }
 
     return updatePanel(interaction, buildModulePanel(moduleKey, memberDisplayName));
@@ -236,6 +198,6 @@ async function handleUserPanelInteraction(interaction) {
 
 module.exports = {
   handleUserPanelInteraction,
-  canUseUserSocialStudio: (interaction) => socialStudio.getAccess(interaction).allowed,
+  canUseUserSocialStudio: (interaction) => socialUserPanel.user.canAccess(interaction),
   buildUserHomePanel,
 };
