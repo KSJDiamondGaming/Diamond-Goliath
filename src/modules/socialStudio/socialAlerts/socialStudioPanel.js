@@ -150,14 +150,14 @@ function routeTypeSelect(id, selected, types = ALERT_TYPES) {
 function notificationModeSelect(selected = 'none') {
   return row(new StringSelectMenuBuilder()
     .setCustomId(`${P}notification:mode`)
-    .setPlaceholder('Choose who LIVE alerts should ping')
+    .setPlaceholder('Choose @everyone, @here or a role')
     .setMinValues(1)
     .setMaxValues(1)
     .addOptions([
       { label: 'No notification ping', value: 'none', description: 'Post alerts without pinging members.', default: selected === 'none' },
       { label: '@everyone', value: 'everyone', description: 'Ping everyone when a creator goes LIVE.', default: selected === 'everyone' },
       { label: '@here', value: 'here', description: 'Ping currently online members.', default: selected === 'here' },
-      { label: 'Selected notification role', value: 'role', description: 'Ping the role selected below.', default: selected === 'role' },
+      { label: 'Select role', value: 'role', description: 'Ping the role selected below.', default: selected === 'role' },
     ]));
 }
 function channelSelect(id, selected, placeholder) { const m = new ChannelSelectMenuBuilder().setCustomId(id).setPlaceholder(placeholder).setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(1).setMaxValues(1); if (selected) m.setDefaultChannels([selected]); return row(m); }
@@ -299,8 +299,24 @@ function buildSectionPanel(i, name) {
         : config.notificationMentionMode === 'role' && config.notificationRoleId
           ? `<@&${config.notificationRoleId}>`
           : 'No ping';
-    const d = ['Control who can use Social Studio.', '', '**Admin access**', 'Server administrators can manage Social Studio from `/admin`.', 'You can also choose manager roles below.', '', `**Manager roles:** ${managerRoles}`, '', '**User access**', 'These roles can use Social Studio from `/user` to create their own creator profile and add their own accounts.', 'Leave this as Everyone if the server wants self-service open to all members.', '', `**User access roles:** ${userRoles}`, '', '**LIVE notification ping**', 'Choose who is pinged whenever any connected creator goes LIVE.', `**Current ping:** ${pingTarget}`].join('\n');
-    return { embeds: [embed(config, '🔐 Permissions', d, who(i))], components: [roleSelect(config.managerRoleIds), roleSelect(config.userRoleIds, `${P}userroles:select`, 'Select roles allowed to use /user Social Studio'), notificationModeSelect(config.notificationMentionMode), notificationRoleSelect(config.notificationRoleId, config.notificationMentionMode !== 'role'), navigation('permissions')] };
+    const d = [
+      '👥 **Manager roles**',
+      `Current: ${managerRoles}`,
+      '',
+      '👤 **User access roles**',
+      `Current: ${userRoles}`,
+      '',
+      '📢 **LIVE Notification Target**',
+      `Current: ${pingTarget}`,
+    ].join('\n');
+    const components = [
+      roleSelect(config.managerRoleIds, `${P}roles:select`, 'Select Social Studio manager roles'),
+      roleSelect(config.userRoleIds, `${P}userroles:select`, 'Select roles allowed to use /user Social Studio'),
+      notificationModeSelect(config.notificationMentionMode),
+    ];
+    if (config.notificationMentionMode === 'role') components.push(notificationRoleSelect(config.notificationRoleId));
+    components.push(navigation('permissions'));
+    return { embeds: [embed(config, '🔐 Permissions', d, who(i))], components };
   }
   if (name === 'roles') return buildSectionPanel(i, 'permissions');
   if (name === 'automation') return buildSectionPanel(i, 'monitoring');
