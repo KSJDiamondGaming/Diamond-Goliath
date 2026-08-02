@@ -64,6 +64,8 @@ function getConfig(guildId) {
     alertChannels: s.alertChannels && typeof s.alertChannels === 'object' ? s.alertChannels : {},
     managerRoleIds: Array.isArray(s.managerRoleIds) ? s.managerRoleIds : [],
     userRoleIds: Array.isArray(s.userRoleIds) ? s.userRoleIds : [],
+    notificationMentionMode: ['none', 'role', 'everyone', 'here'].includes(s.notificationMentionMode) ? s.notificationMentionMode : 'none',
+    notificationRoleId: s.notificationRoleId || null,
     accounts: s.accounts && typeof s.accounts === 'object' ? s.accounts : {},
     creators: s.creators && typeof s.creators === 'object' ? s.creators : {},
     templates: s.templates && typeof s.templates === 'object' ? s.templates : {},
@@ -83,6 +85,19 @@ function saveConfig(guildId, config, guild, actorId = null) {
   for (const id of Object.keys(next.creators || {})) if (!saved.creators?.[id]) throw new Error(`Creator profile ${id} was not persisted.`);
   for (const id of Object.keys(next.accounts || {})) if (!saved.accounts?.[id]) throw new Error(`Social account ${id} was not persisted.`);
   return { ...saved, enabled: guildManager.isModuleEnabled(guildId, 'social') };
+}
+
+function applyNotificationDefaults(config) {
+  const mode = ['none', 'role', 'everyone', 'here'].includes(config.notificationMentionMode)
+    ? config.notificationMentionMode
+    : 'none';
+  const roleId = mode === 'role' ? config.notificationRoleId || null : null;
+  for (const account of Object.values(config.accounts || {})) {
+    if (!account || typeof account !== 'object') continue;
+    account.mentionMode = mode;
+    account.mentionRoleId = roleId;
+    account.updatedAt = now();
+  }
 }
 
 function getAccountSession(i) { return accountSessions.get(sessionKey(i)) || { creatorId: null, platforms: [], accountId: null, routeType: 'default' }; }
@@ -132,8 +147,31 @@ function routeTypeSelect(id, selected, types = ALERT_TYPES) {
   options[0] = { ...options[0], value: 'default' };
   return row(new StringSelectMenuBuilder().setCustomId(id).setPlaceholder('Choose what you want to send').setMinValues(1).setMaxValues(1).addOptions(options.map((o) => ({ ...o, default: o.value === selected }))));
 }
+function notificationModeSelect(selected = 'none') {
+  return row(new StringSelectMenuBuilder()
+    .setCustomId(`${P}notification:mode`)
+    .setPlaceholder('Choose who LIVE alerts should ping')
+    .setMinValues(1)
+    .setMaxValues(1)
+    .addOptions([
+      { label: 'No notification ping', value: 'none', description: 'Post alerts without pinging members.', default: selected === 'none' },
+      { label: '@everyone', value: 'everyone', description: 'Ping everyone when a creator goes LIVE.', default: selected === 'everyone' },
+      { label: '@here', value: 'here', description: 'Ping currently online members.', default: selected === 'here' },
+      { label: 'Selected notification role', value: 'role', description: 'Ping the role selected below.', default: selected === 'role' },
+    ]));
+}
 function channelSelect(id, selected, placeholder) { const m = new ChannelSelectMenuBuilder().setCustomId(id).setPlaceholder(placeholder).setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(1).setMaxValues(1); if (selected) m.setDefaultChannels([selected]); return row(m); }
 function roleSelect(ids, customId = `${P}roles:select`, placeholder = 'Select Social Studio manager roles') { const m = new RoleSelectMenuBuilder().setCustomId(customId).setPlaceholder(placeholder).setMinValues(0).setMaxValues(10); if (ids?.length) m.setDefaultRoles(ids.slice(0, 10)); return row(m); }
+function notificationRoleSelect(roleId, disabled = false) {
+  const menu = new RoleSelectMenuBuilder()
+    .setCustomId(`${P}notification:role`)
+    .setPlaceholder('Select the role pinged for LIVE alerts')
+    .setMinValues(0)
+    .setMaxValues(1)
+    .setDisabled(disabled);
+  if (roleId) menu.setDefaultRoles([roleId]);
+  return row(menu);
+}
 
 function creatorModal(c = null) {
   return new ModalBuilder().setCustomId(c ? `${P}creator:update:${c.creatorId}` : `${P}creator:create`).setTitle(c ? 'Edit Creator Profile' : 'Create Creator Profile').addComponents(
@@ -164,7 +202,7 @@ function upsertAccount(config, creator, platform, rawValue) {
   const matches = Object.values(config.accounts).filter((a) => { try { return canonicalKey(migrateAccount(a)) === key; } catch { return false; } });
   const primary = matches[0] || null; const accountId = primary?.accountId || makeId('account'); const duplicates = matches.slice(1).map((a) => a.accountId);
   if (duplicates.length) { removeAccountReferences(config, duplicates); for (const id of duplicates) delete config.accounts[id]; }
-  config.accounts[accountId] = { ...(primary || {}), accountId, platform, username: n.username, normalizedUsername: n.normalizedUsername, externalId: primary?.externalId || n.externalId || null, inputType: n.inputType, canonicalIdentity: n.canonicalIdentity, profileUrl: n.profileUrl, sourceInput: n.sourceInput, displayName: creator.displayName, enabled: primary?.enabled !== false, alertTypes: Array.isArray(primary?.alertTypes) ? primary.alertTypes : supportedAlerts(platform), alertChannelId: primary?.alertChannelId || null, alertChannels: primary?.alertChannels && typeof primary.alertChannels === 'object' ? primary.alertChannels : {}, createdAt: primary?.createdAt || now(), updatedAt: now() };
+  config.accounts[accountId] = { ...(primary || {}), accountId, platform, username: n.username, normalizedUsername: n.normalizedUsername, externalId: primary?.externalId || n.externalId || null, inputType: n.inputType, canonicalIdentity: n.canonicalIdentity, profileUrl: n.profileUrl, sourceInput: n.sourceInput, displayName: creator.displayName, enabled: primary?.enabled !== false, alertTypes: Array.isArray(primary?.alertTypes) ? primary.alertTypes : supportedAlerts(platform), alertChannelId: primary?.alertChannelId || null, alertChannels: primary?.alertChannels && typeof primary.alertChannels === 'object' ? primary.alertChannels : {}, mentionMode: primary?.mentionMode || config.notificationMentionMode || 'none', mentionRoleId: primary?.mentionRoleId || (config.notificationMentionMode === 'role' ? config.notificationRoleId || null : null), createdAt: primary?.createdAt || now(), updatedAt: now() };
   creator.accountIds = [...new Set([...(creator.accountIds || []), accountId])]; creator.updatedAt = now(); return { accountId, created: !primary, removedDuplicates: duplicates.length };
 }
 function accountState(a) { const s = a.state || {}; return a.enabled === false ? '⏸️ Paused' : s.isLive === true ? '🔴 LIVE' : s.isLive === false ? '⚫ Offline' : s.lastError ? '🟡 Unavailable' : '🟢 Monitoring'; }
@@ -251,7 +289,19 @@ function buildSectionPanel(i, name) {
     return { embeds: [embed(config, '📂 Channels', d, who(i))], components };
   }
   if (name === 'settings') return { embeds: [embed(config, '⚙️ Social Studio Settings', 'Manage access, monitoring, live message behaviour and diagnostics.', who(i))], components: [row(btn(`${P}permissions`, '🔐 Permissions', ButtonStyle.Primary), btn(`${P}monitoring`, '📡 Monitoring', ButtonStyle.Primary), btn(`${P}liveMessages`, '🔴 Live Messages', ButtonStyle.Primary), btn(`${P}diagnostics`, '🧪 Diagnostics', ButtonStyle.Primary)), navigation('settings')] };
-  if (name === 'permissions') { const managerRoles = config.managerRoleIds.length ? config.managerRoleIds.map((id) => `<@&${id}>`).join(', ') : 'None'; const userRoles = config.userRoleIds.length ? config.userRoleIds.map((id) => `<@&${id}>`).join(', ') : 'Everyone'; const d = ['Control who can use Social Studio.', '', '**Admin access**', 'Server administrators can manage Social Studio from `/admin`.', 'You can also choose manager roles below.', '', `**Manager roles:** ${managerRoles}`, '', '**User access**', 'These roles can use Social Studio from `/user` to create their own creator profile and add their own accounts.', 'Leave this as Everyone if the server wants self-service open to all members.', '', `**User access roles:** ${userRoles}`].join('\n'); return { embeds: [embed(config, '🔐 Permissions', d, who(i))], components: [roleSelect(config.managerRoleIds), roleSelect(config.userRoleIds, `${P}userroles:select`, 'Select roles allowed to use /user Social Studio'), navigation('permissions')] }; }
+  if (name === 'permissions') {
+    const managerRoles = config.managerRoleIds.length ? config.managerRoleIds.map((id) => `<@&${id}>`).join(', ') : 'None';
+    const userRoles = config.userRoleIds.length ? config.userRoleIds.map((id) => `<@&${id}>`).join(', ') : 'Everyone';
+    const pingTarget = config.notificationMentionMode === 'everyone'
+      ? '@everyone'
+      : config.notificationMentionMode === 'here'
+        ? '@here'
+        : config.notificationMentionMode === 'role' && config.notificationRoleId
+          ? `<@&${config.notificationRoleId}>`
+          : 'No ping';
+    const d = ['Control who can use Social Studio.', '', '**Admin access**', 'Server administrators can manage Social Studio from `/admin`.', 'You can also choose manager roles below.', '', `**Manager roles:** ${managerRoles}`, '', '**User access**', 'These roles can use Social Studio from `/user` to create their own creator profile and add their own accounts.', 'Leave this as Everyone if the server wants self-service open to all members.', '', `**User access roles:** ${userRoles}`, '', '**LIVE notification ping**', 'Choose who is pinged whenever any connected creator goes LIVE.', `**Current ping:** ${pingTarget}`].join('\n');
+    return { embeds: [embed(config, '🔐 Permissions', d, who(i))], components: [roleSelect(config.managerRoleIds), roleSelect(config.userRoleIds, `${P}userroles:select`, 'Select roles allowed to use /user Social Studio'), notificationModeSelect(config.notificationMentionMode), notificationRoleSelect(config.notificationRoleId, config.notificationMentionMode !== 'role'), navigation('permissions')] };
+  }
   if (name === 'roles') return buildSectionPanel(i, 'permissions');
   if (name === 'automation') return buildSectionPanel(i, 'monitoring');
   if (name === 'testing' || name === 'data') return buildSectionPanel(i, 'diagnostics');
@@ -313,7 +363,7 @@ async function handleInteraction(i) {
   if (id === `${P}account:delete`) { const a = config.accounts[getAccountSession(i).accountId]; if (!a) throw new Error('The selected account no longer exists.'); return respond(i, { embeds: [embed(config, '⚠️ Delete Social Account', `Delete **${LABEL[a.platform]} · ${a.username || a.externalId}**?`, who(i))], components: [row(btn(`${P}account:delete:cancel`, '⬅️ Cancel'), btn(`${P}account:delete:confirm`, '🗑️ Delete Account', ButtonStyle.Danger))] }); }
   if (id === `${P}account:delete:cancel`) { const s = getAccountSession(i), c = config.creators[s.creatorId], a = config.accounts[s.accountId]; return c && a ? respond(i, buildAccountEditPanel(i, config, c, a)) : respond(i, buildSectionPanel(i, 'accounts')); }
   if (id === `${P}account:delete:confirm`) { const s = getAccountSession(i), a = config.accounts[s.accountId]; if (!a) throw new Error('The selected account no longer exists.'); removeAccountReferences(config, [a.accountId]); delete config.accounts[a.accountId]; saveConfig(i.guildId, config, i.guild, actorId); setAccountSession(i, { accountId: null }); return respond(i, buildSectionPanel(i, 'accounts')); }
-  if (id.startsWith(`${P}account:update:`)) { const aid = id.slice(`${P}account:update:`.length), old = config.accounts[aid], s = getAccountSession(i), c = config.creators[s.creatorId]; if (!old || !c) throw new Error('The selected account no longer exists.'); const raw = i.fields.getTextInputValue('accountValue').trim(); removeAccountReferences(config, [old.accountId]); delete config.accounts[old.accountId]; const r = upsertAccount(config, c, old.platform, raw), a = config.accounts[r.accountId]; a.enabled = old.enabled !== false; a.alertTypes = Array.isArray(old.alertTypes) ? old.alertTypes : supportedAlerts(old.platform); a.alertChannelId = old.alertChannelId || null; a.alertChannels = old.alertChannels && typeof old.alertChannels === 'object' ? old.alertChannels : {}; a.mentionMode = old.mentionMode || 'none'; a.mentionRoleId = old.mentionRoleId || null; saveConfig(i.guildId, config, i.guild, actorId); setAccountSession(i, { accountId: r.accountId, platforms: [], routeType: 'default' }); return afterModal(i, 'accounts', `✅ ${LABEL[old.platform]} account updated.`); }
+  if (id.startsWith(`${P}account:update:`)) { const aid = id.slice(`${P}account:update:`.length), old = config.accounts[aid], s = getAccountSession(i), c = config.creators[s.creatorId]; if (!old || !c) throw new Error('The selected account no longer exists.'); const raw = i.fields.getTextInputValue('accountValue').trim(); removeAccountReferences(config, [old.accountId]); delete config.accounts[old.accountId]; const r = upsertAccount(config, c, old.platform, raw), a = config.accounts[r.accountId]; a.enabled = old.enabled !== false; a.alertTypes = Array.isArray(old.alertTypes) ? old.alertTypes : supportedAlerts(old.platform); a.alertChannelId = old.alertChannelId || null; a.alertChannels = old.alertChannels && typeof old.alertChannels === 'object' ? old.alertChannels : {}; a.mentionMode = old.mentionMode || config.notificationMentionMode || 'none'; a.mentionRoleId = old.mentionRoleId || (config.notificationMentionMode === 'role' ? config.notificationRoleId || null : null); saveConfig(i.guildId, config, i.guild, actorId); setAccountSession(i, { accountId: r.accountId, platforms: [], routeType: 'default' }); return afterModal(i, 'accounts', `✅ ${LABEL[old.platform]} account updated.`); }
   if (id === `${P}creator:create`) { const name = i.fields.getTextInputValue('displayName').trim(); if (!name) throw new Error('Creator display name is required.'); const cid = makeId('creator'); config.creators[cid] = { creatorId: cid, displayName: name, group: i.fields.getTextInputValue('group').trim(), tags: i.fields.getTextInputValue('tags').split(',').map((v) => v.trim()).filter(Boolean), notes: i.fields.getTextInputValue('notes').trim(), enabled: true, accountIds: [], createdAt: now(), updatedAt: now() }; saveConfig(i.guildId, config, i.guild, actorId); setCreatorSession(i, { creatorId: cid }); return afterModal(i, 'creators', '✅ Creator profile created.'); }
   if (id === `${P}account:create-multi`) { const s = getAccountSession(i), c = config.creators[s.creatorId]; if (!c) throw new Error('The selected creator profile no longer exists.'); let created = 0, updated = 0, dupes = 0, selected = null; for (const p of s.platforms.slice(0, 5)) { const raw = i.fields.getTextInputValue(`account_${p}`).trim(); if (!raw) continue; const r = upsertAccount(config, c, p, raw); selected = r.accountId; r.created ? created++ : updated++; dupes += r.removedDuplicates; } saveConfig(i.guildId, config, i.guild, actorId); setAccountSession(i, { creatorId: c.creatorId, platforms: [], accountId: selected, routeType: 'default' }); return afterModal(i, 'accounts', `✅ ${created} added, ${updated} updated${dupes ? `, ${dupes} duplicates merged` : ''}.`); }
   if (id.startsWith(`${P}template:`) && !id.startsWith(`${P}template:save:`)) { const type = id.split(':')[2]; if (!ALERT_TYPES.includes(type)) throw new Error('Unknown notification template.'); await i.showModal(templateModal(type, config)); return true; }
@@ -324,6 +374,8 @@ async function handleInteraction(i) {
   if (id === `${P}feed:channel` || id === `${P}channel:alerts`) { config.alertsChannelId = i.values?.[0] || null; saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'channels')); }
   if (id === `${P}roles:select`) { config.managerRoleIds = i.values || []; saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'permissions')); }
   if (id === `${P}userroles:select`) { config.userRoleIds = i.values || []; saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'permissions')); }
+  if (id === `${P}notification:mode`) { const mode = i.values?.[0] || 'none'; config.notificationMentionMode = ['none', 'role', 'everyone', 'here'].includes(mode) ? mode : 'none'; if (config.notificationMentionMode !== 'role') config.notificationRoleId = null; applyNotificationDefaults(config); saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'permissions')); }
+  if (id === `${P}notification:role`) { config.notificationRoleId = i.values?.[0] || null; config.notificationMentionMode = config.notificationRoleId ? 'role' : 'none'; applyNotificationDefaults(config); saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'permissions')); }
   if (id === `${P}toggle`) { guildManager.setModuleEnabled(interaction.guildId, 'social', !config.enabled, { actorId }); return respond(i, buildSectionPanel(i, 'monitoring')); }
   if (id === `${P}automation:interval`) { const values = [60000, 120000, 300000, 600000, 900000], current = Math.max(60000, Number(config.settings?.checkIntervalMs || 300000)), index = values.findIndex((v) => v === current), next = values[(index < 0 ? 2 : index + 1) % values.length]; config.settings = { ...(config.settings || {}), checkIntervalMs: next }; saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'monitoring')); }
   if (id === `${P}automation:dupes`) { config.settings = { ...(config.settings || {}), suppressDuplicates: config.settings?.suppressDuplicates === false }; saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'monitoring')); }
