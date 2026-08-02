@@ -26,7 +26,7 @@ const intText = (value) => Number.isFinite(Number(value)) ? Number(value).toLoca
 
 function embedActionBlock(lines = []) {
   const actions = lines.map((line) => clean(line, 300)).filter(Boolean);
-  return actions.length ? `\n\n${EMBED_WIDTH_DIVIDER}\n${actions.join('\n')}` : `\n\n${EMBED_WIDTH_DIVIDER}`;
+  return actions.length ? `\n\n${actions.join('\n')}\n${EMBED_WIDTH_DIVIDER}` : `\n\n${EMBED_WIDTH_DIVIDER}`;
 }
 
 function configFor(guildId) {
