@@ -98,11 +98,11 @@ function buildProfile(interaction, creator, created = false) {
     ].filter(Boolean).join('\n\n'), interaction)],
     components: [
       row(
-        button('user:social:create', 'New Profile', ButtonStyle.Success, true, '➕'),
         button('user:social:accounts', 'Accounts', ButtonStyle.Secondary, false, '🔗'),
+        button('user:social:details', 'Manage Profile', ButtonStyle.Primary, false, '🖊️'),
+        button('user:social:create', 'New Profile', ButtonStyle.Success, true, '➕'),
         button('user:social:alerts', 'Post LIVE', ButtonStyle.Primary, false, '📣'),
       ),
-      row(button('user:social:details', 'Manage Profile', ButtonStyle.Primary, false, '🖊️')),
       nav(),
     ],
   };
