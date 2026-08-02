@@ -1,7 +1,7 @@
 const guildManager = require('../../guild/guildManager');
 const leveling = require('../../../modules/communityStudio/leveling/leveling');
 const invites = require('../../../modules/communityStudio/invites/invites');
-const socialUserPanel = require('../../../modules/socialStudio/socialAlerts/socialStudioUserPanel');
+const socialStudio = require('../../../modules/socialStudio/socialAlerts/socialStudio');
 const notesUserPanel = require('../../../modules/utilityStudio/notes/notesUserPanel');
 const pingCommand = require('../../../commands/utility/ping');
 const helpCommand = require('../../../commands/utility/help');
@@ -117,7 +117,7 @@ async function showProgress(interaction) {
 }
 
 async function delegateModuleUserInteraction(interaction) {
-  if (await socialUserPanel.user.handleInteraction(interaction, updatePanel)) return true;
+  if (await socialStudio.user.handleInteraction(interaction, updatePanel)) return true;
   if (await notesUserPanel.user.handleInteraction(interaction, updatePanel)) return true;
   return false;
 }
@@ -161,7 +161,7 @@ async function handleUserPanelInteraction(interaction) {
   if (interaction.isStringSelectMenu?.() && customId === 'user:search') {
     const [moduleKey] = interaction.values || [];
     if (moduleKey === 'notes') return updatePanel(interaction, notesUserPanel.user.buildPanel(interaction));
-    if (moduleKey === 'social') return updatePanel(interaction, socialUserPanel.user.buildLanding(interaction));
+    if (moduleKey === 'social') return updatePanel(interaction, socialStudio.user.buildLanding(interaction));
     if (moduleKey === 'ping') return executeUtilityCommand(interaction, pingCommand);
     if (moduleKey === 'help') return executeUtilityCommand(interaction, helpCommand);
     if (moduleKey === 'serverinfo') return executeUtilityCommand(interaction, serverInfoCommand);
@@ -198,6 +198,6 @@ async function handleUserPanelInteraction(interaction) {
 
 module.exports = {
   handleUserPanelInteraction,
-  canUseUserSocialStudio: (interaction) => socialUserPanel.user.canAccess(interaction),
+  canUseUserSocialStudio: (interaction) => socialStudio.user.canAccess(interaction),
   buildUserHomePanel,
 };
