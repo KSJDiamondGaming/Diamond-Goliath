@@ -40,7 +40,10 @@ function buildLanding(interaction) {
       'Your profile connects your Discord account to your streaming accounts, live alerts and creator settings.',
     ].join('\n'), interaction)],
     components: [
-      row(button('user:module:social', 'My Creator Profile', ButtonStyle.Success, false, '👤')),
+      row(
+        button('user:module:social', 'My Creator Profile', ButtonStyle.Primary, false, '👤'),
+        button('user:social:templates', 'Templates', ButtonStyle.Secondary, false, '🎨'),
+      ),
       nav('user:home'),
     ],
   };
@@ -63,7 +66,7 @@ function buildDenied(interaction, roleIds = []) {
 
 function buildCreate(interaction) {
   return {
-    embeds: [base('📣 My Creator Profile', [
+    embeds: [base('👥 Creator Profiles', [
       'You do not have a Creator Profile yet.',
       '',
       'Create one to connect your Discord account to Social Studio.',
@@ -71,7 +74,7 @@ function buildCreate(interaction) {
       'Ownership is assigned automatically to your Discord account. You cannot select or change the owner.',
     ].join('\n'), interaction)],
     components: [
-      row(button('user:social:create', 'Create Creator Profile', ButtonStyle.Success, false, '➕')),
+      row(button('user:social:create', 'New Profile', ButtonStyle.Success, false, '➕')),
       nav(),
     ],
   };
@@ -83,7 +86,7 @@ function buildProfile(interaction, creator, created = false) {
   const updatedAt = creator.updatedAt ? `<t:${Math.floor(new Date(creator.updatedAt).getTime() / 1000)}:R>` : 'Unknown';
 
   return {
-    embeds: [base('📣 My Creator Profile', [
+    embeds: [base('👥 Creator Profiles', [
       created ? '✅ **Creator Profile created.**' : null,
       `**Creator ID**\n\`${creator.creatorId}\``,
       `**Discord Owner**\n<@${creator.ownerDiscordId}>`,
@@ -91,19 +94,15 @@ function buildProfile(interaction, creator, created = false) {
       `**Created**\n${createdAt}`,
       `**Last Updated**\n${updatedAt}`,
       '',
-      'Use the buttons below to manage the creator features connected to your own profile.',
+      'Use the buttons below to manage your own Creator Profile.',
     ].filter(Boolean).join('\n\n'), interaction)],
     components: [
       row(
-        button('user:social:details', 'Creator Details', ButtonStyle.Primary, false, '👤'),
-        button('user:social:accounts', 'Linked Accounts', ButtonStyle.Secondary, false, '🌐'),
-        button('user:social:alerts', 'Live Alerts', ButtonStyle.Secondary, false, '🔴'),
+        button('user:social:create', 'New Profile', ButtonStyle.Success, true, '➕'),
+        button('user:social:accounts', 'Accounts', ButtonStyle.Secondary, false, '🔗'),
+        button('user:social:alerts', 'Post LIVE', ButtonStyle.Primary, false, '📣'),
       ),
-      row(
-        button('user:social:templates', 'Alert Templates', ButtonStyle.Secondary, false, '🎨'),
-        button('user:social:notifications', 'Notifications', ButtonStyle.Secondary, false, '🔔'),
-        button('user:social:open', 'Refresh', ButtonStyle.Success, false, '🔄'),
-      ),
+      row(button('user:social:details', 'Manage Profile', ButtonStyle.Primary, false, '🖊️')),
       nav(),
     ],
   };
@@ -112,37 +111,34 @@ function buildProfile(interaction, creator, created = false) {
 function buildSection(interaction, creator, section) {
   const sections = {
     details: {
-      title: '👤 Creator Details',
+      title: '🖊️ Manage Profile',
       description: [
         `**Creator ID**\n\`${creator.creatorId}\``,
         `**Discord Owner**\n<@${creator.ownerDiscordId}>`,
         `**Status**\n${creator.status || 'active'}`,
         '',
-        'Creator name, bio and branding controls will be connected here as we test the shared Creator Profile functions.',
+        'Creator profile management will be connected here using the existing Social Studio profile functions.',
       ].join('\n\n'),
     },
     accounts: {
-      title: '🌐 Linked Accounts',
-      description: 'Connect and manage the streaming and social accounts owned by this Creator Profile. This section will reuse the existing Social Studio account storage and validation.',
+      title: '🔗 Accounts',
+      description: 'Connect and manage the streaming and social accounts owned by your Creator Profile. This section will reuse the existing Social Studio account storage and validation.',
     },
     alerts: {
-      title: '🔴 Live Alerts',
-      description: 'Manage the live-alert behaviour for accounts linked to this Creator Profile. Alert processing remains owned by the existing Social Studio monitoring and notification systems.',
+      title: '📣 Post LIVE',
+      description: 'Create and send a LIVE post for an account connected to your Creator Profile. Existing Social Studio posting and alert logic remains the source of truth.',
     },
     templates: {
-      title: '🎨 Alert Templates',
-      description: 'Choose and manage the alert templates available to this Creator Profile. Global template administration remains in the Admin Panel.',
-    },
-    notifications: {
-      title: '🔔 Creator Notifications',
-      description: 'Manage notification preferences for this Creator Profile. Server-wide notification configuration remains in the Admin Panel.',
+      title: '🎨 Templates',
+      description: 'View and manage the templates available to your Creator Profile. Global template administration remains in the Admin Panel.',
     },
   };
 
   const selected = sections[section] || sections.details;
+  const backId = section === 'templates' ? 'user:category:social' : 'user:social:open';
   return {
     embeds: [base(selected.title, selected.description, interaction, '#FEE75C')],
-    components: [nav('user:social:open')],
+    components: [nav(backId)],
   };
 }
 
