@@ -1,8 +1,8 @@
 'use strict';
 
 const { PermissionFlagsBits } = require('discord.js');
-const guildManager = require('../../core/guild/guildManager');
-const security = require('../../core/security/securityCore');
+const guildManager = require('../../../core/guild/guildManager');
+const security = require('../../../core/security/securityCore');
 
 const ACTIVE = 'active';
 const LEFT_SERVER = 'left_server';

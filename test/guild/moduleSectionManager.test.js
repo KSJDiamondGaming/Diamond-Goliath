@@ -21,8 +21,8 @@ const serverBackupSchedulerPath = path.resolve(__dirname, '../../src/core/securi
 const statsRoutePath = path.resolve(__dirname, '../../src/modules/utilityStudio/stats/statsRoute.js');
 const giveawaysAdminPanelPath = path.resolve(__dirname, '../../src/modules/communityStudio/giveaways/giveawaysAdminPanel.js');
 const giveawaysInteractionHandlerPath = path.resolve(__dirname, '../../src/modules/communityStudio/giveaways/giveawaysInteractionHandler.js');
-const socialStudioMonitorPath = path.resolve(__dirname, '../../src/modules/socialStudio/socialStudioMonitor.js');
-const socialStudioRoutePath = path.resolve(__dirname, '../../src/modules/socialStudio/socialStudioRoute.js');
+const socialStudioMonitorPath = path.resolve(__dirname, '../../src/modules/socialStudio/socialAlerts/socialStudioMonitor.js');
+const socialStudioRoutePath = path.resolve(__dirname, '../../src/modules/socialStudio/socialAlerts/socialStudioRoute.js');
 
 function loadManager(initialModules = {}) {
   let modules = JSON.parse(JSON.stringify(initialModules));

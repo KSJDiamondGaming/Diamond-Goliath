@@ -3,7 +3,7 @@
 const crypto = require('crypto');
 const express = require('express');
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const guildManager = require('../../core/guild/guildManager');
+const guildManager = require('../../../core/guild/guildManager');
 
 const router = express.Router();
 const PLATFORMS = ['twitch', 'youtube', 'tiktok', 'kick', 'facebook', 'instagram', 'x'];

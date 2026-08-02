@@ -1,8 +1,8 @@
 'use strict';
 const { ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle, ChannelSelectMenuBuilder, ChannelType, EmbedBuilder, ModalBuilder, PermissionFlagsBits, RoleSelectMenuBuilder, StringSelectMenuBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const crypto = require('crypto');
-const guildManager = require('../../core/guild/guildManager');
-const security = require('../../core/security/securityCore');
+const guildManager = require('../../../core/guild/guildManager');
+const security = require('../../../core/security/securityCore');
 const { normalizeAccountInput, migrateAccount } = require('./accountNormalizer');
 const { providerInfo } = require('./socialStudioProviders');
 const { forcePostCreatorLive } = require('./socialStudioMonitor');

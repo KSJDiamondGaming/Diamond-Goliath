@@ -2,8 +2,8 @@
 
 const crypto = require('crypto');
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const { startupSocialStudio, checkGuildAccounts } = require('../../modules/socialStudio/socialStudioMonitor');
-const { buildSectionPanel } = require('../../modules/socialStudio/socialStudioPanel');
+const { startupSocialStudio, checkGuildAccounts } = require('../../modules/socialStudio/socialAlerts/socialStudioMonitor');
+const { buildSectionPanel } = require('../../modules/socialStudio/socialAlerts/socialStudioPanel');
 
 const PLATFORM_LABELS = {
   twitch: 'Twitch',

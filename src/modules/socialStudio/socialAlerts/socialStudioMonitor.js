@@ -1,7 +1,7 @@
 'use strict';
 
 const { EmbedBuilder } = require('discord.js');
-const guildManager = require('../../core/guild/guildManager');
+const guildManager = require('../../../core/guild/guildManager');
 const { checkAccount, providerInfo } = require('./socialStudioProviders');
 
 const runningGuilds = new Set();

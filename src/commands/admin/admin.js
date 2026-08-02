@@ -1,7 +1,7 @@
 const { SlashCommandBuilder } = require('discord.js');
 
 const { buildAdminPanel } = require('../../core/admin/functions/adminPanel');
-const socialStudioPanel = require('../../modules/socialStudio/socialStudioPanel');
+const socialStudioPanel = require('../../modules/socialStudio/socialAlerts/socialStudioPanel');
 const { errorEmbed } = require('../../core/ui/embeds');
 const { enforceCommandAccess } = require('../../core/ui/commandAccess');
 const security = require('../../core/security/securityCore');
