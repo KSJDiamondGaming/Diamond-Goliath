@@ -3,7 +3,10 @@
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
 
 function button(customId, label, style = ButtonStyle.Secondary, emoji = null) {
-  const component = new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style);
+  const component = new ButtonBuilder()
+    .setCustomId(customId)
+    .setLabel(label)
+    .setStyle(style);
   if (emoji) component.setEmoji(emoji);
   return component;
 }
@@ -20,34 +23,23 @@ function refreshHelpPanel(payload) {
   const description = [
     'Welcome to your personal Goliath User Panel.',
     '',
-    '**🧭 Navigation**',
-    '⬅️ **Back** — Return to the previous page.',
-    '🏠 **User Panel** — Return to your profile home when available.',
-    '',
     '**👤 Profile Home**',
     'Your profile information is displayed directly on the landing panel.',
     '',
     '**📌 Personal Tools**',
-    '🗂️ **Account Record** — Your warnings, cases, infractions and appeals.',
+    '🗂️ **Account Record** — Your own account history.',
     '📌 **Notes** — Planned private personal notebook.',
-    '⚙️ **Configure** — Future personal configuration options.',
+    '⚙️ **Preferences** — Future personal settings.',
     '❓ **Help** — User Panel guidance.',
     '',
     '**📂 Categories**',
     '🏘️ **Community** — Giveaways, invites, leveling and polls.',
     '💬 **Feedback** — Forms, suggestions and tickets.',
-    '✉️ **Messages** — Member-visible message tools.',
+    '✉️ **Messages** — Member message tools.',
     '🎭 **Roles** — View roles and role history.',
     '🛡️ **Security** — Verification and notifications.',
     '📣 **Social** — Your Social Studio Creator Profile.',
-    '🧰 **Utility** — Help, ping, server info, translate and future tools.',
-    '',
-    '**🔎 Search**',
-    'Use search to jump directly to available user tools.',
-    '',
-    '**💡 Tips**',
-    '• Your panel is private and only visible to you.',
-    '• Some tools require permissions or configured roles.',
+    '🧰 **Utility** — Utility tools and future features.',
   ].join('\n');
 
   if (typeof embed.setDescription === 'function') embed.setDescription(description);
@@ -66,11 +58,13 @@ function removeDuplicateDevelopmentButtons(payload) {
     'user:category:utility',
   ]);
 
-  payload.components = payload.components.map((r) => {
-    if (!Array.isArray(r.components)) return r;
-    r.components = r.components.filter((c) => !removed.has(c?.data?.custom_id));
-    return r;
-  }).filter((r) => r.components.length);
+  payload.components = payload.components
+    .map((r) => {
+      if (!Array.isArray(r.components)) return r;
+      r.components = r.components.filter((c) => !removed.has(c?.data?.custom_id));
+      return r;
+    })
+    .filter((r) => r.components.length);
 
   return payload;
 }
@@ -97,7 +91,7 @@ function buildProfileDevelopmentPage(interaction) {
         '',
         'Navigation only. Business logic remains owned by existing modules.',
         '',
-        'Removed duplicate routes: modules are accessed through their category only.',
+        'Duplicate routes have been removed. Categories own their modules.',
       ].join('\n'))
       .setFooter({ text: `Requested by ${name}` })
       .setTimestamp()],
