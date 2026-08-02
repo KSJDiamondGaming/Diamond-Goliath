@@ -1,6 +1,7 @@
 'use strict';
 
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
+const { categoryButton } = require('../shared/navigationButtons');
 
 function button(customId, label, style = ButtonStyle.Secondary, emoji = null) {
   const component = new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style);
@@ -64,13 +65,13 @@ function rebuildProfileHome(payload) {
   ];
 
   const categories = [
-    button('user:category:community', 'Community', ButtonStyle.Secondary, '🏘️'),
-    button('user:category:feedback', 'Feedback', ButtonStyle.Secondary, '💬'),
-    button('user:category:messages', 'Messages', ButtonStyle.Secondary, '✉️'),
-    button('user:category:roles', 'Roles', ButtonStyle.Secondary, '🎭'),
-    button('user:category:security', 'Security', ButtonStyle.Secondary, '🛡️'),
-    button('user:category:social', 'Social', ButtonStyle.Secondary, '📣'),
-    button('user:category:utility', 'Utility', ButtonStyle.Secondary, '🧰'),
+    categoryButton('community', 'user:category:community'),
+    categoryButton('feedback', 'user:category:feedback'),
+    categoryButton('messages', 'user:category:messages'),
+    categoryButton('roles', 'user:category:roles'),
+    categoryButton('security', 'user:category:security'),
+    categoryButton('social', 'user:category:social'),
+    categoryButton('utility', 'user:category:utility'),
   ];
 
   payload.components = [
