@@ -76,9 +76,9 @@ function rebuildProfileHome(payload) {
 
   payload.components = [
     searchRow,
-    row(...actionButtons),
     row(...categories.slice(0, 4)),
     row(...categories.slice(4)),
+    row(...actionButtons),
     row(
       back,
       refresh,
@@ -214,6 +214,11 @@ function sortNonNavigationButtons(payload) {
   refreshInProgressPanel(payload);
   rebuildProfileHome(payload);
   rebuildCategoryPanel(payload);
+
+  // The Profile Home is deliberately grouped: alphabetical categories first,
+  // then alphabetical personal tools, then the fixed navigation row.
+  // Do not run the generic sorter afterwards because it mixes those groups.
+  if (embedTitle(payload) === '👤 Your Profile') return payload;
 
   const finalRowIndex = payload.components.length - 1;
   const sortableRows = [];
