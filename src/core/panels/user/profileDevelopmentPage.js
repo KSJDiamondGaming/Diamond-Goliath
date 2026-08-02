@@ -216,7 +216,8 @@ function sortNonNavigationButtons(payload) {
   rebuildProfileHome(payload);
   rebuildCategoryPanel(payload);
 
-  if (embedTitle(payload) === '👤 Your Profile') return payload;
+  const title = embedTitle(payload);
+  if (title === '👤 Your Profile' || title === '👥 Creator Profiles' || title === '👥 My Creator Profile') return payload;
 
   const finalRowIndex = payload.components.length - 1;
   const sortableRows = [];
