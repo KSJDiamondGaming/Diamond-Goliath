@@ -48,6 +48,16 @@ function findByOwnerDiscordId(guildId, ownerDiscordId) {
   return Object.values(creators(getSection(guildId))).find((creator) => creator?.ownerDiscordId === ownerId) || null;
 }
 
+function getAccountsForCreator(guildId, creator) {
+  if (!creator) return [];
+  const section = getSection(guildId);
+  const accounts = section.accounts && typeof section.accounts === 'object' && !Array.isArray(section.accounts)
+    ? section.accounts
+    : {};
+  const accountIds = Array.isArray(creator.accountIds) ? creator.accountIds.map(String) : [];
+  return accountIds.map((accountId) => accounts[accountId]).filter(Boolean);
+}
+
 function nextCreatorId(section) {
   const used = new Set(Object.keys(creators(section)));
   let sequence = Math.max(0, Number(section.creatorSequence || 0));
@@ -133,6 +143,7 @@ module.exports = {
   getConfiguredRoleIds,
   getAccess,
   findByOwnerDiscordId,
+  getAccountsForCreator,
   createForMember,
   markMemberActive,
   markMemberLeft,
