@@ -1,7 +1,7 @@
 'use strict';
 
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
-const { categoryButton } = require('../shared/navigationButtons');
+const { categoryButton } = require('../zshared/navigationButtons');
 
 function button(customId, label, style = ButtonStyle.Secondary, emoji = null) {
   const component = new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style);
