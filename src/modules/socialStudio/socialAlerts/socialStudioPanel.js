@@ -113,7 +113,47 @@ function buildSectionPanel(i, name) {
   if (name === 'creators') return buildCreatorPanel(i, config, creators);
   if (name === 'channels') return { embeds: [embed(config, '📂 Channels', `Default channel: ${config.alertsChannelId ? `<#${config.alertsChannelId}>` : 'Not configured'}`, who(i))], components: [navigation('channels')] };
   if (name === 'templates') return { embeds: [embed(config, '🎨 Alert Templates', 'Manage Social Studio alert templates.', who(i))], components: [navigation('templates')] };
-  if (name === 'settings') return { embeds: [embed(config, '⚙️ Social Studio Settings', 'Manage access, monitoring, live message behaviour and diagnostics.', who(i))], components: [navigation('settings')] };
+  if (name === 'settings') return {
+    embeds: [embed(config, '⚙️ Social Studio Settings', 'Manage access, monitoring, live message behaviour and diagnostics.', who(i))],
+    components: [
+      row(
+        btn(`${P}permissions`, '🔐 Permissions', ButtonStyle.Primary),
+        btn(`${P}monitoring`, '📡 Monitoring', ButtonStyle.Primary),
+        btn(`${P}liveMessages`, '🔴 Live Messages', ButtonStyle.Primary),
+        btn(`${P}diagnostics`, '🧪 Diagnostics', ButtonStyle.Primary),
+      ),
+      navigation('settings'),
+    ],
+  };
+  if (name === 'permissions') {
+    const managerRoles = config.managerRoleIds.length ? config.managerRoleIds.map((id) => `<@&${id}>`).join(', ') : 'None';
+    const userRoles = config.userRoleIds.length ? config.userRoleIds.map((id) => `<@&${id}>`).join(', ') : 'Everyone';
+    return {
+      embeds: [embed(config, '🔐 Permissions', [`**Manager Roles:** ${managerRoles}`, `**User Access Roles:** ${userRoles}`, '', 'Manager roles can administer Social Studio. User access roles can use the Social Studio section from `/user`.'].join('\n'), who(i))],
+      components: [navigation('permissions')],
+    };
+  }
+  if (name === 'monitoring') {
+    const interval = Math.max(60000, Number(config.settings?.checkIntervalMs || 300000));
+    const minutes = Math.round(interval / 60000);
+    return {
+      embeds: [embed(config, '📡 Monitoring', [`**Module:** ${config.enabled ? 'Enabled' : 'Disabled'}`, `**Check Interval:** ${minutes} minute${minutes === 1 ? '' : 's'}`, `**Accounts:** ${Object.keys(config.accounts).length}`].join('\n'), who(i))],
+      components: [navigation('monitoring')],
+    };
+  }
+  if (name === 'liveMessages') {
+    const settings = config.settings || {};
+    return {
+      embeds: [embed(config, '🔴 Live Messages', [`**Edit LIVE posts:** ${settings.editLiveNotifications !== false ? 'On' : 'Off'}`, `**Delete ended posts:** ${settings.deleteEndedNotifications !== false ? 'On' : 'Off'}`, `**Viewer count:** ${settings.includeViewerCount === false ? 'Off' : 'On'}`, `**Live duration:** ${settings.includeLiveDuration === false ? 'Off' : 'On'}`].join('\n'), who(i))],
+      components: [navigation('liveMessages')],
+    };
+  }
+  if (name === 'diagnostics') {
+    return {
+      embeds: [embed(config, '🧪 Diagnostics', [`**Provider Checks:** ${Number(config.analytics?.checks || 0).toLocaleString('en-GB')}`, `**Alerts Sent:** ${Number(config.analytics?.alertsSent || 0).toLocaleString('en-GB')}`, `**Failures:** ${Number(config.analytics?.failures || 0).toLocaleString('en-GB')}`, `**History Entries:** ${config.history.length}`, `**Queue Size:** ${config.queue.length}`].join('\n'), who(i))],
+      components: [navigation('diagnostics')],
+    };
+  }
   return buildMainPanel(i.guild, who(i));
 }
 async function respond(i, payload) { if (i.deferred || i.replied) await i.editReply(payload); else await i.update(payload); return true; }
@@ -140,7 +180,8 @@ async function handleInteraction(i) {
     await i.reply({ content: '✅ Creator profile created.', flags: 64 });
     return true;
   }
-  if (NAV.has(id.slice(P.length))) return respond(i, buildSectionPanel(i, id.slice(P.length)));
+  const section = id.slice(P.length);
+  if (NAV.has(section)) return respond(i, buildSectionPanel(i, section));
   throw new Error(`Unknown Social Studio interaction: ${id}`);
 }
 module.exports = { buildPanel: buildMainPanel, handleInteraction, buildSocialAdminPanel: buildMainPanel, buildSectionPanel, handleSocialAdminInteraction: handleInteraction, canManageSocialStudio };
