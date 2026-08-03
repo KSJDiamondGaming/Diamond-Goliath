@@ -231,31 +231,31 @@ function notificationRoleSelect(roleId, disabled = false) {
 
 function creatorModal(c = null) {
   return new ModalBuilder().setCustomId(c ? `${P}creator:update:${c.creatorId}` : `${P}creator:create`).setTitle(c ? 'Edit Creator Profile' : 'Create Creator Profile').addComponents(
-    row(new TextInputBuilder().setCustomId('displayName').setLabel('Creator display name').setStyle(TextInputStyle.Short).setMaxLength(120).setRequired(true).setValue(String(c?.displayName || ''))),
-    row(new TextInputBuilder().setCustomId('group').setLabel('Group or team').setStyle(TextInputStyle.Short).setMaxLength(120).setRequired(false).setValue(String(c?.group || ''))),
-    row(new TextInputBuilder().setCustomId('tags').setLabel('Tags (comma separated)').setStyle(TextInputStyle.Short).setMaxLength(300).setRequired(false).setValue(Array.isArray(c?.tags) ? c.tags.join(', ') : '')),
-    row(new TextInputBuilder().setCustomId('notes').setLabel('Notes').setStyle(TextInputStyle.Paragraph).setMaxLength(1000).setRequired(false).setValue(String(c?.notes || ''))),
+    row(new TextInputBuilder().setCustomId('displayName').setLabel('Creator display name').setPlaceholder('Enter the public creator name here').setStyle(TextInputStyle.Short).setMaxLength(120).setRequired(true).setValue(String(c?.displayName || ''))),
+    row(new TextInputBuilder().setCustomId('group').setLabel('Group or team').setPlaceholder('Add their team, brand or category here').setStyle(TextInputStyle.Short).setMaxLength(120).setRequired(false).setValue(String(c?.group || ''))),
+    row(new TextInputBuilder().setCustomId('tags').setLabel('Tags (comma separated)').setPlaceholder('Example: streamer, ksj, twitch').setStyle(TextInputStyle.Short).setMaxLength(300).setRequired(false).setValue(Array.isArray(c?.tags) ? c.tags.join(', ') : '')),
+    row(new TextInputBuilder().setCustomId('notes').setLabel('Notes').setPlaceholder('Add private admin notes for this creator here').setStyle(TextInputStyle.Paragraph).setMaxLength(1000).setRequired(false).setValue(String(c?.notes || ''))),
   );
 }
-function accountModal(platforms) { const m = new ModalBuilder().setCustomId(`${P}account:create-multi`).setTitle('Add Social Accounts'); for (const p of platforms.slice(0, 5)) m.addComponents(row(new TextInputBuilder().setCustomId(`account_${p}`).setLabel(`${LABEL[p]} username, channel ID or URL`).setStyle(TextInputStyle.Short).setMaxLength(500).setRequired(true))); return m; }
-function accountEditModal(a) { return new ModalBuilder().setCustomId(`${P}account:update:${a.accountId}`).setTitle(`Edit ${LABEL[a.platform] || a.platform} Account`).addComponents(row(new TextInputBuilder().setCustomId('accountValue').setLabel('Username, channel ID or URL').setStyle(TextInputStyle.Short).setMaxLength(500).setRequired(true).setValue(String(a.sourceInput || a.profileUrl || a.externalId || a.username || '')))); }
+function accountModal(platforms) { const m = new ModalBuilder().setCustomId(`${P}account:create-multi`).setTitle('Add Social Accounts'); for (const p of platforms.slice(0, 5)) m.addComponents(row(new TextInputBuilder().setCustomId(`account_${p}`).setLabel(`${LABEL[p]} username, channel ID or URL`).setPlaceholder(`Paste the ${LABEL[p]} profile URL, username or ID here`).setStyle(TextInputStyle.Short).setMaxLength(500).setRequired(true))); return m; }
+function accountEditModal(a) { return new ModalBuilder().setCustomId(`${P}account:update:${a.accountId}`).setTitle(`Edit ${LABEL[a.platform] || a.platform} Account`).addComponents(row(new TextInputBuilder().setCustomId('accountValue').setLabel('Username, channel ID or URL').setPlaceholder('Paste the profile URL, username or channel ID here').setStyle(TextInputStyle.Short).setMaxLength(500).setRequired(true).setValue(String(a.sourceInput || a.profileUrl || a.externalId || a.username || '')))); }
 function templateModal(type, config) {
   const c = config.templates?.[type] || {};
   return new ModalBuilder().setCustomId(`${P}template:save:${type}`).setTitle(`${ALERT_LABEL[type] || type} Template`).addComponents(
-    row(new TextInputBuilder().setCustomId('title').setLabel('Embed title').setStyle(TextInputStyle.Short).setMaxLength(256).setValue(String(c.title || '{creator} alert')).setRequired(true)),
-    row(new TextInputBuilder().setCustomId('description').setLabel('Embed description').setStyle(TextInputStyle.Paragraph).setMaxLength(2000).setValue(String(c.description || '{title}')).setRequired(true)),
-    row(new TextInputBuilder().setCustomId('buttonLabel').setLabel('Primary button label').setStyle(TextInputStyle.Short).setMaxLength(80).setValue(String(c.buttonLabel || 'Watch now')).setRequired(true)),
-    row(new TextInputBuilder().setCustomId('color').setLabel('Embed colour (#RRGGBB or variable)').setStyle(TextInputStyle.Short).setMaxLength(40).setRequired(false).setValue(String(c.color || '{platformColor}'))),
-    row(new TextInputBuilder().setCustomId('footer').setLabel('Embed footer').setStyle(TextInputStyle.Short).setMaxLength(200).setRequired(false).setValue(String(c.footer || '{platform} • Social Studio'))),
+    row(new TextInputBuilder().setCustomId('title').setLabel('Embed title').setPlaceholder('Example: {creator} is LIVE').setStyle(TextInputStyle.Short).setMaxLength(256).setValue(String(c.title || '{creator} alert')).setRequired(true)),
+    row(new TextInputBuilder().setCustomId('description').setLabel('Embed description').setPlaceholder('Write the main alert message. Variables like {title} work here.').setStyle(TextInputStyle.Paragraph).setMaxLength(2000).setValue(String(c.description || '{title}')).setRequired(true)),
+    row(new TextInputBuilder().setCustomId('buttonLabel').setLabel('Primary button label').setPlaceholder('Example: Watch now').setStyle(TextInputStyle.Short).setMaxLength(80).setValue(String(c.buttonLabel || 'Watch now')).setRequired(true)),
+    row(new TextInputBuilder().setCustomId('color').setLabel('Embed colour (#RRGGBB or variable)').setPlaceholder('Example: #5865F2 or {platformColor}').setStyle(TextInputStyle.Short).setMaxLength(40).setRequired(false).setValue(String(c.color || '{platformColor}'))),
+    row(new TextInputBuilder().setCustomId('footer').setLabel('Embed footer').setPlaceholder('Example: {platform} • Social Studio').setStyle(TextInputStyle.Short).setMaxLength(200).setRequired(false).setValue(String(c.footer || '{platform} • Social Studio'))),
   );
 }
 function quietHoursModal(config) {
   const quiet = config.settings?.quietHours && typeof config.settings.quietHours === 'object' ? config.settings.quietHours : {};
   return new ModalBuilder().setCustomId(`${P}automation:quiet`).setTitle('Configure Quiet Hours').addComponents(
-    row(new TextInputBuilder().setCustomId('enabled').setLabel('Enabled? yes or no').setStyle(TextInputStyle.Short).setMaxLength(3).setRequired(true).setValue(quiet.enabled === true ? 'yes' : 'no')),
-    row(new TextInputBuilder().setCustomId('start').setLabel('Start time, HH:MM').setStyle(TextInputStyle.Short).setMaxLength(5).setRequired(true).setValue(String(quiet.start || '23:00'))),
-    row(new TextInputBuilder().setCustomId('end').setLabel('End time, HH:MM').setStyle(TextInputStyle.Short).setMaxLength(5).setRequired(true).setValue(String(quiet.end || '08:00'))),
-    row(new TextInputBuilder().setCustomId('timezone').setLabel('Timezone').setStyle(TextInputStyle.Short).setMaxLength(100).setRequired(true).setValue(String(quiet.timezone || 'Europe/London'))),
+    row(new TextInputBuilder().setCustomId('enabled').setLabel('Enabled? yes or no').setPlaceholder('yes or no').setStyle(TextInputStyle.Short).setMaxLength(3).setRequired(true).setValue(quiet.enabled === true ? 'yes' : 'no')),
+    row(new TextInputBuilder().setCustomId('start').setLabel('Start time, HH:MM').setPlaceholder('Example: 23:00').setStyle(TextInputStyle.Short).setMaxLength(5).setRequired(true).setValue(String(quiet.start || '23:00'))),
+    row(new TextInputBuilder().setCustomId('end').setLabel('End time, HH:MM').setPlaceholder('Example: 08:00').setStyle(TextInputStyle.Short).setMaxLength(5).setRequired(true).setValue(String(quiet.end || '08:00'))),
+    row(new TextInputBuilder().setCustomId('timezone').setLabel('Timezone').setPlaceholder('Example: Europe/London').setStyle(TextInputStyle.Short).setMaxLength(100).setRequired(true).setValue(String(quiet.timezone || 'Europe/London'))),
   );
 }
 
