@@ -321,20 +321,27 @@ function buildCreatorPanel(i, config, creators) {
 }
 function buildCreatorEditPanel(i, config, creator) {
   const linked = (creator.accountIds || []).map((id) => config.accounts[id]).filter(Boolean).sort(accountSort);
+  const monitored = linked.filter((account) => account.enabled !== false).length;
+  const live = linked.filter((account) => account.enabled !== false && account.state?.isLive === true).length;
+  const issues = linked.filter((account) => account.state?.lastError || account.state?.lastDeliveryError).length;
   const description = [
-    '\u{1F464} **' + creator.displayName + '**',
-    '**Group / Team:** ' + (creator.group || 'Not set'),
-    '**Tags:** ' + (creator.tags?.length ? creator.tags.join(', ') : 'None'),
-    '**Accounts:** ' + linked.length,
-    '**Status:** ' + (creator.enabled === false ? '\u23F8\uFE0F Paused' : '\u{1F7E2} Enabled'),
-    '**Notes:** ' + (creator.notes || 'None'),
+    `${creator.enabled === false ? '\u23F8\uFE0F' : '\u{1F7E2}'} **Profile Status**`,
+    creator.enabled === false ? 'Paused' : 'Enabled',
+    '',
+    '\u{1F4E1} **Monitoring**',
+    `${linked.length} linked account${linked.length === 1 ? '' : 's'} \u2022 ${monitored} monitored \u2022 ${live} live \u2022 ${issues} issue${issues === 1 ? '' : 's'}`,
+    '',
+    '\u{1F3F7}\uFE0F **Details**',
+    `Group / Team: ${creator.group || 'Not set'}`,
+    `Tags: ${creator.tags?.length ? creator.tags.join(', ') : 'None'}`,
+    `Notes: ${creator.notes || 'None'}`,
   ].join('\n');
   const components = [
-    row(btn(`${P}creator:change`, '\u{1F4DD} Edit Details'), btn(`${P}creator:check:${creator.creatorId}`, '\u{1F504} Check Creator', ButtonStyle.Primary, !linked.length)),
-    row(btn(`${P}creator:delete`, '\u{1F5D1}\uFE0F Delete', ButtonStyle.Danger), btn(`${P}creator:toggle`, creator.enabled === false ? '\u25B6\uFE0F Resume' : '\u23F8\uFE0F Pause', creator.enabled === false ? ButtonStyle.Success : ButtonStyle.Secondary)),
+    row(btn(`${P}creator:change`, '\u{1F4DD} Edit Details'), btn(`${P}creator:accounts`, '\u{1F517} Linked Accounts', ButtonStyle.Secondary, !linked.length), btn(`${P}creator:check:${creator.creatorId}`, '\u{1F504} Check Creator', ButtonStyle.Secondary, !linked.length)),
+    row(btn(`${P}creator:toggle`, creator.enabled === false ? '\u25B6\uFE0F Resume Creator' : '\u23F8\uFE0F Pause Creator', creator.enabled === false ? ButtonStyle.Success : ButtonStyle.Secondary), btn(`${P}creator:delete`, '\u{1F5D1}\uFE0F Delete', ButtonStyle.Danger)),
     navigation('creators'),
   ];
-  return { embeds: [embed(config, '\u270F\uFE0F Manage Creator', description, who(i))], components };
+  return { embeds: [embed(config, `\u270F\uFE0F ${creator.displayName}`, description, who(i))], components };
 }
 function buildAccountEditPanel(i, config, creator, account) {
   const supported = supportedAlerts(account.platform), alerts = Array.isArray(account.alertTypes) ? account.alertTypes : supported, s = account.state || {}, components = [], session = getAccountSession(i), routeType = supported.includes(session.routeType) ? session.routeType : 'default';
