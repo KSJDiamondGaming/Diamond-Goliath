@@ -24,9 +24,20 @@ const now = () => new Date().toISOString();
 const clean = (value, max = 2000) => String(value ?? '').trim().slice(0, max);
 const intText = (value) => Number.isFinite(Number(value)) ? Number(value).toLocaleString('en-GB') : '';
 
+function stripTrailingDivider(value) {
+  return String(value || '').replace(/(?:\n\s*)+(?:[\u2500\-_]{8,}\s*)+$/u, '').trim();
+}
+
+function cacheBustedImageUrl(value) {
+  const raw = clean(value, 1000);
+  if (!/^https?:\/\//i.test(raw)) return '';
+  const separator = raw.includes('?') ? '&' : '?';
+  return `${raw}${separator}snapshot=${Date.now()}`;
+}
+
 function embedActionBlock(lines = []) {
   const actions = lines.map((line) => clean(line, 300)).filter(Boolean);
-  return actions.length ? `\n\n${actions.join('\n')}` : '';
+  return actions.length ? `\n\n${actions.join('\n')}\n${EMBED_WIDTH_DIVIDER}` : '';
 }
 
 function configFor(guildId) {
@@ -624,7 +635,7 @@ async function buildEventPayload(client, guildId, config, account, creator, even
   const embed = new EmbedBuilder()
     .setColor(embedColor)
     .setTitle(clean(render(template.title, vars), 256) || `${creatorName} update`)
-    .setDescription(clean(baseDescription + embedCallToAction, 4096))
+    .setDescription(clean(stripTrailingDivider(baseDescription) + embedCallToAction, 4096))
     .setFooter({ text: clean(render(template.footer || `Social Studio \u2022 ${platform.label}`, vars), 2048) || `Social Studio \u2022 ${platform.label}` })
     .setTimestamp();
 
@@ -634,7 +645,8 @@ async function buildEventPayload(client, guildId, config, account, creator, even
   if (/^https?:\/\//i.test(profileUrl)) author.url = profileUrl;
   embed.setAuthor(author);
 
-  if (/^https?:\/\//i.test(event.thumbnail || '')) embed.setImage(event.thumbnail);
+  const previewImage = cacheBustedImageUrl(event.thumbnail);
+  if (previewImage) embed.setImage(previewImage);
   if (/^https?:\/\//i.test(account.avatar || '')) embed.setThumbnail(account.avatar);
 
   const fields = [];
@@ -667,7 +679,8 @@ async function buildEventPayload(client, guildId, config, account, creator, even
   if (event.type !== 'ended' && ended) fields.push({ name: '\u26AB Ended', value: ended, inline: true });
   if (published) fields.push({ name: '\u{1F4C5} Published', value: published, inline: true });
   if (event.type === 'live' && /^https?:\/\//i.test(previousVod?.url || '')) {
-    fields.push({ name: '\u200B', value: `\u{1F39E}\uFE0F **[Watch VOD](${previousVod.url})**`, inline: false });
+    const vodTitle = clean(previousVod.title || 'Previous stream replay', 180);
+    fields.push({ name: '\u200B', value: `\u{1F39E}\uFE0F **[Watch VOD](${previousVod.url})**${vodTitle ? `\n${vodTitle}` : ''}`, inline: false });
   }
 
   if (fields.length) embed.addFields(fields.slice(0, 25));
