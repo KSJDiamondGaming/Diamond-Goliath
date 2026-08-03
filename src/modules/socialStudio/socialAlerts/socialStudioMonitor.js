@@ -667,11 +667,7 @@ async function buildEventPayload(client, guildId, config, account, creator, even
   if (event.type !== 'ended' && ended) fields.push({ name: '\u26AB Ended', value: ended, inline: true });
   if (published) fields.push({ name: '\u{1F4C5} Published', value: published, inline: true });
   if (event.type === 'live' && /^https?:\/\//i.test(previousVod?.url || '')) {
-    const vodTitle = clean(previousVod.title || 'Previous stream replay', 160);
-    const vodDuration = clean(previousVod.duration || '', 40);
-    const vodMeta = [vodTitle, vodDuration].filter(Boolean).join(' \u2022 ');
-    const vodText = `\u{1F3AC} [Watch Previous VOD](${previousVod.url})${vodMeta ? `\n${vodMeta}` : ''}`;
-    fields.push({ name: '\u{1F39E}\uFE0F Previous VOD', value: clean(vodText, 1024), inline: false });
+    fields.push({ name: '\u200B', value: `\u{1F39E}\uFE0F **[Watch VOD](${previousVod.url})**`, inline: false });
   }
 
   if (fields.length) embed.addFields(fields.slice(0, 25));
