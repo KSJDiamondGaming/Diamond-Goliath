@@ -3,6 +3,7 @@
 const { EmbedBuilder } = require('discord.js');
 const guildManager = require('../../../core/guild/guildManager');
 const { checkAccount, providerInfo } = require('./socialStudioProviders');
+const { normalizeTemplates, resolveTemplate } = require('./socialStudioTemplates');
 
 const runningGuilds = new Set();
 let timer = null;
@@ -51,7 +52,7 @@ function configFor(guildId) {
     alertChannels: social.alertChannels && typeof social.alertChannels === 'object' ? social.alertChannels : {},
     accounts: social.accounts && typeof social.accounts === 'object' ? social.accounts : {},
     creators: social.creators && typeof social.creators === 'object' ? social.creators : {},
-    templates: social.templates && typeof social.templates === 'object' ? social.templates : {},
+    templates: normalizeTemplates(social.templates),
     settings: social.settings && typeof social.settings === 'object' ? social.settings : {},
     history: Array.isArray(social.history) ? social.history : [],
     analytics: social.analytics && typeof social.analytics === 'object' ? social.analytics : {},
@@ -176,16 +177,7 @@ function resolvedDuplicateIds(config, account, checked, creator) {
 }
 
 function templateFor(config, type) {
-  const defaults = {
-    live: { title: '🔴 {creator} is LIVE', description: '**{title}**', buttonLabel: 'Watch Live' },
-    ended: { title: '⚫ {creator} has ended their stream', description: '**{title}**', buttonLabel: 'View Channel' },
-    vod: { title: '🎞️ New VOD from {creator}', description: '**{title}**', buttonLabel: 'Watch VOD' },
-    clip: { title: '🎬 New clip from {creator}', description: '**{title}**', buttonLabel: 'Watch Clip' },
-    upload: { title: '📺 New upload from {creator}', description: '**{title}**', buttonLabel: 'Watch Now' },
-    short: { title: '📱 New short from {creator}', description: '**{title}**', buttonLabel: 'Watch Now' },
-    post: { title: '📰 New post from {creator}', description: '**{title}**', buttonLabel: 'View Post' },
-  };
-  return { ...(defaults[type] || defaults.upload), ...(config.templates?.[type] || {}) };
+  return resolveTemplate(config.templates, type);
 }
 
 function render(value, vars) {

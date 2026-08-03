@@ -6,20 +6,11 @@ const security = require('../../../core/security/securityCore');
 const { normalizeAccountInput, migrateAccount } = require('./accountNormalizer');
 const { providerInfo } = require('./socialStudioProviders');
 const { forcePostCreatorLive } = require('./socialStudioMonitor');
+const { ALERT_TYPES, normalizeTemplates, resolveTemplate, resetTemplate } = require('./socialStudioTemplates');
 
 const P = 'social:';
 const PAGE_SIZE = 25;
 const PLATFORMS = ['facebook', 'instagram', 'kick', 'tiktok', 'twitch', 'x', 'youtube'];
-const TEMPLATE_DEFAULTS = {
-  live: { title: '🔴 {creator} is LIVE', description: '**{title}**', buttonLabel: 'Watch Live' },
-  ended: { title: '⚫ {creator} has ended their stream', description: '**{title}**', buttonLabel: 'View Channel' },
-  vod: { title: '🎞️ New VOD from {creator}', description: '**{title}**', buttonLabel: 'Watch VOD' },
-  clip: { title: '🎬 New clip from {creator}', description: '**{title}**', buttonLabel: 'Watch Clip' },
-  upload: { title: '📺 New upload from {creator}', description: '**{title}**', buttonLabel: 'Watch Now' },
-  short: { title: '📱 New short from {creator}', description: '**{title}**', buttonLabel: 'Watch Now' },
-  post: { title: '📝 New post from {creator}', description: '**{title}**', buttonLabel: 'View Post' },
-};
-const ALERT_TYPES = ['live', 'ended', 'vod', 'clip', 'upload', 'short', 'post'];
 const ALERT_LABEL = { live: 'LIVE', ended: 'Stream Ended', vod: 'VOD', clip: 'Clip', upload: 'Upload', short: 'Short', post: 'Post' };
 const ALERT_EMOJI = { live: '🔴', ended: '⚫', vod: '🎥', clip: '🎬', upload: '📺', short: '📱', post: '📝' };
 const LABEL = { twitch: 'Twitch', youtube: 'YouTube', tiktok: 'TikTok', kick: 'Kick', facebook: 'Facebook', instagram: 'Instagram', x: 'X' };
@@ -86,7 +77,7 @@ function getConfig(guildId) {
     notificationRoleId: s.notificationRoleId || null,
     accounts: s.accounts && typeof s.accounts === 'object' ? s.accounts : {},
     creators: s.creators && typeof s.creators === 'object' ? s.creators : {},
-    templates: s.templates && typeof s.templates === 'object' ? s.templates : {},
+    templates: normalizeTemplates(s.templates),
     settings: s.settings && typeof s.settings === 'object' ? s.settings : {},
     history: Array.isArray(s.history) ? s.history : [],
     queue: Array.isArray(s.queue) ? s.queue : [],
@@ -258,8 +249,8 @@ function accountMoveNewProfileModal(account) {
   );
 }
 function templateModal(type, config) {
-  const defaults = TEMPLATE_DEFAULTS[type] || TEMPLATE_DEFAULTS.upload;
-  const c = { ...defaults, ...(config.templates?.[type] || {}) };
+  const defaults = config.templates?.defaults?.[type] || resolveTemplate(config.templates, type);
+  const c = resolveTemplate(config.templates, type);
   return new ModalBuilder().setCustomId(`${P}template:save:${type}`).setTitle(`${ALERT_LABEL[type] || type} Template`).addComponents(
     row(new TextInputBuilder().setCustomId('title').setLabel('Alert headline').setPlaceholder(defaults.title).setStyle(TextInputStyle.Short).setMaxLength(256).setValue(String(c.title)).setRequired(true)),
     row(new TextInputBuilder().setCustomId('description').setLabel('Main message text').setPlaceholder('This appears under the headline. Example: **{title}**').setStyle(TextInputStyle.Paragraph).setMaxLength(2000).setValue(String(c.description)).setRequired(true)),
@@ -382,6 +373,35 @@ function buildAccountManagePanel(i, config, creator) {
   return { embeds: [embed(config, '🛠️ Manage Account', d, who(i), active ? platformColor(active.platform) : creatorAccent(linked))], components };
 }
 function variablesDescription() { return ['**🌍 Global / Server**','`{timestamp}` `{nowTimestamp}` `{guildId}` `{guildName}` `{server}` `{guildIcon}` `{serverIcon}` `{guildBanner}` `{guildMemberCount}` `{memberCount}` `{guildVanityCode}`','`{successEmoji}` `{warningEmoji}` `{errorEmoji}` `{proofVerifiedEmoji}` `{successColor}` `{warningColor}` `{errorColor}` `{proofVerifiedColor}`','','**👤 Discord User Context**','`{userId}` `{userTag}` `{userName}` `{userGlobalName}` `{userMention}` `{userNoPing}` `{userAvatar}` `{userServerAvatar}` `{userNickname}` `{userDisplay}`','`{userCreatedAt}` `{userCreatedTimestamp}` `{userJoinedAt}` `{userJoinedTimestamp}` `{createdAt}` `{joinedAt}` `{leftAt}` `{accountAge}` `{membershipDuration}`','`{departureIcon}` `{departureType}` `{departureLabel}` `{departureReason}` `{departureModerator}` `{departureModeratorId}`','','**📣 Creator / Platform**','`{creator}` `{creatorName}` `{creatorDisplayName}` `{creatorAvatar}` `{creatorBanner}` `{creatorDescription}` `{platform}` `{platformIcon}` `{platformColor}` `{username}` `{displayName}` `{channelId}` `{profileUrl}`','','**🔴 LIVE / Stream**','`{title}` `{description}` `{game}` `{category}` `{viewers}` `{peakViewers}` `{started}` `{duration}` `{liveThumbnail}` `{thumbnail}` `{liveUrl}` `{url}`','','**🎥 Video / VOD / Upload / Clip / Short**','`{videoTitle}` `{videoDescription}` `{videoDuration}` `{videoViews}` `{videoThumbnail}` `{videoUrl}`','`{clipTitle}` `{clipCreator}` `{clipViews}` `{clipUrl}` `{uploadTitle}` `{uploadDescription}` `{uploadThumbnail}` `{uploadUrl}` `{shortTitle}` `{shortThumbnail}` `{shortUrl}`','','*Variables without context resolve to an empty value instead of breaking the message.*'].join('\n'); }
+
+function buildTemplatePanel(i, config, type) {
+  const current = resolveTemplate(config.templates, type);
+  const defaults = config.templates?.defaults?.[type] || current;
+  const custom = config.templates?.custom?.[type];
+  const changed = Boolean(custom);
+  const d = [
+    `Configure the **${ALERT_LABEL[type] || type}** message copy.`,
+    '',
+    '**Current Headline**',
+    current.title || 'Not set',
+    '',
+    '**Current Message**',
+    current.description || 'Not set',
+    '',
+    '**Default Headline**',
+    defaults.title || 'Not set',
+    '',
+    `**Status:** ${changed ? 'Customised' : 'Using default'}`,
+    'Layout, media, links, colour and footer stay managed by Goliath.'
+  ].join('\n');
+  return {
+    embeds: [embed(config, `${ALERT_EMOJI[type] || '🔔'} ${ALERT_LABEL[type] || type} Template`, d, who(i))],
+    components: [
+      row(btn(`${P}template:edit:${type}`, '📝 Edit Template', ButtonStyle.Primary), btn(`${P}template:reset:${type}`, '🔄 Reset to Default', ButtonStyle.Secondary, !changed)),
+      row(btn(`${P}templates`, '⬅️ Templates'), btn(`${P}settings`, '⚙️ Settings')),
+    ],
+  };
+}
 
 function buildSectionPanel(i, name) {
   const config = getConfig(i.guildId), accounts = Object.values(config.accounts), creators = Object.values(config.creators).sort((a, b) => String(a.displayName || '').localeCompare(String(b.displayName || ''), undefined, { sensitivity: 'base' })); if (name === 'creators') return buildCreatorPanel(i, config, creators);
@@ -514,7 +534,7 @@ async function respond(i, payload) {
   return true;
 }
 async function afterModal(i, section, message) { const payload = buildSectionPanel(i, section); if (i.isFromMessage?.() && !i.deferred && !i.replied) { await i.update(payload); await i.followUp({ content: message, flags: 64 }).catch(() => null); } else if (!i.deferred && !i.replied) await i.reply({ content: message, flags: 64 }); else await i.followUp({ content: message, flags: 64 }); return true; }
-function opensModal(id) { return id === `${P}creator:new` || id === `${P}creator:edit` || id === `${P}creator:change` || id === `${P}account:continue` || id === `${P}account:change` || id === `${P}account:move:new` || id === `${P}automation:quiet` || (id.startsWith(`${P}template:`) && !id.startsWith(`${P}template:save:`)); }
+function opensModal(id) { return id === `${P}creator:new` || id === `${P}creator:edit` || id === `${P}creator:change` || id === `${P}account:continue` || id === `${P}account:change` || id === `${P}account:move:new` || id === `${P}automation:quiet` || id.startsWith(`${P}template:edit:`); }
 async function handleInteraction(i) {
   const id = String(i?.customId || ''); if (id !== 'admin:social' && !id.startsWith(P)) return false; if (!i.guild?.id) throw new Error('Social Studio requires a guild interaction.'); if (i.isMessageComponent?.() && !opensModal(id) && !i.deferred && !i.replied) await i.deferUpdate();
   const config = getConfig(i.guildId), actorId = i.user?.id || null, interaction = i;
@@ -556,20 +576,24 @@ async function handleInteraction(i) {
   if (id === `${P}account:move:create`) { const s = getAccountSession(i), account = config.accounts[s.accountId]; if (!account) throw new Error('The selected account no longer exists.'); const name = i.fields.getTextInputValue('displayName').trim(); if (!name) throw new Error('Creator display name is required.'); const cid = makeId('creator'); const creator = { creatorId: cid, displayName: name, group: i.fields.getTextInputValue('group').trim(), tags: i.fields.getTextInputValue('tags').split(',').map((v) => v.trim()).filter(Boolean), notes: i.fields.getTextInputValue('notes').trim(), enabled: true, accountIds: [], createdAt: now(), updatedAt: now() }; config.creators[cid] = creator; moveAccountToCreator(config, account, creator); saveConfig(i.guildId, config, i.guild, actorId); setCreatorSession(i, { creatorId: cid }); setAccountSession(i, { creatorId: cid, accountId: account.accountId, platforms: [], routeType: 'default' }); return afterModal(i, 'accounts', `✅ Account moved to ${name}.`); }
   if (id === `${P}creator:create`) { const name = i.fields.getTextInputValue('displayName').trim(); if (!name) throw new Error('Creator display name is required.'); const cid = makeId('creator'); config.creators[cid] = { creatorId: cid, displayName: name, group: i.fields.getTextInputValue('group').trim(), tags: i.fields.getTextInputValue('tags').split(',').map((v) => v.trim()).filter(Boolean), notes: i.fields.getTextInputValue('notes').trim(), enabled: true, accountIds: [], createdAt: now(), updatedAt: now() }; saveConfig(i.guildId, config, i.guild, actorId); setCreatorSession(i, { creatorId: cid }); return afterModal(i, 'creators', '✅ Creator profile created.'); }
   if (id === `${P}account:create-multi`) { const s = getAccountSession(i), c = config.creators[s.creatorId]; if (!c) throw new Error('The selected creator profile no longer exists.'); let created = 0, updated = 0, dupes = 0, selected = null; for (const p of s.platforms.slice(0, 5)) { const raw = i.fields.getTextInputValue(`account_${p}`).trim(); if (!raw) continue; const r = upsertAccount(config, c, p, raw); selected = r.accountId; r.created ? created++ : updated++; dupes += r.removedDuplicates; } saveConfig(i.guildId, config, i.guild, actorId); setCreatorSession(i, { creatorId: c.creatorId }); setAccountSession(i, { creatorId: c.creatorId, platforms: [], accountId: selected, routeType: 'default', mode: null }); return afterModal(i, 'creators', `✅ ${created} added, ${updated} updated${dupes ? `, ${dupes} duplicates merged` : ''}.`); }
-  if (id.startsWith(`${P}template:`) && !id.startsWith(`${P}template:save:`)) { const type = id.split(':')[2]; if (!ALERT_TYPES.includes(type)) throw new Error('Unknown notification template.'); await i.showModal(templateModal(type, config)); return true; }
+  if (id.startsWith(`${P}template:edit:`)) { const type = id.split(':')[3]; if (!ALERT_TYPES.includes(type)) throw new Error('Unknown notification template.'); await i.showModal(templateModal(type, config)); return true; }
+  if (id.startsWith(`${P}template:reset:`)) { const type = id.split(':')[3]; if (!ALERT_TYPES.includes(type)) throw new Error('Unknown notification template.'); config.templates = resetTemplate(config.templates, type); saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildTemplatePanel(i, getConfig(i.guildId), type)); }
+  if (id.startsWith(`${P}template:`) && !id.startsWith(`${P}template:save:`)) { const type = id.split(':')[2]; if (!ALERT_TYPES.includes(type)) throw new Error('Unknown notification template.'); return respond(i, buildTemplatePanel(i, config, type)); }
   if (id.startsWith(`${P}template:save:`)) {
     const type = id.split(':')[3];
-    const existing = config.templates?.[type] || {};
-    config.templates[type] = {
+    config.templates = normalizeTemplates(config.templates);
+    const existing = config.templates.custom?.[type] || {};
+    config.templates.custom[type] = {
       ...existing,
       title: i.fields.getTextInputValue('title'),
-      description: i.fields.getTextInputValue('description'),
-      buttonLabel: existing.buttonLabel || TEMPLATE_DEFAULTS[type]?.buttonLabel || 'Watch now',
-      color: existing.color || '{platformColor}',
-      footer: existing.footer || '{platform} • Social Studio'
+      description: i.fields.getTextInputValue('description')
     };
     saveConfig(i.guildId, config, i.guild, actorId);
-    return afterModal(i, 'templates', `✅ ${ALERT_LABEL[type] || type} template saved.`);
+    const payload = buildTemplatePanel(i, getConfig(i.guildId), type);
+    if (i.isFromMessage?.() && !i.deferred && !i.replied) { await i.update(payload); await i.followUp({ content: `${ALERT_LABEL[type] || type} template saved.`, flags: 64 }).catch(() => null); }
+    else if (!i.deferred && !i.replied) await i.reply({ content: `${ALERT_LABEL[type] || type} template saved.`, flags: 64 });
+    else await i.followUp({ content: `${ALERT_LABEL[type] || type} template saved.`, flags: 64 });
+    return true;
   }
   if (id === `${P}feed:type` || id === `${P}channel:type`) { setFeedSession(i, { routeType: i.values?.[0] || 'default' }); return respond(i, buildSectionPanel(i, 'channels')); }
   if (id === `${P}feed:route` || id === `${P}channel:route`) { const type = getFeedSession(i).routeType || 'default', channelId = i.values?.[0] || null; if (type === 'default') config.alertsChannelId = channelId; else { config.alertChannels = config.alertChannels && typeof config.alertChannels === 'object' ? config.alertChannels : {}; config.alertChannels[type] = channelId; } saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'channels')); }
@@ -596,6 +620,12 @@ async function handleInteraction(i) {
   if (id === `${P}data:export`) { const payload = JSON.stringify({ exportedAt: now(), guildId: i.guildId, analytics: config.analytics, history: config.history }, null, 2); await i.followUp({ content: `📤 Social Studio history export • ${config.history.length} entries`, files: [new AttachmentBuilder(Buffer.from(payload, 'utf8'), { name: `social-studio-history-${i.guildId}.json` })], flags: 64 }); return respond(i, buildSectionPanel(i, 'diagnostics')); }
   if (id === `${P}creator:rebuild`) { const linked = new Set(Object.values(config.creators).flatMap((c) => c.accountIds || [])); for (const a of Object.values(config.accounts)) if (!linked.has(a.accountId)) { const cid = makeId('creator'); config.creators[cid] = { creatorId: cid, displayName: a.displayName || a.username || a.externalId, group: '', tags: [a.platform], notes: '', enabled: true, accountIds: [a.accountId], createdAt: now(), updatedAt: now() }; } saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'creators')); }
   if (id === `${P}test`) { if (!config.alertsChannelId) throw new Error('Choose an alert channel first.'); await i.followUp({ embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🧪 Social Studio Test').setDescription(`✅ Notification routing is working.\n\nThis private preview was opened from ${i.channelId ? `<#${i.channelId}>` : 'this setup channel'}.\n\nThumbnails, platform metadata and template variables will be applied to real provider events.`).setFooter({ text: 'Social Studio • Test' }).setTimestamp()], flags: 64 }).catch(() => null); return respond(i, buildSectionPanel(i, 'diagnostics')); }
-  const section = id.slice(P.length); if (NAV.has(section)) return respond(i, buildSectionPanel(i, section)); throw new Error(`Unknown Social Studio interaction: ${id}`);
+  const section = id.slice(P.length);
+  if (section === 'templates') {
+    config.templates = normalizeTemplates(config.templates);
+    saveConfig(i.guildId, config, i.guild, actorId);
+    return respond(i, buildSectionPanel(i, section));
+  }
+  if (NAV.has(section)) return respond(i, buildSectionPanel(i, section)); throw new Error(`Unknown Social Studio interaction: ${id}`);
 }
 module.exports = { buildPanel: buildMainPanel, handleInteraction, buildSocialAdminPanel: buildMainPanel, buildSectionPanel, handleSocialAdminInteraction: handleInteraction, canManageSocialStudio };

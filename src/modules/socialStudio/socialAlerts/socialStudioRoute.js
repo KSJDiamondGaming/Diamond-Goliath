@@ -4,17 +4,11 @@ const crypto = require('crypto');
 const express = require('express');
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const guildManager = require('../../../core/guild/guildManager');
+const { ALERT_TYPES, normalizeTemplates, resolveTemplate } = require('./socialStudioTemplates');
 
 const router = express.Router();
 const PLATFORMS = ['twitch', 'youtube', 'tiktok', 'kick', 'facebook', 'instagram', 'x'];
-const ALERT_TYPES = ['live', 'upload', 'short', 'post'];
 const CREATOR_STATUSES = ['active', 'left_server', 'disabled', 'archived'];
-const TEMPLATES = {
-  live: { title: '{creator} is now live', description: '{title}', buttonLabel: 'Watch now' },
-  upload: { title: '{creator} uploaded a new video', description: '{title}', buttonLabel: 'Watch now' },
-  short: { title: '{creator} posted a new short', description: '{title}', buttonLabel: 'Watch now' },
-  post: { title: '{creator} shared a new post', description: '{title}', buttonLabel: 'View post' },
-};
 const PROVIDERS = {
   twitch: ['Twitch', ['live'], ['TWITCH_CLIENT_ID', 'TWITCH_CLIENT_SECRET']],
   youtube: ['YouTube', ['live', 'upload', 'short', 'post'], ['YOUTUBE_API_KEY']],
@@ -57,7 +51,7 @@ function defaults() {
     userRoleIds: [],
     accounts: {},
     creators: {},
-    templates: { ...TEMPLATES },
+    templates: normalizeTemplates(),
     settings: {
       checkIntervalMs: 300000,
       retryIntervalMs: 60000,
@@ -147,7 +141,7 @@ function normalize(raw = {}) {
     userRoleIds: [...new Set((Array.isArray(source.userRoleIds) ? source.userRoleIds : []).map(discordId).filter(Boolean))],
     accounts,
     creators,
-    templates: Object.fromEntries(ALERT_TYPES.map((type) => [type, { ...TEMPLATES[type], ...(isObject(source.templates?.[type]) ? source.templates[type] : {}) }])),
+    templates: normalizeTemplates(source.templates),
     settings: {
       ...base.settings,
       ...settings,
@@ -216,7 +210,7 @@ function health(config, discordGuild = null) {
 function render(template, values) { return String(template || '').replace(/\{(creator|title|platform|url)\}/g, (_match, key) => values[key] || ''); }
 function preview(account, config, alertType) {
   const creator = Object.values(config.creators).find((item) => item.accountIds.includes(account.accountId));
-  const template = config.templates[alertType] || TEMPLATES[alertType];
+  const template = resolveTemplate(config.templates, alertType);
   const values = { creator: creator?.displayName || account.displayName || account.username, title: `Test ${alertType} alert`, platform: account.platform, url: account.url || account.username };
   return { title: render(template.title, values), description: render(template.description, values), buttonLabel: template.buttonLabel, url: values.url, platform: account.platform, alertType };
 }
@@ -241,7 +235,7 @@ router.get('/:guildId/queue', (req, res) => { try { const id = guildId(req); con
 router.get('/:guildId/creator-hub', (req, res) => { try { const id = guildId(req); const config = getConfig(id); return success(res, { guildId: id, creators: Object.values(config.creators), accounts: Object.values(config.accounts) }); } catch (error) { return failure(res, error, 400); } });
 router.get('/:guildId/creator-hub/diagnostics', (req, res) => { try { const id = guildId(req); const config = getConfig(id); const result = health(config); return success(res, { guildId: id, diagnostics: { health: result, runtime: { state: result.healthy ? (result.issues.length ? 'warning' : 'healthy') : 'error', startedAt: runtime.startedAt, warningCount: result.issues.filter((item) => item.severity === 'warning').length, errorCount: result.issues.filter((item) => item.severity === 'error').length, issues: result.issues, scheduler: { started: config.enabled, tickIntervalMs: config.settings.checkIntervalMs }, queue: { started: config.enabled && config.settings.retryDeliveries, intervalMs: config.settings.retryIntervalMs }, incidentMonitor: { started: true, intervalMs: 60000 } } } }); } catch (error) { return failure(res, error, 400); } });
 router.get('/:guildId/health', async (req, res) => { try { const id = guildId(req); return success(res, { guildId: id, health: health(getConfig(id), await guild(req, id)) }); } catch (error) { return failure(res, error, 400); } });
-router.patch('/:guildId/config', (req, res) => { try { const id = guildId(req); const current = getConfig(id); const body = isObject(req.body) ? req.body : {}; if (typeof body.enabled === 'boolean') guildManager.setModuleEnabled(id, 'social', body.enabled, actor(req)); const { enabled: _enabled, ...bodyConfig } = body; const config = { ...current, ...bodyConfig, settings: { ...current.settings, ...(isObject(bodyConfig.settings) ? bodyConfig.settings : {}) }, templates: { ...current.templates, ...(isObject(bodyConfig.templates) ? bodyConfig.templates : {}) } }; return success(res, { guildId: id, config: saveConfig(id, config, actor(req)) }); } catch (error) { return failure(res, error, 400); } });
+router.patch('/:guildId/config', (req, res) => { try { const id = guildId(req); const current = getConfig(id); const body = isObject(req.body) ? req.body : {}; if (typeof body.enabled === 'boolean') guildManager.setModuleEnabled(id, 'social', body.enabled, actor(req)); const { enabled: _enabled, ...bodyConfig } = body; const incomingTemplates = normalizeTemplates(bodyConfig.templates); const config = { ...current, ...bodyConfig, settings: { ...current.settings, ...(isObject(bodyConfig.settings) ? bodyConfig.settings : {}) }, templates: isObject(bodyConfig.templates) ? { defaults: { ...current.templates.defaults, ...incomingTemplates.defaults }, custom: { ...current.templates.custom, ...incomingTemplates.custom } } : current.templates }; return success(res, { guildId: id, config: saveConfig(id, config, actor(req)) }); } catch (error) { return failure(res, error, 400); } });
 router.post('/:guildId/accounts', (req, res) => { try { const id = guildId(req); const config = getConfig(id); const account = normalizeAccount(req.body || {}); config.accounts[account.accountId] = account; history(config, { status: 'created', accountId: account.accountId, platform: account.platform, alertType: null, actorId: actor(req).actorId }); return success(res, { guildId: id, account, config: saveConfig(id, config, actor(req)) }); } catch (error) { return failure(res, error, 400); } });
 router.delete('/:guildId/accounts/:accountId', (req, res) => { try { const id = guildId(req); const config = getConfig(id); const accountId = clean(req.params.accountId, 80); if (!config.accounts[accountId]) throw new Error('Social account was not found.'); delete config.accounts[accountId]; Object.values(config.creators).forEach((creator) => { creator.accountIds = creator.accountIds.filter((item) => item !== accountId); }); history(config, { status: 'deleted', accountId, alertType: null, actorId: actor(req).actorId }); return success(res, { guildId: id, config: saveConfig(id, config, actor(req)) }); } catch (error) { return failure(res, error, 400); } });
 router.post('/:guildId/check', (req, res) => { try { const id = guildId(req); const config = getConfig(id); const checked = Object.values(config.accounts).filter((item) => item.enabled).length; config.analytics.checks = Number(config.analytics.checks || 0) + checked; runtime.checks += checked; history(config, { status: 'checked', creator: 'All creators', alertType: null, checked }); return success(res, { guildId: id, checked, config: saveConfig(id, config, actor(req)) }); } catch (error) { return failure(res, error, 400); } });
