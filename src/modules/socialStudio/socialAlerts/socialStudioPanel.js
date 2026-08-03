@@ -348,7 +348,7 @@ function buildAccountMovePanel(i, config, creator, account) {
 function buildAccountAddPanel(i, config, creator) {
   const selected = getAccountSession(i).platforms || [];
   const d = [`Add one or more social accounts to **${creator.displayName}**.`, '', 'Select up to 5 platforms, then continue. The next form will ask for a username, channel ID or URL for each selected platform.', '', `**Selected:** ${selected.length ? selected.map((p) => LABEL[p] || p).join(', ') : 'None'}`].join('\n');
-  return { embeds: [embed(config, '➕ Add Accounts', d, who(i), creatorAccent((creator.accountIds || []).map((id) => config.accounts[id]).filter(Boolean)))], components: [platformSelect(selected), row(btn(`${P}account:continue`, '➡️ Continue', ButtonStyle.Success, !selected.length), btn(`${P}creators`, '⬅️ Back'))] };
+  return { embeds: [embed(config, '➕ Add Accounts', d, who(i), creatorAccent((creator.accountIds || []).map((id) => config.accounts[id]).filter(Boolean)))], components: [platformSelect(selected), row(btn(`${P}creators`, '⬅️ Back'), btn(`${P}account:continue`, '➡️ Continue', ButtonStyle.Success, !selected.length))] };
 }
 function buildProfileManagePanel(i, config, creator) {
   const d = [`👤 **${creator.displayName}**`, '', '**Profile**', `Status: ${creator.enabled === false ? '⏸️ Paused' : '🟢 Monitoring'}`, `Group / Team: ${creator.group || 'Not set'}`, `Tags: ${creator.tags?.length ? creator.tags.join(', ') : 'None'}`, `Notes: ${creator.notes || 'None'}`].join('\n');
