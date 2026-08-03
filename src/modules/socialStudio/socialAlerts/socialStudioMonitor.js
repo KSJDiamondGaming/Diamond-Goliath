@@ -31,6 +31,7 @@ function stripTrailingDivider(value) {
 function cacheBustedImageUrl(value) {
   const raw = clean(value, 1000);
   if (!/^https?:\/\//i.test(raw)) return '';
+  if (/static-cdn\.jtvnw\.net|static-cdn\.twitchcdn\.net/i.test(raw)) return raw;
   const separator = raw.includes('?') ? '&' : '?';
   return `${raw}${separator}snapshot=${Date.now()}`;
 }
@@ -630,9 +631,12 @@ async function buildEventPayload(client, guildId, config, account, creator, even
   const actionLabel = clean(render(actionLabelTemplate, vars), 80) || defaultActionLabel;
   const actionLines = [];
   const liveStatusText = liveStatus === 'OFFLINE' ? '\u{1F534} **OFFLINE**' : liveStatus === 'LIVE' ? '\u{1F7E2} **LIVE**' : '';
-  const statusSpacer = liveStatusText ? '\u2003'.repeat(10) : '';
-  if (/^https?:\/\//i.test(url)) actionLines.push('\u{1F680} **[' + actionLabel + '](' + url + ')**' + statusSpacer + liveStatusText);
-  if (/^https?:\/\//i.test(profileUrl) && profileUrl !== url) actionLines.push('\u{1F464} [Creator Profile](' + profileUrl + ')');
+  const profileLink = /^https?:\/\//i.test(profileUrl) && profileUrl !== url ? '\u{1F464} [Creator Profile](' + profileUrl + ')' : '';
+  if (/^https?:\/\//i.test(url)) {
+    const rightAction = liveStatusText || profileLink;
+    const rightSpacer = rightAction ? '\u2003'.repeat(liveStatusText ? 9 : 8) : '';
+    actionLines.push('\u{1F680} **[' + actionLabel + '](' + url + ')**' + rightSpacer + rightAction);
+  } else if (profileLink) actionLines.push(profileLink);
   const embedCallToAction = embedActionBlock(actionLines);
 
   const embed = new EmbedBuilder()
