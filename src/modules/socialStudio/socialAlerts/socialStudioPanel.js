@@ -272,6 +272,12 @@ function upsertAccount(config, creator, platform, rawValue) {
 }
 function accountState(a) { const s = a.state || {}; return a.enabled === false ? '⏸️ Paused' : s.isLive === true ? '🔴 LIVE' : s.isLive === false ? '⚫ Offline' : s.lastError ? '🟡 Unavailable' : '🟢 Monitoring'; }
 function ts(value) { const ms = new Date(value || '').getTime(); return Number.isFinite(ms) ? `<t:${Math.floor(ms / 1000)}:R>` : 'Never'; }
+function newestTime(values = []) {
+  return values.reduce((latest, value) => {
+    const ms = new Date(value || '').getTime();
+    return Number.isFinite(ms) && ms > latest ? ms : latest;
+  }, 0);
+}
 function dashboardStats(config) {
   const accounts = Object.values(config.accounts);
   return { live: accounts.filter((a) => a.enabled !== false && a.state?.isLive === true).length, offline: accounts.filter((a) => a.enabled !== false && a.state?.isLive === false).length, unavailable: accounts.filter((a) => a.enabled !== false && a.state?.lastError).length, monitored: accounts.filter((a) => a.enabled !== false).length };
@@ -389,25 +395,34 @@ function buildSectionPanel(i, name) {
   if (name === 'monitoring') {
     const settings = config.settings || {}, interval = Math.max(30000, Number(settings.checkIntervalMs || 300000)), mins = interval / 60000, quiet = settings.quietHours && typeof settings.quietHours === 'object' ? settings.quietHours : { enabled: false, start: '23:00', end: '08:00', timezone: 'Europe/London' };
     const monitored = accounts.filter((a) => a.enabled !== false).length;
-    const lastCheck = [...config.history].reverse().find((entry) => entry?.status === 'checked' || entry?.providerStatus);
+    const lastHistoryCheck = [...config.history].reverse().find((entry) => entry?.status === 'checked' || entry?.providerStatus);
+    const lastAccountCheckMs = newestTime(accounts.map((account) => account.state?.lastCheckedAt));
+    const lastProviderCheck = lastAccountCheckMs ? new Date(lastAccountCheckMs).toISOString() : lastHistoryCheck?.createdAt || lastHistoryCheck?.checkedAt || lastHistoryCheck?.lastCheckedAt;
     const failures = accounts.filter((a) => a.state?.lastError || a.state?.lastDeliveryError).length + Number(config.queue?.length || 0);
     const d = [
       `${failures ? 'Warning' : 'Operational'} **System Health**`,
-      failures ? `${failures} item(s) need attention` : 'Operational',
+      failures ? `${failures} account, delivery or queue item(s) need attention.` : 'No provider, delivery or queue issues detected.',
       '',
       `**Module Status**\n${config.enabled ? 'Enabled' : 'Disabled'}`,
+      'Turns Social Studio monitoring on or off for this server.',
       '',
       `**Check Interval**\n${interval < 60000 ? 'Every 30 seconds' : `Every ${mins} minute${mins === 1 ? '' : 's'}`}`,
+      'How often the bot checks linked accounts for new provider activity.',
       '',
       `**Duplicate Protection**\n${settings.suppressDuplicates === false ? 'Disabled' : 'Enabled'}`,
+      'Prevents the same LIVE/provider event from being posted twice.',
       '',
       `**Failed Delivery Retry**\n${settings.retryDeliveries === false ? 'Disabled' : 'Enabled'}`,
+      'Retries alert sends that failed because Discord or the target channel was unavailable.',
       '',
       `**Quiet Hours**\n${quiet.enabled === true ? `${quiet.start || '23:00'} - ${quiet.end || '08:00'} (${quiet.timezone || 'Europe/London'})` : 'Disabled'}`,
+      'Pauses outbound alerts during the selected quiet window.',
       '',
       `**Monitored Accounts**\n${monitored} / ${accounts.length}`,
+      'Accounts enabled for automatic provider checks.',
       '',
-      `**Last Provider Check**\n${ts(lastCheck?.createdAt || lastCheck?.checkedAt || lastCheck?.lastCheckedAt)}`,
+      `**Last Provider Check**\n${ts(lastProviderCheck)}`,
+      'Newest recorded check time across monitored account states.',
     ].join('\n');
     return {
       embeds: [embed(config, 'Social Studio Monitoring', d, who(i))],
