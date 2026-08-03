@@ -253,9 +253,6 @@ function templateModal(type, config) {
   return new ModalBuilder().setCustomId(`${P}template:save:${type}`).setTitle(`${ALERT_LABEL[type] || type} Template`).addComponents(
     row(new TextInputBuilder().setCustomId('title').setLabel('Embed title').setPlaceholder('Example: {creator} is LIVE').setStyle(TextInputStyle.Short).setMaxLength(256).setValue(String(c.title || '{creator} alert')).setRequired(true)),
     row(new TextInputBuilder().setCustomId('description').setLabel('Embed description').setPlaceholder('Write the main alert message. Variables like {title} work here.').setStyle(TextInputStyle.Paragraph).setMaxLength(2000).setValue(String(c.description || '{title}')).setRequired(true)),
-    row(new TextInputBuilder().setCustomId('buttonLabel').setLabel('Primary button label').setPlaceholder('Example: Watch now').setStyle(TextInputStyle.Short).setMaxLength(80).setValue(String(c.buttonLabel || 'Watch now')).setRequired(true)),
-    row(new TextInputBuilder().setCustomId('color').setLabel('Embed colour (#RRGGBB or variable)').setPlaceholder('Example: #5865F2 or {platformColor}').setStyle(TextInputStyle.Short).setMaxLength(40).setRequired(false).setValue(String(c.color || '{platformColor}'))),
-    row(new TextInputBuilder().setCustomId('footer').setLabel('Embed footer').setPlaceholder('Example: {platform} • Social Studio').setStyle(TextInputStyle.Short).setMaxLength(200).setRequired(false).setValue(String(c.footer || '{platform} • Social Studio'))),
   );
 }
 function quietHoursModal(config) {
@@ -550,7 +547,20 @@ async function handleInteraction(i) {
   if (id === `${P}creator:create`) { const name = i.fields.getTextInputValue('displayName').trim(); if (!name) throw new Error('Creator display name is required.'); const cid = makeId('creator'); config.creators[cid] = { creatorId: cid, displayName: name, group: i.fields.getTextInputValue('group').trim(), tags: i.fields.getTextInputValue('tags').split(',').map((v) => v.trim()).filter(Boolean), notes: i.fields.getTextInputValue('notes').trim(), enabled: true, accountIds: [], createdAt: now(), updatedAt: now() }; saveConfig(i.guildId, config, i.guild, actorId); setCreatorSession(i, { creatorId: cid }); return afterModal(i, 'creators', '✅ Creator profile created.'); }
   if (id === `${P}account:create-multi`) { const s = getAccountSession(i), c = config.creators[s.creatorId]; if (!c) throw new Error('The selected creator profile no longer exists.'); let created = 0, updated = 0, dupes = 0, selected = null; for (const p of s.platforms.slice(0, 5)) { const raw = i.fields.getTextInputValue(`account_${p}`).trim(); if (!raw) continue; const r = upsertAccount(config, c, p, raw); selected = r.accountId; r.created ? created++ : updated++; dupes += r.removedDuplicates; } saveConfig(i.guildId, config, i.guild, actorId); setCreatorSession(i, { creatorId: c.creatorId }); setAccountSession(i, { creatorId: c.creatorId, platforms: [], accountId: selected, routeType: 'default', mode: null }); return afterModal(i, 'creators', `✅ ${created} added, ${updated} updated${dupes ? `, ${dupes} duplicates merged` : ''}.`); }
   if (id.startsWith(`${P}template:`) && !id.startsWith(`${P}template:save:`)) { const type = id.split(':')[2]; if (!ALERT_TYPES.includes(type)) throw new Error('Unknown notification template.'); await i.showModal(templateModal(type, config)); return true; }
-  if (id.startsWith(`${P}template:save:`)) { const type = id.split(':')[3]; config.templates[type] = { title: i.fields.getTextInputValue('title'), description: i.fields.getTextInputValue('description'), buttonLabel: i.fields.getTextInputValue('buttonLabel'), color: i.fields.getTextInputValue('color'), footer: i.fields.getTextInputValue('footer') }; saveConfig(i.guildId, config, i.guild, actorId); return afterModal(i, 'templates', `✅ ${ALERT_LABEL[type] || type} template saved.`); }
+  if (id.startsWith(`${P}template:save:`)) {
+    const type = id.split(':')[3];
+    const existing = config.templates?.[type] || {};
+    config.templates[type] = {
+      ...existing,
+      title: i.fields.getTextInputValue('title'),
+      description: i.fields.getTextInputValue('description'),
+      buttonLabel: existing.buttonLabel || 'Watch now',
+      color: existing.color || '{platformColor}',
+      footer: existing.footer || '{platform} • Social Studio'
+    };
+    saveConfig(i.guildId, config, i.guild, actorId);
+    return afterModal(i, 'templates', `✅ ${ALERT_LABEL[type] || type} template saved.`);
+  }
   if (id === `${P}feed:type` || id === `${P}channel:type`) { setFeedSession(i, { routeType: i.values?.[0] || 'default' }); return respond(i, buildSectionPanel(i, 'channels')); }
   if (id === `${P}feed:route` || id === `${P}channel:route`) { const type = getFeedSession(i).routeType || 'default', channelId = i.values?.[0] || null; if (type === 'default') config.alertsChannelId = channelId; else { config.alertChannels = config.alertChannels && typeof config.alertChannels === 'object' ? config.alertChannels : {}; config.alertChannels[type] = channelId; } saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'channels')); }
   if (id === `${P}channel:default`) { const type = getFeedSession(i).routeType || 'default'; if (type !== 'default') { config.alertChannels = config.alertChannels && typeof config.alertChannels === 'object' ? config.alertChannels : {}; delete config.alertChannels[type]; saveConfig(i.guildId, config, i.guild, actorId); } return respond(i, buildSectionPanel(i, 'channels')); }
