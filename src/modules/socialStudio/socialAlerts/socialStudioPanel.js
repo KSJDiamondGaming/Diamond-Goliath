@@ -321,7 +321,20 @@ function buildCreatorPanel(i, config, creators) {
 }
 function buildCreatorEditPanel(i, config, creator) {
   const linked = (creator.accountIds || []).map((id) => config.accounts[id]).filter(Boolean).sort(accountSort);
-  return { embeds: [embed(config, '✏️ Manage Creator', [`👤 **${creator.displayName}**`, `**Group / Team:** ${creator.group || 'Not set'}`, `**Tags:** ${creator.tags?.length ? creator.tags.join(', ') : 'None'}`, `**Accounts:** ${linked.length}`, `**Status:** ${creator.enabled === false ? '⏸️ Paused' : '🟢 Enabled'}`, `**Notes:** ${creator.notes || 'None'}`].join('\n'), who(i))], components: [row(btn(`${P}creator:check:${creator.creatorId}`, '🔄 Check Creator', ButtonStyle.Primary, !linked.length), btn(`${P}creator:accounts`, '🔗 Accounts', ButtonStyle.Primary), btn(`${P}creator:toggle`, creator.enabled === false ? '▶️ Resume' : '⏸️ Pause', creator.enabled === false ? ButtonStyle.Success : ButtonStyle.Secondary)), row(btn(`${P}creator:change`, '📝 Edit Details'), btn(`${P}creator:delete`, '🗑️ Delete', ButtonStyle.Danger), btn(`${P}creators`, '⬅️ Back')), navigation('creators')] };
+  const description = [
+    '\u{1F464} **' + creator.displayName + '**',
+    '**Group / Team:** ' + (creator.group || 'Not set'),
+    '**Tags:** ' + (creator.tags?.length ? creator.tags.join(', ') : 'None'),
+    '**Accounts:** ' + linked.length,
+    '**Status:** ' + (creator.enabled === false ? '\u23F8\uFE0F Paused' : '\u{1F7E2} Enabled'),
+    '**Notes:** ' + (creator.notes || 'None'),
+  ].join('\n');
+  const components = [
+    row(btn(`${P}creator:change`, '\u{1F4DD} Edit Details'), btn(`${P}creator:check:${creator.creatorId}`, '\u{1F504} Check Creator', ButtonStyle.Primary, !linked.length)),
+    row(btn(`${P}creator:delete`, '\u{1F5D1}\uFE0F Delete', ButtonStyle.Danger), btn(`${P}creator:toggle`, creator.enabled === false ? '\u25B6\uFE0F Resume' : '\u23F8\uFE0F Pause', creator.enabled === false ? ButtonStyle.Success : ButtonStyle.Secondary)),
+    navigation('creators'),
+  ];
+  return { embeds: [embed(config, '\u270F\uFE0F Manage Creator', description, who(i))], components };
 }
 function buildAccountEditPanel(i, config, creator, account) {
   const supported = supportedAlerts(account.platform), alerts = Array.isArray(account.alertTypes) ? account.alertTypes : supported, s = account.state || {}, components = [], session = getAccountSession(i), routeType = supported.includes(session.routeType) ? session.routeType : 'default';
