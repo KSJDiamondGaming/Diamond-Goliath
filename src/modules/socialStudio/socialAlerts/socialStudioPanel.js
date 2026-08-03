@@ -29,13 +29,13 @@ const who = (i) => i.member?.displayName || i.user?.displayName || i.user?.usern
 const makeId = (prefix) => `${prefix}_${crypto.randomBytes(8).toString('hex')}`;
 const now = () => new Date().toISOString();
 const MONITORING_INTERVALS = [
-  { label: '30 seconds', value: '30000' },
-  { label: '1 minute', value: '60000' },
-  { label: '5 minutes', value: '300000' },
-  { label: '10 minutes', value: '600000' },
-  { label: '15 minutes', value: '900000' },
-  { label: '30 minutes', value: '1800000' },
-  { label: '1 hour', value: '3600000' },
+  { label: 'Interval: 30 seconds', value: '30000', description: 'Check providers every 30 seconds.' },
+  { label: 'Interval: 1 minute', value: '60000', description: 'Check providers every minute.' },
+  { label: 'Interval: 5 minutes', value: '300000', description: 'Check providers every 5 minutes.' },
+  { label: 'Interval: 10 minutes', value: '600000', description: 'Check providers every 10 minutes.' },
+  { label: 'Interval: 15 minutes', value: '900000', description: 'Check providers every 15 minutes.' },
+  { label: 'Interval: 30 minutes', value: '1800000', description: 'Check providers every 30 minutes.' },
+  { label: 'Interval: 1 hour', value: '3600000', description: 'Check providers every hour.' },
 ];
 const accountSort = (a, b) => {
   const platform = String(LABEL[a?.platform] || a?.platform || '').localeCompare(String(LABEL[b?.platform] || b?.platform || ''), undefined, { sensitivity: 'base' });
@@ -205,15 +205,15 @@ function monitoringIntervalSelect(settings = {}) {
     .setMaxValues(1)
     .addOptions(MONITORING_INTERVALS.map((option) => ({ ...option, default: option.value === current }))));
 }
-function monitoringBooleanSelect(id, placeholder, enabled) {
+function monitoringBooleanSelect(id, label, enabled) {
   return row(new StringSelectMenuBuilder()
     .setCustomId(id)
-    .setPlaceholder(placeholder)
+    .setPlaceholder(label)
     .setMinValues(1)
     .setMaxValues(1)
     .addOptions([
-      { label: 'Enabled', value: 'true', default: enabled === true },
-      { label: 'Disabled', value: 'false', default: enabled !== true },
+      { label: `${label}: Enabled`, value: 'true', description: `Turn ${label.toLowerCase()} on.`, default: enabled === true },
+      { label: `${label}: Disabled`, value: 'false', description: `Turn ${label.toLowerCase()} off.`, default: enabled !== true },
     ]));
 }
 function channelSelect(id, selected, placeholder) { const m = new ChannelSelectMenuBuilder().setCustomId(id).setPlaceholder(placeholder).setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(1).setMaxValues(1); if (selected) m.setDefaultChannels([selected]); return row(m); }
@@ -412,11 +412,11 @@ function buildSectionPanel(i, name) {
     return {
       embeds: [embed(config, 'Social Studio Monitoring', d, who(i))],
       components: [
-        row(btn(`${P}toggle`, config.enabled ? 'Disable Monitoring' : 'Enable Monitoring', config.enabled ? ButtonStyle.Danger : ButtonStyle.Success), btn(`${P}account:check`, 'Run Provider Check', ButtonStyle.Primary, !accounts.length), btn(`${P}test`, 'Send Test LIVE Alert', ButtonStyle.Secondary, !config.alertsChannelId)),
         monitoringIntervalSelect(settings),
         monitoringBooleanSelect(`${P}automation:dupes`, 'Duplicate protection', settings.suppressDuplicates !== false),
-        monitoringBooleanSelect(`${P}automation:retry`, 'Retry failed deliveries', settings.retryDeliveries !== false),
-        row(btn(`${P}automation:quiet`, 'Configure Quiet Hours'), btn(`${P}settings`, 'Back'), btn(`${P}main`, 'Social Studio')),
+        monitoringBooleanSelect(`${P}automation:retry`, 'Failed delivery retry', settings.retryDeliveries !== false),
+        row(btn(`${P}automation:quiet`, 'Configure Quiet Hours'), btn(`${P}account:check`, 'Run Provider Check', ButtonStyle.Primary, !accounts.length), btn(`${P}test`, 'Send Test LIVE Alert', ButtonStyle.Secondary, !config.alertsChannelId)),
+        row(btn(`${P}toggle`, config.enabled ? 'Disable Monitoring' : 'Enable Monitoring', config.enabled ? ButtonStyle.Danger : ButtonStyle.Success), btn(`${P}settings`, 'Back'), btn(`${P}main`, 'Social Studio')),
       ],
     };
   }
