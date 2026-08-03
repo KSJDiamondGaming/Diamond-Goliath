@@ -412,7 +412,7 @@ function buildSectionPanel(i, name) {
     return {
       embeds: [embed(config, 'Social Studio Monitoring', d, who(i))],
       components: [
-        row(btn(`${P}toggle`, config.enabled ? 'Disable Monitoring' : 'Enable Monitoring', config.enabled ? ButtonStyle.Danger : ButtonStyle.Success), btn(`${P}account:check`, 'Run Provider Check', ButtonStyle.Primary, !accounts.length), btn(`${P}test`, 'Send Test LIVE Alert', ButtonStyle.Secondary, !config.alertsChannelId), btn(`${P}diagnostics`, 'View Activity')),
+        row(btn(`${P}toggle`, config.enabled ? 'Disable Monitoring' : 'Enable Monitoring', config.enabled ? ButtonStyle.Danger : ButtonStyle.Success), btn(`${P}account:check`, 'Run Provider Check', ButtonStyle.Primary, !accounts.length), btn(`${P}test`, 'Send Test LIVE Alert', ButtonStyle.Secondary, !config.alertsChannelId)),
         monitoringIntervalSelect(settings),
         monitoringBooleanSelect(`${P}automation:dupes`, 'Duplicate protection', settings.suppressDuplicates !== false),
         monitoringBooleanSelect(`${P}automation:retry`, 'Retry failed deliveries', settings.retryDeliveries !== false),
@@ -436,9 +436,21 @@ function buildSectionPanel(i, name) {
   return { embeds: [embed(config, name[0].toUpperCase() + name.slice(1), 'Social Studio settings.', who(i))], components: [navigation(name)] };
 }
 
-async function respond(i, payload) { if (i.deferred || i.replied) await i.editReply(payload); else await i.update(payload); return true; }
+async function respond(i, payload) {
+  if (i.deferred || i.replied) {
+    await i.editReply(payload);
+    return true;
+  }
+  try {
+    await i.update(payload);
+  } catch (error) {
+    if (!/already been (sent|deferred)|already replied|Unknown interaction/i.test(String(error?.message || error))) throw error;
+    await i.editReply(payload);
+  }
+  return true;
+}
 async function afterModal(i, section, message) { const payload = buildSectionPanel(i, section); if (i.isFromMessage?.() && !i.deferred && !i.replied) { await i.update(payload); await i.followUp({ content: message, flags: 64 }).catch(() => null); } else if (!i.deferred && !i.replied) await i.reply({ content: message, flags: 64 }); else await i.followUp({ content: message, flags: 64 }); return true; }
-function opensModal(id) { return id === `${P}creator:new` || id === `${P}creator:change` || id === `${P}account:continue` || id === `${P}account:change` || (id.startsWith(`${P}template:`) && !id.startsWith(`${P}template:save:`)); }
+function opensModal(id) { return id === `${P}creator:new` || id === `${P}creator:change` || id === `${P}account:continue` || id === `${P}account:change` || id === `${P}automation:quiet` || (id.startsWith(`${P}template:`) && !id.startsWith(`${P}template:save:`)); }
 async function handleInteraction(i) {
   const id = String(i?.customId || ''); if (id !== 'admin:social' && !id.startsWith(P)) return false; if (!i.guild?.id) throw new Error('Social Studio requires a guild interaction.'); if (i.isMessageComponent?.() && !opensModal(id) && !i.deferred && !i.replied) await i.deferUpdate();
   const config = getConfig(i.guildId), actorId = i.user?.id || null, interaction = i;
