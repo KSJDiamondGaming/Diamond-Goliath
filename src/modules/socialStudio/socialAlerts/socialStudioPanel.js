@@ -156,6 +156,28 @@ function routeTypeSelect(id, selected, types = ALERT_TYPES) {
   options[0] = { ...options[0], value: 'default' };
   return row(new StringSelectMenuBuilder().setCustomId(id).setPlaceholder('Choose what you want to send').setMinValues(1).setMaxValues(1).addOptions(options.map((o) => ({ ...o, default: o.value === selected }))));
 }
+function accountOutputSelect(account, selected, types = ALERT_TYPES) {
+  const configured = Array.isArray(account.alertTypes) ? account.alertTypes : types;
+  const copy = {
+    default: { label: '🏠 Default Output', description: 'Fallback channel used unless this alert type has its own channel.' },
+    live: { label: '🔴 LIVE Output', description: 'Where LIVE alerts are posted.' },
+    ended: { label: '⚫ Stream Ended Output', description: 'Where stream ended updates are posted.' },
+    vod: { label: '🎥 VOD Output', description: 'Where stream replays are posted.' },
+    clip: { label: '🎬 Clip Output', description: 'Where new clips are posted.' },
+    upload: { label: '📺 Upload Output', description: 'Where video uploads are posted.' },
+    short: { label: '📱 Short Output', description: 'Where short-form videos are posted.' },
+    post: { label: '📝 Post Output', description: 'Where social posts are posted.' },
+  };
+  const options = [
+    { ...copy.default, value: 'default' },
+    ...types.map((type) => ({
+      label: copy[type]?.label || `${ALERT_LABEL[type] || type} Output`,
+      value: type,
+      description: `${copy[type]?.description || 'Choose where this output posts.'}${configured.includes(type) ? '' : ' Selecting this will enable it.'}`.slice(0, 100),
+    })),
+  ];
+  return row(new StringSelectMenuBuilder().setCustomId(`${P}account:output`).setPlaceholder('Output to configure').setMinValues(1).setMaxValues(1).addOptions(options.map((o) => ({ ...o, default: o.value === selected }))));
+}
 function notificationTargetSelect(i, config) {
   const selected = config.notificationMentionMode === 'role' && config.notificationRoleId
     ? `role:${config.notificationRoleId}`
@@ -360,9 +382,10 @@ function buildCreatorEditPanel(i, config, creator) {
 }
 function buildAccountEditPanel(i, config, creator, account) {
   const supported = supportedAlerts(account.platform), alerts = Array.isArray(account.alertTypes) ? account.alertTypes : supported, s = account.state || {}, components = [], session = getAccountSession(i), routeType = supported.includes(session.routeType) ? session.routeType : 'default';
-  const alertMenu = alertTypeSelect(account); if (alertMenu) components.push(alertMenu); components.push(routeTypeSelect(`${P}account:route:type`, routeType, supported));
+  components.push(accountOutputSelect(account, routeType, supported));
   const routeChannelId = routeType === 'default' ? account.alertChannelId : account.alertChannels?.[routeType]; components.push(channelSelect(`${P}account:route:channel`, routeChannelId, routeType === 'default' ? 'Account default notification channel' : `${ALERT_LABEL[routeType]} notification channel`));
-  const actions = [btn(`${P}account:check:${account.accountId}`, '🔄 Check Now', ButtonStyle.Secondary), btn(`${P}account:change`, '📝 Edit Details'), btn(`${P}account:move`, '↪️ Move Account')]; if (account.profileUrl && /^https?:\/\//i.test(account.profileUrl)) actions.push(linkBtn(account.profileUrl, '🔗 Profile')); components.push(row(...actions.slice(0, 5))); components.push(row(btn(`${P}account:toggle`, account.enabled === false ? '▶️ Resume' : '⏸️ Pause', account.enabled === false ? ButtonStyle.Success : ButtonStyle.Secondary), btn(`${P}account:delete`, '🗑️ Delete', ButtonStyle.Danger), btn(`${P}accounts`, '⬅️ Accounts'), btn(`${P}settings`, '⚙️ Settings')));
+  const actions = [btn(`${P}account:check:${account.accountId}`, '🔄 Check Now', ButtonStyle.Secondary), btn(`${P}account:change`, '📝 Edit Details'), btn(`${P}account:move`, '↪️ Move Account')]; if (account.profileUrl && /^https?:\/\//i.test(account.profileUrl)) actions.push(linkBtn(account.profileUrl, '🔗 Profile')); components.push(row(...actions.slice(0, 5))); components.push(row(btn(`${P}account:toggle`, account.enabled === false ? '▶️ Resume' : '⏸️ Pause', account.enabled === false ? ButtonStyle.Success : ButtonStyle.Secondary), btn(`${P}account:delete`, '🗑️ Delete', ButtonStyle.Danger)));
+  components.push(row(btn(`${P}accounts`, '⬅️ Accounts'), btn(`${P}settings`, '⚙️ Settings')));
   const routes = Object.entries(account.alertChannels || {}).filter(([, channelId]) => channelId).map(([type, channelId]) => `${ALERT_LABEL[type] || type}: <#${channelId}>`).join(' • ');
   const d = [`${ICON[account.platform]} **${LABEL[account.platform]} — ${account.username || account.externalId || 'Resolving…'}**`, '', `**Creator:** ${creator.displayName}`, `**Status:** ${accountState(account)}`, `**Last Checked:** ${ts(s.lastCheckedAt)}`, `**Alerts:** ${alerts.length ? alerts.map((t) => ALERT_LABEL[t] || t).join(', ') : 'None'}`, `**Default Channel:** ${account.alertChannelId ? `<#${account.alertChannelId}>` : config.alertsChannelId ? `Server default <#${config.alertsChannelId}>` : 'Not configured'}`, `**Dedicated Channels:** ${routes || 'None'}`, `**Monitoring:** ${account.enabled === false ? '⏸️ Paused' : '🟢 Enabled'}`, ...(s.lastDeliveryError ? ['', `⚠️ **Last delivery:** ${String(s.lastDeliveryError).slice(0, 400)}`] : []), ...(s.lastError ? ['', `⚠️ **Provider:** ${String(s.lastError).slice(0, 400)}`] : [])].join('\n'); return { embeds: [embed(config, '🔗 Manage Social Account', d, who(i), platformColor(account.platform))], components: components.slice(0, 5) };
 }
@@ -538,6 +561,7 @@ async function handleInteraction(i) {
   if (id === `${P}account:move:new`) { const a = config.accounts[getAccountSession(i).accountId]; if (!a) throw new Error('Select an account first.'); await i.showModal(accountMoveNewProfileModal(a)); return true; }
   if (id === `${P}account:move:creator`) { const s = getAccountSession(i), a = config.accounts[s.accountId], target = config.creators[i.values?.[0]]; if (!a || !target) throw new Error('Select a valid account and creator profile.'); moveAccountToCreator(config, a, target); saveConfig(i.guildId, config, i.guild, actorId); setAccountSession(i, { creatorId: target.creatorId, accountId: a.accountId, routeType: 'default' }); setCreatorSession(i, { creatorId: target.creatorId }); return respond(i, buildAccountEditPanel(i, getConfig(i.guildId), getConfig(i.guildId).creators[target.creatorId], getConfig(i.guildId).accounts[a.accountId])); }
   if (id === `${P}account:alerts`) { const s = getAccountSession(i), c = config.creators[s.creatorId], a = config.accounts[s.accountId]; if (!c || !a) throw new Error('Select an account first.'); a.alertTypes = (i.values || []).filter((t) => supportedAlerts(a.platform).includes(t)); a.updatedAt = now(); saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildAccountEditPanel(i, getConfig(i.guildId), c, getConfig(i.guildId).accounts[a.accountId])); }
+  if (id === `${P}account:output`) { const s = getAccountSession(i), c = config.creators[s.creatorId], a = config.accounts[s.accountId], value = i.values?.[0] || 'default', supported = a ? supportedAlerts(a.platform) : []; if (!c || !a) throw new Error('Select an account first.'); const routeType = supported.includes(value) ? value : 'default'; if (routeType !== 'default') a.alertTypes = [...new Set([...(Array.isArray(a.alertTypes) ? a.alertTypes : supported), routeType])]; a.updatedAt = now(); setAccountSession(i, { routeType }); saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildAccountEditPanel(i, getConfig(i.guildId), c, getConfig(i.guildId).accounts[a.accountId])); }
   if (id === `${P}account:route:type`) { setAccountSession(i, { routeType: i.values?.[0] || 'default' }); const s = getAccountSession(i), c = config.creators[s.creatorId], a = config.accounts[s.accountId]; if (!c || !a) throw new Error('Select an account first.'); return respond(i, buildAccountEditPanel(i, config, c, a)); }
   if (id === `${P}account:route:channel`) { const s = getAccountSession(i), c = config.creators[s.creatorId], a = config.accounts[s.accountId]; if (!c || !a) throw new Error('Select an account first.'); const channelId = i.values?.[0] || null; if (s.routeType === 'default') a.alertChannelId = channelId; else { a.alertChannels = a.alertChannels && typeof a.alertChannels === 'object' ? a.alertChannels : {}; a.alertChannels[s.routeType] = channelId; } a.updatedAt = now(); saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildAccountEditPanel(i, getConfig(i.guildId), c, getConfig(i.guildId).accounts[a.accountId])); }
   if (id === `${P}account:toggle`) { const s = getAccountSession(i), c = config.creators[s.creatorId], account = config.accounts[s.accountId]; if (!c || !account) throw new Error('The selected account no longer exists.'); account.enabled = account.enabled === false; account.updatedAt = now(); saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildAccountEditPanel(i, getConfig(i.guildId), c, getConfig(i.guildId).accounts[account.accountId])); }
