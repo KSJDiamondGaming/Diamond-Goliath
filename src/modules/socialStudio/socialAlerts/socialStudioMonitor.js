@@ -630,8 +630,7 @@ async function buildEventPayload(client, guildId, config, account, creator, even
   const actionLabel = clean(render(actionLabelTemplate, vars), 80) || defaultActionLabel;
   const actionLines = [];
   const liveStatusText = liveStatus === 'OFFLINE' ? '\u{1F534} **OFFLINE**' : liveStatus === 'LIVE' ? '\u{1F7E2} **LIVE**' : '';
-  const statusSpacer = liveStatusText ? '\u2003'.repeat(8) : '';
-  if (/^https?:\/\//i.test(url)) actionLines.push('\u{1F680} **[' + actionLabel + '](' + url + ')**' + statusSpacer + liveStatusText);
+  if (/^https?:\/\//i.test(url)) actionLines.push('\u{1F680} **[' + actionLabel + '](' + url + ')**');
   if (/^https?:\/\//i.test(profileUrl) && profileUrl !== url) actionLines.push('\u{1F464} [Creator Profile](' + profileUrl + ')');
   const embedCallToAction = embedActionBlock(actionLines);
 
@@ -661,6 +660,13 @@ async function buildEventPayload(client, guildId, config, account, creator, even
     if (account.platform !== 'tiktok' && (event.category || event.game)) fields.push({ name: '\u{1F3AE} Game', value: clean(event.category || event.game, 1024), inline: true });
     if (account.platform === 'tiktok') fields.push({ name: '\u{1F4F1} Platform', value: liveStatus === 'OFFLINE' ? 'TikTok' : 'TikTok LIVE', inline: true });
     if (vars.viewers) fields.push({ name: '\u{1F465} Viewers', value: vars.viewers, inline: true });
+    if (liveStatusText) {
+      fields.push({ name: '\u{1F4CD} Status', value: liveStatusText, inline: true });
+      if (started) {
+        fields.push({ name: '\u200B', value: '\u200B', inline: true });
+        fields.push({ name: '\u200B', value: '\u200B', inline: true });
+      }
+    }
     if (started) fields.push({ name: '\u23F2\uFE0F Started', value: started, inline: true });
   } else if (event.type === 'ended') {
     const currentVod = event.currentVod && typeof event.currentVod === 'object' ? event.currentVod : null;
