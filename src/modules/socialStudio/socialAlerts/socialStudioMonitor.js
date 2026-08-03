@@ -17,7 +17,7 @@ const PLATFORM = {
   x: { label: 'X', icon: '⚪', color: 0x000000 },
 };
 
-const EMBED_WIDTH_DIVIDER = '\u2500'.repeat(24);
+const EMBED_WIDTH_DIVIDER = '\u2500'.repeat(27);
 const LIVE_MESSAGE_UPDATE_INTERVAL_MS = 60 * 60 * 1000;
 
 const now = () => new Date().toISOString();
