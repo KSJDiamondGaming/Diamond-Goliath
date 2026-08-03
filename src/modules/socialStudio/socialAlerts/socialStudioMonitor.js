@@ -17,8 +17,8 @@ const PLATFORM = {
   x: { label: 'X', icon: '⚪', color: 0x000000 },
 };
 
-const EMBED_WIDTH_DIVIDER = '\u2500'.repeat(27);
-const LIVE_MESSAGE_UPDATE_INTERVAL_MS = 60 * 60 * 1000;
+const EMBED_WIDTH_DIVIDER = '\u2500'.repeat(28);
+const LIVE_MESSAGE_UPDATE_INTERVAL_MS = 10 * 60 * 1000;
 
 const now = () => new Date().toISOString();
 const clean = (value, max = 2000) => String(value ?? '').trim().slice(0, max);
@@ -470,6 +470,9 @@ function liveMessageUpdateDue(previous, checked) {
   if (checked.isLive !== true || previous.isLive !== true || !checked.event) return false;
   if (!previous.lastAlertMessageId || !previous.lastAlertChannelId) return false;
   if (!String(previous.lastAlertKey || '').startsWith('live:')) return false;
+  const priorThumbnail = clean(previous.lastLiveEvent?.thumbnail || previous.thumbnail || '', 1000);
+  const nextThumbnail = clean(checked.event?.thumbnail || '', 1000);
+  if (nextThumbnail && nextThumbnail !== priorThumbnail) return true;
   const lastUpdated = new Date(previous.lastLiveMessageUpdatedAt || previous.lastAlertAt || 0).getTime();
   if (!Number.isFinite(lastUpdated)) return true;
   return Date.now() - lastUpdated >= LIVE_MESSAGE_UPDATE_INTERVAL_MS;
