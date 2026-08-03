@@ -10,6 +10,15 @@ const { forcePostCreatorLive } = require('./socialStudioMonitor');
 const P = 'social:';
 const PAGE_SIZE = 25;
 const PLATFORMS = ['facebook', 'instagram', 'kick', 'tiktok', 'twitch', 'x', 'youtube'];
+const TEMPLATE_DEFAULTS = {
+  live: { title: '🔴 {creator} is LIVE', description: '**{title}**', buttonLabel: 'Watch Live' },
+  ended: { title: '⚫ {creator} has ended their stream', description: '**{title}**', buttonLabel: 'View Channel' },
+  vod: { title: '🎞️ New VOD from {creator}', description: '**{title}**', buttonLabel: 'Watch VOD' },
+  clip: { title: '🎬 New clip from {creator}', description: '**{title}**', buttonLabel: 'Watch Clip' },
+  upload: { title: '📺 New upload from {creator}', description: '**{title}**', buttonLabel: 'Watch Now' },
+  short: { title: '📱 New short from {creator}', description: '**{title}**', buttonLabel: 'Watch Now' },
+  post: { title: '📝 New post from {creator}', description: '**{title}**', buttonLabel: 'View Post' },
+};
 const ALERT_TYPES = ['live', 'ended', 'vod', 'clip', 'upload', 'short', 'post'];
 const ALERT_LABEL = { live: 'LIVE', ended: 'Stream Ended', vod: 'VOD', clip: 'Clip', upload: 'Upload', short: 'Short', post: 'Post' };
 const ALERT_EMOJI = { live: '🔴', ended: '⚫', vod: '🎥', clip: '🎬', upload: '📺', short: '📱', post: '📝' };
@@ -249,10 +258,11 @@ function accountMoveNewProfileModal(account) {
   );
 }
 function templateModal(type, config) {
-  const c = config.templates?.[type] || {};
+  const defaults = TEMPLATE_DEFAULTS[type] || TEMPLATE_DEFAULTS.upload;
+  const c = { ...defaults, ...(config.templates?.[type] || {}) };
   return new ModalBuilder().setCustomId(`${P}template:save:${type}`).setTitle(`${ALERT_LABEL[type] || type} Template`).addComponents(
-    row(new TextInputBuilder().setCustomId('title').setLabel('Embed title').setPlaceholder('Example: {creator} is LIVE').setStyle(TextInputStyle.Short).setMaxLength(256).setValue(String(c.title || '{creator} alert')).setRequired(true)),
-    row(new TextInputBuilder().setCustomId('description').setLabel('Embed description').setPlaceholder('Write the main alert message. Variables like {title} work here.').setStyle(TextInputStyle.Paragraph).setMaxLength(2000).setValue(String(c.description || '{title}')).setRequired(true)),
+    row(new TextInputBuilder().setCustomId('title').setLabel('Alert headline').setPlaceholder(defaults.title).setStyle(TextInputStyle.Short).setMaxLength(256).setValue(String(c.title)).setRequired(true)),
+    row(new TextInputBuilder().setCustomId('description').setLabel('Main message text').setPlaceholder('This appears under the headline. Example: **{title}**').setStyle(TextInputStyle.Paragraph).setMaxLength(2000).setValue(String(c.description)).setRequired(true)),
   );
 }
 function quietHoursModal(config) {
@@ -385,7 +395,7 @@ function buildSectionPanel(i, name) {
   if (name === 'templates') {
     const templateButtons = ALERT_TYPES.map((t) => btn(`${P}template:${t}`, `${ALERT_EMOJI[t] || '🔔'} ${ALERT_LABEL[t]}`, ButtonStyle.Primary));
     const c = [row(...templateButtons.slice(0, 5)), row(...templateButtons.slice(5)), row(btn(`${P}variables`, '🧩 Variables')), navigation('templates')];
-    return { embeds: [embed(config, '🎨 Alert Templates', 'Build rich notification embeds for each alert type. Templates support dynamic variables, platform colours, thumbnails, metadata fields and link buttons.\n\nUse **🧩 Variables** for the complete helper list.', who(i))], components: c };
+    return { embeds: [embed(config, '🎨 Alert Templates', 'Edit the headline and main message for each Social Studio post. The bot keeps the layout consistent with channel links, status, metadata, thumbnails, media previews, platform colours and footer details.\n\nUse **🧩 Variables** for the complete helper list.', who(i))], components: c };
   }
   if (name === 'variables') return { embeds: [embed(config, '🧩 Template Variables', variablesDescription(), who(i))], components: [row(btn(`${P}templates`, '⬅️ Templates'), btn(`${P}main`, '🏠 Social Studio'))] };
   if (name === 'feeds') return buildSectionPanel(i, 'channels');
@@ -554,7 +564,7 @@ async function handleInteraction(i) {
       ...existing,
       title: i.fields.getTextInputValue('title'),
       description: i.fields.getTextInputValue('description'),
-      buttonLabel: existing.buttonLabel || 'Watch now',
+      buttonLabel: existing.buttonLabel || TEMPLATE_DEFAULTS[type]?.buttonLabel || 'Watch now',
       color: existing.color || '{platformColor}',
       footer: existing.footer || '{platform} • Social Studio'
     };
