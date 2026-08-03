@@ -415,8 +415,8 @@ function buildSectionPanel(i, name) {
         monitoringIntervalSelect(settings),
         monitoringBooleanSelect(`${P}automation:dupes`, 'Duplicate protection', settings.suppressDuplicates !== false),
         monitoringBooleanSelect(`${P}automation:retry`, 'Failed delivery retry', settings.retryDeliveries !== false),
-        row(btn(`${P}automation:quiet`, 'Configure Quiet Hours'), btn(`${P}account:check`, 'Run Provider Check', ButtonStyle.Primary, !accounts.length), btn(`${P}test`, 'Send Test LIVE Alert', ButtonStyle.Secondary, !config.alertsChannelId)),
-        row(btn(`${P}toggle`, config.enabled ? 'Disable Monitoring' : 'Enable Monitoring', config.enabled ? ButtonStyle.Danger : ButtonStyle.Success), btn(`${P}settings`, 'Back'), btn(`${P}main`, 'Social Studio')),
+        row(btn(`${P}automation:quiet`, 'Configure Quiet Hours'), btn(`${P}account:check`, 'Run Provider Check', ButtonStyle.Secondary, !accounts.length), btn(`${P}test`, 'Send Test LIVE Alert', ButtonStyle.Secondary, !config.alertsChannelId)),
+        row(btn(`${P}settings`, '⬅️ Back'), btn(`${P}toggle`, config.enabled ? 'Disable Monitoring' : 'Enable Monitoring', config.enabled ? ButtonStyle.Danger : ButtonStyle.Success)),
       ],
     };
   }
