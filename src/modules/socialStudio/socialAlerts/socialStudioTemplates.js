@@ -1,6 +1,8 @@
 'use strict';
 
 const ALERT_TYPES = ['live', 'ended', 'vod', 'clip', 'upload', 'short', 'post'];
+const TEMPLATE_VERSION = 1;
+const TEMPLATE_SOURCE = 'socialStudioTemplates';
 
 const DEFAULT_TEMPLATES = Object.freeze({
   live: Object.freeze({ title: '🔴 {creator} is LIVE', description: '**{title}**', buttonLabel: 'Watch Live', color: '{platformColor}', footer: 'Social Studio • {platform}' }),
@@ -28,7 +30,18 @@ function normalizeTemplates(source = {}) {
     if (isObject(legacy)) custom[type] = cloneTemplate(legacy);
   }
 
-  return { defaults, custom };
+  return {
+    custom,
+    defaults,
+    lastEditedAt: raw.lastEditedAt || null,
+    lastEditedBy: raw.lastEditedBy || null,
+    lastEditedType: raw.lastEditedType || null,
+    lastResetAt: raw.lastResetAt || null,
+    lastResetBy: raw.lastResetBy || null,
+    lastResetType: raw.lastResetType || null,
+    source: raw.source || TEMPLATE_SOURCE,
+    version: Number(raw.version || raw.templateVersion || TEMPLATE_VERSION) || TEMPLATE_VERSION,
+  };
 }
 
 function resolveTemplate(templates, type) {
@@ -43,4 +56,4 @@ function resetTemplate(templates, type) {
   return normalized;
 }
 
-module.exports = { ALERT_TYPES, DEFAULT_TEMPLATES, normalizeTemplates, resolveTemplate, resetTemplate };
+module.exports = { ALERT_TYPES, DEFAULT_TEMPLATES, TEMPLATE_SOURCE, TEMPLATE_VERSION, normalizeTemplates, resolveTemplate, resetTemplate };
