@@ -17,7 +17,7 @@ const PLATFORM = {
   x: { label: 'X', icon: '⚪', color: 0x000000 },
 };
 
-const EMBED_WIDTH_DIVIDER = '\u2500'.repeat(48);
+const EMBED_WIDTH_DIVIDER = '\u2500'.repeat(24);
 const LIVE_MESSAGE_UPDATE_INTERVAL_MS = 60 * 60 * 1000;
 
 const now = () => new Date().toISOString();
@@ -680,7 +680,7 @@ async function buildEventPayload(client, guildId, config, account, creator, even
   if (published) fields.push({ name: '\u{1F4C5} Published', value: published, inline: true });
   if (event.type === 'live' && /^https?:\/\//i.test(previousVod?.url || '')) {
     const vodTitle = clean(previousVod.title || 'Previous stream replay', 180);
-    fields.push({ name: '\u200B', value: `\u{1F39E}\uFE0F **[Watch VOD](${previousVod.url})**${vodTitle ? `\n${vodTitle}` : ''}`, inline: false });
+    fields.push({ name: '\u200B', value: `\u{1F39E}\uFE0F **[Watch Latest VOD](${previousVod.url})**${vodTitle ? `\n${vodTitle}` : ''}`, inline: false });
   }
 
   if (fields.length) embed.addFields(fields.slice(0, 25));
