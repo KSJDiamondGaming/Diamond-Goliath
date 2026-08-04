@@ -12,10 +12,10 @@ const {
   TextInputStyle,
 } = require('discord.js');
 const crypto = require('crypto');
-const guildManager = require('../../../core/guild/guildManager');
 const security = require('../../../core/security/securityCore');
 const { normalizeAccountInput, migrateAccount } = require('./accountNormalizer');
 const { providerInfo } = require('./socialStudioProviders');
+const store = require('./socialStudioStore');
 const adminPanel = require('./socialStudioPanel');
 
 const ACTIVE = 'active';
@@ -29,15 +29,8 @@ function clean(value, max = 2000) {
   return String(value || '').trim().slice(0, max);
 }
 
-function getSection(guildId) {
-  const section = guildManager.getGuildSection(guildId, 'social', {});
-  return section && typeof section === 'object' && !Array.isArray(section) ? section : {};
-}
-
-function saveSection(guildId, section) {
-  guildManager.saveGuildSection(guildId, 'social', section, { guildId });
-  return section;
-}
+const getSection = store.getSection;
+const saveSection = store.saveSection;
 
 function getConfiguredRoleIds(guildId) {
   const section = getSection(guildId);
@@ -67,145 +60,35 @@ function creators(section) {
 }
 
 function findByOwnerDiscordId(guildId, ownerDiscordId) {
-  const ownerId = clean(ownerDiscordId, 25);
-  if (!ownerId) return null;
-  return Object.values(creators(getSection(guildId)))
-    .find((creator) => creator?.ownerDiscordId === ownerId) || null;
+  return store.findCreatorByOwner(guildId, clean(ownerDiscordId, 25));
 }
 
 function getAccountsForCreator(guildId, creator) {
-  if (!creator) return [];
-  const section = getSection(guildId);
-  const accounts = section.accounts && typeof section.accounts === 'object' && !Array.isArray(section.accounts)
-    ? section.accounts
-    : {};
-  const accountIds = Array.isArray(creator.accountIds) ? creator.accountIds.map(String) : [];
-  return accountIds.map((accountId) => accounts[accountId]).filter(Boolean);
-}
-
-function nextCreatorId(section) {
-  const used = new Set(Object.keys(creators(section)));
-  let sequence = Math.max(0, Number(section.creatorSequence || 0));
-  let id;
-  do {
-    sequence += 1;
-    id = `creator_${String(sequence).padStart(6, '0')}`;
-  } while (used.has(id));
-  section.creatorSequence = sequence;
-  return id;
+  return store.getCreatorAccounts(guildId, creator);
 }
 
 function createForMember(member) {
-  const guildId = member.guild.id;
-  const ownerDiscordId = member.user.id;
-  const existing = findByOwnerDiscordId(guildId, ownerDiscordId);
-  if (existing) return { creator: existing, created: false };
-
-  const section = getSection(guildId);
-  const creatorId = nextCreatorId(section);
-  const timestamp = new Date().toISOString();
-  const creator = {
-    creatorId,
-    ownerDiscordId,
-    displayName: clean(member.displayName || member.user.globalName || member.user.username, 120),
-    group: '',
-    tags: [],
-    notes: '',
-    enabled: true,
-    status: ACTIVE,
-    accountIds: [],
-    profileCompleted: false,
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  };
-  creators(section)[creatorId] = creator;
-  saveSection(guildId, section);
-  return { creator, created: true };
+  return store.createCreatorForMember(member, { actorId: member.user.id });
 }
 
 function completeCreatorProfile(member, values) {
-  const guildId = member.guild.id;
-  const ownerDiscordId = member.user.id;
-  const section = getSection(guildId);
-  let creator = Object.values(creators(section))
-    .find((entry) => entry?.ownerDiscordId === String(ownerDiscordId)) || null;
-  const timestamp = new Date().toISOString();
-  const wasCompleted = creator?.profileCompleted === true;
-
-  if (!creator) {
-    const creatorId = nextCreatorId(section);
-    creator = {
-      creatorId,
-      ownerDiscordId,
-      enabled: true,
-      status: ACTIVE,
-      accountIds: [],
-      createdAt: timestamp,
-    };
-    creators(section)[creatorId] = creator;
-  }
-
-  creator.ownerDiscordId = String(ownerDiscordId);
-  creator.displayName = clean(values.displayName, 120);
-  creator.group = clean(values.group, 120);
-  creator.tags = String(values.tags || '')
-    .split(',')
-    .map((value) => clean(value, 60))
-    .filter(Boolean);
-  creator.notes = clean(values.notes, 1000);
-  creator.enabled = creator.enabled !== false;
-  creator.status = ACTIVE;
-  creator.accountIds = Array.isArray(creator.accountIds) ? creator.accountIds : [];
-  creator.profileCompleted = true;
-  creator.updatedAt = timestamp;
-  saveSection(guildId, section);
-
-  return { creator, created: !wasCompleted };
+  return store.completeCreatorProfile(member, values, { actorId: member.user.id });
 }
 
 function markMemberActive(guildId, ownerDiscordId) {
-  const section = getSection(guildId);
-  const creator = Object.values(creators(section))
-    .find((item) => item?.ownerDiscordId === String(ownerDiscordId));
-  if (!creator) return null;
-  creator.status = ACTIVE;
-  creator.updatedAt = new Date().toISOString();
-  saveSection(guildId, section);
-  return creator;
+  return store.markCreatorActive(guildId, ownerDiscordId, { actorId: ownerDiscordId });
 }
 
 function markMemberLeft(guildId, ownerDiscordId) {
-  const section = getSection(guildId);
-  const creator = Object.values(creators(section))
-    .find((item) => item?.ownerDiscordId === String(ownerDiscordId));
-  if (!creator) return null;
-  creator.status = LEFT_SERVER;
-  creator.updatedAt = new Date().toISOString();
-  saveSection(guildId, section);
-  return creator;
+  return store.markCreatorDeparted(guildId, ownerDiscordId, 'left', {
+    actorId: 'system:social-studio-lifecycle',
+  });
 }
 
 function deleteCreatorOwnedData(guildId, ownerDiscordId) {
-  const section = getSection(guildId);
-  const entry = Object.entries(creators(section))
-    .find(([, item]) => item?.ownerDiscordId === String(ownerDiscordId));
-  if (!entry) return false;
-  const [creatorId, creator] = entry;
-  const accountIds = new Set(Array.isArray(creator.accountIds) ? creator.accountIds : []);
-  delete section.creators[creatorId];
-  if (section.accounts && typeof section.accounts === 'object') {
-    for (const accountId of accountIds) delete section.accounts[accountId];
-  }
-  for (const key of ['drafts', 'scheduledPosts', 'creatorPreferences', 'notifications']) {
-    if (!section[key] || typeof section[key] !== 'object') continue;
-    for (const [id, value] of Object.entries(section[key])) {
-      if (value?.creatorId === creatorId || value?.ownerDiscordId === String(ownerDiscordId)) {
-        delete section[key][id];
-      }
-    }
-  }
-  saveSection(guildId, section);
-  return true;
+  return store.deleteCreatorByOwner(guildId, ownerDiscordId, {
+    actorId: 'system:social-studio-delete',
+  });
 }
 
 function button(customId, label, style = ButtonStyle.Primary, disabled = false, emoji = null) {
@@ -520,7 +403,7 @@ async function handleUserInteraction(interaction, updatePanel) {
       return true;
     }
     const section = getSection(interaction.guildId);
-    const creator = Object.values(creators(section)).find((entry) => entry?.ownerDiscordId === String(interaction.user.id));
+    const creator = store.findCreatorByOwner(interaction.guildId, interaction.user.id);
     if (!creator) {
       await interaction.reply({ content: 'Your Creator Profile could not be found.', flags: 64 });
       return true;
@@ -529,7 +412,7 @@ async function handleUserInteraction(interaction, updatePanel) {
       const value = interaction.fields.getTextInputValue(`account_${platform}`).trim();
       if (value) upsertUserAccount(section, creator, platform, value);
     }
-    saveSection(interaction.guildId, section);
+    saveSection(interaction.guildId, section, { actorId: interaction.user.id });
     setUserAccountSession(interaction, { platforms: [] });
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
     return updatePanel(interaction, buildUserProfile(interaction, creator, getAccountsForCreator(interaction.guildId, creator)));
