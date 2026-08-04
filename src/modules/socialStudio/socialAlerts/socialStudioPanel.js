@@ -812,7 +812,6 @@ async function handleAutomationInteraction(i, context) {
   } = context;
 
   if (id === `${P}creator:rebuild`) { const linked = new Set(Object.values(config.creators).flatMap((c) => c.accountIds || [])); for (const a of Object.values(config.accounts)) if (!linked.has(a.accountId)) { const cid = makeId('creator'); config.creators[cid] = { creatorId: cid, displayName: a.displayName || a.username || a.externalId, group: '', tags: [a.platform], notes: '', enabled: true, accountIds: [a.accountId], createdAt: now(), updatedAt: now() }; } saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'creators')); }
-  if (id === `${P}test`) { if (!config.alertsChannelId) throw new Error('Choose an alert channel first.'); await i.followUp({ embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🧪 Social Studio Test').setDescription(`✅ Notification routing is working.\n\nThis private preview was opened from ${i.channelId ? `<#${i.channelId}>` : 'this setup channel'}.\n\nThumbnails, platform metadata and template variables will be applied to real provider events.`).setFooter({ text: 'Social Studio • Test' }).setTimestamp()], flags: 64 }).catch(() => null); return respond(i, buildSectionPanel(i, 'diagnostics')); }
   const section = id.slice(P.length);
   if (section === 'templates') {
     config.templates = normalizeTemplates(config.templates);
@@ -822,6 +821,19 @@ async function handleAutomationInteraction(i, context) {
   if (NAV.has(section)) return respond(i, buildSectionPanel(i, section)); throw new Error(`Unknown Social Studio interaction: ${id}`);
 }
 
+
+
+async function handleDiagnosticsInteraction(i, context) {
+  const {
+    id,
+    config,
+    actorId,
+  } = context;
+
+  if (id === `${P}test`) { if (!config.alertsChannelId) throw new Error('Choose an alert channel first.'); await i.followUp({ embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🧪 Social Studio Test').setDescription(`✅ Notification routing is working.\n\nThis private preview was opened from ${i.channelId ? `<#${i.channelId}>` : 'this setup channel'}.\n\nThumbnails, platform metadata and template variables will be applied to real provider events.`).setFooter({ text: 'Social Studio • Test' }).setTimestamp()], flags: 64 }).catch(() => null); return respond(i, buildSectionPanel(i, 'diagnostics')); }
+
+  return false;
+}
 
 async function handleInteraction(i) {
   const id = i.customId;
@@ -859,6 +871,12 @@ async function handleInteraction(i) {
   })) return true;
 
   if (await handleAutomationInteraction(i, {
+    id,
+    config,
+    actorId,
+  })) return true;
+
+  if (await handleDiagnosticsInteraction(i, {
     id,
     config,
     actorId,
