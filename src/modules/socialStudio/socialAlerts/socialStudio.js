@@ -173,9 +173,8 @@ function getCreatorContext(interaction) {
   return { creator, accounts: getAccountsForCreator(interaction.guildId, creator) };
 }
 
-async function handleUserInteraction(interaction, updatePanel) {
-  const customId = String(interaction?.customId || '');
-  const isSocial = customId === 'user:category:social'
+function isUserSocialInteraction(customId) {
+  return customId === 'user:category:social'
     || customId === 'user:module:social'
     || customId === 'user:social:open'
     || customId === 'user:social:create'
@@ -184,79 +183,324 @@ async function handleUserInteraction(interaction, updatePanel) {
     || customId === 'user:social:account:continue'
     || customId === 'user:social:account:create-multi'
     || /^user:social:(details|accounts|newAccount|manageAccount|alerts)$/.test(customId);
-  if (!isSocial) return false;
-  if (customId === 'user:category:social') return updatePanel(interaction, buildUserLanding(interaction));
-  if (customId === 'user:social:create' && interaction.isButton?.()) {
-    const access = getAccess(interaction);
-    if (!access.allowed) return updatePanel(interaction, buildUserDenied(interaction, access.roleIds));
-    const creator = findByOwnerDiscordId(interaction.guildId, interaction.user.id);
-    if (creator?.profileCompleted === true) return updatePanel(interaction, buildUserProfile(interaction, creator, getAccountsForCreator(interaction.guildId, creator)));
-    await interaction.showModal(userCreatorModal(creator, interaction));
+}
+
+async function handleUserCreateProfile(interaction, updatePanel) {
+  const access = getAccess(interaction);
+
+  if (!access.allowed) {
+    return updatePanel(
+      interaction,
+      buildUserDenied(interaction, access.roleIds),
+    );
+  }
+
+  const creator = findByOwnerDiscordId(
+    interaction.guildId,
+    interaction.user.id,
+  );
+
+  if (creator?.profileCompleted === true) {
+    return updatePanel(
+      interaction,
+      buildUserProfile(
+        interaction,
+        creator,
+        getAccountsForCreator(interaction.guildId, creator),
+      ),
+    );
+  }
+
+  await interaction.showModal(
+    userCreatorModal(creator, interaction),
+  );
+
+  return true;
+}
+
+async function handleUserCreateProfileSubmit(
+  interaction,
+  updatePanel,
+) {
+  const access = getAccess(interaction);
+
+  if (!access.allowed) {
+    await interaction.reply({
+      content: 'You no longer have access to Social Studio.',
+      flags: 64,
+    });
+
     return true;
   }
-  if (customId === 'user:social:create:submit' && interaction.isModalSubmit?.()) {
-    const access = getAccess(interaction);
-    if (!access.allowed) { await interaction.reply({ content: 'You no longer have access to Social Studio.', flags: 64 }); return true; }
-    const displayName = interaction.fields.getTextInputValue('displayName').trim();
-    if (!displayName) { await interaction.reply({ content: 'Creator display name is required.', flags: 64 }); return true; }
-    const result = completeCreatorProfile(interaction.member, { displayName, group: interaction.fields.getTextInputValue('group'), tags: interaction.fields.getTextInputValue('tags'), notes: interaction.fields.getTextInputValue('notes') });
-    const accounts = getAccountsForCreator(interaction.guildId, result.creator);
-    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-    return updatePanel(interaction, buildUserProfile(interaction, result.creator, accounts, true));
+
+  const displayName = interaction.fields
+    .getTextInputValue('displayName')
+    .trim();
+
+  if (!displayName) {
+    await interaction.reply({
+      content: 'Creator display name is required.',
+      flags: 64,
+    });
+
+    return true;
+  }
+
+  const result = completeCreatorProfile(interaction.member, {
+    displayName,
+    group: interaction.fields.getTextInputValue('group'),
+    tags: interaction.fields.getTextInputValue('tags'),
+    notes: interaction.fields.getTextInputValue('notes'),
+  });
+
+  const accounts = getAccountsForCreator(
+    interaction.guildId,
+    result.creator,
+  );
+
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferUpdate();
+  }
+
+  return updatePanel(
+    interaction,
+    buildUserProfile(
+      interaction,
+      result.creator,
+      accounts,
+      true,
+    ),
+  );
+}
+
+function handleUserAddAccountOpen(interaction, updatePanel, creator) {
+  setUserAccountSession(interaction, { platforms: [] });
+
+  return updatePanel(
+    interaction,
+    buildUserAddAccounts(interaction, creator),
+  );
+}
+
+function handleUserPlatformSelection(
+  interaction,
+  updatePanel,
+  creator,
+) {
+  setUserAccountSession(interaction, {
+    platforms: interaction.values || [],
+  });
+
+  return updatePanel(
+    interaction,
+    buildUserAddAccounts(interaction, creator),
+  );
+}
+
+async function handleUserAccountContinue(
+  interaction,
+  updatePanel,
+  creator,
+) {
+  const platforms =
+    getUserAccountSession(interaction).platforms || [];
+
+  if (!platforms.length) {
+    return updatePanel(
+      interaction,
+      buildUserAddAccounts(interaction, creator),
+    );
+  }
+
+  await interaction.showModal(userAccountModal(platforms));
+  return true;
+}
+
+async function handleUserAccountsSubmit(
+  interaction,
+  updatePanel,
+) {
+  const platforms =
+    getUserAccountSession(interaction).platforms || [];
+
+  if (!platforms.length) {
+    await interaction.reply({
+      content: 'Select at least one platform before continuing.',
+      flags: 64,
+    });
+
+    return true;
+  }
+
+  let creator = store.findCreatorByOwner(
+    interaction.guildId,
+    interaction.user.id,
+  );
+
+  if (!creator) {
+    await interaction.reply({
+      content: 'Your Creator Profile could not be found.',
+      flags: 64,
+    });
+
+    return true;
+  }
+
+  for (const platform of platforms) {
+    const value = interaction.fields
+      .getTextInputValue(`account_${platform}`)
+      .trim();
+
+    if (!value) continue;
+
+    const result = upsertUserAccount(
+      interaction.guildId,
+      creator,
+      platform,
+      value,
+      interaction.user.id,
+    );
+
+    creator = result.creator;
+  }
+
+  creator =
+    store.getCreator(interaction.guildId, creator.creatorId)
+    || creator;
+
+  setUserAccountSession(interaction, { platforms: [] });
+
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferUpdate();
+  }
+
+  return updatePanel(
+    interaction,
+    buildUserProfile(
+      interaction,
+      creator,
+      getAccountsForCreator(interaction.guildId, creator),
+    ),
+  );
+}
+
+function handleUserSectionNavigation(
+  interaction,
+  updatePanel,
+  context,
+  customId,
+) {
+  const match = customId.match(
+    /^user:social:(details|accounts|newAccount|manageAccount|alerts)$/,
+  );
+
+  const section = ['newAccount', 'manageAccount'].includes(match?.[1])
+    ? 'accounts'
+    : match?.[1];
+
+  return updatePanel(
+    interaction,
+    section
+      ? buildUserSection(
+        interaction,
+        context.creator,
+        section,
+        context.accounts,
+      )
+      : buildUserProfile(
+        interaction,
+        context.creator,
+        context.accounts,
+      ),
+  );
+}
+
+async function handleUserInteraction(interaction, updatePanel) {
+  const customId = String(interaction?.customId || '');
+
+  if (!isUserSocialInteraction(customId)) {
+    return false;
+  }
+
+  if (customId === 'user:category:social') {
+    return updatePanel(
+      interaction,
+      buildUserLanding(interaction),
+    );
+  }
+
+  if (
+    customId === 'user:social:create'
+    && interaction.isButton?.()
+  ) {
+    return handleUserCreateProfile(interaction, updatePanel);
+  }
+
+  if (
+    customId === 'user:social:create:submit'
+    && interaction.isModalSubmit?.()
+  ) {
+    return handleUserCreateProfileSubmit(
+      interaction,
+      updatePanel,
+    );
   }
 
   const context = getCreatorContext(interaction);
-  if (context.payload) return updatePanel(interaction, context.payload);
 
-  if (customId === 'user:social:newAccount' || customId === 'user:social:accounts') {
-    setUserAccountSession(interaction, { platforms: [] });
-    return updatePanel(interaction, buildUserAddAccounts(interaction, context.creator));
-  }
-  if (customId === 'user:social:account:platforms' && interaction.isStringSelectMenu?.()) {
-    setUserAccountSession(interaction, { platforms: interaction.values || [] });
-    return updatePanel(interaction, buildUserAddAccounts(interaction, context.creator));
-  }
-  if (customId === 'user:social:account:continue' && interaction.isButton?.()) {
-    const platforms = getUserAccountSession(interaction).platforms || [];
-    if (!platforms.length) return updatePanel(interaction, buildUserAddAccounts(interaction, context.creator));
-    await interaction.showModal(userAccountModal(platforms));
-    return true;
-  }
-  if (customId === 'user:social:account:create-multi' && interaction.isModalSubmit?.()) {
-    const platforms = getUserAccountSession(interaction).platforms || [];
-    if (!platforms.length) {
-      await interaction.reply({ content: 'Select at least one platform before continuing.', flags: 64 });
-      return true;
-    }
-
-    let creator = store.findCreatorByOwner(interaction.guildId, interaction.user.id);
-    if (!creator) {
-      await interaction.reply({ content: 'Your Creator Profile could not be found.', flags: 64 });
-      return true;
-    }
-
-    for (const platform of platforms) {
-      const value = interaction.fields.getTextInputValue(`account_${platform}`).trim();
-      if (!value) continue;
-      const result = upsertUserAccount(
-        interaction.guildId,
-        creator,
-        platform,
-        value,
-        interaction.user.id,
-      );
-      creator = result.creator;
-    }
-
-    creator = store.getCreator(interaction.guildId, creator.creatorId) || creator;
-    setUserAccountSession(interaction, { platforms: [] });
-    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-    return updatePanel(interaction, buildUserProfile(interaction, creator, getAccountsForCreator(interaction.guildId, creator)));
+  if (context.payload) {
+    return updatePanel(interaction, context.payload);
   }
 
-  const match = customId.match(/^user:social:(details|accounts|newAccount|manageAccount|alerts)$/);
-  const section = ['newAccount', 'manageAccount'].includes(match?.[1]) ? 'accounts' : match?.[1];
-  return updatePanel(interaction, section ? buildUserSection(interaction, context.creator, section, context.accounts) : buildUserProfile(interaction, context.creator, context.accounts));
+  if (
+    customId === 'user:social:newAccount'
+    || customId === 'user:social:accounts'
+  ) {
+    return handleUserAddAccountOpen(
+      interaction,
+      updatePanel,
+      context.creator,
+    );
+  }
+
+  if (
+    customId === 'user:social:account:platforms'
+    && interaction.isStringSelectMenu?.()
+  ) {
+    return handleUserPlatformSelection(
+      interaction,
+      updatePanel,
+      context.creator,
+    );
+  }
+
+  if (
+    customId === 'user:social:account:continue'
+    && interaction.isButton?.()
+  ) {
+    return handleUserAccountContinue(
+      interaction,
+      updatePanel,
+      context.creator,
+    );
+  }
+
+  if (
+    customId === 'user:social:account:create-multi'
+    && interaction.isModalSubmit?.()
+  ) {
+    return handleUserAccountsSubmit(
+      interaction,
+      updatePanel,
+    );
+  }
+
+  return handleUserSectionNavigation(
+    interaction,
+    updatePanel,
+    context,
+    customId,
+  );
 }
 
 const user = {
