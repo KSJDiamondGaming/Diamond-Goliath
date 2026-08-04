@@ -686,22 +686,13 @@ async function handleDiagnosticsInteraction(i, context) {
   return false;
 }
 
-async function handleInteraction(i) {
-  const id = String(i?.customId || ''); if (id !== 'admin:social' && !id.startsWith(P)) return false; if (!i.guild?.id) throw new Error('Social Studio requires a guild interaction.'); if (i.isMessageComponent?.() && !opensModal(id) && !i.deferred && !i.replied) await i.deferUpdate();
-  const config = getConfig(i.guildId), actorId = i.user?.id || null, interaction = i;
-  if (id === 'admin:social' || id === `${P}main`) return respond(i, buildMainPanel(i.guild, who(i)));
-  if (id === `${P}creator:new`) { await i.showModal(creatorModal()); return true; }
-  if (await handleCreatorInteraction(i, {
-    id,
-    config,
-    actorId,
-  })) return true;
 
-  if (await handleAccountInteraction(i, {
+async function handleCreatorAccountInteraction(i, context) {
+  const {
     id,
     config,
     actorId,
-  })) return true;
+  } = context;
 
   if (id === `${P}creator:select`) { setCreatorSession(i, { creatorId: i.values?.[0] || null }); return respond(i, buildSectionPanel(i, 'creators')); }
   if (id === `${P}creator:page:prev` || id === `${P}creator:page:next`) { const v = getCreatorSession(i); setCreatorSession(i, { page: Math.max(0, v.page + (id.endsWith('next') ? 1 : -1)), creatorId: null }); return respond(i, buildSectionPanel(i, 'creators')); }
@@ -751,6 +742,32 @@ async function handleInteraction(i) {
   })) return true;
 
   if (await handlePermissionInteraction(i, {
+    id,
+    config,
+    actorId,
+  })) return true;
+
+  return false;
+}
+
+async function handleInteraction(i) {
+  const id = String(i?.customId || ''); if (id !== 'admin:social' && !id.startsWith(P)) return false; if (!i.guild?.id) throw new Error('Social Studio requires a guild interaction.'); if (i.isMessageComponent?.() && !opensModal(id) && !i.deferred && !i.replied) await i.deferUpdate();
+  const config = getConfig(i.guildId), actorId = i.user?.id || null, interaction = i;
+  if (id === 'admin:social' || id === `${P}main`) return respond(i, buildMainPanel(i.guild, who(i)));
+  if (id === `${P}creator:new`) { await i.showModal(creatorModal()); return true; }
+  if (await handleCreatorInteraction(i, {
+    id,
+    config,
+    actorId,
+  })) return true;
+
+  if (await handleAccountInteraction(i, {
+    id,
+    config,
+    actorId,
+  })) return true;
+
+  if (await handleCreatorAccountInteraction(i, {
     id,
     config,
     actorId,
