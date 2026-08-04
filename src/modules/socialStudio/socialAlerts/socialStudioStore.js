@@ -13,6 +13,10 @@ function array(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function clean(value, max = 2000) {
+  return String(value || '').trim().slice(0, max);
+}
+
 function normalizeSection(input = {}) {
   const section = object(input);
 
@@ -86,6 +90,81 @@ function getCreatorAccounts(guildId, creatorOrId) {
   return array(creator.accountIds)
     .map((accountId) => section.accounts[String(accountId)])
     .filter(Boolean);
+}
+
+function nextCreatorId(section) {
+  const used = new Set(Object.keys(section.creators));
+  let sequence = Math.max(0, Number(section.creatorSequence || 0));
+  let creatorId;
+
+  do {
+    sequence += 1;
+    creatorId = `creator_${String(sequence).padStart(6, '0')}`;
+  } while (used.has(creatorId));
+
+  section.creatorSequence = sequence;
+  return creatorId;
+}
+
+function createCreatorForMember(member, meta = {}) {
+  const guildId = member.guild.id;
+  const ownerDiscordId = String(member.user.id);
+  const existing = findCreatorByOwner(guildId, ownerDiscordId);
+  if (existing) return { creator: existing, created: false };
+
+  let creator = null;
+  updateSection(guildId, (section) => {
+    const timestamp = new Date().toISOString();
+    const creatorId = nextCreatorId(section);
+    creator = {
+      creatorId,
+      ownerDiscordId,
+      displayName: clean(member.displayName || member.user.globalName || member.user.username, 120),
+      group: '',
+      tags: [],
+      notes: '',
+      enabled: true,
+      status: 'active',
+      accountIds: [],
+      profileCompleted: false,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    section.creators[creatorId] = creator;
+    return section;
+  }, meta);
+
+  return { creator, created: true };
+}
+
+function completeCreatorProfile(member, values = {}, meta = {}) {
+  const guildId = member.guild.id;
+  const ownerDiscordId = String(member.user.id);
+  let creator = findCreatorByOwner(guildId, ownerDiscordId);
+  const wasCompleted = creator?.profileCompleted === true;
+
+  if (!creator) creator = createCreatorForMember(member, meta).creator;
+
+  const savedCreator = updateCreator(guildId, creator.creatorId, (current) => ({
+    ...current,
+    ownerDiscordId,
+    displayName: clean(values.displayName, 120),
+    group: clean(values.group, 120),
+    tags: String(values.tags || '')
+      .split(',')
+      .map((value) => clean(value, 60))
+      .filter(Boolean),
+    notes: clean(values.notes, 1000),
+    enabled: current.enabled !== false,
+    status: 'active',
+    departureType: null,
+    leftAt: null,
+    scheduledDeletionAt: null,
+    accountIds: array(current.accountIds),
+    profileCompleted: true,
+  }), meta);
+
+  return { creator: savedCreator, created: !wasCompleted };
 }
 
 function updateCreator(guildId, creatorId, updater, meta = {}) {
@@ -261,6 +340,8 @@ module.exports = {
   getCreator,
   findCreatorByOwner,
   getCreatorAccounts,
+  createCreatorForMember,
+  completeCreatorProfile,
   updateCreator,
   markCreatorActive,
   markCreatorDeparted,
