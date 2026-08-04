@@ -171,19 +171,8 @@ function userPlatformSelect(selected = []) {
     }))));
 }
 
-function userAccountModal(platforms) {
-  const modal = new ModalBuilder().setCustomId('user:social:account:create-multi').setTitle('Add Social Accounts');
-  for (const platform of platforms.slice(0, 5)) {
-    modal.addComponents(row(new TextInputBuilder()
-      .setCustomId(`account_${platform}`)
-      .setLabel(`${LABEL[platform]} username, channel ID or URL`)
-      .setPlaceholder(`Paste the ${LABEL[platform]} profile URL, username or ID here`)
-      .setStyle(TextInputStyle.Short)
-      .setMaxLength(500)
-      .setRequired(true)));
-  }
-  return modal;
-}
+const userAccountModal =
+  adminPanel.user.buildAccountModal;
 
 function buildUserAddAccounts(interaction, creator) {
   const selected = getUserAccountSession(interaction).platforms || [];

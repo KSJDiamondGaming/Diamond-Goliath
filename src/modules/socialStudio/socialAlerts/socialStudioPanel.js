@@ -714,6 +714,20 @@ function userCreatorModal(
     );
 }
 
+function userAccountModal(platforms) {
+  const modal = new ModalBuilder().setCustomId('user:social:account:create-multi').setTitle('Add Social Accounts');
+  for (const platform of platforms.slice(0, 5)) {
+    modal.addComponents(row(new TextInputBuilder()
+      .setCustomId(`account_${platform}`)
+      .setLabel(`${LABEL[platform]} username, channel ID or URL`)
+      .setPlaceholder(`Paste the ${LABEL[platform]} profile URL, username or ID here`)
+      .setStyle(TextInputStyle.Short)
+      .setMaxLength(500)
+      .setRequired(true)));
+  }
+  return modal;
+}
+
 function userNavigation(backId = 'user:category:social') {
   return row(btn(backId, '?? Back', ButtonStyle.Secondary));
 }
@@ -1033,6 +1047,7 @@ const userPanel = {
   buildProfile: buildUserProfile,
   buildSection: buildUserSection,
   buildCreatorModal: userCreatorModal,
+  buildAccountModal: userAccountModal,
 };
 
 module.exports = {
