@@ -299,6 +299,46 @@ function updateAccount(guildId, accountId, updater, meta = {}) {
   return savedAccount;
 }
 
+function upsertCreatorAccount(guildId, creatorId, account, duplicateAccountIds = [], meta = {}) {
+  const id = String(creatorId);
+  const accountId = String(account?.accountId || '');
+  if (!accountId) throw new Error('Social account ID is required.');
+
+  let saved = null;
+  updateSection(guildId, (section) => {
+    const creator = section.creators[id];
+    if (!creator) throw new Error('Creator profile was not found.');
+
+    const duplicateIds = new Set(array(duplicateAccountIds).map(String).filter(Boolean));
+    duplicateIds.delete(accountId);
+
+    for (const duplicateId of duplicateIds) delete section.accounts[duplicateId];
+    for (const item of Object.values(section.creators)) {
+      item.accountIds = array(item.accountIds)
+        .map(String)
+        .filter((value) => !duplicateIds.has(value));
+    }
+
+    const timestamp = new Date().toISOString();
+    const current = section.accounts[accountId] || {};
+    const nextAccount = {
+      ...current,
+      ...object(account),
+      accountId,
+      createdAt: current.createdAt || account.createdAt || timestamp,
+      updatedAt: timestamp,
+    };
+
+    section.accounts[accountId] = nextAccount;
+    creator.accountIds = [...new Set([...array(creator.accountIds).map(String), accountId])];
+    creator.updatedAt = timestamp;
+    saved = { account: nextAccount, creator };
+    return section;
+  }, meta);
+
+  return saved;
+}
+
 function deleteAccount(guildId, accountId, meta = {}) {
   const id = String(accountId);
   let deleted = false;
@@ -351,6 +391,7 @@ module.exports = {
   deleteCreatorByOwner,
   getAccount,
   updateAccount,
+  upsertCreatorAccount,
   deleteAccount,
   isEnabled,
   setEnabled,
