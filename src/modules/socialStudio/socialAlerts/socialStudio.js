@@ -243,17 +243,23 @@ function sectionNavigation(backId = 'user:social:open') {
   return row(button(backId, 'Back', ButtonStyle.Secondary, false, '⬅️'), button('user:preferences', 'Settings', ButtonStyle.Secondary, false, '⚙️'));
 }
 
-function creatorActionRows(creator = null) {
+function creatorActionRows(creator = null, accounts = []) {
   const hasCreator = Boolean(creator);
   const completed = creator?.profileCompleted === true;
-  return [
+  const hasAccounts = Array.isArray(accounts) && accounts.length > 0;
+  if (!hasCreator || !completed) return [row(button('user:social:create', 'New Profile', ButtonStyle.Success, completed, '➕'))];
+  const rows = [
     row(
-      button('user:social:create', 'New Profile', ButtonStyle.Success, completed, '➕'),
-      button('user:social:accounts', 'Accounts', ButtonStyle.Primary, !hasCreator, '🔗'),
-      button('user:social:alerts', '📣 Post LIVE', ButtonStyle.Primary, !hasCreator),
+      button('user:social:create', 'New Profile', ButtonStyle.Success, true, '➕'),
+      button('user:social:newAccount', 'New Account', ButtonStyle.Success, false, '➕'),
+      ...(hasAccounts ? [button('user:social:alerts', 'Post LIVE', ButtonStyle.Primary, false, '📣')] : []),
     ),
-    row(button('user:social:details', 'Manage Profile', ButtonStyle.Primary, !hasCreator, '✏️')),
+    row(
+      button('user:social:details', 'Manage Profile', ButtonStyle.Primary, false, '📝'),
+      ...(hasAccounts ? [button('user:social:manageAccount', 'Manage Account', ButtonStyle.Primary, false, '🛠️')] : []),
+    ),
   ];
+  return rows;
 }
 
 function accountLabel(account) {
@@ -279,7 +285,7 @@ function buildUserDenied(interaction, roleIds = []) {
 }
 
 function buildUserCreate(interaction) {
-  return { embeds: [base('👥 Creator Profiles', 'You do not have a completed Creator Profile yet.\n\nSelect New Profile to complete the same Creator Profile form used by Social Studio Management.\n\nYour unique Creator ID and ownership are permanently attached to your Discord user ID.', interaction)], components: [...creatorActionRows(null), socialNavigation()] };
+  return { embeds: [base('👥 Creator Profiles', 'You do not have a completed Creator Profile yet.\n\nSelect New Profile to complete the same Creator Profile form used by Social Studio Management.\n\nYour unique Creator ID and ownership are permanently attached to your Discord user ID.', interaction)], components: [...creatorActionRows(null, []), socialNavigation()] };
 }
 
 function buildUserProfile(interaction, creator, accounts = [], created = false) {
@@ -299,7 +305,7 @@ function buildUserProfile(interaction, creator, accounts = [], created = false) 
       '',
       'Use the buttons below to manage your Creator Profile and linked accounts.',
     ].filter(Boolean).join('\n\n'), interaction)],
-    components: [...creatorActionRows(creator), socialNavigation()],
+    components: [...creatorActionRows(creator, accounts), socialNavigation()],
   };
 }
 
@@ -325,7 +331,7 @@ function getCreatorContext(interaction) {
 
 async function handleUserInteraction(interaction, updatePanel) {
   const customId = String(interaction?.customId || '');
-  const isSocial = customId === 'user:category:social' || customId === 'user:module:social' || customId === 'user:social:open' || customId === 'user:social:create' || customId === 'user:social:create:submit' || /^user:social:(details|accounts|alerts|templates|notifications)$/.test(customId);
+  const isSocial = customId === 'user:category:social' || customId === 'user:module:social' || customId === 'user:social:open' || customId === 'user:social:create' || customId === 'user:social:create:submit' || /^user:social:(details|accounts|newAccount|manageAccount|alerts|templates|notifications)$/.test(customId);
   if (!isSocial) return false;
   if (customId === 'user:category:social') return updatePanel(interaction, buildUserLanding(interaction));
   if (customId === 'user:social:create' && interaction.isButton?.()) {
@@ -348,8 +354,9 @@ async function handleUserInteraction(interaction, updatePanel) {
   }
   const context = getCreatorContext(interaction);
   if (context.payload) return updatePanel(interaction, context.payload);
-  const match = customId.match(/^user:social:(details|accounts|alerts|templates|notifications)$/);
-  return updatePanel(interaction, match ? buildUserSection(interaction, context.creator, match[1], context.accounts) : buildUserProfile(interaction, context.creator, context.accounts));
+  const match = customId.match(/^user:social:(details|accounts|newAccount|manageAccount|alerts|templates|notifications)$/);
+  const section = ['newAccount', 'manageAccount'].includes(match?.[1]) ? 'accounts' : match?.[1];
+  return updatePanel(interaction, section ? buildUserSection(interaction, context.creator, section, context.accounts) : buildUserProfile(interaction, context.creator, context.accounts));
 }
 
 const user = {
