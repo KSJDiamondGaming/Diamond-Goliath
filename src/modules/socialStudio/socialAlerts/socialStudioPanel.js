@@ -728,12 +728,74 @@ function userAccountModal(platforms) {
   return modal;
 }
 
+function userPlatformSelect(selected = []) {
+  return row(
+    new StringSelectMenuBuilder()
+      .setCustomId('user:social:account:platforms')
+      .setPlaceholder('Select platform(s) to add an account')
+      .setMinValues(1)
+      .setMaxValues(5)
+      .addOptions(
+        PLATFORMS.map((platform) => ({
+          label: LABEL[platform],
+          value: platform,
+          default: selected.includes(platform),
+        })),
+      ),
+  );
+}
+
+function buildUserAddAccounts(
+  interaction,
+  creator,
+  selected = [],
+) {
+  const selectedText = selected.length
+    ? selected
+      .map((platform) => LABEL[platform] || platform)
+      .join(', ')
+    : 'None';
+
+  return {
+    embeds: [
+      embed(
+        store.getConfig(interaction.guildId),
+        '➕ Add Accounts',
+        [
+          `Add one or more social accounts to **${creator.displayName || creator.creatorId}**.`,
+          '',
+          'Select up to 5 platforms, then continue. The next form will ask for a username, channel ID or URL for each selected platform.',
+          '',
+          `**Selected:** ${selectedText}`,
+        ].join('\n'),
+        who(interaction),
+      ),
+    ],
+    components: [
+      userPlatformSelect(selected),
+      row(
+        btn(
+          'user:social:open',
+          '⬅️ Back',
+          ButtonStyle.Secondary,
+        ),
+        btn(
+          'user:social:account:continue',
+          '➡️ Continue',
+          ButtonStyle.Success,
+          !selected.length,
+        ),
+      ),
+    ],
+  };
+}
+
 function userNavigation(backId = 'user:category:social') {
-  return row(btn(backId, '?? Back', ButtonStyle.Secondary));
+  return row(btn(backId, '⬅️ Back', ButtonStyle.Secondary));
 }
 
 function userSectionNavigation(backId = 'user:social:open') {
-  return row(btn(backId, '?? Back', ButtonStyle.Secondary));
+  return row(btn(backId, '⬅️ Back', ButtonStyle.Secondary));
 }
 
 function userAccountLabel(account) {
@@ -1048,6 +1110,7 @@ const userPanel = {
   buildSection: buildUserSection,
   buildCreatorModal: userCreatorModal,
   buildAccountModal: userAccountModal,
+  buildAddAccounts: buildUserAddAccounts,
 };
 
 module.exports = {

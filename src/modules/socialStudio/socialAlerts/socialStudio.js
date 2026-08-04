@@ -158,42 +158,17 @@ function supportedAlerts(platform) {
   return supported;
 }
 
-function userPlatformSelect(selected = []) {
-  return row(new StringSelectMenuBuilder()
-    .setCustomId('user:social:account:platforms')
-    .setPlaceholder('Select platform(s) to add an account')
-    .setMinValues(1)
-    .setMaxValues(5)
-    .addOptions(PLATFORMS.map((platform) => ({
-      label: LABEL[platform],
-      value: platform,
-      default: selected.includes(platform),
-    }))));
-}
-
 const userAccountModal =
   adminPanel.user.buildAccountModal;
 
-function buildUserAddAccounts(interaction, creator) {
-  const selected = getUserAccountSession(interaction).platforms || [];
-  const selectedText = selected.length ? selected.map((platform) => LABEL[platform] || platform).join(', ') : 'None';
-  return {
-    embeds: [base('➕ Add Accounts', [
-      `Add one or more social accounts to **${creator.displayName || creator.creatorId}**.`,
-      '',
-      'Select up to 5 platforms, then continue. The next form will ask for a username, channel ID or URL for each selected platform.',
-      '',
-      `**Selected:** ${selectedText}`,
-    ].join('\n'), interaction)],
-    components: [
-      userPlatformSelect(selected),
-      row(
-        button('user:social:open', '⬅️ Back', ButtonStyle.Secondary),
-        button('user:social:account:continue', '➡️ Continue', ButtonStyle.Success, !selected.length),
-      ),
-    ],
-  };
-}
+const buildUserAddAccounts = (
+  interaction,
+  creator,
+) => adminPanel.user.buildAddAccounts(
+  interaction,
+  creator,
+  getUserAccountSession(interaction).platforms || [],
+);
 
 function canonicalIdentity(account) {
   return String(account.canonicalIdentity || account.externalId || account.normalizedUsername || account.username || '').toLowerCase();
