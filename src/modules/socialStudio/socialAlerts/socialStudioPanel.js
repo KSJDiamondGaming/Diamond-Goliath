@@ -646,6 +646,25 @@ async function handlePermissionInteraction(i, context) {
   return false;
 }
 
+
+async function handleAutomationInteraction(i, context) {
+  const {
+    id,
+    config,
+    actorId,
+  } = context;
+
+  if (id === `${P}toggle`) { store.setEnabled(interaction.guildId, !config.enabled, { actorId }); return respond(i, buildSectionPanel(i, 'monitoring')); }
+  if (id === `${P}automation:quiet` && i.fields?.getTextInputValue) { const enabledRaw = i.fields.getTextInputValue('enabled').trim().toLowerCase(); const start = i.fields.getTextInputValue('start').trim(); const end = i.fields.getTextInputValue('end').trim(); const timezone = i.fields.getTextInputValue('timezone').trim() || 'Europe/London'; if (!['yes', 'no'].includes(enabledRaw)) throw new Error('Quiet hours enabled must be yes or no.'); if (!/^\d{2}:\d{2}$/.test(start) || !/^\d{2}:\d{2}$/.test(end)) throw new Error('Quiet hours must use HH:MM time format.'); config.settings = { ...(config.settings || {}), quietHours: { enabled: enabledRaw === 'yes', start, end, timezone } }; saveConfig(i.guildId, config, i.guild, actorId); return afterModal(i, 'monitoring', 'Quiet hours updated.'); }
+  if (id === `${P}automation:interval`) { const value = Number(i.values?.[0] || 300000); const allowed = MONITORING_INTERVALS.some((option) => Number(option.value) === value); config.settings = { ...(config.settings || {}), checkIntervalMs: allowed ? value : 300000 }; saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'monitoring')); }
+  if (id === `${P}automation:dupes`) { config.settings = { ...(config.settings || {}), suppressDuplicates: i.values?.[0] !== 'false' }; saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'monitoring')); }
+  if (id === `${P}automation:retry`) { config.settings = { ...(config.settings || {}), retryDeliveries: i.values?.[0] !== 'false' }; saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'monitoring')); }
+  if (id === `${P}automation:quiet`) { await i.showModal(quietHoursModal(config)); return true; }
+  if (id === `${P}automation:editlive` || id === `${P}automation:deleteended` || id === `${P}automation:viewers` || id === `${P}automation:duration`) { const key = id.endsWith('editlive') ? 'editLiveNotifications' : id.endsWith('deleteended') ? 'deleteEndedNotifications' : id.endsWith('viewers') ? 'includeViewerCount' : 'includeLiveDuration'; const current = config.settings?.[key] !== false; config.settings = { ...(config.settings || {}), [key]: !current }; saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'liveMessages')); }
+
+  return false;
+}
+
 async function handleInteraction(i) {
   const id = String(i?.customId || ''); if (id !== 'admin:social' && !id.startsWith(P)) return false; if (!i.guild?.id) throw new Error('Social Studio requires a guild interaction.'); if (i.isMessageComponent?.() && !opensModal(id) && !i.deferred && !i.replied) await i.deferUpdate();
   const config = getConfig(i.guildId), actorId = i.user?.id || null, interaction = i;
@@ -723,6 +742,12 @@ async function handleInteraction(i) {
   if (id === `${P}automation:retry`) { config.settings = { ...(config.settings || {}), retryDeliveries: i.values?.[0] !== 'false' }; saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'monitoring')); }
   if (id === `${P}automation:quiet`) { await i.showModal(quietHoursModal(config)); return true; }
   if (id === `${P}automation:editlive` || id === `${P}automation:deleteended` || id === `${P}automation:viewers` || id === `${P}automation:duration`) { const key = id.endsWith('editlive') ? 'editLiveNotifications' : id.endsWith('deleteended') ? 'deleteEndedNotifications' : id.endsWith('viewers') ? 'includeViewerCount' : 'includeLiveDuration'; const current = config.settings?.[key] !== false; config.settings = { ...(config.settings || {}), [key]: !current }; saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'liveMessages')); }
+  if (await handleAutomationInteraction(i, {
+    id,
+    config,
+    actorId,
+  })) return true;
+
   if (id === `${P}testing:last`) { const as = getAccountSession(i), a = config.accounts[as.accountId] || Object.values(config.accounts).sort((x, y) => new Date(y.state?.lastCheckedAt || 0) - new Date(x.state?.lastCheckedAt || 0))[0]; const s = a?.state || {}; const d = a ? [`**Account:** ${LABEL[a.platform] || a.platform} — ${a.username || a.externalId}`, `**Status:** ${accountState(a)}`, `**Last Checked:** ${ts(s.lastCheckedAt)}`, `**Provider Source:** ${s.providerSource || 'Not recorded'}`, `**Confidence:** ${s.confidence || 'Not recorded'}`, `**External ID:** ${a.externalId || 'Not resolved'}`, `**Last Error:** ${s.lastError || 'None'}`].join('\n') : 'No provider response has been recorded yet.'; return respond(i, { embeds: [embed(config, '📄 Last Provider Response', d, who(i), a ? platformColor(a.platform) : null)], components: [row(btn(`${P}diagnostics`, '⬅️ Diagnostics'), btn(`${P}settings`, '⚙️ Settings'))] }); }
   if (id === `${P}testing:diagnostics`) { const providerLines = PLATFORMS.map((p) => { const info = providerInfo(p); return `${ICON[p]} **${LABEL[p]}:** ${info.status || 'unknown'}${info.supportedAlertTypes?.length ? ` • ${info.supportedAlertTypes.join(', ')}` : ''}`; }); const errors = Object.values(config.accounts).filter((a) => a.state?.lastError).length; return respond(i, { embeds: [embed(config, '🩺 Social Studio Diagnostics', [`**Module:** ${config.enabled ? 'Enabled' : 'Disabled'}`, `**Default channel:** ${config.alertsChannelId ? `<#${config.alertsChannelId}>` : 'Missing'}`, `**Accounts with provider errors:** ${errors}`, '', '**Providers**', ...providerLines].join('\n'), who(i))], components: [row(btn(`${P}diagnostics`, '⬅️ Diagnostics'), btn(`${P}settings`, '⚙️ Settings'))] }); }
   if (id === `${P}testing:none`) return respond(i, buildSectionPanel(i, 'diagnostics'));
