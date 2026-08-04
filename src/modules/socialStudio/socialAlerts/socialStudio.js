@@ -30,13 +30,7 @@ function clean(value, max = 2000) {
 }
 
 const getSection = store.getSection;
-
-function getConfiguredRoleIds(guildId) {
-  const section = getSection(guildId);
-  return Array.isArray(section.userRoleIds)
-    ? [...new Set(section.userRoleIds.map(String).filter(Boolean))]
-    : [];
-}
+const getConfiguredRoleIds = store.getUserRoleIds;
 
 function getAccess(interaction) {
   const roleIds = getConfiguredRoleIds(interaction.guildId);
