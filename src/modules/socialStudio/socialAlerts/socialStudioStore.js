@@ -73,6 +73,34 @@ function saveSection(guildId, section, meta = {}) {
   return normalizeSection(saved);
 }
 
+function saveConfig(guildId, config, meta = {}) {
+  const { enabled: _enabled, ...storedConfig } = object(config);
+  const next = {
+    ...storedConfig,
+    updatedAt: new Date().toISOString(),
+    lastActorId: meta.actorId || null,
+  };
+
+  const saved = saveSection(guildId, next, meta);
+
+  for (const creatorId of Object.keys(next.creators || {})) {
+    if (!saved.creators?.[creatorId]) {
+      throw new Error(`Creator profile ${creatorId} was not persisted.`);
+    }
+  }
+
+  for (const accountId of Object.keys(next.accounts || {})) {
+    if (!saved.accounts?.[accountId]) {
+      throw new Error(`Social account ${accountId} was not persisted.`);
+    }
+  }
+
+  return {
+    ...saved,
+    enabled: isEnabled(guildId),
+  };
+}
+
 function updateSection(guildId, updater, meta = {}) {
   const current = getSection(guildId);
   const next = typeof updater === 'function'
@@ -392,7 +420,7 @@ module.exports = {
   getManagerRoleIds,
   getUserRoleIds,
   saveSection,
-  saveConfig: saveSection,
+  saveConfig,
   updateSection,
   getCreator,
   findCreatorByOwner,
