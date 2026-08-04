@@ -109,6 +109,51 @@ function updateCreator(guildId, creatorId, updater, meta = {}) {
   return savedCreator;
 }
 
+function getAccount(guildId, accountId) {
+  return getSection(guildId).accounts[String(accountId)] || null;
+}
+
+function updateAccount(guildId, accountId, updater, meta = {}) {
+  let savedAccount = null;
+
+  updateSection(guildId, (section) => {
+    const current = section.accounts[String(accountId)];
+    if (!current) throw new Error('Social account was not found.');
+
+    const next = typeof updater === 'function'
+      ? updater({ ...current })
+      : { ...current, ...object(updater) };
+
+    next.accountId = current.accountId;
+    next.updatedAt = new Date().toISOString();
+    section.accounts[String(accountId)] = next;
+    savedAccount = next;
+    return section;
+  }, meta);
+
+  return savedAccount;
+}
+
+function deleteAccount(guildId, accountId, meta = {}) {
+  const id = String(accountId);
+  let deleted = false;
+
+  updateSection(guildId, (section) => {
+    if (!section.accounts[id]) return section;
+
+    delete section.accounts[id];
+    for (const creator of Object.values(section.creators)) {
+      creator.accountIds = array(creator.accountIds).filter((value) => String(value) !== id);
+      creator.updatedAt = new Date().toISOString();
+    }
+
+    deleted = true;
+    return section;
+  }, meta);
+
+  return deleted;
+}
+
 function isEnabled(guildId) {
   return guildManager.isModuleEnabled(guildId, SECTION);
 }
@@ -130,6 +175,9 @@ module.exports = {
   findCreatorByOwner,
   getCreatorAccounts,
   updateCreator,
+  getAccount,
+  updateAccount,
+  deleteAccount,
   isEnabled,
   setEnabled,
 };
