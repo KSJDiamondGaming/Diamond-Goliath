@@ -220,10 +220,10 @@ function userCreatorModal(creator = null, interaction = null) {
     .setCustomId('user:social:create:submit')
     .setTitle('Create Creator Profile')
     .addComponents(
-      row(new TextInputBuilder().setCustomId('displayName').setLabel('Creator display name').setStyle(TextInputStyle.Short).setMaxLength(120).setRequired(true).setValue(String(suggestedName).slice(0, 120))),
-      row(new TextInputBuilder().setCustomId('group').setLabel('Group or team').setStyle(TextInputStyle.Short).setMaxLength(120).setRequired(false).setValue(String(creator?.group || '').slice(0, 120))),
-      row(new TextInputBuilder().setCustomId('tags').setLabel('Tags (comma separated)').setStyle(TextInputStyle.Short).setMaxLength(300).setRequired(false).setValue(Array.isArray(creator?.tags) ? creator.tags.join(', ').slice(0, 300) : '')),
-      row(new TextInputBuilder().setCustomId('notes').setLabel('Notes').setStyle(TextInputStyle.Paragraph).setMaxLength(1000).setRequired(false).setValue(String(creator?.notes || '').slice(0, 1000))),
+      row(new TextInputBuilder().setCustomId('displayName').setLabel('Creator display name').setPlaceholder('Enter the public creator name here').setStyle(TextInputStyle.Short).setMaxLength(120).setRequired(true).setValue(String(suggestedName).slice(0, 120))),
+      row(new TextInputBuilder().setCustomId('group').setLabel('Group or team').setPlaceholder('Add your team, brand or category here').setStyle(TextInputStyle.Short).setMaxLength(120).setRequired(false).setValue(String(creator?.group || '').slice(0, 120))),
+      row(new TextInputBuilder().setCustomId('tags').setLabel('Tags (comma separated)').setPlaceholder('Example: streamer, ksj, twitch').setStyle(TextInputStyle.Short).setMaxLength(300).setRequired(false).setValue(Array.isArray(creator?.tags) ? creator.tags.join(', ').slice(0, 300) : '')),
+      row(new TextInputBuilder().setCustomId('notes').setLabel('Notes').setPlaceholder('Anything you want staff to know about your creator profile').setStyle(TextInputStyle.Paragraph).setMaxLength(1000).setRequired(false).setValue(String(creator?.notes || '').slice(0, 1000))),
     );
 }
 
