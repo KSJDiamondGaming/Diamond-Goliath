@@ -7,15 +7,23 @@ const {
   EmbedBuilder,
   ModalBuilder,
   PermissionFlagsBits,
+  StringSelectMenuBuilder,
   TextInputBuilder,
   TextInputStyle,
 } = require('discord.js');
+const crypto = require('crypto');
 const guildManager = require('../../../core/guild/guildManager');
 const security = require('../../../core/security/securityCore');
+const { normalizeAccountInput, migrateAccount } = require('./accountNormalizer');
+const { providerInfo } = require('./socialStudioProviders');
 const adminPanel = require('./socialStudioPanel');
 
 const ACTIVE = 'active';
 const LEFT_SERVER = 'left_server';
+const PLATFORMS = ['twitch', 'youtube', 'tiktok', 'kick', 'facebook', 'instagram', 'x'];
+const ALERT_TYPES = ['live', 'ended', 'vod', 'clip', 'upload', 'short', 'post'];
+const LABEL = { twitch: 'Twitch', youtube: 'YouTube', tiktok: 'TikTok', kick: 'Kick', facebook: 'Facebook', instagram: 'Instagram', x: 'X' };
+const userAccountSessions = new Map();
 
 function clean(value, max = 2000) {
   return String(value || '').trim().slice(0, max);
@@ -275,6 +283,125 @@ function accountSummary(accounts = []) {
   })].join('\n');
 }
 
+function userAccountSessionKey(interaction) {
+  return `${interaction.guildId}:${interaction.user?.id || 'unknown'}`;
+}
+
+function getUserAccountSession(interaction) {
+  return userAccountSessions.get(userAccountSessionKey(interaction)) || { platforms: [] };
+}
+
+function setUserAccountSession(interaction, patch) {
+  const next = { ...getUserAccountSession(interaction), ...patch };
+  userAccountSessions.set(userAccountSessionKey(interaction), next);
+  return next;
+}
+
+function supportedAlerts(platform) {
+  const supported = (providerInfo(platform).supportedAlertTypes || []).filter((type) => ALERT_TYPES.includes(type));
+  if (supported.includes('live') && !supported.includes('ended')) supported.splice(1, 0, 'ended');
+  return supported;
+}
+
+function userPlatformSelect(selected = []) {
+  return row(new StringSelectMenuBuilder()
+    .setCustomId('user:social:account:platforms')
+    .setPlaceholder('Select platform(s) to add an account')
+    .setMinValues(1)
+    .setMaxValues(5)
+    .addOptions(PLATFORMS.map((platform) => ({
+      label: LABEL[platform],
+      value: platform,
+      default: selected.includes(platform),
+    }))));
+}
+
+function userAccountModal(platforms) {
+  const modal = new ModalBuilder().setCustomId('user:social:account:create-multi').setTitle('Add Social Accounts');
+  for (const platform of platforms.slice(0, 5)) {
+    modal.addComponents(row(new TextInputBuilder()
+      .setCustomId(`account_${platform}`)
+      .setLabel(`${LABEL[platform]} username, channel ID or URL`)
+      .setPlaceholder(`Paste the ${LABEL[platform]} profile URL, username or ID here`)
+      .setStyle(TextInputStyle.Short)
+      .setMaxLength(500)
+      .setRequired(true)));
+  }
+  return modal;
+}
+
+function buildUserAddAccounts(interaction, creator) {
+  const selected = getUserAccountSession(interaction).platforms || [];
+  const selectedText = selected.length ? selected.map((platform) => LABEL[platform] || platform).join(', ') : 'None';
+  return {
+    embeds: [base('➕ Add Accounts', [
+      `Add one or more social accounts to **${creator.displayName || creator.creatorId}**.`,
+      '',
+      'Select up to 5 platforms, then continue. The next form will ask for a username, channel ID or URL for each selected platform.',
+      '',
+      `**Selected:** ${selectedText}`,
+    ].join('\n'), interaction)],
+    components: [
+      userPlatformSelect(selected),
+      row(
+        button('user:social:open', '⬅️ Back', ButtonStyle.Secondary),
+        button('user:social:account:continue', '➡️ Continue', ButtonStyle.Success, !selected.length),
+      ),
+    ],
+  };
+}
+
+function canonicalIdentity(account) {
+  return String(account.canonicalIdentity || account.externalId || account.normalizedUsername || account.username || '').toLowerCase();
+}
+
+function canonicalKey(account) {
+  return `${String(account.platform || '').toLowerCase()}:${canonicalIdentity(account)}`;
+}
+
+function upsertUserAccount(section, creator, platform, rawValue) {
+  if (!section.accounts || typeof section.accounts !== 'object' || Array.isArray(section.accounts)) section.accounts = {};
+  const normalized = normalizeAccountInput(platform, rawValue);
+  const key = `${platform}:${String(normalized.canonicalIdentity || normalized.externalId || normalized.normalizedUsername || normalized.username || '').toLowerCase()}`;
+  const matches = Object.values(section.accounts).filter((account) => {
+    try { return canonicalKey(migrateAccount(account)) === key; } catch { return false; }
+  });
+  const primary = matches[0] || null;
+  const accountId = primary?.accountId || `account_${crypto.randomBytes(8).toString('hex')}`;
+  const duplicates = matches.slice(1).map((account) => account.accountId);
+  if (duplicates.length) {
+    const duplicateSet = new Set(duplicates);
+    for (const item of Object.values(creators(section))) {
+      item.accountIds = (item.accountIds || []).filter((id) => !duplicateSet.has(id));
+    }
+    for (const id of duplicates) delete section.accounts[id];
+  }
+  const timestamp = new Date().toISOString();
+  section.accounts[accountId] = {
+    ...(primary || {}),
+    accountId,
+    platform,
+    username: normalized.username,
+    normalizedUsername: normalized.normalizedUsername,
+    externalId: primary?.externalId || normalized.externalId || null,
+    inputType: normalized.inputType,
+    canonicalIdentity: normalized.canonicalIdentity,
+    profileUrl: normalized.profileUrl,
+    sourceInput: normalized.sourceInput,
+    displayName: creator.displayName,
+    enabled: primary?.enabled !== false,
+    alertTypes: Array.isArray(primary?.alertTypes) ? primary.alertTypes : supportedAlerts(platform),
+    alertChannelId: primary?.alertChannelId || null,
+    alertChannels: primary?.alertChannels && typeof primary.alertChannels === 'object' ? primary.alertChannels : {},
+    mentionMode: primary?.mentionMode || section.notificationMentionMode || 'none',
+    mentionRoleId: primary?.mentionRoleId || (section.notificationMentionMode === 'role' ? section.notificationRoleId || null : null),
+    createdAt: primary?.createdAt || timestamp,
+    updatedAt: timestamp,
+  };
+  creator.accountIds = [...new Set([...(creator.accountIds || []), accountId])];
+  creator.updatedAt = timestamp;
+}
+
 function buildUserLanding(interaction) {
   return { embeds: [base('📣 Social Studio', 'Create and manage your own Social Studio creator profile.\n\nYour profile connects your Discord account to your streaming accounts, live alerts and creator settings.', interaction)], components: [row(button('user:module:social', 'My Creator Profile', ButtonStyle.Primary, false, '👤')), socialNavigation('user:home')] };
 }
@@ -341,7 +468,15 @@ function getCreatorContext(interaction) {
 
 async function handleUserInteraction(interaction, updatePanel) {
   const customId = String(interaction?.customId || '');
-  const isSocial = customId === 'user:category:social' || customId === 'user:module:social' || customId === 'user:social:open' || customId === 'user:social:create' || customId === 'user:social:create:submit' || /^user:social:(details|accounts|newAccount|manageAccount|alerts|templates|notifications)$/.test(customId);
+  const isSocial = customId === 'user:category:social'
+    || customId === 'user:module:social'
+    || customId === 'user:social:open'
+    || customId === 'user:social:create'
+    || customId === 'user:social:create:submit'
+    || customId === 'user:social:account:platforms'
+    || customId === 'user:social:account:continue'
+    || customId === 'user:social:account:create-multi'
+    || /^user:social:(details|accounts|newAccount|manageAccount|alerts|templates|notifications)$/.test(customId);
   if (!isSocial) return false;
   if (customId === 'user:category:social') return updatePanel(interaction, buildUserLanding(interaction));
   if (customId === 'user:social:create' && interaction.isButton?.()) {
@@ -362,8 +497,46 @@ async function handleUserInteraction(interaction, updatePanel) {
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
     return updatePanel(interaction, buildUserProfile(interaction, result.creator, accounts, true));
   }
+
   const context = getCreatorContext(interaction);
   if (context.payload) return updatePanel(interaction, context.payload);
+
+  if (customId === 'user:social:newAccount' || customId === 'user:social:accounts') {
+    setUserAccountSession(interaction, { platforms: [] });
+    return updatePanel(interaction, buildUserAddAccounts(interaction, context.creator));
+  }
+  if (customId === 'user:social:account:platforms' && interaction.isStringSelectMenu?.()) {
+    setUserAccountSession(interaction, { platforms: interaction.values || [] });
+    return updatePanel(interaction, buildUserAddAccounts(interaction, context.creator));
+  }
+  if (customId === 'user:social:account:continue' && interaction.isButton?.()) {
+    const platforms = getUserAccountSession(interaction).platforms || [];
+    if (!platforms.length) return updatePanel(interaction, buildUserAddAccounts(interaction, context.creator));
+    await interaction.showModal(userAccountModal(platforms));
+    return true;
+  }
+  if (customId === 'user:social:account:create-multi' && interaction.isModalSubmit?.()) {
+    const platforms = getUserAccountSession(interaction).platforms || [];
+    if (!platforms.length) {
+      await interaction.reply({ content: 'Select at least one platform before continuing.', flags: 64 });
+      return true;
+    }
+    const section = getSection(interaction.guildId);
+    const creator = Object.values(creators(section)).find((entry) => entry?.ownerDiscordId === String(interaction.user.id));
+    if (!creator) {
+      await interaction.reply({ content: 'Your Creator Profile could not be found.', flags: 64 });
+      return true;
+    }
+    for (const platform of platforms) {
+      const value = interaction.fields.getTextInputValue(`account_${platform}`).trim();
+      if (value) upsertUserAccount(section, creator, platform, value);
+    }
+    saveSection(interaction.guildId, section);
+    setUserAccountSession(interaction, { platforms: [] });
+    if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+    return updatePanel(interaction, buildUserProfile(interaction, creator, getAccountsForCreator(interaction.guildId, creator)));
+  }
+
   const match = customId.match(/^user:social:(details|accounts|newAccount|manageAccount|alerts|templates|notifications)$/);
   const section = ['newAccount', 'manageAccount'].includes(match?.[1]) ? 'accounts' : match?.[1];
   return updatePanel(interaction, section ? buildUserSection(interaction, context.creator, section, context.accounts) : buildUserProfile(interaction, context.creator, context.accounts));
