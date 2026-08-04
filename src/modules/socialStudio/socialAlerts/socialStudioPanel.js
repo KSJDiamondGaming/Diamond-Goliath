@@ -84,13 +84,10 @@ async function denySocialAccess(i) {
 const getConfig = store.getConfig;
 
 function saveConfig(guildId, config, guild, actorId = null) {
-  const { enabled: _enabled, ...storedConfig } = config;
-  const next = { ...storedConfig, updatedAt: now(), lastActorId: actorId };
-  const saved = guildManager.saveGuildSection(guildId, 'social', next, guild);
-  if (!saved || typeof saved !== 'object') throw new Error('Social Studio could not verify its saved guild data.');
-  for (const id of Object.keys(next.creators || {})) if (!saved.creators?.[id]) throw new Error(`Creator profile ${id} was not persisted.`);
-  for (const id of Object.keys(next.accounts || {})) if (!saved.accounts?.[id]) throw new Error(`Social account ${id} was not persisted.`);
-  return { ...saved, enabled: guildManager.isModuleEnabled(guildId, 'social') };
+  return store.saveConfig(guildId, config, {
+    actorId,
+    guild,
+  });
 }
 
 function applyNotificationDefaults(config) {
