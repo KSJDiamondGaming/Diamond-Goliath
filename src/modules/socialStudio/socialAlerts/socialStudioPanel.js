@@ -665,6 +665,27 @@ async function handleAutomationInteraction(i, context) {
   return false;
 }
 
+
+async function handleDiagnosticsInteraction(i, context) {
+  const {
+    id,
+    config,
+    actorId,
+  } = context;
+
+  if (id === `${P}testing:last`) { const as = getAccountSession(i), a = config.accounts[as.accountId] || Object.values(config.accounts).sort((x, y) => new Date(y.state?.lastCheckedAt || 0) - new Date(x.state?.lastCheckedAt || 0))[0]; const s = a?.state || {}; const d = a ? [`**Account:** ${LABEL[a.platform] || a.platform} — ${a.username || a.externalId}`, `**Status:** ${accountState(a)}`, `**Last Checked:** ${ts(s.lastCheckedAt)}`, `**Provider Source:** ${s.providerSource || 'Not recorded'}`, `**Confidence:** ${s.confidence || 'Not recorded'}`, `**External ID:** ${a.externalId || 'Not resolved'}`, `**Last Error:** ${s.lastError || 'None'}`].join('\n') : 'No provider response has been recorded yet.'; return respond(i, { embeds: [embed(config, '📄 Last Provider Response', d, who(i), a ? platformColor(a.platform) : null)], components: [row(btn(`${P}diagnostics`, '⬅️ Diagnostics'), btn(`${P}settings`, '⚙️ Settings'))] }); }
+  if (id === `${P}testing:diagnostics`) { const providerLines = PLATFORMS.map((p) => { const info = providerInfo(p); return `${ICON[p]} **${LABEL[p]}:** ${info.status || 'unknown'}${info.supportedAlertTypes?.length ? ` • ${info.supportedAlertTypes.join(', ')}` : ''}`; }); const errors = Object.values(config.accounts).filter((a) => a.state?.lastError).length; return respond(i, { embeds: [embed(config, '🩺 Social Studio Diagnostics', [`**Module:** ${config.enabled ? 'Enabled' : 'Disabled'}`, `**Default channel:** ${config.alertsChannelId ? `<#${config.alertsChannelId}>` : 'Missing'}`, `**Accounts with provider errors:** ${errors}`, '', '**Providers**', ...providerLines].join('\n'), who(i))], components: [row(btn(`${P}diagnostics`, '⬅️ Diagnostics'), btn(`${P}settings`, '⚙️ Settings'))] }); }
+  if (id === `${P}testing:none`) return respond(i, buildSectionPanel(i, 'diagnostics'));
+  if (id === `${P}data:refresh`) return respond(i, buildSectionPanel(i, 'diagnostics'));
+  if (id === `${P}data:clear`) return respond(i, { embeds: [embed(config, '⚠️ Clear Social Studio History', `This will remove **${config.history.length}** stored history entries. Account configuration and monitoring state will not be deleted.`, who(i))], components: [row(btn(`${P}data:clear:cancel`, '⬅️ Cancel'), btn(`${P}data:clear:confirm`, '🧹 Clear History', ButtonStyle.Danger))] });
+  if (id === `${P}data:clear:cancel`) return respond(i, buildSectionPanel(i, 'diagnostics'));
+  if (id === `${P}data:clear:confirm`) { config.history = []; saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'diagnostics')); }
+  if (id === `${P}data:export:config`) { const payload = JSON.stringify(socialStudioExport(config, i.guildId), null, 2); await i.followUp({ content: '📤 Social Studio config export', files: [new AttachmentBuilder(Buffer.from(payload, 'utf8'), { name: `social-studio-config-${i.guildId}.json` })], flags: 64 }); return respond(i, buildSectionPanel(i, 'diagnostics')); }
+  if (id === `${P}data:export`) { const payload = JSON.stringify({ exportedAt: now(), guildId: i.guildId, analytics: config.analytics, history: config.history }, null, 2); await i.followUp({ content: `📤 Social Studio history export • ${config.history.length} entries`, files: [new AttachmentBuilder(Buffer.from(payload, 'utf8'), { name: `social-studio-history-${i.guildId}.json` })], flags: 64 }); return respond(i, buildSectionPanel(i, 'diagnostics')); }
+
+  return false;
+}
+
 async function handleInteraction(i) {
   const id = String(i?.customId || ''); if (id !== 'admin:social' && !id.startsWith(P)) return false; if (!i.guild?.id) throw new Error('Social Studio requires a guild interaction.'); if (i.isMessageComponent?.() && !opensModal(id) && !i.deferred && !i.replied) await i.deferUpdate();
   const config = getConfig(i.guildId), actorId = i.user?.id || null, interaction = i;
@@ -748,15 +769,6 @@ async function handleInteraction(i) {
     actorId,
   })) return true;
 
-  if (id === `${P}testing:last`) { const as = getAccountSession(i), a = config.accounts[as.accountId] || Object.values(config.accounts).sort((x, y) => new Date(y.state?.lastCheckedAt || 0) - new Date(x.state?.lastCheckedAt || 0))[0]; const s = a?.state || {}; const d = a ? [`**Account:** ${LABEL[a.platform] || a.platform} — ${a.username || a.externalId}`, `**Status:** ${accountState(a)}`, `**Last Checked:** ${ts(s.lastCheckedAt)}`, `**Provider Source:** ${s.providerSource || 'Not recorded'}`, `**Confidence:** ${s.confidence || 'Not recorded'}`, `**External ID:** ${a.externalId || 'Not resolved'}`, `**Last Error:** ${s.lastError || 'None'}`].join('\n') : 'No provider response has been recorded yet.'; return respond(i, { embeds: [embed(config, '📄 Last Provider Response', d, who(i), a ? platformColor(a.platform) : null)], components: [row(btn(`${P}diagnostics`, '⬅️ Diagnostics'), btn(`${P}settings`, '⚙️ Settings'))] }); }
-  if (id === `${P}testing:diagnostics`) { const providerLines = PLATFORMS.map((p) => { const info = providerInfo(p); return `${ICON[p]} **${LABEL[p]}:** ${info.status || 'unknown'}${info.supportedAlertTypes?.length ? ` • ${info.supportedAlertTypes.join(', ')}` : ''}`; }); const errors = Object.values(config.accounts).filter((a) => a.state?.lastError).length; return respond(i, { embeds: [embed(config, '🩺 Social Studio Diagnostics', [`**Module:** ${config.enabled ? 'Enabled' : 'Disabled'}`, `**Default channel:** ${config.alertsChannelId ? `<#${config.alertsChannelId}>` : 'Missing'}`, `**Accounts with provider errors:** ${errors}`, '', '**Providers**', ...providerLines].join('\n'), who(i))], components: [row(btn(`${P}diagnostics`, '⬅️ Diagnostics'), btn(`${P}settings`, '⚙️ Settings'))] }); }
-  if (id === `${P}testing:none`) return respond(i, buildSectionPanel(i, 'diagnostics'));
-  if (id === `${P}data:refresh`) return respond(i, buildSectionPanel(i, 'diagnostics'));
-  if (id === `${P}data:clear`) return respond(i, { embeds: [embed(config, '⚠️ Clear Social Studio History', `This will remove **${config.history.length}** stored history entries. Account configuration and monitoring state will not be deleted.`, who(i))], components: [row(btn(`${P}data:clear:cancel`, '⬅️ Cancel'), btn(`${P}data:clear:confirm`, '🧹 Clear History', ButtonStyle.Danger))] });
-  if (id === `${P}data:clear:cancel`) return respond(i, buildSectionPanel(i, 'diagnostics'));
-  if (id === `${P}data:clear:confirm`) { config.history = []; saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'diagnostics')); }
-  if (id === `${P}data:export:config`) { const payload = JSON.stringify(socialStudioExport(config, i.guildId), null, 2); await i.followUp({ content: '📤 Social Studio config export', files: [new AttachmentBuilder(Buffer.from(payload, 'utf8'), { name: `social-studio-config-${i.guildId}.json` })], flags: 64 }); return respond(i, buildSectionPanel(i, 'diagnostics')); }
-  if (id === `${P}data:export`) { const payload = JSON.stringify({ exportedAt: now(), guildId: i.guildId, analytics: config.analytics, history: config.history }, null, 2); await i.followUp({ content: `📤 Social Studio history export • ${config.history.length} entries`, files: [new AttachmentBuilder(Buffer.from(payload, 'utf8'), { name: `social-studio-history-${i.guildId}.json` })], flags: 64 }); return respond(i, buildSectionPanel(i, 'diagnostics')); }
   if (id === `${P}creator:rebuild`) { const linked = new Set(Object.values(config.creators).flatMap((c) => c.accountIds || [])); for (const a of Object.values(config.accounts)) if (!linked.has(a.accountId)) { const cid = makeId('creator'); config.creators[cid] = { creatorId: cid, displayName: a.displayName || a.username || a.externalId, group: '', tags: [a.platform], notes: '', enabled: true, accountIds: [a.accountId], createdAt: now(), updatedAt: now() }; } saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'creators')); }
   if (id === `${P}test`) { if (!config.alertsChannelId) throw new Error('Choose an alert channel first.'); await i.followUp({ embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🧪 Social Studio Test').setDescription(`✅ Notification routing is working.\n\nThis private preview was opened from ${i.channelId ? `<#${i.channelId}>` : 'this setup channel'}.\n\nThumbnails, platform metadata and template variables will be applied to real provider events.`).setFooter({ text: 'Social Studio • Test' }).setTimestamp()], flags: 64 }).catch(() => null); return respond(i, buildSectionPanel(i, 'diagnostics')); }
   const section = id.slice(P.length);
