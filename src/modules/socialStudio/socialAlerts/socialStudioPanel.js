@@ -580,6 +580,40 @@ async function handleAccountInteraction(i, context) {
   return false;
 }
 
+
+async function handleTemplateInteraction(i, context) {
+  const {
+    id,
+    config,
+    actorId,
+  } = context;
+
+  if (id.startsWith(`${P}template:edit:`)) { const type = id.split(':')[3]; if (!ALERT_TYPES.includes(type)) throw new Error('Unknown notification template.'); await i.showModal(templateModal(type, config)); return true; }
+  if (id.startsWith(`${P}template:reset:`)) { const type = id.split(':')[3]; if (!ALERT_TYPES.includes(type)) throw new Error('Unknown notification template.'); config.templates = { ...resetTemplate(config.templates, type), lastResetAt: now(), lastResetBy: actorId, lastResetType: type }; saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildTemplatePanel(i, getConfig(i.guildId), type)); }
+  if (id.startsWith(`${P}template:`) && !id.startsWith(`${P}template:save:`)) { const type = id.split(':')[2]; if (!ALERT_TYPES.includes(type)) throw new Error('Unknown notification template.'); return respond(i, buildTemplatePanel(i, config, type)); }
+  if (id.startsWith(`${P}template:save:`)) {
+    const type = id.split(':')[3];
+    config.templates = normalizeTemplates(config.templates);
+    const existing = config.templates.custom?.[type] || {};
+    config.templates.custom[type] = {
+      ...existing,
+      title: i.fields.getTextInputValue('title'),
+      description: i.fields.getTextInputValue('description')
+    };
+    config.templates.lastEditedAt = now();
+    config.templates.lastEditedBy = actorId;
+    config.templates.lastEditedType = type;
+    saveConfig(i.guildId, config, i.guild, actorId);
+    const payload = buildTemplatePanel(i, getConfig(i.guildId), type);
+    if (i.isFromMessage?.() && !i.deferred && !i.replied) { await i.update(payload); await i.followUp({ content: `${ALERT_LABEL[type] || type} template saved.`, flags: 64 }).catch(() => null); }
+    else if (!i.deferred && !i.replied) await i.reply({ content: `${ALERT_LABEL[type] || type} template saved.`, flags: 64 });
+    else await i.followUp({ content: `${ALERT_LABEL[type] || type} template saved.`, flags: 64 });
+    return true;
+  }
+
+  return false;
+}
+
 async function handleInteraction(i) {
   const id = String(i?.customId || ''); if (id !== 'admin:social' && !id.startsWith(P)) return false; if (!i.guild?.id) throw new Error('Social Studio requires a guild interaction.'); if (i.isMessageComponent?.() && !opensModal(id) && !i.deferred && !i.replied) await i.deferUpdate();
   const config = getConfig(i.guildId), actorId = i.user?.id || null, interaction = i;
@@ -632,28 +666,12 @@ async function handleInteraction(i) {
   if (id === `${P}account:move:create`) { const s = getAccountSession(i), account = config.accounts[s.accountId]; if (!account) throw new Error('The selected account no longer exists.'); const name = i.fields.getTextInputValue('displayName').trim(); if (!name) throw new Error('Creator display name is required.'); const cid = makeId('creator'); const creator = { creatorId: cid, displayName: name, group: i.fields.getTextInputValue('group').trim(), tags: i.fields.getTextInputValue('tags').split(',').map((v) => v.trim()).filter(Boolean), notes: i.fields.getTextInputValue('notes').trim(), enabled: true, accountIds: [], createdAt: now(), updatedAt: now() }; config.creators[cid] = creator; moveAccountToCreator(config, account, creator); saveConfig(i.guildId, config, i.guild, actorId); setCreatorSession(i, { creatorId: cid }); setAccountSession(i, { creatorId: cid, accountId: account.accountId, platforms: [], routeType: 'default' }); return afterModal(i, 'accounts', `✅ Account moved to ${name}.`); }
   if (id === `${P}creator:create`) { const name = i.fields.getTextInputValue('displayName').trim(); if (!name) throw new Error('Creator display name is required.'); const cid = makeId('creator'); config.creators[cid] = { creatorId: cid, displayName: name, group: i.fields.getTextInputValue('group').trim(), tags: i.fields.getTextInputValue('tags').split(',').map((v) => v.trim()).filter(Boolean), notes: i.fields.getTextInputValue('notes').trim(), enabled: true, accountIds: [], createdAt: now(), updatedAt: now() }; saveConfig(i.guildId, config, i.guild, actorId); setCreatorSession(i, { creatorId: cid }); return afterModal(i, 'creators', '✅ Creator profile created.'); }
   if (id === `${P}account:create-multi`) { const s = getAccountSession(i), c = config.creators[s.creatorId]; if (!c) throw new Error('The selected creator profile no longer exists.'); let created = 0, updated = 0, dupes = 0, selected = null; for (const p of s.platforms.slice(0, 5)) { const raw = i.fields.getTextInputValue(`account_${p}`).trim(); if (!raw) continue; const r = upsertAccount(config, c, p, raw); selected = r.accountId; r.created ? created++ : updated++; dupes += r.removedDuplicates; } saveConfig(i.guildId, config, i.guild, actorId); setCreatorSession(i, { creatorId: c.creatorId }); setAccountSession(i, { creatorId: c.creatorId, platforms: [], accountId: selected, routeType: 'default', mode: null }); return afterModal(i, 'creators', `✅ ${created} added, ${updated} updated${dupes ? `, ${dupes} duplicates merged` : ''}.`); }
-  if (id.startsWith(`${P}template:edit:`)) { const type = id.split(':')[3]; if (!ALERT_TYPES.includes(type)) throw new Error('Unknown notification template.'); await i.showModal(templateModal(type, config)); return true; }
-  if (id.startsWith(`${P}template:reset:`)) { const type = id.split(':')[3]; if (!ALERT_TYPES.includes(type)) throw new Error('Unknown notification template.'); config.templates = { ...resetTemplate(config.templates, type), lastResetAt: now(), lastResetBy: actorId, lastResetType: type }; saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildTemplatePanel(i, getConfig(i.guildId), type)); }
-  if (id.startsWith(`${P}template:`) && !id.startsWith(`${P}template:save:`)) { const type = id.split(':')[2]; if (!ALERT_TYPES.includes(type)) throw new Error('Unknown notification template.'); return respond(i, buildTemplatePanel(i, config, type)); }
-  if (id.startsWith(`${P}template:save:`)) {
-    const type = id.split(':')[3];
-    config.templates = normalizeTemplates(config.templates);
-    const existing = config.templates.custom?.[type] || {};
-    config.templates.custom[type] = {
-      ...existing,
-      title: i.fields.getTextInputValue('title'),
-      description: i.fields.getTextInputValue('description')
-    };
-    config.templates.lastEditedAt = now();
-    config.templates.lastEditedBy = actorId;
-    config.templates.lastEditedType = type;
-    saveConfig(i.guildId, config, i.guild, actorId);
-    const payload = buildTemplatePanel(i, getConfig(i.guildId), type);
-    if (i.isFromMessage?.() && !i.deferred && !i.replied) { await i.update(payload); await i.followUp({ content: `${ALERT_LABEL[type] || type} template saved.`, flags: 64 }).catch(() => null); }
-    else if (!i.deferred && !i.replied) await i.reply({ content: `${ALERT_LABEL[type] || type} template saved.`, flags: 64 });
-    else await i.followUp({ content: `${ALERT_LABEL[type] || type} template saved.`, flags: 64 });
-    return true;
-  }
+  if (await handleTemplateInteraction(i, {
+    id,
+    config,
+    actorId,
+  })) return true;
+
   if (id === `${P}feed:type` || id === `${P}channel:type`) { setFeedSession(i, { routeType: i.values?.[0] || 'default' }); return respond(i, buildSectionPanel(i, 'channels')); }
   if (id === `${P}feed:route` || id === `${P}channel:route`) { const type = getFeedSession(i).routeType || 'default', channelId = i.values?.[0] || null; if (type === 'default') config.alertsChannelId = channelId; else { config.alertChannels = config.alertChannels && typeof config.alertChannels === 'object' ? config.alertChannels : {}; config.alertChannels[type] = channelId; } saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'channels')); }
   if (id === `${P}channel:default`) { const type = getFeedSession(i).routeType || 'default'; if (type !== 'default') { config.alertChannels = config.alertChannels && typeof config.alertChannels === 'object' ? config.alertChannels : {}; delete config.alertChannels[type]; saveConfig(i.guildId, config, i.guild, actorId); } return respond(i, buildSectionPanel(i, 'channels')); }
