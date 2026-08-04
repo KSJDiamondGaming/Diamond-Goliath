@@ -554,11 +554,30 @@ async function respond(i, payload) {
 }
 async function afterModal(i, section, message) { const payload = buildSectionPanel(i, section); if (i.isFromMessage?.() && !i.deferred && !i.replied) { await i.update(payload); await i.followUp({ content: message, flags: 64 }).catch(() => null); } else if (!i.deferred && !i.replied) await i.reply({ content: message, flags: 64 }); else await i.followUp({ content: message, flags: 64 }); return true; }
 function opensModal(id) { return id === `${P}creator:new` || id === `${P}creator:edit` || id === `${P}creator:change` || id === `${P}account:continue` || id === `${P}account:change` || id === `${P}account:move:new` || id === `${P}automation:quiet` || id.startsWith(`${P}template:edit:`); }
+
+async function handleCreatorInteraction(i, context) {
+  const {
+    id,
+    config,
+    actorId,
+  } = context;
+
+
+
+  return false;
+}
+
 async function handleInteraction(i) {
   const id = String(i?.customId || ''); if (id !== 'admin:social' && !id.startsWith(P)) return false; if (!i.guild?.id) throw new Error('Social Studio requires a guild interaction.'); if (i.isMessageComponent?.() && !opensModal(id) && !i.deferred && !i.replied) await i.deferUpdate();
   const config = getConfig(i.guildId), actorId = i.user?.id || null, interaction = i;
   if (id === 'admin:social' || id === `${P}main`) return respond(i, buildMainPanel(i.guild, who(i)));
   if (id === `${P}creator:new`) { await i.showModal(creatorModal()); return true; }
+  if (await handleCreatorInteraction(i, {
+    id,
+    config,
+    actorId,
+  })) return true;
+
   if (id === `${P}account:new`) { const cid = getCreatorSession(i).creatorId; const creator = config.creators[cid]; if (!creator) throw new Error('Select a creator profile first.'); setAccountSession(i, { creatorId: cid, accountId: null, platforms: [], routeType: 'default', mode: 'add' }); return respond(i, buildAccountAddPanel(i, config, creator)); }
   if (id === `${P}creator:select`) { setCreatorSession(i, { creatorId: i.values?.[0] || null }); return respond(i, buildSectionPanel(i, 'creators')); }
   if (id === `${P}creator:page:prev` || id === `${P}creator:page:next`) { const v = getCreatorSession(i); setCreatorSession(i, { page: Math.max(0, v.page + (id.endsWith('next') ? 1 : -1)), creatorId: null }); return respond(i, buildSectionPanel(i, 'creators')); }
