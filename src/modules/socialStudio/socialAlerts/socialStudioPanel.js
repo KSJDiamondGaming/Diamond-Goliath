@@ -11,8 +11,17 @@ const { ALERT_TYPES, normalizeTemplates, resolveTemplate, resetTemplate } = requ
 const P = 'social:';
 const PAGE_SIZE = 25;
 const PLATFORMS = ['facebook', 'instagram', 'kick', 'tiktok', 'twitch', 'x', 'youtube'];
-const ALERT_LABEL = { live: 'LIVE', ended: 'Stream Ended', vod: 'VOD', clip: 'Clip', upload: 'Upload', short: 'Short', post: 'Post' };
-const ALERT_EMOJI = { live: '🔴', ended: '⚫', vod: '🎥', clip: '🎬', upload: '📺', short: '📱', post: '📝' };
+const ALERT_LABEL = { live: 'LIVE', ended: 'Stream Ended', vod: 'VOD', clip: 'Clip', upload: 'Upload', short: 'Short', post: 'Social Post' };
+const ALERT_EMOJI = { live: '🔴', ended: '⚫', vod: '🎞️', clip: '🎬', upload: '📺', short: '📱', post: '📝' };
+const ALERT_HELP = {
+  live: 'Controls the stream start alert.',
+  ended: 'Controls the stream finished update.',
+  vod: 'Controls replay/VOD alerts, such as Twitch stream replays.',
+  clip: 'Controls short clip alerts.',
+  upload: 'Controls long-form video upload alerts.',
+  short: 'Controls short-form video alerts.',
+  post: 'Controls normal social feed posts, not VOD/replay alerts.',
+};
 const LABEL = { twitch: 'Twitch', youtube: 'YouTube', tiktok: 'TikTok', kick: 'Kick', facebook: 'Facebook', instagram: 'Instagram', x: 'X' };
 const ICON = { twitch: '🟣', youtube: '🔴', tiktok: '⚫', kick: '🟢', facebook: '🔵', instagram: '🟠', x: '⚪' };
 const PLATFORM_COLOR = { twitch: 0x9146FF, youtube: 0xFF0000, tiktok: 0x2F3136, kick: 0x53FC18, facebook: 0x1877F2, instagram: 0xE1306C, x: 0xFFFFFF };
@@ -162,6 +171,10 @@ function platformAvailabilityLines() {
   for (const type of ALERT_TYPES) available[type] = [];
   for (const platform of PLATFORMS) for (const type of supportedAlerts(platform)) available[type]?.push(LABEL[platform] || platform);
   return ALERT_TYPES.filter((type) => available[type]?.length).map((type) => `${ALERT_EMOJI[type] || '🔔'} **${ALERT_LABEL[type]}:** ${available[type].join(', ')}`);
+}
+function platformAvailabilityText(type) {
+  const platforms = PLATFORMS.filter((platform) => supportedAlerts(platform).includes(type)).map((platform) => LABEL[platform] || platform);
+  return platforms.length ? platforms.join(', ') : 'No connected provider currently reports this alert type.';
 }
 function notificationTargetSelect(i, config) {
   const selected = config.notificationMentionMode === 'role' && config.notificationRoleId
@@ -386,7 +399,8 @@ function buildTemplatePanel(i, config, type) {
   const custom = config.templates?.custom?.[type];
   const changed = Boolean(custom);
   const d = [
-    `Goal output for **${ALERT_LABEL[type] || type}** posts.`,
+    `${ALERT_HELP[type] || `Controls ${ALERT_LABEL[type] || type} alerts.`}`,
+    `**Platforms:** ${platformAvailabilityText(type)}`,
     '',
     '**Current Headline**',
     current.title || 'Not set',
