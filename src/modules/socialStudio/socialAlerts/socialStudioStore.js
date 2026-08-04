@@ -44,6 +44,14 @@ function getSection(guildId) {
   return normalizeSection(guildManager.getGuildSection(guildId, SECTION, {}));
 }
 
+function getManagerRoleIds(guildId) {
+  return [...new Set(getSection(guildId).managerRoleIds.map(String).filter(Boolean))];
+}
+
+function getUserRoleIds(guildId) {
+  return [...new Set(getSection(guildId).userRoleIds.map(String).filter(Boolean))];
+}
+
 function saveSection(guildId, section, meta = {}) {
   const normalized = normalizeSection(section);
   const saved = guildManager.saveGuildSection(guildId, SECTION, normalized, {
@@ -374,6 +382,8 @@ module.exports = {
   normalizeSection,
   getSection,
   getConfig: getSection,
+  getManagerRoleIds,
+  getUserRoleIds,
   saveSection,
   saveConfig: saveSection,
   updateSection,
