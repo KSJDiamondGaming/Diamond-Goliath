@@ -3,6 +3,7 @@
 const guildManager = require('../../../core/guild/guildManager');
 
 const SECTION = 'social';
+const CREATOR_DELETE_GRACE_MS = 5 * 24 * 60 * 60 * 1000;
 
 function object(value, fallback = {}) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : fallback;
@@ -109,6 +110,42 @@ function updateCreator(guildId, creatorId, updater, meta = {}) {
   return savedCreator;
 }
 
+function markCreatorActive(guildId, ownerDiscordId, meta = {}) {
+  const creator = findCreatorByOwner(guildId, ownerDiscordId);
+  if (!creator) return null;
+
+  return updateCreator(guildId, creator.creatorId, (current) => ({
+    ...current,
+    enabled: current.enabled !== false,
+    status: 'active',
+    departureType: null,
+    leftAt: null,
+    scheduledDeletionAt: null,
+  }), meta);
+}
+
+function markCreatorDeparted(guildId, ownerDiscordId, departureType = 'left', meta = {}) {
+  const creator = findCreatorByOwner(guildId, ownerDiscordId);
+  if (!creator) return null;
+
+  const leftAt = new Date();
+  return updateCreator(guildId, creator.creatorId, (current) => ({
+    ...current,
+    status: departureType === 'kicked' ? 'kicked' : 'left_server',
+    departureType: departureType === 'kicked' ? 'kicked' : 'left',
+    leftAt: leftAt.toISOString(),
+    scheduledDeletionAt: new Date(leftAt.getTime() + CREATOR_DELETE_GRACE_MS).toISOString(),
+  }), meta);
+}
+
+function getExpiredCreators(guildId, nowMs = Date.now()) {
+  return Object.values(getSection(guildId).creators).filter((creator) => {
+    if (!['left_server', 'kicked'].includes(String(creator?.status || ''))) return false;
+    const deleteAt = new Date(creator?.scheduledDeletionAt || '').getTime();
+    return Number.isFinite(deleteAt) && deleteAt <= nowMs;
+  });
+}
+
 function deleteCreator(guildId, creatorId, meta = {}) {
   const id = String(creatorId);
   let deleted = false;
@@ -145,6 +182,17 @@ function deleteCreator(guildId, creatorId, meta = {}) {
 function deleteCreatorByOwner(guildId, ownerDiscordId, meta = {}) {
   const creator = findCreatorByOwner(guildId, ownerDiscordId);
   return creator ? deleteCreator(guildId, creator.creatorId, meta) : false;
+}
+
+function deleteExpiredCreators(guildId, nowMs = Date.now(), meta = {}) {
+  const expired = getExpiredCreators(guildId, nowMs);
+  const deleted = [];
+
+  for (const creator of expired) {
+    if (deleteCreator(guildId, creator.creatorId, meta)) deleted.push(creator.creatorId);
+  }
+
+  return deleted;
 }
 
 function getAccount(guildId, accountId) {
@@ -203,6 +251,7 @@ function setEnabled(guildId, enabled, meta = {}) {
 
 module.exports = {
   SECTION,
+  CREATOR_DELETE_GRACE_MS,
   normalizeSection,
   getSection,
   getConfig: getSection,
@@ -213,6 +262,10 @@ module.exports = {
   findCreatorByOwner,
   getCreatorAccounts,
   updateCreator,
+  markCreatorActive,
+  markCreatorDeparted,
+  getExpiredCreators,
+  deleteExpiredCreators,
   deleteCreator,
   deleteCreatorByOwner,
   getAccount,
