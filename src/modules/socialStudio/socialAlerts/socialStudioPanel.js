@@ -710,10 +710,6 @@ async function handleInteraction(i) {
     actorId,
   })) return true;
 
-  if (id === `${P}roles:select`) { config.managerRoleIds = i.values || []; saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'permissions')); }
-  if (id === `${P}userroles:select`) { config.userRoleIds = i.values || []; saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'permissions')); }
-  if (id === `${P}notification:mode`) { const value = i.values?.[0] || 'none'; const roleId = value.startsWith('role:') ? value.slice(5) : null; config.notificationMentionMode = roleId ? 'role' : ['none', 'everyone', 'here'].includes(value) ? value : 'none'; config.notificationRoleId = roleId || null; applyNotificationDefaults(config); saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'permissions')); }
-  if (id === `${P}notification:role`) { config.notificationRoleId = i.values?.[0] || null; config.notificationMentionMode = config.notificationRoleId ? 'role' : 'none'; applyNotificationDefaults(config); saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'permissions')); }
   if (await handlePermissionInteraction(i, {
     id,
     config,
