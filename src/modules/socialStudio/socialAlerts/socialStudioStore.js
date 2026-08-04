@@ -62,6 +62,53 @@ function updateSection(guildId, updater, meta = {}) {
   return saveSection(guildId, next, meta);
 }
 
+function getCreator(guildId, creatorId) {
+  return getSection(guildId).creators[String(creatorId)] || null;
+}
+
+function findCreatorByOwner(guildId, ownerDiscordId) {
+  const ownerId = String(ownerDiscordId || '');
+  if (!ownerId) return null;
+
+  return Object.values(getSection(guildId).creators)
+    .find((creator) => String(creator?.ownerDiscordId || '') === ownerId) || null;
+}
+
+function getCreatorAccounts(guildId, creatorOrId) {
+  const section = getSection(guildId);
+  const creator = typeof creatorOrId === 'object'
+    ? creatorOrId
+    : section.creators[String(creatorOrId)] || null;
+
+  if (!creator) return [];
+
+  return array(creator.accountIds)
+    .map((accountId) => section.accounts[String(accountId)])
+    .filter(Boolean);
+}
+
+function updateCreator(guildId, creatorId, updater, meta = {}) {
+  let savedCreator = null;
+
+  updateSection(guildId, (section) => {
+    const current = section.creators[String(creatorId)];
+    if (!current) throw new Error('Creator profile was not found.');
+
+    const next = typeof updater === 'function'
+      ? updater({ ...current })
+      : { ...current, ...object(updater) };
+
+    next.creatorId = current.creatorId;
+    next.ownerDiscordId = current.ownerDiscordId || next.ownerDiscordId || null;
+    next.updatedAt = new Date().toISOString();
+    section.creators[String(creatorId)] = next;
+    savedCreator = next;
+    return section;
+  }, meta);
+
+  return savedCreator;
+}
+
 function isEnabled(guildId) {
   return guildManager.isModuleEnabled(guildId, SECTION);
 }
@@ -75,8 +122,14 @@ module.exports = {
   SECTION,
   normalizeSection,
   getSection,
+  getConfig: getSection,
   saveSection,
+  saveConfig: saveSection,
   updateSection,
+  getCreator,
+  findCreatorByOwner,
+  getCreatorAccounts,
+  updateCreator,
   isEnabled,
   setEnabled,
 };
