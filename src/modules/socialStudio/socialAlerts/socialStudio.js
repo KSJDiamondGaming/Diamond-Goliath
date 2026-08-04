@@ -289,13 +289,23 @@ function buildUserCreate(interaction) {
 }
 
 function buildUserProfile(interaction, creator, accounts = [], created = false) {
+  if (creator.profileCompleted !== true) {
+    return {
+      embeds: [base('👥 My Creator Profile', [
+        '⚠️ **Profile setup has not been submitted yet.**',
+        '',
+        'Select **New Profile** to finish creating your Creator Profile.',
+      ].join('\n'), interaction, '#FEE75C')],
+      components: [...creatorActionRows(creator, accounts), socialNavigation()],
+    };
+  }
+
   const status = creator.status === LEFT_SERVER ? 'Left Server' : creator.status === 'disabled' ? 'Disabled' : 'Active';
   const createdAt = creator.createdAt ? `<t:${Math.floor(new Date(creator.createdAt).getTime() / 1000)}:F>` : 'Unknown';
   const updatedAt = creator.updatedAt ? `<t:${Math.floor(new Date(creator.updatedAt).getTime() / 1000)}:R>` : 'Unknown';
   return {
     embeds: [base('👥 My Creator Profile', [
       created ? '✅ **Creator Profile created.**' : null,
-      creator.profileCompleted !== true ? '⚠️ **Profile setup has not been submitted yet. Select New Profile to complete it.**' : null,
       `**Creator ID**\n\`${creator.creatorId}\``,
       creator.displayName ? `**Creator Name**\n${creator.displayName}` : null,
       `**Status**\n${status}`,
