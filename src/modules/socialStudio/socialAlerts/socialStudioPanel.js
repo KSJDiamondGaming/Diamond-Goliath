@@ -555,6 +555,7 @@ async function respond(i, payload) {
 async function afterModal(i, section, message) { const payload = buildSectionPanel(i, section); if (i.isFromMessage?.() && !i.deferred && !i.replied) { await i.update(payload); await i.followUp({ content: message, flags: 64 }).catch(() => null); } else if (!i.deferred && !i.replied) await i.reply({ content: message, flags: 64 }); else await i.followUp({ content: message, flags: 64 }); return true; }
 function opensModal(id) { return id === `${P}creator:new` || id === `${P}creator:edit` || id === `${P}creator:change` || id === `${P}account:continue` || id === `${P}account:change` || id === `${P}account:move:new` || id === `${P}automation:quiet` || id.startsWith(`${P}template:edit:`); }
 
+
 async function handleCreatorInteraction(i, context) {
   const {
     id,
@@ -562,13 +563,248 @@ async function handleCreatorInteraction(i, context) {
     actorId,
   } = context;
 
+  if (id === `${P}creator:select`) {
+    setCreatorSession(i, { creatorId: i.values?.[0] || null });
+    return respond(i, buildSectionPanel(i, 'creators'));
+  }
 
+  if (
+    id === `${P}creator:page:prev` ||
+    id === `${P}creator:page:next`
+  ) {
+    const v = getCreatorSession(i);
+
+    setCreatorSession(i, {
+      page: Math.max(
+        0,
+        v.page + (id.endsWith('next') ? 1 : -1),
+      ),
+      creatorId: null,
+    });
+
+    return respond(i, buildSectionPanel(i, 'creators'));
+  }
+
+  if (id === `${P}creator:new`) {
+    await i.showModal(creatorModal());
+    return true;
+  }
+
+  if (id === `${P}creator:edit`) {
+    const creatorId = getCreatorSession(i).creatorId;
+    const creator = config.creators[creatorId];
+
+    if (!creator) {
+      throw new Error('Select a creator profile first.');
+    }
+
+    setCreatorSession(i, { creatorId });
+    setAccountSession(i, { creatorId });
+
+    await i.showModal(creatorModal(creator));
+
+    return true;
+  }
+
+  if (id === `${P}creator:change`) {
+    const creator =
+      config.creators[getCreatorSession(i).creatorId];
+
+    if (!creator) {
+      throw new Error(
+        'The selected creator profile no longer exists.',
+      );
+    }
+
+    await i.showModal(creatorModal(creator));
+    return true;
+  }
+
+  if (id === `${P}creator:profile`) {
+    const cid = getCreatorSession(i).creatorId;
+    const creator = config.creators[cid];
+
+    if (!creator) {
+      throw new Error('Select a creator profile first.');
+    }
+
+    setAccountSession(i, {
+      creatorId: cid,
+      accountId: null,
+      platforms: [],
+      routeType: 'default',
+    });
+
+    return respond(
+      i,
+      buildProfileManagePanel(i, config, creator),
+    );
+  }
+
+  if (id === `${P}creator:accounts`) {
+    const cid = getCreatorSession(i).creatorId;
+
+    if (!cid || !config.creators[cid]) {
+      throw new Error('Select a creator profile first.');
+    }
+
+    setAccountSession(i, {
+      creatorId: cid,
+      accountId: null,
+      platforms: [],
+      routeType: 'default',
+    });
+
+    return respond(
+      i,
+      buildSectionPanel(i, 'accounts'),
+    );
+  }
+
+  if (id === `${P}creator:post`) {
+    const cid = getCreatorSession(i).creatorId;
+
+    if (!cid || !config.creators[cid]) {
+      throw new Error('Select a creator profile first.');
+    }
+
+    const result = await forcePostCreatorLive(
+      i.client,
+      i.guildId,
+      cid,
+      {
+        actorId,
+        guild: i.guild,
+        bypassCooldown: true,
+      },
+    );
+
+    await i.followUp({
+      content:
+        `?? Sent ${result.sent?.length || 0} LIVE post(s).`,
+      flags: 64,
+    }).catch(() => null);
+
+    return respond(
+      i,
+      buildSectionPanel(i, 'creators'),
+    );
+  }
+
+  if (id === `${P}creator:profile:toggle`) {
+    const creator =
+      config.creators[getCreatorSession(i).creatorId];
+
+    if (!creator) {
+      throw new Error(
+        'The selected creator profile no longer exists.',
+      );
+    }
+
+    creator.enabled = creator.enabled === false;
+    creator.updatedAt = now();
+
+    saveConfig(
+      i.guildId,
+      config,
+      i.guild,
+      actorId,
+    );
+
+    return respond(
+      i,
+      buildProfileManagePanel(
+        i,
+        getConfig(i.guildId),
+        creator,
+      ),
+    );
+  }
 
   return false;
 }
 
 
 async function handleAccountInteraction(i, context) {
+  const {
+    id,
+    config,
+    actorId,
+  } = context;
+
+  if (id === `${P}account:new`) { const cid = getCreatorSession(i).creatorId; const creator = config.creators[cid]; if (!creator) throw new Error('Select a creator profile first.'); setAccountSession(i, { creatorId: cid, accountId: null, platforms: [], routeType: 'default', mode: 'add' }); return respond(i, buildAccountAddPanel(i, config, creator)); }
+
+  return false;
+}
+
+
+async function handleTemplateInteraction(i, context) {
+  const {
+    id,
+    config,
+    actorId,
+  } = context;
+
+  if (id.startsWith(`${P}template:edit:`)) { const type = id.split(':')[3]; if (!ALERT_TYPES.includes(type)) throw new Error('Unknown notification template.'); await i.showModal(templateModal(type, config)); return true; }
+  if (id.startsWith(`${P}template:reset:`)) { const type = id.split(':')[3]; if (!ALERT_TYPES.includes(type)) throw new Error('Unknown notification template.'); config.templates = { ...resetTemplate(config.templates, type), lastResetAt: now(), lastResetBy: actorId, lastResetType: type }; saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildTemplatePanel(i, getConfig(i.guildId), type)); }
+  if (id.startsWith(`${P}template:`) && !id.startsWith(`${P}template:save:`)) { const type = id.split(':')[2]; if (!ALERT_TYPES.includes(type)) throw new Error('Unknown notification template.'); return respond(i, buildTemplatePanel(i, config, type)); }
+  if (id.startsWith(`${P}template:save:`)) {
+    const type = id.split(':')[3];
+    config.templates = normalizeTemplates(config.templates);
+    const existing = config.templates.custom?.[type] || {};
+    config.templates.custom[type] = {
+      ...existing,
+      title: i.fields.getTextInputValue('title'),
+      description: i.fields.getTextInputValue('description')
+    };
+    config.templates.lastEditedAt = now();
+    config.templates.lastEditedBy = actorId;
+    config.templates.lastEditedType = type;
+    saveConfig(i.guildId, config, i.guild, actorId);
+    const payload = buildTemplatePanel(i, getConfig(i.guildId), type);
+    if (i.isFromMessage?.() && !i.deferred && !i.replied) { await i.update(payload); await i.followUp({ content: `${ALERT_LABEL[type] || type} template saved.`, flags: 64 }).catch(() => null); }
+    else if (!i.deferred && !i.replied) await i.reply({ content: `${ALERT_LABEL[type] || type} template saved.`, flags: 64 });
+    else await i.followUp({ content: `${ALERT_LABEL[type] || type} template saved.`, flags: 64 });
+    return true;
+  }
+
+  return false;
+}
+
+
+async function handleChannelInteraction(i, context) {
+  const {
+    id,
+    config,
+    actorId,
+  } = context;
+
+  if (id === `${P}feed:type` || id === `${P}channel:type`) { setFeedSession(i, { routeType: i.values?.[0] || 'default' }); return respond(i, buildSectionPanel(i, 'channels')); }
+  if (id === `${P}feed:route` || id === `${P}channel:route`) { const type = getFeedSession(i).routeType || 'default', channelId = i.values?.[0] || null; if (type === 'default') config.alertsChannelId = channelId; else { config.alertChannels = config.alertChannels && typeof config.alertChannels === 'object' ? config.alertChannels : {}; config.alertChannels[type] = channelId; } saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'channels')); }
+  if (id === `${P}channel:default`) { const type = getFeedSession(i).routeType || 'default'; if (type !== 'default') { config.alertChannels = config.alertChannels && typeof config.alertChannels === 'object' ? config.alertChannels : {}; delete config.alertChannels[type]; saveConfig(i.guildId, config, i.guild, actorId); } return respond(i, buildSectionPanel(i, 'channels')); }
+  if (id === `${P}feed:channel` || id === `${P}channel:alerts`) { config.alertsChannelId = i.values?.[0] || null; saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'channels')); }
+
+  return false;
+}
+
+
+async function handlePermissionInteraction(i, context) {
+  const {
+    id,
+    config,
+    actorId,
+  } = context;
+
+  if (id === `${P}roles:select`) { config.managerRoleIds = i.values || []; saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'permissions')); }
+  if (id === `${P}userroles:select`) { config.userRoleIds = i.values || []; saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'permissions')); }
+  if (id === `${P}notification:mode`) { const value = i.values?.[0] || 'none'; const roleId = value.startsWith('role:') ? value.slice(5) : null; config.notificationMentionMode = roleId ? 'role' : ['none', 'everyone', 'here'].includes(value) ? value : 'none'; config.notificationRoleId = roleId || null; applyNotificationDefaults(config); saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'permissions')); }
+  if (id === `${P}notification:role`) { config.notificationRoleId = i.values?.[0] || null; config.notificationMentionMode = config.notificationRoleId ? 'role' : 'none'; applyNotificationDefaults(config); saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'permissions')); }
+
+  return false;
+}
+
+
+async function handleAutomationInteraction(i, context) {
   const {
     id,
     config,
@@ -584,6 +820,65 @@ async function handleAccountInteraction(i, context) {
     return respond(i, buildSectionPanel(i, section));
   }
   if (NAV.has(section)) return respond(i, buildSectionPanel(i, section)); throw new Error(`Unknown Social Studio interaction: ${id}`);
+}
+
+
+async function handleInteraction(i) {
+  const id = i.customId;
+  const config = getConfig(i.guildId);
+  const actorId = i.user?.id;
+
+  if (await handleCreatorInteraction(i, {
+    id,
+    config,
+    actorId,
+  })) return true;
+
+  if (await handleAccountInteraction(i, {
+    id,
+    config,
+    actorId,
+  })) return true;
+
+  if (await handleTemplateInteraction(i, {
+    id,
+    config,
+    actorId,
+  })) return true;
+
+  if (await handleChannelInteraction(i, {
+    id,
+    config,
+    actorId,
+  })) return true;
+
+  if (await handlePermissionInteraction(i, {
+    id,
+    config,
+    actorId,
+  })) return true;
+
+  if (await handleAutomationInteraction(i, {
+    id,
+    config,
+    actorId,
+  })) return true;
+
+  const section = id.slice(P.length);
+
+  if (section === 'templates') {
+    config.templates = normalizeTemplates(config.templates);
+    saveConfig(i.guildId, config, i.guild, actorId);
+    return respond(i, buildSectionPanel(i, section));
+  }
+
+  if (NAV.has(section)) {
+    return respond(i, buildSectionPanel(i, section));
+  }
+
+  throw new Error(
+    `Unknown Social Studio interaction: ${id}`,
+  );
 }
 
 function userCreatorModal(
