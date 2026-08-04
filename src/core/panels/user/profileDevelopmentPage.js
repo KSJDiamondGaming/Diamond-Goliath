@@ -65,7 +65,7 @@ function rebuildProfileHome(payload) {
 
   // Locked rule: every non-navigation button is globally alphabetical by name.
   const homeButtons = [
-    button('user:account:record', 'Account Record', ButtonStyle.Secondary, '🗂️'),
+    button('user:account:record', 'Account', ButtonStyle.Secondary, '🗂️'),
     button('user:category:community', '🏘️ Community'),
     button('user:category:feedback', '💬 Feedback'),
     button('user:help', 'Help', ButtonStyle.Secondary, '❓'),
@@ -79,8 +79,9 @@ function rebuildProfileHome(payload) {
 
   payload.components = [
     searchRow,
-    row(...homeButtons.slice(0, 5)),
-    row(...homeButtons.slice(5)),
+    row(...homeButtons.slice(0, 4)),
+    row(...homeButtons.slice(4, 8)),
+    row(...homeButtons.slice(8)),
     row(
       back,
       refresh,
