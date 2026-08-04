@@ -109,6 +109,44 @@ function updateCreator(guildId, creatorId, updater, meta = {}) {
   return savedCreator;
 }
 
+function deleteCreator(guildId, creatorId, meta = {}) {
+  const id = String(creatorId);
+  let deleted = false;
+
+  updateSection(guildId, (section) => {
+    const creator = section.creators[id];
+    if (!creator) return section;
+
+    const accountIds = new Set(array(creator.accountIds).map(String));
+    delete section.creators[id];
+
+    for (const accountId of accountIds) delete section.accounts[accountId];
+
+    for (const key of ['drafts', 'scheduledPosts', 'creatorPreferences', 'notifications']) {
+      const collection = object(section[key]);
+      for (const [entryId, value] of Object.entries(collection)) {
+        if (
+          String(value?.creatorId || '') === id
+          || String(value?.ownerDiscordId || '') === String(creator.ownerDiscordId || '')
+        ) {
+          delete collection[entryId];
+        }
+      }
+      if (section[key]) section[key] = collection;
+    }
+
+    deleted = true;
+    return section;
+  }, meta);
+
+  return deleted;
+}
+
+function deleteCreatorByOwner(guildId, ownerDiscordId, meta = {}) {
+  const creator = findCreatorByOwner(guildId, ownerDiscordId);
+  return creator ? deleteCreator(guildId, creator.creatorId, meta) : false;
+}
+
 function getAccount(guildId, accountId) {
   return getSection(guildId).accounts[String(accountId)] || null;
 }
@@ -175,6 +213,8 @@ module.exports = {
   findCreatorByOwner,
   getCreatorAccounts,
   updateCreator,
+  deleteCreator,
+  deleteCreatorByOwner,
   getAccount,
   updateAccount,
   deleteAccount,
