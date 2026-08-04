@@ -630,6 +630,22 @@ async function handleChannelInteraction(i, context) {
   return false;
 }
 
+
+async function handlePermissionInteraction(i, context) {
+  const {
+    id,
+    config,
+    actorId,
+  } = context;
+
+  if (id === `${P}roles:select`) { config.managerRoleIds = i.values || []; saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'permissions')); }
+  if (id === `${P}userroles:select`) { config.userRoleIds = i.values || []; saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'permissions')); }
+  if (id === `${P}notification:mode`) { const value = i.values?.[0] || 'none'; const roleId = value.startsWith('role:') ? value.slice(5) : null; config.notificationMentionMode = roleId ? 'role' : ['none', 'everyone', 'here'].includes(value) ? value : 'none'; config.notificationRoleId = roleId || null; applyNotificationDefaults(config); saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'permissions')); }
+  if (id === `${P}notification:role`) { config.notificationRoleId = i.values?.[0] || null; config.notificationMentionMode = config.notificationRoleId ? 'role' : 'none'; applyNotificationDefaults(config); saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'permissions')); }
+
+  return false;
+}
+
 async function handleInteraction(i) {
   const id = String(i?.customId || ''); if (id !== 'admin:social' && !id.startsWith(P)) return false; if (!i.guild?.id) throw new Error('Social Studio requires a guild interaction.'); if (i.isMessageComponent?.() && !opensModal(id) && !i.deferred && !i.replied) await i.deferUpdate();
   const config = getConfig(i.guildId), actorId = i.user?.id || null, interaction = i;
@@ -698,6 +714,12 @@ async function handleInteraction(i) {
   if (id === `${P}userroles:select`) { config.userRoleIds = i.values || []; saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'permissions')); }
   if (id === `${P}notification:mode`) { const value = i.values?.[0] || 'none'; const roleId = value.startsWith('role:') ? value.slice(5) : null; config.notificationMentionMode = roleId ? 'role' : ['none', 'everyone', 'here'].includes(value) ? value : 'none'; config.notificationRoleId = roleId || null; applyNotificationDefaults(config); saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'permissions')); }
   if (id === `${P}notification:role`) { config.notificationRoleId = i.values?.[0] || null; config.notificationMentionMode = config.notificationRoleId ? 'role' : 'none'; applyNotificationDefaults(config); saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'permissions')); }
+  if (await handlePermissionInteraction(i, {
+    id,
+    config,
+    actorId,
+  })) return true;
+
   if (id === `${P}toggle`) { store.setEnabled(interaction.guildId, !config.enabled, { actorId }); return respond(i, buildSectionPanel(i, 'monitoring')); }
   if (id === `${P}automation:quiet` && i.fields?.getTextInputValue) { const enabledRaw = i.fields.getTextInputValue('enabled').trim().toLowerCase(); const start = i.fields.getTextInputValue('start').trim(); const end = i.fields.getTextInputValue('end').trim(); const timezone = i.fields.getTextInputValue('timezone').trim() || 'Europe/London'; if (!['yes', 'no'].includes(enabledRaw)) throw new Error('Quiet hours enabled must be yes or no.'); if (!/^\d{2}:\d{2}$/.test(start) || !/^\d{2}:\d{2}$/.test(end)) throw new Error('Quiet hours must use HH:MM time format.'); config.settings = { ...(config.settings || {}), quietHours: { enabled: enabledRaw === 'yes', start, end, timezone } }; saveConfig(i.guildId, config, i.guild, actorId); return afterModal(i, 'monitoring', 'Quiet hours updated.'); }
   if (id === `${P}automation:interval`) { const value = Number(i.values?.[0] || 300000); const allowed = MONITORING_INTERVALS.some((option) => Number(option.value) === value); config.settings = { ...(config.settings || {}), checkIntervalMs: allowed ? value : 300000 }; saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'monitoring')); }
