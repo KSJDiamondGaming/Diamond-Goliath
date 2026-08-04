@@ -30,7 +30,6 @@ function clean(value, max = 2000) {
 }
 
 const getSection = store.getSection;
-const saveSection = store.saveSection;
 
 function getConfiguredRoleIds(guildId) {
   const section = getSection(guildId);
@@ -50,13 +49,6 @@ function getAccess(interaction) {
     || !roleIds.length
     || roleIds.some((id) => interaction.member?.roles?.cache?.has?.(id));
   return { allowed, roleIds, override };
-}
-
-function creators(section) {
-  if (!section.creators || typeof section.creators !== 'object' || Array.isArray(section.creators)) {
-    section.creators = {};
-  }
-  return section.creators;
 }
 
 function findByOwnerDiscordId(guildId, ownerDiscordId) {
@@ -242,25 +234,17 @@ function canonicalKey(account) {
   return `${String(account.platform || '').toLowerCase()}:${canonicalIdentity(account)}`;
 }
 
-function upsertUserAccount(section, creator, platform, rawValue) {
-  if (!section.accounts || typeof section.accounts !== 'object' || Array.isArray(section.accounts)) section.accounts = {};
+function upsertUserAccount(guildId, creator, platform, rawValue, actorId) {
+  const section = getSection(guildId);
   const normalized = normalizeAccountInput(platform, rawValue);
   const key = `${platform}:${String(normalized.canonicalIdentity || normalized.externalId || normalized.normalizedUsername || normalized.username || '').toLowerCase()}`;
-  const matches = Object.values(section.accounts).filter((account) => {
+  const matches = Object.values(section.accounts || {}).filter((account) => {
     try { return canonicalKey(migrateAccount(account)) === key; } catch { return false; }
   });
   const primary = matches[0] || null;
   const accountId = primary?.accountId || `account_${crypto.randomBytes(8).toString('hex')}`;
-  const duplicates = matches.slice(1).map((account) => account.accountId);
-  if (duplicates.length) {
-    const duplicateSet = new Set(duplicates);
-    for (const item of Object.values(creators(section))) {
-      item.accountIds = (item.accountIds || []).filter((id) => !duplicateSet.has(id));
-    }
-    for (const id of duplicates) delete section.accounts[id];
-  }
-  const timestamp = new Date().toISOString();
-  section.accounts[accountId] = {
+  const duplicateAccountIds = matches.slice(1).map((account) => account.accountId);
+  const account = {
     ...(primary || {}),
     accountId,
     platform,
@@ -278,11 +262,16 @@ function upsertUserAccount(section, creator, platform, rawValue) {
     alertChannels: primary?.alertChannels && typeof primary.alertChannels === 'object' ? primary.alertChannels : {},
     mentionMode: primary?.mentionMode || section.notificationMentionMode || 'none',
     mentionRoleId: primary?.mentionRoleId || (section.notificationMentionMode === 'role' ? section.notificationRoleId || null : null),
-    createdAt: primary?.createdAt || timestamp,
-    updatedAt: timestamp,
+    createdAt: primary?.createdAt || new Date().toISOString(),
   };
-  creator.accountIds = [...new Set([...(creator.accountIds || []), accountId])];
-  creator.updatedAt = timestamp;
+
+  return store.upsertCreatorAccount(
+    guildId,
+    creator.creatorId,
+    account,
+    duplicateAccountIds,
+    { actorId },
+  );
 }
 
 function buildUserLanding(interaction) {
@@ -402,17 +391,27 @@ async function handleUserInteraction(interaction, updatePanel) {
       await interaction.reply({ content: 'Select at least one platform before continuing.', flags: 64 });
       return true;
     }
-    const section = getSection(interaction.guildId);
-    const creator = store.findCreatorByOwner(interaction.guildId, interaction.user.id);
+
+    let creator = store.findCreatorByOwner(interaction.guildId, interaction.user.id);
     if (!creator) {
       await interaction.reply({ content: 'Your Creator Profile could not be found.', flags: 64 });
       return true;
     }
+
     for (const platform of platforms) {
       const value = interaction.fields.getTextInputValue(`account_${platform}`).trim();
-      if (value) upsertUserAccount(section, creator, platform, value);
+      if (!value) continue;
+      const result = upsertUserAccount(
+        interaction.guildId,
+        creator,
+        platform,
+        value,
+        interaction.user.id,
+      );
+      creator = result.creator;
     }
-    saveSection(interaction.guildId, section, { actorId: interaction.user.id });
+
+    creator = store.getCreator(interaction.guildId, creator.creatorId) || creator;
     setUserAccountSession(interaction, { platforms: [] });
     if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
     return updatePanel(interaction, buildUserProfile(interaction, creator, getAccountsForCreator(interaction.guildId, creator)));
