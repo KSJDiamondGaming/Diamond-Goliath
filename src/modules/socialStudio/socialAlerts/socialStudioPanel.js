@@ -652,6 +652,68 @@ async function handleInteraction(i) {
   if (NAV.has(section)) return respond(i, buildSectionPanel(i, section)); throw new Error(`Unknown Social Studio interaction: ${id}`);
 }
 
+function userCreatorModal(
+  creator = null,
+  interaction = null,
+) {
+  const suggestedName =
+    creator?.displayName
+    || interaction?.member?.displayName
+    || interaction?.user?.globalName
+    || interaction?.user?.username
+    || '';
+
+  return new ModalBuilder()
+    .setCustomId('user:social:create:submit')
+    .setTitle('Create Creator Profile')
+    .addComponents(
+      row(
+        new TextInputBuilder()
+          .setCustomId('displayName')
+          .setLabel('Creator display name')
+          .setPlaceholder('Enter the public creator name here')
+          .setStyle(TextInputStyle.Short)
+          .setMaxLength(120)
+          .setRequired(true)
+          .setValue(String(suggestedName).slice(0, 120)),
+      ),
+      row(
+        new TextInputBuilder()
+          .setCustomId('group')
+          .setLabel('Group or team')
+          .setPlaceholder('Add your team, brand or category here')
+          .setStyle(TextInputStyle.Short)
+          .setMaxLength(120)
+          .setRequired(false)
+          .setValue(String(creator?.group || '').slice(0, 120)),
+      ),
+      row(
+        new TextInputBuilder()
+          .setCustomId('tags')
+          .setLabel('Tags (comma separated)')
+          .setPlaceholder('Example: streamer, ksj, twitch')
+          .setStyle(TextInputStyle.Short)
+          .setMaxLength(300)
+          .setRequired(false)
+          .setValue(
+            Array.isArray(creator?.tags)
+              ? creator.tags.join(', ').slice(0, 300)
+              : '',
+          ),
+      ),
+      row(
+        new TextInputBuilder()
+          .setCustomId('notes')
+          .setLabel('Profile Notes (optional)')
+          .setPlaceholder('Add notes about this creator profile.')
+          .setStyle(TextInputStyle.Paragraph)
+          .setMaxLength(1000)
+          .setRequired(false)
+          .setValue(String(creator?.notes || '').slice(0, 1000)),
+      ),
+    );
+}
+
 function userNavigation(backId = 'user:category:social') {
   return row(btn(backId, '?? Back', ButtonStyle.Secondary));
 }
@@ -970,6 +1032,7 @@ const userPanel = {
   buildCreate: buildUserCreate,
   buildProfile: buildUserProfile,
   buildSection: buildUserSection,
+  buildCreatorModal: userCreatorModal,
 };
 
 module.exports = {
