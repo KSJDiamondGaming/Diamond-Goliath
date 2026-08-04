@@ -236,27 +236,27 @@ function base(title, description, interaction, color = '#5865F2') {
 }
 
 function socialNavigation(backId = 'user:category:social') {
-  return row(button(backId, 'Back', ButtonStyle.Secondary, false, '⬅️'), button('user:preferences', 'Settings', ButtonStyle.Secondary, false, '⚙️'));
+  return row(button(backId, '⬅️ Back', ButtonStyle.Secondary), button('user:preferences', '⚙️ Settings', ButtonStyle.Secondary));
 }
 
 function sectionNavigation(backId = 'user:social:open') {
-  return row(button(backId, 'Back', ButtonStyle.Secondary, false, '⬅️'), button('user:preferences', 'Settings', ButtonStyle.Secondary, false, '⚙️'));
+  return row(button(backId, '⬅️ Back', ButtonStyle.Secondary), button('user:preferences', '⚙️ Settings', ButtonStyle.Secondary));
 }
 
 function creatorActionRows(creator = null, accounts = []) {
   const hasCreator = Boolean(creator);
   const completed = creator?.profileCompleted === true;
   const hasAccounts = Array.isArray(accounts) && accounts.length > 0;
-  if (!hasCreator || !completed) return [row(button('user:social:create', 'New Profile', ButtonStyle.Success, completed, '➕'))];
+  if (!hasCreator || !completed) return [row(button('user:social:create', '➕ New Profile', ButtonStyle.Success, completed))];
   const rows = [
     row(
-      button('user:social:create', 'New Profile', ButtonStyle.Success, true, '➕'),
-      button('user:social:newAccount', 'New Account', ButtonStyle.Success, false, '➕'),
-      ...(hasAccounts ? [button('user:social:alerts', 'Post LIVE', ButtonStyle.Primary, false, '📣')] : []),
+      button('user:social:create', '➕ New Profile', ButtonStyle.Success, true),
+      button('user:social:newAccount', '➕ New Account', ButtonStyle.Success),
+      ...(hasAccounts ? [button('user:social:alerts', '📣 Post LIVE', ButtonStyle.Primary)] : []),
     ),
     row(
-      button('user:social:details', 'Manage Profile', ButtonStyle.Primary, false, '📝'),
-      ...(hasAccounts ? [button('user:social:manageAccount', 'Manage Account', ButtonStyle.Primary, false, '🛠️')] : []),
+      button('user:social:details', '📝 Manage Profile', ButtonStyle.Primary),
+      ...(hasAccounts ? [button('user:social:manageAccount', '🛠️ Manage Account', ButtonStyle.Primary)] : []),
     ),
   ];
   return rows;
