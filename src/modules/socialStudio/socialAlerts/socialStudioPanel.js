@@ -614,6 +614,22 @@ async function handleTemplateInteraction(i, context) {
   return false;
 }
 
+
+async function handleChannelInteraction(i, context) {
+  const {
+    id,
+    config,
+    actorId,
+  } = context;
+
+  if (id === `${P}feed:type` || id === `${P}channel:type`) { setFeedSession(i, { routeType: i.values?.[0] || 'default' }); return respond(i, buildSectionPanel(i, 'channels')); }
+  if (id === `${P}feed:route` || id === `${P}channel:route`) { const type = getFeedSession(i).routeType || 'default', channelId = i.values?.[0] || null; if (type === 'default') config.alertsChannelId = channelId; else { config.alertChannels = config.alertChannels && typeof config.alertChannels === 'object' ? config.alertChannels : {}; config.alertChannels[type] = channelId; } saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'channels')); }
+  if (id === `${P}channel:default`) { const type = getFeedSession(i).routeType || 'default'; if (type !== 'default') { config.alertChannels = config.alertChannels && typeof config.alertChannels === 'object' ? config.alertChannels : {}; delete config.alertChannels[type]; saveConfig(i.guildId, config, i.guild, actorId); } return respond(i, buildSectionPanel(i, 'channels')); }
+  if (id === `${P}feed:channel` || id === `${P}channel:alerts`) { config.alertsChannelId = i.values?.[0] || null; saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'channels')); }
+
+  return false;
+}
+
 async function handleInteraction(i) {
   const id = String(i?.customId || ''); if (id !== 'admin:social' && !id.startsWith(P)) return false; if (!i.guild?.id) throw new Error('Social Studio requires a guild interaction.'); if (i.isMessageComponent?.() && !opensModal(id) && !i.deferred && !i.replied) await i.deferUpdate();
   const config = getConfig(i.guildId), actorId = i.user?.id || null, interaction = i;
@@ -672,10 +688,12 @@ async function handleInteraction(i) {
     actorId,
   })) return true;
 
-  if (id === `${P}feed:type` || id === `${P}channel:type`) { setFeedSession(i, { routeType: i.values?.[0] || 'default' }); return respond(i, buildSectionPanel(i, 'channels')); }
-  if (id === `${P}feed:route` || id === `${P}channel:route`) { const type = getFeedSession(i).routeType || 'default', channelId = i.values?.[0] || null; if (type === 'default') config.alertsChannelId = channelId; else { config.alertChannels = config.alertChannels && typeof config.alertChannels === 'object' ? config.alertChannels : {}; config.alertChannels[type] = channelId; } saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'channels')); }
-  if (id === `${P}channel:default`) { const type = getFeedSession(i).routeType || 'default'; if (type !== 'default') { config.alertChannels = config.alertChannels && typeof config.alertChannels === 'object' ? config.alertChannels : {}; delete config.alertChannels[type]; saveConfig(i.guildId, config, i.guild, actorId); } return respond(i, buildSectionPanel(i, 'channels')); }
-  if (id === `${P}feed:channel` || id === `${P}channel:alerts`) { config.alertsChannelId = i.values?.[0] || null; saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'channels')); }
+  if (await handleChannelInteraction(i, {
+    id,
+    config,
+    actorId,
+  })) return true;
+
   if (id === `${P}roles:select`) { config.managerRoleIds = i.values || []; saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'permissions')); }
   if (id === `${P}userroles:select`) { config.userRoleIds = i.values || []; saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'permissions')); }
   if (id === `${P}notification:mode`) { const value = i.values?.[0] || 'none'; const roleId = value.startsWith('role:') ? value.slice(5) : null; config.notificationMentionMode = roleId ? 'role' : ['none', 'everyone', 'here'].includes(value) ? value : 'none'; config.notificationRoleId = roleId || null; applyNotificationDefaults(config); saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'permissions')); }
