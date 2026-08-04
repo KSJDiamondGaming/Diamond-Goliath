@@ -651,4 +651,333 @@ async function handleInteraction(i) {
   }
   if (NAV.has(section)) return respond(i, buildSectionPanel(i, section)); throw new Error(`Unknown Social Studio interaction: ${id}`);
 }
-module.exports = { buildPanel: buildMainPanel, handleInteraction, buildSocialAdminPanel: buildMainPanel, buildSectionPanel, handleSocialAdminInteraction: handleInteraction, canManageSocialStudio };
+
+function userNavigation(backId = 'user:category:social') {
+  return row(btn(backId, '?? Back', ButtonStyle.Secondary));
+}
+
+function userSectionNavigation(backId = 'user:social:open') {
+  return row(btn(backId, '?? Back', ButtonStyle.Secondary));
+}
+
+function userAccountLabel(account) {
+  const platform = String(account?.platform || 'account').trim();
+
+  return platform
+    ? `${platform.charAt(0).toUpperCase()}${platform.slice(1)}`
+    : 'Account';
+}
+
+function userAccountSummary(accounts = []) {
+  if (!accounts.length) {
+    return '**Linked Accounts**\nNone connected';
+  }
+
+  return [
+    `**Linked Accounts (${accounts.length})**`,
+    ...accounts.map((account) => {
+      const name =
+        account.displayName
+        || account.username
+        || account.externalId
+        || account.accountId
+        || 'Unnamed account';
+
+      return `? **${userAccountLabel(account)}** ? ${name} ? ${account.enabled === false ? 'Disabled' : 'Enabled'}`;
+    }),
+  ].join('\n');
+}
+
+function userCreatorActionRows(creator = null, accounts = []) {
+  const hasCreator = Boolean(creator);
+  const completed = creator?.profileCompleted === true;
+  const hasAccounts = Array.isArray(accounts) && accounts.length > 0;
+
+  if (!hasCreator || !completed) {
+    return [
+      row(
+        btn(
+          'user:social:create',
+          '➕ New Profile',
+          ButtonStyle.Success,
+          completed,
+        ),
+      ),
+    ];
+  }
+
+  return [
+    row(
+      btn(
+        'user:social:create',
+        '➕ New Profile',
+        ButtonStyle.Success,
+        true,
+      ),
+      btn(
+        'user:social:newAccount',
+        '➕ New Account',
+        ButtonStyle.Success,
+      ),
+      ...(hasAccounts
+        ? [
+            btn(
+              'user:social:alerts',
+              '📣 Post LIVE',
+              ButtonStyle.Primary,
+            ),
+          ]
+        : []),
+    ),
+    row(
+      btn(
+        'user:social:details',
+        '📝 Manage Profile',
+        ButtonStyle.Primary,
+      ),
+      ...(hasAccounts
+        ? [
+            btn(
+              'user:social:manageAccount',
+              '🛠️ Manage Account',
+              ButtonStyle.Primary,
+            ),
+          ]
+        : []),
+    ),
+  ];
+}
+
+function buildUserLanding(interaction) {
+  return {
+    embeds: [
+      embed(
+        store.getConfig(interaction.guildId),
+        '📣 Social Studio',
+        [
+          'Create and manage your own Social Studio creator profile.',
+          '',
+          'Your profile connects your Discord account to your streaming accounts and live alerts.',
+        ].join('\n'),
+        who(interaction),
+      ),
+    ],
+    components: [
+      row(
+        btn(
+          'user:module:social',
+          'My Creator Profile',
+          ButtonStyle.Primary,
+          false,
+        ).setEmoji('👤'),
+      ),
+      userNavigation('user:home'),
+    ],
+  };
+}
+
+function buildUserDenied(interaction, roleIds = []) {
+  const roleText = roleIds.length
+    ? roleIds.map((id) => `<@&${id}>`).join('\n')
+    : 'No eligible roles are currently available.';
+
+  return {
+    embeds: [
+      embed(
+        store.getConfig(interaction.guildId),
+        '📣 Social Studio',
+        [
+          'You do not currently have access to Social Studio.',
+          '',
+          '**Required role ? one of:**',
+          roleText,
+          '',
+          'The Social Studio button is unavailable until you receive an eligible role.',
+        ].join('\n'),
+        who(interaction),
+        0xFEE75C,
+      ),
+    ],
+    components: [
+      row(
+        btn(
+          'user:social:locked',
+          'Social Studio',
+          ButtonStyle.Secondary,
+          true,
+        ).setEmoji('👤'),
+      ),
+      userNavigation(),
+    ],
+  };
+}
+
+function buildUserCreate(interaction) {
+  return {
+    embeds: [
+      embed(
+        store.getConfig(interaction.guildId),
+        '👥 Creator Profiles',
+        [
+          'You do not have a completed Creator Profile yet.',
+          '',
+          'Select New Profile to complete the same Creator Profile form used by Social Studio Management.',
+          '',
+          'Your unique Creator ID and ownership are permanently attached to your Discord user ID.',
+        ].join('\n'),
+        who(interaction),
+      ),
+    ],
+    components: [
+      ...userCreatorActionRows(null, []),
+      userNavigation(),
+    ],
+  };
+}
+
+function buildUserProfile(
+  interaction,
+  creator,
+  accounts = [],
+  created = false,
+) {
+  const config = store.getConfig(interaction.guildId);
+
+  if (creator.profileCompleted !== true) {
+    return {
+      embeds: [
+        embed(
+          config,
+          '👥 My Creator Profile',
+          [
+            '⚠️ **Profile setup has not been submitted yet.**',
+            '',
+            'Select **New Profile** to finish creating your Creator Profile.',
+          ].join('\n'),
+          who(interaction),
+          0xFEE75C,
+        ),
+      ],
+      components: [
+        ...userCreatorActionRows(creator, accounts),
+        userNavigation(),
+      ],
+    };
+  }
+
+  const status =
+    creator.status === 'left_server'
+      ? 'Left Server'
+      : creator.status === 'disabled'
+        ? 'Disabled'
+        : 'Active';
+
+  const createdAt = creator.createdAt
+    ? `<t:${Math.floor(new Date(creator.createdAt).getTime() / 1000)}:F>`
+    : 'Unknown';
+
+  const updatedAt = creator.updatedAt
+    ? `<t:${Math.floor(new Date(creator.updatedAt).getTime() / 1000)}:R>`
+    : 'Unknown';
+
+  return {
+    embeds: [
+      embed(
+        config,
+        '👥 My Creator Profile',
+        [
+          created ? '✅ **Creator Profile created.**' : null,
+          `**Creator ID**\n\`${creator.creatorId}\``,
+          creator.displayName
+            ? `**Creator Name**\n${creator.displayName}`
+            : null,
+          `**Status**\n${status}`,
+          userAccountSummary(accounts),
+          `**Created**\n${createdAt}`,
+          `**Last Updated**\n${updatedAt}`,
+          '',
+          'Use the buttons below to manage your Creator Profile and linked accounts.',
+        ].filter(Boolean).join('\n\n'),
+        who(interaction),
+      ),
+    ],
+    components: [
+      ...userCreatorActionRows(creator, accounts),
+      userNavigation(),
+    ],
+  };
+}
+
+function buildUserSection(
+  interaction,
+  creator,
+  section,
+  accounts = [],
+) {
+  const sections = {
+    details: {
+      title: '📝 Manage Profile',
+      description: [
+        '**Creator ID**',
+        `\`${creator.creatorId}\``,
+        '',
+        ...(creator.displayName
+          ? ['**Creator Name**', creator.displayName, '']
+          : []),
+        '**Status**',
+        creator.status || 'active',
+        '',
+        'Creator profile management will be connected here using the existing Social Studio profile functions.',
+      ].join('\n'),
+    },
+    accounts: {
+      title: '🔗 Accounts',
+      description: [
+        '**Creator ID**',
+        `\`${creator.creatorId}\``,
+        '',
+        userAccountSummary(accounts),
+        '',
+        'Only accounts linked to your Creator Profile are shown here.',
+      ].join('\n'),
+    },
+    alerts: {
+      title: '📣 Post LIVE',
+      description:
+        'Create and send a LIVE post for an account connected to your Creator Profile. Existing Social Studio posting and alert logic remains the source of truth.',
+    },
+  };
+
+  const selected = sections[section] || sections.details;
+
+  return {
+    embeds: [
+      embed(
+        store.getConfig(interaction.guildId),
+        selected.title,
+        selected.description,
+        who(interaction),
+        0xFEE75C,
+      ),
+    ],
+    components: [userSectionNavigation()],
+  };
+}
+
+const userPanel = {
+  buildLanding: buildUserLanding,
+  buildDenied: buildUserDenied,
+  buildCreate: buildUserCreate,
+  buildProfile: buildUserProfile,
+  buildSection: buildUserSection,
+};
+
+module.exports = {
+  buildPanel: buildMainPanel,
+  handleInteraction,
+  buildSocialAdminPanel: buildMainPanel,
+  buildSectionPanel,
+  handleSocialAdminInteraction: handleInteraction,
+  canManageSocialStudio,
+  user: userPanel,
+};

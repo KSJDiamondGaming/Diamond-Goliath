@@ -268,59 +268,20 @@ function upsertUserAccount(guildId, creator, platform, rawValue, actorId) {
   );
 }
 
-function buildUserLanding(interaction) {
-  return { embeds: [base('📣 Social Studio', 'Create and manage your own Social Studio creator profile.\n\nYour profile connects your Discord account to your streaming accounts and live alerts.', interaction)], components: [row(button('user:module:social', 'My Creator Profile', ButtonStyle.Primary, false, '👤')), socialNavigation('user:home')] };
-}
+const buildUserLanding =
+  adminPanel.user.buildLanding;
 
-function buildUserDenied(interaction, roleIds = []) {
-  const roleText = roleIds.length ? roleIds.map((id) => `<@&${id}>`).join('\n') : 'No eligible roles are currently available.';
-  return { embeds: [base('📣 Social Studio', `You do not currently have access to Social Studio.\n\n**Required role — one of:**\n${roleText}\n\nThe Social Studio button is unavailable until you receive an eligible role.`, interaction, '#FEE75C')], components: [row(button('user:social:locked', 'Social Studio', ButtonStyle.Secondary, true, '🔒')), socialNavigation()] };
-}
+const buildUserDenied =
+  adminPanel.user.buildDenied;
 
-function buildUserCreate(interaction) {
-  return { embeds: [base('👥 Creator Profiles', 'You do not have a completed Creator Profile yet.\n\nSelect New Profile to complete the same Creator Profile form used by Social Studio Management.\n\nYour unique Creator ID and ownership are permanently attached to your Discord user ID.', interaction)], components: [...creatorActionRows(null, []), socialNavigation()] };
-}
+const buildUserCreate =
+  adminPanel.user.buildCreate;
 
-function buildUserProfile(interaction, creator, accounts = [], created = false) {
-  if (creator.profileCompleted !== true) {
-    return {
-      embeds: [base('👥 My Creator Profile', [
-        '⚠️ **Profile setup has not been submitted yet.**',
-        '',
-        'Select **New Profile** to finish creating your Creator Profile.',
-      ].join('\n'), interaction, '#FEE75C')],
-      components: [...creatorActionRows(creator, accounts), socialNavigation()],
-    };
-  }
+const buildUserProfile =
+  adminPanel.user.buildProfile;
 
-  const status = creator.status === LEFT_SERVER ? 'Left Server' : creator.status === 'disabled' ? 'Disabled' : 'Active';
-  const createdAt = creator.createdAt ? `<t:${Math.floor(new Date(creator.createdAt).getTime() / 1000)}:F>` : 'Unknown';
-  const updatedAt = creator.updatedAt ? `<t:${Math.floor(new Date(creator.updatedAt).getTime() / 1000)}:R>` : 'Unknown';
-  return {
-    embeds: [base('👥 My Creator Profile', [
-      created ? '✅ **Creator Profile created.**' : null,
-      `**Creator ID**\n\`${creator.creatorId}\``,
-      creator.displayName ? `**Creator Name**\n${creator.displayName}` : null,
-      `**Status**\n${status}`,
-      accountSummary(accounts),
-      `**Created**\n${createdAt}`,
-      `**Last Updated**\n${updatedAt}`,
-      '',
-      'Use the buttons below to manage your Creator Profile and linked accounts.',
-    ].filter(Boolean).join('\n\n'), interaction)],
-    components: [...creatorActionRows(creator, accounts), socialNavigation()],
-  };
-}
-
-function buildUserSection(interaction, creator, section, accounts = []) {
-  const sections = {
-    details: { title: '✏️ Manage Profile', description: `**Creator ID**\n\`${creator.creatorId}\`\n\n${creator.displayName ? `**Creator Name**\n${creator.displayName}\n\n` : ''}**Status**\n${creator.status || ACTIVE}\n\nCreator profile management will be connected here using the existing Social Studio profile functions.` },
-    accounts: { title: '🔗 Accounts', description: `**Creator ID**\n\`${creator.creatorId}\`\n\n${accountSummary(accounts)}\n\nOnly accounts linked to your Creator Profile are shown here.` },
-    alerts: { title: '📣 Post LIVE', description: 'Create and send a LIVE post for an account connected to your Creator Profile. Existing Social Studio posting and alert logic remains the source of truth.' },
-  };
-  const selected = sections[section] || sections.details;
-  return { embeds: [base(selected.title, selected.description, interaction, '#FEE75C')], components: [sectionNavigation()] };
-}
+const buildUserSection =
+  adminPanel.user.buildSection;
 
 function getCreatorContext(interaction) {
   const access = getAccess(interaction);
