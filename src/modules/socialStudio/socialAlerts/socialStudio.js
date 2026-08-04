@@ -244,11 +244,11 @@ function base(title, description, interaction, color = '#5865F2') {
 }
 
 function socialNavigation(backId = 'user:category:social') {
-  return row(button(backId, '⬅️ Back', ButtonStyle.Secondary), button('user:preferences', '⚙️ Settings', ButtonStyle.Secondary));
+  return row(button(backId, '⬅️ Back', ButtonStyle.Secondary));
 }
 
 function sectionNavigation(backId = 'user:social:open') {
-  return row(button(backId, '⬅️ Back', ButtonStyle.Secondary), button('user:preferences', '⚙️ Settings', ButtonStyle.Secondary));
+  return row(button(backId, '⬅️ Back', ButtonStyle.Secondary));
 }
 
 function creatorActionRows(creator = null, accounts = []) {
@@ -403,7 +403,7 @@ function upsertUserAccount(section, creator, platform, rawValue) {
 }
 
 function buildUserLanding(interaction) {
-  return { embeds: [base('📣 Social Studio', 'Create and manage your own Social Studio creator profile.\n\nYour profile connects your Discord account to your streaming accounts, live alerts and creator settings.', interaction)], components: [row(button('user:module:social', 'My Creator Profile', ButtonStyle.Primary, false, '👤')), socialNavigation('user:home')] };
+  return { embeds: [base('📣 Social Studio', 'Create and manage your own Social Studio creator profile.\n\nYour profile connects your Discord account to your streaming accounts and live alerts.', interaction)], components: [row(button('user:module:social', 'My Creator Profile', ButtonStyle.Primary, false, '👤')), socialNavigation('user:home')] };
 }
 
 function buildUserDenied(interaction, roleIds = []) {
@@ -451,8 +451,6 @@ function buildUserSection(interaction, creator, section, accounts = []) {
     details: { title: '✏️ Manage Profile', description: `**Creator ID**\n\`${creator.creatorId}\`\n\n${creator.displayName ? `**Creator Name**\n${creator.displayName}\n\n` : ''}**Status**\n${creator.status || ACTIVE}\n\nCreator profile management will be connected here using the existing Social Studio profile functions.` },
     accounts: { title: '🔗 Accounts', description: `**Creator ID**\n\`${creator.creatorId}\`\n\n${accountSummary(accounts)}\n\nOnly accounts linked to your Creator Profile are shown here.` },
     alerts: { title: '📣 Post LIVE', description: 'Create and send a LIVE post for an account connected to your Creator Profile. Existing Social Studio posting and alert logic remains the source of truth.' },
-    templates: { title: '🎨 Templates', description: 'View and manage the templates available to your Creator Profile. Global template administration remains in the Admin Panel.' },
-    notifications: { title: '🔔 Notifications', description: 'Manage Social Studio notifications available to your Creator Profile.' },
   };
   const selected = sections[section] || sections.details;
   return { embeds: [base(selected.title, selected.description, interaction, '#FEE75C')], components: [sectionNavigation()] };
@@ -476,7 +474,7 @@ async function handleUserInteraction(interaction, updatePanel) {
     || customId === 'user:social:account:platforms'
     || customId === 'user:social:account:continue'
     || customId === 'user:social:account:create-multi'
-    || /^user:social:(details|accounts|newAccount|manageAccount|alerts|templates|notifications)$/.test(customId);
+    || /^user:social:(details|accounts|newAccount|manageAccount|alerts)$/.test(customId);
   if (!isSocial) return false;
   if (customId === 'user:category:social') return updatePanel(interaction, buildUserLanding(interaction));
   if (customId === 'user:social:create' && interaction.isButton?.()) {
@@ -537,7 +535,7 @@ async function handleUserInteraction(interaction, updatePanel) {
     return updatePanel(interaction, buildUserProfile(interaction, creator, getAccountsForCreator(interaction.guildId, creator)));
   }
 
-  const match = customId.match(/^user:social:(details|accounts|newAccount|manageAccount|alerts|templates|notifications)$/);
+  const match = customId.match(/^user:social:(details|accounts|newAccount|manageAccount|alerts)$/);
   const section = ['newAccount', 'manageAccount'].includes(match?.[1]) ? 'accounts' : match?.[1];
   return updatePanel(interaction, section ? buildUserSection(interaction, context.creator, section, context.accounts) : buildUserProfile(interaction, context.creator, context.accounts));
 }
