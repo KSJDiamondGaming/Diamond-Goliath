@@ -79,9 +79,8 @@ function rebuildProfileHome(payload) {
 
   payload.components = [
     searchRow,
-    row(...homeButtons.slice(0, 4)),
-    row(...homeButtons.slice(4, 8)),
-    row(...homeButtons.slice(8)),
+    row(...homeButtons.slice(0, 5)),
+    row(...homeButtons.slice(5)),
     row(
       back,
       refresh,
