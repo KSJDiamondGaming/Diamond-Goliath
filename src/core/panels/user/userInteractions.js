@@ -1,3 +1,9 @@
+const {
+  ActionRowBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+} = require('discord.js');
 const guildManager = require('../../guild/guildManager');
 const leveling = require('../../../modules/communityStudio/leveling/leveling');
 const invites = require('../../../modules/communityStudio/invites/invites');
@@ -117,6 +123,107 @@ async function showProgress(interaction) {
   const profile = buildLiveProfile(interaction);
   if (!profile.leveling) return showProfile(interaction);
   return updatePanel(interaction, buildProgressPanel(interaction, profile.leveling));
+}
+
+function modalRow(component) {
+  return new ActionRowBuilder().addComponents(component);
+}
+
+function buildUserManageProfileModal(creator) {
+  return new ModalBuilder()
+    .setCustomId('user:social:manage-profile:submit')
+    .setTitle('Manage Creator Profile')
+    .addComponents(
+      modalRow(new TextInputBuilder()
+        .setCustomId('displayName')
+        .setLabel('Creator display name')
+        .setPlaceholder('Enter the public creator name here')
+        .setStyle(TextInputStyle.Short)
+        .setMaxLength(120)
+        .setRequired(true)
+        .setValue(String(creator?.displayName || '').slice(0, 120))),
+      modalRow(new TextInputBuilder()
+        .setCustomId('group')
+        .setLabel('Group or team')
+        .setPlaceholder('Add your team, brand or category here')
+        .setStyle(TextInputStyle.Short)
+        .setMaxLength(120)
+        .setRequired(false)
+        .setValue(String(creator?.group || '').slice(0, 120))),
+      modalRow(new TextInputBuilder()
+        .setCustomId('tags')
+        .setLabel('Tags (comma separated)')
+        .setPlaceholder('Example: streamer, ksj, twitch')
+        .setStyle(TextInputStyle.Short)
+        .setMaxLength(300)
+        .setRequired(false)
+        .setValue(Array.isArray(creator?.tags) ? creator.tags.join(', ').slice(0, 300) : '')),
+      modalRow(new TextInputBuilder()
+        .setCustomId('notes')
+        .setLabel('Notes')
+        .setPlaceholder('Anything you want staff to know about your creator profile')
+        .setStyle(TextInputStyle.Paragraph)
+        .setMaxLength(1000)
+        .setRequired(false)
+        .setValue(String(creator?.notes || '').slice(0, 1000))),
+    );
+}
+
+async function handleUserManageProfile(interaction) {
+  const access = socialStudio.getAccess(interaction);
+  if (!access.allowed) {
+    await interaction.reply({ content: 'You do not currently have access to Social Studio.', flags: 64 });
+    return true;
+  }
+
+  const creator = socialStudio.findByOwnerDiscordId(interaction.guildId, interaction.user.id);
+  if (!creator || String(creator.ownerDiscordId) !== String(interaction.user.id)) {
+    await interaction.reply({ content: 'Your Creator Profile could not be verified.', flags: 64 });
+    return true;
+  }
+
+  await interaction.showModal(buildUserManageProfileModal(creator));
+  return true;
+}
+
+async function handleUserManageProfileSubmit(interaction) {
+  const access = socialStudio.getAccess(interaction);
+  if (!access.allowed) {
+    await interaction.reply({ content: 'You no longer have access to Social Studio.', flags: 64 });
+    return true;
+  }
+
+  const current = socialStudio.findByOwnerDiscordId(interaction.guildId, interaction.user.id);
+  if (!current || String(current.ownerDiscordId) !== String(interaction.user.id)) {
+    await interaction.reply({ content: 'Your Creator Profile could not be verified.', flags: 64 });
+    return true;
+  }
+
+  const displayName = interaction.fields.getTextInputValue('displayName').trim();
+  if (!displayName) {
+    await interaction.reply({ content: 'Creator display name is required.', flags: 64 });
+    return true;
+  }
+
+  const result = socialStudio.completeCreatorProfile(interaction.member, {
+    displayName,
+    group: interaction.fields.getTextInputValue('group'),
+    tags: interaction.fields.getTextInputValue('tags'),
+    notes: interaction.fields.getTextInputValue('notes'),
+  });
+
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+
+  await interaction.followUp({ content: '✅ Creator profile updated.', flags: 64 }).catch(() => null);
+
+  return updatePanel(
+    interaction,
+    socialStudio.user.buildProfile(
+      interaction,
+      result.creator,
+      socialStudio.getAccountsForCreator(interaction.guildId, result.creator),
+    ),
+  );
 }
 
 function getUserManualLiveState(guildId, creator, accounts = []) {
@@ -247,6 +354,14 @@ async function handleUserPanelInteraction(interaction) {
   if (!interaction.guild) {
     await interaction.reply({ content: 'This panel can only be used inside a server.', flags: 64 });
     return true;
+  }
+
+  if (customId === 'user:social:details' && interaction.isButton?.()) {
+    return handleUserManageProfile(interaction);
+  }
+
+  if (customId === 'user:social:manage-profile:submit' && interaction.isModalSubmit?.()) {
+    return handleUserManageProfileSubmit(interaction);
   }
 
   if (customId === 'user:social:alerts' && interaction.isButton?.()) {
