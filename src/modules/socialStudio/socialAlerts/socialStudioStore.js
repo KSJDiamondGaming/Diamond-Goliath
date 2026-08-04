@@ -44,6 +44,13 @@ function getSection(guildId) {
   return normalizeSection(guildManager.getGuildSection(guildId, SECTION, {}));
 }
 
+function getConfig(guildId) {
+  return {
+    ...getSection(guildId),
+    enabled: isEnabled(guildId),
+  };
+}
+
 function getManagerRoleIds(guildId) {
   return [...new Set(getSection(guildId).managerRoleIds.map(String).filter(Boolean))];
 }
@@ -381,7 +388,7 @@ module.exports = {
   CREATOR_DELETE_GRACE_MS,
   normalizeSection,
   getSection,
-  getConfig: getSection,
+  getConfig,
   getManagerRoleIds,
   getUserRoleIds,
   saveSection,
