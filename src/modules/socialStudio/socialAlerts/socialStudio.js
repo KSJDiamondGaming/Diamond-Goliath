@@ -1,16 +1,6 @@
 'use strict';
 
-const {
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  EmbedBuilder,
-  ModalBuilder,
-  PermissionFlagsBits,
-  StringSelectMenuBuilder,
-  TextInputBuilder,
-  TextInputStyle,
-} = require('discord.js');
+const { PermissionFlagsBits } = require('discord.js');
 const crypto = require('crypto');
 const security = require('../../../core/security/securityCore');
 const { normalizeAccountInput, migrateAccount } = require('./accountNormalizer');
@@ -77,66 +67,8 @@ function deleteCreatorOwnedData(guildId, ownerDiscordId) {
   });
 }
 
-function button(customId, label, style = ButtonStyle.Primary, disabled = false, emoji = null) {
-  const item = new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style).setDisabled(disabled);
-  if (emoji) item.setEmoji(emoji);
-  return item;
-}
-
-function row(...items) {
-  return new ActionRowBuilder().addComponents(...items);
-}
-
 const userCreatorModal =
   adminPanel.user.buildCreatorModal;
-
-function nameOf(interaction) {
-  return interaction.member?.displayName || interaction.user?.displayName || interaction.user?.username || 'Unknown User';
-}
-
-function base(title, description, interaction, color = '#5865F2') {
-  return new EmbedBuilder().setColor(color).setTitle(title).setDescription(description).setFooter({ text: `Requested by ${nameOf(interaction)}` }).setTimestamp();
-}
-
-function socialNavigation(backId = 'user:category:social') {
-  return row(button(backId, '⬅️ Back', ButtonStyle.Secondary));
-}
-
-function sectionNavigation(backId = 'user:social:open') {
-  return row(button(backId, '⬅️ Back', ButtonStyle.Secondary));
-}
-
-function creatorActionRows(creator = null, accounts = []) {
-  const hasCreator = Boolean(creator);
-  const completed = creator?.profileCompleted === true;
-  const hasAccounts = Array.isArray(accounts) && accounts.length > 0;
-  if (!hasCreator || !completed) return [row(button('user:social:create', '➕ New Profile', ButtonStyle.Success, completed))];
-  const rows = [
-    row(
-      button('user:social:create', '➕ New Profile', ButtonStyle.Success, true),
-      button('user:social:newAccount', '➕ New Account', ButtonStyle.Success),
-      ...(hasAccounts ? [button('user:social:alerts', '📣 Post LIVE', ButtonStyle.Primary)] : []),
-    ),
-    row(
-      button('user:social:details', '📝 Manage Profile', ButtonStyle.Primary),
-      ...(hasAccounts ? [button('user:social:manageAccount', '🛠️ Manage Account', ButtonStyle.Primary)] : []),
-    ),
-  ];
-  return rows;
-}
-
-function accountLabel(account) {
-  const platform = String(account?.platform || 'account').trim();
-  return platform ? `${platform.charAt(0).toUpperCase()}${platform.slice(1)}` : 'Account';
-}
-
-function accountSummary(accounts = []) {
-  if (!accounts.length) return '**Linked Accounts**\nNone connected';
-  return [`**Linked Accounts (${accounts.length})**`, ...accounts.map((account) => {
-    const name = account.displayName || account.username || account.externalId || account.accountId || 'Unnamed account';
-    return `• **${accountLabel(account)}** — ${name} · ${account.enabled === false ? 'Disabled' : 'Enabled'}`;
-  })].join('\n');
-}
 
 function userAccountSessionKey(interaction) {
   return `${interaction.guildId}:${interaction.user?.id || 'unknown'}`;
