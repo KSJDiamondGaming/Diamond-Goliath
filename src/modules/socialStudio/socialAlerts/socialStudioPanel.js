@@ -3,6 +3,7 @@ const { ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle, Channel
 const crypto = require('crypto');
 const guildManager = require('../../../core/guild/guildManager');
 const security = require('../../../core/security/securityCore');
+const store = require('./socialStudioStore');
 const { normalizeAccountInput, migrateAccount } = require('./accountNormalizer');
 const { providerInfo } = require('./socialStudioProviders');
 const { forcePostCreatorLive } = require('./socialStudioMonitor');
@@ -80,26 +81,7 @@ async function denySocialAccess(i) {
   return true;
 }
 
-function getConfig(guildId) {
-  const s = guildManager.getGuildSection(guildId, 'social', {});
-  return {
-    ...s,
-    enabled: guildManager.isModuleEnabled(guildId, 'social'),
-    alertsChannelId: s.alertsChannelId || null,
-    alertChannels: s.alertChannels && typeof s.alertChannels === 'object' ? s.alertChannels : {},
-    managerRoleIds: Array.isArray(s.managerRoleIds) ? s.managerRoleIds : [],
-    userRoleIds: Array.isArray(s.userRoleIds) ? s.userRoleIds : [],
-    notificationMentionMode: ['none', 'role', 'everyone', 'here'].includes(s.notificationMentionMode) ? s.notificationMentionMode : 'none',
-    notificationRoleId: s.notificationRoleId || null,
-    accounts: s.accounts && typeof s.accounts === 'object' ? s.accounts : {},
-    creators: s.creators && typeof s.creators === 'object' ? s.creators : {},
-    templates: normalizeTemplates(s.templates),
-    settings: s.settings && typeof s.settings === 'object' ? s.settings : {},
-    history: Array.isArray(s.history) ? s.history : [],
-    queue: Array.isArray(s.queue) ? s.queue : [],
-    analytics: s.analytics && typeof s.analytics === 'object' ? s.analytics : {},
-  };
-}
+const getConfig = store.getConfig;
 
 function saveConfig(guildId, config, guild, actorId = null) {
   const { enabled: _enabled, ...storedConfig } = config;
@@ -254,7 +236,7 @@ function creatorModal(c = null) {
     row(new TextInputBuilder().setCustomId('displayName').setLabel('Creator display name').setPlaceholder('Enter the public creator name here').setStyle(TextInputStyle.Short).setMaxLength(120).setRequired(true).setValue(String(c?.displayName || ''))),
     row(new TextInputBuilder().setCustomId('group').setLabel('Group or team').setPlaceholder('Add their team, brand or category here').setStyle(TextInputStyle.Short).setMaxLength(120).setRequired(false).setValue(String(c?.group || ''))),
     row(new TextInputBuilder().setCustomId('tags').setLabel('Tags (comma separated)').setPlaceholder('Example: streamer, ksj, twitch').setStyle(TextInputStyle.Short).setMaxLength(300).setRequired(false).setValue(Array.isArray(c?.tags) ? c.tags.join(', ') : '')),
-    row(new TextInputBuilder().setCustomId('notes').setLabel('Notes').setPlaceholder('Add private admin notes for this creator here').setStyle(TextInputStyle.Paragraph).setMaxLength(1000).setRequired(false).setValue(String(c?.notes || ''))),
+    row(new TextInputBuilder().setCustomId('notes').setLabel('Profile Notes (optional)').setPlaceholder('Add notes about this creator profile.').setStyle(TextInputStyle.Paragraph).setMaxLength(1000).setRequired(false).setValue(String(c?.notes || ''))),
   );
 }
 function accountModal(platforms) { const m = new ModalBuilder().setCustomId(`${P}account:create-multi`).setTitle('Add Social Accounts'); for (const p of platforms.slice(0, 5)) m.addComponents(row(new TextInputBuilder().setCustomId(`account_${p}`).setLabel(`${LABEL[p]} username, channel ID or URL`).setPlaceholder(`Paste the ${LABEL[p]} profile URL, username or ID here`).setStyle(TextInputStyle.Short).setMaxLength(500).setRequired(true))); return m; }
@@ -264,7 +246,7 @@ function accountMoveNewProfileModal(account) {
     row(new TextInputBuilder().setCustomId('displayName').setLabel('New creator display name').setPlaceholder(`Example: ${account.displayName || account.username || account.externalId || 'Creator name'}`).setStyle(TextInputStyle.Short).setMaxLength(120).setRequired(true)),
     row(new TextInputBuilder().setCustomId('group').setLabel('Group or team').setPlaceholder('Optional team, brand or category').setStyle(TextInputStyle.Short).setMaxLength(120).setRequired(false)),
     row(new TextInputBuilder().setCustomId('tags').setLabel('Tags (comma separated)').setPlaceholder(`Example: ${account.platform || 'social'}, creator`).setStyle(TextInputStyle.Short).setMaxLength(300).setRequired(false)),
-    row(new TextInputBuilder().setCustomId('notes').setLabel('Notes').setPlaceholder('Optional private admin notes').setStyle(TextInputStyle.Paragraph).setMaxLength(1000).setRequired(false)),
+    row(new TextInputBuilder().setCustomId('notes').setLabel('Profile Notes (optional)').setPlaceholder('Add notes about this creator profile.').setStyle(TextInputStyle.Paragraph).setMaxLength(1000).setRequired(false)),
   );
 }
 function templateModal(type, config) {
@@ -348,7 +330,7 @@ function buildCreatorPanel(i, config, creators) {
   const view = getCreatorSession(i), pages = Math.max(1, Math.ceil(creators.length / PAGE_SIZE)); if (view.page >= pages) setCreatorSession(i, { page: pages - 1 });
   let current = getCreatorSession(i), selected = config.creators[current.creatorId] || null; if (current.creatorId && !selected) { setCreatorSession(i, { creatorId: null }); selected = null; }
   const linked = selected ? (selected.accountIds || []).map((id) => config.accounts[id]).filter(Boolean).sort(accountSort) : [];
-  const d = selected ? [`👤 **${selected.displayName}**`, '', ...(linked.length ? linked.map((a) => `${ICON[a.platform]} **${LABEL[a.platform]}** — ${a.profileUrl ? `[${a.username || a.externalId}](${a.profileUrl})` : a.username || a.externalId} — ${accountState(a)}`) : ['No linked social accounts.']), '', `**Status:** ${selected.enabled === false ? '⏸️ Paused' : '🟢 Monitoring'}`, `**Accounts:** ${linked.length}`].join('\n') : `Select a creator profile below.\n\n**Profiles:** ${creators.length}`;
+  const d = selected ? [`👤 **${selected.displayName}**`, '', ...(linked.length ? linked.map((a) => `${ICON[a.platform]} **${LABEL[a.platform]}** — ${a.profileUrl ? `[${a.username || a.externalId}](${a.profileUrl})` : a.username || a.externalId} — ${accountState(a)}`) : ['No linked social accounts.']), '', `**Status:** ${selected.enabled === false ? '⏸️ Paused' : '🟢 Monitoring'}`, `**Accounts:** ${linked.length}`, '', `**Group / Team:** ${selected.group || 'Not set'}`, `**Tags:** ${selected.tags?.length ? selected.tags.join(', ') : 'None'}`, `**Profile Notes:** ${selected.notes || 'None'}`].join('\n') : `Select a creator profile below.\n\n**Profiles:** ${creators.length}`;
   const postState = creatorLivePostState(config, selected, { bypassCooldown: true });
   const components = [], page = getCreatorSession(i).page, items = creators.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE); if (items.length) components.push(creatorSelect(items, getCreatorSession(i).creatorId, `${P}creator:select`, `Select a creator - Page ${page + 1}/${pages}`)); components.push(row(btn(`${P}creator:new`, '➕ New Profile', ButtonStyle.Success), btn(`${P}account:new`, '➕ New Account', ButtonStyle.Success, !selected), btn(`${P}creator:post`, '📣 Post LIVE', ButtonStyle.Primary, !postState.canPost))); components.push(row(btn(`${P}creator:profile`, '📝 Manage Profile', ButtonStyle.Primary, !selected), btn(`${P}creator:accounts`, '🛠️ Manage Account', ButtonStyle.Primary, !selected || !linked.length))); if (pages > 1) components.push(row(btn(`${P}creator:page:prev`, '⬅️ Previous', ButtonStyle.Secondary, page <= 0), btn(`${P}creator:page:next`, 'Next ➡️', ButtonStyle.Secondary, page >= pages - 1))); components.push(navigation('creators')); return { embeds: [embed(config, '👥 Creator Profiles', selected ? `${d}\n**Post LIVE:** ${postState.reason}` : d, who(i), selected ? creatorAccent(linked) : null)], components };
 }
@@ -374,7 +356,7 @@ function buildAccountAddPanel(i, config, creator) {
   return { embeds: [embed(config, '➕ Add Accounts', d, who(i), creatorAccent((creator.accountIds || []).map((id) => config.accounts[id]).filter(Boolean)))], components: [platformSelect(selected), row(btn(`${P}creators`, '⬅️ Back'), btn(`${P}account:continue`, '➡️ Continue', ButtonStyle.Success, !selected.length))] };
 }
 function buildProfileManagePanel(i, config, creator) {
-  const d = [`👤 **${creator.displayName}**`, '', '**Profile**', `Status: ${creator.enabled === false ? '⏸️ Paused' : '🟢 Monitoring'}`, `Group / Team: ${creator.group || 'Not set'}`, `Tags: ${creator.tags?.length ? creator.tags.join(', ') : 'None'}`, `Notes: ${creator.notes || 'None'}`].join('\n');
+  const d = [`👤 **${creator.displayName}**`, '', '**Profile**', `Status: ${creator.enabled === false ? '⏸️ Paused' : '🟢 Monitoring'}`, `Group / Team: ${creator.group || 'Not set'}`, `Tags: ${creator.tags?.length ? creator.tags.join(', ') : 'None'}`, `Profile Notes: ${creator.notes || 'None'}`].join('\n');
   const components = [
     row(btn(`${P}creator:edit`, '📝 Edit Profile'), btn(`${P}creator:clear`, '🔄 Clear'), btn(`${P}creator:profile:toggle`, creator.enabled === false ? '▶️ Resume' : '⏸️ Pause', creator.enabled === false ? ButtonStyle.Success : ButtonStyle.Secondary), btn(`${P}creator:delete`, '🗑️ Delete', ButtonStyle.Danger)),
     row(btn(`${P}creators`, '⬅️ Back'), btn(`${P}settings`, '⚙️ Settings')),
