@@ -249,7 +249,6 @@ function buildUserManageAccountPanel(interaction, creator, accounts, selectedId 
   }
   components.push(new ActionRowBuilder().addComponents(
     userAccountButton('user:social:open', '⬅️ Back', ButtonStyle.Secondary),
-    userAccountButton('user:preferences', '⚙️ Settings', ButtonStyle.Secondary),
   ));
 
   const description = selected
