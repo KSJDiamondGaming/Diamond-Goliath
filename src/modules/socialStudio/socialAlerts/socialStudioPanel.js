@@ -386,7 +386,7 @@ function buildTemplatePanel(i, config, type) {
   const custom = config.templates?.custom?.[type];
   const changed = Boolean(custom);
   const d = [
-    `Configure the **${ALERT_LABEL[type] || type}** message copy.`,
+    `Goal output for **${ALERT_LABEL[type] || type}** posts.`,
     '',
     '**Current Headline**',
     current.title || 'Not set',
@@ -397,8 +397,12 @@ function buildTemplatePanel(i, config, type) {
     '**Default Headline**',
     defaults.title || 'Not set',
     '',
+    '**Default Message**',
+    defaults.description || 'Not set',
+    '',
     `**Status:** ${changed ? 'Customised' : 'Using default'}`,
-    'Layout, media, links, colour and footer stay managed by Goliath.'
+    changed ? 'Current copy is coming from `templates.custom`.' : 'Current copy matches `templates.defaults`.',
+    'Layout, media, links, colour, footer and previews stay managed by Goliath.'
   ].join('\n');
   return {
     embeds: [embed(config, `${ALERT_EMOJI[type] || '🔔'} ${ALERT_LABEL[type] || type} Template`, d, who(i))],

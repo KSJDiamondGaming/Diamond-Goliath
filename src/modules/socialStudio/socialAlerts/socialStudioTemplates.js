@@ -16,6 +16,14 @@ const DEFAULT_TEMPLATES = Object.freeze({
 
 const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 const cloneTemplate = (template = {}) => ({ ...template });
+const sameTemplateCopy = (left = {}, right = {}) => (
+  String(left.title || '') === String(right.title || '') &&
+  String(left.description || '') === String(right.description || '')
+);
+const legacyPlaceholderTemplate = (template = {}) => (
+  String(template.title || '').trim() === '{creator} alert' &&
+  String(template.description || '').trim() === '{title}'
+);
 
 function normalizeTemplates(source = {}) {
   const raw = isObject(source) ? source : {};
@@ -27,7 +35,7 @@ function normalizeTemplates(source = {}) {
   for (const type of ALERT_TYPES) {
     defaults[type] = { ...DEFAULT_TEMPLATES[type], ...(isObject(rawDefaults[type]) ? rawDefaults[type] : {}) };
     const legacy = rawCustom === raw && (type === 'defaults' || type === 'custom') ? null : rawCustom[type];
-    if (isObject(legacy)) custom[type] = cloneTemplate(legacy);
+    if (isObject(legacy) && !legacyPlaceholderTemplate(legacy) && !sameTemplateCopy(legacy, defaults[type])) custom[type] = cloneTemplate(legacy);
   }
 
   return {
