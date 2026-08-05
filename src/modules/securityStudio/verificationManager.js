@@ -608,7 +608,7 @@ async function verifyMember(interaction) {
     return failVerification(guildId, section, member, 'botBlocked', {}, { botBlocked: 1 });
   }
 
-  if (alreadyVerified && !settings.allowReverification) {
+  if (alreadyVerified) {
     const reconciled = await reconcileAlreadyVerifiedMember(member, settings, verifiedRoles, pendingRoles);
     if (reconciled.issues.length) {
       console.warn('[Verification] Already-verified reconciliation incomplete', {
