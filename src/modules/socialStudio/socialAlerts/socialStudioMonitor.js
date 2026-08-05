@@ -21,7 +21,6 @@ const PLATFORM = {
 };
 
 const EMBED_WIDTH_DIVIDER = '\u2500'.repeat(28);
-const LIVE_MESSAGE_UPDATE_INTERVAL_MS = 10 * 60 * 1000;
 
 const now = () => new Date().toISOString();
 const clean = (value, max = 2000) => String(value ?? '').trim().slice(0, max);
