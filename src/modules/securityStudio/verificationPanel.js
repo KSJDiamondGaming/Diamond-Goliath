@@ -21,7 +21,15 @@ const verificationManager = require('./verificationManager');
 const verificationStore = require('./verificationStore');
 
 const NAV_PAGES = ['overview', 'workflow', 'roles', 'requirements', 'messages', 'panel'];
-const PAGES = [...NAV_PAGES, 'settings', 'status'];
+const PAGES = [
+  ...NAV_PAGES,
+  'settings',
+  'status',
+  'variables',
+  'timing',
+  'saved_panels',
+  'button_style',
+];
 const PANEL_LIMIT = 25;
 
 const WORKFLOW_TOGGLES = new Set([
@@ -41,14 +49,15 @@ const REQUIREMENT_TOGGLES = new Set([
 ]);
 
 function row(...components) {
-  return new ActionRowBuilder().addComponents(...components);
+  return new ActionRowBuilder().addComponents(...components.filter(Boolean));
 }
 
-function button(customId, label, style = ButtonStyle.Primary) {
+function button(customId, label, style = ButtonStyle.Primary, disabled = false) {
   return new ButtonBuilder()
     .setCustomId(customId)
     .setLabel(label)
-    .setStyle(style);
+    .setStyle(style)
+    .setDisabled(Boolean(disabled));
 }
 
 function toggleButton(customId, label, enabled) {
@@ -132,6 +141,12 @@ function formatRoles(guild, ids = []) {
   }).join(', ');
 }
 
+function formatTiming(value) {
+  if (value === 'on_join') return 'On Join';
+  if (value === 'manual') return 'Manual Only';
+  return 'After Discord Screening';
+}
+
 function latestPanel(guildId) {
   return verificationStore.getLatestPanel(guildId);
 }
@@ -148,14 +163,14 @@ function getSavedPanelsFromSection(section) {
   ));
 }
 
-function navRow(page) {
+function workflowNavRow(page) {
   const index = NAV_PAGES.indexOf(page);
   const previousTarget = index > 0
     ? `admin:verification:page:${NAV_PAGES[index - 1]}`
     : 'admin:modules';
   const nextTarget = index >= 0 && index < NAV_PAGES.length - 1
     ? `admin:verification:page:${NAV_PAGES[index + 1]}`
-    : 'admin:verification:page:settings';
+    : 'admin:verification:page:overview';
 
   if (page === 'overview') {
     return row(
@@ -166,10 +181,12 @@ function navRow(page) {
 
   return row(
     button(previousTarget, '⬅️ Previous', ButtonStyle.Secondary),
-    button('admin:verification:page:overview', '🏠 Verification', ButtonStyle.Secondary),
-    button('admin:verification:page:settings', '⚙️ Settings', ButtonStyle.Secondary),
     button(nextTarget, 'Next ➡️', ButtonStyle.Secondary)
   );
+}
+
+function backRow(target, label = '⬅️ Back') {
+  return row(button(target, label, ButtonStyle.Secondary));
 }
 
 function baseEmbed(title, description, memberDisplayName, color = 0x5865f2) {
@@ -220,7 +237,7 @@ function buildOverviewPage(guild, memberDisplayName) {
         button('admin:verification:page:messages', '💬 Messages'),
         button('admin:verification:page:panel', '🎨 Panels')
       ),
-      navRow('overview'),
+      workflowNavRow('overview'),
     ],
   };
 }
@@ -237,11 +254,11 @@ function buildWorkflowPage(guild, memberDisplayName) {
       '',
       `**Use Pending Roles:** ${yesNo(config.usePendingRoles)}`,
       `**Assign Pending Roles:** ${yesNo(config.assignPendingRoles)}`,
-      `**Assignment Timing:** \`${config.pendingRoleTiming}\``,
+      `**Assignment Timing:** ${formatTiming(config.pendingRoleTiming)}`,
       `**Require Pending Role:** ${yesNo(config.requirePendingRole)}`,
       `**Remove Pending Roles:** ${yesNo(config.removePendingRoles)}`,
       '',
-      'Toggle a setting below. The button label always shows its current state.',
+      'Toggle a setting below. Use Timing to change when pending roles are assigned.',
     ].join('\n'),
     memberDisplayName
   );
@@ -258,34 +275,37 @@ function buildWorkflowPage(guild, memberDisplayName) {
         toggleButton('admin:verification:toggle:usePendingRoles', 'Pending', config.usePendingRoles),
         toggleButton('admin:verification:toggle:assignPendingRoles', 'Auto Assign', config.assignPendingRoles),
         toggleButton('admin:verification:toggle:requirePendingRole', 'Require', config.requirePendingRole),
-        toggleButton('admin:verification:toggle:removePendingRoles', 'Remove', config.removePendingRoles)
+        toggleButton('admin:verification:toggle:removePendingRoles', 'Remove', config.removePendingRoles),
+        button('admin:verification:page:timing', '🕒 Timing', ButtonStyle.Secondary)
       ),
+      workflowNavRow('workflow'),
+    ],
+  };
+}
+
+function buildTimingPage(guild, memberDisplayName) {
+  const config = getConfig(guild.id);
+  const embed = baseEmbed(
+    '🕒 Verification · Assignment Timing',
+    [
+      `**Current:** ${formatTiming(config.pendingRoleTiming)}`,
+      '',
+      '**On Join** — assign pending roles immediately when a member joins.',
+      '**After Discord Screening** — wait until Discord screening is complete.',
+      '**Manual Only** — never assign pending roles automatically.',
+    ].join('\n'),
+    memberDisplayName
+  );
+
+  return {
+    embeds: [embed],
+    components: [
       row(
-        new StringSelectMenuBuilder()
-          .setCustomId('admin:verification:pendingTiming')
-          .setPlaceholder('Choose pending-role timing')
-          .addOptions([
-            {
-              label: 'On Join',
-              value: 'on_join',
-              description: 'Assign immediately when the member joins',
-              default: config.pendingRoleTiming === 'on_join',
-            },
-            {
-              label: 'After Discord Screening',
-              value: 'after_screening',
-              description: 'Wait until member.pending becomes false',
-              default: config.pendingRoleTiming === 'after_screening',
-            },
-            {
-              label: 'Manual Only',
-              value: 'manual',
-              description: 'Never assign automatically',
-              default: config.pendingRoleTiming === 'manual',
-            },
-          ])
+        button('admin:verification:timing:on_join', '👋 On Join', config.pendingRoleTiming === 'on_join' ? ButtonStyle.Success : ButtonStyle.Secondary),
+        button('admin:verification:timing:after_screening', '🛡️ After Screening', config.pendingRoleTiming === 'after_screening' ? ButtonStyle.Success : ButtonStyle.Secondary),
+        button('admin:verification:timing:manual', '✋ Manual Only', config.pendingRoleTiming === 'manual' ? ButtonStyle.Success : ButtonStyle.Secondary)
       ),
-      navRow('workflow'),
+      backRow('admin:verification:page:workflow'),
     ],
   };
 }
@@ -295,10 +315,10 @@ function buildRolesPage(guild, memberDisplayName) {
   const embed = baseEmbed(
     '🎭 Verification · Roles & Channels',
     [
-      `**Verification Channel:** ${formatChannel(config.verificationChannelId)}`,
-      `**Log Channel:** ${formatChannel(config.logChannelId)}`,
-      `**Verified Roles:** ${formatRoles(guild, config.verifiedRoleIds)}`,
-      `**Pending Roles:** ${formatRoles(guild, config.pendingRoleIds)}`,
+      `📍 **Verification Channel:** ${formatChannel(config.verificationChannelId)}`,
+      `📝 **Log Channel:** ${formatChannel(config.logChannelId)}`,
+      `🛡️ **Verified Roles:** ${formatRoles(guild, config.verifiedRoleIds)}`,
+      `⏳ **Pending Roles:** ${formatRoles(guild, config.pendingRoleIds)}`,
       '',
       'Choose each channel or role below. Goliath must be above every role it needs to add or remove.',
     ].join('\n'),
@@ -327,7 +347,7 @@ function buildRolesPage(guild, memberDisplayName) {
       row(
         new RoleSelectMenuBuilder()
           .setCustomId('admin:verification:verifiedRoles')
-          .setPlaceholder('✅ Verified role(s)')
+          .setPlaceholder('🛡️ Verified role(s)')
           .setMinValues(0)
           .setMaxValues(10)
       ),
@@ -338,7 +358,7 @@ function buildRolesPage(guild, memberDisplayName) {
           .setMinValues(0)
           .setMaxValues(10)
       ),
-      navRow('roles'),
+      workflowNavRow('roles'),
     ],
   };
 }
@@ -367,12 +387,10 @@ function buildRequirementsPage(guild, memberDisplayName) {
       row(
         toggleButton('admin:verification:toggle:blockBots', 'Bots', config.blockBots),
         toggleButton('admin:verification:toggle:allowStaffBypass', 'Bypass', config.allowStaffBypass),
-        toggleButton('admin:verification:toggle:allowReverification', 'Reverify', config.allowReverification)
-      ),
-      row(
+        toggleButton('admin:verification:toggle:allowReverification', 'Reverify', config.allowReverification),
         button('admin:verification:editRequirements', '✏️ Edit Limits', ButtonStyle.Primary)
       ),
-      navRow('requirements'),
+      workflowNavRow('requirements'),
     ],
   };
 }
@@ -399,7 +417,7 @@ function buildMessagesPage(guild, memberDisplayName) {
       `**Pending Role Required:** ${messages.pendingRoleRequired}`,
       `**Success DM:** ${messages.dmSuccess}`,
       '',
-      'Variables: All default Goliath helpers are supported.',
+      '💡 Use **Variables** below to view every supported placeholder.',
     ].join('\n').slice(0, 4096),
     memberDisplayName
   );
@@ -415,10 +433,121 @@ function buildMessagesPage(guild, memberDisplayName) {
       ),
       row(
         button('admin:verification:editMessagesCore', '✏️ Core'),
-        button('admin:verification:editMessagesRules', '✏️ Requirements'),
-        button('admin:verification:resetMessages', '🗑️ Reset Messages', ButtonStyle.Danger)
+        button('admin:verification:editMessagesRules', '📋 Requirements'),
+        button('admin:verification:page:variables', '🧩 Variables', ButtonStyle.Secondary)
       ),
-      navRow('messages'),
+      workflowNavRow('messages'),
+    ],
+  };
+}
+
+function variableGroups() {
+  const helpers = Array.isArray(verificationManager.DEFAULT_HELPERS)
+    ? verificationManager.DEFAULT_HELPERS
+    : [];
+  const groups = {
+    Member: [],
+    Server: [],
+    Dates: [],
+    Styling: [],
+    Other: [],
+  };
+
+  for (const helper of helpers) {
+    const value = String(helper);
+    if (/user|account|membership/i.test(value)) groups.Member.push(value);
+    else if (/guild|server|memberCount/i.test(value)) groups.Server.push(value);
+    else if (/At}|timestamp|joined|created|left/i.test(value)) groups.Dates.push(value);
+    else if (/Emoji|Color/i.test(value)) groups.Styling.push(value);
+    else groups.Other.push(value);
+  }
+
+  return groups;
+}
+
+function buildVariablesPage(memberDisplayName, backTarget = 'messages') {
+  const groups = variableGroups();
+  const lines = [
+    'Use these placeholders in supported verification messages and embed fields.',
+    '',
+  ];
+
+  for (const [name, helpers] of Object.entries(groups)) {
+    if (!helpers.length) continue;
+    lines.push(`**${name}**`);
+    lines.push(helpers.map((helper) => `\`${helper}\``).join(' · '));
+    lines.push('');
+  }
+
+  return {
+    embeds: [baseEmbed(
+      '🧩 Verification · Variables',
+      lines.join('\n').slice(0, 4096),
+      memberDisplayName
+    )],
+    components: [backRow(`admin:verification:page:${backTarget}`)],
+  };
+}
+
+function buildSavedPanelsPage(guild, memberDisplayName) {
+  const section = verificationStore.getVerificationSection(guild.id);
+  const panels = getSavedPanelsFromSection(section);
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId('admin:verification:savedPanel')
+    .setPlaceholder(panels.length ? '📚 Choose a saved panel' : 'No saved panels yet')
+    .setDisabled(!panels.length);
+
+  if (panels.length) {
+    menu.addOptions(panels.slice(0, PANEL_LIMIT).map((panel) => ({
+      label: `${panel.panelId}${section.activePanelId === panel.panelId ? ' · ACTIVE' : ''}`.slice(0, 100),
+      value: panel.panelId,
+      description: `${panel.channelId ? `#${guild.channels.cache.get(panel.channelId)?.name || panel.channelId}` : 'No channel'} · ${panel.messageId ? 'message saved' : 'no message'}`.slice(0, 100),
+    })));
+  } else {
+    menu.addOptions({
+      label: 'No saved panels',
+      value: 'none',
+      description: 'Deploy a panel to create the first saved record',
+    });
+  }
+
+  return {
+    embeds: [baseEmbed(
+      '📚 Verification · Saved Panels',
+      panels.length
+        ? `Choose one of the \`${panels.length}\` saved panels below to open it in the builder.`
+        : 'No verification panels have been saved yet. Deploy the current design to create one.',
+      memberDisplayName
+    )],
+    components: [
+      row(menu),
+      backRow('admin:verification:page:panel'),
+    ],
+  };
+}
+
+function buildButtonStylePage(guild, memberDisplayName) {
+  const current = panelTemplate(guild.id);
+  const styles = [
+    ['success', '✅ Success', ButtonStyle.Success],
+    ['primary', '🔵 Primary', ButtonStyle.Primary],
+    ['secondary', '⚪ Secondary', ButtonStyle.Secondary],
+    ['danger', '🔴 Danger', ButtonStyle.Danger],
+  ];
+
+  return {
+    embeds: [baseEmbed(
+      '🎨 Verification · Button Style',
+      `**Current style:** \`${current.buttonStyle}\`\n\nChoose the style used by the public verification button.`,
+      memberDisplayName
+    )],
+    components: [
+      row(...styles.map(([value, label, style]) => button(
+        `admin:verification:style:${value}`,
+        label,
+        current.buttonStyle === value ? ButtonStyle.Success : style
+      ))),
+      backRow('admin:verification:page:panel'),
     ],
   };
 }
@@ -462,39 +591,6 @@ function buildPanelPage(guild, memberDisplayName, selectedPanelId = null) {
     current.color || 0x57f287
   );
 
-  const savedPanelMenu = new StringSelectMenuBuilder()
-    .setCustomId('admin:verification:savedPanel')
-    .setPlaceholder(panels.length ? '📋 Select a saved panel' : 'No saved panels yet')
-    .setDisabled(!panels.length);
-
-  if (panels.length) {
-    savedPanelMenu.addOptions(
-      panels.slice(0, PANEL_LIMIT).map((panel) => ({
-        label: `${panel.panelId}${section.activePanelId === panel.panelId ? ' · ACTIVE' : ''}`.slice(0, 100),
-        value: panel.panelId,
-        description: `${panel.channelId ? `#${guild.channels.cache.get(panel.channelId)?.name || panel.channelId}` : 'No channel'} · ${panel.messageId ? 'message saved' : 'no message'}`.slice(0, 100),
-        default: selected?.panelId === panel.panelId,
-      }))
-    );
-  } else {
-    savedPanelMenu.addOptions({
-      label: 'No saved panels',
-      value: 'none',
-      description: 'Deploy a panel to create the first saved record',
-    });
-  }
-
-  const selectedActions = selected
-    ? row(
-      button(`admin:verification:updateSelected:${selected.panelId}`, '📝 Update', ButtonStyle.Primary),
-      button(`admin:verification:redeploySelected:${selected.panelId}`, '♻️ Redeploy', ButtonStyle.Success),
-      button(`admin:verification:deleteSelected:${selected.panelId}`, '🗑️ Delete', ButtonStyle.Danger),
-      button('admin:verification:resetTemplate', '🧹 Reset Design', ButtonStyle.Danger)
-    )
-    : row(
-      button('admin:verification:resetTemplate', '🧹 Reset Design', ButtonStyle.Danger)
-    );
-
   return {
     embeds: [
       embed,
@@ -504,24 +600,24 @@ function buildPanelPage(guild, memberDisplayName, selectedPanelId = null) {
       row(
         button('admin:verification:editEmbed', '🎨 Edit Embed'),
         button('admin:verification:editButton', '🔘 Edit Button'),
-        button('admin:verification:preview', '👁️ Preview', ButtonStyle.Secondary),
-        button('admin:verification:deploy', '🚀 Deploy', ButtonStyle.Success),
-        button('admin:verification:redeploy', '♻️ Latest', ButtonStyle.Success)
+        button('admin:verification:page:button_style', '🎨 Button Style', ButtonStyle.Secondary),
+        button('admin:verification:preview', '👁️ Preview', ButtonStyle.Secondary)
       ),
       row(
-        new StringSelectMenuBuilder()
-          .setCustomId('admin:verification:buttonStyle')
-          .setPlaceholder(`Button style · ${current.buttonStyle}`)
-          .addOptions([
-            { label: 'Success', value: 'success', default: current.buttonStyle === 'success' },
-            { label: 'Primary', value: 'primary', default: current.buttonStyle === 'primary' },
-            { label: 'Secondary', value: 'secondary', default: current.buttonStyle === 'secondary' },
-            { label: 'Danger', value: 'danger', default: current.buttonStyle === 'danger' },
-          ])
+        button('admin:verification:deploy', '🚀 Deploy', ButtonStyle.Success),
+        button(`admin:verification:redeploySelected:${selected?.panelId || 'none'}`, '♻️ Redeploy', ButtonStyle.Success, !selected),
+        button(`admin:verification:updateSelected:${selected?.panelId || 'none'}`, '📝 Update', ButtonStyle.Primary, !selected)
       ),
-      row(savedPanelMenu),
-      selectedActions,
-      navRow('panel'),
+      row(
+        button('admin:verification:page:saved_panels', '📚 Saved Panels', ButtonStyle.Secondary),
+        button('admin:verification:latest', '⭐ Latest', ButtonStyle.Secondary, !panels.length),
+        button('admin:verification:variables:panel', '🧩 Variables', ButtonStyle.Secondary)
+      ),
+      row(
+        button(`admin:verification:deleteSelected:${selected?.panelId || 'none'}`, '🗑️ Delete', ButtonStyle.Danger, !selected),
+        button('admin:verification:resetTemplate', '🎨 Reset Design', ButtonStyle.Danger)
+      ),
+      workflowNavRow('panel'),
     ],
   };
 }
@@ -543,18 +639,19 @@ function buildSettingsPage(guild, memberDisplayName) {
     embeds: [embed],
     components: [
       row(
-        button('admin:verification:page:status', '🩺 Health', ButtonStyle.Secondary),
-        button('admin:verification:export', '📤 Export', ButtonStyle.Secondary),
         button(
           config.enabled ? 'admin:verification:disable' : 'admin:verification:enable',
           config.enabled ? '🔴 Disable' : '🟢 Enable',
           config.enabled ? ButtonStyle.Danger : ButtonStyle.Success
-        )
+        ),
+        button('admin:verification:page:status', '🩺 Health', ButtonStyle.Secondary),
+        button('admin:verification:export', '📤 Export', ButtonStyle.Secondary)
       ),
       row(
+        button('admin:verification:resetMessages', '🗑️ Reset Messages', ButtonStyle.Danger),
         button('admin:verification:resetAll', '🗑️ Reset Verification', ButtonStyle.Danger)
       ),
-      navRow('settings'),
+      backRow('admin:verification:page:overview'),
     ],
   };
 }
@@ -592,7 +689,7 @@ async function buildStatusPage(guild, memberDisplayName) {
         button('admin:verification:redeploy', '🔧 Repair Latest', ButtonStyle.Success),
         button('admin:verification:test', '🧪 Test Setup', ButtonStyle.Primary)
       ),
-      navRow('status'),
+      backRow('admin:verification:page:settings'),
     ],
   };
 }
@@ -606,22 +703,18 @@ async function buildVerificationAdminPanel(
   const safePage = PAGES.includes(page) ? page : 'overview';
 
   switch (safePage) {
-    case 'workflow':
-      return buildWorkflowPage(guild, memberDisplayName);
-    case 'roles':
-      return buildRolesPage(guild, memberDisplayName);
-    case 'requirements':
-      return buildRequirementsPage(guild, memberDisplayName);
-    case 'messages':
-      return buildMessagesPage(guild, memberDisplayName);
-    case 'panel':
-      return buildPanelPage(guild, memberDisplayName, selectedPanelId);
-    case 'settings':
-      return buildSettingsPage(guild, memberDisplayName);
-    case 'status':
-      return buildStatusPage(guild, memberDisplayName);
-    default:
-      return buildOverviewPage(guild, memberDisplayName);
+    case 'workflow': return buildWorkflowPage(guild, memberDisplayName);
+    case 'timing': return buildTimingPage(guild, memberDisplayName);
+    case 'roles': return buildRolesPage(guild, memberDisplayName);
+    case 'requirements': return buildRequirementsPage(guild, memberDisplayName);
+    case 'messages': return buildMessagesPage(guild, memberDisplayName);
+    case 'variables': return buildVariablesPage(memberDisplayName, 'messages');
+    case 'saved_panels': return buildSavedPanelsPage(guild, memberDisplayName);
+    case 'button_style': return buildButtonStylePage(guild, memberDisplayName);
+    case 'panel': return buildPanelPage(guild, memberDisplayName, selectedPanelId);
+    case 'settings': return buildSettingsPage(guild, memberDisplayName);
+    case 'status': return buildStatusPage(guild, memberDisplayName);
+    default: return buildOverviewPage(guild, memberDisplayName);
   }
 }
 
@@ -711,11 +804,8 @@ function buildRuleMessagesModal(guildId) {
 
 async function safeUpdate(interaction, payload) {
   const resolved = await payload;
-  if (interaction.deferred || interaction.replied) {
-    await interaction.editReply(resolved);
-  } else {
-    await interaction.update(resolved);
-  }
+  if (interaction.deferred || interaction.replied) await interaction.editReply(resolved);
+  else await interaction.update(resolved);
   return true;
 }
 
@@ -736,10 +826,8 @@ function canAdministerPanels(interaction) {
 
 async function fetchPanelMessage(guild, panel) {
   if (!panel?.channelId || !panel?.messageId) return null;
-
   const channel = guild.channels.cache.get(panel.channelId)
     || await guild.channels.fetch(panel.channelId).catch(() => null);
-
   if (!channel?.messages?.fetch) return null;
   return channel.messages.fetch(panel.messageId).catch(() => null);
 }
@@ -752,17 +840,12 @@ async function deleteSelectedPanel(interaction, panelId) {
   const guild = interaction.guild;
   const section = verificationStore.getVerificationSection(guild.id);
   const panel = section.panels?.[panelId];
-  if (!panel) {
-    throw new Error('The selected verification panel no longer exists.');
-  }
+  if (!panel) throw new Error('The selected verification panel no longer exists.');
 
   const message = await fetchPanelMessage(guild, panel);
   let messageWarning = null;
-
   if (message?.deletable) {
-    await message.delete().catch((error) => {
-      messageWarning = error.message;
-    });
+    await message.delete().catch((error) => { messageWarning = error.message; });
   } else if (message) {
     messageWarning = 'Discord would not allow Goliath to delete the panel message.';
   }
@@ -773,7 +856,6 @@ async function deleteSelectedPanel(interaction, panelId) {
     (current) => {
       const panels = { ...(current.panels || {}) };
       delete panels[panelId];
-
       if (deletingActive) {
         const retiredAt = new Date().toISOString();
         for (const [id, existing] of Object.entries(panels)) {
@@ -784,7 +866,6 @@ async function deleteSelectedPanel(interaction, panelId) {
           };
         }
       }
-
       return {
         ...current,
         activePanelId: deletingActive ? null : current.activePanelId,
@@ -798,27 +879,19 @@ async function deleteSelectedPanel(interaction, panelId) {
       skipConfigRevision: true,
     }
   );
-
   return messageWarning;
 }
 
 async function deployPanel(interaction, panelId = null, useTemplate = false) {
   const guild = interaction.guild;
   const config = getConfig(guild.id);
-  const stored = panelId
-    ? verificationStore.getPanel(guild.id, panelId)
-    : null;
+  const stored = panelId ? verificationStore.getPanel(guild.id, panelId) : null;
   const channelId = stored?.channelId || config.verificationChannelId;
-
-  if (!channelId) {
-    throw new Error('Choose a verification channel first.');
-  }
+  if (!channelId) throw new Error('Choose a verification channel first.');
 
   const channel = guild.channels.cache.get(channelId)
     || await guild.channels.fetch(channelId).catch(() => null);
-  if (!channel?.send) {
-    throw new Error('Verification channel is not sendable.');
-  }
+  if (!channel?.send) throw new Error('Verification channel is not sendable.');
 
   return verificationManager.deployVerificationPanel(
     channel,
@@ -844,7 +917,6 @@ function exportAttachment(guildId) {
     config: getConfig(guildId),
     module: verificationStore.getVerificationSection(guildId),
   };
-
   return new AttachmentBuilder(
     Buffer.from(JSON.stringify(data, null, 2), 'utf8'),
     { name: `goliath-verification-${guildId}.json` }
@@ -929,28 +1001,6 @@ async function handleSelectInteraction(interaction, customId, displayName) {
         buildVerificationAdminPanel(interaction.guild, displayName, 'panel', panelId)
       );
     }
-
-    if (customId === 'admin:verification:pendingTiming') {
-      saveConfig(interaction.guild, {
-        pendingRoleTiming: interaction.values?.[0] || 'after_screening',
-      });
-      return safeUpdate(
-        interaction,
-        buildVerificationAdminPanel(interaction.guild, displayName, 'workflow')
-      );
-    }
-
-    if (customId === 'admin:verification:buttonStyle') {
-      verificationManager.updatePanelTemplate(
-        interaction.guild.id,
-        { buttonStyle: interaction.values?.[0] || 'success' },
-        { actorId: interaction.user.id }
-      );
-      return safeUpdate(
-        interaction,
-        buildVerificationAdminPanel(interaction.guild, displayName, 'panel')
-      );
-    }
   }
 
   if (interaction.isChannelSelectMenu?.()) {
@@ -969,14 +1019,10 @@ async function handleSelectInteraction(interaction, customId, displayName) {
 
   if (interaction.isRoleSelectMenu?.()) {
     if (customId === 'admin:verification:verifiedRoles') {
-      saveConfig(interaction.guild, {
-        verifiedRoleIds: cleanArray(interaction.values),
-      });
+      saveConfig(interaction.guild, { verifiedRoleIds: cleanArray(interaction.values) });
     }
     if (customId === 'admin:verification:pendingRoles') {
-      saveConfig(interaction.guild, {
-        pendingRoleIds: cleanArray(interaction.values),
-      });
+      saveConfig(interaction.guild, { pendingRoleIds: cleanArray(interaction.values) });
     }
     return safeUpdate(
       interaction,
@@ -994,6 +1040,7 @@ async function handleSelectedPanelAction(interaction, customId, displayName) {
   if (!match) return false;
 
   const [, action, panelId] = match;
+  if (!panelId || panelId === 'none') return false;
   await interaction.deferUpdate();
 
   if (action === 'deleteSelected') {
@@ -1010,12 +1057,8 @@ async function handleSelectedPanelAction(interaction, customId, displayName) {
     );
   }
 
-  if (action === 'updateSelected') {
-    await deployPanel(interaction, panelId, true);
-  }
-  if (action === 'redeploySelected') {
-    await deployPanel(interaction, panelId, false);
-  }
+  if (action === 'updateSelected') await deployPanel(interaction, panelId, true);
+  if (action === 'redeploySelected') await deployPanel(interaction, panelId, false);
 
   return safeUpdate(
     interaction,
@@ -1026,7 +1069,6 @@ async function handleSelectedPanelAction(interaction, customId, displayName) {
 async function handleVerificationAdminInteraction(interaction) {
   const customId = String(interaction.customId || '');
   if (!customId.startsWith('admin:verification')) return false;
-
   const displayName = getMemberDisplayName(interaction);
 
   try {
@@ -1042,6 +1084,41 @@ async function handleVerificationAdminInteraction(interaction) {
       return safeUpdate(
         interaction,
         buildVerificationAdminPanel(interaction.guild, displayName, pageMatch[1])
+      );
+    }
+
+    if (customId === 'admin:verification:variables:panel') {
+      return safeUpdate(interaction, buildVariablesPage(displayName, 'panel'));
+    }
+
+    const timingMatch = customId.match(/^admin:verification:timing:(on_join|after_screening|manual)$/);
+    if (timingMatch) {
+      saveConfig(interaction.guild, { pendingRoleTiming: timingMatch[1] });
+      return safeUpdate(
+        interaction,
+        buildVerificationAdminPanel(interaction.guild, displayName, 'timing')
+      );
+    }
+
+    const styleMatch = customId.match(/^admin:verification:style:(success|primary|secondary|danger)$/);
+    if (styleMatch) {
+      verificationManager.updatePanelTemplate(
+        interaction.guild.id,
+        { buttonStyle: styleMatch[1] },
+        { actorId: interaction.user.id }
+      );
+      return safeUpdate(
+        interaction,
+        buildVerificationAdminPanel(interaction.guild, displayName, 'button_style')
+      );
+    }
+
+    if (customId === 'admin:verification:latest') {
+      const latest = latestPanel(interaction.guild.id);
+      if (!latest) throw new Error('No saved verification panel exists yet.');
+      return safeUpdate(
+        interaction,
+        buildVerificationAdminPanel(interaction.guild, displayName, 'panel', latest.panelId)
       );
     }
 
@@ -1067,24 +1144,10 @@ async function handleVerificationAdminInteraction(interaction) {
     }
 
     if (await handleModalInteraction(interaction, customId)) return true;
+    if (await handleSelectInteraction(interaction, customId, displayName)) return true;
+    if (await handleSelectedPanelAction(interaction, customId, displayName)) return true;
 
-    const selectHandled = await handleSelectInteraction(
-      interaction,
-      customId,
-      displayName
-    );
-    if (selectHandled) return true;
-
-    const selectedPanelHandled = await handleSelectedPanelAction(
-      interaction,
-      customId,
-      displayName
-    );
-    if (selectedPanelHandled) return true;
-
-    const toggleMatch = customId.match(
-      /^admin:verification:toggle:([a-zA-Z0-9_]+)$/
-    );
+    const toggleMatch = customId.match(/^admin:verification:toggle:([a-zA-Z0-9_]+)$/);
     if (toggleMatch) {
       const key = toggleMatch[1];
       if (key === 'allowStaffBypass' && !canAdministerPanels(interaction)) {
@@ -1093,34 +1156,22 @@ async function handleVerificationAdminInteraction(interaction) {
           flags: 64,
         });
       }
-
       saveConfig(interaction.guild, (config) => ({
         ...config,
         [key]: !Boolean(config[key]),
       }));
-
       return safeUpdate(
         interaction,
-        buildVerificationAdminPanel(
-          interaction.guild,
-          displayName,
-          getTogglePage(key)
-        )
+        buildVerificationAdminPanel(interaction.guild, displayName, getTogglePage(key))
       );
     }
 
-    if (
-      customId === 'admin:verification:enable'
-      || customId === 'admin:verification:disable'
-    ) {
+    if (customId === 'admin:verification:enable' || customId === 'admin:verification:disable') {
       guildManager.setModuleEnabled(
         interaction.guild.id,
         'verification',
         customId.endsWith(':enable'),
-        {
-          actorId: interaction.user.id,
-          action: 'verification_admin_toggle',
-        }
+        { actorId: interaction.user.id, action: 'verification_admin_toggle' }
       );
       return safeUpdate(
         interaction,
@@ -1136,7 +1187,7 @@ async function handleVerificationAdminInteraction(interaction) {
       );
       return safeUpdate(
         interaction,
-        buildVerificationAdminPanel(interaction.guild, displayName, 'messages')
+        buildVerificationAdminPanel(interaction.guild, displayName, 'settings')
       );
     }
 
@@ -1171,18 +1222,10 @@ async function handleVerificationAdminInteraction(interaction) {
     }
 
     if (customId === 'admin:verification:preview') {
-      const preview = {
-        panelId: 'preview',
-        ...panelTemplate(interaction.guild.id),
-      };
+      const preview = { panelId: 'preview', ...panelTemplate(interaction.guild.id) };
       await interaction.reply({
-        embeds: [
-          verificationManager.buildVerificationEmbed(preview, interaction.guild),
-        ],
-        components: verificationManager.buildVerificationRows(
-          preview,
-          interaction.guild
-        ),
+        embeds: [verificationManager.buildVerificationEmbed(preview, interaction.guild)],
+        components: verificationManager.buildVerificationRows(preview, interaction.guild),
         flags: 64,
       });
       return true;
@@ -1200,18 +1243,11 @@ async function handleVerificationAdminInteraction(interaction) {
     if (customId === 'admin:verification:redeploy') {
       await interaction.deferUpdate();
       const latest = latestPanel(interaction.guild.id);
-      if (!latest) {
-        throw new Error('No saved verification panel exists yet.');
-      }
+      if (!latest) throw new Error('No saved verification panel exists yet.');
       await deployPanel(interaction, latest.panelId, false);
       return safeUpdate(
         interaction,
-        buildVerificationAdminPanel(
-          interaction.guild,
-          displayName,
-          'panel',
-          latest.panelId
-        )
+        buildVerificationAdminPanel(interaction.guild, displayName, 'panel', latest.panelId)
       );
     }
 
@@ -1239,7 +1275,6 @@ async function handleVerificationAdminInteraction(interaction) {
       content: `❌ Verification setup failed: ${error.message}`,
       flags: 64,
     };
-
     if (interaction.deferred || interaction.replied) {
       await interaction.followUp(payload).catch(() => null);
     } else {
