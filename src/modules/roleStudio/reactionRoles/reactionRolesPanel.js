@@ -297,8 +297,9 @@ function buildWizard(guild, userId, showRemove = false, notice = '') {
     row(
       button('admin:reactionRoles:wizard:deploy', draft.panelId ? '💾 Save Changes' : existing ? '💾 Attach Roles' : '🚀 Deploy Panel', ButtonStyle.Success, !ready),
       button('admin:reactionRoles:wizard:name', '✏️ Name Panel', ButtonStyle.Primary),
-      button('admin:reactionRoles:wizard:cancel', 'Cancel'),
-      button('admin:reactionRoles', '🏠 Home'),
+    ),
+    row(
+      button(existing ? 'admin:reactionRoles:existing' : 'admin:reactionRoles', '⬅️ Back'),
       button('admin:reactionRoles:settings', '⚙️ Settings'),
     ),
   );
