@@ -47,7 +47,7 @@ function mappingText(mappings, guild) {
 function homeNavigationRow() {
   return row(
     button('admin:studio:roleStudio', '⬅️ Back', ButtonStyle.Secondary),
-    button('admin:studio:roleStudio', '🏠 Role Studio', ButtonStyle.Secondary)
+    button('admin:reactionRoles:settings', '⚙️ Settings', ButtonStyle.Secondary)
   );
 }
 
@@ -198,8 +198,7 @@ async function buildReactionRolesAdminPanel(
           '📋 Manage',
           ButtonStyle.Primary,
           !panels.length
-        ),
-        button('admin:reactionRoles:settings', '⚙️ Settings', ButtonStyle.Secondary)
+        )
       ),
       homeNavigationRow(),
     ],
