@@ -22,6 +22,7 @@ const row = (...items) => new ActionRowBuilder().addComponents(...items.filter(B
 const button = (id, label, style = ButtonStyle.Secondary, disabled = false) => new ButtonBuilder()
   .setCustomId(id).setLabel(label).setStyle(style).setDisabled(Boolean(disabled));
 const displayName = (interaction) => interaction.member?.displayName || interaction.user?.username || 'Unknown User';
+const noticeLine = (notice) => notice ? `> ${notice}` : null;
 
 function modeLabel(mode) {
   if (mode === reactionRoles.MODES.ADD) return 'Add only';
@@ -93,7 +94,7 @@ function removeMappingSelect(draft, guild) {
   return menu;
 }
 
-async function buildReactionRolesAdminPanel(guild, memberDisplayName = 'Unknown User') {
+async function buildReactionRolesAdminPanel(guild, memberDisplayName = 'Unknown User', notice = '') {
   const enabled = guildManager.isModuleEnabled(guild.id, reactionRoles.SECTION);
   const health = await reactionRoles.buildHealth(guild);
   const panels = reactionRoles.listPanels(guild.id);
@@ -103,8 +104,8 @@ async function buildReactionRolesAdminPanel(guild, memberDisplayName = 'Unknown 
       .setColor(!enabled ? 0x747f8d : health.healthy ? 0x57f287 : 0xfaa61a)
       .setTitle('🎭 Reaction Roles')
       .setDescription([
-        'Let members assign their own roles by reacting to a message.',
-        '',
+        noticeLine(notice), notice ? '' : null,
+        'Let members assign their own roles by reacting to a message.', '',
         `**Module:** ${enabled ? '🟢 Enabled' : '⏸️ Disabled'}`,
         `**Panels:** \`${panels.length}\``,
         `**Role mappings:** \`${mappings}\``,
@@ -112,8 +113,8 @@ async function buildReactionRolesAdminPanel(guild, memberDisplayName = 'Unknown 
         '',
         enabled
           ? '> Create a panel or manage an existing reaction-role message.'
-          : '> The module is disabled. Existing panels remain saved but reactions will not assign roles.',
-      ].join('\n'))
+          : '> Existing panels remain saved, but reactions will not change roles while disabled.',
+      ].filter((line) => line !== null).join('\n'))
       .setFooter({ text: `Requested by ${memberDisplayName}` }).setTimestamp()],
     components: [
       row(
@@ -134,24 +135,17 @@ async function buildReactionRolesAdminPanel(guild, memberDisplayName = 'Unknown 
 function buildDisableConfirmation(guild) {
   const panels = reactionRoles.listPanels(guild.id);
   return {
-    embeds: [new EmbedBuilder()
-      .setColor(0xed4245)
-      .setTitle('⚠️ Disable Reaction Roles?')
-      .setDescription([
-        'Members will no longer receive or lose roles from reactions.',
-        '',
-        `**Saved panels:** \`${panels.length}\``,
-        '**What stays:** Panel settings, mappings and Discord messages.',
-        '**What stops:** All reaction-role assignments and removals.',
-        '',
-        '> You can enable the module again later without recreating the panels.',
-      ].join('\n'))],
-    components: [
-      row(
-        button('admin:reactionRoles:disable:execute', 'Disable Reaction Roles', ButtonStyle.Danger),
-        button('admin:reactionRoles', 'Keep Module Enabled', ButtonStyle.Secondary),
-      ),
-    ],
+    embeds: [new EmbedBuilder().setColor(0xed4245).setTitle('⚠️ Disable Reaction Roles?').setDescription([
+      'Members will no longer receive or lose roles from reactions.', '',
+      `**Saved panels:** \`${panels.length}\``,
+      '**What stays:** Panel settings, mappings and Discord messages.',
+      '**What stops:** All reaction-role assignments and removals.', '',
+      '> You can enable the module again later without recreating the panels.',
+    ].join('\n'))],
+    components: [row(
+      button('admin:reactionRoles:disable:execute', 'Disable Reaction Roles', ButtonStyle.Danger),
+      button('admin:reactionRoles', 'Keep Module Enabled', ButtonStyle.Secondary),
+    )],
   };
 }
 
@@ -159,43 +153,25 @@ function buildDeleteConfirmation(guild, panelId) {
   const panel = reactionRoles.getPanel(guild.id, panelId);
   if (!panel) throw new Error('That reaction-role panel no longer exists.');
   return {
-    embeds: [new EmbedBuilder()
-      .setColor(0xed4245)
-      .setTitle('⚠️ Delete Reaction-Role Panel?')
-      .setDescription([
-        `**Panel:** ${panel.name}`,
-        `**Channel:** <#${panel.channelId}>`,
-        `**Mappings:** \`${panel.mappings.length}\``,
-        '',
-        '**This will:**',
-        '• Remove the saved reaction-role mappings.',
-        '• Remove Goliath’s reactions from the tracked message.',
-        '',
-        '**This will not:**',
-        '• Delete the Discord message.',
-        '• Remove roles members already have.',
-        '',
-        '> This action cannot be undone automatically.',
-      ].join('\n'))],
-    components: [
-      row(
-        button(`admin:reactionRoles:manage:remove:execute:${panelId}`, 'Delete Panel', ButtonStyle.Danger),
-        button(`admin:reactionRoles:manage:view:${panelId}`, 'Cancel', ButtonStyle.Secondary),
-      ),
-    ],
+    embeds: [new EmbedBuilder().setColor(0xed4245).setTitle('⚠️ Delete Reaction-Role Panel?').setDescription([
+      `**Panel:** ${panel.name}`, `**Channel:** <#${panel.channelId}>`, `**Mappings:** \`${panel.mappings.length}\``, '',
+      '**This will:**', '• Remove the saved mappings.', '• Remove Goliath’s reactions from the tracked message.', '',
+      '**This will not:**', '• Delete the Discord message.', '• Remove roles members already have.', '',
+      '> This action cannot be undone automatically.',
+    ].join('\n'))],
+    components: [row(
+      button(`admin:reactionRoles:manage:remove:execute:${panelId}`, 'Delete Panel', ButtonStyle.Danger),
+      button(`admin:reactionRoles:manage:view:${panelId}`, 'Cancel', ButtonStyle.Secondary),
+    )],
   };
 }
 
 function buildCreatePicker() {
   return {
     embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('➕ Create Reaction Role').setDescription([
-      'Choose where the reaction roles should be placed.',
-      '',
-      '**Create New Panel**',
-      'Post a new message using a Reaction Role template from Embed Studio.',
-      '',
-      '**Use Existing Message**',
-      'Attach emoji and role pairs to a message already in the server.',
+      'Choose where the reaction roles should be placed.', '',
+      '**Create New Panel**', 'Post a new message using a Reaction Role template from Embed Studio.', '',
+      '**Use Existing Message**', 'Attach emoji and role pairs to a message already in the server.',
     ].join('\n'))],
     components: [
       row(
@@ -207,23 +183,31 @@ function buildCreatePicker() {
   };
 }
 
-function buildManagePicker(guild) {
+function buildManagePicker(guild, notice = '') {
+  const panels = reactionRoles.listPanels(guild.id);
   return {
-    embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('⚙️ Manage Reaction Roles')
-      .setDescription('Choose a panel to view its mappings, status and management controls.')],
-    components: [row(deploymentSelect(guild.id)), row(button('admin:reactionRoles', '⬅️ Back', ButtonStyle.Secondary))],
+    embeds: [new EmbedBuilder().setColor(notice ? 0x57f287 : 0x5865f2).setTitle('⚙️ Manage Reaction Roles').setDescription([
+      noticeLine(notice), notice ? '' : null,
+      panels.length
+        ? 'Choose a panel to view its mappings, status and management controls.'
+        : 'No reaction-role panels are configured yet.',
+    ].filter((line) => line !== null).join('\n'))],
+    components: [
+      ...(panels.length ? [row(deploymentSelect(guild.id))] : [row(button('admin:reactionRoles:create', '➕ Create First Panel', ButtonStyle.Success))]),
+      row(button('admin:reactionRoles', '⬅️ Back', ButtonStyle.Secondary)),
+    ],
   };
 }
 
-function buildExistingMessageStep(guild, userId) {
+function buildExistingMessageStep(guild, userId, notice = '') {
   const draft = reactionRoles.getDraft(guild.id, userId);
   return {
     embeds: [new EmbedBuilder().setColor(draft?.messageId ? 0x57f287 : 0x5865f2)
       .setTitle('🔗 Select Existing Message').setDescription([
-        'Paste the full Discord message link.',
-        '',
+        noticeLine(notice), notice ? '' : null,
+        'Paste the full Discord message link.', '',
         draft?.messageId ? `**Selected:** <#${draft.channelId}> · \`${draft.messageId}\`` : '> No message selected.',
-      ].join('\n'))],
+      ].filter((line) => line !== null).join('\n'))],
     components: [
       row(button('admin:reactionRoles:source:link', draft?.messageId ? '🔄 Change Message' : '🔗 Paste Message Link', ButtonStyle.Primary)),
       row(
@@ -234,11 +218,11 @@ function buildExistingMessageStep(guild, userId) {
   };
 }
 
-function buildWizard(guild, userId, showRemove = false) {
+function buildWizard(guild, userId, showRemove = false, notice = '') {
   const draft = reactionRoles.getDraft(guild.id, userId);
   if (!draft) throw new Error('Your setup session has expired. Start again.');
   const existing = draft.type === reactionRoles.DRAFT_TYPES.EXISTING;
-  if (existing && !draft.messageId) return buildExistingMessageStep(guild, userId);
+  if (existing && !draft.messageId) return buildExistingMessageStep(guild, userId, notice);
   const sourceReady = existing ? Boolean(draft.messageId) : Boolean(draft.templateId);
   const ready = Boolean(draft.channelId && sourceReady && draft.mappings.length);
   const selectedRole = draft.selectedRoleId ? guild.roles.cache.get(draft.selectedRoleId) : null;
@@ -261,9 +245,7 @@ function buildWizard(guild, userId, showRemove = false) {
       .setMinValues(1).setMaxValues(1)),
     row(modeSelect(draft.selectedMode)),
   );
-
   if (showRemove && draft.mappings.length) components.push(row(removeMappingSelect(draft, guild)));
-
   components.push(
     row(
       button('admin:reactionRoles:wizard:emoji', '➕ Add Selected Role', ButtonStyle.Success, !draft.selectedRoleId),
@@ -276,53 +258,47 @@ function buildWizard(guild, userId, showRemove = false) {
   );
 
   return {
-    embeds: [new EmbedBuilder().setColor(ready ? 0x57f287 : 0x5865f2)
+    embeds: [new EmbedBuilder().setColor(notice || ready ? 0x57f287 : 0x5865f2)
       .setTitle(draft.panelId ? '✏️ Edit Reaction Roles' : existing ? '🔗 Attach Reaction Roles' : '✨ Create Reaction Role Panel')
       .setDescription([
+        noticeLine(notice), notice ? '' : null,
         `**Source:** ${existing ? `Existing message in <#${draft.channelId}>` : 'New Embed Studio panel'}`,
         !existing ? `**Channel:** ${draft.channelId ? `<#${draft.channelId}>` : 'Not selected'}` : null,
         !existing ? `**Template:** ${draft.templateId ? `\`${draft.templateId}\`` : 'Not selected'}` : null,
-        '',
-        `### Mappings (${draft.mappings.length})`,
-        mappingText(draft.mappings, guild),
-        '',
+        '', `### Mappings (${draft.mappings.length})`, mappingText(draft.mappings, guild), '',
         `**Selected role:** ${selectedRole ? `<@&${selectedRole.id}>` : 'Choose a role above'}`,
-        `**Behaviour:** ${modeLabel(draft.selectedMode)}`,
-        '',
+        `**Behaviour:** ${modeLabel(draft.selectedMode)}`, '',
         ready ? '> Ready to deploy.' : '> Complete the selections above and add at least one mapping.',
-      ].filter(Boolean).join('\n').slice(0, 4096))],
+      ].filter((line) => line !== null).join('\n').slice(0, 4096))],
     components,
   };
 }
 
-async function buildManagedPanel(guild, panelId) {
+async function buildManagedPanel(guild, panelId, notice = '') {
   const panel = reactionRoles.getPanel(guild.id, panelId);
   if (!panel) throw new Error('That reaction-role panel no longer exists.');
   const health = await reactionRoles.buildHealth(guild);
   const panelHealth = health.panels.find((item) => item.panelId === panelId);
   const healthy = panel.enabled !== false && panelHealth?.healthy !== false;
   return {
-    embeds: [new EmbedBuilder().setColor(panel.enabled === false ? 0x747f8d : healthy ? 0x57f287 : 0xed4245)
+    embeds: [new EmbedBuilder().setColor(notice ? 0x57f287 : panel.enabled === false ? 0x747f8d : healthy ? 0x57f287 : 0xed4245)
       .setTitle(`🎭 ${panel.name}`).setDescription([
+        noticeLine(notice), notice ? '' : null,
         `**Status:** ${panel.enabled === false ? '⏸️ Disabled' : healthy ? '✅ Healthy' : '⚠️ Needs attention'}`,
         `**Channel:** <#${panel.channelId}>`,
         `**Message:** [Open tracked message](https://discord.com/channels/${guild.id}/${panel.channelId}/${panel.messageId})`,
         `**Mappings:** \`${panel.mappings.length}\``,
         panel.lastError ? `**Last error:** ${panel.lastError}` : null,
-        '',
-        '### Emoji and roles',
-        mappingText(panel.mappings, guild),
-      ].filter(Boolean).join('\n').slice(0, 4096))],
+        '', '### Emoji and roles', mappingText(panel.mappings, guild),
+      ].filter((line) => line !== null).join('\n').slice(0, 4096))],
     components: [
       row(
         button(`admin:reactionRoles:manage:edit:${panelId}`, '✏️ Edit Mappings', ButtonStyle.Primary),
         button(`admin:reactionRoles:manage:repair:${panelId}`, '🔄 Sync & Repair', ButtonStyle.Secondary, panel.enabled === false),
       ),
-      row(
-        button(`admin:reactionRoles:manage:${panel.enabled === false ? 'enable' : 'disable'}:${panelId}`,
-          panel.enabled === false ? '▶️ Enable Panel' : '⏸️ Disable Panel',
-          panel.enabled === false ? ButtonStyle.Success : ButtonStyle.Secondary),
-      ),
+      row(button(`admin:reactionRoles:manage:${panel.enabled === false ? 'enable' : 'disable'}:${panelId}`,
+        panel.enabled === false ? '▶️ Enable Panel' : '⏸️ Disable Panel',
+        panel.enabled === false ? ButtonStyle.Success : ButtonStyle.Secondary)),
       row(button(`admin:reactionRoles:manage:remove:confirm:${panelId}`, '🗑️ Delete Panel', ButtonStyle.Danger)),
       row(button('admin:reactionRoles:manage', '⬅️ Back to Panels', ButtonStyle.Secondary)),
     ],
@@ -343,6 +319,7 @@ async function respond(interaction, payload) {
 
 async function deployDraft(guild, userId) {
   const draft = reactionRoles.getDraft(guild.id, userId);
+  if (!draft) throw new Error('Your setup session has expired. Start again.');
   await reactionRolesHealth.assertDeploymentAccess({
     guild, channelId: draft.channelId, mappings: draft.mappings,
     createMessage: draft.type === reactionRoles.DRAFT_TYPES.TEMPLATE,
@@ -361,7 +338,7 @@ async function deployDraft(guild, userId) {
     });
   }
   await reactionRolesHealth.ensurePanelReactions(guild, panel);
-  return panel;
+  return { panel, wasEdit: Boolean(draft.panelId) };
 }
 
 async function handleReactionRolesAdminInteraction(interaction) {
@@ -378,25 +355,21 @@ async function handleReactionRolesAdminInteraction(interaction) {
       const message = channel?.messages?.fetch ? await channel.messages.fetch(parsed.messageId).catch(() => null) : null;
       if (!message) throw new Error('That message could not be found or Goliath cannot access it.');
       reactionRoles.saveDraft(guild.id, userId, { channelId: parsed.channelId, messageId: parsed.messageId }, guild);
-      return interaction.reply({ ...buildExistingMessageStep(guild, userId), ephemeral: true });
+      return interaction.reply({ ...buildExistingMessageStep(guild, userId, '✅ Message selected successfully.'), ephemeral: true });
     }
 
     if (interaction.isModalSubmit?.() && id === 'admin:reactionRoles:wizard:emoji:submit') {
       const draft = reactionRoles.getDraft(guild.id, userId);
       if (!draft?.selectedRoleId) throw new Error('Choose a role before adding an emoji.');
       reactionRoles.addDraftMapping(guild.id, userId, {
-        emoji: interaction.fields.getTextInputValue('emoji'),
-        roleId: draft.selectedRoleId,
-        mode: draft.selectedMode,
-        removeOnUnreact: draft.selectedMode === reactionRoles.MODES.TOGGLE,
+        emoji: interaction.fields.getTextInputValue('emoji'), roleId: draft.selectedRoleId,
+        mode: draft.selectedMode, removeOnUnreact: draft.selectedMode === reactionRoles.MODES.TOGGLE,
       }, guild);
       reactionRoles.saveDraft(guild.id, userId, { selectedRoleId: null }, guild);
-      return interaction.reply({ ...buildWizard(guild, userId), ephemeral: true });
+      return interaction.reply({ ...buildWizard(guild, userId, false, '✅ Mapping added. Choose another role or deploy the panel.'), ephemeral: true });
     }
 
-    if (id === 'admin:reactionRoles' || id === 'admin:reactionRoles:open') {
-      return respond(interaction, await buildReactionRolesAdminPanel(guild, displayName(interaction)));
-    }
+    if (id === 'admin:reactionRoles' || id === 'admin:reactionRoles:open') return respond(interaction, await buildReactionRolesAdminPanel(guild, displayName(interaction)));
     if (id === 'admin:reactionRoles:create') return respond(interaction, buildCreatePicker());
     if (id === 'admin:reactionRoles:manage') return respond(interaction, buildManagePicker(guild));
     if (id === 'admin:reactionRoles:disable:confirm') return respond(interaction, buildDisableConfirmation(guild));
@@ -407,9 +380,7 @@ async function handleReactionRolesAdminInteraction(interaction) {
         type, panelId: null, channelId: null, messageId: null, templateId: null,
         mappings: [], selectedRoleId: null, selectedMode: reactionRoles.MODES.TOGGLE,
       }, guild);
-      return respond(interaction, type === reactionRoles.DRAFT_TYPES.EXISTING
-        ? buildExistingMessageStep(guild, userId)
-        : buildWizard(guild, userId));
+      return respond(interaction, type === reactionRoles.DRAFT_TYPES.EXISTING ? buildExistingMessageStep(guild, userId) : buildWizard(guild, userId));
     }
 
     if (id === 'admin:reactionRoles:source') return respond(interaction, buildExistingMessageStep(guild, userId));
@@ -433,7 +404,7 @@ async function handleReactionRolesAdminInteraction(interaction) {
     }
     if (interaction.isStringSelectMenu?.() && id === 'admin:reactionRoles:wizard:remove:mapping') {
       reactionRoles.removeDraftMapping(guild.id, userId, interaction.values[0], guild);
-      return respond(interaction, buildWizard(guild, userId));
+      return respond(interaction, buildWizard(guild, userId, false, '✅ Mapping removed.'));
     }
     if (interaction.isStringSelectMenu?.() && id === 'admin:reactionRoles:manage:panel' && interaction.values[0] !== 'none') {
       return respond(interaction, await buildManagedPanel(guild, interaction.values[0]));
@@ -441,8 +412,7 @@ async function handleReactionRolesAdminInteraction(interaction) {
 
     if (id === 'admin:reactionRoles:source:link') {
       await interaction.showModal(modal(`${id}:submit`, 'Select Discord Message', [{
-        id: 'messageLink', label: 'Full Discord message link',
-        placeholder: 'https://discord.com/channels/server/channel/message',
+        id: 'messageLink', label: 'Full Discord message link', placeholder: 'https://discord.com/channels/server/channel/message',
       }]));
       return true;
     }
@@ -455,21 +425,18 @@ async function handleReactionRolesAdminInteraction(interaction) {
     if (id === 'admin:reactionRoles:wizard:remove') return respond(interaction, buildWizard(guild, userId, true));
     if (id === 'admin:reactionRoles:wizard:cancel') {
       reactionRoles.clearDraft(guild.id, userId, guild);
-      return respond(interaction, await buildReactionRolesAdminPanel(guild, displayName(interaction)));
+      return respond(interaction, await buildReactionRolesAdminPanel(guild, displayName(interaction), 'ℹ️ Setup cancelled. No changes were deployed.'));
     }
     if (id === 'admin:reactionRoles:wizard:deploy') {
       await interaction.deferUpdate();
-      const panel = await deployDraft(guild, userId);
+      const { panel, wasEdit } = await deployDraft(guild, userId);
       reactionRoles.clearDraft(guild.id, userId, guild);
-      return interaction.editReply(await buildManagedPanel(guild, panel.panelId));
+      return interaction.editReply(await buildManagedPanel(guild, panel.panelId,
+        wasEdit ? '✅ Changes saved and reactions synchronised.' : '✅ Panel deployed and reactions added.'));
     }
 
-    if (id.startsWith('admin:reactionRoles:manage:view:')) {
-      return respond(interaction, await buildManagedPanel(guild, id.split(':').pop()));
-    }
-    if (id.startsWith('admin:reactionRoles:manage:remove:confirm:')) {
-      return respond(interaction, buildDeleteConfirmation(guild, id.split(':').pop()));
-    }
+    if (id.startsWith('admin:reactionRoles:manage:view:')) return respond(interaction, await buildManagedPanel(guild, id.split(':').pop()));
+    if (id.startsWith('admin:reactionRoles:manage:remove:confirm:')) return respond(interaction, buildDeleteConfirmation(guild, id.split(':').pop()));
     if (id.startsWith('admin:reactionRoles:manage:edit:')) {
       const panel = reactionRoles.getPanel(guild.id, id.split(':').pop());
       if (!panel) throw new Error('That reaction-role panel no longer exists.');
@@ -482,37 +449,42 @@ async function handleReactionRolesAdminInteraction(interaction) {
     }
     if (id.startsWith('admin:reactionRoles:manage:enable:') || id.startsWith('admin:reactionRoles:manage:disable:')) {
       const panelId = id.split(':').pop();
+      const enabling = id.includes(':enable:');
       await interaction.deferUpdate();
-      const panel = await reactionRoles.setPanelEnabled(guild, panelId, id.includes(':enable:'), guild);
+      const panel = await reactionRoles.setPanelEnabled(guild, panelId, enabling, guild);
       if (panel.enabled !== false) await reactionRolesHealth.ensurePanelReactions(guild, panel);
-      return interaction.editReply(await buildManagedPanel(guild, panelId));
+      return interaction.editReply(await buildManagedPanel(guild, panelId,
+        enabling ? '✅ Panel enabled and reactions synchronised.' : '✅ Panel disabled. Its mappings remain saved.'));
     }
     if (id.startsWith('admin:reactionRoles:manage:repair:')) {
       const panelId = id.split(':').pop();
       await interaction.deferUpdate();
       const panel = await reactionRoles.repairPanel(guild, panelId, guild);
       await reactionRolesHealth.ensurePanelReactions(guild, panel);
-      return interaction.editReply(await buildManagedPanel(guild, panelId));
+      return interaction.editReply(await buildManagedPanel(guild, panelId, '✅ Panel checked and repaired successfully.'));
     }
     if (id.startsWith('admin:reactionRoles:manage:remove:execute:')) {
       const panelId = id.split(':').pop();
       await interaction.deferUpdate();
       await reactionRoles.detachPanel(guild, panelId, { clearReactions: true });
-      return interaction.editReply(buildManagePicker(guild));
+      return interaction.editReply(buildManagePicker(guild, '✅ Panel deleted. The Discord message was left in place.'));
     }
 
     if (id === 'admin:reactionRoles:enable') {
       guildManager.setModuleEnabled(guild.id, reactionRoles.SECTION, true, { actorId: userId });
-      return respond(interaction, await buildReactionRolesAdminPanel(guild, displayName(interaction)));
+      return respond(interaction, await buildReactionRolesAdminPanel(guild, displayName(interaction), '✅ Reaction Roles enabled.'));
     }
     if (id === 'admin:reactionRoles:disable:execute') {
       guildManager.setModuleEnabled(guild.id, reactionRoles.SECTION, false, { actorId: userId });
-      return respond(interaction, await buildReactionRolesAdminPanel(guild, displayName(interaction)));
+      return respond(interaction, await buildReactionRolesAdminPanel(guild, displayName(interaction), '✅ Reaction Roles disabled. Saved panels were preserved.'));
     }
     if (id === 'admin:reactionRoles:repair') {
       await interaction.deferUpdate();
-      await reactionRoles.repairAll(guild);
-      return interaction.editReply(await buildReactionRolesAdminPanel(guild, displayName(interaction)));
+      const result = await reactionRoles.repairAll(guild);
+      const notice = result.failed?.length
+        ? `⚠️ Repair finished: ${result.repaired.length} repaired, ${result.failed.length} failed.`
+        : `✅ Repair finished: ${result.repaired.length} panel${result.repaired.length === 1 ? '' : 's'} synchronised.`;
+      return interaction.editReply(await buildReactionRolesAdminPanel(guild, displayName(interaction), notice));
     }
 
     return respond(interaction, await buildReactionRolesAdminPanel(guild, displayName(interaction)));
@@ -524,7 +496,4 @@ async function handleReactionRolesAdminInteraction(interaction) {
   }
 }
 
-module.exports = {
-  buildReactionRolesAdminPanel,
-  handleReactionRolesAdminInteraction,
-};
+module.exports = { buildReactionRolesAdminPanel, handleReactionRolesAdminInteraction };
