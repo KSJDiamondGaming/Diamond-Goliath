@@ -137,7 +137,7 @@ async function buildReactionRolesAdminPanel(guild, memberDisplayName = 'Unknown 
         button(enabled ? 'admin:reactionRoles:disable' : 'admin:reactionRoles:enable', enabled ? '⏸️ Disable Module' : '▶️ Enable Module', enabled ? ButtonStyle.Danger : ButtonStyle.Success),
         button('admin:reactionRoles:repair', '🩺 Repair All', ButtonStyle.Secondary, !panels.length),
       ),
-      row(button('admin:roleStudio', '⬅️ Back to Role Studio', ButtonStyle.Secondary)),
+      row(button('admin:studio:roleStudio', '⬅️ Back to Role Studio', ButtonStyle.Secondary)),
     ],
   };
 }
