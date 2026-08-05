@@ -362,8 +362,35 @@ function buildAccountAddPanel(i, config, creator) {
   return { embeds: [embed(config, '➕ Add Accounts', d, who(i), creatorAccent((creator.accountIds || []).map((id) => config.accounts[id]).filter(Boolean)))], components: [platformSelect(selected), row(btn(`${P}creators`, '⬅️ Back'), btn(`${P}account:continue`, '➡️ Continue', ButtonStyle.Success, !selected.length))] };
 }
 function buildProfileManagePanel(i, config, creator) {
-  const d = [`👤 **${creator.displayName}**`, '', '**Profile**', `Status: ${creator.enabled === false ? '⏸️ Paused' : '🟢 Monitoring'}`, `Group / Team: ${creator.group || 'Not set'}`, `Tags: ${creator.tags?.length ? creator.tags.join(', ') : 'None'}`, `Profile Notes: ${creator.notes || 'None'}`,
-    `\u{1F512} Admin Notes: ${creator.adminNotes || 'None'}`].join('\n');
+  const d = [
+    `👤 **${creator.displayName}**`,
+    '',
+    '**__Profile__**',
+    `**__Status__** ${creator.enabled === false ? '⏸️ Paused' : '🟢 Monitoring'}`,
+    `**__Group / Team__** ${creator.group || 'Not set'}`,
+    `**__Tags__** ${creator.tags?.length ? creator.tags.join(', ') : 'None'}`,
+    `**__Profile Notes__** ${creator.notes || 'None'}`,
+    `🔒 **__Admin Notes__** ${creator.adminNotes || 'None'}`
+  ].join('\n');
+
+  const components = [
+    row(btn(`${P}creator:edit`, '📝 Edit Profile'), btn(`${P}creator:clear`, '🔄 Clear'), btn(`${P}creator:profile:toggle`, creator.enabled === false ? '▶️ Resume' : '⏸️ Pause', creator.enabled === false ? ButtonStyle.Success : ButtonStyle.Secondary), btn(`${P}creator:delete`, '🗑️ Delete', ButtonStyle.Danger)),
+    row(btn(`${P}creators`, '⬅️ Back'), btn(`${P}settings`, '⚙️ Settings')),
+  ];
+
+  return {
+    embeds: [
+      embed(
+        config,
+        '📝 Manage Profile',
+        d,
+        who(i),
+        creatorAccent((creator.accountIds || []).map((id) => config.accounts[id]).filter(Boolean))
+      )
+    ],
+    components
+  };
+}
   const components = [
     row(btn(`${P}creator:edit`, '📝 Edit Profile'), btn(`${P}creator:clear`, '🔄 Clear'), btn(`${P}creator:profile:toggle`, creator.enabled === false ? '▶️ Resume' : '⏸️ Pause', creator.enabled === false ? ButtonStyle.Success : ButtonStyle.Secondary), btn(`${P}creator:delete`, '🗑️ Delete', ButtonStyle.Danger)),
     row(btn(`${P}creators`, '⬅️ Back'), btn(`${P}settings`, '⚙️ Settings')),
