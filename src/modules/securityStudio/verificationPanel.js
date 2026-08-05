@@ -51,6 +51,14 @@ function button(customId, label, style = ButtonStyle.Primary) {
     .setStyle(style);
 }
 
+function toggleButton(customId, label, enabled) {
+  return button(
+    customId,
+    `${enabled ? '🟢' : '🔴'} ${label} ${enabled ? 'ON' : 'OFF'}`,
+    enabled ? ButtonStyle.Success : ButtonStyle.Danger
+  );
+}
+
 function getMemberDisplayName(interaction) {
   return interaction.member?.displayName
     || interaction.user?.displayName
@@ -141,27 +149,20 @@ function getSavedPanelsFromSection(section) {
 }
 
 function navRow(page) {
-  const index = Math.max(0, NAV_PAGES.indexOf(page));
-  const backTarget = index > 0
+  const index = NAV_PAGES.indexOf(page);
+  const previousTarget = index > 0
     ? `admin:verification:page:${NAV_PAGES[index - 1]}`
     : 'admin:modules';
+  const nextTarget = index >= 0 && index < NAV_PAGES.length - 1
+    ? `admin:verification:page:${NAV_PAGES[index + 1]}`
+    : 'admin:verification:page:settings';
 
-  const components = [
-    button(backTarget, '⬅️ Back', ButtonStyle.Secondary),
+  return row(
+    button(previousTarget, '⬅️ Previous', ButtonStyle.Secondary),
+    button('admin:verification:page:overview', '🏠 Verification', ButtonStyle.Secondary),
     button('admin:verification:page:settings', '⚙️ Settings', ButtonStyle.Secondary),
-  ];
-
-  if (index < NAV_PAGES.length - 1) {
-    components.push(
-      button(
-        `admin:verification:page:${NAV_PAGES[index + 1]}`,
-        'Next ➡️',
-        ButtonStyle.Secondary
-      )
-    );
-  }
-
-  return row(...components);
+    button(nextTarget, 'Next ➡️', ButtonStyle.Secondary)
+  );
 }
 
 function baseEmbed(title, description, memberDisplayName, color = 0x5865f2) {
@@ -184,19 +185,17 @@ function buildOverviewPage(guild, memberDisplayName) {
   const embed = baseEmbed(
     '✅ Verification · Overview',
     [
-      'Flexible server verification with every stage optional.',
+      'Manage the complete verification flow from one Discord panel.',
       '',
-      `**Module:** ${config.enabled ? 'Enabled ✅' : 'Disabled ❌'}`,
-      `**Discord Screening:** ${verificationManager.hasDiscordScreening(guild) ? 'Detected ✅' : 'Not configured'}`,
-      `**Wait for Screening:** ${yesNo(config.waitForDiscordScreening)}`,
-      `**Method:** \`${config.method}\``,
+      `**Status:** ${config.enabled ? 'Enabled ✅' : 'Disabled ❌'}`,
+      `**Health:** ${verificationManager.hasDiscordScreening(guild) ? 'Discord Screening detected ✅' : 'Discord Screening not configured'}`,
       `**Verification Channel:** ${formatChannel(config.verificationChannelId)}`,
       `**Verified Roles:** ${formatRoles(guild, config.verifiedRoleIds)}`,
-      `**Pending Roles Enabled:** ${yesNo(config.usePendingRoles)}`,
       `**Pending Roles:** ${formatRoles(guild, config.pendingRoleIds)}`,
-      `**DM on Success:** ${yesNo(config.dmOnVerify)}`,
       '',
-      `Panels: \`${panels.length}\` | Verified: \`${section.analytics?.verified || 0}\` | Failed: \`${section.analytics?.failed || 0}\``,
+      `**Saved Panels:** \`${panels.length}\``,
+      `**Verified Members:** \`${section.analytics?.verified || 0}\``,
+      `**Failed Attempts:** \`${section.analytics?.failed || 0}\``,
     ].join('\n'),
     memberDisplayName,
     config.enabled ? 0x57f287 : 0x5865f2
@@ -208,9 +207,12 @@ function buildOverviewPage(guild, memberDisplayName) {
       row(
         button('admin:verification:page:workflow', '🔀 Workflow'),
         button('admin:verification:page:roles', '🎭 Roles'),
-        button('admin:verification:page:requirements', '🔒 Requirements'),
+        button('admin:verification:page:requirements', '🔒 Requirements')
+      ),
+      row(
         button('admin:verification:page:messages', '💬 Messages'),
-        button('admin:verification:page:panel', '🎨 Panel')
+        button('admin:verification:page:panel', '🎨 Panels'),
+        button('admin:verification:page:status', '🩺 Health', ButtonStyle.Secondary)
       ),
       navRow('overview'),
     ],
@@ -233,7 +235,7 @@ function buildWorkflowPage(guild, memberDisplayName) {
       `**Require Pending Role:** ${yesNo(config.requirePendingRole)}`,
       `**Remove Pending Roles:** ${yesNo(config.removePendingRoles)}`,
       '',
-      'Selecting a pending role does not automatically enable, assign, require or remove it.',
+      'Toggle a setting below. The button label always shows its current state.',
     ].join('\n'),
     memberDisplayName
   );
@@ -242,35 +244,38 @@ function buildWorkflowPage(guild, memberDisplayName) {
     embeds: [embed],
     components: [
       row(
-        button('admin:verification:toggle:waitForDiscordScreening', '📜 Wait Screening', ButtonStyle.Secondary),
-        button('admin:verification:toggle:skipScreeningIfUnavailable', '⏭️ Skip Missing', ButtonStyle.Secondary),
-        button('admin:verification:toggle:logScreeningCompletion', '📝 Log Screening', ButtonStyle.Secondary)
+        toggleButton('admin:verification:toggle:waitForDiscordScreening', 'Wait', config.waitForDiscordScreening),
+        toggleButton('admin:verification:toggle:skipScreeningIfUnavailable', 'Skip Missing', config.skipScreeningIfUnavailable),
+        toggleButton('admin:verification:toggle:logScreeningCompletion', 'Log', config.logScreeningCompletion)
       ),
       row(
-        button('admin:verification:toggle:usePendingRoles', '🎭 Use Pending', ButtonStyle.Secondary),
-        button('admin:verification:toggle:assignPendingRoles', '➕ Auto Assign', ButtonStyle.Secondary),
-        button('admin:verification:toggle:requirePendingRole', '🔒 Require Pending', ButtonStyle.Secondary),
-        button('admin:verification:toggle:removePendingRoles', '🧹 Remove Pending', ButtonStyle.Secondary)
+        toggleButton('admin:verification:toggle:usePendingRoles', 'Pending', config.usePendingRoles),
+        toggleButton('admin:verification:toggle:assignPendingRoles', 'Auto Assign', config.assignPendingRoles),
+        toggleButton('admin:verification:toggle:requirePendingRole', 'Require', config.requirePendingRole),
+        toggleButton('admin:verification:toggle:removePendingRoles', 'Remove', config.removePendingRoles)
       ),
       row(
         new StringSelectMenuBuilder()
           .setCustomId('admin:verification:pendingTiming')
-          .setPlaceholder('Pending-role assignment timing')
+          .setPlaceholder('Choose pending-role timing')
           .addOptions([
             {
               label: 'On Join',
               value: 'on_join',
               description: 'Assign immediately when the member joins',
+              default: config.pendingRoleTiming === 'on_join',
             },
             {
               label: 'After Discord Screening',
               value: 'after_screening',
               description: 'Wait until member.pending becomes false',
+              default: config.pendingRoleTiming === 'after_screening',
             },
             {
               label: 'Manual Only',
               value: 'manual',
               description: 'Never assign automatically',
+              default: config.pendingRoleTiming === 'manual',
             },
           ])
       ),
@@ -289,7 +294,7 @@ function buildRolesPage(guild, memberDisplayName) {
       `**Verified Roles:** ${formatRoles(guild, config.verifiedRoleIds)}`,
       `**Pending Roles:** ${formatRoles(guild, config.pendingRoleIds)}`,
       '',
-      'All roles are selected from this server. Goliath must be above every role it needs to add or remove.',
+      'Choose each channel or role below. Goliath must be above every role it needs to add or remove.',
     ].join('\n'),
     memberDisplayName
   );
@@ -300,7 +305,7 @@ function buildRolesPage(guild, memberDisplayName) {
       row(
         new ChannelSelectMenuBuilder()
           .setCustomId('admin:verification:channel')
-          .setPlaceholder('Verification channel')
+          .setPlaceholder('📍 Verification channel')
           .setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
           .setMinValues(0)
           .setMaxValues(1)
@@ -308,7 +313,7 @@ function buildRolesPage(guild, memberDisplayName) {
       row(
         new ChannelSelectMenuBuilder()
           .setCustomId('admin:verification:logChannel')
-          .setPlaceholder('Optional log channel')
+          .setPlaceholder('📝 Optional log channel')
           .setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
           .setMinValues(0)
           .setMaxValues(1)
@@ -316,14 +321,14 @@ function buildRolesPage(guild, memberDisplayName) {
       row(
         new RoleSelectMenuBuilder()
           .setCustomId('admin:verification:verifiedRoles')
-          .setPlaceholder('Verified role(s)')
+          .setPlaceholder('✅ Verified role(s)')
           .setMinValues(0)
           .setMaxValues(10)
       ),
       row(
         new RoleSelectMenuBuilder()
           .setCustomId('admin:verification:pendingRoles')
-          .setPlaceholder('Optional pending role(s)')
+          .setPlaceholder('⏳ Optional pending role(s)')
           .setMinValues(0)
           .setMaxValues(10)
       ),
@@ -338,8 +343,8 @@ function buildRequirementsPage(guild, memberDisplayName) {
     '🔒 Verification · Requirements',
     [
       `**Block Bots:** ${yesNo(config.blockBots)}`,
-      `**Allow Management Bypass:** ${yesNo(config.allowStaffBypass)}`,
-      `**Allow Reverification:** ${yesNo(config.allowReverification)}`,
+      `**Management Bypass:** ${yesNo(config.allowStaffBypass)}`,
+      `**Reverification:** ${yesNo(config.allowReverification)}`,
       `**Minimum Account Age:** \`${config.minimumAccountAgeDays}\` day(s)`,
       `**Minimum Server Time:** \`${config.minimumMembershipAgeMinutes}\` minute(s)`,
       `**Attempt Cooldown:** \`${config.attemptCooldownSeconds}\` second(s)`,
@@ -354,16 +359,12 @@ function buildRequirementsPage(guild, memberDisplayName) {
     embeds: [embed],
     components: [
       row(
-        button('admin:verification:toggle:blockBots', '🤖 Block Bots', ButtonStyle.Secondary),
-        button('admin:verification:toggle:allowStaffBypass', '🛡️ Management Bypass', ButtonStyle.Secondary),
-        button('admin:verification:toggle:allowReverification', '🔁 Reverification', ButtonStyle.Secondary)
+        toggleButton('admin:verification:toggle:blockBots', 'Bots', config.blockBots),
+        toggleButton('admin:verification:toggle:allowStaffBypass', 'Bypass', config.allowStaffBypass),
+        toggleButton('admin:verification:toggle:allowReverification', 'Reverify', config.allowReverification)
       ),
       row(
-        button(
-          'admin:verification:editRequirements',
-          '✏️ Edit Numeric Requirements',
-          ButtonStyle.Primary
-        )
+        button('admin:verification:editRequirements', '✏️ Edit Limits', ButtonStyle.Primary)
       ),
       navRow('requirements'),
     ],
@@ -401,15 +402,15 @@ function buildMessagesPage(guild, memberDisplayName) {
     embeds: [embed],
     components: [
       row(
-        button('admin:verification:toggle:dmOnVerify', '📩 Success DM', ButtonStyle.Secondary),
-        button('admin:verification:toggle:dmOnPendingRole', '📨 Pending DM', ButtonStyle.Secondary),
-        button('admin:verification:toggle:logSuccess', '✅ Success Logs', ButtonStyle.Secondary),
-        button('admin:verification:toggle:logFailure', '❌ Failure Logs', ButtonStyle.Secondary)
+        toggleButton('admin:verification:toggle:dmOnVerify', 'Success DM', config.dmOnVerify),
+        toggleButton('admin:verification:toggle:dmOnPendingRole', 'Pending DM', config.dmOnPendingRole),
+        toggleButton('admin:verification:toggle:logSuccess', 'Success Log', config.logSuccess),
+        toggleButton('admin:verification:toggle:logFailure', 'Failure Log', config.logFailure)
       ),
       row(
-        button('admin:verification:editMessagesCore', '✏️ Core Messages'),
-        button('admin:verification:editMessagesRules', '✏️ Requirement Messages'),
-        button('admin:verification:resetMessages', '♻️ Reset Messages', ButtonStyle.Danger)
+        button('admin:verification:editMessagesCore', '✏️ Core'),
+        button('admin:verification:editMessagesRules', '✏️ Requirements'),
+        button('admin:verification:resetMessages', '🗑️ Reset Messages', ButtonStyle.Danger)
       ),
       navRow('messages'),
     ],
@@ -455,66 +456,67 @@ function buildPanelPage(guild, memberDisplayName, selectedPanelId = null) {
     current.color || 0x57f287
   );
 
-  const components = [
-    row(
-      button('admin:verification:editEmbed', '✏️ Edit Embed'),
-      button('admin:verification:editButton', '🔘 Edit Button'),
-      button('admin:verification:preview', '👁️ Preview', ButtonStyle.Secondary),
-      button('admin:verification:deploy', '🚀 Deploy', ButtonStyle.Success),
-      button('admin:verification:redeploy', '🔄 Redeploy Latest', ButtonStyle.Success)
-    ),
-  ];
+  const savedPanelMenu = new StringSelectMenuBuilder()
+    .setCustomId('admin:verification:savedPanel')
+    .setPlaceholder(panels.length ? '📋 Select a saved panel' : 'No saved panels yet')
+    .setDisabled(!panels.length);
 
   if (panels.length) {
-    components.push(
-      row(
-        new StringSelectMenuBuilder()
-          .setCustomId('admin:verification:savedPanel')
-          .setPlaceholder('Select a saved verification panel')
-          .addOptions(
-            panels.slice(0, PANEL_LIMIT).map((panel) => ({
-              label: `${panel.panelId}${section.activePanelId === panel.panelId ? ' · ACTIVE' : ''}`.slice(0, 100),
-              value: panel.panelId,
-              description: `${panel.channelId ? `#${guild.channels.cache.get(panel.channelId)?.name || panel.channelId}` : 'No channel'} · ${panel.messageId ? 'message saved' : 'no message'}`.slice(0, 100),
-              default: selected?.panelId === panel.panelId,
-            }))
-          )
-      )
+    savedPanelMenu.addOptions(
+      panels.slice(0, PANEL_LIMIT).map((panel) => ({
+        label: `${panel.panelId}${section.activePanelId === panel.panelId ? ' · ACTIVE' : ''}`.slice(0, 100),
+        value: panel.panelId,
+        description: `${panel.channelId ? `#${guild.channels.cache.get(panel.channelId)?.name || panel.channelId}` : 'No channel'} · ${panel.messageId ? 'message saved' : 'no message'}`.slice(0, 100),
+        default: selected?.panelId === panel.panelId,
+      }))
     );
-
-    if (selected) {
-      components.push(
-        row(
-          button(`admin:verification:updateSelected:${selected.panelId}`, '🛡️ Update Selected', ButtonStyle.Primary),
-          button(`admin:verification:redeploySelected:${selected.panelId}`, '🚀 Redeploy Selected', ButtonStyle.Success),
-          button(`admin:verification:deleteSelected:${selected.panelId}`, '🗑️ Delete Selected', ButtonStyle.Danger),
-          button('admin:verification:resetTemplate', '♻️ Reset Design', ButtonStyle.Danger)
-        )
-      );
-    }
+  } else {
+    savedPanelMenu.addOptions({
+      label: 'No saved panels',
+      value: 'none',
+      description: 'Deploy a panel to create the first saved record',
+    });
   }
 
-  components.push(
-    row(
-      new StringSelectMenuBuilder()
-        .setCustomId('admin:verification:buttonStyle')
-        .setPlaceholder('Button style')
-        .addOptions([
-          { label: 'Success', value: 'success' },
-          { label: 'Primary', value: 'primary' },
-          { label: 'Secondary', value: 'secondary' },
-          { label: 'Danger', value: 'danger' },
-        ])
+  const selectedActions = selected
+    ? row(
+      button(`admin:verification:updateSelected:${selected.panelId}`, '📝 Update', ButtonStyle.Primary),
+      button(`admin:verification:redeploySelected:${selected.panelId}`, '♻️ Redeploy', ButtonStyle.Success),
+      button(`admin:verification:deleteSelected:${selected.panelId}`, '🗑️ Delete', ButtonStyle.Danger),
+      button('admin:verification:resetTemplate', '🧹 Reset Design', ButtonStyle.Danger)
     )
-  );
-  components.push(navRow('panel'));
+    : row(
+      button('admin:verification:resetTemplate', '🧹 Reset Design', ButtonStyle.Danger)
+    );
 
   return {
     embeds: [
       embed,
       verificationManager.buildVerificationEmbed(preview, guild),
     ],
-    components,
+    components: [
+      row(
+        button('admin:verification:editEmbed', '🎨 Edit Embed'),
+        button('admin:verification:editButton', '🔘 Edit Button'),
+        button('admin:verification:preview', '👁️ Preview', ButtonStyle.Secondary),
+        button('admin:verification:deploy', '🚀 Deploy', ButtonStyle.Success),
+        button('admin:verification:redeploy', '♻️ Latest', ButtonStyle.Success)
+      ),
+      row(
+        new StringSelectMenuBuilder()
+          .setCustomId('admin:verification:buttonStyle')
+          .setPlaceholder(`Button style · ${current.buttonStyle}`)
+          .addOptions([
+            { label: 'Success', value: 'success', default: current.buttonStyle === 'success' },
+            { label: 'Primary', value: 'primary', default: current.buttonStyle === 'primary' },
+            { label: 'Secondary', value: 'secondary', default: current.buttonStyle === 'secondary' },
+            { label: 'Danger', value: 'danger', default: current.buttonStyle === 'danger' },
+          ])
+      ),
+      row(savedPanelMenu),
+      selectedActions,
+      navRow('panel'),
+    ],
   };
 }
 
@@ -525,7 +527,7 @@ function buildSettingsPage(guild, memberDisplayName) {
     [
       `**Module:** ${config.enabled ? 'Enabled ✅' : 'Disabled ❌'}`,
       '',
-      'Module controls and maintenance tools are grouped here.',
+      'Module controls, health checks, exports and reset tools are grouped here.',
     ].join('\n'),
     memberDisplayName,
     config.enabled ? 0x57f287 : 0x5865f2
@@ -537,17 +539,16 @@ function buildSettingsPage(guild, memberDisplayName) {
       row(
         button('admin:verification:page:status', '🩺 Health', ButtonStyle.Secondary),
         button('admin:verification:export', '📤 Export', ButtonStyle.Secondary),
-        button('admin:verification:resetAll', '♻️ Reset', ButtonStyle.Danger),
         button(
           config.enabled ? 'admin:verification:disable' : 'admin:verification:enable',
-          config.enabled ? '⏸️ Disable' : '▶️ Enable',
-          config.enabled ? ButtonStyle.Secondary : ButtonStyle.Success
+          config.enabled ? '🔴 Disable' : '🟢 Enable',
+          config.enabled ? ButtonStyle.Danger : ButtonStyle.Success
         )
       ),
       row(
-        button('admin:verification:page:overview', '⬅️ Back', ButtonStyle.Secondary),
-        button('admin:modules', 'Modules', ButtonStyle.Secondary)
+        button('admin:verification:resetAll', '🗑️ Reset Verification', ButtonStyle.Danger)
       ),
+      navRow('settings'),
     ],
   };
 }
@@ -581,17 +582,11 @@ async function buildStatusPage(guild, memberDisplayName) {
     embeds: [embed],
     components: [
       row(
-        button('admin:verification:statusRefresh', '🔄 Refresh'),
+        button('admin:verification:statusRefresh', '🔄 Refresh', ButtonStyle.Secondary),
         button('admin:verification:redeploy', '🔧 Repair Latest', ButtonStyle.Success),
-        button('admin:verification:test', '🧪 Test Setup', ButtonStyle.Secondary)
+        button('admin:verification:test', '🧪 Test Setup', ButtonStyle.Primary)
       ),
-      row(
-        button(
-          'admin:verification:page:settings',
-          '⬅️ Back to Settings',
-          ButtonStyle.Secondary
-        )
-      ),
+      navRow('status'),
     ],
   };
 }
