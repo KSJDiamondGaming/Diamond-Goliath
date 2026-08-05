@@ -1,31 +1,643 @@
 'use strict';
-const {EmbedBuilder,ActionRowBuilder,ButtonBuilder,ButtonStyle,ModalBuilder,TextInputBuilder,TextInputStyle,StringSelectMenuBuilder,ChannelSelectMenuBuilder,RoleSelectMenuBuilder,ChannelType}=require('discord.js');
-const gm=require('../../../core/guild/guildManager');
-const rr=require('./reactionRoles');
-const health=require('./reactionRolesHealth');
-const row=(...x)=>new ActionRowBuilder().addComponents(...x.filter(Boolean));
-const btn=(id,label,style=ButtonStyle.Secondary,disabled=false)=>new ButtonBuilder().setCustomId(id).setLabel(label).setStyle(style).setDisabled(!!disabled);
-const name=i=>i.member?.displayName||i.user?.username||'Unknown User';
-const notice=n=>n?`> ${n}`:null;
-const mode=m=>m===rr.MODES.ADD?'Add only':m===rr.MODES.REMOVE?'Remove only':'Toggle role';
-const result=m=>m===rr.MODES.ADD?'React adds the role; unreact keeps it.':m===rr.MODES.REMOVE?'React removes the role; unreact makes no change.':'React adds the role; unreact removes it.';
-function maps(list,g){if(!list.length)return'> No mappings added yet.';return list.slice(0,20).map((m,i)=>{const r=g.roles.cache.get(m.roleId);return`**${i+1}. ${m.emoji} → ${r?`<@&${r.id}>`:`\`${m.roleId}\``}**\n└ ${mode(m.mode)}\n└ ${result(m.mode)}`}).join('\n\n')}
-function panelMenu(gid){const p=rr.listPanels(gid).slice(0,25),m=new StringSelectMenuBuilder().setCustomId('admin:reactionRoles:manage:panel').setPlaceholder(p.length?'Choose a saved panel':'No saved panels').setMinValues(1).setMaxValues(1).setDisabled(!p.length);m.addOptions(p.length?p.map(x=>({label:String(x.name||x.panelId).slice(0,100),description:`${x.enabled===false?'Disabled':'Enabled'} • ${x.mappings.length} mapping${x.mappings.length===1?'':'s'}`,value:x.panelId})):[{label:'No panels available',value:'none'}]);return m}
-function templateMenu(gid,selected){const t=rr.listReactionTemplates(gid).slice(0,25),m=new StringSelectMenuBuilder().setCustomId('admin:reactionRoles:wizard:template').setPlaceholder(t.length?'2. Choose an Embed Studio template':'No Reaction Role templates available').setMinValues(1).setMaxValues(1).setDisabled(!t.length);m.addOptions(t.length?t.map(x=>({label:String(x.name||x.templateId).slice(0,100),description:String(x.embed?.title||'Reaction Role panel').slice(0,100),value:String(x.templateId),default:String(x.templateId)===String(selected)})):[{label:'Create a template in Embed Studio first',value:'none'}]);return m}
-function modeMenu(m){return new StringSelectMenuBuilder().setCustomId('admin:reactionRoles:wizard:mode').setPlaceholder('4. Choose what reacting should do').addOptions([{label:'Toggle role',description:'React adds it; unreact removes it',value:rr.MODES.TOGGLE,default:m===rr.MODES.TOGGLE},{label:'Add only',description:'React adds it; unreact keeps it',value:rr.MODES.ADD,default:m===rr.MODES.ADD},{label:'Remove only',description:'React removes it; unreact changes nothing',value:rr.MODES.REMOVE,default:m===rr.MODES.REMOVE}])}
-function removeMenu(d,g){const m=new StringSelectMenuBuilder().setCustomId('admin:reactionRoles:wizard:remove:mapping').setPlaceholder('Choose a mapping to remove').setMinValues(1).setMaxValues(1);m.addOptions(d.mappings.slice(0,25).map(x=>({label:`${x.emoji} → ${g.roles.cache.get(x.roleId)?.name||x.roleId}`.slice(0,100),description:mode(x.mode),value:x.mappingId})));return m}
-async function home(g,who='Unknown User',n=''){const on=gm.isModuleEnabled(g.id,rr.SECTION),h=await rr.buildHealth(g),p=rr.listPanels(g.id),count=p.reduce((a,x)=>a+(x.mappings?.length||0),0);return{embeds:[new EmbedBuilder().setColor(!on?0x747f8d:h.healthy?0x57f287:0xfaa61a).setTitle('🎭 Reaction Roles').setDescription([notice(n),n?'':null,'Create and manage self-assignable role panels.','',`**Module:** ${on?'🟢 Enabled':'🔴 Disabled'}`,`**Panels:** \`${p.length}\``,`**Role mappings:** \`${count}\``,`**Health:** ${h.healthy?'✅ Healthy':`⚠️ ${h.unhealthy||0} panel(s) need attention`}`].filter(x=>x!==null).join('\n')).setFooter({text:`Requested by ${who}`}).setTimestamp()],components:[row(btn('admin:reactionRoles:create','➕ Create',ButtonStyle.Success),btn('admin:reactionRoles:existing','🔗 Use Existing',ButtonStyle.Primary)),row(btn('admin:reactionRoles:saved','📚 Saved Panels',ButtonStyle.Secondary,!p.length),btn('admin:reactionRoles:manage','📋 Manage',ButtonStyle.Primary,!p.length)),row(btn('admin:studio:roleStudio','⬅️ Back'),btn('admin:reactionRoles:settings','⚙️ Settings'))]}}
-const createPicker=()=>({embeds:[new EmbedBuilder().setColor(0x5865f2).setTitle('➕ Create').setDescription('Choose what you want to create.\n\n**New Panel**\nBuild from an Embed Studio template.\n\n**New Message**\nCreate a Discord message, then configure reaction roles.')],components:[row(btn('admin:reactionRoles:new:template','✨ New Panel',ButtonStyle.Success),btn('admin:reactionRoles:new:message','💬 New Message',ButtonStyle.Primary)),row(btn('admin:reactionRoles','⬅️ Back'),btn('admin:reactionRoles','🏠 Home'),btn('admin:reactionRoles:settings','⚙️ Settings'))]});
-const existingPicker=g=>{const p=rr.listPanels(g.id);return{embeds:[new EmbedBuilder().setColor(0x5865f2).setTitle('🔗 Use Existing').setDescription('Choose an existing item.\n\n**Existing Message**\nAttach roles to a Discord message.\n\n**Existing Panel**\nOpen a saved reaction-role panel.')],components:[row(btn('admin:reactionRoles:new:existing','🔗 Existing Message',ButtonStyle.Primary),btn('admin:reactionRoles:saved','📚 Existing Panel',ButtonStyle.Secondary,!p.length)),row(btn('admin:reactionRoles','⬅️ Back'),btn('admin:reactionRoles','🏠 Home'),btn('admin:reactionRoles:settings','⚙️ Settings'))]}};
-async function settings(g,who='Unknown User',n=''){const on=gm.isModuleEnabled(g.id,rr.SECTION),h=await rr.buildHealth(g),p=rr.listPanels(g.id);return{embeds:[new EmbedBuilder().setColor(!on?0x747f8d:h.healthy?0x57f287:0xfaa61a).setTitle('⚙️ Reaction Roles · Settings').setDescription([notice(n),n?'':null,`**Module:** ${on?'🟢 Enabled':'🔴 Disabled'}`,`**Saved panels:** \`${p.length}\``,`**Health:** ${h.healthy?'✅ Healthy':`⚠️ ${h.unhealthy||0} panel(s) need attention`}`].filter(x=>x!==null).join('\n')).setFooter({text:`Requested by ${who}`}).setTimestamp()],components:[row(btn(on?'admin:reactionRoles:disable:confirm':'admin:reactionRoles:enable',on?'⏸️ Disable Module':'▶️ Enable Module',on?ButtonStyle.Danger:ButtonStyle.Success),btn('admin:reactionRoles:repair','🩺 Repair All',ButtonStyle.Secondary,!p.length||!on)),row(btn('admin:reactionRoles','⬅️ Back to Reaction Roles'))]}}
-function disableConfirm(g){return{embeds:[new EmbedBuilder().setColor(0xed4245).setTitle('⚠️ Disable Reaction Roles?').setDescription(`Saved panels: \`${rr.listPanels(g.id).length}\`\n\nAssignments stop, but panels, mappings and messages remain saved.`)],components:[row(btn('admin:reactionRoles:disable:execute','Disable Reaction Roles',ButtonStyle.Danger),btn('admin:reactionRoles:settings','Cancel'))]}}
-function manage(g,n=''){const p=rr.listPanels(g.id);return{embeds:[new EmbedBuilder().setColor(n?0x57f287:0x5865f2).setTitle('📚 Saved Reaction Role Panels').setDescription([notice(n),n?'':null,p.length?'Choose a saved panel.':'No panels are configured yet.'].filter(x=>x!==null).join('\n'))],components:[...(p.length?[row(panelMenu(g.id))]:[row(btn('admin:reactionRoles:create','➕ Create First Panel',ButtonStyle.Success))]),row(btn('admin:reactionRoles','⬅️ Back'))]}}
-function sourceStep(g,uid,n=''){const d=rr.getDraft(g.id,uid);return{embeds:[new EmbedBuilder().setColor(d?.messageId?0x57f287:0x5865f2).setTitle('🔗 Select Existing Message').setDescription([notice(n),n?'':null,'**Step 1 of 2 — Select the source message**','Paste the full Discord message link.','',d?.messageId?`**Selected:** <#${d.channelId}> · \`${d.messageId}\``:'> No message selected.'].filter(x=>x!==null).join('\n'))],components:[row(btn('admin:reactionRoles:source:link',d?.messageId?'🔄 Change Message':'🔗 Paste Message Link',ButtonStyle.Primary)),row(btn('admin:reactionRoles:source:continue','Continue to Mapping Builder',ButtonStyle.Success,!d?.messageId),btn('admin:reactionRoles:wizard:cancel','Cancel Setup'))]}}
-function wizard(g,uid,rem=false,n=''){const d=rr.getDraft(g.id,uid);if(!d)throw new Error('Your setup session has expired. Start again.');const ex=d.type===rr.DRAFT_TYPES.EXISTING;if(ex&&!d.messageId)return sourceStep(g,uid,n);const src=ex?!!d.messageId:!!d.templateId,ready=!!(d.channelId&&src&&d.mappings.length),role=d.selectedRoleId?g.roles.cache.get(d.selectedRoleId):null,c=[];if(!ex)c.push(row(new ChannelSelectMenuBuilder().setCustomId('admin:reactionRoles:wizard:channel').setPlaceholder(d.channelId?'1. Change target channel':'1. Choose target channel').setChannelTypes(ChannelType.GuildText,ChannelType.GuildAnnouncement).setMinValues(1).setMaxValues(1)),row(templateMenu(g.id,d.templateId)));else c.push(row(btn('admin:reactionRoles:source','🔄 Change Source Message')));c.push(row(new RoleSelectMenuBuilder().setCustomId('admin:reactionRoles:wizard:role').setPlaceholder(role?`3. Selected role: ${role.name}`:'3. Choose the role this reaction controls').setMinValues(1).setMaxValues(1)),row(rem&&d.mappings.length?removeMenu(d,g):modeMenu(d.selectedMode)),row(btn('admin:reactionRoles:wizard:emoji','😊 Add Mapping',ButtonStyle.Success,!d.selectedRoleId),btn('admin:reactionRoles:wizard:remove','🗑️ Remove',ButtonStyle.Secondary,!d.mappings.length),btn('admin:reactionRoles:wizard:deploy',d.panelId?'💾 Save Changes':'🚀 Deploy Panel',ButtonStyle.Success,!ready),btn('admin:reactionRoles:wizard:cancel','Cancel Setup')));let next=!src||!d.channelId?'Finish selecting the panel source above.':!role?'Choose the role this reaction should control.':'Choose its behaviour, then press “Add Mapping”.';if(ready)next='Ready to deploy. Review the mappings, add another if needed, then deploy.';return{embeds:[new EmbedBuilder().setColor(n||ready?0x57f287:0x5865f2).setTitle(d.panelId?'✏️ Edit Reaction Role Mappings':ex?'🔗 Attach Reaction Roles':'✨ Create Reaction Role Panel').setDescription([notice(n),n?'':null,'**Build each mapping in order:** role → behaviour → emoji.','',`**Source:** ${ex?`Existing message in <#${d.channelId}>`:'New Embed Studio panel'}`,!ex?`**Channel:** ${d.channelId?`<#${d.channelId}>`:'Not selected'}`:null,!ex?`**Template:** ${d.templateId?`\`${d.templateId}\``:'Not selected'}`:null,'',`### Completed Mappings (${d.mappings.length})`,maps(d.mappings,g),'','### Mapping Being Built',`**Role:** ${role?`<@&${role.id}>`:'Not selected'}`,`**Behaviour:** ${mode(d.selectedMode)}`,`**Result:** ${result(d.selectedMode)}`,'',rem&&d.mappings.length?'> Choose a completed mapping above to remove it.':`> ${next}`].filter(x=>x!==null).join('\n').slice(0,4096))],components:c}}
-async function managed(g,id,n=''){const p=rr.getPanel(g.id,id);if(!p)throw new Error('That reaction-role panel no longer exists.');return{embeds:[new EmbedBuilder().setColor(n?0x57f287:p.enabled===false?0x747f8d:0x57f287).setTitle(`🎭 ${p.name}`).setDescription([notice(n),n?'':null,`**Status:** ${p.enabled===false?'⏸️ Disabled':'✅ Enabled'}`,`**Channel:** <#${p.channelId}>`,`**Message:** [Open tracked message](https://discord.com/channels/${g.id}/${p.channelId}/${p.messageId})`,`**Mappings:** \`${p.mappings.length}\``,'','### Emoji and roles',maps(p.mappings,g)].filter(x=>x!==null).join('\n').slice(0,4096))],components:[row(btn(`admin:reactionRoles:manage:edit:${id}`,'✏️ Edit Mappings',ButtonStyle.Primary),btn(`admin:reactionRoles:manage:repair:${id}`,'🔄 Sync & Repair',ButtonStyle.Secondary,p.enabled===false),btn(`admin:reactionRoles:manage:${p.enabled===false?'enable':'disable'}:${id}`,p.enabled===false?'▶️ Enable Panel':'⏸️ Disable Panel',p.enabled===false?ButtonStyle.Success:ButtonStyle.Secondary),btn(`admin:reactionRoles:manage:remove:confirm:${id}`,'🗑️ Delete Panel',ButtonStyle.Danger)),row(btn('admin:reactionRoles:manage','⬅️ Back'),btn('admin:reactionRoles','🏠 Home'),btn('admin:reactionRoles:settings','⚙️ Settings'))]}}
-function delConfirm(g,id){const p=rr.getPanel(g.id,id);if(!p)throw new Error('That reaction-role panel no longer exists.');return{embeds:[new EmbedBuilder().setColor(0xed4245).setTitle('⚠️ Delete Reaction-Role Panel?').setDescription(`**Panel:** ${p.name}\n**Channel:** <#${p.channelId}>\n**Mappings:** \`${p.mappings.length}\`\n\nThe Discord message and existing member roles will remain.`)],components:[row(btn(`admin:reactionRoles:manage:remove:execute:${id}`,'Delete Panel',ButtonStyle.Danger),btn(`admin:reactionRoles:manage:view:${id}`,'Cancel'))]}}
-const modal=(id,title,fields)=>new ModalBuilder().setCustomId(id).setTitle(title).addComponents(...fields.map(f=>row(new TextInputBuilder().setCustomId(f.id).setLabel(f.label).setPlaceholder(f.placeholder||'').setStyle(TextInputStyle.Short).setRequired(true))));
-async function respond(i,p){if(i.deferred||i.replied)return i.editReply(p);if(i.isButton?.()||i.isAnySelectMenu?.())return i.update(p);return i.reply({...p,ephemeral:true})}
-async function deploy(g,uid){const d=rr.getDraft(g.id,uid);if(!d)throw new Error('Your setup session has expired. Start again.');await health.assertDeploymentAccess({guild:g,channelId:d.channelId,mappings:d.mappings,createMessage:d.type===rr.DRAFT_TYPES.TEMPLATE});let p;if(d.panelId)p=await rr.updatePanelMappings(g,d.panelId,d.mappings,uid);else if(d.type===rr.DRAFT_TYPES.TEMPLATE)p=await rr.createFromTemplate({guild:g,channelId:d.channelId,templateId:d.templateId,name:d.name,mappings:d.mappings,createdBy:uid});else p=await rr.attachExistingMessage({guild:g,messageReference:d.messageId,channelId:d.channelId,name:d.name,mappings:d.mappings,createdBy:uid});await health.ensurePanelReactions(g,p);return{p,edit:!!d.panelId}}
-async function handleReactionRolesAdminInteraction(i){const id=String(i.customId||'');if(!id.startsWith('admin:reactionRoles'))return false;const g=i.guild,u=i.user.id;try{if(i.isModalSubmit?.()&&id==='admin:reactionRoles:source:link:submit'){const x=rr.parseMessageReference(i.fields.getTextInputValue('messageLink'));if(x.guildId&&x.guildId!==g.id)throw new Error('That message belongs to a different server.');const c=g.channels.cache.get(x.channelId)||await g.channels.fetch(x.channelId).catch(()=>null),m=c?.messages?.fetch?await c.messages.fetch(x.messageId).catch(()=>null):null;if(!m)throw new Error('That message could not be found or Goliath cannot access it.');rr.saveDraft(g.id,u,{channelId:x.channelId,messageId:x.messageId},g);return i.reply({...sourceStep(g,u,'✅ Message selected successfully.'),ephemeral:true})}if(i.isModalSubmit?.()&&id==='admin:reactionRoles:wizard:emoji:submit'){const d=rr.getDraft(g.id,u);if(!d?.selectedRoleId)throw new Error('Choose a role before adding an emoji.');rr.addDraftMapping(g.id,u,{emoji:i.fields.getTextInputValue('emoji'),roleId:d.selectedRoleId,mode:d.selectedMode,removeOnUnreact:d.selectedMode===rr.MODES.TOGGLE},g);rr.saveDraft(g.id,u,{selectedRoleId:null},g);return i.reply({...wizard(g,u,false,'✅ Mapping added. Choose another role or deploy the panel.'),ephemeral:true})}if(id==='admin:reactionRoles'||id==='admin:reactionRoles:open')return respond(i,await home(g,name(i)));if(id==='admin:reactionRoles:create')return respond(i,createPicker());if(id==='admin:reactionRoles:existing')return respond(i,existingPicker(g));if(id==='admin:reactionRoles:settings')return respond(i,await settings(g,name(i)));if(id==='admin:reactionRoles:saved'||id==='admin:reactionRoles:manage')return respond(i,manage(g));if(id==='admin:reactionRoles:disable:confirm')return respond(i,disableConfirm(g));if(id==='admin:reactionRoles:new:message'||id==='admin:reactionRoles:new:existing'||id==='admin:reactionRoles:new:template'){const type=id.endsWith('existing')?rr.DRAFT_TYPES.EXISTING:rr.DRAFT_TYPES.TEMPLATE;rr.saveDraft(g.id,u,{type,panelId:null,channelId:null,messageId:null,templateId:null,mappings:[],selectedRoleId:null,selectedMode:rr.MODES.TOGGLE},g);return respond(i,type===rr.DRAFT_TYPES.EXISTING?sourceStep(g,u):wizard(g,u))}if(id==='admin:reactionRoles:source')return respond(i,sourceStep(g,u));if(id==='admin:reactionRoles:source:continue')return respond(i,wizard(g,u));if(i.isChannelSelectMenu?.()&&id==='admin:reactionRoles:wizard:channel'){rr.saveDraft(g.id,u,{channelId:i.values[0]},g);return respond(i,wizard(g,u))}if(i.isRoleSelectMenu?.()&&id==='admin:reactionRoles:wizard:role'){rr.saveDraft(g.id,u,{selectedRoleId:i.values[0]},g);return respond(i,wizard(g,u))}if(i.isStringSelectMenu?.()&&id==='admin:reactionRoles:wizard:mode'){rr.saveDraft(g.id,u,{selectedMode:i.values[0]},g);return respond(i,wizard(g,u))}if(i.isStringSelectMenu?.()&&id==='admin:reactionRoles:wizard:template'&&i.values[0]!=='none'){rr.saveDraft(g.id,u,{templateId:i.values[0]},g);return respond(i,wizard(g,u))}if(i.isStringSelectMenu?.()&&id==='admin:reactionRoles:wizard:remove:mapping'){rr.removeDraftMapping(g.id,u,i.values[0],g);return respond(i,wizard(g,u,false,'✅ Mapping removed.'))}if(i.isStringSelectMenu?.()&&id==='admin:reactionRoles:manage:panel'&&i.values[0]!=='none')return respond(i,await managed(g,i.values[0]));if(id==='admin:reactionRoles:source:link'){await i.showModal(modal(`${id}:submit`,'Select Discord Message',[{id:'messageLink',label:'Full Discord message link',placeholder:'https://discord.com/channels/server/channel/message'}]));return true}if(id==='admin:reactionRoles:wizard:emoji'){const d=rr.getDraft(g.id,u),r=d?.selectedRoleId?g.roles.cache.get(d.selectedRoleId):null;if(!r)throw new Error('Choose the role this reaction should control first.');await i.showModal(modal(`${id}:submit`,'Choose Mapping Emoji',[{id:'emoji',label:`Emoji that triggers ${r.name}`.slice(0,45),placeholder:'Example: ⭐ or <:server_emoji:123456789>'}]));return true}if(id==='admin:reactionRoles:wizard:remove')return respond(i,wizard(g,u,true));if(id==='admin:reactionRoles:wizard:cancel'){rr.clearDraft(g.id,u,g);return respond(i,await home(g,name(i),'ℹ️ Setup cancelled. No changes were deployed.'))}if(id==='admin:reactionRoles:wizard:deploy'){await i.deferUpdate();const{p,edit}=await deploy(g,u);rr.clearDraft(g.id,u,g);return i.editReply(await managed(g,p.panelId,edit?'✅ Changes saved and reactions synchronised.':'✅ Panel deployed and reactions added.'))}if(id.startsWith('admin:reactionRoles:manage:view:'))return respond(i,await managed(g,id.split(':').pop()));if(id.startsWith('admin:reactionRoles:manage:remove:confirm:'))return respond(i,delConfirm(g,id.split(':').pop()));if(id.startsWith('admin:reactionRoles:manage:edit:')){const p=rr.getPanel(g.id,id.split(':').pop());if(!p)throw new Error('That reaction-role panel no longer exists.');rr.saveDraft(g.id,u,{type:p.source,panelId:p.panelId,channelId:p.channelId,messageId:p.messageId,name:p.name,templateId:p.templateId,mappings:p.mappings,selectedRoleId:null,selectedMode:rr.MODES.TOGGLE},g);return respond(i,wizard(g,u))}if(id.startsWith('admin:reactionRoles:manage:enable:')||id.startsWith('admin:reactionRoles:manage:disable:')){const pid=id.split(':').pop(),on=id.includes(':enable:');await i.deferUpdate();const p=await rr.setPanelEnabled(g,pid,on,g);if(p.enabled!==false)await health.ensurePanelReactions(g,p);return i.editReply(await managed(g,pid,on?'✅ Panel enabled and reactions synchronised.':'✅ Panel disabled. Its mappings remain saved.'))}if(id.startsWith('admin:reactionRoles:manage:repair:')){const pid=id.split(':').pop();await i.deferUpdate();const p=await rr.repairPanel(g,pid,g);await health.ensurePanelReactions(g,p);return i.editReply(await managed(g,pid,'✅ Panel checked and repaired successfully.'))}if(id.startsWith('admin:reactionRoles:manage:remove:execute:')){const pid=id.split(':').pop();await i.deferUpdate();await rr.detachPanel(g,pid,{clearReactions:true});return i.editReply(manage(g,'✅ Panel deleted. The Discord message was left in place.'))}if(id==='admin:reactionRoles:enable'){gm.setModuleEnabled(g.id,rr.SECTION,true,{actorId:u});return respond(i,await settings(g,name(i),'✅ Reaction Roles enabled.'))}if(id==='admin:reactionRoles:disable:execute'){gm.setModuleEnabled(g.id,rr.SECTION,false,{actorId:u});return respond(i,await settings(g,name(i),'✅ Reaction Roles disabled. Saved panels were preserved.'))}if(id==='admin:reactionRoles:repair'){await i.deferUpdate();const x=await rr.repairAll(g),n=x.failed?.length?`⚠️ Repair finished: ${x.repaired.length} repaired, ${x.failed.length} failed.`:`✅ Repair finished: ${x.repaired.length} panel${x.repaired.length===1?'':'s'} synchronised.`;return i.editReply(await settings(g,name(i),n))}return respond(i,await home(g,name(i)))}catch(e){const p={content:`❌ Reaction Roles failed: ${e.message}`,ephemeral:true};if(i.deferred||i.replied)await i.followUp(p).catch(()=>null);else await i.reply(p).catch(()=>null);return true}}
-module.exports={buildReactionRolesAdminPanel:home,handleReactionRolesAdminInteraction};
+
+const {
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  StringSelectMenuBuilder,
+  ChannelSelectMenuBuilder,
+  RoleSelectMenuBuilder,
+  ChannelType,
+} = require('discord.js');
+
+const guildManager = require('../../../core/guild/guildManager');
+const reactionRoles = require('./reactionRoles');
+const reactionRolesHealth = require('./reactionRolesHealth');
+
+const row = (...components) => new ActionRowBuilder().addComponents(...components.filter(Boolean));
+const button = (customId, label, style = ButtonStyle.Secondary, disabled = false) => new ButtonBuilder()
+  .setCustomId(customId)
+  .setLabel(label)
+  .setStyle(style)
+  .setDisabled(Boolean(disabled));
+const displayName = (interaction) => interaction.member?.displayName || interaction.user?.username || 'Unknown User';
+const noticeLine = (notice) => notice ? `> ${notice}` : null;
+
+function modeLabel(mode) {
+  if (mode === reactionRoles.MODES.ADD) return 'Add only';
+  if (mode === reactionRoles.MODES.REMOVE) return 'Remove only';
+  return 'Toggle role';
+}
+
+function modeResult(mode) {
+  if (mode === reactionRoles.MODES.ADD) return 'React adds the role; removing the reaction keeps it.';
+  if (mode === reactionRoles.MODES.REMOVE) return 'React removes the role; removing the reaction makes no change.';
+  return 'React adds the role; removing the reaction removes it.';
+}
+
+function mappingText(mappings, guild) {
+  if (!mappings.length) return '> No mappings added yet.';
+  return mappings.slice(0, 20).map((mapping, index) => {
+    const role = guild.roles.cache.get(mapping.roleId);
+    const roleText = role ? `<@&${role.id}>` : `\`${mapping.roleId}\``;
+    return `**${index + 1}. ${mapping.emoji} → ${roleText}**\n└ ${modeLabel(mapping.mode)}\n└ ${modeResult(mapping.mode)}`;
+  }).join('\n\n');
+}
+
+function generatedPanelPayload(mappings, guild) {
+  const lines = mappings.map((mapping) => {
+    const role = guild.roles.cache.get(mapping.roleId);
+    return `${mapping.emoji}  ${role ? `<@&${role.id}>` : `\`${mapping.roleId}\``}`;
+  });
+  return {
+    embeds: [new EmbedBuilder()
+      .setColor(0x5865f2)
+      .setTitle('🎭 Reaction Roles')
+      .setDescription([
+        'React below to add or remove the roles you want.',
+        '',
+        ...lines,
+        '',
+        '_Remove your reaction to remove toggle roles._',
+      ].join('\n'))],
+  };
+}
+
+function deploymentSelect(guildId) {
+  const panels = reactionRoles.listPanels(guildId).slice(0, 25);
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId('admin:reactionRoles:manage:panel')
+    .setPlaceholder(panels.length ? 'Choose a saved panel' : 'No saved panels')
+    .setMinValues(1)
+    .setMaxValues(1)
+    .setDisabled(!panels.length);
+  menu.addOptions(panels.length ? panels.map((panel) => ({
+    label: String(panel.name || panel.panelId).slice(0, 100),
+    description: `${panel.enabled === false ? 'Disabled' : 'Enabled'} • ${panel.mappings.length} mapping${panel.mappings.length === 1 ? '' : 's'}`.slice(0, 100),
+    value: panel.panelId,
+  })) : [{ label: 'No panels available', value: 'none' }]);
+  return menu;
+}
+
+function modeSelect(mode) {
+  return new StringSelectMenuBuilder()
+    .setCustomId('admin:reactionRoles:wizard:mode')
+    .setPlaceholder('Choose what reacting should do')
+    .addOptions([
+      { label: 'Toggle role', description: 'React adds it; unreact removes it', value: reactionRoles.MODES.TOGGLE, default: mode === reactionRoles.MODES.TOGGLE },
+      { label: 'Add only', description: 'React adds it; unreact keeps it', value: reactionRoles.MODES.ADD, default: mode === reactionRoles.MODES.ADD },
+      { label: 'Remove only', description: 'React removes it; unreact changes nothing', value: reactionRoles.MODES.REMOVE, default: mode === reactionRoles.MODES.REMOVE },
+    ]);
+}
+
+function removeMappingSelect(draft, guild) {
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId('admin:reactionRoles:wizard:remove:mapping')
+    .setPlaceholder('Choose a mapping to remove')
+    .setMinValues(1)
+    .setMaxValues(1);
+  menu.addOptions(draft.mappings.slice(0, 25).map((mapping) => ({
+    label: `${mapping.emoji} → ${guild.roles.cache.get(mapping.roleId)?.name || mapping.roleId}`.slice(0, 100),
+    description: modeLabel(mapping.mode),
+    value: mapping.mappingId,
+  })));
+  return menu;
+}
+
+async function buildReactionRolesAdminPanel(guild, memberDisplayName = 'Unknown User', notice = '') {
+  const enabled = guildManager.isModuleEnabled(guild.id, reactionRoles.SECTION);
+  const health = await reactionRoles.buildHealth(guild);
+  const panels = reactionRoles.listPanels(guild.id);
+  const mappings = panels.reduce((total, panel) => total + (panel.mappings?.length || 0), 0);
+  return {
+    embeds: [new EmbedBuilder()
+      .setColor(!enabled ? 0x747f8d : health.healthy ? 0x57f287 : 0xfaa61a)
+      .setTitle('🎭 Reaction Roles')
+      .setDescription([
+        noticeLine(notice), notice ? '' : null,
+        'Create and manage self-assignable role panels.', '',
+        `**Module:** ${enabled ? '🟢 Enabled' : '🔴 Disabled'}`,
+        `**Panels:** \`${panels.length}\``,
+        `**Role mappings:** \`${mappings}\``,
+        `**Health:** ${health.healthy ? '✅ Healthy' : `⚠️ ${health.unhealthy || 0} panel(s) need attention`}`,
+      ].filter((line) => line !== null).join('\n'))
+      .setFooter({ text: `Requested by ${memberDisplayName}` })
+      .setTimestamp()],
+    components: [
+      row(
+        button('admin:reactionRoles:create', '➕ Create', ButtonStyle.Success),
+        button('admin:reactionRoles:existing', '🔗 Use Existing', ButtonStyle.Primary),
+      ),
+      row(
+        button('admin:reactionRoles:saved', '📚 Saved Panels', ButtonStyle.Secondary, !panels.length),
+        button('admin:reactionRoles:manage', '📋 Manage', ButtonStyle.Primary, !panels.length),
+      ),
+      row(
+        button('admin:studio:roleStudio', '⬅️ Back'),
+        button('admin:reactionRoles:settings', '⚙️ Settings'),
+      ),
+    ],
+  };
+}
+
+function buildExistingPicker(guild) {
+  const panels = reactionRoles.listPanels(guild.id);
+  return {
+    embeds: [new EmbedBuilder()
+      .setColor(0x5865f2)
+      .setTitle('🔗 Use Existing')
+      .setDescription([
+        'Choose an existing item.', '',
+        '**Existing Message**', 'Attach reaction roles to a Discord message without changing its content.', '',
+        '**Existing Panel**', 'Open a saved reaction-role panel.',
+      ].join('\n'))],
+    components: [
+      row(
+        button('admin:reactionRoles:new:existing', '🔗 Existing Message', ButtonStyle.Primary),
+        button('admin:reactionRoles:saved', '📚 Existing Panel', ButtonStyle.Secondary, !panels.length),
+      ),
+      row(
+        button('admin:reactionRoles', '⬅️ Back'),
+        button('admin:reactionRoles', '🏠 Home'),
+        button('admin:reactionRoles:settings', '⚙️ Settings'),
+      ),
+    ],
+  };
+}
+
+async function buildSettingsPage(guild, memberDisplayName = 'Unknown User', notice = '') {
+  const enabled = guildManager.isModuleEnabled(guild.id, reactionRoles.SECTION);
+  const health = await reactionRoles.buildHealth(guild);
+  const panels = reactionRoles.listPanels(guild.id);
+  return {
+    embeds: [new EmbedBuilder()
+      .setColor(!enabled ? 0x747f8d : health.healthy ? 0x57f287 : 0xfaa61a)
+      .setTitle('⚙️ Reaction Roles · Settings')
+      .setDescription([
+        noticeLine(notice), notice ? '' : null,
+        `**Module:** ${enabled ? '🟢 Enabled' : '🔴 Disabled'}`,
+        `**Saved panels:** \`${panels.length}\``,
+        `**Health:** ${health.healthy ? '✅ Healthy' : `⚠️ ${health.unhealthy || 0} panel(s) need attention`}`,
+      ].filter((line) => line !== null).join('\n'))
+      .setFooter({ text: `Requested by ${memberDisplayName}` })
+      .setTimestamp()],
+    components: [
+      row(
+        button(enabled ? 'admin:reactionRoles:disable:confirm' : 'admin:reactionRoles:enable', enabled ? '⏸️ Disable Module' : '▶️ Enable Module', enabled ? ButtonStyle.Danger : ButtonStyle.Success),
+        button('admin:reactionRoles:repair', '🩺 Repair All', ButtonStyle.Secondary, !panels.length || !enabled),
+      ),
+      row(button('admin:reactionRoles', '⬅️ Back to Reaction Roles')),
+    ],
+  };
+}
+
+function buildDisableConfirmation(guild) {
+  return {
+    embeds: [new EmbedBuilder()
+      .setColor(0xed4245)
+      .setTitle('⚠️ Disable Reaction Roles?')
+      .setDescription(`Saved panels: \`${reactionRoles.listPanels(guild.id).length}\`\n\nAssignments stop, but panels, mappings and messages remain saved.`)],
+    components: [row(
+      button('admin:reactionRoles:disable:execute', 'Disable Reaction Roles', ButtonStyle.Danger),
+      button('admin:reactionRoles:settings', 'Cancel'),
+    )],
+  };
+}
+
+function buildManagePicker(guild, notice = '') {
+  const panels = reactionRoles.listPanels(guild.id);
+  return {
+    embeds: [new EmbedBuilder()
+      .setColor(notice ? 0x57f287 : 0x5865f2)
+      .setTitle('📚 Saved Reaction Role Panels')
+      .setDescription([
+        noticeLine(notice), notice ? '' : null,
+        panels.length ? 'Choose a saved panel.' : 'No panels are configured yet.',
+      ].filter((line) => line !== null).join('\n'))],
+    components: [
+      ...(panels.length ? [row(deploymentSelect(guild.id))] : [row(button('admin:reactionRoles:create', '➕ Create First Panel', ButtonStyle.Success))]),
+      row(button('admin:reactionRoles', '⬅️ Back'), button('admin:reactionRoles', '🏠 Home')),
+    ],
+  };
+}
+
+function buildExistingMessageStep(guild, userId, notice = '') {
+  const draft = reactionRoles.getDraft(guild.id, userId);
+  return {
+    embeds: [new EmbedBuilder()
+      .setColor(draft?.messageId ? 0x57f287 : 0x5865f2)
+      .setTitle('🔗 Select Existing Message')
+      .setDescription([
+        noticeLine(notice), notice ? '' : null,
+        '**Step 1 of 2 — Select the source message**',
+        'Paste the full Discord message link. Goliath will not change the message content.', '',
+        draft?.messageId ? `**Selected:** <#${draft.channelId}> · \`${draft.messageId}\`` : '> No message selected.',
+      ].filter((line) => line !== null).join('\n'))],
+    components: [
+      row(button('admin:reactionRoles:source:link', draft?.messageId ? '🔄 Change Message' : '🔗 Paste Message Link', ButtonStyle.Primary)),
+      row(
+        button('admin:reactionRoles:source:continue', 'Continue to Mapping Builder', ButtonStyle.Success, !draft?.messageId),
+        button('admin:reactionRoles:wizard:cancel', 'Cancel Setup'),
+        button('admin:reactionRoles', '🏠 Home'),
+      ),
+    ],
+  };
+}
+
+function buildWizard(guild, userId, showRemove = false, notice = '') {
+  const draft = reactionRoles.getDraft(guild.id, userId);
+  if (!draft) throw new Error('Your setup session has expired. Start again.');
+  const existing = draft.type === reactionRoles.DRAFT_TYPES.EXISTING;
+  if (existing && !draft.messageId) return buildExistingMessageStep(guild, userId, notice);
+
+  const sourceReady = existing ? Boolean(draft.messageId) : Boolean(draft.channelId);
+  const ready = Boolean(sourceReady && draft.mappings.length);
+  const selectedRole = draft.selectedRoleId ? guild.roles.cache.get(draft.selectedRoleId) : null;
+  const components = [];
+
+  if (!existing) {
+    components.push(row(
+      new ChannelSelectMenuBuilder()
+        .setCustomId('admin:reactionRoles:wizard:channel')
+        .setPlaceholder(draft.channelId ? 'Change target channel' : '1. Choose target channel')
+        .setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+        .setMinValues(1)
+        .setMaxValues(1)
+    ));
+  } else {
+    components.push(row(button('admin:reactionRoles:source', '🔄 Change Source Message')));
+  }
+
+  components.push(
+    row(new RoleSelectMenuBuilder()
+      .setCustomId('admin:reactionRoles:wizard:role')
+      .setPlaceholder(selectedRole ? `Selected role: ${selectedRole.name}` : '2. Choose the role this reaction controls')
+      .setMinValues(1)
+      .setMaxValues(1)),
+    row(showRemove && draft.mappings.length ? removeMappingSelect(draft, guild) : modeSelect(draft.selectedMode)),
+    row(
+      button('admin:reactionRoles:wizard:emoji', '😊 Add Mapping', ButtonStyle.Success, !draft.selectedRoleId),
+      button('admin:reactionRoles:wizard:remove', '🗑️ Remove', ButtonStyle.Secondary, !draft.mappings.length),
+    ),
+    row(
+      button('admin:reactionRoles:wizard:deploy', draft.panelId ? '💾 Save Changes' : existing ? '💾 Attach Roles' : '🚀 Deploy Panel', ButtonStyle.Success, !ready),
+      button('admin:reactionRoles:wizard:cancel', 'Cancel Setup'),
+      button('admin:reactionRoles', '🏠 Home'),
+      button('admin:reactionRoles:settings', '⚙️ Settings'),
+    ),
+  );
+
+  let next = !sourceReady
+    ? existing ? 'Select the source message first.' : 'Choose where Goliath should post the panel.'
+    : !selectedRole
+      ? 'Choose the role this reaction should control.'
+      : 'Choose the behaviour, then press “Add Mapping” to select its emoji.';
+  if (ready) next = 'Ready. Review the mappings, add another if needed, then deploy.';
+
+  return {
+    embeds: [new EmbedBuilder()
+      .setColor(notice || ready ? 0x57f287 : 0x5865f2)
+      .setTitle(draft.panelId ? '✏️ Edit Reaction Role Mappings' : existing ? '🔗 Attach Reaction Roles' : '✨ Reaction Role Builder')
+      .setDescription([
+        noticeLine(notice), notice ? '' : null,
+        existing
+          ? 'Add emoji-to-role mappings to the selected message.'
+          : 'Choose a channel, create one or more emoji-to-role mappings, then deploy.',
+        '',
+        `**Source:** ${existing ? `Existing message in <#${draft.channelId}>` : 'New Goliath reaction-role panel'}`,
+        !existing ? `**Channel:** ${draft.channelId ? `<#${draft.channelId}>` : 'Not selected'}` : null,
+        '',
+        `### Current Mappings (${draft.mappings.length})`,
+        mappingText(draft.mappings, guild),
+        '',
+        selectedRole ? '### New Mapping' : null,
+        selectedRole ? `**Role:** <@&${selectedRole.id}>` : null,
+        selectedRole ? `**Behaviour:** ${modeLabel(draft.selectedMode)}` : null,
+        selectedRole ? `**Result:** ${modeResult(draft.selectedMode)}` : null,
+        selectedRole ? '' : null,
+        showRemove && draft.mappings.length ? '> Choose a completed mapping above to remove it.' : `> ${next}`,
+      ].filter((line) => line !== null).join('\n').slice(0, 4096))],
+    components,
+  };
+}
+
+async function buildManagedPanel(guild, panelId, notice = '') {
+  const panel = reactionRoles.getPanel(guild.id, panelId);
+  if (!panel) throw new Error('That reaction-role panel no longer exists.');
+  return {
+    embeds: [new EmbedBuilder()
+      .setColor(notice ? 0x57f287 : panel.enabled === false ? 0x747f8d : 0x57f287)
+      .setTitle(`🎭 ${panel.name}`)
+      .setDescription([
+        noticeLine(notice), notice ? '' : null,
+        `**Status:** ${panel.enabled === false ? '⏸️ Disabled' : '✅ Enabled'}`,
+        `**Channel:** <#${panel.channelId}>`,
+        `**Message:** [Open tracked message](https://discord.com/channels/${guild.id}/${panel.channelId}/${panel.messageId})`,
+        `**Mappings:** \`${panel.mappings.length}\``, '',
+        '### Emoji and roles', mappingText(panel.mappings, guild),
+      ].filter((line) => line !== null).join('\n').slice(0, 4096))],
+    components: [
+      row(
+        button(`admin:reactionRoles:manage:edit:${panelId}`, '✏️ Edit Mappings', ButtonStyle.Primary),
+        button(`admin:reactionRoles:manage:repair:${panelId}`, '🔄 Sync & Repair', ButtonStyle.Secondary, panel.enabled === false),
+        button(`admin:reactionRoles:manage:${panel.enabled === false ? 'enable' : 'disable'}:${panelId}`, panel.enabled === false ? '▶️ Enable Panel' : '⏸️ Disable Panel', panel.enabled === false ? ButtonStyle.Success : ButtonStyle.Secondary),
+        button(`admin:reactionRoles:manage:remove:confirm:${panelId}`, '🗑️ Delete Panel', ButtonStyle.Danger),
+      ),
+      row(
+        button('admin:reactionRoles:manage', '⬅️ Back'),
+        button('admin:reactionRoles', '🏠 Home'),
+        button('admin:reactionRoles:settings', '⚙️ Settings'),
+      ),
+    ],
+  };
+}
+
+function buildDeleteConfirmation(guild, panelId) {
+  const panel = reactionRoles.getPanel(guild.id, panelId);
+  if (!panel) throw new Error('That reaction-role panel no longer exists.');
+  return {
+    embeds: [new EmbedBuilder()
+      .setColor(0xed4245)
+      .setTitle('⚠️ Delete Reaction-Role Panel?')
+      .setDescription(`**Panel:** ${panel.name}\n**Channel:** <#${panel.channelId}>\n**Mappings:** \`${panel.mappings.length}\`\n\nThe Discord message and existing member roles will remain.`)],
+    components: [row(
+      button(`admin:reactionRoles:manage:remove:execute:${panelId}`, 'Delete Panel', ButtonStyle.Danger),
+      button(`admin:reactionRoles:manage:view:${panelId}`, 'Cancel'),
+    )],
+  };
+}
+
+function modal(customId, title, fields) {
+  return new ModalBuilder()
+    .setCustomId(customId)
+    .setTitle(title)
+    .addComponents(...fields.map((field) => row(
+      new TextInputBuilder()
+        .setCustomId(field.id)
+        .setLabel(field.label)
+        .setPlaceholder(field.placeholder || '')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+    )));
+}
+
+async function respond(interaction, payload) {
+  if (interaction.deferred || interaction.replied) return interaction.editReply(payload);
+  if (interaction.isButton?.() || interaction.isAnySelectMenu?.()) return interaction.update(payload);
+  return interaction.reply({ ...payload, ephemeral: true });
+}
+
+async function updateGeneratedMessage(guild, panel) {
+  if (panel.source !== reactionRoles.DRAFT_TYPES.TEMPLATE || panel.templateId) return;
+  const channel = guild.channels.cache.get(panel.channelId) || await guild.channels.fetch(panel.channelId).catch(() => null);
+  const message = channel?.messages?.fetch ? await channel.messages.fetch(panel.messageId).catch(() => null) : null;
+  if (message?.author?.id === guild.members.me?.id) await message.edit(generatedPanelPayload(panel.mappings, guild));
+}
+
+async function deployDraft(guild, userId) {
+  const draft = reactionRoles.getDraft(guild.id, userId);
+  if (!draft) throw new Error('Your setup session has expired. Start again.');
+  const existing = draft.type === reactionRoles.DRAFT_TYPES.EXISTING;
+  await reactionRolesHealth.assertDeploymentAccess({
+    guild,
+    channelId: draft.channelId,
+    mappings: draft.mappings,
+    createMessage: !existing && !draft.panelId,
+  });
+
+  if (draft.panelId) {
+    const panel = await reactionRoles.updatePanelMappings(guild, draft.panelId, draft.mappings, userId);
+    await updateGeneratedMessage(guild, panel);
+    return { panel, wasEdit: true };
+  }
+
+  if (existing) {
+    const panel = await reactionRoles.attachExistingMessage({
+      guild,
+      messageReference: draft.messageId,
+      channelId: draft.channelId,
+      name: draft.name,
+      mappings: draft.mappings,
+      createdBy: userId,
+    });
+    return { panel, wasEdit: false };
+  }
+
+  const channel = guild.channels.cache.get(draft.channelId) || await guild.channels.fetch(draft.channelId).catch(() => null);
+  if (!channel?.send) throw new Error('Choose a text channel where Goliath can send messages.');
+  let message = null;
+  let panel = null;
+  try {
+    message = await channel.send(generatedPanelPayload(draft.mappings, guild));
+    panel = reactionRoles.savePanel(guild.id, {
+      name: draft.name || 'Reaction Roles',
+      source: reactionRoles.DRAFT_TYPES.TEMPLATE,
+      templateId: null,
+      channelId: channel.id,
+      messageId: message.id,
+      mappings: draft.mappings,
+      createdBy: userId,
+      status: 'pending',
+    }, guild);
+    panel = (await reactionRoles.syncPanelReactions(guild, panel)).panel;
+    return { panel, wasEdit: false };
+  } catch (error) {
+    if (panel?.panelId) reactionRoles.removePanel(guild.id, panel.panelId, guild);
+    if (message) await message.delete().catch(() => null);
+    throw error;
+  }
+}
+
+async function handleReactionRolesAdminInteraction(interaction) {
+  const id = String(interaction.customId || '');
+  if (!id.startsWith('admin:reactionRoles')) return false;
+  const guild = interaction.guild;
+  const userId = interaction.user.id;
+
+  try {
+    if (interaction.isModalSubmit?.() && id === 'admin:reactionRoles:source:link:submit') {
+      const parsed = reactionRoles.parseMessageReference(interaction.fields.getTextInputValue('messageLink'));
+      if (parsed.guildId && parsed.guildId !== guild.id) throw new Error('That message belongs to a different server.');
+      const channel = guild.channels.cache.get(parsed.channelId) || await guild.channels.fetch(parsed.channelId).catch(() => null);
+      const message = channel?.messages?.fetch ? await channel.messages.fetch(parsed.messageId).catch(() => null) : null;
+      if (!message) throw new Error('That message could not be found or Goliath cannot access it.');
+      reactionRoles.saveDraft(guild.id, userId, { channelId: parsed.channelId, messageId: parsed.messageId }, guild);
+      return interaction.reply({ ...buildExistingMessageStep(guild, userId, '✅ Message selected successfully.'), ephemeral: true });
+    }
+
+    if (interaction.isModalSubmit?.() && id === 'admin:reactionRoles:wizard:emoji:submit') {
+      const draft = reactionRoles.getDraft(guild.id, userId);
+      if (!draft?.selectedRoleId) throw new Error('Choose a role before adding an emoji.');
+      reactionRoles.addDraftMapping(guild.id, userId, {
+        emoji: interaction.fields.getTextInputValue('emoji'),
+        roleId: draft.selectedRoleId,
+        mode: draft.selectedMode,
+        removeOnUnreact: draft.selectedMode === reactionRoles.MODES.TOGGLE,
+      }, guild);
+      reactionRoles.saveDraft(guild.id, userId, { selectedRoleId: null }, guild);
+      return interaction.reply({ ...buildWizard(guild, userId, false, '✅ Mapping added. Add another or deploy the panel.'), ephemeral: true });
+    }
+
+    if (id === 'admin:reactionRoles' || id === 'admin:reactionRoles:open') return respond(interaction, await buildReactionRolesAdminPanel(guild, displayName(interaction)));
+    if (id === 'admin:reactionRoles:create') {
+      reactionRoles.saveDraft(guild.id, userId, {
+        type: reactionRoles.DRAFT_TYPES.TEMPLATE,
+        panelId: null,
+        channelId: null,
+        messageId: null,
+        templateId: null,
+        mappings: [],
+        selectedRoleId: null,
+        selectedMode: reactionRoles.MODES.TOGGLE,
+      }, guild);
+      return respond(interaction, buildWizard(guild, userId));
+    }
+    if (id === 'admin:reactionRoles:existing') return respond(interaction, buildExistingPicker(guild));
+    if (id === 'admin:reactionRoles:settings') return respond(interaction, await buildSettingsPage(guild, displayName(interaction)));
+    if (id === 'admin:reactionRoles:saved' || id === 'admin:reactionRoles:manage') return respond(interaction, buildManagePicker(guild));
+    if (id === 'admin:reactionRoles:disable:confirm') return respond(interaction, buildDisableConfirmation(guild));
+
+    if (id === 'admin:reactionRoles:new:existing') {
+      reactionRoles.saveDraft(guild.id, userId, {
+        type: reactionRoles.DRAFT_TYPES.EXISTING,
+        panelId: null,
+        channelId: null,
+        messageId: null,
+        templateId: null,
+        mappings: [],
+        selectedRoleId: null,
+        selectedMode: reactionRoles.MODES.TOGGLE,
+      }, guild);
+      return respond(interaction, buildExistingMessageStep(guild, userId));
+    }
+
+    if (id === 'admin:reactionRoles:source') return respond(interaction, buildExistingMessageStep(guild, userId));
+    if (id === 'admin:reactionRoles:source:continue') return respond(interaction, buildWizard(guild, userId));
+
+    if (interaction.isChannelSelectMenu?.() && id === 'admin:reactionRoles:wizard:channel') {
+      reactionRoles.saveDraft(guild.id, userId, { channelId: interaction.values[0] }, guild);
+      return respond(interaction, buildWizard(guild, userId));
+    }
+    if (interaction.isRoleSelectMenu?.() && id === 'admin:reactionRoles:wizard:role') {
+      reactionRoles.saveDraft(guild.id, userId, { selectedRoleId: interaction.values[0] }, guild);
+      return respond(interaction, buildWizard(guild, userId));
+    }
+    if (interaction.isStringSelectMenu?.() && id === 'admin:reactionRoles:wizard:mode') {
+      reactionRoles.saveDraft(guild.id, userId, { selectedMode: interaction.values[0] }, guild);
+      return respond(interaction, buildWizard(guild, userId));
+    }
+    if (interaction.isStringSelectMenu?.() && id === 'admin:reactionRoles:wizard:remove:mapping') {
+      reactionRoles.removeDraftMapping(guild.id, userId, interaction.values[0], guild);
+      return respond(interaction, buildWizard(guild, userId, false, '✅ Mapping removed.'));
+    }
+    if (interaction.isStringSelectMenu?.() && id === 'admin:reactionRoles:manage:panel' && interaction.values[0] !== 'none') {
+      return respond(interaction, await buildManagedPanel(guild, interaction.values[0]));
+    }
+
+    if (id === 'admin:reactionRoles:source:link') {
+      await interaction.showModal(modal(`${id}:submit`, 'Select Discord Message', [{
+        id: 'messageLink',
+        label: 'Full Discord message link',
+        placeholder: 'https://discord.com/channels/server/channel/message',
+      }]));
+      return true;
+    }
+    if (id === 'admin:reactionRoles:wizard:emoji') {
+      const draft = reactionRoles.getDraft(guild.id, userId);
+      const role = draft?.selectedRoleId ? guild.roles.cache.get(draft.selectedRoleId) : null;
+      if (!role) throw new Error('Choose the role this reaction should control first.');
+      await interaction.showModal(modal(`${id}:submit`, 'Choose Mapping Emoji', [{
+        id: 'emoji',
+        label: `Emoji that triggers ${role.name}`.slice(0, 45),
+        placeholder: 'Example: ⭐ or <:server_emoji:123456789>',
+      }]));
+      return true;
+    }
+    if (id === 'admin:reactionRoles:wizard:remove') return respond(interaction, buildWizard(guild, userId, true));
+    if (id === 'admin:reactionRoles:wizard:cancel') {
+      reactionRoles.clearDraft(guild.id, userId, guild);
+      return respond(interaction, await buildReactionRolesAdminPanel(guild, displayName(interaction), 'ℹ️ Setup cancelled. No changes were deployed.'));
+    }
+    if (id === 'admin:reactionRoles:wizard:deploy') {
+      await interaction.deferUpdate();
+      const { panel, wasEdit } = await deployDraft(guild, userId);
+      reactionRoles.clearDraft(guild.id, userId, guild);
+      return interaction.editReply(await buildManagedPanel(guild, panel.panelId,
+        wasEdit ? '✅ Changes saved and reactions synchronised.' : '✅ Reaction roles deployed successfully.'));
+    }
+
+    if (id.startsWith('admin:reactionRoles:manage:view:')) return respond(interaction, await buildManagedPanel(guild, id.split(':').pop()));
+    if (id.startsWith('admin:reactionRoles:manage:remove:confirm:')) return respond(interaction, buildDeleteConfirmation(guild, id.split(':').pop()));
+    if (id.startsWith('admin:reactionRoles:manage:edit:')) {
+      const panel = reactionRoles.getPanel(guild.id, id.split(':').pop());
+      if (!panel) throw new Error('That reaction-role panel no longer exists.');
+      reactionRoles.saveDraft(guild.id, userId, {
+        type: panel.source,
+        panelId: panel.panelId,
+        channelId: panel.channelId,
+        messageId: panel.messageId,
+        name: panel.name,
+        templateId: panel.templateId,
+        mappings: panel.mappings,
+        selectedRoleId: null,
+        selectedMode: reactionRoles.MODES.TOGGLE,
+      }, guild);
+      return respond(interaction, buildWizard(guild, userId));
+    }
+    if (id.startsWith('admin:reactionRoles:manage:enable:') || id.startsWith('admin:reactionRoles:manage:disable:')) {
+      const panelId = id.split(':').pop();
+      const enabling = id.includes(':enable:');
+      await interaction.deferUpdate();
+      const panel = await reactionRoles.setPanelEnabled(guild, panelId, enabling, guild);
+      if (panel.enabled !== false) await reactionRolesHealth.ensurePanelReactions(guild, panel);
+      return interaction.editReply(await buildManagedPanel(guild, panelId,
+        enabling ? '✅ Panel enabled and reactions synchronised.' : '✅ Panel disabled. Its mappings remain saved.'));
+    }
+    if (id.startsWith('admin:reactionRoles:manage:repair:')) {
+      const panelId = id.split(':').pop();
+      await interaction.deferUpdate();
+      const panel = await reactionRoles.repairPanel(guild, panelId, guild);
+      await reactionRolesHealth.ensurePanelReactions(guild, panel);
+      return interaction.editReply(await buildManagedPanel(guild, panelId, '✅ Panel checked and repaired successfully.'));
+    }
+    if (id.startsWith('admin:reactionRoles:manage:remove:execute:')) {
+      const panelId = id.split(':').pop();
+      await interaction.deferUpdate();
+      await reactionRoles.detachPanel(guild, panelId, { clearReactions: true });
+      return interaction.editReply(buildManagePicker(guild, '✅ Panel removed. The Discord message was left in place.'));
+    }
+
+    if (id === 'admin:reactionRoles:enable') {
+      guildManager.setModuleEnabled(guild.id, reactionRoles.SECTION, true, { actorId: userId });
+      return respond(interaction, await buildSettingsPage(guild, displayName(interaction), '✅ Reaction Roles enabled.'));
+    }
+    if (id === 'admin:reactionRoles:disable:execute') {
+      guildManager.setModuleEnabled(guild.id, reactionRoles.SECTION, false, { actorId: userId });
+      return respond(interaction, await buildSettingsPage(guild, displayName(interaction), '✅ Reaction Roles disabled. Saved panels were preserved.'));
+    }
+    if (id === 'admin:reactionRoles:repair') {
+      await interaction.deferUpdate();
+      const result = await reactionRoles.repairAll(guild);
+      const notice = result.failed?.length
+        ? `⚠️ Repair finished: ${result.repaired.length} repaired, ${result.failed.length} failed.`
+        : `✅ Repair finished: ${result.repaired.length} panel${result.repaired.length === 1 ? '' : 's'} synchronised.`;
+      return interaction.editReply(await buildSettingsPage(guild, displayName(interaction), notice));
+    }
+
+    return respond(interaction, await buildReactionRolesAdminPanel(guild, displayName(interaction)));
+  } catch (error) {
+    const payload = { content: `❌ Reaction Roles failed: ${error.message}`, ephemeral: true };
+    if (interaction.deferred || interaction.replied) await interaction.followUp(payload).catch(() => null);
+    else await interaction.reply(payload).catch(() => null);
+    return true;
+  }
+}
+
+module.exports = {
+  buildReactionRolesAdminPanel,
+  handleReactionRolesAdminInteraction,
+};
