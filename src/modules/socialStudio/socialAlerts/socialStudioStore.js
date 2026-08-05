@@ -166,6 +166,7 @@ function createCreatorForMember(member, meta = {}) {
       group: '',
       tags: [],
       notes: '',
+      adminNotes: '',
       enabled: true,
       status: 'active',
       accountIds: [],

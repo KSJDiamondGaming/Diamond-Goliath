@@ -2,10 +2,12 @@
 
 const { EmbedBuilder } = require('discord.js');
 const guildManager = require('../../../core/guild/guildManager');
+const { deleteExpiredCreators } = require('./socialStudioStore');
 const { checkAccount, providerInfo } = require('./socialStudioProviders');
 const { normalizeTemplates, resolveTemplate } = require('./socialStudioTemplates');
 
 const runningGuilds = new Set();
+const LIVE_MESSAGE_REFRESH_MS = 60 * 60 * 1000;
 let timer = null;
 
 const PLATFORM = {
@@ -460,15 +462,18 @@ function liveAccountsForCreator(config, creator) {
 }
 
 function liveMessageUpdateDue(previous, checked) {
-  if (checked.isLive !== true || previous.isLive !== true || !checked.event) return false;
-  if (!previous.lastAlertMessageId || !previous.lastAlertChannelId) return false;
-  if (!String(previous.lastAlertKey || '').startsWith('live:')) return false;
-  const priorThumbnail = clean(previous.lastLiveEvent?.thumbnail || previous.thumbnail || '', 1000);
-  const nextThumbnail = clean(checked.event?.thumbnail || '', 1000);
-  if (nextThumbnail && nextThumbnail !== priorThumbnail) return true;
-  const lastUpdated = new Date(previous.lastLiveMessageUpdatedAt || previous.lastAlertAt || 0).getTime();
-  if (!Number.isFinite(lastUpdated)) return true;
-  return Date.now() - lastUpdated >= LIVE_MESSAGE_UPDATE_INTERVAL_MS;
+  if (
+    checked.isLive !== true ||
+    previous.isLive !== true ||
+    !checked.event
+  ) return false;
+
+  const last =
+    Number(previous.lastLiveMessageUpdateAt || 0);
+
+  return (
+    Date.now() - last >= LIVE_MESSAGE_REFRESH_MS
+  );
 }
 async function forcePostCreatorLive(client, guildId, creatorId, options = {}) {
   const config = configFor(guildId);
@@ -917,6 +922,21 @@ async function checkGuildAccounts(client, guildId, options = {}) {
 
 async function sweep(client) {
   for (const guild of client.guilds.cache.values()) {
+
+    try {
+      deleteExpiredCreators(
+        guild.id,
+        Date.now(),
+        {
+          actorId: 'system',
+        },
+      );
+    } catch (error) {
+      console.error(
+        `[Social Studio] creator cleanup failed for guild ${guild.id}:`,
+        error?.message || error,
+      );
+    }
     try { await checkGuildAccounts(client, guild.id); }
     catch (error) { console.error(`[Social Studio] automatic check failed for guild ${guild.id}:`, error?.message || error); }
   }
