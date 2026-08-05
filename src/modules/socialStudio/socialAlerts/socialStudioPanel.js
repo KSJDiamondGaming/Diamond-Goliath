@@ -823,6 +823,13 @@ async function handleAutomationInteraction(i, context) {
   } = context;
 
   if (id === `${P}creator:rebuild`) { const linked = new Set(Object.values(config.creators).flatMap((c) => c.accountIds || [])); for (const a of Object.values(config.accounts)) if (!linked.has(a.accountId)) { const cid = makeId('creator'); config.creators[cid] = { creatorId: cid, displayName: a.displayName || a.username || a.externalId, group: '', tags: [a.platform], notes: '', enabled: true, accountIds: [a.accountId], createdAt: now(), updatedAt: now() }; } saveConfig(i.guildId, config, i.guild, actorId); return respond(i, buildSectionPanel(i, 'creators')); }
+  if (id === `${P}main`) {
+    return respond(
+      i,
+      buildMainPanel(i, config),
+    );
+  }
+
   const section = id.slice(P.length);
   if (section === 'templates') {
     config.templates = normalizeTemplates(config.templates);
