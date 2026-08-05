@@ -62,13 +62,26 @@ async function getRoleStudioState(guild) {
   };
 }
 
+function moduleHealthLabel({ enabled, configured, healthy, detail = '' }) {
+  if (!enabled) return '⏸️ Not active while disabled';
+  if (!configured) return 'ℹ️ Ready — nothing configured yet';
+  return healthLabel(healthy, detail);
+}
+
 async function buildRoleStudioPanel(guild, memberDisplayName = 'Unknown User') {
   const state = await getRoleStudioState(guild);
-  const overallHealthy = state.canManageRoles
-    && state.autoHealth.healthy
-    && state.reactionHealth.healthy
-    && state.timedHealth.healthy
-    && state.missingTemporaryRoles === 0;
+  const autoConfigured = state.autoRoleCount > 0;
+  const reactionConfigured = state.reactionDeployments.length > 0;
+  const timedConfigured = state.timedRules.length > 0;
+  const temporaryConfigured = state.tempAssignments.length > 0;
+
+  const activeSystemsHealthy = [
+    !state.autoEnabled || !autoConfigured || state.autoHealth.healthy,
+    !state.reactionEnabled || !reactionConfigured || state.reactionHealth.healthy,
+    !state.timedEnabled || !timedConfigured || state.timedHealth.healthy,
+    !state.temporaryEnabled || !temporaryConfigured || state.missingTemporaryRoles === 0,
+  ].every(Boolean);
+  const overallHealthy = state.canManageRoles && activeSystemsHealthy;
 
   const embed = new EmbedBuilder()
     .setColor(!state.canManageRoles ? 0xED4245 : overallHealthy ? 0x57F287 : 0xFAA61A)
@@ -78,23 +91,42 @@ async function buildRoleStudioPanel(guild, memberDisplayName = 'Unknown User') {
       '',
       `**👥 Auto Roles** — ${statusIcon(state.autoEnabled)} ${statusLabel(state.autoEnabled)}`,
       `Configured: \`${state.autoRoleCount}\` • Assigned: \`${state.auto.analytics?.assigned || 0}\``,
-      `Health: ${healthLabel(state.autoHealth.healthy)}`,
+      `Health: ${moduleHealthLabel({
+        enabled: state.autoEnabled,
+        configured: autoConfigured,
+        healthy: state.autoHealth.healthy,
+      })}`,
       '',
       `**😊 Reaction Roles** — ${statusIcon(state.reactionEnabled)} ${statusLabel(state.reactionEnabled)}`,
       `Panels: \`${state.reactionDeployments.length}\` • Added: \`${state.reaction.analytics?.assigned || 0}\` • Removed: \`${state.reaction.analytics?.removed || 0}\``,
-      `Health: ${healthLabel(state.reactionHealth.healthy, state.reactionHealth.healthy ? '' : `${state.reactionHealth.unhealthy || 0} panel(s)`)}`,
+      `Health: ${moduleHealthLabel({
+        enabled: state.reactionEnabled,
+        configured: reactionConfigured,
+        healthy: state.reactionHealth.healthy,
+        detail: `${state.reactionHealth.unhealthy || 0} panel(s)`,
+      })}`,
       '',
       `**⏳ Timed Roles** — ${statusIcon(state.timedEnabled)} ${statusLabel(state.timedEnabled)}`,
       `Milestones: \`${state.timedRules.length}\` • Awarded: \`${state.timed.analytics?.awarded || 0}\``,
-      `Health: ${healthLabel(state.timedHealth.healthy, state.timedHealth.healthy ? '' : `${state.timedHealth.issues?.length || 0} issue(s)`)}`,
+      `Health: ${moduleHealthLabel({
+        enabled: state.timedEnabled,
+        configured: timedConfigured,
+        healthy: state.timedHealth.healthy,
+        detail: `${state.timedHealth.issues?.length || 0} issue(s)`,
+      })}`,
       '',
       `**⚡ Temporary Roles** — ${statusIcon(state.temporaryEnabled)} ${statusLabel(state.temporaryEnabled)}`,
       `Active: \`${state.tempAssignments.length}\` • Assigned: \`${state.temporary.analytics?.assigned || 0}\` • Expired: \`${state.temporary.analytics?.expired || 0}\``,
-      `Health: ${healthLabel(state.missingTemporaryRoles === 0, state.missingTemporaryRoles ? `${state.missingTemporaryRoles} missing role reference(s)` : '')}`,
+      `Health: ${moduleHealthLabel({
+        enabled: state.temporaryEnabled,
+        configured: temporaryConfigured,
+        healthy: state.missingTemporaryRoles === 0,
+        detail: `${state.missingTemporaryRoles} missing role reference(s)`,
+      })}`,
       '',
       state.canManageRoles
-        ? `> Overall: ${overallHealthy ? '✅ All role systems are healthy.' : '⚠️ One or more role systems need attention.'}`
-        : '❌ **Goliath is missing Manage Roles.** Role assignments will fail until this permission is restored.',
+        ? `> Overall: ${activeSystemsHealthy ? '✅ All active role systems are healthy.' : '⚠️ One or more active role systems need attention.'}`
+        : '❌ **Goliath is missing Manage Roles.** Enable this permission on the Goliath role, then press **Refresh Status**.',
     ].join('\n'))
     .setFooter({ text: `Requested by ${memberDisplayName}` })
     .setTimestamp();
