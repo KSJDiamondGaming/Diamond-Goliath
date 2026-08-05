@@ -6,7 +6,7 @@ const verificationManager = require('./verificationManager');
 const verificationStore = require('./verificationStore');
 const verificationHealth = require('./verificationHealth');
 const guildManager = require('../../core/guild/guildManager');
-const security = require('../../core/security/securityCore');
+const { isBotOwner } = require('../../core/security/securityCore');
 
 const router = express.Router();
 
@@ -70,7 +70,7 @@ async function requireVerificationGuildAccess(req, res, next) {
     const guildId = getGuildId(req);
     req.verificationActorId = userId;
 
-    if (security.isBotOwner(userId)) return next();
+    if (isBotOwner(userId)) return next();
 
     const guild = await getGuild(req, guildId);
     if (!guild) {
