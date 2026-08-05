@@ -13,6 +13,7 @@ const {
   TextInputStyle,
   StringSelectMenuBuilder,
   AttachmentBuilder,
+  PermissionFlagsBits,
 } = require('discord.js');
 
 const guildManager = require('../../core/guild/guildManager');
