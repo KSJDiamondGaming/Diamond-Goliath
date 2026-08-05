@@ -1345,25 +1345,25 @@ function buildUserProfile(
         '👥 My Creator Profile',
         [
           created ? '✅ **Creator Profile created.**' : null,
-          `**Creator ID**\n\`${creator.creatorId}\``,
+                    `**__Creator ID__** \`${creator.creatorId}\``,
           creator.displayName
-            ? `**Creator Name**\n${creator.displayName}`
+            ? `**__Creator Name__** ${creator.displayName}`
             : null,
-          `**Status**\n${status}`,
+          `**__Status__** ${status}`,
           creator.group
-            ? `**Group / Team**\n${creator.group}`
+            ? `**__Group / Team__** ${creator.group}`
             : null,
           Array.isArray(creator.tags) && creator.tags.length
-            ? `**Tags**\n${creator.tags.join(', ')}`
+            ? `**__Tags__** ${creator.tags.join(', ')}`
             : null,
           creator.notes
-            ? `**Profile Notes**\n${creator.notes}`
+            ? `**__Profile Notes__** ${creator.notes}`
             : null,
           userAccountSummary(accounts),
-          `**Created**\n${createdAt}`,
-          `**Last Updated**\n${updatedAt}`,
+          `**__Created__** ${createdAt}`,
+          `**__Last Updated__** ${updatedAt}`,
           '',
-          'Use the buttons below to manage your Creator Profile and linked accounts.',
+          'Manage your Creator Profile and linked accounts below.',
         ].filter(Boolean).join('\n\n'),
         who(interaction),
       ),
