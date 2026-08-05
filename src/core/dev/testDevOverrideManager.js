@@ -5,7 +5,6 @@ const path = require('path');
 
 const { normalizeBotMode } = require('../../config/botModes');
 const { getRuntimePaths } = require('../../config/runtimePaths');
-const security = require('../security/securityCore');
 
 const DEV_MODE = 'DEV';
 const FILE_NAME = 'testDevOverride.json';
@@ -24,6 +23,11 @@ const OWNER_PROTECTED_ACTIONS = new Set([
 
 function text(value) {
   return String(value || '').trim();
+}
+
+function isBotOwner(userId) {
+  const security = require('../security/securityCore');
+  return typeof security.isBotOwner === 'function' && security.isBotOwner(userId);
 }
 
 function isDevMode() {
@@ -125,7 +129,7 @@ function toggle(userId) {
     };
   }
 
-  if (!security.isBotOwner(userId)) {
+  if (!isBotOwner(userId)) {
     return {
       ...readState(),
       blocked: true,
@@ -173,7 +177,7 @@ function isOwnerSubject({ guild = null, member = null, user = null, userId = '' 
   const id = text(userId || subjectId(member) || subjectId(user));
   if (!id) return false;
   if (text(guild?.ownerId) === id) return true;
-  return security.isBotOwner(id);
+  return isBotOwner(id);
 }
 
 function isDevOwnerHierarchyOverride({ guild = null, guildId: targetGuildId = '', member = null, user = null, userId = '' } = {}) {
