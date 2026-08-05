@@ -199,6 +199,7 @@ function completeCreatorProfile(member, values = {}, meta = {}) {
       .map((value) => clean(value, 60))
       .filter(Boolean),
     notes: clean(values.notes, 1000),
+    adminNotes: clean(values.adminNotes, 1000),
     enabled: current.enabled !== false,
     status: 'active',
     departureType: null,
