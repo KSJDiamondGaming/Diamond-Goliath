@@ -115,8 +115,8 @@ async function buildReactionRolesAdminPanel(guild, memberDisplayName = 'Unknown 
       .setFooter({ text: `Requested by ${memberDisplayName}` }).setTimestamp()],
     components: [
       row(
-        button('admin:reactionRoles:new:template', '✨ Create New Panel', ButtonStyle.Success),
-        button('admin:reactionRoles:new:existing', '🔗 Use Existing Message', ButtonStyle.Primary),
+        button('admin:reactionRoles:create', '➕ Create', ButtonStyle.Success),
+        button('admin:reactionRoles:existing', '🔗 Use Existing', ButtonStyle.Primary),
       ),
       row(
         button('admin:reactionRoles:saved', '📚 Saved Panels', ButtonStyle.Secondary, !panels.length),
@@ -126,6 +126,41 @@ async function buildReactionRolesAdminPanel(guild, memberDisplayName = 'Unknown 
         button('admin:studio:roleStudio', '⬅️ Back', ButtonStyle.Secondary),
         button('admin:reactionRoles:settings', '⚙️ Settings', ButtonStyle.Secondary),
       ),
+    ],
+  };
+}
+
+function buildCreatePicker() {
+  return {
+    embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('➕ Create').setDescription([
+      'Choose what you want to create.', '',
+      '**Create New Panel**', 'Build and deploy a new reaction-role panel.', '',
+      '**Create New Message**', 'Create a new Discord message first, then attach reaction roles.',
+    ].join('\n'))],
+    components: [
+      row(
+        button('admin:reactionRoles:new:template', '✨ New Panel', ButtonStyle.Success),
+        button('admin:reactionRoles:new:message', '💬 New Message', ButtonStyle.Primary),
+      ),
+      row(button('admin:reactionRoles', '⬅️ Back', ButtonStyle.Secondary)),
+    ],
+  };
+}
+
+function buildExistingPicker(guild) {
+  const panels = reactionRoles.listPanels(guild.id);
+  return {
+    embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('🔗 Use Existing').setDescription([
+      'Choose an existing item to use.', '',
+      '**Existing Message**', 'Attach reaction roles to a Discord message already in the server.', '',
+      '**Existing Panel**', 'Open one of the saved reaction-role panels.',
+    ].join('\n'))],
+    components: [
+      row(
+        button('admin:reactionRoles:new:existing', '🔗 Existing Message', ButtonStyle.Primary),
+        button('admin:reactionRoles:saved', '📚 Existing Panel', ButtonStyle.Secondary, !panels.length),
+      ),
+      row(button('admin:reactionRoles', '⬅️ Back', ButtonStyle.Secondary)),
     ],
   };
 }
@@ -198,7 +233,7 @@ function buildManagePicker(guild, notice = '') {
       panels.length ? 'Choose a saved panel to view and manage it.' : 'No reaction-role panels are configured yet.',
     ].filter((line) => line !== null).join('\n'))],
     components: [
-      ...(panels.length ? [row(deploymentSelect(guild.id))] : [row(button('admin:reactionRoles:new:template', '✨ Create First Panel', ButtonStyle.Success))]),
+      ...(panels.length ? [row(deploymentSelect(guild.id))] : [row(button('admin:reactionRoles:create', '➕ Create First Panel', ButtonStyle.Success))]),
       row(button('admin:reactionRoles', '⬅️ Back', ButtonStyle.Secondary)),
     ],
   };
@@ -376,9 +411,19 @@ async function handleReactionRolesAdminInteraction(interaction) {
     }
 
     if (id === 'admin:reactionRoles' || id === 'admin:reactionRoles:open') return respond(interaction, await buildReactionRolesAdminPanel(guild, displayName(interaction)));
+    if (id === 'admin:reactionRoles:create') return respond(interaction, buildCreatePicker());
+    if (id === 'admin:reactionRoles:existing') return respond(interaction, buildExistingPicker(guild));
     if (id === 'admin:reactionRoles:settings') return respond(interaction, await buildSettingsPage(guild, displayName(interaction)));
     if (id === 'admin:reactionRoles:saved' || id === 'admin:reactionRoles:manage') return respond(interaction, buildManagePicker(guild));
     if (id === 'admin:reactionRoles:disable:confirm') return respond(interaction, buildDisableConfirmation(guild));
+
+    if (id === 'admin:reactionRoles:new:message') {
+      reactionRoles.saveDraft(guild.id, userId, {
+        type: reactionRoles.DRAFT_TYPES.TEMPLATE, panelId: null, channelId: null, messageId: null, templateId: null,
+        mappings: [], selectedRoleId: null, selectedMode: reactionRoles.MODES.TOGGLE,
+      }, guild);
+      return respond(interaction, buildWizard(guild, userId));
+    }
 
     if (id === 'admin:reactionRoles:new:existing' || id === 'admin:reactionRoles:new:template') {
       const type = id.endsWith('template') ? reactionRoles.DRAFT_TYPES.TEMPLATE : reactionRoles.DRAFT_TYPES.EXISTING;
