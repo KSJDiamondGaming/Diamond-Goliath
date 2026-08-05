@@ -174,7 +174,9 @@ async function fetchFreshMember(interaction) {
 }
 async function handleVerificationMemberInteraction(interaction) {
   if (typeof verificationManager?.verifyMember !== 'function') throw new Error('Verification handler is unavailable.');
-  if (!interaction.deferred && !interaction.replied) await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  if (!interaction.deferred && !interaction.replied) {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+}
   const lockKey = `${interaction.guildId}:${interaction.user.id}`;
   const previous = verificationLocks.get(lockKey);
   if (previous) await previous.catch(() => null);
@@ -224,6 +226,8 @@ module.exports = {
       }
       const interactionAgeMs = Math.max(0, Date.now() - Number(interaction.createdTimestamp || Date.now()));
       const customId = String(interaction.customId || '');
+      
+      if (isVerificationMemberInteraction(interaction)) { await handleVerificationMemberInteraction(interaction); return; }
       if (interactionAgeMs > 1500) console.warn(`[InteractionCreate] Slow dispatch before routing: customId=${customId} age=${interactionAgeMs}ms pid=${process.pid}`);
       if (startsWith(interaction, 'user:')) {
         if (!await callHandler(userPanelInteractions, 'handleUserPanelInteraction', interaction)) throw new Error(`User panel did not handle ${customId}.`);
@@ -270,7 +274,7 @@ module.exports = {
       if (startsWith(interaction, 'admin:reactionRoles')) { await callHandler(reactionRolesAdminPanel, 'handleReactionRolesAdminInteraction', interaction); return; }
       if (startsWith(interaction, 'admin:schedule')) { await callHandler(schedulePanel, 'handleScheduleAdminInteraction', interaction); return; }
       if (startsWith(interaction, 'schedule:rsvp:')) { await callHandler(scheduleDeployment, 'handleMemberInteraction', interaction); return; }
-      if (isVerificationMemberInteraction(interaction)) { await handleVerificationMemberInteraction(interaction); return; }
+      
       if (await callHandler(statsAdminPanel, 'handleStatsAdminInteraction', interaction)) return;
       if (await callHandler(suggestionsInteractions, 'handleSuggestionsAdminInteraction', interaction)) return;
       if (await callHandler(giveawaysAdminPanel, 'handleGiveawaysAdminInteraction', interaction)) return;
