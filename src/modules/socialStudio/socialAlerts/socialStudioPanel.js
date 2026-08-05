@@ -631,6 +631,39 @@ async function handleCreatorInteraction(i, context) {
     return true;
   }
 
+  if (id.startsWith(`${P}creator:update:`)) {
+    const creatorId = id.split(':')[2];
+
+    const values = {
+      displayName: i.fields.getTextInputValue('displayName'),
+      group: i.fields.getTextInputValue('group'),
+      tags: i.fields.getTextInputValue('tags'),
+      notes: i.fields.getTextInputValue('notes'),
+      adminNotes: i.fields.getTextInputValue('adminNotes'),
+    };
+
+    updateCreator(
+      i.guildId,
+      creatorId,
+      values,
+      {
+        actorId,
+      },
+    );
+
+    const updated =
+      getConfig(i.guildId).creators[creatorId];
+
+    return respond(
+      i,
+      buildProfileManagePanel(
+        i,
+        getConfig(i.guildId),
+        updated,
+      ),
+    );
+  }
+
   if (id === `${P}creator:profile`) {
     const cid = getCreatorSession(i).creatorId;
     const creator = config.creators[cid];
