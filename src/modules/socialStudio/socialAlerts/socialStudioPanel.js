@@ -233,6 +233,16 @@ function creatorModal(c = null) {
     row(new TextInputBuilder().setCustomId('group').setLabel('Group or team').setPlaceholder('Add their team, brand or category here').setStyle(TextInputStyle.Short).setMaxLength(120).setRequired(false).setValue(String(c?.group || ''))),
     row(new TextInputBuilder().setCustomId('tags').setLabel('Tags (comma separated)').setPlaceholder('Example: streamer, ksj, twitch').setStyle(TextInputStyle.Short).setMaxLength(300).setRequired(false).setValue(Array.isArray(c?.tags) ? c.tags.join(', ') : '')),
     row(new TextInputBuilder().setCustomId('notes').setLabel('Profile Notes (optional)').setPlaceholder('Add notes about this creator profile.').setStyle(TextInputStyle.Paragraph).setMaxLength(1000).setRequired(false).setValue(String(c?.notes || ''))),
+    row(new TextInputBuilder()
+      .setCustomId('adminNotes')
+      .setLabel('Admin Notes (Management Only)')
+      .setPlaceholder('Private notes visible only to Social Studio managers.')
+      .setStyle(TextInputStyle.Paragraph)
+      .setMaxLength(1000)
+      .setRequired(false)
+      .setValue(String(c?.adminNotes || ''))
+    ),
+
   );
 }
 function accountModal(platforms) { const m = new ModalBuilder().setCustomId(`${P}account:create-multi`).setTitle('Add Social Accounts'); for (const p of platforms.slice(0, 5)) m.addComponents(row(new TextInputBuilder().setCustomId(`account_${p}`).setLabel(`${LABEL[p]} username, channel ID or URL`).setPlaceholder(`Paste the ${LABEL[p]} profile URL, username or ID here`).setStyle(TextInputStyle.Short).setMaxLength(500).setRequired(true))); return m; }
@@ -352,7 +362,8 @@ function buildAccountAddPanel(i, config, creator) {
   return { embeds: [embed(config, '➕ Add Accounts', d, who(i), creatorAccent((creator.accountIds || []).map((id) => config.accounts[id]).filter(Boolean)))], components: [platformSelect(selected), row(btn(`${P}creators`, '⬅️ Back'), btn(`${P}account:continue`, '➡️ Continue', ButtonStyle.Success, !selected.length))] };
 }
 function buildProfileManagePanel(i, config, creator) {
-  const d = [`👤 **${creator.displayName}**`, '', '**Profile**', `Status: ${creator.enabled === false ? '⏸️ Paused' : '🟢 Monitoring'}`, `Group / Team: ${creator.group || 'Not set'}`, `Tags: ${creator.tags?.length ? creator.tags.join(', ') : 'None'}`, `Profile Notes: ${creator.notes || 'None'}`].join('\n');
+  const d = [`👤 **${creator.displayName}**`, '', '**Profile**', `Status: ${creator.enabled === false ? '⏸️ Paused' : '🟢 Monitoring'}`, `Group / Team: ${creator.group || 'Not set'}`, `Tags: ${creator.tags?.length ? creator.tags.join(', ') : 'None'}`, `Profile Notes: ${creator.notes || 'None'}`,
+    `\u{1F512} Admin Notes: ${creator.adminNotes || 'None'}`].join('\n');
   const components = [
     row(btn(`${P}creator:edit`, '📝 Edit Profile'), btn(`${P}creator:clear`, '🔄 Clear'), btn(`${P}creator:profile:toggle`, creator.enabled === false ? '▶️ Resume' : '⏸️ Pause', creator.enabled === false ? ButtonStyle.Success : ButtonStyle.Secondary), btn(`${P}creator:delete`, '🗑️ Delete', ButtonStyle.Danger)),
     row(btn(`${P}creators`, '⬅️ Back'), btn(`${P}settings`, '⚙️ Settings')),
@@ -835,10 +846,32 @@ async function handleDiagnosticsInteraction(i, context) {
   return false;
 }
 
+
+async function handleAdminSocialEntry(i, context) {
+  const {
+    config,
+  } = context;
+
+  if (i.customId === 'admin:social') {
+    return respond(
+      i,
+      buildMainPanel(i, config),
+    );
+  }
+
+  return false;
+}
+
 async function handleInteraction(i) {
   const id = i.customId;
   const config = getConfig(i.guildId);
   const actorId = i.user?.id;
+
+  if (await handleAdminSocialEntry(i, {
+    id,
+    config,
+    actorId,
+  })) return true;
 
   if (await handleCreatorInteraction(i, {
     id,
