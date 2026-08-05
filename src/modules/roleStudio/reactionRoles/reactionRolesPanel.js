@@ -293,10 +293,8 @@ function buildWizard(guild, userId, showRemove = false, notice = '') {
     row(
       button('admin:reactionRoles:wizard:emoji', '😊 Add Mapping', ButtonStyle.Success, !draft.selectedRoleId),
       button('admin:reactionRoles:wizard:remove', '🗑️ Remove', ButtonStyle.Secondary, !draft.mappings.length),
-    ),
-    row(
-      button('admin:reactionRoles:wizard:deploy', draft.panelId ? '💾 Save Changes' : existing ? '💾 Attach Roles' : '🚀 Deploy Panel', ButtonStyle.Success, !ready),
-      button('admin:reactionRoles:wizard:name', '✏️ Name Panel', ButtonStyle.Primary),
+      button('admin:reactionRoles:wizard:deploy', draft.panelId ? '💾 Save' : existing ? '💾 Attach' : '🚀 Deploy', ButtonStyle.Success, !ready),
+      button('admin:reactionRoles:wizard:name', '✏️ Name', ButtonStyle.Primary),
     ),
     row(
       button(existing ? 'admin:reactionRoles:existing' : 'admin:reactionRoles', '⬅️ Back'),
