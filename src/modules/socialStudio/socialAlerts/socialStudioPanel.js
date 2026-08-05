@@ -363,50 +363,51 @@ function buildAccountAddPanel(i, config, creator) {
 }
 function buildProfileManagePanel(i, config, creator) {
   const d = [
-    `👤 **${creator.displayName}**`,
+    `?? **${creator.displayName}**`,
     '',
     '**__Profile__**',
-    `**__Status__** ${creator.enabled === false ? '⏸️ Paused' : '🟢 Monitoring'}`,
+    `**__Status__** ${creator.enabled === false ? '?? Paused' : '?? Monitoring'}`,
     `**__Group / Team__** ${creator.group || 'Not set'}`,
     `**__Tags__** ${creator.tags?.length ? creator.tags.join(', ') : 'None'}`,
     `**__Profile Notes__** ${creator.notes || 'None'}`,
-    `🔒 **__Admin Notes__** ${creator.adminNotes || 'None'}`
+    `?? **__Admin Notes__** ${creator.adminNotes || 'None'}`
   ].join('\n');
 
   const components = [
-    row(btn(`${P}creator:edit`, '📝 Edit Profile'), btn(`${P}creator:clear`, '🔄 Clear'), btn(`${P}creator:profile:toggle`, creator.enabled === false ? '▶️ Resume' : '⏸️ Pause', creator.enabled === false ? ButtonStyle.Success : ButtonStyle.Secondary), btn(`${P}creator:delete`, '🗑️ Delete', ButtonStyle.Danger)),
-    row(btn(`${P}creators`, '⬅️ Back'), btn(`${P}settings`, '⚙️ Settings')),
+    row(
+      btn(`${P}creator:edit`, '?? Edit Profile'),
+      btn(`${P}creator:clear`, '?? Clear'),
+      btn(
+        `${P}creator:profile:toggle`,
+        creator.enabled === false ? '?? Resume' : '?? Pause',
+        creator.enabled === false ? ButtonStyle.Success : ButtonStyle.Secondary
+      ),
+      btn(`${P}creator:delete`, '??? Delete', ButtonStyle.Danger)
+    ),
+    row(
+      btn(`${P}creators`, '?? Back'),
+      btn(`${P}settings`, '?? Settings')
+    ),
   ];
 
   return {
     embeds: [
       embed(
         config,
-        '📝 Manage Profile',
+        '?? Manage Profile',
         d,
         who(i),
-        creatorAccent((creator.accountIds || []).map((id) => config.accounts[id]).filter(Boolean))
+        creatorAccent(
+          (creator.accountIds || [])
+            .map((id) => config.accounts[id])
+            .filter(Boolean)
+        )
       )
     ],
     components
   };
 }
-  const components = [
-    row(btn(`${P}creator:edit`, '📝 Edit Profile'), btn(`${P}creator:clear`, '🔄 Clear'), btn(`${P}creator:profile:toggle`, creator.enabled === false ? '▶️ Resume' : '⏸️ Pause', creator.enabled === false ? ButtonStyle.Success : ButtonStyle.Secondary), btn(`${P}creator:delete`, '🗑️ Delete', ButtonStyle.Danger)),
-    row(btn(`${P}creators`, '⬅️ Back'), btn(`${P}settings`, '⚙️ Settings')),
-  ];
-  return { embeds: [embed(config, '📝 Manage Profile', d, who(i), creatorAccent((creator.accountIds || []).map((id) => config.accounts[id]).filter(Boolean)))], components };
-}
-function buildAccountManagePanel(i, config, creator) {
-  const linked = (creator.accountIds || []).map((id) => config.accounts[id]).filter(Boolean).sort(accountSort);
-  const active = config.accounts[getAccountSession(i).accountId] || null;
-  const d = [`👤 **${creator.displayName}**`, '', '**Accounts**', `Linked: ${linked.length}`, `Selected: ${active ? `${LABEL[active.platform]} — ${active.username || active.externalId}` : linked.length ? 'Choose an account below.' : 'None yet.'}`, ...(linked.length ? ['', linked.map((a) => `• ${ICON[a.platform]} **${LABEL[a.platform]}** — ${a.profileUrl ? `[${a.username || a.externalId}](${a.profileUrl})` : a.username || a.externalId} — ${accountState(a)}`).join('\n')] : ['', 'No linked social accounts.'])].join('\n');
-  const components = [];
-  if (linked.length) components.push(accountSelect(linked, getAccountSession(i).accountId));
-  components.push(row(btn(`${P}account:change`, '📝 Edit Account', ButtonStyle.Secondary, !active), btn(`${P}account:reset`, '🔄 Clear'), btn(`${P}account:delete`, '🗑️ Delete', ButtonStyle.Danger, !active)));
-  components.push(row(btn(`${P}creators`, '⬅️ Back'), btn(`${P}settings`, '⚙️ Settings')));
-  return { embeds: [embed(config, '🛠️ Manage Account', d, who(i), active ? platformColor(active.platform) : creatorAccent(linked))], components };
-}
+
 function variablesDescription() { return ['**🌍 Global / Server**','`{timestamp}` `{nowTimestamp}` `{guildId}` `{guildName}` `{server}` `{guildIcon}` `{serverIcon}` `{guildBanner}` `{guildMemberCount}` `{memberCount}` `{guildVanityCode}`','`{successEmoji}` `{warningEmoji}` `{errorEmoji}` `{proofVerifiedEmoji}` `{successColor}` `{warningColor}` `{errorColor}` `{proofVerifiedColor}`','','**👤 Discord User Context**','`{userId}` `{userTag}` `{userName}` `{userGlobalName}` `{userMention}` `{userNoPing}` `{userAvatar}` `{userServerAvatar}` `{userNickname}` `{userDisplay}`','`{userCreatedAt}` `{userCreatedTimestamp}` `{userJoinedAt}` `{userJoinedTimestamp}` `{createdAt}` `{joinedAt}` `{leftAt}` `{accountAge}` `{membershipDuration}`','`{departureIcon}` `{departureType}` `{departureLabel}` `{departureReason}` `{departureModerator}` `{departureModeratorId}`','','**📣 Creator / Platform**','`{creator}` `{creatorName}` `{creatorDisplayName}` `{creatorAvatar}` `{creatorBanner}` `{creatorDescription}` `{platform}` `{platformIcon}` `{platformColor}` `{username}` `{displayName}` `{channelId}` `{profileUrl}`','','**🔴 LIVE / Stream**','`{title}` `{description}` `{game}` `{category}` `{viewers}` `{peakViewers}` `{started}` `{duration}` `{liveThumbnail}` `{thumbnail}` `{liveUrl}` `{url}`','','**🎥 Video / VOD / Upload / Clip / Short**','`{videoTitle}` `{videoDescription}` `{videoDuration}` `{videoViews}` `{videoThumbnail}` `{videoUrl}`','`{clipTitle}` `{clipCreator}` `{clipViews}` `{clipUrl}` `{uploadTitle}` `{uploadDescription}` `{uploadThumbnail}` `{uploadUrl}` `{shortTitle}` `{shortThumbnail}` `{shortUrl}`','','*Variables without context resolve to an empty value instead of breaking the message.*'].join('\n'); }
 
 function buildTemplatePanel(i, config, type) {
