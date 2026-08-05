@@ -22,40 +22,78 @@ const button = (customId, label, style = ButtonStyle.Primary, disabled = false) 
 
 const statusLabel = (enabled) => enabled ? 'Enabled' : 'Disabled';
 const statusIcon = (enabled) => enabled ? '🟢' : '⏸️';
+const healthLabel = (healthy, detail = '') => healthy ? '✅ Healthy' : `⚠️ Needs attention${detail ? ` — ${detail}` : ''}`;
 
-async function buildRoleStudioPanel(guild, memberDisplayName = 'Unknown User') {
+async function getRoleStudioState(guild) {
   const auto = autoroles.getAutoRolesSection(guild.id);
-  const autoEnabled = guildManager.isModuleEnabled(guild.id, 'autoRoles');
-  const reactionEnabled = guildManager.isModuleEnabled(guild.id, reactionRoles.SECTION);
-  const timedEnabled = guildManager.isModuleEnabled(guild.id, 'timedRoles');
-  const temporaryEnabled = guildManager.isModuleEnabled(guild.id, 'temporaryRoles');
+  const reaction = reactionRoles.getSection(guild.id);
+  const timed = timedRoles.getSection(guild.id);
+  const temporary = temporaryRoles.getSection(guild.id);
+
+  const [autoHealth, reactionHealth, timedHealth] = await Promise.all([
+    autoroles.buildHealthReport(guild),
+    reactionRoles.buildHealth(guild),
+    timedRoles.buildHealth(guild),
+  ]);
 
   const reactionDeployments = reactionRoles.listPanels(guild.id);
   const timedRules = timedRoles.listRules(guild.id);
   const tempAssignments = temporaryRoles.listAssignments(guild.id, { activeOnly: true });
-  const autoRoleCount = (auto.joinRoles || []).length + (auto.botRoles || []).length;
-  const canManageRoles = Boolean(guild.members.me?.permissions.has('ManageRoles'));
+  const missingTemporaryRoles = tempAssignments.filter((item) => !guild.roles.cache.has(item.roleId)).length;
+
+  return {
+    auto,
+    reaction,
+    timed,
+    temporary,
+    autoHealth,
+    reactionHealth,
+    timedHealth,
+    reactionDeployments,
+    timedRules,
+    tempAssignments,
+    missingTemporaryRoles,
+    autoRoleCount: (auto.joinRoles || []).length + (auto.botRoles || []).length,
+    autoEnabled: guildManager.isModuleEnabled(guild.id, 'autoRoles'),
+    reactionEnabled: guildManager.isModuleEnabled(guild.id, reactionRoles.SECTION),
+    timedEnabled: guildManager.isModuleEnabled(guild.id, 'timedRoles'),
+    temporaryEnabled: guildManager.isModuleEnabled(guild.id, 'temporaryRoles'),
+    canManageRoles: Boolean(guild.members.me?.permissions.has('ManageRoles')),
+  };
+}
+
+async function buildRoleStudioPanel(guild, memberDisplayName = 'Unknown User') {
+  const state = await getRoleStudioState(guild);
+  const overallHealthy = state.canManageRoles
+    && state.autoHealth.healthy
+    && state.reactionHealth.healthy
+    && state.timedHealth.healthy
+    && state.missingTemporaryRoles === 0;
 
   const embed = new EmbedBuilder()
-    .setColor(canManageRoles ? 0x5865F2 : 0xED4245)
+    .setColor(!state.canManageRoles ? 0xED4245 : overallHealthy ? 0x57F287 : 0xFAA61A)
     .setTitle('🎭 Role Studio')
     .setDescription([
-      'Choose the role system you want to configure.',
+      'Choose a role system to configure. Current status, health and recent activity are shown below.',
       '',
-      `**👥 Auto Roles** — ${statusIcon(autoEnabled)} ${statusLabel(autoEnabled)}`,
-      `Roles assigned automatically when members or bots join. \`${autoRoleCount}\` configured.`,
+      `**👥 Auto Roles** — ${statusIcon(state.autoEnabled)} ${statusLabel(state.autoEnabled)}`,
+      `Configured: \`${state.autoRoleCount}\` • Assigned: \`${state.auto.analytics?.assigned || 0}\``,
+      `Health: ${healthLabel(state.autoHealth.healthy)}`,
       '',
-      `**😊 Reaction Roles** — ${statusIcon(reactionEnabled)} ${statusLabel(reactionEnabled)}`,
-      `Members choose roles by reacting to messages. \`${reactionDeployments.length}\` panel${reactionDeployments.length === 1 ? '' : 's'}.`,
+      `**😊 Reaction Roles** — ${statusIcon(state.reactionEnabled)} ${statusLabel(state.reactionEnabled)}`,
+      `Panels: \`${state.reactionDeployments.length}\` • Added: \`${state.reaction.analytics?.assigned || 0}\` • Removed: \`${state.reaction.analytics?.removed || 0}\``,
+      `Health: ${healthLabel(state.reactionHealth.healthy, state.reactionHealth.healthy ? '' : `${state.reactionHealth.unhealthy || 0} panel(s)`)}`,
       '',
-      `**⏳ Timed Roles** — ${statusIcon(timedEnabled)} ${statusLabel(timedEnabled)}`,
-      `Roles awarded after server-tenure milestones. \`${timedRules.length}\` milestone${timedRules.length === 1 ? '' : 's'}.`,
+      `**⏳ Timed Roles** — ${statusIcon(state.timedEnabled)} ${statusLabel(state.timedEnabled)}`,
+      `Milestones: \`${state.timedRules.length}\` • Awarded: \`${state.timed.analytics?.awarded || 0}\``,
+      `Health: ${healthLabel(state.timedHealth.healthy, state.timedHealth.healthy ? '' : `${state.timedHealth.issues?.length || 0} issue(s)`)}`,
       '',
-      `**⚡ Temporary Roles** — ${statusIcon(temporaryEnabled)} ${statusLabel(temporaryEnabled)}`,
-      `Roles removed automatically after a set duration. \`${tempAssignments.length}\` active.`,
+      `**⚡ Temporary Roles** — ${statusIcon(state.temporaryEnabled)} ${statusLabel(state.temporaryEnabled)}`,
+      `Active: \`${state.tempAssignments.length}\` • Assigned: \`${state.temporary.analytics?.assigned || 0}\` • Expired: \`${state.temporary.analytics?.expired || 0}\``,
+      `Health: ${healthLabel(state.missingTemporaryRoles === 0, state.missingTemporaryRoles ? `${state.missingTemporaryRoles} missing role reference(s)` : '')}`,
       '',
-      canManageRoles
-        ? '> Select a module below to open its controls.'
+      state.canManageRoles
+        ? `> Overall: ${overallHealthy ? '✅ All role systems are healthy.' : '⚠️ One or more role systems need attention.'}`
         : '❌ **Goliath is missing Manage Roles.** Role assignments will fail until this permission is restored.',
     ].join('\n'))
     .setFooter({ text: `Requested by ${memberDisplayName}` })
@@ -81,24 +119,19 @@ async function buildRoleStudioPanel(guild, memberDisplayName = 'Unknown User') {
 }
 
 async function buildRoleAnalyticsPanel(guild, memberDisplayName = 'Unknown User') {
-  const auto = autoroles.getAutoRolesSection(guild.id);
-  const reaction = reactionRoles.getSection(guild.id);
-  const timed = timedRoles.getSection(guild.id);
-  const temporary = temporaryRoles.getSection(guild.id);
-
+  const state = await getRoleStudioState(guild);
   return {
     embeds: [new EmbedBuilder()
       .setColor(0x5865F2)
-      .setTitle('📊 Role Studio Analytics')
+      .setTitle('📊 Role Studio Activity')
       .setDescription([
-        '**Assignment activity**',
-        `Auto Roles assigned: \`${auto.analytics?.assigned || 0}\``,
-        `Reaction Roles added: \`${reaction.analytics?.assigned || 0}\``,
-        `Reaction Roles removed: \`${reaction.analytics?.removed || 0}\``,
-        `Timed Roles awarded: \`${timed.analytics?.awarded || 0}\``,
-        `Temporary Roles assigned: \`${temporary.analytics?.assigned || 0}\``,
-        `Temporary Roles expired: \`${temporary.analytics?.expired || 0}\``,
-        `Temporary Roles removed early: \`${temporary.analytics?.removed || 0}\``,
+        `**Auto Roles assigned:** \`${state.auto.analytics?.assigned || 0}\``,
+        `**Reaction Roles added:** \`${state.reaction.analytics?.assigned || 0}\``,
+        `**Reaction Roles removed:** \`${state.reaction.analytics?.removed || 0}\``,
+        `**Timed Roles awarded:** \`${state.timed.analytics?.awarded || 0}\``,
+        `**Temporary Roles assigned:** \`${state.temporary.analytics?.assigned || 0}\``,
+        `**Temporary Roles expired:** \`${state.temporary.analytics?.expired || 0}\``,
+        `**Temporary Roles removed early:** \`${state.temporary.analytics?.removed || 0}\``,
       ].join('\n'))
       .setFooter({ text: `Requested by ${memberDisplayName}` })
       .setTimestamp()],
@@ -107,14 +140,12 @@ async function buildRoleAnalyticsPanel(guild, memberDisplayName = 'Unknown User'
 }
 
 async function buildRoleHealthPanel(guild, memberDisplayName = 'Unknown User') {
-  const [autoHealth, reactionHealth, timedHealth] = await Promise.all([
-    autoroles.buildHealthReport(guild),
-    reactionRoles.buildHealth(guild),
-    timedRoles.buildHealth(guild),
-  ]);
-  const activeTemporary = temporaryRoles.listAssignments(guild.id, { activeOnly: true });
-  const missingTemporaryRoles = activeTemporary.filter((item) => !guild.roles.cache.has(item.roleId)).length;
-  const healthy = autoHealth.healthy && reactionHealth.healthy && timedHealth.healthy && missingTemporaryRoles === 0;
+  const state = await getRoleStudioState(guild);
+  const healthy = state.canManageRoles
+    && state.autoHealth.healthy
+    && state.reactionHealth.healthy
+    && state.timedHealth.healthy
+    && state.missingTemporaryRoles === 0;
 
   return {
     embeds: [new EmbedBuilder()
@@ -123,13 +154,13 @@ async function buildRoleHealthPanel(guild, memberDisplayName = 'Unknown User') {
       .setDescription([
         `**Overall status:** ${healthy ? '✅ Healthy' : '⚠️ Needs attention'}`,
         '',
-        `**Auto Roles:** ${autoHealth.healthy ? '✅ Healthy' : '⚠️ Needs attention'}`,
-        `**Reaction Roles:** ${reactionHealth.healthy ? '✅ Healthy' : `⚠️ ${reactionHealth.unhealthy || 0} panel(s) need attention`}`,
-        `**Timed Roles:** ${timedHealth.healthy ? '✅ Healthy' : `⚠️ ${timedHealth.issues?.length || 0} issue(s)`}`,
-        `**Temporary Roles:** ${missingTemporaryRoles ? `⚠️ ${missingTemporaryRoles} missing role reference(s)` : '✅ Healthy'}`,
+        `**Auto Roles:** ${healthLabel(state.autoHealth.healthy)}`,
+        `**Reaction Roles:** ${healthLabel(state.reactionHealth.healthy, state.reactionHealth.healthy ? '' : `${state.reactionHealth.unhealthy || 0} panel(s)`)}`,
+        `**Timed Roles:** ${healthLabel(state.timedHealth.healthy, state.timedHealth.healthy ? '' : `${state.timedHealth.issues?.length || 0} issue(s)`)}`,
+        `**Temporary Roles:** ${healthLabel(state.missingTemporaryRoles === 0, state.missingTemporaryRoles ? `${state.missingTemporaryRoles} missing role reference(s)` : '')}`,
         '',
         `**Goliath highest role:** ${guild.members.me?.roles.highest ? `<@&${guild.members.me.roles.highest.id}>` : 'Unavailable'}`,
-        `**Manage Roles permission:** ${guild.members.me?.permissions.has('ManageRoles') ? '✅ Granted' : '❌ Missing'}`,
+        `**Manage Roles permission:** ${state.canManageRoles ? '✅ Granted' : '❌ Missing'}`,
       ].join('\n'))
       .setFooter({ text: `Requested by ${memberDisplayName}` })
       .setTimestamp()],
