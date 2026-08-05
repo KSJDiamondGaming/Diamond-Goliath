@@ -346,12 +346,9 @@ async function fetchRole(guild, roleId) {
 }
 
 async function fetchRoles(guild, roleIds = []) {
-  const roles = [];
-  for (const roleId of cleanDiscordIds(roleIds)) {
-    const role = await fetchRole(guild, roleId);
-    if (role) roles.push(role);
-  }
-  return roles;
+  const ids = cleanDiscordIds(roleIds);
+  const roles = await Promise.all(ids.map((roleId) => fetchRole(guild, roleId)));
+  return roles.filter(Boolean);
 }
 
 function roleMentions(roles = []) {
@@ -593,8 +590,10 @@ async function verifyMember(interaction) {
   const settings = section.settings;
   const messages = section.messages;
   const bypass = isStaffBypass(member, settings);
-  const verifiedRoles = await fetchRoles(guild, settings.verifiedRoleIds);
-  const pendingRoles = await fetchRoles(guild, settings.pendingRoleIds);
+  const [verifiedRoles, pendingRoles] = await Promise.all([
+    fetchRoles(guild, settings.verifiedRoleIds),
+    fetchRoles(guild, settings.pendingRoleIds),
+  ]);
   const alreadyVerified = verifiedRoles.length > 0 && verifiedRoles.some((role) => member.roles.cache.has(role.id));
 
   if (section.enabled !== true) {
@@ -946,11 +945,15 @@ async function getPanelHealth(guild, panel) {
 async function buildHealthReport(guild) {
   const section = getEffectiveVerificationSection(guild.id);
   const settings = section.settings;
-  const verifiedRoles = await fetchRoles(guild, settings.verifiedRoleIds);
-  const pendingRoles = await fetchRoles(guild, settings.pendingRoleIds);
   const panels = Object.values(section.panels || {});
-  const panelHealth = [];
-  for (const panel of panels) panelHealth.push({ panelId: panel.panelId, ...(await getPanelHealth(guild, panel)) });
+  const [verifiedRoles, pendingRoles, panelHealth] = await Promise.all([
+    fetchRoles(guild, settings.verifiedRoleIds),
+    fetchRoles(guild, settings.pendingRoleIds),
+    Promise.all(panels.map(async (panel) => ({
+      panelId: panel.panelId,
+      ...(await getPanelHealth(guild, panel)),
+    }))),
+  ]);
 
   const invalidVerified = verifiedRoles.filter((role) => !canBotManageRole(guild, role));
   const invalidPending = pendingRoles.filter((role) => !canBotManageRole(guild, role));
