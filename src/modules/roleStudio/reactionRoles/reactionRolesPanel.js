@@ -166,10 +166,11 @@ function buildDeleteConfirmation(guild, panelId) {
   };
 }
 
-function buildCreatePicker() {
+function buildCreatePicker(guild) {
+  const panels = reactionRoles.listPanels(guild.id);
   return {
     embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('➕ Create Reaction Role').setDescription([
-      'Choose where the reaction roles should be placed.', '',
+      'Choose how you would like to create your reaction role panel.', '',
       '**Create New Panel**', 'Post a new message using a Reaction Role template from Embed Studio.', '',
       '**Use Existing Message**', 'Attach emoji and role pairs to a message already in the server.',
     ].join('\n'))],
@@ -177,8 +178,13 @@ function buildCreatePicker() {
       row(
         button('admin:reactionRoles:new:template', '✨ Create New Panel', ButtonStyle.Success),
         button('admin:reactionRoles:new:existing', '🔗 Use Existing Message', ButtonStyle.Primary),
+        button('admin:reactionRoles:manage', '📚 Saved Panels', ButtonStyle.Secondary, !panels.length)
       ),
-      row(button('admin:reactionRoles', '⬅️ Back', ButtonStyle.Secondary)),
+      row(
+        button('admin:reactionRoles', '⬅️ Back', ButtonStyle.Secondary),
+        button('admin:studio:roleStudio', '🏠 Home', ButtonStyle.Secondary),
+        button('admin:reactionRoles:manage', 'Next ➡️', ButtonStyle.Secondary, !panels.length)
+      ),
     ],
   };
 }
@@ -399,7 +405,7 @@ async function handleReactionRolesAdminInteraction(interaction) {
     }
 
     if (id === 'admin:reactionRoles' || id === 'admin:reactionRoles:open') return respond(interaction, await buildReactionRolesAdminPanel(guild, displayName(interaction)));
-    if (id === 'admin:reactionRoles:create') return respond(interaction, buildCreatePicker());
+    if (id === 'admin:reactionRoles:create') return respond(interaction, buildCreatePicker(guild));
     if (id === 'admin:reactionRoles:manage') return respond(interaction, buildManagePicker(guild));
     if (id === 'admin:reactionRoles:disable:confirm') return respond(interaction, buildDisableConfirmation(guild));
 
