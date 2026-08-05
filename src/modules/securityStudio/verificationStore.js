@@ -250,7 +250,7 @@ function normalizeSettings(settings = {}) {
     logSuccess: source.logSuccess !== false,
     logFailure: source.logFailure !== false,
     blockBots: source.blockBots !== false,
-    allowStaffBypass: !requirePendingRole && source.allowStaffBypass === true,
+    allowStaffBypass: source.allowStaffBypass === true,
     allowReverification: source.allowReverification === true,
     minimumAccountAgeDays: cleanInteger(source.minimumAccountAgeDays, 0, 0, 3650),
     minimumMembershipAgeMinutes: cleanInteger(source.minimumMembershipAgeMinutes, 0, 0, 525600),
