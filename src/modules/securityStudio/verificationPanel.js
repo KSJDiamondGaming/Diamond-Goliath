@@ -109,7 +109,7 @@ function baseEmbed(title, description, memberDisplayName, color = 0x5865f2) {
 }
 
 function buildOverviewPage(guild, memberDisplayName) {
-  const config = getConfig(guild.id);
+  const config = overrideConfig || getConfig(guild.id);
   const section = verificationManager.getVerificationStatus(guild.id);
   const screening = verificationManager.hasDiscordScreening(guild);
   const panels = Object.values(section.panels || {});
@@ -145,7 +145,7 @@ function buildOverviewPage(guild, memberDisplayName) {
 }
 
 function buildWorkflowPage(guild, memberDisplayName) {
-  const config = getConfig(guild.id);
+  const config = overrideConfig || getConfig(guild.id);
   const screening = verificationManager.hasDiscordScreening(guild);
   const embed = baseEmbed('🔀 Verification · Workflow', [
     `**Discord Screening Detected:** ${screening ? 'Yes ✅' : 'No'}`,
@@ -190,7 +190,7 @@ function buildWorkflowPage(guild, memberDisplayName) {
 }
 
 function buildRolesPage(guild, memberDisplayName) {
-  const config = getConfig(guild.id);
+  const config = overrideConfig || getConfig(guild.id);
   const embed = baseEmbed('🎭 Verification · Roles & Channels', [
     `**Verification Channel:** ${formatChannel(config.verificationChannelId)}`,
     `**Log Channel:** ${formatChannel(config.logChannelId)}`,
@@ -213,7 +213,7 @@ function buildRolesPage(guild, memberDisplayName) {
 }
 
 function buildRequirementsPage(guild, memberDisplayName) {
-  const config = getConfig(guild.id);
+  const config = overrideConfig || getConfig(guild.id);
   const embed = baseEmbed('🔒 Verification · Requirements', [
     `**Block Bots:** ${yesNo(config.blockBots)}`,
     `**Allow Management Bypass:** ${yesNo(config.allowStaffBypass)}`,
@@ -241,7 +241,7 @@ function buildRequirementsPage(guild, memberDisplayName) {
 }
 
 function buildMessagesPage(guild, memberDisplayName) {
-  const config = getConfig(guild.id);
+  const config = overrideConfig || getConfig(guild.id);
   const section = verificationStore.getVerificationSection(guild.id);
   const messages = section.messages;
   const embed = baseEmbed('💬 Verification · Messages', [
@@ -317,7 +317,7 @@ function buildPanelPage(guild, memberDisplayName) {
 }
 
 function buildSettingsPage(guild, memberDisplayName) {
-  const config = getConfig(guild.id);
+  const config = overrideConfig || getConfig(guild.id);
   const embed = baseEmbed('⚙️ Verification · Settings', [
     `**Module:** ${config.enabled ? 'Enabled ✅' : 'Disabled ❌'}`,
     '',
@@ -457,7 +457,7 @@ async function replyEphemeral(interaction, content) {
 
 async function deployLatestOrNew(interaction, redeploy = false) {
   const guild = interaction.guild;
-  const config = getConfig(guild.id);
+  const config = overrideConfig || getConfig(guild.id);
   if (!config.verificationChannelId) throw new Error('Choose a verification channel first.');
   const channel = guild.channels.cache.get(config.verificationChannelId) || await guild.channels.fetch(config.verificationChannelId).catch(() => null);
   if (!channel?.send) throw new Error('Verification channel is not sendable.');
