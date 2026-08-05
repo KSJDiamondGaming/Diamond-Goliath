@@ -624,8 +624,22 @@ async function handleVerificationAdminInteraction(interaction) {
 
     const toggleMatch = customId.match(/^admin:verification:toggle:([a-zA-Z0-9_]+)$/);
     if (toggleMatch) {
-      const key = toggleMatch[1];
-      saveConfig(interaction.guild, (config) => ({ ...config, [key]: !Boolean(config[key]) }));
+  const key = toggleMatch[1];
+
+  if (key === 'allowStaffBypass') {
+    const allowed =
+      interaction.guild.ownerId === interaction.user.id ||
+      interaction.member?.permissions?.has(PermissionFlagsBits.Administrator);
+
+    if (!allowed) {
+      return interaction.reply({
+        content: 'Only the server owner or administrators can change Management Bypass.',
+        flags: 64
+      });
+    }
+  }
+
+  saveConfig(interaction.guild, (config) => ({ ...config, [key]: !Boolean(config[key]) }));
       const page = ['waitForDiscordScreening', 'skipScreeningIfUnavailable', 'logScreeningCompletion', 'usePendingRoles', 'assignPendingRoles', 'requirePendingRole', 'removePendingRoles'].includes(key)
         ? 'workflow'
         : ['blockBots', 'allowStaffBypass', 'allowReverification'].includes(key)
