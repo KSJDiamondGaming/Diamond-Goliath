@@ -48,7 +48,7 @@ function mappingText(mappings, guild) {
   }).join('\n\n');
 }
 
-function generatedPanelPayload(mappings, guild) {
+function generatedPanelPayload(name, mappings, guild) {
   const lines = mappings.map((mapping) => {
     const role = guild.roles.cache.get(mapping.roleId);
     return `${mapping.emoji}  ${role ? `<@&${role.id}>` : `\`${mapping.roleId}\``}`;
@@ -56,7 +56,7 @@ function generatedPanelPayload(mappings, guild) {
   return {
     embeds: [new EmbedBuilder()
       .setColor(0x5865f2)
-      .setTitle('🎭 Reaction Roles')
+      .setTitle(`🎭 ${name || 'Reaction Roles'}`)
       .setDescription([
         'React below to add or remove the roles you want.',
         '',
@@ -248,6 +248,17 @@ function buildExistingMessageStep(guild, userId, notice = '') {
   };
 }
 
+function buildProgress(draft, existing, selectedRole) {
+  const destinationReady = existing ? Boolean(draft.messageId) : Boolean(draft.channelId);
+  return [
+    `${destinationReady ? '✅' : '⬜'} ${existing ? 'Message selected' : 'Channel selected'}`,
+    `${draft.name && draft.name !== 'Reaction Roles' ? '✅' : '⬜'} Panel named`,
+    `${selectedRole ? '✅' : '⬜'} Role selected`,
+    `${draft.mappings.length ? '✅' : '⬜'} At least one mapping added`,
+    `${destinationReady && draft.mappings.length ? '✅' : '⬜'} Ready to deploy`,
+  ].join('\n');
+}
+
 function buildWizard(guild, userId, showRemove = false, notice = '') {
   const draft = reactionRoles.getDraft(guild.id, userId);
   if (!draft) throw new Error('Your setup session has expired. Start again.');
@@ -285,7 +296,8 @@ function buildWizard(guild, userId, showRemove = false, notice = '') {
     ),
     row(
       button('admin:reactionRoles:wizard:deploy', draft.panelId ? '💾 Save Changes' : existing ? '💾 Attach Roles' : '🚀 Deploy Panel', ButtonStyle.Success, !ready),
-      button('admin:reactionRoles:wizard:cancel', 'Cancel Setup'),
+      button('admin:reactionRoles:wizard:name', '✏️ Name Panel', ButtonStyle.Primary),
+      button('admin:reactionRoles:wizard:cancel', 'Cancel'),
       button('admin:reactionRoles', '🏠 Home'),
       button('admin:reactionRoles:settings', '⚙️ Settings'),
     ),
@@ -296,7 +308,7 @@ function buildWizard(guild, userId, showRemove = false, notice = '') {
     : !selectedRole
       ? 'Choose the role this reaction should control.'
       : 'Choose the behaviour, then press “Add Mapping” to select its emoji.';
-  if (ready) next = 'Ready. Review the mappings, add another if needed, then deploy.';
+  if (ready) next = 'Ready. Review the mappings, name the panel if needed, then deploy.';
 
   return {
     embeds: [new EmbedBuilder()
@@ -308,8 +320,12 @@ function buildWizard(guild, userId, showRemove = false, notice = '') {
           ? 'Add emoji-to-role mappings to the selected message.'
           : 'Choose a channel, create one or more emoji-to-role mappings, then deploy.',
         '',
+        `**Panel name:** ${draft.name || 'Reaction Roles'}`,
         `**Source:** ${existing ? `Existing message in <#${draft.channelId}>` : 'New Goliath reaction-role panel'}`,
         !existing ? `**Channel:** ${draft.channelId ? `<#${draft.channelId}>` : 'Not selected'}` : null,
+        '',
+        '### Setup Progress',
+        buildProgress(draft, existing, selectedRole),
         '',
         `### Current Mappings (${draft.mappings.length})`,
         mappingText(draft.mappings, guild),
@@ -380,8 +396,10 @@ function modal(customId, title, fields) {
         .setCustomId(field.id)
         .setLabel(field.label)
         .setPlaceholder(field.placeholder || '')
-        .setStyle(TextInputStyle.Short)
-        .setRequired(true)
+        .setValue(field.value || '')
+        .setStyle(field.style || TextInputStyle.Short)
+        .setRequired(field.required !== false)
+        .setMaxLength(field.maxLength || 100)
     )));
 }
 
@@ -395,7 +413,7 @@ async function updateGeneratedMessage(guild, panel) {
   if (panel.source !== reactionRoles.DRAFT_TYPES.TEMPLATE || panel.templateId) return;
   const channel = guild.channels.cache.get(panel.channelId) || await guild.channels.fetch(panel.channelId).catch(() => null);
   const message = channel?.messages?.fetch ? await channel.messages.fetch(panel.messageId).catch(() => null) : null;
-  if (message?.author?.id === guild.members.me?.id) await message.edit(generatedPanelPayload(panel.mappings, guild));
+  if (message?.author?.id === guild.members.me?.id) await message.edit(generatedPanelPayload(panel.name, panel.mappings, guild));
 }
 
 async function deployDraft(guild, userId) {
@@ -411,8 +429,9 @@ async function deployDraft(guild, userId) {
 
   if (draft.panelId) {
     const panel = await reactionRoles.updatePanelMappings(guild, draft.panelId, draft.mappings, userId);
-    await updateGeneratedMessage(guild, panel);
-    return { panel, wasEdit: true };
+    const renamed = reactionRoles.savePanel(guild.id, { ...panel, name: draft.name || panel.name }, guild);
+    await updateGeneratedMessage(guild, renamed);
+    return { panel: renamed, wasEdit: true };
   }
 
   if (existing) {
@@ -432,7 +451,7 @@ async function deployDraft(guild, userId) {
   let message = null;
   let panel = null;
   try {
-    message = await channel.send(generatedPanelPayload(draft.mappings, guild));
+    message = await channel.send(generatedPanelPayload(draft.name, draft.mappings, guild));
     panel = reactionRoles.savePanel(guild.id, {
       name: draft.name || 'Reaction Roles',
       source: reactionRoles.DRAFT_TYPES.TEMPLATE,
@@ -469,6 +488,13 @@ async function handleReactionRolesAdminInteraction(interaction) {
       return interaction.reply({ ...buildExistingMessageStep(guild, userId, '✅ Message selected successfully.'), ephemeral: true });
     }
 
+    if (interaction.isModalSubmit?.() && id === 'admin:reactionRoles:wizard:name:submit') {
+      const panelName = interaction.fields.getTextInputValue('panelName').trim();
+      if (!panelName) throw new Error('Enter a panel name.');
+      reactionRoles.saveDraft(guild.id, userId, { name: panelName }, guild);
+      return interaction.reply({ ...buildWizard(guild, userId, false, `✅ Panel named “${panelName}”.`), ephemeral: true });
+    }
+
     if (interaction.isModalSubmit?.() && id === 'admin:reactionRoles:wizard:emoji:submit') {
       const draft = reactionRoles.getDraft(guild.id, userId);
       if (!draft?.selectedRoleId) throw new Error('Choose a role before adding an emoji.');
@@ -490,6 +516,7 @@ async function handleReactionRolesAdminInteraction(interaction) {
         channelId: null,
         messageId: null,
         templateId: null,
+        name: 'Reaction Roles',
         mappings: [],
         selectedRoleId: null,
         selectedMode: reactionRoles.MODES.TOGGLE,
@@ -508,6 +535,7 @@ async function handleReactionRolesAdminInteraction(interaction) {
         channelId: null,
         messageId: null,
         templateId: null,
+        name: 'Reaction Roles',
         mappings: [],
         selectedRoleId: null,
         selectedMode: reactionRoles.MODES.TOGGLE,
@@ -543,6 +571,18 @@ async function handleReactionRolesAdminInteraction(interaction) {
         id: 'messageLink',
         label: 'Full Discord message link',
         placeholder: 'https://discord.com/channels/server/channel/message',
+        maxLength: 300,
+      }]));
+      return true;
+    }
+    if (id === 'admin:reactionRoles:wizard:name') {
+      const draft = reactionRoles.getDraft(guild.id, userId);
+      await interaction.showModal(modal(`${id}:submit`, 'Name Reaction Role Panel', [{
+        id: 'panelName',
+        label: 'Panel name',
+        placeholder: 'Example: Gaming Roles',
+        value: draft?.name === 'Reaction Roles' ? '' : draft?.name,
+        maxLength: 100,
       }]));
       return true;
     }
@@ -554,6 +594,7 @@ async function handleReactionRolesAdminInteraction(interaction) {
         id: 'emoji',
         label: `Emoji that triggers ${role.name}`.slice(0, 45),
         placeholder: 'Example: ⭐ or <:server_emoji:123456789>',
+        maxLength: 100,
       }]));
       return true;
     }
@@ -622,10 +663,10 @@ async function handleReactionRolesAdminInteraction(interaction) {
     if (id === 'admin:reactionRoles:repair') {
       await interaction.deferUpdate();
       const result = await reactionRoles.repairAll(guild);
-      const notice = result.failed?.length
+      const repairNotice = result.failed?.length
         ? `⚠️ Repair finished: ${result.repaired.length} repaired, ${result.failed.length} failed.`
         : `✅ Repair finished: ${result.repaired.length} panel${result.repaired.length === 1 ? '' : 's'} synchronised.`;
-      return interaction.editReply(await buildSettingsPage(guild, displayName(interaction), notice));
+      return interaction.editReply(await buildSettingsPage(guild, displayName(interaction), repairNotice));
     }
 
     return respond(interaction, await buildReactionRolesAdminPanel(guild, displayName(interaction)));
