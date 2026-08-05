@@ -1141,7 +1141,7 @@ function userAccountSummary(accounts = []) {
         || account.accountId
         || 'Unnamed account';
 
-      return `? **${userAccountLabel(account)}** ? ${name} ? ${account.enabled === false ? 'Disabled' : 'Enabled'}`;
+      return `\u{1F7E3} **${userAccountLabel(account)}** \u{2705} ${name} \u{25CF} ${account.enabled === false ? 'Disabled' : 'Enabled'}`;
     }),
   ].join('\n');
 }
