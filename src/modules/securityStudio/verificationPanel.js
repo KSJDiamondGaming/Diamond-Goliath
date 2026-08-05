@@ -461,7 +461,7 @@ async function replyEphemeral(interaction, content) {
 
 async function deployLatestOrNew(interaction, redeploy = false) {
   const guild = interaction.guild;
-  const config = overrideConfig || getConfig(guild.id);
+  const config = getConfig(guild.id);
   if (!config.verificationChannelId) throw new Error('Choose a verification channel first.');
   const channel = guild.channels.cache.get(config.verificationChannelId) || await guild.channels.fetch(config.verificationChannelId).catch(() => null);
   if (!channel?.send) throw new Error('Verification channel is not sendable.');
@@ -649,14 +649,14 @@ async function handleVerificationAdminInteraction(interaction) {
     ...config,
     [key]: !Boolean(config[key])
   }));
-  console.log('[Verification Toggle]', key, 'after=', updatedConfig[key]);
+  console.log('[Verification Toggle] saved=', key);
 
 const page = ['waitForDiscordScreening', 'skipScreeningIfUnavailable', 'logScreeningCompletion', 'usePendingRoles', 'assignPendingRoles', 'requirePendingRole', 'removePendingRoles'].includes(key)
         ? 'workflow'
         : ['blockBots', 'allowStaffBypass', 'allowReverification'].includes(key)
           ? 'requirements'
           : 'messages';
-      return safeUpdate(interaction, buildVerificationAdminPanel(interaction.guild, displayName, page, updatedConfig));
+      return safeUpdate(interaction, buildVerificationAdminPanel(interaction.guild, displayName, page));
     }
 
     if (customId === 'admin:verification:enable' || customId === 'admin:verification:disable') {
