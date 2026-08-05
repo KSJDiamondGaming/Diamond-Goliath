@@ -209,8 +209,17 @@ function buildRolesPage(guild, memberDisplayName) {
     components: [
       row(new ChannelSelectMenuBuilder().setCustomId('admin:verification:channel').setPlaceholder('Verification channel').setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(0).setMaxValues(1)),
       row(new ChannelSelectMenuBuilder().setCustomId('admin:verification:logChannel').setPlaceholder('Optional log channel').setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(0).setMaxValues(1)),
-      row(new RoleSelectMenuBuilder().setCustomId('admin:verification:verifiedRoles').setPlaceholder('Verified role(s)').setMinValues(0).setMaxValues(10)),
-      row(new RoleSelectMenuBuilder().setCustomId('admin:verification:pendingRoles').setPlaceholder('Optional pending role(s)').setMinValues(0).setMaxValues(10)),
+      row(new RoleSelectMenuBuilder()
+        .setCustomId('admin:verification:verifiedRoles')
+        .setPlaceholder('Verified role(s)')
+        .setMinValues(0)
+        .setMaxValues(10)),
+
+      row(new RoleSelectMenuBuilder()
+        .setCustomId('admin:verification:pendingRoles')
+        .setPlaceholder('Optional pending role(s)')
+        .setMinValues(0)
+        .setMaxValues(10)),
       navRow('roles'),
     ],
   };
