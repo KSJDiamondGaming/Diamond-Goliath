@@ -225,7 +225,7 @@ function normalizeSettings(settings = {}) {
   const requirePendingRole = source.requirePendingRole === true;
   const verifiedRoleIds = cleanDiscordIds(source.verifiedRoleIds?.length ? source.verifiedRoleIds : legacyVerified);
   const pendingRoleIds = cleanDiscordIds(source.pendingRoleIds?.length ? source.pendingRoleIds : legacyPending);
-  const removePendingRoles = source.removePendingRoles !== false && source.removePendingRole !== false;
+  const removePendingRoles = source.removePendingRoles === true;
   return {
     ...base,
     ...clone(source),
