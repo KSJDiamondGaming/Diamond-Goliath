@@ -255,7 +255,11 @@ function validateRole(guild, roleId) {
 }
 function findMessageReaction(message, mapping) {
   const emoji = normalizeEmoji(mapping.emoji);
-  return message.reactions.cache.find((reaction) => reaction.emoji.id === emoji.id || (!emoji.id && reaction.emoji.name === emoji.name)) || null;
+  return message.reactions.cache.find((reaction) => (
+    emoji.id
+      ? reaction.emoji.id === emoji.id
+      : !reaction.emoji.id && reaction.emoji.name === emoji.name
+  )) || null;
 }
 function mappingConflicts(mappings) {
   const seen = new Map();
