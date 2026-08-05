@@ -74,9 +74,13 @@ function formatChannel(id) {
   return id ? `<#${id}>` : '`Not set`';
 }
 
-function formatRoles(ids = []) {
-  const list = cleanArray(ids);
-  return list.length ? list.map((id) => `<@&${id}>`).join(', ') : '`None`';
+function formatRoles(guild, ids = []) {
+  if (!Array.isArray(ids) || !ids.length) return 'None';
+
+  return ids.map((id) => {
+    const role = guild.roles.cache.get(id);
+    return role ? '<@&' + role.id + '> (' + role.name + ')' : 'Unknown (' + id + ')';
+  }).join(', ');
 }
 
 function latestPanel(guildId) {
@@ -121,9 +125,9 @@ function buildOverviewPage(guild, memberDisplayName) {
     `**Wait for Screening:** ${yesNo(config.waitForDiscordScreening)}`,
     `**Method:** \`${config.method}\``,
     `**Verification Channel:** ${formatChannel(config.verificationChannelId)}`,
-    `**Verified Roles:** ${formatRoles(config.verifiedRoleIds)}`,
+    `**Verified Roles:** ${formatRoles(guild, config.verifiedRoleIds)}`,
     `**Pending Roles Enabled:** ${yesNo(config.usePendingRoles)}`,
-    `**Pending Roles:** ${formatRoles(config.pendingRoleIds)}`,
+    `**Pending Roles:** ${formatRoles(guild, config.pendingRoleIds)}`,
     `**DM on Success:** ${yesNo(config.dmOnVerify)}`,
     '',
     `Panels: \`${panels.length}\` | Verified: \`${section.analytics?.verified || 0}\` | Failed: \`${section.analytics?.failed || 0}\``,
@@ -194,8 +198,8 @@ function buildRolesPage(guild, memberDisplayName) {
   const embed = baseEmbed('🎭 Verification · Roles & Channels', [
     `**Verification Channel:** ${formatChannel(config.verificationChannelId)}`,
     `**Log Channel:** ${formatChannel(config.logChannelId)}`,
-    `**Verified Roles:** ${formatRoles(config.verifiedRoleIds)}`,
-    `**Pending Roles:** ${formatRoles(config.pendingRoleIds)}`,
+    `**Verified Roles:** ${formatRoles(guild, config.verifiedRoleIds)}`,
+    `**Pending Roles:** ${formatRoles(guild, config.pendingRoleIds)}`,
     '',
     'All roles are selected from this server. Goliath must be above every role it needs to add or remove.',
   ].join('\n'), memberDisplayName);
@@ -374,7 +378,7 @@ async function buildStatusPage(guild, memberDisplayName) {
   };
 }
 
-async function buildVerificationAdminPanel(guild, memberDisplayName = 'Unknown User', page = 'overview') {
+async function buildVerificationAdminPanel(guild, memberDisplayName = 'Unknown User', page = 'overview', overrideConfig = null) {
   const safePage = PAGES.includes(page) ? page : 'overview';
   if (safePage === 'workflow') return buildWorkflowPage(guild, memberDisplayName);
   if (safePage === 'roles') return buildRolesPage(guild, memberDisplayName);
