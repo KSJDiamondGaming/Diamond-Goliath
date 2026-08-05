@@ -221,40 +221,65 @@ function buildExistingMessageStep(guild, userId, notice = '') {
 function buildWizard(guild, userId, showRemove = false, notice = '') {
   const draft = reactionRoles.getDraft(guild.id, userId);
   if (!draft) throw new Error('Your setup session has expired. Start again.');
+
   const existing = draft.type === reactionRoles.DRAFT_TYPES.EXISTING;
-  if (existing && !draft.messageId) return buildExistingMessageStep(guild, userId, notice);
+  if (existing && !draft.messageId) {
+    return buildExistingMessageStep(guild, userId, notice);
+  }
+
   const sourceReady = existing ? Boolean(draft.messageId) : Boolean(draft.templateId);
   const ready = Boolean(draft.channelId && sourceReady && draft.mappings.length);
-  const selectedRole = draft.selectedRoleId ? guild.roles.cache.get(draft.selectedRoleId) : null;
+  const selectedRole = draft.selectedRoleId
+    ? guild.roles.cache.get(draft.selectedRoleId)
+    : null;
   const components = [];
 
   if (!existing) {
     components.push(
-      row(new ChannelSelectMenuBuilder().setCustomId('admin:reactionRoles:wizard:channel')
-        .setPlaceholder(draft.channelId ? 'Change target channel' : '1. Choose target channel')
-        .setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setMinValues(1).setMaxValues(1)),
-      row(templateSelect(guild.id, draft.templateId)),
+      row(
+        new ChannelSelectMenuBuilder()
+          .setCustomId('admin:reactionRoles:wizard:channel')
+          .setPlaceholder(draft.channelId ? 'Change target channel' : '1. Choose target channel')
+          .setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+          .setMinValues(1)
+          .setMaxValues(1)
+      ),
+      row(templateSelect(guild.id, draft.templateId))
     );
   } else {
-    components.push(row(button('admin:reactionRoles:source', '🔄 Change Source Message', ButtonStyle.Secondary)));
+    components.push(
+      row(button('admin:reactionRoles:source', '🔄 Change Source', ButtonStyle.Secondary))
+    );
   }
 
   components.push(
-    row(new RoleSelectMenuBuilder().setCustomId('admin:reactionRoles:wizard:role')
-      .setPlaceholder(selectedRole ? `Selected role: ${selectedRole.name}` : '2. Choose a role')
-      .setMinValues(1).setMaxValues(1)),
-    row(modeSelect(draft.selectedMode)),
+    row(
+      new RoleSelectMenuBuilder()
+        .setCustomId('admin:reactionRoles:wizard:role')
+        .setPlaceholder(selectedRole ? `Selected role: ${selectedRole.name}` : '2. Choose a role')
+        .setMinValues(1)
+        .setMaxValues(1)
+    )
   );
-  if (showRemove && draft.mappings.length) components.push(row(removeMappingSelect(draft, guild)));
+
+  if (showRemove && draft.mappings.length) {
+    components.push(row(removeMappingSelect(draft, guild)));
+  } else {
+    components.push(row(modeSelect(draft.selectedMode)));
+  }
+
   components.push(
     row(
-      button('admin:reactionRoles:wizard:emoji', '➕ Add Selected Role', ButtonStyle.Success, !draft.selectedRoleId),
-      button('admin:reactionRoles:wizard:remove', '➖ Remove Mapping', ButtonStyle.Secondary, !draft.mappings.length),
-    ),
-    row(
-      button('admin:reactionRoles:wizard:deploy', draft.panelId ? '💾 Save Changes' : '🚀 Deploy Panel', ButtonStyle.Success, !ready),
-      button('admin:reactionRoles:wizard:cancel', 'Cancel Setup', ButtonStyle.Secondary),
-    ),
+      button('admin:reactionRoles:wizard:emoji', '➕ Add Role', ButtonStyle.Success, !draft.selectedRoleId),
+      button('admin:reactionRoles:wizard:remove', '➖ Remove', ButtonStyle.Secondary, !draft.mappings.length),
+      button(
+        'admin:reactionRoles:wizard:deploy',
+        draft.panelId ? '💾 Save' : '🚀 Deploy',
+        ButtonStyle.Success,
+        !ready
+      ),
+      button('admin:reactionRoles:wizard:cancel', 'Cancel', ButtonStyle.Secondary)
+    )
   );
 
   return {
@@ -268,7 +293,11 @@ function buildWizard(guild, userId, showRemove = false, notice = '') {
         '', `### Mappings (${draft.mappings.length})`, mappingText(draft.mappings, guild), '',
         `**Selected role:** ${selectedRole ? `<@&${selectedRole.id}>` : 'Choose a role above'}`,
         `**Behaviour:** ${modeLabel(draft.selectedMode)}`, '',
-        ready ? '> Ready to deploy.' : '> Complete the selections above and add at least one mapping.',
+        showRemove && draft.mappings.length
+          ? '> Choose a mapping above to remove it.'
+          : ready
+            ? '> Ready to deploy.'
+            : '> Complete the selections above and add at least one mapping.',
       ].filter((line) => line !== null).join('\n').slice(0, 4096))],
     components,
   };
