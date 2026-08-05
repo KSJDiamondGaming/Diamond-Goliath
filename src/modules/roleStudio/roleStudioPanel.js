@@ -25,9 +25,6 @@ const statusIcon = (enabled) => enabled ? '🟢' : '⏸️';
 
 async function buildRoleStudioPanel(guild, memberDisplayName = 'Unknown User') {
   const auto = autoroles.getAutoRolesSection(guild.id);
-  const timed = timedRoles.getSection(guild.id);
-  const temporary = temporaryRoles.getSection(guild.id);
-
   const autoEnabled = guildManager.isModuleEnabled(guild.id, 'autoRoles');
   const reactionEnabled = guildManager.isModuleEnabled(guild.id, reactionRoles.SECTION);
   const timedEnabled = guildManager.isModuleEnabled(guild.id, 'timedRoles');
@@ -37,26 +34,29 @@ async function buildRoleStudioPanel(guild, memberDisplayName = 'Unknown User') {
   const timedRules = timedRoles.listRules(guild.id);
   const tempAssignments = temporaryRoles.listAssignments(guild.id, { activeOnly: true });
   const autoRoleCount = (auto.joinRoles || []).length + (auto.botRoles || []).length;
+  const canManageRoles = Boolean(guild.members.me?.permissions.has('ManageRoles'));
 
   const embed = new EmbedBuilder()
-    .setColor(0x5865F2)
+    .setColor(canManageRoles ? 0x5865F2 : 0xED4245)
     .setTitle('🎭 Role Studio')
     .setDescription([
-      'Manage automated role systems for this server.',
+      'Choose the role system you want to configure.',
       '',
       `**👥 Auto Roles** — ${statusIcon(autoEnabled)} ${statusLabel(autoEnabled)}`,
-      `Assign roles when members or bots join. \`${autoRoleCount}\` configured.`,
+      `Roles assigned automatically when members or bots join. \`${autoRoleCount}\` configured.`,
       '',
       `**😊 Reaction Roles** — ${statusIcon(reactionEnabled)} ${statusLabel(reactionEnabled)}`,
-      `Let members choose roles with reactions. \`${reactionDeployments.length}\` panel${reactionDeployments.length === 1 ? '' : 's'}.`,
+      `Members choose roles by reacting to messages. \`${reactionDeployments.length}\` panel${reactionDeployments.length === 1 ? '' : 's'}.`,
       '',
       `**⏳ Timed Roles** — ${statusIcon(timedEnabled)} ${statusLabel(timedEnabled)}`,
-      `Award roles after server-tenure milestones. \`${timedRules.length}\` milestone${timedRules.length === 1 ? '' : 's'}.`,
+      `Roles awarded after server-tenure milestones. \`${timedRules.length}\` milestone${timedRules.length === 1 ? '' : 's'}.`,
       '',
       `**⚡ Temporary Roles** — ${statusIcon(temporaryEnabled)} ${statusLabel(temporaryEnabled)}`,
-      `Assign roles that expire automatically. \`${tempAssignments.length}\` active.`,
+      `Roles removed automatically after a set duration. \`${tempAssignments.length}\` active.`,
       '',
-      '> Choose a module below. Status and counts are shown before you open it.',
+      canManageRoles
+        ? '> Select a module below to open its controls.'
+        : '❌ **Goliath is missing Manage Roles.** Role assignments will fail until this permission is restored.',
     ].join('\n'))
     .setFooter({ text: `Requested by ${memberDisplayName}` })
     .setTimestamp();
@@ -65,18 +65,17 @@ async function buildRoleStudioPanel(guild, memberDisplayName = 'Unknown User') {
     embeds: [embed],
     components: [
       row(
-        button('admin:autoRoles', '👥 Open Auto Roles', ButtonStyle.Primary),
-        button('admin:reactionRoles:open', '😊 Open Reaction Roles', ButtonStyle.Primary),
+        button('admin:autoRoles', '👥 Auto Roles', ButtonStyle.Primary),
+        button('admin:reactionRoles:open', '😊 Reaction Roles', ButtonStyle.Primary),
       ),
       row(
-        button('admin:timedRoles', '⏳ Open Timed Roles', ButtonStyle.Primary),
-        button('admin:reactionRoles:temporary', '⚡ Open Temporary Roles', ButtonStyle.Primary),
+        button('admin:timedRoles', '⏳ Timed Roles', ButtonStyle.Primary),
+        button('admin:temporaryRoles', '⚡ Temporary Roles', ButtonStyle.Primary),
       ),
       row(
-        button('admin:reactionRoles:analytics', '📊 View Role Analytics', ButtonStyle.Secondary),
-        button('admin:reactionRoles:health', '🩺 Check Role Health', ButtonStyle.Secondary),
+        button('admin:studio:roleStudio', '🔄 Refresh Status', ButtonStyle.Secondary),
+        button('admin:modules', '⬅️ Back to Modules', ButtonStyle.Secondary),
       ),
-      row(button('admin:modules', '⬅️ Back to Modules', ButtonStyle.Secondary)),
     ],
   };
 }
