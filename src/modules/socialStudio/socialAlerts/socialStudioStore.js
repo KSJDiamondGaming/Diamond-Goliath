@@ -17,6 +17,21 @@ function clean(value, max = 2000) {
   return String(value || '').trim().slice(0, max);
 }
 
+
+function normalizeCreator(creator = {}) {
+  return {
+    ...creator,
+    group: creator.group || '',
+    tags: Array.isArray(creator.tags)
+      ? creator.tags
+      : [],
+    notes: creator.notes || '',
+    adminNotes: creator.adminNotes || '',
+    enabled: creator.enabled !== false,
+    status: creator.status || 'active',
+  };
+}
+
 function normalizeSection(input = {}) {
   const section = object(input);
 
@@ -30,7 +45,7 @@ function normalizeSection(input = {}) {
       ? section.notificationMentionMode
       : 'none',
     notificationRoleId: section.notificationRoleId || null,
-    creators: object(section.creators),
+    creators: Object.fromEntries(Object.entries(object(section.creators)).map(([id, creator]) => [id, normalizeCreator(creator)])),
     accounts: object(section.accounts),
     settings: object(section.settings),
     templates: object(section.templates),
