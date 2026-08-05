@@ -157,6 +157,13 @@ function navRow(page) {
     ? `admin:verification:page:${NAV_PAGES[index + 1]}`
     : 'admin:verification:page:settings';
 
+  if (page === 'overview') {
+    return row(
+      button(previousTarget, '⬅️ Back', ButtonStyle.Secondary),
+      button('admin:verification:page:settings', '⚙️ Settings', ButtonStyle.Secondary)
+    );
+  }
+
   return row(
     button(previousTarget, '⬅️ Previous', ButtonStyle.Secondary),
     button('admin:verification:page:overview', '🏠 Verification', ButtonStyle.Secondary),
@@ -211,8 +218,7 @@ function buildOverviewPage(guild, memberDisplayName) {
       ),
       row(
         button('admin:verification:page:messages', '💬 Messages'),
-        button('admin:verification:page:panel', '🎨 Panels'),
-        button('admin:verification:page:status', '🩺 Health', ButtonStyle.Secondary)
+        button('admin:verification:page:panel', '🎨 Panels')
       ),
       navRow('overview'),
     ],
