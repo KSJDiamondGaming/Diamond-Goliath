@@ -624,6 +624,7 @@ async function handleVerificationAdminInteraction(interaction) {
 
     const toggleMatch = customId.match(/^admin:verification:toggle:([a-zA-Z0-9_]+)$/);
     if (toggleMatch) {
+      console.log('[Verification Toggle Fired]', customId);
   const key = toggleMatch[1];
 
   if (key === 'allowStaffBypass') {
