@@ -640,20 +640,17 @@ async function handleVerificationAdminInteraction(interaction) {
     }
   }
 
-  saveConfig(interaction.guild, (config) => ({ 
-  ...config, 
-  [key]: !Boolean(config[key]) 
-}));
-
-// Force fresh verification settings after toggle save
-verificationManager.getVerificationStatus(interaction.guild.id);
+  const updatedConfig = saveConfig(interaction.guild, (config) => ({
+    ...config,
+    [key]: !Boolean(config[key])
+  }));
 
 const page = ['waitForDiscordScreening', 'skipScreeningIfUnavailable', 'logScreeningCompletion', 'usePendingRoles', 'assignPendingRoles', 'requirePendingRole', 'removePendingRoles'].includes(key)
         ? 'workflow'
         : ['blockBots', 'allowStaffBypass', 'allowReverification'].includes(key)
           ? 'requirements'
           : 'messages';
-      return safeUpdate(interaction, buildVerificationAdminPanel(interaction.guild, displayName, page));
+      return safeUpdate(interaction, buildVerificationAdminPanel(interaction.guild, displayName, page, updatedConfig));
     }
 
     if (customId === 'admin:verification:enable' || customId === 'admin:verification:disable') {
