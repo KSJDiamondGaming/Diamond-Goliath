@@ -1350,6 +1350,15 @@ function buildUserProfile(
             ? `**Creator Name**\n${creator.displayName}`
             : null,
           `**Status**\n${status}`,
+          creator.group
+            ? `**Group / Team**\n${creator.group}`
+            : null,
+          Array.isArray(creator.tags) && creator.tags.length
+            ? `**Tags**\n${creator.tags.join(', ')}`
+            : null,
+          creator.notes
+            ? `**Profile Notes**\n${creator.notes}`
+            : null,
           userAccountSummary(accounts),
           `**Created**\n${createdAt}`,
           `**Last Updated**\n${updatedAt}`,
