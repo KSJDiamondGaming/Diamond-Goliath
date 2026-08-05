@@ -626,6 +626,7 @@ async function handleVerificationAdminInteraction(interaction) {
     if (toggleMatch) {
       console.log('[Verification Toggle Fired]', customId);
   const key = toggleMatch[1];
+  console.log('[Verification Toggle]', key, 'before=', getConfig(interaction.guild.id)[key]);
 
   if (key === 'allowStaffBypass') {
     const allowed =
@@ -644,6 +645,7 @@ async function handleVerificationAdminInteraction(interaction) {
     ...config,
     [key]: !Boolean(config[key])
   }));
+  console.log('[Verification Toggle]', key, 'after=', updatedConfig[key]);
 
 const page = ['waitForDiscordScreening', 'skipScreeningIfUnavailable', 'logScreeningCompletion', 'usePendingRoles', 'assignPendingRoles', 'requirePendingRole', 'removePendingRoles'].includes(key)
         ? 'workflow'
