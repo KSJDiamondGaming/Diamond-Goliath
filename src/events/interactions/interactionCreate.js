@@ -116,6 +116,19 @@ function normalizeBackComponent(component, interaction) {
   if (!parentStudio || customId !== 'admin:modules') return data;
   return { ...data, custom_id: `admin:studio:${parentStudio}`, label: '⬅️ Back' };
 }
+function normalizeVerificationWorkflowRows(payload, rows) {
+  const title = payload?.embeds?.[0]?.title;
+  if (title !== '🔀 Verification · Workflow') return rows;
+  if (rows.length !== 3 || rows[1]?.components?.length !== 5) return rows;
+
+  const roleRow = rows[1];
+  return [
+    rows[0],
+    { ...roleRow, components: roleRow.components.slice(0, 3) },
+    { ...roleRow, components: roleRow.components.slice(3) },
+    rows[2],
+  ];
+}
 function sanitizeComponentPayload(payload, interaction) {
   if (!payload || typeof payload !== 'object') return payload;
   const sanitizedPayload = {
@@ -138,7 +151,10 @@ function sanitizeComponentPayload(payload, interaction) {
       : [];
     if (components.length) rows.push({ ...rowData, components });
   }
-  return { ...sanitizedPayload, components: rows };
+  return {
+    ...sanitizedPayload,
+    components: normalizeVerificationWorkflowRows(sanitizedPayload, rows),
+  };
 }
 function wrapInteractionResponses(interaction) {
   if (!interaction || interaction.__goliathResponsesWrapped) return;
