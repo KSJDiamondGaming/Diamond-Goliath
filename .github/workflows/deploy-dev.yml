@@ -15,6 +15,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # Manual retry marker after a GitHub-hosted runner allocation failure.
       - name: Deploy DEV to VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
