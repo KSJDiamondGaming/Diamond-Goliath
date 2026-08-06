@@ -175,8 +175,8 @@ async function fetchFreshMember(interaction) {
 async function handleVerificationMemberInteraction(interaction) {
   if (typeof verificationManager?.verifyMember !== 'function') throw new Error('Verification handler is unavailable.');
   if (!interaction.deferred && !interaction.replied) {
-  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-}
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  }
   const lockKey = `${interaction.guildId}:${interaction.user.id}`;
   const previous = verificationLocks.get(lockKey);
   if (previous) await previous.catch(() => null);
@@ -226,7 +226,7 @@ module.exports = {
       }
       const interactionAgeMs = Math.max(0, Date.now() - Number(interaction.createdTimestamp || Date.now()));
       const customId = String(interaction.customId || '');
-      
+
       if (isVerificationMemberInteraction(interaction)) { await handleVerificationMemberInteraction(interaction); return; }
       if (interactionAgeMs > 1500) console.warn(`[InteractionCreate] Slow dispatch before routing: customId=${customId} age=${interactionAgeMs}ms pid=${process.pid}`);
       if (startsWith(interaction, 'user:')) {
@@ -266,6 +266,14 @@ module.exports = {
         if (!await callHandler(panel, 'handleInviteStudioInteraction', interaction)) throw new Error(`Invite Studio did not handle ${customId}.`);
         return;
       }
+      if (customId === 'admin:embed' || customId.startsWith('embed:')) {
+        if (!await callHandler(embedPanel, 'handleInteraction', interaction)) throw new Error(`Embed Studio did not handle ${customId}.`);
+        return;
+      }
+      if (customId === 'admin:social' || customId.startsWith('social:')) {
+        if (!await callHandler(socialAdminPanel, 'handleSocialAdminInteraction', interaction)) throw new Error(`Social Studio did not handle ${customId}.`);
+        return;
+      }
       if (startsWith(interaction, 'admin:verification')) { await callHandler(verificationAdminPanel, 'handleVerificationAdminInteraction', interaction); return; }
       if (startsWith(interaction, 'admin:autoRoles')) { await callHandler(autorolesPanel, 'handleAutoRolesInteraction', interaction); return; }
       if (startsWith(interaction, 'admin:timedRoles')) { await callHandler(timedRolesPanel, 'handleTimedRolesInteraction', interaction); return; }
@@ -274,7 +282,7 @@ module.exports = {
       if (startsWith(interaction, 'admin:reactionRoles')) { await callHandler(reactionRolesAdminPanel, 'handleReactionRolesAdminInteraction', interaction); return; }
       if (startsWith(interaction, 'admin:schedule')) { await callHandler(schedulePanel, 'handleScheduleAdminInteraction', interaction); return; }
       if (startsWith(interaction, 'schedule:rsvp:')) { await callHandler(scheduleDeployment, 'handleMemberInteraction', interaction); return; }
-      
+
       if (await callHandler(statsAdminPanel, 'handleStatsAdminInteraction', interaction)) return;
       if (await callHandler(suggestionsInteractions, 'handleSuggestionsAdminInteraction', interaction)) return;
       if (await callHandler(giveawaysAdminPanel, 'handleGiveawaysAdminInteraction', interaction)) return;
@@ -283,10 +291,8 @@ module.exports = {
       if (await callHandler(starboardPanel, 'handleStarboardAdminInteraction', interaction)) return;
       if (await callHandler(stickyAdminPanel, 'handleStickyAdminInteraction', interaction)) return;
       if (await callHandler(levelingInteractions, 'handleLevelingInteraction', interaction)) return;
-      if (await callHandler(socialAdminPanel, 'handleSocialAdminInteraction', interaction)) return;
       if (await callHandler(adminPanel, 'handleAdminNavigation', interaction)) return;
       if (await callHandler(duplicator, 'handleInteraction', interaction)) return;
-      if (await callHandler(embedPanel, 'handleInteraction', interaction)) return;
       if (interaction.isButton?.() && await callHandler(testSecurityCommand, 'handleButton', interaction)) return;
       if (interaction.isButton?.() && await callHandler(tempVoiceInteractionHandler, 'handleTempVoiceInteraction', interaction, client)) return;
       if (await callHandler(formsInteractions, 'handleFormsInteraction', interaction)) return;
