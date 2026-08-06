@@ -116,18 +116,70 @@ function normalizeBackComponent(component, interaction) {
   if (!parentStudio || customId !== 'admin:modules') return data;
   return { ...data, custom_id: `admin:studio:${parentStudio}`, label: '⬅️ Back' };
 }
-function normalizeVerificationWorkflowRows(payload, rows) {
+function componentId(component) {
+  return component?.custom_id || component?.customId || null;
+}
+function findComponent(rows, customId) {
+  for (const rowData of rows) {
+    const found = rowData?.components?.find((component) => componentId(component) === customId);
+    if (found) return found;
+  }
+  return null;
+}
+function normalizeVerificationRows(payload, rows) {
   const title = payload?.embeds?.[0]?.title;
-  if (title !== '🔀 Verification · Workflow') return rows;
-  if (rows.length !== 3 || rows[1]?.components?.length !== 5) return rows;
 
-  const roleRow = rows[1];
-  return [
-    rows[0],
-    { ...roleRow, components: roleRow.components.slice(0, 3) },
-    { ...roleRow, components: roleRow.components.slice(3) },
-    rows[2],
-  ];
+  if (title === '🔀 Verification · Workflow') {
+    if (rows.length !== 3 || rows[1]?.components?.length !== 5) return rows;
+    const roleRow = rows[1];
+    return [
+      rows[0],
+      { ...roleRow, components: roleRow.components.slice(0, 3) },
+      { ...roleRow, components: roleRow.components.slice(3) },
+      rows[2],
+    ];
+  }
+
+  if (title === '✅ Verification · Overview') {
+    const workflow = findComponent(rows, 'admin:verification:page:workflow');
+    const roles = findComponent(rows, 'admin:verification:page:roles');
+    const messages = findComponent(rows, 'admin:verification:page:messages');
+    const panels = findComponent(rows, 'admin:verification:page:panel');
+    const back = findComponent(rows, 'admin:studio:securityStudio')
+      || findComponent(rows, 'admin:modules');
+    const settings = findComponent(rows, 'admin:verification:page:settings');
+    const requirements = findComponent(rows, 'admin:verification:page:requirements');
+    if (![workflow, roles, messages, panels, back, settings, requirements].every(Boolean)) return rows;
+    return [
+      { ...rows[0], components: [workflow, roles, messages, panels] },
+      { ...rows[0], components: [back, settings, requirements] },
+    ];
+  }
+
+  if (title === '🎨 Verification · Panel Builder') {
+    const editRow = rows[0];
+    const publishRow = rows[1];
+    const savedPanels = findComponent(rows, 'admin:verification:page:saved_panels');
+    const deletePanel = rows[3]?.components?.[0];
+    const resetDesign = rows[3]?.components?.[1];
+    const navRow = rows[4];
+    if (
+      editRow?.components?.length !== 4
+      || publishRow?.components?.length !== 3
+      || !savedPanels
+      || !deletePanel
+      || !resetDesign
+      || !navRow?.components?.length
+    ) return rows;
+    return [
+      editRow,
+      { ...publishRow, components: [...publishRow.components, savedPanels] },
+      { ...rows[3], components: [deletePanel, resetDesign] },
+      navRow,
+    ];
+  }
+
+  return rows;
 }
 function sanitizeComponentPayload(payload, interaction) {
   if (!payload || typeof payload !== 'object') return payload;
@@ -142,7 +194,7 @@ function sanitizeComponentPayload(payload, interaction) {
     const rowData = typeof actionRow?.toJSON === 'function' ? actionRow.toJSON() : actionRow;
     const components = Array.isArray(rowData?.components)
       ? rowData.components.map((component) => normalizeBackComponent(component, interaction)).filter((component) => {
-        const customId = component?.custom_id || component?.customId || null;
+        const customId = componentId(component);
         if (!customId) return true;
         if (seen.has(customId)) return false;
         seen.add(customId);
@@ -153,7 +205,7 @@ function sanitizeComponentPayload(payload, interaction) {
   }
   return {
     ...sanitizedPayload,
-    components: normalizeVerificationWorkflowRows(sanitizedPayload, rows),
+    components: normalizeVerificationRows(sanitizedPayload, rows),
   };
 }
 function wrapInteractionResponses(interaction) {
