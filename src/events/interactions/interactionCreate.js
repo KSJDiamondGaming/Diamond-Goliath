@@ -143,10 +143,33 @@ function sanitizeComponentPayload(payload, interaction) {
 function wrapInteractionResponses(interaction) {
   if (!interaction || interaction.__goliathResponsesWrapped) return;
   interaction.__goliathResponsesWrapped = true;
+
+  const originals = {};
   for (const methodName of ['reply', 'update', 'editReply', 'followUp']) {
-    if (typeof interaction[methodName] !== 'function') continue;
-    const original = interaction[methodName].bind(interaction);
-    interaction[methodName] = (payload, ...args) => original(sanitizeComponentPayload(payload, interaction), ...args);
+    if (typeof interaction[methodName] === 'function') originals[methodName] = interaction[methodName].bind(interaction);
+  }
+
+  for (const methodName of Object.keys(originals)) {
+    interaction[methodName] = (payload, ...args) => {
+      const sanitized = sanitizeComponentPayload(payload, interaction);
+      const isPanelPayload = Array.isArray(sanitized?.embeds) || Array.isArray(sanitized?.components);
+      const canReuseModalSource = methodName === 'reply'
+        && interaction.isModalSubmit?.()
+        && interaction.isFromMessage?.()
+        && !interaction.deferred
+        && !interaction.replied
+        && isPanelPayload
+        && typeof originals.update === 'function';
+
+      if (canReuseModalSource) {
+        const updatePayload = { ...sanitized };
+        delete updatePayload.ephemeral;
+        delete updatePayload.flags;
+        return originals.update(updatePayload, ...args);
+      }
+
+      return originals[methodName](sanitized, ...args);
+    };
   }
 }
 const startsWith = (interaction, prefix) => String(interaction?.customId || '').startsWith(prefix);
