@@ -31,6 +31,23 @@ const PAGES = [
   'button_style',
 ];
 const PANEL_LIMIT = 25;
+const NAV_HISTORY_LIMIT = 20;
+const NAV_HISTORY = new Map();
+
+const PAGE_TITLES = new Map([
+  ['✅ Verification · Overview', 'overview'],
+  ['🔀 Verification · Workflow', 'workflow'],
+  ['🕒 Verification · Assignment Timing', 'timing'],
+  ['🎭 Verification · Roles & Channels', 'roles'],
+  ['🔒 Verification · Requirements', 'requirements'],
+  ['💬 Verification · Messages', 'messages'],
+  ['🧩 Verification · Variables', 'variables'],
+  ['📚 Verification · Saved Panels', 'saved_panels'],
+  ['🎨 Verification · Button Style', 'button_style'],
+  ['🎨 Verification · Panel Builder', 'panel'],
+  ['⚙️ Verification · Settings', 'settings'],
+  ['🩺 Verification · Health', 'status'],
+]);
 
 const WORKFLOW_TOGGLES = new Set([
   'waitForDiscordScreening',
@@ -159,37 +176,65 @@ function getSavedPanelsFromSection(section) {
   ));
 }
 
-function workflowTargets(page) {
+function navigationKey(interaction) {
+  return `${interaction.guildId || interaction.guild?.id || 'unknown'}:${interaction.user?.id || 'unknown'}`;
+}
+
+function currentPageFromInteraction(interaction) {
+  const title = interaction.message?.embeds?.[0]?.title;
+  return PAGE_TITLES.get(title) || null;
+}
+
+function navigationStack(interaction) {
+  const key = navigationKey(interaction);
+  const existing = NAV_HISTORY.get(key);
+  if (Array.isArray(existing)) return existing;
+  const stack = [];
+  NAV_HISTORY.set(key, stack);
+  return stack;
+}
+
+function rememberCurrentPage(interaction, targetPage) {
+  const currentPage = currentPageFromInteraction(interaction);
+  if (!currentPage || currentPage === targetPage) return;
+
+  const stack = navigationStack(interaction);
+  if (stack[stack.length - 1] !== currentPage) stack.push(currentPage);
+  if (stack.length > NAV_HISTORY_LIMIT) {
+    stack.splice(0, stack.length - NAV_HISTORY_LIMIT);
+  }
+}
+
+function previousVisitedPage(interaction) {
+  const stack = navigationStack(interaction);
+  return stack.pop() || 'overview';
+}
+
+function nextPageTarget(page) {
   const index = NAV_PAGES.indexOf(page);
-  return {
-    previous: index > 0
-      ? `admin:verification:page:${NAV_PAGES[index - 1]}`
-      : 'admin:modules',
-    next: index >= 0 && index < NAV_PAGES.length - 1
-      ? `admin:verification:page:${NAV_PAGES[index + 1]}`
-      : 'admin:verification:page:overview',
-  };
+  return index >= 0 && index < NAV_PAGES.length - 1
+    ? NAV_PAGES[index + 1]
+    : 'overview';
 }
 
 function workflowNavRow(page, middle = null) {
-  const targets = workflowTargets(page);
-
   if (page === 'overview') {
     return row(
-      button(targets.previous, '⬅️ Back', ButtonStyle.Secondary),
+      button('admin:modules', '⬅️ Back', ButtonStyle.Secondary),
       button('admin:verification:page:settings', '⚙️ Settings', ButtonStyle.Secondary)
     );
   }
 
   return row(
-    button(targets.previous, '⬅️ Previous', ButtonStyle.Secondary),
+    button('admin:verification:back', '⬅️ Back', ButtonStyle.Secondary),
+    button('admin:verification:page:settings', '⚙️ Settings', ButtonStyle.Secondary),
     middle,
-    button(targets.next, 'Next ➡️', ButtonStyle.Secondary)
+    button(`admin:verification:page:${nextPageTarget(page)}`, 'Next ➡️', ButtonStyle.Secondary)
   );
 }
 
-function backRow(target, label = '⬅️ Back') {
-  return row(button(target, label, ButtonStyle.Secondary));
+function backRow() {
+  return row(button('admin:verification:back', '⬅️ Back', ButtonStyle.Secondary));
 }
 
 function baseEmbed(title, description, memberDisplayName, color = 0x5865f2) {
@@ -304,7 +349,7 @@ function buildTimingPage(guild, memberDisplayName) {
         button('admin:verification:timing:after_screening', '🛡️ After Screening', config.pendingRoleTiming === 'after_screening' ? ButtonStyle.Success : ButtonStyle.Secondary),
         button('admin:verification:timing:manual', '✋ Manual Only', config.pendingRoleTiming === 'manual' ? ButtonStyle.Success : ButtonStyle.Secondary)
       ),
-      backRow('admin:verification:page:workflow'),
+      backRow(),
     ],
   };
 }
@@ -464,7 +509,7 @@ function variableGroups() {
   return groups;
 }
 
-function buildVariablesPage(memberDisplayName, backTarget = 'messages') {
+function buildVariablesPage(memberDisplayName) {
   const lines = [
     'Use these placeholders in supported verification messages and embed fields.',
     '',
@@ -483,7 +528,7 @@ function buildVariablesPage(memberDisplayName, backTarget = 'messages') {
       lines.join('\n').slice(0, 4096),
       memberDisplayName
     )],
-    components: [backRow(`admin:verification:page:${backTarget}`)],
+    components: [backRow()],
   };
 }
 
@@ -548,7 +593,7 @@ function buildSavedPanelsPage(guild, memberDisplayName, selectedPanelId = null) 
           button(`admin:verification:saved:delete:${selected.panelId}`, '🗑️ Delete', ButtonStyle.Danger)
         ),
       ] : []),
-      backRow('admin:verification:page:panel'),
+      backRow(),
     ],
   };
 }
@@ -574,7 +619,7 @@ function buildButtonStylePage(guild, memberDisplayName) {
         label,
         current.buttonStyle === value ? ButtonStyle.Success : style
       ))),
-      backRow('admin:verification:page:panel'),
+      backRow(),
     ],
   };
 }
@@ -641,7 +686,7 @@ function buildPanelPage(guild, memberDisplayName, selectedPanelId = null) {
       ),
       workflowNavRow(
         'panel',
-        button('admin:verification:variables:panel', '🧩 Variables', ButtonStyle.Secondary)
+        button('admin:verification:page:variables', '🧩 Variables', ButtonStyle.Secondary)
       ),
     ],
   };
@@ -675,7 +720,7 @@ function buildSettingsPage(guild, memberDisplayName) {
         button('admin:verification:resetMessages', '🗑️ Reset Messages', ButtonStyle.Danger),
         button('admin:verification:resetAll', '🗑️ Reset Verification', ButtonStyle.Danger)
       ),
-      backRow('admin:verification:page:overview'),
+      backRow(),
     ],
   };
 }
@@ -712,7 +757,7 @@ async function buildStatusPage(guild, memberDisplayName) {
         button('admin:verification:redeploy', '🔧 Repair Latest', ButtonStyle.Success),
         button('admin:verification:test', '🧪 Test Setup', ButtonStyle.Primary)
       ),
-      backRow('admin:verification:page:settings'),
+      backRow(),
     ],
   };
 }
@@ -731,7 +776,7 @@ async function buildVerificationAdminPanel(
     case 'roles': return buildRolesPage(guild, memberDisplayName);
     case 'requirements': return buildRequirementsPage(guild, memberDisplayName);
     case 'messages': return buildMessagesPage(guild, memberDisplayName);
-    case 'variables': return buildVariablesPage(memberDisplayName, 'messages');
+    case 'variables': return buildVariablesPage(memberDisplayName);
     case 'saved_panels': return buildSavedPanelsPage(guild, memberDisplayName, selectedPanelId);
     case 'button_style': return buildButtonStylePage(guild, memberDisplayName);
     case 'panel': return buildPanelPage(guild, memberDisplayName, selectedPanelId);
@@ -1095,6 +1140,7 @@ async function handleSavedPanelAction(interaction, customId, displayName) {
 
   const [, action, panelId] = match;
   if (action === 'open') {
+    rememberCurrentPage(interaction, 'panel');
     return safeUpdate(
       interaction,
       buildVerificationAdminPanel(interaction.guild, displayName, 'panel', panelId)
@@ -1130,22 +1176,29 @@ async function handleVerificationAdminInteraction(interaction) {
 
   try {
     if (customId === 'admin:verification') {
+      NAV_HISTORY.delete(navigationKey(interaction));
       return safeUpdate(
         interaction,
         buildVerificationAdminPanel(interaction.guild, displayName)
       );
     }
 
-    const pageMatch = customId.match(/^admin:verification:page:([a-z_]+)$/);
-    if (pageMatch && PAGES.includes(pageMatch[1])) {
+    if (customId === 'admin:verification:back') {
+      const targetPage = previousVisitedPage(interaction);
       return safeUpdate(
         interaction,
-        buildVerificationAdminPanel(interaction.guild, displayName, pageMatch[1])
+        buildVerificationAdminPanel(interaction.guild, displayName, targetPage)
       );
     }
 
-    if (customId === 'admin:verification:variables:panel') {
-      return safeUpdate(interaction, buildVariablesPage(displayName, 'panel'));
+    const pageMatch = customId.match(/^admin:verification:page:([a-z_]+)$/);
+    if (pageMatch && PAGES.includes(pageMatch[1])) {
+      const targetPage = pageMatch[1];
+      rememberCurrentPage(interaction, targetPage);
+      return safeUpdate(
+        interaction,
+        buildVerificationAdminPanel(interaction.guild, displayName, targetPage)
+      );
     }
 
     const timingMatch = customId.match(/^admin:verification:timing:(on_join|after_screening|manual)$/);
