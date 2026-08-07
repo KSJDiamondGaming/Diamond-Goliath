@@ -7,6 +7,14 @@ const {
 } = require('../../../core/guild/moduleSectionManager');
 
 const MODULE_KEY = 'leveling';
+const XP_SOURCES = Object.freeze({
+  MESSAGE: 'message',
+  VOICE: 'voice',
+  MANUAL: 'manual',
+  EVENT: 'event',
+  QUEST: 'quest',
+  OTHER: 'other',
+});
 
 const now = () => new Date().toISOString();
 
@@ -34,8 +42,10 @@ function defaults() {
     pausedUsers: {},
     analytics: {
       messagesTracked: 0,
+      voiceMinutesTracked: 0,
       xpAwarded: 0,
       levelUps: 0,
+      xpBySource: {},
     },
     createdAt: now(),
     updatedAt: now(),
@@ -63,6 +73,7 @@ function normalizeUser(input = {}) {
     messages: Math.max(0, Number(input.messages || 0)),
     voiceMinutes: Math.max(0, Number(input.voiceMinutes || 0)),
     lastMessageXpAt: input.lastMessageXpAt || null,
+    lastVoiceXpAt: input.lastVoiceXpAt || null,
     createdAt: input.createdAt || now(),
     updatedAt: input.updatedAt || input.createdAt || now(),
   };
@@ -74,6 +85,12 @@ function normalizeUsers(value) {
     .map(([id, user]) => normalizeUser({ ...user, userId: user.userId || id }))
     .filter((user) => user.userId)
     .map((user) => [user.userId, user]));
+}
+
+function normalizeSourceAnalytics(value) {
+  const source = value && typeof value === 'object' ? value : {};
+  return Object.fromEntries(Object.entries(source)
+    .map(([key, amount]) => [String(key), Math.max(0, Number(amount || 0))]));
 }
 
 function normalize(section = {}) {
@@ -94,8 +111,10 @@ function normalize(section = {}) {
     pausedUsers: normalizeUsers(source.pausedUsers),
     analytics: {
       messagesTracked: Math.max(0, Number(source.analytics?.messagesTracked || 0)),
+      voiceMinutesTracked: Math.max(0, Number(source.analytics?.voiceMinutesTracked || 0)),
       xpAwarded: Math.max(0, Number(source.analytics?.xpAwarded || 0)),
       levelUps: Math.max(0, Number(source.analytics?.levelUps || 0)),
+      xpBySource: normalizeSourceAnalytics(source.analytics?.xpBySource),
     },
     createdAt: source.createdAt || base.createdAt,
     updatedAt: source.updatedAt || now(),
@@ -136,8 +155,7 @@ function getUser(guildId, userId) {
 function isUserParticipating(guildId, userId) {
   const safeUserId = cleanDiscordId(userId);
   if (!safeUserId) return false;
-  const section = getSection(guildId);
-  return !section.pausedUsers?.[safeUserId];
+  return !getSection(guildId).pausedUsers?.[safeUserId];
 }
 
 function setUserParticipation(guildId, userId, participating, guildOrMeta = {}) {
@@ -173,21 +191,12 @@ function saveUser(guildId, user, guildOrMeta = {}) {
   if (!normalized.userId) throw new Error('A valid user is required.');
   const paused = !isUserParticipating(guildId, normalized.userId);
   const section = updateSection(guildId, (current) => {
-    if (paused) {
-      return {
-        ...current,
-        pausedUsers: {
-          ...current.pausedUsers,
-          [normalized.userId]: { ...current.pausedUsers[normalized.userId], ...normalized, updatedAt: now() },
-        },
-        updatedAt: now(),
-      };
-    }
+    const bucket = paused ? 'pausedUsers' : 'users';
     return {
       ...current,
-      users: {
-        ...current.users,
-        [normalized.userId]: { ...current.users?.[normalized.userId], ...normalized, updatedAt: now() },
+      [bucket]: {
+        ...current[bucket],
+        [normalized.userId]: { ...current[bucket]?.[normalized.userId], ...normalized, updatedAt: now() },
       },
       updatedAt: now(),
     };
@@ -202,33 +211,93 @@ function canAwardMessageXp(user, section) {
   return Date.now() - last >= Number(section.cooldownSeconds || 60) * 1000;
 }
 
-function awardMessageXp(guildId, userId, guildOrMeta = {}) {
+function normalizeXpSource(value) {
+  const source = String(value || XP_SOURCES.OTHER).trim().toLowerCase();
+  return source || XP_SOURCES.OTHER;
+}
+
+function awardXp(guildId, userId, amount, options = {}, guildOrMeta = {}) {
   const safeUserId = cleanDiscordId(userId);
-  if (!safeUserId || !isUserParticipating(guildId, safeUserId)) return null;
+  const xpAwarded = Math.max(0, Number(amount || 0));
+  if (!safeUserId || xpAwarded <= 0) return null;
+
+  // This is the single authoritative opt-out guard for every XP source.
+  if (!isUserParticipating(guildId, safeUserId)) return null;
+
   const section = getSection(guildId);
-  const existing = section.users[safeUserId] || { userId: safeUserId, xp: 0, level: 0, messages: 0 };
-  if (!canAwardMessageXp(existing, section)) return null;
+  const existing = section.users[safeUserId] || normalizeUser({ userId: safeUserId });
   const previousLevel = Number(existing.level || 0);
-  const xpAwarded = Number(section.xpPerMessage || 10);
   const nextXp = Number(existing.xp || 0) + xpAwarded;
   const nextLevel = levelForXp(nextXp);
+  const source = normalizeXpSource(options.source);
+  const activity = options.activity && typeof options.activity === 'object' ? options.activity : {};
+
   const user = saveUser(guildId, {
     ...existing,
+    ...activity,
     xp: nextXp,
     level: nextLevel,
-    messages: Number(existing.messages || 0) + 1,
-    lastMessageXpAt: now(),
   }, guildOrMeta);
+
   updateSection(guildId, (current) => ({
     ...current,
     analytics: {
       ...current.analytics,
-      messagesTracked: Number(current.analytics.messagesTracked || 0) + 1,
+      messagesTracked: Number(current.analytics.messagesTracked || 0) + Math.max(0, Number(options.messagesTracked || 0)),
+      voiceMinutesTracked: Number(current.analytics.voiceMinutesTracked || 0) + Math.max(0, Number(options.voiceMinutesTracked || 0)),
       xpAwarded: Number(current.analytics.xpAwarded || 0) + xpAwarded,
       levelUps: Number(current.analytics.levelUps || 0) + (nextLevel > previousLevel ? 1 : 0),
+      xpBySource: {
+        ...current.analytics.xpBySource,
+        [source]: Number(current.analytics.xpBySource?.[source] || 0) + xpAwarded,
+      },
     },
+    updatedAt: now(),
   }), guildOrMeta);
-  return { user, previousLevel, newLevel: nextLevel, levelledUp: nextLevel > previousLevel, xpAwarded };
+
+  return {
+    user,
+    source,
+    previousLevel,
+    newLevel: nextLevel,
+    levelledUp: nextLevel > previousLevel,
+    xpAwarded,
+  };
+}
+
+function awardMessageXp(guildId, userId, guildOrMeta = {}) {
+  const safeUserId = cleanDiscordId(userId);
+  if (!safeUserId || !isUserParticipating(guildId, safeUserId)) return null;
+  const section = getSection(guildId);
+  const existing = section.users[safeUserId] || normalizeUser({ userId: safeUserId });
+  if (!canAwardMessageXp(existing, section)) return null;
+
+  return awardXp(guildId, safeUserId, section.xpPerMessage, {
+    source: XP_SOURCES.MESSAGE,
+    messagesTracked: 1,
+    activity: {
+      messages: Number(existing.messages || 0) + 1,
+      lastMessageXpAt: now(),
+    },
+  }, guildOrMeta);
+}
+
+function awardVoiceXp(guildId, userId, amount, voiceMinutes = 0, guildOrMeta = {}) {
+  const safeUserId = cleanDiscordId(userId);
+  if (!safeUserId || !isUserParticipating(guildId, safeUserId)) return null;
+  const section = getSection(guildId);
+  if (section.trackVoice === false) return null;
+  const existing = section.users[safeUserId] || normalizeUser({ userId: safeUserId });
+  const minutes = Math.max(0, Number(voiceMinutes || 0));
+
+  return awardXp(guildId, safeUserId, amount, {
+    source: XP_SOURCES.VOICE,
+    voiceMinutesTracked: minutes,
+    activity: {
+      voiceMinutes: Number(existing.voiceMinutes || 0) + minutes,
+      lastVoiceXpAt: now(),
+    },
+  }, guildOrMeta);
 }
 
 function getLeaderboard(guildId, limit = 10) {
@@ -239,6 +308,7 @@ function getLeaderboard(guildId, limit = 10) {
 
 module.exports = {
   MODULE_KEY,
+  XP_SOURCES,
   defaults,
   normalize,
   normalizeUser,
@@ -252,6 +322,8 @@ module.exports = {
   xpForLevel,
   levelForXp,
   canAwardMessageXp,
+  awardXp,
   awardMessageXp,
+  awardVoiceXp,
   getLeaderboard,
 };
