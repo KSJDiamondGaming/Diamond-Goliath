@@ -15,6 +15,7 @@ const {
 } = require('discord.js');
 
 const guildManager = require('../../../core/guild/guildManager');
+const { getAllEmbedDeployments } = require('../../messageStudio/embed/embedDeployments');
 const reactionRoles = require('./reactionRoles');
 const reactionRolesHealth = require('./reactionRolesHealth');
 
@@ -97,6 +98,34 @@ function deploymentSelect(guildId) {
   return menu;
 }
 
+function embedDeploymentsForChannel(guildId, channelId) {
+  if (!channelId) return [];
+  const trackedReactionMessages = new Set(reactionRoles.listPanels(guildId).map((panel) => panel.messageId));
+  return Object.values(getAllEmbedDeployments(guildId))
+    .filter((deployment) => deployment.channelId === channelId && deployment.messageId && !trackedReactionMessages.has(deployment.messageId))
+    .sort((a, b) => String(b.lastUpdatedAt || b.createdAt || '').localeCompare(String(a.lastUpdatedAt || a.createdAt || '')))
+    .slice(0, 25);
+}
+
+function embedDeploymentSelect(guildId, channelId) {
+  const deployments = embedDeploymentsForChannel(guildId, channelId);
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId('admin:reactionRoles:existing:embed:deployment')
+    .setPlaceholder(deployments.length ? '2. Choose an Embed Studio panel' : 'No available Embed Studio panels in this channel')
+    .setMinValues(1)
+    .setMaxValues(1)
+    .setDisabled(!deployments.length);
+  menu.addOptions(deployments.length ? deployments.map((deployment) => {
+    const name = String(deployment.preset || deployment.template || deployment.key || 'Embed Studio Panel');
+    return {
+      label: name.slice(0, 100),
+      description: `Message ${deployment.messageId}`.slice(0, 100),
+      value: deployment.key,
+    };
+  }) : [{ label: 'No panels available', value: 'none' }]);
+  return menu;
+}
+
 function modeSelect(mode) {
   return new StringSelectMenuBuilder()
     .setCustomId('admin:reactionRoles:wizard:mode')
@@ -156,22 +185,59 @@ async function buildReactionRolesAdminPanel(guild, memberDisplayName = 'Unknown 
 }
 
 function buildExistingPicker(guild) {
-  const panels = reactionRoles.listPanels(guild.id);
   return {
     embeds: [new EmbedBuilder()
       .setColor(0x5865f2)
       .setTitle('🔗 Use Existing')
       .setDescription([
         'Choose an existing item.', '',
-        '**Existing Message**', 'Attach reaction roles to a Discord message without changing its content.', '',
-        '**Existing Panel**', 'Open a saved reaction-role panel.',
+        '**Existing Message**', 'Paste a Discord message link and attach reaction roles without changing its content.', '',
+        '**Existing Panel**', 'Browse Embed Studio panels by Discord channel, then select one by name or message ID.',
       ].join('\n'))],
     components: [
       row(
         button('admin:reactionRoles:new:existing', '🔗 Existing Message', ButtonStyle.Primary),
-        button('admin:reactionRoles:saved', '📚 Existing Panel', ButtonStyle.Secondary, !panels.length),
+        button('admin:reactionRoles:existing:embed', '📚 Existing Panel', ButtonStyle.Primary),
       ),
       row(button('admin:reactionRoles', '⬅️ Back'), button('admin:reactionRoles:settings', '⚙️ Settings')),
+    ],
+  };
+}
+
+function buildEmbedStudioPicker(guild, userId, notice = '') {
+  const draft = reactionRoles.getDraft(guild.id, userId);
+  const channelId = draft?.channelId || null;
+  const deployments = embedDeploymentsForChannel(guild.id, channelId);
+  return {
+    embeds: [new EmbedBuilder()
+      .setColor(channelId && deployments.length ? 0x57f287 : 0x5865f2)
+      .setTitle('📚 Select Existing Embed Studio Panel')
+      .setDescription([
+        noticeLine(notice), notice ? '' : null,
+        '**Step 1 — Choose a channel**',
+        'Select the Discord channel containing the Embed Studio panel.', '',
+        `**Channel:** ${channelId ? `<#${channelId}>` : 'Not selected'}`,
+        channelId ? `**Available panels:** \`${deployments.length}\`` : null,
+        '',
+        '**Step 2 — Choose a panel**',
+        channelId
+          ? deployments.length
+            ? 'Select a panel below. Each option shows its saved panel name and Discord message ID.'
+            : '> No unassigned Embed Studio panels were found in that channel.'
+          : '> Choose a channel first.',
+      ].filter((line) => line !== null).join('\n'))],
+    components: [
+      row(new ChannelSelectMenuBuilder()
+        .setCustomId('admin:reactionRoles:existing:embed:channel')
+        .setPlaceholder(channelId ? 'Change channel' : '1. Choose a channel')
+        .setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+        .setMinValues(1)
+        .setMaxValues(1)),
+      row(embedDeploymentSelect(guild.id, channelId)),
+      row(
+        button('admin:reactionRoles:existing', '⬅️ Back'),
+        button('admin:reactionRoles:settings', '⚙️ Settings'),
+      ),
     ],
   };
 }
@@ -481,7 +547,7 @@ async function deleteTrackedMessageAndPanel(guild, panelId) {
   }
   try {
     await message.delete();
-  } catch (error) {
+  } catch {
     throw new Error('Goliath could not delete the tracked Discord message. Check its Manage Messages permission and channel access.');
   }
   reactionRoles.removePanel(guild.id, panelId, guild);
@@ -553,8 +619,35 @@ async function handleReactionRolesAdminInteraction(interaction) {
       return respond(interaction, buildExistingMessageStep(guild, userId));
     }
 
+    if (id === 'admin:reactionRoles:existing:embed') {
+      reactionRoles.saveDraft(guild.id, userId, {
+        type: reactionRoles.DRAFT_TYPES.EXISTING, panelId: null, channelId: null, messageId: null, templateId: null,
+        name: 'Reaction Roles', mappings: [], selectedRoleId: null, selectedRoleIds: [], selectedMode: reactionRoles.MODES.TOGGLE,
+      }, guild);
+      return respond(interaction, buildEmbedStudioPicker(guild, userId));
+    }
+
     if (id === 'admin:reactionRoles:source') return respond(interaction, buildExistingMessageStep(guild, userId));
     if (id === 'admin:reactionRoles:source:continue') return respond(interaction, buildWizard(guild, userId));
+
+    if (interaction.isChannelSelectMenu?.() && id === 'admin:reactionRoles:existing:embed:channel') {
+      reactionRoles.saveDraft(guild.id, userId, { channelId: interaction.values[0], messageId: null }, guild);
+      return respond(interaction, buildEmbedStudioPicker(guild, userId));
+    }
+    if (interaction.isStringSelectMenu?.() && id === 'admin:reactionRoles:existing:embed:deployment') {
+      const key = interaction.values[0];
+      if (key === 'none') return respond(interaction, buildEmbedStudioPicker(guild, userId));
+      const deployment = getAllEmbedDeployments(guild.id)[key];
+      const draft = reactionRoles.getDraft(guild.id, userId);
+      if (!deployment || deployment.channelId !== draft?.channelId) throw new Error('That Embed Studio panel is no longer available in the selected channel.');
+      const panelName = String(deployment.preset || deployment.template || deployment.key || 'Reaction Roles').slice(0, 100);
+      reactionRoles.saveDraft(guild.id, userId, {
+        channelId: deployment.channelId,
+        messageId: deployment.messageId,
+        name: panelName,
+      }, guild);
+      return respond(interaction, buildWizard(guild, userId, false, `✅ Selected “${panelName}” from <#${deployment.channelId}>.`));
+    }
 
     if (interaction.isChannelSelectMenu?.() && id === 'admin:reactionRoles:wizard:channel') {
       reactionRoles.saveDraft(guild.id, userId, { channelId: interaction.values[0] }, guild);
