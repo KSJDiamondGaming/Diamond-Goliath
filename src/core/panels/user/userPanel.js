@@ -29,7 +29,7 @@ const MODULE_CATALOG = [
   { key: 'appeals', category: 'account', label: 'Appeals', emoji: '📝', summary: 'Planned personal appeal access.', status: 'planned' },
   { key: 'giveaways', category: 'community', label: 'Giveaways', emoji: '🎉', summary: 'Member giveaway dashboard plan.', status: 'locked' },
   { key: 'invites', category: 'community', label: 'Invites', emoji: '📨', summary: 'Planned member invite view.', status: 'planned' },
-  { key: 'leveling', category: 'community', label: 'Leveling', emoji: '🏆', summary: 'Planned member rank and XP view.', status: 'planned' },
+  { key: 'leveling', category: 'community', label: 'Leveling', emoji: '🏆', summary: 'View your XP, rank, rewards and earning rules.', status: 'live' },
   { key: 'polls', category: 'community', label: 'Polls', emoji: '📊', summary: 'Planned member poll view.', status: 'planned' },
   { key: 'forms', category: 'feedback', label: 'Forms', emoji: '📝', summary: 'Planned member form access.', status: 'planned' },
   { key: 'suggestions', category: 'feedback', label: 'Suggestions', emoji: '💡', summary: 'Planned member suggestion access.', status: 'planned' },
@@ -66,11 +66,6 @@ const IN_PROGRESS_PAGES = [
       '• Total and successful invites',
       '• Left-server and fake-invite counts',
       '• Invite leaderboard, rewards and history',
-      '',
-      '**🏆 Leveling — Discussion**',
-      '• Full XP profile and progress history',
-      '• Weekly, message and voice XP',
-      '• Rewards and leaderboard',
       '',
       '**📊 Polls — Discussion**',
       '• Active polls, my votes, results and history',
@@ -245,7 +240,7 @@ function buildCategoryPanel(categoryKey, interactionOrName = 'Unknown User') {
   const moduleButtons = modules.map((module) => button(
     `user:module:${module.key}`,
     module.label,
-    module.key === 'social' || module.key === 'giveaways' ? ButtonStyle.Success : ButtonStyle.Secondary,
+    module.key === 'social' || module.key === 'giveaways' || module.key === 'leveling' ? ButtonStyle.Success : ButtonStyle.Secondary,
     false,
     module.emoji,
   ));
@@ -336,6 +331,78 @@ function buildAccountRecordPanel(interactionOrName = 'Unknown User') {
         module.emoji,
       ))),
       navigationRow({ backId: 'user:home' }),
+    ],
+  };
+}
+
+function formatXpSource(id, source) {
+  const amount = Number(source.amount || 0) > 0 ? `**${source.amount} XP**` : '**Variable XP**';
+  const timing = id === 'message'
+    ? ` · ${source.cooldownSeconds}s cooldown`
+    : id === 'voice'
+      ? ` · every ${source.intervalMinutes} minutes`
+      : '';
+  return `${source.enabled ? '✅' : '❌'} **${source.label}** — ${amount}${timing}\n${source.description}`;
+}
+
+function buildLevelingUserPanel(interaction, section, user, rank, participating, activeMultiplier) {
+  const memberDisplayName = getMemberDisplayName(interaction);
+  const currentUser = user || { xp: 0, level: 0, messages: 0, voiceMinutes: 0 };
+  const details = progressDetails({
+    ...currentUser,
+    currentLevelXp: Math.max(0, Number(currentUser.level || 0)) ** 2 * 100,
+    nextLevelXp: (Math.max(0, Number(currentUser.level || 0)) + 1) ** 2 * 100,
+  });
+  const progressLines = participating
+    ? [
+      `Level: **${details.level}**`,
+      `Total XP: **${details.xp.toLocaleString()}**`,
+      rank ? `Server Rank: **#${rank}**` : 'Server Rank: **Unranked**',
+      `Next Level: **${details.earnedThisLevel.toLocaleString()} / ${details.neededThisLevel.toLocaleString()} XP**`,
+      `\`${details.bar}\` **${details.percent}%**`,
+      `Messages Tracked: **${Number(currentUser.messages || 0).toLocaleString()}**`,
+      `Voice Activity: **${Number(currentUser.voiceMinutes || 0).toLocaleString()} minutes**`,
+    ]
+    : [
+      '**Leveling is paused for your account.**',
+      `Saved Level: **${details.level}**`,
+      `Saved XP: **${details.xp.toLocaleString()}**`,
+      'You will not gain XP until Leveling is enabled again in Preferences.',
+    ];
+
+  const multiplierLines = activeMultiplier
+    ? [
+      `🟢 **${activeMultiplier.name || 'Active XP Multiplier'}**`,
+      `Multiplier: **${activeMultiplier.value}×**`,
+      `Applies to: ${activeMultiplier.sourceIds?.length ? activeMultiplier.sourceIds.map((id) => `\`${id}\``).join(', ') : 'All enabled XP sources'}`,
+      activeMultiplier.endsAt ? `Ends: <t:${Math.floor(new Date(activeMultiplier.endsAt).getTime() / 1000)}:R>` : 'Ends: No scheduled end',
+    ]
+    : ['No XP multiplier is currently active.'];
+
+  const rewardLines = section.levelRewards.length
+    ? section.levelRewards.slice(0, 15).map((reward) => `Level **${reward.level}** → <@&${reward.roleId}>`).join('\n')
+    : 'No level reward roles are currently configured.';
+
+  return {
+    embeds: [markLiveEmbed(createEmbed('🏆 Your Leveling', [
+      '**Your Progress**',
+      ...progressLines,
+      '',
+      '**Ways to Earn XP**',
+      ...Object.entries(section.xpSources).map(([id, source]) => formatXpSource(id, source)),
+      '',
+      '**XP Multiplier**',
+      ...multiplierLines,
+      '',
+      '**Rank Rewards**',
+      rewardLines,
+    ].join('\n'), memberDisplayName, participating ? PANEL_COLOR : DEV_COLOR))],
+    components: [
+      row(
+        button('user:module:leveling', 'Refresh', ButtonStyle.Success, false, '🔄'),
+        button('user:preferences', 'Preferences', ButtonStyle.Secondary, false, '⚙️'),
+      ),
+      navigationRow({ backId: 'user:category:community' }),
     ],
   };
 }
@@ -499,6 +566,7 @@ module.exports = {
   buildInProgressPanel,
   buildHelpPanel,
   buildProgressPanel,
+  buildLevelingUserPanel,
   buildRolesPanel,
   buildSocialAccessDeniedPanel,
 };
