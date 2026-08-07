@@ -50,6 +50,9 @@ async function handleLevelingInteraction(interaction) {
     if (customId === 'admin:leveling') {
       return safeUpdate(interaction, panel.buildLevelingPanel(interaction.guild, displayName));
     }
+    if (customId === 'admin:leveling:multiplier') {
+      return safeUpdate(interaction, panel.buildMultiplierManagerPanel(interaction.guild, displayName));
+    }
     if (customId === 'admin:leveling:leaderboard') {
       return safeUpdate(interaction, panel.buildLeaderboardPanel(interaction.guild, displayName, 0, 'xp'));
     }
@@ -222,7 +225,8 @@ async function handleLevelingInteraction(interaction) {
       refreshVoiceTracking(interaction);
     } else if (interaction.isModalSubmit?.() && customId === 'admin:leveling:configureMultiplier:submit') {
       const name = interaction.fields.getTextInputValue('name').trim();
-      const value = numberField(interaction, 'value', { min: 1, max: 100 });
+      const value = numberField(interaction, 'value', { min: 1.01, max: 100 });
+      const startDelayMinutes = numberField(interaction, 'startDelay', { min: 0, max: 525600, integer: true });
       const durationMinutes = numberField(interaction, 'duration', { min: 1, max: 525600, integer: true });
       const rawSources = interaction.fields.getTextInputValue('sources').trim();
       const sourceIds = /^all$/i.test(rawSources)
@@ -231,16 +235,17 @@ async function handleLevelingInteraction(interaction) {
       const validSources = new Set(Object.keys(leveling.getSection(interaction.guildId).xpSources));
       const invalid = sourceIds.filter((sourceId) => !validSources.has(sourceId));
       if (invalid.length) throw new Error(`Unknown XP source(s): ${invalid.join(', ')}`);
-      const startsAt = new Date();
+      const startsAt = new Date(Date.now() + startDelayMinutes * 60000);
       const endsAt = new Date(startsAt.getTime() + durationMinutes * 60000);
       leveling.setMultiplier(interaction.guildId, {
-        enabled: value > 1,
-        name: name || 'XP Multiplier',
+        enabled: true,
+        name: name || 'XP Event',
         value,
         sourceIds,
         startsAt: startsAt.toISOString(),
         endsAt: endsAt.toISOString(),
       }, { actorId: interaction.user.id, action: customId });
+      return safeUpdate(interaction, panel.buildMultiplierManagerPanel(interaction.guild, displayName));
     } else if (interaction.isModalSubmit?.() && customId === 'admin:leveling:configureRankLevels:submit') {
       const section = leveling.getSection(interaction.guildId);
       const roles = section.levelRewards.map((reward) => reward.roleId);
@@ -304,6 +309,7 @@ async function handleLevelingInteraction(interaction) {
       return safeUpdate(interaction, panel.buildRankRewardsPanel(interaction.guild, displayName));
     } else if (customId === 'admin:leveling:stopMultiplier') {
       leveling.clearMultiplier(interaction.guildId, { actorId: interaction.user.id, action: customId });
+      return safeUpdate(interaction, panel.buildMultiplierManagerPanel(interaction.guild, displayName));
     } else {
       return false;
     }
