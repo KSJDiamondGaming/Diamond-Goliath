@@ -15,6 +15,9 @@ const {
 const leveling = require('./leveling');
 const { isModuleEnabled } = require('../../../core/guild/guildManager');
 
+const LEADERBOARD_PAGE_SIZE = 10;
+const LEADERBOARD_SORTS = new Set(['xp', 'level', 'messages', 'voice']);
+
 const row = (...components) => new ActionRowBuilder().addComponents(...components);
 const button = (customId, label, style = ButtonStyle.Primary, disabled = false) => new ButtonBuilder()
   .setCustomId(customId)
@@ -23,6 +26,7 @@ const button = (customId, label, style = ButtonStyle.Primary, disabled = false) 
   .setDisabled(disabled);
 const formatChannel = (id) => id ? `<#${id}>` : '`Not set`';
 const formatRoles = (ids = []) => ids.length ? ids.map((id) => `<@&${id}>`).join(', ') : '`None`';
+const formatChannels = (ids = []) => ids.length ? ids.map((id) => `<#${id}>`).join(', ') : '`None`';
 
 function input(customId, label, value, style = TextInputStyle.Short, required = true, placeholder = null) {
   const component = new TextInputBuilder()
@@ -30,7 +34,7 @@ function input(customId, label, value, style = TextInputStyle.Short, required = 
     .setLabel(label)
     .setStyle(style)
     .setRequired(required)
-    .setValue(String(value ?? '').slice(0, style === TextInputStyle.Paragraph ? 4000 : 4000));
+    .setValue(String(value ?? '').slice(0, 4000));
   if (placeholder) component.setPlaceholder(placeholder);
   return new ActionRowBuilder().addComponents(component);
 }
@@ -43,6 +47,36 @@ function formatMultiplier(section, guildId) {
   const starts = multiplier.startsAt ? `<t:${Math.floor(new Date(multiplier.startsAt).getTime() / 1000)}:f>` : 'Immediately';
   const ends = multiplier.endsAt ? `<t:${Math.floor(new Date(multiplier.endsAt).getTime() / 1000)}:R>` : 'No end time';
   return `${active ? '🟢 Active' : '🟡 Scheduled / expired'} · **${multiplier.value}×**\n${multiplier.name || 'XP Multiplier'}\nApplies to: ${sources}\nStarts: ${starts}\nEnds: ${ends}`;
+}
+
+function sortLabel(sortBy) {
+  if (sortBy === 'messages') return 'Messages';
+  if (sortBy === 'voice') return 'Voice Activity';
+  if (sortBy === 'level') return 'Level';
+  return 'XP';
+}
+
+function leaderboardRows(guildId, { page = 0, sortBy = 'xp', includePaused = false } = {}) {
+  const safeSort = LEADERBOARD_SORTS.has(sortBy) ? sortBy : 'xp';
+  const records = leveling.getLeaderboard(guildId, 500, { includePaused, sortBy: safeSort });
+  const totalPages = Math.max(1, Math.ceil(records.length / LEADERBOARD_PAGE_SIZE));
+  const safePage = Math.max(0, Math.min(Number(page) || 0, totalPages - 1));
+  const start = safePage * LEADERBOARD_PAGE_SIZE;
+  const visible = records.slice(start, start + LEADERBOARD_PAGE_SIZE);
+  const lines = visible.length
+    ? visible.map((user, index) => {
+      const rank = start + index + 1;
+      const detail = safeSort === 'messages'
+        ? `${Number(user.messages || 0).toLocaleString()} messages`
+        : safeSort === 'voice'
+          ? `${Number(user.voiceMinutes || 0).toLocaleString()} voice minutes`
+          : safeSort === 'level'
+            ? `Level ${Number(user.level || 0).toLocaleString()} · ${Number(user.xp || 0).toLocaleString()} XP`
+            : `${Number(user.xp || 0).toLocaleString()} XP · Level ${Number(user.level || 0).toLocaleString()}`;
+      return `**${rank}.** <@${user.userId}> — ${detail}${user.participating === false ? ' · ⏸️ Paused' : ''}`;
+    })
+    : ['`No XP tracked yet.`'];
+  return { records, lines, page: safePage, totalPages, sortBy: safeSort };
 }
 
 function buildLeaderboard(guildId, limit = 10) {
@@ -143,9 +177,46 @@ function buildLevelingPanel(guild, memberDisplayName = 'Unknown User') {
         button('admin:leveling:leaderboard', '🏆 Leaderboard', ButtonStyle.Primary),
       ),
       row(
+        button('admin:leveling:trackingRules', '🚫 XP Exclusions', ButtonStyle.Secondary),
         button('admin:leveling:stopMultiplier', '⏹️ Stop Multiplier', ButtonStyle.Danger, !section.multiplier?.enabled),
         button('admin:modules', '⬅️ Modules', ButtonStyle.Secondary),
       ),
+    ],
+  };
+}
+
+function buildTrackingRulesPanel(guild, memberDisplayName = 'Unknown User') {
+  const section = leveling.getSection(guild.id);
+  const ignoredChannels = Array.isArray(section.ignoredChannelIds) ? section.ignoredChannelIds : [];
+  const ignoredRoles = Array.isArray(section.ignoredRoleIds) ? section.ignoredRoleIds : [];
+  return {
+    embeds: [new EmbedBuilder()
+      .setColor(0x5865f2)
+      .setTitle('🚫 XP Tracking Exclusions')
+      .setDescription([
+        'Members do not gain message or voice XP while an exclusion applies.',
+        '',
+        `**Ignored Channels:** ${formatChannels(ignoredChannels)}`,
+        `**Ignored Roles:** ${formatRoles(ignoredRoles)}`,
+        '',
+        'Channel exclusions apply to both message and voice XP. Role exclusions apply to the member everywhere in this server.',
+      ].join('\n'))
+      .setFooter({ text: `Requested by ${memberDisplayName}` })
+      .setTimestamp()],
+    components: [
+      row(new ChannelSelectMenuBuilder()
+        .setCustomId('admin:leveling:ignoredChannels')
+        .setPlaceholder('Choose channels that must not award XP')
+        .setMinValues(0)
+        .setMaxValues(25)
+        .setDefaultChannels(...ignoredChannels.slice(0, 25))),
+      row(new RoleSelectMenuBuilder()
+        .setCustomId('admin:leveling:ignoredRoles')
+        .setPlaceholder('Choose roles that must not earn XP')
+        .setMinValues(0)
+        .setMaxValues(25)
+        .setDefaultRoles(...ignoredRoles.slice(0, 25))),
+      row(button('admin:leveling', '⬅️ Back', ButtonStyle.Secondary)),
     ],
   };
 }
@@ -239,34 +310,51 @@ function buildRankLevelsModal(section) {
     ));
 }
 
-function buildLeaderboardPanel(guild, memberDisplayName = 'Unknown User') {
+function buildLeaderboardPanel(guild, memberDisplayName = 'Unknown User', page = 0, sortBy = 'xp') {
   const section = leveling.getSection(guild.id);
   const eligible = leveling.getEligibleUsers(guild.id, { includePaused: false });
   const paused = Object.keys(section.pausedUsers || {}).length;
+  const board = leaderboardRows(guild.id, { page, sortBy, includePaused: true });
   const embed = new EmbedBuilder()
     .setColor(0x5865f2)
     .setTitle('🏆 Leveling Leaderboard')
     .setDescription([
-      'Use this list when planning level-based rewards or giveaway eligibility.',
+      `Sorted by **${sortLabel(board.sortBy)}** · Page **${board.page + 1}/${board.totalPages}**`,
       '',
-      buildLeaderboard(guild.id, 25),
+      ...board.lines,
       '',
       `Eligible active users: \`${eligible.length}\``,
-      `Paused users excluded by default: \`${paused}\``,
+      `Paused users: \`${paused}\``,
       '',
-      'Giveaway filters can use minimum level, minimum XP, top-N and paused-user exclusion through the Leveling API.',
+      'Paused members are shown for management visibility but remain excluded from giveaway eligibility by default.',
     ].join('\n'))
     .setFooter({ text: `Requested by ${memberDisplayName}` })
     .setTimestamp();
 
+  const previousPage = Math.max(0, board.page - 1);
+  const nextPage = Math.min(board.totalPages - 1, board.page + 1);
   return {
     embeds: [embed],
-    components: [row(button('admin:leveling', '⬅️ Back', ButtonStyle.Secondary))],
+    components: [
+      row(
+        button('admin:leveling:leaderboard:xp:0', 'XP', board.sortBy === 'xp' ? ButtonStyle.Success : ButtonStyle.Secondary),
+        button('admin:leveling:leaderboard:level:0', 'Level', board.sortBy === 'level' ? ButtonStyle.Success : ButtonStyle.Secondary),
+        button('admin:leveling:leaderboard:messages:0', 'Messages', board.sortBy === 'messages' ? ButtonStyle.Success : ButtonStyle.Secondary),
+        button('admin:leveling:leaderboard:voice:0', 'Voice', board.sortBy === 'voice' ? ButtonStyle.Success : ButtonStyle.Secondary),
+      ),
+      row(
+        button(`admin:leveling:leaderboard:${board.sortBy}:${previousPage}`, '⬅️ Previous', ButtonStyle.Secondary, board.page <= 0),
+        button(`admin:leveling:leaderboard:${board.sortBy}:${board.page}`, '🔄 Refresh', ButtonStyle.Secondary),
+        button(`admin:leveling:leaderboard:${board.sortBy}:${nextPage}`, 'Next ➡️', ButtonStyle.Secondary, board.page >= board.totalPages - 1),
+      ),
+      row(button('admin:leveling', '⬅️ Back', ButtonStyle.Secondary)),
+    ],
   };
 }
 
 module.exports = {
   buildLevelingPanel,
+  buildTrackingRulesPanel,
   buildRankRewardsPanel,
   buildMessageXpModal,
   buildVoiceXpModal,
