@@ -15,6 +15,23 @@ async function safeUpdate(interaction, payload) {
   return true;
 }
 
+function numberField(interaction, id, { min = 0, max = Number.MAX_SAFE_INTEGER, integer = false } = {}) {
+  const raw = interaction.fields.getTextInputValue(id).trim();
+  const value = Number(raw);
+  if (!Number.isFinite(value)) throw new Error(`${id} must be a valid number.`);
+  const normalized = integer ? Math.round(value) : value;
+  if (normalized < min || normalized > max) throw new Error(`${id} must be between ${min} and ${max}.`);
+  return normalized;
+}
+
+function optionalField(interaction, id) {
+  try {
+    return interaction.fields.getTextInputValue(id).trim();
+  } catch {
+    return '';
+  }
+}
+
 async function handleLevelingInteraction(interaction) {
   const customId = String(interaction?.customId || '');
   if (!customId.startsWith('admin:leveling')) return false;
@@ -27,25 +44,102 @@ async function handleLevelingInteraction(interaction) {
     if (customId === 'admin:leveling:leaderboard') {
       return safeUpdate(interaction, panel.buildLeaderboardPanel(interaction.guild, displayName));
     }
+    if (customId === 'admin:leveling:ranks') {
+      return safeUpdate(interaction, panel.buildRankRewardsPanel(interaction.guild, displayName));
+    }
+    if (customId === 'admin:leveling:configureMessage' && interaction.isButton?.()) {
+      await interaction.showModal(panel.buildMessageXpModal(leveling.getSection(interaction.guildId)));
+      return true;
+    }
+    if (customId === 'admin:leveling:configureVoice' && interaction.isButton?.()) {
+      await interaction.showModal(panel.buildVoiceXpModal(leveling.getSection(interaction.guildId)));
+      return true;
+    }
+    if (customId === 'admin:leveling:configureMultiplier' && interaction.isButton?.()) {
+      await interaction.showModal(panel.buildMultiplierModal(leveling.getSection(interaction.guildId)));
+      return true;
+    }
+    if (customId === 'admin:leveling:configureRankLevels' && interaction.isButton?.()) {
+      await interaction.showModal(panel.buildRankLevelsModal(leveling.getSection(interaction.guildId)));
+      return true;
+    }
 
     const save = (updater) => leveling.updateSection(interaction.guildId, updater, {
       actorId: interaction.user.id,
       action: customId,
     });
 
-    if (interaction.isChannelSelectMenu?.() && customId === 'admin:leveling:announceChannel') {
+    if (interaction.isModalSubmit?.() && customId === 'admin:leveling:configureMessage:submit') {
+      const amount = numberField(interaction, 'amount', { min: 1, max: 100000, integer: true });
+      const cooldownSeconds = numberField(interaction, 'cooldown', { min: 0, max: 86400, integer: true });
+      const description = optionalField(interaction, 'description');
+      leveling.setXpSource(interaction.guildId, 'message', {
+        amount,
+        cooldownSeconds,
+        description: description || 'Earn XP for eligible server messages.',
+      }, { actorId: interaction.user.id, action: customId });
+    } else if (interaction.isModalSubmit?.() && customId === 'admin:leveling:configureVoice:submit') {
+      const amount = numberField(interaction, 'amount', { min: 1, max: 100000, integer: true });
+      const intervalMinutes = numberField(interaction, 'interval', { min: 1, max: 1440, integer: true });
+      const description = optionalField(interaction, 'description');
+      leveling.setXpSource(interaction.guildId, 'voice', {
+        amount,
+        intervalMinutes,
+        description: description || 'Earn XP for eligible time spent in voice channels.',
+      }, { actorId: interaction.user.id, action: customId });
+    } else if (interaction.isModalSubmit?.() && customId === 'admin:leveling:configureMultiplier:submit') {
+      const name = interaction.fields.getTextInputValue('name').trim();
+      const value = numberField(interaction, 'value', { min: 1, max: 100 });
+      const durationMinutes = numberField(interaction, 'duration', { min: 1, max: 525600, integer: true });
+      const rawSources = interaction.fields.getTextInputValue('sources').trim();
+      const sourceIds = /^all$/i.test(rawSources)
+        ? []
+        : [...new Set(rawSources.split(',').map((entry) => entry.trim().toLowerCase()).filter(Boolean))];
+      const validSources = new Set(Object.keys(leveling.getSection(interaction.guildId).xpSources));
+      const invalid = sourceIds.filter((sourceId) => !validSources.has(sourceId));
+      if (invalid.length) throw new Error(`Unknown XP source(s): ${invalid.join(', ')}`);
+      const startsAt = new Date();
+      const endsAt = new Date(startsAt.getTime() + durationMinutes * 60000);
+      leveling.setMultiplier(interaction.guildId, {
+        enabled: value > 1,
+        name: name || 'XP Multiplier',
+        value,
+        sourceIds,
+        startsAt: startsAt.toISOString(),
+        endsAt: endsAt.toISOString(),
+      }, { actorId: interaction.user.id, action: customId });
+    } else if (interaction.isModalSubmit?.() && customId === 'admin:leveling:configureRankLevels:submit') {
+      const section = leveling.getSection(interaction.guildId);
+      const roles = section.levelRewards.map((reward) => reward.roleId);
+      const levels = interaction.fields.getTextInputValue('levels')
+        .split(',')
+        .map((entry) => Number(entry.trim()))
+        .filter((value) => Number.isFinite(value))
+        .map((value) => Math.round(value));
+      if (!roles.length) throw new Error('Choose at least one rank reward role first.');
+      if (levels.length !== roles.length) throw new Error(`Enter exactly ${roles.length} level value(s), one for each selected role.`);
+      if (levels.some((level) => level < 1 || level > 100000)) throw new Error('Rank levels must be between 1 and 100000.');
+      if (new Set(levels).size !== levels.length) throw new Error('Each rank reward must use a unique level.');
+      leveling.setLevelRewards(interaction.guildId, roles.map((roleId, index) => ({
+        roleId,
+        level: levels[index],
+      })), { actorId: interaction.user.id, action: customId });
+      return safeUpdate(interaction, panel.buildRankRewardsPanel(interaction.guild, displayName));
+    } else if (interaction.isChannelSelectMenu?.() && customId === 'admin:leveling:announceChannel') {
       save((section) => ({ ...section, announceChannelId: interaction.values?.[0] || null }));
     } else if (interaction.isRoleSelectMenu?.() && customId === 'admin:leveling:managerRoles') {
       save((section) => ({ ...section, managerRoleIds: [...new Set(interaction.values || [])] }));
     } else if (interaction.isRoleSelectMenu?.() && customId === 'admin:leveling:levelRoles') {
       const selected = [...new Set(interaction.values || [])];
+      const current = leveling.getSection(interaction.guildId).levelRewards;
       leveling.setLevelRewards(interaction.guildId, selected.map((roleId, index) => ({
-        level: index + 1,
+        level: current[index]?.level || index + 1,
         roleId,
       })), {
         actorId: interaction.user.id,
         action: customId,
       });
+      return safeUpdate(interaction, panel.buildRankRewardsPanel(interaction.guild, displayName));
     } else if (customId === 'admin:leveling:enable') {
       setModuleEnabled(interaction.guildId, 'leveling', true, { actorId: interaction.user.id, action: customId });
     } else if (customId === 'admin:leveling:disable') {
@@ -60,28 +154,9 @@ async function handleLevelingInteraction(interaction) {
       save((section) => ({ ...section, announceLevelUps: !section.announceLevelUps }));
     } else if (customId === 'admin:leveling:toggleRemovePrevious') {
       save((section) => ({ ...section, removePreviousLevelRoles: !section.removePreviousLevelRoles }));
-    } else if (customId === 'admin:leveling:xpUp') {
-      const current = leveling.getSection(interaction.guildId).xpSources.message;
-      leveling.setXpSource(interaction.guildId, 'message', { amount: Math.min(1000, Number(current.amount || 10) + 5) }, { actorId: interaction.user.id, action: customId });
-    } else if (customId === 'admin:leveling:xpDown') {
-      const current = leveling.getSection(interaction.guildId).xpSources.message;
-      leveling.setXpSource(interaction.guildId, 'message', { amount: Math.max(1, Number(current.amount || 10) - 5) }, { actorId: interaction.user.id, action: customId });
-    } else if (customId === 'admin:leveling:multiplierToggle') {
-      const active = leveling.getActiveMultiplier(interaction.guildId, null);
-      if (active) {
-        leveling.clearMultiplier(interaction.guildId, { actorId: interaction.user.id, action: customId });
-      } else {
-        const startsAt = new Date();
-        const endsAt = new Date(startsAt.getTime() + 60 * 60 * 1000);
-        leveling.setMultiplier(interaction.guildId, {
-          enabled: true,
-          name: 'Double XP Hour',
-          value: 2,
-          sourceIds: [],
-          startsAt: startsAt.toISOString(),
-          endsAt: endsAt.toISOString(),
-        }, { actorId: interaction.user.id, action: customId });
-      }
+      return safeUpdate(interaction, panel.buildRankRewardsPanel(interaction.guild, displayName));
+    } else if (customId === 'admin:leveling:stopMultiplier') {
+      leveling.clearMultiplier(interaction.guildId, { actorId: interaction.user.id, action: customId });
     } else {
       return false;
     }
