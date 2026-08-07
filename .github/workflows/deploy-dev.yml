@@ -86,13 +86,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ needs.resolve.outputs.source_branch }}
           fetch-depth: 0
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -117,7 +117,7 @@ jobs:
       target_sha: ${{ steps.sha.outputs.target_sha }}
     steps:
       - name: Checkout target branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ needs.resolve.outputs.target_branch }}
           fetch-depth: 0
@@ -149,7 +149,7 @@ jobs:
       target_sha: ${{ steps.sha.outputs.target_sha }}
     steps:
       - name: Checkout DEV
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: dev
           fetch-depth: 1
