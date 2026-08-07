@@ -5,18 +5,66 @@ const leveling = require('./leveling');
 const panel = require('./levelingPanel');
 const { isModuleEnabled } = require('../../../core/guild/guildManager');
 
-async function assignLevelRole(member, section, newLevel) {
-  if (!member?.roles?.add || !Array.isArray(section.levelRoleIds)) return false;
-  const roleId = section.levelRoleIds[newLevel - 1];
-  if (!roleId) return false;
+function earnedRewards(section, level) {
+  const rewards = Array.isArray(section?.levelRewards) ? section.levelRewards : [];
+  return rewards
+    .filter((reward) => reward?.roleId && Number(reward.level || 0) <= Number(level || 0))
+    .sort((left, right) => Number(left.level || 0) - Number(right.level || 0));
+}
+
+async function resolveManageableRole(member, roleId, botMember) {
   const role = member.guild.roles.cache.get(roleId)
     || await member.guild.roles.fetch(roleId).catch(() => null);
-  if (!role || role.managed || role.id === member.guild.id) return false;
+  if (!role || role.managed || role.id === member.guild.id) return null;
+  if (role.position >= botMember.roles.highest.position) return null;
+  return role;
+}
+
+async function assignLevelRole(member, section, newLevel) {
+  if (!member?.roles?.add || !member?.guild) return false;
+
+  const rewards = earnedRewards(section, newLevel);
+  if (!rewards.length) return false;
+
   const me = member.guild.members.me || await member.guild.members.fetchMe().catch(() => null);
   if (!me?.permissions?.has?.(PermissionFlagsBits.ManageRoles)) return false;
-  if (role.position >= me.roles.highest.position) return false;
-  await member.roles.add(role, `Goliath leveling reward for level ${newLevel}`).catch(() => null);
-  return member.roles.cache.has(role.id);
+
+  const manageable = [];
+  for (const reward of rewards) {
+    const role = await resolveManageableRole(member, reward.roleId, me);
+    if (role) manageable.push({ reward, role });
+  }
+  if (!manageable.length) return false;
+
+  const highestEarned = manageable[manageable.length - 1];
+  const rolesToAdd = section.removePreviousLevelRoles === true
+    ? [highestEarned.role]
+    : manageable.map((entry) => entry.role);
+
+  const missingRoles = rolesToAdd.filter((role) => !member.roles.cache.has(role.id));
+  if (missingRoles.length) {
+    await member.roles.add(
+      missingRoles,
+      `Goliath leveling rewards through level ${newLevel}`,
+    ).catch(() => null);
+  }
+
+  if (section.removePreviousLevelRoles === true && member.roles?.remove) {
+    const keepId = highestEarned.role.id;
+    const earnedRoleIds = new Set(rewards.map((reward) => String(reward.roleId)));
+    const removable = [...member.roles.cache.values()]
+      .filter((role) => earnedRoleIds.has(String(role.id)) && role.id !== keepId)
+      .filter((role) => !role.managed && role.position < me.roles.highest.position);
+
+    if (removable.length) {
+      await member.roles.remove(
+        removable,
+        `Goliath replaced previous leveling ranks at level ${newLevel}`,
+      ).catch(() => null);
+    }
+  }
+
+  return rolesToAdd.every((role) => member.roles.cache.has(role.id));
 }
 
 async function announceLevelUp(message, section, user) {
@@ -48,4 +96,9 @@ async function handleMessageCreate(message) {
   return true;
 }
 
-module.exports = { handleMessageCreate, assignLevelRole, announceLevelUp };
+module.exports = {
+  handleMessageCreate,
+  assignLevelRole,
+  announceLevelUp,
+  earnedRewards,
+};
