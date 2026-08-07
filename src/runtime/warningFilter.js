@@ -354,7 +354,38 @@ try {
     return false;
   }
 
+  function repairSocialText(value) {
+    if (typeof value !== 'string' || !value.includes('?')) return value;
+    return value
+      .replaceAll('??? Delete', '🗑️ Delete')
+      .replaceAll('?? Manage Profile', '👤 Manage Profile')
+      .replaceAll('?? Edit Profile', '📝 Edit Profile')
+      .replaceAll('?? Clear', '🧹 Clear')
+      .replaceAll('?? Pause', '⏸️ Pause')
+      .replaceAll('?? Resume', '▶️ Resume')
+      .replaceAll('?? Back', '⬅️ Back')
+      .replaceAll('?? Settings', '⚙️ Settings')
+      .replaceAll('?? Monitoring', '🟢 Monitoring')
+      .replaceAll('?? Paused', '⏸️ Paused')
+      .replaceAll('?? **__Admin Notes__**', '🔒 **__Admin Notes__**')
+      .replace(/^\?\? \*\*/m, '👤 **');
+  }
+
+  function repairSocialValue(value) {
+    if (typeof value === 'string') return repairSocialText(value);
+    if (Array.isArray(value)) return value.map(repairSocialValue);
+    if (!value || typeof value !== 'object') return value;
+    const data = typeof value.toJSON === 'function' ? value.toJSON() : value;
+    return Object.fromEntries(Object.entries(data).map(([key, item]) => [key, repairSocialValue(item)]));
+  }
+
+  function repairSocialProfilePayload(payload) {
+    if (!payload || typeof payload !== 'object') return payload;
+    return repairSocialValue(payload);
+  }
+
   function augmentChannelsPayload(payload) {
+    payload = repairSocialProfilePayload(payload);
     if (!payload || !Array.isArray(payload.embeds)) return payload;
     const title = payload.embeds.map((embed) => typeof embed?.toJSON === 'function' ? embed.toJSON().title : embed?.title).find(Boolean);
     if (title !== '📂 Channels') return payload;
