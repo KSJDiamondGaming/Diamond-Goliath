@@ -28,6 +28,7 @@ const {
   buildInProgressPanel,
   buildHelpPanel,
   buildProgressPanel,
+  buildLevelingUserPanel,
   buildRolesPanel,
 } = require('./userPanel');
 
@@ -129,6 +130,24 @@ async function showProgress(interaction) {
   const profile = buildLiveProfile(interaction);
   if (!profile.leveling) return showProfile(interaction);
   return updatePanel(interaction, buildProgressPanel(interaction, profile.leveling));
+}
+
+async function showLeveling(interaction) {
+  const section = leveling.getSection(interaction.guildId);
+  const participating = leveling.isUserParticipating(interaction.guildId, interaction.user.id);
+  const user = leveling.getUser(interaction.guildId, interaction.user.id);
+  const leaderboard = leveling.getLeaderboard(interaction.guildId, 100);
+  const rankIndex = leaderboard.findIndex((entry) => String(entry.userId || entry.id) === String(interaction.user.id));
+  const rank = participating && rankIndex >= 0 ? rankIndex + 1 : null;
+  const activeMultiplier = leveling.getActiveMultiplier(interaction.guildId);
+  return updatePanel(interaction, buildLevelingUserPanel(
+    interaction,
+    section,
+    user,
+    rank,
+    participating,
+    activeMultiplier,
+  ));
 }
 
 function modalRow(component) {
@@ -536,6 +555,7 @@ async function handleUserPanelInteraction(interaction) {
     const [moduleKey] = interaction.values || [];
     if (moduleKey === 'notes') return updatePanel(interaction, notesUserPanel.user.buildPanel(interaction));
     if (moduleKey === 'social') return updatePanel(interaction, socialStudio.user.buildLanding(interaction));
+    if (moduleKey === 'leveling') return showLeveling(interaction);
     if (moduleKey === 'ping') return executeUtilityCommand(interaction, pingCommand);
     if (moduleKey === 'help') return executeUtilityCommand(interaction, helpCommand);
     if (moduleKey === 'serverinfo') return executeUtilityCommand(interaction, serverInfoCommand);
@@ -548,6 +568,7 @@ async function handleUserPanelInteraction(interaction) {
   if (moduleMatch && interaction.isButton?.()) {
     const moduleKey = moduleMatch[1];
     if (moduleKey === 'profile') return showProfile(interaction);
+    if (moduleKey === 'leveling') return showLeveling(interaction);
     if (moduleKey === 'ping') return executeUtilityCommand(interaction, pingCommand);
     if (moduleKey === 'help') return executeUtilityCommand(interaction, helpCommand);
     if (moduleKey === 'serverinfo') return executeUtilityCommand(interaction, serverInfoCommand);
