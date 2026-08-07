@@ -137,10 +137,10 @@ async function buildRoleStudioPanel(guild, memberDisplayName = 'Unknown User') {
       row(
         button('admin:autoRoles', '👥 Auto Roles', ButtonStyle.Primary),
         button('admin:reactionRoles:open', '😊 Reaction Roles', ButtonStyle.Primary),
+        button('admin:temporaryRoles', '⚡ Temporary Roles', ButtonStyle.Primary),
       ),
       row(
         button('admin:timedRoles', '⏳ Timed Roles', ButtonStyle.Primary),
-        button('admin:temporaryRoles', '⚡ Temporary Roles', ButtonStyle.Primary),
       ),
       row(
         button('admin:studio:roleStudio', '🔄 Refresh Status', ButtonStyle.Secondary),
