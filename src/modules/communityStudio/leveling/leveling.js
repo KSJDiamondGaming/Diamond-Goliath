@@ -31,6 +31,7 @@ function defaults() {
     xpPerMessage: 10,
     cooldownSeconds: 60,
     users: {},
+    pausedUsers: {},
     analytics: {
       messagesTracked: 0,
       xpAwarded: 0,
@@ -67,10 +68,17 @@ function normalizeUser(input = {}) {
   };
 }
 
+function normalizeUsers(value) {
+  const users = value && typeof value === 'object' ? value : {};
+  return Object.fromEntries(Object.entries(users)
+    .map(([id, user]) => normalizeUser({ ...user, userId: user.userId || id }))
+    .filter((user) => user.userId)
+    .map((user) => [user.userId, user]));
+}
+
 function normalize(section = {}) {
   const base = defaults();
   const source = section && typeof section === 'object' ? section : {};
-  const users = source.users && typeof source.users === 'object' ? source.users : {};
   const normalized = {
     ...base,
     ...source,
@@ -82,10 +90,8 @@ function normalize(section = {}) {
     announceLevelUps: source.announceLevelUps !== false,
     xpPerMessage: Math.max(1, Math.min(1000, Number(source.xpPerMessage || 10))),
     cooldownSeconds: Math.max(0, Math.min(3600, Number(source.cooldownSeconds ?? 60))),
-    users: Object.fromEntries(Object.entries(users)
-      .map(([id, user]) => normalizeUser({ ...user, userId: user.userId || id }))
-      .filter((user) => user.userId)
-      .map((user) => [user.userId, user])),
+    users: normalizeUsers(source.users),
+    pausedUsers: normalizeUsers(source.pausedUsers),
     analytics: {
       messagesTracked: Math.max(0, Number(source.analytics?.messagesTracked || 0)),
       xpAwarded: Math.max(0, Number(source.analytics?.xpAwarded || 0)),
@@ -121,20 +127,71 @@ function updateSection(guildId, updater, guildOrMeta = {}) {
 }
 
 function getUser(guildId, userId) {
-  return getSection(guildId).users?.[cleanDiscordId(userId)] || null;
+  const safeUserId = cleanDiscordId(userId);
+  if (!safeUserId) return null;
+  const section = getSection(guildId);
+  return section.users?.[safeUserId] || section.pausedUsers?.[safeUserId] || null;
+}
+
+function isUserParticipating(guildId, userId) {
+  const safeUserId = cleanDiscordId(userId);
+  if (!safeUserId) return false;
+  const section = getSection(guildId);
+  return !section.pausedUsers?.[safeUserId];
+}
+
+function setUserParticipation(guildId, userId, participating, guildOrMeta = {}) {
+  const safeUserId = cleanDiscordId(userId);
+  if (!safeUserId) throw new Error('A valid user is required.');
+  const enabled = participating !== false;
+
+  const section = updateSection(guildId, (current) => {
+    const users = { ...current.users };
+    const pausedUsers = { ...current.pausedUsers };
+    const existing = users[safeUserId] || pausedUsers[safeUserId] || normalizeUser({ userId: safeUserId });
+    const preserved = normalizeUser({ ...existing, userId: safeUserId, updatedAt: now() });
+
+    if (enabled) {
+      users[safeUserId] = preserved;
+      delete pausedUsers[safeUserId];
+    } else {
+      pausedUsers[safeUserId] = preserved;
+      delete users[safeUserId];
+    }
+
+    return { ...current, users, pausedUsers, updatedAt: now() };
+  }, guildOrMeta);
+
+  return {
+    participating: enabled,
+    user: enabled ? section.users[safeUserId] : section.pausedUsers[safeUserId],
+  };
 }
 
 function saveUser(guildId, user, guildOrMeta = {}) {
   const normalized = normalizeUser(user);
   if (!normalized.userId) throw new Error('A valid user is required.');
-  return updateSection(guildId, (section) => ({
-    ...section,
-    users: {
-      ...section.users,
-      [normalized.userId]: { ...section.users?.[normalized.userId], ...normalized, updatedAt: now() },
-    },
-    updatedAt: now(),
-  }), guildOrMeta).users[normalized.userId];
+  return updateSection(guildId, (section) => {
+    const paused = Boolean(section.pausedUsers?.[normalized.userId]);
+    if (paused) {
+      return {
+        ...section,
+        pausedUsers: {
+          ...section.pausedUsers,
+          [normalized.userId]: { ...section.pausedUsers[normalized.userId], ...normalized, updatedAt: now() },
+        },
+        updatedAt: now(),
+      };
+    }
+    return {
+      ...section,
+      users: {
+        ...section.users,
+        [normalized.userId]: { ...section.users?.[normalized.userId], ...normalized, updatedAt: now() },
+      },
+      updatedAt: now(),
+    };
+  }, guildOrMeta)[paused ? 'pausedUsers' : 'users'][normalized.userId];
 }
 
 function canAwardMessageXp(user, section) {
@@ -145,8 +202,10 @@ function canAwardMessageXp(user, section) {
 }
 
 function awardMessageXp(guildId, userId, guildOrMeta = {}) {
+  const safeUserId = cleanDiscordId(userId);
+  if (!safeUserId || !isUserParticipating(guildId, safeUserId)) return null;
   const section = getSection(guildId);
-  const existing = getUser(guildId, userId) || { userId, xp: 0, level: 0, messages: 0 };
+  const existing = section.users[safeUserId] || { userId: safeUserId, xp: 0, level: 0, messages: 0 };
   if (!canAwardMessageXp(existing, section)) return null;
   const previousLevel = Number(existing.level || 0);
   const xpAwarded = Number(section.xpPerMessage || 10);
@@ -187,6 +246,8 @@ module.exports = {
   updateSection,
   getUser,
   saveUser,
+  isUserParticipating,
+  setUserParticipation,
   xpForLevel,
   levelForXp,
   canAwardMessageXp,
