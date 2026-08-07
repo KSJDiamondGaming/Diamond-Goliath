@@ -1,5 +1,6 @@
 const { Events } = require('discord.js');
 const terminal = require('../../core/logging/terminalLogger').createLogger('bot');
+const levelingTracking = require('../../modules/communityStudio/leveling/levelingTracking');
 
 const {
   restoreLockdownReminders,
@@ -51,5 +52,12 @@ module.exports = {
     restoreLockdownReminders(client);
     startbackupWorker(client);
     startStatusRotation(client);
+
+    try {
+      const voiceSessions = levelingTracking.bootstrapVoiceSessions(client);
+      if (voiceSessions > 0) terminal.info(`Leveling voice XP sessions resumed: ${voiceSessions}`);
+    } catch (error) {
+      terminal.error(`Failed to resume Leveling voice XP sessions: ${error?.message || error}`);
+    }
   },
 };
