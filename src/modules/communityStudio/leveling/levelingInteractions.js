@@ -24,6 +24,9 @@ async function handleLevelingInteraction(interaction) {
     if (customId === 'admin:leveling') {
       return safeUpdate(interaction, panel.buildLevelingPanel(interaction.guild, displayName));
     }
+    if (customId === 'admin:leveling:leaderboard') {
+      return safeUpdate(interaction, panel.buildLeaderboardPanel(interaction.guild, displayName));
+    }
 
     const save = (updater) => leveling.updateSection(interaction.guildId, updater, {
       actorId: interaction.user.id,
@@ -35,25 +38,50 @@ async function handleLevelingInteraction(interaction) {
     } else if (interaction.isRoleSelectMenu?.() && customId === 'admin:leveling:managerRoles') {
       save((section) => ({ ...section, managerRoleIds: [...new Set(interaction.values || [])] }));
     } else if (interaction.isRoleSelectMenu?.() && customId === 'admin:leveling:levelRoles') {
-      save((section) => ({ ...section, levelRoleIds: [...new Set(interaction.values || [])] }));
+      const selected = [...new Set(interaction.values || [])];
+      leveling.setLevelRewards(interaction.guildId, selected.map((roleId, index) => ({
+        level: index + 1,
+        roleId,
+      })), {
+        actorId: interaction.user.id,
+        action: customId,
+      });
     } else if (customId === 'admin:leveling:enable') {
       setModuleEnabled(interaction.guildId, 'leveling', true, { actorId: interaction.user.id, action: customId });
     } else if (customId === 'admin:leveling:disable') {
       setModuleEnabled(interaction.guildId, 'leveling', false, { actorId: interaction.user.id, action: customId });
     } else if (customId === 'admin:leveling:toggleMessages') {
-      save((section) => ({ ...section, trackMessages: !section.trackMessages }));
+      const current = leveling.getSection(interaction.guildId).xpSources.message;
+      leveling.setXpSource(interaction.guildId, 'message', { enabled: !current.enabled }, { actorId: interaction.user.id, action: customId });
     } else if (customId === 'admin:leveling:toggleVoice') {
-      save((section) => ({ ...section, trackVoice: !section.trackVoice }));
+      const current = leveling.getSection(interaction.guildId).xpSources.voice;
+      leveling.setXpSource(interaction.guildId, 'voice', { enabled: !current.enabled }, { actorId: interaction.user.id, action: customId });
     } else if (customId === 'admin:leveling:toggleAnnounce') {
       save((section) => ({ ...section, announceLevelUps: !section.announceLevelUps }));
+    } else if (customId === 'admin:leveling:toggleRemovePrevious') {
+      save((section) => ({ ...section, removePreviousLevelRoles: !section.removePreviousLevelRoles }));
     } else if (customId === 'admin:leveling:xpUp') {
-      save((section) => ({ ...section, xpPerMessage: Math.min(1000, Number(section.xpPerMessage || 10) + 5) }));
+      const current = leveling.getSection(interaction.guildId).xpSources.message;
+      leveling.setXpSource(interaction.guildId, 'message', { amount: Math.min(1000, Number(current.amount || 10) + 5) }, { actorId: interaction.user.id, action: customId });
     } else if (customId === 'admin:leveling:xpDown') {
-      save((section) => ({ ...section, xpPerMessage: Math.max(1, Number(section.xpPerMessage || 10) - 5) }));
-    } else if (customId === 'admin:leveling:cooldownUp') {
-      save((section) => ({ ...section, cooldownSeconds: Math.min(3600, Number(section.cooldownSeconds || 60) + 15) }));
-    } else if (customId === 'admin:leveling:cooldownDown') {
-      save((section) => ({ ...section, cooldownSeconds: Math.max(0, Number(section.cooldownSeconds || 60) - 15) }));
+      const current = leveling.getSection(interaction.guildId).xpSources.message;
+      leveling.setXpSource(interaction.guildId, 'message', { amount: Math.max(1, Number(current.amount || 10) - 5) }, { actorId: interaction.user.id, action: customId });
+    } else if (customId === 'admin:leveling:multiplierToggle') {
+      const active = leveling.getActiveMultiplier(interaction.guildId, null);
+      if (active) {
+        leveling.clearMultiplier(interaction.guildId, { actorId: interaction.user.id, action: customId });
+      } else {
+        const startsAt = new Date();
+        const endsAt = new Date(startsAt.getTime() + 60 * 60 * 1000);
+        leveling.setMultiplier(interaction.guildId, {
+          enabled: true,
+          name: 'Double XP Hour',
+          value: 2,
+          sourceIds: [],
+          startsAt: startsAt.toISOString(),
+          endsAt: endsAt.toISOString(),
+        }, { actorId: interaction.user.id, action: customId });
+      }
     } else {
       return false;
     }
