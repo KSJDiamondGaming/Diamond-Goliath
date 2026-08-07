@@ -24,6 +24,10 @@ const XP_SOURCES = Object.freeze({
   QUEST: 'quest',
   OTHER: 'other',
 });
+const REWARD_BEHAVIOURS = Object.freeze({
+  STACK: 'stack',
+  HIGHEST_ONLY: 'highest_only',
+});
 
 const now = () => new Date().toISOString();
 
@@ -87,12 +91,15 @@ function defaults() {
     managerRoleIds: [],
     levelRoleIds: [],
     levelRewards: [],
+    rewardBehaviour: REWARD_BEHAVIOURS.STACK,
     removePreviousLevelRoles: false,
     trackMessages: true,
     trackVoice: true,
     announceLevelUps: true,
     xpPerMessage: 10,
     cooldownSeconds: 60,
+    ignoredChannelIds: [],
+    ignoredRoleIds: [],
     xpSources: defaultXpSources(),
     multiplier: {
       enabled: false,
@@ -227,7 +234,21 @@ function normalizeLevelRewards(value, legacyRoleIds = []) {
       .filter((reward) => reward.roleId);
   }
 
-  return normalized.sort((a, b) => a.level - b.level || a.roleId.localeCompare(b.roleId));
+  const seenLevels = new Set();
+  return normalized
+    .sort((a, b) => a.level - b.level || a.roleId.localeCompare(b.roleId))
+    .filter((reward) => {
+      if (seenLevels.has(reward.level)) return false;
+      seenLevels.add(reward.level);
+      return true;
+    });
+}
+
+function normalizeRewardBehaviour(value, legacyRemovePrevious = false) {
+  const behaviour = String(value || '').trim().toLowerCase();
+  if (behaviour === REWARD_BEHAVIOURS.HIGHEST_ONLY) return REWARD_BEHAVIOURS.HIGHEST_ONLY;
+  if (behaviour === REWARD_BEHAVIOURS.STACK) return REWARD_BEHAVIOURS.STACK;
+  return legacyRemovePrevious === true ? REWARD_BEHAVIOURS.HIGHEST_ONLY : REWARD_BEHAVIOURS.STACK;
 }
 
 function normalize(section = {}) {
@@ -235,6 +256,7 @@ function normalize(section = {}) {
   const source = section && typeof section === 'object' ? section : {};
   const xpSources = normalizeXpSources(source.xpSources, source);
   const levelRewards = normalizeLevelRewards(source.levelRewards, source.levelRoleIds);
+  const rewardBehaviour = normalizeRewardBehaviour(source.rewardBehaviour, source.removePreviousLevelRoles);
   const normalized = {
     ...base,
     ...source,
@@ -243,12 +265,15 @@ function normalize(section = {}) {
     managerRoleIds: cleanIdArray(source.managerRoleIds),
     levelRoleIds: levelRewards.map((reward) => reward.roleId),
     levelRewards,
-    removePreviousLevelRoles: source.removePreviousLevelRoles === true,
+    rewardBehaviour,
+    removePreviousLevelRoles: rewardBehaviour === REWARD_BEHAVIOURS.HIGHEST_ONLY,
     trackMessages: xpSources.message.enabled !== false,
     trackVoice: xpSources.voice.enabled !== false,
     announceLevelUps: source.announceLevelUps !== false,
     xpPerMessage: xpSources.message.amount,
     cooldownSeconds: xpSources.message.cooldownSeconds,
+    ignoredChannelIds: cleanIdArray(source.ignoredChannelIds),
+    ignoredRoleIds: cleanIdArray(source.ignoredRoleIds),
     xpSources,
     multiplier: normalizeMultiplier(source.multiplier),
     users: normalizeUsers(source.users),
@@ -628,6 +653,64 @@ function setLevelRewards(guildId, rewards, guildOrMeta = {}) {
   }, guildOrMeta).levelRewards;
 }
 
+function addLevelRewards(guildId, rewards, guildOrMeta = {}) {
+  const current = getLevelRewards(guildId);
+  return setLevelRewards(guildId, [...current, ...(Array.isArray(rewards) ? rewards : [rewards])], guildOrMeta);
+}
+
+function updateLevelReward(guildId, currentLevel, patch = {}, guildOrMeta = {}) {
+  const targetLevel = Math.max(1, Number(currentLevel || 0));
+  const rewards = getLevelRewards(guildId);
+  const index = rewards.findIndex((reward) => Number(reward.level) === targetLevel);
+  if (index < 0) throw new Error(`No level reward exists at level ${targetLevel}.`);
+  const next = [...rewards];
+  next[index] = {
+    ...next[index],
+    ...patch,
+    level: Math.max(1, Math.min(100000, Number(patch.level ?? next[index].level))),
+    roleId: cleanDiscordId(patch.roleId ?? next[index].roleId),
+    label: patch.label == null ? next[index].label : String(patch.label || '').slice(0, 100) || null,
+  };
+  return setLevelRewards(guildId, next, guildOrMeta);
+}
+
+function deleteLevelReward(guildId, level, guildOrMeta = {}) {
+  const targetLevel = Math.max(1, Number(level || 0));
+  const rewards = getLevelRewards(guildId);
+  const next = rewards.filter((reward) => Number(reward.level) !== targetLevel);
+  if (next.length === rewards.length) return false;
+  setLevelRewards(guildId, next, guildOrMeta);
+  return true;
+}
+
+function getRewardBehaviour(guildId) {
+  return getSection(guildId).rewardBehaviour;
+}
+
+function setRewardBehaviour(guildId, behaviour, guildOrMeta = {}) {
+  const normalizedBehaviour = normalizeRewardBehaviour(behaviour);
+  return updateSection(guildId, (section) => ({
+    ...section,
+    rewardBehaviour: normalizedBehaviour,
+    removePreviousLevelRoles: normalizedBehaviour === REWARD_BEHAVIOURS.HIGHEST_ONLY,
+    updatedAt: now(),
+  }), guildOrMeta).rewardBehaviour;
+}
+
+function getMissingLevelRewards(guild) {
+  if (!guild?.id) return [];
+  return getLevelRewards(guild.id).filter((reward) => !guild.roles?.cache?.has?.(reward.roleId));
+}
+
+function repairMissingLevelRewards(guild, guildOrMeta = {}) {
+  const missing = getMissingLevelRewards(guild);
+  if (!missing.length) return { removed: 0, missing: [] };
+  const missingIds = new Set(missing.map((reward) => reward.roleId));
+  const kept = getLevelRewards(guild.id).filter((reward) => !missingIds.has(reward.roleId));
+  setLevelRewards(guild.id, kept, guildOrMeta);
+  return { removed: missing.length, missing };
+}
+
 function getRewardForLevel(guildId, level) {
   const currentLevel = Math.max(0, Number(level || 0));
   return getLevelRewards(guildId)
@@ -639,6 +722,7 @@ module.exports = {
   MODULE_KEY,
   LEVELING_SCHEMA_VERSION,
   XP_SOURCES,
+  REWARD_BEHAVIOURS,
   defaults,
   normalize,
   normalizeUser,
@@ -666,5 +750,12 @@ module.exports = {
   getEligibleUsers,
   getLevelRewards,
   setLevelRewards,
+  addLevelRewards,
+  updateLevelReward,
+  deleteLevelReward,
+  getRewardBehaviour,
+  setRewardBehaviour,
+  getMissingLevelRewards,
+  repairMissingLevelRewards,
   getRewardForLevel,
 };
