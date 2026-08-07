@@ -411,9 +411,12 @@ function buildMaintenancePanel(guild, memberDisplayName = 'Unknown User', report
   const issueCount = Number(report?.issueCount || 0);
   const levelMismatch = Number(report?.levelMismatch || 0);
   const duplicateUsers = Number(report?.duplicateUsers || 0);
+  const invalidUserIds = Number(report?.invalidUserIds || 0);
+  const invalidXpRecords = Number(report?.invalidXpRecords || 0);
   const missingRewards = Number(report?.missingRewards || 0);
   const roleSyncIssues = Number(report?.roleSyncIssues || 0);
-  const invalidMultiplierSources = Number(report?.invalidMultiplierSources || 0);
+  const multiplierIssues = Number(report?.multiplierIssues || 0);
+  const analyticsIssues = Number(report?.analyticsIssues || 0);
   return {
     embeds: [new EmbedBuilder()
       .setColor(issueCount ? 0xFEE75C : 0x5865f2)
@@ -427,7 +430,7 @@ function buildMaintenancePanel(guild, memberDisplayName = 'Unknown User', report
         '',
         '**Latest Integrity Scan**',
         report
-          ? `Issues: **${issueCount}** · Level mismatches: **${levelMismatch}** · Duplicate records: **${duplicateUsers}**\nMissing reward mappings: **${missingRewards}** · Reward-role sync: **${roleSyncIssues}** · Invalid multiplier sources: **${invalidMultiplierSources}**`
+          ? `Issues: **${issueCount}** · Level mismatches: **${levelMismatch}** · Duplicate records: **${duplicateUsers}**\nInvalid IDs: **${invalidUserIds}** · Invalid XP/stat records: **${invalidXpRecords}** · Missing rewards: **${missingRewards}**\nReward-role sync: **${roleSyncIssues}** · Multiplier issues: **${multiplierIssues}** · Analytics issues: **${analyticsIssues}**`
           : 'Run **Scan Integrity** to preview current issues.',
         '',
         'Use **Preview Repair** before Auto Fix. Recalculate Levels never changes XP; it only derives levels from stored XP.',
@@ -463,10 +466,12 @@ function buildIntegrityPreviewPanel(guild, memberDisplayName = 'Unknown User', r
         `**Total Issues:** ${Number(report.issueCount || 0)}`,
         `Level mismatches: **${Number(report.levelMismatch || 0)}**`,
         `Duplicate active/paused records: **${Number(report.duplicateUsers || 0)}**`,
+        `Invalid Discord IDs: **${Number(report.invalidUserIds || 0)}**`,
+        `Invalid XP/stat records: **${Number(report.invalidXpRecords || 0)}**`,
         `Missing reward mappings: **${Number(report.missingRewards || 0)}**`,
         `Reward-role sync issues: **${Number(report.roleSyncIssues || 0)}**`,
-        `Invalid multiplier sources: **${Number(report.invalidMultiplierSources || 0)}**`,
-        `Expired multiplier cleanup: **${Number(report.expiredMultiplier || 0)}**`,
+        `Multiplier config issues: **${Number(report.multiplierIssues || 0)}**`,
+        `Analytics issues: **${Number(report.analyticsIssues || 0)}**`,
         '',
         '**Preview**',
         ...(details.length ? details.map((line) => `• ${line}`) : ['✅ No repairable integrity issues found.']),
