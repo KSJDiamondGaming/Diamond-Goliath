@@ -130,12 +130,11 @@ function normalizeVerificationRows(payload, rows) {
   const title = payload?.embeds?.[0]?.title;
 
   if (title === '🔀 Verification · Workflow') {
-    if (rows.length !== 3 || rows[1]?.components?.length !== 5) return rows;
-    const roleRow = rows[1];
+    if (rows.length !== 3 || rows[0]?.components?.length !== 3 || rows[1]?.components?.length !== 5) return rows;
+    const workflowButtons = [...rows[0].components, ...rows[1].components];
     return [
-      rows[0],
-      { ...roleRow, components: roleRow.components.slice(0, 3) },
-      { ...roleRow, components: roleRow.components.slice(3) },
+      { ...rows[0], components: workflowButtons.slice(0, 4) },
+      { ...rows[1], components: workflowButtons.slice(4) },
       rows[2],
     ];
   }
