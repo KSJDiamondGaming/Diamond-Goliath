@@ -41,21 +41,12 @@ async function repairMissingPanelMessages(guild, report, meta = {}) {
       continue;
     }
 
-    const channel = guild.channels.cache.get(panel.channelId)
-      || await guild.channels.fetch(panel.channelId).catch(() => null);
-
-    if (!channel?.send) {
-      failed.push({ panelId: health.panelId, reason: 'Panel channel is unavailable or not sendable.' });
-      continue;
-    }
-
     try {
-      await verificationManager.refreshVerificationPanel(
+      await verificationManager.restoreMissingVerificationPanel(
         guild,
         health.panelId,
-        { channelId: panel.channelId },
         {
-          action: 'verification_health_redeploy_missing_message',
+          action: 'verification_health_restore_missing_message',
           actorId: 'system:verification-health',
           ...meta,
         }
@@ -64,7 +55,7 @@ async function repairMissingPanelMessages(guild, report, meta = {}) {
     } catch (error) {
       failed.push({
         panelId: health.panelId,
-        reason: error?.message || 'Panel redeploy failed.',
+        reason: error?.message || 'Panel restore failed.',
       });
     }
   }
@@ -75,9 +66,6 @@ async function repairMissingPanelMessages(guild, report, meta = {}) {
 async function repair(guild, meta = {}) {
   const targetGuild = requireGuild(guild);
 
-  // Normalize the persisted section without deleting saved Discord references.
-  // Missing panel messages are repaired by redeploying the existing saved panel
-  // to its configured channel, preserving the panel ID and configuration.
   verificationStore.updateVerificationSection(
     targetGuild.id,
     (current) => ({

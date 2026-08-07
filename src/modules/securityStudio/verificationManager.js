@@ -406,16 +406,11 @@ function membershipAgeMinutes(member) {
   return (Date.now() - Number(member?.joinedTimestamp || Date.now())) / 60000;
 }
 
-async function assignPendingRoles(member, reason = 'Goliath pending verification role assignment') {
-  if (!member?.guild?.id || member.user?.bot) return { assigned: [], failed: [], skipped: true };
+async function assignPendingRoles(member, reason = 'Goliath pending verification role assigned') {
   const section = getEffectiveVerificationSection(member.guild.id);
   const settings = section.settings;
   if (section.enabled !== true || !settings.usePendingRoles || !settings.assignPendingRoles) {
     return { assigned: [], failed: [], skipped: true };
-  }
-  if (settings.pendingRoleTiming === 'manual') return { assigned: [], failed: [], skipped: true };
-  if (settings.pendingRoleTiming === 'after_screening' && member.pending === true) {
-    return { assigned: [], failed: [], skipped: true, waitingForScreening: true };
   }
   const roles = await fetchRoles(member.guild, settings.pendingRoleIds);
   const assigned = [];
@@ -423,10 +418,7 @@ async function assignPendingRoles(member, reason = 'Goliath pending verification
   for (const role of roles) {
     const status = resolveRoleActionStatus(member.guild, member, role, 'add');
     if (!status.ok) {
-      failed.push({ roleId: role.id, reason: status.message });
-      console.warn('[Verification] Pending role assignment blocked', {
-        guildId: member.guild.id,
-        userId: member.id,
+      failed.push({
         roleId: role.id,
         reason: status.message,
       });
@@ -800,6 +792,59 @@ function snapshotMessagePayload(message) {
   };
 }
 
+async function restoreMissingVerificationPanel(guild, panelId, meta = {}) {
+  if (!guild?.id) throw new Error('Guild is unavailable.');
+  const section = getEffectiveVerificationSection(guild.id);
+  if (section.enabled !== true) throw new Error('Verification module is disabled.');
+
+  const panel = verificationStore.getPanel(guild.id, panelId);
+  if (!panel) throw new Error('Verification panel not found.');
+  if (!panel.channelId) throw new Error('Panel channel is not configured.');
+
+  const existingMessage = await fetchPanelMessage(guild, panel);
+  if (existingMessage) return panel;
+
+  const channel = guild.channels.cache.get(panel.channelId)
+    || await guild.channels.fetch(panel.channelId).catch(() => null);
+  if (!channel?.send) throw new Error('Panel channel is unavailable or not sendable.');
+
+  const candidate = {
+    ...verificationStore.normalizePanelTemplate(panel),
+    ...panel,
+    panelId: panel.panelId,
+    id: panel.panelId,
+    channelId: channel.id,
+    enabled: true,
+    retiredAt: null,
+  };
+  const payload = {
+    embeds: [buildVerificationEmbed(candidate, guild)],
+    components: buildVerificationRows(candidate, guild),
+  };
+
+  let message = null;
+  try {
+    message = await channel.send(payload);
+    const saved = verificationStore.savePanel(guild.id, {
+      ...candidate,
+      channelId: message.channelId || channel.id,
+      messageId: message.id,
+      enabled: true,
+      retiredAt: null,
+      lastDeployedAt: new Date().toISOString(),
+    }, { action: 'verification_panel_restore_missing_message', skipConfigRevision: true, ...meta });
+
+    const confirmed = await fetchPanelMessage(guild, saved);
+    if (!confirmed) throw new Error('Replacement verification message could not be confirmed after save.');
+    return saved;
+  } catch (error) {
+    if (message?.deletable) {
+      await message.delete().catch(() => null);
+    }
+    throw error;
+  }
+}
+
 async function deployVerificationPanel(channel, input = {}, meta = {}) {
   if (!channel?.guild?.id || !channel?.send) throw new Error('A sendable channel is required.');
   const guild = channel.guild;
@@ -1024,6 +1069,7 @@ module.exports = {
   handleMemberUpdate,
   deployVerificationPanel,
   refreshVerificationPanel,
+  restoreMissingVerificationPanel,
   deleteVerificationPanel,
   getPanelHealth,
   buildHealthReport,
