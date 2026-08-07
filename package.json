@@ -16,7 +16,7 @@
     "test:verification": "node --test test/verification/*.test.js",
     "promote:beta": "node scripts/goliath.js promote beta",
     "promote:production": "node scripts/goliath.js promote production",
-    "sync:commands": "cross-env COMMAND_SYNC_DELETE_STALE=true node scripts/goliath.js sync-commands",
+    "sync:commands": "cross-env COMMAND_SYNC_DELETE_STALE=true COMMAND_SYNC_UPDATE_EXISTING=true node scripts/goliath.js sync-commands",
     "doctor": "node -e \"require('./scripts/goliath.js'); process.exit(process.exitCode || 0)\" doctor",
     "audit": "node scripts/goliath.js audit"
   },
