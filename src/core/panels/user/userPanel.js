@@ -363,6 +363,19 @@ function buildRewardProgressLines(section, currentLevel = 0) {
   return lines;
 }
 
+function memberHistoryLines(user, limit = 15) {
+  const entries = (Array.isArray(user?.history) ? user.history : []).slice(-limit).reverse();
+  if (!entries.length) return ['No XP history has been recorded yet.'];
+  return entries.map((entry) => {
+    const timestamp = Math.floor(new Date(entry.createdAt || Date.now()).getTime() / 1000);
+    const delta = Number(entry.delta || 0);
+    const sign = delta > 0 ? '+' : '';
+    const multiplier = Number(entry.multiplier || 1) > 1 ? ` · ${Number(entry.multiplier)}×` : '';
+    const reason = entry.reason ? `\n↳ ${entry.reason}` : '';
+    return `<t:${timestamp}:R> · **${sign}${delta.toLocaleString()} XP** · ${entry.source || 'other'}${multiplier}\n${Number(entry.beforeXp || 0).toLocaleString()} XP / Lv ${Number(entry.beforeLevel || 0)} → ${Number(entry.afterXp || 0).toLocaleString()} XP / Lv ${Number(entry.afterLevel || 0)}${reason}`;
+  });
+}
+
 function buildLevelingUserPanel(interaction, section, user, rank, participating, activeMultiplier) {
   const memberDisplayName = getMemberDisplayName(interaction);
   const currentUser = user || { xp: 0, level: 0, messages: 0, voiceMinutes: 0 };
@@ -385,7 +398,7 @@ function buildLevelingUserPanel(interaction, section, user, rank, participating,
       '**Leveling is paused for your account.**',
       `Saved Level: **${details.level}**`,
       `Saved XP: **${details.xp.toLocaleString()}**`,
-      'You will not gain XP until Leveling is enabled again in Preferences.',
+      'You will not gain XP until Leveling is enabled again.',
     ];
 
   const configuredMultiplier = section.multiplier || {};
@@ -432,9 +445,30 @@ function buildLevelingUserPanel(interaction, section, user, rank, participating,
     components: [
       row(
         button('user:module:leveling', 'Refresh', ButtonStyle.Success, false, '🔄'),
-        button('user:preferences', 'Preferences', ButtonStyle.Secondary, false, '⚙️'),
+        button('user:leveling:leaderboard:xp:0', 'Leaderboard', ButtonStyle.Primary, false, '🏆'),
+        button('user:leveling:history', 'XP History', ButtonStyle.Primary, false, '📈'),
+        button('user:leveling:toggle', participating ? 'Disable Leveling' : 'Enable Leveling', participating ? ButtonStyle.Secondary : ButtonStyle.Success, false, participating ? '⏸️' : '▶️'),
       ),
+      row(button('user:preferences', 'Preferences', ButtonStyle.Secondary, false, '⚙️')),
       navigationRow({ backId: 'user:category:community' }),
+    ],
+  };
+}
+
+function buildLevelingHistoryPanel(interaction, user = {}) {
+  const memberDisplayName = getMemberDisplayName(interaction);
+  return {
+    embeds: [markLiveEmbed(createEmbed('📈 Your XP History', [
+      `Current XP: **${Number(user.xp || 0).toLocaleString()}**`,
+      `Current Level: **${Number(user.level || 0)}**`,
+      '',
+      ...memberHistoryLines(user, 15),
+    ].join('\n'), memberDisplayName))],
+    components: [
+      row(
+        button('user:leveling:history', 'Refresh', ButtonStyle.Success, false, '🔄'),
+        button('user:module:leveling', 'Back', ButtonStyle.Secondary, false, '⬅️'),
+      ),
     ],
   };
 }
@@ -599,6 +633,7 @@ module.exports = {
   buildHelpPanel,
   buildProgressPanel,
   buildLevelingUserPanel,
+  buildLevelingHistoryPanel,
   buildRolesPanel,
   buildSocialAccessDeniedPanel,
 };
