@@ -9,10 +9,9 @@ on:
       environment:
         description: Environment to deploy
         required: true
-        default: dev
+        default: beta
         type: choice
         options:
-          - dev
           - beta
           - production
 
@@ -21,7 +20,7 @@ permissions:
 
 concurrency:
   group: deploy-${{ github.event_name == 'push' && 'dev' || inputs.environment }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   resolve:
