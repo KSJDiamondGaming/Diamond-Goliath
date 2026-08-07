@@ -16,6 +16,7 @@ const {
 
 const MODULE_KEY = 'leveling';
 const LEVELING_SCHEMA_VERSION = 2;
+const USER_HISTORY_LIMIT = 100;
 const XP_SOURCES = Object.freeze({
   MESSAGE: 'message',
   VOICE: 'voice',
@@ -111,6 +112,8 @@ function defaults() {
     },
     users: {},
     pausedUsers: {},
+    auditLog: [],
+    maintenanceLog: [],
     analytics: {
       messagesTracked: 0,
       voiceMinutesTracked: 0,
@@ -133,6 +136,33 @@ function levelForXp(xp) {
   return Math.floor(Math.sqrt(safeXp / 100));
 }
 
+function normalizeHistoryEntry(input = {}) {
+  const createdAt = input.createdAt || now();
+  return {
+    historyId: String(input.historyId || `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`).slice(0, 100),
+    type: String(input.type || 'award').slice(0, 40),
+    source: String(input.source || XP_SOURCES.OTHER).slice(0, 80),
+    delta: Number.isFinite(Number(input.delta)) ? Number(input.delta) : 0,
+    beforeXp: Math.max(0, Number(input.beforeXp || 0)),
+    afterXp: Math.max(0, Number(input.afterXp || 0)),
+    beforeLevel: Math.max(0, Number(input.beforeLevel || 0)),
+    afterLevel: Math.max(0, Number(input.afterLevel || 0)),
+    actorId: cleanDiscordId(input.actorId),
+    reason: input.reason ? String(input.reason).slice(0, 500) : null,
+    multiplier: Math.max(1, Number(input.multiplier || 1)),
+    createdAt,
+  };
+}
+
+function normalizeHistory(value) {
+  const entries = Array.isArray(value) ? value : [];
+  return entries.slice(-USER_HISTORY_LIMIT).map(normalizeHistoryEntry);
+}
+
+function appendHistory(value, entry) {
+  return [...normalizeHistory(value), normalizeHistoryEntry(entry)].slice(-USER_HISTORY_LIMIT);
+}
+
 function normalizeUser(input = {}) {
   const userId = cleanDiscordId(input.userId || input.id);
   const xp = Math.max(0, Number(input.xp || 0));
@@ -147,6 +177,7 @@ function normalizeUser(input = {}) {
     lastVoiceXpAt: input.lastVoiceXpAt || null,
     lastXpAt: input.lastXpAt || null,
     lastXpSource: input.lastXpSource || null,
+    history: normalizeHistory(input.history),
     createdAt: input.createdAt || now(),
     updatedAt: input.updatedAt || input.createdAt || now(),
   };
@@ -206,8 +237,10 @@ function normalizeXpSources(value, legacy = {}) {
 
 function normalizeMultiplier(value = {}) {
   const source = value && typeof value === 'object' ? value : {};
-  const startsAt = source.startsAt ? new Date(source.startsAt).toISOString() : null;
-  const endsAt = source.endsAt ? new Date(source.endsAt).toISOString() : null;
+  let startsAt = null;
+  let endsAt = null;
+  try { startsAt = source.startsAt ? new Date(source.startsAt).toISOString() : null; } catch { startsAt = null; }
+  try { endsAt = source.endsAt ? new Date(source.endsAt).toISOString() : null; } catch { endsAt = null; }
   return {
     enabled: source.enabled === true,
     name: source.name ? String(source.name).slice(0, 100) : null,
@@ -278,6 +311,8 @@ function normalize(section = {}) {
     multiplier: normalizeMultiplier(source.multiplier),
     users: normalizeUsers(source.users),
     pausedUsers: normalizeUsers(source.pausedUsers),
+    auditLog: Array.isArray(source.auditLog) ? source.auditLog.slice(-200) : [],
+    maintenanceLog: Array.isArray(source.maintenanceLog) ? source.maintenanceLog.slice(-100) : [],
     analytics: {
       messagesTracked: Math.max(0, Number(source.analytics?.messagesTracked || 0)),
       voiceMinutesTracked: Math.max(0, Number(source.analytics?.voiceMinutesTracked || 0)),
@@ -523,9 +558,23 @@ function awardXp(guildId, userId, amount, options = {}, guildOrMeta = {}) {
   const section = getSection(guildId);
   const existing = section.users[safeUserId] || normalizeUser({ userId: safeUserId });
   const previousLevel = Number(existing.level || 0);
-  const nextXp = Number(existing.xp || 0) + xpAwarded;
+  const previousXp = Number(existing.xp || 0);
+  const nextXp = previousXp + xpAwarded;
   const nextLevel = levelForXp(nextXp);
   const activity = options.activity && typeof options.activity === 'object' ? options.activity : {};
+  const history = appendHistory(existing.history, {
+    type: 'award',
+    source,
+    delta: xpAwarded,
+    beforeXp: previousXp,
+    afterXp: nextXp,
+    beforeLevel: previousLevel,
+    afterLevel: nextLevel,
+    actorId: guildOrMeta?.actorId,
+    reason: options.reason || null,
+    multiplier: multiplierValue,
+    createdAt: now(),
+  });
 
   const user = saveUser(guildId, {
     ...existing,
@@ -534,6 +583,7 @@ function awardXp(guildId, userId, amount, options = {}, guildOrMeta = {}) {
     level: nextLevel,
     lastXpAt: now(),
     lastXpSource: source,
+    history,
   }, guildOrMeta);
 
   updateSection(guildId, (current) => ({
@@ -721,11 +771,14 @@ function getRewardForLevel(guildId, level) {
 module.exports = {
   MODULE_KEY,
   LEVELING_SCHEMA_VERSION,
+  USER_HISTORY_LIMIT,
   XP_SOURCES,
   REWARD_BEHAVIOURS,
   defaults,
   normalize,
   normalizeUser,
+  normalizeHistory,
+  appendHistory,
   migrateSectionIfNeeded,
   validateProtectedUsers,
   getSection,
