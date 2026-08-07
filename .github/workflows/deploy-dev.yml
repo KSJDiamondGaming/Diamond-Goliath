@@ -18,8 +18,6 @@ on:
 permissions:
   contents: write
 
-# DEV commits queue in order. Manual BETA and PRODUCTION promotions use
-# independent queues so one environment cannot interrupt another.
 concurrency:
   group: deploy-${{ github.event_name == 'push' && 'dev' || inputs.environment }}
   cancel-in-progress: false
@@ -36,49 +34,39 @@ jobs:
       runtime_dir: ${{ steps.target.outputs.runtime_dir }}
       pm2_name: ${{ steps.target.outputs.pm2_name }}
     steps:
-      - name: Resolve deployment target
+      - name: Resolve target
         id: target
         shell: bash
         run: |
           set -euo pipefail
-
-          if [ "${{ github.event_name }}" = "push" ]; then
-            ENVIRONMENT="dev"
-          else
-            ENVIRONMENT="${{ inputs.environment }}"
-          fi
+          ENVIRONMENT="${{ github.event_name == 'push' && 'dev' || inputs.environment }}"
 
           case "$ENVIRONMENT" in
             dev)
-              SOURCE_BRANCH="dev"
-              TARGET_BRANCH="dev"
+              SOURCE_BRANCH="dev"; TARGET_BRANCH="dev"
               DEPLOY_SCRIPT="/home/goliath/deploy-dev.sh"
-              APP_DIR="/home/goliath/dev"
-              RUNTIME_DIR="/home/goliath/dev/src/runtime/dev"
+              APP_DIR="/home/goliath/dev"; RUNTIME_DIR="$APP_DIR/src/runtime/dev"
               PM2_NAME="goliath-dev"
               ;;
             beta)
-              SOURCE_BRANCH="dev"
-              TARGET_BRANCH="beta"
+              SOURCE_BRANCH="dev"; TARGET_BRANCH="beta"
               DEPLOY_SCRIPT="/home/goliath/deploy-beta.sh"
-              APP_DIR="/home/goliath/beta"
-              RUNTIME_DIR="/home/goliath/beta/src/runtime/beta"
+              APP_DIR="/home/goliath/beta"; RUNTIME_DIR="$APP_DIR/src/runtime/beta"
               PM2_NAME="goliath-beta"
               ;;
             production)
-              SOURCE_BRANCH="beta"
-              TARGET_BRANCH="production"
+              SOURCE_BRANCH="dev"; TARGET_BRANCH="production"
               DEPLOY_SCRIPT="/home/goliath/deploy-production.sh"
-              APP_DIR="/home/goliath/production"
-              RUNTIME_DIR="/home/goliath/production/src/runtime/production"
+              APP_DIR="/home/goliath/production"; RUNTIME_DIR="$APP_DIR/src/runtime/production"
               PM2_NAME="goliath-production"
               ;;
-            *)
-              echo "Unsupported environment: $ENVIRONMENT"
-              exit 1
-              ;;
+            *) exit 1 ;;
           esac
 
+          for value in environment source_branch target_branch deploy_script app_dir runtime_dir pm2_name; do
+            key="${value^^}"
+            key="${key//_BRANCH/_BRANCH}"
+          done
           echo "environment=$ENVIRONMENT" >> "$GITHUB_OUTPUT"
           echo "source_branch=$SOURCE_BRANCH" >> "$GITHUB_OUTPUT"
           echo "target_branch=$TARGET_BRANCH" >> "$GITHUB_OUTPUT"
@@ -91,23 +79,16 @@ jobs:
     needs: resolve
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout source branch
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5
         with:
           ref: ${{ needs.resolve.outputs.source_branch }}
           fetch-depth: 0
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run deployment gate
-        shell: bash
+      - run: npm ci
+      - name: Validate source
         run: |
           set -euo pipefail
           npm run doctor
@@ -115,79 +96,62 @@ jobs:
           npx vite build src/dashboard --outDir ../../dist --emptyOutDir --logLevel warn
 
   promote:
-    needs:
-      - resolve
-      - preflight
+    needs: [resolve, preflight]
     if: needs.resolve.outputs.environment != 'dev'
     runs-on: ubuntu-latest
     outputs:
       target_sha: ${{ steps.sha.outputs.target_sha }}
     steps:
-      - name: Checkout target branch
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5
         with:
           ref: ${{ needs.resolve.outputs.target_branch }}
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Fast-forward source into target
+      - name: Promote DEV
         shell: bash
         run: |
           set -euo pipefail
+          SOURCE="${{ needs.resolve.outputs.source_branch }}"
+          TARGET="${{ needs.resolve.outputs.target_branch }}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin "${{ needs.resolve.outputs.source_branch }}" "${{ needs.resolve.outputs.target_branch }}"
-          git checkout "${{ needs.resolve.outputs.target_branch }}"
-          git reset --hard "origin/${{ needs.resolve.outputs.target_branch }}"
-          git merge --ff-only "origin/${{ needs.resolve.outputs.source_branch }}"
-          git push origin "${{ needs.resolve.outputs.target_branch }}"
-
-      - name: Record promoted commit
-        id: sha
+          git fetch origin "$SOURCE" "$TARGET"
+          git checkout "$TARGET"
+          git reset --hard "origin/$TARGET"
+          git merge --ff-only "origin/$SOURCE"
+          git push origin "$TARGET"
+      - id: sha
         run: echo "target_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
   dev-sha:
-    needs:
-      - resolve
-      - preflight
+    needs: [resolve, preflight]
     if: needs.resolve.outputs.environment == 'dev'
     runs-on: ubuntu-latest
     outputs:
       target_sha: ${{ steps.sha.outputs.target_sha }}
     steps:
-      - name: Checkout DEV
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5
         with:
           ref: dev
           fetch-depth: 1
-
-      - name: Record DEV commit
-        id: sha
+      - id: sha
         run: echo "target_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
   deploy:
-    needs:
-      - resolve
-      - preflight
-      - promote
-      - dev-sha
+    needs: [resolve, preflight, promote, dev-sha]
     if: always() && needs.preflight.result == 'success' && (needs.promote.result == 'success' || needs.promote.result == 'skipped') && (needs.dev-sha.result == 'success' || needs.dev-sha.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
-      - name: Resolve expected commit
+      - name: Resolve commit
         id: expected
         shell: bash
         run: |
-          set -euo pipefail
           SHA="${{ needs.promote.outputs.target_sha }}"
-          if [ -z "$SHA" ]; then SHA="${{ needs.dev-sha.outputs.target_sha }}"; fi
-          if [ -z "$SHA" ]; then
-            echo "Unable to resolve deployment commit."
-            exit 1
-          fi
+          [ -n "$SHA" ] || SHA="${{ needs.dev-sha.outputs.target_sha }}"
+          [ -n "$SHA" ] || exit 1
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
 
-      - name: Deploy affected components to VPS
+      - name: Deploy affected components
         uses: appleboy/ssh-action@v1.0.3
         env:
           ENVIRONMENT: ${{ needs.resolve.outputs.environment }}
@@ -205,102 +169,16 @@ jobs:
           envs: ENVIRONMENT,TARGET_BRANCH,DEPLOY_SCRIPT,APP_DIR,RUNTIME_DIR,PM2_NAME,EXPECTED_SHA
           script: |
             set -euo pipefail
-
-            if [ ! -d "$APP_DIR/.git" ]; then
-              echo "Expected Git checkout missing: $APP_DIR"
-              exit 1
-            fi
-
+            [ -d "$APP_DIR/.git" ] || { echo "Missing checkout: $APP_DIR"; exit 1; }
             cd "$APP_DIR"
+
             OLD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
             git fetch origin "$TARGET_BRANCH"
-
-            if ! git cat-file -e "$EXPECTED_SHA^{commit}" 2>/dev/null; then
-              echo "Expected commit is not available on the VPS: $EXPECTED_SHA"
-              exit 1
-            fi
-
-            FULL_FALLBACK=false
-            CHANGED_FILE_LIST=""
-            if [ -n "$OLD_SHA" ] && git cat-file -e "$OLD_SHA^{commit}" 2>/dev/null; then
-              CHANGED_FILE_LIST="$(git diff --name-only "$OLD_SHA" "$EXPECTED_SHA" || true)"
-            else
-              FULL_FALLBACK=true
-            fi
-
-            echo "========================================"
-            echo "Goliath single-pass deployment"
-            echo "Environment : $ENVIRONMENT"
-            echo "Branch      : $TARGET_BRANCH"
-            echo "Previous    : ${OLD_SHA:-unknown}"
-            echo "Target      : $EXPECTED_SHA"
-            echo "PM2 app     : $PM2_NAME"
-            echo "========================================"
-
-            if [ -n "$CHANGED_FILE_LIST" ]; then
-              echo "Changed files:"
-              printf '%s\n' "$CHANGED_FILE_LIST" | sed 's/^/  - /'
-            elif [ "$FULL_FALLBACK" = false ]; then
-              echo "No file changes detected."
-            fi
-
-            NEED_DEPS=false
-            NEED_COMMAND_SYNC=false
-            NEED_DASHBOARD_BUILD=false
-            NEED_APP_RELOAD=false
-            NEED_DOCTOR=false
-
-            while IFS= read -r file; do
-              [ -z "$file" ] && continue
-              case "$file" in
-                package.json|package-lock.json|npm-shrinkwrap.json)
-                  NEED_DEPS=true
-                  NEED_APP_RELOAD=true
-                  NEED_DASHBOARD_BUILD=true
-                  NEED_COMMAND_SYNC=true
-                  NEED_DOCTOR=true
-                  ;;
-                src/commands/*)
-                  NEED_COMMAND_SYNC=true
-                  NEED_APP_RELOAD=true
-                  NEED_DOCTOR=true
-                  ;;
-                src/dashboard/*|vite.config.*)
-                  NEED_DASHBOARD_BUILD=true
-                  NEED_DOCTOR=true
-                  ;;
-                server.js|scripts/goliath.js|src/core/*|src/core/**/*|src/events/*|src/events/**/*|src/modules/*|src/modules/**/*|src/server/*|src/server/**/*)
-                  NEED_APP_RELOAD=true
-                  NEED_DOCTOR=true
-                  ;;
-                src/runtime/*.js|src/runtime/**/*.js)
-                  NEED_APP_RELOAD=true
-                  NEED_DOCTOR=true
-                  ;;
-                .github/workflows/*|test/*|test/**/*|docs/*|docs/**/*|*.md)
-                  ;;
-                *)
-                  echo "Unclassified application change: $file"
-                  FULL_FALLBACK=true
-                  ;;
-              esac
-            done <<< "$CHANGED_FILE_LIST"
-
-            if [ "$FULL_FALLBACK" = true ]; then
-              echo "Complex/unclassified change detected: using safe full-deploy fallback."
-              NEED_DEPS=true
-              NEED_COMMAND_SYNC=true
-              NEED_DASHBOARD_BUILD=true
-              NEED_APP_RELOAD=true
-              NEED_DOCTOR=true
-            fi
+            git cat-file -e "$EXPECTED_SHA^{commit}"
 
             BACKUP_DIR="/home/goliath/.goliath-${ENVIRONMENT}-runtime-deploy-backup"
-            rm -rf "$BACKUP_DIR"
-            mkdir -p "$BACKUP_DIR"
-            if [ -d "$RUNTIME_DIR" ]; then
-              cp -a "$RUNTIME_DIR/." "$BACKUP_DIR/"
-            fi
+            rm -rf "$BACKUP_DIR"; mkdir -p "$BACKUP_DIR"
+            [ ! -d "$RUNTIME_DIR" ] || cp -a "$RUNTIME_DIR/." "$BACKUP_DIR/"
 
             restore_runtime() {
               mkdir -p "$RUNTIME_DIR"
@@ -309,121 +187,64 @@ jobs:
                 cp -a "$BACKUP_DIR/." "$RUNTIME_DIR/"
               fi
             }
-
-            cleanup() {
-              status=$?
-              restore_runtime
-              rm -rf "$BACKUP_DIR"
-              exit "$status"
-            }
+            cleanup() { status=$?; restore_runtime; rm -rf "$BACKUP_DIR"; exit "$status"; }
             trap cleanup EXIT
 
             git checkout "$TARGET_BRANCH"
             git reset --hard "$EXPECTED_SHA"
             restore_runtime
 
-            ACTUAL_SHA="$(git rev-parse HEAD)"
-            if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
-              echo "VPS checkout mismatch. Expected $EXPECTED_SHA, got $ACTUAL_SHA"
-              exit 1
-            fi
-
-            echo "Deployment plan:"
-            echo "  Dependencies : $NEED_DEPS"
-            echo "  Dashboard    : $NEED_DASHBOARD_BUILD"
-            echo "  Commands     : $NEED_COMMAND_SYNC"
-            echo "  App reload   : $NEED_APP_RELOAD"
-            echo "  Doctor       : $NEED_DOCTOR"
-            echo "  Full fallback: $FULL_FALLBACK"
+            echo "Goliath deployment: $ENVIRONMENT ${OLD_SHA:-unknown} -> $EXPECTED_SHA"
+            PLAN="$(node scripts/goliath.js deploy-plan "$OLD_SHA" "$EXPECTED_SHA" --env)"
+            echo "$PLAN"
+            eval "$PLAN"
 
             if [ "$NEED_DEPS" = true ] || ! node -e "require.resolve('express')" >/dev/null 2>&1; then
-              echo "Installing dependencies with npm ci..."
               npm ci
             fi
 
             if [ "$NEED_DOCTOR" = true ]; then
-              echo "Running environment doctor..."
               BOT_MODE="$ENVIRONMENT" npm run doctor
             fi
 
             if [ "$NEED_DASHBOARD_BUILD" = true ]; then
-              echo "Building dashboard assets once..."
               rm -rf dist
               npx vite build src/dashboard --outDir ../../dist --emptyOutDir --logLevel warn
-
-              DASHBOARD_ROOT=""
-              if [ -f "$DEPLOY_SCRIPT" ]; then
-                DASHBOARD_ROOT="$(awk '$1 == "rm" && $2 == "-rf" && $3 ~ /^\/var\/www\// { print $3; exit }' "$DEPLOY_SCRIPT")"
-              fi
-              if [ -z "$DASHBOARD_ROOT" ] && [ "$ENVIRONMENT" = "dev" ]; then
-                DASHBOARD_ROOT="/var/www/goliath-dashboard"
-              fi
-              case "$DASHBOARD_ROOT" in
-                /var/www/*) ;;
-                *)
-                  echo "Unable to resolve a safe dashboard publish root for $ENVIRONMENT from $DEPLOY_SCRIPT"
-                  exit 1
-                  ;;
-              esac
-
-              echo "Publishing $ENVIRONMENT dashboard to $DASHBOARD_ROOT..."
-              rm -rf "$DASHBOARD_ROOT"
-              mkdir -p "$DASHBOARD_ROOT"
+              DASHBOARD_ROOT="$(awk '$1 == "rm" && $2 == "-rf" && $3 ~ /^\/var\/www\// { print $3; exit }' "$DEPLOY_SCRIPT" 2>/dev/null || true)"
+              [ -n "$DASHBOARD_ROOT" ] || { [ "$ENVIRONMENT" != dev ] || DASHBOARD_ROOT="/var/www/goliath-dashboard"; }
+              case "$DASHBOARD_ROOT" in /var/www/*) ;; *) echo "Unsafe dashboard root"; exit 1 ;; esac
+              rm -rf "$DASHBOARD_ROOT"; mkdir -p "$DASHBOARD_ROOT"
               cp -a dist/. "$DASHBOARD_ROOT/"
-              nginx -t
-              systemctl reload nginx
+              nginx -t && systemctl reload nginx
             fi
 
             if [ "$NEED_COMMAND_SYNC" = true ]; then
-              echo "Synchronizing Discord commands for $ENVIRONMENT..."
               BOT_MODE="$ENVIRONMENT" COMMAND_SYNC_DELETE_STALE=true COMMAND_SYNC_UPDATE_EXISTING=true node scripts/goliath.js sync-commands "$ENVIRONMENT"
             fi
 
             if [ "$NEED_APP_RELOAD" = true ]; then
-              echo "Restarting $PM2_NAME exactly once..."
               if pm2 describe "$PM2_NAME" >/dev/null 2>&1; then
                 pm2 restart "$PM2_NAME" --update-env
               else
                 BOT_MODE="$ENVIRONMENT" NODE_ENV="$([ "$ENVIRONMENT" = production ] && echo production || echo development)" pm2 start server.js --name "$PM2_NAME" --cwd "$APP_DIR"
               fi
               pm2 save
-            else
-              echo "No live application restart required."
-            fi
-
-            ACTUAL_SHA="$(git rev-parse HEAD)"
-            if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
-              echo "VPS checkout mismatch after deploy. Expected $EXPECTED_SHA, got $ACTUAL_SHA"
-              exit 1
-            fi
-
-            if [ "$NEED_APP_RELOAD" = true ]; then
               sleep 3
-              PM2_STATUS="$(pm2 jlist | PM2_TARGET="$PM2_NAME" node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const list=JSON.parse(s);const p=list.find(x=>x.name===process.env.PM2_TARGET);process.stdout.write(p?.pm2_env?.status||'missing')})")"
-              if [ "$PM2_STATUS" != "online" ]; then
-                echo "$PM2_NAME failed post-deploy health check: $PM2_STATUS"
-                pm2 logs "$PM2_NAME" --lines 80 --nostream || true
-                exit 1
-              fi
-              echo "$PM2_NAME PM2 health: online"
+              STATUS="$(pm2 jlist | PM2_TARGET="$PM2_NAME" node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const a=JSON.parse(s);const p=a.find(x=>x.name===process.env.PM2_TARGET);process.stdout.write(p?.pm2_env?.status||'missing')})")"
+              [ "$STATUS" = online ] || { pm2 logs "$PM2_NAME" --lines 80 --nostream || true; exit 1; }
             fi
 
+            [ "$(git rev-parse HEAD)" = "$EXPECTED_SHA" ] || exit 1
             restore_runtime
             trap - EXIT
             rm -rf "$BACKUP_DIR"
-            echo "Deployment verified: $ENVIRONMENT @ $ACTUAL_SHA"
 
-      - name: Deployment summary
-        shell: bash
+      - name: Summary
         run: |
           echo "### 🚀 Goliath deployment" >> "$GITHUB_STEP_SUMMARY"
           echo "- Environment: **${{ needs.resolve.outputs.environment }}**" >> "$GITHUB_STEP_SUMMARY"
           echo "- Source: **${{ needs.resolve.outputs.source_branch }}**" >> "$GITHUB_STEP_SUMMARY"
           echo "- Target: **${{ needs.resolve.outputs.target_branch }}**" >> "$GITHUB_STEP_SUMMARY"
           echo "- Commit: \`${{ steps.expected.outputs.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Preflight: ✅ doctor, tests, dashboard compile" >> "$GITHUB_STEP_SUMMARY"
-          echo "- VPS Git: ✅ exact target commit" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Processes: ✅ single-pass deploy, max one controlled PM2 restart when required" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Dashboard: ✅ built once and published directly to the environment Nginx root" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Discord commands: ✅ synchronized only when command/dependency definitions change" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Runtime data: ✅ destination environment preserved" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Planner: ✅ scripts/goliath.js" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Runtime data: ✅ preserved" >> "$GITHUB_STEP_SUMMARY"
