@@ -3,7 +3,8 @@
 const leveling = require('./leveling');
 const panel = require('./levelingPanel');
 const tracking = require('./levelingTracking');
-const { setModuleEnabled } = require('../../../core/guild/guildManager');
+const { setModuleEnabled, getGuildFilePath } = require('../../../core/guild/guildManager');
+const { createBackup } = require('../../../core/guild/fileStore');
 
 const memberName = (interaction) => interaction.member?.displayName
   || interaction.user?.displayName
@@ -41,6 +42,264 @@ function refreshVoiceTracking(interaction) {
   }
 }
 
+function createMaintenanceBackup(guildId, action) {
+  const filePath = getGuildFilePath(guildId);
+  return createBackup(filePath, `leveling-${String(action || 'maintenance').replace(/[^a-z0-9_-]/gi, '-')}`);
+}
+
+function appendMaintenanceLog(guildId, actorId, action, summary, backupPath = null) {
+  const createdAt = new Date().toISOString();
+  leveling.updateSection(guildId, (current) => ({
+    ...current,
+    maintenanceLog: [
+      ...(Array.isArray(current.maintenanceLog) ? current.maintenanceLog : []),
+      {
+        maintenanceId: `${Date.now()}_${actorId}_${action}`,
+        actorId,
+        action,
+        summary: String(summary || 'Completed.').slice(0, 1000),
+        backupPath: backupPath || null,
+        createdAt,
+      },
+    ].slice(-100),
+    updatedAt: createdAt,
+  }), { actorId, action: `leveling_maintenance_log_${action}` });
+}
+
+function expectedRewardIds(section, level) {
+  const earned = tracking.earnedRewards(section, level);
+  if (!earned.length) return new Set();
+  if (section.removePreviousLevelRoles === true) return new Set([String(earned[earned.length - 1].roleId)]);
+  return new Set(earned.map((reward) => String(reward.roleId)));
+}
+
+function scanIntegrity(guild) {
+  const section = leveling.getSection(guild.id);
+  const details = [];
+  let levelMismatch = 0;
+  let duplicateUsers = 0;
+  let roleSyncIssues = 0;
+  let invalidMultiplierSources = 0;
+  let expiredMultiplier = 0;
+
+  for (const bucket of ['users', 'pausedUsers']) {
+    for (const user of Object.values(section[bucket] || {})) {
+      const expectedLevel = leveling.levelForXp(user.xp);
+      if (Number(user.level || 0) !== expectedLevel) {
+        levelMismatch += 1;
+        if (details.length < 20) details.push(`<@${user.userId}> level ${user.level} should be ${expectedLevel} from ${Number(user.xp || 0).toLocaleString()} XP.`);
+      }
+    }
+  }
+
+  for (const userId of Object.keys(section.users || {})) {
+    if (section.pausedUsers?.[userId]) {
+      duplicateUsers += 1;
+      if (details.length < 20) details.push(`<@${userId}> exists in both active and paused Leveling records.`);
+    }
+  }
+
+  const missingRewards = leveling.getMissingLevelRewards(guild);
+  for (const reward of missingRewards) {
+    if (details.length < 20) details.push(`Level ${reward.level} reward role ${reward.roleId} no longer exists.`);
+  }
+
+  const allRewardIds = new Set((section.levelRewards || []).map((reward) => String(reward.roleId)));
+  const combinedUsers = [
+    ...Object.values(section.users || {}),
+    ...Object.values(section.pausedUsers || {}),
+  ];
+  for (const user of combinedUsers) {
+    const member = guild.members?.cache?.get?.(user.userId);
+    if (!member?.roles?.cache || !allRewardIds.size) continue;
+    const expected = expectedRewardIds(section, user.level);
+    const actual = new Set([...member.roles.cache.keys()].filter((roleId) => allRewardIds.has(String(roleId))).map(String));
+    const missing = [...expected].filter((roleId) => !actual.has(roleId));
+    const extra = [...actual].filter((roleId) => !expected.has(roleId));
+    if (missing.length || extra.length) {
+      roleSyncIssues += 1;
+      if (details.length < 20) details.push(`<@${user.userId}> reward roles need sync${missing.length ? ` · ${missing.length} missing` : ''}${extra.length ? ` · ${extra.length} extra` : ''}.`);
+    }
+  }
+
+  const validSources = new Set(Object.keys(section.xpSources || {}));
+  const configuredSources = Array.isArray(section.multiplier?.sourceIds) ? section.multiplier.sourceIds : [];
+  invalidMultiplierSources = configuredSources.filter((sourceId) => !validSources.has(String(sourceId))).length;
+  if (invalidMultiplierSources && details.length < 20) details.push(`${invalidMultiplierSources} multiplier source reference(s) no longer exist.`);
+
+  const endsAt = section.multiplier?.endsAt ? new Date(section.multiplier.endsAt).getTime() : null;
+  if (section.multiplier?.enabled && Number.isFinite(endsAt) && endsAt <= Date.now()) {
+    expiredMultiplier = 1;
+    if (details.length < 20) details.push('An expired XP multiplier is still stored as enabled and can be cleaned up.');
+  }
+
+  const issueCount = levelMismatch
+    + duplicateUsers
+    + missingRewards.length
+    + roleSyncIssues
+    + invalidMultiplierSources
+    + expiredMultiplier;
+
+  return {
+    issueCount,
+    levelMismatch,
+    duplicateUsers,
+    missingRewards: missingRewards.length,
+    roleSyncIssues,
+    invalidMultiplierSources,
+    expiredMultiplier,
+    details,
+  };
+}
+
+async function syncAllRewardRoles(guild) {
+  const section = leveling.getSection(guild.id);
+  const records = [
+    ...Object.values(section.users || {}),
+    ...Object.values(section.pausedUsers || {}),
+  ];
+  let synced = 0;
+  let skipped = 0;
+  for (const user of records) {
+    const member = guild.members?.cache?.get?.(user.userId)
+      || await guild.members?.fetch?.(user.userId).catch(() => null);
+    if (!member) {
+      skipped += 1;
+      continue;
+    }
+    await syncManualRewardRoles(guild, user.userId, user.level);
+    synced += 1;
+  }
+  return { synced, skipped };
+}
+
+async function recalculateAllLevels(guild, actorId) {
+  const backupPath = createMaintenanceBackup(guild.id, 'recalculate-levels');
+  let changed = 0;
+  const createdAt = new Date().toISOString();
+  leveling.updateSection(guild.id, (current) => {
+    const next = { ...current };
+    for (const bucket of ['users', 'pausedUsers']) {
+      next[bucket] = { ...(current[bucket] || {}) };
+      for (const [userId, record] of Object.entries(current[bucket] || {})) {
+        const expectedLevel = leveling.levelForXp(record.xp);
+        if (Number(record.level || 0) === expectedLevel) continue;
+        changed += 1;
+        next[bucket][userId] = leveling.normalizeUser({
+          ...record,
+          level: expectedLevel,
+          history: leveling.appendHistory(record.history, {
+            type: 'maintenance',
+            source: 'recalculate',
+            delta: 0,
+            beforeXp: record.xp,
+            afterXp: record.xp,
+            beforeLevel: record.level,
+            afterLevel: expectedLevel,
+            actorId,
+            reason: 'Bulk level recalculation from stored XP.',
+            createdAt,
+          }),
+          updatedAt: createdAt,
+        });
+      }
+    }
+    return { ...next, updatedAt: createdAt };
+  }, { actorId, action: 'leveling_maintenance_recalculate_levels' });
+  const roleResult = await syncAllRewardRoles(guild);
+  appendMaintenanceLog(guild.id, actorId, 'recalculate_levels', `Recalculated ${changed} member level(s). Reward roles synced for ${roleResult.synced}; ${roleResult.skipped} unavailable member(s) skipped.`, backupPath);
+  return { changed, ...roleResult, backupPath };
+}
+
+async function rebuildRewardRoles(guild, actorId) {
+  const backupPath = createMaintenanceBackup(guild.id, 'rebuild-reward-roles');
+  const result = await syncAllRewardRoles(guild);
+  appendMaintenanceLog(guild.id, actorId, 'rebuild_reward_roles', `Reward roles rebuilt for ${result.synced} member(s); ${result.skipped} unavailable member(s) skipped.`, backupPath);
+  return { ...result, backupPath };
+}
+
+function rebuildLeaderboard(guild, actorId) {
+  const backupPath = createMaintenanceBackup(guild.id, 'rebuild-leaderboard');
+  const count = leveling.getLeaderboard(guild.id, 500, { includePaused: true, sortBy: 'xp' }).length;
+  leveling.updateSection(guild.id, (current) => ({
+    ...current,
+    users: Object.fromEntries(Object.entries(current.users || {}).map(([id, user]) => [id, leveling.normalizeUser(user)])),
+    pausedUsers: Object.fromEntries(Object.entries(current.pausedUsers || {}).map(([id, user]) => [id, leveling.normalizeUser(user)])),
+    updatedAt: new Date().toISOString(),
+  }), { actorId, action: 'leveling_maintenance_rebuild_leaderboard' });
+  appendMaintenanceLog(guild.id, actorId, 'rebuild_leaderboard', `Validated and rebuilt the derived leaderboard from ${count} Leveling record(s).`, backupPath);
+  return { count, backupPath };
+}
+
+async function repairIntegrity(guild, actorId) {
+  const before = scanIntegrity(guild);
+  const backupPath = createMaintenanceBackup(guild.id, 'integrity-repair');
+  const createdAt = new Date().toISOString();
+  const missingRoleIds = new Set(leveling.getMissingLevelRewards(guild).map((reward) => String(reward.roleId)));
+
+  leveling.updateSection(guild.id, (current) => {
+    const users = { ...(current.users || {}) };
+    const pausedUsers = { ...(current.pausedUsers || {}) };
+
+    for (const userId of Object.keys(users)) {
+      if (!pausedUsers[userId]) continue;
+      const active = users[userId];
+      const paused = pausedUsers[userId];
+      const winner = Number(paused.xp || 0) >= Number(active.xp || 0) ? paused : active;
+      pausedUsers[userId] = leveling.normalizeUser({
+        ...winner,
+        userId,
+        messages: Math.max(Number(active.messages || 0), Number(paused.messages || 0)),
+        voiceMinutes: Math.max(Number(active.voiceMinutes || 0), Number(paused.voiceMinutes || 0)),
+        updatedAt: createdAt,
+      });
+      delete users[userId];
+    }
+
+    for (const bucket of [users, pausedUsers]) {
+      for (const [userId, record] of Object.entries(bucket)) {
+        const expectedLevel = leveling.levelForXp(record.xp);
+        bucket[userId] = leveling.normalizeUser({ ...record, userId, level: expectedLevel, updatedAt: createdAt });
+      }
+    }
+
+    const validSources = new Set(Object.keys(current.xpSources || {}));
+    const multiplier = { ...(current.multiplier || {}) };
+    multiplier.sourceIds = (Array.isArray(multiplier.sourceIds) ? multiplier.sourceIds : []).filter((sourceId) => validSources.has(String(sourceId)));
+    const endsAt = multiplier.endsAt ? new Date(multiplier.endsAt).getTime() : null;
+    if (multiplier.enabled && Number.isFinite(endsAt) && endsAt <= Date.now()) {
+      multiplier.enabled = false;
+      multiplier.value = 1;
+      multiplier.name = null;
+      multiplier.sourceIds = [];
+      multiplier.startsAt = null;
+      multiplier.endsAt = null;
+    }
+
+    const levelRewards = (current.levelRewards || []).filter((reward) => !missingRoleIds.has(String(reward.roleId)));
+    return {
+      ...current,
+      users,
+      pausedUsers,
+      multiplier,
+      levelRewards,
+      levelRoleIds: levelRewards.map((reward) => reward.roleId),
+      updatedAt: createdAt,
+    };
+  }, { actorId, action: 'leveling_maintenance_integrity_repair' });
+
+  const roleResult = await syncAllRewardRoles(guild);
+  const after = scanIntegrity(guild);
+  appendMaintenanceLog(
+    guild.id,
+    actorId,
+    'integrity_repair',
+    `Integrity repair completed: ${before.issueCount} issue(s) before, ${after.issueCount} remaining. Reward roles synced for ${roleResult.synced}; ${roleResult.skipped} unavailable member(s) skipped.`,
+    backupPath,
+  );
+  return { before, after, roleResult, backupPath };
+}
+
 function applyManualProgressChange(guildId, userId, action, value, reason, actorId) {
   const createdAt = new Date().toISOString();
   let result = null;
@@ -59,7 +318,6 @@ function applyManualProgressChange(guildId, userId, action, value, reason, actor
     };
 
     let nextXp = before.xp;
-    let nextLevel = before.level;
     let nextMessages = before.messages;
     let nextVoiceMinutes = before.voiceMinutes;
     let clearActivity = false;
@@ -75,7 +333,19 @@ function applyManualProgressChange(guildId, userId, action, value, reason, actor
       clearActivity = true;
     } else throw new Error(`Unsupported XP management action: ${action}`);
 
-    nextLevel = leveling.levelForXp(nextXp);
+    const nextLevel = leveling.levelForXp(nextXp);
+    const history = leveling.appendHistory(existing.history, {
+      type: action === 'reset' ? 'reset' : 'manual',
+      source: leveling.XP_SOURCES.MANUAL,
+      delta: nextXp - before.xp,
+      beforeXp: before.xp,
+      afterXp: nextXp,
+      beforeLevel: before.level,
+      afterLevel: nextLevel,
+      actorId,
+      reason,
+      createdAt,
+    });
     const updatedUser = leveling.normalizeUser({
       ...existing,
       userId,
@@ -87,6 +357,7 @@ function applyManualProgressChange(guildId, userId, action, value, reason, actor
       lastVoiceXpAt: clearActivity ? null : existing.lastVoiceXpAt,
       lastXpAt: clearActivity ? null : createdAt,
       lastXpSource: clearActivity ? null : leveling.XP_SOURCES.MANUAL,
+      history,
       updatedAt: createdAt,
     });
 
@@ -140,7 +411,7 @@ async function syncManualRewardRoles(guild, userId, newLevel) {
   if (!member?.roles?.cache) return false;
   const section = leveling.getSection(guild.id);
   const earned = tracking.earnedRewards(section, newLevel);
-  const earnedIds = new Set(earned.map((reward) => String(reward.roleId)));
+  const earnedIds = expectedRewardIds(section, newLevel);
   const allRewardIds = new Set((section.levelRewards || []).map((reward) => String(reward.roleId)));
   const botMember = guild.members.me || await guild.members.fetchMe().catch(() => null);
 
@@ -149,7 +420,7 @@ async function syncManualRewardRoles(guild, userId, newLevel) {
       .filter((role) => allRewardIds.has(String(role.id)) && !earnedIds.has(String(role.id)))
       .filter((role) => !role.managed && role.position < botMember.roles.highest.position);
     if (removeRoles.length) {
-      await member.roles.remove(removeRoles, `Goliath manual leveling sync to level ${newLevel}`).catch(() => null);
+      await member.roles.remove(removeRoles, `Goliath leveling sync to level ${newLevel}`).catch(() => null);
     }
   }
 
@@ -172,10 +443,56 @@ async function handleLevelingInteraction(interaction) {
     if (customId === 'admin:leveling:xpmanage:audit') {
       return safeUpdate(interaction, panel.buildXpAuditPanel(interaction.guild, displayName));
     }
+    if (customId === 'admin:leveling:maintenance') {
+      return safeUpdate(interaction, panel.buildMaintenancePanel(interaction.guild, displayName));
+    }
+    if (customId === 'admin:leveling:maintenance:scan') {
+      const report = scanIntegrity(interaction.guild);
+      return safeUpdate(interaction, panel.buildMaintenancePanel(interaction.guild, displayName, report));
+    }
+    if (customId === 'admin:leveling:maintenance:preview') {
+      const report = scanIntegrity(interaction.guild);
+      return safeUpdate(interaction, panel.buildIntegrityPreviewPanel(interaction.guild, displayName, report));
+    }
+    if (customId === 'admin:leveling:maintenance:log') {
+      return safeUpdate(interaction, panel.buildMaintenanceLogPanel(interaction.guild, displayName));
+    }
+    if (customId === 'admin:leveling:maintenance:recalculate') {
+      if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+      const result = await recalculateAllLevels(interaction.guild, interaction.user.id);
+      await interaction.followUp({ content: `✅ Recalculated **${result.changed}** level record(s) and synced rewards for **${result.synced}** member(s). A pre-task backup was created.`, flags: 64 }).catch(() => null);
+      return safeUpdate(interaction, panel.buildMaintenancePanel(interaction.guild, displayName, scanIntegrity(interaction.guild)));
+    }
+    if (customId === 'admin:leveling:maintenance:rewards') {
+      if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+      const result = await rebuildRewardRoles(interaction.guild, interaction.user.id);
+      await interaction.followUp({ content: `✅ Rebuilt reward roles for **${result.synced}** member(s); **${result.skipped}** unavailable member(s) skipped. A pre-task backup was created.`, flags: 64 }).catch(() => null);
+      return safeUpdate(interaction, panel.buildMaintenancePanel(interaction.guild, displayName, scanIntegrity(interaction.guild)));
+    }
+    if (customId === 'admin:leveling:maintenance:leaderboard') {
+      const result = rebuildLeaderboard(interaction.guild, interaction.user.id);
+      if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+      await interaction.followUp({ content: `✅ Rebuilt and validated the derived leaderboard from **${result.count}** Leveling record(s). A pre-task backup was created.`, flags: 64 }).catch(() => null);
+      return safeUpdate(interaction, panel.buildMaintenancePanel(interaction.guild, displayName, scanIntegrity(interaction.guild)));
+    }
+    if (customId === 'admin:leveling:maintenance:repair') {
+      if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+      const result = await repairIntegrity(interaction.guild, interaction.user.id);
+      await interaction.followUp({ content: `🩹 Integrity repair complete: **${result.before.issueCount}** issue(s) before, **${result.after.issueCount}** remaining. A pre-repair backup was created.`, flags: 64 }).catch(() => null);
+      return safeUpdate(interaction, panel.buildIntegrityPreviewPanel(interaction.guild, displayName, result.after));
+    }
     if (interaction.isUserSelectMenu?.() && customId === 'admin:leveling:xpmanage:select') {
       const userId = String(interaction.values?.[0] || '');
       if (!/^\d{15,25}$/.test(userId)) throw new Error('Select a valid Discord member.');
       return safeUpdate(interaction, panel.buildXpMemberPanel(interaction.guild, userId, displayName));
+    }
+    const xpMemberMatch = customId.match(/^admin:leveling:xpmanage:member:(\d{15,25})$/);
+    if (xpMemberMatch) {
+      return safeUpdate(interaction, panel.buildXpMemberPanel(interaction.guild, xpMemberMatch[1], displayName));
+    }
+    const xpHistoryMatch = customId.match(/^admin:leveling:xpmanage:history:(\d{15,25})$/);
+    if (xpHistoryMatch) {
+      return safeUpdate(interaction, panel.buildMemberXpHistoryPanel(interaction.guild, xpHistoryMatch[1], displayName));
     }
     const xpActionMatch = customId.match(/^admin:leveling:xpmanage:(add|remove|setxp|setlevel|reset):(\d{15,25})$/);
     if (xpActionMatch && interaction.isButton?.()) {
@@ -360,14 +677,16 @@ async function handleLevelingInteraction(interaction) {
     }
 
     if (customId === 'admin:leveling:ranks:repair') {
+      const backupPath = createMaintenanceBackup(interaction.guildId, 'repair-missing-rewards');
       const result = leveling.repairMissingLevelRewards(interaction.guild, {
         actorId: interaction.user.id,
         action: customId,
       });
+      appendMaintenanceLog(interaction.guildId, interaction.user.id, 'repair_missing_rewards', `Removed ${result.removed} missing reward mapping(s).`, backupPath);
       if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
       await interaction.followUp({
         content: result.removed
-          ? `🩹 Removed ${result.removed} missing reward mapping${result.removed === 1 ? '' : 's'}.`
+          ? `🩹 Removed ${result.removed} missing reward mapping${result.removed === 1 ? '' : 's'}. A backup was created first.`
           : '✅ No missing level reward roles were found.',
         flags: 64,
       }).catch(() => null);
@@ -493,4 +812,11 @@ async function handleLevelingInteraction(interaction) {
   }
 }
 
-module.exports = { handleLevelingInteraction };
+module.exports = {
+  handleLevelingInteraction,
+  scanIntegrity,
+  recalculateAllLevels,
+  rebuildRewardRoles,
+  rebuildLeaderboard,
+  repairIntegrity,
+};
