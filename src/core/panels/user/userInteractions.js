@@ -10,6 +10,7 @@ const {
 } = require('discord.js');
 const guildManager = require('../../guild/guildManager');
 const leveling = require('../../../modules/communityStudio/leveling/leveling');
+const levelingTracking = require('../../../modules/communityStudio/leveling/levelingTracking');
 const invites = require('../../../modules/communityStudio/invites/invites');
 const socialStudio = require('../../../modules/socialStudio/socialAlerts/socialStudio');
 const { normalizeAccountInput, migrateAccount } = require('../../../modules/socialStudio/socialAlerts/accountNormalizer');
@@ -29,6 +30,7 @@ const {
   buildHelpPanel,
   buildProgressPanel,
   buildLevelingUserPanel,
+  buildLevelingHistoryPanel,
   buildRolesPanel,
 } = require('./userPanel');
 
@@ -148,6 +150,22 @@ async function showLeveling(interaction) {
     participating,
     activeMultiplier,
   ));
+}
+
+async function showLevelingHistory(interaction) {
+  const user = leveling.getUser(interaction.guildId, interaction.user.id)
+    || leveling.normalizeUser({ userId: interaction.user.id });
+  return updatePanel(interaction, buildLevelingHistoryPanel(interaction, user));
+}
+
+async function toggleLevelingParticipation(interaction) {
+  const current = leveling.isUserParticipating(interaction.guildId, interaction.user.id);
+  leveling.setUserParticipation(interaction.guildId, interaction.user.id, !current, {
+    actorId: interaction.user.id,
+    action: 'user_leveling_toggle',
+  });
+  try { levelingTracking.refreshGuildVoiceSessions(interaction.guild); } catch {}
+  return showLeveling(interaction);
 }
 
 async function showLevelingLeaderboard(interaction, sortBy = 'xp', pageIndex = 0) {
@@ -613,6 +631,8 @@ async function handleUserPanelInteraction(interaction) {
     return updatePanel(interaction, buildRolesPanel(interaction, settings));
   }
   if (customId === 'user:profile:progress' && interaction.isButton?.()) return showProgress(interaction);
+  if (customId === 'user:leveling:history' && interaction.isButton?.()) return showLevelingHistory(interaction);
+  if (customId === 'user:leveling:toggle' && interaction.isButton?.()) return toggleLevelingParticipation(interaction);
   const levelingLeaderboardMatch = customId.match(/^user:leveling:leaderboard:(xp|level|messages|voice):(\d+)$/);
   if (levelingLeaderboardMatch && interaction.isButton?.()) {
     return showLevelingLeaderboard(interaction, levelingLeaderboardMatch[1], Number(levelingLeaderboardMatch[2]));
