@@ -126,6 +126,47 @@ function embedDeploymentSelect(guildId, channelId) {
   return menu;
 }
 
+function normalMessageSelect(draft) {
+  const choices = Array.isArray(draft?.messageChoices) ? draft.messageChoices.slice(0, 25) : [];
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId('admin:reactionRoles:existing:message:select')
+    .setPlaceholder(choices.length ? '2. Choose a message' : draft?.channelId ? 'No accessible messages found' : 'Choose a channel first')
+    .setMinValues(1)
+    .setMaxValues(1)
+    .setDisabled(!choices.length);
+  menu.addOptions(choices.length ? choices.map((choice) => ({
+    label: String(choice.label || `Message ${choice.messageId}`).slice(0, 100),
+    description: String(choice.description || `Message ${choice.messageId}`).slice(0, 100),
+    value: choice.messageId,
+  })) : [{ label: 'No messages available', value: 'none' }]);
+  return menu;
+}
+
+function messageChoiceLabel(message) {
+  const embedTitle = message.embeds?.find((embed) => embed?.title)?.title;
+  const content = String(message.content || '').replace(/\s+/g, ' ').trim();
+  const author = message.member?.displayName || message.author?.globalName || message.author?.username || 'Unknown author';
+  const label = embedTitle || content || `Message by ${author}`;
+  return {
+    messageId: message.id,
+    label: label.slice(0, 100),
+    description: `${author} • ID ${message.id}`.slice(0, 100),
+  };
+}
+
+async function loadMessageChoices(guild, channelId) {
+  const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
+  if (!channel?.messages?.fetch) throw new Error('Goliath cannot read messages in that channel.');
+  const trackedReactionMessages = new Set(reactionRoles.listPanels(guild.id).map((panel) => panel.messageId));
+  const messages = await channel.messages.fetch({ limit: 100 }).catch(() => null);
+  if (!messages) throw new Error('Goliath could not load messages from that channel. Check View Channel and Read Message History permissions.');
+  return [...messages.values()]
+    .filter((message) => !trackedReactionMessages.has(message.id))
+    .sort((a, b) => Number(BigInt(b.id) - BigInt(a.id)))
+    .slice(0, 25)
+    .map(messageChoiceLabel);
+}
+
 function modeSelect(mode) {
   return new StringSelectMenuBuilder()
     .setCustomId('admin:reactionRoles:wizard:mode')
@@ -191,7 +232,7 @@ function buildExistingPicker(guild) {
       .setTitle('🔗 Use Existing')
       .setDescription([
         'Choose an existing item.', '',
-        '**Existing Message**', 'Paste a Discord message link and attach reaction roles without changing its content.', '',
+        '**Existing Message**', 'Browse normal Discord messages by channel or paste a direct message link.', '',
         '**Existing Panel**', 'Browse Embed Studio panels by Discord channel, then select one by name or message ID.',
       ].join('\n'))],
     components: [
@@ -300,19 +341,37 @@ function buildManagePicker(guild, notice = '') {
 
 function buildExistingMessageStep(guild, userId, notice = '') {
   const draft = reactionRoles.getDraft(guild.id, userId);
+  const choices = Array.isArray(draft?.messageChoices) ? draft.messageChoices : [];
   return {
     embeds: [new EmbedBuilder()
       .setColor(draft?.messageId ? 0x57f287 : 0x5865f2)
       .setTitle('🔗 Select Existing Message')
       .setDescription([
         noticeLine(notice), notice ? '' : null,
-        '**Step 1 of 2 — Select the source message**',
-        'Paste the full Discord message link. Goliath will not change the message content.', '',
+        '**Step 1 — Choose a channel**',
+        'Select the channel containing the normal Discord message.', '',
+        `**Channel:** ${draft?.channelId ? `<#${draft.channelId}>` : 'Not selected'}`,
+        draft?.channelId ? `**Available recent messages:** \`${choices.length}\`` : null,
+        '',
+        '**Step 2 — Choose a message**',
+        draft?.channelId
+          ? choices.length
+            ? 'Select a message below. Options show message text or embed title, author and message ID.'
+            : '> No accessible unassigned messages were found. Use Paste Message Link for an older message.'
+          : '> Choose a channel first.',
+        '',
         draft?.messageId ? `**Selected:** <#${draft.channelId}> · \`${draft.messageId}\`` : '> No message selected.',
       ].filter((line) => line !== null).join('\n'))],
     components: [
+      row(new ChannelSelectMenuBuilder()
+        .setCustomId('admin:reactionRoles:existing:message:channel')
+        .setPlaceholder(draft?.channelId ? 'Change channel' : '1. Choose a channel')
+        .setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+        .setMinValues(1)
+        .setMaxValues(1)),
+      row(normalMessageSelect(draft)),
       row(
-        button('admin:reactionRoles:source:link', draft?.messageId ? '🔄 Change Message' : '🔗 Paste Message Link', ButtonStyle.Primary),
+        button('admin:reactionRoles:source:link', draft?.messageId ? '🔄 Paste Different Link' : '🔗 Paste Message Link', ButtonStyle.Primary),
         button('admin:reactionRoles:source:continue', '🗺️ Mapping Builder', ButtonStyle.Success, !draft?.messageId),
       ),
       row(
@@ -567,7 +626,7 @@ async function handleReactionRolesAdminInteraction(interaction) {
       const channel = guild.channels.cache.get(parsed.channelId) || await guild.channels.fetch(parsed.channelId).catch(() => null);
       const message = channel?.messages?.fetch ? await channel.messages.fetch(parsed.messageId).catch(() => null) : null;
       if (!message) throw new Error('That message could not be found or Goliath cannot access it.');
-      reactionRoles.saveDraft(guild.id, userId, { channelId: parsed.channelId, messageId: parsed.messageId }, guild);
+      reactionRoles.saveDraft(guild.id, userId, { channelId: parsed.channelId, messageId: parsed.messageId, messageChoices: [] }, guild);
       return interaction.reply({ ...buildExistingMessageStep(guild, userId, '✅ Message selected successfully.'), ephemeral: true });
     }
 
@@ -615,6 +674,7 @@ async function handleReactionRolesAdminInteraction(interaction) {
       reactionRoles.saveDraft(guild.id, userId, {
         type: reactionRoles.DRAFT_TYPES.EXISTING, panelId: null, channelId: null, messageId: null, templateId: null,
         name: 'Reaction Roles', mappings: [], selectedRoleId: null, selectedRoleIds: [], selectedMode: reactionRoles.MODES.TOGGLE,
+        messageChoices: [],
       }, guild);
       return respond(interaction, buildExistingMessageStep(guild, userId));
     }
@@ -629,6 +689,25 @@ async function handleReactionRolesAdminInteraction(interaction) {
 
     if (id === 'admin:reactionRoles:source') return respond(interaction, buildExistingMessageStep(guild, userId));
     if (id === 'admin:reactionRoles:source:continue') return respond(interaction, buildWizard(guild, userId));
+
+    if (interaction.isChannelSelectMenu?.() && id === 'admin:reactionRoles:existing:message:channel') {
+      const channelId = interaction.values[0];
+      const messageChoices = await loadMessageChoices(guild, channelId);
+      reactionRoles.saveDraft(guild.id, userId, { channelId, messageId: null, messageChoices }, guild);
+      return respond(interaction, buildExistingMessageStep(guild, userId, `✅ Loaded ${messageChoices.length} recent message${messageChoices.length === 1 ? '' : 's'}.`));
+    }
+    if (interaction.isStringSelectMenu?.() && id === 'admin:reactionRoles:existing:message:select') {
+      const messageId = interaction.values[0];
+      if (messageId === 'none') return respond(interaction, buildExistingMessageStep(guild, userId));
+      const draft = reactionRoles.getDraft(guild.id, userId);
+      const choice = (draft?.messageChoices || []).find((item) => item.messageId === messageId);
+      if (!draft?.channelId || !choice) throw new Error('That message is no longer available. Choose the channel again.');
+      const channel = guild.channels.cache.get(draft.channelId) || await guild.channels.fetch(draft.channelId).catch(() => null);
+      const message = channel?.messages?.fetch ? await channel.messages.fetch(messageId).catch(() => null) : null;
+      if (!message) throw new Error('That message could not be found or Goliath cannot access it.');
+      reactionRoles.saveDraft(guild.id, userId, { messageId }, guild);
+      return respond(interaction, buildExistingMessageStep(guild, userId, `✅ Selected “${choice.label}”.`));
+    }
 
     if (interaction.isChannelSelectMenu?.() && id === 'admin:reactionRoles:existing:embed:channel') {
       reactionRoles.saveDraft(guild.id, userId, { channelId: interaction.values[0], messageId: null }, guild);
