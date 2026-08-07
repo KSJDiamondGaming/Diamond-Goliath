@@ -176,7 +176,7 @@ test('reaction roles admin panel reports, writes and exports canonical module st
 test('leveling core stores settings and XP without duplicating module enabled state', () => {
   const source = fs.readFileSync(levelingPath, 'utf8');
   const defaults = source.slice(source.indexOf('function defaults()'), source.indexOf('function xpForLevel('));
-  const normalizer = source.slice(source.indexOf('function normalize(section'), source.indexOf('function getSection('));
+  const normalizer = source.slice(source.indexOf('function normalize(section'), source.indexOf('function protectedUserSnapshot('));
 
   assert.doesNotMatch(defaults, /enabled\s*:/);
   assert.match(normalizer, /delete normalized\.enabled;/);
@@ -185,6 +185,30 @@ test('leveling core stores settings and XP without duplicating module enabled st
   assert.match(source, /updateModuleSection\(/);
   assert.doesNotMatch(source, /guildManager\.updateGuildSection/);
   assert.doesNotMatch(source, /enabled: source\.enabled !== false/);
+});
+
+test('leveling migration explicitly protects existing active and paused XP records', () => {
+  const source = fs.readFileSync(levelingPath, 'utf8');
+  const migration = source.slice(source.indexOf('function protectedUserSnapshot('), source.indexOf('function getSection('));
+
+  assert.match(source, /const LEVELING_SCHEMA_VERSION = \d+;/);
+  assert.match(migration, /for \(const bucket of \['users', 'pausedUsers'\]\)/);
+  assert.match(migration, /for \(const field of \['xp', 'level', 'messages', 'voiceMinutes'\]\)/);
+  assert.match(migration, /createBackup\(filePath, `leveling-v\$\{LEVELING_SCHEMA_VERSION\}-pre-migration`\)/);
+  assert.match(migration, /validateProtectedUsers\(beforeSnapshot, migrated\)/);
+  assert.match(migration, /validateProtectedUsers\(beforeSnapshot, persisted\)/);
+  assert.match(migration, /restoreBackup\(filePath, backupPath\)/);
+});
+
+test('leveling XP awards reject paused users before changing XP or analytics', () => {
+  const source = fs.readFileSync(levelingPath, 'utf8');
+  const awardXp = source.slice(source.indexOf('function awardXp('), source.indexOf('function awardMessageXp('));
+
+  assert.match(awardXp, /if \(!isUserParticipating\(guildId, safeUserId\)\) return null;/);
+  assert.ok(
+    awardXp.indexOf('if (!isUserParticipating(guildId, safeUserId)) return null;') < awardXp.indexOf('const multiplier ='),
+    'participation guard must run before multiplier calculation and persistence',
+  );
 });
 
 test('sticky store strips module enabled state while preserving channel enabled state', () => {
