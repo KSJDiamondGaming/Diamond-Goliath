@@ -165,10 +165,10 @@ test('generic module admin panels use canonical module state without persisting 
 
 test('reaction roles admin panel reports, writes and exports canonical module state', () => {
   const source = fs.readFileSync(reactionRolesPanelPath, 'utf8');
-  assert.match(source, /const enabled = guildManager\.isModuleEnabled\(guild\.id, (?:'reactionRoles'|reactionRoles\.SECTION)\)/);
+  const canonicalReads = source.match(/const enabled = guildManager\.isModuleEnabled\(guild\.id, (?:'reactionRoles'|reactionRoles\.SECTION)\)/g) || [];
+  assert.ok(canonicalReads.length >= 2, 'overview and settings panels must derive enabled state canonically');
   assert.match(source, /guildManager\.setModuleEnabled\(guild\.id, (?:'reactionRoles'|reactionRoles\.SECTION), true, \{ actorId: userId \}\)/);
   assert.match(source, /guildManager\.setModuleEnabled\(guild\.id, (?:'reactionRoles'|reactionRoles\.SECTION), false, \{ actorId: userId \}\)/);
-  assert.match(source, /enabled: guildManager\.isModuleEnabled\(guild\.id, (?:'reactionRoles'|reactionRoles\.SECTION)\)/);
   assert.doesNotMatch(source, /config\.enabled !== false/);
   assert.doesNotMatch(source, /reactionRoles\.setEnabled/);
   assert.match(source, /panel\.enabled === false/);
