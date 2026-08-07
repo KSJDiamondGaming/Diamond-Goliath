@@ -343,8 +343,8 @@ test('social studio panel reports and writes canonical module state', () => {
   assert.match(store, /guildManager\.setModuleEnabled\(guildId, SECTION, enabled === true, meta\)/);
   assert.doesNotMatch(panel, /config\.enabled = !config\.enabled/);
   assert.match(panel, /enabled: primary\?\.enabled !== false/);
-  assert.match(panel, /creator\.enabled = creator\.enabled === false/);
-  assert.match(panel, /account\.enabled = account\.enabled === false/);
+  assert.match(panel, /creator\.enabled\s*=\s*creator\.enabled\s*===\s*false/);
+  assert.match(panel, /account\.enabled\s*=\s*account\.enabled\s*===\s*false/);
 });
 
 test('auto roles reset preserves canonical module state', () => {
