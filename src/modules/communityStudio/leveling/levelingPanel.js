@@ -40,14 +40,24 @@ function input(customId, label, value, style = TextInputStyle.Short, required = 
   return new ActionRowBuilder().addComponents(component);
 }
 
+function multiplierState(multiplier, at = Date.now()) {
+  if (!multiplier?.enabled || Number(multiplier.value || 1) <= 1) return 'none';
+  const starts = multiplier.startsAt ? new Date(multiplier.startsAt).getTime() : null;
+  const ends = multiplier.endsAt ? new Date(multiplier.endsAt).getTime() : null;
+  if (Number.isFinite(ends) && at >= ends) return 'expired';
+  if (Number.isFinite(starts) && at < starts) return 'scheduled';
+  return 'active';
+}
+
 function formatMultiplier(section, guildId) {
-  const active = leveling.getActiveMultiplier(guildId, null);
   const multiplier = section.multiplier;
-  if (!multiplier?.enabled) return 'No multiplier configured.';
+  const state = multiplierState(multiplier);
+  if (state === 'none') return 'No multiplier configured.';
   const sources = multiplier.sourceIds?.length ? multiplier.sourceIds.map((id) => `\`${id}\``).join(', ') : 'All enabled sources';
   const starts = multiplier.startsAt ? `<t:${Math.floor(new Date(multiplier.startsAt).getTime() / 1000)}:f>` : 'Immediately';
   const ends = multiplier.endsAt ? `<t:${Math.floor(new Date(multiplier.endsAt).getTime() / 1000)}:R>` : 'No end time';
-  return `${active ? '🟢 Active' : '🟡 Scheduled / expired'} · **${multiplier.value}×**\n${multiplier.name || 'XP Multiplier'}\nApplies to: ${sources}\nStarts: ${starts}\nEnds: ${ends}`;
+  const stateLabel = state === 'active' ? '🟢 Active' : state === 'scheduled' ? '🟡 Scheduled' : '⚪ Expired';
+  return `${stateLabel} · **${multiplier.value}×**\n${multiplier.name || 'XP Multiplier'}\nApplies to: ${sources}\nStarts: ${starts}\nEnds: ${ends}`;
 }
 
 function sortLabel(sortBy) {
@@ -173,13 +183,12 @@ function buildLevelingPanel(guild, memberDisplayName = 'Unknown User') {
       row(
         button('admin:leveling:configureMessage', '💬 Message XP', ButtonStyle.Primary),
         button('admin:leveling:configureVoice', '🔊 Voice XP', ButtonStyle.Primary),
-        button('admin:leveling:configureMultiplier', activeMultiplier ? '⚡ Edit Multiplier' : '⚡ Multiplier', ButtonStyle.Primary),
+        button('admin:leveling:multiplier', '⚡ XP Event', ButtonStyle.Primary),
         button('admin:leveling:ranks', '🎭 Rank Rewards', ButtonStyle.Primary),
         button('admin:leveling:leaderboard', '🏆 Leaderboard', ButtonStyle.Primary),
       ),
       row(
         button('admin:leveling:trackingRules', '🚫 XP Exclusions', ButtonStyle.Secondary),
-        button('admin:leveling:stopMultiplier', '⏹️ Stop Multiplier', ButtonStyle.Danger, !section.multiplier?.enabled),
         button('admin:modules', '⬅️ Modules', ButtonStyle.Secondary),
       ),
     ],
@@ -441,18 +450,66 @@ function buildVoiceXpModal(section) {
     );
 }
 
+function buildMultiplierManagerPanel(guild, memberDisplayName = 'Unknown User') {
+  const section = leveling.getSection(guild.id);
+  const multiplier = section.multiplier || {};
+  const state = multiplierState(multiplier);
+  const activeOrScheduled = state === 'active' || state === 'scheduled';
+  const stateLabel = state === 'active' ? '🟢 Active' : state === 'scheduled' ? '🟡 Scheduled' : state === 'expired' ? '⚪ Expired' : '⚫ None';
+  const starts = multiplier.startsAt ? `<t:${Math.floor(new Date(multiplier.startsAt).getTime() / 1000)}:F>\n<t:${Math.floor(new Date(multiplier.startsAt).getTime() / 1000)}:R>` : 'Immediately';
+  const ends = multiplier.endsAt ? `<t:${Math.floor(new Date(multiplier.endsAt).getTime() / 1000)}:F>\n<t:${Math.floor(new Date(multiplier.endsAt).getTime() / 1000)}:R>` : 'No end time';
+  const sources = multiplier.sourceIds?.length ? multiplier.sourceIds.map((id) => `\`${id}\``).join(', ') : 'All enabled XP sources';
+
+  return {
+    embeds: [new EmbedBuilder()
+      .setColor(state === 'active' ? 0x57f287 : state === 'scheduled' ? 0xFEE75C : 0x5865f2)
+      .setTitle('⚡ XP Event Manager')
+      .setDescription([
+        'Create an XP multiplier for an event now or schedule it to begin later.',
+        '',
+        `**Status:** ${stateLabel}`,
+        `**Event:** ${multiplier.name || 'No event configured'}`,
+        `**Multiplier:** ${Number(multiplier.value || 1)}×`,
+        `**Sources:** ${sources}`,
+        '',
+        '**Starts**',
+        starts,
+        '',
+        '**Ends**',
+        ends,
+        '',
+        state === 'scheduled'
+          ? 'The multiplier will automatically become effective at the scheduled start time.'
+          : state === 'active'
+            ? 'XP awards are currently using this multiplier for the selected sources.'
+            : 'Create an event to activate or schedule an XP multiplier.',
+      ].join('\n'))
+      .setFooter({ text: `Requested by ${memberDisplayName}` })
+      .setTimestamp()],
+    components: [
+      row(
+        button('admin:leveling:configureMultiplier', activeOrScheduled ? '✏️ Edit Event' : '➕ Create Event', activeOrScheduled ? ButtonStyle.Primary : ButtonStyle.Success),
+        button('admin:leveling:stopMultiplier', state === 'scheduled' ? '✖️ Cancel Event' : '⏹️ Stop Event', ButtonStyle.Danger, !activeOrScheduled),
+      ),
+      row(button('admin:leveling', '⬅️ Back', ButtonStyle.Secondary)),
+    ],
+  };
+}
+
 function buildMultiplierModal(section) {
   const multiplier = section.multiplier || {};
-  const durationMinutes = multiplier.endsAt
-    ? Math.max(1, Math.round((new Date(multiplier.endsAt).getTime() - Date.now()) / 60000))
-    : 60;
+  const startsAtMs = multiplier.startsAt ? new Date(multiplier.startsAt).getTime() : Date.now();
+  const endsAtMs = multiplier.endsAt ? new Date(multiplier.endsAt).getTime() : startsAtMs + 60 * 60000;
+  const durationMinutes = Math.max(1, Math.round((endsAtMs - startsAtMs) / 60000));
+  const startDelayMinutes = Math.max(0, Math.round((startsAtMs - Date.now()) / 60000));
   return new ModalBuilder()
     .setCustomId('admin:leveling:configureMultiplier:submit')
-    .setTitle('Configure XP Multiplier')
+    .setTitle('Configure XP Event')
     .addComponents(
-      input('name', 'Multiplier name', multiplier.name || 'Double XP Event', TextInputStyle.Short, true),
-      input('value', 'Multiplier value', multiplier.value > 1 ? multiplier.value : 2, TextInputStyle.Short, true, 'Example: 2'),
-      input('duration', 'Duration in minutes', durationMinutes, TextInputStyle.Short, true, 'Example: 60'),
+      input('name', 'Event name', multiplier.name || 'Double XP Event', TextInputStyle.Short, true),
+      input('value', 'XP multiplier', multiplier.value > 1 ? multiplier.value : 2, TextInputStyle.Short, true, 'Example: 2'),
+      input('startDelay', 'Starts in minutes (0 = now)', startDelayMinutes, TextInputStyle.Short, true, 'Example: 0 or 120'),
+      input('duration', 'Duration in minutes', durationMinutes, TextInputStyle.Short, true, 'Example: 60 or 2880'),
       input('sources', 'Sources (comma separated or ALL)', multiplier.sourceIds?.length ? multiplier.sourceIds.join(', ') : 'ALL', TextInputStyle.Short, true, 'message, voice'),
     );
 }
@@ -526,6 +583,7 @@ module.exports = {
   buildRewardsPreviewPanel,
   buildMessageXpModal,
   buildVoiceXpModal,
+  buildMultiplierManagerPanel,
   buildMultiplierModal,
   buildRankLevelsModal,
   buildLeaderboardPanel,
