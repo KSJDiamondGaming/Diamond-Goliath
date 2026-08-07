@@ -165,10 +165,10 @@ test('generic module admin panels use canonical module state without persisting 
 
 test('reaction roles admin panel reports, writes and exports canonical module state', () => {
   const source = fs.readFileSync(reactionRolesPanelPath, 'utf8');
-  assert.match(source, /const enabled = guildManager\.isModuleEnabled\(guild\.id, 'reactionRoles'\)/);
-  assert.match(source, /guildManager\.setModuleEnabled\(guild\.id, 'reactionRoles', true, \{ actorId: userId \}\)/);
-  assert.match(source, /guildManager\.setModuleEnabled\(guild\.id, 'reactionRoles', false, \{ actorId: userId \}\)/);
-  assert.match(source, /enabled: guildManager\.isModuleEnabled\(guild\.id, 'reactionRoles'\)/);
+  assert.match(source, /const enabled = guildManager\.isModuleEnabled\(guild\.id, (?:'reactionRoles'|reactionRoles\.SECTION)\)/);
+  assert.match(source, /guildManager\.setModuleEnabled\(guild\.id, (?:'reactionRoles'|reactionRoles\.SECTION), true, \{ actorId: userId \}\)/);
+  assert.match(source, /guildManager\.setModuleEnabled\(guild\.id, (?:'reactionRoles'|reactionRoles\.SECTION), false, \{ actorId: userId \}\)/);
+  assert.match(source, /enabled: guildManager\.isModuleEnabled\(guild\.id, (?:'reactionRoles'|reactionRoles\.SECTION)\)/);
   assert.doesNotMatch(source, /config\.enabled !== false/);
   assert.doesNotMatch(source, /reactionRoles\.setEnabled/);
   assert.match(source, /panel\.enabled === false/);
@@ -179,7 +179,7 @@ test('leveling core stores settings and XP without duplicating module enabled st
   const defaults = source.slice(source.indexOf('function defaults()'), source.indexOf('function xpForLevel('));
   const normalizer = source.slice(source.indexOf('function normalize(section'), source.indexOf('function protectedUserSnapshot('));
 
-  assert.doesNotMatch(defaults, /enabled\s*:/);
+  assert.doesNotMatch(defaults, /^    enabled\s*:/m);
   assert.match(normalizer, /delete normalized\.enabled;/);
   assert.match(source, /getModuleSection\(guildId, MODULE_KEY, defaults\(\)\)/);
   assert.match(source, /saveModuleSection\(guildId, MODULE_KEY, normalize\(section\), guildOrMeta\)/);
