@@ -151,7 +151,7 @@ function normalizeVerificationRows(payload, rows) {
     if (![workflow, roles, messages, panels, back, settings, requirements].every(Boolean)) return rows;
     const next = {
       ...workflow,
-      custom_id: 'admin:verification:page:workflow',
+      custom_id: 'admin:verification:overview:next',
       label: 'Next ➡️',
       style: 2,
     };
@@ -368,6 +368,20 @@ module.exports = {
       }
       if (customId === 'admin:social' || customId.startsWith('social:')) {
         if (!await callHandler(socialAdminPanel, 'handleSocialAdminInteraction', interaction)) throw new Error(`Social Studio did not handle ${customId}.`);
+        return;
+      }
+      if (customId === 'admin:verification:overview:next') {
+        const displayName = interaction.member?.displayName
+          || interaction.user?.displayName
+          || interaction.user?.username
+          || 'Unknown User';
+        const payload = await verificationAdminPanel.buildVerificationAdminPanel(
+          interaction.guild,
+          displayName,
+          'workflow'
+        );
+        if (interaction.deferred || interaction.replied) await interaction.editReply(payload);
+        else await interaction.update(payload);
         return;
       }
       if (startsWith(interaction, 'admin:verification')) { await callHandler(verificationAdminPanel, 'handleVerificationAdminInteraction', interaction); return; }
