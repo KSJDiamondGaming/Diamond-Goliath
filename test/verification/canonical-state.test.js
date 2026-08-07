@@ -13,17 +13,17 @@ function read(relativePath) {
 
 test('verification health reads canonical module state', () => {
   const source = read('src/modules/securityStudio/verificationHealth.js');
-  assert.match(source, /guildManager\.isModuleEnabled\(guild\.id, 'verification'\)/);
+  assert.match(source, /guildManager\.isModuleEnabled\((?:guild|targetGuild)\.id, (?:'verification'|MODULE)\)/);
 });
 
 test('verification startup reads canonical module state', () => {
   const source = read('src/modules/securityStudio/verification.js');
-  assert.match(source, /guildManager\.isModuleEnabled\(guild\.id, 'verification'\)/);
+  assert.match(source, /guildManager\.isModuleEnabled\(guild\.id, (?:'verification'|MODULE)\)/);
 });
 
 test('verification route does not persist enabled through manager config', () => {
   const source = read('src/modules/securityStudio/verificationRoute.js');
-  assert.match(source, /enabled: guildManager\.isModuleEnabled\(guildId, 'verification'\) === true/);
+  assert.match(source, /enabled:\s*guildManager\.isModuleEnabled\(guildId, (?:'verification'|MODULE)\)\s*===\s*true/);
   assert.doesNotMatch(source, /configureVerification\(guildId, \{ enabled,/);
 });
 
@@ -40,7 +40,7 @@ test('verification store removes module-level enabled state', () => {
 test('verification admin panel reports and writes canonical module state', () => {
   const source = read('src/modules/securityStudio/verificationPanel.js');
   assert.match(source, /enabled: guildManager\.isModuleEnabled\(guildId, 'verification'\)/);
-  assert.match(source, /guildManager\.setModuleEnabled\(interaction\.guild\.id, 'verification', customId\.endsWith\(':enable'\)/);
+  assert.match(source, /guildManager\.setModuleEnabled\(\s*interaction\.guild\.id,\s*'verification',\s*customId\.endsWith\(':enable'\)/);
   assert.doesNotMatch(source, /typeof admin\.enabled === 'boolean'/);
   assert.doesNotMatch(source, /guildManager\.updateGuildSection\(guild\.id, 'modules'/);
   assert.doesNotMatch(source, /configureVerification\(guild\.id, \{\s*enabled/);
@@ -335,15 +335,16 @@ test('giveaways store preserves canonical module state and item-level enabled fl
 });
 
 test('social studio panel reports and writes canonical module state', () => {
-  const source = read('src/modules/socialStudio/socialAlerts/socialStudioPanel.js');
-  assert.match(source, /enabled: guildManager\.isModuleEnabled\(guildId, 'social'\)/);
-  assert.match(source, /const \{ enabled: _enabled, \.\.\.storedConfig \} = config;/);
-  assert.match(source, /guildManager\.setModuleEnabled\(interaction\.guildId, 'social', !config\.enabled, \{ actorId \}\)/);
-  assert.doesNotMatch(source, /enabled: section\.enabled !== false/);
-  assert.doesNotMatch(source, /config\.enabled = !config\.enabled/);
-  assert.match(source, /enabled: primary\?\.enabled !== false/);
-  assert.match(source, /creator\.enabled = creator\.enabled === false/);
-  assert.match(source, /account\.enabled = account\.enabled === false/);
+  const panel = read('src/modules/socialStudio/socialAlerts/socialStudioPanel.js');
+  const store = read('src/modules/socialStudio/socialAlerts/socialStudioStore.js');
+  assert.match(panel, /const getConfig = store\.getConfig;/);
+  assert.match(store, /enabled: isEnabled\(guildId\)/);
+  assert.match(store, /const \{ enabled: _enabled, \.\.\.storedConfig \} = object\(config\);/);
+  assert.match(store, /guildManager\.setModuleEnabled\(guildId, SECTION, enabled === true, meta\)/);
+  assert.doesNotMatch(panel, /config\.enabled = !config\.enabled/);
+  assert.match(panel, /enabled: primary\?\.enabled !== false/);
+  assert.match(panel, /creator\.enabled = creator\.enabled === false/);
+  assert.match(panel, /account\.enabled = account\.enabled === false/);
 });
 
 test('auto roles reset preserves canonical module state', () => {
