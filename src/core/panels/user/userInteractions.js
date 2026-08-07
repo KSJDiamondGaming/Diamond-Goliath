@@ -150,6 +150,68 @@ async function showLeveling(interaction) {
   ));
 }
 
+async function showLevelingLeaderboard(interaction, sortBy = 'xp', pageIndex = 0) {
+  const allowedSorts = new Set(['xp', 'level', 'messages', 'voice']);
+  const safeSort = allowedSorts.has(sortBy) ? sortBy : 'xp';
+  const records = leveling.getLeaderboard(interaction.guildId, 500, { includePaused: false, sortBy: safeSort });
+  const pageSize = 10;
+  const totalPages = Math.max(1, Math.ceil(records.length / pageSize));
+  const safePage = Math.min(Math.max(0, Number(pageIndex) || 0), totalPages - 1);
+  const start = safePage * pageSize;
+  const page = records.slice(start, start + pageSize);
+  const userIndex = records.findIndex((entry) => String(entry.userId || entry.id) === String(interaction.user.id));
+  const label = safeSort === 'voice' ? 'Voice Minutes' : safeSort === 'messages' ? 'Messages' : safeSort === 'level' ? 'Level' : 'XP';
+  const valueFor = (user) => safeSort === 'voice'
+    ? Number(user.voiceMinutes || 0).toLocaleString()
+    : safeSort === 'messages'
+      ? Number(user.messages || 0).toLocaleString()
+      : safeSort === 'level'
+        ? Number(user.level || 0).toLocaleString()
+        : Number(user.xp || 0).toLocaleString();
+  const lines = page.length
+    ? page.map((user, index) => {
+      const rank = start + index + 1;
+      const me = String(user.userId) === String(interaction.user.id) ? ' ← **You**' : '';
+      return `**#${rank}** <@${user.userId}> — ${label}: **${valueFor(user)}** · Lv **${Number(user.level || 0)}**${me}`;
+    })
+    : ['No active leveling participants yet.'];
+
+  const components = [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`user:leveling:leaderboard:xp:0`).setLabel('XP').setStyle(safeSort === 'xp' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`user:leveling:leaderboard:level:0`).setLabel('Level').setStyle(safeSort === 'level' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`user:leveling:leaderboard:messages:0`).setLabel('Messages').setStyle(safeSort === 'messages' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`user:leveling:leaderboard:voice:0`).setLabel('Voice').setStyle(safeSort === 'voice' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+    ),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`user:leveling:leaderboard:${safeSort}:${Math.max(0, safePage - 1)}`).setLabel('Previous').setEmoji('⬅️').setStyle(ButtonStyle.Secondary).setDisabled(safePage === 0),
+      new ButtonBuilder().setCustomId(`user:leveling:leaderboard:${safeSort}:${Math.min(totalPages - 1, safePage + 1)}`).setLabel('Next').setEmoji('➡️').setStyle(ButtonStyle.Primary).setDisabled(safePage >= totalPages - 1),
+      new ButtonBuilder().setCustomId('user:module:leveling').setLabel('Back').setEmoji('⬅️').setStyle(ButtonStyle.Secondary),
+    ),
+  ];
+
+  const position = userIndex >= 0
+    ? `Your position: **#${userIndex + 1}** of **${records.length}** active participants.`
+    : 'You are not currently ranked because Leveling is paused or you have not earned XP yet.';
+
+  return updatePanel(interaction, {
+    embeds: [new EmbedBuilder()
+      .setColor(0x5865F2)
+      .setTitle('🏆 Server Leveling Leaderboard')
+      .setDescription([
+        `Sorted by **${label}**`,
+        position,
+        '',
+        ...lines,
+        '',
+        `Page **${safePage + 1} / ${totalPages}**`,
+      ].join('\n'))
+      .setFooter({ text: 'Active leveling participants only' })
+      .setTimestamp()],
+    components,
+  });
+}
+
 function modalRow(component) {
   return new ActionRowBuilder().addComponents(component);
 }
@@ -551,6 +613,10 @@ async function handleUserPanelInteraction(interaction) {
     return updatePanel(interaction, buildRolesPanel(interaction, settings));
   }
   if (customId === 'user:profile:progress' && interaction.isButton?.()) return showProgress(interaction);
+  const levelingLeaderboardMatch = customId.match(/^user:leveling:leaderboard:(xp|level|messages|voice):(\d+)$/);
+  if (levelingLeaderboardMatch && interaction.isButton?.()) {
+    return showLevelingLeaderboard(interaction, levelingLeaderboardMatch[1], Number(levelingLeaderboardMatch[2]));
+  }
   if (interaction.isStringSelectMenu?.() && customId === 'user:search') {
     const [moduleKey] = interaction.values || [];
     if (moduleKey === 'notes') return updatePanel(interaction, notesUserPanel.user.buildPanel(interaction));
