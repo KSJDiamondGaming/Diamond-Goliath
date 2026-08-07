@@ -8,6 +8,7 @@ const {
   ChannelSelectMenuBuilder,
   ChannelType,
   RoleSelectMenuBuilder,
+  StringSelectMenuBuilder,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
@@ -105,10 +106,10 @@ function sourceLine(id, source) {
   return `${source.enabled ? '✅' : '❌'} **${source.label}** — ${amount}${timing}`;
 }
 
-function rewardLines(section) {
+function rewardLines(section, limit = 15) {
   if (!section.levelRewards.length) return '`No level reward roles configured.`';
   return section.levelRewards
-    .slice(0, 15)
+    .slice(0, limit)
     .map((reward) => `Level **${reward.level}** → <@&${reward.roleId}>${reward.label ? ` · ${reward.label}` : ''}`)
     .join('\n');
 }
@@ -221,38 +222,198 @@ function buildTrackingRulesPanel(guild, memberDisplayName = 'Unknown User') {
   };
 }
 
+function rewardBehaviourLabel(section) {
+  return section.rewardBehaviour === leveling.REWARD_BEHAVIOURS.HIGHEST_ONLY
+    ? 'Keep highest reward only'
+    : 'Stack all earned reward roles';
+}
+
 function buildRankRewardsPanel(guild, memberDisplayName = 'Unknown User') {
   const section = leveling.getSection(guild.id);
-  const currentRoles = section.levelRewards.map((reward) => reward.roleId);
+  const missing = leveling.getMissingLevelRewards(guild);
+  const highest = section.levelRewards.length ? section.levelRewards[section.levelRewards.length - 1] : null;
   return {
     embeds: [new EmbedBuilder()
-      .setColor(0x5865f2)
-      .setTitle('🎭 Level Rank Rewards')
+      .setColor(missing.length ? 0xFEE75C : 0x5865f2)
+      .setTitle('🏅 Level Reward Manager')
       .setDescription([
-        'Choose reward roles in ascending level order, then configure the matching level requirements.',
+        'Create and manage the roles members earn as they level up.',
+        '',
+        `**Configured Rewards:** ${section.levelRewards.length}`,
+        `**Highest Reward:** ${highest ? `Level ${highest.level} → <@&${highest.roleId}>` : 'None'}`,
+        `**Reward Behaviour:** ${rewardBehaviourLabel(section)}`,
+        `**Missing Roles:** ${missing.length}`,
         '',
         '**Current Rewards**',
         rewardLines(section),
+        missing.length ? `\n⚠️ ${missing.length} configured reward role${missing.length === 1 ? ' is' : 's are'} missing from Discord.` : '',
+      ].join('\n'))
+      .setFooter({ text: `Requested by ${memberDisplayName}` })
+      .setTimestamp()],
+    components: [
+      row(
+        button('admin:leveling:ranks:add', '➕ Add Rewards', ButtonStyle.Success),
+        button('admin:leveling:ranks:manage', '🛠️ Manage Rewards', ButtonStyle.Primary, section.levelRewards.length === 0),
+        button('admin:leveling:ranks:preview', '👁️ Preview', ButtonStyle.Secondary, section.levelRewards.length === 0),
+      ),
+      row(
+        button('admin:leveling:ranks:behaviour', section.rewardBehaviour === leveling.REWARD_BEHAVIOURS.HIGHEST_ONLY ? '🎭 Highest Only' : '🎭 Stack Rewards', ButtonStyle.Secondary),
+        button('admin:leveling:ranks:repair', '🩹 Repair Missing', ButtonStyle.Danger, missing.length === 0),
+      ),
+      row(button('admin:leveling', '⬅️ Back', ButtonStyle.Secondary)),
+    ],
+  };
+}
+
+function buildAddRewardsPanel(guild, memberDisplayName = 'Unknown User') {
+  return {
+    embeds: [new EmbedBuilder()
+      .setColor(0x57f287)
+      .setTitle('➕ Add Level Rewards')
+      .setDescription([
+        'Select one or more roles to add as level rewards.',
         '',
-        `**Role Behaviour:** ${section.removePreviousLevelRoles ? 'Replace previous rank roles' : 'Keep and stack earned rank roles'}`,
+        'After selecting the roles, you will enter the matching levels in the same order.',
         '',
-        'Example: select Bronze, Silver and Gold, then enter levels `5, 10, 20`.',
+        'Example: select Bronze, Silver, Gold → enter `5, 10, 20`.',
       ].join('\n'))
       .setFooter({ text: `Requested by ${memberDisplayName}` })
       .setTimestamp()],
     components: [
       row(new RoleSelectMenuBuilder()
-        .setCustomId('admin:leveling:levelRoles')
-        .setPlaceholder('Choose rank reward roles in ascending order')
-        .setMinValues(0)
-        .setMaxValues(10)
-        .setDefaultRoles(...currentRoles.slice(0, 10))),
-      row(
-        button('admin:leveling:configureRankLevels', '🔢 Configure Levels', ButtonStyle.Primary, currentRoles.length === 0),
-        button('admin:leveling:toggleRemovePrevious', section.removePreviousLevelRoles ? '🎭 Replace Ranks' : '🎭 Stack Ranks', ButtonStyle.Secondary),
-      ),
-      row(button('admin:leveling', '⬅️ Back', ButtonStyle.Secondary)),
+        .setCustomId('admin:leveling:ranks:add:roles')
+        .setPlaceholder('Select reward roles')
+        .setMinValues(1)
+        .setMaxValues(10)),
+      row(button('admin:leveling:ranks', '⬅️ Back', ButtonStyle.Secondary)),
     ],
+  };
+}
+
+function buildAddRewardLevelsModal(roleIds = []) {
+  return new ModalBuilder()
+    .setCustomId(`admin:leveling:ranks:add:levels:${roleIds.join('.')}`)
+    .setTitle('Set Reward Levels')
+    .addComponents(input(
+      'levels',
+      `Levels for ${roleIds.length} selected role${roleIds.length === 1 ? '' : 's'}`,
+      '',
+      TextInputStyle.Short,
+      true,
+      roleIds.length === 1 ? 'Example: 25' : 'Example: 5, 10, 20',
+    ));
+}
+
+function buildManageRewardsPanel(guild, memberDisplayName = 'Unknown User') {
+  const section = leveling.getSection(guild.id);
+  const rewards = section.levelRewards.slice(0, 25);
+  const select = new StringSelectMenuBuilder()
+    .setCustomId('admin:leveling:ranks:select')
+    .setPlaceholder('Select a reward to manage')
+    .setMinValues(1)
+    .setMaxValues(1)
+    .addOptions(rewards.map((reward) => ({
+      label: `Level ${reward.level}`.slice(0, 100),
+      description: `Role ${reward.roleId}`.slice(0, 100),
+      value: String(reward.level),
+    })));
+
+  return {
+    embeds: [new EmbedBuilder()
+      .setColor(0x5865f2)
+      .setTitle('🛠️ Manage Level Rewards')
+      .setDescription([
+        'Select a configured reward to edit or delete it.',
+        '',
+        rewardLines(section, 25),
+      ].join('\n'))
+      .setFooter({ text: `Requested by ${memberDisplayName}` })
+      .setTimestamp()],
+    components: [
+      row(select),
+      row(button('admin:leveling:ranks', '⬅️ Back', ButtonStyle.Secondary)),
+    ],
+  };
+}
+
+function buildRewardDetailPanel(guild, level, memberDisplayName = 'Unknown User') {
+  const reward = leveling.getLevelRewards(guild.id).find((entry) => Number(entry.level) === Number(level));
+  if (!reward) return buildManageRewardsPanel(guild, memberDisplayName);
+  const roleExists = guild.roles.cache.has(reward.roleId);
+  return {
+    embeds: [new EmbedBuilder()
+      .setColor(roleExists ? 0x5865f2 : 0xFEE75C)
+      .setTitle(`🏅 Reward · Level ${reward.level}`)
+      .setDescription([
+        `**Level:** ${reward.level}`,
+        `**Role:** <@&${reward.roleId}>`,
+        `**Role Status:** ${roleExists ? 'Available ✅' : 'Missing ⚠️'}`,
+        `**Behaviour:** ${rewardBehaviourLabel(leveling.getSection(guild.id))}`,
+      ].join('\n'))
+      .setFooter({ text: `Requested by ${memberDisplayName}` })
+      .setTimestamp()],
+    components: [
+      row(
+        button(`admin:leveling:ranks:edit:${reward.level}`, '✏️ Edit', ButtonStyle.Primary),
+        button(`admin:leveling:ranks:delete:${reward.level}`, '🗑️ Delete', ButtonStyle.Danger),
+      ),
+      row(button('admin:leveling:ranks:manage', '⬅️ Back', ButtonStyle.Secondary)),
+    ],
+  };
+}
+
+function buildEditRewardModal(reward) {
+  return new ModalBuilder()
+    .setCustomId(`admin:leveling:ranks:edit:${reward.level}:submit`)
+    .setTitle(`Edit Level ${reward.level} Reward`)
+    .addComponents(
+      input('level', 'Required level', reward.level, TextInputStyle.Short, true, 'Example: 25'),
+      input('roleId', 'Discord role ID', reward.roleId, TextInputStyle.Short, true, 'Paste the role ID'),
+      input('label', 'Optional label', reward.label || '', TextInputStyle.Short, false, 'Example: Diamond'),
+    );
+}
+
+function buildDeleteRewardConfirmPanel(guild, level, memberDisplayName = 'Unknown User') {
+  const reward = leveling.getLevelRewards(guild.id).find((entry) => Number(entry.level) === Number(level));
+  if (!reward) return buildManageRewardsPanel(guild, memberDisplayName);
+  return {
+    embeds: [new EmbedBuilder()
+      .setColor(0xED4245)
+      .setTitle('⚠️ Delete Level Reward')
+      .setDescription(`Delete the **Level ${reward.level}** reward for <@&${reward.roleId}>?\n\nThis removes the reward mapping only. It does not delete the Discord role.`)
+      .setFooter({ text: `Requested by ${memberDisplayName}` })
+      .setTimestamp()],
+    components: [
+      row(
+        button(`admin:leveling:ranks:view:${reward.level}`, 'Cancel', ButtonStyle.Secondary),
+        button(`admin:leveling:ranks:delete:${reward.level}:confirm`, 'Delete Reward', ButtonStyle.Danger),
+      ),
+    ],
+  };
+}
+
+function buildRewardsPreviewPanel(guild, memberDisplayName = 'Unknown User') {
+  const section = leveling.getSection(guild.id);
+  const highestOnly = section.rewardBehaviour === leveling.REWARD_BEHAVIOURS.HIGHEST_ONLY;
+  const lines = section.levelRewards.slice(0, 25).flatMap((reward, index) => {
+    const previous = index > 0 ? section.levelRewards[index - 1] : null;
+    const behaviour = highestOnly && previous
+      ? `<@&${previous.roleId}> removed → <@&${reward.roleId}> added`
+      : `<@&${reward.roleId}> added`;
+    return [`**Level ${reward.level}**`, `↳ ${behaviour}`];
+  });
+  return {
+    embeds: [new EmbedBuilder()
+      .setColor(0x5865f2)
+      .setTitle('👁️ Level Reward Preview')
+      .setDescription([
+        `**Behaviour:** ${rewardBehaviourLabel(section)}`,
+        '',
+        ...(lines.length ? lines : ['No rewards configured.']),
+      ].join('\n'))
+      .setFooter({ text: `Requested by ${memberDisplayName}` })
+      .setTimestamp()],
+    components: [row(button('admin:leveling:ranks', '⬅️ Back', ButtonStyle.Secondary))],
   };
 }
 
@@ -356,6 +517,13 @@ module.exports = {
   buildLevelingPanel,
   buildTrackingRulesPanel,
   buildRankRewardsPanel,
+  buildAddRewardsPanel,
+  buildAddRewardLevelsModal,
+  buildManageRewardsPanel,
+  buildRewardDetailPanel,
+  buildEditRewardModal,
+  buildDeleteRewardConfirmPanel,
+  buildRewardsPreviewPanel,
   buildMessageXpModal,
   buildVoiceXpModal,
   buildMultiplierModal,
