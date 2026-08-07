@@ -345,6 +345,24 @@ function formatXpSource(id, source) {
   return `${source.enabled ? '✅' : '❌'} **${source.label}** — ${amount}${timing}\n${source.description}`;
 }
 
+function buildRewardProgressLines(section, currentLevel = 0) {
+  const rewards = Array.isArray(section.levelRewards) ? section.levelRewards : [];
+  if (!rewards.length) return ['No level reward roles are currently configured.'];
+  const level = Math.max(0, Number(currentLevel || 0));
+  const nextReward = rewards.find((reward) => Number(reward.level) > level) || null;
+  const lines = rewards.slice(0, 15).map((reward) => {
+    const unlocked = level >= Number(reward.level);
+    return `${unlocked ? '✅' : '⬜'} Level **${reward.level}** → <@&${reward.roleId}>`;
+  });
+  if (nextReward) {
+    lines.push('', `**Next Reward:** Level ${nextReward.level} → <@&${nextReward.roleId}>`);
+    lines.push(`**Levels Remaining:** ${Math.max(0, Number(nextReward.level) - level)}`);
+  } else {
+    lines.push('', '🏁 **All configured level rewards unlocked.**');
+  }
+  return lines;
+}
+
 function buildLevelingUserPanel(interaction, section, user, rank, participating, activeMultiplier) {
   const memberDisplayName = getMemberDisplayName(interaction);
   const currentUser = user || { xp: 0, level: 0, messages: 0, voiceMinutes: 0 };
@@ -379,10 +397,6 @@ function buildLevelingUserPanel(interaction, section, user, rank, participating,
     ]
     : ['No XP multiplier is currently active.'];
 
-  const rewardLines = section.levelRewards.length
-    ? section.levelRewards.slice(0, 15).map((reward) => `Level **${reward.level}** → <@&${reward.roleId}>`).join('\n')
-    : 'No level reward roles are currently configured.';
-
   return {
     embeds: [markLiveEmbed(createEmbed('🏆 Your Leveling', [
       '**Your Progress**',
@@ -395,7 +409,7 @@ function buildLevelingUserPanel(interaction, section, user, rank, participating,
       ...multiplierLines,
       '',
       '**Rank Rewards**',
-      rewardLines,
+      ...buildRewardProgressLines(section, details.level),
     ].join('\n'), memberDisplayName, participating ? PANEL_COLOR : DEV_COLOR))],
     components: [
       row(
