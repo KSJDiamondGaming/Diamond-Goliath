@@ -10,6 +10,7 @@ const guildManagerPath = path.resolve(__dirname, '../../src/core/guild/guildMana
 const moduleAdminPanelsPath = path.resolve(__dirname, '../../src/core/admin/functions/moduleAdminPanels.js');
 const reactionRolesPanelPath = path.resolve(__dirname, '../../src/modules/roleStudio/reactionRoles/reactionRolesPanel.js');
 const levelingPath = path.resolve(__dirname, '../../src/modules/communityStudio/leveling/leveling.js');
+const levelingInteractionsPath = path.resolve(__dirname, '../../src/modules/communityStudio/leveling/levelingInteractions.js');
 const stickyStorePath = path.resolve(__dirname, '../../src/modules/messageStudio/sticky/stickyStore.js');
 const starboardRuntimePath = path.resolve(__dirname, '../../src/modules/messageStudio/starboard/starboard.js');
 const starboardStorePath = path.resolve(__dirname, '../../src/modules/messageStudio/starboard/starboardStore.js');
@@ -211,6 +212,51 @@ test('leveling XP awards reject paused users before changing XP or analytics', (
   );
 });
 
+test('leveling XP history is capped, normalized and attached to every XP award', () => {
+  const source = fs.readFileSync(levelingPath, 'utf8');
+  const history = source.slice(source.indexOf('function normalizeHistoryEntry('), source.indexOf('function normalizeUsers('));
+  const awardXp = source.slice(source.indexOf('function awardXp('), source.indexOf('function awardMessageXp('));
+
+  assert.match(source, /const USER_HISTORY_LIMIT = 100;/);
+  assert.match(history, /entries\.slice\(-USER_HISTORY_LIMIT\)\.map\(normalizeHistoryEntry\)/);
+  assert.match(history, /return \[\.\.\.normalizeHistory\(value\), normalizeHistoryEntry\(entry\)\]\.slice\(-USER_HISTORY_LIMIT\);/);
+  assert.match(history, /history: normalizeHistory\(input\.history\)/);
+  assert.match(awardXp, /const history = appendHistory\(existing\.history,/);
+  assert.match(awardXp, /beforeXp: previousXp/);
+  assert.match(awardXp, /afterXp: nextXp/);
+  assert.match(awardXp, /beforeLevel: previousLevel/);
+  assert.match(awardXp, /afterLevel: nextLevel/);
+  assert.match(awardXp, /history,/);
+});
+
+test('leveling integrity maintenance scans raw data and backs up write operations', () => {
+  const source = fs.readFileSync(levelingInteractionsPath, 'utf8');
+  const scan = source.slice(source.indexOf('function scanIntegrity('), source.indexOf('async function syncAllRewardRoles('));
+  const repair = source.slice(source.indexOf('async function repairIntegrity('), source.indexOf('function applyManualProgressChange('));
+
+  assert.match(source, /const \{ getModuleSection \} = require\('\.\.\/\.\.\/\.\.\/core\/guild\/moduleSectionManager'\);/);
+  assert.match(scan, /getModuleSection\(guild\.id, leveling\.MODULE_KEY, leveling\.defaults\(\)\)/);
+  assert.match(scan, /invalidUserIds/);
+  assert.match(scan, /invalidXpRecords/);
+  assert.match(scan, /multiplierIssues/);
+  assert.match(scan, /analyticsIssues/);
+  assert.match(scan, /rawIdsByBucket/);
+  assert.match(scan, /rawAnalytics/);
+  assert.match(source, /createMaintenanceBackup\(guild\.id, 'recalculate-levels'\)/);
+  assert.match(source, /createMaintenanceBackup\(guild\.id, 'rebuild-reward-roles'\)/);
+  assert.match(source, /createMaintenanceBackup\(guild\.id, 'rebuild-leaderboard'\)/);
+  assert.match(repair, /createMaintenanceBackup\(guild\.id, 'integrity-repair'\)/);
+  assert.match(source, /maintenanceLog:/);
+});
+
+test('leveling multiplier normalization tolerates malformed stored dates', () => {
+  const source = fs.readFileSync(levelingPath, 'utf8');
+  const multiplier = source.slice(source.indexOf('function normalizeMultiplier('), source.indexOf('function normalizeLevelRewards('));
+
+  assert.match(multiplier, /try \{ startsAt = source\.startsAt \? new Date\(source\.startsAt\)\.toISOString\(\) : null; \} catch \{ startsAt = null; \}/);
+  assert.match(multiplier, /try \{ endsAt = source\.endsAt \? new Date\(source\.endsAt\)\.toISOString\(\) : null; \} catch \{ endsAt = null; \}/);
+});
+
 test('sticky store strips module enabled state while preserving channel enabled state', () => {
   const source = fs.readFileSync(stickyStorePath, 'utf8');
   const defaults = source.slice(source.indexOf('function defaultStickySection()'), source.indexOf('function normalizeSticky('));
@@ -239,7 +285,7 @@ test('starboard uses canonical module state across runtime, store, route and pan
   assert.match(panel, /setModuleEnabled\(interaction\.guild\.id, 'starboard', true\)/);
   assert.match(panel, /setModuleEnabled\(interaction\.guild\.id, 'starboard', false\)/);
   assert.match(route, /enabled: isModuleEnabled\(guildId, 'starboard'\) === true/);
-  assert.match(route, /setModuleEnabled\(guildId, 'starboard', req\.body\?\.enabled === true\)/);
+  assert.match(route, /setModuleEnabled\(guildId, 'starboard', req\.body\?\.enabled === true/);
   assert.doesNotMatch(store, /enabled: source\.enabled !== false/);
 });
 
