@@ -97,6 +97,38 @@ function buildLeaderboard(guildId, limit = 10) {
     : '`No XP tracked yet.`';
 }
 
+function sourceAnalyticsLines(section) {
+  const totals = section.analytics?.xpBySource || {};
+  const grandTotal = Math.max(0, Number(section.analytics?.xpAwarded || 0));
+  const entries = Object.entries(section.xpSources || {})
+    .map(([id, config]) => ({ id, label: config.label || id, amount: Math.max(0, Number(totals[id] || 0)) }))
+    .filter((entry) => entry.amount > 0)
+    .sort((a, b) => b.amount - a.amount);
+  if (!entries.length) return ['`No source XP has been awarded yet.`'];
+  return entries.slice(0, 8).map((entry) => {
+    const percent = grandTotal > 0 ? Math.round((entry.amount / grandTotal) * 100) : 0;
+    return `• **${entry.label}** — ${entry.amount.toLocaleString()} XP (${percent}%)`;
+  });
+}
+
+function recentActivityLines(section) {
+  const records = [
+    ...Object.values(section.users || {}).map((user) => ({ ...user, participating: true })),
+    ...Object.values(section.pausedUsers || {}).map((user) => ({ ...user, participating: false })),
+  ]
+    .filter((user) => user?.userId && user?.lastXpAt)
+    .map((user) => ({ ...user, lastXpMs: new Date(user.lastXpAt).getTime() }))
+    .filter((user) => Number.isFinite(user.lastXpMs))
+    .sort((a, b) => b.lastXpMs - a.lastXpMs)
+    .slice(0, 5);
+  if (!records.length) return ['`No recent XP activity recorded yet.`'];
+  return records.map((user) => {
+    const timestamp = Math.floor(user.lastXpMs / 1000);
+    const source = user.lastXpSource ? ` · \`${user.lastXpSource}\`` : '';
+    return `• <@${user.userId}> — Level **${Number(user.level || 0)}** · ${Number(user.xp || 0).toLocaleString()} XP${source} · <t:${timestamp}:R>${user.participating === false ? ' · ⏸️' : ''}`;
+  });
+}
+
 function buildLevelUpEmbed(member, user) {
   return new EmbedBuilder()
     .setColor(0xfacc15)
@@ -185,7 +217,7 @@ function buildLevelingPanel(guild, memberDisplayName = 'Unknown User') {
         button('admin:leveling:configureVoice', '🔊 Voice XP', ButtonStyle.Primary),
         button('admin:leveling:multiplier', '⚡ XP Event', ButtonStyle.Primary),
         button('admin:leveling:ranks', '🎭 Rank Rewards', ButtonStyle.Primary),
-        button('admin:leveling:leaderboard', '🏆 Leaderboard', ButtonStyle.Primary),
+        button('admin:leveling:leaderboard', '📊 Analytics', ButtonStyle.Primary),
       ),
       row(
         button('admin:leveling:trackingRules', '🚫 XP Exclusions', ButtonStyle.Secondary),
@@ -532,19 +564,31 @@ function buildLeaderboardPanel(guild, memberDisplayName = 'Unknown User', page =
   const section = leveling.getSection(guild.id);
   const eligible = leveling.getEligibleUsers(guild.id, { includePaused: false });
   const paused = Object.keys(section.pausedUsers || {}).length;
+  const active = Object.keys(section.users || {}).length;
   const board = leaderboardRows(guild.id, { page, sortBy, includePaused: true });
+  const analytics = section.analytics || {};
   const embed = new EmbedBuilder()
     .setColor(0x5865f2)
-    .setTitle('🏆 Leveling Leaderboard')
+    .setTitle('📊 XP Analytics & Leaderboard')
     .setDescription([
-      `Sorted by **${sortLabel(board.sortBy)}** · Page **${board.page + 1}/${board.totalPages}**`,
+      '**Server XP Overview**',
+      `XP Awarded: **${Number(analytics.xpAwarded || 0).toLocaleString()}**`,
+      `Level Ups: **${Number(analytics.levelUps || 0).toLocaleString()}**`,
+      `Messages Tracked: **${Number(analytics.messagesTracked || 0).toLocaleString()}**`,
+      `Voice Minutes Tracked: **${Number(analytics.voiceMinutesTracked || 0).toLocaleString()}**`,
+      `Participants: **${active} active** · **${paused} paused**`,
       '',
+      '**XP by Source**',
+      ...sourceAnalyticsLines(section),
+      '',
+      '**Recent XP Activity**',
+      ...recentActivityLines(section),
+      '',
+      `**Leaderboard — ${sortLabel(board.sortBy)}** · Page **${board.page + 1}/${board.totalPages}**`,
       ...board.lines,
       '',
-      `Eligible active users: \`${eligible.length}\``,
-      `Paused users: \`${paused}\``,
-      '',
-      'Paused members are shown for management visibility but remain excluded from giveaway eligibility by default.',
+      `Giveaway-eligible active users: \`${eligible.length}\``,
+      'Paused members remain visible to admins but are excluded from giveaway eligibility by default.',
     ].join('\n'))
     .setFooter({ text: `Requested by ${memberDisplayName}` })
     .setTimestamp();
