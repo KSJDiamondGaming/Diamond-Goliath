@@ -10,6 +10,7 @@ const {
 
 const giveawaysStore = require('./giveawaysStore');
 const guildManager = require('../../../core/guild/guildManager');
+const leveling = require('../leveling/leveling');
 
 const ENTER_EMOJI = '🎉';
 
@@ -33,11 +34,88 @@ function parseDurationMs(value) {
   return amount * 24 * 60 * 60 * 1000;
 }
 
-function buildGiveawayEmbed(giveaway) {
+function getLevelingEligibility(section = {}) {
+  const config = section.levelingEligibility && typeof section.levelingEligibility === 'object'
+    ? section.levelingEligibility
+    : {};
+  const sortBy = ['xp', 'level', 'messages', 'voice'].includes(String(config.sortBy || '').toLowerCase())
+    ? String(config.sortBy).toLowerCase()
+    : 'xp';
+  return {
+    enabled: config.enabled === true,
+    minLevel: Math.max(0, Math.floor(Number(config.minLevel || 0))),
+    minXp: Math.max(0, Math.floor(Number(config.minXp || 0))),
+    top: Math.max(0, Math.min(500, Math.floor(Number(config.top || 0)))),
+    sortBy,
+    activeOnly: config.activeOnly !== false,
+  };
+}
+
+function levelingEligibilityText(section = {}) {
+  const config = getLevelingEligibility(section);
+  if (!config.enabled) return null;
+  const rules = [];
+  if (config.minLevel) rules.push(`Level ${config.minLevel}+`);
+  if (config.minXp) rules.push(`${config.minXp.toLocaleString()}+ XP`);
+  if (config.top) rules.push(`Top ${config.top} by ${config.sortBy}`);
+  if (config.activeOnly) rules.push('Leveling enabled');
+  return rules.length ? rules.join(' · ') : 'Active Leveling participant';
+}
+
+function getLevelingEligibleUsers(guildId, section = {}) {
+  const config = getLevelingEligibility(section);
+  if (!config.enabled) return null;
+  if (!guildManager.isModuleEnabled(guildId, 'leveling')) return [];
+  return leveling.getEligibleUsers(guildId, {
+    minLevel: config.minLevel,
+    minXp: config.minXp,
+    top: config.top || null,
+    includePaused: !config.activeOnly,
+    sortBy: config.sortBy,
+  });
+}
+
+function getLevelingEligibilityFailure(guildId, userId, section = {}) {
+  const config = getLevelingEligibility(section);
+  if (!config.enabled) return null;
+  if (!guildManager.isModuleEnabled(guildId, 'leveling')) {
+    return 'This giveaway requires Leveling eligibility, but Leveling is currently disabled in this server.';
+  }
+
+  const user = leveling.getUser(guildId, userId);
+  if (!user) return 'You need a Leveling record before you can enter this giveaway.';
+  if (config.activeOnly && !leveling.isUserParticipating(guildId, userId)) {
+    return 'You must have Leveling enabled on your account to enter this giveaway.';
+  }
+  if (Number(user.level || 0) < config.minLevel) {
+    return `You must be at least Level ${config.minLevel} to enter this giveaway.`;
+  }
+  if (Number(user.xp || 0) < config.minXp) {
+    return `You must have at least ${config.minXp.toLocaleString()} XP to enter this giveaway.`;
+  }
+  if (config.top > 0) {
+    const eligibleIds = new Set((getLevelingEligibleUsers(guildId, section) || []).map((entry) => String(entry.userId)));
+    if (!eligibleIds.has(String(userId))) {
+      return `You must be within the top ${config.top} members by ${config.sortBy} to enter this giveaway.`;
+    }
+  }
+  return null;
+}
+
+function filterEntriesByLevelingEligibility(guildId, entries = [], section = {}) {
+  const config = getLevelingEligibility(section);
+  const uniqueEntries = [...new Set(entries)];
+  if (!config.enabled) return uniqueEntries;
+  const eligibleIds = new Set((getLevelingEligibleUsers(guildId, section) || []).map((entry) => String(entry.userId)));
+  return uniqueEntries.filter((userId) => eligibleIds.has(String(userId)));
+}
+
+function buildGiveawayEmbed(giveaway, section = {}) {
   const ended = giveaway.status === 'ended';
   const winners = giveaway.winners?.length
     ? giveaway.winners.map((id) => `<@${id}>`).join(', ')
     : 'Not drawn yet';
+  const xpEligibility = levelingEligibilityText(section);
   return new EmbedBuilder()
     .setColor(ended ? 0x57f287 : 0xfaa61a)
     .setTitle(`🎉 ${giveaway.prize}`)
@@ -47,6 +125,7 @@ function buildGiveawayEmbed(giveaway) {
       `**Status:** ${giveaway.status}`,
       `**Entries:** ${giveaway.entries?.length || 0}`,
       `**Winner Count:** ${giveaway.winnerCount || 1}`,
+      xpEligibility ? `**XP Eligibility:** ${xpEligibility}` : null,
       `**Winners:** ${winners}`,
       giveaway.endsAt ? `**Ends:** <t:${Math.floor(new Date(giveaway.endsAt).getTime() / 1000)}:R>` : null,
     ].filter(Boolean).join('\n'))
@@ -94,13 +173,14 @@ function hasEntryRoles(member, giveaway, section) {
 }
 
 async function refreshGiveawayMessage(guild, giveawayId) {
+  const section = giveawaysStore.getSection(guild.id);
   const giveaway = giveawaysStore.getGiveaway(guild.id, giveawayId);
   if (!giveaway?.channelId || !giveaway.messageId) return null;
   const channel = guild.channels.cache.get(giveaway.channelId)
     || await guild.channels.fetch(giveaway.channelId).catch(() => null);
   const message = await channel?.messages?.fetch(giveaway.messageId).catch(() => null);
   if (!message?.editable) return null;
-  await message.edit({ embeds: [buildGiveawayEmbed(giveaway)], components: buildGiveawayRows(giveaway) }).catch(() => null);
+  await message.edit({ embeds: [buildGiveawayEmbed(giveaway, section)], components: buildGiveawayRows(giveaway) }).catch(() => null);
   return giveaway;
 }
 
@@ -130,7 +210,7 @@ async function createGiveaway(guildOrChannel, input = {}) {
     status: 'active',
   }, guild);
 
-  const message = await channel.send({ embeds: [buildGiveawayEmbed(giveaway)], components: buildGiveawayRows(giveaway) });
+  const message = await channel.send({ embeds: [buildGiveawayEmbed(giveaway, section)], components: buildGiveawayRows(giveaway) });
   await message.react(ENTER_EMOJI).catch(() => null);
   giveaway = giveawaysStore.saveGiveaway(guild.id, { ...giveaway, messageId: message.id, channelId: channel.id }, guild);
   giveawaysStore.incrementAnalytics(guild.id, { created: 1 }, guild);
@@ -143,6 +223,8 @@ async function addEntry(guild, giveawayId, userId, member = null) {
   const giveaway = giveawaysStore.getGiveaway(guild.id, giveawayId);
   if (!giveaway || giveaway.status !== 'active') throw new Error('This giveaway is not active.');
   if (!hasEntryRoles(member, giveaway, section)) throw new Error('You do not have the required role to enter this giveaway.');
+  const levelingFailure = getLevelingEligibilityFailure(guild.id, userId, section);
+  if (levelingFailure) throw new Error(levelingFailure);
 
   const entries = Array.isArray(giveaway.entries) ? [...giveaway.entries] : [];
   if (!section.allowMultipleEntries && entries.includes(userId)) return giveaway;
@@ -200,7 +282,8 @@ async function endGiveawayById(client, guildId, giveawayId, actorMember = null) 
   const giveaway = giveawaysStore.getGiveaway(guildId, giveawayId);
   if (!giveaway || giveaway.status !== 'active') return null;
 
-  const winners = pickWinners(giveaway.entries || [], giveaway.winnerCount || 1);
+  const eligibleEntries = filterEntriesByLevelingEligibility(guildId, giveaway.entries || [], section);
+  const winners = pickWinners(eligibleEntries, giveaway.winnerCount || 1);
   const updated = giveawaysStore.updateGiveaway(guildId, giveawayId, {
     status: 'ended',
     winners,
@@ -228,9 +311,11 @@ async function endGiveaway(interaction, giveawayId) {
 }
 
 async function rerollGiveaway(client, guildId, giveawayId) {
+  const section = giveawaysStore.getSection(guildId);
   const giveaway = giveawaysStore.getGiveaway(guildId, giveawayId);
   if (!giveaway || giveaway.status !== 'ended') return null;
-  const winners = pickWinners(giveaway.entries || [], giveaway.winnerCount || 1);
+  const eligibleEntries = filterEntriesByLevelingEligibility(guildId, giveaway.entries || [], section);
+  const winners = pickWinners(eligibleEntries, giveaway.winnerCount || 1);
   const updated = giveawaysStore.updateGiveaway(guildId, giveawayId, { winners });
   giveawaysStore.incrementAnalytics(guildId, { rerolls: 1 });
   const guild = client?.guilds?.cache?.get(guildId)
@@ -277,6 +362,9 @@ module.exports = {
   isManager,
   canManageGiveaways: isManager,
   parseDurationMs,
+  getLevelingEligibility,
+  getLevelingEligibilityFailure,
+  filterEntriesByLevelingEligibility,
   buildGiveawayEmbed,
   buildGiveawayRows,
   createGiveaway,
