@@ -41,6 +41,122 @@ function refreshVoiceTracking(interaction) {
   }
 }
 
+function applyManualProgressChange(guildId, userId, action, value, reason, actorId) {
+  const createdAt = new Date().toISOString();
+  let result = null;
+  leveling.updateSection(guildId, (current) => {
+    const paused = Boolean(current.pausedUsers?.[userId]);
+    const bucket = paused ? 'pausedUsers' : 'users';
+    const otherBucket = paused ? 'users' : 'pausedUsers';
+    const existing = current[bucket]?.[userId]
+      || current[otherBucket]?.[userId]
+      || leveling.normalizeUser({ userId });
+    const before = {
+      xp: Math.max(0, Number(existing.xp || 0)),
+      level: Math.max(0, Number(existing.level || 0)),
+      messages: Math.max(0, Number(existing.messages || 0)),
+      voiceMinutes: Math.max(0, Number(existing.voiceMinutes || 0)),
+    };
+
+    let nextXp = before.xp;
+    let nextLevel = before.level;
+    let nextMessages = before.messages;
+    let nextVoiceMinutes = before.voiceMinutes;
+    let clearActivity = false;
+
+    if (action === 'add') nextXp = before.xp + Math.max(0, Number(value || 0));
+    else if (action === 'remove') nextXp = Math.max(0, before.xp - Math.max(0, Number(value || 0)));
+    else if (action === 'setxp') nextXp = Math.max(0, Number(value || 0));
+    else if (action === 'setlevel') nextXp = leveling.xpForLevel(Math.max(0, Number(value || 0)));
+    else if (action === 'reset') {
+      nextXp = 0;
+      nextMessages = 0;
+      nextVoiceMinutes = 0;
+      clearActivity = true;
+    } else throw new Error(`Unsupported XP management action: ${action}`);
+
+    nextLevel = leveling.levelForXp(nextXp);
+    const updatedUser = leveling.normalizeUser({
+      ...existing,
+      userId,
+      xp: nextXp,
+      level: nextLevel,
+      messages: nextMessages,
+      voiceMinutes: nextVoiceMinutes,
+      lastMessageXpAt: clearActivity ? null : existing.lastMessageXpAt,
+      lastVoiceXpAt: clearActivity ? null : existing.lastVoiceXpAt,
+      lastXpAt: clearActivity ? null : createdAt,
+      lastXpSource: clearActivity ? null : leveling.XP_SOURCES.MANUAL,
+      updatedAt: createdAt,
+    });
+
+    const users = { ...(current.users || {}) };
+    const pausedUsers = { ...(current.pausedUsers || {}) };
+    if (paused) {
+      pausedUsers[userId] = updatedUser;
+      delete users[userId];
+    } else {
+      users[userId] = updatedUser;
+      delete pausedUsers[userId];
+    }
+
+    const auditEntry = {
+      auditId: `${Date.now()}_${actorId}_${userId}`,
+      action,
+      userId,
+      actorId,
+      reason: String(reason || '').slice(0, 500),
+      value: Number.isFinite(Number(value)) ? Number(value) : null,
+      before,
+      after: {
+        xp: updatedUser.xp,
+        level: updatedUser.level,
+        messages: updatedUser.messages,
+        voiceMinutes: updatedUser.voiceMinutes,
+      },
+      createdAt,
+    };
+
+    const auditLog = [...(Array.isArray(current.auditLog) ? current.auditLog : []), auditEntry].slice(-200);
+    const manualAward = action === 'add' ? Math.max(0, updatedUser.xp - before.xp) : 0;
+    const analytics = {
+      ...(current.analytics || {}),
+      xpAwarded: Number(current.analytics?.xpAwarded || 0) + manualAward,
+      xpBySource: {
+        ...(current.analytics?.xpBySource || {}),
+        [leveling.XP_SOURCES.MANUAL]: Number(current.analytics?.xpBySource?.[leveling.XP_SOURCES.MANUAL] || 0) + manualAward,
+      },
+    };
+
+    result = { user: updatedUser, before, after: auditEntry.after, paused, auditEntry };
+    return { ...current, users, pausedUsers, auditLog, analytics, updatedAt: createdAt };
+  }, { actorId, action: `leveling_manual_${action}` });
+  return result;
+}
+
+async function syncManualRewardRoles(guild, userId, newLevel) {
+  const member = guild?.members?.cache?.get?.(userId)
+    || await guild?.members?.fetch?.(userId).catch(() => null);
+  if (!member?.roles?.cache) return false;
+  const section = leveling.getSection(guild.id);
+  const earned = tracking.earnedRewards(section, newLevel);
+  const earnedIds = new Set(earned.map((reward) => String(reward.roleId)));
+  const allRewardIds = new Set((section.levelRewards || []).map((reward) => String(reward.roleId)));
+  const botMember = guild.members.me || await guild.members.fetchMe().catch(() => null);
+
+  if (botMember?.roles?.highest && member.roles?.remove) {
+    const removeRoles = [...member.roles.cache.values()]
+      .filter((role) => allRewardIds.has(String(role.id)) && !earnedIds.has(String(role.id)))
+      .filter((role) => !role.managed && role.position < botMember.roles.highest.position);
+    if (removeRoles.length) {
+      await member.roles.remove(removeRoles, `Goliath manual leveling sync to level ${newLevel}`).catch(() => null);
+    }
+  }
+
+  if (earned.length) await tracking.assignLevelRole(member, section, newLevel).catch(() => null);
+  return true;
+}
+
 async function handleLevelingInteraction(interaction) {
   const customId = String(interaction?.customId || '');
   if (!customId.startsWith('admin:leveling')) return false;
@@ -49,6 +165,60 @@ async function handleLevelingInteraction(interaction) {
   try {
     if (customId === 'admin:leveling') {
       return safeUpdate(interaction, panel.buildLevelingPanel(interaction.guild, displayName));
+    }
+    if (customId === 'admin:leveling:xpmanage') {
+      return safeUpdate(interaction, panel.buildXpManagerPanel(interaction.guild, displayName));
+    }
+    if (customId === 'admin:leveling:xpmanage:audit') {
+      return safeUpdate(interaction, panel.buildXpAuditPanel(interaction.guild, displayName));
+    }
+    if (interaction.isUserSelectMenu?.() && customId === 'admin:leveling:xpmanage:select') {
+      const userId = String(interaction.values?.[0] || '');
+      if (!/^\d{15,25}$/.test(userId)) throw new Error('Select a valid Discord member.');
+      return safeUpdate(interaction, panel.buildXpMemberPanel(interaction.guild, userId, displayName));
+    }
+    const xpActionMatch = customId.match(/^admin:leveling:xpmanage:(add|remove|setxp|setlevel|reset):(\d{15,25})$/);
+    if (xpActionMatch && interaction.isButton?.()) {
+      const action = xpActionMatch[1];
+      const userId = xpActionMatch[2];
+      const user = leveling.getUser(interaction.guildId, userId) || leveling.normalizeUser({ userId });
+      await interaction.showModal(panel.buildXpActionModal(action, userId, user));
+      return true;
+    }
+    const xpSubmitMatch = customId.match(/^admin:leveling:xpmanage:(add|remove|setxp|setlevel|reset):submit:(\d{15,25})$/);
+    if (xpSubmitMatch && interaction.isModalSubmit?.()) {
+      const action = xpSubmitMatch[1];
+      const userId = xpSubmitMatch[2];
+      const reason = interaction.fields.getTextInputValue('reason').trim();
+      if (reason.length < 3) throw new Error('A reason of at least 3 characters is required.');
+
+      let value = 0;
+      if (action === 'reset') {
+        const confirmation = interaction.fields.getTextInputValue('value').trim().toUpperCase();
+        if (confirmation !== 'RESET') throw new Error('Type RESET exactly to confirm the member reset.');
+      } else if (action === 'setlevel') {
+        value = numberField(interaction, 'value', { min: 0, max: 100000, integer: true });
+      } else if (action === 'setxp') {
+        value = numberField(interaction, 'value', { min: 0, max: Number.MAX_SAFE_INTEGER, integer: true });
+      } else {
+        value = numberField(interaction, 'value', { min: 1, max: Number.MAX_SAFE_INTEGER, integer: true });
+      }
+
+      const result = applyManualProgressChange(
+        interaction.guildId,
+        userId,
+        action,
+        value,
+        reason,
+        interaction.user.id,
+      );
+      await syncManualRewardRoles(interaction.guild, userId, result.user.level);
+      if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+      await interaction.followUp({
+        content: `✅ Updated <@${userId}>: **${result.before.xp.toLocaleString()} XP / Lv ${result.before.level}** → **${result.after.xp.toLocaleString()} XP / Lv ${result.after.level}**.`,
+        flags: 64,
+      }).catch(() => null);
+      return safeUpdate(interaction, panel.buildXpMemberPanel(interaction.guild, userId, displayName));
     }
     if (customId === 'admin:leveling:multiplier') {
       return safeUpdate(interaction, panel.buildMultiplierManagerPanel(interaction.guild, displayName));
