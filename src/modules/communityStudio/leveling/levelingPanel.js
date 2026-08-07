@@ -9,6 +9,7 @@ const {
   ChannelType,
   RoleSelectMenuBuilder,
   StringSelectMenuBuilder,
+  UserSelectMenuBuilder,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
@@ -129,6 +130,20 @@ function recentActivityLines(section) {
   });
 }
 
+function auditLines(section, userId = null, limit = 10) {
+  const records = (Array.isArray(section.auditLog) ? section.auditLog : [])
+    .filter((entry) => !userId || String(entry.userId) === String(userId))
+    .slice(-Math.max(1, limit))
+    .reverse();
+  if (!records.length) return ['`No manual XP changes have been recorded yet.`'];
+  return records.map((entry) => {
+    const timestamp = Math.floor(new Date(entry.createdAt || Date.now()).getTime() / 1000);
+    const before = `${Number(entry.before?.xp || 0).toLocaleString()} XP / Lv ${Number(entry.before?.level || 0)}`;
+    const after = `${Number(entry.after?.xp || 0).toLocaleString()} XP / Lv ${Number(entry.after?.level || 0)}`;
+    return `• <t:${timestamp}:R> · <@${entry.userId}> · **${String(entry.action || 'adjust').replaceAll('_', ' ')}**\n  ${before} → ${after} · by <@${entry.actorId}>\n  Reason: ${entry.reason || 'No reason recorded'}`;
+  });
+}
+
 function buildLevelUpEmbed(member, user) {
   return new EmbedBuilder()
     .setColor(0xfacc15)
@@ -220,10 +235,124 @@ function buildLevelingPanel(guild, memberDisplayName = 'Unknown User') {
         button('admin:leveling:leaderboard', '📊 Analytics', ButtonStyle.Primary),
       ),
       row(
+        button('admin:leveling:xpmanage', '🛠️ XP Manager', ButtonStyle.Primary),
         button('admin:leveling:trackingRules', '🚫 XP Exclusions', ButtonStyle.Secondary),
         button('admin:modules', '⬅️ Modules', ButtonStyle.Secondary),
       ),
     ],
+  };
+}
+
+function buildXpManagerPanel(guild, memberDisplayName = 'Unknown User') {
+  const section = leveling.getSection(guild.id);
+  const active = Object.keys(section.users || {}).length;
+  const paused = Object.keys(section.pausedUsers || {}).length;
+  const auditCount = Array.isArray(section.auditLog) ? section.auditLog.length : 0;
+  return {
+    embeds: [new EmbedBuilder()
+      .setColor(0x5865f2)
+      .setTitle('🛠️ XP Member Manager')
+      .setDescription([
+        'Select a member to inspect or manually adjust their Leveling record.',
+        '',
+        `**Active Participants:** ${active}`,
+        `**Paused Participants:** ${paused}`,
+        `**Manual Audit Records:** ${auditCount}`,
+        '',
+        'Manual changes require a reason and are recorded in the Leveling audit trail.',
+      ].join('\n'))
+      .setFooter({ text: `Requested by ${memberDisplayName}` })
+      .setTimestamp()],
+    components: [
+      row(new UserSelectMenuBuilder()
+        .setCustomId('admin:leveling:xpmanage:select')
+        .setPlaceholder('Select a member to manage')
+        .setMinValues(1)
+        .setMaxValues(1)),
+      row(
+        button('admin:leveling:xpmanage:audit', '📜 Audit Log', ButtonStyle.Secondary),
+        button('admin:leveling', '⬅️ Back', ButtonStyle.Secondary),
+      ),
+    ],
+  };
+}
+
+function buildXpMemberPanel(guild, userId, memberDisplayName = 'Unknown User') {
+  const section = leveling.getSection(guild.id);
+  const user = leveling.getUser(guild.id, userId) || leveling.normalizeUser({ userId });
+  const participating = !section.pausedUsers?.[userId];
+  const nextLevelXp = leveling.xpForLevel(Number(user.level || 0) + 1);
+  const nextReward = section.levelRewards.find((reward) => Number(reward.level) > Number(user.level || 0));
+  return {
+    embeds: [new EmbedBuilder()
+      .setColor(participating ? 0x57f287 : 0xFEE75C)
+      .setTitle('👤 Member XP Record')
+      .setDescription([
+        `**Member:** <@${userId}>`,
+        `**Participation:** ${participating ? 'Enabled ✅' : 'Paused ⏸️'}`,
+        `**Level:** ${Number(user.level || 0).toLocaleString()}`,
+        `**XP:** ${Number(user.xp || 0).toLocaleString()}`,
+        `**Next Level:** ${Math.max(0, nextLevelXp - Number(user.xp || 0)).toLocaleString()} XP remaining`,
+        `**Messages:** ${Number(user.messages || 0).toLocaleString()}`,
+        `**Voice:** ${Number(user.voiceMinutes || 0).toLocaleString()} minutes`,
+        `**Next Reward:** ${nextReward ? `Level ${nextReward.level} → <@&${nextReward.roleId}>` : 'All configured rewards unlocked'}`,
+        '',
+        '**Recent Manual Changes**',
+        ...auditLines(section, userId, 4),
+      ].join('\n'))
+      .setFooter({ text: `Requested by ${memberDisplayName}` })
+      .setTimestamp()],
+    components: [
+      row(
+        button(`admin:leveling:xpmanage:add:${userId}`, '➕ Add XP', ButtonStyle.Success),
+        button(`admin:leveling:xpmanage:remove:${userId}`, '➖ Remove XP', ButtonStyle.Secondary),
+        button(`admin:leveling:xpmanage:setxp:${userId}`, '🎯 Set XP', ButtonStyle.Primary),
+        button(`admin:leveling:xpmanage:setlevel:${userId}`, '🏆 Set Level', ButtonStyle.Primary),
+      ),
+      row(
+        button(`admin:leveling:xpmanage:reset:${userId}`, '🗑️ Reset Member', ButtonStyle.Danger),
+        button('admin:leveling:xpmanage:audit', '📜 Audit Log', ButtonStyle.Secondary),
+      ),
+      row(button('admin:leveling:xpmanage', '⬅️ Back', ButtonStyle.Secondary)),
+    ],
+  };
+}
+
+function buildXpActionModal(action, userId, user = {}) {
+  const labels = {
+    add: ['Add XP', 'XP to add', '500'],
+    remove: ['Remove XP', 'XP to remove', '250'],
+    setxp: ['Set XP', 'New total XP', String(Number(user.xp || 0))],
+    setlevel: ['Set Level', 'New level', String(Number(user.level || 0))],
+    reset: ['Reset Member', 'Type RESET to confirm', 'RESET'],
+  };
+  const [title, valueLabel, placeholder] = labels[action] || labels.add;
+  return new ModalBuilder()
+    .setCustomId(`admin:leveling:xpmanage:${action}:submit:${userId}`)
+    .setTitle(title)
+    .addComponents(
+      input('value', valueLabel, action === 'reset' ? '' : placeholder, TextInputStyle.Short, true, placeholder),
+      input('reason', 'Reason (required)', '', TextInputStyle.Paragraph, true, 'Example: Event winner, correction, moderation adjustment'),
+    );
+}
+
+function buildXpAuditPanel(guild, memberDisplayName = 'Unknown User') {
+  const section = leveling.getSection(guild.id);
+  return {
+    embeds: [new EmbedBuilder()
+      .setColor(0x5865f2)
+      .setTitle('📜 Leveling XP Audit Log')
+      .setDescription([
+        'Latest manual XP and level changes.',
+        '',
+        ...auditLines(section, null, 12),
+      ].join('\n'))
+      .setFooter({ text: `Requested by ${memberDisplayName} · Last 12 changes` })
+      .setTimestamp()],
+    components: [row(
+      button('admin:leveling:xpmanage:audit', '🔄 Refresh', ButtonStyle.Secondary),
+      button('admin:leveling:xpmanage', '⬅️ Back', ButtonStyle.Secondary),
+    )],
   };
 }
 
@@ -616,6 +745,10 @@ function buildLeaderboardPanel(guild, memberDisplayName = 'Unknown User', page =
 
 module.exports = {
   buildLevelingPanel,
+  buildXpManagerPanel,
+  buildXpMemberPanel,
+  buildXpActionModal,
+  buildXpAuditPanel,
   buildTrackingRulesPanel,
   buildRankRewardsPanel,
   buildAddRewardsPanel,
