@@ -336,8 +336,6 @@ jobs:
             echo "  Doctor       : $NEED_DOCTOR"
             echo "  Full fallback: $FULL_FALLBACK"
 
-            # One authoritative dependency install on the VPS. Also repair a
-            # partially populated node_modules tree before touching PM2.
             if [ "$NEED_DEPS" = true ] || ! node -e "require.resolve('express')" >/dev/null 2>&1; then
               echo "Installing dependencies with npm ci..."
               npm ci
@@ -353,9 +351,6 @@ jobs:
               rm -rf dist
               npx vite build src/dashboard --outDir ../../dist --emptyOutDir --logLevel warn
 
-              # Legacy VPS scripts remain the authority for where each Nginx
-              # dashboard lives, but they are no longer executed. Read only the
-              # first explicit /var/www removal target and publish there directly.
               DASHBOARD_ROOT=""
               if [ -f "$DEPLOY_SCRIPT" ]; then
                 DASHBOARD_ROOT="$(awk '$1 == "rm" && $2 == "-rf" && $3 ~ /^\/var\/www\// { print $3; exit }' "$DEPLOY_SCRIPT")"
@@ -384,9 +379,6 @@ jobs:
               BOT_MODE="$ENVIRONMENT" COMMAND_SYNC_DELETE_STALE=true COMMAND_SYNC_UPDATE_EXISTING=true node scripts/goliath.js sync-commands "$ENVIRONMENT"
             fi
 
-            # Exactly one controlled PM2 restart when live backend/runtime code
-            # changed. Dashboard-only, docs, tests and workflow changes do not
-            # bounce the bot process.
             if [ "$NEED_APP_RELOAD" = true ]; then
               echo "Restarting $PM2_NAME exactly once..."
               if pm2 describe "$PM2_NAME" >/dev/null 2>&1; then
@@ -407,7 +399,7 @@ jobs:
 
             if [ "$NEED_APP_RELOAD" = true ]; then
               sleep 3
-              PM2_STATUS="$(PM2_TARGET="$PM2_NAME" pm2 jlist | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const list=JSON.parse(s);const p=list.find(x=>x.name===process.env.PM2_TARGET);process.stdout.write(p?.pm2_env?.status||'missing')})")"
+              PM2_STATUS="$(pm2 jlist | PM2_TARGET="$PM2_NAME" node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const list=JSON.parse(s);const p=list.find(x=>x.name===process.env.PM2_TARGET);process.stdout.write(p?.pm2_env?.status||'missing')})")"
               if [ "$PM2_STATUS" != "online" ]; then
                 echo "$PM2_NAME failed post-deploy health check: $PM2_STATUS"
                 pm2 logs "$PM2_NAME" --lines 80 --nostream || true
