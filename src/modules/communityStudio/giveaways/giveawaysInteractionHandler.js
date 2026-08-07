@@ -10,12 +10,65 @@ function getMemberDisplayName(interaction) { return interaction.member?.displayN
 function save(guild, updater) { return giveawaysStore.updateSection(guild.id, updater, guild); }
 async function safeUpdate(interaction, payload) { if (interaction.deferred || interaction.replied) { await interaction.editReply(payload); return true; } await interaction.update(payload); return true; }
 
+function numericField(interaction, id, max = Number.MAX_SAFE_INTEGER) {
+  const raw = interaction.fields.getTextInputValue(id).trim();
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0 || value > max) throw new Error(`${id} must be a number between 0 and ${max}.`);
+  return Math.floor(value);
+}
+
 async function handleGiveawaysAdminInteraction(interaction) {
   const customId = String(interaction.customId || '');
   if (!customId.startsWith('admin:giveaways')) return false;
   const memberDisplayName = getMemberDisplayName(interaction);
   try {
     if (customId === 'admin:giveaways') return safeUpdate(interaction, giveawaysPanel.buildGiveawaysAdminPanel(interaction.guild, memberDisplayName));
+    if (customId === 'admin:giveaways:levelingEligibility') {
+      return safeUpdate(interaction, giveawaysPanel.buildLevelingEligibilityPanel(interaction.guild, memberDisplayName));
+    }
+    if (customId === 'admin:giveaways:levelingEligibility:configure' && interaction.isButton?.()) {
+      await interaction.showModal(giveawaysPanel.buildLevelingEligibilityModal(giveawaysStore.getSection(interaction.guildId)));
+      return true;
+    }
+    if (customId === 'admin:giveaways:levelingEligibility:toggle') {
+      save(interaction.guild, (section) => ({
+        ...section,
+        levelingEligibility: {
+          ...(section.levelingEligibility || {}),
+          enabled: section.levelingEligibility?.enabled !== true,
+        },
+      }));
+      return safeUpdate(interaction, giveawaysPanel.buildLevelingEligibilityPanel(interaction.guild, memberDisplayName));
+    }
+    if (customId === 'admin:giveaways:levelingEligibility:toggleActive') {
+      save(interaction.guild, (section) => ({
+        ...section,
+        levelingEligibility: {
+          ...(section.levelingEligibility || {}),
+          activeOnly: section.levelingEligibility?.activeOnly === false,
+        },
+      }));
+      return safeUpdate(interaction, giveawaysPanel.buildLevelingEligibilityPanel(interaction.guild, memberDisplayName));
+    }
+    if (customId === 'admin:giveaways:levelingEligibility:configure:submit' && interaction.isModalSubmit?.()) {
+      const minLevel = numericField(interaction, 'minLevel', 100000);
+      const minXp = numericField(interaction, 'minXp', 1_000_000_000);
+      const top = numericField(interaction, 'top', 500);
+      const sortBy = interaction.fields.getTextInputValue('sortBy').trim().toLowerCase();
+      if (!['xp', 'level', 'messages', 'voice'].includes(sortBy)) throw new Error('sortBy must be xp, level, messages or voice.');
+      save(interaction.guild, (section) => ({
+        ...section,
+        levelingEligibility: {
+          ...(section.levelingEligibility || {}),
+          minLevel,
+          minXp,
+          top,
+          sortBy,
+          activeOnly: section.levelingEligibility?.activeOnly !== false,
+        },
+      }));
+      return safeUpdate(interaction, giveawaysPanel.buildLevelingEligibilityPanel(interaction.guild, memberDisplayName));
+    }
     if (interaction.isChannelSelectMenu?.()) {
       const value = interaction.values?.[0] || null;
       const prop = customId.split(':')[2];
