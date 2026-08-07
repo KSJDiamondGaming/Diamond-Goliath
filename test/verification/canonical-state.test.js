@@ -337,6 +337,7 @@ test('giveaways store preserves canonical module state and item-level enabled fl
 test('social studio panel reports and writes canonical module state', () => {
   const panel = read('src/modules/socialStudio/socialAlerts/socialStudioPanel.js');
   const store = read('src/modules/socialStudio/socialAlerts/socialStudioStore.js');
+  const accountRuntime = read('src/runtime/warningFilter.js');
   assert.match(panel, /const getConfig = store\.getConfig;/);
   assert.match(store, /enabled: isEnabled\(guildId\)/);
   assert.match(store, /const \{ enabled: _enabled, \.\.\.storedConfig \} = object\(config\);/);
@@ -344,7 +345,7 @@ test('social studio panel reports and writes canonical module state', () => {
   assert.doesNotMatch(panel, /config\.enabled = !config\.enabled/);
   assert.match(panel, /enabled: primary\?\.enabled !== false/);
   assert.match(panel, /creator\.enabled\s*=\s*creator\.enabled\s*===\s*false/);
-  assert.match(panel, /account\.enabled\s*=\s*account\.enabled\s*===\s*false/);
+  assert.match(accountRuntime, /account\.enabled\s*=\s*account\.enabled\s*===\s*false/);
 });
 
 test('auto roles reset preserves canonical module state', () => {
