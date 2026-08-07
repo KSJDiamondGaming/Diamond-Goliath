@@ -118,6 +118,7 @@ function rebuildLevelingPanel(payload) {
         paused ? ButtonStyle.Success : ButtonStyle.Danger,
         paused ? '▶️' : '⏸️',
       ),
+      button('user:leveling:leaderboard:xp:0', 'Leaderboard', ButtonStyle.Primary, '🏆'),
       refresh,
     ),
     navigationRow,
