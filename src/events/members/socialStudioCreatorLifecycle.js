@@ -35,7 +35,7 @@ async function cleanupAllGuilds(client) {
 
 module.exports = [
   {
-    name: 'ready',
+    name: 'clientReady',
     once: true,
     async execute(client) {
       await cleanupAllGuilds(client);

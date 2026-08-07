@@ -13,7 +13,7 @@ function optionalRequire(label, modulePath, fallback = {}) {
 
 const guildManager = optionalRequire('guild manager', '../../core/guild/guildManager');
 const verificationManager = optionalRequire('verification manager', '../../modules/securityStudio/verificationManager');
-const ticketInteractionHandler = optionalRequire('tickets', '../../modules/feedbackStudio/tickets/ticketsInteractions');
+const ticketInteractionHandler = optionalRequire('tickets', '../../modules/feedbackStudio/tickets/tickets');
 const pollsInteractions = optionalRequire('polls', '../../modules/communityStudio/polls/pollsInteractions');
 const tempVoiceInteractionHandler = optionalRequire('temp voice', '../../modules/utilityStudio/tempVoice/tempVoiceInteractionHandler');
 const suggestionsInteractions = optionalRequire('suggestions', '../../modules/feedbackStudio/suggestions/suggestionsInteractions');
