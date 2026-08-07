@@ -148,9 +148,6 @@ async function buildReactionRolesAdminPanel(guild, memberDisplayName = 'Unknown 
         button('admin:reactionRoles:manage', '📋 Manage', ButtonStyle.Primary, !panels.length),
       ),
       row(
-        button('admin:reactionRoles:saved', '📚 Saved Panels', ButtonStyle.Secondary, !panels.length),
-      ),
-      row(
         button('admin:studio:roleStudio', '⬅️ Back'),
         button('admin:reactionRoles:settings', '⚙️ Settings'),
       ),
@@ -322,7 +319,7 @@ function buildWizard(guild, userId, showRemove = false, notice = '') {
     ? existing ? 'Select the source message first.' : 'Choose where Goliath should post the panel.'
     : !roles.length
       ? 'Select up to five roles, then press Continue.'
-      : `Press Continue to enter one emoji for each selected role.`;
+      : 'Press Continue to enter one emoji for each selected role.';
   if (ready && !roles.length) next = 'Ready. Add another batch if needed, name the panel, then deploy.';
 
   return {
