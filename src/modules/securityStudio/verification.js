@@ -41,12 +41,39 @@ function buildFailedResult(guild, error) {
   };
 }
 
+function hasMissingPanelMessage(report) {
+  return (report?.panels || []).some(
+    (panel) => panel?.ok === false && panel?.status === 'Missing message'
+  );
+}
+
 async function checkGuild(guild) {
   const enabled = guildManager.isModuleEnabled(guild.id, MODULE) === true;
   if (!enabled) return buildSkippedResult(guild);
 
   try {
-    const report = await verificationHealth.buildHealthReport(guild);
+    let report = await verificationHealth.buildHealthReport(guild);
+
+    if (hasMissingPanelMessage(report)) {
+      const repaired = await verificationHealth.repair(guild, {
+        actorId: 'system:verification-startup',
+      });
+
+      if (repaired?.repair?.repaired) {
+        console.log(
+          `[Verification] ${guild.name || guild.id}: restored ${repaired.repair.repaired} missing panel message(s).`
+        );
+      }
+
+      for (const failure of repaired?.repair?.failed || []) {
+        console.warn(
+          `[Verification] ${guild.name || guild.id}: could not restore ${failure.panelId}: ${failure.reason}`
+        );
+      }
+
+      report = repaired;
+    }
+
     return buildEnabledResult(guild, report);
   } catch (error) {
     return buildFailedResult(guild, error);
