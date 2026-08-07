@@ -17,6 +17,17 @@ const PLATFORM_LABELS = {
 const PLATFORM_ORDER = Object.keys(PLATFORM_LABELS);
 const statusSessions = new Map();
 const STATUS_SESSION_TTL_MS = 15 * 60 * 1000;
+const MONITORING_COMPAT_IDS = new Set([
+  'social:automation:interval',
+  'social:automation:dupes',
+  'social:automation:retry',
+  'social:automation:editlive',
+  'social:automation:deleteended',
+  'social:automation:viewers',
+  'social:automation:duration',
+  'social:test',
+  'social:toggle',
+]);
 
 function cleanupStatusSessions() {
   const cutoff = Date.now() - STATUS_SESSION_TTL_MS;
@@ -99,6 +110,24 @@ function currentPanelSection(interaction, customId) {
   return 'accounts';
 }
 
+async function acknowledgeCompatibilityControl(interaction, customId) {
+  if (!MONITORING_COMPAT_IDS.has(customId) || !interaction.guildId) return false;
+  if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate().catch(() => null);
+
+  // The Social Studio compatibility wrapper performs the state mutation. Refresh
+  // shortly afterwards so the current ephemeral panel reflects the new value and
+  // Discord never shows an "Interaction failed" banner while the legacy panel
+  // handler falls through.
+  await new Promise((resolve) => setTimeout(resolve, 75));
+  try {
+    const section = currentPanelSection(interaction, customId);
+    await interaction.editReply(buildSectionPanel(interaction, section));
+  } catch (error) {
+    console.warn('[Social Studio] compatibility panel refresh failed:', error?.message || error);
+  }
+  return true;
+}
+
 module.exports = [
   {
     name: 'clientReady',
@@ -127,28 +156,31 @@ module.exports = [
       }
 
       const options = checkOptions(customId);
-      if (!options || !interaction.guildId) return;
+      if (options && interaction.guildId) {
+        if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+        const outcome = await checkGuildAccounts(client || interaction.client, interaction.guildId, options);
 
-      if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
-      const outcome = await checkGuildAccounts(client || interaction.client, interaction.guildId, options);
+        if (outcome.skipped && outcome.reason === 'check_already_running') {
+          await interaction.followUp({ content: '🔎 **Social Studio Status Check**\n\n⏳ A Social Studio check is already running for this server.', flags: 64 }).catch(() => null);
+          return;
+        }
 
-      if (outcome.skipped && outcome.reason === 'check_already_running') {
-        await interaction.followUp({ content: '🔎 **Social Studio Status Check**\n\n⏳ A Social Studio check is already running for this server.', flags: 64 }).catch(() => null);
+        try {
+          const section = currentPanelSection(interaction, customId);
+          await interaction.editReply(buildSectionPanel(interaction, section));
+        } catch (error) {
+          console.warn('[Social Studio] panel refresh after manual check failed:', error?.message || error);
+        }
+
+        cleanupStatusSessions();
+        const sessionId = crypto.randomBytes(6).toString('hex');
+        const results = sortProviderResults(outcome.results || []);
+        statusSessions.set(sessionId, { userId: interaction.user?.id || null, createdAt: Date.now(), results });
+        await interaction.followUp(statusPayload(results, sessionId, false)).catch(() => null);
         return;
       }
 
-      try {
-        const section = currentPanelSection(interaction, customId);
-        await interaction.editReply(buildSectionPanel(interaction, section));
-      } catch (error) {
-        console.warn('[Social Studio] panel refresh after manual check failed:', error?.message || error);
-      }
-
-      cleanupStatusSessions();
-      const sessionId = crypto.randomBytes(6).toString('hex');
-      const results = sortProviderResults(outcome.results || []);
-      statusSessions.set(sessionId, { userId: interaction.user?.id || null, createdAt: Date.now(), results });
-      await interaction.followUp(statusPayload(results, sessionId, false)).catch(() => null);
+      await acknowledgeCompatibilityControl(interaction, customId);
     },
   },
 ];
