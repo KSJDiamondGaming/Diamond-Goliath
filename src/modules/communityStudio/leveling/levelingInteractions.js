@@ -4,6 +4,7 @@ const leveling = require('./leveling');
 const panel = require('./levelingPanel');
 const tracking = require('./levelingTracking');
 const { setModuleEnabled, getGuildFilePath } = require('../../../core/guild/guildManager');
+const { getModuleSection } = require('../../../core/guild/moduleSectionManager');
 const { createBackup } = require('../../../core/guild/fileStore');
 
 const memberName = (interaction) => interaction.member?.displayName
@@ -73,36 +74,72 @@ function expectedRewardIds(section, level) {
   return new Set(earned.map((reward) => String(reward.roleId)));
 }
 
+function isValidDiscordId(value) {
+  return /^\d{15,25}$/.test(String(value || '').replace(/[<@&#!>]/g, '').trim());
+}
+
+function isInvalidNonNegativeNumber(value) {
+  const number = Number(value);
+  return !Number.isFinite(number) || number < 0;
+}
+
 function scanIntegrity(guild) {
+  const raw = getModuleSection(guild.id, leveling.MODULE_KEY, leveling.defaults()) || {};
   const section = leveling.getSection(guild.id);
   const details = [];
+  const addDetail = (text) => { if (details.length < 20) details.push(text); };
   let levelMismatch = 0;
   let duplicateUsers = 0;
+  let invalidUserIds = 0;
+  let invalidXpRecords = 0;
   let roleSyncIssues = 0;
   let invalidMultiplierSources = 0;
   let expiredMultiplier = 0;
+  let multiplierIssues = 0;
+  let analyticsIssues = 0;
+
+  const rawIdsByBucket = { users: new Set(), pausedUsers: new Set() };
+  for (const bucket of ['users', 'pausedUsers']) {
+    const records = raw?.[bucket] && typeof raw[bucket] === 'object' && !Array.isArray(raw[bucket]) ? raw[bucket] : {};
+    for (const [key, recordValue] of Object.entries(records)) {
+      const record = recordValue && typeof recordValue === 'object' ? recordValue : {};
+      const candidateId = record.userId || record.id || key;
+      if (!isValidDiscordId(candidateId)) {
+        invalidUserIds += 1;
+        addDetail(`${bucket} contains an invalid Discord user ID at key \`${String(key).slice(0, 60)}\`.`);
+        continue;
+      }
+      const userId = String(candidateId).replace(/[<@&#!>]/g, '').trim();
+      rawIdsByBucket[bucket].add(userId);
+
+      const badFields = ['xp', 'level', 'messages', 'voiceMinutes']
+        .filter((field) => record[field] != null && isInvalidNonNegativeNumber(record[field]));
+      if (badFields.length) {
+        invalidXpRecords += 1;
+        addDetail(`<@${userId}> has invalid ${badFields.join(', ')} value${badFields.length === 1 ? '' : 's'} in ${bucket}.`);
+      }
+    }
+  }
+
+  for (const userId of rawIdsByBucket.users) {
+    if (rawIdsByBucket.pausedUsers.has(userId)) {
+      duplicateUsers += 1;
+      addDetail(`<@${userId}> exists in both active and paused Leveling records.`);
+    }
+  }
 
   for (const bucket of ['users', 'pausedUsers']) {
     for (const user of Object.values(section[bucket] || {})) {
       const expectedLevel = leveling.levelForXp(user.xp);
       if (Number(user.level || 0) !== expectedLevel) {
         levelMismatch += 1;
-        if (details.length < 20) details.push(`<@${user.userId}> level ${user.level} should be ${expectedLevel} from ${Number(user.xp || 0).toLocaleString()} XP.`);
+        addDetail(`<@${user.userId}> level ${user.level} should be ${expectedLevel} from ${Number(user.xp || 0).toLocaleString()} XP.`);
       }
     }
   }
 
-  for (const userId of Object.keys(section.users || {})) {
-    if (section.pausedUsers?.[userId]) {
-      duplicateUsers += 1;
-      if (details.length < 20) details.push(`<@${userId}> exists in both active and paused Leveling records.`);
-    }
-  }
-
   const missingRewards = leveling.getMissingLevelRewards(guild);
-  for (const reward of missingRewards) {
-    if (details.length < 20) details.push(`Level ${reward.level} reward role ${reward.roleId} no longer exists.`);
-  }
+  for (const reward of missingRewards) addDetail(`Level ${reward.level} reward role ${reward.roleId} no longer exists.`);
 
   const allRewardIds = new Set((section.levelRewards || []).map((reward) => String(reward.roleId)));
   const combinedUsers = [
@@ -118,36 +155,87 @@ function scanIntegrity(guild) {
     const extra = [...actual].filter((roleId) => !expected.has(roleId));
     if (missing.length || extra.length) {
       roleSyncIssues += 1;
-      if (details.length < 20) details.push(`<@${user.userId}> reward roles need sync${missing.length ? ` · ${missing.length} missing` : ''}${extra.length ? ` · ${extra.length} extra` : ''}.`);
+      addDetail(`<@${user.userId}> reward roles need sync${missing.length ? ` · ${missing.length} missing` : ''}${extra.length ? ` · ${extra.length} extra` : ''}.`);
     }
   }
 
+  const rawMultiplier = raw?.multiplier && typeof raw.multiplier === 'object' ? raw.multiplier : {};
+  const rawValue = Number(rawMultiplier.value ?? 1);
+  if (!Number.isFinite(rawValue) || rawValue < 1 || rawValue > 100) {
+    multiplierIssues += 1;
+    addDetail('XP multiplier value is invalid and will be normalized to a safe value.');
+  }
   const validSources = new Set(Object.keys(section.xpSources || {}));
-  const configuredSources = Array.isArray(section.multiplier?.sourceIds) ? section.multiplier.sourceIds : [];
+  const configuredSources = Array.isArray(rawMultiplier.sourceIds) ? rawMultiplier.sourceIds : [];
   invalidMultiplierSources = configuredSources.filter((sourceId) => !validSources.has(String(sourceId))).length;
-  if (invalidMultiplierSources && details.length < 20) details.push(`${invalidMultiplierSources} multiplier source reference(s) no longer exist.`);
+  if (invalidMultiplierSources) {
+    multiplierIssues += invalidMultiplierSources;
+    addDetail(`${invalidMultiplierSources} multiplier source reference(s) no longer exist.`);
+  }
 
-  const endsAt = section.multiplier?.endsAt ? new Date(section.multiplier.endsAt).getTime() : null;
-  if (section.multiplier?.enabled && Number.isFinite(endsAt) && endsAt <= Date.now()) {
+  const parseDate = (value) => {
+    if (!value) return null;
+    const timestamp = new Date(value).getTime();
+    return Number.isFinite(timestamp) ? timestamp : NaN;
+  };
+  const startsAt = parseDate(rawMultiplier.startsAt);
+  const endsAt = parseDate(rawMultiplier.endsAt);
+  if (Number.isNaN(startsAt)) {
+    multiplierIssues += 1;
+    addDetail('XP multiplier start time is malformed.');
+  }
+  if (Number.isNaN(endsAt)) {
+    multiplierIssues += 1;
+    addDetail('XP multiplier end time is malformed.');
+  }
+  if (Number.isFinite(startsAt) && Number.isFinite(endsAt) && endsAt <= startsAt) {
+    multiplierIssues += 1;
+    addDetail('XP multiplier end time is not later than its start time.');
+  }
+  if (rawMultiplier.enabled === true && Number.isFinite(endsAt) && endsAt <= Date.now()) {
     expiredMultiplier = 1;
-    if (details.length < 20) details.push('An expired XP multiplier is still stored as enabled and can be cleaned up.');
+    multiplierIssues += 1;
+    addDetail('An expired XP multiplier is still stored as enabled and can be cleaned up.');
+  }
+
+  const rawAnalytics = raw?.analytics && typeof raw.analytics === 'object' ? raw.analytics : {};
+  for (const field of ['messagesTracked', 'voiceMinutesTracked', 'xpAwarded', 'levelUps']) {
+    if (rawAnalytics[field] != null && isInvalidNonNegativeNumber(rawAnalytics[field])) {
+      analyticsIssues += 1;
+      addDetail(`Analytics field \`${field}\` contains an invalid value.`);
+    }
+  }
+  const rawBySource = rawAnalytics.xpBySource && typeof rawAnalytics.xpBySource === 'object' && !Array.isArray(rawAnalytics.xpBySource)
+    ? rawAnalytics.xpBySource
+    : {};
+  for (const [sourceId, amount] of Object.entries(rawBySource)) {
+    if (isInvalidNonNegativeNumber(amount)) {
+      analyticsIssues += 1;
+      addDetail(`XP analytics source \`${String(sourceId).slice(0, 50)}\` contains an invalid value.`);
+    }
   }
 
   const issueCount = levelMismatch
     + duplicateUsers
+    + invalidUserIds
+    + invalidXpRecords
     + missingRewards.length
     + roleSyncIssues
-    + invalidMultiplierSources
-    + expiredMultiplier;
+    + multiplierIssues
+    + analyticsIssues;
 
   return {
     issueCount,
     levelMismatch,
     duplicateUsers,
+    invalidUserIds,
+    invalidXpRecords,
     missingRewards: missingRewards.length,
     roleSyncIssues,
     invalidMultiplierSources,
     expiredMultiplier,
+    multiplierIssues,
+    analyticsIssues,
     details,
   };
 }
