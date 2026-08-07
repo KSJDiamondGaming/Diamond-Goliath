@@ -12,11 +12,12 @@ on:
         default: beta
         type: choice
         options:
+          - dev
           - beta
           - production
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: deploy-${{ github.event_name == 'push' && 'dev' || inputs.environment }}
@@ -74,6 +75,8 @@ jobs:
   preflight:
     needs: resolve
     runs-on: ubuntu-latest
+    outputs:
+      source_sha: ${{ steps.sha.outputs.source_sha }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -90,63 +93,15 @@ jobs:
           npm run doctor
           npm test
           npx vite build src/dashboard --outDir ../../dist --emptyOutDir --logLevel warn
-
-  promote:
-    needs: [resolve, preflight]
-    if: needs.resolve.outputs.environment != 'dev'
-    runs-on: ubuntu-latest
-    outputs:
-      target_sha: ${{ steps.sha.outputs.target_sha }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ needs.resolve.outputs.source_branch }}
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Synchronize target branch to DEV
-        shell: bash
-        run: |
-          set -euo pipefail
-          SOURCE="${{ needs.resolve.outputs.source_branch }}"
-          TARGET="${{ needs.resolve.outputs.target_branch }}"
-          git fetch origin "$SOURCE" "$TARGET"
-          SOURCE_SHA="$(git rev-parse "origin/$SOURCE")"
-          echo "Synchronizing $TARGET to $SOURCE @ $SOURCE_SHA"
-          git push --force-with-lease="refs/heads/$TARGET:$(git rev-parse "origin/$TARGET")" origin "$SOURCE_SHA:refs/heads/$TARGET"
-          git fetch origin "$TARGET"
-          git checkout -B "$TARGET" "origin/$TARGET"
-          [ "$(git rev-parse HEAD)" = "$SOURCE_SHA" ]
-      - id: sha
-        run: echo "target_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-
-  dev-sha:
-    needs: [resolve, preflight]
-    if: needs.resolve.outputs.environment == 'dev'
-    runs-on: ubuntu-latest
-    outputs:
-      target_sha: ${{ steps.sha.outputs.target_sha }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: dev
-          fetch-depth: 1
-      - id: sha
-        run: echo "target_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Record source commit
+        id: sha
+        run: echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
   deploy:
-    needs: [resolve, preflight, promote, dev-sha]
-    if: always() && needs.preflight.result == 'success' && (needs.promote.result == 'success' || needs.promote.result == 'skipped') && (needs.dev-sha.result == 'success' || needs.dev-sha.result == 'skipped')
+    needs: [resolve, preflight]
+    if: needs.preflight.result == 'success'
     runs-on: ubuntu-latest
     steps:
-      - name: Resolve commit
-        id: expected
-        shell: bash
-        run: |
-          SHA="${{ needs.promote.outputs.target_sha }}"
-          [ -n "$SHA" ] || SHA="${{ needs.dev-sha.outputs.target_sha }}"
-          [ -n "$SHA" ] || exit 1
-          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
-
       - name: Deploy affected components
         uses: appleboy/ssh-action@v1.0.3
         env:
@@ -156,7 +111,7 @@ jobs:
           APP_DIR: ${{ needs.resolve.outputs.app_dir }}
           RUNTIME_DIR: ${{ needs.resolve.outputs.runtime_dir }}
           PM2_NAME: ${{ needs.resolve.outputs.pm2_name }}
-          EXPECTED_SHA: ${{ steps.expected.outputs.sha }}
+          EXPECTED_SHA: ${{ needs.preflight.outputs.source_sha }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
@@ -169,7 +124,7 @@ jobs:
             cd "$APP_DIR"
 
             OLD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
-            git fetch origin "$TARGET_BRANCH"
+            git fetch origin dev "$TARGET_BRANCH"
             git cat-file -e "$EXPECTED_SHA^{commit}"
 
             BACKUP_DIR="/home/goliath/.goliath-${ENVIRONMENT}-runtime-deploy-backup"
@@ -240,7 +195,7 @@ jobs:
           echo "### 🚀 Goliath deployment" >> "$GITHUB_STEP_SUMMARY"
           echo "- Environment: **${{ needs.resolve.outputs.environment }}**" >> "$GITHUB_STEP_SUMMARY"
           echo "- Source: **${{ needs.resolve.outputs.source_branch }}**" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Target: **${{ needs.resolve.outputs.target_branch }}**" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Commit: \`${{ steps.expected.outputs.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Protected branch: **${{ needs.resolve.outputs.target_branch }}** (not rewritten)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Deployed commit: \`${{ needs.preflight.outputs.source_sha }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Planner: ✅ scripts/goliath.js" >> "$GITHUB_STEP_SUMMARY"
           echo "- Runtime data: ✅ preserved" >> "$GITHUB_STEP_SUMMARY"
