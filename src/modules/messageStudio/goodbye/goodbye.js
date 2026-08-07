@@ -399,20 +399,26 @@ function resetGoodbye(guildId, meta = {}) {
 
 async function startupGoodbye(client) {
   if (!client?.guilds?.cache) return { ok: false, guildsChecked: 0, warnings: 1, results: [] };
+  const enabledGuilds = client.guilds.cache.filter((guild) => guildManager.isModuleEnabled(guild.id, MODULE));
+  if (!enabledGuilds.size) {
+    const summary = { ok: true, guildsChecked: 0, enabledGuilds: 0, warnings: 0, results: [] };
+    console.log('[Goodbye] Startup check skipped: no enabled guilds.');
+    return summary;
+  }
+
   const results = [];
-  for (const guild of client.guilds.cache.values()) {
+  for (const guild of enabledGuilds.values()) {
     try {
-      const enabled = guildManager.isModuleEnabled(guild.id, MODULE);
       const health = await buildHealthReport(guild);
-      results.push({ guildId: guild.id, guildName: guild.name, enabled, healthy: health.healthy, warnings: health.warnings });
+      results.push({ guildId: guild.id, guildName: guild.name, enabled: true, healthy: health.healthy, warnings: health.warnings });
     } catch (error) {
-      results.push({ guildId: guild.id, guildName: guild.name, enabled: false, healthy: false, warnings: [error.message || 'Goodbye startup check failed.'] });
+      results.push({ guildId: guild.id, guildName: guild.name, enabled: true, healthy: false, warnings: [error.message || 'Goodbye startup check failed.'] });
     }
   }
   const summary = {
-    ok: results.every((result) => result.healthy || result.enabled === false),
+    ok: results.every((result) => result.healthy),
     guildsChecked: results.length,
-    enabledGuilds: results.filter((result) => result.enabled).length,
+    enabledGuilds: results.length,
     warnings: results.reduce((total, result) => total + result.warnings.length, 0),
     results,
   };
