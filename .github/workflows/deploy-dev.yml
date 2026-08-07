@@ -214,8 +214,6 @@ jobs:
               exit 1
             fi
 
-            # Work out what changed before advancing the checkout. If the old
-            # commit cannot be compared safely, use the full-deploy fallback.
             FULL_FALLBACK=false
             CHANGED_FILE_LIST=""
             if [ -n "$OLD_SHA" ] && git cat-file -e "$OLD_SHA^{commit}" 2>/dev/null; then
@@ -274,8 +272,6 @@ jobs:
                   NEED_DOCTOR=true
                   ;;
                 .github/workflows/*|test/*|test/**/*|docs/*|docs/**/*|*.md)
-                  # Repository-only/test/docs changes still advance the VPS Git
-                  # checkout but do not require a bot restart or command sync.
                   ;;
                 *)
                   echo "Unclassified application change: $file"
@@ -293,8 +289,6 @@ jobs:
               NEED_DOCTOR=true
             fi
 
-            # Runtime/guild state belongs to the destination environment and is
-            # never replaced by Git deployment content.
             BACKUP_DIR="/home/goliath/.goliath-${ENVIRONMENT}-runtime-deploy-backup"
             rm -rf "$BACKUP_DIR"
             mkdir -p "$BACKUP_DIR"
@@ -318,9 +312,6 @@ jobs:
             }
             trap cleanup EXIT
 
-            # Advance the checkout to the exact GitHub branch commit. Git only
-            # updates tracked files whose content changed; unchanged files are not
-            # copied from scratch.
             git checkout "$TARGET_BRANCH"
             git reset --hard "$EXPECTED_SHA"
             restore_runtime
@@ -339,8 +330,10 @@ jobs:
             echo "  Doctor       : $NEED_DOCTOR"
             echo "  Full fallback: $FULL_FALLBACK"
 
-            if [ "$NEED_DEPS" = true ]; then
-              echo "Installing changed dependencies..."
+            # Install dependencies exactly once when dependency definitions changed.
+            # Also self-heal an incomplete node_modules tree before any restart.
+            if [ "$NEED_DEPS" = true ] || ! node -e "require.resolve('express')" >/dev/null 2>&1; then
+              echo "Installing dependencies with npm ci..."
               npm ci
             fi
 
@@ -351,7 +344,19 @@ jobs:
 
             if [ "$NEED_DASHBOARD_BUILD" = true ]; then
               echo "Building affected dashboard assets..."
+              rm -rf dist
               npx vite build src/dashboard --outDir ../../dist --emptyOutDir --logLevel warn
+
+              # DEV is now a single-pass deployment: publish the dashboard that
+              # was just built instead of calling deploy-dev.sh and rebuilding it.
+              if [ "$ENVIRONMENT" = "dev" ]; then
+                echo "Publishing DEV dashboard..."
+                rm -rf /var/www/goliath-dashboard
+                mkdir -p /var/www/goliath-dashboard
+                cp -a dist/. /var/www/goliath-dashboard/
+                nginx -t
+                systemctl reload nginx
+              fi
             fi
 
             if [ "$NEED_COMMAND_SYNC" = true ]; then
@@ -359,17 +364,23 @@ jobs:
               BOT_MODE="$ENVIRONMENT" COMMAND_SYNC_DELETE_STALE=true COMMAND_SYNC_UPDATE_EXISTING=true node scripts/goliath.js sync-commands "$ENVIRONMENT"
             fi
 
-            # The environment deploy script remains the canonical process reload
-            # mechanism. It only runs when application/runtime changes actually
-            # require the live bot/dashboard process to be refreshed, or when the
-            # classifier intentionally falls back for safety.
             if [ "$NEED_APP_RELOAD" = true ]; then
-              echo "Reloading affected $ENVIRONMENT application processes..."
-              bash "$DEPLOY_SCRIPT"
-              cd "$APP_DIR"
-              git fetch origin "$TARGET_BRANCH"
-              git reset --hard "$EXPECTED_SHA"
-              restore_runtime
+              if [ "$ENVIRONMENT" = "dev" ]; then
+                echo "Restarting goliath-dev exactly once..."
+                if pm2 describe goliath-dev >/dev/null 2>&1; then
+                  pm2 restart goliath-dev --update-env
+                else
+                  BOT_MODE=dev NODE_ENV=development pm2 start server.js --name goliath-dev --cwd "$APP_DIR"
+                fi
+                pm2 save
+              else
+                echo "Reloading affected $ENVIRONMENT application processes..."
+                bash "$DEPLOY_SCRIPT"
+                cd "$APP_DIR"
+                git fetch origin "$TARGET_BRANCH"
+                git reset --hard "$EXPECTED_SHA"
+                restore_runtime
+              fi
             else
               echo "No live application reload required."
             fi
@@ -378,6 +389,18 @@ jobs:
             if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
               echo "VPS checkout mismatch after deploy. Expected $EXPECTED_SHA, got $ACTUAL_SHA"
               exit 1
+            fi
+
+            # Confirm PM2 accepted the DEV process after the one controlled restart.
+            if [ "$ENVIRONMENT" = "dev" ] && [ "$NEED_APP_RELOAD" = true ]; then
+              sleep 3
+              PM2_STATUS="$(pm2 jlist | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const list=JSON.parse(s);const p=list.find(x=>x.name==='goliath-dev');process.stdout.write(p?.pm2_env?.status||'missing')})")"
+              if [ "$PM2_STATUS" != "online" ]; then
+                echo "goliath-dev failed post-deploy health check: $PM2_STATUS"
+                pm2 logs goliath-dev --lines 80 --nostream || true
+                exit 1
+              fi
+              echo "goliath-dev PM2 health: online"
             fi
 
             restore_runtime
@@ -396,6 +419,7 @@ jobs:
           echo "- Commit: \`${{ steps.expected.outputs.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Preflight: ✅ doctor, tests, dashboard compile" >> "$GITHUB_STEP_SUMMARY"
           echo "- VPS Git: ✅ exact target commit" >> "$GITHUB_STEP_SUMMARY"
+          echo "- DEV process: ✅ single-pass deploy, one controlled PM2 restart when required" >> "$GITHUB_STEP_SUMMARY"
           echo "- Deployment: ✅ affected components only, full fallback when required" >> "$GITHUB_STEP_SUMMARY"
           echo "- Discord commands: ✅ synchronized automatically when command/dependency definitions change" >> "$GITHUB_STEP_SUMMARY"
           echo "- Runtime data: ✅ destination environment preserved" >> "$GITHUB_STEP_SUMMARY"
