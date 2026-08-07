@@ -5,6 +5,8 @@ const leveling = require('./leveling');
 const panel = require('./levelingPanel');
 const { isModuleEnabled } = require('../../../core/guild/guildManager');
 
+const voiceSessions = new Map();
+
 function earnedRewards(section, level) {
   const rewards = Array.isArray(section?.levelRewards) ? section.levelRewards : [];
   return rewards
@@ -67,14 +69,26 @@ async function assignLevelRole(member, section, newLevel) {
   return rolesToAdd.every((role) => member.roles.cache.has(role.id));
 }
 
-async function announceLevelUp(message, section, user) {
-  if (section.announceLevelUps === false) return false;
-  const channelId = section.announceChannelId || message.channel.id;
-  const channel = message.guild.channels.cache.get(channelId)
-    || await message.guild.channels.fetch(channelId).catch(() => null);
-  if (!channel?.send) return false;
-  await channel.send({ embeds: [panel.buildLevelUpEmbed(message.member, user)] }).catch(() => null);
+async function resolveAnnouncementChannel(guild, section, fallbackChannelId = null) {
+  const channelIds = [section.announceChannelId, fallbackChannelId, guild.systemChannelId].filter(Boolean);
+  for (const channelId of channelIds) {
+    const channel = guild.channels.cache.get(channelId)
+      || await guild.channels.fetch(channelId).catch(() => null);
+    if (channel?.send) return channel;
+  }
+  return null;
+}
+
+async function announceMemberLevelUp(member, section, user, fallbackChannelId = null) {
+  if (section.announceLevelUps === false || !member?.guild) return false;
+  const channel = await resolveAnnouncementChannel(member.guild, section, fallbackChannelId);
+  if (!channel) return false;
+  await channel.send({ embeds: [panel.buildLevelUpEmbed(member, user)] }).catch(() => null);
   return true;
+}
+
+async function announceLevelUp(message, section, user) {
+  return announceMemberLevelUp(message.member, section, user, message.channel?.id || null);
 }
 
 async function handleMessageCreate(message) {
@@ -96,9 +110,126 @@ async function handleMessageCreate(message) {
   return true;
 }
 
+function voiceSessionKey(guildId, userId) {
+  return `${guildId}:${userId}`;
+}
+
+function stopVoiceSession(guildId, userId) {
+  const key = voiceSessionKey(guildId, userId);
+  const session = voiceSessions.get(key);
+  if (!session) return false;
+  clearInterval(session.timer);
+  voiceSessions.delete(key);
+  return true;
+}
+
+function hasEligibleVoiceCompany(channel, userId) {
+  if (!channel?.members) return false;
+  return channel.members.some((member) => member.id !== userId && !member.user?.bot);
+}
+
+function isVoiceStateEligible(state) {
+  const member = state?.member;
+  if (!state?.channelId || !state.channel || !member || member.user?.bot) return false;
+  if (state.selfDeaf || state.serverDeaf) return false;
+  return hasEligibleVoiceCompany(state.channel, member.id);
+}
+
+async function awardVoiceInterval(guildId, userId, channelId) {
+  if (!isModuleEnabled(guildId, 'leveling')) return false;
+  if (!leveling.isUserParticipating(guildId, userId)) return false;
+
+  const section = leveling.getSection(guildId);
+  const source = section.xpSources?.voice;
+  if (!source?.enabled) return false;
+
+  const guild = voiceSessions.get(voiceSessionKey(guildId, userId))?.guild;
+  if (!guild) return false;
+  const member = guild.members.cache.get(userId)
+    || await guild.members.fetch(userId).catch(() => null);
+  const state = member?.voice;
+  if (!state || state.channelId !== channelId || !isVoiceStateEligible(state)) return false;
+
+  const intervalMinutes = Math.max(1, Number(source.intervalMinutes || 10));
+  const result = leveling.awardVoiceXp(
+    guildId,
+    userId,
+    source.amount,
+    intervalMinutes,
+    { actorId: userId, action: 'leveling_voice_xp' },
+  );
+  if (!result) return false;
+
+  if (result.levelledUp) {
+    const freshSection = leveling.getSection(guildId);
+    await assignLevelRole(member, freshSection, result.newLevel);
+    await announceMemberLevelUp(member, freshSection, result.user);
+  }
+  return true;
+}
+
+function startVoiceSession(state) {
+  const guildId = state?.guild?.id;
+  const userId = state?.member?.id;
+  if (!guildId || !userId || !isVoiceStateEligible(state)) return false;
+  if (!isModuleEnabled(guildId, 'leveling')) return false;
+  if (!leveling.isUserParticipating(guildId, userId)) return false;
+
+  const section = leveling.getSection(guildId);
+  const source = section.xpSources?.voice;
+  if (!source?.enabled) return false;
+
+  stopVoiceSession(guildId, userId);
+  const intervalMinutes = Math.max(1, Number(source.intervalMinutes || 10));
+  const channelId = state.channelId;
+  const timer = setInterval(() => {
+    awardVoiceInterval(guildId, userId, channelId).catch((error) => {
+      console.error('[Leveling] Voice XP interval failed:', error?.stack || error?.message || error);
+    });
+  }, intervalMinutes * 60 * 1000);
+  timer.unref?.();
+
+  voiceSessions.set(voiceSessionKey(guildId, userId), {
+    guild: state.guild,
+    channelId,
+    startedAt: Date.now(),
+    intervalMinutes,
+    timer,
+  });
+  return true;
+}
+
+async function handleVoiceStateUpdate(oldState, newState) {
+  const guildId = newState?.guild?.id || oldState?.guild?.id;
+  const userId = newState?.member?.id || oldState?.member?.id;
+  if (!guildId || !userId) return false;
+
+  const movedChannel = oldState?.channelId !== newState?.channelId;
+  const eligibilityChanged = isVoiceStateEligible(oldState) !== isVoiceStateEligible(newState);
+  if (!movedChannel && !eligibilityChanged) return false;
+
+  stopVoiceSession(guildId, userId);
+  if (isVoiceStateEligible(newState)) startVoiceSession(newState);
+
+  // Re-evaluate other members when someone joins or leaves, because solo users do not earn voice XP.
+  const affectedChannels = [oldState?.channel, newState?.channel].filter(Boolean);
+  for (const channel of affectedChannels) {
+    for (const member of channel.members.values()) {
+      if (member.user?.bot || member.id === userId) continue;
+      stopVoiceSession(guildId, member.id);
+      if (isVoiceStateEligible(member.voice)) startVoiceSession(member.voice);
+    }
+  }
+  return true;
+}
+
 module.exports = {
   handleMessageCreate,
+  handleVoiceStateUpdate,
   assignLevelRole,
   announceLevelUp,
+  announceMemberLevelUp,
   earnedRewards,
+  startVoiceSession,
+  stopVoiceSession,
 };
