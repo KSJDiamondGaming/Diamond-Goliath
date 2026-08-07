@@ -50,7 +50,7 @@ function initSocketHub(server, options = {}) {
   return io;
 }
 
-function emitGuildUpdate(guildId, payload = {}) {
+function buildGuildUpdate(guildId, payload = {}) {
   const id = normaliseGuildId(guildId);
 
   if (!id) return null;
@@ -60,14 +60,38 @@ function emitGuildUpdate(guildId, payload = {}) {
       ? payload
       : {};
 
-  const update = {
+  return {
     ...data,
     guildId: id,
     updatedAt: new Date().toISOString(),
   };
+}
+
+function emitGuildUpdate(guildId, payload = {}) {
+  const update = buildGuildUpdate(guildId, payload);
+  if (!update) return null;
 
   if (io) {
-    io.to(getRoomName(id)).emit('guild:update', update);
+    io.to(getRoomName(update.guildId)).emit('guild:update', update);
+  }
+
+  return update;
+}
+
+function emitSyncEvent(event, guildId, payload = {}) {
+  const eventName = String(event || '').trim();
+  if (!eventName) return null;
+
+  const update = buildGuildUpdate(guildId, {
+    ...payload,
+    event: eventName,
+  });
+  if (!update) return null;
+
+  if (io) {
+    const room = getRoomName(update.guildId);
+    io.to(room).emit(eventName, update);
+    io.to(room).emit('guild:update', update);
   }
 
   return update;
@@ -85,5 +109,6 @@ function emitRoomEvent(room, event, update) {
 module.exports = {
   initSocketHub,
   emitGuildUpdate,
+  emitSyncEvent,
   emitRoomEvent,
 };
