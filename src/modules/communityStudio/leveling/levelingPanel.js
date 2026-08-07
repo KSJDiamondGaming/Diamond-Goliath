@@ -50,7 +50,7 @@ function multiplierState(multiplier, at = Date.now()) {
   return 'active';
 }
 
-function formatMultiplier(section, guildId) {
+function formatMultiplier(section) {
   const multiplier = section.multiplier;
   const state = multiplierState(multiplier);
   if (state === 'none') return 'No multiplier configured.';
@@ -144,6 +144,29 @@ function auditLines(section, userId = null, limit = 10) {
   });
 }
 
+function historyLines(user, limit = 15) {
+  const history = (Array.isArray(user?.history) ? user.history : []).slice(-Math.max(1, limit)).reverse();
+  if (!history.length) return ['`No XP history has been recorded yet.`'];
+  return history.map((entry) => {
+    const timestamp = Math.floor(new Date(entry.createdAt || Date.now()).getTime() / 1000);
+    const delta = Number(entry.delta || 0);
+    const sign = delta > 0 ? '+' : '';
+    const actor = entry.actorId ? ` · by <@${entry.actorId}>` : '';
+    const reason = entry.reason ? `\n  ${entry.reason}` : '';
+    const multiplier = Number(entry.multiplier || 1) > 1 ? ` · ${Number(entry.multiplier)}×` : '';
+    return `• <t:${timestamp}:R> · **${sign}${delta.toLocaleString()} XP** · \`${entry.source || 'other'}\`${multiplier}${actor}\n  ${Number(entry.beforeXp || 0).toLocaleString()} XP / Lv ${Number(entry.beforeLevel || 0)} → ${Number(entry.afterXp || 0).toLocaleString()} XP / Lv ${Number(entry.afterLevel || 0)}${reason}`;
+  });
+}
+
+function maintenanceLines(section, limit = 10) {
+  const entries = (Array.isArray(section.maintenanceLog) ? section.maintenanceLog : []).slice(-limit).reverse();
+  if (!entries.length) return ['`No maintenance tasks have been run yet.`'];
+  return entries.map((entry) => {
+    const timestamp = Math.floor(new Date(entry.createdAt || Date.now()).getTime() / 1000);
+    return `• <t:${timestamp}:R> · **${String(entry.action || 'maintenance').replaceAll('_', ' ')}** · by <@${entry.actorId}>\n  ${entry.summary || 'Completed.'}${entry.backupPath ? '\n  Backup created before changes.' : ''}`;
+  });
+}
+
 function buildLevelUpEmbed(member, user) {
   return new EmbedBuilder()
     .setColor(0xfacc15)
@@ -181,7 +204,7 @@ function buildLevelingPanel(guild, memberDisplayName = 'Unknown User') {
     .setColor(enabled ? 0x57f287 : 0x5865f2)
     .setTitle('🏆 Leveling')
     .setDescription([
-      'Configure XP sources, multipliers, rank rewards and giveaway-ready leaderboards.',
+      'Configure XP sources, multipliers, rank rewards, maintenance and giveaway-ready leaderboards.',
       '',
       `**Status:** ${enabled ? 'Enabled ✅' : 'Disabled ❌'}`,
       `**Announce Channel:** ${formatChannel(section.announceChannelId)}`,
@@ -194,7 +217,7 @@ function buildLevelingPanel(guild, memberDisplayName = 'Unknown User') {
       '**XP Multiplier**',
       activeMultiplier
         ? `🟢 **${activeMultiplier.name || 'Active Multiplier'}** · ${activeMultiplier.value}×`
-        : formatMultiplier(section, guild.id),
+        : formatMultiplier(section),
       '',
       '**Level Reward Roles**',
       rewardLines(section),
@@ -236,6 +259,7 @@ function buildLevelingPanel(guild, memberDisplayName = 'Unknown User') {
       ),
       row(
         button('admin:leveling:xpmanage', '🛠️ XP Manager', ButtonStyle.Primary),
+        button('admin:leveling:maintenance', '🧰 Maintenance', ButtonStyle.Primary),
         button('admin:leveling:trackingRules', '🚫 XP Exclusions', ButtonStyle.Secondary),
         button('admin:modules', '⬅️ Modules', ButtonStyle.Secondary),
       ),
@@ -271,6 +295,7 @@ function buildXpManagerPanel(guild, memberDisplayName = 'Unknown User') {
         .setMaxValues(1)),
       row(
         button('admin:leveling:xpmanage:audit', '📜 Audit Log', ButtonStyle.Secondary),
+        button('admin:leveling:maintenance', '🧰 Maintenance', ButtonStyle.Secondary),
         button('admin:leveling', '⬅️ Back', ButtonStyle.Secondary),
       ),
     ],
@@ -295,6 +320,7 @@ function buildXpMemberPanel(guild, userId, memberDisplayName = 'Unknown User') {
         `**Next Level:** ${Math.max(0, nextLevelXp - Number(user.xp || 0)).toLocaleString()} XP remaining`,
         `**Messages:** ${Number(user.messages || 0).toLocaleString()}`,
         `**Voice:** ${Number(user.voiceMinutes || 0).toLocaleString()} minutes`,
+        `**History Records:** ${Array.isArray(user.history) ? user.history.length : 0}`,
         `**Next Reward:** ${nextReward ? `Level ${nextReward.level} → <@&${nextReward.roleId}>` : 'All configured rewards unlocked'}`,
         '',
         '**Recent Manual Changes**',
@@ -310,11 +336,33 @@ function buildXpMemberPanel(guild, userId, memberDisplayName = 'Unknown User') {
         button(`admin:leveling:xpmanage:setlevel:${userId}`, '🏆 Set Level', ButtonStyle.Primary),
       ),
       row(
+        button(`admin:leveling:xpmanage:history:${userId}`, '📈 XP History', ButtonStyle.Primary),
         button(`admin:leveling:xpmanage:reset:${userId}`, '🗑️ Reset Member', ButtonStyle.Danger),
         button('admin:leveling:xpmanage:audit', '📜 Audit Log', ButtonStyle.Secondary),
       ),
       row(button('admin:leveling:xpmanage', '⬅️ Back', ButtonStyle.Secondary)),
     ],
+  };
+}
+
+function buildMemberXpHistoryPanel(guild, userId, memberDisplayName = 'Unknown User') {
+  const user = leveling.getUser(guild.id, userId) || leveling.normalizeUser({ userId });
+  return {
+    embeds: [new EmbedBuilder()
+      .setColor(0x5865f2)
+      .setTitle('📈 Member XP History')
+      .setDescription([
+        `**Member:** <@${userId}>`,
+        `**Current:** ${Number(user.xp || 0).toLocaleString()} XP · Level ${Number(user.level || 0)}`,
+        '',
+        ...historyLines(user, 15),
+      ].join('\n'))
+      .setFooter({ text: `Requested by ${memberDisplayName} · Last 15 XP changes` })
+      .setTimestamp()],
+    components: [row(
+      button(`admin:leveling:xpmanage:history:${userId}`, '🔄 Refresh', ButtonStyle.Secondary),
+      button(`admin:leveling:xpmanage:member:${userId}`, '⬅️ Member', ButtonStyle.Secondary),
+    )],
   };
 }
 
@@ -352,6 +400,101 @@ function buildXpAuditPanel(guild, memberDisplayName = 'Unknown User') {
     components: [row(
       button('admin:leveling:xpmanage:audit', '🔄 Refresh', ButtonStyle.Secondary),
       button('admin:leveling:xpmanage', '⬅️ Back', ButtonStyle.Secondary),
+    )],
+  };
+}
+
+function buildMaintenancePanel(guild, memberDisplayName = 'Unknown User', report = null) {
+  const section = leveling.getSection(guild.id);
+  const active = Object.keys(section.users || {}).length;
+  const paused = Object.keys(section.pausedUsers || {}).length;
+  const issueCount = Number(report?.issueCount || 0);
+  const levelMismatch = Number(report?.levelMismatch || 0);
+  const duplicateUsers = Number(report?.duplicateUsers || 0);
+  const missingRewards = Number(report?.missingRewards || 0);
+  const roleSyncIssues = Number(report?.roleSyncIssues || 0);
+  const invalidMultiplierSources = Number(report?.invalidMultiplierSources || 0);
+  return {
+    embeds: [new EmbedBuilder()
+      .setColor(issueCount ? 0xFEE75C : 0x5865f2)
+      .setTitle('🧰 Leveling Maintenance')
+      .setDescription([
+        'Safe maintenance tools for existing Leveling data. Every write action creates a guild JSON backup first.',
+        '',
+        `**Records:** ${active} active · ${paused} paused`,
+        `**Configured Rewards:** ${section.levelRewards.length}`,
+        `**Maintenance Log:** ${Array.isArray(section.maintenanceLog) ? section.maintenanceLog.length : 0} entries`,
+        '',
+        '**Latest Integrity Scan**',
+        report
+          ? `Issues: **${issueCount}** · Level mismatches: **${levelMismatch}** · Duplicate records: **${duplicateUsers}**\nMissing reward mappings: **${missingRewards}** · Reward-role sync: **${roleSyncIssues}** · Invalid multiplier sources: **${invalidMultiplierSources}**`
+          : 'Run **Scan Integrity** to preview current issues.',
+        '',
+        'Use **Preview Repair** before Auto Fix. Recalculate Levels never changes XP; it only derives levels from stored XP.',
+      ].join('\n'))
+      .setFooter({ text: `Requested by ${memberDisplayName}` })
+      .setTimestamp()],
+    components: [
+      row(
+        button('admin:leveling:maintenance:scan', '🔍 Scan Integrity', ButtonStyle.Primary),
+        button('admin:leveling:maintenance:preview', '👁️ Preview Repair', ButtonStyle.Secondary),
+        button('admin:leveling:maintenance:repair', '🩹 Auto Fix', ButtonStyle.Danger, !report || issueCount === 0),
+      ),
+      row(
+        button('admin:leveling:maintenance:recalculate', '🔄 Recalculate Levels', ButtonStyle.Primary),
+        button('admin:leveling:maintenance:rewards', '🏅 Rebuild Reward Roles', ButtonStyle.Primary),
+        button('admin:leveling:maintenance:leaderboard', '📊 Rebuild Leaderboard', ButtonStyle.Secondary),
+      ),
+      row(
+        button('admin:leveling:maintenance:log', '📜 Maintenance Log', ButtonStyle.Secondary),
+        button('admin:leveling', '⬅️ Back', ButtonStyle.Secondary),
+      ),
+    ],
+  };
+}
+
+function buildIntegrityPreviewPanel(guild, memberDisplayName = 'Unknown User', report = {}) {
+  const details = Array.isArray(report.details) ? report.details.slice(0, 20) : [];
+  return {
+    embeds: [new EmbedBuilder()
+      .setColor(Number(report.issueCount || 0) ? 0xFEE75C : 0x57f287)
+      .setTitle('👁️ Leveling Integrity Preview')
+      .setDescription([
+        `**Total Issues:** ${Number(report.issueCount || 0)}`,
+        `Level mismatches: **${Number(report.levelMismatch || 0)}**`,
+        `Duplicate active/paused records: **${Number(report.duplicateUsers || 0)}**`,
+        `Missing reward mappings: **${Number(report.missingRewards || 0)}**`,
+        `Reward-role sync issues: **${Number(report.roleSyncIssues || 0)}**`,
+        `Invalid multiplier sources: **${Number(report.invalidMultiplierSources || 0)}**`,
+        `Expired multiplier cleanup: **${Number(report.expiredMultiplier || 0)}**`,
+        '',
+        '**Preview**',
+        ...(details.length ? details.map((line) => `• ${line}`) : ['✅ No repairable integrity issues found.']),
+        '',
+        '_Auto Fix creates a backup before changing JSON or member reward roles._',
+      ].join('\n'))
+      .setFooter({ text: `Requested by ${memberDisplayName}` })
+      .setTimestamp()],
+    components: [row(
+      button('admin:leveling:maintenance:repair', '🩹 Apply Auto Fix', ButtonStyle.Danger, Number(report.issueCount || 0) === 0),
+      button('admin:leveling:maintenance:scan', '🔄 Rescan', ButtonStyle.Secondary),
+      button('admin:leveling:maintenance', '⬅️ Back', ButtonStyle.Secondary),
+    )],
+  };
+}
+
+function buildMaintenanceLogPanel(guild, memberDisplayName = 'Unknown User') {
+  const section = leveling.getSection(guild.id);
+  return {
+    embeds: [new EmbedBuilder()
+      .setColor(0x5865f2)
+      .setTitle('📜 Leveling Maintenance Log')
+      .setDescription(maintenanceLines(section, 12).join('\n'))
+      .setFooter({ text: `Requested by ${memberDisplayName} · Last 12 maintenance tasks` })
+      .setTimestamp()],
+    components: [row(
+      button('admin:leveling:maintenance:log', '🔄 Refresh', ButtonStyle.Secondary),
+      button('admin:leveling:maintenance', '⬅️ Back', ButtonStyle.Secondary),
     )],
   };
 }
@@ -747,8 +890,12 @@ module.exports = {
   buildLevelingPanel,
   buildXpManagerPanel,
   buildXpMemberPanel,
+  buildMemberXpHistoryPanel,
   buildXpActionModal,
   buildXpAuditPanel,
+  buildMaintenancePanel,
+  buildIntegrityPreviewPanel,
+  buildMaintenanceLogPanel,
   buildTrackingRulesPanel,
   buildRankRewardsPanel,
   buildAddRewardsPanel,
