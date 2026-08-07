@@ -248,7 +248,7 @@ jobs:
             BOT_MODE="$ENVIRONMENT" npm run doctor
             BOT_MODE="$ENVIRONMENT" npm test
             BOT_MODE="$ENVIRONMENT" npm run build
-            BOT_MODE="$ENVIRONMENT" COMMAND_SYNC_DELETE_STALE=true node scripts/goliath.js sync-commands "$ENVIRONMENT"
+            BOT_MODE="$ENVIRONMENT" COMMAND_SYNC_DELETE_STALE=true COMMAND_SYNC_UPDATE_EXISTING=true node scripts/goliath.js sync-commands "$ENVIRONMENT"
 
             ACTUAL_SHA="$(git rev-parse HEAD)"
             if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
