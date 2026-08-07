@@ -2,6 +2,7 @@
 
 const leveling = require('./leveling');
 const panel = require('./levelingPanel');
+const tracking = require('./levelingTracking');
 const { setModuleEnabled } = require('../../../core/guild/guildManager');
 
 const memberName = (interaction) => interaction.member?.displayName
@@ -32,6 +33,14 @@ function optionalField(interaction, id) {
   }
 }
 
+function refreshVoiceTracking(interaction) {
+  try {
+    tracking.refreshGuildVoiceSessions(interaction.guild);
+  } catch (error) {
+    console.error('[Leveling] Failed to refresh voice XP sessions:', error?.stack || error?.message || error);
+  }
+}
+
 async function handleLevelingInteraction(interaction) {
   const customId = String(interaction?.customId || '');
   if (!customId.startsWith('admin:leveling')) return false;
@@ -42,7 +51,19 @@ async function handleLevelingInteraction(interaction) {
       return safeUpdate(interaction, panel.buildLevelingPanel(interaction.guild, displayName));
     }
     if (customId === 'admin:leveling:leaderboard') {
-      return safeUpdate(interaction, panel.buildLeaderboardPanel(interaction.guild, displayName));
+      return safeUpdate(interaction, panel.buildLeaderboardPanel(interaction.guild, displayName, 0, 'xp'));
+    }
+    const leaderboardMatch = customId.match(/^admin:leveling:leaderboard:(xp|level|messages|voice):(\d+)$/);
+    if (leaderboardMatch) {
+      return safeUpdate(interaction, panel.buildLeaderboardPanel(
+        interaction.guild,
+        displayName,
+        Number(leaderboardMatch[2]),
+        leaderboardMatch[1],
+      ));
+    }
+    if (customId === 'admin:leveling:trackingRules') {
+      return safeUpdate(interaction, panel.buildTrackingRulesPanel(interaction.guild, displayName));
     }
     if (customId === 'admin:leveling:ranks') {
       return safeUpdate(interaction, panel.buildRankRewardsPanel(interaction.guild, displayName));
@@ -87,6 +108,7 @@ async function handleLevelingInteraction(interaction) {
         intervalMinutes,
         description: description || 'Earn XP for eligible time spent in voice channels.',
       }, { actorId: interaction.user.id, action: customId });
+      refreshVoiceTracking(interaction);
     } else if (interaction.isModalSubmit?.() && customId === 'admin:leveling:configureMultiplier:submit') {
       const name = interaction.fields.getTextInputValue('name').trim();
       const value = numberField(interaction, 'value', { min: 1, max: 100 });
@@ -129,6 +151,14 @@ async function handleLevelingInteraction(interaction) {
       save((section) => ({ ...section, announceChannelId: interaction.values?.[0] || null }));
     } else if (interaction.isRoleSelectMenu?.() && customId === 'admin:leveling:managerRoles') {
       save((section) => ({ ...section, managerRoleIds: [...new Set(interaction.values || [])] }));
+    } else if (interaction.isChannelSelectMenu?.() && customId === 'admin:leveling:ignoredChannels') {
+      save((section) => ({ ...section, ignoredChannelIds: [...new Set(interaction.values || [])] }));
+      refreshVoiceTracking(interaction);
+      return safeUpdate(interaction, panel.buildTrackingRulesPanel(interaction.guild, displayName));
+    } else if (interaction.isRoleSelectMenu?.() && customId === 'admin:leveling:ignoredRoles') {
+      save((section) => ({ ...section, ignoredRoleIds: [...new Set(interaction.values || [])] }));
+      refreshVoiceTracking(interaction);
+      return safeUpdate(interaction, panel.buildTrackingRulesPanel(interaction.guild, displayName));
     } else if (interaction.isRoleSelectMenu?.() && customId === 'admin:leveling:levelRoles') {
       const selected = [...new Set(interaction.values || [])];
       const current = leveling.getSection(interaction.guildId).levelRewards;
@@ -142,14 +172,17 @@ async function handleLevelingInteraction(interaction) {
       return safeUpdate(interaction, panel.buildRankRewardsPanel(interaction.guild, displayName));
     } else if (customId === 'admin:leveling:enable') {
       setModuleEnabled(interaction.guildId, 'leveling', true, { actorId: interaction.user.id, action: customId });
+      refreshVoiceTracking(interaction);
     } else if (customId === 'admin:leveling:disable') {
       setModuleEnabled(interaction.guildId, 'leveling', false, { actorId: interaction.user.id, action: customId });
+      refreshVoiceTracking(interaction);
     } else if (customId === 'admin:leveling:toggleMessages') {
       const current = leveling.getSection(interaction.guildId).xpSources.message;
       leveling.setXpSource(interaction.guildId, 'message', { enabled: !current.enabled }, { actorId: interaction.user.id, action: customId });
     } else if (customId === 'admin:leveling:toggleVoice') {
       const current = leveling.getSection(interaction.guildId).xpSources.voice;
       leveling.setXpSource(interaction.guildId, 'voice', { enabled: !current.enabled }, { actorId: interaction.user.id, action: customId });
+      refreshVoiceTracking(interaction);
     } else if (customId === 'admin:leveling:toggleAnnounce') {
       save((section) => ({ ...section, announceLevelUps: !section.announceLevelUps }));
     } else if (customId === 'admin:leveling:toggleRemovePrevious') {
