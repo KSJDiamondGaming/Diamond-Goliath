@@ -145,10 +145,10 @@ async function buildReactionRolesAdminPanel(guild, memberDisplayName = 'Unknown 
       row(
         button('admin:reactionRoles:create', '➕ Create', ButtonStyle.Success),
         button('admin:reactionRoles:existing', '🔗 Use Existing', ButtonStyle.Primary),
+        button('admin:reactionRoles:manage', '📋 Manage', ButtonStyle.Primary, !panels.length),
       ),
       row(
         button('admin:reactionRoles:saved', '📚 Saved Panels', ButtonStyle.Secondary, !panels.length),
-        button('admin:reactionRoles:manage', '📋 Manage', ButtonStyle.Primary, !panels.length),
       ),
       row(
         button('admin:studio:roleStudio', '⬅️ Back'),
