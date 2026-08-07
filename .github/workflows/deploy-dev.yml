@@ -63,10 +63,6 @@ jobs:
             *) exit 1 ;;
           esac
 
-          for value in environment source_branch target_branch deploy_script app_dir runtime_dir pm2_name; do
-            key="${value^^}"
-            key="${key//_BRANCH/_BRANCH}"
-          done
           echo "environment=$ENVIRONMENT" >> "$GITHUB_OUTPUT"
           echo "source_branch=$SOURCE_BRANCH" >> "$GITHUB_OUTPUT"
           echo "target_branch=$TARGET_BRANCH" >> "$GITHUB_OUTPUT"
@@ -104,22 +100,22 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ needs.resolve.outputs.target_branch }}
+          ref: ${{ needs.resolve.outputs.source_branch }}
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Promote DEV
+      - name: Synchronize target branch to DEV
         shell: bash
         run: |
           set -euo pipefail
           SOURCE="${{ needs.resolve.outputs.source_branch }}"
           TARGET="${{ needs.resolve.outputs.target_branch }}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch origin "$SOURCE" "$TARGET"
-          git checkout "$TARGET"
-          git reset --hard "origin/$TARGET"
-          git merge --ff-only "origin/$SOURCE"
-          git push origin "$TARGET"
+          SOURCE_SHA="$(git rev-parse "origin/$SOURCE")"
+          echo "Synchronizing $TARGET to $SOURCE @ $SOURCE_SHA"
+          git push --force-with-lease="refs/heads/$TARGET:$(git rev-parse "origin/$TARGET")" origin "$SOURCE_SHA:refs/heads/$TARGET"
+          git fetch origin "$TARGET"
+          git checkout -B "$TARGET" "origin/$TARGET"
+          [ "$(git rev-parse HEAD)" = "$SOURCE_SHA" ]
       - id: sha
         run: echo "target_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
