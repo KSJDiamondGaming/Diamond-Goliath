@@ -12,7 +12,7 @@ const ITEMS_PER_ROW = 4;
 const ACCOUNT_RECORD_KEYS = new Set(['warnings', 'cases', 'infractions', 'appeals']);
 
 const CATEGORY_CATALOG = [
-  { key: 'account', label: 'Account', emoji: '👤', summary: 'View your personal Goliath profile and account tools.' },
+  { key: 'account', label: 'Account', emoji: '👤', summary: 'Review your moderation and appeal information.' },
   { key: 'community', label: 'Community', emoji: '🏘️', summary: 'Giveaways, invites, leveling and polls.' },
   { key: 'feedback', label: 'Feedback', emoji: '💬', summary: 'Forms, suggestions and tickets.' },
   { key: 'messages', label: 'Messages', emoji: '✉️', summary: 'Member-visible message tools when approved.' },
@@ -23,13 +23,10 @@ const CATEGORY_CATALOG = [
 ];
 
 const MODULE_CATALOG = [
-  { key: 'reputation', category: 'account', label: 'Reputation', emoji: '⭐', summary: 'Planned personal reputation view.', status: 'planned' },
   { key: 'warnings', category: 'account', label: 'Warnings', emoji: '⚠️', summary: 'Planned personal warning view.', status: 'planned' },
   { key: 'cases', category: 'account', label: 'Cases', emoji: '📁', summary: 'Planned view of your own cases.', status: 'planned' },
   { key: 'infractions', category: 'account', label: 'Infractions', emoji: '📋', summary: 'Planned personal infraction history.', status: 'planned' },
   { key: 'appeals', category: 'account', label: 'Appeals', emoji: '📝', summary: 'Planned personal appeal access.', status: 'planned' },
-  { key: 'notes', category: 'account', label: 'Notes', emoji: '📌', summary: 'Planned personal notes.', status: 'planned' },
-  { key: 'profile-settings', category: 'account', label: 'Profile Settings', emoji: '👤', summary: 'Planned profile visibility and personal display settings.', status: 'planned' },
   { key: 'giveaways', category: 'community', label: 'Giveaways', emoji: '🎉', summary: 'Member giveaway dashboard plan.', status: 'locked' },
   { key: 'invites', category: 'community', label: 'Invites', emoji: '📨', summary: 'Planned member invite view.', status: 'planned' },
   { key: 'leveling', category: 'community', label: 'Leveling', emoji: '🏆', summary: 'Planned member rank and XP view.', status: 'planned' },
@@ -118,18 +115,8 @@ const IN_PROGRESS_PAGES = [
   {
     title: '👤 Account & Utility',
     lines: [
-      '**⭐ Reputation — Discussion**',
-      '• Score, received/given history and common reasons',
-      '',
       '**🗂️ Account Record — Planned**',
       '• Warnings, cases, infractions and appeals (own only)',
-      '',
-      '**📌 Notes — Discussion**',
-      '• Create, edit, delete and pin personal notes',
-      '',
-      '**👤 Profile Settings — Planned**',
-      '• Admin-controlled profile-section visibility',
-      '• Per-user progress visibility and enable/disable controls',
       '',
       '**🧰 Utility — Approved / Future**',
       '• Help, ping, server info and translate',
@@ -246,6 +233,7 @@ function buildMainPanel(interactionOrName = 'Unknown User') {
 }
 
 function buildCategoryPanel(categoryKey, interactionOrName = 'Unknown User') {
+  if (categoryKey === 'account') return buildAccountRecordPanel(interactionOrName);
   const memberDisplayName = getMemberDisplayName(interactionOrName);
   const category = CATEGORY_BY_KEY[categoryKey] || CATEGORY_BY_KEY.community;
   const modules = MODULE_CATALOG.filter((module) => module.category === category.key);
@@ -310,9 +298,7 @@ function buildProfilePanel(interaction, profile = {}, options = {}) {
 
   const actionButtons = [];
   if (options.rolesEnabled !== false) actionButtons.push(button('user:profile:roles', 'View Roles', ButtonStyle.Primary, false, '🎭'));
-  actionButtons.push(button('user:module:reputation', 'Reputation', ButtonStyle.Secondary, false, '⭐'));
   actionButtons.push(button('user:account:record', 'Account Record', ButtonStyle.Secondary, false, '🗂️'));
-  actionButtons.push(button('user:module:notes', 'Notes', ButtonStyle.Secondary, false, '📌'));
   actionButtons.push(button('user:help', 'Help', ButtonStyle.Secondary, false, '❓'));
 
   return {
@@ -349,7 +335,7 @@ function buildAccountRecordPanel(interactionOrName = 'Unknown User') {
         false,
         module.emoji,
       ))),
-      navigationRow({ backId: 'user:category:account' }),
+      navigationRow({ backId: 'user:home' }),
     ],
   };
 }
@@ -371,12 +357,8 @@ function buildInProgressPanel(interactionOrName = 'Unknown User', pageIndex = 0)
     button('user:home', 'Back', ButtonStyle.Secondary, false, '⬅️'),
     button(`user:in-progress:${safeIndex}`, 'Refresh', ButtonStyle.Success, false, '🔄'),
   ];
-  if (safeIndex < IN_PROGRESS_PAGES.length - 1) {
-    controls.push(button(`user:in-progress:${safeIndex + 1}`, 'Next', ButtonStyle.Primary, false, '➡️'));
-  }
-  if (safeIndex > 0) {
-    controls.unshift(button(`user:in-progress:${safeIndex - 1}`, 'Previous', ButtonStyle.Secondary, false, '⬅️'));
-  }
+  if (safeIndex < IN_PROGRESS_PAGES.length - 1) controls.push(button(`user:in-progress:${safeIndex + 1}`, 'Next', ButtonStyle.Primary, false, '➡️'));
+  if (safeIndex > 0) controls.unshift(button(`user:in-progress:${safeIndex - 1}`, 'Previous', ButtonStyle.Secondary, false, '⬅️'));
 
   return {
     embeds: [createEmbed(`🚧 User Panel Development — ${page.title}`, description, memberDisplayName, DEV_COLOR)],
@@ -408,7 +390,7 @@ function buildHelpPanel(interactionOrName = 'Unknown User') {
 
   return {
     embeds: [createEmbed('❓ Goliath User Panel Help', description, memberDisplayName)],
-    components: [navigationRow({ backId: 'user:category:account' })],
+    components: [navigationRow({ backId: 'user:home', home: false })],
   };
 }
 
@@ -429,7 +411,7 @@ function buildProgressPanel(interaction, levelingProfile = {}) {
     embeds: [markLiveEmbed(createEmbed('🏆 Your Progress', lines.join('\n'), memberDisplayName))],
     components: [
       row(button('user:profile:progress', 'Refresh', ButtonStyle.Success, false, '🔄')),
-      navigationRow({ backId: 'user:category:account' }),
+      navigationRow({ backId: 'user:home', home: false }),
     ],
   };
 }
@@ -452,7 +434,7 @@ function buildRolesPanel(interaction, options = {}) {
     embeds: [markLiveEmbed(createEmbed('🎭 Your Roles', description || 'Role visibility is disabled for this server.', memberDisplayName))],
     components: [
       row(button('user:profile:roles', 'Refresh', ButtonStyle.Success, false, '🔄')),
-      navigationRow({ backId: 'user:category:account' }),
+      navigationRow({ backId: 'user:home', home: false }),
     ],
   };
 }
