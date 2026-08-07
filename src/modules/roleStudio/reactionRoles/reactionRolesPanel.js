@@ -248,9 +248,11 @@ function buildExistingMessageStep(guild, userId, notice = '') {
         draft?.messageId ? `**Selected:** <#${draft.channelId}> · \`${draft.messageId}\`` : '> No message selected.',
       ].filter((line) => line !== null).join('\n'))],
     components: [
-      row(button('admin:reactionRoles:source:link', draft?.messageId ? '🔄 Change Message' : '🔗 Paste Message Link', ButtonStyle.Primary)),
       row(
-        button('admin:reactionRoles:source:continue', 'Continue to Mapping Builder', ButtonStyle.Success, !draft?.messageId),
+        button('admin:reactionRoles:source:link', draft?.messageId ? '🔄 Change Message' : '🔗 Paste Message Link', ButtonStyle.Primary),
+        button('admin:reactionRoles:source:continue', '🗺️ Mapping Builder', ButtonStyle.Success, !draft?.messageId),
+      ),
+      row(
         button('admin:reactionRoles:existing', '⬅️ Back'),
         button('admin:reactionRoles:settings', '⚙️ Settings'),
       ),
@@ -305,10 +307,10 @@ function buildWizard(guild, userId, showRemove = false, notice = '') {
     row(roleMenu),
     row(showRemove && draft.mappings.length ? removeMappingSelect(draft, guild) : modeSelect(draft.selectedMode)),
     row(
-      button('admin:reactionRoles:wizard:batch', '➡️ Continue', ButtonStyle.Success, !roles.length),
-      button('admin:reactionRoles:wizard:remove', '🗑️ Remove', ButtonStyle.Secondary, !draft.mappings.length),
-      button('admin:reactionRoles:wizard:deploy', draft.panelId ? '💾 Save' : existing ? '💾 Attach' : '🚀 Deploy', ButtonStyle.Success, !ready),
       button('admin:reactionRoles:wizard:name', '✏️ Name', ButtonStyle.Primary),
+      button('admin:reactionRoles:wizard:batch', '➡️ Continue', ButtonStyle.Success, !roles.length),
+      button('admin:reactionRoles:wizard:deploy', draft.panelId ? '💾 Save' : existing ? '💾 Attach' : '🚀 Deploy', ButtonStyle.Success, !ready),
+      button('admin:reactionRoles:wizard:remove', '🗑️ Remove', ButtonStyle.Secondary, !draft.mappings.length),
     ),
     row(
       button(existing ? 'admin:reactionRoles:existing' : 'admin:reactionRoles', '⬅️ Back'),
@@ -366,9 +368,14 @@ async function buildManagedPanel(guild, panelId, notice = '') {
         button(`admin:reactionRoles:manage:edit:${panelId}`, '✏️ Edit Mappings', ButtonStyle.Primary),
         button(`admin:reactionRoles:manage:repair:${panelId}`, '🔄 Sync & Repair', ButtonStyle.Secondary, panel.enabled === false),
         button(`admin:reactionRoles:manage:${panel.enabled === false ? 'enable' : 'disable'}:${panelId}`, panel.enabled === false ? '▶️ Enable Panel' : '⏸️ Disable Panel', panel.enabled === false ? ButtonStyle.Success : ButtonStyle.Secondary),
+      ),
+      row(
         button(`admin:reactionRoles:manage:remove:confirm:${panelId}`, '🗑️ Delete Panel', ButtonStyle.Danger),
       ),
-      row(button('admin:reactionRoles:manage', '⬅️ Back'), button('admin:reactionRoles:settings', '⚙️ Settings')),
+      row(
+        button('admin:reactionRoles:manage', '⬅️ Back'),
+        button('admin:reactionRoles:settings', '⚙️ Settings'),
+      ),
     ],
   };
 }
