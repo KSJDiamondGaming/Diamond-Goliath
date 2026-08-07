@@ -2,8 +2,6 @@
 
 // src/modules/utilityStudio/translation/providers/deeplProvider.js
 
-const fetch = require('node-fetch');
-
 const PROVIDER = 'deepl';
 const FREE_URL = 'https://api-free.deepl.com/v2/translate';
 const PRO_URL = 'https://api.deepl.com/v2/translate';
