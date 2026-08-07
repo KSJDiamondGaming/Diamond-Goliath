@@ -290,6 +290,175 @@ function output(command, argumentsList) {
   return result.status === 0 ? String(result.stdout || '').trim() : '';
 }
 
+function classifyDeploymentChanges(files) {
+  const plan = {
+    changedFiles: files,
+    affected: new Set(),
+    commands: new Set(),
+    needsDeps: false,
+    needsCommandSync: false,
+    needsDashboardBuild: false,
+    needsAppReload: false,
+    needsDoctor: false,
+    fullFallback: false,
+  };
+
+  for (const rawFile of files) {
+    const file = String(rawFile || '').replace(/\\/g, '/').trim();
+    if (!file) continue;
+
+    if (/^(package\.json|package-lock\.json|npm-shrinkwrap\.json)$/.test(file)) {
+      plan.needsDeps = true;
+      plan.needsCommandSync = true;
+      plan.needsDashboardBuild = true;
+      plan.needsAppReload = true;
+      plan.needsDoctor = true;
+      plan.affected.add('dependencies');
+      continue;
+    }
+
+    if (file.startsWith('src/commands/')) {
+      plan.needsCommandSync = true;
+      plan.needsAppReload = true;
+      plan.needsDoctor = true;
+      plan.affected.add('commands');
+      plan.commands.add(path.basename(file).replace(/\.[^.]+$/, ''));
+      continue;
+    }
+
+    if (file.startsWith('src/dashboard/') || /^vite\.config\./.test(file)) {
+      plan.needsDashboardBuild = true;
+      plan.needsDoctor = true;
+      plan.affected.add('dashboard');
+      continue;
+    }
+
+    if (file.startsWith('src/modules/')) {
+      const parts = file.split('/');
+      const label = [parts[2], parts[3]].filter(Boolean).join('/');
+      if (label) plan.affected.add(label);
+      plan.needsAppReload = true;
+      plan.needsDoctor = true;
+      continue;
+    }
+
+    if (file.startsWith('src/core/')) {
+      plan.affected.add('core');
+      plan.needsAppReload = true;
+      plan.needsDoctor = true;
+      continue;
+    }
+
+    if (file.startsWith('src/events/')) {
+      plan.affected.add('events');
+      plan.needsAppReload = true;
+      plan.needsDoctor = true;
+      continue;
+    }
+
+    if (file.startsWith('src/server/') || file === 'server.js') {
+      plan.affected.add('server');
+      plan.needsAppReload = true;
+      plan.needsDoctor = true;
+      continue;
+    }
+
+    if (/^src\/runtime\/.*\.js$/.test(file)) {
+      plan.affected.add('runtime');
+      plan.needsAppReload = true;
+      plan.needsDoctor = true;
+      continue;
+    }
+
+    if (file === 'scripts/goliath.js') {
+      plan.affected.add('deployment');
+      plan.needsAppReload = true;
+      plan.needsDoctor = true;
+      continue;
+    }
+
+    if (file.startsWith('.github/workflows/') || file.startsWith('test/') || file.startsWith('docs/') || file.endsWith('.md')) {
+      continue;
+    }
+
+    if (/^src\/runtime\/(dev|beta|production)\//.test(file)) {
+      continue;
+    }
+
+    plan.fullFallback = true;
+    plan.affected.add(`unclassified:${file}`);
+  }
+
+  if (plan.fullFallback) {
+    plan.needsDeps = true;
+    plan.needsCommandSync = true;
+    plan.needsDashboardBuild = true;
+    plan.needsAppReload = true;
+    plan.needsDoctor = true;
+  }
+
+  return plan;
+}
+
+function deployPlan(fromSha, toSha, format = 'human') {
+  const from = String(fromSha || '').trim();
+  const to = String(toSha || '').trim();
+  let files = [];
+  let forceFallback = false;
+
+  if (!to || !output('git', ['cat-file', '-t', to])) {
+    console.error(`Invalid deployment target commit: ${to || '(missing)'}`);
+    return false;
+  }
+
+  if (!from || !output('git', ['cat-file', '-t', from])) {
+    forceFallback = true;
+  } else {
+    const changed = output('git', ['diff', '--name-only', from, to]);
+    files = changed ? changed.split(/\r?\n/).filter(Boolean) : [];
+  }
+
+  const plan = classifyDeploymentChanges(files);
+  if (forceFallback) {
+    plan.fullFallback = true;
+    plan.needsDeps = true;
+    plan.needsCommandSync = true;
+    plan.needsDashboardBuild = true;
+    plan.needsAppReload = true;
+    plan.needsDoctor = true;
+    plan.affected.add('fallback');
+  }
+
+  if (format === '--env') {
+    const line = (name, value) => console.log(`${name}=${value}`);
+    line('NEED_DEPS', plan.needsDeps);
+    line('NEED_COMMAND_SYNC', plan.needsCommandSync);
+    line('NEED_DASHBOARD_BUILD', plan.needsDashboardBuild);
+    line('NEED_APP_RELOAD', plan.needsAppReload);
+    line('NEED_DOCTOR', plan.needsDoctor);
+    line('FULL_FALLBACK', plan.fullFallback);
+    line('CHANGED_COUNT', plan.changedFiles.length);
+    line('AFFECTED_SYSTEMS', [...plan.affected].join(','));
+    line('AFFECTED_COMMANDS', [...plan.commands].join(','));
+    return true;
+  }
+
+  section('Deployment plan');
+  console.log(`From: ${from || 'unknown'}`);
+  console.log(`To:   ${to}`);
+  console.log(`Changed files: ${plan.changedFiles.length}`);
+  for (const file of plan.changedFiles) console.log(` - ${file}`);
+  console.log(`Affected: ${[...plan.affected].join(', ') || 'repository only'}`);
+  console.log(`Commands: ${[...plan.commands].map((name) => `/${name}`).join(', ') || 'none'}`);
+  console.log(`Dependencies: ${plan.needsDeps}`);
+  console.log(`Dashboard: ${plan.needsDashboardBuild}`);
+  console.log(`Command sync: ${plan.needsCommandSync}`);
+  console.log(`App reload: ${plan.needsAppReload}`);
+  console.log(`Doctor: ${plan.needsDoctor}`);
+  console.log(`Full fallback: ${plan.fullFallback}`);
+  return true;
+}
+
 function syncCommands(target = mode) {
   const environment = String(target || mode).toLowerCase();
   if (!['dev', 'beta', 'production'].includes(environment)) {
@@ -337,7 +506,7 @@ function promote(target) {
   const environment = String(target || '').toLowerCase();
   const plan = {
     beta: { source: 'dev', deploy: '/home/goliath/deploy-beta.sh' },
-    production: { source: 'beta', deploy: '/home/goliath/deploy-production.sh' },
+    production: { source: 'dev', deploy: '/home/goliath/deploy-production.sh' },
   }[environment];
 
   if (!plan) {
@@ -365,7 +534,8 @@ function audit() {
   return [projectShape, sourceAudit, importAudit, runtimeAudit, guildAudit, mediaAudit].map((suite) => suite()).every(Boolean);
 }
 
-const [command = 'doctor', target = ''] = process.argv.slice(2);
+const args = process.argv.slice(2);
+const [command = 'doctor', target = ''] = args;
 const success = command === 'doctor'
   ? doctor(String(target || '').toLowerCase())
   : command === 'audit'
@@ -374,6 +544,8 @@ const success = command === 'doctor'
       ? syncCommands(target)
       : command === 'promote'
         ? promote(target)
-        : false;
+        : command === 'deploy-plan'
+          ? deployPlan(args[1], args[2], args[3])
+          : false;
 
 if (!success) process.exitCode = 1;
