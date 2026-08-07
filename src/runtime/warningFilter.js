@@ -158,10 +158,7 @@ try {
   console.warn(error?.stack || error?.message || error);
 }
 
-// Social Studio mixed routing.
-// Creator routes win over platform routes, which win over the existing account,
-// alert-type and default routes. The existing data remains valid and unchanged
-// until an administrator explicitly adds an override.
+// Social Studio mixed routing and account-management compatibility.
 try {
   const Module = require('module');
   const {
@@ -171,16 +168,22 @@ try {
     ChannelSelectMenuBuilder,
     ChannelType,
     EmbedBuilder,
+    ModalBuilder,
     PermissionFlagsBits,
     StringSelectMenuBuilder,
+    TextInputBuilder,
+    TextInputStyle,
   } = require('discord.js');
   const guildManager = require('../core/guild/guildManager');
+  const { normalizeAccountInput } = require('../modules/socialStudio/socialAlerts/accountNormalizer');
 
   const PLATFORM_IDS = ['facebook', 'instagram', 'kick', 'tiktok', 'twitch', 'x', 'youtube'];
   const PLATFORM_LABELS = { facebook: 'Facebook', instagram: 'Instagram', kick: 'Kick', tiktok: 'TikTok', twitch: 'Twitch', x: 'X', youtube: 'YouTube' };
+  const PLATFORM_ICONS = { facebook: '🔵', instagram: '🟠', kick: '🟢', tiktok: '⚫', twitch: '🟣', x: '⚪', youtube: '🔴' };
   const ALERT_TYPES = ['live', 'ended', 'vod', 'clip', 'upload', 'short', 'post'];
   const ALERT_LABELS = { live: 'LIVE', ended: 'Stream Ended', vod: 'VOD', clip: 'Clip', upload: 'Upload', short: 'Short', post: 'Social Post' };
   const routingSessions = new Map();
+  const accountManageSessions = new Map();
   const sessionKey = (interaction) => `${interaction.guildId}:${interaction.user?.id || 'unknown'}`;
   const row = (...components) => new ActionRowBuilder().addComponents(...components.filter(Boolean));
   const button = (id, label, style = ButtonStyle.Secondary, disabled = false) => new ButtonBuilder().setCustomId(id).setLabel(label).setStyle(style).setDisabled(disabled);
@@ -284,6 +287,228 @@ try {
     if (interaction.deferred || interaction.replied) return interaction.editReply(payload);
     if (interaction.isButton?.() || interaction.isAnySelectMenu?.()) return interaction.update(payload);
     return interaction.reply({ ...payload, flags: 64 });
+  }
+
+  function selectedCreatorFromMessage(interaction, social) {
+    const rows = interaction.message?.components || [];
+    for (const actionRow of rows) {
+      const data = typeof actionRow?.toJSON === 'function' ? actionRow.toJSON() : actionRow;
+      for (const component of data?.components || []) {
+        if ((component.custom_id || component.customId) !== 'social:creator:select') continue;
+        const selected = (component.options || []).find((option) => option.default === true);
+        if (selected?.value && social.creators?.[selected.value]) return selected.value;
+      }
+    }
+    const embedData = interaction.message?.embeds?.[0]?.data || interaction.message?.embeds?.[0]?.toJSON?.() || {};
+    const description = String(embedData.description || '');
+    const match = description.match(/👤 \*\*(.+?)\*\*/);
+    if (match) {
+      const found = Object.values(object(social.creators)).find((creator) => String(creator?.displayName || '') === match[1]);
+      if (found?.creatorId) return found.creatorId;
+    }
+    return null;
+  }
+
+  function accountStatus(account) {
+    if (account?.enabled === false) return '⏸️ Paused';
+    if (account?.state?.isLive === true) return '🔴 LIVE';
+    if (account?.state?.isLive === false) return '⚫ Offline';
+    if (account?.state?.lastError) return '🟡 Unavailable';
+    return '🟢 Monitoring';
+  }
+
+  function accountManagerPayload(interaction, social, creatorId, accountId = null) {
+    const creator = social.creators?.[creatorId];
+    if (!creator) throw new Error('The selected creator profile no longer exists.');
+    const accounts = (Array.isArray(creator.accountIds) ? creator.accountIds : [])
+      .map((id) => social.accounts?.[id])
+      .filter(Boolean)
+      .sort((a, b) => String(PLATFORM_LABELS[a.platform] || a.platform || '').localeCompare(String(PLATFORM_LABELS[b.platform] || b.platform || ''), undefined, { sensitivity: 'base' }));
+    const selected = accounts.find((account) => String(account.accountId) === String(accountId)) || null;
+    const requestedBy = interaction.member?.displayName || interaction.user?.username || 'Administrator';
+
+    if (!selected) {
+      const lines = accounts.length
+        ? accounts.map((account) => `${PLATFORM_ICONS[account.platform] || '🌐'} **${PLATFORM_LABELS[account.platform] || account.platform}** — ${account.username || account.externalId || 'Resolving…'} — ${accountStatus(account)}`)
+        : ['No social accounts are linked to this creator.'];
+      const components = [];
+      if (accounts.length) {
+        components.push(row(new StringSelectMenuBuilder()
+          .setCustomId('social:runtime:account:select')
+          .setPlaceholder('Select an account to manage')
+          .setMinValues(1)
+          .setMaxValues(1)
+          .addOptions(accounts.slice(0, 25).map((account) => ({
+            label: `${PLATFORM_LABELS[account.platform] || account.platform} · ${account.username || account.externalId || 'Resolving'}`.slice(0, 100),
+            value: String(account.accountId),
+            description: accountStatus(account).slice(0, 100),
+          })))));
+      }
+      components.push(row(button('social:creators', '⬅️ Creator Profiles'), button('social:settings', '⚙️ Settings')));
+      return {
+        embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🛠️ Manage Accounts').setDescription([`**Creator:** ${creator.displayName}`, `**Accounts:** ${accounts.length}`, '', ...lines, '', 'Choose an account below to edit, pause or remove it.'].join('\n')).setFooter({ text: `Requested by ${requestedBy}` }).setTimestamp()],
+        components,
+      };
+    }
+
+    const routes = Object.entries(object(selected.alertChannels)).filter(([, channelId]) => channelId).map(([type, channelId]) => `${ALERT_LABELS[type] || type}: <#${channelId}>`).join(' • ');
+    const defaultRoute = selected.alertChannelId
+      ? `<#${selected.alertChannelId}>`
+      : social.alertsChannelId
+        ? `Server default <#${social.alertsChannelId}>`
+        : 'Inherited / not configured';
+    const components = [
+      row(
+        button('social:runtime:account:edit', '📝 Edit', ButtonStyle.Primary),
+        button('social:runtime:account:toggle', selected.enabled === false ? '▶️ Resume' : '⏸️ Pause'),
+        button('social:runtime:account:delete', '🗑️ Delete', ButtonStyle.Danger),
+        ...(selected.profileUrl && /^https?:\/\//i.test(selected.profileUrl)
+          ? [new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(selected.profileUrl).setLabel('🔗 Open Profile')]
+          : []),
+      ),
+      row(button('social:runtime:accounts', '⬅️ Accounts'), button('social:creators', '👥 Creator Profiles'), button('social:settings', '⚙️ Settings')),
+    ];
+    return {
+      embeds: [new EmbedBuilder().setColor(0x5865F2).setTitle('🔗 Manage Social Account').setDescription([
+        `${PLATFORM_ICONS[selected.platform] || '🌐'} **${PLATFORM_LABELS[selected.platform] || selected.platform}**`,
+        `**${selected.username || selected.externalId || 'Resolving…'}**`,
+        accountStatus(selected),
+        '',
+        `**Creator:** ${creator.displayName}`,
+        `**Monitoring:** ${selected.enabled === false ? 'Paused' : 'Enabled'}`,
+        `**Alert types:** ${Array.isArray(selected.alertTypes) && selected.alertTypes.length ? selected.alertTypes.map((type) => ALERT_LABELS[type] || type).join(', ') : 'Provider defaults'}`,
+        `**Default route:** ${defaultRoute}`,
+        `**Dedicated routes:** ${routes || 'None'}`,
+        selected.state?.lastError ? `\n⚠️ **Provider:** ${String(selected.state.lastError).slice(0, 400)}` : '',
+      ].filter(Boolean).join('\n')).setFooter({ text: `Requested by ${requestedBy}` }).setTimestamp()],
+      components,
+    };
+  }
+
+  function accountEditModal(account) {
+    return new ModalBuilder()
+      .setCustomId('social:runtime:account:update')
+      .setTitle(`Edit ${PLATFORM_LABELS[account.platform] || account.platform} Account`)
+      .addComponents(row(new TextInputBuilder()
+        .setCustomId('accountValue')
+        .setLabel('Username, channel ID or URL')
+        .setPlaceholder('Paste the profile URL, username or channel ID here')
+        .setStyle(TextInputStyle.Short)
+        .setMaxLength(500)
+        .setRequired(true)
+        .setValue(String(account.sourceInput || account.profileUrl || account.externalId || account.username || '').slice(0, 500))));
+  }
+
+  async function handleAccountManagement(interaction) {
+    const id = String(interaction.customId || '');
+    const managedIds = new Set([
+      'social:creator:accounts',
+      'social:runtime:accounts',
+      'social:runtime:account:select',
+      'social:runtime:account:edit',
+      'social:runtime:account:update',
+      'social:runtime:account:toggle',
+      'social:runtime:account:delete',
+      'social:runtime:account:delete:confirm',
+      'social:runtime:account:delete:cancel',
+    ]);
+    if (!managedIds.has(id)) return false;
+
+    const social = getSocial(interaction.guildId);
+    if (!canManage(interaction, social)) throw new Error('You do not have permission to manage Social Studio accounts.');
+    const key = sessionKey(interaction);
+    const session = accountManageSessions.get(key) || { creatorId: null, accountId: null };
+
+    if (id === 'social:creator:accounts') {
+      session.creatorId = selectedCreatorFromMessage(interaction, social);
+      session.accountId = null;
+      if (!session.creatorId) throw new Error('Select a creator profile first.');
+      accountManageSessions.set(key, session);
+      return respond(interaction, accountManagerPayload(interaction, social, session.creatorId));
+    }
+
+    if (!session.creatorId || !social.creators?.[session.creatorId]) {
+      throw new Error('Open Manage Account from a creator profile first.');
+    }
+
+    if (id === 'social:runtime:accounts') {
+      session.accountId = null;
+      accountManageSessions.set(key, session);
+      return respond(interaction, accountManagerPayload(interaction, social, session.creatorId));
+    }
+
+    if (id === 'social:runtime:account:select') {
+      session.accountId = interaction.values?.[0] || null;
+      accountManageSessions.set(key, session);
+      return respond(interaction, accountManagerPayload(interaction, social, session.creatorId, session.accountId));
+    }
+
+    const account = session.accountId ? social.accounts?.[session.accountId] : null;
+    if (!account) throw new Error('Select an account to manage first.');
+
+    if (id === 'social:runtime:account:edit') {
+      await interaction.showModal(accountEditModal(account));
+      return true;
+    }
+
+    if (id === 'social:runtime:account:update') {
+      const rawValue = interaction.fields.getTextInputValue('accountValue').trim();
+      const normalized = normalizeAccountInput(account.platform, rawValue);
+      const duplicate = Object.values(object(social.accounts)).find((other) => (
+        String(other?.accountId) !== String(account.accountId)
+        && String(other?.platform || '').toLowerCase() === String(account.platform || '').toLowerCase()
+        && String(other?.canonicalIdentity || other?.externalId || other?.normalizedUsername || other?.username || '').toLowerCase()
+          === String(normalized.canonicalIdentity || normalized.externalId || normalized.normalizedUsername || normalized.username || '').toLowerCase()
+      ));
+      if (duplicate) throw new Error('That social account is already linked in Social Studio.');
+      social.accounts[account.accountId] = {
+        ...account,
+        username: normalized.username,
+        normalizedUsername: normalized.normalizedUsername,
+        externalId: normalized.externalId || account.externalId || null,
+        inputType: normalized.inputType,
+        canonicalIdentity: normalized.canonicalIdentity,
+        profileUrl: normalized.profileUrl,
+        sourceInput: normalized.sourceInput,
+        updatedAt: new Date().toISOString(),
+      };
+      saveSocial(interaction, social);
+      const payload = accountManagerPayload(interaction, getSocial(interaction.guildId), session.creatorId, session.accountId);
+      if (!interaction.deferred && !interaction.replied && interaction.message) return interaction.update(payload);
+      if (!interaction.deferred && !interaction.replied) return interaction.reply({ ...payload, flags: 64 });
+      return interaction.editReply(payload);
+    }
+
+    if (id === 'social:runtime:account:toggle') {
+      account.enabled = account.enabled === false;
+      account.updatedAt = new Date().toISOString();
+      saveSocial(interaction, social);
+      return respond(interaction, accountManagerPayload(interaction, getSocial(interaction.guildId), session.creatorId, session.accountId));
+    }
+
+    if (id === 'social:runtime:account:delete') {
+      return respond(interaction, {
+        embeds: [new EmbedBuilder().setColor(0xED4245).setTitle('🗑️ Delete Social Account?').setDescription(`Remove **${PLATFORM_LABELS[account.platform] || account.platform} — ${account.username || account.externalId || account.accountId}** from **${social.creators[session.creatorId].displayName}**?\n\nThis removes the saved Social Studio account and stops monitoring it.`).setTimestamp()],
+        components: [row(button('social:runtime:account:delete:confirm', '🗑️ Delete Account', ButtonStyle.Danger), button('social:runtime:account:delete:cancel', 'Cancel'))],
+      });
+    }
+
+    if (id === 'social:runtime:account:delete:cancel') {
+      return respond(interaction, accountManagerPayload(interaction, social, session.creatorId, session.accountId));
+    }
+
+    if (id === 'social:runtime:account:delete:confirm') {
+      delete social.accounts[session.accountId];
+      for (const creator of Object.values(object(social.creators))) {
+        creator.accountIds = (Array.isArray(creator.accountIds) ? creator.accountIds : []).filter((accountId) => String(accountId) !== String(session.accountId));
+      }
+      session.accountId = null;
+      accountManageSessions.set(key, session);
+      saveSocial(interaction, social);
+      return respond(interaction, accountManagerPayload(interaction, getSocial(interaction.guildId), session.creatorId));
+    }
+
+    return false;
   }
 
   async function handleRouting(interaction) {
@@ -438,6 +663,7 @@ try {
     const originalHandler = loaded.handleSocialAdminInteraction;
     if (typeof originalHandler !== 'function') return loaded;
     loaded.handleSocialAdminInteraction = async function routedSocialHandler(interaction, ...args) {
+      if (await handleAccountManagement(interaction)) return true;
       if (await handleRouting(interaction)) return true;
       const originals = {};
       for (const method of ['reply', 'update', 'editReply', 'followUp']) {
@@ -454,6 +680,6 @@ try {
     return loaded;
   };
 } catch (error) {
-  console.warn('[Runtime] Unable to load Social Studio mixed routing.');
+  console.warn('[Runtime] Unable to load Social Studio compatibility layer.');
   console.warn(error?.stack || error?.message || error);
 }
