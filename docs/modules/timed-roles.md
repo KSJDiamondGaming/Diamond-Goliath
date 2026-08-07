@@ -5,7 +5,7 @@ Timed Roles awards Discord roles when a member reaches a configured amount of ti
 ## Canonical module
 
 ```text
-src/modules/timedroles/
+src/modules/roleStudio/timedRoles/
 ├── timedRoles.js
 ├── timedRolesPanel.js
 └── timedRolesRoute.js
@@ -122,7 +122,7 @@ Invalid timed rules without a usable role ID are skipped and counted in the migr
 The canonical startup operation is:
 
 ```js
-require('./src/modules/timedroles/timedRoles').startup(client)
+require('./src/modules/roleStudio/timedRoles/timedRoles').startup(client)
 ```
 
 Only the canonical Timed Roles scheduler should run. The deleted generic Roles module must not be reintroduced.

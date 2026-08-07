@@ -5,12 +5,12 @@
 const express = require('express');
 const { PermissionFlagsBits } = require('discord.js');
 
-const autoRoleStore = require('../../modules/autoroles/autoroles');
-const verificationStore = require('../../modules/verification/verificationStore');
-const formStore = require('../../modules/forms/formStore');
-const ticketStore = require('../../modules/tickets/ticketStore');
-const translationStore = require('../../modules/translation/translationStore');
-const { getAllEmbedDeployments } = require('../../modules/embed/embedDeploymentStore');
+const autoRoleStore = require('../../modules/roleStudio/autoRoles/autoRoles');
+const verificationStore = require('../../modules/securityStudio/verificationStore');
+const forms = require('../../modules/feedbackStudio/forms/forms');
+const ticketStore = require('../../modules/feedbackStudio/tickets/tickets');
+const translationStore = require('../../modules/utilityStudio/translation/translationStore');
+const { getAllEmbedDeployments } = require('../../modules/messageStudio/embed/embedDeployments');
 
 const {
   DEFAULT_BOT_CHANNEL_PERMISSIONS,
@@ -239,7 +239,7 @@ function buildModuleDiagnostics(guildId, channelHealth, roleHealth) {
 
   const autoRoles = autoRoleStore.getAutoRolesSection(guildId);
   const verification = verificationStore.getVerificationSection(guildId);
-  const forms = formStore.getFormsSection(guildId);
+  const forms = forms.getFormsSection(guildId);
   const ticketSettings = ticketStore.getTicketSettings(guildId) || {};
   const ticketPanels = ticketStore.getPanels(guildId)?.panels || [];
   const ticketList = ticketStore.getAllTickets(guildId) || [];
@@ -323,3 +323,4 @@ router.get('/:guildId', async (req, res) => {
 });
 
 module.exports = router;
+

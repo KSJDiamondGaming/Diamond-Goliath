@@ -1,7 +1,7 @@
 'use strict';
 
 const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
-const { buildSchedulePanel } = require('../../modules/schedule/schedulePanel');
+const { buildSchedulePanel } = require('../../modules/utilityStudio/schedule/schedulePanel');
 
 module.exports = {
   data: new SlashCommandBuilder()

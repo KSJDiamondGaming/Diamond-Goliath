@@ -147,11 +147,11 @@ function buildOverview(guildId) {
       auditLog: protectionModules.find((module) => module.key === 'auditLog'),
     },
     moduleFlags: {
-      security: modules.security?.enabled !== false,
-      automod: modules.automod?.enabled !== false,
-      logs: modules.logs?.enabled !== false,
-      restore: modules.restore?.enabled !== false,
-      verification: modules.verification?.enabled !== false,
+      security: guildManager.isModuleEnabled(guildId, 'security'),
+      automod: guildManager.isModuleEnabled(guildId, 'automod'),
+      logs: guildManager.isModuleEnabled(guildId, 'logs'),
+      restore: guildManager.isModuleEnabled(guildId, 'restore'),
+      verification: guildManager.isModuleEnabled(guildId, 'verification'),
     },
     premium: {
       advancedSecurityLocked: true,

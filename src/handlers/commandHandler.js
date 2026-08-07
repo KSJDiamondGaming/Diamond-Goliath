@@ -24,7 +24,13 @@ function getAllJsFiles(dir) {
 
 function loadCommands(client, options = {}) {
   const commandsPath = options.commandsPath || path.join(process.cwd(), 'src', 'commands');
-  const files = getAllJsFiles(commandsPath);
+  const userPanelCommand = path.join(process.cwd(), 'src', 'core', 'panels', 'user', 'user.js');
+  const modPanelCommand = path.join(process.cwd(), 'src', 'core', 'panels', 'mod', 'mod.js');
+  const files = [
+    ...getAllJsFiles(commandsPath),
+    ...(fs.existsSync(userPanelCommand) ? [userPanelCommand] : []),
+    ...(fs.existsSync(modPanelCommand) ? [modPanelCommand] : []),
+  ];
   const loaded = [];
   const skipped = [];
 
@@ -77,3 +83,4 @@ module.exports = {
   getAllJsFiles,
   loadCommands,
 };
+

@@ -1,5 +1,6 @@
 'use strict';
 
+const { normalizeBotMode } = require('../../config/botModes');
 const notifications = require('./notificationStore');
 
 function ownerGuildId(fallbackGuildId = null) {
@@ -27,7 +28,7 @@ function backupCompleted(backup = {}) {
   const backupType = backup.backupType || backup.type || 'runtime';
   const guildId = backup.guildId || backup.guild?.id || null;
   const guildName = backup.guildName || backup.guild?.name || 'Unknown Guild';
-  const environment = backup.environment || backup.metadata?.environment || process.env.BOT_MODE || 'DEV';
+  const environment = normalizeBotMode(backup.environment || backup.metadata?.environment);
   const roles = backup.roles?.length ?? backup.roles ?? backup.counts?.roles ?? 0;
   const channels = backup.channels?.length ?? backup.channels ?? backup.counts?.channels ?? 0;
   const level = backupType === 'rollback' ? 'warning' : 'success';
@@ -43,7 +44,7 @@ function backupCompleted(backup = {}) {
 
 function backupFailed(details = {}) {
   const guildId = details.guildId || details.guild?.id || null;
-  const environment = details.environment || process.env.BOT_MODE || 'DEV';
+  const environment = normalizeBotMode(details.environment);
   const backupType = details.backupType || details.type || 'runtime';
   const message = details.error || details.message || 'Backup failed.';
 
@@ -58,7 +59,7 @@ function backupFailed(details = {}) {
 function backupIntegrityWarning(backup = {}, warning = 'Backup integrity needs attention.') {
   const backupId = backup.backupId || backup.id || 'unknown';
   const guildId = backup.guildId || backup.guild?.id || null;
-  const environment = backup.environment || backup.metadata?.environment || process.env.BOT_MODE || 'DEV';
+  const environment = normalizeBotMode(backup.environment || backup.metadata?.environment);
 
   return notify(guildId, {
     level: 'warning',
@@ -68,13 +69,15 @@ function backupIntegrityWarning(backup = {}, warning = 'Backup integrity needs a
   }, { fingerprint: `backup:integrity:${environment}:${backupId}`, windowMs: 24 * 60 * 60_000 });
 }
 
-function restoreQueueFailed(environment = process.env.BOT_MODE || 'DEV', count = 1, message = 'Restore queue has failed request(s).') {
+function restoreQueueFailed(environment = process.env.BOT_MODE, count = 1, message = 'Restore queue has failed request(s).') {
+  const mode = normalizeBotMode(environment);
+
   return notify(null, {
     level: 'danger',
     title: 'Restore queue failure',
     message: `${count} failed restore request(s): ${message}`,
-    metadata: { environment, count, fingerprint: `backup:restore-failed:${environment}:${count}` },
-  }, { fingerprint: `backup:restore-failed:${environment}:${count}`, windowMs: 15 * 60_000 });
+    metadata: { environment: mode, count, fingerprint: `backup:restore-failed:${mode}:${count}` },
+  }, { fingerprint: `backup:restore-failed:${mode}:${count}`, windowMs: 15 * 60_000 });
 }
 
 module.exports = {

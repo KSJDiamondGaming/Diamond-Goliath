@@ -1,21 +1,9 @@
 let io = null;
-const botListeners = new Set();
 
-const {
-  setSocketProvider: setTicketSocketProvider,
-} = require('../../modules/tickets/ticketSocketEvents');
-
-const {
-  setSocketProvider: setFormSocketProvider,
-} = require('../../modules/forms/formSocketEvents');
-
-const {
-  setSocketProvider: setEmbedSocketProvider,
-} = require('../../modules/embed/embedSocketEvents');
-
-const {
-  setSocketProvider: setCaseSocketProvider,
-} = require('../../core/logging/cases/caseSocketEvents');
+function normaliseGuildId(guildId) {
+  const id = String(guildId || '').trim();
+  return /^\d{16,20}$/.test(id) ? id : '';
+}
 
 function getRoomName(guildId) {
   return `guild:${guildId}`;
@@ -32,23 +20,18 @@ function initSocketHub(server, options = {}) {
     cors: {
       origin:
         options?.clientUrl ||
-        'http://localhost:5173',
+        'http://localhost:5175',
 
       credentials: true,
     },
   });
-
-  setTicketSocketProvider(() => io);
-  setFormSocketProvider(() => io);
-  setEmbedSocketProvider(() => io);
-  setCaseSocketProvider(() => io);
 
   io.on('connection', (socket) => {
     console.log(`🟢 Dashboard connected: ${socket.id}`);
     socket.join('goliath:tickets');
 
     function joinGuildRoom(guildId) {
-      const id = String(guildId || '').trim();
+      const id = normaliseGuildId(guildId);
       if (!id) return;
 
       const room = getRoomName(id);
@@ -58,11 +41,6 @@ function initSocketHub(server, options = {}) {
     }
 
     socket.on('joinGuild', joinGuildRoom);
-    socket.on('automod:join', joinGuildRoom);
-    socket.on('tickets:joinGuild', joinGuildRoom);
-    socket.on('forms:joinGuild', joinGuildRoom);
-    socket.on('embeds:joinGuild', joinGuildRoom);
-    socket.on('cases:joinGuild', joinGuildRoom);
 
     socket.on('disconnect', () => {
       console.log(`🔴 Dashboard disconnected: ${socket.id}`);
@@ -72,26 +50,19 @@ function initSocketHub(server, options = {}) {
   return io;
 }
 
-function onGuildUpdate(listener) {
-  if (typeof listener !== 'function') {
-    return () => {};
-  }
-
-  botListeners.add(listener);
-
-  return () => {
-    botListeners.delete(listener);
-  };
-}
-
 function emitGuildUpdate(guildId, payload = {}) {
-  const id = String(guildId || '').trim();
+  const id = normaliseGuildId(guildId);
 
   if (!id) return null;
 
+  const data =
+    payload && typeof payload === 'object' && !Array.isArray(payload)
+      ? payload
+      : {};
+
   const update = {
+    ...data,
     guildId: id,
-    ...(payload && typeof payload === 'object' ? payload : {}),
     updatedAt: new Date().toISOString(),
   };
 
@@ -99,34 +70,20 @@ function emitGuildUpdate(guildId, payload = {}) {
     io.to(getRoomName(id)).emit('guild:update', update);
   }
 
-  for (const listener of botListeners) {
-    try {
-      listener(update);
-    } catch (error) {
-      console.error('Guild update listener failed:', error);
-    }
-  }
-
   return update;
 }
 
-function normaliseSyncEvent(event) {
-  return String(event || '').trim();
-}
+function emitRoomEvent(room, event, update) {
+  const roomName = String(room || '').trim();
+  const eventName = String(event || '').trim();
+  if (!roomName || !eventName || !io) return false;
 
-function emitDirectSyncEvent(guildId, event, update) {
-  const id = String(guildId || '').trim();
-  const eventName = normaliseSyncEvent(event);
-  if (!id || !eventName || !io) return false;
-
-  io.to(getRoomName(id)).emit(eventName, update);
+  io.to(roomName).emit(eventName, update);
   return true;
 }
 
 module.exports = {
   initSocketHub,
-  getRoomName,
-  onGuildUpdate,
   emitGuildUpdate,
-  emitDirectSyncEvent,
+  emitRoomEvent,
 };

@@ -4,9 +4,10 @@
 
 const express = require('express');
 
-const translationStore = require('../../modules/translation/translationStore');
-const translationThreadManager = require('../../modules/translation/translationThreadManager');
-const providerManager = require('../../modules/translation/providers/providerManager');
+const translationStore = require('../../modules/utilityStudio/translation/translationStore');
+const translationThreadManager = require('../../modules/utilityStudio/translation/translationThreadManager');
+const providerManager = require('../../modules/utilityStudio/translation/translationProviderConfig');
+const { isModuleEnabled, setModuleEnabled } = require('../../core/guild/guildManager');
 const { requireEntitlement } = require('../middleware/requireEntitlement');
 const {
   DEFAULT_BOT_CHANNEL_PERMISSIONS,
@@ -114,6 +115,7 @@ function publicTranslationConfig(guildId) {
 
   return {
     ...section,
+    enabled: isModuleEnabled(guildId, 'translation'),
     providerStatus,
     providerSettings: providerStatus.supportedProviders,
     settings: {
@@ -137,7 +139,7 @@ router.get('/:guildId/overview', (req, res) => {
     return success(res, {
       guildId,
       overview: {
-        enabled: section.enabled === true,
+        enabled: isModuleEnabled(guildId, 'translation'),
         provider: providerStatus.provider,
         providerLabel: providerStatus.label,
         providerReady: providerStatus.ready,
@@ -198,8 +200,8 @@ router.patch('/:guildId/provider', (req, res) => {
 router.patch('/:guildId/enabled', (req, res) => {
   try {
     const guildId = getGuildId(req);
-    const config = translationStore.setTranslationEnabled(guildId, req.body?.enabled === true);
-    return success(res, { guildId, config: publicTranslationConfig(guildId), rawConfig: config });
+    setModuleEnabled(guildId, 'translation', req.body?.enabled === true);
+    return success(res, { guildId, config: publicTranslationConfig(guildId) });
   } catch (error) {
     return failure(res, error, 400);
   }

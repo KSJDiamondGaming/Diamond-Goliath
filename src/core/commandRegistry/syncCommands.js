@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { REST, Routes } = require('discord.js');
 const { loadEnvironment } = require('../../config/envLoader');
+const { resolveTokenDetails, getRequiredTokenEnvName } = require('../../config/tokenResolver');
 const { BETA_GUILD_IDS: CONFIGURED_BETA_GUILD_IDS = [] } = require('../../config/betaGuilds');
 
 const ALLOWED_MODES = ['dev', 'beta', 'production'];
@@ -98,8 +99,9 @@ process.env.BOT_MODE = selectedMode;
 const loadedEnv = loadEnvironment(selectedMode);
 const BOT_MODE = selectedMode.toUpperCase();
 const envFile = loadedEnv?.envFile || `.env.${selectedMode}`;
+const tokenDetails = resolveTokenDetails({ mode: BOT_MODE });
 
-const TOKEN = required('DISCORD_TOKEN', firstEnv(['DISCORD_TOKEN', 'DISCORD_BOT_TOKEN', 'TOKEN']), envFile);
+const TOKEN = required(getRequiredTokenEnvName(BOT_MODE), tokenDetails.token, envFile);
 const CLIENT_ID = required('DISCORD_CLIENT_ID', firstEnv(['DISCORD_CLIENT_ID', 'CLIENT_ID', 'APPLICATION_ID']), envFile);
 
 const COMMAND_MODE = (() => {
@@ -233,7 +235,15 @@ function loadCommands(commandsPath, mode) {
   const seen = new Set();
   const errors = [];
 
-  for (const filePath of getAllJsFiles(commandsPath)) {
+  const userPanelCommand = path.join(process.cwd(), 'src', 'core', 'panels', 'user', 'user.js');
+  const modPanelCommand = path.join(process.cwd(), 'src', 'core', 'panels', 'mod', 'mod.js');
+  const commandFiles = [
+    ...getAllJsFiles(commandsPath),
+    ...(fs.existsSync(userPanelCommand) ? [userPanelCommand] : []),
+    ...(fs.existsSync(modPanelCommand) ? [modPanelCommand] : []),
+  ];
+
+  for (const filePath of commandFiles) {
     try {
       delete require.cache[require.resolve(filePath)];
 

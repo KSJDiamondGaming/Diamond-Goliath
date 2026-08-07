@@ -2,9 +2,8 @@
 
 const crypto = require('crypto');
 const fs = require('fs');
-const path = require('path');
 
-const { getRuntimeRoot } = require('../../config/runtimePaths');
+const { resolveBillingPath } = require('./billingPaths');
 const subscriptionManager = require('./subscriptionManager');
 const { PLAN_IDS, normalizePlanId } = require('../../config/plans');
 
@@ -19,14 +18,8 @@ function now() {
   return new Date().toISOString();
 }
 
-function getBillingDir() {
-  const dir = path.join(getRuntimeRoot(process.env.BOT_MODE || 'DEV'), 'billing');
-  fs.mkdirSync(dir, { recursive: true });
-  return dir;
-}
-
 function getCodesFile() {
-  return path.join(getBillingDir(), 'codes.json');
+  return resolveBillingPath('codes.json');
 }
 
 function readCodes() {

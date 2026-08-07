@@ -6,7 +6,7 @@ const {
   SlashCommandBuilder,
 } = require('discord.js');
 
-const mediaTools = require('../../core/mediaTools');
+const mediaTools = require('../../core/mediaTools/mediaService');
 const entitlementManager = require('../../server/billing/entitlementManager');
 const { FEATURE_KEYS } = require('../../config/plans');
 const { enforceCommandAccess } = require('../../core/ui/commandAccess');

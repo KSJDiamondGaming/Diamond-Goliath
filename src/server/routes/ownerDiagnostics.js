@@ -4,40 +4,25 @@ const express = require('express');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { resolveBotMode, getRuntimeRoot, resolveRuntimePath } = require('../../config/runtimePaths');
+const security = require('../../core/security/securityCore');
 
 const router = express.Router();
-
-function splitIds(value) {
-  return String(value || '').split(',').map((id) => id.trim()).filter(Boolean);
-}
-
-function getOwnerIds() {
-  return [...new Set([
-    ...splitIds(process.env.OWNER_ID),
-    ...splitIds(process.env.OWNER_IDS),
-    ...splitIds(process.env.BOT_OWNER_ID),
-    ...splitIds(process.env.BOT_OWNER_IDS),
-  ])];
-}
-
-function isOwnerUser(userId) {
-  if (!userId) return false;
-  return getOwnerIds().includes(String(userId));
-}
+const RUNTIME_MODE = resolveBotMode(process.env.BOT_MODE).toUpperCase();
 
 function requireOwner(req, res, next) {
   if (!req.session?.user) {
     return res.status(401).json({ success: false, error: 'Not authenticated.' });
   }
 
-  if (!isOwnerUser(req.session.user.id)) {
+  if (!security.isBotOwner(req.session.user.id)) {
     return res.status(403).json({
       success: false,
       error: 'Forbidden',
       diagnostics: {
         sessionUserId: req.session.user.id,
         ownerMatch: false,
-        ownerIdCount: getOwnerIds().length,
+        ownerIdCount: security.getBotOwnerIds().length,
         configuredOwnerKeys: getConfiguredOwnerKeys(),
       },
     });
@@ -48,10 +33,7 @@ function requireOwner(req, res, next) {
 
 function getConfiguredOwnerKeys() {
   return {
-    OWNER_ID: splitIds(process.env.OWNER_ID).length,
-    OWNER_IDS: splitIds(process.env.OWNER_IDS).length,
-    BOT_OWNER_ID: splitIds(process.env.BOT_OWNER_ID).length,
-    BOT_OWNER_IDS: splitIds(process.env.BOT_OWNER_IDS).length,
+    OWNER_IDS: security.getBotOwnerIds().length,
   };
 }
 
@@ -65,17 +47,6 @@ function getDiscordClient(req) {
     global.discordClient ||
     null
   );
-}
-
-function getRuntimeMode() {
-  return String(process.env.BOT_MODE || 'dev').trim().toUpperCase();
-}
-
-function getEnvironmentKey(environment = getRuntimeMode()) {
-  const value = String(environment || 'DEV').toUpperCase();
-  if (value === 'PRODUCTION' || value === 'PROD') return 'production';
-  if (value === 'BETA') return 'beta';
-  return 'dev';
 }
 
 function getSafeEnvSummary() {
@@ -105,8 +76,8 @@ function getPackageInfo() {
   return safeReadJson(path.join(process.cwd(), 'package.json'), { name: 'goliath', version: 'unknown' }) || { name: 'goliath', version: 'unknown' };
 }
 
-function getRuntimeFolders(environment = getRuntimeMode()) {
-  const root = path.join(process.cwd(), 'src', 'runtime', getEnvironmentKey(environment));
+function getRuntimeFolders(environment = RUNTIME_MODE) {
+  const root = getRuntimeRoot(environment);
   const folders = ['guilds', 'logs', 'backups', 'data', 'cache', 'deployments'];
   return Object.fromEntries(folders.map((folder) => {
     const folderPath = path.join(root, folder);
@@ -114,11 +85,11 @@ function getRuntimeFolders(environment = getRuntimeMode()) {
   }));
 }
 
-function readDeploymentHistory(environment = getRuntimeMode()) {
+function readDeploymentHistory(environment = RUNTIME_MODE) {
   const candidates = [
-    path.join(process.cwd(), 'src', 'runtime', getEnvironmentKey(environment), 'deployments', 'history.json'),
-    path.join(process.cwd(), 'src', 'runtime', getEnvironmentKey(environment), 'data', 'deployments.json'),
-    path.join(process.cwd(), 'src', 'runtime', getEnvironmentKey(environment), 'logs', 'deployments.json'),
+    resolveRuntimePath(environment, 'deployments', 'history.json'),
+    resolveRuntimePath(environment, 'data', 'deployments.json'),
+    resolveRuntimePath(environment, 'logs', 'deployments.json'),
   ];
 
   for (const filePath of candidates) {
@@ -133,7 +104,7 @@ function readDeploymentHistory(environment = getRuntimeMode()) {
 
 function buildDeploymentPayload(req) {
   const client = getDiscordClient(req);
-  const mode = getRuntimeMode();
+  const mode = RUNTIME_MODE;
   const branchMap = { DEV: 'dev', BETA: 'beta', PRODUCTION: 'production' };
   const packageInfo = getPackageInfo();
   const commitSha = String(process.env.GITHUB_SHA || process.env.COMMIT_SHA || process.env.GIT_COMMIT || '').trim() || null;
@@ -201,19 +172,19 @@ function buildDeploymentPayload(req) {
 router.get('/', requireOwner, (req, res) => {
   const client = getDiscordClient(req);
   const guildCount = client?.guilds?.cache?.size || 0;
-  const ownerIds = getOwnerIds();
+  const ownerIds = security.getBotOwnerIds();
   const sessionUserId = String(req.session?.user?.id || '');
 
   return res.json({
     success: true,
     checkedAt: new Date().toISOString(),
-    mode: getRuntimeMode(),
+    mode: RUNTIME_MODE,
     auth: {
       authenticated: Boolean(req.session?.user),
       sessionUserId,
       sessionUserName: req.session?.user?.username || req.session?.user?.displayName || null,
       sessionOwnerFlag: req.session?.user?.isOwner === true,
-      ownerMatch: isOwnerUser(sessionUserId),
+      ownerMatch: security.isBotOwner(sessionUserId),
       ownerIdCount: ownerIds.length,
       configuredOwnerKeys: getConfiguredOwnerKeys(),
     },
@@ -248,7 +219,7 @@ router.get('/deployments', requireOwner, (req, res) => {
     return res.json({
       success: true,
       owner: true,
-      mode: getRuntimeMode(),
+      mode: RUNTIME_MODE,
       ...payload,
       updatedAt: new Date().toISOString(),
     });

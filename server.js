@@ -37,6 +37,7 @@ const { bootstrapRuntime, runBootValidation, safeLoad, printStartupFingerprint }
   bootstrapRuntime: () => ({}), runBootValidation: () => true, safeLoad: (_label, fn) => ({ ok: true, result: fn() }), printStartupFingerprint: () => null,
 }, { optional: false });
 const { initSocketHub } = safeRequire('socketHub', './src/server/sockets/socketHub', { initSocketHub: () => null }, { optional: false });
+const { prepareInteraction } = safeRequire('interaction response guard', './src/runtime/interactionResponseGuard', { prepareInteraction: async () => null }, { optional: false });
 safeRequire('backup notification wiring', './src/core/notifications/wireBackupNotifications', { wireBackupNotifications: () => false }).wireBackupNotifications?.();
 
 const route = (label, modulePath, optional = false) => safeRequire(label, modulePath, emptyRouter(), { optional });
@@ -52,31 +53,31 @@ const automodRoutes = route('automod routes', './src/server/routes/config/automo
 const generalSettingsRoutes = route('general settings routes', './src/server/routes/config/generalSettings');
 const logsRoutes = route('logs routes', './src/server/routes/config/logs');
 const messagesRoutes = route('messages routes', './src/server/routes/config/messages');
-const embedsRoutes = route('embeds routes', './src/server/routes/config/embeds');
+const embedsRoutes = route('embeds routes', './src/server/routes/embeds');
 const billingRoutes = route('billing routes', './src/server/routes/billing');
 const moderationRoutes = route('moderation routes', './src/server/routes/moderation');
 const serverRestoreRoutes = route('restore routes', './src/server/routes/serverRestoreRoutes');
 const securityRoutes = route('security routes', './src/server/routes/security');
-const ticketRoutes = route('ticket routes', './src/modules/tickets/ticketsRoute');
+const ticketRoutes = route('ticket routes', './src/server/routes/tickets');
 const formsRoutes = route('forms routes', './src/server/routes/forms');
 const transcriptRoutes = route('transcript routes', './src/server/routes/transcripts');
 const translationRoutes = route('translation routes', './src/server/routes/translation');
 const permissionHealthRoutes = route('permission health routes', './src/server/routes/permissionHealth');
-const socialRoutes = route('social routes', './src/modules/social/socialRoute');
-const scheduleRoutes = route('schedule routes', './src/modules/schedule/scheduleRoute');
-const invitesRoutes = route('invite routes', './src/modules/invites/invitesRoute');
-const verificationRoutes = route('verification routes', './src/modules/verification/verificationRoute');
-const autoRolesRoutes = route('auto roles routes', './src/modules/autoroles/autorolesRoute');
-const welcomeRoutes = route('welcome routes', './src/modules/welcome/welcomeRoute');
-const goodbyeRoutes = route('goodbye routes', './src/modules/goodbye/goodbyeRoute');
-const reactionRolesRoutes = route('reaction roles routes', './src/modules/reactionroles/reactionRolesRoute');
-const timedRolesRoutes = route('timed roles routes', './src/modules/timedroles/timedRolesRoute');
+const socialRoutes = route('social routes', './src/modules/socialStudio/socialAlerts/socialStudioRoute');
+const scheduleRoutes = route('schedule routes', './src/modules/utilityStudio/schedule/scheduleRoute');
+const invitesRoutes = route('invite routes', './src/modules/communityStudio/invites/invitesRoute');
+const verificationRoutes = route('verification routes', './src/modules/securityStudio/verificationRoute');
+const autoRolesRoutes = route('auto roles routes', './src/modules/roleStudio/autoRoles/autoRolesRoute');
+const welcomeRoutes = route('welcome routes', './src/modules/messageStudio/welcome/welcomeRoute');
+const goodbyeRoutes = route('goodbye routes', './src/server/routes/goodbye');
+const reactionRolesRoutes = route('reaction roles routes', './src/modules/roleStudio/reactionRoles/reactionRolesRoute');
+const timedRolesRoutes = route('timed roles routes', './src/modules/roleStudio/timedRoles/timedRolesRoute');
 const modulesRoutes = route('modules routes', './src/server/routes/modules');
 const automationRoutes = route('automation routes', './src/server/routes/automation');
 const notificationRoutes = route('notification routes', './src/server/routes/notifications');
 const activityRoutes = route('activity routes', './src/server/routes/activity');
-const pollsRoutes = route('polls routes', './src/modules/polls/pollsRoute');
-const statsRoutes = route('stats routes', './src/server/routes/stats');
+const pollsRoutes = route('polls routes', './src/modules/communityStudio/polls/pollsRoute');
+const statsRoutes = route('stats routes', './src/modules/utilityStudio/stats/statsRoute');
 const tempVoiceRoutes = route('temp voice routes', './src/server/routes/tempVoice');
 const starboardRoutes = route('starboard routes', './src/server/routes/starboard');
 const mediaRoutes = route('media routes', './src/server/routes/media');
@@ -117,7 +118,7 @@ app.set('trust proxy', 1);
 app.set('goliath.client', client);
 app.set('goliath.io', io);
 
-const allowedOrigins = new Set(['https://goliath.ksjdigital.co.uk', 'https://dev.goliath.ksjdigital.co.uk', 'https://twotonetaj.ksjdigital.co.uk', 'http://localhost:5173', 'http://localhost:5174']);
+const allowedOrigins = new Set(['https://goliath.ksjdigital.co.uk', 'https://dev.goliath.ksjdigital.co.uk', 'https://twotonetaj.ksjdigital.co.uk', 'http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175']);
 [process.env.CLIENT_URL, process.env.DASHBOARD_CLIENT_URL, process.env.DASHBOARD_URL, process.env.VITE_CLIENT_URL, process.env.TWOTONETAJ_CLIENT_URL].filter(Boolean).forEach((origin) => allowedOrigins.add(String(origin).trim()));
 app.use(cors({ origin(origin, callback) { if (!origin || allowedOrigins.has(origin)) return callback(null, true); return callback(new Error(`CORS blocked origin: ${origin}`)); }, credentials: true }));
 app.use(express.json({ limit: '25mb' }));
@@ -141,17 +142,39 @@ function registerEvents() {
   const eventsPath = path.join(process.cwd(), 'src', 'events');
   if (!fs.existsSync(eventsPath)) return;
   const files = [];
+  const grouped = new Map();
   const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).forEach((entry) => { const full = path.join(dir, entry.name); if (entry.isDirectory()) walk(full); else if (entry.isFile() && entry.name.endsWith('.js')) files.push(full); });
   walk(eventsPath);
+  files.sort((a, b) => a.localeCompare(b));
+
   for (const file of files) {
     try {
       const loaded = require(file);
       for (const handler of (Array.isArray(loaded) ? loaded : [loaded])) {
         if (!handler?.name || typeof handler.execute !== 'function') continue;
-        const listener = (...args) => handler.execute(...args, client);
-        if (handler.once === true) client.once(handler.name, listener); else client.on(handler.name, listener);
+        const eventName = String(handler.name);
+        const groupKey = `${eventName}:${handler.once === true ? 'once' : 'on'}`;
+        if (!grouped.has(groupKey)) grouped.set(groupKey, { eventName, once: handler.once === true, handlers: [] });
+        grouped.get(groupKey).handlers.push({ file, execute: handler.execute });
       }
-    } catch (error) { console.warn(`⚠️ Event skipped: ${file}`); console.warn(error?.message || error); }
+    } catch (error) {
+      console.warn(`⚠️ Event skipped: ${file}`);
+      console.warn(error?.message || error);
+    }
+  }
+
+  for (const { eventName, once, handlers } of grouped.values()) {
+    const listener = async (...args) => {
+      if (eventName === 'interactionCreate') await prepareInteraction(args[0]);
+      for (const handler of handlers) {
+        try { await handler.execute(...args, client); }
+        catch (error) {
+          console.error(`[Events] ${eventName} handler failed: ${handler.file}`);
+          console.error(error?.stack || error?.message || error);
+        }
+      }
+    };
+    if (once) client.once(eventName, listener); else client.on(eventName, listener);
   }
 }
 registerEvents();
@@ -161,23 +184,25 @@ async function runStartupTask(label, fn) {
 }
 client.once('clientReady', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
-  console.log(`ℹ Guilds cached: ${client.guilds.cache.size}`);
+  console.log(`ℹ️ Guilds cached: ${client.guilds.cache.size}`);
   for (const guild of client.guilds.cache.values()) {
     try { await enforceGuildAccess(guild, botMode, config); defaultModules.initializeDefaultModules?.(guild.id); guildManager.syncGuildMeta?.(guild); await resourceManager.syncDiscordResources?.(guild); }
     catch (error) { console.error(`Guild startup sync failed for ${guild?.id}:`, error?.message || error); }
   }
   await Promise.all([
-    runStartupTask('Tickets', () => require('./src/modules/tickets/tickets').startup.startupTickets(client)),
-    runStartupTask('Timed Roles', () => require('./src/modules/timedroles/timedRoles').startup(client)),
-    runStartupTask('Translation', () => require('./src/modules/translation/translationStartup').startupTranslation(client)),
-    runStartupTask('Verification', () => require('./src/modules/verification/verification').startupVerification(client)),
-    runStartupTask('Goodbye', () => require('./src/modules/goodbye/goodbye').startupGoodbye(client)),
-    runStartupTask('Reaction Roles', () => require('./src/modules/reactionroles/reactionRoles').startup(client)),
-    runStartupTask('Giveaways', () => require('./src/modules/giveaways/giveawayScheduler').start(client)),
+    runStartupTask('Tickets', () => require('./src/modules/feedbackStudio/tickets/tickets').startup.startupTickets(client)),
+    runStartupTask('Timed Roles', () => require('./src/modules/roleStudio/timedRoles/timedRoles').startup(client)),
+    runStartupTask('Translation', () => require('./src/modules/utilityStudio/translation/translationStartup').startupTranslation(client)),
+    runStartupTask('Goodbye', () => require('./src/modules/messageStudio/goodbye/goodbye').startupGoodbye(client)),
+    runStartupTask('Reaction Roles', () => {
+      const enabledGuilds = client.guilds.cache.filter((guild) => guildManager.isModuleEnabled(guild.id, 'reactionRoles'));
+      return require('./src/modules/roleStudio/reactionRoles/reactionRoles').startup({ guilds: { cache: enabledGuilds } });
+    }),
+    runStartupTask('Verification', () => require('./src/modules/securityStudio/verification').startupVerification(client)),
   ]);
-  backupScheduler.startBackupScheduler?.();
+  backupScheduler.startBackupScheduler?.(client);
 });
-server.listen(PORT, () => console.log(`🌐 Dashboard server running on port ${PORT}`));
-const token = resolveToken(config);
-if (!token) { console.error('❌ Missing Discord token for current BOT_MODE.'); process.exit(1); }
+
+const token = resolveToken(botMode, config);
 client.login(token);
+server.listen(PORT, '0.0.0.0', () => console.log(`🌐 Dashboard server running on port ${PORT}`));

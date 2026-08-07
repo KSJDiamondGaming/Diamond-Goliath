@@ -4,32 +4,18 @@ const express = require('express');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { resolveBotMode, resolveRuntimePath } = require('../../config/runtimePaths');
 const notifications = require('../../core/notifications/notificationStore');
+const security = require('../../core/security/securityCore');
 
 const router = express.Router();
+const RUNTIME_MODE = resolveBotMode(process.env.BOT_MODE).toUpperCase();
 
 const ENVIRONMENT_PORTS = [
   { key: 'dev', environment: 'DEV', branch: 'dev', port: 3001 },
   { key: 'beta', environment: 'BETA', branch: 'beta', port: 3011 },
   { key: 'production', environment: 'PRODUCTION', branch: 'production', port: 3021 },
 ];
-
-function splitIds(value) {
-  return String(value || '').split(',').map((id) => id.trim()).filter(Boolean);
-}
-
-function getOwnerIds() {
-  return [...new Set([
-    ...splitIds(process.env.OWNER_ID),
-    ...splitIds(process.env.OWNER_IDS),
-    ...splitIds(process.env.BOT_OWNER_ID),
-    ...splitIds(process.env.BOT_OWNER_IDS),
-  ])];
-}
-
-function isOwnerUser(userId) {
-  return Boolean(userId && getOwnerIds().includes(String(userId)));
-}
 
 function isInternalOwnerRequest(req) {
   const token = String(process.env.OWNER_INTERNAL_TOKEN || '').trim();
@@ -39,7 +25,7 @@ function isInternalOwnerRequest(req) {
 
 function requireOwner(req, res, next) {
   if (!req.session?.user) return res.status(401).json({ success: false, error: 'Not authenticated.' });
-  if (!isOwnerUser(req.session.user.id)) return res.status(403).json({ success: false, error: 'Forbidden' });
+  if (!security.isBotOwner(req.session.user.id)) return res.status(403).json({ success: false, error: 'Forbidden' });
   return next();
 }
 
@@ -48,19 +34,8 @@ function requireOwnerOrInternal(req, res, next) {
   return requireOwner(req, res, next);
 }
 
-function getRuntimeMode() {
-  return String(process.env.BOT_MODE || 'dev').trim().toUpperCase();
-}
-
-function getEnvironmentKey(environment = getRuntimeMode()) {
-  const value = String(environment || 'DEV').toUpperCase();
-  if (value === 'PRODUCTION' || value === 'PROD') return 'production';
-  if (value === 'BETA') return 'beta';
-  return 'dev';
-}
-
-function getEnvironmentConfig(environment = getRuntimeMode()) {
-  const key = getEnvironmentKey(environment);
+function getEnvironmentConfig(environment = RUNTIME_MODE) {
+  const key = resolveBotMode(environment);
   return ENVIRONMENT_PORTS.find((item) => item.key === key) || ENVIRONMENT_PORTS[0];
 }
 
@@ -85,19 +60,15 @@ function getBuildTime() {
   return String(process.env.BUILD_TIME || process.env.BUILD_DATE || process.env.DEPLOYED_AT || '').trim() || null;
 }
 
-function getCurrentBranch(environment = getRuntimeMode()) {
+function getCurrentBranch(environment = RUNTIME_MODE) {
   return String(process.env.GIT_BRANCH || process.env.BRANCH_NAME || getEnvironmentConfig(environment).branch || '').replace(/^origin\//, '') || getEnvironmentConfig(environment).branch;
 }
 
-function runtimePath(environment = getRuntimeMode(), ...parts) {
-  return path.join(process.cwd(), 'src', 'runtime', getEnvironmentKey(environment), ...parts);
-}
-
-function readDeploymentHistory(environment = getRuntimeMode()) {
+function readDeploymentHistory(environment = RUNTIME_MODE) {
   const candidates = [
-    runtimePath(environment, 'deployments', 'history.json'),
-    runtimePath(environment, 'data', 'deployments.json'),
-    runtimePath(environment, 'logs', 'deployments.json'),
+    resolveRuntimePath(environment, 'deployments', 'history.json'),
+    resolveRuntimePath(environment, 'data', 'deployments.json'),
+    resolveRuntimePath(environment, 'logs', 'deployments.json'),
   ];
 
   for (const filePath of candidates) {
@@ -110,8 +81,8 @@ function readDeploymentHistory(environment = getRuntimeMode()) {
   return [];
 }
 
-function getRuntimeFolders(environment = getRuntimeMode()) {
-  const root = runtimePath(environment);
+function getRuntimeFolders(environment = RUNTIME_MODE) {
+  const root = resolveRuntimePath(environment);
   const folders = ['guilds', 'logs', 'backups', 'data', 'cache', 'deployments'];
   return Object.fromEntries(folders.map((folder) => {
     const folderPath = path.join(root, folder);
@@ -125,7 +96,7 @@ function getDiscordClient(req) {
 
 function notifyDeployment(deployment = {}) {
   try {
-    const environment = String(deployment.environment || getRuntimeMode()).toUpperCase();
+    const environment = String(deployment.environment || RUNTIME_MODE).toUpperCase();
     const sourceGuildId = process.env.OWNER_NOTIFICATION_GUILD_ID || process.env.PRIMARY_GUILD_ID || process.env.GUILD_ID || null;
     if (!sourceGuildId) return null;
 
@@ -156,7 +127,7 @@ function notifyDeployment(deployment = {}) {
   return null;
 }
 
-function buildLocalDeployment(req, environment = getRuntimeMode()) {
+function buildLocalDeployment(req, environment = RUNTIME_MODE) {
   const config = getEnvironmentConfig(environment);
   const client = getDiscordClient(req);
   const packageInfo = getPackageInfo();
@@ -254,7 +225,7 @@ async function fetchInternalDeployment(port, environment) {
 
 router.get('/local', requireOwnerOrInternal, (req, res) => {
   try {
-    const deployment = buildLocalDeployment(req, getRuntimeMode());
+    const deployment = buildLocalDeployment(req, RUNTIME_MODE);
     notifyDeployment(deployment);
     return res.json({ success: true, owner: true, deployment, deployments: [deployment], summary: summarise([deployment]), updatedAt: new Date().toISOString() });
   } catch (error) {

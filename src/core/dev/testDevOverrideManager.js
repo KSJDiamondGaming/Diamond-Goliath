@@ -3,9 +3,10 @@
 const fs = require('fs');
 const path = require('path');
 
+const { normalizeBotMode } = require('../../config/botModes');
 const { getRuntimePaths } = require('../../config/runtimePaths');
 
-const DEV_MODE = 'dev';
+const DEV_MODE = 'DEV';
 const FILE_NAME = 'testDevOverride.json';
 const PAYWALL_BYPASS_DEFAULT_ENABLED = true;
 const PAYWALL_BYPASS_PLAN = 'lifetime';
@@ -24,39 +25,13 @@ function text(value) {
   return String(value || '').trim();
 }
 
-function splitIds(value) {
-  return String(value || '')
-    .split(',')
-    .map((entry) => text(entry))
-    .filter(Boolean);
-}
-
-function mode() {
-  return String(process.env.BOT_MODE || 'DEV').toLowerCase();
+function isBotOwner(userId) {
+  const security = require('../security/securityCore');
+  return typeof security.isBotOwner === 'function' && security.isBotOwner(userId);
 }
 
 function isDevMode() {
-  return mode() === DEV_MODE;
-}
-
-function getOwnerIds() {
-  return String(process.env.OWNER_IDS || '')
-    .split(',')
-    .map((id) => id.trim())
-    .filter(Boolean);
-}
-
-function configuredOwnerIds() {
-  return new Set([
-    ...splitIds(process.env.OWNER_ID),
-    ...splitIds(process.env.OWNER_IDS),
-    ...splitIds(process.env.BOT_OWNER_ID),
-    ...splitIds(process.env.BOT_OWNER_IDS),
-  ]);
-}
-
-function isOwnerId(userId) {
-  return getOwnerIds().includes(String(userId || ''));
+  return normalizeBotMode(process.env.BOT_MODE) === DEV_MODE;
 }
 
 function guildId(guildOrId) {
@@ -154,7 +129,7 @@ function toggle(userId) {
     };
   }
 
-  if (!isOwnerId(userId)) {
+  if (!isBotOwner(userId)) {
     return {
       ...readState(),
       blocked: true,
@@ -202,7 +177,7 @@ function isOwnerSubject({ guild = null, member = null, user = null, userId = '' 
   const id = text(userId || subjectId(member) || subjectId(user));
   if (!id) return false;
   if (text(guild?.ownerId) === id) return true;
-  return configuredOwnerIds().has(id);
+  return isBotOwner(id);
 }
 
 function isDevOwnerHierarchyOverride({ guild = null, guildId: targetGuildId = '', member = null, user = null, userId = '' } = {}) {
@@ -245,9 +220,6 @@ module.exports = {
   DEVELOPMENT_TEST_GUILD_ID,
   OWNER_PROTECTED_ACTIONS,
   isDevMode,
-  isOwnerId,
-  getOwnerIds,
-  configuredOwnerIds,
   readState,
   isEnabled,
   toggle,

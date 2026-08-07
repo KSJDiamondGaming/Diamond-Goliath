@@ -6,6 +6,7 @@ const {
   getDiscordResources,
   syncDiscordResources,
 } = require('../../core/guild/discordResourceManager');
+const { resolveToken, getRequiredTokenEnvName } = require('../../config/tokenResolver');
 
 const router = express.Router();
 
@@ -21,12 +22,12 @@ function sleep(ms) {
 }
 
 function getBotToken() {
-  return String(process.env.DISCORD_TOKEN || process.env.TOKEN || process.env.DISCORD_BOT_TOKEN || '').trim();
+  return String(resolveToken() || '').trim();
 }
 
 function requireBotToken() {
   const token = getBotToken();
-  if (!token) throw new Error('Missing bot token environment variable');
+  if (!token) throw new Error(`Missing bot token. Set ${getRequiredTokenEnvName()} in the active mode env.`);
   return token;
 }
 

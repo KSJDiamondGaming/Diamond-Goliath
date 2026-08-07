@@ -1,6 +1,6 @@
 const { getRuntimePaths } = require('../../config/runtimePaths');
 
-const runtimePaths = getRuntimePaths(process.env.BOT_MODE || 'DEV');
+const runtimePaths = getRuntimePaths(process.env.BOT_MODE);
 
 const DEFAULT_GENERAL_SETTINGS = Object.freeze({
   prefix: '!',

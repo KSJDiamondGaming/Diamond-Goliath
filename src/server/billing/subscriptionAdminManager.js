@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const guildManager = require('../../core/guild/guildManager');
-const { getRuntimeRoot } = require('../../config/runtimePaths');
+const { resolveBillingPath } = require('./billingPaths');
 const { PLAN_IDS, normalizePlanId, getPlanDefinition } = require('../../config/plans');
 const subscriptionManager = require('./subscriptionManager');
 
@@ -12,14 +12,8 @@ function now() {
   return new Date().toISOString();
 }
 
-function getBillingDir() {
-  const dir = path.join(getRuntimeRoot(process.env.BOT_MODE || 'DEV'), 'billing');
-  fs.mkdirSync(dir, { recursive: true });
-  return dir;
-}
-
 function getHistoryFile() {
-  return path.join(getBillingDir(), 'subscriptionHistory.json');
+  return resolveBillingPath('subscriptionHistory.json');
 }
 
 function cleanGuildId(value) {

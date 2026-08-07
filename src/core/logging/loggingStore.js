@@ -1,11 +1,11 @@
 'use strict';
 
+const guildManager = require('../guild/guildManager');
 const {
   getModuleSection,
   saveModuleSection,
   updateModuleSection,
-} = require('../../core/guild/moduleSectionManager');
-const guildManager = require('../../core/guild/guildManager');
+} = require('../guild/moduleSectionManager');
 
 const MODULE = 'logging';
 
@@ -89,7 +89,6 @@ function defaultAnalytics() {
 
 function defaultLoggingSection() {
   return {
-    enabled: false,
     channels: defaultChannels(),
     events: defaultEvents(),
     settings: defaultSettings(),
@@ -101,15 +100,12 @@ function defaultLoggingSection() {
 
 function normalizeChannels(value = {}) {
   const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
-  const legacyMessage = cleanDiscordId(source.message);
   const output = defaultChannels();
 
   for (const key of EVENT_KEYS) {
     output[key] = cleanDiscordId(source[key]);
   }
 
-  if (!output.messageDelete) output.messageDelete = legacyMessage;
-  if (!output.messageEdit) output.messageEdit = legacyMessage;
   return output;
 }
 
@@ -163,10 +159,9 @@ function normalizeAnalytics(value = {}) {
 function normalizeLoggingSection(value = {}) {
   const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
   const defaults = defaultLoggingSection();
-  return {
+  const normalized = {
     ...defaults,
     ...clone(source),
-    enabled: source.enabled === true,
     channels: normalizeChannels(source.channels),
     events: normalizeEvents(source.events),
     settings: normalizeSettings(source.settings),
@@ -174,35 +169,33 @@ function normalizeLoggingSection(value = {}) {
     createdAt: source.createdAt || defaults.createdAt,
     updatedAt: source.updatedAt || now(),
   };
+  delete normalized.enabled;
+  return normalized;
 }
 
-function getLegacyConfig(guildId) {
-  const legacy = guildManager.getGuildSection(guildId, 'logs', null);
-  return legacy && typeof legacy === 'object' ? legacy : null;
+function withCanonicalState(guildId, section) {
+  return {
+    ...normalizeLoggingSection(section),
+    enabled: guildManager.isModuleEnabled(guildId, MODULE),
+  };
 }
 
 function getLoggingSection(guildId) {
   const stored = getModuleSection(guildId, MODULE, null);
   if (stored && typeof stored === 'object' && Object.keys(stored).length) {
-    return normalizeLoggingSection(stored);
+    return withCanonicalState(guildId, stored);
   }
 
-  const legacy = getLegacyConfig(guildId);
-  if (legacy) {
-    const migrated = normalizeLoggingSection({ ...legacy, enabled: legacy.enabled !== false });
-    saveModuleSection(guildId, MODULE, migrated, { action: 'logging_legacy_migration' });
-    return migrated;
-  }
-
-  return defaultLoggingSection();
+  return withCanonicalState(guildId, defaultLoggingSection());
 }
 
 function saveLoggingSection(guildId, section, meta = {}) {
-  return normalizeLoggingSection(saveModuleSection(guildId, MODULE, normalizeLoggingSection(section), meta));
+  const saved = saveModuleSection(guildId, MODULE, normalizeLoggingSection(section), meta);
+  return withCanonicalState(guildId, saved);
 }
 
 function updateLoggingSection(guildId, updater, meta = {}) {
-  return normalizeLoggingSection(updateModuleSection(
+  const updated = updateModuleSection(
     guildId,
     MODULE,
     (current) => {
@@ -212,7 +205,8 @@ function updateLoggingSection(guildId, updater, meta = {}) {
     },
     defaultLoggingSection(),
     meta
-  ));
+  );
+  return withCanonicalState(guildId, updated);
 }
 
 function incrementAnalytics(guildId, eventKey, result = 'sent', meta = {}) {

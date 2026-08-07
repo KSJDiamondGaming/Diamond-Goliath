@@ -1,3 +1,7 @@
+'use strict';
+
+const { normalizeBotMode } = require('./botModes');
+
 function getEnvList(name) {
   const value = process.env[name];
 
@@ -9,16 +13,12 @@ function getEnvList(name) {
     .filter(Boolean);
 }
 
-function normaliseBotMode(botMode) {
-  return String(botMode || process.env.BOT_MODE || 'DEV').toUpperCase();
-}
-
 function normaliseModeConfig(modeConfig) {
   return modeConfig && typeof modeConfig === 'object' ? modeConfig : {};
 }
 
-function getAllowedGuildIds(botMode) {
-  const safeBotMode = normaliseBotMode(botMode);
+function getAllowedGuildIds(botMode = process.env.BOT_MODE) {
+  const safeBotMode = normalizeBotMode(botMode);
 
   if (safeBotMode === 'DEV') {
     return getEnvList('DEV_GUILD_ID');
@@ -47,11 +47,11 @@ function isGuildAllowed(guildId, botMode, modeConfig) {
   return allowedGuildIds.includes(String(guildId));
 }
 
-async function enforceGuildAccess(guild, botMode, modeConfig) {
+async function enforceGuildAccess(guild, botMode = process.env.BOT_MODE, modeConfig) {
   if (!guild) return false;
 
   const safeConfig = normaliseModeConfig(modeConfig);
-  const safeBotMode = normaliseBotMode(botMode);
+  const safeBotMode = normalizeBotMode(botMode);
 
   if (!safeConfig.strictGuildAccess) {
     return true;

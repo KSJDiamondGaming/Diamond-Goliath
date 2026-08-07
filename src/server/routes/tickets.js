@@ -14,18 +14,19 @@ const {
   addTicketNote,
   archiveTicket,
   removeTicket,
-} = require("../../modules/tickets/ticketManager");
+} = require("../../modules/feedbackStudio/tickets/ticketsLifecycle");
 
-const ticketRecovery = require("../../modules/tickets/ticketRecovery");
-const ticketPanelManager = require("../../modules/tickets/ticketPanelManager");
-const ticketTranscriptManager = require("../../modules/tickets/ticketTranscriptManager");
+const ticketRecovery = require("../../modules/feedbackStudio/tickets/ticketsTracking");
+const ticketPanelManager = require("../../modules/feedbackStudio/tickets/ticketsPanel");
+const ticketTranscriptManager = require("../../modules/feedbackStudio/tickets/ticketsTranscripts");
+const guildManager = require("../../core/guild/guildManager");
 
 const {
   getPanels,
   getPanel,
   getTicketSettings,
   saveTicketSettings,
-} = require("../../modules/tickets/ticketStore");
+} = require("../../modules/feedbackStudio/tickets/tickets");
 
 const {
   MANAGE_CHANNEL_PERMISSIONS,
@@ -73,6 +74,13 @@ function cleanDiscordId(value) {
 
 function cleanDiscordIds(values = []) {
   return [...new Set((Array.isArray(values) ? values : [values]).map(cleanDiscordId).filter(Boolean))];
+}
+
+function canonicalTicketSettings(guildId, settings = getTicketSettings(guildId) || {}) {
+  return {
+    ...settings,
+    enabled: guildManager.isModuleEnabled(guildId, "tickets"),
+  };
 }
 
 async function fetchGuild(req, guildId) {
@@ -269,7 +277,7 @@ router.get("/:guildId/overview", async (req, res) => {
     const { guildId } = req.params;
     const tickets = getGuildTickets(guildId);
     const panels = getPanels(guildId).panels || [];
-    const settings = getTicketSettings(guildId) || {};
+    const settings = canonicalTicketSettings(guildId);
     const openCount = countByStatus(tickets, "open");
     const claimedCount = countByStatus(tickets, "claimed");
     const closedCount = countByStatus(tickets, "closed");
@@ -279,7 +287,7 @@ router.get("/:guildId/overview", async (req, res) => {
     const missingChannelRecordCount = tickets.filter(hasMissingChannelRecord).length;
 
     return res.json({ success: true, guildId, overview: {
-      enabled: settings.enabled !== false,
+      enabled: guildManager.isModuleEnabled(guildId, "tickets"),
       ticketCount: tickets.length,
       totalCount: tickets.length,
       openCount,
@@ -322,8 +330,7 @@ router.post("/:guildId/recovery", async (req, res) => {
 router.get("/:guildId/settings", async (req, res) => {
   try {
     const { guildId } = req.params;
-    const settings = getTicketSettings(guildId) || {};
-    return res.json({ success: true, guildId, settings });
+    return res.json({ success: true, guildId, settings: canonicalTicketSettings(guildId) });
   } catch (error) {
     console.error("[TicketsRoute] SETTINGS GET:", error);
     return failure(res, error, "Failed to fetch ticket settings.");
@@ -333,10 +340,14 @@ router.get("/:guildId/settings", async (req, res) => {
 router.patch("/:guildId/settings", async (req, res) => {
   try {
     const { guildId } = req.params;
-    const settings = req.body?.settings || req.body || {};
+    const input = req.body?.settings || req.body || {};
+    const { enabled, ...settings } = input;
     await guardTicketSettings(req, guildId, settings);
+    if (typeof enabled === "boolean") {
+      guildManager.setModuleEnabled(guildId, "tickets", enabled, { actorId: req.body?.actorId });
+    }
     const savedSettings = saveTicketSettings(guildId, settings);
-    return res.json({ success: true, guildId, settings: savedSettings });
+    return res.json({ success: true, guildId, settings: canonicalTicketSettings(guildId, savedSettings) });
   } catch (error) {
     console.error("[TicketsRoute] SETTINGS PATCH:", error);
     return failure(res, error, "Failed to update ticket settings.", 400);
@@ -584,6 +595,40 @@ router.delete("/:guildId/:ticketId", async (req, res) => {
   } catch (error) {
     console.error("[TicketsRoute] DELETE:", error);
     return failure(res, error, "Failed to delete ticket.");
+  }
+});
+
+router.get("/:guildId/health", async (req, res) => {
+  try {
+    const guild = await fetchGuild(req, req.params.guildId);
+    if (!guild) return res.status(404).json({ success: false, error: "Guild is unavailable." });
+    const health = await require("../../modules/feedbackStudio/tickets/ticketsHealth").buildHealthReport(guild);
+    return res.json({ success: true, health });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error.message || "Unable to check Tickets health." });
+  }
+});
+
+router.post("/:guildId/health/repair", async (req, res) => {
+  try {
+    const guild = await fetchGuild(req, req.params.guildId);
+    if (!guild) return res.status(404).json({ success: false, error: "Guild is unavailable." });
+    const result = await require("../../modules/feedbackStudio/tickets/ticketsHealth").repairAll(guild, req.body?.actorId || null);
+    return res.json({ success: true, result });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error.message || "Unable to repair Tickets." });
+  }
+});
+
+router.post("/:guildId/panels/:panelId/repair", async (req, res) => {
+  try {
+    const guild = await fetchGuild(req, req.params.guildId);
+    if (!guild) return res.status(404).json({ success: false, error: "Guild is unavailable." });
+    const panel = await require("../../modules/feedbackStudio/tickets/ticketsHealth").repairPanel(guild, req.params.panelId, req.body?.actorId || null);
+    return res.json({ success: true, panel });
+  } catch (error) {
+    const status = /not found/i.test(String(error.message || "")) ? 404 : 500;
+    return res.status(status).json({ success: false, error: error.message || "Unable to repair ticket panel." });
   }
 });
 

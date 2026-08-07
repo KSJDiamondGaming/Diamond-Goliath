@@ -1,7 +1,7 @@
 'use strict';
 
 const { Events } = require('discord.js');
-const { startupWelcome } = require('../../modules/welcome/welcome');
+const { startupWelcome } = require('../../modules/messageStudio/welcome/welcome');
 
 module.exports = {
   name: Events.ClientReady,

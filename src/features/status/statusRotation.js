@@ -1,9 +1,10 @@
 const { ActivityType } = require('discord.js');
+const { normalizeBotMode } = require('../../config/botModes');
 
 const STATUS_INTERVAL_MS = 180_000;
 
 function getMode(client) {
-  return (client.botMode || process.env.BOT_MODE || 'DEV').toUpperCase();
+  return normalizeBotMode(client.botMode || process.env.BOT_MODE);
 }
 
 function getTotalMembers(client) {

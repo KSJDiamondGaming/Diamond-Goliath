@@ -4,14 +4,15 @@
 
 const express = require('express');
 
-const formStore = require('../../modules/forms/formStore');
-const formManager = require('../../modules/forms/formManager');
-const ticketStore = require('../../modules/tickets/ticketStore');
+const forms = require('../../modules/feedbackStudio/forms/forms');
+const formsPanel = require('../../modules/feedbackStudio/forms/formsPanel');
+const ticketStore = require('../../modules/feedbackStudio/tickets/tickets');
 const planLimitManager = require('../billing/planLimitManager');
+const guildManager = require('../../core/guild/guildManager');
 const {
   buildFormsWorkflowOverview,
   buildSubmissionWorkflowSummary,
-} = require('../../modules/forms/formWorkflowSummary');
+} = require('../../modules/feedbackStudio/forms/formsTracking');
 const {
   isGoliathPermissionError,
   validateRoleSelection,
@@ -73,6 +74,13 @@ function getGuildId(req) {
   return guildId;
 }
 
+function canonicalConfig(guildId, section = forms.getFormsSection(guildId)) {
+  return {
+    ...section,
+    enabled: guildManager.isModuleEnabled(guildId, 'forms'),
+  };
+}
+
 function getDiscordClient(req) {
   return (
     req.client ||
@@ -127,8 +135,8 @@ function workflowEvent(type, label, actorId, metadata = {}) {
 }
 
 function readSubmission(guildId, submissionId) {
-  const section = formStore.getFormsSection(guildId);
-  return section.submissions?.[formStore.cleanKey(submissionId)] || null;
+  const section = forms.getFormsSection(guildId);
+  return section.submissions?.[forms.cleanKey(submissionId)] || null;
 }
 
 function updateSubmissionWorkflow(guildId, submissionId, updater, actorId, timelineEvent) {
@@ -137,7 +145,7 @@ function updateSubmissionWorkflow(guildId, submissionId, updater, actorId, timel
 
   const currentWorkflow = existing.workflow && typeof existing.workflow === 'object' ? existing.workflow : {};
   const nextWorkflow = typeof updater === 'function' ? updater({ ...currentWorkflow }, existing) : { ...currentWorkflow, ...(updater || {}) };
-  const saved = formStore.updateSubmission(guildId, submissionId, {
+  const saved = forms.updateSubmission(guildId, submissionId, {
     workflow: {
       ...nextWorkflow,
       version: Math.max(Number(nextWorkflow.version || 1), 2),
@@ -147,7 +155,7 @@ function updateSubmissionWorkflow(guildId, submissionId, updater, actorId, timel
   }, { action: 'forms_workflow_update', actorId });
 
   if (saved && timelineEvent) {
-    formStore.addSubmissionTimeline(guildId, submissionId, timelineEvent, { action: 'forms_workflow_timeline', actorId });
+    forms.addSubmissionTimeline(guildId, submissionId, timelineEvent, { action: 'forms_workflow_timeline', actorId });
   }
 
   return readSubmission(guildId, submissionId) || saved;
@@ -165,7 +173,7 @@ async function guardFormStaffRoles(req, guildId, input = {}, scope = 'forms.staf
 }
 
 function assertFormLimit(guildId) {
-  const currentForms = formStore.listForms(guildId).length;
+  const currentForms = forms.listForms(guildId).length;
   return planLimitManager.assertCanCreateResource(guildId, 'forms', currentForms, {
     upgradeHint: 'Upgrade to Plus for 25 forms or Pro for unlimited forms.',
   });
@@ -177,7 +185,7 @@ function sortByNewest(items = []) {
 
 function filterSubmissions(submissions = [], query = {}) {
   let result = [...submissions];
-  if (query.formId) result = result.filter((submission) => submission.formId === formStore.cleanKey(query.formId));
+  if (query.formId) result = result.filter((submission) => submission.formId === forms.cleanKey(query.formId));
   if (query.status) result = result.filter((submission) => submission.status === String(query.status).trim().toLowerCase());
   if (query.userId) {
     const userId = String(query.userId).replace(/[<@!>]/g, '').trim();
@@ -187,7 +195,7 @@ function filterSubmissions(submissions = [], query = {}) {
 }
 
 function getPanelForms(guildId, panel) {
-  return (panel.formIds || []).map((formId) => formStore.getForm(guildId, formId)).filter(Boolean);
+  return (panel.formIds || []).map((formId) => forms.getForm(guildId, formId)).filter(Boolean);
 }
 
 function buildDecisionTicketUpdates(submission, decision = {}) {
@@ -248,19 +256,19 @@ function syncLinkedTicketDecision(guildId, submission, decision = {}) {
 router.get('/:guildId/overview', (req, res) => {
   try {
     const guildId = getGuildId(req);
-    const section = formStore.getFormsSection(guildId);
-    const forms = Object.values(section.forms || {});
+    const section = forms.getFormsSection(guildId);
+    const formItems = Object.values(section.forms || {});
     const panels = Object.values(section.panels || {});
     const submissions = Object.values(section.submissions || {});
-    const workflowOverview = buildFormsWorkflowOverview(forms, submissions);
+    const workflowOverview = buildFormsWorkflowOverview(formItems, submissions);
 
     return success(res, {
       guildId,
       overview: {
-        enabled: section.enabled !== false,
-        formCount: forms.length,
-        enabledFormCount: forms.filter((form) => form.enabled !== false).length,
-        disabledFormCount: forms.filter((form) => form.enabled === false).length,
+        enabled: guildManager.isModuleEnabled(guildId, 'forms'),
+        formCount: formItems.length,
+        enabledFormCount: formItems.filter((form) => form.enabled !== false).length,
+        disabledFormCount: formItems.filter((form) => form.enabled === false).length,
         panelCount: panels.length,
         deployedPanelCount: panels.filter((panel) => panel.channelId && panel.messageId).length,
         submissionCount: submissions.length,
@@ -277,7 +285,7 @@ router.get('/:guildId/overview', (req, res) => {
 router.get('/:guildId', (req, res) => {
   try {
     const guildId = getGuildId(req);
-    return success(res, { guildId, config: formStore.getFormsSection(guildId) });
+    return success(res, { guildId, config: canonicalConfig(guildId) });
   } catch (error) {
     return failure(res, error, 400);
   }
@@ -286,7 +294,7 @@ router.get('/:guildId', (req, res) => {
 router.get('/:guildId/forms', (req, res) => {
   try {
     const guildId = getGuildId(req);
-    return success(res, { guildId, forms: formStore.listForms(guildId) });
+    return success(res, { guildId, forms: forms.listForms(guildId) });
   } catch (error) {
     return failure(res, error, 400);
   }
@@ -295,7 +303,7 @@ router.get('/:guildId/forms', (req, res) => {
 router.get('/:guildId/forms/:formId', (req, res) => {
   try {
     const guildId = getGuildId(req);
-    const form = formStore.getForm(guildId, req.params.formId);
+    const form = forms.getForm(guildId, req.params.formId);
     if (!form) return failure(res, new Error('Form not found.'), 404);
     return success(res, { guildId, form });
   } catch (error) {
@@ -308,7 +316,7 @@ router.post('/:guildId/forms', async (req, res) => {
     const guildId = getGuildId(req);
     await guardFormStaffRoles(req, guildId, req.body || {}, 'forms.create_staff_roles');
     assertFormLimit(guildId);
-    const saved = formStore.saveForm(guildId, req.body || {});
+    const saved = forms.saveForm(guildId, req.body || {});
     return success(res, { guildId, form: saved });
   } catch (error) {
     return failure(res, error, 400);
@@ -319,9 +327,9 @@ router.put('/:guildId/forms/:formId', async (req, res) => {
   try {
     const guildId = getGuildId(req);
     await guardFormStaffRoles(req, guildId, req.body || {}, 'forms.update_staff_roles');
-    const existing = formStore.getForm(guildId, req.params.formId);
+    const existing = forms.getForm(guildId, req.params.formId);
     if (!existing) assertFormLimit(guildId);
-    const saved = formStore.saveForm(guildId, { ...(req.body || {}), formId: req.params.formId });
+    const saved = forms.saveForm(guildId, { ...(req.body || {}), formId: req.params.formId });
     return success(res, { guildId, form: saved });
   } catch (error) {
     return failure(res, error, 400);
@@ -331,9 +339,9 @@ router.put('/:guildId/forms/:formId', async (req, res) => {
 router.patch('/:guildId/forms/:formId/enabled', (req, res) => {
   try {
     const guildId = getGuildId(req);
-    const existing = formStore.getForm(guildId, req.params.formId);
+    const existing = forms.getForm(guildId, req.params.formId);
     if (!existing) return failure(res, new Error('Form not found.'), 404);
-    const saved = formStore.saveForm(guildId, { ...existing, enabled: req.body?.enabled !== false });
+    const saved = forms.saveForm(guildId, { ...existing, enabled: req.body?.enabled !== false });
     return success(res, { guildId, form: saved });
   } catch (error) {
     return failure(res, error, 400);
@@ -343,7 +351,7 @@ router.patch('/:guildId/forms/:formId/enabled', (req, res) => {
 router.get('/:guildId/panels', (req, res) => {
   try {
     const guildId = getGuildId(req);
-    const section = formStore.getFormsSection(guildId);
+    const section = forms.getFormsSection(guildId);
     return success(res, { guildId, panels: Object.values(section.panels || {}) });
   } catch (error) {
     return failure(res, error, 400);
@@ -353,7 +361,7 @@ router.get('/:guildId/panels', (req, res) => {
 router.post('/:guildId/panels', (req, res) => {
   try {
     const guildId = getGuildId(req);
-    return success(res, { guildId, panel: formStore.savePanel(guildId, req.body || {}) });
+    return success(res, { guildId, panel: forms.savePanel(guildId, req.body || {}) });
   } catch (error) {
     return failure(res, error, 400);
   }
@@ -362,7 +370,7 @@ router.post('/:guildId/panels', (req, res) => {
 router.put('/:guildId/panels/:panelId', (req, res) => {
   try {
     const guildId = getGuildId(req);
-    const panel = formStore.savePanel(guildId, { ...(req.body || {}), panelId: req.params.panelId });
+    const panel = forms.savePanel(guildId, { ...(req.body || {}), panelId: req.params.panelId });
     return success(res, { guildId, panel });
   } catch (error) {
     return failure(res, error, 400);
@@ -372,11 +380,11 @@ router.put('/:guildId/panels/:panelId', (req, res) => {
 router.post('/:guildId/panels/:panelId/deploy', async (req, res) => {
   try {
     const guildId = getGuildId(req);
-    const panel = formStore.getPanel(guildId, req.params.panelId);
+    const panel = forms.getPanel(guildId, req.params.panelId);
     if (!panel) return failure(res, new Error('Panel not found.'), 404);
     if (!panel.channelId) throw new Error('Panel needs a target channel before deployment.');
     const channel = await fetchGuildChannel(req, guildId, panel.channelId);
-    const saved = await formManager.deployFormPanel(channel, panel, channel.guild);
+    const saved = await formsPanel.deployFormPanel(channel, panel, channel.guild);
     return success(res, { guildId, panel: saved, message: 'Panel deployed.' });
   } catch (error) {
     return failure(res, error, 400);
@@ -386,15 +394,15 @@ router.post('/:guildId/panels/:panelId/deploy', async (req, res) => {
 router.post('/:guildId/panels/:panelId/refresh', async (req, res) => {
   try {
     const guildId = getGuildId(req);
-    const panel = formStore.getPanel(guildId, req.params.panelId);
+    const panel = forms.getPanel(guildId, req.params.panelId);
     if (!panel) return failure(res, new Error('Panel not found.'), 404);
     if (!panel.channelId || !panel.messageId) throw new Error('Panel must be deployed before it can be refreshed.');
     const channel = await fetchGuildChannel(req, guildId, panel.channelId);
     const message = await channel.messages.fetch(panel.messageId).catch(() => null);
     if (!message) throw new Error('Existing panel message was not found. Deploy a new panel instead.');
-    const forms = getPanelForms(guildId, panel);
-    await message.edit({ embeds: [formManager.buildFormPanelEmbed(panel, forms)], components: formManager.buildFormPanelRows(panel, forms) });
-    const saved = formStore.savePanel(guildId, panel, channel.guild);
+    const panelForms = getPanelForms(guildId, panel);
+    await message.edit({ embeds: [formsPanel.buildFormPanelEmbed(panel, panelForms)], components: formsPanel.buildFormPanelRows(panel, panelForms) });
+    const saved = forms.savePanel(guildId, panel, channel.guild);
     return success(res, { guildId, panel: saved, message: 'Panel refreshed.' });
   } catch (error) {
     return failure(res, error, 400);
@@ -404,7 +412,7 @@ router.post('/:guildId/panels/:panelId/refresh', async (req, res) => {
 router.get('/:guildId/submissions', (req, res) => {
   try {
     const guildId = getGuildId(req);
-    const section = formStore.getFormsSection(guildId);
+    const section = forms.getFormsSection(guildId);
     const limit = Math.min(Math.max(Number(req.query.limit || 50), 1), 200);
     const submissions = filterSubmissions(Object.values(section.submissions || {}), req.query);
     return success(res, { guildId, submissions: sortByNewest(submissions).slice(0, limit), total: submissions.length });
@@ -429,7 +437,7 @@ router.get('/:guildId/submissions/:submissionId/workflow', (req, res) => {
     const guildId = getGuildId(req);
     const submission = readSubmission(guildId, req.params.submissionId);
     if (!submission) return failure(res, new Error('Submission not found.'), 404);
-    const form = formStore.getForm(guildId, submission.formId);
+    const form = forms.getForm(guildId, submission.formId);
     return success(res, { guildId, workflow: buildSubmissionWorkflowSummary(form, submission) });
   } catch (error) {
     return failure(res, error, 400);
@@ -531,14 +539,14 @@ router.patch('/:guildId/submissions/:submissionId/status', (req, res) => {
   try {
     const guildId = getGuildId(req);
     const status = String(req.body?.status || '').trim().toLowerCase();
-    if (!formStore.SUBMISSION_STATUSES.includes(status)) throw new Error('Invalid submission status.');
+    if (!forms.SUBMISSION_STATUSES.includes(status)) throw new Error('Invalid submission status.');
 
     let updated;
     let linkedTicket = null;
     const actorId = req.session?.user?.id || req.body?.reviewedBy || null;
 
     if (['approved', 'denied', 'request_info'].includes(status)) {
-      updated = formStore.recordSubmissionDecision(guildId, req.params.submissionId, {
+      updated = forms.recordSubmissionDecision(guildId, req.params.submissionId, {
         status,
         reviewedBy: actorId,
         notes: req.body?.notes || '',
@@ -553,7 +561,7 @@ router.patch('/:guildId/submissions/:submissionId/status', (req, res) => {
           reviewedAt: updated.reviewedAt,
         });
 
-        formStore.addSubmissionTimeline(guildId, req.params.submissionId, {
+        forms.addSubmissionTimeline(guildId, req.params.submissionId, {
           type: linkedTicket ? 'ticket_synced' : 'ticket_sync_skipped',
           label: linkedTicket ? 'Linked ticket updated' : 'No linked ticket to update',
           actorId,
@@ -561,13 +569,13 @@ router.patch('/:guildId/submissions/:submissionId/status', (req, res) => {
         });
       }
     } else {
-      updated = formStore.updateSubmission(guildId, req.params.submissionId, {
+      updated = forms.updateSubmission(guildId, req.params.submissionId, {
         status,
         reviewedBy: req.body?.reviewedBy || null,
         reviewedAt: status === 'closed' ? new Date().toISOString() : null,
       });
       if (updated) {
-        formStore.addSubmissionTimeline(guildId, req.params.submissionId, {
+        forms.addSubmissionTimeline(guildId, req.params.submissionId, {
           type: `status_${status}`,
           label: `Status changed to ${status}`,
           actorId,
@@ -575,7 +583,7 @@ router.patch('/:guildId/submissions/:submissionId/status', (req, res) => {
       }
     }
 
-    const finalSubmission = updated ? formStore.getFormsSection(guildId).submissions?.[formStore.cleanKey(req.params.submissionId)] || updated : null;
+    const finalSubmission = updated ? forms.getFormsSection(guildId).submissions?.[forms.cleanKey(req.params.submissionId)] || updated : null;
     if (!finalSubmission) return failure(res, new Error('Submission not found.'), 404);
     return success(res, { guildId, submission: finalSubmission, linkedTicket });
   } catch (error) {
@@ -587,12 +595,14 @@ router.patch('/:guildId/settings', async (req, res) => {
   try {
     const guildId = getGuildId(req);
     await guardFormStaffRoles(req, guildId, req.body || {}, 'forms.settings_staff_roles');
-    const section = formStore.updateFormsSection(guildId, (current) => ({
+    if (typeof req.body?.enabled === 'boolean') {
+      guildManager.setModuleEnabled(guildId, 'forms', req.body.enabled, { actorId: getActorId(req) });
+    }
+    const section = forms.updateFormsSection(guildId, (current) => ({
       ...current,
-      enabled: req.body?.enabled !== false,
       settings: { ...(current.settings || {}), ...(req.body?.settings || {}) },
     }));
-    return success(res, { guildId, config: section });
+    return success(res, { guildId, config: canonicalConfig(guildId, section) });
   } catch (error) {
     return failure(res, error, 400);
   }

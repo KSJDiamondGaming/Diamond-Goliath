@@ -1,26 +1,19 @@
 'use strict';
 
 const express = require('express');
-const translationStore = require('../../modules/translation/translationStore');
+const { normalizeBotMode } = require('../../config/botModes');
+const security = require('../../core/security/securityCore');
+const guildManager = require('../../core/guild/guildManager');
+const translationStore = require('../../modules/utilityStudio/translation/translationStore');
 
 const router = express.Router();
+const RUNTIME_MODE = normalizeBotMode(process.env.BOT_MODE);
 
 const ENVIRONMENT_PORTS = [
   { environment: 'DEV', port: 3001 },
   { environment: 'BETA', port: 3011 },
   { environment: 'PRODUCTION', port: 3021 },
 ];
-
-function getOwnerIds() {
-  return String(process.env.OWNER_IDS || '')
-    .split(',')
-    .map((id) => id.trim())
-    .filter(Boolean);
-}
-
-function isOwnerUser(userId) {
-  return Boolean(userId && getOwnerIds().includes(String(userId)));
-}
 
 function isInternalOwnerRequest(req) {
   const token = String(process.env.OWNER_INTERNAL_TOKEN || '').trim();
@@ -33,7 +26,7 @@ function requireOwner(req, res, next) {
     return res.status(401).json({ success: false, error: 'Not authenticated.' });
   }
 
-  if (!isOwnerUser(req.session.user.id)) {
+  if (!security.isBotOwner(req.session.user.id)) {
     return res.status(403).json({ success: false, error: 'Forbidden' });
   }
 
@@ -43,10 +36,6 @@ function requireOwner(req, res, next) {
 function requireOwnerOrInternal(req, res, next) {
   if (isInternalOwnerRequest(req)) return next();
   return requireOwner(req, res, next);
-}
-
-function getRuntimeMode() {
-  return String(process.env.BOT_MODE || 'dev').trim().toUpperCase();
 }
 
 function getDiscordClient(req) {
@@ -83,7 +72,7 @@ function providerHealth() {
   };
 }
 
-function buildGuildOverview(guild, environment = getRuntimeMode()) {
+function buildGuildOverview(guild, environment = RUNTIME_MODE) {
   const guildId = guild.guildId || guild.id;
   const section = translationStore.getTranslationSection(guildId) || {};
   const channels = Object.values(section.channels || {});
@@ -101,7 +90,7 @@ function buildGuildOverview(guild, environment = getRuntimeMode()) {
     guildId,
     guildName,
     environment,
-    enabled: section.enabled === true,
+    enabled: guildManager.isModuleEnabled(guildId, 'translation'),
     provider: section.settings?.provider || 'manual',
     autoDetect: section.settings?.autoDetect !== false,
     threadMode: section.settings?.threadMode !== false,
@@ -205,7 +194,7 @@ async function fetchEnvironmentTranslation(port, environment) {
 
 router.get('/', requireOwnerOrInternal, (req, res) => {
   const client = getDiscordClient(req);
-  const mode = getRuntimeMode();
+  const mode = RUNTIME_MODE;
 
   if (!client?.guilds?.cache) {
     return res.status(503).json({ success: false, error: 'Discord client unavailable.' });

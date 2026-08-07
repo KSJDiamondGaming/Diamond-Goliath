@@ -1,0 +1,408 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const root = path.resolve(__dirname, '..', '..');
+
+function read(relativePath) {
+  return fs.readFileSync(path.join(root, relativePath), 'utf8');
+}
+
+test('verification health reads canonical module state', () => {
+  const source = read('src/modules/securityStudio/verificationHealth.js');
+  assert.match(source, /guildManager\.isModuleEnabled\(guild\.id, 'verification'\)/);
+});
+
+test('verification startup reads canonical module state', () => {
+  const source = read('src/modules/securityStudio/verification.js');
+  assert.match(source, /guildManager\.isModuleEnabled\(guild\.id, 'verification'\)/);
+});
+
+test('verification route does not persist enabled through manager config', () => {
+  const source = read('src/modules/securityStudio/verificationRoute.js');
+  assert.match(source, /enabled: guildManager\.isModuleEnabled\(guildId, 'verification'\) === true/);
+  assert.doesNotMatch(source, /configureVerification\(guildId, \{ enabled,/);
+});
+
+test('verification store removes module-level enabled state', () => {
+  const source = read('src/modules/securityStudio/verificationStore.js');
+  const defaultSection = source.slice(
+    source.indexOf('function defaultVerificationSection()'),
+    source.indexOf('function normalizeAnalytics('),
+  );
+  assert.doesNotMatch(defaultSection, /enabled\s*:/);
+  assert.match(source, /delete normalized\.enabled;/);
+});
+
+test('verification admin panel reports and writes canonical module state', () => {
+  const source = read('src/modules/securityStudio/verificationPanel.js');
+  assert.match(source, /enabled: guildManager\.isModuleEnabled\(guildId, 'verification'\)/);
+  assert.match(source, /guildManager\.setModuleEnabled\(interaction\.guild\.id, 'verification', customId\.endsWith\(':enable'\)/);
+  assert.doesNotMatch(source, /typeof admin\.enabled === 'boolean'/);
+  assert.doesNotMatch(source, /guildManager\.updateGuildSection\(guild\.id, 'modules'/);
+  assert.doesNotMatch(source, /configureVerification\(guild\.id, \{\s*enabled/);
+  const reset = source.slice(source.indexOf('function resetConfig('), source.indexOf('function yesNo('));
+  assert.doesNotMatch(reset, /setModuleEnabled/);
+});
+
+test('verification member events are guarded by canonical module state', () => {
+  const source = read('src/events/members/memberJoinLeave.js');
+  assert.match(source, /guildManager\.isModuleEnabled\(member\.guild\.id, 'verification'\)/);
+  assert.match(source, /guildManager\.isModuleEnabled\(newMember\.guild\.id, 'verification'\)/);
+});
+
+test('welcome and goodbye member events are guarded by canonical module state', () => {
+  const source = read('src/events/members/memberJoinLeave.js');
+  assert.match(source, /guildManager\.isModuleEnabled\(member\.guild\.id, 'welcome'\)/);
+  assert.match(source, /guildManager\.isModuleEnabled\(member\.guild\.id, 'goodbye'\)/);
+});
+
+test('polls startup recovery reads canonical module state', () => {
+  const source = read('src/events/polls/pollsReady.js');
+  assert.match(source, /guildManager\.isModuleEnabled\(guild\.id, 'polls'\)/);
+  assert.doesNotMatch(source, /section\.enabled/);
+});
+
+test('poll creation reads canonical module state', () => {
+  const source = read('src/modules/communityStudio/polls/polls.js');
+  assert.match(source, /guildManager\.isModuleEnabled\(guildId, MODULE_KEY\)/);
+  assert.doesNotMatch(source.slice(source.indexOf('function createPoll'), source.indexOf('function updatePoll')), /section\.enabled/);
+});
+
+test('invite tracking dispatch reads canonical module state', () => {
+  const source = read('src/modules/communityStudio/invites/invitesTracking.js');
+  assert.match(source, /isModuleEnabled\(member\.guild\.id, 'invites'\)/);
+  assert.doesNotMatch(source, /section\.enabled/);
+});
+
+test('invites core removes duplicate module state and uses canonical runtime gates', () => {
+  const source = read('src/modules/communityStudio/invites/invites.js');
+  const defaults = source.slice(source.indexOf('function defaults()'), source.indexOf('function normalizeReward('));
+  assert.doesNotMatch(defaults, /^\s{4}enabled\s*:/m);
+  assert.match(source, /delete normalized\.enabled;/);
+  assert.match(source, /guildManager\.setModuleEnabled\(guildId, SECTION, enabled === true, meta\)/);
+  assert.match(source, /guildManager\.isModuleEnabled\(guild\.id, SECTION\)/);
+  assert.doesNotMatch(source, /section\.enabled/);
+  assert.match(source, /enabled: memberTemplate\.enabled !== false/);
+  assert.match(source, /enabled: item\.enabled !== false/);
+});
+
+test('timed roles member join is guarded by canonical module state', () => {
+  const source = read('src/events/timedroles/timedRolesMemberJoin.js');
+  assert.match(source, /guildManager\.isModuleEnabled\(member\.guild\.id, 'timedRoles'\)/);
+  assert.doesNotMatch(source, /section\.enabled/);
+});
+
+test('timed roles API reports and writes canonical module state', () => {
+  const source = read('src/modules/roleStudio/timedRoles/timedRolesRoute.js');
+  assert.match(source, /guildManager\.isModuleEnabled\(id, 'timedRoles'\)/);
+  assert.match(source, /guildManager\.setModuleEnabled\(id, 'timedRoles', req\.body\?\.enabled === true/);
+  assert.doesNotMatch(source, /timedRoles\.setEnabled/);
+  assert.doesNotMatch(source, /enabled: config\.enabled !== false/);
+});
+
+test('timed roles runtime and store use canonical module state', () => {
+  const source = read('src/modules/roleStudio/timedRoles/timedRoles.js');
+  const defaults = source.slice(source.indexOf('function defaultSection()'), source.indexOf('function normalizeRule('));
+  assert.doesNotMatch(defaults, /enabled\s*:/);
+  assert.match(source, /delete normalized\.enabled;/);
+  assert.match(source, /guildManager\.setModuleEnabled\(guildId, SECTION, enabled === true, meta\)/);
+  assert.match(source, /guildManager\.isModuleEnabled\(guildId, SECTION\)/);
+  assert.match(source, /guildManager\.isModuleEnabled\(guild\.id, SECTION\)/);
+  assert.doesNotMatch(source, /section\.enabled === false/);
+});
+
+test('timed roles panel reports, writes and exports canonical module state', () => {
+  const source = read('src/modules/roleStudio/timedRoles/timedRolesPanel.js');
+  assert.match(source, /const enabled = guildManager\.isModuleEnabled\(guild\.id, 'timedRoles'\)/);
+  assert.match(source, /guildManager\.setModuleEnabled\(interaction\.guild\.id, 'timedRoles', true/);
+  assert.match(source, /guildManager\.setModuleEnabled\(interaction\.guild\.id, 'timedRoles', false/);
+  assert.match(source, /enabled: guildManager\.isModuleEnabled\(interaction\.guild\.id, 'timedRoles'\)/);
+  assert.doesNotMatch(source, /section\.enabled !== false/);
+  assert.doesNotMatch(source, /timedRoles\.setEnabled/);
+  assert.match(source, /enabled: !rule\.enabled/);
+});
+
+test('leveling message tracking reads canonical module state', () => {
+  const source = read('src/modules/communityStudio/leveling/levelingTracking.js');
+  assert.match(source, /isModuleEnabled\(message\.guild\.id, 'leveling'\)/);
+  assert.doesNotMatch(source, /section\.enabled/);
+});
+
+test('schedule tracking reads canonical module state', () => {
+  const source = read('src/modules/utilityStudio/schedule/scheduleTracking.js');
+  assert.match(source, /isModuleEnabled\(guild\.id, 'schedule'\)/);
+  assert.doesNotMatch(source, /section\.enabled/);
+});
+
+test('schedule runtime and store use canonical module state', () => {
+  const source = read('src/modules/utilityStudio/schedule/schedule.js');
+  const defaults = source.slice(source.indexOf('function defaultSection()'), source.indexOf('function validTimezone('));
+  assert.doesNotMatch(defaults, /enabled\s*:/);
+  assert.match(source, /delete normalized\.enabled;/);
+  assert.match(source, /guildManager\.setModuleEnabled\(guildId, SECTION, enabled === true, meta\)/);
+  assert.match(source, /guildManager\.isModuleEnabled\(guild\.id, SECTION\)/);
+  assert.doesNotMatch(source, /section\.enabled/);
+  assert.match(source, /enabled: event\.enabled !== false/);
+  assert.match(source, /event\.enabled === false/);
+});
+
+test('translation startup and message runtime read canonical module state', () => {
+  const startup = read('src/modules/utilityStudio/translation/translationStartup.js');
+  const messages = read('src/events/messages/messageCreate.js');
+  const threads = read('src/modules/utilityStudio/translation/translationThreadManager.js');
+  assert.match(startup, /isModuleEnabled\(guild\.id, 'translation'\)/);
+  assert.match(messages, /guildManager\.isModuleEnabled\(message\.guild\.id, 'translation'\)/);
+  assert.match(threads, /guildManager\.isModuleEnabled\(guildId, 'translation'\)/);
+  assert.doesNotMatch(threads.slice(threads.indexOf('async function handleMessageCreate')), /section\.enabled/);
+});
+
+test('translation owner overview reads canonical module state', () => {
+  const source = read('src/server/routes/ownerTranslation.js');
+  assert.match(source, /enabled: guildManager\.isModuleEnabled\(guildId, 'translation'\)/);
+  assert.doesNotMatch(source, /enabled: section\.enabled === true/);
+});
+
+test('translation store removes duplicate module state', () => {
+  const source = read('src/modules/utilityStudio/translation/translationStore.js');
+  const defaults = source.slice(source.indexOf('function defaultTranslationSection()'), source.indexOf('function normalizeChannelConfig('));
+  assert.doesNotMatch(defaults, /enabled\s*:/);
+  assert.match(source, /delete normalized\.enabled;/);
+  assert.match(source, /guildManager\.setModuleEnabled\(guildId, MODULE, enabled === true, guildOrMeta\)/);
+  assert.match(source, /guildManager\.isModuleEnabled\(guildId, MODULE\)/);
+  assert.match(source, /enabled: source\.openai\?\.enabled !== false/);
+  assert.match(source, /enabled: source\.enabled !== false/);
+});
+
+test('reaction role add and remove dispatch read canonical module state', () => {
+  const add = read('src/events/messages/messageReactionAdd.js');
+  const remove = read('src/events/messages/messageReactionRemove.js');
+  assert.match(add, /isModuleEnabled\(guildId, 'reactionRoles'\)/);
+  assert.match(remove, /isModuleEnabled\(guildId, 'reactionRoles'\)/);
+});
+
+test('reaction roles API reports and writes canonical module state', () => {
+  const source = read('src/modules/roleStudio/reactionRoles/reactionRolesRoute.js');
+  assert.match(source, /enabled: guildManager\.isModuleEnabled\(guildId, 'reactionRoles'\)/);
+  assert.match(source, /guildManager\.setModuleEnabled\(guildId, 'reactionRoles', req\.body\?\.enabled === true/);
+  assert.doesNotMatch(source, /reactionRoles\.setEnabled/);
+});
+
+test('reaction roles runtime and store use canonical module state', () => {
+  const source = read('src/modules/roleStudio/reactionRoles/reactionRoles.js');
+  const defaults = source.slice(source.indexOf('function defaultSection()'), source.indexOf('function normalizeEmoji('));
+  assert.doesNotMatch(defaults, /enabled\s*:/);
+  assert.match(source, /delete normalized\.enabled;/);
+  assert.match(source, /guildManager\.setModuleEnabled\(guildId, SECTION, enabled === true, meta\)/);
+  assert.match(source, /guildManager\.isModuleEnabled\(guild\.id, SECTION\)/);
+  assert.doesNotMatch(source, /getSection\(guild\.id\)\.enabled === false/);
+  assert.match(source, /panel\.enabled === false/);
+  assert.match(source, /mapping\.enabled !== false/);
+});
+
+test('stats verification summary reads canonical module state', () => {
+  const source = read('src/modules/utilityStudio/stats/statsRoute.js');
+  assert.match(source, /enabled: guildManager\.isModuleEnabled\(guildId, 'verification'\)/);
+  assert.doesNotMatch(source, /enabled: section\.enabled === true/);
+});
+
+test('stats runtime and store use canonical module state', () => {
+  const source = read('src/modules/utilityStudio/stats/statsStore.js');
+  const defaults = source.slice(source.indexOf('const DEFAULT_STATS = {'), source.indexOf('function copy('));
+  assert.doesNotMatch(defaults, /enabled\s*:/);
+  assert.match(source, /delete normalized\.enabled;/);
+  assert.match(source, /guildManager\.setModuleEnabled\(guildId, MODULE_KEY, enabled === true, guildOrMeta\)/);
+  assert.match(source, /guildManager\.isModuleEnabled\(guildId, MODULE_KEY\)/);
+  assert.doesNotMatch(source, /stats\.enabled !== true/);
+  assert.match(source, /enabled: isEnabled\(guildId\)/);
+});
+
+test('stats API reports and writes canonical module state', () => {
+  const source = read('src/modules/utilityStudio/stats/statsRoute.js');
+  assert.match(source, /enabled: guildManager\.isModuleEnabled\(guildId, 'stats'\)/);
+  assert.match(source, /guildManager\.setModuleEnabled\(guildId, 'stats', req\.body\.enabled/);
+  assert.doesNotMatch(source, /const allowed = \['enabled'/);
+});
+
+test('stats health and export report canonical module state', () => {
+  const source = read('src/modules/utilityStudio/stats/statsHealth.js');
+  assert.match(source, /enabled: guildManager\.isModuleEnabled\(guild\.id, 'stats'\)/);
+  assert.match(source, /enabled: guildManager\.isModuleEnabled\(guildId, 'stats'\)/);
+  assert.doesNotMatch(source, /enabled: config\.enabled === true/);
+});
+
+test('temp voice API reports and writes canonical module state', () => {
+  const source = read('src/server/routes/tempVoice.js');
+  assert.match(source, /enabled: isModuleEnabled\(guildId, 'tempVoice'\)/);
+  assert.match(source, /setModuleEnabled\(guildId, 'tempVoice', enabled,/);
+  assert.doesNotMatch(source, /\.\.\.section, enabled, updatedAt/);
+  assert.doesNotMatch(source, /enabled: section\.enabled !== false/);
+  assert.match(source, /enabled: input\.enabled !== false/);
+});
+
+test('temp voice store removes duplicate module state without removing hub state', () => {
+  const source = read('src/modules/utilityStudio/tempVoice/tempVoiceStore.js');
+  const defaults = source.slice(source.indexOf('function defaultTempVoiceSection()'), source.indexOf('function normalizeHub('));
+  assert.doesNotMatch(defaults, /enabled\s*:/);
+  assert.match(source, /delete normalized\.enabled;/);
+  assert.doesNotMatch(source, /enabled: source\.enabled !== false/);
+  assert.match(source, /enabled: hub\.enabled !== false/);
+  assert.match(source, /hub\.enabled !== false && hub\.joinChannelId/);
+});
+
+test('goodbye API reports and writes canonical module state', () => {
+  const source = read('src/server/routes/goodbye.js');
+  assert.match(source, /enabled: guildManager\.isModuleEnabled\(guildId, 'goodbye'\)/);
+  assert.match(source, /guildManager\.setModuleEnabled\(guildId, 'goodbye', req\.body\?\.enabled === true/);
+  assert.match(source, /const \{ enabled, templateId, \.\.\.configPatch \} = patch;/);
+  assert.match(source, /config: canonicalConfig\(guildId, exported\.config\)/);
+  assert.match(source, /JSON\.stringify\(canonicalExport\(guildId\)/);
+  assert.doesNotMatch(source, /goodbye\.updateConfig\(guildId, \{ enabled:/);
+  assert.doesNotMatch(source, /enabled: config\.enabled !== false/);
+  assert.match(source, /dmEnabled: dmConfig\.enabled/);
+});
+
+test('goodbye runtime and store use canonical module state', () => {
+  const source = read('src/modules/messageStudio/goodbye/goodbye.js');
+  const defaults = source.slice(source.indexOf('function defaultGoodbyeSection()'), source.indexOf('function normalizeAnalytics('));
+  assert.doesNotMatch(defaults, /enabled\s*:/);
+  assert.match(source, /delete normalized\.enabled;/);
+  assert.match(source, /guildManager\.setModuleEnabled\(guildId, MODULE, enabled, meta\)/);
+  assert.match(source, /guildManager\.isModuleEnabled\(member\.guild\.id, MODULE\)/);
+  assert.match(source, /const enabled = guildManager\.isModuleEnabled\(guild\.id, MODULE\)/);
+  assert.doesNotMatch(source, /config\.enabled === false/);
+  const repair = source.slice(source.indexOf('async function repairConfiguration'), source.indexOf('function exportConfiguration'));
+  assert.doesNotMatch(repair, /enabled\s*:/);
+});
+
+test('forms API reports and writes canonical module state', () => {
+  const source = read('src/server/routes/forms.js');
+  assert.match(source, /enabled: guildManager\.isModuleEnabled\(guildId, 'forms'\)/);
+  assert.match(source, /guildManager\.setModuleEnabled\(guildId, 'forms', req\.body\.enabled/);
+  assert.match(source, /config: canonicalConfig\(guildId/);
+  assert.doesNotMatch(source, /enabled: section\.enabled !== false/);
+  const settingsRoute = source.slice(source.indexOf("router.patch('/:guildId/settings'"));
+  assert.doesNotMatch(settingsRoute, /enabled: req\.body\?\.enabled !== false/);
+  assert.match(source, /form\.enabled !== false/);
+});
+
+test('forms panel reports and writes canonical module state', () => {
+  const source = read('src/modules/feedbackStudio/forms/formsPanel.js');
+  assert.match(source, /const moduleEnabled = isModuleEnabled\(guildId, 'forms'\)/);
+  assert.match(source, /const moduleEnabled = isModuleEnabled\(guild\.id, 'forms'\)/);
+  assert.match(source, /setModuleEnabled\(interaction\.guild\.id, 'forms', customId\.endsWith\(':enable'\)/);
+  assert.match(source, /if \(!isModuleEnabled\(guild\.id, 'forms'\)\) throw new Error\('Forms are disabled\.'\)/);
+  assert.doesNotMatch(source, /section\.enabled === false/);
+  assert.doesNotMatch(source, /section\.enabled !== false/);
+  assert.match(source, /form\.enabled !== false/);
+});
+
+test('forms store removes duplicate module state while preserving item enabled flags', () => {
+  const source = read('src/modules/feedbackStudio/forms/forms.js');
+  const defaults = source.slice(source.indexOf('function defaultFormsSection()'), source.indexOf('function normalizeField('));
+  const formNormalizer = source.slice(source.indexOf('function normalizeForm('), source.indexOf('function normalizeSubmission('));
+  const panelNormalizer = source.slice(source.indexOf('function normalizePanel('), source.indexOf('function normalizeFormsSection('));
+  const sectionNormalizer = source.slice(source.indexOf('function normalizeFormsSection('), source.indexOf('function getFormsSection('));
+  assert.doesNotMatch(defaults, /enabled\s*:/);
+  assert.match(sectionNormalizer, /delete normalized\.enabled;/);
+  assert.doesNotMatch(sectionNormalizer, /enabled: source\.enabled !== false/);
+  assert.match(formNormalizer, /enabled: source\.enabled !== false/);
+  assert.match(panelNormalizer, /enabled: source\.enabled !== false/);
+});
+
+test('giveaways runtime reads canonical module state', () => {
+  const source = read('src/modules/communityStudio/giveaways/giveawaysManager.js');
+  assert.match(source, /guildManager\.isModuleEnabled\(guild\.id, 'giveaways'\)/);
+  assert.match(source, /guildManager\.isModuleEnabled\(guildId, 'giveaways'\)/);
+  assert.doesNotMatch(source, /section\.enabled === false/);
+  assert.match(source, /giveaway\.status !== 'active'/);
+});
+
+test('giveaways store preserves canonical module state and item-level enabled flags', () => {
+  const source = read('src/modules/communityStudio/giveaways/giveawaysStore.js');
+  const defaults = source.slice(source.indexOf('function defaultGiveawaysSection()'), source.indexOf('function normalizeGiveaway('));
+  assert.doesNotMatch(defaults, /enabled\s*:/);
+  assert.match(source, /delete normalized\.enabled;/);
+  assert.match(source, /getModuleSection\(guildId, MODULE_KEY, defaultGiveawaysSection\(\)\)/);
+  assert.match(source, /saveModuleSection\(/);
+  assert.match(source, /updateModuleSection\(/);
+  assert.doesNotMatch(source, /guildManager\.updateGuildSection/);
+  assert.match(source, /enabled: input\.enabled !== false/);
+  assert.match(source, /giveaway\.enabled !== false && giveaway\.status === 'active'/);
+});
+
+test('social studio panel reports and writes canonical module state', () => {
+  const source = read('src/modules/socialStudio/socialAlerts/socialStudioPanel.js');
+  assert.match(source, /enabled: guildManager\.isModuleEnabled\(guildId, 'social'\)/);
+  assert.match(source, /const \{ enabled: _enabled, \.\.\.storedConfig \} = config;/);
+  assert.match(source, /guildManager\.setModuleEnabled\(interaction\.guildId, 'social', !config\.enabled, \{ actorId \}\)/);
+  assert.doesNotMatch(source, /enabled: section\.enabled !== false/);
+  assert.doesNotMatch(source, /config\.enabled = !config\.enabled/);
+  assert.match(source, /enabled: primary\?\.enabled !== false/);
+  assert.match(source, /creator\.enabled = creator\.enabled === false/);
+  assert.match(source, /account\.enabled = account\.enabled === false/);
+});
+
+test('auto roles reset preserves canonical module state', () => {
+  const runtime = read('src/modules/roleStudio/autoRoles/autoRoles.js');
+  const route = read('src/modules/roleStudio/autoRoles/autoRolesRoute.js');
+  const reset = runtime.slice(runtime.indexOf('function resetAutoRoles('), runtime.indexOf('async function startupAutoRoles'));
+  assert.match(reset, /return resetAutoRolesSection\(guildId, meta\);/);
+  assert.doesNotMatch(reset, /setModuleEnabled/);
+  const routeReset = route.slice(route.indexOf("router.post('/:guildId/reset'"), route.indexOf("router.get('/:guildId/export'"));
+  assert.doesNotMatch(routeReset, /wasEnabled/);
+  assert.doesNotMatch(routeReset, /setAutoRolesEnabled/);
+  assert.match(routeReset, /autoroles\.resetAutoRoles\(guildId, \{ actorId: getActorId\(req\) \}\)/);
+});
+
+test('welcome admin panel reports, writes and exports canonical module state', () => {
+  const source = read('src/modules/messageStudio/welcome/welcomePanel.js');
+  assert.match(source, /const moduleEnabled = guildManager\.isModuleEnabled\(guild\.id, 'welcome'\)/);
+  assert.match(source, /guildManager\.setModuleEnabled\(interaction\.guild\.id, 'welcome', true/);
+  assert.match(source, /guildManager\.setModuleEnabled\(interaction\.guild\.id, 'welcome', false/);
+  assert.match(source, /enabled: guildManager\.isModuleEnabled\(interaction\.guild\.id, 'welcome'\)/);
+  assert.doesNotMatch(source, /config\.enabled === false/);
+  assert.doesNotMatch(source, /welcome\.updateConfig\(interaction\.guild\.id, \{ enabled:/);
+  assert.match(source, /config\.dmEnabled/);
+});
+
+test('tickets API reports and writes canonical module state while preserving panel state', () => {
+  const source = read('src/server/routes/tickets.js');
+  assert.match(source, /enabled: guildManager\.isModuleEnabled\(guildId, "tickets"\)/);
+  assert.match(source, /const \{ enabled, \.\.\.settings \} = input;/);
+  assert.match(source, /guildManager\.setModuleEnabled\(guildId, "tickets", enabled/);
+  assert.doesNotMatch(source, /enabled: settings\.enabled !== false/);
+  assert.match(source, /enabled: payload\.enabled !== false/);
+});
+
+test('starboard store, runtime, API and panel use canonical module state', () => {
+  const store = read('src/modules/messageStudio/starboard/starboardStore.js');
+  const runtime = read('src/modules/messageStudio/starboard/starboard.js');
+  const route = read('src/server/routes/starboard.js');
+  const panel = read('src/modules/messageStudio/starboard/starboardPanel.js');
+  const defaults = store.slice(store.indexOf('function defaultStarboardSection()'), store.indexOf('function normalizePost('));
+  assert.doesNotMatch(defaults, /enabled\s*:/);
+  assert.match(store, /delete normalized\.enabled;/);
+  assert.match(runtime, /isModuleEnabled\(guildId, 'starboard'\) === true/);
+  assert.match(runtime, /setModuleEnabled\(guildId, 'starboard', input\.enabled === true\)/);
+  assert.doesNotMatch(runtime, /section\.enabled/);
+  assert.match(route, /enabled: isModuleEnabled\(guildId, 'starboard'\) === true/);
+  assert.match(route, /setModuleEnabled\(guildId, 'starboard', req\.body\?\.enabled === true\)/);
+  assert.match(panel, /const enabled = isModuleEnabled\(guild\.id, 'starboard'\) === true/);
+  assert.match(panel, /setModuleEnabled\(interaction\.guild\.id, 'starboard', true\)/);
+  assert.match(panel, /setModuleEnabled\(interaction\.guild\.id, 'starboard', false\)/);
+});
+
+test('welcome runtime and store use canonical module state while preserving DM settings', () => {
+  const source = read('src/modules/messageStudio/welcome/welcome.js');
+  const defaults = source.slice(source.indexOf('function defaultWelcomeSection()'), source.indexOf('function normalizeAnalytics('));
+  assert.doesNotMatch(defaults, /enabled\s*:/);
+  assert.match(source, /delete normalized\.enabled;/);
+  assert.match(source, /guildManager\.setModuleEnabled\(guildId, MODULE, enabled, meta\)/);
+  assert.match(source, /guildManager\.isModuleEnabled\(member\.guild\.id, MODULE\)/);
+  assert.doesNotMatch(source, /config\.enabled === false/);
+  assert.match(source, /dmEnabled: source\.dmEnabled === true \|\| source\.sendDm === true/);
+});

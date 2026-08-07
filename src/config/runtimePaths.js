@@ -1,24 +1,57 @@
 const fs = require('fs');
 const path = require('path');
 
-function resolveBotMode(botMode = process.env.BOT_MODE || 'DEV') {
-  return String(botMode).toLowerCase();
+const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
+const DEFAULT_DATA_ROOT = path.join(PROJECT_ROOT, 'src', 'runtime');
+
+function resolveBotMode(botMode = process.env.BOT_MODE) {
+  const rawMode = botMode && typeof botMode === 'object'
+    ? botMode.botMode || botMode.mode || botMode.runtimeMode || 'DEV'
+    : botMode;
+  const mode = String(rawMode || 'DEV').trim().toUpperCase();
+
+  if (mode === 'PRODUCTION' || mode === 'PROD') return 'production';
+  if (mode === 'BETA') return 'beta';
+  return 'dev';
+}
+
+/*
+ * Runtime data is intentionally deployment-local.
+ *
+ * VPS layout:
+ *   /home/goliath/dev/src/runtime/dev
+ *   /home/goliath/beta/src/runtime/beta
+ *   /home/goliath/production/src/runtime/production
+ *
+ * Local installs follow the same PROJECT_ROOT/src/runtime/<mode> layout.
+ * Do not move guild/runtime data to a shared parent GoliathData directory.
+ */
+function getPersistentDataRoot() {
+  return DEFAULT_DATA_ROOT;
+}
+
+function getLegacyRuntimeRoot(botMode = process.env.BOT_MODE) {
+  return path.join(DEFAULT_DATA_ROOT, resolveBotMode(botMode));
+}
+
+/*
+ * Compatibility shim for callers that still use the old migration helper.
+ * There is no migration anymore; the canonical runtime root is already the
+ * deployment-local src/runtime/<mode> directory.
+ */
+function migrateLegacyRuntime(botMode = process.env.BOT_MODE) {
+  return getLegacyRuntimeRoot(botMode);
 }
 
 /* ---------------- ROOT ---------------- */
 
-function getRuntimeRoot(botMode = process.env.BOT_MODE || 'DEV') {
-  return path.join(
-    process.cwd(),
-    'src',
-    'runtime',
-    resolveBotMode(botMode)
-  );
+function getRuntimeRoot(botMode = process.env.BOT_MODE) {
+  return getLegacyRuntimeRoot(botMode);
 }
 
 /* ---------------- PATHS ---------------- */
 
-function getRuntimePaths(botMode = process.env.BOT_MODE || 'DEV') {
+function getRuntimePaths(botMode = process.env.BOT_MODE) {
   const root = getRuntimeRoot(botMode);
 
   return {
@@ -52,7 +85,7 @@ function getRuntimePaths(botMode = process.env.BOT_MODE || 'DEV') {
 
 /* ---------------- ENSURE ---------------- */
 
-function ensureRuntimePaths(botMode = process.env.BOT_MODE || 'DEV') {
+function ensureRuntimePaths(botMode = process.env.BOT_MODE) {
   const runtimePaths = getRuntimePaths(botMode);
 
   for (const folderPath of Object.values(runtimePaths)) {
@@ -79,6 +112,12 @@ function resolveRuntimePath(
 }
 
 module.exports = {
+  PROJECT_ROOT,
+  DEFAULT_DATA_ROOT,
+  getPersistentDataRoot,
+  getLegacyRuntimeRoot,
+  migrateLegacyRuntime,
+  resolveBotMode,
   getRuntimeRoot,
   getRuntimePaths,
   ensureRuntimePaths,
