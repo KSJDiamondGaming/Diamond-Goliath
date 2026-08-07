@@ -339,20 +339,25 @@ async function buildHealthReport(guild) {
     roles.push({ roleId, exists: Boolean(role), manageable: Boolean(role && canBotManageRole(guild, role)), name: role?.name || null });
   }
 
+  const configured = section.joinRoles.length > 0 || (section.settings.applyToBots === true && section.botRoles.length > 0);
+  const notices = [
+    enabled === true && !configured ? 'No automatic roles are configured.' : null,
+  ].filter(Boolean);
+
   const warnings = [
-    enabled === false ? 'Auto Roles is disabled.' : null,
-    !botMember?.permissions?.has(PermissionFlagsBits.ManageRoles) ? 'Goliath is missing Manage Roles.' : null,
-    section.joinRoles.length === 0 && (!section.settings.applyToBots || section.botRoles.length === 0) ? 'No automatic roles are configured.' : null,
+    enabled === true && !botMember?.permissions?.has(PermissionFlagsBits.ManageRoles) ? 'Goliath is missing Manage Roles.' : null,
     ...roles.filter((role) => !role.exists).map((role) => `Role ${role.roleId} no longer exists.`),
     ...roles.filter((role) => role.exists && !role.manageable).map((role) => `${role.name || role.roleId} is above Goliath or managed by an integration.`),
   ].filter(Boolean);
 
   return {
     enabled,
+    configured,
     hasManageRoles: Boolean(botMember?.permissions?.has(PermissionFlagsBits.ManageRoles)),
     joinRoles: section.joinRoles.length,
     botRoles: section.botRoles.length,
     roles,
+    notices,
     warnings,
     healthy: warnings.length === 0,
   };
@@ -434,14 +439,16 @@ async function startupAutoRoles(client) {
         guildId: guild.id,
         guildName: guild.name,
         enabled,
+        configured: health.configured,
         healthy: health.healthy,
+        notices: health.notices,
         warnings: health.warnings,
         joinRoles: health.joinRoles,
         botRoles: health.botRoles,
         reapply,
       });
     } catch (error) {
-      results.push({ guildId: guild.id, guildName: guild.name, enabled: false, healthy: false, warnings: [error.message || 'Auto Roles startup check failed.'], joinRoles: 0, botRoles: 0, reapply: null });
+      results.push({ guildId: guild.id, guildName: guild.name, enabled: false, configured: false, healthy: false, notices: [], warnings: [error.message || 'Auto Roles startup check failed.'], joinRoles: 0, botRoles: 0, reapply: null });
     }
   }
 
@@ -449,13 +456,16 @@ async function startupAutoRoles(client) {
     ok: results.every((result) => result.healthy || result.enabled === false),
     guildsChecked: results.length,
     enabledGuilds: results.filter((result) => result.enabled).length,
+    configuredGuilds: results.filter((result) => result.enabled && result.configured).length,
     configuredRoles: results.reduce((total, result) => total + result.joinRoles + result.botRoles, 0),
+    notices: results.reduce((total, result) => total + result.notices.length, 0),
     warnings: results.reduce((total, result) => total + result.warnings.length, 0),
     results,
   };
 
-  console.log(`[AutoRoles] Startup check complete: ${summary.guildsChecked} guild(s), ${summary.enabledGuilds} enabled, ${summary.configuredRoles} configured role(s), ${summary.warnings} warning(s).`);
+  console.log(`[AutoRoles] Startup check complete: ${summary.guildsChecked} guild(s), ${summary.enabledGuilds} enabled, ${summary.configuredGuilds} configured guild(s), ${summary.configuredRoles} configured role(s), ${summary.warnings} warning(s).`);
   for (const result of results) {
+    if (result.notices.length) console.log(`[AutoRoles] ${result.guildName || result.guildId}: ${result.notices.join(' | ')}`);
     if (result.warnings.length) console.warn(`[AutoRoles] ${result.guildName || result.guildId}: ${result.warnings.join(' | ')}`);
   }
   return summary;
