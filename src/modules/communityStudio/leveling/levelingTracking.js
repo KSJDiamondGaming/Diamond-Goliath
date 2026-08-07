@@ -7,6 +7,25 @@ const { isModuleEnabled } = require('../../../core/guild/guildManager');
 
 const voiceSessions = new Map();
 
+function cleanIdSet(values = []) {
+  return new Set((Array.isArray(values) ? values : []).map(String).filter(Boolean));
+}
+
+function memberHasIgnoredRole(member, section) {
+  const ignored = cleanIdSet(section?.ignoredRoleIds);
+  if (!ignored.size || !member?.roles?.cache) return false;
+  return [...member.roles.cache.keys()].some((roleId) => ignored.has(String(roleId)));
+}
+
+function isIgnoredChannel(channelId, section) {
+  if (!channelId) return false;
+  return cleanIdSet(section?.ignoredChannelIds).has(String(channelId));
+}
+
+function isXpIgnored(member, channelId, section) {
+  return isIgnoredChannel(channelId, section) || memberHasIgnoredRole(member, section);
+}
+
 function earnedRewards(section, level) {
   const rewards = Array.isArray(section?.levelRewards) ? section.levelRewards : [];
   return rewards
@@ -92,10 +111,11 @@ async function announceLevelUp(message, section, user) {
 }
 
 async function handleMessageCreate(message) {
-  if (!message?.guild?.id || !message.member || message.author?.bot) return false;
+  if (!message?.guild?.id || !message.member || message.author?.bot || message.webhookId) return false;
   if (!isModuleEnabled(message.guild.id, 'leveling')) return false;
   const section = leveling.getSection(message.guild.id);
-  if (section.trackMessages === false) return false;
+  if (section.trackMessages === false || section.xpSources?.message?.enabled === false) return false;
+  if (isXpIgnored(message.member, message.channelId, section)) return false;
 
   const result = leveling.awardMessageXp(message.guild.id, message.author.id, {
     actorId: message.author.id,
@@ -104,8 +124,9 @@ async function handleMessageCreate(message) {
   if (!result) return false;
 
   if (result.levelledUp) {
-    await assignLevelRole(message.member, section, result.newLevel);
-    await announceLevelUp(message, section, result.user);
+    const freshSection = leveling.getSection(message.guild.id);
+    await assignLevelRole(message.member, freshSection, result.newLevel);
+    await announceLevelUp(message, freshSection, result.user);
   }
   return true;
 }
@@ -123,15 +144,29 @@ function stopVoiceSession(guildId, userId) {
   return true;
 }
 
+function stopGuildVoiceSessions(guildId) {
+  const prefix = `${guildId}:`;
+  let stopped = 0;
+  for (const [key, session] of voiceSessions.entries()) {
+    if (!key.startsWith(prefix)) continue;
+    clearInterval(session.timer);
+    voiceSessions.delete(key);
+    stopped += 1;
+  }
+  return stopped;
+}
+
 function hasEligibleVoiceCompany(channel, userId) {
   if (!channel?.members) return false;
   return channel.members.some((member) => member.id !== userId && !member.user?.bot);
 }
 
-function isVoiceStateEligible(state) {
+function isVoiceStateEligible(state, section = null) {
   const member = state?.member;
   if (!state?.channelId || !state.channel || !member || member.user?.bot) return false;
   if (state.selfDeaf || state.serverDeaf) return false;
+  const config = section || (state.guild?.id ? leveling.getSection(state.guild.id) : null);
+  if (config && isXpIgnored(member, state.channelId, config)) return false;
   return hasEligibleVoiceCompany(state.channel, member.id);
 }
 
@@ -141,14 +176,14 @@ async function awardVoiceInterval(guildId, userId, channelId) {
 
   const section = leveling.getSection(guildId);
   const source = section.xpSources?.voice;
-  if (!source?.enabled) return false;
+  if (section.trackVoice === false || !source?.enabled) return false;
 
   const guild = voiceSessions.get(voiceSessionKey(guildId, userId))?.guild;
   if (!guild) return false;
   const member = guild.members.cache.get(userId)
     || await guild.members.fetch(userId).catch(() => null);
   const state = member?.voice;
-  if (!state || state.channelId !== channelId || !isVoiceStateEligible(state)) return false;
+  if (!state || state.channelId !== channelId || !isVoiceStateEligible(state, section)) return false;
 
   const intervalMinutes = Math.max(1, Number(source.intervalMinutes || 10));
   const result = leveling.awardVoiceXp(
@@ -163,7 +198,7 @@ async function awardVoiceInterval(guildId, userId, channelId) {
   if (result.levelledUp) {
     const freshSection = leveling.getSection(guildId);
     await assignLevelRole(member, freshSection, result.newLevel);
-    await announceMemberLevelUp(member, freshSection, result.user);
+    await announceMemberLevelUp(member, freshSection, result.user, channelId);
   }
   return true;
 }
@@ -171,13 +206,13 @@ async function awardVoiceInterval(guildId, userId, channelId) {
 function startVoiceSession(state) {
   const guildId = state?.guild?.id;
   const userId = state?.member?.id;
-  if (!guildId || !userId || !isVoiceStateEligible(state)) return false;
+  if (!guildId || !userId) return false;
   if (!isModuleEnabled(guildId, 'leveling')) return false;
   if (!leveling.isUserParticipating(guildId, userId)) return false;
 
   const section = leveling.getSection(guildId);
   const source = section.xpSources?.voice;
-  if (!source?.enabled) return false;
+  if (section.trackVoice === false || !source?.enabled || !isVoiceStateEligible(state, section)) return false;
 
   stopVoiceSession(guildId, userId);
   const intervalMinutes = Math.max(1, Number(source.intervalMinutes || 10));
@@ -199,17 +234,41 @@ function startVoiceSession(state) {
   return true;
 }
 
+function refreshGuildVoiceSessions(guild) {
+  if (!guild?.id) return 0;
+  stopGuildVoiceSessions(guild.id);
+  if (!isModuleEnabled(guild.id, 'leveling')) return 0;
+
+  const section = leveling.getSection(guild.id);
+  if (section.trackVoice === false || section.xpSources?.voice?.enabled === false) return 0;
+
+  let started = 0;
+  for (const state of guild.voiceStates?.cache?.values?.() || []) {
+    if (isVoiceStateEligible(state, section) && startVoiceSession(state)) started += 1;
+  }
+  return started;
+}
+
+function bootstrapVoiceSessions(client) {
+  let started = 0;
+  for (const guild of client?.guilds?.cache?.values?.() || []) {
+    started += refreshGuildVoiceSessions(guild);
+  }
+  return started;
+}
+
 async function handleVoiceStateUpdate(oldState, newState) {
   const guildId = newState?.guild?.id || oldState?.guild?.id;
   const userId = newState?.member?.id || oldState?.member?.id;
   if (!guildId || !userId) return false;
 
+  const section = leveling.getSection(guildId);
   const movedChannel = oldState?.channelId !== newState?.channelId;
-  const eligibilityChanged = isVoiceStateEligible(oldState) !== isVoiceStateEligible(newState);
+  const eligibilityChanged = isVoiceStateEligible(oldState, section) !== isVoiceStateEligible(newState, section);
   if (!movedChannel && !eligibilityChanged) return false;
 
   stopVoiceSession(guildId, userId);
-  if (isVoiceStateEligible(newState)) startVoiceSession(newState);
+  if (isVoiceStateEligible(newState, section)) startVoiceSession(newState);
 
   // Re-evaluate other members when someone joins or leaves, because solo users do not earn voice XP.
   const affectedChannels = [oldState?.channel, newState?.channel].filter(Boolean);
@@ -217,7 +276,7 @@ async function handleVoiceStateUpdate(oldState, newState) {
     for (const member of channel.members.values()) {
       if (member.user?.bot || member.id === userId) continue;
       stopVoiceSession(guildId, member.id);
-      if (isVoiceStateEligible(member.voice)) startVoiceSession(member.voice);
+      if (isVoiceStateEligible(member.voice, section)) startVoiceSession(member.voice);
     }
   }
   return true;
@@ -230,6 +289,11 @@ module.exports = {
   announceLevelUp,
   announceMemberLevelUp,
   earnedRewards,
+  isXpIgnored,
+  isVoiceStateEligible,
   startVoiceSession,
   stopVoiceSession,
+  stopGuildVoiceSessions,
+  refreshGuildVoiceSessions,
+  bootstrapVoiceSessions,
 };
