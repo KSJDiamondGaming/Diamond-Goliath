@@ -5,8 +5,17 @@ const {
   saveModuleSection,
   updateModuleSection,
 } = require('../../../core/guild/moduleSectionManager');
+const {
+  getGuildFilePath,
+  clearGuildCache,
+} = require('../../../core/guild/guildManager');
+const {
+  createBackup,
+  restoreBackup,
+} = require('../../../core/guild/fileStore');
 
 const MODULE_KEY = 'leveling';
+const LEVELING_SCHEMA_VERSION = 2;
 const XP_SOURCES = Object.freeze({
   MESSAGE: 'message',
   VOICE: 'voice',
@@ -73,6 +82,7 @@ function defaultXpSources() {
 
 function defaults() {
   return {
+    schemaVersion: LEVELING_SCHEMA_VERSION,
     announceChannelId: null,
     managerRoleIds: [],
     levelRoleIds: [],
@@ -228,6 +238,7 @@ function normalize(section = {}) {
   const normalized = {
     ...base,
     ...source,
+    schemaVersion: LEVELING_SCHEMA_VERSION,
     announceChannelId: cleanDiscordId(source.announceChannelId),
     managerRoleIds: cleanIdArray(source.managerRoleIds),
     levelRoleIds: levelRewards.map((reward) => reward.roleId),
@@ -256,8 +267,82 @@ function normalize(section = {}) {
   return normalized;
 }
 
+function protectedUserSnapshot(section = {}) {
+  const snapshot = new Map();
+  for (const bucket of ['users', 'pausedUsers']) {
+    const records = section?.[bucket] && typeof section[bucket] === 'object' ? section[bucket] : {};
+    for (const [key, value] of Object.entries(records)) {
+      const user = value && typeof value === 'object' ? value : {};
+      const userId = cleanDiscordId(user.userId || user.id || key);
+      if (!userId) throw new Error(`Leveling migration found an invalid stored user ID in ${bucket}: ${key}`);
+      snapshot.set(`${bucket}:${userId}`, {
+        bucket,
+        userId,
+        xp: Math.max(0, Number(user.xp || 0)),
+        level: Math.max(0, Number(user.level ?? levelForXp(user.xp || 0))),
+        messages: Math.max(0, Number(user.messages || 0)),
+        voiceMinutes: Math.max(0, Number(user.voiceMinutes || 0)),
+      });
+    }
+  }
+  return snapshot;
+}
+
+function validateProtectedUsers(beforeSnapshot, afterSection) {
+  const afterSnapshot = protectedUserSnapshot(afterSection);
+  if (afterSnapshot.size < beforeSnapshot.size) {
+    throw new Error(`Leveling migration would lose user records (${beforeSnapshot.size} before, ${afterSnapshot.size} after).`);
+  }
+
+  for (const [key, before] of beforeSnapshot.entries()) {
+    const after = afterSnapshot.get(key);
+    if (!after) throw new Error(`Leveling migration would lose ${before.bucket} record for ${before.userId}.`);
+    for (const field of ['xp', 'level', 'messages', 'voiceMinutes']) {
+      if (Number(after[field]) !== Number(before[field])) {
+        throw new Error(`Leveling migration changed ${field} for ${before.userId}: ${before[field]} -> ${after[field]}.`);
+      }
+    }
+  }
+  return true;
+}
+
+function migrateSectionIfNeeded(guildId, rawSection) {
+  const rawVersion = Math.max(0, Number(rawSection?.schemaVersion || 0));
+  if (rawVersion >= LEVELING_SCHEMA_VERSION) return normalize(rawSection);
+
+  const beforeSnapshot = protectedUserSnapshot(rawSection);
+  const filePath = getGuildFilePath(guildId);
+  const backupPath = createBackup(filePath, `leveling-v${LEVELING_SCHEMA_VERSION}-pre-migration`);
+
+  try {
+    const migrated = normalize({ ...rawSection, schemaVersion: LEVELING_SCHEMA_VERSION });
+    validateProtectedUsers(beforeSnapshot, migrated);
+
+    saveModuleSection(guildId, MODULE_KEY, migrated, {
+      guildId,
+      action: `leveling_schema_migration_v${LEVELING_SCHEMA_VERSION}`,
+    });
+
+    clearGuildCache(guildId);
+    const persistedRaw = getModuleSection(guildId, MODULE_KEY, defaults());
+    if (Number(persistedRaw?.schemaVersion || 0) !== LEVELING_SCHEMA_VERSION) {
+      throw new Error(`Persisted Leveling schema version is ${persistedRaw?.schemaVersion || 0}, expected ${LEVELING_SCHEMA_VERSION}.`);
+    }
+    const persisted = normalize(persistedRaw);
+    validateProtectedUsers(beforeSnapshot, persisted);
+    return persisted;
+  } catch (error) {
+    let restored = false;
+    if (backupPath) restored = restoreBackup(filePath, backupPath);
+    clearGuildCache(guildId);
+    const suffix = restored ? ' The pre-migration guild JSON was restored.' : ' Automatic restore was not available.';
+    throw new Error(`Leveling migration failed for guild ${guildId}: ${error.message}.${suffix}`);
+  }
+}
+
 function getSection(guildId) {
-  return normalize(getModuleSection(guildId, MODULE_KEY, defaults()));
+  const rawSection = getModuleSection(guildId, MODULE_KEY, defaults());
+  return migrateSectionIfNeeded(guildId, rawSection);
 }
 
 function saveSection(guildId, section, guildOrMeta = {}) {
@@ -269,7 +354,7 @@ function updateSection(guildId, updater, guildOrMeta = {}) {
     guildId,
     MODULE_KEY,
     (current) => {
-      const normalized = normalize(current);
+      const normalized = migrateSectionIfNeeded(guildId, current);
       const next = typeof updater === 'function' ? updater(normalized) : updater;
       return normalize(next);
     },
@@ -552,10 +637,13 @@ function getRewardForLevel(guildId, level) {
 
 module.exports = {
   MODULE_KEY,
+  LEVELING_SCHEMA_VERSION,
   XP_SOURCES,
   defaults,
   normalize,
   normalizeUser,
+  migrateSectionIfNeeded,
+  validateProtectedUsers,
   getSection,
   saveSection,
   updateSection,
