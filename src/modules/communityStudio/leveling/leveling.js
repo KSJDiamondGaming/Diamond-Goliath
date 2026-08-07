@@ -171,27 +171,28 @@ function setUserParticipation(guildId, userId, participating, guildOrMeta = {}) 
 function saveUser(guildId, user, guildOrMeta = {}) {
   const normalized = normalizeUser(user);
   if (!normalized.userId) throw new Error('A valid user is required.');
-  return updateSection(guildId, (section) => {
-    const paused = Boolean(section.pausedUsers?.[normalized.userId]);
+  const paused = !isUserParticipating(guildId, normalized.userId);
+  const section = updateSection(guildId, (current) => {
     if (paused) {
       return {
-        ...section,
+        ...current,
         pausedUsers: {
-          ...section.pausedUsers,
-          [normalized.userId]: { ...section.pausedUsers[normalized.userId], ...normalized, updatedAt: now() },
+          ...current.pausedUsers,
+          [normalized.userId]: { ...current.pausedUsers[normalized.userId], ...normalized, updatedAt: now() },
         },
         updatedAt: now(),
       };
     }
     return {
-      ...section,
+      ...current,
       users: {
-        ...section.users,
-        [normalized.userId]: { ...section.users?.[normalized.userId], ...normalized, updatedAt: now() },
+        ...current.users,
+        [normalized.userId]: { ...current.users?.[normalized.userId], ...normalized, updatedAt: now() },
       },
       updatedAt: now(),
     };
-  }, guildOrMeta)[paused ? 'pausedUsers' : 'users'][normalized.userId];
+  }, guildOrMeta);
+  return (paused ? section.pausedUsers : section.users)[normalized.userId];
 }
 
 function canAwardMessageXp(user, section) {
