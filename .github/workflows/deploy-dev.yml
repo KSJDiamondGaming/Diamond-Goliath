@@ -18,6 +18,8 @@ on:
 permissions:
   contents: write
 
+# DEV commits queue in order instead of cancelling each other. Manual BETA and
+# PRODUCTION promotions use their own queues.
 concurrency:
   group: deploy-${{ github.event_name == 'push' && 'dev' || inputs.environment }}
   cancel-in-progress: false
@@ -61,7 +63,7 @@ jobs:
               RUNTIME_DIR="/home/goliath/beta/src/runtime/beta"
               ;;
             production)
-              SOURCE_BRANCH="beta"
+              SOURCE_BRANCH="dev"
               TARGET_BRANCH="production"
               DEPLOY_SCRIPT="/home/goliath/deploy-production.sh"
               APP_DIR="/home/goliath/production"
@@ -100,11 +102,12 @@ jobs:
         run: npm ci
 
       - name: Run deployment gate
+        shell: bash
         run: |
           set -euo pipefail
           npm run doctor
           npm test
-          npm run build
+          npx vite build src/dashboard --outDir ../../dist --emptyOutDir --logLevel warn
 
   promote:
     needs:
@@ -122,7 +125,7 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Fast-forward promote source into target
+      - name: Fast-forward DEV into target
         shell: bash
         run: |
           set -euo pipefail
@@ -152,6 +155,7 @@ jobs:
         with:
           ref: dev
           fetch-depth: 1
+
       - name: Record DEV commit
         id: sha
         run: echo "target_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
@@ -178,7 +182,7 @@ jobs:
           fi
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
 
-      - name: Deploy and synchronize VPS environment
+      - name: Deploy affected components to VPS
         uses: appleboy/ssh-action@v1.0.3
         env:
           ENVIRONMENT: ${{ needs.resolve.outputs.environment }}
@@ -196,10 +200,104 @@ jobs:
           script: |
             set -euo pipefail
 
+            if [ ! -d "$APP_DIR/.git" ]; then
+              echo "Expected Git checkout missing: $APP_DIR"
+              exit 1
+            fi
+
+            cd "$APP_DIR"
+            OLD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
+            git fetch origin "$TARGET_BRANCH"
+
+            if ! git cat-file -e "$EXPECTED_SHA^{commit}" 2>/dev/null; then
+              echo "Expected commit is not available on the VPS: $EXPECTED_SHA"
+              exit 1
+            fi
+
+            # Work out what changed before advancing the checkout. If the old
+            # commit cannot be compared safely, use the full-deploy fallback.
+            FULL_FALLBACK=false
+            CHANGED_FILE_LIST=""
+            if [ -n "$OLD_SHA" ] && git cat-file -e "$OLD_SHA^{commit}" 2>/dev/null; then
+              CHANGED_FILE_LIST="$(git diff --name-only "$OLD_SHA" "$EXPECTED_SHA" || true)"
+            else
+              FULL_FALLBACK=true
+            fi
+
+            echo "========================================"
+            echo "Goliath affected-change deployment"
+            echo "Environment : $ENVIRONMENT"
+            echo "Branch      : $TARGET_BRANCH"
+            echo "Previous    : ${OLD_SHA:-unknown}"
+            echo "Target      : $EXPECTED_SHA"
+            echo "========================================"
+
+            if [ -n "$CHANGED_FILE_LIST" ]; then
+              echo "Changed files:"
+              printf '%s\n' "$CHANGED_FILE_LIST" | sed 's/^/  - /'
+            elif [ "$FULL_FALLBACK" = false ]; then
+              echo "No file changes detected."
+            fi
+
+            NEED_DEPS=false
+            NEED_COMMAND_SYNC=false
+            NEED_DASHBOARD_BUILD=false
+            NEED_APP_RELOAD=false
+            NEED_DOCTOR=false
+
+            while IFS= read -r file; do
+              [ -z "$file" ] && continue
+
+              case "$file" in
+                package.json|package-lock.json|npm-shrinkwrap.json)
+                  NEED_DEPS=true
+                  NEED_APP_RELOAD=true
+                  NEED_DASHBOARD_BUILD=true
+                  NEED_COMMAND_SYNC=true
+                  NEED_DOCTOR=true
+                  ;;
+                src/commands/*)
+                  NEED_COMMAND_SYNC=true
+                  NEED_APP_RELOAD=true
+                  NEED_DOCTOR=true
+                  ;;
+                src/dashboard/*|vite.config.*)
+                  NEED_DASHBOARD_BUILD=true
+                  NEED_DOCTOR=true
+                  ;;
+                server.js|scripts/goliath.js|src/core/*|src/core/**/*|src/events/*|src/events/**/*|src/modules/*|src/modules/**/*|src/server/*|src/server/**/*)
+                  NEED_APP_RELOAD=true
+                  NEED_DOCTOR=true
+                  ;;
+                src/runtime/*.js|src/runtime/**/*.js)
+                  NEED_APP_RELOAD=true
+                  NEED_DOCTOR=true
+                  ;;
+                .github/workflows/*|test/*|test/**/*|docs/*|docs/**/*|*.md)
+                  # Repository-only/test/docs changes still advance the VPS Git
+                  # checkout but do not require a bot restart or command sync.
+                  ;;
+                *)
+                  echo "Unclassified application change: $file"
+                  FULL_FALLBACK=true
+                  ;;
+              esac
+            done <<< "$CHANGED_FILE_LIST"
+
+            if [ "$FULL_FALLBACK" = true ]; then
+              echo "Complex/unclassified change detected: using safe full-deploy fallback."
+              NEED_DEPS=true
+              NEED_COMMAND_SYNC=true
+              NEED_DASHBOARD_BUILD=true
+              NEED_APP_RELOAD=true
+              NEED_DOCTOR=true
+            fi
+
+            # Runtime/guild state belongs to the destination environment and is
+            # never replaced by Git deployment content.
             BACKUP_DIR="/home/goliath/.goliath-${ENVIRONMENT}-runtime-deploy-backup"
             rm -rf "$BACKUP_DIR"
             mkdir -p "$BACKUP_DIR"
-
             if [ -d "$RUNTIME_DIR" ]; then
               cp -a "$RUNTIME_DIR/." "$BACKUP_DIR/"
             fi
@@ -220,34 +318,61 @@ jobs:
             }
             trap cleanup EXIT
 
-            if [ ! -d "$APP_DIR/.git" ]; then
-              echo "Expected Git checkout missing: $APP_DIR"
-              exit 1
-            fi
-
-            cd "$APP_DIR"
-            git fetch origin "$TARGET_BRANCH"
+            # Advance the checkout to the exact GitHub branch commit. Git only
+            # updates tracked files whose content changed; unchanged files are not
+            # copied from scratch.
             git checkout "$TARGET_BRANCH"
-            git reset --hard "origin/$TARGET_BRANCH"
+            git reset --hard "$EXPECTED_SHA"
+            restore_runtime
 
             ACTUAL_SHA="$(git rev-parse HEAD)"
             if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
-              echo "VPS checkout mismatch before deploy. Expected $EXPECTED_SHA, got $ACTUAL_SHA"
+              echo "VPS checkout mismatch. Expected $EXPECTED_SHA, got $ACTUAL_SHA"
               exit 1
             fi
 
-            bash "$DEPLOY_SCRIPT"
+            echo "Deployment plan:"
+            echo "  Dependencies : $NEED_DEPS"
+            echo "  Dashboard    : $NEED_DASHBOARD_BUILD"
+            echo "  Commands     : $NEED_COMMAND_SYNC"
+            echo "  App reload   : $NEED_APP_RELOAD"
+            echo "  Doctor       : $NEED_DOCTOR"
+            echo "  Full fallback: $FULL_FALLBACK"
 
-            cd "$APP_DIR"
-            git fetch origin "$TARGET_BRANCH"
-            git reset --hard "origin/$TARGET_BRANCH"
-            restore_runtime
+            if [ "$NEED_DEPS" = true ]; then
+              echo "Installing changed dependencies..."
+              npm ci
+            fi
 
-            npm ci
-            BOT_MODE="$ENVIRONMENT" npm run doctor
-            BOT_MODE="$ENVIRONMENT" npm test
-            BOT_MODE="$ENVIRONMENT" npm run build
-            BOT_MODE="$ENVIRONMENT" COMMAND_SYNC_DELETE_STALE=true COMMAND_SYNC_UPDATE_EXISTING=true node scripts/goliath.js sync-commands "$ENVIRONMENT"
+            if [ "$NEED_DOCTOR" = true ]; then
+              echo "Running environment doctor..."
+              BOT_MODE="$ENVIRONMENT" npm run doctor
+            fi
+
+            if [ "$NEED_DASHBOARD_BUILD" = true ]; then
+              echo "Building affected dashboard assets..."
+              npx vite build src/dashboard --outDir ../../dist --emptyOutDir --logLevel warn
+            fi
+
+            if [ "$NEED_COMMAND_SYNC" = true ]; then
+              echo "Synchronizing Discord commands for $ENVIRONMENT..."
+              BOT_MODE="$ENVIRONMENT" COMMAND_SYNC_DELETE_STALE=true COMMAND_SYNC_UPDATE_EXISTING=true node scripts/goliath.js sync-commands "$ENVIRONMENT"
+            fi
+
+            # The environment deploy script remains the canonical process reload
+            # mechanism. It only runs when application/runtime changes actually
+            # require the live bot/dashboard process to be refreshed, or when the
+            # classifier intentionally falls back for safety.
+            if [ "$NEED_APP_RELOAD" = true ]; then
+              echo "Reloading affected $ENVIRONMENT application processes..."
+              bash "$DEPLOY_SCRIPT"
+              cd "$APP_DIR"
+              git fetch origin "$TARGET_BRANCH"
+              git reset --hard "$EXPECTED_SHA"
+              restore_runtime
+            else
+              echo "No live application reload required."
+            fi
 
             ACTUAL_SHA="$(git rev-parse HEAD)"
             if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
@@ -269,7 +394,8 @@ jobs:
           echo "- Source: **${{ needs.resolve.outputs.source_branch }}**" >> "$GITHUB_STEP_SUMMARY"
           echo "- Target: **${{ needs.resolve.outputs.target_branch }}**" >> "$GITHUB_STEP_SUMMARY"
           echo "- Commit: \`${{ steps.expected.outputs.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Preflight: ✅ doctor, tests, build" >> "$GITHUB_STEP_SUMMARY"
-          echo "- VPS sync: ✅ exact Git commit" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Discord commands: ✅ synchronized" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Runtime data: ✅ preserved" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Preflight: ✅ doctor, tests, dashboard compile" >> "$GITHUB_STEP_SUMMARY"
+          echo "- VPS Git: ✅ exact target commit" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Deployment: ✅ affected components only, full fallback when required" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Discord commands: ✅ synchronized automatically when command/dependency definitions change" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Runtime data: ✅ destination environment preserved" >> "$GITHUB_STEP_SUMMARY"
