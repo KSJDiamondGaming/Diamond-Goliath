@@ -3,6 +3,7 @@
 const voiceLog = require('../../core/logging/voice/voiceLog');
 const tempVoice = require('../../modules/utilityStudio/tempVoice/tempVoice');
 const statsManager = require('../../modules/utilityStudio/stats/statsManager');
+const levelingTracking = require('../../modules/communityStudio/leveling/levelingTracking');
 
 async function runHandler(label, handler, oldState, newState, client) {
   try {
@@ -19,5 +20,6 @@ module.exports = {
     await runHandler('Voice Logs', voiceLog.handleVoiceStateUpdate, oldState, newState, client);
     await runHandler('Temp Voice', tempVoice.handleVoiceStateUpdate, oldState, newState, client);
     await runHandler('Stats', statsManager.handleVoiceStateUpdate, oldState, newState, client);
+    await runHandler('Leveling', levelingTracking.handleVoiceStateUpdate, oldState, newState, client);
   },
 };
