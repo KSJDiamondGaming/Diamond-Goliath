@@ -1,6 +1,7 @@
 'use strict';
 
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
+const leveling = require('../../../modules/communityStudio/leveling/leveling');
 
 function button(customId, label, style = ButtonStyle.Secondary, emoji = null) {
   const component = new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style);
@@ -36,13 +37,17 @@ function embedTitle(payload) {
   return embed?.data?.title || embed?.title || '';
 }
 
+function interactionSourceTitle(interaction) {
+  return interaction?.message?.embeds?.[0]?.title || '';
+}
+
 function cleanSearchOptions(payload) {
   for (const actionRow of payload?.components || []) {
     for (const component of actionRow?.components || []) {
       if (componentId(component) !== 'user:search' || !Array.isArray(component.options)) continue;
       component.options = component.options.filter((option) => {
         const value = option?.data?.value || option?.value;
-        return !['reputation', 'profile-settings'].includes(value);
+        return !['reputation', 'profile-settings', 'notes'].includes(value);
       });
     }
   }
@@ -63,14 +68,12 @@ function rebuildProfileHome(payload) {
   const inProgress = existingNavigationComponents.find((component) => componentLabel(component) === 'In Progress')
     || button('user:in-progress:0', 'In Progress', ButtonStyle.Secondary, '🚧');
 
-  // Locked rule: every non-navigation button is globally alphabetical by name.
   const homeButtons = [
     button('user:account:record', 'Account', ButtonStyle.Secondary, '🗂️'),
     button('user:category:community', '🏘️ Community'),
     button('user:category:feedback', '💬 Feedback'),
     button('user:help', 'Help', ButtonStyle.Secondary, '❓'),
     button('user:category:messages', '✉️ Messages'),
-    button('user:module:notes', 'Notes', ButtonStyle.Secondary, '📌'),
     button('user:category:roles', '🎭 Roles'),
     button('user:category:security', '🛡️ Security'),
     button('user:category:social', '📣 Social'),
@@ -129,8 +132,7 @@ function refreshHelpPanel(payload) {
     '**📌 Personal Tools**',
     '🗂️ **Account Record** — Your warnings, cases, infractions and appeals.',
     '❓ **Help** — User Panel guidance.',
-    '📌 **Notes** — Planned private personal notebook.',
-    '⚙️ **Preferences** — Planned personal User Panel preferences.',
+    '⚙️ **Preferences** — Control personal participation in supported modules.',
     '',
     '**📂 Categories**',
     '🏘️ **Community** — Giveaways, invites, leveling and polls.',
@@ -179,8 +181,6 @@ function refreshInProgressPanel(payload) {
     '🚧 User Panel Development — 👤 Account & Utility': [
       '**Pending personal tools**',
       '• Account Record',
-      '• Notes',
-      '• Preferences',
       '',
       '**Pending utility buttons**',
       '• Schedule',
@@ -193,9 +193,7 @@ function refreshInProgressPanel(payload) {
   const lines = pages[title];
   if (!lines) return payload;
 
-  if (title.endsWith('👤 Account & Utility')) {
-    embed.setTitle('🚧 User Panel Development — Personal Tools & Utility');
-  }
+  if (title.endsWith('👤 Account & Utility')) embed.setTitle('🚧 User Panel Development — Personal Tools & Utility');
 
   embed.setDescription([
     '**DEV planning notebook**',
@@ -261,11 +259,59 @@ function buildSimpleDevelopmentPanel(interaction, title, description) {
 }
 
 function buildPreferencesDevelopmentPanel(interaction) {
-  return buildSimpleDevelopmentPanel(
-    interaction,
-    '⚙️ Preferences — Development',
-    'Personal User Panel preferences will be designed and connected in a later stage.',
-  );
+  const guildId = interaction.guildId || interaction.guild?.id;
+  const userId = interaction.user?.id;
+  const sourceIsPreferences = interactionSourceTitle(interaction) === '⚙️ Preferences';
+
+  let participating = leveling.isUserParticipating(guildId, userId);
+  let notice = null;
+  if (sourceIsPreferences) {
+    participating = !participating;
+    leveling.setUserParticipation(guildId, userId, participating, {
+      guildId,
+      actorId: userId,
+      action: participating ? 'user_leveling_opt_in' : 'user_leveling_opt_out',
+    });
+    notice = participating
+      ? '✅ Leveling enabled. XP earning and profile progress have resumed.'
+      : '⏸️ Leveling disabled. Your XP is preserved and no new XP will be earned.';
+  }
+
+  const name = interaction.member?.displayName || interaction.user?.username || 'Unknown User';
+  const savedUser = leveling.getUser(guildId, userId);
+  const savedXp = Math.max(0, Number(savedUser?.xp || 0));
+  const savedLevel = Math.max(0, Number(savedUser?.level || 0));
+
+  return {
+    embeds: [new EmbedBuilder()
+      .setColor(participating ? '#57F287' : '#747F8D')
+      .setTitle('⚙️ Preferences')
+      .setDescription([
+        notice ? `> ${notice}` : null,
+        notice ? '' : null,
+        '**🏆 Leveling**',
+        `**Status:** ${participating ? '🟢 Participating' : '⏸️ Paused'}`,
+        `**Saved level:** ${savedLevel}`,
+        `**Saved XP:** ${savedXp.toLocaleString()}`,
+        '',
+        participating
+          ? 'You are earning XP. Your level, XP progress and rank can appear on your profile.'
+          : 'You are not earning XP. Your saved progress is hidden from your profile until you re-enable leveling.',
+        '',
+        '_Disabling leveling never deletes your existing XP or level._',
+      ].filter((line) => line !== null).join('\n'))
+      .setFooter({ text: `Requested by ${name}` })
+      .setTimestamp()],
+    components: [
+      row(button(
+        'user:preferences',
+        participating ? 'Disable Leveling' : 'Enable Leveling',
+        participating ? ButtonStyle.Danger : ButtonStyle.Success,
+        participating ? '⏸️' : '▶️',
+      )),
+      row(button('user:home', 'Back', ButtonStyle.Secondary, '⬅️')),
+    ],
+  };
 }
 
 function buildProfileDevelopmentPage(interaction) {
