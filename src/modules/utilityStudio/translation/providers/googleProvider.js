@@ -2,8 +2,6 @@
 
 // src/modules/utilityStudio/translation/providers/googleProvider.js
 
-const fetch = require('node-fetch');
-
 const PROVIDER = 'google';
 const GOOGLE_TRANSLATE_URL = 'https://translation.googleapis.com/language/translate/v2';
 

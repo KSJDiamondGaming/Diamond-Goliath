@@ -1,4 +1,4 @@
-const fetch = global.fetch || require('node-fetch');
+const fetch = global.fetch;
 const express = require('express');
 const { ChannelType, PermissionFlagsBits, PermissionsBitField } = require('discord.js');
 

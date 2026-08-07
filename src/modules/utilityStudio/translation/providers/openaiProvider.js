@@ -2,8 +2,6 @@
 
 // src/modules/utilityStudio/translation/providers/openaiProvider.js
 
-const fetch = require('node-fetch');
-
 const PROVIDER = 'openai';
 const DEFAULT_MODEL = 'gpt-4o-mini';
 const OPENAI_CHAT_COMPLETIONS_URL = 'https://api.openai.com/v1/chat/completions';

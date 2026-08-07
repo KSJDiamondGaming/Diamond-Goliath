@@ -12,7 +12,7 @@ const {
   StringSelectMenuBuilder,
 } = require('discord.js');
 
-const fetch = require('node-fetch');
+const fetch = global.fetch;
 const security = require('../security/securityCore');
 const guildManager = require('../guild/guildManager');
 const { createServerBackup } = require('../security/serverBackup');
@@ -279,7 +279,7 @@ async function bufferFromUrl(url) {
   if (!url) return null;
   const response = await fetch(url);
   if (!response.ok) throw new Error(`Failed to fetch asset: ${response.status}`);
-  return response.buffer();
+  return Buffer.from(await response.arrayBuffer());
 }
 
 function runLog(session, snap) {

@@ -1,4 +1,3 @@
-const fetch = global.fetch || require('node-fetch');
 const express = require('express');
 const security = require('../../core/security/securityCore');
 
