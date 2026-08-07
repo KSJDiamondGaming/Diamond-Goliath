@@ -37,6 +37,11 @@ function embedTitle(payload) {
   return embed?.data?.title || embed?.title || '';
 }
 
+function embedDescription(payload) {
+  const embed = payload?.embeds?.[0];
+  return String(embed?.data?.description || embed?.description || '');
+}
+
 function interactionSourceTitle(interaction) {
   return interaction?.message?.embeds?.[0]?.title || '';
 }
@@ -91,6 +96,31 @@ function rebuildProfileHome(payload) {
       button('user:preferences', 'Preferences', ButtonStyle.Secondary, '⚙️'),
       inProgress,
     ),
+  ].filter(Boolean);
+
+  return payload;
+}
+
+function rebuildLevelingPanel(payload) {
+  if (embedTitle(payload) !== '🏆 Your Leveling') return payload;
+
+  const paused = embedDescription(payload).includes('Leveling is paused for your account.');
+  const navigationRow = payload.components?.[payload.components.length - 1];
+  const existingActionComponents = payload.components?.[0]?.components || [];
+  const refresh = existingActionComponents.find((component) => componentLabel(component) === 'Refresh')
+    || button('user:module:leveling', 'Refresh', ButtonStyle.Success, '🔄');
+
+  payload.components = [
+    row(
+      button(
+        'user:preferences',
+        paused ? 'Enable Leveling' : 'Disable Leveling',
+        paused ? ButtonStyle.Success : ButtonStyle.Danger,
+        paused ? '▶️' : '⏸️',
+      ),
+      refresh,
+    ),
+    navigationRow,
   ].filter(Boolean);
 
   return payload;
@@ -212,6 +242,7 @@ function sortNonNavigationButtons(payload) {
   refreshHelpPanel(payload);
   refreshInProgressPanel(payload);
   rebuildProfileHome(payload);
+  rebuildLevelingPanel(payload);
   rebuildCategoryPanel(payload);
 
   const title = embedTitle(payload);
@@ -261,11 +292,12 @@ function buildSimpleDevelopmentPanel(interaction, title, description) {
 function buildPreferencesDevelopmentPanel(interaction) {
   const guildId = interaction.guildId || interaction.guild?.id;
   const userId = interaction.user?.id;
-  const sourceIsPreferences = interactionSourceTitle(interaction) === '⚙️ Preferences';
+  const sourceTitle = interactionSourceTitle(interaction);
+  const shouldToggleLeveling = sourceTitle === '⚙️ Preferences' || sourceTitle === '🏆 Your Leveling';
 
   let participating = leveling.isUserParticipating(guildId, userId);
   let notice = null;
-  if (sourceIsPreferences) {
+  if (shouldToggleLeveling) {
     participating = !participating;
     leveling.setUserParticipation(guildId, userId, participating, {
       guildId,
