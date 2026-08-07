@@ -9,6 +9,7 @@ const session = require('express-session');
 const { Client, Collection, GatewayIntentBits, Partials } = require('discord.js');
 const { loadEnvironment } = require('./src/config/envLoader');
 const { resolveToken } = require('./src/config/tokenResolver');
+const { loginWithRetry } = require('./src/runtime/discordLogin');
 loadEnvironment();
 
 process.on('warning', (warning) => {
@@ -204,5 +205,10 @@ client.once('clientReady', async () => {
 });
 
 const token = resolveToken(botMode, config);
-client.login(token);
+loginWithRetry(client, token, { label: `Discord:${botMode}` }).catch((error) => {
+  console.error(`[Discord:${botMode}] Unable to establish a Discord connection. Exiting so the process manager can recover.`);
+  console.error(error?.stack || error?.message || error);
+  process.exitCode = 1;
+  setTimeout(() => process.exit(1), 250).unref();
+});
 server.listen(PORT, '0.0.0.0', () => console.log(`🌐 Dashboard server running on port ${PORT}`));
