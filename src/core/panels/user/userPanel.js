@@ -388,6 +388,15 @@ function buildLevelingUserPanel(interaction, section, user, rank, participating,
       'You will not gain XP until Leveling is enabled again in Preferences.',
     ];
 
+  const configuredMultiplier = section.multiplier || {};
+  const configuredStartsAt = configuredMultiplier.startsAt ? new Date(configuredMultiplier.startsAt).getTime() : null;
+  const configuredEndsAt = configuredMultiplier.endsAt ? new Date(configuredMultiplier.endsAt).getTime() : null;
+  const scheduledMultiplier = configuredMultiplier.enabled === true
+    && Number(configuredMultiplier.value || 1) > 1
+    && Number.isFinite(configuredStartsAt)
+    && configuredStartsAt > Date.now()
+    && (!Number.isFinite(configuredEndsAt) || configuredEndsAt > Date.now());
+
   const multiplierLines = activeMultiplier
     ? [
       `🟢 **${activeMultiplier.name || 'Active XP Multiplier'}**`,
@@ -395,7 +404,16 @@ function buildLevelingUserPanel(interaction, section, user, rank, participating,
       `Applies to: ${activeMultiplier.sourceIds?.length ? activeMultiplier.sourceIds.map((id) => `\`${id}\``).join(', ') : 'All enabled XP sources'}`,
       activeMultiplier.endsAt ? `Ends: <t:${Math.floor(new Date(activeMultiplier.endsAt).getTime() / 1000)}:R>` : 'Ends: No scheduled end',
     ]
-    : ['No XP multiplier is currently active.'];
+    : scheduledMultiplier
+      ? [
+        `🟡 **${configuredMultiplier.name || 'Scheduled XP Event'}**`,
+        `Multiplier: **${configuredMultiplier.value}×**`,
+        `Applies to: ${configuredMultiplier.sourceIds?.length ? configuredMultiplier.sourceIds.map((id) => `\`${id}\``).join(', ') : 'All enabled XP sources'}`,
+        `Starts: <t:${Math.floor(configuredStartsAt / 1000)}:R>`,
+        Number.isFinite(configuredEndsAt) ? `Ends: <t:${Math.floor(configuredEndsAt / 1000)}:R>` : 'Ends: No scheduled end',
+        '_The multiplier will not affect XP until the scheduled start time._',
+      ]
+      : ['No XP multiplier is currently active or scheduled.'];
 
   return {
     embeds: [markLiveEmbed(createEmbed('🏆 Your Leveling', [
