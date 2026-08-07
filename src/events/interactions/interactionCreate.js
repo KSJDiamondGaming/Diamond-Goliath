@@ -149,9 +149,15 @@ function normalizeVerificationRows(payload, rows) {
     const settings = findComponent(rows, 'admin:verification:page:settings');
     const requirements = findComponent(rows, 'admin:verification:page:requirements');
     if (![workflow, roles, messages, panels, back, settings, requirements].every(Boolean)) return rows;
+    const next = {
+      ...workflow,
+      custom_id: 'admin:verification:page:workflow',
+      label: 'Next ➡️',
+      style: 2,
+    };
     return [
       { ...rows[0], components: [workflow, roles, messages, panels] },
-      { ...rows[0], components: [back, settings, requirements] },
+      { ...rows[0], components: [back, settings, requirements, next] },
     ];
   }
 
