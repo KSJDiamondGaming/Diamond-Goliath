@@ -194,7 +194,14 @@ client.once('clientReady', async () => {
     runStartupTask('Tickets', () => require('./src/modules/feedbackStudio/tickets/tickets').startup.startupTickets(client)),
     runStartupTask('Timed Roles', () => require('./src/modules/roleStudio/timedRoles/timedRoles').startup(client)),
     runStartupTask('Translation', () => require('./src/modules/utilityStudio/translation/translationStartup').startupTranslation(client)),
-    runStartupTask('Goodbye', () => require('./src/modules/messageStudio/goodbye/goodbye').startupGoodbye(client)),
+    runStartupTask('Goodbye', () => {
+      const enabledGuilds = client.guilds.cache.filter((guild) => guildManager.isModuleEnabled(guild.id, 'goodbye'));
+      if (!enabledGuilds.size) {
+        console.log('[Goodbye] Startup check skipped: no enabled guilds.');
+        return null;
+      }
+      return require('./src/modules/messageStudio/goodbye/goodbye').startupGoodbye({ guilds: { cache: enabledGuilds } });
+    }),
     runStartupTask('Reaction Roles', () => {
       const enabledGuilds = client.guilds.cache.filter((guild) => guildManager.isModuleEnabled(guild.id, 'reactionRoles'));
       return require('./src/modules/roleStudio/reactionRoles/reactionRoles').startup({ guilds: { cache: enabledGuilds } });
