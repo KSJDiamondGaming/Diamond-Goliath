@@ -383,10 +383,21 @@ function buildDeleteConfirmation(guild, panelId) {
   return {
     embeds: [new EmbedBuilder()
       .setColor(0xed4245)
-      .setTitle('⚠️ Delete Reaction-Role Panel?')
-      .setDescription(`**Panel:** ${panel.name}\n**Channel:** <#${panel.channelId}>\n**Mappings:** \`${panel.mappings.length}\`\n\nThe Discord message and existing member roles will remain.`)],
+      .setTitle('⚠️ Remove Reaction-Role Panel?')
+      .setDescription([
+        `**Panel:** ${panel.name}`,
+        `**Channel:** <#${panel.channelId}>`,
+        `**Mappings:** \`${panel.mappings.length}\``,
+        '',
+        '**Remove from Goliath**',
+        'Stops tracking the panel and removes Goliath’s reactions. The Discord message remains.',
+        '',
+        '**Delete Message & Panel**',
+        'Deletes the tracked Discord message and removes the panel from Goliath. Existing member roles are not changed.',
+      ].join('\n'))],
     components: [row(
-      button(`admin:reactionRoles:manage:remove:execute:${panelId}`, 'Delete Panel', ButtonStyle.Danger),
+      button(`admin:reactionRoles:manage:remove:execute:${panelId}`, 'Remove from Goliath', ButtonStyle.Secondary),
+      button(`admin:reactionRoles:manage:remove:message:${panelId}`, 'Delete Message & Panel', ButtonStyle.Danger),
       button(`admin:reactionRoles:manage:view:${panelId}`, 'Cancel'),
     )],
   };
@@ -456,6 +467,25 @@ async function deployDraft(guild, userId) {
     if (message) await message.delete().catch(() => null);
     throw error;
   }
+}
+
+async function deleteTrackedMessageAndPanel(guild, panelId) {
+  const panel = reactionRoles.getPanel(guild.id, panelId);
+  if (!panel) throw new Error('That reaction-role panel no longer exists.');
+  const channel = guild.channels.cache.get(panel.channelId) || await guild.channels.fetch(panel.channelId).catch(() => null);
+  if (!channel?.messages?.fetch) throw new Error('Goliath cannot access the tracked message channel.');
+  const message = await channel.messages.fetch(panel.messageId).catch(() => null);
+  if (!message) {
+    reactionRoles.removePanel(guild.id, panelId, guild);
+    return { messageDeleted: false, messageMissing: true };
+  }
+  try {
+    await message.delete();
+  } catch (error) {
+    throw new Error('Goliath could not delete the tracked Discord message. Check its Manage Messages permission and channel access.');
+  }
+  reactionRoles.removePanel(guild.id, panelId, guild);
+  return { messageDeleted: true, messageMissing: false };
 }
 
 async function handleReactionRolesAdminInteraction(interaction) {
@@ -604,11 +634,20 @@ async function handleReactionRolesAdminInteraction(interaction) {
       await reactionRolesHealth.ensurePanelReactions(guild, panel);
       return interaction.editReply(await buildManagedPanel(guild, panelId, '✅ Panel checked and repaired successfully.'));
     }
+    if (id.startsWith('admin:reactionRoles:manage:remove:message:')) {
+      const panelId = id.split(':').pop();
+      await interaction.deferUpdate();
+      const result = await deleteTrackedMessageAndPanel(guild, panelId);
+      const notice = result.messageMissing
+        ? '✅ Panel removed. The tracked Discord message had already been deleted.'
+        : '✅ Panel and tracked Discord message deleted.';
+      return interaction.editReply(buildManagePicker(guild, notice));
+    }
     if (id.startsWith('admin:reactionRoles:manage:remove:execute:')) {
       const panelId = id.split(':').pop();
       await interaction.deferUpdate();
       await reactionRoles.detachPanel(guild, panelId, { clearReactions: true });
-      return interaction.editReply(buildManagePicker(guild, '✅ Panel removed. The Discord message was left in place.'));
+      return interaction.editReply(buildManagePicker(guild, '✅ Panel removed from Goliath. The Discord message was left in place.'));
     }
 
     if (id === 'admin:reactionRoles:enable') {
