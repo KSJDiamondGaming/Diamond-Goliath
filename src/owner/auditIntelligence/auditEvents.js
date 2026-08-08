@@ -2,6 +2,8 @@
 
 const {
   ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   ChannelSelectMenuBuilder,
   ChannelType,
   EmbedBuilder,
@@ -19,6 +21,7 @@ const { buildUserIntelligenceSectionEmbed, buildCommandCenterSetup } = require('
 
 const wired = new WeakSet();
 const routingSessions = new Map();
+const monitoringSessions = new Map();
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const ROUTE_LABELS = {
   default: 'Guild Events / Default',
@@ -26,6 +29,16 @@ const ROUTE_LABELS = {
   security: 'Security / AutoMod',
   messages: 'Messages / Reactions',
   roles: 'Roles / Permissions',
+  goliath: 'Goliath Actions',
+};
+const MONITOR_LABELS = {
+  guild: 'Guild / System Events',
+  members: 'Member Events',
+  moderation: 'Moderation',
+  messages: 'Messages / Reactions',
+  voice: 'Voice',
+  roles: 'Roles / Permissions',
+  security: 'Security / AutoMod',
   goliath: 'Goliath Actions',
 };
 const roleState = (role) => role ? { id: role.id, name: role.name, color: role.hexColor, position: role.position, hoist: role.hoist, mentionable: role.mentionable, permissions: role.permissions?.bitfield?.toString?.() || null } : null;
@@ -59,21 +72,37 @@ function setRoutingSession(interaction, patch) {
   routingSessions.set(routingKey(interaction), next);
   return next;
 }
+function monitoringKey(interaction) { return `${interaction.guildId}:${interaction.user?.id || 'unknown'}`; }
+function getMonitoringSession(interaction) { return monitoringSessions.get(monitoringKey(interaction)) || { sourceGuildId: null, family: 'members' }; }
+function setMonitoringSession(interaction, patch) {
+  const next = { ...getMonitoringSession(interaction), ...patch };
+  monitoringSessions.set(monitoringKey(interaction), next);
+  return next;
+}
 function configuredGuild(client, id) {
   return client.guilds.cache.get(String(id || '')) || null;
+}
+function sourceGuildOptions(client, destinationId) {
+  return [...client.guilds.cache.values()]
+    .filter((guild) => guild.id !== String(destinationId || ''))
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
+    .slice(0, 25);
 }
 function routeSummary(config, sourceGuildId) {
   const routes = config.guilds?.[String(sourceGuildId || '')]?.routes || {};
   return Object.keys(ROUTE_LABELS).map((key) => `**${ROUTE_LABELS[key]}:** ${routes[key] ? `<#${routes[key]}>` : 'Automatic / guild-events'}`).join('\n');
 }
+function monitoringSummary(config, sourceGuildId) {
+  const guildConfig = config.guilds?.[String(sourceGuildId || '')] || {};
+  const monitoring = guildConfig.monitoring && typeof guildConfig.monitoring === 'object' ? guildConfig.monitoring : {};
+  const lines = Object.entries(MONITOR_LABELS).map(([key, label]) => `${monitoring[key] === false ? '🔴' : '🟢'} **${label}**`);
+  return `${guildConfig.enabled === false ? '⏸️ **Guild monitoring paused**' : '▶️ **Guild monitoring active**'}\n\n${lines.join('\n')}`;
+}
 function buildRoutingPanel(client, interaction) {
   const config = auditStore.getConfig();
   const session = getRoutingSession(interaction);
   const destinationId = String(config.commandCenter?.guildId || '');
-  const sourceGuilds = [...client.guilds.cache.values()]
-    .filter((guild) => guild.id !== destinationId)
-    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
-    .slice(0, 25);
+  const sourceGuilds = sourceGuildOptions(client, destinationId);
   const selectedGuild = configuredGuild(client, session.sourceGuildId);
   const embed = new EmbedBuilder()
     .setColor(0x5865F2)
@@ -115,16 +144,99 @@ function buildRoutingPanel(client, interaction) {
         default: value === session.routeKey,
       })));
     rows.push(new ActionRowBuilder().addComponents(routeSelect));
-    rows.push(new ActionRowBuilder().addComponents(new ChannelSelectMenuBuilder()
+
+    const channelSelect = new ChannelSelectMenuBuilder()
       .setCustomId('owner:commandcenter:routing:channel')
       .setPlaceholder(`3. Choose destination for ${ROUTE_LABELS[session.routeKey] || 'route'}`)
       .setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
-      .setMinValues(1).setMaxValues(1)));
-    rows.push(new ActionRowBuilder().addComponents(
-      new (require('discord.js').ButtonBuilder)().setCustomId('owner:commandcenter:routing:reset').setLabel('Reset This Route').setStyle(require('discord.js').ButtonStyle.Secondary),
-      new (require('discord.js').ButtonBuilder)().setCustomId('owner:commandcenter:refresh').setLabel('Back / Refresh Home').setStyle(require('discord.js').ButtonStyle.Secondary),
-    ));
+      .setMinValues(1)
+      .setMaxValues(1);
+    rows.push(new ActionRowBuilder().addComponents(channelSelect));
+
+    const resetButton = new ButtonBuilder()
+      .setCustomId('owner:commandcenter:routing:reset')
+      .setLabel('Reset This Route')
+      .setStyle(ButtonStyle.Secondary);
+    const backButton = new ButtonBuilder()
+      .setCustomId('owner:commandcenter:refresh')
+      .setLabel('Back / Refresh Home')
+      .setStyle(ButtonStyle.Secondary);
+    rows.push(new ActionRowBuilder().addComponents(resetButton, backButton));
   }
+  return { embeds: [embed], components: rows, allowedMentions: { parse: [] } };
+}
+
+function buildMonitoringPanel(client, interaction) {
+  const config = auditStore.getConfig();
+  const session = getMonitoringSession(interaction);
+  const sourceGuilds = sourceGuildOptions(client, config.commandCenter?.guildId);
+  const selectedGuild = configuredGuild(client, session.sourceGuildId);
+  const guildConfig = selectedGuild ? (config.guilds?.[selectedGuild.id] || {}) : {};
+  const monitoring = guildConfig.monitoring && typeof guildConfig.monitoring === 'object' ? guildConfig.monitoring : {};
+  const selectedEnabled = monitoring[session.family] !== false;
+
+  const embed = new EmbedBuilder()
+    .setColor(0x5865F2)
+    .setTitle('👁️ Audit Intelligence Monitoring')
+    .setDescription(selectedGuild
+      ? `Control which **${selectedGuild.name}** events are mirrored into your private Audit Intelligence server. Captured intelligence remains stored even when a mirror family is disabled.`
+      : 'Choose a source guild to configure. All monitoring families default to enabled.')
+    .addFields(
+      { name: 'Source Guild', value: selectedGuild ? `**${selectedGuild.name}**\n\`${selectedGuild.id}\`` : 'Not selected', inline: true },
+      { name: 'Selected Family', value: MONITOR_LABELS[session.family] || MONITOR_LABELS.members, inline: true },
+      { name: 'Selected Status', value: selectedGuild ? (selectedEnabled ? '🟢 Mirroring enabled' : '🔴 Mirroring disabled') : 'Select a guild first.', inline: true },
+      { name: 'Monitoring Status', value: selectedGuild ? monitoringSummary(config, selectedGuild.id) : 'Select a guild first.', inline: false },
+    )
+    .setFooter({ text: 'Goliath Command Center • Monitoring • Owner only' });
+
+  const rows = [];
+  if (sourceGuilds.length) {
+    const guildSelect = new StringSelectMenuBuilder()
+      .setCustomId('owner:commandcenter:monitoring:guild')
+      .setPlaceholder('1. Select source guild')
+      .setMinValues(1)
+      .setMaxValues(1)
+      .addOptions(sourceGuilds.map((guild) => ({
+        label: String(guild.name || guild.id).slice(0, 100),
+        value: guild.id,
+        description: `Guild ID: ${guild.id}`.slice(0, 100),
+        default: guild.id === session.sourceGuildId,
+      })));
+    rows.push(new ActionRowBuilder().addComponents(guildSelect));
+  }
+
+  if (selectedGuild) {
+    const familySelect = new StringSelectMenuBuilder()
+      .setCustomId('owner:commandcenter:monitoring:family')
+      .setPlaceholder('2. Select monitoring family')
+      .setMinValues(1)
+      .setMaxValues(1)
+      .addOptions(Object.entries(MONITOR_LABELS).map(([value, label]) => ({
+        label,
+        value,
+        default: value === session.family,
+      })));
+    rows.push(new ActionRowBuilder().addComponents(familySelect));
+
+    const toggleFamily = new ButtonBuilder()
+      .setCustomId('owner:commandcenter:monitoring:toggle')
+      .setLabel(selectedEnabled ? 'Disable Selected' : 'Enable Selected')
+      .setStyle(selectedEnabled ? ButtonStyle.Danger : ButtonStyle.Success);
+    const toggleGuild = new ButtonBuilder()
+      .setCustomId('owner:commandcenter:monitoring:guild-toggle')
+      .setLabel(guildConfig.enabled === false ? 'Resume Guild' : 'Pause Guild')
+      .setStyle(guildConfig.enabled === false ? ButtonStyle.Success : ButtonStyle.Danger);
+    const enableAll = new ButtonBuilder()
+      .setCustomId('owner:commandcenter:monitoring:all-on')
+      .setLabel('Enable All')
+      .setStyle(ButtonStyle.Secondary);
+    const backButton = new ButtonBuilder()
+      .setCustomId('owner:commandcenter:refresh')
+      .setLabel('Back / Refresh Home')
+      .setStyle(ButtonStyle.Secondary);
+    rows.push(new ActionRowBuilder().addComponents(toggleFamily, toggleGuild, enableAll, backButton));
+  }
+
   return { embeds: [embed], components: rows, allowedMentions: { parse: [] } };
 }
 
@@ -241,8 +353,55 @@ async function handleCommandCenterInteraction(client, interaction) {
     return true;
   }
 
+  if (customId === 'owner:commandcenter:monitoring' && interaction.isButton?.()) {
+    monitoringSessions.set(monitoringKey(interaction), { sourceGuildId: null, family: 'members' });
+    await interaction.reply({ ...buildMonitoringPanel(client, interaction), flags: MessageFlags.Ephemeral }).catch(() => null);
+    return true;
+  }
+  if (customId === 'owner:commandcenter:monitoring:guild' && interaction.isStringSelectMenu?.()) {
+    setMonitoringSession(interaction, { sourceGuildId: interaction.values?.[0] || null, family: 'members' });
+    await interaction.update(buildMonitoringPanel(client, interaction)).catch(() => null);
+    return true;
+  }
+  if (customId === 'owner:commandcenter:monitoring:family' && interaction.isStringSelectMenu?.()) {
+    const family = String(interaction.values?.[0] || 'members');
+    setMonitoringSession(interaction, { family: MONITOR_LABELS[family] ? family : 'members' });
+    await interaction.update(buildMonitoringPanel(client, interaction)).catch(() => null);
+    return true;
+  }
+  if (customId === 'owner:commandcenter:monitoring:toggle' && interaction.isButton?.()) {
+    const session = getMonitoringSession(interaction);
+    if (!session.sourceGuildId) return true;
+    const current = auditStore.getConfig();
+    const existing = current.guilds?.[session.sourceGuildId] || {};
+    const monitoring = { ...(existing.monitoring || {}) };
+    monitoring[session.family] = monitoring[session.family] === false;
+    auditStore.updateConfig({ guilds: { [session.sourceGuildId]: { ...existing, monitoring } } });
+    await interaction.update(buildMonitoringPanel(client, interaction)).catch(() => null);
+    return true;
+  }
+  if (customId === 'owner:commandcenter:monitoring:guild-toggle' && interaction.isButton?.()) {
+    const session = getMonitoringSession(interaction);
+    if (!session.sourceGuildId) return true;
+    const current = auditStore.getConfig();
+    const existing = current.guilds?.[session.sourceGuildId] || {};
+    auditStore.updateConfig({ guilds: { [session.sourceGuildId]: { ...existing, enabled: existing.enabled === false } } });
+    await interaction.update(buildMonitoringPanel(client, interaction)).catch(() => null);
+    return true;
+  }
+  if (customId === 'owner:commandcenter:monitoring:all-on' && interaction.isButton?.()) {
+    const session = getMonitoringSession(interaction);
+    if (!session.sourceGuildId) return true;
+    const current = auditStore.getConfig();
+    const existing = current.guilds?.[session.sourceGuildId] || {};
+    const monitoring = Object.fromEntries(Object.keys(MONITOR_LABELS).map((key) => [key, true]));
+    auditStore.updateConfig({ guilds: { [session.sourceGuildId]: { ...existing, enabled: true, monitoring } } });
+    await interaction.update(buildMonitoringPanel(client, interaction)).catch(() => null);
+    return true;
+  }
+
   if (interaction.isButton?.()) {
-    await interaction.reply({ content: 'ℹ️ This Command Center section is ready for the next monitoring/structure build phase.', flags: MessageFlags.Ephemeral }).catch(() => null);
+    await interaction.reply({ content: 'ℹ️ This Command Center section is ready for the next structure/health build phase.', flags: MessageFlags.Ephemeral }).catch(() => null);
     return true;
   }
   return false;
