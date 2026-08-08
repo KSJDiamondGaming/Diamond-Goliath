@@ -48,10 +48,58 @@ const AUDIT_ACTIONS = {
   'guild.update': AuditLogEvent.GuildUpdate,
 };
 
+const SYSTEM_RULES = [
+  ['Social Studio', ['admin:social', 'social:', '/social']],
+  ['Verification', ['admin:verification', 'verification:', '/verification']],
+  ['Tickets', ['admin:tickets', 'tickets:', 'ticket_', 'goliath_ticket_', '/ticket']],
+  ['Auto Roles', ['admin:autoroles', 'autoroles:', 'autoRoles:', '/autoroles']],
+  ['Timed Roles', ['admin:timedroles', 'timedroles:', 'timedRoles:']],
+  ['Reaction Roles', ['admin:reactionroles', 'reactionroles:', 'reactionRoles:']],
+  ['Role Studio', ['admin:studio:rolestudio', 'admin:role', 'roleStudio:']],
+  ['Schedule', ['admin:schedule', 'schedule:', '/schedule']],
+  ['Stats', ['admin:stats', 'stats:', '/stats']],
+  ['Translation', ['admin:translation', 'translation:', '/translation', '/translate']],
+  ['Temp Voice', ['admin:tempvoice', 'tempvoice:', 'tempVoice:']],
+  ['Invites', ['admin:invites', 'invites:']],
+  ['Giveaways', ['admin:giveaways', 'giveaways:']],
+  ['Polls', ['admin:polls', 'poll_vote:', 'polls:']],
+  ['Leveling', ['admin:leveling', 'leveling:']],
+  ['Forms', ['admin:forms', 'forms:', '/forms']],
+  ['Suggestions', ['admin:suggestions', 'suggestions:']],
+  ['Welcome', ['admin:welcome', 'welcome:']],
+  ['Goodbye', ['admin:goodbye', 'goodbye:']],
+  ['Embed Studio', ['admin:embed', 'embed:', '/embed']],
+  ['Starboard', ['admin:starboard', 'starboard:']],
+  ['Sticky', ['admin:sticky', 'sticky:']],
+  ['Security Studio', ['admin:studio:securitystudio', 'admin:automod', 'automod:', '/testsecurity', '/lockdown']],
+  ['User Panel', ['user:', '/user']],
+  ['Mod Panel', ['mod_', 'mod:', '/mod']],
+  ['Admin Panel', ['admin:', '/admin']],
+  ['Moderation', ['/purge', '/lockdown']],
+  ['Media', ['/media', 'media:']],
+  ['Server', ['/server', '/serverinfo']],
+  ['Help', ['/help']],
+  ['Prefix', ['/prefix']],
+];
+
 function id() { return `AUD-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`; }
 function operationId() { return `OP-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`; }
 function plain(value) { return value === undefined ? undefined : JSON.parse(JSON.stringify(value)); }
 function actor(user) { return user ? { id: user.id, username: user.username || null, globalName: user.globalName || null, bot: Boolean(user.bot) } : null; }
+
+function identifyGoliathSystem(event) {
+  const metadata = event?.metadata || {};
+  const candidates = [metadata.customId, metadata.commandName ? `/${metadata.commandName}` : null, event?.target?.label]
+    .filter(Boolean)
+    .map((value) => String(value).toLowerCase());
+
+  for (const [system, prefixes] of SYSTEM_RULES) {
+    if (candidates.some((candidate) => prefixes.some((prefix) => candidate === prefix.toLowerCase() || candidate.startsWith(prefix.toLowerCase())))) {
+      return system;
+    }
+  }
+  return 'Goliath Core';
+}
 
 function operationReferences(metadata = {}) {
   const refs = new Set();
@@ -80,6 +128,7 @@ function pruneOperations(guildId, now = Date.now()) {
 
 function registerOperation(event) {
   if (!event?.guildId || !String(event.type || '').startsWith('goliath.interaction.')) return null;
+  const system = identifyGoliathSystem(event);
   const op = {
     operationId: operationId(),
     createdAt: new Date(event.timestamp).getTime() || Date.now(),
@@ -89,6 +138,7 @@ function registerOperation(event) {
     triggerEventId: event.eventId,
     triggerType: event.type,
     triggerLabel: event.target?.label || null,
+    system,
     references: operationReferences(event.metadata),
   };
   const active = pruneOperations(op.guildId, op.createdAt);
@@ -96,11 +146,13 @@ function registerOperation(event) {
   recentOperations.set(op.guildId, active.slice(-OPERATION_MAX_PER_GUILD));
   event.metadata = {
     ...(event.metadata || {}),
+    goliathSystem: system,
     operation: {
       operationId: op.operationId,
       role: 'trigger',
       confidence: 'direct',
       evidence: 'Goliath interaction created the operation',
+      system,
     },
   };
   return op;
@@ -151,6 +203,7 @@ function attachOperation(event, match, role) {
   if (!event || !match?.op) return false;
   event.metadata = {
     ...(event.metadata || {}),
+    goliathSystem: match.op.system || event.metadata?.goliathSystem || 'Goliath Core',
     operation: {
       operationId: match.op.operationId,
       role,
@@ -160,6 +213,7 @@ function attachOperation(event, match, role) {
       triggerType: match.op.triggerType,
       triggerLabel: match.op.triggerLabel,
       triggeredBy: match.op.actorId,
+      system: match.op.system || 'Goliath Core',
     },
   };
   return true;
@@ -364,4 +418,5 @@ module.exports = {
   registerOperation,
   findOperationForOutput,
   findOperationForConfirmedOutcome,
+  identifyGoliathSystem,
 };
