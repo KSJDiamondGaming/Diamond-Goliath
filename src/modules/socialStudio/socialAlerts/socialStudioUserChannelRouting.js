@@ -174,7 +174,7 @@ function payload(i) {
           ? 'Send every content type for this user to one channel.'
           : `Override only ${TYPE_LABELS[type] || type} posts.`,
         default: type === s.type,
-      }))));
+      })))));
 
     const channel = new ChannelSelectMenuBuilder()
       .setCustomId(`${P}channel`)
