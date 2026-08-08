@@ -1,8 +1,10 @@
 'use strict';
 
 const { ChannelType, PermissionFlagsBits } = require('discord.js');
-const { buildAuditEmbed, buildUserIntelligenceEmbed, buildUserIntelligenceControls } = require('./auditEmbeds');
+const { buildAuditEmbed, buildUserIntelligenceEmbed, buildUserIntelligenceControls, buildCommandCenterHome } = require('./auditEmbeds');
 const { buildReport } = require('./userIntelligence');
+const auditStore = require('./auditStore');
+const security = require('../../core/security/securityCore');
 
 const MAX_CATEGORY_CHILDREN = 50;
 const SUMMARY_REFRESH_MS = 60000;
@@ -17,15 +19,20 @@ function slug(value, fallback = 'item') {
 }
 
 function getOwnerAuditGuildId() {
-  return String(process.env.OWNER_AUDIT_GUILD_ID || '').trim();
+  return String(auditStore.getConfig().commandCenter?.guildId || '').trim();
 }
 
 function autoProvisionEnabled() {
-  return process.env.OWNER_AUDIT_AUTO_PROVISION === 'true';
+  return auditStore.getConfig().autoProvision !== false;
 }
 
 function privateOverwrites(ownerGuild) {
-  return [{ id: ownerGuild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] }];
+  const ownerId = security.getBotOwnerId();
+  const botId = ownerGuild.members.me?.id;
+  const overwrites = [{ id: ownerGuild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] }];
+  if (ownerId) overwrites.push({ id: ownerId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] });
+  if (botId) overwrites.push({ id: botId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.ManageMessages] });
+  return overwrites;
 }
 
 function guildMarker(sourceGuild) {
@@ -58,6 +65,58 @@ async function getOwnerGuild(client) {
   const ownerGuildId = getOwnerAuditGuildId();
   if (!ownerGuildId || !client?.guilds?.cache) return null;
   return client.guilds.cache.get(ownerGuildId) || await client.guilds.fetch(ownerGuildId).catch(() => null);
+}
+
+async function ensureCommandCenter(client, ownerGuild = null) {
+  const config = auditStore.getConfig();
+  const guildId = String(ownerGuild?.id || config.commandCenter?.guildId || '');
+  if (!guildId) return null;
+  const guild = ownerGuild || client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
+  if (!guild) return null;
+
+  let category = config.commandCenter?.categoryId ? guild.channels.cache.get(config.commandCenter.categoryId) : null;
+  if (!category || category.type !== ChannelType.GuildCategory) {
+    category = guild.channels.cache.find((channel) => channel.type === ChannelType.GuildCategory && channel.name === 'GOLIATH CONTROL') || null;
+  }
+  if (!category) {
+    category = await guild.channels.create({
+      name: 'GOLIATH CONTROL',
+      type: ChannelType.GuildCategory,
+      permissionOverwrites: privateOverwrites(guild),
+      reason: 'Goliath private owner command center',
+    });
+  }
+
+  let channel = config.commandCenter?.channelId ? guild.channels.cache.get(config.commandCenter.channelId) : null;
+  if (!channel || channel.type !== ChannelType.GuildText) {
+    channel = guild.channels.cache.find((item) => item.type === ChannelType.GuildText && item.parentId === category.id && item.name === 'command-center') || null;
+  }
+  if (!channel) {
+    channel = await guild.channels.create({
+      name: 'command-center',
+      type: ChannelType.GuildText,
+      parent: category.id,
+      topic: 'GOLIATH_COMMAND_CENTER • Private owner control plane'.slice(0, 1024),
+      permissionOverwrites: privateOverwrites(guild),
+      reason: 'Goliath private owner command center',
+    });
+  } else if (channel.parentId !== category.id) {
+    await channel.setParent(category.id, { lockPermissions: true, reason: 'Restore Goliath command center structure' }).catch(() => null);
+  }
+
+  const nextConfig = auditStore.updateConfig({ commandCenter: { guildId: guild.id, categoryId: category.id, channelId: channel.id } });
+  const homePayload = buildCommandCenterHome(client, guild, nextConfig);
+  let message = nextConfig.commandCenter?.messageId ? await channel.messages.fetch(nextConfig.commandCenter.messageId).catch(() => null) : null;
+  if (!message) {
+    const recent = await channel.messages.fetch({ limit: 25 }).catch(() => null);
+    message = recent?.find((item) => item.author?.id === client.user?.id && item.embeds?.some((embed) => String(embed.footer?.text || '').includes('Goliath Command Center'))) || null;
+  }
+  if (message) await message.edit(homePayload).catch(() => null);
+  else message = await channel.send(homePayload);
+
+  auditStore.updateConfig({ commandCenter: { guildId: guild.id, categoryId: category.id, channelId: channel.id, messageId: message.id } });
+  await message.pin('Goliath Command Center').catch(() => null);
+  return { guild, category, channel, message };
 }
 
 function findSystemChannel(ownerGuild, sourceGuild) {
@@ -233,4 +292,4 @@ async function deliver(client, sourceGuild, event) {
   return true;
 }
 
-module.exports = { deliver, ensureAuditChannel, ensureUserAuditChannel, refreshUserSummary, getOwnerAuditGuildId };
+module.exports = { deliver, ensureAuditChannel, ensureUserAuditChannel, refreshUserSummary, getOwnerAuditGuildId, ensureCommandCenter };
