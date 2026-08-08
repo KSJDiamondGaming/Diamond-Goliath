@@ -1,6 +1,14 @@
 'use strict';
 
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
+const {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  EmbedBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+} = require('discord.js');
 const store = require('./socialStudioStore');
 
 const P = 'social:';
@@ -32,6 +40,54 @@ function row(...components) {
 
 function button(id, label, style = ButtonStyle.Secondary) {
   return new ButtonBuilder().setCustomId(id).setLabel(label).setStyle(style);
+}
+
+function creatorEditModal(creator) {
+  return new ModalBuilder()
+    .setCustomId(`${P}creator:update:${creator.creatorId}`)
+    .setTitle('Edit Creator Profile')
+    .addComponents(
+      row(new TextInputBuilder()
+        .setCustomId('displayName')
+        .setLabel('Creator display name')
+        .setPlaceholder('Enter the public creator name here')
+        .setStyle(TextInputStyle.Short)
+        .setMaxLength(120)
+        .setRequired(true)
+        .setValue(String(creator.displayName || '').slice(0, 120))),
+      row(new TextInputBuilder()
+        .setCustomId('group')
+        .setLabel('Group or team')
+        .setPlaceholder('Add their team, brand or category here')
+        .setStyle(TextInputStyle.Short)
+        .setMaxLength(120)
+        .setRequired(false)
+        .setValue(String(creator.group || '').slice(0, 120))),
+      row(new TextInputBuilder()
+        .setCustomId('tags')
+        .setLabel('Tags (comma separated)')
+        .setPlaceholder('Example: streamer, ksj, twitch')
+        .setStyle(TextInputStyle.Short)
+        .setMaxLength(300)
+        .setRequired(false)
+        .setValue(Array.isArray(creator.tags) ? creator.tags.join(', ').slice(0, 300) : '')),
+      row(new TextInputBuilder()
+        .setCustomId('notes')
+        .setLabel('Profile Notes (optional)')
+        .setPlaceholder('Add notes about this creator profile.')
+        .setStyle(TextInputStyle.Paragraph)
+        .setMaxLength(1000)
+        .setRequired(false)
+        .setValue(String(creator.notes || '').slice(0, 1000))),
+      row(new TextInputBuilder()
+        .setCustomId('adminNotes')
+        .setLabel('Admin Notes (Management Only)')
+        .setPlaceholder('Private notes visible only to Social Studio managers.')
+        .setStyle(TextInputStyle.Paragraph)
+        .setMaxLength(1000)
+        .setRequired(false)
+        .setValue(String(creator.adminNotes || '').slice(0, 1000))),
+    );
 }
 
 function profilePayload(interaction, creator) {
@@ -113,7 +169,7 @@ function capture(interaction) {
 async function handle(interaction) {
   const id = String(interaction?.customId || '');
   capture(interaction);
-  if (id !== `${P}creator:clear` && id !== `${P}creator:delete`) return false;
+  if (![`${P}creator:edit`, `${P}creator:clear`, `${P}creator:delete`].includes(id)) return false;
 
   const creatorId = selectedCreatorId(interaction);
   if (!creatorId) throw new Error('Select a creator profile first.');
@@ -121,6 +177,11 @@ async function handle(interaction) {
   if (!creator) {
     sessions.delete(key(interaction));
     throw new Error('The selected creator profile no longer exists.');
+  }
+
+  if (id === `${P}creator:edit`) {
+    await interaction.showModal(creatorEditModal(creator));
+    return true;
   }
 
   if (id === `${P}creator:clear`) {
