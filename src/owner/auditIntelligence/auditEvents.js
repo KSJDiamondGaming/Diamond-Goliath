@@ -1,10 +1,12 @@
 'use strict';
 
-const { Events, MessageFlags } = require('discord.js');
+const { Events, MessageFlags, SlashCommandBuilder } = require('discord.js');
 const audit = require('./auditIntelligence');
 const auditRouter = require('./auditRouter');
+const auditStore = require('./auditStore');
+const security = require('../../core/security/securityCore');
 const { snapshotMember, buildReport } = require('./userIntelligence');
-const { buildUserIntelligenceSectionEmbed } = require('./auditEmbeds');
+const { buildUserIntelligenceSectionEmbed, buildCommandCenterSetup } = require('./auditEmbeds');
 
 const wired = new WeakSet();
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -32,12 +34,123 @@ const stickerState = (sticker) => sticker ? { id: sticker.id, name: sticker.name
 const scheduledEventState = (event) => event ? { id: event.id, name: event.name, description: event.description || null, channelId: event.channelId || null, creatorId: event.creatorId || null, status: event.status, privacyLevel: event.privacyLevel, entityType: event.entityType, scheduledStartAt: event.scheduledStartAt?.toISOString?.() || null, scheduledEndAt: event.scheduledEndAt?.toISOString?.() || null, entityMetadata: event.entityMetadata || null } : null;
 
 function ownerIds() {
-  return [...new Set([
-    process.env.OWNER_ID,
-    ...(String(process.env.OWNER_IDS || '').split(',')),
-    process.env.BOT_OWNER_ID,
-    ...(String(process.env.BOT_OWNER_IDS || '').split(',')),
-  ].map((value) => String(value || '').trim()).filter(Boolean))];
+  return security.getBotOwnerIds();
+}
+
+async function ensurePrivateCommandRegistration(client, guildId) {
+  if (!client?.application || !guildId) return false;
+  const ownerGuild = client.guilds.cache.get(String(guildId)) || await client.guilds.fetch(String(guildId)).catch(() => null);
+  if (!ownerGuild) return false;
+
+  try {
+    const globals = await client.application.commands.fetch();
+    const leaked = globals.find((command) => command.name === 'commandcenter');
+    if (leaked) {
+      await leaked.delete();
+      console.warn('[Audit Intelligence] Removed leaked global /commandcenter registration.');
+    }
+  } catch (error) {
+    console.warn('[Audit Intelligence] Global command privacy check failed:', error?.message || error);
+  }
+
+  try {
+    const commands = await ownerGuild.commands.fetch();
+    const existing = commands.find((command) => command.name === 'commandcenter');
+    const payload = module.exports.data.toJSON();
+    if (existing) await existing.edit(payload);
+    else await ownerGuild.commands.create(payload);
+    console.log(`[Audit Intelligence] /commandcenter registered privately in ${ownerGuild.name} (${ownerGuild.id}).`);
+    return true;
+  } catch (error) {
+    console.warn('[Audit Intelligence] Private /commandcenter registration failed:', error?.message || error);
+    return false;
+  }
+}
+
+async function sendCommandCenterSetupDm(client) {
+  const ownerId = security.getBotOwnerId();
+  if (!ownerId) {
+    console.warn('[Audit Intelligence] Command Center bootstrap skipped: no configured Goliath owner.');
+    return false;
+  }
+  const user = await client.users.fetch(ownerId).catch(() => null);
+  if (!user) return false;
+  const dm = await user.createDM().catch(() => null);
+  if (!dm) {
+    console.warn('[Audit Intelligence] Unable to DM the Goliath owner for Command Center setup.');
+    return false;
+  }
+  await dm.send(buildCommandCenterSetup(client)).catch((error) => console.warn('[Audit Intelligence] Command Center setup DM failed:', error?.message || error));
+  return true;
+}
+
+async function initializeCommandCenter(client) {
+  const config = auditStore.getConfig();
+  const guildId = String(config.commandCenter?.guildId || '');
+  if (!guildId) return sendCommandCenterSetupDm(client);
+  const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
+  if (!guild) {
+    console.warn(`[Audit Intelligence] Configured Command Center guild ${guildId} is unavailable.`);
+    return false;
+  }
+  await auditRouter.ensureCommandCenter(client, guild);
+  return ensurePrivateCommandRegistration(client, guild.id);
+}
+
+async function handleCommandCenterInteraction(client, interaction) {
+  const customId = String(interaction?.customId || '');
+  if (!customId.startsWith('owner:commandcenter:')) return false;
+
+  if (!security.isBotOwner(interaction.user?.id)) {
+    if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: '❌ Owner-only control.', flags: MessageFlags.Ephemeral }).catch(() => null);
+    return true;
+  }
+
+  if (customId === 'owner:commandcenter:destination' && interaction.isStringSelectMenu?.()) {
+    const guildId = String(interaction.values?.[0] || '');
+    const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
+    if (!guild) {
+      await interaction.update({ content: '❌ That guild is no longer available to Goliath.', embeds: [], components: [] }).catch(() => null);
+      return true;
+    }
+    const ownerMember = await guild.members.fetch(interaction.user.id).catch(() => null);
+    if (!ownerMember) {
+      await interaction.update({ content: '❌ You must be a member of the selected private server.', embeds: [], components: [] }).catch(() => null);
+      return true;
+    }
+
+    auditStore.updateConfig({ commandCenter: { guildId: guild.id, categoryId: null, channelId: null, messageId: null } });
+    const context = await auditRouter.ensureCommandCenter(client, guild);
+    const registered = await ensurePrivateCommandRegistration(client, guild.id);
+    const link = context?.channel ? `https://discord.com/channels/${guild.id}/${context.channel.id}` : null;
+    await interaction.update({
+      content: registered
+        ? `✅ **Goliath Command Center secured.**\n\nDestination: **${guild.name}**\n/commandcenter is registered **only** in that server.${link ? `\n\nOpen: ${link}` : ''}`
+        : `⚠️ Command Center channels were prepared in **${guild.name}**, but private command registration needs attention.`,
+      embeds: [],
+      components: [],
+    }).catch(() => null);
+    return true;
+  }
+
+  const config = auditStore.getConfig();
+  if (!config.commandCenter?.guildId || String(interaction.guildId || '') !== String(config.commandCenter.guildId)) {
+    if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: '❌ This control is only valid inside your private Goliath Command Center server.', flags: MessageFlags.Ephemeral }).catch(() => null);
+    return true;
+  }
+
+  if (customId === 'owner:commandcenter:refresh' && interaction.isButton?.()) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => null);
+    const context = await auditRouter.ensureCommandCenter(client, interaction.guild);
+    await interaction.editReply({ content: context ? '✅ Command Center refreshed.' : '❌ Command Center refresh failed.' }).catch(() => null);
+    return true;
+  }
+
+  if (interaction.isButton?.()) {
+    await interaction.reply({ content: 'ℹ️ This Command Center section is ready for the next routing/monitoring build phase.', flags: MessageFlags.Ephemeral }).catch(() => null);
+    return true;
+  }
+  return false;
 }
 
 function auditChannelContext(channel) {
@@ -89,7 +202,7 @@ async function captureGoliathInteraction(client, interaction) {
   if (!interaction?.guild || !interaction?.user) return false;
   const ownerAuditGuildId = auditRouter.getOwnerAuditGuildId();
   if (ownerAuditGuildId && String(interaction.guildId || '') === String(ownerAuditGuildId)) return false;
-  if (String(interaction.customId || '').startsWith('owner:audit:')) return false;
+  if (String(interaction.customId || '').startsWith('owner:audit:') || String(interaction.customId || '').startsWith('owner:commandcenter:')) return false;
   if (interaction?.isAutocomplete?.()) return false;
 
   const kind = interactionKind(interaction);
@@ -141,7 +254,7 @@ async function handleOwnerAuditInteraction(client, interaction) {
     return true;
   }
 
-  if (!ownerIds().includes(String(interaction.user?.id || ''))) {
+  if (!security.isBotOwner(interaction.user?.id)) {
     if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: '❌ Owner-only control.', flags: MessageFlags.Ephemeral }).catch(() => null);
     return true;
   }
@@ -232,9 +345,11 @@ function registerAuditEvents(client) {
   wired.add(client);
 
   client.on(Events.InteractionCreate, (interaction) => {
+    handleCommandCenterInteraction(client, interaction).catch((error) => console.warn('[Audit Intelligence] command center interaction failed:', error?.message || error));
     handleOwnerAuditInteraction(client, interaction).catch((error) => console.warn('[Audit Intelligence] owner interaction failed:', error?.message || error));
     captureGoliathInteraction(client, interaction).catch((error) => console.warn('[Audit Intelligence] Goliath interaction capture failed:', error?.message || error));
   });
+  client.once(Events.ClientReady, () => initializeCommandCenter(client).catch((error) => console.warn('[Audit Intelligence] Command Center startup failed:', error?.message || error)));
   client.on(Events.GuildMemberAdd, (member) => audit.capture(client, { type: 'member.join', category: 'member', action: 'join', title: 'Member Joined', icon: '📥', guild: member.guild, member, target: { id: member.id, label: member.user?.tag || member.user?.username }, after: snapshotMember(member) }));
   client.on(Events.GuildMemberRemove, async (member) => {
     const removal = await findRemoval(member.guild, member.id).catch(() => ({ type: 'member.leave', correlation: null }));
@@ -301,4 +416,35 @@ function registerAuditEvents(client) {
   return true;
 }
 
-module.exports = { registerAuditEvents, handleOwnerAuditInteraction, captureGoliathInteraction };
+const commandCenterCommand = {
+  category: 'Owner',
+  help: { name: 'commandcenter', description: 'Open the private Goliath owner Command Center.', usage: '/commandcenter' },
+  access: { ownerOnly: true },
+  privateGuildOnly: true,
+  data: new SlashCommandBuilder()
+    .setName('commandcenter')
+    .setDescription('Open the private Goliath owner Command Center')
+    .setDMPermission(false),
+  async execute(interaction) {
+    if (!security.isBotOwner(interaction.user?.id)) {
+      return interaction.reply({ content: '❌ This command is restricted to the Goliath owner.', flags: MessageFlags.Ephemeral }).catch(() => null);
+    }
+    const config = auditStore.getConfig();
+    if (!config.commandCenter?.guildId || String(interaction.guildId || '') !== String(config.commandCenter.guildId)) {
+      return interaction.reply({ content: '❌ /commandcenter is only valid inside your private Goliath Command Center server.', flags: MessageFlags.Ephemeral }).catch(() => null);
+    }
+    const context = await auditRouter.ensureCommandCenter(interaction.client, interaction.guild);
+    const link = context?.channel ? `https://discord.com/channels/${interaction.guildId}/${context.channel.id}` : null;
+    return interaction.reply({ content: context ? `✅ Command Center ready.${link ? `\n${link}` : ''}` : '❌ Command Center could not be prepared.', flags: MessageFlags.Ephemeral }).catch(() => null);
+  },
+};
+
+module.exports = {
+  ...commandCenterCommand,
+  registerAuditEvents,
+  handleOwnerAuditInteraction,
+  handleCommandCenterInteraction,
+  captureGoliathInteraction,
+  initializeCommandCenter,
+  ensurePrivateCommandRegistration,
+};
