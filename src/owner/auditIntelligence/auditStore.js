@@ -195,6 +195,29 @@ function updateVoiceHistory(current, event) {
   }, (item) => item.eventId || `${item.guildId}:${item.timestamp}`);
 }
 
+function updateActorHistory(current, event) {
+  if (event.relation !== 'actor') return;
+  current.actorHistory = pushUnique(current.actorHistory, {
+    guildId: event.guildId || null,
+    guildName: event.guildName || null,
+    timestamp: event.timestamp,
+    type: event.type || 'unknown',
+    category: event.category || 'system',
+    action: event.action || 'observe',
+    title: event.title || event.type || 'Audit Event',
+    target: event.target || (event.user?.id ? { id: event.user.id, label: event.user.globalName || event.user.username || event.user.id } : null),
+    channelId: event.channel?.id || null,
+    channelName: event.channel?.name || null,
+    reason: event.reason || null,
+    source: event.source || null,
+    result: event.result || null,
+    actorSnapshot: event.actor || null,
+    auditLogId: event.metadata?.auditLog?.auditLogId || null,
+    operationId: event.metadata?.operation?.operationId || null,
+    eventId: event.eventId || null,
+  }, (item) => item.eventId || `${item.guildId}:${item.timestamp}:${item.type}`, HISTORY_LIMIT);
+}
+
 function updateUserIndex(userId, event) {
   const file = path.join(root, 'users', `${userId}.json`);
   const current = readJson(file, {
@@ -215,6 +238,7 @@ function updateUserIndex(userId, event) {
     roleHistory: [],
     moderationHistory: [],
     voiceHistory: [],
+    actorHistory: [],
     recentEvents: [],
   });
 
@@ -225,6 +249,7 @@ function updateUserIndex(userId, event) {
   current.eventTypes ||= {};
   current.categories ||= {};
   current.relations ||= { subject: 0, actor: 0 };
+  current.actorHistory ||= [];
   increment(current.eventTypes, event.type || 'unknown');
   increment(current.categories, event.category || 'system');
   increment(current.relations, event.relation === 'actor' ? 'actor' : 'subject');
@@ -234,6 +259,7 @@ function updateUserIndex(userId, event) {
   updateRoleHistory(current, event);
   updateModerationHistory(current, event);
   updateVoiceHistory(current, event);
+  updateActorHistory(current, event);
 
   current.recentEvents = pushUnique(current.recentEvents, eventSummary(event), (item) => item.eventId || `${item.timestamp}:${item.type}`, 50);
   writeJson(file, current);
