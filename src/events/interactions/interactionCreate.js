@@ -30,6 +30,7 @@ const starboardPanel = optionalRequire('starboard admin', '../../modules/message
 const stickyAdminPanel = optionalRequire('sticky admin', '../../modules/messageStudio/sticky/stickyAdminPanel');
 const levelingInteractions = optionalRequire('leveling', '../../modules/communityStudio/leveling/levelingInteractions');
 const socialAdminPanel = optionalRequire('social admin', '../../modules/socialStudio/socialAlerts/socialStudioPanel');
+const socialCreatorActionCompat = optionalRequire('social creator actions', '../../modules/socialStudio/socialAlerts/socialStudioCreatorActionCompat');
 const schedulePanel = optionalRequire('schedule admin', '../../modules/utilityStudio/schedule/schedulePanel');
 const scheduleDeployment = optionalRequire('schedule RSVP', '../../modules/utilityStudio/schedule/scheduleDeployment');
 const verificationAdminPanel = optionalRequire('verification admin', '../../modules/securityStudio/verificationPanel');
@@ -367,6 +368,8 @@ module.exports = {
         return;
       }
       if (customId === 'admin:social' || customId.startsWith('social:')) {
+        await callHandler(socialCreatorActionCompat, 'capture', interaction);
+        if (await callHandler(socialCreatorActionCompat, 'handle', interaction)) return;
         if (!await callHandler(socialAdminPanel, 'handleSocialAdminInteraction', interaction)) throw new Error(`Social Studio did not handle ${customId}.`);
         return;
       }
