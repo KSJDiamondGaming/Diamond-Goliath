@@ -114,6 +114,9 @@ function buildCommandCenterHome(client, guild, config = {}) {
       new ButtonBuilder().setCustomId('owner:commandcenter:structure').setLabel('Structure').setEmoji('📂').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('owner:commandcenter:health').setLabel('Health').setEmoji('🩺').setStyle(ButtonStyle.Secondary),
     ),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('owner:commandcenter:intelligence').setLabel('User Intelligence').setEmoji('🔎').setStyle(ButtonStyle.Primary),
+    ),
   ];
   return { embeds: [embed], components: rows, allowedMentions: { parse: [] } };
 }
