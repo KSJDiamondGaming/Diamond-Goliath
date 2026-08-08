@@ -208,6 +208,27 @@ function routeKeyForEvent(event) {
   return 'default';
 }
 
+function monitorKeyForEvent(event) {
+  const category = String(event?.category || '').toLowerCase();
+  const type = String(event?.type || '').toLowerCase();
+  if (category === 'moderation' || /^member\.(ban|unban|kick|timeout|prune)/.test(type)) return 'moderation';
+  if (category === 'automod' || category === 'security') return 'security';
+  if (category === 'message' || type.startsWith('reaction.')) return 'messages';
+  if (category === 'role' || type === 'member.roles' || type.includes('permission')) return 'roles';
+  if (category === 'goliath' || type.startsWith('goliath.')) return 'goliath';
+  if (category === 'voice' || type.startsWith('voice.')) return 'voice';
+  if (category === 'member' || type.startsWith('member.')) return 'members';
+  return 'guild';
+}
+
+function monitoringEnabled(sourceGuild, event) {
+  const config = auditStore.getConfig();
+  const guildConfig = config.guilds?.[String(sourceGuild?.id || '')] || {};
+  if (guildConfig.enabled === false) return false;
+  const monitoring = guildConfig.monitoring && typeof guildConfig.monitoring === 'object' ? guildConfig.monitoring : {};
+  return monitoring[monitorKeyForEvent(event)] !== false;
+}
+
 async function configuredRouteChannel(client, sourceGuild, event) {
   const config = auditStore.getConfig();
   const guildConfig = config.guilds?.[String(sourceGuild?.id || '')] || {};
@@ -223,6 +244,7 @@ async function configuredRouteChannel(client, sourceGuild, event) {
 
 async function deliver(client, sourceGuild, event) {
   if (!sourceGuild || sourceGuild.id === getOwnerAuditGuildId()) return false;
+  if (!monitoringEnabled(sourceGuild, event)) return false;
   const userId = eventUserId(event);
   const routedChannel = await configuredRouteChannel(client, sourceGuild, event);
   const primary = userId ? await ensureUserAuditChannel(client, sourceGuild, event) : (routedChannel || await ensureAuditChannel(client, sourceGuild));
@@ -242,5 +264,7 @@ module.exports = {
   getOwnerAuditGuildId,
   ensureCommandCenter,
   routeKeyForEvent,
+  monitorKeyForEvent,
+  monitoringEnabled,
   configuredRouteChannel,
 };
