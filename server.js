@@ -97,6 +97,7 @@ const backupScheduler = safeRequire('backup scheduler', './src/core/backup/backu
 const defaultModules = safeRequire('default modules', './src/core/guild/defaultModules', { initializeDefaultModules: () => null });
 const guildManager = safeRequire('guild manager', './src/core/guild/guildManager', { syncGuildMeta: () => null }, { optional: false });
 const resourceManager = safeRequire('discord resource manager', './src/core/guild/discordResourceManager', { syncDiscordResources: async () => null }, { optional: false });
+const auditEvents = safeRequire('owner audit intelligence', './src/owner/auditIntelligence/auditEvents', { registerAuditEvents: () => false }, { optional: false });
 
 const config = getBotModeConfig(process.env.BOT_MODE);
 const botMode = String(process.env.BOT_MODE || config?.name || 'DEV').toUpperCase();
@@ -179,6 +180,7 @@ function registerEvents() {
   }
 }
 registerEvents();
+auditEvents.registerAuditEvents?.(client);
 async function runStartupTask(label, fn) {
   try { await fn(); console.log(`✅ ${label} startup complete`); }
   catch (error) { console.error(`❌ ${label} startup failed`); console.error(error?.stack || error?.message || error); }
