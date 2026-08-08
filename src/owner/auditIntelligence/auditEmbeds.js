@@ -1,6 +1,8 @@
 'use strict';
 
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, StringSelectMenuBuilder } = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, MessageFlags, StringSelectMenuBuilder } = require('discord.js');
+
+const guildIntelligenceWired = new WeakSet();
 
 const COLORS = {
   create: 0x57F287,
@@ -87,7 +89,89 @@ function buildCommandCenterSetup(client) {
   return { embeds: [embed], components: [new ActionRowBuilder().addComponents(select)] };
 }
 
+function guildIntelligenceSources(client, destinationId) {
+  return [...(client?.guilds?.cache?.values?.() || [])]
+    .filter((guild) => String(guild.id) !== String(destinationId || ''))
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
+    .slice(0, 25);
+}
+
+async function buildGuildIntelligencePanel(client, sourceGuildId = null) {
+  const auditStore = require('./auditStore');
+  const auditRouter = require('./auditRouter');
+  const config = auditStore.getConfig();
+  const sources = guildIntelligenceSources(client, config.commandCenter?.guildId);
+  const sourceGuild = sourceGuildId ? client.guilds.cache.get(String(sourceGuildId)) : null;
+  const rows = [];
+  const select = new StringSelectMenuBuilder()
+    .setCustomId('owner:guildintelligence:guild')
+    .setPlaceholder('Select a guild to inspect')
+    .setMinValues(1)
+    .setMaxValues(1)
+    .addOptions(sources.map((guild) => ({
+      label: String(guild.name || guild.id).slice(0, 100),
+      value: guild.id,
+      description: `Guild ID: ${guild.id}`.slice(0, 100),
+      default: guild.id === sourceGuild?.id,
+    })));
+  if (sources.length) rows.push(new ActionRowBuilder().addComponents(select));
+
+  if (!sourceGuild) {
+    const embed = new EmbedBuilder()
+      .setColor(COLORS.intelligence)
+      .setTitle('🏰 Guild Intelligence')
+      .setDescription('Choose any guild Goliath is in to inspect its live Discord state together with Goliath\'s stored Audit Intelligence history.')
+      .setFooter({ text: 'Goliath Command Center • Guild Intelligence • Owner only' });
+    return { embeds: [embed], components: rows, allowedMentions: { parse: [] } };
+  }
+
+  const stored = auditStore.getGuild(sourceGuild.id) || {};
+  const guildConfig = config.guilds?.[sourceGuild.id] || {};
+  const structure = await auditRouter.inspectStructure(client, sourceGuild).catch(() => ({}));
+  const refresh = new ButtonBuilder()
+    .setCustomId(`owner:guildintelligence:refresh:${sourceGuild.id}`)
+    .setLabel('Rescan Guild')
+    .setEmoji('🔄')
+    .setStyle(ButtonStyle.Secondary);
+  rows.push(new ActionRowBuilder().addComponents(refresh));
+  return { embeds: [buildGuildIntelligenceEmbed(sourceGuild, stored, guildConfig, structure)], components: rows, allowedMentions: { parse: [] } };
+}
+
+function ensureGuildIntelligenceControls(client) {
+  if (!client || guildIntelligenceWired.has(client)) return;
+  guildIntelligenceWired.add(client);
+  client.on('interactionCreate', async (interaction) => {
+    const customId = String(interaction?.customId || '');
+    if (!customId.startsWith('owner:guildintelligence:')) return;
+    const security = require('../../core/security/securityCore');
+    const auditStore = require('./auditStore');
+    if (!security.isBotOwner(interaction.user?.id)) {
+      if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: '❌ Owner-only control.', flags: MessageFlags.Ephemeral }).catch(() => null);
+      return;
+    }
+    const config = auditStore.getConfig();
+    if (!config.commandCenter?.guildId || String(interaction.guildId || '') !== String(config.commandCenter.guildId)) {
+      if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: '❌ Guild Intelligence is only available inside your private Goliath Command Center server.', flags: MessageFlags.Ephemeral }).catch(() => null);
+      return;
+    }
+    if (customId === 'owner:guildintelligence:open' && interaction.isButton?.()) {
+      await interaction.reply({ ...(await buildGuildIntelligencePanel(client)), flags: MessageFlags.Ephemeral }).catch(() => null);
+      return;
+    }
+    if (customId === 'owner:guildintelligence:guild' && interaction.isStringSelectMenu?.()) {
+      await interaction.update(await buildGuildIntelligencePanel(client, interaction.values?.[0] || null)).catch(() => null);
+      return;
+    }
+    if (customId.startsWith('owner:guildintelligence:refresh:') && interaction.isButton?.()) {
+      const sourceGuildId = customId.slice('owner:guildintelligence:refresh:'.length);
+      await interaction.deferUpdate().catch(() => null);
+      await interaction.editReply(await buildGuildIntelligencePanel(client, sourceGuildId)).catch(() => null);
+    }
+  });
+}
+
 function buildCommandCenterHome(client, guild, config = {}) {
+  ensureGuildIntelligenceControls(client);
   const monitored = Object.keys(config.guilds && typeof config.guilds === 'object' ? config.guilds : {})
     .filter((guildId) => String(guildId) !== String(guild?.id || config.commandCenter?.guildId || ''))
     .length;
@@ -116,7 +200,7 @@ function buildCommandCenterHome(client, guild, config = {}) {
     ),
     new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('owner:commandcenter:intelligence').setLabel('User Intelligence').setEmoji('🔎').setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId('owner:commandcenter:guild-intelligence').setLabel('Guild Intelligence').setEmoji('🏰').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('owner:guildintelligence:open').setLabel('Guild Intelligence').setEmoji('🏰').setStyle(ButtonStyle.Primary),
     ),
   ];
   return { embeds: [embed], components: rows, allowedMentions: { parse: [] } };
