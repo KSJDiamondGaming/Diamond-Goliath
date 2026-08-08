@@ -1,8 +1,10 @@
 'use strict';
 
-const { Events } = require('discord.js');
+const { Events, MessageFlags } = require('discord.js');
 const audit = require('./auditIntelligence');
-const { snapshotMember } = require('./userIntelligence');
+const auditRouter = require('./auditRouter');
+const { snapshotMember, buildReport } = require('./userIntelligence');
+const { buildUserIntelligenceSectionEmbed } = require('./auditEmbeds');
 
 const wired = new WeakSet();
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -28,6 +30,66 @@ const threadState = (thread) => thread ? { id: thread.id, name: thread.name, par
 const emojiState = (emoji) => emoji ? { id: emoji.id, name: emoji.name, animated: Boolean(emoji.animated), available: emoji.available !== false, managed: Boolean(emoji.managed), roles: emoji.roles?.cache?.map?.((role) => ({ id: role.id, name: role.name })) || [] } : null;
 const stickerState = (sticker) => sticker ? { id: sticker.id, name: sticker.name, description: sticker.description || null, tags: sticker.tags || null, format: sticker.format ?? null, available: sticker.available !== false } : null;
 const scheduledEventState = (event) => event ? { id: event.id, name: event.name, description: event.description || null, channelId: event.channelId || null, creatorId: event.creatorId || null, status: event.status, privacyLevel: event.privacyLevel, entityType: event.entityType, scheduledStartAt: event.scheduledStartAt?.toISOString?.() || null, scheduledEndAt: event.scheduledEndAt?.toISOString?.() || null, entityMetadata: event.entityMetadata || null } : null;
+
+function ownerIds() {
+  return [...new Set([
+    process.env.OWNER_ID,
+    ...(String(process.env.OWNER_IDS || '').split(',')),
+    process.env.BOT_OWNER_ID,
+    ...(String(process.env.BOT_OWNER_IDS || '').split(',')),
+  ].map((value) => String(value || '').trim()).filter(Boolean))];
+}
+
+function auditChannelContext(channel) {
+  const topic = String(channel?.topic || '');
+  const userMatch = topic.match(/GOLIATH_AUDIT_USER:(\d+):(\d+)/);
+  if (!userMatch) return null;
+  return { sourceGuildId: userMatch[1], userId: userMatch[2] };
+}
+
+async function handleOwnerAuditInteraction(client, interaction) {
+  const customId = String(interaction?.customId || '');
+  if (!interaction?.isButton?.() || !customId.startsWith('owner:audit:')) return false;
+
+  const ownerGuildId = auditRouter.getOwnerAuditGuildId();
+  if (!ownerGuildId || String(interaction.guildId || '') !== ownerGuildId) {
+    if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: '❌ This control is only available in the private Goliath audit server.', flags: MessageFlags.Ephemeral }).catch(() => null);
+    return true;
+  }
+
+  if (!ownerIds().includes(String(interaction.user?.id || ''))) {
+    if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: '❌ Owner-only control.', flags: MessageFlags.Ephemeral }).catch(() => null);
+    return true;
+  }
+
+  const context = auditChannelContext(interaction.channel);
+  if (!context) {
+    if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: '❌ This is not a Goliath user intelligence channel.', flags: MessageFlags.Ephemeral }).catch(() => null);
+    return true;
+  }
+
+  const sourceGuild = client.guilds.cache.get(context.sourceGuildId) || await client.guilds.fetch(context.sourceGuildId).catch(() => null);
+  if (!sourceGuild) {
+    if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: '❌ Source guild is not currently available to Goliath.', flags: MessageFlags.Ephemeral }).catch(() => null);
+    return true;
+  }
+
+  if (customId === 'owner:audit:refresh') {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => null);
+    const refreshed = await auditRouter.refreshUserSummary(client, sourceGuild, interaction.channel, context.userId, true);
+    await interaction.editReply({ content: refreshed ? '✅ User Intelligence summary refreshed.' : '❌ Summary refresh failed.' }).catch(() => null);
+    return true;
+  }
+
+  const section = customId.slice('owner:audit:'.length);
+  if (!['deep', 'guilds', 'moderation', 'roles', 'voice', 'timeline'].includes(section)) return false;
+
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => null);
+  const report = await buildReport(client, context.userId);
+  const embed = buildUserIntelligenceSectionEmbed(report, section, sourceGuild);
+  await interaction.editReply({ embeds: [embed], allowedMentions: { parse: [] } }).catch(() => null);
+  return true;
+}
 
 function changedRoleIds(member) {
   return new Set(member?.roles?.cache?.keys?.() || []);
@@ -85,6 +147,7 @@ function registerAuditEvents(client) {
   if (!client || wired.has(client)) return false;
   wired.add(client);
 
+  client.on(Events.InteractionCreate, (interaction) => handleOwnerAuditInteraction(client, interaction).catch((error) => console.warn('[Audit Intelligence] owner interaction failed:', error?.message || error)));
   client.on(Events.GuildMemberAdd, (member) => audit.capture(client, { type: 'member.join', category: 'member', action: 'join', title: 'Member Joined', icon: '📥', guild: member.guild, member, target: { id: member.id, label: member.user?.tag || member.user?.username }, after: snapshotMember(member) }));
   client.on(Events.GuildMemberRemove, async (member) => {
     const removal = await findRemoval(member.guild, member.id).catch(() => ({ type: 'member.leave', correlation: null }));
@@ -151,4 +214,4 @@ function registerAuditEvents(client) {
   return true;
 }
 
-module.exports = { registerAuditEvents };
+module.exports = { registerAuditEvents, handleOwnerAuditInteraction };
