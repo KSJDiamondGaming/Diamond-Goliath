@@ -198,6 +198,51 @@ async function buildStructurePanel(client, interaction) {
   }
   return { embeds: [embed], components: rows, allowedMentions: { parse: [] } };
 }
+async function buildHealthPanel(client) {
+  const report = await auditRouter.inspectHealth(client);
+  const commandCenter = report.commandCenter || {};
+  const permissions = commandCenter.permissions || {};
+  const counts = report.counts || {};
+  const issueLines = report.issues?.length ? report.issues.map((issue) => `• ${issue}`) : ['None'];
+  const guildIssueLines = report.guilds
+    .filter((guild) => !guild.healthy)
+    .slice(0, 12)
+    .map((guild) => `• **${guild.guildName || guild.guildId}** — ${guild.issues.join('; ')}`);
+  const embed = new EmbedBuilder()
+    .setColor(report.healthy ? 0x57F287 : 0xED4245)
+    .setTitle('🩺 Audit Intelligence Health')
+    .setDescription(report.healthy ? 'All critical Audit Intelligence health checks are passing.' : 'One or more Audit Intelligence health checks need attention.')
+    .addFields(
+      { name: 'Environment', value: report.environment || 'Unknown', inline: true },
+      { name: 'Overall', value: report.healthy ? '🟢 Healthy' : '🔴 Attention required', inline: true },
+      { name: 'Destination', value: report.destination ? `**${report.destination.name}**\n\`${report.destination.id}\`` : 'Unavailable', inline: true },
+      { name: 'Command Center', value: [
+        `Channel: ${commandCenter.channelId ? `<#${commandCenter.channelId}>` : 'Missing'}`,
+        `Panel message: ${commandCenter.messagePresent ? '🟢 Present' : '🔴 Missing'}`,
+        `Owner access: ${permissions.owner ? '🟢' : '🔴'}`,
+        `Goliath access: ${permissions.bot ? '🟢' : '🔴'}`,
+        `@everyone hidden: ${permissions.everyone === false ? '🟢' : '🔴'}`,
+      ].join('\n'), inline: false },
+      { name: '/commandcenter Privacy', value: [
+        `Private registration: ${commandCenter.privateCommandRegistered ? '🟢 Present' : '🔴 Missing'}`,
+        `Global exposure: ${commandCenter.globalCommandLeaked ? '🔴 LEAKED' : '🟢 None'}`,
+      ].join('\n'), inline: false },
+      { name: 'Monitored Guilds', value: [
+        `Configured: **${counts.configured || 0}**`,
+        `Healthy: **${counts.healthy || 0}**`,
+        `Structural failures: **${counts.structuralFailures || 0}**`,
+        `Unavailable: **${counts.unavailable || 0}**`,
+        `Paused: **${counts.paused || 0}**`,
+        `Partially disabled: **${counts.partiallyDisabled || 0}**`,
+      ].join('\n'), inline: false },
+      { name: 'Critical Issues', value: issueLines.join('\n').slice(0, 1024), inline: false },
+      { name: 'Guild Attention', value: (guildIssueLines.length ? guildIssueLines.join('\n') : 'None').slice(0, 1024), inline: false },
+    )
+    .setFooter({ text: `Goliath Command Center • Health • Owner only • Checked ${report.checkedAt || 'now'}` });
+  const rescanButton = new ButtonBuilder().setCustomId('owner:commandcenter:health:rescan').setLabel('Rescan Health').setStyle(ButtonStyle.Primary);
+  const backButton = new ButtonBuilder().setCustomId('owner:commandcenter:refresh').setLabel('Back / Refresh Home').setStyle(ButtonStyle.Secondary);
+  return { embeds: [embed], components: [new ActionRowBuilder().addComponents(rescanButton, backButton)], allowedMentions: { parse: [] } };
+}
 
 async function ensurePrivateCommandRegistration(client, guildId) {
   if (!client?.application || !guildId) return false;
@@ -321,7 +366,14 @@ async function handleCommandCenterInteraction(client, interaction) {
     await auditRouter.repairStructure(client, sourceGuild);
     await interaction.editReply(await buildStructurePanel(client, interaction)).catch(() => null); return true;
   }
-  if (interaction.isButton?.()) { await interaction.reply({ content: 'ℹ️ This Command Center section is ready for the next health build phase.', flags: MessageFlags.Ephemeral }).catch(() => null); return true; }
+  if (customId === 'owner:commandcenter:health' && interaction.isButton?.()) {
+    await interaction.reply({ ...(await buildHealthPanel(client)), flags: MessageFlags.Ephemeral }).catch(() => null); return true;
+  }
+  if (customId === 'owner:commandcenter:health:rescan' && interaction.isButton?.()) {
+    await interaction.deferUpdate().catch(() => null);
+    await interaction.editReply(await buildHealthPanel(client)).catch(() => null); return true;
+  }
+  if (interaction.isButton?.()) { await interaction.reply({ content: 'ℹ️ This Command Center section is ready for the next build phase.', flags: MessageFlags.Ephemeral }).catch(() => null); return true; }
   return false;
 }
 
