@@ -689,7 +689,7 @@ function buildEmbedFromPanel(p, i, showTimestamp, fieldLayout = "auto") {
   if (p.title) e.setTitle(trim(replaceVars(p.title, i), 256));
 
   const media = extractMediaLines(replaceVars(p.description, i));
-  const widthAnchor = "\u2800".repeat(38);
+  const widthAnchor = "\u2800".repeat(64);
   const description = trim(media.description, 4096 - widthAnchor.length - 2);
   if (description) e.setDescription(`${description}\n\n${widthAnchor}`);
   else e.setDescription(widthAnchor);
