@@ -1,7 +1,7 @@
 'use strict';
 
 const { ChannelType, PermissionFlagsBits } = require('discord.js');
-const { buildAuditEmbed, buildUserIntelligenceEmbed } = require('./auditEmbeds');
+const { buildAuditEmbed, buildUserIntelligenceEmbed, buildUserIntelligenceControls } = require('./auditEmbeds');
 const { buildReport } = require('./userIntelligence');
 
 const MAX_CATEGORY_CHILDREN = 50;
@@ -87,9 +87,7 @@ async function ensureGuildCategory(ownerGuild, sourceGuild, preferredPage = 1) {
   const preferredName = categoryName(sourceGuild, preferredPage);
   const preferred = existing.find((category) => category.name === preferredName);
   if (preferred) return preferred;
-
   if (!autoProvisionEnabled()) return existing.first?.() || null;
-
   return ownerGuild.channels.create({
     name: preferredName,
     type: ChannelType.GuildCategory,
@@ -100,17 +98,14 @@ async function ensureGuildCategory(ownerGuild, sourceGuild, preferredPage = 1) {
 
 async function ensureSystemChannel(ownerGuild, sourceGuild, category) {
   let channel = findSystemChannel(ownerGuild, sourceGuild);
-
   if (channel) {
     if (category && channel.parentId !== category.id && autoProvisionEnabled()) {
       await channel.setParent(category.id, { lockPermissions: true, reason: `Move Goliath audit channel for ${sourceGuild.name}` }).catch(() => null);
     }
     return channel;
   }
-
   if (!autoProvisionEnabled()) return null;
-
-  channel = await ownerGuild.channels.create({
+  return ownerGuild.channels.create({
     name: 'guild-events',
     type: ChannelType.GuildText,
     parent: category?.id || null,
@@ -118,20 +113,15 @@ async function ensureSystemChannel(ownerGuild, sourceGuild, category) {
     permissionOverwrites: category ? undefined : privateOverwrites(ownerGuild),
     reason: `Goliath guild audit stream for ${sourceGuild.name}`,
   });
-
-  return channel;
 }
 
 async function ensureAuditContext(client, sourceGuild) {
   const ownerGuild = await getOwnerGuild(client);
   if (!ownerGuild) return null;
-
   let systemChannel = findSystemChannel(ownerGuild, sourceGuild);
   let category = isSourceGuildCategory(systemChannel?.parent, sourceGuild) ? systemChannel.parent : null;
-
   if (!category) category = await ensureGuildCategory(ownerGuild, sourceGuild, 1);
   systemChannel = await ensureSystemChannel(ownerGuild, sourceGuild, category);
-
   return { ownerGuild, category, systemChannel };
 }
 
@@ -141,30 +131,21 @@ function eventUserId(event) {
 }
 
 function eventUserLabel(event, userId) {
-  return event?.user?.displayName
-    || event?.user?.globalName
-    || event?.user?.username
-    || `user-${String(userId).slice(-6)}`;
+  return event?.user?.displayName || event?.user?.globalName || event?.user?.username || `user-${String(userId).slice(-6)}`;
 }
 
 function findUserChannel(ownerGuild, sourceGuild, userId) {
   const marker = userMarker(sourceGuild, userId);
-  return ownerGuild.channels.cache.find((channel) => (
-    channel.type === ChannelType.GuildText
-    && String(channel.topic || '').includes(marker)
-  )) || null;
+  return ownerGuild.channels.cache.find((channel) => channel.type === ChannelType.GuildText && String(channel.topic || '').includes(marker)) || null;
 }
 
 async function chooseUserCategory(ownerGuild, sourceGuild, firstCategory) {
   const categories = findGuildCategories(ownerGuild, sourceGuild);
   if (firstCategory && !categories.has(firstCategory.id)) categories.set(firstCategory.id, firstCategory);
-
   const available = categories.find((category) => categoryChildCount(ownerGuild, category.id) < MAX_CATEGORY_CHILDREN);
   if (available) return available;
   if (!autoProvisionEnabled()) return firstCategory || categories.first?.() || null;
-
-  const nextPage = Math.max(1, categories.size + 1);
-  return ensureGuildCategory(ownerGuild, sourceGuild, nextPage);
+  return ensureGuildCategory(ownerGuild, sourceGuild, Math.max(1, categories.size + 1));
 }
 
 function profileMessageId(channel) {
@@ -178,7 +159,6 @@ async function findProfileMessage(channel, userId) {
     const known = await channel.messages.fetch(knownId).catch(() => null);
     if (known) return known;
   }
-
   const pinned = await channel.messages.fetchPinned().catch(() => null);
   if (!pinned) return null;
   return pinned.find((message) => message.embeds?.some((embed) => String(embed.footer?.text || '') === `Goliath User Intelligence • ${userId}`)) || null;
@@ -192,17 +172,15 @@ async function refreshUserSummary(client, sourceGuild, channel, userId, force = 
 
   try {
     const report = await buildReport(client, userId);
-    const embed = buildUserIntelligenceEmbed(report, sourceGuild);
+    const payload = { embeds: [buildUserIntelligenceEmbed(report, sourceGuild)], components: buildUserIntelligenceControls(), allowedMentions: { parse: [] } };
     let message = await findProfileMessage(channel, userId);
-
     if (message) {
-      await message.edit({ embeds: [embed], allowedMentions: { parse: [] } });
+      await message.edit(payload);
       return true;
     }
 
-    message = await channel.send({ embeds: [embed], allowedMentions: { parse: [] } });
+    message = await channel.send(payload);
     await message.pin('Goliath User Intelligence summary').catch(() => null);
-
     const baseTopic = String(channel.topic || '').replace(/\s*•?\s*GOLIATH_AUDIT_PROFILE:\d+/g, '').trim();
     const nextTopic = `${baseTopic} • ${profileMarker(message.id)}`.slice(0, 1024);
     if (nextTopic !== channel.topic) await channel.setTopic(nextTopic, 'Track Goliath User Intelligence summary').catch(() => null);
@@ -216,7 +194,6 @@ async function refreshUserSummary(client, sourceGuild, channel, userId, force = 
 async function ensureUserAuditChannel(client, sourceGuild, event) {
   const userId = eventUserId(event);
   if (!userId) return null;
-
   const context = await ensureAuditContext(client, sourceGuild);
   if (!context) return null;
 
@@ -229,17 +206,14 @@ async function ensureUserAuditChannel(client, sourceGuild, event) {
 
   const category = await chooseUserCategory(context.ownerGuild, sourceGuild, context.category);
   const label = eventUserLabel(event, userId);
-  const channelName = `user-${slug(label, 'user').slice(0, 70)}-${userId.slice(-6)}`.slice(0, 100);
-
   const channel = await context.ownerGuild.channels.create({
-    name: channelName,
+    name: `user-${slug(label, 'user').slice(0, 70)}-${userId.slice(-6)}`.slice(0, 100),
     type: ChannelType.GuildText,
     parent: category?.id || null,
     topic: `${userMarker(sourceGuild, userId)} • ${label} • ${userId} • Individual user audit history`.slice(0, 1024),
     permissionOverwrites: category ? undefined : privateOverwrites(context.ownerGuild),
     reason: `Goliath user audit stream for ${label} in ${sourceGuild.name}`,
   });
-
   await refreshUserSummary(client, sourceGuild, channel, userId, true).catch(() => null);
   return channel;
 }
@@ -251,22 +225,12 @@ async function ensureAuditChannel(client, sourceGuild) {
 
 async function deliver(client, sourceGuild, event) {
   if (!sourceGuild || sourceGuild.id === getOwnerAuditGuildId()) return false;
-
   const userId = eventUserId(event);
-  const channel = userId
-    ? await ensureUserAuditChannel(client, sourceGuild, event)
-    : await ensureAuditChannel(client, sourceGuild);
-
+  const channel = userId ? await ensureUserAuditChannel(client, sourceGuild, event) : await ensureAuditChannel(client, sourceGuild);
   if (!channel?.isTextBased?.()) return false;
   await channel.send({ embeds: [buildAuditEmbed(event)], allowedMentions: { parse: [] } });
   if (userId) refreshUserSummary(client, sourceGuild, channel, userId).catch(() => null);
   return true;
 }
 
-module.exports = {
-  deliver,
-  ensureAuditChannel,
-  ensureUserAuditChannel,
-  refreshUserSummary,
-  getOwnerAuditGuildId,
-};
+module.exports = { deliver, ensureAuditChannel, ensureUserAuditChannel, refreshUserSummary, getOwnerAuditGuildId };
