@@ -93,7 +93,10 @@ function appendEvent(event) {
   fs.appendFileSync(file, `${JSON.stringify(event)}\n`, 'utf8');
   updateGuildIndex(event);
   if (event.user?.id) updateUserIndex(event.user.id, event);
-  if (event.actor?.id && event.actor.id !== event.user?.id) updateUserIndex(event.actor.id, { ...event, relation: 'actor' });
+  if (event.actor?.id) {
+    if (event.actor.id !== event.user?.id) updateUserIndex(event.actor.id, { ...event, relation: 'actor' });
+    else updateActorHistoryOnly(event.actor.id, event);
+  }
   return event;
 }
 
@@ -262,6 +265,18 @@ function updateActorHistory(current, event) {
     operationId: event.metadata?.operation?.operationId || null,
     eventId: event.eventId || null,
   }, (item) => item.eventId || `${item.guildId}:${item.timestamp}:${item.type}`, HISTORY_LIMIT);
+}
+
+function updateActorHistoryOnly(userId, event) {
+  const file = path.join(root, 'users', `${userId}.json`);
+  const current = readJson(file, null);
+  if (!current) return updateUserIndex(userId, { ...event, relation: 'actor' });
+  current.actorHistory ||= [];
+  current.relations ||= { subject: 0, actor: 0 };
+  increment(current.relations, 'actor');
+  current.lastObservedAt = event.timestamp || current.lastObservedAt || null;
+  updateActorHistory(current, { ...event, relation: 'actor' });
+  writeJson(file, current);
 }
 
 function updateUserIndex(userId, event) {
