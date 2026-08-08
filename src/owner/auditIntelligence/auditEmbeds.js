@@ -88,8 +88,8 @@ function buildCommandCenterSetup(client) {
 }
 
 function buildCommandCenterHome(client, guild, config = {}) {
-  const monitored = [...(client?.guilds?.cache?.values?.() || [])]
-    .filter((item) => String(item.id) !== String(guild?.id || config.commandCenter?.guildId || ''))
+  const monitored = Object.keys(config.guilds && typeof config.guilds === 'object' ? config.guilds : {})
+    .filter((guildId) => String(guildId) !== String(guild?.id || config.commandCenter?.guildId || ''))
     .length;
   const embed = new EmbedBuilder()
     .setColor(COLORS.intelligence)
