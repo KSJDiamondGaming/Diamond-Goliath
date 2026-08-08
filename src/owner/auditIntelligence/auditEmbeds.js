@@ -1,6 +1,6 @@
 'use strict';
 
-const { EmbedBuilder } = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
 
 const COLORS = {
   create: 0x57F287,
@@ -105,4 +105,86 @@ function buildUserIntelligenceEmbed(report, sourceGuild) {
     .setTimestamp(new Date(report.generatedAt || Date.now()));
 }
 
-module.exports = { buildAuditEmbed, buildUserIntelligenceEmbed };
+function buildUserIntelligenceControls() {
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('owner:audit:refresh').setLabel('Refresh').setEmoji('🔄').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('owner:audit:deep').setLabel('Deep Scan').setEmoji('🔎').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('owner:audit:guilds').setLabel('Guild History').setEmoji('🏰').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('owner:audit:moderation').setLabel('Moderation').setEmoji('🛡️').setStyle(ButtonStyle.Secondary),
+    ),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('owner:audit:roles').setLabel('Roles').setEmoji('🎭').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('owner:audit:voice').setLabel('Voice').setEmoji('🔊').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('owner:audit:timeline').setLabel('Timeline').setEmoji('🕒').setStyle(ButtonStyle.Secondary),
+    ),
+  ];
+}
+
+function listLines(items, formatter, limit = 15) {
+  if (!Array.isArray(items) || !items.length) return 'None recorded.';
+  return items.slice(-limit).reverse().map(formatter).join('\n').slice(0, 3900) || 'None recorded.';
+}
+
+function buildUserIntelligenceSectionEmbed(report, section, sourceGuild) {
+  const history = report?.history || {};
+  const stored = report?.stored || {};
+  const currentGuilds = report?.currentState?.guilds || [];
+  const titleMap = {
+    deep: '🔎 Deep Scan',
+    guilds: '🏰 Guild History',
+    moderation: '🛡️ Moderation History',
+    roles: '🎭 Role History',
+    voice: '🔊 Voice History',
+    timeline: '🕒 Recent Timeline',
+  };
+  const embed = new EmbedBuilder()
+    .setColor(COLORS.intelligence)
+    .setTitle(titleMap[section] || '🔎 User Intelligence')
+    .setFooter({ text: `Goliath User Intelligence • ${report.userId}` })
+    .setTimestamp(new Date(report.generatedAt || Date.now()));
+
+  if (section === 'deep') {
+    const guildLines = currentGuilds.map((item) => {
+      const member = item.member || {};
+      return `**${item.guildName || item.guildId}** — ${member.joinedAt ? `joined ${discordTime(member.joinedAt, 'F')}` : 'join unknown'} — ${(member.roles || []).length} roles`;
+    }).join('\n') || 'No current guild memberships visible to Goliath.';
+    embed.setDescription(`Full live + stored scan for <@${report.userId}>.`).addFields(
+      { name: 'Identity', value: compact({ profile: report.profile, summary: report.summary }, 1000), inline: false },
+      { name: 'Current Guilds', value: compact(guildLines, 1000), inline: false },
+      { name: 'Event Totals', value: compact(report.counts, 1000), inline: false },
+    );
+    return embed;
+  }
+
+  if (section === 'guilds') {
+    const guilds = Object.values(stored.guilds || {});
+    embed.setDescription(listLines(guilds, (guild) => `**${guild.guildName || guild.guildId}** — first seen ${discordTime(guild.firstObservedAt, 'F')} — last seen ${discordTime(guild.lastObservedAt, 'R')} — ${guild.currentMember === true ? 'current member' : guild.currentMember === false ? 'former member' : 'membership unknown'} — ${guild.eventCount || 0} events`, 20));
+    return embed;
+  }
+
+  if (section === 'moderation') {
+    embed.setDescription(listLines(history.moderation, (item) => `**${item.type || 'moderation'}** — ${discordTime(item.timestamp, 'F')} — ${item.reason || 'No reason recorded'}${item.actorId ? ` — actor <@${item.actorId}>` : ''}`, 20));
+    return embed;
+  }
+
+  if (section === 'roles') {
+    embed.setDescription(listLines(history.roles, (item) => `**${discordTime(item.timestamp, 'F')}** — +${(item.added || []).map((role) => role.name || role.id).join(', ') || 'none'} / -${(item.removed || []).map((role) => role.name || role.id).join(', ') || 'none'} — ${item.guildName || item.guildId || 'Unknown guild'}`, 20));
+    return embed;
+  }
+
+  if (section === 'voice') {
+    embed.setDescription(listLines(history.voice, (item) => `**${discordTime(item.timestamp, 'F')}** — ${item.guildName || item.guildId || 'Unknown guild'} — ${item.before?.channelId || 'none'} → ${item.after?.channelId || 'none'}`, 20));
+    return embed;
+  }
+
+  embed.setDescription(listLines(history.recentEvents, (item) => `**${discordTime(item.timestamp, 'F')}** — \`${item.type || 'event'}\` — ${item.guildName || item.guildId || 'Unknown guild'}${item.relation ? ` — ${item.relation}` : ''}`, 25));
+  return embed;
+}
+
+module.exports = {
+  buildAuditEmbed,
+  buildUserIntelligenceEmbed,
+  buildUserIntelligenceControls,
+  buildUserIntelligenceSectionEmbed,
+};
