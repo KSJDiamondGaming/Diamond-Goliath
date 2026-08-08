@@ -13,6 +13,7 @@ const store = require('./socialStudioStore');
 
 const P = 'social:';
 const sessions = new Map();
+const MONITORING_INTERVALS = new Set(['30000', '60000', '300000', '600000', '900000', '1800000', '3600000']);
 
 function key(interaction) {
   return `${interaction.guildId}:${interaction.user?.id || 'unknown'}`;
@@ -87,6 +88,49 @@ function creatorEditModal(creator) {
         .setMaxLength(1000)
         .setRequired(false)
         .setValue(String(creator.adminNotes || '').slice(0, 1000))),
+    );
+}
+
+function quietHoursModal(config) {
+  const quiet = config.settings?.quietHours && typeof config.settings.quietHours === 'object'
+    ? config.settings.quietHours
+    : {};
+  return new ModalBuilder()
+    .setCustomId(`${P}automation:quiet`)
+    .setTitle('Configure Quiet Hours')
+    .addComponents(
+      row(new TextInputBuilder()
+        .setCustomId('enabled')
+        .setLabel('Enabled? yes or no')
+        .setPlaceholder('yes or no')
+        .setStyle(TextInputStyle.Short)
+        .setMaxLength(3)
+        .setRequired(true)
+        .setValue(quiet.enabled === true ? 'yes' : 'no')),
+      row(new TextInputBuilder()
+        .setCustomId('start')
+        .setLabel('Start time, HH:MM')
+        .setPlaceholder('Example: 23:00')
+        .setStyle(TextInputStyle.Short)
+        .setMaxLength(5)
+        .setRequired(true)
+        .setValue(String(quiet.start || '23:00'))),
+      row(new TextInputBuilder()
+        .setCustomId('end')
+        .setLabel('End time, HH:MM')
+        .setPlaceholder('Example: 08:00')
+        .setStyle(TextInputStyle.Short)
+        .setMaxLength(5)
+        .setRequired(true)
+        .setValue(String(quiet.end || '08:00'))),
+      row(new TextInputBuilder()
+        .setCustomId('timezone')
+        .setLabel('Timezone')
+        .setPlaceholder('Example: Europe/London')
+        .setStyle(TextInputStyle.Short)
+        .setMaxLength(100)
+        .setRequired(true)
+        .setValue(String(quiet.timezone || 'Europe/London'))),
     );
 }
 
@@ -166,9 +210,130 @@ function capture(interaction) {
   return false;
 }
 
+function monitoringPayload(interaction) {
+  const panel = require('./socialStudioPanel');
+  return panel.buildSectionPanel(interaction, 'monitoring');
+}
+
+function liveMessagesPayload(interaction) {
+  const panel = require('./socialStudioPanel');
+  return panel.buildSectionPanel(interaction, 'liveMessages');
+}
+
+async function updatePanel(interaction, payload) {
+  if (interaction.deferred || interaction.replied) await interaction.editReply(payload);
+  else await interaction.update(payload);
+  return true;
+}
+
+function saveSettings(interaction, config) {
+  return store.saveConfig(interaction.guildId, config, {
+    actorId: interaction.user?.id || null,
+    guild: interaction.guild,
+  });
+}
+
+async function handleMonitoringAction(interaction, id) {
+  const config = store.getConfig(interaction.guildId);
+  config.settings = config.settings && typeof config.settings === 'object' ? config.settings : {};
+
+  if (id === `${P}automation:interval`) {
+    const value = String(interaction.values?.[0] || '');
+    if (!MONITORING_INTERVALS.has(value)) throw new Error('Choose a valid monitoring interval.');
+    config.settings.checkIntervalMs = Number(value);
+    saveSettings(interaction, config);
+    return updatePanel(interaction, monitoringPayload(interaction));
+  }
+
+  if (id === `${P}automation:dupes`) {
+    config.settings.suppressDuplicates = String(interaction.values?.[0]) !== 'false';
+    saveSettings(interaction, config);
+    return updatePanel(interaction, monitoringPayload(interaction));
+  }
+
+  if (id === `${P}automation:retry`) {
+    config.settings.retryDeliveries = String(interaction.values?.[0]) !== 'false';
+    saveSettings(interaction, config);
+    return updatePanel(interaction, monitoringPayload(interaction));
+  }
+
+  if (id === `${P}toggle`) {
+    store.setEnabled(interaction.guildId, config.enabled !== true, {
+      actorId: interaction.user?.id || null,
+      guild: interaction.guild,
+    });
+    return updatePanel(interaction, monitoringPayload(interaction));
+  }
+
+  if (id === `${P}automation:quiet`) {
+    if (interaction.isButton?.()) {
+      await interaction.showModal(quietHoursModal(config));
+      return true;
+    }
+    if (interaction.isModalSubmit?.()) {
+      const enabledRaw = String(interaction.fields.getTextInputValue('enabled') || '').trim().toLowerCase();
+      const start = String(interaction.fields.getTextInputValue('start') || '').trim();
+      const end = String(interaction.fields.getTextInputValue('end') || '').trim();
+      const timezone = String(interaction.fields.getTextInputValue('timezone') || '').trim();
+      if (!['yes', 'no'].includes(enabledRaw)) throw new Error('Quiet Hours enabled must be yes or no.');
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(start) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(end)) {
+        throw new Error('Quiet Hours times must use HH:MM, for example 23:00.');
+      }
+      if (!timezone) throw new Error('Quiet Hours timezone is required.');
+      config.settings.quietHours = {
+        enabled: enabledRaw === 'yes',
+        start,
+        end,
+        timezone,
+      };
+      saveSettings(interaction, config);
+      if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
+      return updatePanel(interaction, monitoringPayload(interaction));
+    }
+  }
+
+  return false;
+}
+
+async function handleLiveMessageAction(interaction, id) {
+  const config = store.getConfig(interaction.guildId);
+  config.settings = config.settings && typeof config.settings === 'object' ? config.settings : {};
+  const keyById = {
+    [`${P}automation:editlive`]: 'editLiveNotifications',
+    [`${P}automation:deleteended`]: 'deleteEndedNotifications',
+    [`${P}automation:viewers`]: 'includeViewerCount',
+    [`${P}automation:duration`]: 'includeLiveDuration',
+  };
+  const setting = keyById[id];
+  if (!setting) return false;
+  config.settings[setting] = config.settings[setting] === false;
+  saveSettings(interaction, config);
+  return updatePanel(interaction, liveMessagesPayload(interaction));
+}
+
 async function handle(interaction) {
   const id = String(interaction?.customId || '');
   capture(interaction);
+
+  if ([
+    `${P}automation:interval`,
+    `${P}automation:dupes`,
+    `${P}automation:retry`,
+    `${P}automation:quiet`,
+    `${P}toggle`,
+  ].includes(id)) {
+    return handleMonitoringAction(interaction, id);
+  }
+
+  if ([
+    `${P}automation:editlive`,
+    `${P}automation:deleteended`,
+    `${P}automation:viewers`,
+    `${P}automation:duration`,
+  ].includes(id)) {
+    return handleLiveMessageAction(interaction, id);
+  }
+
   if (![`${P}creator:edit`, `${P}creator:clear`, `${P}creator:delete`].includes(id)) return false;
 
   const creatorId = selectedCreatorId(interaction);
