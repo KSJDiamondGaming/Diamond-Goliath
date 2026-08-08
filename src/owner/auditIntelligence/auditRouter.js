@@ -74,37 +74,65 @@ async function ensureCommandCenter(client, ownerGuild = null) {
   const guild = ownerGuild || client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
   if (!guild) return null;
 
-  let category = config.commandCenter?.categoryId ? guild.channels.cache.get(config.commandCenter.categoryId) : null;
-  if (!category || category.type !== ChannelType.GuildCategory) {
-    category = guild.channels.cache.find((channel) => channel.type === ChannelType.GuildCategory && channel.name === 'GOLIATH CONTROL') || null;
-  }
-  if (!category) {
-    category = await guild.channels.create({
-      name: 'GOLIATH CONTROL',
-      type: ChannelType.GuildCategory,
-      permissionOverwrites: privateOverwrites(guild),
-      reason: 'Goliath private owner command center',
-    });
-  }
-
+  // Once provisioned, the stored channel ID is authoritative. The owner may rename
+  // the channel or move it to any category; Goliath must follow it rather than
+  // restoring the original generated layout.
   let channel = config.commandCenter?.channelId ? guild.channels.cache.get(config.commandCenter.channelId) : null;
-  if (!channel || channel.type !== ChannelType.GuildText) {
-    channel = guild.channels.cache.find((item) => item.type === ChannelType.GuildText && item.parentId === category.id && item.name === 'command-center') || null;
-  }
-  if (!channel) {
-    channel = await guild.channels.create({
-      name: 'command-center',
-      type: ChannelType.GuildText,
-      parent: category.id,
-      topic: 'GOLIATH_COMMAND_CENTER • Private owner control plane'.slice(0, 1024),
-      permissionOverwrites: privateOverwrites(guild),
-      reason: 'Goliath private owner command center',
-    });
-  } else if (channel.parentId !== category.id) {
-    await channel.setParent(category.id, { lockPermissions: true, reason: 'Restore Goliath command center structure' }).catch(() => null);
+  if (!channel && config.commandCenter?.channelId) {
+    channel = await guild.channels.fetch(config.commandCenter.channelId).catch(() => null);
   }
 
-  const nextConfig = auditStore.updateConfig({ commandCenter: { guildId: guild.id, categoryId: category.id, channelId: channel.id } });
+  let category = channel?.parent?.type === ChannelType.GuildCategory ? channel.parent : null;
+
+  if (!channel || channel.type !== ChannelType.GuildText) {
+    // Only use/create the default structure when the configured channel no longer
+    // exists. Visible names are bootstrap defaults, never persistent identifiers.
+    category = config.commandCenter?.categoryId ? guild.channels.cache.get(config.commandCenter.categoryId) : null;
+    if (!category && config.commandCenter?.categoryId) {
+      category = await guild.channels.fetch(config.commandCenter.categoryId).catch(() => null);
+    }
+    if (!category || category.type !== ChannelType.GuildCategory) {
+      category = guild.channels.cache.find((item) => item.type === ChannelType.GuildCategory && item.name === 'GOLIATH CONTROL') || null;
+    }
+    if (!category) {
+      category = await guild.channels.create({
+        name: 'GOLIATH CONTROL',
+        type: ChannelType.GuildCategory,
+        permissionOverwrites: privateOverwrites(guild),
+        reason: 'Goliath private owner command center',
+      });
+    }
+
+    channel = guild.channels.cache.find((item) => (
+      item.type === ChannelType.GuildText
+      && item.parentId === category.id
+      && item.name === 'command-center'
+    )) || null;
+
+    if (!channel) {
+      channel = await guild.channels.create({
+        name: 'command-center',
+        type: ChannelType.GuildText,
+        parent: category.id,
+        topic: 'GOLIATH_COMMAND_CENTER • Private owner control plane'.slice(0, 1024),
+        permissionOverwrites: privateOverwrites(guild),
+        reason: 'Goliath private owner command center',
+      });
+    }
+  }
+
+  // Persist the channel's current parent (or null) as observed state. This means
+  // moving the command center or removing its original generated category is a
+  // supported customization and Repair will not move it back.
+  category = channel.parent?.type === ChannelType.GuildCategory ? channel.parent : null;
+  const nextConfig = auditStore.updateConfig({
+    commandCenter: {
+      guildId: guild.id,
+      categoryId: category?.id || null,
+      channelId: channel.id,
+    },
+  });
+
   const homePayload = buildCommandCenterHome(client, guild, nextConfig);
   let message = nextConfig.commandCenter?.messageId ? await channel.messages.fetch(nextConfig.commandCenter.messageId).catch(() => null) : null;
   if (!message) {
@@ -114,7 +142,14 @@ async function ensureCommandCenter(client, ownerGuild = null) {
   if (message) await message.edit(homePayload).catch(() => null);
   else message = await channel.send(homePayload);
 
-  auditStore.updateConfig({ commandCenter: { guildId: guild.id, categoryId: category.id, channelId: channel.id, messageId: message.id } });
+  auditStore.updateConfig({
+    commandCenter: {
+      guildId: guild.id,
+      categoryId: category?.id || null,
+      channelId: channel.id,
+      messageId: message.id,
+    },
+  });
   await message.pin('Goliath Command Center').catch(() => null);
   return { guild, category, channel, message };
 }
