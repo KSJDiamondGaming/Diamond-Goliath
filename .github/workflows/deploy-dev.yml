@@ -112,12 +112,13 @@ jobs:
           RUNTIME_DIR: ${{ needs.resolve.outputs.runtime_dir }}
           PM2_NAME: ${{ needs.resolve.outputs.pm2_name }}
           EXPECTED_SHA: ${{ needs.preflight.outputs.source_sha }}
+          FORCE_COMMAND_SYNC: ${{ github.event_name == 'workflow_dispatch' }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
           port: 22
-          envs: ENVIRONMENT,TARGET_BRANCH,DEPLOY_SCRIPT,APP_DIR,RUNTIME_DIR,PM2_NAME,EXPECTED_SHA
+          envs: ENVIRONMENT,TARGET_BRANCH,DEPLOY_SCRIPT,APP_DIR,RUNTIME_DIR,PM2_NAME,EXPECTED_SHA,FORCE_COMMAND_SYNC
           script: |
             set -euo pipefail
             [ -d "$APP_DIR/.git" ] || { echo "Missing checkout: $APP_DIR"; exit 1; }
@@ -149,6 +150,24 @@ jobs:
             PLAN="$(node scripts/goliath.js deploy-plan "$OLD_SHA" "$EXPECTED_SHA" --env)"
             echo "$PLAN"
             eval "$PLAN"
+
+            # Manual deployments are explicit environment promotions/redeploys.
+            # Always reconcile the complete Discord command registry so special
+            # command surfaces such as /user and /mod cannot be missed by the
+            # affected-file classifier.
+            if [ "$FORCE_COMMAND_SYNC" = "true" ]; then
+              echo "Manual deployment: forcing full Discord command reconciliation."
+              NEED_COMMAND_SYNC=true
+            fi
+
+            # /user and /mod are command modules outside src/commands. Keep
+            # automatic DEV deployments aware of changes to those definitions.
+            if [ -n "$OLD_SHA" ] && git cat-file -e "$OLD_SHA^{commit}" 2>/dev/null; then
+              if git diff --name-only "$OLD_SHA" "$EXPECTED_SHA" | grep -Eq '^src/core/panels/(user/user|mod/mod)\.js$'; then
+                echo "Special command definition changed: forcing Discord command reconciliation."
+                NEED_COMMAND_SYNC=true
+              fi
+            fi
 
             if [ "$NEED_DEPS" = true ] || ! node -e "require.resolve('express')" >/dev/null 2>&1; then
               npm ci
@@ -198,4 +217,5 @@ jobs:
           echo "- Protected branch: **${{ needs.resolve.outputs.target_branch }}** (not rewritten)" >> "$GITHUB_STEP_SUMMARY"
           echo "- Deployed commit: \`${{ needs.preflight.outputs.source_sha }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Planner: ✅ scripts/goliath.js" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Manual command reconciliation: **${{ github.event_name == 'workflow_dispatch' }}**" >> "$GITHUB_STEP_SUMMARY"
           echo "- Runtime data: ✅ preserved" >> "$GITHUB_STEP_SUMMARY"
