@@ -94,14 +94,14 @@ function buildRoutingPanel(client, interaction) {
       .setCustomId('owner:commandcenter:routing:guild')
       .setPlaceholder('1. Select source guild')
       .setMinValues(1).setMaxValues(1)
-      .addOptions(sourceGuilds.map((guild) => ({ label: String(guild.name || guild.id).slice(0, 100), value: guild.id, description: `Guild ID: ${guild.id}`.slice(0, 100), default: guild.id === session.sourceGuildId }))));
+      .addOptions(sourceGuilds.map((guild) => ({ label: String(guild.name || guild.id).slice(0, 100), value: guild.id, description: `Guild ID: ${guild.id}`.slice(0, 100), default: guild.id === session.sourceGuildId }))))) ;
   }
   if (selectedGuild) {
     rows.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder()
       .setCustomId('owner:commandcenter:routing:type')
       .setPlaceholder('2. Select audit event family')
       .setMinValues(1).setMaxValues(1)
-      .addOptions(Object.entries(ROUTE_LABELS).map(([value, label]) => ({ label, value, default: value === session.routeKey }))));
+      .addOptions(Object.entries(ROUTE_LABELS).map(([value, label]) => ({ label, value, default: value === session.routeKey }))))) ;
     rows.push(new ActionRowBuilder().addComponents(new ChannelSelectMenuBuilder()
       .setCustomId('owner:commandcenter:routing:channel')
       .setPlaceholder(`3. Choose destination for ${ROUTE_LABELS[session.routeKey] || 'route'}`)
